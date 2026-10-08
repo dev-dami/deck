@@ -42,8 +42,25 @@ func kinds(evs []agent.Event) []agent.Kind {
 	return k
 }
 
+// isMidTurnUsage reports whether ev is a context-only usage event.
+func isMidTurnUsage(ev agent.Event) bool {
+	u := ev.Usage
+	return ev.Kind == agent.KindUsage && u != nil && u.InputTokens == 0 && u.OutputTokens == 0 && u.CachedTokens == 0 && u.CostUSD == 0
+}
+
+// withoutMidTurnUsage drops the context-only usage events.
+func withoutMidTurnUsage(evs []agent.Event) []agent.Event {
+	var out []agent.Event
+	for _, e := range evs {
+		if !isMidTurnUsage(e) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func TestReplaySession1(t *testing.T) {
-	evs := replay(t, filepath.Join("testdata", "session1.jsonl"))
+	evs := withoutMidTurnUsage(replay(t, filepath.Join("testdata", "session1.jsonl")))
 	want := []agent.Kind{
 		agent.KindSessionStarted,
 		agent.KindToolCall, agent.KindToolResult, agent.KindFileChange,
@@ -159,6 +176,13 @@ func fakeClaude() {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
 	for sc.Scan() {
+		if f := os.Getenv("DECK_FAKE_STDIN_FILE"); f != "" {
+			// record each stdin line (one per user message), across restarts
+			if fh, err := os.OpenFile(f, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+				fh.WriteString(sc.Text() + "\n")
+				fh.Close()
+			}
+		}
 		if strings.Contains(sc.Text(), "HANG") {
 			time.Sleep(time.Hour)
 		}
@@ -516,5 +540,117 @@ func TestTranslateMessagingTools(t *testing.T) {
 	}
 	if c := evs[3].Tool; c.Name != "read" {
 		t.Errorf("read_thread result %+v", c)
+	}
+}
+
+func TestContextUsageFromFixture(t *testing.T) {
+	evs := replay(t, filepath.Join("testdata", "session1.jsonl"))
+	var mid, final []*agent.Usage
+	for _, e := range evs {
+		switch {
+		case isMidTurnUsage(e):
+			mid = append(mid, e.Usage)
+		case e.Kind == agent.KindUsage:
+			final = append(final, e.Usage)
+		}
+	}
+	// Per assistant message: input + cache creation + cache read + output.
+	// msg 1: 2+10308+28579+16 (message_start), then output 109 (message_delta).
+	// msg 2: 2+2117+38887+8, then output 44. The repeated assistant line of
+	// msg 2 changes nothing and yields no event.
+	wantCtx := []int{38905, 38998, 41014, 41050}
+	if len(mid) != len(wantCtx) {
+		t.Fatalf("mid-turn usage events = %d want %d", len(mid), len(wantCtx))
+	}
+	for i, u := range mid {
+		if u.ContextTokens != wantCtx[i] {
+			t.Errorf("mid[%d].ContextTokens = %d want %d", i, u.ContextTokens, wantCtx[i])
+		}
+		// no modelUsage seen yet: family fallback for claude-opus-*
+		if u.ContextWindow != 200000 {
+			t.Errorf("mid[%d].ContextWindow = %d want 200000 (fallback)", i, u.ContextWindow)
+		}
+	}
+	if len(final) != 1 {
+		t.Fatalf("final usage events = %d", len(final))
+	}
+	f := final[0]
+	if f.ContextTokens != 41050 {
+		t.Errorf("final ContextTokens = %d want 41050 (latest message, not the cumulative sum)", f.ContextTokens)
+	}
+	if f.ContextWindow != 1000000 {
+		t.Errorf("final ContextWindow = %d want 1000000 (modelUsage.contextWindow)", f.ContextWindow)
+	}
+	if f.OutputTokens != 153 || f.CostUSD < 0.11 {
+		t.Errorf("existing fields lost: %+v", f)
+	}
+}
+
+func TestContextWindowKnownAfterFirstResult(t *testing.T) {
+	// Replaying the session twice through one translator: the second turn's
+	// mid-turn events already carry the window the first result reported.
+	path := filepath.Join("testdata", "session1.jsonl")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := newTranslator("c1")
+	var second []agent.Event
+	for pass := 0; pass < 2; pass++ {
+		for _, l := range strings.Split(string(b), "\n") {
+			evs := tr.Line([]byte(l))
+			if pass == 1 {
+				second = append(second, evs...)
+			}
+		}
+	}
+	for _, e := range second {
+		if e.Kind == agent.KindUsage && e.Usage.ContextWindow != 1000000 {
+			t.Errorf("second turn window = %d want 1000000", e.Usage.ContextWindow)
+		}
+	}
+}
+
+func TestFallbackWindow(t *testing.T) {
+	cases := map[string]int{
+		"claude-opus-4-1":            200000,
+		"sonnet":                     200000,
+		"haiku":                      200000,
+		"claude-fable-1":             200000,
+		"claude-sonnet-4-5[1m]":      1000000,
+		"sonnet[1m]":                 1000000,
+		"opus-1m":                    1000000,
+		"claude-sonnet-4-5-20250929": 200000,
+		"":                           0,
+		"gpt-5":                      0,
+	}
+	for m, want := range cases {
+		if got := fallbackWindow(m); got != want {
+			t.Errorf("fallbackWindow(%q) = %d want %d", m, got, want)
+		}
+	}
+}
+
+func TestContextWindowFromModelUsageAndSubagentIgnored(t *testing.T) {
+	tr := newTranslator("c1")
+	lines := []string{
+		// sub-agent chatter must not move the meter
+		`{"type":"assistant","parent_tool_use_id":"toolu_x","message":{"model":"claude-haiku-9","usage":{"input_tokens":999999},"content":[{"type":"text","text":"sub"}]}}`,
+		`{"type":"assistant","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":30,"output_tokens":5},"content":[{"type":"text","text":"hi"}]}}`,
+		`{"type":"result","subtype":"success","total_cost_usd":0.01,"usage":{"input_tokens":50,"output_tokens":9},"modelUsage":{"claude-sonnet-4-5":{"contextWindow":500000},"claude-haiku-9":{"contextWindow":123}}}`,
+	}
+	var evs []agent.Event
+	for _, l := range lines {
+		evs = append(evs, tr.Line([]byte(l))...)
+	}
+	// text, mid-turn usage, final usage, turn_done
+	if got := kinds(evs); len(got) != 4 || got[1] != agent.KindUsage || got[2] != agent.KindUsage {
+		t.Fatalf("kinds %v", got)
+	}
+	if u := evs[1].Usage; u.ContextTokens != 65 || u.ContextWindow != 200000 || u.CostUSD != 0 || u.OutputTokens != 0 {
+		t.Errorf("mid-turn %+v", u)
+	}
+	if u := evs[2].Usage; u.ContextTokens != 65 || u.ContextWindow != 500000 || u.OutputTokens != 9 || u.CostUSD != 0.01 {
+		t.Errorf("final %+v", u)
 	}
 }

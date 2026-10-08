@@ -373,26 +373,43 @@ func (r *run) SessionID() string {
 	return r.sessionID
 }
 
-type userMessage struct {
-	Type    string `json:"type"`
-	Message struct {
-		Role    string `json:"role"`
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	} `json:"message"`
+func jsonMarshal(v any) ([]byte, error) { return json.Marshal(v) }
+
+// Send sends a text-only prompt.
+func (r *run) Send(prompt string) error { return r.send(prompt, nil) }
+
+// SendWithImages implements agent.ImageSender: the images go into the same
+// user message, before the text. The echo (KindUserText) carries the prompt
+// only; images are the UI's own knowledge.
+func (r *run) SendWithImages(prompt string, images []agent.Image) error {
+	return r.send(prompt, images)
 }
 
-func (r *run) Send(prompt string) error {
-	var um userMessage
-	um.Type = "user"
-	um.Message.Role = "user"
-	um.Message.Content = []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}{{Type: "text", Text: prompt}}
-	data, err := json.Marshal(um)
+// Steer implements agent.Steerer. Idle: same as SendWithImages. Busy: the
+// current turn is interrupted (Interrupt: kill, respawn with --resume, one
+// KindTurnDone "interrupted") and the steer prompt is then delivered to the
+// replacement process as the next message. Claude Code's stream-json input has
+// no documented way to inject into a running turn, so this is the only
+// supported route. A mode/model restart already in flight just queues it.
+func (r *run) Steer(prompt string, images []agent.Image) error {
+	// Validate (and read) the images before touching the running turn, so a bad
+	// attachment cannot cost the user their turn.
+	if _, _, err := buildUserMessage(prompt, images); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	busy := r.busy && !r.restarting && !r.closed
+	r.mu.Unlock()
+	if busy {
+		if err := r.Interrupt(); err != nil {
+			return err
+		}
+	}
+	return r.send(prompt, images)
+}
+
+func (r *run) send(prompt string, images []agent.Image) error {
+	data, echo, err := buildUserMessage(prompt, images)
 	if err != nil {
 		return err
 	}
@@ -406,7 +423,7 @@ func (r *run) Send(prompt string) error {
 		// A mode/model restart is in flight: hold the prompt, restart() writes it.
 		r.queue = append(r.queue, append(append([]byte(nil), data...), '\n'))
 		r.mu.Unlock()
-		r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindUserText, Text: prompt, Raw: data})
+		r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindUserText, Text: prompt, Raw: echo})
 		return nil
 	}
 	p := r.cur
@@ -419,7 +436,7 @@ func (r *run) Send(prompt string) error {
 	if err != nil {
 		return fmt.Errorf("writing to claude: %w", err)
 	}
-	r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindUserText, Text: prompt, Raw: data})
+	r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindUserText, Text: prompt, Raw: echo})
 	return nil
 }
 

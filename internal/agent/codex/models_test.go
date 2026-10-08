@@ -89,12 +89,14 @@ func TestModelsTimeout(t *testing.T) {
 	if time.Since(start) > 8*time.Second {
 		t.Errorf("took %v", time.Since(start))
 	}
-	// Errors are not cached: a retry runs again.
+	// Errors are not cached: a retry runs again. (Checked on the cache itself;
+	// counting model/list requests is timing-dependent, since under load the
+	// fake server can still be starting when the 500ms timeout fires.)
+	if a := l.(*adapter); a.models != nil {
+		t.Fatalf("a failed listing was cached: %+v", a.models)
+	}
 	if _, err := l.Models(context.Background()); err == nil {
 		t.Fatal("expected second timeout error")
-	}
-	if n := strings.Count(fe.read(t), "model/list="); n != 2 {
-		t.Errorf("model/list requested %d times, want 2", n)
 	}
 }
 
