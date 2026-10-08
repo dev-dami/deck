@@ -87,6 +87,7 @@ type streamLine struct {
 	Type            string          `json:"type"`
 	Subtype         string          `json:"subtype"`
 	SessionID       string          `json:"session_id"`
+	Model           string          `json:"model"` // system/init: the model this session runs
 	ParentToolUseID *string         `json:"parent_tool_use_id"`
 	Event           json.RawMessage `json:"event"`
 	Message         json.RawMessage `json:"message"`
@@ -148,6 +149,7 @@ func (t *translator) Line(line []byte) []agent.Event {
 		if sl.Subtype == "init" && sl.SessionID != "" {
 			ev := mk(agent.KindSessionStarted)
 			ev.SessionID = sl.SessionID
+			ev.Text = sl.Model // the model this session actually runs
 			return []agent.Event{ev}
 		}
 

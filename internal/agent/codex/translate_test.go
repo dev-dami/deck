@@ -87,7 +87,7 @@ func replay(t testing.TB, name string) replayResult {
 			if sent[string(m.ID)] == methodThreadStart {
 				var tr threadResponse
 				_ = json.Unmarshal(m.Result, &tr)
-				res.events = append(res.events, res.tr.sessionStarted(tr.Thread.ID, m.Raw))
+				res.events = append(res.events, res.tr.sessionStarted(tr.Thread.ID, tr.Model, m.Raw))
 			}
 		case m.IsRequest():
 			res.requests = append(res.requests, m)

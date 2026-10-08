@@ -94,6 +94,7 @@ type threadResponse struct {
 	Thread struct {
 		ID string `json:"id"`
 	} `json:"thread"`
+	Model string `json:"model"` // the model the thread runs
 }
 
 // userInput is one UserInput item: {"type":"text","text":...,"text_elements":[]}

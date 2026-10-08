@@ -15,7 +15,7 @@ import (
 type Kind string
 
 const (
-	KindSessionStarted Kind = "session_started" // SessionID is known
+	KindSessionStarted Kind = "session_started" // SessionID is known; Text = model slug the CLI runs, if it says
 	KindAssistantText  Kind = "assistant_text"  // Text; Delta=true while streaming
 	KindReasoning      Kind = "reasoning"       // Text; Delta=true while streaming
 	KindUserText       Kind = "user_text"       // echo of a prompt Deck sent

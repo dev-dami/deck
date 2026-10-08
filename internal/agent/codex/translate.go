@@ -55,9 +55,10 @@ func (t *translator) ev(kind agent.Kind, raw json.RawMessage) agent.Event {
 
 // sessionStarted builds the KindSessionStarted event for a thread/start or
 // thread/resume response.
-func (t *translator) sessionStarted(threadID string, raw json.RawMessage) agent.Event {
+func (t *translator) sessionStarted(threadID, model string, raw json.RawMessage) agent.Event {
 	e := t.ev(agent.KindSessionStarted, raw)
 	e.SessionID = threadID
+	e.Text = model
 	return e
 }
 

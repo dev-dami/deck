@@ -654,3 +654,16 @@ func TestContextWindowFromModelUsageAndSubagentIgnored(t *testing.T) {
 		t.Errorf("final %+v", u)
 	}
 }
+
+func TestSessionStartedCarriesRunningModel(t *testing.T) {
+	evs := replay(t, "testdata/session1.jsonl")
+	for _, ev := range evs {
+		if ev.Kind == agent.KindSessionStarted {
+			if ev.Text != "claude-opus-5-5" {
+				t.Fatalf("running model = %q, want claude-opus-5-5", ev.Text)
+			}
+			return
+		}
+	}
+	t.Fatal("no session_started event")
+}

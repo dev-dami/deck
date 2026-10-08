@@ -121,7 +121,7 @@ func (r *run) handshake(ctx context.Context, opts Options) error {
 	r.mu.Unlock()
 
 	raw, _ := json.Marshal(map[string]any{"threadId": resp.Thread.ID, "resumed": r.spec.ResumeID != ""})
-	r.events <- r.tr.sessionStarted(resp.Thread.ID, raw)
+	r.events <- r.tr.sessionStarted(resp.Thread.ID, resp.Model, raw)
 	go r.loop()
 	return nil
 }

@@ -186,6 +186,9 @@ type AgentInfo struct {
 	// ContextTokens of ContextWindow tokens are in use (0 = not reported yet).
 	ContextTokens int
 	ContextWindow int
+	// RunningModel is the model slug the CLI reports it is running (e.g.
+	// "claude-opus-5-5" when Model is "" or an alias); "" until it says.
+	RunningModel string
 }
 
 // ThreadInfo is a snapshot of one live thread.
@@ -1336,6 +1339,7 @@ type agentState struct {
 	interrupted bool
 	ctxTokens   int // context window use, from the latest usage event that reported it
 	ctxWindow   int
+	running     string // model slug the CLI reported at session start
 }
 
 func (a *agentState) getRun() agent.Run {
@@ -1373,6 +1377,7 @@ func (a *agentState) info() AgentInfo {
 		ID: a.id, Kind: a.kind, Name: a.name, Dir: a.thread.dir, Model: a.model,
 		Status: a.statusLocked(), CostUSD: a.costTotal + a.costTurn, Pending: len(a.pending),
 		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow,
+		RunningModel: a.running,
 	}
 }
 
@@ -1494,6 +1499,9 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 		if ev.SessionID != "" && ev.SessionID != a.sessionID {
 			a.sessionID = ev.SessionID
 			res.metaDirty = true
+		}
+		if ev.Text != "" {
+			a.running = ev.Text
 		}
 	case agent.KindAssistantText:
 		a.base = StatusWorking
