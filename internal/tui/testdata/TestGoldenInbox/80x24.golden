@@ -1,24 +1,24 @@
  ◆ deck                                                               2 waiting
 
-  ⚠ codex  rebuild dist      ◐ Edit internal/store/store.go
- ▎⚠ claude  tidy the sto…
-                           ⚠ claude wants to edit internal/store…       +24 −9
-                           │ @@ -9,9 +9,13 @@
-                           │   9   type Store struct {
-                           │  10       dir string
-                           │  11 -     mu  sync.Mutex
-                           │  11 +     mu    sync.Mutex
-                           │  12 +     locks map[string]*sync.Mutex
-                           │  13   }
-                           │  14
-                           │  15   // lock returns the mutex that serialises …
-                           │  15 - func (s *Store) lockFor(id string) *sync.M…
-                            ─── inbox ─────────────────────────────────────────
-                            ▎⚠ codex    run  rm -rf dist && npm run bui… ~/repo
-                             ⚠ claude   edit internal/store/store.go     +24 −9
+  ⚠ codex                 ◐ Edit internal/store/store.go
+ ▎⚠ claude
+                        ⚠ claude wants to edit internal/store/st…       +24 −9
+                        │ @@ -9,9 +9,13 @@
+                        │   9   9 │  type Store struct {
+                        │  10  10 │      dir string
+                        │  11     │-     mu  sync.Mutex
+                        │      11 │+     mu    sync.Mutex
+                        │      12 │+     locks map[string]*sync.Mutex
+                        │  12  13 │  }
+                        │  13  14 │
+                        │  14  15 │  // lock returns the mutex that serialise…
+                        │  15     │- func (s *Store) lockFor(id string) *sync…
+                         ─── inbox ────────────────────────────────────────────
+                         ▎⚠ codex    run  rm -rf dist && npm run build   ~/repo
+                          ⚠ claude   edit internal/store/store.go        +24 −9
 
-                            y allow   n deny   a always   enter open
-                           ────────────────────────────────────────────────────
-                             claude · default · ~/repo
-                           › message claude…
+                         y allow   n deny   a always   enter open   esc close
+                        ───────────────────────────────────────────────────────
+                          claude · default · ~/repo
+                        › message claude…
  y allow   n deny   a always   esc close

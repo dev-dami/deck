@@ -1,24 +1,24 @@
  ◆ deck                                                               1 waiting
 
- ▎⚠ codex  rebuild dist      Ada
-                             rebuild dist
-
-                           ◆ codex
-                             I'll rebuild  dist  from a clean slate. The old
-                             output is stale, so I'm removing it first.
-
-                             ◐ Bash rm -rf dist && npm run build
-
-                           ⚠ codex wants to run
-                           │ rm -rf dist && npm run build
-                           │ in ~/repo
-                           │
-                           │ y allow   n deny   a always   e edit
+ ▎⚠ codex
 
 
 
 
-                           ────────────────────────────────────────────────────
-                             codex · default · ~/repo
-                           › message codex…
+                          Ada
+                          rebuild dist
+
+                        ◆ codex
+                          I'll rebuild dist from a clean slate. The old output
+                          is stale, so I'm removing it first.
+                          ◐ Bash rm -rf dist && npm run build
+
+                        ⚠ codex wants to run
+                        │ rm -rf dist && npm run build
+                        │ in ~/repo
+                        │
+                        │ y allow   n deny   a always   e edit
+                        ───────────────────────────────────────────────────────
+                          codex · default · ~/repo
+                        › message codex…
  y allow   n deny   a always   i inbox

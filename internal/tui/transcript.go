@@ -323,7 +323,11 @@ func (v *agentView) advance() {
 	}
 }
 
-func gap(prev, cur *item) bool { return !(prev.rowLike() && cur.rowLike()) }
+// gap reports whether one blank line separates two consecutive items. Rows
+// (tools, thinking, notes) sit directly under their message and under each other.
+func gap(prev, cur *item) bool {
+	return !(cur.rowLike() && (prev.rowLike() || prev.kind == kText))
+}
 
 // compose lays out the whole transcript for the view at width w.
 func (m *model) compose(v *agentView, info session.AgentInfo, w int) {
@@ -336,6 +340,12 @@ func (m *model) compose(v *agentView, info session.AgentInfo, w int) {
 			owners = append(owners, it)
 		}
 	}
+	// blank adds the one faint blank line between messages, never two in a row.
+	blank := func() {
+		if n := len(lines); n > 0 && lines[n-1] != "" {
+			add([]string{""}, nil)
+		}
+	}
 	agentLabel := sAccent.Render(theme.GlyphAgent) + " " + sBold.Render(trunc(info.Name, w-2))
 	focusedCursor := m.focus == focusTranscript && !m.hasOverlay()
 	cur := v.cursorItem()
@@ -343,7 +353,7 @@ func (m *model) compose(v *agentView, info session.AgentInfo, w int) {
 	var prev *item
 	for _, it := range v.items {
 		if prev != nil && gap(prev, it) {
-			add([]string{""}, nil)
+			blank()
 		}
 		if it.agentSide() && (prev == nil || prev.kind == kUser) {
 			add([]string{agentLabel}, nil)
@@ -360,14 +370,13 @@ func (m *model) compose(v *agentView, info session.AgentInfo, w int) {
 	working := info.Status == session.StatusWorking || info.Status == session.StatusTool
 	if working && (prev == nil || prev.kind == kUser) {
 		if prev != nil {
-			add([]string{"", agentLabel}, nil)
+			blank()
+			add([]string{agentLabel}, nil)
 		}
 		add([]string{"  " + sMuted.Render(motion.NewSpinner().Frame(m.now)) + sFaint.Render(" working…")}, nil)
 	}
 	if pend := m.pendingFor(v.id); len(pend) > 0 {
-		if len(lines) > 0 {
-			add([]string{""}, nil)
-		}
+		blank()
 		add(m.renderApproval(pend[0], w, true, len(pend)), nil)
 	}
 	v.lines, v.owners = lines, owners
@@ -441,12 +450,16 @@ func (v *agentView) lineOf(it *item) int {
 
 // window returns exactly vh lines of the transcript.
 func (v *agentView) window(vh int) []string {
-	top := v.top()
+	top, pad := v.top(), v.padTop(vh)
 	out := make([]string, vh)
-	for i := 0; i < vh; i++ {
-		if top+i >= 0 && top+i < len(v.lines) {
-			out[i] = v.lines[top+i]
+	for i := pad; i < vh; i++ {
+		if li := top + i - pad; li >= 0 && li < len(v.lines) {
+			out[i] = v.lines[li]
 		}
 	}
 	return out
 }
+
+// padTop is how many blank rows sit above a transcript shorter than the pane:
+// the transcript is bottom-anchored so the latest message rests on the rule.
+func (v *agentView) padTop(vh int) int { return max(0, vh-len(v.lines)) }

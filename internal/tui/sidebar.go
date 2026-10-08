@@ -33,7 +33,8 @@ func (m *model) statusGlyph(a session.AgentInfo) (string, lipgloss.Style) {
 
 // sidebarLines renders rows lines, each exactly g.sbW cells wide.
 func (m *model) sidebarLines(g geom, rows int) []string {
-	cw := g.sbW - 3 // one cell of screen padding on the left, two of gap on the right
+	cw := g.sbW - 3     // one cell of screen padding on the left, two of gap on the right
+	wide := g.sbW >= 31 // titles (and every row's cost) only fit on wide terminals
 	out := make([]string, 0, rows)
 	// The accent bar glides between rows: each row's bar fades with its
 	// distance from the spring position, so adjacent rows cross-fade.
@@ -83,13 +84,16 @@ func (m *model) sidebarLines(g geom, rows int) []string {
 		name := trunc(a.Name, 10)
 		left := bar + gs.Render(glyph) + " " + nameStyle.Render(name)
 		cost := fmtCost(a.CostUSD)
+		if !wide && !selected { // narrow sidebar: cost only on the selected row
+			cost = ""
+		}
 		costW := 0
 		if cost != "" {
 			costW = sw(cost) + 1
 		}
 		titleW := cw - sw(left) - 2 - costW
 		line := left
-		if t := oneLine(a.Title); t != "" && titleW >= 4 {
+		if t := oneLine(a.Title); wide && t != "" && titleW >= 4 {
 			line += "  " + sFaint.Render(trunc(t, titleW))
 		}
 		if cost != "" {

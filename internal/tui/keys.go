@@ -551,7 +551,7 @@ func (m *model) handleMouse(msg tea.MouseMsg) []tea.Cmd {
 				m.selectAgent(m.agents[row].ID)
 			}
 		case msg.X >= g.mainX && msg.Y >= g.topY && msg.Y < g.topY+g.trH && v != nil:
-			li := v.top() + msg.Y - g.topY
+			li := v.top() + msg.Y - g.topY - v.padTop(g.trH)
 			if li >= 0 && li < len(v.owners) {
 				if it := v.owners[li]; it != nil && it.foldable() {
 					v.cursor = it

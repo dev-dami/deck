@@ -176,7 +176,7 @@ type geom struct {
 func (m *model) geo() geom {
 	g := geom{w: m.w, h: m.h}
 	if m.w >= sidebarMinWidth && (len(m.agents) > 0) {
-		g.sbW = 27
+		g.sbW = 24
 		if m.w >= 100 {
 			g.sbW = 31
 		}
@@ -467,6 +467,9 @@ func (m *model) View() string {
 
 func (m *model) headerLine(g geom) string {
 	left := " " + sAccent.Render(theme.GlyphAgent) + " " + sBold.Render(theme.Wordmark)
+	if m.curView() == nil { // the empty state draws its own wordmark
+		left = " "
+	}
 	working, waiting := 0, 0
 	cost := 0.0
 	for _, a := range m.agents {
@@ -493,6 +496,9 @@ func (m *model) headerLine(g geom) string {
 	right := strings.Join(parts, sep)
 	if right == "" {
 		return trunc(left, m.w)
+	}
+	if left == " " {
+		return padTo("", m.w-sw(right)-1) + right + " "
 	}
 	return rightAlign(left, right+" ", m.w)
 }

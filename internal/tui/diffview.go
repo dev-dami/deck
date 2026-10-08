@@ -22,6 +22,20 @@ const bodyCap = 12
 
 var lexerCache sync.Map // base filename -> chroma.Lexer
 
+// lexerByLang resolves a markdown fence language ("go", "sh", "ts", ...).
+func lexerByLang(lang string) chroma.Lexer {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	if lang != "" {
+		if lx := lexers.Get(lang); lx != nil {
+			return chroma.Coalesce(lx)
+		}
+		if lx := lexers.Match("x." + lang); lx != nil {
+			return chroma.Coalesce(lx)
+		}
+	}
+	return chroma.Coalesce(lexers.Fallback)
+}
+
 func lexerFor(path string) chroma.Lexer {
 	name := filepath.Base(path)
 	if v, ok := lexerCache.Load(name); ok {
@@ -61,7 +75,7 @@ func syntaxful(t chroma.TokenType) bool {
 
 // highlight returns text coloured by Chroma with the given tone and optional
 // background (bg == "" means none).
-func highlight(text, path string, tone, bg string, strength float64, dark bool) string {
+func highlight(text string, lx chroma.Lexer, tone, bg string, strength float64, dark bool) string {
 	base := lipgloss.NewStyle()
 	if bg != "" {
 		base = base.Background(lipgloss.Color(bg))
@@ -75,7 +89,7 @@ func highlight(text, path string, tone, bg string, strength float64, dark bool) 
 		name = "github-dark"
 	}
 	cs := cstyles.Get(name)
-	it, err := lexerFor(path).Tokenise(nil, text)
+	it, err := lx.Tokenise(nil, text)
 	if err != nil {
 		return plain.Render(text)
 	}
@@ -123,7 +137,9 @@ func renderDiff(d *agent.FileDiff, w int, dark bool, capLines int) []string {
 	if gw < 3 {
 		gw = 3
 	}
-	codeW := w - gw - 3
+	// gutter: old number, new number, bar; then the marker and the code
+	codeW := w - (2*gw + 3) - 2
+	lx := lexerFor(d.Path)
 	faint := lipgloss.NewStyle().Foreground(lipgloss.Color(pick(theme.Faint, dark)))
 
 	var all []string
@@ -132,22 +148,23 @@ func renderDiff(d *agent.FileDiff, w int, dark bool, capLines int) []string {
 		oldN, newN := h.OldStart, h.NewStart
 		for _, l := range h.Lines {
 			var (
-				num      int
-				marker   string
-				tone, bg string
-				strength float64
+				oldS, newS string
+				marker     string
+				tone, bg   string
+				strength   float64
 			)
+			blank := strings.Repeat(" ", gw)
 			switch l.Op {
 			case agent.OpAdd:
-				num, marker = newN, "+"
+				oldS, newS, marker = blank, fmt.Sprintf("%*d", gw, newN), "+"
 				tone, bg, strength = pick(theme.Add, dark), pick(theme.AddBg, dark), 0.45
 				newN++
 			case agent.OpDel:
-				num, marker = oldN, "-"
+				oldS, newS, marker = fmt.Sprintf("%*d", gw, oldN), blank, "-"
 				tone, bg, strength = pick(theme.Danger, dark), pick(theme.DelBg, dark), 0.45
 				oldN++
 			default:
-				num, marker = newN, " "
+				oldS, newS, marker = fmt.Sprintf("%*d", gw, oldN), fmt.Sprintf("%*d", gw, newN), " "
 				tone, strength = pick(theme.Muted, dark), 0.3
 				oldN++
 				newN++
@@ -157,9 +174,9 @@ func renderDiff(d *agent.FileDiff, w int, dark bool, capLines int) []string {
 			if bg != "" {
 				base = base.Background(lipgloss.Color(bg))
 			}
-			gut := base.Foreground(lipgloss.Color(pick(theme.Faint, dark))).Render(fmt.Sprintf("%*d ", gw, num))
+			gut := base.Foreground(lipgloss.Color(pick(theme.Faint, dark))).Render(oldS + " " + newS + " " + theme.GlyphBar)
 			mk := base.Foreground(lipgloss.Color(tone)).Render(marker + " ")
-			body := highlight(code, d.Path, tone, bg, strength, dark)
+			body := highlight(code, lx, tone, bg, strength, dark)
 			if sw(body) > codeW {
 				body = ansi.Truncate(body, codeW, "…")
 			}
