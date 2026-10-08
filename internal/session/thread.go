@@ -22,6 +22,7 @@ type thread struct {
 	mu      sync.Mutex
 	title   string
 	dir     string
+	mode    agent.Mode // permission mode; never empty
 	members []*agentState
 	log     []store.Entry
 
@@ -36,9 +37,9 @@ type thread struct {
 	created bool // the store knows this thread (touched by the writer goroutine only)
 }
 
-func newThread(m *Manager, id, dir string) *thread {
+func newThread(m *Manager, id, dir string, mode agent.Mode) *thread {
 	return &thread{
-		id: id, m: m, dir: dir,
+		id: id, m: m, dir: dir, mode: mode,
 		boundary:  map[string]int{},
 		inert:     map[int]bool{},
 		lastRelay: map[string]string{},
@@ -89,7 +90,7 @@ func (m *Manager) persistMeta(t *thread) {
 func (m *Manager) snapshot(t *thread) store.Thread {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	th := store.Thread{ID: t.id, Title: t.title, Dir: t.dir}
+	th := store.Thread{ID: t.id, Title: t.title, Dir: t.dir, Mode: string(t.mode)}
 	for _, a := range t.members {
 		th.Members = append(th.Members, a.memberMeta())
 	}

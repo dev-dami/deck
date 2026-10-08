@@ -52,6 +52,7 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 		TellAgentsName: false,
 		ClaudeBinary:   "claude",
 		CodexBinary:    "codex",
+		DefaultMode:    "ask",
 	}
 	if cfg != want {
 		t.Errorf("Load() = %+v\nwant %+v", cfg, want)
@@ -135,6 +136,7 @@ func TestInvalidValuesRejected(t *testing.T) {
 	cases := map[string]string{
 		"bad agent":  `{"default_agent":"gemini"}`,
 		"bad motion": `{"motion":"loud"}`,
+		"bad mode":   `{"default_mode":"reckless"}`,
 		"bad json":   `{"bell": `,
 	}
 	for name, body := range cases {
@@ -206,5 +208,49 @@ func TestSaveToCreatesDirectory(t *testing.T) {
 	}
 	if _, err := LoadFrom(path); err != nil {
 		t.Fatalf("LoadFrom after SaveTo: %v", err)
+	}
+}
+
+func TestDefaultModeValidationAndStartMode(t *testing.T) {
+	home := isolateHome(t)
+	stubIdentity(t, "x", "x")
+	path := filepath.Join(home, ".deck", "config.json")
+
+	cases := []struct {
+		body    string
+		want    string
+		ignored bool
+	}{
+		{`{}`, "ask", false}, // missing key keeps the default
+		{`{"default_mode":"ask"}`, "ask", false},
+		{`{"default_mode":"plan"}`, "plan", false},
+		{`{"default_mode":""}`, "ask", false},
+		{`{"default_mode":"yolo"}`, "ask", true}, // never silently yolo
+	}
+	for _, c := range cases {
+		writeFile(t, path, c.body)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load(%s): %v", c.body, err)
+		}
+		got, ignored := cfg.StartMode()
+		if got != c.want || ignored != c.ignored {
+			t.Errorf("StartMode for %s = %q, %v; want %q, %v", c.body, got, ignored, c.want, c.ignored)
+		}
+	}
+
+	// yolo is a valid stored value (the user may mean it for a session) ...
+	cfg := Defaults()
+	cfg.DefaultMode = "yolo"
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("yolo should validate: %v", err)
+	}
+	// ... but junk is not.
+	cfg.DefaultMode = "turbo"
+	if err := cfg.Validate(); err == nil {
+		t.Error("default_mode turbo validated")
+	}
+	if err := SaveTo(path, cfg); err == nil {
+		t.Error("SaveTo accepted an invalid default_mode")
 	}
 }

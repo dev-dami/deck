@@ -16,8 +16,8 @@ func DemoDuo(speed float64) (map[string]agent.Adapter, *Hub) {
 	hub := NewHub()
 	c, x := DemoDuoScripts()
 	return map[string]agent.Adapter{
-		"claude": NewTurns(speed, hub, c...),
-		"codex":  NewTurns(speed, hub, x...),
+		"claude": WithModels(NewTurns(speed, hub, c...), ClaudeModels()),
+		"codex":  WithModels(NewTurns(speed, hub, x...), CodexModels()),
 	}, hub
 }
 

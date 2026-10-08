@@ -34,6 +34,7 @@ type Config struct {
 	TellAgentsName bool   `json:"tell_agents_name"` // tell agents the user's name (agent.Spec.TellName)
 	ClaudeBinary   string `json:"claude_binary"`    // path or command name; empty means "claude"
 	CodexBinary    string `json:"codex_binary"`     // path or command name; empty means "codex"
+	DefaultMode    string `json:"default_mode"`     // "plan", "ask" or "yolo"; empty means "ask". "yolo" is ignored at startup (see StartMode)
 	Models         Models `json:"models"`
 }
 
@@ -75,6 +76,7 @@ func Defaults() Config {
 		TellAgentsName: false,
 		ClaudeBinary:   "claude",
 		CodexBinary:    "codex",
+		DefaultMode:    "ask",
 	}
 }
 
@@ -186,5 +188,25 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("motion must be \"on\" or \"off\", got %q", c.Motion)
 	}
+	switch c.DefaultMode {
+	case "", "plan", "ask", "yolo":
+	default:
+		return fmt.Errorf("default_mode must be \"plan\", \"ask\" or \"yolo\", got %q", c.DefaultMode)
+	}
 	return nil
+}
+
+// StartMode is the permission mode new threads start in: DefaultMode, or "ask"
+// when it is empty. "yolo" is never a starting mode - turning everything on
+// without asking must be a deliberate act during the session, not a setting that
+// applies silently - so a config that says yolo starts threads in "ask" and
+// reports ignored == true (the UI shows a notice).
+func (c Config) StartMode() (mode string, ignored bool) {
+	switch c.DefaultMode {
+	case "plan":
+		return "plan", false
+	case "yolo":
+		return "ask", true
+	}
+	return "ask", false
 }

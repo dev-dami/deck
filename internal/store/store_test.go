@@ -429,3 +429,64 @@ func TestAppendEntryKeepsSpeakerAndStaysReadableAsEvents(t *testing.T) {
 		t.Errorf("events = %+v", evs)
 	}
 }
+
+func TestModePersistsAndOldThreadsReadAsAsk(t *testing.T) {
+	s, dir := newStore(t)
+
+	// A new thread without a mode reads as ask.
+	plain := mustCreate(t, s, Thread{ID: "plain", AgentKind: "claude", Name: "claude"})
+	if plain.Mode != "ask" {
+		t.Errorf("new thread Mode = %q, want ask", plain.Mode)
+	}
+
+	// A mode survives Create, UpdateMeta and a reopen.
+	th := mustCreate(t, s, Thread{ID: "planner", Mode: "plan", Members: []Member{{ID: "claude", Kind: "claude"}}})
+	if th.Mode != "plan" {
+		t.Fatalf("Create dropped Mode: %q", th.Mode)
+	}
+	th.Mode = "yolo"
+	if err := s.UpdateMeta(th); err != nil {
+		t.Fatalf("UpdateMeta: %v", err)
+	}
+	s2, err := New(dir)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	_, got, err := s2.LoadEntries("planner")
+	if err != nil || got.Mode != "yolo" {
+		t.Fatalf("reopened Mode = %q, %v; want yolo", got.Mode, err)
+	}
+
+	// An unknown value is migrated, not kept.
+	bad := got
+	bad.Mode = "bogus"
+	if err := s.UpdateMeta(bad); err != nil {
+		t.Fatalf("UpdateMeta: %v", err)
+	}
+	if _, m, _ := s.LoadEntries("planner"); m.Mode != "ask" {
+		t.Errorf("unknown Mode kept as %q, want ask", m.Mode)
+	}
+}
+
+func TestMetaWithoutModeMigratesToAsk(t *testing.T) {
+	dir := t.TempDir()
+	// A thread file written before modes existed, with no index.json.
+	old := `{"id":"legacy1","version":2,"title":"old","dir":"C:/x","members":[{"id":"claude","kind":"claude","name":"claude"}],"created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(dir, "legacy1.meta.json"), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, th, err := s.LoadEntries("legacy1")
+	if err != nil {
+		t.Fatalf("LoadEntries: %v", err)
+	}
+	if th.Mode != "ask" {
+		t.Errorf("legacy thread Mode = %q, want ask", th.Mode)
+	}
+	if th.Version != 2 {
+		t.Errorf("Version changed to %d; migration must not bump it", th.Version)
+	}
+}

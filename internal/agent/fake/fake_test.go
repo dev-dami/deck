@@ -652,3 +652,67 @@ func TestDemoDuoScriptsShape(t *testing.T) {
 		t.Fatal("DemoDuo incomplete")
 	}
 }
+
+func TestRunRecordsModeAndModel(t *testing.T) {
+	a := NewTurns(0, nil)
+	r, err := a.Start(context.Background(), agent.Spec{ID: "c", Mode: agent.ModePlan, Model: "opus"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	ms, ok := r.(agent.ModeSetter)
+	if !ok {
+		t.Fatal("fake run is not an agent.ModeSetter")
+	}
+	mo, ok := r.(agent.ModelSetter)
+	if !ok {
+		t.Fatal("fake run is not an agent.ModelSetter")
+	}
+	in := r.(Inspector)
+	if in.Mode() != agent.ModePlan || in.Model() != "opus" {
+		t.Fatalf("initial mode/model = %q/%q, want spec values", in.Mode(), in.Model())
+	}
+	if err := ms.SetMode(agent.ModeYolo); err != nil {
+		t.Fatal(err)
+	}
+	if err := mo.SetModel("sonnet"); err != nil {
+		t.Fatal(err)
+	}
+	if in.Mode() != agent.ModeYolo || in.Model() != "sonnet" {
+		t.Errorf("after set mode/model = %q/%q", in.Mode(), in.Model())
+	}
+	if got := in.ModeCalls(); len(got) != 1 || got[0] != agent.ModeYolo {
+		t.Errorf("ModeCalls = %v", got)
+	}
+	if got := in.ModelCalls(); len(got) != 1 || got[0] != "sonnet" {
+		t.Errorf("ModelCalls = %v", got)
+	}
+
+	_ = r.Close()
+	if err := ms.SetMode(agent.ModeAsk); !errors.Is(err, ErrClosed) {
+		t.Errorf("SetMode after Close = %v, want ErrClosed", err)
+	}
+}
+
+func TestAdaptersListModels(t *testing.T) {
+	adapters, _ := DemoDuo(0)
+	for kind, wantFirst := range map[string]string{"claude": "default", "codex": "gpt-5-codex"} {
+		ml, ok := adapters[kind].(agent.ModelLister)
+		if !ok {
+			t.Fatalf("%s adapter is not an agent.ModelLister", kind)
+		}
+		ms, err := ml.Models(context.Background())
+		if err != nil || len(ms) < 3 || ms[0].ID != wantFirst || !ms[0].Default {
+			t.Errorf("%s models = %+v, %v", kind, ms, err)
+		}
+	}
+	ml := New(nil, 0).(agent.ModelLister)
+	if ms, _ := ml.Models(context.Background()); len(ms) != 4 {
+		t.Errorf("plain adapter models = %+v, want the claude list", ms)
+	}
+	custom := WithModels(New(nil, 0), CodexModels()).(agent.ModelLister)
+	if ms, _ := custom.Models(context.Background()); ms[0].ID != "gpt-5-codex" {
+		t.Errorf("WithModels not applied: %+v", ms)
+	}
+}

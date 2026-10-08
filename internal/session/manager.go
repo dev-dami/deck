@@ -46,8 +46,36 @@
 //	Agents() / Agent(id)              every live member across threads
 //	Saved()                           stored threads, for a resume picker
 //	History(threadID)                 a live thread's log as replayable messages
+//	SetMode(threadID, mode)           switch the thread's permission mode (see below)
+//	Mode(threadID)                    the thread's mode
+//	NextMode(mode)                    plan -> ask -> yolo -> plan (shift+tab)
+//	SetModel(agentID, model)          switch one member's model mid-session
+//	SetDefaultModel(kind, model)      model for members of that kind started later
+//	Models(ctx, kind)                 the models the kind's CLI offers (cached)
 //	Start / Send                      one-member shortcuts kept for older callers
 //	Close()
+//
+// # Permission modes and models
+//
+// Every thread has a mode (agent.ModePlan, ModeAsk, ModeYolo), stored with it.
+// New threads start in config.DefaultMode (ask when unset); a config that says
+// yolo is ignored at startup with a NoticeMsg, and a stored yolo thread resumes in
+// ask, because yolo must be a deliberate act of the session (shift+tab). The mode
+// is passed to members as Spec.Mode and, when it changes, to live members whose run
+// implements agent.ModeSetter; the next prompt to each member also starts with
+// "[deck] Permission mode is now <mode>." once. Deck enforces the mode on its own
+// as well, whatever the adapter does: in yolo every ApprovalRequest is answered
+// Allow and surfaces only as AutoApprovedMsg (switching into yolo does the same
+// for the requests already pending, after ApprovalGoneMsg); in plan, edit and
+// command requests are denied ("Deck is in plan mode: propose the change instead
+// of making it.") and surface as AutoDeniedMsg; in ask nothing changes. The UI
+// learns of changes through ModeChangedMsg and ModelChangedMsg.
+//
+// Models come from the CLI itself: Models lists them through an adapter that
+// implements agent.ModelLister; SetModel needs the member's run to implement
+// agent.ModelSetter and otherwise fails with "this agent can't switch model
+// mid-session; start a new one". New members get SetDefaultModel's model for their
+// kind, else config.Models.
 //
 // The Manager persists each thread (members, cursors, and a log of entries that
 // carry the speaker) on a single writer goroutine, so the UI never blocks on disk.
@@ -128,7 +156,8 @@ type ThreadInfo struct {
 	// Pending counts approvals waiting across the members.
 	Pending     int
 	CostUSD     float64
-	LastSpeaker string // member id the next unaddressed message goes to ("" = none yet)
+	LastSpeaker string     // member id the next unaddressed message goes to ("" = none yet)
+	Mode        agent.Mode // the thread's permission mode
 }
 
 // Manager owns every thread and agent.
@@ -144,6 +173,10 @@ type Manager struct {
 	out    chan tea.Msg
 	w      *writer
 	wg     sync.WaitGroup
+
+	modelMu    sync.Mutex        // guards defModels and modelCache
+	defModels  map[string]string // kind -> model for members started later (SetDefaultModel)
+	modelCache map[string][]agent.ModelInfo
 
 	mu      sync.Mutex
 	cfg     config.Config
@@ -181,6 +214,9 @@ func NewManager(adapters map[string]agent.Adapter, st *store.Store, cfg config.C
 	if m.maxHops <= 0 {
 		m.maxHops = DefaultMaxHops
 	}
+	if _, ignored := startMode(cfg); ignored {
+		m.out <- yoloIgnoredNotice() // the channel is buffered; nobody is listening yet
+	}
 	m.w = newWriter()
 	if o.Hub != nil {
 		o.Hub.SetThreadReader(m.readThread)
@@ -193,8 +229,14 @@ func NewManager(adapters map[string]agent.Adapter, st *store.Store, cfg config.C
 // SetConfig replaces the config used for agents started from now on.
 func (m *Manager) SetConfig(cfg config.Config) {
 	m.mu.Lock()
+	old := m.cfg
 	m.cfg = cfg
 	m.mu.Unlock()
+	if _, ignored := startMode(cfg); ignored {
+		if _, was := startMode(old); !was {
+			m.emit(yoloIgnoredNotice())
+		}
+	}
 }
 
 func (m *Manager) config() config.Config {
@@ -228,7 +270,8 @@ func (m *Manager) Kinds() []string {
 }
 
 // Updates is the single stream of messages: EventMsg, ApprovalMsg,
-// ApprovalGoneMsg, RelayMsg, PausedMsg, ContinuedMsg, MemberAddedMsg, NoticeMsg.
+// ApprovalGoneMsg, RelayMsg, PausedMsg, ContinuedMsg, MemberAddedMsg, NoticeMsg,
+// ModeChangedMsg, ModelChangedMsg, AutoApprovedMsg, AutoDeniedMsg.
 func (m *Manager) Updates() <-chan tea.Msg { return m.out }
 
 // Listen returns a command that waits for the next update. Call it again from
@@ -279,7 +322,7 @@ func (m *Manager) threadInfo(t *thread) ThreadInfo {
 	members := append([]*agentState(nil), t.members...)
 	info := ThreadInfo{
 		ID: t.id, Title: t.title, Dir: t.dir, Paused: t.paused, Hops: t.hops,
-		MaxHops: m.maxHops, Held: len(t.heldIdx), LastSpeaker: t.lastSpeaker,
+		MaxHops: m.maxHops, Held: len(t.heldIdx), LastSpeaker: t.lastSpeaker, Mode: t.mode,
 	}
 	t.mu.Unlock()
 	for _, a := range members {
@@ -372,7 +415,8 @@ func (m *Manager) NewThread(dir string) (string, error) {
 	if m.closed {
 		return "", errClosed
 	}
-	t := newThread(m, store.NewID(), dir)
+	mode, _ := startMode(m.cfg)
+	t := newThread(m, store.NewID(), dir, mode)
 	m.threads[t.id] = t
 	m.torder = append(m.torder, t)
 	return t.id, nil
@@ -408,7 +452,7 @@ func (m *Manager) newMember(t *thread, kind, model, preferredID string) (*agentS
 		return nil, err
 	}
 	if model == "" {
-		model = modelFor(cfg, kind)
+		model = m.defaultModel(cfg, kind)
 	}
 	a := &agentState{id: id, kind: kind, name: id, model: model, thread: t, base: StatusIdle, started: time.Now()}
 	m.mu.Lock()
@@ -418,6 +462,7 @@ func (m *Manager) newMember(t *thread, kind, model, preferredID string) (*agentS
 
 	e := store.Entry{Type: store.EntryMember, Speaker: id, Event: eventText(kind)}
 	t.mu.Lock()
+	a.knownMode = t.mode
 	t.members = append(t.members, a)
 	m.appendLocked(t, e)
 	t.mu.Unlock()
@@ -474,7 +519,7 @@ func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Sp
 	cfg := m.config()
 	s := agent.Spec{
 		ID: a.id, Dir: t.dir, Model: a.model, ResumeID: resume, FirstPrompt: prompt,
-		UserName: cfg.UserName, TellName: cfg.TellAgentsName,
+		UserName: cfg.UserName, TellName: cfg.TellAgentsName, Mode: t.getMode(),
 	}
 	switch a.kind {
 	case "claude":
@@ -747,8 +792,12 @@ func (m *Manager) deliver(t *thread, a *agentState) (delivery, error) {
 		return dQueued, nil
 	}
 	prompt, cursor, hold := m.buildPrompt(t, a)
-	oldCursor, oldHold := a.cursor, a.holdFrom
+	oldCursor, oldHold, oldKnown := a.cursor, a.holdFrom, a.knownMode
 	a.cursor, a.holdFrom = cursor, hold
+	if a.knownMode != t.mode {
+		prompt = modeLine(t.mode) + "\n\n" + prompt
+		a.knownMode = t.mode
+	}
 	t.mu.Unlock()
 
 	var err error
@@ -759,7 +808,7 @@ func (m *Manager) deliver(t *thread, a *agentState) (delivery, error) {
 	}
 	if err != nil {
 		t.mu.Lock()
-		a.cursor, a.holdFrom = oldCursor, oldHold
+		a.cursor, a.holdFrom, a.knownMode = oldCursor, oldHold, oldKnown
 		t.mu.Unlock()
 		a.restore(prev)
 		return dNone, err
@@ -867,7 +916,16 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		canonical(&entries[i], cfg.UserName)
 	}
 
-	t := newThread(m, th.ID, dir)
+	mode := agent.Mode(th.Mode)
+	switch {
+	case mode == agent.ModeYolo:
+		// yolo is a per-session decision: a stored thread never wakes up in it.
+		mode = agent.ModeAsk
+		m.emit(NoticeMsg{ThreadID: th.ID, Text: "this thread was in yolo mode; resumed in ask mode. Press shift+tab to switch"})
+	case !validMode(mode):
+		mode = agent.ModeAsk
+	}
+	t := newThread(m, th.ID, dir, mode)
 	t.created = true
 	t.title = th.Title
 	remap := map[string]string{}
@@ -897,7 +955,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		}
 		model := mem.Model
 		if model == "" {
-			model = modelFor(cfg, mem.Kind)
+			model = m.defaultModel(cfg, mem.Kind)
 		}
 		cursor := mem.Cursor
 		if th.Version < store.CurrentVersion && len(th.Members) == 1 {
@@ -909,6 +967,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		a := &agentState{
 			id: id, kind: mem.Kind, name: name, model: model, thread: t, base: StatusIdle,
 			started: time.Now(), costTotal: mem.CostUSD, sessionID: mem.SessionID, cursor: cursor,
+			knownMode: mode,
 		}
 		m.mu.Lock()
 		taken := false
@@ -1134,7 +1193,12 @@ func (m *Manager) onApproval(a *agentState, req agent.ApprovalRequest) {
 			}
 		})
 	}
-	a.addPending(id, req.Respond)
+	a.addPending(id, req.Kind, summaryOf(req), req.Respond)
+	// Added to the pending list first, so a SetMode(yolo) racing with this
+	// request answers it either here or when it drains the list.
+	if m.enforce(a.thread, a, req) {
+		return
+	}
 	m.emit(ApprovalMsg{ApprovalRequest: req, ThreadID: a.thread.id})
 }
 
@@ -1142,6 +1206,8 @@ func (m *Manager) onApproval(a *agentState, req agent.ApprovalRequest) {
 
 type pendingApproval struct {
 	id      string
+	kind    agent.ApprovalKind
+	summary string
 	respond func(agent.Decision)
 }
 
@@ -1156,6 +1222,9 @@ type agentState struct {
 	// the first log index of its still-running turn that was held back.
 	cursor   int
 	holdFrom map[string]int
+	// knownMode is the permission mode the member was last told about (its
+	// Spec.Mode, or the line at the top of its last prompt); guarded by thread.mu.
+	knownMode agent.Mode
 
 	mu          sync.Mutex
 	run         agent.Run
@@ -1272,9 +1341,9 @@ func (a *agentState) takeFinal() (string, bool) {
 	return strings.TrimSpace(text), intr
 }
 
-func (a *agentState) addPending(id string, respond func(agent.Decision)) {
+func (a *agentState) addPending(id string, kind agent.ApprovalKind, summary string, respond func(agent.Decision)) {
 	a.mu.Lock()
-	a.pending = append(a.pending, pendingApproval{id: id, respond: respond})
+	a.pending = append(a.pending, pendingApproval{id: id, kind: kind, summary: summary, respond: respond})
 	a.mu.Unlock()
 }
 

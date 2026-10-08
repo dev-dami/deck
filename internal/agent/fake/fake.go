@@ -78,6 +78,7 @@ type adapter struct {
 	turns   []Script
 	perTurn bool
 	hub     *Hub
+	models  []agent.ModelInfo // nil = ClaudeModels
 }
 
 // Name returns "fake".
@@ -106,6 +107,8 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		turns:     a.turns,
 		perTurn:   a.perTurn,
 		sessionID: spec.ResumeID,
+		mode:      spec.Mode,
+		model:     spec.Model,
 	}
 	if spec.ResumeID != "" {
 		r.next = len(a.turns) // a resumed conversation is past its scripted opening
@@ -171,7 +174,11 @@ type run struct {
 	mu        sync.Mutex
 	shut      bool // Close has begun
 	sessionID string
-	cur       *turn // the turn currently playing, nil when idle
+	cur       *turn      // the turn currently playing, nil when idle
+	mode      agent.Mode // last permission mode set (starts as Spec.Mode)
+	model     string     // last model set (starts as Spec.Model)
+	modes     []agent.Mode
+	models    []string
 	wg        sync.WaitGroup
 }
 
@@ -724,3 +731,115 @@ func fileDiff(path string, hunks ...agent.Hunk) *agent.FileDiff {
 	}
 	return fd
 }
+
+// ClaudeModels is the model list a fake adapter offers by default, shaped like
+// the Claude CLI's aliases.
+func ClaudeModels() []agent.ModelInfo {
+	return []agent.ModelInfo{
+		{ID: "default", Name: "Default", Description: "The CLI's recommended model", Default: true},
+		{ID: "opus", Name: "Opus", Description: "Most capable, for complex work"},
+		{ID: "sonnet", Name: "Sonnet", Description: "Best for everyday tasks"},
+		{ID: "haiku", Name: "Haiku", Description: "Fastest, for quick answers"},
+	}
+}
+
+// CodexModels is a model list shaped like the Codex CLI's.
+func CodexModels() []agent.ModelInfo {
+	return []agent.ModelInfo{
+		{ID: "gpt-5-codex", Name: "gpt-5-codex", Description: "Tuned for agentic coding", Default: true},
+		{ID: "gpt-5-codex-mini", Name: "gpt-5-codex-mini", Description: "Cheaper and faster"},
+		{ID: "gpt-5", Name: "gpt-5", Description: "General purpose"},
+	}
+}
+
+// WithModels returns a copy of a fake adapter that lists models instead of
+// ClaudeModels. Any other adapter is returned unchanged.
+func WithModels(a agent.Adapter, models []agent.ModelInfo) agent.Adapter {
+	fa, ok := a.(*adapter)
+	if !ok {
+		return a
+	}
+	cp := *fa
+	cp.models = append([]agent.ModelInfo(nil), models...)
+	return &cp
+}
+
+// Models implements agent.ModelLister.
+func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	ms := a.models
+	if ms == nil {
+		ms = ClaudeModels()
+	}
+	return append([]agent.ModelInfo(nil), ms...), nil
+}
+
+// SetMode implements agent.ModeSetter: it records the mode (the fake does not
+// change its script because of it).
+func (r *run) SetMode(m agent.Mode) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.shut {
+		return ErrClosed
+	}
+	r.mode = m
+	r.modes = append(r.modes, m)
+	return nil
+}
+
+// SetModel implements agent.ModelSetter: it records the model.
+func (r *run) SetModel(model string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.shut {
+		return ErrClosed
+	}
+	r.model = model
+	r.models = append(r.models, model)
+	return nil
+}
+
+// Mode is the permission mode the run currently has: Spec.Mode until SetMode is called.
+func (r *run) Mode() agent.Mode {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.mode
+}
+
+// Model is the model the run currently has: Spec.Model until SetModel is called.
+func (r *run) Model() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.model
+}
+
+// ModeCalls lists every mode passed to SetMode, in order.
+func (r *run) ModeCalls() []agent.Mode {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]agent.Mode(nil), r.modes...)
+}
+
+// ModelCalls lists every model passed to SetModel, in order.
+func (r *run) ModelCalls() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.models...)
+}
+
+// Inspector is what tests can assert on a fake run (type-assert an agent.Run to it).
+type Inspector interface {
+	Mode() agent.Mode
+	Model() string
+	ModeCalls() []agent.Mode
+	ModelCalls() []string
+}
+
+var (
+	_ agent.ModeSetter  = (*run)(nil)
+	_ agent.ModelSetter = (*run)(nil)
+	_ agent.ModelLister = (*adapter)(nil)
+	_ Inspector         = (*run)(nil)
+)

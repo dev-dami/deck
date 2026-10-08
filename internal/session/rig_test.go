@@ -23,9 +23,10 @@ func testCfg() config.Config {
 
 type spyAdapter struct {
 	agent.Adapter
-	mu    sync.Mutex
-	specs []agent.Spec
-	runs  map[string]*spyRun
+	setters bool // runs also implement agent.ModeSetter and agent.ModelSetter
+	mu      sync.Mutex
+	specs   []agent.Spec
+	runs    map[string]*spyRun
 }
 
 type spyRun struct {
@@ -49,8 +50,17 @@ func (s *spyAdapter) Start(ctx context.Context, sp agent.Spec) (agent.Run, error
 	s.specs = append(s.specs, sp)
 	s.runs[sp.ID] = sr
 	s.mu.Unlock()
+	if s.setters {
+		return &spyRunSetters{sr}, nil
+	}
 	return sr, nil
 }
+
+// spyRunSetters is a spyRun that forwards SetMode and SetModel to the fake run.
+type spyRunSetters struct{ *spyRun }
+
+func (r *spyRunSetters) SetMode(m agent.Mode) error { return r.Run.(agent.ModeSetter).SetMode(m) }
+func (r *spyRunSetters) SetModel(m string) error    { return r.Run.(agent.ModelSetter).SetModel(m) }
 
 func (r *spyRun) Send(p string) error {
 	r.mu.Lock()
@@ -207,6 +217,13 @@ func newRig(t *testing.T, claude, codex []fake.Script) *rig {
 
 func newRigIn(t *testing.T, dir string, claude, codex []fake.Script) *rig {
 	t.Helper()
+	return newRigWith(t, dir, false, testCfg(), claude, codex)
+}
+
+// newRigWith is newRigIn with the spies' runs optionally implementing the mode and
+// model setters, and a given config.
+func newRigWith(t *testing.T, dir string, setters bool, cfg config.Config, claude, codex []fake.Script) *rig {
+	t.Helper()
 	st, err := store.New(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -216,7 +233,8 @@ func newRigIn(t *testing.T, dir string, claude, codex []fake.Script) *rig {
 		claude: newSpy(fake.NewTurns(0, hub, claude...)),
 		codex:  newSpy(fake.NewTurns(0, hub, codex...)),
 	}
-	r.m = NewManager(map[string]agent.Adapter{"claude": r.claude, "codex": r.codex}, st, testCfg(),
+	r.claude.setters, r.codex.setters = setters, setters
+	r.m = NewManager(map[string]agent.Adapter{"claude": r.claude, "codex": r.codex}, st, cfg,
 		Options{Hub: hub, MCPFor: fake.MCPFor})
 	t.Cleanup(r.m.Close)
 	r.c = collect(t, r.m)

@@ -105,3 +105,37 @@ func msgFor(threadID string, e store.Entry) tea.Msg {
 	}
 	return nil
 }
+
+// ModeChangedMsg says a thread's permission mode changed (SetMode). Prev is the
+// mode it had before.
+type ModeChangedMsg struct {
+	ThreadID string
+	Mode     agent.Mode
+	Prev     agent.Mode
+}
+
+// ModelChangedMsg says a member now runs a different model (SetModel). An empty
+// Model means the CLI's default.
+type ModelChangedMsg struct {
+	ThreadID string
+	AgentID  string
+	Model    string
+}
+
+// AutoApprovedMsg reports an approval request that Deck answered Allow itself
+// because the thread is in yolo mode. It never appears as an ApprovalMsg; the
+// transcript can show it as a faint "✓ auto-approved: <Summary>" line.
+type AutoApprovedMsg struct {
+	ThreadID string
+	AgentID  string
+	Summary  string // the command line or file path
+}
+
+// AutoDeniedMsg reports an edit or command request that Deck denied itself
+// because the thread is in plan mode ("auto-denied: <Summary>"). It never
+// appears as an ApprovalMsg.
+type AutoDeniedMsg struct {
+	ThreadID string
+	AgentID  string
+	Summary  string
+}

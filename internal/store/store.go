@@ -74,6 +74,9 @@ type Thread struct {
 	Title   string   `json:"title"` // first prompt, truncated
 	Dir     string   `json:"dir"`
 	Members []Member `json:"members,omitempty"`
+	// Mode is the thread's permission mode: "plan", "ask" or "yolo". Threads
+	// stored before modes existed (and any unknown value) read as "ask".
+	Mode string `json:"mode,omitempty"`
 
 	// Legacy mirror of Members[0] (Name: every member's name joined by "+").
 	AgentKind string `json:"agent_kind"`
@@ -88,10 +91,16 @@ type Thread struct {
 
 // Normalize migrates a pre-shared-thread record in place: when there are no
 // Members but a legacy AgentKind, the legacy fields become one Member. It then
-// refreshes the legacy mirror and CostUSD from Members. Version is left as is,
+// refreshes the legacy mirror and CostUSD from Members. A missing or unknown
+// Mode becomes "ask". Version is left as is,
 // so a caller can tell a migrated thread (Version < CurrentVersion) from a new
 // one.
 func (t *Thread) Normalize() {
+	switch t.Mode {
+	case "plan", "ask", "yolo":
+	default:
+		t.Mode = "ask"
+	}
 	if len(t.Members) == 0 && t.AgentKind != "" {
 		id := t.Name
 		if id == "" || strings.ContainsAny(id, "+ ") {
