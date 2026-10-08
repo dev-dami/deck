@@ -285,6 +285,9 @@ func TestGoldenInbox(t *testing.T) {
 		hr.type_("@claude tidy the store")
 		hr.key(tea.KeyEnter)
 		hr.waitFor("wants to edit")
+		// Approvals and events travel on separate channels, so the Edit tool
+		// row can land after the card (seen under -race). Wait for both.
+		hr.waitFor("◐ Edit")
 		hr.settle()
 		hr.type_("i")
 		hr.settle()
