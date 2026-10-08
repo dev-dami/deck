@@ -12,6 +12,7 @@ const (
 	methodThreadResume  = "thread/resume"
 	methodTurnStart     = "turn/start"
 	methodTurnInterrupt = "turn/interrupt"
+	methodModelList     = "model/list"
 
 	notifyInitialized = "initialized"
 )
@@ -100,9 +101,39 @@ type userInput struct {
 	TextElements []any  `json:"text_elements"`
 }
 
+// sandboxPolicy is the turn-level SandboxPolicy (a tagged union; only the
+// tag is needed for the three modes Deck uses): readOnly | workspaceWrite |
+// dangerFullAccess.
+type sandboxPolicy struct {
+	Type string `json:"type"`
+}
+
 type turnStartParams struct {
 	ThreadID string      `json:"threadId"`
 	Input    []userInput `json:"input"`
+	// Per-turn overrides; each applies "for this turn and subsequent turns".
+	// Omitted when unchanged.
+	ApprovalPolicy string         `json:"approvalPolicy,omitempty"`
+	SandboxPolicy  *sandboxPolicy `json:"sandboxPolicy,omitempty"`
+	Model          string         `json:"model,omitempty"`
+}
+
+type modelListParams struct {
+	Cursor string `json:"cursor,omitempty"`
+	Limit  int    `json:"limit,omitempty"`
+}
+
+// modelListResponse is ModelListResponse (subset of Model).
+type modelListResponse struct {
+	Data []struct {
+		ID          string `json:"id"`
+		Model       string `json:"model"`
+		DisplayName string `json:"displayName"`
+		Description string `json:"description"`
+		Hidden      bool   `json:"hidden"`
+		IsDefault   bool   `json:"isDefault"`
+	} `json:"data"`
+	NextCursor string `json:"nextCursor"`
 }
 
 type turnStartResponse struct {

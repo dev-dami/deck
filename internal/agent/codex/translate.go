@@ -261,11 +261,12 @@ func (t *translator) itemCompleted(it threadItem, raw json.RawMessage) []agent.E
 				sb.WriteString(p.Text)
 			}
 		}
-		if sb.Len() == 0 {
+		text := stripPlanNote(sb.String())
+		if text == "" {
 			return nil
 		}
 		e := t.ev(agent.KindUserText, raw)
-		e.Text = sb.String()
+		e.Text = text
 		return []agent.Event{e}
 
 	case "agentMessage":

@@ -35,7 +35,12 @@ type Options struct {
 type adapter struct {
 	binary string
 	opts   Options
+
+	modelsMu sync.Mutex
+	models   []agent.ModelInfo // cached for the adapter's lifetime
 }
+
+var _ agent.ModelLister = (*adapter)(nil)
 
 // New returns the codex adapter. binary is the codex executable ("" = "codex"
 // on PATH); Spec.Binary overrides it per run.
@@ -99,6 +104,7 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		cmd:       cmd,
 		stdin:     stdin,
 		stderr:    stderr,
+		opts:      a.opts,
 		client:    NewClient(stdout, stdin, a.opts.Tap),
 		events:    make(chan agent.Event, 256),
 		approvals: make(chan agent.ApprovalRequest, 16),

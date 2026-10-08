@@ -146,6 +146,9 @@ func fakeCodex() {
 				if idx := reply(methodTurnStart, m.ID); idx >= 0 {
 					go stream(idx)
 				}
+			case m.Method == methodModelList:
+				record("model/list=" + string(m.Params))
+				reply(methodModelList, m.ID)
 			case m.Method == methodTurnInterrupt:
 				record("interrupt=" + string(m.Params))
 				b, _ := json.Marshal(map[string]any{"id": m.ID, "result": map[string]any{}})

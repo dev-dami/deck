@@ -30,9 +30,17 @@ type run struct {
 	closeOnce sync.Once
 	loopDone  chan struct{}
 
+	opts Options
+
 	mu       sync.Mutex
 	threadID string
 	turnID   string
+
+	// mode is the current permission mode. pendingMode / pendingModel hold a
+	// SetMode / SetModel change that the next turn/start carries as overrides.
+	mode         agent.Mode
+	pendingMode  agent.Mode
+	pendingModel string
 }
 
 func (r *run) Events() <-chan agent.Event              { return r.events }
@@ -64,15 +72,23 @@ func (r *run) handshake(ctx context.Context, opts Options) error {
 		return fmt.Errorf("codex: initialized: %w", err)
 	}
 
+	ms, err := opts.settingsFor(r.spec.Mode)
+	if err != nil {
+		return err
+	}
+	r.mode = r.spec.Mode
+	if r.mode == "" {
+		r.mode = agent.ModeAsk
+	}
+
 	var resp threadResponse
-	var err error
 	if r.spec.ResumeID != "" {
 		err = r.client.Call(ictx, methodThreadResume, threadResumeParams{
 			ThreadID:       r.spec.ResumeID,
 			Cwd:            r.spec.Dir,
 			Model:          r.spec.Model,
-			ApprovalPolicy: opts.ApprovalPolicy,
-			Sandbox:        opts.Sandbox,
+			ApprovalPolicy: ms.approval,
+			Sandbox:        ms.sandbox,
 
 			Config:                mcpThreadConfig(r.spec.MCP),
 			DeveloperInstructions: r.spec.Instructions,
@@ -84,8 +100,8 @@ func (r *run) handshake(ctx context.Context, opts Options) error {
 		err = r.client.Call(ictx, methodThreadStart, threadStartParams{
 			Cwd:            r.spec.Dir,
 			Model:          r.spec.Model,
-			ApprovalPolicy: opts.ApprovalPolicy,
-			Sandbox:        opts.Sandbox,
+			ApprovalPolicy: ms.approval,
+			Sandbox:        ms.sandbox,
 
 			Config:                mcpThreadConfig(r.spec.MCP),
 			DeveloperInstructions: r.spec.Instructions,
@@ -160,14 +176,39 @@ func (r *run) Send(prompt string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 	defer cancel()
+	r.mu.Lock()
+	mode, pMode, pModel := r.mode, r.pendingMode, r.pendingModel
+	r.mu.Unlock()
+
+	params := turnStartParams{ThreadID: tid}
+	if mode == agent.ModePlan {
+		params.Input = append(params.Input, userInput{Type: "text", Text: planNote, TextElements: []any{}})
+	}
+	params.Input = append(params.Input, userInput{Type: "text", Text: prompt, TextElements: []any{}})
+	if pMode != "" {
+		ms, err := r.opts.settingsFor(pMode)
+		if err != nil {
+			return err
+		}
+		params.ApprovalPolicy = ms.approval
+		params.SandboxPolicy = sandboxPolicyFor(ms.sandbox)
+	}
+	params.Model = pModel
+
 	var resp turnStartResponse
-	err := r.client.Call(ctx, methodTurnStart, turnStartParams{
-		ThreadID: tid,
-		Input:    []userInput{{Type: "text", Text: prompt, TextElements: []any{}}},
-	}, &resp)
-	if err != nil {
+	if err := r.client.Call(ctx, methodTurnStart, params, &resp); err != nil {
 		return err
 	}
+	// The overrides now stick for this and later turns; drop them unless a
+	// newer SetMode / SetModel replaced them while the call was in flight.
+	r.mu.Lock()
+	if r.pendingMode == pMode {
+		r.pendingMode = ""
+	}
+	if r.pendingModel == pModel {
+		r.pendingModel = ""
+	}
+	r.mu.Unlock()
 	if resp.Turn.ID != "" {
 		r.mu.Lock()
 		r.turnID = resp.Turn.ID
@@ -209,3 +250,36 @@ func (r *run) watchContext(ctx context.Context) {
 	case <-r.loopDone:
 	}
 }
+
+// SetMode switches the permission mode. It is sent as approvalPolicy and
+// sandboxPolicy overrides on the next turn/start; a running turn is unaffected.
+func (r *run) SetMode(m agent.Mode) error {
+	if _, err := r.opts.settingsFor(m); err != nil {
+		return err
+	}
+	if m == "" {
+		m = agent.ModeAsk
+	}
+	r.mu.Lock()
+	r.mode = m
+	r.pendingMode = m
+	r.mu.Unlock()
+	return nil
+}
+
+// SetModel switches the model, sent as the `model` override on the next
+// turn/start; a running turn is unaffected.
+func (r *run) SetModel(model string) error {
+	if model == "" {
+		return errors.New("codex: empty model")
+	}
+	r.mu.Lock()
+	r.pendingModel = model
+	r.mu.Unlock()
+	return nil
+}
+
+var (
+	_ agent.ModeSetter  = (*run)(nil)
+	_ agent.ModelSetter = (*run)(nil)
+)
