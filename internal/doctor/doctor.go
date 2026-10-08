@@ -98,7 +98,7 @@ func RunWith(ctx context.Context, w io.Writer, opts Options) error {
 	}
 
 	var b strings.Builder
-	b.WriteString("deck doctor\n")
+	b.WriteString("deck doctor\n\n")
 	b.WriteString(checkAgent(ctx, opts, agentSpec{
 		name:       "claude",
 		binary:     opts.ClaudeBinary,
@@ -106,7 +106,6 @@ func RunWith(ctx context.Context, w io.Writer, opts Options) error {
 		statusArgs: []string{"auth", "status"},
 		install:    "npm install -g @anthropic-ai/claude-code",
 	}))
-	b.WriteString("\n")
 	b.WriteString(checkAgent(ctx, opts, agentSpec{
 		name:       "codex",
 		binary:     opts.CodexBinary,
