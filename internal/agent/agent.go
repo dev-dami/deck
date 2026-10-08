@@ -1,0 +1,163 @@
+// Package agent defines the contract between Deck and the coding-agent CLIs it drives.
+//
+// Deck never talks to a model API itself. Every adapter launches the user's own
+// installed CLI (claude, codex) under the user's own login, over that CLI's
+// documented structured protocol, and translates its output into Events.
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+)
+
+// Kind is the kind of a normalized event.
+type Kind string
+
+const (
+	KindSessionStarted Kind = "session_started" // SessionID is known
+	KindAssistantText  Kind = "assistant_text"  // Text; Delta=true while streaming
+	KindReasoning      Kind = "reasoning"       // Text; Delta=true while streaming
+	KindUserText       Kind = "user_text"       // echo of a prompt Deck sent
+	KindToolCall       Kind = "tool_call"       // Tool populated, Status=running
+	KindToolResult     Kind = "tool_result"     // Tool populated, Status=ok|error
+	KindFileChange     Kind = "file_change"     // Diff populated
+	KindUsage          Kind = "usage"           // Usage populated (cumulative for the turn)
+	KindTurnDone       Kind = "turn_done"       // a turn finished; agent is idle
+	KindError          Kind = "error"           // Text holds the message
+	KindExited         Kind = "exited"          // the CLI process ended
+)
+
+// ToolStatus is the lifecycle state of a tool call.
+type ToolStatus string
+
+const (
+	ToolRunning ToolStatus = "running"
+	ToolOK      ToolStatus = "ok"
+	ToolError   ToolStatus = "error"
+)
+
+// Tool describes one tool call (Bash, Edit, Read, command_execution, ...).
+type Tool struct {
+	ID     string
+	Name   string     // display name, e.g. "Bash", "Edit", "Read"
+	Title  string     // one-line summary, e.g. "go test ./..." or "internal/store/store.go"
+	Input  json.RawMessage
+	Output string
+	Status ToolStatus
+}
+
+// LineOp is the kind of a diff line.
+type LineOp byte
+
+const (
+	OpContext LineOp = ' '
+	OpAdd     LineOp = '+'
+	OpDel     LineOp = '-'
+)
+
+// DiffLine is one line of a hunk.
+type DiffLine struct {
+	Op   LineOp
+	Text string
+}
+
+// Hunk is one unified-diff hunk.
+type Hunk struct {
+	OldStart, OldLines int
+	NewStart, NewLines int
+	Lines              []DiffLine
+}
+
+// FileDiff is a change to a single file.
+type FileDiff struct {
+	Path    string
+	OldPath string // set on rename
+	Added   int
+	Removed int
+	Hunks   []Hunk
+	New     bool
+	Deleted bool
+}
+
+// Usage is token and cost accounting reported by the CLI.
+type Usage struct {
+	InputTokens  int
+	OutputTokens int
+	CachedTokens int
+	CostUSD      float64 // 0 when the CLI does not report cost
+}
+
+// Event is the normalized event every adapter emits.
+type Event struct {
+	AgentID string
+	Time    time.Time
+	Kind    Kind
+	Text    string
+	Delta   bool
+	Tool    *Tool
+	Diff    *FileDiff
+	Usage   *Usage
+	// SessionID is the CLI's own session/thread id (KindSessionStarted).
+	SessionID string
+	// Raw is the original protocol line, kept so nothing is lost.
+	Raw json.RawMessage
+}
+
+// ApprovalKind classifies what an agent is asking permission for.
+type ApprovalKind string
+
+const (
+	ApproveCommand ApprovalKind = "command"
+	ApproveEdit    ApprovalKind = "edit"
+	ApproveOther   ApprovalKind = "other"
+)
+
+// Decision is the user's answer to an approval request.
+type Decision struct {
+	Allow  bool
+	Always bool   // allow this tool for the rest of the session
+	Reason string // optional, sent back to the agent on deny
+}
+
+// ApprovalRequest is a permission prompt raised by an agent.
+type ApprovalRequest struct {
+	ID       string
+	AgentID  string
+	Kind     ApprovalKind
+	ToolName string
+	Summary  string // the command line, or the file path
+	Cwd      string
+	Diff     *FileDiff
+	// Respond must be called exactly once.
+	Respond func(Decision)
+}
+
+// Spec describes how to start an agent.
+type Spec struct {
+	ID          string            // Deck's id for this agent, e.g. "claude2"
+	Dir         string            // working directory
+	Model       string            // empty = CLI default
+	Binary      string            // empty = look up on PATH
+	Env         map[string]string // extra env (e.g. CLAUDE_CONFIG_DIR); never logged
+	ResumeID    string            // CLI session/thread id to resume
+	FirstPrompt string
+	UserName    string // optional: told to the agent only if TellName is true
+	TellName    bool
+}
+
+// Run is a live agent process.
+type Run interface {
+	Events() <-chan Event
+	Approvals() <-chan ApprovalRequest
+	Send(prompt string) error
+	Interrupt() error
+	SessionID() string
+	Close() error
+}
+
+// Adapter starts runs of one CLI.
+type Adapter interface {
+	Name() string // "claude" | "codex" | "fake"
+	Start(ctx context.Context, spec Spec) (Run, error)
+}
