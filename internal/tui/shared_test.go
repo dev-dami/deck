@@ -132,6 +132,9 @@ func TestTintedSpeakersAndMergedBlocks(t *testing.T) {
 	say(cl, r, "I will plan this.")
 	r.event(cl, agent.Event{Kind: agent.KindToolCall, Tool: &agent.Tool{ID: "t1", Name: "Read", Title: "store.go", Status: agent.ToolRunning}})
 	r.event(cl, agent.Event{Kind: agent.KindToolResult, Tool: &agent.Tool{ID: "t1", Name: "Read", Output: "ok", Status: agent.ToolOK}})
+	// Each agent's events reach the UI on their own goroutine, so order across
+	// agents is only what the UI has rendered: let claude's block land first.
+	r.pump("claude's block", func() bool { return r.has("I will plan this.") && r.has("Read store.go") })
 	say(cx, r, "I will review it.")
 	r.pump("both spoke", func() bool { return r.has("I will plan this.") && r.has("I will review it.") })
 	r.done(cl, "claude")
