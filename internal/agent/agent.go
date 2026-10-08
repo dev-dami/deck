@@ -152,6 +152,48 @@ type Spec struct {
 	// Claude, plus the send_message / read_thread messaging tools). Adapters
 	// register it with their CLI under MCP.Name. Nil = none.
 	MCP *MCPServer
+	// Mode is the starting permission mode; empty means ModeAsk.
+	Mode Mode
+}
+
+// Mode is the permission mode of a thread.
+type Mode string
+
+const (
+	// ModePlan: the agent may read and explore but must not change anything.
+	ModePlan Mode = "plan"
+	// ModeAsk: every action that needs permission asks the user (default).
+	ModeAsk Mode = "ask"
+	// ModeYolo: everything is approved without asking.
+	ModeYolo Mode = "yolo"
+)
+
+// Modes in shift+tab order.
+var Modes = []Mode{ModePlan, ModeAsk, ModeYolo}
+
+// ModelInfo is one model a CLI offers.
+type ModelInfo struct {
+	ID          string // value passed to the CLI (--model / model field)
+	Name        string // display name
+	Description string
+	Default     bool
+}
+
+// ModeSetter is implemented by runs that can change permission mode.
+// The change applies from the next turn at the latest.
+type ModeSetter interface {
+	SetMode(Mode) error
+}
+
+// ModelSetter is implemented by runs that can switch model mid-session.
+// The change applies from the next turn at the latest.
+type ModelSetter interface {
+	SetModel(model string) error
+}
+
+// ModelLister is implemented by adapters that can list their CLI's models.
+type ModelLister interface {
+	Models(ctx context.Context) ([]ModelInfo, error)
 }
 
 // MCPServer describes a stdio MCP server an adapter registers with its CLI.
