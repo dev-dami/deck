@@ -144,6 +144,44 @@ type Spec struct {
 	FirstPrompt string
 	UserName    string // optional: told to the agent only if TellName is true
 	TellName    bool
+	// Instructions are extra system/developer instructions, e.g. the
+	// shared-thread briefing. Claude: --append-system-prompt; Codex: the
+	// thread's developer instructions.
+	Instructions string
+	// MCP is Deck's own stdio MCP server for this agent (approve tool for
+	// Claude, plus the send_message / read_thread messaging tools). Adapters
+	// register it with their CLI under MCP.Name. Nil = none.
+	MCP *MCPServer
+}
+
+// MCPServer describes a stdio MCP server an adapter registers with its CLI.
+// Env carries secrets (the hub token); it must never appear in Args or logs.
+type MCPServer struct {
+	Name    string // "deck"
+	Command string
+	Args    []string
+	Env     map[string]string
+}
+
+// Message is an agent-to-agent (or agent-to-thread) message raised through
+// Deck's send_message MCP tool.
+type Message struct {
+	ID   string
+	From string // sending agent id, e.g. "claude"
+	To   string // agent id/name, or "all"
+	Text string
+	// Respond must be called exactly once; result is returned to the sending
+	// agent as the tool result (e.g. "delivered to codex").
+	Respond func(result string, err error)
+}
+
+// Hub is Deck's side of the messaging tools: it receives send_message calls
+// from every agent and answers read_thread calls.
+type Hub interface {
+	Messages() <-chan Message
+	// SetThreadReader installs the read_thread provider: given the calling
+	// agent id, return the shared thread as plain text.
+	SetThreadReader(func(agentID string) string)
 }
 
 // Run is a live agent process.

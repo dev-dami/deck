@@ -20,6 +20,25 @@ var (
 	DelBg = lipgloss.AdaptiveColor{Light: "#FBEAE8", Dark: "#2E1C1B"}
 )
 
+// Agent tints: used only for an agent's ◆ glyph and name in a shared thread,
+// so you can tell speakers apart at a glance. Accent stays the UI colour.
+var (
+	TintClaude = lipgloss.AdaptiveColor{Light: "#B5562F", Dark: "#E39A6F"} // warm clay
+	TintCodex  = lipgloss.AdaptiveColor{Light: "#3B62B8", Dark: "#8DA9F0"} // cool periwinkle
+	TintOther  = Muted
+)
+
+// Tint returns the agent tint for an agent kind ("claude", "codex", ...).
+func Tint(kind string) lipgloss.AdaptiveColor {
+	switch kind {
+	case "claude":
+		return TintClaude
+	case "codex":
+		return TintCodex
+	}
+	return TintOther
+}
+
 // Glyphs.
 const (
 	GlyphWorking  = "●"
