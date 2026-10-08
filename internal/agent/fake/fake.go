@@ -28,10 +28,19 @@ var ErrClosed = errors.New("fake: run is closed")
 // approval is raised on Approvals() and playback blocks until Respond is called.
 // Denying an approval emits a tool_result with Status error and Output "denied",
 // then a turn_done; the rest of the script is abandoned.
+//
+// Message, when set, makes the agent call the hub's send_message tool after the
+// Event is emitted: a tool_call event, then the message is handed to the Hub
+// (only To and Text are used; the sender is the agent itself), playback waits
+// for the Hub's answer, and a tool_result event carries it. ReadThread does the
+// same for the read_thread tool. Both need a Hub (see NewTurns / NewHub); without
+// one the tool_result is an error.
 type Step struct {
-	Delay    time.Duration
-	Event    agent.Event
-	Approval *agent.ApprovalRequest
+	Delay      time.Duration
+	Event      agent.Event
+	Approval   *agent.ApprovalRequest
+	Message    *agent.Message
+	ReadThread bool
 }
 
 // Script is an ordered list of steps. A turn ends when a step emits
@@ -52,10 +61,23 @@ func NewWithReply(start, reply Script, speed float64) agent.Adapter {
 	return &adapter{start: start, reply: reply, speed: speed}
 }
 
+// NewTurns returns a fake adapter that plays one script per turn, in order: the
+// first turn is the first script, the second turn the second, and so on. After
+// the scripts run out every turn is a short acknowledgement. Unlike New, a run
+// started without a FirstPrompt stays idle until Send, which is how Deck starts
+// members of a shared thread. hub (may be nil) serves Step.Message and
+// Step.ReadThread. speed is as in New.
+func NewTurns(speed float64, hub *Hub, turns ...Script) agent.Adapter {
+	return &adapter{turns: turns, perTurn: true, hub: hub, speed: speed}
+}
+
 type adapter struct {
-	start Script
-	reply Script
-	speed float64
+	start   Script
+	reply   Script
+	speed   float64
+	turns   []Script
+	perTurn bool
+	hub     *Hub
 }
 
 // Name returns "fake".
@@ -80,16 +102,38 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		events:    make(chan agent.Event, 1024),
 		approvals: make(chan agent.ApprovalRequest, 16),
 		closed:    make(chan struct{}),
+		hub:       a.hub,
+		turns:     a.turns,
+		perTurn:   a.perTurn,
+		sessionID: spec.ResumeID,
+	}
+	if spec.ResumeID != "" {
+		r.next = len(a.turns) // a resumed conversation is past its scripted opening
+	}
+
+	if a.perTurn && spec.FirstPrompt == "" {
+		go func() {
+			select {
+			case <-ctx.Done():
+				_ = r.Close()
+			case <-r.closed:
+			}
+		}()
+		return r, nil
 	}
 
 	r.mu.Lock()
 	t := r.newTurnLocked()
+	script := a.start
+	if a.perTurn {
+		script = r.nextTurnLocked()
+	}
 	r.mu.Unlock()
 
 	if spec.FirstPrompt != "" {
 		r.emit(nil, agent.Event{Kind: agent.KindUserText, Text: spec.FirstPrompt})
 	}
-	go r.play(t, a.start)
+	go r.play(t, script)
 
 	go func() {
 		select {
@@ -118,6 +162,11 @@ type run struct {
 	events    chan agent.Event
 	approvals chan agent.ApprovalRequest
 	closed    chan struct{}
+
+	hub     *Hub
+	turns   []Script
+	perTurn bool
+	next    int // index of the next scripted turn (perTurn only)
 
 	mu        sync.Mutex
 	shut      bool // Close has begun
@@ -159,11 +208,29 @@ func (r *run) Send(prompt string) error {
 		return ErrBusy
 	}
 	t := r.newTurnLocked()
+	script := r.reply
+	if r.perTurn {
+		script = r.nextTurnLocked()
+	}
 	r.mu.Unlock()
 
 	r.emit(nil, agent.Event{Kind: agent.KindUserText, Text: prompt})
-	go r.play(t, r.reply)
+	go r.play(t, script)
 	return nil
+}
+
+// nextTurnLocked returns the script for the next turn of a NewTurns run.
+func (r *run) nextTurnLocked() Script {
+	i := r.next
+	r.next++
+	if i < len(r.turns) {
+		return r.turns[i]
+	}
+	return Script{
+		{Event: agent.Event{Kind: agent.KindAssistantText, Text: "Noted."}},
+		{Event: agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{InputTokens: 100, OutputTokens: 5, CostUSD: 0.01}}},
+		{Event: agent.Event{Kind: agent.KindTurnDone}},
+	}
 }
 
 // Interrupt stops the current turn, if any. The playback goroutine emits
@@ -234,6 +301,14 @@ func (r *run) play(t *turn, script Script) {
 			r.endTurn(t)
 			return
 		}
+		if st.Message != nil && !r.callHub(t, "send_message", st.Message.To, st.Message.Text) {
+			r.endTurn(t)
+			return
+		}
+		if st.ReadThread && !r.callHub(t, "read_thread", "", "") {
+			r.endTurn(t)
+			return
+		}
 		if st.Approval == nil {
 			continue
 		}
@@ -293,6 +368,45 @@ func (r *run) play(t *turn, script Script) {
 	// A script that runs out without turn_done simply goes idle; the deferred
 	// clearTurn lets the next Send start a new turn.
 }
+
+// callHub plays one messaging tool call: tool_call, the hub round trip,
+// tool_result. It reports false when the turn was cancelled meanwhile.
+func (r *run) callHub(t *turn, name, to, text string) bool {
+	id := fmt.Sprintf("fake-%s-%d", name, atomic.AddInt64(&idCounter, 1))
+	title := name
+	if name == "send_message" {
+		title = "to " + to + ": " + oneLine(text)
+	}
+	if !r.emit(t.cancel, agent.Event{Kind: agent.KindToolCall, Tool: &agent.Tool{
+		ID: id, Name: name, Title: title, Status: agent.ToolRunning,
+	}}) {
+		return false
+	}
+	var out string
+	var err error
+	switch {
+	case r.hub == nil:
+		err = errors.New("no hub")
+	case name == "read_thread":
+		out = r.hub.ReadThread(r.agentID)
+	default:
+		out, err = r.hub.Send(t.cancel, r.agentID, to, text)
+	}
+	select {
+	case <-t.cancel:
+		return false
+	default:
+	}
+	status := agent.ToolOK
+	if err != nil {
+		status, out = agent.ToolError, err.Error()
+	}
+	return r.emit(t.cancel, agent.Event{Kind: agent.KindToolResult, Text: out, Tool: &agent.Tool{
+		ID: id, Name: name, Title: title, Output: out, Status: status,
+	}})
+}
+
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // endTurn clears the active turn before emitting turn_done, so a consumer that
 // reacts to turn_done by calling Send does not race with the playback

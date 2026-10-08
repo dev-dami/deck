@@ -2,7 +2,9 @@
 //
 // Layout under the threads directory (default ~/.deck/threads):
 //
-//	<id>.jsonl      one JSON line per agent.Event (streaming deltas are dropped)
+//	<id>.jsonl      one JSON line per Entry (an agent.Event plus the speaker, the
+//	                addressees and how it was relayed); streaming deltas are
+//	                dropped. Old logs of bare agent.Event lines load unchanged.
 //	<id>.meta.json  the Thread metadata; the source of truth for that thread
 //	index.json      cache of every thread's metadata, sorted on read; rebuilt
 //	                from the *.meta.json files when missing or unreadable
@@ -42,18 +44,107 @@ const maxTitleRunes = 60
 
 var validID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 
-// Thread is the metadata of one conversation with one agent.
+// CurrentVersion is the metadata format written by this package. Version 0
+// (absent) marks a thread written before shared threads existed: one agent,
+// described by the legacy AgentKind/Name/Model/SessionID fields.
+const CurrentVersion = 2
+
+// Member is one agent taking part in a thread.
+type Member struct {
+	ID        string  `json:"id"`   // Deck's id, unique across the deck: "claude", "claude2", "codex"
+	Kind      string  `json:"kind"` // "claude" or "codex"
+	Name      string  `json:"name"` // display name; used for addressing
+	Model     string  `json:"model,omitempty"`
+	SessionID string  `json:"session_id,omitempty"` // the CLI's own session/thread id
+	CostUSD   float64 `json:"cost_usd,omitempty"`
+	// Cursor is how many thread-log entries this member has been briefed on.
+	Cursor int `json:"cursor,omitempty"`
+}
+
+// Thread is the metadata of one conversation between the user and one or more
+// agents (the Members).
+//
+// Members is authoritative whenever it is non-empty. The flat AgentKind, Name,
+// Model and SessionID fields are the pre-shared-thread format: they are read to
+// migrate old threads (see Normalize) and mirrored from Members on every write
+// so older Deck builds can still list the thread.
 type Thread struct {
-	ID        string    `json:"id"`
-	AgentKind string    `json:"agent_kind"` // "claude" or "codex"
-	Name      string    `json:"name"`       // display name, e.g. "claude2"
-	Title     string    `json:"title"`      // first prompt, truncated
-	Dir       string    `json:"dir"`
-	Model     string    `json:"model"`
-	SessionID string    `json:"session_id"` // the CLI's own session/thread id
-	Created   time.Time `json:"created"`
-	Updated   time.Time `json:"updated"`
-	CostUSD   float64   `json:"cost_usd"`
+	ID      string   `json:"id"`
+	Version int      `json:"version,omitempty"`
+	Title   string   `json:"title"` // first prompt, truncated
+	Dir     string   `json:"dir"`
+	Members []Member `json:"members,omitempty"`
+
+	// Legacy mirror of Members[0] (Name: every member's name joined by "+").
+	AgentKind string `json:"agent_kind"`
+	Name      string `json:"name"`
+	Model     string `json:"model"`
+	SessionID string `json:"session_id"`
+
+	Created time.Time `json:"created"`
+	Updated time.Time `json:"updated"`
+	CostUSD float64   `json:"cost_usd"` // sum over members
+}
+
+// Normalize migrates a pre-shared-thread record in place: when there are no
+// Members but a legacy AgentKind, the legacy fields become one Member. It then
+// refreshes the legacy mirror and CostUSD from Members. Version is left as is,
+// so a caller can tell a migrated thread (Version < CurrentVersion) from a new
+// one.
+func (t *Thread) Normalize() {
+	if len(t.Members) == 0 && t.AgentKind != "" {
+		id := t.Name
+		if id == "" || strings.ContainsAny(id, "+ ") {
+			id = t.AgentKind
+		}
+		t.Members = []Member{{
+			ID: id, Kind: t.AgentKind, Name: id, Model: t.Model,
+			SessionID: t.SessionID, CostUSD: t.CostUSD,
+		}}
+	}
+	if len(t.Members) == 0 {
+		return
+	}
+	t.Members = append([]Member(nil), t.Members...)
+	names := make([]string, 0, len(t.Members))
+	cost := 0.0
+	for _, m := range t.Members {
+		n := m.Name
+		if n == "" {
+			n = m.ID
+		}
+		names = append(names, n)
+		cost += m.CostUSD
+	}
+	first := t.Members[0]
+	t.AgentKind, t.Model, t.SessionID = first.Kind, first.Model, first.SessionID
+	t.Name = strings.Join(names, "+")
+	t.CostUSD = cost
+}
+
+// Entry types. The zero value is a plain agent event.
+const (
+	EntryEvent    = ""         // an agent.Event; Event.AgentID is the speaker
+	EntryUser     = "user"     // the user spoke; Speaker is their name, To the members addressed
+	EntryRelay    = "relay"    // an agent message to other members; Speaker is the sender, Via "tool" or "mention"
+	EntryMember   = "member"   // Speaker joined the thread; Event.Text holds its kind
+	EntryPause    = "pause"    // agent-to-agent relays paused; Event.Text holds the hop count
+	EntryContinue = "continue" // the user released a pause
+	EntryNotice   = "notice"   // Deck's own note (e.g. a dropped duplicate relay)
+)
+
+// Entry is one line of a thread log. The embedded Event keeps old logs (bare
+// agent.Event lines) readable: they load as Entries with every other field
+// empty. For a user, relay, member, pause, continue or notice entry the
+// message text lives in Event.Text.
+type Entry struct {
+	agent.Event
+	Type    string   `json:"type,omitempty"`
+	Speaker string   `json:"speaker,omitempty"`
+	To      []string `json:"to,omitempty"` // member ids
+	Via     string   `json:"via,omitempty"`
+	// Held marks a relay that was held by a pause (informational).
+	Held bool `json:"held,omitempty"`
 }
 
 // Store is a directory of threads. It is safe for concurrent use.
@@ -128,6 +219,8 @@ func (s *Store) Create(t Thread) (Thread, error) {
 		return Thread{}, fmt.Errorf("store: invalid thread id %q", t.ID)
 	}
 	t.Title = truncateTitle(t.Title)
+	t.Normalize()
+	t.Version = CurrentVersion
 	now := time.Now()
 	if t.Created.IsZero() {
 		t.Created = now
@@ -158,17 +251,23 @@ func (s *Store) Create(t Thread) (Thread, error) {
 	return t, nil
 }
 
-// Append writes one event to the thread's log and bumps its Updated time.
-// Streaming deltas (Delta == true) are dropped to keep logs small. Events that
-// cannot be encoded have their invalid raw JSON removed rather than failing.
+// Append writes one plain agent event to the thread's log and bumps its Updated
+// time. It is AppendEntry for an event with no speaker information.
 func (s *Store) Append(threadID string, ev agent.Event) error {
-	if ev.Delta {
+	return s.AppendEntry(threadID, Entry{Event: ev})
+}
+
+// AppendEntry writes one entry to the thread's log and bumps its Updated time.
+// Streaming deltas (Event.Delta == true) are dropped to keep logs small. Events
+// that cannot be encoded have their invalid raw JSON removed rather than failing.
+func (s *Store) AppendEntry(threadID string, e Entry) error {
+	if e.Delta {
 		return nil
 	}
-	ev = sanitize(ev)
-	line, err := json.Marshal(ev)
+	e.Event = sanitize(e.Event)
+	line, err := json.Marshal(e)
 	if err != nil {
-		return fmt.Errorf("store: encode event: %w", err)
+		return fmt.Errorf("store: encode entry: %w", err)
 	}
 	line = append(line, '\n')
 
@@ -197,9 +296,9 @@ func (s *Store) Append(threadID string, ev agent.Event) error {
 	return s.saveLocked(*t)
 }
 
-// UpdateMeta replaces the stored metadata of t.ID with t's fields (Name,
-// Title, Dir, Model, SessionID, AgentKind, CostUSD). Created is kept and
-// Updated is set to now.
+// UpdateMeta replaces the stored metadata of t.ID with t (Title, Dir, Members;
+// a Thread with no Members is migrated from the legacy single-agent fields
+// first). Created is kept and Updated is set to now.
 func (s *Store) UpdateMeta(t Thread) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -210,6 +309,8 @@ func (s *Store) UpdateMeta(t Thread) error {
 	t.Created = cur.Created
 	t.Updated = time.Now()
 	t.Title = truncateTitle(t.Title)
+	t.Normalize()
+	t.Version = CurrentVersion
 	s.threads[t.ID] = &t
 	return s.saveLocked(t)
 }
@@ -222,8 +323,25 @@ func (s *Store) List() ([]Thread, error) {
 }
 
 // Load returns a thread's events in the order they were appended, along with
-// its metadata. Malformed lines (for example a torn final write) are skipped.
+// its metadata (migrated to the shared-thread shape, see Thread.Normalize).
+// Malformed lines (for example a torn final write) are skipped. Entries that
+// are not agent events (user messages, relays, ...) are included with their text
+// in Event.Text; use LoadEntries to tell them apart.
 func (s *Store) Load(id string) ([]agent.Event, Thread, error) {
+	entries, meta, err := s.LoadEntries(id)
+	if err != nil {
+		return nil, meta, err
+	}
+	var events []agent.Event
+	for _, e := range entries {
+		events = append(events, e.Event)
+	}
+	return events, meta, nil
+}
+
+// LoadEntries returns a thread's log entries in append order along with its
+// metadata. Old logs (bare agent.Event lines) come back as EntryEvent entries.
+func (s *Store) LoadEntries(id string) ([]Entry, Thread, error) {
 	s.mu.Lock()
 	cur, ok := s.threads[id]
 	if !ok {
@@ -231,6 +349,7 @@ func (s *Store) Load(id string) ([]agent.Event, Thread, error) {
 		return nil, Thread{}, ErrNotFound
 	}
 	meta := *cur
+	meta.Members = append([]Member(nil), cur.Members...)
 	tl := s.threadLockLocked(id)
 	s.mu.Unlock()
 
@@ -245,14 +364,14 @@ func (s *Store) Load(id string) ([]agent.Event, Thread, error) {
 	}
 	defer f.Close()
 
-	var events []agent.Event
+	var entries []Entry
 	r := bufio.NewReader(f)
 	for {
 		line, err := r.ReadBytes('\n')
 		if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
-			var ev agent.Event
-			if json.Unmarshal(trimmed, &ev) == nil {
-				events = append(events, ev)
+			var e Entry
+			if json.Unmarshal(trimmed, &e) == nil {
+				entries = append(entries, e)
 			}
 		}
 		if err == io.EOF {
@@ -262,7 +381,7 @@ func (s *Store) Load(id string) ([]agent.Event, Thread, error) {
 			return nil, meta, err
 		}
 	}
-	return events, meta, nil
+	return entries, meta, nil
 }
 
 func (s *Store) threadLockLocked(id string) *sync.Mutex {
@@ -321,6 +440,9 @@ func readIndex(path string) ([]Thread, error) {
 	if err := json.Unmarshal(data, &threads); err != nil {
 		return nil, err
 	}
+	for i := range threads {
+		threads[i].Normalize()
+	}
 	return threads, nil
 }
 
@@ -341,6 +463,7 @@ func scanMeta(dir string) ([]Thread, error) {
 		if err := json.Unmarshal(data, &t); err != nil || t.ID == "" {
 			continue
 		}
+		t.Normalize()
 		threads = append(threads, t)
 	}
 	return threads, nil
@@ -400,6 +523,9 @@ func sanitize(ev agent.Event) agent.Event {
 	}
 	return ev
 }
+
+// NewID returns a fresh random thread id, valid for Create.
+func NewID() string { return newID() }
 
 func newID() string {
 	var b [8]byte

@@ -2,6 +2,8 @@ package fake
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -497,4 +499,156 @@ func equalKinds(a, b []agent.Kind) bool {
 		}
 	}
 	return true
+}
+
+func TestNewTurnsPlaysOneScriptPerTurnAndStaysIdleWithoutPrompt(t *testing.T) {
+	t1 := Script{{Event: agent.Event{Kind: agent.KindAssistantText, Text: "one"}}, {Event: agent.Event{Kind: agent.KindTurnDone}}}
+	t2 := Script{{Event: agent.Event{Kind: agent.KindAssistantText, Text: "two"}}, {Event: agent.Event{Kind: agent.KindTurnDone}}}
+	r := startRun(t, NewTurns(0, nil, t1, t2), "a")
+	select {
+	case ev := <-r.Events():
+		t.Fatalf("a run started without a prompt must stay idle, got %+v", ev)
+	case <-time.After(50 * time.Millisecond):
+	}
+	for _, want := range []string{"one", "two", "Noted."} {
+		if err := r.Send("go"); err != nil {
+			t.Fatal(err)
+		}
+		var text string
+		for _, ev := range untilTurnDone(t, r) {
+			if ev.Kind == agent.KindAssistantText {
+				text = ev.Text
+			}
+		}
+		if text != want {
+			t.Fatalf("turn text = %q, want %q", text, want)
+		}
+	}
+}
+
+func TestNewTurnsWithFirstPromptPlaysFirstTurn(t *testing.T) {
+	t1 := Script{{Event: agent.Event{Kind: agent.KindAssistantText, Text: "one"}}, {Event: agent.Event{Kind: agent.KindTurnDone}}}
+	r, err := NewTurns(0, nil, t1).Start(context.Background(), agent.Spec{ID: "a", FirstPrompt: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	got := untilTurnDone(t, r)
+	if k := kinds(got); !equalKinds(k, []agent.Kind{agent.KindUserText, agent.KindAssistantText, agent.KindTurnDone}) {
+		t.Fatalf("kinds = %v", k)
+	}
+}
+
+func TestMessageStepGoesThroughTheHub(t *testing.T) {
+	hub := NewHub()
+	hub.SetThreadReader(func(id string) string { return "thread for " + id })
+	script := Script{
+		{Message: &agent.Message{To: "codex", Text: "review this"}},
+		{ReadThread: true},
+		{Event: agent.Event{Kind: agent.KindTurnDone}},
+	}
+	r, err := NewTurns(0, hub, script).Start(context.Background(), agent.Spec{ID: "claude", FirstPrompt: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+
+	select {
+	case msg := <-hub.Messages():
+		if msg.From != "claude" || msg.To != "codex" || msg.Text != "review this" {
+			t.Fatalf("message = %+v", msg)
+		}
+		msg.Respond("delivered to codex", nil)
+	case <-time.After(wait5):
+		t.Fatal("no message reached the hub")
+	}
+	got := untilTurnDone(t, r)
+	var results []string
+	for _, ev := range got {
+		if ev.Kind == agent.KindToolResult {
+			results = append(results, ev.Tool.Name+"="+ev.Tool.Output+"/"+string(ev.Tool.Status))
+		}
+	}
+	want := []string{"send_message=delivered to codex/ok", "read_thread=thread for claude/ok"}
+	if len(results) != 2 || results[0] != want[0] || results[1] != want[1] {
+		t.Fatalf("tool results = %q, want %q", results, want)
+	}
+}
+
+func TestMessageStepErrorIsAToolError(t *testing.T) {
+	hub := NewHub()
+	script := Script{{Message: &agent.Message{To: "nobody", Text: "x"}}, {Event: agent.Event{Kind: agent.KindTurnDone}}}
+	r, err := NewTurns(0, hub, script).Start(context.Background(), agent.Spec{ID: "claude", FirstPrompt: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	msg := <-hub.Messages()
+	msg.Respond("", errors.New("unknown recipient"))
+	for _, ev := range untilTurnDone(t, r) {
+		if ev.Kind == agent.KindToolResult && (ev.Tool.Status != agent.ToolError || ev.Tool.Output != "unknown recipient") {
+			t.Fatalf("tool result = %+v", ev.Tool)
+		}
+	}
+}
+
+func TestMessageStepWithoutHubErrors(t *testing.T) {
+	script := Script{{Message: &agent.Message{To: "codex", Text: "x"}}, {Event: agent.Event{Kind: agent.KindTurnDone}}}
+	r, err := NewTurns(0, nil, script).Start(context.Background(), agent.Spec{ID: "claude", FirstPrompt: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	var sawError bool
+	for _, ev := range untilTurnDone(t, r) {
+		if ev.Kind == agent.KindToolResult && ev.Tool.Status == agent.ToolError {
+			sawError = true
+		}
+	}
+	if !sawError {
+		t.Fatal("expected an error tool_result")
+	}
+}
+
+func TestInterruptCancelsAPendingHubCall(t *testing.T) {
+	hub := NewHub()
+	script := Script{{Message: &agent.Message{To: "codex", Text: "x"}}, {Event: agent.Event{Kind: agent.KindTurnDone}}}
+	r, err := NewTurns(0, hub, script).Start(context.Background(), agent.Spec{ID: "claude", FirstPrompt: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	<-hub.Messages() // never answered
+	done := make(chan struct{})
+	go func() { _ = r.Interrupt(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(wait5):
+		t.Fatal("Interrupt hung on an unanswered hub call")
+	}
+}
+
+func TestDemoDuoScriptsShape(t *testing.T) {
+	c, x := DemoDuoScripts()
+	if len(c) != 2 || len(x) != 1 {
+		t.Fatalf("turns: claude %d codex %d", len(c), len(x))
+	}
+	var sends, mentions int
+	for _, st := range c[0] {
+		if st.Message != nil && st.Message.To == "codex" {
+			sends++
+		}
+	}
+	for _, st := range x[0] {
+		if st.Event.Kind == agent.KindAssistantText && strings.Contains(st.Event.Text, "\n@claude ") {
+			mentions++
+		}
+	}
+	if sends != 1 || mentions != 1 {
+		t.Fatalf("sends=%d mentions=%d", sends, mentions)
+	}
+	adapters, hub := DemoDuo(0)
+	if adapters["claude"] == nil || adapters["codex"] == nil || hub == nil {
+		t.Fatal("DemoDuo incomplete")
+	}
 }

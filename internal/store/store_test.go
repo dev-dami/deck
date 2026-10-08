@@ -225,10 +225,7 @@ func TestUpdateMetaPersistsAndKeepsCreated(t *testing.T) {
 	th := mustCreate(t, s, Thread{AgentKind: "codex", Name: "codex1", Title: "old"})
 
 	upd := th
-	upd.Name = "codex2"
-	upd.Model = "gpt-x"
-	upd.SessionID = "thr-7"
-	upd.CostUSD = 0.5
+	upd.Members = []Member{{ID: "codex1", Kind: "codex", Name: "codex2", Model: "gpt-x", SessionID: "thr-7", CostUSD: 0.5}}
 	upd.Created = time.Time{} // must be ignored
 	if err := s.UpdateMeta(upd); err != nil {
 		t.Fatalf("UpdateMeta: %v", err)
@@ -343,4 +340,92 @@ func ids(ts []Thread) []string {
 		out[i] = t.ID
 	}
 	return out
+}
+
+func TestMembersRoundTripAndLegacyMirror(t *testing.T) {
+	s, dir := newStore(t)
+	th := mustCreate(t, s, Thread{Title: "duo", Dir: "C:/work", Members: []Member{
+		{ID: "claude", Kind: "claude", Name: "claude", SessionID: "s1", CostUSD: 0.25, Cursor: 3},
+		{ID: "codex", Kind: "codex", Name: "reviewer", SessionID: "s2", CostUSD: 0.5},
+	}})
+	if th.Version != CurrentVersion || th.CostUSD != 0.75 || th.AgentKind != "claude" || th.Name != "claude+reviewer" {
+		t.Fatalf("created = %+v", th)
+	}
+	s2, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, got, err := s2.Load(th.ID)
+	if err != nil || len(got.Members) != 2 || got.Members[0].Cursor != 3 || got.Members[1].Name != "reviewer" {
+		t.Fatalf("loaded = %+v, %v", got, err)
+	}
+}
+
+func TestLegacySingleAgentThreadMigratesOnLoad(t *testing.T) {
+	dir := t.TempDir()
+	meta := `{"id":"old1","agent_kind":"codex","name":"codex2","title":"rebuild","dir":"C:/w","model":"gpt-x","session_id":"thr-9","created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z","cost_usd":0.04}`
+	if err := os.WriteFile(filepath.Join(dir, "old1.meta.json"), []byte(meta), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	log := `{"AgentID":"codex2","Time":"2026-01-01T00:00:00Z","Kind":"user_text","Text":"rebuild dist"}` + "\n" +
+		`{"AgentID":"codex2","Time":"2026-01-01T00:00:01Z","Kind":"assistant_text","Text":"done"}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "old1.jsonl"), []byte(log), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := New(dir) // no index: rebuilt from the meta files
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, th, err := s.LoadEntries("old1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if th.Version != 0 {
+		t.Errorf("Version = %d, want 0 so the caller can see it was migrated", th.Version)
+	}
+	if len(th.Members) != 1 {
+		t.Fatalf("members = %+v", th.Members)
+	}
+	m := th.Members[0]
+	if m.ID != "codex2" || m.Kind != "codex" || m.Name != "codex2" || m.Model != "gpt-x" || m.SessionID != "thr-9" || m.CostUSD != 0.04 {
+		t.Errorf("migrated member = %+v", m)
+	}
+	if len(entries) != 2 || entries[0].Type != EntryEvent || entries[0].Text != "rebuild dist" || entries[1].AgentID != "codex2" {
+		t.Errorf("entries = %+v", entries)
+	}
+	// Saving migrates the file to the new format.
+	if err := s.UpdateMeta(th); err != nil {
+		t.Fatal(err)
+	}
+	_, th2, _ := s.Load("old1")
+	if th2.Version != CurrentVersion || len(th2.Members) != 1 {
+		t.Errorf("after save = %+v", th2)
+	}
+}
+
+func TestAppendEntryKeepsSpeakerAndStaysReadableAsEvents(t *testing.T) {
+	s, _ := newStore(t)
+	th := mustCreate(t, s, Thread{})
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(s.AppendEntry(th.ID, Entry{Type: EntryUser, Speaker: "dami", To: []string{"claude"}, Event: agent.Event{Kind: agent.KindUserText, Text: "plan it"}}))
+	must(s.AppendEntry(th.ID, Entry{Type: EntryRelay, Speaker: "claude", To: []string{"codex"}, Via: "tool", Event: agent.Event{Text: "review"}}))
+	must(s.Append(th.ID, agent.Event{AgentID: "codex", Kind: agent.KindAssistantText, Text: "ok"}))
+	must(s.AppendEntry(th.ID, Entry{Event: agent.Event{Kind: agent.KindAssistantText, Delta: true, Text: "x"}}))
+
+	entries, _, err := s.LoadEntries(th.ID)
+	if err != nil || len(entries) != 3 {
+		t.Fatalf("entries = %+v, %v", entries, err)
+	}
+	if e := entries[1]; e.Type != EntryRelay || e.Speaker != "claude" || e.Via != "tool" || len(e.To) != 1 || e.To[0] != "codex" || e.Text != "review" {
+		t.Errorf("relay entry = %+v", e)
+	}
+	evs, _, _ := s.Load(th.ID)
+	if len(evs) != 3 || evs[2].AgentID != "codex" {
+		t.Errorf("events = %+v", evs)
+	}
 }
