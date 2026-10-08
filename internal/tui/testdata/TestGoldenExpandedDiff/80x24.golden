@@ -1,0 +1,24 @@
+ ◆ deck                                                            idle · $0.12
+
+ ▎○ claude  refact… $0.12  ▎ ▾ Edit internal/store/store.go +24 −9
+                               @@ -9,9 +9,13 @@
+                                 9   type Store struct {
+                                10       dir string
+                                11 -     mu  sync.Mutex
+                                11 +     mu    sync.Mutex
+                                12 +     locks map[string]*sync.Mutex
+                                13   }
+                                14
+                                15   // lock returns the mutex that serialise…
+                                15 - func (s *Store) lockFor(id string) *sync…
+                                16 -     return &s.mu
+                                16 + func (s *Store) lock(threadID string) *s…
+                               … 31 more
+                             ▸ Bash go test ./...
+
+                             The store now drops streaming deltas, and  go
+                             test ./...  passes.
+                           ────────────────────────────────────────────────────
+                             claude · default · ~/repo
+                           › message claude…
+ enter fold   [ ] row   tab compose   q quit  claude finished · 1 file · $0.12

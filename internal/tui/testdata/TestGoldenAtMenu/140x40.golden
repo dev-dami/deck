@@ -1,0 +1,40 @@
+ ◆ deck                                                                                                                        idle · $0.12
+
+ ▎○ claude  refactor t… $0.12    Ada
+                                 refactor the store
+
+                               ◆ claude
+                                 ∴ thinking…
+
+                                 I'll check the store layer before changing anything.  Append  currently writes every event, so
+                                 streaming deltas bloat the thread files.
+
+                                 • read  store.go  to see the current layout
+                                 • drop streaming deltas before they reach disk
+                                 • run the package tests
+
+                                 ▸ Read internal/store/store.go
+                                 ▸ Edit internal/store/store.go +24 −9
+                                 ▸ Bash go test ./...
+
+                                 The store now drops streaming deltas, and  go test ./...  passes.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                ▎○ claude   refactor the store
+                                 + codex    new agent
+                               ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                 claude · default · ~/repo
+                               › @
+ ↑↓ select   tab complete   esc close                                                                     claude finished · 1 file · $0.12
