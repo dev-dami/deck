@@ -40,8 +40,8 @@ const (
 // Tool describes one tool call (Bash, Edit, Read, command_execution, ...).
 type Tool struct {
 	ID     string
-	Name   string     // display name, e.g. "Bash", "Edit", "Read"
-	Title  string     // one-line summary, e.g. "go test ./..." or "internal/store/store.go"
+	Name   string // display name, e.g. "Bash", "Edit", "Read"
+	Title  string // one-line summary, e.g. "go test ./..." or "internal/store/store.go"
 	Input  json.RawMessage
 	Output string
 	Status ToolStatus
