@@ -5,6 +5,9 @@
 //	<id>.jsonl      one JSON line per Entry (an agent.Event plus the speaker, the
 //	                addressees and how it was relayed); streaming deltas are
 //	                dropped. Old logs of bare agent.Event lines load unchanged.
+//	                Besides messages and events the log holds the user's edits of
+//	                earlier messages (EntryEdit) and cancelled queued messages
+//	                (EntryCancel); user entries may carry image paths and a steer flag.
 //	<id>.meta.json  the Thread metadata; the source of truth for that thread
 //	index.json      cache of every thread's metadata, sorted on read; rebuilt
 //	                from the *.meta.json files when missing or unreadable
@@ -26,6 +29,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -59,6 +63,10 @@ type Member struct {
 	CostUSD   float64 `json:"cost_usd,omitempty"`
 	// Cursor is how many thread-log entries this member has been briefed on.
 	Cursor int `json:"cursor,omitempty"`
+	// ContextTokens and ContextWindow are the member's last reported context
+	// window use (0 = unknown), so a resumed thread can show the meter at once.
+	ContextTokens int `json:"context_tokens,omitempty"`
+	ContextWindow int `json:"context_window,omitempty"`
 }
 
 // Thread is the metadata of one conversation between the user and one or more
@@ -140,6 +148,14 @@ const (
 	EntryPause    = "pause"    // agent-to-agent relays paused; Event.Text holds the hop count
 	EntryContinue = "continue" // the user released a pause
 	EntryNotice   = "notice"   // Deck's own note (e.g. a dropped duplicate relay)
+	// EntryEdit: the user edited an earlier message. Ref is that message's entry
+	// id, Old the text it had before this edit, Event.Text the new text, To the
+	// members the edit was delivered to (empty when the original had not been
+	// delivered yet, so the edit just replaced its text).
+	EntryEdit = "edit"
+	// EntryCancel: the user cancelled a queued message before it was delivered.
+	// Ref is the message's entry id, To the member it was queued for.
+	EntryCancel = "cancel"
 )
 
 // Entry is one line of a thread log. The embedded Event keeps old logs (bare
@@ -154,6 +170,22 @@ type Entry struct {
 	Via     string   `json:"via,omitempty"`
 	// Held marks a relay that was held by a pause (informational).
 	Held bool `json:"held,omitempty"`
+
+	// ID identifies the entry within its thread. Deck assigns one to every entry
+	// it writes; LoadEntries gives entries from older logs a stable one ("e<n>",
+	// n = position in the log).
+	ID string `json:"id,omitempty"`
+	// Images (user entries) are the paths of the images attached to the message.
+	Images []string `json:"images,omitempty"`
+	// Steer marks a user entry that redirected a busy agent mid-task (the
+	// message was queued and the user then steered with it).
+	Steer bool `json:"steer,omitempty"`
+	// Ref is the entry this one refers to (EntryEdit, EntryCancel; for a Steer
+	// entry the queued message it delivered).
+	Ref string `json:"ref,omitempty"`
+	// Old is the text before an edit (EntryEdit); on a Steer entry it is set when
+	// the steer delivered an edit, and holds the text before that edit.
+	Old string `json:"old,omitempty"`
 }
 
 // Store is a directory of threads. It is safe for concurrent use.
@@ -350,6 +382,7 @@ func (s *Store) Load(id string) ([]agent.Event, Thread, error) {
 
 // LoadEntries returns a thread's log entries in append order along with its
 // metadata. Old logs (bare agent.Event lines) come back as EntryEvent entries.
+// Every returned entry has an ID (see Entry.ID).
 func (s *Store) LoadEntries(id string) ([]Entry, Thread, error) {
 	s.mu.Lock()
 	cur, ok := s.threads[id]
@@ -380,6 +413,9 @@ func (s *Store) LoadEntries(id string) ([]Entry, Thread, error) {
 		if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
 			var e Entry
 			if json.Unmarshal(trimmed, &e) == nil {
+				if e.ID == "" {
+					e.ID = "e" + strconv.Itoa(len(entries))
+				}
 				entries = append(entries, e)
 			}
 		}

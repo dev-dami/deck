@@ -152,6 +152,9 @@ type turn struct {
 	cancel chan struct{}
 	done   chan struct{}
 	once   sync.Once
+	// silent is set when a Steer replaces the turn: it ends without turn_done,
+	// because to the caller the steered turn is still the same turn.
+	silent atomic.Bool
 }
 
 func (t *turn) stop() { t.once.Do(func() { close(t.cancel) }) }
@@ -179,6 +182,9 @@ type run struct {
 	model     string     // last model set (starts as Spec.Model)
 	modes     []agent.Mode
 	models    []string
+	images    []PromptCall
+	steers    []PromptCall
+	ctx       int // context tokens reported so far (grows with every turn)
 	wg        sync.WaitGroup
 }
 
@@ -235,7 +241,10 @@ func (r *run) nextTurnLocked() Script {
 	}
 	return Script{
 		{Event: agent.Event{Kind: agent.KindAssistantText, Text: "Noted."}},
-		{Event: agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{InputTokens: 100, OutputTokens: 5, CostUSD: 0.01}}},
+		{Event: agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{
+			InputTokens: 100, OutputTokens: 5, CostUSD: 0.01,
+			ContextTokens: r.growContextLocked(), ContextWindow: contextWindowFor(r.agentID),
+		}}},
 		{Event: agent.Event{Kind: agent.KindTurnDone}},
 	}
 }
@@ -420,6 +429,9 @@ func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 // goroutine.
 func (r *run) endTurn(t *turn) {
 	r.clearTurn(t)
+	if t.silent.Load() {
+		return
+	}
 	r.emit(nil, agent.Event{Kind: agent.KindTurnDone})
 }
 
@@ -540,6 +552,7 @@ func claudeDemo() Script {
 
 	var s Script
 	s = append(s, Step{Event: agent.Event{Kind: agent.KindSessionStarted, SessionID: "fake-demo-claude"}})
+	s = append(s, contextStep(claudeWindow, 14200))
 	s = append(s, streamSteps(streamedReply, 80*time.Millisecond)...)
 	s = append(s, Step{Event: agent.Event{
 		Kind: agent.KindAssistantText,
@@ -554,6 +567,7 @@ func claudeDemo() Script {
 			ID: "toolu_read", Name: "Read", Title: "internal/store/store.go", Input: readInput,
 			Output: "148 lines read", Status: agent.ToolOK,
 		}}},
+		contextStep(claudeWindow, 31800),
 	)
 
 	s = append(s,
@@ -575,6 +589,7 @@ func claudeDemo() Script {
 			ID: "toolu_edit", Name: "Edit", Title: "internal/store/store.go", Input: editInput,
 			Output: "Applied 2 hunks to internal/store/store.go", Status: agent.ToolOK,
 		}}},
+		contextStep(claudeWindow, 52400),
 	)
 
 	s = append(s,
@@ -596,6 +611,7 @@ func claudeDemo() Script {
 			Text: "The store now drops streaming deltas, and `go test ./...` passes."}},
 		Step{Event: agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{
 			InputTokens: 18432, OutputTokens: 1260, CachedTokens: 12010, CostUSD: 0.12,
+			ContextTokens: 61800, ContextWindow: claudeWindow,
 		}}},
 		Step{Event: agent.Event{Kind: agent.KindTurnDone}},
 	)
@@ -609,6 +625,7 @@ func DemoCodexScript() Script {
 
 	var s Script
 	s = append(s, Step{Event: agent.Event{Kind: agent.KindSessionStarted, SessionID: "fake-demo-codex"}})
+	s = append(s, contextStep(codexWindow, 9600))
 	pre := []string{
 		"I'll rebuild `dist` from a clean slate. ",
 		"The old output is stale, so I'm removing it first.",
@@ -632,10 +649,12 @@ func DemoCodexScript() Script {
 			ID: "item_cmd", Name: "command_execution", Title: cmd, Input: input,
 			Output: "> build\n> vite build\n\nbuilt in 3.2s", Status: agent.ToolOK,
 		}}},
+		contextStep(codexWindow, 27400),
 		Step{Delay: 150 * time.Millisecond, Event: agent.Event{Kind: agent.KindAssistantText,
 			Text: "Rebuilt `dist` from a clean slate."}},
 		Step{Event: agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{
 			InputTokens: 6120, OutputTokens: 310, CostUSD: 0.04,
+			ContextTokens: 34900, ContextWindow: codexWindow,
 		}}},
 		Step{Event: agent.Event{Kind: agent.KindTurnDone}},
 	)
@@ -835,11 +854,105 @@ type Inspector interface {
 	Model() string
 	ModeCalls() []agent.Mode
 	ModelCalls() []string
+	ImageCalls() []PromptCall
+	SteerCalls() []PromptCall
 }
 
 var (
 	_ agent.ModeSetter  = (*run)(nil)
 	_ agent.ModelSetter = (*run)(nil)
 	_ agent.ModelLister = (*adapter)(nil)
+	_ agent.ImageSender = (*run)(nil)
+	_ agent.Steerer     = (*run)(nil)
 	_ Inspector         = (*run)(nil)
 )
+
+// Context windows the fake models report: Claude's and Codex's.
+const (
+	claudeWindow = 200000
+	codexWindow  = 272000
+)
+
+// contextStep is a mid-turn usage event that carries only the context fields,
+// like the real CLIs' per-message usage: cost and token totals stay as they were.
+func contextStep(window, used int) Step {
+	return Step{Event: agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{
+		ContextTokens: used, ContextWindow: window,
+	}}}
+}
+
+// contextWindowFor is the window a fake agent reports: 272000 for ids that start
+// with "codex", else 200000.
+func contextWindowFor(agentID string) int {
+	if strings.HasPrefix(agentID, "codex") {
+		return codexWindow
+	}
+	return claudeWindow
+}
+
+// growContextLocked is the context size for the next default turn: it starts at
+// 8000 tokens and grows by 6000 with every turn that reports it. r.mu is held.
+func (r *run) growContextLocked() int {
+	if r.ctx == 0 {
+		r.ctx = 8000
+	} else {
+		r.ctx += 6000
+	}
+	return r.ctx
+}
+
+// PromptCall is a prompt a fake run was given through SendWithImages or Steer.
+type PromptCall struct {
+	Prompt string
+	Images []agent.Image
+}
+
+// SendWithImages implements agent.ImageSender: it records the call and then
+// behaves like Send.
+func (r *run) SendWithImages(prompt string, images []agent.Image) error {
+	r.mu.Lock()
+	if r.shut {
+		r.mu.Unlock()
+		return ErrClosed
+	}
+	r.images = append(r.images, PromptCall{prompt, append([]agent.Image(nil), images...)})
+	r.mu.Unlock()
+	return r.Send(prompt)
+}
+
+// Steer implements agent.Steerer: it records the call and replaces the turn in
+// progress with a new one that answers the prompt. The interrupted turn ends
+// without a turn_done, so the caller sees a single turn that changed course. On
+// an idle run it simply starts a turn.
+func (r *run) Steer(prompt string, images []agent.Image) error {
+	r.mu.Lock()
+	if r.shut {
+		r.mu.Unlock()
+		return ErrClosed
+	}
+	r.steers = append(r.steers, PromptCall{prompt, append([]agent.Image(nil), images...)})
+	t := r.cur
+	if t != nil {
+		t.silent.Store(true)
+	}
+	r.mu.Unlock()
+	if t != nil {
+		t.stop()
+		<-t.done
+	}
+	return r.Send(prompt)
+}
+
+// ImageCalls lists every SendWithImages call, in order.
+func (r *run) ImageCalls() []PromptCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]PromptCall(nil), r.images...)
+}
+
+// SteerCalls lists every Steer call, in order.
+func (r *run) SteerCalls() []PromptCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]PromptCall(nil), r.steers...)
+}

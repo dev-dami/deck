@@ -14,7 +14,7 @@
 //
 // # Talking
 //
-// The user: Post(threadID, text). "@name" at the start of a clause addresses
+// The user: Post(threadID, text) or PostWith(threadID, text, images). "@name" at the start of a clause addresses
 // that member (ParseAddressing has the exact rules); "@claude" / "@codex" naming
 // a kind the thread has no live member of adds a new member of that kind;
 // "@all" addresses everyone; with no mention the message goes to the member who
@@ -37,6 +37,11 @@
 //	Updates() / Listen()              the single stream of tea messages (msgs.go)
 //	NewThread(dir) -> threadID        an empty thread
 //	Post(threadID, text)              the user speaks (see above)
+//	PostWith(threadID, text, images)  the same with image attachments; returns a PostResult
+//	Queue(threadID)                   user messages waiting for busy members
+//	Steer(itemID)                     deliver a queued message into the running turn now
+//	CancelQueued(itemID)              drop a queued message without delivering it
+//	Edit(threadID, entryID, text)     the user edits an earlier message of theirs
 //	AddMember(threadID, kind, model)  add an agent without sending anything
 //	Continue(threadID)                release a pause
 //	Interrupt(agentID)                stop one member's turn
@@ -70,6 +75,44 @@
 // command requests are denied ("Deck is in plan mode: propose the change instead
 // of making it.") and surface as AutoDeniedMsg; in ask nothing changes. The UI
 // learns of changes through ModeChangedMsg and ModelChangedMsg.
+//
+// # Images, queue, steering, edits
+//
+// PostWith attaches images (agent.Image: a local path and a media type) to a
+// message. They go to every addressee whose run implements agent.ImageSender;
+// an addressee without it gets the text plus the line "[deck] The user attached N
+// image(s) that this agent can't view: a.png, b.png". The PostResult carries the
+// message's EntryID (EventMsg.EntryID; the handle for Edit) and Queued, the items
+// that had to wait because their addressee was busy.
+//
+// Queue(threadID) lists the user's messages waiting for busy members, oldest
+// first - one QueuedItem per (message, member); relays between agents are never
+// in it. Every change (added, delivered when the turn ends, steered, cancelled,
+// edited in place, dropped by Interrupt) is announced with a QueueChangedMsg
+// holding the whole queue. Steer(itemID) takes an item out of the queue and
+// delivers it now: through agent.Steerer when the member's run implements it,
+// otherwise Interrupt then Send. The prompt starts "[deck] The user is redirecting
+// you mid-task:" followed by the text, after the usual briefing of what the
+// member missed; anything else queued for that member rides along. The steer is
+// logged as a user entry with the Steer flag and surfaces as an EventMsg with
+// Steer true (and SteerOf = the queued message's EntryID), in history too.
+// CancelQueued(itemID) removes an item without delivering it; the member never
+// sees that message. Interrupt(agentID) clears the agent's queue.
+//
+// Edit(threadID, entryID, newText) lets the user edit one of their earlier
+// messages (only user messages; EntryID from EventMsg or PostResult). An
+// EditedMsg{ThreadID, EntryID, OldText, NewText} is emitted (and replayed by
+// History/Resume after the message itself, so a rebuilt view shows the latest text
+// with an "edited" tag). Members that already received the original get a prompt
+// "[deck] The user edited their earlier message." / "Before: <old>" / "After: <new>" /
+// "Treat the edited version as what they meant."; a busy one gets it queued like any
+// message (QueuedItem.Edit true). Members that have not received the original yet
+// (it is still queued) simply get the new text in its place (QueueChangedMsg).
+//
+// Context: AgentInfo.ContextTokens / ContextWindow hold how much of its model's
+// context window the member's conversation fills, from the latest usage event
+// that reported it (0 = unknown). Usage events that carry only context fields do
+// not disturb the cost totals.
 //
 // Models come from the CLI itself: Models lists them through an adapter that
 // implements agent.ModelLister; SetModel needs the member's run to implement
@@ -140,6 +183,9 @@ type AgentInfo struct {
 	CostUSD  float64
 	Pending  int // approvals waiting for an answer
 	ThreadID string
+	// ContextTokens of ContextWindow tokens are in use (0 = not reported yet).
+	ContextTokens int
+	ContextWindow int
 }
 
 // ThreadInfo is a snapshot of one live thread.
@@ -271,7 +317,8 @@ func (m *Manager) Kinds() []string {
 
 // Updates is the single stream of messages: EventMsg, ApprovalMsg,
 // ApprovalGoneMsg, RelayMsg, PausedMsg, ContinuedMsg, MemberAddedMsg, NoticeMsg,
-// ModeChangedMsg, ModelChangedMsg, AutoApprovedMsg, AutoDeniedMsg.
+// ModeChangedMsg, ModelChangedMsg, AutoApprovedMsg, AutoDeniedMsg, QueueChangedMsg,
+// EditedMsg.
 func (m *Manager) Updates() <-chan tea.Msg { return m.out }
 
 // Listen returns a command that waits for the next update. Call it again from
@@ -595,13 +642,23 @@ func (m *Manager) defaultKind() string {
 // adds the missing members. Errors from starting or sending to an agent are
 // returned, but the message stays in the thread.
 func (m *Manager) Post(threadID, text string) error {
+	_, err := m.PostWith(threadID, text, nil)
+	return err
+}
+
+// PostWith is Post with images attached (see the package comment). An image-only
+// message (empty text) is sent as "See the attached image(s)."
+func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostResult, error) {
 	t := m.thread(threadID)
 	if t == nil {
-		return fmt.Errorf("session: no thread %q", threadID)
+		return PostResult{}, fmt.Errorf("session: no thread %q", threadID)
 	}
 	text = strings.TrimSpace(text)
+	if text == "" && len(images) > 0 {
+		text = "See the attached image(s)."
+	}
 	if text == "" {
-		return errors.New("session: empty message")
+		return PostResult{}, errors.New("session: empty message")
 	}
 
 	t.mu.Lock()
@@ -613,7 +670,7 @@ func (m *Manager) Post(threadID, text string) error {
 		for _, r := range refs {
 			names = append(names, r.Name)
 		}
-		return fmt.Errorf("no agent @%s in this thread (members: %s; kinds: %s)",
+		return PostResult{}, fmt.Errorf("no agent @%s in this thread (members: %s; kinds: %s)",
 			ad.Unknown[0], strings.Join(names, ", "), strings.Join(m.Kinds(), ", "))
 	}
 
@@ -625,14 +682,14 @@ func (m *Manager) Post(threadID, text string) error {
 		targets = t.live()
 		if len(targets) == 0 && len(newKinds) == 0 {
 			t.mu.Unlock()
-			return errors.New("nobody is running in this thread")
+			return PostResult{}, errors.New("nobody is running in this thread")
 		}
 	case len(ad.Members) > 0:
 		for _, id := range ad.Members {
 			a := t.member(id)
 			if a != nil && a.status() == StatusExited {
 				t.mu.Unlock()
-				return fmt.Errorf("%s has exited", a.getName())
+				return PostResult{}, fmt.Errorf("%s has exited", a.getName())
 			}
 			targets = append(targets, a)
 		}
@@ -644,12 +701,12 @@ func (m *Manager) Post(threadID, text string) error {
 			newKinds = []string{m.defaultKind()}
 		} else {
 			t.mu.Unlock()
-			return errors.New("every agent in this thread has exited; @claude or @codex adds a new one")
+			return PostResult{}, errors.New("every agent in this thread has exited; @claude or @codex adds a new one")
 		}
 	}
 	t.mu.Unlock()
 	if len(newKinds) == 1 && newKinds[0] == "" {
-		return errors.New("session: no agent kinds available")
+		return PostResult{}, errors.New("session: no agent kinds available")
 	}
 
 	body := ad.Body
@@ -659,32 +716,35 @@ func (m *Manager) Post(threadID, text string) error {
 	for _, k := range newKinds {
 		a, err := m.newMember(t, k, "", "")
 		if err != nil {
-			return err
+			return PostResult{}, err
 		}
 		if body == "" {
 			if err := m.startRun(t, a, "", ""); err != nil {
 				m.dropMember(t, a)
-				return err
+				return PostResult{}, err
 			}
 			continue
 		}
 		targets = append(targets, a)
 	}
 	if body == "" {
-		return nil
+		return PostResult{}, nil
 	}
-	return m.postTo(t, body, targets)
+	return m.postTo(t, body, targets, images)
 }
 
 // postTo logs a user message addressed to targets and delivers it. A user
 // message ends any pause and resets the hop count.
-func (m *Manager) postTo(t *thread, text string, targets []*agentState) error {
+func (m *Manager) postTo(t *thread, text string, targets []*agentState, images []agent.Image) (PostResult, error) {
 	cfg := m.config()
 	speaker := cfg.UserName
 	if speaker == "" {
 		speaker = "user"
 	}
-	e := store.Entry{Type: store.EntryUser, Speaker: speaker, To: ids(targets), Event: agent.Event{Kind: agent.KindUserText, Text: text}}
+	e := store.Entry{Type: store.EntryUser, ID: store.NewID(), Speaker: speaker, To: ids(targets), Event: agent.Event{Kind: agent.KindUserText, Text: text}}
+	if len(images) > 0 {
+		e.Images = imagePaths(images)
+	}
 
 	var msgs []tea.Msg
 	t.mu.Lock()
@@ -693,6 +753,9 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState) error {
 	t.lastRelay = map[string]string{}
 	if t.title == "" {
 		t.title = oneLine(text)
+	}
+	if len(images) > 0 {
+		t.images[e.ID] = append([]agent.Image(nil), images...)
 	}
 	m.appendLocked(t, e)
 	msgs = append(msgs, msgFor(t.id, e))
@@ -711,7 +774,7 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState) error {
 			first = err
 		}
 	}
-	return first
+	return PostResult{EntryID: e.ID, Queued: t.queuedFor(e.ID)}, first
 }
 
 // Start creates a one-member thread in dir with an agent of the given kind and
@@ -737,7 +800,7 @@ func (m *Manager) Start(kind, prompt, dir, model string) (string, error) {
 		}
 		return a.id, nil
 	}
-	if err := m.postTo(t, strings.TrimSpace(prompt), []*agentState{a}); err != nil {
+	if _, err := m.postTo(t, strings.TrimSpace(prompt), []*agentState{a}, nil); err != nil {
 		return a.id, err
 	}
 	return a.id, nil
@@ -757,7 +820,8 @@ func (m *Manager) Send(id, prompt string) error {
 	if prompt == "" {
 		return errors.New("session: empty message")
 	}
-	return m.postTo(a.thread, prompt, []*agentState{a})
+	_, err := m.postTo(a.thread, prompt, []*agentState{a}, nil)
+	return err
 }
 
 // ---- delivery ----
@@ -772,13 +836,20 @@ const (
 )
 
 // deliver starts a turn for a if messages addressed to it are waiting and it is
-// idle. Its prompt is a briefing of what it missed plus those messages.
+// idle. Its prompt is a briefing of what it missed plus those messages. When a
+// is busy, the user's waiting messages are entered in the thread's queue.
 func (m *Manager) deliver(t *thread, a *agentState) (delivery, error) {
+	return m.deliverEx(t, a, true)
+}
+
+// deliverEx is deliver; with needTrigger false it starts the turn even though no
+// entry would trigger one (a steer is delivered explicitly).
+func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (delivery, error) {
 	if m.isClosed() {
 		return dNone, errClosed
 	}
 	t.mu.Lock()
-	if !t.hasTrigger(a) {
+	if needTrigger && !t.hasTrigger(a) {
 		t.mu.Unlock()
 		return dNone, nil
 	}
@@ -788,10 +859,14 @@ func (m *Manager) deliver(t *thread, a *agentState) (delivery, error) {
 		return dExited, nil
 	}
 	if !ok {
+		changed := needTrigger && t.syncQueueLocked(a)
 		t.mu.Unlock()
+		if changed {
+			m.emitQueue(t)
+		}
 		return dQueued, nil
 	}
-	prompt, cursor, hold := m.buildPrompt(t, a)
+	prompt, images, cursor, hold := m.buildPrompt(t, a)
 	oldCursor, oldHold, oldKnown := a.cursor, a.holdFrom, a.knownMode
 	a.cursor, a.holdFrom = cursor, hold
 	if a.knownMode != t.mode {
@@ -800,13 +875,7 @@ func (m *Manager) deliver(t *thread, a *agentState) (delivery, error) {
 	}
 	t.mu.Unlock()
 
-	var err error
-	if run := a.getRun(); run != nil {
-		err = run.Send(prompt)
-	} else {
-		err = m.startRun(t, a, prompt, "")
-	}
-	if err != nil {
+	if err := m.sendPrompt(t, a, prompt, images); err != nil {
 		t.mu.Lock()
 		a.cursor, a.holdFrom, a.knownMode = oldCursor, oldHold, oldKnown
 		t.mu.Unlock()
@@ -814,7 +883,30 @@ func (m *Manager) deliver(t *thread, a *agentState) (delivery, error) {
 		return dNone, err
 	}
 	m.persistMeta(t)
+	m.queueDelivered(t, a, cursor)
 	return dStarted, nil
+}
+
+// sendPrompt hands a prompt (and images) to a member's run, starting the run if
+// it has not been started. A run that cannot take images gets a line saying so.
+func (m *Manager) sendPrompt(t *thread, a *agentState, prompt string, images []agent.Image) error {
+	run := a.getRun()
+	if len(images) == 0 {
+		if run != nil {
+			return run.Send(prompt)
+		}
+		return m.startRun(t, a, prompt, "")
+	}
+	if run == nil {
+		if err := m.startRun(t, a, "", ""); err != nil {
+			return err
+		}
+		run = a.getRun()
+	}
+	if is, ok := run.(agent.ImageSender); ok {
+		return is.SendWithImages(prompt, images)
+	}
+	return run.Send(prompt + "\n\n" + noImageLine(images))
 }
 
 // Interrupt stops the agent's current turn. Pending approvals are denied first
@@ -828,7 +920,11 @@ func (m *Manager) Interrupt(id string) error {
 	t := a.thread
 	t.mu.Lock()
 	t.dropPending(a)
+	changed := t.dropQueueLocked(a, -1)
 	t.mu.Unlock()
+	if changed {
+		m.emitQueue(t)
+	}
 	a.markInterrupted()
 	for _, p := range a.takePending() {
 		p.respond(agent.Decision{Allow: false, Reason: "interrupted"})
@@ -967,7 +1063,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		a := &agentState{
 			id: id, kind: mem.Kind, name: name, model: model, thread: t, base: StatusIdle,
 			started: time.Now(), costTotal: mem.CostUSD, sessionID: mem.SessionID, cursor: cursor,
-			knownMode: mode,
+			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow,
 		}
 		m.mu.Lock()
 		taken := false
@@ -1000,6 +1096,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		}
 	}
 	t.log = entries
+	t.rebuildSkips()
 	for _, a := range members {
 		t.boundary[a.id] = len(entries) // a turn cut short by a crash counts as finished
 		if t.lastSpeaker == "" {
@@ -1237,6 +1334,8 @@ type agentState struct {
 	sessionID   string
 	lastText    string // the last assistant text of the running turn
 	interrupted bool
+	ctxTokens   int // context window use, from the latest usage event that reported it
+	ctxWindow   int
 }
 
 func (a *agentState) getRun() agent.Run {
@@ -1273,7 +1372,7 @@ func (a *agentState) info() AgentInfo {
 	return AgentInfo{
 		ID: a.id, Kind: a.kind, Name: a.name, Dir: a.thread.dir, Model: a.model,
 		Status: a.statusLocked(), CostUSD: a.costTotal + a.costTurn, Pending: len(a.pending),
-		ThreadID: a.thread.id,
+		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow,
 	}
 }
 
@@ -1293,6 +1392,7 @@ func (a *agentState) memberMeta() store.Member {
 	return store.Member{
 		ID: a.id, Kind: a.kind, Name: a.name, Model: a.model, SessionID: a.sessionID,
 		CostUSD: a.costTotal + a.costTurn, Cursor: a.cursor,
+		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow,
 	}
 }
 
@@ -1405,8 +1505,18 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 	case agent.KindToolCall:
 		a.base = StatusTool
 	case agent.KindUsage:
-		if ev.Usage != nil {
-			a.costTurn = ev.Usage.CostUSD
+		if u := ev.Usage; u != nil {
+			// Zero means "not reported by this event": mid-turn usage events carry
+			// only the context fields and must not reset the turn's cost.
+			if u.CostUSD > 0 {
+				a.costTurn = u.CostUSD
+			}
+			if u.ContextTokens > 0 {
+				a.ctxTokens = u.ContextTokens
+			}
+			if u.ContextWindow > 0 {
+				a.ctxWindow = u.ContextWindow
+			}
 		}
 	case agent.KindError:
 		a.base = StatusError

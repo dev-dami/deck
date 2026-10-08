@@ -27,7 +27,8 @@ type line struct {
 	text      string
 	addressed bool // a user/relay message addressed to the viewer
 	user      bool
-	raw       string // the bare message text (user lines)
+	raw       string        // the bare message text (user lines)
+	images    []agent.Image // images attached to an addressed user message
 }
 
 // walk renders t.log[start:end] from v's point of view. in decides whether the
@@ -38,6 +39,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 	cfg := m.config()
 	var out []line
 	hold := map[string]int{}
+	edited := t.editedTexts()
 
 	type acc struct {
 		files, cmds, edits []string
@@ -116,16 +118,40 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				flush(sp)
 			}
 		case store.EntryUser:
+			if v.self != "" && t.skip[skipKey{i, v.self}] != 0 {
+				continue // cancelled, or already delivered as a steer
+			}
 			raw := strings.TrimSpace(e.Text)
+			if txt, ok := edited[e.ID]; ok {
+				raw = strings.TrimSpace(txt)
+			}
 			l := line{user: true, raw: raw}
 			who := userLabel(cfg.TellAgentsName, e.Speaker)
-			if v.skipSelf && contains(e.To, v.self) {
+			if e.Steer {
+				// A steer reaches only the member it redirected; the others read the
+				// queued message it came from.
+				if !contains(e.To, v.self) {
+					continue
+				}
+				l.user = false
+				l.addressed = v.skipSelf
+				l.text = steerText(raw, e.Old)
+				if v.skipSelf {
+					l.images = t.imagesOf(e)
+				}
+			} else if v.skipSelf && contains(e.To, v.self) {
 				l.addressed = true
 				l.text = "[" + who + "] " + clip(raw, maxEntryChars)
+				l.images = t.imagesOf(e)
 			} else {
 				l.text = "[" + who + t.arrow(e.To, "", v.self) + "] " + clip(raw, maxEntryChars)
 			}
 			out = append(out, l)
+		case store.EntryEdit:
+			if v.self == "" || !contains(e.To, v.self) || t.skip[skipKey{i, v.self}] != 0 {
+				continue
+			}
+			out = append(out, line{addressed: v.skipSelf, text: editText(e.Old, e.Text)})
 		case store.EntryRelay:
 			if e.Speaker == v.self && v.skipSelf {
 				continue
@@ -165,7 +191,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 // nothing to brief is passed through unchanged, so a one-member thread behaves
 // exactly as it always did. It returns the member's new cursor and held-back
 // speakers. t.mu is held.
-func (m *Manager) buildPrompt(t *thread, a *agentState) (prompt string, cursor int, hold map[string]int) {
+func (m *Manager) buildPrompt(t *thread, a *agentState) (prompt string, images []agent.Image, cursor int, hold map[string]int) {
 	start := a.cursor
 	for _, h := range a.holdFrom {
 		if h < start {
@@ -189,12 +215,13 @@ func (m *Manager) buildPrompt(t *thread, a *agentState) (prompt string, cursor i
 	for _, l := range lines {
 		if l.addressed {
 			addressed = append(addressed, l)
+			images = append(images, l.images...)
 		} else {
 			brief = append(brief, l)
 		}
 	}
 	if len(brief) == 0 && len(addressed) == 1 && addressed[0].user {
-		return addressed[0].raw, end, hold
+		return addressed[0].raw, images, end, hold
 	}
 	var b strings.Builder
 	if len(brief) > 0 {
@@ -205,7 +232,7 @@ func (m *Manager) buildPrompt(t *thread, a *agentState) (prompt string, cursor i
 		}
 	}
 	b.WriteString(joinLines(addressed))
-	return b.String(), end, hold
+	return b.String(), images, end, hold
 }
 
 // readThread renders a's whole thread (the last readThreadLast entries) as the
@@ -272,6 +299,40 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 }
 
 // ---- small helpers ----
+
+const steerHeader = "[deck] The user is redirecting you mid-task:"
+
+// steerText is the prompt text of a steer; old is non-empty when the steer
+// delivers an edit of an earlier message (raw is then the new text).
+func steerText(raw, old string) string {
+	if old != "" {
+		return steerHeader + "\n" + editBody(old, raw)
+	}
+	return steerHeader + "\n" + clip(raw, maxEntryChars)
+}
+
+// editText is the prompt text that tells a member the user edited a message.
+func editText(old, new string) string { return "[deck] " + editBody(old, new) }
+
+func editBody(old, new string) string {
+	return "The user edited their earlier message.\nBefore: " + clip(strings.TrimSpace(old), maxEntryChars) +
+		"\nAfter: " + clip(strings.TrimSpace(new), maxEntryChars) +
+		"\nTreat the edited version as what they meant."
+}
+
+// editedTexts maps a user entry id to its latest edited text. t.mu is held.
+func (t *thread) editedTexts() map[string]string {
+	var out map[string]string
+	for _, e := range t.log {
+		if e.Type == store.EntryEdit {
+			if out == nil {
+				out = map[string]string{}
+			}
+			out[e.Ref] = e.Text
+		}
+	}
+	return out
+}
 
 // name is a member's current display name (its id when unknown).
 func (t *thread) name(id string) string {

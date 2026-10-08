@@ -2,6 +2,7 @@ package session
 
 import (
 	"strconv"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -15,10 +16,22 @@ import (
 // message the user typed arrives as Kind == agent.KindUserText with AgentID ==
 // "" and To holding the member ids it was addressed to. The adapters' own
 // user_text echoes (which would contain Deck's briefing) are never forwarded.
+//
+// For user messages the extra fields are set: EntryID identifies the message (for
+// Edit), Images holds the paths of attached images, and Steer is true when the
+// message is a steer (see Manager.Steer): a queued message the user pushed into
+// the agent's running turn. A steer arrives as its own EventMsg (To = the
+// steered agent, SteerOf = EntryID of the queued message it delivers, which the UI
+// already showed when it was posted); show it as a steer line, or fold it into
+// that message.
 type EventMsg struct {
 	agent.Event
 	ThreadID string
 	To       []string // user messages only
+	EntryID  string   // user messages only: id for Manager.Edit
+	Images   []string // user messages only: attached image paths
+	Steer    bool     // user messages only: a queued message delivered as a steer
+	SteerOf  string   // steers only: EntryID of the queued message being delivered
 }
 
 // FromUser reports whether the event is a message the user typed.
@@ -90,7 +103,13 @@ func msgFor(threadID string, e store.Entry) tea.Msg {
 	case store.EntryUser:
 		ev := e.Event
 		ev.Kind, ev.AgentID = agent.KindUserText, ""
-		return EventMsg{Event: ev, ThreadID: threadID, To: e.To}
+		msg := EventMsg{Event: ev, ThreadID: threadID, To: e.To, EntryID: e.ID, Images: e.Images, Steer: e.Steer}
+		if e.Steer {
+			msg.SteerOf = e.Ref
+		}
+		return msg
+	case store.EntryEdit:
+		return EditedMsg{ThreadID: threadID, EntryID: e.Ref, OldText: e.Old, NewText: e.Text}
 	case store.EntryRelay:
 		return RelayMsg{ThreadID: threadID, From: e.Speaker, To: e.To, Text: e.Text, Via: e.Via, Held: e.Held}
 	case store.EntryMember:
@@ -138,4 +157,56 @@ type AutoDeniedMsg struct {
 	ThreadID string
 	AgentID  string
 	Summary  string
+}
+
+// QueuedItem is a user-authored message (or edit) waiting for a busy member. It
+// is delivered, merged with anything else queued for that member, when the
+// member's turn ends - unless the user steers it (Manager.Steer) or cancels it
+// (Manager.CancelQueued).
+type QueuedItem struct {
+	// ID identifies the item for Steer and CancelQueued. A message addressed to
+	// several busy members yields one item per member.
+	ID       string
+	ThreadID string
+	AgentID  string // the busy member it waits for
+	// Text is the message as it will be delivered (the latest edited text; for an
+	// Edit item, the new text).
+	Text   string
+	Images []agent.Image
+	At     time.Time
+	// Steer is true only while a steer of this item is in flight (the agent had to
+	// be interrupted first); the item disappears once it is delivered.
+	Steer bool
+	// Edit is true for an item that delivers an edit of an earlier message.
+	Edit bool
+	// EntryID is the user message the item belongs to (the id EventMsg.EntryID
+	// carries): for an Edit item, the message that was edited.
+	EntryID string
+}
+
+// PostResult is what PostWith returns.
+type PostResult struct {
+	// EntryID identifies the user message just posted (EventMsg.EntryID; the id
+	// Manager.Edit takes). Empty when the post only added members.
+	EntryID string
+	// Queued lists the items that were queued because their addressee was busy.
+	Queued []QueuedItem
+}
+
+// QueueChangedMsg reports that a thread's user queue (Manager.Queue) changed:
+// an item was added, delivered, steered, cancelled, edited or dropped by an
+// interrupt. Items is the whole queue after the change, oldest first.
+type QueueChangedMsg struct {
+	ThreadID string
+	Items    []QueuedItem
+}
+
+// EditedMsg says the user edited an earlier message (Manager.Edit). The UI shows
+// NewText on the message EntryID with an "edited" tag. History and Resume replay
+// it after the message itself, so a rebuilt view shows the latest text.
+type EditedMsg struct {
+	ThreadID string
+	EntryID  string
+	OldText  string // the text before this edit
+	NewText  string
 }

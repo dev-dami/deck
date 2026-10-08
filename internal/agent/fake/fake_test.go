@@ -121,14 +121,15 @@ func TestSpeedScalesDelays(t *testing.T) {
 	}
 
 	slow := Script{
-		{Delay: 200 * time.Millisecond, Event: agent.Event{Kind: agent.KindTurnDone}},
+		{Delay: 4 * time.Second, Event: agent.Event{Kind: agent.KindTurnDone}},
 	}
-	// speed 4 turns 200ms into ~50ms, so it must finish well under 200ms.
+	// speed 4 turns 4s into ~1s. Bounds are wide so a loaded CI machine can't
+	// flake it: sleeps never end early, and 2.5s is still far below unscaled 4s.
 	start = time.Now()
 	r2 := startRun(t, New(slow, 4), "y")
 	untilTurnDone(t, r2)
-	if elapsed := time.Since(start); elapsed < 30*time.Millisecond || elapsed > 180*time.Millisecond {
-		t.Fatalf("speed 4 elapsed %v, want about 50ms", elapsed)
+	if elapsed := time.Since(start); elapsed < 900*time.Millisecond || elapsed > 2500*time.Millisecond {
+		t.Fatalf("speed 4 elapsed %v, want about 1s", elapsed)
 	}
 }
 

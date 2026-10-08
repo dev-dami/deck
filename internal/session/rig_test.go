@@ -24,6 +24,8 @@ func testCfg() config.Config {
 type spyAdapter struct {
 	agent.Adapter
 	setters bool // runs also implement agent.ModeSetter and agent.ModelSetter
+	images  bool // runs implement agent.ImageSender
+	steer   bool // runs implement agent.Steerer
 	mu      sync.Mutex
 	specs   []agent.Spec
 	runs    map[string]*spyRun
@@ -33,6 +35,14 @@ type spyRun struct {
 	agent.Run
 	mu      sync.Mutex
 	prompts []string
+	imgs    []sentImages // SendWithImages calls
+	steers  []sentImages // Steer calls
+}
+
+// sentImages is a prompt handed to SendWithImages or Steer.
+type sentImages struct {
+	prompt string
+	images []agent.Image
 }
 
 func newSpy(a agent.Adapter) *spyAdapter { return &spyAdapter{Adapter: a, runs: map[string]*spyRun{}} }
@@ -50,10 +60,77 @@ func (s *spyAdapter) Start(ctx context.Context, sp agent.Spec) (agent.Run, error
 	s.specs = append(s.specs, sp)
 	s.runs[sp.ID] = sr
 	s.mu.Unlock()
-	if s.setters {
+	switch {
+	case s.setters:
 		return &spyRunSetters{sr}, nil
+	case s.images && s.steer:
+		return &spyRunBoth{&spyRunImg{sr}, &spyRunSteer{sr}}, nil
+	case s.images:
+		return &spyRunImg{sr}, nil
+	case s.steer:
+		return &spyRunSteer{sr}, nil
 	}
 	return sr, nil
+}
+
+// spyRunImg is a spyRun that also implements agent.ImageSender.
+type spyRunImg struct{ *spyRun }
+
+func (r *spyRunImg) SendWithImages(p string, images []agent.Image) error {
+	r.mu.Lock()
+	r.prompts = append(r.prompts, p)
+	r.imgs = append(r.imgs, sentImages{p, images})
+	r.mu.Unlock()
+	return r.Run.(agent.ImageSender).SendWithImages(p, images)
+}
+
+// spyRunSteer is a spyRun that also implements agent.Steerer.
+type spyRunSteer struct{ *spyRun }
+
+func (r *spyRunSteer) Steer(p string, images []agent.Image) error {
+	r.mu.Lock()
+	r.steers = append(r.steers, sentImages{p, images})
+	r.mu.Unlock()
+	return r.Run.(agent.Steerer).Steer(p, images)
+}
+
+// spyRunBoth implements both; the two embedded wrappers share one spyRun.
+type spyRunBoth struct {
+	*spyRunImg
+	*spyRunSteer
+}
+
+func (r *spyRunBoth) Events() <-chan agent.Event              { return r.spyRunImg.Run.Events() }
+func (r *spyRunBoth) Approvals() <-chan agent.ApprovalRequest { return r.spyRunImg.Run.Approvals() }
+func (r *spyRunBoth) Send(p string) error                     { return r.spyRunImg.spyRun.Send(p) }
+func (r *spyRunBoth) Interrupt() error                        { return r.spyRunImg.Run.Interrupt() }
+func (r *spyRunBoth) SessionID() string                       { return r.spyRunImg.Run.SessionID() }
+func (r *spyRunBoth) Close() error                            { return r.spyRunImg.Run.Close() }
+
+// imageCalls lists the SendWithImages calls a member's run received.
+func (s *spyAdapter) imageCalls(id string) []sentImages {
+	s.mu.Lock()
+	r := s.runs[id]
+	s.mu.Unlock()
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]sentImages(nil), r.imgs...)
+}
+
+// steerCalls lists the Steer calls a member's run received.
+func (s *spyAdapter) steerCalls(id string) []sentImages {
+	s.mu.Lock()
+	r := s.runs[id]
+	s.mu.Unlock()
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]sentImages(nil), r.steers...)
 }
 
 // spyRunSetters is a spyRun that forwards SetMode and SetModel to the fake run.

@@ -34,8 +34,29 @@ type thread struct {
 	hops        int
 	paused      bool
 
+	// Queue of user messages waiting for busy members (queue.go), guarded by mu.
+	queue  []qitem
+	skip   map[skipKey]skipKind     // (entry index, member) pairs that must not be delivered again
+	images map[string][]agent.Image // entry id -> images as the user attached them
+	// qemit serialises QueueChangedMsg snapshots so they reach the UI in order.
+	qemit sync.Mutex
+
 	created bool // the store knows this thread (touched by the writer goroutine only)
 }
+
+// skipKey names one member's copy of a log entry.
+type skipKey struct {
+	idx   int
+	agent string
+}
+
+// skipKind says why a member's copy of an entry is skipped.
+type skipKind uint8
+
+const (
+	skipCancelled skipKind = iota + 1 // the user cancelled it while queued: the member never sees it
+	skipSteered                       // it was delivered as a steer instead
+)
 
 func newThread(m *Manager, id, dir string, mode agent.Mode) *thread {
 	return &thread{
@@ -43,6 +64,8 @@ func newThread(m *Manager, id, dir string, mode agent.Mode) *thread {
 		boundary:  map[string]int{},
 		inert:     map[int]bool{},
 		lastRelay: map[string]string{},
+		skip:      map[skipKey]skipKind{},
+		images:    map[string][]agent.Image{},
 	}
 }
 
@@ -51,6 +74,9 @@ func newThread(m *Manager, id, dir string, mode agent.Mode) *thread {
 func (m *Manager) appendLocked(t *thread, e store.Entry) int {
 	if e.Time.IsZero() {
 		e.Time = time.Now()
+	}
+	if e.ID == "" {
+		e.ID = store.NewID()
 	}
 	idx := len(t.log)
 	t.log = append(t.log, e)
@@ -160,12 +186,18 @@ func (t *thread) find(self *agentState, tok string) *agentState {
 	return hit
 }
 
+// triggers reports whether e is the kind of entry that is delivered to the
+// members it is addressed to: a user message, a relay, or an edit.
+func triggers(e store.Entry) bool {
+	return e.Type == store.EntryUser || e.Type == store.EntryRelay || e.Type == store.EntryEdit
+}
+
 // hasTrigger reports whether a has messages addressed to it that it has not
 // been given yet and that are allowed to start a turn.
 func (t *thread) hasTrigger(a *agentState) bool {
 	for i := a.cursor; i < len(t.log); i++ {
 		e := t.log[i]
-		if (e.Type == store.EntryUser || e.Type == store.EntryRelay) && !t.inert[i] && contains(e.To, a.id) {
+		if triggers(e) && !t.inert[i] && t.skip[skipKey{i, a.id}] == 0 && contains(e.To, a.id) {
 			return true
 		}
 	}
@@ -177,7 +209,7 @@ func (t *thread) hasTrigger(a *agentState) bool {
 func (t *thread) dropPending(a *agentState) {
 	for i := a.cursor; i < len(t.log); i++ {
 		e := t.log[i]
-		if (e.Type == store.EntryUser || e.Type == store.EntryRelay) && contains(e.To, a.id) {
+		if triggers(e) && contains(e.To, a.id) {
 			t.inert[i] = true
 		}
 	}
