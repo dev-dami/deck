@@ -86,6 +86,11 @@ type Usage struct {
 	OutputTokens int
 	CachedTokens int
 	CostUSD      float64 // 0 when the CLI does not report cost
+	// ContextTokens is how much of the model's context window the
+	// conversation currently fills; ContextWindow is that window's size.
+	// Either may be 0 when the CLI does not report it.
+	ContextTokens int
+	ContextWindow int
 }
 
 // Event is the normalized event every adapter emits.
@@ -189,6 +194,25 @@ type ModeSetter interface {
 // The change applies from the next turn at the latest.
 type ModelSetter interface {
 	SetModel(model string) error
+}
+
+// Image is an image attached to a prompt. Path is a local file the user
+// chose (dropped, pasted or saved from the clipboard by Deck).
+type Image struct {
+	Path      string
+	MediaType string // "image/png", "image/jpeg", "image/gif", "image/webp"
+}
+
+// ImageSender is implemented by runs that accept images with a prompt.
+type ImageSender interface {
+	SendWithImages(prompt string, images []Image) error
+}
+
+// Steerer is implemented by runs that can inject a message into the turn in
+// progress (redirecting the agent) instead of waiting for it to finish.
+// Runs without it are steered by Interrupt followed by Send.
+type Steerer interface {
+	Steer(prompt string, images []Image) error
 }
 
 // ModelLister is implemented by adapters that can list their CLI's models.
