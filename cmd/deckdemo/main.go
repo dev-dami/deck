@@ -6,6 +6,10 @@
 // It opens on the logo with an empty thread. Type anything to start the duo, or
 // try "@claude plan the store refactor, @codex review it" to watch a scripted
 // Claude and Codex plan, review and answer each other in one thread.
+//
+// The permission modes work here too: shift+tab (or a click on the chip at the
+// right of the line above the composer) cycles plan, ask and yolo, and the model
+// chips open a picker over the fakes' model lists.
 package main
 
 import (
@@ -95,4 +99,13 @@ func (w withCodex) join(claudeID string) {
 		}
 	}
 	_, _ = mgr.AddMember(a.ThreadID, "codex", "")
+}
+
+// Models passes the wrapped Claude's model list through, so the model picker
+// works in the demo (Adapter alone would hide it).
+func (w withCodex) Models(ctx context.Context) ([]agent.ModelInfo, error) {
+	if ml, ok := w.Adapter.(agent.ModelLister); ok {
+		return ml.Models(ctx)
+	}
+	return nil, nil
 }

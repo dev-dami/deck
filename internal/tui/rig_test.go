@@ -21,6 +21,13 @@ type stubAdapter struct {
 	kind string
 	mu   sync.Mutex
 	runs []*stubRun
+
+	// models is what Models lists; modelsErr makes it fail instead.
+	models    []agent.ModelInfo
+	modelsErr error
+	// plain hides SetMode/SetModel from the manager (a CLI that cannot switch
+	// anything mid-session).
+	plain bool
 }
 
 type stubRun struct {
@@ -31,9 +38,22 @@ type stubRun struct {
 	interrupt int
 	spec      agent.Spec
 	once      sync.Once
+	modes     []agent.Mode
+	setModels []string
 }
 
 func (a *stubAdapter) Name() string { return a.kind }
+
+// Models implements agent.ModelLister.
+func (a *stubAdapter) Models(context.Context) ([]agent.ModelInfo, error) {
+	if a.modelsErr != nil {
+		return nil, a.modelsErr
+	}
+	return append([]agent.ModelInfo(nil), a.models...), nil
+}
+
+// plainRun is a run that offers nothing beyond agent.Run.
+type plainRun struct{ agent.Run }
 
 func (a *stubAdapter) Start(_ context.Context, spec agent.Spec) (agent.Run, error) {
 	r := &stubRun{ev: make(chan agent.Event, 256), ap: make(chan agent.ApprovalRequest, 16), spec: spec}
@@ -42,8 +62,40 @@ func (a *stubAdapter) Start(_ context.Context, spec agent.Spec) (agent.Run, erro
 	}
 	a.mu.Lock()
 	a.runs = append(a.runs, r)
+	plain := a.plain
 	a.mu.Unlock()
+	if plain {
+		return plainRun{r}, nil
+	}
 	return r, nil
+}
+
+// SetMode implements agent.ModeSetter.
+func (r *stubRun) SetMode(m agent.Mode) error {
+	r.mu.Lock()
+	r.modes = append(r.modes, m)
+	r.mu.Unlock()
+	return nil
+}
+
+// SetModel implements agent.ModelSetter.
+func (r *stubRun) SetModel(model string) error {
+	r.mu.Lock()
+	r.setModels = append(r.setModels, model)
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *stubRun) modeCalls() []agent.Mode {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]agent.Mode(nil), r.modes...)
+}
+
+func (r *stubRun) modelCalls() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.setModels...)
 }
 
 func (a *stubAdapter) last() *stubRun {
@@ -97,12 +149,22 @@ func newRig(t *testing.T, w, h int) *rig { return newRigHops(t, w, h, 0) }
 // newRigHops is newRig with a different agent-to-agent hop limit (0 = the default).
 func newRigHops(t *testing.T, w, h, maxHops int) *rig {
 	t.Helper()
+	return newRigWith(t, w, h, maxHops, nil)
+}
+
+// newRigWith is newRigHops with a say over the config.
+func newRigWith(t *testing.T, w, h, maxHops int, tune func(*config.Config)) *rig {
+	t.Helper()
 	st, err := store.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &rig{t: t, claude: &stubAdapter{kind: "claude"}, codex: &stubAdapter{kind: "codex"}, hub: fake.NewHub()}
+	r := &rig{t: t, claude: &stubAdapter{kind: "claude", models: fake.ClaudeModels()},
+		codex: &stubAdapter{kind: "codex", models: fake.CodexModels()}, hub: fake.NewHub()}
 	cfg := testConfig()
+	if tune != nil {
+		tune(&cfg)
+	}
 	r.mgr = session.NewManager(map[string]agent.Adapter{"claude": r.claude, "codex": r.codex}, st, cfg,
 		session.Options{Hub: r.hub, MCPFor: fake.MCPFor, MaxHops: maxHops})
 	t.Cleanup(r.mgr.Close)

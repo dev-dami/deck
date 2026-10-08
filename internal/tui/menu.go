@@ -23,6 +23,10 @@ type menuItem struct {
 	kind   string // agent kind: tints the label
 	args   string // slash commands: argument placeholder, "" when none
 	idx    []int  // matched rune indexes in label
+	val    string // model picker: the id (or member id) a row stands for
+	tag    string // model picker: faint tag at the right edge
+	cur    bool   // model picker: the model in use now
+	free   bool   // model picker: the typed text, as a model id
 }
 
 // menu is the upward completion menu above the composer, for "@" and "/".
@@ -46,7 +50,7 @@ func (m *model) syncMenu() {
 		mn.kind = 0
 		mn.h.Set(0)
 	}
-	if m.prompt.active() || m.ov.open || t == "" || (t[0] != '@' && t[0] != '/') || t == mn.dismissed {
+	if m.prompt.active() || m.ov.open || m.pick.open || t == "" || (t[0] != '@' && t[0] != '/') || t == mn.dismissed {
 		if t != mn.dismissed {
 			mn.dismissed = ""
 		}

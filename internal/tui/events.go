@@ -132,10 +132,23 @@ func (m *model) dispatch(msg tea.Msg, replay bool) []tea.Cmd {
 		}
 
 	case session.NoticeMsg:
-		v := m.view(msg.ThreadID)
-		it := newItem(kNotice)
-		it.text = msg.Text
-		v.add(it)
+		return m.onNotice(msg)
+
+	case session.ModeChangedMsg:
+		if !replay {
+			m.onModeChanged(msg)
+		}
+
+	case session.ModelChangedMsg:
+		if !replay {
+			m.onModelChanged(msg)
+		}
+
+	case session.AutoApprovedMsg:
+		m.onAuto(msg.ThreadID, msg.AgentID, msg.Summary, false)
+
+	case session.AutoDeniedMsg:
+		m.onAuto(msg.ThreadID, msg.AgentID, msg.Summary, true)
 
 	case session.ApprovalMsg:
 		return m.onApproval(msg)

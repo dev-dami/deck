@@ -19,6 +19,6 @@
                           The store now drops streaming deltas, and go test
                           ./... passes.
                         ───────────────────────────────────────────────────────
-                          ◆claude · default · ~/repo
+                          ◆claude · default · ~/repo                     ● ask
                         › message claude…
  enter fold   [ ] row   tab compose   q quit  claude finished · 1 file · $0.12

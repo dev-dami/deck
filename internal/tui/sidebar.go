@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/dev-dami/deck/internal/agent"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/tui/motion"
 	"github.com/dev-dami/deck/internal/tui/theme"
@@ -148,7 +149,11 @@ func (m *model) sidebarLines(g geom, rows int) []string {
 			titleStyle = lipglossFg(m.blend(theme.Accent, baseCol, v.flash.Progress(m.now))).Bold(selected)
 		}
 
-		prefix := bar + gs.Render(glyph) + " "
+		prefix := bar + gs.Render(glyph)
+		if m.modeOf(t) == agent.ModeYolo { // yolo threads are marked in the list
+			prefix += sDanger.Render(glyphYolo)
+		}
+		prefix += " "
 		if !wide { // no chip line: a tinted ◆ per member says who is in it
 			for k, a := range t.Members {
 				if k == 3 {

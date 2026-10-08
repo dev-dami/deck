@@ -117,13 +117,43 @@ The message that hit the limit is shown dimmed with a `held` tag and is not deli
 
 Agents learn your name only if `tell_agents_name` is `true` in the config.
 
+### Permission modes
+
+Every thread has a permission mode, shown as a chip at the right of the line above the composer. Click it or press `shift+tab` to cycle `◇ plan` → `● ask` → `▲ yolo` → plan, from the composer or the transcript. Each switch is announced once in the transcript.
+
+| mode | meaning | Claude Code | Codex |
+| --- | --- | --- | --- |
+| `◇ plan` | agents investigate and propose; nothing is changed | `--permission-mode plan` | read-only sandbox, plus a note to propose rather than change |
+| `● ask` | the default; anything that needs permission asks you | prompts come to Deck's approval inbox | `on-request` approvals, `workspace-write` sandbox |
+| `▲ yolo` | everything is approved without asking | `--permission-mode bypassPermissions` | `never` approvals, `danger-full-access` sandbox |
+
+Deck also enforces the mode itself, whatever the CLI does. In plan it declines edit and command requests on its own (`⊘ declined (plan)  <what>`, faint, in that agent's block). In yolo it approves every request on its own (`✓ auto-approved  <what>`), including ones already waiting when you switch. While a thread is in yolo, the rule above the composer is faint red and the thread carries a `▲` in the sidebar.
+
+Yolo is never the startup default: a `default_mode` of `"yolo"` is ignored with a warning, and a saved thread that was in yolo resumes in ask. You switch to it on purpose, in the session.
+
+Switching to yolo plays a short animation above the composer: two stick figures fight, the cautious one is kicked off the edge, and then the chip flips. Any key or click skips it. It is only for show: the thread is in yolo from the moment you switch. With reduced motion the chip flips at once. To see it on its own:
+
+```sh
+go run ./cmd/deckyolo
+```
+
+### Choosing a model
+
+The model each agent runs is part of the chip line (`◆claude · sonnet`). Click it, press `alt+m`, or type `/model` and press enter to open a picker above the composer. It lists the models the CLI itself offers: the current one is ticked, the CLI's default is tagged `default`, and typing narrows the list. Text that matches nothing can still be used as a model id (`use "…"`). If the list cannot be fetched, the picker says so and still takes a typed id.
+
+- In a thread with one agent the picker is for that agent; enter switches it for its next turn.
+- With several agents it first asks whose model; clicking a specific agent's chip skips that step.
+- Not every CLI session can switch model while it runs. Deck says so and you can start a new agent instead.
+- In an empty thread the picker sets the model the next agent starts with. `/model codex` opens the picker for that kind.
+- `/model <id>` and `/model <kind> <id>` set the next agent's model directly, without the picker.
+
 ### Slash commands
 
 | command | what it does |
 | --- | --- |
 | `/new` | a fresh, empty thread |
 | `/resume` | open saved threads and continue one |
-| `/model <name>` | model for the next agent of the kind you are talking to; `/model codex <name>` names the kind; `default` clears it |
+| `/model` | open the model picker; `/model <name>` sets the model for the next agent of the kind you are talking to, `/model codex <name>` names the kind, `default` clears it |
 | `/cd <path>` | directory for new threads; `~` works |
 | `/name <name>` | your display name; saved to `config.json` |
 
@@ -137,6 +167,8 @@ Composer, the default focus:
 | alt+enter, ctrl+j | new line; a trailing `\` before enter also adds one |
 | up / down | move the thread selection when the composer is empty, otherwise move between lines |
 | tab, esc | move focus to the transcript |
+| shift+tab | cycle the permission mode (plan, ask, yolo); works from the transcript too, not inside a menu or the model picker |
+| alt+m | open the model picker |
 | ctrl+c | interrupt every agent that is working in the thread; otherwise clear the composer; press twice within a second to quit |
 | i | open the approval inbox, when approvals are pending and the composer is empty |
 | ctrl+w, ctrl+u, ctrl+k | delete word back, to start of line, to end of line |
@@ -160,7 +192,7 @@ Transcript, after tab or esc:
 
 Inbox and resume lists: up / down or j / k to move, enter to open, esc or q to close.
 
-Mouse: the wheel scrolls the transcript, a click selects a thread in the sidebar, a click on a fold toggles it, and a click on the composer focuses it. On the empty screen the logo follows the pointer.
+Mouse: the wheel scrolls the transcript, a click selects a thread in the sidebar, a click on a fold toggles it, a click on the composer focuses it, a click on the mode chip cycles the mode, and a click on a model opens the model picker. On the empty screen the logo follows the pointer.
 
 ### Approvals
 
@@ -209,7 +241,7 @@ Settings live in `~/.deck/config.json`. A missing file means defaults, and any k
 | `codex_binary` | `"codex"` | path or command name for Codex |
 | `models.claude`, `models.codex` | `""` | model to run; empty means the CLI's default |
 
-`/name` writes `user_name` back to the file. `/model` is not saved.
+`/name` writes `user_name` back to the file. `/model` and the picker are not saved.
 
 ## How it talks to the agents
 

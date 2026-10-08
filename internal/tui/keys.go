@@ -67,6 +67,10 @@ func (m *model) handleKey(msg tea.KeyMsg) (cmds []tea.Cmd) {
 	}()
 
 	if key == "ctrl+c" {
+		if m.pick.open {
+			m.closePicker()
+			return nil
+		}
 		return m.ctrlC()
 	}
 	if msg.Paste {
@@ -79,6 +83,18 @@ func (m *model) handleKey(msg tea.KeyMsg) (cmds []tea.Cmd) {
 	}
 	if m.ov.open {
 		return m.overlayKey(key)
+	}
+	if m.pick.open {
+		return m.pickKey(msg)
+	}
+	// shift+tab cycles the permission mode from anywhere except inside a menu or
+	// a prompt; alt+m is the model picker's key.
+	free := !m.prompt.active() && !(m.menu.open() && m.focus == focusComposer)
+	if key == "shift+tab" && free {
+		return m.cycleMode()
+	}
+	if key == "alt+m" && free {
+		return m.openPicker("")
 	}
 	if m.prompt.active() {
 		return m.promptKey(msg)
@@ -98,6 +114,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (cmds []tea.Cmd) {
 func (m *model) settleComposer() {
 	m.g = m.geo()
 	m.syncMenu()
+	m.syncPick()
 }
 
 // ctrlC interrupts everything in the thread that is working; failing that it
@@ -521,8 +538,13 @@ func (m *model) runCommand(name, arg string) []tea.Cmd {
 		m.comp.Reset()
 		m.openOverlay(ovResume)
 	case "model":
-		if arg == "" {
-			return danger("usage: /model <name>")
+		if arg == "" { // no name: pick one from what the CLI offers
+			m.comp.Reset()
+			return m.openPicker("")
+		}
+		if hasKind(m.kinds, arg) { // /model codex: the models of that kind
+			m.comp.Reset()
+			return m.openPickerKind(arg)
 		}
 		kind := m.newKind
 		if a, ok := m.defaultTarget(); ok {
@@ -534,10 +556,14 @@ func (m *model) runCommand(name, arg string) []tea.Cmd {
 		m.comp.Reset()
 		if arg == "default" {
 			delete(m.newModel, kind)
+			m.newDefault[kind] = true
+			m.mgr.SetDefaultModel(kind, "")
 			m.pushConfig()
 			return info("next " + kind + " uses its default model")
 		}
 		m.newModel[kind] = arg
+		delete(m.newDefault, kind)
+		m.mgr.SetDefaultModel(kind, arg)
 		m.pushConfig()
 		return info("next " + kind + " starts on " + arg)
 	case "cd":
@@ -615,7 +641,18 @@ func (m *model) handleMouse(msg tea.MouseMsg) []tea.Cmd {
 		if m.ov.open {
 			return nil
 		}
+		if m.pick.open {
+			return m.pickMouse(msg)
+		}
 		switch {
+		case msg.Y == g.chipY && msg.X >= g.mainX && !m.prompt.active():
+			if h, ok := m.chipAt(msg.X - g.mainX); ok {
+				if h.kind == hitMode {
+					return m.cycleMode()
+				}
+				return m.openPicker(h.agent)
+			}
+			m.focus = focusComposer
 		case g.sidebar && msg.X < g.sbW && msg.Y >= g.topY:
 			rh := g.sidebarRowHeight()
 			row := m.sidebarStart(g, g.footY-g.topY) + (msg.Y-g.topY)/rh

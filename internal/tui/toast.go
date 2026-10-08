@@ -20,6 +20,7 @@ type toastExpireMsg struct{ seq int }
 type toast struct {
 	text   string
 	danger bool
+	warn   bool
 	on     bool
 	seq    int
 	fadeAt time.Time
@@ -29,7 +30,7 @@ type toast struct {
 // show replaces the toast and returns the commands that fade and clear it.
 func (t *toast) show(text string, danger bool, now time.Time) tea.Cmd {
 	t.seq++
-	t.text, t.danger, t.on = text, danger, true
+	t.text, t.danger, t.warn, t.on = text, danger, false, true
 	t.fade = motion.NewFade(toastLife-toastFadeAt, motion.Linear)
 	t.fadeAt = now.Add(toastFadeAt)
 	t.fade.Start(t.fadeAt)
@@ -55,8 +56,19 @@ func (m *model) renderToast() string {
 		p = t.fade.Progress(m.now)
 	}
 	from := theme.Muted
+	if t.warn {
+		from = theme.Warn
+	}
 	if t.danger {
 		from = theme.Danger
 	}
 	return m.ramp(from, theme.Faint, p).Render(t.text)
+}
+
+// showWarn is show for a note that deserves a second look but is no error: the
+// text is in the warning colour.
+func (t *toast) showWarn(text string, now time.Time) tea.Cmd {
+	cmd := t.show(text, false, now)
+	t.warn = true
+	return cmd
 }

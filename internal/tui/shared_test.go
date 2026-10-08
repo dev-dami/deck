@@ -282,12 +282,12 @@ func TestAddressHintAppearsWhileTyping(t *testing.T) {
 	} {
 		r.m.comp.Reset()
 		r.typeText(text)
-		if got := chip(); !strings.HasSuffix(strings.TrimRight(got, " "), want) {
-			t.Errorf("typing %q: chip line %q should end with %q", text, got, want)
+		if got := strings.TrimRight(strings.TrimSuffix(strings.TrimRight(chip(), " "), "● ask"), " "); !strings.HasSuffix(got, want) {
+			t.Errorf("typing %q: chip line %q should end with %q (before the mode chip)", text, got, want)
 		}
 	}
 	r.m.comp.Reset()
-	if got := chip(); !strings.Contains(got, "◆claude ◆codex") || !strings.Contains(got, "~/repo") {
+	if got := chip(); !strings.Contains(got, "◆claude · default  ◆codex · default") || !strings.Contains(got, "~/repo") || !strings.HasSuffix(strings.TrimRight(got, " "), "● ask") {
 		t.Fatalf("the chip line lists the members and the directory: %q", got)
 	}
 }
@@ -597,7 +597,7 @@ func TestBareMentionKeepsTheTextAndShowsTheHint(t *testing.T) {
 	if r.m.comp.Value() != "@claude " || r.m.focus != focusComposer {
 		t.Fatalf("composer = %q focus = %v", r.m.comp.Value(), r.m.focus)
 	}
-	if got := ansiStrip(r.m.chipLine(r.m.g.mainW)); !strings.HasSuffix(strings.TrimRight(got, " "), "→ claude") {
+	if got := strings.TrimSuffix(strings.TrimRight(ansiStrip(r.m.chipLine(r.m.g.mainW)), " "), "● ask"); !strings.HasSuffix(strings.TrimRight(got, " "), "→ claude") {
 		t.Fatalf("the hint says who it is for: %q", got)
 	}
 	if !r.m.toast.on || r.m.toast.danger {

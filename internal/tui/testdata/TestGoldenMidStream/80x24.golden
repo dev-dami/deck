@@ -19,6 +19,6 @@
                           The store now drops streaming deltas, and the
                           package tests pass. Next I'm▍
                         ───────────────────────────────────────────────────────
-                          ◆claude · default · ~/repo
+                          ◆claude · default · ~/repo                     ● ask
                         › message claude…
- @ agent   / commands   tab browse   ^c stop
+ @ agent   / commands   tab browse   ^c stop   ⇧tab mode

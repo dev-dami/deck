@@ -8,11 +8,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/dev-dami/deck/internal/agent"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/tui/logo"
 	"github.com/dev-dami/deck/internal/tui/motion"
 	"github.com/dev-dami/deck/internal/tui/theme"
+	"github.com/dev-dami/deck/internal/tui/yolo"
 )
 
 type focusArea int
@@ -46,6 +48,7 @@ type model struct {
 	w, h  int
 	dark  bool
 	now   time.Time
+	nowFn func() time.Time // the clock; tests replace it
 	home  string
 	kinds []string
 
@@ -63,6 +66,9 @@ type model struct {
 	newKind  string // kind an empty thread starts with
 	newDir   string // directory of new threads
 	newModel map[string]string
+	// newDefault marks kinds whose next agent was told to use the CLI's own
+	// default model, over whatever the config says.
+	newDefault map[string]bool
 
 	focus   focusArea
 	comp    composer
@@ -71,6 +77,12 @@ type model struct {
 	prompt  promptMode
 	pending []*pendingApproval
 	toast   toast
+
+	pick       picker                // the model picker
+	fight      fightState            // the yolo animation, while it plays
+	modeFlash  motion.Fade           // the chip glowing after it flips to yolo
+	noted      map[string]agent.Mode // per thread: the last mode the transcript announced
+	seenGlobal map[string]bool       // global notices already shown
 
 	barY       motion.Spring
 	switchX    motion.Spring
@@ -116,6 +128,7 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 		opts:       opts,
 		dark:       dark,
 		now:        time.Now(),
+		nowFn:      time.Now,
 		home:       home,
 		kinds:      mgr.Kinds(),
 		clock:      motion.NewClock(60),
@@ -125,6 +138,11 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 		newKind:    cfg.DefaultAgent,
 		newDir:     dir,
 		newModel:   map[string]string{},
+		newDefault: map[string]bool{},
+		noted:      map[string]agent.Mode{},
+		seenGlobal: map[string]bool{},
+		fight:      fightState{anim: yolo.New(dark)},
+		modeFlash:  motion.NewFade(flashLife, motion.EaseOutCubic),
 		barY:       motion.Glide.New(60),
 		switchX:    motion.Snappy.New(60),
 		switchFade: motion.NewFade(150*time.Millisecond, motion.EaseOutCubic),
@@ -134,6 +152,7 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 	}
 	m.menu.h = motion.Soft.New(60)
 	m.ov.h = motion.Soft.New(60)
+	m.pick.h = motion.Soft.New(60)
 	m.md = newMD(m.dark)
 	m.introTag = motion.NewFade(introTag, motion.EaseOutCubic)
 	if m.newKind == "" {
@@ -158,7 +177,7 @@ func Run(mgr *session.Manager, cfg config.Config) error {
 
 // Init implements tea.Model.
 func (m *model) Init() tea.Cmd {
-	m.now = time.Now()
+	m.now = m.nowFn()
 	go m.md.warm()
 	return tea.Batch(m.listen(), m.wake())
 }
@@ -311,6 +330,7 @@ func (m *model) geo() geom {
 
 // settle recomputes everything derived from state after any change.
 func (m *model) settle() {
+	m.stepFight()
 	m.refresh()
 	m.g = m.geo()
 	g := m.g
@@ -345,7 +365,8 @@ func (m *model) settle() {
 func (m *model) motionState() (fast, lg, ambient bool) {
 	now := m.now
 	if m.barY.Moving() || m.switchX.Moving() || m.switchFade.Moving(now) || m.menu.h.Moving() ||
-		m.ov.h.Moving() || m.introMoving() || m.toast.moving(now) {
+		m.ov.h.Moving() || m.introMoving() || m.toast.moving(now) ||
+		m.pick.h.Moving() || m.fight.active || m.modeFlash.Moving(now) {
 		fast = true
 	}
 	for _, p := range m.pending {
@@ -411,6 +432,7 @@ func (m *model) advance() {
 	m.switchX.Update()
 	m.menu.h.Update()
 	m.ov.h.Update()
+	m.pick.h.Update()
 	if !m.ov.open && m.ov.h.Pos <= 0.5 {
 		m.ov.kind = ovNone
 	}
@@ -426,7 +448,7 @@ func (m *model) advance() {
 
 // Update implements tea.Model.
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	m.now = time.Now()
+	m.now = m.nowFn()
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -437,6 +459,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.emptyVisible() { // any key settles the logo; the composer owns the keyboard
 			m.logo.Calm(m.now)
 		}
+		m.skipFight() // any key ends the yolo fight; the key still does its own job
 		cmds = append(cmds, m.handleKey(msg)...)
 
 	case tea.MouseMsg:
@@ -446,6 +469,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.MouseActionRelease:
 			return m, nil
 		}
+		m.skipFight()
 		cmds = append(cmds, m.handleMouse(msg)...)
 
 	case motion.FrameMsg:
@@ -470,9 +494,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.clock.Tick()
 
 	case session.EventMsg, session.RelayMsg, session.PausedMsg, session.ContinuedMsg,
-		session.MemberAddedMsg, session.NoticeMsg, session.ApprovalMsg, session.ApprovalGoneMsg:
+		session.MemberAddedMsg, session.NoticeMsg, session.ApprovalMsg, session.ApprovalGoneMsg,
+		session.ModeChangedMsg, session.ModelChangedMsg, session.AutoApprovedMsg, session.AutoDeniedMsg:
 		cmds = append(cmds, m.dispatch(msg, false)...)
 		cmds = append(cmds, m.listen())
+
+	case modelsMsg:
+		m.onModels(msg)
 
 	case sentMsg:
 		if msg.err != nil {
@@ -590,6 +618,8 @@ func (m *model) mainLines(g geom) []string {
 	var ov []string
 	if m.ov.visible() {
 		ov = m.overlayLines(w, max(3, g.trH-1))
+	} else if m.pick.visible() {
+		ov = m.pickLines(w)
 	} else if m.menu.visible() {
 		ov = m.menuLines(w)
 	}
@@ -605,7 +635,7 @@ func (m *model) mainLines(g geom) []string {
 
 	out := make([]string, 0, g.trH+2+g.compH)
 	out = append(out, tr...)
-	out = append(out, st(theme.Rule).Render(strings.Repeat(theme.GlyphRule, w)))
+	out = append(out, m.ruleStyle().Render(strings.Repeat(theme.GlyphRule, w)))
 	out = append(out, m.chipLine(w))
 	out = append(out, m.composerLines(w)...)
 	return out
@@ -635,75 +665,6 @@ func (m *model) applySwitch(tr []string, w int) []string {
 	return tr
 }
 
-// chipLine is the line above the composer: who is in the thread (their ◆
-// chips, tinted, with a status) and where it works, and on the right where the
-// text you are typing would go. An empty thread shows the kind, model and
-// directory it will start with.
-func (m *model) chipLine(w int) string {
-	if m.prompt.active() {
-		return "  " + sWarn.Render(trunc(m.prompt.label(m), w-2))
-	}
-	th, ok := m.selThread()
-	sep := sFaint.Render(" " + glyphDot + " ")
-	dir := m.newDir
-	var left string
-	if ok && len(th.Members) > 0 {
-		dir = th.Dir
-		left = "  " + strings.Join(func() []string {
-			var cs []string
-			for _, a := range th.Members {
-				cs = append(cs, m.chip(a))
-			}
-			return cs
-		}(), " ")
-		if len(th.Members) == 1 {
-			a := th.Members[0]
-			model := a.Model
-			if model == "" {
-				model = m.defaultModel(a.Kind)
-			}
-			if model == "" {
-				model = "default"
-			}
-			left += sep + sFaint.Render(model)
-		}
-	} else {
-		kind := m.newKind
-		model := m.newModelFor(kind)
-		if model == "" {
-			model = "default"
-		}
-		left = "  " + sMuted.Render(kind) + sep + sFaint.Render(model)
-		if ok && th.Dir != "" {
-			dir = th.Dir
-		}
-	}
-
-	hint := addressHint(m.comp.Value(), th, m.kinds)
-	if m.menu.open() { // still choosing the name: the menu says it
-		hint = ""
-	}
-	hintW := 0
-	if hint != "" {
-		hintW = sw(hint) + 2
-	}
-	if sw(left)+hintW+2 > w { // not enough room for both: the hint can wait
-		hint, hintW = "", 0
-	}
-	d := tilde(dir, m.home)
-	if room := w - sw(left) - 3 - hintW; room >= 4 {
-		left += sep + sFaint.Render(shortPath(d, room))
-	}
-	if hint == "" {
-		return trunc(left, w)
-	}
-	hs := sFaint.Render(hint)
-	if hintIsWarning(hint) {
-		hs = sWarn.Render(hint)
-	}
-	return trunc(padTo(left, w-sw(hint)-1)+hs, w)
-}
-
 func (m *model) defaultModel(kind string) string {
 	switch kind {
 	case "claude":
@@ -718,6 +679,9 @@ func (m *model) newModelFor(kind string) string {
 	if v := m.newModel[kind]; v != "" {
 		return v
 	}
+	if m.newDefault[kind] {
+		return ""
+	}
 	return m.defaultModel(kind)
 }
 
@@ -729,6 +693,9 @@ func (m *model) composerLines(w int) []string {
 	ph := m.placeholder()
 	if m.prompt.active() {
 		prompt = sWarn.Render(m.prompt.glyph())
+	}
+	if m.pick.open {
+		prompt = sAccent.Render(theme.GlyphAgent + " ")
 	}
 	return m.comp.View(w, prompt, ph, m.focus == focusComposer && !m.ov.open)
 }
@@ -753,6 +720,8 @@ func (m *model) placeholder() string {
 	switch {
 	case m.prompt.active():
 		return m.prompt.placeholder()
+	case m.pick.open:
+		return "filter, or type a model id"
 	case m.emptyVisible():
 		return "ask " + m.newKind + "…"
 	}
@@ -787,23 +756,25 @@ func (m *model) footerHints() string {
 		return h("y allow", "n deny", "a always", "esc close")
 	case m.prompt.active():
 		return h("enter send", "esc cancel")
+	case m.pick.open:
+		return h("↑↓ select", "enter pick", "1-9 jump", "type to filter or any model id", "esc close")
 	case m.menu.open():
 		return h("↑↓ select", "tab complete", "esc close")
 	case m.focus == focusTranscript:
 		return h("enter fold", "[ ] row", "tab compose", "q quit")
 	case m.emptyVisible():
-		return h("enter start "+m.newKind, "@ agent", "/ commands")
+		return h("enter start "+m.newKind, "@ agent", "/ commands", "⇧tab mode")
 	}
 	if len(m.pendingFor(m.sel)) > 0 && m.comp.Empty() {
 		return h("y allow", "n deny", "a always", "i inbox")
 	}
 	if th.Paused && m.comp.Empty() {
-		return h("enter continue", "@ agent", "/ commands", "^c stop")
+		return h("enter continue", "@ agent", "/ commands", "^c stop", "⇧tab mode")
 	}
 	if len(m.pending) > 0 {
-		return h("@ agent", "/ commands", "i inbox", "^c stop")
+		return h("@ agent", "/ commands", "i inbox", "^c stop", "⇧tab mode")
 	}
-	return h("@ agent", "/ commands", "tab browse", "^c stop")
+	return h("@ agent", "/ commands", "tab browse", "^c stop", "⇧tab mode")
 }
 
 // bell rings the terminal once.
@@ -824,6 +795,9 @@ func (m *model) bell() tea.Cmd {
 func (m *model) selectThread(id string) {
 	if id == m.sel {
 		return
+	}
+	if m.fight.active && m.fight.thread != id { // the fight belongs to the thread you leave
+		m.skipFight()
 	}
 	m.sel = id
 	m.refresh()

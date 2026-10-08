@@ -28,6 +28,9 @@ const (
 	kPause  // the hop limit paused the thread
 	kJoin   // an agent joined
 	kNotice // a note from Deck itself
+	kMode   // the permission mode changed
+	kModel  // a member switched model
+	kAuto   // Deck answered an approval itself (yolo, plan)
 )
 
 type pauseState int
@@ -61,7 +64,10 @@ type item struct {
 	hops   int
 	pstate pauseState
 
-	joinID string // join lines: who joined
+	joinID string // join lines: who joined; model lines: whose model
+
+	mode   agent.Mode // mode lines
+	denied bool       // auto lines: declined rather than approved
 
 	streaming bool // text/reasoning still arriving
 	expanded  bool
@@ -95,14 +101,16 @@ func (it *item) bump() { it.ver++ }
 // rowLike items are the small one-line rows that sit under their message.
 func (it *item) rowLike() bool {
 	switch it.kind {
-	case kTool, kReasoning, kError, kNote, kExit, kRead:
+	case kTool, kReasoning, kError, kNote, kExit, kRead, kAuto:
 		return true
 	}
 	return false
 }
 
 // quiet items are the thread's own faint one-liners.
-func (it *item) quiet() bool { return it.kind == kJoin || it.kind == kNotice }
+func (it *item) quiet() bool {
+	return it.kind == kJoin || it.kind == kNotice || it.kind == kMode || it.kind == kModel
+}
 
 // foldable rows toggle on Enter or click.
 func (it *item) foldable() bool {
@@ -189,6 +197,12 @@ func (it *item) render(c *rctx) []string {
 			out[i] = "  " + sItalic.Render(l)
 		}
 		return out
+	case kMode:
+		return it.renderMode(c)
+	case kModel:
+		return it.renderModel(c)
+	case kAuto:
+		return it.renderAuto(c)
 	}
 	return nil
 }
