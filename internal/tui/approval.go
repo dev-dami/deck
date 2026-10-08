@@ -15,18 +15,20 @@ const badgePulses = 1200 * time.Millisecond
 
 // pendingApproval is a permission request waiting for the user.
 type pendingApproval struct {
-	req   agent.ApprovalRequest
-	at    time.Time
-	slide motion.Spring // lines the card is still sliding up by (2 -> 0)
-	fade  motion.Fade   // the warning glyph fading up
+	req    agent.ApprovalRequest
+	thread string
+	at     time.Time
+	slide  motion.Spring // lines the card is still sliding up by (2 -> 0)
+	fade   motion.Fade   // the warning glyph fading up
 }
 
-func newPending(req agent.ApprovalRequest, now time.Time) *pendingApproval {
+func newPending(req agent.ApprovalRequest, thread string, now time.Time) *pendingApproval {
 	p := &pendingApproval{
-		req:   req,
-		at:    now,
-		slide: motion.Snappy.New(60),
-		fade:  motion.NewFade(350*time.Millisecond, motion.EaseOutCubic),
+		req:    req,
+		thread: thread,
+		at:     now,
+		slide:  motion.Snappy.New(60),
+		fade:   motion.NewFade(350*time.Millisecond, motion.EaseOutCubic),
 	}
 	p.slide.Pos = 2
 	p.slide.Set(0)
@@ -97,7 +99,7 @@ func (m *model) renderApproval(p *pendingApproval, w int, withSlide bool, total 
 
 	glyph := m.ramp(theme.Faint, theme.Warn, p.fade.Progress(m.now)).Render(glyphWarn)
 	verb := approvalVerb(r)
-	head := glyph + " " + sBold.Render(m.agentName(r.AgentID)) + sWarn.Render(" "+verb)
+	head := glyph + " " + tintStyle(m.kindOf(r.AgentID)).Bold(true).Render(m.agentName(r.AgentID)) + sWarn.Render(" "+verb)
 	if r.Kind == agent.ApproveEdit && r.Summary != "" {
 		head += " " + sWarn.Render(trunc(oneLine(r.Summary), max(10, w-sw(head)-14)))
 	}
@@ -135,13 +137,4 @@ func (m *model) renderApproval(p *pendingApproval, w int, withSlide bool, total 
 		}
 	}
 	return out
-}
-
-func (m *model) agentName(id string) string {
-	for _, a := range m.agents {
-		if a.ID == id {
-			return a.Name
-		}
-	}
-	return id
 }

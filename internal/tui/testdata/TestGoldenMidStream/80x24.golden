@@ -1,6 +1,6 @@
- ◆ deck                                                               1 working
+ ◆ deck                                                         1 agent working
 
- ▎● claude                refactor the store
+ ▎● ◆ refactor the st…    refactor the store
 
                         ◆ claude
                           ∴ thinking…
@@ -19,6 +19,6 @@
                           The store now drops streaming deltas, and the
                           package tests pass. Next I'm▍
                         ───────────────────────────────────────────────────────
-                          claude · default · ~/repo
+                          ◆claude · default · ~/repo
                         › message claude…
  @ agent   / commands   tab browse   ^c stop

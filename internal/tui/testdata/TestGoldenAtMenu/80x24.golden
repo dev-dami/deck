@@ -1,6 +1,6 @@
  ◆ deck                                                            idle · $0.12
 
- ▎○ claude       $0.12    refactor the store
+ ▎○ ◆ refactor … $0.12    refactor the store
 
                         ◆ claude
                           ∴ thinking…
@@ -16,9 +16,9 @@
                           ▸ Edit internal/store/store.go +24 −9
                           ▸ Bash go test ./...
 
-                         ▎○ claude   refactor the store
-                          + codex    new agent
+                         ▎○ claude   idle
+                          + codex    add codex
                         ───────────────────────────────────────────────────────
-                          claude · default · ~/repo
+                          ◆claude · default · ~/repo
                         › @
  ↑↓ select   tab complete   esc close         claude finished · 1 file · $0.12

@@ -17,10 +17,14 @@ func TestPreviewSettlesAndKeys(t *testing.T) {
 	defer motion.SetReduced(prev)
 
 	m := newModel()
-	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	cmd := m.Init()
-	if cmd == nil {
-		t.Fatal("Init should start the clock")
+	if m.Init() != nil {
+		t.Fatal("Init should wait for the window size")
+	}
+	if _, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30}); cmd == nil {
+		t.Fatal("the first window size should start the intro")
+	}
+	if _, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30}); cmd != nil {
+		t.Fatal("a resize should not replay the intro")
 	}
 	v := m.View()
 	if !strings.Contains(v, theme.Tagline) {

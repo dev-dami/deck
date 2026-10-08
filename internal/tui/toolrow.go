@@ -155,8 +155,12 @@ func (m *model) toggle(it *item, w int) {
 		return
 	}
 	it.expanded = !it.expanded
+	if it.kind == kRelay { // no animated body: the quote just grows
+		it.bump()
+		return
+	}
 	if it.expanded {
-		it.h.Set(float64(len(it.bodyLines(m.newRctx(w)))))
+		it.h.Set(float64(len(it.bodyLines(m.newRctx(w, m.curThread())))))
 	} else {
 		it.h.Set(0)
 	}

@@ -1,0 +1,40 @@
+ ◆ deck                                                                                                         1 agent working · 1 waiting
+
+ ▎⚠ plan the store refactor,…
+ ▎  ◆claude ◆codex
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                 ◆codex joined
+
+                                 Ada → all
+                                 plan the store refactor, @codex review it
+
+                               ◆ claude
+                                 I will keep the delta change small.
+
+                               ◆ codex
+                               ⚠ codex wants to run
+                               │ go test ./internal/store/...
+                               │ in ~/repo
+                               │
+                               │ y allow   n deny   a always   e edit
+                               ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                 ◆claude ◆codex · ~/repo
+                               › message claude…
+ y allow   n deny   a always   i inbox

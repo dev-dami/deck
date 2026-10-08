@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dev-dami/deck/internal/agent"
+	"github.com/dev-dami/deck/internal/agent/fake"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/store"
@@ -86,19 +87,24 @@ type rig struct {
 	mgr    *session.Manager
 	claude *stubAdapter
 	codex  *stubAdapter
+	hub    *fake.Hub
 	saved  []config.Config
 	quit   bool
 }
 
-func newRig(t *testing.T, w, h int) *rig {
+func newRig(t *testing.T, w, h int) *rig { return newRigHops(t, w, h, 0) }
+
+// newRigHops is newRig with a different agent-to-agent hop limit (0 = the default).
+func newRigHops(t *testing.T, w, h, maxHops int) *rig {
 	t.Helper()
 	st, err := store.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &rig{t: t, claude: &stubAdapter{kind: "claude"}, codex: &stubAdapter{kind: "codex"}}
+	r := &rig{t: t, claude: &stubAdapter{kind: "claude"}, codex: &stubAdapter{kind: "codex"}, hub: fake.NewHub()}
 	cfg := testConfig()
-	r.mgr = session.NewManager(map[string]agent.Adapter{"claude": r.claude, "codex": r.codex}, st, cfg)
+	r.mgr = session.NewManager(map[string]agent.Adapter{"claude": r.claude, "codex": r.codex}, st, cfg,
+		session.Options{Hub: r.hub, MCPFor: fake.MCPFor, MaxHops: maxHops})
 	t.Cleanup(r.mgr.Close)
 	r.m = newModel(r.mgr, cfg, Options{
 		Dir:        repoDir(),
@@ -197,13 +203,25 @@ func (r *rig) view() string { return ansiStrip(r.m.View()) }
 
 func (r *rig) has(s string) bool { return strings.Contains(r.view(), s) }
 
-// start launches an agent through the composer and waits for it to be selected.
+// start sends a first message through the composer and waits for the thread to
+// have a member.
 func (r *rig) start(text string) {
 	r.t.Helper()
 	r.typeText(text)
 	r.key("enter")
-	r.pump("agent started", func() bool { return len(r.mgr.Agents()) > 0 && r.m.sel != "" })
+	r.pump("thread started", func() bool { return len(r.m.curThread().Members) > 0 })
+	r.drain()
 }
+
+// say types a message into the composer and sends it.
+func (r *rig) say(text string) {
+	r.t.Helper()
+	r.typeText(text)
+	r.key("enter")
+}
+
+// tv is the transcript of the selected thread.
+func (r *rig) tv() *threadView { return r.m.views[r.m.sel] }
 
 // approval pushes an approval request from the latest run of a stub.
 func (r *rig) approval(run *stubRun, id, summary string, kind agent.ApprovalKind) chan agent.Decision {
@@ -216,3 +234,46 @@ func (r *rig) approval(run *stubRun, id, summary string, kind agent.ApprovalKind
 }
 
 func (r *rig) event(run *stubRun, ev agent.Event) { run.ev <- ev }
+
+// duo starts a thread with claude and codex in it and waits for both.
+func (r *rig) duo() {
+	r.t.Helper()
+	r.say("@claude plan it, @codex review it")
+	r.pump("two members", func() bool { return len(r.m.curThread().Members) == 2 })
+	r.drain()
+}
+
+// done ends an agent's turn and waits until the manager sees it idle.
+func (r *rig) done(run *stubRun, id string) {
+	r.t.Helper()
+	r.event(run, agent.Event{Kind: agent.KindTurnDone})
+	r.pump(id+" idle", func() bool { return status(r, id) == session.StatusIdle })
+}
+
+// relay has agent from send_message to `to` through the hub and waits for the
+// relay line to reach the transcript.
+func (r *rig) relay(from, to, text string) {
+	r.t.Helper()
+	go func() { _, _ = r.hub.Send(nil, from, to, text) }()
+	r.pump("relay", func() bool {
+		for _, it := range r.tv().items {
+			if it.kind == kRelay && it.text == strings.TrimSpace(text) {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// text of the view's lines joined, colours stripped.
+func (r *rig) lines() []string { return strings.Split(r.view(), "\n") }
+
+// find returns the first screen line containing s, or "".
+func (r *rig) find(s string) string {
+	for _, l := range r.lines() {
+		if strings.Contains(l, s) {
+			return l
+		}
+	}
+	return ""
+}

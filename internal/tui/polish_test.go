@@ -8,18 +8,35 @@ import (
 	"github.com/dev-dami/deck/internal/agent"
 )
 
+// brailleCells counts the braille characters the logo draws with.
+func brailleCells(s string) int {
+	n := 0
+	for _, r := range s {
+		if r >= 0x2801 && r <= 0x28FF {
+			n++
+		}
+	}
+	return n
+}
+
 func TestEmptyStateHeaderHasNoDuplicateWordmark(t *testing.T) {
 	r := newRig(t, 100, 30)
 	lines := strings.Split(r.view(), "\n")
 	if strings.Contains(lines[0], "deck") {
 		t.Fatalf("header must not repeat the wordmark in the empty state: %q", lines[0])
 	}
-	if strings.Count(r.view(), "◆ deck") != 1 {
-		t.Fatalf("exactly one wordmark expected:\n%s", r.view())
+	if brailleCells(r.view()) < 20 {
+		t.Fatalf("the empty state shows the logo:\n%s", r.view())
+	}
+	if strings.Contains(r.view(), "◆ deck") {
+		t.Fatalf("no plain wordmark next to the logo:\n%s", r.view())
 	}
 	r.start("hi")
 	if !strings.Contains(strings.Split(r.view(), "\n")[0], "◆ deck") {
 		t.Fatal("header wordmark returns once an agent exists")
+	}
+	if brailleCells(r.view()) != 0 {
+		t.Fatal("the logo belongs to the empty state only")
 	}
 }
 
@@ -34,7 +51,7 @@ func TestTranscriptIsBottomAnchored(t *testing.T) {
 		t.Fatalf("latest message should sit right above the rule, got %q above %q", lines[rule-1], lines[rule])
 	}
 	// the first rows of the pane are blank padding
-	if strings.TrimSpace(lines[r.m.g.topY+1][r.m.g.mainX:]) != "" {
+	if strings.TrimSpace(string([]rune(lines[r.m.g.topY+1])[r.m.g.mainX:])) != "" {
 		t.Fatalf("padding expected above the transcript: %q", lines[r.m.g.topY+1])
 	}
 }
@@ -49,7 +66,7 @@ func TestNoDoubleBlankLinesInTranscript(t *testing.T) {
 	r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: "After tools."})
 	r.approval(run, "x", "ls", agent.ApproveCommand)
 	r.pump("all", func() bool { return len(r.m.pending) == 1 && r.has("After tools.") })
-	v := r.m.views["claude"]
+	v := r.tv()
 	for i := 1; i < len(v.lines); i++ {
 		if v.lines[i] == "" && v.lines[i-1] == "" {
 			t.Fatalf("two blank lines at %d:\n%s", i, strings.Join(v.lines, "\n"))
@@ -102,34 +119,36 @@ func TestSplitFences(t *testing.T) {
 	}
 }
 
-func TestNarrowSidebarDropsTitleAndOnlySelectedShowsCost(t *testing.T) {
+func TestNarrowSidebarDropsChipsAndOnlySelectedShowsCost(t *testing.T) {
 	for _, tc := range []struct {
-		w         int
-		wantTitle bool
+		w    int
+		wide bool
 	}{{99, false}, {100, true}} {
 		r := newRig(t, tc.w, 30)
-		r.start("dtitle")
-		r.typeText("@codex second")
-		r.key("enter")
-		r.pump("codex", func() bool { return r.m.sel == "codex" })
-		r.event(r.claude.last(), agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{CostUSD: 1.5}})
-		r.event(r.codex.last(), agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{CostUSD: 2.5}})
-		r.event(r.codex.last(), agent.Event{Kind: agent.KindTurnDone})
-		r.event(r.claude.last(), agent.Event{Kind: agent.KindTurnDone})
+		first, _ := twoThreads(r) // claude in the first, claude2 in the second (selected)
+		_ = first
+		r.event(r.claude.runs[0], agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{CostUSD: 1.5}})
+		r.event(r.claude.runs[1], agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{CostUSD: 2.5}})
+		r.event(r.claude.runs[1], agent.Event{Kind: agent.KindTurnDone})
+		r.event(r.claude.runs[0], agent.Event{Kind: agent.KindTurnDone})
 		r.pump("costs", func() bool {
-			return r.mgr.Agents()[0].CostUSD > 1 && r.mgr.Agents()[1].CostUSD > 2 && !r.m.toast.on == false
+			ts := r.mgr.Threads()
+			return len(ts) == 2 && ts[0].CostUSD > 1 && ts[1].CostUSD > 2
 		})
 		r.m.settle()
-		side := ansiStrip(strings.Join(r.m.sidebarLines(r.m.g, 4), "\n"))
-		if strings.Contains(side, "dtitle") != tc.wantTitle {
-			t.Errorf("w=%d title in sidebar = %v, want %v:\n%s", tc.w, !tc.wantTitle, tc.wantTitle, side)
+		side := ansiStrip(strings.Join(r.m.sidebarLines(r.m.g, 8), "\n"))
+		if !strings.Contains(side, "one") || !strings.Contains(side, "two") {
+			t.Errorf("w=%d titles are always shown:\n%s", tc.w, side)
 		}
-		hasClaudeCost, hasCodexCost := strings.Contains(side, "$1.50"), strings.Contains(side, "$2.50")
-		if !hasCodexCost {
+		if got := strings.Contains(side, "◆claude"); got != tc.wide {
+			t.Errorf("w=%d member chips shown = %v, want %v:\n%s", tc.w, got, tc.wide, side)
+		}
+		hasFirst, hasSecond := strings.Contains(side, "$1.50"), strings.Contains(side, "$2.50")
+		if !hasSecond {
 			t.Errorf("w=%d selected row must show its cost:\n%s", tc.w, side)
 		}
-		if hasClaudeCost != tc.wantTitle {
-			t.Errorf("w=%d unselected cost shown = %v:\n%s", tc.w, hasClaudeCost, side)
+		if hasFirst != tc.wide {
+			t.Errorf("w=%d unselected cost shown = %v:\n%s", tc.w, hasFirst, side)
 		}
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -113,7 +114,10 @@ func runDeck() error {
 		}
 	}
 
-	mgr := session.NewManager(adapters, st, cfg)
+	mgr := session.NewManager(adapters, st, cfg, session.Options{
+		Hub:    broker,
+		MCPFor: func(id string) *agent.MCPServer { return broker.ServerFor(self, id) },
+	})
 	defer mgr.Close()
 	return tui.Run(mgr, cfg)
 }
@@ -143,7 +147,15 @@ func listThreads(w io.Writer) error {
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, t := range threads {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t$%.2f\t%s\n", t.Name, t.AgentKind, t.Title, t.CostUSD, ago(t.Updated))
+		kinds := t.AgentKind
+		if len(t.Members) > 1 { // a shared thread lists every kind in it
+			ks := make([]string, len(t.Members))
+			for i, mem := range t.Members {
+				ks[i] = mem.Kind
+			}
+			kinds = strings.Join(ks, "+")
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t$%.2f\t%s\n", t.Name, kinds, t.Title, t.CostUSD, ago(t.Updated))
 	}
 	return tw.Flush()
 }

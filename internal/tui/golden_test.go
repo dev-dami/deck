@@ -280,6 +280,8 @@ func TestGoldenInbox(t *testing.T) {
 		hr.type_("@codex rebuild dist")
 		hr.key(tea.KeyEnter)
 		hr.waitFor("wants to run")
+		hr.type_("/new")
+		hr.key(tea.KeyEnter)
 		hr.type_("@claude tidy the store")
 		hr.key(tea.KeyEnter)
 		hr.waitFor("wants to edit")
@@ -299,5 +301,119 @@ func TestGoldenAtMenu(t *testing.T) {
 		hr.type_("@")
 		hr.settle()
 		requireGolden(t, hr.finish(w, h))
+	})
+}
+
+// shared threads -------------------------------------------------------------
+//
+// These drive the model by hand (see rig) so the order of events is exactly the
+// one written down.
+
+// drain feeds manager updates until none arrive for a moment.
+func (r *rig) drain() {
+	for {
+		select {
+		case msg := <-r.mgr.Updates():
+			r.feed(msg)
+		case <-time.After(60 * time.Millisecond):
+			return
+		}
+	}
+}
+
+func toolRow(r *rig, run *stubRun, id, name, title, out string) {
+	r.event(run, agent.Event{Kind: agent.KindToolCall, Tool: &agent.Tool{ID: id, Name: name, Title: title, Status: agent.ToolRunning}})
+	r.event(run, agent.Event{Kind: agent.KindToolResult, Tool: &agent.Tool{ID: id, Name: name, Title: title, Output: out, Status: agent.ToolOK}})
+	r.drain()
+}
+
+// duoMidCollaboration: Claude has planned and asked Codex for a review, Codex
+// has answered with an @claude line, and Claude has started on the test.
+func duoMidCollaboration(t *testing.T, w, h int) *rig {
+	r := newRig(t, w, h)
+	r.say("@claude plan the store refactor, @codex review it")
+	r.pump("two members", func() bool { return len(r.m.curThread().Members) == 2 })
+	r.drain()
+	cl, cx := r.claude.last(), r.codex.last()
+
+	toolRow(r, cl, "c1", "Read", "internal/store/store.go", "148 lines read")
+	say(cl, r, "Plan for the store change:\n\n- drop streaming deltas before they reach disk\n- keep one lock per thread\n- add a test that appends 1000 deltas")
+	r.drain()
+	r.relay("claude", "codex", "Please review this plan for the store change and tell me what you would change.")
+	r.drain()
+
+	toolRow(r, cx, "x0", "read_thread", "shared thread", "the thread")
+	toolRow(r, cx, "x1", "Read", "internal/store/store.go", "148 lines read")
+	say(cx, r, "The plan holds. One change: take the per-thread lock before the index lock, never the other way round, or Append and List can deadlock.\n\n@claude agree on the lock order and add the 1000-delta test.")
+	r.drain()
+	// what the manager emits for the "@claude ..." line of a final reply
+	r.feed(session.RelayMsg{ThreadID: r.m.sel, From: "codex", To: []string{"claude"}, Via: "mention", Text: "agree on the lock order and add the 1000-delta test."})
+	r.drain()
+
+	r.event(cl, agent.Event{Kind: agent.KindAssistantText, Text: "Good catch on the lock order. Adding the delta test", Delta: true})
+	r.event(cl, agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{CostUSD: 0.09}})
+	r.event(cx, agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{CostUSD: 0.04}})
+	r.drain()
+	return r
+}
+
+func TestGoldenDuo(t *testing.T) {
+	forSizes(t, func(t *testing.T, w, h int) {
+		r := duoMidCollaboration(t, w, h)
+		v := r.m.View()
+		checkShape(t, v, w, h)
+		requireGolden(t, v)
+	})
+}
+
+func TestGoldenPaused(t *testing.T) {
+	forSizes(t, func(t *testing.T, w, h int) {
+		r := newRigHops(t, w, h, 1)
+		r.say("@claude plan the store refactor, @codex review it")
+		r.pump("two members", func() bool { return len(r.m.curThread().Members) == 2 })
+		r.drain()
+		say(r.claude.last(), r, "Plan: drop streaming deltas before they reach disk.")
+		r.drain()
+		r.done(r.claude.last(), "claude")
+		r.relay("claude", "codex", "Please review the plan.")
+		r.relay("codex", "claude", "Looks good - go ahead and apply it.")
+		r.pump("paused", func() bool { return r.m.curThread().Paused && r.has("paused after") })
+		r.drain()
+		v := r.m.View()
+		checkShape(t, v, w, h)
+		requireGolden(t, v)
+	})
+}
+
+func TestGoldenAtMenuMembers(t *testing.T) {
+	forSizes(t, func(t *testing.T, w, h int) {
+		r := newRig(t, w, h)
+		r.start("tidy the store")
+		if _, err := r.mgr.AddMember(r.m.sel, "claude", ""); err != nil {
+			t.Fatal(err)
+		}
+		r.pump("second claude", func() bool { return len(r.m.curThread().Members) == 2 })
+		r.drain()
+		r.typeText("@")
+		v := r.m.View()
+		checkShape(t, v, w, h)
+		requireGolden(t, v)
+	})
+}
+
+func TestGoldenApprovalInSpeakersBlock(t *testing.T) {
+	forSizes(t, func(t *testing.T, w, h int) {
+		r := newRig(t, w, h)
+		r.say("@claude plan the store refactor, @codex review it")
+		r.pump("two members", func() bool { return len(r.m.curThread().Members) == 2 })
+		r.drain()
+		say(r.claude.last(), r, "I will keep the delta change small.")
+		r.drain()
+		r.approval(r.codex.last(), "x1", "go test ./internal/store/...", agent.ApproveCommand)
+		r.pump("card", func() bool { return len(r.m.pending) == 1 })
+		r.drain()
+		v := r.m.View()
+		checkShape(t, v, w, h)
+		requireGolden(t, v)
 	})
 }

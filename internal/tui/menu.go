@@ -20,6 +20,7 @@ type menuItem struct {
 	gStyle lipgloss.Style
 	desc   string
 	isNew  bool
+	kind   string // agent kind: tints the label
 	args   string // slash commands: argument placeholder, "" when none
 	idx    []int  // matched rune indexes in label
 }
@@ -67,7 +68,7 @@ func (m *model) syncMenu() {
 	}
 	var all []menuItem
 	if t[0] == '@' {
-		all = m.agentMenuItems()
+		all = m.atMenuItems()
 	} else {
 		for _, c := range Commands {
 			all = append(all, menuItem{label: c.Name, desc: c.Desc, args: c.Args})
@@ -89,26 +90,53 @@ func (m *model) syncMenu() {
 	mn.h.Set(float64(min(len(mn.items), maxMenuRows)))
 }
 
-func (m *model) agentMenuItems() []menuItem {
+// statusWord says what a member is doing, for the @ menu.
+func statusWord(a session.AgentInfo) string {
+	switch a.Status {
+	case session.StatusWorking:
+		return "working"
+	case session.StatusTool:
+		return "running a tool"
+	case session.StatusApproval:
+		return "waiting for you"
+	case session.StatusError:
+		return "error"
+	}
+	return "idle"
+}
+
+// atMenuItems are the members of the current thread first, then @all (with two
+// or more), then the kinds the thread has no live member of: "add codex".
+func (m *model) atMenuItems() []menuItem {
 	var out []menuItem
-	for _, a := range m.agents {
+	th, _ := m.selThread()
+	have := map[string]bool{}
+	live := 0
+	for _, a := range th.Members {
 		if a.Status == session.StatusExited {
 			continue
 		}
+		live++
+		have[a.Kind] = true
 		g, gs := m.statusGlyph(a)
-		desc := oneLine(a.Title)
+		desc := statusWord(a)
 		if a.Name != a.Kind {
-			desc = strings.TrimSpace(a.Kind + " " + glyphDot + " " + desc)
+			desc = a.Kind + " " + glyphDot + " " + desc
 		}
-		out = append(out, menuItem{label: a.Name, glyph: g, gStyle: gs, desc: desc})
+		out = append(out, menuItem{label: a.Name, glyph: g, gStyle: gs, desc: desc, kind: a.Kind})
+	}
+	if live >= 2 {
+		out = append(out, menuItem{label: "all", glyph: theme.GlyphAgent, gStyle: sAccent, desc: "everyone in this thread"})
 	}
 	for _, k := range m.kinds {
-		if !m.newMode {
-			if _, running := findRunning(m.agents, k); running {
-				continue
-			}
+		if have[k] {
+			continue
 		}
-		out = append(out, menuItem{label: k, glyph: "+", gStyle: sFaint, desc: "new agent", isNew: true})
+		desc := "add " + k
+		if len(th.Members) == 0 {
+			desc = "start with " + k
+		}
+		out = append(out, menuItem{label: k, glyph: "+", gStyle: sFaint, desc: desc, isNew: true, kind: k})
 	}
 	return out
 }
@@ -161,9 +189,15 @@ func (m *model) menuLines(w int) []string {
 		it := mn.items[i]
 		bar := " "
 		name := sMuted
+		if it.kind != "" {
+			name = tintStyle(it.kind)
+		}
 		if i == mn.sel {
 			bar = sAccent.Render(glyphBarSel)
-			name = sBold
+			name = name.Bold(true)
+			if it.kind == "" {
+				name = sBold
+			}
 		}
 		g := " "
 		if it.glyph != "" {

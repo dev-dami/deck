@@ -37,7 +37,7 @@ func (m *model) hasOverlay() bool { return m.ov.open }
 func (m *model) openOverlay(k ovKind) {
 	m.ov.kind, m.ov.open, m.ov.sel = k, true, 0
 	if k == ovResume {
-		m.ov.threads = m.mgr.Threads()
+		m.ov.threads = m.mgr.Saved()
 	}
 	m.menu.kind = 0
 	m.menu.h.Set(0)
@@ -127,10 +127,10 @@ func (m *model) inboxLines(w, maxRows int) []string {
 	for i := s; i < e; i++ {
 		r := m.pending[i].req
 		bar := " "
-		name := sMuted
+		name := tintStyle(m.kindOf(r.AgentID))
 		if i == m.ov.sel {
 			bar = sAccent.Render(glyphBarSel)
-			name = sBold
+			name = tintStyle(m.kindOf(r.AgentID)).Bold(true)
 		}
 		what := r.Summary
 		verb := "run"
@@ -178,7 +178,7 @@ func (m *model) resumeLines(w, maxRows int) []string {
 		if nm == "" {
 			nm = t.AgentKind
 		}
-		left := " " + bar + " " + name.Render(padTo(trunc(nm, 10), 9)) + " " + sFg.Render(oneLine(t.Title))
+		left := " " + bar + " " + name.Render(padTo(trunc(nm, 12), 12)) + " " + sFg.Render(oneLine(t.Title))
 		out = append(out, rightAlign(left, right, w))
 	}
 	out = append(out, "", " "+hintFit(w-2, "enter resume", "esc close"))

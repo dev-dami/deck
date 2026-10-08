@@ -6,37 +6,12 @@ import (
 	"github.com/dev-dami/deck/internal/session"
 )
 
-// Action says what a submitted composer line means.
-type Action int
-
-// Actions produced by ParseInput.
-const (
-	ActNone    Action = iota // nothing to do
-	ActSend                  // send Text to the agent AgentID
-	ActStart                 // start a new agent of Kind with prompt Text
-	ActSelect                // "@name" alone: just select that agent
-	ActNewKind               // "@kind" alone: next message starts a new agent of Kind
-	ActCommand               // slash command Cmd/Arg
-	ActError                 // Err explains what is wrong
-)
-
-// Parsed is the result of ParseInput.
-type Parsed struct {
-	Action  Action
-	AgentID string
-	Kind    string
-	Text    string
-	Cmd     string // command name without the slash
-	Arg     string
-	Err     string
-}
-
 // Commands are the five slash commands, in menu order.
 var Commands = []struct{ Name, Args, Desc string }{
-	{"new", "", "start a fresh agent"},
+	{"new", "", "start a fresh thread"},
 	{"resume", "", "continue a saved thread"},
 	{"model", "<name>", "model for the next agent"},
-	{"cd", "<path>", "directory for new agents"},
+	{"cd", "<path>", "directory for new threads"},
 	{"name", "<name>", "your display name"},
 }
 
@@ -49,76 +24,14 @@ func isCommand(name string) bool {
 	return false
 }
 
-func hasKind(kinds []string, k string) bool {
-	for _, x := range kinds {
-		if x == k {
-			return true
-		}
-	}
-	return false
-}
-
-// findRunning resolves a name or id to a running (not exited) agent.
-func findRunning(agents []session.AgentInfo, name string) (session.AgentInfo, bool) {
-	for _, a := range agents {
-		if a.Status != session.StatusExited && (a.Name == name || a.ID == name) {
-			return a, true
-		}
-	}
-	return session.AgentInfo{}, false
-}
-
-// ParseInput decides what a submitted line means.
-//
-//   - "/cmd arg"            a slash command
-//   - "@name msg"           send to that running agent, from anywhere
-//   - "@kind msg"           start a new agent of that kind when no running
-//     agent has that name (or always, in new-agent mode)
-//   - "msg"                 the selected agent; a new default agent when the
-//     deck is empty or in new-agent mode
-func ParseInput(text string, agents []session.AgentInfo, selected string, newMode bool, newKind string, kinds []string) Parsed {
+// parseCommand reads a submitted line that starts with "/".
+func parseCommand(text string) (name, arg string, ok bool) {
 	t := strings.TrimSpace(text)
-	if t == "" {
-		if len(agents) == 0 || newMode {
-			return Parsed{Action: ActStart, Kind: newKind}
-		}
-		return Parsed{Action: ActNone}
+	if !strings.HasPrefix(t, "/") {
+		return "", "", false
 	}
 	head, rest := splitToken(t)
-	switch {
-	case strings.HasPrefix(head, "/"):
-		return Parsed{Action: ActCommand, Cmd: strings.TrimPrefix(head, "/"), Arg: rest}
-	case strings.HasPrefix(head, "@"):
-		name := strings.TrimPrefix(head, "@")
-		if name == "" {
-			return Parsed{Action: ActError, Err: "name an agent after @"}
-		}
-		if a, ok := findRunning(agents, name); ok && !(newMode && hasKind(kinds, name)) {
-			if rest == "" {
-				return Parsed{Action: ActSelect, AgentID: a.ID}
-			}
-			return Parsed{Action: ActSend, AgentID: a.ID, Text: rest}
-		}
-		if hasKind(kinds, name) {
-			if rest == "" {
-				return Parsed{Action: ActNewKind, Kind: name}
-			}
-			return Parsed{Action: ActStart, Kind: name, Text: rest}
-		}
-		return Parsed{Action: ActError, Err: "no agent @" + name}
-	}
-	if len(agents) == 0 || newMode || selected == "" {
-		return Parsed{Action: ActStart, Kind: newKind, Text: t}
-	}
-	for _, a := range agents {
-		if a.ID == selected {
-			if a.Status == session.StatusExited {
-				return Parsed{Action: ActError, Err: a.Name + " has exited, /new starts another"}
-			}
-			return Parsed{Action: ActSend, AgentID: a.ID, Text: t}
-		}
-	}
-	return Parsed{Action: ActStart, Kind: newKind, Text: t}
+	return strings.TrimPrefix(head, "/"), rest, true
 }
 
 // splitToken splits "head rest" at the first whitespace; rest is trimmed.
@@ -128,4 +41,82 @@ func splitToken(s string) (head, rest string) {
 		return s, ""
 	}
 	return s[:i], strings.TrimSpace(s[i+1:])
+}
+
+// refsOf lists a thread's members the way session.ParseAddressing wants them.
+func refsOf(th session.ThreadInfo) []session.MemberRef {
+	refs := make([]session.MemberRef, 0, len(th.Members))
+	for _, a := range th.Members {
+		refs = append(refs, session.MemberRef{ID: a.ID, Name: a.Name, Kind: a.Kind, Exited: a.Status == session.StatusExited})
+	}
+	return refs
+}
+
+// addressHint says, while you type, where Post would send the text:
+//
+//	→ codex            addressed to that member
+//	→ all              @all
+//	→ claude (last spoke)  no mention, goes to whoever spoke last
+//	+ adds codex       @codex names a kind with no live member in the thread
+//
+// It uses session.ParseAddressing, so it agrees with what Post will do. A
+// thread with at most one member has nothing to say unless a new agent is named.
+func addressHint(text string, th session.ThreadInfo, kinds []string) string {
+	t := strings.TrimSpace(text)
+	if t == "" || strings.HasPrefix(t, "/") {
+		return ""
+	}
+	ad := session.ParseAddressing(t, refsOf(th), kinds)
+	if len(ad.Unknown) > 0 {
+		return "no agent @" + ad.Unknown[0]
+	}
+	find := func(id string) session.AgentInfo {
+		for _, a := range th.Members {
+			if a.ID == id {
+				return a
+			}
+		}
+		return session.AgentInfo{ID: id, Name: id}
+	}
+	for _, id := range ad.Members {
+		if a := find(id); a.Status == session.StatusExited {
+			return a.Name + " has exited"
+		}
+	}
+	var parts []string
+	switch {
+	case ad.All:
+		parts = append(parts, "→ all")
+	case len(ad.Members) > 0:
+		names := make([]string, len(ad.Members))
+		for i, id := range ad.Members {
+			names[i] = find(id).Name
+		}
+		parts = append(parts, "→ "+strings.Join(names, ", "))
+	}
+	if len(ad.NewKinds) > 0 {
+		parts = append(parts, "+ adds "+strings.Join(ad.NewKinds, ", "))
+	}
+	if len(parts) > 0 {
+		return strings.Join(parts, " "+glyphDot+" ")
+	}
+	if len(th.Members) < 2 {
+		return ""
+	}
+	for _, a := range th.Members {
+		if a.ID == th.LastSpeaker && a.Status != session.StatusExited {
+			return "→ " + a.Name + " (last spoke)"
+		}
+	}
+	for _, a := range th.Members {
+		if a.Status != session.StatusExited {
+			return "→ " + a.Name
+		}
+	}
+	return ""
+}
+
+// hintIsWarning reports whether an addressing hint says something is wrong.
+func hintIsWarning(h string) bool {
+	return strings.HasPrefix(h, "no agent") || strings.HasSuffix(h, "has exited")
 }

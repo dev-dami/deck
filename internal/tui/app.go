@@ -10,6 +10,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/session"
+	"github.com/dev-dami/deck/internal/tui/logo"
 	"github.com/dev-dami/deck/internal/tui/motion"
 	"github.com/dev-dami/deck/internal/tui/theme"
 )
@@ -32,7 +33,7 @@ type Options struct {
 	SaveConfig func(config.Config) error
 	// Bell rings the terminal. Default: write "\a" to stdout when cfg.Bell.
 	Bell func() tea.Cmd
-	// Dir is the working directory for new agents. Default: os.Getwd.
+	// Dir is the working directory for new threads. Default: os.Getwd.
 	Dir string
 }
 
@@ -53,13 +54,14 @@ type model struct {
 	budget *motion.Budget
 	md     *mdCache
 
-	agents []session.AgentInfo
-	views  map[string]*agentView
-	sel    string
+	threads []session.ThreadInfo // every live thread
+	rows    []session.ThreadInfo // the ones the sidebar lists
+	agents  []session.AgentInfo  // every member of every thread
+	views   map[string]*threadView
+	sel     string // the selected thread
 
-	newMode  bool
-	newKind  string
-	newDir   string
+	newKind  string // kind an empty thread starts with
+	newDir   string // directory of new threads
 	newModel map[string]string
 
 	focus   focusArea
@@ -73,8 +75,15 @@ type model struct {
 	barY       motion.Spring
 	switchX    motion.Spring
 	switchFade motion.Fade
-	intro      motion.Typewriter
-	introTag   motion.Fade
+
+	// the empty state's logo
+	logo        *logo.Model
+	logoStarted bool // the intro has been started for this showing of the empty state
+	logoMoving  bool // the last Advance (or Start, or Mouse) said it is not at rest
+	logoX       int  // screen cell of the logo's top-left
+	logoY       int
+	plan        emptyPlan
+	introTag    motion.Fade
 
 	quitArmed time.Time
 	g         geom
@@ -100,31 +109,32 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 	if opts.SaveConfig == nil {
 		opts.SaveConfig = config.Save
 	}
+	dark := lipgloss.HasDarkBackground()
 	m := &model{
 		mgr:        mgr,
 		cfg:        cfg,
 		opts:       opts,
-		dark:       lipgloss.HasDarkBackground(),
+		dark:       dark,
 		now:        time.Now(),
 		home:       home,
 		kinds:      mgr.Kinds(),
 		clock:      motion.NewClock(60),
 		fps:        60,
 		budget:     motion.NewBudget(),
-		views:      map[string]*agentView{},
+		views:      map[string]*threadView{},
 		newKind:    cfg.DefaultAgent,
 		newDir:     dir,
 		newModel:   map[string]string{},
 		barY:       motion.Glide.New(60),
 		switchX:    motion.Snappy.New(60),
 		switchFade: motion.NewFade(150*time.Millisecond, motion.EaseOutCubic),
+		logo:       logo.New(dark),
 		w:          80,
 		h:          24,
 	}
 	m.menu.h = motion.Soft.New(60)
 	m.ov.h = motion.Soft.New(60)
 	m.md = newMD(m.dark)
-	m.intro = motion.NewTypewriter(theme.GlyphAgent+" "+theme.Wordmark, introType)
 	m.introTag = motion.NewFade(introTag, motion.EaseOutCubic)
 	if m.newKind == "" {
 		m.newKind = "claude"
@@ -132,14 +142,16 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 	if !motion.Reduced() && cfg.Motion == "off" {
 		motion.SetReduced(true)
 	}
-	m.agents = mgr.Agents()
+	m.refresh()
 	m.g = m.geo()
 	return m
 }
 
-// Run runs the app full-screen with mouse support.
+// Run runs the app full-screen with mouse support. All-motion mouse reporting
+// is on so the logo can ripple under the pointer; moves are ignored cheaply
+// everywhere else.
 func Run(mgr *session.Manager, cfg config.Config) error {
-	p := tea.NewProgram(New(mgr, cfg), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(New(mgr, cfg), tea.WithAltScreen(), tea.WithMouseAllMotion())
 	_, err := p.Run()
 	return err
 }
@@ -147,7 +159,6 @@ func Run(mgr *session.Manager, cfg config.Config) error {
 // Init implements tea.Model.
 func (m *model) Init() tea.Cmd {
 	m.now = time.Now()
-	m.startIntro(m.now)
 	go m.md.warm()
 	return tea.Batch(m.listen(), m.wake())
 }
@@ -157,6 +168,98 @@ func (m *model) listen() tea.Cmd {
 		return nil
 	}
 	return m.mgr.Listen()
+}
+
+// ---- state ----
+
+// refresh reloads the threads and members from the manager, keeps the selection
+// valid and decides which threads the sidebar lists: the ones somebody has
+// joined, and the selected one.
+func (m *model) refresh() {
+	m.threads = m.mgr.Threads()
+	m.agents = m.agents[:0:0]
+	for _, t := range m.threads {
+		m.agents = append(m.agents, t.Members...)
+	}
+	if m.sel != "" {
+		found := false
+		for _, t := range m.threads {
+			if t.ID == m.sel {
+				found = true
+			}
+		}
+		if !found {
+			m.sel = ""
+		}
+	}
+	if m.sel == "" {
+		for _, t := range m.threads {
+			if len(t.Members) > 0 {
+				m.sel = t.ID
+				break
+			}
+		}
+		if m.sel == "" && len(m.threads) > 0 {
+			m.sel = m.threads[len(m.threads)-1].ID
+		}
+	}
+	m.rows = m.rows[:0:0]
+	for _, t := range m.threads {
+		if len(t.Members) > 0 || t.ID == m.sel {
+			m.rows = append(m.rows, t)
+		}
+	}
+}
+
+func (m *model) hasContent() bool {
+	for _, t := range m.threads {
+		if len(t.Members) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// selThread is the selected thread, if there is one.
+func (m *model) selThread() (session.ThreadInfo, bool) {
+	for _, t := range m.threads {
+		if t.ID == m.sel {
+			return t, true
+		}
+	}
+	return session.ThreadInfo{}, false
+}
+
+func (m *model) curThread() session.ThreadInfo {
+	th, _ := m.selThread()
+	return th
+}
+
+// curView is the transcript on screen, nil in the empty state.
+func (m *model) curView() *threadView {
+	if m.emptyVisible() {
+		return nil
+	}
+	return m.view(m.sel)
+}
+
+func (m *model) view(id string) *threadView {
+	v := m.views[id]
+	if v == nil {
+		v = newView(id)
+		m.views[id] = v
+	}
+	return v
+}
+
+func (m *model) pendingFor(threadID string) []*pendingApproval {
+	var out []*pendingApproval
+	for _, p := range m.pending {
+		if p.thread == threadID {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // ---- layout ----
@@ -175,7 +278,7 @@ type geom struct {
 
 func (m *model) geo() geom {
 	g := geom{w: m.w, h: m.h}
-	if m.w >= sidebarMinWidth && (len(m.agents) > 0) {
+	if m.w >= sidebarMinWidth && m.hasContent() {
 		g.sbW = 24
 		if m.w >= 100 {
 			g.sbW = 31
@@ -206,78 +309,40 @@ func (m *model) geo() geom {
 	return g
 }
 
-func (m *model) curView() *agentView {
-	if m.sel == "" || m.newMode {
-		return nil
-	}
-	return m.views[m.sel]
-}
-
-func (m *model) view(id string) *agentView {
-	v := m.views[id]
-	if v == nil {
-		v = newView(id)
-		m.views[id] = v
-	}
-	return v
-}
-
-func (m *model) info(id string) (session.AgentInfo, bool) {
-	for _, a := range m.agents {
-		if a.ID == id {
-			return a, true
-		}
-	}
-	return session.AgentInfo{}, false
-}
-
-func (m *model) pendingFor(id string) []*pendingApproval {
-	var out []*pendingApproval
-	for _, p := range m.pending {
-		if p.req.AgentID == id {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
 // settle recomputes everything derived from state after any change.
 func (m *model) settle() {
-	m.agents = m.mgr.Agents()
-	if m.sel != "" {
-		if _, ok := m.info(m.sel); !ok {
-			m.sel = ""
-		}
-	}
-	if m.sel == "" && !m.newMode && len(m.agents) > 0 {
-		m.sel = m.agents[0].ID
-	}
+	m.refresh()
 	m.g = m.geo()
 	g := m.g
 
 	// sidebar bar target
-	if m.newMode {
-		m.barY.Set(float64(len(m.agents)))
-	} else if i := m.selIndex(); i >= 0 {
+	if i := m.selIndex(); i >= 0 {
 		m.barY.Set(float64(i))
 	}
 	if m.ov.open {
 		m.clampOverlay()
 		m.ov.h.Set(float64(m.overlayTargetHeight(g.mainW, max(3, g.trH-1))))
 	}
-	if v := m.curView(); v != nil {
-		if a, ok := m.info(v.id); ok {
-			m.compose(v, a, g.mainW-1)
-			v.layoutScroll(g.trH)
+	if m.emptyVisible() {
+		p := m.planEmpty(g.mainW, g.trH)
+		m.logoX, m.logoY = g.mainX+p.left, g.topY+p.top
+		if !m.logoStarted {
+			m.startIntro(m.now)
 		}
+		return
+	}
+	m.logoStarted, m.logoMoving = false, false
+	if v := m.curView(); v != nil {
+		m.compose(v, m.curThread(), g.mainW-1)
+		v.layoutScroll(g.trH)
 	}
 }
 
 // ---- motion ----
 
-// motionState reports whether anything needs fast (spring) frames or only
-// slow ambient ones (spinner, pulse, cursor).
-func (m *model) motionState() (fast, ambient bool) {
+// motionState reports whether anything needs fast (spring) frames, the logo's
+// frames, or only slow ambient ones (spinner, pulse, cursor).
+func (m *model) motionState() (fast, lg, ambient bool) {
 	now := m.now
 	if m.barY.Moving() || m.switchX.Moving() || m.switchFade.Moving(now) || m.menu.h.Moving() ||
 		m.ov.h.Moving() || m.introMoving() || m.toast.moving(now) {
@@ -304,24 +369,34 @@ func (m *model) motionState() (fast, ambient bool) {
 			ambient = true
 		}
 	}
+	if m.emptyVisible() && m.logoMoving {
+		lg = true
+	}
 	for _, a := range m.agents {
-		if a.Status == session.StatusWorking || a.Status == session.StatusTool {
+		if working(a) {
 			ambient = true
 		}
 	}
-	return fast, ambient
+	return fast, lg, ambient
+}
+
+func fpsFor(fast, lg bool) int {
+	switch {
+	case fast:
+		return 60
+	case lg:
+		return 30
+	}
+	return 15
 }
 
 // wake starts the clock if anything is moving.
 func (m *model) wake() tea.Cmd {
-	fast, amb := m.motionState()
-	if !fast && !amb {
+	fast, lg, amb := m.motionState()
+	if !fast && !lg && !amb {
 		return nil
 	}
-	want := 15
-	if fast {
-		want = 60
-	}
+	want := fpsFor(fast, lg)
 	if want != m.fps {
 		m.fps = want
 		m.clock.SetFPS(want)
@@ -359,9 +434,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.w, m.h = msg.Width, msg.Height
 
 	case tea.KeyMsg:
+		if m.emptyVisible() { // any key settles the logo; the composer owns the keyboard
+			m.logo.Calm(m.now)
+		}
 		cmds = append(cmds, m.handleKey(msg)...)
 
 	case tea.MouseMsg:
+		switch msg.Action {
+		case tea.MouseActionMotion:
+			return m, m.logoMouse(msg, false) // cheap: nothing else cares about moves
+		case tea.MouseActionRelease:
+			return m, nil
+		}
 		cmds = append(cmds, m.handleMouse(msg)...)
 
 	case motion.FrameMsg:
@@ -369,14 +453,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.advance()
+		if m.emptyVisible() && m.logoStarted {
+			m.logoMoving = m.logo.Advance(msg.At)
+		}
 		m.settle()
-		fast, amb := m.motionState()
-		if fast || amb {
-			want := 15
-			if fast {
-				want = 60
-			}
-			if want != m.fps {
+		fast, lg, amb := m.motionState()
+		if fast || lg || amb {
+			if want := fpsFor(fast, lg); want != m.fps {
 				m.fps = want
 				m.clock.SetFPS(want)
 			}
@@ -386,20 +469,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.clock.Tick()
 
-	case session.EventMsg:
-		cmds = append(cmds, m.onSessionEvent(msg.Event, false)...)
+	case session.EventMsg, session.RelayMsg, session.PausedMsg, session.ContinuedMsg,
+		session.MemberAddedMsg, session.NoticeMsg, session.ApprovalMsg, session.ApprovalGoneMsg:
+		cmds = append(cmds, m.dispatch(msg, false)...)
 		cmds = append(cmds, m.listen())
-
-	case session.ApprovalMsg:
-		cmds = append(cmds, m.onApproval(msg.ApprovalRequest)...)
-		cmds = append(cmds, m.listen())
-
-	case session.ApprovalGoneMsg:
-		m.dropApproval(msg.ID)
-		cmds = append(cmds, m.listen())
-
-	case startedMsg:
-		cmds = append(cmds, m.onStarted(msg)...)
 
 	case sentMsg:
 		if msg.err != nil {
@@ -467,22 +540,22 @@ func (m *model) View() string {
 
 func (m *model) headerLine(g geom) string {
 	left := " " + sAccent.Render(theme.GlyphAgent) + " " + sBold.Render(theme.Wordmark)
-	if m.curView() == nil { // the empty state draws its own wordmark
+	if m.emptyVisible() { // the empty state draws its own logo
 		left = " "
 	}
-	working, waiting := 0, 0
+	nWorking, waiting := 0, 0
 	cost := 0.0
 	for _, a := range m.agents {
-		if a.Status == session.StatusWorking || a.Status == session.StatusTool {
-			working++
+		if working(a) {
+			nWorking++
 		}
 		waiting += a.Pending
 		cost += a.CostUSD
 	}
 	var parts []string
 	switch {
-	case working > 0:
-		parts = append(parts, sMuted.Render(plural(working, "working", "working")))
+	case nWorking > 0:
+		parts = append(parts, sMuted.Render(plural(nWorking, "agent working", "agents working")))
 	case len(m.agents) > 0 && waiting == 0:
 		parts = append(parts, sMuted.Render("idle"))
 	}
@@ -538,7 +611,7 @@ func (m *model) mainLines(g geom) []string {
 	return out
 }
 
-// applySwitch slides and fades the transcript when the selected agent changes.
+// applySwitch slides and fades the transcript when the selected thread changes.
 func (m *model) applySwitch(tr []string, w int) []string {
 	if motion.Reduced() {
 		return tr
@@ -562,38 +635,73 @@ func (m *model) applySwitch(tr []string, w int) []string {
 	return tr
 }
 
+// chipLine is the line above the composer: who is in the thread (their ◆
+// chips, tinted, with a status) and where it works, and on the right where the
+// text you are typing would go. An empty thread shows the kind, model and
+// directory it will start with.
 func (m *model) chipLine(w int) string {
 	if m.prompt.active() {
 		return "  " + sWarn.Render(trunc(m.prompt.label(m), w-2))
 	}
-	kind, model, dir := m.newKind, m.newModelFor(m.newKind), m.newDir
-	if a, ok := m.info(m.sel); ok && !m.newMode {
-		kind, model, dir = a.Kind, a.Model, a.Dir
-		if model == "" {
-			model = m.defaultModel(kind)
-		}
-	} else if model == "" {
-		model = m.defaultModel(kind)
-	}
-	if model == "" {
-		model = "default"
-	}
+	th, ok := m.selThread()
 	sep := sFaint.Render(" " + glyphDot + " ")
-	var parts []string
-	if m.newMode && len(m.agents) > 0 {
-		parts = append(parts, sFaint.Render("new"))
+	dir := m.newDir
+	var left string
+	if ok && len(th.Members) > 0 {
+		dir = th.Dir
+		left = "  " + strings.Join(func() []string {
+			var cs []string
+			for _, a := range th.Members {
+				cs = append(cs, m.chip(a))
+			}
+			return cs
+		}(), " ")
+		if len(th.Members) == 1 {
+			a := th.Members[0]
+			model := a.Model
+			if model == "" {
+				model = m.defaultModel(a.Kind)
+			}
+			if model == "" {
+				model = "default"
+			}
+			left += sep + sFaint.Render(model)
+		}
+	} else {
+		kind := m.newKind
+		model := m.newModelFor(kind)
+		if model == "" {
+			model = "default"
+		}
+		left = "  " + sMuted.Render(kind) + sep + sFaint.Render(model)
+		if ok && th.Dir != "" {
+			dir = th.Dir
+		}
 	}
-	parts = append(parts, sMuted.Render(kind), sFaint.Render(model))
+
+	hint := addressHint(m.comp.Value(), th, m.kinds)
+	if m.menu.open() { // still choosing the name: the menu says it
+		hint = ""
+	}
+	hintW := 0
+	if hint != "" {
+		hintW = sw(hint) + 2
+	}
+	if sw(left)+hintW+2 > w { // not enough room for both: the hint can wait
+		hint, hintW = "", 0
+	}
 	d := tilde(dir, m.home)
-	line := "  " + strings.Join(parts, sep)
-	if next := m.newModel[kind]; next != "" && !m.newMode && next != model {
-		line += sep + sFaint.Render("next "+next)
+	if room := w - sw(left) - 3 - hintW; room >= 4 {
+		left += sep + sFaint.Render(shortPath(d, room))
 	}
-	room := w - sw(line) - 3
-	if room >= 4 {
-		line += sep + sFaint.Render(shortPath(d, room))
+	if hint == "" {
+		return trunc(left, w)
 	}
-	return trunc(line, w)
+	hs := sFaint.Render(hint)
+	if hintIsWarning(hint) {
+		hs = sWarn.Render(hint)
+	}
+	return trunc(padTo(left, w-sw(hint)-1)+hs, w)
 }
 
 func (m *model) defaultModel(kind string) string {
@@ -625,14 +733,30 @@ func (m *model) composerLines(w int) []string {
 	return m.comp.View(w, prompt, ph, m.focus == focusComposer && !m.ov.open)
 }
 
+// defaultTarget is who an unaddressed message goes to, mirroring Post.
+func (m *model) defaultTarget() (session.AgentInfo, bool) {
+	th, _ := m.selThread()
+	for _, a := range th.Members {
+		if a.ID == th.LastSpeaker && a.Status != session.StatusExited {
+			return a, true
+		}
+	}
+	for _, a := range th.Members {
+		if a.Status != session.StatusExited {
+			return a, true
+		}
+	}
+	return session.AgentInfo{}, false
+}
+
 func (m *model) placeholder() string {
 	switch {
 	case m.prompt.active():
 		return m.prompt.placeholder()
-	case m.newMode || len(m.agents) == 0:
+	case m.emptyVisible():
 		return "ask " + m.newKind + "…"
 	}
-	if a, ok := m.info(m.sel); ok {
+	if a, ok := m.defaultTarget(); ok {
 		return "message " + a.Name + "…"
 	}
 	return "message…"
@@ -655,6 +779,7 @@ func (m *model) footerLine(g geom) string {
 
 func (m *model) footerHints() string {
 	h := func(parts ...string) string { return hintFit(m.w-4, parts...) }
+	th := m.curThread()
 	switch {
 	case m.ov.open && m.ov.kind == ovResume:
 		return h("↑↓ select", "enter resume", "esc close")
@@ -666,11 +791,14 @@ func (m *model) footerHints() string {
 		return h("↑↓ select", "tab complete", "esc close")
 	case m.focus == focusTranscript:
 		return h("enter fold", "[ ] row", "tab compose", "q quit")
-	case len(m.agents) == 0:
+	case m.emptyVisible():
 		return h("enter start "+m.newKind, "@ agent", "/ commands")
 	}
 	if len(m.pendingFor(m.sel)) > 0 && m.comp.Empty() {
 		return h("y allow", "n deny", "a always", "i inbox")
+	}
+	if th.Paused && m.comp.Empty() {
+		return h("enter continue", "@ agent", "/ commands", "^c stop")
 	}
 	if len(m.pending) > 0 {
 		return h("@ agent", "/ commands", "i inbox", "^c stop")
@@ -692,14 +820,13 @@ func (m *model) bell() tea.Cmd {
 	}
 }
 
-// selectAgent makes id the selected agent and starts the switch animation.
-func (m *model) selectAgent(id string) {
-	if id == m.sel && !m.newMode {
+// selectThread makes id the selected thread and starts the switch animation.
+func (m *model) selectThread(id string) {
+	if id == m.sel {
 		return
 	}
-	m.newMode = false
 	m.sel = id
-	m.agents = m.mgr.Agents()
+	m.refresh()
 	if i := m.selIndex(); i >= 0 {
 		m.barY.Set(float64(i))
 	}

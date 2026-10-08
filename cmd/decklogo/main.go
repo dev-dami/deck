@@ -57,7 +57,9 @@ func (m *model) start(now time.Time) tea.Cmd {
 	return m.clock.Wake()
 }
 
-func (m *model) Init() tea.Cmd { return m.start(time.Now()) }
+// Init waits for the first WindowSizeMsg: the logo picks its size from the
+// window, and an unsized logo has nothing to animate.
+func (m *model) Init() tea.Cmd { return nil }
 
 func (m *model) layout() {
 	// Reserve a blank line and the tagline under the logo, and the hint row.
@@ -73,8 +75,12 @@ func (m *model) layout() {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		first := m.w == 0 && m.h == 0
 		m.w, m.h = msg.Width, msg.Height
 		m.layout()
+		if first {
+			return m, m.start(time.Now())
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -142,7 +148,7 @@ func (m *model) View() string {
 }
 
 func main() {
-	p := tea.NewProgram(newModel(), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(newModel(), tea.WithAltScreen(), tea.WithMouseAllMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "decklogo:", err)
 		os.Exit(1)

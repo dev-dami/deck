@@ -23,6 +23,19 @@ const (
 	kError
 	kNote
 	kExit
+	kRead   // an agent read the shared thread
+	kRelay  // one agent's message to others
+	kPause  // the hop limit paused the thread
+	kJoin   // an agent joined
+	kNotice // a note from Deck itself
+)
+
+type pauseState int
+
+const (
+	pauseActive pauseState = iota // waiting for Continue
+	pauseDone                     // continued
+	pauseStale                    // replayed from history; nothing is waiting any more
 )
 
 // item is one block of a transcript.
@@ -30,11 +43,29 @@ type item struct {
 	kind itemKind
 	text string
 
+	// speaker is the agent id of everything an agent says or does; empty for
+	// the user's messages and for the thread's own lines (relays, pauses, ...).
+	speaker string
+
+	to       []string // user messages: members it was addressed to
+	nmembers int      // user messages: how many members the thread had then
+
 	tool agent.Tool
 	diff *agent.FileDiff
 
+	from string   // relays: the sender
+	rto  []string // relays: the receivers
+	via  string
+	held bool
+
+	hops   int
+	pstate pauseState
+
+	joinID string // join lines: who joined
+
 	streaming bool // text/reasoning still arriving
 	expanded  bool
+	overflow  bool          // relays: the text does not fit its collapsed height
 	h         motion.Spring // visible body lines
 	mdFade    motion.Fade
 
@@ -46,6 +77,7 @@ type item struct {
 type lineCacheKey struct {
 	w, ver, hpos int
 	dark, cursor bool
+	tag          string
 }
 
 type lineCache struct {
@@ -60,17 +92,17 @@ func newItem(k itemKind) *item {
 
 func (it *item) bump() { it.ver++ }
 
-func (it *item) agentSide() bool {
-	return it.kind == kText || it.kind == kReasoning || it.kind == kTool
-}
-
+// rowLike items are the small one-line rows that sit under their message.
 func (it *item) rowLike() bool {
 	switch it.kind {
-	case kTool, kReasoning, kError, kNote, kExit:
+	case kTool, kReasoning, kError, kNote, kExit, kRead:
 		return true
 	}
 	return false
 }
+
+// quiet items are the thread's own faint one-liners.
+func (it *item) quiet() bool { return it.kind == kJoin || it.kind == kNotice }
 
 // foldable rows toggle on Enter or click.
 func (it *item) foldable() bool {
@@ -79,6 +111,8 @@ func (it *item) foldable() bool {
 		return true
 	case kExit:
 		return strings.Contains(strings.TrimSpace(it.text), "\n")
+	case kRelay:
+		return it.overflow || it.expanded
 	}
 	return false
 }
@@ -103,18 +137,19 @@ func (it *item) ambient() bool {
 // rctx carries everything an item needs to render.
 type rctx struct {
 	m      *model
+	th     session.ThreadInfo
 	w      int // width of a transcript line
 	tw     int // width of prose, including its 2-col indent
 	now    time.Time
 	cursor bool // this item holds the row cursor in a focused transcript
 }
 
-func (m *model) newRctx(w int) *rctx {
+func (m *model) newRctx(w int, th session.ThreadInfo) *rctx {
 	tw := w
 	if tw > maxTextWidth {
 		tw = maxTextWidth
 	}
-	return &rctx{m: m, w: w, tw: tw, now: m.now}
+	return &rctx{m: m, th: th, w: w, tw: tw, now: m.now}
 }
 
 // render returns the item's styled lines.
@@ -139,16 +174,48 @@ func (it *item) render(c *rctx) []string {
 		return out
 	case kNote:
 		return []string{"  " + sFaint.Render(trunc(oneLine(it.text), c.w-2))}
+	case kRead:
+		return []string{"  " + sFaint.Render(glyphThink+" read the thread")}
+	case kRelay:
+		return it.renderRelay(c)
+	case kPause:
+		return it.renderPause(c)
+	case kJoin:
+		return []string{it.renderJoin(c)}
+	case kNotice:
+		ls := wrapText(it.text, c.tw-2)
+		out := make([]string, len(ls))
+		for i, l := range ls {
+			out[i] = "  " + sItalic.Render(l)
+		}
+		return out
 	}
 	return nil
 }
 
+// addressee is the faint "→ codex" after the user's name: who the message went
+// to. A one-member thread has nothing to say.
+func (c *rctx) addressee(it *item) string {
+	if it.nmembers < 2 || len(it.to) == 0 {
+		return ""
+	}
+	if len(it.to) >= it.nmembers {
+		return "all"
+	}
+	return strings.Join(c.m.agentNames(it.to), ", ")
+}
+
 func (it *item) renderUser(c *rctx) []string {
-	key := lineCacheKey{w: c.w, ver: it.ver, dark: c.m.dark}
+	name, to := c.m.cfg.UserName, c.addressee(it)
+	key := lineCacheKey{w: c.w, ver: it.ver, dark: c.m.dark, tag: name + "\x00" + to}
 	if it.cache.ok && it.cache.key == key {
 		return it.cache.lines
 	}
-	out := []string{"  " + sBold.Render(trunc(c.m.cfg.UserName, c.w-2))}
+	label := sBold.Render(trunc(name, c.w-2))
+	if to != "" {
+		label += sFaint.Render(" " + trunc("→ "+to, max(4, c.w-4-sw(name))))
+	}
+	out := []string{"  " + label}
 	for _, l := range wrapText(it.text, c.tw-2) {
 		out = append(out, "  "+sFg.Render(l))
 	}
@@ -213,16 +280,23 @@ func (m *model) cursorGlyph() string {
 	return lipglossFg(m.blend(theme.Faint, theme.Accent, 0.35+0.65*p)).Render(theme.GlyphCursor)
 }
 
-// ---- agent view ----
+// ---- thread view ----
 
-// agentView is everything the UI keeps for one agent.
-type agentView struct {
+// turnStats is what one agent's running turn has done so far, for the toast.
+type turnStats struct {
+	cost  float64
+	files map[string]bool
+}
+
+// threadView is everything the UI keeps for one thread.
+type threadView struct {
 	id string
 
 	items  []*item
-	open   *item // streaming assistant text
-	openR  *item // streaming reasoning
-	tools  map[string]*item
+	open   map[string]*item // agent id -> its streaming assistant text
+	openR  map[string]*item // agent id -> its streaming reasoning
+	tools  map[string]*item // agent id/tool id -> row
+	hide   map[string]bool  // agent id/tool id of tools that are not shown
 	cursor *item
 
 	scroll motion.Spring
@@ -234,27 +308,41 @@ type agentView struct {
 
 	flash motion.Fade
 
-	turnCost float64
-	files    map[string]bool
+	stats map[string]*turnStats
+	known map[string]string // agent id -> kind, for everyone who has joined
+	order []string          // join order
 }
 
-func newView(id string) *agentView {
-	return &agentView{
+func newView(id string) *threadView {
+	return &threadView{
 		id:     id,
+		open:   map[string]*item{},
+		openR:  map[string]*item{},
 		tools:  map[string]*item{},
+		hide:   map[string]bool{},
 		scroll: motion.Glide.New(60),
 		follow: true,
 		flash:  motion.NewFade(700*time.Millisecond, motion.EaseOutCubic),
-		files:  map[string]bool{},
+		stats:  map[string]*turnStats{},
+		known:  map[string]string{},
 	}
 }
 
-func (v *agentView) add(it *item) *item {
+func (v *threadView) turn(id string) *turnStats {
+	s := v.stats[id]
+	if s == nil {
+		s = &turnStats{files: map[string]bool{}}
+		v.stats[id] = s
+	}
+	return s
+}
+
+func (v *threadView) add(it *item) *item {
 	v.items = append(v.items, it)
 	return it
 }
 
-func (v *agentView) foldables() []*item {
+func (v *threadView) foldables() []*item {
 	var out []*item
 	for _, it := range v.items {
 		if it.foldable() {
@@ -264,7 +352,7 @@ func (v *agentView) foldables() []*item {
 	return out
 }
 
-func (v *agentView) cursorItem() *item {
+func (v *threadView) cursorItem() *item {
 	fs := v.foldables()
 	if len(fs) == 0 {
 		return nil
@@ -278,7 +366,7 @@ func (v *agentView) cursorItem() *item {
 }
 
 // moveCursor moves the row cursor by d foldable rows and keeps it on screen.
-func (v *agentView) moveCursor(d int) *item {
+func (v *threadView) moveCursor(d int) *item {
 	fs := v.foldables()
 	if len(fs) == 0 {
 		return nil
@@ -295,7 +383,7 @@ func (v *agentView) moveCursor(d int) *item {
 	return v.cursor
 }
 
-func (v *agentView) anyMoving(now time.Time) bool {
+func (v *threadView) anyMoving(now time.Time) bool {
 	if v.scroll.Moving() || v.flash.Moving(now) {
 		return true
 	}
@@ -307,7 +395,7 @@ func (v *agentView) anyMoving(now time.Time) bool {
 	return false
 }
 
-func (v *agentView) anyAmbient() bool {
+func (v *threadView) anyAmbient() bool {
 	for i := len(v.items) - 1; i >= 0 && i >= len(v.items)-40; i-- {
 		if v.items[i].ambient() {
 			return true
@@ -316,7 +404,7 @@ func (v *agentView) anyAmbient() bool {
 	return false
 }
 
-func (v *agentView) advance() {
+func (v *threadView) advance() {
 	v.scroll.Update()
 	for _, it := range v.items {
 		it.h.Update()
@@ -324,14 +412,21 @@ func (v *agentView) advance() {
 }
 
 // gap reports whether one blank line separates two consecutive items. Rows
-// (tools, thinking, notes) sit directly under their message and under each other.
+// (tools, thinking, notes) sit directly under their own speaker's message and
+// under each other; the thread's quiet one-liners sit together.
 func gap(prev, cur *item) bool {
-	return !(cur.rowLike() && (prev.rowLike() || prev.kind == kText))
+	if cur.rowLike() && cur.speaker == prev.speaker && (prev.rowLike() || prev.kind == kText) {
+		return false
+	}
+	if cur.quiet() && prev.quiet() {
+		return false
+	}
+	return true
 }
 
 // compose lays out the whole transcript for the view at width w.
-func (m *model) compose(v *agentView, info session.AgentInfo, w int) {
-	c := m.newRctx(w)
+func (m *model) compose(v *threadView, th session.ThreadInfo, w int) {
+	c := m.newRctx(w, th)
 	var lines []string
 	var owners []*item
 	add := func(ls []string, it *item) {
@@ -346,17 +441,17 @@ func (m *model) compose(v *agentView, info session.AgentInfo, w int) {
 			add([]string{""}, nil)
 		}
 	}
-	agentLabel := sAccent.Render(theme.GlyphAgent) + " " + sBold.Render(trunc(info.Name, w-2))
 	focusedCursor := m.focus == focusTranscript && !m.hasOverlay()
 	cur := v.cursorItem()
 
 	var prev *item
+	last := "" // the speaker of the block at the bottom
 	for _, it := range v.items {
 		if prev != nil && gap(prev, it) {
 			blank()
 		}
-		if it.agentSide() && (prev == nil || prev.kind == kUser) {
-			add([]string{agentLabel}, nil)
+		if it.speaker != "" && (prev == nil || prev.speaker != it.speaker) {
+			add([]string{m.speakerLabel(it.speaker, w)}, nil)
 		}
 		c.cursor = focusedCursor && it == cur
 		ls := it.render(c)
@@ -366,24 +461,30 @@ func (m *model) compose(v *agentView, info session.AgentInfo, w int) {
 		}
 		add(ls, it)
 		prev = it
+		last = it.speaker
 	}
-	working := info.Status == session.StatusWorking || info.Status == session.StatusTool
-	if working && (prev == nil || prev.kind == kUser) {
-		if prev != nil {
-			blank()
-			add([]string{agentLabel}, nil)
+	// members that are working but have nothing at the bottom yet
+	for _, a := range th.Members {
+		if !working(a) || a.ID == last {
+			continue
 		}
+		blank()
+		add([]string{m.speakerLabel(a.ID, w)}, nil)
 		add([]string{"  " + sMuted.Render(motion.NewSpinner().Frame(m.now)) + sFaint.Render(" working…")}, nil)
+		last = a.ID
 	}
 	if pend := m.pendingFor(v.id); len(pend) > 0 {
 		blank()
+		if who := pend[0].req.AgentID; who != last {
+			add([]string{m.speakerLabel(who, w)}, nil)
+		}
 		add(m.renderApproval(pend[0], w, true, len(pend)), nil)
 	}
 	v.lines, v.owners = lines, owners
 }
 
 // layoutScroll updates the scroll target for the current content and viewport.
-func (v *agentView) layoutScroll(vh int) {
+func (v *threadView) layoutScroll(vh int) {
 	maxTop := max(0, len(v.lines)-vh)
 	if !v.laid {
 		v.scroll.Target = float64(maxTop)
@@ -403,10 +504,10 @@ func (v *agentView) layoutScroll(vh int) {
 	}
 }
 
-func (v *agentView) top() int { return int(math.Round(v.scroll.Pos)) }
+func (v *threadView) top() int { return int(math.Round(v.scroll.Pos)) }
 
 // scrollBy moves the scroll target by n lines; reaching the bottom re-follows.
-func (v *agentView) scrollBy(n, vh int) {
+func (v *threadView) scrollBy(n, vh int) {
 	maxTop := max(0, len(v.lines)-vh)
 	t := int(math.Round(v.scroll.Target)) + n
 	t = max(0, min(maxTop, t))
@@ -414,7 +515,7 @@ func (v *agentView) scrollBy(n, vh int) {
 	v.scroll.Set(float64(t))
 }
 
-func (v *agentView) scrollTo(bottom bool, vh int) {
+func (v *threadView) scrollTo(bottom bool, vh int) {
 	maxTop := max(0, len(v.lines)-vh)
 	if bottom {
 		v.follow = true
@@ -426,7 +527,7 @@ func (v *agentView) scrollTo(bottom bool, vh int) {
 }
 
 // ensureVisible scrolls so line index li is on screen.
-func (v *agentView) ensureVisible(li, vh int) {
+func (v *threadView) ensureVisible(li, vh int) {
 	top := int(math.Round(v.scroll.Target))
 	switch {
 	case li < top:
@@ -439,7 +540,7 @@ func (v *agentView) ensureVisible(li, vh int) {
 	}
 }
 
-func (v *agentView) lineOf(it *item) int {
+func (v *threadView) lineOf(it *item) int {
 	for i, o := range v.owners {
 		if o == it {
 			return i
@@ -449,7 +550,7 @@ func (v *agentView) lineOf(it *item) int {
 }
 
 // window returns exactly vh lines of the transcript.
-func (v *agentView) window(vh int) []string {
+func (v *threadView) window(vh int) []string {
 	top, pad := v.top(), v.padTop(vh)
 	out := make([]string, vh)
 	for i := pad; i < vh; i++ {
@@ -462,4 +563,4 @@ func (v *agentView) window(vh int) []string {
 
 // padTop is how many blank rows sit above a transcript shorter than the pane:
 // the transcript is bottom-anchored so the latest message rests on the rule.
-func (v *agentView) padTop(vh int) int { return max(0, vh-len(v.lines)) }
+func (v *threadView) padTop(vh int) int { return max(0, vh-len(v.lines)) }

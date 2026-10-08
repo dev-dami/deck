@@ -1,6 +1,6 @@
  ◆ deck                                                               1 waiting
 
- ▎⚠ codex
+ ▎⚠ ◆ rebuild dist
 
 
 
@@ -19,6 +19,6 @@
                         │
                         │ y allow   n deny   a always   e edit
                         ───────────────────────────────────────────────────────
-                          codex · default · ~/repo
+                          ◆codex · default · ~/repo
                         › message codex…
  y allow   n deny   a always   i inbox

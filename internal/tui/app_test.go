@@ -28,66 +28,100 @@ func status(r *rig, id string) session.Status {
 	return a.Status
 }
 
+// twoThreads leaves two one-member threads, claude in the first and claude2 in
+// the second, the second selected.
+func twoThreads(r *rig) (first, second string) {
+	r.t.Helper()
+	r.start("one")
+	first = r.m.sel
+	r.say("/new")
+	r.say("two")
+	r.pump("second thread", func() bool { return len(r.m.curThread().Members) == 1 && r.m.sel != first })
+	return first, r.m.sel
+}
+
 func TestEmptyDeckEnterStartsDefaultAgent(t *testing.T) {
 	r := newRig(t, 100, 30)
 	r.key("enter")
-	r.pump("default agent", func() bool { return r.m.sel == "claude" })
+	r.pump("default agent", func() bool { return len(r.m.curThread().Members) == 1 })
+	if got := r.m.curThread().Members[0].Kind; got != "claude" {
+		t.Fatalf("kind = %q", got)
+	}
 	run := r.claude.last()
 	if run.spec.Dir != repoDir() {
 		t.Fatalf("dir = %q, want %q", run.spec.Dir, repoDir())
 	}
 }
 
-func TestStartRoutesAndKeepsSelection(t *testing.T) {
+func TestPostRoutesWithinOneThread(t *testing.T) {
 	r := newRig(t, 120, 30)
 	r.start("hello there")
-	if r.m.sel != "claude" {
-		t.Fatalf("sel = %q", r.m.sel)
+	th := r.m.sel
+	if th == "" || len(r.m.curThread().Members) != 1 {
+		t.Fatalf("sel=%q members=%d", th, len(r.m.curThread().Members))
 	}
-	// a message with no @ goes to the selected agent
-	r.typeText("second")
-	r.key("enter")
+	r.done(r.claude.last(), "claude")
+
+	// a message with no @ goes to the only member, untouched
+	r.say("second")
 	r.pump("send", func() bool { return len(r.claude.last().sentList()) == 1 })
 	if got := r.claude.last().sentList()[0]; got != "second" {
 		t.Fatalf("sent %q", got)
 	}
 
-	// @codex starts a new codex (no running codex), the new agent is selected
-	r.typeText("@codex build it")
-	r.key("enter")
-	r.pump("codex", func() bool { return r.m.sel == "codex" })
-	if len(r.codex.runs) != 1 || r.codex.runs[0].spec.FirstPrompt != "build it" {
+	// @codex adds a codex to the same thread
+	r.done(r.claude.last(), "claude")
+	r.say("@codex build it")
+	r.pump("codex joins", func() bool { return len(r.m.curThread().Members) == 2 })
+	if len(r.codex.runs) != 1 || !strings.Contains(r.codex.runs[0].spec.FirstPrompt, "build it") {
 		t.Fatalf("codex runs: %+v", r.codex.runs)
 	}
-
-	// @claude now addresses the running claude from anywhere, selection stays on codex
-	r.typeText("@claude status?")
-	r.key("enter")
-	r.pump("addressed send", func() bool { return len(r.claude.last().sentList()) == 2 })
-	if r.m.sel != "codex" {
-		t.Fatalf("addressing must not move selection, sel=%q", r.m.sel)
+	if r.m.sel != th || len(r.m.threads) != 1 {
+		t.Fatalf("addressing must stay in the thread: sel=%q threads=%d", r.m.sel, len(r.m.threads))
 	}
-	if got := r.claude.last().sentList()[1]; got != "status?" {
+
+	// @claude reaches the running claude
+	r.say("@claude status?")
+	r.pump("addressed send", func() bool { return len(r.claude.last().sentList()) == 2 })
+	if got := r.claude.last().sentList()[1]; !strings.Contains(got, "status?") {
 		t.Fatalf("sent %q", got)
 	}
 }
 
-func TestNewModeStartsSecondAgentOfSameKind(t *testing.T) {
+func TestUnknownMentionKeepsTheText(t *testing.T) {
+	r := newRig(t, 120, 30)
+	r.start("hi")
+	r.typeText("@nobody look")
+	r.key("enter")
+	if r.m.comp.Value() != "@nobody look" || !r.m.toast.on || !r.m.toast.danger {
+		t.Fatalf("unknown mention must toast and keep the text: %q %+v", r.m.comp.Value(), r.m.toast)
+	}
+}
+
+func TestNewThreadIsEmptyAndSelected(t *testing.T) {
 	r := newRig(t, 120, 30)
 	r.start("one")
+	first := r.m.sel
 	r.key("tab")
 	r.key("n") // transcript focused: n = /new
-	if !r.m.newMode || r.m.focus != focusComposer {
-		t.Fatalf("newMode=%v focus=%v", r.m.newMode, r.m.focus)
+	if r.m.sel == first || r.m.focus != focusComposer || !r.m.emptyVisible() {
+		t.Fatalf("sel=%q focus=%v empty=%v", r.m.sel, r.m.focus, r.m.emptyVisible())
 	}
-	if !strings.Contains(r.view(), "new agent") {
-		t.Fatalf("sidebar should show the new-agent row:\n%s", r.view())
+	if !strings.Contains(r.view(), "new thread") {
+		t.Fatalf("sidebar should show the new thread row:\n%s", r.view())
+	}
+	r.key("tab", "n") // already on an empty thread: nothing piles up
+	if len(r.m.threads) != 2 {
+		t.Fatalf("threads = %d, want 2", len(r.m.threads))
 	}
 	r.typeText("two")
 	r.key("enter")
-	r.pump("claude2", func() bool { return r.m.sel == "claude2" })
-	if r.m.newMode {
-		t.Fatal("newMode should end once the agent starts")
+	r.pump("claude2", func() bool { return len(r.m.curThread().Members) == 1 })
+	if got := r.m.curThread().Members[0].ID; got != "claude2" {
+		t.Fatalf("member = %q", got)
+	}
+	if r.m.emptyVisible() {
+		t.Fatal("the empty state should end once an agent joins")
 	}
 }
 
@@ -181,13 +215,10 @@ func TestEditApproval(t *testing.T) {
 
 func TestInboxActsOnHighlightedAndAdvances(t *testing.T) {
 	r := newRig(t, 120, 30)
-	r.start("one")
-	r.typeText("@codex two")
-	r.key("enter")
-	r.pump("codex", func() bool { return r.m.sel == "codex" })
-	g1 := r.approval(r.claude.last(), "c1", "echo one", agent.ApproveCommand)
+	twoThreads(r)
+	g1 := r.approval(r.claude.runs[0], "c1", "echo one", agent.ApproveCommand)
 	r.pump("first card", func() bool { return len(r.m.pending) == 1 })
-	g2 := r.approval(r.codex.last(), "x1", "echo two", agent.ApproveCommand)
+	g2 := r.approval(r.claude.runs[1], "x1", "echo two", agent.ApproveCommand)
 	r.pump("two cards", func() bool { return len(r.m.pending) == 2 })
 
 	r.key("i")
@@ -211,16 +242,16 @@ func TestInboxActsOnHighlightedAndAdvances(t *testing.T) {
 	}
 }
 
-func TestInboxEnterJumpsToAgent(t *testing.T) {
+func TestInboxEnterJumpsToThread(t *testing.T) {
 	r := newRig(t, 120, 30)
-	r.start("one")
-	r.typeText("@codex two")
-	r.key("enter")
-	r.pump("codex", func() bool { return r.m.sel == "codex" })
-	r.approval(r.claude.last(), "c1", "echo one", agent.ApproveCommand)
+	first, second := twoThreads(r)
+	if r.m.sel != second {
+		t.Fatal("setup")
+	}
+	r.approval(r.claude.runs[0], "c1", "echo one", agent.ApproveCommand)
 	r.pump("card", func() bool { return len(r.m.pending) == 1 })
 	r.key("i", "enter")
-	if r.m.sel != "claude" || r.m.ov.open {
+	if r.m.sel != first || r.m.ov.open {
 		t.Fatalf("sel=%q open=%v", r.m.sel, r.m.ov.open)
 	}
 }
@@ -265,9 +296,6 @@ func TestInterruptAndDoubleCtrlCQuit(t *testing.T) {
 	if r.quit {
 		t.Fatal("first ^c must interrupt, not quit")
 	}
-	if !strings.Contains(r.view(), "interrupted") {
-		t.Fatalf("interrupted note missing:\n%s", r.view())
-	}
 	if r.m.toast.on && strings.Contains(r.m.toast.text, "finished") {
 		t.Fatal("an interrupted turn must not show the finished toast")
 	}
@@ -280,6 +308,23 @@ func TestInterruptAndDoubleCtrlCQuit(t *testing.T) {
 	if !r.quit {
 		t.Fatal("second ^c within 1s should quit")
 	}
+}
+
+func TestCtrlCInterruptsEveryWorkingMember(t *testing.T) {
+	r := newRig(t, 120, 30)
+	r.duo()
+	cl, cx := r.claude.last(), r.codex.last()
+	r.pump("both working", func() bool {
+		return status(r, "claude") == session.StatusWorking && status(r, "codex") == session.StatusWorking
+	})
+	r.key("ctrl+c")
+	r.pump("both interrupted", func() bool {
+		cl.mu.Lock()
+		cx.mu.Lock()
+		defer cl.mu.Unlock()
+		defer cx.mu.Unlock()
+		return cl.interrupt == 1 && cx.interrupt == 1
+	})
 }
 
 func TestCtrlCClearsComposerFirst(t *testing.T) {
@@ -313,32 +358,46 @@ func TestQuitOnlyWhenComposerEmptyAndBlurred(t *testing.T) {
 
 func TestSelectionKeys(t *testing.T) {
 	r := newRig(t, 120, 30)
-	r.start("one")
-	r.typeText("@codex two")
-	r.key("enter")
-	r.pump("codex", func() bool { return r.m.sel == "codex" })
+	first, second := twoThreads(r)
 	r.key("up")
-	if r.m.sel != "claude" {
+	if r.m.sel != first {
 		t.Fatalf("up from empty composer: sel=%q", r.m.sel)
 	}
 	r.key("down")
-	if r.m.sel != "codex" {
+	if r.m.sel != second {
 		t.Fatalf("down: sel=%q", r.m.sel)
 	}
 	r.key("tab")
 	r.key("k")
-	if r.m.sel != "claude" {
+	if r.m.sel != first {
 		t.Fatalf("k in transcript focus: sel=%q", r.m.sel)
 	}
 	r.key("j")
-	if r.m.sel != "codex" {
+	if r.m.sel != second {
 		t.Fatalf("j: sel=%q", r.m.sel)
 	}
 	// while typing, j/k are text
 	r.key("tab")
 	r.typeText("jk")
-	if r.m.comp.Value() != "jk" || r.m.sel != "codex" {
+	if r.m.comp.Value() != "jk" || r.m.sel != second {
 		t.Fatalf("typed j/k must not move selection: %q %q", r.m.comp.Value(), r.m.sel)
+	}
+}
+
+func TestSidebarClickSelectsThread(t *testing.T) {
+	for _, w := range []int{80, 120} { // one-line rows, two-line rows
+		r := newRig(t, w, 30)
+		first, second := twoThreads(r)
+		g := r.m.g
+		r.feed(tea.MouseMsg{X: 3, Y: g.topY, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+		if r.m.sel != first {
+			t.Fatalf("w=%d: click on row 0 -> %q, want %q", w, r.m.sel, first)
+		}
+		row1 := g.topY + g.sidebarRowHeight() // the second row's first line
+		r.feed(tea.MouseMsg{X: 3, Y: row1 + g.sidebarRowHeight() - 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+		if r.m.sel != second {
+			t.Fatalf("w=%d: click on row 1 -> %q, want %q", w, r.m.sel, second)
+		}
 	}
 }
 
@@ -371,22 +430,29 @@ func TestSlashCommands(t *testing.T) {
 	if r.m.newModel["claude"] != "opus-test" {
 		t.Fatalf("newModel = %v", r.m.newModel)
 	}
+	run("/model codex gpt-test")
+	if r.m.newModel["codex"] != "gpt-test" || r.m.newModel["claude"] != "opus-test" {
+		t.Fatalf("/model <kind> <name>: %v", r.m.newModel)
+	}
 
 	run("/name Grace")
 	if r.m.cfg.UserName != "Grace" || len(r.saved) != 1 || r.saved[0].UserName != "Grace" {
 		t.Fatalf("name not saved: %q %v", r.m.cfg.UserName, r.saved)
 	}
+	if r.saved[0].Models.Claude != "" {
+		t.Fatalf("/model must not be saved: %+v", r.saved[0].Models)
+	}
 
 	run("/new")
-	if !r.m.newMode {
-		t.Fatal("/new should deselect")
+	if !r.m.emptyVisible() {
+		t.Fatal("/new should select an empty thread")
 	}
 	r.typeText("fresh")
 	r.key("enter")
-	r.pump("claude2", func() bool { return r.m.sel == "claude2" })
+	r.pump("claude2", func() bool { return len(r.m.curThread().Members) == 1 })
 	spec := r.claude.last().spec
 	if spec.Dir != tmp || spec.Model != "opus-test" {
-		t.Fatalf("new agent should use /cd and /model: %+v", spec)
+		t.Fatalf("new thread should use /cd and /model: %+v", spec)
 	}
 }
 
@@ -416,39 +482,18 @@ func TestSlashMenuListsExactlyFiveCommands(t *testing.T) {
 	}
 }
 
-func TestAtMenuListsAgentsThenNewKinds(t *testing.T) {
-	r := newRig(t, 120, 30)
-	r.start("one")
-	r.typeText("@")
-	var labels []string
-	for _, it := range r.m.menu.items {
-		labels = append(labels, it.label)
-	}
-	// claude is running, so only codex is offered as new
-	if strings.Join(labels, ",") != "claude,codex" {
-		t.Fatalf("items = %v", labels)
-	}
-	if r.m.menu.items[0].isNew || !r.m.menu.items[1].isNew {
-		t.Fatal("running agents come first, new kinds after")
-	}
-	r.key("down", "enter")
-	if r.m.comp.Value() != "@codex " {
-		t.Fatalf("completion = %q", r.m.comp.Value())
-	}
-}
-
 func TestStreamingDeltasAreReplacedByFinalText(t *testing.T) {
 	r := newRig(t, 120, 30)
 	r.start("hi")
 	run := r.claude.last()
 	r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: "Hel", Delta: true})
 	r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: "lo wor", Delta: true})
-	r.pump("streaming", func() bool { return r.m.views["claude"].open != nil && r.m.views["claude"].open.text == "Hello wor" })
+	r.pump("streaming", func() bool { it := r.tv().open["claude"]; return it != nil && it.text == "Hello wor" })
 	if !r.has("Hello wor▍") {
 		t.Fatalf("streaming text with cursor missing:\n%s", r.view())
 	}
 	r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: "Hello world."})
-	r.pump("final", func() bool { return r.m.views["claude"].open == nil })
+	r.pump("final", func() bool { return r.tv().open["claude"] == nil })
 	v := r.view()
 	if strings.Count(v, "Hello") != 1 || !strings.Contains(v, "Hello world.") || strings.Contains(v, "▍") {
 		t.Fatalf("final text must replace deltas:\n%s", v)
@@ -460,16 +505,16 @@ func TestToolRowLifecycle(t *testing.T) {
 	r.start("hi")
 	run := r.claude.last()
 	r.event(run, agent.Event{Kind: agent.KindToolCall, Tool: &agent.Tool{ID: "t1", Name: "Bash", Title: "go test ./...", Status: agent.ToolRunning}})
-	r.pump("running", func() bool { return len(r.m.views["claude"].items) == 2 })
+	r.pump("running", func() bool { return len(r.tv().items) == 2 })
 	if !r.has("◐ Bash go test ./...") {
 		t.Fatalf("running row:\n%s", r.view())
 	}
 	r.event(run, agent.Event{Kind: agent.KindToolResult, Tool: &agent.Tool{ID: "t1", Name: "Bash", Status: agent.ToolError, Output: "boom"}})
 	r.pump("error", func() bool {
-		v := r.m.views["claude"]
+		v := r.tv()
 		return len(v.items) > 1 && v.items[1].tool.Status == agent.ToolError
 	})
-	if !r.has("✗ Bash go test ./...") || len(r.m.views["claude"].items) != 2 {
+	if !r.has("✗ Bash go test ./...") || len(r.tv().items) != 2 {
 		t.Fatalf("error row:\n%s", r.view())
 	}
 	// expand with Enter on the transcript
@@ -494,7 +539,7 @@ func TestOutputCapAndMore(t *testing.T) {
 	r.event(run, agent.Event{Kind: agent.KindToolCall, Tool: &agent.Tool{ID: "t1", Name: "Bash", Title: "seq", Status: agent.ToolRunning}})
 	r.event(run, agent.Event{Kind: agent.KindToolResult, Tool: &agent.Tool{ID: "t1", Name: "Bash", Status: agent.ToolOK, Output: strings.Join(out, "\n")}})
 	r.pump("result", func() bool {
-		v := r.m.views["claude"]
+		v := r.tv()
 		return v != nil && len(v.items) > 1 && v.items[1].tool.Output != ""
 	})
 	r.key("tab", "enter")
@@ -580,6 +625,7 @@ func TestBellOncePerApproval(t *testing.T) {
 func TestMultilineComposerGrowsAndSubmitsAll(t *testing.T) {
 	r := newRig(t, 100, 30)
 	r.start("hi")
+	r.done(r.claude.last(), "claude")
 	r.typeText("line one")
 	r.key("alt+enter")
 	r.typeText("line two")
@@ -596,14 +642,16 @@ func TestMultilineComposerGrowsAndSubmitsAll(t *testing.T) {
 func TestShapeAtAwkwardSizes(t *testing.T) {
 	for _, sz := range []struct{ w, h int }{{30, 8}, {40, 12}, {69, 24}, {70, 24}, {99, 30}, {100, 30}, {200, 60}} {
 		r := newRig(t, sz.w, sz.h)
+		checkShape(t, r.m.View(), sz.w, sz.h) // the empty state
 		r.start("a rather long first prompt to see how titles truncate in the sidebar 日本語のテキスト 🙂")
 		run := r.claude.last()
 		r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: strings.Repeat("wide 日本語 text 🙂 and more words ", 12)})
 		r.event(run, agent.Event{Kind: agent.KindToolCall, Tool: &agent.Tool{ID: "t", Name: "Edit", Title: strings.Repeat("very/long/path/", 12) + "file.go", Status: agent.ToolRunning}})
+		r.say("@codex also look at 日本語")
+		r.pump("duo", func() bool { return len(r.m.curThread().Members) == 2 })
+		r.relay("claude", "codex", strings.Repeat("please review 日本語 carefully ", 12))
 		r.approval(run, "s1", strings.Repeat("echo 日本語 ", 30), agent.ApproveCommand)
-		r.pump("card", func() bool {
-			return len(r.m.pending) == 1 && r.m.views["claude"] != nil && len(r.m.views["claude"].items) >= 3
-		})
+		r.pump("card", func() bool { return len(r.m.pending) == 1 })
 		checkShape(t, r.m.View(), sz.w, sz.h)
 		r.typeText("@")
 		checkShape(t, r.m.View(), sz.w, sz.h)
@@ -626,19 +674,35 @@ func TestSidebarHiddenBelow70(t *testing.T) {
 	}
 }
 
+func TestSidebarHiddenForAnEmptyThread(t *testing.T) {
+	r := newRig(t, 120, 30)
+	if r.m.g.sidebar {
+		t.Fatal("no sidebar before any thread has an agent")
+	}
+	r.key("tab", "n") // an empty thread, still nobody in it
+	if r.m.g.sidebar {
+		t.Fatal("no sidebar for a single empty thread")
+	}
+}
+
 func TestChipNeverWraps(t *testing.T) {
 	r := newRig(t, 40, 12)
 	r.m.newDir = repoDir() + "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	r.m.newModel["claude"] = strings.Repeat("m", 40)
-	chip := r.m.chipLine(r.m.g.mainW)
-	if sw(chip) > r.m.g.mainW {
+	if chip := r.m.chipLine(r.m.g.mainW); sw(chip) > r.m.g.mainW {
 		t.Fatalf("chip is %d wide, max %d", sw(chip), r.m.g.mainW)
+	}
+	r.duo()
+	r.typeText("@codex a long message to see the hint")
+	if chip := r.m.chipLine(r.m.g.mainW); sw(chip) > r.m.g.mainW {
+		t.Fatalf("duo chip is %d wide, max %d", sw(chip), r.m.g.mainW)
 	}
 }
 
 func TestResumeShowsHistory(t *testing.T) {
 	r := newRig(t, 120, 30)
 	r.start("remember me")
+	tid := r.m.sel
 	run := r.claude.last()
 	r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: "I will remember."})
 	r.event(run, agent.Event{Kind: agent.KindTurnDone})
@@ -646,6 +710,7 @@ func TestResumeShowsHistory(t *testing.T) {
 	r.pump("exited", func() bool { return r.has("claude exited") })
 	r.mgr.Flush()
 
+	delete(r.m.views, tid) // as if Deck had been restarted: nothing on screen yet
 	r.m.toast.on = false
 	r.typeText("/resume")
 	r.key("enter")
@@ -653,9 +718,12 @@ func TestResumeShowsHistory(t *testing.T) {
 		t.Fatalf("thread list should show the title:\n%s", r.view())
 	}
 	r.key("enter")
-	r.pump("resumed", func() bool { return r.m.sel == "claude2" })
-	if !r.has("I will remember.") {
-		t.Fatalf("history missing after resume:\n%s", r.view())
+	r.pump("resumed", func() bool { return r.has("I will remember.") })
+	if !r.has("remember me") {
+		t.Fatalf("the user's message should be replayed:\n%s", r.view())
+	}
+	if r.m.sel != tid {
+		t.Fatalf("sel = %q, want %q", r.m.sel, tid)
 	}
 	if r.m.toast.on {
 		t.Fatalf("replayed history must not toast: %q", r.m.toast.text)
@@ -664,14 +732,17 @@ func TestResumeShowsHistory(t *testing.T) {
 
 // ---- motion ----
 
-// idleAgents starts two agents that never emit anything, so nothing is
-// "working" and the clock has no ambient reason to run.
-func idleAgents(r *rig) {
+// idleThreads leaves two threads with an agent that never emits anything, so
+// nothing is "working" and the clock has no ambient reason to run. It returns
+// them in sidebar order; the second is selected.
+func idleThreads(r *rig) (first, second string) {
 	r.key("enter")
-	r.pump("claude", func() bool { return r.m.sel == "claude" })
-	r.typeText("@codex")
-	r.key("enter", "enter", "enter")
-	r.pump("codex", func() bool { return r.m.sel == "codex" })
+	r.pump("claude", func() bool { return len(r.m.curThread().Members) == 1 })
+	first = r.m.sel
+	r.say("/new")
+	r.key("enter")
+	r.pump("claude2", func() bool { return len(r.m.curThread().Members) == 1 && r.m.sel != first })
+	return first, r.m.sel
 }
 
 // runClock feeds frames until the clock stops, returning how many it took.
@@ -686,13 +757,13 @@ func runClock(r *rig, limit int) (frames int, stillTicking bool) {
 
 func TestMotionSettlesAndTicksStop(t *testing.T) {
 	r := newRig(t, 120, 30)
-	idleAgents(r)
+	first, _ := idleThreads(r)
 	r.m.barY.Snap()
 	r.m.switchX.Snap()
 
 	motion.SetReduced(false)
 	defer motion.SetReduced(true)
-	r.m.selectAgent("claude")
+	r.m.selectThread(first)
 	frames, ticking := runClock(r, 400)
 	if ticking {
 		t.Fatalf("clock still ticking after %d frames", frames)
@@ -701,7 +772,7 @@ func TestMotionSettlesAndTicksStop(t *testing.T) {
 		t.Fatal("springs should have settled")
 	}
 	if int(r.m.barY.Pos+0.5) != 0 {
-		t.Fatalf("bar should rest on the claude row, pos=%v", r.m.barY.Pos)
+		t.Fatalf("bar should rest on the first row, pos=%v", r.m.barY.Pos)
 	}
 	if frames < 3 {
 		t.Fatalf("expected a visible animation, got %d frames", frames)
@@ -713,10 +784,7 @@ func TestMotionSettlesAndTicksStop(t *testing.T) {
 
 func TestReducedMotionIsInstantAndCorrect(t *testing.T) {
 	r := newRig(t, 120, 30) // motion is reduced for the whole test binary
-	r.start("one")
-	r.typeText("@codex two")
-	r.key("enter")
-	r.pump("codex", func() bool { return r.m.sel == "codex" })
+	idleThreads(r)
 	if r.m.barY.Pos != 1 || r.m.switchX.Pos != 0 {
 		t.Fatalf("reduced motion must snap: bar=%v switch=%v", r.m.barY.Pos, r.m.switchX.Pos)
 	}
@@ -737,11 +805,11 @@ func TestExpandAnimatesWithSpring(t *testing.T) {
 	r.event(run, agent.Event{Kind: agent.KindToolResult, Tool: &agent.Tool{ID: "t1", Name: "Bash", Status: agent.ToolOK, Output: "a\nb\nc\nd\ne\nf"}})
 	r.event(run, agent.Event{Kind: agent.KindTurnDone})
 	r.pump("done", func() bool {
-		v := r.m.views["claude"]
+		v := r.tv()
 		return v != nil && len(v.items) >= 2 && v.items[1].tool.Output != "" && status(r, "claude") == session.StatusIdle && r.m.toast.on
 	})
 	r.m.focus = focusTranscript
-	it := r.m.views["claude"].items[1]
+	it := r.tv().items[1]
 
 	motion.SetReduced(false)
 	defer motion.SetReduced(true)

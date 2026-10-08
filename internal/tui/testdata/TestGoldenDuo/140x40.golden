@@ -1,0 +1,40 @@
+ ◆ deck                                                                                                            2 agents working · $0.13
+
+ ▎● plan the store ref… $0.13
+ ▎  ◆claude ◆codex
+
+                                 ◆codex joined
+
+                                 Ada → all
+                                 plan the store refactor, @codex review it
+
+                               ◆ claude
+                                 ▸ Read internal/store/store.go
+
+                                 Plan for the store change:
+
+                                 • drop streaming deltas before they reach disk
+                                 • keep one lock per thread
+                                 • add a test that appends 1000 deltas
+
+                                 ↪ claude → codex  "Please review this plan for the store change and tell me what you would
+                                                   change."
+
+                               ◆ codex
+                                 ∴ read the thread
+                                 ▸ Read internal/store/store.go
+
+                                 The plan holds. One change: take the per-thread lock before the index lock, never the other way
+                                 round, or Append and List can deadlock.
+
+                                 ↪ codex → claude  "agree on the lock order and add the 1000-delta test."
+
+                               ◆ claude
+                                 Good catch on the lock order. Adding the delta test▍
+
+                               ◆ codex
+                                 ◐ working…
+                               ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                 ◆claude ◆codex · ~/repo
+                               › message codex…
+ @ agent   / commands   tab browse   ^c stop

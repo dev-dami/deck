@@ -100,12 +100,19 @@ func (m *model) settleComposer() {
 	m.syncMenu()
 }
 
+// ctrlC interrupts everything in the thread that is working; failing that it
+// clears the composer; failing that it arms (then performs) quit.
 func (m *model) ctrlC() []tea.Cmd {
-	if a, ok := m.info(m.sel); ok && !m.newMode {
-		switch a.Status {
-		case session.StatusWorking, session.StatusTool, session.StatusApproval:
+	if th, ok := m.selThread(); ok {
+		var ids []string
+		for _, a := range th.Members {
+			if busy(a) {
+				ids = append(ids, a.ID)
+			}
+		}
+		if len(ids) > 0 {
 			m.quitArmed = time.Time{}
-			return []tea.Cmd{m.interruptCmd(a.ID)}
+			return []tea.Cmd{m.interruptCmd(ids...)}
 		}
 	}
 	if !m.comp.Empty() {
@@ -120,25 +127,16 @@ func (m *model) ctrlC() []tea.Cmd {
 }
 
 func (m *model) moveSel(d int) {
-	if len(m.agents) == 0 {
+	if len(m.rows) == 0 {
 		return
 	}
-	idx := m.selIndex()
-	if m.newMode {
-		if d > 0 {
-			return
-		}
-		idx = len(m.agents)
-	}
-	ni := max(0, min(len(m.agents)-1, idx+d))
-	m.selectAgent(m.agents[ni].ID)
+	idx := max(0, m.selIndex())
+	ni := max(0, min(len(m.rows)-1, idx+d))
+	m.selectThread(m.rows[ni].ID)
 }
 
-// approvalKey handles y/n/a/e for the selected agent's first pending request.
+// approvalKey handles y/n/a/e for the selected thread's first pending request.
 func (m *model) approvalKey(key string) (bool, []tea.Cmd) {
-	if m.newMode {
-		return false, nil
-	}
 	pend := m.pendingFor(m.sel)
 	if len(pend) == 0 {
 		return false, nil
@@ -212,7 +210,7 @@ func (m *model) overlayKey(key string) []tea.Cmd {
 		switch m.ov.kind {
 		case ovInbox:
 			if m.ov.sel < len(m.pending) {
-				m.selectAgent(m.pending[m.ov.sel].req.AgentID)
+				m.selectThread(m.pending[m.ov.sel].thread)
 			}
 			m.closeOverlay()
 		case ovResume:
@@ -368,7 +366,7 @@ func (m *model) transcriptKey(msg tea.KeyMsg) []tea.Cmd {
 				d = 1
 			}
 			if it := v.moveCursor(d); it != nil {
-				m.compose(v, m.mustInfo(v.id), m.g.mainW-1)
+				m.compose(v, m.curThread(), m.g.mainW-1)
 				if li := v.lineOf(it); li >= 0 {
 					v.ensureVisible(li, vh)
 				}
@@ -395,8 +393,7 @@ func (m *model) transcriptKey(msg tea.KeyMsg) []tea.Cmd {
 			return cmds
 		}
 		if key == "n" {
-			m.startNew()
-			return nil
+			return m.startNew()
 		}
 		m.focus = focusComposer
 		m.comp.Insert(key)
@@ -409,17 +406,41 @@ func (m *model) transcriptKey(msg tea.KeyMsg) []tea.Cmd {
 	return nil
 }
 
-func (m *model) mustInfo(id string) session.AgentInfo {
-	a, _ := m.info(id)
-	return a
+// startNew is /new: an empty thread, selected, and the composer to type in. An
+// empty thread that is already there is reused rather than piling up.
+func (m *model) startNew() []tea.Cmd {
+	m.comp.Reset()
+	m.focus = focusComposer
+	if th, ok := m.selThread(); ok && len(th.Members) == 0 {
+		return nil
+	}
+	for _, t := range m.threads {
+		if len(t.Members) == 0 {
+			m.selectThread(t.ID)
+			return nil
+		}
+	}
+	id, err := m.mgr.NewThread(m.newDir)
+	if err != nil {
+		return []tea.Cmd{m.toast.show(err.Error(), true, m.now)}
+	}
+	m.threads = m.mgr.Threads()
+	m.selectThread(id)
+	return nil
 }
 
-// startNew is /new: an empty composer and no selected agent.
-func (m *model) startNew() {
-	m.comp.Reset()
-	m.newMode = true
-	m.newKind = m.cfg.DefaultAgent
-	m.focus = focusComposer
+// ensureThread makes sure there is a selected thread to type into.
+func (m *model) ensureThread() (string, error) {
+	if _, ok := m.selThread(); ok {
+		return m.sel, nil
+	}
+	id, err := m.mgr.NewThread(m.newDir)
+	if err != nil {
+		return "", err
+	}
+	m.threads = m.mgr.Threads()
+	m.selectThread(id)
+	return id, nil
 }
 
 // ---- submit ----
@@ -431,27 +452,63 @@ func (m *model) submit() []tea.Cmd {
 		m.comp.Insert("\n")
 		return nil
 	}
-	p := ParseInput(text, m.agents, m.sel, m.newMode, m.newKind, m.kinds)
-	switch p.Action {
-	case ActSend:
-		m.comp.Reset()
-		return []tea.Cmd{m.sendCmd(p.AgentID, p.Text)}
-	case ActStart:
-		m.comp.Reset()
-		return []tea.Cmd{m.startCmd(p.Kind, p.Text, m.newDir, m.newModel[p.Kind])}
-	case ActSelect:
-		m.comp.Reset()
-		m.selectAgent(p.AgentID)
-	case ActNewKind:
-		m.comp.Reset()
-		m.newMode = true
-		m.newKind = p.Kind
-	case ActCommand:
-		return m.runCommand(p.Cmd, p.Arg)
-	case ActError:
-		return []tea.Cmd{m.toast.show(p.Err, true, m.now)}
+	t := strings.TrimSpace(text)
+	th, _ := m.selThread()
+
+	if t == "" {
+		switch {
+		case th.Paused: // enter on an empty composer releases a pause
+			m.comp.Reset()
+			return []tea.Cmd{m.continueCmd(th.ID)}
+		case m.emptyVisible(): // enter on an empty new thread starts the default agent
+			m.comp.Reset()
+			id, err := m.ensureThread()
+			if err != nil {
+				return []tea.Cmd{m.toast.show(err.Error(), true, m.now)}
+			}
+			return []tea.Cmd{m.addCmd(id, m.newKind)}
+		}
+		return nil
 	}
-	return nil
+	if name, arg, ok := parseCommand(t); ok {
+		return m.runCommand(name, arg)
+	}
+
+	// Addressing mistakes are caught before the text leaves the composer.
+	ad := session.ParseAddressing(t, refsOf(th), m.kinds)
+	if len(ad.Unknown) > 0 {
+		return []tea.Cmd{m.toast.show("no agent @"+ad.Unknown[0]+" in this thread", true, m.now)}
+	}
+	if ad.Mentioned() && strings.TrimSpace(ad.Body) == "" && len(ad.NewKinds) == 0 {
+		// "@claude" alone has nothing to send: keep it, ready for the message,
+		// and let the hint say who it is for.
+		hint := addressHint(t, th, m.kinds)
+		if hintIsWarning(hint) {
+			return []tea.Cmd{m.toast.show(hint, true, m.now)}
+		}
+		m.focus = focusComposer
+		m.comp.SetValue(t + " ")
+		return []tea.Cmd{m.toast.show("type your message "+hint, false, m.now)}
+	}
+	id, err := m.ensureThread()
+	if err != nil {
+		return []tea.Cmd{m.toast.show(err.Error(), true, m.now)}
+	}
+	m.comp.Reset()
+	return []tea.Cmd{m.postCmd(id, t)}
+}
+
+// pushConfig tells the manager about the models picked with /model, which are
+// not saved, on top of the saved config.
+func (m *model) pushConfig() {
+	c := m.cfg
+	if v := m.newModel["claude"]; v != "" {
+		c.Models.Claude = v
+	}
+	if v := m.newModel["codex"]; v != "" {
+		c.Models.Codex = v
+	}
+	m.mgr.SetConfig(c)
 }
 
 func (m *model) runCommand(name, arg string) []tea.Cmd {
@@ -459,7 +516,7 @@ func (m *model) runCommand(name, arg string) []tea.Cmd {
 	info := func(s string) []tea.Cmd { return []tea.Cmd{m.toast.show(s, false, m.now)} }
 	switch name {
 	case "new":
-		m.startNew()
+		return m.startNew()
 	case "resume":
 		m.comp.Reset()
 		m.openOverlay(ovResume)
@@ -468,15 +525,20 @@ func (m *model) runCommand(name, arg string) []tea.Cmd {
 			return danger("usage: /model <name>")
 		}
 		kind := m.newKind
-		if a, ok := m.info(m.sel); ok && !m.newMode {
+		if a, ok := m.defaultTarget(); ok {
 			kind = a.Kind
+		}
+		if first, rest := splitToken(arg); rest != "" && hasKind(m.kinds, first) {
+			kind, arg = first, rest // /model codex gpt-5
 		}
 		m.comp.Reset()
 		if arg == "default" {
 			delete(m.newModel, kind)
+			m.pushConfig()
 			return info("next " + kind + " uses its default model")
 		}
 		m.newModel[kind] = arg
+		m.pushConfig()
 		return info("next " + kind + " starts on " + arg)
 	case "cd":
 		if arg == "" {
@@ -488,7 +550,7 @@ func (m *model) runCommand(name, arg string) []tea.Cmd {
 		}
 		m.newDir = dir
 		m.comp.Reset()
-		return info("new agents start in " + tilde(dir, m.home))
+		return info("new threads start in " + tilde(dir, m.home))
 	case "name":
 		if arg == "" {
 			return danger("usage: /name <name>")
@@ -500,12 +562,21 @@ func (m *model) runCommand(name, arg string) []tea.Cmd {
 				return danger("could not save config: " + err.Error())
 			}
 		}
-		m.mgr.SetConfig(m.cfg)
+		m.pushConfig()
 		return info("you are " + arg)
 	default:
 		return danger(fmt.Sprintf("unknown command /%s", name))
 	}
 	return nil
+}
+
+func hasKind(kinds []string, k string) bool {
+	for _, x := range kinds {
+		if x == k {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *model) resolveDir(arg string) (string, error) {
@@ -526,11 +597,10 @@ func (m *model) resolveDir(arg string) (string, error) {
 
 // ---- mouse ----
 
+// handleMouse deals with presses and the wheel; moves and releases never get
+// here (see Update).
 func (m *model) handleMouse(msg tea.MouseMsg) []tea.Cmd {
 	g := m.g
-	if msg.Action != tea.MouseActionPress {
-		return nil
-	}
 	v := m.curView()
 	switch msg.Button {
 	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
@@ -547,8 +617,14 @@ func (m *model) handleMouse(msg tea.MouseMsg) []tea.Cmd {
 		}
 		switch {
 		case g.sidebar && msg.X < g.sbW && msg.Y >= g.topY:
-			if row := msg.Y - g.topY; row >= 0 && row < len(m.agents) {
-				m.selectAgent(m.agents[row].ID)
+			rh := g.sidebarRowHeight()
+			row := m.sidebarStart(g, g.footY-g.topY) + (msg.Y-g.topY)/rh
+			if row >= 0 && row < len(m.rows) {
+				m.selectThread(m.rows[row].ID)
+			}
+		case v == nil && msg.Y >= g.topY && msg.Y < g.topY+g.trH:
+			if cmd := m.logoMouse(msg, true); cmd != nil {
+				return []tea.Cmd{cmd}
 			}
 		case msg.X >= g.mainX && msg.Y >= g.topY && msg.Y < g.topY+g.trH && v != nil:
 			li := v.top() + msg.Y - g.topY - v.padTop(g.trH)

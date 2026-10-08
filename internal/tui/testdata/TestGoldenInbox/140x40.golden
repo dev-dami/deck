@@ -1,9 +1,9 @@
  ◆ deck                                                                                                                           2 waiting
 
-  ⚠ codex  rebuild dist
- ▎⚠ claude  tidy the store
-
-
+  ⚠ rebuild dist
+    ◆codex
+ ▎⚠ tidy the store
+ ▎  ◆claude
 
                                  Ada
                                  tidy the store
@@ -35,6 +35,6 @@
 
                                 y allow   n deny   a always   enter open   esc close
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                 claude · default · ~/repo
+                                 ◆claude · default · ~/repo
                                › message claude…
  y allow   n deny   a always   esc close
