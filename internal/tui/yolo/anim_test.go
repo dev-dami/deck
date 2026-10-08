@@ -10,7 +10,10 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/mattn/go-runewidth"
 	"github.com/muesli/termenv"
+	"github.com/rivo/uniseg"
 
 	"github.com/dev-dami/deck/internal/tui/motion"
 )
@@ -129,7 +132,7 @@ func TestHeightSequence(t *testing.T) {
 			t.Fatalf("height %d at %dms, want %d before the collapse", h, ms, FullHeight)
 		}
 	}
-	want := []int{4, 3, 2, 1, 0}
+	want := []int{7, 6, 5, 4, 3, 2, 1, 0}
 	if len(seq) != len(want) {
 		t.Fatalf("height steps = %v, want %v", seq, want)
 	}
@@ -225,24 +228,111 @@ func TestFrameRateIndependent(t *testing.T) {
 	}
 }
 
+// allSprites lists every hand-drawn pose with its name.
+func allSprites() map[string]sprite {
+	m := map[string]sprite{
+		"askGuardA": askGuardA, "askGuardB": askGuardB, "askJab": askJab,
+		"askBlock": askBlock, "askFlinch": askFlinch, "askFly": askFly,
+		"yoloGuardA": yoloGuardA, "yoloGuardB": yoloGuardB, "yoloJab": yoloJab,
+		"yoloBlock": yoloBlock, "yoloWind": yoloWind, "yoloKick": yoloKick,
+		"yoloCheerA": yoloCheerA, "yoloCheerB": yoloCheerB,
+	}
+	for i, s := range tumble {
+		m["tumble"+string(rune('0'+i))] = s
+	}
+	for i, s := range signs {
+		m["sign"+string(rune('0'+i))] = s
+	}
+	return m
+}
+
 func TestSpritesAreRectangular(t *testing.T) {
-	for _, s := range tumble {
-		if len(s) != 2 {
-			t.Fatalf("tumble pose has %d rows", len(s))
+	for name, s := range allSprites() {
+		if len(s) == 0 {
+			t.Fatalf("%s is empty", name)
 		}
+		w := len([]rune(s[0]))
 		for _, row := range s {
-			if n := len([]rune(row)); n != 3 {
-				t.Fatalf("tumble row %q has %d columns", row, n)
+			if n := len([]rune(row)); n != w {
+				t.Fatalf("%s: row %q is %d columns, want %d", name, row, n, w)
 			}
 		}
 	}
-	for _, s := range []sprite{yoloKick, yoloCheerA, askBlock} {
-		if got := flip(flip(s)); strings.Join(got, "|") != strings.Join(s, "|") {
-			t.Fatalf("flip is not an involution: %q -> %q", s, got)
+	for _, s := range []sprite{askGuardA, askJab, askBlock, askFlinch, askFly} {
+		if len(s) != figRows || s.width() != figSize {
+			t.Fatalf("figure %q is not %dx%d", s, figSize, figRows)
 		}
 	}
-	if got := flip(sprite{"?/|──"}); got[0] != "──|\\?" {
-		t.Fatalf("flip = %q", got[0])
+}
+
+// TestGlyphsAreSingleWidth: no wide, emoji or combining glyphs anywhere, so
+// a column is always a cell. Checked with both width libraries, with
+// ambiguous-width glyphs counted narrow as a Western terminal does.
+func TestGlyphsAreSingleWidth(t *testing.T) {
+	cond := runewidth.NewCondition()
+	cond.EastAsianWidth = false
+	seen := map[rune]bool{}
+	check := func(where string, r rune) {
+		if r == ' ' || seen[r] {
+			return
+		}
+		seen[r] = true
+		s := string(r)
+		if w := cond.StringWidth(s); w != 1 {
+			t.Errorf("%s: %q (U+%04X) is %d cells by go-runewidth", where, r, r, w)
+		}
+		if w := uniseg.StringWidth(s); w != 1 {
+			t.Errorf("%s: %q (U+%04X) is %d cells by uniseg", where, r, r, w)
+		}
+		if w := ansi.StringWidth(s); w != 1 {
+			t.Errorf("%s: %q (U+%04X) is %d cells by ansi", where, r, r, w)
+		}
+	}
+	for name, s := range allSprites() {
+		for _, row := range s {
+			for _, r := range row {
+				check(name, r)
+			}
+		}
+	}
+	// Everything else the scenes draw.
+	for _, r := range `─·.*✦✶?¿yoloYOLO/\|-o` {
+		check("scene", r)
+	}
+}
+
+// TestFiguresDoNotOverlap: ask (with its sign and tumbling body) and yolo never
+// share a cell, at any millisecond. Contact is shown only by the impact marks. Contact is shown only by the
+// impact marks, which sit in the gap between the two.
+func TestFiguresDoNotOverlap(t *testing.T) {
+	for _, w := range []int{40, 60, 120} {
+		c := w / 2
+		for ms := 0; ms <= int(Duration/time.Millisecond); ms++ {
+			fr := layoutFull(c, float64(ms))
+			taken := map[[2]int]who{}
+			for _, f := range fr.figs {
+				if f.who == whoSign {
+					f.who = whoAsk // the sign is ask's
+				}
+				for dy, row := range f.s {
+					x := f.x
+					for _, r := range row {
+						if r != ' ' {
+							if o, ok := taken[[2]int{x, f.y + dy}]; ok && o != f.who {
+								t.Fatalf("w=%d t=%dms: cell (%d,%d) is drawn by both characters", w, ms, x, f.y+dy)
+							}
+							taken[[2]int{x, f.y + dy}] = f.who
+						}
+						x++
+					}
+				}
+			}
+			for _, m := range fr.marks {
+				if _, ok := taken[[2]int{m.x, m.y}]; ok {
+					t.Fatalf("w=%d t=%dms: spark at (%d,%d) sits on a figure", w, ms, m.x, m.y)
+				}
+			}
+		}
 	}
 }
 
@@ -254,13 +344,13 @@ func TestBeats(t *testing.T) {
 	a := started(60)
 	view := func(ms int) string { return strip(a.View(60, at(ms))) }
 
-	if v := view(150); !strings.Contains(v, "?") || strings.Contains(v, "yolo") {
+	if v := view(250); !strings.Contains(v, "?") || strings.Contains(v, "yolo") {
 		t.Fatalf("face-off should show the sign and no word:\n%s", v)
 	}
-	if v := view(700); !strings.ContainsAny(v, "*✦") {
+	if v := view(700); !strings.ContainsAny(v, "*✦✶") {
 		t.Fatalf("scuffle should show impact sparks:\n%s", v)
 	}
-	if v := view(1170); !strings.ContainsAny(v, "*✦") {
+	if v := view(1170); !strings.ContainsAny(v, "*✦✶") {
 		t.Fatalf("the kick should show impact sparks:\n%s", v)
 	}
 	if v := view(1300); !strings.Contains(v, "·") && !strings.Contains(v, ".") {
@@ -283,7 +373,7 @@ func TestKeyFrameGoldens(t *testing.T) {
 		name string
 		ms   int
 	}{
-		{"1_faceoff", 150},
+		{"1_faceoff", 250},
 		{"2_scuffle", 700},
 		{"3_kick", 1170},
 		{"4_flight", 1280},

@@ -13,7 +13,7 @@
 //	a.SetWidth(composerWidth)          // on layout, so Height is right
 //	a.Start(now)                       // on switching to yolo
 //	moving := a.Advance(msg.At)        // each motion.FrameMsg
-//	rows := a.Height(msg.At)           // strip height, 4 then 4->0 at the end
+//	rows := a.Height(msg.At)           // strip height, 7 then 7->0 at the end
 //	block := a.View(width, msg.At)     // exactly rows lines, width cells each
 //	a.Skip()                           // any keypress
 //	if a.Done(now) { /* flip the mode chip */ }
@@ -37,11 +37,11 @@ import (
 const (
 	// Duration is the total run time, including the collapse.
 	Duration = 2200 * time.Millisecond
-	// MinWidth is the narrowest width that gets the four-row strip; below it
+	// MinWidth is the narrowest width that gets the seven-row strip; below it
 	// the one-row version plays.
 	MinWidth = 40
-	// FullHeight is the strip height in rows.
-	FullHeight = 4
+	// FullHeight is the strip height in rows: six rows of figures and the ground.
+	FullHeight = 7
 
 	fadeAt     = 1900 * time.Millisecond // fade to Faint starts
 	fadeSpan   = 250 * time.Millisecond
@@ -91,7 +91,7 @@ func (a *Anim) Done(now time.Time) bool {
 // When it returns false the host stops ticking and flips the mode chip.
 func (a *Anim) Advance(now time.Time) (moving bool) { return !a.Done(now) }
 
-// Height is the number of rows the strip needs at now: 4 (or 1 in the compact
+// Height is the number of rows the strip needs at now: 7 (or 1 in the compact
 // version) while it plays, shrinking to 0 over the last 200ms, and 0 once
 // Done. The host animates the composer with it.
 func (a *Anim) Height(now time.Time) int {

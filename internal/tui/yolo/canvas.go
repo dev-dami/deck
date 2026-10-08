@@ -88,13 +88,31 @@ func (c *canvas) text(x, y int, s string, k kind, bold bool) {
 	}
 }
 
-// sprite draws a pose with its top-left cell at (ox, oy). Spaces are
-// transparent.
-func (c *canvas) sprite(s sprite, ox, oy int, k kind) {
-	for dy, row := range s {
-		x := ox
+// fig draws a placed pose. Each character has one accent detail: ask's [?]
+// sign in Fg, and yolo's headband knot and tails (the = ~ ≈ on its top two
+// rows) in Danger. The tails flutter: ~ and ≈ trade places every 100ms.
+func (c *canvas) fig(f fig, t float64) {
+	swap := int(t/100)%2 == 1
+	for dy, row := range f.s {
+		x := f.x
 		for _, r := range row {
-			c.put(x, oy+dy, r, k, false, 0)
+			k := f.k
+			switch f.who {
+			case whoAsk:
+				if r == '[' || r == '?' || r == ']' {
+					k = kFg
+				}
+			case whoYolo:
+				if dy <= 1 && (r == '=' || r == '~' || r == '≈') {
+					k = kDanger
+					if swap && r == '~' {
+						r = '≈'
+					} else if swap && r == '≈' {
+						r = '~'
+					}
+				}
+			}
+			c.put(x, f.y+dy, r, k, false, 0)
 			x++
 		}
 	}

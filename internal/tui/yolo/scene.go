@@ -14,7 +14,7 @@ const (
 	tStampB  = 1500.0 // word flashes
 	tStampC  = 1600.0 // word settles
 	tFlight  = 340.0  // ask's flight time
-	tSign    = 420.0  // the ? sign's flight time
+	tSign    = 240.0  // the ? sign's flight time
 	tDust    = 300.0  // life of a dust mote
 	scuffleF = 175.0  // one scuffle frame
 )
@@ -40,6 +40,7 @@ func easeOut(u float64) float64 {
 // the kick fast and coasts.
 func launch(u float64) float64 { return 1 - math.Pow(1-clamp01(u), 1.7) }
 
+// spark is a compact-scene impact mark; dx is relative to the centre column.
 type spark struct {
 	dx, row int
 	r       rune
@@ -58,23 +59,50 @@ func stamp(t float64) (word string, k kind, bold, flash bool) {
 	return "yolo", kDanger, true, false
 }
 
-// sceneFull draws the 4-row strip: three rows of figure over a baseline.
-func sceneFull(cv *canvas, t float64) {
-	c := cv.w / 2
-	a0 := c - 3 // ask's head at rest
-	y0 := c + 2 // yolo's head at rest
-	for x := 0; x < cv.w; x++ {
-		cv.put(x, 3, '─', kFaint, false, 0)
-	}
+// who says which character a figure belongs to; it picks the accent colour.
+type who uint8
 
+const (
+	whoAsk who = iota
+	whoYolo
+	whoSign
+)
+
+// fig is a pose placed on the canvas: x, y is its top-left cell.
+type fig struct {
+	s    sprite
+	x, y int
+	who  who
+	k    kind
+}
+
+// mark is an impact spark at an absolute cell.
+type mark struct {
+	x, y int
+	r    rune
+}
+
+// frame is everything the full scene draws at one instant, apart from the
+// ground, the dust and the word.
+type frame struct {
+	figs  []fig
+	marks []mark
+	yx    int // yolo's head column, where the word is anchored
+}
+
+// layoutFull places the characters for the six-row figure strip centred on
+// column c at time t. The two never share a cell: contact is shown by marks.
+func layoutFull(c int, t float64) frame {
+	a0 := c - 6 // ask's head at rest
+	y0 := c + 6 // yolo's head at rest
 	yk := kWarn
 	if t >= tWind {
 		yk = kDanger
 	}
+	var fr frame
 	ax, yx := a0, y0
-	var askP, yoloP sprite
+	var askS, yoloS sprite
 	askHere := t < tHit
-	var sparks []spark // relative to a0
 
 	switch {
 	case t < tScuffle:
@@ -82,149 +110,169 @@ func sceneFull(cv *canvas, t float64) {
 		d := rnd(4 * (1 - easeOut(t/tScuffle)))
 		ax, yx = a0-d, y0+d
 		if int(t/100)%2 == 0 {
-			askP, yoloP = askGuardA, yoloGuardB
+			askS, yoloS = askGuardA, yoloGuardB
 		} else {
-			askP, yoloP = askGuardB, yoloGuardA
+			askS, yoloS = askGuardB, yoloGuardA
 		}
 
 	case t < tWind:
 		switch f := min(int((t-tScuffle)/scuffleF), 3); f {
-		case 0: // yolo punches, ask blocks
-			askP, yoloP = askBlock, yoloPunch
-			sparks = []spark{{2, 1, '*'}, {2, 0, '✦'}}
+		case 0: // yolo jabs, ask blocks
+			askS, yoloS = askBlock, yoloJab
+			fr.marks = []mark{{a0 + 6, 2, '✦'}, {a0 + 5, 1, '*'}}
 		case 1: // ask jabs, yolo blocks
-			askP, yoloP = askJab, yoloBlock
-			sparks = []spark{{3, 1, '✦'}, {3, 0, '*'}}
+			askS, yoloS = askJab, yoloBlock
+			fr.marks = []mark{{a0 + 6, 2, '✦'}, {a0 + 7, 1, '*'}}
 		case 2: // fists meet
-			askP, yoloP = askJab, yoloPunch
-			sparks = []spark{{2, 0, '✦'}, {3, 0, '*'}}
-		default: // yolo lands one, ask is pushed back a column
-			askP, yoloP = askGuardB, yoloPunch
-			ax = a0 - 1
-			sparks = []spark{{2, 1, '✦'}, {2, 0, '*'}}
+			askS, yoloS = askJab, yoloJab
+			fr.marks = []mark{{a0 + 6, 1, '✦'}, {a0 + 6, 2, '✶'}, {a0 + 6, 3, '*'}}
+		default: // yolo lands one: ask is knocked back a column
+			askS, yoloS = askFlinch, yoloJab
+			ax, yx = a0-1, y0-2
+			fr.marks = []mark{{a0 + 3, 2, '✶'}, {a0 + 2, 1, '*'}}
 		}
 
 	case t < tHit:
-		// Ask cowers; yolo draws back a column, then lunges two.
+		// Ask cowers; yolo draws back two columns, then lunges six.
 		if int(t/50)%2 == 0 {
-			askP = askGuardA
+			askS = askGuardA
 		} else {
-			askP = askGuardB
+			askS = askGuardB
 		}
 		if t < tLunge {
-			yoloP = yoloWind
-			yx = y0 + rnd((t-tWind)/(tLunge-tWind))
+			yoloS = yoloWind
+			yx = y0 + rnd(2*(t-tWind)/(tLunge-tWind))
 		} else {
-			yoloP = yoloKick
-			yx = y0 + 1 - rnd(2*(t-tLunge)/(tHit-tLunge))
+			yoloS = yoloKick
+			yx = y0 + 2 - rnd(6*(t-tLunge)/(tHit-tLunge))
 		}
 
 	default:
-		yx = y0 - 1
+		yx = y0 - 4
 		switch {
 		case t < tHit+140:
-			yoloP = yoloKick
+			yoloS = yoloKick
 		case t < tCheer:
-			yoloP = yoloGuardA
+			yoloS = yoloGuardA
 		case int((t-tCheer)/125)%2 == 0:
-			yoloP = yoloCheerA
+			yoloS = yoloCheerA
 		default:
-			yoloP = yoloCheerB
+			yoloS = yoloCheerB
+		}
+		if age := t - tHit; age < 200 {
+			// The foot lands.
+			if age < 100 {
+				fr.marks = append(fr.marks, mark{a0 + 2, 3, '✦'}, mark{a0 + 3, 2, '*'})
+			} else {
+				fr.marks = append(fr.marks, mark{a0 + 2, 2, '✶'}, mark{a0 + 1, 3, '*'})
+			}
 		}
 	}
+	fr.yx = yx
 
 	if askHere {
-		cv.sprite(askP, ax-head, 0, kMuted)
+		fr.figs = append(fr.figs, fig{askS, ax - figHead, 0, whoAsk, kMuted})
 	} else {
-		flight(cv, t, a0)
+		fr.figs = append(fr.figs, flightFigs(t, a0)...)
 	}
-	cv.sprite(flip(yoloP), yx-head, 0, yk)
-	for _, s := range sparks {
-		cv.put(a0+s.dx, s.row, s.r, kWarn, false, 0)
-	}
-
-	if dt := t - tHit; dt >= 0 && dt < 200 {
-		// The foot lands.
-		if dt < 100 {
-			cv.put(c-2, 1, '✦', kWarn, false, 0)
-			cv.put(c-1, 0, '*', kWarn, false, 0)
-		} else {
-			cv.put(c-3, 1, '*', kWarn, false, 0)
-			cv.put(c-2, 0, '✦', kWarn, false, 0)
-		}
-	}
-
-	if w, k, bold, flash := stamp(t); w != "" {
-		x := yx + 3
-		cv.text(x, 0, w, k, bold)
-		if flash {
-			cv.put(x+len(w), 0, '✦', kWarn, false, 0)
-			cv.put(x+len(w)+1, 1, '*', kWarn, false, 0)
-		}
-	}
+	fr.figs = append(fr.figs, fig{yoloS, yx - figHead, 0, whoYolo, yk})
+	return fr
 }
 
-// flightPos is where the kicked figure's head is at progress u: the column,
-// and the top row of its two-row tumbling sprite (it leaves the ground, then
-// holds its height).
-func flightPos(a0 int, u float64) (x, y int) {
-	x = rnd(float64(a0) - float64(a0+3)*launch(u))
-	y = 1
-	if u > 0.15 {
-		y = 0
+// flightPose is the kicked ask at progress u: its head column, the sprite it
+// has rotated to, and the sprite's top row. It is knocked back upright, then
+// tumbles, leaving the ground and climbing to the top rows.
+func flightPose(a0 int, u float64) (xh, top int, s sprite) {
+	xh = rnd(float64(a0) - float64(a0+5)*launch(u))
+	if u < 0.15 {
+		return xh, 0, askFly
 	}
-	return x, y
+	top = 1
+	if u >= 0.5 {
+		top = 0
+	}
+	return xh, top, tumble[int(u*6)%len(tumble)]
 }
 
-// flight draws the kicked ask figure tumbling off the left edge, the ? sign
-// spinning after it, and the dust each leaves.
-func flight(cv *canvas, t float64, a0 int) {
+func (s sprite) width() int { return len([]rune(s[0])) }
+
+// flightFigs places the tumbling ask and the ? sign spinning after it.
+func flightFigs(t float64, a0 int) []fig {
+	age := t - tHit
+	var out []fig
+	// The sign flies higher and a little behind, flipping as it goes.
+	if us := clamp01(age / tSign); us < 1 {
+		// It starts faster than the ask so the body never catches it.
+		sx := a0 - 5 - rnd(float64(a0-2)*(1-math.Pow(1-us, 3)))
+		sy := 2
+		switch {
+		case us > 0.8:
+			sy = 0
+		case us > 0.5:
+			sy = 1
+		}
+		out = append(out, fig{signs[int(age/70)%2], sx, sy, whoSign, kFg})
+	}
+	if u := age / tFlight; u < 1 {
+		xh, top, s := flightPose(a0, u)
+		out = append(out, fig{s, xh - s.width()/2, top, whoAsk, kMuted})
+	}
+	return out
+}
+
+// dustFull draws the puff where the ask stood and the trail along its path.
+func dustFull(cv *canvas, t float64, a0 int) {
 	age := t - tHit
 	if age < 0 {
 		return
 	}
-
-	// Dust: a puff where it stood, and a trail along the path.
+	ground := cv.h - 2
 	if age < tDust {
 		f := age / tDust
-		cv.put(a0-1, 2, '.', kMuted, false, f)
-		cv.put(a0+1, 2, '·', kMuted, false, f)
-		cv.put(a0+3, 2, '.', kMuted, false, f)
+		cv.put(a0-2, ground, '.', kMuted, false, f)
+		cv.put(a0-1, ground, '·', kMuted, false, f)
+		cv.put(a0+1, ground, '·', kMuted, false, f)
+		cv.put(a0+2, ground, '.', kMuted, false, f)
+		cv.put(a0, ground-1, '·', kMuted, false, f)
 	}
 	for tau, i := 0.0, 0; tau <= math.Min(age, tFlight); tau, i = tau+17, i+1 {
 		since := age - tau
 		if since < 40 || since > tDust {
 			continue
 		}
-		x, y := flightPos(a0, tau/tFlight)
+		xh, top, s := flightPose(a0, tau/tFlight)
 		r := '·'
 		if i%2 == 1 {
 			r = '.'
 		}
-		cv.put(x+1, y+1, r, kMuted, false, since/tDust)
+		cv.put(xh+s.width()/2, top+len(s)-1, r, kMuted, false, since/tDust)
 	}
+}
 
-	// The sign flies higher and a little behind, flipping as it goes.
-	us := clamp01(age / tSign)
-	if us < 1 {
-		sx := rnd(float64(a0-2) - float64(a0+4)*us)
-		sy := 1
-		if us > 0.2 {
-			sy = 0
-		}
-		r := '?'
-		if int(age/70)%2 == 1 {
-			r = '¿'
-		}
-		cv.put(sx, sy, r, kMuted, false, 0)
+// sceneFull draws the strip: six rows of figures over a baseline.
+func sceneFull(cv *canvas, t float64) {
+	c := cv.w / 2
+	for x := 0; x < cv.w; x++ {
+		cv.put(x, cv.h-1, '─', kFaint, false, 0)
 	}
+	dustFull(cv, t, c-6)
 
-	u := age / tFlight
-	if u >= 1 {
-		return
+	fr := layoutFull(c, t)
+	for _, f := range fr.figs {
+		cv.fig(f, t)
 	}
-	x, y := flightPos(a0, u)
-	cv.sprite(tumble[int(u*6)%len(tumble)], x-1, y, kMuted)
+	for _, m := range fr.marks {
+		cv.put(m.x, m.y, m.r, kWarn, false, 0)
+	}
+	if w, k, bold, flash := stamp(t); w != "" {
+		x := fr.yx + 7
+		cv.text(x, 1, w, k, bold)
+		if flash {
+			cv.put(x+len(w), 1, '✦', kWarn, false, 0)
+			cv.put(x+len(w)+1, 2, '*', kWarn, false, 0)
+			cv.put(x-1, 0, '*', kWarn, false, 0)
+		}
+	}
 }
 
 // sceneCompact draws the one-row version: tiny figures, same beats.
