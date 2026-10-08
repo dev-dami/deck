@@ -37,9 +37,13 @@ type adapter struct {
 	self   string
 	broker *approve.Broker
 
+	modelsMu sync.Mutex
+	models   []agent.ModelInfo // cached Models() result
+
 	// test hooks
 	extraArgs []string
-	tap       func(line []byte) // called with every raw stdout line
+	tap       func(line []byte)                     // called with every raw stdout line
+	helpFn    func(context.Context) (string, error) // replaces running `claude --help`
 }
 
 // New returns the Claude Code adapter. binary may be empty (looks up "claude" on
@@ -96,6 +100,11 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		}
 	}
 	r.sessionID = spec.ResumeID
+	r.model = spec.Model
+	r.mode = spec.Mode
+	if r.mode == "" {
+		r.mode = agent.ModeAsk
+	}
 
 	if err := r.spawn(spec.ResumeID); err != nil {
 		r.removeConfig()
@@ -179,13 +188,25 @@ type run struct {
 	sessionID string
 	busy      bool
 	closed    bool
-	readers   sync.WaitGroup
-	sendMu    sync.Mutex
-	evMu      sync.RWMutex
-	evClosed  bool
+	model     string     // current --model ("" = CLI default)
+	mode      agent.Mode // current permission mode (never empty)
+	// dirty: model or mode changed while busy (or while a restart was running);
+	// the process is restarted with the new flags once the turn is done.
+	dirty bool
+	// restarting: a deliberate restart is in flight; Sends are queued in
+	// queue and written, in order, to the new process when it is up.
+	restarting bool
+	queue      [][]byte
+	readers    sync.WaitGroup
+	sendMu     sync.Mutex
+	evMu       sync.RWMutex
+	evClosed   bool
 }
 
 func (r *run) args(resume string) []string {
+	r.mu.Lock()
+	model, mode := r.model, r.mode
+	r.mu.Unlock()
 	args := []string{
 		"-p",
 		"--input-format", "stream-json",
@@ -198,8 +219,14 @@ func (r *run) args(resume string) []string {
 			"--permission-prompt-tool", "mcp__"+r.mcpName+"__"+approve.MCPToolName,
 			"--allowedTools", "mcp__"+r.mcpName+"__"+approve.MCPToolSendMessage+",mcp__"+r.mcpName+"__"+approve.MCPToolReadThread)
 	}
-	if r.spec.Model != "" {
-		args = append(args, "--model", r.spec.Model)
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	switch mode {
+	case agent.ModePlan:
+		args = append(args, "--permission-mode", "plan")
+	case agent.ModeYolo:
+		args = append(args, "--permission-mode", "bypassPermissions")
 	}
 	if resume != "" {
 		args = append(args, "--resume", resume)
@@ -286,6 +313,7 @@ func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 				r.a.tap(append([]byte(nil), line...))
 			}
 			for _, ev := range r.tr.Line(line) {
+				restart := false
 				switch ev.Kind {
 				case agent.KindSessionStarted:
 					r.mu.Lock()
@@ -294,6 +322,12 @@ func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 				case agent.KindTurnDone:
 					r.mu.Lock()
 					r.busy = false
+					// A mode/model change arrived mid-turn: from here on Sends
+					// queue until the restart (below) has finished.
+					if r.dirty && !r.closed && !p.intentional && !r.restarting {
+						r.restarting = true
+						restart = true
+					}
 					r.mu.Unlock()
 				}
 				r.mu.Lock()
@@ -303,6 +337,9 @@ func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 					continue
 				}
 				r.emit(ev)
+				if restart {
+					go r.restart()
+				}
 			}
 		}
 		if err != nil {
@@ -365,6 +402,13 @@ func (r *run) Send(prompt string) error {
 		r.mu.Unlock()
 		return errors.New("claude run is closed")
 	}
+	if r.restarting {
+		// A mode/model restart is in flight: hold the prompt, restart() writes it.
+		r.queue = append(r.queue, append(append([]byte(nil), data...), '\n'))
+		r.mu.Unlock()
+		r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindUserText, Text: prompt, Raw: data})
+		return nil
+	}
 	p := r.cur
 	r.busy = true
 	r.mu.Unlock()
@@ -388,6 +432,12 @@ func (r *run) Interrupt() error {
 		r.mu.Unlock()
 		return errors.New("claude run is closed")
 	}
+	if r.restarting {
+		// Nothing is running; drop what was queued behind the restart.
+		r.queue = nil
+		r.mu.Unlock()
+		return nil
+	}
 	if !r.busy {
 		r.mu.Unlock()
 		return nil
@@ -396,6 +446,7 @@ func (r *run) Interrupt() error {
 	old.intentional = true
 	sid := r.sessionID
 	r.busy = false
+	r.dirty = false // the replacement below starts with the current model/mode
 	r.mu.Unlock()
 
 	killTree(old.cmd)
@@ -412,6 +463,130 @@ func (r *run) Interrupt() error {
 	}
 	r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindTurnDone, Text: "interrupted"})
 	return nil
+}
+
+// SetMode implements agent.ModeSetter. Claude Code takes its permission mode
+// as a start-up flag, so a change restarts the process with --resume (see
+// apply). Idle: now. Busy: right after the current turn is done.
+func (r *run) SetMode(m agent.Mode) error {
+	if m == "" {
+		m = agent.ModeAsk
+	}
+	switch m {
+	case agent.ModePlan, agent.ModeAsk, agent.ModeYolo:
+	default:
+		return fmt.Errorf("unknown mode %q", m)
+	}
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return errors.New("claude run is closed")
+	}
+	if r.mode == m {
+		r.mu.Unlock()
+		return nil
+	}
+	r.mode = m
+	r.applyLocked()
+	return nil
+}
+
+// SetModel implements agent.ModelSetter; "" selects the CLI default.
+func (r *run) SetModel(model string) error {
+	model = strings.TrimSpace(model)
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return errors.New("claude run is closed")
+	}
+	if r.model == model {
+		r.mu.Unlock()
+		return nil
+	}
+	r.model = model
+	r.applyLocked()
+	return nil
+}
+
+// applyLocked is called with r.mu held after r.mode/r.model changed, and
+// releases it. If a turn (or another restart) is in progress the restart is
+// deferred; otherwise it starts now.
+func (r *run) applyLocked() {
+	if r.busy || r.restarting {
+		r.dirty = true
+		r.mu.Unlock()
+		return
+	}
+	r.restarting = true
+	r.mu.Unlock()
+	go r.restart()
+}
+
+// restart replaces the idle process with one started from the current
+// model/mode flags (and --resume of the session, if one exists). It is a
+// deliberate restart: it emits no TurnDone / Exited. The caller has set
+// r.restarting, so Sends are queued meanwhile and flushed here, in order.
+func (r *run) restart() {
+	for {
+		r.mu.Lock()
+		if r.closed {
+			r.restarting = false
+			r.queue = nil
+			r.mu.Unlock()
+			return
+		}
+		old := r.cur
+		sid := r.sessionID
+		r.dirty = false // spawn reads the flags after this point; later changes set it again
+		if old != nil {
+			old.intentional = true
+		}
+		r.mu.Unlock()
+
+		if old != nil {
+			killTree(old.cmd)
+			old.closeStdin()
+			waitProcExit(old)
+		}
+		err := r.spawn(sid)
+
+		r.mu.Lock()
+		if err != nil {
+			closed := r.closed
+			r.restarting = false
+			r.queue = nil
+			r.mu.Unlock()
+			if !closed {
+				r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindError, Text: err.Error()})
+				r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindExited})
+				go r.Close()
+			}
+			return
+		}
+		if r.dirty && !r.closed {
+			r.mu.Unlock()
+			continue // changed again while restarting
+		}
+		r.restarting = false
+		q := r.queue
+		r.queue = nil
+		p := r.cur
+		if len(q) > 0 {
+			r.busy = true
+		}
+		r.mu.Unlock()
+
+		for _, data := range q {
+			r.sendMu.Lock()
+			_, werr := p.stdin.Write(data)
+			r.sendMu.Unlock()
+			if werr != nil {
+				r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindError, Text: fmt.Sprintf("writing to claude: %v", werr)})
+				break
+			}
+		}
+		return
+	}
 }
 
 func waitProcExit(p *proc) {

@@ -162,6 +162,9 @@ func fakeClaude() {
 		if strings.Contains(sc.Text(), "HANG") {
 			time.Sleep(time.Hour)
 		}
+		if strings.Contains(sc.Text(), "SLOW") {
+			time.Sleep(700 * time.Millisecond)
+		}
 		os.Stdout.Write(data)
 	}
 }
