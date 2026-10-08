@@ -413,3 +413,105 @@ func contains(ss []string, s string) bool {
 	}
 	return false
 }
+
+func TestAdapterAllowedToolsAndInstructions(t *testing.T) {
+	a, spec, argsFile := newFake(t)
+	spec.Instructions = "You share a thread with codex."
+	spec.FirstPrompt = "go"
+	r, err := a.Start(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	waitKind(t, r, agent.KindTurnDone)
+	args := readArgs(t, argsFile)[0]
+	if v, _ := argAfter(args, "--allowedTools"); v != "mcp__deck__send_message,mcp__deck__read_thread" {
+		t.Errorf("allowedTools %q", v)
+	}
+	if v, _ := argAfter(args, "--permission-prompt-tool"); v != "mcp__deck__approve" {
+		t.Errorf("permission-prompt-tool %q", v)
+	}
+	if v, _ := argAfter(args, "--append-system-prompt"); v != "The user's name is Dami.\n\nYou share a thread with codex." {
+		t.Errorf("system prompt %q", v)
+	}
+	// Instructions alone (name not allowed)
+	spec.TellName = false
+	r2, err := a.Start(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r2.Close()
+	waitKind(t, r2, agent.KindTurnDone)
+	all := readArgs(t, argsFile)
+	if v, _ := argAfter(all[len(all)-1], "--append-system-prompt"); v != "You share a thread with codex." {
+		t.Errorf("instructions-only system prompt %q", v)
+	}
+}
+
+func TestAdapterUsesSpecMCP(t *testing.T) {
+	a, spec, argsFile := newFake(t)
+	spec.MCP = &agent.MCPServer{
+		Name:    "deck",
+		Command: "/opt/deck",
+		Args:    []string{"mcp-approve", "--addr", "127.0.0.1:9", "--agent", "claude7"},
+		Env:     map[string]string{approve.TokenEnv: "spec-token"},
+	}
+	spec.FirstPrompt = "go"
+	r, err := a.Start(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	waitKind(t, r, agent.KindTurnDone)
+	args := readArgs(t, argsFile)[0]
+	cfg, _ := argAfter(args, "--mcp-config")
+	raw, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		MCPServers map[string]struct {
+			Command string            `json:"command"`
+			Args    []string          `json:"args"`
+			Env     map[string]string `json:"env"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	d := parsed.MCPServers["deck"]
+	if d.Command != "/opt/deck" || len(d.Args) != 5 || d.Args[2] != "127.0.0.1:9" || d.Env[approve.TokenEnv] != "spec-token" {
+		t.Errorf("config does not reflect spec.MCP: %+v", d)
+	}
+	if strings.Contains(strings.Join(args, " "), "spec-token") {
+		t.Error("token on the command line")
+	}
+}
+
+func TestTranslateMessagingTools(t *testing.T) {
+	tr := newTranslator("c1")
+	long := strings.Repeat("abcdefghij", 10)
+	lines := []string{
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"m1","name":"mcp__deck__send_message","input":{"to":"codex","message":"` + long + `"}},{"type":"tool_use","id":"m2","name":"mcp__deck__read_thread","input":{}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"m1","content":"delivered to codex"},{"type":"tool_result","tool_use_id":"m2","content":"thread"}]}}`,
+	}
+	var evs []agent.Event
+	for _, l := range lines {
+		evs = append(evs, tr.Line([]byte(l))...)
+	}
+	if len(evs) != 4 {
+		t.Fatalf("events %v", kinds(evs))
+	}
+	if c := evs[0].Tool; evs[0].Kind != agent.KindToolCall || c.Name != "message" || c.Title != "to codex: "+long[:60] {
+		t.Errorf("send_message call %+v", c)
+	}
+	if c := evs[1].Tool; c.Name != "read" || c.Title != "shared thread" {
+		t.Errorf("read_thread call %+v", c)
+	}
+	if c := evs[2].Tool; c.Name != "message" || c.Output != "delivered to codex" || c.Status != agent.ToolOK {
+		t.Errorf("send_message result %+v", c)
+	}
+	if c := evs[3].Tool; c.Name != "read" {
+		t.Errorf("read_thread result %+v", c)
+	}
+}

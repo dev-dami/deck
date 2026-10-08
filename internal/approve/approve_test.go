@@ -3,6 +3,7 @@ package approve
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"strings"
@@ -185,8 +186,20 @@ func TestMCPRoundTrip(t *testing.T) {
 
 	m = call(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
 	tools := m["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 1 || tools[0].(map[string]any)["name"] != "approve" {
+	var names []string
+	for _, tl := range tools {
+		names = append(names, tl.(map[string]any)["name"].(string))
+	}
+	if strings.Join(names, ",") != "approve,send_message,read_thread" {
 		t.Fatalf("tools/list: %v", m)
+	}
+	sm := tools[1].(map[string]any)
+	if d := sm["description"].(string); !strings.Contains(d, "shared Deck thread") || !strings.Contains(d, "user sees every message") {
+		t.Errorf("send_message description %q", d)
+	}
+	props := sm["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if props["to"] == nil || props["message"] == nil {
+		t.Errorf("send_message schema %v", sm["inputSchema"])
 	}
 
 	go func() {
@@ -257,4 +270,172 @@ func TestBuildEditDiffSeparateHunks(t *testing.T) {
 	if d.Hunks[1].OldStart != 23 {
 		t.Fatalf("second hunk start %d", d.Hunks[1].OldStart)
 	}
+}
+
+func recvMsg(t *testing.T, ch <-chan agent.Message) agent.Message {
+	t.Helper()
+	select {
+	case m := <-ch:
+		return m
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for message")
+		return agent.Message{}
+	}
+}
+
+func TestMessageRoundTrip(t *testing.T) {
+	b, _ := NewBroker()
+	defer b.Close()
+	var hub agent.Hub = b
+
+	out := make(chan string, 1)
+	go func() {
+		s, _ := rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "message", AgentID: "claude", RequestID: "m1", To: "codex", Text: "hi there"})
+		out <- s
+	}()
+	m := recvMsg(t, hub.Messages())
+	if m.From != "claude" || m.To != "codex" || m.Text != "hi there" || m.ID != "m1" {
+		t.Fatalf("bad message %+v", m)
+	}
+	m.Respond("delivered to codex", nil)
+	m.Respond("ignored second call", nil)
+	if s := <-out; s != `{"text":"delivered to codex"}` {
+		t.Fatalf("reply %q", s)
+	}
+
+	go func() {
+		s, _ := rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "message", AgentID: "claude", To: "nobody", Text: "x"})
+		out <- s
+	}()
+	m = recvMsg(t, hub.Messages())
+	m.Respond("", errors.New("no such agent: nobody"))
+	if s := <-out; s != `{"text":"no such agent: nobody","is_error":true}` {
+		t.Fatalf("error reply %q", s)
+	}
+}
+
+func TestMessageTimeout(t *testing.T) {
+	old := messageTimeout
+	messageTimeout = 100 * time.Millisecond
+	defer func() { messageTimeout = old }()
+	b, _ := NewBroker()
+	defer b.Close()
+
+	s, err := rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "message", AgentID: "claude", To: "codex", Text: "x"})
+	if err != nil || s != `{"text":"Deck did not answer","is_error":true}` {
+		t.Fatalf("timeout reply %q %v", s, err)
+	}
+	// a late Respond must not panic or block
+	m := recvMsg(t, b.Messages())
+	m.Respond("late", nil)
+}
+
+func TestReadThread(t *testing.T) {
+	b, _ := NewBroker()
+	defer b.Close()
+
+	s, _ := rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "read", AgentID: "claude"})
+	if s != `{"text":"No shared thread."}` {
+		t.Fatalf("no provider reply %q", s)
+	}
+	var gotID string
+	b.SetThreadReader(func(id string) string { gotID = id; return "you: hi\ncodex: yo" })
+	s, _ = rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "read", AgentID: "claude2"})
+	if s != `{"text":"you: hi\ncodex: yo"}` || gotID != "claude2" {
+		t.Fatalf("reader reply %q id=%q", s, gotID)
+	}
+}
+
+func TestWrongTokenRejectedNewKinds(t *testing.T) {
+	b, _ := NewBroker()
+	defer b.Close()
+	b.SetThreadReader(func(string) string { return "secret transcript" })
+	for _, kind := range []string{"message", "read"} {
+		s, err := rawReq(t, b.Addr(), wireRequest{Token: "nope", Kind: kind, AgentID: "a", To: "codex", Text: "x"})
+		if err == nil || s != "" {
+			t.Fatalf("%s: expected closed connection, got %q err=%v", kind, s, err)
+		}
+	}
+	select {
+	case m := <-b.Messages():
+		t.Fatalf("message must not be surfaced: %+v", m)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestServerFor(t *testing.T) {
+	b, _ := NewBroker()
+	defer b.Close()
+	srv := b.ServerFor("/bin/deck", "claude3")
+	if srv.Name != "deck" || srv.Command != "/bin/deck" {
+		t.Fatalf("%+v", srv)
+	}
+	want := []string{"mcp-approve", "--addr", b.Addr(), "--agent", "claude3"}
+	if strings.Join(srv.Args, "|") != strings.Join(want, "|") {
+		t.Fatalf("args %v", srv.Args)
+	}
+	if srv.Env[TokenEnv] != b.Token() || len(srv.Env) != 1 {
+		t.Fatalf("env %v", srv.Env)
+	}
+	if strings.Contains(strings.Join(srv.Args, " "), b.Token()) {
+		t.Fatal("token leaked into args")
+	}
+}
+
+func TestMCPMessageTools(t *testing.T) {
+	b, _ := NewBroker()
+	defer b.Close()
+	b.SetThreadReader(func(id string) string { return "thread for " + id })
+
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	go func() { MCPServe(inR, outW, b.Addr(), b.Token(), "claude"); outW.Close() }()
+	out := bufio.NewReader(outR)
+	call := func(line string) map[string]any {
+		t.Helper()
+		io.WriteString(inW, line+"\n")
+		s, err := out.ReadString('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(s), &m); err != nil {
+			t.Fatalf("bad json %q", s)
+		}
+		return m
+	}
+	text := func(m map[string]any) (string, bool) {
+		res := m["result"].(map[string]any)
+		isErr, _ := res["isError"].(bool)
+		return res["content"].([]any)[0].(map[string]any)["text"].(string), isErr
+	}
+
+	go func() {
+		m := recvMsg(t, b.Messages())
+		if m.From != "claude" || m.To != "codex" || m.Text != "hi" {
+			t.Errorf("bad message %+v", m)
+		}
+		m.Respond("delivered to codex", nil)
+	}()
+	txt, isErr := text(call(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"codex","message":"hi"}}}`))
+	if txt != "delivered to codex" || isErr {
+		t.Fatalf("send_message result %q %v", txt, isErr)
+	}
+
+	go func() { recvMsg(t, b.Messages()).Respond("", errors.New("codex is not in this thread")) }()
+	txt, isErr = text(call(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"codex","message":"hi"}}}`))
+	if txt != "codex is not in this thread" || !isErr {
+		t.Fatalf("send_message error result %q %v", txt, isErr)
+	}
+
+	txt, isErr = text(call(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"","message":"hi"}}}`))
+	if !isErr {
+		t.Fatalf("empty target should be an error result, got %q", txt)
+	}
+
+	txt, isErr = text(call(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"read_thread","arguments":{}}}`))
+	if txt != "thread for claude" || isErr {
+		t.Fatalf("read_thread result %q %v", txt, isErr)
+	}
+	inW.Close()
 }

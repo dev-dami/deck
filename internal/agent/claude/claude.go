@@ -26,6 +26,12 @@ import (
 // "deck", tool "approve".
 const MCPToolFlagValue = "mcp__deck__" + approve.MCPToolName
 
+// Messaging tool names as Claude sees them (server "deck").
+const (
+	toolSendMessage = "mcp__deck__" + approve.MCPToolSendMessage
+	toolReadThread  = "mcp__deck__" + approve.MCPToolReadThread
+)
+
 type adapter struct {
 	binary string
 	self   string
@@ -69,13 +75,25 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 	}
 	if a.broker != nil {
 		r.approvals = a.broker.Register(spec.ID)
-		cfg, err := writeMCPConfig(a.self, a.broker.Addr(), a.broker.Token(), spec.ID)
+	} else {
+		r.approvals = make(chan agent.ApprovalRequest)
+	}
+	// Prefer the server the caller put in the spec; fall back to one built from
+	// the adapter's own broker so older callers keep working.
+	server := spec.MCP
+	if server == nil && a.broker != nil {
+		server = a.broker.ServerFor(a.self, spec.ID)
+	}
+	if server != nil {
+		cfg, err := writeMCPConfig(server)
 		if err != nil {
 			return nil, err
 		}
 		r.cfgPath = cfg
-	} else {
-		r.approvals = make(chan agent.ApprovalRequest)
+		r.mcpName = server.Name
+		if r.mcpName == "" {
+			r.mcpName = "deck"
+		}
 	}
 	r.sessionID = spec.ResumeID
 
@@ -99,12 +117,21 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 	return r, nil
 }
 
-func writeMCPConfig(selfExe, addr, token, agentID string) (string, error) {
-	cfg := map[string]any{"mcpServers": map[string]any{"deck": map[string]any{
-		"command": selfExe,
-		"args":    []string{"mcp-approve", "--addr", addr, "--agent", agentID},
-		"env":     map[string]string{approve.TokenEnv: token},
-	}}}
+// writeMCPConfig writes the --mcp-config file (0600; it carries the hub token in
+// the server env) for one stdio MCP server.
+func writeMCPConfig(s *agent.MCPServer) (string, error) {
+	name := s.Name
+	if name == "" {
+		name = "deck"
+	}
+	entry := map[string]any{"command": s.Command, "args": s.Args}
+	if len(s.Env) > 0 {
+		entry["env"] = s.Env
+	}
+	if s.Args == nil {
+		entry["args"] = []string{}
+	}
+	cfg := map[string]any{"mcpServers": map[string]any{name: entry}}
 	data, _ := json.Marshal(cfg)
 	f, err := os.CreateTemp("", "deck-mcp-*.json")
 	if err != nil {
@@ -143,6 +170,7 @@ type run struct {
 	approvals <-chan agent.ApprovalRequest
 	done      chan struct{}
 	cfgPath   string
+	mcpName   string // server name in the MCP config ("deck")
 
 	tr *translator // used by the single active reader goroutine at a time
 
@@ -166,7 +194,9 @@ func (r *run) args(resume string) []string {
 		"--include-partial-messages",
 	}
 	if r.cfgPath != "" {
-		args = append(args, "--mcp-config", r.cfgPath, "--permission-prompt-tool", MCPToolFlagValue)
+		args = append(args, "--mcp-config", r.cfgPath,
+			"--permission-prompt-tool", "mcp__"+r.mcpName+"__"+approve.MCPToolName,
+			"--allowedTools", "mcp__"+r.mcpName+"__"+approve.MCPToolSendMessage+",mcp__"+r.mcpName+"__"+approve.MCPToolReadThread)
 	}
 	if r.spec.Model != "" {
 		args = append(args, "--model", r.spec.Model)
@@ -174,8 +204,15 @@ func (r *run) args(resume string) []string {
 	if resume != "" {
 		args = append(args, "--resume", resume)
 	}
+	var sys []string
 	if r.spec.TellName && r.spec.UserName != "" {
-		args = append(args, "--append-system-prompt", "The user's name is "+r.spec.UserName+".")
+		sys = append(sys, "The user's name is "+r.spec.UserName+".")
+	}
+	if in := strings.TrimSpace(r.spec.Instructions); in != "" {
+		sys = append(sys, in)
+	}
+	if len(sys) > 0 {
+		args = append(args, "--append-system-prompt", strings.Join(sys, "\n\n"))
 	}
 	args = append(args, r.a.extraArgs...)
 	return args

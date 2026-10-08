@@ -177,10 +177,10 @@ func (t *translator) assistant(sl streamLine, mk func(agent.Kind) agent.Event) [
 			ev.Text = b.Thinking
 			out = append(out, ev)
 		case "tool_use":
-			title := toolTitle(b.Name, b.Input)
-			t.tools[b.ID] = toolInfo{name: b.Name, title: title, input: b.Input}
+			name, title := displayTool(b.Name, b.Input)
+			t.tools[b.ID] = toolInfo{name: name, title: title, input: b.Input}
 			ev := mk(agent.KindToolCall)
-			ev.Tool = &agent.Tool{ID: b.ID, Name: b.Name, Title: title, Input: b.Input, Status: agent.ToolRunning}
+			ev.Tool = &agent.Tool{ID: b.ID, Name: name, Title: title, Input: b.Input, Status: agent.ToolRunning}
 			out = append(out, ev)
 		}
 	}
@@ -306,6 +306,27 @@ func stringifyContent(raw json.RawMessage) string {
 		return sb.String()
 	}
 	return string(raw)
+}
+
+// displayTool maps Claude's tool name to Deck's display name and title. Deck's
+// own messaging tools become "message" ("to <to>: <text>") and "read".
+func displayTool(name string, input json.RawMessage) (string, string) {
+	switch name {
+	case toolSendMessage:
+		var in struct {
+			To      string `json:"to"`
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(input, &in)
+		text := strings.Join(strings.Fields(in.Message), " ")
+		if r := []rune(text); len(r) > 60 {
+			text = string(r[:60])
+		}
+		return "message", "to " + in.To + ": " + text
+	case toolReadThread:
+		return "read", "shared thread"
+	}
+	return name, toolTitle(name, input)
 }
 
 func toolTitle(name string, input json.RawMessage) string {

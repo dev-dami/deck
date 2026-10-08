@@ -127,3 +127,80 @@ func TestLiveApproval(t *testing.T) {
 		t.Fatal("no approval request surfaced")
 	}
 }
+
+// TestLiveMessaging checks against real Claude that the deck messaging tools are
+// visible and callable without a permission prompt. DECK_LIVE=message.
+func TestLiveMessaging(t *testing.T) {
+	if os.Getenv("DECK_LIVE") != "message" {
+		t.Skip("set DECK_LIVE=message to exercise send_message against real Claude")
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	broker, err := approve.NewBroker()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.Close()
+
+	got := make(chan agent.Message, 4)
+	go func() {
+		for m := range broker.Messages() {
+			got <- m
+			m.Respond("delivered to "+m.To, nil)
+		}
+	}()
+
+	a := New("", self, broker)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	r, err := a.Start(ctx, agent.Spec{
+		ID: "claude1", Dir: t.TempDir(),
+		MCP:          broker.ServerFor(self, "claude1"),
+		Instructions: "You share a Deck thread with an agent named codex. Use the deck send_message tool to talk to it.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	go func() {
+		for req := range r.Approvals() {
+			t.Logf("approval surfaced: tool=%s", req.ToolName)
+			req.Respond(agent.Decision{Allow: true})
+		}
+	}()
+	if err := r.Send("Use the deck send_message tool to send 'hi' to codex, then reply DONE."); err != nil {
+		t.Fatal(err)
+	}
+	timeout := time.After(4 * time.Minute)
+loop:
+	for {
+		select {
+		case ev, ok := <-r.Events():
+			if !ok {
+				break loop
+			}
+			t.Logf("%s %s %q", ev.Kind, func() string {
+				if ev.Tool != nil {
+					return ev.Tool.Name + " | " + ev.Tool.Title
+				}
+				return ""
+			}(), ev.Text)
+			if ev.Kind == agent.KindTurnDone || ev.Kind == agent.KindExited {
+				break loop
+			}
+		case <-timeout:
+			t.Fatal("timeout")
+		}
+	}
+	select {
+	case m := <-got:
+		t.Logf("hub received: from=%s to=%s text=%q", m.From, m.To, m.Text)
+		if m.To != "codex" {
+			t.Errorf("unexpected target %q", m.To)
+		}
+	default:
+		t.Fatal("send_message never reached the hub")
+	}
+}

@@ -16,9 +16,22 @@ import (
 	"github.com/dev-dami/deck/internal/agent"
 )
 
+// Wire request kinds. An empty kind means approve (backward compatible).
+const (
+	kindApprove = "approve"
+	kindMessage = "message"
+	kindRead    = "read"
+)
+
+// messageTimeout is how long send_message waits for Deck to answer.
+var messageTimeout = 30 * time.Second
+
 // wireRequest is one newline-JSON request from the MCP helper process.
 type wireRequest struct {
 	Token     string          `json:"token"`
+	Kind      string          `json:"kind,omitempty"` // approve (default) | message | read
+	To        string          `json:"to,omitempty"`   // message: target agent name or "all"
+	Text      string          `json:"text,omitempty"` // message: the text
 	AgentID   string          `json:"agent_id"`
 	RequestID string          `json:"request_id"`
 	ToolName  string          `json:"tool_name"`
@@ -40,7 +53,12 @@ type Broker struct {
 	agents map[string]*agentState
 	done   chan struct{}
 	once   sync.Once
+
+	messages chan agent.Message
+	reader   func(agentID string) string
 }
+
+var _ agent.Hub = (*Broker)(nil)
 
 // NewBroker starts listening on 127.0.0.1 on a random port.
 func NewBroker() (*Broker, error) {
@@ -57,6 +75,8 @@ func NewBroker() (*Broker, error) {
 		token:  hex.EncodeToString(raw[:]),
 		agents: map[string]*agentState{},
 		done:   make(chan struct{}),
+
+		messages: make(chan agent.Message, 32),
 	}
 	go b.accept()
 	return b, nil
@@ -67,6 +87,28 @@ func (b *Broker) Addr() string { return b.ln.Addr().String() }
 
 // Token is the shared secret clients must present.
 func (b *Broker) Token() string { return b.token }
+
+// Messages delivers send_message calls from every agent. Each message's Respond
+// must be called exactly once; the sending agent is blocked until then.
+func (b *Broker) Messages() <-chan agent.Message { return b.messages }
+
+// SetThreadReader installs the read_thread provider.
+func (b *Broker) SetThreadReader(f func(agentID string) string) {
+	b.mu.Lock()
+	b.reader = f
+	b.mu.Unlock()
+}
+
+// ServerFor builds the MCP server description for one agent: the Deck binary
+// run as `mcp-approve`, with the broker token in its environment only.
+func (b *Broker) ServerFor(selfExe, agentID string) *agent.MCPServer {
+	return &agent.MCPServer{
+		Name:    "deck",
+		Command: selfExe,
+		Args:    []string{"mcp-approve", "--addr", b.Addr(), "--agent", agentID},
+		Env:     map[string]string{TokenEnv: b.token},
+	}
+}
 
 // Close stops the listener. Pending requests are denied.
 func (b *Broker) Close() {
@@ -127,7 +169,17 @@ func (b *Broker) serve(c net.Conn) {
 		if subtle.ConstantTimeCompare([]byte(req.Token), []byte(b.token)) != 1 {
 			return
 		}
-		resp := b.handle(req)
+		var resp any
+		switch req.Kind {
+		case "", kindApprove:
+			resp = b.handle(req)
+		case kindMessage:
+			resp = b.handleMessage(req)
+		case kindRead:
+			resp = b.handleRead(req)
+		default:
+			resp = wireResponse{Behavior: "deny", Message: "unknown request kind"}
+		}
 		out, _ := json.Marshal(resp)
 		c.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		if _, err := c.Write(append(out, '\n')); err != nil {
@@ -140,6 +192,64 @@ type wireResponse struct {
 	Behavior     string          `json:"behavior"`
 	UpdatedInput json.RawMessage `json:"updatedInput,omitempty"`
 	Message      string          `json:"message,omitempty"`
+}
+
+// wireReply answers message and read requests.
+type wireReply struct {
+	Text    string `json:"text"`
+	IsError bool   `json:"is_error,omitempty"`
+}
+
+func (b *Broker) handleMessage(req wireRequest) wireReply {
+	type result struct {
+		text string
+		err  error
+	}
+	reply := make(chan result, 1)
+	var once sync.Once
+	m := agent.Message{
+		ID:   req.RequestID,
+		From: req.AgentID,
+		To:   req.To,
+		Text: req.Text,
+		Respond: func(text string, err error) {
+			once.Do(func() { reply <- result{text, err} })
+		},
+	}
+	timer := time.NewTimer(messageTimeout)
+	defer timer.Stop()
+	select {
+	case b.messages <- m:
+	case <-b.done:
+		return wireReply{Text: "Deck is shutting down", IsError: true}
+	case <-timer.C:
+		return wireReply{Text: "Deck did not answer", IsError: true}
+	}
+	select {
+	case r := <-reply:
+		if r.err != nil {
+			text := r.err.Error()
+			if r.text != "" {
+				text = r.text
+			}
+			return wireReply{Text: text, IsError: true}
+		}
+		return wireReply{Text: r.text}
+	case <-b.done:
+		return wireReply{Text: "Deck is shutting down", IsError: true}
+	case <-timer.C:
+		return wireReply{Text: "Deck did not answer", IsError: true}
+	}
+}
+
+func (b *Broker) handleRead(req wireRequest) wireReply {
+	b.mu.Lock()
+	f := b.reader
+	b.mu.Unlock()
+	if f == nil {
+		return wireReply{Text: "No shared thread."}
+	}
+	return wireReply{Text: f(req.AgentID)}
 }
 
 func (b *Broker) handle(req wireRequest) wireResponse {
