@@ -1,5 +1,12 @@
-﻿bin/
+bin/
 dist/
 *.exe
 /deck
 .deck/
+
+# test coverage
+coverage.out
+coverage.txt
+coverage.html
+*.coverprofile
+cover.out

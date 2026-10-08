@@ -1,0 +1,63 @@
+# GoReleaser configuration: https://goreleaser.com
+version: 2
+
+project_name: deck
+
+builds:
+  - id: deck
+    main: ./cmd/deck
+    binary: deck
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
+
+  - id: deckdemo
+    main: ./cmd/deckdemo
+    binary: deckdemo
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+
+  - id: decklogo
+    main: ./cmd/decklogo
+    binary: decklogo
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+
+archives:
+  - id: deck
+    ids: [deck, deckdemo, decklogo]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^test:"
+      - "^Merge "
+
+release:
+  # Tags like v0.1.0-rc.1 are published as pre-releases.
+  prerelease: auto

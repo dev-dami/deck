@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -28,7 +27,6 @@ var forbiddenEnvRead = regexp.MustCompile(`(?:Getenv|LookupEnv)\(\s*"(?:ANTHROPI
 
 func TestNoCredentialOrAPIReferences(t *testing.T) {
 	root := repoRoot(t)
-	self := thisFile(t)
 
 	files := goFiles(t, root)
 	if len(files) < 3 {
@@ -36,7 +34,10 @@ func TestNoCredentialOrAPIReferences(t *testing.T) {
 	}
 
 	for _, path := range files {
-		if path == self {
+		rel, _ := filepath.Rel(root, path)
+		// This file names the forbidden patterns on purpose. Match by repo-relative
+		// path, not runtime.Caller, which is wrong under -trimpath or cross builds.
+		if filepath.ToSlash(rel) == "internal/guard/guard_test.go" {
 			continue
 		}
 		data, err := os.ReadFile(path)
@@ -44,7 +45,6 @@ func TestNoCredentialOrAPIReferences(t *testing.T) {
 			t.Errorf("read %s: %v", path, err)
 			continue
 		}
-		rel, _ := filepath.Rel(root, path)
 		text := string(data)
 		for _, bad := range forbiddenText {
 			if strings.Contains(text, bad) {
@@ -122,19 +122,4 @@ func goFiles(t *testing.T, root string) []string {
 		t.Fatalf("walk %s: %v", root, err)
 	}
 	return out
-}
-
-// thisFile returns the absolute path of this test file, which is excluded
-// from the scan because it names the forbidden patterns on purpose.
-func thisFile(t *testing.T) string {
-	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot locate guard_test.go")
-	}
-	abs, err := filepath.Abs(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return abs
 }

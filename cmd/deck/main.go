@@ -33,7 +33,12 @@ import (
 	"github.com/dev-dami/deck/internal/tui"
 )
 
-var version = "dev"
+// Set at release time: -ldflags "-X main.version=... -X main.commit=... -X main.date=..."
+var (
+	version = "dev"
+	commit  = ""
+	date    = ""
+)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -56,6 +61,12 @@ func run(args []string) error {
 		return listThreads(os.Stdout)
 	case "version", "--version", "-v":
 		fmt.Println("deck", version)
+		if commit != "" {
+			fmt.Println("commit", commit)
+		}
+		if date != "" {
+			fmt.Println("built", date)
+		}
 		return nil
 	case "mcp-approve":
 		return mcpApprove(args[1:])

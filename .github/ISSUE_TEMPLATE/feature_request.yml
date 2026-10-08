@@ -1,0 +1,51 @@
+name: Feature request
+description: Suggest an idea or an improvement
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Deck is small on purpose. Ideas that keep it calm, dense and easy to reason about are the most likely to land. Please read [CONTRIBUTING.md](https://github.com/dev-dami/deck/blob/main/CONTRIBUTING.md) first, especially "Playing by the rules".
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation you are in. Focus on the problem before the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What you would like deck to do. A rough sketch of the keys, commands or screens involved is welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+      description: Other ways to get the same result, including workarounds you already use.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Screenshots, terminal recordings (scrubbed of paths and account details), or links.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Checks
+      options:
+        - label: This does not require Deck to read credential files, call a model API directly, or approve an agent's own actions.
+          required: true
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true

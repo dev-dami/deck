@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -249,10 +250,19 @@ func TestReplaySession2FileChangeAndDeclinedCommand(t *testing.T) {
 	if fc == nil {
 		t.Fatal("no file change")
 	}
-	if fc.Path != "hello.txt" || !fc.New || fc.Added < 1 || fc.Removed != 0 || len(fc.Hunks) != 1 {
+	// The fixture was recorded on Windows, so its working directory is a Windows
+	// path. Only a Windows host can make a path under it relative; elsewhere the
+	// absolute path is kept, so compare the file name there.
+	name := func(p string) string {
+		if runtime.GOOS == "windows" {
+			return p
+		}
+		return p[strings.LastIndexAny(p, `\/`)+1:]
+	}
+	if name(fc.Path) != "hello.txt" || !fc.New || fc.Added < 1 || fc.Removed != 0 || len(fc.Hunks) != 1 {
 		t.Errorf("file change = %+v", fc)
 	}
-	if results[0].Tool.Name != "Edit" || results[0].Tool.Status != agent.ToolOK || results[0].Tool.Title != "hello.txt" {
+	if results[0].Tool.Name != "Edit" || results[0].Tool.Status != agent.ToolOK || name(results[0].Tool.Title) != "hello.txt" {
 		t.Errorf("edit result = %+v", results[0].Tool)
 	}
 	curl := results[1].Tool

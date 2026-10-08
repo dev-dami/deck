@@ -1,8 +1,23 @@
-# ◆ deck
+```text
+             ⣿⡇                  ⣿⡇
+         ⣠⣤⣤⣄⣿⡇  ⢀⣤⣤⣤⡀    ⣠⣤⣤⣄   ⣿⡇  ⢀⣤⡀
+ ⣠⣦⡀   ⢠⣾⠟⠉⠉⠻⣿⡇ ⣴⡿⠋⠉⠙⢿⣦ ⢠⣾⠟⠉⠉⠉⠁  ⣿⡇⣠⣴⡿⠛⠁
+⠺⣿⣿⡿⠂  ⢸⣿⡀  ⢀⣿⡇ ⣿⣿⠿⠿⠿⠿⠿ ⢸⣿⡀      ⣿⣿⠟⢿⣷⡀
+ ⠈⠋     ⠙⢿⣶⣶⡿⣿⡇ ⠈⠻⣷⣶⣶⠖   ⠙⢿⣶⣶⡶⠂  ⣿⡇  ⠙⢿⡆
+```
 
-one deck for all your agents
+**one deck for all your agents**
 
-<!-- demo gif: docs/demo.gif -->
+[![CI](https://github.com/dev-dami/deck/actions/workflows/ci.yml/badge.svg)](https://github.com/dev-dami/deck/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/dev-dami/deck.svg)](https://pkg.go.dev/github.com/dev-dami/deck)
+[![Go Report Card](https://goreportcard.com/badge/github.com/dev-dami/deck)](https://goreportcard.com/report/github.com/dev-dami/deck)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/dev-dami/deck)](https://github.com/dev-dami/deck/releases/latest)
+
+<!-- regenerate: vhs docs/demo.tape -->
+![deck demo](docs/demo.gif)
+
+> **Status:** early. Expect rough edges. Developed and tested mainly on Windows; CI runs on Linux, macOS and Windows.
 
 ## What it is
 
@@ -12,11 +27,24 @@ Inspired by T3 Code, built for the terminal.
 
 ## Install
 
-```sh
-go install github.com/dev-dami/deck/cmd/deck@latest
-```
+Pick one.
 
-Needs Go 1.25 or newer.
+1. **Download a binary** from the [Releases page](https://github.com/dev-dami/deck/releases). Archives for Linux, macOS and Windows (amd64 and arm64) hold `deck`, `deckdemo` and `decklogo`. Unpack them somewhere on your `PATH`; `checksums.txt` is on the same page.
+2. **With Go** 1.25 or newer:
+
+   ```sh
+   go install github.com/dev-dami/deck/cmd/deck@latest
+   ```
+
+3. **From source:**
+
+   ```sh
+   git clone https://github.com/dev-dami/deck
+   cd deck
+   go build -o deck ./cmd/deck
+   ```
+
+`deck version` prints the version of the build.
 
 Deck drives the `claude` and `codex` CLIs. Install them and sign in yourself. Deck never logs in for you:
 
@@ -36,7 +64,8 @@ Doctor reports whether each CLI is installed, its version, and whether it is sig
 ## Try it without spending tokens
 
 ```sh
-go run ./cmd/deckdemo
+deckdemo                # from a release archive
+go run ./cmd/deckdemo   # from a checkout
 ```
 
 This runs the full TUI against scripted fake agents. It needs no CLI and no login, and it never touches `~/.deck/config.json`. It opens on the logo with an empty thread. Type anything to start the duo: a scripted Claude plans a change and asks a scripted Codex to review it, Codex answers, and Claude acts on it. Or type `@claude plan the store refactor, @codex review it` to start both at once.
@@ -44,7 +73,7 @@ This runs the full TUI against scripted fake agents. It needs no CLI and no logi
 To look at the animated logo on its own:
 
 ```sh
-go run ./cmd/decklogo
+decklogo             # or: go run ./cmd/decklogo
 ```
 
 Move the mouse over it for ripples, click for a splash, `r` replays the intro, `q` quits. With `DECK_REDUCED_MOTION=1` it is static. The same logo is the empty state of Deck itself: it ripples under the pointer, any keypress calms it, and it stops drawing frames once it is at rest.
@@ -220,11 +249,28 @@ Deck is not affiliated with Anthropic or OpenAI.
 ## Development
 
 ```sh
+go vet ./...
 go test ./...
 ```
 
 Live tests record real sessions and spend a little of your usage, so they are skipped unless gated. `DECK_LIVE=1` records Claude and Codex sessions. `DECK_LIVE=approve` runs the Claude approval path. Codex's patch and approval session uses `DECK_LIVE=2`. TUI golden snapshots live in `internal/tui/testdata`.
 
+The demo GIF is recorded with [VHS](https://github.com/charmbracelet/vhs) against `deckdemo`. To regenerate it, install `deckdemo` and run:
+
+```sh
+vhs docs/demo.tape
+```
+
+Releases are built by [GoReleaser](https://goreleaser.com) when a `v*` tag is pushed; see `.goreleaser.yaml`.
+
+## Contributing
+
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+
+## Security
+
+To report a vulnerability, follow [SECURITY.md](SECURITY.md). Please do not open a public issue for it.
+
 ## License
 
-TBD
+MIT. See [LICENSE](LICENSE).

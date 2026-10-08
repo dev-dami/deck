@@ -1,0 +1,97 @@
+name: Bug report
+description: Something in deck does not work as it should
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please fill in as much as you can.
+
+        Do not paste credentials, tokens, account identifiers or private code here. If you think a problem is a security issue, do not use this form. Use the [private security advisory form](https://github.com/dev-dami/deck/security/advisories/new) instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you saw. Include any error messages, exactly as shown.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps that shows the problem.
+      placeholder: |
+        1. Run `deck`
+        2. Type `@codex review this`
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you thought would happen instead.
+    validations:
+      required: true
+
+  - type: input
+    id: deck-version
+    attributes:
+      label: deck version
+      description: The output of `deck version`.
+      placeholder: "deck v0.1.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: deck doctor output
+      description: |
+        The output of `deck doctor`, run in the same terminal where you saw the problem.
+
+        `deck doctor` never prints account information, but it does print file paths, which include your username. Check the output and replace your username and any other personal detail with a placeholder before you paste it.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: os-terminal
+    attributes:
+      label: OS and terminal
+      description: Your operating system and version, and the terminal app and version you ran deck in.
+      placeholder: "Windows 11 23H2, Windows Terminal 1.20"
+    validations:
+      required: true
+
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code version
+      description: The output of `claude --version`, or "not installed".
+      placeholder: "2.0.0"
+    validations:
+      required: false
+
+  - type: input
+    id: codex-version
+    attributes:
+      label: Codex CLI version
+      description: The output of `codex --version`, or "not installed".
+      placeholder: "0.1.0"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+        - label: I have removed credentials, tokens, account identifiers and personal data from anything I pasted.
+          required: true
