@@ -141,7 +141,7 @@ func (m *model) setMode(id string, next agent.Mode) []tea.Cmd {
 	if err := m.mgr.SetMode(id, next); err != nil {
 		return []tea.Cmd{m.toast.show(err.Error(), true, m.now)}
 	}
-	if next == agent.ModeYolo && id == m.sel && !motion.Reduced() {
+	if next == agent.ModeYolo && id == m.sel && !motion.UserReduced() {
 		f := &m.fight
 		f.anim.SetDark(m.dark)
 		f.anim.Start(m.now)

@@ -38,7 +38,7 @@ func (b *Budget) Observe(d time.Duration) {
 	p90 := s[(budgetWindow*9+9)/10-1] // nearest rank
 	if p90 > budgetThreshold {
 		b.degraded = true
-		SetReduced(true)
+		setDegraded()
 	}
 }
 

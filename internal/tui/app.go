@@ -591,7 +591,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View implements tea.Model.
 func (m *model) View() string {
 	start := time.Now()
-	defer func() { m.budget.Observe(time.Since(start)) }()
+	defer func() {
+		if !m.fightShown() { // the yolo blast is heavy on purpose; it must not turn motion off
+			m.budget.Observe(time.Since(start))
+		}
+	}()
 
 	if m.w < minW || m.h < minH {
 		return sFaint.Render(trunc("deck needs a bigger terminal", m.w))

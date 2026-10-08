@@ -93,7 +93,7 @@ func (a *Anim) Skip() { a.skipped = true }
 
 // Done reports whether the effect is over (or never started).
 func (a *Anim) Done(now time.Time) bool {
-	return !a.started || a.skipped || motion.Reduced() || now.Sub(a.start) >= Duration
+	return !a.started || a.skipped || motion.UserReduced() || now.Sub(a.start) >= Duration
 }
 
 // Advance reports whether the effect still needs frames.
