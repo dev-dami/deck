@@ -213,8 +213,12 @@ func (t *translator) itemStarted(it threadItem, raw json.RawMessage) []agent.Eve
 		st := t.item(it.ID, it.Type)
 		st.title = it.Server + "/" + it.Tool
 		st.input = it.Arguments
+		name := it.Tool
+		if n, title, ok := deckToolDisplay(it); ok {
+			name, st.title = n, title
+		}
 		e := t.ev(agent.KindToolCall, raw)
-		e.Tool = &agent.Tool{ID: it.ID, Name: it.Tool, Title: st.title, Input: it.Arguments, Status: agent.ToolRunning}
+		e.Tool = &agent.Tool{ID: it.ID, Name: name, Title: st.title, Input: it.Arguments, Status: agent.ToolRunning}
 		return []agent.Event{e}
 
 	case "webSearch":
@@ -354,8 +358,18 @@ func (t *translator) itemCompleted(it threadItem, raw json.RawMessage) []agent.E
 		case "webSearch":
 			name = "WebSearch"
 		}
+		out := it.resultText()
+		if n, title, ok := deckToolDisplay(it); ok {
+			name, out = n, deckResultText(it)
+			if st.title == "" || st.title == it.Server+"/"+it.Tool {
+				st.title = title
+			}
+			if st.input == nil {
+				st.input = it.Arguments
+			}
+		}
 		e := t.ev(agent.KindToolResult, raw)
-		e.Tool = &agent.Tool{ID: it.ID, Name: name, Title: st.title, Input: st.input, Output: it.resultText(), Status: status}
+		e.Tool = &agent.Tool{ID: it.ID, Name: name, Title: st.title, Input: st.input, Output: out, Status: status}
 		return []agent.Event{e}
 	}
 	return nil

@@ -73,6 +73,9 @@ func (r *run) handshake(ctx context.Context, opts Options) error {
 			Model:          r.spec.Model,
 			ApprovalPolicy: opts.ApprovalPolicy,
 			Sandbox:        opts.Sandbox,
+
+			Config:                mcpThreadConfig(r.spec.MCP),
+			DeveloperInstructions: r.spec.Instructions,
 		}, &resp)
 		if err != nil {
 			return fmt.Errorf("codex: thread/resume: %w", err)
@@ -83,6 +86,9 @@ func (r *run) handshake(ctx context.Context, opts Options) error {
 			Model:          r.spec.Model,
 			ApprovalPolicy: opts.ApprovalPolicy,
 			Sandbox:        opts.Sandbox,
+
+			Config:                mcpThreadConfig(r.spec.MCP),
+			DeveloperInstructions: r.spec.Instructions,
 		}, &resp)
 		if err != nil {
 			return fmt.Errorf("codex: thread/start: %w", err)

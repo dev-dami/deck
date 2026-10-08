@@ -69,6 +69,10 @@ type threadStartParams struct {
 	Model          string `json:"model,omitempty"`
 	ApprovalPolicy string `json:"approvalPolicy,omitempty"`
 	Sandbox        string `json:"sandbox,omitempty"`
+	// Config is per-thread config overrides (same dotted keys as `codex -c`).
+	Config map[string]any `json:"config,omitempty"`
+	// DeveloperInstructions are extra developer-role instructions for the thread.
+	DeveloperInstructions string `json:"developerInstructions,omitempty"`
 }
 
 type threadResumeParams struct {
@@ -77,6 +81,10 @@ type threadResumeParams struct {
 	Model          string `json:"model,omitempty"`
 	ApprovalPolicy string `json:"approvalPolicy,omitempty"`
 	Sandbox        string `json:"sandbox,omitempty"`
+	// Config is per-thread config overrides (same dotted keys as `codex -c`).
+	Config map[string]any `json:"config,omitempty"`
+	// DeveloperInstructions are extra developer-role instructions for the thread.
+	DeveloperInstructions string `json:"developerInstructions,omitempty"`
 }
 
 // threadResponse is the result of thread/start and thread/resume.

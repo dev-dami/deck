@@ -76,6 +76,9 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 	for k, v := range spec.Env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
+	// Deck's MCP server env (the hub token) rides in the process environment,
+	// never argv or the protocol; the thread config only names the variables.
+	cmd.Env = append(cmd.Env, mcpProcessEnv(spec.MCP)...)
 	configureProc(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

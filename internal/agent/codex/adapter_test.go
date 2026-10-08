@@ -18,6 +18,10 @@ import (
 // with DECK_FAKE_CODEX=1. The fake replays the recv side of a recorded session
 // and records what the adapter sent into DECK_FAKE_OUT.
 func TestMain(m *testing.M) {
+	if len(os.Args) > 2 && os.Args[1] == stubMCPFlag {
+		stubMCP(os.Args[2])
+		return
+	}
 	if os.Getenv("DECK_FAKE_CODEX") == "1" {
 		fakeCodex()
 		return
@@ -40,6 +44,8 @@ func fakeCodex() {
 	cwd, _ := os.Getwd()
 	record("cwd=" + cwd)
 	record("env=" + os.Getenv("DECK_FAKE_EXTRA"))
+	record("args=" + strings.Join(os.Args[1:], " "))
+	record("tokenenv=" + os.Getenv("DECK_TEST_TOKEN"))
 
 	var fixture []fixtureLine
 	f, err := os.Open(os.Getenv("DECK_FAKE_FIXTURE"))
