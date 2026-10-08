@@ -121,18 +121,34 @@ func TestMiddleIsRainbowWithYOLO(t *testing.T) {
 	}
 }
 
-func TestWaveEntersFromTheTopLeft(t *testing.T) {
+func TestBlastStartsInTheMiddle(t *testing.T) {
 	withProfile(t)
 	w, h := 80, 24
 	t0 := time.Now()
 	a := New(true)
 	a.Start(t0)
-	out := strings.Split(a.Apply(screen(w, h), w, t0.Add(40*time.Millisecond)), "\n")
-	if !strings.Contains(out[0], "48;2;") {
-		t.Fatal("the top-left is painted first")
+	out := strings.Split(a.Apply(screen(w, h), w, t0.Add(80*time.Millisecond)), "\n")
+	if !strings.Contains(out[h/2], "48;2;") {
+		t.Fatal("the middle is painted first")
 	}
-	if strings.Contains(out[h-1], "48;2;") {
-		t.Fatal("the bottom rows are still untouched early on")
+	if strings.Contains(out[0], "48;2;") || strings.Contains(out[h-1], "48;2;") {
+		t.Fatal("the top and bottom rows are still untouched early on")
+	}
+}
+
+func TestTrailingRingHandsBackTheMiddleFirst(t *testing.T) {
+	withProfile(t)
+	w, h := 80, 24
+	t0 := time.Now()
+	a := New(true)
+	a.Start(t0)
+	out := strings.Split(a.Apply(screen(w, h), w, t0.Add(1300*time.Millisecond)), "\n")
+	if !strings.Contains(out[0], "48;2;") {
+		t.Fatal("the edges are still rippling")
+	}
+	// Row 14 is all x; near the centre it is back to plain text.
+	if !strings.Contains(out[14], strings.Repeat("x", 12)) {
+		t.Fatalf("the middle should be back to normal: %q", out[14])
 	}
 }
 

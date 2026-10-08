@@ -1,14 +1,16 @@
 // Package yolo is the effect that plays when a thread switches to yolo mode:
-// a rainbow wave sweeps across the whole screen, a big YOLO flashes in the
-// middle, and the wave sweeps out again, leaving the normal screen.
+// a blast wave of colour bursts from the middle of the screen, a big YOLO
+// flashes where it started, and a second ring follows the first outwards,
+// handing the normal screen back from the centre to the edges.
 //
 // It is pure: the host keeps rendering its own screen and passes every frame
 // through Apply while the effect runs, driving time from its motion clock.
 //
-//	0ms     wave enters from the top-left corner
-//	450ms   the whole screen is rainbow; YOLO pops in
-//	1150ms  YOLO goes; the wave leaves, uncovering the screen from the top-left
-//	1600ms  done: Apply returns the screen untouched
+//	0ms     the blast leaves the centre: a white-hot front, concentric rainbow behind it
+//	60ms    YOLO pops in the middle
+//	700ms   the front has passed the corners; the whole screen ripples
+//	850ms   the trailing ring leaves the centre, uncovering the screen (and eating YOLO)
+//	1500ms  done: Apply returns the screen untouched
 package yolo
 
 import (
@@ -27,21 +29,37 @@ import (
 
 // Timeline.
 const (
-	Duration = 1600 * time.Millisecond
+	Duration = 1500 * time.Millisecond
 
-	sweepIn  = 450 * time.Millisecond
-	wordOn   = 380 * time.Millisecond
-	wordOff  = 1150 * time.Millisecond
-	sweepOut = 1150 * time.Millisecond
-	popFor   = 120 * time.Millisecond
+	blastFor = 700 * time.Millisecond // front: centre to corners
+	tailAt   = 850 * time.Millisecond // trailing ring leaves the centre
+	wordOn   = 60 * time.Millisecond
+	wordOff  = Duration
+	popFor   = 140 * time.Millisecond
+)
+
+// The rings, in cells of radius: the bright shock front, and the dim edge
+// of the trailing ring.
+const (
+	frontW = 3.0
+	tailW  = 5.0
 )
 
 // hueStep quantises hues so neighbouring cells share colours and the output
-// stays small; hueSpeed is how fast the rainbow flows (degrees per second).
+// stays small; hueSpread is degrees per cell of radius, hueSpeed how fast the
+// bands ripple outwards (degrees per second).
 const (
 	hueStep   = 12.0
-	hueSpread = 7.0 // degrees per diagonal cell
-	hueSpeed  = 420.0
+	hueSpread = 9.0
+	hueSpeed  = 520.0
+)
+
+// Tiers of the palette: the shock front, the body, the trailing edge.
+const (
+	tierFront = iota
+	tierBody
+	tierTail
+	tiers
 )
 
 // Anim is the effect's state. The zero value is finished.
@@ -51,9 +69,12 @@ type Anim struct {
 	started bool
 	skipped bool
 
-	pal     []string
+	pal     []string // tiers × hue steps
 	palDark bool
 	palProf termenv.Profile
+
+	// This frame's geometry.
+	cx, cy, rIn, rOut float64
 }
 
 // New returns a finished effect; call Start to play it.
@@ -78,6 +99,12 @@ func (a *Anim) Done(now time.Time) bool {
 // Advance reports whether the effect still needs frames.
 func (a *Anim) Advance(now time.Time) bool { return !a.Done(now) }
 
+// radius is the distance of cell (x, y) from the centre, counting a row as
+// two columns so the rings come out round on a terminal.
+func (a *Anim) radius(x, y int) float64 {
+	return math.Hypot(float64(x)-a.cx, 2*(float64(y)-a.cy))
+}
+
 // Apply returns screen as it looks at now: every line exactly w cells. When
 // the effect is done, screen comes back unchanged.
 func (a *Anim) Apply(screen string, w int, now time.Time) string {
@@ -87,58 +114,52 @@ func (a *Anim) Apply(screen string, w int, now time.Time) string {
 	t := now.Sub(a.start)
 	lines := strings.Split(screen, "\n")
 	h := len(lines)
-	span := float64(w + 2*h) // the diagonal coordinate d = x + 2y runs over [0, span)
 
-	// The wave front, as a diagonal coordinate: rainbow where in(d) is true.
-	var in func(d int) bool
-	switch {
-	case t < sweepIn:
-		front := easeOut(float64(t)/float64(sweepIn)) * span
-		in = func(d int) bool { return float64(d) < front }
-	case t < sweepOut:
-		in = func(int) bool { return true }
-	default:
-		front := easeIn(float64(t-sweepOut)/float64(Duration-sweepOut)) * span
-		in = func(d int) bool { return float64(d) >= front }
+	a.cx, a.cy = float64(w-1)/2, float64(h-1)/2
+	reach := math.Hypot(a.cx+1, 2*(a.cy+1)) + tailW // past the farthest corner
+	a.rOut = easeOut(float64(t)/float64(blastFor)) * reach
+	a.rIn = -1
+	if t >= tailAt {
+		a.rIn = easeIn(float64(t-tailAt)/float64(Duration-tailAt)) * reach
 	}
 
 	word := a.word(w, h, t)
+	in := func(x, y int) bool {
+		r := a.radius(x, y)
+		return r >= a.rIn && (r < a.rOut || word != nil && word.at(x, y))
+	}
 	shift := hueSpeed * t.Seconds()
 	for y, line := range lines {
-		// Find the rainbow span on this row: [lo, hi) in cells.
-		lo, hi := -1, -1
-		for x := 0; x < w; x++ {
-			if in(x + 2*y) {
-				if lo < 0 {
-					lo = x
-				}
-				hi = x + 1
-			}
-		}
-		if lo < 0 {
-			lines[y] = pad(line, w)
-			continue
-		}
-		cells := splitCells(ansi.Strip(line), w)
 		var b strings.Builder
-		if lo > 0 {
-			b.WriteString(pad(ansi.Truncate(line, lo, ""), lo))
-		}
-		a.paint(&b, cells, y, lo, hi, shift, word)
-		if hi < w {
-			b.WriteString(pad(ansi.TruncateLeft(line, hi, ""), w-hi))
+		var cells []string
+		for x := 0; x < w; {
+			on := in(x, y)
+			e := x + 1
+			for e < w && in(e, y) == on {
+				e++
+			}
+			if on {
+				if cells == nil {
+					cells = splitCells(ansi.Strip(line), w)
+				}
+				a.paint(&b, cells, y, x, e, shift, word)
+			} else {
+				b.WriteString(pad(ansi.Cut(line, x, e), e-x))
+			}
+			x = e
 		}
 		lines[y] = b.String()
 	}
 	return strings.Join(lines, "\n")
 }
 
-// paint writes cells [lo, hi) of a row in rainbow, grouping runs of one colour.
+// paint writes cells [lo, hi) of a row in colour, grouping runs of one colour.
 // Escapes are written directly (precomputed per colour) rather than through
 // lipgloss: this runs for every cell of every frame.
 func (a *Anim) paint(b *strings.Builder, cells []string, y, lo, hi int, shift float64, word *wordLayer) {
 	runKey, open := math.MinInt, false
 	pal := a.palette()
+	n := len(pal) / tiers
 	owe := false // the last cell was a wide head drawn one cell wide
 	for x := lo; x < hi; x++ {
 		key, esc, text := 0, "", cells[x]
@@ -163,8 +184,19 @@ func (a *Anim) paint(b *strings.Builder, cells []string, y, lo, hi int, shift fl
 		if letter {
 			key, esc, text = -1, word.esc, "█"
 		} else {
-			hue := math.Mod(float64(x+2*y)*hueSpread+shift, 360)
-			key = int(hue/hueStep) % len(pal)
+			r := a.radius(x, y)
+			tier := tierBody
+			switch {
+			case a.rOut-r < frontW:
+				tier = tierFront
+			case a.rIn >= 0 && r-a.rIn < tailW:
+				tier = tierTail
+			}
+			hue := math.Mod(r*hueSpread-shift, 360)
+			if hue < 0 {
+				hue += 360
+			}
+			key = tier*n + int(hue/hueStep)%n
 			esc = pal[key]
 		}
 		if key != runKey {
@@ -183,31 +215,44 @@ func (a *Anim) paint(b *strings.Builder, cells []string, y, lo, hi int, shift fl
 
 const reset = "\x1b[0m"
 
-// palette is the rainbow, one escape per hue step, built once per theme and
-// colour profile.
+// palette is the rainbow, one escape per tier and hue step, built once per
+// theme and colour profile.
 func (a *Anim) palette() []string {
 	prof := lipgloss.ColorProfile()
 	if a.pal == nil || a.palDark != a.dark || a.palProf != prof {
 		n := int(360 / hueStep)
-		a.pal = make([]string, n)
-		for i := range a.pal {
-			a.pal[i] = a.cellEsc(float64(i) * hueStep)
+		a.pal = make([]string, tiers*n)
+		for tier := 0; tier < tiers; tier++ {
+			for i := 0; i < n; i++ {
+				a.pal[tier*n+i] = a.cellEsc(float64(i)*hueStep, tier)
+			}
 		}
 		a.palDark, a.palProf = a.dark, prof
 	}
 	return a.pal
 }
 
-// cellEsc is one rainbow cell: a saturated background with the screen's text
-// kept readable on top of it.
-func (a *Anim) cellEsc(hue float64) string {
-	bgL, fgL := 0.62, 0.16
+// cellEsc is one coloured cell: a saturated background with the screen's text
+// kept readable on top of it. The front is near white, the tail fades out.
+func (a *Anim) cellEsc(hue float64, tier int) string {
+	bgS, bgL, fgL := 0.85, 0.62, 0.16
 	if a.dark {
-		bgL, fgL = 0.40, 0.92
+		bgL, fgL = 0.42, 0.93
 	}
-	bg := colorful.Hsl(hue, 0.80, bgL).Clamped().Hex()
+	switch tier {
+	case tierFront:
+		bgS, bgL, fgL = 1.0, 0.86, 0.20
+	case tierTail:
+		bgS = 0.45
+		if a.dark {
+			bgL = 0.24
+		} else {
+			bgL = 0.80
+		}
+	}
+	bg := colorful.Hsl(hue, bgS, bgL).Clamped().Hex()
 	fg := colorful.Hsl(hue, 0.35, fgL).Clamped().Hex()
-	return sgr(fg, bg, false)
+	return sgr(fg, bg, tier == tierFront)
 }
 
 // sgr is the escape setting fg and bg (hex) in the current colour profile,
@@ -262,8 +307,9 @@ func splitCells(s string, w int) []string {
 // pad makes an ANSI line exactly w cells.
 func pad(s string, w int) string {
 	n := ansi.StringWidth(s)
-	if n > w {
-		return ansi.Truncate(s, w, "")
+	if n > w { // cutting a wide grapheme can leave it a cell short: fill below
+		s = ansi.Truncate(s, w, "")
+		n = ansi.StringWidth(s)
 	}
 	return s + strings.Repeat(" ", w-n)
 }
