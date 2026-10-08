@@ -36,6 +36,8 @@ type translator struct {
 
 	// onTurn is called with the active turn id ("" when none).
 	onTurn func(id string)
+	// onTurnDone is called with the id of each turn that completed.
+	onTurnDone func(id string)
 }
 
 func newTranslator(agentID, cwd string) *translator {
@@ -87,6 +89,9 @@ func (t *translator) notification(method string, params, raw json.RawMessage) []
 		var n turnNotification
 		if json.Unmarshal(params, &n) != nil {
 			return nil
+		}
+		if t.onTurnDone != nil {
+			t.onTurnDone(n.Turn.ID)
 		}
 		if t.onTurn != nil {
 			t.onTurn("")
@@ -166,6 +171,18 @@ func (t *translator) notification(method string, params, raw json.RawMessage) []
 			InputTokens:  nonNeg(tot.InputTokens - t.baseTotal.InputTokens),
 			OutputTokens: nonNeg(tot.OutputTokens - t.baseTotal.OutputTokens),
 			CachedTokens: nonNeg(tot.CachedInputTokens - t.baseTotal.CachedInputTokens),
+		}
+		// Context fullness is the latest model request (`last`), not the
+		// thread's cumulative `total`. Like codex itself, reasoning tokens are
+		// excluded: they are not carried into the next request.
+		last := n.TokenUsage.Last
+		ctxTok := last.TotalTokens - last.ReasoningOutputTokens
+		if last.TotalTokens == 0 {
+			ctxTok = last.InputTokens + last.OutputTokens - last.ReasoningOutputTokens
+		}
+		e.Usage.ContextTokens = nonNeg(ctxTok)
+		if w := n.TokenUsage.ModelContextWindow; w != nil {
+			e.Usage.ContextWindow = nonNeg(*w)
 		}
 		return []agent.Event{e}
 

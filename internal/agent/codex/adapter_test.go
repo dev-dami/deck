@@ -149,6 +149,19 @@ func fakeCodex() {
 			case m.Method == methodModelList:
 				record("model/list=" + string(m.Params))
 				reply(methodModelList, m.ID)
+			case m.Method == methodTurnSteer:
+				record("steer=" + string(m.Params))
+				var b []byte
+				if os.Getenv("DECK_FAKE_STEER_ERR") == "1" {
+					b, _ = json.Marshal(map[string]any{"id": m.ID, "error": map[string]any{"code": -32600, "message": "no active turn to steer"}})
+				} else {
+					var p struct {
+						ExpectedTurnID string `json:"expectedTurnId"`
+					}
+					_ = json.Unmarshal(m.Params, &p)
+					b, _ = json.Marshal(map[string]any{"id": m.ID, "result": map[string]any{"turnId": p.ExpectedTurnID}})
+				}
+				write(b)
 			case m.Method == methodTurnInterrupt:
 				record("interrupt=" + string(m.Params))
 				b, _ := json.Marshal(map[string]any{"id": m.ID, "result": map[string]any{}})

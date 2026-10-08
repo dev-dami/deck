@@ -12,6 +12,7 @@ const (
 	methodThreadResume  = "thread/resume"
 	methodTurnStart     = "turn/start"
 	methodTurnInterrupt = "turn/interrupt"
+	methodTurnSteer     = "turn/steer"
 	methodModelList     = "model/list"
 
 	notifyInitialized = "initialized"
@@ -95,10 +96,39 @@ type threadResponse struct {
 	} `json:"thread"`
 }
 
+// userInput is one UserInput item: {"type":"text","text":...,"text_elements":[]}
+// or {"type":"localImage","path":<absolute file path>}.
 type userInput struct {
-	Type         string `json:"type"` // "text"
-	Text         string `json:"text"`
-	TextElements []any  `json:"text_elements"`
+	Type         string // "text" | "localImage"
+	Text         string
+	TextElements []any
+	Path         string // localImage
+}
+
+func (u userInput) MarshalJSON() ([]byte, error) {
+	if u.Type == "localImage" {
+		return json.Marshal(struct {
+			Type string `json:"type"`
+			Path string `json:"path"`
+		}{u.Type, u.Path})
+	}
+	te := u.TextElements
+	if te == nil {
+		te = []any{}
+	}
+	return json.Marshal(struct {
+		Type         string `json:"type"`
+		Text         string `json:"text"`
+		TextElements []any  `json:"text_elements"`
+	}{u.Type, u.Text, te})
+}
+
+// turnSteerParams is TurnSteerParams: add input to the running turn.
+// ExpectedTurnId must match the active turn or the request fails.
+type turnSteerParams struct {
+	ThreadID       string      `json:"threadId"`
+	ExpectedTurnID string      `json:"expectedTurnId"`
+	Input          []userInput `json:"input"`
 }
 
 // sandboxPolicy is the turn-level SandboxPolicy (a tagged union; only the
@@ -233,6 +263,8 @@ type tokenUsageNotification struct {
 	TokenUsage struct {
 		Last  tokenBreakdown `json:"last"`
 		Total tokenBreakdown `json:"total"`
+		// ModelContextWindow is null when the model's window is unknown.
+		ModelContextWindow *int `json:"modelContextWindow"`
 	} `json:"tokenUsage"`
 }
 

@@ -41,6 +41,9 @@ type run struct {
 	mode         agent.Mode
 	pendingMode  agent.Mode
 	pendingModel string
+
+	// doneTurns holds ids of turns that already completed.
+	doneTurns map[string]bool
 }
 
 func (r *run) Events() <-chan agent.Event              { return r.events }
@@ -169,10 +172,18 @@ func (r *run) loop() {
 }
 
 // Send starts a new turn with the prompt.
-func (r *run) Send(prompt string) error {
+func (r *run) Send(prompt string) error { return r.SendWithImages(prompt, nil) }
+
+// SendWithImages starts a new turn whose input is the images (as localImage
+// items) followed by the prompt text.
+func (r *run) SendWithImages(prompt string, images []agent.Image) error {
 	tid := r.SessionID()
 	if tid == "" {
 		return errNoThread
+	}
+	imgs, err := imageInputs(images)
+	if err != nil {
+		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 	defer cancel()
@@ -184,7 +195,10 @@ func (r *run) Send(prompt string) error {
 	if mode == agent.ModePlan {
 		params.Input = append(params.Input, userInput{Type: "text", Text: planNote, TextElements: []any{}})
 	}
-	params.Input = append(params.Input, userInput{Type: "text", Text: prompt, TextElements: []any{}})
+	params.Input = append(params.Input, imgs...)
+	if prompt != "" || len(imgs) == 0 {
+		params.Input = append(params.Input, userInput{Type: "text", Text: prompt, TextElements: []any{}})
+	}
 	if pMode != "" {
 		ms, err := r.opts.settingsFor(pMode)
 		if err != nil {
@@ -209,11 +223,12 @@ func (r *run) Send(prompt string) error {
 		r.pendingModel = ""
 	}
 	r.mu.Unlock()
-	if resp.Turn.ID != "" {
-		r.mu.Lock()
+	r.mu.Lock()
+	// A very short turn can complete before this response is handled.
+	if resp.Turn.ID != "" && !r.doneTurns[resp.Turn.ID] {
 		r.turnID = resp.Turn.ID
-		r.mu.Unlock()
 	}
+	r.mu.Unlock()
 	return nil
 }
 

@@ -113,6 +113,7 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 	}
 	r.tr = newTranslator(spec.ID, spec.Dir)
 	r.tr.onTurn = r.setTurn
+	r.tr.onTurnDone = r.markTurnDone
 
 	if err := r.handshake(ctx, a.opts); err != nil {
 		r.kill()
