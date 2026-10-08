@@ -625,7 +625,11 @@ func (m *model) View() string {
 	for i, r := range rows {
 		rows[i] = trunc(r, m.w)
 	}
-	return strings.Join(rows, "\n")
+	screen := strings.Join(rows, "\n")
+	if m.fightShown() { // switching to yolo: the blast wave covers the whole screen
+		return m.fight.anim.Apply(screen, m.w, m.now)
+	}
+	return screen
 }
 
 func (m *model) headerLine(g geom) string {
