@@ -8,6 +8,7 @@
 //	deck            open the deck
 //	deck doctor     check the CLIs Deck can drive
 //	deck ls         list saved threads
+//	deck debug input  show the key and mouse events your terminal sends
 //	deck version    print the version
 package main
 
@@ -28,6 +29,7 @@ import (
 	"github.com/dev-dami/deck/internal/approve"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/doctor"
+	"github.com/dev-dami/deck/internal/inputdebug"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/store"
 	"github.com/dev-dami/deck/internal/tui"
@@ -68,6 +70,12 @@ func run(args []string) error {
 			fmt.Println("built", date)
 		}
 		return nil
+	case "debug":
+		if len(args) == 2 && args[1] == "input" {
+			return inputdebug.Run()
+		}
+		usage(os.Stderr)
+		return fmt.Errorf("usage: deck debug input")
 	case "mcp-approve":
 		return mcpApprove(args[1:])
 	case "help", "--help", "-h":
@@ -85,6 +93,7 @@ func usage(w io.Writer) {
   deck            open the deck
   deck doctor     check the CLIs Deck can drive
   deck ls         list saved threads
+  deck debug input  show the key and mouse events your terminal sends (q quits)
   deck version    print the version
 `)
 }

@@ -10,6 +10,12 @@
 // The permission modes work here too: shift+tab (or a click on the chip at the
 // right of the line above the composer) cycles plan, ask and yolo, and the model
 // chips open a picker over the fakes' model lists.
+//
+// Also to try here: paste or type a path to a real image file (or press ctrl+v
+// with an image on the clipboard) to attach it; the ◔ 42% meters in the chip
+// line grow with every turn; send a second message while an agent is working to
+// see it queued (click the row, or alt+up then enter, to steer it; ✕ drops it);
+// press up on an empty composer to edit your last message.
 package main
 
 import (

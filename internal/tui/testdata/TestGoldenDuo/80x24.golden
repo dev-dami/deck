@@ -21,4 +21,4 @@
                         ───────────────────────────────────────────────────────
                           ◆claude · default  ◆codex · default · ~/repo   ● ask
                         › message codex…
- @ agent   / commands   tab browse   ^c stop   ⇧tab mode
+ @ agent   / commands   ↑ edit last   ⌥↑↓ threads   tab browse   ^c stop

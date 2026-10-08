@@ -666,6 +666,7 @@ func TestChipLineStaysOneLineAtEveryWidth(t *testing.T) {
 
 func TestFightGeometryNeverOverflows(t *testing.T) {
 	for _, sz := range []struct{ w, h int }{{80, 24}, {140, 40}, {40, 12}, {30, 8}} {
+		motion.SetReduced(true) // build each rig still, as the rest of the suite does
 		r := idleClaude(t, sz.w, sz.h)
 		withMotion(t)
 		now := r.frozen(t0)

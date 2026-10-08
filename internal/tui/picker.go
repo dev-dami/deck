@@ -41,6 +41,7 @@ type picker struct {
 	kind    string // models stage: the CLI whose models are listed
 	agentID string // models stage: the member to switch, "" for the model new agents start with
 	cur     string // models stage: the model it runs now
+	running string // models stage: the slug the CLI reports it runs (member only)
 
 	members []session.AgentInfo // member stage
 	models  []agent.ModelInfo
@@ -131,6 +132,10 @@ func (m *model) openPickerKind(kind string) []tea.Cmd {
 func (m *model) pickModels(kind, agentID, cur string) tea.Cmd {
 	p := &m.pick
 	p.stage, p.kind, p.agentID, p.cur = pickModels, kind, agentID, cur
+	p.running = ""
+	if a, ok := m.agentInfo(agentID); ok && agentID != "" {
+		p.running = a.RunningModel
+	}
 	p.models, p.loadErr, p.noList, p.loading = nil, nil, false, true
 	p.seq++
 	p.built = false
@@ -170,7 +175,7 @@ func (m *model) closePicker() {
 
 // isCurrent reports whether a listed model is what the target runs now.
 func (p *picker) isCurrent(mi agent.ModelInfo) bool {
-	return mi.ID == p.cur || (p.cur == "" && mi.Default) || (p.cur == "default" && mi.Default)
+	return mi.ID == p.cur || (p.running != "" && mi.ID == p.running) || (p.cur == "" && mi.Default) || (p.cur == "default" && mi.Default)
 }
 
 // slugOf is what a model is called on the command line: its id, or "default"
@@ -282,7 +287,11 @@ func (m *model) pickRows(w, maxRows int) []string {
 	if p.stage == pickMembers {
 		title = "Whose model?"
 	}
-	out := []string{" " + sBold.Render(title)}
+	head := " " + sBold.Render(title)
+	if p.stage == pickModels && p.running != "" {
+		head += sFaint.Render(" " + glyphDot + " running " + p.running)
+	}
+	out := []string{trunc(head, w)}
 	p.rowItem = []int{-1}
 	for _, l := range m.pickInfo() {
 		out = append(out, trunc(l, w))

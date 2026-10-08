@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dev-dami/deck/internal/agent"
+	"github.com/dev-dami/deck/internal/clipimg"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/tui/logo"
@@ -37,6 +39,10 @@ type Options struct {
 	Bell func() tea.Cmd
 	// Dir is the working directory for new threads. Default: os.Getwd.
 	Dir string
+	// KeyClock stamps key presses for paste-burst detection. Default: time.Now.
+	KeyClock func() time.Time
+	// ClipSave reads an image off the clipboard into a file. Default: clipimg.Save.
+	ClipSave func(ctx context.Context, dir string) (string, error)
 }
 
 // model is the app. It is used through a pointer.
@@ -97,6 +103,23 @@ type model struct {
 	plan        emptyPlan
 	introTag    motion.Fade
 
+	// paste bursts, attachments, queue, editing (attach.go, queue.go)
+	keyNow       func() time.Time
+	lastKeyAt    time.Time
+	inBurst      bool
+	prevTyped    bool // the previous key was a typed character
+	prevPasteKey bool // the previous key was an Enter or Tab taken as paste
+	burstText    bool // characters arrived in a burst since the last check
+	burstArmed   bool
+	noBurstTick  bool // tests call burstCheckMsg by hand
+	attach       []attachment
+	clipSave     func(ctx context.Context, dir string) (string, error)
+	clipWarned   bool
+	queue        map[string][]session.QueuedItem
+	steering     map[string]bool
+	qFocus       int // focused queue row, -1 for none
+	edit         *editState
+
 	quitArmed time.Time
 	g         geom
 	noListen  bool // tests drive the manager by hand
@@ -120,6 +143,12 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 	}
 	if opts.SaveConfig == nil {
 		opts.SaveConfig = config.Save
+	}
+	if opts.KeyClock == nil {
+		opts.KeyClock = time.Now
+	}
+	if opts.ClipSave == nil {
+		opts.ClipSave = clipimg.Save
 	}
 	dark := lipgloss.HasDarkBackground()
 	m := &model{
@@ -147,6 +176,11 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 		switchX:    motion.Snappy.New(60),
 		switchFade: motion.NewFade(150*time.Millisecond, motion.EaseOutCubic),
 		logo:       logo.New(dark),
+		keyNow:     opts.KeyClock,
+		clipSave:   opts.ClipSave,
+		queue:      map[string][]session.QueuedItem{},
+		steering:   map[string]bool{},
+		qFocus:     -1,
 		w:          80,
 		h:          24,
 	}
@@ -291,6 +325,8 @@ type geom struct {
 	trH          int
 	ruleY, chipY int
 	compY, compH int
+	qY, qRows    int // queue rows above the attachment line
+	attY, attH   int // the attachment line (attH 0 or 1)
 	footY        int
 	sidebar      bool
 }
@@ -320,7 +356,19 @@ func (m *model) geo() geom {
 	g.compH = m.comp.Height(g.mainW)
 	g.compY = g.footY - g.compH
 	g.chipY = g.compY - 1
-	g.ruleY = g.chipY - 1
+	// the queue and the attachment line take rows from the transcript, but never
+	// all of it
+	room := max(0, g.chipY-1-g.topY-3)
+	if len(m.attach) > 0 && room > 0 {
+		g.attH = 1
+		room--
+	}
+	if !m.emptyVisible() {
+		g.qRows = min(m.queueRowCount(), room)
+	}
+	g.attY = g.chipY - g.attH
+	g.qY = g.attY - g.qRows
+	g.ruleY = g.qY - 1
 	g.trH = g.ruleY - g.topY
 	if g.trH < 1 {
 		g.trH = 1
@@ -493,9 +541,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.clock.Tick()
 
+	case burstCheckMsg:
+		cmds = append(cmds, m.onBurstCheck()...)
+
+	case clipImgMsg:
+		cmds = append(cmds, m.onClipImg(msg)...)
+
+	case steerDoneMsg:
+		cmds = append(cmds, m.onSteerDone(msg)...)
+
 	case session.EventMsg, session.RelayMsg, session.PausedMsg, session.ContinuedMsg,
 		session.MemberAddedMsg, session.NoticeMsg, session.ApprovalMsg, session.ApprovalGoneMsg,
-		session.ModeChangedMsg, session.ModelChangedMsg, session.AutoApprovedMsg, session.AutoDeniedMsg:
+		session.ModeChangedMsg, session.ModelChangedMsg, session.AutoApprovedMsg, session.AutoDeniedMsg,
+		session.QueueChangedMsg, session.EditedMsg:
 		cmds = append(cmds, m.dispatch(msg, false)...)
 		cmds = append(cmds, m.listen())
 
@@ -636,6 +694,13 @@ func (m *model) mainLines(g geom) []string {
 	out := make([]string, 0, g.trH+2+g.compH)
 	out = append(out, tr...)
 	out = append(out, m.ruleStyle().Render(strings.Repeat(theme.GlyphRule, w)))
+	if g.qRows > 0 {
+		out = append(out, m.queueLines(w)[:g.qRows]...)
+	}
+	if g.attH > 0 {
+		al, _ := m.attachLayout(w)
+		out = append(out, al)
+	}
 	out = append(out, m.chipLine(w))
 	out = append(out, m.composerLines(w)...)
 	return out
@@ -756,12 +821,16 @@ func (m *model) footerHints() string {
 		return h("y allow", "n deny", "a always", "esc close")
 	case m.prompt.active():
 		return h("enter send", "esc cancel")
+	case m.edit != nil:
+		return h("enter resend", "esc cancel")
+	case m.qFocus >= 0:
+		return h("enter steer", "del cancel", "⌥↑↓ rows", "esc back")
 	case m.pick.open:
 		return h("↑↓ select", "enter pick", "1-9 jump", "type to filter or any model id", "esc close")
 	case m.menu.open():
 		return h("↑↓ select", "tab complete", "esc close")
 	case m.focus == focusTranscript:
-		return h("enter fold", "[ ] row", "tab compose", "q quit")
+		return h("enter fold", "[ ] row", "e edit message", "tab compose", "q quit")
 	case m.emptyVisible():
 		return h("enter start "+m.newKind, "@ agent", "/ commands", "⇧tab mode")
 	}
@@ -774,7 +843,13 @@ func (m *model) footerHints() string {
 	if len(m.pending) > 0 {
 		return h("@ agent", "/ commands", "i inbox", "^c stop", "⇧tab mode")
 	}
-	return h("@ agent", "/ commands", "tab browse", "^c stop", "⇧tab mode")
+	if q := len(m.queueOf(m.sel)); q > 0 {
+		return h("@ agent", "/ commands", "⌥↑ queue: steer", "tab browse", "^c stop", "⇧tab mode", "^v image")
+	}
+	if m.comp.Empty() && lastUserItem(m.curView()) != nil {
+		return h("@ agent", "/ commands", "↑ edit last", "⌥↑↓ threads", "tab browse", "^c stop", "⇧tab mode", "^v image")
+	}
+	return h("@ agent", "/ commands", "tab browse", "^c stop", "⇧tab mode", "^v image")
 }
 
 // bell rings the terminal once.

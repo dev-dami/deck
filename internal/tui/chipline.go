@@ -15,7 +15,10 @@ func (m *model) chipLine(w int) string {
 
 // modelLabel is the model a member runs, as the chip names it.
 func (m *model) modelLabel(a session.AgentInfo) string {
-	model := a.Model
+	model := a.RunningModel
+	if model == "" {
+		model = a.Model
+	}
 	if model == "" {
 		model = m.defaultModel(a.Kind)
 	}
@@ -35,6 +38,9 @@ func (m *model) chipLayout(w int) (string, []chipHit) {
 	if m.pick.open {
 		return m.pickChipLine(w), nil
 	}
+	if m.edit != nil {
+		return "  " + sWarn.Render(trunc(editLabel, w-2)), nil
+	}
 	th, ok := m.selThread()
 	sep := sFaint.Render(" " + glyphDot + " ")
 	dir := m.newDir
@@ -47,7 +53,7 @@ func (m *model) chipLayout(w int) (string, []chipHit) {
 
 	// build lays out the left side; models says whether every member names its
 	// model (a lone member always does).
-	build := func(models bool) (string, []chipHit) {
+	build := func(models, meters bool) (string, []chipHit) {
 		left := "  "
 		var hits []chipHit
 		if members {
@@ -59,6 +65,9 @@ func (m *model) chipLayout(w int) (string, []chipHit) {
 				left += m.chip(a)
 				if models || len(th.Members) == 1 {
 					left += sep + sFaint.Render(m.modelLabel(a))
+				}
+				if ms := meter(a); meters && ms != "" {
+					left += sep + ms
 				}
 				hits = append(hits, chipHit{x0: x0, x1: sw(left), kind: hitModel, agent: a.ID})
 			}
@@ -85,13 +94,13 @@ func (m *model) chipLayout(w int) (string, []chipHit) {
 	var hits []chipHit
 	hintW := 0
 fit:
-	for _, models := range []bool{true, false} {
+	for _, lv := range [][2]bool{{true, true}, {false, true}, {false, false}} {
 		for _, h := range []string{hint, ""} {
 			hw := 0
 			if h != "" {
 				hw = sw(h) + 2
 			}
-			left, hits = build(models)
+			left, hits = build(lv[0], lv[1])
 			if sw(left)+2+hw+mw+1 <= w {
 				hint, hintW = h, hw
 				break fit

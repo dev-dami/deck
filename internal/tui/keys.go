@@ -78,36 +78,60 @@ func (m *model) handleKey(msg tea.KeyMsg) (cmds []tea.Cmd) {
 			return nil
 		}
 		m.focus = focusComposer
-		m.comp.Insert(string(msg.Runes))
+		m.pasted(string(msg.Runes))
 		return nil
 	}
+	// A paste that arrives as key presses must not send: see burstKey.
+	at := m.keyNow()
+	defer func() { m.lastKeyAt = m.keyNow() }()
+	if !m.ov.open && !m.pick.open && !m.prompt.active() && m.focus == focusComposer {
+		consumed, c := m.burstKey(msg, at)
+		cmds = append(cmds, c...)
+		if consumed {
+			return cmds
+		}
+	} else {
+		m.prevTyped, m.prevPasteKey = false, false
+	}
+	if (key == "ctrl+v" || key == "alt+v") && !m.ov.open && !m.pick.open && !m.prompt.active() && m.edit == nil {
+		return append(cmds, m.clipCmd())
+	}
+	if m.edit != nil && key == "esc" && !m.menu.open() && !m.ov.open && !m.pick.open && !m.prompt.active() {
+		m.cancelEdit()
+		return cmds
+	}
+	if m.qFocus >= 0 && !m.ov.open && !m.pick.open && !m.prompt.active() && m.focus == focusComposer {
+		if used, c := m.queueKey(msg); used {
+			return append(cmds, c...)
+		}
+	}
 	if m.ov.open {
-		return m.overlayKey(key)
+		return append(cmds, m.overlayKey(key)...)
 	}
 	if m.pick.open {
-		return m.pickKey(msg)
+		return append(cmds, m.pickKey(msg)...)
 	}
 	// shift+tab cycles the permission mode from anywhere except inside a menu or
 	// a prompt; alt+m is the model picker's key.
 	free := !m.prompt.active() && !(m.menu.open() && m.focus == focusComposer)
 	if key == "shift+tab" && free {
-		return m.cycleMode()
+		return append(cmds, m.cycleMode()...)
 	}
 	if key == "alt+m" && free {
-		return m.openPicker("")
+		return append(cmds, m.openPicker("")...)
 	}
 	if m.prompt.active() {
-		return m.promptKey(msg)
+		return append(cmds, m.promptKey(msg)...)
 	}
 	if m.menu.open() && m.focus == focusComposer {
 		if handled, c := m.menuKey(msg); handled {
-			return c
+			return append(cmds, c...)
 		}
 	}
 	if m.focus == focusTranscript {
-		return m.transcriptKey(msg)
+		return append(cmds, m.transcriptKey(msg)...)
 	}
-	return m.composerKey(msg)
+	return append(cmds, m.composerKey(msg)...)
 }
 
 // settleComposer refreshes composer-derived state after a key.
@@ -120,6 +144,10 @@ func (m *model) settleComposer() {
 // ctrlC interrupts everything in the thread that is working; failing that it
 // clears the composer; failing that it arms (then performs) quit.
 func (m *model) ctrlC() []tea.Cmd {
+	if m.edit != nil {
+		m.cancelEdit()
+		return nil
+	}
 	if th, ok := m.selThread(); ok {
 		var ids []string
 		for _, a := range th.Members {
@@ -296,17 +324,38 @@ func (m *model) composerKey(msg tea.KeyMsg) []tea.Cmd {
 	case "alt+enter", "ctrl+j", "shift+enter":
 		m.comp.Insert("\n")
 		return nil
+	case "alt+up", "alt+down":
+		d := -1
+		if key == "alt+down" {
+			d = 1
+		}
+		if !m.focusQueue(d) {
+			m.moveSel(d)
+		}
+		return nil
 	case "up", "down":
 		d := -1
 		if key == "down" {
 			d = 1
 		}
-		if m.comp.Empty() {
-			m.moveSel(d)
-		} else {
+		switch {
+		case !m.comp.Empty():
 			m.comp.MoveVertical(d, m.g.mainW)
+		case d < 0 && m.edit == nil && len(m.queueOf(m.sel)) == 0:
+			// up on an empty composer edits your last message, like Claude Code
+			if it := lastUserItem(m.curView()); it != nil {
+				return m.startEdit(it)
+			}
+			m.moveSel(d)
+		default:
+			m.moveSel(d)
 		}
 		return nil
+	case "backspace", "ctrl+h":
+		if m.comp.Empty() && len(m.attach) > 0 {
+			m.removeAttach(len(m.attach) - 1)
+			return nil
+		}
 	}
 	return m.editKey(msg)
 }
@@ -409,6 +458,11 @@ func (m *model) transcriptKey(msg tea.KeyMsg) []tea.Cmd {
 		if ok, cmds := m.approvalKey(key); ok {
 			return cmds
 		}
+		if key == "e" && v != nil {
+			if it := v.cursorItem(); it != nil && it.kind == kUser {
+				return m.startEdit(it)
+			}
+		}
 		if key == "n" {
 			return m.startNew()
 		}
@@ -463,6 +517,9 @@ func (m *model) ensureThread() (string, error) {
 // ---- submit ----
 
 func (m *model) submit() []tea.Cmd {
+	if m.edit != nil {
+		return m.submitEdit()
+	}
 	text := m.comp.Value()
 	if strings.HasSuffix(text, "\\") {
 		m.comp.Backspace()
@@ -472,7 +529,7 @@ func (m *model) submit() []tea.Cmd {
 	t := strings.TrimSpace(text)
 	th, _ := m.selThread()
 
-	if t == "" {
+	if t == "" && len(m.attach) == 0 {
 		switch {
 		case th.Paused: // enter on an empty composer releases a pause
 			m.comp.Reset()
@@ -496,7 +553,7 @@ func (m *model) submit() []tea.Cmd {
 	if len(ad.Unknown) > 0 {
 		return []tea.Cmd{m.toast.show("no agent @"+ad.Unknown[0]+" in this thread", true, m.now)}
 	}
-	if ad.Mentioned() && strings.TrimSpace(ad.Body) == "" && len(ad.NewKinds) == 0 {
+	if ad.Mentioned() && strings.TrimSpace(ad.Body) == "" && len(ad.NewKinds) == 0 && len(m.attach) == 0 {
 		// "@claude" alone has nothing to send: keep it, ready for the message,
 		// and let the hint say who it is for.
 		hint := addressHint(t, th, m.kinds)
@@ -512,7 +569,7 @@ func (m *model) submit() []tea.Cmd {
 		return []tea.Cmd{m.toast.show(err.Error(), true, m.now)}
 	}
 	m.comp.Reset()
-	return []tea.Cmd{m.postCmd(id, t)}
+	return []tea.Cmd{m.postCmd(id, t, m.takeAttach())}
 }
 
 // pushConfig tells the manager about the models picked with /model, which are
@@ -645,6 +702,10 @@ func (m *model) handleMouse(msg tea.MouseMsg) []tea.Cmd {
 			return m.pickMouse(msg)
 		}
 		switch {
+		case g.qRows > 0 && msg.Y >= g.qY && msg.Y < g.qY+g.qRows && msg.X >= g.mainX:
+			return m.queueMouse(msg.Y-g.qY, msg.X-g.mainX)
+		case g.attH > 0 && msg.Y == g.attY && msg.X >= g.mainX:
+			m.attachMouse(msg.X - g.mainX)
 		case msg.Y == g.chipY && msg.X >= g.mainX && !m.prompt.active():
 			if h, ok := m.chipAt(msg.X - g.mainX); ok {
 				if h.kind == hitMode {
@@ -669,6 +730,9 @@ func (m *model) handleMouse(msg tea.MouseMsg) []tea.Cmd {
 				if it := v.owners[li]; it != nil && it.foldable() {
 					v.cursor = it
 					m.toggle(it, g.mainW-1)
+				} else if it != nil && it.kind == kUser && it.entryID != "" {
+					v.cursor = it
+					return m.startEdit(it)
 				}
 			}
 		case msg.Y >= g.compY && msg.Y < g.compY+g.compH:

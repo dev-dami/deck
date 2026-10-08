@@ -2,6 +2,8 @@ package tui
 
 import (
 	"math"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,6 +54,10 @@ type item struct {
 
 	to       []string // user messages: members it was addressed to
 	nmembers int      // user messages: how many members the thread had then
+	entryID  string   // user messages: the id Manager.Edit takes
+	images   []string // user messages: attached image paths
+	steer    bool     // user messages: delivered as a steer
+	edited   bool     // user messages: edited after sending
 
 	tool agent.Tool
 	diff *agent.FileDiff
@@ -123,6 +129,12 @@ func (it *item) foldable() bool {
 		return it.overflow || it.expanded
 	}
 	return false
+}
+
+// selectable items can hold the row cursor: the foldable rows, and your own
+// messages (press e to edit one).
+func (it *item) selectable() bool {
+	return it.foldable() || (it.kind == kUser && it.entryID != "")
 }
 
 // moving reports whether the item is mid-animation.
@@ -219,9 +231,24 @@ func (c *rctx) addressee(it *item) string {
 	return strings.Join(c.m.agentNames(it.to), ", ")
 }
 
+// imagesLine is the faint "▣ 2 images: a.png, b.png" under a message.
+func imagesLine(paths []string, w int) string {
+	names := make([]string, len(paths))
+	for i, p := range paths {
+		names[i] = filepath.Base(p)
+	}
+	noun := "image"
+	if len(paths) != 1 {
+		noun = "images"
+	}
+	return "  " + sFaint.Render(trunc("▣ "+itoa(len(paths))+" "+noun+": "+strings.Join(names, ", "), w-2))
+}
+
 func (it *item) renderUser(c *rctx) []string {
 	name, to := c.m.cfg.UserName, c.addressee(it)
-	key := lineCacheKey{w: c.w, ver: it.ver, dark: c.m.dark, tag: name + "\x00" + to}
+	queued := c.m.queued(c.th.ID, it.entryID)
+	key := lineCacheKey{w: c.w, ver: it.ver, dark: c.m.dark,
+		tag: name + "\x00" + to + "\x00" + strconv.FormatBool(queued)}
 	if it.cache.ok && it.cache.key == key {
 		return it.cache.lines
 	}
@@ -229,9 +256,21 @@ func (it *item) renderUser(c *rctx) []string {
 	if to != "" {
 		label += sFaint.Render(" " + trunc("→ "+to, max(4, c.w-4-sw(name))))
 	}
+	if it.steer {
+		label += " " + sWarn.Render("steer")
+	}
+	if queued {
+		label += " " + sFaint.Render("queued")
+	}
+	if it.edited {
+		label += " " + sFaint.Render("edited")
+	}
 	out := []string{"  " + label}
 	for _, l := range wrapText(it.text, c.tw-2) {
 		out = append(out, "  "+sFg.Render(l))
+	}
+	if len(it.images) > 0 {
+		out = append(out, imagesLine(it.images, c.tw))
 	}
 	it.cache = lineCache{key: key, lines: out, ok: true}
 	return out
@@ -359,7 +398,7 @@ func (v *threadView) add(it *item) *item {
 func (v *threadView) foldables() []*item {
 	var out []*item
 	for _, it := range v.items {
-		if it.foldable() {
+		if it.selectable() {
 			out = append(out, it)
 		}
 	}

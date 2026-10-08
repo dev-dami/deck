@@ -119,7 +119,8 @@ func newHarness(t *testing.T, w, h int, adapters map[string]agent.Adapter) *harn
 	cfg := testConfig()
 	mgr := session.NewManager(adapters, st, cfg)
 	t.Cleanup(mgr.Close)
-	app := NewWithOptions(mgr, cfg, Options{Dir: repoDir(), SaveConfig: func(config.Config) error { return nil }})
+	clk := &manualClock{t: time.Unix(1_700_000_000, 0), step: 100 * time.Millisecond}
+	app := NewWithOptions(mgr, cfg, Options{KeyClock: clk.Now, Dir: repoDir(), SaveConfig: func(config.Config) error { return nil }})
 	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(w, h))
 	hr := &harness{t: t, tm: tm, mgr: mgr}
 	stop := make(chan struct{})

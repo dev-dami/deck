@@ -37,4 +37,4 @@
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                  ◆claude · default · ~/repo                                                                          ● ask
                                › message claude…
- @ agent   / commands   tab browse   ^c stop   ⇧tab mode
+ @ agent   / commands   ↑ edit last   ⌥↑↓ threads   tab browse   ^c stop   ⇧tab mode   ^v image

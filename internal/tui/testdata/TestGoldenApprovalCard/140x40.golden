@@ -1,7 +1,7 @@
  ◆ deck                                                                                                                           1 waiting
 
  ▎⚠ rebuild dist
- ▎  ◆codex
+ ▎  ◆codex ○
 
 
 
@@ -35,6 +35,6 @@
                                │
                                │ y allow   n deny   a always   e edit
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                 ◆codex · default · ~/repo                                                                           ● ask
+                                 ◆codex · default · ○ 3% · ~/repo                                                                    ● ask
                                › message codex…
  y allow   n deny   a always   i inbox

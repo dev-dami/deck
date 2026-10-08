@@ -37,4 +37,4 @@
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                  ◆claude · sonnet · ~/repo                                                                           ● ask
                                › message claude…
- @ agent   / commands   tab browse   ^c stop   ⇧tab mode                                                                   claude finished
+ @ agent   / commands   ↑ edit last   ⌥↑↓ threads   tab browse   ^c stop   ⇧tab mode   ^v image                            claude finished

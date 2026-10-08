@@ -150,6 +150,12 @@ func (m *model) dispatch(msg tea.Msg, replay bool) []tea.Cmd {
 	case session.AutoDeniedMsg:
 		m.onAuto(msg.ThreadID, msg.AgentID, msg.Summary, true)
 
+	case session.QueueChangedMsg:
+		m.onQueueChanged(msg)
+
+	case session.EditedMsg:
+		m.applyEdit(msg)
+
 	case session.ApprovalMsg:
 		return m.onApproval(msg)
 
@@ -171,8 +177,19 @@ func (m *model) onEvent(msg session.EventMsg, replay bool) []tea.Cmd {
 			return nil // an adapter's echo of a prompt
 		}
 		m.closeAllStreams(v, replay)
+		if msg.Steer && msg.SteerOf != "" { // a queued message pushed into the turn: tag it, don't repeat it
+			for _, o := range v.items {
+				if o.kind == kUser && o.entryID == msg.SteerOf {
+					o.steer = true
+					o.bump()
+					v.follow = true
+					return nil
+				}
+			}
+		}
 		it := newItem(kUser)
 		it.text = ev.Text
+		it.entryID, it.images, it.steer = msg.EntryID, msg.Images, msg.Steer
 		it.to, it.nmembers = msg.To, len(v.known)
 		v.add(it)
 		v.follow = true
@@ -477,9 +494,12 @@ func (m *model) respond(p *pendingApproval, d agent.Decision) tea.Cmd {
 
 // ---- commands that talk to the manager ----
 
-func (m *model) postCmd(threadID, text string) tea.Cmd {
+func (m *model) postCmd(threadID, text string, images []agent.Image) tea.Cmd {
 	mgr := m.mgr
-	return func() tea.Msg { return sentMsg{err: mgr.Post(threadID, text)} }
+	return func() tea.Msg {
+		_, err := mgr.PostWith(threadID, text, images)
+		return sentMsg{err: err}
+	}
 }
 
 // addCmd starts an agent in a thread without sending it anything.

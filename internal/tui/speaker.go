@@ -93,7 +93,11 @@ func (m *model) chip(a session.AgentInfo) string {
 func (m *model) chips(members []session.AgentInfo, w int) string {
 	parts := make([]string, 0, len(members))
 	for _, a := range members {
-		parts = append(parts, m.chip(a))
+		c := m.chip(a)
+		if pct, ok := ctxPct(a); ok {
+			c += " " + ctxStyle(pct).Render(ctxGlyph(pct))
+		}
+		parts = append(parts, c)
 	}
 	return trunc(strings.Join(parts, " "), w)
 }
@@ -105,3 +109,40 @@ func working(a session.AgentInfo) bool {
 
 // busy reports whether Ctrl+C would interrupt something.
 func busy(a session.AgentInfo) bool { return working(a) || a.Status == session.StatusApproval }
+
+// ---- context meter ----
+
+// ctxPct is how full a member's context window is, in percent; ok is false when
+// the window is not known.
+func ctxPct(a session.AgentInfo) (int, bool) {
+	if a.ContextWindow <= 0 {
+		return 0, false
+	}
+	p := a.ContextTokens * 100 / a.ContextWindow
+	return max(0, min(100, p)), true
+}
+
+// ctxGlyph is ○ ◔ ◑ ◕ ● by quarter.
+func ctxGlyph(pct int) string {
+	return []string{"○", "◔", "◑", "◕", "●"}[max(0, min(4, pct/25))]
+}
+
+// ctxStyle is muted until 70%, warning to 90%, danger above.
+func ctxStyle(pct int) lipgloss.Style {
+	switch {
+	case pct > 90:
+		return sDanger
+	case pct >= 70:
+		return sWarn
+	}
+	return sMuted
+}
+
+// meter is "◔ 42%" in its colour.
+func meter(a session.AgentInfo) string {
+	pct, ok := ctxPct(a)
+	if !ok {
+		return ""
+	}
+	return ctxStyle(pct).Render(ctxGlyph(pct) + " " + itoa(pct) + "%")
+}

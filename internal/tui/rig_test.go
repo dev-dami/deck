@@ -11,6 +11,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/agent"
 	"github.com/dev-dami/deck/internal/agent/fake"
+	"github.com/dev-dami/deck/internal/clipimg"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/store"
@@ -140,6 +141,7 @@ type rig struct {
 	claude *stubAdapter
 	codex  *stubAdapter
 	hub    *fake.Hub
+	clock  *manualClock
 	saved  []config.Config
 	quit   bool
 }
@@ -168,11 +170,15 @@ func newRigWith(t *testing.T, w, h, maxHops int, tune func(*config.Config)) *rig
 	r.mgr = session.NewManager(map[string]agent.Adapter{"claude": r.claude, "codex": r.codex}, st, cfg,
 		session.Options{Hub: r.hub, MCPFor: fake.MCPFor, MaxHops: maxHops})
 	t.Cleanup(r.mgr.Close)
+	r.clock = &manualClock{t: time.Unix(1_700_000_000, 0), step: 100 * time.Millisecond}
 	r.m = newModel(r.mgr, cfg, Options{
+		KeyClock:   r.clock.Now,
+		ClipSave:   func(context.Context, string) (string, error) { return "", clipimg.ErrNoImage },
 		Dir:        repoDir(),
 		SaveConfig: func(c config.Config) error { r.saved = append(r.saved, c); return nil },
 	})
 	r.m.noListen = true
+	r.m.noBurstTick = true
 	r.feed(tea.WindowSizeMsg{Width: w, Height: h})
 	return r
 }
