@@ -95,29 +95,68 @@ func TestReducedMotionNeverPlays(t *testing.T) {
 	}
 }
 
-func TestMiddleIsRainbowWithYOLO(t *testing.T) {
+func TestYOLOPopsWithTheWave(t *testing.T) {
 	withProfile(t)
 	w, h := 80, 24
 	t0 := time.Now()
 	a := New(true)
 	a.Start(t0)
-	out := a.Apply(screen(w, h), w, t0.Add(800*time.Millisecond))
-	plain := ansi.Strip(out)
-	if n := strings.Count(plain, "█"); n < 40 {
-		t.Fatalf("YOLO should be drawn in the middle (%d block cells):\n%s", n, plain)
+	out := a.Apply(screen(w, h), w, t0.Add(500*time.Millisecond))
+	if n := strings.Count(ansi.Strip(out), "█"); n < 40 {
+		t.Fatalf("YOLO should be drawn in the middle (%d block cells):\n%s", n, ansi.Strip(out))
 	}
 	if !strings.Contains(out, "48;2;") {
-		t.Fatal("the screen should be painted with truecolor backgrounds")
+		t.Fatal("the wave should colour what it crosses")
 	}
-	// Text outside the letters is still readable.
-	if !strings.Contains(plain, "◆ deck") {
-		t.Fatalf("screen text should survive the rainbow:\n%s", plain)
-	}
-	// Mid-effect, no line keeps its own colours: every cell is repainted.
-	for i, l := range strings.Split(out, "\n") {
-		if strings.Contains(l, "38;2;95;215;175") {
-			t.Fatalf("line %d still has the original accent colour", i)
+}
+
+// The wave moves the screen's own cells, and puts every one back.
+func TestComponentsAreWarpedAndSettle(t *testing.T) {
+	withProfile(t)
+	w, h := 80, 24
+	ox, oy := w/2+16, h/2+2
+	rows := make([]string, h)
+	for y := range rows {
+		rows[y] = strings.Repeat(".", w)
+		if y == oy {
+			rows[y] = rows[y][:ox] + "@" + rows[y][ox+1:]
 		}
+	}
+	scr := strings.Join(rows, "\n")
+	find := func(out string) (int, int) {
+		for y, l := range strings.Split(ansi.Strip(out), "\n") {
+			if x := strings.Index(l, "@"); x >= 0 {
+				return x, y
+			}
+		}
+		return -1, -1
+	}
+	t0 := time.Now()
+	a := New(true)
+	a.Start(t0)
+	moved := false
+	for ms := 0; ms < int(Duration/time.Millisecond); ms += 16 {
+		if x, y := find(a.Apply(scr, w, t0.Add(time.Duration(ms)*time.Millisecond))); x != ox || y != oy {
+			moved = true
+		}
+	}
+	if !moved {
+		t.Fatal("the wave never moved the marker")
+	}
+	if x, y := find(a.Apply(scr, w, t0.Add(Duration-20*time.Millisecond))); x != ox || y != oy {
+		t.Fatalf("just before the end the marker is at %d,%d, want %d,%d", x, y, ox, oy)
+	}
+}
+
+func TestOwnColoursComeBackBehindTheWave(t *testing.T) {
+	withProfile(t)
+	w, h := 80, 24
+	t0 := time.Now()
+	a := New(true)
+	a.Start(t0)
+	out := strings.Split(a.Apply(screen(w, h), w, t0.Add(1300*time.Millisecond)), "\n")
+	if !strings.Contains(out[0], "38;2;95;215;175") {
+		t.Fatalf("the accent colour should be back on the top row: %q", out[0])
 	}
 }
 
@@ -133,22 +172,6 @@ func TestBlastStartsInTheMiddle(t *testing.T) {
 	}
 	if strings.Contains(out[0], "48;2;") || strings.Contains(out[h-1], "48;2;") {
 		t.Fatal("the top and bottom rows are still untouched early on")
-	}
-}
-
-func TestTrailingRingHandsBackTheMiddleFirst(t *testing.T) {
-	withProfile(t)
-	w, h := 80, 24
-	t0 := time.Now()
-	a := New(true)
-	a.Start(t0)
-	out := strings.Split(a.Apply(screen(w, h), w, t0.Add(1300*time.Millisecond)), "\n")
-	if !strings.Contains(out[0], "48;2;") {
-		t.Fatal("the edges are still rippling")
-	}
-	// Row 14 is all x; near the centre it is back to plain text.
-	if !strings.Contains(out[14], strings.Repeat("x", 12)) {
-		t.Fatalf("the middle should be back to normal: %q", out[14])
 	}
 }
 
