@@ -6,7 +6,7 @@ import (
 	"github.com/dev-dami/deck/internal/session"
 )
 
-// Commands are the five slash commands, in menu order.
+// Commands are the slash commands, in menu order.
 var Commands = []struct{ Name, Args, Desc string }{
 	{"new", "", "start a fresh thread"},
 	{"resume", "", "continue a saved thread"},
@@ -14,6 +14,11 @@ var Commands = []struct{ Name, Args, Desc string }{
 	{"cd", "<path>", "directory for new threads"},
 	{"name", "<name>", "your display name"},
 	{"changes", "", "what changed since your messages, with undo"},
+	{"rename", "<title>", "rename this thread"},
+	{"pin", "", "pin this thread to the top, or unpin it"},
+	{"done", "", "resolve this thread; a new message wakes it"},
+	{"archive", "", "put this thread away; /resume brings it back"},
+	{"delete", "", "delete this thread for good (asks twice)"},
 }
 
 func isCommand(name string) bool {

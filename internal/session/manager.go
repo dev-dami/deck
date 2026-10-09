@@ -207,6 +207,10 @@ type ThreadInfo struct {
 	CostUSD     float64
 	LastSpeaker string     // member id the next unaddressed message goes to ("" = none yet)
 	Mode        agent.Mode // the thread's permission mode
+	// Pinned threads sort first; Resolved ones are settled until a new message.
+	Pinned, Resolved bool
+	// Active is when anything last happened in the thread.
+	Active time.Time
 }
 
 // Manager owns every thread and agent.
@@ -373,6 +377,10 @@ func (m *Manager) threadInfo(t *thread) ThreadInfo {
 	info := ThreadInfo{
 		ID: t.id, Title: t.title, Dir: t.dir, Paused: t.paused, Hops: t.hops,
 		MaxHops: m.maxHops, Held: len(t.heldIdx), LastSpeaker: t.lastSpeaker, Mode: t.mode,
+		Pinned: t.pinned, Resolved: t.resolved,
+	}
+	if n := len(t.log); n > 0 {
+		info.Active = t.log[n-1].Time
 	}
 	t.mu.Unlock()
 	for _, a := range members {
@@ -680,6 +688,8 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 		return PostResult{}, fmt.Errorf("no agent @%s in this thread (members: %s; kinds: %s)",
 			ad.Unknown[0], strings.Join(names, ", "), strings.Join(m.Kinds(), ", "))
 	}
+
+	m.wake(t)
 
 	var targets []*agentState
 	newKinds := ad.NewKinds
@@ -1032,6 +1042,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	t := newThread(m, th.ID, dir, mode)
 	t.created = true
 	t.title = th.Title
+	t.pinned, t.resolved = th.Pinned, th.Resolved // resuming un-archives
 	remap := map[string]string{}
 	var started []*agentState
 	fail := func(err error) (ThreadInfo, []tea.Msg, error) {
@@ -1129,6 +1140,9 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 			return fail(fmt.Errorf("session: resume %s: %w", a.kind, err))
 		}
 		started = append(started, a)
+	}
+	if th.Archived {
+		m.persistMeta(t) // resuming brings it back to the sidebar
 	}
 	return m.threadInfo(t), historyOf(t.id, entries), nil
 }

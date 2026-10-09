@@ -137,13 +137,19 @@ func (m *model) sidebarLines(g geom, rows int) []string {
 		selected := t.ID == m.sel
 
 		glyph, gs := m.threadGlyph(t)
+		if t.Resolved && glyph == theme.GlyphIdle {
+			glyph, gs = glyphResolved, sFaint
+		}
+		unread := m.unread[t.ID] && !selected
 		baseCol := theme.Muted
 		titleStyle := sMuted
 		switch {
-		case exited(t), len(t.Members) == 0: // a finished thread, or "new thread"
+		case exited(t), len(t.Members) == 0, t.Resolved: // finished, settled, or "new thread"
 			baseCol, titleStyle = theme.Faint, sFaint
 		case selected:
 			baseCol, titleStyle = theme.Fg, sBold
+		case unread: // news you have not seen reads brighter
+			baseCol, titleStyle = theme.Fg, sFg
 		}
 		if v := m.views[t.ID]; v != nil && v.flash.Started() && v.flash.Moving(m.now) {
 			titleStyle = lipglossFg(m.blend(theme.Accent, baseCol, v.flash.Progress(m.now))).Bold(selected)
@@ -173,8 +179,15 @@ func (m *model) sidebarLines(g geom, rows int) []string {
 		if cost != "" {
 			costW = sw(cost) + 1
 		}
-		titleW := max(1, cw-sw(prefix)-costW)
-		line := prefix + titleStyle.Render(trunc(threadTitle(t), titleW))
+		marks := ""
+		if t.Pinned {
+			marks += " " + sFaint.Render(glyphPinned)
+		}
+		if unread {
+			marks += " " + sAccent.Render(glyphUnread)
+		}
+		titleW := max(1, cw-sw(prefix)-costW-sw(marks))
+		line := prefix + titleStyle.Render(trunc(threadTitle(t), titleW)) + marks
 		if cost != "" {
 			line = padTo(line, cw-sw(cost)) + sFaint.Render(cost)
 		}

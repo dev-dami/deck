@@ -137,6 +137,11 @@ func (m *model) dispatch(msg tea.Msg, replay bool) []tea.Cmd {
 	case session.NoticeMsg:
 		return m.onNotice(msg)
 
+	case session.ThreadChangedMsg:
+		if !replay {
+			m.onThreadChanged(msg)
+		}
+
 	case session.ModeChangedMsg:
 		if !replay {
 			m.onModeChanged(msg)
@@ -177,6 +182,9 @@ func (m *model) onEvent(msg session.EventMsg, replay bool) []tea.Cmd {
 	ev := msg.Event
 	v := m.view(msg.ThreadID)
 	id := ev.AgentID
+	if !replay && !ev.Delta && (ev.Kind == agent.KindAssistantText || ev.Kind == agent.KindTurnDone) {
+		m.markUnread(msg.ThreadID)
+	}
 
 	if ev.Kind == agent.KindUserText {
 		if !msg.FromUser() {

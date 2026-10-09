@@ -459,6 +459,18 @@ func (m *model) transcriptKey(msg tea.KeyMsg) []tea.Cmd {
 		}
 	case "d":
 		return m.openChanges()
+	case "p":
+		return m.threadCommand("pin", "")
+	case "x":
+		if th, ok := m.selThread(); ok && th.Resolved {
+			return []tea.Cmd{m.toast.show("resolved · a new message wakes it", false, m.now)}
+		}
+		return m.threadCommand("done", "")
+	case "r":
+		if th, ok := m.selThread(); ok {
+			m.focus = focusComposer
+			m.comp.SetValue("/rename " + threadTitle(th))
+		}
 	case "n", "y", "a", "e":
 		if ok, cmds := m.approvalKey(key); ok {
 			return cmds
@@ -602,6 +614,8 @@ func (m *model) runCommand(name, arg string) []tea.Cmd {
 	case "changes":
 		m.comp.Reset()
 		return m.openChanges()
+	case "rename", "pin", "done", "archive", "delete":
+		return m.threadCommand(name, arg)
 	case "model":
 		if arg == "" { // no name: pick one from what the CLI offers
 			m.comp.Reset()

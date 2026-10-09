@@ -113,6 +113,12 @@ type model struct {
 	burstArmed   bool
 	noBurstTick  bool // tests call burstCheckMsg by hand
 	attach       []attachment
+
+	// thread lifecycle (threads.go)
+	drafts    map[string]draft // composer text per thread you left
+	unread    map[string]bool  // threads with news you have not seen
+	delArm    time.Time        // a first /delete, waiting for the second
+	delThread string
 	clipSave     func(ctx context.Context, dir string) (string, error)
 	clipWarned   bool
 	queue        map[string][]session.QueuedItem
@@ -169,6 +175,8 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 		fps:        60,
 		budget:     motion.NewBudget(),
 		views:      map[string]*threadView{},
+		drafts:     map[string]draft{},
+		unread:     map[string]bool{},
 		newKind:    cfg.DefaultAgent,
 		newDir:     dir,
 		newModel:   map[string]string{},
@@ -269,6 +277,7 @@ func (m *model) refresh() {
 			m.rows = append(m.rows, t)
 		}
 	}
+	sortRows(m.rows)
 }
 
 func (m *model) hasContent() bool {
@@ -937,7 +946,9 @@ func (m *model) selectThread(id string) {
 	if m.fight.active && m.fight.thread != id { // the fight belongs to the thread you leave
 		m.skipFight()
 	}
+	m.leaveThread(m.sel)
 	m.sel = id
+	m.enterThread(id)
 	m.refresh()
 	if i := m.selIndex(); i >= 0 {
 		m.barY.Set(float64(i))

@@ -35,6 +35,10 @@ type thread struct {
 	hops        int
 	paused      bool
 
+	// Lifecycle (lifecycle.go): pinned to the top, resolved (settled until a
+	// new message wakes it), archived (off the sidebar, still resumable).
+	pinned, resolved, archived bool
+
 	// Queue of user messages waiting for busy members (queue.go), guarded by mu.
 	queue  []qitem
 	skip   map[skipKey]skipKind     // (entry index, member) pairs that must not be delivered again
@@ -122,7 +126,8 @@ func (m *Manager) persistMeta(t *thread) {
 func (m *Manager) snapshot(t *thread) store.Thread {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	th := store.Thread{ID: t.id, Title: t.title, Dir: t.dir, Mode: string(t.mode)}
+	th := store.Thread{ID: t.id, Title: t.title, Dir: t.dir, Mode: string(t.mode),
+		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived}
 	for _, a := range t.members {
 		th.Members = append(th.Members, a.memberMeta())
 	}

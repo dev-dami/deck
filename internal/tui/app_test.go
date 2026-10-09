@@ -456,14 +456,14 @@ func TestSlashCommands(t *testing.T) {
 	}
 }
 
-func TestSlashMenuListsExactlySixCommands(t *testing.T) {
+func TestSlashMenuListsEveryCommand(t *testing.T) {
 	r := newRig(t, 120, 30)
 	r.start("one")
 	r.typeText("/")
-	if got := len(r.m.menu.items); got != 6 {
+	want := []string{"new", "resume", "model", "cd", "name", "changes", "rename", "pin", "done", "archive", "delete"}
+	if got := len(r.m.menu.items); got != len(want) {
 		t.Fatalf("menu has %d commands", got)
 	}
-	want := []string{"new", "resume", "model", "cd", "name", "changes"}
 	for i, it := range r.m.menu.items {
 		if it.label != want[i] {
 			t.Fatalf("item %d = %q", i, it.label)

@@ -88,6 +88,11 @@ type Thread struct {
 	// Mode is the thread's permission mode: "plan", "ask" or "yolo". Threads
 	// stored before modes existed (and any unknown value) read as "ask".
 	Mode string `json:"mode,omitempty"`
+	// Pinned threads sort first; Resolved ones are settled (shown apart until
+	// a new message wakes them); Archived ones are off the sidebar.
+	Pinned   bool `json:"pinned,omitempty"`
+	Resolved bool `json:"resolved,omitempty"`
+	Archived bool `json:"archived,omitempty"`
 
 	// Legacy mirror of Members[0] (Name: every member's name joined by "+").
 	AgentKind string `json:"agent_kind"`
@@ -489,6 +494,26 @@ func (s *Store) writeIndexLocked() error {
 		return err
 	}
 	return writeFileAtomic(s.indexPath(), data)
+}
+
+// Delete removes a thread for good: its metadata, its log and its index entry.
+func (s *Store) Delete(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.threads[id]; !ok {
+		return ErrNotFound
+	}
+	tl := s.threadLockLocked(id)
+	tl.Lock()
+	for _, p := range []string{s.logPath(id), s.metaPath(id)} {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			tl.Unlock()
+			return err
+		}
+	}
+	tl.Unlock()
+	delete(s.threads, id)
+	return s.writeIndexLocked()
 }
 
 func (s *Store) indexPath() string         { return filepath.Join(s.dir, "index.json") }
