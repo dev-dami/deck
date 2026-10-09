@@ -19,6 +19,9 @@ type resumedMsg struct {
 	info    session.ThreadInfo
 	history []tea.Msg
 	err     error
+	// shown: the thread's transcript was already on screen when the resume
+	// was asked for, so the history is in it.
+	shown bool
 }
 
 // closeStreams ends any text or reasoning of one agent that is still arriving.
@@ -531,9 +534,11 @@ func (m *model) interruptCmd(ids ...string) tea.Cmd {
 
 func (m *model) resumeCmd(threadID string) tea.Cmd {
 	mgr := m.mgr
+	v := m.views[threadID]
+	shown := v != nil && len(v.items) > 0
 	return func() tea.Msg {
 		info, hist, err := mgr.Resume(threadID)
-		return resumedMsg{info: info, history: hist, err: err}
+		return resumedMsg{info: info, history: hist, err: err, shown: shown}
 	}
 }
 
@@ -541,14 +546,46 @@ func (m *model) onResumed(msg resumedMsg) []tea.Cmd {
 	if msg.err != nil {
 		return []tea.Cmd{m.toast.show(msg.err.Error(), true, m.now)}
 	}
-	v := m.view(msg.info.ID)
-	if len(msg.history) > 0 && len(v.items) == 0 {
-		for _, h := range msg.history {
-			m.dispatch(h, true)
-		}
+	if len(msg.history) > 0 && !msg.shown {
+		m.hydrate(msg.info.ID, msg.history)
 	}
 	m.threads = m.mgr.Threads()
 	m.selectThread(msg.info.ID)
 	m.focus = focusComposer
 	return nil
+}
+
+// hydrate lays a resumed thread's stored history down first. Restarting its
+// agents can put live lines (session started, notices) on screen before the
+// history arrives; those move after it instead of hiding it.
+func (m *model) hydrate(id string, history []tea.Msg) {
+	live := m.views[id]
+	v := newView(id)
+	m.views[id] = v
+	for _, h := range history {
+		m.dispatch(h, true)
+	}
+	if live == nil {
+		return
+	}
+	v.items = append(v.items, live.items...)
+	for _, mp := range [][2]map[string]*item{{v.open, live.open}, {v.openR, live.openR}, {v.tools, live.tools}} {
+		for k, it := range mp[1] {
+			mp[0][k] = it
+		}
+	}
+	for k, h := range live.hide {
+		v.hide[k] = h
+	}
+	for k, st := range live.stats {
+		if v.stats[k] == nil {
+			v.stats[k] = st
+		}
+	}
+	for _, a := range live.order {
+		if _, ok := v.known[a]; !ok {
+			v.known[a] = live.known[a]
+			v.order = append(v.order, a)
+		}
+	}
 }

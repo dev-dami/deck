@@ -730,6 +730,31 @@ func TestResumeShowsHistory(t *testing.T) {
 	}
 }
 
+// Restarting a resumed thread's agents can put live lines on screen before the
+// history arrives; the history must still show, above them.
+func TestResumeShowsHistoryWhenLiveLinesComeFirst(t *testing.T) {
+	r := newRig(t, 120, 30)
+	r.start("remember me")
+	tid := r.m.sel
+	run := r.claude.last()
+	r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: "I will remember."})
+	r.event(run, agent.Event{Kind: agent.KindTurnDone})
+	r.event(run, agent.Event{Kind: agent.KindExited})
+	r.pump("exited", func() bool { return r.has("claude exited") })
+	r.mgr.Flush()
+
+	delete(r.m.views, tid)
+	cmd := r.m.resumeCmd(tid)
+	r.feed(session.NoticeMsg{ThreadID: tid, Text: "an early live line"})
+	r.feed(cmd())
+	r.m.selectThread(tid)
+	out := r.view()
+	hist, live := strings.Index(out, "I will remember."), strings.Index(out, "an early live line")
+	if hist < 0 || live < 0 || hist > live {
+		t.Fatalf("history first, then the live line (history at %d, live at %d):\n%s", hist, live, out)
+	}
+}
+
 // ---- motion ----
 
 // idleThreads leaves two threads with an agent that never emits anything, so
