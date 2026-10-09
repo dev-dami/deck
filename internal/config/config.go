@@ -35,7 +35,10 @@ type Config struct {
 	ClaudeBinary   string `json:"claude_binary"`    // path or command name; empty means "claude"
 	CodexBinary    string `json:"codex_binary"`     // path or command name; empty means "codex"
 	DefaultMode    string `json:"default_mode"`     // "plan", "ask" or "yolo"; empty means "ask". "yolo" is ignored at startup (see StartMode)
-	Models         Models `json:"models"`
+	// TrackChanges snapshots a thread's git work tree with every message you
+	// send, for the changes panel and its undo.
+	TrackChanges bool   `json:"track_changes"`
+	Models       Models `json:"models"`
 }
 
 // gitUserName and osUserName are indirections so tests can stub them.
@@ -77,6 +80,7 @@ func Defaults() Config {
 		ClaudeBinary:   "claude",
 		CodexBinary:    "codex",
 		DefaultMode:    "ask",
+		TrackChanges:   true,
 	}
 }
 

@@ -445,7 +445,7 @@ func (t *translator) changesTitle(cs []fileUpdateChange) string {
 // fileDiff converts one protocol change to an agent.FileDiff.
 func (t *translator) fileDiff(c fileUpdateChange) agent.FileDiff {
 	var fd agent.FileDiff
-	if parsed := ParseUnified(c.Diff); len(parsed) > 0 && len(parsed[0].Hunks) > 0 {
+	if parsed := agent.ParseUnified(c.Diff); len(parsed) > 0 && len(parsed[0].Hunks) > 0 {
 		fd = parsed[0]
 		for _, extra := range parsed[1:] { // defensive: merge stray extra files
 			fd.Hunks = append(fd.Hunks, extra.Hunks...)

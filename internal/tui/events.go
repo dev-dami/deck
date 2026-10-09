@@ -159,6 +159,9 @@ func (m *model) dispatch(msg tea.Msg, replay bool) []tea.Cmd {
 	case session.EditedMsg:
 		m.applyEdit(msg)
 
+	case session.RevertedMsg:
+		return m.onReverted(msg, replay)
+
 	case session.ApprovalMsg:
 		return m.onApproval(msg)
 
@@ -364,7 +367,7 @@ func (m *model) onEvent(msg session.EventMsg, replay bool) []tea.Cmd {
 			break
 		}
 		v.flash.Start(m.now)
-		cmds = append(cmds, m.toast.show(m.finishedText(id, stats), false, m.now))
+		cmds = append(cmds, m.toast.show(m.finishedText(id, stats), false, m.now), m.refreshSum(msg.ThreadID))
 
 	case agent.KindExited:
 		m.closeStreams(v, id, replay)
@@ -552,7 +555,7 @@ func (m *model) onResumed(msg resumedMsg) []tea.Cmd {
 	m.threads = m.mgr.Threads()
 	m.selectThread(msg.info.ID)
 	m.focus = focusComposer
-	return nil
+	return []tea.Cmd{m.refreshSum(msg.info.ID)}
 }
 
 // hydrate lays a resumed thread's stored history down first. Restarting its

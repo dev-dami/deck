@@ -8,6 +8,9 @@
 //	                Besides messages and events the log holds the user's edits of
 //	                earlier messages (EntryEdit) and cancelled queued messages
 //	                (EntryCancel); user entries may carry image paths and a steer flag.
+//	                With change tracking on it also holds git snapshots of the
+//	                work tree (EntrySnap) and reverts of files (EntryRevert,
+//	                EntryUnrevert).
 //	<id>.meta.json  the Thread metadata; the source of truth for that thread
 //	index.json      cache of every thread's metadata, sorted on read; rebuilt
 //	                from the *.meta.json files when missing or unreadable
@@ -156,6 +159,16 @@ const (
 	// EntryCancel: the user cancelled a queued message before it was delivered.
 	// Ref is the message's entry id, To the member it was queued for.
 	EntryCancel = "cancel"
+	// EntrySnap: Snap is the work tree just before the user message Ref
+	// reached anyone; the changes panel measures from it. Never shown.
+	EntrySnap = "snap"
+	// EntryRevert: the user put Files back the way they were just before the
+	// message Ref (see EntrySnap). Snap is the work tree right before the
+	// revert, which EntryUnrevert restores from.
+	EntryRevert = "revert"
+	// EntryUnrevert: the user undid the revert Ref, taking Files back to that
+	// revert's Snap. Snap is the work tree right before the undo.
+	EntryUnrevert = "unrevert"
 )
 
 // Entry is one line of a thread log. The embedded Event keeps old logs (bare
@@ -186,6 +199,12 @@ type Entry struct {
 	// Old is the text before an edit (EntryEdit); on a Steer entry it is set when
 	// the steer delivered an edit, and holds the text before that edit.
 	Old string `json:"old,omitempty"`
+	// Snap is a git tree of the thread's work tree (EntrySnap, EntryRevert,
+	// EntryUnrevert).
+	Snap string `json:"snap,omitempty"`
+	// Files are the work-tree paths (relative to the repository root, forward
+	// slashes) an EntryRevert or EntryUnrevert put back.
+	Files []string `json:"files,omitempty"`
 }
 
 // Store is a directory of threads. It is safe for concurrent use.

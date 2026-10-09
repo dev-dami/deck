@@ -433,6 +433,10 @@ func (m *Manager) History(threadID string) []tea.Msg {
 func historyOf(threadID string, entries []store.Entry) []tea.Msg {
 	var out []tea.Msg
 	for _, e := range entries {
+		if e.Type == store.EntryRevert || e.Type == store.EntryUnrevert {
+			out = append(out, revertMsg(threadID, entries, e))
+			continue
+		}
 		if msg := msgFor(threadID, e); msg != nil {
 			out = append(out, msg)
 		}
@@ -770,6 +774,7 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState, images [
 	t.mu.Unlock()
 	m.persistMeta(t)
 	m.emitAll(msgs...)
+	m.checkpoint(t, e.ID)
 
 	var first error
 	for _, a := range targets {

@@ -78,6 +78,8 @@ type FileDiff struct {
 	Hunks   []Hunk
 	New     bool
 	Deleted bool
+	// Binary marks a file whose change has no text hunks to show.
+	Binary bool `json:",omitempty"`
 }
 
 // Usage is token and cost accounting reported by the CLI.

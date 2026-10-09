@@ -1,15 +1,13 @@
-package codex
+package agent
 
 import (
 	"strconv"
 	"strings"
-
-	"github.com/dev-dami/deck/internal/agent"
 )
 
 // ParseUnified parses a unified diff (git style or plain ---/+++ style, one or
 // many files) into FileDiffs, counting Added and Removed lines.
-func ParseUnified(diff string) []agent.FileDiff {
+func ParseUnified(diff string) []FileDiff {
 	p := &diffParser{}
 	lines := strings.Split(strings.ReplaceAll(diff, "\r\n", "\n"), "\n")
 	// A trailing newline yields one empty trailing element; drop it.
@@ -28,9 +26,9 @@ func ParseUnified(diff string) []agent.FileDiff {
 }
 
 type diffParser struct {
-	files []agent.FileDiff
-	cur   *agent.FileDiff
-	hunk  *agent.Hunk
+	files []FileDiff
+	cur   *FileDiff
+	hunk  *Hunk
 
 	// remaining old/new lines in the current hunk; -1 means unbounded
 	// (the header carried no counts).
@@ -70,12 +68,12 @@ func (p *diffParser) flushFile() {
 
 func (p *diffParser) startFile() {
 	p.flushFile()
-	p.cur = &agent.FileDiff{}
+	p.cur = &FileDiff{}
 }
 
 func (p *diffParser) ensureFile() {
 	if p.cur == nil {
-		p.cur = &agent.FileDiff{}
+		p.cur = &FileDiff{}
 	}
 }
 
@@ -101,6 +99,10 @@ func (p *diffParser) line(l, next string) {
 	case strings.HasPrefix(l, "deleted file mode"):
 		p.ensureFile()
 		p.cur.Deleted = true
+	case strings.HasPrefix(l, "Binary files ") && strings.HasSuffix(l, " differ"),
+		l == "GIT binary patch":
+		p.ensureFile()
+		p.cur.Binary = true
 	case strings.HasPrefix(l, "rename from "):
 		p.ensureFile()
 		p.cur.OldPath = strings.TrimPrefix(l, "rename from ")
@@ -170,28 +172,28 @@ func (p *diffParser) bodyLine(l, next string) bool {
 			return false
 		}
 	}
-	var op agent.LineOp
+	var op LineOp
 	text := ""
 	switch {
 	case l == "":
-		op = agent.OpContext
+		op = OpContext
 	case l[0] == ' ':
-		op, text = agent.OpContext, l[1:]
+		op, text = OpContext, l[1:]
 	case l[0] == '+':
-		op, text = agent.OpAdd, l[1:]
+		op, text = OpAdd, l[1:]
 	case l[0] == '-':
-		op, text = agent.OpDel, l[1:]
+		op, text = OpDel, l[1:]
 	default:
 		return false
 	}
-	p.hunk.Lines = append(p.hunk.Lines, agent.DiffLine{Op: op, Text: text})
+	p.hunk.Lines = append(p.hunk.Lines, DiffLine{Op: op, Text: text})
 	switch op {
-	case agent.OpAdd:
+	case OpAdd:
 		p.cur.Added++
 		if p.remNew > 0 {
 			p.remNew--
 		}
-	case agent.OpDel:
+	case OpDel:
 		p.cur.Removed++
 		if p.remOld > 0 {
 			p.remOld--
@@ -208,7 +210,7 @@ func (p *diffParser) bodyLine(l, next string) bool {
 }
 
 type hunkHeader struct {
-	hunk           agent.Hunk
+	hunk           Hunk
 	remOld, remNew int
 }
 
@@ -232,7 +234,7 @@ func parseHunkHeader(l string) (hunkHeader, bool) {
 		h.remOld, h.remNew = -1, -1
 		return h, true
 	}
-	h.hunk = agent.Hunk{OldStart: os, OldLines: ol, NewStart: ns, NewLines: nl}
+	h.hunk = Hunk{OldStart: os, OldLines: ol, NewStart: ns, NewLines: nl}
 	h.remOld, h.remNew = ol, nl
 	return h, true
 }

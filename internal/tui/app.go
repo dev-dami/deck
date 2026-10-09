@@ -120,6 +120,11 @@ type model struct {
 	qFocus       int // focused queue row, -1 for none
 	edit         *editState
 
+	// the changes panel and the header's summary per thread (changes.go)
+	chg       changesPanel
+	chgSum    map[string]changeSum
+	chgSumSeq map[string]int
+
 	quitArmed time.Time
 	g         geom
 	noListen  bool // tests drive the manager by hand
@@ -181,6 +186,8 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 		queue:      map[string][]session.QueuedItem{},
 		steering:   map[string]bool{},
 		qFocus:     -1,
+		chgSum:     map[string]changeSum{},
+		chgSumSeq:  map[string]int{},
 		w:          80,
 		h:          24,
 	}
@@ -553,9 +560,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case session.EventMsg, session.RelayMsg, session.PausedMsg, session.ContinuedMsg,
 		session.MemberAddedMsg, session.NoticeMsg, session.ApprovalMsg, session.ApprovalGoneMsg,
 		session.ModeChangedMsg, session.ModelChangedMsg, session.AutoApprovedMsg, session.AutoDeniedMsg,
-		session.QueueChangedMsg, session.EditedMsg:
+		session.QueueChangedMsg, session.EditedMsg, session.RevertedMsg:
 		cmds = append(cmds, m.dispatch(msg, false)...)
 		cmds = append(cmds, m.listen())
+
+	case changesMsg:
+		m.onChanges(msg)
+
+	case changeSumMsg:
+		m.onChangeSum(msg)
+
+	case revertDoneMsg:
+		cmds = append(cmds, m.onRevertDone(msg)...)
 
 	case modelsMsg:
 		m.onModels(msg)
@@ -637,6 +653,19 @@ func (m *model) headerLine(g geom) string {
 	if m.emptyVisible() { // the empty state draws its own logo
 		left = " "
 	}
+	right, _, _ := m.headerRight()
+	if right == "" {
+		return trunc(left, m.w)
+	}
+	if left == " " {
+		return padTo("", m.w-sw(right)-1) + right + " "
+	}
+	return rightAlign(left, right+" ", m.w)
+}
+
+// headerRight is the right side of the header, and the cells [x0, x1) of it
+// the changes summary takes (x1 is 0 when it is not shown).
+func (m *model) headerRight() (right string, x0, x1 int) {
 	nWorking, waiting := 0, 0
 	cost := 0.0
 	for _, a := range m.agents {
@@ -656,18 +685,40 @@ func (m *model) headerLine(g geom) string {
 	if waiting > 0 {
 		parts = append(parts, sWarn.Render(plural(waiting, "waiting", "waiting")))
 	}
+	sum := -1
+	if s := m.changeSumText(); s != "" {
+		sum = len(parts)
+		parts = append(parts, s)
+	}
 	if c := fmtCost(cost); c != "" {
 		parts = append(parts, sMuted.Render(c))
 	}
 	sep := sFaint.Render(" " + glyphDot + " ")
-	right := strings.Join(parts, sep)
-	if right == "" {
-		return trunc(left, m.w)
+	for i, p := range parts {
+		if i == sum {
+			x0 = sw(right)
+			x1 = x0 + sw(p)
+		}
+		if i > 0 {
+			right += sep
+			if i == sum {
+				x0, x1 = x0+sw(sep), x1+sw(sep)
+			}
+		}
+		right += p
 	}
-	if left == " " {
-		return padTo("", m.w-sw(right)-1) + right + " "
+	return right, x0, x1
+}
+
+// overChangeSum reports whether screen column x of the header is on the
+// changes summary.
+func (m *model) overChangeSum(x int) bool {
+	right, x0, x1 := m.headerRight()
+	if x1 == 0 {
+		return false
 	}
-	return rightAlign(left, right+" ", m.w)
+	start := m.w - 1 - sw(right)
+	return x >= start+x0 && x < start+x1
 }
 
 func (m *model) mainLines(g geom) []string {
@@ -825,6 +876,10 @@ func (m *model) footerHints() string {
 	switch {
 	case m.ov.open && m.ov.kind == ovResume:
 		return h("↑↓ select", "enter resume", "esc close")
+	case m.ov.open && m.ov.kind == ovChanges && m.chg.set.Git:
+		return h("↑↓ file", "u undo", "esc close")
+	case m.ov.open && m.ov.kind == ovChanges:
+		return h("↑↓ file", "esc close")
 	case m.ov.open:
 		return h("y allow", "n deny", "a always", "esc close")
 	case m.prompt.active():
@@ -838,7 +893,7 @@ func (m *model) footerHints() string {
 	case m.menu.open():
 		return h("↑↓ select", "tab complete", "esc close")
 	case m.focus == focusTranscript:
-		return h("enter fold", "[ ] row", "e edit message", "tab compose", "q quit")
+		return h("enter fold", "[ ] row", "e edit message", "tab compose", "q quit", "d changes")
 	case m.emptyVisible():
 		return h("enter start "+m.newKind, "@ agent", "/ commands", "⇧tab mode")
 	}

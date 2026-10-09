@@ -13,6 +13,7 @@ var Commands = []struct{ Name, Args, Desc string }{
 	{"model", "<name>", "pick a model, or name one"},
 	{"cd", "<path>", "directory for new threads"},
 	{"name", "<name>", "your display name"},
+	{"changes", "", "what changed since your messages, with undo"},
 }
 
 func isCommand(name string) bool {

@@ -244,6 +244,9 @@ func (m *model) promptKey(msg tea.KeyMsg) []tea.Cmd {
 }
 
 func (m *model) overlayKey(key string) []tea.Cmd {
+	if m.ov.kind == ovChanges {
+		return m.changesKey(key)
+	}
 	switch key {
 	case "esc", "q":
 		m.closeOverlay()
@@ -454,6 +457,8 @@ func (m *model) transcriptKey(msg tea.KeyMsg) []tea.Cmd {
 		} else {
 			return []tea.Cmd{m.toast.show("no pending approvals", false, m.now)}
 		}
+	case "d":
+		return m.openChanges()
 	case "n", "y", "a", "e":
 		if ok, cmds := m.approvalKey(key); ok {
 			return cmds
@@ -594,6 +599,9 @@ func (m *model) runCommand(name, arg string) []tea.Cmd {
 	case "resume":
 		m.comp.Reset()
 		m.openOverlay(ovResume)
+	case "changes":
+		m.comp.Reset()
+		return m.openChanges()
 	case "model":
 		if arg == "" { // no name: pick one from what the CLI offers
 			m.comp.Reset()
@@ -687,6 +695,14 @@ func (m *model) handleMouse(msg tea.MouseMsg) []tea.Cmd {
 	v := m.curView()
 	switch msg.Button {
 	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
+		if m.ov.open && m.ov.kind == ovChanges {
+			if msg.Button == tea.MouseButtonWheelUp {
+				m.chg.scroll = max(0, m.chg.scroll-3)
+			} else {
+				m.chg.scroll += 3 // clamped when drawn
+			}
+			return nil
+		}
 		if v != nil && !m.ov.open {
 			d := 3
 			if msg.Button == tea.MouseButtonWheelUp {
@@ -702,6 +718,8 @@ func (m *model) handleMouse(msg tea.MouseMsg) []tea.Cmd {
 			return m.pickMouse(msg)
 		}
 		switch {
+		case msg.Y == 0 && m.overChangeSum(msg.X):
+			return m.openChanges()
 		case g.qRows > 0 && msg.Y >= g.qY && msg.Y < g.qY+g.qRows && msg.X >= g.mainX:
 			return m.queueMouse(msg.Y-g.qY, msg.X-g.mainX)
 		case g.attH > 0 && msg.Y == g.attY && msg.X >= g.mainX:

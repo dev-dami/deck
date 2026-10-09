@@ -1,9 +1,7 @@
-package codex
+package agent
 
 import (
 	"testing"
-
-	"github.com/dev-dami/deck/internal/agent"
 )
 
 func TestParseUnifiedGitNewFile(t *testing.T) {
@@ -19,7 +17,7 @@ func TestParseUnifiedGitNewFile(t *testing.T) {
 	if len(f.Hunks) != 1 || f.Hunks[0].NewStart != 1 || f.Hunks[0].NewLines != 1 || f.Hunks[0].OldLines != 0 {
 		t.Fatalf("bad hunk: %+v", f.Hunks)
 	}
-	if got := f.Hunks[0].Lines; len(got) != 1 || got[0].Op != agent.OpAdd || got[0].Text != "hi" {
+	if got := f.Hunks[0].Lines; len(got) != 1 || got[0].Op != OpAdd || got[0].Text != "hi" {
 		t.Fatalf("bad lines: %+v", got)
 	}
 }
@@ -59,7 +57,7 @@ index 111..222 100644
 	if h.OldStart != 1 || h.OldLines != 4 || h.NewStart != 1 || h.NewLines != 5 || len(h.Lines) != 6 {
 		t.Fatalf("bad hunk0: %+v", h)
 	}
-	if h.Lines[4].Op != agent.OpContext || h.Lines[4].Text != "" {
+	if h.Lines[4].Op != OpContext || h.Lines[4].Text != "" {
 		t.Fatalf("blank context line lost: %+v", h.Lines[4])
 	}
 	if f.Hunks[1].OldStart != 20 || f.Hunks[1].NewStart != 21 {

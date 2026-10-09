@@ -178,6 +178,8 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			out = append(out, line{text: "[deck] agent-to-agent messages paused after " + e.Text + " hops; waiting for the user"})
 		case store.EntryContinue:
 			out = append(out, line{text: "[deck] the user let agent-to-agent messages continue"})
+		case store.EntryRevert, store.EntryUnrevert:
+			out = append(out, line{text: revertText(e, revertSince(t.log, e))})
 		}
 	}
 	for _, sp := range order {

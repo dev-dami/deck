@@ -144,6 +144,9 @@ type rig struct {
 	clock  *manualClock
 	saved  []config.Config
 	quit   bool
+	// late, when set, receives the results of commands that outlast exec's
+	// wait (git, in the changes tests); pump feeds them.
+	late chan tea.Msg
 }
 
 func newRig(t *testing.T, w, h int) *rig { return newRigHops(t, w, h, 0) }
@@ -209,6 +212,9 @@ func (r *rig) exec(cmd tea.Cmd) {
 	case msg := <-done:
 		r.feed(msg)
 	case <-time.After(120 * time.Millisecond):
+		if late := r.late; late != nil {
+			go func() { late <- <-done }()
+		}
 	}
 }
 
@@ -261,6 +267,8 @@ func (r *rig) pump(what string, cond func() bool) {
 		}
 		select {
 		case msg := <-r.mgr.Updates():
+			r.feed(msg)
+		case msg := <-r.late:
 			r.feed(msg)
 		case <-time.After(10 * time.Millisecond):
 		}

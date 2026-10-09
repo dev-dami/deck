@@ -44,6 +44,7 @@ Run `deck`, type, press enter.
 - **Queue and steer.** Messages sent while an agent works wait above the composer; click one to steer the agent with it now.
 - **Edit.** `↑` on an empty composer, or a click on your message, edits it and resends it marked as edited.
 - **Context.** Each agent's context window use shows in the chip line.
+- **Changes.** `d` (from the transcript), `/changes` or a click on the header's `3 files +40 −12` opens every file that differs from the moment you sent a message, whoever changed it, with its diff and a ◆ for each agent that touched it. `[` `]` pick which of your messages to measure from. `u` puts the selected file back as it was then, `U` puts back all of them (each asks for a second press), `z` undoes that. The agents are told at their next turn.
 
 | mode | Claude Code | Codex |
 | --- | --- | --- |
@@ -51,7 +52,7 @@ Run `deck`, type, press enter.
 | `● ask` | prompts come to Deck's inbox | `on-request`, `workspace-write` |
 | `▲ yolo` | `--permission-mode bypassPermissions` | `never`, `danger-full-access` |
 
-Commands: `/new`, `/resume`, `/model`, `/cd <path>`, `/name <name>`. `ctrl+c` interrupts; twice quits.
+Commands: `/new`, `/resume`, `/model`, `/cd <path>`, `/name <name>`, `/changes`. `ctrl+c` interrupts; twice quits.
 
 ## Config
 
@@ -64,6 +65,7 @@ Commands: `/new`, `/resume`, `/model`, `/cd <path>`, `/name <name>`. `ctrl+c` in
   "motion": "on",
   "bell": true,
   "tell_agents_name": false,
+  "track_changes": true,
   "claude_binary": "claude",
   "codex_binary": "codex",
   "models": { "claude": "", "codex": "" }
@@ -75,6 +77,8 @@ Commands: `/new`, `/resume`, `/model`, `/cd <path>`, `/name <name>`. `ctrl+c` in
 ## How it works
 
 Deck never calls a model API and never touches your credentials. It starts your CLIs as child processes and reads their structured output: `claude -p` with stream-json, and `codex app-server` over JSON-RPC. Approvals and agent messages travel through a small MCP helper (`deck mcp-approve`) to Deck over loopback, authenticated with a per-run token. Usage counts against your own Claude and Codex plans.
+
+In a git work tree, each message you send records the tree as a git snapshot (tracked edits and untracked files that are not ignored). The snapshot is written through a throwaway index, so your branch, index, stash and refs are never touched. Its objects sit unreferenced in `.git` until `git gc` prunes them. Undo writes files the way `git checkout` would. Set `track_changes` to `false` to turn this off. Outside git the changes panel shows what the agents reported, without undo.
 
 Deck is not affiliated with Anthropic or OpenAI.
 

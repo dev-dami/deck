@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dev-dami/deck/internal/agent"
+	"github.com/dev-dami/deck/internal/changes"
 	"github.com/dev-dami/deck/internal/store"
 )
 
@@ -40,6 +41,11 @@ type thread struct {
 	images map[string][]agent.Image // entry id -> images as the user attached them
 	// qemit serialises QueueChangedMsg snapshots so they reach the UI in order.
 	qemit sync.Mutex
+
+	// The git work tree the thread runs in, opened on first use (changes.go);
+	// nil outside a repository.
+	repoOnce sync.Once
+	repo     *changes.Repo
 
 	created bool // the store knows this thread (touched by the writer goroutine only)
 }

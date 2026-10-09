@@ -53,6 +53,7 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 		ClaudeBinary:   "claude",
 		CodexBinary:    "codex",
 		DefaultMode:    "ask",
+		TrackChanges:   true,
 	}
 	if cfg != want {
 		t.Errorf("Load() = %+v\nwant %+v", cfg, want)
