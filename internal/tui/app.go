@@ -574,7 +574,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case session.EventMsg, session.RelayMsg, session.PausedMsg, session.ContinuedMsg,
 		session.MemberAddedMsg, session.NoticeMsg, session.ApprovalMsg, session.ApprovalGoneMsg,
 		session.ModeChangedMsg, session.ModelChangedMsg, session.AutoApprovedMsg, session.AutoDeniedMsg,
-		session.QueueChangedMsg, session.EditedMsg, session.RevertedMsg:
+		session.QueueChangedMsg, session.EditedMsg, session.RevertedMsg, session.ThreadChangedMsg:
 		cmds = append(cmds, m.dispatch(msg, false)...)
 		cmds = append(cmds, m.listen())
 
@@ -597,6 +597,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case resumedMsg:
 		cmds = append(cmds, m.onResumed(msg)...)
+	case forkedMsg:
+		cmds = append(cmds, m.onForked(msg)...)
 
 	case toastFadeMsg:
 		// the fade itself is time-based; this only wakes the clock

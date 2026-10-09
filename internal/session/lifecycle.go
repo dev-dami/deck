@@ -6,7 +6,10 @@ import (
 	"sync"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/dev-dami/deck/internal/agent"
+	"github.com/dev-dami/deck/internal/store"
 )
 
 // ThreadChangedMsg says a thread was renamed, pinned, resolved, woken,
@@ -140,4 +143,55 @@ func (m *Manager) drop(threadID string) (*thread, error) {
 	wait(&wg, 3*time.Second)
 	m.forget(t)
 	return t, nil
+}
+
+// Fork starts a new thread from threadID's history up to (not including) the
+// user message entryID, or from all of it when entryID is "". The new thread
+// has the same members on fresh CLI sessions, each briefed on that history at
+// its first turn. It returns the new thread like Resume does, plus the text of
+// the message forked at (for the composer).
+func (m *Manager) Fork(threadID, entryID string) (ThreadInfo, []tea.Msg, string, error) {
+	if m.st == nil {
+		return ThreadInfo{}, nil, "", errors.New("session: no store")
+	}
+	t := m.thread(threadID)
+	if t == nil {
+		return ThreadInfo{}, nil, "", fmt.Errorf("session: no thread %q", threadID)
+	}
+	t.mu.Lock()
+	cut, text := len(t.log), ""
+	if entryID != "" {
+		cut = -1
+		for i, e := range t.log {
+			if e.ID == entryID && e.Type == store.EntryUser {
+				cut, text = i, e.Text
+				if s, ok := t.editedTexts()[e.ID]; ok {
+					text = s
+				}
+				break
+			}
+		}
+	}
+	if cut < 0 {
+		t.mu.Unlock()
+		return ThreadInfo{}, nil, "", errors.New("session: no such message in this thread")
+	}
+	entries := append([]store.Entry(nil), t.log[:cut]...)
+	members := append([]*agentState(nil), t.members...)
+	th := store.Thread{ID: store.NewID(), Title: "fork · " + t.title, Dir: t.dir, Mode: string(t.mode)}
+	t.mu.Unlock()
+	if len(members) == 0 {
+		return ThreadInfo{}, nil, "", errors.New("session: nothing to fork yet")
+	}
+	for _, a := range members {
+		mm := a.memberMeta()
+		mm.SessionID, mm.Cursor, mm.CostUSD = "", 0, 0 // a fresh session, briefed on everything
+		mm.ContextTokens, mm.ContextWindow = 0, 0
+		th.Members = append(th.Members, mm)
+	}
+	if _, err := m.st.CreateWith(th, entries); err != nil {
+		return ThreadInfo{}, nil, "", err
+	}
+	info, hist, err := m.Resume(th.ID)
+	return info, hist, text, err
 }

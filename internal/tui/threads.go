@@ -365,3 +365,42 @@ func abs(n int) int {
 	}
 	return n
 }
+
+// forkedMsg is the result of Fork.
+type forkedMsg struct {
+	info    session.ThreadInfo
+	history []tea.Msg
+	text    string
+	err     error
+}
+
+// forkCmd forks the selected thread before the user message entryID, or
+// copies all of it with "".
+func (m *model) forkCmd(entryID string) []tea.Cmd {
+	th, ok := m.selThread()
+	if !ok {
+		return nil
+	}
+	mgr := m.mgr
+	return []tea.Cmd{func() tea.Msg {
+		info, hist, text, err := mgr.Fork(th.ID, entryID)
+		return forkedMsg{info: info, history: hist, text: text, err: err}
+	}}
+}
+
+// onForked opens the new thread with its history; a fork at a message puts
+// that message in the composer to change and send.
+func (m *model) onForked(msg forkedMsg) []tea.Cmd {
+	if msg.err != nil {
+		return []tea.Cmd{m.toast.show(msg.err.Error(), true, m.now)}
+	}
+	m.hydrate(msg.info.ID, msg.history)
+	m.threads = m.mgr.Threads()
+	m.selectThread(msg.info.ID)
+	m.focus = focusComposer
+	if msg.text != "" {
+		m.comp.SetValue(msg.text)
+		return []tea.Cmd{m.toast.show("forked · change the message and send", false, m.now)}
+	}
+	return []tea.Cmd{m.toast.show("forked into a new thread", false, m.now)}
+}

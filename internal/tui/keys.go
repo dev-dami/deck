@@ -468,6 +468,13 @@ func (m *model) transcriptKey(msg tea.KeyMsg) []tea.Cmd {
 		return m.openChanges()
 	case "?":
 		m.openOverlay(ovKeys)
+	case "f":
+		if v != nil {
+			if it := v.cursorItem(); it != nil && it.kind == kUser && it.entryID != "" {
+				return m.forkCmd(it.entryID)
+			}
+		}
+		return []tea.Cmd{m.toast.show("put the cursor on one of your messages ([ ]) to fork there, or /fork", false, m.now)}
 	case "p":
 		return m.threadCommand("pin", "")
 	case "x":
@@ -623,6 +630,9 @@ func (m *model) runCommand(name, arg string) []tea.Cmd {
 	case "changes":
 		m.comp.Reset()
 		return m.openChanges()
+	case "fork":
+		m.comp.Reset()
+		return m.forkCmd("")
 	case "rename", "pin", "done", "archive", "delete":
 		return m.threadCommand(name, arg)
 	case "model":

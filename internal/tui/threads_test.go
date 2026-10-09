@@ -217,3 +217,42 @@ func TestQuestionMarkListsTheKeys(t *testing.T) {
 		t.Fatal("any key closes the list")
 	}
 }
+
+func TestFOnAMessageForksThereWithTheMessageInTheComposer(t *testing.T) {
+	r := newRig(t, 120, 30)
+	r.late = make(chan tea.Msg, 16)
+	r.start("first question")
+	run := r.claude.last()
+	r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: "first answer"})
+	r.event(run, agent.Event{Kind: agent.KindTurnDone})
+	r.say("second question")
+	r.event(run, agent.Event{Kind: agent.KindTurnDone})
+	r.drain()
+	orig := r.m.sel
+
+	r.key("tab")
+	for i := 0; i < 20; i++ { // walk the cursor to the second question
+		if it := r.tv().cursorItem(); it != nil && it.kind == kUser && it.text == "second question" {
+			break
+		}
+		r.key("[")
+	}
+	r.key("f")
+	r.pump("the fork", func() bool {
+		select {
+		case msg := <-r.late:
+			r.feed(msg)
+		default:
+		}
+		return r.m.sel != orig
+	})
+	if v := r.m.comp.Value(); v != "second question" {
+		t.Fatalf("composer = %q, want the forked message", v)
+	}
+	if !r.has("first answer") || r.has("second question\n") {
+		t.Fatalf("the fork shows the history before the message:\n%s", r.view())
+	}
+	if !strings.Contains(r.m.toast.text, "forked") {
+		t.Fatalf("toast = %q", r.m.toast.text)
+	}
+}

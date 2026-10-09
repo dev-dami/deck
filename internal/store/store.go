@@ -316,6 +316,36 @@ func (s *Store) Create(t Thread) (Thread, error) {
 	return t, nil
 }
 
+// CreateWith stores a new thread whose log starts with entries (a fork).
+// Streaming deltas are dropped as AppendEntry would.
+func (s *Store) CreateWith(t Thread, entries []Entry) (Thread, error) {
+	t, err := s.Create(t)
+	if err != nil {
+		return Thread{}, err
+	}
+	var buf []byte
+	for _, e := range entries {
+		if e.Delta {
+			continue
+		}
+		e.Event = sanitize(e.Event)
+		line, err := json.Marshal(e)
+		if err != nil {
+			return Thread{}, fmt.Errorf("store: encode entry: %w", err)
+		}
+		buf = append(append(buf, line...), '\n')
+	}
+	s.mu.Lock()
+	tl := s.threadLockLocked(t.ID)
+	s.mu.Unlock()
+	tl.Lock()
+	defer tl.Unlock()
+	if err := appendFile(s.logPath(t.ID), buf); err != nil {
+		return Thread{}, err
+	}
+	return t, nil
+}
+
 // Append writes one plain agent event to the thread's log and bumps its Updated
 // time. It is AppendEntry for an event with no speaker information.
 func (s *Store) Append(threadID string, ev agent.Event) error {

@@ -2,6 +2,7 @@ package session
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -103,5 +104,58 @@ func TestDeleteRemovesTheThreadForGood(t *testing.T) {
 	}
 	if _, live := r.m.Thread(tid); live {
 		t.Fatal("deleted thread still live")
+	}
+}
+
+func TestForkKeepsTheHistoryBeforeAMessageAndBriefsFreshAgents(t *testing.T) {
+	r := newRig(t, []fake.Script{turn(say("hi"), finish()), turn(say("again"), finish()), turn(say("forked reply"), finish())}, nil)
+	tid, _ := r.m.NewThread(r.dir)
+	if err := r.m.Post(tid, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "first turn", func() bool { return r.c.turnDones("claude") >= 1 })
+	if err := r.m.Post(tid, "second question"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "second turn", func() bool { return r.c.turnDones("claude") >= 2 })
+
+	var at string
+	th := r.m.thread(tid)
+	th.mu.Lock()
+	for _, e := range th.log {
+		if e.Type == store.EntryUser && e.Text == "second question" {
+			at = e.ID
+		}
+	}
+	th.mu.Unlock()
+
+	info, hist, text, err := r.m.Fork(tid, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.ID == tid || len(info.Members) != 1 || text != "second question" {
+		t.Fatalf("fork = %+v, text %q", info, text)
+	}
+	var said []string
+	for _, h := range hist {
+		if em, ok := h.(EventMsg); ok && em.Text != "" {
+			said = append(said, em.Text)
+		}
+	}
+	joined := strings.Join(said, "|")
+	if !strings.Contains(joined, "hello") || !strings.Contains(joined, "hi") || strings.Contains(joined, "second question") {
+		t.Fatalf("fork history = %q, want up to before the forked message", joined)
+	}
+	if _, live := r.m.Thread(tid); !live {
+		t.Fatal("the original thread stays")
+	}
+
+	fid := info.Members[0].ID
+	if err := r.m.Post(info.ID, "try another way"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the fork's agent gets a prompt", func() bool { return len(r.claude.prompts(fid)) > 0 })
+	if p := r.claude.prompts(fid)[0]; !strings.Contains(p, "hello") || !strings.Contains(p, "try another way") {
+		t.Fatalf("the fresh agent is briefed on the history:\n%s", p)
 	}
 }
