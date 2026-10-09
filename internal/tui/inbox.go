@@ -19,6 +19,7 @@ const (
 	ovInbox
 	ovResume
 	ovChanges
+	ovKeys // the ? list of keys
 )
 
 // overlay is a list that rises from the composer: the approval inbox or the
@@ -93,6 +94,8 @@ func (m *model) overlayFull(w, maxRows int) []string {
 		return m.resumeLines(w, maxRows)
 	case ovChanges:
 		return m.changesLines(w, maxRows)
+	case ovKeys:
+		return m.keysLines(w, maxRows)
 	}
 	return nil
 }

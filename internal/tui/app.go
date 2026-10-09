@@ -37,6 +37,9 @@ type Options struct {
 	SaveConfig func(config.Config) error
 	// Bell rings the terminal. Default: write "\a" to stdout when cfg.Bell.
 	Bell func() tea.Cmd
+	// Notify raises a desktop notification. Default: OSC 777 and OSC 9 to
+	// stdout, which terminals that support them turn into one.
+	Notify func(title, body string) tea.Cmd
 	// Dir is the working directory for new threads. Default: os.Getwd.
 	Dir string
 	// KeyClock stamps key presses for paste-burst detection. Default: time.Now.
@@ -119,6 +122,8 @@ type model struct {
 	unread     map[string]bool  // threads with news you have not seen
 	delArm     time.Time        // a first /delete, waiting for the second
 	delThread  string
+	winTitle   string // the terminal title last set
+	blurred    bool   // the terminal window does not have focus
 	clipSave   func(ctx context.Context, dir string) (string, error)
 	clipWarned bool
 	queue      map[string][]session.QueuedItem
@@ -219,7 +224,7 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 // is on so the logo can ripple under the pointer; moves are ignored cheaply
 // everywhere else.
 func Run(mgr *session.Manager, cfg config.Config) error {
-	p := tea.NewProgram(New(mgr, cfg), tea.WithAltScreen(), tea.WithMouseAllMotion())
+	p := tea.NewProgram(New(mgr, cfg), tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithReportFocus())
 	_, err := p.Run()
 	return err
 }
@@ -604,9 +609,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// nothing: armed state expires by time
 
 	case tea.QuitMsg:
+
+	case tea.FocusMsg:
+		m.blurred = false
+	case tea.BlurMsg:
+		m.blurred = true
 	}
 
 	m.settle()
+	if c := m.titleCmd(); c != nil {
+		cmds = append(cmds, c)
+	}
 	cmds = append(cmds, m.wake())
 	return m, tea.Batch(cmds...)
 }
@@ -739,6 +752,10 @@ func (m *model) mainLines(g geom) []string {
 	} else {
 		tr = v.window(g.trH)
 		tr = m.applySwitch(tr, w)
+		if pill := m.newPill(v, g.trH); pill != "" && len(tr) > 0 {
+			last := len(tr) - 1
+			tr[last] = padTo(trunc(tr[last], w-sw(pill)-2), w-sw(pill)-1) + pill
+		}
 	}
 	// overlays rise from the composer
 	var ov []string
@@ -853,6 +870,8 @@ func (m *model) placeholder() string {
 	switch {
 	case m.prompt.active():
 		return m.prompt.placeholder()
+	case m.pick.open && m.pick.stage == pickThreads:
+		return "find a thread"
 	case m.pick.open:
 		return "filter, or type a model id"
 	case m.emptyVisible():
@@ -889,6 +908,8 @@ func (m *model) footerHints() string {
 		return h("↑↓ file", "u undo", "esc close")
 	case m.ov.open && m.ov.kind == ovChanges:
 		return h("↑↓ file", "esc close")
+	case m.ov.open && m.ov.kind == ovKeys:
+		return h("any key closes")
 	case m.ov.open:
 		return h("y allow", "n deny", "a always", "esc close")
 	case m.prompt.active():
@@ -897,12 +918,14 @@ func (m *model) footerHints() string {
 		return h("enter resend", "esc cancel")
 	case m.qFocus >= 0:
 		return h("enter steer", "del cancel", "⌥↑↓ rows", "esc back")
+	case m.pick.open && m.pick.stage == pickThreads:
+		return h("↑↓ select", "enter open", "1-9 jump", "type to filter", "esc close")
 	case m.pick.open:
 		return h("↑↓ select", "enter pick", "1-9 jump", "type to filter or any model id", "esc close")
 	case m.menu.open():
 		return h("↑↓ select", "tab complete", "esc close")
 	case m.focus == focusTranscript:
-		return h("enter fold", "[ ] row", "e edit message", "tab compose", "q quit", "d changes")
+		return h("enter fold", "e edit", "d changes", "p pin", "x resolve", "r rename", "? keys", "tab compose")
 	case m.emptyVisible():
 		return h("enter start "+m.newKind, "@ agent", "/ commands", "⇧tab mode")
 	}

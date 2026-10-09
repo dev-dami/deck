@@ -26,6 +26,7 @@ type pickStage int
 const (
 	pickMembers pickStage = iota + 1
 	pickModels
+	pickThreads // ctrl+k: switch to another thread
 )
 
 // modelListTimeout bounds how long listing a CLI's models may take.
@@ -208,6 +209,23 @@ func (m *model) syncPick() {
 			all = append(all, menuItem{label: a.Name, kind: a.Kind, val: a.ID, desc: m.modelLabel(a)})
 			hay = append(hay, a.Name+" "+a.Kind)
 		}
+	case pickThreads:
+		for _, t := range m.rows {
+			var names []string
+			for _, a := range t.Members {
+				names = append(names, a.Name)
+			}
+			desc := strings.Join(names, " + ")
+			if !t.Active.IsZero() {
+				desc = strings.TrimPrefix(desc+" "+glyphDot+" "+ago(t.Active, m.now), " "+glyphDot+" ")
+			}
+			it := menuItem{label: threadTitle(t), desc: desc, val: t.ID, cur: t.ID == m.sel}
+			if t.Resolved {
+				it.tag = "resolved"
+			}
+			all = append(all, it)
+			hay = append(hay, threadTitle(t)+" "+strings.Join(names, " "))
+		}
 	case pickModels:
 		for _, mi := range p.models {
 			slug := slugOf(mi)
@@ -284,8 +302,11 @@ func (m *model) pickInfo() []string {
 func (m *model) pickRows(w, maxRows int) []string {
 	p := &m.pick
 	title := "Select a model"
-	if p.stage == pickMembers {
+	switch p.stage {
+	case pickMembers:
 		title = "Whose model?"
+	case pickThreads:
+		title = "Switch thread"
 	}
 	head := " " + sBold.Render(title)
 	if p.stage == pickModels && p.running != "" {
@@ -391,6 +412,8 @@ func (m *model) pickChipLine(w int) string {
 	switch {
 	case p.stage == pickMembers:
 		what = sMuted.Render("pick the agent whose model to change")
+	case p.stage == pickThreads:
+		what = sMuted.Render("type to find a thread by title or agent")
 	case p.agentID != "":
 		a, _ := m.agentInfo(p.agentID)
 		what = sMuted.Render("model for ") + m.chip(a)
@@ -446,6 +469,11 @@ func (m *model) pickChoose() []tea.Cmd {
 		return nil
 	}
 	it := p.items[p.sel]
+	if p.stage == pickThreads {
+		m.closePicker()
+		m.selectThread(it.val)
+		return nil
+	}
 	if p.stage == pickMembers {
 		a, ok := m.agentInfo(it.val)
 		if !ok {

@@ -1,7 +1,6 @@
  ◆ deck                                                            idle · $0.12
 
- ▎○ ◆ refactor … $0.12    refactor the store
-
+ ▎○ ◆ refactor … $0.12
                         ◆ claude
                           ∴ thinking…
 
@@ -16,6 +15,7 @@
                           ▸ Edit internal/store/store.go +24 −9
                           ▸ Bash go test ./...
 
+                          The store now drops streaming deltas, and go test
                          ▎○ claude   idle
                           + codex    add codex
                         ───────────────────────────────────────────────────────

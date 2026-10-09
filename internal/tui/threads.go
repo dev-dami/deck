@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"fmt"
+	"os"
 	"sort"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -151,3 +154,214 @@ const (
 	glyphPinned   = "⌃"
 	glyphUnread   = "•"
 )
+
+// openSwitcher opens the picker on the thread list (ctrl+k).
+func (m *model) openSwitcher() []tea.Cmd {
+	if m.ov.open || m.prompt.active() || len(m.rows) == 0 {
+		return nil
+	}
+	m.skipFight()
+	p := &m.pick
+	p.draft = m.comp.Value()
+	m.comp.Reset()
+	m.focus = focusComposer
+	*p = picker{open: true, h: p.h, draft: p.draft, thread: m.sel, seq: p.seq, stage: pickThreads}
+	m.menu.kind = 0
+	m.menu.h.Set(0)
+	m.syncPick()
+	for i, it := range p.items { // start on the thread you are in
+		if it.cur {
+			p.sel = i
+		}
+	}
+	return nil
+}
+
+// newPill is the "↓ 3 new" marker at the bottom right of a transcript you
+// scrolled up in; G or a click on it goes back to the latest. Empty when the
+// view follows the bottom.
+func (m *model) newPill(v *threadView, vh int) string {
+	if v.follow || len(v.lines) <= vh || v.top() >= len(v.lines)-vh {
+		return ""
+	}
+	if n := len(v.items) - v.seen; n > 0 {
+		return sAccent.Render("↓ " + plural(n, "new", "new"))
+	}
+	return sFaint.Render("↓ latest")
+}
+
+// turnFooter is the faint line that ends an agent's turn:
+// "42s · 1.2k tokens · 3 files · $0.04". Empty when there is nothing to say.
+func turnFooter(s *turnStats, end time.Time) string {
+	var parts []string
+	if !s.start.IsZero() && end.After(s.start) {
+		parts = append(parts, fmtDur(end.Sub(s.start)))
+	}
+	if s.tokens > 0 {
+		parts = append(parts, fmtTokens(s.tokens)+" tokens")
+	}
+	if n := len(s.files); n > 0 {
+		parts = append(parts, plural(n, "file", "files"))
+	}
+	if c := fmtCost(s.cost); c != "" {
+		parts = append(parts, c)
+	}
+	if len(parts) < 2 { // a bare duration is noise
+		return ""
+	}
+	return strings.Join(parts, " "+glyphDot+" ")
+}
+
+func fmtDur(d time.Duration) string {
+	switch {
+	case d < time.Second:
+		return "<1s"
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm %02ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%dh %02dm", int(d.Hours()), int(d.Minutes())%60)
+}
+
+func fmtTokens(n int) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	return strings.TrimSuffix(fmt.Sprintf("%.1f", float64(n)/1000), ".0") + "k"
+}
+
+// titleCmd keeps the terminal's title on what needs you: "deck · 2 working ·
+// 1 needs you", or just "deck".
+func (m *model) titleCmd() tea.Cmd {
+	nWork, nNeed := 0, 0
+	for _, t := range m.threads {
+		need, work := t.Paused || t.Pending > 0, false
+		for _, a := range t.Members {
+			if working(a) {
+				work = true
+			}
+		}
+		switch {
+		case need:
+			nNeed++
+		case work:
+			nWork++
+		}
+	}
+	title := "deck"
+	if nWork > 0 {
+		title += " · " + plural(nWork, "working", "working")
+	}
+	if nNeed > 0 {
+		title += " · " + plural(nNeed, "needs you", "need you")
+	}
+	if title == m.winTitle {
+		return nil
+	}
+	m.winTitle = title
+	return tea.SetWindowTitle(title)
+}
+
+// notify raises a desktop notification while the terminal is in the
+// background (and the bell is on: both are "get my attention").
+func (m *model) notify(title, body string) tea.Cmd {
+	if !m.blurred || !m.cfg.Bell {
+		return nil
+	}
+	if m.opts.Notify != nil {
+		return m.opts.Notify(title, body)
+	}
+	clean := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if r < 0x20 || r == 0x7f || r == ';' {
+				return ' '
+			}
+			return r
+		}, s)
+	}
+	title, body = clean(title), clean(body)
+	return func() tea.Msg {
+		// OSC 777 (foot, ghostty, wezterm, konsole…) and OSC 9 (iTerm2,
+		// Windows Terminal ignores it); terminals skip the one they don't know.
+		_, _ = os.Stdout.WriteString("\x1b]777;notify;" + title + ";" + body + "\x07\x1b]9;" + title + ": " + body + "\x07")
+		return nil
+	}
+}
+
+func threadTitleOf(m *model, id string) string {
+	for _, t := range m.threads {
+		if t.ID == id {
+			return threadTitle(t)
+		}
+	}
+	return ""
+}
+
+// keyGroups is what the ? overlay lists.
+var keyGroups = []struct {
+	title string
+	keys  [][2]string
+}{
+	{"anywhere", [][2]string{
+		{"ctrl+k", "switch thread"}, {"shift+tab", "cycle plan · ask · yolo"}, {"alt+m", "pick a model"},
+		{"ctrl+c", "interrupt; twice quits"}, {"alt+↑↓", "previous / next thread"},
+	}},
+	{"composer", [][2]string{
+		{"enter", "send"}, {"alt+enter", "new line"}, {"@name", "talk to an agent"}, {"/", "commands"},
+		{"↑", "edit your last message"}, {"ctrl+v", "paste an image"}, {"tab · esc", "to the transcript"},
+	}},
+	{"transcript", [][2]string{
+		{"enter", "fold or unfold"}, {"[ ]", "previous / next row"}, {"e", "edit a message of yours"},
+		{"d", "changes"}, {"p", "pin"}, {"x", "resolve"}, {"r", "rename"}, {"i", "approval inbox"},
+		{"g G", "top / bottom"}, {"y a n", "allow · always · deny"}, {"q", "quit"},
+	}},
+}
+
+// keysLines is the ? overlay: every key, grouped, in two columns when wide.
+func (m *model) keysLines(w, maxRows int) []string {
+	var col []string
+	var bounds []int // where each group starts
+	for _, g := range keyGroups {
+		bounds = append(bounds, len(col))
+		col = append(col, "  "+sMuted.Render(g.title))
+		for _, k := range g.keys {
+			col = append(col, "    "+sFg.Render(padTo(k[0], 11))+sFaint.Render(k[1]))
+		}
+	}
+	out := []string{ruleTitle("keys", w-1)}
+	half := len(col) // the second column starts at the group start nearest the middle
+	for _, b := range bounds[1:] {
+		if abs(b-len(col)/2) < abs(half-len(col)/2) {
+			half = b
+		}
+	}
+	if w >= 60 && len(col) > maxRows-1 { // two columns when one does not fit
+		cw := w / 2
+		for i := 0; i < max(half, len(col)-half); i++ {
+			l := strings.Repeat(" ", cw)
+			if i < half {
+				l = padTo(trunc(col[i], cw), cw)
+			}
+			if i+half < len(col) {
+				l += trunc(col[i+half], w-cw)
+			}
+			out = append(out, l)
+		}
+	} else {
+		for _, l := range col {
+			out = append(out, trunc(l, w))
+		}
+	}
+	if len(out) > maxRows {
+		out = out[:maxRows]
+	}
+	return out
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}

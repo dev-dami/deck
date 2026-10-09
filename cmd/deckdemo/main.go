@@ -72,7 +72,7 @@ func run() error {
 
 	// The demo never touches the real ~/.deck/config.json.
 	app := tui.NewWithOptions(mgr, cfg, tui.Options{SaveConfig: func(config.Config) error { return nil }})
-	_, err = tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseAllMotion()).Run()
+	_, err = tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithReportFocus()).Run()
 	return err
 }
 

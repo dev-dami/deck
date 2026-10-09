@@ -120,6 +120,9 @@ func (m *model) handleKey(msg tea.KeyMsg) (cmds []tea.Cmd) {
 	if key == "alt+m" && free {
 		return append(cmds, m.openPicker("")...)
 	}
+	if key == "ctrl+k" && free {
+		return append(cmds, m.openSwitcher()...)
+	}
 	if m.prompt.active() {
 		return append(cmds, m.promptKey(msg)...)
 	}
@@ -246,6 +249,10 @@ func (m *model) promptKey(msg tea.KeyMsg) []tea.Cmd {
 func (m *model) overlayKey(key string) []tea.Cmd {
 	if m.ov.kind == ovChanges {
 		return m.changesKey(key)
+	}
+	if m.ov.kind == ovKeys { // any key closes it
+		m.closeOverlay()
+		return nil
 	}
 	switch key {
 	case "esc", "q":
@@ -459,6 +466,8 @@ func (m *model) transcriptKey(msg tea.KeyMsg) []tea.Cmd {
 		}
 	case "d":
 		return m.openChanges()
+	case "?":
+		m.openOverlay(ovKeys)
 	case "p":
 		return m.threadCommand("pin", "")
 	case "x":
@@ -734,6 +743,9 @@ func (m *model) handleMouse(msg tea.MouseMsg) []tea.Cmd {
 		switch {
 		case msg.Y == 0 && m.overChangeSum(msg.X):
 			return m.openChanges()
+		case v != nil && msg.Y == g.topY+g.trH-1 && m.newPill(v, g.trH) != "" &&
+			msg.X >= m.w-sw(m.newPill(v, g.trH))-2:
+			v.scrollTo(true, g.trH)
 		case g.qRows > 0 && msg.Y >= g.qY && msg.Y < g.qY+g.qRows && msg.X >= g.mainX:
 			return m.queueMouse(msg.Y-g.qY, msg.X-g.mainX)
 		case g.attH > 0 && msg.Y == g.attY && msg.X >= g.mainX:

@@ -1,10 +1,14 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/dev-dami/deck/internal/agent"
+	"github.com/dev-dami/deck/internal/config"
 )
 
 // threadChanged waits for the session's ThreadChangedMsg to reach the model.
@@ -117,5 +121,99 @@ func TestNewsInAnotherThreadShowsAnUnreadDot(t *testing.T) {
 	r.m.selectThread(first)
 	if r.m.unread[first] {
 		t.Fatal("opening the thread clears its dot")
+	}
+}
+
+func TestCtrlKSwitchesThreadsByName(t *testing.T) {
+	r := newRig(t, 120, 30)
+	r.start("refactor the store")
+	first := r.m.sel
+	r.say("/new")
+	r.start("fix the parser")
+	r.feed(tea.KeyMsg{Type: tea.KeyCtrlK})
+	if !r.m.pick.open || !r.has("Switch thread") {
+		t.Fatalf("ctrl+k opens the switcher:\n%s", r.view())
+	}
+	r.typeText("store")
+	r.key("enter")
+	if r.m.sel != first || r.m.pick.open {
+		t.Fatalf("enter picks the match: sel=%q open=%v", r.m.sel, r.m.pick.open)
+	}
+}
+
+func TestScrolledUpShowsANewPillAndGGoesBack(t *testing.T) {
+	r := newRig(t, 100, 20)
+	r.start("go")
+	run := r.claude.last()
+	for i := 0; i < 30; i++ {
+		r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: fmt.Sprintf("line %d", i)})
+	}
+	r.drain()
+	r.key("tab", "g") // to the top: no longer following
+	r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: "something new"})
+	r.drain()
+	if !r.has("↓ 1 new") {
+		t.Fatalf("a pill counts what arrived below:\n%s", r.view())
+	}
+	r.key("G")
+	r.drain()
+	if r.has("↓ 1 new") || r.has("↓ latest") {
+		t.Fatalf("G goes back to the latest:\n%s", r.view())
+	}
+}
+
+func TestATurnEndsWithAFooterLine(t *testing.T) {
+	r := newRig(t, 120, 30)
+	r.start("go")
+	run := r.claude.last()
+	r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: "done"})
+	r.event(run, agent.Event{Kind: agent.KindFileChange, Diff: &agent.FileDiff{Path: "a.go", Added: 1}})
+	r.event(run, agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{OutputTokens: 1234, CostUSD: 0.04}})
+	r.event(run, agent.Event{Kind: agent.KindTurnDone})
+	r.pump("footer", func() bool { return r.has("1.2k tokens · 1 file · $0.04") })
+}
+
+func TestTitleSaysWhatIsGoingOn(t *testing.T) {
+	r := newRig(t, 120, 30)
+	r.start("go")
+	run := r.claude.last()
+	r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: "working", Delta: true})
+	r.pump("working title", func() bool { return r.m.winTitle == "deck · 1 working" })
+	r.event(run, agent.Event{Kind: agent.KindTurnDone})
+	r.pump("idle title", func() bool { return r.m.winTitle == "deck" })
+}
+
+func TestNotifiesOnlyWhenTheTerminalIsInTheBackground(t *testing.T) {
+	r := newRigWith(t, 120, 30, 0, func(c *config.Config) { c.Bell = true })
+	var got []string
+	r.m.opts.Notify = func(title, body string) tea.Cmd { got = append(got, title); return nil }
+	r.m.opts.Bell = func() tea.Cmd { return nil }
+	r.start("go")
+	run := r.claude.last()
+	r.event(run, agent.Event{Kind: agent.KindTurnDone})
+	r.drain()
+	if len(got) != 0 {
+		t.Fatalf("focused: no notification, got %v", got)
+	}
+	r.feed(tea.BlurMsg{})
+	r.say("again")
+	run = r.claude.last()
+	r.event(run, agent.Event{Kind: agent.KindTurnDone})
+	r.pump("notification", func() bool { return len(got) == 1 })
+	if !strings.Contains(got[0], "claude finished") {
+		t.Fatalf("notification = %q", got[0])
+	}
+}
+
+func TestQuestionMarkListsTheKeys(t *testing.T) {
+	r := newRig(t, 120, 40)
+	r.start("go")
+	r.key("tab", "?")
+	if !r.has("ctrl+k") || !r.has("switch thread") {
+		t.Fatalf("? lists the keys:\n%s", r.view())
+	}
+	r.key("x")
+	if r.m.ov.open {
+		t.Fatal("any key closes the list")
 	}
 }

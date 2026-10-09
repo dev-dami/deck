@@ -16,7 +16,6 @@
 
 
 
-
                                  Ada
                                  refactor the store
 
@@ -32,6 +31,7 @@
                                  ▸ Read internal/store/store.go
                                  ▸ Edit internal/store/store.go +24 −9
                                  ▸ Bash go test ./...
+
                                 ▎○ claude   idle
                                  + codex    add codex
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────

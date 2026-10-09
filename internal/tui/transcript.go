@@ -337,8 +337,10 @@ func (m *model) cursorGlyph() string {
 
 // turnStats is what one agent's running turn has done so far, for the toast.
 type turnStats struct {
-	cost  float64
-	files map[string]bool
+	cost   float64
+	files  map[string]bool
+	start  time.Time // the turn's first event
+	tokens int       // output tokens so far
 }
 
 // threadView is everything the UI keeps for one thread.
@@ -354,6 +356,7 @@ type threadView struct {
 
 	scroll motion.Spring
 	follow bool
+	seen   int // items there were when the view last followed the bottom
 	laid   bool
 
 	lines  []string
@@ -546,6 +549,7 @@ func (v *threadView) layoutScroll(vh int) {
 	}
 	if v.follow {
 		v.scroll.Set(float64(maxTop))
+		v.seen = len(v.items)
 	} else {
 		v.scroll.Set(math.Max(0, math.Min(v.scroll.Target, float64(maxTop))))
 	}

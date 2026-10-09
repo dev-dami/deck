@@ -182,7 +182,7 @@ func (m *model) onEvent(msg session.EventMsg, replay bool) []tea.Cmd {
 	ev := msg.Event
 	v := m.view(msg.ThreadID)
 	id := ev.AgentID
-	if !replay && !ev.Delta && (ev.Kind == agent.KindAssistantText || ev.Kind == agent.KindTurnDone) {
+	if !replay && !ev.Delta && ev.Kind == agent.KindAssistantText && strings.TrimSpace(ev.Text) != "" {
 		m.markUnread(msg.ThreadID)
 	}
 
@@ -210,10 +210,21 @@ func (m *model) onEvent(msg session.EventMsg, replay bool) []tea.Cmd {
 		return nil
 	}
 
+	at := ev.Time
+	if at.IsZero() {
+		at = m.now
+	}
+	if id != "" && ev.Kind != agent.KindExited && ev.Kind != agent.KindSessionStarted {
+		if s := v.turn(id); s.start.IsZero() {
+			s.start = at
+		}
+	}
+
 	switch ev.Kind {
 	case agent.KindUsage:
 		if ev.Usage != nil {
 			v.turn(id).cost = ev.Usage.CostUSD // cumulative for the turn
+			v.turn(id).tokens = ev.Usage.OutputTokens
 		}
 
 	case agent.KindAssistantText:
@@ -371,13 +382,23 @@ func (m *model) onEvent(msg session.EventMsg, replay bool) []tea.Cmd {
 			break
 		}
 		m.finishTools(v, id, agent.ToolOK)
+		if foot := turnFooter(stats, at); foot != "" {
+			it := newItem(kNote)
+			it.speaker = id
+			it.text = foot
+			v.add(it)
+		}
 		if replay {
 			break
 		}
 		v.flash.Start(m.now)
 		cmds = append(cmds, m.toast.show(m.finishedText(id, stats), false, m.now), m.refreshSum(msg.ThreadID))
+		if n := m.notify(m.finishedText(id, stats), threadTitleOf(m, msg.ThreadID)); n != nil {
+			cmds = append(cmds, n)
+		}
 
 	case agent.KindExited:
+		delete(v.stats, id)
 		m.closeStreams(v, id, replay)
 		m.finishTools(v, id, agent.ToolOK)
 		name := m.agentName(id)
@@ -466,6 +487,9 @@ func (m *model) onApproval(msg session.ApprovalMsg) []tea.Cmd {
 	var cmds []tea.Cmd
 	if b := m.bell(); b != nil {
 		cmds = append(cmds, b)
+	}
+	if n := m.notify(m.agentName(req.AgentID)+" needs you", oneLine(req.ToolName+" "+req.Summary)); n != nil {
+		cmds = append(cmds, n)
 	}
 	return cmds
 }
