@@ -119,4 +119,3 @@ func TestNewsInAnotherThreadShowsAnUnreadDot(t *testing.T) {
 		t.Fatal("opening the thread clears its dot")
 	}
 }
-

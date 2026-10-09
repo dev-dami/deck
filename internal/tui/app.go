@@ -115,16 +115,16 @@ type model struct {
 	attach       []attachment
 
 	// thread lifecycle (threads.go)
-	drafts    map[string]draft // composer text per thread you left
-	unread    map[string]bool  // threads with news you have not seen
-	delArm    time.Time        // a first /delete, waiting for the second
-	delThread string
-	clipSave     func(ctx context.Context, dir string) (string, error)
-	clipWarned   bool
-	queue        map[string][]session.QueuedItem
-	steering     map[string]bool
-	qFocus       int // focused queue row, -1 for none
-	edit         *editState
+	drafts     map[string]draft // composer text per thread you left
+	unread     map[string]bool  // threads with news you have not seen
+	delArm     time.Time        // a first /delete, waiting for the second
+	delThread  string
+	clipSave   func(ctx context.Context, dir string) (string, error)
+	clipWarned bool
+	queue      map[string][]session.QueuedItem
+	steering   map[string]bool
+	qFocus     int // focused queue row, -1 for none
+	edit       *editState
 
 	// the changes panel and the header's summary per thread (changes.go)
 	chg       changesPanel
