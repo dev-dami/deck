@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -254,5 +256,39 @@ func TestFOnAMessageForksThereWithTheMessageInTheComposer(t *testing.T) {
 	}
 	if !strings.Contains(r.m.toast.text, "forked") {
 		t.Fatalf("toast = %q", r.m.toast.text)
+	}
+}
+
+func TestAtFileMentionsComplete(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{"internal/store/store.go", "README.md", "Makefile"} {
+		p := filepath.Join(dir, filepath.FromSlash(f))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		put(t, filepath.Dir(p), filepath.Base(p), "x")
+	}
+	r := newRig(t, 120, 30)
+	r.late = make(chan tea.Msg, 16)
+	r.m.newDir = dir
+	r.typeText("look at @stor")
+	r.gitWait("file list", func() bool { _, ok := r.m.files[dir]; return ok })
+	r.typeText("e") // any key re-syncs the menu with the list in
+	if !r.m.menu.open() || len(r.m.menu.items) == 0 || r.m.menu.items[0].label != "internal/store/store.go" {
+		t.Fatalf("menu = %+v", r.m.menu.items)
+	}
+	r.key("tab")
+	if v := r.m.comp.Value(); v != "look at @internal/store/store.go " {
+		t.Fatalf("composer = %q", v)
+	}
+	if r.m.menu.open() {
+		t.Fatal("the menu closes after picking")
+	}
+
+	r.m.comp.Reset()
+	r.typeText("@Makef")
+	r.key("enter")
+	if v := r.m.comp.Value(); v != "@./Makefile " {
+		t.Fatalf("a bare top-level name gets ./ so it is not an agent: %q", v)
 	}
 }

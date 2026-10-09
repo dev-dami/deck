@@ -40,6 +40,7 @@ Run `deck`, type, press enter.
 - **Permission modes.** `shift+tab` or a click on the chip cycles `◇ plan` → `● ask` → `▲ yolo`. Yolo is never the startup default.
 - **Models.** Click the model in the chip line or press `alt+m` to pick from the models the CLI offers.
 - **Approvals** appear inline and in the inbox (`i`): `y` allow, `a` always, `n` deny, `e` edit.
+- **Files.** Type `@` and part of a path anywhere in a message to pick a file from the thread's folder (git's file list, or the folder outside git); it goes in as `@path`.
 - **Images.** `ctrl+v` pastes one from the clipboard; pasting or dropping an image path attaches it.
 - **Queue and steer.** Messages sent while an agent works wait above the composer; click one to steer the agent with it now.
 - **Edit.** `↑` on an empty composer, or a click on your message, edits it and resends it marked as edited.

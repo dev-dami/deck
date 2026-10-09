@@ -27,6 +27,7 @@ type menuItem struct {
 	tag    string // model picker: faint tag at the right edge
 	cur    bool   // model picker: the model in use now
 	free   bool   // model picker: the typed text, as a model id
+	path   string // @file: what goes after "@" when picked
 }
 
 // menu is the upward completion menu above the composer, for "@" and "/".
@@ -36,6 +37,9 @@ type menu struct {
 	sel       int
 	h         motion.Spring
 	dismissed string
+	// from, to is the "@word" being completed mid-message (rune range); 0, 0
+	// when the menu completes the first word.
+	from, to int
 }
 
 func (mn *menu) open() bool { return mn.kind != 0 }
@@ -50,6 +54,20 @@ func (m *model) syncMenu() {
 		mn.kind = 0
 		mn.h.Set(0)
 	}
+	if !(m.prompt.active() || m.ov.open || m.pick.open || t == "" || t == mn.dismissed) {
+		if from, to, q, ok := atToken(m.comp.text, m.comp.cur); ok { // @file mid-message
+			mn.items = m.fileItems(q)
+			if len(mn.items) == 0 {
+				closeMenu()
+				return
+			}
+			mn.kind, mn.from, mn.to = '@', from, to
+			mn.sel = min(mn.sel, len(mn.items)-1)
+			mn.h.Set(float64(min(len(mn.items), maxMenuRows)))
+			return
+		}
+	}
+	mn.from, mn.to = 0, 0
 	if m.prompt.active() || m.ov.open || m.pick.open || t == "" || (t[0] != '@' && t[0] != '/') || t == mn.dismissed {
 		if t != mn.dismissed {
 			mn.dismissed = ""
@@ -79,6 +97,9 @@ func (m *model) syncMenu() {
 		}
 	}
 	mn.items = filterMenu(all, query)
+	if t[0] == '@' { // files after the agents, once something is typed
+		mn.items = append(mn.items, m.fileItems(query)...)
+	}
 	mn.kind = t[0]
 	mn.sel = 0
 	for i, it := range mn.items {
@@ -251,6 +272,17 @@ func (m *model) completeMenu(execNow bool) (run bool) {
 		return false
 	}
 	it := mn.items[mn.sel]
+	if it.path != "" {
+		from, to := mn.from, mn.to
+		if from == 0 && to == 0 { // the first word: up to its end
+			to = len([]rune(m.comp.Value()))
+			if i := strings.IndexAny(m.comp.Value(), " \t\r\n"); i >= 0 {
+				to = len([]rune(m.comp.Value()[:i]))
+			}
+		}
+		m.insertMention(from, to, it.path)
+		return false
+	}
 	t := m.comp.Value()
 	rest := ""
 	if i := strings.IndexAny(t, " \t\r\n"); i >= 0 {

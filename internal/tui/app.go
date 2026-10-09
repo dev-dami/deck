@@ -118,18 +118,21 @@ type model struct {
 	attach       []attachment
 
 	// thread lifecycle (threads.go)
-	drafts     map[string]draft // composer text per thread you left
-	unread     map[string]bool  // threads with news you have not seen
-	delArm     time.Time        // a first /delete, waiting for the second
-	delThread  string
-	winTitle   string // the terminal title last set
-	blurred    bool   // the terminal window does not have focus
-	clipSave   func(ctx context.Context, dir string) (string, error)
-	clipWarned bool
-	queue      map[string][]session.QueuedItem
-	steering   map[string]bool
-	qFocus     int // focused queue row, -1 for none
-	edit       *editState
+	drafts       map[string]draft // composer text per thread you left
+	unread       map[string]bool  // threads with news you have not seen
+	delArm       time.Time        // a first /delete, waiting for the second
+	delThread    string
+	files        map[string][]string // @file: each folder's files
+	filesLoading map[string]bool
+	wantFiles    string // a folder whose files the menu is waiting for
+	winTitle     string // the terminal title last set
+	blurred      bool   // the terminal window does not have focus
+	clipSave     func(ctx context.Context, dir string) (string, error)
+	clipWarned   bool
+	queue        map[string][]session.QueuedItem
+	steering     map[string]bool
+	qFocus       int // focused queue row, -1 for none
+	edit         *editState
 
 	// the changes panel and the header's summary per thread (changes.go)
 	chg       changesPanel
@@ -168,41 +171,43 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 	}
 	dark := lipgloss.HasDarkBackground()
 	m := &model{
-		mgr:        mgr,
-		cfg:        cfg,
-		opts:       opts,
-		dark:       dark,
-		now:        time.Now(),
-		nowFn:      time.Now,
-		home:       home,
-		kinds:      mgr.Kinds(),
-		clock:      motion.NewClock(60),
-		fps:        60,
-		budget:     motion.NewBudget(),
-		views:      map[string]*threadView{},
-		drafts:     map[string]draft{},
-		unread:     map[string]bool{},
-		newKind:    cfg.DefaultAgent,
-		newDir:     dir,
-		newModel:   map[string]string{},
-		newDefault: map[string]bool{},
-		noted:      map[string]agent.Mode{},
-		seenGlobal: map[string]bool{},
-		fight:      fightState{anim: yolo.New(dark)},
-		modeFlash:  motion.NewFade(flashLife, motion.EaseOutCubic),
-		barY:       motion.Glide.New(60),
-		switchX:    motion.Snappy.New(60),
-		switchFade: motion.NewFade(150*time.Millisecond, motion.EaseOutCubic),
-		logo:       logo.New(dark),
-		keyNow:     opts.KeyClock,
-		clipSave:   opts.ClipSave,
-		queue:      map[string][]session.QueuedItem{},
-		steering:   map[string]bool{},
-		qFocus:     -1,
-		chgSum:     map[string]changeSum{},
-		chgSumSeq:  map[string]int{},
-		w:          80,
-		h:          24,
+		mgr:          mgr,
+		cfg:          cfg,
+		opts:         opts,
+		dark:         dark,
+		now:          time.Now(),
+		nowFn:        time.Now,
+		home:         home,
+		kinds:        mgr.Kinds(),
+		clock:        motion.NewClock(60),
+		fps:          60,
+		budget:       motion.NewBudget(),
+		views:        map[string]*threadView{},
+		drafts:       map[string]draft{},
+		files:        map[string][]string{},
+		filesLoading: map[string]bool{},
+		unread:       map[string]bool{},
+		newKind:      cfg.DefaultAgent,
+		newDir:       dir,
+		newModel:     map[string]string{},
+		newDefault:   map[string]bool{},
+		noted:        map[string]agent.Mode{},
+		seenGlobal:   map[string]bool{},
+		fight:        fightState{anim: yolo.New(dark)},
+		modeFlash:    motion.NewFade(flashLife, motion.EaseOutCubic),
+		barY:         motion.Glide.New(60),
+		switchX:      motion.Snappy.New(60),
+		switchFade:   motion.NewFade(150*time.Millisecond, motion.EaseOutCubic),
+		logo:         logo.New(dark),
+		keyNow:       opts.KeyClock,
+		clipSave:     opts.ClipSave,
+		queue:        map[string][]session.QueuedItem{},
+		steering:     map[string]bool{},
+		qFocus:       -1,
+		chgSum:       map[string]changeSum{},
+		chgSumSeq:    map[string]int{},
+		w:            80,
+		h:            24,
 	}
 	m.menu.h = motion.Soft.New(60)
 	m.ov.h = motion.Soft.New(60)
@@ -601,6 +606,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.onForked(msg)...)
 	case movedMsg:
 		cmds = append(cmds, m.onMoved(msg)...)
+	case filesMsg:
+		m.onFiles(msg)
 
 	case toastFadeMsg:
 		// the fade itself is time-based; this only wakes the clock
@@ -622,6 +629,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	m.settle()
 	if c := m.titleCmd(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.filesCmd(); c != nil {
 		cmds = append(cmds, c)
 	}
 	cmds = append(cmds, m.wake())
