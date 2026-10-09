@@ -599,6 +599,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.onResumed(msg)...)
 	case forkedMsg:
 		cmds = append(cmds, m.onForked(msg)...)
+	case movedMsg:
+		cmds = append(cmds, m.onMoved(msg)...)
 
 	case toastFadeMsg:
 		// the fade itself is time-based; this only wakes the clock

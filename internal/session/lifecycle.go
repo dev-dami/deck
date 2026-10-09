@@ -3,6 +3,8 @@ package session
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -127,9 +129,12 @@ func (m *Manager) drop(threadID string) (*thread, error) {
 	t.mu.Lock()
 	members := append([]*agentState(nil), t.members...)
 	t.mu.Unlock()
-	var wg sync.WaitGroup
 	for _, a := range members {
 		_ = m.Interrupt(a.id) // denies its pending approvals too
+	}
+	t.gone.Store(true) // from here its agents' events and writes are dropped
+	var wg sync.WaitGroup
+	for _, a := range members {
 		run := a.getRun()
 		if run == nil {
 			continue
@@ -194,4 +199,56 @@ func (m *Manager) Fork(threadID, entryID string) (ThreadInfo, []tea.Msg, string,
 	}
 	info, hist, err := m.Resume(th.ID)
 	return info, hist, text, err
+}
+
+// Move re-homes a thread in dir. A CLI's session belongs to the folder it ran
+// in, so the members restart there on fresh sessions, each briefed on the
+// thread so far at its next turn. The thread keeps its id and history.
+func (m *Manager) Move(threadID, dir string) (ThreadInfo, []tea.Msg, error) {
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return ThreadInfo{}, nil, fmt.Errorf("session: %s is not a directory", dir)
+	}
+	dir = filepath.Clean(dir)
+	t := m.thread(threadID)
+	if t == nil {
+		return ThreadInfo{}, nil, fmt.Errorf("session: no thread %q", threadID)
+	}
+	t.mu.Lock()
+	same, empty := t.dir == dir, len(t.members) == 0
+	if empty && !same { // nobody has run yet: just point it elsewhere
+		t.dir = dir
+		t.repoOnce, t.repo = sync.Once{}, nil
+	}
+	t.mu.Unlock()
+	switch {
+	case same:
+		return ThreadInfo{}, nil, errors.New("session: the thread is already there")
+	case empty:
+		m.emit(ThreadChangedMsg{ThreadID: threadID})
+		return m.threadInfo(t), nil, nil
+	case m.st == nil:
+		return ThreadInfo{}, nil, errors.New("session: no store")
+	}
+	th := m.snapshot(t)
+	th.Dir = dir
+	for i := range th.Members {
+		th.Members[i].SessionID, th.Members[i].Cursor = "", 0
+		th.Members[i].ContextTokens, th.Members[i].ContextWindow = 0, 0
+	}
+	if _, err := m.drop(threadID); err != nil {
+		return ThreadInfo{}, nil, err
+	}
+	errc := make(chan error, 1)
+	m.w.push(func() { // after every write the thread had queued
+		if t.created {
+			errc <- m.st.UpdateMeta(th)
+			return
+		}
+		_, err := m.st.Create(th)
+		errc <- err
+	})
+	if err := <-errc; err != nil {
+		return ThreadInfo{}, nil, err
+	}
+	return m.Resume(threadID)
 }

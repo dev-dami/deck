@@ -3,6 +3,7 @@ package session
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -38,6 +39,9 @@ type thread struct {
 	// Lifecycle (lifecycle.go): pinned to the top, resolved (settled until a
 	// new message wakes it), archived (off the sidebar, still resumable).
 	pinned, resolved, archived bool
+	// gone is set when the thread leaves the live set (archive, delete, move):
+	// its old agents' late events, approvals and store writes are dropped.
+	gone atomic.Bool
 
 	// Queue of user messages waiting for busy members (queue.go), guarded by mu.
 	queue  []qitem
@@ -104,6 +108,9 @@ func (m *Manager) appendLocked(t *thread, e store.Entry) int {
 // if it does not exist there yet.
 func (m *Manager) persist(t *thread, f func()) {
 	if m.st == nil {
+		return
+	}
+	if t.gone.Load() {
 		return
 	}
 	m.w.push(func() {

@@ -34,10 +34,10 @@ func TestParseCommand(t *testing.T) {
 	if _, _, ok := parseCommand("@claude hi"); ok {
 		t.Fatal("a mention is not a command")
 	}
-	if len(Commands) != 12 {
-		t.Fatalf("exactly twelve commands, have %d", len(Commands))
+	if len(Commands) != 13 {
+		t.Fatalf("exactly thirteen commands, have %d", len(Commands))
 	}
-	for _, n := range []string{"new", "resume", "model", "cd", "name", "changes", "rename", "pin", "done", "archive", "delete", "fork"} {
+	for _, n := range []string{"new", "resume", "model", "cd", "name", "changes", "rename", "pin", "done", "archive", "delete", "fork", "move"} {
 		if !isCommand(n) {
 			t.Errorf("missing /%s", n)
 		}

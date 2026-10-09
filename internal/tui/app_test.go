@@ -460,7 +460,7 @@ func TestSlashMenuListsEveryCommand(t *testing.T) {
 	r := newRig(t, 120, 30)
 	r.start("one")
 	r.typeText("/")
-	want := []string{"new", "resume", "model", "cd", "name", "changes", "rename", "pin", "done", "archive", "delete", "fork"}
+	want := []string{"new", "resume", "model", "cd", "name", "changes", "rename", "pin", "done", "archive", "delete", "fork", "move"}
 	if got := len(r.m.menu.items); got != len(want) {
 		t.Fatalf("menu has %d commands", got)
 	}
@@ -469,7 +469,7 @@ func TestSlashMenuListsEveryCommand(t *testing.T) {
 			t.Fatalf("item %d = %q", i, it.label)
 		}
 	}
-	r.typeText("mo")
+	r.typeText("mod")
 	if len(r.m.menu.items) == 0 || r.m.menu.items[0].label != "model" {
 		t.Fatalf("fuzzy filter: %+v", r.m.menu.items)
 	}

@@ -20,6 +20,7 @@ var Commands = []struct{ Name, Args, Desc string }{
 	{"archive", "", "put this thread away; /resume brings it back"},
 	{"delete", "", "delete this thread for good (asks twice)"},
 	{"fork", "", "copy this thread into a new one; f on a message forks there"},
+	{"move", "<path>", "move this thread to another folder"},
 }
 
 func isCommand(name string) bool {

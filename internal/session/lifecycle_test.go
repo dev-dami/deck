@@ -2,11 +2,13 @@ package session
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dev-dami/deck/internal/agent"
 	"github.com/dev-dami/deck/internal/agent/fake"
 	"github.com/dev-dami/deck/internal/store"
 )
@@ -157,5 +159,39 @@ func TestForkKeepsTheHistoryBeforeAMessageAndBriefsFreshAgents(t *testing.T) {
 	waitFor(t, "the fork's agent gets a prompt", func() bool { return len(r.claude.prompts(fid)) > 0 })
 	if p := r.claude.prompts(fid)[0]; !strings.Contains(p, "hello") || !strings.Contains(p, "try another way") {
 		t.Fatalf("the fresh agent is briefed on the history:\n%s", p)
+	}
+}
+
+func TestMoveRestartsTheAgentsInTheNewFolderBriefedOnTheThread(t *testing.T) {
+	r, tid := lifeRig(t)
+	to := t.TempDir()
+	info, hist, err := r.m.Move(tid, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.ID != tid || info.Dir != filepath.Clean(to) || len(info.Members) != 1 {
+		t.Fatalf("moved = %+v", info)
+	}
+	for _, h := range hist {
+		if em, ok := h.(EventMsg); ok && em.Kind == agent.KindExited {
+			t.Fatal("closing the old agents must not land in the thread")
+		}
+	}
+	if err := r.m.Post(tid, "carry on here"); err != nil {
+		t.Fatal(err)
+	}
+	id := info.Members[0].ID
+	waitFor(t, "the restarted agent's prompt", func() bool { return len(r.claude.prompts(id)) > 0 })
+	r.claude.mu.Lock()
+	last := r.claude.specs[len(r.claude.specs)-1]
+	r.claude.mu.Unlock()
+	if last.Dir != filepath.Clean(to) || last.ResumeID != "" {
+		t.Fatalf("restarted with dir %q resume %q, want the new folder and a fresh session", last.Dir, last.ResumeID)
+	}
+	if p := r.claude.prompts(id)[0]; !strings.Contains(p, "hello") {
+		t.Fatalf("the agent is briefed on the thread:\n%s", p)
+	}
+	if th := stored(t, r, tid); th.Dir != filepath.Clean(to) {
+		t.Fatalf("stored dir = %q", th.Dir)
 	}
 }

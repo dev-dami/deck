@@ -404,3 +404,39 @@ func (m *model) onForked(msg forkedMsg) []tea.Cmd {
 	}
 	return []tea.Cmd{m.toast.show("forked into a new thread", false, m.now)}
 }
+
+// movedMsg is the result of Move.
+type movedMsg struct {
+	info    session.ThreadInfo
+	history []tea.Msg
+	err     error
+}
+
+func (m *model) moveCmd(dir string) []tea.Cmd {
+	th, ok := m.selThread()
+	if !ok {
+		return nil
+	}
+	mgr := m.mgr
+	return []tea.Cmd{func() tea.Msg {
+		info, hist, err := mgr.Move(th.ID, dir)
+		return movedMsg{info: info, history: hist, err: err}
+	}}
+}
+
+// onMoved redraws the moved thread from its history (its agents restarted).
+func (m *model) onMoved(msg movedMsg) []tea.Cmd {
+	if msg.err != nil {
+		return []tea.Cmd{m.toast.show(msg.err.Error(), true, m.now)}
+	}
+	if msg.history != nil {
+		delete(m.views, msg.info.ID)
+		m.hydrate(msg.info.ID, msg.history)
+	}
+	m.refresh()
+	text := "moved to " + tilde(msg.info.Dir, m.home)
+	if len(msg.info.Members) > 0 {
+		text += " · agents start fresh there, briefed on the thread"
+	}
+	return []tea.Cmd{m.toast.show(text, false, m.now)}
+}

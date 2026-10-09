@@ -1280,6 +1280,9 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	if ev.Kind == agent.KindUserText {
 		return // the adapter's echo of a prompt; Deck's own user entry stands for it
 	}
+	if a.thread.gone.Load() {
+		return // the thread was archived, deleted or moved
+	}
 	t := a.thread
 	res := a.apply(ev)
 	if !ev.Delta {
@@ -1300,6 +1303,12 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 }
 
 func (m *Manager) onApproval(a *agentState, req agent.ApprovalRequest) {
+	if a.thread.gone.Load() {
+		if req.Respond != nil {
+			req.Respond(agent.Decision{Allow: false, Reason: "the thread was closed"})
+		}
+		return
+	}
 	req.AgentID = a.id
 	orig := req.Respond
 	var once sync.Once

@@ -633,6 +633,16 @@ func (m *model) runCommand(name, arg string) []tea.Cmd {
 	case "fork":
 		m.comp.Reset()
 		return m.forkCmd("")
+	case "move":
+		if arg == "" {
+			return danger("usage: /move <path>")
+		}
+		dir, err := m.resolveDir(arg)
+		if err != nil {
+			return danger(err.Error())
+		}
+		m.comp.Reset()
+		return m.moveCmd(dir)
 	case "rename", "pin", "done", "archive", "delete":
 		return m.threadCommand(name, arg)
 	case "model":
