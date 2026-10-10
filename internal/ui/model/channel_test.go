@@ -6,7 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 
-	"github.com/dev-dami/deck/internal/agent/tools/mcp"
+	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/session"

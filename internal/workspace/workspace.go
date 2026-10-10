@@ -11,13 +11,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
-	mcptools "github.com/dev-dami/deck/internal/agent/tools/mcp"
+	mcptools "github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/commands"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/history"
 	"github.com/dev-dami/deck/internal/lsp"
 	"github.com/dev-dami/deck/internal/message"
-	"github.com/dev-dami/deck/internal/oauth"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/proto"
 	"github.com/dev-dami/deck/internal/question"
@@ -220,7 +219,6 @@ type Workspace interface {
 	SetConfigField(scope config.Scope, key string, value any) error
 	SetConfigFields(scope config.Scope, fields map[string]any) error
 	RemoveConfigField(scope config.Scope, key string) error
-	ImportCopilot() (*oauth.Token, bool)
 	RefreshOAuthToken(ctx context.Context, scope config.Scope, providerID string) error
 
 	// Project lifecycle

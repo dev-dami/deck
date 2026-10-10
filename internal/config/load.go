@@ -17,13 +17,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
 	powernapConfig "github.com/charmbracelet/x/powernap/pkg/config"
-	"github.com/dev-dami/deck/internal/agent/hyper"
 	"github.com/dev-dami/deck/internal/csync"
-	"github.com/dev-dami/deck/internal/discover"
 	"github.com/dev-dami/deck/internal/env"
 	"github.com/dev-dami/deck/internal/filepathext"
 	"github.com/dev-dami/deck/internal/fsext"
@@ -105,9 +102,7 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	// list is fatal: starting up without providers is worse than starting
 	// up with slightly stale ones. Pass a Hyper token refresher so the
 	// catalog fetch can retry on 401.
-	providers, err := Providers(cfg, func(ctx context.Context) error {
-		return store.RefreshOAuthToken(ctx, ScopeGlobal, "hyper")
-	})
+	providers, err := Providers(cfg)
 	if err != nil {
 		if len(providers) == 0 {
 			return nil, err
@@ -125,13 +120,6 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	// The refetches publish a copy-on-write config, so re-read it
 	// afterwards: the mutations below must land on the live config rather
 	// than a snapshot the store has already replaced.
-	if CatwalkUpdated() {
-		fetchCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		store.refetchOpenAIModels(fetchCtx, ScopeGlobal)
-		store.refetchGrokModels(fetchCtx, ScopeGlobal)
-		cancel()
-		cfg = store.Config()
-	}
 
 	env := env.New()
 	// Configure providers
@@ -228,306 +216,11 @@ func PushPopDeckEnv() func() {
 }
 
 func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env env.Env, resolver VariableResolver, knownProviders []catwalk.Provider) error {
-	knownProviderNames := make(map[string]bool)
-	restore := PushPopDeckEnv()
-	defer restore()
-
-	// When disable_default_providers is enabled, skip all default/embedded
-	// providers entirely. Users must fully specify any providers they want.
-	// We skip to the custom provider validation loop which handles all
-	// user-configured providers uniformly.
-	if c.Options.DisableDefaultProviders {
-		knownProviders = nil
-	}
-
-	for _, p := range knownProviders {
-		knownProviderNames[string(p.ID)] = true
-		config, configExists := c.Providers.Get(string(p.ID))
-		// if the user configured a known provider we need to allow it to override a couple of parameters
-		if configExists {
-			if config.BaseURL != "" {
-				p.APIEndpoint = config.BaseURL
-			}
-			if config.APIKey != "" {
-				p.APIKey = config.APIKey
-			}
-			if len(config.Models) > 0 {
-				models := []catwalk.Model{}
-				seen := make(map[string]bool)
-
-				for _, model := range config.Models {
-					if seen[model.ID] {
-						continue
-					}
-					seen[model.ID] = true
-					if model.Name == "" {
-						model.Name = model.ID
-					}
-					models = append(models, model)
-				}
-				for _, model := range p.Models {
-					if seen[model.ID] {
-						continue
-					}
-					seen[model.ID] = true
-					if model.Name == "" {
-						model.Name = model.ID
-					}
-					models = append(models, model)
-				}
-
-				p.Models = models
-			}
-		}
-
-		headers := map[string]string{}
-		if len(p.DefaultHeaders) > 0 {
-			maps.Copy(headers, p.DefaultHeaders)
-		}
-		if len(config.ExtraHeaders) > 0 {
-			maps.Copy(headers, config.ExtraHeaders)
-		}
-		// Provider headers use the same error contract as MCP headers:
-		// a failing $(...) aborts the provider load with a clear
-		// message, and a header that resolves to the empty string
-		// (unset bare $VAR under lenient nounset, $(echo), or literal
-		// "") is dropped from the outgoing request.
-		for k, v := range headers {
-			resolved, err := resolver.ResolveValue(v)
-			if err != nil {
-				return fmt.Errorf("resolving provider %s header %q: %w", p.ID, k, err)
-			}
-			if resolved == "" {
-				delete(headers, k)
-				continue
-			}
-			headers[k] = resolved
-		}
-		// Start from user config so all user fields survive without
-		// explicit copying. Overlay catwalk identity/endpoint fields
-		// (already merged with user overrides above).
-		prepared := config
-		prepared.ID = string(p.ID)
-		prepared.Name = p.Name
-		prepared.BaseURL = p.APIEndpoint
-		prepared.APIKey = p.APIKey
-		prepared.APIKeyTemplate = p.APIKey // Store original template for re-resolution
-		prepared.Type = p.Type
-		prepared.Models = p.Models
-		prepared.ExtraHeaders = headers
-		if prepared.ExtraParams == nil {
-			prepared.ExtraParams = make(map[string]string)
-		}
-
-		switch {
-		case p.ID == catwalk.InferenceProviderAnthropic && config.OAuthToken != nil:
-			// Claude Code subscription is not supported anymore. Remove to show onboarding.
-			// RemoveConfigField persists the deletion to disk. The in-memory
-			// state is kept consistent by the Providers.Del call below; any
-			// concurrent reload that races with this write will also see the
-			// removal because it re-reads from disk.
-			store.RemoveConfigField(ScopeGlobal, "providers.anthropic")
-			c.Providers.Del(string(p.ID))
-			continue
-		case p.ID == catwalk.InferenceProviderCopilot && config.OAuthToken != nil:
-			prepared.SetupGitHubCopilot()
-		}
-
-		switch p.ID {
-		// Handle specific providers that require additional configuration
-		case catwalk.InferenceProviderVertexAI:
-			var (
-				project  = env.Get("VERTEXAI_PROJECT")
-				location = env.Get("VERTEXAI_LOCATION")
-			)
-			if project == "" || location == "" {
-				if configExists {
-					slog.Warn("Skipping Vertex AI provider due to missing credentials")
-					c.Providers.Del(string(p.ID))
-				}
-				continue
-			}
-			prepared.ExtraParams["project"] = project
-			prepared.ExtraParams["location"] = location
-		case catwalk.InferenceProviderAzure:
-			endpoint, err := resolver.ResolveValue(p.APIEndpoint)
-			if err != nil || endpoint == "" {
-				if configExists {
-					slog.Warn("Skipping Azure provider due to missing API endpoint", "provider", p.ID, "error", err)
-					c.Providers.Del(string(p.ID))
-				}
-				continue
-			}
-			prepared.BaseURL = endpoint
-			prepared.ExtraParams["apiVersion"] = env.Get("AZURE_OPENAI_API_VERSION")
-		case catwalk.InferenceProviderBedrock, catwalk.InferenceProviderBedrockEurope:
-			if p.APIKey == "" && !hasAWSCredentials(env) {
-				if configExists {
-					slog.Warn("Skipping Bedrock provider due to missing AWS credentials")
-					c.Providers.Del(string(p.ID))
-				}
-				continue
-			}
-		case catwalk.InferenceProvider("hyper"):
-			if apiKey := env.Get("HYPER_API_KEY"); apiKey != "" {
-				prepared.APIKey = apiKey
-				prepared.APIKeyTemplate = apiKey
-			} else {
-				v, err := resolver.ResolveValue(p.APIKey)
-				if v == "" || err != nil {
-					if configExists {
-						slog.Warn("Skipping Hyper provider due to missing API key", "provider", p.ID)
-						c.Providers.Del(string(p.ID))
-					}
-					continue
-				}
-			}
-		default:
-			// An OAuth login is a credential too: providers signed in
-			// through OAuth (e.g. OpenAI with a ChatGPT account) are
-			// configured even when no API key is present.
-			if config.OAuthToken != nil {
-				break
-			}
-			// if the provider api or endpoint are missing we skip them
-			v, err := resolver.ResolveValue(p.APIKey)
-			if v == "" || err != nil {
-				if configExists {
-					slog.Warn("Skipping provider due to missing API key", "provider", p.ID)
-					c.Providers.Del(string(p.ID))
-				}
-				continue
-			}
-		}
-		c.Providers.Set(string(p.ID), prepared)
-	}
-
-	// Discover models concurrently for custom providers that need it.
-	// A provider needs discovery when discover_models is explicitly true,
-	// or when the models list is empty (auto-trigger, unless opted out).
-	type discoveryResult struct {
-		models []catwalk.Model
-		err    error
-	}
-
-	discoveryResults := make(map[string]discoveryResult)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-
-	discoverCtx, discoverCancel := context.WithTimeout(ctx, 3*time.Second)
-	for id, pc := range c.Providers.Seq2() {
-		if knownProviderNames[id] {
-			continue
-		}
-		if pc.Disable || pc.BaseURL == "" {
-			continue
-		}
-		wantsDiscovery := pc.AutoDiscoverModels != nil && *pc.AutoDiscoverModels
-		autoTrigger := len(pc.Models) == 0 && (pc.AutoDiscoverModels == nil || *pc.AutoDiscoverModels)
-		if !wantsDiscovery && !autoTrigger {
-			continue
-		}
-		providerID := cmp.Or(pc.ID, id)
-		cfg := discover.Config{
-			ID:             providerID,
-			BaseURL:        pc.BaseURL,
-			APIKey:         pc.APIKey,
-			ExtraHeaders:   pc.ExtraHeaders,
-			ExistingModels: pc.Models,
-		}
-		providerType := cmp.Or(pc.Type, catwalk.TypeOpenAICompat)
-		wg.Go(func() {
-			models, err := discover.DiscoverModels(discoverCtx, cfg, resolver)
-			if err == nil && len(models) > 0 {
-				if enricher := discover.GetEnricher(string(providerType)); enricher != nil {
-					models, _ = enricher.EnrichModels(discoverCtx, cfg, resolver, models)
-				}
-			}
-			mu.Lock()
-			discoveryResults[id] = discoveryResult{models: models, err: err}
-			mu.Unlock()
-		})
-	}
-	wg.Wait()
-	discoverCancel()
-
-	// Validate the custom providers.
-	for id, providerConfig := range c.Providers.Seq2() {
-		if knownProviderNames[id] {
-			continue
-		}
-
-		// Make sure the provider ID is set.
-		providerConfig.ID = id
-		providerConfig.Name = cmp.Or(providerConfig.Name, id) // Use ID as name if not set
-		// Default to OpenAI if not set.
-		providerConfig.Type = cmp.Or(providerConfig.Type, catwalk.TypeOpenAICompat)
-		if !slices.Contains(catwalk.KnownProviderTypes(), providerConfig.Type) &&
-			providerConfig.Type != hyper.Name &&
-			!discover.IsKnownCustomProvider(string(providerConfig.Type)) {
-			slog.Warn("Skipping custom provider due to unsupported provider type", "provider", id)
-			c.Providers.Del(id)
-			continue
-		}
-
-		if providerConfig.Disable {
-			slog.Debug("Skipping custom provider due to disable flag", "provider", id)
-			c.Providers.Del(id)
-			continue
-		}
-		apiKey, err := resolver.ResolveValue(providerConfig.APIKey)
-		if apiKey == "" || err != nil {
-			slog.Warn("Provider is missing API key, this might be OK for local providers", "provider", id)
-		}
-		baseURL, err := resolver.ResolveValue(providerConfig.BaseURL)
-		if baseURL == "" || err != nil {
-			slog.Warn("Skipping custom provider due to missing API endpoint", "provider", id, "error", err)
-			c.Providers.Del(id)
-			continue
-		}
-
-		// Apply discovery results if available.
-		if result, ok := discoveryResults[id]; ok {
-			if result.err != nil {
-				slog.Warn("Model discovery failed", "provider", id, "error", result.err)
-				if len(providerConfig.Models) == 0 {
-					slog.Warn("Skipping provider with no models after failed discovery", "provider", id)
-					c.Providers.Del(id)
-					continue
-				}
-			} else if len(result.models) > 0 {
-				providerConfig.Models = result.models
-				slog.Info("Discovered models for provider", "provider", id, "count", len(result.models))
-			}
-		}
-
-		if len(providerConfig.Models) == 0 {
-			slog.Warn("Skipping custom provider because the provider has no models", "provider", id)
-			c.Providers.Del(id)
-			continue
-		}
-
-		// Custom-provider headers share the MCP error contract; see
-		// the known-provider loop above.
-		for k, v := range providerConfig.ExtraHeaders {
-			resolved, err := resolver.ResolveValue(v)
-			if err != nil {
-				return fmt.Errorf("resolving provider %s header %q: %w", id, k, err)
-			}
-			if resolved == "" {
-				delete(providerConfig.ExtraHeaders, k)
-				continue
-			}
-			providerConfig.ExtraHeaders[k] = resolved
-		}
-
-		c.Providers.Set(id, providerConfig)
-	}
-
-	if c.Providers.Len() == 0 && c.Options.DisableDefaultProviders {
-		return fmt.Errorf("default providers are disabled and there are no custom providers are configured")
-	}
-
+	// Deck's agents are the user's own CLIs, signed in on their own. Deck
+	// configures no model provider and reads no API key or token.
+	_, _, _, _ = ctx, store, env, resolver
+	_ = knownProviders
+	c.Providers = csync.NewMap[string, ProviderConfig]()
 	return nil
 }
 

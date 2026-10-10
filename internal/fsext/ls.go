@@ -34,7 +34,7 @@ var fastIgnoreDirs = map[string]bool{
 	".Trash":          true,
 	".Spotlight-V100": true,
 	".fseventsd":      true,
-	".deck":          true,
+	".deck":           true,
 	"OrbStack":        true,
 	".local":          true,
 	".share":          true,

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dev-dami/deck/internal/agent/tools/mcp"
+	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/ui/common"
 )
 

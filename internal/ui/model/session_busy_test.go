@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dev-dami/deck/internal/agent/notify"
-	"github.com/dev-dami/deck/internal/agent/tools/mcp"
+	"github.com/dev-dami/deck/internal/notify"
+	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/commands"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/lsp"

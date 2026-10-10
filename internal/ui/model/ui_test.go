@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
 	uv "github.com/charmbracelet/ultraviolet"
-	"github.com/dev-dami/deck/internal/agent/notify"
+	"github.com/dev-dami/deck/internal/notify"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/csync"
 	"github.com/dev-dami/deck/internal/message"

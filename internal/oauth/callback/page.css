@@ -1,37 +1,36 @@
 :root {
-  /* Dark mode surface colors - charmtone dark palette. */
-  --bg: #201f26; /* Pepper */
-  --bg-card: #2d2c36; /* BBQ */
-  --bg-inset: #201f26; /* Pepper */
-  --text: #f7f6fb; /* Salt */
-  --text-muted: #f7f6fb; /* Salt */
-  --border: #4d4c57; /* Iron */
+  /* Dark: Deck's graphite ground, mint accent. */
+  --bg: #0e1211; /* Ink */
+  --bg-card: #1a201f; /* Coal */
+  --bg-inset: #141918; /* Slate */
+  --text: #e6edeb; /* Fg */
+  --text-muted: #9aa5a2; /* Muted */
+  --border: #2a3130; /* Rule */
 
-  /* Outcome accents; subject highlight follows --text unless light
-     mode overrides below. Error codes use Coral; the success rail
-     uses Blush. */
-  --blush: #ff84ff; /* Blush */
-  --coral: #ff577d; /* Coral */
-  --hazy: #f7f6fb; /* Salt — matches body text in dark */
+  /* Outcome accents: errors in Coral, the success rail in Mint. */
+  --blush: #5fd7af; /* Mint */
+  --coral: #f0716a; /* Coral */
+  --hazy: #e6edeb; /* Fg */
 
   /* Code-like fragments (the error code, the countdown) use mono. */
   --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
 
-  /* Large, soft lift — even quieter on dark surfaces. */
   --card-shadow: 0 32px 96px rgba(0, 0, 0, 0.05);
 }
 
-/* Light: Sash ground, Salt card, Charple type — error codes stay Coral. */
+/* Light: pale ground, white card, deep-teal type. */
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #ecebf0; /* Sash */
-    --bg-card: #f7f6fb; /* Salt */
-    --bg-inset: #ecebf0; /* Sash */
-    --text: #6b50ff; /* Charple */
-    --text-muted: #6b50ff; /* Charple */
-    --border: #d6d3dc; /* Steep */
-    --hazy: #6b50ff; /* Charple */
-    --card-shadow: 0 32px 96px rgba(32, 31, 38, 0.1); /* Pepper */
+    --bg: #f0f4f2;
+    --bg-card: #fafcfb;
+    --bg-inset: #f0f4f2;
+    --text: #1b1f1e;
+    --text-muted: #5c6664;
+    --border: #dde3e1;
+    --blush: #0f8a6e;
+    --coral: #b3261e;
+    --hazy: #0f8a6e;
+    --card-shadow: 0 32px 96px rgba(14, 18, 17, 0.1);
   }
 }
 
@@ -121,7 +120,7 @@ h1 {
 .continue a {
   display: inline-block;
   background: var(--accent);
-  color: #f7f6fb; /* Salt — stays white on the accent in either scheme. */
+  color: #0e1211; /* Ink on the mint accent in either scheme. */
   font-weight: 700;
   font-size: 0.9375rem;
   letter-spacing: 0.01em;

@@ -17,15 +17,15 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/charmbracelet/x/term"
-	"github.com/dev-dami/deck/internal/agent/tools"
+	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/db"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/ui/chat"
 	"github.com/dev-dami/deck/internal/ui/common"
+	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/spf13/cobra"
 )
 
@@ -141,7 +141,6 @@ func runSessionList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	defer cleanup()
-
 
 	list, err := svc.sessions.List(ctx)
 	if err != nil {
@@ -264,7 +263,6 @@ func runSessionShow(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-
 	sess, err := resolveSessionID(ctx, svc.sessions, args[0])
 	if err != nil {
 		return err
@@ -289,7 +287,6 @@ func runSessionDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer cleanup()
-
 
 	sess, err := resolveSessionID(ctx, svc.sessions, args[0])
 	if err != nil {
@@ -324,7 +321,6 @@ func runSessionRename(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-
 	sess, err := resolveSessionID(ctx, svc.sessions, args[0])
 	if err != nil {
 		return err
@@ -358,7 +354,6 @@ func runSessionLast(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	defer cleanup()
-
 
 	list, err := svc.sessions.List(ctx)
 	if err != nil {

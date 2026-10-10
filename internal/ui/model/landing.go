@@ -1,7 +1,6 @@
 package model
 
 import (
-
 	"charm.land/lipgloss/v2"
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/workspace"

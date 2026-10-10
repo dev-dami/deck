@@ -6,8 +6,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/tree"
-	"github.com/dev-dami/deck/internal/agent"
 	"github.com/dev-dami/deck/internal/message"
+	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/ui/styles"
 )
 
@@ -143,7 +143,7 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 		return pendingTool(sty, "Agent", opts.Anim, opts.Compact)
 	}
 
-	var params agent.AgentParams
+	var params tools.AgentParams
 	_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
 
 	prompt := params.Prompt

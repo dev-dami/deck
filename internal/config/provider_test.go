@@ -274,21 +274,21 @@ func TestCache_GetInvalidJSON(t *testing.T) {
 
 func TestCachePathFor(t *testing.T) {
 	tests := []struct {
-		name            string
+		name           string
 		deckGlobalData string
-		xdgDataHome     string
-		expected        string
+		xdgDataHome    string
+		expected       string
 	}{
 		{
-			name:            "with DECK_GLOBAL_DATA",
+			name:           "with DECK_GLOBAL_DATA",
 			deckGlobalData: "/scratch/data",
-			expected:        "/scratch/data/providers.json",
+			expected:       "/scratch/data/providers.json",
 		},
 		{
-			name:            "DECK_GLOBAL_DATA takes priority over XDG_DATA_HOME",
+			name:           "DECK_GLOBAL_DATA takes priority over XDG_DATA_HOME",
 			deckGlobalData: "/scratch/data",
-			xdgDataHome:     "/custom/data",
-			expected:        "/scratch/data/providers.json",
+			xdgDataHome:    "/custom/data",
+			expected:       "/scratch/data/providers.json",
 		},
 		{
 			name:        "with XDG_DATA_HOME",

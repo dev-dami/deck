@@ -8,8 +8,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dev-dami/deck/internal/agent"
-	mcptools "github.com/dev-dami/deck/internal/agent/tools/mcp"
+
+	mcptools "github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/app"
 	"github.com/dev-dami/deck/internal/commands"
 	"github.com/dev-dami/deck/internal/config"
@@ -17,7 +17,6 @@ import (
 	"github.com/dev-dami/deck/internal/history"
 	"github.com/dev-dami/deck/internal/lsp"
 	"github.com/dev-dami/deck/internal/message"
-	"github.com/dev-dami/deck/internal/oauth"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/proto"
 	"github.com/dev-dami/deck/internal/question"
@@ -108,20 +107,17 @@ func (w *AppWorkspace) ListAllUserMessages(ctx context.Context) ([]message.Messa
 
 // -- Agent --
 
-func (w *AppWorkspace) AgentRun(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) error {
-	if w.app.AgentCoordinator == nil {
-		return errors.New("agent coordinator not initialized")
-	}
-	_, err := w.app.AgentCoordinator.Run(ctx, sessionID, prompt, attachments...)
-	return err
+// The agent methods below are the base for DeckWorkspace, which drives
+// the agent CLIs; on its own the AppWorkspace has no agent.
+
+var errNoAgent = errors.New("no agent: Deck's engine drives the agents")
+
+func (w *AppWorkspace) AgentRun(context.Context, string, string, ...message.Attachment) error {
+	return errNoAgent
 }
 
-func (w *AppWorkspace) AgentRunChannel(ctx context.Context, channel, sessionID, prompt string, attachments ...message.Attachment) error {
-	if w.app.AgentCoordinator == nil {
-		return errors.New("agent coordinator not initialized")
-	}
-	_, err := w.app.AgentCoordinator.Run(agent.WithChannel(ctx, channel), sessionID, prompt, attachments...)
-	return err
+func (w *AppWorkspace) AgentRunChannel(context.Context, string, string, string, ...message.Attachment) error {
+	return errNoAgent
 }
 
 func (w *AppWorkspace) AgentRunShellCommand(ctx context.Context, sessionID, command string, termWidth int, onProgress func(string), isFirstMessage bool) (proto.ShellCommandResponse, error) {
@@ -158,11 +154,7 @@ func (w *AppWorkspace) AgentRunShellCommand(ctx context.Context, sessionID, comm
 		}
 	}
 
-	// Generate a title from the shell command if it was the first message.
-	if isFirstMessage && w.app.AgentCoordinator != nil {
-		titleCtx := context.WithoutCancel(ctx)
-		w.app.AgentCoordinator.GenerateTitle(titleCtx, sessionID, "$ "+command)
-	}
+	_ = isFirstMessage
 
 	return proto.ShellCommandResponse{
 		Output:   result.Output,
@@ -170,96 +162,22 @@ func (w *AppWorkspace) AgentRunShellCommand(ctx context.Context, sessionID, comm
 	}, nil
 }
 
-func (w *AppWorkspace) AgentCancel(sessionID string) {
-	if w.app.AgentCoordinator != nil {
-		w.app.AgentCoordinator.Cancel(sessionID)
-	}
-}
-
-func (w *AppWorkspace) AgentIsBusy() bool {
-	if w.app.AgentCoordinator == nil {
-		return false
-	}
-	return w.app.AgentCoordinator.IsBusy()
-}
-
-func (w *AppWorkspace) AgentIsSessionBusy(sessionID string) bool {
-	if w.app.AgentCoordinator == nil {
-		return false
-	}
-	return w.app.AgentCoordinator.IsSessionBusy(sessionID)
-}
-
-func (w *AppWorkspace) AgentModel() AgentModel {
-	if w.app.AgentCoordinator == nil {
-		return AgentModel{}
-	}
-	m := w.app.AgentCoordinator.Model()
-	return AgentModel{
-		CatwalkCfg: m.CatwalkCfg,
-		ModelCfg:   m.ModelCfg,
-	}
-}
-
-func (w *AppWorkspace) AgentIsReady() bool {
-	return w.app.AgentCoordinator != nil
-}
-
-func (w *AppWorkspace) AgentReadyErr() error {
-	if w.app.AgentCoordinator == nil {
-		return ErrAgentNotInitialized
-	}
-	return nil
-}
-
-func (w *AppWorkspace) AgentQueuedPrompts(sessionID string) int {
-	if w.app.AgentCoordinator == nil {
-		return 0
-	}
-	return w.app.AgentCoordinator.QueuedPrompts(sessionID)
-}
-
-func (w *AppWorkspace) AgentQueuedPromptsList(sessionID string) []string {
-	if w.app.AgentCoordinator == nil {
-		return nil
-	}
-	return w.app.AgentCoordinator.QueuedPromptsList(sessionID)
-}
-
-func (w *AppWorkspace) AgentClearQueue(sessionID string) {
-	if w.app.AgentCoordinator != nil {
-		w.app.AgentCoordinator.ClearQueue(sessionID)
-	}
-}
-
-func (w *AppWorkspace) AgentSetMain(agentID string) error {
-	if w.app.AgentCoordinator == nil {
-		return errors.New("agent coordinator not initialized")
-	}
-	return w.app.AgentCoordinator.SetMainAgent(agentID)
-}
-
-func (w *AppWorkspace) AgentSummarize(ctx context.Context, sessionID string) error {
-	if w.app.AgentCoordinator == nil {
-		return errors.New("agent coordinator not initialized")
-	}
-	return w.app.AgentCoordinator.Summarize(ctx, sessionID)
-}
-
-func (w *AppWorkspace) UpdateAgentModel(ctx context.Context) error {
-	return w.app.UpdateAgentModel(ctx)
-}
-
-func (w *AppWorkspace) InitCoderAgent(ctx context.Context) error {
-	return w.app.InitCoderAgent(ctx)
-}
-
-func (w *AppWorkspace) InitCoderAgentNonInteractive(ctx context.Context) error {
-	return w.app.InitCoderAgentNonInteractive(ctx)
-}
-
-func (w *AppWorkspace) GetDefaultSmallModel(providerID string) config.SelectedModel {
-	return w.app.GetDefaultSmallModel(providerID)
+func (w *AppWorkspace) AgentCancel(string)                                 {}
+func (w *AppWorkspace) AgentIsBusy() bool                                  { return false }
+func (w *AppWorkspace) AgentIsSessionBusy(string) bool                     { return false }
+func (w *AppWorkspace) AgentModel() AgentModel                             { return AgentModel{} }
+func (w *AppWorkspace) AgentIsReady() bool                                 { return false }
+func (w *AppWorkspace) AgentReadyErr() error                               { return ErrAgentNotInitialized }
+func (w *AppWorkspace) AgentQueuedPrompts(string) int                      { return 0 }
+func (w *AppWorkspace) AgentQueuedPromptsList(string) []string             { return nil }
+func (w *AppWorkspace) AgentClearQueue(string)                             {}
+func (w *AppWorkspace) AgentSetMain(string) error                          { return errNoAgent }
+func (w *AppWorkspace) AgentSummarize(context.Context, string) error       { return errNoAgent }
+func (w *AppWorkspace) UpdateAgentModel(context.Context) error             { return nil }
+func (w *AppWorkspace) InitCoderAgent(context.Context) error               { return nil }
+func (w *AppWorkspace) InitCoderAgentNonInteractive(context.Context) error { return nil }
+func (w *AppWorkspace) GetDefaultSmallModel(string) config.SelectedModel {
+	return config.SelectedModel{}
 }
 
 // -- Permissions --
@@ -395,10 +313,6 @@ func (w *AppWorkspace) RemoveConfigField(scope config.Scope, key string) error {
 	return w.store.RemoveConfigField(scope, key)
 }
 
-func (w *AppWorkspace) ImportCopilot() (*oauth.Token, bool) {
-	return w.store.ImportCopilot()
-}
-
 func (w *AppWorkspace) RefreshOAuthToken(ctx context.Context, scope config.Scope, providerID string) error {
 	return w.store.RefreshOAuthToken(ctx, scope, providerID)
 }
@@ -414,7 +328,7 @@ func (w *AppWorkspace) MarkProjectInitialized() error {
 }
 
 func (w *AppWorkspace) InitializePrompt() (string, error) {
-	return agent.InitializePrompt(w.store)
+	return "", nil
 }
 
 func (w *AppWorkspace) ListSkills(_ context.Context) ([]skills.CatalogEntry, error) {

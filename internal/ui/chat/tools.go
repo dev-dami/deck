@@ -11,8 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/tree"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/dev-dami/deck/internal/agent"
-	"github.com/dev-dami/deck/internal/agent/tools"
+	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/diff"
 	"github.com/dev-dami/deck/internal/fsext"
 	"github.com/dev-dami/deck/internal/hooks"
@@ -256,7 +255,7 @@ func NewToolMessageItem(
 		item = NewSourcegraphToolMessageItem(sty, toolCall, result, canceled)
 	case tools.DiagnosticsToolName:
 		item = NewDiagnosticsToolMessageItem(sty, toolCall, result, canceled)
-	case agent.AgentToolName:
+	case tools.AgentToolName:
 		item = NewAgentToolMessageItem(sty, toolCall, result, canceled)
 	case tools.AgenticFetchToolName:
 		item = NewAgenticFetchToolMessageItem(sty, toolCall, result, canceled)
@@ -1344,8 +1343,8 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 		}
 	case tools.DiagnosticsToolName:
 		return "**Project:** diagnostics"
-	case agent.AgentToolName:
-		var params agent.AgentParams
+	case tools.AgentToolName:
+		var params tools.AgentParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			return fmt.Sprintf("**Task:**\n%s", params.Prompt)
 		}
@@ -1397,7 +1396,7 @@ func (t *baseToolMessageItem) formatResultForCopy() string {
 		return t.formatAgenticFetchResultForCopy()
 	case tools.WebFetchToolName:
 		return t.formatWebFetchResultForCopy()
-	case agent.AgentToolName:
+	case tools.AgentToolName:
 		return t.formatAgentResultForCopy()
 	case tools.DownloadToolName, tools.GrepToolName, tools.GlobToolName, tools.LSToolName, tools.SourcegraphToolName, tools.DiagnosticsToolName, tools.TodosToolName:
 		return fmt.Sprintf("```\n%s\n```", t.result.Content)
@@ -1715,7 +1714,7 @@ func (t *baseToolMessageItem) formatAgentResultForCopy() string {
 // prettifyToolName returns a human-readable name for tool names.
 func prettifyToolName(name string) string {
 	switch name {
-	case agent.AgentToolName:
+	case tools.AgentToolName:
 		return "Agent"
 	case tools.BashToolName:
 		return "Bash"

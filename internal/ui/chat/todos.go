@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/dev-dami/deck/internal/agent/tools"
+	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/ui/styles"

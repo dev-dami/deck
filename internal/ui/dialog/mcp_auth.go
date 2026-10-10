@@ -11,7 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
-	mcptools "github.com/dev-dami/deck/internal/agent/tools/mcp"
+	mcptools "github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/pkg/browser"
 )

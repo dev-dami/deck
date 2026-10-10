@@ -5,28 +5,17 @@ package app
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"fmt"
-	"io"
 	"log/slog"
-	"os"
-	"strings"
 	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/catwalk/pkg/catwalk"
-	"charm.land/fantasy"
-	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/term"
-	"github.com/dev-dami/deck/internal/agent"
-	"github.com/dev-dami/deck/internal/agent/notify"
-	"github.com/dev-dami/deck/internal/agent/tools/mcp"
+	"github.com/dev-dami/deck/internal/notify"
+	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/clipboard"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/db"
 	"github.com/dev-dami/deck/internal/filetracker"
-	"github.com/dev-dami/deck/internal/format"
 	"github.com/dev-dami/deck/internal/herdr"
 	"github.com/dev-dami/deck/internal/history"
 	"github.com/dev-dami/deck/internal/log"
@@ -38,8 +27,6 @@ import (
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/shell"
 	"github.com/dev-dami/deck/internal/skills"
-	"github.com/dev-dami/deck/internal/ui/anim"
-	"github.com/dev-dami/deck/internal/ui/styles"
 )
 
 // UpdateAvailableMsg is sent when a new version is available.
@@ -56,8 +43,6 @@ type App struct {
 	Permissions permission.Service
 	Questions   question.Service
 	FileTracker filetracker.Service
-
-	AgentCoordinator agent.Coordinator
 
 	LSPManager *lsp.Manager
 
@@ -132,33 +117,6 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		slog.Warn("Clipboard initialization failed", "error", err)
 	}
 
-	// Check for updates in the background.
-
-	// Arm initialization synchronously before launching it so WaitForInit
-	// blocks for the in-flight init instead of racing the goroutine and
-	// returning before any MCP tools register.
-	mcp.ArmInit()
-	// Config-disabled servers the user enabled via Toggle MCPs have a
-	// repository-scoped enabled override; force-start them so the toggle
-	// survives restarts. A read failure only means the override is skipped.
-	var forceStart []string
-	if enabled, err := app.Sessions.MCPServersEnabled(ctx); err != nil {
-		slog.Warn("Failed to list enabled MCP overrides; config-disabled servers stay disabled", "error", err)
-	} else {
-		for _, name := range enabled {
-			if m, ok := store.Config().MCP[name]; ok && m.Disabled {
-				forceStart = append(forceStart, name)
-			}
-		}
-	}
-	// Servers disabled for this repository via Toggle MCPs are not started.
-	localDisabled, err := app.Sessions.MCPDisabledServers(ctx)
-	if err != nil {
-		slog.Warn("Failed to list disabled MCP overrides; starting them anyway", "error", err)
-	}
-	// Deck's agents run their own MCP servers; Deck starts none itself.
-	_, _ = forceStart, localDisabled
-
 	// Start herdr integration when running inside a herdr pane.
 	app.herdrClient = herdr.Init()
 	herdr.BridgeLocal(ctx, app.herdrClient, herdr.BridgeSources{
@@ -176,29 +134,6 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		func(context.Context) error { return db.Release(dataDir) },
 		func(ctx context.Context) error { return mcp.Close(ctx) },
 	)
-
-	// TODO: remove the concept of agent config, most likely.
-	if !cfg.IsConfigured() {
-		slog.Warn("No agent configuration found")
-		return app, nil
-	}
-	if err := app.InitCoderAgent(ctx); err != nil {
-		return nil, fmt.Errorf("failed to initialize coder agent: %w", err)
-	}
-
-	// Set up callback for LSP state updates.
-	app.LSPManager.SetCallback(func(name string, client *lsp.Client) {
-		if client == nil {
-			updateLSPState(name, lsp.StateUnstarted, nil, nil, 0)
-			return
-		}
-		client.SetDiagnosticsCallback(updateLSPDiagnostics)
-		updateLSPState(name, client.GetServerState(), nil, client, 0)
-	})
-
-	// TrackConfigured must run after SetCallback so the callback is already
-	// installed when configured-but-not-yet-started LSPs are announced.
-	go app.LSPManager.TrackConfigured(ctx)
 
 	return app, nil
 }
@@ -244,464 +179,6 @@ func (app *App) RunCompletions() *pubsub.Broker[notify.RunComplete] {
 // new, or select).
 func (app *App) ReportCurrentSession(sessionID string) {
 	app.herdrClient.SetSessionID(sessionID)
-}
-
-// resolveSession resolves which session to use for a non-interactive run
-// If continueSessionID is set, it looks up that session by ID
-// If useLast is set, it returns the most recently updated top-level session
-// Otherwise, it creates a new session
-func (app *App) resolveSession(ctx context.Context, continueSessionID string, useLast bool) (session.Session, error) {
-	switch {
-	case continueSessionID != "":
-		if app.Sessions.IsAgentToolSession(continueSessionID) {
-			return session.Session{}, fmt.Errorf("cannot continue an agent tool session: %s", continueSessionID)
-		}
-		sess, err := app.Sessions.Get(ctx, continueSessionID)
-		if err != nil {
-			return session.Session{}, fmt.Errorf("session not found: %s", continueSessionID)
-		}
-		if sess.ParentSessionID != "" {
-			return session.Session{}, fmt.Errorf("cannot continue a child session: %s", continueSessionID)
-		}
-		return sess, nil
-
-	case useLast:
-		sess, err := app.Sessions.GetLast(ctx)
-		if err != nil {
-			return session.Session{}, fmt.Errorf("no sessions found to continue")
-		}
-		return sess, nil
-
-	default:
-		return app.Sessions.Create(ctx, agent.DefaultSessionName)
-	}
-}
-
-// RunNonInteractive runs the application in non-interactive mode with the
-// given prompt, printing to stdout.
-func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt, largeModel, smallModel, reasoningEffort string, hideSpinner bool, continueSessionID string, useLast bool) error {
-	slog.Info("Running in non-interactive mode")
-
-	// Re-initialize the coder agent without interactive-only tools.
-	if err := app.InitCoderAgentNonInteractive(ctx); err != nil {
-		return fmt.Errorf("failed to reinitialize agent for non-interactive mode: %w", err)
-	}
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	if largeModel != "" || smallModel != "" {
-		if err := app.overrideModelsForNonInteractive(ctx, largeModel, smallModel); err != nil {
-			return fmt.Errorf("failed to override models: %w", err)
-		}
-	}
-
-	// The reasoning effort applies to the model that will actually run.
-	// On a continued session without an explicit model override, the
-	// model is resolved later from the session's last assistant message,
-	// so the override is applied after that restore instead.
-	deferredEffort := (continueSessionID != "" || useLast) && largeModel == "" && smallModel == ""
-	if reasoningEffort != "" && !deferredEffort {
-		if err := app.overrideReasoningEffort(ctx, reasoningEffort); err != nil {
-			return err
-		}
-	}
-
-	var (
-		spinner   *format.Spinner
-		stderrTTY bool
-		progress  bool
-	)
-
-	stderrTTY = term.IsTerminal(os.Stderr.Fd())
-	progress = app.config.Config().Options.Progress == nil || *app.config.Config().Options.Progress
-
-	if !hideSpinner && stderrTTY {
-		activeTheme := ""
-		if cfg := app.config.Config(); cfg != nil && cfg.Options != nil && cfg.Options.TUI != nil {
-			activeTheme = cfg.Options.TUI.ActiveTheme
-		}
-		t := styles.ThemeFromConfig(activeTheme)
-
-		spinner = format.NewSpinner(ctx, cancel, anim.Settings{
-			Size:        10,
-			Label:       "Generating",
-			GradColorA:  t.WorkingGradFromColor,
-			GradColorB:  t.WorkingGradToColor,
-			CycleColors: true,
-		})
-		spinner.Start()
-	}
-
-	// Helper function to stop spinner once.
-	stopSpinner := func() {
-		if !hideSpinner && spinner != nil {
-			spinner.Stop()
-			spinner = nil
-		}
-	}
-
-	// Non-interactive runs get a single shot at the tool palette, so wait for
-	// MCP initialization to settle before reading MCP tools. The coordinator
-	// waits again for the same reason (it is the gate the client/server path
-	// goes through); doing it here too surfaces the failure before we create a
-	// session, and lets the UpdateModels below see every MCP tool. The wait is
-	// bounded so a server wedged mid-handshake cannot stall the one-shot run
-	// for its full connect timeout; past the budget the run proceeds without
-	// the unfinished servers' tools.
-	if err := mcp.WaitForInitBudget(ctx, mcp.InitWaitBudget); err != nil {
-		return fmt.Errorf("failed to wait for MCP initialization: %w", err)
-	}
-
-	// force update of agent models before running so mcp tools are loaded
-	app.AgentCoordinator.UpdateModels(ctx)
-
-	defer stopSpinner()
-
-	sess, err := app.resolveSession(ctx, continueSessionID, useLast)
-	if err != nil {
-		return fmt.Errorf("failed to create session for non-interactive mode: %w", err)
-	}
-
-	if continueSessionID != "" || useLast {
-		slog.Info("Continuing session for non-interactive run", "session_id", sess.ID)
-		// If no explicit model override was requested, restore the
-		// model/provider from the last assistant message in the
-		// session, provided it is still available.
-		if largeModel == "" && smallModel == "" {
-			if err := app.restoreModelFromSession(ctx, sess.ID); err != nil {
-				slog.Warn("Failed to restore model from session", "error", err)
-			}
-		}
-	} else {
-		slog.Info("Created session for non-interactive run", "session_id", sess.ID)
-	}
-
-	if reasoningEffort != "" && deferredEffort {
-		if err := app.overrideReasoningEffort(ctx, reasoningEffort); err != nil {
-			return err
-		}
-	}
-
-	// Automatically approve all permission requests for this non-interactive
-	// session.
-	app.Permissions.AutoApproveSession(sess.ID)
-
-	// Report session identity to herdr.
-	app.ReportCurrentSession(sess.ID)
-
-	type response struct {
-		result *fantasy.AgentResult
-		err    error
-	}
-	done := make(chan response, 1)
-
-	go func(ctx context.Context, sessionID, prompt string) {
-		result, err := app.AgentCoordinator.Run(ctx, sess.ID, prompt)
-		if err != nil {
-			done <- response{
-				err: fmt.Errorf("failed to start agent processing stream: %w", err),
-			}
-			return
-		}
-		done <- response{
-			result: result,
-		}
-	}(ctx, sess.ID, prompt)
-
-	messageEvents := app.Messages.Subscribe(ctx)
-	messageReadBytes := make(map[string]int)
-	var printed bool
-
-	defer func() {
-		if progress && stderrTTY {
-			_, _ = fmt.Fprintf(os.Stderr, ansi.ResetProgressBar)
-		}
-
-		// Always print a newline at the end. If output is a TTY this will
-		// prevent the prompt from overwriting the last line of output.
-		_, _ = fmt.Fprintln(output)
-	}()
-
-	for {
-		if progress && stderrTTY {
-			// HACK: Reinitialize the terminal progress bar on every iteration
-			// so it doesn't get hidden by the terminal due to inactivity.
-			_, _ = fmt.Fprintf(os.Stderr, ansi.SetIndeterminateProgressBar)
-		}
-
-		select {
-		case result := <-done:
-			stopSpinner()
-			if result.err != nil {
-				if errors.Is(result.err, context.Canceled) || errors.Is(result.err, agent.ErrRequestCancelled) {
-					slog.Debug("Non-interactive: agent processing cancelled", "session_id", sess.ID)
-					return nil
-				}
-				return fmt.Errorf("agent processing failed: %w", result.err)
-			}
-			return nil
-
-		case event := <-messageEvents:
-			msg := event.Payload
-			if msg.SessionID == sess.ID && msg.Role == message.Assistant && len(msg.Parts) > 0 {
-				stopSpinner()
-
-				content := msg.Content().String()
-				readBytes := messageReadBytes[msg.ID]
-
-				if len(content) < readBytes {
-					slog.Error("Non-interactive: message content is shorter than read bytes", "message_length", len(content), "read_bytes", readBytes)
-					return fmt.Errorf("message content is shorter than read bytes: %d < %d", len(content), readBytes)
-				}
-
-				part := content[readBytes:]
-				// Trim leading whitespace. Sometimes the LLM includes leading
-				// formatting and intentation, which we don't want here.
-				if readBytes == 0 {
-					part = strings.TrimLeft(part, " \t")
-				}
-				// Ignore initial whitespace-only messages.
-				if printed || strings.TrimSpace(part) != "" {
-					printed = true
-					fmt.Fprint(output, part)
-				}
-				messageReadBytes[msg.ID] = len(content)
-			}
-
-		case <-ctx.Done():
-			stopSpinner()
-			return ctx.Err()
-		}
-	}
-}
-
-func (app *App) UpdateAgentModel(ctx context.Context) error {
-	if app.AgentCoordinator == nil {
-		return fmt.Errorf("agent configuration is missing")
-	}
-	return app.AgentCoordinator.UpdateModels(ctx)
-}
-
-// restoreModelFromSession reads the last assistant message in the
-// session and, if it used a different provider/model than the current
-// config, overrides the preferred model in-memory (non-persistent)
-// provided the provider/model is still available. This ensures that
-// continuing a session uses the same model that produced the last
-// response.
-func (app *App) restoreModelFromSession(ctx context.Context, sessionID string) error {
-	lastMsg, err := app.Messages.GetLastAssistantMessage(ctx, sessionID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		return fmt.Errorf("failed to get last assistant message: %w", err)
-	}
-	if lastMsg.Provider == "" || lastMsg.Model == "" {
-		return nil
-	}
-
-	cfg := app.config.Config()
-	currentLarge := cfg.Models[config.SelectedModelTypeLarge]
-	if currentLarge.Provider == lastMsg.Provider && currentLarge.Model == lastMsg.Model {
-		return nil
-	}
-
-	if !cfg.IsModelAvailable(lastMsg.Provider, lastMsg.Model) {
-		slog.Debug("Skipping model restoration: provider/model not available",
-			"provider", lastMsg.Provider,
-			"model", lastMsg.Model)
-		return nil
-	}
-
-	app.config.OverridePreferredModel(config.SelectedModelTypeLarge, config.SelectedModel{
-		Provider: lastMsg.Provider,
-		Model:    lastMsg.Model,
-	})
-	if _, ok := cfg.Models[config.SelectedModelTypeSmall]; !ok {
-		smallModel := app.GetDefaultSmallModel(lastMsg.Provider)
-		app.config.OverridePreferredModel(config.SelectedModelTypeSmall, smallModel)
-	}
-	if err := app.AgentCoordinator.UpdateModels(ctx); err != nil {
-		return fmt.Errorf("failed to update agent models: %w", err)
-	}
-	slog.Info("Restored model from session",
-		"provider", lastMsg.Provider,
-		"model", lastMsg.Model)
-	return nil
-}
-
-// overrideModelsForNonInteractive parses the model strings and temporarily
-// overrides the model configurations, then rebuilds the agent.
-// Format: "model-name" (searches all providers) or "provider/model-name".
-// Model matching is case-insensitive.
-// If largeModel is provided but smallModel is not, the small model defaults to
-// the provider's default small model.
-func (app *App) overrideModelsForNonInteractive(ctx context.Context, largeModel, smallModel string) error {
-	providers := app.config.Config().Providers.Copy()
-
-	largeMatches, smallMatches, err := findModels(providers, largeModel, smallModel)
-	if err != nil {
-		return err
-	}
-
-	var largeProviderID string
-
-	// Override large model.
-	if largeModel != "" {
-		found, err := validateMatches(largeMatches, largeModel, "large")
-		if err != nil {
-			return err
-		}
-		largeProviderID = found.provider
-		slog.Info("Overriding large model for non-interactive run", "provider", found.provider, "model", found.modelID)
-		app.config.OverridePreferredModel(config.SelectedModelTypeLarge, config.SelectedModel{
-			Provider: found.provider,
-			Model:    found.modelID,
-		})
-	}
-
-	// Override small model.
-	switch {
-	case smallModel != "":
-		found, err := validateMatches(smallMatches, smallModel, "small")
-		if err != nil {
-			return err
-		}
-		slog.Info("Overriding small model for non-interactive run", "provider", found.provider, "model", found.modelID)
-		app.config.OverridePreferredModel(config.SelectedModelTypeSmall, config.SelectedModel{
-			Provider: found.provider,
-			Model:    found.modelID,
-		})
-
-	case largeModel != "":
-		// No small model specified, but large model was - use provider's default.
-		smallCfg := app.GetDefaultSmallModel(largeProviderID)
-		app.config.OverridePreferredModel(config.SelectedModelTypeSmall, smallCfg)
-	}
-
-	return app.AgentCoordinator.UpdateModels(ctx)
-}
-
-// overrideReasoningEffort validates the requested reasoning effort against
-// the large model in effect for this run (which may have been overridden by
-// --model or restored from a continued session) and applies it as an
-// in-memory override.
-func (app *App) overrideReasoningEffort(ctx context.Context, reasoningEffort string) error {
-	cfg := app.config.Config()
-	selected, ok := cfg.Models[config.SelectedModelTypeLarge]
-	if !ok {
-		return fmt.Errorf("no large model selected; set one with the --model flag or 'model large'")
-	}
-	if err := cfg.ValidateReasoningEffort(selected.Provider, selected.Model, reasoningEffort); err != nil {
-		return err
-	}
-	selected.ReasoningEffort = reasoningEffort
-	slog.Info("Overriding reasoning effort for non-interactive run",
-		"provider", selected.Provider,
-		"model", selected.Model,
-		"reasoning_effort", reasoningEffort)
-	app.config.OverridePreferredModel(config.SelectedModelTypeLarge, selected)
-	return app.AgentCoordinator.UpdateModels(ctx)
-}
-
-// GetDefaultSmallModel returns the default small model for the given
-// provider. Falls back to the large model if no default is found.
-func (app *App) GetDefaultSmallModel(providerID string) config.SelectedModel {
-	cfg := app.config.Config()
-	largeModelCfg := cfg.Models[config.SelectedModelTypeLarge]
-
-	// Find the provider in the known providers list to get its default small model.
-	knownProviders, _ := config.Providers(cfg)
-	var knownProvider *catwalk.Provider
-	for _, p := range knownProviders {
-		if string(p.ID) == providerID {
-			knownProvider = &p
-			break
-		}
-	}
-
-	// For unknown/local providers, use the large model as small.
-	if knownProvider == nil {
-		slog.Warn("Using large model as small model for unknown provider", "provider", providerID, "model", largeModelCfg.Model)
-		return largeModelCfg
-	}
-
-	defaultSmallModelID := knownProvider.DefaultSmallModelID
-	model := cfg.GetModel(providerID, defaultSmallModelID)
-	if model == nil {
-		slog.Warn("Default small model not found, using large model", "provider", providerID, "model", largeModelCfg.Model)
-		return largeModelCfg
-	}
-
-	// A subscription-authenticated provider only serves the models its
-	// subscription grants, so the default small model must come from that
-	// catalog as well. This applies to ChatGPT-authenticated OpenAI and
-	// Grok-authenticated xAI alike.
-	if largeModelCfg.Provider == providerID {
-		var pick func(config.ProviderConfig) *catwalk.Model
-		switch providerID {
-		case string(catwalk.InferenceProviderOpenAI):
-			pick = chatGPTSmallModel
-		case string(catwalk.InferenceProviderXAI):
-			pick = grokSmallModel
-		}
-		if pick != nil {
-			if pc, ok := cfg.Providers.Get(providerID); ok && pc.OAuthToken != nil {
-				if small := pick(pc); small != nil {
-					return config.SelectedModel{
-						Provider:        providerID,
-						Model:           small.ID,
-						MaxTokens:       small.DefaultMaxTokens,
-						ReasoningEffort: small.DefaultReasoningEffort,
-					}
-				}
-				return largeModelCfg
-			}
-		}
-	}
-
-	slog.Info("Using provider default small model", "provider", providerID, "model", defaultSmallModelID)
-	return config.SelectedModel{
-		Provider:        providerID,
-		Model:           defaultSmallModelID,
-		MaxTokens:       model.DefaultMaxTokens,
-		ReasoningEffort: model.DefaultReasoningEffort,
-	}
-}
-
-// chatGPTSmallModel picks a lightweight model from the ChatGPT catalog,
-// preferring a "mini" variant and falling back to the last entry (the
-// catalog lists heavier models first). Returns nil when the catalog is
-// empty.
-func chatGPTSmallModel(pc config.ProviderConfig) *catwalk.Model {
-	for i := range pc.ChatGPTModels {
-		if strings.Contains(pc.ChatGPTModels[i].ID, "mini") {
-			return &pc.ChatGPTModels[i]
-		}
-	}
-	if len(pc.ChatGPTModels) > 0 {
-		return &pc.ChatGPTModels[len(pc.ChatGPTModels)-1]
-	}
-	return nil
-}
-
-// grokSmallModel picks a lightweight model from the Grok catalog,
-// preferring a "fast" or "mini" variant and falling back to the last
-// entry (the catalog lists heavier models first). Returns nil when the
-// catalog is empty.
-func grokSmallModel(pc config.ProviderConfig) *catwalk.Model {
-	for _, marker := range []string{"fast", "mini"} {
-		for i := range pc.GrokModels {
-			if strings.Contains(pc.GrokModels[i].ID, marker) {
-				return &pc.GrokModels[i]
-			}
-		}
-	}
-	if len(pc.GrokModels) > 0 {
-		return &pc.GrokModels[len(pc.GrokModels)-1]
-	}
-	return nil
 }
 
 func (app *App) setupEvents() {
@@ -820,43 +297,6 @@ func (app *App) subscribeMustDeliver[T any](
 	})
 }
 
-func (app *App) InitCoderAgent(ctx context.Context) error {
-	return app.initCoderAgent(ctx, true)
-}
-
-// InitCoderAgentNonInteractive initializes the coder agent without
-// interactive-only tools (e.g. question).
-func (app *App) InitCoderAgentNonInteractive(ctx context.Context) error {
-	return app.initCoderAgent(ctx, false)
-}
-
-func (app *App) initCoderAgent(ctx context.Context, interactive bool) error {
-	coderAgentCfg := app.config.Config().Agents[config.AgentCoder]
-	if coderAgentCfg.ID == "" {
-		return fmt.Errorf("coder agent configuration is missing")
-	}
-	var err error
-	app.AgentCoordinator, err = agent.NewCoordinator(ctx, agent.CoordinatorOptions{
-		Config:      app.config,
-		Sessions:    app.Sessions,
-		Messages:    app.Messages,
-		Permissions: app.Permissions,
-		Questions:   app.Questions,
-		History:     app.History,
-		FileTracker: app.FileTracker,
-		LSPManager:  app.LSPManager,
-		Notify:      app.agentNotifications,
-		RunComplete: app.runCompletions,
-		Skills:      app.Skills,
-		Interactive: interactive,
-	})
-	if err != nil {
-		slog.Error("Failed to create coder agent", "err", err)
-		return err
-	}
-	return nil
-}
-
 // Subscribe sends events to the TUI as tea.Msgs.
 func (app *App) Subscribe(program *tea.Program) {
 	defer log.RecoverPanic("app.Subscribe", func() {
@@ -894,12 +334,6 @@ func (app *App) Subscribe(program *tea.Program) {
 func (app *App) Shutdown() {
 	start := time.Now()
 	defer func() { slog.Debug("Shutdown took " + time.Since(start).String()) }()
-
-	// First, cancel all agents and wait for them to finish. This must complete
-	// before closing the DB so agents can finish writing their state.
-	if app.AgentCoordinator != nil {
-		app.AgentCoordinator.CancelAll()
-	}
 
 	// Shared shutdown context for all timeout-bounded cleanup.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -947,4 +381,3 @@ func (app *App) Shutdown() {
 	}
 	wg.Wait()
 }
-

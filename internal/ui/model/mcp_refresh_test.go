@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dev-dami/deck/internal/agent/tools/mcp"
+	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/pubsub"
 	"github.com/dev-dami/deck/internal/ui/dialog"
 	"github.com/dev-dami/deck/internal/workspace"

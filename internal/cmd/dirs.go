@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/charmbracelet/x/term"
 	"github.com/dev-dami/deck/internal/config"
+	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/spf13/cobra"
 )
 

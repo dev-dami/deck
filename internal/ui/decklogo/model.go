@@ -24,8 +24,6 @@ package decklogo
 import (
 	"math"
 	"time"
-
-
 )
 
 // Effect parameters. Tune here.

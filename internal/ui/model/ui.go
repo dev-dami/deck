@@ -31,9 +31,9 @@ import (
 	"github.com/charmbracelet/ultraviolet/screen"
 	"github.com/charmbracelet/x/editor"
 	xstrings "github.com/charmbracelet/x/exp/strings"
-	"github.com/dev-dami/deck/internal/agent/notify"
-	agenttools "github.com/dev-dami/deck/internal/agent/tools"
-	"github.com/dev-dami/deck/internal/agent/tools/mcp"
+	"github.com/dev-dami/deck/internal/notify"
+
+	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/app"
 	"github.com/dev-dami/deck/internal/clipboard"
 	"github.com/dev-dami/deck/internal/commands"
@@ -5488,7 +5488,6 @@ func (m *UI) newSession() tea.Cmd {
 	m.invalidatePromptQueue()
 	m.pillsView = ""
 	m.historyReset()
-	agenttools.ResetCache()
 	return tea.Batch(
 		planCmd,
 		func() tea.Msg {

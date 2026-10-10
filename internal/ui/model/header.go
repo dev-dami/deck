@@ -2,8 +2,8 @@ package model
 
 import (
 	"fmt"
-	"strings"
 	"image"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -17,8 +17,8 @@ import (
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/decklogo"
 	"github.com/dev-dami/deck/internal/ui/logo"
-	"github.com/dev-dami/deck/internal/version"
 	"github.com/dev-dami/deck/internal/ui/styles"
+	"github.com/dev-dami/deck/internal/version"
 )
 
 const (

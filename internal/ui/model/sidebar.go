@@ -7,9 +7,9 @@ import (
 
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/ultraviolet/layout"
-	mcp "github.com/dev-dami/deck/internal/agent/tools/mcp"
+	"github.com/charmbracelet/x/ansi"
+	mcp "github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/logo"

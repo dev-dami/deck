@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dev-dami/deck/internal/agent/notify"
+	"github.com/dev-dami/deck/internal/notify"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/pubsub"
 	"github.com/dev-dami/deck/internal/question"

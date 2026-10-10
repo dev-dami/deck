@@ -20,10 +20,10 @@ import (
 )
 
 const (
-	CheckIcon       string = "✓"
-	SpinnerIcon     string = "⋯"
-	LoadingIcon     string = "⟳"
-	ModelIcon       string = "◇"
+	CheckIcon   string = "✓"
+	SpinnerIcon string = "⋯"
+	LoadingIcon string = "⟳"
+	ModelIcon   string = "◇"
 
 	ArrowRightIcon string = "→"
 

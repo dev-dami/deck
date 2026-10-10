@@ -16,7 +16,6 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/dev-dami/deck/internal/csync"
 	"github.com/dev-dami/deck/internal/oauth"
-	"github.com/dev-dami/deck/internal/oauth/copilot"
 	"github.com/invopop/jsonschema"
 )
 
@@ -191,9 +190,8 @@ func (c *ProviderConfig) ToProvider() catwalk.Provider {
 	return provider
 }
 
-func (c *ProviderConfig) SetupGitHubCopilot() {
-	maps.Copy(c.ExtraHeaders, copilot.Headers())
-}
+// SetupGitHubCopilot does nothing: Deck signs in to no model provider.
+func (c *ProviderConfig) SetupGitHubCopilot() {}
 
 // HasAPIKey reports whether the provider's api_key resolves to a usable
 // credential. The stored value is often an unresolved template like

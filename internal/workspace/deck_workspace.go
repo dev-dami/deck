@@ -14,8 +14,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
 
-	"github.com/dev-dami/deck/internal/agent/notify"
-	"github.com/dev-dami/deck/internal/agent/tools"
+	"github.com/dev-dami/deck/internal/notify"
+	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/app"
 	"github.com/dev-dami/deck/internal/config"
 	deckagent "github.com/dev-dami/deck/internal/deck/agent"
@@ -48,7 +48,7 @@ type DeckWorkspace struct {
 	approvals map[string]context.CancelFunc
 	last      deckagent.Event // the most recent agent event, for AgentModel
 
-	prog *tea.Program   // where busy/idle edges are sent
+	prog *tea.Program    // where busy/idle edges are sent
 	busy map[string]bool // last busy state sent, by session
 }
 

@@ -30,7 +30,7 @@ func SkipHidden(path string) bool {
 	}
 
 	commonIgnoredDirs := map[string]bool{
-		".deck":           true,
+		".deck":            true,
 		"node_modules":     true,
 		"vendor":           true,
 		"dist":             true,

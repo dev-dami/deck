@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/dev-dami/deck/internal/agent/notify"
+	"github.com/dev-dami/deck/internal/notify"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/proto"

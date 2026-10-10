@@ -7,11 +7,11 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/ui/logo"
 	"github.com/dev-dami/deck/internal/ui/styles"
+	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/dev-dami/deck/internal/version"
 )
 

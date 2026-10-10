@@ -1,3 +1,0 @@
-test file for grep
-I wanna grep THIS particular word
-and nothing else

@@ -282,18 +282,18 @@ func gruvboxDarkOverrides(s Styles) Styles {
 
 // builtinThemes maps theme names to their quickStyleOpts palette definitions.
 var builtinThemes = map[string]func() quickStyleOpts{
-	"deck":       deckDarkOpts,
-	"deck-light": deckLightOpts,
-	"gruvbox-dark":      gruvboxDarkOpts,
+	"deck":         deckDarkOpts,
+	"deck-light":   deckLightOpts,
+	"gruvbox-dark": gruvboxDarkOpts,
 }
 
 // builtinThemeOverrides maps theme names to functions that apply
 // theme-specific style tweaks on top of the styles produced by
 // [quickStyle]. Themes without overrides are absent from the map.
 var builtinThemeOverrides = map[string]func(Styles) Styles{
-	"deck":       deckOverrides,
-	"deck-light": deckOverrides,
-	"gruvbox-dark":      gruvboxDarkOverrides,
+	"deck":         deckOverrides,
+	"deck-light":   deckOverrides,
+	"gruvbox-dark": gruvboxDarkOverrides,
 }
 
 // deprecatedThemeNames maps legacy built-in theme names to their current
