@@ -261,3 +261,24 @@ func TestLoginHintSkipsAddressesAndTruncates(t *testing.T) {
 		t.Errorf("truncated hint %q lacks ellipsis", got)
 	}
 }
+
+func TestLogosSitBesideEachCLIsLine(t *testing.T) {
+	r := &fakeRunner{results: map[string]result{}}
+	opts := baseOptions(t, r)
+	opts.Logo = func(kind string) string { return "<" + kind + " logo>" }
+	out := runReport(t, opts)
+	for _, kind := range []string{"claude", "codex"} {
+		want := "\n\n\x1b[2A\x1b7<" + kind + " logo>\x1b8\x1b[6C"
+		i := strings.Index(out, want)
+		if i < 0 {
+			t.Fatalf("no logo block for %s in %q", kind, out)
+		}
+		if !strings.Contains(out[i:], kind) {
+			t.Fatalf("%s's line does not follow its logo", kind)
+		}
+	}
+	opts.Logo = func(string) string { return "" }
+	if strings.Contains(runReport(t, opts), "\x1b7") {
+		t.Fatal("without logos the report is plain text")
+	}
+}

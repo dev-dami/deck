@@ -21,8 +21,10 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/dev-dami/deck/internal/brand"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/store"
+	"github.com/dev-dami/deck/internal/termimg"
 )
 
 // Runner runs external commands. Tests inject a fake; Run uses the real one.
@@ -45,6 +47,9 @@ type Options struct {
 	Timeout      time.Duration
 	// Terminal reports the output terminal's size and whether it is a TTY.
 	Terminal func() (cols, rows int, tty bool)
+	// Logo returns the escape sequence that draws a CLI's logo (logoCols x
+	// logoRows cells) at the cursor, or "" when the terminal cannot.
+	Logo func(kind string) string
 
 	configErr error
 }
@@ -64,6 +69,7 @@ func DefaultOptions() Options {
 		CodexBinary:  "codex",
 		Timeout:      10 * time.Second,
 		Terminal:     stdoutTerminal,
+		Logo:         terminalLogo,
 	}
 	if p, err := config.Path(); err == nil {
 		opts.ConfigPath = p
@@ -99,20 +105,20 @@ func RunWith(ctx context.Context, w io.Writer, opts Options) error {
 
 	var b strings.Builder
 	b.WriteString("deck doctor\n\n")
-	b.WriteString(checkAgent(ctx, opts, agentSpec{
+	b.WriteString(withLogo(opts, "claude", checkAgent(ctx, opts, agentSpec{
 		name:       "claude",
 		binary:     opts.ClaudeBinary,
 		helpWord:   authWord,
 		statusArgs: []string{"auth", "status"},
 		install:    "npm install -g @anthropic-ai/claude-code",
-	}))
-	b.WriteString(checkAgent(ctx, opts, agentSpec{
+	})))
+	b.WriteString(withLogo(opts, "codex", checkAgent(ctx, opts, agentSpec{
 		name:       "codex",
 		binary:     opts.CodexBinary,
 		helpWord:   loginWord,
 		statusArgs: []string{"login", "status"},
 		install:    "npm install -g @openai/codex",
-	}))
+	})))
 	b.WriteString("\n")
 
 	b.WriteString(configLine(opts))
@@ -274,4 +280,36 @@ func (execRunner) Run(ctx context.Context, path string, args ...string) (string,
 		return string(out), exitErr.ExitCode(), nil
 	}
 	return string(out), -1, err
+}
+
+// The logo beside each CLI's line, in cells.
+const logoCols, logoRows = 4, 2
+
+// withLogo puts a CLI's logo to the left of its report line: two rows are
+// reserved, the logo is drawn at their start, and the line is written beside
+// it. Without a logo the line is unchanged.
+func withLogo(opts Options, kind, line string) string {
+	if opts.Logo == nil {
+		return line
+	}
+	logo := opts.Logo(kind)
+	if logo == "" {
+		return line
+	}
+	return strings.Repeat("\n", logoRows) + fmt.Sprintf("\x1b[%dA\x1b7", logoRows) + logo +
+		fmt.Sprintf("\x1b8\x1b[%dC", logoCols+2) + strings.TrimSuffix(line, "\n") + strings.Repeat("\n", logoRows)
+}
+
+// terminalLogo draws the real logo when stdout is a terminal that can show
+// images.
+func terminalLogo(kind string) string {
+	if _, _, tty := stdoutTerminal(); !tty {
+		return ""
+	}
+	p := termimg.Detect(os.Getenv)
+	img, ok := brand.Logo(kind)
+	if p == termimg.None || !ok {
+		return ""
+	}
+	return termimg.Draw(p, img, logoCols, logoRows)
 }

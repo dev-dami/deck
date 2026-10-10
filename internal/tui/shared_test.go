@@ -8,9 +8,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dev-dami/deck/internal/agent"
-	"github.com/dev-dami/deck/internal/tui/theme"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/tui/motion"
+	"github.com/dev-dami/deck/internal/tui/theme"
 )
 
 func say(run *stubRun, r *rig, text string) {

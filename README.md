@@ -79,6 +79,8 @@ Commands: `/new`, `/resume`, `/model`, `/cd <path>`, `/name <name>`, `/changes`,
 
 `DECK_REDUCED_MOTION=1` turns animations off.
 
+Agents are drawn with their own CLI's mark: Claude Code's `✻` and Codex CLI's `>_`. Terminals that can show images get the real logos: inside Deck in Kitty and Ghostty, and in `deck doctor` there as well as in Windows Terminal (Sixel), iTerm2 and WezTerm. `DECK_IMAGES=off` turns them off; `DECK_IMAGES=kitty|sixel|iterm` picks a protocol by hand.
+
 ## How it works
 
 Deck never calls a model API and never touches your credentials. It starts your CLIs as child processes and reads their structured output: `claude -p` with stream-json, and `codex app-server` over JSON-RPC. Approvals and agent messages travel through a small MCP helper (`deck mcp-approve`) to Deck over loopback, authenticated with a per-run token. Usage counts against your own Claude and Codex plans.

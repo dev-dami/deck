@@ -13,6 +13,7 @@ import (
 	"github.com/dev-dami/deck/internal/clipimg"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/session"
+	"github.com/dev-dami/deck/internal/termimg"
 	"github.com/dev-dami/deck/internal/tui/logo"
 	"github.com/dev-dami/deck/internal/tui/motion"
 	"github.com/dev-dami/deck/internal/tui/theme"
@@ -40,6 +41,9 @@ type Options struct {
 	// Notify raises a desktop notification. Default: OSC 777 and OSC 9 to
 	// stdout, which terminals that support them turn into one.
 	Notify func(title, body string) tea.Cmd
+	// Images is how the terminal draws pictures. With kitty graphics the
+	// agents' marks are their real logos. Default: none (text marks).
+	Images termimg.Protocol
 	// Dir is the working directory for new threads. Default: os.Getwd.
 	Dir string
 	// KeyClock stamps key presses for paste-burst detection. Default: time.Now.
@@ -127,8 +131,10 @@ type model struct {
 	wantFiles    string    // a folder whose files the menu is waiting for
 	unisoArm     time.Time // a refused /unisolate, waiting for the second
 	unisoThread  string
-	winTitle     string // the terminal title last set
-	blurred      bool   // the terminal window does not have focus
+	kittyIDs     map[string]uint32 // agent kind -> its logo's image id (logos.go)
+	kittyPending bool              // the logos still have to be sent
+	winTitle     string            // the terminal title last set
+	blurred      bool              // the terminal window does not have focus
 	clipSave     func(ctx context.Context, dir string) (string, error)
 	clipWarned   bool
 	queue        map[string][]session.QueuedItem
@@ -148,7 +154,7 @@ type model struct {
 
 // New returns the Deck app model.
 func New(m *session.Manager, cfg config.Config) tea.Model {
-	return NewWithOptions(m, cfg, Options{})
+	return NewWithOptions(m, cfg, Options{Images: termimg.Detect(os.Getenv)})
 }
 
 // NewWithOptions is New with overrides.
@@ -211,6 +217,7 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 		w:            80,
 		h:            24,
 	}
+	m.setupLogos(opts.Images)
 	m.menu.h = motion.Soft.New(60)
 	m.ov.h = motion.Soft.New(60)
 	m.pick.h = motion.Soft.New(60)
@@ -680,6 +687,10 @@ func (m *model) View() string {
 	rows = append(rows, m.footerLine(g))
 	for i, r := range rows {
 		rows[i] = trunc(r, m.w)
+	}
+	if m.kittyPending && len(rows) > 0 { // send the logos once, on this screen
+		m.kittyPending = false
+		rows[0] = m.kittyTransmit() + rows[0]
 	}
 	screen := strings.Join(rows, "\n")
 	if m.fightShown() { // switching to yolo: the blast wave covers the whole screen

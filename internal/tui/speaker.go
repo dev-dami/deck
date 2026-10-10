@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dev-dami/deck/internal/session"
+	"github.com/dev-dami/deck/internal/termimg"
 	"github.com/dev-dami/deck/internal/tui/motion"
 	"github.com/dev-dami/deck/internal/tui/theme"
 )
@@ -69,8 +70,12 @@ func (m *model) speakerLabel(id string, w int) string {
 	return mark + " " + ts.Bold(true).Render(trunc(m.agentName(id), max(1, w-sw(mark)-1)))
 }
 
-// markR is an agent kind's mark (✻, >_) in style st.
+// markR is an agent kind's mark (✻, >_) in style st, or its real logo where
+// the terminal keeps images in text cells (kitty graphics).
 func (m *model) markR(kind string, st lipgloss.Style) string {
+	if id := m.kittyIDs[kind]; id != 0 {
+		return termimg.KittyMark(id, logoCells)
+	}
 	return st.Render(theme.Mark(kind))
 }
 
