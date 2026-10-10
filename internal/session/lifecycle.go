@@ -116,6 +116,10 @@ func (m *Manager) Delete(threadID string) error {
 			}
 		})
 	}
+	t.mu.Lock()
+	wt := t.worktree
+	t.mu.Unlock()
+	m.dropWorktree(wt)
 	m.emit(ThreadChangedMsg{ThreadID: threadID, Gone: true})
 	return nil
 }

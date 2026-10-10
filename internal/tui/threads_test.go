@@ -292,3 +292,34 @@ func TestAtFileMentionsComplete(t *testing.T) {
 		t.Fatalf("a bare top-level name gets ./ so it is not an agent: %q", v)
 	}
 }
+
+func TestIsolateShowsTheBranchAndUnisolateAsksAboutUnappliedWork(t *testing.T) {
+	repo := gitRepo(t)
+	r := changesRig(t, repo)
+	r.begin("fix a")
+	r.say("/isolate")
+	r.gitWait("isolated", func() bool { th, _ := r.m.selThread(); return th.Branch != "" })
+	th, _ := r.m.selThread()
+	if !r.has(glyphBranch + " " + th.Branch) {
+		t.Fatalf("the chip line shows the branch:\n%s", r.view())
+	}
+	put(t, th.Dir, "a.txt", "ONE\ntwo\n")
+
+	r.say("/unisolate")
+	r.gitWait("the refusal", func() bool { return strings.Contains(r.m.toast.text, "not applied") })
+	if th, _ := r.m.selThread(); th.Branch == "" {
+		t.Fatal("one /unisolate with unapplied work must not drop it")
+	}
+
+	r.say("/apply")
+	r.gitWait("applied", func() bool { return strings.Contains(r.m.toast.text, "applied 1 file") })
+	if b, _ := os.ReadFile(filepath.Join(repo, "a.txt")); string(b) != "ONE\ntwo\n" {
+		t.Fatalf("shared a.txt = %q", b)
+	}
+
+	r.say("/unisolate")
+	r.gitWait("back", func() bool { return strings.Contains(r.m.toast.text, "shared tree") })
+	if th, _ := r.m.selThread(); th.Branch != "" || th.Dir != filepath.Clean(repo) {
+		t.Fatalf("back = %+v", th)
+	}
+}

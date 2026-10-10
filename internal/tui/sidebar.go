@@ -180,6 +180,9 @@ func (m *model) sidebarLines(g geom, rows int) []string {
 			costW = sw(cost) + 1
 		}
 		marks := ""
+		if t.Branch != "" {
+			marks += " " + sFaint.Render(glyphBranch)
+		}
 		if t.Pinned {
 			marks += " " + sFaint.Render(glyphPinned)
 		}

@@ -21,6 +21,9 @@ var Commands = []struct{ Name, Args, Desc string }{
 	{"delete", "", "delete this thread for good (asks twice)"},
 	{"fork", "", "copy this thread into a new one; f on a message forks there"},
 	{"move", "<path>", "move this thread to another folder"},
+	{"isolate", "", "give this thread its own git worktree and branch"},
+	{"apply", "", "bring an isolated thread's changes into your tree"},
+	{"unisolate", "", "back to the shared tree; removes the worktree"},
 }
 
 func isCommand(name string) bool {

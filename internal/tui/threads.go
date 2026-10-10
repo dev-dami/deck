@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -410,6 +411,10 @@ type movedMsg struct {
 	info    session.ThreadInfo
 	history []tea.Msg
 	err     error
+	note    string // the toast instead of "moved to …"
+	// a refused /unisolate arms the second one
+	refusedAt time.Time
+	thread    string
 }
 
 func (m *model) moveCmd(dir string) []tea.Cmd {
@@ -426,6 +431,11 @@ func (m *model) moveCmd(dir string) []tea.Cmd {
 
 // onMoved redraws the moved thread from its history (its agents restarted).
 func (m *model) onMoved(msg movedMsg) []tea.Cmd {
+	var ue session.UnappliedError
+	if errors.As(msg.err, &ue) {
+		m.unisoArm, m.unisoThread = msg.refusedAt, msg.thread
+		return []tea.Cmd{m.toast.showWarn(plural(ue.Files, "changed file", "changed files")+" not applied · /apply first, or /unisolate again to drop them", m.now)}
+	}
 	if msg.err != nil {
 		return []tea.Cmd{m.toast.show(msg.err.Error(), true, m.now)}
 	}
@@ -438,5 +448,62 @@ func (m *model) onMoved(msg movedMsg) []tea.Cmd {
 	if len(msg.info.Members) > 0 {
 		text += " · agents start fresh there, briefed on the thread"
 	}
+	if msg.note != "" {
+		text = msg.note
+	}
 	return []tea.Cmd{m.toast.show(text, false, m.now)}
+}
+
+// glyphBranch marks an isolated thread (its own worktree and branch).
+const glyphBranch = "⑂"
+
+// appliedMsg is the result of ApplyIsolated.
+type appliedMsg struct {
+	files []string
+	err   error
+}
+
+// unisolateArmFor is how long a refused /unisolate waits for the second.
+const unisolateArmFor = 5 * time.Second
+
+// isolateCommand runs /isolate, /apply and /unisolate. Git can take a moment,
+// so each runs as a command; isolate and unisolate come back as a move.
+func (m *model) isolateCommand(name string) []tea.Cmd {
+	th, ok := m.selThread()
+	if !ok {
+		return []tea.Cmd{m.toast.show("no thread selected", true, m.now)}
+	}
+	mgr, id := m.mgr, th.ID
+	switch name {
+	case "isolate":
+		return []tea.Cmd{
+			m.toast.show("making a worktree…", false, m.now),
+			func() tea.Msg {
+				info, hist, err := mgr.Isolate(id)
+				return movedMsg{info: info, history: hist, err: err, note: "isolated on " + info.Branch + " · from your last commit; /apply brings changes back"}
+			},
+		}
+	case "apply":
+		return []tea.Cmd{func() tea.Msg {
+			files, err := mgr.ApplyIsolated(id)
+			return appliedMsg{files: files, err: err}
+		}}
+	}
+	discard := !m.unisoArm.IsZero() && m.now.Sub(m.unisoArm) < unisolateArmFor && m.unisoThread == id
+	m.unisoArm = time.Time{}
+	now := m.now
+	return []tea.Cmd{func() tea.Msg {
+		info, hist, err := mgr.Unisolate(id, discard)
+		return movedMsg{info: info, history: hist, err: err, note: "back on the shared tree · worktree removed", refusedAt: now, thread: id}
+	}}
+}
+
+func (m *model) onApplied(msg appliedMsg) []tea.Cmd {
+	switch {
+	case msg.err != nil:
+		return []tea.Cmd{m.toast.show(msg.err.Error(), true, m.now)}
+	case len(msg.files) == 0:
+		return []tea.Cmd{m.toast.show("nothing new to apply", false, m.now)}
+	}
+	return []tea.Cmd{m.toast.show("applied "+plural(len(msg.files), "file", "files")+" to your tree, uncommitted", false, m.now)}
 }

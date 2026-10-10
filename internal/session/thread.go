@@ -42,6 +42,8 @@ type thread struct {
 	// gone is set when the thread leaves the live set (archive, delete, move):
 	// its old agents' late events, approvals and store writes are dropped.
 	gone atomic.Bool
+	// worktree is set while the thread is isolated (lifecycle.go).
+	worktree *store.Worktree
 
 	// Queue of user messages waiting for busy members (queue.go), guarded by mu.
 	queue  []qitem
@@ -134,7 +136,7 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	th := store.Thread{ID: t.id, Title: t.title, Dir: t.dir, Mode: string(t.mode),
-		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived}
+		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree}
 	for _, a := range t.members {
 		th.Members = append(th.Members, a.memberMeta())
 	}

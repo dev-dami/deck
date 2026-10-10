@@ -54,9 +54,10 @@ Run `deck`, type, press enter.
 | `▲ yolo` | `--permission-mode bypassPermissions` | `never`, `danger-full-access` |
 
 - **Threads.** `ctrl+k` jumps to any thread by name. `/rename`, `/pin` (pinned threads stay on top), `/done` (resolves a thread; any new message wakes it), `/archive` (off the sidebar, `/resume` brings it back) and `/delete`. `f` on one of your messages forks the thread there into a new one, with that message in the composer to change; `/fork` copies the whole thread. A fork's agents start fresh sessions, briefed on the history. `/move <path>` moves a thread to another folder; its agents restart there the same way. Each thread keeps its own unsent draft, and a dot marks threads with news you have not read.
+- **Isolation (opt-in).** Threads share one working tree by default. `/isolate` gives a thread its own git worktree on a `deck/<id>` branch, made from your last commit; the chip line shows `⑂ deck/<id>`. `/apply` brings its changes into your tree as uncommitted edits (your branch and index are left alone), and `/unisolate` moves it back and removes the worktree, asking twice if there is work you never applied. Worktrees live in `~/.deck/worktrees`.
 - **Small things.** A faint line ends every turn (`42s · 1.2k tokens · 3 files · $0.04`). Scrolled up, a `↓ 3 new` marker takes you back. The terminal title says what is working and what needs you, and when the terminal is in the background a finished turn or an approval raises a desktop notification where your terminal supports it. `?` lists every key.
 
-Commands: `/new`, `/resume`, `/model`, `/cd <path>`, `/name <name>`, `/changes`, `/rename`, `/pin`, `/done`, `/archive`, `/delete`, `/fork`, `/move <path>`. `ctrl+c` interrupts; twice quits.
+Commands: `/new`, `/resume`, `/model`, `/cd <path>`, `/name <name>`, `/changes`, `/rename`, `/pin`, `/done`, `/archive`, `/delete`, `/fork`, `/move <path>`, `/isolate`, `/apply`, `/unisolate`. `ctrl+c` interrupts; twice quits.
 
 ## Config
 

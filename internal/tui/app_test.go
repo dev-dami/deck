@@ -460,7 +460,7 @@ func TestSlashMenuListsEveryCommand(t *testing.T) {
 	r := newRig(t, 120, 30)
 	r.start("one")
 	r.typeText("/")
-	want := []string{"new", "resume", "model", "cd", "name", "changes", "rename", "pin", "done", "archive", "delete", "fork", "move"}
+	want := []string{"new", "resume", "model", "cd", "name", "changes", "rename", "pin", "done", "archive", "delete", "fork", "move", "isolate", "apply", "unisolate"}
 	if got := len(r.m.menu.items); got != len(want) {
 		t.Fatalf("menu has %d commands", got)
 	}

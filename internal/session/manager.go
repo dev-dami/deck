@@ -209,6 +209,8 @@ type ThreadInfo struct {
 	Mode        agent.Mode // the thread's permission mode
 	// Pinned threads sort first; Resolved ones are settled until a new message.
 	Pinned, Resolved bool
+	// Branch is the worktree branch of an isolated thread, "" otherwise.
+	Branch string
 	// Active is when anything last happened in the thread.
 	Active time.Time
 }
@@ -378,6 +380,9 @@ func (m *Manager) threadInfo(t *thread) ThreadInfo {
 		ID: t.id, Title: t.title, Dir: t.dir, Paused: t.paused, Hops: t.hops,
 		MaxHops: m.maxHops, Held: len(t.heldIdx), LastSpeaker: t.lastSpeaker, Mode: t.mode,
 		Pinned: t.pinned, Resolved: t.resolved,
+	}
+	if t.worktree != nil {
+		info.Branch = t.worktree.Branch
 	}
 	if n := len(t.log); n > 0 {
 		info.Active = t.log[n-1].Time
@@ -1043,6 +1048,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	t.created = true
 	t.title = th.Title
 	t.pinned, t.resolved = th.Pinned, th.Resolved // resuming un-archives
+	t.worktree = th.Worktree
 	remap := map[string]string{}
 	var started []*agentState
 	fail := func(err error) (ThreadInfo, []tea.Msg, error) {

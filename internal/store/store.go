@@ -93,6 +93,8 @@ type Thread struct {
 	Pinned   bool `json:"pinned,omitempty"`
 	Resolved bool `json:"resolved,omitempty"`
 	Archived bool `json:"archived,omitempty"`
+	// Worktree is set while the thread works apart from the shared tree.
+	Worktree *Worktree `json:"worktree,omitempty"`
 
 	// Legacy mirror of Members[0] (Name: every member's name joined by "+").
 	AgentKind string `json:"agent_kind"`
@@ -525,6 +527,17 @@ func (s *Store) writeIndexLocked() error {
 	}
 	return writeFileAtomic(s.indexPath(), data)
 }
+
+// Worktree is an isolated thread's git worktree.
+type Worktree struct {
+	Path   string `json:"path"`   // where the thread's agents work
+	Branch string `json:"branch"` // its branch, deck/<id>
+	Main   string `json:"main"`   // the shared work tree it came from
+	Base   string `json:"base"`   // the commit it started from
+}
+
+// Dir is the folder the store keeps threads in.
+func (s *Store) Dir() string { return s.dir }
 
 // Delete removes a thread for good: its metadata, its log and its index entry.
 func (s *Store) Delete(id string) error {

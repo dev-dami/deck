@@ -124,7 +124,9 @@ type model struct {
 	delThread    string
 	files        map[string][]string // @file: each folder's files
 	filesLoading map[string]bool
-	wantFiles    string // a folder whose files the menu is waiting for
+	wantFiles    string    // a folder whose files the menu is waiting for
+	unisoArm     time.Time // a refused /unisolate, waiting for the second
+	unisoThread  string
 	winTitle     string // the terminal title last set
 	blurred      bool   // the terminal window does not have focus
 	clipSave     func(ctx context.Context, dir string) (string, error)
@@ -606,6 +608,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.onForked(msg)...)
 	case movedMsg:
 		cmds = append(cmds, m.onMoved(msg)...)
+	case appliedMsg:
+		cmds = append(cmds, m.onApplied(msg)...)
 	case filesMsg:
 		m.onFiles(msg)
 

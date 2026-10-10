@@ -122,7 +122,11 @@ fit:
 	}
 
 	if room := w - sw(left) - 3 - hintW - mw - 1 - 2; room >= 4 {
-		left += sep + sFaint.Render(shortPath(tilde(dir, m.home), room))
+		if ok && th.Branch != "" { // an isolated thread: its branch says where it works
+			left += sep + sAccent.Render(trunc(glyphBranch+" "+th.Branch, room))
+		} else {
+			left += sep + sFaint.Render(shortPath(tilde(dir, m.home), room))
+		}
 	}
 	line := padTo(left, w-mw-1-hintW)
 	if hint != "" {

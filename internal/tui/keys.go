@@ -633,6 +633,9 @@ func (m *model) runCommand(name, arg string) []tea.Cmd {
 	case "fork":
 		m.comp.Reset()
 		return m.forkCmd("")
+	case "isolate", "apply", "unisolate":
+		m.comp.Reset()
+		return m.isolateCommand(name)
 	case "move":
 		if arg == "" {
 			return danger("usage: /move <path>")
