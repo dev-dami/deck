@@ -1,0 +1,87 @@
+# Installs deck on Windows from the latest GitHub release.
+#
+#   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/dev-dami/deck/main/install.ps1 | iex"
+#
+# Settings (environment):
+#   DECK_VERSION      a release tag to install, e.g. v0.7.0 (default: the latest)
+#   DECK_INSTALL_DIR  where deck.exe goes (default: %LOCALAPPDATA%\deck\bin)
+#   DECK_REPO         the GitHub repository to install from (default: dev-dami/deck)
+
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$repo = if ($env:DECK_REPO) { $env:DECK_REPO } else { 'dev-dami/deck' }
+$dir = if ($env:DECK_INSTALL_DIR) { $env:DECK_INSTALL_DIR } else { Join-Path (Join-Path $env:LOCALAPPDATA 'deck') 'bin' }
+
+# Fail stops the install. It throws rather than exits, so a run through
+# "irm | iex" does not close the user's PowerShell window.
+function Fail($msg) {
+    throw "deck install: $msg"
+}
+
+$arch = switch ($env:PROCESSOR_ARCHITECTURE) {
+    'AMD64' { 'amd64' }
+    'ARM64' { 'arm64' }
+    default { Fail "unsupported processor $($env:PROCESSOR_ARCHITECTURE)" }
+}
+
+$tag = $env:DECK_VERSION
+if (-not $tag) {
+    try {
+        $latest = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent' = 'deck-install' } "https://api.github.com/repos/$repo/releases/latest"
+        $tag = $latest.tag_name
+    } catch {
+        Fail "could not find the latest release of $repo"
+    }
+}
+$version = $tag.TrimStart('v')
+
+$archive = "deck_${version}_windows_${arch}.zip"
+$base = "https://github.com/$repo/releases/download/$tag"
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ("deck-install-" + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $tmp | Out-Null
+
+try {
+    Write-Host "Downloading deck $tag for windows/$arch"
+    $zip = Join-Path $tmp $archive
+    $sums = Join-Path $tmp 'checksums.txt'
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri "$base/$archive" -OutFile $zip
+        Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.txt" -OutFile $sums
+    } catch {
+        Fail "could not download $base/$archive"
+    }
+
+    $line = Get-Content $sums | Where-Object { $_ -match (' ' + [regex]::Escape($archive) + '$') } | Select-Object -First 1
+    if (-not $line) { Fail "$archive is not in checksums.txt" }
+    $want = ($line -split ' ')[0].ToLower()
+    $got = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+    if ($got -ne $want) { Fail "checksum mismatch for $archive" }
+
+    $out = Join-Path $tmp 'out'
+    Expand-Archive -Path $zip -DestinationPath $out -Force
+    $exe = Join-Path $out 'deck.exe'
+    if (-not (Test-Path $exe)) { Fail 'the archive has no deck.exe' }
+
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    Copy-Item -Force $exe (Join-Path $dir 'deck.exe')
+} finally {
+    Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+}
+
+Write-Host "Installed deck $tag to $(Join-Path $dir 'deck.exe')"
+
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$parts = @()
+if ($userPath) { $parts = $userPath -split ';' }
+if ($parts -notcontains $dir) {
+    $newPath = (@($parts | Where-Object { $_ }) + $dir) -join ';'
+    [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+    $env:Path = "$env:Path;$dir"
+    Write-Host "Added $dir to your PATH. Open a new terminal for it to take effect everywhere."
+}
+
+Write-Host ''
+Write-Host 'Deck drives the agent CLIs you have installed and signed in to: claude, codex, opencode.'
+Write-Host "Run 'deck doctor' to see which ones it found, then 'deck' in a project folder."

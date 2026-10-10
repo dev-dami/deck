@@ -14,9 +14,19 @@ Deck never calls a model API and never reads a credential. It starts no language
 
 ## Install
 
+macOS and Linux:
+
 ```sh
-go install github.com/dev-dami/deck@latest
+curl -fsSL https://raw.githubusercontent.com/dev-dami/deck/main/install.sh | sh
 ```
+
+Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/dev-dami/deck/main/install.ps1 | iex"
+```
+
+Both install the latest release (checked against its checksum): to `~/.local/bin` on macOS and Linux, and to `%LOCALAPPDATA%\deckin` on Windows, which is added to your PATH. `DECK_VERSION=v0.7.0` picks a release and `DECK_INSTALL_DIR` another folder. With Go: `go install github.com/dev-dami/deck@latest`.
 
 Sign in to `claude`, `codex` and/or `opencode` yourself, then check what Deck sees:
 
