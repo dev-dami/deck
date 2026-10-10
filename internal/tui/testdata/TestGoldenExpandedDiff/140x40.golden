@@ -1,12 +1,12 @@
  ◆ deck                                                                                                                        idle · $0.12
 
  ▎○ refactor the store  $0.12
- ▎  ◆claude
+ ▎  ✻ claude
 
                                  Ada
                                  refactor the store
 
-                               ◆ claude
+                               ✻ claude
                                  ∴ thinking…
 
                                  I'll check the store layer before changing anything. Append currently writes every event, so
@@ -35,6 +35,6 @@
                                  The store now drops streaming deltas, and go test ./... passes.
                                  1 file · $0.12
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                 ◆claude · default · ~/repo                                                                          ● ask
+                                 ✻ claude · default · ~/repo                                                                         ● ask
                                › message claude…
  enter fold   e edit   d changes   p pin   x resolve   r rename   ? keys   tab compose                    claude finished · 1 file · $0.12

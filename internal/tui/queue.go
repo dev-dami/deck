@@ -77,7 +77,7 @@ func (m *model) queueRow(w int, it session.QueuedItem, focused bool) (string, in
 	if focused {
 		mark = sAccent.Render(glyphBarSel)
 	}
-	who := tintStyle(m.kindOf(it.AgentID)).Render("◆" + m.agentName(it.AgentID))
+	who := m.markR(m.kindOf(it.AgentID), tintStyle(m.kindOf(it.AgentID))) + tintStyle(m.kindOf(it.AgentID)).Render(" "+m.agentName(it.AgentID))
 	if it.Steer || m.steering[it.ID] {
 		return trunc(mark+" "+sWarn.Render("↪ steering ")+who+sWarn.Render("…"), w), -1
 	}

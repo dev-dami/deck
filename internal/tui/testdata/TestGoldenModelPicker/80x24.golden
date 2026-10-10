@@ -1,6 +1,6 @@
  ◆ deck                                                                    idle
 
- ▎○ ◆ refactor the st…
+ ▎○ ✻ refactor the st…
 
 
 
@@ -11,7 +11,7 @@
                           Ada
                           refactor the store
 
-                        ◆ claude
+                        ✻ claude
                           ▸ Read internal/store/store.go
                          Select a model
                            1. default  The CLI's recommended model     default
@@ -19,6 +19,6 @@
                          ❯ 3. sonnet   Best for everyday tasks       ✓ current
                            4. haiku    Fastest, for quick answers
                         ───────────────────────────────────────────────────────
-                          model for ◆claude
+                          model for ✻ claude
                         ◆ filter, or type a model id
  ↑↓ select   enter pick   1-9 jump   type to filter or any mo… claude finished

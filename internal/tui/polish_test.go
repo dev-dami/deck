@@ -140,7 +140,7 @@ func TestNarrowSidebarDropsChipsAndOnlySelectedShowsCost(t *testing.T) {
 		if !strings.Contains(side, "one") || !strings.Contains(side, "two") {
 			t.Errorf("w=%d titles are always shown:\n%s", tc.w, side)
 		}
-		if got := strings.Contains(side, "◆claude"); got != tc.wide {
+		if got := strings.Contains(side, "✻ claude"); got != tc.wide {
 			t.Errorf("w=%d member chips shown = %v, want %v:\n%s", tc.w, got, tc.wide, side)
 		}
 		hasFirst, hasSecond := strings.Contains(side, "$1.50"), strings.Contains(side, "$2.50")

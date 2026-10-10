@@ -1,7 +1,7 @@
  ◆ deck                                                                                                                        idle · $0.12
 
  ▎○ refactor the store  $0.12
- ▎  ◆claude
+ ▎  ✻ claude
 
 
 
@@ -19,7 +19,7 @@
                                  Ada
                                  refactor the store
 
-                               ◆ claude
+                               ✻ claude
                                  ∴ thinking…
 
                                  I'll check the store layer before changing anything. Append currently writes every event, so
@@ -35,6 +35,6 @@
                                 ▎○ claude   idle
                                  + codex    add codex
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                 ◆claude · default · ~/repo                                                                          ● ask
+                                 ✻ claude · default · ~/repo                                                                         ● ask
                                › @
  ↑↓ select   tab complete   esc close                                                                     claude finished · 1 file · $0.12

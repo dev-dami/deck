@@ -23,8 +23,8 @@ var (
 // Agent tints: used only for an agent's ◆ glyph and name in a shared thread,
 // so you can tell speakers apart at a glance. Accent stays the UI colour.
 var (
-	TintClaude = lipgloss.AdaptiveColor{Light: "#B5562F", Dark: "#E39A6F"} // warm clay
-	TintCodex  = lipgloss.AdaptiveColor{Light: "#3B62B8", Dark: "#8DA9F0"} // cool periwinkle
+	TintClaude = lipgloss.AdaptiveColor{Light: "#C15F3C", Dark: "#D97757"} // Claude's spark
+	TintCodex  = lipgloss.AdaptiveColor{Light: "#3D4BE0", Dark: "#8C9EFF"} // the Codex logo's blue
 	TintOther  = Muted
 )
 
@@ -37,6 +37,18 @@ func Tint(kind string) lipgloss.AdaptiveColor {
 		return TintCodex
 	}
 	return TintOther
+}
+
+// Mark is how an agent kind is drawn: the mark its own CLI uses in the
+// terminal (Claude Code's ✻, Codex CLI's >_), ◆ for anything else.
+func Mark(kind string) string {
+	switch kind {
+	case "claude":
+		return "✻"
+	case "codex":
+		return ">_"
+	}
+	return GlyphAgent
 }
 
 // Glyphs.

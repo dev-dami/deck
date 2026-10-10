@@ -1,7 +1,7 @@
  ◆ deck                                                                                                                                idle
 
  ▎○ refactor the store
- ▎  ◆claude
+ ▎  ✻ claude
 
 
 
@@ -21,7 +21,7 @@
                                  Ada
                                  refactor the store
 
-                               ◆ claude
+                               ✻ claude
                                  ▸ Read internal/store/store.go
 
                                  I'll check the store layer before changing anything.
@@ -32,9 +32,9 @@
                                  ▲ yolo on — Deck approves everything in this thread
                                  ◇ plan — agents investigate and propose; edits and commands are declined
 
-                               ◆ claude
+                               ✻ claude
                                  ⊘ declined (plan)  edit internal/store/store.go
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                 ◆claude · sonnet · ~/repo                                                                          ◇ plan
+                                 ✻ claude · sonnet · ~/repo                                                                         ◇ plan
                                › message claude…
  @ agent   / commands   ↑ edit last   ⌥↑↓ threads   tab browse   ^c stop   ⇧tab mode   ^v image                            claude finished

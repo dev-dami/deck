@@ -185,7 +185,7 @@ func TestChipSpansMatchWhatIsDrawn(t *testing.T) {
 	for _, h := range hits {
 		got = append(got, text(h))
 	}
-	want := []string{"◆claude · sonnet", "◆codex · gpt-6-sol", "● ask"}
+	want := []string{"✻ claude · sonnet", ">_ codex · gpt-6-sol", "● ask"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("spans %q, want %q", got, want)
 	}
@@ -386,7 +386,7 @@ func TestAutoApprovedAndDeclinedLinesSitInTheSpeakersBlock(t *testing.T) {
 	if !r.has("  ⊘ declined (plan)  internal/store/store.go") {
 		t.Fatalf("declined line:\n%s", r.view())
 	}
-	if n := r.countLines("◆ claude"); n != 1 {
+	if n := r.countLines("✻ claude"); n != 1 {
 		t.Fatalf("the lines join claude's block, found %d labels", n)
 	}
 	for i := 1; i < len(r.tv().lines); i++ {
@@ -443,7 +443,7 @@ func TestModelChipClickOpensThePickerAndSelectingSwitchesTheModel(t *testing.T) 
 			t.Errorf("picker is missing %q:\n%s", want, v)
 		}
 	}
-	if !strings.Contains(r.chipText(), "model for ◆claude") {
+	if !strings.Contains(r.chipText(), "model for ✻ claude") {
 		t.Fatalf("chip line while picking: %q", r.chipText())
 	}
 	r.typeText("son") // fuzzy filter
@@ -457,8 +457,8 @@ func TestModelChipClickOpensThePickerAndSelectingSwitchesTheModel(t *testing.T) 
 	if got := run.modelCalls(); len(got) != 1 || got[0] != "sonnet" {
 		t.Fatalf("SetModel calls = %v", got)
 	}
-	r.pump("model notice", func() bool { return r.has("◆claude now on sonnet") })
-	if !strings.Contains(r.chipText(), "◆claude · sonnet") {
+	r.pump("model notice", func() bool { return r.has("✻ claude now on sonnet") })
+	if !strings.Contains(r.chipText(), "✻ claude · sonnet") {
 		t.Fatalf("the chip names the new model: %q", r.chipText())
 	}
 }
@@ -558,7 +558,7 @@ func TestDuoPickerAsksWhichMemberThenListsItsModels(t *testing.T) {
 	if r.m.pick.stage != pickMembers || len(r.m.pick.items) != 2 {
 		t.Fatalf("a duo thread asks who first: %+v", r.m.pick)
 	}
-	if !r.has("◆claude  sonnet") || !r.has("◆codex  gpt-6-sol") {
+	if !r.has("✻ claude  sonnet") || !r.has(">_ codex  gpt-6-sol") {
 		t.Fatalf("the member rows:\n%s", r.view())
 	}
 	r.key("down", "enter") // codex

@@ -353,7 +353,8 @@ func (m *model) pickRow(it menuItem, i int, selected bool, labelW, w int) string
 		if selected {
 			ts = ts.Bold(true)
 		}
-		name := highlightMatches(theme.GlyphAgent+it.label, shiftIdx(it.idx, 1), 0, ts)
+		mark := theme.Mark(it.kind) + " "
+		name := highlightMatches(mark+it.label, shiftIdx(it.idx, len([]rune(mark))), 0, ts)
 		return trunc(" "+cursor+num+name+sFaint.Render("  "+it.desc), w)
 	}
 	style := sFg

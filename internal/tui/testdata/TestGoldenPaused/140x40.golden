@@ -1,7 +1,7 @@
  ◆ deck                                                                                                                     1 agent working
 
  ▎‖ plan the store refactor,…
- ▎  ◆claude ◆codex
+ ▎  ✻ claude >_ codex
 
 
 
@@ -18,12 +18,12 @@
 
 
 
-                                 ◆codex joined
+                                 >_ codex joined
 
                                  Ada → all
                                  plan the store refactor, @codex review it
 
-                               ◆ claude
+                               ✻ claude
                                  Plan: drop streaming deltas before they reach disk.
 
                                  ↪ claude → codex  "Please review the plan."
@@ -32,9 +32,9 @@
 
                                  ‖ paused after 1 agent message · enter continue · or type to steer ──────────────────────────────
 
-                               ◆ codex
+                               >_ codex
                                  ◐ working…
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                 ◆claude · default  ◆codex · default · ~/repo                                                        ● ask
+                                 ✻ claude · default  >_ codex · default · ~/repo                                                     ● ask
                                › message claude…
  enter continue   @ agent   / commands   ^c stop   ⇧tab mode                                                               claude finished

@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dev-dami/deck/internal/agent"
+	"github.com/dev-dami/deck/internal/tui/theme"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/tui/motion"
 )
@@ -140,26 +141,26 @@ func TestTintedSpeakersAndMergedBlocks(t *testing.T) {
 	r.done(cl, "claude")
 	r.done(cx, "codex")
 
-	if n := r.countLines("◆ claude"); n != 1 {
+	if n := r.countLines("✻ claude"); n != 1 {
 		t.Fatalf("claude's text and tool row are one block, got %d labels", n)
 	}
-	if n := r.countLines("◆ codex"); n != 1 {
+	if n := r.countLines(">_ codex"); n != 1 {
 		t.Fatalf("codex labels = %d", n)
 	}
-	for name, esc := range map[string]string{"claude": "38;2;227;154;111", "codex": "38;2;141;169;240"} { // TintClaude, TintCodex (dark)
+	for name, esc := range map[string]string{"claude": "38;2;217;119;87", "codex": "38;2;140;158;255"} { // TintClaude, TintCodex (dark)
 		label := ""
 		for _, l := range r.tv().lines {
-			if ansiStrip(l) == "◆ "+name {
+			if ansiStrip(l) == theme.Mark(name)+" "+name {
 				label = l
 			}
 		}
 		if label == "" {
 			t.Fatalf("no %s label", name)
 		}
-		if !strings.Contains(label, esc+"m◆") {
-			t.Errorf("the %s ◆ should be tinted %s: %q", name, esc, label)
+		if !strings.Contains(label, esc+"m"+theme.Mark(name)) {
+			t.Errorf("the %s mark should be tinted %s: %q", name, esc, label)
 		}
-		if !strings.Contains(label, esc+"m"+name) || !strings.Contains(label, "1;"+esc) {
+		if !strings.Contains(label, "1;"+esc+"m"+name) {
 			t.Errorf("the %s name should be tinted %s and bold: %q", name, esc, label)
 		}
 	}
@@ -187,7 +188,7 @@ func TestUserMessageNamesItsAddressees(t *testing.T) {
 func TestJoinLine(t *testing.T) {
 	r := newRig(t, 140, 40)
 	r.duo()
-	if !r.has("◆codex joined") {
+	if !r.has(">_ codex joined") {
 		t.Fatalf("the second member announces itself:\n%s", r.view())
 	}
 	if r.has("claude joined") {
@@ -287,7 +288,7 @@ func TestAddressHintAppearsWhileTyping(t *testing.T) {
 		}
 	}
 	r.m.comp.Reset()
-	if got := chip(); !strings.Contains(got, "◆claude · default  ◆codex · default") || !strings.Contains(got, "~/repo") || !strings.HasSuffix(strings.TrimRight(got, " "), "● ask") {
+	if got := chip(); !strings.Contains(got, "✻ claude · default  >_ codex · default") || !strings.Contains(got, "~/repo") || !strings.HasSuffix(strings.TrimRight(got, " "), "● ask") {
 		t.Fatalf("the chip line lists the members and the directory: %q", got)
 	}
 }
@@ -365,8 +366,8 @@ func TestApprovalCardSitsInItsSpeakersBlock(t *testing.T) {
 		t.Fatalf("card missing:\n%s", r.view())
 	}
 	for i := card - 1; i >= 0; i-- {
-		if l := ansiStrip(ls[i]); strings.HasPrefix(l, "◆ ") {
-			if l != "◆ codex" {
+		if l := ansiStrip(ls[i]); strings.HasPrefix(l, "✻ ") || strings.HasPrefix(l, ">_ ") {
+			if l != ">_ codex" {
 				t.Fatalf("the card belongs to codex's block, found %q above it", l)
 			}
 			return
@@ -398,7 +399,7 @@ func TestSidebarThreadRowsAndMemberChips(t *testing.T) {
 	if !strings.Contains(lines[0], "plan it") || !strings.Contains(lines[0], "●") {
 		t.Fatalf("row 1 is the thread: %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "◆claude ◆codex") {
+	if !strings.Contains(lines[1], "✻ claude >_ codex") {
 		t.Fatalf("row 2 lists the members: %q", lines[1])
 	}
 	// a pending approval turns the thread's glyph into ⚠

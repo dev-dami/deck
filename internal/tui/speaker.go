@@ -60,11 +60,18 @@ func (m *model) agentNames(ids []string) []string {
 	return out
 }
 
-// speakerLabel is the line that opens an agent's block: ◆ and the bold name,
-// both in the agent's tint.
+// speakerLabel is the line that opens an agent's block: its mark and the bold
+// name, both in the agent's tint.
 func (m *model) speakerLabel(id string, w int) string {
-	ts := tintStyle(m.kindOf(id))
-	return ts.Render(theme.GlyphAgent) + " " + ts.Bold(true).Render(trunc(m.agentName(id), max(1, w-2)))
+	kind := m.kindOf(id)
+	ts := tintStyle(kind)
+	mark := m.markR(kind, ts)
+	return mark + " " + ts.Bold(true).Render(trunc(m.agentName(id), max(1, w-sw(mark)-1)))
+}
+
+// markR is an agent kind's mark (✻, >_) in style st.
+func (m *model) markR(kind string, st lipgloss.Style) string {
+	return st.Render(theme.Mark(kind))
 }
 
 // memberStyle colours a member's ◆: its tint, breathing while it works, in the
@@ -85,9 +92,10 @@ func (m *model) memberStyle(a session.AgentInfo) lipgloss.Style {
 	return lipglossFg(m.blend(theme.Faint, tint, 0.75))
 }
 
-// chip is "◆claude" in the member's tint and status.
+// chip is "✻ claude" in the member's tint and status.
 func (m *model) chip(a session.AgentInfo) string {
-	return m.memberStyle(a).Render(theme.GlyphAgent + a.Name)
+	st := m.memberStyle(a)
+	return m.markR(a.Kind, st) + st.Render(" "+a.Name)
 }
 
 func (m *model) chips(members []session.AgentInfo, w int) string {

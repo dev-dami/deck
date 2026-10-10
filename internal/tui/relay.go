@@ -147,7 +147,7 @@ func (it *item) renderJoin(c *rctx) string {
 	m := c.m
 	kind := m.kindOf(it.joinID)
 	tint := m.ramp(theme.Tint(kind), theme.Faint, 0.35)
-	return "  " + tint.Render(theme.GlyphAgent+m.agentName(it.joinID)) + sFaint.Render(" joined")
+	return "  " + m.markR(kind, tint) + " " + tint.Render(m.agentName(it.joinID)) + sFaint.Render(" joined")
 }
 
 // ---- mention relays ----

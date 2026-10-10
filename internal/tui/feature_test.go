@@ -288,7 +288,7 @@ func TestContextMeterInChipLineAndSidebar(t *testing.T) {
 		t.Errorf("chip line %q", c)
 	}
 	side := r.view()
-	if !strings.Contains(side, "◆claude ◔") || !strings.Contains(side, "◆codex ◕") {
+	if !strings.Contains(side, "✻ claude ◔") || !strings.Contains(side, ">_ codex ◕") {
 		t.Errorf("sidebar chips carry the glyph only:\n%s", side)
 	}
 }
@@ -322,7 +322,7 @@ func busyThread(t *testing.T, text string) *rig {
 
 func TestQueueRowAndQueuedTag(t *testing.T) {
 	r := busyThread(t, "fix the tests too")
-	if !r.has("⏳ queued for ◆claude · fix the tests too") || !r.has("steer ⏎ · ✕") {
+	if !r.has("⏳ queued for ✻ claude · fix the tests too") || !r.has("steer ⏎ · ✕") {
 		t.Fatalf("no queue row:\n%s", r.view())
 	}
 	if !strings.Contains(r.find("fix the tests too\n"), "queued") && !strings.Contains(r.view(), "Ada queued") {
@@ -353,7 +353,7 @@ func TestClickQueueRowSteers(t *testing.T) {
 	r := busyThread(t, "fix the tests too")
 	x, y := r.where("⏳ queued")
 	r.click(x+3, y)
-	if !r.m.steering[r.m.queueOf(r.m.sel)[0].ID] || !r.has("↪ steering ◆claude…") {
+	if !r.m.steering[r.m.queueOf(r.m.sel)[0].ID] || !r.has("↪ steering ✻ claude…") {
 		t.Fatalf("row did not flip:\n%s", r.view())
 	}
 	r.pump("delivered", func() bool { return len(r.m.queueOf(r.m.sel)) == 0 })

@@ -244,7 +244,7 @@ func (it *item) renderModel(c *rctx) []string {
 	if it.text == "" {
 		what = " now on its default model"
 	}
-	line := "  " + tintStyle(kind).Render(theme.GlyphAgent+name) + sFaint.Render(what)
+	line := "  " + tintStyle(kind).Render(theme.Mark(kind)+" "+name) + sFaint.Render(what)
 	return []string{trunc(line, c.w)}
 }
 

@@ -1,14 +1,14 @@
  ◆ deck                                                                                                            2 agents working · $0.13
 
  ▎● plan the store ref… $0.13
- ▎  ◆claude ◆codex
+ ▎  ✻ claude >_ codex
 
-                                 ◆codex joined
+                                 >_ codex joined
 
                                  Ada → all
                                  plan the store refactor, @codex review it
 
-                               ◆ claude
+                               ✻ claude
                                  ▸ Read internal/store/store.go
 
                                  Plan for the store change:
@@ -20,7 +20,7 @@
                                  ↪ claude → codex  "Please review this plan for the store change and tell me what you would
                                                    change."
 
-                               ◆ codex
+                               >_ codex
                                  ∴ read the thread
                                  ▸ Read internal/store/store.go
 
@@ -29,12 +29,12 @@
 
                                  ↪ codex → claude  "agree on the lock order and add the 1000-delta test."
 
-                               ◆ claude
+                               ✻ claude
                                  Good catch on the lock order. Adding the delta test▍
 
-                               ◆ codex
+                               >_ codex
                                  ◐ working…
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                 ◆claude · default  ◆codex · default · ~/repo                                                        ● ask
+                                 ✻ claude · default  >_ codex · default · ~/repo                                                     ● ask
                                › message codex…
  @ agent   / commands   ↑ edit last   ⌥↑↓ threads   tab browse   ^c stop   ⇧tab mode   ^v image

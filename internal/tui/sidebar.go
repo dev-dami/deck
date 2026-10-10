@@ -165,7 +165,7 @@ func (m *model) sidebarLines(g geom, rows int) []string {
 				if k == 3 {
 					break
 				}
-				prefix += m.memberStyle(a).Render(theme.GlyphAgent)
+				prefix += m.memberStyle(a).Render(theme.Mark(a.Kind))
 			}
 			if len(t.Members) > 0 {
 				prefix += " "

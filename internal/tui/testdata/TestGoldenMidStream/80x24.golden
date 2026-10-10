@@ -1,8 +1,8 @@
  ◆ deck                                                         1 agent working
 
- ▎● ◆ refactor the st…    refactor the store
+ ▎● ✻ refactor the st…    refactor the store
 
-                        ◆ claude
+                        ✻ claude
                           ∴ thinking…
 
                           I'll check the store layer before changing anything.
@@ -19,6 +19,6 @@
                           The store now drops streaming deltas, and the
                           package tests pass. Next I'm▍
                         ───────────────────────────────────────────────────────
-                          ◆claude · default · ~/repo                     ● ask
+                          ✻ claude · default · ~/repo                    ● ask
                         › message claude…
  @ agent   / commands   ↑ edit last   ⌥↑↓ threads   tab browse   ^c stop

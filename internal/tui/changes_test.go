@@ -111,10 +111,10 @@ func TestChangesPanelShowsWhatChangedAndUndoes(t *testing.T) {
 		t.Fatalf("title:\n%s", r.view())
 	}
 	row := r.find("a.txt")
-	if !strings.Contains(row, "M a.txt") || !strings.Contains(row, "◆") || !strings.Contains(row, "+1 −1") {
+	if !strings.Contains(row, "M a.txt") || !strings.Contains(row, "✻") || !strings.Contains(row, "+1 −1") {
 		t.Fatalf("a.txt row = %q", row)
 	}
-	if row := r.find("new.txt"); !strings.Contains(row, "A new.txt") || strings.Contains(row, "◆") {
+	if row := r.find("new.txt"); !strings.Contains(row, "A new.txt") || strings.Contains(row, "✻") {
 		t.Fatalf("new.txt row = %q (no agent reported it)", row)
 	}
 	if !r.has("ONE") {

@@ -1,6 +1,6 @@
  ◆ deck                                                            idle · $0.12
 
- ▎○ ◆ refactor … $0.12      @@ -9,9 +9,13 @@
+ ▎○ ✻ refactor … $0.12      @@ -9,9 +9,13 @@
                               9   9 │  type Store struct {
                              10  10 │      dir string
                              11     │-     mu  sync.Mutex
@@ -19,6 +19,6 @@
                           ./... passes.
                           1 file · $0.12
                         ───────────────────────────────────────────────────────
-                          ◆claude · default · ~/repo                     ● ask
+                          ✻ claude · default · ~/repo                    ● ask
                         › message claude…
  enter fold   e edit   d changes   p pin   x… claude finished · 1 file · $0.12

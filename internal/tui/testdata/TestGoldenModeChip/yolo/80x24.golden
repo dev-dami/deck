@@ -1,6 +1,6 @@
  ◆ deck                                                                    idle
 
- ▎○▲ ◆ refactor the s…
+ ▎○▲ ✻ refactor the s…
 
 
 
@@ -9,7 +9,7 @@
                           Ada
                           refactor the store
 
-                        ◆ claude
+                        ✻ claude
                           ▸ Read internal/store/store.go
 
                           I'll check the store layer before changing anything.
@@ -19,6 +19,6 @@
 
                           ▲ yolo on — Deck approves everything in this thread
                         ───────────────────────────────────────────────────────
-                          ◆claude · sonnet · ~/repo                     ▲ yolo
+                          ✻ claude · sonnet · ~/repo                    ▲ yolo
                         › message claude…
  @ agent   / commands   ↑ edit last   ⌥↑↓ threads   tab brows… claude finished

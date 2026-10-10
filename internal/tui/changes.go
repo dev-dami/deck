@@ -411,7 +411,7 @@ func (m *model) changeRow(f session.ChangedFile, sel bool, w int) string {
 	}
 	dots := ""
 	for _, id := range f.Agents {
-		dots += tintStyle(m.kindOf(id)).Render(theme.GlyphAgent)
+		dots += tintStyle(m.kindOf(id)).Render(theme.Mark(m.kindOf(id)))
 	}
 	if dots != "" {
 		right = dots + "  " + right
