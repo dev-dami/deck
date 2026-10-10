@@ -23,6 +23,7 @@ import (
 	"github.com/dev-dami/deck/internal/notify"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/pubsub"
+	"github.com/dev-dami/deck/internal/session"
 	tools "github.com/dev-dami/deck/internal/toolspec"
 )
 
@@ -490,6 +491,9 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		t.msg.AddToolCall(message.ToolCall{ID: ev.Tool.ID, Name: name, Input: input, Finished: true})
 		t.tools[ev.Tool.ID] = true
 		_ = w.app.Messages.Update(ctx, t.msg)
+		if ev.Tool.Name == "TodoWrite" {
+			w.setTodos(sid, ev.Tool.Input)
+		}
 	case deckagent.KindFileChange:
 		if ev.Diff != nil {
 			t.diffs[ev.Diff.Path] = *ev.Diff
@@ -537,6 +541,31 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		delete(w.turns, ev.AgentID)
 	}
 	w.edge(sid, ev.Kind == deckagent.KindError)
+}
+
+// setTodos shows an agent's to-do list (Claude Code's TodoWrite) in the
+// session's to-do panel.
+func (w *DeckWorkspace) setTodos(sid string, input json.RawMessage) {
+	var in struct {
+		Todos []struct {
+			Content    string `json:"content"`
+			Status     string `json:"status"`
+			ActiveForm string `json:"activeForm"`
+		} `json:"todos"`
+	}
+	if json.Unmarshal(input, &in) != nil || len(in.Todos) == 0 {
+		return
+	}
+	ctx := context.Background()
+	sess, err := w.app.Sessions.Get(ctx, sid)
+	if err != nil {
+		return
+	}
+	sess.Todos = sess.Todos[:0]
+	for _, td := range in.Todos {
+		sess.Todos = append(sess.Todos, session.Todo{Content: td.Content, Status: session.TodoStatus(td.Status), ActiveForm: td.ActiveForm})
+	}
+	_, _ = w.app.Sessions.Save(ctx, sess)
 }
 
 // addUsage adds a finished turn's cost to the session and shows how full the
