@@ -145,6 +145,7 @@ type Spec struct {
 	ID          string            // Deck's id for this agent, e.g. "claude2"
 	Dir         string            // working directory
 	Model       string            // empty = CLI default
+	Effort      string            // reasoning effort ("low" … "max"); empty = the model's default
 	Binary      string            // empty = look up on PATH
 	Env         map[string]string // extra env (e.g. CLAUDE_CONFIG_DIR); never logged
 	ResumeID    string            // CLI session/thread id to resume
@@ -184,6 +185,17 @@ type ModelInfo struct {
 	Name        string // display name
 	Description string
 	Default     bool
+	// Efforts are the reasoning efforts the model takes, in the CLI's order;
+	// none when it has no effort setting. DefaultEffort is the one it uses
+	// when none is chosen ("" when the CLI doesn't say).
+	Efforts       []EffortInfo
+	DefaultEffort string
+}
+
+// EffortInfo is one reasoning effort a model offers.
+type EffortInfo struct {
+	Level       string // value passed to the CLI: "low", "medium", "high", …
+	Description string
 }
 
 // ModeSetter is implemented by runs that can change permission mode.
@@ -203,6 +215,13 @@ type ModelSetter interface {
 type Image struct {
 	Path      string
 	MediaType string // "image/png", "image/jpeg", "image/gif", "image/webp"
+}
+
+// EffortSetter is implemented by runs that can change reasoning effort
+// mid-session ("" = the model's default). The change applies from the next
+// turn at the latest.
+type EffortSetter interface {
+	SetEffort(effort string) error
 }
 
 // ImageSender is implemented by runs that accept images with a prompt.

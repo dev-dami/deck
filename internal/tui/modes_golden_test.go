@@ -55,6 +55,18 @@ func TestGoldenModelPicker(t *testing.T) {
 	})
 }
 
+func TestGoldenEffortPicker(t *testing.T) {
+	forSizes(t, func(t *testing.T, w, h int) {
+		r := modesScene(t, w, h)
+		r.typeText("/model")
+		r.key("enter", "enter")
+		r.pump("models", func() bool { return r.m.pick.open && !r.m.pick.loading })
+		r.typeText("opus")
+		r.key("enter")
+		checkGolden(t, r, w, h)
+	})
+}
+
 func TestGoldenModelPickerDuo(t *testing.T) {
 	forSizes(t, func(t *testing.T, w, h int) {
 		r := newRigWith(t, w, h, 0, func(c *config.Config) { c.Models = config.Models{Claude: "sonnet", Codex: "gpt-6-sol"} })

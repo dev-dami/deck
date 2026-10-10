@@ -10,7 +10,8 @@ import (
 var Commands = []struct{ Name, Args, Desc string }{
 	{"new", "", "start a fresh thread"},
 	{"resume", "", "continue a saved thread"},
-	{"model", "<name>", "pick a model, or name one"},
+	{"model", "<name>", "pick a model and its effort, or name one"},
+	{"effort", "<level>", "reasoning effort: low, medium, high, …"},
 	{"cd", "<path>", "directory for new threads"},
 	{"name", "<name>", "your display name"},
 	{"changes", "", "what changed since your messages, with undo"},

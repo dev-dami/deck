@@ -2,6 +2,7 @@ package claude
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -341,6 +342,7 @@ func idsOf(ms []agent.ModelInfo) string {
 func TestModelsFromHelpAndCache(t *testing.T) {
 	a := New("", "deck", nil).(*adapter)
 	calls := 0
+	a.initFn = noInit
 	a.helpFn = func(context.Context) (string, error) { calls++; return readHelpSample(t), nil }
 	ms, err := a.Models(context.Background())
 	if err != nil {
@@ -374,6 +376,7 @@ func TestModelsFallback(t *testing.T) {
 	const want = ",opus,sonnet,haiku,fable"
 	// help text without model aliases
 	a := New("", "deck", nil).(*adapter)
+	a.initFn = noInit
 	a.helpFn = func(context.Context) (string, error) { return "Usage: claude\n  --model <model>  Some model.\n", nil }
 	ms, err := a.Models(context.Background())
 	if err != nil || idsOf(ms) != want || !ms[0].Default {
@@ -384,5 +387,42 @@ func TestModelsFallback(t *testing.T) {
 	ms, err = b.Models(context.Background())
 	if err != nil || idsOf(ms) != want {
 		t.Errorf("missing binary: %v %v", idsOf(ms), err)
+	}
+}
+
+func noInit(context.Context) ([]byte, error) { return nil, errors.New("no initialize") }
+
+func TestModelsComeFromClaudeCodesOwnList(t *testing.T) {
+	a := New("", "deck", nil).(*adapter)
+	a.helpFn = func(context.Context) (string, error) { t.Fatal("help read"); return "", nil }
+	a.initFn = func(context.Context) ([]byte, error) {
+		return []byte(`{"type":"control_response","response":{"subtype":"success","request_id":"deck-models","response":{"models":[` +
+			`{"value":"default","displayName":"Default (recommended)","description":"Opus 5.5 · Best for everyday, complex tasks","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"]},` +
+			`{"value":"sonnet","displayName":"Sonnet 5.5","description":"Efficient for routine tasks","supportsEffort":true,"supportedEffortLevels":["low","high"]},` +
+			`{"value":"claude-haiku-4-5-20251001","displayName":"Haiku 4.5","description":"Fastest for quick answers"}]}}}` + "\n"), nil
+	}
+	ms, err := a.Models(context.Background())
+	if err != nil || idsOf(ms) != ",sonnet,claude-haiku-4-5-20251001" {
+		t.Fatalf("ids %q %v", idsOf(ms), err)
+	}
+	if !ms[0].Default || ms[0].Name != "Default (recommended)" || len(ms[0].Efforts) != 5 {
+		t.Errorf("default: %+v", ms[0])
+	}
+	if e := ms[1].Efforts; len(e) != 2 || e[1].Level != "high" || e[1].Description == "" {
+		t.Errorf("sonnet efforts: %+v", e)
+	}
+	if len(ms[2].Efforts) != 0 {
+		t.Errorf("haiku 4.5 has no effort setting: %+v", ms[2])
+	}
+}
+
+func TestEffortRestartsWithTheFlag(t *testing.T) {
+	r := &run{a: &adapter{}, mode: agent.ModeAsk, effort: "high"}
+	if v, _ := argAfter(r.args(""), "--effort"); v != "high" {
+		t.Fatalf("--effort = %q", v)
+	}
+	r.effort = ""
+	if contains(r.args(""), "--effort") {
+		t.Fatal("no --effort for the model's default")
 	}
 }

@@ -133,12 +133,14 @@ type ModeChangedMsg struct {
 	Prev     agent.Mode
 }
 
-// ModelChangedMsg says a member now runs a different model (SetModel). An empty
-// Model means the CLI's default.
+// ModelChangedMsg says a member now runs a different model or effort
+// (SetModel, SetEffort). An empty Model means the CLI's default, an empty
+// Effort the model's.
 type ModelChangedMsg struct {
 	ThreadID string
 	AgentID  string
 	Model    string
+	Effort   string
 }
 
 // AutoApprovedMsg reports an approval request that Deck answered Allow itself

@@ -1,8 +1,12 @@
 package claude
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -11,10 +15,12 @@ import (
 	"github.com/dev-dami/deck/internal/agent"
 )
 
-// Models implements agent.ModelLister. Claude Code has no model-list command,
-// so the aliases are read from the `--model` entry of the installed
-// `claude --help` text; if that cannot be run or parsed a static list is
-// returned. No API is ever called. The result is cached per adapter.
+// Models implements agent.ModelLister. The list is the one Claude Code's own
+// /model picker shows: a short-lived `claude -p` in stream-json mode is sent
+// the SDK's initialize request, and the models (with their effort levels) are
+// read from its answer. Nothing is prompted, so no model API is called. When
+// that fails the aliases are read from the `--model` entry of `claude --help`,
+// and failing that a static list is returned. The result is cached per adapter.
 func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
 	a.modelsMu.Lock()
 	defer a.modelsMu.Unlock()
@@ -22,14 +28,141 @@ func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
 		return append([]agent.ModelInfo(nil), a.models...), nil
 	}
 	var list []agent.ModelInfo
-	if txt, err := a.helpText(ctx); err == nil {
-		list = modelsFromHelp(txt)
+	if out, err := a.initAnswer(ctx); err == nil {
+		list = modelsFromInit(out)
+	}
+	if list == nil {
+		if txt, err := a.helpText(ctx); err == nil {
+			list = modelsFromHelp(txt)
+		}
 	}
 	if list == nil {
 		list = fallbackModels()
 	}
 	a.models = list
 	return append([]agent.ModelInfo(nil), list...), nil
+}
+
+const initRequestID = "deck-models"
+
+// initAnswer runs claude just long enough to answer the initialize request and
+// returns that one answer line.
+func (a *adapter) initAnswer(ctx context.Context) ([]byte, error) {
+	if a.initFn != nil {
+		return a.initFn(ctx)
+	}
+	bin := a.binary
+	if bin == "" {
+		bin = "claude"
+	}
+	path, err := exec.LookPath(bin)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	cmd := exec.Command(path, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose")
+	cmd.Dir = os.TempDir() // no project's settings or hooks
+	setProcAttr(cmd)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = stdin.Close()
+		killTree(cmd)
+		_ = cmd.Wait()
+	}()
+	if _, err := stdin.Write([]byte(`{"type":"control_request","request_id":"` + initRequestID + `","request":{"subtype":"initialize"}}` + "\n")); err != nil {
+		return nil, err
+	}
+	found := make(chan []byte, 1)
+	go func() {
+		defer close(found)
+		r := bufio.NewReaderSize(stdout, 1<<20)
+		for {
+			line, err := r.ReadBytes('\n')
+			if bytes.Contains(line, []byte(`"control_response"`)) && bytes.Contains(line, []byte(initRequestID)) {
+				found <- line
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	select {
+	case line, ok := <-found:
+		if !ok {
+			return nil, errors.New("claude: no answer to initialize")
+		}
+		return line, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// initAnswerJSON is the part of the initialize answer Deck reads. The answer
+// also describes the account; that is never decoded.
+type initAnswerJSON struct {
+	Response struct {
+		Subtype   string `json:"subtype"`
+		RequestID string `json:"request_id"`
+		Response  struct {
+			Models []struct {
+				Value          string   `json:"value"`
+				DisplayName    string   `json:"displayName"`
+				Description    string   `json:"description"`
+				SupportsEffort bool     `json:"supportsEffort"`
+				Efforts        []string `json:"supportedEffortLevels"`
+			} `json:"models"`
+		} `json:"response"`
+	} `json:"response"`
+}
+
+// effortDescriptions describe Claude Code's effort levels, which it lists
+// without descriptions.
+var effortDescriptions = map[string]string{
+	"low":    "Quick answers, light reasoning",
+	"medium": "Balanced speed and reasoning depth",
+	"high":   "Deeper reasoning for complex work",
+	"xhigh":  "Extra reasoning depth for hard problems",
+	"max":    "The most reasoning, slowest",
+}
+
+// modelsFromInit reads the models out of an initialize answer, or nil.
+func modelsFromInit(line []byte) []agent.ModelInfo {
+	var ans initAnswerJSON
+	if json.Unmarshal(line, &ans) != nil || ans.Response.Subtype != "success" || ans.Response.RequestID != initRequestID {
+		return nil
+	}
+	var out []agent.ModelInfo
+	for _, m := range ans.Response.Response.Models {
+		if m.Value == "" {
+			continue
+		}
+		mi := agent.ModelInfo{ID: m.Value, Name: m.DisplayName, Description: m.Description}
+		if m.Value == "default" {
+			mi.ID, mi.Default = "", true
+		}
+		if m.SupportsEffort {
+			for _, e := range m.Efforts {
+				mi.Efforts = append(mi.Efforts, agent.EffortInfo{Level: e, Description: effortDescriptions[e]})
+			}
+		}
+		out = append(out, mi)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (a *adapter) helpText(ctx context.Context) (string, error) {

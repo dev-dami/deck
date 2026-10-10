@@ -451,15 +451,72 @@ func TestModelChipClickOpensThePickerAndSelectingSwitchesTheModel(t *testing.T) 
 		t.Fatalf("filter: %+v", r.m.pick.items)
 	}
 	r.key("enter")
+	if r.m.pick.stage != pickEffort || !r.has("Effort for Sonnet") || !r.has("Deeper reasoning for complex work") {
+		t.Fatalf("a model with efforts asks which one:\n%s", r.view())
+	}
+	if it := r.m.pick.items[r.m.pick.sel]; it.label != "default" || !it.cur {
+		t.Fatalf("the model's own effort is current: %+v", it)
+	}
+	r.typeText("high")
+	r.key("enter")
 	if r.m.pick.open {
 		t.Fatal("enter picks and closes")
 	}
 	if got := run.modelCalls(); len(got) != 1 || got[0] != "sonnet" {
 		t.Fatalf("SetModel calls = %v", got)
 	}
-	r.pump("model notice", func() bool { return r.has("✻ claude now on sonnet") })
-	if !strings.Contains(r.chipText(), "✻ claude · sonnet") {
-		t.Fatalf("the chip names the new model: %q", r.chipText())
+	if got := run.effortCalls(); len(got) != 1 || got[0] != "high" {
+		t.Fatalf("SetEffort calls = %v", got)
+	}
+	r.pump("model notice", func() bool { return r.has("✻ claude now on sonnet · high effort") })
+	if r.m.view(r.m.sel).items[len(r.m.view(r.m.sel).items)-1].kind != kModel || strings.Count(r.view(), "now on sonnet") != 1 {
+		t.Fatalf("one line for the model and effort:\n%s", r.view())
+	}
+	if !strings.Contains(r.chipText(), "✻ claude · sonnet · high") {
+		t.Fatalf("the chip names the new model and effort: %q", r.chipText())
+	}
+}
+
+func TestEffortCommandOpensTheCurrentModelsEfforts(t *testing.T) {
+	r := newRigWith(t, 140, 40, 0, func(c *config.Config) { c.Models.Claude = "opus"; c.Efforts.Claude = "low" })
+	r.start("hi")
+	r.done(r.claude.last(), "claude")
+	if spec := r.claude.last().spec; spec.Effort != "low" {
+		t.Fatalf("the agent starts at the configured effort: %+v", spec)
+	}
+	r.typeText("/effort")
+	r.key("enter", "enter")
+	r.pump("efforts", func() bool { return r.m.pick.open && r.m.pick.stage == pickEffort })
+	if it := r.m.pick.items[r.m.pick.sel]; it.label != "low" || !it.cur {
+		t.Fatalf("low is current: %+v", it)
+	}
+	r.key("5") // default, low, medium, high, max
+	if got := r.claude.last().effortCalls(); len(got) != 1 || got[0] != "max" {
+		t.Fatalf("SetEffort calls = %v", got)
+	}
+	r.typeText("/effort medium")
+	r.key("enter")
+	if got := r.claude.last().effortCalls(); len(got) != 2 || got[1] != "medium" {
+		t.Fatalf("/effort medium: %v", got)
+	}
+}
+
+func TestCodexEffortsShowItsDefault(t *testing.T) {
+	r := newRig(t, 140, 40)
+	r.duo()
+	r.clickChip(hitModel, "codex")
+	r.pump("codex models", func() bool { return r.m.pick.open && r.m.pick.stage == pickModels && !r.m.pick.loading })
+	r.key("enter") // gpt-5-codex, the current one
+	if r.m.pick.stage != pickEffort {
+		t.Fatalf("stage = %v", r.m.pick.stage)
+	}
+	for _, it := range r.m.pick.items {
+		if it.label == "default" {
+			t.Fatal("codex names its default level; no separate default row")
+		}
+	}
+	if it := r.m.pick.items[r.m.pick.sel]; it.label != "medium" || it.tag != "default" {
+		t.Fatalf("the model's default level is preselected: %+v", it)
 	}
 }
 
@@ -544,7 +601,7 @@ func TestSetModelErrorToasts(t *testing.T) {
 	r.key("enter", "enter")
 	r.pump("picker", func() bool { return r.m.pick.open && !r.m.pick.loading })
 	r.typeText("opus")
-	r.key("enter")
+	r.key("enter", "enter") // the model, then its effort
 	if !r.m.toast.on || !r.m.toast.danger || !strings.Contains(r.m.toast.text, "can't switch model mid-session") {
 		t.Fatalf("toast = %+v", r.m.toast)
 	}
@@ -567,7 +624,7 @@ func TestDuoPickerAsksWhichMemberThenListsItsModels(t *testing.T) {
 		t.Fatalf("codex's models, not claude's:\n%s", r.view())
 	}
 	r.typeText("mini")
-	r.key("enter")
+	r.key("enter", "enter") // the model, then its effort
 	if got := r.codex.last().modelCalls(); len(got) != 1 || got[0] != "gpt-5-codex-mini" {
 		t.Fatalf("codex SetModel = %v", got)
 	}
@@ -591,7 +648,7 @@ func TestPickerWithoutAMemberSetsTheNextAgentsModel(t *testing.T) {
 	r.clickChip(hitModel, "")
 	r.pump("models", func() bool { return r.m.pick.open && !r.m.pick.loading })
 	r.typeText("opus")
-	r.key("enter")
+	r.key("enter", "enter") // the model, then its effort
 	if r.m.newModel["claude"] != "opus" {
 		t.Fatalf("newModel = %v", r.m.newModel)
 	}

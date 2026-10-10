@@ -628,6 +628,49 @@ func TestSetModelWithModelSetter(t *testing.T) {
 	}
 }
 
+func TestSetEffortIsKeptAndResumed(t *testing.T) {
+	cfg := testCfg()
+	cfg.Efforts.Claude = "low"
+	r := newRigWith(t, t.TempDir(), true, cfg, nil, nil)
+	tid := r.thread(t)
+	id, err := r.m.AddMember(tid, "claude", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sp, _ := r.claude.spec(id); sp.Effort != "low" {
+		t.Fatalf("a new member starts at the configured effort: %q", sp.Effort)
+	}
+	if err := r.m.SetEffort(id, "High"); err != nil {
+		t.Fatal(err)
+	}
+	if got := inspect(t, r.claude, id).Effort(); got != "high" {
+		t.Errorf("run effort %q", got)
+	}
+	if ai, _ := r.m.Agent(id); ai.Effort != "high" {
+		t.Errorf("AgentInfo.Effort = %q", ai.Effort)
+	}
+	waitFor(t, "ModelChangedMsg", func() bool {
+		return r.c.count(func(m tea.Msg) bool {
+			mc, ok := m.(ModelChangedMsg)
+			return ok && mc.AgentID == id && mc.Effort == "high"
+		}) == 1
+	})
+	r.m.Flush()
+	_, th, _ := r.st.LoadEntries(tid)
+	if len(th.Members) != 1 || th.Members[0].Effort != "high" {
+		t.Fatalf("stored members = %+v", th.Members)
+	}
+	r.m.Close()
+
+	r2 := newRigIn(t, r.dir, nil, nil)
+	if _, _, err := r2.m.Resume(tid); err != nil {
+		t.Fatal(err)
+	}
+	if ai, _ := r2.m.Agent(id); ai.Effort != "high" {
+		t.Errorf("resumed effort = %q", ai.Effort)
+	}
+}
+
 func TestSetModelWithoutModelSetter(t *testing.T) {
 	r := newRig(t, nil, nil) // plain spy runs: no ModelSetter
 	tid := r.thread(t)

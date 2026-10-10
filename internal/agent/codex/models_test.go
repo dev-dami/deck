@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -50,14 +51,15 @@ func TestModelsMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []agent.ModelInfo{
-		{ID: "gpt-a", Name: "GPT A", Description: "fast one", Default: true},
-		{ID: "gpt-b", Name: "gpt-b"}, // model slug is the id; empty displayName falls back
+		{ID: "gpt-a", Name: "GPT A", Description: "fast one", Default: true,
+			Efforts: []agent.EffortInfo{{Level: "low", Description: "l"}}, DefaultEffort: "medium"},
+		{ID: "gpt-b", Name: "gpt-b", DefaultEffort: "low"}, // model slug is the id; empty displayName falls back
 	}
 	if len(got) != len(want) {
 		t.Fatalf("models = %+v", got)
 	}
 	for i := range want {
-		if got[i] != want[i] {
+		if !reflect.DeepEqual(got[i], want[i]) {
 			t.Errorf("model %d = %+v, want %+v", i, got[i], want[i])
 		}
 	}

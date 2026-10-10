@@ -23,7 +23,7 @@ func testCfg() config.Config {
 
 type spyAdapter struct {
 	agent.Adapter
-	setters bool // runs also implement agent.ModeSetter and agent.ModelSetter
+	setters bool // runs also implement agent.ModeSetter, ModelSetter and EffortSetter
 	images  bool // runs implement agent.ImageSender
 	steer   bool // runs implement agent.Steerer
 	mu      sync.Mutex
@@ -138,6 +138,7 @@ type spyRunSetters struct{ *spyRun }
 
 func (r *spyRunSetters) SetMode(m agent.Mode) error { return r.Run.(agent.ModeSetter).SetMode(m) }
 func (r *spyRunSetters) SetModel(m string) error    { return r.Run.(agent.ModelSetter).SetModel(m) }
+func (r *spyRunSetters) SetEffort(e string) error   { return r.Run.(agent.EffortSetter).SetEffort(e) }
 
 func (r *spyRun) Send(p string) error {
 	r.mu.Lock()

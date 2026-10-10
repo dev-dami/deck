@@ -141,6 +141,9 @@ func TestSetModeAndSetModelApplyOnNextTurnOnly(t *testing.T) {
 	if err := mdl.SetModel("gpt-next"); err != nil {
 		t.Fatal(err)
 	}
+	if err := run.(agent.EffortSetter).SetEffort("high"); err != nil {
+		t.Fatal(err)
+	}
 	// Nothing is sent by SetMode / SetModel themselves.
 	if n := len(fe.recorded(t, methodTurnStart)); n != 1 {
 		t.Fatalf("SetMode/SetModel sent a request: %d turn/starts", n)
@@ -163,13 +166,13 @@ func TestSetModeAndSetModelApplyOnNextTurnOnly(t *testing.T) {
 		t.Fatalf("turns = %d", len(turns))
 	}
 	// 1: untouched.
-	for _, k := range []string{"approvalPolicy", "sandboxPolicy", "model"} {
+	for _, k := range []string{"approvalPolicy", "sandboxPolicy", "model", "effort"} {
 		if _, ok := turns[0][k]; ok {
 			t.Errorf("turn 1 carries %s", k)
 		}
 	}
 	// 2: plan + model override, plan note.
-	if turns[1]["approvalPolicy"] != "on-request" || turns[1]["model"] != "gpt-next" ||
+	if turns[1]["approvalPolicy"] != "on-request" || turns[1]["model"] != "gpt-next" || turns[1]["effort"] != "high" ||
 		turns[1]["sandboxPolicy"].(map[string]any)["type"] != "readOnly" {
 		t.Errorf("turn 2 = %v", turns[1])
 	}
@@ -187,7 +190,7 @@ func TestSetModeAndSetModelApplyOnNextTurnOnly(t *testing.T) {
 		t.Errorf("turn 3 input = %q", got)
 	}
 	// 4: overrides were consumed.
-	for _, k := range []string{"approvalPolicy", "sandboxPolicy", "model"} {
+	for _, k := range []string{"approvalPolicy", "sandboxPolicy", "model", "effort"} {
 		if _, ok := turns[3][k]; ok {
 			t.Errorf("turn 4 carries %s", k)
 		}

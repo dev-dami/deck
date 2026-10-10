@@ -25,6 +25,9 @@ func (m *model) modelLabel(a session.AgentInfo) string {
 	if model == "" {
 		model = "default"
 	}
+	if a.Effort != "" {
+		model += " " + glyphDot + " " + a.Effort
+	}
 	return model
 }
 

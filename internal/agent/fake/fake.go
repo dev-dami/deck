@@ -109,6 +109,7 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		sessionID: spec.ResumeID,
 		mode:      spec.Mode,
 		model:     spec.Model,
+		effort:    spec.Effort,
 	}
 	if spec.ResumeID != "" {
 		r.next = len(a.turns) // a resumed conversation is past its scripted opening
@@ -179,6 +180,7 @@ type run struct {
 	sessionID string
 	cur       *turn      // the turn currently playing, nil when idle
 	mode      agent.Mode // last permission mode set (starts as Spec.Mode)
+	effort    string     // last effort set (starts as Spec.Effort)
 	model     string     // last model set (starts as Spec.Model)
 	modes     []agent.Mode
 	models    []string
@@ -752,22 +754,38 @@ func fileDiff(path string, hunks ...agent.Hunk) *agent.FileDiff {
 }
 
 // ClaudeModels is the model list a fake adapter offers by default, shaped like
-// the Claude CLI's aliases.
+// the list Claude Code's initialize answer gives: efforts, no default effort.
 func ClaudeModels() []agent.ModelInfo {
+	es := claudeEfforts()
 	return []agent.ModelInfo{
-		{ID: "default", Name: "Default", Description: "The CLI's recommended model", Default: true},
-		{ID: "opus", Name: "Opus", Description: "Most capable, for complex work"},
-		{ID: "sonnet", Name: "Sonnet", Description: "Best for everyday tasks"},
+		{ID: "default", Name: "Default", Description: "The CLI's recommended model", Default: true, Efforts: es},
+		{ID: "opus", Name: "Opus", Description: "Most capable, for complex work", Efforts: es},
+		{ID: "sonnet", Name: "Sonnet", Description: "Best for everyday tasks", Efforts: es},
 		{ID: "haiku", Name: "Haiku", Description: "Fastest, for quick answers"},
 	}
 }
 
-// CodexModels is a model list shaped like the Codex CLI's.
+func claudeEfforts() []agent.EffortInfo {
+	return []agent.EffortInfo{
+		{Level: "low", Description: "Quick answers, light reasoning"},
+		{Level: "medium", Description: "Balanced speed and reasoning depth"},
+		{Level: "high", Description: "Deeper reasoning for complex work"},
+		{Level: "max", Description: "The most reasoning, slowest"},
+	}
+}
+
+// CodexModels is a model list shaped like the Codex CLI's: each model has
+// efforts and names its default one.
 func CodexModels() []agent.ModelInfo {
+	es := []agent.EffortInfo{
+		{Level: "low", Description: "Fast responses with lighter reasoning"},
+		{Level: "medium", Description: "Balances speed and reasoning depth"},
+		{Level: "high", Description: "Greater reasoning depth for complex problems"},
+	}
 	return []agent.ModelInfo{
-		{ID: "gpt-5-codex", Name: "gpt-5-codex", Description: "Tuned for agentic coding", Default: true},
-		{ID: "gpt-5-codex-mini", Name: "gpt-5-codex-mini", Description: "Cheaper and faster"},
-		{ID: "gpt-5", Name: "gpt-5", Description: "General purpose"},
+		{ID: "gpt-5-codex", Name: "gpt-5-codex", Description: "Tuned for agentic coding", Default: true, Efforts: es, DefaultEffort: "medium"},
+		{ID: "gpt-5-codex-mini", Name: "gpt-5-codex-mini", Description: "Cheaper and faster", Efforts: es, DefaultEffort: "low"},
+		{ID: "gpt-5", Name: "gpt-5", Description: "General purpose", Efforts: es, DefaultEffort: "medium"},
 	}
 }
 
@@ -820,6 +838,24 @@ func (r *run) SetModel(model string) error {
 	return nil
 }
 
+// SetEffort implements agent.EffortSetter: it records the effort.
+func (r *run) SetEffort(effort string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.shut {
+		return ErrClosed
+	}
+	r.effort = effort
+	return nil
+}
+
+// Effort is the effort the run currently has: Spec.Effort until SetEffort.
+func (r *run) Effort() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.effort
+}
+
 // Mode is the permission mode the run currently has: Spec.Mode until SetMode is called.
 func (r *run) Mode() agent.Mode {
 	r.mu.Lock()
@@ -852,6 +888,7 @@ func (r *run) ModelCalls() []string {
 type Inspector interface {
 	Mode() agent.Mode
 	Model() string
+	Effort() string
 	ModeCalls() []agent.Mode
 	ModelCalls() []string
 	ImageCalls() []PromptCall
@@ -859,12 +896,13 @@ type Inspector interface {
 }
 
 var (
-	_ agent.ModeSetter  = (*run)(nil)
-	_ agent.ModelSetter = (*run)(nil)
-	_ agent.ModelLister = (*adapter)(nil)
-	_ agent.ImageSender = (*run)(nil)
-	_ agent.Steerer     = (*run)(nil)
-	_ Inspector         = (*run)(nil)
+	_ agent.ModeSetter   = (*run)(nil)
+	_ agent.ModelSetter  = (*run)(nil)
+	_ agent.EffortSetter = (*run)(nil)
+	_ agent.ModelLister  = (*adapter)(nil)
+	_ agent.ImageSender  = (*run)(nil)
+	_ agent.Steerer      = (*run)(nil)
+	_ Inspector          = (*run)(nil)
 )
 
 // Context windows the fake models report: Claude's and Codex's.

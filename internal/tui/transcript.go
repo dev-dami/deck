@@ -71,6 +71,7 @@ type item struct {
 	pstate pauseState
 
 	joinID string // join lines: who joined; model lines: whose model
+	effort string // model lines: the effort it runs at, "" = the model's default
 
 	mode   agent.Mode // mode lines
 	denied bool       // auto lines: declined rather than approved

@@ -82,6 +82,9 @@ type model struct {
 	// newDefault marks kinds whose next agent was told to use the CLI's own
 	// default model, over whatever the config says.
 	newDefault map[string]bool
+	// newEffort is the effort the next agent of a kind starts with, once
+	// picked ("" = the model's default); unset kinds use the config's.
+	newEffort map[string]string
 
 	focus   focusArea
 	comp    composer
@@ -199,6 +202,7 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 		newDir:       dir,
 		newModel:     map[string]string{},
 		newDefault:   map[string]bool{},
+		newEffort:    map[string]string{},
 		noted:        map[string]agent.Mode{},
 		seenGlobal:   map[string]bool{},
 		fight:        fightState{anim: yolo.New(dark)},
@@ -844,6 +848,20 @@ func (m *model) applySwitch(tr []string, w int) []string {
 	return tr
 }
 
+// newEffortFor is the effort the next agent of kind starts with.
+func (m *model) newEffortFor(kind string) string {
+	if v, ok := m.newEffort[kind]; ok {
+		return v
+	}
+	switch kind {
+	case "claude":
+		return m.cfg.Efforts.Claude
+	case "codex":
+		return m.cfg.Efforts.Codex
+	}
+	return ""
+}
+
 func (m *model) defaultModel(kind string) string {
 	switch kind {
 	case "claude":
@@ -901,6 +919,8 @@ func (m *model) placeholder() string {
 		return m.prompt.placeholder()
 	case m.pick.open && m.pick.stage == pickThreads:
 		return "find a thread"
+	case m.pick.open && m.pick.stage == pickEffort:
+		return "filter efforts"
 	case m.pick.open:
 		return "filter, or type a model id"
 	case m.emptyVisible():
@@ -949,6 +969,8 @@ func (m *model) footerHints() string {
 		return h("enter steer", "del cancel", "⌥↑↓ rows", "esc back")
 	case m.pick.open && m.pick.stage == pickThreads:
 		return h("↑↓ select", "enter open", "1-9 jump", "type to filter", "esc close")
+	case m.pick.open && m.pick.stage == pickEffort:
+		return h("↑↓ select", "enter pick", "1-9 jump", "esc back to models")
 	case m.pick.open:
 		return h("↑↓ select", "enter pick", "1-9 jump", "type to filter or any model id", "esc close")
 	case m.menu.open():

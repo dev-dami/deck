@@ -39,6 +39,9 @@ type Config struct {
 	// send, for the changes panel and its undo.
 	TrackChanges bool   `json:"track_changes"`
 	Models       Models `json:"models"`
+	// Efforts names the reasoning effort each CLI should use; empty means the
+	// model's default.
+	Efforts Models `json:"efforts"`
 }
 
 // gitUserName and osUserName are indirections so tests can stub them.

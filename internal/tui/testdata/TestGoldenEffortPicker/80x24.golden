@@ -1,0 +1,24 @@
+ ◆ deck                                                                    idle
+
+ ▎○ ✻ refactor the st…
+
+
+
+
+
+
+
+                          Ada
+                          refactor the store
+
+                        ✻ claude
+                         Effort for Opus
+                         ❯ 1. default  the model's own effort        ✓ current
+                           2. low      Quick answers, light reasoning
+                           3. medium   Balanced speed and reasoning depth
+                           4. high     Deeper reasoning for complex work
+                           5. max      The most reasoning, slowest
+                        ───────────────────────────────────────────────────────
+                          reasoning effort for ✻ claude
+                        ◆ filter efforts
+ ↑↓ select   enter pick   1-9 jump   esc back to models        claude finished

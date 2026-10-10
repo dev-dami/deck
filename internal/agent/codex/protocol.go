@@ -147,6 +147,7 @@ type turnStartParams struct {
 	ApprovalPolicy string         `json:"approvalPolicy,omitempty"`
 	SandboxPolicy  *sandboxPolicy `json:"sandboxPolicy,omitempty"`
 	Model          string         `json:"model,omitempty"`
+	Effort         string         `json:"effort,omitempty"`
 }
 
 type modelListParams struct {
@@ -163,6 +164,11 @@ type modelListResponse struct {
 		Description string `json:"description"`
 		Hidden      bool   `json:"hidden"`
 		IsDefault   bool   `json:"isDefault"`
+		Efforts     []struct {
+			ReasoningEffort string `json:"reasoningEffort"`
+			Description     string `json:"description"`
+		} `json:"supportedReasoningEfforts"`
+		DefaultEffort string `json:"defaultReasoningEffort"`
 	} `json:"data"`
 	NextCursor string `json:"nextCursor"`
 }

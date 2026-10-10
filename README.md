@@ -38,7 +38,7 @@ Run `deck`, type, press enter.
 - **Threads, not agents.** A thread holds you and one or more agents. `@codex review this` talks to one, `@claude plan it, @codex review it` to both, `@all` to everyone. Mentioning an agent the thread lacks adds it.
 - **Agents talk to each other** through a `send_message` tool or by starting a line with `@name`. Every relay shows in the transcript. After six agent-to-agent messages the thread pauses until you continue or steer.
 - **Permission modes.** `shift+tab` or a click on the chip cycles `◇ plan` → `● ask` → `▲ yolo`. Yolo is never the startup default.
-- **Models.** Click the model in the chip line or press `alt+m` to pick from the models the CLI offers.
+- **Models and effort.** Click the model in the chip line or press `alt+m` to pick from the models the CLI itself offers (the same list as Claude Code's `/model` and Codex's model picker), then the reasoning effort. `/effort high` sets the effort directly.
 - **Approvals** appear inline and in the inbox (`i`): `y` allow, `a` always, `n` deny, `e` edit.
 - **Files.** Type `@` and part of a path anywhere in a message to pick a file from the thread's folder (git's file list, or the folder outside git); it goes in as `@path`.
 - **Images.** `ctrl+v` pastes one from the clipboard; pasting or dropping an image path attaches it.
@@ -57,7 +57,7 @@ Run `deck`, type, press enter.
 - **Isolation (opt-in).** Threads share one working tree by default. `/isolate` gives a thread its own git worktree on a `deck/<id>` branch, made from your last commit; the chip line shows `⑂ deck/<id>`. `/apply` brings its changes into your tree as uncommitted edits (your branch and index are left alone), and `/unisolate` moves it back and removes the worktree, asking twice if there is work you never applied. Worktrees live in `~/.deck/worktrees`.
 - **Small things.** A faint line ends every turn (`42s · 1.2k tokens · 3 files · $0.04`). Scrolled up, a `↓ 3 new` marker takes you back. The terminal title says what is working and what needs you, and when the terminal is in the background a finished turn or an approval raises a desktop notification where your terminal supports it. `?` lists every key.
 
-Commands: `/new`, `/resume`, `/model`, `/cd <path>`, `/name <name>`, `/changes`, `/rename`, `/pin`, `/done`, `/archive`, `/delete`, `/fork`, `/move <path>`, `/isolate`, `/apply`, `/unisolate`. `ctrl+c` interrupts; twice quits.
+Commands: `/new`, `/resume`, `/model`, `/effort <level>`, `/cd <path>`, `/name <name>`, `/changes`, `/rename`, `/pin`, `/done`, `/archive`, `/delete`, `/fork`, `/move <path>`, `/isolate`, `/apply`, `/unisolate`. `ctrl+c` interrupts; twice quits.
 
 ## Config
 
@@ -73,7 +73,8 @@ Commands: `/new`, `/resume`, `/model`, `/cd <path>`, `/name <name>`, `/changes`,
   "track_changes": true,
   "claude_binary": "claude",
   "codex_binary": "codex",
-  "models": { "claude": "", "codex": "" }
+  "models": { "claude": "", "codex": "" },
+  "efforts": { "claude": "", "codex": "" }
 }
 ```
 

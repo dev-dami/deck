@@ -28,6 +28,7 @@ type menuItem struct {
 	cur    bool   // model picker: the model in use now
 	free   bool   // model picker: the typed text, as a model id
 	path   string // @file: what goes after "@" when picked
+	note   string // model picker: shown after desc, only when both fit whole
 }
 
 // menu is the upward completion menu above the composer, for "@" and "/".

@@ -36,11 +36,13 @@ type run struct {
 	threadID string
 	turnID   string
 
-	// mode is the current permission mode. pendingMode / pendingModel hold a
-	// SetMode / SetModel change that the next turn/start carries as overrides.
-	mode         agent.Mode
-	pendingMode  agent.Mode
-	pendingModel string
+	// mode is the current permission mode. pendingMode / pendingModel /
+	// pendingEffort hold a SetMode / SetModel / SetEffort change (or the
+	// spec's effort) that the next turn/start carries as overrides.
+	mode          agent.Mode
+	pendingMode   agent.Mode
+	pendingModel  string
+	pendingEffort string
 
 	// doneTurns holds ids of turns that already completed.
 	doneTurns map[string]bool
@@ -188,7 +190,7 @@ func (r *run) SendWithImages(prompt string, images []agent.Image) error {
 	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 	defer cancel()
 	r.mu.Lock()
-	mode, pMode, pModel := r.mode, r.pendingMode, r.pendingModel
+	mode, pMode, pModel, pEffort := r.mode, r.pendingMode, r.pendingModel, r.pendingEffort
 	r.mu.Unlock()
 
 	params := turnStartParams{ThreadID: tid}
@@ -208,6 +210,7 @@ func (r *run) SendWithImages(prompt string, images []agent.Image) error {
 		params.SandboxPolicy = sandboxPolicyFor(ms.sandbox)
 	}
 	params.Model = pModel
+	params.Effort = pEffort
 
 	var resp turnStartResponse
 	if err := r.client.Call(ctx, methodTurnStart, params, &resp); err != nil {
@@ -221,6 +224,9 @@ func (r *run) SendWithImages(prompt string, images []agent.Image) error {
 	}
 	if r.pendingModel == pModel {
 		r.pendingModel = ""
+	}
+	if r.pendingEffort == pEffort {
+		r.pendingEffort = ""
 	}
 	r.mu.Unlock()
 	r.mu.Lock()
@@ -294,7 +300,21 @@ func (r *run) SetModel(model string) error {
 	return nil
 }
 
+// SetEffort switches the reasoning effort, sent as the `effort` override on
+// the next turn/start. Codex has no "back to the default" override, so a level
+// is required (the picker offers the model's default level by name).
+func (r *run) SetEffort(effort string) error {
+	if effort == "" {
+		return errors.New("codex: pick an effort level")
+	}
+	r.mu.Lock()
+	r.pendingEffort = effort
+	r.mu.Unlock()
+	return nil
+}
+
 var (
-	_ agent.ModeSetter  = (*run)(nil)
-	_ agent.ModelSetter = (*run)(nil)
+	_ agent.ModeSetter   = (*run)(nil)
+	_ agent.ModelSetter  = (*run)(nil)
+	_ agent.EffortSetter = (*run)(nil)
 )

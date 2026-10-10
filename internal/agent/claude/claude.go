@@ -44,6 +44,7 @@ type adapter struct {
 	extraArgs []string
 	tap       func(line []byte)                     // called with every raw stdout line
 	helpFn    func(context.Context) (string, error) // replaces running `claude --help`
+	initFn    func(context.Context) ([]byte, error) // replaces asking claude for its models
 }
 
 // New returns the Claude Code adapter. binary may be empty (looks up "claude" on
@@ -101,6 +102,7 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 	}
 	r.sessionID = spec.ResumeID
 	r.model = spec.Model
+	r.effort = spec.Effort
 	r.mode = spec.Mode
 	if r.mode == "" {
 		r.mode = agent.ModeAsk
@@ -189,6 +191,7 @@ type run struct {
 	busy      bool
 	closed    bool
 	model     string     // current --model ("" = CLI default)
+	effort    string     // current --effort ("" = the model's default)
 	mode      agent.Mode // current permission mode (never empty)
 	// dirty: model or mode changed while busy (or while a restart was running);
 	// the process is restarted with the new flags once the turn is done.
@@ -205,7 +208,7 @@ type run struct {
 
 func (r *run) args(resume string) []string {
 	r.mu.Lock()
-	model, mode := r.model, r.mode
+	model, mode, effort := r.model, r.mode, r.effort
 	r.mu.Unlock()
 	args := []string{
 		"-p",
@@ -221,6 +224,9 @@ func (r *run) args(resume string) []string {
 	}
 	if model != "" {
 		args = append(args, "--model", model)
+	}
+	if effort != "" {
+		args = append(args, "--effort", effort)
 	}
 	switch mode {
 	case agent.ModePlan:
@@ -521,6 +527,25 @@ func (r *run) SetModel(model string) error {
 		return nil
 	}
 	r.model = model
+	r.applyLocked()
+	return nil
+}
+
+// SetEffort switches the reasoning effort ("" = the model's default). Like
+// SetModel it restarts the process with the new --effort, resuming the
+// session, once the turn in progress is done.
+func (r *run) SetEffort(effort string) error {
+	effort = strings.TrimSpace(effort)
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return errors.New("claude run is closed")
+	}
+	if r.effort == effort {
+		r.mu.Unlock()
+		return nil
+	}
+	r.effort = effort
 	r.applyLocked()
 	return nil
 }

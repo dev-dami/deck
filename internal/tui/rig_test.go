@@ -39,8 +39,9 @@ type stubRun struct {
 	interrupt int
 	spec      agent.Spec
 	once      sync.Once
-	modes     []agent.Mode
-	setModels []string
+	modes      []agent.Mode
+	setModels  []string
+	setEfforts []string
 }
 
 func (a *stubAdapter) Name() string { return a.kind }
@@ -85,6 +86,20 @@ func (r *stubRun) SetModel(model string) error {
 	r.setModels = append(r.setModels, model)
 	r.mu.Unlock()
 	return nil
+}
+
+// SetEffort implements agent.EffortSetter.
+func (r *stubRun) SetEffort(effort string) error {
+	r.mu.Lock()
+	r.setEfforts = append(r.setEfforts, effort)
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *stubRun) effortCalls() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.setEfforts...)
 }
 
 func (r *stubRun) modeCalls() []agent.Mode {

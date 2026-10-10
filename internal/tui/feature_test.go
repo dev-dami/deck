@@ -524,8 +524,8 @@ func TestClickPickerRowPicks(t *testing.T) {
 		t.Skipf("picker rows not numbered in this layout:\n%s", r.view())
 	}
 	r.click(r.m.g.mainX+6, row)
-	if r.m.pick.open && r.m.pick.sel != 1 {
-		t.Errorf("click on row %d selected item %d\n%s", row, r.m.pick.sel, r.view())
+	if r.m.pick.stage != pickEffort || r.m.pick.chosen.ID != "opus" {
+		t.Errorf("click on row %d picked %q (stage %v)\n%s", row, r.m.pick.chosen.ID, r.m.pick.stage, r.view())
 	}
 }
 

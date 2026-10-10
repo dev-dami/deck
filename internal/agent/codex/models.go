@@ -111,7 +111,13 @@ func (a *adapter) listModels(ctx context.Context) ([]agent.ModelInfo, error) {
 			if name == "" {
 				name = id
 			}
-			out = append(out, agent.ModelInfo{ID: id, Name: name, Description: m.Description, Default: m.IsDefault})
+			mi := agent.ModelInfo{ID: id, Name: name, Description: m.Description, Default: m.IsDefault, DefaultEffort: m.DefaultEffort}
+			for _, e := range m.Efforts {
+				if e.ReasoningEffort != "" {
+					mi.Efforts = append(mi.Efforts, agent.EffortInfo{Level: e.ReasoningEffort, Description: e.Description})
+				}
+			}
+			out = append(out, mi)
 		}
 		if resp.NextCursor == "" {
 			return out, nil

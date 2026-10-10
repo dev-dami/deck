@@ -179,6 +179,7 @@ type AgentInfo struct {
 	Title    string // the thread's title: its first message, one line
 	Dir      string
 	Model    string
+	Effort   string // "" = the model's default
 	Status   Status
 	CostUSD  float64
 	Pending  int // approvals waiting for an answer
@@ -231,6 +232,7 @@ type Manager struct {
 
 	modelMu    sync.Mutex        // guards defModels and modelCache
 	defModels  map[string]string // kind -> model for members started later (SetDefaultModel)
+	defEfforts map[string]string // kind -> effort for members started later (SetDefaultEffort)
 	modelCache map[string][]agent.ModelInfo
 
 	mu      sync.Mutex
@@ -521,7 +523,8 @@ func (m *Manager) newMember(t *thread, kind, model, preferredID string) (*agentS
 	if model == "" {
 		model = m.defaultModel(cfg, kind)
 	}
-	a := &agentState{id: id, kind: kind, name: id, model: model, thread: t, base: StatusIdle, started: time.Now()}
+	effort := m.defaultEffort(cfg, kind)
+	a := &agentState{id: id, kind: kind, name: id, model: model, effort: effort, thread: t, base: StatusIdle, started: time.Now()}
 	m.mu.Lock()
 	m.order = append(m.order, a)
 	m.byID[id] = a
@@ -585,7 +588,7 @@ func (m *Manager) startRun(t *thread, a *agentState, prompt, resumeID string) er
 func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Spec {
 	cfg := m.config()
 	s := agent.Spec{
-		ID: a.id, Dir: t.dir, Model: a.model, ResumeID: resume, FirstPrompt: prompt,
+		ID: a.id, Dir: t.dir, Model: a.model, Effort: a.effort, ResumeID: resume, FirstPrompt: prompt,
 		UserName: cfg.UserName, TellName: cfg.TellAgentsName, Mode: t.getMode(),
 	}
 	switch a.kind {
@@ -1074,9 +1077,12 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		if name == "" {
 			name = id
 		}
-		model := mem.Model
+		model, effort := mem.Model, mem.Effort
 		if model == "" {
 			model = m.defaultModel(cfg, mem.Kind)
+		}
+		if effort == "" {
+			effort = m.defaultEffort(cfg, mem.Kind)
 		}
 		cursor := mem.Cursor
 		if th.Version < store.CurrentVersion && len(th.Members) == 1 {
@@ -1086,7 +1092,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 			cursor = len(entries)
 		}
 		a := &agentState{
-			id: id, kind: mem.Kind, name: name, model: model, thread: t, base: StatusIdle,
+			id: id, kind: mem.Kind, name: name, model: model, effort: effort, thread: t, base: StatusIdle,
 			started: time.Now(), costTotal: mem.CostUSD, sessionID: mem.SessionID, cursor: cursor,
 			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow,
 		}
@@ -1364,6 +1370,7 @@ type agentState struct {
 	run         agent.Run
 	name        string
 	model       string
+	effort      string
 	base        Status
 	pending     []pendingApproval
 	costTotal   float64 // folded turns
@@ -1408,7 +1415,7 @@ func (a *agentState) info() AgentInfo {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return AgentInfo{
-		ID: a.id, Kind: a.kind, Name: a.name, Dir: a.thread.dir, Model: a.model,
+		ID: a.id, Kind: a.kind, Name: a.name, Dir: a.thread.dir, Model: a.model, Effort: a.effort,
 		Status: a.statusLocked(), CostUSD: a.costTotal + a.costTurn, Pending: len(a.pending),
 		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow,
 		RunningModel: a.running,
@@ -1429,7 +1436,7 @@ func (a *agentState) memberMeta() store.Member {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return store.Member{
-		ID: a.id, Kind: a.kind, Name: a.name, Model: a.model, SessionID: a.sessionID,
+		ID: a.id, Kind: a.kind, Name: a.name, Model: a.model, Effort: a.effort, SessionID: a.sessionID,
 		CostUSD: a.costTotal + a.costTurn, Cursor: a.cursor,
 		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow,
 	}

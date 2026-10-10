@@ -17,7 +17,7 @@ import (
 
 // The model picker: an upward menu, in the style of the @ and / menus, that
 // lists the models a CLI itself offers. In a thread with several agents it
-// first asks which one. The composer is borrowed for the filter (your draft
+// first asks which one; a model with reasoning efforts then asks which effort. The composer is borrowed for the filter (your draft
 // waits and comes back), so typing narrows the list and text that matches
 // nothing can still be used as a model id.
 
@@ -27,6 +27,7 @@ const (
 	pickMembers pickStage = iota + 1
 	pickModels
 	pickThreads // ctrl+k: switch to another thread
+	pickEffort  // after a model with efforts: which effort
 )
 
 // modelListTimeout bounds how long listing a CLI's models may take.
@@ -44,8 +45,12 @@ type picker struct {
 	cur     string // models stage: the model it runs now
 	running string // models stage: the slug the CLI reports it runs (member only)
 
+	curEffort string // models and effort stages: the effort it runs at now
+	toEffort  bool   // /effort: go straight to the current model's efforts
+
 	members []session.AgentInfo // member stage
 	models  []agent.ModelInfo
+	chosen  agent.ModelInfo // effort stage: the model picked
 	loading bool
 	loadErr error
 	noList  bool // the CLI cannot list its models
@@ -133,9 +138,9 @@ func (m *model) openPickerKind(kind string) []tea.Cmd {
 func (m *model) pickModels(kind, agentID, cur string) tea.Cmd {
 	p := &m.pick
 	p.stage, p.kind, p.agentID, p.cur = pickModels, kind, agentID, cur
-	p.running = ""
+	p.running, p.curEffort = "", m.newEffortFor(kind)
 	if a, ok := m.agentInfo(agentID); ok && agentID != "" {
-		p.running = a.RunningModel
+		p.running, p.curEffort = a.RunningModel, a.Effort
 	}
 	p.models, p.loadErr, p.noList, p.loading = nil, nil, false, true
 	p.seq++
@@ -155,6 +160,24 @@ func (m *model) onModels(msg modelsMsg) {
 	p.models, p.loadErr = msg.list, msg.err
 	p.noList = msg.err == nil && len(msg.list) == 0
 	p.built = false
+	if p.toEffort {
+		p.toEffort = false
+		for _, mi := range p.models {
+			if p.isCurrent(mi) && len(mi.Efforts) > 0 {
+				m.pickEfforts(mi)
+				return
+			}
+		}
+	}
+	m.syncPick()
+}
+
+// pickEfforts moves to the efforts of the chosen model.
+func (m *model) pickEfforts(mi agent.ModelInfo) {
+	p := &m.pick
+	p.stage, p.chosen = pickEffort, mi
+	p.built, p.sel = false, 0
+	m.comp.Reset()
 	m.syncPick()
 }
 
@@ -238,8 +261,34 @@ func (m *model) syncPick() {
 			if mi.Default {
 				it.tag = "default"
 			}
+			if len(mi.Efforts) > 0 {
+				it.note = "effort " + effortRange(mi.Efforts)
+			}
 			all = append(all, it)
 			hay = append(hay, slug+" "+mi.Name)
+		}
+	case pickEffort:
+		mi := p.chosen
+		cur := p.curEffort
+		known := cur == ""
+		for _, e := range mi.Efforts {
+			known = known || e.Level == cur
+		}
+		if !known { // not one this model offers: it would run at its default
+			cur = ""
+		}
+		if mi.DefaultEffort == "" {
+			all = append(all, menuItem{label: "default", desc: "the model's own effort", val: "", cur: cur == "", tag: "default"})
+			hay = append(hay, "default")
+		}
+		for _, e := range mi.Efforts {
+			it := menuItem{label: e.Level, desc: e.Description, val: e.Level,
+				cur: e.Level == cur || (cur == "" && e.Level == mi.DefaultEffort)}
+			if e.Level == mi.DefaultEffort {
+				it.tag = "default"
+			}
+			all = append(all, it)
+			hay = append(hay, e.Level)
 		}
 	}
 	if q == "" {
@@ -268,7 +317,7 @@ func (m *model) syncPick() {
 		}
 	}
 	p.sel = 0
-	if q == "" && p.stage == pickModels {
+	if q == "" && (p.stage == pickModels || p.stage == pickEffort) {
 		for i, it := range p.items {
 			if it.cur {
 				p.sel = i
@@ -307,10 +356,19 @@ func (m *model) pickRows(w, maxRows int) []string {
 		title = "Whose model?"
 	case pickThreads:
 		title = "Switch thread"
+	case pickEffort:
+		name := p.chosen.Name
+		if name == "" {
+			name = slugOf(p.chosen)
+		}
+		title = "Effort for " + name
 	}
 	head := " " + sBold.Render(title)
 	if p.stage == pickModels && p.running != "" {
 		head += sFaint.Render(" " + glyphDot + " running " + p.running)
+	}
+	if p.stage == pickModels && p.curEffort != "" {
+		head += sFaint.Render(" " + glyphDot + " " + p.curEffort + " effort")
 	}
 	out := []string{trunc(head, w)}
 	p.rowItem = []int{-1}
@@ -375,10 +433,16 @@ func (m *model) pickRow(it menuItem, i int, selected bool, labelW, w int) string
 	} else if it.tag != "" {
 		right = sFaint.Render(it.tag)
 	}
-	if it.desc != "" {
+	if it.desc != "" || it.note != "" {
 		room := w - sw(left) - 2 - sw(right) - 2
-		if room >= 6 {
-			left += "  " + sFaint.Render(trunc(oneLine(it.desc), room))
+		desc := oneLine(it.desc)
+		if it.note != "" {
+			if full := strings.TrimPrefix(desc+" "+glyphDot+" "+it.note, " "+glyphDot+" "); sw(full) <= room {
+				desc = full
+			}
+		}
+		if room >= 6 && desc != "" {
+			left += "  " + sFaint.Render(trunc(desc, room))
 		}
 	}
 	if right != "" {
@@ -415,6 +479,11 @@ func (m *model) pickChipLine(w int) string {
 		what = sMuted.Render("pick the agent whose model to change")
 	case p.stage == pickThreads:
 		what = sMuted.Render("type to find a thread by title or agent")
+	case p.stage == pickEffort && p.agentID != "":
+		a, _ := m.agentInfo(p.agentID)
+		what = sMuted.Render("reasoning effort for ") + m.chip(a)
+	case p.stage == pickEffort:
+		what = sMuted.Render("reasoning effort for the next ") + tintStyle(p.kind).Render(p.kind)
 	case p.agentID != "":
 		a, _ := m.agentInfo(p.agentID)
 		what = sMuted.Render("model for ") + m.chip(a)
@@ -433,6 +502,12 @@ func (m *model) pickKey(msg tea.KeyMsg) []tea.Cmd {
 	p := &m.pick
 	switch msg.String() {
 	case "esc":
+		if p.stage == pickEffort {
+			p.stage, p.built = pickModels, false
+			m.comp.Reset()
+			m.syncPick()
+			return nil
+		}
 		m.closePicker()
 	case "up", "ctrl+p":
 		if n := len(p.items); n > 0 {
@@ -465,7 +540,7 @@ func (m *model) pickChoose() []tea.Cmd {
 	p := &m.pick
 	if p.sel < 0 || p.sel >= len(p.items) {
 		if q := strings.TrimSpace(m.comp.Value()); q != "" && p.stage == pickModels {
-			return m.applyModel(q)
+			return m.applyModel(q, "", false)
 		}
 		return nil
 	}
@@ -480,36 +555,101 @@ func (m *model) pickChoose() []tea.Cmd {
 		if !ok {
 			return nil
 		}
-		return []tea.Cmd{m.pickModels(a.Kind, a.ID, a.Model)}
+		cmds := []tea.Cmd{m.pickModels(a.Kind, a.ID, a.Model)}
+		return cmds
 	}
-	return m.applyModel(it.val)
+	if p.stage == pickEffort {
+		return m.applyModel(p.chosen.ID, it.val, true)
+	}
+	if !it.free {
+		for _, mi := range p.models {
+			if mi.ID == it.val && len(mi.Efforts) > 0 {
+				m.pickEfforts(mi)
+				return nil
+			}
+		}
+	}
+	// a model without efforts runs at its default
+	return m.applyModel(it.val, "", p.curEffort != "")
 }
 
-// applyModel switches the target to a model and closes the picker. A live
-// member is switched in the session; with no member it sets what new agents of
-// the kind start with.
-func (m *model) applyModel(id string) []tea.Cmd {
+// applyModel switches the target to a model (and, with setEffort, an effort)
+// and closes the picker. A live member is switched in the session; with no
+// member it sets what new agents of the kind start with.
+func (m *model) applyModel(id, effort string, setEffort bool) []tea.Cmd {
 	p := &m.pick
-	kind, agentID := p.kind, p.agentID
+	kind, agentID, curEffort := p.kind, p.agentID, p.curEffort
 	m.closePicker()
 	if agentID != "" {
 		if err := m.mgr.SetModel(agentID, id); err != nil {
 			return []tea.Cmd{m.toast.show(err.Error(), true, m.now)}
 		}
+		if setEffort && effort != curEffort {
+			// clearing the effort is best effort: codex has no "back to the
+			// default" and keeps the last level
+			if err := m.mgr.SetEffort(agentID, effort); err != nil && effort != "" {
+				return []tea.Cmd{m.toast.show(err.Error(), true, m.now)}
+			}
+		}
 		return nil
+	}
+	suffix := ""
+	if setEffort {
+		m.newEffort[kind] = effort
+		m.mgr.SetDefaultEffort(kind, effort)
+		if effort != "" {
+			suffix = " " + glyphDot + " " + effort + " effort"
+		}
 	}
 	if id == "" || id == "default" {
 		delete(m.newModel, kind)
 		m.newDefault[kind] = true
 		m.mgr.SetDefaultModel(kind, "")
 		m.pushConfig()
-		return []tea.Cmd{m.toast.show("next "+kind+" uses its default model", false, m.now)}
+		return []tea.Cmd{m.toast.show("next "+kind+" uses its default model"+suffix, false, m.now)}
 	}
 	m.newModel[kind] = id
 	delete(m.newDefault, kind)
 	m.mgr.SetDefaultModel(kind, id)
 	m.pushConfig()
-	return []tea.Cmd{m.toast.show("next "+kind+" starts on "+id, false, m.now)}
+	return []tea.Cmd{m.toast.show("next "+kind+" starts on "+id+suffix, false, m.now)}
+}
+
+// effortRange names a model's efforts, lowest to highest: "low–max".
+func effortRange(es []agent.EffortInfo) string {
+	if len(es) == 1 {
+		return es[0].Level
+	}
+	return es[0].Level + "–" + es[len(es)-1].Level
+}
+
+// effortCommand is /effort: with no level it opens the picker at the current
+// model's efforts; with one it sets it on the agent you're talking to, or on
+// the next agent when nobody is in the thread.
+func (m *model) effortCommand(arg string) []tea.Cmd {
+	if arg == "" {
+		cmds := m.openPicker("")
+		m.pick.toEffort = m.pick.open
+		return cmds
+	}
+	level := strings.ToLower(strings.TrimSpace(arg))
+	if level == "default" {
+		level = ""
+	}
+	if a, ok := m.defaultTarget(); ok {
+		if err := m.mgr.SetEffort(a.ID, level); err != nil {
+			return []tea.Cmd{m.toast.show(err.Error(), true, m.now)}
+		}
+		return nil
+	}
+	kind := m.newKind
+	m.newEffort[kind] = level
+	m.mgr.SetDefaultEffort(kind, level)
+	m.pushConfig()
+	if level == "" {
+		return []tea.Cmd{m.toast.show("next "+kind+" uses its model's default effort", false, m.now)}
+	}
+	return []tea.Cmd{m.toast.show("next "+kind+" thinks at "+level+" effort", false, m.now)}
 }
 
 // pickMouse handles a click while the picker is open: a choice picks it,

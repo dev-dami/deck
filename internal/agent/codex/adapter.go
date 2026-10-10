@@ -110,6 +110,8 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		approvals: make(chan agent.ApprovalRequest, 16),
 		closing:   make(chan struct{}),
 		loopDone:  make(chan struct{}),
+
+		pendingEffort: spec.Effort,
 	}
 	r.tr = newTranslator(spec.ID, spec.Dir)
 	r.tr.onTurn = r.setTurn

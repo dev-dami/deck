@@ -271,6 +271,72 @@ func (m *Manager) SetModel(agentID, model string) error {
 	a.model = model
 	a.mu.Unlock()
 	m.persistMeta(a.thread)
-	m.emit(ModelChangedMsg{ThreadID: a.thread.id, AgentID: a.id, Model: model})
+	m.emit(ModelChangedMsg{ThreadID: a.thread.id, AgentID: a.id, Model: model, Effort: a.getEffort()})
 	return nil
+}
+
+// SetEffort switches a member's reasoning effort ("" = the model's default).
+// The run must implement agent.EffortSetter; a member whose process has not
+// started yet simply starts with it. The choice is persisted with the member
+// and announced with a ModelChangedMsg.
+func (m *Manager) SetEffort(agentID, effort string) error {
+	a := m.get(agentID)
+	if a == nil {
+		return fmt.Errorf("session: no agent %q", agentID)
+	}
+	if a.status() == StatusExited {
+		return fmt.Errorf("session: %s has exited", agentID)
+	}
+	effort = strings.ToLower(strings.TrimSpace(effort))
+	if run := a.getRun(); run != nil {
+		es, ok := run.(agent.EffortSetter)
+		if !ok {
+			return errors.New("this agent can't change effort mid-session; start a new one")
+		}
+		if err := es.SetEffort(effort); err != nil {
+			return err
+		}
+	}
+	a.mu.Lock()
+	a.effort = effort
+	model := a.model
+	a.mu.Unlock()
+	m.persistMeta(a.thread)
+	m.emit(ModelChangedMsg{ThreadID: a.thread.id, AgentID: a.id, Model: model, Effort: effort})
+	return nil
+}
+
+func (a *agentState) getEffort() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.effort
+}
+
+// SetDefaultEffort sets the effort members of kind get when they are started
+// from now on ("" = the model's default). Like SetDefaultModel it lives in
+// memory; config.Efforts stays the persisted default.
+func (m *Manager) SetDefaultEffort(kind, effort string) {
+	m.modelMu.Lock()
+	if m.defEfforts == nil {
+		m.defEfforts = map[string]string{}
+	}
+	m.defEfforts[kind] = effort
+	m.modelMu.Unlock()
+}
+
+// defaultEffort is the effort a new member of kind starts with.
+func (m *Manager) defaultEffort(cfg config.Config, kind string) string {
+	m.modelMu.Lock()
+	e, ok := m.defEfforts[kind]
+	m.modelMu.Unlock()
+	if ok {
+		return e
+	}
+	switch kind {
+	case "claude":
+		return cfg.Efforts.Claude
+	case "codex":
+		return cfg.Efforts.Codex
+	}
+	return ""
 }

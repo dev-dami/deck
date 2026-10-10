@@ -30,9 +30,9 @@
                                ✻ claude
                                  ▸ Read internal/store/store.go
                                 Select a model
-                                  1. default  The CLI's recommended model                                                          default
-                                  2. opus     Most capable, for complex work
-                                ❯ 3. sonnet   Best for everyday tasks                                                            ✓ current
+                                  1. default  The CLI's recommended model · effort low–max                                         default
+                                  2. opus     Most capable, for complex work · effort low–max
+                                ❯ 3. sonnet   Best for everyday tasks · effort low–max                                           ✓ current
                                   4. haiku    Fastest, for quick answers
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                  model for ✻ claude

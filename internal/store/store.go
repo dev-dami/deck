@@ -62,6 +62,7 @@ type Member struct {
 	Kind      string  `json:"kind"` // "claude" or "codex"
 	Name      string  `json:"name"` // display name; used for addressing
 	Model     string  `json:"model,omitempty"`
+	Effort    string  `json:"effort,omitempty"`
 	SessionID string  `json:"session_id,omitempty"` // the CLI's own session/thread id
 	CostUSD   float64 `json:"cost_usd,omitempty"`
 	// Cursor is how many thread-log entries this member has been briefed on.

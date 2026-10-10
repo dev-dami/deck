@@ -615,6 +615,12 @@ func (m *model) pushConfig() {
 	if v := m.newModel["codex"]; v != "" {
 		c.Models.Codex = v
 	}
+	if v, ok := m.newEffort["claude"]; ok {
+		c.Efforts.Claude = v
+	}
+	if v, ok := m.newEffort["codex"]; ok {
+		c.Efforts.Codex = v
+	}
 	m.mgr.SetConfig(c)
 }
 
@@ -648,6 +654,9 @@ func (m *model) runCommand(name, arg string) []tea.Cmd {
 		return m.moveCmd(dir)
 	case "rename", "pin", "done", "archive", "delete":
 		return m.threadCommand(name, arg)
+	case "effort":
+		m.comp.Reset()
+		return m.effortCommand(arg)
 	case "model":
 		if arg == "" { // no name: pick one from what the CLI offers
 			m.comp.Reset()

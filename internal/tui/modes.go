@@ -244,6 +244,9 @@ func (it *item) renderModel(c *rctx) []string {
 	if it.text == "" {
 		what = " now on its default model"
 	}
+	if it.effort != "" {
+		what += " " + glyphDot + " " + it.effort + " effort"
+	}
 	line := "  " + tintStyle(kind).Render(theme.Mark(kind)+" "+name) + sFaint.Render(what)
 	return []string{trunc(line, c.w)}
 }
@@ -271,11 +274,18 @@ func (m *model) onAuto(thread, agentID, summary string, denied bool) {
 	m.view(thread).add(it)
 }
 
-// onModelChanged follows a model switch the session reports.
+// onModelChanged follows a model or effort switch the session reports. A
+// switch of both arrives as two messages; the second replaces the first's line.
 func (m *model) onModelChanged(msg session.ModelChangedMsg) {
+	v := m.view(msg.ThreadID)
+	if n := len(v.items); n > 0 && v.items[n-1].kind == kModel && v.items[n-1].joinID == msg.AgentID {
+		last := v.items[n-1]
+		last.text, last.effort = msg.Model, msg.Effort
+		return
+	}
 	it := newItem(kModel)
-	it.joinID, it.text = msg.AgentID, msg.Model
-	m.view(msg.ThreadID).add(it)
+	it.joinID, it.text, it.effort = msg.AgentID, msg.Model, msg.Effort
+	v.add(it)
 }
 
 // onNotice shows a note from Deck: in the thread it belongs to, or, with no
