@@ -44,9 +44,11 @@ type Options struct {
 	CodexBinary  string // command name or path; "codex" by default
 	// OpencodeBinary is the opencode command or path; "opencode" by default.
 	OpencodeBinary string
-	ConfigPath     string // shown in the report
-	ThreadsDir     string // shown in the report
-	Timeout        time.Duration
+	// AntigravityBinary is the agy command or path; "agy" by default.
+	AntigravityBinary string
+	ConfigPath        string // shown in the report
+	ThreadsDir        string // shown in the report
+	Timeout           time.Duration
 	// Terminal reports the output terminal's size and whether it is a TTY.
 	Terminal func() (cols, rows int, tty bool)
 	// Logo returns the escape sequence that draws a CLI's logo (logoCols x
@@ -71,9 +73,11 @@ func DefaultOptions() Options {
 		CodexBinary:  "codex",
 		// OpenCode is optional: it is only reported when it is installed.
 		OpencodeBinary: "opencode",
-		Timeout:        10 * time.Second,
-		Terminal:       stdoutTerminal,
-		Logo:           terminalLogo,
+		// Antigravity is optional: it is only reported when it is installed.
+		AntigravityBinary: "agy",
+		Timeout:           10 * time.Second,
+		Terminal:          stdoutTerminal,
+		Logo:              terminalLogo,
 	}
 	if p, err := config.Path(); err == nil {
 		opts.ConfigPath = p
@@ -94,6 +98,9 @@ func DefaultOptions() Options {
 	}
 	if cfg.OpencodeBinary != "" {
 		opts.OpencodeBinary = cfg.OpencodeBinary
+	}
+	if cfg.AntigravityBinary != "" {
+		opts.AntigravityBinary = cfg.AntigravityBinary
 	}
 	return opts
 }
@@ -132,6 +139,15 @@ func RunWith(ctx context.Context, w io.Writer, opts Options) error {
 				name:   "opencode",
 				binary: opts.OpencodeBinary,
 				note:   "uses its own providers (opencode auth login)",
+			})))
+		}
+	}
+	if opts.AntigravityBinary != "" {
+		if _, err := opts.Runner.LookPath(opts.AntigravityBinary); err == nil {
+			b.WriteString(withLogo(opts, "antigravity", checkAgent(ctx, opts, agentSpec{
+				name:   "antigravity",
+				binary: opts.AntigravityBinary,
+				note:   "uses its own login (run agy once to sign in)",
 			})))
 		}
 	}

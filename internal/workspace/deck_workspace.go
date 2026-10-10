@@ -29,7 +29,7 @@ import (
 
 // DeckWorkspace is the in-process workspace with Deck's engine in place of
 // Deck's own agent: every session is a Deck thread, its agents are the
-// user's installed claude, codex and opencode CLIs, and what they do is
+// user's installed claude, codex, opencode and agy CLIs, and what they do is
 // written into the message store the UI draws from. Sessions, messages,
 // history, LSP, MCP and config still come from the embedded AppWorkspace.
 type DeckWorkspace struct {

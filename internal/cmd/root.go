@@ -57,7 +57,7 @@ func init() {
 var rootCmd = &cobra.Command{
 	Use:     "deck",
 	Short:   logo.Tagline,
-	Long:    "Deck runs your own claude, codex and opencode CLIs side by side in one shared chat.",
+	Long:    "Deck runs your own claude, codex, opencode and agy CLIs side by side in one shared chat.",
 	Version: version.Version,
 	Example: `
 # Open the deck

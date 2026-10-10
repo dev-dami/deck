@@ -20,13 +20,14 @@ import (
 const EnvReducedMotion = "DECK_REDUCED_MOTION"
 
 // Kinds are the CLIs Deck can drive, in the order they are offered.
-var Kinds = []string{"claude", "codex", "opencode"}
+var Kinds = []string{"claude", "codex", "opencode", "antigravity"}
 
 // Models names the model each CLI should run. An empty value means the CLI's default.
 type Models struct {
-	Claude   string `json:"claude"`
-	Codex    string `json:"codex"`
-	Opencode string `json:"opencode,omitempty"`
+	Claude      string `json:"claude"`
+	Codex       string `json:"codex"`
+	Opencode    string `json:"opencode,omitempty"`
+	Antigravity string `json:"antigravity,omitempty"`
 }
 
 // For is the value for a kind ("" for an unknown one).
@@ -38,6 +39,8 @@ func (m Models) For(kind string) string {
 		return m.Codex
 	case "opencode":
 		return m.Opencode
+	case "antigravity":
+		return m.Antigravity
 	}
 	return ""
 }
@@ -51,20 +54,23 @@ func (m *Models) Set(kind, v string) {
 		m.Codex = v
 	case "opencode":
 		m.Opencode = v
+	case "antigravity":
+		m.Antigravity = v
 	}
 }
 
 // Config is Deck's user settings.
 type Config struct {
-	UserName       string `json:"user_name"`        // shown in the UI; defaults to git's user.name
-	DefaultAgent   string `json:"default_agent"`    // "claude" or "codex"
-	Motion         string `json:"motion"`           // "on" or "off"
-	Bell           bool   `json:"bell"`             // ring the terminal bell when a turn needs attention
-	TellAgentsName bool   `json:"tell_agents_name"` // tell agents the user's name (agent.Spec.TellName)
-	ClaudeBinary   string `json:"claude_binary"`    // path or command name; empty means "claude"
-	CodexBinary    string `json:"codex_binary"`     // path or command name; empty means "codex"
-	OpencodeBinary string `json:"opencode_binary"`  // path or command name; empty means "opencode"
-	DefaultMode    string `json:"default_mode"`     // "plan", "ask" or "yolo"; empty means "ask". "yolo" is ignored at startup (see StartMode)
+	UserName          string `json:"user_name"`          // shown in the UI; defaults to git's user.name
+	DefaultAgent      string `json:"default_agent"`      // "claude" or "codex"
+	Motion            string `json:"motion"`             // "on" or "off"
+	Bell              bool   `json:"bell"`               // ring the terminal bell when a turn needs attention
+	TellAgentsName    bool   `json:"tell_agents_name"`   // tell agents the user's name (agent.Spec.TellName)
+	ClaudeBinary      string `json:"claude_binary"`      // path or command name; empty means "claude"
+	CodexBinary       string `json:"codex_binary"`       // path or command name; empty means "codex"
+	OpencodeBinary    string `json:"opencode_binary"`    // path or command name; empty means "opencode"
+	AntigravityBinary string `json:"antigravity_binary"` // path or command name; empty means "agy"
+	DefaultMode       string `json:"default_mode"`       // "plan", "ask" or "yolo"; empty means "ask". "yolo" is ignored at startup (see StartMode)
 	// TrackChanges snapshots a thread's git work tree with every message you
 	// send, for the changes panel and its undo.
 	TrackChanges bool   `json:"track_changes"`
@@ -105,16 +111,17 @@ func Defaults() Config {
 		name = osUserName()
 	}
 	return Config{
-		UserName:       name,
-		DefaultAgent:   "claude",
-		Motion:         "on",
-		Bell:           true,
-		TellAgentsName: false,
-		ClaudeBinary:   "claude",
-		CodexBinary:    "codex",
-		OpencodeBinary: "opencode",
-		DefaultMode:    "ask",
-		TrackChanges:   true,
+		UserName:          name,
+		DefaultAgent:      "claude",
+		Motion:            "on",
+		Bell:              true,
+		TellAgentsName:    false,
+		ClaudeBinary:      "claude",
+		CodexBinary:       "codex",
+		OpencodeBinary:    "opencode",
+		AntigravityBinary: "agy",
+		DefaultMode:       "ask",
+		TrackChanges:      true,
 	}
 }
 
@@ -217,9 +224,9 @@ func SaveTo(path string, c Config) error {
 // Validate reports the first invalid value.
 func (c Config) Validate() error {
 	switch c.DefaultAgent {
-	case "claude", "codex", "opencode":
+	case "claude", "codex", "opencode", "antigravity":
 	default:
-		return fmt.Errorf("default_agent must be \"claude\", \"codex\" or \"opencode\", got %q", c.DefaultAgent)
+		return fmt.Errorf("default_agent must be \"claude\", \"codex\", \"opencode\" or \"antigravity\", got %q", c.DefaultAgent)
 	}
 	switch c.Motion {
 	case "on", "off":
@@ -249,9 +256,11 @@ func (c Config) StartMode() (mode string, ignored bool) {
 	return "ask", false
 }
 
-// Binary is the configured command for a kind's CLI (its own name when unset).
+// Binary is the configured command for a kind's CLI (its own name when unset;
+// "agy" for antigravity, whose kind and binary names differ).
 func (c Config) Binary(kind string) string {
 	b := ""
+	def := kind
 	switch kind {
 	case "claude":
 		b = c.ClaudeBinary
@@ -259,9 +268,12 @@ func (c Config) Binary(kind string) string {
 		b = c.CodexBinary
 	case "opencode":
 		b = c.OpencodeBinary
+	case "antigravity":
+		b = c.AntigravityBinary
+		def = "agy"
 	}
 	if b == "" {
-		return kind
+		return def
 	}
 	return b
 }

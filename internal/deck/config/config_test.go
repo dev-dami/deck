@@ -45,16 +45,17 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 		t.Fatalf("Load with no file: %v", err)
 	}
 	want := Config{
-		UserName:       "Ada Lovelace",
-		DefaultAgent:   "claude",
-		Motion:         "on",
-		Bell:           true,
-		TellAgentsName: false,
-		ClaudeBinary:   "claude",
-		CodexBinary:    "codex",
-		OpencodeBinary: "opencode",
-		DefaultMode:    "ask",
-		TrackChanges:   true,
+		UserName:          "Ada Lovelace",
+		DefaultAgent:      "claude",
+		Motion:            "on",
+		Bell:              true,
+		TellAgentsName:    false,
+		ClaudeBinary:      "claude",
+		CodexBinary:       "codex",
+		OpencodeBinary:    "opencode",
+		AntigravityBinary: "agy",
+		DefaultMode:       "ask",
+		TrackChanges:      true,
 	}
 	if cfg != want {
 		t.Errorf("Load() = %+v\nwant %+v", cfg, want)
