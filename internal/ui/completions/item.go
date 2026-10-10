@@ -15,6 +15,15 @@ type FileCompletionValue struct {
 	Path string
 }
 
+// AgentCompletionValue is an agent and a model it can run, offered after $.
+// Picking it addresses that agent and switches it to the model.
+type AgentCompletionValue struct {
+	Kind    string // "claude", "codex", "opencode"
+	Model   string // passed to the CLI; "" = its default
+	Effort  string // kept when the model takes it
+	Current bool   // the agent runs this model already
+}
+
 // ResourceCompletionValue represents a MCP resource completion value.
 type ResourceCompletionValue struct {
 	MCPName  string

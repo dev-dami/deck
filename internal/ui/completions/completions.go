@@ -201,6 +201,34 @@ func (c *Completions) SetItems(files []FileCompletionValue, resources []Resource
 	c.updateSize()
 }
 
+// AgentItem is one row of the $ popup: the label shown and what picking it
+// does.
+type AgentItem struct {
+	Label string
+	Value AgentCompletionValue
+}
+
+// SetAgentItems opens the popup on agents and their models.
+func (c *Completions) SetAgentItems(agents []AgentItem) {
+	items := make([]list.FilterableItem, 0, len(agents))
+	for _, a := range agents {
+		items = append(items, NewCompletionItem(a.Label, a.Value, c.normalStyle, c.focusedStyle, c.matchStyle))
+	}
+	c.open = true
+	c.query = ""
+	c.allItems = items
+	c.filtered = append([]list.FilterableItem(nil), items...)
+	c.list.SetItems(c.filtered...)
+	c.list.SetFilter("")
+	c.list.Focus()
+	c.width = maxWidth
+	c.height = ordered.Clamp(len(items), int(minHeight), int(maxHeight))
+	c.list.SetSize(c.width, c.height)
+	c.list.SelectFirst()
+	c.list.ScrollToSelected()
+	c.updateSize()
+}
+
 // Close closes the completions popup.
 func (c *Completions) Close() {
 	c.open = false
@@ -385,6 +413,8 @@ func (c *Completions) selectCurrent(keepOpen bool) tea.Msg {
 			Value:    item,
 			KeepOpen: keepOpen,
 		}
+	case AgentCompletionValue:
+		return SelectionMsg[AgentCompletionValue]{Value: item}
 	default:
 		return nil
 	}

@@ -47,7 +47,7 @@ func (m *Manager) handleMessage(msg agent.Message) {
 		return
 	}
 	text := strings.TrimSpace(msg.Text)
-	to := strings.TrimPrefix(strings.TrimSpace(msg.To), "@")
+	to := TrimSigil(msg.To)
 
 	t.mu.Lock()
 	valid := validNames(t, from)
@@ -178,7 +178,7 @@ func (m *Manager) relay(t *thread, from *agentState, targets []*agentState, text
 	return strings.Join(res, "; ")
 }
 
-// afterTurn runs when a member's turn ends: it relays the @mention lines of the
+// afterTurn runs when a member's turn ends: it relays the $mention lines of the
 // final reply, then starts the member's next turn if messages queued up.
 func (m *Manager) afterTurn(a *agentState) {
 	text, interrupted := a.takeFinal()
@@ -196,7 +196,7 @@ func (m *Manager) afterTurn(a *agentState) {
 	_, _ = m.deliver(t, a)
 }
 
-// mentionTargets resolves the names of an @mention line to live members other
+// mentionTargets resolves the names of an $mention line to live members other
 // than the sender; names that match nobody are ignored. t.mu is held.
 func mentionTargets(t *thread, from *agentState, names []string) []*agentState {
 	var out []*agentState

@@ -257,7 +257,7 @@ func TestPostAddsMemberForKindMentionAndBriefsItOnTheWholeThread(t *testing.T) {
 	}
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 
-	if err := r.m.Post(tid, "@codex please review"); err != nil { // kind with no member: added
+	if err := r.m.Post(tid, "$codex please review"); err != nil { // kind with no member: added
 		t.Fatal(err)
 	}
 	waitFor(t, "codex to start", func() bool { return len(r.codex.prompts("codex")) == 1 })
@@ -281,7 +281,7 @@ func TestPostAddsMemberForKindMentionAndBriefsItOnTheWholeThread(t *testing.T) {
 		"[claude] Store now drops deltas.",
 		"[tester] please review",
 	)
-	lacks(t, p, "NOISY-TEST-OUTPUT", "narration before tools", "@codex")
+	lacks(t, p, "NOISY-TEST-OUTPUT", "narration before tools", "$codex")
 	if strings.Index(p, "[claude] Store now") > strings.Index(p, "[tester] please review") {
 		t.Errorf("briefing must come before the addressed message:\n%s", p)
 	}
@@ -313,7 +313,7 @@ func TestAddressingRoutesAndFansOut(t *testing.T) {
 		t.Fatal("codex should not have been addressed")
 	}
 	// the member who spoke last gets unaddressed messages
-	if err := r.m.Post(tid, "@codex two"); err != nil {
+	if err := r.m.Post(tid, "$codex two"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "codex turn", func() bool { return r.c.turnDones("codex") == 1 })
@@ -324,15 +324,15 @@ func TestAddressingRoutesAndFansOut(t *testing.T) {
 	if got := len(r.claude.prompts("claude")); got != 1 {
 		t.Fatalf("claude prompts = %d", got)
 	}
-	// @all reaches both, concurrently
-	if err := r.m.Post(tid, "@all four"); err != nil {
+	// $all reaches both, concurrently
+	if err := r.m.Post(tid, "$all four"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "both answer", func() bool { return r.c.turnDones("claude") == 2 && r.c.turnDones("codex") == 3 })
 	last := r.claude.prompts("claude")
 	has(t, last[len(last)-1], "[tester] four")
 	// mention-only just adds
-	if err := r.m.Post(tid, "@claude"); err != nil {
+	if err := r.m.Post(tid, "$claude"); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.m.Post(tid, "@nobody hi"); err == nil {
@@ -370,14 +370,14 @@ func TestBusyMemberQueuesAndCoalesces(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 
-	if err := r.m.Post(tid, "@claude build it"); err != nil {
+	if err := r.m.Post(tid, "$claude build it"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "approval", func() bool { return len(r.c.approvals()) == 1 })
-	if err := r.m.Post(tid, "@claude also lint"); err != nil {
+	if err := r.m.Post(tid, "$claude also lint"); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.m.Post(tid, "@claude and vet"); err != nil {
+	if err := r.m.Post(tid, "$claude and vet"); err != nil {
 		t.Fatal(err)
 	}
 	if got := len(r.claude.prompts("claude")); got != 1 {
@@ -406,11 +406,11 @@ func TestMessageToBusyMemberViaToolSaysQueued(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "@codex start"); err != nil {
+	if err := r.m.Post(tid, "$codex start"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "codex approval", func() bool { return len(r.c.approvals()) == 1 })
-	if err := r.m.Post(tid, "@claude go"); err != nil {
+	if err := r.m.Post(tid, "$claude go"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
@@ -430,12 +430,12 @@ func TestToolAndMentionRelays(t *testing.T) {
 		turn(started("sess-claude"), sendTo("codex", "review the plan"), say("asked codex"), finish()),
 		turn(say("thanks, applying it"), finish()),
 	}, []fake.Script{
-		turn(started("sess-codex"), say("Looks fine.\n\n@claude lock order matters, fix it first"), finish()),
+		turn(started("sess-codex"), say("Looks fine.\n\n$claude lock order matters, fix it first"), finish()),
 	})
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "@claude plan it"); err != nil {
+	if err := r.m.Post(tid, "$claude plan it"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude's second turn", func() bool { return r.c.turnDones("claude") == 2 })
@@ -489,7 +489,7 @@ func TestHopLimitPausesAndContinueReleases(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "@claude start"); err != nil {
+	if err := r.m.Post(tid, "$claude start"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "pause", func() bool {
@@ -549,7 +549,7 @@ func TestHeldRelayOverToolSaysSo(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "@claude go"); err != nil {
+	if err := r.m.Post(tid, "$claude go"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
@@ -566,9 +566,9 @@ func TestNewUserMessageEndsPauseAndDropsHeldRelays(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "@claude go")
+	_ = r.m.Post(tid, "$claude go")
 	waitFor(t, "paused", func() bool { ti, _ := r.m.Thread(tid); return ti.Paused && r.c.turnDones("codex") == 1 })
-	if err := r.m.Post(tid, "@claude never mind"); err != nil {
+	if err := r.m.Post(tid, "$claude never mind"); err != nil {
 		t.Fatal(err)
 	}
 	ti, _ := r.m.Thread(tid)
@@ -581,7 +581,7 @@ func TestNewUserMessageEndsPauseAndDropsHeldRelays(t *testing.T) {
 		t.Fatalf("the held relay was delivered anyway (codex turns = %d)", got)
 	}
 	// ... but it is still in the log, so codex sees it next time
-	_ = r.m.Post(tid, "@codex status?")
+	_ = r.m.Post(tid, "$codex status?")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 2 })
 	has(t, r.codex.prompts("codex")[1], "[claude → codex] two", "[tester] status?")
 }
@@ -593,7 +593,7 @@ func TestUnknownRecipientErrorsAndIsNotAHop(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "@claude go")
+	_ = r.m.Post(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	res := r.c.toolResults("claude", "send_message")
 	if len(res) != 4 {
@@ -627,7 +627,7 @@ func TestMessageToExitedAgentFailsFast(t *testing.T) {
 	waitFor(t, "codex exit", func() bool { a, _ := r.m.Agent("codex"); return a.Status == StatusExited })
 
 	start := time.Now()
-	_ = r.m.Post(tid, "@claude go")
+	_ = r.m.Post(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	if time.Since(start) > 3*time.Second {
 		t.Fatal("answer took too long")
@@ -638,7 +638,7 @@ func TestMessageToExitedAgentFailsFast(t *testing.T) {
 	}
 	has(t, res[0], "codex is not running")
 	has(t, res[1], "nobody else")
-	if err := r.m.Post(tid, "@codex are you there"); err == nil || !strings.Contains(err.Error(), "exited") {
+	if err := r.m.Post(tid, "$codex are you there"); err == nil || !strings.Contains(err.Error(), "exited") {
 		t.Fatalf("post to an exited member: %v", err)
 	}
 }
@@ -648,7 +648,7 @@ func TestEchoLoopIsDroppedWithNotice(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "@claude go")
+	_ = r.m.Post(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	waitFor(t, "codex to settle", func() bool { return r.c.turnDones("codex") >= 1 })
 	res := r.c.toolResults("claude", "send_message")
@@ -664,11 +664,11 @@ func TestEchoLoopIsDroppedWithNotice(t *testing.T) {
 }
 
 func TestMentionOfSelfOrUnknownIsNotRelayed(t *testing.T) {
-	r := newRig(t, []fake.Script{turn(say("@claude note to self\n\n@nobody hello\n\n@param is a thing"), finish())}, nil)
+	r := newRig(t, []fake.Script{turn(say("$claude note to self\n\n@nobody hello\n\n@param is a thing"), finish())}, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "@claude go")
+	_ = r.m.Post(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	time.Sleep(30 * time.Millisecond)
 	if n := len(r.c.relays()); n != 0 {
@@ -681,11 +681,11 @@ func TestInterruptedTurnDoesNotRelayMentions(t *testing.T) {
 		Event:    agent.Event{Kind: agent.KindToolCall, Tool: &agent.Tool{ID: "t", Name: "Bash", Title: "make", Status: agent.ToolRunning}},
 		Approval: &agent.ApprovalRequest{ID: "ap", Kind: agent.ApproveCommand, ToolName: "Bash", Summary: "make"},
 	}
-	r := newRig(t, []fake.Script{turn(say("@codex look at this"), block, finish())}, nil)
+	r := newRig(t, []fake.Script{turn(say("$codex look at this"), block, finish())}, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "@claude go")
+	_ = r.m.Post(tid, "$claude go")
 	waitFor(t, "approval", func() bool { return len(r.c.approvals()) == 1 })
 	_ = r.m.Interrupt("claude")
 	waitFor(t, "turn end", func() bool { return r.c.turnDones("claude") == 1 })
@@ -705,9 +705,9 @@ func TestUserNameHiddenUnlessAllowed(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "@claude one")
+	_ = r.m.Post(tid, "$claude one")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
-	_ = r.m.Post(tid, "@codex two")
+	_ = r.m.Post(tid, "$codex two")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 	p := r.codex.prompts("codex")[0]
 	has(t, p, "[user → claude] one", "[user] two")
@@ -725,16 +725,16 @@ func TestOpenTurnsAreHeldBackThenDeliveredOnce(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "@claude work")
+	_ = r.m.Post(tid, "$claude work")
 	waitFor(t, "approval", func() bool { return len(r.c.approvals()) == 1 })
-	_ = r.m.Post(tid, "@codex what is claude doing?")
+	_ = r.m.Post(tid, "$codex what is claude doing?")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 	first := r.codex.prompts("codex")[0]
 	lacks(t, first, "half-baked thought", "FINAL")
 
 	r.c.approvals()[0].Respond(agent.Decision{Allow: true})
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
-	_ = r.m.Post(tid, "@codex and now?")
+	_ = r.m.Post(tid, "$codex and now?")
 	waitFor(t, "codex again", func() bool { return r.c.turnDones("codex") == 2 })
 	second := r.codex.prompts("codex")[1]
 	has(t, second, "[claude] FINAL claude answer", "[tester] and now?")
@@ -746,9 +746,9 @@ func TestReadThreadTool(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "@claude hello there")
+	_ = r.m.Post(tid, "$claude hello there")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
-	_ = r.m.Post(tid, "@codex read the thread")
+	_ = r.m.Post(tid, "$codex read the thread")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 	out := r.c.toolResults("codex", "read_thread")
 	if len(out) != 1 {
@@ -768,13 +768,13 @@ func TestResumeTwoMemberThread(t *testing.T) {
 		turn(say("thanks"), cost(0.02), finish()),
 	}
 	codex := []fake.Script{
-		turn(started("sess-codex"), say("Fine.\n\n@claude one change please"), cost(0.04), finish()),
+		turn(started("sess-codex"), say("Fine.\n\n$claude one change please"), cost(0.04), finish()),
 	}
 	r := newRig(t, claude, codex)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "@claude plan it")
+	_ = r.m.Post(tid, "$claude plan it")
 	waitFor(t, "exchange", func() bool { return r.c.turnDones("claude") == 2 })
 	if err := r.m.Rename("codex", "reviewer"); err != nil {
 		t.Fatal(err)
@@ -821,15 +821,15 @@ func TestResumeTwoMemberThread(t *testing.T) {
 	}
 
 	// cursors survived: claude saw everything before, so a new message is passed untouched
-	if err := r2.m.Post(tid, "@claude again"); err != nil {
+	if err := r2.m.Post(tid, "$claude again"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude after resume", func() bool { return r2.c.turnDones("claude") == 1 })
 	if got := r2.claude.prompts("claude"); len(got) != 1 || got[0] != "again" {
 		t.Fatalf("claude prompt after resume = %q", got)
 	}
-	// codex has not seen "again"; the name survived, so @reviewer reaches it
-	if err := r2.m.Post(tid, "@reviewer and you?"); err != nil {
+	// codex has not seen "again"; the name survived, so $reviewer reaches it
+	if err := r2.m.Post(tid, "$reviewer and you?"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "codex after resume", func() bool { return r2.c.turnDones("codex") == 1 })
@@ -842,7 +842,7 @@ func TestResumeRemapsIDsThatAreTaken(t *testing.T) {
 	r := newRig(t, nil, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	_ = r.m.Post(tid, "@claude hi")
+	_ = r.m.Post(tid, "$claude hi")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	r.m.Flush()
 
@@ -924,10 +924,10 @@ func TestDemoDuoCollaborates(t *testing.T) {
 	t.Cleanup(m.Close)
 	c := collect(t, m)
 	tid, _ := m.NewThread(t.TempDir())
-	if err := m.Post(tid, "@claude plan the store change"); err != nil {
+	if err := m.Post(tid, "$claude plan the store change"); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Post(tid, "@codex"); err != nil { // add codex without a message
+	if err := m.Post(tid, "$codex"); err != nil { // add codex without a message
 		t.Fatal(err)
 	}
 	waitFor(t, "claude's edit approval", func() bool { return len(c.approvals()) == 1 })

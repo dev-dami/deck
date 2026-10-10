@@ -188,7 +188,7 @@ func (t *thread) defaultTarget() *agentState {
 // find resolves a name as a recipient among members other than self: an id or
 // name (case-insensitive), or a kind with exactly one member in the thread.
 func (t *thread) find(self *agentState, tok string) *agentState {
-	tok = strings.TrimPrefix(strings.TrimSpace(tok), "@")
+	tok = TrimSigil(tok)
 	for _, a := range t.members {
 		if strings.EqualFold(a.id, tok) || strings.EqualFold(a.getName(), tok) {
 			return a

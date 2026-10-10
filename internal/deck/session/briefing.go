@@ -292,9 +292,9 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	fmt.Fprintf(&b, "You are %q in a shared Deck thread with %s. Everything said in the thread is visible to all of them.\n", clip(a.getName(), 30), clip(who, 200))
 	b.WriteString("What others said since your last turn is summarised first; messages from other agents are prefixed with their name, like \"[codex] ...\".\n")
 	if tools {
-		b.WriteString("To message another agent, call the deck send_message tool (to: an agent name, or \"all\"), or start a line of your final reply with @name. The deck read_thread tool shows the whole thread.\n")
+		b.WriteString("To message another agent, call the deck send_message tool (to: an agent name, or \"all\"), or start a line of your final reply with $name. The deck read_thread tool shows the whole thread.\n")
 	} else {
-		b.WriteString("To message another agent, start a line of your final reply with @name (or @all).\n")
+		b.WriteString("To message another agent, start a line of your final reply with $name (or $all).\n")
 	}
 	b.WriteString("Keep messages to other agents short and actionable. Do not repeat what the user can already see.")
 	return clip(b.String(), maxInstrChars)

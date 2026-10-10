@@ -641,7 +641,7 @@ func TestDemoDuoScriptsShape(t *testing.T) {
 		}
 	}
 	for _, st := range x[0] {
-		if st.Event.Kind == agent.KindAssistantText && strings.Contains(st.Event.Text, "\n@claude ") {
+		if st.Event.Kind == agent.KindAssistantText && strings.Contains(st.Event.Text, "\n$claude ") {
 			mentions++
 		}
 	}

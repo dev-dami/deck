@@ -31,6 +31,10 @@ type Status struct {
 	// inputMode and yolo drive the mode badge shown before the help hints.
 	inputMode uiInputMode
 	yolo      bool
+
+	// working, when set, returns the line that says which agents are at
+	// work; while it is not empty it takes the place of the help hints.
+	working func(width int) string
 }
 
 // NewStatus creates a new status bar and help model.
@@ -98,7 +102,19 @@ func (s *Status) SetHideHelp(hideHelp bool) {
 
 // Draw draws the status bar onto the screen.
 func (s *Status) Draw(scr uv.Screen, area uv.Rectangle) {
-	if !s.hideHelp {
+	if s.working != nil {
+		if line := s.working(area.Dx() - 2); line != "" {
+			badge := s.modeBadge()
+			if badge != "" {
+				line = badge + " " + line
+			}
+			uv.NewStyledString(strings.Repeat(" ", badgeLeftInset)+line).Draw(scr, area)
+			if s.msg.IsEmpty() {
+				return
+			}
+		}
+	}
+	if !s.hideHelp && (s.working == nil || s.working(1) == "") {
 		helpStyle := s.com.Styles.Status.Help
 		helpWidth := area.Dx() - helpStyle.GetPaddingLeft() - helpStyle.GetPaddingRight()
 		badge := s.modeBadge()

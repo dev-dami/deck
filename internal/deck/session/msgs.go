@@ -55,7 +55,7 @@ type ApprovalGoneMsg struct {
 
 // RelayMsg reports a message one agent sent to others, so the thread can show
 // it ("codex -> claude: ..."). Via is "tool" (the send_message MCP tool) or
-// "mention" (a line of the sender's final reply starting with @name). Held is
+// "mention" (a line of the sender's final reply starting with $name). Held is
 // true when the thread was paused and the relay was not delivered; it is
 // delivered when the user calls Continue.
 type RelayMsg struct {

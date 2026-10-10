@@ -52,6 +52,9 @@ type DeckWorkspace struct {
 	prog *tea.Program    // where busy/idle edges are sent
 	busy map[string]bool // last busy state sent, by session
 	plan bool            // the UI is in plan mode
+
+	models map[string][]deckagent.ModelInfo // each CLI's models, once asked
+	since  map[string]time.Time             // when each busy agent's turn began
 }
 
 // turn is what is known about one agent's current reply.
@@ -75,6 +78,8 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 		turns:        map[string]*turn{},
 		approvals:    map[string]context.CancelFunc{},
 		busy:         map[string]bool{},
+		models:       map[string][]deckagent.ModelInfo{},
+		since:        map[string]time.Time{},
 		path:         filepath.Join(store.Config().Options.DataDirectory, "deck-threads.json"),
 	}
 	if b, err := os.ReadFile(w.path); err == nil {
@@ -136,7 +141,7 @@ func (w *DeckWorkspace) threadOf(sessionID string) (decks.ThreadInfo, bool) {
 // -- Agent --
 
 // AgentRun posts the prompt to the session's thread: to the agents it names
-// (@claude, @codex, @all), or to whoever spoke last.
+// ($claude, $codex, $all), or to whoever spoke last.
 func (w *DeckWorkspace) AgentRun(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) error {
 	tid, err := w.thread(sessionID)
 	if err != nil {
@@ -408,7 +413,7 @@ func (w *DeckWorkspace) pump() {
 		case decks.RelayMsg:
 			to := make([]string, len(m.To))
 			for i, t := range m.To {
-				to[i] = "@" + t
+				to[i] = "$" + t
 			}
 			w.say(m.ThreadID, m.From, "→ "+strings.Join(to, " ")+"\n\n"+m.Text)
 		case decks.NoticeMsg:
@@ -428,6 +433,14 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 	}
 	w.mu.Lock()
 	w.last = ev
+	switch ev.Kind {
+	case deckagent.KindTurnDone, deckagent.KindExited, deckagent.KindError:
+		delete(w.since, ev.AgentID)
+	default:
+		if w.since[ev.AgentID].IsZero() {
+			w.since[ev.AgentID] = time.Now()
+		}
+	}
 	w.mu.Unlock()
 	ctx := context.Background()
 	t := w.turns[ev.AgentID]

@@ -4,6 +4,16 @@ import (
 	"strings"
 )
 
+// Sigil starts a mention of an agent: "$codex review this". "@" is left
+// for files.
+const Sigil = '$'
+
+// TrimSigil drops a leading "$" (or "@", as agents sometimes write it) from
+// an agent name.
+func TrimSigil(name string) string {
+	return strings.TrimLeft(strings.TrimSpace(name), "$@")
+}
+
 // MemberRef is what addressing needs to know about a thread member.
 type MemberRef struct {
 	ID, Name, Kind string
@@ -14,15 +24,15 @@ type MemberRef struct {
 type Addressing struct {
 	// Members are the existing members addressed, by id, in order of first mention.
 	Members []string
-	// NewKinds are kinds named (@claude, @codex) that have no live member in the
+	// NewKinds are kinds named ($claude, $codex) that have no live member in the
 	// thread: Post adds one member of each.
 	NewKinds []string
-	// All is true when @all was used.
+	// All is true when $all was used.
 	All bool
-	// Body is the message without its leading mentions ("@codex review this" ->
+	// Body is the message without its leading mentions ("$codex review this" ->
 	// "review this"). Mentions further in (at the start of a later clause) stay.
 	Body string
-	// Unknown lists @names that matched no member and no kind.
+	// Unknown lists $names that matched no member and no kind.
 	Unknown []string
 }
 
@@ -33,28 +43,31 @@ func (a Addressing) Mentioned() bool { return a.All || len(a.Members) > 0 || len
 //
 // A mention counts when it starts a clause: at the very start of the text, at
 // the start of a line, after . ! ? ; : or a comma, after "then" / "and" / "also"
-// / "plus", or directly after another mention. "ask @codex" (mid-clause) and
-// "foo@bar" or "@codex.go" are plain text. Names match a member's id or name
+// / "plus", or directly after another mention. "ask $codex" (mid-clause) and
+// "foo@bar" or "$codex.go" are plain text. Names match a member's id or name
 // (case-insensitively); failing that, a kind ("claude", "codex") addresses the
 // first live member of that kind, or - when the thread has none - asks for a new
-// one. "@all" addresses every member.
+// one. "$all" addresses every member.
 func ParseAddressing(text string, members []MemberRef, kinds []string) Addressing {
 	text = strings.TrimSpace(text)
 	var out Addressing
-	add := func(name string) {
+	// add records a mention; a name that is no member, kind or "all" is
+	// plain text ($HOME, $PATH), so it is not taken.
+	add := func(name string) bool {
 		if strings.EqualFold(name, "all") {
 			out.All = true
-			return
+			return true
 		}
 		id, kind, ok := resolveName(name, members, kinds)
 		switch {
 		case !ok:
-			out.Unknown = appendUnique(out.Unknown, name)
+			return false
 		case id != "":
 			out.Members = appendUnique(out.Members, id)
 		default:
 			out.NewKinds = appendUnique(out.NewKinds, kind)
 		}
+		return true
 	}
 
 	// the leading run of mentions
@@ -63,9 +76,8 @@ func ParseAddressing(text string, members []MemberRef, kinds []string) Addressin
 		for p < len(text) && (text[p] == ' ' || text[p] == '\t' || text[p] == '\n' || text[p] == '\r' || text[p] == ',') {
 			p++
 		}
-		if p < len(text) && text[p] == '@' {
-			if name, end, ok := scanMention(text, p); ok {
-				add(name)
+		if p < len(text) && text[p] == Sigil {
+			if name, end, ok := scanMention(text, p); ok && add(name) {
 				p = end
 				continue
 			}
@@ -82,7 +94,7 @@ func ParseAddressing(text string, members []MemberRef, kinds []string) Addressin
 
 	// mentions that start a later clause
 	for i := p; i < len(text); i++ {
-		if text[i] != '@' || !clauseStart(text, i) {
+		if text[i] != Sigil || !clauseStart(text, i) {
 			continue
 		}
 		if name, end, ok := scanMention(text, i); ok {
@@ -93,7 +105,7 @@ func ParseAddressing(text string, members []MemberRef, kinds []string) Addressin
 	return out
 }
 
-// resolveName maps a @token to an existing member id, or to a kind to add.
+// resolveName maps a $token to an existing member id, or to a kind to add.
 func resolveName(tok string, members []MemberRef, kinds []string) (id, newKind string, ok bool) {
 	for _, m := range members {
 		if strings.EqualFold(m.ID, tok) || strings.EqualFold(m.Name, tok) {
@@ -119,7 +131,7 @@ func isNameByte(c byte) bool {
 
 func isSpaceByte(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
 
-// scanMention reads "@name" at s[i] and returns the name and the index after it.
+// scanMention reads "$name" at s[i] and returns the name and the index after it.
 // The name must be followed by the end of the text, whitespace, one of , : ; ! ?
 // or a sentence-ending ".".
 func scanMention(s string, i int) (name string, end int, ok bool) {
@@ -144,7 +156,7 @@ func scanMention(s string, i int) (name string, end int, ok bool) {
 	return s[i+1 : j], j, true
 }
 
-// clauseStart reports whether the '@' at s[i] begins a clause.
+// clauseStart reports whether the '$' at s[i] begins a clause.
 func clauseStart(s string, i int) bool {
 	j := i
 	for j > 0 && (s[j-1] == ' ' || s[j-1] == '\t') {
@@ -179,12 +191,12 @@ func appendUnique(list []string, v string) []string {
 
 // mention is one relay requested by a line of an agent's reply.
 type mention struct {
-	Names []string // targets as written (without @); may contain "all"
+	Names []string // targets as written (without $); may contain "all"
 	Text  string
 }
 
 // parseMentions finds the lines of an agent's final reply that start with
-// @name. Fenced code blocks are ignored. A mention's text is the rest of its
+// $name. Fenced code blocks are ignored. A mention's text is the rest of its
 // line plus the lines that follow up to a blank line, the next mention or the
 // end. Mentions with the same targets are merged.
 func parseMentions(reply string) []mention {
@@ -206,10 +218,10 @@ func parseMentions(reply string) []mention {
 			cur = -1
 			continue
 		}
-		if strings.HasPrefix(trim, "@") {
+		if strings.HasPrefix(trim, string(Sigil)) {
 			var names []string
 			p := 0
-			for p < len(trim) && trim[p] == '@' {
+			for p < len(trim) && trim[p] == Sigil {
 				name, end, ok := scanMention(trim, p)
 				if !ok {
 					break

@@ -28,9 +28,11 @@ deck doctor
 
 Run `deck`, type, press enter.
 
-- **Who answers.** Start a message with `@claude`, `@codex` or `@opencode` to bring that agent in, `@all` to ask everyone; otherwise whoever spoke last answers. Each agent speaks under its own CLI's mark and colour: `✻ claude`, `>_ codex`, `▯ opencode`.
-- **Agents talk to each other.** An agent can hand work to another; every hand-off shows in the chat as `→ @codex …`. After six agent-to-agent hand-offs Deck pauses until you write.
-- **Models and effort.** `ctrl+l` lists every model your CLIs offer (OpenCode: every model of every provider it is set up for), then the reasoning efforts that model takes.
+- **Who answers.** Type `$` to pick an agent and the model it should run: `$claude`, `$codex`, `$opencode` bring that agent in, `$all` asks everyone; otherwise whoever spoke last answers. `$` names that are not agents (`$HOME`) stay plain text.
+- **Files.** Type `@` to search the folder's files and add one to the message. Each agent speaks under its own CLI's mark and colour: `✻ claude`, `>_ codex`, `▯ opencode`.
+- **Agents talk to each other.** An agent can hand work to another; every hand-off shows in the chat as `→ $codex …`. After six agent-to-agent hand-offs Deck pauses until you write.
+- **Working.** While agents work, the bottom line says who and for how long, with a spinner in each agent's colour.
+- **Models and effort.** `$` switches an agent's model as you address it; `ctrl+l` lists every model your CLIs offer (OpenCode: every model of every provider it is set up for), then the reasoning efforts that model takes.
 - **Approvals** open as a dialog with the command or the diff: allow, allow for the session, or deny.
 - **Plan and yolo.** `tab` switches plan mode, where agents read but change nothing. `ctrl+y` is yolo: everything is approved, and the screen tells you so.
 - **Pastes** of any size go in whole; big ones become an attachment the agent still reads in full.

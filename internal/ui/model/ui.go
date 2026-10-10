@@ -57,6 +57,7 @@ import (
 	"github.com/dev-dami/deck/internal/ui/logo"
 	"github.com/dev-dami/deck/internal/ui/notification"
 	"github.com/dev-dami/deck/internal/ui/styles"
+	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/dev-dami/deck/internal/ui/util"
 	"github.com/dev-dami/deck/internal/ui/yolo"
 	"github.com/dev-dami/deck/internal/version"
@@ -282,6 +283,11 @@ type UI struct {
 	yoloFX      *yolo.Anim
 	yoloTicking bool
 
+	// workTicking is true while the working line's frame tick is on its
+	// way; workSeen is when each busy agent was first seen at work.
+	workTicking bool
+	workSeen    map[string]time.Time
+
 	// sendProgressBar instructs the TUI to send progress bar updates to the
 	// terminal.
 	sendProgressBar    bool
@@ -321,6 +327,9 @@ type UI struct {
 	completionsStartIndex    int
 	completionsQuery         string
 	completionsPositionStart image.Point // x,y where user typed '@'
+	// completionsSigil is what opened the popup: "@" for files, "$" for
+	// agents and their models.
+	completionsSigil string
 
 	// Chat components
 	chat *Chat
@@ -533,6 +542,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 	}
 
 	status := NewStatus(com, ui)
+	status.working = ui.workingLine
 
 	// Seed the active theme key from the large model provider so the
 	// first model selection can correctly skip a redundant theme swap.
@@ -816,10 +826,21 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.yoloTicking = false
 		return m, nil
 	}
+	if _, ok := msg.(workTickMsg); ok {
+		if len(m.busyAgents()) > 0 {
+			return m, workTick()
+		}
+		m.workTicking = false
+		return m, nil
+	}
 	model, cmd := m.update(msg)
 	if !m.yoloTicking && m.yoloFX.Advance(time.Now()) {
 		m.yoloTicking = true
 		cmd = tea.Batch(cmd, yoloTick())
+	}
+	if !m.workTicking && len(m.busyAgents()) > 0 {
+		m.workTicking = true
+		cmd = tea.Batch(cmd, workTick())
 	}
 	return model, cmd
 }
@@ -1553,8 +1574,12 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.handleConnectionEvent(msg)...)
 	case util.ClearStatusMsg:
 		m.status.ClearInfoMsg()
+	case agentCompletionsMsg:
+		if m.completionsOpen && m.completionsSigil == "$" && m.completionsQuery == "" {
+			m.completions.SetAgentItems(m.agentCompletionItems())
+		}
 	case completions.CompletionItemsLoadedMsg:
-		if m.completionsOpen {
+		if m.completionsOpen && m.completionsSigil != "$" {
 			m.completions.SetItems(msg.Files, msg.Resources)
 		}
 	case uv.KittyGraphicsEvent:
@@ -2825,6 +2850,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 						if !msg.KeepOpen {
 							m.closeCompletions()
 						}
+					case completions.SelectionMsg[completions.AgentCompletionValue]:
+						cmds = append(cmds, m.insertAgentCompletion(msg.Value))
+						m.closeCompletions()
 					case completions.SelectionMsg[completions.ResourceCompletionValue]:
 						cmds = append(cmds, m.insertMCPResourceCompletion(msg.Value))
 						if !msg.KeepOpen {
@@ -3000,16 +3028,21 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				curValue := m.textarea.Value()
 				curIdx := len(curValue)
 
-				// Trigger completions on @.
-				if msg.String() == "@" && !m.completionsOpen {
+				// Trigger completions on @ (files) and $ (agents and models).
+				if (msg.String() == "@" || msg.String() == "$") && !m.completionsOpen {
 					// Only show if beginning of prompt or after whitespace.
 					if curIdx == 0 || (curIdx > 0 && isWhitespace(curValue[curIdx-1])) {
 						m.completionsOpen = true
 						m.completionsQuery = ""
 						m.completionsStartIndex = curIdx
 						m.completionsPositionStart = m.completionsPosition()
-						depth, limit := m.com.Config().Options.TUI.Completions.Limits()
-						cmds = append(cmds, m.completions.Open(depth, limit))
+						m.completionsSigil = msg.String()
+						if m.completionsSigil == "$" {
+							cmds = append(cmds, m.openAgentCompletions())
+						} else {
+							depth, limit := m.com.Config().Options.TUI.Completions.Limits()
+							cmds = append(cmds, m.completions.Open(depth, limit))
+						}
 					}
 				}
 
@@ -3054,7 +3087,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 
 				// After updating textarea, check if we need to filter completions.
 				// Skip filtering on the initial @ keystroke since items are loading async.
-				if m.completionsOpen && msg.String() != "@" {
+				if m.completionsOpen && msg.String() != m.completionsSigil {
 					newValue := m.textarea.Value()
 					newIdx := len(newValue)
 
@@ -3067,7 +3100,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					} else {
 						// Extract current word and filter.
 						word := m.textareaWord()
-						if strings.HasPrefix(word, "@") {
+						if strings.HasPrefix(word, m.completionsSigil) {
 							m.completionsQuery = word[1:]
 							m.completions.Filter(m.completionsQuery)
 						} else if m.completionsOpen {
@@ -3643,6 +3676,7 @@ func (m *UI) FullHelp() [][]key.Binding {
 		case uiFocusEditor:
 			editorBinds := []key.Binding{
 				k.Editor.Newline,
+				k.Editor.MentionAgent,
 				k.Editor.MentionFile,
 				k.Editor.OpenEditor,
 				k.Editor.PasteText,
@@ -3719,6 +3753,7 @@ func (m *UI) FullHelp() [][]key.Binding {
 			)
 			editorBinds := []key.Binding{
 				k.Editor.Newline,
+				k.Editor.MentionAgent,
 				k.Editor.MentionFile,
 				k.Editor.OpenEditor,
 				k.Editor.PasteText,
@@ -4447,6 +4482,76 @@ func (m *UI) insertCompletionText(text string) bool {
 	return true
 }
 
+// agentCompletionsMsg says the agent CLIs' model lists are in, for the $
+// popup.
+type agentCompletionsMsg struct{}
+
+// openAgentCompletions opens the $ popup on what is known at once, and asks
+// the CLIs that have not listed their models yet.
+func (m *UI) openAgentCompletions() tea.Cmd {
+	m.completions.SetAgentItems(m.agentCompletionItems())
+	picker, ok := m.com.Workspace.(workspace.AgentPicker)
+	if !ok {
+		return nil
+	}
+	sessionID := ""
+	if m.session != nil {
+		sessionID = m.session.ID
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_, _ = picker.AgentModelChoices(ctx, sessionID)
+		return agentCompletionsMsg{}
+	}
+}
+
+// agentCompletionItems is every agent with every model it offers, its
+// current model first.
+func (m *UI) agentCompletionItems() []completions.AgentItem {
+	picker, ok := m.com.Workspace.(workspace.AgentPicker)
+	if !ok {
+		return nil
+	}
+	sessionID := ""
+	if m.session != nil {
+		sessionID = m.session.ID
+	}
+	var cur, rest []completions.AgentItem
+	for _, c := range picker.CachedAgentModelChoices(sessionID) {
+		label := tone.Mark(c.Kind) + " " + c.Kind + " · " + c.Name
+		effort := c.CurrentEffort
+		if c.Current {
+			label += "  (now)"
+		} else {
+			effort = ""
+		}
+		it := completions.AgentItem{Label: label, Value: completions.AgentCompletionValue{
+			Kind: c.Kind, Model: c.ID, Effort: effort, Current: c.Current,
+		}}
+		if c.Current {
+			cur = append(cur, it)
+		} else {
+			rest = append(rest, it)
+		}
+	}
+	return append(cur, rest...)
+}
+
+// insertAgentCompletion puts $agent in the message and, when another model
+// was picked, switches the agent to it.
+func (m *UI) insertAgentCompletion(v completions.AgentCompletionValue) tea.Cmd {
+	prevHeight := m.textarea.Height()
+	if !m.insertCompletionText("$" + v.Kind) {
+		return nil
+	}
+	cmds := []tea.Cmd{m.handleTextareaHeightChange(prevHeight)}
+	if !v.Current {
+		cmds = append(cmds, m.selectAgentModel(dialog.ActionSelectAgentModel{Kind: v.Kind, Model: v.Model, Effort: v.Effort}))
+	}
+	return tea.Batch(cmds...)
+}
+
 // insertFileCompletion inserts the selected file path into the textarea,
 // replacing the @query, and adds the file as an attachment.
 func (m *UI) insertFileCompletion(path string) tea.Cmd {
@@ -4607,8 +4712,8 @@ func mimeOf(content []byte) string {
 }
 
 var readyPlaceholders = [...]string{
-	"Message your agents — @claude @codex @opencode, or @all",
-	"Ask anything; start with @codex to bring codex in",
+	"Message your agents — $ picks who and which model, @ adds a file",
+	"Ask anything; $codex brings codex in, $all asks everyone",
 	"What should the agents do?",
 }
 

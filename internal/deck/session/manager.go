@@ -14,16 +14,16 @@
 //
 // # Talking
 //
-// The user: Post(threadID, text) or PostWith(threadID, text, images). "@name" at the start of a clause addresses
-// that member (ParseAddressing has the exact rules); "@claude" / "@codex" naming
+// The user: Post(threadID, text) or PostWith(threadID, text, images). "$name" at the start of a clause addresses
+// that member (ParseAddressing has the exact rules); "$claude" / "$codex" naming
 // a kind the thread has no live member of adds a new member of that kind;
-// "@all" addresses everyone; with no mention the message goes to the member who
+// "$all" addresses everyone; with no mention the message goes to the member who
 // spoke last (or the only member; or, in an empty thread, a new member of the
 // default kind). Several addressees receive it concurrently.
 //
 // Agents: through the deck MCP tool send_message (Options.Hub receives the
 // calls; Message.To is a member id/name or "all"), or by starting a line of their
-// final reply with "@name". Both are relayed, logged in the thread and reported
+// final reply with "$name". Both are relayed, logged in the thread and reported
 // to the UI as RelayMsg. At most Options.MaxHops (default 6) relays happen after
 // each user message; the next one is held, the thread is paused (PausedMsg) and
 // stays so until Continue (or a new Post, which drops the held relays from
@@ -162,7 +162,7 @@ const DefaultMaxHops = 6
 // MCP, six hops.
 type Options struct {
 	// Hub receives the agents' send_message calls and serves read_thread. Nil
-	// disables the tools; @mention relays still work.
+	// disables the tools; $mention relays still work.
 	Hub agent.Hub
 	// MCPFor returns the MCP server to register with the agent's CLI (approve
 	// tool plus the messaging tools). Nil, or a nil result, means none.
@@ -649,7 +649,7 @@ func (m *Manager) defaultKind() string {
 // ---- the user speaks ----
 
 // Post sends the user's message into a thread. See the package comment for how
-// it is addressed. A message that is only mentions (for example "@codex") just
+// it is addressed. A message that is only mentions (for example "$codex") just
 // adds the missing members. Errors from starting or sending to an agent are
 // returned, but the message stays in the thread.
 func (m *Manager) Post(threadID, text string) error {
@@ -681,7 +681,7 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 		for _, r := range refs {
 			names = append(names, r.Name)
 		}
-		return PostResult{}, fmt.Errorf("no agent @%s in this thread (members: %s; kinds: %s)",
+		return PostResult{}, fmt.Errorf("no agent $%s in this thread (members: %s; kinds: %s)",
 			ad.Unknown[0], strings.Join(names, ", "), strings.Join(m.Kinds(), ", "))
 	}
 
@@ -714,7 +714,7 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 			newKinds = []string{m.defaultKind()}
 		} else {
 			t.mu.Unlock()
-			return PostResult{}, errors.New("every agent in this thread has exited; @claude or @codex adds a new one")
+			return PostResult{}, errors.New("every agent in this thread has exited; $claude or $codex adds a new one")
 		}
 	}
 	t.mu.Unlock()
@@ -951,11 +951,11 @@ func (m *Manager) Interrupt(id string) error {
 }
 
 // Rename changes an agent's display name. Names must be unique, non-empty and
-// free of whitespace and '@' (they are used for addressing), and cannot be "all",
+// free of whitespace, '$' and '@' (used for agents and files), and cannot be "all",
 // "user", "deck" or another kind's name.
 func (m *Manager) Rename(id, name string) error {
 	name = strings.TrimSpace(name)
-	if name == "" || strings.ContainsAny(name, " \t\r\n@/") {
+	if name == "" || strings.ContainsAny(name, " \t\r\n@$/") {
 		return fmt.Errorf("session: invalid name %q", name)
 	}
 	m.mu.Lock()

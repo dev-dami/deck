@@ -47,7 +47,7 @@ func tool(id, name, title string, delay time.Duration, out string) []Step {
 //	claude turn 1 (the user asks for a plan): plans, then send_message to codex
 //	    asking for a review of the plan.
 //	codex  turn 1 (the relay arrives): reads the thread, checks the code, and
-//	    answers with a line starting "@claude ..." which Deck relays.
+//	    answers with a line starting "$claude ..." which Deck relays.
 //	claude turn 2 (the mention arrives): asks for permission to edit a test
 //	    file, applies it and acknowledges, ending the exchange.
 func DemoDuoScripts() (claude, codex []Script) {
@@ -99,7 +99,7 @@ func DemoDuoScripts() (claude, codex []Script) {
 	x1 = append(x1, tool("x_read", "Read", "internal/store/store.go", 400*time.Millisecond, "148 lines read")...)
 	x1 = append(x1, say("The plan holds. One change: take the per-thread lock before the index lock, "+
 		"never the other way round, or Append and List can deadlock.\n\n"+
-		"@claude agree on the lock order and add the 1000-delta test; I will not touch store.go meanwhile."))
+		"$claude agree on the lock order and add the 1000-delta test; I will not touch store.go meanwhile."))
 	x1 = append(x1, usage(0.04)...)
 
 	return []Script{c1, c2}, []Script{x1}

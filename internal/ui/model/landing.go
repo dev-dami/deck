@@ -33,7 +33,7 @@ func (m *UI) landingView() string {
 	parts = append(parts, "", m.modelInfo(width))
 	infoSection := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
-	hint := t.ModelInfo.Provider.Render("Start with @claude, @codex or @opencode to choose who answers; @all asks everyone. ctrl+l picks models.")
+	hint := t.ModelInfo.Provider.Render("Type $ to pick an agent and its model ($claude, $codex, $opencode; $all asks everyone). @ adds a file.")
 
 	return lipgloss.NewStyle().
 		Width(width).
