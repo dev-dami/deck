@@ -77,8 +77,8 @@ func TestSignedInBothAndNoIdentifiersPrinted(t *testing.T) {
 	out := runReport(t, baseOptions(t, r))
 
 	for _, want := range []string{
-		"✓ claude  2.1.285  signed in",
-		"✓ codex   0.9.1  signed in",
+		"✓ claude    2.1.285  signed in",
+		"✓ codex     0.9.1  signed in",
 		"deck doctor",
 		"120×40, interactive",
 	} {
@@ -115,7 +115,7 @@ func TestMissingCLIShowsInstallHint(t *testing.T) {
 		},
 	}
 	out := runReport(t, baseOptions(t, r))
-	if !strings.Contains(out, "✗ codex   not found — install: npm install -g @openai/codex") {
+	if !strings.Contains(out, "✗ codex     not found — install: npm install -g @openai/codex") {
 		t.Errorf("missing codex install hint:\n%s", out)
 	}
 	for _, c := range r.calls {
@@ -138,10 +138,10 @@ func TestNotSignedInPrintsCLIHint(t *testing.T) {
 		},
 	}
 	out := runReport(t, baseOptions(t, r))
-	if !strings.Contains(out, "✗ claude  2.1.285  not signed in — Not logged in · Run /login to sign in") {
+	if !strings.Contains(out, "✗ claude    2.1.285  not signed in — Not logged in · Run /login to sign in") {
 		t.Errorf("claude hint missing:\n%s", out)
 	}
-	if !strings.Contains(out, "✗ codex   0.9.1  not signed in — Run codex login to sign in") {
+	if !strings.Contains(out, "✗ codex     0.9.1  not signed in — Run codex login to sign in") {
 		t.Errorf("codex should skip the line with an address and use the next hint:\n%s", out)
 	}
 	if strings.Contains(out, "dami") || strings.Contains(out, "example.com") {
@@ -162,7 +162,7 @@ func TestNonZeroExitWithoutHintIsNotSignedIn(t *testing.T) {
 		},
 	}
 	out := runReport(t, baseOptions(t, r))
-	if !strings.Contains(out, "✗ claude  2.1.285  not signed in\n") {
+	if !strings.Contains(out, "✗ claude    2.1.285  not signed in\n") {
 		t.Errorf("expected bare not-signed-in line:\n%s", out)
 	}
 }
@@ -178,7 +178,7 @@ func TestStatusCommandAbsentIsNotRun(t *testing.T) {
 		},
 	}
 	out := runReport(t, baseOptions(t, r))
-	if !strings.Contains(out, "! claude  2.1.285  sign-in status not available in this version") {
+	if !strings.Contains(out, "! claude    2.1.285  sign-in status not available in this version") {
 		t.Errorf("claude without auth command:\n%s", out)
 	}
 	for _, c := range r.calls {
@@ -198,7 +198,7 @@ func TestVersionFailureStillReportsSignIn(t *testing.T) {
 		},
 	}
 	out := runReport(t, baseOptions(t, r))
-	if !strings.Contains(out, "✓ claude  version unknown  signed in") {
+	if !strings.Contains(out, "✓ claude    version unknown  signed in") {
 		t.Errorf("version failure line:\n%s", out)
 	}
 }

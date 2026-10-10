@@ -98,3 +98,19 @@ func TestGoldenPlanDeclined(t *testing.T) {
 		checkGolden(t, r, w, h)
 	})
 }
+
+// An OpenCode agent in a thread with the other two, and its model picker:
+// every provider's models, by provider/model.
+func TestGoldenOpencodeTrio(t *testing.T) {
+	forSizes(t, func(t *testing.T, w, h int) {
+		r := newTrioRig(t, w, h)
+		r.say("@claude plan it, @codex review it, @opencode write the tests")
+		r.pump("three members", func() bool { return len(r.m.curThread().Members) == 3 })
+		r.drain()
+		r.event(r.opencode.last(), agent.Event{Kind: agent.KindAssistantText, Text: "On it: table tests for the store."})
+		r.pump("opencode text", func() bool { return r.has("table tests for the store") })
+		r.clickChip(hitModel, "opencode")
+		r.pump("models", func() bool { return r.m.pick.open && !r.m.pick.loading })
+		checkGolden(t, r, w, h)
+	})
+}

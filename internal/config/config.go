@@ -19,10 +19,39 @@ import (
 // EnvReducedMotion, when set to "1", forces Motion to "off".
 const EnvReducedMotion = "DECK_REDUCED_MOTION"
 
+// Kinds are the CLIs Deck can drive, in the order they are offered.
+var Kinds = []string{"claude", "codex", "opencode"}
+
 // Models names the model each CLI should run. An empty value means the CLI's default.
 type Models struct {
-	Claude string `json:"claude"`
-	Codex  string `json:"codex"`
+	Claude   string `json:"claude"`
+	Codex    string `json:"codex"`
+	Opencode string `json:"opencode,omitempty"`
+}
+
+// For is the value for a kind ("" for an unknown one).
+func (m Models) For(kind string) string {
+	switch kind {
+	case "claude":
+		return m.Claude
+	case "codex":
+		return m.Codex
+	case "opencode":
+		return m.Opencode
+	}
+	return ""
+}
+
+// Set sets the value for a kind; an unknown kind is ignored.
+func (m *Models) Set(kind, v string) {
+	switch kind {
+	case "claude":
+		m.Claude = v
+	case "codex":
+		m.Codex = v
+	case "opencode":
+		m.Opencode = v
+	}
 }
 
 // Config is Deck's user settings.
@@ -34,6 +63,7 @@ type Config struct {
 	TellAgentsName bool   `json:"tell_agents_name"` // tell agents the user's name (agent.Spec.TellName)
 	ClaudeBinary   string `json:"claude_binary"`    // path or command name; empty means "claude"
 	CodexBinary    string `json:"codex_binary"`     // path or command name; empty means "codex"
+	OpencodeBinary string `json:"opencode_binary"`  // path or command name; empty means "opencode"
 	DefaultMode    string `json:"default_mode"`     // "plan", "ask" or "yolo"; empty means "ask". "yolo" is ignored at startup (see StartMode)
 	// TrackChanges snapshots a thread's git work tree with every message you
 	// send, for the changes panel and its undo.
@@ -82,6 +112,7 @@ func Defaults() Config {
 		TellAgentsName: false,
 		ClaudeBinary:   "claude",
 		CodexBinary:    "codex",
+		OpencodeBinary: "opencode",
 		DefaultMode:    "ask",
 		TrackChanges:   true,
 	}
@@ -186,9 +217,9 @@ func SaveTo(path string, c Config) error {
 // Validate reports the first invalid value.
 func (c Config) Validate() error {
 	switch c.DefaultAgent {
-	case "claude", "codex":
+	case "claude", "codex", "opencode":
 	default:
-		return fmt.Errorf("default_agent must be \"claude\" or \"codex\", got %q", c.DefaultAgent)
+		return fmt.Errorf("default_agent must be \"claude\", \"codex\" or \"opencode\", got %q", c.DefaultAgent)
 	}
 	switch c.Motion {
 	case "on", "off":
@@ -216,4 +247,21 @@ func (c Config) StartMode() (mode string, ignored bool) {
 		return "ask", true
 	}
 	return "ask", false
+}
+
+// Binary is the configured command for a kind's CLI (its own name when unset).
+func (c Config) Binary(kind string) string {
+	b := ""
+	switch kind {
+	case "claude":
+		b = c.ClaudeBinary
+	case "codex":
+		b = c.CodexBinary
+	case "opencode":
+		b = c.OpencodeBinary
+	}
+	if b == "" {
+		return kind
+	}
+	return b
 }

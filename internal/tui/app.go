@@ -853,24 +853,10 @@ func (m *model) newEffortFor(kind string) string {
 	if v, ok := m.newEffort[kind]; ok {
 		return v
 	}
-	switch kind {
-	case "claude":
-		return m.cfg.Efforts.Claude
-	case "codex":
-		return m.cfg.Efforts.Codex
-	}
-	return ""
+	return m.cfg.Efforts.For(kind)
 }
 
-func (m *model) defaultModel(kind string) string {
-	switch kind {
-	case "claude":
-		return m.cfg.Models.Claude
-	case "codex":
-		return m.cfg.Models.Codex
-	}
-	return ""
-}
+func (m *model) defaultModel(kind string) string { return m.cfg.Models.For(kind) }
 
 func (m *model) newModelFor(kind string) string {
 	if v := m.newModel[kind]; v != "" {

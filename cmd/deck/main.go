@@ -1,6 +1,6 @@
 // Command deck is one calm terminal deck for all your coding agents.
 //
-// Deck launches your own installed claude and codex CLIs under your own
+// Deck launches your own installed claude, codex and opencode CLIs under your own
 // login, over their documented structured protocols, and draws its own
 // interface from their events. It never reads their credentials and never
 // calls a model API itself.
@@ -26,6 +26,7 @@ import (
 	"github.com/dev-dami/deck/internal/agent"
 	"github.com/dev-dami/deck/internal/agent/claude"
 	"github.com/dev-dami/deck/internal/agent/codex"
+	"github.com/dev-dami/deck/internal/agent/opencode"
 	"github.com/dev-dami/deck/internal/approve"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/doctor"
@@ -124,8 +125,11 @@ func runDeck() error {
 	if found(cfg.CodexBinary, "codex") {
 		adapters["codex"] = codex.New(cfg.CodexBinary)
 	}
+	if found(cfg.OpencodeBinary, "opencode") {
+		adapters["opencode"] = opencode.New(cfg.OpencodeBinary)
+	}
 	if len(adapters) == 0 {
-		return fmt.Errorf("neither claude nor codex was found on PATH — run `deck doctor`")
+		return fmt.Errorf("none of claude, codex or opencode was found on PATH — run `deck doctor`")
 	}
 	if adapters[cfg.DefaultAgent] == nil {
 		for k := range adapters {

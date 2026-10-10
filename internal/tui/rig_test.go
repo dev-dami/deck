@@ -32,13 +32,13 @@ type stubAdapter struct {
 }
 
 type stubRun struct {
-	ev        chan agent.Event
-	ap        chan agent.ApprovalRequest
-	mu        sync.Mutex
-	sent      []string
-	interrupt int
-	spec      agent.Spec
-	once      sync.Once
+	ev         chan agent.Event
+	ap         chan agent.ApprovalRequest
+	mu         sync.Mutex
+	sent       []string
+	interrupt  int
+	spec       agent.Spec
+	once       sync.Once
 	modes      []agent.Mode
 	setModels  []string
 	setEfforts []string
@@ -150,15 +150,16 @@ func (r *stubRun) sentList() []string {
 
 // rig drives a model by hand: keys in, messages pumped from the manager.
 type rig struct {
-	t      *testing.T
-	m      *model
-	mgr    *session.Manager
-	claude *stubAdapter
-	codex  *stubAdapter
-	hub    *fake.Hub
-	clock  *manualClock
-	saved  []config.Config
-	quit   bool
+	t        *testing.T
+	m        *model
+	mgr      *session.Manager
+	claude   *stubAdapter
+	codex    *stubAdapter
+	opencode *stubAdapter // only in a trio rig
+	hub      *fake.Hub
+	clock    *manualClock
+	saved    []config.Config
+	quit     bool
 	// late, when set, receives the results of commands that outlast exec's
 	// wait (git, in the changes tests); pump feeds them.
 	late chan tea.Msg
@@ -175,6 +176,29 @@ func newRigHops(t *testing.T, w, h, maxHops int) *rig {
 // newRigWith is newRigHops with a say over the config.
 func newRigWith(t *testing.T, w, h, maxHops int, tune func(*config.Config)) *rig {
 	t.Helper()
+	return newRigKinds(t, w, h, maxHops, tune, false)
+}
+
+// newTrioRig is a rig where OpenCode is installed too.
+func newTrioRig(t *testing.T, w, h int) *rig {
+	t.Helper()
+	return newRigKinds(t, w, h, 0, nil, true)
+}
+
+// opencodeModels is a model list shaped like OpenCode's: every provider's
+// models as provider/model, some with efforts.
+func opencodeModels() []agent.ModelInfo {
+	es := []agent.EffortInfo{{Level: "low", Description: "Quick answers, light reasoning"}, {Level: "high", Description: "Deeper reasoning for complex work"}}
+	return []agent.ModelInfo{
+		{ID: "agentrouter/claude-opus-5", Name: "Claude Opus 5", Description: "agentrouter", Efforts: es},
+		{ID: "agentrouter-openai/gpt-6-astra", Name: "GPT 6 Astra", Description: "agentrouter-openai", Efforts: es},
+		{ID: "opencode/big-pickle", Name: "Big Pickle", Description: "opencode", Default: true},
+		{ID: "opencode/step-5-preview-free", Name: "Step 5 Preview Free", Description: "opencode", Efforts: es},
+	}
+}
+
+func newRigKinds(t *testing.T, w, h, maxHops int, tune func(*config.Config), trio bool) *rig {
+	t.Helper()
 	st, err := store.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -185,7 +209,12 @@ func newRigWith(t *testing.T, w, h, maxHops int, tune func(*config.Config)) *rig
 	if tune != nil {
 		tune(&cfg)
 	}
-	r.mgr = session.NewManager(map[string]agent.Adapter{"claude": r.claude, "codex": r.codex}, st, cfg,
+	adapters := map[string]agent.Adapter{"claude": r.claude, "codex": r.codex}
+	if trio {
+		r.opencode = &stubAdapter{kind: "opencode", models: opencodeModels()}
+		adapters["opencode"] = r.opencode
+	}
+	r.mgr = session.NewManager(adapters, st, cfg,
 		session.Options{Hub: r.hub, MCPFor: fake.MCPFor, MaxHops: maxHops})
 	t.Cleanup(r.mgr.Close)
 	r.clock = &manualClock{t: time.Unix(1_700_000_000, 0), step: 100 * time.Millisecond}

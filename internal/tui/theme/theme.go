@@ -25,7 +25,9 @@ var (
 var (
 	TintClaude = lipgloss.AdaptiveColor{Light: "#C15F3C", Dark: "#D97757"} // Claude's spark
 	TintCodex  = lipgloss.AdaptiveColor{Light: "#3D4BE0", Dark: "#8C9EFF"} // the Codex logo's blue
-	TintOther  = Muted
+	// OpenCode's mark is monochrome: near black on light, near white on dark.
+	TintOpencode = lipgloss.AdaptiveColor{Light: "#4B4646", Dark: "#E4E0DF"}
+	TintOther    = Muted
 )
 
 // Tint returns the agent tint for an agent kind ("claude", "codex", ...).
@@ -35,18 +37,23 @@ func Tint(kind string) lipgloss.AdaptiveColor {
 		return TintClaude
 	case "codex":
 		return TintCodex
+	case "opencode":
+		return TintOpencode
 	}
 	return TintOther
 }
 
 // Mark is how an agent kind is drawn: the mark its own CLI uses in the
-// terminal (Claude Code's ✻, Codex CLI's >_), ◆ for anything else.
+// terminal (Claude Code's ✻, Codex CLI's >_, OpenCode's hollow block ▯), ◆
+// for anything else.
 func Mark(kind string) string {
 	switch kind {
 	case "claude":
 		return "✻"
 	case "codex":
 		return ">_"
+	case "opencode":
+		return "▯"
 	}
 	return GlyphAgent
 }

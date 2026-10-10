@@ -70,6 +70,8 @@ type Client struct {
 	q    *queue
 	out  chan Message
 	done chan struct{}
+
+	version string // "jsonrpc" member of every message sent; codex omits it
 }
 
 // NewClient starts reading r and writing to w. Notifications and server
@@ -85,6 +87,14 @@ func NewClient(r io.Reader, w io.Writer, tap Tap) *Client {
 	}
 	go c.readLoop(r)
 	go c.pump()
+	return c
+}
+
+// NewClient2 is NewClient for a peer that wants strict JSON-RPC 2.0: every
+// message it is sent carries "jsonrpc":"2.0".
+func NewClient2(r io.Reader, w io.Writer, tap Tap) *Client {
+	c := NewClient(r, w, tap)
+	c.version = "2.0"
 	return c
 }
 
@@ -155,6 +165,11 @@ func (c *Client) handleLine(line []byte) {
 	}
 }
 
+// Inject queues m on Incoming behind everything read so far. A caller whose
+// Call just returned can use it to mark that point in the stream: everything
+// the server sent before that response comes out of Incoming first.
+func (c *Client) Inject(m Message) { c.q.push(m) }
+
 // pump moves messages from the unbounded queue to the out channel so a slow
 // consumer can never stall response handling.
 func (c *Client) pump() {
@@ -184,22 +199,26 @@ func (c *Client) writeLine(v any) error {
 }
 
 type outRequest struct {
+	V      string `json:"jsonrpc,omitempty"`
 	ID     int64  `json:"id"`
 	Method string `json:"method"`
 	Params any    `json:"params,omitempty"`
 }
 
 type outNotification struct {
+	V      string `json:"jsonrpc,omitempty"`
 	Method string `json:"method"`
 	Params any    `json:"params,omitempty"`
 }
 
 type outResponse struct {
+	V      string          `json:"jsonrpc,omitempty"`
 	ID     json.RawMessage `json:"id"`
 	Result any             `json:"result"`
 }
 
 type outError struct {
+	V     string          `json:"jsonrpc,omitempty"`
 	ID    json.RawMessage `json:"id"`
 	Error RPCError        `json:"error"`
 }
@@ -217,7 +236,7 @@ func (c *Client) Call(ctx context.Context, method string, params, result any) er
 	c.pending[id] = ch
 	c.mu.Unlock()
 
-	if err := c.writeLine(outRequest{ID: id, Method: method, Params: params}); err != nil {
+	if err := c.writeLine(outRequest{V: c.version, ID: id, Method: method, Params: params}); err != nil {
 		c.forget(id)
 		return err
 	}
@@ -247,7 +266,7 @@ func (c *Client) forget(id int64) {
 
 // Notify sends a notification.
 func (c *Client) Notify(method string, params any) error {
-	return c.writeLine(outNotification{Method: method, Params: params})
+	return c.writeLine(outNotification{V: c.version, Method: method, Params: params})
 }
 
 // Respond answers a server request. id is the request's id exactly as received.
@@ -255,12 +274,12 @@ func (c *Client) Respond(id json.RawMessage, result any) error {
 	if result == nil {
 		result = struct{}{}
 	}
-	return c.writeLine(outResponse{ID: id, Result: result})
+	return c.writeLine(outResponse{V: c.version, ID: id, Result: result})
 }
 
 // RespondError answers a server request with a JSON-RPC error.
 func (c *Client) RespondError(id json.RawMessage, code int, msg string) error {
-	return c.writeLine(outError{ID: id, Error: RPCError{Code: code, Message: msg}})
+	return c.writeLine(outError{V: c.version, ID: id, Error: RPCError{Code: code, Message: msg}})
 }
 
 // queue is an unbounded FIFO of Messages.

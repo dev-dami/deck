@@ -1,10 +1,11 @@
 // Package brand holds the providers' logos, as published, for the places Deck
-// can draw an image (see internal/termimg). Text marks (✻, >_) live in the
-// TUI's theme.
+// can draw an image (see internal/termimg). Text marks (✻, >_, ▯) live in
+// the TUI's theme.
 //
 // The logo files come from lobe-icons 1.97.1 (MIT,
-// github.com/lobehub/lobe-icons); the marks themselves are trademarks of
-// Anthropic and OpenAI and are used only to say which CLI an agent runs.
+// github.com/lobehub/lobe-icons; OpenCode's is its monochrome dark variant);
+// the marks themselves belong to Anthropic, OpenAI and OpenCode and are used
+// only to say which CLI an agent runs.
 package brand
 
 import (
@@ -23,7 +24,7 @@ var (
 	cache = map[string]image.Image{}
 )
 
-// Logo is the logo of an agent kind ("claude", "codex"), or false.
+// Logo is the logo of an agent kind ("claude", "codex", "opencode"), or false.
 func Logo(kind string) (image.Image, bool) {
 	mu.Lock()
 	defer mu.Unlock()

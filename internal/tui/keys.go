@@ -609,17 +609,13 @@ func (m *model) submit() []tea.Cmd {
 // not saved, on top of the saved config.
 func (m *model) pushConfig() {
 	c := m.cfg
-	if v := m.newModel["claude"]; v != "" {
-		c.Models.Claude = v
+	for kind, v := range m.newModel {
+		if v != "" {
+			c.Models.Set(kind, v)
+		}
 	}
-	if v := m.newModel["codex"]; v != "" {
-		c.Models.Codex = v
-	}
-	if v, ok := m.newEffort["claude"]; ok {
-		c.Efforts.Claude = v
-	}
-	if v, ok := m.newEffort["codex"]; ok {
-		c.Efforts.Codex = v
+	for kind, v := range m.newEffort {
+		c.Efforts.Set(kind, v)
 	}
 	m.mgr.SetConfig(c)
 }

@@ -52,6 +52,7 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 		TellAgentsName: false,
 		ClaudeBinary:   "claude",
 		CodexBinary:    "codex",
+		OpencodeBinary: "opencode",
 		DefaultMode:    "ask",
 		TrackChanges:   true,
 	}

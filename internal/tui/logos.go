@@ -19,7 +19,7 @@ const logoCells = 2
 
 // kittyLogoIDs name the logos to the terminal; the id is also the 24-bit
 // colour of their placeholder cells.
-var kittyLogoIDs = map[string]uint32{"claude": 0x7A0001, "codex": 0x7A0002}
+var kittyLogoIDs = map[string]uint32{"claude": 0x7A0001, "codex": 0x7A0002, "opencode": 0x7A0003}
 
 // setupLogos turns the logos on when the terminal can show them.
 func (m *model) setupLogos(p termimg.Protocol) {
@@ -27,9 +27,9 @@ func (m *model) setupLogos(p termimg.Protocol) {
 		return // the placeholder colours must reach the terminal exactly
 	}
 	m.kittyIDs = map[string]uint32{}
-	for kind, id := range kittyLogoIDs {
-		if _, ok := brand.Logo(kind); ok {
-			m.kittyIDs[kind] = id
+	for _, kind := range m.kinds { // only the CLIs Deck can start
+		if _, ok := brand.Logo(kind); ok && kittyLogoIDs[kind] != 0 {
+			m.kittyIDs[kind] = kittyLogoIDs[kind]
 		}
 	}
 	m.kittyPending = len(m.kittyIDs) > 0

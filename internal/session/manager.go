@@ -309,13 +309,12 @@ func (m *Manager) Kinds() []string {
 		ks = append(ks, k)
 	}
 	rank := func(k string) int {
-		switch k {
-		case "claude":
-			return 0
-		case "codex":
-			return 1
+		for i, o := range config.Kinds {
+			if o == k {
+				return i
+			}
 		}
-		return 2
+		return len(config.Kinds)
 	}
 	sort.Slice(ks, func(i, j int) bool {
 		if rank(ks[i]) != rank(ks[j]) {
@@ -591,11 +590,8 @@ func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Sp
 		ID: a.id, Dir: t.dir, Model: a.model, Effort: a.effort, ResumeID: resume, FirstPrompt: prompt,
 		UserName: cfg.UserName, TellName: cfg.TellAgentsName, Mode: t.getMode(),
 	}
-	switch a.kind {
-	case "claude":
-		s.Binary = cfg.ClaudeBinary
-	case "codex":
-		s.Binary = cfg.CodexBinary
+	if b := cfg.Binary(a.kind); b != a.kind {
+		s.Binary = b
 	}
 	if m.opts.MCPFor != nil {
 		s.MCP = m.opts.MCPFor(a.id)
@@ -637,15 +633,7 @@ func (m *Manager) reservedLocked(id string) bool {
 	return false
 }
 
-func modelFor(cfg config.Config, kind string) string {
-	switch kind {
-	case "claude":
-		return cfg.Models.Claude
-	case "codex":
-		return cfg.Models.Codex
-	}
-	return ""
-}
+func modelFor(cfg config.Config, kind string) string { return cfg.Models.For(kind) }
 
 func (m *Manager) defaultKind() string {
 	cfg := m.config()

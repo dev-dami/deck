@@ -42,9 +42,11 @@ type Options struct {
 	Runner       Runner
 	ClaudeBinary string // command name or path; "claude" by default
 	CodexBinary  string // command name or path; "codex" by default
-	ConfigPath   string // shown in the report
-	ThreadsDir   string // shown in the report
-	Timeout      time.Duration
+	// OpencodeBinary is the opencode command or path; "opencode" by default.
+	OpencodeBinary string
+	ConfigPath     string // shown in the report
+	ThreadsDir     string // shown in the report
+	Timeout        time.Duration
 	// Terminal reports the output terminal's size and whether it is a TTY.
 	Terminal func() (cols, rows int, tty bool)
 	// Logo returns the escape sequence that draws a CLI's logo (logoCols x
@@ -67,9 +69,11 @@ func DefaultOptions() Options {
 		Runner:       execRunner{},
 		ClaudeBinary: "claude",
 		CodexBinary:  "codex",
-		Timeout:      10 * time.Second,
-		Terminal:     stdoutTerminal,
-		Logo:         terminalLogo,
+		// OpenCode is optional: it is only reported when it is installed.
+		OpencodeBinary: "opencode",
+		Timeout:        10 * time.Second,
+		Terminal:       stdoutTerminal,
+		Logo:           terminalLogo,
 	}
 	if p, err := config.Path(); err == nil {
 		opts.ConfigPath = p
@@ -87,6 +91,9 @@ func DefaultOptions() Options {
 	}
 	if cfg.CodexBinary != "" {
 		opts.CodexBinary = cfg.CodexBinary
+	}
+	if cfg.OpencodeBinary != "" {
+		opts.OpencodeBinary = cfg.OpencodeBinary
 	}
 	return opts
 }
@@ -119,6 +126,15 @@ func RunWith(ctx context.Context, w io.Writer, opts Options) error {
 		statusArgs: []string{"login", "status"},
 		install:    "npm install -g @openai/codex",
 	})))
+	if opts.OpencodeBinary != "" {
+		if _, err := opts.Runner.LookPath(opts.OpencodeBinary); err == nil {
+			b.WriteString(withLogo(opts, "opencode", checkAgent(ctx, opts, agentSpec{
+				name:   "opencode",
+				binary: opts.OpencodeBinary,
+				note:   "uses its own providers (opencode auth login)",
+			})))
+		}
+	}
 	b.WriteString("\n")
 
 	b.WriteString(configLine(opts))
@@ -135,6 +151,7 @@ type agentSpec struct {
 	helpWord   *regexp.Regexp // the status subcommand's word, which must appear in --help
 	statusArgs []string       // the CLI's own status command
 	install    string
+	note       string // in place of a sign-in check, for a CLI without one
 }
 
 var (
@@ -149,7 +166,7 @@ const maxHintRunes = 100
 func checkAgent(ctx context.Context, opts Options, a agentSpec) string {
 	path, err := opts.Runner.LookPath(a.binary)
 	if err != nil {
-		return fmt.Sprintf("✗ %-6s  not found — install: %s\n", a.name, a.install)
+		return fmt.Sprintf("✗ %-8s  not found — install: %s\n", a.name, a.install)
 	}
 
 	version := ""
@@ -157,7 +174,10 @@ func checkAgent(ctx context.Context, opts Options, a agentSpec) string {
 		version = versionRE.FindString(out)
 	}
 
-	icon, state := signInState(ctx, opts, path, a)
+	icon, state := "✓", a.note
+	if a.note == "" {
+		icon, state = signInState(ctx, opts, path, a)
+	}
 
 	parts := []string{}
 	if version != "" {
@@ -166,7 +186,7 @@ func checkAgent(ctx context.Context, opts Options, a agentSpec) string {
 		parts = append(parts, "version unknown")
 	}
 	parts = append(parts, state)
-	return fmt.Sprintf("%s %-6s  %s\n", icon, a.name, strings.Join(parts, "  "))
+	return fmt.Sprintf("%s %-8s  %s\n", icon, a.name, strings.Join(parts, "  "))
 }
 
 // signInState returns the icon and text for the sign-in state.

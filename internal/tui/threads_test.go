@@ -226,7 +226,7 @@ func TestFOnAMessageForksThereWithTheMessageInTheComposer(t *testing.T) {
 	r.start("first question")
 	run := r.claude.last()
 	r.event(run, agent.Event{Kind: agent.KindAssistantText, Text: "first answer"})
-	r.event(run, agent.Event{Kind: agent.KindTurnDone})
+	r.done(run, "claude") // the answer is in the thread's log before the next message
 	r.say("second question")
 	r.event(run, agent.Event{Kind: agent.KindTurnDone})
 	r.drain()

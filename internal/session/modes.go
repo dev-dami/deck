@@ -332,11 +332,5 @@ func (m *Manager) defaultEffort(cfg config.Config, kind string) string {
 	if ok {
 		return e
 	}
-	switch kind {
-	case "claude":
-		return cfg.Efforts.Claude
-	case "codex":
-		return cfg.Efforts.Codex
-	}
-	return ""
+	return cfg.Efforts.For(kind)
 }
