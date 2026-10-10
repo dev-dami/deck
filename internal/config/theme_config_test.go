@@ -9,7 +9,7 @@ import (
 
 func TestTUIOptions_UnmarshalLegacyStringTheme(t *testing.T) {
 	t.Parallel()
-	// Older Crush builds stored the theme as a plain string. Loading such a
+	// Older Deck builds stored the theme as a plain string. Loading such a
 	// config must not fail; the string becomes the active theme.
 	var opts TUIOptions
 	require.NoError(t, json.Unmarshal([]byte(`{"theme":"gruvbox-dark"}`), &opts))

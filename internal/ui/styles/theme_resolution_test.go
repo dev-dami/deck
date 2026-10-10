@@ -23,12 +23,12 @@ func TestLoadTheme_UserFileShadowsBuiltin(t *testing.T) {
 	setTestThemeDirs(t, []string{dir})
 
 	tf := &ThemeFile{
-		Base:    "charmtone-panther",
+		Base:    "deck",
 		Palette: Palette{Primary: "#ff0000"},
 	}
-	require.NoError(t, SaveThemeFile(filepath.Join(dir, "charmtone-panther.json"), tf))
+	require.NoError(t, SaveThemeFile(filepath.Join(dir, "deck.json"), tf))
 
-	s, err := LoadTheme("charmtone-panther")
+	s, err := LoadTheme("deck")
 	require.NoError(t, err)
 	require.NotNil(t, s.WorkingGradFromColor)
 }
@@ -110,9 +110,9 @@ func TestForkedTheme_KeepsLoadingAfterSourceBaseDeleted(t *testing.T) {
 func TestLoadTheme_OverriddenBuiltinKeepsThemeOverrides(t *testing.T) {
 	dir := t.TempDir()
 	setTestThemeDirs(t, []string{dir})
-	require.NoError(t, SaveThemeFile(filepath.Join(dir, "charmtone-panther.json"), &ThemeFile{Base: "charmtone-panther"}))
+	require.NoError(t, SaveThemeFile(filepath.Join(dir, "deck.json"), &ThemeFile{Base: "deck"}))
 
-	loaded, err := LoadTheme("charmtone-panther")
+	loaded, err := LoadTheme("deck")
 	require.NoError(t, err)
 	builtin := CharmtonePantera()
 	require.Equal(t, builtin.Editor.PromptBangIconFocused.GetForeground(), loaded.Editor.PromptBangIconFocused.GetForeground())
@@ -146,13 +146,13 @@ func TestListAllThemes_IncludesBuiltins(t *testing.T) {
 
 	foundCharmtone := false
 	for _, info := range infos {
-		if info.Name == "charmtone-panther" {
+		if info.Name == "deck" {
 			foundCharmtone = true
 			require.Equal(t, ThemeSourceBuiltin, info.Source)
 			require.False(t, info.Overridden)
 		}
 	}
-	require.True(t, foundCharmtone, "expected charmtone-panther in theme list")
+	require.True(t, foundCharmtone, "expected deck in theme list")
 }
 
 func TestListAllThemes_ShowsOverridden(t *testing.T) {
@@ -208,7 +208,7 @@ func TestListAllThemes_IncludesUserOnlyThemes(t *testing.T) {
 	userDir := t.TempDir()
 	setTestThemeDirs(t, []string{userDir})
 
-	tf := &ThemeFile{Base: "charmtone-panther"}
+	tf := &ThemeFile{Base: "deck"}
 	require.NoError(t, SaveThemeFile(filepath.Join(userDir, "my-neon.json"), tf))
 
 	infos := ListAllThemes()
@@ -237,7 +237,7 @@ func TestListAllThemes_Sorted(t *testing.T) {
 func TestLoadPaletteTheme_OverridesOnlyForPureBuiltin(t *testing.T) {
 	// An untouched base theme keeps the built-in's style overrides
 	// (e.g. the hardcoded Charmtone syntax colors).
-	pure, err := LoadPaletteTheme("charmtone-panther", Palette{})
+	pure, err := LoadPaletteTheme("deck", Palette{})
 	require.NoError(t, err)
 	builtin := CharmtonePantera()
 	require.Equal(t, builtin.Markdown.CodeBlock.Chroma.CommentPreproc.Color,
@@ -246,7 +246,7 @@ func TestLoadPaletteTheme_OverridesOnlyForPureBuiltin(t *testing.T) {
 	// A customized theme must not inherit those overrides; otherwise
 	// light themes would keep dark-tuned syntax and markdown colors.
 	light := Palette{BgBase: "#ffffff", FgBase: "#000000"}
-	custom, err := LoadPaletteTheme("charmtone-panther", light)
+	custom, err := LoadPaletteTheme("deck", light)
 	require.NoError(t, err)
 	require.NotEqual(t, builtin.Markdown.CodeBlock.Chroma.CommentPreproc.Color,
 		custom.Markdown.CodeBlock.Chroma.CommentPreproc.Color)
@@ -256,7 +256,7 @@ func TestLoadPaletteTheme_AnsiColors(t *testing.T) {
 	// ANSI 16-color remapping is customizable so light themes can keep
 	// raw terminal output legible.
 	custom := Palette{BgBase: "#ffffff", AnsiWhite: "#000000", AnsiBrightWhite: "#1a1a1a"}
-	s, err := LoadPaletteTheme("charmtone-panther", custom)
+	s, err := LoadPaletteTheme("deck", custom)
 	require.NoError(t, err)
 	require.Equal(t, "#000000", *hex(s.ANSI[7]))
 	require.Equal(t, "#1a1a1a", *hex(s.ANSI[15]))
@@ -264,9 +264,9 @@ func TestLoadPaletteTheme_AnsiColors(t *testing.T) {
 
 func TestExportResolvedPalette_Builtin(t *testing.T) {
 	t.Parallel()
-	tf, err := ExportResolvedPalette("charmtone-panther")
+	tf, err := ExportResolvedPalette("deck")
 	require.NoError(t, err)
-	require.Equal(t, "charmtone-panther", tf.Base)
+	require.Equal(t, "deck", tf.Base)
 	require.NotEmpty(t, tf.Primary)
 	require.NotEmpty(t, tf.BgBase)
 	require.NotEmpty(t, tf.FgBase)
@@ -288,14 +288,14 @@ func TestExportResolvedPalette_UserTheme(t *testing.T) {
 	setTestThemeDirs(t, []string{dir})
 
 	userTf := &ThemeFile{
-		Base:    "charmtone-panther",
+		Base:    "deck",
 		Palette: Palette{Primary: "#ff0000"},
 	}
 	require.NoError(t, SaveThemeFile(filepath.Join(dir, "custom.json"), userTf))
 
 	exported, err := ExportResolvedPalette("custom")
 	require.NoError(t, err)
-	require.Equal(t, "charmtone-panther", exported.Base)
+	require.Equal(t, "deck", exported.Base)
 	require.Equal(t, "#ff0000", exported.Primary)
 	require.NotEmpty(t, exported.BgBase)
 	require.NotEmpty(t, exported.FgBase)
@@ -317,7 +317,7 @@ func TestThemeSource_String(t *testing.T) {
 
 func TestIsBuiltinTheme(t *testing.T) {
 	t.Parallel()
-	require.True(t, IsBuiltinTheme("charmtone-panther"))
+	require.True(t, IsBuiltinTheme("deck"))
 	require.True(t, IsBuiltinTheme("charmtone")) // deprecated alias
 	require.True(t, IsBuiltinTheme("Gruvbox-Dark"))
 	require.False(t, IsBuiltinTheme("my-custom"))
@@ -356,7 +356,7 @@ func TestValidateThemeName_RejectsBuiltin(t *testing.T) {
 	dir := t.TempDir()
 	setTestThemeDirs(t, []string{dir})
 
-	err := ValidateThemeName("charmtone-panther")
+	err := ValidateThemeName("deck")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "built-in")
 }
@@ -365,7 +365,7 @@ func TestValidateThemeName_RejectsExisting(t *testing.T) {
 	dir := t.TempDir()
 	setTestThemeDirs(t, []string{dir})
 
-	require.NoError(t, SaveThemeFile(filepath.Join(dir, "taken.json"), &ThemeFile{Base: "charmtone-panther"}))
+	require.NoError(t, SaveThemeFile(filepath.Join(dir, "taken.json"), &ThemeFile{Base: "deck"}))
 
 	err := ValidateThemeName("taken")
 	require.Error(t, err)

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/exp/charmtone"
+	"github.com/dev-dami/deck/internal/ui/tone"
 )
 
 // validHexColor matches "#rgb", "#rrggbb", "#rgba", or "#rrggbbaa".
@@ -16,19 +16,14 @@ var validHexColor = regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-f
 // validANSIColor matches ANSI color indices 0-255.
 var validANSIColor = regexp.MustCompile(`^([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$`)
 
-// charmtoneByName maps lowercase charmtone color names to their hex values.
-// Built once at init time from the charmtone package.
-var charmtoneByName map[string]string
-
-func init() {
-	charmtoneByName = make(map[string]string, len(charmtone.Keys()))
-	for _, k := range charmtone.Keys() {
-		charmtoneByName[strings.ToLower(k.String())] = k.Hex()
+// toneByName maps lowercase Deck palette names to their hex values.
+var toneByName = func() map[string]string {
+	m := map[string]string{}
+	for _, n := range tone.Names() {
+		m[n], _ = tone.ByName(n)
 	}
-	// Include aliases.
-	charmtoneByName["ash"] = charmtone.Sash.Hex()
-	charmtoneByName["charcoal"] = charmtone.Char.Hex()
-}
+	return m
+}()
 
 // PaletteField describes a single customizable color token in a Palette.
 // It pairs the JSON field name with getter/setter accessors so that
@@ -331,7 +326,7 @@ func IsValidColor(s string) bool {
 	if validANSIColor.MatchString(s) {
 		return true
 	}
-	_, ok := charmtoneByName[strings.ToLower(s)]
+	_, ok := toneByName[strings.ToLower(s)]
 	return ok
 }
 
@@ -346,7 +341,7 @@ func ParseColor(s string) string {
 	}
 	if strings.HasPrefix(s, "#") {
 		if validHexColor.MatchString(s) {
-			if name := charmtone.NameFromHex(s); name != "" {
+			if name := tone.NameFromHex(s); name != "" {
 				return name
 			}
 			return s
@@ -356,8 +351,8 @@ func ParseColor(s string) string {
 	if validANSIColor.MatchString(s) {
 		return s
 	}
-	if hex, ok := charmtoneByName[strings.ToLower(s)]; ok {
-		if name := charmtone.NameFromHex(hex); name != "" {
+	if hex, ok := toneByName[strings.ToLower(s)]; ok {
+		if name := tone.NameFromHex(hex); name != "" {
 			return name
 		}
 		return hex
@@ -431,7 +426,7 @@ func MergePalette(baseName string, palette Palette) (Palette, error) {
 // a theme. User themes may inherit from other user themes; cycles are rejected.
 func resolveThemePalette(name string, visiting map[string]bool) (Palette, string, error) {
 	if name == "" {
-		name = "charmtone-panther"
+		name = "deck"
 	}
 	key := normalizeThemeName(name)
 	if visiting[key] {
@@ -447,7 +442,7 @@ func resolveThemePalette(name string, visiting map[string]bool) (Palette, string
 		}
 		baseName := tf.Base
 		if baseName == "" {
-			baseName = "charmtone-panther"
+			baseName = "deck"
 		}
 		var base Palette
 		var root string
@@ -484,7 +479,7 @@ func resolveThemePalette(name string, visiting map[string]bool) (Palette, string
 // builtinThemeOpts returns the quickStyleOpts of a built-in theme.
 func builtinThemeOpts(name string) (quickStyleOpts, error) {
 	if name == "" {
-		name = "charmtone-panther"
+		name = "deck"
 	}
 	optsFn, ok := builtinThemes[normalizeThemeName(name)]
 	if !ok {
@@ -532,7 +527,7 @@ func colorToHex(c color.Color) string {
 	}
 	r, g, b, _ := c.RGBA()
 	hex := fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
-	if name := charmtone.NameFromHex(hex); name != "" {
+	if name := tone.NameFromHex(hex); name != "" {
 		return name
 	}
 	return hex
@@ -546,7 +541,7 @@ func ColorString(s string) string {
 	if resolved == "" {
 		return ""
 	}
-	if hex, ok := charmtoneByName[strings.ToLower(resolved)]; ok {
+	if hex, ok := toneByName[strings.ToLower(resolved)]; ok {
 		return hex
 	}
 	return resolved

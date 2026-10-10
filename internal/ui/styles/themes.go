@@ -7,163 +7,195 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/exp/charmtone"
+	"github.com/dev-dami/deck/internal/ui/tone"
 )
 
 // ThemeKeyForProvider returns a stable identifier for the theme
-// associated with the given provider ID. Providers that share a theme
-// yield the same key, so callers can cheaply detect when switching
-// providers would not actually change the active theme and skip the
-// expensive style rebuild. This is the single source of truth for the
-// provider-to-theme mapping; [ThemeForProvider] builds on it.
-func ThemeKeyForProvider(providerID string) string {
-	switch providerID {
-	case "hyper":
-		return "hyper"
-	default:
-		return "default"
-	}
-}
+// associated with the given provider ID. Every agent shares Deck's theme,
+// so this is always "default"; callers use it to skip needless rebuilds.
+func ThemeKeyForProvider(string) string { return "default" }
 
-// ThemeForProvider returns the Styles associated with the given provider
-// ID. Unknown or empty provider IDs yield the default Charmtone Pantera
-// theme.
-func ThemeForProvider(providerID string) Styles {
-	switch ThemeKeyForProvider(providerID) {
-	case "hyper":
-		return HypercrushObsidiana()
-	default:
-		return CharmtonePantera()
-	}
-}
+// ThemeForProvider returns the Styles for the given provider ID: Deck's
+// own theme, whichever agent is speaking.
+func ThemeForProvider(string) Styles { return DeckDark() }
 
-// CharmtonePantera returns the Charmtone dark theme. It's the default style
-// for the UI.
-func CharmtonePantera() Styles {
-	return charmtoneOverrides(quickStyle(charmtoneOpts()))
-}
+// DeckDark is Deck's dark theme and the default: a graphite ground, a mint
+// accent and soft status colours.
+func DeckDark() Styles { return deckOverrides(quickStyle(deckDarkOpts())) }
 
-// charmtoneOpts returns the quickStyleOpts for the Charmtone dark theme,
-// using colors from the upstream charmbracelet/x/exp/charmtone package.
-func charmtoneOpts() quickStyleOpts {
+// DeckLight is Deck's light theme.
+func DeckLight() Styles { return deckOverrides(quickStyle(deckLightOpts())) }
+
+func deckDarkOpts() quickStyleOpts {
 	return quickStyleOpts{
-		primary:   charmtone.Charple,
-		secondary: charmtone.Dolly,
-		accent:    charmtone.Bok,
-		keyword:   charmtone.Blush,
+		primary:   tone.Mint,
+		secondary: tone.Seafoam,
+		accent:    tone.Teal,
+		keyword:   tone.Plum,
 
-		fgBase:       charmtone.Sash,
-		fgMoreSubtle: charmtone.Squid,
-		fgSubtle:     charmtone.Smoke,
-		fgMostSubtle: charmtone.Oyster,
+		fgBase:       tone.Fg,
+		fgMoreSubtle: tone.Muted,
+		fgSubtle:     tone.Mist,
+		fgMostSubtle: tone.Fog,
 
-		onPrimary: charmtone.Butter,
+		onPrimary: tone.Ink,
 
-		bgBase:         charmtone.Pepper,
-		bgLeastVisible: charmtone.BBQ,
-		bgLessVisible:  charmtone.Char,
-		bgMostVisible:  charmtone.Iron,
+		bgBase:         tone.Ink,
+		bgLeastVisible: tone.Slate,
+		bgLessVisible:  tone.Coal,
+		bgMostVisible:  tone.Shale,
 
-		separator: charmtone.Char,
+		separator: tone.Rule,
 
-		destructive:       charmtone.Coral,
-		error:             charmtone.Sriracha,
-		warningSubtle:     charmtone.Zest,
-		warning:           charmtone.Mustard,
-		attention:         charmtone.Tang,
-		busy:              charmtone.Citron,
-		info:              charmtone.Malibu,
-		infoMoreSubtle:    charmtone.Sardine,
-		infoMostSubtle:    charmtone.Damson,
-		success:           charmtone.Julep,
-		successMoreSubtle: charmtone.Bok,
-		successMostSubtle: charmtone.Guac,
-		yolo:              charmtone.Zest,
-		plan:              charmtone.Charple,
-		planMoreSubtle:    charmtone.Hazy,
+		destructive:       tone.Coral,
+		error:             tone.Ember,
+		warningSubtle:     tone.Honey,
+		warning:           tone.Amber,
+		attention:         tone.Clay,
+		busy:              tone.Mint,
+		info:              tone.Sky,
+		infoMoreSubtle:    tone.Seafoam,
+		infoMostSubtle:    tone.Dusk,
+		success:           tone.Moss,
+		successMoreSubtle: tone.Teal,
+		successMostSubtle: tone.Fern,
+		yolo:              tone.Coral,
+		plan:              tone.Sky,
+		planMoreSubtle:    tone.Dusk,
 
-		// Muted diff foreground hues; the backgrounds derive from these
-		// over bgBase.
-		diffInsertFg: lipgloss.Color("#629657"),
-		diffDeleteFg: lipgloss.Color("#a45c59"),
+		diffInsertFg:     tone.Moss,
+		diffInsertCodeBg: tone.AddBg,
+		diffDeleteFg:     tone.Coral,
+		diffDeleteCodeBg: tone.DelBg,
 
-		button:         charmtone.Dolly,
-		buttonSubtle:   charmtone.Char,
-		buttonInactive: charmtone.Iron,
-		buttonHovered:  charmtone.Oyster,
-		// ANSI 16-color palette for remapping raw terminal output
-		// (e.g. bang-mode shell commands) onto legible Charmtone colors.
-		ansiBlack:   charmtone.BBQ,
-		ansiRed:     charmtone.Coral,
-		ansiGreen:   charmtone.Guac,
-		ansiYellow:  charmtone.Mustard,
-		ansiBlue:    charmtone.Charple,
-		ansiMagenta: charmtone.Dolly,
-		ansiCyan:    charmtone.Malibu,
-		ansiWhite:   charmtone.Smoke,
+		button:         tone.Mint,
+		buttonSubtle:   tone.Coal,
+		buttonInactive: tone.Shale,
+		buttonHovered:  tone.Teal,
 
-		ansiBrightBlack:   charmtone.Iron,
-		ansiBrightRed:     charmtone.Tuna,
-		ansiBrightGreen:   charmtone.Julep,
-		ansiBrightYellow:  charmtone.Zest,
-		ansiBrightBlue:    charmtone.Guppy,
-		ansiBrightMagenta: charmtone.Blush,
-		ansiBrightCyan:    charmtone.Sardine,
-		ansiBrightWhite:   charmtone.Salt,
+		ansiBlack:   tone.Slate,
+		ansiRed:     tone.Coral,
+		ansiGreen:   tone.Fern,
+		ansiYellow:  tone.Amber,
+		ansiBlue:    tone.Dusk,
+		ansiMagenta: tone.Plum,
+		ansiCyan:    tone.Teal,
+		ansiWhite:   tone.Mist,
+
+		ansiBrightBlack:   tone.Stone,
+		ansiBrightRed:     tone.Coral,
+		ansiBrightGreen:   tone.Moss,
+		ansiBrightYellow:  tone.Honey,
+		ansiBrightBlue:    tone.Sky,
+		ansiBrightMagenta: tone.Plum,
+		ansiBrightCyan:    tone.Mint,
+		ansiBrightWhite:   tone.Paper,
 	}
 }
 
-// charmtoneOverrides applies Charmtone-specific tweaks that don't fit the
-// token model of [quickStyleOpts].
-func charmtoneOverrides(s Styles) Styles {
-	// Bang ! prompt overrides - use Salt/Hazy/Larple colors.
+func deckLightOpts() quickStyleOpts {
+	return quickStyleOpts{
+		primary:   tone.LightMint,
+		secondary: tone.Teal,
+		accent:    tone.DeepTeal,
+		keyword:   tone.LightPlum,
+
+		fgBase:       tone.LightFg,
+		fgMoreSubtle: tone.LightMuted,
+		fgSubtle:     tone.LightMuted,
+		fgMostSubtle: tone.LightFaint,
+
+		onPrimary: tone.LightPage,
+
+		bgBase:         tone.LightPage,
+		bgLeastVisible: tone.LightRaise,
+		bgLessVisible:  tone.LightPanel,
+		bgMostVisible:  tone.LightEdge,
+
+		separator: tone.LightRule,
+
+		destructive:       tone.LightCoral,
+		error:             tone.LightCoral,
+		warningSubtle:     tone.LightAmber,
+		warning:           tone.LightAmber,
+		attention:         tone.LightClay,
+		busy:              tone.LightMint,
+		info:              tone.LightSky,
+		infoMoreSubtle:    tone.LightSky,
+		infoMostSubtle:    tone.LightMuted,
+		success:           tone.LightMoss,
+		successMoreSubtle: tone.LightMint,
+		successMostSubtle: tone.LightMoss,
+		yolo:              tone.LightCoral,
+		plan:              tone.LightSky,
+		planMoreSubtle:    tone.LightMuted,
+
+		diffInsertFg: tone.LightMoss,
+		diffDeleteFg: tone.LightCoral,
+
+		button:         tone.LightMint,
+		buttonSubtle:   tone.LightPanel,
+		buttonInactive: tone.LightEdge,
+		buttonHovered:  tone.DeepTeal,
+
+		ansiBlack:   tone.LightFg,
+		ansiRed:     tone.LightCoral,
+		ansiGreen:   tone.LightMoss,
+		ansiYellow:  tone.LightAmber,
+		ansiBlue:    tone.LightSky,
+		ansiMagenta: tone.LightPlum,
+		ansiCyan:    tone.LightMint,
+		ansiWhite:   tone.LightMuted,
+
+		ansiBrightBlack:   tone.LightFaint,
+		ansiBrightRed:     tone.LightCoral,
+		ansiBrightGreen:   tone.LightMoss,
+		ansiBrightYellow:  tone.LightAmber,
+		ansiBrightBlue:    tone.LightIris,
+		ansiBrightMagenta: tone.LightPlum,
+		ansiBrightCyan:    tone.DeepTeal,
+		ansiBrightWhite:   tone.LightFg,
+
+		light: true,
+	}
+}
+
+// deckOverrides applies Deck's touches that don't fit the token model of
+// [quickStyleOpts]: calm syntax colours and the bang prompt in the accent.
+func deckOverrides(s Styles) Styles {
 	s.Editor.PromptBangIconFocused = s.Editor.PromptBangIconFocused.
-		Foreground(charmtone.Salt).
-		Background(charmtone.Hazy)
+		Foreground(tone.Ink).
+		Background(tone.Mint)
 	s.Editor.PromptBangDotsFocused = s.Editor.PromptBangDotsFocused.
-		Foreground(charmtone.Hazy)
+		Foreground(tone.Mint)
 	s.Editor.PromptBangDotsBlurred = s.Editor.PromptBangDotsBlurred.
-		Foreground(charmtone.Larple)
+		Foreground(tone.DeepTeal)
 
-	// Shell bar/prompt overrides - use Charple/Iron/Hazy colors.
 	s.Messages.ShellBarFocused = s.Messages.ShellBarFocused.
-		BorderForeground(charmtone.Charple)
+		BorderForeground(tone.Mint)
 	s.Messages.ShellBarBlurred = s.Messages.ShellBarBlurred.
-		BorderForeground(charmtone.Iron)
+		BorderForeground(tone.Shale)
 	s.Messages.ShellPrompt = s.Messages.ShellPrompt.
-		Foreground(charmtone.Hazy)
+		Foreground(tone.Mint)
 	s.Messages.ShellPromptBlurred = s.Messages.ShellPromptBlurred.
-		Foreground(charmtone.Hazy)
+		Foreground(tone.Fog)
 
-	// Restore the original Charmtone syntax-highlight and markdown colors
-	// where the generic quickStyle token choices diverge from the palette
-	// this theme has always used.
 	chroma := s.Markdown.CodeBlock.Chroma
 	if chroma != nil {
-		chroma.CommentPreproc.Color = hex(charmtone.Bengal)
-		chroma.KeywordReserved.Color = hex(charmtone.Pony)
-		chroma.KeywordNamespace.Color = hex(charmtone.Pony)
-		chroma.KeywordType.Color = hex(charmtone.Guppy)
-		chroma.Operator.Color = hex(charmtone.Salmon)
-		chroma.NameTag.Color = hex(charmtone.Mauve)
-		chroma.NameAttribute.Color = hex(charmtone.Hazy)
-		chroma.NameClass.Color = hex(charmtone.Salt)
-		chroma.LiteralString.Color = hex(charmtone.Cumin)
+		chroma.CommentPreproc.Color = hex(tone.Clay)
+		chroma.KeywordReserved.Color = hex(tone.Plum)
+		chroma.KeywordNamespace.Color = hex(tone.Plum)
+		chroma.KeywordType.Color = hex(tone.Sky)
+		chroma.Operator.Color = hex(tone.Seafoam)
+		chroma.NameTag.Color = hex(tone.Plum)
+		chroma.NameAttribute.Color = hex(tone.Sky)
+		chroma.NameClass.Color = hex(tone.Paper)
+		chroma.LiteralString.Color = hex(tone.Honey)
 	}
-	s.Markdown.Link.Color = hex(charmtone.Zinc)
-	s.Markdown.Image.Color = hex(charmtone.Cheeky)
-
-	// The ◆ hypercredit symbol inside subdued text (e.g. savings
-	// suffixes) uses Mochi so it stays visible against its surroundings.
-	s.Messages.SubduedHypercreditIcon = s.Messages.SubduedHypercreditIcon.
-		Foreground(charmtone.Violet)
-
+	s.Markdown.Link.Color = hex(tone.Mint)
+	s.Markdown.Image.Color = hex(tone.Plum)
+	s.Markdown.Code.Color = hex(tone.Mint)
 	return s
-}
-
-// HypercrushObsidiana returns the Hypercrush dark theme.
-func HypercrushObsidiana() Styles {
-	return CharmtonePantera()
 }
 
 // gruvboxDarkOpts returns the quickStyleOpts for the Gruvbox Dark theme,
@@ -250,7 +282,8 @@ func gruvboxDarkOverrides(s Styles) Styles {
 
 // builtinThemes maps theme names to their quickStyleOpts palette definitions.
 var builtinThemes = map[string]func() quickStyleOpts{
-	"charmtone-panther": charmtoneOpts,
+	"deck":       deckDarkOpts,
+	"deck-light": deckLightOpts,
 	"gruvbox-dark":      gruvboxDarkOpts,
 }
 
@@ -258,14 +291,16 @@ var builtinThemes = map[string]func() quickStyleOpts{
 // theme-specific style tweaks on top of the styles produced by
 // [quickStyle]. Themes without overrides are absent from the map.
 var builtinThemeOverrides = map[string]func(Styles) Styles{
-	"charmtone-panther": charmtoneOverrides,
+	"deck":       deckOverrides,
+	"deck-light": deckOverrides,
 	"gruvbox-dark":      gruvboxDarkOverrides,
 }
 
 // deprecatedThemeNames maps legacy built-in theme names to their current
 // names so existing configs and user theme files keep resolving.
 var deprecatedThemeNames = map[string]string{
-	"charmtone": "charmtone-panther",
+	"charmtone":         "deck",
+	"charmtone-panther": "deck",
 }
 
 // normalizeThemeName lowercases a theme name and maps deprecated built-in
@@ -290,13 +325,13 @@ func BuiltinThemeNames() []string {
 
 // LoadTheme loads a theme by name. User theme files (in ThemeDirs) take
 // precedence over built-in themes of the same name. Returns
-// CharmtonePantera styles for an empty name. Returns an error if the
+// DeckDark styles for an empty name. Returns an error if the
 // name is not recognized as either a user file or a built-in.
 // LoadTheme loads a theme by name. Global user theme files take precedence
-// over built-in themes of the same name. Empty names use Charmtone.
+// over built-in themes of the same name. Empty names use Deck.
 func LoadTheme(name string) (Styles, error) {
 	if name == "" {
-		return CharmtonePantera(), nil
+		return DeckDark(), nil
 	}
 	key := normalizeThemeName(name)
 
@@ -320,14 +355,14 @@ func LoadTheme(name string) (Styles, error) {
 }
 
 // ThemeFromConfig resolves the configured theme name, falling back to the
-// default Charmtone theme when the config value is empty or invalid. The
+// default Deck theme when the config value is empty or invalid. The
 // fallback is logged so a missing or broken theme file is not silently
 // replaced by different colors.
 func ThemeFromConfig(name string) Styles {
 	s, err := LoadTheme(name)
 	if err != nil {
 		slog.Warn("Falling back to the default theme", "configured_theme", name, "reason", err)
-		return CharmtonePantera()
+		return DeckDark()
 	}
 	return s
 }
@@ -338,7 +373,7 @@ type ThemeSource int
 const (
 	// ThemeSourceBuiltin is a theme compiled into the binary.
 	ThemeSourceBuiltin ThemeSource = iota
-	// ThemeSourceUser is a theme file in ~/.config/crush/themes/.
+	// ThemeSourceUser is a theme file in ~/.config/deck/themes/.
 	ThemeSourceUser
 )
 

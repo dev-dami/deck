@@ -760,7 +760,7 @@ func TestConnect_OneLoginOpensOneTab(t *testing.T) {
 		return redirect(u)
 	}
 
-	client := mcp.NewClient(&mcp.Implementation{Name: "crush", Version: "test"}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "deck", Version: "test"}, nil)
 	// The handshake itself fails by design; the tab count is the subject.
 	_, _ = client.Connect(t.Context(), &mcp.StreamableClientTransport{
 		Endpoint:     endpoint,

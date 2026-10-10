@@ -48,7 +48,7 @@ func TestTransport_CodexRequest(t *testing.T) {
 	resp.Body.Close()
 	require.NotNil(t, gotReq)
 
-	require.Equal(t, "crush", gotReq.Header.Get("originator"))
+	require.Equal(t, "deck", gotReq.Header.Get("originator"))
 	require.Equal(t, "acct-1", gotReq.Header.Get("chatgpt-account-id"))
 	// max_output_tokens is rejected by the Codex backend and must be
 	// stripped from the body.

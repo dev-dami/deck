@@ -1,5 +1,5 @@
 // Package mcp provides functionality for managing Model Context Protocol (MCP)
-// clients within the Crush application.
+// clients within the Deck application.
 package mcp
 
 import (
@@ -982,7 +982,7 @@ func updateState(name string, state State, err error, client *ClientSession, cou
 		// A session that has errored is dead to us: close it so the child
 		// process and its stdio pipes are released, and clear its registry
 		// entries so the agent stops advertising capabilities it can no
-		// longer call (without that, crush_info / the `/mcp` menu and the
+		// longer call (without that, deck_info / the `/mcp` menu and the
 		// tool list handed to the LLM diverge). Crucially, close exactly the
 		// session that errored (the client argument): if the registry
 		// already holds a DIFFERENT session — a newer, healthy one another
@@ -1091,9 +1091,9 @@ func createSession(ctx context.Context, cfg *config.ConfigStore, name string, m 
 	}
 	client := mcp.NewClient(
 		&mcp.Implementation{
-			Name:    "crush",
+			Name:    "deck",
 			Version: version.Version,
-			Title:   "Crush",
+			Title:   "Deck",
 		},
 		opts,
 	)
@@ -1136,7 +1136,7 @@ func createSession(ctx context.Context, cfg *config.ConfigStore, name string, m 
 	}, nil
 }
 
-// transportWrapper is implemented by every transport decorator crush layers
+// transportWrapper is implemented by every transport decorator deck layers
 // around a base transport, so diagnostics that need the innermost transport
 // can reach it without knowing which decorators are in play.
 type transportWrapper interface {

@@ -61,7 +61,7 @@ func TestAuthorizeURL(t *testing.T) {
 	require.Equal(t, "true", query.Get("id_token_add_organizations"))
 	require.Equal(t, "true", query.Get("codex_cli_simplified_flow"))
 	require.Equal(t, "state123", query.Get("state"))
-	require.Equal(t, "crush", query.Get("originator"))
+	require.Equal(t, "deck", query.Get("originator"))
 }
 
 func TestNewPKCE(t *testing.T) {

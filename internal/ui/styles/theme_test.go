@@ -8,9 +8,9 @@ import (
 )
 
 func TestLoadTheme_Builtin(t *testing.T) {
-	_, err := LoadTheme("charmtone-panther")
+	_, err := LoadTheme("deck")
 	if err != nil {
-		t.Fatalf("LoadTheme(charmtone-panther): %v", err)
+		t.Fatalf("LoadTheme(deck): %v", err)
 	}
 }
 
@@ -19,9 +19,9 @@ func TestLoadTheme_DeprecatedAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTheme(charmtone) via deprecated alias: %v", err)
 	}
-	newStyles, err := LoadTheme("charmtone-panther")
+	newStyles, err := LoadTheme("deck")
 	if err != nil {
-		t.Fatalf("LoadTheme(charmtone-panther): %v", err)
+		t.Fatalf("LoadTheme(deck): %v", err)
 	}
 	alias, err := LoadTheme("charmtone")
 	if err != nil {

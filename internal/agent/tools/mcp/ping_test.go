@@ -31,7 +31,7 @@ func noPingSession(t *testing.T) *ClientSession {
 	t.Cleanup(func() { _ = serverSession.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
-	client := mcp.NewClient(&mcp.Implementation{Name: "crush-test"}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "deck-test"}, nil)
 	clientSession, err := client.Connect(ctx, clientTransport, nil)
 	require.NoError(t, err)
 

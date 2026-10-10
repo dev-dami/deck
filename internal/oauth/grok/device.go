@@ -36,7 +36,7 @@ func RequestDeviceCode(ctx context.Context) (*DeviceCode, error) {
 	vals := url.Values{
 		"client_id": {ClientID},
 		"scope":     {Scope},
-		"referrer":  {"crush"},
+		"referrer":  {"deck"},
 	}
 	req, err := http.NewRequestWithContext(
 		ctx,

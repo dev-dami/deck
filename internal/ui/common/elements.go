@@ -9,7 +9,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/dev-dami/deck/internal/agent/hyper"
 	"github.com/dev-dami/deck/internal/home"
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"golang.org/x/text/cases"
@@ -64,7 +63,7 @@ type ModelContextInfo struct {
 
 // ModelInfo renders model information including name, provider, reasoning
 // settings, and optional context usage/cost.
-func ModelInfo(t *styles.Styles, modelName, providerName, reasoningInfo string, context *ModelContextInfo, width int, hyperCredits *int) string {
+func ModelInfo(t *styles.Styles, modelName, providerName, reasoningInfo string, context *ModelContextInfo, width int) string {
 	modelIcon := t.ModelInfo.Icon.Render(styles.ModelIcon)
 	modelName = t.ModelInfo.Name.Render(modelName)
 
@@ -100,13 +99,6 @@ func ModelInfo(t *styles.Styles, modelName, providerName, reasoningInfo string, 
 	if context != nil {
 		formattedInfo := formatTokensAndCost(t, context.ContextUsed, context.ModelContext, context.Cost, context.EstimatedUsage)
 		parts = append(parts, lipgloss.NewStyle().PaddingLeft(2).Render(formattedInfo))
-	}
-
-	if providerName == hyper.DisplayName && hyperCredits != nil {
-		hcInfo := t.ModelInfo.HypercreditIcon.Render(styles.HypercreditIcon)
-		hcInfo += " "
-		hcInfo += t.ModelInfo.HypercreditText.Render(fmt.Sprintf("%s Hypercredits", FormatCredits(*hyperCredits)))
-		parts = append(parts, "", hcInfo)
 	}
 
 	return lipgloss.NewStyle().Width(width).Render(

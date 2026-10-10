@@ -26,7 +26,7 @@ func TestAssistantMessageItem_PlanCardKeepsIntentionalBackgrounds(t *testing.T) 
 		ID:   "plan-card",
 		Role: message.Assistant,
 		Parts: []message.ContentPart{
-			message.TextContent{Text: "# Plan\n\nPlain **bold** and *italic* with [link](https://example.com), `code`, and 👩‍💻.\n\n- first item\n- second item\n\n```go\nfmt.Println(\"hi\")\n```\n\n<!-- CRUSH_PLAN_READY -->"},
+			message.TextContent{Text: "# Plan\n\nPlain **bold** and *italic* with [link](https://example.com), `code`, and 👩‍💻.\n\n- first item\n- second item\n\n```go\nfmt.Println(\"hi\")\n```\n\n<!-- DECK_PLAN_READY -->"},
 			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1},
 		},
 	}
@@ -87,7 +87,7 @@ func TestAssistantMessageItem_PlanCardDoesNotReWrapContent(t *testing.T) {
 		ID:   "plan-wrap",
 		Role: message.Assistant,
 		Parts: []message.ContentPart{
-			message.TextContent{Text: paragraph + "\n\n<!-- CRUSH_PLAN_READY -->"},
+			message.TextContent{Text: paragraph + "\n\n<!-- DECK_PLAN_READY -->"},
 			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1},
 		},
 	}
@@ -136,7 +136,7 @@ func TestAssistantMessageItem_PlanCardFitsAvailableWidth(t *testing.T) {
 		ID:   "responsive-plan-card",
 		Role: message.Assistant,
 		Parts: []message.ContentPart{
-			message.TextContent{Text: "# Plan\n\nA deliberately long plan line with `code`, a [link](https://example.com), and Unicode 👩‍💻.\n\n<!-- CRUSH_PLAN_READY -->"},
+			message.TextContent{Text: "# Plan\n\nA deliberately long plan line with `code`, a [link](https://example.com), and Unicode 👩‍💻.\n\n<!-- DECK_PLAN_READY -->"},
 			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1},
 		},
 	}
@@ -169,20 +169,20 @@ func TestAssistantMessageItem_PlanStreamingCardIsOpenUntilMarker(t *testing.T) {
 		}
 	}
 
-	streaming := NewAssistantMessageItem(&sty, mk("<!-- CRUSH_PLAN_START -->\n\n# Plan\n\nIn progress", false)).(*AssistantMessageItem)
+	streaming := NewAssistantMessageItem(&sty, mk("<!-- DECK_PLAN_START -->\n\n# Plan\n\nIn progress", false)).(*AssistantMessageItem)
 	streaming.SetPlanAgent(true)
 	got := streaming.RawRender(72)
 	require.Contains(t, got, "╭", "streaming plan must draw the top border")
 	require.Contains(t, got, "│", "streaming plan must draw the side borders")
 	require.NotContains(t, got, "╰", "streaming plan must withhold the bottom border")
-	require.NotContains(t, got, "CRUSH_PLAN_START", "the start marker must be stripped from the card")
+	require.NotContains(t, got, "DECK_PLAN_START", "the start marker must be stripped from the card")
 
-	done := NewAssistantMessageItem(&sty, mk("<!-- CRUSH_PLAN_START -->\n\n# Plan\n\nDone\n\n<!-- CRUSH_PLAN_READY -->", true)).(*AssistantMessageItem)
+	done := NewAssistantMessageItem(&sty, mk("<!-- DECK_PLAN_START -->\n\n# Plan\n\nDone\n\n<!-- DECK_PLAN_READY -->", true)).(*AssistantMessageItem)
 	done.SetPlanAgent(true)
 	closed := done.RawRender(72)
 	require.Contains(t, closed, "╭", "finished plan must draw the top border")
 	require.Contains(t, closed, "╰", "finished plan must close the bottom border")
-	require.NotContains(t, closed, "CRUSH_PLAN_START", "the start marker must be stripped from the card")
+	require.NotContains(t, closed, "DECK_PLAN_START", "the start marker must be stripped from the card")
 
 	intermediate := NewAssistantMessageItem(&sty, mk("Let me look around.", false)).(*AssistantMessageItem)
 	intermediate.SetPlanAgent(true)
@@ -190,11 +190,11 @@ func TestAssistantMessageItem_PlanStreamingCardIsOpenUntilMarker(t *testing.T) {
 	require.NotContains(t, plain, "╭", "an intermediate plan-mode reply must not render a card")
 	require.NotContains(t, plain, "│", "an intermediate plan-mode reply must not draw side borders")
 
-	interrupted := NewAssistantMessageItem(&sty, mk("<!-- CRUSH_PLAN_START -->\n\nHalf a plan", true)).(*AssistantMessageItem)
+	interrupted := NewAssistantMessageItem(&sty, mk("<!-- DECK_PLAN_START -->\n\nHalf a plan", true)).(*AssistantMessageItem)
 	interrupted.SetPlanAgent(true)
 	cut := interrupted.RawRender(72)
 	require.NotContains(t, cut, "╭", "a plan that never reached the ready marker must not render a card")
-	require.NotContains(t, cut, "CRUSH_PLAN_START", "the start marker must not leak into rendered output")
+	require.NotContains(t, cut, "DECK_PLAN_START", "the start marker must not leak into rendered output")
 }
 
 func TestAssistantMessageItem_NonPlanRepliesHaveNoPlanCard(t *testing.T) {
@@ -206,7 +206,7 @@ func TestAssistantMessageItem_NonPlanRepliesHaveNoPlanCard(t *testing.T) {
 		text string
 	}{
 		{name: "ordinary reply", text: "Ordinary assistant reply."},
-		{name: "marker mentioned in prose", text: "The marker <!-- CRUSH_PLAN_READY --> is not on its own line."},
+		{name: "marker mentioned in prose", text: "The marker <!-- DECK_PLAN_READY --> is not on its own line."},
 	}
 
 	for _, tt := range tests {
@@ -237,7 +237,7 @@ func TestAssistantMessageItem_SelectionOverridesPlanBackground(t *testing.T) {
 		ID:   "selected-plan",
 		Role: message.Assistant,
 		Parts: []message.ContentPart{
-			message.TextContent{Text: "Plan text.\n\n<!-- CRUSH_PLAN_READY -->"},
+			message.TextContent{Text: "Plan text.\n\n<!-- DECK_PLAN_READY -->"},
 			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1},
 		},
 	}

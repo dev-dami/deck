@@ -25,7 +25,6 @@ import (
 	"github.com/dev-dami/deck/internal/clipboard"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/db"
-	"github.com/dev-dami/deck/internal/event"
 	"github.com/dev-dami/deck/internal/filetracker"
 	"github.com/dev-dami/deck/internal/format"
 	"github.com/dev-dami/deck/internal/herdr"
@@ -41,8 +40,6 @@ import (
 	"github.com/dev-dami/deck/internal/skills"
 	"github.com/dev-dami/deck/internal/ui/anim"
 	"github.com/dev-dami/deck/internal/ui/styles"
-	"github.com/dev-dami/deck/internal/update"
-	"github.com/dev-dami/deck/internal/version"
 )
 
 // UpdateAvailableMsg is sent when a new version is available.
@@ -80,7 +77,7 @@ type App struct {
 	// runCompletions is the authoritative per-run completion signal,
 	// emitted once per top-level agent turn after all message
 	// updates have been flushed. Bridged into app.events so SSE
-	// subscribers (notably `crush run` in client/server mode) can
+	// subscribers (notably `deck run` in client/server mode) can
 	// drive their exit on a deterministic, payload-bearing event
 	// instead of guessing from message finish parts.
 	runCompletions *pubsub.Broker[notify.RunComplete]
@@ -136,7 +133,6 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	}
 
 	// Check for updates in the background.
-	go app.checkForUpdates(ctx)
 
 	// Arm initialization synchronously before launching it so WaitForInit
 	// blocks for the in-flight init instead of racing the goroutine and
@@ -160,7 +156,8 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	if err != nil {
 		slog.Warn("Failed to list disabled MCP overrides; starting them anyway", "error", err)
 	}
-	go mcp.Initialize(ctx, app.Permissions, store, forceStart, localDisabled)
+	// Deck's agents run their own MCP servers; Deck starts none itself.
+	_, _ = forceStart, localDisabled
 
 	// Start herdr integration when running inside a herdr pane.
 	app.herdrClient = herdr.Init()
@@ -798,7 +795,7 @@ func (app *App) subscribe[T any](
 // app.events broker using PublishMustDeliver instead of Publish. Use
 // this for terminal events that subscribers cannot tolerate losing —
 // notably RunComplete, which is the authoritative end-of-run signal
-// for `crush run`. A lossy fan-in here can drop the only terminal
+// for `deck run`. A lossy fan-in here can drop the only terminal
 // event and hang non-interactive clients waiting on it.
 func (app *App) subscribeMustDeliver[T any](
 	ctx context.Context,
@@ -923,7 +920,6 @@ func (app *App) Shutdown() {
 
 	// Send exit event
 	wg.Go(func() {
-		event.AppExited()
 	})
 
 	// Kill all background shells.
@@ -952,18 +948,3 @@ func (app *App) Shutdown() {
 	wg.Wait()
 }
 
-// checkForUpdates checks for available updates.
-func (app *App) checkForUpdates(ctx context.Context) {
-	checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	info, err := update.Check(checkCtx, version.Version, update.Default)
-	if err != nil || !info.Available() {
-		return
-	}
-	app.events.Publish(pubsub.UpdatedEvent, UpdateAvailableMsg{
-		CurrentVersion: info.Current,
-		LatestVersion:  info.Latest,
-		IsDevelopment:  info.IsDevelopment(),
-	})
-}

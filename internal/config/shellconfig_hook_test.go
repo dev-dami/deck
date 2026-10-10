@@ -8,7 +8,7 @@ import (
 )
 
 func TestShellConfigHookAdd(t *testing.T) {
-	store := loadCrushSh(t, `hook add PreToolUse --matcher "^bash$" --command "echo hi" --name greet --timeout 10`)
+	store := loadDeckSh(t, `hook add PreToolUse --matcher "^bash$" --command "echo hi" --name greet --timeout 10`)
 
 	hs := store.Config().Hooks[hooks.EventPreToolUse]
 	require.Len(t, hs, 1)
@@ -19,7 +19,7 @@ func TestShellConfigHookAdd(t *testing.T) {
 }
 
 func TestShellConfigHookRemoveByName(t *testing.T) {
-	store := loadCrushSh(t, `hook add PreToolUse --command a --name keep
+	store := loadDeckSh(t, `hook add PreToolUse --command a --name keep
 hook add PreToolUse --command b --name drop
 hook remove PreToolUse --name drop`)
 
@@ -29,7 +29,7 @@ hook remove PreToolUse --name drop`)
 }
 
 func TestShellConfigHookClearEvent(t *testing.T) {
-	store := loadCrushSh(t, `hook add PreToolUse --command a --name a
+	store := loadDeckSh(t, `hook add PreToolUse --command a --name a
 hook add PreToolUse --command b --name b
 hook remove PreToolUse`)
 

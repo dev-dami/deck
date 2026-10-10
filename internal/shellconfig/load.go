@@ -12,14 +12,14 @@ import (
 	"github.com/dev-dami/deck/internal/version"
 )
 
-// loadTimeout bounds a single crushrc execution. Config loading runs on the
+// loadTimeout bounds a single deckrc execution. Config loading runs on the
 // startup and reload critical paths while the config store's write lock is
 // held, so a script that blocks (a hung command substitution, a stray loop)
 // must not be able to wedge the whole store. The interpreter honors context
 // cancellation, so this deadline reliably interrupts a runaway script.
 const loadTimeout = 30 * time.Second
 
-// LoadShellConfig executes a crushrc script and returns its config as a
+// LoadShellConfig executes a deckrc script and returns its config as a
 // single JSON object. The script uses config builtins (provider, model, mcp,
 // etc.) that mutate a ConfigBuilder in execution order; the builder is then
 // marshaled to JSON, which the config loader merges with any other config
@@ -41,9 +41,9 @@ func LoadShellConfig(ctx context.Context, path string, src []byte) ([]byte, erro
 
 	cwd := filepath.Dir(path)
 
-	// Expose the running Crush version so scripts can feature-detect, e.g.
-	// [[ "$CRUSH_VERSION" == "devel" ]] or branch on the release.
-	env := append(os.Environ(), "CRUSH_VERSION="+version.Version)
+	// Expose the running Deck version so scripts can feature-detect, e.g.
+	// [[ "$DECK_VERSION" == "devel" ]] or branch on the release.
+	env := append(os.Environ(), "DECK_VERSION="+version.Version)
 
 	err := shell.Run(runCtx, shell.RunOptions{
 		Command: string(src),

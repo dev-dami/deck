@@ -1,4 +1,4 @@
-// Package main is the entry point for the Crush CLI.
+// Package main is the entry point for the Deck CLI.
 package main
 
 import (
@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	if os.Getenv("CRUSH_PROFILE") != "" {
+	if os.Getenv("DECK_PROFILE") != "" {
 		go func() {
 			slog.Info("Serving pprof at localhost:6060")
 			if httpErr := http.ListenAndServe("localhost:6060", nil); httpErr != nil {

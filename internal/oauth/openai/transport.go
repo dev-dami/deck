@@ -22,7 +22,7 @@ type Transport struct {
 	// through untouched.
 	Token *oauth.Token
 	// Originator identifies the client to the backend. Defaults to
-	// "crush".
+	// "deck".
 	Originator string
 }
 
@@ -45,7 +45,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if t.Originator != "" {
 			clone.Header.Set("originator", t.Originator)
 		} else {
-			clone.Header.Set("originator", "crush")
+			clone.Header.Set("originator", "deck")
 		}
 		if t.Token.AccountID != "" {
 			clone.Header.Set("chatgpt-account-id", t.Token.AccountID)
@@ -64,7 +64,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // codexRequestBody strips request fields the Codex backend rejects.
-// max_output_tokens is a Responses API field the backend refuses; crush
+// max_output_tokens is a Responses API field the backend refuses; deck
 // derives it from the model catalog, so it is present on every call and
 // must be removed. Bodies that are not JSON pass through unchanged.
 func codexRequestBody(body io.ReadCloser, length int64) (io.ReadCloser, int64) {

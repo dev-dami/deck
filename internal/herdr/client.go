@@ -1,5 +1,5 @@
 // Package herdr provides native integration with the herdr terminal
-// multiplexer. When Crush runs inside a herdr-managed pane it reports
+// multiplexer. When Deck runs inside a herdr-managed pane it reports
 // agent state (idle, working, blocked) and session identity over
 // herdr's Unix socket API so herdr can display accurate status without
 // screen scraping.
@@ -77,7 +77,7 @@ type sender interface {
 	close()
 }
 
-// Client reports Crush agent state to a running herdr instance.
+// Client reports Deck agent state to a running herdr instance.
 type Client struct {
 	socketPath string
 	paneID     string
@@ -100,7 +100,7 @@ var (
 )
 
 // Init returns the process-wide herdr Client, creating it on first
-// call from environment variables. Returns nil when Crush is not
+// call from environment variables. Returns nil when Deck is not
 // running inside a herdr pane. Safe to call from any goroutine.
 func Init() *Client {
 	initOnce.Do(func() {
@@ -149,8 +149,8 @@ func newFromEnv() *Client {
 //
 // herdr remembers the highest seq it has seen per source for the
 // lifetime of a pane and silently drops any report with a seq that
-// is not strictly greater. Because crush seeds seq from the wall
-// clock at startup (see newFromEnv), a restarted crush in the same
+// is not strictly greater. Because deck seeds seq from the wall
+// clock at startup (see newFromEnv), a restarted deck in the same
 // pane always reports above the previous run's high-water mark, so
 // the first report is accepted instead of being rejected as stale.
 func (c *Client) registerInitial() {
@@ -277,12 +277,12 @@ func (c *Client) onSummarizing() {
 func (c *Client) newRequestLocked(method, idPrefix, state string) reportRequest {
 	c.seq++
 	return reportRequest{
-		ID:     fmt.Sprintf("crush:%s:%d", idPrefix, time.Now().UnixNano()),
+		ID:     fmt.Sprintf("deck:%s:%d", idPrefix, time.Now().UnixNano()),
 		Method: method,
 		Params: reportParams{
 			PaneID:         c.paneID,
-			Source:         "crush",
-			Agent:          "crush",
+			Source:         "deck",
+			Agent:          "deck",
 			State:          state,
 			Seq:            c.seq,
 			AgentSessionID: c.sessionID,

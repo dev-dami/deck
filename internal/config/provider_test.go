@@ -79,8 +79,8 @@ func TestProviders_Integration_WithMockClients(t *testing.T) {
 		},
 	}
 
-	catwalkPath := tmpDir + "/crush/providers.json"
-	hyperPath := tmpDir + "/crush/hyper.json"
+	catwalkPath := tmpDir + "/deck/providers.json"
+	hyperPath := tmpDir + "/deck/hyper.json"
 
 	testCatwalkSyncer.Init(mockCatwalkClient, catwalkPath, true)
 	testHyperSyncer.Init(mockHyperClient, hyperPath, true)
@@ -104,10 +104,10 @@ func TestProviders_Integration_WithCachedData(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 
 	// Create cache files.
-	catwalkPath := tmpDir + "/crush/providers.json"
-	hyperPath := tmpDir + "/crush/hyper.json"
+	catwalkPath := tmpDir + "/deck/providers.json"
+	hyperPath := tmpDir + "/deck/hyper.json"
 
-	require.NoError(t, os.MkdirAll(tmpDir+"/crush", 0o755))
+	require.NoError(t, os.MkdirAll(tmpDir+"/deck", 0o755))
 
 	// Write Catwalk cache.
 	catwalkProviders := []catwalk.Provider{
@@ -174,8 +174,8 @@ func TestProviders_Integration_CatwalkFailsHyperSucceeds(t *testing.T) {
 		},
 	}
 
-	catwalkPath := tmpDir + "/crush/providers.json"
-	hyperPath := tmpDir + "/crush/hyper.json"
+	catwalkPath := tmpDir + "/deck/providers.json"
+	hyperPath := tmpDir + "/deck/hyper.json"
 
 	testCatwalkSyncer.Init(mockCatwalkClient, catwalkPath, true)
 	testHyperSyncer.Init(mockHyperClient, hyperPath, true)
@@ -204,8 +204,8 @@ func TestProviders_Integration_BothFail(t *testing.T) {
 		provider: catwalk.Provider{}, // Empty provider.
 	}
 
-	catwalkPath := tmpDir + "/crush/providers.json"
-	hyperPath := tmpDir + "/crush/hyper.json"
+	catwalkPath := tmpDir + "/deck/providers.json"
+	hyperPath := tmpDir + "/deck/hyper.json"
 
 	testCatwalkSyncer.Init(mockCatwalkClient, catwalkPath, true)
 	testHyperSyncer.Init(mockHyperClient, hyperPath, true)
@@ -275,25 +275,25 @@ func TestCache_GetInvalidJSON(t *testing.T) {
 func TestCachePathFor(t *testing.T) {
 	tests := []struct {
 		name            string
-		crushGlobalData string
+		deckGlobalData string
 		xdgDataHome     string
 		expected        string
 	}{
 		{
-			name:            "with CRUSH_GLOBAL_DATA",
-			crushGlobalData: "/scratch/data",
+			name:            "with DECK_GLOBAL_DATA",
+			deckGlobalData: "/scratch/data",
 			expected:        "/scratch/data/providers.json",
 		},
 		{
-			name:            "CRUSH_GLOBAL_DATA takes priority over XDG_DATA_HOME",
-			crushGlobalData: "/scratch/data",
+			name:            "DECK_GLOBAL_DATA takes priority over XDG_DATA_HOME",
+			deckGlobalData: "/scratch/data",
 			xdgDataHome:     "/custom/data",
 			expected:        "/scratch/data/providers.json",
 		},
 		{
 			name:        "with XDG_DATA_HOME",
 			xdgDataHome: "/custom/data",
-			expected:    "/custom/data/crush/providers.json",
+			expected:    "/custom/data/deck/providers.json",
 		},
 		{
 			name:     "without either",
@@ -303,14 +303,14 @@ func TestCachePathFor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("CRUSH_GLOBAL_DATA", tt.crushGlobalData)
+			t.Setenv("DECK_GLOBAL_DATA", tt.deckGlobalData)
 			t.Setenv("XDG_DATA_HOME", tt.xdgDataHome)
 
 			result := cachePathFor("providers")
 			if tt.expected != "" {
 				require.Equal(t, tt.expected, filepath.ToSlash(result))
 			} else {
-				require.Contains(t, result, "crush")
+				require.Contains(t, result, "deck")
 				require.Contains(t, result, "providers.json")
 			}
 		})
@@ -408,7 +408,7 @@ func TestProviders_HonorsDisableDefaultProviders(t *testing.T) {
 }
 
 // TestCacheStore_ReplacesFileInsteadOfRewritingIt guards the property that
-// several Crush instances depend on: the provider cache is swapped into place
+// several Deck instances depend on: the provider cache is swapped into place
 // as a finished file, never truncated and refilled underneath a reader that is
 // already reading it. A reader that loses that race cannot parse the catalog
 // and silently falls back to the bundled copy.

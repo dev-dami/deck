@@ -1,4 +1,4 @@
-// Package agent is the core orchestration layer for Crush AI agents.
+// Package agent is the core orchestration layer for Deck AI agents.
 //
 // It provides session-based AI agent functionality for managing
 // conversations, tool execution, and message handling. It coordinates
@@ -35,7 +35,7 @@ import (
 	"charm.land/fantasy/providers/vercel"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/exp/charmtone"
+	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/dev-dami/deck/internal/agent/hyper"
 	"github.com/dev-dami/deck/internal/agent/notify"
 	"github.com/dev-dami/deck/internal/agent/tools"
@@ -58,7 +58,7 @@ const (
 	smallContextWindowRatio     = 0.2
 )
 
-var userAgent = fmt.Sprintf("Charm-Crush/%s (https://charm.land/crush)", version.Version)
+var userAgent = fmt.Sprintf("Charm-Deck/%s (https://charm.land/deck)", version.Version)
 
 //go:embed templates/title.md
 var titlePrompt []byte
@@ -79,7 +79,7 @@ type SessionAgentCall struct {
 	// this turn. It is preserved when the call is enqueued behind a
 	// busy session so the queued turn's terminal event is still
 	// recognisable to the original caller. Callers that need a
-	// reliable completion contract (e.g. `crush run` against a
+	// reliable completion contract (e.g. `deck run` against a
 	// session that may be busy) MUST set it; SessionID alone is
 	// ambiguous when concurrent turns share the same session.
 	RunID             string
@@ -100,7 +100,7 @@ type SessionAgentCall struct {
 	// callback instead of emitting it on the RunComplete broker. The
 	// coordinator uses this hook to coalesce the unauthorized →
 	// re-auth → retry chain into a single user-visible terminal
-	// event, so non-interactive clients (e.g. `crush run`) don't
+	// event, so non-interactive clients (e.g. `deck run`) don't
 	// exit on a stale failed-attempt RunComplete before the
 	// successful retry. It is intentionally stripped when queueing
 	// a busy-session call (see Run): the originating
@@ -427,7 +427,7 @@ func (a *sessionAgent) enqueueCall(call SessionAgentCall) {
 // Calls covered by a pending cancel are dropped; the dropped ones that
 // carry a RunID are returned in canceledWithRunID so the caller can
 // publish their terminal cancelled RunComplete (a caller waiting on that
-// RunID, e.g. `crush run`, would otherwise hang). Uncanceled calls without
+// RunID, e.g. `deck run`, would otherwise hang). Uncanceled calls without
 // a RunID are returned in fold to be folded into the active turn,
 // preserving the existing follow-up behavior. Uncanceled calls that carry
 // a RunID are left in the queue so each runs as its own turn via the
@@ -466,7 +466,7 @@ func (a *sessionAgent) drainQueueForStep(sessionID string) (fold, canceledWithRu
 // every dropped queued call that carries a RunID. A queued prompt removed
 // from the queue without ever running — covered by a pending cancel, or
 // cleared by Cancel/ClearQueue — would otherwise leave a caller blocked on
-// that RunID: `crush run` ignores live message events and exits only on a
+// that RunID: `deck run` ignores live message events and exits only on a
 // RunComplete whose RunID matches. Calls without a RunID had no such waiter
 // and are dropped silently as before. A detached, bounded context keeps the
 // must-deliver publish alive even when the run context that triggered the
@@ -498,7 +498,7 @@ func (a *sessionAgent) publishCanceledQueueDrops(drops []SessionAgentCall) {
 
 // clearQueueAndNotify removes all queued prompts for the session and
 // publishes a terminal cancelled RunComplete for any that carried a RunID,
-// so callers waiting on those RunIDs (e.g. `crush run`) are not left
+// so callers waiting on those RunIDs (e.g. `deck run`) are not left
 // hanging when their queued prompt is discarded without running.
 func (a *sessionAgent) clearQueueAndNotify(sessionID string) {
 	queued, ok := a.messageQueue.Get(sessionID)
@@ -572,7 +572,7 @@ func (a *sessionAgent) persistCanceledTurn(ctx context.Context, call SessionAgen
 // ctx is used only for the bounded-blocking must-deliver publish; the
 // terminal payload is supplied by the caller. This is the single emit path
 // shared by the streaming defer and the cancel-on-entry early return so a
-// caller waiting on RunComplete (e.g. `crush run` with a RunID) always
+// caller waiting on RunComplete (e.g. `deck run` with a RunID) always
 // observes exactly one terminal event regardless of which Run branch ends
 // the turn.
 func (a *sessionAgent) publishRunComplete(ctx context.Context, call SessionAgentCall, complete notify.RunComplete) {
@@ -642,7 +642,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		// This path returns before the streaming defer that publishes
 		// RunComplete is installed, so emit the terminal event explicitly.
 		// Without it, a caller waiting on RunComplete for this RunID (e.g.
-		// `crush run`, which ignores message events and blocks on
+		// `deck run`, which ignores message events and blocks on
 		// RunComplete) would hang on an immediately-canceled accepted run.
 		call.Accepted.Close()
 		sessMu.Unlock()
@@ -1214,7 +1214,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		var providerErr *fantasy.ProviderError
 		var requestTimedOutErr *requestTimeoutError
 		const defaultTitle = "Provider Error"
-		linkStyle := lipgloss.NewStyle().Foreground(charmtone.Guac).Underline(true)
+		linkStyle := lipgloss.NewStyle().Foreground(tone.Fern).Underline(true)
 		if isCancelErr {
 			currentAssistant.AddFinish(message.FinishReasonCanceled, "User canceled request", "")
 		} else if errors.As(err, &requestTimedOutErr) {
@@ -1222,7 +1222,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			// request timeout imposed is never reported as a provider error.
 			currentAssistant.AddFinish(message.FinishReasonError, "Request timed out", requestTimedOutErr.userMessage())
 		} else if isHyper && errors.As(err, &providerErr) && providerErr.StatusCode == http.StatusUnauthorized {
-			currentAssistant.AddFinish(message.FinishReasonError, "Unauthorized", `Please re-authenticate with Hyper. You can also run "crush auth" to re-authenticate.`)
+			currentAssistant.AddFinish(message.FinishReasonError, "Unauthorized", `Please re-authenticate with Hyper. You can also run "deck auth" to re-authenticate.`)
 		} else if errors.As(err, &providerErr) {
 			if providerErr.Message == "The requested model is not supported." {
 				url := "https://github.com/settings/copilot/features"
@@ -1559,7 +1559,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 }
 
 func (a *sessionAgent) getCacheControlOptions() fantasy.ProviderOptions {
-	if t, _ := strconv.ParseBool(os.Getenv("CRUSH_DISABLE_ANTHROPIC_CACHE")); t {
+	if t, _ := strconv.ParseBool(os.Getenv("DECK_DISABLE_ANTHROPIC_CACHE")); t {
 		return fantasy.ProviderOptions{}
 	}
 	return fantasy.ProviderOptions{

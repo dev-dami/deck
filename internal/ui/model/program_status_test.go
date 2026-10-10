@@ -17,7 +17,7 @@ func TestProgramStatus(t *testing.T) {
 
 	ws := &countingWorkspace{ready: true}
 	u := newBusyUI(ws)
-	require.Equal(t, &tea.ProgramStatus{State: tea.ProgramStateIdle, App: "crush"}, u.programStatus())
+	require.Equal(t, &tea.ProgramStatus{State: tea.ProgramStateIdle, App: "deck"}, u.programStatus())
 
 	warmCaches(u, true)
 	require.Equal(t, tea.ProgramStateWorking, u.programStatus().State)

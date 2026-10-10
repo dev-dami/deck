@@ -14,7 +14,7 @@ func TestThemeFile_SaveAndLoad_RoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "my-theme.json")
 
 	tf := &ThemeFile{
-		Base: "charmtone-panther",
+		Base: "deck",
 		Palette: Palette{
 			Primary: "#ff0000",
 			BgBase:  "#1a1a2e",
@@ -71,12 +71,12 @@ func TestThemeFile_LoadUnknownFieldsWarnsButSucceeds(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "extra.json")
-	data := `{"base":"charmtone-panther","primary":"#ff0000","unknown_field":"value","another_bad":"x"}`
+	data := `{"base":"deck","primary":"#ff0000","unknown_field":"value","another_bad":"x"}`
 	require.NoError(t, os.WriteFile(path, []byte(data), 0o644))
 
 	tf, err := LoadThemeFile(path)
 	require.NoError(t, err)
-	require.Equal(t, "charmtone-panther", tf.Base)
+	require.Equal(t, "deck", tf.Base)
 	require.Equal(t, "#ff0000", tf.Primary)
 }
 
@@ -128,12 +128,12 @@ func TestThemePath_UsesGlobalDirectory(t *testing.T) {
 func TestThemeDirs_HasOnlyGlobalUserDirectory(t *testing.T) {
 	dirs := ThemeDirs()
 	require.Len(t, dirs, 1)
-	require.NotEqual(t, filepath.Join(".crush", "themes"), dirs[0])
+	require.NotEqual(t, filepath.Join(".deck", "themes"), dirs[0])
 }
 
 func TestThemeDirs_HonorsGlobalConfigEnv(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("CRUSH_GLOBAL_CONFIG", dir)
+	t.Setenv("DECK_GLOBAL_CONFIG", dir)
 
 	dirs := ThemeDirs()
 	require.Len(t, dirs, 1)
@@ -200,7 +200,7 @@ func TestDeleteThemeFile_RemovesUserTheme(t *testing.T) {
 }
 
 func TestDeleteThemeFile_RejectsBuiltin(t *testing.T) {
-	require.Error(t, DeleteThemeFile("charmtone-panther"))
+	require.Error(t, DeleteThemeFile("deck"))
 }
 
 func TestDeleteThemeFile_NotFound(t *testing.T) {

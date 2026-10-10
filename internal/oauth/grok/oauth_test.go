@@ -51,7 +51,7 @@ func TestAuthorizeURL(t *testing.T) {
 	require.Equal(t, "S256", query.Get("code_challenge_method"))
 	require.Equal(t, "state123", query.Get("state"))
 	require.Equal(t, "nonce456", query.Get("nonce"))
-	require.Equal(t, "crush", query.Get("referrer"))
+	require.Equal(t, "deck", query.Get("referrer"))
 }
 
 func TestNewPKCE(t *testing.T) {

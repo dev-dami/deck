@@ -104,7 +104,7 @@ func AuthorizeURL(redirectURI string, pkce PKCE, state, nonce string) string {
 		"code_challenge_method": {"S256"},
 		"state":                 {state},
 		"nonce":                 {nonce},
-		"referrer":              {"crush"},
+		"referrer":              {"deck"},
 	}
 	return authorizeEndpoint + "?" + vals.Encode()
 }

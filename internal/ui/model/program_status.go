@@ -6,10 +6,10 @@ import (
 )
 
 // programStatusApp is the stable program name reported to the terminal.
-const programStatusApp = "crush"
+const programStatusApp = "deck"
 
-// programStatus reports what Crush is doing to terminals that support the
-// Program Status Protocol (OSC 7501), so they can show whether Crush is
+// programStatus reports what Deck is doing to terminals that support the
+// Program Status Protocol (OSC 7501), so they can show whether Deck is
 // working, waiting on the user, or finished. Terminals without support
 // ignore it.
 func (m *UI) programStatus() *tea.ProgramStatus {
@@ -23,10 +23,6 @@ func (m *UI) programStatus() *tea.ProgramStatus {
 		ps.State = tea.ProgramStateBlocked
 		ps.Kind = tea.ProgramStatusKindQuestion
 		ps.Message = "Questions need your input"
-	case m.dialog != nil && m.dialog.ContainsDialog(dialog.AWSSSOID):
-		ps.State = tea.ProgramStateBlocked
-		ps.Kind = tea.ProgramStatusKindAuth
-		ps.Message = "AWS sign-in required"
 	case m.isAgentBusy():
 		ps.State = tea.ProgramStateWorking
 	case m.turnOutcome != "":

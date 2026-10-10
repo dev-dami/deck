@@ -20,7 +20,7 @@ import (
 // The channel contract lets an MCP server push events straight into the
 // session as a <channel> element that the model reads on its next turn. See
 // https://code.claude.com/docs/en/channels-reference for the authoritative
-// spec. Crush plays the client role: it detects the capability a server
+// spec. Deck plays the client role: it detects the capability a server
 // declares, listens for the server-initiated notification, and injects the
 // (validated, escaped) payload into the active session.
 const (
@@ -179,7 +179,7 @@ func ChannelEnabled(enabled []string, name string) bool {
 }
 
 // ChannelOptIn reports whether server `name` should be treated as a channel,
-// considering both enablement sources: persistently via crush.json
+// considering both enablement sources: persistently via deck.json
 // (m.ChannelEnabled) or per-launch via the --channels overrides list. Every
 // site that gates channel behaviour — session creation, session renewal, and
 // message routing — must use this so the two sources are always ORed together

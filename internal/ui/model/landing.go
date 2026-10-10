@@ -1,10 +1,8 @@
 package model
 
 import (
-	"image"
 
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/ultraviolet/layout"
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/workspace"
 )
@@ -36,25 +34,13 @@ func (m *UI) landingView() string {
 	parts = append(parts, "", m.modelInfo(width))
 	infoSection := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
-	var remainingHeightArea image.Rectangle
-	layout.Vertical(
-		layout.Len(lipgloss.Height(infoSection)+1),
-		layout.Fill(1),
-	).Split(m.layout.main).Assign(new(image.Rectangle), &remainingHeightArea)
-
-	mcpLspSectionWidth := min(30, (width-2)/3)
-
-	lspSection := m.lspInfo(mcpLspSectionWidth, max(1, remainingHeightArea.Dy()), false)
-	mcpSection := m.mcpInfo(mcpLspSectionWidth, max(1, remainingHeightArea.Dy()), false)
-	skillsSection := m.skillsInfo(mcpLspSectionWidth, max(1, remainingHeightArea.Dy()), false)
-
-	content := lipgloss.JoinHorizontal(lipgloss.Left, lspSection, " ", mcpSection, " ", skillsSection)
+	hint := t.ModelInfo.Provider.Render("Start with @claude, @codex or @opencode to choose who answers; @all asks everyone. ctrl+l picks models.")
 
 	return lipgloss.NewStyle().
 		Width(width).
 		Height(m.layout.main.Dy() - 1).
 		PaddingTop(1).
 		Render(
-			lipgloss.JoinVertical(lipgloss.Left, infoSection, "", content),
+			lipgloss.JoinVertical(lipgloss.Left, infoSection, "", lipgloss.NewStyle().Width(min(width, 72)).Render(hint)),
 		)
 }

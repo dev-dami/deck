@@ -24,7 +24,6 @@ const (
 	SpinnerIcon     string = "⋯"
 	LoadingIcon     string = "⟳"
 	ModelIcon       string = "◇"
-	HypercreditIcon string = "◆"
 
 	ArrowRightIcon string = "→"
 
@@ -92,25 +91,24 @@ type Styles struct {
 	// basic 16-color SGR codes (red, green, blue, …) and leave the actual
 	// colors up to the terminal; without this palette they fall through
 	// to the user's terminal defaults, which are often illegible on
-	// Crush's background. Defining them here keeps output readable and
+	// Deck's background. Defining them here keeps output readable and
 	// on-brand regardless of terminal configuration.
 	ANSI [16]color.Color
 
 	// Header
 	Header struct {
-		Charm             lipgloss.Style // Style for "Charm™" label
-		Diagonals         lipgloss.Style // Style for diagonal separators (╱)
+		Mark              lipgloss.Style // Style for the ◆ deck mark
+		Diagonals         lipgloss.Style // Style for the rule separators
 		Percentage        lipgloss.Style // Style for context percentage
-		HypercreditIcon   lipgloss.Style // Style for Hypercredit count (◆ N)
 		Keystroke         lipgloss.Style // Style for keystroke hints (e.g., "ctrl+d")
 		KeystrokeTip      lipgloss.Style // Style for keystroke action text (e.g., "open", "close")
 		WorkingDir        lipgloss.Style // Style for current working directory
 		GitBranch         lipgloss.Style // Style for the current git branch name
 		Separator         lipgloss.Style // Style for separator dots (•)
 		Wrapper           lipgloss.Style // Outer container for the entire header row
-		LogoGradCanvas    lipgloss.Style // Canvas for the compact "CRUSH" gradient
-		LogoGradFromColor color.Color    // "CRUSH" wordmark gradient start
-		LogoGradToColor   color.Color    // "CRUSH" wordmark gradient end
+		LogoGradCanvas    lipgloss.Style // Canvas for the compact "DECK" gradient
+		LogoGradFromColor color.Color    // "DECK" wordmark gradient start
+		LogoGradToColor   color.Color    // "DECK" wordmark gradient end
 	}
 
 	CompactDetails struct {
@@ -219,19 +217,17 @@ type Styles struct {
 
 	// Background
 	Background color.Color
+	// IsDark is false for a light theme.
+	IsDark bool
 
 	// Logo
 	Logo struct {
-		FieldColor         color.Color
-		TitleColorA        color.Color
-		TitleColorB        color.Color
-		CharmColor         color.Color
-		VersionColor       color.Color
-		SmallCharm         lipgloss.Style // "Charm™" label in SmallRender
-		SmallDiagonals     lipgloss.Style // Diagonal line fill in SmallRender
-		GradCanvas         lipgloss.Style // Blank canvas for gradient painting
-		SmallGradFromColor color.Color    // Small "Crush" wordmark gradient start
-		SmallGradToColor   color.Color    // Small "Crush" wordmark gradient end
+		TaglineColor   color.Color
+		VersionColor   color.Color
+		SmallMark      lipgloss.Style // the ◆ in SmallRender
+		SmallName      lipgloss.Style // "deck" in SmallRender
+		SmallDiagonals lipgloss.Style // the rule after it in SmallRender
+		GradCanvas     lipgloss.Style // blank canvas for gradient painting
 	}
 
 	// Working indicator gradient (spinners/shimmers on assistant "thinking",
@@ -279,8 +275,6 @@ type Styles struct {
 		TokenPercentage      lipgloss.Style // "42%" percent of context window
 		EstimatedUsagePrefix lipgloss.Style // "~" prefix for estimated usage
 		Cost                 lipgloss.Style // "$0.42" cost readout
-		HypercreditIcon      lipgloss.Style // Hypercredit icon (◆)
-		HypercreditText      lipgloss.Style // Remaining Hypercredits text
 	}
 
 	// Resource styles the LSP/MCP/skills sidebar lists: their heading,
@@ -353,7 +347,6 @@ type Styles struct {
 		AssistantInfoModel     lipgloss.Style
 		AssistantInfoProvider  lipgloss.Style
 		AssistantInfoDuration  lipgloss.Style
-		SubduedHypercreditIcon lipgloss.Style // Subdued ◆ for hypercredit figures within subdued text
 		AssistantCanceled      lipgloss.Style // Italic "Canceled" footer
 	}
 

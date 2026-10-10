@@ -1,165 +1,64 @@
-// Package logo renders a Crush wordmark in a stylized way.
+// Package logo renders Deck's wordmark for the places it is drawn still: the
+// landing screen's resting frame, the sidebar and the exit banner. The
+// animated version lives in package decklogo.
 package logo
 
 import (
-	"fmt"
 	"image/color"
-	"math/rand/v2"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/dev-dami/deck/internal/ui/decklogo"
 	"github.com/dev-dami/deck/internal/ui/styles"
 )
 
-// letterform represents a letterform. It can be stretched horizontally by
-// a given amount via the boolean argument.
-type letterform func(bool) string
+// Tagline is shown under the wordmark.
+const Tagline = "one deck for all your agents"
 
-const diag = `╱`
-
-// Opts are the options for rendering the Crush title art.
+// Opts are the options for rendering the Deck logo.
 type Opts struct {
-	FieldColor   color.Color // diagonal lines
-	TitleColorA  color.Color // left gradient ramp point
-	TitleColorB  color.Color // right gradient ramp point
-	CharmColor   color.Color // Charm™ text color
-	VersionColor color.Color // version text color
-	Width        int         // width of the rendered logo, used for truncation
-	Hyper        bool        // whether it is Crush or Hypercrush
-
-	// When true, stretch a random letterform on each render. Has no effect in
-	// compact mode. Mainly for testing. In production you will want to cache
-	// the stretched letterform to keep the logo from jittering on resize.
-	Unstable bool
+	TaglineColor color.Color // the tagline
+	VersionColor color.Color // the version
+	Width        int         // the room there is; lines are cut to it
+	Dark         bool        // the dark palette (the default theme)
 }
 
-// Render renders the Crush logo. Set the argument to true to render the narrow
-// version, intended for use in a sidebar.
-//
-// The compact argument determines whether it renders compact for the sidebar
-// or wider for the main pane.
-func Render(base lipgloss.Style, version string, compact bool, o Opts) string {
-	charm := "Charm™"
-	if !o.Hyper {
-		charm = " " + charm
+// Render renders the Deck logo with the tagline and version under it. The
+// compact argument picks the smaller wordmark, for narrow places.
+func Render(_ lipgloss.Style, version string, compact bool, o Opts) string {
+	w := o.Width
+	if w <= 0 {
+		w = 80
 	}
-
-	fg := func(c color.Color, s string) string {
-		return lipgloss.NewStyle().Foreground(c).Render(s)
-	}
-
-	// Title.
-	const spacing = 1
-	var hyperLetterforms []letterform
-	if o.Hyper {
-		hyperLetterforms = []letterform{
-			LetterH,
-			LetterYAlt,
-			LetterP,
-			LetterE,
-			LetterR,
-		}
-	}
-	crushLetterforms := []letterform{
-		LetterC,
-		LetterR,
-		LetterU,
-		LetterSAlt,
-		LetterH,
-	}
-	if o.Hyper && !compact {
-		crushLetterforms = append(hyperLetterforms, crushLetterforms...)
-	}
-
-	stretchIndex := -1 // -1 means no stretching.
-	if !compact && !o.Unstable {
-		// Always stretch the same letterform, which is picked once at random.
-		stretchIndex = cachedRandN(len(crushLetterforms))
-	} else if !compact && o.Unstable {
-		// Stretch a random letterform on every render.
-		stretchIndex = rand.IntN(len(crushLetterforms))
-	}
-	crush := renderWord(spacing, stretchIndex, crushLetterforms...)
-	if o.Hyper && compact {
-		crush = renderWord(spacing, stretchIndex, hyperLetterforms...) + "\n" + crush
-	}
-	crushWidth := lipgloss.Width(crush)
-	b := new(strings.Builder)
-	for r := range strings.SplitSeq(crush, "\n") {
-		fmt.Fprintln(b, styles.ApplyForegroundGrad(base, r, o.TitleColorA, o.TitleColorB))
-	}
-	crush = b.String()
-
-	// Charm and version.
-	metaRowGap := 1
-	maxVersionWidth := crushWidth - lipgloss.Width(charm) - metaRowGap
-	version = ansi.Truncate(version, maxVersionWidth, "…") // truncate version if too long.
-	if o.Hyper && compact {
-		version += " "
-	}
-	gap := max(0, crushWidth-lipgloss.Width(charm)-lipgloss.Width(version))
-	metaRow := fg(o.CharmColor, charm) + strings.Repeat(" ", gap) + fg(o.VersionColor, version)
-
-	// Join the meta row and big Crush title.
-	crush = strings.TrimSpace(metaRow + "\n" + crush)
-
-	// Narrow version. If this is Hypercrush, this is also a stacked version.
+	h := 6
 	if compact {
-		field := fg(o.FieldColor, strings.Repeat(diag, crushWidth))
-		return strings.Join([]string{field, field, crush, field, ""}, "\n")
+		h = 4
+		w = min(w, 40)
 	}
-
-	fieldHeight := lipgloss.Height(crush)
-
-	// Left field.
-	const leftWidth = 6
-	leftFieldRow := fg(o.FieldColor, strings.Repeat(diag, leftWidth))
-	leftField := new(strings.Builder)
-	for range fieldHeight {
-		fmt.Fprintln(leftField, leftFieldRow)
+	mark := decklogo.Static(w, h, o.Dark || o.Width == 0)
+	meta := lipgloss.NewStyle().Foreground(o.TaglineColor).Render(Tagline)
+	if version != "" {
+		meta += "  " + lipgloss.NewStyle().Foreground(o.VersionColor).Render(version)
 	}
-
-	// Right field.
-	rightWidth := max(15, o.Width-crushWidth-leftWidth-2) // 2 for the gap.
-	const stepDownAt = 0
-	rightField := new(strings.Builder)
-	for i := range fieldHeight {
-		width := rightWidth
-		if i >= stepDownAt {
-			width = rightWidth - (i - stepDownAt)
-		}
-		fmt.Fprint(rightField, fg(o.FieldColor, strings.Repeat(diag, width)), "\n")
-	}
-
-	// Return the wide version.
-	const hGap = " "
-	logo := lipgloss.JoinHorizontal(lipgloss.Top, leftField.String(), hGap, crush, hGap, rightField.String())
+	out := mark + "\n" + meta
 	if o.Width > 0 {
-		// Truncate the logo to the specified width.
-		lines := strings.Split(logo, "\n")
-		for i, line := range lines {
-			lines[i] = ansi.Truncate(line, o.Width, "")
+		lines := strings.Split(out, "\n")
+		for i, l := range lines {
+			lines[i] = ansi.Truncate(l, o.Width, "")
 		}
-		logo = strings.Join(lines, "\n")
+		out = strings.Join(lines, "\n")
 	}
-	return logo
+	return out
 }
 
-// SmallRender renders a smaller version of the Crush logo, suitable for
-// smaller windows or sidebar usage.
-func SmallRender(t *styles.Styles, width int, o Opts) string {
-	name := "Crush"
-	if o.Hyper {
-		name = "HYPERCRUSH"
-	}
-	charm := "Charm™"
-	title := t.Logo.SmallCharm.Render(charm)
-	title = fmt.Sprintf("%s %s", title, styles.ApplyBoldForegroundGrad(t.Logo.GradCanvas, name, t.Logo.SmallGradFromColor, t.Logo.SmallGradToColor))
-	remainingWidth := width - lipgloss.Width(title) - 1 // 1 for the space after the name
-	if remainingWidth > 0 {
-		lines := strings.Repeat("╱", remainingWidth)
-		title = fmt.Sprintf("%s %s", title, t.Logo.SmallDiagonals.Render(lines))
+// SmallRender renders the one-line logo, "◆ deck" and a rule to the edge,
+// for small windows and the sidebar.
+func SmallRender(t *styles.Styles, width int, _ Opts) string {
+	title := t.Logo.SmallMark.Render("◆") + " " + t.Logo.SmallName.Render("deck")
+	if rest := width - lipgloss.Width(title) - 1; rest > 0 {
+		title += " " + t.Logo.SmallDiagonals.Render(strings.Repeat("─", rest))
 	}
 	return title
 }

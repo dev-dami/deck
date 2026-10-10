@@ -39,7 +39,7 @@ func renderedLines(t *testing.T, text string, width int) []string {
 }
 
 // TestUserMessagePreservesSingleLineBreaks is the regression test for
-// charmbracelet/crush#3502: a user submitting
+// charmbracelet/deck#3502: a user submitting
 //
 //	a
 //	b

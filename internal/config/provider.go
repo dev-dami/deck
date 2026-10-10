@@ -4,21 +4,17 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/catwalk/pkg/embedded"
 	"github.com/charmbracelet/x/etag"
 	"github.com/dev-dami/deck/internal/agent/hyper"
-	"github.com/dev-dami/deck/internal/csync"
 )
 
 type syncer[T any] interface {
@@ -32,7 +28,7 @@ var (
 )
 
 // file to cache provider data. It resolves through GlobalConfigData so the
-// catalog follows CRUSH_GLOBAL_DATA like the rest of the data directory.
+// catalog follows DECK_GLOBAL_DATA like the rest of the data directory.
 func cachePathFor(name string) string {
 	return filepath.Join(filepath.Dir(GlobalConfigData()), name+".json")
 }
@@ -159,81 +155,10 @@ func CatwalkUpdated() bool {
 // using the returned list. A refresh that simply could not reach the network
 // is not an error at all: the cached or embedded catalog is a sound answer, so
 // those are logged and the fallback is returned.
-func Providers(cfg *Config, opts ...HyperTokenRefresher) ([]catwalk.Provider, error) {
-	providerOnce.Do(func() {
-		var wg sync.WaitGroup
-		providers := csync.NewSlice[catwalk.Provider]()
-		autoupdate := !cfg.Options.DisableProviderAutoUpdate
-		customProvidersOnly := cfg.Options.DisableDefaultProviders
-
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		defer cancel()
-
-		// Each goroutine owns its own error so the two can report
-		// independently without racing on a shared slice.
-		var catwalkErr, hyperErr error
-		var hyperProvider catwalk.Provider
-
-		wg.Go(func() {
-			if customProvidersOnly {
-				return
-			}
-			catwalkURL := cmp.Or(os.Getenv("CATWALK_URL"), defaultCatwalkURL)
-			client := catwalk.NewWithURL(catwalkURL)
-			path := cachePathFor("providers")
-			catwalkSyncer.Init(client, path, autoupdate)
-
-			// A failure to refresh or cache the catalog is worth
-			// reporting, but the syncer still hands back the cached or
-			// embedded list. Dropping that would leave the user with no
-			// providers at all over a transient disk or network problem.
-			items, err := catwalkSyncer.Get(ctx)
-			if err != nil {
-				catwalkURL := fmt.Sprintf("%s/v2/providers", cmp.Or(os.Getenv("CATWALK_URL"), defaultCatwalkURL))
-				catwalkErr = fmt.Errorf("Crush was unable to fetch an updated list of providers from %s. Consider setting CRUSH_DISABLE_PROVIDER_AUTO_UPDATE=1 to use the embedded providers bundled at the time of this Crush release. You can also update providers manually. For more info see crush update-providers --help.\n\nCause: %w", catwalkURL, err) //nolint:staticcheck
-			}
-			providers.Append(items...)
-		})
-
-		wg.Go(func() {
-			if customProvidersOnly {
-				return
-			}
-			path := cachePathFor("hyper")
-			cfgSnapshot := cfg
-			var refresher func(context.Context) error
-			if len(opts) > 0 {
-				refresher = opts[0]
-			}
-			hyperSyncer.Init(realHyperClient{
-				baseURL:      hyper.BaseURL(),
-				resolveKey:   func() string { return ResolveHyperAPIKey(cfgSnapshot) },
-				refreshToken: refresher,
-			}, path, autoupdate)
-
-			// As above: keep whatever provider we were handed. The syncer
-			// already falls back to the cached or embedded copy, so an
-			// error here means "could not refresh", not "no Hyper". This
-			// matters more than for other providers because Hyper's
-			// endpoint and model list live in the catalog rather than in
-			// the user's config: dropping it signs a logged-in user out.
-			item, err := hyperSyncer.Get(ctx)
-			if err != nil {
-				hyperErr = fmt.Errorf("Crush was unable to fetch updated information from Hyper: %w", err) //nolint:staticcheck
-			}
-			hyperProvider = item
-		})
-
-		wg.Wait()
-
-		if hyperProvider.ID != "" {
-			providerList = append([]catwalk.Provider{hyperProvider}, slices.Collect(providers.Seq())...)
-		} else {
-			providerList = slices.Collect(providers.Seq())
-		}
-		providerErr = errors.Join(catwalkErr, hyperErr)
-	})
-	return providerList, providerErr
+func Providers(*Config, ...HyperTokenRefresher) ([]catwalk.Provider, error) {
+	// Deck's agents are the user's own CLIs, logged in on their own: there is
+	// no model provider catalogue to fetch, and nothing is downloaded.
+	return nil, nil
 }
 
 // UpdateProviderInList replaces a provider in the memoized provider list
@@ -284,7 +209,7 @@ func (c cache[T]) Store(v T) error {
 		return fmt.Errorf("failed to marshal provider data: %w", err)
 	}
 
-	// Written through a temporary file and renamed into place. Several Crush
+	// Written through a temporary file and renamed into place. Several Deck
 	// instances start independently and race to refresh this cache, and a
 	// truncating write would let one of them read a half-written catalog and
 	// silently fall back to the bundled copy.

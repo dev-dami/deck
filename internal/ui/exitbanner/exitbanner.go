@@ -1,4 +1,4 @@
-// Package exitbanner renders what Crush prints after the TUI exits.
+// Package exitbanner renders what Deck prints after the TUI exits.
 package exitbanner
 
 import (
@@ -7,7 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/exp/charmtone"
+	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/ui/logo"
@@ -54,21 +54,19 @@ func Render(banner config.ExitBanner, sess *session.Session, width int) string {
 // logoSection returns the ASCII art logo followed by the parting message.
 func logoSection(contentWidth int) string {
 	t := styles.ThemeForProvider("")
-	crushLogo := logo.Render(t.Logo.GradCanvas, version.Version, true, logo.Opts{
-		FieldColor:   t.Logo.FieldColor,
-		TitleColorA:  t.Logo.TitleColorA,
-		TitleColorB:  t.Logo.TitleColorB,
-		CharmColor:   t.Logo.CharmColor,
+	deckLogo := logo.Render(t.Logo.GradCanvas, version.Version, true, logo.Opts{
+		TaglineColor: t.Logo.TaglineColor,
 		VersionColor: t.Logo.VersionColor,
-		Hyper:        false,
+		Width:        contentWidth,
+		Dark:         true,
 	})
 	// Wrap the greeting and the message together: wrapping only the message
 	// leaves the greeting's own width unaccounted for and overflows the frame.
-	return crushLogo + "\n" +
-		lipgloss.NewStyle().Width(contentWidth).Render("Thanks for using Crush! "+randomExitMessage())
+	return deckLogo + "\n" +
+		lipgloss.NewStyle().Width(contentWidth).Render("Thanks for using deck. "+randomExitMessage())
 }
 
-// sessionResumeLines returns the "Session  <title>\nContinue crush -s <hash>"
+// sessionResumeLines returns the "Session  <title>\nContinue deck -s <hash>"
 // pair used by the exit banner.
 func sessionResumeLines(sess *session.Session, contentWidth int) string {
 	title := strings.ReplaceAll(sess.Title, "\n", " ")
@@ -80,9 +78,9 @@ func sessionResumeLines(sess *session.Session, contentWidth int) string {
 	}
 
 	hash := session.HashID(sess.ID)[:7]
-	label := lipgloss.NewStyle().Foreground(charmtone.Charple)
+	label := lipgloss.NewStyle().Foreground(tone.Mint)
 	sessionLine := label.Render("Session  ") + title
-	continueLine := label.Render("Continue ") + "crush -s " + hash
+	continueLine := label.Render("Continue ") + "deck -s " + hash
 	return sessionLine + "\n" + continueLine
 }
 

@@ -34,7 +34,7 @@ type modelsResponse struct {
 
 // clientVersion is the codex client version reported to the models
 // endpoint, which requires it. The backend gates models by the codex
-// client's feature support; crush runs its own agent loop and does not
+// client's feature support; deck runs its own agent loop and does not
 // depend on those features, so a deliberately high version requests the
 // full catalog the subscription grants.
 const clientVersion = "999.0.0"
@@ -56,7 +56,7 @@ func Models(ctx context.Context, token *oauth.Token) ([]catwalk.Model, error) {
 	if token.AccountID != "" {
 		req.Header.Set("chatgpt-account-id", token.AccountID)
 	}
-	req.Header.Set("originator", "crush")
+	req.Header.Set("originator", "deck")
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)

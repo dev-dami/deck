@@ -89,9 +89,9 @@ func SaveThemeFile(path string, tf *ThemeFile) error {
 var themeDirsOverride []string
 
 // ThemeDirs returns the user theme directory. Theme files are global so
-// launching Crush from different working directories always resolves the same
-// themes. Themes live in the Crush config directory (the one holding the
-// global config file) under themes/, which honors CRUSH_GLOBAL_CONFIG and
+// launching Deck from different working directories always resolves the same
+// themes. Themes live in the Deck config directory (the one holding the
+// global config file) under themes/, which honors DECK_GLOBAL_CONFIG and
 // matches the README on every platform.
 func ThemeDirs() []string {
 	if themeDirsOverride != nil {

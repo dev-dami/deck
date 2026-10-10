@@ -46,7 +46,7 @@ func TestRequestDeviceCode(t *testing.T) {
 
 	require.Equal(t, ClientID, got.Get("client_id"))
 	require.Equal(t, Scope, got.Get("scope"))
-	require.Equal(t, "crush", got.Get("referrer"))
+	require.Equal(t, "deck", got.Get("referrer"))
 
 	require.Equal(t, "dc-123", dc.DeviceCode)
 	require.Equal(t, "94mJX-FLQP", dc.UserCode)

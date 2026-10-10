@@ -183,7 +183,7 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	// Capture initial staleness snapshot
 	// Capture initial staleness snapshot. Track every discovered config path,
 	// not just the ones that loaded, so a config file created after startup
-	// (e.g. a crushrc added mid-session) is detected as a change.
+	// (e.g. a deckrc added mid-session) is detected as a change.
 	store.captureStalenessSnapshot(append(slices.Clone(configPaths), loadedPaths...))
 
 	return store, nil
@@ -199,15 +199,15 @@ func mustMarshalConfig(cfg *Config) []byte {
 	return data
 }
 
-func PushPopCrushEnv() func() {
+func PushPopDeckEnv() func() {
 	var found []string
 	for _, ev := range os.Environ() {
-		if strings.HasPrefix(ev, "CRUSH_") {
+		if strings.HasPrefix(ev, "DECK_") {
 			pair := strings.SplitN(ev, "=", 2)
 			if len(pair) != 2 {
 				continue
 			}
-			found = append(found, strings.TrimPrefix(pair[0], "CRUSH_"))
+			found = append(found, strings.TrimPrefix(pair[0], "DECK_"))
 		}
 	}
 	backups := make(map[string]string)
@@ -216,7 +216,7 @@ func PushPopCrushEnv() func() {
 	}
 
 	for _, ev := range found {
-		os.Setenv(ev, os.Getenv("CRUSH_"+ev))
+		os.Setenv(ev, os.Getenv("DECK_"+ev))
 	}
 
 	restore := func() {
@@ -229,7 +229,7 @@ func PushPopCrushEnv() func() {
 
 func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env env.Env, resolver VariableResolver, knownProviders []catwalk.Provider) error {
 	knownProviderNames := make(map[string]bool)
-	restore := PushPopCrushEnv()
+	restore := PushPopDeckEnv()
 	defer restore()
 
 	// When disable_default_providers is enabled, skip all default/embedded
@@ -553,7 +553,7 @@ func (c *Config) applyEnv(resolver VariableResolver) {
 // NormalizeOptions allocates Options and Options.TUI and fills in the option
 // defaults the UI relies on, so readers can dereference them without guarding.
 // Configs loaded from disk get this via setDefaults; configs arriving over the
-// wire from a Crush server need the same treatment before the UI reads them.
+// wire from a Deck server need the same treatment before the UI reads them.
 //
 // DiffMode is deliberately left alone: the permissions dialog reads its zero
 // value as "choose split or unified from the terminal width".
@@ -575,10 +575,10 @@ func (c *Config) NormalizeOptions() {
 func (c *Config) setDefaults(workingDir, dataDir string) {
 	c.NormalizeOptions()
 	if len(c.Options.GlobalContextPaths) == 0 {
-		crushConfigDir := filepath.Dir(GlobalConfig())
+		deckConfigDir := filepath.Dir(GlobalConfig())
 		c.Options.GlobalContextPaths = []string{
-			filepath.Join(crushConfigDir, "CRUSH.md"),
-			filepath.Join(filepath.Dir(crushConfigDir), "AGENTS.md"),
+			filepath.Join(deckConfigDir, "DECK.md"),
+			filepath.Join(filepath.Dir(deckConfigDir), "AGENTS.md"),
 		}
 	}
 	slices.Sort(c.Options.GlobalContextPaths)
@@ -607,7 +607,7 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 		c.MCP = make(map[string]MCPConfig)
 	}
 	// Drop orphaned OAuth token entries left behind when a user removes
-	// an MCP from crush.json. See MCPConfig.isOrphanedToken.
+	// an MCP from deck.json. See MCPConfig.isOrphanedToken.
 	for name, m := range c.MCP {
 		if m.isOrphanedToken() {
 			delete(c.MCP, name)
@@ -636,11 +636,11 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	// Project specific skills dirs.
 	c.Options.SkillsPaths = append(c.Options.SkillsPaths, ProjectSkillsDir(workingDir)...)
 
-	if str, ok := os.LookupEnv("CRUSH_DISABLE_PROVIDER_AUTO_UPDATE"); ok {
+	if str, ok := os.LookupEnv("DECK_DISABLE_PROVIDER_AUTO_UPDATE"); ok {
 		c.Options.DisableProviderAutoUpdate, _ = strconv.ParseBool(str)
 	}
 
-	if str, ok := os.LookupEnv("CRUSH_DISABLE_DEFAULT_PROVIDERS"); ok {
+	if str, ok := os.LookupEnv("DECK_DISABLE_DEFAULT_PROVIDERS"); ok {
 		c.Options.DisableDefaultProviders, _ = strconv.ParseBool(str)
 	}
 
@@ -940,12 +940,12 @@ func resolveSelectedModels(cfg *Config, knownProviders []catwalk.Provider) (reso
 // lookupConfigs searches config files starting at cwd and walking up
 // through the current project. The upward walk stops at the git
 // working tree root when one can be detected, otherwise at cwd itself,
-// so an unrelated crush.json placed above the project is never picked
+// so an unrelated deck.json placed above the project is never picked
 // up. Global user-level config locations are always included
 // regardless of the boundary.
 func lookupConfigs(cwd string) []string {
 	// Prepend global user config and machine-owned data JSON. Only the user
-	// config directory contributes a crushrc; the data directory is writable
+	// config directory contributes a deckrc; the data directory is writable
 	// machine state and must never be executed as Bash. Missing files are
 	// skipped when loaded.
 	configPaths := []string{
@@ -957,8 +957,8 @@ func lookupConfigs(cwd string) []string {
 
 	// Ordered high-to-low priority within a directory. LookupBounded returns
 	// matches in this order, and the later reverse + merge make the earliest
-	// listed name win on conflict. So: .crushrc beats crushrc, both beat the
-	// JSON configs, and .crush.json beats crush.json.
+	// listed name win on conflict. So: .deckrc beats deckrc, both beat the
+	// JSON configs, and .deck.json beats deck.json.
 	configNames := []string{
 		"." + appName + "rc",
 		appName + "rc",
@@ -982,7 +982,7 @@ func loadFromConfigPaths(ctx context.Context, configPaths []string) (*Config, []
 	var configs [][]byte
 	var loaded []string
 
-	// Track directories that have both crush.json and crushrc to warn
+	// Track directories that have both deck.json and deckrc to warn
 	// about potential confusion, along with the top-level keys each
 	// defines so we can report conflicts.
 	jsonDirKeys := make(map[string]map[string]bool)
@@ -1027,7 +1027,7 @@ func loadFromConfigPaths(ctx context.Context, configPaths []string) (*Config, []
 		}
 	}
 
-	// Warn if both a JSON config and a crushrc exist in the same directory
+	// Warn if both a JSON config and a deckrc exist in the same directory
 	// and define overlapping top-level keys. Disjoint coexistence is
 	// intentional and not worth warning about.
 	for dir, jKeys := range jsonDirKeys {
@@ -1043,7 +1043,7 @@ func loadFromConfigPaths(ctx context.Context, configPaths []string) (*Config, []
 		}
 		if len(conflicts) > 0 {
 			slices.Sort(conflicts)
-			slog.Warn("Found both a JSON config and a crushrc in the same directory; merging with crushrc taking precedence",
+			slog.Warn("Found both a JSON config and a deckrc in the same directory; merging with deckrc taking precedence",
 				"dir", dir, "conflicting_keys", strings.Join(conflicts, ", "))
 		}
 	}
@@ -1210,21 +1210,21 @@ func migrateDisableNotifications() {
 
 // GlobalConfig returns the global configuration file path for the application.
 func GlobalConfig() string {
-	if crushGlobal := os.Getenv("CRUSH_GLOBAL_CONFIG"); crushGlobal != "" {
-		return filepath.Join(crushGlobal, fmt.Sprintf("%s.json", appName))
+	if deckGlobal := os.Getenv("DECK_GLOBAL_CONFIG"); deckGlobal != "" {
+		return filepath.Join(deckGlobal, fmt.Sprintf("%s.json", appName))
 	}
 	return filepath.Join(home.Config(), appName, fmt.Sprintf("%s.json", appName))
 }
 
-// shellConfigSibling returns the crushrc path that sits alongside a given
-// crush.json path (same directory). Used so global config locations pick up a
+// shellConfigSibling returns the deckrc path that sits alongside a given
+// deck.json path (same directory). Used so global config locations pick up a
 // shell config, not just JSON.
 func shellConfigSibling(jsonPath string) string {
 	return filepath.Join(filepath.Dir(jsonPath), appName+"rc")
 }
 
-// isShellConfig reports whether a config path is a shell config (crushrc or
-// the hidden .crushrc), as opposed to a JSON config.
+// isShellConfig reports whether a config path is a shell config (deckrc or
+// the hidden .deckrc), as opposed to a JSON config.
 func isShellConfig(path string) bool {
 	base := filepath.Base(path)
 	return base == appName+"rc" || base == "."+appName+"rc"
@@ -1233,8 +1233,8 @@ func isShellConfig(path string) bool {
 // GlobalCacheDir returns the path to the global cache directory for the
 // application.
 func GlobalCacheDir() string {
-	if crushCache := os.Getenv("CRUSH_CACHE_DIR"); crushCache != "" {
-		return crushCache
+	if deckCache := os.Getenv("DECK_CACHE_DIR"); deckCache != "" {
+		return deckCache
 	}
 	if xdgCacheHome := os.Getenv("XDG_CACHE_HOME"); xdgCacheHome != "" {
 		return filepath.Join(xdgCacheHome, appName)
@@ -1257,16 +1257,16 @@ func ProjectConfigs(cwd string) []string {
 // GlobalConfigData returns the path to the main data directory for the application.
 // this config is used when the app overrides configurations instead of updating the global config.
 func GlobalConfigData() string {
-	if crushData := os.Getenv("CRUSH_GLOBAL_DATA"); crushData != "" {
-		return filepath.Join(crushData, fmt.Sprintf("%s.json", appName))
+	if deckData := os.Getenv("DECK_GLOBAL_DATA"); deckData != "" {
+		return filepath.Join(deckData, fmt.Sprintf("%s.json", appName))
 	}
 	if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
 		return filepath.Join(xdgDataHome, appName, fmt.Sprintf("%s.json", appName))
 	}
 
 	// return the path to the main data directory
-	// for windows, it should be in `%LOCALAPPDATA%/crush/`
-	// for linux and macOS, it should be in `$HOME/.local/share/crush/`
+	// for windows, it should be in `%LOCALAPPDATA%/deck/`
+	// for linux and macOS, it should be in `$HOME/.local/share/deck/`
 	if runtime.GOOS == "windows" {
 		localAppData := cmp.Or(
 			os.Getenv("LOCALAPPDATA"),
@@ -1346,7 +1346,7 @@ func computeWorktreeRoot(dir string) string {
 // projectBoundary returns the directory at which an upward configuration
 // search rooted at dir should stop. It is the git working tree root when
 // one can be detected, otherwise dir itself. Returning dir as a
-// fallback keeps Crush from silently adopting state files placed above
+// fallback keeps Deck from silently adopting state files placed above
 // the current project.
 func projectBoundary(dir string) string {
 	if root := worktreeRoot(dir); root != "" {
@@ -1363,8 +1363,8 @@ func projectBoundary(dir string) string {
 // Skills in these directories are auto-discovered and their files can be read
 // without permission prompts.
 func GlobalSkillsDirs() []string {
-	if crushSkills := os.Getenv("CRUSH_SKILLS_DIR"); crushSkills != "" {
-		return []string{crushSkills}
+	if deckSkills := os.Getenv("DECK_SKILLS_DIR"); deckSkills != "" {
+		return []string{deckSkills}
 	}
 
 	paths := []string{
@@ -1375,7 +1375,7 @@ func GlobalSkillsDirs() []string {
 		filepath.Join(home.Dir(), ".claude", "skills"),
 	}
 
-	// On Windows, also load from app data on top of `$HOME/.config/crush`.
+	// On Windows, also load from app data on top of `$HOME/.config/deck`.
 	// This is here mostly for backwards compatibility.
 	if runtime.GOOS == "windows" {
 		appData := cmp.Or(
@@ -1397,12 +1397,12 @@ func GlobalSkillsDirs() []string {
 // git-root lookups to prevent drift when a new convention is added.
 var projectSkillSubdirs = []string{
 	".agents/skills",
-	".crush/skills",
+	".deck/skills",
 	".claude/skills",
 	".cursor/skills",
 }
 
-// ProjectSkillsDir returns the default project directories for which Crush
+// ProjectSkillsDir returns the default project directories for which Deck
 // will look for skills. In addition to the working directory, it also
 // checks the git working tree root so that monorepo-level skills are
 // discovered when the user is inside a subdirectory.

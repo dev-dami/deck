@@ -1,63 +1,73 @@
 package model
 
 import (
-	"cmp"
 	"fmt"
 	"image"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/ultraviolet/layout"
 	mcp "github.com/dev-dami/deck/internal/agent/tools/mcp"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/logo"
+	"github.com/dev-dami/deck/internal/ui/tone"
+	"github.com/dev-dami/deck/internal/workspace"
 )
 
-// modelInfo renders the current model information including reasoning
-// settings and context usage/cost for the sidebar.
+// modelInfo renders the session's agents: each one's mark and name in its
+// own tint, the model and effort it runs, and what it is doing, how full its
+// context is and what it has cost. Before anyone joins it lists the agent
+// CLIs that are installed.
 func (m *UI) modelInfo(width int) string {
-	model := m.selectedLargeModel()
-	reasoningInfo := ""
-	providerName := ""
-
-	if model != nil {
-		// Get provider name first
-		providerConfig, ok := m.com.Config().Providers.Get(model.ModelCfg.Provider)
-		if ok {
-			providerName = providerConfig.Name
-
-			// Only check reasoning if model can reason
-			if model.CatwalkCfg.CanReason {
-				if len(model.CatwalkCfg.ReasoningLevels) == 0 {
-					if model.ModelCfg.Think {
-						reasoningInfo = "Thinking On"
-					} else {
-						reasoningInfo = "Thinking Off"
-					}
-				} else {
-					reasoningEffort := cmp.Or(model.ModelCfg.ReasoningEffort, model.CatwalkCfg.DefaultReasoningEffort)
-					reasoningInfo = fmt.Sprintf("Reasoning %s", common.FormatReasoningEffort(reasoningEffort))
-				}
-			}
+	roster, ok := m.com.Workspace.(workspace.Roster)
+	if !ok {
+		return ""
+	}
+	sessionID := ""
+	if m.session != nil {
+		sessionID = m.session.ID
+	}
+	t := m.com.Styles
+	muted := t.ModelInfo.Provider
+	var lines []string
+	for _, a := range roster.Roster(sessionID) {
+		tint := lipgloss.NewStyle().Foreground(tone.Tint(a.Kind))
+		head := tint.Render(tone.Mark(a.Kind)) + " " + tint.Bold(true).Render(a.ID)
+		model := a.Model
+		if model == "" {
+			model = "default model"
 		}
-	}
-
-	var modelContext *common.ModelContextInfo
-	if model != nil && m.session != nil {
-		modelContext = &common.ModelContextInfo{
-			ContextUsed:    m.session.CompletionTokens + m.session.PromptTokens,
-			Cost:           m.session.Cost,
-			ModelContext:   model.CatwalkCfg.ContextWindow,
-			EstimatedUsage: m.session.EstimatedUsage,
+		if a.Effort != "" {
+			model += " · " + a.Effort
 		}
+		head += " " + muted.Render(model)
+		lines = append(lines, ansi.Truncate(head, width, "…"))
+
+		var facts []string
+		switch a.Status {
+		case "working", "tool":
+			facts = append(facts, t.ModelInfo.Name.Render("working"))
+		case "approval":
+			facts = append(facts, t.ModelInfo.Reasoning.Render(fmt.Sprintf("needs you (%d)", max(1, a.Pending))))
+		case "error", "exited":
+			facts = append(facts, muted.Render(a.Status))
+		case "ready":
+			facts = append(facts, muted.Render("ready"))
+		default:
+			facts = append(facts, muted.Render("idle"))
+		}
+		if a.ContextWindow > 0 && a.ContextTokens > 0 {
+			facts = append(facts, muted.Render(fmt.Sprintf("%d%% context", a.ContextTokens*100/a.ContextWindow)))
+		}
+		if a.CostUSD > 0 {
+			facts = append(facts, muted.Render(fmt.Sprintf("$%.2f", a.CostUSD)))
+		}
+		lines = append(lines, ansi.Truncate("  "+strings.Join(facts, muted.Render(" · ")), width, "…"))
 	}
-	var modelName string
-	if model != nil {
-		modelName = model.CatwalkCfg.Name
-	}
-	return common.ModelInfo(m.com.Styles, modelName, providerName, reasoningInfo, modelContext, width, m.hyperCredits)
+	return lipgloss.NewStyle().Width(width).Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }
 
 // updateSidebarScrollState renders the sidebar content and computes scroll
@@ -80,9 +90,7 @@ func (m *UI) updateSidebarScrollState() {
 	cwd := common.PrettyPathWithBranch(t, m.com.Workspace.WorkingDir(), m.gitBranch, contentWidth)
 	sidebarLogo := m.sidebarLogo
 	if height < logoHeightBreakpoint {
-		sidebarLogo = lipgloss.JoinVertical(lipgloss.Left, logo.SmallRender(m.com.Styles, contentWidth, logo.Opts{
-			Hyper: m.com.IsHyper(),
-		}), "")
+		sidebarLogo = lipgloss.JoinVertical(lipgloss.Left, logo.SmallRender(m.com.Styles, contentWidth, logo.Opts{}), "")
 	}
 
 	var logoRect, contentRect image.Rectangle
@@ -94,9 +102,6 @@ func (m *UI) updateSidebarScrollState() {
 	contentHeight := contentRect.Dy()
 
 	// Render all items without truncation; virtual scrolling handles overflow.
-	lspSection := m.lspInfo(contentWidth, len(m.lspStates), true)
-	mcpSection := m.mcpInfo(contentWidth, mcpCount(m.com.Config().MCP.Sorted(), m.mcpStates), true)
-	skillsSection := m.skillsInfo(contentWidth, len(m.skillStatusItems()), true)
 	filesSection := m.filesInfo(m.com.Workspace.WorkingDir(), contentWidth, fileChangeCount(m.sessionFiles), true)
 
 	// Build the scrollable content.
@@ -109,12 +114,6 @@ func (m *UI) updateSidebarScrollState() {
 		m.modelInfo(contentWidth),
 		"",
 		filesSection,
-		"",
-		lspSection,
-		"",
-		mcpSection,
-		"",
-		skillsSection,
 	)
 
 	totalLines := strings.Count(content, "\n") + 1

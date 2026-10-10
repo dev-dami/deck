@@ -106,6 +106,9 @@ type quickStyleOpts struct {
 	ansiBrightMagenta color.Color
 	ansiBrightCyan    color.Color
 	ansiBrightWhite   color.Color
+
+	// light marks a theme for light terminals.
+	light bool
 }
 
 // Diff tint blend ratios: the fraction of the insert/delete foreground
@@ -173,6 +176,7 @@ func quickStyle(o quickStyleOpts) Styles {
 	)
 
 	s.Background = o.bgBase
+	s.IsDark = !o.light
 
 	// Populate color fields
 	s.WorkingGradFromColor = o.primary
@@ -723,10 +727,9 @@ func quickStyle(o quickStyleOpts) Styles {
 	// borders
 	s.ToolCallSuccess = lipgloss.NewStyle().Foreground(o.success).SetString(ToolSuccess)
 
-	s.Header.Charm = base.Foreground(o.secondary)
-	s.Header.Diagonals = base.Foreground(o.primary)
+	s.Header.Mark = base.Foreground(o.primary)
+	s.Header.Diagonals = base.Foreground(o.separator)
 	s.Header.Percentage = muted
-	s.Header.HypercreditIcon = base.Foreground(o.secondary)
 	s.Header.Keystroke = muted
 	s.Header.KeystrokeTip = subtle
 	s.Header.WorkingDir = muted
@@ -912,16 +915,12 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.Tab.InactiveStyle = uv.Style{Fg: o.fgMoreSubtle}
 
 	// Logo
-	s.Logo.FieldColor = o.primary
-	s.Logo.TitleColorA = o.secondary
-	s.Logo.TitleColorB = o.primary
-	s.Logo.CharmColor = o.secondary
-	s.Logo.VersionColor = o.primary
-	s.Logo.SmallCharm = lipgloss.NewStyle().Foreground(o.secondary)
-	s.Logo.SmallDiagonals = lipgloss.NewStyle().Foreground(o.primary)
+	s.Logo.TaglineColor = o.fgMoreSubtle
+	s.Logo.VersionColor = o.fgMostSubtle
+	s.Logo.SmallMark = lipgloss.NewStyle().Foreground(o.primary)
+	s.Logo.SmallName = lipgloss.NewStyle().Foreground(o.fgBase).Bold(true)
+	s.Logo.SmallDiagonals = lipgloss.NewStyle().Foreground(o.separator)
 	s.Logo.GradCanvas = lipgloss.NewStyle()
-	s.Logo.SmallGradFromColor = o.secondary
-	s.Logo.SmallGradToColor = o.primary
 
 	// Section
 	s.Section.Title = subtle
@@ -978,8 +977,6 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.ModelInfo.TokenPercentage = lipgloss.NewStyle().Foreground(o.fgMoreSubtle)
 	s.ModelInfo.EstimatedUsagePrefix = s.ModelInfo.TokenPercentage
 	s.ModelInfo.Cost = lipgloss.NewStyle().Foreground(o.fgMoreSubtle)
-	s.ModelInfo.HypercreditIcon = lipgloss.NewStyle().Foreground(o.secondary)
-	s.ModelInfo.HypercreditText = lipgloss.NewStyle().Foreground(o.fgMoreSubtle)
 
 	// ResourceGroup
 	s.Resource.DefaultTitleFg = o.fgMoreSubtle
@@ -1041,7 +1038,6 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.Messages.AssistantInfoModel = muted
 	s.Messages.AssistantInfoProvider = subtle
 	s.Messages.AssistantInfoDuration = subtle
-	s.Messages.SubduedHypercreditIcon = subtle
 	s.Messages.AssistantCanceled = lipgloss.NewStyle().Foreground(o.fgSubtle).Italic(true)
 
 	// Plan section styles. The plan card is a bordered box with no background

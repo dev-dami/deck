@@ -7,6 +7,9 @@ package notify
 type Type string
 
 const (
+	// TypeAgentStarted indicates an agent began working in the session
+	// without the user sending anything (another agent wrote to it).
+	TypeAgentStarted Type = "agent_started"
 	// TypeAgentFinished indicates the agent has completed its turn.
 	TypeAgentFinished Type = "agent_finished"
 	// TypeReAuthenticate indicates the agent encountered an

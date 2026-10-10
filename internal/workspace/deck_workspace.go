@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
 
+	"github.com/dev-dami/deck/internal/agent/notify"
 	"github.com/dev-dami/deck/internal/agent/tools"
 	"github.com/dev-dami/deck/internal/app"
 	"github.com/dev-dami/deck/internal/config"
@@ -22,10 +23,11 @@ import (
 	decks "github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/permission"
+	"github.com/dev-dami/deck/internal/pubsub"
 )
 
 // DeckWorkspace is the in-process workspace with Deck's engine in place of
-// Crush's own agent: every session is a Deck thread, its agents are the
+// Deck's own agent: every session is a Deck thread, its agents are the
 // user's installed claude, codex and opencode CLIs, and what they do is
 // written into the message store the UI draws from. Sessions, messages,
 // history, LSP, MCP and config still come from the embedded AppWorkspace.
@@ -34,8 +36,8 @@ type DeckWorkspace struct {
 	eng *engine.Engine
 
 	mu      sync.Mutex
-	threads map[string]string // Crush session id -> Deck thread id
-	back    map[string]string // Deck thread id -> Crush session id
+	threads map[string]string // Deck session id -> Deck thread id
+	back    map[string]string // Deck thread id -> Deck session id
 	path    string            // where the session/thread pairs are kept
 
 	// turns is the message each agent is writing, by Deck agent id. Only
@@ -45,6 +47,9 @@ type DeckWorkspace struct {
 	// agent withdraws them.
 	approvals map[string]context.CancelFunc
 	last      deckagent.Event // the most recent agent event, for AgentModel
+
+	prog *tea.Program   // where busy/idle edges are sent
+	busy map[string]bool // last busy state sent, by session
 }
 
 // turn is what is known about one agent's current reply.
@@ -67,6 +72,7 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 		back:         map[string]string{},
 		turns:        map[string]*turn{},
 		approvals:    map[string]context.CancelFunc{},
+		busy:         map[string]bool{},
 		path:         filepath.Join(store.Config().Options.DataDirectory, "deck-threads.json"),
 	}
 	if b, err := os.ReadFile(w.path); err == nil {
@@ -296,7 +302,36 @@ func (w *DeckWorkspace) InitCoderAgentNonInteractive(context.Context) error { re
 
 // Subscribe also tells the engine the program is there (nothing to do: the
 // pump writes to the stores, whose events the AppWorkspace forwards).
-func (w *DeckWorkspace) Subscribe(program *tea.Program) { w.AppWorkspace.Subscribe(program) }
+func (w *DeckWorkspace) Subscribe(program *tea.Program) {
+	w.mu.Lock()
+	w.prog = program
+	w.mu.Unlock()
+	w.AppWorkspace.Subscribe(program)
+}
+
+// edge tells the UI when a session goes from idle to busy or back, so its
+// busy indicator and "done" notification follow the agents.
+func (w *DeckWorkspace) edge(sid string, failed bool) {
+	now := w.AgentIsSessionBusy(sid)
+	w.mu.Lock()
+	was, prog := w.busy[sid], w.prog
+	w.busy[sid] = now
+	w.mu.Unlock()
+	if now == was || prog == nil {
+		return
+	}
+	n := notify.Notification{SessionID: sid, Type: notify.TypeAgentStarted}
+	if !now {
+		n.Type = notify.TypeAgentFinished
+		if failed {
+			n.Type = notify.TypeAgentError
+		}
+		if sess, err := w.app.Sessions.Get(context.Background(), sid); err == nil {
+			n.SessionTitle = sess.Title
+		}
+	}
+	go prog.Send(pubsub.Event[notify.Notification]{Type: pubsub.UpdatedEvent, Payload: n})
+}
 
 // pump turns the engine's events into messages in the store.
 func (w *DeckWorkspace) pump() {
@@ -399,7 +434,7 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		if t.msg.ReasoningContent().Thinking != "" {
 			t.msg.FinishThinking()
 		}
-		name, input := crushTool(ev.Tool)
+		name, input := deckTool(ev.Tool)
 		t.msg.AddToolCall(message.ToolCall{ID: ev.Tool.ID, Name: name, Input: input, Finished: true})
 		t.tools[ev.Tool.ID] = true
 		_ = w.app.Messages.Update(ctx, t.msg)
@@ -413,7 +448,7 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		}
 		if !t.tools[ev.Tool.ID] { // a result with no call seen: show the call too
 			open()
-			name, input := crushTool(ev.Tool)
+			name, input := deckTool(ev.Tool)
 			t.msg.AddToolCall(message.ToolCall{ID: ev.Tool.ID, Name: name, Input: input, Finished: true})
 			t.tools[ev.Tool.ID] = true
 			_ = w.app.Messages.Update(ctx, t.msg)
@@ -449,6 +484,7 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		w.addUsage(sid, t.usage)
 		delete(w.turns, ev.AgentID)
 	}
+	w.edge(sid, ev.Kind == deckagent.KindError)
 }
 
 // addUsage adds a finished turn's cost to the session and shows how full the
@@ -516,7 +552,7 @@ func (w *DeckWorkspace) notice(sid, text string) {
 	})
 }
 
-// onApproval asks the user through Crush's permission dialog and answers the
+// onApproval asks the user through Deck's permission dialog and answers the
 // agent with what they chose.
 func (w *DeckWorkspace) onApproval(m decks.ApprovalMsg) {
 	sid := w.sessionOf(m.ThreadID)
@@ -598,9 +634,9 @@ func sides(d deckagent.FileDiff) (before, after string) {
 	return o.String(), n.String()
 }
 
-// crushTool names a Deck tool call the way Crush's chat draws it, with the
+// deckTool names a Deck tool call the way Deck's chat draws it, with the
 // input its renderer reads.
-func crushTool(t *deckagent.Tool) (name, input string) {
+func deckTool(t *deckagent.Tool) (name, input string) {
 	var in map[string]any
 	_ = json.Unmarshal(t.Input, &in)
 	str := func(keys ...string) string {
@@ -649,9 +685,9 @@ func crushTool(t *deckagent.Tool) (name, input string) {
 	return t.Name, enc(map[string]string{"input": t.Title})
 }
 
-// result is a finished tool call as Crush's renderers read it.
+// result is a finished tool call as Deck's renderers read it.
 func (t *turn) result(tool *deckagent.Tool) message.ToolResult {
-	name, input := crushTool(tool)
+	name, input := deckTool(tool)
 	r := message.ToolResult{ToolCallID: tool.ID, Name: name, Content: tool.Output, IsError: tool.Status == deckagent.ToolError}
 	enc := func(v any) string {
 		b, _ := json.Marshal(v)
@@ -694,3 +730,7 @@ func firstLine(s string, n int) string {
 	}
 	return s
 }
+
+// LSPStart does nothing: Deck's agents run their own language tooling, so
+// Deck starts no language servers of its own.
+func (w *DeckWorkspace) LSPStart(context.Context, string) {}

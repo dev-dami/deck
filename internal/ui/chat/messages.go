@@ -14,6 +14,7 @@ import (
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/list"
 	"github.com/dev-dami/deck/internal/ui/styles"
+	"github.com/dev-dami/deck/internal/ui/tone"
 )
 
 // MessageLeftPaddingTotal is the total width that is taken up by the border +
@@ -368,70 +369,22 @@ func (a *AssistantInfoItem) renderContent(width int) string {
 	// separator line); intermediate turns render a compact header.
 	isFinalTurn := finishData.Reason == message.FinishReasonEndTurn
 
-	icon := a.sty.Messages.AssistantInfoIcon.Render(styles.ModelIcon)
-	mainModelName := "Unknown Model"
-	if model := a.cfg.GetModel(a.message.Provider, a.message.Model); model != nil {
-		mainModelName = model.Name
-	}
-	modelFormatted := a.sty.Messages.AssistantInfoModel.Render(mainModelName)
-	// A Prism-routed turn shows the model that actually served the
-	// request, with the arrow and any savings suffix subdued.
-	if a.message.PrismModelName != "" {
-		routedModel := a.sty.Messages.AssistantInfoModel.Render(a.message.PrismModelName)
-		arrow := a.sty.Messages.AssistantInfoProvider.Render("→")
-		modelFormatted = fmt.Sprintf("%s %s %s", modelFormatted, arrow, routedModel)
-	}
-	savings := prismSavingsSuffix(a.sty, a.message)
+	// The speaker: the agent's own mark and name in its tint, then the
+	// model it ran when that is known.
+	kind := a.message.Provider
+	tint := lipgloss.NewStyle().Foreground(tone.Tint(kind))
+	speaker := tint.Render(tone.Mark(kind)) + " " + tint.Bold(true).Render(a.message.Model)
 	if !isFinalTurn {
-		if savings != "" {
-			return fmt.Sprintf("%s %s %s", icon, modelFormatted, savings)
-		}
-		return fmt.Sprintf("%s %s", icon, modelFormatted)
+		return speaker
 	}
-	providerName := a.message.Provider
-	if providerConfig, ok := a.cfg.Providers.Get(a.message.Provider); ok {
-		providerName = providerConfig.Name
-	}
-	provider := a.sty.Messages.AssistantInfoProvider.Render(fmt.Sprintf("via %s", providerName))
-	duration := time.Unix(finishData.Time, 0).Sub(a.lastUserMessageTime)
-	infoMsg := a.sty.Messages.AssistantInfoDuration.Render(fmt.Sprintf("in %s", duration))
-	assistant := fmt.Sprintf("%s %s %s %s", icon, modelFormatted, provider, infoMsg)
-	if savings != "" {
-		assistant = fmt.Sprintf("%s %s", assistant, savings)
-	}
+	duration := time.Unix(finishData.Time, 0).Sub(a.lastUserMessageTime).Round(time.Second)
+	assistant := speaker + " " + a.sty.Messages.AssistantInfoDuration.Render(fmt.Sprintf("in %s", duration))
 	return common.Section(a.sty, assistant, width)
 }
 
 // cappedMessageWidth returns the maximum width for message content for readability.
 func cappedMessageWidth(availableWidth int) int {
 	return min(availableWidth-MessageLeftPaddingTotal, maxTextWidth)
-}
-
-// prismSavingsSuffix returns the styled Prism savings suffix for the
-// message, or an empty string when none was reported. The hypercredit
-// symbol carries the sidebar's hypercredit color; the rest is subdued
-// like the provider. Hypercredits are preferred over dollars when both
-// are present, matching Hyper's either/or credit model.
-func prismSavingsSuffix(sty *styles.Styles, msg *message.Message) string {
-	switch {
-	case msg.PrismHypercreditSavings != nil:
-		icon := sty.Messages.SubduedHypercreditIcon.Render(styles.HypercreditIcon)
-		rest := sty.Messages.AssistantInfoProvider.Render(fmt.Sprintf(" %s Saved", formatHypercreditSavings(*msg.PrismHypercreditSavings)))
-		return icon + rest
-	case msg.PrismDollarSavings != nil:
-		return sty.Messages.AssistantInfoProvider.Render(fmt.Sprintf("• $%.2f Saved", *msg.PrismDollarSavings))
-	default:
-		return ""
-	}
-}
-
-// formatHypercreditSavings rounds hypercredits to whole numbers at 1 and
-// above, keeping a single decimal below that.
-func formatHypercreditSavings(v float64) string {
-	if v >= 1 {
-		return fmt.Sprintf("%.0f", v)
-	}
-	return fmt.Sprintf("%.1f", v)
 }
 
 // ExtractMessageItems extracts [MessageItem]s from a [message.Message]. It

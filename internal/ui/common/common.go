@@ -23,11 +23,11 @@ const MaxAttachmentSize = int64(5 * 1024 * 1024)
 // PlanStartMarker is the sentinel the plan agent emits on its own line at the
 // very start of its final response, so the UI can tell the plan document
 // apart from the agent's intermediate exploratory replies while it streams.
-const PlanStartMarker = "<!-- CRUSH_PLAN_START -->"
+const PlanStartMarker = "<!-- DECK_PLAN_START -->"
 
 // PlanReadyMarker is the sentinel the plan agent emits on its own line at the
 // end of its final response to signal that the plan is ready for execution.
-const PlanReadyMarker = "<!-- CRUSH_PLAN_READY -->"
+const PlanReadyMarker = "<!-- DECK_PLAN_READY -->"
 
 // PlanStartMarkerPresent reports whether text contains the plan-start
 // sentinel on a line by itself. See [PlanReadyMarkerPresent] for why the
@@ -187,7 +187,7 @@ func ThemeNameFromConfig(cfg *config.Config) string {
 }
 
 // LoadThemeStyles resolves a theme name to Styles, falling back to
-// CharmtonePantera on error or empty name.
+// DeckDark on error or empty name.
 func LoadThemeStyles(name string) styles.Styles {
 	return styles.ThemeFromConfig(name)
 }
@@ -197,12 +197,6 @@ func LoadThemeStyles(name string) styles.Styles {
 // file.
 func ThemeStylesFromConfig(cfg *config.Config) styles.Styles {
 	return LoadThemeStyles(ThemeNameFromConfig(cfg))
-}
-
-// IsHyper reports whether the currently selected large model is provided
-// by Hyper.
-func (c *Common) IsHyper() bool {
-	return largeModelProviderID(c.Workspace) == "hyper"
 }
 
 // CenterRect returns a new [Rectangle] centered within the given area with the

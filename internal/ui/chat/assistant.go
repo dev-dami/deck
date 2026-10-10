@@ -15,6 +15,7 @@ import (
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/list"
 	"github.com/dev-dami/deck/internal/ui/styles"
+	"github.com/dev-dami/deck/internal/ui/tone"
 )
 
 // assistantMessageTruncateFormat is the text shown when an assistant message is
@@ -244,10 +245,19 @@ func NewAssistantMessageItem(sty *styles.Styles, message *message.Message) Messa
 		sty:                      sty,
 	}
 
+	// The spinner runs from the agent's own tint into the accent, and is
+	// labelled with the agent's mark and name.
+	gradA := sty.WorkingGradFromColor
+	label := ""
+	if message.Provider != "" && message.Provider != "deck" {
+		gradA = tone.Tint(message.Provider)
+		label = tone.Mark(message.Provider) + " " + message.Model
+	}
 	a.anim = anim.New(anim.Settings{
 		ID:          a.ID(),
 		Size:        15,
-		GradColorA:  sty.WorkingGradFromColor,
+		Label:       label,
+		GradColorA:  gradA,
 		GradColorB:  sty.WorkingGradToColor,
 		LabelColor:  sty.WorkingLabelColor,
 		CycleColors: true,
@@ -777,8 +787,14 @@ func (a *AssistantMessageItem) renderMarkdown(content string, width int) string 
 }
 
 func (a *AssistantMessageItem) renderSpinning() string {
+	who := ""
+	if a.message.Provider != "" && a.message.Provider != "deck" {
+		who = tone.Mark(a.message.Provider) + " " + a.message.Model + " · "
+	}
 	if a.message.IsThinking() {
-		a.anim.SetLabel("Thinking")
+		a.anim.SetLabel(who + "thinking")
+	} else if who != "" {
+		a.anim.SetLabel(strings.TrimSuffix(who, " · "))
 	} else if a.message.IsSummaryMessage {
 		a.anim.SetLabel("Summarizing")
 	}

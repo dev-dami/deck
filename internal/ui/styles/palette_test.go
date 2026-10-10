@@ -205,7 +205,7 @@ func TestLoadPaletteTheme_UnknownBase(t *testing.T) {
 
 func TestLoadPaletteTheme_InvalidPalette(t *testing.T) {
 	t.Parallel()
-	_, err := LoadPaletteTheme("charmtone-panther", Palette{Primary: "not-a-color"})
+	_, err := LoadPaletteTheme("deck", Palette{Primary: "not-a-color"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "primary")
 }
@@ -232,7 +232,7 @@ func TestLoadPaletteTheme_BgBaseOverrideDerivesDiffTints(t *testing.T) {
 	// base palette before user overrides merged, so overriding bg_base
 	// on a dark built-in theme kept the built-in theme's dark tints.
 	builtin := quickStyle(charmtoneOpts())
-	light, err := LoadPaletteTheme("charmtone-panther", Palette{BgBase: "#ffffff"})
+	light, err := LoadPaletteTheme("deck", Palette{BgBase: "#ffffff"})
 	require.NoError(t, err)
 
 	builtinInsert := colorToHex(builtin.Diff.InsertLine.Code.GetBackground())
@@ -259,7 +259,7 @@ func TestLoadPaletteTheme_SuccessOverrideDerivesDiffInsertFg(t *testing.T) {
 
 func TestMergePalette_BgBaseOverrideDerivesLightDiffTints(t *testing.T) {
 	t.Parallel()
-	p, err := MergePalette("charmtone-panther", Palette{BgBase: "#ffffff"})
+	p, err := MergePalette("deck", Palette{BgBase: "#ffffff"})
 	require.NoError(t, err)
 	require.Equal(t, "#ffffff", p.BgBase)
 	require.Greater(t, luminance(p.DiffInsertCodeBg), 180.0, "diff_insert_code_bg %s should be light on white bg", p.DiffInsertCodeBg)

@@ -96,7 +96,7 @@ func AuthorizeURL(redirectURI string, pkce PKCE, state string) string {
 		"id_token_add_organizations": {"true"},
 		"codex_cli_simplified_flow":  {"true"},
 		"state":                      {state},
-		"originator":                 {"crush"},
+		"originator":                 {"deck"},
 	}
 	return Issuer + "/oauth/authorize?" + vals.Encode()
 }

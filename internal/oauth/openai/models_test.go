@@ -14,7 +14,7 @@ func TestModels(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Bearer at-models", r.Header.Get("Authorization"))
 		require.Equal(t, "acct-9", r.Header.Get("chatgpt-account-id"))
-		require.Equal(t, "crush", r.Header.Get("originator"))
+		require.Equal(t, "deck", r.Header.Get("originator"))
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{

@@ -7,7 +7,7 @@ import (
 )
 
 func TestShellConfigOptionBooleans(t *testing.T) {
-	store := loadCrushSh(t, `option debug true
+	store := loadDeckSh(t, `option debug true
 option progress false
 option auto-lsp false`)
 
@@ -22,18 +22,18 @@ option auto-lsp false`)
 // Config phrases this field negatively (disable_metrics) but the command
 // exposes it positively. "metrics false" must land as disable_metrics = true.
 func TestShellConfigOptionPositiveMetricsFalse(t *testing.T) {
-	store := loadCrushSh(t, `option metrics false`)
+	store := loadDeckSh(t, `option metrics false`)
 	require.True(t, store.Config().Options.DisableMetrics, "metrics off => disable_metrics true")
 }
 
 // The bare positive form defaults to true, which inverts to disable = false.
 func TestShellConfigOptionPositiveMetricsBare(t *testing.T) {
-	store := loadCrushSh(t, `option metrics`)
+	store := loadDeckSh(t, `option metrics`)
 	require.False(t, store.Config().Options.DisableMetrics, "metrics on => disable_metrics false")
 }
 
 func TestShellConfigOptionUI(t *testing.T) {
-	store := loadCrushSh(t, `option ui compact true
+	store := loadDeckSh(t, `option ui compact true
 option ui diff split
 option ui transparent false
 option ui mouse false
@@ -57,13 +57,13 @@ option ui completions-max-items 200`)
 }
 
 func TestShellConfigOptionUIRejectsInvalidValue(t *testing.T) {
-	_, err := loadCrushShErr(t, `option ui diff side-by-side`)
+	_, err := loadDeckShErr(t, `option ui diff side-by-side`)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "expects unified or split")
 }
 
 func TestShellConfigOptionAttribution(t *testing.T) {
-	store := loadCrushSh(t, `option attribution-trailer-style none
+	store := loadDeckSh(t, `option attribution-trailer-style none
 option attribution-generated-with false`)
 
 	attribution := store.Config().Options.Attribution
@@ -73,7 +73,7 @@ option attribution-generated-with false`)
 }
 
 func TestShellConfigOptionAttributionTrailerStylePreservesGeneratedWithDefault(t *testing.T) {
-	store := loadCrushSh(t, `option attribution-trailer-style co-authored-by`)
+	store := loadDeckSh(t, `option attribution-trailer-style co-authored-by`)
 
 	attribution := store.Config().Options.Attribution
 	require.NotNil(t, attribution)
@@ -82,29 +82,29 @@ func TestShellConfigOptionAttributionTrailerStylePreservesGeneratedWithDefault(t
 }
 
 func TestShellConfigOptionAttributionGeneratedWithCaseInsensitive(t *testing.T) {
-	store := loadCrushSh(t, `option attribution-generated-with YES`)
+	store := loadDeckSh(t, `option attribution-generated-with YES`)
 
 	require.NotNil(t, store.Config().Options.Attribution)
 	require.True(t, store.Config().Options.Attribution.GeneratedWith)
 }
 
 func TestShellConfigOptionAttributionRejectsInvalidStyle(t *testing.T) {
-	_, err := loadCrushShErr(t, `option attribution-trailer-style bogus`)
+	_, err := loadDeckShErr(t, `option attribution-trailer-style bogus`)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "expects none, co-authored-by, or assisted-by")
 }
 
 func TestShellConfigOptionListAppends(t *testing.T) {
-	store := loadCrushSh(t, `option disable-skill crush-config
+	store := loadDeckSh(t, `option disable-skill deck-config
 option disable-skill jq`)
 
-	require.Subset(t, store.Config().Options.DisabledSkills, []string{"crush-config", "jq"})
+	require.Subset(t, store.Config().Options.DisabledSkills, []string{"deck-config", "jq"})
 }
 
 // reset wipes values added earlier (or via source) while keeping anything
 // added after it — observable in the effective config.
 func TestShellConfigOptionReset(t *testing.T) {
-	store := loadCrushSh(t, `option skill-path ./inherited-a
+	store := loadDeckSh(t, `option skill-path ./inherited-a
 option skill-path ./inherited-b
 option reset skill-path
 option skill-path ./mine`)
@@ -116,19 +116,19 @@ option skill-path ./mine`)
 }
 
 func TestShellConfigOptionUnknownKeyFails(t *testing.T) {
-	_, err := loadCrushShErr(t, `option bogus-key value`)
+	_, err := loadDeckShErr(t, `option bogus-key value`)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unknown key")
 }
 
 func TestShellConfigOptionDisableToolRemoved(t *testing.T) {
-	_, err := loadCrushShErr(t, `option disable-tool bash`)
+	_, err := loadDeckShErr(t, `option disable-tool bash`)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unknown key")
 }
 
 func TestShellConfigOptionResetRejectsNonList(t *testing.T) {
-	_, err := loadCrushShErr(t, `option reset debug`)
+	_, err := loadDeckShErr(t, `option reset debug`)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not one")
 }

@@ -8,11 +8,8 @@ import (
 	"path/filepath"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/catwalk/pkg/catwalk"
 	"github.com/dev-dami/deck/internal/commands"
-	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/message"
-	"github.com/dev-dami/deck/internal/oauth"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/skills"
@@ -35,14 +32,6 @@ type ActionOpenDialog struct {
 // ActionSelectSession is a message indicating a session has been selected.
 type ActionSelectSession struct {
 	Session session.Session
-}
-
-// ActionSelectModel is a message indicating a model has been selected.
-type ActionSelectModel struct {
-	Provider       catwalk.Provider
-	Model          config.SelectedModel
-	ModelType      config.SelectedModelType
-	ReAuthenticate bool
 }
 
 // Messages for commands
@@ -155,53 +144,6 @@ type (
 	ActionMCPAuthErrored struct {
 		Name  string
 		Error error
-	}
-)
-
-// Messages for API key input dialog.
-type (
-	ActionChangeAPIKeyState struct {
-		State APIKeyInputState
-	}
-)
-
-// Messages for OAuth2 device flow dialog.
-type (
-	// ActionInitiateOAuth is sent when the device auth is initiated
-	// successfully.
-	ActionInitiateOAuth struct {
-		DeviceCode      string
-		UserCode        string
-		ExpiresIn       int
-		VerificationURL string
-		Interval        int
-	}
-
-	// ActionCompleteOAuth is sent when the device flow completes successfully.
-	ActionCompleteOAuth struct {
-		Token *oauth.Token
-	}
-
-	// ActionOAuthErrored is sent when the device flow encounters an error.
-	ActionOAuthErrored struct {
-		Error error
-	}
-
-	// ActionCloseOAuth closes the OAuth dialog and runs the given cleanup
-	// command, cancelling any in-flight authorization. It exists so a
-	// dismissed dialog does not leave a poller or loopback listener
-	// running in the background.
-	ActionCloseOAuth struct {
-		Cmd tea.Cmd
-	}
-
-	// ActionSelectAuthMethod is sent when the user picks how to
-	// authenticate a provider that supports both OAuth and API keys.
-	ActionSelectAuthMethod struct {
-		Provider  catwalk.Provider
-		Model     config.SelectedModel
-		ModelType config.SelectedModelType
-		UseOAuth  bool
 	}
 )
 

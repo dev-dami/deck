@@ -3,6 +3,10 @@ package model
 import (
 	"fmt"
 	"strings"
+	"image"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
 
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -11,11 +15,14 @@ import (
 	"github.com/dev-dami/deck/internal/fsext"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/ui/common"
+	"github.com/dev-dami/deck/internal/ui/decklogo"
+	"github.com/dev-dami/deck/internal/ui/logo"
+	"github.com/dev-dami/deck/internal/version"
 	"github.com/dev-dami/deck/internal/ui/styles"
 )
 
 const (
-	headerDiag           = "╱"
+	headerDiag           = "─"
 	minHeaderDiags       = 3
 	leftPadding          = 1
 	rightPadding         = 1
@@ -27,6 +34,12 @@ type header struct {
 	logo        string
 	compactLogo string
 
+	// anim is the landing screen's living wordmark; ticking is true while
+	// a frame tick is on its way.
+	anim    *decklogo.Model
+	ticking bool
+	area    uv.Rectangle // where the wordmark was last drawn
+
 	com     *common.Common
 	width   int
 	compact bool
@@ -35,7 +48,8 @@ type header struct {
 // newHeader creates a new header model.
 func newHeader(com *common.Common) *header {
 	h := &header{
-		com: com,
+		com:  com,
+		anim: decklogo.New(com.Styles.IsDark),
 	}
 	h.refresh()
 	return h
@@ -45,17 +59,8 @@ func newHeader(com *common.Common) *header {
 // after the theme changes.
 func (h *header) refresh() {
 	t := h.com.Styles
-	isHyper := h.com.IsHyper()
-	charm := "Charm™"
-	if !isHyper {
-		charm = " " + charm
-	}
-	name := "CRUSH"
-	if isHyper {
-		name = "HYPERCRUSH"
-	}
-	h.compactLogo = t.Header.Charm.Render(charm) + " " +
-		styles.ApplyBoldForegroundGrad(t.Header.LogoGradCanvas, name, t.Header.LogoGradFromColor, t.Header.LogoGradToColor) + " "
+	h.compactLogo = " " + t.Header.Mark.Render("◆") + " " +
+		styles.ApplyBoldForegroundGrad(t.Header.LogoGradCanvas, "deck", t.Header.LogoGradFromColor, t.Header.LogoGradToColor) + " "
 	// Force drawHeader to re-render the wide logo on the next frame.
 	h.width = 0
 	h.logo = ""
@@ -72,19 +77,18 @@ func (h *header) drawHeader(
 	detailsOpen bool,
 	width int,
 	lspErrorCount int,
-	hyperCredits *int,
 	gitBranch string,
 ) {
 	t := h.com.Styles
 	if width != h.width || compact != h.compact {
-		h.logo = renderLogo(h.com.Styles, compact, h.com.IsHyper(), width)
+		h.logo = renderLogo(h.com.Styles, compact, width)
 	}
 
 	h.width = width
 	h.compact = compact
 
 	if !compact || session == nil {
-		uv.NewStyledString(h.logo).Draw(scr, area)
+		uv.NewStyledString(h.landingLogo(area)).Draw(scr, area)
 		return
 	}
 
@@ -102,7 +106,6 @@ func (h *header) drawHeader(
 		lspErrorCount,
 		detailsOpen,
 		availDetailWidth,
-		hyperCredits,
 		gitBranch,
 	)
 
@@ -135,7 +138,6 @@ func renderHeaderDetails(
 	lspErrorCount int,
 	detailsOpen bool,
 	availWidth int,
-	hyperCredits *int,
 	gitBranch string,
 ) string {
 	t := com.Styles
@@ -156,11 +158,6 @@ func renderHeaderDetails(
 		}
 		formattedPercentage := t.Header.Percentage.Render(percentageText)
 		parts = append(parts, formattedPercentage)
-	}
-
-	if com.IsHyper() && hyperCredits != nil {
-		hc := t.Header.HypercreditIcon.Render(styles.HypercreditIcon) + " " + t.Header.Percentage.Render(common.FormatCredits(*hyperCredits))
-		parts = append(parts, hc)
 	}
 
 	const keystroke = "ctrl+d"
@@ -192,4 +189,61 @@ func renderHeaderDetails(
 
 	result := cwd + metadata
 	return ansi.Truncate(result, max(0, availWidth), "…")
+}
+
+// logoFrame is the wordmark's frame rate while it moves.
+const logoFrame = time.Second / 30
+
+// logoTickMsg asks for the wordmark's next frame.
+type logoTickMsg time.Time
+
+func logoTick() tea.Cmd {
+	return tea.Tick(logoFrame, func(t time.Time) tea.Msg { return logoTickMsg(t) })
+}
+
+// landingLogo is the living wordmark with the tagline and version under it,
+// sized to area.
+func (h *header) landingLogo(area uv.Rectangle) string {
+	t := h.com.Styles
+	h.area = area
+	h.anim.SetDark(t.IsDark)
+	h.anim.SetSize(area.Dx(), max(1, area.Dy()-1))
+	meta := lipgloss.NewStyle().Foreground(t.Logo.TaglineColor).Render(logo.Tagline) + "  " +
+		lipgloss.NewStyle().Foreground(t.Logo.VersionColor).Render(version.Version)
+	return lipgloss.JoinVertical(lipgloss.Left, h.anim.View(), meta)
+}
+
+// startLogo plays the wordmark's intro.
+func (h *header) startLogo(now time.Time) tea.Cmd {
+	h.anim.Start(now)
+	return h.wakeLogo()
+}
+
+// wakeLogo makes sure frames are coming while the wordmark moves.
+func (h *header) wakeLogo() tea.Cmd {
+	if h.ticking {
+		return nil
+	}
+	h.ticking = true
+	return logoTick()
+}
+
+// logoFrameAt advances the wordmark; it asks for another frame while it
+// still moves.
+func (h *header) logoFrameAt(now time.Time) tea.Cmd {
+	if h.anim.Advance(now) {
+		return logoTick()
+	}
+	h.ticking = false
+	return nil
+}
+
+// logoMouse sends the pointer to the wordmark when it is over it: a move
+// ripples the surface, a click splashes it.
+func (h *header) logoMouse(x, y int, click bool, now time.Time) tea.Cmd {
+	if !image.Pt(x, y).In(h.area) {
+		return nil
+	}
+	h.anim.Mouse(x-h.area.Min.X, y-h.area.Min.Y, click, now)
+	return h.wakeLogo()
 }

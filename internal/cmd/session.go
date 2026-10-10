@@ -17,12 +17,11 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/exp/charmtone"
+	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/charmbracelet/x/term"
 	"github.com/dev-dami/deck/internal/agent/tools"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/db"
-	"github.com/dev-dami/deck/internal/event"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/ui/chat"
@@ -34,7 +33,7 @@ var sessionCmd = &cobra.Command{
 	Use:     "session",
 	Aliases: []string{"sessions", "s"},
 	Short:   "Manage sessions",
-	Long:    "Manage Crush sessions. Agents can use --json for machine-readable output.",
+	Long:    "Manage Deck sessions. Agents can use --json for machine-readable output.",
 }
 
 var (
@@ -120,9 +119,6 @@ func sessionSetup(cmd *cobra.Command) (context.Context, *sessionServices, func()
 	if dataDir == "" {
 		dataDir = cfg.Config().Options.DataDirectory
 	}
-	if shouldEnableMetrics(cfg.Config()) {
-		event.Init()
-	}
 
 	conn, err := db.Connect(ctx, dataDir)
 	if err != nil {
@@ -139,7 +135,6 @@ func sessionSetup(cmd *cobra.Command) (context.Context, *sessionServices, func()
 }
 
 func runSessionList(cmd *cobra.Command, _ []string) error {
-	event.SetNonInteractive(true)
 
 	ctx, svc, cleanup, err := sessionSetup(cmd)
 	if err != nil {
@@ -147,7 +142,6 @@ func runSessionList(cmd *cobra.Command, _ []string) error {
 	}
 	defer cleanup()
 
-	event.SessionListed(sessionListJSON)
 
 	list, err := svc.sessions.List(ctx)
 	if err != nil {
@@ -174,8 +168,8 @@ func runSessionList(cmd *cobra.Command, _ []string) error {
 	w, cleanup, usingPager := sessionWriter(ctx, len(list))
 	defer cleanup()
 
-	hashStyle := lipgloss.NewStyle().Foreground(charmtone.Malibu)
-	dateStyle := lipgloss.NewStyle().Foreground(charmtone.Damson)
+	hashStyle := lipgloss.NewStyle().Foreground(tone.Sky)
+	dateStyle := lipgloss.NewStyle().Foreground(tone.Dusk)
 
 	width := sessionOutputWidth
 	if tw, _, err := term.GetSize(os.Stdout.Fd()); err == nil && tw > 0 {
@@ -263,7 +257,6 @@ func resolveSessionID(ctx context.Context, svc session.Service, id string) (sess
 }
 
 func runSessionShow(cmd *cobra.Command, args []string) error {
-	event.SetNonInteractive(true)
 
 	ctx, svc, cleanup, err := sessionSetup(cmd)
 	if err != nil {
@@ -271,7 +264,6 @@ func runSessionShow(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	event.SessionShown(sessionShowJSON)
 
 	sess, err := resolveSessionID(ctx, svc.sessions, args[0])
 	if err != nil {
@@ -291,7 +283,6 @@ func runSessionShow(cmd *cobra.Command, args []string) error {
 }
 
 func runSessionDelete(cmd *cobra.Command, args []string) error {
-	event.SetNonInteractive(true)
 
 	ctx, svc, cleanup, err := sessionSetup(cmd)
 	if err != nil {
@@ -299,7 +290,6 @@ func runSessionDelete(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	event.SessionDeletedCommand(sessionDeleteJSON)
 
 	sess, err := resolveSessionID(ctx, svc.sessions, args[0])
 	if err != nil {
@@ -327,7 +317,6 @@ func runSessionDelete(cmd *cobra.Command, args []string) error {
 }
 
 func runSessionRename(cmd *cobra.Command, args []string) error {
-	event.SetNonInteractive(true)
 
 	ctx, svc, cleanup, err := sessionSetup(cmd)
 	if err != nil {
@@ -335,7 +324,6 @@ func runSessionRename(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	event.SessionRenamed(sessionRenameJSON)
 
 	sess, err := resolveSessionID(ctx, svc.sessions, args[0])
 	if err != nil {
@@ -364,7 +352,6 @@ func runSessionRename(cmd *cobra.Command, args []string) error {
 }
 
 func runSessionLast(cmd *cobra.Command, _ []string) error {
-	event.SetNonInteractive(true)
 
 	ctx, svc, cleanup, err := sessionSetup(cmd)
 	if err != nil {
@@ -372,7 +359,6 @@ func runSessionLast(cmd *cobra.Command, _ []string) error {
 	}
 	defer cleanup()
 
-	event.SessionLastShown(sessionLastJSON)
 
 	list, err := svc.sessions.List(ctx)
 	if err != nil {
@@ -454,8 +440,8 @@ func outputSessionHuman(ctx context.Context, cfg *config.ConfigStore, sess sessi
 	}
 	contentWidth := min(width, sessionMaxContentWidth)
 
-	keyStyle := lipgloss.NewStyle().Foreground(charmtone.Damson)
-	valStyle := lipgloss.NewStyle().Foreground(charmtone.Malibu)
+	keyStyle := lipgloss.NewStyle().Foreground(tone.Dusk)
+	valStyle := lipgloss.NewStyle().Foreground(tone.Sky)
 
 	hash := session.HashID(sess.ID)[:12]
 	created := time.Unix(sess.CreatedAt, 0).Format("Mon Jan 2 15:04:05 2006 -0700")
