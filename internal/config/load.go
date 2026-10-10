@@ -1,0 +1,1164 @@
+package config
+
+import (
+	"cmp"
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"maps"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+
+	"charm.land/catwalk/pkg/catwalk"
+	powernapConfig "github.com/charmbracelet/x/powernap/pkg/config"
+	"github.com/dev-dami/deck/internal/csync"
+	"github.com/dev-dami/deck/internal/env"
+	"github.com/dev-dami/deck/internal/filepathext"
+	"github.com/dev-dami/deck/internal/fsext"
+	"github.com/dev-dami/deck/internal/home"
+	"github.com/dev-dami/deck/internal/shellconfig"
+	"github.com/qjebbs/go-jsons"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+)
+
+const defaultCatwalkURL = "https://catwalk.charm.land"
+
+// Load loads the configuration from the default paths and returns a
+// ConfigStore that owns both the pure-data Config and all runtime state.
+func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
+	// Migrate deprecated disable_notifications before loading config.
+	migrateDisableNotifications()
+
+	configPaths := lookupConfigs(workingDir)
+
+	cfg, loadedPaths, err := loadFromConfigPaths(context.Background(), configPaths)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config from paths %v: %w", configPaths, err)
+	}
+
+	cfg.setDefaults(workingDir, dataDir)
+
+	store := &ConfigStore{
+		config:         cfg,
+		workingDir:     workingDir,
+		globalDataPath: GlobalConfigData(),
+		workspacePath:  filepath.Join(cfg.Options.DataDirectory, fmt.Sprintf("%s.json", appName)),
+		loadedPaths:    loadedPaths,
+	}
+
+	if debug {
+		cfg.Options.Debug = true
+	}
+
+	// Load workspace config last so it has highest priority.
+	if wsData, err := readFile(store.workspacePath); err == nil && len(wsData) > 0 {
+		if !json.Valid(wsData) {
+			return nil, fmt.Errorf("invalid JSON in config file %s", store.workspacePath)
+		}
+		merged, mergeErr := loadFromBytes(append([][]byte{mustMarshalConfig(cfg)}, wsData))
+		if mergeErr == nil {
+			// Preserve defaults that setDefaults already applied.
+			dataDir := cfg.Options.DataDirectory
+			*cfg = *merged
+			cfg.setDefaults(workingDir, dataDir)
+			store.config = cfg
+			store.loadedPaths = append(store.loadedPaths, store.workspacePath)
+		}
+	}
+
+	// Validate hooks after all config merging is complete so workspace
+	// hooks also get their matcher regexes compiled.
+	if err := cfg.ValidateHooks(); err != nil {
+		return nil, fmt.Errorf("invalid hook configuration: %w", err)
+	}
+
+	if !isInsideWorktree() {
+		const depth = 2
+		const items = 100
+		slog.Warn("No git repository detected in working directory, will limit file walk operations", "depth", depth, "items", items)
+		assignIfNil(&cfg.Tools.Ls.MaxDepth, depth)
+		assignIfNil(&cfg.Tools.Ls.MaxItems, items)
+		assignIfNil(&cfg.Options.TUI.Completions.MaxDepth, depth)
+		assignIfNil(&cfg.Options.TUI.Completions.MaxItems, items)
+	}
+
+	if isAppleTerminal() {
+		slog.Warn("Detected Apple Terminal, enabling transparent mode")
+		assignIfNil(&cfg.Options.TUI.Transparent, true)
+	}
+
+	// Load known providers, this loads the config from catwalk. A failed
+	// refresh still yields the cached or embedded catalog, so only an empty
+	// list is fatal: starting up without providers is worse than starting
+	// up with slightly stale ones. Pass a Hyper token refresher so the
+	// catalog fetch can retry on 401.
+	providers, err := Providers(cfg)
+	if err != nil {
+		if len(providers) == 0 {
+			return nil, err
+		}
+		slog.Warn("Continuing with the previously known providers", "error", err)
+	}
+	store.knownProviders = providers
+
+	// When Catwalk refreshed its catalog this run, give the model
+	// catalogs that shadow Catwalk's the same treatment: the ChatGPT and
+	// Grok catalogs are otherwise only fetched at login and would freeze
+	// there while Catwalk keeps moving. Best effort; a failed fetch keeps
+	// the catalog loaded from config.
+	//
+	// The refetches publish a copy-on-write config, so re-read it
+	// afterwards: the mutations below must land on the live config rather
+	// than a snapshot the store has already replaced.
+
+	env := env.New()
+	// Configure providers
+	valueResolver := NewShellVariableResolver(env)
+	store.resolver = valueResolver
+
+	// Hold writeMu during initial load to prevent configureProviders
+	// from triggering auto-reload via RemoveConfigField.
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+
+	// Apply top-level env vars before configuring providers so variables
+	// like AWS_PROFILE are visible to the AWS SDK credential chain.
+	cfg.applyEnv(valueResolver)
+
+	if err := cfg.configureProviders(context.Background(), store, env, valueResolver, store.knownProviders); err != nil {
+		return nil, fmt.Errorf("failed to configure providers: %w", err)
+	}
+
+	if !cfg.IsConfigured() {
+		slog.Warn("No providers configured")
+		return store, nil
+	}
+
+	resolved, err := resolveSelectedModels(cfg, store.knownProviders)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure selected models: %w", err)
+	}
+	cfg.Models[SelectedModelTypeLarge] = resolved.Large
+	cfg.Models[SelectedModelTypeSmall] = resolved.Small
+
+	// Persist any fallback corrections while we still hold writeMu.
+	if resolved.LargeFallback {
+		if err := store.updateLocked(ScopeGlobal, func(c *Config) map[string]any {
+			return store.updatePreferredModelFields(c, SelectedModelTypeLarge, resolved.Large)
+		}); err != nil {
+			return nil, fmt.Errorf("failed to update preferred large model: %w", err)
+		}
+	}
+	if resolved.SmallFallback {
+		if err := store.updateLocked(ScopeGlobal, func(c *Config) map[string]any {
+			return store.updatePreferredModelFields(c, SelectedModelTypeSmall, resolved.Small)
+		}); err != nil {
+			return nil, fmt.Errorf("failed to update preferred small model: %w", err)
+		}
+	}
+	store.SetupAgents()
+
+	// Capture initial staleness snapshot
+	// Capture initial staleness snapshot. Track every discovered config path,
+	// not just the ones that loaded, so a config file created after startup
+	// (e.g. a deckrc added mid-session) is detected as a change.
+	store.captureStalenessSnapshot(append(slices.Clone(configPaths), loadedPaths...))
+
+	return store, nil
+}
+
+// mustMarshalConfig marshals the config to JSON bytes, returning empty JSON on
+// error.
+func mustMarshalConfig(cfg *Config) []byte {
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return []byte("{}")
+	}
+	return data
+}
+
+func PushPopDeckEnv() func() {
+	var found []string
+	for _, ev := range os.Environ() {
+		if strings.HasPrefix(ev, "DECK_") {
+			pair := strings.SplitN(ev, "=", 2)
+			if len(pair) != 2 {
+				continue
+			}
+			found = append(found, strings.TrimPrefix(pair[0], "DECK_"))
+		}
+	}
+	backups := make(map[string]string)
+	for _, ev := range found {
+		backups[ev] = os.Getenv(ev)
+	}
+
+	for _, ev := range found {
+		os.Setenv(ev, os.Getenv("DECK_"+ev))
+	}
+
+	restore := func() {
+		for k, v := range backups {
+			os.Setenv(k, v)
+		}
+	}
+	return restore
+}
+
+func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env env.Env, resolver VariableResolver, knownProviders []catwalk.Provider) error {
+	// Deck's agents are the user's own CLIs, signed in on their own. Deck
+	// configures no model provider and reads no API key or token.
+	_, _, _, _ = ctx, store, env, resolver
+	_ = knownProviders
+	c.Providers = csync.NewMap[string, ProviderConfig]()
+	return nil
+}
+
+// applyEnv sets top-level env vars from the config. Keys are sorted for
+// deterministic ordering so that vars referencing other vars via the
+// value resolver produce consistent results.
+func (c *Config) applyEnv(resolver VariableResolver) {
+	keys := make([]string, 0, len(c.Env))
+	for k := range c.Env {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		resolved, err := resolver.ResolveValue(c.Env[k])
+		if err != nil {
+			slog.Warn("Skipping env var due to resolution failure.", "key", k, "value", c.Env[k], "error", err)
+			continue
+		}
+		os.Setenv(k, resolved)
+	}
+}
+
+// NormalizeOptions allocates Options and Options.TUI and fills in the option
+// defaults the UI relies on, so readers can dereference them without guarding.
+// Configs loaded from disk get this via setDefaults; configs arriving over the
+// wire from a Deck server need the same treatment before the UI reads them.
+//
+// DiffMode is deliberately left alone: the permissions dialog reads its zero
+// value as "choose split or unified from the terminal width".
+func (c *Config) NormalizeOptions() {
+	if c.Options == nil {
+		c.Options = &Options{}
+	}
+	if c.Options.TUI == nil {
+		c.Options.TUI = &TUIOptions{}
+	}
+	if c.Options.TUI.Scrollbar == "" {
+		c.Options.TUI.Scrollbar = ScrollbarDefault
+	}
+	if c.Options.TUI.ExitBanner == "" {
+		c.Options.TUI.ExitBanner = ExitBannerDefault
+	}
+}
+
+func (c *Config) setDefaults(workingDir, dataDir string) {
+	c.NormalizeOptions()
+	if len(c.Options.GlobalContextPaths) == 0 {
+		deckConfigDir := filepath.Dir(GlobalConfig())
+		c.Options.GlobalContextPaths = []string{
+			filepath.Join(deckConfigDir, "DECK.md"),
+			filepath.Join(filepath.Dir(deckConfigDir), "AGENTS.md"),
+		}
+	}
+	slices.Sort(c.Options.GlobalContextPaths)
+	c.Options.GlobalContextPaths = slices.Compact(c.Options.GlobalContextPaths)
+
+	if dataDir != "" {
+		c.Options.DataDirectory = dataDir
+	} else if c.Options.DataDirectory == "" {
+		if path, ok := fsext.LookupClosestBounded(workingDir, projectBoundary(workingDir), defaultDataDirectory); ok {
+			c.Options.DataDirectory = path
+		} else {
+			c.Options.DataDirectory = filepath.Join(workingDir, defaultDataDirectory)
+		}
+	}
+	c.Options.DataDirectory = filepath.Clean(filepathext.SmartJoin(workingDir, c.Options.DataDirectory))
+	if c.Providers == nil {
+		c.Providers = csync.NewMap[string, ProviderConfig]()
+	}
+	if c.Models == nil {
+		c.Models = make(map[SelectedModelType]SelectedModel)
+	}
+	if c.RecentModels == nil {
+		c.RecentModels = make(map[SelectedModelType][]SelectedModel)
+	}
+	if c.MCP == nil {
+		c.MCP = make(map[string]MCPConfig)
+	}
+	// Drop orphaned OAuth token entries left behind when a user removes
+	// an MCP from deck.json. See MCPConfig.isOrphanedToken.
+	for name, m := range c.MCP {
+		if m.isOrphanedToken() {
+			delete(c.MCP, name)
+		}
+	}
+	if c.LSP == nil {
+		c.LSP = make(map[string]LSPConfig)
+	}
+
+	// Apply defaults to LSP configurations
+	c.applyLSPDefaults()
+
+	// Add the default context paths if they are not already present
+	c.Options.ContextPaths = append(slices.Clone(defaultContextPaths), c.Options.ContextPaths...)
+
+	slices.Sort(c.Options.ContextPaths)
+	c.Options.ContextPaths = slices.Compact(c.Options.ContextPaths)
+
+	// Add the default skills directories if not already present.
+	for _, dir := range GlobalSkillsDirs() {
+		if !slices.Contains(c.Options.SkillsPaths, dir) {
+			c.Options.SkillsPaths = append(c.Options.SkillsPaths, dir)
+		}
+	}
+
+	// Project specific skills dirs.
+	c.Options.SkillsPaths = append(c.Options.SkillsPaths, ProjectSkillsDir(workingDir)...)
+
+	if str, ok := os.LookupEnv("DECK_DISABLE_PROVIDER_AUTO_UPDATE"); ok {
+		c.Options.DisableProviderAutoUpdate, _ = strconv.ParseBool(str)
+	}
+
+	if str, ok := os.LookupEnv("DECK_DISABLE_DEFAULT_PROVIDERS"); ok {
+		c.Options.DisableDefaultProviders, _ = strconv.ParseBool(str)
+	}
+
+	if c.Options.Attribution == nil {
+		c.Options.Attribution = &Attribution{
+			TrailerStyle:  TrailerStyleAssistedBy,
+			GeneratedWith: true,
+		}
+	} else if c.Options.Attribution.TrailerStyle == "" {
+		// Migrate deprecated co_authored_by or apply default
+		if c.Options.Attribution.CoAuthoredBy != nil {
+			if *c.Options.Attribution.CoAuthoredBy {
+				c.Options.Attribution.TrailerStyle = TrailerStyleCoAuthoredBy
+			} else {
+				c.Options.Attribution.TrailerStyle = TrailerStyleNone
+			}
+		} else {
+			c.Options.Attribution.TrailerStyle = TrailerStyleAssistedBy
+		}
+	}
+
+	c.Options.InitializeAs = cmp.Or(c.Options.InitializeAs, defaultInitializeAs)
+}
+
+// powernapDefaults caches the powernap default LSP server catalog. The
+// catalog is static and immutable for the life of the process, but
+// building it (NewManager + LoadDefaults) is expensive and was previously
+// repeated on every config reload. We load it once and only ever read from
+// it via GetServer, so a shared instance is safe.
+var (
+	powernapDefaultsOnce sync.Once
+	powernapDefaults     *powernapConfig.Manager
+)
+
+func lspDefaultsManager() *powernapConfig.Manager {
+	powernapDefaultsOnce.Do(func() {
+		m := powernapConfig.NewManager()
+		// LoadDefaults only fails on malformed embedded defaults, which
+		// would be a build-time bug; treat the manager as usable either
+		// way so a transient error never wedges config loading.
+		_ = m.LoadDefaults()
+		powernapDefaults = m
+	})
+	return powernapDefaults
+}
+
+// applyLSPDefaults applies default values from powernap to LSP configurations
+func (c *Config) applyLSPDefaults() {
+	// Reuse the process-wide default catalog; building it per reload was a
+	// significant chunk of reload latency.
+	configManager := lspDefaultsManager()
+
+	// Apply defaults to each LSP configuration
+	for name, cfg := range c.LSP {
+		// Try to get defaults from powernap based on name or command name.
+		base, ok := configManager.GetServer(name)
+		if !ok {
+			base, ok = configManager.GetServer(cfg.Command)
+			if !ok {
+				continue
+			}
+		}
+		if cfg.Options == nil {
+			cfg.Options = base.Settings
+		}
+		if cfg.InitOptions == nil {
+			cfg.InitOptions = base.InitOptions
+		}
+		if len(cfg.FileTypes) == 0 {
+			cfg.FileTypes = base.FileTypes
+		}
+		if len(cfg.RootMarkers) == 0 {
+			cfg.RootMarkers = base.RootMarkers
+		}
+		cfg.Command = cmp.Or(cfg.Command, base.Command)
+		if len(cfg.Args) == 0 {
+			cfg.Args = base.Args
+		}
+		if len(cfg.Env) == 0 {
+			cfg.Env = base.Environment
+		}
+		// Update the config in the map
+		c.LSP[name] = cfg
+	}
+}
+
+func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (largeModel SelectedModel, smallModel SelectedModel, err error) {
+	if len(knownProviders) == 0 && c.Providers.Len() == 0 {
+		err = fmt.Errorf("no providers configured, please configure at least one provider")
+		return largeModel, smallModel, err
+	}
+
+	// Use the first provider enabled based on the known providers order
+	// if no provider found that is known use the first provider configured
+	for _, p := range knownProviders {
+		providerConfig, ok := c.Providers.Get(string(p.ID))
+		if !ok || providerConfig.Disable {
+			continue
+		}
+		defaultLargeModel := c.GetModel(string(p.ID), p.DefaultLargeModelID)
+		if defaultLargeModel == nil {
+			slog.Warn("Default large model %s not found for provider %s", p.DefaultLargeModelID, p.ID)
+			if len(providerConfig.Models) == 0 {
+				return largeModel, smallModel, fmt.Errorf("default large model %s not found for provider %s", p.DefaultLargeModelID, p.ID)
+			}
+			defaultLargeModel = &providerConfig.Models[0]
+		}
+		largeModel = SelectedModel{
+			Provider:        string(p.ID),
+			Model:           defaultLargeModel.ID,
+			MaxTokens:       defaultLargeModel.DefaultMaxTokens,
+			ReasoningEffort: defaultLargeModel.DefaultReasoningEffort,
+		}
+
+		defaultSmallModel := c.GetModel(string(p.ID), p.DefaultSmallModelID)
+		if defaultSmallModel == nil {
+			slog.Warn("Default small model %s not found for provider %s", p.DefaultSmallModelID, p.ID)
+			if len(providerConfig.Models) == 0 {
+				return largeModel, smallModel, fmt.Errorf("default small model %s not found for provider %s", p.DefaultSmallModelID, p.ID)
+			}
+			defaultSmallModel = &providerConfig.Models[0]
+		}
+		smallModel = SelectedModel{
+			Provider:        string(p.ID),
+			Model:           defaultSmallModel.ID,
+			MaxTokens:       defaultSmallModel.DefaultMaxTokens,
+			ReasoningEffort: defaultSmallModel.DefaultReasoningEffort,
+		}
+		return largeModel, smallModel, err
+	}
+
+	enabledProviders := c.EnabledProviders()
+	slices.SortFunc(enabledProviders, func(a, b ProviderConfig) int {
+		return strings.Compare(a.ID, b.ID)
+	})
+
+	if len(enabledProviders) == 0 {
+		err = fmt.Errorf("no providers configured, please configure at least one provider")
+		return largeModel, smallModel, err
+	}
+
+	providerConfig := enabledProviders[0]
+	if len(providerConfig.Models) == 0 {
+		err = fmt.Errorf("provider %s has no models configured", providerConfig.ID)
+		return largeModel, smallModel, err
+	}
+	defaultLargeModel := c.GetModel(providerConfig.ID, providerConfig.Models[0].ID)
+	largeModel = SelectedModel{
+		Provider:  providerConfig.ID,
+		Model:     defaultLargeModel.ID,
+		MaxTokens: defaultLargeModel.DefaultMaxTokens,
+	}
+	defaultSmallModel := c.GetModel(providerConfig.ID, providerConfig.Models[0].ID)
+	smallModel = SelectedModel{
+		Provider:  providerConfig.ID,
+		Model:     defaultSmallModel.ID,
+		MaxTokens: defaultSmallModel.DefaultMaxTokens,
+	}
+	return largeModel, smallModel, err
+}
+
+// resolvedModels holds the result of resolving user-configured model
+// selections against the provider catalog.
+type resolvedModels struct {
+	Large         SelectedModel
+	Small         SelectedModel
+	LargeFallback bool // true if Large was corrected to a default
+	SmallFallback bool // true if Small was corrected to a default
+}
+
+// resolveSelectedModels validates the user's configured model selections
+// against the provider catalog, falling back to defaults when a model ID is
+// invalid. It is pure resolution logic: it does not mutate the store or
+// touch disk. The caller assigns the results to c.Models and persists any
+// fallback corrections as appropriate.
+func resolveSelectedModels(cfg *Config, knownProviders []catwalk.Provider) (resolvedModels, error) {
+	var result resolvedModels
+	defaultLarge, defaultSmall, err := cfg.defaultModelSelection(knownProviders)
+	if err != nil {
+		return result, fmt.Errorf("failed to select default models: %w", err)
+	}
+	large, small := defaultLarge, defaultSmall
+
+	largeModelSelected, largeModelConfigured := cfg.Models[SelectedModelTypeLarge]
+	if largeModelConfigured {
+		if largeModelSelected.Model != "" {
+			large.Model = largeModelSelected.Model
+		}
+		if largeModelSelected.Provider != "" {
+			large.Provider = largeModelSelected.Provider
+		}
+		model := cfg.GetModel(large.Provider, large.Model)
+		if model == nil {
+			large = defaultLarge
+			result.LargeFallback = true
+		} else {
+			if largeModelSelected.MaxTokens > 0 {
+				large.MaxTokens = largeModelSelected.MaxTokens
+			} else {
+				large.MaxTokens = model.DefaultMaxTokens
+			}
+			if largeModelSelected.ReasoningEffort != "" {
+				large.ReasoningEffort = largeModelSelected.ReasoningEffort
+			} else {
+				large.ReasoningEffort = model.DefaultReasoningEffort
+			}
+			large.Think = largeModelSelected.Think
+			if largeModelSelected.Temperature != nil {
+				large.Temperature = largeModelSelected.Temperature
+			}
+			if largeModelSelected.TopP != nil {
+				large.TopP = largeModelSelected.TopP
+			}
+			if largeModelSelected.TopK != nil {
+				large.TopK = largeModelSelected.TopK
+			}
+			if largeModelSelected.FrequencyPenalty != nil {
+				large.FrequencyPenalty = largeModelSelected.FrequencyPenalty
+			}
+			if largeModelSelected.PresencePenalty != nil {
+				large.PresencePenalty = largeModelSelected.PresencePenalty
+			}
+			if largeModelSelected.ProviderOptions != nil {
+				large.ProviderOptions = maps.Clone(largeModelSelected.ProviderOptions)
+			}
+		}
+	}
+	smallModelSelected, smallModelConfigured := cfg.Models[SelectedModelTypeSmall]
+	if smallModelConfigured {
+		if smallModelSelected.Model != "" {
+			small.Model = smallModelSelected.Model
+		}
+		if smallModelSelected.Provider != "" {
+			small.Provider = smallModelSelected.Provider
+		}
+
+		model := cfg.GetModel(small.Provider, small.Model)
+		if model == nil {
+			small = defaultSmall
+			result.SmallFallback = true
+		} else {
+			if smallModelSelected.MaxTokens > 0 {
+				small.MaxTokens = smallModelSelected.MaxTokens
+			} else {
+				small.MaxTokens = model.DefaultMaxTokens
+			}
+			if smallModelSelected.ReasoningEffort != "" {
+				small.ReasoningEffort = smallModelSelected.ReasoningEffort
+			} else {
+				small.ReasoningEffort = model.DefaultReasoningEffort
+			}
+			if smallModelSelected.Temperature != nil {
+				small.Temperature = smallModelSelected.Temperature
+			}
+			if smallModelSelected.TopP != nil {
+				small.TopP = smallModelSelected.TopP
+			}
+			if smallModelSelected.TopK != nil {
+				small.TopK = smallModelSelected.TopK
+			}
+			if smallModelSelected.FrequencyPenalty != nil {
+				small.FrequencyPenalty = smallModelSelected.FrequencyPenalty
+			}
+			if smallModelSelected.PresencePenalty != nil {
+				small.PresencePenalty = smallModelSelected.PresencePenalty
+			}
+			if smallModelSelected.ProviderOptions != nil {
+				small.ProviderOptions = maps.Clone(smallModelSelected.ProviderOptions)
+			}
+			small.Think = smallModelSelected.Think
+		}
+	}
+
+	// When small isn't explicitly configured and the provider isn't a
+	// known built-in, use the large model as the small model. This
+	// prevents two different models from being requested concurrently
+	// for local/openai-compat providers.
+	if !smallModelConfigured {
+		isKnownProvider := false
+		for _, kp := range knownProviders {
+			if string(kp.ID) == small.Provider {
+				isKnownProvider = true
+				break
+			}
+		}
+		if !isKnownProvider {
+			slog.Warn("Using large model as small model for unknown provider", "provider", large.Provider, "model", large.Model)
+			small = large
+		}
+	}
+
+	result.Large = large
+	result.Small = small
+	return result, nil
+}
+
+// lookupConfigs searches config files starting at cwd and walking up
+// through the current project. The upward walk stops at the git
+// working tree root when one can be detected, otherwise at cwd itself,
+// so an unrelated deck.json placed above the project is never picked
+// up. Global user-level config locations are always included
+// regardless of the boundary.
+func lookupConfigs(cwd string) []string {
+	// Prepend global user config and machine-owned data JSON. Only the user
+	// config directory contributes a deckrc; the data directory is writable
+	// machine state and must never be executed as Bash. Missing files are
+	// skipped when loaded.
+	configPaths := []string{
+		systemConfigPath,
+		GlobalConfig(),
+		shellConfigSibling(GlobalConfig()),
+		GlobalConfigData(),
+	}
+
+	// Ordered high-to-low priority within a directory. LookupBounded returns
+	// matches in this order, and the later reverse + merge make the earliest
+	// listed name win on conflict. So: .deckrc beats deckrc, both beat the
+	// JSON configs, and .deck.json beats deck.json.
+	configNames := []string{
+		"." + appName + "rc",
+		appName + "rc",
+		"." + appName + ".json",
+		appName + ".json",
+	}
+
+	foundConfigs, err := fsext.LookupBounded(cwd, projectBoundary(cwd), configNames...)
+	if err != nil {
+		// returns at least default configs
+		return configPaths
+	}
+
+	// reverse order so last config has more priority
+	slices.Reverse(foundConfigs)
+
+	return append(configPaths, foundConfigs...)
+}
+
+func loadFromConfigPaths(ctx context.Context, configPaths []string) (*Config, []string, error) {
+	var configs [][]byte
+	var loaded []string
+
+	// Track directories that have both deck.json and deckrc to warn
+	// about potential confusion, along with the top-level keys each
+	// defines so we can report conflicts.
+	jsonDirKeys := make(map[string]map[string]bool)
+	shDirKeys := make(map[string]map[string]bool)
+
+	for _, path := range configPaths {
+		if path == "" {
+			continue
+		}
+		data, err := readFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, nil, fmt.Errorf("failed to open config file %s: %w", path, err)
+		}
+		if len(data) == 0 {
+			continue
+		}
+
+		dir := filepath.Dir(path)
+		if isShellConfig(path) {
+			jsonBytes, err := shellconfig.LoadShellConfig(ctx, path, data)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to load shell config %s: %w", path, err)
+			}
+			if len(jsonBytes) > 0 {
+				if !json.Valid(jsonBytes) {
+					return nil, nil, fmt.Errorf("shell config %s produced invalid JSON", path)
+				}
+				addTopLevelKeys(shDirKeys, dir, jsonBytes)
+				configs = append(configs, jsonBytes)
+				loaded = append(loaded, path)
+			}
+		} else {
+			if !json.Valid(data) {
+				return nil, nil, fmt.Errorf("invalid JSON in config file %s", path)
+			}
+			addTopLevelKeys(jsonDirKeys, dir, data)
+			configs = append(configs, data)
+			loaded = append(loaded, path)
+		}
+	}
+
+	// Warn if both a JSON config and a deckrc exist in the same directory
+	// and define overlapping top-level keys. Disjoint coexistence is
+	// intentional and not worth warning about.
+	for dir, jKeys := range jsonDirKeys {
+		sKeys, ok := shDirKeys[dir]
+		if !ok {
+			continue
+		}
+		var conflicts []string
+		for k := range jKeys {
+			if sKeys[k] {
+				conflicts = append(conflicts, k)
+			}
+		}
+		if len(conflicts) > 0 {
+			slices.Sort(conflicts)
+			slog.Warn("Found both a JSON config and a deckrc in the same directory; merging with deckrc taking precedence",
+				"dir", dir, "conflicting_keys", strings.Join(conflicts, ", "))
+		}
+	}
+
+	cfg, err := loadFromBytes(configs)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, loaded, nil
+}
+
+// addTopLevelKeys records the top-level JSON keys present in data into the
+// set for dir.
+func addTopLevelKeys(m map[string]map[string]bool, dir string, data []byte) {
+	keys := m[dir]
+	if keys == nil {
+		keys = make(map[string]bool)
+		m[dir] = keys
+	}
+	gjson.ParseBytes(data).ForEach(func(key, _ gjson.Result) bool {
+		keys[key.String()] = true
+		return true
+	})
+}
+
+func loadFromBytes(configs [][]byte) (*Config, error) {
+	if len(configs) == 0 {
+		return &Config{}, nil
+	}
+
+	data, err := jsons.Merge(configs)
+	if err != nil {
+		return nil, err
+	}
+	var config Config
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+func hasAWSCredentials(env env.Env) bool {
+	if env.Get("AWS_BEARER_TOKEN_BEDROCK") != "" {
+		return true
+	}
+
+	if env.Get("AWS_ACCESS_KEY_ID") != "" && env.Get("AWS_SECRET_ACCESS_KEY") != "" {
+		return true
+	}
+
+	if env.Get("AWS_PROFILE") != "" || env.Get("AWS_DEFAULT_PROFILE") != "" {
+		return true
+	}
+
+	if env.Get("AWS_REGION") != "" || env.Get("AWS_DEFAULT_REGION") != "" {
+		return true
+	}
+
+	if env.Get("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") != "" ||
+		env.Get("AWS_CONTAINER_CREDENTIALS_FULL_URI") != "" {
+		return true
+	}
+
+	// File-based credential discovery requires filesystem stats, so do it
+	// last and skip it under test. Checking testing.Testing() before the
+	// os.Stat call (rather than after, in the && tail) ensures the syscall
+	// is never issued during tests, where it otherwise ran unconditionally
+	// and only had its result discarded.
+	if testing.Testing() {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(home.Dir(), ".aws/credentials")); err == nil {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(home.Dir(), ".aws/login")); err == nil {
+		return true
+	}
+
+	return false
+}
+
+// migrateDisableNotifications migrates the deprecated disable_notifications
+// and notification_style fields to the unified notifications field. It checks
+// both the user config (~/.config) and data config (~/.local) files. If
+// disable_notifications is true, it sets notifications to "disabled" in the
+// data file. If notification_style is set, it moves the value to notifications.
+// Regardless of value, it removes the deprecated fields from any file that
+// contains them.
+func migrateDisableNotifications() {
+	globalConfig := GlobalConfig()
+	dataConfig := GlobalConfigData()
+
+	var wasDisabled bool
+	var styleValue string
+	filesToClean := []string{}
+
+	for _, path := range []string{globalConfig, dataConfig} {
+		data, err := readFile(path)
+		if err != nil {
+			continue
+		}
+		needsClean := false
+		if gjson.Get(string(data), "options.disable_notifications").Exists() {
+			needsClean = true
+			if gjson.Get(string(data), "options.disable_notifications").Bool() {
+				wasDisabled = true
+			}
+		}
+		if v := gjson.Get(string(data), "options.notification_style"); v.Exists() {
+			needsClean = true
+			if styleValue == "" {
+				styleValue = v.String()
+			}
+		}
+		if needsClean {
+			filesToClean = append(filesToClean, path)
+		}
+	}
+
+	if len(filesToClean) == 0 {
+		return
+	}
+
+	// Determine the value to persist: notification_style takes precedence,
+	// then disable_notifications: true maps to "disabled".
+	migratedValue := styleValue
+	if migratedValue == "" && wasDisabled {
+		migratedValue = "disabled"
+	}
+
+	if migratedValue != "" {
+		data, err := readFile(dataConfig)
+		if err == nil {
+			if !gjson.Get(string(data), "options.notifications").Exists() {
+				updated, err := sjson.Set(string(data), "options.notifications", migratedValue)
+				if err == nil {
+					if err := atomicWriteFile(dataConfig, []byte(updated), 0o600); err != nil {
+						slog.Warn("Failed to migrate to notifications field", "error", err)
+					} else {
+						slog.Info("Migrated notification settings to notifications field", "value", migratedValue)
+					}
+				}
+			}
+		}
+	}
+
+	// Remove deprecated fields from all files that contain them.
+	for _, path := range filesToClean {
+		data, err := readFile(path)
+		if err != nil {
+			continue
+		}
+		updated := string(data)
+		updated, _ = sjson.Delete(updated, "options.disable_notifications")
+		updated, _ = sjson.Delete(updated, "options.notification_style")
+		if updated == string(data) {
+			continue
+		}
+		if err := atomicWriteFile(path, []byte(updated), 0o600); err != nil {
+			slog.Warn("Failed to write migrated config", "path", path, "error", err)
+		}
+	}
+}
+
+// GlobalConfig returns the global configuration file path for the application.
+func GlobalConfig() string {
+	if deckGlobal := os.Getenv("DECK_GLOBAL_CONFIG"); deckGlobal != "" {
+		return filepath.Join(deckGlobal, fmt.Sprintf("%s.json", appName))
+	}
+	return filepath.Join(home.Config(), appName, fmt.Sprintf("%s.json", appName))
+}
+
+// shellConfigSibling returns the deckrc path that sits alongside a given
+// deck.json path (same directory). Used so global config locations pick up a
+// shell config, not just JSON.
+func shellConfigSibling(jsonPath string) string {
+	return filepath.Join(filepath.Dir(jsonPath), appName+"rc")
+}
+
+// isShellConfig reports whether a config path is a shell config (deckrc or
+// the hidden .deckrc), as opposed to a JSON config.
+func isShellConfig(path string) bool {
+	base := filepath.Base(path)
+	return base == appName+"rc" || base == "."+appName+"rc"
+}
+
+// GlobalCacheDir returns the path to the global cache directory for the
+// application.
+func GlobalCacheDir() string {
+	if deckCache := os.Getenv("DECK_CACHE_DIR"); deckCache != "" {
+		return deckCache
+	}
+	if xdgCacheHome := os.Getenv("XDG_CACHE_HOME"); xdgCacheHome != "" {
+		return filepath.Join(xdgCacheHome, appName)
+	}
+	if runtime.GOOS == "windows" {
+		localAppData := cmp.Or(
+			os.Getenv("LOCALAPPDATA"),
+			filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local"),
+		)
+		return filepath.Join(localAppData, appName, "cache")
+	}
+	return filepath.Join(home.Dir(), ".cache", appName)
+}
+
+// ProjectConfigs returns list of current project configs paths.
+func ProjectConfigs(cwd string) []string {
+	return lookupConfigs(cwd)
+}
+
+// GlobalConfigData returns the path to the main data directory for the application.
+// this config is used when the app overrides configurations instead of updating the global config.
+func GlobalConfigData() string {
+	if deckData := os.Getenv("DECK_GLOBAL_DATA"); deckData != "" {
+		return filepath.Join(deckData, fmt.Sprintf("%s.json", appName))
+	}
+	if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
+		return filepath.Join(xdgDataHome, appName, fmt.Sprintf("%s.json", appName))
+	}
+
+	// return the path to the main data directory
+	// for windows, it should be in `%LOCALAPPDATA%/deck/`
+	// for linux and macOS, it should be in `$HOME/.local/share/deck/`
+	if runtime.GOOS == "windows" {
+		localAppData := cmp.Or(
+			os.Getenv("LOCALAPPDATA"),
+			filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local"),
+		)
+		return filepath.Join(localAppData, appName, fmt.Sprintf("%s.json", appName))
+	}
+
+	return filepath.Join(home.Dir(), ".local", "share", appName, fmt.Sprintf("%s.json", appName))
+}
+
+// GlobalWorkspaceDir returns the path to the global server workspace
+// directory. This directory acts as a meta-workspace for the server
+// process, giving it a real workingDir so that config loading, scoped
+// writes, and provider resolution behave identically to project
+// workspaces.
+func GlobalWorkspaceDir() string {
+	return filepath.Dir(GlobalConfigData())
+}
+
+func assignIfNil[T any](ptr **T, val T) {
+	if *ptr == nil {
+		*ptr = &val
+	}
+}
+
+func isInsideWorktree() bool {
+	bts, err := exec.CommandContext(
+		context.Background(),
+		"git", "rev-parse",
+		"--is-inside-work-tree",
+	).CombinedOutput()
+	return err == nil && strings.TrimSpace(string(bts)) == "true"
+}
+
+// worktreeRoot returns the absolute path of the git working tree root for
+// dir, or the empty string if dir is not inside a working tree (bare
+// repositories, missing git binary, plain directories, or any other
+// failure mode). Linked worktrees and submodules each report their own
+// top-level, which is what callers want when bounding lookups.
+// worktreeRootCache memoizes the git worktree root per directory. The root
+// is stable for the life of the process, so we avoid re-shelling out to
+// "git rev-parse" on every config reload. Keyed by the requested dir; the
+// value is the resolved root ("" when dir is not in a git worktree).
+var worktreeRootCache sync.Map // map[string]string
+
+func worktreeRoot(dir string) string {
+	if cached, ok := worktreeRootCache.Load(dir); ok {
+		return cached.(string)
+	}
+	root := computeWorktreeRoot(dir)
+	worktreeRootCache.Store(dir, root)
+	return root
+}
+
+func computeWorktreeRoot(dir string) string {
+	cmd := exec.CommandContext(
+		context.Background(),
+		"git", "rev-parse", "--show-toplevel",
+	)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	root := strings.TrimSpace(string(out))
+	if root == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return ""
+	}
+	return abs
+}
+
+// projectBoundary returns the directory at which an upward configuration
+// search rooted at dir should stop. It is the git working tree root when
+// one can be detected, otherwise dir itself. Returning dir as a
+// fallback keeps Deck from silently adopting state files placed above
+// the current project.
+func projectBoundary(dir string) string {
+	if root := worktreeRoot(dir); root != "" {
+		return root
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return dir
+	}
+	return abs
+}
+
+// GlobalSkillsDirs returns the default directories for Agent Skills.
+// Skills in these directories are auto-discovered and their files can be read
+// without permission prompts.
+func GlobalSkillsDirs() []string {
+	if deckSkills := os.Getenv("DECK_SKILLS_DIR"); deckSkills != "" {
+		return []string{deckSkills}
+	}
+
+	paths := []string{
+		filepath.Join(home.Config(), appName, "skills"),
+		filepath.Join(home.Config(), "agents", "skills"),
+		// Per the Agent Skills spec, scan ~/.agents/skills
+		filepath.Join(home.Dir(), ".agents", "skills"),
+		filepath.Join(home.Dir(), ".claude", "skills"),
+	}
+
+	// On Windows, also load from app data on top of `$HOME/.config/deck`.
+	// This is here mostly for backwards compatibility.
+	if runtime.GOOS == "windows" {
+		appData := cmp.Or(
+			os.Getenv("LOCALAPPDATA"),
+			filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local"),
+		)
+		paths = append(
+			paths,
+			filepath.Join(appData, appName, "skills"),
+			filepath.Join(appData, "agents", "skills"),
+		)
+	}
+
+	return paths
+}
+
+// projectSkillSubdirs lists the conventional subdirectories where
+// project-level skills are discovered. Shared across working-dir and
+// git-root lookups to prevent drift when a new convention is added.
+var projectSkillSubdirs = []string{
+	".agents/skills",
+	".deck/skills",
+	".claude/skills",
+	".cursor/skills",
+}
+
+// ProjectSkillsDir returns the default project directories for which Deck
+// will look for skills. In addition to the working directory, it also
+// checks the git working tree root so that monorepo-level skills are
+// discovered when the user is inside a subdirectory.
+// Working-directory paths come first so local skills take precedence
+// over monorepo-level ones.
+func ProjectSkillsDir(workingDir string) []string {
+	dirs := make([]string, 0, len(projectSkillSubdirs)*2)
+	for _, sub := range projectSkillSubdirs {
+		dirs = append(dirs, filepath.Join(workingDir, sub))
+	}
+
+	// When the working directory is inside a git repository, also look at
+	// the repository root so monorepo-level .agents/skills are found.
+	if root := worktreeRoot(workingDir); root != "" && root != workingDir {
+		for _, sub := range projectSkillSubdirs {
+			dirs = append(dirs, filepath.Join(root, sub))
+		}
+	}
+
+	return dirs
+}
+
+func isAppleTerminal() bool { return os.Getenv("TERM_PROGRAM") == "Apple_Terminal" }
+
+// normalizeHookEvent maps user-provided event names to their canonical
+// form. Matching is case-insensitive and accepts snake_case variants
+// (e.g. "pre_tool_use" → "PreToolUse").
+func normalizeHookEvent(name string) string {
+	switch strings.ToLower(strings.ReplaceAll(name, "_", "")) {
+	case "pretooluse":
+		return "PreToolUse"
+	default:
+		return name
+	}
+}
+
+// ValidateHooks normalizes event names and checks that every configured
+// hook has a command and a syntactically valid matcher regex. Matcher
+// compilation used for matching is owned by hooks.Runner; this function
+// only validates up front so the user sees config errors at load time
+// rather than on the first tool call.
+func (c *Config) ValidateHooks() error {
+	// Normalize event name keys.
+	for event, eventHooks := range c.Hooks {
+		canonical := normalizeHookEvent(event)
+		if canonical != event {
+			c.Hooks[canonical] = append(c.Hooks[canonical], eventHooks...)
+			delete(c.Hooks, event)
+		}
+	}
+
+	for event, eventHooks := range c.Hooks {
+		for i, h := range eventHooks {
+			if h.Command == "" {
+				return fmt.Errorf("hook %s[%d]: command is required", event, i)
+			}
+			if h.Matcher == "" {
+				continue
+			}
+			if _, err := regexp.Compile(h.Matcher); err != nil {
+				return fmt.Errorf("hook %s[%d]: invalid matcher regex %q: %w", event, i, h.Matcher, err)
+			}
+		}
+	}
+	return nil
+}
