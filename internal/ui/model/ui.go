@@ -33,7 +33,6 @@ import (
 	xstrings "github.com/charmbracelet/x/exp/strings"
 	"github.com/dev-dami/deck/internal/notify"
 
-	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/app"
 	"github.com/dev-dami/deck/internal/clipboard"
 	"github.com/dev-dami/deck/internal/commands"
@@ -42,6 +41,7 @@ import (
 	"github.com/dev-dami/deck/internal/history"
 	"github.com/dev-dami/deck/internal/home"
 	"github.com/dev-dami/deck/internal/lsp"
+	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/pubsub"
@@ -58,6 +58,7 @@ import (
 	"github.com/dev-dami/deck/internal/ui/notification"
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/ui/util"
+	"github.com/dev-dami/deck/internal/ui/yolo"
 	"github.com/dev-dami/deck/internal/version"
 	"github.com/dev-dami/deck/internal/workspace"
 )
@@ -275,6 +276,11 @@ type UI struct {
 	bangCancel context.CancelFunc
 
 	header *header
+
+	// yoloFX is the shockwave that plays when yolo is switched on;
+	// yoloTicking is true while its frame tick is on its way.
+	yoloFX      *yolo.Anim
+	yoloTicking bool
 
 	// sendProgressBar instructs the TUI to send progress bar updates to the
 	// terminal.
@@ -512,6 +518,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		textarea:            ta,
 		chat:                ch,
 		header:              header,
+		yoloFX:              yolo.New(com.Styles.IsDark),
 		completions:         comp,
 		attachments:         attachments,
 		todoSpinner:         todoSpinner,
@@ -799,8 +806,32 @@ func (m *UI) loadMCPrompts() tea.Msg {
 	return mcpPromptsLoadedMsg{Prompts: prompts}
 }
 
-// Update handles updates to the UI model.
+// Update handles updates to the UI model, and keeps the yolo shockwave's
+// frames coming while it plays.
 func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if t, ok := msg.(yoloTickMsg); ok {
+		if m.yoloFX.Advance(time.Time(t)) {
+			return m, yoloTick()
+		}
+		m.yoloTicking = false
+		return m, nil
+	}
+	model, cmd := m.update(msg)
+	if !m.yoloTicking && m.yoloFX.Advance(time.Now()) {
+		m.yoloTicking = true
+		cmd = tea.Batch(cmd, yoloTick())
+	}
+	return model, cmd
+}
+
+// yoloTickMsg asks for the yolo shockwave's next frame.
+type yoloTickMsg time.Time
+
+func yoloTick() tea.Cmd {
+	return tea.Tick(time.Second/30, func(t time.Time) tea.Msg { return yoloTickMsg(t) })
+}
+
+func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	m.beginFrameUpdate()
 	// Update terminal capabilities
@@ -3374,7 +3405,8 @@ func (m *UI) View() tea.View {
 	v.WindowTitle = "deck " + home.Short(m.com.Workspace.WorkingDir())
 
 	key, cacheable := m.currentFrameKey()
-	if cacheable {
+	fx := !m.yoloFX.Done(time.Now())
+	if cacheable && !fx {
 		if content, cursor, ok := m.frames.get(key); ok {
 			v.Content = content
 			v.Cursor = cursor
@@ -3395,6 +3427,12 @@ func (m *UI) View() tea.View {
 	}
 
 	content = strings.Join(contentLines, "\n")
+	if fx {
+		v.Content = m.yoloFX.Apply(content, m.width, time.Now())
+		m.applyProgressBar(&v)
+		v.ProgramStatus = m.programStatus()
+		return v
+	}
 
 	v.Content = content
 	if cacheable {

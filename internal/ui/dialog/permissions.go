@@ -11,10 +11,10 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
-	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/fsext"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/stringext"
+	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/styles"
 )

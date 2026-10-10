@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/proto"
+	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/stretchr/testify/require"
 )
 

@@ -3,8 +3,8 @@ package herdr
 import (
 	"testing"
 
-	"github.com/dev-dami/deck/internal/notify"
 	"github.com/dev-dami/deck/internal/message"
+	"github.com/dev-dami/deck/internal/notify"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/proto"
 	"github.com/dev-dami/deck/internal/pubsub"

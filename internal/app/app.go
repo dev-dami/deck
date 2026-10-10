@@ -10,8 +10,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dev-dami/deck/internal/notify"
-	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/clipboard"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/db"
@@ -20,7 +18,9 @@ import (
 	"github.com/dev-dami/deck/internal/history"
 	"github.com/dev-dami/deck/internal/log"
 	"github.com/dev-dami/deck/internal/lsp"
+	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/message"
+	"github.com/dev-dami/deck/internal/notify"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/pubsub"
 	"github.com/dev-dami/deck/internal/question"

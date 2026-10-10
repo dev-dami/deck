@@ -11,11 +11,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
-	mcptools "github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/commands"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/history"
 	"github.com/dev-dami/deck/internal/lsp"
+	mcptools "github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/proto"

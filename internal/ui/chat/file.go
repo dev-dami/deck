@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/fsext"
 	"github.com/dev-dami/deck/internal/message"
+	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/ui/styles"
 )
 

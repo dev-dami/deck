@@ -14,16 +14,16 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
 
-	"github.com/dev-dami/deck/internal/notify"
-	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/app"
 	"github.com/dev-dami/deck/internal/config"
 	deckagent "github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/engine"
 	decks "github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/message"
+	"github.com/dev-dami/deck/internal/notify"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/pubsub"
+	tools "github.com/dev-dami/deck/internal/toolspec"
 )
 
 // DeckWorkspace is the in-process workspace with Deck's engine in place of
@@ -50,6 +50,7 @@ type DeckWorkspace struct {
 
 	prog *tea.Program    // where busy/idle edges are sent
 	busy map[string]bool // last busy state sent, by session
+	plan bool            // the UI is in plan mode
 }
 
 // turn is what is known about one agent's current reply.
@@ -97,6 +98,7 @@ func (w *DeckWorkspace) thread(sessionID string) (string, error) {
 			return id, nil
 		}
 		if _, _, err := w.mgr().Resume(id); err == nil {
+			_ = w.mgr().SetMode(id, w.mode())
 			return id, nil
 		}
 	}
@@ -104,6 +106,7 @@ func (w *DeckWorkspace) thread(sessionID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	_ = w.mgr().SetMode(id, w.mode())
 	w.mu.Lock()
 	w.threads[sessionID], w.back[id] = id, sessionID
 	b, _ := json.Marshal(w.threads)
@@ -288,7 +291,56 @@ func (w *DeckWorkspace) AgentClearQueue(sessionID string) {
 	}
 }
 
-func (w *DeckWorkspace) AgentSetMain(string) error { return nil }
+// AgentSetMain switches between plan and code: in plan mode the agents may
+// read but change nothing.
+func (w *DeckWorkspace) AgentSetMain(agentID string) error {
+	w.mu.Lock()
+	w.plan = agentID == config.AgentPlan
+	w.mu.Unlock()
+	return w.applyMode()
+}
+
+// PermissionSetSkipRequests is yolo: every agent's requests are approved,
+// the agents themselves run in their own unattended modes.
+func (w *DeckWorkspace) PermissionSetSkipRequests(skip bool) {
+	w.AppWorkspace.PermissionSetSkipRequests(skip)
+	_ = w.applyMode()
+}
+
+// mode is the Deck permission mode the UI's plan and yolo switches add up to.
+func (w *DeckWorkspace) mode() deckagent.Mode {
+	w.mu.Lock()
+	plan := w.plan
+	w.mu.Unlock()
+	switch {
+	case plan:
+		return deckagent.ModePlan
+	case w.AppWorkspace.PermissionSkipRequests():
+		return deckagent.ModeYolo
+	}
+	return deckagent.ModeAsk
+}
+
+// applyMode puts every live thread in the current mode.
+func (w *DeckWorkspace) applyMode() error {
+	mode := w.mode()
+	w.mu.Lock()
+	ids := make([]string, 0, len(w.threads))
+	for _, id := range w.threads {
+		ids = append(ids, id)
+	}
+	w.mu.Unlock()
+	var first error
+	for _, id := range ids {
+		if _, live := w.mgr().Thread(id); !live {
+			continue
+		}
+		if err := w.mgr().SetMode(id, mode); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
+}
 
 func (w *DeckWorkspace) AgentSummarize(context.Context, string) error {
 	return errors.New("each agent manages its own context; ask it to /compact")

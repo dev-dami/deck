@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/home"
+	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/skills"
 )
 
