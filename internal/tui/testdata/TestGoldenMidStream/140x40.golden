@@ -1,8 +1,7 @@
- ◆ deck                                                                                                                     1 agent working
+ ◆ deck                                                                                                                   ◐ 1 agent working
 
  ▎● refactor the store
  ▎  ✻ claude
-
 
 
 
@@ -34,7 +33,8 @@
                                  ▸ Bash go test ./...
 
                                  The store now drops streaming deltas, and the package tests pass. Next I'm▍
+                                 ◐ working
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                 ✻ claude · default · ~/repo                                                                         ● ask
+                                 ◐ ✻ claude · default · ~/repo                                                                       ● ask
                                › message claude…
  @ agent   / commands   ↑ edit last   ⌥↑↓ threads   tab browse   ^c stop   ⇧tab mode   ^v image

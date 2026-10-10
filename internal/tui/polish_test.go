@@ -45,6 +45,7 @@ func TestTranscriptIsBottomAnchored(t *testing.T) {
 	r.start("hello")
 	r.event(r.claude.last(), agent.Event{Kind: agent.KindAssistantText, Text: "Short answer."})
 	r.pump("text", func() bool { return r.has("Short answer.") })
+	r.done(r.claude.last(), "claude") // at rest: no working row under it
 	lines := strings.Split(r.view(), "\n")
 	rule := r.m.g.ruleY
 	if !strings.Contains(lines[rule-1], "Short answer.") {

@@ -94,7 +94,7 @@ func (m *model) pasted(text string) {
 			return
 		}
 	}
-	m.comp.Insert(text)
+	m.comp.Paste(text)
 }
 
 // burstKey decides whether a key belongs to a paste that arrived as key

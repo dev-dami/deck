@@ -1,7 +1,6 @@
- ◆ deck                                                2 agents working · $0.13
+ ◆ deck                                              ◐ 2 agents working · $0.13
 
- ▎● ✻>_ plan th… $0.13                      would change."
-
+ ▎● ✻>_ plan th… $0.13
                         >_ codex
                           ∴ read the thread
                           ▸ Read internal/store/store.go
@@ -15,10 +14,11 @@
 
                         ✻ claude
                           Good catch on the lock order. Adding the delta test▍
+                          ◐ working
 
                         >_ codex
-                          ◐ working…
+                          ◐ working
                         ───────────────────────────────────────────────────────
-                          ✻ claude · default  >_ codex · default · …/r…  ● ask
+                          ◐ ✻ claude · default  ◐ >_ codex · default     ● ask
                         › message codex…
  @ agent   / commands   ↑ edit last   ⌥↑↓ threads   tab browse   ^c stop

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -18,22 +19,84 @@ type composer struct {
 	text    []rune
 	cur     int
 	vscroll int
+	pastes  []string // the blocks behind paste chips; see Paste
+}
+
+// A large paste sits in the composer as one chip, "[pasted #1 · 42 lines]",
+// that the cursor steps over and backspace removes whole; the text is sent in
+// its place. In the text a chip is one rune from a private-use plane.
+const pasteRune = 0xF0000
+
+// Pastes this big become a chip: more lines than this, or this many runes.
+const (
+	chipLines = 3
+	chipRunes = 500
+)
+
+func (c *composer) chip(r rune) (int, bool) {
+	i := int(r - pasteRune)
+	return i, r >= pasteRune && i < len(c.pastes)
+}
+
+// label is what a chip shows.
+func (c *composer) label(i int) string {
+	n := strings.Count(c.pastes[i], "\n") + 1
+	size := strconv.Itoa(n) + " lines"
+	if n == 1 {
+		size = strconv.Itoa(len([]rune(c.pastes[i]))) + " chars"
+	}
+	return "[pasted #" + strconv.Itoa(i+1) + " · " + size + "]"
+}
+
+// cw is the width of a rune as drawn: a chip is as wide as its label.
+func (c *composer) cw(r rune) int {
+	if i, ok := c.chip(r); ok {
+		return ansi.StringWidth(c.label(i))
+	}
+	return runeW(r)
+}
+
+// Paste inserts pasted text, as a chip when it is large.
+func (c *composer) Paste(s string) {
+	s = normalize(s)
+	if strings.Count(s, "\n") < chipLines && len([]rune(s)) < chipRunes {
+		c.Insert(s)
+		return
+	}
+	c.pastes = append(c.pastes, s)
+	c.text = append(c.text[:c.cur], append([]rune{rune(pasteRune + len(c.pastes) - 1)}, c.text[c.cur:]...)...)
+	c.cur++
 }
 
 type span struct{ s, e int }
 
 func runeW(r rune) int { return ansi.StringWidth(string(r)) }
 
-func (c *composer) Value() string { return string(c.text) }
+// Value is the text with every chip replaced by what was pasted.
+func (c *composer) Value() string {
+	if len(c.pastes) == 0 {
+		return string(c.text)
+	}
+	var b strings.Builder
+	for _, r := range c.text {
+		if i, ok := c.chip(r); ok {
+			b.WriteString(c.pastes[i])
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
 func (c *composer) Empty() bool   { return len(c.text) == 0 }
 
 func (c *composer) SetValue(s string) {
 	c.text = []rune(normalize(s))
 	c.cur = len(c.text)
 	c.vscroll = 0
+	c.pastes = nil
 }
 
-func (c *composer) Reset() { c.text, c.cur, c.vscroll = nil, 0, 0 }
+func (c *composer) Reset() { c.text, c.cur, c.vscroll, c.pastes = nil, 0, 0, nil }
 
 // normalize makes pasted text safe: LF newlines, tabs as spaces, no controls.
 func normalize(s string) string {
@@ -41,6 +104,9 @@ func normalize(s string) string {
 	s = strings.ReplaceAll(s, "\r", "\n")
 	s = strings.ReplaceAll(s, "\t", "    ")
 	return strings.Map(func(r rune) rune {
+		if r >= pasteRune && r < pasteRune+0x10000 { // chips are made only by Paste
+			return -1
+		}
 		if r == '\n' || !unicode.IsControl(r) {
 			return r
 		}
@@ -161,7 +227,7 @@ func (c *composer) rows(avail int) []span {
 		for le < n && c.text[le] != '\n' {
 			le++
 		}
-		out = append(out, wrapLine(c.text, i, le, avail)...)
+		out = append(out, c.wrapLine(i, le, avail)...)
 		if le >= n {
 			break
 		}
@@ -170,7 +236,8 @@ func (c *composer) rows(avail int) []span {
 	return out
 }
 
-func wrapLine(t []rune, s, e, avail int) []span {
+func (c *composer) wrapLine(s, e, avail int) []span {
+	t := c.text
 	if s == e {
 		return []span{{s, s}}
 	}
@@ -179,7 +246,7 @@ func wrapLine(t []rune, s, e, avail int) []span {
 	for pos < e {
 		width, j := 0, pos
 		for j < e {
-			rw := runeW(t[j])
+			rw := c.cw(t[j])
 			if width+rw > avail && j > pos {
 				break
 			}
@@ -209,7 +276,7 @@ func (c *composer) cursorAt(rows []span) (row, col int) {
 		if c.cur < sp.e || (c.cur == sp.e && lastOfLine) {
 			if c.cur >= sp.s {
 				for _, r := range c.text[sp.s:c.cur] {
-					col += runeW(r)
+					col += c.cw(r)
 				}
 				return i, col
 			}
@@ -250,7 +317,7 @@ func (c *composer) MoveVertical(dir, w int) bool {
 	sp := rows[nr]
 	x, pos := 0, sp.s
 	for pos < sp.e {
-		rw := runeW(c.text[pos])
+		rw := c.cw(c.text[pos])
 		if x+rw > col {
 			break
 		}
@@ -313,22 +380,40 @@ func (c *composer) View(w int, prompt string, placeholder string, focused bool) 
 		if focused && ri == crow {
 			col := 0
 			idx := 0
-			for idx < len(seg) && col+runeW(seg[idx]) <= ccol {
-				col += runeW(seg[idx])
+			for idx < len(seg) && col+c.cw(seg[idx]) <= ccol {
+				col += c.cw(seg[idx])
 				idx++
 			}
-			before := string(seg[:idx])
+			before := c.draw(seg[:idx])
 			cell := " "
 			after := ""
 			if idx < len(seg) {
 				cell = string(seg[idx])
-				after = string(seg[idx+1:])
+				if i, ok := c.chip(seg[idx]); ok {
+					cell = c.label(i)
+				}
+				after = c.draw(seg[idx+1:])
 			}
-			line = sFg.Render(before) + cursor.Render(cell) + sFg.Render(after)
+			line = before + cursor.Render(cell) + after
 		} else {
-			line = sFg.Render(string(seg))
+			line = c.draw(seg)
 		}
 		out = append(out, pre+line)
 	}
 	return out
+}
+
+// draw renders a run of text, chips in the accent colour.
+func (c *composer) draw(seg []rune) string {
+	var b strings.Builder
+	from := 0
+	for i, r := range seg {
+		if k, ok := c.chip(r); ok {
+			b.WriteString(sFg.Render(string(seg[from:i])))
+			b.WriteString(sAccent.Render(c.label(k)))
+			from = i + 1
+		}
+	}
+	b.WriteString(sFg.Render(string(seg[from:])))
+	return b.String()
 }

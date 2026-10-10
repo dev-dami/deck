@@ -1,8 +1,7 @@
- ◆ deck                                                                                                            2 agents working · $0.13
+ ◆ deck                                                                                                          ◐ 2 agents working · $0.13
 
  ▎● plan the store ref… $0.13
  ▎  ✻ claude >_ codex
-
                                  >_ codex joined
 
                                  Ada → all
@@ -31,10 +30,11 @@
 
                                ✻ claude
                                  Good catch on the lock order. Adding the delta test▍
+                                 ◐ working
 
                                >_ codex
-                                 ◐ working…
+                                 ◐ working
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                 ✻ claude · default  >_ codex · default · ~/repo                                                     ● ask
+                                 ◐ ✻ claude · default  ◐ >_ codex · default · ~/repo                                                 ● ask
                                › message codex…
  @ agent   / commands   ↑ edit last   ⌥↑↓ threads   tab browse   ^c stop   ⇧tab mode   ^v image

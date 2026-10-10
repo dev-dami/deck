@@ -520,14 +520,17 @@ func (m *model) compose(v *threadView, th session.ThreadInfo, w int) {
 		prev = it
 		last = it.speaker
 	}
-	// members that are working but have nothing at the bottom yet
+	// a live row under every member at work, labelled when its block is not
+	// the last one
 	for _, a := range th.Members {
-		if !working(a) || a.ID == last {
+		if !working(a) {
 			continue
 		}
-		blank()
-		add([]string{m.speakerLabel(a.ID, w)}, nil)
-		add([]string{"  " + sMuted.Render(motion.NewSpinner().Frame(m.now)) + sFaint.Render(" working…")}, nil)
+		if a.ID != last {
+			blank()
+			add([]string{m.speakerLabel(a.ID, w)}, nil)
+		}
+		add([]string{m.activityLine(v, a, w)}, nil)
 		last = a.ID
 	}
 	if pend := m.pendingFor(v.id); len(pend) > 0 {

@@ -1,7 +1,6 @@
- ◆ deck                                             1 agent working · 1 waiting
+ ◆ deck                                           ◐ 1 agent working · 1 waiting
 
  ▎⚠ ✻>_ plan the stor…
-
 
 
                           >_ codex joined
@@ -11,6 +10,7 @@
 
                         ✻ claude
                           I will keep the delta change small.
+                          ◐ working
 
                         >_ codex
                         ⚠ codex wants to run
@@ -19,6 +19,6 @@
                         │
                         │ y allow   n deny   a always   e edit
                         ───────────────────────────────────────────────────────
-                          ✻ claude · default  >_ codex · default · …/r…  ● ask
+                          ◐ ✻ claude · default  >_ codex · default       ● ask
                         › message claude…
  y allow   n deny   a always   i inbox

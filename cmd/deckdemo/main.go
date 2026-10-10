@@ -28,6 +28,7 @@ import (
 	"github.com/dev-dami/deck/internal/agent"
 	"github.com/dev-dami/deck/internal/agent/fake"
 	"github.com/dev-dami/deck/internal/config"
+	"github.com/dev-dami/deck/internal/conin"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/store"
 	"github.com/dev-dami/deck/internal/termimg"
@@ -73,7 +74,7 @@ func run() error {
 
 	// The demo never touches the real ~/.deck/config.json.
 	app := tui.NewWithOptions(mgr, cfg, tui.Options{SaveConfig: func(config.Config) error { return nil }, Images: termimg.Detect(os.Getenv)})
-	_, err = tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithReportFocus()).Run()
+	_, err = conin.Run(app, tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithReportFocus())
 	return err
 }
 

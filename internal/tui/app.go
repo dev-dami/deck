@@ -12,6 +12,7 @@ import (
 	"github.com/dev-dami/deck/internal/agent"
 	"github.com/dev-dami/deck/internal/clipimg"
 	"github.com/dev-dami/deck/internal/config"
+	"github.com/dev-dami/deck/internal/conin"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/termimg"
 	"github.com/dev-dami/deck/internal/tui/logo"
@@ -242,8 +243,7 @@ func newModel(mgr *session.Manager, cfg config.Config, opts Options) *model {
 // is on so the logo can ripple under the pointer; moves are ignored cheaply
 // everywhere else.
 func Run(mgr *session.Manager, cfg config.Config) error {
-	p := tea.NewProgram(New(mgr, cfg), tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithReportFocus())
-	_, err := p.Run()
+	_, err := conin.Run(New(mgr, cfg), tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithReportFocus())
 	return err
 }
 
@@ -733,7 +733,7 @@ func (m *model) headerRight() (right string, x0, x1 int) {
 	var parts []string
 	switch {
 	case nWorking > 0:
-		parts = append(parts, sMuted.Render(plural(nWorking, "agent working", "agents working")))
+		parts = append(parts, sAccent.Render(motion.NewSpinner().Frame(m.now)+" "+plural(nWorking, "agent working", "agents working")))
 	case len(m.agents) > 0 && waiting == 0:
 		parts = append(parts, sMuted.Render("idle"))
 	}
@@ -811,7 +811,7 @@ func (m *model) mainLines(g geom) []string {
 
 	out := make([]string, 0, g.trH+2+g.compH)
 	out = append(out, tr...)
-	out = append(out, m.ruleStyle().Render(strings.Repeat(theme.GlyphRule, w)))
+	out = append(out, m.ruleLine(w))
 	if g.qRows > 0 {
 		out = append(out, m.queueLines(w)[:g.qRows]...)
 	}

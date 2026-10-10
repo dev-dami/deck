@@ -185,7 +185,8 @@ func TestChipSpansMatchWhatIsDrawn(t *testing.T) {
 	for _, h := range hits {
 		got = append(got, text(h))
 	}
-	want := []string{"✻ claude · sonnet", ">_ codex · gpt-6-sol", "● ask"}
+	spin := motion.NewSpinner().Frame(r.m.now) // both are at work: a spinner leads each chip
+	want := []string{spin + " ✻ claude · sonnet", spin + " >_ codex · gpt-6-sol", "● ask"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("spans %q, want %q", got, want)
 	}

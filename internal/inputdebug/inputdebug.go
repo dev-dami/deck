@@ -15,6 +15,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/dev-dami/deck/internal/conin"
 )
 
 // maxEntries is how many received messages are kept (and can be shown).
@@ -34,13 +36,12 @@ var getenv = os.Getenv
 // Run starts the input debug program on the alternate screen with all-motion
 // mouse reporting and focus reporting enabled. It returns when the user quits.
 func Run() error {
-	p := tea.NewProgram(
+	_, err := conin.Run(
 		newModel(time.Now, getenv),
 		tea.WithAltScreen(),
 		tea.WithMouseAllMotion(),
 		tea.WithReportFocus(),
 	)
-	_, err := p.Run()
 	return err
 }
 

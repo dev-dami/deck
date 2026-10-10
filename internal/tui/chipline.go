@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/dev-dami/deck/internal/session"
+	"github.com/dev-dami/deck/internal/tui/motion"
 )
 
 // chipLine is the line above the composer: who is in the thread (their ◆
@@ -65,6 +66,9 @@ func (m *model) chipLayout(w int) (string, []chipHit) {
 					left += "  "
 				}
 				x0 := sw(left)
+				if working(a) {
+					left += tintStyle(a.Kind).Render(motion.NewSpinner().Frame(m.now)) + " "
+				}
 				left += m.chip(a)
 				if models || len(th.Members) == 1 {
 					left += sep + sFaint.Render(m.modelLabel(a))

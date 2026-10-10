@@ -1,8 +1,7 @@
- ◆ deck                                                                                                         1 agent working · 1 waiting
+ ◆ deck                                                                                                       ◐ 1 agent working · 1 waiting
 
  ▎⚠ plan the store refactor,…
  ▎  ✻ claude >_ codex
-
 
 
 
@@ -27,6 +26,7 @@
 
                                ✻ claude
                                  I will keep the delta change small.
+                                 ◐ working
 
                                >_ codex
                                ⚠ codex wants to run
@@ -35,6 +35,6 @@
                                │
                                │ y allow   n deny   a always   e edit
                                ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                 ✻ claude · default  >_ codex · default · ~/repo                                                     ● ask
+                                 ◐ ✻ claude · default  >_ codex · default · ~/repo                                                   ● ask
                                › message claude…
  y allow   n deny   a always   i inbox
