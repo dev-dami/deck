@@ -91,6 +91,7 @@ func (t *thread) findItemLocked(id string) int {
 func (t *thread) syncQueueLocked(a *agentState) bool {
 	changed := false
 	var edited map[string]string
+	editsRead := false
 	for i := a.cursor; i < len(t.log); i++ {
 		e := t.log[i]
 		if (e.Type != store.EntryUser && e.Type != store.EntryEdit) || e.Steer {
@@ -106,8 +107,8 @@ func (t *thread) syncQueueLocked(a *agentState) bool {
 		q := qitem{idx: i, src: e.ID}
 		q.QueuedItem = QueuedItem{ID: id, ThreadID: t.id, AgentID: a.id, At: e.Time}
 		if e.Type == store.EntryUser {
-			if edited == nil {
-				edited = t.editedTexts()
+			if !editsRead { // later messages' edits come later still
+				edited, editsRead = t.editedFrom(i), true
 			}
 			q.Text = strings.TrimSpace(e.Text)
 			if txt, ok := edited[e.ID]; ok {
@@ -361,12 +362,16 @@ func (m *Manager) steerDeliver(t *thread, a *agentState) error {
 	if err := m.Interrupt(a.id); err != nil {
 		return err
 	}
+	// Poll with a backoff: quick for an agent that stops at once, without
+	// spinning every 2ms for the seconds a slow one can take.
 	deadline := time.Now().Add(steerWait)
+	pause := time.Millisecond
 	for a.busy() {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("session: %s did not stop in time to be redirected", a.getName())
 		}
-		time.Sleep(2 * time.Millisecond)
+		time.Sleep(pause)
+		pause = min(pause*2, 25*time.Millisecond)
 	}
 	return m.startAfterSteer(t, a)
 }
@@ -451,7 +456,7 @@ func (m *Manager) Edit(threadID, entryID, newText string) error {
 		return errors.New("session: only the user's own messages can be edited")
 	}
 	old := strings.TrimSpace(orig.Text)
-	if txt, ok := t.editedTexts()[orig.ID]; ok {
+	if txt, ok := t.editedFrom(idx)[orig.ID]; ok {
 		old = strings.TrimSpace(txt)
 	}
 	if old == newText {

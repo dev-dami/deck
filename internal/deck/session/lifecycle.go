@@ -174,7 +174,7 @@ func (m *Manager) Fork(threadID, entryID string) (ThreadInfo, []tea.Msg, string,
 		for i, e := range t.log {
 			if e.ID == entryID && e.Type == store.EntryUser {
 				cut, text = i, e.Text
-				if s, ok := t.editedTexts()[e.ID]; ok {
+				if s, ok := t.editedFrom(i)[e.ID]; ok {
 					text = s
 				}
 				break
