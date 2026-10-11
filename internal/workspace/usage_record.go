@@ -25,6 +25,10 @@ type LiveLimits struct {
 	At time.Time
 }
 
+// LimitsChangedMsg tells the UI an agent kind's plan limits changed, so
+// what shows them (Deck's mark) is drawn again.
+type LimitsChangedMsg struct{ Kind string }
+
 // pendingTurn is what will start an agent's next turn: who addressed it, and
 // when, if the agent was idle then (so the turn's clock starts at the post,
 // not at the agent's first event).
@@ -304,7 +308,11 @@ func (w *DeckWorkspace) onLimits(ev deckagent.Event) {
 	w.mu.Lock()
 	cur := mergeLimits(w.limits[kind].Limits, *ev.Limits)
 	w.limits[kind] = LiveLimits{Limits: cur, At: at}
+	prog := w.prog
 	w.mu.Unlock()
+	if prog != nil {
+		go prog.Send(LimitsChangedMsg{Kind: kind})
+	}
 
 	if !w.usageOK() || len(ev.Limits.Windows) == 0 {
 		return

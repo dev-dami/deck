@@ -133,7 +133,7 @@ func Tint(kind string) color.Color {
 
 // Mark is how an agent kind is drawn: the mark its own CLI uses in the
 // terminal (Claude Code's ✻, Codex CLI's >_, OpenCode's hollow block ▯,
-// Antigravity's ◎), ◆ for anything else.
+// Antigravity's ◎), ▌ (a card edge, as in Deck's mark) for anything else.
 func Mark(kind string) string {
 	switch kind {
 	case "claude":
@@ -145,7 +145,7 @@ func Mark(kind string) string {
 	case "antigravity":
 		return "◎"
 	}
-	return "◆"
+	return "▌"
 }
 
 // named lists the palette by name, for theme files.

@@ -7,6 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/dev-dami/deck/internal/ui/decklogo"
 	"github.com/dev-dami/deck/internal/ui/styles"
 )
 
@@ -41,14 +42,39 @@ func TestSmallRender(t *testing.T) {
 	t.Parallel()
 	sty := styles.DeckDark()
 	out := ansi.Strip(SmallRender(&sty, 30, Opts{}))
-	if !strings.Contains(out, "deck") || !strings.HasPrefix(out, "◆ deck") {
+	if !strings.Contains(out, "deck") || !strings.HasPrefix(out, "▎▍▌ deck") {
 		t.Fatalf("SmallRender = %q", out)
 	}
 	if got := ansi.StringWidth(out); got != 30 {
 		t.Errorf("SmallRender width = %d, want 30", got)
 	}
-	if got := ansi.Strip(SmallRender(&sty, 4, Opts{})); got != "◆ deck" {
+	if got := ansi.Strip(SmallRender(&sty, 4, Opts{})); got != "▎▍▌ deck" {
 		t.Errorf("narrow SmallRender = %q", got)
+	}
+}
+
+func TestSmallRenderEdges(t *testing.T) {
+	t.Parallel()
+	sty := styles.DeckDark()
+	edges := []decklogo.Edge{
+		{Kind: "claude", Pct: 20, Known: true},
+		{Kind: "codex", Pct: 60, Known: true},
+		{Kind: "opencode", Pct: 100, Known: true},
+	}
+	if got := ansi.Strip(SmallRender(&sty, 8, Opts{Edges: edges})); got != "▂▅█ deck" {
+		t.Errorf("SmallRender = %q, want %q", got, "▂▅█ deck")
+	}
+}
+
+func TestRenderDrawsEdges(t *testing.T) {
+	t.Parallel()
+	edges := []decklogo.Edge{{Kind: "claude", Pct: 100, Known: true}, {Kind: "codex"}}
+	out := ansi.Strip(Render(lipgloss.NewStyle(), "", false, Opts{Dark: true, Edges: edges}))
+	if !strings.Contains(out, "✻") || !strings.Contains(out, ">_") {
+		t.Errorf("no agent marks under the edges:\n%s", out)
+	}
+	if strings.Contains(out, decklogo.Stack) {
+		t.Errorf("the stack is drawn with agents' edges:\n%s", out)
 	}
 }
 
