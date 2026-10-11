@@ -24,6 +24,15 @@ type UsageReader interface {
 	// (1 = today; 0 = all time). It reads the database: call it off the UI
 	// loop.
 	Usage(ctx context.Context, sinceDays int) (UsageReport, error)
+	// UsageService is the local usage record itself, for the full Usage
+	// view (overview, series, behaviour, limits, traces, models, cost); nil
+	// when there is no database. Its reads hit the database: call them off
+	// the UI loop.
+	UsageService() usage.Service
+	// LiveLimits is each agent kind's plan limits as its CLI last reported
+	// them in this run, by kind ("claude", "codex", ...). A kind that has not
+	// reported yet is missing. It reads memory only.
+	LiveLimits() map[string]LiveLimits
 }
 
 // SettingsEditor reads and changes Deck's own settings (~/.deck/config.json).
@@ -84,10 +93,19 @@ func (w *DeckWorkspace) SetDeckSettings(edit func(*deckconfig.Config)) error {
 // AgentKinds implements [SettingsEditor].
 func (w *DeckWorkspace) AgentKinds() []string { return w.mgr().Kinds() }
 
+// turnMeta is what is known about a finished turn beyond its usage.
+type turnMeta struct {
+	status  string
+	trigger string
+	mode    string
+	trace   *traceBuilder // nil when the turn saw no events
+	end     time.Time
+}
+
 // recordUsage writes one finished turn to the local usage table, under the
-// agent's kind and the model it ran.
-func (w *DeckWorkspace) recordUsage(ctx context.Context, sid, agentID string, u deckagent.Usage, took time.Duration) {
-	if w.AppWorkspace == nil || w.app == nil || w.app.Usage == nil {
+// agent's kind and the model it ran, with its trace spans.
+func (w *DeckWorkspace) recordUsage(ctx context.Context, sid, agentID string, u deckagent.Usage, took time.Duration, meta turnMeta) {
+	if !w.usageOK() {
 		return
 	}
 	kind, model := agentID, ""
@@ -97,18 +115,34 @@ func (w *DeckWorkspace) recordUsage(ctx context.Context, sid, agentID string, u 
 			model = a.Model
 		}
 	}
-	err := w.app.Usage.Record(ctx, usage.Record{
-		SessionID:    sid,
-		AgentID:      agentID,
-		Kind:         kind,
-		Model:        model,
-		InputTokens:  u.InputTokens,
-		OutputTokens: u.OutputTokens,
-		CachedTokens: u.CachedTokens,
-		CostUSD:      u.CostUSD,
-		Duration:     took,
-	})
-	if err != nil {
+	if took == 0 && u.DurationMs > 0 {
+		took = time.Duration(u.DurationMs) * time.Millisecond
+	}
+	rec := usage.Record{
+		SessionID:        sid,
+		AgentID:          agentID,
+		Kind:             kind,
+		Model:            model,
+		InputTokens:      u.InputTokens,
+		OutputTokens:     u.OutputTokens,
+		CachedTokens:     u.CachedTokens,
+		CacheWriteTokens: u.CacheWriteTokens,
+		ReasoningTokens:  u.ReasoningTokens,
+		CostUSD:          u.CostUSD,
+		Duration:         took,
+		TTFT:             time.Duration(u.TTFTms) * time.Millisecond,
+		APITime:          time.Duration(u.APIms) * time.Millisecond,
+		Status:           meta.status,
+		Trigger:          meta.trigger,
+		Mode:             meta.mode,
+	}
+	if meta.trace != nil {
+		if rec.TTFT == 0 {
+			rec.TTFT = meta.trace.ttft()
+		}
+		rec.Spans = meta.trace.finish(meta.end, u, kind)
+	}
+	if err := w.app.Usage.Record(ctx, rec); err != nil {
 		slog.Warn("deck: record usage", "error", err)
 	}
 }

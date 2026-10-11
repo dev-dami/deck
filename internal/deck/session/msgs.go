@@ -135,12 +135,22 @@ type ModeChangedMsg struct {
 
 // ModelChangedMsg says a member now runs a different model or effort
 // (SetModel, SetEffort). An empty Model means the CLI's default, an empty
-// Effort the model's.
+// Effort the model's. Changed says which of the two was set: "model" or
+// "effort".
 type ModelChangedMsg struct {
 	ThreadID string
 	AgentID  string
 	Model    string
 	Effort   string
+	Changed  string
+}
+
+// QueueCancelledMsg says the user cancelled a queued message (CancelQueued)
+// before it reached AgentID. A QueueChangedMsg with the new queue follows.
+type QueueCancelledMsg struct {
+	ThreadID string
+	AgentID  string
+	ItemID   string
 }
 
 // AutoApprovedMsg reports an approval request that Deck answered Allow itself

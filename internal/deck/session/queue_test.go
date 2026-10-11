@@ -325,6 +325,12 @@ func TestCancelQueued(t *testing.T) {
 		t.Fatalf("queue = %+v", q)
 	}
 	waitFor(t, "QueueChangedMsg after cancel", func() bool { return len(r.c.lastQueue()) == 1 })
+	waitFor(t, "QueueCancelledMsg", func() bool {
+		return r.c.count(func(m tea.Msg) bool {
+			qc, ok := m.(QueueCancelledMsg)
+			return ok && qc == QueueCancelledMsg{ThreadID: tid, AgentID: "claude", ItemID: a.Queued[0].ID}
+		}) == 1
+	})
 	if err := r.m.CancelQueued(a.Queued[0].ID); err == nil {
 		t.Error("cancelling twice should fail")
 	}

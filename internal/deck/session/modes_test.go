@@ -615,7 +615,7 @@ func TestSetModelWithModelSetter(t *testing.T) {
 	waitFor(t, "ModelChangedMsg", func() bool {
 		return r.c.count(func(m tea.Msg) bool {
 			mc, ok := m.(ModelChangedMsg)
-			return ok && mc == ModelChangedMsg{ThreadID: tid, AgentID: id, Model: "opus"}
+			return ok && mc == ModelChangedMsg{ThreadID: tid, AgentID: id, Model: "opus", Changed: "model"}
 		}) == 1
 	})
 	r.m.Flush()
