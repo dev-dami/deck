@@ -147,8 +147,26 @@ func (w *limitBuffer) Write(p []byte) (int, error) {
 
 func (w *limitBuffer) String() string { return w.buf.String() }
 
+// found remembers where git and gh were found, per PATH: on Windows a
+// LookPath tries every PATH folder with every PATHEXT extension, and the git
+// pane runs a command every few seconds. A miss is not remembered, so a gh
+// installed mid-run is found.
+var found sync.Map // name + "\x00" + PATH -> path
+
+func lookPath(name string) (string, error) {
+	key := name + "\x00" + os.Getenv("PATH")
+	if p, ok := found.Load(key); ok {
+		return p.(string), nil
+	}
+	p, err := exec.LookPath(name)
+	if err == nil {
+		found.Store(key, p)
+	}
+	return p, err
+}
+
 func execTo(ctx context.Context, dir, stdin, name string, args []string, out, errb output) (string, error) {
-	bin, err := exec.LookPath(name)
+	bin, err := lookPath(name)
 	if err != nil {
 		return "", fmt.Errorf("%s is not installed", name)
 	}

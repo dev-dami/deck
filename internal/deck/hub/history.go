@@ -400,6 +400,9 @@ func opHistoryRead(_ context.Context, env *Env, a args) (string, error) {
 
 // clipLong shortens s to n runes, keeping its line breaks.
 func clipLong(s string, n int) string {
+	if len(s) <= n { // no more runes than bytes
+		return s
+	}
 	if r := []rune(s); len(r) > n {
 		return string(r[:n]) + " …"
 	}

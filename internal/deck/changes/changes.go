@@ -214,15 +214,26 @@ func firstLine(s string) string {
 // with the index file's own mtime; a copy stamped now would make an edit that
 // kept a file's size within the second of the last index write look clean.
 func copyIndex(src, dst string) error {
-	fi, err := os.Stat(src)
+	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	data, err := os.ReadFile(src)
+	defer in.Close()
+	fi, err := in.Stat()
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(dst, data, 0o600); err != nil {
+	// Streamed: a big repository's index runs to tens of megabytes, and a
+	// snapshot is taken for every message.
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
 		return err
 	}
 	return os.Chtimes(dst, fi.ModTime(), fi.ModTime())

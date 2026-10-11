@@ -465,6 +465,9 @@ func contains(list []string, v string) bool {
 }
 
 func clip(s string, n int) string {
+	if len(s) <= n { // no more runes than bytes
+		return s
+	}
 	r := []rune(s)
 	if len(r) <= n {
 		return s
@@ -473,6 +476,9 @@ func clip(s string, n int) string {
 }
 
 func tail(s string, n int) string {
+	if len(s) <= n { // no more runes than bytes
+		return s
+	}
 	r := []rune(s)
 	if len(r) <= n {
 		return s
