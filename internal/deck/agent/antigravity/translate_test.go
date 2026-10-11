@@ -73,6 +73,7 @@ func TestRecordedSession(t *testing.T) {
 	}
 	want := []agent.Kind{
 		agent.KindSessionStarted,
+		agent.KindLimits, // once: agy reports no plan windows
 		// user_input echo: skipped, Deck echoes at Send.
 		agent.KindAssistantText, // ACTIVE delta
 		agent.KindAssistantText, // DONE delta
@@ -90,17 +91,27 @@ func TestRecordedSession(t *testing.T) {
 	if got[0].SessionID != "67ae5621-c175-433e-b1ed-4153b533310c" {
 		t.Fatalf("session id = %q", got[0].SessionID)
 	}
-	if !got[1].Delta || got[1].Text != "pineapples" {
-		t.Fatalf("streaming delta = %+v", got[1])
+	if l := got[1].Limits; l == nil || l.Unavailable != agent.LimitsUnsupported || len(l.Windows) != 0 {
+		t.Fatalf("limits = %+v", got[1])
 	}
-	if got[2].Delta {
-		t.Fatalf("final delta should not be marked streaming: %+v", got[2])
+	if !got[2].Delta || got[2].Text != "pineapples" {
+		t.Fatalf("streaming delta = %+v", got[2])
 	}
-	u := got[3].Usage
-	if u == nil || u.InputTokens != 13092 || u.OutputTokens != 69 || u.CachedTokens != 0 {
+	if got[3].Delta {
+		t.Fatalf("final delta should not be marked streaming: %+v", got[3])
+	}
+	u := got[4].Usage
+	if u == nil || u.InputTokens != 13092 || u.OutputTokens != 69 || u.CachedTokens != 0 || u.ReasoningTokens != 67 || u.DurationMs != 3440 {
 		t.Fatalf("usage = %+v", u)
 	}
+	// A second init (the next turn's process) does not repeat the limits.
+	if evs := tr.Line([]byte(`{"event":"init","conversation_id":"67ae5621-c175-433e-b1ed-4153b533310c"}`)); len(evs) != 1 || evs[0].Kind != agent.KindSessionStarted {
+		t.Fatalf("second init = %v", kinds(evs))
+	}
 	for i, e := range got {
+		if e.Kind == agent.KindLimits {
+			continue // about the account, not a protocol line
+		}
 		if len(e.Raw) == 0 {
 			t.Fatalf("event %d carries no Raw", i)
 		}

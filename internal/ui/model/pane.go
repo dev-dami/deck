@@ -23,6 +23,7 @@ const (
 	paneTasks    paneID = "tasks"    // the agents' running subagents
 	paneCommands paneID = "commands" // running and background commands, Deck's own jobs
 	paneNotices  paneID = "notices"  // the notification history
+	paneUsage    paneID = "usage"    // plan limits, today's tokens, the live turn
 )
 
 // pane is one sidebar pane.
@@ -78,4 +79,5 @@ var defaultColumns = [][]paneID{
 	{paneSession, paneAgents},
 	{paneGit},
 	{paneTasks, paneCommands},
+	{paneUsage},
 }

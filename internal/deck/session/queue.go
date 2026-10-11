@@ -240,6 +240,7 @@ func (m *Manager) CancelQueued(itemID string) error {
 	t.skip[skipKey{q.idx, a.id}] = skipCancelled
 	m.appendLocked(t, store.Entry{Type: store.EntryCancel, Ref: q.src, To: []string{a.id}})
 	t.mu.Unlock()
+	m.emit(QueueCancelledMsg{ThreadID: t.id, AgentID: a.id, ItemID: itemID})
 	m.emitQueue(t)
 	return nil
 }

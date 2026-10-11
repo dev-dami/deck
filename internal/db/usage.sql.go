@@ -9,6 +9,218 @@ import (
 	"context"
 )
 
+const behaviorByDay = `-- name: BehaviorByDay :many
+SELECT
+    CAST(date(created_at, 'unixepoch', 'localtime') AS TEXT) AS day,
+    kind,
+    COUNT(*) AS count
+FROM behavior
+WHERE created_at >= ?
+GROUP BY day, kind
+ORDER BY day ASC, kind ASC
+`
+
+type BehaviorByDayRow struct {
+	Day   string `json:"day"`
+	Kind  string `json:"kind"`
+	Count int64  `json:"count"`
+}
+
+// Days are local calendar days, as the user counts them.
+func (q *Queries) BehaviorByDay(ctx context.Context, since int64) ([]BehaviorByDayRow, error) {
+	rows, err := q.query(ctx, q.behaviorByDayStmt, behaviorByDay, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BehaviorByDayRow{}
+	for rows.Next() {
+		var i BehaviorByDayRow
+		if err := rows.Scan(
+			&i.Day,
+			&i.Kind,
+			&i.Count,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const behaviorCounts = `-- name: BehaviorCounts :many
+SELECT
+    kind,
+    detail,
+    COUNT(*) AS count,
+    CAST(COALESCE(SUM(value), 0) AS INTEGER) AS value
+FROM behavior
+WHERE created_at >= ?
+GROUP BY kind, detail
+ORDER BY kind ASC, detail ASC
+`
+
+type BehaviorCountsRow struct {
+	Kind   string `json:"kind"`
+	Detail string `json:"detail"`
+	Count  int64  `json:"count"`
+	Value  int64  `json:"value"`
+}
+
+func (q *Queries) BehaviorCounts(ctx context.Context, since int64) ([]BehaviorCountsRow, error) {
+	rows, err := q.query(ctx, q.behaviorCountsStmt, behaviorCounts, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BehaviorCountsRow{}
+	for rows.Next() {
+		var i BehaviorCountsRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.Detail,
+			&i.Count,
+			&i.Value,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const insertBehavior = `-- name: InsertBehavior :exec
+INSERT INTO behavior (
+    session_id,
+    agent_id,
+    kind,
+    detail,
+    value,
+    created_at
+) VALUES (
+    ?, ?, ?, ?, ?, ?
+)
+`
+
+type InsertBehaviorParams struct {
+	SessionID string `json:"session_id"`
+	AgentID   string `json:"agent_id"`
+	Kind      string `json:"kind"`
+	Detail    string `json:"detail"`
+	Value     int64  `json:"value"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+func (q *Queries) InsertBehavior(ctx context.Context, arg InsertBehaviorParams) error {
+	_, err := q.exec(ctx, q.insertBehaviorStmt, insertBehavior,
+		arg.SessionID,
+		arg.AgentID,
+		arg.Kind,
+		arg.Detail,
+		arg.Value,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertLimitSnapshot = `-- name: InsertLimitSnapshot :exec
+INSERT INTO limit_snapshot (
+    agent_kind,
+    window_id,
+    kind,
+    label,
+    used_pct,
+    resets_at,
+    duration_mins,
+    plan,
+    created_at
+) VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?, ?
+)
+`
+
+type InsertLimitSnapshotParams struct {
+	AgentKind    string  `json:"agent_kind"`
+	WindowID     string  `json:"window_id"`
+	Kind         string  `json:"kind"`
+	Label        string  `json:"label"`
+	UsedPct      float64 `json:"used_pct"`
+	ResetsAt     int64   `json:"resets_at"`
+	DurationMins int64   `json:"duration_mins"`
+	Plan         string  `json:"plan"`
+	CreatedAt    int64   `json:"created_at"`
+}
+
+func (q *Queries) InsertLimitSnapshot(ctx context.Context, arg InsertLimitSnapshotParams) error {
+	_, err := q.exec(ctx, q.insertLimitSnapshotStmt, insertLimitSnapshot,
+		arg.AgentKind,
+		arg.WindowID,
+		arg.Kind,
+		arg.Label,
+		arg.UsedPct,
+		arg.ResetsAt,
+		arg.DurationMins,
+		arg.Plan,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertTraceSpan = `-- name: InsertTraceSpan :exec
+INSERT INTO trace_span (
+    turn_id,
+    session_id,
+    agent_id,
+    kind,
+    name,
+    start_ms,
+    dur_ms,
+    tokens,
+    created_at
+) VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?, ?
+)
+`
+
+type InsertTraceSpanParams struct {
+	TurnID    string `json:"turn_id"`
+	SessionID string `json:"session_id"`
+	AgentID   string `json:"agent_id"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	StartMs   int64  `json:"start_ms"`
+	DurMs     int64  `json:"dur_ms"`
+	Tokens    int64  `json:"tokens"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+func (q *Queries) InsertTraceSpan(ctx context.Context, arg InsertTraceSpanParams) error {
+	_, err := q.exec(ctx, q.insertTraceSpanStmt, insertTraceSpan,
+		arg.TurnID,
+		arg.SessionID,
+		arg.AgentID,
+		arg.Kind,
+		arg.Name,
+		arg.StartMs,
+		arg.DurMs,
+		arg.Tokens,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const insertUsage = `-- name: InsertUsage :exec
 INSERT INTO usage (
     id,
@@ -21,24 +233,38 @@ INSERT INTO usage (
     cached_tokens,
     cost_usd,
     duration_ms,
-    created_at
+    created_at,
+    cache_write_tokens,
+    reasoning_tokens,
+    status,
+    ttft_ms,
+    api_ms,
+    "trigger",
+    mode
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 `
 
 type InsertUsageParams struct {
-	ID           string  `json:"id"`
-	SessionID    string  `json:"session_id"`
-	AgentID      string  `json:"agent_id"`
-	Kind         string  `json:"kind"`
-	Model        string  `json:"model"`
-	InputTokens  int64   `json:"input_tokens"`
-	OutputTokens int64   `json:"output_tokens"`
-	CachedTokens int64   `json:"cached_tokens"`
-	CostUsd      float64 `json:"cost_usd"`
-	DurationMs   int64   `json:"duration_ms"`
-	CreatedAt    int64   `json:"created_at"`
+	ID               string  `json:"id"`
+	SessionID        string  `json:"session_id"`
+	AgentID          string  `json:"agent_id"`
+	Kind             string  `json:"kind"`
+	Model            string  `json:"model"`
+	InputTokens      int64   `json:"input_tokens"`
+	OutputTokens     int64   `json:"output_tokens"`
+	CachedTokens     int64   `json:"cached_tokens"`
+	CostUsd          float64 `json:"cost_usd"`
+	DurationMs       int64   `json:"duration_ms"`
+	CreatedAt        int64   `json:"created_at"`
+	CacheWriteTokens int64   `json:"cache_write_tokens"`
+	ReasoningTokens  int64   `json:"reasoning_tokens"`
+	Status           string  `json:"status"`
+	TtftMs           int64   `json:"ttft_ms"`
+	ApiMs            int64   `json:"api_ms"`
+	Trigger          string  `json:"trigger"`
+	Mode             string  `json:"mode"`
 }
 
 func (q *Queries) InsertUsage(ctx context.Context, arg InsertUsageParams) error {
@@ -54,8 +280,244 @@ func (q *Queries) InsertUsage(ctx context.Context, arg InsertUsageParams) error 
 		arg.CostUsd,
 		arg.DurationMs,
 		arg.CreatedAt,
+		arg.CacheWriteTokens,
+		arg.ReasoningTokens,
+		arg.Status,
+		arg.TtftMs,
+		arg.ApiMs,
+		arg.Trigger,
+		arg.Mode,
 	)
 	return err
+}
+
+const latestLimitSnapshot = `-- name: LatestLimitSnapshot :one
+SELECT
+    agent_kind,
+    window_id,
+    kind,
+    label,
+    used_pct,
+    resets_at,
+    duration_mins,
+    plan,
+    created_at
+FROM limit_snapshot
+WHERE agent_kind = ? AND window_id = ?
+ORDER BY id DESC
+LIMIT 1
+`
+
+type LatestLimitSnapshotParams struct {
+	AgentKind string `json:"agent_kind"`
+	WindowID  string `json:"window_id"`
+}
+
+type LatestLimitSnapshotRow struct {
+	AgentKind    string  `json:"agent_kind"`
+	WindowID     string  `json:"window_id"`
+	Kind         string  `json:"kind"`
+	Label        string  `json:"label"`
+	UsedPct      float64 `json:"used_pct"`
+	ResetsAt     int64   `json:"resets_at"`
+	DurationMins int64   `json:"duration_mins"`
+	Plan         string  `json:"plan"`
+	CreatedAt    int64   `json:"created_at"`
+}
+
+func (q *Queries) LatestLimitSnapshot(ctx context.Context, arg LatestLimitSnapshotParams) (LatestLimitSnapshotRow, error) {
+	row := q.queryRow(ctx, q.latestLimitSnapshotStmt, latestLimitSnapshot, arg.AgentKind, arg.WindowID)
+	var i LatestLimitSnapshotRow
+	err := row.Scan(
+		&i.AgentKind,
+		&i.WindowID,
+		&i.Kind,
+		&i.Label,
+		&i.UsedPct,
+		&i.ResetsAt,
+		&i.DurationMins,
+		&i.Plan,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const latestLimitSnapshots = `-- name: LatestLimitSnapshots :many
+SELECT
+    agent_kind,
+    window_id,
+    kind,
+    label,
+    used_pct,
+    resets_at,
+    duration_mins,
+    plan,
+    created_at
+FROM limit_snapshot
+WHERE id IN (SELECT MAX(id) FROM limit_snapshot GROUP BY agent_kind, window_id)
+ORDER BY agent_kind ASC, window_id ASC
+`
+
+type LatestLimitSnapshotsRow struct {
+	AgentKind    string  `json:"agent_kind"`
+	WindowID     string  `json:"window_id"`
+	Kind         string  `json:"kind"`
+	Label        string  `json:"label"`
+	UsedPct      float64 `json:"used_pct"`
+	ResetsAt     int64   `json:"resets_at"`
+	DurationMins int64   `json:"duration_mins"`
+	Plan         string  `json:"plan"`
+	CreatedAt    int64   `json:"created_at"`
+}
+
+// The newest row of every window of every agent kind.
+func (q *Queries) LatestLimitSnapshots(ctx context.Context) ([]LatestLimitSnapshotsRow, error) {
+	rows, err := q.query(ctx, q.latestLimitSnapshotsStmt, latestLimitSnapshots)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LatestLimitSnapshotsRow{}
+	for rows.Next() {
+		var i LatestLimitSnapshotsRow
+		if err := rows.Scan(
+			&i.AgentKind,
+			&i.WindowID,
+			&i.Kind,
+			&i.Label,
+			&i.UsedPct,
+			&i.ResetsAt,
+			&i.DurationMins,
+			&i.Plan,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const limitHistory = `-- name: LimitHistory :many
+SELECT
+    agent_kind,
+    window_id,
+    kind,
+    label,
+    used_pct,
+    resets_at,
+    duration_mins,
+    plan,
+    created_at
+FROM limit_snapshot
+WHERE agent_kind = ? AND window_id = ? AND created_at >= ?
+ORDER BY created_at ASC, id ASC
+`
+
+type LimitHistoryParams struct {
+	AgentKind string `json:"agent_kind"`
+	WindowID  string `json:"window_id"`
+	Since     int64  `json:"since"`
+}
+
+type LimitHistoryRow struct {
+	AgentKind    string  `json:"agent_kind"`
+	WindowID     string  `json:"window_id"`
+	Kind         string  `json:"kind"`
+	Label        string  `json:"label"`
+	UsedPct      float64 `json:"used_pct"`
+	ResetsAt     int64   `json:"resets_at"`
+	DurationMins int64   `json:"duration_mins"`
+	Plan         string  `json:"plan"`
+	CreatedAt    int64   `json:"created_at"`
+}
+
+func (q *Queries) LimitHistory(ctx context.Context, arg LimitHistoryParams) ([]LimitHistoryRow, error) {
+	rows, err := q.query(ctx, q.limitHistoryStmt, limitHistory, arg.AgentKind, arg.WindowID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LimitHistoryRow{}
+	for rows.Next() {
+		var i LimitHistoryRow
+		if err := rows.Scan(
+			&i.AgentKind,
+			&i.WindowID,
+			&i.Kind,
+			&i.Label,
+			&i.UsedPct,
+			&i.ResetsAt,
+			&i.DurationMins,
+			&i.Plan,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const traceSpans = `-- name: TraceSpans :many
+SELECT
+    kind,
+    name,
+    start_ms,
+    dur_ms,
+    tokens
+FROM trace_span
+WHERE turn_id = ?
+ORDER BY start_ms ASC, id ASC
+`
+
+type TraceSpansRow struct {
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
+	StartMs int64  `json:"start_ms"`
+	DurMs   int64  `json:"dur_ms"`
+	Tokens  int64  `json:"tokens"`
+}
+
+func (q *Queries) TraceSpans(ctx context.Context, turnID string) ([]TraceSpansRow, error) {
+	rows, err := q.query(ctx, q.traceSpansStmt, traceSpans, turnID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TraceSpansRow{}
+	for rows.Next() {
+		var i TraceSpansRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.Name,
+			&i.StartMs,
+			&i.DurMs,
+			&i.Tokens,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const usageByDay = `-- name: UsageByDay :many
@@ -205,6 +667,398 @@ func (q *Queries) UsageByModel(ctx context.Context, since int64) ([]UsageByModel
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const usageByStatus = `-- name: UsageByStatus :many
+SELECT
+    status,
+    COUNT(*) AS turns
+FROM usage
+WHERE created_at >= ?
+GROUP BY status
+ORDER BY status ASC
+`
+
+type UsageByStatusRow struct {
+	Status string `json:"status"`
+	Turns  int64  `json:"turns"`
+}
+
+func (q *Queries) UsageByStatus(ctx context.Context, since int64) ([]UsageByStatusRow, error) {
+	rows, err := q.query(ctx, q.usageByStatusStmt, usageByStatus, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UsageByStatusRow{}
+	for rows.Next() {
+		var i UsageByStatusRow
+		if err := rows.Scan(
+			&i.Status,
+			&i.Turns,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const usageByTrigger = `-- name: UsageByTrigger :many
+SELECT
+    "trigger",
+    COUNT(*) AS turns
+FROM usage
+WHERE created_at >= ?
+GROUP BY "trigger"
+ORDER BY "trigger" ASC
+`
+
+type UsageByTriggerRow struct {
+	Trigger string `json:"trigger"`
+	Turns   int64  `json:"turns"`
+}
+
+func (q *Queries) UsageByTrigger(ctx context.Context, since int64) ([]UsageByTriggerRow, error) {
+	rows, err := q.query(ctx, q.usageByTriggerStmt, usageByTrigger, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UsageByTriggerRow{}
+	for rows.Next() {
+		var i UsageByTriggerRow
+		if err := rows.Scan(
+			&i.Trigger,
+			&i.Turns,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const usageKindStats = `-- name: UsageKindStats :many
+SELECT
+    kind,
+    COUNT(*) AS turns,
+    CAST(COALESCE(SUM(input_tokens), 0) AS INTEGER) AS input_tokens,
+    CAST(COALESCE(SUM(output_tokens), 0) AS INTEGER) AS output_tokens,
+    CAST(COALESCE(SUM(cached_tokens), 0) AS INTEGER) AS cached_tokens,
+    CAST(COALESCE(SUM(cache_write_tokens), 0) AS INTEGER) AS cache_write_tokens,
+    CAST(COALESCE(SUM(reasoning_tokens), 0) AS INTEGER) AS reasoning_tokens,
+    CAST(COALESCE(SUM(cost_usd), 0) AS REAL) AS cost_usd,
+    CAST(COALESCE(SUM(CASE WHEN cost_usd > 0 THEN 1 ELSE 0 END), 0) AS INTEGER) AS cost_turns,
+    CAST(COALESCE(SUM(duration_ms), 0) AS INTEGER) AS duration_ms,
+    CAST(COALESCE(SUM(ttft_ms), 0) AS INTEGER) AS ttft_sum,
+    CAST(COALESCE(SUM(CASE WHEN ttft_ms > 0 THEN 1 ELSE 0 END), 0) AS INTEGER) AS ttft_turns
+FROM usage
+WHERE created_at >= ?
+GROUP BY kind
+ORDER BY turns DESC, kind ASC
+`
+
+type UsageKindStatsRow struct {
+	Kind             string  `json:"kind"`
+	Turns            int64   `json:"turns"`
+	InputTokens      int64   `json:"input_tokens"`
+	OutputTokens     int64   `json:"output_tokens"`
+	CachedTokens     int64   `json:"cached_tokens"`
+	CacheWriteTokens int64   `json:"cache_write_tokens"`
+	ReasoningTokens  int64   `json:"reasoning_tokens"`
+	CostUsd          float64 `json:"cost_usd"`
+	CostTurns        int64   `json:"cost_turns"`
+	DurationMs       int64   `json:"duration_ms"`
+	TtftSum          int64   `json:"ttft_sum"`
+	TtftTurns        int64   `json:"ttft_turns"`
+}
+
+// ttft_sum and ttft_turns cover only the turns whose TTFT is known.
+func (q *Queries) UsageKindStats(ctx context.Context, since int64) ([]UsageKindStatsRow, error) {
+	rows, err := q.query(ctx, q.usageKindStatsStmt, usageKindStats, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UsageKindStatsRow{}
+	for rows.Next() {
+		var i UsageKindStatsRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.Turns,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CachedTokens,
+			&i.CacheWriteTokens,
+			&i.ReasoningTokens,
+			&i.CostUsd,
+			&i.CostTurns,
+			&i.DurationMs,
+			&i.TtftSum,
+			&i.TtftTurns,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const usageModelStats = `-- name: UsageModelStats :many
+SELECT
+    kind,
+    model,
+    COUNT(*) AS turns,
+    CAST(COALESCE(SUM(input_tokens), 0) AS INTEGER) AS input_tokens,
+    CAST(COALESCE(SUM(output_tokens), 0) AS INTEGER) AS output_tokens,
+    CAST(COALESCE(SUM(cached_tokens), 0) AS INTEGER) AS cached_tokens,
+    CAST(COALESCE(SUM(cache_write_tokens), 0) AS INTEGER) AS cache_write_tokens,
+    CAST(COALESCE(SUM(reasoning_tokens), 0) AS INTEGER) AS reasoning_tokens,
+    CAST(COALESCE(SUM(ttft_ms), 0) AS INTEGER) AS ttft_sum,
+    CAST(COALESCE(SUM(CASE WHEN ttft_ms > 0 THEN 1 ELSE 0 END), 0) AS INTEGER) AS ttft_turns
+FROM usage
+WHERE created_at >= ?
+GROUP BY kind, model
+ORDER BY turns DESC, kind ASC, model ASC
+`
+
+type UsageModelStatsRow struct {
+	Kind             string `json:"kind"`
+	Model            string `json:"model"`
+	Turns            int64  `json:"turns"`
+	InputTokens      int64  `json:"input_tokens"`
+	OutputTokens     int64  `json:"output_tokens"`
+	CachedTokens     int64  `json:"cached_tokens"`
+	CacheWriteTokens int64  `json:"cache_write_tokens"`
+	ReasoningTokens  int64  `json:"reasoning_tokens"`
+	TtftSum          int64  `json:"ttft_sum"`
+	TtftTurns        int64  `json:"ttft_turns"`
+}
+
+func (q *Queries) UsageModelStats(ctx context.Context, since int64) ([]UsageModelStatsRow, error) {
+	rows, err := q.query(ctx, q.usageModelStatsStmt, usageModelStats, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UsageModelStatsRow{}
+	for rows.Next() {
+		var i UsageModelStatsRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.Model,
+			&i.Turns,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CachedTokens,
+			&i.CacheWriteTokens,
+			&i.ReasoningTokens,
+			&i.TtftSum,
+			&i.TtftTurns,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const usageRecent = `-- name: UsageRecent :many
+SELECT
+    id,
+    session_id,
+    agent_id,
+    kind,
+    model,
+    input_tokens,
+    output_tokens,
+    cached_tokens,
+    cache_write_tokens,
+    reasoning_tokens,
+    cost_usd,
+    duration_ms,
+    ttft_ms,
+    api_ms,
+    status,
+    "trigger",
+    mode,
+    created_at
+FROM usage
+ORDER BY created_at DESC, rowid DESC
+LIMIT ?
+`
+
+type UsageRecentRow struct {
+	ID               string  `json:"id"`
+	SessionID        string  `json:"session_id"`
+	AgentID          string  `json:"agent_id"`
+	Kind             string  `json:"kind"`
+	Model            string  `json:"model"`
+	InputTokens      int64   `json:"input_tokens"`
+	OutputTokens     int64   `json:"output_tokens"`
+	CachedTokens     int64   `json:"cached_tokens"`
+	CacheWriteTokens int64   `json:"cache_write_tokens"`
+	ReasoningTokens  int64   `json:"reasoning_tokens"`
+	CostUsd          float64 `json:"cost_usd"`
+	DurationMs       int64   `json:"duration_ms"`
+	TtftMs           int64   `json:"ttft_ms"`
+	ApiMs            int64   `json:"api_ms"`
+	Status           string  `json:"status"`
+	Trigger          string  `json:"trigger"`
+	Mode             string  `json:"mode"`
+	CreatedAt        int64   `json:"created_at"`
+}
+
+func (q *Queries) UsageRecent(ctx context.Context, limit int64) ([]UsageRecentRow, error) {
+	rows, err := q.query(ctx, q.usageRecentStmt, usageRecent, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UsageRecentRow{}
+	for rows.Next() {
+		var i UsageRecentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.AgentID,
+			&i.Kind,
+			&i.Model,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CachedTokens,
+			&i.CacheWriteTokens,
+			&i.ReasoningTokens,
+			&i.CostUsd,
+			&i.DurationMs,
+			&i.TtftMs,
+			&i.ApiMs,
+			&i.Status,
+			&i.Trigger,
+			&i.Mode,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const usageSeries = `-- name: UsageSeries :many
+SELECT
+    CAST(strftime(?, created_at, 'unixepoch', 'localtime') AS TEXT) AS bucket,
+    kind,
+    COUNT(*) AS turns,
+    CAST(COALESCE(SUM(input_tokens + output_tokens), 0) AS INTEGER) AS tokens
+FROM usage
+WHERE created_at >= ?
+GROUP BY bucket, kind
+ORDER BY bucket ASC, kind ASC
+`
+
+type UsageSeriesParams struct {
+	Format string `json:"format"`
+	Since  int64  `json:"since"`
+}
+
+type UsageSeriesRow struct {
+	Bucket string `json:"bucket"`
+	Kind   string `json:"kind"`
+	Turns  int64  `json:"turns"`
+	Tokens int64  `json:"tokens"`
+}
+
+// bucket is the local time formatted with format ('%Y-%m-%d %H' for hours,
+// '%Y-%m-%d' for days).
+func (q *Queries) UsageSeries(ctx context.Context, arg UsageSeriesParams) ([]UsageSeriesRow, error) {
+	rows, err := q.query(ctx, q.usageSeriesStmt, usageSeries, arg.Format, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UsageSeriesRow{}
+	for rows.Next() {
+		var i UsageSeriesRow
+		if err := rows.Scan(
+			&i.Bucket,
+			&i.Kind,
+			&i.Turns,
+			&i.Tokens,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const usageTTFTs = `-- name: UsageTTFTs :many
+SELECT ttft_ms
+FROM usage
+WHERE created_at >= ? AND ttft_ms > 0
+ORDER BY ttft_ms ASC
+`
+
+// Every known time to first token in the range, for percentiles.
+func (q *Queries) UsageTTFTs(ctx context.Context, since int64) ([]int64, error) {
+	rows, err := q.query(ctx, q.usageTTFTsStmt, usageTTFTs, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var ttftMs int64
+		if err := rows.Scan(&ttftMs); err != nil {
+			return nil, err
+		}
+		items = append(items, ttftMs)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

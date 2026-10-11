@@ -195,7 +195,7 @@ func (s *paneStrip) fromColumns(cols [][]paneID, widths []int, closed []paneID) 
 }
 
 // paneOrder is the order new kinds of panes are added in.
-var paneOrder = []paneID{paneSession, paneAgents, paneGit, paneTasks, paneCommands, paneNotices}
+var paneOrder = []paneID{paneSession, paneAgents, paneGit, paneTasks, paneCommands, paneNotices, paneUsage}
 
 // registeredOrder lists the registered panes, known kinds first in
 // paneOrder, then any others by name.

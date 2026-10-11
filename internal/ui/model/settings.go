@@ -30,6 +30,18 @@ func (m *UI) openSettingsDialog(id string) tea.Cmd {
 	return d.InitialCmd()
 }
 
+// openUsageDialog opens the full Usage view, or brings an open one to the
+// front.
+func (m *UI) openUsageDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.UsageID) {
+		m.dialog.BringToFront(dialog.UsageID)
+		return nil
+	}
+	d := dialog.NewUsage(m.com)
+	m.dialog.OpenDialog(d)
+	return d.InitialCmd()
+}
+
 // applyDeckSettings saves a change to Deck's own settings, off the UI loop.
 // The dialog shows the change already.
 func (m *UI) applyDeckSettings(msg dialog.ActionSetDeckSettings) tea.Cmd {

@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"image"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,6 +33,10 @@ type header struct {
 	// cached logo and compact logo
 	logo        string
 	compactLogo string
+	// markEdges are the agents' card edges compactLogo was drawn with;
+	// markOK is false when it must be drawn again.
+	markEdges []decklogo.Edge
+	markOK    bool
 
 	// anim is the landing screen's living wordmark; ticking is true while
 	// a frame tick is on its way.
@@ -61,21 +66,40 @@ func newHeader(com *common.Common) *header {
 // after the theme changes.
 func (h *header) refresh() {
 	t := h.com.Styles
-	h.compactLogo = " " + t.Header.Mark.Render("◆") + " " +
-		styles.ApplyBoldForegroundGrad(t.Header.LogoGradCanvas, "deck", t.Header.LogoGradFromColor, t.Header.LogoGradToColor) + " "
+	h.invalidateMark()
 	h.anim.SetPalette(logo.PaletteFor(t))
 	// Force drawHeader to re-render the wide logo on the next frame.
 	h.width = 0
 	h.logo = ""
 }
 
-// drawHeader draws the header for the given session. lspErrorCount comes
+// invalidateMark makes the next frame draw the compact logo's mark again:
+// call it when the agents' limits or context change.
+func (h *header) invalidateMark() { h.markOK = false }
+
+// mark returns the compact logo, " ▂▅█ deck ", the agents' card edges
+// filled by their usage, drawn again only when the edges change.
+func (h *header) mark(edges []decklogo.Edge) string {
+	if h.markOK && slices.Equal(edges, h.markEdges) {
+		return h.compactLogo
+	}
+	t := h.com.Styles
+	h.compactLogo = " " + decklogo.SmallMark(edges, t.Header.Mark.GetForeground(), t.Logo.MarkLowColor) + " " +
+		styles.ApplyBoldForegroundGrad(t.Header.LogoGradCanvas, "deck", t.Header.LogoGradFromColor, t.Header.LogoGradToColor) + " "
+	h.markEdges = append(h.markEdges[:0], edges...)
+	h.markOK = true
+	return h.compactLogo
+}
+
+// drawHeader draws the header for the given session. edges are the agents'
+// card edges in Deck's mark (see UI.markLevels). lspErrorCount comes
 // from the UI's memoized LSP state: drawing runs on every frame and must not
 // probe the workspace (a synchronous HTTP round-trip in client/server mode).
 func (h *header) drawHeader(
 	scr uv.Screen,
 	area uv.Rectangle,
 	session *session.Session,
+	edges []decklogo.Edge,
 	compact bool,
 	detailsOpen bool,
 	width int,
@@ -92,7 +116,7 @@ func (h *header) drawHeader(
 	h.compact = compact
 
 	if !compact || session == nil {
-		uv.NewStyledString(h.landingLogo(area)).Draw(scr, area)
+		uv.NewStyledString(h.landingLogo(area, edges)).Draw(scr, area)
 		return
 	}
 
@@ -101,7 +125,7 @@ func (h *header) drawHeader(
 	}
 
 	var b strings.Builder
-	b.WriteString(h.compactLogo)
+	b.WriteString(h.mark(edges))
 
 	availDetailWidth := width - leftPadding - rightPadding - lipgloss.Width(b.String()) - minHeaderDiags - diagToDetailsSpacing
 	details := renderHeaderDetails(
@@ -209,12 +233,13 @@ func logoTick() tea.Cmd {
 	return tea.Tick(logoFrame, func(t time.Time) tea.Msg { return logoTickMsg(t) })
 }
 
-// landingLogo is the living wordmark with the tagline and version under it,
-// sized to area.
-func (h *header) landingLogo(area uv.Rectangle) string {
+// landingLogo is the living wordmark beside the agents' card edges, with the
+// tagline and version under it, sized to area.
+func (h *header) landingLogo(area uv.Rectangle, edges []decklogo.Edge) string {
 	t := h.com.Styles
 	h.area = area
 	h.anim.SetPalette(logo.PaletteFor(t))
+	h.anim.SetEdges(edges)
 	h.anim.SetSize(area.Dx(), max(1, area.Dy()-1))
 	if h.pending {
 		if w, _ := h.anim.Bounds(); w > 0 {

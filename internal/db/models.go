@@ -8,6 +8,16 @@ import (
 	"database/sql"
 )
 
+type Behavior struct {
+	ID        int64  `json:"id"`
+	SessionID string `json:"session_id"`
+	AgentID   string `json:"agent_id"`
+	Kind      string `json:"kind"`
+	Detail    string `json:"detail"`
+	Value     int64  `json:"value"`
+	CreatedAt int64  `json:"created_at"`
+}
+
 type File struct {
 	ID        string `json:"id"`
 	SessionID string `json:"session_id"`
@@ -16,6 +26,19 @@ type File struct {
 	Version   int64  `json:"version"`
 	CreatedAt int64  `json:"created_at"`
 	UpdatedAt int64  `json:"updated_at"`
+}
+
+type LimitSnapshot struct {
+	ID           int64   `json:"id"`
+	AgentKind    string  `json:"agent_kind"`
+	WindowID     string  `json:"window_id"`
+	Kind         string  `json:"kind"`
+	Label        string  `json:"label"`
+	UsedPct      float64 `json:"used_pct"`
+	ResetsAt     int64   `json:"resets_at"`
+	DurationMins int64   `json:"duration_mins"`
+	Plan         string  `json:"plan"`
+	CreatedAt    int64   `json:"created_at"`
 }
 
 type McpDisabledServer struct {
@@ -64,16 +87,36 @@ type Session struct {
 	Channel          sql.NullString `json:"channel"`
 }
 
+type TraceSpan struct {
+	ID        int64  `json:"id"`
+	TurnID    string `json:"turn_id"`
+	SessionID string `json:"session_id"`
+	AgentID   string `json:"agent_id"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	StartMs   int64  `json:"start_ms"`
+	DurMs     int64  `json:"dur_ms"`
+	Tokens    int64  `json:"tokens"`
+	CreatedAt int64  `json:"created_at"`
+}
+
 type Usage struct {
-	ID           string  `json:"id"`
-	SessionID    string  `json:"session_id"`
-	AgentID      string  `json:"agent_id"`
-	Kind         string  `json:"kind"`
-	Model        string  `json:"model"`
-	InputTokens  int64   `json:"input_tokens"`
-	OutputTokens int64   `json:"output_tokens"`
-	CachedTokens int64   `json:"cached_tokens"`
-	CostUsd      float64 `json:"cost_usd"`
-	DurationMs   int64   `json:"duration_ms"`
-	CreatedAt    int64   `json:"created_at"`
+	ID               string  `json:"id"`
+	SessionID        string  `json:"session_id"`
+	AgentID          string  `json:"agent_id"`
+	Kind             string  `json:"kind"`
+	Model            string  `json:"model"`
+	InputTokens      int64   `json:"input_tokens"`
+	OutputTokens     int64   `json:"output_tokens"`
+	CachedTokens     int64   `json:"cached_tokens"`
+	CostUsd          float64 `json:"cost_usd"`
+	DurationMs       int64   `json:"duration_ms"`
+	CreatedAt        int64   `json:"created_at"`
+	CacheWriteTokens int64   `json:"cache_write_tokens"`
+	ReasoningTokens  int64   `json:"reasoning_tokens"`
+	Status           string  `json:"status"`
+	TtftMs           int64   `json:"ttft_ms"`
+	ApiMs            int64   `json:"api_ms"`
+	Trigger          string  `json:"trigger"`
+	Mode             string  `json:"mode"`
 }

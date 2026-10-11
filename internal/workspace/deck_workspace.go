@@ -25,6 +25,7 @@ import (
 	"github.com/dev-dami/deck/internal/pubsub"
 	"github.com/dev-dami/deck/internal/session"
 	tools "github.com/dev-dami/deck/internal/toolspec"
+	"github.com/dev-dami/deck/internal/usage"
 )
 
 // DeckWorkspace is the in-process workspace with Deck's engine in place of
@@ -57,6 +58,11 @@ type DeckWorkspace struct {
 	models map[string][]deckagent.ModelInfo // each CLI's models, once asked
 	since  map[string]time.Time             // when each busy agent's turn began
 	warned map[string]bool                  // agents told they cannot ask in ask mode
+	next   map[string]pendingTurn           // what starts each agent's next turn
+	limits map[string]LiveLimits            // plan limits by agent kind, as last reported
+	// lastMode is the permission mode the last recorded mode change set.
+	// Only the pump goroutine touches it.
+	lastMode deckagent.Mode
 
 	act activity // tool calls in flight and background shells, by session
 }
@@ -71,6 +77,9 @@ type turn struct {
 	diffs    map[string]deckagent.FileDiff // by path, for edit results
 	usage    deckagent.Usage
 	began    time.Time // when the turn began, kept past an error for the usage record
+	trace    *traceBuilder
+	trigger  string // what started the turn (usage.Trigger*); "" = not known
+	failed   bool   // an error ended part of the turn
 }
 
 // NewDeckWorkspace wraps a and drives eng's agents through it.
@@ -86,6 +95,9 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 		models:       map[string][]deckagent.ModelInfo{},
 		since:        map[string]time.Time{},
 		warned:       map[string]bool{},
+		next:         map[string]pendingTurn{},
+		limits:       map[string]LiveLimits{},
+		lastMode:     deckagent.ModeAsk,
 		path:         filepath.Join(store.Config().Options.DataDirectory, "deck-threads.json"),
 	}
 	if b, err := os.ReadFile(w.path); err == nil {
@@ -211,7 +223,9 @@ func (w *DeckWorkspace) AgentCancel(sessionID string) {
 	}
 	for _, a := range th.Members {
 		if busy(a) {
-			_ = w.mgr().Interrupt(a.ID)
+			if w.mgr().Interrupt(a.ID) == nil {
+				w.recordBehavior(sessionID, a.ID, usage.BehaviorInterrupt, "", 1)
+			}
 		}
 	}
 }
@@ -405,7 +419,8 @@ func (w *DeckWorkspace) pump() {
 		switch m := msg.(type) {
 		case decks.EventMsg:
 			if m.FromUser() {
-				continue // AgentRun stored it already
+				w.onUserMessage(m) // AgentRun stored the message already
+				continue
 			}
 			w.onEvent(m.ThreadID, m.Event)
 		case decks.ApprovalMsg:
@@ -419,6 +434,7 @@ func (w *DeckWorkspace) pump() {
 				cancel()
 			}
 		case decks.RelayMsg:
+			w.onRelay(m)
 			to := make([]string, len(m.To))
 			for i, t := range m.To {
 				to[i] = "$" + t
@@ -427,41 +443,95 @@ func (w *DeckWorkspace) pump() {
 		case decks.NoticeMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.Text)
 		case decks.PausedMsg:
+			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorHopPause, "", m.Hops)
 			w.notice(w.sessionOf(m.ThreadID), "Paused after the agents passed messages back and forth; send a message to go on.")
+		case decks.ContinuedMsg:
+			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorContinue, "", 1)
 		case decks.MemberAddedMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.AgentID+" joined")
+		case decks.AutoApprovedMsg:
+			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorApproveAllow, "auto", 1)
+		case decks.AutoDeniedMsg:
+			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorApproveDeny, "auto", 1)
+		case decks.ModeChangedMsg:
+			// One switch in the UI changes every live thread, and a new
+			// thread is put in the current mode: count the switch once.
+			if m.Mode != w.lastMode {
+				w.lastMode = m.Mode
+				w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorModeChange, string(m.Mode), 1)
+			}
+		case decks.ModelChangedMsg:
+			if m.Changed == "effort" {
+				w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorEffortChange, m.Effort, 1)
+			} else {
+				w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorModelChange, m.Model, 1)
+			}
+		case decks.EditedMsg:
+			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorQueueEdit, "", 1)
+		case decks.QueueCancelledMsg:
+			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorQueueCancel, "", 1)
 		}
 	}
 }
 
 func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
+	if ev.Kind == deckagent.KindLimits {
+		if ev.AgentID != "" {
+			w.onLimits(ev) // about the account: no turn, no message
+		}
+		return
+	}
 	sid := w.sessionOf(threadID)
 	if sid == "" || ev.AgentID == "" {
 		return
 	}
 	var began time.Time // when a finishing turn began; zero when unknown
+	var start time.Time // when the turn this event belongs to began; zero when unknown
 	w.mu.Lock()
 	w.last = ev
 	switch ev.Kind {
+	case deckagent.KindSessionStarted:
+		// The CLI is up (codex says so at start-up, Claude at each turn):
+		// not yet a turn.
 	case deckagent.KindTurnDone, deckagent.KindExited, deckagent.KindError:
 		began = w.since[ev.AgentID]
 		delete(w.since, ev.AgentID)
+		start = began
 	default:
 		if w.since[ev.AgentID].IsZero() {
-			w.since[ev.AgentID] = time.Now()
+			// A turn starts: at the post that addressed the agent, when
+			// that found it idle, else now.
+			now := time.Now()
+			if p := w.next[ev.AgentID]; !p.at.IsZero() && p.at.Before(now) {
+				now = p.at
+			}
+			w.since[ev.AgentID] = now
 		}
+		start = w.since[ev.AgentID]
 	}
 	w.mu.Unlock()
 	if ev.Kind == deckagent.KindSessionStarted {
 		w.warnNoAsk(sid, ev.AgentID)
+		w.observeActivity(sid, ev)
+		w.edge(sid, false)
+		return
 	}
 	w.observeActivity(sid, ev)
 	ctx := context.Background()
 	t := w.turns[ev.AgentID]
 	if t == nil {
-		t = &turn{tools: map[string]bool{}, diffs: map[string]deckagent.FileDiff{}}
+		traceStart := start
+		if traceStart.IsZero() {
+			traceStart = time.Now()
+		}
+		t = &turn{tools: map[string]bool{}, diffs: map[string]deckagent.FileDiff{}, began: start, trace: newTraceBuilder(traceStart)}
+		w.mu.Lock()
+		t.trigger = w.next[ev.AgentID].trigger
+		delete(w.next, ev.AgentID)
+		w.mu.Unlock()
 		w.turns[ev.AgentID] = t
 	}
+	t.trace.observe(ev)
 	open := func() {
 		if t.open {
 			return
@@ -553,8 +623,14 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 			}
 		}
 	case deckagent.KindError:
-		if !began.IsZero() {
+		if !began.IsZero() && (t.began.IsZero() || began.Before(t.began)) {
 			t.began = began
+		}
+		if retrying(ev.Text) {
+			w.recordBehavior(sid, ev.AgentID, usage.BehaviorRetry, "", 1)
+		} else {
+			t.failed = true
+			w.recordBehavior(sid, ev.AgentID, usage.BehaviorError, "", 1)
 		}
 		open()
 		t.msg.AddFinish(message.FinishReasonError, "Error", ev.Text)
@@ -572,14 +648,21 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 			t.msg.AddFinish(reason, "", "")
 			_ = w.app.Messages.Update(ctx, t.msg)
 		}
-		if began.IsZero() {
+		// The turn's own start outlives an error mid-turn, which restarts
+		// the agent's clock.
+		if !t.began.IsZero() && (began.IsZero() || t.began.Before(began)) {
 			began = t.began
 		}
 		var took time.Duration
+		end := time.Now()
 		if !began.IsZero() {
-			took = time.Since(began)
+			took = end.Sub(began)
 		}
-		w.addUsage(sid, ev.AgentID, t.usage, took)
+		meta := turnMeta{status: turnStatus(ev, t.failed), trigger: t.trigger, trace: t.trace, end: end}
+		if th, ok := w.mgr().Thread(threadID); ok {
+			meta.mode = string(th.Mode)
+		}
+		w.addUsage(sid, ev.AgentID, t.usage, took, meta)
 		delete(w.turns, ev.AgentID)
 	}
 	w.edge(sid, ev.Kind == deckagent.KindError)
@@ -613,7 +696,7 @@ func (w *DeckWorkspace) setTodos(sid string, input json.RawMessage) {
 // addUsage adds a finished turn's tokens and cost to the session and records
 // the turn for the Usage view. How full each agent's context is comes from
 // the roster, not from the session's token counts, which only ever add up.
-func (w *DeckWorkspace) addUsage(sid, agentID string, u deckagent.Usage, took time.Duration) {
+func (w *DeckWorkspace) addUsage(sid, agentID string, u deckagent.Usage, took time.Duration, meta turnMeta) {
 	if u.InputTokens == 0 && u.OutputTokens == 0 && u.CachedTokens == 0 && u.CostUSD == 0 && took == 0 {
 		return // no turn ran (an exit after the turn was already counted)
 	}
@@ -624,7 +707,7 @@ func (w *DeckWorkspace) addUsage(sid, agentID string, u deckagent.Usage, took ti
 		sess.CompletionTokens += int64(u.OutputTokens)
 		_, _ = w.app.Sessions.Save(ctx, sess)
 	}
-	w.recordUsage(ctx, sid, agentID, u, took)
+	w.recordUsage(ctx, sid, agentID, u, took, meta)
 }
 
 // setText puts the final text of a reply in the message: it replaces what
@@ -752,6 +835,11 @@ func (w *DeckWorkspace) onApproval(m decks.ApprovalMsg) {
 			req.Respond(deckagent.Decision{Allow: false, Reason: err.Error()})
 			return
 		}
+		kind := usage.BehaviorApproveDeny
+		if ok {
+			kind = usage.BehaviorApproveAllow
+		}
+		w.recordBehavior(sid, req.AgentID, kind, "manual", 1)
 		req.Respond(deckagent.Decision{Allow: ok})
 	}()
 }

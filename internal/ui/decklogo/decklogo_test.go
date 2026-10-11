@@ -43,8 +43,8 @@ func TestStaticLightIsNotEmpty(t *testing.T) {
 func TestStaticTinyArea(t *testing.T) {
 	t.Parallel()
 	got := ansi.Strip(Static(10, 1, true))
-	if got != "◆ deck" {
-		t.Fatalf("tiny logo = %q, want %q", got, "◆ deck")
+	if got != "▎▍▌ deck" {
+		t.Fatalf("tiny logo = %q, want %q", got, "▎▍▌ deck")
 	}
 	if got := Static(3, 1, true); got != "" {
 		t.Fatalf("logo with no room = %q, want empty", got)
@@ -113,7 +113,7 @@ func TestTinyUsesPalette(t *testing.T) {
 	t.Parallel()
 	p := Palette{Accent: lipgloss.Color("#88c0d0"), Name: lipgloss.Color("#eceff4")}
 	got := StaticPalette(10, 1, p)
-	if ansi.Strip(got) != "◆ deck" {
+	if ansi.Strip(got) != "▎▍▌ deck" {
 		t.Fatalf("tiny logo = %q", ansi.Strip(got))
 	}
 	if got == Static(10, 1, true) {

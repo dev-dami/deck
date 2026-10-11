@@ -1,5 +1,7 @@
-// Package decklogo draws Deck's animated wordmark: lowercase "deck" with the ◆
-// mark, as dot-matrix pixel art in braille cells, treated as a liquid surface.
+// Package decklogo draws Deck's animated wordmark: lowercase "deck" beside
+// Deck's mark, a deck of cards seen edge-on whose edges are the agents' live
+// usage meters (see Edge). The letters are dot-matrix pixel art in braille
+// cells, treated as a liquid surface.
 //
 // The package is pure. It owns no tea.Cmd and no timers: the host forwards
 // mouse and key events, calls Advance on each animation frame, and asks
@@ -73,15 +75,16 @@ const (
 const (
 	maxRipples  = 8
 	maxSplashes = 4
-	// tinyWidth is the width of the one-line fallback "◆ deck".
-	tinyWidth = 6
+	// tinyName is the width of " deck" after the small mark in the
+	// one-line fallback.
+	tinyName = 5
 )
 
 type sizeKind uint8
 
 const (
 	kindNone sizeKind = iota
-	kindTiny          // plain "◆ deck" text
+	kindTiny          // one line: the small mark, then "deck"
 	kindCompact
 	kindFull
 )
@@ -112,8 +115,16 @@ type Model struct {
 	// Available area and chosen layout.
 	aw, ah     int
 	kind       sizeKind
-	cols, rows int // drawn size in cells
-	dw, dh     int // drawn size in dots
+	cols, rows int // the wordmark's drawn size in cells
+	dw, dh     int // the wordmark's drawn size in dots
+	py         int // the wordmark's rows of padding above and below
+	ew         int // cells of card edges left of the wordmark
+
+	// The agents' card edges, and whether they are rising (the intro).
+	edges     []Edge
+	epal      []palEntry
+	edgeOn    bool
+	edgeStart time.Time
 
 	// Precomputed per-dot data (len dw*dh).
 	glow, near, base []float32
@@ -177,6 +188,7 @@ func (m *Model) SetPalette(p Palette) {
 	if !p.equal(m.colors) {
 		m.colors = p
 		m.pal = nil
+		m.epal = nil
 		m.dirty = true
 	}
 }
@@ -194,7 +206,7 @@ func (m *Model) SetSize(w, h int) {
 }
 
 // Bounds returns the drawn size in cells (0, 0 when nothing fits).
-func (m *Model) Bounds() (w, h int) { return m.cols, m.rows }
+func (m *Model) Bounds() (w, h int) { return m.ew + m.cols, m.rows }
 
 // Start begins the intro at now. With reduced motion it does nothing visible.
 func (m *Model) Start(now time.Time) {
@@ -204,6 +216,7 @@ func (m *Model) Start(now time.Time) {
 	m.amp = 0
 	m.introOn = !reduced() && m.kind >= kindCompact
 	m.introStart = now
+	m.edgeOn, m.edgeStart = m.introOn, now
 	m.wasMoving = true
 	m.dirty = true
 }
@@ -224,6 +237,7 @@ func (m *Model) Mouse(x, y int, click bool, now time.Time) {
 	if reduced() || m.kind < kindCompact {
 		return
 	}
+	x -= m.ew // the edges do not ripple
 	if x < 0 || y < 0 || x >= m.cols || y >= m.rows {
 		return
 	}
@@ -277,8 +291,8 @@ func (m *Model) clearFX() {
 // until the next Start or Mouse.
 func (m *Model) Advance(now time.Time) (moving bool) {
 	if reduced() || m.kind < kindCompact {
-		if m.introOn || m.amp != 0 {
-			m.introOn, m.amp = false, 0
+		if m.introOn || m.amp != 0 || m.edgeOn {
+			m.introOn, m.amp, m.edgeOn = false, 0, false
 			m.clearFX()
 			m.dirty = true
 		}
@@ -300,6 +314,14 @@ func (m *Model) Advance(now time.Time) (moving bool) {
 		if now.Sub(m.introStart) >= sweepStart+sweepDuration {
 			m.introOn = false
 			m.amp = 1 // continue from the intro's envelope (already 1)
+		} else {
+			moving = true
+		}
+	}
+	if m.edgeOn {
+		if now.Sub(m.edgeStart) >= edgeRise {
+			m.edgeOn = false
+			m.dirty = true
 		} else {
 			moving = true
 		}
@@ -356,32 +378,36 @@ func (m *Model) splashPush() float64 {
 // rebuild picks the layout for the available area and precomputes all fields.
 func (m *Model) rebuild() {
 	var bm *bitmap
+	ew := m.edgesWidth()
+	tiny := smallWidth(len(m.edges)) + tinyName
 	switch {
-	case m.aw >= (fullBitmap().w+1)/2 && m.ah >= fullBitmap().h/4:
+	case m.aw >= ew+(fullBitmap().w+1)/2 && m.ah >= fullBitmap().h/4:
 		m.kind, bm = kindFull, fullBitmap()
-	case m.aw >= (compactBitmap().w+1)/2 && m.ah >= compactBitmap().h/4:
+	case m.aw >= ew+(compactBitmap().w+1)/2 && m.ah >= compactBitmap().h/4:
 		m.kind, bm = kindCompact, compactBitmap()
-	case m.aw >= tinyWidth && m.ah >= 1:
+	case m.aw >= tiny && m.ah >= 1:
 		m.kind = kindTiny
 	default:
 		m.kind = kindNone
 	}
 	m.pal = nil
 	m.cache = ""
+	m.ew, m.py = 0, 0
 	switch m.kind {
 	case kindNone:
 		m.cols, m.rows, m.dw, m.dh = 0, 0, 0, 0
 		m.core = nil
 		return
 	case kindTiny:
-		m.cols, m.rows, m.dw, m.dh = tinyWidth, 1, 0, 0
+		m.cols, m.rows, m.dw, m.dh = tiny, 1, 0, 0
 		m.core = nil
 		return
 	}
 
 	cols0, rows0 := (bm.w+1)/2, bm.h/4
-	px := clampInt((m.aw-cols0)/2, 0, 2)
+	px := clampInt((m.aw-ew-cols0)/2, 0, 2)
 	py := clampInt((m.ah-rows0)/2, 0, 1)
+	m.ew, m.py = ew, py
 	m.cols, m.rows = cols0+2*px, rows0+2*py
 	m.dw, m.dh = m.cols*2, m.rows*4
 	ox := px*2 + (cols0*2-bm.w)/2
@@ -446,7 +472,7 @@ func (m *Model) rebuild() {
 	m.bits = make([]uint8, nc)
 	m.sum = make([]float32, nc)
 	m.cnt = make([]uint8, nc)
-	m.buf = make([]byte, 0, (m.cols*3+16)*m.rows*2)
+	m.buf = make([]byte, 0, (m.cols*3+16+m.ew*24)*m.rows*2)
 }
 
 func clampInt(v, lo, hi int) int {

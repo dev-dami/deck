@@ -114,6 +114,7 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		r.removeConfig()
 		return nil, err
 	}
+	r.probeUsage()
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -392,6 +393,22 @@ func (r *run) SessionID() string {
 }
 
 func jsonMarshal(v any) ([]byte, error) { return json.Marshal(v) }
+
+// probeUsage asks the CLI, once per run, for the plan's usage windows (the
+// get_usage control request; see limits.go). The answer comes back on stdout
+// as a control_response. It is best effort: a write error is ignored and the
+// rate_limit_event lines still arrive with each turn.
+func (r *run) probeUsage() {
+	r.mu.Lock()
+	p := r.cur
+	r.mu.Unlock()
+	if p == nil {
+		return
+	}
+	r.sendMu.Lock()
+	_, _ = p.stdin.Write(append(usageProbe(), '\n'))
+	r.sendMu.Unlock()
+}
 
 // Send sends a text-only prompt.
 func (r *run) Send(prompt string) error { return r.send(prompt, nil) }

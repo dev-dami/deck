@@ -14,6 +14,8 @@ import (
 
 // Record is one finished agent turn.
 type Record struct {
+	// ID identifies the turn; its trace spans refer to it. "" means a new one.
+	ID           string
 	SessionID    string
 	AgentID      string
 	Kind         string // "claude", "codex", "opencode", "antigravity"
@@ -21,9 +23,55 @@ type Record struct {
 	InputTokens  int
 	OutputTokens int
 	CachedTokens int
-	CostUSD      float64
-	Duration     time.Duration
-	At           time.Time // when the turn finished; zero means now
+	// CacheWriteTokens went into the prompt cache; ReasoningTokens were spent
+	// thinking.
+	CacheWriteTokens int
+	ReasoningTokens  int
+	CostUSD          float64
+	Duration         time.Duration
+	// TTFT is the time to the first token and APITime the time spent in model
+	// requests; 0 when not known.
+	TTFT    time.Duration
+	APITime time.Duration
+	Status  string    // StatusDone ("" too), StatusInterrupted or StatusFailed
+	Trigger string    // TriggerUser, TriggerRelay, TriggerMention, TriggerSteer; "" = not known
+	Mode    string    // the thread's permission mode: "plan", "ask" or "yolo"
+	At      time.Time // when the turn finished; zero means now
+	// Spans are where the turn's time went, written with it.
+	Spans []Span
+}
+
+// How a turn ended.
+const (
+	StatusDone        = "done"
+	StatusInterrupted = "interrupted"
+	StatusFailed      = "failed"
+)
+
+// What started a turn.
+const (
+	TriggerUser    = "user"    // the user's message
+	TriggerRelay   = "relay"   // another agent's thread.send
+	TriggerMention = "mention" // another agent's reply naming it
+	TriggerSteer   = "steer"   // the user steered a queued message in
+)
+
+// Span kinds.
+const (
+	SpanThink = "think"
+	SpanText  = "text"
+	SpanTool  = "tool"
+	SpanWait  = "wait" // from the start of the turn to its first token
+)
+
+// Span is one stretch of a turn: thinking, writing, a tool call, or the wait
+// for the first token. Start is from the beginning of the turn.
+type Span struct {
+	Kind   string // SpanThink, SpanText, SpanTool or SpanWait
+	Name   string // the tool's name for a tool span; never prompt text
+	Start  time.Duration
+	Dur    time.Duration
+	Tokens int // output tokens of a think or text span (estimated, see the recorder)
 }
 
 // Totals sums a range.
@@ -90,6 +138,34 @@ type Service interface {
 	// Report sums the turns since since (zero: all of them), with the top
 	// costliest sessions.
 	Report(ctx context.Context, since time.Time, top int) (Report, error)
+
+	// RecordBehavior notes one thing the user (or Deck for them) did.
+	RecordBehavior(ctx context.Context, b Behavior) error
+	// RecordLimits stores plan windows, skipping each that has not moved
+	// since its last row (used_pct by less than 1, same reset). It returns
+	// how many rows it wrote.
+	RecordLimits(ctx context.Context, snaps []LimitSnapshot) (int, error)
+
+	// Overview sums the turns since since (zero: all of them).
+	Overview(ctx context.Context, since time.Time) (Overview, error)
+	// Series is tokens and turns per agent kind, by hour or day.
+	Series(ctx context.Context, since time.Time, g Granularity) (Series, error)
+	// Heat is the tokens of each day of the last weeks weeks, from a Monday.
+	Heat(ctx context.Context, weeks int) ([]Day, error)
+	// Behavior counts what the user did, with rates and a daily series.
+	Behavior(ctx context.Context, since time.Time) (BehaviorReport, error)
+	// Limits is the newest stored row of every plan window, by agent kind.
+	Limits(ctx context.Context) ([]LimitSnapshot, error)
+	// LimitHistory is one window's stored rows since since, oldest first.
+	LimitHistory(ctx context.Context, agentKind, windowID string, since time.Time) ([]LimitSnapshot, error)
+	// Traces are the latest turns, newest first.
+	Traces(ctx context.Context, limit int) ([]Turn, error)
+	// Trace is one turn's spans, in order.
+	Trace(ctx context.Context, turnID string) ([]Span, error)
+	// Models sums the turns of each agent kind's models.
+	Models(ctx context.Context, since time.Time) ([]ModelStat, error)
+	// Cost is what each agent kind's CLI reported the turns cost.
+	Cost(ctx context.Context, since time.Time) ([]KindCost, error)
 }
 
 type service struct {
@@ -106,19 +182,54 @@ func (s *service) Record(ctx context.Context, r Record) error {
 	if at.IsZero() {
 		at = time.Now()
 	}
-	return s.q.InsertUsage(ctx, db.InsertUsageParams{
-		ID:           uuid.New().String(),
-		SessionID:    r.SessionID,
-		AgentID:      r.AgentID,
-		Kind:         r.Kind,
-		Model:        r.Model,
-		InputTokens:  int64(max(0, r.InputTokens)),
-		OutputTokens: int64(max(0, r.OutputTokens)),
-		CachedTokens: int64(max(0, r.CachedTokens)),
-		CostUsd:      max(0, r.CostUSD),
-		DurationMs:   max(0, r.Duration.Milliseconds()),
-		CreatedAt:    at.Unix(),
+	id := r.ID
+	if id == "" {
+		id = uuid.New().String()
+	}
+	status := r.Status
+	if status == "" {
+		status = StatusDone
+	}
+	err := s.q.InsertUsage(ctx, db.InsertUsageParams{
+		ID:               id,
+		SessionID:        r.SessionID,
+		AgentID:          r.AgentID,
+		Kind:             r.Kind,
+		Model:            r.Model,
+		InputTokens:      int64(max(0, r.InputTokens)),
+		OutputTokens:     int64(max(0, r.OutputTokens)),
+		CachedTokens:     int64(max(0, r.CachedTokens)),
+		CostUsd:          max(0, r.CostUSD),
+		DurationMs:       max(0, r.Duration.Milliseconds()),
+		CreatedAt:        at.Unix(),
+		CacheWriteTokens: int64(max(0, r.CacheWriteTokens)),
+		ReasoningTokens:  int64(max(0, r.ReasoningTokens)),
+		Status:           status,
+		TtftMs:           max(0, r.TTFT.Milliseconds()),
+		ApiMs:            max(0, r.APITime.Milliseconds()),
+		Trigger:          r.Trigger,
+		Mode:             r.Mode,
 	})
+	if err != nil {
+		return err
+	}
+	for _, sp := range r.Spans {
+		err := s.q.InsertTraceSpan(ctx, db.InsertTraceSpanParams{
+			TurnID:    id,
+			SessionID: r.SessionID,
+			AgentID:   r.AgentID,
+			Kind:      sp.Kind,
+			Name:      sp.Name,
+			StartMs:   max(0, sp.Start.Milliseconds()),
+			DurMs:     max(0, sp.Dur.Milliseconds()),
+			Tokens:    int64(max(0, sp.Tokens)),
+			CreatedAt: at.Unix(),
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *service) Report(ctx context.Context, since time.Time, top int) (Report, error) {

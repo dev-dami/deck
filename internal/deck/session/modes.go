@@ -271,7 +271,7 @@ func (m *Manager) SetModel(agentID, model string) error {
 	a.model = model
 	a.mu.Unlock()
 	m.persistMeta(a.thread)
-	m.emit(ModelChangedMsg{ThreadID: a.thread.id, AgentID: a.id, Model: model, Effort: a.getEffort()})
+	m.emit(ModelChangedMsg{ThreadID: a.thread.id, AgentID: a.id, Model: model, Effort: a.getEffort(), Changed: "model"})
 	return nil
 }
 
@@ -302,7 +302,7 @@ func (m *Manager) SetEffort(agentID, effort string) error {
 	model := a.model
 	a.mu.Unlock()
 	m.persistMeta(a.thread)
-	m.emit(ModelChangedMsg{ThreadID: a.thread.id, AgentID: a.id, Model: model, Effort: effort})
+	m.emit(ModelChangedMsg{ThreadID: a.thread.id, AgentID: a.id, Model: model, Effort: effort, Changed: "effort"})
 	return nil
 }
 

@@ -1289,7 +1289,9 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	}
 	t := a.thread
 	res := a.apply(ev)
-	if !ev.Delta {
+	// Plan limits are about the account, not the conversation: they are not
+	// part of the thread's log.
+	if !ev.Delta && ev.Kind != agent.KindLimits {
 		t.mu.Lock()
 		m.appendLocked(t, store.Entry{Event: ev})
 		t.mu.Unlock()

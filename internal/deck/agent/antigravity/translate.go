@@ -32,6 +32,9 @@ type translator struct {
 	// DONE; then the call and result are emitted back to back.
 	pending map[int]pendingTool
 	now     func() time.Time
+	// limitsSent: the one KindLimits event (agy reports no plan windows, and
+	// reading its token is off-limits) went out with the first init.
+	limitsSent bool
 }
 
 type pendingTool struct {
@@ -140,7 +143,14 @@ func (t *translator) Line(line []byte) []agent.Event {
 			// The model/agent the CLI runs, when overridden on the command line.
 			ev.Text = strings.TrimSpace(wl.Init.Model + " " + wl.Init.Agent)
 		}
-		return []agent.Event{ev}
+		if t.limitsSent {
+			return []agent.Event{ev}
+		}
+		t.limitsSent = true
+		le := mk(agent.KindLimits)
+		le.Raw = nil
+		le.Limits = &agent.Limits{Unavailable: agent.LimitsUnsupported}
+		return []agent.Event{ev, le}
 
 	case "step_update":
 		if wl.StepUpdate == nil {
@@ -295,6 +305,10 @@ func (t *translator) result(r *wireResult, mk func(agent.Kind) agent.Event) []ag
 		u := &agent.Usage{}
 		if r.Usage != nil {
 			u.InputTokens, u.OutputTokens, u.CachedTokens = r.Usage.InputTokens, r.Usage.OutputTokens, r.Usage.CacheReadTokens
+			u.ReasoningTokens = r.Usage.ThinkingTokens
+		}
+		if r.DurationSecs > 0 {
+			u.DurationMs = int(r.DurationSecs * 1000)
 		}
 		return u
 	}

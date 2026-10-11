@@ -230,6 +230,9 @@ func TestATurnStreamsAsksAndEnds(t *testing.T) {
 	f := newFake(t)
 	r := f.start(t, agent.Spec{Instructions: "BRIEF"})
 	<-r.Events() // session started
+	if ev := <-r.Events(); ev.Kind != agent.KindLimits || ev.Limits == nil || ev.Limits.Unavailable != agent.LimitsUnsupported {
+		t.Fatalf("limits = %+v", ev)
+	}
 	if err := r.Send("hi"); err != nil {
 		t.Fatal(err)
 	}

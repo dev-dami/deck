@@ -34,6 +34,16 @@ type translator struct {
 	model       string
 	windows     map[string]int
 	lastEmitted int // ContextTokens of the last mid-turn usage event (dedup)
+
+	// ttft is the first message's time to first token in the turn under
+	// way, used when the result line does not carry one.
+	ttft int
+
+	// Plan limits (see limits.go): the windows known so far by id, the plan,
+	// and whether the get_usage probe failed.
+	limits       map[string]agent.LimitWindow
+	plan         string
+	limitsFailed bool
 }
 
 // ctxUsage is the token usage of one assistant message.
@@ -44,7 +54,10 @@ type ctxUsage struct {
 func (c ctxUsage) total() int { return c.input + c.cacheCreate + c.cacheRead + c.output }
 
 func newTranslator(agentID string) *translator {
-	return &translator{agentID: agentID, tools: map[string]toolInfo{}, now: time.Now, windows: map[string]int{}}
+	return &translator{
+		agentID: agentID, tools: map[string]toolInfo{}, now: time.Now, windows: map[string]int{},
+		limits: map[string]agent.LimitWindow{},
+	}
 }
 
 // Default context windows by model family, used until the CLI has reported
@@ -99,16 +112,25 @@ type streamLine struct {
 	TotalCostUSD float64         `json:"total_cost_usd"`
 	Usage        json.RawMessage `json:"usage"`
 	ModelUsage   map[string]struct {
-		ContextWindow int `json:"contextWindow"`
+		ContextWindow  int `json:"contextWindow"`
+		ThinkingTokens int `json:"thinkingTokens"`
 	} `json:"modelUsage"`
+	DurationMs    int `json:"duration_ms"`
+	DurationAPIMs int `json:"duration_api_ms"`
+
+	// result, and a stream_event's message_start: time to first token
+	TTFTMs int `json:"ttft_ms"`
 }
 
 // wireUsage is the usage object of an assistant message / message_delta.
 type wireUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	CacheCreate  int `json:"cache_creation_input_tokens"`
-	CacheRead    int `json:"cache_read_input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens   int `json:"input_tokens"`
+	CacheCreate   int `json:"cache_creation_input_tokens"`
+	CacheRead     int `json:"cache_read_input_tokens"`
+	OutputTokens  int `json:"output_tokens"`
+	OutputDetails struct {
+		ThinkingTokens int `json:"thinking_tokens"`
+	} `json:"output_tokens_details"`
 }
 
 type contentBlock struct {
@@ -169,6 +191,9 @@ func (t *translator) Line(line []byte) []agent.Event {
 		if json.Unmarshal(sl.Event, &se) != nil {
 			return nil
 		}
+		if se.Type == "message_start" && t.ttft == 0 && sl.TTFTMs > 0 {
+			t.ttft = sl.TTFTMs
+		}
 		if se.Type == "message_delta" && se.Usage != nil {
 			// Final usage of the message being streamed (the assistant lines
 			// carry the message_start usage, whose output_tokens is partial).
@@ -228,14 +253,37 @@ func (t *translator) Line(line []byte) []agent.Event {
 				}
 			}
 		}
+		thinking := u.OutputDetails.ThinkingTokens
+		if thinking == 0 {
+			for _, mu := range sl.ModelUsage {
+				thinking += mu.ThinkingTokens
+			}
+		}
+		ttft := sl.TTFTMs
+		if ttft == 0 {
+			ttft = t.ttft
+		}
+		t.ttft = 0
 		ue := mk(agent.KindUsage)
 		ue.Usage = &agent.Usage{
 			InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CachedTokens: u.CacheRead, CostUSD: sl.TotalCostUSD,
 			ContextTokens: t.ctx.total(), ContextWindow: t.window(),
+			CacheWriteTokens: u.CacheCreate, ReasoningTokens: thinking,
+			TTFTms: ttft, APIms: sl.DurationAPIMs, DurationMs: sl.DurationMs,
 		}
 		t.lastEmitted = t.ctx.total()
 		out = append(out, ue, mk(agent.KindTurnDone))
 		return out
+
+	case "rate_limit_event":
+		if t.rateLimit(line) {
+			return t.limitsEvent(mk)
+		}
+
+	case "control_response":
+		if t.probeAnswer(line) {
+			return t.limitsEvent(mk)
+		}
 	}
 	return nil
 }
