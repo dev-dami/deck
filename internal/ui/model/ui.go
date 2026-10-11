@@ -290,6 +290,11 @@ type UI struct {
 	workTicking bool
 	workSeen    map[string]time.Time
 
+	// chatWarmPending asks the end of the current update to start warming
+	// the chat's message cache (see Chat.Warm), after a theme change
+	// dropped it.
+	chatWarmPending bool
+
 	// sendProgressBar instructs the TUI to send progress bar updates to the
 	// terminal.
 	sendProgressBar    bool
@@ -964,7 +969,12 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, m.startLSPs(msg.lspFilePaths()))
 		msgs := msg.messages
-		if cmd := m.setSessionMessages(msgs); cmd != nil {
+		if cmd := m.setSessionMessagesNested(msgs, msg.nested); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		// Render the transcript into the cache a batch at a time so the
+		// first scroll does not render it all at once.
+		if cmd := m.chat.Warm(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 		if cmd := m.restoreModelFromSession(msgs); cmd != nil {
@@ -1478,16 +1488,22 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chat.HideScrollbar(msg.seq)
 		}
 	case chatWarmMsg:
-		// A resize has settled; warm the message cache one batch at a time
-		// so the scrollbar recompute never blocks the UI thread.
+		// A resize has settled (or a session loaded, or the theme changed);
+		// warm the message cache one batch at a time so the scrollbar
+		// recompute never blocks the UI thread.
 		if m.state == uiChat {
 			cmd, done := m.chat.WarmStep(msg.seq)
 			if cmd != nil {
 				cmds = append(cmds, cmd)
-			} else if done {
+			}
+			if done {
 				// Heights are cached now, so the final layout pass (scrollbar
 				// reservation) is cheap.
 				m.updateLayoutAndSize()
+			} else {
+				// Rendering off-screen messages into the cache changes
+				// nothing on screen; keep the memoized frame.
+				m.markScrollOnly()
 			}
 		}
 	case stripSaveMsg:
@@ -1695,6 +1711,14 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 	}
+	if m.chatWarmPending {
+		// A theme change dropped every message's render; re-render them
+		// a batch at a time rather than all at once on the first scroll.
+		m.chatWarmPending = false
+		if cmd := m.chat.Warm(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
 	if cmd := m.endFrameUpdate(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -1724,6 +1748,14 @@ func (m *UI) handleAnimTick(msg animTickMsg) tea.Cmd {
 
 // setSessionMessages sets the messages for the current session in the chat
 func (m *UI) setSessionMessages(msgs []message.Message) tea.Cmd {
+	return m.setSessionMessagesNested(msgs, nil)
+}
+
+// setSessionMessagesNested is setSessionMessages with the nested agent
+// transcripts the load command already read (see loadNestedMessages),
+// keyed by agent tool session ID. Transcripts missing from nested are
+// read here.
+func (m *UI) setSessionMessagesNested(msgs []message.Message, nested map[string][]message.Message) tea.Cmd {
 	var cmds []tea.Cmd
 	// Build tool result map to link tool calls with their results
 	msgPtrs := make([]*message.Message, len(msgs))
@@ -1754,7 +1786,7 @@ func (m *UI) setSessionMessages(msgs []message.Message) tea.Cmd {
 	}
 
 	// Load nested tool calls for agent/agentic_fetch tools.
-	m.loadNestedToolCalls(items)
+	m.loadNestedToolCalls(items, nested)
 	m.setMessagePlanFlags(items)
 
 	// If the user switches between sessions while the agent is working we
@@ -1814,8 +1846,11 @@ func (m *UI) handleConnectionEvent(msg workspace.ConnectionEvent) []tea.Cmd {
 	return cmds
 }
 
-// loadNestedToolCalls recursively loads nested tool calls for agent/agentic_fetch tools.
-func (m *UI) loadNestedToolCalls(items []chat.MessageItem) {
+// loadNestedToolCalls recursively loads nested tool calls for
+// agent/agentic_fetch tools. Transcripts are taken from nested, keyed by
+// agent tool session ID, when the load command already read them; only
+// the ones it did not are read here, on the event loop.
+func (m *UI) loadNestedToolCalls(items []chat.MessageItem, nested map[string][]message.Message) {
 	for _, item := range items {
 		nestedContainer, ok := item.(chat.NestedToolContainer)
 		if !ok {
@@ -1833,8 +1868,15 @@ func (m *UI) loadNestedToolCalls(items []chat.MessageItem) {
 		agentSessionID := m.com.Workspace.CreateAgentToolSessionID(messageID, tc.ID)
 
 		// Fetch nested messages.
-		nestedMsgs, err := m.com.Workspace.ListMessages(context.Background(), agentSessionID)
-		if err != nil || len(nestedMsgs) == 0 {
+		nestedMsgs, ok := nested[agentSessionID]
+		if !ok {
+			var err error
+			nestedMsgs, err = m.com.Workspace.ListMessages(context.Background(), agentSessionID)
+			if err != nil {
+				continue
+			}
+		}
+		if len(nestedMsgs) == 0 {
 			continue
 		}
 
@@ -1865,7 +1907,7 @@ func (m *UI) loadNestedToolCalls(items []chat.MessageItem) {
 		for i, nt := range nestedTools {
 			nestedMessageItems[i] = nt
 		}
-		m.loadNestedToolCalls(nestedMessageItems)
+		m.loadNestedToolCalls(nestedMessageItems, nested)
 
 		// Set nested tools on the parent.
 		nestedContainer.SetNestedTools(nestedTools)
@@ -4886,6 +4928,7 @@ func (m *UI) applyTheme(s styles.Styles) {
 	common.InvalidateStyleCaches()
 	m.refreshStyles()
 	m.chat.InvalidateRenderCaches()
+	m.chatWarmPending = true
 }
 
 // previewTheme applies the given styles for live preview inside an open
