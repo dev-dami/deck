@@ -2517,6 +2517,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 
 	case dialog.ActionSelectAgentModel:
 		cmds = append(cmds, m.selectAgentModel(msg))
+	case dialog.ActionSetDeckSettings:
+		cmds = append(cmds, m.applyDeckSettings(msg))
+	case dialog.ActionSetTUIOption:
+		cmds = append(cmds, m.setTUIOption(msg))
 	case dialog.ActionPermissionResponse:
 		m.dialog.CloseDialog(dialog.PermissionsID)
 		switch msg.Action {
@@ -2704,6 +2708,11 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			return true
 		case key.Matches(msg, m.keyMap.Sessions):
 			if cmd := m.openSessionsDialog(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return true
+		case key.Matches(msg, m.keyMap.Settings):
+			if cmd := m.openSettingsDialog(dialog.SettingsID); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 			return true
@@ -5197,6 +5206,10 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		m.openThemeEditorDialog("")
 	case dialog.QuitID:
 		if cmd := m.openQuitDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.SettingsID, dialog.SettingsUsageID:
+		if cmd := m.openSettingsDialog(id); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	default:

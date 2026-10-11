@@ -76,9 +76,10 @@ func (w *DeckWorkspace) AgentModelChoices(ctx context.Context, sessionID string)
 // asked yet is listed with just its current model.
 func (w *DeckWorkspace) CachedAgentModelChoices(sessionID string) []ModelChoice {
 	th, _ := w.threadOf(sessionID)
+	cfg := w.DeckSettings()
 	var out []ModelChoice
 	for _, kind := range w.mgr().Kinds() {
-		cur, curEffort := w.eng.Config.Models.For(kind), w.eng.Config.Efforts.For(kind)
+		cur, curEffort := cfg.Models.For(kind), cfg.Efforts.For(kind)
 		for _, a := range th.Members {
 			if a.Kind == kind {
 				cur, curEffort = a.Model, a.Effort
@@ -134,6 +135,8 @@ func (w *DeckWorkspace) SetAgentModel(sessionID, kind, model, effort string) err
 	}
 	w.mgr().SetDefaultModel(kind, model)
 	w.mgr().SetDefaultEffort(kind, effort)
+	w.cfgMu.Lock()
+	defer w.cfgMu.Unlock()
 	cfg := w.eng.Config
 	cfg.Models.Set(kind, model)
 	cfg.Efforts.Set(kind, effort)
@@ -184,10 +187,11 @@ func (w *DeckWorkspace) Roster(sessionID string) []AgentLine {
 	if len(out) > 0 {
 		return out
 	}
+	cfg := w.DeckSettings()
 	for _, kind := range w.mgr().Kinds() {
 		out = append(out, AgentLine{
 			ID: kind, Kind: kind, Status: "ready",
-			Model: w.eng.Config.Models.For(kind), Effort: w.eng.Config.Efforts.For(kind),
+			Model: cfg.Models.For(kind), Effort: cfg.Efforts.For(kind),
 		})
 	}
 	return out

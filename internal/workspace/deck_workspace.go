@@ -34,7 +34,8 @@ import (
 // history, LSP, MCP and config still come from the embedded AppWorkspace.
 type DeckWorkspace struct {
 	*AppWorkspace
-	eng *engine.Engine
+	eng   *engine.Engine
+	cfgMu sync.Mutex // guards eng.Config, which the settings and model pickers change
 
 	mu      sync.Mutex
 	threads map[string]string // Deck session id -> Deck thread id
@@ -67,6 +68,7 @@ type turn struct {
 	tools    map[string]bool
 	diffs    map[string]deckagent.FileDiff // by path, for edit results
 	usage    deckagent.Usage
+	began    time.Time // when the turn began, kept past an error for the usage record
 }
 
 // NewDeckWorkspace wraps a and drives eng's agents through it.
@@ -245,7 +247,7 @@ func (w *DeckWorkspace) AgentModel() AgentModel {
 	id := w.lastAgent()
 	a, ok := w.mgr().Agent(id)
 	if !ok {
-		kind := w.eng.Config.DefaultAgent
+		kind := w.DeckSettings().DefaultAgent
 		return AgentModel{
 			CatwalkCfg: catwalk.Model{ID: kind, Name: kind},
 			ModelCfg:   config.SelectedModel{Provider: kind, Model: kind},
@@ -433,10 +435,12 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 	if sid == "" || ev.AgentID == "" {
 		return
 	}
+	var began time.Time // when a finishing turn began; zero when unknown
 	w.mu.Lock()
 	w.last = ev
 	switch ev.Kind {
 	case deckagent.KindTurnDone, deckagent.KindExited, deckagent.KindError:
+		began = w.since[ev.AgentID]
 		delete(w.since, ev.AgentID)
 	default:
 		if w.since[ev.AgentID].IsZero() {
@@ -535,10 +539,18 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 			slog.Error("deck: tool result", "error", err)
 		}
 	case deckagent.KindUsage:
-		if ev.Usage != nil {
-			t.usage = *ev.Usage
+		if u := ev.Usage; u != nil {
+			if u.InputTokens == 0 && u.OutputTokens == 0 && u.CachedTokens == 0 && u.CostUSD == 0 {
+				// A mid-turn context update: the turn's totals come later.
+				t.usage.ContextTokens, t.usage.ContextWindow = u.ContextTokens, u.ContextWindow
+			} else {
+				t.usage = *u
+			}
 		}
 	case deckagent.KindError:
+		if !began.IsZero() {
+			t.began = began
+		}
 		open()
 		t.msg.AddFinish(message.FinishReasonError, "Error", ev.Text)
 		_ = w.app.Messages.Update(ctx, t.msg)
@@ -555,7 +567,14 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 			t.msg.AddFinish(reason, "", "")
 			_ = w.app.Messages.Update(ctx, t.msg)
 		}
-		w.addUsage(sid, t.usage)
+		if began.IsZero() {
+			began = t.began
+		}
+		var took time.Duration
+		if !began.IsZero() {
+			took = time.Since(began)
+		}
+		w.addUsage(sid, ev.AgentID, t.usage, took)
 		delete(w.turns, ev.AgentID)
 	}
 	w.edge(sid, ev.Kind == deckagent.KindError)
@@ -586,22 +605,21 @@ func (w *DeckWorkspace) setTodos(sid string, input json.RawMessage) {
 	_, _ = w.app.Sessions.Save(ctx, sess)
 }
 
-// addUsage adds a finished turn's cost to the session and shows how full the
-// agent's context is.
-func (w *DeckWorkspace) addUsage(sid string, u deckagent.Usage) {
-	ctx := context.Background()
-	sess, err := w.app.Sessions.Get(ctx, sid)
-	if err != nil {
-		return
+// addUsage adds a finished turn's tokens and cost to the session and records
+// the turn for the Usage view. How full each agent's context is comes from
+// the roster, not from the session's token counts, which only ever add up.
+func (w *DeckWorkspace) addUsage(sid, agentID string, u deckagent.Usage, took time.Duration) {
+	if u.InputTokens == 0 && u.OutputTokens == 0 && u.CachedTokens == 0 && u.CostUSD == 0 && took == 0 {
+		return // no turn ran (an exit after the turn was already counted)
 	}
-	sess.Cost += u.CostUSD
-	if u.ContextTokens > 0 {
-		sess.PromptTokens, sess.CompletionTokens = int64(u.ContextTokens), 0
-	} else {
+	ctx := context.Background()
+	if sess, err := w.app.Sessions.Get(ctx, sid); err == nil {
+		sess.Cost += u.CostUSD
 		sess.PromptTokens += int64(u.InputTokens)
 		sess.CompletionTokens += int64(u.OutputTokens)
+		_, _ = w.app.Sessions.Save(ctx, sess)
 	}
-	_, _ = w.app.Sessions.Save(ctx, sess)
+	w.recordUsage(ctx, sid, agentID, u, took)
 }
 
 // setText puts the final text of a reply in the message: it replaces what
