@@ -12,7 +12,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
-// hubLoop answers the send_message tool calls of every agent.
+// hubLoop answers the thread.send calls of every agent.
 func (m *Manager) hubLoop(msgs <-chan agent.Message) {
 	defer m.wg.Done()
 	for {
@@ -28,7 +28,7 @@ func (m *Manager) hubLoop(msgs <-chan agent.Message) {
 	}
 }
 
-// handleMessage validates and routes one send_message call. Failed calls (unknown
+// handleMessage validates and routes one thread.send call. Failed calls (unknown
 // sender or recipient, an exited agent, a message to oneself) are answered with
 // an error and never count as hops.
 func (m *Manager) handleMessage(msg agent.Message) {
@@ -107,7 +107,7 @@ func validNames(t *thread, from *agentState) string {
 
 // relay delivers text from one member to others, counting one hop. Past the hop
 // limit the message is logged but held until Continue. It returns the sentence
-// the send_message tool answers with.
+// a thread.send call answers with.
 func (m *Manager) relay(t *thread, from *agentState, targets []*agentState, text, via string) string {
 	norm := normText(text)
 	var pre, post []tea.Msg

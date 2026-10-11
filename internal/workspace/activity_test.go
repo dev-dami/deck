@@ -47,6 +47,19 @@ func TestActivityTracksCallsUntilResult(t *testing.T) {
 	require.Empty(t, a.report("s1").Tools)
 }
 
+func TestActivityTextForDeckJobs(t *testing.T) {
+	t.Parallel()
+	w := &DeckWorkspace{back: map[string]string{"t1": "s1"}}
+	who := agentRef{id: "a1", name: "claude", kind: "claude"}
+	w.act.observe("s1", who, toolEv(deckagent.KindToolCall, "a1", &deckagent.Tool{
+		ID: "b1", Name: "Bash", Input: json.RawMessage(`{"command":"go test ./...\nmore"}`),
+	}), time.Now())
+	text := w.activityText("t1")
+	require.Contains(t, text, "Running now:")
+	require.Contains(t, text, "claude [Bash] go test ./... ...")
+	require.Empty(t, w.activityText("unknown"))
+}
+
 func TestActivityRepeatedCallKeepsStart(t *testing.T) {
 	t.Parallel()
 	var a activity

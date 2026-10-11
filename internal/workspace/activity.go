@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -69,6 +70,45 @@ var _ Activity = (*DeckWorkspace)(nil)
 // Activity implements [Activity].
 func (w *DeckWorkspace) Activity(sessionID string) ActivityReport {
 	return w.act.report(sessionID)
+}
+
+// activityText is what a thread's agents are running, as the deck.jobs op
+// shows it to the agents: commands and subagents in flight, and background
+// shells with the tail of their output.
+func (w *DeckWorkspace) activityText(threadID string) string {
+	sid := w.sessionOf(threadID)
+	if sid == "" {
+		return ""
+	}
+	r := w.act.report(sid)
+	now := time.Now()
+	ago := func(t time.Time) string { return now.Sub(t).Round(time.Second).String() }
+	var b strings.Builder
+	if len(r.Commands)+len(r.Subagents) > 0 {
+		b.WriteString("Running now:\n")
+		for _, c := range append(append([]RunningTool{}, r.Commands...), r.Subagents...) {
+			fmt.Fprintf(&b, "  %s [%s] %s (%s)\n", c.AgentName, c.Name, firstLineOf(c.Summary), ago(c.Started))
+		}
+	}
+	if len(r.Background) > 0 {
+		b.WriteString("Background shells:\n")
+		for _, s := range r.Background {
+			fmt.Fprintf(&b, "  %s [%s] %s (started %s ago)\n", s.AgentName, s.ShellID, firstLineOf(s.Command), ago(s.Started))
+			if out := strings.TrimSpace(s.Output); out != "" {
+				fmt.Fprintf(&b, "    last output: %s\n", strings.ReplaceAll(tail(out, 400), "\n", "\n    "))
+			}
+		}
+	}
+	b.WriteString("(Deck's own git and gh jobs run by the user from the git pane are not listed.)\n")
+	return b.String()
+}
+
+func firstLineOf(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i] + " ..."
+	}
+	return s
 }
 
 // observeActivity feeds an agent event to the activity tracker.

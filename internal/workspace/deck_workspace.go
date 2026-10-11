@@ -94,6 +94,8 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 			w.back[t] = s
 		}
 	}
+	// The agents' deck.jobs op reads what this workspace's activity tracker sees.
+	eng.Manager.SetActivity(w.activityText)
 	go w.pump()
 	return w
 }
