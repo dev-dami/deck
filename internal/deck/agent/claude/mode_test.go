@@ -278,6 +278,9 @@ func TestSetModeModelUnchangedNoRestart(t *testing.T) {
 
 func TestSetModeBeforeFirstTurnNoResume(t *testing.T) {
 	r, argsFile := startFake(t, nil)
+	// Let the first process log its args: on Linux the restart's kill can
+	// otherwise land before it does, leaving only one launch on record.
+	launches(t, argsFile, 1)
 	if err := r.(agent.ModeSetter).SetMode(agent.ModeYolo); err != nil {
 		t.Fatal(err)
 	}

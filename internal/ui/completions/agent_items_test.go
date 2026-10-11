@@ -56,7 +56,21 @@ func TestSelectAgentItem(t *testing.T) {
 		require.False(t, c.IsOpen())
 	})
 
-	t.Run("down then enter picks the next", func(t *testing.T) {
+	// The popup opens above the editor and is drawn reversed: the first item
+	// sits at the bottom, nearest the input, so up moves to the next one and
+	// down wraps around to the last.
+	t.Run("up then enter picks the next", func(t *testing.T) {
+		t.Parallel()
+		c := newAgentCompletions()
+		_, handled := c.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+		require.True(t, handled)
+		msg, _ := c.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		sel, ok := msg.(SelectionMsg[AgentCompletionValue])
+		require.True(t, ok, "got %T", msg)
+		require.Equal(t, AgentCompletionValue{Kind: "codex", Model: "gpt-5", Effort: "low"}, sel.Value)
+	})
+
+	t.Run("down from the first wraps to the last", func(t *testing.T) {
 		t.Parallel()
 		c := newAgentCompletions()
 		_, handled := c.Update(tea.KeyPressMsg{Code: tea.KeyDown})
@@ -64,7 +78,7 @@ func TestSelectAgentItem(t *testing.T) {
 		msg, _ := c.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		sel, ok := msg.(SelectionMsg[AgentCompletionValue])
 		require.True(t, ok, "got %T", msg)
-		require.Equal(t, AgentCompletionValue{Kind: "codex", Model: "gpt-5", Effort: "low"}, sel.Value)
+		require.Equal(t, "opencode", sel.Value.Kind)
 	})
 
 	t.Run("filter then select", func(t *testing.T) {

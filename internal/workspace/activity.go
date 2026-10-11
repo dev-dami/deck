@@ -370,8 +370,8 @@ func shellIDOf(input json.RawMessage) string {
 }
 
 var (
-	// "Command running in background with ID: bash_1" and the like.
-	bgIDText = regexp.MustCompile(`(?i)\b(?:shell[ _]?id|bash[ _]?id|with id|id)\s*[:=]\s*"?([A-Za-z0-9_.\-]+)`)
+	// "Command running in background with ID: bash_1", {"shell_id": "abc"} and the like.
+	bgIDText = regexp.MustCompile(`(?i)\b(?:shell[ _]?id|bash[ _]?id|with id|id)"?\s*[:=]\s*"?([A-Za-z0-9_.\-]+)`)
 	// <status>completed</status>, "status": "killed", Status: failed…
 	shellStatus = regexp.MustCompile(`(?i)status\W{0,4}(running|completed|complete|killed|failed|exited|done)`)
 )

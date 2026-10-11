@@ -185,6 +185,21 @@ func fakeStdin(t *testing.T, f string) []wireMsg {
 	return out
 }
 
+// waitStdinLines polls until the fake has logged n complete stdin lines.
+func waitStdinLines(t *testing.T, f string, n int) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if b, err := os.ReadFile(f); err == nil && bytes.Count(b, []byte("\n")) >= n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timeout waiting for %d stdin lines", n)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestSendWithImagesReachesClaude(t *testing.T) {
 	stdinFile := filepath.Join(t.TempDir(), "stdin.jsonl")
 	r, _ := startFake(t, func(s *agent.Spec) { s.Env["DECK_FAKE_STDIN_FILE"] = stdinFile })
@@ -271,6 +286,9 @@ func TestSteerBusyInterruptsThenDelivers(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitKind(t, r, agent.KindUserText)
+	// The echo comes as soon as the prompt is written; wait until the fake has
+	// read it too, or a fast kill (Linux) lands before it is logged.
+	waitStdinLines(t, stdinFile, 2)
 	if err := r.(agent.Steerer).Steer("actually do X", nil); err != nil {
 		t.Fatal(err)
 	}

@@ -17,7 +17,7 @@ import (
 // correct JSON for a basic provider definition.
 func TestLoadShellConfig_Provider(t *testing.T) {
 	dir := t.TempDir()
-	script := `provider add openai --api-key "$OPENAI_API_KEY" --base-url "https://api.openai.com/v1"`
+	script := `provider add openai --api-key "$OPENAI_API_KEY" --base-url "https://openai.example.com/v1"`
 	path := filepath.Join(dir, "deckrc")
 
 	t.Setenv("OPENAI_API_KEY", "test-key-123")
@@ -33,7 +33,7 @@ func TestLoadShellConfig_Provider(t *testing.T) {
 	openai, ok := providers["openai"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "test-key-123", openai["api_key"])
-	require.Equal(t, "https://api.openai.com/v1", openai["base_url"])
+	require.Equal(t, "https://openai.example.com/v1", openai["base_url"])
 }
 
 // TestLoadShellConfig_FlagBoolCaseInsensitive verifies that flag booleans
@@ -439,7 +439,7 @@ func TestLoadShellConfig_FullConfig(t *testing.T) {
 	script := `#!/usr/bin/env bash
 
 # Providers
-provider add openai --api-key "$OPENAI_API_KEY" --base-url "https://api.openai.com/v1"
+provider add openai --api-key "$OPENAI_API_KEY" --base-url "https://openai.example.com/v1"
 provider add anthropic --api-key "$ANTHROPIC_API_KEY"
 provider add my-llm --type openai --api-key "ollama" --base-url "http://localhost:11434/v1"
 

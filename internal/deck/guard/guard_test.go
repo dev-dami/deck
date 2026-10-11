@@ -37,7 +37,7 @@ func TestNoCredentialOrAPIReferences(t *testing.T) {
 		rel, _ := filepath.Rel(root, path)
 		// This file names the forbidden patterns on purpose. Match by repo-relative
 		// path, not runtime.Caller, which is wrong under -trimpath or cross builds.
-		if filepath.ToSlash(rel) == "internal/guard/guard_test.go" {
+		if filepath.ToSlash(rel) == "internal/deck/guard/guard_test.go" {
 			continue
 		}
 		data, err := os.ReadFile(path)

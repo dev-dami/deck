@@ -18,11 +18,11 @@ func BenchmarkLoadFromConfigPaths(b *testing.B) {
 		"providers": {
 			"openai": {
 				"api_key": "$OPENAI_API_KEY",
-				"base_url": "https://api.openai.com/v1"
+				"base_url": "https://openai.example.com/v1"
 			},
 			"anthropic": {
 				"api_key": "$ANTHROPIC_API_KEY",
-				"base_url": "https://api.anthropic.com"
+				"base_url": "https://anthropic.example.com"
 			}
 		},
 		"options": {
@@ -111,7 +111,7 @@ func BenchmarkLoadFromConfigPaths_ShellConfig(b *testing.B) {
 	tmpDir := b.TempDir()
 	rcPath := filepath.Join(tmpDir, "deckrc")
 
-	rcContent := []byte(`provider add openai --api-key "$OPENAI_API_KEY" --base-url "https://api.openai.com/v1"
+	rcContent := []byte(`provider add openai --api-key "$OPENAI_API_KEY" --base-url "https://openai.example.com/v1"
 provider add anthropic --api-key "$ANTHROPIC_API_KEY"
 model large openai/gpt-4o --think
 permissions allow bash view
