@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/agent/antigravity"
@@ -96,17 +97,27 @@ func found(configured, def string) bool {
 }
 
 // MCPApprove is the stdio MCP server Claude Code launches for
-// --permission-prompt-tool. The broker token arrives via the environment,
-// never on the command line.
+// --permission-prompt-tool. The broker token arrives via the environment, or
+// in a file named by --token-file for CLIs that would otherwise keep it in
+// their own config; never on the command line.
 func MCPApprove(args []string) error {
 	fs := flag.NewFlagSet("mcp-approve", flag.ContinueOnError)
 	addr := fs.String("addr", "", "broker address")
 	id := fs.String("agent", "", "agent id")
+	tokenFile := fs.String("token-file", "", "file holding the broker token")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *addr == "" || *id == "" {
 		return fmt.Errorf("mcp-approve: --addr and --agent are required")
 	}
-	return approve.MCPServe(os.Stdin, os.Stdout, *addr, approve.TokenFromEnv(), *id)
+	token := approve.TokenFromEnv()
+	if *tokenFile != "" {
+		b, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			return fmt.Errorf("mcp-approve: %w", err)
+		}
+		token = strings.TrimSpace(string(b))
+	}
+	return approve.MCPServe(os.Stdin, os.Stdout, *addr, token, *id)
 }

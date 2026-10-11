@@ -2,10 +2,13 @@ package antigravity
 
 import (
 	"context"
+	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
+	"github.com/dev-dami/deck/internal/deck/approve"
 )
 
 const modelsFixture = "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n" +
@@ -144,12 +147,15 @@ func TestMcpAddArgs(t *testing.T) {
 		Name: "deck", Command: "/opt/deck", Args: []string{"mcp-approve", "--addr", "127.0.0.1:9", "--agent", "x"},
 		Env: map[string]string{"B_TOKEN": "b", "A_TOKEN": "a"},
 	}
-	name, err := a.mcpAdd(context.Background(), "agy", srv, "antigravity")
+	name, file, err := a.mcpAdd(context.Background(), "agy", srv, "antigravity")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if name != "deck-antigravity" {
 		t.Fatalf("name = %q", name)
+	}
+	if file != "" {
+		t.Fatalf("token file %q made with no broker token", file)
 	}
 	want := []string{
 		"mcp", "add", "--env", "A_TOKEN=a", "--env", "B_TOKEN=b",
@@ -173,24 +179,37 @@ func TestMcpServerName(t *testing.T) {
 	}
 }
 
-func TestTokenTravelsAsEnvPair(t *testing.T) {
+func TestTokenTravelsInAFile(t *testing.T) {
 	var gotArgs []string
 	a := &adapter{mcpRunFn: func(_ context.Context, _ string, args ...string) error {
 		gotArgs = args
 		return nil
 	}}
-	srv := &agent.MCPServer{Command: "/opt/deck", Env: map[string]string{"DECK_APPROVE_TOKEN": "spec-token"}}
-	if _, err := a.mcpAdd(context.Background(), "agy", srv, "x"); err != nil {
+	srv := &agent.MCPServer{Command: "/opt/deck", Env: map[string]string{approve.TokenEnv: "spec-token"}}
+	name, file, err := a.mcpAdd(context.Background(), "agy", srv, "x")
+	if err != nil {
 		t.Fatal(err)
 	}
-	// The token must only ever appear as the value of a --env KEY=value
-	// pair, never as a bare argument of its own.
-	if !hasArgs(gotArgs, "--env", "DECK_APPROVE_TOKEN=spec-token") {
-		t.Fatalf("no --env pair in %v", gotArgs)
-	}
+	// The token must never reach agy's config or the command line: only
+	// the path of a file holding it does.
 	for _, arg := range gotArgs {
-		if arg == "spec-token" {
-			t.Fatalf("bare token in %v", gotArgs)
+		if strings.Contains(arg, "spec-token") {
+			t.Fatalf("token in %v", gotArgs)
 		}
+	}
+	if !hasArgs(gotArgs, "--token-file", file) {
+		t.Fatalf("no --token-file in %v", gotArgs)
+	}
+	b, err := os.ReadFile(file)
+	if err != nil || string(b) != "spec-token" {
+		t.Fatalf("token file = %q, %v", b, err)
+	}
+	r := &run{a: a, path: "agy", mcpName: name, mcpFile: file}
+	r.mcpRemove()
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Fatalf("token file left behind: %v", err)
+	}
+	if !slices.Equal(gotArgs, []string{"mcp", "remove", name}) {
+		t.Fatalf("remove = %v", gotArgs)
 	}
 }

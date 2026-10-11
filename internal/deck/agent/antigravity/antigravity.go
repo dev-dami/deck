@@ -84,13 +84,13 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 	}
 
 	if spec.MCP != nil {
-		if name, err := a.mcpAdd(ctx, path, spec.MCP, spec.ID); err != nil {
+		if name, file, err := a.mcpAdd(ctx, path, spec.MCP, spec.ID); err != nil {
 			r.emit(agent.Event{
 				AgentID: spec.ID, Time: time.Now(), Kind: agent.KindError,
 				Text: "deck messaging unavailable: " + err.Error(),
 			})
 		} else {
-			r.mcpName = name
+			r.mcpName, r.mcpFile = name, file
 		}
 	}
 
@@ -133,6 +133,7 @@ type run struct {
 	approvals <-chan agent.ApprovalRequest
 	done      chan struct{}
 	mcpName   string // `agy mcp` server name holding Deck's MCP server, "" = none
+	mcpFile   string // the broker token file that server reads, "" = none
 
 	tr *translator // used by the single active reader goroutine at a time
 

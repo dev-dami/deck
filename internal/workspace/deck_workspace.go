@@ -55,6 +55,7 @@ type DeckWorkspace struct {
 
 	models map[string][]deckagent.ModelInfo // each CLI's models, once asked
 	since  map[string]time.Time             // when each busy agent's turn began
+	warned map[string]bool                  // agents told they cannot ask in ask mode
 }
 
 // turn is what is known about one agent's current reply.
@@ -80,6 +81,7 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 		busy:         map[string]bool{},
 		models:       map[string][]deckagent.ModelInfo{},
 		since:        map[string]time.Time{},
+		warned:       map[string]bool{},
 		path:         filepath.Join(store.Config().Options.DataDirectory, "deck-threads.json"),
 	}
 	if b, err := os.ReadFile(w.path); err == nil {
@@ -442,6 +444,9 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		}
 	}
 	w.mu.Unlock()
+	if ev.Kind == deckagent.KindSessionStarted {
+		w.warnNoAsk(sid, ev.AgentID)
+	}
 	ctx := context.Background()
 	t := w.turns[ev.AgentID]
 	if t == nil {
@@ -646,6 +651,26 @@ func (w *DeckWorkspace) notice(sid, text string) {
 	})
 }
 
+// noAsk are the agent kinds whose CLI cannot hand Deck an approval prompt:
+// in ask mode they are refused whatever needs approval.
+var noAsk = map[string]bool{"antigravity": true}
+
+// warnNoAsk tells the user, once per agent, when an agent that cannot ask
+// starts in ask mode.
+func (w *DeckWorkspace) warnNoAsk(sid, agentID string) {
+	a, ok := w.mgr().Agent(agentID)
+	if !ok || !noAsk[a.Kind] || w.mode() != deckagent.ModeAsk {
+		return
+	}
+	w.mu.Lock()
+	seen := w.warned[agentID]
+	w.warned[agentID] = true
+	w.mu.Unlock()
+	if !seen {
+		w.notice(sid, a.Name+" cannot ask you for approval: in ask mode it is refused commands and edits that need one. Use yolo mode to let it run them, or plan mode to keep it read-only.")
+	}
+}
+
 // onApproval asks the user through Deck's permission dialog and answers the
 // agent with what they chose.
 func (w *DeckWorkspace) onApproval(m decks.ApprovalMsg) {
@@ -752,8 +777,8 @@ func deckTool(t *deckagent.Tool) (name, input string) {
 		return t.Title
 	}
 	switch t.Name {
-	case "Bash":
-		cmd := str("command", "cmd")
+	case "Bash", "run_command":
+		cmd := str("command", "cmd", "CommandLine")
 		if cmd == "" {
 			cmd = t.Title
 		}
