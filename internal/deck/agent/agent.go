@@ -214,6 +214,9 @@ type Spec struct {
 	FirstPrompt string
 	UserName    string // optional: told to the agent only if TellName is true
 	TellName    bool
+	// Attribution: commits and PRs credit Deck instead of the CLI (Claude:
+	// its attribution settings; every agent: the git hooks in Env).
+	Attribution bool
 	// Instructions are extra system/developer instructions, e.g. the
 	// shared-thread briefing. Claude: --append-system-prompt; Codex: the
 	// thread's developer instructions.

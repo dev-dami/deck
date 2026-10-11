@@ -190,6 +190,9 @@ func (r *run) spawn(resume string) error {
 	cmd := exec.Command(r.path, r.args(resume)...)
 	cmd.Dir = r.spec.Dir
 	cmd.Env = os.Environ()
+	for k, v := range r.spec.Env {
+		cmd.Env = append(cmd.Env, k+"="+v)
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err

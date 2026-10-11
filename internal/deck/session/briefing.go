@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
+	"github.com/dev-dami/deck/internal/deck/brand"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -297,7 +298,13 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	} else {
 		b.WriteString("To message another agent, start a line of your final reply with $name (or $all).\n")
 	}
-	b.WriteString("Keep messages to other agents short and actionable. Do not repeat what the user can already see.")
+	b.WriteString("Keep messages to other agents short and actionable. Do not repeat what the user can already see.\n")
+	fmt.Fprintf(&b, "Write plan files in %s.", brand.PlansDir())
+	// Deck's own attribution, whichever CLI does the work (Settings → General).
+	if cfg.DeckAttribution {
+		fmt.Fprintf(&b, " Commits you make end with the trailer %q and no other AI attribution; pull requests end with %q.",
+			brand.CommitTrailer, brand.PRFooter)
+	}
 	return clip(b.String(), maxInstrChars)
 }
 

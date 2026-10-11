@@ -202,6 +202,15 @@ func (s *Settings) agentRows() []settingsRow {
 				return s.deckEdit("Tell agents your name "+onOff(v), func(c *deckconfig.Config) { c.TellAgentsName = v })
 			},
 		},
+		{
+			label: "Deck attribution",
+			value: onOff(s.deck.DeckAttribution),
+			hint:  "Commits agents make credit Deck: other AI attribution is stripped and replaced. Applies to agents started after the change.",
+			change: func(int) Action {
+				v := !s.deck.DeckAttribution
+				return s.deckEdit("Deck attribution "+onOff(v), func(c *deckconfig.Config) { c.DeckAttribution = v })
+			},
+		},
 	}
 	for _, kind := range deckconfig.Kinds {
 		row := settingsRow{
