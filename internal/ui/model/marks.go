@@ -17,7 +17,7 @@ var sessionWindow = map[string]string{
 // is filled by its plan's session window, or, for a CLI with no plan limits
 // or none reported yet, by its fullest context. It reads memory only.
 func (m *UI) markLevels() []decklogo.Edge {
-	roster, ok := m.com.Workspace.(workspace.Roster)
+	roster, ok := m.roster()
 	if !ok {
 		return nil
 	}

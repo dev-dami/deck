@@ -25,6 +25,7 @@ package model
 // Update, no model mutation inside commands).
 
 import (
+	"reflect"
 	"slices"
 	"time"
 
@@ -184,6 +185,11 @@ func (m *UI) applyBusyState(msg busyStateMsg) []tea.Cmd {
 	}
 	prevBusy := m.isAgentBusy()
 	prevYolo := m.yoloModeCached()
+	// The probe re-runs every busyCacheTTL while anything animates; a
+	// result that only confirms what is memoized changes nothing on
+	// screen, so it must not cost a full redraw.
+	unchanged := msg.agentBusy == m.agentBusyCache.val && msg.yolo == prevYolo &&
+		msg.ready == m.agentReady && reflect.DeepEqual(msg.model, m.agentModel)
 	m.agentBusyCache.set(msg.agentBusy)
 	m.yoloCache.set(msg.yolo)
 	m.agentReady = msg.ready
@@ -215,6 +221,9 @@ func (m *UI) applyBusyState(msg busyStateMsg) []tea.Cmd {
 	}
 	if prevBusy != busy {
 		m.renderPills()
+	}
+	if unchanged && len(cmds) == 0 {
+		m.markScrollOnly()
 	}
 	return cmds
 }
@@ -276,6 +285,9 @@ func (m *UI) applyPromptQueue(msg promptQueueMsg) []tea.Cmd {
 		m.updateLayoutAndSize()
 	} else if itemsChanged {
 		m.renderPills()
+	} else {
+		// The periodic re-fetch confirmed the queue; nothing to redraw.
+		m.markScrollOnly()
 	}
 	return nil
 }

@@ -146,8 +146,27 @@ func gitNextSection(rows []gitRow, cur, dir int) int {
 	return firsts[order[(at+dir+len(order))%len(order)]]
 }
 
-// gitRootRows is the root view's lines.
+// gitRootRows is the root view's lines. While a frame is drawn they are
+// built once per width: the strip asks for the pane's height and then
+// renders it.
 func (m *UI) gitRootRows(width int) []gitRow {
+	f := m.frameMemo
+	if f == nil {
+		return m.buildGitRootRows(width)
+	}
+	if rows, ok := f.gitRows[width]; ok {
+		return rows
+	}
+	rows := m.buildGitRootRows(width)
+	if f.gitRows == nil {
+		f.gitRows = map[int][]gitRow{}
+	}
+	f.gitRows[width] = rows
+	return rows
+}
+
+// buildGitRootRows builds gitRootRows.
+func (m *UI) buildGitRootRows(width int) []gitRow {
 	g := &m.git
 	t := m.com.Styles
 	muted := gitMuted(t)

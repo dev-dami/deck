@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -92,7 +93,22 @@ func (*sessionPane) key(*UI, tea.KeyPressMsg) (bool, tea.Cmd) { return false, ni
 func (*sessionPane) click(*UI, int, int) tea.Cmd              { return nil }
 
 // agentsPane shows the session's agents: model, status, context, cost.
-type agentsPane struct{ cache paneText }
+type agentsPane struct {
+	cache paneText
+	memo  agentsPaneMemo
+}
+
+// agentsPaneMemo keeps the agents pane's text across frames. The text is
+// a function of the roster, the width and the theme alone, and the frame
+// is redrawn several times a second while an agent works, mostly with
+// none of those changed.
+type agentsPaneMemo struct {
+	ok     bool
+	width  int
+	styles uint64
+	lines  []workspace.AgentLine
+	text   string
+}
 
 func (*agentsPane) id() paneID       { return paneAgents }
 func (*agentsPane) title(*UI) string { return "Agents" }
@@ -113,14 +129,23 @@ func (p *agentsPane) render(m *UI, width, _ int, _ bool) string {
 	return p.cache.get(width, func() string { return p.text(m, width) })
 }
 
-func (*agentsPane) text(m *UI, width int) string {
+func (p *agentsPane) text(m *UI, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if len(m.sessionRoster()) == 0 {
-		return m.stripStyles().muted.Render("No agents yet")
+	lines := m.sessionRoster()
+	c := &p.memo
+	if c.ok && c.width == width && c.styles == m.stylesGen && slices.Equal(c.lines, lines) {
+		return c.text
 	}
-	return m.modelInfo(width)
+	var text string
+	if len(lines) == 0 {
+		text = m.stripStyles().muted.Render("No agents yet")
+	} else {
+		text = m.modelInfoFor(lines, width)
+	}
+	*c = agentsPaneMemo{ok: true, width: width, styles: m.stylesGen, lines: slices.Clone(lines), text: text}
+	return text
 }
 
 func (*agentsPane) key(*UI, tea.KeyPressMsg) (bool, tea.Cmd) { return false, nil }
@@ -128,7 +153,7 @@ func (*agentsPane) click(*UI, int, int) tea.Cmd              { return nil }
 
 // sessionRoster is the current session's agents, or nil.
 func (m *UI) sessionRoster() []workspace.AgentLine {
-	roster, ok := m.com.Workspace.(workspace.Roster)
+	roster, ok := m.roster()
 	if !ok {
 		return nil
 	}

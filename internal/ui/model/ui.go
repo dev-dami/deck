@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -289,6 +290,16 @@ type UI struct {
 	// way; workSeen is when each busy agent was first seen at work.
 	workTicking bool
 	workSeen    map[string]time.Time
+
+	// canvas is the screen buffer View draws each frame into, kept
+	// between frames while the terminal size holds.
+	canvas uv.ScreenBuffer
+	// frameMemo shares reads between the parts of the frame View is
+	// drawing; nil outside of it. See frameMemo.
+	frameMemo *frameMemo
+	// stylesGen changes whenever the active styles do (refreshStyles), so
+	// text memoized across frames can tell a theme change.
+	stylesGen uint64
 
 	// chatWarmPending asks the end of the current update to start warming
 	// the chat's message cache (see Chat.Warm), after a theme change
@@ -890,6 +901,10 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case uv.UnknownOscEvent:
 		m.updateNotificationBackend()
 	case tea.FocusMsg:
+		if m.windowBlurred() {
+			// Catch up on the git reads skipped while blurred.
+			cmds = append(cmds, m.fetchGitBranch(), m.gitPoll())
+		}
 		m.notifyWindowFocused = true
 		m.turnOutcome = ""
 	case tea.BlurMsg:
@@ -1335,8 +1350,13 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// terminal reports every move (see View); a move with no button
 		// held is only that, so it stops here unless something else
 		// asked for hover.
-		m.hoverToast(msg.X, msg.Y)
+		hoverChanged := m.hoverToast(msg.X, msg.Y)
 		if m.notices.toasts.Len() > 0 && msg.Button == uv.MouseNone && m.activeInline == nil && m.state != uiLanding {
+			if !hoverChanged {
+				// A move that holds no new toast changes nothing on
+				// screen; keep the memoized frame.
+				m.markScrollOnly()
+			}
 			return m, tea.Batch(cmds...)
 		}
 		if m.state == uiLanding {
@@ -1596,7 +1616,16 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case gitBranchUpdatedMsg:
 		m.gitBranch = msg.branch
 	case gitBranchPollMsg:
-		cmds = append(cmds, m.fetchGitBranch(), m.gitBranchTicker(), m.gitPoll())
+		cmds = append(cmds, m.gitBranchTicker())
+		if m.windowBlurred() {
+			// Nobody is looking: skip the local branch and status reads
+			// (FocusMsg catches them up), but keep asking GitHub, whose
+			// finished checks ring the bell.
+			m.gitClient()
+			cmds = append(cmds, m.gitMaybePollPR(time.Now()))
+		} else {
+			cmds = append(cmds, m.fetchGitBranch(), m.gitPoll())
+		}
 	case gitMsg:
 		cmds = append(cmds, m.handleGitMsg(msg))
 	case util.InfoMsg:
@@ -2713,6 +2742,12 @@ func (m *UI) fetchGitBranch() tea.Cmd {
 	}
 }
 
+// windowBlurred reports whether the terminal said its window lost focus.
+// Terminals that do not report focus are always treated as focused.
+func (m *UI) windowBlurred() bool {
+	return m.caps.ReportFocusEvents && !m.notifyWindowFocused
+}
+
 // gitBranchTicker schedules the next git branch poll.
 func (m *UI) gitBranchTicker() tea.Cmd {
 	return tea.Tick(gitBranchPollInterval, func(time.Time) tea.Msg {
@@ -3346,6 +3381,7 @@ func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
 		m.lspErrorCount(),
 		m.gitBranch,
 		m.gitHeaderBadge(),
+		m.rosterOrNil(),
 	)
 }
 
@@ -3473,7 +3509,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 
 	// Debugging rendering (visually see when the tui rerenders)
-	if os.Getenv("DECK_UI_DEBUG") == "true" {
+	if uiDebug() {
 		debugView := lipgloss.NewStyle().Background(lipgloss.ANSIColor(rand.Intn(256))).Width(4).Height(2)
 		debug := uv.NewStyledString(debugView.String())
 		debug.Draw(scr, image.Rectangle{
@@ -3522,6 +3558,11 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	return nil
 }
 
+// uiDebug reports whether DECK_UI_DEBUG asks Draw to mark every redraw.
+// Read once: the environment does not change under a running UI, and
+// Draw runs on every frame.
+var uiDebug = sync.OnceValue(func() bool { return os.Getenv("DECK_UI_DEBUG") == "true" })
+
 // mouseMode determines the Bubble Tea mouse reporting mode to request for
 // the current frame. When mouse support is disabled via configuration, no
 // mouse mode is requested so the terminal emulator (or tmux) can handle
@@ -3564,8 +3605,15 @@ func (m *UI) View() tea.View {
 		}
 	}
 
-	canvas := uv.NewScreenBuffer(m.width, m.height)
+	// Reuse the canvas across frames: Draw clears it first, and a fresh
+	// width*height buffer per frame is pure garbage at animation rates.
+	if m.canvas.RenderBuffer == nil || m.canvas.Width() != m.width || m.canvas.Height() != m.height {
+		m.canvas = uv.NewScreenBuffer(m.width, m.height)
+	}
+	canvas := m.canvas
+	m.beginFrameMemo()
 	v.Cursor = m.Draw(canvas, canvas.Bounds())
+	m.endFrameMemo()
 
 	content := strings.ReplaceAll(canvas.Render(), "\r\n", "\n") // normalize newlines
 	contentLines := strings.Split(content, "\n")
@@ -4947,6 +4995,7 @@ func (m *UI) previewTheme(s styles.Styles) {
 // that copies or pre-renders style-dependent values at construction time.
 // Callers are responsible for invalidating chat render caches.
 func (m *UI) refreshStyles() {
+	m.stylesGen++
 	t := m.com.Styles
 	tone.SetLight(!t.IsDark)
 	m.header.refresh()
