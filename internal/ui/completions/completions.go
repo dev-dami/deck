@@ -269,10 +269,21 @@ func (c *Completions) applyNamePriorityFilter(query string) {
 		filtered = append(filtered, filterable)
 	}
 
+	// Rank each item once rather than twice per comparison: a tier takes
+	// lowercasing and splitting the path.
 	queryLower := strings.ToLower(strings.TrimSpace(query))
-	slices.SortStableFunc(filtered, func(a, b list.FilterableItem) int {
-		return namePriorityTier(a.Filter(), queryLower) - namePriorityTier(b.Filter(), queryLower)
-	})
+	type ranked struct {
+		item list.FilterableItem
+		tier int
+	}
+	ranks := make([]ranked, len(filtered))
+	for i, item := range filtered {
+		ranks[i] = ranked{item: item, tier: namePriorityTier(item.Filter(), queryLower)}
+	}
+	slices.SortStableFunc(ranks, func(a, b ranked) int { return a.tier - b.tier })
+	for i := range ranks {
+		filtered[i] = ranks[i].item
+	}
 	c.filtered = filtered
 	c.list.SetItems(c.filtered...)
 }
