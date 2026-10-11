@@ -161,9 +161,19 @@ func (t *translator) Line(line []byte) []agent.Event {
 	if json.Unmarshal(line, &sl) != nil {
 		return nil
 	}
-	raw := json.RawMessage(append([]byte(nil), line...))
+	// The line is copied for Raw only when an event keeps it: most lines
+	// (stream deltas, sub-agent chatter) yield none that does.
+	var raw json.RawMessage
 	mk := func(k agent.Kind) agent.Event {
+		if raw == nil {
+			raw = json.RawMessage(append([]byte(nil), line...))
+		}
 		return agent.Event{AgentID: t.agentID, Time: t.now(), Kind: k, Raw: raw}
+	}
+	// Streamed text carries no Raw: Deck drops it for these kinds anyway
+	// (agent.KeepsRaw), and deltas are most of the stream.
+	mkDelta := func(k agent.Kind, text string) agent.Event {
+		return agent.Event{AgentID: t.agentID, Time: t.now(), Kind: k, Text: text, Delta: true}
 	}
 
 	switch sl.Type {
@@ -208,16 +218,12 @@ func (t *translator) Line(line []byte) []agent.Event {
 			if se.Delta.Text == "" {
 				return nil
 			}
-			ev := mk(agent.KindAssistantText)
-			ev.Text, ev.Delta = se.Delta.Text, true
-			return []agent.Event{ev}
+			return []agent.Event{mkDelta(agent.KindAssistantText, se.Delta.Text)}
 		case "thinking_delta":
 			if se.Delta.Thinking == "" {
 				return nil
 			}
-			ev := mk(agent.KindReasoning)
-			ev.Text, ev.Delta = se.Delta.Thinking, true
-			return []agent.Event{ev}
+			return []agent.Event{mkDelta(agent.KindReasoning, se.Delta.Thinking)}
 		}
 
 	case "assistant":

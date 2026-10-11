@@ -127,8 +127,12 @@ func (t *translator) Line(line []byte) []agent.Event {
 	if json.Unmarshal(line, &wl) != nil {
 		return nil
 	}
-	raw := json.RawMessage(append([]byte(nil), line...))
+	// The line is copied for Raw only once a line yields an event.
+	var raw json.RawMessage
 	mk := func(k agent.Kind) agent.Event {
+		if raw == nil {
+			raw = json.RawMessage(append([]byte(nil), line...))
+		}
 		return agent.Event{AgentID: t.agentID, Time: t.now(), Kind: k, Raw: raw}
 	}
 

@@ -20,6 +20,7 @@ func newStore(t *testing.T) (*Store, string) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	t.Cleanup(func() { _ = s.Close() }) // no flush timer outliving the temp dir
 	return s, dir
 }
 

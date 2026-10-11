@@ -80,6 +80,9 @@ type turn struct {
 	trace    *traceBuilder
 	trigger  string // what started the turn (usage.Trigger*); "" = not known
 	failed   bool   // an error ended part of the turn
+	// text and reasoning hold msg's streamed text, so a delta costs its own
+	// length instead of a copy of the reply so far.
+	text, reasoning message.StreamBuffer
 }
 
 // NewDeckWorkspace wraps a and drives eng's agents through it.
@@ -549,7 +552,7 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 	}
 	// Text after a tool call starts a new message, as a new step does.
 	fresh := func() {
-		if t.open && len(t.msg.ToolCalls()) > 0 {
+		if t.open && t.msg.HasToolCalls() {
 			t.msg.AddFinish(message.FinishReasonToolUse, "", "")
 			_ = w.app.Messages.Update(ctx, t.msg)
 			t.open = false
@@ -560,7 +563,7 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 	case deckagent.KindAssistantText:
 		fresh()
 		if ev.Delta {
-			t.msg.AppendContent(ev.Text)
+			t.msg.AppendContentBuf(&t.text, ev.Text)
 			t.streamed = true
 		} else {
 			setText(&t.msg, ev.Text, t.streamed)
@@ -570,7 +573,7 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 	case deckagent.KindReasoning:
 		fresh()
 		if ev.Delta {
-			t.msg.AppendReasoningContent(ev.Text)
+			t.msg.AppendReasoningContentBuf(&t.reasoning, ev.Text)
 			t.thinking = true
 		} else if !t.thinking {
 			t.msg.AppendReasoningContent(ev.Text)
@@ -599,16 +602,16 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		if ev.Tool == nil {
 			return
 		}
+		name, input := deckTool(ev.Tool)
 		if !t.tools[ev.Tool.ID] { // a result with no call seen: show the call too
 			open()
-			name, input := deckTool(ev.Tool)
 			t.msg.AddToolCall(message.ToolCall{ID: ev.Tool.ID, Name: name, Input: input, Finished: true})
 			t.tools[ev.Tool.ID] = true
 			_ = w.app.Messages.Update(ctx, t.msg)
 		}
 		_, err := w.app.Messages.Create(ctx, sid, message.CreateMessageParams{
 			Role:  message.Tool,
-			Parts: []message.ContentPart{t.result(ev.Tool)},
+			Parts: []message.ContentPart{t.resultAs(ev.Tool, name, input)},
 		})
 		if err != nil {
 			slog.Error("deck: tool result", "error", err)
@@ -664,6 +667,17 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		}
 		w.addUsage(sid, ev.AgentID, t.usage, took, meta)
 		delete(w.turns, ev.AgentID)
+	}
+	if ev.Delta {
+		// A delta comes from an agent at work: once the session shows
+		// busy it changes nothing, and checking costs a look at every
+		// member. The event that ends the turn does the check.
+		w.mu.Lock()
+		shown := w.busy[sid]
+		w.mu.Unlock()
+		if shown {
+			return
+		}
 	}
 	w.edge(sid, ev.Kind == deckagent.KindError)
 }
@@ -854,10 +868,12 @@ func sides(d deckagent.FileDiff) (before, after string) {
 		}
 		for _, l := range h.Lines {
 			if l.Op != deckagent.OpAdd {
-				o.WriteString(l.Text + "\n")
+				o.WriteString(l.Text)
+				o.WriteByte('\n')
 			}
 			if l.Op != deckagent.OpDel {
-				n.WriteString(l.Text + "\n")
+				n.WriteString(l.Text)
+				n.WriteByte('\n')
 			}
 		}
 	}
@@ -918,6 +934,15 @@ func deckTool(t *deckagent.Tool) (name, input string) {
 // result is a finished tool call as Deck's renderers read it.
 func (t *turn) result(tool *deckagent.Tool) message.ToolResult {
 	name, input := deckTool(tool)
+	return t.resultAs(tool, name, input)
+}
+
+// resultAs is result for a tool deckTool has already named.
+//
+// The output is stored once, in Content: the bash and view renderers fall
+// back to it when the metadata has none, so repeating it there would only
+// double every result's size in the database.
+func (t *turn) resultAs(tool *deckagent.Tool, name, input string) message.ToolResult {
 	r := message.ToolResult{ToolCallID: tool.ID, Name: name, Content: tool.Output, IsError: tool.Status == deckagent.ToolError}
 	enc := func(v any) string {
 		b, _ := json.Marshal(v)
@@ -929,7 +954,13 @@ func (t *turn) result(tool *deckagent.Tool) message.ToolResult {
 	_ = json.Unmarshal([]byte(input), &in)
 	switch name {
 	case tools.BashToolName:
-		r.Metadata = enc(tools.BashResponseMetadata{Output: tool.Output})
+		var meta tools.BashResponseMetadata
+		if tool.Output == tools.BashNoOutput {
+			// The renderer takes this Content to mean "nothing to show",
+			// but here it is the command's real output.
+			meta.Output = tool.Output
+		}
+		r.Metadata = enc(meta)
 	case tools.EditToolName, tools.WriteToolName:
 		d, ok := t.diffs[in.FilePath]
 		if !ok {
@@ -945,7 +976,7 @@ func (t *turn) result(tool *deckagent.Tool) message.ToolResult {
 			r.Metadata = enc(tools.EditResponseMetadata{Additions: d.Added, Removals: d.Removed, OldContent: before, NewContent: after})
 		}
 	case tools.ViewToolName:
-		r.Metadata = enc(tools.ViewResponseMetadata{FilePath: in.FilePath, Content: tool.Output})
+		r.Metadata = enc(tools.ViewResponseMetadata{FilePath: in.FilePath})
 	}
 	return r
 }

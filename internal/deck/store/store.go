@@ -13,10 +13,17 @@
 //	                EntryUnrevert).
 //	<id>.meta.json  the Thread metadata; the source of truth for that thread
 //	index.json      cache of every thread's metadata, sorted on read; rebuilt
-//	                from the *.meta.json files when missing or unreadable
+//	                from the *.meta.json files when missing or unreadable,
+//	                and patched from any that are newer than it
 //
 // Every write to a file goes through a temp file and a rename, so a crash never
 // leaves a half-written index or metadata file.
+//
+// Appends do not rewrite metadata: the bump to a thread's Updated time stays in
+// memory and reaches its .meta.json and the index within flushDelay, at the
+// end of a turn, or on Flush. Metadata changes (UpdateMeta) are written to the
+// .meta.json at once and to the index on the same schedule. A crash can thus
+// lose at most the last second of Updated bumps, nothing else.
 package store
 
 import (
@@ -30,6 +37,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -215,13 +223,24 @@ type Entry struct {
 	Files []string `json:"files,omitempty"`
 }
 
+// flushDelay is how long metadata and index writes are held back so a burst
+// of appends costs one write instead of one per event.
+const flushDelay = time.Second
+
 // Store is a directory of threads. It is safe for concurrent use.
 type Store struct {
 	dir string
 
-	mu      sync.Mutex // guards threads, locks and every write to index.json
+	mu      sync.Mutex // guards threads, locks, the flush state and every write to index.json
 	threads map[string]*Thread
 	locks   map[string]*sync.Mutex // per-thread lock serialising log appends
+
+	// Writes held back until the next flush (see flushDelay).
+	dirty      map[string]bool // threads whose .meta.json lags behind memory
+	indexDirty bool            // index.json lags behind memory
+	timer      *time.Timer     // the pending flush; nil when none
+	closed     bool            // after Close every change is written at once
+	delay      time.Duration
 }
 
 // DefaultDir returns ~/.deck/threads.
@@ -251,12 +270,31 @@ func New(dir string) (*Store, error) {
 		dir:     dir,
 		threads: make(map[string]*Thread),
 		locks:   make(map[string]*sync.Mutex),
+		dirty:   make(map[string]bool),
+		delay:   flushDelay,
 	}
 
 	if threads, err := readIndex(s.indexPath()); err == nil {
 		for i := range threads {
 			t := threads[i]
 			s.threads[t.ID] = &t
+		}
+		// The index is written lazily, so a crash can leave it behind the
+		// metadata files: take any written since.
+		stale := false
+		for _, t := range newerMeta(dir, s.indexPath()) {
+			if cur, ok := s.threads[t.ID]; ok && reflect.DeepEqual(*cur, t) {
+				continue
+			}
+			s.threads[t.ID] = &t
+			stale = true
+		}
+		if stale {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if err := s.writeIndexLocked(); err != nil {
+				return nil, err
+			}
 		}
 		return s, nil
 	}
@@ -326,17 +364,9 @@ func (s *Store) CreateWith(t Thread, entries []Entry) (Thread, error) {
 	if err != nil {
 		return Thread{}, err
 	}
-	var buf []byte
-	for _, e := range entries {
-		if e.Delta {
-			continue
-		}
-		e.Event = sanitize(e.Event)
-		line, err := json.Marshal(e)
-		if err != nil {
-			return Thread{}, fmt.Errorf("store: encode entry: %w", err)
-		}
-		buf = append(append(buf, line...), '\n')
+	buf, _, err := encodeEntries(entries)
+	if err != nil {
+		return Thread{}, err
 	}
 	s.mu.Lock()
 	tl := s.threadLockLocked(t.ID)
@@ -356,18 +386,21 @@ func (s *Store) Append(threadID string, ev agent.Event) error {
 }
 
 // AppendEntry writes one entry to the thread's log and bumps its Updated time.
-// Streaming deltas (Event.Delta == true) are dropped to keep logs small. Events
-// that cannot be encoded have their invalid raw JSON removed rather than failing.
+// Streaming deltas (Event.Delta == true) are dropped to keep logs small, and so
+// is the raw protocol line of every event agent.KeepsRaw does not keep. Events
+// that cannot be encoded have their invalid raw JSON removed rather than
+// failing.
 func (s *Store) AppendEntry(threadID string, e Entry) error {
-	if e.Delta {
-		return nil
+	return s.AppendEntries(threadID, []Entry{e})
+}
+
+// AppendEntries is AppendEntry for several entries, written to the log in one
+// go and in order.
+func (s *Store) AppendEntries(threadID string, entries []Entry) error {
+	buf, ended, err := encodeEntries(entries)
+	if err != nil || len(buf) == 0 {
+		return err
 	}
-	e.Event = sanitize(e.Event)
-	line, err := json.Marshal(e)
-	if err != nil {
-		return fmt.Errorf("store: encode entry: %w", err)
-	}
-	line = append(line, '\n')
 
 	s.mu.Lock()
 	if _, ok := s.threads[threadID]; !ok {
@@ -378,7 +411,7 @@ func (s *Store) AppendEntry(threadID string, e Entry) error {
 	s.mu.Unlock()
 
 	tl.Lock()
-	err = appendFile(s.logPath(threadID), line)
+	err = appendFile(s.logPath(threadID), buf)
 	tl.Unlock()
 	if err != nil {
 		return err
@@ -391,12 +424,50 @@ func (s *Store) AppendEntry(threadID string, e Entry) error {
 		return ErrNotFound
 	}
 	t.Updated = time.Now()
-	return s.saveLocked(*t)
+	s.dirty[threadID] = true
+	s.indexDirty = true
+	if ended {
+		// A turn ended: a good moment to bring the files up to date.
+		return s.flushLocked()
+	}
+	s.scheduleLocked()
+	return nil
+}
+
+// encodeEntries renders the log lines for entries, dropping streaming deltas
+// and the raw lines the log does not keep. ended reports an entry that ends a
+// turn.
+func encodeEntries(entries []Entry) (buf []byte, ended bool, err error) {
+	for _, e := range entries {
+		if e.Delta {
+			continue
+		}
+		e.Event = slim(sanitize(e.Event))
+		line, err := json.Marshal(e)
+		if err != nil {
+			return nil, false, fmt.Errorf("store: encode entry: %w", err)
+		}
+		buf = append(append(buf, line...), '\n')
+		if e.Type == EntryEvent && (e.Kind == agent.KindTurnDone || e.Kind == agent.KindExited) {
+			ended = true
+		}
+	}
+	return buf, ended, nil
+}
+
+// slim drops the raw protocol line of an event that does not keep it (see
+// agent.KeepsRaw).
+func slim(ev agent.Event) agent.Event {
+	if len(ev.Raw) > 0 && !agent.KeepsRaw(ev.Kind) {
+		ev.Raw = nil
+	}
+	return ev
 }
 
 // UpdateMeta replaces the stored metadata of t.ID with t (Title, Dir, Members;
 // a Thread with no Members is migrated from the legacy single-agent fields
-// first). Created is kept and Updated is set to now.
+// first). Created is kept and Updated is set to now. The thread's .meta.json is
+// written before UpdateMeta returns; the index follows within flushDelay.
 func (s *Store) UpdateMeta(t Thread) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -410,7 +481,71 @@ func (s *Store) UpdateMeta(t Thread) error {
 	t.Normalize()
 	t.Version = CurrentVersion
 	s.threads[t.ID] = &t
-	return s.saveLocked(t)
+	if err := s.writeMetaLocked(t); err != nil {
+		return err
+	}
+	delete(s.dirty, t.ID)
+	s.indexDirty = true
+	s.scheduleLocked()
+	return nil
+}
+
+// Flush writes every held-back metadata and index change now.
+func (s *Store) Flush() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.flushLocked()
+}
+
+// Close flushes the store. The store stays usable, but from then on every
+// change is written at once instead of being held back.
+func (s *Store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+	return s.flushLocked()
+}
+
+// scheduleLocked arranges for held-back writes to be flushed. Caller holds s.mu.
+func (s *Store) scheduleLocked() {
+	if s.closed || s.delay <= 0 {
+		_ = s.flushLocked()
+		return
+	}
+	if s.timer == nil {
+		s.timer = time.AfterFunc(s.delay, func() { _ = s.Flush() })
+	}
+}
+
+// flushLocked writes the metadata files that lag behind memory and then the
+// index. What fails to be written stays pending for the next flush. Caller
+// holds s.mu.
+func (s *Store) flushLocked() error {
+	if s.timer != nil {
+		s.timer.Stop()
+		s.timer = nil
+	}
+	var first error
+	for id := range s.dirty {
+		t, ok := s.threads[id]
+		if !ok {
+			delete(s.dirty, id)
+			continue
+		}
+		if err := s.writeMetaLocked(*t); err != nil {
+			if first == nil {
+				first = err
+			}
+			continue
+		}
+		delete(s.dirty, id)
+	}
+	if s.indexDirty {
+		if err := s.writeIndexLocked(); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
 }
 
 // List returns every thread, most recently updated first.
@@ -464,7 +599,7 @@ func (s *Store) LoadEntries(id string) ([]Entry, Thread, error) {
 	defer f.Close()
 
 	var entries []Entry
-	r := bufio.NewReader(f)
+	r := bufio.NewReaderSize(f, 64<<10)
 	for {
 		line, err := r.ReadBytes('\n')
 		if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
@@ -473,6 +608,9 @@ func (s *Store) LoadEntries(id string) ([]Entry, Thread, error) {
 				if e.ID == "" {
 					e.ID = "e" + strconv.Itoa(len(entries))
 				}
+				// Older logs kept every event's raw line; it is not
+				// worth holding in memory.
+				e.Event = slim(e.Event)
 				entries = append(entries, e)
 			}
 		}
@@ -511,22 +649,34 @@ func (s *Store) sortedLocked() []Thread {
 
 // saveLocked writes one thread's metadata file and then the index. Caller holds s.mu.
 func (s *Store) saveLocked(t Thread) error {
+	if err := s.writeMetaLocked(t); err != nil {
+		return err
+	}
+	delete(s.dirty, t.ID)
+	return s.writeIndexLocked()
+}
+
+// writeMetaLocked writes one thread's metadata file. Caller holds s.mu.
+func (s *Store) writeMetaLocked(t Thread) error {
 	data, err := json.MarshalIndent(t, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := writeFileAtomic(s.metaPath(t.ID), data); err != nil {
-		return err
-	}
-	return s.writeIndexLocked()
+	return writeFileAtomic(s.metaPath(t.ID), data)
 }
 
+// writeIndexLocked writes index.json, compact: it is only a cache for New, and
+// it holds every thread. Caller holds s.mu.
 func (s *Store) writeIndexLocked() error {
-	data, err := json.MarshalIndent(s.sortedLocked(), "", "  ")
+	data, err := json.Marshal(s.sortedLocked())
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(s.indexPath(), data)
+	if err := writeFileAtomic(s.indexPath(), data); err != nil {
+		return err
+	}
+	s.indexDirty = false
+	return nil
 }
 
 // Worktree is an isolated thread's git worktree.
@@ -557,6 +707,7 @@ func (s *Store) Delete(id string) error {
 	}
 	tl.Unlock()
 	delete(s.threads, id)
+	delete(s.dirty, id)
 	return s.writeIndexLocked()
 }
 
@@ -600,6 +751,42 @@ func scanMeta(dir string) ([]Thread, error) {
 		threads = append(threads, t)
 	}
 	return threads, nil
+}
+
+// newerMeta reads the *.meta.json files in dir modified no earlier than the
+// index file (equal times count: the clock may be coarse). Unreadable or
+// id-less files are skipped.
+func newerMeta(dir, index string) []Thread {
+	fi, err := os.Stat(index)
+	if err != nil {
+		return nil
+	}
+	since := fi.ModTime()
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var threads []Thread
+	for _, de := range ents {
+		if de.IsDir() || !strings.HasSuffix(de.Name(), ".meta.json") {
+			continue
+		}
+		info, err := de.Info()
+		if err != nil || info.ModTime().Before(since) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, de.Name()))
+		if err != nil {
+			continue
+		}
+		var t Thread
+		if err := json.Unmarshal(data, &t); err != nil || t.ID == "" {
+			continue
+		}
+		t.Normalize()
+		threads = append(threads, t)
+	}
+	return threads
 }
 
 func appendFile(path string, data []byte) error {
