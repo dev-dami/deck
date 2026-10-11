@@ -1,25 +1,70 @@
 name: Release
 
+# Two ways to cut a release:
+#   - push a tag:        git tag v0.8.0 && git push origin v0.8.0
+#   - or press the button: Actions → Release → Run workflow, version v0.8.0
+#     (gh workflow run release.yml -f version=v0.8.0); the tag is made here.
+# A version with a suffix (v0.8.0-dev, v0.8.0-rc.1) is published as a
+# pre-release, so the one-line installers keep giving people the last full one.
+
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. v0.8.0 or v0.8.0-dev"
+        required: true
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  goreleaser:
+  release:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Tag
+        id: tag
+        env:
+          INPUT: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="$INPUT"
+            case "$tag" in v*) ;; *) tag="v$tag" ;; esac
+            if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+              echo "::error::$tag is not a version like v0.8.0 or v0.8.0-dev"
+              exit 1
+            fi
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "::error::$tag already exists"
+              exit 1
+            fi
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" -m "$tag"
+            git push origin "$tag"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Vet
+        run: go vet ./...
 
       - uses: goreleaser/goreleaser-action@v6
         with:
@@ -28,3 +73,46 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.tag.outputs.tag }}
+
+  # Download what was just published, on each system, and run it.
+  verify:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, pattern: "deck_*_linux_amd64.tar.gz" }
+          - { os: macos-latest, pattern: "deck_*_darwin_arm64.tar.gz" }
+          - { os: windows-latest, pattern: "deck_*_windows_amd64.zip" }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Download
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "${{ matrix.pattern }}" --pattern checksums.txt --dir dl
+          cd dl
+          archive=$(ls deck_*)
+          grep " $archive\$" checksums.txt > want.txt
+          if command -v sha256sum >/dev/null; then sha256sum -c want.txt; else shasum -a 256 -c want.txt; fi
+          case "$archive" in
+            *.zip) unzip -q "$archive" ;;
+            *) tar -xzf "$archive" ;;
+          esac
+
+      - name: Run
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          out=$(./dl/deck --version)
+          echo "$out"
+          case "$out" in
+            *"${TAG#v}"*) ;;
+            *) echo "::error::deck --version does not say ${TAG#v}"; exit 1 ;;
+          esac
+          ./dl/deck --help >/dev/null

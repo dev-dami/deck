@@ -26,15 +26,36 @@ $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     default { Fail "unsupported processor $($env:PROCESSOR_ARCHITECTURE)" }
 }
 
+# A private repository answers plain downloads with 404; the GitHub CLI, when
+# it is installed and signed in, still can.
+function Have-Gh {
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return $false }
+    # Windows PowerShell turns a native command's stderr into errors, which
+    # 'Stop' would throw; run it with errors allowed and read the exit code.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & gh auth status *> $null; return $LASTEXITCODE -eq 0 }
+    catch { return $false }
+    finally { $ErrorActionPreference = $prev }
+}
+
+function Gh {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & gh @args 2>$null } finally { $ErrorActionPreference = $prev }
+}
+
 $tag = $env:DECK_VERSION
 if (-not $tag) {
     try {
         $latest = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent' = 'deck-install' } "https://api.github.com/repos/$repo/releases/latest"
         $tag = $latest.tag_name
     } catch {
-        Fail "could not find the latest release of $repo"
+        if (Have-Gh) { $tag = (Gh release view --repo $repo --json tagName -q .tagName) }
+        if (-not $tag) { Fail "could not find the latest release of $repo (if it is private, install gh and run 'gh auth login')" }
     }
 }
+if (-not $tag.StartsWith('v')) { $tag = "v$tag" }
 $version = $tag.TrimStart('v')
 
 $archive = "deck_${version}_windows_${arch}.zip"
@@ -50,7 +71,10 @@ try {
         Invoke-WebRequest -UseBasicParsing -Uri "$base/$archive" -OutFile $zip
         Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.txt" -OutFile $sums
     } catch {
-        Fail "could not download $base/$archive"
+        if (-not (Have-Gh)) { Fail "could not download $base/$archive (if the repository is private, install gh and run 'gh auth login')" }
+        Remove-Item -Force $zip, $sums -ErrorAction SilentlyContinue
+        Gh release download $tag --repo $repo --pattern $archive --pattern checksums.txt --dir $tmp | Out-Null
+        if ($LASTEXITCODE -ne 0) { Fail "could not download $archive from $repo $tag" }
     }
 
     $line = Get-Content $sums | Where-Object { $_ -match (' ' + [regex]::Escape($archive) + '$') } | Select-Object -First 1
@@ -83,5 +107,5 @@ if ($parts -notcontains $dir) {
 }
 
 Write-Host ''
-Write-Host 'Deck drives the agent CLIs you have installed and signed in to: claude, codex, opencode.'
+Write-Host 'Deck drives the agent CLIs you have installed and signed in to: claude, codex, opencode, agy.'
 Write-Host "Run 'deck doctor' to see which ones it found, then 'deck' in a project folder."
