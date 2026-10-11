@@ -1,17 +1,17 @@
 # Installs deck on Windows from the latest GitHub release.
 #
-#   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/dev-dami/deck/main/install.ps1 | iex"
+#   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/dev-dami/deck-releases/main/install.ps1 | iex"
 #
 # Settings (environment):
 #   DECK_VERSION      a release tag to install, e.g. v0.7.0 (default: the latest)
 #   DECK_INSTALL_DIR  where deck.exe goes (default: %LOCALAPPDATA%\deck\bin)
-#   DECK_REPO         the GitHub repository to install from (default: dev-dami/deck)
+#   DECK_REPO         the GitHub repository to install from (default: dev-dami/deck-releases)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$repo = if ($env:DECK_REPO) { $env:DECK_REPO } else { 'dev-dami/deck' }
+$repo = if ($env:DECK_REPO) { $env:DECK_REPO } else { 'dev-dami/deck-releases' }
 $dir = if ($env:DECK_INSTALL_DIR) { $env:DECK_INSTALL_DIR } else { Join-Path (Join-Path $env:LOCALAPPDATA 'deck') 'bin' }
 
 # Fail stops the install. It throws rather than exits, so a run through

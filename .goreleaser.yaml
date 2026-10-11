@@ -31,7 +31,6 @@ archives:
         formats: [zip]
     files:
       - README.md
-      - LICENSE
       - LICENSE.crush.md
 
 checksum:
@@ -54,12 +53,12 @@ release:
 
     macOS / Linux:
     ```sh
-    curl -fsSL https://raw.githubusercontent.com/dev-dami/deck/main/install.sh | DECK_VERSION={{ .Tag }} sh
+    curl -fsSL https://raw.githubusercontent.com/dev-dami/deck-releases/main/install.sh | DECK_VERSION={{ .Tag }} sh
     ```
 
     Windows (PowerShell):
     ```powershell
-    $env:DECK_VERSION='{{ .Tag }}'; irm https://raw.githubusercontent.com/dev-dami/deck/main/install.ps1 | iex
+    $env:DECK_VERSION='{{ .Tag }}'; irm https://raw.githubusercontent.com/dev-dami/deck-releases/main/install.ps1 | iex
     ```
 
     Then run `deck doctor`. Deck drives the agent CLIs you already have signed in: claude, codex, opencode, agy.
