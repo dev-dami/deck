@@ -108,6 +108,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.insertMCPEnabledServerStmt, err = db.PrepareContext(ctx, insertMCPEnabledServer); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertMCPEnabledServer: %w", err)
 	}
+	if q.insertUsageStmt, err = db.PrepareContext(ctx, insertUsage); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertUsage: %w", err)
+	}
 	if q.listAllUserMessagesStmt, err = db.PrepareContext(ctx, listAllUserMessages); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAllUserMessages: %w", err)
 	}
@@ -161,6 +164,21 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.updateSessionTitleAndUsageStmt, err = db.PrepareContext(ctx, updateSessionTitleAndUsage); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateSessionTitleAndUsage: %w", err)
+	}
+	if q.usageByDayStmt, err = db.PrepareContext(ctx, usageByDay); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageByDay: %w", err)
+	}
+	if q.usageByKindStmt, err = db.PrepareContext(ctx, usageByKind); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageByKind: %w", err)
+	}
+	if q.usageByModelStmt, err = db.PrepareContext(ctx, usageByModel); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageByModel: %w", err)
+	}
+	if q.usageTopSessionsStmt, err = db.PrepareContext(ctx, usageTopSessions); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageTopSessions: %w", err)
+	}
+	if q.usageTotalsStmt, err = db.PrepareContext(ctx, usageTotals); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageTotals: %w", err)
 	}
 	return &q, nil
 }
@@ -307,6 +325,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing insertMCPEnabledServerStmt: %w", cerr)
 		}
 	}
+	if q.insertUsageStmt != nil {
+		if cerr := q.insertUsageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertUsageStmt: %w", cerr)
+		}
+	}
 	if q.listAllUserMessagesStmt != nil {
 		if cerr := q.listAllUserMessagesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listAllUserMessagesStmt: %w", cerr)
@@ -397,6 +420,31 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing updateSessionTitleAndUsageStmt: %w", cerr)
 		}
 	}
+	if q.usageByDayStmt != nil {
+		if cerr := q.usageByDayStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageByDayStmt: %w", cerr)
+		}
+	}
+	if q.usageByKindStmt != nil {
+		if cerr := q.usageByKindStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageByKindStmt: %w", cerr)
+		}
+	}
+	if q.usageByModelStmt != nil {
+		if cerr := q.usageByModelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageByModelStmt: %w", cerr)
+		}
+	}
+	if q.usageTopSessionsStmt != nil {
+		if cerr := q.usageTopSessionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageTopSessionsStmt: %w", cerr)
+		}
+	}
+	if q.usageTotalsStmt != nil {
+		if cerr := q.usageTotalsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageTotalsStmt: %w", cerr)
+		}
+	}
 	return err
 }
 
@@ -464,6 +512,7 @@ type Queries struct {
 	getUsageByModelStmt                  *sql.Stmt
 	insertMCPDisabledServerStmt          *sql.Stmt
 	insertMCPEnabledServerStmt           *sql.Stmt
+	insertUsageStmt                      *sql.Stmt
 	listAllUserMessagesStmt              *sql.Stmt
 	listFilesByPathStmt                  *sql.Stmt
 	listFilesBySessionStmt               *sql.Stmt
@@ -482,6 +531,11 @@ type Queries struct {
 	updateMessageStmt                    *sql.Stmt
 	updateSessionStmt                    *sql.Stmt
 	updateSessionTitleAndUsageStmt       *sql.Stmt
+	usageByDayStmt                       *sql.Stmt
+	usageByKindStmt                      *sql.Stmt
+	usageByModelStmt                     *sql.Stmt
+	usageTopSessionsStmt                 *sql.Stmt
+	usageTotalsStmt                      *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -516,6 +570,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getUsageByModelStmt:                  q.getUsageByModelStmt,
 		insertMCPDisabledServerStmt:          q.insertMCPDisabledServerStmt,
 		insertMCPEnabledServerStmt:           q.insertMCPEnabledServerStmt,
+		insertUsageStmt:                      q.insertUsageStmt,
 		listAllUserMessagesStmt:              q.listAllUserMessagesStmt,
 		listFilesByPathStmt:                  q.listFilesByPathStmt,
 		listFilesBySessionStmt:               q.listFilesBySessionStmt,
@@ -534,5 +589,10 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		updateMessageStmt:                    q.updateMessageStmt,
 		updateSessionStmt:                    q.updateSessionStmt,
 		updateSessionTitleAndUsageStmt:       q.updateSessionTitleAndUsageStmt,
+		usageByDayStmt:                       q.usageByDayStmt,
+		usageByKindStmt:                      q.usageByKindStmt,
+		usageByModelStmt:                     q.usageByModelStmt,
+		usageTopSessionsStmt:                 q.usageTopSessionsStmt,
+		usageTotalsStmt:                      q.usageTotalsStmt,
 	}
 }

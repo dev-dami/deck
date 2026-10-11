@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -69,5 +70,53 @@ func TestIntroMoves(t *testing.T) {
 	m.Start(now)
 	if !m.Advance(now.Add(16 * time.Millisecond)) {
 		t.Fatal("intro does not move")
+	}
+}
+
+func TestStaticPaletteUsesItsColours(t *testing.T) {
+	t.Parallel()
+	p := Palette{
+		Low:    lipgloss.Color("#202020"),
+		Accent: lipgloss.Color("#bd93f9"),
+		High:   lipgloss.Color("#ff79c6"),
+		Name:   lipgloss.Color("#f8f8f2"),
+	}
+	themed := StaticPalette(80, 6, p)
+	if ansi.Strip(themed) != ansi.Strip(Static(80, 6, true)) {
+		t.Fatal("a palette changes the letterforms")
+	}
+	if themed == Static(80, 6, true) {
+		t.Fatal("a palette does not change the colours")
+	}
+}
+
+func TestSetPaletteRecolours(t *testing.T) {
+	t.Parallel()
+	m := New(true)
+	m.SetSize(80, 6)
+	before := m.View()
+	m.SetPalette(Palette{Accent: lipgloss.Color("#7aa2f7")})
+	if m.View() == before {
+		t.Fatal("SetPalette does not recolour the logo")
+	}
+	// Unset colours keep their current value, and SetDark restores Deck's.
+	if m.colors.Low == nil || m.colors.High == nil || m.colors.Name == nil {
+		t.Fatal("SetPalette dropped the unset colours")
+	}
+	m.SetDark(true)
+	if m.View() != before {
+		t.Fatal("SetDark does not restore Deck's palette")
+	}
+}
+
+func TestTinyUsesPalette(t *testing.T) {
+	t.Parallel()
+	p := Palette{Accent: lipgloss.Color("#88c0d0"), Name: lipgloss.Color("#eceff4")}
+	got := StaticPalette(10, 1, p)
+	if ansi.Strip(got) != "◆ deck" {
+		t.Fatalf("tiny logo = %q", ansi.Strip(got))
+	}
+	if got == Static(10, 1, true) {
+		t.Fatal("tiny logo ignores the palette")
 	}
 }

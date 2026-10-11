@@ -11,7 +11,6 @@ import (
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/ui/logo"
 	"github.com/dev-dami/deck/internal/ui/styles"
-	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/dev-dami/deck/internal/version"
 )
 
@@ -23,6 +22,17 @@ const FallbackWidth = 80
 // there is nothing to print. A nil or untitled session means the resume hint is
 // omitted, which for the compact banner leaves nothing at all.
 func Render(banner config.ExitBanner, sess *session.Session, width int) string {
+	t := styles.DeckDark()
+	return RenderTheme(banner, sess, width, &t)
+}
+
+// RenderTheme is Render in the colours of the given theme, normally the one
+// the TUI was showing when it exited.
+func RenderTheme(banner config.ExitBanner, sess *session.Session, width int, t *styles.Styles) string {
+	if t == nil {
+		dark := styles.DeckDark()
+		t = &dark
+	}
 	if width <= 0 {
 		width = FallbackWidth
 	}
@@ -36,29 +46,29 @@ func Render(banner config.ExitBanner, sess *session.Session, width int) string {
 		if !hasSession {
 			return ""
 		}
-		return sessionResumeLines(sess, width)
+		return sessionResumeLines(t, sess, width)
 
 	default:
 		// Unrecognized values render the full banner rather than nothing.
 		style := lipgloss.NewStyle().Padding(1, 3)
 		contentWidth := width - style.GetHorizontalFrameSize()
 
-		sections := []string{logoSection(contentWidth)}
+		sections := []string{logoSection(t, contentWidth)}
 		if hasSession {
-			sections = append(sections, sessionResumeLines(sess, contentWidth))
+			sections = append(sections, sessionResumeLines(t, sess, contentWidth))
 		}
 		return style.Render(strings.Join(sections, "\n\n"))
 	}
 }
 
 // logoSection returns the ASCII art logo followed by the parting message.
-func logoSection(contentWidth int) string {
-	t := styles.ThemeForProvider("")
+func logoSection(t *styles.Styles, contentWidth int) string {
 	deckLogo := logo.Render(t.Logo.GradCanvas, version.Version, true, logo.Opts{
 		TaglineColor: t.Logo.TaglineColor,
 		VersionColor: t.Logo.VersionColor,
 		Width:        contentWidth,
-		Dark:         true,
+		Dark:         t.IsDark,
+		Mark:         logo.PaletteFor(t),
 	})
 	// Wrap the greeting and the message together: wrapping only the message
 	// leaves the greeting's own width unaccounted for and overflows the frame.
@@ -68,7 +78,7 @@ func logoSection(contentWidth int) string {
 
 // sessionResumeLines returns the "Session  <title>\nContinue deck -s <hash>"
 // pair used by the exit banner.
-func sessionResumeLines(sess *session.Session, contentWidth int) string {
+func sessionResumeLines(t *styles.Styles, sess *session.Session, contentWidth int) string {
 	title := strings.ReplaceAll(sess.Title, "\n", " ")
 
 	labelWidth := lipgloss.Width("Session  ")
@@ -78,7 +88,7 @@ func sessionResumeLines(sess *session.Session, contentWidth int) string {
 	}
 
 	hash := session.HashID(sess.ID)[:7]
-	label := lipgloss.NewStyle().Foreground(tone.Mint)
+	label := lipgloss.NewStyle().Foreground(t.Logo.MarkColor)
 	sessionLine := label.Render("Session  ") + title
 	continueLine := label.Render("Continue ") + "deck -s " + hash
 	return sessionLine + "\n" + continueLine

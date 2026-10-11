@@ -23,6 +23,19 @@ type Opts struct {
 	VersionColor color.Color // the version
 	Width        int         // the room there is; lines are cut to it
 	Dark         bool        // the dark palette (the default theme)
+	// Mark is the wordmark's colours, usually PaletteFor the active
+	// theme. Unset, the wordmark uses Deck's own Dark or light palette.
+	Mark decklogo.Palette
+}
+
+// PaletteFor returns the wordmark colours of a theme.
+func PaletteFor(t *styles.Styles) decklogo.Palette {
+	return decklogo.Palette{
+		Low:    t.Logo.MarkLowColor,
+		Accent: t.Logo.MarkColor,
+		High:   t.Logo.MarkHighColor,
+		Name:   t.Logo.NameColor,
+	}
 }
 
 // Render renders the Deck logo with the tagline and version under it. The
@@ -37,7 +50,12 @@ func Render(_ lipgloss.Style, version string, compact bool, o Opts) string {
 		h = 4
 		w = min(w, 40)
 	}
-	mark := decklogo.Static(w, h, o.Dark || o.Width == 0)
+	var mark string
+	if o.Mark.Accent != nil {
+		mark = decklogo.StaticPalette(w, h, o.Mark)
+	} else {
+		mark = decklogo.Static(w, h, o.Dark || o.Width == 0)
+	}
 	meta := lipgloss.NewStyle().Foreground(o.TaglineColor).Render(Tagline)
 	if version != "" {
 		meta += "  " + lipgloss.NewStyle().Foreground(o.VersionColor).Render(version)

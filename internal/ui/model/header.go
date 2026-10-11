@@ -11,7 +11,6 @@ import (
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/fsext"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/ui/common"
@@ -52,7 +51,7 @@ type header struct {
 func newHeader(com *common.Common) *header {
 	h := &header{
 		com:  com,
-		anim: decklogo.New(com.Styles.IsDark),
+		anim: decklogo.NewWithPalette(logo.PaletteFor(com.Styles)),
 	}
 	h.refresh()
 	return h
@@ -64,6 +63,7 @@ func (h *header) refresh() {
 	t := h.com.Styles
 	h.compactLogo = " " + t.Header.Mark.Render("◆") + " " +
 		styles.ApplyBoldForegroundGrad(t.Header.LogoGradCanvas, "deck", t.Header.LogoGradFromColor, t.Header.LogoGradToColor) + " "
+	h.anim.SetPalette(logo.PaletteFor(t))
 	// Force drawHeader to re-render the wide logo on the next frame.
 	h.width = 0
 	h.logo = ""
@@ -81,6 +81,7 @@ func (h *header) drawHeader(
 	width int,
 	lspErrorCount int,
 	gitBranch string,
+	gitBadge string,
 ) {
 	t := h.com.Styles
 	if width != h.width || compact != h.compact {
@@ -110,6 +111,7 @@ func (h *header) drawHeader(
 		detailsOpen,
 		availDetailWidth,
 		gitBranch,
+		gitBadge,
 	)
 
 	remainingWidth := width -
@@ -142,6 +144,7 @@ func renderHeaderDetails(
 	detailsOpen bool,
 	availWidth int,
 	gitBranch string,
+	gitBadge string,
 ) string {
 	t := com.Styles
 
@@ -151,11 +154,8 @@ func renderHeaderDetails(
 		parts = append(parts, t.LSP.ErrorDiagnostic.Render(fmt.Sprintf("%s%d", styles.LSPErrorIcon, lspErrorCount)))
 	}
 
-	agentCfg := com.Config().Agents[config.AgentCoder]
-	model := com.Config().GetModelByType(agentCfg.Model)
-	if model != nil && model.ContextWindow > 0 {
-		percentage := (float64(session.CompletionTokens+session.PromptTokens) / float64(model.ContextWindow)) * 100
-		percentageText := fmt.Sprintf("%d%%", int(percentage))
+	if percentage, ok := contextPercent(com, session); ok {
+		percentageText := fmt.Sprintf("%d%%", percentage)
 		if session.EstimatedUsage {
 			percentageText = "~" + percentageText
 		}
@@ -182,11 +182,16 @@ func renderHeaderDetails(
 		// Reserve space for the dot separator between branch and path and
 		// at least some of the path.
 		branchSep := t.Header.Separator.Render(" • ")
+		// The branch's pull request and checks ("#12 ✓") follow it.
+		badge := ""
+		if gitBadge != "" {
+			badge = " " + gitBadge
+		}
 		metadataWidth := lipgloss.Width(metadata)
-		maxBranchWidth := max(0, availWidth-metadataWidth-lipgloss.Width(cwd)-lipgloss.Width(branchSep))
+		maxBranchWidth := max(0, availWidth-metadataWidth-lipgloss.Width(cwd)-lipgloss.Width(branchSep)-lipgloss.Width(badge))
 		if maxBranchWidth > 0 {
 			truncBranch := ansi.Truncate(gitBranch, maxBranchWidth, "…")
-			cwd = t.Header.GitBranch.Render(truncBranch) + branchSep + cwd
+			cwd = t.Header.GitBranch.Render(truncBranch) + badge + branchSep + cwd
 		}
 	}
 
@@ -209,7 +214,7 @@ func logoTick() tea.Cmd {
 func (h *header) landingLogo(area uv.Rectangle) string {
 	t := h.com.Styles
 	h.area = area
-	h.anim.SetDark(t.IsDark)
+	h.anim.SetPalette(logo.PaletteFor(t))
 	h.anim.SetSize(area.Dx(), max(1, area.Dy()-1))
 	if h.pending {
 		if w, _ := h.anim.Bounds(); w > 0 {

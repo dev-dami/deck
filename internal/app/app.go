@@ -27,6 +27,7 @@ import (
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/shell"
 	"github.com/dev-dami/deck/internal/skills"
+	"github.com/dev-dami/deck/internal/usage"
 )
 
 // UpdateAvailableMsg is sent when a new version is available.
@@ -43,6 +44,8 @@ type App struct {
 	Permissions permission.Service
 	Questions   question.Service
 	FileTracker filetracker.Service
+	// Usage records what each agent turn used, for the local Usage view.
+	Usage usage.Service
 
 	LSPManager *lsp.Manager
 
@@ -95,6 +98,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		Permissions: permission.NewPermissionService(store.WorkingDir(), skipPermissionsRequests, allowedTools),
 		Questions:   question.NewService(),
 		FileTracker: filetracker.NewService(q),
+		Usage:       usage.NewService(q),
 		LSPManager:  lsp.NewManager(store),
 		Skills:      skillsMgr,
 

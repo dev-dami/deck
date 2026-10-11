@@ -55,6 +55,7 @@ import (
 	"github.com/dev-dami/deck/internal/ui/dialog"
 	fimage "github.com/dev-dami/deck/internal/ui/image"
 	"github.com/dev-dami/deck/internal/ui/logo"
+	"github.com/dev-dami/deck/internal/ui/motion"
 	"github.com/dev-dami/deck/internal/ui/notification"
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/ui/tone"
@@ -457,6 +458,10 @@ type UI struct {
 	// here rather than asking the workspace per frame.
 	gitBranch string
 
+	// git is the git/GitHub state behind the header badge, the sidebar
+	// block and the PR nudge (see git.go).
+	git gitState
+
 	// Prompt history for up/down navigation through previous messages.
 	promptHistory struct {
 		messages []string
@@ -518,6 +523,10 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		},
 	)
 
+	tone.SetLight(!com.Styles.IsDark)
+	if editor, ok := com.Workspace.(workspace.SettingsEditor); ok {
+		motion.Set(editor.DeckSettings().Motion)
+	}
 	header := newHeader(com)
 
 	ui := &UI{
@@ -619,7 +628,7 @@ func (m *UI) Init() tea.Cmd {
 		cmds = append(cmds, initialSession)
 	}
 	// loadSessionMsg reloads history for whichever session arrives, so
-	// doing it here too would be discarded — and with no session set yet
+	// doing it here too would be discarded â€” and with no session set yet
 	// it reads every user message in the database, which the pending
 	// session load then queues behind on the single connection.
 	if initialSession == nil {
@@ -1082,7 +1091,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case pubsub.CreatedEvent:
 			cmds = append(cmds, m.appendSessionMessage(msg.Payload))
-			// A new message is a run boundary — a user prompt starting
+			// A new message is a run boundary â€” a user prompt starting
 			// a turn or the agent replying/dequeueing. Drop the
 			// memoized busy state and re-fetch it and the queue
 			// off-thread. Per-chunk UpdatedEvents deliberately do NOT
@@ -1522,7 +1531,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		}
 	case shellResultMsg:
-		// Clear the bang cancel func — command is done.
+		// Clear the bang cancel func â€” command is done.
 		if m.bangCancel != nil {
 			m.bangCancel()
 			m.bangCancel = nil
@@ -1547,7 +1556,9 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case gitBranchUpdatedMsg:
 		m.gitBranch = msg.branch
 	case gitBranchPollMsg:
-		cmds = append(cmds, m.fetchGitBranch(), m.gitBranchTicker())
+		cmds = append(cmds, m.fetchGitBranch(), m.gitBranchTicker(), m.gitPoll())
+	case gitMsg:
+		cmds = append(cmds, m.handleGitMsg(msg))
 	case util.InfoMsg:
 		if msg.Type == util.InfoTypeError {
 			slog.Error("Error reported", "error", msg.Msg)
@@ -1559,7 +1570,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, clearInfoMsgCmd(ttl))
 	case app.UpdateAvailableMsg:
-		text := fmt.Sprintf("Deck update available: v%s → v%s.", msg.CurrentVersion, msg.LatestVersion)
+		text := fmt.Sprintf("Deck update available: v%s â†’ v%s.", msg.CurrentVersion, msg.LatestVersion)
 		if msg.IsDevelopment {
 			text = fmt.Sprintf("This is a development version of Deck. The latest version is v%s.", msg.LatestVersion)
 		}
@@ -1738,7 +1749,7 @@ func (m *UI) setSessionMessages(msgs []message.Message) tea.Cmd {
 func (m *UI) handleConnectionEvent(msg workspace.ConnectionEvent) []tea.Cmd {
 	info := util.InfoMsg{
 		Type: util.InfoTypeWarn,
-		Msg:  "Lost connection to the Deck server — reconnecting…",
+		Msg:  "Lost connection to the Deck server â€” reconnectingâ€¦",
 		TTL:  30 * time.Second,
 	}
 	switch msg.State {
@@ -2147,6 +2158,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if msg.Cmd != nil {
 			cmds = append(cmds, msg.Cmd)
 		}
+	case dialog.GitAction:
+		cmds = append(cmds, m.handleGitAction(msg))
 
 	// Session dialog messages.
 	case dialog.ActionSelectSession:
@@ -2517,6 +2530,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 
 	case dialog.ActionSelectAgentModel:
 		cmds = append(cmds, m.selectAgentModel(msg))
+	case dialog.ActionSetDeckSettings:
+		cmds = append(cmds, m.applyDeckSettings(msg))
+	case dialog.ActionSetTUIOption:
+		cmds = append(cmds, m.setTUIOption(msg))
 	case dialog.ActionPermissionResponse:
 		m.dialog.CloseDialog(dialog.PermissionsID)
 		switch msg.Action {
@@ -2706,6 +2723,14 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			if cmd := m.openSessionsDialog(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
+			return true
+		case key.Matches(msg, m.keyMap.Settings):
+			if cmd := m.openSettingsDialog(dialog.SettingsID); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return true
+		case key.Matches(msg, m.keyMap.Git):
+			cmds = append(cmds, m.openGitPanel(dialog.GitTabBranch, false))
 			return true
 		case key.Matches(msg, m.keyMap.Chat.Details) && m.isCompact:
 			m.detailsOpen = !m.detailsOpen
@@ -3240,6 +3265,7 @@ func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
 		area.Dx(),
 		m.lspErrorCount(),
 		m.gitBranch,
+		m.gitHeaderBadge(),
 	)
 }
 
@@ -3663,6 +3689,7 @@ func (m *UI) FullHelp() [][]key.Binding {
 			k.Models,
 			k.Sessions,
 			k.ToggleYolo,
+			k.Git,
 		)
 		if hasSession {
 			mainBinds = append(mainBinds, k.Chat.NewSession, k.Chat.EndFollow)
@@ -4374,7 +4401,7 @@ func (m *UI) toggleInputMode() tea.Cmd {
 
 // switchPlanToYolo handles activating YOLO while in plan mode: YOLO is a
 // coding concern, so instead of a "plan + yolo" state the UI switches
-// straight to the coder with YOLO enabled. Activation is idempotent — YOLO
+// straight to the coder with YOLO enabled. Activation is idempotent â€” YOLO
 // carried into plan mode stays on, and the user ends up in full YOLO mode
 // either way.
 func (m *UI) switchPlanToYolo() tea.Cmd {
@@ -4520,7 +4547,7 @@ func (m *UI) agentCompletionItems() []completions.AgentItem {
 	}
 	var cur, rest []completions.AgentItem
 	for _, c := range picker.CachedAgentModelChoices(sessionID) {
-		label := tone.Mark(c.Kind) + " " + c.Kind + " · " + c.Name
+		label := tone.Mark(c.Kind) + " " + c.Kind + " Â· " + c.Name
 		effort := c.CurrentEffort
 		if c.Current {
 			label += "  (now)"
@@ -4713,14 +4740,14 @@ func mimeOf(content []byte) string {
 }
 
 var readyPlaceholders = [...]string{
-	"Message your agents — $ picks who and which model, @ adds a file",
+	"Message your agents â€” $ picks who and which model, @ adds a file",
 	"Ask anything; $codex brings codex in, $all asks everyone",
 	"What should the agents do?",
 }
 
 var workingPlaceholders = [...]string{
-	"The agents are on it — type to queue, esc twice to stop",
-	"Working — your next message waits its turn",
+	"The agents are on it â€” type to queue, esc twice to stop",
+	"Working â€” your next message waits its turn",
 }
 
 // randomizePlaceholders selects random placeholder text for the textarea's
@@ -4735,6 +4762,8 @@ func (m *UI) renderEditorView(width int) string {
 	var attachmentsView string
 	if len(m.attachments.List()) > 0 {
 		attachmentsView = m.attachments.Render(width)
+	} else {
+		attachmentsView = m.gitNudgeLine(width)
 	}
 	return strings.Join([]string{
 		attachmentsView,
@@ -4799,6 +4828,7 @@ func (m *UI) previewTheme(s styles.Styles) {
 // Callers are responsible for invalidating chat render caches.
 func (m *UI) refreshStyles() {
 	t := m.com.Styles
+	tone.SetLight(!t.IsDark)
 	m.header.refresh()
 	if m.layout.sidebar.Dx() > 0 {
 		m.cacheSidebarLogo(m.layout.sidebar.Dx())
@@ -4991,7 +5021,7 @@ func (m *UI) handleChannelMessage(ev mcp.Event) tea.Cmd {
 		return loadCmd
 	}
 	// The coordinator sets the channel binding during the turn
-	// (syncSessionChannel), so there is no need to write it here —
+	// (syncSessionChannel), so there is no need to write it here â€”
 	// doing so would race with the coordinator's own write and
 	// publish a duplicate session update.
 	sessionID := m.session.ID
@@ -5122,7 +5152,7 @@ func (m *UI) cancelAgent() tea.Cmd {
 	}
 
 	if m.isCanceling {
-		// Second escape press — actually cancel.
+		// Second escape press â€” actually cancel.
 		m.isCanceling = false
 
 		// Cancel a running bang command if one is in progress.
@@ -5199,6 +5229,10 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openQuitDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.SettingsID, dialog.SettingsUsageID:
+		if cmd := m.openSettingsDialog(id); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	default:
 		// Unknown dialog
 		break
@@ -5246,7 +5280,7 @@ func (m *UI) fetchAgentModels() tea.Cmd {
 		sessionID = m.session.ID
 	}
 	return tea.Batch(
-		util.ReportInfo("Asking the agents for their models…"),
+		util.ReportInfo("Asking the agents for their modelsâ€¦"),
 		func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -5291,7 +5325,7 @@ func (m *UI) selectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 			label = "its default model"
 		}
 		if msg.Effort != "" {
-			label += " · " + msg.Effort + " effort"
+			label += " Â· " + msg.Effort + " effort"
 		}
 		return util.NewInfoMsg(msg.Kind + " now runs " + label)
 	}
@@ -5591,7 +5625,7 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	default:
 		return nil
 	}
-	// TypeAgentFinished / TypeAgentError are the busy→idle edge: the agent
+	// TypeAgentFinished / TypeAgentError are the busyâ†’idle edge: the agent
 	// clears its active request before publishing precisely so observers
 	// can re-probe. Drop the memoized busy state and re-fetch it and the
 	// prompt queue off-thread.
@@ -6026,5 +6060,6 @@ func renderLogo(t *styles.Styles, compact bool, width int) string {
 		VersionColor: t.Logo.VersionColor,
 		Width:        width,
 		Dark:         t.IsDark,
+		Mark:         logo.PaletteFor(t),
 	})
 }

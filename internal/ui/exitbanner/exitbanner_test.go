@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/session"
+	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/stretchr/testify/require"
 )
 
@@ -146,4 +147,18 @@ func TestRenderNonPositiveWidthUsesFallback(t *testing.T) {
 	for _, line := range strings.Split(got, "\n") {
 		require.LessOrEqual(t, ansi.StringWidth(line), FallbackWidth)
 	}
+}
+
+func TestRenderThemeFollowsTheTheme(t *testing.T) {
+	t.Parallel()
+
+	sty, err := styles.LoadTheme("nord")
+	require.NoError(t, err)
+	deck := Render(config.ExitBannerCompact, testSession(), 80)
+	themed := RenderTheme(config.ExitBannerCompact, testSession(), 80, &sty)
+	require.Equal(t, ansi.Strip(deck), ansi.Strip(themed))
+	require.NotEqual(t, deck, themed)
+
+	// A nil theme falls back to Deck's own.
+	require.Equal(t, deck, RenderTheme(config.ExitBannerCompact, testSession(), 80, nil))
 }

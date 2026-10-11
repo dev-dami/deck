@@ -228,6 +228,15 @@ type Styles struct {
 		SmallName      lipgloss.Style // "deck" in SmallRender
 		SmallDiagonals lipgloss.Style // the rule after it in SmallRender
 		GradCanvas     lipgloss.Style // blank canvas for gradient painting
+
+		// The braille wordmark (package decklogo) runs from MarkLowColor
+		// (faint dots) through MarkColor (the letterforms at rest) to
+		// MarkHighColor (the shimmer). NameColor is "deck" beside the ◆
+		// in its one-line form.
+		MarkLowColor  color.Color
+		MarkColor     color.Color
+		MarkHighColor color.Color
+		NameColor     color.Color
 	}
 
 	// Working indicator gradient (spinners/shimmers on assistant "thinking",

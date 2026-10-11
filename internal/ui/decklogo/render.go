@@ -2,38 +2,81 @@ package decklogo
 
 import (
 	"image/color"
-	"os"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/dev-dami/deck/internal/ui/motion"
 	"github.com/dev-dami/deck/internal/ui/tone"
 )
 
-// reduced reports whether the user asked for less motion
-// (DECK_REDUCED_MOTION=1): the logo then appears at once and stays still.
-func reduced() bool { return os.Getenv("DECK_REDUCED_MOTION") == "1" }
+// reduced reports whether the user asked for less motion (motion off in
+// the settings, or DECK_REDUCED_MOTION=1): the logo then appears at once and
+// stays still.
+func reduced() bool { return motion.Off() }
 
 const nLevels = 32
 
 type palEntry struct{ pre, suf string }
 
-// ramp is the colour of the logo at a level from 0 to 1: Faint up to the
-// accent at baseLevel, then on towards a pale highlight.
-func (m *Model) ramp() (lo, mid, hi color.Color) {
-	if m.dark {
-		return tone.Faint, tone.Mint, tone.Seafoam
-	}
-	return tone.LightFaint, tone.LightMint, tone.DeepTeal
+// Palette is the colours the wordmark is drawn in. The letterforms run on
+// a ramp from Low (the faintest dots) up to Accent at rest, and on towards
+// High where the shimmer and ripples brighten them. Name is the "deck" of
+// the one-line form, beside a ◆ in Accent.
+type Palette struct {
+	Low    color.Color
+	Accent color.Color
+	High   color.Color
+	Name   color.Color
 }
 
-// palette lazily builds the colour ramp. It is rebuilt when the colour mode
-// changes.
+// DefaultPalette is Deck's own mint wordmark for a dark or light ground.
+func DefaultPalette(dark bool) Palette {
+	if dark {
+		return Palette{Low: tone.Faint, Accent: tone.Mint, High: tone.Seafoam, Name: tone.Fg}
+	}
+	return Palette{Low: tone.LightFaint, Accent: tone.LightMint, High: tone.DeepTeal, Name: tone.LightFg}
+}
+
+// fill returns p with its unset colours taken from def.
+func (p Palette) fill(def Palette) Palette {
+	if p.Low == nil {
+		p.Low = def.Low
+	}
+	if p.Accent == nil {
+		p.Accent = def.Accent
+	}
+	if p.High == nil {
+		p.High = def.High
+	}
+	if p.Name == nil {
+		p.Name = def.Name
+	}
+	return p
+}
+
+// equal reports whether two palettes draw the same colours.
+func (p Palette) equal(o Palette) bool {
+	return sameColor(p.Low, o.Low) && sameColor(p.Accent, o.Accent) &&
+		sameColor(p.High, o.High) && sameColor(p.Name, o.Name)
+}
+
+func sameColor(a, b color.Color) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	ar, ag, ab, aa := a.RGBA()
+	br, bg, bb, ba := b.RGBA()
+	return ar == br && ag == bg && ab == bb && aa == ba
+}
+
+// palette lazily builds the colour ramp. It is rebuilt when the colours
+// change.
 func (m *Model) palette() []palEntry {
-	if m.pal != nil && m.palDark == m.dark {
+	if m.pal != nil {
 		return m.pal
 	}
-	lo, mid, hi := m.ramp()
+	lo, mid, hi := m.colors.Low, m.colors.Accent, m.colors.High
 	low := lipgloss.Blend1D(101, lo, mid)
 	high := lipgloss.Blend1D(101, mid, hi)
 	pal := make([]palEntry, nLevels)
@@ -47,7 +90,7 @@ func (m *Model) palette() []palEntry {
 		}
 		pal[i] = splitStyle(lipgloss.NewStyle().Foreground(c))
 	}
-	m.pal, m.palDark = pal, m.dark
+	m.pal = pal
 	return pal
 }
 
@@ -71,12 +114,8 @@ func (m *Model) View() string {
 	case kindNone:
 		m.cache = ""
 	case kindTiny:
-		accent, fg := tone.Mint, tone.Fg
-		if !m.dark {
-			accent, fg = tone.LightMint, tone.LightFg
-		}
-		m.cache = lipgloss.NewStyle().Foreground(accent).Render("◆") + " " +
-			lipgloss.NewStyle().Foreground(fg).Bold(true).Render("deck")
+		m.cache = lipgloss.NewStyle().Foreground(m.colors.Accent).Render("◆") + " " +
+			lipgloss.NewStyle().Foreground(m.colors.Name).Bold(true).Render("deck")
 	default:
 		m.compose()
 		m.cache = m.emit()
@@ -121,7 +160,12 @@ func (m *Model) emit() string {
 // Static renders the finished logo at the size that fits w×h cells, without
 // any motion: for places drawn once (the exit banner, a narrow header).
 func Static(w, h int, dark bool) string {
-	m := New(dark)
+	return StaticPalette(w, h, DefaultPalette(dark))
+}
+
+// StaticPalette is Static drawn in the given colours.
+func StaticPalette(w, h int, p Palette) string {
+	m := NewWithPalette(p)
 	m.SetSize(w, h)
 	return m.View()
 }

@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"charm.land/lipgloss/v2"
 )
@@ -89,8 +90,34 @@ var (
 	LightIris  = lipgloss.Color("#3D4BE0")
 )
 
+// Agent tints for light grounds: the same hues, dark enough to read.
+var (
+	LightOpencode    = lipgloss.Color("#3B3634")
+	LightAntigravity = lipgloss.Color("#6D4FD8")
+)
+
+// light is true while a light theme is active; set by SetLight.
+var light atomic.Bool
+
+// SetLight tells Tint whether the active theme is light, so agent tints
+// stay readable on it. The UI calls it whenever the theme changes.
+func SetLight(on bool) { light.Store(on) }
+
 // Tint is an agent kind's colour ("claude", "codex", "opencode", "antigravity").
 func Tint(kind string) color.Color {
+	if light.Load() {
+		switch kind {
+		case "claude":
+			return LightClay
+		case "codex":
+			return LightIris
+		case "opencode":
+			return LightOpencode
+		case "antigravity":
+			return LightAntigravity
+		}
+		return LightMuted
+	}
 	switch kind {
 	case "claude":
 		return Claude

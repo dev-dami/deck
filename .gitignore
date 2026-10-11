@@ -10,3 +10,6 @@ coverage.txt
 coverage.html
 *.coverprofile
 cover.out
+
+# Claude Code agent worktrees
+.claude/worktrees/
