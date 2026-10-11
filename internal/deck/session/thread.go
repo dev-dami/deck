@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -185,12 +186,39 @@ func (t *thread) defaultTarget() *agentState {
 	return live[0]
 }
 
-// find resolves a name as a recipient among members other than self: an id or
-// name (case-insensitive), or a kind with exactly one member in the thread.
+// freeName is the first of kind, kind2, kind3, ... that no member of the thread
+// is called. t.mu is held or the caller owns t.
+func (t *thread) freeName(kind string) string {
+	for n := 1; ; n++ {
+		name := kind
+		if n > 1 {
+			name = fmt.Sprintf("%s%d", kind, n)
+		}
+		taken := false
+		for _, a := range t.members {
+			if strings.EqualFold(a.getName(), name) {
+				taken = true
+				break
+			}
+		}
+		if !taken {
+			return name
+		}
+	}
+}
+
+// find resolves a name as a recipient among members other than self: a name or
+// id (case-insensitive; names win, as an id can look like another member's
+// name), or a kind with exactly one member in the thread.
 func (t *thread) find(self *agentState, tok string) *agentState {
 	tok = TrimSigil(tok)
 	for _, a := range t.members {
-		if strings.EqualFold(a.id, tok) || strings.EqualFold(a.getName(), tok) {
+		if strings.EqualFold(a.getName(), tok) {
+			return a
+		}
+	}
+	for _, a := range t.members {
+		if strings.EqualFold(a.id, tok) {
 			return a
 		}
 	}

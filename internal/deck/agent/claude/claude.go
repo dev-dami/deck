@@ -231,7 +231,9 @@ func (r *run) args(resume string) []string {
 		"--include-partial-messages",
 	}
 	if r.cfgPath != "" {
-		args = append(args, "--mcp-config", r.cfgPath,
+		// --strict-mcp-config: only Deck's server, not every MCP server in the
+		// user's Claude config, whose tool lists would fill the context window.
+		args = append(args, "--mcp-config", r.cfgPath, "--strict-mcp-config",
 			"--permission-prompt-tool", "mcp__"+r.mcpName+"__"+approve.MCPToolName,
 			"--allowedTools", "mcp__"+r.mcpName+"__"+approve.MCPToolSearch+",mcp__"+r.mcpName+"__"+approve.MCPToolExecute)
 	}
@@ -274,6 +276,9 @@ func (r *run) spawn(resume string) error {
 			env = append(env, kv) // the token only goes to the MCP helper, via the MCP config
 		}
 	}
+	// Nor the claude.ai connectors (Notion, Granola, ...) a signed-in claude
+	// loads on top: dozens of tools in every prompt.
+	env = append(env, "ENABLE_CLAUDEAI_MCP_SERVERS=false")
 	for k, v := range r.spec.Env {
 		if strings.EqualFold(k, approve.TokenEnv) {
 			continue

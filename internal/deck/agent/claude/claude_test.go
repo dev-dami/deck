@@ -319,6 +319,9 @@ func TestAdapterStartSendClose(t *testing.T) {
 	if !ok {
 		t.Fatal("no --mcp-config")
 	}
+	if !contains(args, "--strict-mcp-config") {
+		t.Error("no --strict-mcp-config: the user's own MCP servers would load too")
+	}
 	raw, err := os.ReadFile(cfg)
 	if err != nil {
 		t.Fatalf("config missing while running: %v", err)
