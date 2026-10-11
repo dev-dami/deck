@@ -8,11 +8,16 @@ import (
 
 const diffContext = 3
 
-// maxLCSCells bounds the LCS table (4 bytes a cell); larger inputs go to
-// myersOps, whose memory grows with the number of edits instead.
-const maxLCSCells = 250_000
+// Inputs past smallLCSCells (4 bytes a cell) go to myersOps, whose memory
+// grows with the number of edits instead; only when it gives up is the LCS
+// table built, up to maxLCSCells. Larger inputs fall back to a full replace
+// hunk.
+const (
+	smallLCSCells = 250_000
+	maxLCSCells   = 4_000_000
+)
 
-// Myers' bounds: past them an edit falls back to a full replace hunk.
+// Myers' bounds.
 const (
 	maxEditD    = 1000      // edits
 	maxEditWork = 8_000_000 // steps (about what a 4M-cell table took)
@@ -79,7 +84,7 @@ func diffOps(a, b []string) []editOp {
 func lcsOps(a, b []string) []editOp {
 	n, m := len(a), len(b)
 	var ops []editOp
-	if n > 0 && m > 0 && n*m > maxLCSCells {
+	if n > 0 && m > 0 && n*m > smallLCSCells {
 		if ops, ok := myersOps(a, b); ok {
 			return ops
 		}
@@ -134,7 +139,7 @@ func lcsOps(a, b []string) []editOp {
 }
 
 // myersOps is a shortest edit script from a to b by Myers' O(ND) algorithm,
-// for inputs too big for the LCS table. It keeps one row of the search per
+// for inputs too big for a small LCS table. It keeps one row of the search per
 // edit (O(D²) memory), and gives up (false) past maxEditD edits or
 // maxEditWork steps. Within each run of changes deletions come first, as
 // lcsOps has them.
