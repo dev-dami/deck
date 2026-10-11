@@ -37,6 +37,7 @@ jobs:
         id: tag
         env:
           INPUT: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             tag="$INPUT"
@@ -46,13 +47,23 @@ jobs:
               exit 1
             fi
             if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-              echo "::error::$tag already exists"
-              exit 1
+              # A retry of a run that failed before publishing: reuse the tag
+              # when it is on this commit and has no release yet.
+              if [ "$(git rev-parse "$tag^{commit}")" != "$(git rev-parse HEAD)" ]; then
+                echo "::error::$tag already exists on another commit"
+                exit 1
+              fi
+              if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                echo "::error::$tag is already released"
+                exit 1
+              fi
+              echo "Reusing $tag from an earlier run"
+            else
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git tag -a "$tag" -m "$tag"
+              git push origin "$tag"
             fi
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag -a "$tag" -m "$tag"
-            git push origin "$tag"
           else
             tag="$GITHUB_REF_NAME"
           fi
