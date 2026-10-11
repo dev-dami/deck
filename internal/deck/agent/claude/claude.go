@@ -43,6 +43,9 @@ type adapter struct {
 	tap       func(line []byte)                     // called with every raw stdout line
 	helpFn    func(context.Context) (string, error) // replaces running `claude --help`
 	initFn    func(context.Context) ([]byte, error) // replaces asking claude for its models
+	// beforeRespawn runs in restart between stopping the old process and
+	// starting the new one.
+	beforeRespawn func()
 }
 
 // New returns the Claude Code adapter. binary may be empty (looks up "claude" on
@@ -219,6 +222,13 @@ type run struct {
 	// dirty: model or mode changed while busy (or while a restart was running);
 	// the process is restarted with the new flags once the turn is done.
 	dirty bool
+	// spawned: the model, effort and mode the newest process was started
+	// with, so a restart can tell whether a change that arrived while it was
+	// under way already made it in.
+	spawned struct {
+		model, effort string
+		mode          agent.Mode
+	}
 	// restarting: a deliberate restart is in flight; Sends are queued in
 	// queue and written, in order, to the new process when it is up.
 	restarting bool
@@ -229,9 +239,16 @@ type run struct {
 	evClosed   bool
 }
 
+// flagsChangedLocked reports whether the model, effort or mode differ from
+// what the newest process was started with. Caller holds r.mu.
+func (r *run) flagsChangedLocked() bool {
+	return r.model != r.spawned.model || r.effort != r.spawned.effort || r.mode != r.spawned.mode
+}
+
 func (r *run) args(resume string) []string {
 	r.mu.Lock()
 	model, mode, effort := r.model, r.mode, r.effort
+	r.spawned.model, r.spawned.effort, r.spawned.mode = model, effort, mode
 	r.mu.Unlock()
 	args := []string{
 		"-p",
@@ -346,7 +363,8 @@ var readerPool = sync.Pool{New: func() any { return bufio.NewReaderSize(nil, 1<<
 
 // readLine returns the next line of br, newline included. The line is only
 // valid until the next call: it is br's own buffer, or scratch (returned
-// for reuse) for a line longer than that buffer.
+// for reuse) for a line longer than that buffer. A scratch grown past 4 MiB
+// is not handed back, so one huge line is not kept alive for the whole run.
 func readLine(br *bufio.Reader, scratch []byte) (line, buf []byte, err error) {
 	line, err = br.ReadSlice('\n')
 	if err != bufio.ErrBufferFull {
@@ -356,6 +374,9 @@ func readLine(br *bufio.Reader, scratch []byte) (line, buf []byte, err error) {
 	for err == bufio.ErrBufferFull {
 		line, err = br.ReadSlice('\n')
 		buf = append(buf, line...)
+	}
+	if cap(buf) > 4<<20 {
+		return buf, nil, err
 	}
 	return buf, buf, err
 }
@@ -671,6 +692,9 @@ func (r *run) restart() {
 			old.closeStdin()
 			waitProcExit(old)
 		}
+		if r.a.beforeRespawn != nil {
+			r.a.beforeRespawn()
+		}
 		err := r.spawn(sid)
 
 		r.mu.Lock()
@@ -687,8 +711,14 @@ func (r *run) restart() {
 			return
 		}
 		if r.dirty && !r.closed {
-			r.mu.Unlock()
-			continue // changed again while restarting
+			if r.flagsChangedLocked() {
+				r.mu.Unlock()
+				continue // changed again while restarting
+			}
+			// Changed again, but before the new process read its flags (a
+			// model and an effort picked together): it already runs with
+			// them, so a second restart would only cost another cold start.
+			r.dirty = false
 		}
 		r.restarting = false
 		q := r.queue

@@ -117,7 +117,9 @@ type wireLine struct {
 }
 
 // Line translates one raw stdout line. Unknown or malformed lines yield
-// nothing; it never panics on new shapes.
+// nothing; it never panics on new shapes. line is only valid for the
+// duration of the call (the reader reuses its buffer): anything kept must be
+// copied.
 func (t *translator) Line(line []byte) []agent.Event {
 	line = bytes.TrimSpace(line)
 	if len(line) == 0 || line[0] != '{' {
