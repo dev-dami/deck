@@ -152,10 +152,7 @@ func (c *ConfirmComponent) Height(width int) int {
 	h++                                                       // blank
 	if c.Description != "" {
 		r := common.MarkdownRenderer(c.Styles, w)
-		mu := common.LockMarkdownRenderer(r)
-		mu.Lock()
-		out, err := r.Render(c.Description)
-		mu.Unlock()
+		out, err := common.RenderMarkdownMemo(r, c.Description)
 		if err == nil {
 			out = strings.TrimSuffix(out, "\n")
 			h += strings.Count(out, "\n") + 1
@@ -200,10 +197,7 @@ func (c *ConfirmComponent) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	// Description.
 	if c.Description != "" {
 		r := common.MarkdownRenderer(c.Styles, area.Dx())
-		mu := common.LockMarkdownRenderer(r)
-		mu.Lock()
-		desc, err := r.Render(c.Description)
-		mu.Unlock()
+		desc, err := common.RenderMarkdownMemo(r, c.Description)
 		if err == nil {
 			desc = strings.TrimSuffix(desc, "\n")
 			for _, l := range strings.Split(desc, "\n") {
