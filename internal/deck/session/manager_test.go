@@ -474,7 +474,7 @@ func TestToolAndMentionRelays(t *testing.T) {
 func pingPong(from, to string, n int) []fake.Script {
 	var out []fake.Script
 	for i := 1; i <= n; i++ {
-		out = append(out, turn(say(fmt.Sprintf("round %d from %s\n\n@%s round %d please", i, from, to, i)), finish()))
+		out = append(out, turn(say(fmt.Sprintf("round %d from %s\n\n$%s round %d please", i, from, to, i)), finish()))
 	}
 	return out
 }

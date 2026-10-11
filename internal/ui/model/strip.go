@@ -134,14 +134,23 @@ func newPaneStripFrom(saved config.SidebarLayout, factories map[paneID]func() pa
 		cols = append(cols, ids)
 	}
 	closed := make([]paneID, 0, len(saved.Closed))
+	known := false
 	for _, id := range saved.Closed {
 		closed = append(closed, paneID(id))
+		known = known || s.live[paneID(id)] != nil
+	}
+	for _, c := range cols {
+		for _, id := range c {
+			known = known || s.live[id] != nil
+		}
+	}
+	if !known {
+		// Nothing in the saved layout exists any more. Checked before
+		// fromColumns, which gives every unmentioned pane its own column.
+		s.fromColumns(defaultColumns, nil, nil)
+		return s
 	}
 	s.fromColumns(cols, saved.Widths, closed)
-	if len(s.cols) == 0 && len(s.closed) == 0 {
-		// Nothing in the saved layout exists any more.
-		s.fromColumns(defaultColumns, nil, nil)
-	}
 	return s
 }
 

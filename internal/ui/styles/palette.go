@@ -415,7 +415,7 @@ func MergePalette(baseName string, palette Palette) (Palette, error) {
 	if err != nil {
 		return Palette{}, err
 	}
-	opts := palette.ToQuickStyleOpts(base.ToQuickStyleOpts(rootOpts))
+	opts := mergeOpts(palette, base, rootOpts)
 	opts.deriveDiffColors()
 	return PaletteFromOpts(opts), nil
 }
@@ -466,7 +466,7 @@ func resolveThemePalette(name string, visiting map[string]bool) (Palette, string
 		if err != nil {
 			return Palette{}, "", err
 		}
-		return PaletteFromOpts(tf.ToQuickStyleOpts(base.ToQuickStyleOpts(rootOpts))), root, nil
+		return PaletteFromOpts(mergeOpts(tf.Palette, base, rootOpts)), root, nil
 	}
 
 	optsFn, ok := builtinThemes[key]
@@ -504,7 +504,7 @@ func LoadPaletteTheme(baseName string, palette Palette) (Styles, error) {
 	if err != nil {
 		return Styles{}, err
 	}
-	s := quickStyle(palette.ToQuickStyleOpts(base.ToQuickStyleOpts(rootOpts)))
+	s := quickStyle(mergeOpts(palette, base, rootOpts))
 	// Root theme overrides hardcode built-in colors (e.g. the Charmtone
 	// syntax palette) that only make sense for the untouched built-in.
 	// Only apply them when the theme is unmodified, so user themes (e.g.
@@ -521,6 +521,35 @@ func LoadPaletteTheme(baseName string, palette Palette) (Styles, error) {
 // colorToHex returns a canonical display string for a color. If the color
 // matches a Charmtone palette entry, its name is returned; otherwise the
 // "#rrggbb" hex value is returned. Nil colors return an empty string.
+// mergeOpts applies override on top of base (whose empty fields fall back to
+// root). A theme's diff backgrounds are tints picked for its own bg_base, so
+// when the override moves bg_base, any diff background it does not set itself
+// is re-derived from the new ground instead of inherited.
+func mergeOpts(override, base Palette, root quickStyleOpts) quickStyleOpts {
+	baseOpts := base.ToQuickStyleOpts(root)
+	opts := override.ToQuickStyleOpts(baseOpts)
+	if override.BgBase == "" || colorToHex(opts.bgBase) == colorToHex(baseOpts.bgBase) {
+		return opts
+	}
+	derived := opts
+	derived.diffInsertCodeBg, derived.diffInsertGutterBg = nil, nil
+	derived.diffDeleteCodeBg, derived.diffDeleteGutterBg = nil, nil
+	derived.deriveDiffColors()
+	if override.DiffInsertCodeBg == "" {
+		opts.diffInsertCodeBg = derived.diffInsertCodeBg
+	}
+	if override.DiffInsertGutterBg == "" {
+		opts.diffInsertGutterBg = derived.diffInsertGutterBg
+	}
+	if override.DiffDeleteCodeBg == "" {
+		opts.diffDeleteCodeBg = derived.diffDeleteCodeBg
+	}
+	if override.DiffDeleteGutterBg == "" {
+		opts.diffDeleteGutterBg = derived.diffDeleteGutterBg
+	}
+	return opts
+}
+
 func colorToHex(c color.Color) string {
 	if c == nil {
 		return ""

@@ -159,7 +159,7 @@ func NewSettings(com *common.Common, tab SettingsTab) *Settings {
 		s.deck = s.editor.DeckSettings()
 		s.kinds = s.editor.AgentKinds()
 	}
-	if cfg := s.config(); cfg != nil && cfg.Options != nil {
+	if cfg := s.config(); cfg != nil && cfg.Options != nil && cfg.Options.TUI != nil {
 		tui := cfg.Options.TUI
 		s.compact = tui.CompactMode
 		s.transparent = tui.IsTransparent()

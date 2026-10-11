@@ -135,8 +135,12 @@ type Common struct {
 	Styles    *styles.Styles
 }
 
-// Config returns the pure-data configuration associated with this [Common] instance.
+// Config returns the pure-data configuration associated with this [Common]
+// instance, or nil when there is no workspace to read it from.
 func (c *Common) Config() *config.Config {
+	if c == nil || c.Workspace == nil {
+		return nil
+	}
 	return c.Workspace.Config()
 }
 
