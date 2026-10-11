@@ -26,6 +26,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/agent/codex"
+	"github.com/dev-dami/deck/internal/deck/agent/modelcache"
 )
 
 // Options tune the adapter.
@@ -40,8 +41,7 @@ type adapter struct {
 	binary string
 	opts   Options
 
-	modelsMu sync.Mutex
-	models   []agent.ModelInfo // cached for the adapter's lifetime
+	models modelcache.Cache // see Models
 }
 
 var _ agent.ModelLister = (*adapter)(nil)
@@ -55,7 +55,9 @@ func NewWithOptions(binary string, opts Options) agent.Adapter {
 	if opts.ClientVersion == "" {
 		opts.ClientVersion = "0.1.0"
 	}
-	return &adapter{binary: binary, opts: opts}
+	a := &adapter{binary: binary, opts: opts}
+	a.models.RetryAfter = modelsRetryAfter
+	return a
 }
 
 func (a *adapter) Name() string { return "opencode" }

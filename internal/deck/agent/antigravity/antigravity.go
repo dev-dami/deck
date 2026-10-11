@@ -29,13 +29,13 @@ import (
 	"time"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
+	"github.com/dev-dami/deck/internal/deck/agent/modelcache"
 )
 
 type adapter struct {
 	binary string
 
-	modelsMu sync.Mutex
-	models   []agent.ModelInfo // cached Models() result
+	models modelcache.Cache // Models() result
 
 	// test hooks
 	extraArgs []string

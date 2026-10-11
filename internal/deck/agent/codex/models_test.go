@@ -91,14 +91,27 @@ func TestModelsTimeout(t *testing.T) {
 	if time.Since(start) > 8*time.Second {
 		t.Errorf("took %v", time.Since(start))
 	}
-	// Errors are not cached: a retry runs again. (Checked on the cache itself;
+	// A failure is never kept as the list. (Checked on the cache itself;
 	// counting model/list requests is timing-dependent, since under load the
 	// fake server can still be starting when the 500ms timeout fires.)
-	if a := l.(*adapter); a.models != nil {
-		t.Fatalf("a failed listing was cached: %+v", a.models)
+	if a := l.(*adapter); a.models.Cached() != nil {
+		t.Fatalf("a failed listing was cached: %+v", a.models.Cached())
 	}
+	// Right after, the failure is answered from memory, without a second wait.
+	start = time.Now()
 	if _, err := l.Models(context.Background()); err == nil {
 		t.Fatal("expected second timeout error")
+	}
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Errorf("remembered failure took %v", d)
+	}
+	// Once that has lapsed, a retry runs again.
+	old2 := modelsRetryAfter
+	modelsRetryAfter = 0
+	t.Cleanup(func() { modelsRetryAfter = old2 })
+	l2 := fakeAdapter(t, fe)
+	if _, err := l2.Models(context.Background()); err == nil {
+		t.Fatal("expected timeout error on retry")
 	}
 }
 

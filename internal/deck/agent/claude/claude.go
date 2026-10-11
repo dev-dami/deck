@@ -20,6 +20,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/approve"
+	"github.com/dev-dami/deck/internal/deck/agent/modelcache"
 	"github.com/dev-dami/deck/internal/deck/brand"
 )
 
@@ -35,8 +36,7 @@ type adapter struct {
 	self   string
 	broker *approve.Broker
 
-	modelsMu sync.Mutex
-	models   []agent.ModelInfo // cached Models() result
+	models modelcache.Cache // Models() result
 
 	// test hooks
 	extraArgs []string
@@ -340,11 +340,39 @@ func (r *run) emit(ev agent.Event) {
 	}
 }
 
+// readerPool recycles the 1 MiB stdout readers: an interrupt or a mode or
+// model change spawns a new process, and with it a new reader.
+var readerPool = sync.Pool{New: func() any { return bufio.NewReaderSize(nil, 1<<20) }}
+
+// readLine returns the next line of br, newline included. The line is only
+// valid until the next call: it is br's own buffer, or scratch (returned
+// for reuse) for a line longer than that buffer.
+func readLine(br *bufio.Reader, scratch []byte) (line, buf []byte, err error) {
+	line, err = br.ReadSlice('\n')
+	if err != bufio.ErrBufferFull {
+		return line, scratch, err
+	}
+	buf = append(scratch[:0], line...)
+	for err == bufio.ErrBufferFull {
+		line, err = br.ReadSlice('\n')
+		buf = append(buf, line...)
+	}
+	return buf, buf, err
+}
+
 func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 	defer r.readers.Done()
-	sc := bufio.NewReaderSize(stdout, 1<<20)
+	sc := readerPool.Get().(*bufio.Reader)
+	sc.Reset(stdout)
+	defer func() {
+		sc.Reset(nil)
+		readerPool.Put(sc)
+	}()
+	var scratch []byte
 	for {
-		line, err := sc.ReadBytes('\n')
+		var line []byte
+		var err error
+		line, scratch, err = readLine(sc, scratch)
 		if len(bytes.TrimSpace(line)) > 0 {
 			if r.a.tap != nil {
 				r.a.tap(append([]byte(nil), line...))
@@ -446,8 +474,10 @@ func (r *run) SendWithImages(prompt string, images []agent.Image) error {
 // supported route. A mode/model restart already in flight just queues it.
 func (r *run) Steer(prompt string, images []agent.Image) error {
 	// Validate (and read) the images before touching the running turn, so a bad
-	// attachment cannot cost the user their turn.
-	if _, _, err := buildUserMessage(prompt, images); err != nil {
+	// attachment cannot cost the user their turn. The message built here is
+	// the one sent: images are read and encoded once.
+	data, echo, err := buildUserMessage(prompt, images)
+	if err != nil {
 		return err
 	}
 	r.mu.Lock()
@@ -458,7 +488,7 @@ func (r *run) Steer(prompt string, images []agent.Image) error {
 			return err
 		}
 	}
-	return r.send(prompt, images)
+	return r.sendMessage(prompt, data, echo)
 }
 
 func (r *run) send(prompt string, images []agent.Image) error {
@@ -466,7 +496,11 @@ func (r *run) send(prompt string, images []agent.Image) error {
 	if err != nil {
 		return err
 	}
+	return r.sendMessage(prompt, data, echo)
+}
 
+// sendMessage writes a user message built by buildUserMessage.
+func (r *run) sendMessage(prompt string, data, echo []byte) error {
 	r.mu.Lock()
 	if r.closed || r.cur == nil {
 		r.mu.Unlock()
@@ -484,7 +518,7 @@ func (r *run) send(prompt string, images []agent.Image) error {
 	r.mu.Unlock()
 
 	r.sendMu.Lock()
-	_, err = p.stdin.Write(append(data, '\n'))
+	_, err := p.stdin.Write(append(data, '\n'))
 	r.sendMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("writing to claude: %w", err)
