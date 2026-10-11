@@ -11,8 +11,13 @@ builds:
       - CGO_ENABLED=0
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    flags:
+      - -trimpath
     ldflags:
-      - -s -w -X github.com/dev-dami/deck/internal/version.Version={{.Version}}
+      - -s -w
+      - -X github.com/dev-dami/deck/internal/version.Version={{.Version}}
+      - -X github.com/dev-dami/deck/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/dev-dami/deck/internal/version.BuildID={{.ShortCommit}}
 
 archives:
   - id: deck
@@ -40,5 +45,19 @@ changelog:
       - "^Merge "
 
 release:
-  # Tags like v0.1.0-rc.1 are published as pre-releases.
+  # Tags with a suffix (v0.8.0-dev, v0.8.0-rc.1) are published as pre-releases.
   prerelease: auto
+  header: |
+    ## Install
+
+    macOS / Linux:
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/dev-dami/deck/main/install.sh | DECK_VERSION={{ .Tag }} sh
+    ```
+
+    Windows (PowerShell):
+    ```powershell
+    $env:DECK_VERSION='{{ .Tag }}'; irm https://raw.githubusercontent.com/dev-dami/deck/main/install.ps1 | iex
+    ```
+
+    Then run `deck doctor`. Deck drives the agent CLIs you already have signed in: claude, codex, opencode, agy.

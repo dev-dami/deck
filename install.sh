@@ -32,15 +32,28 @@ case "$(uname -m)" in
   *) fail "unsupported processor $(uname -m)" ;;
 esac
 
+# A private repository answers plain downloads with 404; the GitHub CLI, when
+# it is installed and signed in, still can.
+have_gh() { command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; }
+
 tag="${DECK_VERSION:-}"
 if [ -z "$tag" ]; then
   # The latest release page redirects to its tag.
-  tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" | sed 's#.*/tag/##')
+  tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##') || tag=""
   case "$tag" in
     v*) ;;
-    *) fail "could not find the latest release of $REPO" ;;
+    *)
+      if have_gh; then
+        tag=$(gh release view --repo "$REPO" --json tagName -q .tagName 2>/dev/null) || tag=""
+      fi
+      case "$tag" in
+        v*) ;;
+        *) fail "could not find the latest release of $REPO (if it is private, install gh and run 'gh auth login')" ;;
+      esac
+      ;;
   esac
 fi
+case "$tag" in v*) ;; *) tag="v$tag" ;; esac
 version="${tag#v}"
 
 archive="deck_${version}_${os}_${arch}.tar.gz"
@@ -50,8 +63,13 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
 say "Downloading deck $tag for $os/$arch"
-curl -fsSL -o "$tmp/$archive" "$base/$archive" || fail "could not download $base/$archive"
-curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt" || fail "could not download the checksums"
+if ! curl -fsSL -o "$tmp/$archive" "$base/$archive" 2>/dev/null ||
+  ! curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt" 2>/dev/null; then
+  have_gh || fail "could not download $base/$archive (if the repository is private, install gh and run 'gh auth login')"
+  rm -f "$tmp/$archive" "$tmp/checksums.txt"
+  gh release download "$tag" --repo "$REPO" --pattern "$archive" --pattern checksums.txt --dir "$tmp" ||
+    fail "could not download $archive from $REPO $tag"
+fi
 
 want=$(grep " $archive\$" "$tmp/checksums.txt" | cut -d' ' -f1)
 [ -n "$want" ] || fail "$archive is not in checksums.txt"
@@ -81,5 +99,5 @@ case ":$PATH:" in
     ;;
 esac
 say ""
-say "Deck drives the agent CLIs you have installed and signed in to: claude, codex, opencode."
+say "Deck drives the agent CLIs you have installed and signed in to: claude, codex, opencode, agy."
 say "Run 'deck doctor' to see which ones it found, then 'deck' in a project folder."

@@ -20,11 +20,11 @@ var (
 
 // A user may install deck using `go install github.com/dev-dami/deck@latest`.
 // without -ldflags, in which case the version above is unset. As a workaround
-// we use the embedded build version that *is* set when using `go install` (and
-// is only set for `go install` and not for `go build`).
+// we use the embedded build version. A version set via -ldflags (release
+// builds) always wins: newer Go stamps a VCS-derived version into every build.
 func init() {
 	info, ok := debug.ReadBuildInfo()
-	if ok {
+	if ok && Version == "devel" {
 		mainVersion := info.Main.Version
 		if mainVersion != "" && mainVersion != "(devel)" {
 			Version = mainVersion
