@@ -287,7 +287,7 @@ func TestGitOpsAreReadOnlyAndUseTheRunner(t *testing.T) {
 	for _, want := range []string{
 		"git -c color.ui=false status --short --branch",
 		"git log -n 200 ",
-		"git -c color.ui=false diff --no-ext-diff --no-textconv --no-color --cached --stat -- a b.go",
+		"git -c color.ui=false diff --no-ext-diff --no-textconv --no-color --cached --patch-with-stat -- a b.go",
 		"git -c color.ui=false show --no-ext-diff --no-textconv --no-color --stat -p HEAD~1 --",
 		"gh run list --limit 3 ",
 	} {

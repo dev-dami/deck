@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
@@ -133,8 +135,11 @@ func readable(entries []store.Entry, t store.Thread) []line {
 		return id
 	}
 	var out []line
-	for _, e := range entries {
-		ev := store.Sanitize(e.Event)
+	for i := range entries {
+		e := &entries[i]
+		// Only Time, Text, Kind and the tool's name and title are read, so the
+		// raw protocol data and tool input are never looked at (or validated).
+		ev := &e.Event
 		switch e.Type {
 		case store.EntryUser:
 			sp := e.Speaker
@@ -165,6 +170,100 @@ func readable(entries []store.Entry, t store.Thread) []line {
 	return out
 }
 
+// threadLines are a thread's readable lines, kept while its log is unchanged.
+type threadLines struct {
+	key   logKey
+	meta  store.Thread
+	lines []line
+	low   []string // each line's text in lower case, for search
+	bytes int
+}
+
+// logKey identifies one state of a thread's log: its file's size and time,
+// and the thread's Updated (which moves even when writes are buffered).
+type logKey struct {
+	size    int64
+	mod     time.Time
+	updated time.Time
+}
+
+func (k logKey) same(o logKey) bool {
+	return k.size == o.size && k.mod.Equal(o.mod) && k.updated.Equal(o.updated)
+}
+
+// historyCache keeps the readable lines of recently searched threads, so a
+// search re-reads only the logs that changed since the last one. It holds at
+// most historyCacheBytes of text.
+var historyCache = struct {
+	sync.Mutex
+	m     map[string]*threadLines
+	bytes int
+}{m: map[string]*threadLines{}}
+
+const historyCacheBytes = 32 << 20
+
+// logDir is implemented by a store that keeps each thread's log in
+// <Dir>/<id>.jsonl (store.Store); history from any other store is read afresh
+// every time.
+type logDir interface{ Dir() string }
+
+// threadReadable is readable(env.Store.LoadEntries(t.ID)) through the cache.
+// The result is shared: callers must not modify it.
+func threadReadable(env *Env, t store.Thread) (*threadLines, error) {
+	load := func() (*threadLines, error) {
+		entries, meta, err := env.Store.LoadEntries(t.ID)
+		if err != nil {
+			return nil, err
+		}
+		tl := &threadLines{meta: meta, lines: readable(entries, meta)}
+		tl.low = make([]string, len(tl.lines))
+		for i, l := range tl.lines {
+			tl.low[i] = strings.ToLower(l.text)
+			tl.bytes += len(l.text) + len(l.speaker) + 64
+			if tl.low[i] != l.text {
+				tl.bytes += len(tl.low[i])
+			}
+		}
+		return tl, nil
+	}
+	d, ok := env.Store.(logDir)
+	if !ok || d.Dir() == "" {
+		return load()
+	}
+	path := filepath.Join(d.Dir(), t.ID+".jsonl")
+	st, err := os.Stat(path)
+	if err != nil {
+		return load()
+	}
+	key := logKey{size: st.Size(), mod: st.ModTime(), updated: t.Updated}
+	historyCache.Lock()
+	c := historyCache.m[path]
+	historyCache.Unlock()
+	if c != nil && c.key.same(key) {
+		return c, nil
+	}
+	tl, err := load()
+	if err != nil {
+		return nil, err
+	}
+	tl.key = key
+	historyCache.Lock()
+	if old := historyCache.m[path]; old != nil {
+		historyCache.bytes -= old.bytes
+		delete(historyCache.m, path)
+	}
+	if tl.bytes <= historyCacheBytes/4 {
+		if historyCache.bytes+tl.bytes > historyCacheBytes {
+			clear(historyCache.m)
+			historyCache.bytes = 0
+		}
+		historyCache.m[path] = tl
+		historyCache.bytes += tl.bytes
+	}
+	historyCache.Unlock()
+	return tl, nil
+}
+
 // hit is one chat-history match.
 type hit struct {
 	thread, title, speaker, snippet string
@@ -184,12 +283,13 @@ func searchHistory(env *Env, terms []string, limit, maxThreads int) []hit {
 	}
 	var hits []hit
 	for _, t := range ts {
-		entries, meta, err := env.Store.LoadEntries(t.ID)
+		tl, err := threadReadable(env, t)
 		if err != nil {
 			continue
 		}
-		for _, l := range readable(entries, meta) {
-			low := strings.ToLower(l.text)
+		meta := tl.meta
+		for k, l := range tl.lines {
+			low := tl.low[k]
 			s, first := 0, -1
 			for _, term := range terms {
 				if i := strings.Index(low, term); i >= 0 {
@@ -268,11 +368,11 @@ func opHistoryRead(_ context.Context, env *Env, a args) (string, error) {
 	if meta == nil {
 		return "", fmt.Errorf("no thread %q in this project (execute history.threads)", id)
 	}
-	entries, t, err := env.Store.LoadEntries(id)
+	tl, err := threadReadable(env, *meta)
 	if err != nil {
 		return "", err
 	}
-	ls := readable(entries, t)
+	ls, t := tl.lines, tl.meta
 	last := a.num("last", 60, 1, 400)
 	start := max(len(ls)-last, 0)
 	var b strings.Builder
