@@ -84,6 +84,7 @@ type KeyMap struct {
 	Models     key.Binding
 	Suspend    key.Binding
 	Sessions   key.Binding
+	Settings   key.Binding
 	Tab        key.Binding
 	ToggleYolo key.Binding
 	ShiftTab   key.Binding
@@ -114,6 +115,12 @@ func DefaultKeyMap() KeyMap {
 		Sessions: key.NewBinding(
 			key.WithKeys("ctrl+s"),
 			key.WithHelp("ctrl+s", "sessions"),
+		),
+		// Only terminals that report modified keys (the kitty keyboard
+		// protocol) can send ctrl+,; elsewhere Settings is in the palette.
+		Settings: key.NewBinding(
+			key.WithKeys("ctrl+,"),
+			key.WithHelp("ctrl+,", "settings"),
 		),
 		Tab: key.NewBinding(
 			key.WithKeys("tab"),

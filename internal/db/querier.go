@@ -37,6 +37,7 @@ type Querier interface {
 	GetUsageByModel(ctx context.Context) ([]GetUsageByModelRow, error)
 	InsertMCPDisabledServer(ctx context.Context, name string) error
 	InsertMCPEnabledServer(ctx context.Context, name string) error
+	InsertUsage(ctx context.Context, arg InsertUsageParams) error
 	// Backs prompt history when no session is open. Needs
 	// idx_messages_role_created_at to seek rather than scan the table.
 	ListAllUserMessages(ctx context.Context) ([]Message, error)
@@ -61,6 +62,14 @@ type Querier interface {
 	UpdateMessage(ctx context.Context, arg UpdateMessageParams) error
 	UpdateSession(ctx context.Context, arg UpdateSessionParams) (Session, error)
 	UpdateSessionTitleAndUsage(ctx context.Context, arg UpdateSessionTitleAndUsageParams) error
+	// Days are local calendar days, as the user counts them.
+	UsageByDay(ctx context.Context, since int64) ([]UsageByDayRow, error)
+	UsageByKind(ctx context.Context, since int64) ([]UsageByKindRow, error)
+	UsageByModel(ctx context.Context, since int64) ([]UsageByModelRow, error)
+	// Sessions keep their usage rows after they are deleted, so the title can be
+	// missing.
+	UsageTopSessions(ctx context.Context, arg UsageTopSessionsParams) ([]UsageTopSessionsRow, error)
+	UsageTotals(ctx context.Context, since int64) (UsageTotalsRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

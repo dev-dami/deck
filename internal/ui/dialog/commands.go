@@ -510,6 +510,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	commands = append(commands, NewCommandItem(c.com.Styles, "toggle_transparent", transparentLabel, "", ActionToggleTransparentBackground{}))
 
 	commands = append(commands, NewCommandItem(c.com.Styles, "switch_theme", "Themes", "", ActionOpenDialog{ThemeID}))
+	commands = append(commands,
+		NewCommandItem(c.com.Styles, "settings", "Settings", "ctrl+,", ActionOpenDialog{SettingsID}).WithAliases("preferences", "options"),
+		NewCommandItem(c.com.Styles, "usage", "Usage", "", ActionOpenDialog{SettingsUsageID}).WithAliases("cost", "tokens", "analytics"),
+	)
 
 	// Add mouse support toggle.
 	mouseLabel := "Disable Mouse"

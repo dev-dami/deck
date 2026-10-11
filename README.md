@@ -82,6 +82,12 @@ Agents are drawn with their own CLI's mark: Claude Code's `✻`, Codex CLI's `>_
 
 The interface's own settings (theme, notifications, mouse) live in `~/.config/deck/deck.json` and the project's `.deck/deck.json`; the `Themes` command switches between Deck's dark and light themes.
 
+### Settings and usage
+
+The `Settings` command (`ctrl+,` in terminals that report modified keys) changes both files from inside Deck: theme, motion, bell, default mode, compact mode, background, mouse and exit banner on **General**; the default agent, change tracking, telling agents your name, and where each agent CLI was found on **Agents**. `tab` or `1`–`3` switch pages.
+
+The **Usage** page (or the `Usage` command) sums what the agents used — cost, turns, tokens in, out and cached — per agent, per model, per day and for the costliest sessions, over today, 7 days, 30 days or all time (`←`/`→`). Each finished turn is recorded in Deck's local database as it ends; nothing is sent anywhere, and turns from before this version are not counted.
+
 ## How it works
 
 Deck never calls a model API and never touches your credentials. It starts your CLIs as child processes and reads their structured output: `claude -p` with stream-json, `codex app-server` over JSON-RPC, and `opencode acp` over the Agent Client Protocol. For OpenCode, Deck sets one thing, in the child's environment only (`OPENCODE_CONFIG_CONTENT`, laid over any you already set): edits, commands and fetches ask first, so Deck's approvals and modes decide them. Your OpenCode config files are never written. Approvals and agent messages travel through a small MCP helper (`deck mcp-approve`) to Deck over loopback, authenticated with a per-run token. Usage counts against your own Claude and Codex plans and whatever providers OpenCode uses.
