@@ -48,7 +48,7 @@ func repo(t *testing.T) (string, []string) {
 	run(t, dir, nil, "config", "user.email", "tester@example.com")
 	run(t, dir, nil, "config", "commit.gpgsign", "false")
 	env := os.Environ()
-	for k, v := range envFor(hooks) {
+	for k, v := range envFor(hooks, false) {
 		env = append(env, k+"="+v)
 	}
 	return dir, env
@@ -144,5 +144,27 @@ func TestFixLeavesPushedCommits(t *testing.T) {
 func TestFixOutsideRepository(t *testing.T) {
 	if n, err := Fix(context.Background(), t.TempDir(), time.Now()); n != 0 || err != nil {
 		t.Errorf("Fix = %d, %v", n, err)
+	}
+}
+
+func TestAuthorAsDeck(t *testing.T) {
+	env := envFor("hooks", true)
+	if env["GIT_AUTHOR_NAME"] != brand.AuthorName || env["GIT_AUTHOR_EMAIL"] != brand.AuthorEmail {
+		t.Fatalf("env %v", env)
+	}
+	if _, ok := envFor("hooks", false)["GIT_AUTHOR_EMAIL"]; ok {
+		t.Fatal("author set while off")
+	}
+
+	dir, base := repo(t)
+	env2 := append(base, "GIT_AUTHOR_NAME="+brand.AuthorName, "GIT_AUTHOR_EMAIL="+brand.AuthorEmail)
+	run(t, dir, env2, "commit", "-q", "--allow-empty", "-m", "feat: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
+	who := run(t, dir, nil, "log", "-1", "--format=%an <%ae>|%cn <%ce>")
+	if strings.TrimSpace(who) != brand.CommitAuthor+"|Tester <tester@example.com>" {
+		t.Errorf("author|committer = %q", who)
+	}
+	msg := message(t, dir)
+	if strings.Contains(msg, "Claude") || strings.Contains(msg, "Co-Authored-By: Deck") {
+		t.Errorf("message:\n%s", msg)
 	}
 }

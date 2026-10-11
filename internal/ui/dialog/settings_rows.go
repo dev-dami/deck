@@ -211,6 +211,15 @@ func (s *Settings) agentRows() []settingsRow {
 				return s.deckEdit("Deck attribution "+onOff(v), func(c *deckconfig.Config) { c.DeckAttribution = v })
 			},
 		},
+		{
+			label: "Author commits as Deck",
+			value: onOff(s.deck.DeckAuthor),
+			hint:  "Agents' commits are authored by Deck, with you as committer, so Deck shows among the repository's contributors. Needs Deck attribution on.",
+			change: func(int) Action {
+				v := !s.deck.DeckAuthor
+				return s.deckEdit("Author commits as Deck "+onOff(v), func(c *deckconfig.Config) { c.DeckAuthor = v })
+			},
+		},
 	}
 	for _, kind := range deckconfig.Kinds {
 		row := settingsRow{

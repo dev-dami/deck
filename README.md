@@ -162,7 +162,7 @@ Deck is not affiliated with Anthropic or OpenAI.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
 
-Commits that agents make in a Deck thread credit [Deck](https://github.com/deck-cli) (`Co-Authored-By: Deck <311780591+deck-cli@users.noreply.github.com>`); see Settings → Agents → Deck attribution.
+Commits that agents make in a Deck thread are authored by [Deck](https://github.com/deck-cli), with you as committer, and other AI attribution is replaced; see Settings → Agents → Deck attribution and Author commits as Deck.
 
 ## License
 

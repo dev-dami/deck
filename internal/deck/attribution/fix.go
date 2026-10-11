@@ -96,13 +96,6 @@ func Fix(ctx context.Context, dir string, since time.Time) (int, error) {
 	fixed := 0
 	for i := start; i >= 0; i-- {
 		c := list[i]
-		msg, dirty := Clean(c.msg)
-		if dirty {
-			if msg, err = addTrailer(ctx, dir, msg); err != nil {
-				return 0, err
-			}
-			fixed++
-		}
 		meta, err := git(ctx, dir, "log", "-1", "--format=%an%x1f%ae%x1f%aI%x1f%cn%x1f%ce%x1f%cI%x1f%T", c.hash)
 		if err != nil {
 			return 0, err
@@ -110,6 +103,16 @@ func Fix(ctx context.Context, dir string, since time.Time) (int, error) {
 		m := strings.Split(strings.TrimSpace(meta), "\x1f")
 		if len(m) != 7 {
 			return 0, fmt.Errorf("unexpected commit metadata for %s", c.hash)
+		}
+		msg, dirty := Clean(c.msg)
+		if dirty {
+			// A commit Deck authors needs no Deck co-author line.
+			if !strings.EqualFold(m[1], brand.AuthorEmail) {
+				if msg, err = addTrailer(ctx, dir, msg); err != nil {
+					return 0, err
+				}
+			}
+			fixed++
 		}
 		args := []string{"commit-tree", m[6]}
 		if parent != "" {

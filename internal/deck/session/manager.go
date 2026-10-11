@@ -602,7 +602,7 @@ func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Sp
 	if cfg.DeckAttribution {
 		// The guard: the agent's git runs Deck's hooks, which put Deck's
 		// trailer in place of any other AI attribution, whatever the model wrote.
-		if env, err := attribution.Env(); err == nil {
+		if env, err := attribution.Env(cfg.DeckAuthor); err == nil {
 			s.Env = env
 		} else {
 			m.emit(NoticeMsg{ThreadID: t.id, Text: "commit attribution guard is off: " + err.Error()})
