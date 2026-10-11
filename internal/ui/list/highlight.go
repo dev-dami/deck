@@ -3,6 +3,7 @@ package list
 import (
 	"image"
 	"strings"
+	"sync"
 
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -185,13 +186,29 @@ func startsBlock(row string) bool {
 	return false
 }
 
+// highlightBufs recycles Highlight's scratch buffers. A drag selection
+// highlights the items under its ends again on every mouse move, and each
+// call allocated a buffer the size of the whole item.
+var highlightBufs sync.Pool
+
 // Highlight highlights a region of text within the given content and region.
 func Highlight(content string, area image.Rectangle, startLine, startCol, endLine, endCol int, highlighter Highlighter) string {
-	buf := HighlightBuffer(content, area, startLine, startCol, endLine, endCol, highlighter)
-	if buf == nil {
+	if startLine < 0 || startCol < 0 {
 		return content
 	}
-	return buf.Render()
+	width, height := area.Dx(), area.Dy()
+	buf, _ := highlightBufs.Get().(*uv.ScreenBuffer)
+	if buf == nil {
+		b := uv.NewScreenBuffer(width, height)
+		buf = &b
+	} else {
+		buf.Resize(width, height)
+		buf.Clear()
+	}
+	highlightInto(buf, stringext.NormalizeSpace(content), area, startLine, startCol, endLine, endCol, highlighter)
+	out := buf.Render()
+	highlightBufs.Put(buf)
+	return out
 }
 
 // HighlightBuffer highlights a region of text within the given content and
@@ -203,14 +220,21 @@ func HighlightBuffer(content string, area image.Rectangle, startLine, startCol, 
 		return nil
 	}
 
+	buf := uv.NewScreenBuffer(area.Dx(), area.Dy())
+	highlightInto(&buf, content, area, startLine, startCol, endLine, endCol, highlighter)
+	return &buf
+}
+
+// highlightInto draws content into buf, an empty buffer the size of area,
+// and highlights the region in it.
+func highlightInto(buf *uv.ScreenBuffer, content string, area image.Rectangle, startLine, startCol, endLine, endCol int, highlighter Highlighter) {
 	if highlighter == nil {
 		highlighter = DefaultHighlighter
 	}
 
 	width, height := area.Dx(), area.Dy()
-	buf := uv.NewScreenBuffer(width, height)
 	styled := uv.NewStyledString(content)
-	styled.Draw(&buf, area)
+	styled.Draw(buf, area)
 
 	// Treat -1 as "end of content"
 	if endLine < 0 {
@@ -273,8 +297,6 @@ func HighlightBuffer(content string, area image.Rectangle, startLine, startCol, 
 			}
 		}
 	}
-
-	return &buf
 }
 
 // ToHighlighter converts a [lipgloss.Style] to a [Highlighter].
