@@ -1,6 +1,10 @@
 package model
 
-import "charm.land/bubbles/v2/key"
+import (
+	"charm.land/bubbles/v2/key"
+
+	"github.com/dev-dami/deck/internal/ui/notice"
+)
 
 type KeyMap struct {
 	Editor struct {
@@ -89,6 +93,7 @@ type KeyMap struct {
 	ToggleYolo key.Binding
 	ShiftTab   key.Binding
 	Git        key.Binding
+	Notices    key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -138,6 +143,12 @@ func DefaultKeyMap() KeyMap {
 		Git: key.NewBinding(
 			key.WithKeys("ctrl+x"),
 			key.WithHelp("ctrl+x", "git & PRs"),
+		),
+		// alt+n: ctrl+u deletes to the line start in the editor. Inline
+		// question forms take alt+n first, for their notes.
+		Notices: key.NewBinding(
+			key.WithKeys(notice.HistoryKey),
+			key.WithHelp(notice.HistoryKey, "notifications"),
 		),
 	}
 

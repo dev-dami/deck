@@ -56,6 +56,7 @@ import (
 	fimage "github.com/dev-dami/deck/internal/ui/image"
 	"github.com/dev-dami/deck/internal/ui/logo"
 	"github.com/dev-dami/deck/internal/ui/motion"
+	"github.com/dev-dami/deck/internal/ui/notice"
 	"github.com/dev-dami/deck/internal/ui/notification"
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/ui/tone"
@@ -462,6 +463,11 @@ type UI struct {
 	// block and the PR nudge (see git.go).
 	git gitState
 
+	// notices is the notification history and the toasts on screen (see
+	// notices.go); jobs are Deck's own operations in flight (jobs.go).
+	notices noticeState
+	jobs    jobState
+
 	// Prompt history for up/down navigation through previous messages.
 	promptHistory struct {
 		messages []string
@@ -842,7 +848,13 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.workTicking = false
 		return m, nil
 	}
+	if t, ok := msg.(toastTickMsg); ok {
+		return m, m.handleToastTick(t)
+	}
 	model, cmd := m.update(msg)
+	if c := m.scheduleToastTick(time.Now()); c != nil {
+		cmd = tea.Batch(cmd, c)
+	}
 	if !m.yoloTicking && m.yoloFX.Advance(time.Now()) {
 		m.yoloTicking = true
 		cmd = tea.Batch(cmd, yoloTick())
@@ -1153,6 +1165,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.openPermissionsDialog(msg.Payload); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+		m.noticeFromPermission(msg.Payload)
 		if cmd := m.sendNotification(notification.Notification{
 			Title:   "Deck is waiting...",
 			Message: fmt.Sprintf("Permission required to execute \"%s\"", msg.Payload.ToolName),
@@ -1222,6 +1235,10 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cmd := m.handleDialogMsg(msg); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
+			return m, tea.Batch(cmds...)
+		}
+		// A click on a toast dismisses it.
+		if msg.Button == uv.MouseLeft && m.clickToast(msg.X, msg.Y) {
 			return m, tea.Batch(cmds...)
 		}
 		if m.state == uiLanding {
@@ -1297,6 +1314,14 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Pass mouse events to dialogs first if any are open.
 		if m.dialog.HasDialogs() {
 			m.dialog.Update(msg)
+			return m, tea.Batch(cmds...)
+		}
+		// Toasts hold still under the pointer. While they are up the
+		// terminal reports every move (see View); a move with no button
+		// held is only that, so it stops here unless something else
+		// asked for hover.
+		m.hoverToast(msg.X, msg.Y)
+		if m.notices.toasts.Len() > 0 && msg.Button == uv.MouseNone && m.activeInline == nil && m.state != uiLanding {
 			return m, tea.Batch(cmds...)
 		}
 		if m.state == uiLanding {
@@ -1564,11 +1589,18 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.Error("Error reported", "error", msg.Msg)
 		}
 		m.status.SetInfoMsg(msg)
+		m.noticeFromInfo(msg)
 		ttl := msg.TTL
 		if ttl <= 0 {
 			ttl = DefaultStatusTTL
 		}
 		cmds = append(cmds, clearInfoMsgCmd(ttl))
+	case notice.Msg:
+		m.Notify(msg.Notice)
+	case JobStartedMsg:
+		m.jobStarted(msg.ID, msg.Label)
+	case JobDoneMsg:
+		m.jobDone(msg.ID, msg.Err)
 	case app.UpdateAvailableMsg:
 		text := fmt.Sprintf("Deck update available: v%s â†’ v%s.", msg.CurrentVersion, msg.LatestVersion)
 		if msg.IsDevelopment {
@@ -1580,6 +1612,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Msg:  text,
 			TTL:  ttl,
 		})
+		m.Notify(notice.Notice{Level: notice.Info, Source: notice.SourceDeck, Body: text})
 		cmds = append(cmds, clearInfoMsgCmd(ttl))
 	case workspace.ConnectionEvent:
 		cmds = append(cmds, m.handleConnectionEvent(msg)...)
@@ -2185,6 +2218,12 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			m.toggleYoloMode()
 		}
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionRunNotice:
+		if cmd := m.runNoticeAction(msg.ID); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.ActionClearNotices:
+		m.clearNotices()
 	case dialog.ActionSelectNotificationStyle:
 		cfg := m.com.Config()
 		if cfg != nil && cfg.Options != nil {
@@ -2731,6 +2770,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			return true
 		case key.Matches(msg, m.keyMap.Git):
 			cmds = append(cmds, m.openGitPanel(dialog.GitTabBranch, false))
+			return true
+		case key.Matches(msg, m.keyMap.Notices):
+			cmds = append(cmds, m.openNoticeHistory())
 			return true
 		case key.Matches(msg, m.keyMap.Chat.Details) && m.isCompact:
 			m.detailsOpen = !m.detailsOpen
@@ -3366,6 +3408,9 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	m.status.SetHideHelp(isOnboarding)
 	m.status.SetMode(m.mode, m.yoloModeCached())
 	m.status.Draw(scr, layout.status)
+	if !isOnboarding {
+		m.drawNoticeDot(scr, layout.status)
+	}
 
 	// Draw completions popup if open
 	if !isOnboarding && m.completionsOpen && m.completions.HasItems() {
@@ -3396,6 +3441,9 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 			Max: image.Pt(8, 3),
 		})
 	}
+
+	// Toasts sit over the main view, under the dialogs.
+	m.drawToasts(scr, area)
 
 	// This needs to come last to overlay on top of everything. We always pass
 	// the full screen bounds because the dialogs will position themselves
@@ -3460,7 +3508,7 @@ func (m *UI) View() tea.View {
 		v.BackgroundColor = m.com.Styles.Background
 	}
 	// The landing wordmark ripples under the pointer, so it needs every move.
-	v.MouseMode = mouseMode(m.mouseEnabled, m.activeInline != nil || m.dialog.HandlesHover() || m.state == uiLanding)
+	v.MouseMode = mouseMode(m.mouseEnabled, m.activeInline != nil || m.dialog.HandlesHover() || m.state == uiLanding || m.notices.toasts.Len() > 0)
 	v.ReportFocus = m.caps.ReportFocusEvents
 	v.WindowTitle = "deck " + home.Short(m.com.Workspace.WorkingDir())
 
@@ -5233,6 +5281,8 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openSettingsDialog(id); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.NoticeHistoryID:
+		cmds = append(cmds, m.openNoticeHistory())
 	default:
 		// Unknown dialog
 		break
@@ -5608,6 +5658,7 @@ func (m *UI) openPlanHandoff() {
 // notifications using the UI notification backend.
 func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	var cmds []tea.Cmd
+	m.noticeFromAgent(n)
 	switch n.Type {
 	case notify.TypeAgentFinished:
 		common.StopTurn()

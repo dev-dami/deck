@@ -111,6 +111,7 @@ type (
 		closeID      string // a dialog to close when it worked
 		refresh      bool
 		thenCreatePR bool
+		job          string // the Commands pane's job for it
 	}
 	// gitPRDetailMsg is a pull request read for the detail dialog.
 	gitPRDetailMsg struct {
@@ -365,6 +366,7 @@ func (m *UI) handleGitMsg(msg gitMsg) tea.Cmd {
 		return cmd
 
 	case gitOpMsg:
+		m.jobDone(msg.job, msg.err)
 		if d, ok := m.dialog.Dialog(msg.busyID).(dialog.GitBusyDialog); ok {
 			d.SetBusy("")
 		}
@@ -665,9 +667,11 @@ func (m *UI) gitOp(busyID, label string, run func(context.Context) gitOpMsg) tea
 			cmds = append(cmds, util.ReportInfo(label))
 		}
 	}
+	job := m.startJob("git", label)
 	cmds = append(cmds, func() tea.Msg {
 		msg := run(context.Background())
 		msg.busyID = busyID
+		msg.job = job
 		return msg
 	})
 	return tea.Batch(cmds...)

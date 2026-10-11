@@ -14,6 +14,7 @@ import (
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/list"
+	"github.com/dev-dami/deck/internal/ui/notice"
 	"github.com/dev-dami/deck/internal/ui/styles"
 )
 
@@ -493,6 +494,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 
 	// Add a command for selecting notification style via picker dialog.
+	commands = append(commands, NewCommandItem(c.com.Styles, "notice_history", "Notifications", notice.HistoryKey, ActionOpenDialog{DialogID: NoticeHistoryID}).WithAliases("notices", "toasts", "history"))
 	notificationLabel := "Notification Style"
 	commands = append(commands, NewCommandItem(c.com.Styles, "select_notifications", notificationLabel, "", ActionOpenDialog{DialogID: NotificationsID}))
 
