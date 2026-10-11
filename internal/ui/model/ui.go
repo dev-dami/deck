@@ -922,6 +922,14 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case workspace.LimitsChangedMsg:
 		// An agent's plan limits moved: Deck's mark shows them.
 		m.header.invalidateMark()
+	case themeSwitchedMsg:
+		cmds = append(cmds, m.handleThemeSwitched(msg))
+	case themeCreatedMsg:
+		cmds = append(cmds, m.handleThemeCreated(msg))
+	case themeRenamedMsg:
+		cmds = append(cmds, m.handleThemeRenamed(msg))
+	case themeDeletedMsg:
+		cmds = append(cmds, m.handleThemeDeleted(msg))
 	case busyStateMsg:
 		cmds = append(cmds, m.applyBusyState(msg)...)
 	case promptQueueMsg:
@@ -2407,19 +2415,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			cmds = append(cmds, util.ReportError(err))
 			break
 		}
-		if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.tui.active_theme", themeName); err != nil {
-			if m.preThemeStyles != nil {
-				m.applyTheme(*m.preThemeStyles)
-				m.preThemeStyles = nil
-			}
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-		m.applyTheme(newStyles)
-		m.preThemeStyles = nil
-		cmds = append(cmds, util.ReportInfo("Theme switched to "+themeName))
-		m.userThemeSelected = true
-		m.dialog.CloseDialog(dialog.ThemeID)
+		// Saved off the event loop; themeSwitchedMsg applies it.
+		cmds = append(cmds, m.switchThemeCmd(themeName, newStyles))
 	case dialog.ActionPreviewTheme:
 		newStyles, err := styles.LoadTheme(msg.Theme)
 		if err != nil {
@@ -2522,82 +2519,18 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if base == "" {
 			base = "deck"
 		}
-		name := msg.Name
-		exported, err := styles.ExportResolvedPalette(base)
-		if err != nil {
-			// Fall back to the default theme when the base theme is no
-			// longer resolvable (e.g. a user theme that was since deleted).
-			base = "deck"
-			exported, err = styles.ExportResolvedPalette(base)
-			if err != nil {
-				cmds = append(cmds, util.ReportError(err))
-				break
-			}
-		}
-		savePath, err := styles.ThemePath(name)
-		if err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-		// ExportResolvedPalette already pins Base to the built-in root the
-		// palette was resolved from. Keep it so the new theme stays
-		// loadable even if a user theme used as the source is later
-		// deleted or renamed.
-		if err := styles.SaveThemeFile(savePath, exported); err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-		if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.tui.active_theme", name); err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-		cmds = append(cmds, util.ReportInfo("Created new theme: "+name))
-		m.dialog.CloseDialog(dialog.ThemeNewID)
-		m.dialog.CloseDialog(dialog.ThemeID)
-		m.openThemeEditorDialog(name)
+		// Written off the event loop; themeCreatedMsg finishes up.
+		cmds = append(cmds, m.createThemeCmd(msg.Name, base))
 	case dialog.ActionRenameTheme:
-		oldName := msg.OldName
-		newName := strings.ToLower(msg.NewName)
-		oldPath, newPath, err := styles.RenameThemeFile(oldName, newName)
-		if err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
 		cfg := m.com.Config()
-		if cfg != nil && cfg.Options != nil && cfg.Options.TUI != nil && strings.EqualFold(cfg.Options.TUI.ActiveTheme, oldName) {
-			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.tui.active_theme", newName); err != nil {
-				if rollbackErr := os.Rename(newPath, oldPath); rollbackErr != nil {
-					slog.Error("Failed to roll back theme rename", "error", rollbackErr)
-				}
-				cmds = append(cmds, util.ReportError(err))
-				break
-			}
-		}
-		cmds = append(cmds, util.ReportInfo("Renamed theme "+oldName+" to "+newName))
-		m.dialog.CloseDialog(dialog.ThemeID)
-		m.openThemeDialog()
+		wasActive := cfg != nil && cfg.Options != nil && cfg.Options.TUI != nil && strings.EqualFold(cfg.Options.TUI.ActiveTheme, msg.OldName)
+		// Renamed off the event loop; themeRenamedMsg finishes up.
+		cmds = append(cmds, m.renameThemeCmd(msg.OldName, strings.ToLower(msg.NewName), wasActive))
 	case dialog.ActionDeleteTheme:
-		if err := styles.DeleteThemeFile(msg.Name); err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-		// If the deleted theme was active, reset to the default theme.
-		if strings.EqualFold(common.ThemeNameFromConfig(m.com.Config()), msg.Name) {
-			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.tui.active_theme", "deck"); err != nil {
-				cmds = append(cmds, util.ReportError(err))
-				break
-			}
-			newStyles, err := styles.LoadTheme("deck")
-			if err != nil {
-				cmds = append(cmds, util.ReportError(err))
-				break
-			}
-			m.applyTheme(newStyles)
-			m.preThemeStyles = nil
-		}
-		cmds = append(cmds, util.ReportInfo("Deleted theme "+msg.Name))
-		m.dialog.CloseDialog(dialog.ThemeID)
-		m.openThemeDialog()
+		// If the deleted theme was active, the command resets to the
+		// default theme; themeDeletedMsg applies it.
+		wasActive := strings.EqualFold(common.ThemeNameFromConfig(m.com.Config()), msg.Name)
+		cmds = append(cmds, m.deleteThemeCmd(msg.Name, wasActive))
 	case dialog.ActionToggleMouseSupport:
 		cfg := m.com.Config()
 		if cfg == nil {
