@@ -91,20 +91,32 @@ type Anim struct {
 func New(dark bool) *Anim { return &Anim{dark: dark} }
 
 // SetDark switches the palette for dark or light terminals.
-func (a *Anim) SetDark(dark bool) { a.dark = dark }
+func (a *Anim) SetDark(dark bool) {
+	if a != nil {
+		a.dark = dark
+	}
+}
 
-// Start plays the effect from now.
+// Start plays the effect from now. Like every Anim method it is safe on a nil
+// *Anim, which behaves as an effect that never plays.
 func (a *Anim) Start(now time.Time) {
+	if a == nil {
+		return
+	}
 	a.start, a.started, a.skipped = now, true, false
 }
 
 // Skip ends the effect immediately.
-func (a *Anim) Skip() { a.skipped = true }
+func (a *Anim) Skip() {
+	if a != nil {
+		a.skipped = true
+	}
+}
 
 // Done reports whether the effect is over (or never started, or the user
 // turned motion off).
 func (a *Anim) Done(now time.Time) bool {
-	return !a.started || a.skipped || reducedMotion() || now.Sub(a.start) >= Duration
+	return a == nil || !a.started || a.skipped || reducedMotion() || now.Sub(a.start) >= Duration
 }
 
 // Advance reports whether the effect still needs frames.

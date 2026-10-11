@@ -406,25 +406,12 @@ func TestDiscoverBuiltin(t *testing.T) {
 	discovered := DiscoverBuiltin()
 	require.NotEmpty(t, discovered)
 
-	var found bool
-	for _, s := range discovered {
-		if s.Name == "deck-config" {
-			found = true
-			require.True(t, strings.HasPrefix(s.SkillFilePath, BuiltinPrefix))
-			require.True(t, strings.HasPrefix(s.Path, BuiltinPrefix))
-			require.Equal(t, "deck://skills/deck-config/SKILL.md", s.SkillFilePath)
-			require.Equal(t, "deck://skills/deck-config", s.Path)
-			require.NotEmpty(t, s.Description)
-			require.NotEmpty(t, s.Instructions)
-			require.True(t, s.Builtin)
-		}
-	}
-	require.True(t, found, "deck-config builtin skill not found")
-
 	var foundJQ bool
 	for _, s := range discovered {
 		if s.Name == "jq" {
 			foundJQ = true
+			require.True(t, strings.HasPrefix(s.SkillFilePath, BuiltinPrefix))
+			require.True(t, strings.HasPrefix(s.Path, BuiltinPrefix))
 			require.Equal(t, "deck://skills/jq/SKILL.md", s.SkillFilePath)
 			require.Equal(t, "deck://skills/jq", s.Path)
 			require.NotEmpty(t, s.Description)
@@ -434,18 +421,11 @@ func TestDiscoverBuiltin(t *testing.T) {
 	}
 	require.True(t, foundJQ, "jq builtin skill not found")
 
-	var foundHooks bool
+	// The deck-config and deck-hooks skills documented Crush's own agent and
+	// were removed with it; Deck's agents bring their own skills.
 	for _, s := range discovered {
-		if s.Name == "deck-hooks" {
-			foundHooks = true
-			require.Equal(t, "deck://skills/deck-hooks/SKILL.md", s.SkillFilePath)
-			require.Equal(t, "deck://skills/deck-hooks", s.Path)
-			require.NotEmpty(t, s.Description)
-			require.NotEmpty(t, s.Instructions)
-			require.True(t, s.Builtin)
-		}
+		require.NotContains(t, []string{"deck-config", "deck-hooks"}, s.Name)
 	}
-	require.True(t, foundHooks, "deck-hooks builtin skill not found")
 }
 
 func TestDeduplicate(t *testing.T) {

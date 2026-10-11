@@ -36,8 +36,8 @@ func runIsolated(m *testing.M) int {
 }
 
 func TestConfig_LoadFromBytes(t *testing.T) {
-	data1 := []byte(`{"providers": {"openai": {"api_key": "key1", "base_url": "https://api.openai.com/v1"}}}`)
-	data2 := []byte(`{"providers": {"openai": {"api_key": "key2", "base_url": "https://api.openai.com/v2"}}}`)
+	data1 := []byte(`{"providers": {"openai": {"api_key": "key1", "base_url": "https://openai.example.com/v1"}}}`)
+	data2 := []byte(`{"providers": {"openai": {"api_key": "key2", "base_url": "https://openai.example.com/v2"}}}`)
 	data3 := []byte(`{"providers": {"openai": {}}}`)
 
 	loadedConfig, err := loadFromBytes([][]byte{data1, data2, data3})
@@ -47,7 +47,7 @@ func TestConfig_LoadFromBytes(t *testing.T) {
 	require.Equal(t, 1, loadedConfig.Providers.Len())
 	pc, _ := loadedConfig.Providers.Get("openai")
 	require.Equal(t, "key2", pc.APIKey)
-	require.Equal(t, "https://api.openai.com/v2", pc.BaseURL)
+	require.Equal(t, "https://openai.example.com/v2", pc.BaseURL)
 }
 
 func TestLookupConfigs_BoundedByProject(t *testing.T) {

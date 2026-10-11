@@ -74,7 +74,7 @@ func (s *Settings) deckEdit(label string, set func(*deckconfig.Config)) Action {
 
 func (s *Settings) generalRows() []settingsRow {
 	theme := "deck"
-	if cfg := s.config(); cfg != nil && cfg.Options != nil && cfg.Options.TUI.ActiveTheme != "" {
+	if cfg := s.config(); cfg != nil && cfg.Options != nil && cfg.Options.TUI != nil && cfg.Options.TUI.ActiveTheme != "" {
 		theme = cfg.Options.TUI.ActiveTheme
 	}
 	rows := []settingsRow{{
