@@ -36,10 +36,19 @@ esac
 # it is installed and signed in, still can.
 have_gh() { command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; }
 
+# fetch runs curl with a connect timeout. A server with a broken IPv6 route can
+# otherwise sit for minutes on a dead connection; GitHub is always reachable
+# over IPv4, so a failed attempt is retried with -4.
+fetch() {
+  curl --connect-timeout 10 --retry 2 --retry-delay 1 "$@" ||
+    curl -4 --connect-timeout 10 --retry 2 --retry-delay 1 "$@"
+}
+
 tag="${DECK_VERSION:-}"
 if [ -z "$tag" ]; then
+  say "Finding the latest release of $REPO"
   # The latest release page redirects to its tag.
-  tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##') || tag=""
+  tag=$(fetch -fsSLI --max-time 30 -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##') || tag=""
   case "$tag" in
     v*) ;;
     *)
@@ -64,8 +73,11 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
 say "Downloading deck $tag for $os/$arch"
-if ! curl -fsSL -o "$tmp/$archive" "$base/$archive" 2>/dev/null ||
-  ! curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt" 2>/dev/null; then
+# A progress bar on a terminal; quiet when piped into a log.
+progress=-s
+[ -t 2 ] && progress=--progress-bar
+if ! fetch -fL $progress -o "$tmp/$archive" "$base/$archive" ||
+  ! fetch -fsSL --max-time 60 -o "$tmp/checksums.txt" "$base/checksums.txt" 2>/dev/null; then
   have_gh || fail "could not download $base/$archive (if the repository is private, install gh and run 'gh auth login')"
   rm -f "$tmp/$archive" "$tmp/checksums.txt"
   gh release download "$tag" --repo "$REPO" --pattern "$archive" --pattern checksums.txt --dir "$tmp" ||
