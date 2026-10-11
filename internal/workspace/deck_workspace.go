@@ -868,10 +868,12 @@ func sides(d deckagent.FileDiff) (before, after string) {
 		}
 		for _, l := range h.Lines {
 			if l.Op != deckagent.OpAdd {
-				o.WriteString(l.Text + "\n")
+				o.WriteString(l.Text)
+				o.WriteByte('\n')
 			}
 			if l.Op != deckagent.OpDel {
-				n.WriteString(l.Text + "\n")
+				n.WriteString(l.Text)
+				n.WriteByte('\n')
 			}
 		}
 	}

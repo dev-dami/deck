@@ -62,12 +62,22 @@ func TestDelayedFlushAndTurnEndFlush(t *testing.T) {
 	if err := s.Append(th.ID, agent.Event{Kind: agent.KindAssistantText, Text: "hi"}); err != nil {
 		t.Fatal(err)
 	}
+	// Poll the store, not the file: on Windows reading the file while the
+	// flush renames over it fails.
+	pending := func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return len(s.dirty) > 0 || s.indexDirty
+	}
 	deadline := time.Now().Add(2 * time.Second)
-	for readMeta(t, dir, th.ID).Updated.Equal(th.Updated) {
+	for pending() {
 		if time.Now().After(deadline) {
 			t.Fatal("held-back meta never flushed")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+	if readMeta(t, dir, th.ID).Updated.Equal(th.Updated) {
+		t.Fatal("flushed meta lacks the append's Updated")
 	}
 
 	s.delay = time.Hour
