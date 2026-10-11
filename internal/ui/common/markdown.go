@@ -22,9 +22,9 @@ func init() {
 // mdCacheMu guards mdCache, quietMDCache, userMDCache, and planMDCache.
 //
 // Lock ordering: when both mdCacheMu and rendererLocksMu are
-// needed (only in InvalidateMarkdownRendererCache), acquire
-// mdCacheMu FIRST, then rendererLocksMu. No other call site may
-// hold rendererLocksMu while acquiring mdCacheMu.
+// needed (InvalidateMarkdownRendererCache and capRendererCache),
+// acquire mdCacheMu FIRST, then rendererLocksMu. No other call site
+// may hold rendererLocksMu while acquiring mdCacheMu.
 var (
 	mdCacheMu    sync.Mutex
 	mdCache      = map[int]*glamour.TermRenderer{}
@@ -55,8 +55,34 @@ func MarkdownRenderer(sty *styles.Styles, width int) *glamour.TermRenderer {
 		glamour.WithWordWrap(width),
 		glamour.WithChromaFormatter(formatterName),
 	)
+	capRendererCache(mdCache)
 	mdCache[width] = r
 	return r
+}
+
+// maxRenderersPerCache bounds each per-width renderer cache. A window
+// resize asks for a renderer at every width it passes through, and each
+// one carries its own parser and styles; without a bound they pile up
+// for the life of the process.
+const maxRenderersPerCache = 16
+
+// capRendererCache empties cache when it is full, before a new renderer
+// is added. Must be called with mdCacheMu held. Holders of a dropped
+// renderer keep using it; its lock is dropped too unless it is held
+// right now, so the renderer can be collected once they are done.
+func capRendererCache(cache map[int]*glamour.TermRenderer) {
+	if len(cache) < maxRenderersPerCache {
+		return
+	}
+	rendererLocksMu.Lock()
+	for _, r := range cache {
+		if mu, ok := rendererLocks[r]; ok && mu.TryLock() {
+			mu.Unlock()
+			delete(rendererLocks, r)
+		}
+	}
+	rendererLocksMu.Unlock()
+	clear(cache)
 }
 
 // UserMarkdownRenderer returns a glamour [glamour.TermRenderer] configured like
@@ -87,6 +113,7 @@ func UserMarkdownRenderer(sty *styles.Styles, width int) *glamour.TermRenderer {
 		glamour.WithChromaFormatter(formatterName),
 		glamour.WithPreservedNewLines(),
 	)
+	capRendererCache(userMDCache)
 	userMDCache[width] = r
 	return r
 }
@@ -106,6 +133,7 @@ func QuietMarkdownRenderer(sty *styles.Styles, width int) *glamour.TermRenderer 
 		glamour.WithWordWrap(width),
 		glamour.WithChromaFormatter(formatterName),
 	)
+	capRendererCache(quietMDCache)
 	quietMDCache[width] = r
 	return r
 }
@@ -126,8 +154,55 @@ func PlanMarkdownRenderer(sty *styles.Styles, width int) *glamour.TermRenderer {
 		glamour.WithWordWrap(width),
 		glamour.WithChromaFormatter(formatterName),
 	)
+	capRendererCache(planMDCache)
 	planMDCache[width] = r
 	return r
+}
+
+// mdMemoMu guards mdMemo. No other lock is taken while it is held.
+var (
+	mdMemoMu sync.Mutex
+	mdMemo   = map[mdMemoKey]string{}
+)
+
+// mdMemoKey identifies a memoized render: the text and the renderer,
+// which stands for the width and the styles it was built with.
+type mdMemoKey struct {
+	r    *glamour.TermRenderer
+	text string
+}
+
+// mdMemoMax bounds mdMemo. Its entries are short dialog texts; when it
+// fills up it starts over.
+const mdMemoMax = 64
+
+// RenderMarkdownMemo renders text with r like r.Render, serving a repeat
+// render of the same text by the same renderer from memory. It is for
+// dialog copy (question and confirmation descriptions) that is measured
+// and drawn again on every frame while the dialog is open. The render is
+// serialized through [LockMarkdownRenderer].
+func RenderMarkdownMemo(r *glamour.TermRenderer, text string) (string, error) {
+	key := mdMemoKey{r: r, text: text}
+	mdMemoMu.Lock()
+	out, ok := mdMemo[key]
+	mdMemoMu.Unlock()
+	if ok {
+		return out, nil
+	}
+	mu := LockMarkdownRenderer(r)
+	mu.Lock()
+	out, err := r.Render(text)
+	mu.Unlock()
+	if err != nil {
+		return out, err
+	}
+	mdMemoMu.Lock()
+	if len(mdMemo) >= mdMemoMax {
+		clear(mdMemo)
+	}
+	mdMemo[key] = out
+	mdMemoMu.Unlock()
+	return out, nil
 }
 
 // InvalidateMarkdownRendererCache drops every cached renderer
@@ -153,6 +228,11 @@ func InvalidateMarkdownRendererCache() {
 	userMDCache = map[int]*glamour.TermRenderer{}
 	planMDCache = map[int]*glamour.TermRenderer{}
 	rendererLocks = map[*glamour.TermRenderer]*sync.Mutex{}
+
+	// Renders by the dropped renderers can never be asked for again.
+	mdMemoMu.Lock()
+	clear(mdMemo)
+	mdMemoMu.Unlock()
 }
 
 // rendererLocksMu guards rendererLocks. We key per-renderer

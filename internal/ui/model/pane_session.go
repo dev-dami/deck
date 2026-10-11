@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -51,7 +52,28 @@ func (c *paneText) lines(width int, build func() string) int {
 
 // sessionPane shows the session's title, its folder and branch, and the
 // files it touched.
-type sessionPane struct{ cache paneText }
+type sessionPane struct {
+	cache paneText
+	memo  sessionPaneMemo
+}
+
+// sessionPaneMemo keeps the session pane's text across frames, keyed by
+// everything it is drawn from. The session's files are replaced, never
+// changed in place, so the slice's identity stands for its contents.
+type sessionPaneMemo struct {
+	ok         bool
+	width      int
+	styles     uint64
+	title, cwd string
+	branch     string
+	files      []SessionFile
+	text       string
+}
+
+// sameFiles reports whether a and b are the same slice.
+func sameFiles(a, b []SessionFile) bool {
+	return len(a) == len(b) && (len(a) == 0 || &a[0] == &b[0])
+}
 
 func (*sessionPane) id() paneID       { return paneSession }
 func (*sessionPane) title(*UI) string { return "Session" }
@@ -72,13 +94,18 @@ func (p *sessionPane) render(m *UI, width, _ int, _ bool) string {
 	return p.cache.get(width, func() string { return p.text(m, width) })
 }
 
-func (*sessionPane) text(m *UI, width int) string {
+func (p *sessionPane) text(m *UI, width int) string {
 	if m.session == nil || width <= 0 {
 		return ""
 	}
 	t := m.com.Styles
 	cwd := m.com.Workspace.WorkingDir()
-	return lipgloss.JoinVertical(
+	c := &p.memo
+	if c.ok && c.width == width && c.styles == m.stylesGen && c.title == m.session.Title &&
+		c.cwd == cwd && c.branch == m.gitBranch && sameFiles(c.files, m.sessionFiles) {
+		return c.text
+	}
+	text := lipgloss.JoinVertical(
 		lipgloss.Left,
 		t.Sidebar.SessionTitle.Width(width).MaxHeight(2).Render(m.session.Title),
 		"",
@@ -86,13 +113,33 @@ func (*sessionPane) text(m *UI, width int) string {
 		"",
 		m.filesInfo(cwd, width, fileChangeCount(m.sessionFiles), true),
 	)
+	*c = sessionPaneMemo{
+		ok: true, width: width, styles: m.stylesGen, title: m.session.Title,
+		cwd: cwd, branch: m.gitBranch, files: m.sessionFiles, text: text,
+	}
+	return text
 }
 
 func (*sessionPane) key(*UI, tea.KeyPressMsg) (bool, tea.Cmd) { return false, nil }
 func (*sessionPane) click(*UI, int, int) tea.Cmd              { return nil }
 
 // agentsPane shows the session's agents: model, status, context, cost.
-type agentsPane struct{ cache paneText }
+type agentsPane struct {
+	cache paneText
+	memo  agentsPaneMemo
+}
+
+// agentsPaneMemo keeps the agents pane's text across frames. The text is
+// a function of the roster, the width and the theme alone, and the frame
+// is redrawn several times a second while an agent works, mostly with
+// none of those changed.
+type agentsPaneMemo struct {
+	ok     bool
+	width  int
+	styles uint64
+	lines  []workspace.AgentLine
+	text   string
+}
 
 func (*agentsPane) id() paneID       { return paneAgents }
 func (*agentsPane) title(*UI) string { return "Agents" }
@@ -113,14 +160,23 @@ func (p *agentsPane) render(m *UI, width, _ int, _ bool) string {
 	return p.cache.get(width, func() string { return p.text(m, width) })
 }
 
-func (*agentsPane) text(m *UI, width int) string {
+func (p *agentsPane) text(m *UI, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if len(m.sessionRoster()) == 0 {
-		return m.stripStyles().muted.Render("No agents yet")
+	lines := m.sessionRoster()
+	c := &p.memo
+	if c.ok && c.width == width && c.styles == m.stylesGen && slices.Equal(c.lines, lines) {
+		return c.text
 	}
-	return m.modelInfo(width)
+	var text string
+	if len(lines) == 0 {
+		text = m.stripStyles().muted.Render("No agents yet")
+	} else {
+		text = m.modelInfoFor(lines, width)
+	}
+	*c = agentsPaneMemo{ok: true, width: width, styles: m.stylesGen, lines: slices.Clone(lines), text: text}
+	return text
 }
 
 func (*agentsPane) key(*UI, tea.KeyPressMsg) (bool, tea.Cmd) { return false, nil }
@@ -128,7 +184,7 @@ func (*agentsPane) click(*UI, int, int) tea.Cmd              { return nil }
 
 // sessionRoster is the current session's agents, or nil.
 func (m *UI) sessionRoster() []workspace.AgentLine {
-	roster, ok := m.com.Workspace.(workspace.Roster)
+	roster, ok := m.roster()
 	if !ok {
 		return nil
 	}

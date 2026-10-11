@@ -30,7 +30,7 @@ func workTick() tea.Cmd {
 
 // busyAgents is the session's agents that are at work now.
 func (m *UI) busyAgents() []workspace.AgentLine {
-	roster, ok := m.com.Workspace.(workspace.Roster)
+	roster, ok := m.roster()
 	if !ok || m.session == nil {
 		return nil
 	}

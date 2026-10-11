@@ -19,6 +19,7 @@ import (
 	"github.com/dev-dami/deck/internal/ui/logo"
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/version"
+	"github.com/dev-dami/deck/internal/workspace"
 )
 
 const (
@@ -106,6 +107,7 @@ func (h *header) drawHeader(
 	lspErrorCount int,
 	gitBranch string,
 	gitBadge string,
+	roster workspace.Roster,
 ) {
 	t := h.com.Styles
 	if width != h.width || compact != h.compact {
@@ -136,6 +138,7 @@ func (h *header) drawHeader(
 		availDetailWidth,
 		gitBranch,
 		gitBadge,
+		roster,
 	)
 
 	remainingWidth := width -
@@ -169,6 +172,7 @@ func renderHeaderDetails(
 	availWidth int,
 	gitBranch string,
 	gitBadge string,
+	roster workspace.Roster,
 ) string {
 	t := com.Styles
 
@@ -178,7 +182,7 @@ func renderHeaderDetails(
 		parts = append(parts, t.LSP.ErrorDiagnostic.Render(fmt.Sprintf("%s%d", styles.LSPErrorIcon, lspErrorCount)))
 	}
 
-	if percentage, ok := contextPercent(com, session); ok {
+	if percentage, ok := contextPercent(com, roster, session); ok {
 		percentageText := fmt.Sprintf("%d%%", percentage)
 		if session.EstimatedUsage {
 			percentageText = "~" + percentageText

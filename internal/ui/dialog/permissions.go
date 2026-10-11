@@ -74,6 +74,9 @@ type Permissions struct {
 	unifiedDiffContent   string
 	splitDiffContent     string
 
+	// contentMemo keeps the non-diff content between frames.
+	contentMemo permissionsContentMemo
+
 	help   help.Model
 	keyMap permissionsKeyMap
 }
@@ -538,6 +541,32 @@ func prettyName(name string) string {
 }
 
 func (p *Permissions) renderContent(width int) string {
+	if p.hasDiffView() {
+		// Diffs keep their own cache, invalidated by scrolling and mode.
+		return p.renderContentUncached(width)
+	}
+	// The rest is a function of the request (fixed for the dialog's
+	// life), the width and the theme, yet was syntax highlighted and
+	// laid out again on every frame.
+	c := &p.contentMemo
+	gen := common.StyleGeneration()
+	if c.ok && c.width == width && c.gen == gen {
+		return c.out
+	}
+	out := p.renderContentUncached(width)
+	*c = permissionsContentMemo{ok: true, width: width, gen: gen, out: out}
+	return out
+}
+
+// permissionsContentMemo is a memoized non-diff content render.
+type permissionsContentMemo struct {
+	ok    bool
+	width int
+	gen   uint64
+	out   string
+}
+
+func (p *Permissions) renderContentUncached(width int) string {
 	switch p.permission.ToolName {
 	case tools.BashToolName:
 		return p.renderBashContent(width)

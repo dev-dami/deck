@@ -538,11 +538,17 @@ func (a *AssistantMessageItem) thinkingHashIncremental(thinking string) uint64 {
 // message flips between the plain, open-card, and closed-card renders
 // as the plan run progresses.
 func (a *AssistantMessageItem) contentKey() (uint64, uint64) {
-	var planStreaming byte
+	var extra uint64
 	if a.planStreaming() {
-		planStreaming = 1
+		extra = 1
 	}
-	return fnv64(a.message.Content().Text), uint64(planStreaming)
+	// A finished message whose content was last drawn through the
+	// open-fence shortcut needs one exact render; see
+	// streamingMarkdown.SetSettled.
+	if a.message.IsFinished() && a.streamingContent.Approximate() {
+		extra |= 2
+	}
+	return fnv64(a.message.Content().Text), extra
 }
 
 // SetPlanAgent flags this item as plan-agent output (or clears the
@@ -710,6 +716,9 @@ func (a *AssistantMessageItem) cachedError(width int) string {
 // lines so the visual box matches what the user sees today.
 func (a *AssistantMessageItem) renderThinking(thinking string, width int) string {
 	renderer := common.QuietMarkdownRenderer(a.sty, width)
+	// Thinking stops growing once the reply starts; the key flips then
+	// (the footer appears), so that render is exact.
+	a.streamingThinking.SetSettled(!a.message.IsThinking())
 	rendered := a.streamingThinking.Render(thinking, width, renderer)
 	rendered = strings.TrimSpace(rendered)
 	// The renderer already knows this count from its cached prefix, so
@@ -783,6 +792,7 @@ func (a *AssistantMessageItem) renderThinking(thinking string, width int) string
 // findSafeMarkdownBoundary.
 func (a *AssistantMessageItem) renderMarkdown(content string, width int) string {
 	renderer := common.MarkdownRenderer(a.sty, width)
+	a.streamingContent.SetSettled(a.message.IsFinished())
 	return a.streamingContent.Render(content, width, renderer)
 }
 

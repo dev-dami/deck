@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/glamour/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dev-dami/deck/internal/ui/common"
 )
 
@@ -51,6 +52,39 @@ type streamingMarkdown struct {
 	// a fresh O(document) scan on every flush.
 	stablePrefixLines int
 	lastLines         int
+
+	// fence caches the highlighted head of a long fenced code block
+	// that is still open at the end of the document; see
+	// [streamingMarkdown.renderOpenFence]. settled turns that path off
+	// so a finished document always renders in one exact pass. approx
+	// records that some render since the last Reset took that path, so
+	// a caller knows its output needs one more render once settled.
+	fence   openFence
+	settled bool
+	approx  bool
+}
+
+// openFence is the cached render of the head of a fenced code block
+// that is still open at the end of the text being rendered.
+type openFence struct {
+	// src is the source the cached render covers: the text up to and
+	// including the last frozen code line. bodyStart is the offset of
+	// the first code line in that text.
+	src       string
+	bodyStart int
+	// opener is the fence's opening line (newline included) and
+	// closer a fence that closes it.
+	opener, closer string
+	// out is the render of src, ending at the last frozen code line
+	// (no trailing margin).
+	out string
+}
+
+// SetSettled marks whether the document has stopped growing. A settled
+// document never takes the open-fence shortcut, so a message that ends
+// on an unclosed fence still gets one exact, fully highlighted render.
+func (s *streamingMarkdown) SetSettled(settled bool) {
+	s.settled = settled
 }
 
 // LastLines reports the number of lines in the string the most recent
@@ -71,6 +105,14 @@ func (s *streamingMarkdown) Reset() {
 	s.baseHasListMarker = false
 	s.stablePrefixLines = 0
 	s.lastLines = 0
+	s.fence = openFence{}
+	s.approx = false
+}
+
+// Approximate reports whether a render since the last Reset took the
+// open-fence shortcut, whose output can differ from an exact render.
+func (s *streamingMarkdown) Approximate() bool {
+	return s.approx
 }
 
 // Render returns the glamour render of content at the given width,
@@ -93,7 +135,7 @@ func (s *streamingMarkdown) Render(content string, width int, renderer *glamour.
 	mu.Lock()
 	defer mu.Unlock()
 	full := func() string {
-		out, err := renderer.Render(content)
+		out, err := s.render(content, renderer)
 		if err != nil {
 			out = content
 		} else {
@@ -396,11 +438,187 @@ func (s *streamingMarkdown) renderTrailing(text string, renderer *glamour.TermRe
 	if text == "" {
 		return ""
 	}
-	out, err := renderer.Render(text)
+	out, err := s.render(text, renderer)
 	if err != nil {
 		return text
 	}
 	return trimGlamourMargins(out)
+}
+
+// openFenceChunkLines is how many code lines of a fenced block that is
+// still streaming are highlighted together and then frozen.
+const openFenceChunkLines = 48
+
+// render renders text as one glamour document, taking the open-fence
+// shortcut when text ends inside a long fenced code block.
+func (s *streamingMarkdown) render(text string, renderer *glamour.TermRenderer) (string, error) {
+	if out, ok := s.renderOpenFence(text, renderer); ok {
+		return out, nil
+	}
+	return renderer.Render(text)
+}
+
+// renderOpenFence renders text that ends inside a long fenced code block
+// without re-highlighting the whole block on every flush. No blank-line
+// boundary can fall inside an open fence, so without it each flush
+// re-renders every line of the block: O(n^2) over a long code reply.
+//
+// Glamour renders a code block line by line, so the block's lines can be
+// rendered in chunks and stitched. The head (everything up to the first
+// chunk, closed with a fence) is rendered once, each further chunk of
+// [openFenceChunkLines] complete lines once as its own block, and only
+// the tail is rendered per flush. Only the colouring of a token spanning
+// a chunk seam (a multi-line string or comment) can differ from a single
+// render; that lasts only while the fence is open, since a closed fence
+// takes the normal path and renders whole.
+//
+// Returns ok == false when text does not end in a long open fence or a
+// render does not have the shape the stitching relies on; the caller
+// then renders text whole.
+func (s *streamingMarkdown) renderOpenFence(text string, renderer *glamour.TermRenderer) (string, bool) {
+	if s.settled {
+		s.fence = openFence{}
+		return "", false
+	}
+	openerStart, bodyStart, closer, ok := openFenceAtEnd(text)
+	if !ok {
+		return "", false
+	}
+	f := &s.fence
+	if f.src == "" || f.bodyStart != bodyStart || !strings.HasPrefix(text, f.src) {
+		// Seed the head once the block is long enough to be worth it.
+		cut, ok := afterLines(text[bodyStart:], openFenceChunkLines)
+		if !ok {
+			return "", false
+		}
+		out, err := renderer.Render(text[:bodyStart+cut] + closer)
+		if err == nil {
+			out, ok = trimTrailingMargin(out)
+		}
+		if err != nil || !ok {
+			s.fence = openFence{}
+			return "", false
+		}
+		*f = openFence{
+			src:       text[:bodyStart+cut],
+			bodyStart: bodyStart,
+			opener:    text[openerStart:bodyStart],
+			closer:    closer,
+			out:       out,
+		}
+	}
+	rest := text[len(f.src):]
+	for {
+		cut, ok := afterLines(rest, openFenceChunkLines)
+		if !ok {
+			break
+		}
+		code, ok := renderCodeLines(f.opener+rest[:cut]+f.closer, renderer, true)
+		if !ok {
+			s.fence = openFence{}
+			return "", false
+		}
+		f.out += "\n" + code
+		f.src = text[:len(f.src)+cut]
+		rest = rest[cut:]
+	}
+	if rest == "" {
+		return "", false
+	}
+	tail, ok := renderCodeLines(f.opener+rest, renderer, false)
+	if !ok {
+		return "", false
+	}
+	s.approx = true
+	return f.out + "\n" + tail, true
+}
+
+// renderCodeLines renders src, a document holding only a fenced code
+// block, and returns it without the blank margin line glamour puts
+// before the block, and with closed also without the stub line after
+// it (see trimTrailingMargin). ok is false when the render is not
+// shaped like that.
+func renderCodeLines(src string, renderer *glamour.TermRenderer, closed bool) (string, bool) {
+	out, err := renderer.Render(src)
+	if err != nil {
+		return "", false
+	}
+	nl := strings.IndexByte(out, '\n')
+	if nl < 0 || !isBlankRenderLine(out[:nl]) {
+		return "", false
+	}
+	out = out[nl+1:]
+	if !closed {
+		return out, true
+	}
+	return trimTrailingMargin(out)
+}
+
+// trimTrailingMargin strips the blank stub line glamour ends a document
+// with when its last block is a code block (the indentation, if any,
+// written after the code's final newline), leaving the block's last
+// code line. ok is false when out does not end that way.
+func trimTrailingMargin(out string) (string, bool) {
+	nl := strings.LastIndexByte(out, '\n')
+	if nl < 0 || !isBlankRenderLine(out[nl+1:]) {
+		return "", false
+	}
+	return out[:nl], true
+}
+
+// isBlankRenderLine reports whether a rendered line shows nothing but
+// spaces.
+func isBlankRenderLine(line string) bool {
+	return strings.TrimSpace(ansi.Strip(line)) == ""
+}
+
+// openFenceAtEnd reports whether text ends inside a fenced code block
+// whose opening line is followed by at least one code line. It returns
+// the offsets of the opening line and of the first code line, and a
+// fence that closes the block.
+func openFenceAtEnd(text string) (openerStart, bodyStart int, closer string, ok bool) {
+	if countFenceLines(text)%2 == 0 {
+		return 0, 0, "", false
+	}
+	// The block opens at the last fence line.
+	openerStart = -1
+	start := 0
+	for line := range splitLines(text) {
+		if isFenceLine(line) {
+			openerStart = start
+		}
+		start += len(line) + 1
+	}
+	if openerStart < 0 {
+		return 0, 0, "", false
+	}
+	nl := strings.IndexByte(text[openerStart:], '\n')
+	if nl < 0 {
+		return 0, 0, "", false
+	}
+	bodyStart = openerStart + nl + 1
+	opener := strings.TrimLeft(text[openerStart:bodyStart-1], " ")
+	c := opener[0]
+	run := 0
+	for run < len(opener) && opener[run] == c {
+		run++
+	}
+	return openerStart, bodyStart, strings.Repeat(string(c), run), true
+}
+
+// afterLines returns the offset just past the first n lines of s. ok is
+// false unless s holds more than n complete lines, so the text after
+// the offset always keeps a complete line of its own.
+func afterLines(s string, n int) (int, bool) {
+	off := 0
+	for range n {
+		i := strings.IndexByte(s[off:], '\n')
+		if i < 0 {
+			return 0, false
+		}
+		off += i + 1
+	}
+	return off, strings.IndexByte(s[off:], '\n') >= 0
 }
 
 // glueRenders concatenates two glamour-rendered fragments with a

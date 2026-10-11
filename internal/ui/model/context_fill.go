@@ -11,12 +11,13 @@ import (
 // Deck's agents it is the fullest agent's, from the roster: the session's
 // token counts add up every turn and say nothing about the context. Without
 // a roster it is the session's tokens against the configured model's
-// window. ok is false when neither is known.
-func contextPercent(com *common.Common, sess *session.Session) (pct int, ok bool) {
+// window. ok is false when neither is known. roster is the workspace's
+// roster, nil when it has none.
+func contextPercent(com *common.Common, roster workspace.Roster, sess *session.Session) (pct int, ok bool) {
 	if sess == nil {
 		return 0, false
 	}
-	if roster, isRoster := com.Workspace.(workspace.Roster); isRoster {
+	if roster != nil {
 		return rosterContextPercent(roster.Roster(sess.ID))
 	}
 	cfg := com.Config()

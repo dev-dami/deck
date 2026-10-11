@@ -16,6 +16,7 @@ import (
 	"github.com/dev-dami/deck/internal/history"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/session"
+	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/ui/util"
@@ -28,6 +29,9 @@ type loadSessionMsg struct {
 	files     []SessionFile
 	readFiles []string
 	messages  []message.Message
+	// nested are the agent tools' transcripts, keyed by agent tool
+	// session ID; see loadNestedMessages.
+	nested map[string][]message.Message
 }
 
 // lspFilePaths returns deduplicated file paths from both modified and read
@@ -100,10 +104,56 @@ func (m *UI) loadSession(sessionID string) tea.Cmd {
 			files:     sessionFiles,
 			readFiles: readFiles,
 			messages:  messages,
+			nested:    m.loadNestedMessages(messages),
 		}
 	}
 	return tea.Batch(load, m.reportCurrentSession(sessionID))
 }
+
+// loadNestedMessages reads the transcripts of the agent and agentic fetch
+// tool calls in msgs, and of those nested in them, keyed by agent tool
+// session ID. It runs in the load command so the event loop does not
+// make one synchronous read per agent tool when the session is shown.
+// A transcript that fails to read is recorded as empty, which is how the
+// chat treats it either way.
+func (m *UI) loadNestedMessages(msgs []message.Message) map[string][]message.Message {
+	var nested map[string][]message.Message
+	var walk func(msgs []message.Message, depth int)
+	walk = func(msgs []message.Message, depth int) {
+		if depth > maxNestedAgentDepth {
+			return
+		}
+		for i := range msgs {
+			if msgs[i].Role != message.Assistant {
+				continue
+			}
+			for _, tc := range msgs[i].ToolCalls() {
+				if tc.Name != tools.AgentToolName && tc.Name != tools.AgenticFetchToolName {
+					continue
+				}
+				id := m.com.Workspace.CreateAgentToolSessionID(msgs[i].ID, tc.ID)
+				if _, seen := nested[id]; seen {
+					continue
+				}
+				got, err := m.com.Workspace.ListMessages(context.Background(), id)
+				if err != nil {
+					got = nil
+				}
+				if nested == nil {
+					nested = map[string][]message.Message{}
+				}
+				nested[id] = got
+				walk(got, depth+1)
+			}
+		}
+	}
+	walk(msgs, 0)
+	return nested
+}
+
+// maxNestedAgentDepth bounds how deep loadNestedMessages follows agents
+// started by agents. Deeper transcripts are still read, on demand.
+const maxNestedAgentDepth = 8
 
 // reportCurrentSession returns a fire-and-forget tea.Cmd that
 // informs the workspace which session this client is currently

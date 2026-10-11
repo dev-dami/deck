@@ -49,6 +49,8 @@ type DiffView struct {
 	style           Style
 	tabWidth        int
 	chromaStyle     *chroma.Style
+	// maxRows, when positive, stops rendering after that many rows.
+	maxRows int
 
 	isComputed bool
 	err        error
@@ -148,6 +150,28 @@ func (dv *DiffView) LineNumbers(lineNumbers bool) *DiffView {
 func (dv *DiffView) Height(height int) *DiffView {
 	dv.height = height
 	return dv
+}
+
+// MaxRows makes String render only the first n rows, exactly as they
+// appear in the full render and with no ellipsis row (unlike Height). It
+// is for callers that show only the head of a diff: the rows past it are
+// never highlighted. Zero or less renders every row.
+func (dv *DiffView) MaxRows(n int) *DiffView {
+	dv.maxRows = n
+	return dv
+}
+
+// TotalLines returns how many rows the full diff renders, or -1 when the
+// diff cannot be computed.
+func (dv *DiffView) TotalLines() int {
+	dv.normalizeLineEndings()
+	dv.replaceTabs()
+	if err := dv.computeDiff(); err != nil {
+		return -1
+	}
+	dv.convertDiffToSplit()
+	dv.detectTotalLines()
+	return dv.totalLines
 }
 
 // Width sets the width of the DiffView.
@@ -415,6 +439,7 @@ func (dv *DiffView) renderUnified() string {
 	fullContentStyle := lipgloss.NewStyle().MaxWidth(dv.fullCodeWidth)
 	printedLines := -dv.yOffset
 	shouldWrite := func() bool { return printedLines >= 0 }
+	full := func() bool { return dv.maxRows > 0 && printedLines >= dv.maxRows }
 
 	getContent := func(in string, ls LineStyle) (content string, leadingEllipsis bool) {
 		content = strings.TrimSuffix(in, "\n")
@@ -441,6 +466,9 @@ outer:
 			}
 			printedLines++
 		}
+		if full() {
+			break
+		}
 		if shouldWrite() {
 			ls := dv.style.DividerLine
 			if dv.lineNumbers {
@@ -457,6 +485,9 @@ outer:
 		afterLine := h.ToLine
 
 		for j, l := range h.Lines {
+			if full() {
+				break outer
+			}
 			// print ellipis if we don't have enough space to print the rest of the diff
 			hasReachedHeight := dv.height > 0 && printedLines+1 == dv.height
 			isLastHunk := i+1 == len(dv.unified.Hunks)
@@ -539,6 +570,7 @@ func (dv *DiffView) renderSplit() string {
 	afterFullContentStyle := lipgloss.NewStyle().MaxWidth(dv.fullCodeWidth + btoi(dv.extraColOnAfter))
 	printedLines := -dv.yOffset
 	shouldWrite := func() bool { return printedLines >= 0 }
+	full := func() bool { return dv.maxRows > 0 && printedLines >= dv.maxRows }
 
 	getContent := func(in string, ls LineStyle) (content string, leadingEllipsis bool) {
 		content = strings.TrimSuffix(in, "\n")
@@ -568,6 +600,9 @@ outer:
 			}
 			printedLines++
 		}
+		if full() {
+			break
+		}
 		if shouldWrite() {
 			ls := dv.style.DividerLine
 			if dv.lineNumbers {
@@ -587,6 +622,9 @@ outer:
 		afterLine := h.toLine
 
 		for j, l := range h.lines {
+			if full() {
+				break outer
+			}
 			// print ellipis if we don't have enough space to print the rest of the diff
 			hasReachedHeight := dv.height > 0 && printedLines+1 == dv.height
 			isLastHunk := i+1 == len(dv.unified.Hunks)
