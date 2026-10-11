@@ -169,8 +169,24 @@ type Event struct {
 	Limits  *Limits
 	// SessionID is the CLI's own session/thread id (KindSessionStarted).
 	SessionID string
-	// Raw is the original protocol line, kept so nothing is lost.
+	// Raw is the original protocol line, kept so nothing is lost. Deck keeps
+	// it past the adapter only where KeepsRaw says so.
 	Raw json.RawMessage
+}
+
+// KeepsRaw reports whether an event of kind k keeps its Raw line once Deck
+// has it: only errors and kinds Deck does not know, whose protocol line may
+// be the only full account of what happened. For every other kind Raw just
+// repeats Text, Tool and the rest, so Deck drops it before the event is
+// logged, stored or passed on.
+func KeepsRaw(k Kind) bool {
+	switch k {
+	case KindSessionStarted, KindAssistantText, KindReasoning, KindUserText,
+		KindToolCall, KindToolResult, KindFileChange, KindUsage, KindTurnDone,
+		KindExited, KindLimits:
+		return false
+	}
+	return true
 }
 
 // ApprovalKind classifies what an agent is asking permission for.
