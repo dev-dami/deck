@@ -19,18 +19,19 @@ package yolo
 
 import (
 	"math"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/lucasb-eyer/go-colorful"
 	"github.com/rivo/uniseg"
+
+	"github.com/dev-dami/deck/internal/ui/motion"
 )
 
-// reducedMotion is the user's request for less motion (DECK_REDUCED_MOTION=1):
-// the effect then does not play.
-func reducedMotion() bool { return os.Getenv("DECK_REDUCED_MOTION") == "1" }
+// reducedMotion is the user's request for less motion (motion off in the
+// settings, or DECK_REDUCED_MOTION=1): the effect then does not play.
+func reducedMotion() bool { return motion.Off() }
 
 // Timeline.
 const (

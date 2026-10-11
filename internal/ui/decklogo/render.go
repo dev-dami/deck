@@ -2,17 +2,18 @@ package decklogo
 
 import (
 	"image/color"
-	"os"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/dev-dami/deck/internal/ui/motion"
 	"github.com/dev-dami/deck/internal/ui/tone"
 )
 
-// reduced reports whether the user asked for less motion
-// (DECK_REDUCED_MOTION=1): the logo then appears at once and stays still.
-func reduced() bool { return os.Getenv("DECK_REDUCED_MOTION") == "1" }
+// reduced reports whether the user asked for less motion (motion off in
+// the settings, or DECK_REDUCED_MOTION=1): the logo then appears at once and
+// stays still.
+func reduced() bool { return motion.Off() }
 
 const nLevels = 32
 

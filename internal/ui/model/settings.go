@@ -5,6 +5,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/ui/dialog"
+	"github.com/dev-dami/deck/internal/ui/motion"
 	"github.com/dev-dami/deck/internal/ui/util"
 	"github.com/dev-dami/deck/internal/workspace"
 )
@@ -40,6 +41,9 @@ func (m *UI) applyDeckSettings(msg dialog.ActionSetDeckSettings) tea.Cmd {
 		if err := editor.SetDeckSettings(msg.Edit); err != nil {
 			return util.ReportError(err)()
 		}
+		// Motion is read by the animations on every frame (an atomic, not
+		// model state), so it takes effect at once.
+		motion.Set(editor.DeckSettings().Motion)
 		return util.NewInfoMsg(msg.Label)
 	}
 }
