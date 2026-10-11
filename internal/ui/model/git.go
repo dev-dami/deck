@@ -539,7 +539,7 @@ func gitFetchStatus(cli *gh.Client) tea.Cmd {
 			return gitStatusMsg{err: err}
 		}
 		recent, _ := cli.RecentBranches(ctx, gitRecentBranches)
-		commits, _ := cli.Log(ctx, gitRecentCommits)
+		commits, _ := cli.Graph(ctx, gitRecentCommits)
 		return gitStatusMsg{status: st, files: files, recent: recent, commits: commits}
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/csync"
@@ -403,23 +404,23 @@ func TestLayoutStripGeometry(t *testing.T) {
 	u := newStripTestUI(t, s, 200)
 
 	area := image.Rect(0, 0, 34*2+stripGap, 20)
-	u.layoutStrip(area)
+	u.layoutStrip(area, false)
 	g := s.geo
 	// Two whole columns fit; the third is off to the right, so the
-	// indicator row is taken from the bottom.
+	// indicator takes the strip's top row.
 	require.Len(t, g.cols, 2)
-	require.Equal(t, image.Rect(0, 19, area.Dx(), 20), g.indicator)
+	require.Equal(t, image.Rect(0, 0, area.Dx(), 1), g.indicator)
 	a, b := g.cols[0].panes[0], g.cols[0].panes[1]
-	require.Equal(t, image.Rect(0, 0, 34, 1), a.header)
+	require.Equal(t, image.Rect(0, 1, 34, 2), a.header)
 	require.Equal(t, 3, a.body.Dy())
-	require.Equal(t, 4, b.header.Min.Y)
-	require.Equal(t, 19-5, b.body.Dy())
+	require.Equal(t, 5, b.header.Min.Y)
+	require.Equal(t, 20-6, b.body.Dy())
 	require.Equal(t, 34+stripGap, g.cols[1].x)
 
 	// Focusing the last column scrolls just far enough to show it.
 	s.focusColumn(1)
 	s.focusColumn(1)
-	u.layoutStrip(area)
+	u.layoutStrip(area, false)
 	require.Equal(t, 1, s.first)
 	require.Equal(t, 2, s.geo.cols[1].index)
 }
@@ -494,7 +495,7 @@ func TestStripClickFocusesAndCloses(t *testing.T) {
 	s, fakes := testStrip([]paneID{"a", "b"})
 	u := newStripTestUI(t, s, 200)
 	u.focus = uiFocusEditor
-	u.layoutStrip(image.Rect(10, 5, 44, 25))
+	u.layoutStrip(image.Rect(10, 5, 44, 25), false)
 	b, _ := s.geo.paneGeomOf("b")
 
 	// A click in b's body focuses the sidebar and b, and reaches b with
@@ -515,7 +516,7 @@ func TestStripBodyScroll(t *testing.T) {
 	s, fakes := testStrip([]paneID{"a"})
 	fakes["a"].lines = 50
 	u := newStripTestUI(t, s, 200)
-	u.layoutStrip(image.Rect(0, 0, 34, 11))
+	u.layoutStrip(image.Rect(0, 0, 34, 11), false)
 	// Draw records how many lines the body rendered.
 	s.geo.cols[0].panes[0].lines = 50
 	require.False(t, s.canScrollBody("a", -1))
@@ -538,6 +539,81 @@ func TestSidebarWidth(t *testing.T) {
 	require.LessOrEqual(t, w, 198*sidebarWidePercent/100)
 	// Two columns side by side, no wasted space.
 	require.Equal(t, 34*2+stripGap+1, w)
+}
+
+func TestFillWidths(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, []int{48}, fillWidths([]int{34}, 48))
+	require.Equal(t, []int{36, 35}, fillWidths([]int{34, 34}, 34*2+stripGap+3))
+	// Already full, or too wide: left alone.
+	require.Equal(t, []int{34, 34}, fillWidths([]int{34, 34}, 34*2+stripGap))
+	require.Equal(t, []int{50}, fillWidths([]int{50}, 40))
+	require.Empty(t, fillWidths(nil, 40))
+}
+
+// TestSidebarLayoutAcrossWidths lays the chat out with the default strip's
+// column widths at widths around the wide-sidebar breakpoint: the strip
+// fills the sidebar to its right margin, the chat and the sidebar never
+// overlap, and the column pager sits inside the sidebar, only when
+// columns are hidden.
+func TestSidebarLayoutAcrossWidths(t *testing.T) {
+	t.Parallel()
+	for w := compactModeWidthBreakpoint; w <= 260; w++ {
+		// The default columns: session and agents, git, tasks and
+		// commands, usage, with the widths those panes ask for.
+		s := newPaneStripFrom(config.SidebarLayout{Columns: [][]string{{"session", "agents"}, {"git"}, {"tasks", "commands"}, {"usage"}}},
+			fakeFactories(&fakePane{pid: "session", lines: 3}, &fakePane{pid: "agents", lines: 3},
+				&fakePane{pid: "git", w: gitPaneWidth, lines: 3},
+				&fakePane{pid: "tasks", lines: 3}, &fakePane{pid: "commands", lines: 3},
+				&fakePane{pid: "usage", w: usagePaneWidth, lines: 3}))
+		u := newStripTestUI(t, s, w)
+		u.height = 40
+		u.updateLayoutAndSize()
+		l := u.layout
+		side, main := l.sidebar, l.main
+		require.False(t, side.Empty(), "w=%d", w)
+		// One cell of margin on the right, as on the left.
+		require.Equal(t, w-1, side.Max.X, "w=%d: sidebar ends at the margin", w)
+		require.LessOrEqual(t, main.Max.X, side.Min.X, "w=%d: chat and sidebar overlap", w)
+		require.LessOrEqual(t, l.editor.Max.X, side.Min.X, "w=%d: editor and sidebar overlap", w)
+		require.LessOrEqual(t, side.Min.X-main.Max.X, 2, "w=%d: dead space between chat and sidebar", w)
+
+		scr := uv.NewScreenBuffer(w, u.height)
+		u.drawSidebar(scr, side)
+		g := s.geo
+		require.NotEmpty(t, g.cols, "w=%d", w)
+		first, last := g.cols[0], g.cols[len(g.cols)-1]
+		require.Equal(t, side.Min.X, first.x, "w=%d", w)
+		require.Equal(t, side.Max.X, last.x+last.w, "w=%d: the strip leaves a gap on its right", w)
+		for i := 1; i < len(g.cols); i++ {
+			require.Equal(t, g.cols[i-1].x+g.cols[i-1].w+stripGap, g.cols[i].x, "w=%d", w)
+		}
+		if len(g.cols) < len(s.cols) {
+			require.False(t, g.indicator.Empty(), "w=%d: hidden columns need the pager", w)
+			require.True(t, g.indicator.In(side), "w=%d: the pager is inside the sidebar", w)
+		} else {
+			require.True(t, g.indicator.Empty(), "w=%d: no pager when every column shows", w)
+		}
+	}
+}
+
+// TestNoPagerWithoutSidebar draws a whole frame with the sidebar hidden:
+// the column pager must not be drawn anywhere.
+func TestNoPagerWithoutSidebar(t *testing.T) {
+	t.Parallel()
+	s, _ := testStrip([]paneID{"a"}, []paneID{"b"}, []paneID{"c"}, []paneID{"d"}, []paneID{"e"})
+	u := newStripTestUI(t, s, 170)
+	u.height = 40
+	u.focus = uiFocusEditor
+	u.forceCompactMode = true
+	u.header = newHeader(u.com)
+	u.updateLayoutAndSize()
+	require.True(t, u.layout.sidebar.Empty())
+	scr := uv.NewScreenBuffer(170, 40)
+	u.Draw(scr, scr.Bounds())
+	out := ansi.Strip(scr.Render())
+	require.NotContains(t, out, "›")
+	require.NotContains(t, out, "○ ○")
 }
 
 func TestStripSaveDebounce(t *testing.T) {

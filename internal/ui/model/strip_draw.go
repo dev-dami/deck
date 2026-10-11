@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"image"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -61,10 +62,11 @@ func (m *UI) stripMaxWidth() int {
 // drawSidebar draws the sidebar: the logo when there is room for it, and
 // the strip of panes below.
 func (m *UI) drawSidebar(scr uv.Screen, area uv.Rectangle) {
-	if m.session == nil {
+	if m.session == nil || area.Dx() <= 0 || area.Dy() <= 0 {
 		return
 	}
 	stripArea := area
+	spacer := false
 	if area.Dy() >= sidebarLogoMinHeight && m.sidebarLogo != "" {
 		h := lipgloss.Height(m.sidebarLogo)
 		if h+1 < area.Dy()/2 {
@@ -72,17 +74,21 @@ func (m *UI) drawSidebar(scr uv.Screen, area uv.Rectangle) {
 			uv.NewStyledString(
 				lipgloss.NewStyle().MaxWidth(area.Dx()).MaxHeight(h).Render(m.sidebarLogo),
 			).Draw(scr, logoRect)
-			stripArea.Min.Y += h + 1
+			// The row under the logo is kept: blank, or the indicator.
+			stripArea.Min.Y += h
+			spacer = true
 		}
 	}
-	m.layoutStrip(stripArea)
+	m.layoutStrip(stripArea, spacer)
 	m.drawStrip(scr)
 }
 
 // layoutStrip works out where columns and panes go in area: the visible
-// columns, scrolled to the focus when it moved, and each pane's share of
-// its column's height.
-func (m *UI) layoutStrip(area uv.Rectangle) {
+// columns, scrolled to the focus when it moved and widened to fill the
+// strip, and each pane's share of its column's height. The indicator of
+// columns off to the sides takes the top row; spacer keeps that row (it
+// sits under the logo) even when there is no indicator to draw.
+func (m *UI) layoutStrip(area uv.Rectangle, spacer bool) {
 	s := m.strip()
 	s.clampFocus()
 	g := stripGeom{area: area}
@@ -100,14 +106,18 @@ func (m *UI) layoutStrip(area uv.Rectangle) {
 	count := fitCount(widths, s.first, avail)
 
 	colsArea := area
-	if (s.first > 0 || s.first+count < len(widths)) && colsArea.Dy() > 2 {
-		g.indicator = image.Rect(area.Min.X, area.Max.Y-1, area.Max.X, area.Max.Y)
-		colsArea.Max.Y--
+	hidden := s.first > 0 || s.first+count < len(widths)
+	if (spacer || hidden) && colsArea.Dy() > 2 {
+		if hidden {
+			g.indicator = image.Rect(area.Min.X, area.Min.Y, area.Max.X, area.Min.Y+1)
+		}
+		colsArea.Min.Y++
 	}
 
+	shown := fillWidths(widths[s.first:s.first+count], avail)
 	x := area.Min.X
 	for i := s.first; i < s.first+count; i++ {
-		w := widths[i]
+		w := shown[i-s.first]
 		c := s.cols[i]
 		needs := make([]int, len(c.panes))
 		for k, id := range c.panes {
@@ -131,7 +141,31 @@ func (m *UI) layoutStrip(area uv.Rectangle) {
 		g.cols = append(g.cols, cg)
 		x += w + stripGap
 	}
+	g.body = colsArea
 	s.geo = g
+}
+
+// fillWidths widens the visible columns' widths so that, with the gaps
+// between them, they fill avail cells: the strip never leaves empty space
+// on its right. The extra is shared evenly, the leftmost columns taking
+// the odd cells.
+func fillWidths(widths []int, avail int) []int {
+	out := slices.Clone(widths)
+	if len(out) == 0 {
+		return out
+	}
+	extra := avail - spanWidth(out, 0, len(out))
+	if extra <= 0 {
+		return out
+	}
+	share, odd := extra/len(out), extra%len(out)
+	for i := range out {
+		out[i] += share
+		if i < odd {
+			out[i]++
+		}
+	}
+	return out
 }
 
 // stripStyles are the strip's colours, taken from the theme.
@@ -205,10 +239,7 @@ func (m *UI) drawStrip(scr uv.Screen) {
 	}
 
 	// Separators between the visible columns.
-	top, bottom := g.area.Min.Y, g.area.Max.Y
-	if !g.indicator.Empty() {
-		bottom = g.indicator.Min.Y
-	}
+	top, bottom := g.body.Min.Y, g.body.Max.Y
 	if h := bottom - top; h > 0 {
 		sep := st.rule.Render(strings.TrimSuffix(strings.Repeat("│\n", h), "\n"))
 		for ci := 0; ci+1 < len(g.cols); ci++ {

@@ -279,6 +279,32 @@ type Commit struct {
 	When    time.Time
 	Author  string
 	Subject string
+
+	// ID is the full hash and Parents the full hashes of its parents,
+	// first parent first; set by [Client.Graph].
+	ID      string
+	Parents []string
+	// Refs are the branches, tags and HEAD pointing at it; set by
+	// [Client.Graph].
+	Refs []Ref
+}
+
+// RefKind is what kind of name a [Ref] is.
+type RefKind int
+
+const (
+	RefBranch RefKind = iota // a local branch
+	RefRemote                // a remote-tracking branch, "origin/main"
+	RefTag                   // a tag
+	RefHead                  // a detached HEAD
+)
+
+// Ref is a name pointing at a commit.
+type Ref struct {
+	Name string
+	Kind RefKind
+	// Head is set on the branch HEAD points at.
+	Head bool
 }
 
 // Log lists up to n commits of HEAD, the newest first. A repository with no
@@ -304,6 +330,78 @@ func parseLog(out string) []Commit {
 		cs = append(cs, Commit{Hash: f[0], When: unixTime(f[1]), Author: f[2], Subject: f[3]})
 	}
 	return cs
+}
+
+// graphFormat is one commit per line, its fields split by \x1f: the
+// abbreviated and full hash, the parents' full hashes, the decorations, the
+// author, the commit time and the subject.
+const graphFormat = "--format=%h%x1f%H%x1f%P%x1f%D%x1f%an%x1f%ct%x1f%s"
+
+// Graph lists up to n commits of HEAD and the local branches in
+// topological order (children before parents), with their parents and the
+// names pointing at them, for drawing a commit graph. A repository with no
+// commits yet has none.
+func (c *Client) Graph(ctx context.Context, n int) ([]Commit, error) {
+	out, err := c.git(ctx, localTimeout, "log", "--topo-order", "--decorate=full", "--no-show-signature",
+		"-n", strconv.Itoa(n), graphFormat, "HEAD", "--branches", "--")
+	if err != nil {
+		s := stderrOf(err)
+		if strings.Contains(s, "does not have any commits") || strings.Contains(s, "unknown revision") {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return parseGraph(out), nil
+}
+
+func parseGraph(out string) []Commit {
+	var cs []Commit
+	for _, l := range lines(out) {
+		f := strings.SplitN(l, "\x1f", 7)
+		if len(f) < 7 || f[0] == "" || f[1] == "" {
+			continue
+		}
+		cs = append(cs, Commit{
+			Hash:    f[0],
+			ID:      f[1],
+			Parents: strings.Fields(f[2]),
+			Refs:    parseRefs(f[3]),
+			Author:  f[4],
+			When:    unixTime(f[5]),
+			Subject: f[6],
+		})
+	}
+	return cs
+}
+
+// parseRefs reads %D made with --decorate=full: "HEAD -> refs/heads/main,
+// refs/remotes/origin/main, tag: refs/tags/v1". Names it does not know
+// (the stash, notes, a remote's HEAD) are left out.
+func parseRefs(d string) []Ref {
+	var refs []Ref
+	for _, item := range strings.Split(d, ", ") {
+		item = strings.TrimSpace(item)
+		head := false
+		if rest, ok := strings.CutPrefix(item, "HEAD -> "); ok {
+			item, head = rest, true
+		}
+		item = strings.TrimPrefix(item, "tag: ")
+		switch {
+		case item == "HEAD":
+			refs = append(refs, Ref{Name: "HEAD", Kind: RefHead})
+		case strings.HasPrefix(item, "refs/heads/"):
+			refs = append(refs, Ref{Name: strings.TrimPrefix(item, "refs/heads/"), Kind: RefBranch, Head: head})
+		case strings.HasPrefix(item, "refs/remotes/"):
+			name := strings.TrimPrefix(item, "refs/remotes/")
+			if strings.HasSuffix(name, "/HEAD") {
+				continue
+			}
+			refs = append(refs, Ref{Name: name, Kind: RefRemote})
+		case strings.HasPrefix(item, "refs/tags/"):
+			refs = append(refs, Ref{Name: strings.TrimPrefix(item, "refs/tags/"), Kind: RefTag})
+		}
+	}
+	return refs
 }
 
 func unixTime(s string) time.Time {

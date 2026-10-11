@@ -57,6 +57,7 @@ type Author struct {
 type PR struct {
 	Number         int       `json:"number"`
 	Title          string    `json:"title"`
+	Body           string    `json:"body"`
 	State          string    `json:"state"` // OPEN, CLOSED, MERGED
 	URL            string    `json:"url"`
 	IsDraft        bool      `json:"isDraft"`
@@ -124,7 +125,7 @@ func (p *PR) readRollup() {
 	}
 }
 
-const prFields = "number,title,state,url,isDraft,reviewDecision,mergeable,baseRefName,headRefName,author,updatedAt,statusCheckRollup"
+const prFields = "number,title,body,state,url,isDraft,reviewDecision,mergeable,baseRefName,headRefName,author,updatedAt,statusCheckRollup"
 
 // PRForBranch is the pull request for branch ("" = the current branch), or
 // nil when it has none.

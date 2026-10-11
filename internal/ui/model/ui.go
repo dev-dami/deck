@@ -3399,6 +3399,12 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	// Add status and help layer
 	m.status.SetHideHelp(isOnboarding)
 	m.status.SetMode(m.mode, m.yoloModeCached())
+	// Keep the hints clear of the unread mark at the right.
+	reserve := 0
+	if !isOnboarding {
+		reserve = m.noticeDotReserve(layout.status)
+	}
+	m.status.SetRightReserve(reserve)
 	m.status.Draw(scr, layout.status)
 	if !isOnboarding {
 		m.drawNoticeDot(scr, layout.status)
