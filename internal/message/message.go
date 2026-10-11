@@ -471,34 +471,42 @@ func floatPtr(v sql.NullFloat64) *float64 {
 // finished, the tool-call set grew, a tool call transitioned to
 // finished, or reasoning just finished. prev is the last-flushed
 // snapshot (or nil if no write has landed yet).
+//
+// It runs on every streamed delta, so it walks the parts once and
+// allocates nothing.
 func shouldFlushNow(prev *flushBaseline, next *Message) bool {
-	if next.IsFinished() {
-		return true
-	}
-
 	var prevCalls []bool
 	var prevReasoningFinishedAt int64
 	if prev != nil {
 		prevCalls = prev.toolCallsFinished
 		prevReasoningFinishedAt = prev.reasoningFinishedAt
 	}
-	nextCalls := next.ToolCalls()
-	if len(nextCalls) != len(prevCalls) {
-		return true
-	}
-	for i := range nextCalls {
-		// Bounds-safe: lengths are equal here.
-		if nextCalls[i].Finished != prevCalls[i] {
+	calls := 0
+	reasoning := false
+	var reasoningFinishedAt int64
+	for _, part := range next.Parts {
+		switch p := part.(type) {
+		case Finish:
 			return true
+		case ToolCall:
+			// A tool call's input only matters once it has landed (Finished
+			// flips true). Earlier deltas to Input are debounced with the
+			// rest of the streaming state.
+			if calls >= len(prevCalls) || p.Finished != prevCalls[calls] {
+				return true
+			}
+			calls++
+		case ReasoningContent:
+			if !reasoning { // the first reasoning part, as ReasoningContent reads it
+				reasoning = true
+				reasoningFinishedAt = p.FinishedAt
+			}
 		}
-		// A tool call's input only matters once it has landed (Finished
-		// flips true). Earlier deltas to Input are debounced with the
-		// rest of the streaming state.
 	}
-	if next.ReasoningContent().FinishedAt > 0 && prevReasoningFinishedAt == 0 {
+	if calls != len(prevCalls) {
 		return true
 	}
-	return false
+	return reasoningFinishedAt > 0 && prevReasoningFinishedAt == 0
 }
 
 func (s *service) Get(ctx context.Context, id string) (Message, error) {

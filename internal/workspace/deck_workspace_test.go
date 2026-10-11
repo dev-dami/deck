@@ -154,7 +154,15 @@ func TestTurnResult(t *testing.T) {
 		require.False(t, r.IsError)
 		var meta tools.BashResponseMetadata
 		require.NoError(t, json.Unmarshal([]byte(r.Metadata), &meta))
-		require.Equal(t, "a.go", meta.Output)
+		require.Empty(t, meta.Output, "the output is kept once, in Content")
+	})
+
+	t.Run("bash whose output reads no output", func(t *testing.T) {
+		t.Parallel()
+		r := tr.result(&deckagent.Tool{ID: "1b", Name: "Bash", Input: raw(`{"command":"echo"}`), Output: tools.BashNoOutput, Status: deckagent.ToolOK})
+		var meta tools.BashResponseMetadata
+		require.NoError(t, json.Unmarshal([]byte(r.Metadata), &meta))
+		require.Equal(t, tools.BashNoOutput, meta.Output, "Content alone would read as no output at all")
 	})
 
 	t.Run("error status", func(t *testing.T) {
@@ -203,7 +211,8 @@ func TestTurnResult(t *testing.T) {
 		var meta tools.ViewResponseMetadata
 		require.NoError(t, json.Unmarshal([]byte(r.Metadata), &meta))
 		require.Equal(t, "x.go", meta.FilePath)
-		require.Equal(t, "package x", meta.Content)
+		require.Empty(t, meta.Content, "the output is kept once, in Content")
+		require.Equal(t, "package x", r.Content)
 	})
 
 	t.Run("other tools have no metadata", func(t *testing.T) {
