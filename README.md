@@ -122,9 +122,34 @@ The `Settings` command (`ctrl+,` in terminals that report modified keys) changes
 
 The **Usage** page (or the `Usage` command) sums what the agents used — cost, turns, tokens in, out and cached — per agent, per model, per day and for the costliest sessions, over today, 7 days, 30 days or all time (`←`/`→`). Each finished turn is recorded in Deck's local database as it ends; nothing is sent anywhere, and turns from before this version are not counted.
 
+## Agents and Deck
+
+Every agent Deck runs (Claude, Codex, OpenCode, Antigravity) is connected to Deck through one MCP server, `deck`, that offers just two tools:
+
+- **`search {query?, limit?}`** finds things. It returns the Deck ops that match, the best matching skills (with the agent they come from) and hits from this project's past threads. An empty query lists every op with its arguments.
+- **`execute {op, args?}`** runs one op. An unknown op or bad arguments come back as an error that points at `search`.
+
+Capabilities are ops, not tools, so adding one never adds a tool:
+
+| Op | What it does |
+| --- | --- |
+| `thread.send {to, message}` | Message another agent in the thread, or `all`. It shows in the thread like a `$name` mention. |
+| `thread.read` | The current shared thread. |
+| `history.threads {limit?}` | This project's Deck threads: id, title, updated time, agents. |
+| `history.search {query, limit?}` | Search what was said in this project's threads. |
+| `history.read {thread, last?}` | The last entries of one of them. |
+| `skills.list` | Every skill any agent can see: Deck's builtins, and the project's and your `.claude`, `.agents`, `.codex`, `.opencode`, `.agent`/`.gemini` skill folders. |
+| `skills.read {name, source?, file?}` | A skill's `SKILL.md`, or one file inside its folder, so one agent can follow another's skill. |
+| `skills.used` | Skills the agents in this thread have used (Claude's Skill tool, `SKILL.md` reads). |
+| `git.status`, `git.log {n?}`, `git.diff {path?, staged?}`, `git.show {ref}`, `git.branches` | Read-only git, in the thread's folder. |
+| `gh.prs`, `gh.pr {number}`, `gh.runs {limit?}` | Pull requests, their checks and workflow runs, through your own `gh`. |
+| `deck.jobs` | Commands the agents are running and shells left in the background. |
+
+Everything is read-only except `thread.send`; agents use their own shells for changes. Results are capped at 20 KB. History is shown as text only, without tool output. Anything shaped like a token is redacted. Git and gh run with Deck's clean environment, and Deck never reads their credentials. Claude also gets `approve`, the permission-prompt tool.
+
 ## How it works
 
-Deck never calls a model API and never touches your credentials. It starts your CLIs as child processes and reads their structured output: `claude -p` with stream-json, `codex app-server` over JSON-RPC, and `opencode acp` over the Agent Client Protocol. For OpenCode, Deck sets one thing, in the child's environment only (`OPENCODE_CONFIG_CONTENT`, laid over any you already set): edits, commands and fetches ask first, so Deck's approvals and modes decide them. Your OpenCode config files are never written. Approvals and agent messages travel through a small MCP helper (`deck mcp-approve`) to Deck over loopback, authenticated with a per-run token. Usage counts against your own Claude and Codex plans and whatever providers OpenCode uses.
+Deck never calls a model API and never touches your credentials. It starts your CLIs as child processes and reads their structured output: `claude -p` with stream-json, `codex app-server` over JSON-RPC, and `opencode acp` over the Agent Client Protocol. For OpenCode, Deck sets one thing, in the child's environment only (`OPENCODE_CONFIG_CONTENT`, laid over any you already set): edits, commands and fetches ask first, so Deck's approvals and modes decide them. Your OpenCode config files are never written. Approvals and the agents' `search` and `execute` calls travel through a small MCP helper (`deck mcp-approve`) to Deck over loopback, authenticated with a per-run token. Usage counts against your own Claude and Codex plans and whatever providers OpenCode uses.
 
 In a git work tree, each message you send records the tree as a git snapshot (tracked edits and untracked files that are not ignored). The snapshot is written through a throwaway index, so your branch, index, stash and refs are never touched. Its objects sit unreferenced in `.git` until `git gc` prunes them. Undo writes files the way `git checkout` would. Set `track_changes` to `false` to turn this off. Outside git the changes panel shows what the agents reported, without undo.
 

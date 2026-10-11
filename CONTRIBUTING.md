@@ -41,7 +41,7 @@ Some tests drive the real `claude` and `codex` CLIs. They are skipped unless you
 | --- | --- |
 | `DECK_LIVE=1` | record Claude and Codex sessions |
 | `DECK_LIVE=approve` | the Claude approval path through the broker |
-| `DECK_LIVE=message` | `send_message` against real Claude |
+| `DECK_LIVE=message` | `execute` with `thread.send` against real Claude |
 | `DECK_LIVE=2` | the Codex patch and approval session |
 
 If you record a session, scrub it before you commit it. Recordings are raw CLI output and can include:
