@@ -137,6 +137,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
+	"github.com/dev-dami/deck/internal/deck/attribution"
 	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
@@ -596,6 +597,16 @@ func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Sp
 	s := agent.Spec{
 		ID: a.id, Dir: t.dir, Model: a.model, Effort: a.effort, ResumeID: resume, FirstPrompt: prompt,
 		UserName: cfg.UserName, TellName: cfg.TellAgentsName, Mode: t.getMode(),
+		Attribution: cfg.DeckAttribution,
+	}
+	if cfg.DeckAttribution {
+		// The guard: the agent's git runs Deck's hooks, which put Deck's
+		// trailer in place of any other AI attribution, whatever the model wrote.
+		if env, err := attribution.Env(); err == nil {
+			s.Env = env
+		} else {
+			m.emit(NoticeMsg{ThreadID: t.id, Text: "commit attribution guard is off: " + err.Error()})
+		}
 	}
 	if b := cfg.Binary(a.kind); b != a.kind {
 		s.Binary = b
@@ -1305,6 +1316,7 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	m.emit(EventMsg{Event: ev, ThreadID: t.id})
 	if ev.Kind == agent.KindTurnDone {
 		m.afterTurn(a)
+		m.checkAttribution(a)
 	}
 }
 
@@ -1350,6 +1362,7 @@ type agentState struct {
 	id      string
 	kind    string
 	started time.Time
+	turnAt  time.Time // when the current or last turn began; guarded by mu
 
 	// cursor and holdFrom are guarded by thread.mu: cursor is how much of the
 	// thread log the member has been briefed on; holdFrom maps another member to
@@ -1454,6 +1467,7 @@ func (a *agentState) tryBegin() (prev Status, ok, exited bool) {
 	a.base = StatusWorking
 	a.lastText = ""
 	a.interrupted = false
+	a.turnAt = time.Now()
 	return prev, true, false
 }
 

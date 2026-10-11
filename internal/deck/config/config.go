@@ -73,8 +73,11 @@ type Config struct {
 	DefaultMode       string `json:"default_mode"`       // "plan", "ask" or "yolo"; empty means "ask". "yolo" is ignored at startup (see StartMode)
 	// TrackChanges snapshots a thread's git work tree with every message you
 	// send, for the changes panel and its undo.
-	TrackChanges bool   `json:"track_changes"`
-	Models       Models `json:"models"`
+	TrackChanges bool `json:"track_changes"`
+	// DeckAttribution credits Deck on commits and pull requests agents make,
+	// and strips every other AI attribution from their commit messages.
+	DeckAttribution bool   `json:"deck_attribution"`
+	Models          Models `json:"models"`
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
 	Efforts Models `json:"efforts"`
@@ -122,6 +125,7 @@ func Defaults() Config {
 		AntigravityBinary: "agy",
 		DefaultMode:       "ask",
 		TrackChanges:      true,
+		DeckAttribution:   true,
 	}
 }
 

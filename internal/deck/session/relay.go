@@ -1,14 +1,17 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
+	"github.com/dev-dami/deck/internal/deck/attribution"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -265,4 +268,33 @@ func (m *Manager) Continue(threadID string) error {
 		}
 	}
 	return first
+}
+
+// checkAttribution is the watcher behind the commit hooks: after a turn it
+// rewrites the turn's unpushed commits that still credit another AI (one made
+// with --no-verify skips the hooks), so Deck's attribution holds whatever the
+// model did. It runs off the event loop.
+func (m *Manager) checkAttribution(a *agentState) {
+	if !m.config().DeckAttribution {
+		return
+	}
+	a.mu.Lock()
+	since := a.turnAt
+	a.mu.Unlock()
+	t := a.thread
+	m.wg.Add(1)
+	go func() {
+		defer m.wg.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		n, err := attribution.Fix(ctx, t.dir, since)
+		switch {
+		case errors.Is(err, attribution.ErrPushed):
+			m.emit(NoticeMsg{ThreadID: t.id, Text: a.getName() + " pushed a commit crediting another AI; it is on the remote, so Deck left it"})
+		case err != nil:
+			m.emit(NoticeMsg{ThreadID: t.id, Text: "commit attribution check failed: " + err.Error()})
+		case n > 0:
+			m.emit(NoticeMsg{ThreadID: t.id, Text: fmt.Sprintf("replaced another AI's attribution with Deck's on %s by %s", plural(n, "commit"), a.getName())})
+		}
+	}()
 }
