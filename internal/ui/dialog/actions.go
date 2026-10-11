@@ -147,6 +147,25 @@ type (
 	}
 )
 
+// ActionGitPane focuses the git pane in the sidebar and does what Do says
+// there. The git and GitHub palette entries send it.
+type ActionGitPane struct {
+	Do GitPaneDo
+}
+
+// GitPaneDo is what an [ActionGitPane] does once the pane has focus.
+type GitPaneDo int
+
+// What the git palette entries ask the git pane for.
+const (
+	GitPaneOpen     GitPaneDo = iota // just focus it
+	GitPaneCreatePR                  // the create pull request form
+	GitPanePRs                       // the open pull requests
+	GitPaneChecks                    // the current branch's pull request and checks
+	GitPanePush                      // push the current branch
+	GitPaneCommit                    // the commit message input
+)
+
 // ActionCmd represents an action that carries a [tea.Cmd] to be passed to the
 // Bubble Tea program loop.
 type ActionCmd struct {

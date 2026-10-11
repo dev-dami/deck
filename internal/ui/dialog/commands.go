@@ -522,8 +522,21 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 	commands = append(commands, NewCommandItem(c.com.Styles, "toggle_mouse", mouseLabel, "", ActionToggleMouseSupport{}))
 
-	// Git and GitHub (dialog/git_commands.go).
-	commands = append(commands, gitCommands(c.com.Styles)...)
+	// Git and GitHub: each focuses the git pane in the sidebar.
+	commands = append(commands,
+		NewCommandItem(c.com.Styles, "git", "Git", "ctrl+x", ActionGitPane{Do: GitPaneOpen}).
+			WithAliases("branch", "github"),
+		NewCommandItem(c.com.Styles, "git_create_pr", "Create Pull Request", "", ActionGitPane{Do: GitPaneCreatePR}).
+			WithAliases("pr", "open pr", "github"),
+		NewCommandItem(c.com.Styles, "git_prs", "Pull Requests", "", ActionGitPane{Do: GitPanePRs}).
+			WithAliases("prs", "github"),
+		NewCommandItem(c.com.Styles, "git_checks", "Checks for This Branch", "", ActionGitPane{Do: GitPaneChecks}).
+			WithAliases("ci", "pr checks", "actions"),
+		NewCommandItem(c.com.Styles, "git_push", "Push", "", ActionGitPane{Do: GitPanePush}).
+			WithAliases("git push"),
+		NewCommandItem(c.com.Styles, "git_commit", "Commit All…", "", ActionGitPane{Do: GitPaneCommit}).
+			WithAliases("git commit"),
+	)
 
 	commands = append(
 		commands,

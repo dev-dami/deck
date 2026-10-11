@@ -2158,8 +2158,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if msg.Cmd != nil {
 			cmds = append(cmds, msg.Cmd)
 		}
-	case dialog.GitAction:
-		cmds = append(cmds, m.handleGitAction(msg))
+	case dialog.ActionGitPane:
+		cmds = append(cmds, m.handleGitPaneAction(msg))
 
 	// Session dialog messages.
 	case dialog.ActionSelectSession:
@@ -2730,7 +2730,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			}
 			return true
 		case key.Matches(msg, m.keyMap.Git):
-			cmds = append(cmds, m.openGitPanel(dialog.GitTabBranch, false))
+			cmds = append(cmds, m.openGitPane())
 			return true
 		case key.Matches(msg, m.keyMap.Chat.Details) && m.isCompact:
 			m.detailsOpen = !m.detailsOpen
