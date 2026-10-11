@@ -56,8 +56,9 @@ fi
 case "$tag" in v*) ;; *) tag="v$tag" ;; esac
 version="${tag#v}"
 
-archive="deck_${version}_${os}_${arch}.tar.gz"
-base="https://github.com/$REPO/releases/download/$tag"
+# Archive names carry build metadata with a "-" in place of "+".
+archive="deck_$(printf '%s' "$version" | tr '+' '-')_${os}_${arch}.tar.gz"
+base="https://github.com/$REPO/releases/download/$(printf '%s' "$tag" | sed 's/+/%2B/g')"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM

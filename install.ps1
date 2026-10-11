@@ -58,8 +58,9 @@ if (-not $tag) {
 if (-not $tag.StartsWith('v')) { $tag = "v$tag" }
 $version = $tag.TrimStart('v')
 
-$archive = "deck_${version}_windows_${arch}.zip"
-$base = "https://github.com/$repo/releases/download/$tag"
+# Archive names carry build metadata with a "-" in place of "+".
+$archive = "deck_$($version.Replace('+', '-'))_windows_${arch}.zip"
+$base = "https://github.com/$repo/releases/download/$([uri]::EscapeDataString($tag))"
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("deck-install-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $tmp | Out-Null
 
