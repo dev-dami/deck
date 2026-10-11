@@ -47,8 +47,9 @@ function Gh {
 
 $tag = $env:DECK_VERSION
 if (-not $tag) {
+    Write-Host "Finding the latest release of $repo"
     try {
-        $latest = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent' = 'deck-install' } "https://api.github.com/repos/$repo/releases/latest"
+        $latest = Invoke-RestMethod -UseBasicParsing -TimeoutSec 30 -Headers @{ 'User-Agent' = 'deck-install' } "https://api.github.com/repos/$repo/releases/latest"
         $tag = $latest.tag_name
     } catch {
         if (Have-Gh) { $tag = (Gh release view --repo $repo --json tagName -q .tagName) }
@@ -69,8 +70,8 @@ try {
     $zip = Join-Path $tmp $archive
     $sums = Join-Path $tmp 'checksums.txt'
     try {
-        Invoke-WebRequest -UseBasicParsing -Uri "$base/$archive" -OutFile $zip
-        Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.txt" -OutFile $sums
+        Invoke-WebRequest -UseBasicParsing -TimeoutSec 600 -Uri "$base/$archive" -OutFile $zip
+        Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 -Uri "$base/checksums.txt" -OutFile $sums
     } catch {
         if (-not (Have-Gh)) { Fail "could not download $base/$archive (if the repository is private, install gh and run 'gh auth login')" }
         Remove-Item -Force $zip, $sums -ErrorAction SilentlyContinue
