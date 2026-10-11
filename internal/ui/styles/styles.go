@@ -97,7 +97,7 @@ type Styles struct {
 
 	// Header
 	Header struct {
-		Mark              lipgloss.Style // Style for the ◆ deck mark
+		Mark              lipgloss.Style // Accent of the deck mark (the stack and one-cell marks)
 		Diagonals         lipgloss.Style // Style for the rule separators
 		Percentage        lipgloss.Style // Style for context percentage
 		Keystroke         lipgloss.Style // Style for keystroke hints (e.g., "ctrl+d")
@@ -224,15 +224,16 @@ type Styles struct {
 	Logo struct {
 		TaglineColor   color.Color
 		VersionColor   color.Color
-		SmallMark      lipgloss.Style // the ◆ in SmallRender
+		SmallMark      lipgloss.Style // the mark's accent in SmallRender (the stack)
 		SmallName      lipgloss.Style // "deck" in SmallRender
 		SmallDiagonals lipgloss.Style // the rule after it in SmallRender
 		GradCanvas     lipgloss.Style // blank canvas for gradient painting
 
 		// The braille wordmark (package decklogo) runs from MarkLowColor
 		// (faint dots) through MarkColor (the letterforms at rest) to
-		// MarkHighColor (the shimmer). NameColor is "deck" beside the ◆
-		// in its one-line form.
+		// MarkHighColor (the shimmer). MarkLowColor is also the unused
+		// part of the agents' card edges beside it. NameColor is "deck"
+		// beside the small mark in its one-line form.
 		MarkLowColor  color.Color
 		MarkColor     color.Color
 		MarkHighColor color.Color

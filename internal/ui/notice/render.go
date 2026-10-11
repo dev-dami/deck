@@ -21,7 +21,7 @@ func Icon(l Level) string {
 	case Error:
 		return "✕"
 	}
-	return "◆"
+	return "▌"
 }
 
 // Color is a level's colour in the theme.

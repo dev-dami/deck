@@ -16,8 +16,8 @@ func TestTintAndMark(t *testing.T) {
 		{"claude", Hex(Claude), "✻"},
 		{"codex", Hex(Codex), ">_"},
 		{"opencode", Hex(Opencode), "▯"},
-		{"other", Hex(Muted), "◆"},
-		{"", Hex(Muted), "◆"},
+		{"other", Hex(Muted), "▌"},
+		{"", Hex(Muted), "▌"},
 	}
 	for _, c := range cases {
 		if got := Hex(Tint(c.kind)); got != c.tint {

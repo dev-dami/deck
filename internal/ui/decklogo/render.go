@@ -21,8 +21,9 @@ type palEntry struct{ pre, suf string }
 
 // Palette is the colours the wordmark is drawn in. The letterforms run on
 // a ramp from Low (the faintest dots) up to Accent at rest, and on towards
-// High where the shimmer and ripples brighten them. Name is the "deck" of
-// the one-line form, beside a ◆ in Accent.
+// High where the shimmer and ripples brighten them. Low is also the unused
+// part of the card edges, and Accent the stack drawn when there are no
+// agents' edges. Name is the "deck" of the one-line form.
 type Palette struct {
 	Low    color.Color
 	Accent color.Color
@@ -114,7 +115,7 @@ func (m *Model) View() string {
 	case kindNone:
 		m.cache = ""
 	case kindTiny:
-		m.cache = lipgloss.NewStyle().Foreground(m.colors.Accent).Render("◆") + " " +
+		m.cache = SmallMark(m.edges, m.colors.Accent, m.colors.Low) + " " +
 			lipgloss.NewStyle().Foreground(m.colors.Name).Bold(true).Render("deck")
 	default:
 		m.compose()
@@ -129,6 +130,7 @@ func (m *Model) emit() string {
 	pal := m.palette()
 	b := m.buf[:0]
 	for cy := 0; cy < m.rows; cy++ {
+		b = m.appendEdgeRow(b, cy)
 		cur := -1
 		for cx := 0; cx < m.cols; cx++ {
 			c := cy*m.cols + cx

@@ -897,6 +897,9 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.handlePlanHandoff(msg.Payload); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case workspace.LimitsChangedMsg:
+		// An agent's plan limits moved: Deck's mark shows them.
+		m.header.invalidateMark()
 	case busyStateMsg:
 		cmds = append(cmds, m.applyBusyState(msg)...)
 	case promptQueueMsg:
@@ -1063,6 +1066,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			prevHasInProgress := hasInProgressTodo(m.session.Todos)
 			prevPillsHeight := m.pillsAreaHeight()
 			m.session = &msg.Payload
+			m.header.invalidateMark() // the agents' context may have moved
 			if !prevHasInProgress && hasInProgressTodo(m.session.Todos) {
 				m.todoIsSpinning = true
 				cmds = append(cmds, m.todoSpinner.Tick)
@@ -3282,6 +3286,7 @@ func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
 		scr,
 		area,
 		m.session,
+		m.markLevels(),
 		m.isCompact,
 		m.detailsOpen,
 		area.Dx(),

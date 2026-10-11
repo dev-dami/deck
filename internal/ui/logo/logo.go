@@ -26,6 +26,9 @@ type Opts struct {
 	// Mark is the wordmark's colours, usually PaletteFor the active
 	// theme. Unset, the wordmark uses Deck's own Dark or light palette.
 	Mark decklogo.Palette
+	// Edges are the agents' card edges, their usage meters. None draws
+	// the plain stack of cards.
+	Edges []decklogo.Edge
 }
 
 // PaletteFor returns the wordmark colours of a theme.
@@ -50,12 +53,14 @@ func Render(_ lipgloss.Style, version string, compact bool, o Opts) string {
 		h = 4
 		w = min(w, 40)
 	}
-	var mark string
-	if o.Mark.Accent != nil {
-		mark = decklogo.StaticPalette(w, h, o.Mark)
-	} else {
-		mark = decklogo.Static(w, h, o.Dark || o.Width == 0)
+	pal := o.Mark
+	if pal.Accent == nil {
+		pal = decklogo.DefaultPalette(o.Dark || o.Width == 0)
 	}
+	m := decklogo.NewWithPalette(pal)
+	m.SetEdges(o.Edges)
+	m.SetSize(w, h)
+	mark := m.View()
 	meta := lipgloss.NewStyle().Foreground(o.TaglineColor).Render(Tagline)
 	if version != "" {
 		meta += "  " + lipgloss.NewStyle().Foreground(o.VersionColor).Render(version)
@@ -71,10 +76,12 @@ func Render(_ lipgloss.Style, version string, compact bool, o Opts) string {
 	return out
 }
 
-// SmallRender renders the one-line logo, "◆ deck" and a rule to the edge,
-// for small windows and the sidebar.
-func SmallRender(t *styles.Styles, width int, _ Opts) string {
-	title := t.Logo.SmallMark.Render("◆") + " " + t.Logo.SmallName.Render("deck")
+// SmallRender renders the one-line logo, the small mark (a cell per agent's
+// card edge, filled by its usage, as in "▂▅█ deck"), "deck" and a rule to
+// the edge, for small windows and the sidebar.
+func SmallRender(t *styles.Styles, width int, o Opts) string {
+	title := decklogo.SmallMark(o.Edges, t.Logo.SmallMark.GetForeground(), t.Logo.MarkLowColor) +
+		" " + t.Logo.SmallName.Render("deck")
 	if rest := width - lipgloss.Width(title) - 1; rest > 0 {
 		title += " " + t.Logo.SmallDiagonals.Render(strings.Repeat("─", rest))
 	}

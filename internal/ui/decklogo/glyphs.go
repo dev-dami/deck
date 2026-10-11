@@ -66,8 +66,6 @@ const (
 	fullStroke = 3.0
 	fullBowl   = 14 // bowl letter width
 	fullGap    = 3  // between letters
-	fullDiaGap = 6  // diamond to d
-	fullDia    = 9  // diamond width/height
 )
 
 // capsule reports whether (px,py) is within r of the segment a-b.
@@ -104,7 +102,7 @@ func buildFull() *bitmap {
 	th := fullStroke
 
 	// letter origins
-	xd := fullDia + fullDiaGap
+	xd := 0
 	xe := xd + bw + fullGap
 	xc := xe + bw + fullGap
 	xk := xc + bw + fullGap
@@ -112,15 +110,6 @@ func buildFull() *bitmap {
 	total := xk + kw
 
 	b := newBitmap(total, fullH)
-
-	// diamond
-	for y := 0; y < fullDia; y++ {
-		for x := 0; x < fullDia; x++ {
-			if abs(x-4)+abs(y-4) <= 4 {
-				b.set(x, y+9)
-			}
-		}
-	}
 
 	stem := func(ox int, x0 int) {
 		// x0: left x of the stem inside the letter. Rounded top, flat bottom.
@@ -181,16 +170,6 @@ func buildFull() *bitmap {
 }
 
 func buildCompact() *bitmap {
-	diamond := []string{
-		".....",
-		".....",
-		"..#..",
-		".###.",
-		"#####",
-		".###.",
-		"..#..",
-		".....",
-	}
 	d := []string{
 		"....##",
 		"....##",
@@ -231,8 +210,8 @@ func buildCompact() *bitmap {
 		"##.##.",
 		"##..##",
 	}
-	parts := [][]string{diamond, d, e, c, k}
-	gaps := []int{4, 2, 2, 2}
+	parts := [][]string{d, e, c, k}
+	gaps := []int{2, 2, 2}
 	total := 0
 	for i, p := range parts {
 		total += len(p[0])
@@ -256,11 +235,4 @@ func buildCompact() *bitmap {
 		}
 	}
 	return b
-}
-
-func abs(v int) int {
-	if v < 0 {
-		return -v
-	}
-	return v
 }
