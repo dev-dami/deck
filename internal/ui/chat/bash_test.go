@@ -18,7 +18,7 @@ import (
 func TestBashToolMessageItem_CommandAlwaysExpanded(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	tc := message.ToolCall{
 		ID:       "bash1",
 		Name:     "bash",
@@ -50,7 +50,7 @@ func TestBashToolMessageItem_CommandAlwaysExpanded(t *testing.T) {
 func TestBashToolMessageItem_LongCommandNotTruncated(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	longCmd := "echo " + strings.Repeat("a", 200)
 	tc := message.ToolCall{
 		ID:       "bash3",
@@ -75,7 +75,7 @@ func TestBashToolMessageItem_LongCommandNotTruncated(t *testing.T) {
 func TestBashToolMessageItem_OutputDefaultsCollapsed(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	tc := message.ToolCall{
 		ID:       "bash2",
 		Name:     "bash",
@@ -108,7 +108,7 @@ func TestBashToolMessageItem_OutputDefaultsCollapsed(t *testing.T) {
 func TestToolOutputPlainContent_SingleHiddenLineShown(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	var lines []string
 	for i := 1; i <= 11; i++ {
 		lines = append(lines, fmt.Sprintf("line%d", i))

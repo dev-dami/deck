@@ -15,7 +15,7 @@ import (
 )
 
 func newTestQuit() *Quit {
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	return NewQuit(&common.Common{Styles: &sty})
 }
 

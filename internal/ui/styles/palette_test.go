@@ -11,7 +11,7 @@ import (
 
 func TestPaletteFromOpts_RoundTrip(t *testing.T) {
 	t.Parallel()
-	opts := charmtoneOpts()
+	opts := deckDarkOpts()
 	p := PaletteFromOpts(opts)
 
 	require.NotEmpty(t, p.Primary)
@@ -39,7 +39,7 @@ func TestPaletteFromOpts_GruvboxDark(t *testing.T) {
 
 func TestPalette_ToQuickStyleOpts_PartialOverride(t *testing.T) {
 	t.Parallel()
-	base := charmtoneOpts()
+	base := deckDarkOpts()
 	override := Palette{
 		Primary: "#FF0000",
 		BgBase:  "#000000",
@@ -56,7 +56,7 @@ func TestPalette_ToQuickStyleOpts_PartialOverride(t *testing.T) {
 
 func TestPalette_ToQuickStyleOpts_EmptyFallsBackToBase(t *testing.T) {
 	t.Parallel()
-	base := charmtoneOpts()
+	base := deckDarkOpts()
 	empty := Palette{}
 
 	result := empty.ToQuickStyleOpts(base)
@@ -231,7 +231,7 @@ func TestLoadPaletteTheme_BgBaseOverrideDerivesDiffTints(t *testing.T) {
 	// Regression: derived diff backgrounds used to be baked into the
 	// base palette before user overrides merged, so overriding bg_base
 	// on a dark built-in theme kept the built-in theme's dark tints.
-	builtin := quickStyle(charmtoneOpts())
+	builtin := quickStyle(deckDarkOpts())
 	light, err := LoadPaletteTheme("deck", Palette{BgBase: "#ffffff"})
 	require.NoError(t, err)
 
@@ -343,16 +343,15 @@ func TestIsValidColor_ANSI256(t *testing.T) {
 	require.False(t, IsValidColor("-1"))
 }
 
-func TestIsValidColor_CharmtoneNames(t *testing.T) {
+func TestIsValidColor_ToneNames(t *testing.T) {
 	t.Parallel()
-	require.True(t, IsValidColor("Charple"))
-	require.True(t, IsValidColor("charple"))
-	require.True(t, IsValidColor("CHARPLE"))
-	require.True(t, IsValidColor("Dolly"))
-	require.True(t, IsValidColor("Pepper"))
-	require.True(t, IsValidColor("BBQ"))
-	require.True(t, IsValidColor("Ash"))      // alias for Sash
-	require.True(t, IsValidColor("Charcoal")) // alias for Char
+	require.True(t, IsValidColor("Mint"))
+	require.True(t, IsValidColor("mint"))
+	require.True(t, IsValidColor("MINT"))
+	require.True(t, IsValidColor("coral"))
+	require.True(t, IsValidColor("ink"))
+	require.True(t, IsValidColor("amber"))
+	require.False(t, IsValidColor("Charple"))
 	require.False(t, IsValidColor("Notacolor"))
 }
 
@@ -373,12 +372,12 @@ func TestParseColor_Hex(t *testing.T) {
 	require.Empty(t, ParseColor("#xyz"))
 }
 
-func TestParseColor_HexNormalizesToCharmtone(t *testing.T) {
+func TestParseColor_HexNormalizesToTone(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "Charple", ParseColor("#6b50ff"))
-	require.Equal(t, "Charple", ParseColor("#6B50FF"))
-	require.Equal(t, "Pepper", ParseColor("#201f26"))
-	require.Equal(t, "Dolly", ParseColor("#ff60ff"))
+	require.Equal(t, "mint", ParseColor("#5fd7af"))
+	require.Equal(t, "mint", ParseColor("#5FD7AF"))
+	require.Equal(t, "ink", ParseColor("#0e1211"))
+	require.Equal(t, "coral", ParseColor("#f0716a"))
 }
 
 func TestParseColor_ANSI(t *testing.T) {
@@ -390,17 +389,13 @@ func TestParseColor_ANSI(t *testing.T) {
 	require.Empty(t, ParseColor("256"))
 }
 
-func TestParseColor_CharmtoneNames(t *testing.T) {
+func TestParseColor_ToneNames(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "Charple", ParseColor("Charple"))
+	require.Equal(t, "mint", ParseColor("mint"))
 
 	// Case-insensitive.
-	require.Equal(t, ParseColor("charple"), ParseColor("Charple"))
-	require.Equal(t, ParseColor("CHARPLE"), ParseColor("Charple"))
-
-	// Aliases resolve to canonical name.
-	require.Equal(t, "Sash", ParseColor("Ash"))
-	require.Equal(t, "Char", ParseColor("Charcoal"))
+	require.Equal(t, "mint", ParseColor("Mint"))
+	require.Equal(t, "mint", ParseColor("MINT"))
 }
 
 func TestParseColor_Invalid(t *testing.T) {
@@ -420,12 +415,12 @@ func TestPalette_Validate_ANSIColors(t *testing.T) {
 	require.NoError(t, p.Validate())
 }
 
-func TestPalette_Validate_CharmtoneNames(t *testing.T) {
+func TestPalette_Validate_ToneNames(t *testing.T) {
 	t.Parallel()
 	p := Palette{
-		Primary: "Charple",
-		BgBase:  "Pepper",
-		Accent:  "Dolly",
+		Primary: "mint",
+		BgBase:  "ink",
+		Accent:  "coral",
 	}
 	require.NoError(t, p.Validate())
 }
@@ -434,17 +429,17 @@ func TestPalette_Validate_MixedFormats(t *testing.T) {
 	t.Parallel()
 	p := Palette{
 		Primary:   "#ff0000",
-		Secondary: "Charple",
+		Secondary: "teal",
 		Accent:    "100",
 		Keyword:   "#f00",
 	}
 	require.NoError(t, p.Validate())
 }
 
-func TestResolveColor_CharmtoneName(t *testing.T) {
+func TestResolveColor_ToneName(t *testing.T) {
 	t.Parallel()
 	fallback := lipgloss.Color("#000000")
-	result := resolveColor("Charple", fallback)
+	result := resolveColor("mint", fallback)
 	require.NotEqual(t, fallback, result)
 }
 

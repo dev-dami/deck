@@ -18,7 +18,7 @@ func assistantWith(parts ...message.ContentPart) *message.Message {
 func TestFinishBannerIsSetOffFromContent(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 
 	for _, tc := range []struct {
 		name string
@@ -77,7 +77,7 @@ func stripStyle(s string) string {
 func TestCanceledBannerYieldsToToolCalls(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	withTools := assistantWith(
 		message.TextContent{Text: "Now the discriminating test:"},
 		message.ToolCall{ID: "c1", Name: "mcp__prickly__find", Finished: true},

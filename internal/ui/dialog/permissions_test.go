@@ -12,7 +12,7 @@ import (
 
 func newTestPermissions(t *testing.T) *Permissions {
 	t.Helper()
-	s := styles.CharmtonePantera()
+	s := styles.DeckDark()
 	com := &common.Common{Styles: &s}
 	perm := permission.PermissionRequest{
 		ID:         "perm-test",

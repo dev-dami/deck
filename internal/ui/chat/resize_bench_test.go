@@ -52,7 +52,7 @@ func BenchmarkResizeSession(b *testing.B) {
 	}
 	toolResults := BuildToolResultMap(ptrs)
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	var items []list.Item
 	for _, m := range ptrs {
 		for _, it := range ExtractMessageItems(&sty, m, toolResults, "") {

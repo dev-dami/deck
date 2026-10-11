@@ -114,7 +114,7 @@ func TestLoadTheme_OverriddenBuiltinKeepsThemeOverrides(t *testing.T) {
 
 	loaded, err := LoadTheme("deck")
 	require.NoError(t, err)
-	builtin := CharmtonePantera()
+	builtin := DeckDark()
 	require.Equal(t, builtin.Editor.PromptBangIconFocused.GetForeground(), loaded.Editor.PromptBangIconFocused.GetForeground())
 	require.Equal(t, builtin.Messages.ShellPrompt.GetForeground(), loaded.Messages.ShellPrompt.GetForeground())
 }
@@ -239,7 +239,7 @@ func TestLoadPaletteTheme_OverridesOnlyForPureBuiltin(t *testing.T) {
 	// (e.g. the hardcoded Charmtone syntax colors).
 	pure, err := LoadPaletteTheme("deck", Palette{})
 	require.NoError(t, err)
-	builtin := CharmtonePantera()
+	builtin := DeckDark()
 	require.Equal(t, builtin.Markdown.CodeBlock.Chroma.CommentPreproc.Color,
 		pure.Markdown.CodeBlock.Chroma.CommentPreproc.Color)
 

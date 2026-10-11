@@ -20,7 +20,7 @@ func TestParseAddressing(t *testing.T) {
 	}{
 		{"no mention", "hello there", duo, Addressing{Body: "hello there"}},
 		{"member", "$claude hello", duo, Addressing{Members: []string{"claude"}, Body: "hello"}},
-		{"case-insensitive", "@Codex hello", duo, Addressing{Members: []string{"codex"}, Body: "hello"}},
+		{"case-insensitive", "$Codex hello", duo, Addressing{Members: []string{"codex"}, Body: "hello"}},
 		{"mention only", "$claude", duo, Addressing{Members: []string{"claude"}}},
 		{"colon form", "$codex: review it", duo, Addressing{Members: []string{"codex"}, Body: "review it"}},
 		{"kind without member adds one", "$codex review this", solo, Addressing{NewKinds: []string{"codex"}, Body: "review this"}},
@@ -37,8 +37,15 @@ func TestParseAddressing(t *testing.T) {
 		{"mid-clause is plain text", "please ask $codex to look", duo, Addressing{Body: "please ask $codex to look"}},
 		{"email is plain text", "mail me$claude.com", duo, Addressing{Body: "mail me$claude.com"}},
 		{"file name is plain text", "open $codex.go", duo, Addressing{Body: "open $codex.go"}},
-		{"unknown", "@foo hi", duo, Addressing{Unknown: []string{"foo"}, Body: "hi"}},
-		{"renamed by name", "@auth hi", renamed, Addressing{Members: []string{"claude2"}, Body: "hi"}},
+		{"unknown name is plain text", "$foo hi", duo, Addressing{Body: "$foo hi"}},
+		{"shell variable is plain text", "$HOME is wrong", duo, Addressing{Body: "$HOME is wrong"}},
+		{"shell variable mid-clause", "echo $PATH", duo, Addressing{Body: "echo $PATH"}},
+		{"inside a word is plain text", "foo$bar", duo, Addressing{Body: "foo$bar"}},
+		{"at sign is not a mention", "@codex review this", duo, Addressing{Body: "@codex review this"}},
+		{"kind to review", "$codex review this", duo, Addressing{Members: []string{"codex"}, Body: "review this"}},
+		{"unknown name after a member stays in the body", "$claude $HOME is wrong", duo,
+			Addressing{Members: []string{"claude"}, Body: "$HOME is wrong"}},
+		{"renamed by name", "$auth hi", renamed, Addressing{Members: []string{"claude2"}, Body: "hi"}},
 		{"renamed by id", "$claude2 hi", renamed, Addressing{Members: []string{"claude2"}, Body: "hi"}},
 		{"kind resolves to renamed member", "$claude hi", renamed, Addressing{Members: []string{"claude2"}, Body: "hi"}},
 		{"exited member of the kind: add a new one", "$codex hi", gone, Addressing{NewKinds: []string{"codex"}, Body: "hi"}},
@@ -51,6 +58,21 @@ func TestParseAddressing(t *testing.T) {
 				t.Fatalf("ParseAddressing(%q)\n got %+v\nwant %+v", c.text, got, c.want)
 			}
 		})
+	}
+}
+
+func TestTrimSigil(t *testing.T) {
+	cases := map[string]string{
+		"$codex":  "codex",
+		"@codex":  "codex",
+		"  $all ": "all",
+		"codex":   "codex",
+		"":        "",
+	}
+	for in, want := range cases {
+		if got := TrimSigil(in); got != want {
+			t.Errorf("TrimSigil(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

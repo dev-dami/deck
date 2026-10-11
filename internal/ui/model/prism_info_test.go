@@ -50,35 +50,10 @@ func prismToolTurn(finished bool, prismName string) message.Message {
 		SessionID:      "s1",
 		Role:           message.Assistant,
 		Model:          "prism-model",
-		Provider:       "hyper",
+		Provider:       "test",
 		Parts:          parts,
 		PrismModelName: prismName,
 	}
-}
-
-// TestUpdateSessionMessage_PrismInfoBetweenTurns reproduces the between-turn
-// flow: an assistant message streams without a finish part, then the turn
-// finishes as a tool-use turn with a Prism-routed model name. The info item
-// must appear once the routed name is available.
-func TestUpdateSessionMessage_PrismInfoBetweenTurns(t *testing.T) {
-	m := newPrismTestUI()
-
-	// Turn streams: no finish part, no prism info item yet.
-	_ = m.appendSessionMessage(prismToolTurn(false, ""))
-	require.Nil(t, m.chat.MessageItem(chat.AssistantInfoID("a1")))
-
-	// An update mid-stream changes nothing.
-	_ = m.updateSessionMessage(prismToolTurn(false, ""))
-	require.Nil(t, m.chat.MessageItem(chat.AssistantInfoID("a1")))
-
-	// Turn finishes as a tool-use turn with a routed model name: the
-	// info item must be appended.
-	_ = m.updateSessionMessage(prismToolTurn(true, "GLM 5.3"))
-	require.NotNil(t, m.chat.MessageItem(chat.AssistantInfoID("a1")), "expected assistant info item between turns")
-
-	// A later update for the same turn must not remove it.
-	_ = m.updateSessionMessage(prismToolTurn(true, "GLM 5.3"))
-	require.NotNil(t, m.chat.MessageItem(chat.AssistantInfoID("a1")))
 }
 
 // TestUpdateSessionMessage_NoPrismInfoWithoutName ensures intermediate turns

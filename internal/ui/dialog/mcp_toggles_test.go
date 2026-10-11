@@ -10,7 +10,7 @@ import (
 )
 
 func newMCPTogglesForTest(items []MCPToggleItem) *MCPToggles {
-	s := styles.CharmtonePantera()
+	s := styles.DeckDark()
 	com := &common.Common{Styles: &s}
 	return NewMCPToggles(com, items)
 }
