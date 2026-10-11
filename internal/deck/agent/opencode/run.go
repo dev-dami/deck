@@ -125,6 +125,9 @@ func (r *run) handshake(ctx context.Context) error {
 	raw, _ := json.Marshal(map[string]any{"sessionId": res.SessionID, "resumed": r.spec.ResumeID != ""})
 	e := agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindSessionStarted, SessionID: res.SessionID, Text: r.current(optModel), Raw: raw}
 	r.events <- e
+	// OpenCode's ACP reports no plan windows, and getting them some other
+	// way would mean reading its stored credentials.
+	r.events <- agent.UnsupportedLimits(r.spec.ID)
 	return nil
 }
 

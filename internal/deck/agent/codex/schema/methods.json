@@ -4,7 +4,9 @@
   "thread/start",
   "thread/resume",
   "turn/start",
-  "turn/interrupt"
+  "turn/interrupt",
+  "account/rateLimits/read",
+  "account/read"
  ],
  "clientNotifications_used": [
   "initialized"

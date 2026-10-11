@@ -162,6 +162,25 @@ func fakeCodex() {
 					b, _ = json.Marshal(map[string]any{"id": m.ID, "result": map[string]any{"turnId": p.ExpectedTurnID}})
 				}
 				write(b)
+			case m.Method == methodRateLimits:
+				record("rateLimits=" + string(m.Params))
+				b, _ := json.Marshal(map[string]any{"id": m.ID, "result": map[string]any{
+					"accountId": "acct-1",
+					"rateLimits": map[string]any{
+						"limitId":   "codex",
+						"primary":   map[string]any{"usedPercent": 12, "windowDurationMins": 300, "resetsAt": 1760000000},
+						"secondary": map[string]any{"usedPercent": 40},
+						"planType":  nil,
+					},
+				}})
+				write(b)
+			case m.Method == methodAccountRead:
+				record("account/read")
+				b, _ := json.Marshal(map[string]any{"id": m.ID, "result": map[string]any{
+					"account":            map[string]any{"type": "chatgpt", "email": "someone@example.com", "planType": "pro"},
+					"requiresOpenaiAuth": true,
+				}})
+				write(b)
 			case m.Method == methodTurnInterrupt:
 				record("interrupt=" + string(m.Params))
 				b, _ := json.Marshal(map[string]any{"id": m.ID, "result": map[string]any{}})
@@ -462,9 +481,11 @@ func TestAdapterFileChangePermissionsAndUnsupportedRequests(t *testing.T) {
 	}
 
 	mu.Lock()
-	got := make([]agent.Kind, len(*evs))
-	for i, e := range *evs {
-		got[i] = e.Kind
+	var got []agent.Kind
+	for _, e := range *evs {
+		if e.Kind != agent.KindLimits { // the start-up limits read lands whenever it lands
+			got = append(got, e.Kind)
+		}
 	}
 	mu.Unlock()
 	want := []agent.Kind{agent.KindSessionStarted, agent.KindToolCall, agent.KindFileChange, agent.KindToolResult, agent.KindTurnDone}

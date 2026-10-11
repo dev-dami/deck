@@ -26,6 +26,10 @@ const (
 	KindTurnDone       Kind = "turn_done"       // a turn finished; agent is idle
 	KindError          Kind = "error"           // Text holds the message
 	KindExited         Kind = "exited"          // the CLI process ended
+	// KindLimits carries the signed-in account's plan windows (Limits), or why
+	// the CLI reports none. It is about the account, not the thread: it can
+	// arrive at any time, including between turns.
+	KindLimits Kind = "limits"
 )
 
 // ToolStatus is the lifecycle state of a tool call.
@@ -93,6 +97,63 @@ type Usage struct {
 	// Either may be 0 when the CLI does not report it.
 	ContextTokens int
 	ContextWindow int
+	// CacheWriteTokens are input tokens written to the prompt cache, and
+	// ReasoningTokens output tokens spent thinking (counted in OutputTokens
+	// too when the CLI does). 0 when the CLI does not report them.
+	CacheWriteTokens int
+	ReasoningTokens  int
+	// TTFTms is the time to the turn's first token and APIms the time spent
+	// in model requests, and DurationMs the turn's whole time, as the CLI
+	// measured them; 0 when it does not say.
+	TTFTms     int
+	APIms      int
+	DurationMs int
+}
+
+// Why a CLI's Limits carry no windows.
+const (
+	// LimitsUnsupported: the CLI has no way to report plan limits that Deck
+	// may use (reading its credentials is off-limits).
+	LimitsUnsupported = "unsupported"
+	// LimitsProbeFailed: asking the CLI failed; windows may still arrive later
+	// with the CLI's own events.
+	LimitsProbeFailed = "probe_failed"
+)
+
+// Kinds of plan window.
+const (
+	WindowSession = "session" // a rolling few-hour window
+	WindowWeekly  = "weekly"
+	WindowMonthly = "monthly"
+	WindowOther   = "other"
+)
+
+// Limits are the signed-in account's plan windows as a CLI reports them. Every
+// KindLimits event carries the whole current picture, not a change. Deck
+// never reads the CLI's credentials to get them, and no account email is
+// ever part of them.
+type Limits struct {
+	Plan string // the plan's name as the CLI says it ("max", "pro", ...); "" when not known
+	// Unavailable is "" when the CLI reports limits (Windows may still be
+	// empty until it does), else LimitsUnsupported or LimitsProbeFailed.
+	Unavailable string
+	Windows     []LimitWindow
+}
+
+// LimitWindow is one usage window of a plan.
+type LimitWindow struct {
+	ID           string    // stable per CLI, e.g. "five_hour", "seven_day", "primary"
+	Kind         string    // WindowSession | WindowWeekly | WindowMonthly | WindowOther
+	Label        string    // short display name, e.g. "5h", "Weekly"
+	UsedPct      float64   // 0-100
+	ResetsAt     time.Time // zero when not known
+	DurationMins int       // 0 when not known
+}
+
+// UnsupportedLimits is the KindLimits event of a CLI that reports no plan
+// limits.
+func UnsupportedLimits(agentID string) Event {
+	return Event{AgentID: agentID, Time: time.Now(), Kind: KindLimits, Limits: &Limits{Unavailable: LimitsUnsupported}}
 }
 
 // Event is the normalized event every adapter emits.
@@ -105,6 +166,7 @@ type Event struct {
 	Tool    *Tool
 	Diff    *FileDiff
 	Usage   *Usage
+	Limits  *Limits
 	// SessionID is the CLI's own session/thread id (KindSessionStarted).
 	SessionID string
 	// Raw is the original protocol line, kept so nothing is lost.

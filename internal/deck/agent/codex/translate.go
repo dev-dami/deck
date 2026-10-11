@@ -34,6 +34,10 @@ type translator struct {
 	lastTotal tokenBreakdown
 	baseTotal tokenBreakdown
 
+	// limits is the plan's windows (limits.go). Unlike the rest of the
+	// translator it is safe for concurrent use.
+	limits *limitState
+
 	// onTurn is called with the active turn id ("" when none).
 	onTurn func(id string)
 	// onTurnDone is called with the id of each turn that completed.
@@ -46,6 +50,7 @@ func newTranslator(agentID, cwd string) *translator {
 		cwd:     cwd,
 		now:     time.Now,
 		items:   map[string]*itemState{},
+		limits:  &limitState{},
 	}
 }
 
@@ -169,9 +174,11 @@ func (t *translator) notification(method string, params, raw json.RawMessage) []
 		t.lastTotal = tot
 		e := t.ev(agent.KindUsage, raw)
 		e.Usage = &agent.Usage{
-			InputTokens:  nonNeg(tot.InputTokens - t.baseTotal.InputTokens),
-			OutputTokens: nonNeg(tot.OutputTokens - t.baseTotal.OutputTokens),
-			CachedTokens: nonNeg(tot.CachedInputTokens - t.baseTotal.CachedInputTokens),
+			InputTokens:      nonNeg(tot.InputTokens - t.baseTotal.InputTokens),
+			OutputTokens:     nonNeg(tot.OutputTokens - t.baseTotal.OutputTokens),
+			CachedTokens:     nonNeg(tot.CachedInputTokens - t.baseTotal.CachedInputTokens),
+			CacheWriteTokens: nonNeg(tot.CacheWriteInputTokens - t.baseTotal.CacheWriteInputTokens),
+			ReasoningTokens:  nonNeg(tot.ReasoningOutputTokens - t.baseTotal.ReasoningOutputTokens),
 		}
 		// Context fullness is the latest model request (`last`), not the
 		// thread's cumulative `total`. Like codex itself, reasoning tokens are
@@ -186,6 +193,13 @@ func (t *translator) notification(method string, params, raw json.RawMessage) []
 			e.Usage.ContextWindow = nonNeg(*w)
 		}
 		return []agent.Event{e}
+
+	case noteRateLimits:
+		var n rateLimitsNotification
+		if json.Unmarshal(params, &n) != nil || !t.limits.merge(n.RateLimits) {
+			return nil
+		}
+		return []agent.Event{t.limitsEvent()}
 
 	case noteError:
 		var n errorNotification

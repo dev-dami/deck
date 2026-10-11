@@ -124,7 +124,9 @@ func (r *run) handshake(ctx context.Context, opts Options) error {
 
 	raw, _ := json.Marshal(map[string]any{"threadId": resp.Thread.ID, "resumed": r.spec.ResumeID != ""})
 	r.events <- r.tr.sessionStarted(resp.Thread.ID, resp.Model, raw)
+	r.pushers.Add(1) // before the loop, which waits for pushers when it ends
 	go r.loop()
+	go r.probeLimits()
 	return nil
 }
 

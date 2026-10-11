@@ -176,6 +176,16 @@ func fakeClaude() {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
 	for sc.Scan() {
+		if strings.Contains(sc.Text(), `"control_request"`) {
+			// Deck's get_usage probe: the fake has no answer.
+			if f := os.Getenv("DECK_FAKE_PROBE_FILE"); f != "" {
+				if fh, err := os.OpenFile(f, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+					fh.WriteString(sc.Text() + "\n")
+					fh.Close()
+				}
+			}
+			continue
+		}
 		if f := os.Getenv("DECK_FAKE_STDIN_FILE"); f != "" {
 			// record each stdin line (one per user message), across restarts
 			if fh, err := os.OpenFile(f, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
@@ -371,6 +381,15 @@ func TestAdapterNoNameWhenNotAllowed(t *testing.T) {
 
 func TestAdapterInterruptRestartsWithResume(t *testing.T) {
 	a, spec, argsFile := newFake(t)
+	probes := filepath.Join(t.TempDir(), "probes.jsonl")
+	spec.Env["DECK_FAKE_PROBE_FILE"] = probes
+	defer func() {
+		// One get_usage probe per run, not per process.
+		b, _ := os.ReadFile(probes)
+		if n := strings.Count(string(b), "\n"); n != 1 || !strings.Contains(string(b), `"get_usage"`) {
+			t.Errorf("probes sent: %q", b)
+		}
+	}()
 	r, err := a.Start(context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)

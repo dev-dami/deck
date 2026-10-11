@@ -14,6 +14,8 @@ const (
 	methodTurnInterrupt = "turn/interrupt"
 	methodTurnSteer     = "turn/steer"
 	methodModelList     = "model/list"
+	methodRateLimits    = "account/rateLimits/read"
+	methodAccountRead   = "account/read"
 
 	notifyInitialized = "initialized"
 )
@@ -30,6 +32,7 @@ const (
 	noteCommandOutput    = "item/commandExecution/outputDelta"
 	noteFilePatchUpdated = "item/fileChange/patchUpdated"
 	noteTokenUsage       = "thread/tokenUsage/updated"
+	noteRateLimits       = "account/rateLimits/updated"
 	noteError            = "error"
 )
 
@@ -259,10 +262,56 @@ type patchUpdatedNotification struct {
 
 type tokenBreakdown struct {
 	CachedInputTokens     int `json:"cachedInputTokens"`
+	CacheWriteInputTokens int `json:"cacheWriteInputTokens"` // newer servers only
 	InputTokens           int `json:"inputTokens"`
 	OutputTokens          int `json:"outputTokens"`
 	ReasoningOutputTokens int `json:"reasoningOutputTokens"`
 	TotalTokens           int `json:"totalTokens"`
+}
+
+// rateLimitWindow is RateLimitWindow: resetsAt is epoch seconds.
+type rateLimitWindow struct {
+	UsedPercent        float64 `json:"usedPercent"`
+	WindowDurationMins *int    `json:"windowDurationMins"`
+	ResetsAt           *int64  `json:"resetsAt"`
+}
+
+// rateLimitSnapshot is RateLimitSnapshot (subset). In an
+// account/rateLimits/updated notification it is sparse: a missing or null
+// field means "unchanged", not "gone".
+type rateLimitSnapshot struct {
+	LimitID   *string          `json:"limitId"`
+	PlanType  *string          `json:"planType"`
+	Primary   *rateLimitWindow `json:"primary"`
+	Secondary *rateLimitWindow `json:"secondary"`
+}
+
+// rateLimitsNotification is AccountRateLimitsUpdatedNotification.
+type rateLimitsNotification struct {
+	RateLimits rateLimitSnapshot `json:"rateLimits"`
+}
+
+// rateLimitsParams is GetAccountRateLimitsParams.
+type rateLimitsParams struct {
+	ExcludeResetCreditDetails bool `json:"excludeResetCreditDetails"`
+}
+
+// rateLimitsResponse is GetAccountRateLimitsResponse (subset; the account id
+// it may carry is not read).
+type rateLimitsResponse struct {
+	RateLimits          rateLimitSnapshot            `json:"rateLimits"`
+	RateLimitsByLimitID map[string]rateLimitSnapshot `json:"rateLimitsByLimitId"`
+}
+
+// accountParams is GetAccountParams: no token refresh.
+type accountParams struct{}
+
+// accountResponse is GetAccountResponse, reduced to the plan: the account's
+// email is deliberately not decoded.
+type accountResponse struct {
+	Account *struct {
+		PlanType string `json:"planType"`
+	} `json:"account"`
 }
 
 type tokenUsageNotification struct {
