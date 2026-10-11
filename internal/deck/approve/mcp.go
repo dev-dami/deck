@@ -2,12 +2,15 @@ package approve
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
@@ -61,10 +64,37 @@ func TokenFromEnv() string { return os.Getenv(TokenEnv) }
 // stdin/stdout. It exposes Deck's two tools, "search" and "execute", plus
 // "approve" (permission prompts) when approveTool is set; every call is
 // forwarded to the broker at addr.
+//
+// Each tools/call runs on its own goroutine, so a long execute (up to a
+// minute) never holds up an approval behind it; replies are written whole,
+// one at a time, and carry their request's id. A call the client cancels
+// (notifications/cancelled) stops waiting for Deck. MCPServe returns once
+// stdin ends and every call has been answered.
 func MCPServe(stdin io.Reader, stdout io.Writer, addr, token, agentID string, approveTool bool) error {
-	r := bufio.NewReaderSize(stdin, 4<<20)
+	// ReadBytes grows past the buffer for a long line (a Write's content).
+	r := bufio.NewReaderSize(stdin, 64<<10)
 	enc := json.NewEncoder(stdout)
-	write := func(v any) error { return enc.Encode(v) }
+	var (
+		wmu  sync.Mutex
+		werr error
+		wg   sync.WaitGroup
+	)
+	write := func(v any) error {
+		wmu.Lock()
+		defer wmu.Unlock()
+		if werr == nil {
+			werr = enc.Encode(v)
+		}
+		return werr
+	}
+	failed := func() error {
+		wmu.Lock()
+		defer wmu.Unlock()
+		return werr
+	}
+	var cmu sync.Mutex
+	calls := map[string]context.CancelFunc{} // in-flight tools/call by id
+	defer wg.Wait()
 
 	for {
 		line, err := r.ReadBytes('\n')
@@ -72,21 +102,55 @@ func MCPServe(stdin io.Reader, stdout io.Writer, addr, token, agentID string, ap
 			var req rpcRequest
 			if jerr := json.Unmarshal(line, &req); jerr == nil && req.Method != "" {
 				isNote := len(req.ID) == 0
-				if werr := mcpDispatch(req, isNote, write, addr, token, agentID, approveTool); werr != nil {
-					return werr
+				switch {
+				case req.Method == "tools/call" && !isNote:
+					ctx, cancel := context.WithCancel(context.Background())
+					key := string(bytes.TrimSpace(req.ID))
+					cmu.Lock()
+					calls[key] = cancel
+					cmu.Unlock()
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						defer func() {
+							cmu.Lock()
+							delete(calls, key)
+							cmu.Unlock()
+							cancel()
+						}()
+						_ = mcpDispatch(ctx, req, false, write, addr, token, agentID, approveTool)
+					}()
+				case req.Method == "notifications/cancelled":
+					var p struct {
+						RequestID json.RawMessage `json:"requestId"`
+					}
+					_ = json.Unmarshal(req.Params, &p)
+					cmu.Lock()
+					if cancel := calls[string(bytes.TrimSpace(p.RequestID))]; cancel != nil {
+						cancel()
+					}
+					cmu.Unlock()
+				default:
+					if werr := mcpDispatch(context.Background(), req, isNote, write, addr, token, agentID, approveTool); werr != nil {
+						return werr
+					}
 				}
 			}
 		}
+		if werr := failed(); werr != nil {
+			return werr
+		}
 		if err != nil {
 			if err == io.EOF {
-				return nil
+				wg.Wait()
+				return failed()
 			}
 			return err
 		}
 	}
 }
 
-func mcpDispatch(req rpcRequest, isNote bool, write func(any) error, addr, token, agentID string, approveTool bool) error {
+func mcpDispatch(ctx context.Context, req rpcRequest, isNote bool, write func(any) error, addr, token, agentID string, approveTool bool) error {
 	reply := func(result any) error {
 		if isNote {
 			return nil
@@ -141,14 +205,14 @@ func mcpDispatch(req rpcRequest, isNote bool, write func(any) error, addr, token
 				ToolUseID string          `json:"tool_use_id"`
 			}
 			_ = json.Unmarshal(p.Arguments, &a)
-			decision := askBroker(addr, token, agentID, a.ToolUseID, a.ToolName, a.Input)
+			decision := askBroker(ctx, addr, token, agentID, a.ToolUseID, a.ToolName, a.Input)
 			return textResult(decision, false)
 		case p.Name == MCPToolSearch:
 			args := p.Arguments
 			if len(args) == 0 || string(args) == "null" {
 				args = json.RawMessage(`{}`)
 			}
-			text, isErr := askHub(addr, wireRequest{
+			text, isErr := askHub(ctx, addr, wireRequest{
 				Token: token, Kind: kindExec, AgentID: agentID, RequestID: newRequestID(),
 				Op: opSearch, Args: args,
 			}, execTimeout+15*time.Second)
@@ -162,7 +226,7 @@ func mcpDispatch(req rpcRequest, isNote bool, write func(any) error, addr, token
 			if in.Op == agent.OpThreadSend {
 				wait = messageTimeout + 15*time.Second
 			}
-			text, isErr := askHub(addr, wireRequest{
+			text, isErr := askHub(ctx, addr, wireRequest{
 				Token: token, Kind: kindExec, AgentID: agentID, RequestID: newRequestID(),
 				Op: in.Op, Args: in.Args,
 			}, wait)
@@ -177,18 +241,30 @@ func mcpDispatch(req rpcRequest, isNote bool, write func(any) error, addr, token
 	}
 }
 
+// dial connects to the broker; the connection is closed when ctx ends (the
+// call was cancelled), which tells the broker to stop waiting for it.
+func dial(ctx context.Context, addr string) (net.Conn, func(), error) {
+	d := net.Dialer{Timeout: 5 * time.Second}
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, nil, err
+	}
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	return conn, func() { stop(); conn.Close() }, nil
+}
+
 // askBroker forwards one request and returns the decision JSON string. On any
 // failure it returns a deny decision so the agent keeps working.
-func askBroker(addr, token, agentID, requestID, toolName string, input json.RawMessage) string {
+func askBroker(ctx context.Context, addr, token, agentID, requestID, toolName string, input json.RawMessage) string {
 	deny := func(msg string) string {
 		b, _ := json.Marshal(wireResponse{Behavior: "deny", Message: msg})
 		return string(b)
 	}
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	conn, done, err := dial(ctx, addr)
 	if err != nil {
 		return deny("Deck approval broker unreachable")
 	}
-	defer conn.Close()
+	defer done()
 	cwd, _ := os.Getwd()
 	if len(input) == 0 {
 		input = json.RawMessage(`{}`)
@@ -200,8 +276,11 @@ func askBroker(addr, token, agentID, requestID, toolName string, input json.RawM
 	if _, err := conn.Write(append(payload, '\n')); err != nil {
 		return deny("Deck approval broker write failed")
 	}
-	line, err := bufio.NewReaderSize(conn, 4<<20).ReadBytes('\n')
+	line, err := bufio.NewReader(conn).ReadBytes('\n')
 	if err != nil {
+		if ctx.Err() != nil {
+			return deny("the approval request was cancelled")
+		}
 		return deny("Deck approval broker closed the connection")
 	}
 	var w wireResponse
@@ -269,19 +348,22 @@ func newRequestID() string {
 
 // askHub forwards an exec request and returns the result text. On any
 // failure it returns an error result so the agent keeps working.
-func askHub(addr string, req wireRequest, wait time.Duration) (text string, isErr bool) {
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+func askHub(ctx context.Context, addr string, req wireRequest, wait time.Duration) (text string, isErr bool) {
+	conn, done, err := dial(ctx, addr)
 	if err != nil {
 		return "Deck is unreachable", true
 	}
-	defer conn.Close()
+	defer done()
 	payload, _ := json.Marshal(req)
 	if _, err := conn.Write(append(payload, '\n')); err != nil {
 		return "Deck is unreachable", true
 	}
 	conn.SetReadDeadline(time.Now().Add(wait))
-	line, err := bufio.NewReaderSize(conn, 4<<20).ReadBytes('\n')
+	line, err := bufio.NewReader(conn).ReadBytes('\n')
 	if err != nil {
+		if ctx.Err() != nil {
+			return "cancelled", true
+		}
 		return "Deck did not answer", true
 	}
 	var w wireReply

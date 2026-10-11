@@ -29,12 +29,20 @@ import (
 // OpSearch is the op name the search tool travels under.
 const OpSearch = "search"
 
+// OpSkillsUsed is the one op that reads [Env.Tools]; callers can skip
+// gathering the thread's tool calls for every other op.
+const OpSkillsUsed = "skills.used"
+
 // Limits.
 const (
 	// Timeout bounds one op.
 	Timeout = 55 * time.Second
 	// MaxOutput is the most text one call returns.
 	MaxOutput = 20 << 10
+	// capSlack is how much text past MaxOutput is kept (and redacted) before
+	// the cut: enough that a secret straddling the end of what is kept can
+	// never reach the part that is shown.
+	capSlack = 64 << 10
 )
 
 // Store is the part of the thread store history ops read.
@@ -70,6 +78,10 @@ type Env struct {
 	// Activity reports the commands Deck's agents are running; nil when
 	// unavailable.
 	Activity func() string
+
+	// dropped counts output bytes a command wrote past what was kept in
+	// memory, so the truncation note still gives the full size.
+	dropped int64
 }
 
 func (e *Env) runner() gh.Runner {
@@ -150,7 +162,7 @@ func init() {
 			run: opSkillsList},
 		{Name: "skills.read", Desc: "Read a skill's SKILL.md, or one file inside that skill's folder, so you can follow it whichever agent owns it.",
 			Args: []Arg{{Name: "name", Type: tString, Required: true}, {Name: "source", Type: tString, Desc: "e.g. claude-user, when names clash"}, {Name: "file", Type: tString, Desc: "path inside the skill folder"}}, run: opSkillsRead},
-		{Name: "skills.used", Desc: "Skills the agents in this thread have used so far (Skill tool calls, SKILL.md reads), so you can pick them up.",
+		{Name: OpSkillsUsed, Desc: "Skills the agents in this thread have used so far (Skill tool calls, SKILL.md reads), so you can pick them up.",
 			run: opSkillsUsed},
 		{Name: "git.status", Desc: "git status of the thread's work tree: branch, upstream, changed files.", run: opGitStatus},
 		{Name: "git.log", Desc: "Recent git commits (default 20).", Args: []Arg{{Name: "n", Type: tInt}}, run: opGitLog},
@@ -304,22 +316,41 @@ func Execute(ctx context.Context, env Env, op string, raw json.RawMessage) (text
 		if ctx.Err() != nil {
 			msg = o.Name + " timed out"
 		}
-		return Cap(Redact(strings.TrimSpace(out+"\n"+msg)), MaxOutput), true
+		return capOut(strings.TrimSpace(out+"\n"+msg), env.dropped), true
 	}
 	if strings.TrimSpace(out) == "" {
 		out = "(nothing)"
 	}
-	return Cap(Redact(out), MaxOutput), false
+	return capOut(out, env.dropped), false
+}
+
+// capOut is Cap(Redact(s), MaxOutput) without redacting text that can never
+// be shown: only the first MaxOutput+capSlack bytes are redacted. dropped is
+// output that never reached s, counted in the note's total.
+func capOut(s string, dropped int64) string {
+	if lim := MaxOutput + capSlack; len(s) > lim {
+		cut := lim
+		for cut > 0 && (s[cut]&0xC0) == 0x80 {
+			cut--
+		}
+		dropped += int64(len(s) - cut)
+		s = s[:cut]
+	}
+	s = Redact(s)
+	return capTotal(s, MaxOutput, int64(len(s))+dropped)
 }
 
 // Cap trims s to at most n bytes (on a rune boundary) with a note.
-func Cap(s string, n int) string {
-	if len(s) <= n {
+func Cap(s string, n int) string { return capTotal(s, n, int64(len(s))) }
+
+// capTotal is Cap for an s that is the head of total bytes of output.
+func capTotal(s string, n int, total int64) string {
+	if total <= int64(n) && len(s) <= n {
 		return s
 	}
-	cut := n
+	cut := min(n, len(s))
 	for cut > 0 && cut < len(s) && (s[cut]&0xC0) == 0x80 {
 		cut--
 	}
-	return s[:cut] + fmt.Sprintf("\n[... output truncated at %d KB of %d KB; narrow the request ...]", n>>10, (len(s)+1023)>>10)
+	return s[:cut] + fmt.Sprintf("\n[... output truncated at %d KB of %d KB; narrow the request ...]", n>>10, (total+1023)>>10)
 }

@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/hub"
@@ -36,13 +37,18 @@ func (m *Manager) execOp(agentID, op string, args json.RawMessage) (string, bool
 	if t.worktree != nil && t.worktree.Main != "" {
 		env.Roots = append(env.Roots, t.worktree.Main)
 	}
-	for _, e := range t.log {
-		if e.Tool == nil || e.Kind != agent.KindToolCall {
-			continue
+	// Only skills.used reads the thread's tool calls; gathering them for every
+	// op would walk the whole log under the thread's lock.
+	if strings.TrimSpace(op) == hub.OpSkillsUsed {
+		for i := range t.log {
+			e := &t.log[i]
+			if e.Tool == nil || e.Kind != agent.KindToolCall {
+				continue
+			}
+			env.Tools = append(env.Tools, hub.ToolUse{
+				Agent: t.name(e.AgentID), Name: e.Tool.Name, Title: e.Tool.Title, Input: e.Tool.Input,
+			})
 		}
-		env.Tools = append(env.Tools, hub.ToolUse{
-			Agent: t.name(e.AgentID), Name: e.Tool.Name, Title: e.Tool.Title, Input: e.Tool.Input,
-		})
 	}
 	t.mu.Unlock()
 

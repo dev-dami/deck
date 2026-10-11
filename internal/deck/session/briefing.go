@@ -40,7 +40,10 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 	cfg := m.config()
 	var out []line
 	hold := map[string]int{}
-	edited := t.editedTexts()
+	// The edits of the user messages in range, read from the first of them on
+	// (a briefing covers the end of a long log).
+	var edited map[string]string
+	editsRead := false
 
 	type acc struct {
 		files, cmds, edits []string
@@ -123,6 +126,9 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				continue // cancelled, or already delivered as a steer
 			}
 			raw := strings.TrimSpace(e.Text)
+			if !editsRead {
+				edited, editsRead = t.editedFrom(i), true
+			}
 			if txt, ok := edited[e.ID]; ok {
 				raw = strings.TrimSpace(txt)
 			}
@@ -331,10 +337,15 @@ func editBody(old, new string) string {
 }
 
 // editedTexts maps a user entry id to its latest edited text. t.mu is held.
-func (t *thread) editedTexts() map[string]string {
+func (t *thread) editedTexts() map[string]string { return t.editedFrom(0) }
+
+// editedFrom is editedTexts for the user entries at log index from or later.
+// An edit is always logged after the message it edits, so only the log from
+// there on is read. t.mu is held.
+func (t *thread) editedFrom(from int) map[string]string {
 	var out map[string]string
-	for _, e := range t.log {
-		if e.Type == store.EntryEdit {
+	for i := min(max(from, 0), len(t.log)); i < len(t.log); i++ {
+		if e := &t.log[i]; e.Type == store.EntryEdit {
 			if out == nil {
 				out = map[string]string{}
 			}
@@ -454,6 +465,9 @@ func contains(list []string, v string) bool {
 }
 
 func clip(s string, n int) string {
+	if len(s) <= n { // no more runes than bytes
+		return s
+	}
 	r := []rune(s)
 	if len(r) <= n {
 		return s
@@ -462,6 +476,9 @@ func clip(s string, n int) string {
 }
 
 func tail(s string, n int) string {
+	if len(s) <= n { // no more runes than bytes
+		return s
+	}
 	r := []rune(s)
 	if len(r) <= n {
 		return s

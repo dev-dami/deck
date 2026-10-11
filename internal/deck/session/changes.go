@@ -121,24 +121,29 @@ func (m *Manager) checkpoint(t *thread, entryID string) {
 // checkpointsLocked lists the thread's user messages oldest first, with the
 // index of each in the log and its snapshot. t.mu is held.
 func (t *thread) checkpointsLocked() (cps []Checkpoint, idx []int, snaps []string) {
-	edited := t.editedTexts()
+	// One pass: an edit is always logged after the message it edits, so the
+	// last edit seen for a checkpoint is its latest text.
 	at := map[string]int{}
-	for i, e := range t.log {
+	for i := range t.log {
+		e := &t.log[i]
 		switch {
 		case e.Type == store.EntryUser && !e.Steer:
-			text := e.Text
-			if s, ok := edited[e.ID]; ok {
-				text = s
-			}
 			at[e.ID] = len(cps)
-			cps = append(cps, Checkpoint{EntryID: e.ID, Text: oneLine(text), Time: e.Time})
+			cps = append(cps, Checkpoint{EntryID: e.ID, Text: e.Text, Time: e.Time})
 			idx = append(idx, i)
 			snaps = append(snaps, "")
+		case e.Type == store.EntryEdit:
+			if j, ok := at[e.Ref]; ok {
+				cps[j].Text = e.Text
+			}
 		case e.Type == store.EntrySnap:
 			if j, ok := at[e.Ref]; ok {
 				snaps[j] = e.Snap
 			}
 		}
+	}
+	for i := range cps {
+		cps[i].Text = oneLine(cps[i].Text)
 	}
 	return cps, idx, snaps
 }
@@ -223,7 +228,9 @@ func (m *Manager) Changes(ctx context.Context, threadID, since string) (ChangeSe
 func (t *thread) touchedLocked(from int, root string) map[string][]string {
 	out := map[string][]string{}
 	root = realPath(root)
-	for _, e := range t.log[from:] {
+	relOf := relMemo(root, t.dir)
+	for i := from; i < len(t.log); i++ {
+		e := &t.log[i]
 		if e.Type != store.EntryEvent || e.Kind != agent.KindFileChange || e.Diff == nil || e.AgentID == "" {
 			continue
 		}
@@ -231,7 +238,7 @@ func (t *thread) touchedLocked(from int, root string) map[string][]string {
 			if p == "" {
 				continue
 			}
-			rel, ok := relTo(root, t.dir, p)
+			rel, ok := relOf(p)
 			if !ok {
 				continue
 			}
@@ -248,14 +255,15 @@ func (t *thread) touchedLocked(from int, root string) map[string][]string {
 func (t *thread) reportedLocked(from int) []ChangedFile {
 	var out []ChangedFile
 	at := map[string]int{}
-	base := realPath(t.dir)
-	for _, e := range t.log[from:] {
+	relOf := relMemo(realPath(t.dir), t.dir)
+	for i := from; i < len(t.log); i++ {
+		e := &t.log[i]
 		if e.Type != store.EntryEvent || e.Kind != agent.KindFileChange || e.Diff == nil {
 			continue
 		}
 		d := *e.Diff
 		path := d.Path
-		if rel, ok := relTo(base, t.dir, path); ok {
+		if rel, ok := relOf(path); ok {
 			path = rel
 		}
 		k := pathKey(path)
@@ -411,6 +419,25 @@ func relTo(root, dir, p string) (string, bool) {
 		return "", false
 	}
 	return filepath.ToSlash(rel), true
+}
+
+// relMemo is relTo(root, dir, p) remembering each path's answer: resolving a
+// path costs a file-system lookup per component, and an agent reports the
+// same few files over and over.
+func relMemo(root, dir string) func(p string) (string, bool) {
+	type res struct {
+		rel string
+		ok  bool
+	}
+	memo := map[string]res{}
+	return func(p string) (string, bool) {
+		r, seen := memo[p]
+		if !seen {
+			r.rel, r.ok = relTo(root, dir, p)
+			memo[p] = r
+		}
+		return r.rel, r.ok
+	}
 }
 
 // realPath resolves symlinks (and on Windows short 8.3 names) so that a path an
