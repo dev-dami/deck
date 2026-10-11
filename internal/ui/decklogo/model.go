@@ -107,7 +107,7 @@ type particle struct {
 
 // Model is the logo state. Use New.
 type Model struct {
-	dark bool
+	colors Palette
 
 	// Available area and chosen layout.
 	aw, ah     int
@@ -150,20 +150,32 @@ type Model struct {
 	cache        string
 	buf          []byte
 
-	pal     []palEntry
-	palDark bool
+	pal []palEntry
 }
 
 // New returns a logo in its static, finished state. Call Start to play the
 // intro.
 func New(dark bool) *Model {
-	return &Model{dark: dark, hoverX: -1, hoverY: -1, dirty: true}
+	return NewWithPalette(DefaultPalette(dark))
 }
 
-// SetDark switches between the dark and light palette.
+// NewWithPalette returns a logo drawn in the given colours, in its static,
+// finished state.
+func NewWithPalette(p Palette) *Model {
+	return &Model{colors: p.fill(DefaultPalette(true)), hoverX: -1, hoverY: -1, dirty: true}
+}
+
+// SetDark switches between Deck's own dark and light palette.
 func (m *Model) SetDark(dark bool) {
-	if m.dark != dark {
-		m.dark = dark
+	m.SetPalette(DefaultPalette(dark))
+}
+
+// SetPalette draws the logo in the given colours, typically the active
+// theme's (see logo.PaletteFor). Unset colours keep their current value.
+func (m *Model) SetPalette(p Palette) {
+	p = p.fill(m.colors)
+	if !p.equal(m.colors) {
+		m.colors = p
 		m.pal = nil
 		m.dirty = true
 	}

@@ -2,6 +2,7 @@ package styles
 
 import (
 	"fmt"
+	"image/color"
 	"log/slog"
 	"sort"
 	"strings"
@@ -163,38 +164,52 @@ func deckLightOpts() quickStyleOpts {
 // deckOverrides applies Deck's touches that don't fit the token model of
 // [quickStyleOpts]: calm syntax colours and the bang prompt in the accent.
 func deckOverrides(s Styles) Styles {
+	// Deck's dark tones, and their light-theme counterparts so deck-light
+	// does not inherit pale dark-ground colours.
+	ink, mint, deep, shale, fog := tone.Ink, tone.Mint, tone.DeepTeal, tone.Shale, tone.Fog
+	clay, plum, sky, seafoam, paper, honey := tone.Clay, tone.Plum, tone.Sky, tone.Seafoam, tone.Paper, tone.Honey
+	faint := tone.Faint
+	if !s.IsDark {
+		ink, mint, deep, shale, fog = tone.LightPage, tone.LightMint, tone.Teal, tone.LightEdge, tone.LightFaint
+		clay, plum, sky, seafoam, paper, honey = tone.LightClay, tone.LightPlum, tone.LightSky, tone.DeepTeal, tone.LightFg, tone.LightAmber
+		faint = tone.LightFaint
+	}
+
 	s.Editor.PromptBangIconFocused = s.Editor.PromptBangIconFocused.
-		Foreground(tone.Ink).
-		Background(tone.Mint)
+		Foreground(ink).
+		Background(mint)
 	s.Editor.PromptBangDotsFocused = s.Editor.PromptBangDotsFocused.
-		Foreground(tone.Mint)
+		Foreground(mint)
 	s.Editor.PromptBangDotsBlurred = s.Editor.PromptBangDotsBlurred.
-		Foreground(tone.DeepTeal)
+		Foreground(deep)
 
 	s.Messages.ShellBarFocused = s.Messages.ShellBarFocused.
-		BorderForeground(tone.Mint)
+		BorderForeground(mint)
 	s.Messages.ShellBarBlurred = s.Messages.ShellBarBlurred.
-		BorderForeground(tone.Shale)
+		BorderForeground(shale)
 	s.Messages.ShellPrompt = s.Messages.ShellPrompt.
-		Foreground(tone.Mint)
+		Foreground(mint)
 	s.Messages.ShellPromptBlurred = s.Messages.ShellPromptBlurred.
-		Foreground(tone.Fog)
+		Foreground(fog)
 
 	chroma := s.Markdown.CodeBlock.Chroma
 	if chroma != nil {
-		chroma.CommentPreproc.Color = hex(tone.Clay)
-		chroma.KeywordReserved.Color = hex(tone.Plum)
-		chroma.KeywordNamespace.Color = hex(tone.Plum)
-		chroma.KeywordType.Color = hex(tone.Sky)
-		chroma.Operator.Color = hex(tone.Seafoam)
-		chroma.NameTag.Color = hex(tone.Plum)
-		chroma.NameAttribute.Color = hex(tone.Sky)
-		chroma.NameClass.Color = hex(tone.Paper)
-		chroma.LiteralString.Color = hex(tone.Honey)
+		chroma.CommentPreproc.Color = hex(clay)
+		chroma.KeywordReserved.Color = hex(plum)
+		chroma.KeywordNamespace.Color = hex(plum)
+		chroma.KeywordType.Color = hex(sky)
+		chroma.Operator.Color = hex(seafoam)
+		chroma.NameTag.Color = hex(plum)
+		chroma.NameAttribute.Color = hex(sky)
+		chroma.NameClass.Color = hex(paper)
+		chroma.LiteralString.Color = hex(honey)
 	}
-	s.Markdown.Link.Color = hex(tone.Mint)
-	s.Markdown.Image.Color = hex(tone.Plum)
-	s.Markdown.Code.Color = hex(tone.Mint)
+	s.Markdown.Link.Color = hex(mint)
+	s.Markdown.Image.Color = hex(plum)
+	s.Markdown.Code.Color = hex(mint)
+
+	// The wordmark keeps its hand-picked ramp.
+	s.Logo.MarkLowColor, s.Logo.MarkColor, s.Logo.MarkHighColor = faint, mint, seafoam
 	return s
 }
 
@@ -280,20 +295,463 @@ func gruvboxDarkOverrides(s Styles) Styles {
 	return s
 }
 
+// inlineCodeOverride returns an override that draws inline code in fg on
+// bg (nil keeps the background). The shared quickStyle draws it in the
+// destructive hue on bgLessVisible, which some palettes leave below WCAG AA.
+func inlineCodeOverride(fg, bg color.Color) func(Styles) Styles {
+	return func(s Styles) Styles {
+		s.Markdown.Code.Color = hex(fg)
+		if bg != nil {
+			s.Markdown.Code.BackgroundColor = hex(bg)
+		}
+		return s
+	}
+}
+
+// tokyoNightOpts returns the quickStyleOpts for Tokyo Night, using the
+// "night" palette from folke/tokyonight.nvim.
+func tokyoNightOpts() quickStyleOpts {
+	return quickStyleOpts{
+		primary:   lipgloss.Color("#7aa2f7"), // blue
+		secondary: lipgloss.Color("#bb9af7"), // magenta
+		accent:    lipgloss.Color("#7dcfff"), // cyan
+		keyword:   lipgloss.Color("#9d7cd8"), // purple
+
+		fgBase:       lipgloss.Color("#c0caf5"), // fg
+		fgSubtle:     lipgloss.Color("#a9b1d6"), // fg_dark
+		fgMoreSubtle: lipgloss.Color("#737aa2"), // dark5
+		fgMostSubtle: lipgloss.Color("#565f89"), // comment
+
+		onPrimary: lipgloss.Color("#1a1b26"), // bg
+
+		bgBase:         lipgloss.Color("#1a1b26"), // bg
+		bgLeastVisible: lipgloss.Color("#1f2335"), // bg_dark (storm)
+		bgLessVisible:  lipgloss.Color("#292e42"), // bg_highlight
+		bgMostVisible:  lipgloss.Color("#3b4261"), // fg_gutter
+
+		separator: lipgloss.Color("#3b4261"), // fg_gutter
+
+		destructive:       lipgloss.Color("#f7768e"), // red
+		error:             lipgloss.Color("#db4b4b"), // red1
+		warningSubtle:     lipgloss.Color("#e0af68"), // yellow
+		warning:           lipgloss.Color("#e0af68"), // yellow
+		attention:         lipgloss.Color("#ff9e64"), // orange
+		busy:              lipgloss.Color("#7aa2f7"), // blue
+		info:              lipgloss.Color("#7dcfff"), // cyan
+		infoMoreSubtle:    lipgloss.Color("#2ac3de"), // blue1
+		infoMostSubtle:    lipgloss.Color("#3d59a1"), // blue0
+		success:           lipgloss.Color("#9ece6a"), // green
+		successMoreSubtle: lipgloss.Color("#73daca"), // green1
+		successMostSubtle: lipgloss.Color("#41a6b5"), // green2
+
+		yolo:           lipgloss.Color("#ff9e64"), // orange
+		plan:           lipgloss.Color("#bb9af7"), // magenta
+		planMoreSubtle: lipgloss.Color("#565f89"), // comment
+
+		// Diff colors derive from success/destructive over bgBase.
+
+		button:         lipgloss.Color("#7aa2f7"), // blue
+		buttonSubtle:   lipgloss.Color("#292e42"), // bg_highlight
+		buttonInactive: lipgloss.Color("#3b4261"), // fg_gutter
+		buttonHovered:  lipgloss.Color("#3d59a1"), // blue0
+
+		ansiBlack:   lipgloss.Color("#15161e"),
+		ansiRed:     lipgloss.Color("#f7768e"),
+		ansiGreen:   lipgloss.Color("#9ece6a"),
+		ansiYellow:  lipgloss.Color("#e0af68"),
+		ansiBlue:    lipgloss.Color("#7aa2f7"),
+		ansiMagenta: lipgloss.Color("#bb9af7"),
+		ansiCyan:    lipgloss.Color("#7dcfff"),
+		ansiWhite:   lipgloss.Color("#a9b1d6"),
+
+		ansiBrightBlack:   lipgloss.Color("#414868"),
+		ansiBrightRed:     lipgloss.Color("#f7768e"),
+		ansiBrightGreen:   lipgloss.Color("#9ece6a"),
+		ansiBrightYellow:  lipgloss.Color("#e0af68"),
+		ansiBrightBlue:    lipgloss.Color("#7aa2f7"),
+		ansiBrightMagenta: lipgloss.Color("#bb9af7"),
+		ansiBrightCyan:    lipgloss.Color("#7dcfff"),
+		ansiBrightWhite:   lipgloss.Color("#c0caf5"),
+	}
+}
+
+// catppuccinMochaOpts returns the quickStyleOpts for Catppuccin Mocha,
+// using the canonical catppuccin/palette colors.
+func catppuccinMochaOpts() quickStyleOpts {
+	return quickStyleOpts{
+		primary:   lipgloss.Color("#cba6f7"), // mauve
+		secondary: lipgloss.Color("#b4befe"), // lavender
+		accent:    lipgloss.Color("#94e2d5"), // teal
+		keyword:   lipgloss.Color("#cba6f7"), // mauve
+
+		fgBase:       lipgloss.Color("#cdd6f4"), // text
+		fgSubtle:     lipgloss.Color("#bac2de"), // subtext1
+		fgMoreSubtle: lipgloss.Color("#a6adc8"), // subtext0
+		fgMostSubtle: lipgloss.Color("#7f849c"), // overlay1
+
+		onPrimary: lipgloss.Color("#1e1e2e"), // base
+
+		bgBase:         lipgloss.Color("#1e1e2e"), // base
+		bgLeastVisible: lipgloss.Color("#181825"), // mantle
+		bgLessVisible:  lipgloss.Color("#313244"), // surface0
+		bgMostVisible:  lipgloss.Color("#45475a"), // surface1
+
+		separator: lipgloss.Color("#45475a"), // surface1
+
+		destructive:       lipgloss.Color("#f38ba8"), // red
+		error:             lipgloss.Color("#f38ba8"), // red
+		warningSubtle:     lipgloss.Color("#f9e2af"), // yellow
+		warning:           lipgloss.Color("#f9e2af"), // yellow
+		attention:         lipgloss.Color("#fab387"), // peach
+		busy:              lipgloss.Color("#cba6f7"), // mauve
+		info:              lipgloss.Color("#89b4fa"), // blue
+		infoMoreSubtle:    lipgloss.Color("#89dceb"), // sky
+		infoMostSubtle:    lipgloss.Color("#74c7ec"), // sapphire
+		success:           lipgloss.Color("#a6e3a1"), // green
+		successMoreSubtle: lipgloss.Color("#a6e3a1"), // green
+		successMostSubtle: lipgloss.Color("#94e2d5"), // teal
+
+		yolo:           lipgloss.Color("#fab387"), // peach
+		plan:           lipgloss.Color("#89b4fa"), // blue
+		planMoreSubtle: lipgloss.Color("#6c7086"), // overlay0
+
+		// Diff colors derive from success/destructive over bgBase.
+
+		button:         lipgloss.Color("#cba6f7"), // mauve
+		buttonSubtle:   lipgloss.Color("#313244"), // surface0
+		buttonInactive: lipgloss.Color("#45475a"), // surface1
+		buttonHovered:  lipgloss.Color("#b4befe"), // lavender
+
+		ansiBlack:   lipgloss.Color("#45475a"),
+		ansiRed:     lipgloss.Color("#f38ba8"),
+		ansiGreen:   lipgloss.Color("#a6e3a1"),
+		ansiYellow:  lipgloss.Color("#f9e2af"),
+		ansiBlue:    lipgloss.Color("#89b4fa"),
+		ansiMagenta: lipgloss.Color("#f5c2e7"),
+		ansiCyan:    lipgloss.Color("#94e2d5"),
+		ansiWhite:   lipgloss.Color("#bac2de"),
+
+		ansiBrightBlack:   lipgloss.Color("#585b70"),
+		ansiBrightRed:     lipgloss.Color("#f38ba8"),
+		ansiBrightGreen:   lipgloss.Color("#a6e3a1"),
+		ansiBrightYellow:  lipgloss.Color("#f9e2af"),
+		ansiBrightBlue:    lipgloss.Color("#89b4fa"),
+		ansiBrightMagenta: lipgloss.Color("#f5c2e7"),
+		ansiBrightCyan:    lipgloss.Color("#94e2d5"),
+		ansiBrightWhite:   lipgloss.Color("#a6adc8"),
+	}
+}
+
+// catppuccinLatteOpts returns the quickStyleOpts for Catppuccin Latte, the
+// light flavor, using the canonical catppuccin/palette colors.
+func catppuccinLatteOpts() quickStyleOpts {
+	return quickStyleOpts{
+		primary:   lipgloss.Color("#8839ef"), // mauve
+		secondary: lipgloss.Color("#1e66f5"), // blue
+		accent:    lipgloss.Color("#179299"), // teal
+		keyword:   lipgloss.Color("#8839ef"), // mauve
+
+		fgBase:       lipgloss.Color("#4c4f69"), // text
+		fgSubtle:     lipgloss.Color("#5c5f77"), // subtext1
+		fgMoreSubtle: lipgloss.Color("#6c6f85"), // subtext0
+		fgMostSubtle: lipgloss.Color("#8c8fa1"), // overlay1
+
+		onPrimary: lipgloss.Color("#eff1f5"), // base
+
+		bgBase:         lipgloss.Color("#eff1f5"), // base
+		bgLeastVisible: lipgloss.Color("#e6e9ef"), // mantle
+		bgLessVisible:  lipgloss.Color("#dce0e8"), // crust
+		bgMostVisible:  lipgloss.Color("#ccd0da"), // surface0
+
+		separator: lipgloss.Color("#ccd0da"), // surface0
+
+		destructive:       lipgloss.Color("#d20f39"), // red
+		error:             lipgloss.Color("#d20f39"), // red
+		warningSubtle:     lipgloss.Color("#df8e1d"), // yellow
+		warning:           lipgloss.Color("#df8e1d"), // yellow
+		attention:         lipgloss.Color("#fe640b"), // peach
+		busy:              lipgloss.Color("#8839ef"), // mauve
+		info:              lipgloss.Color("#1e66f5"), // blue
+		infoMoreSubtle:    lipgloss.Color("#209fb5"), // sapphire
+		infoMostSubtle:    lipgloss.Color("#04a5e5"), // sky
+		success:           lipgloss.Color("#40a02b"), // green
+		successMoreSubtle: lipgloss.Color("#179299"), // teal
+		successMostSubtle: lipgloss.Color("#40a02b"), // green
+
+		yolo:           lipgloss.Color("#fe640b"), // peach
+		plan:           lipgloss.Color("#1e66f5"), // blue
+		planMoreSubtle: lipgloss.Color("#8c8fa1"), // overlay1
+
+		// Diff colors derive from success/destructive over bgBase.
+
+		button:         lipgloss.Color("#8839ef"), // mauve
+		buttonSubtle:   lipgloss.Color("#dce0e8"), // crust
+		buttonInactive: lipgloss.Color("#ccd0da"), // surface0
+		buttonHovered:  lipgloss.Color("#7287fd"), // lavender
+
+		// Catppuccin's terminal white and bright white are pale greys that
+		// vanish on the light ground, so they map to the text greys, as in
+		// deck-light.
+		ansiBlack:   lipgloss.Color("#5c5f77"),
+		ansiRed:     lipgloss.Color("#d20f39"),
+		ansiGreen:   lipgloss.Color("#40a02b"),
+		ansiYellow:  lipgloss.Color("#df8e1d"),
+		ansiBlue:    lipgloss.Color("#1e66f5"),
+		ansiMagenta: lipgloss.Color("#ea76cb"),
+		ansiCyan:    lipgloss.Color("#179299"),
+		ansiWhite:   lipgloss.Color("#6c6f85"),
+
+		ansiBrightBlack:   lipgloss.Color("#8c8fa1"),
+		ansiBrightRed:     lipgloss.Color("#d20f39"),
+		ansiBrightGreen:   lipgloss.Color("#40a02b"),
+		ansiBrightYellow:  lipgloss.Color("#df8e1d"),
+		ansiBrightBlue:    lipgloss.Color("#1e66f5"),
+		ansiBrightMagenta: lipgloss.Color("#ea76cb"),
+		ansiBrightCyan:    lipgloss.Color("#179299"),
+		ansiBrightWhite:   lipgloss.Color("#4c4f69"),
+
+		light: true,
+	}
+}
+
+// catppuccinLatteOverrides draws inline code in text on surface0: Latte's
+// red on crust is only ~4.1:1.
+var catppuccinLatteOverrides = inlineCodeOverride(lipgloss.Color("#4c4f69"), lipgloss.Color("#ccd0da"))
+
+// nordOpts returns the quickStyleOpts for Nord, using the canonical
+// arcticicestudio/nord palette (nord0–nord15).
+func nordOpts() quickStyleOpts {
+	return quickStyleOpts{
+		primary:   lipgloss.Color("#88c0d0"), // nord8
+		secondary: lipgloss.Color("#8fbcbb"), // nord7
+		accent:    lipgloss.Color("#81a1c1"), // nord9
+		keyword:   lipgloss.Color("#81a1c1"), // nord9
+
+		fgBase:       lipgloss.Color("#eceff4"), // nord6
+		fgSubtle:     lipgloss.Color("#d8dee9"), // nord4
+		fgMoreSubtle: lipgloss.Color("#a9b3c5"), // midway nord4 → comment grey
+		fgMostSubtle: lipgloss.Color("#7b88a1"), // brightened nord3, for comments
+
+		onPrimary: lipgloss.Color("#2e3440"), // nord0
+
+		bgBase:         lipgloss.Color("#2e3440"), // nord0
+		bgLeastVisible: lipgloss.Color("#3b4252"), // nord1
+		bgLessVisible:  lipgloss.Color("#434c5e"), // nord2
+		bgMostVisible:  lipgloss.Color("#4c566a"), // nord3
+
+		separator: lipgloss.Color("#4c566a"), // nord3
+
+		destructive:       lipgloss.Color("#bf616a"), // nord11
+		error:             lipgloss.Color("#bf616a"), // nord11
+		warningSubtle:     lipgloss.Color("#ebcb8b"), // nord13
+		warning:           lipgloss.Color("#ebcb8b"), // nord13
+		attention:         lipgloss.Color("#d08770"), // nord12
+		busy:              lipgloss.Color("#88c0d0"), // nord8
+		info:              lipgloss.Color("#81a1c1"), // nord9
+		infoMoreSubtle:    lipgloss.Color("#88c0d0"), // nord8
+		infoMostSubtle:    lipgloss.Color("#5e81ac"), // nord10
+		success:           lipgloss.Color("#a3be8c"), // nord14
+		successMoreSubtle: lipgloss.Color("#8fbcbb"), // nord7
+		successMostSubtle: lipgloss.Color("#88c0d0"), // nord8
+
+		yolo:           lipgloss.Color("#d08770"), // nord12
+		plan:           lipgloss.Color("#b48ead"), // nord15
+		planMoreSubtle: lipgloss.Color("#4c566a"), // nord3
+
+		// Diff colors derive from success/destructive over bgBase.
+
+		button:         lipgloss.Color("#88c0d0"), // nord8
+		buttonSubtle:   lipgloss.Color("#434c5e"), // nord2
+		buttonInactive: lipgloss.Color("#4c566a"), // nord3
+		buttonHovered:  lipgloss.Color("#81a1c1"), // nord9
+
+		ansiBlack:   lipgloss.Color("#3b4252"),
+		ansiRed:     lipgloss.Color("#bf616a"),
+		ansiGreen:   lipgloss.Color("#a3be8c"),
+		ansiYellow:  lipgloss.Color("#ebcb8b"),
+		ansiBlue:    lipgloss.Color("#81a1c1"),
+		ansiMagenta: lipgloss.Color("#b48ead"),
+		ansiCyan:    lipgloss.Color("#88c0d0"),
+		ansiWhite:   lipgloss.Color("#e5e9f0"),
+
+		ansiBrightBlack:   lipgloss.Color("#4c566a"),
+		ansiBrightRed:     lipgloss.Color("#bf616a"),
+		ansiBrightGreen:   lipgloss.Color("#a3be8c"),
+		ansiBrightYellow:  lipgloss.Color("#ebcb8b"),
+		ansiBrightBlue:    lipgloss.Color("#81a1c1"),
+		ansiBrightMagenta: lipgloss.Color("#b48ead"),
+		ansiBrightCyan:    lipgloss.Color("#8fbcbb"),
+		ansiBrightWhite:   lipgloss.Color("#eceff4"),
+	}
+}
+
+// nordOverrides draws inline code in frost on nord1: Aurora red on nord2
+// is only ~2.1:1.
+var nordOverrides = inlineCodeOverride(lipgloss.Color("#88c0d0"), lipgloss.Color("#3b4252"))
+
+// rosePineOpts returns the quickStyleOpts for Rosé Pine (main), using the
+// canonical rose-pine/palette colors.
+func rosePineOpts() quickStyleOpts {
+	return quickStyleOpts{
+		primary:   lipgloss.Color("#ebbcba"), // rose
+		secondary: lipgloss.Color("#c4a7e7"), // iris
+		accent:    lipgloss.Color("#9ccfd8"), // foam
+		keyword:   lipgloss.Color("#31748f"), // pine
+
+		fgBase:       lipgloss.Color("#e0def4"), // text
+		fgSubtle:     lipgloss.Color("#e0def4"), // text
+		fgMoreSubtle: lipgloss.Color("#908caa"), // subtle
+		fgMostSubtle: lipgloss.Color("#6e6a86"), // muted
+
+		onPrimary: lipgloss.Color("#191724"), // base
+
+		bgBase:         lipgloss.Color("#191724"), // base
+		bgLeastVisible: lipgloss.Color("#1f1d2e"), // surface
+		bgLessVisible:  lipgloss.Color("#26233a"), // overlay
+		bgMostVisible:  lipgloss.Color("#403d52"), // highlight med
+
+		separator: lipgloss.Color("#403d52"), // highlight med
+
+		// Rosé Pine has no green: foam marks additions and success, love
+		// deletions and errors, as in its own git colors.
+		destructive:       lipgloss.Color("#eb6f92"), // love
+		error:             lipgloss.Color("#eb6f92"), // love
+		warningSubtle:     lipgloss.Color("#f6c177"), // gold
+		warning:           lipgloss.Color("#f6c177"), // gold
+		attention:         lipgloss.Color("#f6c177"), // gold
+		busy:              lipgloss.Color("#ebbcba"), // rose
+		info:              lipgloss.Color("#9ccfd8"), // foam
+		infoMoreSubtle:    lipgloss.Color("#9ccfd8"), // foam
+		infoMostSubtle:    lipgloss.Color("#31748f"), // pine
+		success:           lipgloss.Color("#9ccfd8"), // foam
+		successMoreSubtle: lipgloss.Color("#9ccfd8"), // foam
+		successMostSubtle: lipgloss.Color("#ebbcba"), // rose
+
+		yolo:           lipgloss.Color("#eb6f92"), // love
+		plan:           lipgloss.Color("#c4a7e7"), // iris
+		planMoreSubtle: lipgloss.Color("#6e6a86"), // muted
+
+		// Diff colors derive from success/destructive over bgBase.
+
+		button:         lipgloss.Color("#ebbcba"), // rose
+		buttonSubtle:   lipgloss.Color("#26233a"), // overlay
+		buttonInactive: lipgloss.Color("#403d52"), // highlight med
+		buttonHovered:  lipgloss.Color("#c4a7e7"), // iris
+
+		ansiBlack:   lipgloss.Color("#26233a"),
+		ansiRed:     lipgloss.Color("#eb6f92"),
+		ansiGreen:   lipgloss.Color("#31748f"),
+		ansiYellow:  lipgloss.Color("#f6c177"),
+		ansiBlue:    lipgloss.Color("#9ccfd8"),
+		ansiMagenta: lipgloss.Color("#c4a7e7"),
+		ansiCyan:    lipgloss.Color("#ebbcba"),
+		ansiWhite:   lipgloss.Color("#e0def4"),
+
+		ansiBrightBlack:   lipgloss.Color("#6e6a86"),
+		ansiBrightRed:     lipgloss.Color("#eb6f92"),
+		ansiBrightGreen:   lipgloss.Color("#31748f"),
+		ansiBrightYellow:  lipgloss.Color("#f6c177"),
+		ansiBrightBlue:    lipgloss.Color("#9ccfd8"),
+		ansiBrightMagenta: lipgloss.Color("#c4a7e7"),
+		ansiBrightCyan:    lipgloss.Color("#ebbcba"),
+		ansiBrightWhite:   lipgloss.Color("#e0def4"),
+	}
+}
+
+// draculaOpts returns the quickStyleOpts for Dracula, using the canonical
+// draculatheme.com palette and its UI background steps.
+func draculaOpts() quickStyleOpts {
+	return quickStyleOpts{
+		primary:   lipgloss.Color("#bd93f9"), // purple
+		secondary: lipgloss.Color("#ff79c6"), // pink
+		accent:    lipgloss.Color("#8be9fd"), // cyan
+		keyword:   lipgloss.Color("#ff79c6"), // pink
+
+		fgBase:       lipgloss.Color("#f8f8f2"), // foreground
+		fgSubtle:     lipgloss.Color("#f8f8f2"), // foreground
+		fgMoreSubtle: lipgloss.Color("#adb5cb"), // midway foreground → comment
+		fgMostSubtle: lipgloss.Color("#6272a4"), // comment
+
+		onPrimary: lipgloss.Color("#282a36"), // background
+
+		bgBase:         lipgloss.Color("#282a36"), // background
+		bgLeastVisible: lipgloss.Color("#21222c"), // BGDark
+		bgLessVisible:  lipgloss.Color("#343746"), // BGLight
+		bgMostVisible:  lipgloss.Color("#44475a"), // current line / selection
+
+		separator: lipgloss.Color("#44475a"), // current line
+
+		destructive:       lipgloss.Color("#ff5555"), // red
+		error:             lipgloss.Color("#ff5555"), // red
+		warningSubtle:     lipgloss.Color("#f1fa8c"), // yellow
+		warning:           lipgloss.Color("#ffb86c"), // orange
+		attention:         lipgloss.Color("#ffb86c"), // orange
+		busy:              lipgloss.Color("#bd93f9"), // purple
+		info:              lipgloss.Color("#8be9fd"), // cyan
+		infoMoreSubtle:    lipgloss.Color("#8be9fd"), // cyan
+		infoMostSubtle:    lipgloss.Color("#6272a4"), // comment
+		success:           lipgloss.Color("#50fa7b"), // green
+		successMoreSubtle: lipgloss.Color("#50fa7b"), // green
+		successMostSubtle: lipgloss.Color("#50fa7b"), // green
+
+		yolo:           lipgloss.Color("#ffb86c"), // orange
+		plan:           lipgloss.Color("#8be9fd"), // cyan
+		planMoreSubtle: lipgloss.Color("#6272a4"), // comment
+
+		// Diff colors derive from success/destructive over bgBase.
+
+		button:         lipgloss.Color("#bd93f9"), // purple
+		buttonSubtle:   lipgloss.Color("#343746"), // BGLight
+		buttonInactive: lipgloss.Color("#44475a"), // current line
+		buttonHovered:  lipgloss.Color("#ff79c6"), // pink
+
+		ansiBlack:   lipgloss.Color("#21222c"),
+		ansiRed:     lipgloss.Color("#ff5555"),
+		ansiGreen:   lipgloss.Color("#50fa7b"),
+		ansiYellow:  lipgloss.Color("#f1fa8c"),
+		ansiBlue:    lipgloss.Color("#bd93f9"),
+		ansiMagenta: lipgloss.Color("#ff79c6"),
+		ansiCyan:    lipgloss.Color("#8be9fd"),
+		ansiWhite:   lipgloss.Color("#f8f8f2"),
+
+		ansiBrightBlack:   lipgloss.Color("#6272a4"),
+		ansiBrightRed:     lipgloss.Color("#ff6e6e"),
+		ansiBrightGreen:   lipgloss.Color("#69ff94"),
+		ansiBrightYellow:  lipgloss.Color("#ffffa5"),
+		ansiBrightBlue:    lipgloss.Color("#d6acff"),
+		ansiBrightMagenta: lipgloss.Color("#ff92df"),
+		ansiBrightCyan:    lipgloss.Color("#a4ffff"),
+		ansiBrightWhite:   lipgloss.Color("#ffffff"),
+	}
+}
+
+// draculaOverrides draws inline code in green, Dracula's usual color for
+// it: red on BGLight is only ~3.8:1.
+var draculaOverrides = inlineCodeOverride(lipgloss.Color("#50fa7b"), nil)
+
 // builtinThemes maps theme names to their quickStyleOpts palette definitions.
 var builtinThemes = map[string]func() quickStyleOpts{
-	"deck":         deckDarkOpts,
-	"deck-light":   deckLightOpts,
-	"gruvbox-dark": gruvboxDarkOpts,
+	"deck":             deckDarkOpts,
+	"deck-light":       deckLightOpts,
+	"gruvbox-dark":     gruvboxDarkOpts,
+	"tokyo-night":      tokyoNightOpts,
+	"catppuccin-mocha": catppuccinMochaOpts,
+	"catppuccin-latte": catppuccinLatteOpts,
+	"nord":             nordOpts,
+	"rose-pine":        rosePineOpts,
+	"dracula":          draculaOpts,
 }
 
 // builtinThemeOverrides maps theme names to functions that apply
 // theme-specific style tweaks on top of the styles produced by
 // [quickStyle]. Themes without overrides are absent from the map.
 var builtinThemeOverrides = map[string]func(Styles) Styles{
-	"deck":         deckOverrides,
-	"deck-light":   deckOverrides,
-	"gruvbox-dark": gruvboxDarkOverrides,
+	"deck":             deckOverrides,
+	"deck-light":       deckOverrides,
+	"gruvbox-dark":     gruvboxDarkOverrides,
+	"catppuccin-latte": catppuccinLatteOverrides,
+	"nord":             nordOverrides,
+	"dracula":          draculaOverrides,
 }
 
 // deprecatedThemeNames maps legacy built-in theme names to their current

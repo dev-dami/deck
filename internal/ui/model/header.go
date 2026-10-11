@@ -52,7 +52,7 @@ type header struct {
 func newHeader(com *common.Common) *header {
 	h := &header{
 		com:  com,
-		anim: decklogo.New(com.Styles.IsDark),
+		anim: decklogo.NewWithPalette(logo.PaletteFor(com.Styles)),
 	}
 	h.refresh()
 	return h
@@ -64,6 +64,7 @@ func (h *header) refresh() {
 	t := h.com.Styles
 	h.compactLogo = " " + t.Header.Mark.Render("◆") + " " +
 		styles.ApplyBoldForegroundGrad(t.Header.LogoGradCanvas, "deck", t.Header.LogoGradFromColor, t.Header.LogoGradToColor) + " "
+	h.anim.SetPalette(logo.PaletteFor(t))
 	// Force drawHeader to re-render the wide logo on the next frame.
 	h.width = 0
 	h.logo = ""
@@ -209,7 +210,7 @@ func logoTick() tea.Cmd {
 func (h *header) landingLogo(area uv.Rectangle) string {
 	t := h.com.Styles
 	h.area = area
-	h.anim.SetDark(t.IsDark)
+	h.anim.SetPalette(logo.PaletteFor(t))
 	h.anim.SetSize(area.Dx(), max(1, area.Dy()-1))
 	if h.pending {
 		if w, _ := h.anim.Bounds(); w > 0 {

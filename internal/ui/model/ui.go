@@ -6026,5 +6026,6 @@ func renderLogo(t *styles.Styles, compact bool, width int) string {
 		VersionColor: t.Logo.VersionColor,
 		Width:        width,
 		Dark:         t.IsDark,
+		Mark:         logo.PaletteFor(t),
 	})
 }

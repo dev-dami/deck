@@ -51,3 +51,19 @@ func TestSmallRender(t *testing.T) {
 		t.Errorf("narrow SmallRender = %q", got)
 	}
 }
+
+func TestRenderFollowsThemePalette(t *testing.T) {
+	t.Parallel()
+	sty, err := styles.LoadTheme("tokyo-night")
+	if err != nil {
+		t.Fatalf("LoadTheme: %v", err)
+	}
+	deck := Render(lipgloss.NewStyle(), "v1.2.3", true, Opts{Width: 40, Dark: true})
+	themed := Render(lipgloss.NewStyle(), "v1.2.3", true, Opts{Width: 40, Dark: true, Mark: PaletteFor(&sty)})
+	if ansi.Strip(themed) != ansi.Strip(deck) {
+		t.Fatal("the theme palette changes the wordmark's shape")
+	}
+	if themed == deck {
+		t.Fatal("the wordmark ignores the theme palette")
+	}
+}

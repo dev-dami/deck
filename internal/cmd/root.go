@@ -31,6 +31,7 @@ import (
 	"github.com/dev-dami/deck/internal/ui/exitbanner"
 	"github.com/dev-dami/deck/internal/ui/logo"
 	ui "github.com/dev-dami/deck/internal/ui/model"
+	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/version"
 	"github.com/dev-dami/deck/internal/workspace"
 )
@@ -115,7 +116,7 @@ deck doctor
 		if cfg := com.Config(); cfg != nil {
 			banner = cfg.Options.TUI.ExitBanner
 		}
-		printSessionResume(model, banner)
+		printSessionResume(model, banner, com.Styles)
 		return nil
 	},
 }
@@ -123,9 +124,9 @@ deck doctor
 // printSessionResume prints the exit banner after the TUI exits, including the
 // session title and the hint to resume it with `deck -s <id>`. The banner
 // style decides how much of that is shown; see config.ExitBanner.
-func printSessionResume(model *ui.UI, banner config.ExitBanner) {
+func printSessionResume(model *ui.UI, banner config.ExitBanner, t *styles.Styles) {
 	tw, _, _ := term.GetSize(os.Stdout.Fd())
-	body := exitbanner.Render(banner, model.CurrentSession(), tw)
+	body := exitbanner.RenderTheme(banner, model.CurrentSession(), tw, t)
 	if body == "" {
 		return
 	}

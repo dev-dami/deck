@@ -921,6 +921,10 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.Logo.SmallName = lipgloss.NewStyle().Foreground(o.fgBase).Bold(true)
 	s.Logo.SmallDiagonals = lipgloss.NewStyle().Foreground(o.separator)
 	s.Logo.GradCanvas = lipgloss.NewStyle()
+	s.Logo.MarkLowColor = o.fgMostSubtle
+	s.Logo.MarkColor = o.primary
+	s.Logo.MarkHighColor = o.secondary
+	s.Logo.NameColor = o.fgBase
 
 	// Section
 	s.Section.Title = subtle
