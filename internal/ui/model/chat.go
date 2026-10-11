@@ -249,7 +249,7 @@ func (m *Chat) Draw(scr uv.Screen, area uv.Rectangle) {
 		if m.drawCache == nil ||
 			m.drawCache.rendered != rendered ||
 			m.drawCache.method != method {
-			m.drawCache = newChatDrawCache(rendered, method)
+			m.drawCache = newChatDrawCache(rendered, method, m.drawCache)
 		}
 		drawCachedBuffer(scr, listArea, m.drawCache.buf)
 	}
@@ -285,7 +285,11 @@ func (m *Chat) Draw(scr uv.Screen, area uv.Rectangle) {
 // with `method.StringWidth` per line matches what printString tallies
 // cell-by-cell, since both decode ANSI sequences and use the same width
 // method.
-func newChatDrawCache(rendered string, method ansi.Method) *chatDrawCache {
+//
+// prev, when not nil, is the cache being replaced: its buffer is reused
+// when it has the same size and method, as it does on most frames while a
+// spinner turns, rather than allocating a new one per frame.
+func newChatDrawCache(rendered string, method ansi.Method, prev *chatDrawCache) *chatDrawCache {
 	w, h := renderedBounds(rendered, method)
 	if w <= 0 {
 		w = 1
@@ -293,8 +297,14 @@ func newChatDrawCache(rendered string, method ansi.Method) *chatDrawCache {
 	if h <= 0 {
 		h = 1
 	}
-	buf := uv.NewScreenBuffer(w, h)
-	buf.Method = method
+	var buf uv.ScreenBuffer
+	if prev != nil && prev.method == method && prev.buf.Width() == w && prev.buf.Height() == h {
+		buf = prev.buf
+		buf.Clear()
+	} else {
+		buf = uv.NewScreenBuffer(w, h)
+		buf.Method = method
+	}
 	uv.NewStyledString(rendered).Draw(buf, buf.Bounds())
 	return &chatDrawCache{
 		rendered: rendered,
