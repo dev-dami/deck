@@ -9,6 +9,9 @@ import (
 )
 
 type Querier interface {
+	// Days are local calendar days, as the user counts them.
+	BehaviorByDay(ctx context.Context, since int64) ([]BehaviorByDayRow, error)
+	BehaviorCounts(ctx context.Context, since int64) ([]BehaviorCountsRow, error)
 	CreateFile(ctx context.Context, arg CreateFileParams) (File, error)
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
@@ -35,9 +38,16 @@ type Querier interface {
 	GetUsageByDayOfWeek(ctx context.Context) ([]GetUsageByDayOfWeekRow, error)
 	GetUsageByHour(ctx context.Context) ([]GetUsageByHourRow, error)
 	GetUsageByModel(ctx context.Context) ([]GetUsageByModelRow, error)
+	InsertBehavior(ctx context.Context, arg InsertBehaviorParams) error
+	InsertLimitSnapshot(ctx context.Context, arg InsertLimitSnapshotParams) error
 	InsertMCPDisabledServer(ctx context.Context, name string) error
 	InsertMCPEnabledServer(ctx context.Context, name string) error
+	InsertTraceSpan(ctx context.Context, arg InsertTraceSpanParams) error
 	InsertUsage(ctx context.Context, arg InsertUsageParams) error
+	LatestLimitSnapshot(ctx context.Context, arg LatestLimitSnapshotParams) (LatestLimitSnapshotRow, error)
+	// The newest row of every window of every agent kind.
+	LatestLimitSnapshots(ctx context.Context) ([]LatestLimitSnapshotsRow, error)
+	LimitHistory(ctx context.Context, arg LimitHistoryParams) ([]LimitHistoryRow, error)
 	// Backs prompt history when no session is open. Needs
 	// idx_messages_role_created_at to seek rather than scan the table.
 	ListAllUserMessages(ctx context.Context) ([]Message, error)
@@ -59,6 +69,7 @@ type Querier interface {
 	RecordFileRead(ctx context.Context, arg RecordFileReadParams) error
 	RenameSession(ctx context.Context, arg RenameSessionParams) error
 	SetSessionChannel(ctx context.Context, arg SetSessionChannelParams) (Session, error)
+	TraceSpans(ctx context.Context, turnID string) ([]TraceSpansRow, error)
 	UpdateMessage(ctx context.Context, arg UpdateMessageParams) error
 	UpdateSession(ctx context.Context, arg UpdateSessionParams) (Session, error)
 	UpdateSessionTitleAndUsage(ctx context.Context, arg UpdateSessionTitleAndUsageParams) error
@@ -66,6 +77,17 @@ type Querier interface {
 	UsageByDay(ctx context.Context, since int64) ([]UsageByDayRow, error)
 	UsageByKind(ctx context.Context, since int64) ([]UsageByKindRow, error)
 	UsageByModel(ctx context.Context, since int64) ([]UsageByModelRow, error)
+	UsageByStatus(ctx context.Context, since int64) ([]UsageByStatusRow, error)
+	UsageByTrigger(ctx context.Context, since int64) ([]UsageByTriggerRow, error)
+	// ttft_sum and ttft_turns cover only the turns whose TTFT is known.
+	UsageKindStats(ctx context.Context, since int64) ([]UsageKindStatsRow, error)
+	UsageModelStats(ctx context.Context, since int64) ([]UsageModelStatsRow, error)
+	UsageRecent(ctx context.Context, limit int64) ([]UsageRecentRow, error)
+	// bucket is the local time formatted with format ('%Y-%m-%d %H' for hours,
+	// '%Y-%m-%d' for days).
+	UsageSeries(ctx context.Context, arg UsageSeriesParams) ([]UsageSeriesRow, error)
+	// Every known time to first token in the range, for percentiles.
+	UsageTTFTs(ctx context.Context, since int64) ([]int64, error)
 	// Sessions keep their usage rows after they are deleted, so the title can be
 	// missing.
 	UsageTopSessions(ctx context.Context, arg UsageTopSessionsParams) ([]UsageTopSessionsRow, error)

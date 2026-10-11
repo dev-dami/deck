@@ -24,6 +24,12 @@ func New(db DBTX) *Queries {
 func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	q := Queries{db: db}
 	var err error
+	if q.behaviorByDayStmt, err = db.PrepareContext(ctx, behaviorByDay); err != nil {
+		return nil, fmt.Errorf("error preparing query BehaviorByDay: %w", err)
+	}
+	if q.behaviorCountsStmt, err = db.PrepareContext(ctx, behaviorCounts); err != nil {
+		return nil, fmt.Errorf("error preparing query BehaviorCounts: %w", err)
+	}
 	if q.createFileStmt, err = db.PrepareContext(ctx, createFile); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateFile: %w", err)
 	}
@@ -102,14 +108,32 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getUsageByModelStmt, err = db.PrepareContext(ctx, getUsageByModel); err != nil {
 		return nil, fmt.Errorf("error preparing query GetUsageByModel: %w", err)
 	}
+	if q.insertBehaviorStmt, err = db.PrepareContext(ctx, insertBehavior); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertBehavior: %w", err)
+	}
+	if q.insertLimitSnapshotStmt, err = db.PrepareContext(ctx, insertLimitSnapshot); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertLimitSnapshot: %w", err)
+	}
 	if q.insertMCPDisabledServerStmt, err = db.PrepareContext(ctx, insertMCPDisabledServer); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertMCPDisabledServer: %w", err)
 	}
 	if q.insertMCPEnabledServerStmt, err = db.PrepareContext(ctx, insertMCPEnabledServer); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertMCPEnabledServer: %w", err)
 	}
+	if q.insertTraceSpanStmt, err = db.PrepareContext(ctx, insertTraceSpan); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertTraceSpan: %w", err)
+	}
 	if q.insertUsageStmt, err = db.PrepareContext(ctx, insertUsage); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertUsage: %w", err)
+	}
+	if q.latestLimitSnapshotStmt, err = db.PrepareContext(ctx, latestLimitSnapshot); err != nil {
+		return nil, fmt.Errorf("error preparing query LatestLimitSnapshot: %w", err)
+	}
+	if q.latestLimitSnapshotsStmt, err = db.PrepareContext(ctx, latestLimitSnapshots); err != nil {
+		return nil, fmt.Errorf("error preparing query LatestLimitSnapshots: %w", err)
+	}
+	if q.limitHistoryStmt, err = db.PrepareContext(ctx, limitHistory); err != nil {
+		return nil, fmt.Errorf("error preparing query LimitHistory: %w", err)
 	}
 	if q.listAllUserMessagesStmt, err = db.PrepareContext(ctx, listAllUserMessages); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAllUserMessages: %w", err)
@@ -156,6 +180,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setSessionChannelStmt, err = db.PrepareContext(ctx, setSessionChannel); err != nil {
 		return nil, fmt.Errorf("error preparing query SetSessionChannel: %w", err)
 	}
+	if q.traceSpansStmt, err = db.PrepareContext(ctx, traceSpans); err != nil {
+		return nil, fmt.Errorf("error preparing query TraceSpans: %w", err)
+	}
 	if q.updateMessageStmt, err = db.PrepareContext(ctx, updateMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateMessage: %w", err)
 	}
@@ -174,6 +201,27 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.usageByModelStmt, err = db.PrepareContext(ctx, usageByModel); err != nil {
 		return nil, fmt.Errorf("error preparing query UsageByModel: %w", err)
 	}
+	if q.usageByStatusStmt, err = db.PrepareContext(ctx, usageByStatus); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageByStatus: %w", err)
+	}
+	if q.usageByTriggerStmt, err = db.PrepareContext(ctx, usageByTrigger); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageByTrigger: %w", err)
+	}
+	if q.usageKindStatsStmt, err = db.PrepareContext(ctx, usageKindStats); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageKindStats: %w", err)
+	}
+	if q.usageModelStatsStmt, err = db.PrepareContext(ctx, usageModelStats); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageModelStats: %w", err)
+	}
+	if q.usageRecentStmt, err = db.PrepareContext(ctx, usageRecent); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageRecent: %w", err)
+	}
+	if q.usageSeriesStmt, err = db.PrepareContext(ctx, usageSeries); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageSeries: %w", err)
+	}
+	if q.usageTTFTsStmt, err = db.PrepareContext(ctx, usageTTFTs); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageTTFTs: %w", err)
+	}
 	if q.usageTopSessionsStmt, err = db.PrepareContext(ctx, usageTopSessions); err != nil {
 		return nil, fmt.Errorf("error preparing query UsageTopSessions: %w", err)
 	}
@@ -185,6 +233,16 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 
 func (q *Queries) Close() error {
 	var err error
+	if q.behaviorByDayStmt != nil {
+		if cerr := q.behaviorByDayStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing behaviorByDayStmt: %w", cerr)
+		}
+	}
+	if q.behaviorCountsStmt != nil {
+		if cerr := q.behaviorCountsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing behaviorCountsStmt: %w", cerr)
+		}
+	}
 	if q.createFileStmt != nil {
 		if cerr := q.createFileStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createFileStmt: %w", cerr)
@@ -315,6 +373,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getUsageByModelStmt: %w", cerr)
 		}
 	}
+	if q.insertBehaviorStmt != nil {
+		if cerr := q.insertBehaviorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertBehaviorStmt: %w", cerr)
+		}
+	}
+	if q.insertLimitSnapshotStmt != nil {
+		if cerr := q.insertLimitSnapshotStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertLimitSnapshotStmt: %w", cerr)
+		}
+	}
 	if q.insertMCPDisabledServerStmt != nil {
 		if cerr := q.insertMCPDisabledServerStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing insertMCPDisabledServerStmt: %w", cerr)
@@ -325,9 +393,29 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing insertMCPEnabledServerStmt: %w", cerr)
 		}
 	}
+	if q.insertTraceSpanStmt != nil {
+		if cerr := q.insertTraceSpanStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertTraceSpanStmt: %w", cerr)
+		}
+	}
 	if q.insertUsageStmt != nil {
 		if cerr := q.insertUsageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing insertUsageStmt: %w", cerr)
+		}
+	}
+	if q.latestLimitSnapshotStmt != nil {
+		if cerr := q.latestLimitSnapshotStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing latestLimitSnapshotStmt: %w", cerr)
+		}
+	}
+	if q.latestLimitSnapshotsStmt != nil {
+		if cerr := q.latestLimitSnapshotsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing latestLimitSnapshotsStmt: %w", cerr)
+		}
+	}
+	if q.limitHistoryStmt != nil {
+		if cerr := q.limitHistoryStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing limitHistoryStmt: %w", cerr)
 		}
 	}
 	if q.listAllUserMessagesStmt != nil {
@@ -405,6 +493,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setSessionChannelStmt: %w", cerr)
 		}
 	}
+	if q.traceSpansStmt != nil {
+		if cerr := q.traceSpansStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing traceSpansStmt: %w", cerr)
+		}
+	}
 	if q.updateMessageStmt != nil {
 		if cerr := q.updateMessageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateMessageStmt: %w", cerr)
@@ -433,6 +526,41 @@ func (q *Queries) Close() error {
 	if q.usageByModelStmt != nil {
 		if cerr := q.usageByModelStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing usageByModelStmt: %w", cerr)
+		}
+	}
+	if q.usageByStatusStmt != nil {
+		if cerr := q.usageByStatusStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageByStatusStmt: %w", cerr)
+		}
+	}
+	if q.usageByTriggerStmt != nil {
+		if cerr := q.usageByTriggerStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageByTriggerStmt: %w", cerr)
+		}
+	}
+	if q.usageKindStatsStmt != nil {
+		if cerr := q.usageKindStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageKindStatsStmt: %w", cerr)
+		}
+	}
+	if q.usageModelStatsStmt != nil {
+		if cerr := q.usageModelStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageModelStatsStmt: %w", cerr)
+		}
+	}
+	if q.usageRecentStmt != nil {
+		if cerr := q.usageRecentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageRecentStmt: %w", cerr)
+		}
+	}
+	if q.usageSeriesStmt != nil {
+		if cerr := q.usageSeriesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageSeriesStmt: %w", cerr)
+		}
+	}
+	if q.usageTTFTsStmt != nil {
+		if cerr := q.usageTTFTsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageTTFTsStmt: %w", cerr)
 		}
 	}
 	if q.usageTopSessionsStmt != nil {
@@ -484,6 +612,8 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 type Queries struct {
 	db                                   DBTX
 	tx                                   *sql.Tx
+	behaviorByDayStmt                    *sql.Stmt
+	behaviorCountsStmt                   *sql.Stmt
 	createFileStmt                       *sql.Stmt
 	createMessageStmt                    *sql.Stmt
 	createSessionStmt                    *sql.Stmt
@@ -510,9 +640,15 @@ type Queries struct {
 	getUsageByDayOfWeekStmt              *sql.Stmt
 	getUsageByHourStmt                   *sql.Stmt
 	getUsageByModelStmt                  *sql.Stmt
+	insertBehaviorStmt                   *sql.Stmt
+	insertLimitSnapshotStmt              *sql.Stmt
 	insertMCPDisabledServerStmt          *sql.Stmt
 	insertMCPEnabledServerStmt           *sql.Stmt
+	insertTraceSpanStmt                  *sql.Stmt
 	insertUsageStmt                      *sql.Stmt
+	latestLimitSnapshotStmt              *sql.Stmt
+	latestLimitSnapshotsStmt             *sql.Stmt
+	limitHistoryStmt                     *sql.Stmt
 	listAllUserMessagesStmt              *sql.Stmt
 	listFilesByPathStmt                  *sql.Stmt
 	listFilesBySessionStmt               *sql.Stmt
@@ -528,12 +664,20 @@ type Queries struct {
 	recordFileReadStmt                   *sql.Stmt
 	renameSessionStmt                    *sql.Stmt
 	setSessionChannelStmt                *sql.Stmt
+	traceSpansStmt                       *sql.Stmt
 	updateMessageStmt                    *sql.Stmt
 	updateSessionStmt                    *sql.Stmt
 	updateSessionTitleAndUsageStmt       *sql.Stmt
 	usageByDayStmt                       *sql.Stmt
 	usageByKindStmt                      *sql.Stmt
 	usageByModelStmt                     *sql.Stmt
+	usageByStatusStmt                    *sql.Stmt
+	usageByTriggerStmt                   *sql.Stmt
+	usageKindStatsStmt                   *sql.Stmt
+	usageModelStatsStmt                  *sql.Stmt
+	usageRecentStmt                      *sql.Stmt
+	usageSeriesStmt                      *sql.Stmt
+	usageTTFTsStmt                       *sql.Stmt
 	usageTopSessionsStmt                 *sql.Stmt
 	usageTotalsStmt                      *sql.Stmt
 }
@@ -542,6 +686,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
 		db:                                   tx,
 		tx:                                   tx,
+		behaviorByDayStmt:                    q.behaviorByDayStmt,
+		behaviorCountsStmt:                   q.behaviorCountsStmt,
 		createFileStmt:                       q.createFileStmt,
 		createMessageStmt:                    q.createMessageStmt,
 		createSessionStmt:                    q.createSessionStmt,
@@ -568,9 +714,15 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getUsageByDayOfWeekStmt:              q.getUsageByDayOfWeekStmt,
 		getUsageByHourStmt:                   q.getUsageByHourStmt,
 		getUsageByModelStmt:                  q.getUsageByModelStmt,
+		insertBehaviorStmt:                   q.insertBehaviorStmt,
+		insertLimitSnapshotStmt:              q.insertLimitSnapshotStmt,
 		insertMCPDisabledServerStmt:          q.insertMCPDisabledServerStmt,
 		insertMCPEnabledServerStmt:           q.insertMCPEnabledServerStmt,
+		insertTraceSpanStmt:                  q.insertTraceSpanStmt,
 		insertUsageStmt:                      q.insertUsageStmt,
+		latestLimitSnapshotStmt:              q.latestLimitSnapshotStmt,
+		latestLimitSnapshotsStmt:             q.latestLimitSnapshotsStmt,
+		limitHistoryStmt:                     q.limitHistoryStmt,
 		listAllUserMessagesStmt:              q.listAllUserMessagesStmt,
 		listFilesByPathStmt:                  q.listFilesByPathStmt,
 		listFilesBySessionStmt:               q.listFilesBySessionStmt,
@@ -586,12 +738,20 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		recordFileReadStmt:                   q.recordFileReadStmt,
 		renameSessionStmt:                    q.renameSessionStmt,
 		setSessionChannelStmt:                q.setSessionChannelStmt,
+		traceSpansStmt:                       q.traceSpansStmt,
 		updateMessageStmt:                    q.updateMessageStmt,
 		updateSessionStmt:                    q.updateSessionStmt,
 		updateSessionTitleAndUsageStmt:       q.updateSessionTitleAndUsageStmt,
 		usageByDayStmt:                       q.usageByDayStmt,
 		usageByKindStmt:                      q.usageByKindStmt,
 		usageByModelStmt:                     q.usageByModelStmt,
+		usageByStatusStmt:                    q.usageByStatusStmt,
+		usageByTriggerStmt:                   q.usageByTriggerStmt,
+		usageKindStatsStmt:                   q.usageKindStatsStmt,
+		usageModelStatsStmt:                  q.usageModelStatsStmt,
+		usageRecentStmt:                      q.usageRecentStmt,
+		usageSeriesStmt:                      q.usageSeriesStmt,
+		usageTTFTsStmt:                       q.usageTTFTsStmt,
 		usageTopSessionsStmt:                 q.usageTopSessionsStmt,
 		usageTotalsStmt:                      q.usageTotalsStmt,
 	}
