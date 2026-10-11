@@ -107,8 +107,15 @@ func ParseAddressing(text string, members []MemberRef, kinds []string) Addressin
 
 // resolveName maps a $token to an existing member id, or to a kind to add.
 func resolveName(tok string, members []MemberRef, kinds []string) (id, newKind string, ok bool) {
+	// Names first: an id (unique across the deck) can look like another
+	// member's name in this thread.
 	for _, m := range members {
-		if strings.EqualFold(m.ID, tok) || strings.EqualFold(m.Name, tok) {
+		if strings.EqualFold(m.Name, tok) {
+			return m.ID, "", true
+		}
+	}
+	for _, m := range members {
+		if strings.EqualFold(m.ID, tok) {
 			return m.ID, "", true
 		}
 	}

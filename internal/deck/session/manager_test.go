@@ -346,8 +346,26 @@ func TestAddMemberOfSameKindGetsNextID(t *testing.T) {
 		t.Fatalf("ids %s %s", a, b)
 	}
 	tid2 := r.thread(t)
-	if c := r.add(t, tid2, "claude"); c != "claude3" {
+	c := r.add(t, tid2, "claude")
+	if c != "claude3" {
 		t.Fatalf("ids are unique across the deck, got %s", c)
+	}
+	// Names restart in each thread: the first claude of a new session is "claude".
+	names := map[string]string{}
+	for _, a := range r.m.Agents() {
+		names[a.ID] = a.Name
+	}
+	if names["claude"] != "claude" || names["claude2"] != "claude2" || names[c] != "claude" {
+		t.Fatalf("names %v", names)
+	}
+	// $claude in the second thread is its own claude, not the first thread's.
+	th := r.m.thread(tid2)
+	th.mu.Lock()
+	refs := th.refs()
+	th.mu.Unlock()
+	ad := ParseAddressing("$claude hi", refs, []string{"claude", "codex"})
+	if len(ad.Members) != 1 || ad.Members[0] != c {
+		t.Fatalf("addressing in thread 2 = %+v", ad)
 	}
 }
 

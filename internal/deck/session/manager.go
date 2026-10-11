@@ -527,7 +527,7 @@ func (m *Manager) newMember(t *thread, kind, model, preferredID string) (*agentS
 		model = m.defaultModel(cfg, kind)
 	}
 	effort := m.defaultEffort(cfg, kind)
-	a := &agentState{id: id, kind: kind, name: id, model: model, effort: effort, thread: t, base: StatusIdle, started: time.Now()}
+	a := &agentState{id: id, kind: kind, model: model, effort: effort, thread: t, base: StatusIdle, started: time.Now()}
 	m.mu.Lock()
 	m.order = append(m.order, a)
 	m.byID[id] = a
@@ -535,6 +535,9 @@ func (m *Manager) newMember(t *thread, kind, model, preferredID string) (*agentS
 
 	e := store.Entry{Type: store.EntryMember, Speaker: id, Event: eventText(kind)}
 	t.mu.Lock()
+	// The id is unique across the deck (the hub routes by it); the name only
+	// has to be unique in this thread, so each session starts at "claude".
+	a.name = t.freeName(kind)
 	a.knownMode = t.mode
 	t.members = append(t.members, a)
 	m.appendLocked(t, e)
@@ -1088,16 +1091,13 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 			started: time.Now(), costTotal: mem.CostUSD, sessionID: mem.SessionID, cursor: cursor,
 			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow,
 		}
-		m.mu.Lock()
-		taken := false
-		for _, o := range m.order {
+		// Names are per thread: only another member of this thread can clash.
+		for _, o := range members {
 			if strings.EqualFold(o.getName(), name) {
-				taken = true
+				a.name = id
 			}
 		}
-		if taken {
-			a.name = id
-		}
+		m.mu.Lock()
 		m.order = append(m.order, a)
 		m.byID[id] = a
 		m.mu.Unlock()
