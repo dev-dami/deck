@@ -21,8 +21,8 @@
 // spoke last (or the only member; or, in an empty thread, a new member of the
 // default kind). Several addressees receive it concurrently.
 //
-// Agents: through the deck MCP tool send_message (Options.Hub receives the
-// calls; Message.To is a member id/name or "all"), or by starting a line of their
+// Agents: through the deck MCP tool execute with op thread.send (Options.Hub
+// receives the calls; Message.To is a member id/name or "all"), or by starting a line of their
 // final reply with "$name". Both are relayed, logged in the thread and reported
 // to the UI as RelayMsg. At most Options.MaxHops (default 6) relays happen after
 // each user message; the next one is held, the thread is paused (PausedMsg) and
@@ -161,11 +161,12 @@ const DefaultMaxHops = 6
 // Options configures a Manager. The zero value is valid: no messaging tools, no
 // MCP, six hops.
 type Options struct {
-	// Hub receives the agents' send_message calls and serves read_thread. Nil
-	// disables the tools; $mention relays still work.
+	// Hub receives the agents' thread.send calls, serves thread.read and runs
+	// the other search/execute ops through the Manager. Nil disables the
+	// tools; $mention relays still work.
 	Hub agent.Hub
-	// MCPFor returns the MCP server to register with the agent's CLI (approve
-	// tool plus the messaging tools). Nil, or a nil result, means none.
+	// MCPFor returns the MCP server to register with the agent's CLI (search
+	// and execute, plus approve for Claude). Nil, or a nil result, means none.
 	MCPFor func(agentID string) *agent.MCPServer
 	// MaxHops caps agent-to-agent relays after each user message. 0 = 6.
 	MaxHops int
@@ -243,6 +244,8 @@ type Manager struct {
 	counts  map[string]int
 	threads map[string]*thread
 	torder  []*thread
+	// activity reports a thread's running commands (deck.jobs); see SetActivity.
+	activity func(threadID string) string
 }
 
 // NewManager returns a Manager that starts agents from adapters (keyed by kind,
@@ -277,6 +280,7 @@ func NewManager(adapters map[string]agent.Adapter, st *store.Store, cfg config.C
 	m.w = newWriter()
 	if o.Hub != nil {
 		o.Hub.SetThreadReader(m.readThread)
+		o.Hub.SetExecutor(m.execOp)
 		m.wg.Add(1)
 		go m.hubLoop(o.Hub.Messages())
 	}

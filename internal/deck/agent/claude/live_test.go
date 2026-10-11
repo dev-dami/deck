@@ -16,15 +16,24 @@ import (
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == "mcp-approve" {
 		var addr, id string
-		for i := 2; i+1 < len(os.Args); i += 2 {
+		var approveTool bool
+		for i := 2; i < len(os.Args); i++ {
 			switch os.Args[i] {
 			case "--addr":
-				addr = os.Args[i+1]
+				if i+1 < len(os.Args) {
+					i++
+					addr = os.Args[i]
+				}
 			case "--agent":
-				id = os.Args[i+1]
+				if i+1 < len(os.Args) {
+					i++
+					id = os.Args[i]
+				}
+			case approve.ApproveToolFlag:
+				approveTool = true
 			}
 		}
-		if err := approve.MCPServe(os.Stdin, os.Stdout, addr, approve.TokenFromEnv(), id); err != nil {
+		if err := approve.MCPServe(os.Stdin, os.Stdout, addr, approve.TokenFromEnv(), id, approveTool); err != nil {
 			os.Exit(1)
 		}
 		os.Exit(0)
@@ -132,7 +141,7 @@ func TestLiveApproval(t *testing.T) {
 // visible and callable without a permission prompt. DECK_LIVE=message.
 func TestLiveMessaging(t *testing.T) {
 	if os.Getenv("DECK_LIVE") != "message" {
-		t.Skip("set DECK_LIVE=message to exercise send_message against real Claude")
+		t.Skip("set DECK_LIVE=message to exercise thread.send against real Claude")
 	}
 	self, err := os.Executable()
 	if err != nil {
@@ -158,7 +167,7 @@ func TestLiveMessaging(t *testing.T) {
 	r, err := a.Start(ctx, agent.Spec{
 		ID: "claude1", Dir: t.TempDir(),
 		MCP:          broker.ServerFor(self, "claude1"),
-		Instructions: "You share a Deck thread with an agent named codex. Use the deck send_message tool to talk to it.",
+		Instructions: "You share a Deck thread with an agent named codex. Use the deck execute tool with op thread.send to talk to it.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +179,7 @@ func TestLiveMessaging(t *testing.T) {
 			req.Respond(agent.Decision{Allow: true})
 		}
 	}()
-	if err := r.Send("Use the deck send_message tool to send 'hi' to codex, then reply DONE."); err != nil {
+	if err := r.Send("Use the deck execute tool (op thread.send, args to and message) to send 'hi' to codex, then reply DONE."); err != nil {
 		t.Fatal(err)
 	}
 	timeout := time.After(4 * time.Minute)
@@ -201,6 +210,6 @@ loop:
 			t.Errorf("unexpected target %q", m.To)
 		}
 	default:
-		t.Fatal("send_message never reached the hub")
+		t.Fatal("thread.send never reached the hub")
 	}
 }

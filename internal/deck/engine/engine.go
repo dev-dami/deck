@@ -96,8 +96,9 @@ func found(configured, def string) bool {
 	return err == nil
 }
 
-// MCPApprove is the stdio MCP server Claude Code launches for
-// --permission-prompt-tool. The broker token arrives via the environment, or
+// MCPApprove is Deck's stdio MCP server, which every agent CLI launches: the
+// search and execute tools, plus approve (Claude Code's
+// --permission-prompt-tool) with --approve-tool. The broker token arrives via the environment, or
 // in a file named by --token-file for CLIs that would otherwise keep it in
 // their own config; never on the command line.
 func MCPApprove(args []string) error {
@@ -105,6 +106,7 @@ func MCPApprove(args []string) error {
 	addr := fs.String("addr", "", "broker address")
 	id := fs.String("agent", "", "agent id")
 	tokenFile := fs.String("token-file", "", "file holding the broker token")
+	approveTool := fs.Bool(strings.TrimPrefix(approve.ApproveToolFlag, "--"), false, "also expose the approve tool (Claude's permission prompts)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -119,5 +121,5 @@ func MCPApprove(args []string) error {
 		}
 		token = strings.TrimSpace(string(b))
 	}
-	return approve.MCPServe(os.Stdin, os.Stdout, *addr, token, *id)
+	return approve.MCPServe(os.Stdin, os.Stdout, *addr, token, *id, *approveTool)
 }

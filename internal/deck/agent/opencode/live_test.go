@@ -104,7 +104,7 @@ func TestLiveSession(t *testing.T) {
 }
 
 // TestLiveDeckTools checks that OpenCode starts Deck's MCP server and can call
-// read_thread through it. DECK_EXE names a built deck binary.
+// thread.read through it. DECK_EXE names a built deck binary.
 func TestLiveDeckTools(t *testing.T) {
 	exe := os.Getenv("DECK_EXE")
 	if os.Getenv("DECK_LIVE") != "1" || exe == "" {
@@ -127,7 +127,7 @@ func TestLiveDeckTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	if err := r.Send("Call your read_thread tool (from the deck MCP server) and reply with the secret word it shows, nothing else."); err != nil {
+	if err := r.Send("Call the execute tool of the deck MCP server with op thread.read and reply with the secret word it shows, nothing else."); err != nil {
 		t.Fatal(err)
 	}
 	final, tools := "", []string{}

@@ -643,6 +643,10 @@ func writeFileAtomic(path string, data []byte) error {
 	return nil
 }
 
+// Sanitize is what the store does to every event before writing it: raw JSON
+// the encoder would reject is dropped. The caller's copy is not touched.
+func Sanitize(ev agent.Event) agent.Event { return sanitize(ev) }
+
 // sanitize drops raw JSON the encoder would reject, without touching the
 // caller's copy of the event.
 func sanitize(ev agent.Event) agent.Event {

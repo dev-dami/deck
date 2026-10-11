@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -288,7 +289,7 @@ func TestPostAddsMemberForKindMentionAndBriefsItOnTheWholeThread(t *testing.T) {
 	if sp.MCP == nil || sp.MCP.Name != "deck" {
 		t.Errorf("MCP = %+v", sp.MCP)
 	}
-	has(t, sp.Instructions, `"codex"`, "claude", "tester", "send_message", "read_thread", "$name")
+	has(t, sp.Instructions, `"codex"`, "claude", "tester", "search", "execute", "thread.send", "thread.read", "$name")
 	lacks(t, sp.Instructions, "fix the store", "Store now drops")
 	if len(sp.Instructions) > 1500 {
 		t.Errorf("Instructions are %d bytes", len(sp.Instructions))
@@ -408,9 +409,9 @@ func TestMessageToBusyMemberViaToolSaysQueued(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
-	res := r.c.toolResults("claude", "send_message")
+	res := r.c.toolResults("claude", "message")
 	if len(res) != 1 || res[0] != "queued for codex (busy)" {
-		t.Fatalf("send_message result = %q", res)
+		t.Fatalf("thread.send result = %q", res)
 	}
 	r.c.approvals()[0].Respond(agent.Decision{Allow: true})
 	waitFor(t, "codex second turn", func() bool { return r.c.turnDones("codex") == 2 })
@@ -444,8 +445,8 @@ func TestToolAndMentionRelays(t *testing.T) {
 	if rel[1].From != "codex" || rel[1].To[0] != "claude" || rel[1].Via != "mention" || rel[1].Text != "lock order matters, fix it first" {
 		t.Errorf("mention relay = %+v", rel[1])
 	}
-	if res := r.c.toolResults("claude", "send_message"); len(res) != 1 || res[0] != "delivered to codex" {
-		t.Errorf("send_message result = %q", res)
+	if res := r.c.toolResults("claude", "message"); len(res) != 1 || res[0] != "delivered to codex" {
+		t.Errorf("thread.send result = %q", res)
 	}
 	// codex was briefed on what claude said and got the relay as a message to it
 	has(t, r.codex.prompts("codex")[0], "[claude → codex] review the plan")
@@ -547,7 +548,7 @@ func TestHeldRelayOverToolSaysSo(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
-	res := r.c.toolResults("claude", "send_message")
+	res := r.c.toolResults("claude", "message")
 	if len(res) != 2 || !strings.HasPrefix(res[0], "delivered to codex") ||
 		!strings.HasPrefix(res[1], "held: Deck paused this thread after 1 agent-to-agent messages") {
 		t.Fatalf("results = %q", res)
@@ -589,7 +590,7 @@ func TestUnknownRecipientErrorsAndIsNotAHop(t *testing.T) {
 	r.add(t, tid, "codex")
 	_ = r.m.Post(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
-	res := r.c.toolResults("claude", "send_message")
+	res := r.c.toolResults("claude", "message")
 	if len(res) != 4 {
 		t.Fatalf("results = %q", res)
 	}
@@ -604,7 +605,7 @@ func TestUnknownRecipientErrorsAndIsNotAHop(t *testing.T) {
 		t.Fatal("codex must not have been messaged")
 	}
 	for _, e := range r.c.events(func(e EventMsg) bool {
-		return e.Tool != nil && e.Tool.Name == "send_message" && e.Kind == agent.KindToolResult
+		return e.Tool != nil && e.Tool.Name == "message" && e.Kind == agent.KindToolResult
 	}) {
 		if e.Tool.Status != agent.ToolError {
 			t.Errorf("tool result not an error: %+v", e.Tool)
@@ -626,7 +627,7 @@ func TestMessageToExitedAgentFailsFast(t *testing.T) {
 	if time.Since(start) > 3*time.Second {
 		t.Fatal("answer took too long")
 	}
-	res := r.c.toolResults("claude", "send_message")
+	res := r.c.toolResults("claude", "message")
 	if len(res) != 2 {
 		t.Fatalf("results = %q", res)
 	}
@@ -645,7 +646,7 @@ func TestEchoLoopIsDroppedWithNotice(t *testing.T) {
 	_ = r.m.Post(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	waitFor(t, "codex to settle", func() bool { return r.c.turnDones("codex") >= 1 })
-	res := r.c.toolResults("claude", "send_message")
+	res := r.c.toolResults("claude", "message")
 	if len(res) != 3 || !strings.HasPrefix(res[1], "dropped") || strings.HasPrefix(res[0], "dropped") || strings.HasPrefix(res[2], "dropped") {
 		t.Fatalf("results = %q", res)
 	}
@@ -744,13 +745,40 @@ func TestReadThreadTool(t *testing.T) {
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	_ = r.m.Post(tid, "$codex read the thread")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
-	out := r.c.toolResults("codex", "read_thread")
+	out := r.c.toolResults("codex", "read")
 	if len(out) != 1 {
-		t.Fatalf("read_thread results = %q", out)
+		t.Fatalf("thread.read results = %q", out)
 	}
 	has(t, out[0], "claude, codex", "[tester → claude] hello there", "[tester → codex (you)] read the thread")
 	if got := r.m.readThread("nobody"); got != "" {
 		t.Fatalf("unknown agent: %q", got)
+	}
+}
+
+// TestExecuteSkillsUsed: an op run through the hub sees the skills another
+// member used in the thread.
+func TestExecuteSkillsUsed(t *testing.T) {
+	skill := fake.Step{Event: agent.Event{Kind: agent.KindToolCall, Tool: &agent.Tool{
+		ID: "s1", Name: "Skill", Title: "pdf", Input: json.RawMessage(`{"skill":"pdf"}`), Status: agent.ToolRunning,
+	}}}
+	r := newRig(t,
+		[]fake.Script{turn(skill, say("used it"), finish())},
+		[]fake.Script{turn(fake.Step{Exec: &fake.Exec{Op: "skills.used"}}, fake.Step{Exec: &fake.Exec{Op: "no.such.op"}}, say("ok"), finish())})
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	r.add(t, tid, "codex")
+	_ = r.m.Post(tid, "$claude make a pdf")
+	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
+	_ = r.m.Post(tid, "$codex which skills were used?")
+	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
+	out := r.c.toolResults("codex", "deck")
+	if len(out) != 2 {
+		t.Fatalf("deck results = %q", out)
+	}
+	has(t, out[0], "pdf - used by claude (Skill tool)")
+	has(t, out[1], "Unknown op", "search")
+	if txt, isErr := r.m.execOp("nobody", "git.status", nil); !isErr || txt == "" {
+		t.Fatalf("unknown agent: %q %v", txt, isErr)
 	}
 }
 
@@ -937,9 +965,9 @@ func TestDemoDuoCollaborates(t *testing.T) {
 	if len(rel) != 2 || rel[0].Via != "tool" || rel[1].Via != "mention" || rel[1].From != "codex" {
 		t.Fatalf("relays = %+v", rel)
 	}
-	out := c.toolResults("codex", "read_thread")
+	out := c.toolResults("codex", "read")
 	if len(out) != 1 || !strings.Contains(out[0], "Plan for the store change") {
-		t.Fatalf("read_thread = %q", out)
+		t.Fatalf("thread.read = %q", out)
 	}
 	ti, _ := m.Thread(tid)
 	if math.Abs(ti.CostUSD-0.19) > 1e-9 || ti.Paused || ti.Hops != 2 {

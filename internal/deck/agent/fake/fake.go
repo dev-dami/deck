@@ -5,6 +5,7 @@ package fake
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,18 +30,27 @@ var ErrClosed = errors.New("fake: run is closed")
 // Denying an approval emits a tool_result with Status error and Output "denied",
 // then a turn_done; the rest of the script is abandoned.
 //
-// Message, when set, makes the agent call the hub's send_message tool after the
-// Event is emitted: a tool_call event, then the message is handed to the Hub
-// (only To and Text are used; the sender is the agent itself), playback waits
-// for the Hub's answer, and a tool_result event carries it. ReadThread does the
-// same for the read_thread tool. Both need a Hub (see NewTurns / NewHub); without
-// one the tool_result is an error.
+// Message, when set, makes the agent call Deck's execute tool with op
+// thread.send after the Event is emitted: a tool_call event (named "message",
+// as the real adapters render it), then the message is handed to the Hub (only
+// To and Text are used; the sender is the agent itself), playback waits for
+// the Hub's answer, and a tool_result event carries it. ReadThread does the
+// same for op thread.read (a "read" tool), and Exec for any other op (a "deck"
+// tool, answered by the Hub's executor). All need a Hub (see NewTurns /
+// NewHub); without one the tool_result is an error.
 type Step struct {
 	Delay      time.Duration
 	Event      agent.Event
 	Approval   *agent.ApprovalRequest
 	Message    *agent.Message
 	ReadThread bool
+	Exec       *Exec
+}
+
+// Exec is one execute call a fake agent makes.
+type Exec struct {
+	Op   string
+	Args json.RawMessage
 }
 
 // Script is an ordered list of steps. A turn ends when a step emits
@@ -319,11 +329,15 @@ func (r *run) play(t *turn, script Script) {
 			r.endTurn(t)
 			return
 		}
-		if st.Message != nil && !r.callHub(t, "send_message", st.Message.To, st.Message.Text) {
+		if st.Message != nil && !r.callHub(t, "message", st.Message.To, st.Message.Text, nil) {
 			r.endTurn(t)
 			return
 		}
-		if st.ReadThread && !r.callHub(t, "read_thread", "", "") {
+		if st.ReadThread && !r.callHub(t, "read", "", "", nil) {
+			r.endTurn(t)
+			return
+		}
+		if st.Exec != nil && !r.callHub(t, "deck", "", "", st.Exec) {
 			r.endTurn(t)
 			return
 		}
@@ -387,16 +401,26 @@ func (r *run) play(t *turn, script Script) {
 	// clearTurn lets the next Send start a new turn.
 }
 
-// callHub plays one messaging tool call: tool_call, the hub round trip,
+// callHub plays one call of Deck's execute tool, under the name the real
+// adapters show ("message", "read" or "deck"): tool_call, the hub round trip,
 // tool_result. It reports false when the turn was cancelled meanwhile.
-func (r *run) callHub(t *turn, name, to, text string) bool {
+func (r *run) callHub(t *turn, name, to, text string, ex *Exec) bool {
 	id := fmt.Sprintf("fake-%s-%d", name, atomic.AddInt64(&idCounter, 1))
-	title := name
-	if name == "send_message" {
+	var input json.RawMessage
+	var title string
+	switch {
+	case name == "message":
 		title = "to " + to + ": " + oneLine(text)
+		input, _ = json.Marshal(map[string]any{"op": agent.OpThreadSend, "args": map[string]string{"to": to, "message": text}})
+	case name == "read":
+		title = "shared thread"
+		input = json.RawMessage(`{"op":"` + agent.OpThreadRead + `"}`)
+	case ex != nil:
+		input, _ = json.Marshal(agent.ExecInput{Op: ex.Op, Args: ex.Args})
+		_, title, _ = agent.DeckToolDisplay(agent.DeckToolExecute, input)
 	}
 	if !r.emit(t.cancel, agent.Event{Kind: agent.KindToolCall, Tool: &agent.Tool{
-		ID: id, Name: name, Title: title, Status: agent.ToolRunning,
+		ID: id, Name: name, Title: title, Input: input, Status: agent.ToolRunning,
 	}}) {
 		return false
 	}
@@ -405,8 +429,14 @@ func (r *run) callHub(t *turn, name, to, text string) bool {
 	switch {
 	case r.hub == nil:
 		err = errors.New("no hub")
-	case name == "read_thread":
+	case name == "read":
 		out = r.hub.ReadThread(r.agentID)
+	case ex != nil:
+		var isErr bool
+		out, isErr = r.hub.Exec(r.agentID, ex.Op, ex.Args)
+		if isErr {
+			err = errors.New(out)
+		}
 	default:
 		out, err = r.hub.Send(t.cancel, r.agentID, to, text)
 	}
@@ -420,7 +450,7 @@ func (r *run) callHub(t *turn, name, to, text string) bool {
 		status, out = agent.ToolError, err.Error()
 	}
 	return r.emit(t.cancel, agent.Event{Kind: agent.KindToolResult, Text: out, Tool: &agent.Tool{
-		ID: id, Name: name, Title: title, Output: out, Status: status,
+		ID: id, Name: name, Title: title, Input: input, Output: out, Status: status,
 	}})
 }
 

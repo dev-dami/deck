@@ -89,10 +89,11 @@ func sortedEnvNames(env map[string]string) []string {
 // MCP elicitation fallback
 // ---------------------------------------------------------------------------
 
-// deckTools are the only tools of the "deck" server Deck auto-accepts.
-var deckTools = map[string]bool{"send_message": true, "read_thread": true}
+// deckTools are the only tools of the "deck" server Deck auto-accepts: search
+// and execute (read-only ops, plus thread.send, which the user sees).
+var deckTools = map[string]bool{agent.DeckToolSearch: true, agent.DeckToolExecute: true}
 
-var deckToolWord = regexp.MustCompile(`\b(send_message|read_thread)\b`)
+var deckToolWord = regexp.MustCompile(`\b(search|execute)\b`)
 
 // elicitationParams is McpServerElicitationRequestParams (subset). Codex raises
 // an MCP tool approval as an elicitation whose _meta carries
@@ -145,28 +146,7 @@ func deckToolDisplay(it threadItem) (name, title string, ok bool) {
 	if it.Type != "mcpToolCall" || it.Server != deckServerName {
 		return "", "", false
 	}
-	switch it.Tool {
-	case "send_message":
-		var a struct {
-			To      string `json:"to"`
-			Message string `json:"message"`
-		}
-		_ = json.Unmarshal(it.Arguments, &a)
-		return "message", "to " + a.To + ": " + truncateRunes(oneLine(a.Message), 60), true
-	case "read_thread":
-		return "read", "shared thread", true
-	}
-	return "", "", false
-}
-
-func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
-
-func truncateRunes(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n])
+	return agent.DeckToolDisplay(it.Tool, it.Arguments)
 }
 
 // deckResultText renders a deck tool result (the text blocks of the MCP

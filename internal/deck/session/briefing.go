@@ -11,7 +11,7 @@ import (
 const (
 	maxEntryChars    = 6000  // one briefed message is cut here
 	maxBriefingChars = 40000 // a whole briefing keeps its tail
-	readThreadLast   = 200   // entries read_thread covers
+	readThreadLast   = 200   // entries thread.read covers
 	maxInstrChars    = 1400  // Spec.Instructions stays well under 1.5 KB
 )
 
@@ -19,7 +19,7 @@ const (
 type viewer struct {
 	self        string // member id; "" for none
 	skipSelf    bool   // leave out the viewer's own events (a briefing)
-	includeOpen bool   // include turns still in flight (read_thread)
+	includeOpen bool   // include turns still in flight (thread.read)
 }
 
 // line is one rendered block of a briefing.
@@ -238,7 +238,7 @@ func (m *Manager) buildPrompt(t *thread, a *agentState) (prompt string, images [
 }
 
 // readThread renders a's whole thread (the last readThreadLast entries) as the
-// plain text the read_thread tool returns.
+// plain text the thread.read op returns.
 func (m *Manager) readThread(agentID string) string {
 	a := m.get(agentID)
 	if a == nil {
@@ -292,7 +292,8 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	fmt.Fprintf(&b, "You are %q in a shared Deck thread with %s. Everything said in the thread is visible to all of them.\n", clip(a.getName(), 30), clip(who, 200))
 	b.WriteString("What others said since your last turn is summarised first; messages from other agents are prefixed with their name, like \"[codex] ...\".\n")
 	if tools {
-		b.WriteString("To message another agent, call the deck send_message tool (to: an agent name, or \"all\"), or start a line of your final reply with $name. The deck read_thread tool shows the whole thread.\n")
+		b.WriteString("Deck's MCP server has two tools: search finds Deck ops, skills other agents have and this project's past threads; execute runs one op.\n")
+		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with $name. Op \"thread.read\" shows the whole thread.\n")
 	} else {
 		b.WriteString("To message another agent, start a line of your final reply with $name (or $all).\n")
 	}
@@ -458,5 +459,5 @@ func tail(s string, n int) string {
 	if len(r) <= n {
 		return s
 	}
-	return "[... earlier activity omitted; the read_thread tool shows more ...]\n\n" + string(r[len(r)-n:])
+	return "[... earlier activity omitted; execute thread.read shows more ...]\n\n" + string(r[len(r)-n:])
 }

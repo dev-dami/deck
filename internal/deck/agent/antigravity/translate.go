@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -194,7 +195,8 @@ func (t *translator) step(s *wireStep, mk func(agent.Kind) agent.Event) []agent.
 			}
 			t.pending[s.StepIndex] = pendingTool{id: id, name: name, title: title, input: input}
 			ev := mk(agent.KindToolCall)
-			ev.Tool = &agent.Tool{ID: id, Name: displayName(name), Title: title, Input: input, Status: agent.ToolRunning}
+			dn, dt := displayTool(name, title, input)
+			ev.Tool = &agent.Tool{ID: id, Name: dn, Title: dt, Input: input, Status: agent.ToolRunning}
 			return []agent.Event{ev}
 		}
 		p, announced := t.pending[s.StepIndex]
@@ -207,7 +209,8 @@ func (t *translator) step(s *wireStep, mk func(agent.Kind) agent.Event) []agent.
 			}
 			p = pendingTool{id: toolID(s.StepIndex), name: name, title: title, input: input}
 			ev := mk(agent.KindToolCall)
-			ev.Tool = &agent.Tool{ID: p.id, Name: displayName(p.name), Title: p.title, Input: p.input, Status: agent.ToolRunning}
+			dn, dt := displayTool(p.name, p.title, p.input)
+			ev.Tool = &agent.Tool{ID: p.id, Name: dn, Title: dt, Input: p.input, Status: agent.ToolRunning}
 			out = append(out, ev)
 		} else if info != nil {
 			// The ACTIVE step announced the call before its parameters
@@ -228,7 +231,8 @@ func (t *translator) step(s *wireStep, mk func(agent.Kind) agent.Event) []agent.
 				}
 			}
 		}
-		res.Tool = &agent.Tool{ID: p.id, Name: displayName(p.name), Title: p.title, Input: p.input, Output: output, Status: status}
+		dn, dt := displayTool(p.name, p.title, p.input)
+		res.Tool = &agent.Tool{ID: p.id, Name: dn, Title: dt, Input: p.input, Output: output, Status: status}
 		out = append(out, res)
 		out = append(out, t.subagents(s, mk)...)
 		return out
@@ -401,17 +405,32 @@ func compactJSON(in json.RawMessage) string {
 	return s
 }
 
-// displayName maps agy's tool names to Deck's display names. Deck's own
-// messaging tools arrive through the deck MCP server under an unknown tool
-// prefix (agy's MCP tool naming is undocumented), so they are matched by
-// suffix: anything ending in send_message becomes "message".
-func displayName(name string) string {
-	switch {
-	case name == "send_message" || strings.HasSuffix(name, "__send_message") || strings.HasSuffix(name, "_send_message"):
-		return "message"
-	case name == "read_thread" || strings.HasSuffix(name, "__read_thread") || strings.HasSuffix(name, "_read_thread"):
-		return "read"
+// deckToolName matches Deck's own search and execute tools as agy names
+// them. agy's MCP tool naming is undocumented, so the server prefix ("deck",
+// or the per-agent "deck-<id>") is matched loosely; a bare name is not, since
+// agy has tools of its own that end in "search".
+var deckToolName = regexp.MustCompile(`^(?:mcp__)?deck(?:-[A-Za-z0-9-]+)?(?:__|_)(search|execute)$`)
+
+// displayTool maps agy's tool name and title to Deck's display name and title.
+// Deck's own tools render as agent.DeckToolDisplay says: a thread.send is a
+// "message" ("to <to>: <text>"), a thread.read a "read".
+func displayTool(name, title string, input json.RawMessage) (string, string) {
+	bare := ""
+	if m := deckToolName.FindStringSubmatch(name); m != nil {
+		bare = m[1]
+	} else if name == agent.DeckToolExecute && agent.ParseExecInput(input).Op != "" {
+		bare = name
 	}
+	if bare != "" {
+		if n, t, ok := agent.DeckToolDisplay(bare, input); ok {
+			return n, t
+		}
+	}
+	return displayName(name), title
+}
+
+// displayName maps agy's tool names to Deck's display names.
+func displayName(name string) string {
 	if strings.HasSuffix(name, "__approve") || strings.HasSuffix(name, "_approve") || name == "approve" {
 		return "approve"
 	}

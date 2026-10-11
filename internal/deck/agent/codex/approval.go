@@ -105,8 +105,9 @@ func (r *run) handleServerRequest(m Message) {
 		r.push(req)
 
 	case reqElicitation:
-		// Only Deck's own messaging tools (server "deck": send_message,
-		// read_thread) are auto-accepted; every other elicitation is declined.
+		// Only Deck's own tools (server "deck": search and execute, whose
+		// ops are read-only except thread.send, which the user sees) are
+		// auto-accepted; every other elicitation is declined.
 		// With default_tools_approval_mode=approve codex should not ask at all;
 		// this is the fallback.
 		if isDeckToolApproval(m.Params) {

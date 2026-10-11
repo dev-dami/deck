@@ -1,6 +1,7 @@
 package fake
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -11,13 +12,14 @@ import (
 )
 
 // Hub is an in-process agent.Hub for tests and the demo. Fake agents call it
-// through Step.Message / Step.ReadThread; a session.Manager consumes Messages()
-// and installs the thread reader.
+// through Step.Message / Step.ReadThread / Step.Exec; a session.Manager
+// consumes Messages() and installs the thread reader and the executor.
 type Hub struct {
 	msgs chan agent.Message
 
 	mu     sync.Mutex
 	reader func(string) string
+	exec   agent.Executor
 	seq    int64
 }
 
@@ -26,17 +28,35 @@ var _ agent.Hub = (*Hub)(nil)
 // NewHub returns a Hub with a buffered message channel.
 func NewHub() *Hub { return &Hub{msgs: make(chan agent.Message, 64)} }
 
-// Messages is the stream of send_message calls.
+// Messages is the stream of thread.send calls.
 func (h *Hub) Messages() <-chan agent.Message { return h.msgs }
 
-// SetThreadReader installs the read_thread provider.
+// SetThreadReader installs the thread.read provider.
 func (h *Hub) SetThreadReader(f func(agentID string) string) {
 	h.mu.Lock()
 	h.reader = f
 	h.mu.Unlock()
 }
 
-// ReadThread answers a read_thread call for agentID ("" when no reader is set).
+// SetExecutor installs the provider of search and the other execute ops.
+func (h *Hub) SetExecutor(f agent.Executor) {
+	h.mu.Lock()
+	h.exec = f
+	h.mu.Unlock()
+}
+
+// Exec answers an execute call (op "search" for the search tool) for agentID.
+func (h *Hub) Exec(agentID, op string, args json.RawMessage) (string, bool) {
+	h.mu.Lock()
+	f := h.exec
+	h.mu.Unlock()
+	if f == nil {
+		return "no executor", true
+	}
+	return f(agentID, op, args)
+}
+
+// ReadThread answers a thread.read call for agentID ("" when no reader is set).
 func (h *Hub) ReadThread(agentID string) string {
 	h.mu.Lock()
 	f := h.reader
@@ -47,7 +67,7 @@ func (h *Hub) ReadThread(agentID string) string {
 	return f(agentID)
 }
 
-// Send raises a send_message call from agent `from` and waits for the answer.
+// Send raises a thread.send call from agent `from` and waits for the answer.
 // It gives up when stop closes or after 10 seconds.
 func (h *Hub) Send(stop <-chan struct{}, from, to, text string) (string, error) {
 	type result struct {

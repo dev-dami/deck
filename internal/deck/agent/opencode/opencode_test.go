@@ -345,14 +345,31 @@ func TestModelsListEveryProviderWithEfforts(t *testing.T) {
 	}
 }
 
+func TestDeckToolTitles(t *testing.T) {
+	tr := newTranslator("oc", t.TempDir())
+	got := tr.agentTool(toolCall{ToolCallID: "x", Name: "deck_execute", RawInput: json.RawMessage(`{"op":"thread.send","args":{"to":"claude","message":"look at\nthis"}}`)})
+	if got.Name != "message" || got.Title != "to claude: look at this" {
+		t.Errorf("thread.send = %+v", got)
+	}
+	got = tr.agentTool(toolCall{ToolCallID: "y", Name: "deck_search", RawInput: json.RawMessage(`{"query":"git log"}`)})
+	if got.Name != "deck" || got.Title != "search git log" {
+		t.Errorf("search = %+v", got)
+	}
+}
+
 func TestToolNames(t *testing.T) {
 	for _, c := range []struct {
 		call toolCall
 		want string
 	}{
 		{toolCall{Name: "shell"}, "Bash"},
-		{toolCall{Name: "deck_send_message"}, "send_message"},
-		{toolCall{Name: "execute", RawInput: json.RawMessage(`{"code":"await deck.read_thread({})"}`)}, "read_thread"},
+		{toolCall{Name: "deck_execute", RawInput: json.RawMessage(`{"op":"thread.send","args":{"to":"claude","message":"hi"}}`)}, "message"},
+		{toolCall{Name: "deck_execute", RawInput: json.RawMessage(`{"op":"thread.read"}`)}, "read"},
+		{toolCall{Name: "deck_execute", RawInput: json.RawMessage(`{"op":"git.status"}`)}, "deck"},
+		{toolCall{Name: "deck_search", RawInput: json.RawMessage(`{"query":"pdf"}`)}, "deck"},
+		{toolCall{Name: "brave_search"}, "brave_search"},
+		{toolCall{Name: "execute", RawInput: json.RawMessage(`{"code":"await deck.execute({op: 'thread.read'})"}`)}, "read"},
+		{toolCall{Name: "execute", RawInput: json.RawMessage(`{"code":"await deck.execute({op: 'thread.send', args: {to: 'codex', message: 'hi'}})"}`)}, "message"},
 		{toolCall{Name: "execute", RawInput: json.RawMessage(`{"code":"await tools.grep({})"}`)}, "execute"},
 		{toolCall{Kind: "search"}, "Grep"},
 	} {

@@ -206,7 +206,7 @@ func (t *translator) tool(c toolCall, raw json.RawMessage) []agent.Event {
 }
 
 // toolNames maps OpenCode's tool names to the names Deck shows; Deck's own MCP
-// tools (registered as server "deck") keep their bare names.
+// tools (registered as server "deck") are mapped by deckTool.
 var toolNames = map[string]string{
 	"bash": "Bash", "shell": "Bash", "edit": "Edit", "write": "Write", "patch": "Edit", "apply_patch": "Edit",
 	"read": "Read", "grep": "Grep", "glob": "Glob", "list": "LS", "webfetch": "WebFetch", "websearch": "WebSearch",
@@ -217,23 +217,51 @@ var kindNames = map[string]string{
 	"execute": "Bash", "edit": "Edit", "delete": "Edit", "move": "Edit", "read": "Read", "search": "Grep", "fetch": "WebFetch",
 }
 
-func toolName(c toolCall) string {
+// deckToolPrefixes are how OpenCode may name the tools of Deck's MCP server
+// (registered as "deck"), longest first.
+var deckToolPrefixes = []string{"mcp__deck__", "deck__", "deck_"}
+
+// deckTool maps a call of Deck's own search or execute tool to its display
+// name and title (a thread.send is a "message", a thread.read a "read").
+// OpenCode's code mode runs a script under its own bare "execute" tool; a
+// script that calls Deck's execute with exactly one of the thread ops is
+// shown as that op, and one that only searches Deck as "deck".
+func deckTool(c toolCall) (name, title string, ok bool) {
 	n := strings.ToLower(c.Name)
-	for _, own := range []string{"send_message", "read_thread"} {
-		if n == own || strings.HasSuffix(n, "_"+own) {
-			return own
+	for _, p := range deckToolPrefixes {
+		if bare, found := strings.CutPrefix(n, p); found {
+			return agent.DeckToolDisplay(bare, c.RawInput)
 		}
 	}
-	if n == "execute" { // OpenCode's code mode: a script that calls tools
-		in := string(c.RawInput)
-		msg, read := strings.Contains(in, "send_message"), strings.Contains(in, "read_thread")
-		switch {
-		case msg && !read:
-			return "send_message"
-		case read && !msg:
-			return "read_thread"
-		}
+	if n != "execute" { // not OpenCode's code mode either
+		return "", "", false
 	}
+	var code struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(c.RawInput, &code) != nil || code.Code == "" {
+		return "", "", false
+	}
+	in := code.Code
+	callsExec := strings.Contains(in, "deck.execute") || strings.Contains(in, "deck_execute")
+	callsSearch := strings.Contains(in, "deck.search") || strings.Contains(in, "deck_search")
+	send, read := strings.Contains(in, agent.OpThreadSend), strings.Contains(in, agent.OpThreadRead)
+	switch {
+	case callsExec && send && !read:
+		return "message", "", true
+	case callsExec && read && !send:
+		return "read", "shared thread", true
+	case callsSearch && !callsExec:
+		return "deck", "search", true
+	}
+	return "", "", false
+}
+
+func toolName(c toolCall) string {
+	if name, _, ok := deckTool(c); ok {
+		return name
+	}
+	n := strings.ToLower(c.Name)
 	if v, ok := toolNames[n]; ok {
 		return v
 	}
@@ -247,6 +275,12 @@ func toolName(c toolCall) string {
 }
 
 func (t *translator) agentTool(c toolCall) agent.Tool {
+	if name, title, ok := deckTool(c); ok {
+		if title == "" {
+			title = t.title(c)
+		}
+		return agent.Tool{ID: c.ToolCallID, Name: name, Title: title, Input: c.RawInput}
+	}
 	return agent.Tool{ID: c.ToolCallID, Name: toolName(c), Title: t.title(c), Input: c.RawInput}
 }
 

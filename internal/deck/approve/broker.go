@@ -19,19 +19,26 @@ import (
 // Wire request kinds. An empty kind means approve (backward compatible).
 const (
 	kindApprove = "approve"
-	kindMessage = "message"
-	kindRead    = "read"
+	kindExec    = "exec" // the search tool (op "search") and every execute op
 )
 
-// messageTimeout is how long send_message waits for Deck to answer.
+// opSearch is the op the search tool travels under.
+const opSearch = "search"
+
+// maxExecOutput caps the text one search or execute call returns.
+const maxExecOutput = 20 << 10
+
+// messageTimeout is how long thread.send waits for Deck to answer.
 var messageTimeout = 30 * time.Second
 
 // wireRequest is one newline-JSON request from the MCP helper process.
 type wireRequest struct {
 	Token     string          `json:"token"`
-	Kind      string          `json:"kind,omitempty"` // approve (default) | message | read
-	To        string          `json:"to,omitempty"`   // message: target agent name or "all"
-	Text      string          `json:"text,omitempty"` // message: the text
+	Kind      string          `json:"kind,omitempty"` // approve (default) | exec
+	Op        string          `json:"op,omitempty"`   // exec: the op ("search" for the search tool)
+	Args      json.RawMessage `json:"args,omitempty"` // exec: the op's arguments
+	To        string          `json:"to,omitempty"`   // thread.send: target agent name or "all"
+	Text      string          `json:"text,omitempty"` // thread.send: the text
 	AgentID   string          `json:"agent_id"`
 	RequestID string          `json:"request_id"`
 	ToolName  string          `json:"tool_name"`
@@ -56,6 +63,7 @@ type Broker struct {
 
 	messages chan agent.Message
 	reader   func(agentID string) string
+	exec     agent.Executor
 }
 
 var _ agent.Hub = (*Broker)(nil)
@@ -88,14 +96,22 @@ func (b *Broker) Addr() string { return b.ln.Addr().String() }
 // Token is the shared secret clients must present.
 func (b *Broker) Token() string { return b.token }
 
-// Messages delivers send_message calls from every agent. Each message's Respond
+// Messages delivers thread.send calls from every agent. Each message's Respond
 // must be called exactly once; the sending agent is blocked until then.
 func (b *Broker) Messages() <-chan agent.Message { return b.messages }
 
-// SetThreadReader installs the read_thread provider.
+// SetThreadReader installs the thread.read provider.
 func (b *Broker) SetThreadReader(f func(agentID string) string) {
 	b.mu.Lock()
 	b.reader = f
+	b.mu.Unlock()
+}
+
+// SetExecutor installs the provider of search and of every execute op other
+// than thread.send and thread.read, which the broker answers itself.
+func (b *Broker) SetExecutor(f agent.Executor) {
+	b.mu.Lock()
+	b.exec = f
 	b.mu.Unlock()
 }
 
@@ -105,8 +121,10 @@ func (b *Broker) ServerFor(selfExe, agentID string) *agent.MCPServer {
 	return &agent.MCPServer{
 		Name:    "deck",
 		Command: selfExe,
-		Args:    []string{"mcp-approve", "--addr", b.Addr(), "--agent", agentID},
-		Env:     map[string]string{TokenEnv: b.token},
+		// Claude's adapter adds ApproveToolFlag; other agents get only
+		// search and execute.
+		Args: []string{"mcp-approve", "--addr", b.Addr(), "--agent", agentID},
+		Env:  map[string]string{TokenEnv: b.token},
 	}
 }
 
@@ -173,10 +191,8 @@ func (b *Broker) serve(c net.Conn) {
 		switch req.Kind {
 		case "", kindApprove:
 			resp = b.handle(req)
-		case kindMessage:
-			resp = b.handleMessage(req)
-		case kindRead:
-			resp = b.handleRead(req)
+		case kindExec:
+			resp = b.handleExec(req)
 		default:
 			resp = wireResponse{Behavior: "deny", Message: "unknown request kind"}
 		}
@@ -194,10 +210,75 @@ type wireResponse struct {
 	Message      string          `json:"message,omitempty"`
 }
 
-// wireReply answers message and read requests.
+// wireReply answers exec requests.
 type wireReply struct {
 	Text    string `json:"text"`
 	IsError bool   `json:"is_error,omitempty"`
+}
+
+// handleExec answers the search tool and one execute op. thread.send and
+// thread.read are answered here; everything else goes to the executor,
+// bounded by execTimeout. Results are capped and never carry the broker
+// token.
+func (b *Broker) handleExec(req wireRequest) wireReply {
+	var r wireReply
+	switch strings.TrimSpace(req.Op) {
+	case agent.OpThreadSend:
+		var a struct {
+			To      string `json:"to"`
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(req.Args, &a) != nil || strings.TrimSpace(a.To) == "" || strings.TrimSpace(a.Message) == "" {
+			return wireReply{Text: "thread.send needs args {\"to\": an agent name or \"all\", \"message\": the text}", IsError: true}
+		}
+		req.To, req.Text = strings.TrimSpace(a.To), a.Message
+		r = b.handleMessage(req)
+	case agent.OpThreadRead:
+		r = b.handleRead(req)
+	default:
+		r = b.runExec(req)
+	}
+	r.Text = b.scrub(r.Text)
+	return r
+}
+
+func (b *Broker) runExec(req wireRequest) wireReply {
+	b.mu.Lock()
+	f := b.exec
+	b.mu.Unlock()
+	if f == nil {
+		return wireReply{Text: "Deck's search and execute are not available in this session.", IsError: true}
+	}
+	done := make(chan wireReply, 1)
+	go func() {
+		text, isErr := f(req.AgentID, req.Op, req.Args)
+		done <- wireReply{Text: text, IsError: isErr}
+	}()
+	timer := time.NewTimer(execTimeout)
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		return r
+	case <-timer.C:
+		return wireReply{Text: req.Op + " took too long; Deck gave up after " + execTimeout.String(), IsError: true}
+	case <-b.done:
+		return wireReply{Text: "Deck is shutting down", IsError: true}
+	}
+}
+
+// scrub caps a result at maxExecOutput and removes the broker token.
+func (b *Broker) scrub(s string) string {
+	if b.token != "" {
+		s = strings.ReplaceAll(s, b.token, "[redacted]")
+	}
+	if len(s) <= maxExecOutput {
+		return s
+	}
+	cut := maxExecOutput
+	for cut > 0 && (s[cut]&0xC0) == 0x80 {
+		cut--
+	}
+	return s[:cut] + "\n[... output truncated at 20 KB; narrow the request ...]"
 }
 
 func (b *Broker) handleMessage(req wireRequest) wireReply {

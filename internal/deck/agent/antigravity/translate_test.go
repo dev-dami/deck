@@ -246,17 +246,30 @@ func TestUnknownShapesNeverPanic(t *testing.T) {
 	}
 }
 
-func TestDisplayName(t *testing.T) {
-	for in, want := range map[string]string{
-		"run_command":                   "run_command",
-		"send_message":                  "message",
-		"mcp__deck__send_message":       "message",
-		"deck-antigravity_send_message": "message",
-		"read_thread":                   "read",
-		"mcp__deck__read_thread":        "read",
+func TestDisplayTool(t *testing.T) {
+	send := json.RawMessage(`{"op":"thread.send","args":{"to":"claude","message":"hi"}}`)
+	read := json.RawMessage(`{"op":"thread.read"}`)
+	for _, c := range []struct {
+		name      string
+		input     json.RawMessage
+		wantName  string
+		wantTitle string
+	}{
+		{"run_command", nil, "run_command", "orig"},
+		{"grep_search", json.RawMessage(`{"query":"x"}`), "grep_search", "orig"},
+		{"mcp__deck__execute", send, "message", "to claude: hi"},
+		{"deck-antigravity_execute", send, "message", "to claude: hi"},
+		{"deck_execute", read, "read", "shared thread"},
+		{"deck-antigravity__execute", json.RawMessage(`{"op":"git.log"}`), "deck", "git.log"},
+		{"deck-antigravity_search", json.RawMessage(`{"query":"pdf"}`), "deck", "search pdf"},
+		{"execute", read, "read", "shared thread"},
+		{"execute", json.RawMessage(`{"code":"x"}`), "execute", "orig"},
+		{"search", json.RawMessage(`{"query":"pdf"}`), "search", "orig"},
+		{"deck-antigravity_approve", nil, "approve", "orig"},
 	} {
-		if got := displayName(in); got != want {
-			t.Fatalf("displayName(%q) = %q, want %q", in, got, want)
+		n, title := displayTool(c.name, "orig", c.input)
+		if n != c.wantName || title != c.wantTitle {
+			t.Errorf("displayTool(%q, %s) = %q, %q; want %q, %q", c.name, c.input, n, title, c.wantName, c.wantTitle)
 		}
 	}
 }

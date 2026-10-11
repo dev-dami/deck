@@ -19,7 +19,7 @@ Please give us a reasonable chance to fix the problem before you disclose it pub
 Deck is a terminal app that runs the user's own `claude` and `codex` CLIs. The areas we care most about are:
 
 - **The approval broker.** The loopback TCP listener on `127.0.0.1`, and the token that authenticates the MCP helper to it. Anything that lets a connection other than Deck's own helper approve a request, or that lets one thread approve for another.
-- **The MCP helper (`deck mcp-approve`).** Its stdio protocol, what it forwards, and what it accepts from the agent.
+- **The MCP helper (`deck mcp-approve`).** Its stdio protocol, what it forwards, and what it accepts from the agent. It offers every agent `search` and `execute` (and Claude `approve`); every op is read-only except `thread.send`, and `skills.read` must stay inside a skill's folder.
 - **Process spawning.** How Deck starts the `claude` and `codex` binaries, including argument handling, environment passing and the working directory.
 - **Credentials.** Anything that could read, copy, log, print or transmit credential files, OAuth tokens, or API keys, whether from the user's CLI login or from the environment. Deck is designed never to touch them. The guard test in `internal/guard` checks part of that.
 - **Agent self-approval.** Anything that lets an agent approve its own tool calls or file changes, or that bypasses the user's approval inbox.

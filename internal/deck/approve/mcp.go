@@ -8,8 +8,9 @@ import (
 	"io"
 	"net"
 	"os"
-	"strings"
 	"time"
+
+	"github.com/dev-dami/deck/internal/deck/agent"
 )
 
 type rpcRequest struct {
@@ -31,14 +32,22 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-// MCP tool names exposed by the server; Claude sees them as mcp__deck__approve,
-// mcp__deck__send_message and mcp__deck__read_thread when the server is
-// registered under the name "deck".
+// MCP tool names exposed by the server; Claude sees them as mcp__deck__search,
+// mcp__deck__execute and mcp__deck__approve when the server is registered
+// under the name "deck". Every agent gets search and execute; only Claude,
+// whose --permission-prompt-tool must be an MCP tool, gets approve.
 const (
-	MCPToolName        = "approve"
-	MCPToolSendMessage = "send_message"
-	MCPToolReadThread  = "read_thread"
+	MCPToolName    = "approve"
+	MCPToolSearch  = agent.DeckToolSearch
+	MCPToolExecute = agent.DeckToolExecute
 )
+
+// ApproveToolFlag is the `deck mcp-approve` flag that adds the approve tool;
+// only Claude's adapter passes it.
+const ApproveToolFlag = "--approve-tool"
+
+// execTimeout is how long an execute op (other than thread.send) may run.
+var execTimeout = 60 * time.Second
 
 // TokenEnv is the environment variable through which the broker token reaches
 // the MCP helper process (never on the command line).
@@ -49,9 +58,10 @@ const TokenEnv = "DECK_APPROVE_TOKEN"
 func TokenFromEnv() string { return os.Getenv(TokenEnv) }
 
 // MCPServe runs a minimal MCP server over newline-delimited JSON-RPC on
-// stdin/stdout. It exposes "approve" (permission prompts) plus the shared-thread
-// tools "send_message" and "read_thread", all forwarded to the broker at addr.
-func MCPServe(stdin io.Reader, stdout io.Writer, addr, token, agentID string) error {
+// stdin/stdout. It exposes Deck's two tools, "search" and "execute", plus
+// "approve" (permission prompts) when approveTool is set; every call is
+// forwarded to the broker at addr.
+func MCPServe(stdin io.Reader, stdout io.Writer, addr, token, agentID string, approveTool bool) error {
 	r := bufio.NewReaderSize(stdin, 4<<20)
 	enc := json.NewEncoder(stdout)
 	write := func(v any) error { return enc.Encode(v) }
@@ -62,7 +72,7 @@ func MCPServe(stdin io.Reader, stdout io.Writer, addr, token, agentID string) er
 			var req rpcRequest
 			if jerr := json.Unmarshal(line, &req); jerr == nil && req.Method != "" {
 				isNote := len(req.ID) == 0
-				if werr := mcpDispatch(req, isNote, write, addr, token, agentID); werr != nil {
+				if werr := mcpDispatch(req, isNote, write, addr, token, agentID, approveTool); werr != nil {
 					return werr
 				}
 			}
@@ -76,7 +86,7 @@ func MCPServe(stdin io.Reader, stdout io.Writer, addr, token, agentID string) er
 	}
 }
 
-func mcpDispatch(req rpcRequest, isNote bool, write func(any) error, addr, token, agentID string) error {
+func mcpDispatch(req rpcRequest, isNote bool, write func(any) error, addr, token, agentID string, approveTool bool) error {
 	reply := func(result any) error {
 		if isNote {
 			return nil
@@ -107,17 +117,11 @@ func mcpDispatch(req rpcRequest, isNote bool, write func(any) error, addr, token
 	case "ping":
 		return reply(map[string]any{})
 	case "tools/list":
-		return reply(map[string]any{"tools": toolList()})
+		return reply(map[string]any{"tools": toolList(approveTool)})
 	case "tools/call":
 		var p struct {
-			Name      string `json:"name"`
-			Arguments struct {
-				ToolName  string          `json:"tool_name"`
-				Input     json.RawMessage `json:"input"`
-				ToolUseID string          `json:"tool_use_id"`
-				To        string          `json:"to"`
-				Message   string          `json:"message"`
-			} `json:"arguments"`
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
 		}
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return fail(-32602, "invalid params")
@@ -129,23 +133,39 @@ func mcpDispatch(req rpcRequest, isNote bool, write func(any) error, addr, token
 			}
 			return reply(res)
 		}
-		switch p.Name {
-		case MCPToolName:
-			decision := askBroker(addr, token, agentID, p.Arguments.ToolUseID, p.Arguments.ToolName, p.Arguments.Input)
+		switch {
+		case p.Name == MCPToolName && approveTool:
+			var a struct {
+				ToolName  string          `json:"tool_name"`
+				Input     json.RawMessage `json:"input"`
+				ToolUseID string          `json:"tool_use_id"`
+			}
+			_ = json.Unmarshal(p.Arguments, &a)
+			decision := askBroker(addr, token, agentID, a.ToolUseID, a.ToolName, a.Input)
 			return textResult(decision, false)
-		case MCPToolSendMessage:
-			if strings.TrimSpace(p.Arguments.To) == "" || strings.TrimSpace(p.Arguments.Message) == "" {
-				return textResult("send_message needs both \"to\" and \"message\"", true)
+		case p.Name == MCPToolSearch:
+			args := p.Arguments
+			if len(args) == 0 || string(args) == "null" {
+				args = json.RawMessage(`{}`)
 			}
 			text, isErr := askHub(addr, wireRequest{
-				Token: token, Kind: kindMessage, AgentID: agentID, RequestID: newRequestID(),
-				To: strings.TrimSpace(p.Arguments.To), Text: p.Arguments.Message,
-			}, messageTimeout+15*time.Second)
+				Token: token, Kind: kindExec, AgentID: agentID, RequestID: newRequestID(),
+				Op: opSearch, Args: args,
+			}, execTimeout+15*time.Second)
 			return textResult(text, isErr)
-		case MCPToolReadThread:
+		case p.Name == MCPToolExecute:
+			in := agent.ParseExecInput(p.Arguments)
+			if in.Op == "" {
+				return textResult("execute needs an \"op\". Call search (an empty query lists every op and its arguments).", true)
+			}
+			wait := execTimeout + 15*time.Second
+			if in.Op == agent.OpThreadSend {
+				wait = messageTimeout + 15*time.Second
+			}
 			text, isErr := askHub(addr, wireRequest{
-				Token: token, Kind: kindRead, AgentID: agentID, RequestID: newRequestID(),
-			}, 15*time.Second)
+				Token: token, Kind: kindExec, AgentID: agentID, RequestID: newRequestID(),
+				Op: in.Op, Args: in.Args,
+			}, wait)
 			return textResult(text, isErr)
 		}
 		return fail(-32602, "unknown tool "+p.Name)
@@ -194,9 +214,37 @@ func askBroker(addr, token, agentID, requestID, toolName string, input json.RawM
 	return string(line)
 }
 
-func toolList() []any {
-	return []any{
+func toolList(approveTool bool) []any {
+	tools := []any{
 		map[string]any{
+			"name": MCPToolSearch,
+			"description": "Search Deck: the ops the execute tool can run, the skills any agent here has (Claude, Codex, OpenCode, Antigravity, Deck), " +
+				"and this project's past Deck threads. An empty query lists every op with its arguments.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string", "description": "Words to look for, e.g. \"git log\", \"pdf skill\", \"login bug\""},
+					"limit": map[string]any{"type": "integer", "description": "Most skill and history hits to return (default 5)"},
+				},
+			},
+		},
+		map[string]any{
+			"name": MCPToolExecute,
+			"description": "Run one Deck op. thread.send {to, message} messages another agent in this shared thread (an agent name, or \"all\"); thread.read reads the thread. " +
+				"Other ops read chat history (history.*), skills from every agent (skills.*), git and GitHub state (git.*, gh.*) and Deck's running commands (deck.jobs). " +
+				"Call search to list them with their arguments. The Deck user sees every call.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"op":   map[string]any{"type": "string", "description": "The op, e.g. \"thread.send\" or \"git.status\""},
+					"args": map[string]any{"type": "object", "description": "The op's arguments, e.g. {\"to\": \"codex\", \"message\": \"...\"}"},
+				},
+				"required": []string{"op"},
+			},
+		},
+	}
+	if approveTool {
+		tools = append(tools, map[string]any{
 			"name":        MCPToolName,
 			"description": "Ask the Deck user to approve a tool call",
 			"inputSchema": map[string]any{
@@ -208,27 +256,9 @@ func toolList() []any {
 				},
 				"required": []string{"tool_name", "input"},
 			},
-		},
-		map[string]any{
-			"name": MCPToolSendMessage,
-			"description": "Send a message to another agent in this shared Deck thread (for example \"codex\" or \"claude2\"), or to \"all\" of them. " +
-				"Use it to ask a question, hand over work or share a finding. The other agent receives it as a normal message in the thread. " +
-				"The Deck user sees every message you send; nothing is hidden.",
-			"inputSchema": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"to":      map[string]any{"type": "string", "description": "Agent name such as \"codex\" or \"claude2\", or \"all\""},
-					"message": map[string]any{"type": "string", "description": "The message text"},
-				},
-				"required": []string{"to", "message"},
-			},
-		},
-		map[string]any{
-			"name":        MCPToolReadThread,
-			"description": "Read the shared Deck thread transcript: what the user and every agent in this thread have said and done so far.",
-			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
-		},
+		})
 	}
+	return tools
 }
 
 func newRequestID() string {
@@ -237,7 +267,7 @@ func newRequestID() string {
 	return hex.EncodeToString(raw[:])
 }
 
-// askHub forwards a message/read request and returns the result text. On any
+// askHub forwards an exec request and returns the result text. On any
 // failure it returns an error result so the agent keeps working.
 func askHub(addr string, req wireRequest, wait time.Duration) (text string, isErr bool) {
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
