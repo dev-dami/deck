@@ -53,6 +53,10 @@ type gitRow struct {
 	right   string // styled, drawn at the right edge
 	number  int    // a pull request
 	name    string // a branch or a commit hash
+	// lead is drawn before the text and kept in its colours when the row
+	// is selected (the commit graph); cont is what stands under it on the
+	// lines a wrapped row goes on to. Both are the same width.
+	lead, cont string
 }
 
 func (r gitRow) selectable() bool { return r.kind >= gitRowBranch }
@@ -248,6 +252,15 @@ func (m *UI) gitRootRows(width int) []gitRow {
 		}
 	}
 
+	// The commit graph, laid out first so the branches can line up with
+	// their tips in it.
+	graph := layoutGraph(g.commits)
+	graphW := 0
+	if len(graph) > 0 {
+		graphW = len(graph[0].line)
+	}
+	tips := graphBranchLanes(g.commits, graph)
+
 	// Recent branches.
 	if len(g.recent) > 0 {
 		header(gitSectionBranches, "Branches")
@@ -268,18 +281,30 @@ func (m *UI) gitRootRows(width int) []gitRow {
 					right += " no PR"
 				}
 			}
-			rows = append(rows, gitRow{kind: gitRowRecent, section: gitSectionBranches, key: gitRowKey(gitRowRecent, name),
-				name: name, text: text, right: muted.Render(right)})
+			row := gitRow{kind: gitRowRecent, section: gitSectionBranches, key: gitRowKey(gitRowRecent, name),
+				name: name, text: text, right: muted.Render(right)}
+			if graphW > 0 {
+				lane, ok := tips[name]
+				row.lead = graphTipLead(graphW, lane, ok) + " "
+				row.cont = strings.Repeat(" ", graphW+1)
+			}
+			rows = append(rows, row)
 		}
 	}
 
-	// Recent commits.
+	// Recent commits, as a graph.
 	if len(g.commits) > 0 {
 		header(gitSectionCommits, "Commits")
-		for _, c := range g.commits {
+		for i, c := range g.commits {
+			text := muted.Render(c.Hash) + " "
+			if refs := graphRefs(t, c.Refs); refs != "" {
+				text += refs + " "
+			}
 			rows = append(rows, gitRow{kind: gitRowCommit, section: gitSectionCommits, key: gitRowKey(gitRowCommit, c.Hash),
-				name: c.Hash, text: muted.Render(c.Hash) + " " + c.Subject,
-				right: muted.Render(strings.TrimSuffix(gitAgo(c.When, now), " ago"))})
+				name: c.Hash, text: text + c.Subject,
+				right: muted.Render(strings.TrimSuffix(gitAgo(c.When, now), " ago")),
+				lead:  graphRender(graph[i].line) + " ",
+				cont:  graphRender(graph[i].cont) + " "})
 		}
 	}
 	return rows
@@ -297,8 +322,10 @@ type gitBody struct {
 	lines []string
 	// items is, per line, the index of the row or check on it, or -1.
 	items []int
-	// sel is the selected line, or -1 when the view only scrolls.
-	sel int
+	// sel is the selected row's first line, or -1 when the view only
+	// scrolls; selEnd is the line after its last (a wrapped row takes
+	// several).
+	sel, selEnd int
 }
 
 func (b *gitBody) add(line string, item int) {
@@ -345,10 +372,79 @@ func (m *UI) gitBodyLines(width int, focused bool) gitBody {
 		m.gitLogBody(&b, v, width)
 	case gitViewCommit:
 		m.gitCommitBody(&b, v, width)
+	case gitViewDesc:
+		m.gitDescBody(&b, v, width)
 	case gitViewCreate:
 		m.gitFormBody(&b, v, width)
 	}
 	return b
+}
+
+// gitWrapFit is text wrapped to width after a one-cell inset, with right
+// (if any) at the right edge of the first line: nothing is cut, so the
+// full text can be read.
+func gitWrapFit(text, right string, width int) []string {
+	inner := max(0, width-1)
+	rw := 0
+	if right != "" {
+		rw = lipgloss.Width(right) + 1
+	}
+	if inner-rw < gitWrapMin {
+		return []string{gitFit(text, right, width)}
+	}
+	parts := gitWrap(text, inner-rw)
+	out := make([]string, len(parts))
+	for i, p := range parts {
+		if i == 0 {
+			out[i] = gitFit(p, right, width)
+		} else {
+			out[i] = gitFit(p, "", width)
+		}
+	}
+	return out
+}
+
+// gitWrapMin is the narrowest text column worth wrapping into.
+const gitWrapMin = 8
+
+// gitRowLines is root row r at width: one line, cut to fit, or, for the
+// selected row while the pane has focus, highlighted and wrapped onto as
+// many lines as its full text needs.
+func (m *UI) gitRowLines(r gitRow, width int, selected bool) []string {
+	if !selected {
+		if r.lead == "" {
+			return []string{gitFit(r.text, r.right, width)}
+		}
+		return []string{" " + r.lead + strings.TrimPrefix(gitFit(r.text, r.right, max(0, width-lipgloss.Width(r.lead))), " ")}
+	}
+	st := m.com.Styles.Dialog.SelectedItem
+	// hw is the highlight's width: the whole line, or what the lead
+	// leaves of it after the inset.
+	hw := width
+	if r.lead != "" {
+		hw = max(0, width-1-lipgloss.Width(r.lead))
+	}
+	textW := hw - st.GetHorizontalFrameSize()
+	if r.right != "" {
+		textW -= lipgloss.Width(r.right) + 1
+	}
+	parts := []string{r.text}
+	if textW >= gitWrapMin {
+		parts = gitWrap(ansi.Strip(r.text), textW)
+	}
+	out := make([]string, len(parts))
+	for i, p := range parts {
+		right, lead := r.right, r.lead
+		if i > 0 {
+			right, lead = "", r.cont
+		}
+		line := m.gitHighlight(p, right, hw)
+		if r.lead != "" {
+			line = " " + lead + line
+		}
+		out[i] = line
+	}
+	return out
 }
 
 func (m *UI) gitRootBody(b *gitBody, v *gitView, width int, focused bool) {
@@ -362,15 +458,13 @@ func (m *UI) gitRootBody(b *gitBody, v *gitView, width int, focused bool) {
 		if r.selectable() {
 			item = i
 		}
-		if i == cur && focused {
-			b.sel = len(b.lines)
-			b.add(m.gitHighlight(r.text, r.right, width), item)
-			continue
-		}
+		lines := m.gitRowLines(r, width, i == cur && focused)
 		if i == cur {
-			b.sel = len(b.lines)
+			b.sel, b.selEnd = len(b.lines), len(b.lines)+len(lines)
 		}
-		b.add(gitFit(r.text, r.right, width), item)
+		for _, l := range lines {
+			b.add(l, item)
+		}
 	}
 }
 
@@ -396,7 +490,9 @@ func (m *UI) gitPRBody(b *gitBody, v *gitView, width int, focused bool) {
 		return
 	}
 	pr := v.pr
-	b.add(gitFit(primary.Render(fmt.Sprintf("#%d", pr.Number))+" "+pr.Title, "", width), -1)
+	for _, l := range gitWrapFit(primary.Render(fmt.Sprintf("#%d", pr.Number))+" "+pr.Title, "", width) {
+		b.add(l, -1)
+	}
 	facts := []string{gitPRState(t, pr)}
 	if pr.IsDraft && pr.State == "OPEN" {
 		facts[0] = muted.Render("draft")
@@ -416,6 +512,10 @@ func (m *UI) gitPRBody(b *gitBody, v *gitView, width int, focused bool) {
 	}
 	b.add(gitFit(strings.Join(facts, muted.Render(" · ")), right, width), -1)
 	b.add(gitFit(t.Header.GitBranch.Render(pr.HeadRefName)+muted.Render(" → ")+t.Header.GitBranch.Render(pr.BaseRefName), "", width), -1)
+	if body := gitPRDescription(pr); body != "" {
+		first, _, _ := strings.Cut(body, "\n")
+		b.add(gitFit(muted.Render("“"+first+"”"), muted.Render("d read"), width), -1)
+	}
 	if v.err != "" {
 		b.add(gitFit(gitFailStyle.Render(v.err), "", width), -1)
 	}
@@ -446,6 +546,50 @@ func (m *UI) gitPRBody(b *gitBody, v *gitView, width int, focused bool) {
 	}
 }
 
+// gitPRDescription is a pull request's body with its line ends and
+// surrounding blank lines tidied, or "".
+func gitPRDescription(pr *gh.PR) string {
+	if pr == nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.ReplaceAll(pr.Body, "\r\n", "\n"))
+}
+
+// gitDescBody is a pull request's full title and description, wrapped to
+// the width so nothing is cut; the view scrolls.
+func (m *UI) gitDescBody(b *gitBody, v *gitView, width int) {
+	t := m.com.Styles
+	muted := gitMuted(t)
+	pr := v.pr
+	if pr == nil {
+		return
+	}
+	for _, l := range gitWrapFit(gitPrimary(t).Render(fmt.Sprintf("#%d", pr.Number))+" "+t.Resource.Heading.Render(pr.Title), "", width) {
+		b.add(l, -1)
+	}
+	by := pr.Author.Login
+	if by != "" {
+		by = "by " + by + " · "
+	}
+	b.add(gitFit(muted.Render(by)+t.Header.GitBranch.Render(pr.HeadRefName)+muted.Render(" → ")+t.Header.GitBranch.Render(pr.BaseRefName), "", width), -1)
+	b.add("", -1)
+	body := gitPRDescription(pr)
+	if body == "" {
+		b.add(gitFit(muted.Render("No description."), "", width), -1)
+		return
+	}
+	for _, para := range strings.Split(body, "\n") {
+		para = strings.ReplaceAll(para, "\t", "    ")
+		if strings.TrimSpace(para) == "" {
+			b.add("", -1)
+			continue
+		}
+		for _, l := range gitWrapFit(para, "", width) {
+			b.add(l, -1)
+		}
+	}
+}
+
 func (m *UI) gitLogBody(b *gitBody, v *gitView, width int) {
 	t := m.com.Styles
 	title := fmt.Sprintf("#%d · %s · failed log", v.number, v.check.Name)
@@ -468,12 +612,21 @@ func (m *UI) gitCommitBody(b *gitBody, v *gitView, width int) {
 		return
 	}
 	c := v.commit
-	b.add(gitFit(muted.Render(c.Hash)+" "+gitPrimary(t).Render(c.Subject), "", width), -1)
+	// The full message: the subject and the body, wrapped, never cut.
+	for _, l := range gitWrapFit(muted.Render(c.Hash)+" "+gitPrimary(t).Render(c.Subject), "", width) {
+		b.add(l, -1)
+	}
 	b.add(gitFit(muted.Render(c.Author+" · "+gitAgo(c.When, time.Now())), "", width), -1)
-	if c.Body != "" {
+	if body := strings.TrimSpace(strings.ReplaceAll(c.Body, "\r\n", "\n")); body != "" {
 		b.add("", -1)
-		for _, l := range gitWrap(c.Body, width-1) {
-			b.add(gitFit(muted.Render(l), "", width), -1)
+		for _, para := range strings.Split(body, "\n") {
+			if strings.TrimSpace(para) == "" {
+				b.add("", -1)
+				continue
+			}
+			for _, l := range gitWrapFit(muted.Render(strings.ReplaceAll(para, "\t", "    ")), "", width) {
+				b.add(l, -1)
+			}
 		}
 	}
 	b.add("", -1)
@@ -492,7 +645,9 @@ func (m *UI) gitCommitBody(b *gitBody, v *gitView, width int) {
 		if !f.Binary {
 			right = gitPassStyle.Render(fmt.Sprintf("+%d", f.Added)) + " " + gitFailStyle.Render(fmt.Sprintf("−%d", f.Deleted))
 		}
-		b.add(gitFit(f.Path, right, width), -1)
+		for _, l := range gitWrapFit(f.Path, right, width) {
+			b.add(l, -1)
+		}
 	}
 }
 
@@ -541,7 +696,8 @@ func gitWrap(text string, width int) []string {
 	if width <= 0 {
 		return nil
 	}
-	return strings.Split(ansi.Wrap(text, width, ""), "\n")
+	// Paths break after a slash rather than mid-name.
+	return strings.Split(ansi.Wrap(text, width, "/"), "\n")
 }
 
 // gitFooter is the pane's fixed bottom lines: an inline input or question,
@@ -579,7 +735,9 @@ func (m *UI) gitFooter(width int) (lines, hints []string) {
 	case v.kind == gitViewRoot:
 		keys = []string{"↑↓ move", "tab section", "enter open", "c commit", "p push", "f fetch", "P PR", "R refresh"}
 	case v.kind == gitViewPR:
-		keys = []string{"↑↓ check", "l log", "a agent", "r rerun", "m merge", "c checkout", "o web", "R refresh", "esc back"}
+		keys = []string{"↑↓ check", "d description", "l log", "a agent", "r rerun", "m merge", "c checkout", "o web", "R refresh", "esc back"}
+	case v.kind == gitViewDesc:
+		keys = []string{"↑↓ scroll", "space page", "esc back"}
 	case v.kind == gitViewLog:
 		keys = []string{"↑↓ scroll", "a agent", "esc back"}
 	case v.kind == gitViewCommit:
@@ -675,7 +833,7 @@ func (m *UI) gitPaneRender(width, h int, focused bool) string {
 	v := p.top()
 	total := len(body.lines)
 	if body.sel >= 0 {
-		v.off = gitWindow(body.sel, v.off, n, total)
+		v.off = gitWindow(body.sel, max(body.sel+1, body.selEnd), v.off, n, total)
 	} else {
 		v.off = max(0, min(v.off, total-n))
 	}
@@ -690,17 +848,20 @@ func (m *UI) gitPaneRender(width, h int, focused bool) string {
 	return strings.Join(out, "\n")
 }
 
-// gitWindow is the first of n rows to show of total so that sel stays in
-// view, given the previous offset.
-func gitWindow(sel, offset, n, total int) int {
+// gitWindow is the first of n lines to show of total so that the selected
+// lines sel to end (exclusive; a wrapped row takes several) stay in view,
+// given the previous offset. A selection taller than the window shows its
+// first line.
+func gitWindow(sel, end, offset, n, total int) int {
 	if n <= 0 || total <= n {
 		return 0
 	}
+	end = max(end, sel+1)
+	if end > offset+n {
+		offset = end - n
+	}
 	if sel < offset {
 		offset = sel
-	}
-	if sel >= offset+n {
-		offset = sel - n + 1
 	}
 	return max(0, min(offset, total-n))
 }

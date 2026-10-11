@@ -35,6 +35,10 @@ type Status struct {
 	// working, when set, returns the line that says which agents are at
 	// work; while it is not empty it takes the place of the help hints.
 	working func(width int) string
+
+	// rightReserve is how many cells at the right of the first row are
+	// kept clear for the unread notifications mark.
+	rightReserve int
 }
 
 // NewStatus creates a new status bar and help model.
@@ -85,6 +89,12 @@ func (s *Status) SetWidth(width int) {
 	s.help.SetWidth(width - horizontalPadding)
 }
 
+// SetRightReserve keeps n cells at the right of the status bar's first row
+// clear: the help hints, the working line and messages end before them.
+func (s *Status) SetRightReserve(n int) {
+	s.rightReserve = max(0, n)
+}
+
 // ShowingAll returns whether the full help view is shown.
 func (s *Status) ShowingAll() bool {
 	return s.help.ShowAll
@@ -102,13 +112,16 @@ func (s *Status) SetHideHelp(hideHelp bool) {
 
 // Draw draws the status bar onto the screen.
 func (s *Status) Draw(scr uv.Screen, area uv.Rectangle) {
+	// width is what the first row may use, the reserve left clear.
+	width := max(0, area.Dx()-s.rightReserve)
 	if s.working != nil {
-		if line := s.working(area.Dx() - 2); line != "" {
+		if line := s.working(max(1, width-2)); line != "" {
 			badge := s.modeBadge()
 			if badge != "" {
 				line = badge + " " + line
 			}
-			uv.NewStyledString(strings.Repeat(" ", badgeLeftInset)+line).Draw(scr, area)
+			line = ansi.Truncate(strings.Repeat(" ", badgeLeftInset)+line, width, "…")
+			uv.NewStyledString(line).Draw(scr, area)
 			if s.msg.IsEmpty() {
 				return
 			}
@@ -116,7 +129,7 @@ func (s *Status) Draw(scr uv.Screen, area uv.Rectangle) {
 	}
 	if !s.hideHelp && (s.working == nil || s.working(1) == "") {
 		helpStyle := s.com.Styles.Status.Help
-		helpWidth := area.Dx() - helpStyle.GetPaddingLeft() - helpStyle.GetPaddingRight()
+		helpWidth := width - helpStyle.GetPaddingLeft() - helpStyle.GetPaddingRight()
 		badge := s.modeBadge()
 		if badge != "" {
 			// Shrink the hints so the badge does not push them past the
@@ -131,6 +144,13 @@ func (s *Status) Draw(scr uv.Screen, area uv.Rectangle) {
 			indent := strings.Repeat(" ", badgeLeftInset+lipgloss.Width(badge)+1)
 			helpView = strings.ReplaceAll(helpView, "\n", "\n"+indent)
 			helpView = strings.Repeat(" ", badgeLeftInset) + badge + " " + helpView
+		}
+		// The help drops whole hints to fit; cut its first row anyway so
+		// nothing can run under the mark on the right.
+		first, rest, more := strings.Cut(helpView, "\n")
+		helpView = ansi.Truncate(first, width, "…")
+		if more {
+			helpView += "\n" + rest
 		}
 		uv.NewStyledString(helpView).Draw(scr, area)
 	}
@@ -175,7 +195,7 @@ func (s *Status) Draw(scr uv.Screen, area uv.Rectangle) {
 	ind := indStyle.String()
 	indWidth := lipgloss.Width(ind)
 	msgPad := msgStyle.GetPaddingLeft() + msgStyle.GetPaddingRight()
-	avail := max(0, area.Dx()-indWidth-msgPad-indInset)
+	avail := max(0, width-indWidth-msgPad-indInset)
 	msg := strings.Join(strings.Split(s.msg.Msg, "\n"), " ")
 	msg = ansi.Truncate(msg, avail, "…")
 	if w := lipgloss.Width(msg); w < avail {

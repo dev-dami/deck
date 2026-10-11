@@ -112,6 +112,52 @@ func TestShow(t *testing.T) {
 	}
 }
 
+func TestGraph(t *testing.T) {
+	out := "m1\x1fm1full\x1fa1full b1full\x1fHEAD -> refs/heads/main, refs/remotes/origin/main, refs/remotes/origin/HEAD, tag: refs/tags/v1.0\x1fdevban\x1f1791699552\x1fMerge: a | b, c\n" +
+		"b1\x1fb1full\x1fr1full\x1frefs/heads/feature/x\x1fdevban\x1f1791699500\x1fOn the side\n" +
+		"r1\x1fr1full\x1f\x1f\x1fdevban\x1f1791699400\x1fRoot\n"
+	c, f := newFake(reply{prefix: "git log", out: out})
+	cs, err := c.Graph(context.Background(), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cs) != 3 {
+		t.Fatalf("got %+v", cs)
+	}
+	m := cs[0]
+	if m.Hash != "m1" || m.ID != "m1full" || len(m.Parents) != 2 || m.Parents[1] != "b1full" || m.Subject != "Merge: a | b, c" {
+		t.Fatalf("merge: %+v", m)
+	}
+	want := []Ref{{Name: "main", Kind: RefBranch, Head: true}, {Name: "origin/main", Kind: RefRemote}, {Name: "v1.0", Kind: RefTag}}
+	if len(m.Refs) != len(want) {
+		t.Fatalf("refs %+v", m.Refs)
+	}
+	for i := range want {
+		if m.Refs[i] != want[i] {
+			t.Fatalf("ref %d: %+v, want %+v", i, m.Refs[i], want[i])
+		}
+	}
+	if cs[1].Refs[0].Name != "feature/x" || cs[1].Refs[0].Kind != RefBranch {
+		t.Fatalf("a branch with a slash: %+v", cs[1].Refs)
+	}
+	if len(cs[2].Parents) != 0 || len(cs[2].Refs) != 0 {
+		t.Fatalf("root: %+v", cs[2])
+	}
+	call := f.saw("git log --topo-order")
+	if call == nil || call.args[len(call.args)-1] != "--" {
+		t.Fatalf("calls %+v", f.calls)
+	}
+}
+
+func TestGraphNoCommits(t *testing.T) {
+	c, _ := newFake(reply{prefix: "git log", err: &ExitError{Cmd: "git log", Code: 128,
+		Stderr: "fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree."}})
+	cs, err := c.Graph(context.Background(), 20)
+	if err != nil || cs != nil {
+		t.Fatalf("got %+v, %v", cs, err)
+	}
+}
+
 func TestShowRejectsBadHash(t *testing.T) {
 	c, f := newFake()
 	for _, h := range []string{"", "--output=x", "HEAD; rm", "zz12"} {

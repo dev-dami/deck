@@ -341,9 +341,21 @@ func (m *UI) hoverToast(x, y int) {
 // drawNoticeDot marks unread notifications at the right of the status
 // bar: "● 3 alt+n".
 func (m *UI) drawNoticeDot(scr uv.Screen, area uv.Rectangle) {
+	s := m.noticeDot(area)
+	if s == "" {
+		return
+	}
+	w := lipgloss.Width(s)
+	r := image.Rect(area.Max.X-w-1, area.Min.Y, area.Max.X-1, area.Min.Y+1)
+	uv.NewStyledString(s).Draw(scr, r)
+}
+
+// noticeDot is the unread mark drawNoticeDot puts in area, or "" when
+// there is none.
+func (m *UI) noticeDot(area uv.Rectangle) string {
 	n := m.notices.store.Unread()
 	if n == 0 || area.Dx() < 12 || area.Dy() < 1 {
-		return
+		return ""
 	}
 	t := m.com.Styles
 	lvl := notice.Info
@@ -352,8 +364,16 @@ func (m *UI) drawNoticeDot(scr uv.Screen, area uv.Rectangle) {
 	}
 	dot := lipgloss.NewStyle().Foreground(notice.Color(t, lvl)).Render(fmt.Sprintf("● %d", n))
 	hint := lipgloss.NewStyle().Foreground(t.Dialog.SecondaryText.GetForeground()).Render(" " + notice.HistoryKey)
-	s := dot + hint
-	w := lipgloss.Width(s)
-	r := image.Rect(area.Max.X-w-1, area.Min.Y, area.Max.X-1, area.Min.Y+1)
-	uv.NewStyledString(s).Draw(scr, r)
+	return dot + hint
+}
+
+// noticeDotReserve is how many cells at the right of the status bar the
+// unread mark takes, with a space before it and the margin after it; 0
+// when there is no mark.
+func (m *UI) noticeDotReserve(area uv.Rectangle) int {
+	s := m.noticeDot(area)
+	if s == "" {
+		return 0
+	}
+	return lipgloss.Width(s) + 2
 }

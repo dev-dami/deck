@@ -80,9 +80,10 @@ type stripChooser struct {
 // stripGeom is where the last frame put things.
 type stripGeom struct {
 	area uv.Rectangle // the strip, below the logo
+	body uv.Rectangle // the columns' part of area
 	cols []colGeom    // the visible columns
-	// indicator is the row showing columns off to the sides; empty when
-	// every column is visible.
+	// indicator is the strip's top row showing columns off to the sides;
+	// empty when every column is visible.
 	indicator uv.Rectangle
 	// chooser holds the reopen list's item rows while it is open.
 	chooser uv.Rectangle
@@ -450,6 +451,13 @@ func (s *paneStrip) resizeColumn(delta, limit int) bool {
 	s.clampFocus()
 	limit = max(limit, stripColumnMin)
 	cur := min(s.naturalWidth(s.col), limit)
+	// Start from the width on screen: a column widened to fill the strip
+	// is narrowed from what the user sees.
+	for _, c := range s.geo.cols {
+		if c.index == s.col {
+			cur = min(c.w, limit)
+		}
+	}
 	next := max(stripColumnMin, min(cur+delta, limit))
 	if next == cur {
 		return false

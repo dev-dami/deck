@@ -90,6 +90,7 @@ const (
 	gitViewLog                       // a failed check's log
 	gitViewCommit                    // one commit's files
 	gitViewCreate                    // the create pull request form
+	gitViewDesc                      // a pull request's full title and description
 )
 
 // gitView is one view on the pane's back stack.
@@ -457,7 +458,7 @@ func (m *UI) gitPaneKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 			return true, m.gitHandoff(v.number, v.check, v.log)
 		}
 		return m.gitScrollKey(v, k)
-	case gitViewCommit:
+	case gitViewCommit, gitViewDesc:
 		return m.gitScrollKey(v, k)
 	}
 	return false, nil
@@ -696,6 +697,14 @@ func (m *UI) gitPRKey(v *gitView, k string) (bool, tea.Cmd) {
 			v.loading = true
 			p.err, p.info = "", ""
 			return true, m.gitLoadDetail(v.number)
+		}
+		return true, nil
+	}
+	if k == "d" {
+		// The full title and description, to read and scroll.
+		if v.pr != nil {
+			p.err, p.info = "", ""
+			p.push(&gitView{kind: gitViewDesc, number: v.pr.Number, pr: v.pr})
 		}
 		return true, nil
 	}
