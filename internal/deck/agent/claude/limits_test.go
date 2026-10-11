@@ -151,3 +151,34 @@ func TestUsageProbeLine(t *testing.T) {
 		t.Errorf("probe %+v", req)
 	}
 }
+
+// TestProbeAnswerRealShape: a real get_usage answer mixes the windows with a
+// limits list, spend, flags and null windows under rate_limits; the windows
+// must still come through.
+func TestProbeAnswerRealShape(t *testing.T) {
+	tr := newTranslator("claude")
+	line := `{"type":"control_response","response":{"subtype":"success","request_id":"deck_get_usage","response":{` +
+		`"session":{"total_cost_usd":0,"model_usage":{}},"subscription_type":"max","rate_limits_available":true,"rate_limits":{` +
+		`"five_hour":{"utilization":4,"resets_at":"2026-10-11T14:39:59.798808+00:00","limit_dollars":null,"locked_reason":null},` +
+		`"seven_day":{"utilization":23,"resets_at":"2026-10-13T00:59:59.798833+00:00"},` +
+		`"seven_day_opus":null,"tangelo":null,` +
+		`"extra_usage":{"is_enabled":false,"utilization":null,"currency":null},` +
+		`"limits":[{"kind":"session","group":"session","percent":4,"severity":"normal","resets_at":"2026-10-11T14:39:59.798808+00:00","scope":null,"is_active":false}],` +
+		`"spend":{"used":{"amount_minor":0,"currency":"USD","exponent":2},"percent":0,"enabled":false},` +
+		`"member_dashboard_available":false,` +
+		`"seven_day_breakdown":{"as_of":"2026-10-11T13:08:14Z","rows":[{"key":"claude_code","percent":20}]}}}}}`
+	evs := tr.Line([]byte(line))
+	if len(evs) != 1 || evs[0].Kind != agent.KindLimits {
+		t.Fatalf("events %+v", evs)
+	}
+	l := evs[0].Limits
+	if l.Plan != "max" || l.Unavailable != "" || len(l.Windows) != 2 {
+		t.Fatalf("limits %+v", l)
+	}
+	if w, _ := windowByID(l, "five_hour"); w.UsedPct != 4 || w.ResetsAt.IsZero() {
+		t.Errorf("five_hour %+v", w)
+	}
+	if w, _ := windowByID(l, "seven_day"); w.UsedPct != 23 {
+		t.Errorf("seven_day %+v", w)
+	}
+}

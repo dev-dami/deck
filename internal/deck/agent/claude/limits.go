@@ -116,13 +116,19 @@ type controlResponse struct {
 	} `json:"response"`
 }
 
-// usageAnswer is the part of a get_usage answer Deck reads.
+// usageAnswer is the part of a get_usage answer Deck reads. rate_limits mixes
+// the windows (five_hour, seven_day, ...) with other kinds of entry (a limits
+// list, spend, flags), so each entry is decoded on its own and anything that is
+// not a window is skipped.
 type usageAnswer struct {
-	RateLimits map[string]*struct {
-		Utilization *float64        `json:"utilization"`
-		ResetsAt    json.RawMessage `json:"resets_at"`
-	} `json:"rate_limits"`
-	SubscriptionType string `json:"subscription_type"`
+	RateLimits       map[string]json.RawMessage `json:"rate_limits"`
+	SubscriptionType string                     `json:"subscription_type"`
+}
+
+// usageWindow is one window in a get_usage answer.
+type usageWindow struct {
+	Utilization *float64        `json:"utilization"` // 0–100
+	ResetsAt    json.RawMessage `json:"resets_at"`
 }
 
 // probeAnswer handles the answer to Deck's get_usage request. ok is false when
@@ -139,8 +145,9 @@ func (t *translator) probeAnswer(line []byte) (ok bool) {
 		return true
 	}
 	n := 0
-	for id, rl := range ans.RateLimits {
-		if rl == nil || rl.Utilization == nil {
+	for id, raw := range ans.RateLimits {
+		var rl usageWindow
+		if json.Unmarshal(raw, &rl) != nil || rl.Utilization == nil {
 			continue
 		}
 		w := window(id)
