@@ -200,7 +200,7 @@ func (m *UI) runNoticeAction(id int) tea.Cmd {
 		if err != nil || num <= 0 {
 			return m.focusPaneActivity(paneGit)
 		}
-		return tea.Batch(m.focusPaneActivity(paneGit), m.openGitPR(num))
+		return tea.Batch(m.focusPaneActivity(paneGit), m.gitOpenPR(num))
 	case a.ID == notice.ActionApproval:
 		if m.dialog.ContainsDialog(dialog.PermissionsID) {
 			m.dialog.BringToFront(dialog.PermissionsID)

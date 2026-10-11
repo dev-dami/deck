@@ -1,4 +1,4 @@
-// Package gh drives git and the GitHub CLI for the UI's git panel: branch
+// Package gh drives git and the GitHub CLI for the UI's git pane: branch
 // status, commits and pushes, and pull requests with their checks.
 //
 // Deck never reads GitHub credentials. Everything that talks to GitHub goes
