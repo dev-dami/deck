@@ -74,6 +74,40 @@ type KeyMap struct {
 		FocusChat      key.Binding
 	}
 
+	// Sidebar keys work while the sidebar (the strip of panes) has focus,
+	// after the focused pane has had its turn (strip_keys.go).
+	Sidebar struct {
+		Left        key.Binding // previous column; from the first, the chat
+		Right       key.Binding // next column
+		Up          key.Binding // scroll up, then previous pane
+		Down        key.Binding // scroll down, then next pane
+		PageUp      key.Binding
+		PageDown    key.Binding
+		Top         key.Binding
+		Bottom      key.Binding
+		Close       key.Binding
+		PaneLeft    key.Binding // consume into / expel to the left
+		PaneRight   key.Binding // consume into / expel to the right
+		ColumnLeft  key.Binding
+		ColumnRight key.Binding
+		Narrow      key.Binding
+		Widen       key.Binding
+		Reopen      key.Binding
+		Select      key.Binding // in the reopen list
+		Back        key.Binding // back to the editor
+
+		// Help-only summaries of the pairs above.
+		Move       key.Binding
+		MovePane   key.Binding
+		MoveColumn key.Binding
+		Resize     key.Binding
+	}
+
+	// SidebarColumnLeft and SidebarColumnRight move the sidebar's focused
+	// column from anywhere, without leaving the editor or the chat.
+	SidebarColumnLeft  key.Binding
+	SidebarColumnRight key.Binding
+
 	Initialize struct {
 		Yes,
 		No,
@@ -338,6 +372,31 @@ func DefaultKeyMap() KeyMap {
 		key.WithKeys("h", "left"),
 		key.WithHelp("h/←", "focus chat"),
 	)
+	km.Sidebar.Left = key.NewBinding(key.WithKeys("h", "left"), key.WithHelp("h/←", "column left"))
+	km.Sidebar.Right = key.NewBinding(key.WithKeys("l", "right"), key.WithHelp("l/→", "column right"))
+	km.Sidebar.Up = key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up"))
+	km.Sidebar.Down = key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down"))
+	km.Sidebar.PageUp = key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "page up"))
+	km.Sidebar.PageDown = key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", "page down"))
+	km.Sidebar.Top = key.NewBinding(key.WithKeys("g", "home"), key.WithHelp("g", "top"))
+	km.Sidebar.Bottom = key.NewBinding(key.WithKeys("G", "end"), key.WithHelp("G", "bottom"))
+	km.Sidebar.Close = key.NewBinding(key.WithKeys("x", "ctrl+w"), key.WithHelp("x", "close pane"))
+	km.Sidebar.PaneLeft = key.NewBinding(key.WithKeys("["), key.WithHelp("[", "pane left"))
+	km.Sidebar.PaneRight = key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "pane right"))
+	km.Sidebar.ColumnLeft = key.NewBinding(key.WithKeys(",", "H", "shift+h"), key.WithHelp(",", "move column left"))
+	km.Sidebar.ColumnRight = key.NewBinding(key.WithKeys(".", "L", "shift+l"), key.WithHelp(".", "move column right"))
+	km.Sidebar.Narrow = key.NewBinding(key.WithKeys("-"), key.WithHelp("-", "narrower"))
+	km.Sidebar.Widen = key.NewBinding(key.WithKeys("=", "+"), key.WithHelp("=", "wider"))
+	km.Sidebar.Reopen = key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "reopen pane"))
+	km.Sidebar.Select = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open"))
+	km.Sidebar.Back = key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "back to editor"))
+	km.Sidebar.Move = key.NewBinding(key.WithKeys("h", "j", "k", "l"), key.WithHelp("hjkl", "move"))
+	km.Sidebar.MovePane = key.NewBinding(key.WithKeys("[", "]"), key.WithHelp("[/]", "move pane"))
+	km.Sidebar.MoveColumn = key.NewBinding(key.WithKeys(",", "."), key.WithHelp(",/.", "move column"))
+	km.Sidebar.Resize = key.NewBinding(key.WithKeys("-", "="), key.WithHelp("-/=", "column width"))
+	km.SidebarColumnLeft = key.NewBinding(key.WithKeys("alt+h"), key.WithHelp("alt+h/l", "sidebar column"))
+	km.SidebarColumnRight = key.NewBinding(key.WithKeys("alt+l"), key.WithHelp("alt+h/l", "sidebar column"))
+
 	km.Initialize.Yes = key.NewBinding(
 		key.WithKeys("y", "Y"),
 		key.WithHelp("y", "yes"),

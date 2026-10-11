@@ -63,6 +63,24 @@ func (gitPane) click(m *UI, x, y int) tea.Cmd {
 	return tea.Batch(m.gitPaneClick(x, y), m.gitPaneTick())
 }
 
+var _ paneWheeler = gitPane{}
+
+// wheel moves the pane's cursor (or scrolls a log or commit) like ↑/↓, a
+// line per notch. The create form keeps the wheel off its fields.
+func (gitPane) wheel(m *UI, delta int) bool {
+	if m.git.pane.top().kind == gitViewCreate {
+		return true
+	}
+	code := tea.KeyDown
+	if delta < 0 {
+		code, delta = tea.KeyUp, -delta
+	}
+	for range min(delta, 5) {
+		m.gitPaneKey(tea.KeyPressMsg{Code: code})
+	}
+	return true
+}
+
 // gitViewKind is a kind of view in the pane.
 type gitViewKind int
 

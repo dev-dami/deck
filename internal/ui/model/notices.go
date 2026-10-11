@@ -194,13 +194,13 @@ func (m *UI) runNoticeAction(id int) tea.Cmd {
 	}
 	switch {
 	case a.ID == notice.ActionGit:
-		return m.focusPaneActivity(paneGit)
+		return m.focusPane(paneGit)
 	case strings.HasPrefix(a.ID, notice.ActionGitPR):
 		num, err := strconv.Atoi(strings.TrimPrefix(a.ID, notice.ActionGitPR))
 		if err != nil || num <= 0 {
-			return m.focusPaneActivity(paneGit)
+			return m.focusPane(paneGit)
 		}
-		return tea.Batch(m.focusPaneActivity(paneGit), m.gitOpenPR(num))
+		return tea.Batch(m.focusPane(paneGit), m.gitOpenPR(num))
 	case a.ID == notice.ActionApproval:
 		if m.dialog.ContainsDialog(dialog.PermissionsID) {
 			m.dialog.BringToFront(dialog.PermissionsID)
