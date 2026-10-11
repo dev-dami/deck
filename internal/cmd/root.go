@@ -230,18 +230,16 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 		slog.Warn("Failed to register project", "error", err)
 	}
 
-	conn, err := db.Connect(ctx, cfg.Options.DataDirectory)
-	if err != nil {
-		return nil, nil, err
-	}
-
+	// Set the log file up first: the work below runs side by side, and all
+	// of it should log to the file rather than the discard handler Execute
+	// starts with.
 	logFile := filepath.Join(cfg.Options.DataDirectory, "logs", "deck.log")
 	decklog.Setup(logFile, debug)
 
 	// Deck's engine drives the user's own agent CLIs in place of Deck's
 	// agent. No telemetry is sent. It shares nothing with the app below
-	// (its own config, thread store, broker and PATH lookups), so start
-	// it alongside skill discovery and app.New rather than after them.
+	// (its own config, thread store, broker and PATH lookups), so it starts
+	// while the database is opened and skills are discovered.
 	type engineResult struct {
 		eng *engine.Engine
 		err error
@@ -251,15 +249,37 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 		eng, err := engine.Start()
 		engineCh <- engineResult{eng, err}
 	}()
+	closeEngine := func() {
+		if r := <-engineCh; r.eng != nil {
+			r.eng.Close()
+		}
+	}
 
-	// Discover skills once before app.New. Local mode hosts a single
-	// workspace per process, so WithGlobalMirror keeps the package
-	// globals (which the TUI reads via skills.GetLatestStates) in sync
-	// with the manager.
+	// Discover skills once before app.New, while the database opens (and
+	// migrates). Local mode hosts a single workspace per process, so
+	// WithGlobalMirror keeps the package globals (which the TUI reads via
+	// skills.GetLatestStates) in sync with the manager.
 	discoveryCfg := localSkillsDiscoveryConfig(store)
-	allSkills, activeSkills, skillStates := skills.DiscoverFromConfig(discoveryCfg)
+	type skillsResult struct {
+		all, active []*skills.Skill
+		states      []*skills.SkillState
+	}
+	skillsCh := make(chan skillsResult, 1)
+	go func() {
+		all, active, states := skills.DiscoverFromConfig(discoveryCfg)
+		skillsCh <- skillsResult{all, active, states}
+	}()
+
+	conn, err := db.Connect(ctx, cfg.Options.DataDirectory)
+	if err != nil {
+		<-skillsCh
+		closeEngine()
+		return nil, nil, err
+	}
+
+	found := <-skillsCh
 	skillsMgr := skills.NewManager(
-		allSkills, activeSkills, skillStates,
+		found.all, found.active, found.states,
 		skills.WithGlobalMirror(),
 		skills.WithResolvedPaths(discoveryCfg.ResolvePaths()),
 		skills.WithWorkingDir(discoveryCfg.WorkingDir),
@@ -269,9 +289,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	if err != nil {
 		_ = conn.Close()
 		slog.Error("Failed to create app instance", "error", err)
-		if r := <-engineCh; r.eng != nil {
-			r.eng.Close()
-		}
+		closeEngine()
 		return nil, nil, err
 	}
 
