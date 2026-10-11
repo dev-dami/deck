@@ -278,7 +278,7 @@ func NewManager(adapters map[string]agent.Adapter, st *store.Store, cfg config.C
 	if _, ignored := startMode(cfg); ignored {
 		m.out <- yoloIgnoredNotice() // the channel is buffered; nobody is listening yet
 	}
-	m.w = newWriter()
+	m.w = newWriter(m.writeEntries)
 	if o.Hub != nil {
 		o.Hub.SetThreadReader(m.readThread)
 		o.Hub.SetExecutor(m.execOp)
@@ -1206,8 +1206,14 @@ func (m *Manager) forget(t *thread) {
 
 // ---- lifecycle ----
 
-// Flush blocks until every queued store write has been performed.
-func (m *Manager) Flush() { m.w.flush() }
+// Flush blocks until every queued store write has been performed, including
+// the metadata and index writes the store holds back.
+func (m *Manager) Flush() {
+	m.w.flush()
+	if m.st != nil {
+		_ = m.st.Flush()
+	}
+}
 
 // Close stops every agent, drains the writer and releases Listen.
 func (m *Manager) Close() {
@@ -1237,6 +1243,9 @@ func (m *Manager) Close() {
 	wait(&cw, 3*time.Second)
 	wait(&m.wg, 2*time.Second)
 	m.w.stop()
+	if m.st != nil {
+		_ = m.st.Flush()
+	}
 }
 
 func wait(wg *sync.WaitGroup, d time.Duration) {
@@ -1294,6 +1303,9 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	}
 	if ev.Kind == agent.KindUserText {
 		return // the adapter's echo of a prompt; Deck's own user entry stands for it
+	}
+	if len(ev.Raw) > 0 && !agent.KeepsRaw(ev.Kind) {
+		ev.Raw = nil // repeats the rest of the event; not worth logging or passing on
 	}
 	if a.thread.gone.Load() {
 		return // the thread was archived, deleted or moved
@@ -1610,16 +1622,32 @@ func eventText(s string) agent.Event { return agent.Event{Text: s} }
 
 // writer runs queued store operations one at a time on its own goroutine, so
 // store.Append (which costs milliseconds) never runs on the UI goroutine.
+//
+// Log entries for one thread queued back to back are coalesced into one
+// operation, so a writer that falls behind catches up with one append per
+// thread instead of one per event. The queue is not bounded: push is called
+// with thread locks held, which the queued operations take, so blocking it
+// could deadlock.
 type writer struct {
 	mu     sync.Mutex
-	q      []func()
+	q      []wop
 	wake   chan struct{}
 	closed bool
 	done   chan struct{}
+	// entries writes a run of log entries to a thread's log.
+	entries func(*thread, []store.Entry)
 }
 
-func newWriter() *writer {
-	w := &writer{wake: make(chan struct{}, 1), done: make(chan struct{})}
+// wop is one queued store operation: f, or when t is set the log entries es
+// for thread t.
+type wop struct {
+	f  func()
+	t  *thread
+	es []store.Entry
+}
+
+func newWriter(entries func(*thread, []store.Entry)) *writer {
+	w := &writer{wake: make(chan struct{}, 1), done: make(chan struct{}), entries: entries}
 	go w.loop()
 	return w
 }
@@ -1630,8 +1658,30 @@ func (w *writer) push(f func()) {
 		w.mu.Unlock()
 		return
 	}
-	w.q = append(w.q, f)
+	w.q = append(w.q, wop{f: f})
 	w.mu.Unlock()
+	w.signal()
+}
+
+// pushAppend queues e for t's log, joining the operation at the end of the
+// queue when that is for t's log too.
+func (w *writer) pushAppend(t *thread, e store.Entry) {
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return
+	}
+	if n := len(w.q); n > 0 && w.q[n-1].t == t {
+		w.q[n-1].es = append(w.q[n-1].es, e)
+		w.mu.Unlock()
+		return // already signalled for that operation
+	}
+	w.q = append(w.q, wop{t: t, es: []store.Entry{e}})
+	w.mu.Unlock()
+	w.signal()
+}
+
+func (w *writer) signal() {
 	select {
 	case w.wake <- struct{}{}:
 	default:
@@ -1646,8 +1696,12 @@ func (w *writer) loop() {
 		w.q = nil
 		closed := w.closed
 		w.mu.Unlock()
-		for _, f := range q {
-			f()
+		for _, op := range q {
+			if op.t != nil {
+				w.entries(op.t, op.es)
+			} else {
+				op.f()
+			}
 		}
 		if len(q) > 0 {
 			continue
