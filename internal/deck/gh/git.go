@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -193,4 +194,189 @@ func (c *Client) LogSince(ctx context.Context, base string) ([]string, error) {
 		return lines(out), nil
 	}
 	return nil, lastErr
+}
+
+// ChangedFile is one changed path in the work tree, as `git status` lists
+// it.
+type ChangedFile struct {
+	// Code is one letter: M modified, A added, D deleted, R renamed, C
+	// copied, T type changed, U unmerged, ? untracked.
+	Code string
+	Path string
+	// Orig is a rename's or copy's old path.
+	Orig string
+	// Staged is set when the change (or part of it) is in the index.
+	Staged bool
+}
+
+// ChangedFiles lists the work tree's changed, staged, unmerged and
+// untracked paths.
+func (c *Client) ChangedFiles(ctx context.Context) ([]ChangedFile, error) {
+	_, files, err := c.StatusFiles(ctx)
+	return files, err
+}
+
+// StatusFiles is [Client.Status] and [Client.ChangedFiles] from one read.
+func (c *Client) StatusFiles(ctx context.Context) (Status, []ChangedFile, error) {
+	out, err := c.git(ctx, localTimeout, "status", "--porcelain=v2", "--branch")
+	if err != nil {
+		return Status{}, nil, err
+	}
+	return parseStatus(out), parseChangedFiles(out), nil
+}
+
+// parseChangedFiles reads the path lines of porcelain v2 output:
+//
+//	1 XY sub mH mI mW hH hI path
+//	2 XY sub mH mI mW hH hI Xscore path<TAB>orig
+//	u XY sub m1 m2 m3 mW h1 h2 h3 path
+//	? path
+func parseChangedFiles(out string) []ChangedFile {
+	var fs []ChangedFile
+	for _, l := range lines(out) {
+		if len(l) < 3 || l[1] != ' ' {
+			continue
+		}
+		switch l[0] {
+		case '?':
+			fs = append(fs, ChangedFile{Code: "?", Path: l[2:]})
+		case '1':
+			if f := strings.SplitN(l, " ", 9); len(f) == 9 {
+				fs = append(fs, changedFile(f[1], f[8], ""))
+			}
+		case '2':
+			if f := strings.SplitN(l, " ", 10); len(f) == 10 {
+				path, orig, _ := strings.Cut(f[9], "\t")
+				fs = append(fs, changedFile(f[1], path, orig))
+			}
+		case 'u':
+			if f := strings.SplitN(l, " ", 11); len(f) == 11 {
+				fs = append(fs, ChangedFile{Code: "U", Path: f[10]})
+			}
+		}
+	}
+	return fs
+}
+
+// changedFile is a tracked path's change from its XY status: the index
+// side when it changed there, else the work tree side.
+func changedFile(xy, path, orig string) ChangedFile {
+	f := ChangedFile{Path: path, Orig: orig, Code: "M"}
+	if len(xy) < 2 {
+		return f
+	}
+	if xy[0] != '.' {
+		f.Code, f.Staged = string(xy[0]), true
+	} else if xy[1] != '.' {
+		f.Code = string(xy[1])
+	}
+	return f
+}
+
+// Commit is one commit as the recent commits list shows it.
+type Commit struct {
+	Hash    string // abbreviated
+	When    time.Time
+	Author  string
+	Subject string
+}
+
+// Log lists up to n commits of HEAD, the newest first. A repository with no
+// commits yet has none.
+func (c *Client) Log(ctx context.Context, n int) ([]Commit, error) {
+	out, err := c.git(ctx, localTimeout, "log", "-n", strconv.Itoa(n), "--format=%h%x00%ct%x00%an%x00%s", "--")
+	if err != nil {
+		if strings.Contains(stderrOf(err), "does not have any commits") {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return parseLog(out), nil
+}
+
+func parseLog(out string) []Commit {
+	var cs []Commit
+	for _, l := range lines(out) {
+		f := strings.SplitN(l, "\x00", 4)
+		if len(f) < 4 || f[0] == "" {
+			continue
+		}
+		cs = append(cs, Commit{Hash: f[0], When: unixTime(f[1]), Author: f[2], Subject: f[3]})
+	}
+	return cs
+}
+
+func unixTime(s string) time.Time {
+	sec, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil {
+		return time.Time{}
+	}
+	return time.Unix(sec, 0)
+}
+
+// FileStat is one file a commit touched.
+type FileStat struct {
+	Path           string
+	Added, Deleted int
+	Binary         bool
+}
+
+// CommitDetail is one commit with its message body and the files it
+// changed.
+type CommitDetail struct {
+	Commit
+	Body           string
+	Files          []FileStat
+	Added, Deleted int
+}
+
+// hashRe is what a commit hash (or a prefix of one) looks like.
+var hashRe = regexp.MustCompile(`^[0-9a-fA-F]{4,64}$`)
+
+// Show reads commit hash: its message and the files it changed, by line
+// counts. A merge commit lists no files.
+func (c *Client) Show(ctx context.Context, hash string) (*CommitDetail, error) {
+	if !hashRe.MatchString(hash) {
+		return nil, errors.New("git show: bad commit hash")
+	}
+	out, err := c.git(ctx, localTimeout, "show", "--numstat", "--format=%h%x00%ct%x00%an%x00%s%x00%b%x01", hash, "--")
+	if err != nil {
+		return nil, err
+	}
+	return parseShow(out)
+}
+
+// parseShow reads `git show --numstat` output made with a header that ends
+// in \x01: the header's fields, then one "added<TAB>deleted<TAB>path" line
+// per file ("-" counts for a binary file).
+func parseShow(out string) (*CommitDetail, error) {
+	head, rest, ok := strings.Cut(out, "\x01")
+	if !ok {
+		return nil, errors.New("git show: unexpected output")
+	}
+	f := strings.SplitN(head, "\x00", 5)
+	if len(f) < 5 {
+		return nil, errors.New("git show: unexpected output")
+	}
+	d := &CommitDetail{
+		Commit: Commit{Hash: strings.TrimSpace(f[0]), When: unixTime(f[1]), Author: f[2], Subject: f[3]},
+		Body:   strings.TrimSpace(f[4]),
+	}
+	for _, l := range lines(rest) {
+		p := strings.SplitN(l, "\t", 3)
+		if len(p) < 3 {
+			continue
+		}
+		fs := FileStat{Path: p[2]}
+		if p[0] == "-" && p[1] == "-" {
+			fs.Binary = true
+		} else {
+			fs.Added, _ = strconv.Atoi(p[0])
+			fs.Deleted, _ = strconv.Atoi(p[1])
+		}
+		d.Added += fs.Added
+		d.Deleted += fs.Deleted
+		d.Files = append(d.Files, fs)
+	}
+	return d, nil
 }

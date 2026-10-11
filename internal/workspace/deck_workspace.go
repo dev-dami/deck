@@ -57,6 +57,8 @@ type DeckWorkspace struct {
 	models map[string][]deckagent.ModelInfo // each CLI's models, once asked
 	since  map[string]time.Time             // when each busy agent's turn began
 	warned map[string]bool                  // agents told they cannot ask in ask mode
+
+	act activity // tool calls in flight and background shells, by session
 }
 
 // turn is what is known about one agent's current reply.
@@ -451,6 +453,7 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 	if ev.Kind == deckagent.KindSessionStarted {
 		w.warnNoAsk(sid, ev.AgentID)
 	}
+	w.observeActivity(sid, ev)
 	ctx := context.Background()
 	t := w.turns[ev.AgentID]
 	if t == nil {

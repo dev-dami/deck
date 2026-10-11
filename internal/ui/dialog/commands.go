@@ -14,6 +14,7 @@ import (
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/list"
+	"github.com/dev-dami/deck/internal/ui/notice"
 	"github.com/dev-dami/deck/internal/ui/styles"
 )
 
@@ -455,7 +456,11 @@ func (c *Commands) defaultCommands() []*CommandItem {
 
 	// Only show toggle compact mode command if window width is larger than compact breakpoint (120)
 	if c.windowWidth >= sidebarCompactModeBreakpoint && c.hasSession {
-		commands = append(commands, NewCommandItem(c.com.Styles, "toggle_sidebar", "Toggle Sidebar", "ctrl+b", ActionToggleCompactMode{}))
+		commands = append(commands,
+			NewCommandItem(c.com.Styles, "toggle_sidebar", "Toggle Sidebar", "ctrl+b", ActionToggleCompactMode{}),
+			NewCommandItem(c.com.Styles, "sidebar_reopen", "Sidebar: reopen pane…", "", ActionSidebarReopen{}).WithAliases("panes"),
+			NewCommandItem(c.com.Styles, "sidebar_reset", "Sidebar: reset layout", "", ActionSidebarReset{}),
+		)
 	}
 	if c.hasSession {
 		cfgPrime := c.com.Config()
@@ -493,6 +498,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 
 	// Add a command for selecting notification style via picker dialog.
+	commands = append(commands, NewCommandItem(c.com.Styles, "notice_history", "Notifications", notice.HistoryKey, ActionOpenDialog{DialogID: NoticeHistoryID}).WithAliases("notices", "toasts", "history"))
 	notificationLabel := "Notification Style"
 	commands = append(commands, NewCommandItem(c.com.Styles, "select_notifications", notificationLabel, "", ActionOpenDialog{DialogID: NotificationsID}))
 
@@ -522,8 +528,21 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 	commands = append(commands, NewCommandItem(c.com.Styles, "toggle_mouse", mouseLabel, "", ActionToggleMouseSupport{}))
 
-	// Git and GitHub (dialog/git_commands.go).
-	commands = append(commands, gitCommands(c.com.Styles)...)
+	// Git and GitHub: each focuses the git pane in the sidebar.
+	commands = append(commands,
+		NewCommandItem(c.com.Styles, "git", "Git", "ctrl+x", ActionGitPane{Do: GitPaneOpen}).
+			WithAliases("branch", "github"),
+		NewCommandItem(c.com.Styles, "git_create_pr", "Create Pull Request", "", ActionGitPane{Do: GitPaneCreatePR}).
+			WithAliases("pr", "open pr", "github"),
+		NewCommandItem(c.com.Styles, "git_prs", "Pull Requests", "", ActionGitPane{Do: GitPanePRs}).
+			WithAliases("prs", "github"),
+		NewCommandItem(c.com.Styles, "git_checks", "Checks for This Branch", "", ActionGitPane{Do: GitPaneChecks}).
+			WithAliases("ci", "pr checks", "actions"),
+		NewCommandItem(c.com.Styles, "git_push", "Push", "", ActionGitPane{Do: GitPanePush}).
+			WithAliases("git push"),
+		NewCommandItem(c.com.Styles, "git_commit", "Commit All…", "", ActionGitPane{Do: GitPaneCommit}).
+			WithAliases("git commit"),
+	)
 
 	commands = append(
 		commands,

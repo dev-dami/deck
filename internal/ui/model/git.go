@@ -9,7 +9,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
@@ -20,8 +19,8 @@ import (
 )
 
 // Git polling. Status is a local read and cheap; GitHub is asked more often
-// while checks run, and never when gh is missing or signed out (the git panel
-// asks again when it opens).
+// while checks run, and never when gh is missing or signed out (opening the
+// git pane asks again).
 const (
 	gitStatusInterval    = 10 * time.Second
 	gitStatusErrBackoff  = time.Minute
@@ -32,14 +31,16 @@ const (
 	// gitNudgeWindow is how recent a pushed branch's last commit must be
 	// for the "open a PR" nudge.
 	gitNudgeWindow = time.Hour
-	// gitRecentBranches is how many branches the Recent tab lists.
+	// gitRecentBranches is how many branches the pane lists.
 	gitRecentBranches = 15
+	// gitRecentCommits is how many commits the pane lists.
+	gitRecentCommits = 20
 )
 
 // gitState is what the UI knows about the work tree's git and GitHub state,
-// for the header badge, the sidebar block and the nudge above the composer.
-// It is only touched in Update; reads happen in commands that report back
-// with gitMsg messages.
+// for the git pane, the header badge and the nudge above the composer. It
+// is only touched in Update; reads happen in commands that report back with
+// gitMsg messages.
 type gitState struct {
 	client *gh.Client
 
@@ -47,7 +48,11 @@ type gitState struct {
 	statusOK   bool
 	statusAt   time.Time
 	statusBusy bool
-	recent     []gh.Branch
+	// statusErr says why there is no status ("Not a git repository").
+	statusErr string
+	files     []gh.ChangedFile
+	recent    []gh.Branch
+	commits   []gh.Commit
 
 	ghChecked bool
 	ghAvail   bool
@@ -59,8 +64,9 @@ type gitState struct {
 	prAt     time.Time
 	prBusy   bool
 
-	// heads maps the head branch of each open pull request to its number,
-	// as of headsAt.
+	// prs is the open pull requests and heads maps the head branch of each
+	// to its number, as of headsAt.
+	prs     []gh.PR
 	heads   map[string]int
 	headsAt time.Time
 
@@ -68,14 +74,17 @@ type gitState struct {
 	// gets the nudge.
 	defaultBranch string
 
-	// dismissed is the branches whose nudge the user closed.
+	// dismissed is the branches whose nudge the user has seen.
 	dismissed map[string]bool
 	// verdicts is the last check state seen per pull request, to notice a
 	// pending → passed/failed change.
 	verdicts map[int]string
 
-	// detailTick is set while a pull request detail refresh is scheduled.
+	// detailTick is set while a pull request view refresh is scheduled.
 	detailTick bool
+
+	// pane is the git pane's views and inputs.
+	pane gitPaneState
 }
 
 // gitMsg is a message from one of the git commands; Update hands them all
@@ -85,9 +94,11 @@ type gitMsg interface{ gitMsg() }
 type (
 	// gitStatusMsg is a status poll's result.
 	gitStatusMsg struct {
-		status gh.Status
-		recent []gh.Branch
-		err    error
+		status  gh.Status
+		files   []gh.ChangedFile
+		recent  []gh.Branch
+		commits []gh.Commit
+		err     error
 	}
 	// gitPRMsg is a pull request poll's result. prs is set when the open
 	// pull requests were listed too.
@@ -99,26 +110,26 @@ type (
 		prs    []gh.PR
 		listed bool
 	}
-	// gitPanelMsg is what the git panel shows.
-	gitPanelMsg struct {
-		data dialog.GitPanelData
-	}
 	// gitOpMsg is a finished git or gh operation.
 	gitOpMsg struct {
-		busyID       string // the dialog that showed it running
 		info         string
 		err          error
-		closeID      string // a dialog to close when it worked
 		refresh      bool
 		thenCreatePR bool
+		job          string // the Commands pane's job for it
+		// openPR is a pull request to show when it worked (one just
+		// opened); it takes the create view's place.
+		openPR int
 	}
-	// gitPRDetailMsg is a pull request read for the detail dialog.
+	// gitPRDetailMsg is a pull request read for the pull request view; req
+	// is the number asked for (0: the current branch's).
 	gitPRDetailMsg struct {
+		req    int
 		pr     *gh.PR
 		checks []gh.Check
 		err    error
 	}
-	// gitPRDetailTickMsg refreshes the open pull request detail.
+	// gitPRDetailTickMsg refreshes the pull request view.
 	gitPRDetailTickMsg struct{}
 	// gitPrefillMsg is what the create pull request form starts with.
 	gitPrefillMsg struct {
@@ -139,20 +150,26 @@ type (
 		text string
 		err  error
 	}
+	// gitShowMsg is a commit read for the commit view.
+	gitShowMsg struct {
+		hash   string
+		detail *gh.CommitDetail
+		err    error
+	}
+	// gitPaneTickMsg turns the git pane's spinner.
+	gitPaneTickMsg struct{}
 )
 
 func (gitStatusMsg) gitMsg()       {}
 func (gitPRMsg) gitMsg()           {}
-func (gitPanelMsg) gitMsg()        {}
 func (gitOpMsg) gitMsg()           {}
 func (gitPRDetailMsg) gitMsg()     {}
 func (gitPRDetailTickMsg) gitMsg() {}
 func (gitPrefillMsg) gitMsg()      {}
 func (gitLogMsg) gitMsg()          {}
 func (gitHandoffMsg) gitMsg()      {}
-
-// gitDialogIDs is every git dialog, front-most kind first.
-var gitDialogIDs = []string{dialog.GitLogID, dialog.GitMergeID, dialog.GitPRCreateID, dialog.GitPRID, dialog.GitID}
+func (gitShowMsg) gitMsg()         {}
+func (gitPaneTickMsg) gitMsg()     {}
 
 // gitClient is the git/gh client for the workspace's directory.
 func (m *UI) gitClient() *gh.Client {
@@ -182,7 +199,8 @@ func (m *UI) gitPoll() tea.Cmd {
 
 // gitMaybePollPR asks GitHub about the current branch's pull request when
 // it is due: at once after a checkout, every 20s while checks run, every two
-// minutes otherwise.
+// minutes otherwise. The open pull requests are listed every two minutes
+// for the pane.
 func (m *UI) gitMaybePollPR(now time.Time) tea.Cmd {
 	g := &m.git
 	if g.prBusy || !g.statusOK || g.status.Branch == "" || (g.ghChecked && !g.ghAvail) {
@@ -192,26 +210,12 @@ func (m *UI) gitMaybePollPR(now time.Time) tea.Cmd {
 	if g.checks.State() == gh.ChecksPending {
 		interval = gitPRPendingInterval
 	}
-	if g.prBranch == g.status.Branch && now.Sub(g.prAt) < interval {
+	list := now.Sub(g.headsAt) >= gitPRListInterval
+	if !list && g.prBranch == g.status.Branch && now.Sub(g.prAt) < interval {
 		return nil
 	}
 	g.prBusy = true
-	return gitFetchPR(g.client, g.status.Branch, g.wantPRList(now))
-}
-
-// wantPRList reports whether the open pull requests should be listed too: a
-// recently pushed branch other than the current one could get the nudge,
-// and only the list says whether it has a pull request.
-func (g *gitState) wantPRList(now time.Time) bool {
-	if now.Sub(g.headsAt) < gitPRListInterval {
-		return false
-	}
-	for _, b := range g.recent {
-		if b.Name != g.status.Branch && g.nudgeable(b, now) {
-			return true
-		}
-	}
-	return false
+	return gitFetchPR(g.client, g.status.Branch, list)
 }
 
 // nudgeable reports whether b could get the "open a PR" nudge, its pull
@@ -259,8 +263,8 @@ func (m *UI) gitNudgeLine(width int) string {
 	if branch == "" || width <= 2 {
 		return ""
 	}
-	muted := lipgloss.NewStyle().Foreground(m.com.Styles.Dialog.SecondaryText.GetForeground())
-	text := fmt.Sprintf("%s pushed %s · %s then p to open a PR", branch, dialog.GitAgo(at, time.Now()), dialog.GitKey)
+	muted := gitMuted(m.com.Styles)
+	text := fmt.Sprintf("%s pushed %s · %s then P to open a PR", branch, gitAgo(at, time.Now()), gitKey)
 	return " " + muted.Render(ansi.Truncate(text, width-2, "…"))
 }
 
@@ -272,49 +276,21 @@ func (m *UI) gitHeaderBadge() string {
 		return ""
 	}
 	num := m.com.Styles.Header.WorkingDir.Render(fmt.Sprintf("#%d", g.pr.Number))
-	if b := dialog.GitChecksBadge(g.checks); b != "" {
+	if b := gitChecksBadge(g.checks); b != "" {
 		return num + " " + b
 	}
 	return num
 }
 
-// gitSidebarBlock is the sidebar's git lines under the branch: how it
-// stands against its upstream, its pull request and the checks. It is ""
-// when there is nothing to say.
-func (m *UI) gitSidebarBlock(width int) string {
-	g := &m.git
-	if !g.statusOK || width <= 0 {
-		return ""
-	}
-	t := m.com.Styles
-	muted := lipgloss.NewStyle().Foreground(t.Dialog.SecondaryText.GetForeground())
-	var lines []string
-	var facts []string
-	if ab := dialog.GitAheadBehind(g.status); ab != "" {
-		facts = append(facts, ab)
-	}
-	if g.status.Branch != "" && g.status.Upstream == "" {
-		facts = append(facts, "not pushed")
-	}
-	if g.status.Dirty > 0 {
-		facts = append(facts, fmt.Sprintf("%d changed", g.status.Dirty))
-	}
-	if len(facts) > 0 {
-		lines = append(lines, muted.Render(ansi.Truncate(strings.Join(facts, " · "), width, "…")))
-	}
-	if g.pr != nil && g.prBranch == g.status.Branch {
-		num := t.Header.GitBranch.Render(fmt.Sprintf("#%d", g.pr.Number))
-		lines = append(lines, num+" "+ansi.Truncate(g.pr.Title, max(0, width-lipgloss.Width(num)-1), "…"))
-		if s := dialog.GitChecksText(g.checks); s != "" {
-			lines = append(lines, ansi.Truncate(s, width, "…"))
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
 // handleGitMsg applies a git command's result.
 func (m *UI) handleGitMsg(msg gitMsg) tea.Cmd {
+	cmd := m.applyGitMsg(msg)
+	return tea.Batch(cmd, m.gitPaneTick())
+}
+
+func (m *UI) applyGitMsg(msg gitMsg) tea.Cmd {
 	g := &m.git
+	p := &g.pane
 	now := time.Now()
 	switch msg := msg.(type) {
 	case gitStatusMsg:
@@ -322,18 +298,26 @@ func (m *UI) handleGitMsg(msg gitMsg) tea.Cmd {
 		g.statusAt = now
 		if msg.err != nil {
 			g.statusOK = false
+			g.statusErr = gitErrText(msg.err)
 			g.statusAt = now.Add(gitStatusErrBackoff)
+			p.refreshing = false
 			return nil
 		}
-		g.status, g.statusOK, g.recent = msg.status, true, msg.recent
-		return m.gitMaybePollPR(now)
+		g.status, g.statusOK, g.statusErr = msg.status, true, ""
+		g.files, g.recent, g.commits = msg.files, msg.recent, msg.commits
+		cmd := m.gitMaybePollPR(now)
+		if !g.prBusy {
+			p.refreshing = false
+		}
+		return cmd
 
 	case gitPRMsg:
 		g.prBusy = false
 		g.prAt = now
+		p.refreshing = false
 		g.ghChecked, g.ghAvail = true, msg.avail
 		if !msg.avail {
-			g.pr, g.prBranch, g.checks = nil, "", gh.CheckSummary{}
+			g.pr, g.prBranch, g.checks, g.prs = nil, "", gh.CheckSummary{}, nil
 			return nil
 		}
 		if msg.listed {
@@ -345,38 +329,23 @@ func (m *UI) handleGitMsg(msg gitMsg) tea.Cmd {
 		}
 		return m.gitSetPR(msg.branch, msg.pr, nil)
 
-	case gitPanelMsg:
-		d := msg.data
-		if d.StatusErr == "" {
-			g.status, g.statusOK, g.statusAt = d.Status, true, now
-		}
-		g.recent = d.Recent
-		g.ghChecked, g.ghAvail = true, d.GHAvailable
-		var cmd tea.Cmd
-		if d.GHAvailable && d.PRErr == "" {
-			g.setHeads(d.PRs, now)
-			g.prAt = now
-			cmd = m.gitSetPR(d.Status.Branch, d.PR, nil)
-		}
-		if p, ok := m.dialog.Dialog(dialog.GitID).(*dialog.Git); ok {
-			p.SetData(d)
-			p.SetNudge(p.Nudge())
-		}
-		return cmd
-
 	case gitOpMsg:
-		if d, ok := m.dialog.Dialog(msg.busyID).(dialog.GitBusyDialog); ok {
-			d.SetBusy("")
-		}
+		m.jobDone(msg.job, msg.err)
+		p.busy = ""
 		var cmds []tea.Cmd
 		if msg.err != nil {
+			p.err, p.info = gitErrText(msg.err), ""
 			cmds = append(cmds, gitReportErr(msg.err))
 		} else {
+			p.err, p.info = "", msg.info
 			if msg.info != "" {
 				cmds = append(cmds, util.ReportInfo(msg.info))
 			}
-			if msg.closeID != "" {
-				m.dialog.CloseDialog(msg.closeID)
+			if msg.openPR > 0 {
+				if p.top().kind == gitViewCreate {
+					p.pop()
+				}
+				cmds = append(cmds, m.gitOpenPR(msg.openPR))
 			}
 			if msg.thenCreatePR {
 				cmds = append(cmds, m.gitStartCreatePR())
@@ -388,84 +357,104 @@ func (m *UI) handleGitMsg(msg gitMsg) tea.Cmd {
 		return tea.Batch(cmds...)
 
 	case gitPRDetailMsg:
-		d, ok := m.dialog.Dialog(dialog.GitPRID).(*dialog.GitPR)
-		if !ok {
+		v := p.findPR(msg.req)
+		if v == nil {
 			return nil
 		}
+		v.loading = false
 		if msg.err != nil {
-			d.SetError(gitErrText(msg.err))
+			v.err = gitErrText(msg.err)
 			return nil
 		}
-		if d.Number() != 0 && d.Number() != msg.pr.Number {
-			return nil
-		}
-		d.SetData(msg.pr, msg.checks)
+		v.setPR(msg.pr, msg.checks)
 		var cmds []tea.Cmd
 		if msg.pr.HeadRefName == g.status.Branch && msg.pr.State == "OPEN" {
 			cmds = append(cmds, m.gitSetPR(msg.pr.HeadRefName, msg.pr, msg.checks))
 		}
-		if d.Pending() {
-			cmds = append(cmds, d.Tick())
-			if !g.detailTick {
-				g.detailTick = true
-				cmds = append(cmds, tea.Tick(gitPRDetailInterval, func(time.Time) tea.Msg { return gitPRDetailTickMsg{} }))
-			}
+		if v.pending() && !g.detailTick {
+			g.detailTick = true
+			cmds = append(cmds, tea.Tick(gitPRDetailInterval, func(time.Time) tea.Msg { return gitPRDetailTickMsg{} }))
 		}
 		return tea.Batch(cmds...)
 
 	case gitPRDetailTickMsg:
 		g.detailTick = false
-		if d, ok := m.dialog.Dialog(dialog.GitPRID).(*dialog.GitPR); ok && d.Pending() {
-			return tea.Batch(d.StartLoading(), m.gitLoadDetail(d.Number()))
+		if v := p.top(); v.kind == gitViewPR && v.pending() && !v.loading {
+			v.loading = true
+			return m.gitLoadDetail(v.number)
 		}
 		return nil
 
 	case gitPrefillMsg:
+		v := p.top()
+		if v.kind != gitViewCreate || v.form == nil || !v.form.preparing {
+			// The user went elsewhere meanwhile.
+			return nil
+		}
 		switch {
 		case msg.err != nil:
+			p.pop()
+			p.err, p.info = gitErrText(msg.err), ""
 			return gitReportErr(msg.err)
 		case msg.existing > 0:
-			return tea.Batch(
-				util.ReportInfo(fmt.Sprintf("%s already has #%d", msg.branch, msg.existing)),
-				m.openGitPR(msg.existing),
-			)
+			p.pop()
+			p.info = fmt.Sprintf("%s already has #%d", msg.branch, msg.existing)
+			return m.gitOpenPR(msg.existing)
 		}
 		if msg.base != "" {
 			g.defaultBranch = msg.base
 		}
-		m.dialog.CloseDialog(dialog.GitPRCreateID)
-		d := dialog.NewGitPRCreate(m.com, msg.branch, msg.title, msg.base, msg.body, msg.notes)
-		m.dialog.OpenDialog(d)
-		return d.InitialCmd()
+		return v.form.fill(msg.branch, msg.title, msg.base, msg.body, msg.notes)
 
 	case gitLogMsg:
-		if d, ok := m.dialog.Dialog(dialog.GitPRID).(dialog.GitBusyDialog); ok {
-			d.SetBusy("")
-		}
+		p.busy = ""
 		switch {
 		case msg.err != nil:
+			p.err = gitErrText(msg.err)
 			return gitReportErr(msg.err)
 		case strings.TrimSpace(msg.log) == "":
-			return util.ReportInfo("gh has no failed log for " + msg.check.Name + " (yet)")
+			p.info = "gh has no failed log for " + msg.check.Name + " (yet)"
+			return nil
 		}
-		m.dialog.CloseDialog(dialog.GitLogID)
-		m.dialog.OpenDialog(dialog.NewGitLog(m.com, msg.number, msg.check, msg.log))
+		p.err, p.info = "", ""
+		if p.top().kind == gitViewLog {
+			p.pop()
+		}
+		p.push(&gitView{kind: gitViewLog, number: msg.number, check: msg.check, log: msg.log, off: gitBottom})
 		return nil
 
 	case gitHandoffMsg:
-		if d, ok := m.dialog.Dialog(dialog.GitPRID).(dialog.GitBusyDialog); ok {
-			d.SetBusy("")
-		}
+		p.busy = ""
 		if msg.err != nil {
+			p.err = gitErrText(msg.err)
 			return gitReportErr(msg.err)
 		}
 		return m.gitPutInComposer(msg.text)
+
+	case gitShowMsg:
+		for _, v := range p.stack {
+			if v.kind == gitViewCommit && v.hash == msg.hash {
+				v.loading = false
+				if msg.err != nil {
+					v.err = gitErrText(msg.err)
+				} else {
+					v.commit = msg.detail
+				}
+			}
+		}
+		return nil
+
+	case gitPaneTickMsg:
+		p.ticking = false
+		p.frame++
+		return nil
 	}
 	return nil
 }
 
-// setHeads records the open pull requests' head branches.
+// setHeads records the open pull requests and their head branches.
 func (g *gitState) setHeads(prs []gh.PR, now time.Time) {
+	g.prs = prs
 	g.heads = make(map[string]int, len(prs))
 	for _, p := range prs {
 		g.heads[p.HeadRefName] = p.Number
@@ -502,7 +491,7 @@ func (m *UI) gitSetPR(branch string, pr *gh.PR, checks []gh.Check) tea.Cmd {
 	text := fmt.Sprintf("CI passed on #%d", pr.Number)
 	report := util.ReportInfo(text)
 	if cur == gh.ChecksFailed {
-		text = fmt.Sprintf("CI failed on #%d — %s to see why", pr.Number, dialog.GitKey)
+		text = fmt.Sprintf("CI failed on #%d — %s to see why", pr.Number, gitKey)
 		report = util.ReportWarn(text)
 	}
 	return tea.Batch(
@@ -526,7 +515,7 @@ func gitBell() tea.Cmd {
 // gitReportErr reports a failed git or gh command.
 func gitReportErr(err error) tea.Cmd {
 	if errors.Is(err, gh.ErrNoGH) {
-		return util.ReportWarn("GitHub needs the gh CLI: " + dialog.GitNoGHHint)
+		return util.ReportWarn("GitHub needs the gh CLI: " + gitNoGHHint)
 	}
 	return util.ReportError(errors.New(gitErrText(err)))
 }
@@ -535,21 +524,23 @@ func gitReportErr(err error) tea.Cmd {
 func gitErrText(err error) string {
 	s := err.Error()
 	if strings.Contains(strings.ToLower(s), "not a git repository") {
-		return "Not a git repository"
+		return "not a git repository"
 	}
 	return s
 }
 
-// gitFetchStatus reads the status and the recent branches.
+// gitFetchStatus reads the status with the changed files, the recent
+// branches and the recent commits.
 func gitFetchStatus(cli *gh.Client) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		st, err := cli.Status(ctx)
+		st, files, err := cli.StatusFiles(ctx)
 		if err != nil {
 			return gitStatusMsg{err: err}
 		}
 		recent, _ := cli.RecentBranches(ctx, gitRecentBranches)
-		return gitStatusMsg{status: st, recent: recent}
+		commits, _ := cli.Log(ctx, gitRecentCommits)
+		return gitStatusMsg{status: st, files: files, recent: recent, commits: commits}
 	}
 }
 
@@ -573,68 +564,55 @@ func gitFetchPR(cli *gh.Client, branch string, list bool) tea.Cmd {
 	}
 }
 
-// gitLoadPanel reads everything the git panel shows.
-func gitLoadPanel(cli *gh.Client) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		d := dialog.GitPanelData{Loaded: true, Now: time.Now()}
-		st, err := cli.Status(ctx)
-		if err != nil {
-			d.StatusErr = gitErrText(err)
-			return gitPanelMsg{data: d}
+// openGitPane focuses the git pane (ctrl+x) and refreshes it. A branch the
+// composer nudged about is selected, and the nudge goes away.
+func (m *UI) openGitPane() tea.Cmd {
+	m.gitClient().Recheck()
+	cmds := []tea.Cmd{m.focusPane(paneGit), m.gitRefreshAll()}
+	if nudge, _ := m.gitNudge(); nudge != "" {
+		if m.git.dismissed == nil {
+			m.git.dismissed = map[string]bool{}
 		}
-		d.Status = st
-		d.Recent, _ = cli.RecentBranches(ctx, gitRecentBranches)
-		d.GHAvailable = cli.Available(ctx)
-		if !d.GHAvailable {
-			return gitPanelMsg{data: d}
+		m.git.dismissed[nudge] = true
+		if nudge != m.git.status.Branch {
+			p := &m.git.pane
+			p.toRoot()
+			p.root.selKey = gitRowKey(gitRowRecent, nudge)
 		}
-		if st.Branch != "" {
-			d.PR, err = cli.PRForBranch(ctx, st.Branch)
-			if err != nil {
-				d.PRErr = gitErrText(err)
-			}
-		}
-		prs, err := cli.PRList(ctx)
-		if err != nil {
-			d.PRErr = gitErrText(err)
-		}
-		d.PRs = prs
-		return gitPanelMsg{data: d}
 	}
-}
-
-// openGitPanel opens the git panel on tab (or brings it to the front) and
-// loads it; commit puts it on the commit message input.
-func (m *UI) openGitPanel(tab dialog.GitTab, commit bool) tea.Cmd {
-	cli := m.gitClient()
-	// gh may have been signed in to since it was last asked.
-	cli.Recheck()
-	nudge, _ := m.gitNudge()
-	var cmds []tea.Cmd
-	p, ok := m.dialog.Dialog(dialog.GitID).(*dialog.Git)
-	if ok {
-		m.dialog.BringToFront(dialog.GitID)
-		p.SetTab(tab)
-	} else {
-		g := &m.git
-		seed := dialog.GitPanelData{Status: g.status, GHAvailable: g.ghAvail, Recent: g.recent, Now: time.Now()}
-		if g.prBranch == g.status.Branch {
-			seed.PR = g.pr
-		}
-		p = dialog.NewGit(m.com, tab, seed, "")
-		p.SetNudge(nudge)
-		m.dialog.OpenDialog(p)
-	}
-	if commit {
-		cmds = append(cmds, p.StartCommit())
-	}
-	cmds = append(cmds, p.StartLoading(), gitLoadPanel(cli))
 	return tea.Batch(cmds...)
 }
 
+// handleGitPaneAction runs a git command from the palette: it focuses the
+// git pane and goes to the view or starts the action asked for.
+func (m *UI) handleGitPaneAction(a dialog.ActionGitPane) tea.Cmd {
+	m.dialog.CloseDialog(dialog.CommandsID)
+	open := m.openGitPane()
+	p := &m.git.pane
+	var cmd tea.Cmd
+	switch a.Do {
+	case dialog.GitPaneCreatePR:
+		p.toRoot()
+		cmd = m.gitStartCreatePR()
+	case dialog.GitPanePRs:
+		p.toRoot()
+		p.root.selKey = gitSectionKey(gitSectionPRs)
+	case dialog.GitPaneChecks:
+		p.toRoot()
+		cmd = m.gitOpenPR(0)
+	case dialog.GitPanePush:
+		p.toRoot()
+		cmd = m.gitPush()
+	case dialog.GitPaneCommit:
+		p.toRoot()
+		cmd = m.gitStartCommit()
+	}
+	return tea.Batch(open, cmd, m.gitPaneTick())
+}
+
 // gitRefreshAll re-reads after something changed: the status at once, the
-// pull request on the next poll, and whatever git dialog is open.
+// pull request and the open pull requests right after, and the pull
+// request or commit the pane shows.
 func (m *UI) gitRefreshAll() tea.Cmd {
 	g := &m.git
 	cli := m.gitClient()
@@ -645,177 +623,151 @@ func (m *UI) gitRefreshAll() tea.Cmd {
 		g.statusBusy = true
 		cmds = append(cmds, gitFetchStatus(cli))
 	}
-	if p, ok := m.dialog.Dialog(dialog.GitID).(*dialog.Git); ok {
-		cmds = append(cmds, p.StartLoading(), gitLoadPanel(cli))
-	}
-	if d, ok := m.dialog.Dialog(dialog.GitPRID).(*dialog.GitPR); ok {
-		cmds = append(cmds, d.StartLoading(), m.gitLoadDetail(d.Number()))
+	if v := g.pane.top(); v.kind == gitViewPR && !v.loading {
+		v.loading = true
+		cmds = append(cmds, m.gitLoadDetail(v.number))
 	}
 	return tea.Batch(cmds...)
 }
 
-// gitOp runs a git or gh operation off the UI loop, showing label as busy
-// on dialog busyID (or in the status bar when it is not open).
-func (m *UI) gitOp(busyID, label string, run func(context.Context) gitOpMsg) tea.Cmd {
-	var cmds []tea.Cmd
-	if label != "" {
-		if d, ok := m.dialog.Dialog(busyID).(dialog.GitBusyDialog); ok {
-			cmds = append(cmds, d.SetBusy(label))
-		} else {
-			cmds = append(cmds, util.ReportInfo(label))
-		}
-	}
-	cmds = append(cmds, func() tea.Msg {
+// gitOp runs a git or gh operation off the UI loop, showing label with a
+// spinner on the git pane's status line and as a job in the Commands pane.
+func (m *UI) gitOp(label string, run func(context.Context) gitOpMsg) tea.Cmd {
+	p := &m.git.pane
+	p.busy, p.err, p.info = label, "", ""
+	job := m.startJob("git", label)
+	return tea.Batch(m.gitPaneTick(), func() tea.Msg {
 		msg := run(context.Background())
-		msg.busyID = busyID
+		msg.job = job
 		return msg
 	})
-	return tea.Batch(cmds...)
 }
 
-// handleGitAction runs what a git dialog or a git palette command asked
-// for.
-func (m *UI) handleGitAction(action dialog.GitAction) tea.Cmd {
-	m.dialog.CloseDialog(dialog.CommandsID)
+// gitCommitAll stages everything and commits it with msg.
+func (m *UI) gitCommitAll(msg string) tea.Cmd {
+	cli := m.gitClient()
+	return m.gitOp("Committing…", func(ctx context.Context) gitOpMsg {
+		err := cli.CommitAll(ctx, msg)
+		return gitOpMsg{info: "Committed: " + firstLineOf(msg), err: err, refresh: true}
+	})
+}
+
+// gitPush pushes the current branch.
+func (m *UI) gitPush() tea.Cmd {
 	cli := m.gitClient()
 	branch := m.git.status.Branch
-
-	switch a := action.(type) {
-	case dialog.ActionGitOpen:
-		return m.openGitPanel(a.Tab, a.Commit)
-
-	case dialog.ActionGitRefresh:
-		return m.gitRefreshAll()
-
-	case dialog.ActionGitClosePanel:
-		if p, ok := m.dialog.Dialog(dialog.GitID).(*dialog.Git); ok && p.Nudge() != "" {
-			if m.git.dismissed == nil {
-				m.git.dismissed = map[string]bool{}
-			}
-			m.git.dismissed[p.Nudge()] = true
+	return m.gitOp("Pushing…", func(ctx context.Context) gitOpMsg {
+		err := cli.Push(ctx)
+		info := "Pushed"
+		if branch != "" {
+			info = "Pushed " + branch
 		}
-		m.dialog.CloseDialog(dialog.GitID)
-		if m.focus == uiFocusEditor {
-			return m.textarea.Focus()
+		return gitOpMsg{info: info, err: err, refresh: true}
+	})
+}
+
+// gitFetch fetches from the remotes.
+func (m *UI) gitFetch() tea.Cmd {
+	cli := m.gitClient()
+	return m.gitOp("Fetching…", func(ctx context.Context) gitOpMsg {
+		return gitOpMsg{info: "Fetched", err: cli.Fetch(ctx), refresh: true}
+	})
+}
+
+// gitCheckout checks out branch, then starts a pull request for it when
+// thenPR is set.
+func (m *UI) gitCheckout(branch string, thenPR bool) tea.Cmd {
+	cli := m.gitClient()
+	return m.gitOp("Checking out "+branch+"…", func(ctx context.Context) gitOpMsg {
+		err := cli.Checkout(ctx, branch)
+		return gitOpMsg{info: "On " + branch + " now", err: err, refresh: true, thenCreatePR: thenPR}
+	})
+}
+
+// gitSubmitPR pushes the branch if it needs it and opens the pull request.
+func (m *UI) gitSubmitPR(title, base, body string, draft bool) tea.Cmd {
+	cli := m.gitClient()
+	return m.gitOp("Opening the pull request…", func(ctx context.Context) gitOpMsg {
+		st, err := cli.Status(ctx)
+		if err != nil {
+			return gitOpMsg{err: err}
 		}
-		return nil
-
-	case dialog.ActionGitCommitAll:
-		return m.gitOp(dialog.GitID, "Committing…", func(ctx context.Context) gitOpMsg {
-			err := cli.CommitAll(ctx, a.Message)
-			return gitOpMsg{info: "Committed: " + firstLineOf(a.Message), err: err, refresh: true}
-		})
-
-	case dialog.ActionGitPush:
-		return m.gitOp(dialog.GitID, "Pushing…", func(ctx context.Context) gitOpMsg {
-			err := cli.Push(ctx)
-			info := "Pushed"
-			if branch != "" {
-				info = "Pushed " + branch
-			}
-			return gitOpMsg{info: info, err: err, refresh: true}
-		})
-
-	case dialog.ActionGitFetch:
-		return m.gitOp(dialog.GitID, "Fetching…", func(ctx context.Context) gitOpMsg {
-			return gitOpMsg{info: "Fetched", err: cli.Fetch(ctx), refresh: true}
-		})
-
-	case dialog.ActionGitCheckout:
-		return m.gitOp(dialog.GitID, "Checking out "+a.Branch+"…", func(ctx context.Context) gitOpMsg {
-			err := cli.Checkout(ctx, a.Branch)
-			return gitOpMsg{info: "On " + a.Branch + " now", err: err, refresh: true, thenCreatePR: a.ThenCreatePR}
-		})
-
-	case dialog.ActionGitCreatePR:
-		return m.gitStartCreatePR()
-
-	case dialog.ActionGitSubmitPR:
-		return m.gitOp(dialog.GitPRCreateID, "Opening the pull request…", func(ctx context.Context) gitOpMsg {
-			st, err := cli.Status(ctx)
-			if err != nil {
+		if st.Branch == "" {
+			return gitOpMsg{err: errors.New("HEAD is detached; check out a branch first")}
+		}
+		if st.Upstream == "" || st.Ahead > 0 {
+			if err := cli.Push(ctx); err != nil {
 				return gitOpMsg{err: err}
 			}
-			if st.Branch == "" {
-				return gitOpMsg{err: errors.New("HEAD is detached; check out a branch first")}
-			}
-			if st.Upstream == "" || st.Ahead > 0 {
-				if err := cli.Push(ctx); err != nil {
-					return gitOpMsg{err: err}
-				}
-			}
-			n, url, err := cli.CreatePR(ctx, a.Title, a.Body, a.Base, a.Draft)
-			if err != nil {
+		}
+		n, url, err := cli.CreatePR(ctx, title, body, base, draft)
+		if err != nil {
+			return gitOpMsg{err: err, refresh: true}
+		}
+		return gitOpMsg{info: fmt.Sprintf("PR #%d opened · %s", n, url), openPR: n, refresh: true}
+	})
+}
+
+// gitRerun re-runs the failed jobs of pull request number's workflow runs.
+func (m *UI) gitRerun(number int, runIDs []string) tea.Cmd {
+	cli := m.gitClient()
+	return m.gitOp("Re-running the failed jobs…", func(ctx context.Context) gitOpMsg {
+		for _, id := range runIDs {
+			if err := cli.RerunFailed(ctx, id); err != nil {
 				return gitOpMsg{err: err, refresh: true}
 			}
-			return gitOpMsg{info: fmt.Sprintf("PR #%d opened · %s", n, url), closeID: dialog.GitPRCreateID, refresh: true}
-		})
-
-	case dialog.ActionGitViewPR:
-		return m.openGitPR(a.Number)
-
-	case dialog.ActionGitPRRefresh:
-		if d, ok := m.dialog.Dialog(dialog.GitPRID).(*dialog.GitPR); ok {
-			return tea.Batch(d.StartLoading(), m.gitLoadDetail(a.Number))
 		}
-		return nil
+		return gitOpMsg{info: fmt.Sprintf("Re-running the failed jobs on #%d", number), refresh: true}
+	})
+}
 
-	case dialog.ActionGitPRRerun:
-		return m.gitOp(dialog.GitPRID, "Re-running the failed jobs…", func(ctx context.Context) gitOpMsg {
-			for _, id := range a.RunIDs {
-				if err := cli.RerunFailed(ctx, id); err != nil {
-					return gitOpMsg{err: err, refresh: true}
-				}
-			}
-			return gitOpMsg{info: fmt.Sprintf("Re-running the failed jobs on #%d", a.Number), refresh: true}
-		})
+// gitMerge merges pull request number by method.
+func (m *UI) gitMerge(number int, method string) tea.Cmd {
+	cli := m.gitClient()
+	return m.gitOp(fmt.Sprintf("Merging #%d…", number), func(ctx context.Context) gitOpMsg {
+		err := cli.Merge(ctx, number, method)
+		return gitOpMsg{info: fmt.Sprintf("Merged #%d (%s)", number, method), err: err, refresh: true}
+	})
+}
 
-	case dialog.ActionGitPRLog:
-		var cmds []tea.Cmd
-		if d, ok := m.dialog.Dialog(dialog.GitPRID).(dialog.GitBusyDialog); ok {
-			cmds = append(cmds, d.SetBusy("Fetching the failed log…"))
-		}
-		cmds = append(cmds, func() tea.Msg {
-			log, err := cli.FailedLog(context.Background(), a.Check.RunID(), a.Check.JobID())
-			return gitLogMsg{number: a.Number, check: a.Check, log: log, err: err}
-		})
-		return tea.Batch(cmds...)
+// gitCheckoutPR checks out pull request number's branch.
+func (m *UI) gitCheckoutPR(number int) tea.Cmd {
+	cli := m.gitClient()
+	return m.gitOp(fmt.Sprintf("Checking out #%d…", number), func(ctx context.Context) gitOpMsg {
+		err := cli.CheckoutPR(ctx, number)
+		return gitOpMsg{info: fmt.Sprintf("Checked out #%d", number), err: err, refresh: true}
+	})
+}
 
-	case dialog.ActionGitPRHandoff:
-		var cmds []tea.Cmd
-		if a.Log == "" {
-			if d, ok := m.dialog.Dialog(dialog.GitPRID).(dialog.GitBusyDialog); ok {
-				cmds = append(cmds, d.SetBusy("Fetching the failed log…"))
-			}
-		}
-		cmds = append(cmds, gitHandoff(cli, a))
-		return tea.Batch(cmds...)
+// gitOpenWeb opens pull request number in the browser.
+func (m *UI) gitOpenWeb(number int) tea.Cmd {
+	cli := m.gitClient()
+	return m.gitOp("Opening the browser…", func(ctx context.Context) gitOpMsg {
+		err := cli.OpenWeb(ctx, number)
+		return gitOpMsg{info: fmt.Sprintf("Opened #%d in the browser", number), err: err}
+	})
+}
 
-	case dialog.ActionGitPRAskMerge:
-		m.dialog.CloseDialog(dialog.GitMergeID)
-		m.dialog.OpenDialog(dialog.NewGitMerge(m.com, a.Number, a.Title))
-		return nil
+// gitFailedLog fetches check's failed log for the log view.
+func (m *UI) gitFailedLog(number int, check gh.Check) tea.Cmd {
+	cli := m.gitClient()
+	p := &m.git.pane
+	p.busy, p.err, p.info = "Fetching the failed log…", "", ""
+	return tea.Batch(m.gitPaneTick(), func() tea.Msg {
+		log, err := cli.FailedLog(context.Background(), check.RunID(), check.JobID())
+		return gitLogMsg{number: number, check: check, log: log, err: err}
+	})
+}
 
-	case dialog.ActionGitPRMerge:
-		m.dialog.CloseDialog(dialog.GitMergeID)
-		return m.gitOp(dialog.GitPRID, fmt.Sprintf("Merging #%d…", a.Number), func(ctx context.Context) gitOpMsg {
-			err := cli.Merge(ctx, a.Number, a.Method)
-			return gitOpMsg{info: fmt.Sprintf("Merged #%d (%s)", a.Number, a.Method), err: err, refresh: true}
-		})
-
-	case dialog.ActionGitPRCheckout:
-		return m.gitOp(dialog.GitPRID, fmt.Sprintf("Checking out #%d…", a.Number), func(ctx context.Context) gitOpMsg {
-			err := cli.CheckoutPR(ctx, a.Number)
-			return gitOpMsg{info: fmt.Sprintf("Checked out #%d", a.Number), err: err, refresh: true}
-		})
-
-	case dialog.ActionGitPROpenWeb:
-		return m.gitOp(dialog.GitPRID, "", func(ctx context.Context) gitOpMsg {
-			err := cli.OpenWeb(ctx, a.Number)
-			return gitOpMsg{info: fmt.Sprintf("Opened #%d in the browser", a.Number), err: err}
-		})
+// gitHandoff hands check's failed log to an agent through the composer,
+// fetching the log first when log is empty.
+func (m *UI) gitHandoff(number int, check gh.Check, log string) tea.Cmd {
+	p := &m.git.pane
+	p.err, p.info = "", ""
+	if log == "" {
+		p.busy = "Fetching the failed log…"
 	}
-	return nil
+	return tea.Batch(m.gitPaneTick(), gitHandoffCmd(m.gitClient(), number, check, log))
 }
 
 // firstLineOf is s up to its first newline.
@@ -824,12 +776,19 @@ func firstLineOf(s string) string {
 	return l
 }
 
-// gitStartCreatePR reads what the create pull request form starts with,
-// then opens it (or the branch's pull request, if it has one).
+// gitStartCreatePR opens the create pull request view in the pane and
+// reads what its form starts with (or shows the branch's pull request, if
+// it has one).
 func (m *UI) gitStartCreatePR() tea.Cmd {
 	cli := m.gitClient()
 	cli.Recheck()
-	return tea.Batch(util.ReportInfo("Preparing the pull request…"), func() tea.Msg {
+	p := &m.git.pane
+	p.err, p.info = "", ""
+	if v := p.top(); v.kind == gitViewCreate {
+		p.pop()
+	}
+	p.push(&gitView{kind: gitViewCreate, form: newGitPRForm(m.com.Styles)})
+	return tea.Batch(m.gitPaneTick(), func() tea.Msg {
 		ctx := context.Background()
 		if !cli.Available(ctx) {
 			return gitPrefillMsg{err: gh.ErrNoGH}
@@ -890,26 +849,26 @@ func gitPRNotes(st gh.Status) string {
 	return strings.Join(notes, " · ")
 }
 
-// openGitPR opens the detail of pull request number (0: the current
-// branch's) and loads it.
-func (m *UI) openGitPR(number int) tea.Cmd {
+// gitOpenPR shows pull request number (0: the current branch's) in the
+// pane and loads it.
+func (m *UI) gitOpenPR(number int) tea.Cmd {
 	g := &m.git
 	m.gitClient().Recheck()
-	m.dialog.CloseDialog(dialog.GitMergeID)
-	m.dialog.CloseDialog(dialog.GitLogID)
-	m.dialog.CloseDialog(dialog.GitPRID)
-	d := dialog.NewGitPR(m.com, number)
+	p := &g.pane
+	v := &gitView{kind: gitViewPR, number: number, loading: true}
 	if g.pr != nil && ((number == 0 && g.prBranch == g.status.Branch) || g.pr.Number == number) {
 		// Show what is known at once; the read below refreshes it.
-		d.SetData(g.pr, nil)
-		number = g.pr.Number
+		v.setPR(g.pr, nil)
 	}
-	m.dialog.OpenDialog(d)
-	return tea.Batch(d.StartLoading(), m.gitLoadDetail(number))
+	if t := p.top(); t.kind == gitViewPR && t.number == v.number && v.number != 0 {
+		p.pop()
+	}
+	p.push(v)
+	return tea.Batch(m.gitPaneTick(), m.gitLoadDetail(number))
 }
 
 // gitLoadDetail reads pull request number (0: the current branch's) and its
-// checks for the detail dialog.
+// checks for the pull request view.
 func (m *UI) gitLoadDetail(number int) tea.Cmd {
 	cli := m.gitClient()
 	return func() tea.Msg {
@@ -919,28 +878,37 @@ func (m *UI) gitLoadDetail(number int) tea.Cmd {
 		if number == 0 {
 			pr, err = cli.PRForBranch(ctx, "")
 			if err == nil && pr == nil {
-				err = errors.New("this branch has no pull request yet; p in the git panel opens one")
+				err = errors.New("this branch has no pull request yet; P opens one")
 			}
 		} else {
 			pr, err = cli.PRView(ctx, number)
 		}
 		if err != nil {
-			return gitPRDetailMsg{err: err}
+			return gitPRDetailMsg{req: number, err: err}
 		}
 		// gh pr checks knows more than the rollup; without it, the
 		// rollup is shown.
 		checks, _ := cli.Checks(ctx, pr.Number)
-		return gitPRDetailMsg{pr: pr, checks: checks}
+		return gitPRDetailMsg{req: number, pr: pr, checks: checks}
 	}
 }
 
-// gitHandoff builds the composer text that hands a failed check to the
-// user's default agent, fetching the log when a has none.
-func gitHandoff(cli *gh.Client, a dialog.ActionGitPRHandoff) tea.Cmd {
+// gitOpenCommit shows commit hash in the pane and loads it.
+func (m *UI) gitOpenCommit(hash string) tea.Cmd {
+	cli := m.gitClient()
+	m.git.pane.push(&gitView{kind: gitViewCommit, hash: hash, loading: true})
+	return tea.Batch(m.gitPaneTick(), func() tea.Msg {
+		d, err := cli.Show(context.Background(), hash)
+		return gitShowMsg{hash: hash, detail: d, err: err}
+	})
+}
+
+// gitHandoffCmd builds the composer text that hands a failed check to the
+// user's default agent, fetching the log when there is none.
+func gitHandoffCmd(cli *gh.Client, number int, check gh.Check, log string) tea.Cmd {
 	return func() tea.Msg {
-		log := a.Log
 		if log == "" {
-			l, err := cli.FailedLog(context.Background(), a.Check.RunID(), a.Check.JobID())
+			l, err := cli.FailedLog(context.Background(), check.RunID(), check.JobID())
 			if err != nil {
 				return gitHandoffMsg{err: err}
 			}
@@ -950,7 +918,7 @@ func gitHandoff(cli *gh.Client, a dialog.ActionGitPRHandoff) tea.Cmd {
 		if cfg, err := deckconfig.Load(); err == nil && cfg.DefaultAgent != "" {
 			agent = cfg.DefaultAgent
 		}
-		return gitHandoffMsg{text: gitHandoffText(agent, a.Number, a.Check.Name, log)}
+		return gitHandoffMsg{text: gitHandoffText(agent, number, check.Name, log)}
 	}
 }
 
@@ -964,12 +932,9 @@ func gitHandoffText(agent string, number int, check, log string) string {
 	return fmt.Sprintf("$%s CI failed on #%d (%s):\n%s\n%s\n%s", agent, number, check, fence, strings.TrimRight(log, "\n"), fence)
 }
 
-// gitPutInComposer closes the git dialogs and puts text in the composer,
-// after whatever is there, without sending it.
+// gitPutInComposer puts text in the composer, after whatever is there,
+// without sending it, and moves the focus there.
 func (m *UI) gitPutInComposer(text string) tea.Cmd {
-	for _, id := range gitDialogIDs {
-		m.dialog.CloseDialog(id)
-	}
 	prevHeight := m.textarea.Height()
 	if cur := m.textarea.Value(); strings.TrimSpace(cur) != "" {
 		text = strings.TrimRight(cur, "\n") + "\n\n" + text
@@ -978,6 +943,7 @@ func (m *UI) gitPutInComposer(text string) tea.Cmd {
 	m.textarea.MoveToEnd()
 	m.focus = uiFocusEditor
 	m.chat.Blur()
+	m.git.pane.info = "The failed log is in the composer"
 	return tea.Batch(
 		m.textarea.Focus(),
 		m.handleTextareaHeightChange(prevHeight),

@@ -23,7 +23,9 @@ archives:
   - id: deck
     ids: [deck]
     formats: [tar.gz]
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # GitHub renames assets with a "+" in them, so build metadata (v0.8.0-dev+x)
+    # is written with a "-" in file names; the installers do the same.
+    name_template: "{{ .ProjectName }}_{{ replace .Version "+" "-" }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         formats: [zip]

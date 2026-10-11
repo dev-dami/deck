@@ -56,6 +56,7 @@ import (
 	fimage "github.com/dev-dami/deck/internal/ui/image"
 	"github.com/dev-dami/deck/internal/ui/logo"
 	"github.com/dev-dami/deck/internal/ui/motion"
+	"github.com/dev-dami/deck/internal/ui/notice"
 	"github.com/dev-dami/deck/internal/ui/notification"
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/ui/tone"
@@ -376,17 +377,8 @@ type UI struct {
 	// sidebarLogo keeps a cached version of the sidebar sidebarLogo.
 	sidebarLogo string
 
-	// Sidebar scroll state for virtual scrolling.
-	sidebarOffset           int  // current scroll offset in lines
-	sidebarScrollable       bool // true when sidebar content exceeds available height
-	sidebarScrollbarVisible bool
-	sidebarScrollbarSeq     int    // sequence number for auto-hide timer
-	sidebarMaxOffsetVal     int    // max scroll offset, computed in updateSidebarScrollState
-	sidebarContent          string // cached rendered sidebar content
-	sidebarTotalLines       int    // total lines in sidebarContent
-	sidebarContentHeight    int    // available height for sidebar content
-	sidebarContentWidth     int    // available width for sidebar content
-	sidebarDrawLogo         string // logo to render (may differ from sidebarLogo for short heights)
+	// stripState is the sidebar's strip of panes; use strip() (strip.go).
+	stripState *paneStrip
 
 	// Notification state
 	notifyBackend       notification.Backend
@@ -461,6 +453,11 @@ type UI struct {
 	// git is the git/GitHub state behind the header badge, the sidebar
 	// block and the PR nudge (see git.go).
 	git gitState
+
+	// notices is the notification history and the toasts on screen (see
+	// notices.go); jobs are Deck's own operations in flight (jobs.go).
+	notices noticeState
+	jobs    jobState
 
 	// Prompt history for up/down navigation through previous messages.
 	promptHistory struct {
@@ -581,6 +578,8 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 
 	// Initialize compact mode from config
 	ui.forceCompactMode = com.Config().Options.TUI.CompactMode
+	// Restore the sidebar's panes as the user left them.
+	ui.stripState = newPaneStrip(com.Config().Options.TUI.SidebarLayout)
 
 	// set onboarding state defaults
 	ui.onboarding.yesInitializeSelected = true
@@ -842,7 +841,13 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.workTicking = false
 		return m, nil
 	}
+	if t, ok := msg.(toastTickMsg); ok {
+		return m, m.handleToastTick(t)
+	}
 	model, cmd := m.update(msg)
+	if c := m.scheduleToastTick(time.Now()); c != nil {
+		cmd = tea.Batch(cmd, c)
+	}
 	if !m.yoloTicking && m.yoloFX.Advance(time.Now()) {
 		m.yoloTicking = true
 		cmd = tea.Batch(cmd, yoloTick())
@@ -935,7 +940,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setState(uiChat, m.focus)
 		m.session = msg.session
-		m.sidebarOffset = 0
+		m.strip().scroll = map[paneID]int{}
 		m.sessionFiles = msg.files
 		// Session switch: the memoized busy state and queued prompts
 		// belong to the previous session. Drop them and re-fetch
@@ -1153,6 +1158,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.openPermissionsDialog(msg.Payload); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+		m.noticeFromPermission(msg.Payload)
 		if cmd := m.sendNotification(notification.Notification{
 			Title:   "Deck is waiting...",
 			Message: fmt.Sprintf("Permission required to execute \"%s\"", msg.Payload.ToolName),
@@ -1222,6 +1228,10 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cmd := m.handleDialogMsg(msg); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
+			return m, tea.Batch(cmds...)
+		}
+		// A click on a toast dismisses it.
+		if msg.Button == uv.MouseLeft && m.clickToast(msg.X, msg.Y) {
 			return m, tea.Batch(cmds...)
 		}
 		if m.state == uiLanding {
@@ -1297,6 +1307,14 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Pass mouse events to dialogs first if any are open.
 		if m.dialog.HasDialogs() {
 			m.dialog.Update(msg)
+			return m, tea.Batch(cmds...)
+		}
+		// Toasts hold still under the pointer. While they are up the
+		// terminal reports every move (see View); a move with no button
+		// held is only that, so it stops here unless something else
+		// asked for hover.
+		m.hoverToast(msg.X, msg.Y)
+		if m.notices.toasts.Len() > 0 && msg.Button == uv.MouseNone && m.activeInline == nil && m.state != uiLanding {
 			return m, tea.Batch(cmds...)
 		}
 		if m.state == uiLanding {
@@ -1422,15 +1440,9 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// others send DeltaY=1.
 		switch m.state {
 		case uiChat:
-			// When sidebar is focused, route wheel events to sidebar scrolling.
-			if m.focus == uiFocusSidebar {
-				lines := int(msg.DeltaY)
-				if lines != 0 {
-					m.sidebarOffset = max(0, min(m.sidebarOffset+lines, m.sidebarMaxOffsetVal))
-					m.sidebarScrollbarSeq++
-					m.sidebarScrollbarVisible = true
-					cmds = append(cmds, sidebarScrollbarHideCmd(m.sidebarScrollbarSeq))
-				}
+			// Over the sidebar the wheel scrolls its panes (strip_keys.go).
+			if m.stripActive() && image.Pt(msg.Mouse.X, msg.Mouse.Y).In(m.layout.sidebar) {
+				m.handleStripWheel(msg)
 				break
 			}
 			if msg.DeltaX != 0 {
@@ -1466,9 +1478,9 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateLayoutAndSize()
 			}
 		}
-	case sidebarScrollbarHideMsg:
-		if msg.seq == m.sidebarScrollbarSeq && m.focus != uiFocusSidebar {
-			m.sidebarScrollbarVisible = false
+	case stripSaveMsg:
+		if cmd := m.handleStripSave(msg); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 	case spinner.TickMsg:
 		if m.dialog.HasDialogs() {
@@ -1564,11 +1576,18 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.Error("Error reported", "error", msg.Msg)
 		}
 		m.status.SetInfoMsg(msg)
+		m.noticeFromInfo(msg)
 		ttl := msg.TTL
 		if ttl <= 0 {
 			ttl = DefaultStatusTTL
 		}
 		cmds = append(cmds, clearInfoMsgCmd(ttl))
+	case notice.Msg:
+		m.Notify(msg.Notice)
+	case JobStartedMsg:
+		m.jobStarted(msg.ID, msg.Label)
+	case JobDoneMsg:
+		m.jobDone(msg.ID, msg.Err)
 	case app.UpdateAvailableMsg:
 		text := fmt.Sprintf("Deck update available: v%s â†’ v%s.", msg.CurrentVersion, msg.LatestVersion)
 		if msg.IsDevelopment {
@@ -1580,6 +1599,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Msg:  text,
 			TTL:  ttl,
 		})
+		m.Notify(notice.Notice{Level: notice.Info, Source: notice.SourceDeck, Body: text})
 		cmds = append(cmds, clearInfoMsgCmd(ttl))
 	case workspace.ConnectionEvent:
 		cmds = append(cmds, m.handleConnectionEvent(msg)...)
@@ -1920,11 +1940,8 @@ func (m *UI) handleClickFocus(msg tea.MouseClickMsg) (cmd tea.Cmd) {
 	switch {
 	case m.state != uiChat:
 		return nil
-	case m.focus != uiFocusSidebar && image.Pt(msg.X, msg.Y).In(m.layout.sidebar) && m.sidebarScrollable:
-		m.focus = uiFocusSidebar
-		m.textarea.Blur()
-		m.chat.Blur()
-		return nil
+	case m.stripActive() && image.Pt(msg.X, msg.Y).In(m.layout.sidebar):
+		return m.handleStripClick(msg)
 	case m.focus != uiFocusEditor && image.Pt(msg.X, msg.Y).In(m.layout.editor):
 		if m.activeInline != nil {
 			m.focusActiveInline(uiFocusEditor)
@@ -1933,7 +1950,7 @@ func (m *UI) handleClickFocus(msg tea.MouseClickMsg) (cmd tea.Cmd) {
 			cmd = m.textarea.Focus()
 			m.chat.Blur()
 		}
-		m.sidebarScrollbarVisible = false
+		m.strip().chooser = nil
 	case m.focus != uiFocusMain && image.Pt(msg.X, msg.Y).In(m.layout.main):
 		if m.activeInline != nil {
 			m.focusActiveInline(uiFocusMain)
@@ -1942,7 +1959,7 @@ func (m *UI) handleClickFocus(msg tea.MouseClickMsg) (cmd tea.Cmd) {
 			m.textarea.Blur()
 			m.chat.Focus()
 		}
-		m.sidebarScrollbarVisible = false
+		m.strip().chooser = nil
 	}
 	return cmd
 }
@@ -2158,8 +2175,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if msg.Cmd != nil {
 			cmds = append(cmds, msg.Cmd)
 		}
-	case dialog.GitAction:
-		cmds = append(cmds, m.handleGitAction(msg))
+	case dialog.ActionGitPane:
+		cmds = append(cmds, m.handleGitPaneAction(msg))
 
 	// Session dialog messages.
 	case dialog.ActionSelectSession:
@@ -2185,6 +2202,12 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			m.toggleYoloMode()
 		}
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionRunNotice:
+		if cmd := m.runNoticeAction(msg.ID); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.ActionClearNotices:
+		m.clearNotices()
 	case dialog.ActionSelectNotificationStyle:
 		cfg := m.com.Config()
 		if cfg != nil && cfg.Options != nil {
@@ -2237,6 +2260,12 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionToggleCompactMode:
 		cmds = append(cmds, m.toggleCompactMode())
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionSidebarReopen:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		cmds = append(cmds, m.openStripReopen())
+	case dialog.ActionSidebarReset:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		cmds = append(cmds, m.resetStrip())
 	case dialog.ActionTogglePills:
 		if cmd := m.togglePillsExpanded(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -2730,7 +2759,10 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			}
 			return true
 		case key.Matches(msg, m.keyMap.Git):
-			cmds = append(cmds, m.openGitPanel(dialog.GitTabBranch, false))
+			cmds = append(cmds, m.openGitPane())
+			return true
+		case key.Matches(msg, m.keyMap.Notices):
+			cmds = append(cmds, m.openNoticeHistory())
 			return true
 		case key.Matches(msg, m.keyMap.Chat.Details) && m.isCompact:
 			m.detailsOpen = !m.detailsOpen
@@ -2741,6 +2773,10 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				cmds = append(cmds, m.toggleCompactMode())
 				return true
 			}
+		case key.Matches(msg, m.keyMap.SidebarColumnLeft):
+			return m.moveStripColumn(-1)
+		case key.Matches(msg, m.keyMap.SidebarColumnRight):
+			return m.moveStripColumn(1)
 		case key.Matches(msg, m.keyMap.Chat.EndFollow):
 			if m.state == uiChat && m.hasSession() {
 				if cmd := m.chat.ScrollToBottomAndSelectLast(); cmd != nil {
@@ -2845,6 +2881,15 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			}
 		}
 		return tea.Batch(cmds...)
+	}
+
+	// While the sidebar has focus its panes and the strip get keys first,
+	// esc included (strip_keys.go).
+	if m.focus == uiFocusSidebar && m.stripActive() {
+		if handled, cmd := m.handleStripKey(msg); handled {
+			cmds = append(cmds, cmd)
+			return tea.Batch(cmds...)
+		}
 	}
 
 	// Handle cancel key when agent is busy.
@@ -3142,13 +3187,11 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				}
 			case key.Matches(msg, m.keyMap.Tab):
 				m.focus = uiFocusEditor
-				m.sidebarScrollbarVisible = false
 				cmds = append(cmds, m.textarea.Focus())
 				m.chat.Blur()
 			case key.Matches(msg, m.keyMap.Chat.FocusSidebar):
-				if m.state == uiChat && !m.isCompact && m.hasSession() && m.sidebarScrollable {
-					m.focus = uiFocusSidebar
-					m.chat.Blur()
+				if m.stripActive() {
+					m.focusSidebar()
 				}
 			case key.Matches(msg, m.keyMap.Chat.NewSession):
 				if !m.hasSession() {
@@ -3213,34 +3256,13 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				}
 			}
 		case uiFocusSidebar:
-			if m.state != uiChat || m.isCompact || !m.hasSession() {
-				break
-			}
+			// The strip and its panes had the key first (above); what is
+			// left is moving focus away and the global keys.
 			switch {
-			case key.Matches(msg, m.keyMap.Chat.Up):
-				m.sidebarOffset = max(0, m.sidebarOffset-4)
-				m.sidebarScrollbarSeq++
-			case key.Matches(msg, m.keyMap.Chat.Down):
-				maxOffset := m.sidebarMaxOffsetVal
-				if m.sidebarOffset < maxOffset {
-					m.sidebarOffset = min(m.sidebarOffset+4, maxOffset)
-					m.sidebarScrollbarSeq++
-				}
-			case key.Matches(msg, m.keyMap.Chat.Home):
-				m.sidebarOffset = 0
-				m.sidebarScrollbarSeq++
-			case key.Matches(msg, m.keyMap.Chat.End):
-				m.sidebarOffset = m.sidebarMaxOffsetVal
-				m.sidebarScrollbarSeq++
-			case key.Matches(msg, m.keyMap.Chat.FocusChat):
-				m.focus = uiFocusMain
-				m.sidebarScrollbarVisible = false
-				m.chat.Focus()
 			case key.Matches(msg, m.keyMap.Tab):
-				m.focus = uiFocusEditor
-				m.sidebarScrollbarVisible = false
-				cmds = append(cmds, m.textarea.Focus())
-				m.chat.Blur()
+				if cmd := m.leaveSidebar(uiFocusEditor); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			default:
 				handleGlobalKeys(msg)
 			}
@@ -3283,10 +3305,6 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		// renderPills, but only when the layout actually differs;
 		// this catches the steady-state case.
 		m.renderPills()
-	}
-
-	if m.state == uiChat && m.hasSession() && !m.isCompact {
-		m.updateSidebarScrollState()
 	}
 
 	// Clear the screen first
@@ -3366,6 +3384,9 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	m.status.SetHideHelp(isOnboarding)
 	m.status.SetMode(m.mode, m.yoloModeCached())
 	m.status.Draw(scr, layout.status)
+	if !isOnboarding {
+		m.drawNoticeDot(scr, layout.status)
+	}
 
 	// Draw completions popup if open
 	if !isOnboarding && m.completionsOpen && m.completions.HasItems() {
@@ -3396,6 +3417,9 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 			Max: image.Pt(8, 3),
 		})
 	}
+
+	// Toasts sit over the main view, under the dialogs.
+	m.drawToasts(scr, area)
 
 	// This needs to come last to overlay on top of everything. We always pass
 	// the full screen bounds because the dialogs will position themselves
@@ -3460,7 +3484,7 @@ func (m *UI) View() tea.View {
 		v.BackgroundColor = m.com.Styles.Background
 	}
 	// The landing wordmark ripples under the pointer, so it needs every move.
-	v.MouseMode = mouseMode(m.mouseEnabled, m.activeInline != nil || m.dialog.HandlesHover() || m.state == uiLanding)
+	v.MouseMode = mouseMode(m.mouseEnabled, m.activeInline != nil || m.dialog.HandlesHover() || m.state == uiLanding || m.notices.toasts.Len() > 0)
 	v.ReportFocus = m.caps.ReportFocusEvents
 	v.WindowTitle = "deck " + home.Short(m.com.Workspace.WorkingDir())
 
@@ -3581,8 +3605,10 @@ func (m *UI) ShortHelp() []key.Binding {
 		case uiFocusSidebar:
 			binds = append(
 				binds,
-				k.Chat.UpDown,
-				k.Chat.FocusChat,
+				k.Sidebar.Move,
+				k.Sidebar.Close,
+				k.Sidebar.Reopen,
+				k.Sidebar.Back,
 			)
 		case uiFocusMain:
 			binds = append(
@@ -3697,6 +3723,9 @@ func (m *UI) FullHelp() [][]key.Binding {
 		if m.canToggleSidebar() {
 			mainBinds = append(mainBinds, k.Chat.ToggleSidebar)
 		}
+		if m.stripActive() {
+			mainBinds = append(mainBinds, k.SidebarColumnLeft)
+		}
 
 		binds = append(binds, mainBinds)
 
@@ -3730,14 +3759,22 @@ func (m *UI) FullHelp() [][]key.Binding {
 			binds = append(
 				binds,
 				[]key.Binding{
-					k.Chat.UpDown,
+					k.Sidebar.Left,
+					k.Sidebar.Right,
+					k.Sidebar.Up,
+					k.Sidebar.Down,
+					k.Sidebar.PageUp,
+					k.Sidebar.PageDown,
+					k.Sidebar.Top,
+					k.Sidebar.Bottom,
 				},
 				[]key.Binding{
-					k.Chat.FocusChat,
-				},
-				[]key.Binding{
-					k.Chat.Home,
-					k.Chat.End,
+					k.Sidebar.Close,
+					k.Sidebar.Reopen,
+					k.Sidebar.MovePane,
+					k.Sidebar.MoveColumn,
+					k.Sidebar.Resize,
+					k.Sidebar.Back,
 				},
 			)
 		case uiFocusMain:
@@ -3855,7 +3892,7 @@ func (m *UI) toggleCompactMode() tea.Cmd {
 	if m.forceCompactMode && m.focus == uiFocusSidebar {
 		// The sidebar is going away, so focus the editor again to keep key
 		// events routed somewhere useful.
-		m.sidebarScrollbarVisible = false
+		m.strip().chooser = nil
 		if m.activeInline != nil {
 			m.focusActiveInline(uiFocusEditor)
 		} else {
@@ -3888,6 +3925,17 @@ func (m *UI) updateLayoutAndSize() {
 			m.isCompact = true
 		} else {
 			m.isCompact = false
+		}
+		// A window too small for the sidebar takes it away; keep the
+		// keyboard somewhere that is still on screen.
+		if m.isCompact && m.focus == uiFocusSidebar {
+			m.strip().chooser = nil
+			if m.activeInline != nil {
+				m.focusActiveInline(uiFocusEditor)
+			} else {
+				m.focus = uiFocusEditor
+				m.textarea.Focus()
+			}
 		}
 	}
 
@@ -4042,7 +4090,13 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 		}
 	}
 	// The sidebar width
-	sidebarWidth := 32
+	// The sidebar width: the classic column, wider on wide terminals so the
+	// strip shows columns side by side (strip_draw.go). The app area is
+	// the window less a cell of margin on each side.
+	sidebarWidth := sidebarNarrowWidth
+	if m.state == uiChat && !m.isCompact {
+		sidebarWidth = m.sidebarWidth(w - 2)
+	}
 	// The header height
 	const landingHeaderHeight = 7 // the wordmark and its tagline
 
@@ -5233,6 +5287,8 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openSettingsDialog(id); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.NoticeHistoryID:
+		cmds = append(cmds, m.openNoticeHistory())
 	default:
 		// Unknown dialog
 		break
@@ -5476,7 +5532,7 @@ func (m *UI) handleQuestionNotification(_ question.Notification) {
 func (m *UI) editorContentWidth() int {
 	width := m.width - 2 // appRect horizontal margins
 	if m.state == uiChat && !m.isCompact {
-		width -= 30 // sidebar column
+		width -= m.sidebarWidth(m.width-2) - 2 // sidebar column
 	}
 	return width
 }
@@ -5608,6 +5664,7 @@ func (m *UI) openPlanHandoff() {
 // notifications using the UI notification backend.
 func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	var cmds []tea.Cmd
+	m.noticeFromAgent(n)
 	switch n.Type {
 	case notify.TypeAgentFinished:
 		common.StopTurn()
@@ -5650,7 +5707,7 @@ func (m *UI) newSession() tea.Cmd {
 
 	planCmd := m.resetPlanModeState()
 	m.session = nil
-	m.sidebarOffset = 0
+	m.strip().scroll = map[paneID]int{}
 	m.sessionFiles = nil
 	m.sessionFileReads = nil
 	m.setState(uiLanding, uiFocusEditor)
