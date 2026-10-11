@@ -127,3 +127,46 @@ jobs:
             *) echo "::error::deck --version does not say ${TAG#v}"; exit 1 ;;
           esac
           ./dl/deck --help >/dev/null
+
+  # Copy the verified release to the public releases repository, which is where
+  # the installers download from. Needs a RELEASES_TOKEN secret: a fine-grained
+  # token with Contents: read and write on dev-dami/deck-releases only.
+  publish:
+    needs: [release, verify]
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.release.outputs.tag }}
+      PUBLIC_REPO: dev-dami/deck-releases
+    steps:
+      - name: Copy to the public repository
+        env:
+          SOURCE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLIC_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          if [ -z "$PUBLIC_TOKEN" ]; then
+            echo "::warning::RELEASES_TOKEN is not set; $TAG was not copied to $PUBLIC_REPO"
+            exit 0
+          fi
+          GH_TOKEN="$SOURCE_TOKEN" gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dl
+          pre=$(GH_TOKEN="$SOURCE_TOKEN" gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease -q .isPrerelease)
+          cat > notes.md <<NOTES
+          Deck $TAG
+
+          \`\`\`sh
+          curl -fsSL https://raw.githubusercontent.com/$PUBLIC_REPO/main/install.sh | DECK_VERSION='$TAG' sh
+          \`\`\`
+
+          \`\`\`powershell
+          \$env:DECK_VERSION='$TAG'; irm https://raw.githubusercontent.com/$PUBLIC_REPO/main/install.ps1 | iex
+          \`\`\`
+
+          Check downloads against \`checksums.txt\`.
+          NOTES
+          export GH_TOKEN="$PUBLIC_TOKEN"
+          if gh release view "$TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" dl/* --repo "$PUBLIC_REPO" --clobber
+          elif [ "$pre" = "true" ]; then
+            gh release create "$TAG" dl/* --repo "$PUBLIC_REPO" --target main --title "$TAG" --notes-file notes.md --prerelease --latest=false
+          else
+            gh release create "$TAG" dl/* --repo "$PUBLIC_REPO" --target main --title "$TAG" --notes-file notes.md --latest
+          fi

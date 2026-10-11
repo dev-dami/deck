@@ -17,30 +17,20 @@ Deck never calls a model API and never reads a credential. It starts no language
 macOS and Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dev-dami/deck/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/dev-dami/deck-releases/main/install.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/dev-dami/deck/main/install.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/dev-dami/deck-releases/main/install.ps1 | iex"
 ```
 
-Both install the latest release (checked against its checksum): to `~/.local/bin` on macOS and Linux, and to `%LOCALAPPDATA%\deck\bin` on Windows, which is added to your PATH. `DECK_VERSION=v0.8.0-dev` picks a release (pre-releases are only installed by name) and `DECK_INSTALL_DIR` another folder. With Go: `go install github.com/dev-dami/deck@latest`.
-
-While the repository is private, fetch the script through the [GitHub CLI](https://cli.github.com) instead (signed in with `gh auth login`, with access to the repo); the script then downloads through `gh` too:
-
-```sh
-gh api repos/dev-dami/deck/contents/install.sh -H "Accept: application/vnd.github.raw" | sh
-```
-
-```powershell
-gh api repos/dev-dami/deck/contents/install.ps1 -H "Accept: application/vnd.github.raw" | iex
-```
+Both install the latest release (checked against its checksum): to `~/.local/bin` on macOS and Linux, and to `%LOCALAPPDATA%\deck\bin` on Windows, which is added to your PATH. `DECK_VERSION=v0.8.0-dev` picks a release (pre-releases are only installed by name) and `DECK_INSTALL_DIR` another folder. Releases are published to the public [deck-releases](https://github.com/dev-dami/deck-releases/releases) repository.
 
 ## Releasing
 
-Actions → **Release** → Run workflow, version `v0.8.0` (or `gh workflow run release.yml -f version=v0.8.0`), or push a `v*` tag. The workflow tags, builds macOS/Linux/Windows for amd64 and arm64, publishes the archives with `checksums.txt`, then downloads them on each system and runs `deck --version`. A suffix (`-dev`, `-rc.1`) makes it a pre-release.
+Actions → **Release** → Run workflow, version `v0.8.0` (or `gh workflow run release.yml -f version=v0.8.0`), or push a `v*` tag. The workflow tags, builds macOS/Linux/Windows for amd64 and arm64, publishes the archives with `checksums.txt`, downloads them on each system and runs `deck --version`, then copies the release to the public `dev-dami/deck-releases` repository (needs the `RELEASES_TOKEN` secret). A suffix (`-dev`, `-rc.1`) makes it a pre-release.
 
 Sign in to `claude`, `codex` and/or `opencode` yourself, then check what Deck sees:
 
@@ -174,4 +164,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY
 
 ## License
 
-Deck's own code is MIT ([LICENSE](LICENSE)). Its interface is derived from Crush, used under the Functional Source License 1.1 with an MIT future license ([LICENSE.crush.md](LICENSE.crush.md)).
+Copyright © 2026 dev-dami. All rights reserved. Third-party license terms are in [LICENSE.crush.md](LICENSE.crush.md).

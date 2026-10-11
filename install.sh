@@ -1,15 +1,15 @@
 #!/bin/sh
 # Installs deck on macOS or Linux from the latest GitHub release.
 #
-#   curl -fsSL https://raw.githubusercontent.com/dev-dami/deck/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/dev-dami/deck-releases/main/install.sh | sh
 #
 # Settings (environment):
 #   DECK_VERSION      a release tag to install, e.g. v0.7.0 (default: the latest)
 #   DECK_INSTALL_DIR  where the deck binary goes (default: ~/.local/bin)
-#   DECK_REPO         the GitHub repository to install from (default: dev-dami/deck)
+#   DECK_REPO         the GitHub repository to install from (default: dev-dami/deck-releases)
 set -eu
 
-REPO="${DECK_REPO:-dev-dami/deck}"
+REPO="${DECK_REPO:-dev-dami/deck-releases}"
 DIR="${DECK_INSTALL_DIR:-$HOME/.local/bin}"
 
 say() { printf '%s\n' "$*"; }
