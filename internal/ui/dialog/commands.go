@@ -518,7 +518,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	commands = append(commands, NewCommandItem(c.com.Styles, "switch_theme", "Themes", "", ActionOpenDialog{ThemeID}))
 	commands = append(commands,
 		NewCommandItem(c.com.Styles, "settings", "Settings", "ctrl+,", ActionOpenDialog{SettingsID}).WithAliases("preferences", "options"),
-		NewCommandItem(c.com.Styles, "usage", "Usage", "", ActionOpenDialog{SettingsUsageID}).WithAliases("cost", "tokens", "analytics"),
+		NewCommandItem(c.com.Styles, "usage", "Usage", UsageKey, ActionOpenDialog{UsageID}).WithAliases("cost", "tokens", "analytics", "limits", "traces"),
 	)
 
 	// Add mouse support toggle.

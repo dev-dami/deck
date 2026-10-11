@@ -129,7 +129,7 @@ type Settings struct {
 	keyMap struct {
 		Up, Down, Left, Right, Activate  key.Binding
 		NextTab, PrevTab, GoTab, Refresh key.Binding
-		Close                            key.Binding
+		Close, FullView                  key.Binding
 		// help only
 		UpDown, Change, Range key.Binding
 	}
@@ -179,6 +179,7 @@ func NewSettings(com *common.Common, tab SettingsTab) *Settings {
 	s.keyMap.GoTab = key.NewBinding(key.WithKeys("1", "2", "3"), key.WithHelp("1-3", "page"))
 	s.keyMap.Refresh = key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh"))
 	s.keyMap.Close = CloseKey
+	s.keyMap.FullView = key.NewBinding(key.WithKeys(UsageKey), key.WithHelp(UsageKey, "full view"))
 	s.keyMap.UpDown = key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "choose"))
 	s.keyMap.Change = key.NewBinding(key.WithKeys("enter", "left", "right"), key.WithHelp("enter/←/→", "change"))
 	s.keyMap.Range = key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←/→", "range"))
@@ -252,6 +253,8 @@ func (s *Settings) handleKey(msg tea.KeyPressMsg) Action {
 	switch {
 	case key.Matches(msg, s.keyMap.Close):
 		return ActionClose{}
+	case key.Matches(msg, s.keyMap.FullView):
+		return ActionOpenDialog{DialogID: UsageID}
 	case key.Matches(msg, s.keyMap.NextTab):
 		return ActionCmd{Cmd: s.SetTab(s.tab + 1)}
 	case key.Matches(msg, s.keyMap.PrevTab):
@@ -397,7 +400,7 @@ func (s *Settings) tabsView(t *styles.Styles) string {
 // ShortHelp implements [help.KeyMap].
 func (s *Settings) ShortHelp() []key.Binding {
 	if s.tab == SettingsTabUsage {
-		return []key.Binding{s.keyMap.Range, s.keyMap.Refresh, s.keyMap.NextTab, s.keyMap.Close}
+		return []key.Binding{s.keyMap.Range, s.keyMap.FullView, s.keyMap.Refresh, s.keyMap.NextTab, s.keyMap.Close}
 	}
 	return []key.Binding{s.keyMap.UpDown, s.keyMap.Change, s.keyMap.NextTab, s.keyMap.Close}
 }

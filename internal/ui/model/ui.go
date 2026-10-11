@@ -648,6 +648,8 @@ func (m *UI) Init() tea.Cmd {
 	// The branch is shown from the first frame on, so read it now and keep
 	// polling for checkouts made outside Deck.
 	cmds = append(cmds, m.fetchGitBranch(), m.gitBranchTicker())
+	// The Usage pane reads today's tokens off-thread, then every so often.
+	cmds = append(cmds, m.loadUsagePane())
 	// Prime the memoized MCP state off-thread. There is deliberately no
 	// wait for server-side MCP initialization: the init gate is
 	// process-local and only armed where mcp.Initialize runs (the server),
@@ -1214,6 +1216,12 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.openAgentModels(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+		return m, tea.Batch(cmds...)
+	case usagePaneMsg:
+		cmds = append(cmds, m.setUsagePane(msg))
+		return m, tea.Batch(cmds...)
+	case usagePaneTickMsg:
+		cmds = append(cmds, m.usagePaneTick())
 		return m, tea.Batch(cmds...)
 
 	case logoTickMsg:
@@ -2764,6 +2772,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		case key.Matches(msg, m.keyMap.Notices):
 			cmds = append(cmds, m.openNoticeHistory())
 			return true
+		case key.Matches(msg, m.keyMap.Usage):
+			cmds = append(cmds, m.openUsageDialog())
+			return true
 		case key.Matches(msg, m.keyMap.Chat.Details) && m.isCompact:
 			m.detailsOpen = !m.detailsOpen
 			m.updateLayoutAndSize()
@@ -3716,6 +3727,7 @@ func (m *UI) FullHelp() [][]key.Binding {
 			k.Sessions,
 			k.ToggleYolo,
 			k.Git,
+			k.Usage,
 		)
 		if hasSession {
 			mainBinds = append(mainBinds, k.Chat.NewSession, k.Chat.EndFollow)
@@ -5289,6 +5301,8 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		}
 	case dialog.NoticeHistoryID:
 		cmds = append(cmds, m.openNoticeHistory())
+	case dialog.UsageID:
+		cmds = append(cmds, m.openUsageDialog())
 	default:
 		// Unknown dialog
 		break

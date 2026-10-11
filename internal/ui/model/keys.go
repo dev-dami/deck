@@ -3,6 +3,7 @@ package model
 import (
 	"charm.land/bubbles/v2/key"
 
+	"github.com/dev-dami/deck/internal/ui/dialog"
 	"github.com/dev-dami/deck/internal/ui/notice"
 )
 
@@ -128,6 +129,7 @@ type KeyMap struct {
 	ShiftTab   key.Binding
 	Git        key.Binding
 	Notices    key.Binding
+	Usage      key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -183,6 +185,11 @@ func DefaultKeyMap() KeyMap {
 		Notices: key.NewBinding(
 			key.WithKeys(notice.HistoryKey),
 			key.WithHelp(notice.HistoryKey, "notifications"),
+		),
+		// alt+u: ctrl+u deletes to the line start in the editor.
+		Usage: key.NewBinding(
+			key.WithKeys(dialog.UsageKey),
+			key.WithHelp(dialog.UsageKey, "usage"),
 		),
 	}
 

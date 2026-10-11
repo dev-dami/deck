@@ -14,6 +14,15 @@ type Bar struct {
 	Label string
 	Value float64
 	Color color.Color // nil for the label's series colour
+	Text  string      // the value as shown; "" for Compact(Value)
+}
+
+// text is the bar's value as shown.
+func (b Bar) text() string {
+	if b.Text != "" {
+		return b.Text
+	}
+	return Compact(b.Value)
 }
 
 // Bars draws one horizontal bar per row, scaled to the largest: the label,
@@ -26,7 +35,7 @@ func Bars(t Theme, width int, bars []Bar) string {
 	labelW, valueW, top := 0, 0, 0.0
 	for _, b := range bars {
 		labelW = max(labelW, len([]rune(b.Label)))
-		valueW = max(valueW, len(Compact(b.Value)))
+		valueW = max(valueW, len([]rune(b.text())))
 		top = max(top, b.Value)
 	}
 	labelW = min(labelW, max(width/3, 4))
@@ -52,8 +61,8 @@ func Bars(t Theme, width int, bars []Bar) string {
 			bar += string(barEighths[r])
 		}
 		g.text(labelW+1, y, bar, c, false)
-		v := Compact(b.Value)
-		g.text(width-len(v), y, v, t.Subtle, false)
+		v := b.text()
+		g.text(width-len([]rune(v)), y, v, t.Subtle, false)
 	}
 	return g.render()
 }

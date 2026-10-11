@@ -36,6 +36,8 @@ func (w *settingsWorkspace) SetDeckSettings(edit func(*deckconfig.Config)) error
 func (w *settingsWorkspace) Usage(context.Context, int) (workspace.UsageReport, error) {
 	return w.report, nil
 }
+func (*settingsWorkspace) UsageService() usage.Service                 { return nil }
+func (*settingsWorkspace) LiveLimits() map[string]workspace.LiveLimits { return nil }
 
 func newSettingsForTest(t *testing.T, tab SettingsTab) (*Settings, *settingsWorkspace) {
 	t.Helper()
@@ -181,7 +183,7 @@ func TestSettingsUsageLinesFitWidth(t *testing.T) {
 		AllTurns: 3,
 		Kinds:    []usage.Group{{Kind: "claude", Turns: 2, InputTokens: 10000, CostUSD: 1}, {Kind: "codex", Turns: 1, InputTokens: 2000, CostUSD: 0.25}},
 		Models:   []usage.Group{{Kind: "claude", Model: "a-rather-long-model-name-that-overflows", Turns: 2, CostUSD: 1}},
-		Days:     []usage.Day{{CostUSD: 0.25}, {}, {CostUSD: 1}},
+		Days:     []usage.Day{{Tokens: 400, CostUSD: 0.25}, {}, {Tokens: 15000, CostUSD: 1}},
 		Sessions: []usage.Session{{SessionID: "s1", Title: strings.Repeat("long title ", 20), Turns: 2, CostUSD: 1}},
 	}
 	s.HandleMsg(settingsUsageMsg{req: s.req, report: rep})
@@ -190,34 +192,18 @@ func TestSettingsUsageLinesFitWidth(t *testing.T) {
 		require.LessOrEqual(t, ansi.StringWidth(l), width, "line %q overflows", ansi.Strip(l))
 	}
 	text := ansi.Strip(strings.Join(s.usageLines(width), "\n"))
-	require.Contains(t, text, "$1.25")
+	require.Contains(t, text, "15.4k tokens")
 	require.Contains(t, text, "By agent")
-	require.Contains(t, text, "Daily cost")
-	require.Contains(t, text, "Top sessions")
+	require.Contains(t, text, "Daily tokens")
+	require.Contains(t, text, "alt+u for the full view")
+	require.NotContains(t, text, "$", "cost is only on the full view's Cost tab")
 }
 
-func TestSparkline(t *testing.T) {
+func TestSettingsUsageAltUOpensFullView(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "", sparkline(nil, 10))
-	require.Equal(t, "", sparkline([]float64{1}, 0))
-	require.Equal(t, "▁▁▁", sparkline([]float64{0, 0, 0}, 10))
-	require.Equal(t, "▁▂█", sparkline([]float64{0, 0.01, 7}, 10), "a light day is not drawn as an empty one")
-	require.Equal(t, "▁▅█", sparkline([]float64{0, 1, 2}, 10))
-	require.Equal(t, "▅█", sparkline([]float64{9, 1, 2}, 2), "keeps the newest values")
-}
-
-func TestUsageBar(t *testing.T) {
-	t.Parallel()
-	require.Equal(t, "    ", usageBar(0, 10, 4))
-	require.Equal(t, "████", usageBar(10, 10, 4))
-	require.Equal(t, "██  ", usageBar(5, 10, 4))
-	require.Equal(t, "█▌  ", usageBar(3, 8, 4))
-	require.Equal(t, "▏   ", usageBar(0.0001, 10, 4), "anything above zero shows")
-	require.Equal(t, "████", usageBar(20, 10, 4), "clamped to the width")
-	require.Equal(t, "", usageBar(1, 1, 0))
-	for _, v := range []float64{0, 1, 2.5, 7, 10} {
-		require.Equal(t, 7, ansi.StringWidth(usageBar(v, 10, 7)))
-	}
+	s, _ := newSettingsForTest(t, SettingsTabUsage)
+	act := s.HandleMsg(tea.KeyPressMsg{Code: 'u', Mod: tea.ModAlt})
+	require.Equal(t, ActionOpenDialog{DialogID: UsageID}, act)
 }
 
 func TestFormatHelpers(t *testing.T) {
@@ -227,10 +213,6 @@ func TestFormatHelpers(t *testing.T) {
 	require.Equal(t, "12.3k", formatTokens(12_345))
 	require.Equal(t, "4.5M", formatTokens(4_500_000))
 	require.Equal(t, "1.2B", formatTokens(1_200_000_000))
-
-	require.Equal(t, "$0.00", formatCost(0))
-	require.Equal(t, "<$0.01", formatCost(0.001))
-	require.Equal(t, "$12.35", formatCost(12.346))
 
 	require.Equal(t, "plan", cycle(modeValues, "ask", -1))
 	require.Equal(t, "plan", cycle(modeValues, "yolo", 1))
