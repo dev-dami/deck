@@ -28,19 +28,51 @@ type Manager struct {
 	clients     *csync.Map[string, *Client]
 	unavailable *csync.Map[string, time.Time]
 	cfg         *config.ConfigStore
-	manager     *powernapconfig.Manager
 	callback    func(name string, client *Client)
 	now         func() time.Time
 	lookPath    func(string) (string, error)
+
+	// manager is the server registry: powernap's defaults merged with the
+	// user's LSP config. Building it (LoadDefaults) is not free and most
+	// sessions never touch an LSP, so it is built on first use from the
+	// LSP config captured at construction.
+	manager     *powernapconfig.Manager
+	managerOnce sync.Once
+	userLSP     map[string]config.LSPConfig
 }
 
-// NewManager creates a new LSP manager service.
+// NewManager creates a new LSP manager service. The server registry is
+// built lazily on first use; see Manager.servers.
 func NewManager(cfg *config.ConfigStore) *Manager {
+	return &Manager{
+		clients:     csync.NewMap[string, *Client](),
+		unavailable: csync.NewMap[string, time.Time](),
+		cfg:         cfg,
+		userLSP:     cfg.Config().LSP,
+		callback:    func(string, *Client) {}, // default no-op callback
+		now:         time.Now,
+		lookPath:    exec.LookPath,
+	}
+}
+
+// servers returns the server registry, building it on first call.
+func (s *Manager) servers() *powernapconfig.Manager {
+	s.managerOnce.Do(func() {
+		if s.manager == nil {
+			s.manager = buildServerRegistry(s.userLSP)
+		}
+	})
+	return s.manager
+}
+
+// buildServerRegistry loads powernap's default servers and merges the
+// user's LSP config into them.
+func buildServerRegistry(userLSP map[string]config.LSPConfig) *powernapconfig.Manager {
 	manager := powernapconfig.NewManager()
 	manager.LoadDefaults()
 
 	// Merge user-configured LSPs into the manager.
-	for name, clientConfig := range cfg.Config().LSP {
+	for name, clientConfig := range userLSP {
 		if clientConfig.Disabled {
 			slog.Debug("LSP disabled by user config", "name", name)
 			manager.RemoveServer(name)
@@ -60,16 +92,7 @@ func NewManager(cfg *config.ConfigStore) *Manager {
 			Settings:    clientConfig.Options,
 		})
 	}
-
-	return &Manager{
-		clients:     csync.NewMap[string, *Client](),
-		unavailable: csync.NewMap[string, time.Time](),
-		cfg:         cfg,
-		manager:     manager,
-		callback:    func(string, *Client) {}, // default no-op callback
-		now:         time.Now,
-		lookPath:    exec.LookPath,
-	}
+	return manager
 }
 
 // Clients returns the map of LSP clients.
@@ -87,7 +110,7 @@ func (s *Manager) SetCallback(cb func(name string, client *Client)) {
 // starting them. Servers start on demand via Start().
 func (s *Manager) TrackConfigured(ctx context.Context) {
 	var wg sync.WaitGroup
-	servers := s.manager.GetServers()
+	servers := s.servers().GetServers()
 	for name := range servers {
 		if !s.isUserConfigured(name) {
 			continue
@@ -110,7 +133,7 @@ func (s *Manager) Start(ctx context.Context, path string) {
 	}
 
 	var wg sync.WaitGroup
-	for name, server := range s.manager.GetServers() {
+	for name, server := range s.servers().GetServers() {
 		wg.Go(func() {
 			s.startServer(name, path, server)
 		})

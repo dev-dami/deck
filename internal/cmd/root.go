@@ -238,6 +238,20 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	logFile := filepath.Join(cfg.Options.DataDirectory, "logs", "deck.log")
 	decklog.Setup(logFile, debug)
 
+	// Deck's engine drives the user's own agent CLIs in place of Deck's
+	// agent. No telemetry is sent. It shares nothing with the app below
+	// (its own config, thread store, broker and PATH lookups), so start
+	// it alongside skill discovery and app.New rather than after them.
+	type engineResult struct {
+		eng *engine.Engine
+		err error
+	}
+	engineCh := make(chan engineResult, 1)
+	go func() {
+		eng, err := engine.Start()
+		engineCh <- engineResult{eng, err}
+	}()
+
 	// Discover skills once before app.New. Local mode hosts a single
 	// workspace per process, so WithGlobalMirror keeps the package
 	// globals (which the TUI reads via skills.GetLatestStates) in sync
@@ -255,16 +269,18 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	if err != nil {
 		_ = conn.Close()
 		slog.Error("Failed to create app instance", "error", err)
+		if r := <-engineCh; r.eng != nil {
+			r.eng.Close()
+		}
 		return nil, nil, err
 	}
 
-	// Deck's engine drives the user's own agent CLIs in place of Deck's
-	// agent. No telemetry is sent.
-	eng, err := engine.Start()
-	if err != nil {
+	r := <-engineCh
+	if r.err != nil {
 		appInstance.Shutdown()
-		return nil, nil, err
+		return nil, nil, r.err
 	}
+	eng := r.eng
 	ws := workspace.NewDeckWorkspace(appInstance, store, eng)
 	cleanup := func() {
 		eng.Close()
