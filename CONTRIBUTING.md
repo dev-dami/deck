@@ -25,21 +25,13 @@ gofmt -l .        # should print nothing
 
 Run `gofmt -w` on any file it lists. Please run all four before you open a pull request.
 
-## Try the UI without tokens
-
-You can run the full TUI against scripted fake agents. It needs no CLI, no login and no usage:
+## Run it
 
 ```sh
-go run ./cmd/deckdemo
+go run .
 ```
 
-To look at the animated logo on its own:
-
-```sh
-go run ./cmd/decklogo
-```
-
-The demo never touches `~/.deck/config.json`, so it is safe to poke at.
+Run it in a project folder. It drives the `claude`, `codex` and `opencode` CLIs you have installed; `go run . doctor` shows which ones it finds. `DECK_REDUCED_MOTION=1` turns the animations off.
 
 ## Live tests
 
@@ -61,16 +53,6 @@ If you record a session, scrub it before you commit it. Recordings are raw CLI o
 
 Replace them with neutral placeholders such as `/home/user` and `example-host`. Check the diff by hand. Never commit a recording you have not read through.
 
-## TUI golden files
-
-TUI snapshots live in `internal/tui/testdata`, one directory per test, with one `.golden` file per terminal size. If your change alters the output on purpose, update them with the `-update` flag:
-
-```sh
-go test ./internal/tui -run TestGolden -update
-```
-
-Then read the diff in `git diff internal/tui/testdata` before you commit. A golden change should be explained in the pull request. If you did not expect a golden to change, that is a bug to fix, not a file to update.
-
 ## Design principles
 
 Deck should feel calm and dense, like a good editor, not a dashboard.
@@ -79,14 +61,14 @@ Deck should feel calm and dense, like a good editor, not a dashboard.
 - **Dense.** Show the information people need in as few lines as possible.
 - **No boxes.** Do not draw borders or cards around content. Use spacing, indentation and a single accent to group things.
 - **One accent colour.** Everything else is neutral or a muted tint.
-- **Motion is optional.** Every animation must respect `DECK_REDUCED_MOTION` and the `motion` setting. Animations must stop drawing frames once they reach rest.
-- **Colours come from `internal/tui/theme`.** Do not write colour literals in other packages. Add a token to the theme if you need one, and make sure it works in both light and dark terminals.
+- **Motion is optional.** Every animation must respect `DECK_REDUCED_MOTION`. Animations must stop drawing frames once they reach rest.
+- **Colours come from `internal/ui/tone` and the themes in `internal/ui/styles`.** Do not write colour literals elsewhere. Add a token if you need one, and make sure it works in both the dark and the light theme.
 
 ## Playing by the rules
 
 This is the part we will not compromise on.
 
-- Deck launches only the `claude` and `codex` binaries the user has installed, under their own login.
+- Deck launches only the `claude`, `codex` and `opencode` binaries the user has installed, under their own login.
 - Deck never reads, copies or forwards credential files or OAuth tokens.
 - Deck never calls the Anthropic or OpenAI APIs directly. It talks to the CLIs over their documented structured protocols.
 - Agents do not approve their own actions. Every approval goes through the user, via the broker.

@@ -3433,7 +3433,8 @@ func (m *UI) View() tea.View {
 	if !m.isTransparent {
 		v.BackgroundColor = m.com.Styles.Background
 	}
-	v.MouseMode = mouseMode(m.mouseEnabled, m.activeInline != nil || m.dialog.HandlesHover())
+	// The landing wordmark ripples under the pointer, so it needs every move.
+	v.MouseMode = mouseMode(m.mouseEnabled, m.activeInline != nil || m.dialog.HandlesHover() || m.state == uiLanding)
 	v.ReportFocus = m.caps.ReportFocusEvents
 	v.WindowTitle = "deck " + home.Short(m.com.Workspace.WorkingDir())
 

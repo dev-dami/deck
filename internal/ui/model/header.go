@@ -38,6 +38,9 @@ type header struct {
 	// a frame tick is on its way.
 	anim    *decklogo.Model
 	ticking bool
+	// pending is an intro asked for before the wordmark knew its size; it
+	// starts at the first draw.
+	pending bool
 	area    uv.Rectangle // where the wordmark was last drawn
 
 	com     *common.Common
@@ -208,14 +211,25 @@ func (h *header) landingLogo(area uv.Rectangle) string {
 	h.area = area
 	h.anim.SetDark(t.IsDark)
 	h.anim.SetSize(area.Dx(), max(1, area.Dy()-1))
+	if h.pending {
+		if w, _ := h.anim.Bounds(); w > 0 {
+			h.pending = false
+			h.anim.Start(time.Now())
+		}
+	}
 	meta := lipgloss.NewStyle().Foreground(t.Logo.TaglineColor).Render(logo.Tagline) + "  " +
 		lipgloss.NewStyle().Foreground(t.Logo.VersionColor).Render(version.Version)
 	return lipgloss.JoinVertical(lipgloss.Left, h.anim.View(), meta)
 }
 
-// startLogo plays the wordmark's intro.
+// startLogo plays the wordmark's intro: at once when it has been drawn
+// before, otherwise at its first draw, once it knows how much room it has.
 func (h *header) startLogo(now time.Time) tea.Cmd {
-	h.anim.Start(now)
+	if w, _ := h.anim.Bounds(); w > 0 {
+		h.anim.Start(now)
+	} else {
+		h.pending = true
+	}
 	return h.wakeLogo()
 }
 
@@ -231,7 +245,7 @@ func (h *header) wakeLogo() tea.Cmd {
 // logoFrameAt advances the wordmark; it asks for another frame while it
 // still moves.
 func (h *header) logoFrameAt(now time.Time) tea.Cmd {
-	if h.anim.Advance(now) {
+	if h.anim.Advance(now) || h.pending {
 		return logoTick()
 	}
 	h.ticking = false
