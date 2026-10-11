@@ -986,13 +986,17 @@ func assignIfNil[T any](ptr **T, val T) {
 	}
 }
 
+// isInsideWorktree reports whether the process's working directory is
+// inside a git working tree. "git rev-parse --show-toplevel" succeeds in
+// exactly the places "--is-inside-work-tree" prints "true" (it fails in a
+// .git dir, a bare repo and outside any repo), so this shares
+// worktreeRoot's cached result instead of spawning a second git process.
 func isInsideWorktree() bool {
-	bts, err := exec.CommandContext(
-		context.Background(),
-		"git", "rev-parse",
-		"--is-inside-work-tree",
-	).CombinedOutput()
-	return err == nil && strings.TrimSpace(string(bts)) == "true"
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	return worktreeRoot(cwd) != ""
 }
 
 // worktreeRoot returns the absolute path of the git working tree root for
@@ -1007,11 +1011,17 @@ func isInsideWorktree() bool {
 var worktreeRootCache sync.Map // map[string]string
 
 func worktreeRoot(dir string) string {
-	if cached, ok := worktreeRootCache.Load(dir); ok {
+	// Key by the absolute path so "." / a relative --cwd and the Getwd
+	// form of the same directory share one git spawn.
+	key := dir
+	if abs, err := filepath.Abs(dir); err == nil {
+		key = abs
+	}
+	if cached, ok := worktreeRootCache.Load(key); ok {
 		return cached.(string)
 	}
-	root := computeWorktreeRoot(dir)
-	worktreeRootCache.Store(dir, root)
+	root := computeWorktreeRoot(key)
+	worktreeRootCache.Store(key, root)
 	return root
 }
 

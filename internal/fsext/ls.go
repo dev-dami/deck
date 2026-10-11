@@ -144,6 +144,9 @@ type directoryLister struct {
 	// combinedMatchers caches a combined matcher for each directory that includes
 	// all ancestor patterns. This allows O(1) matching per file.
 	combinedMatchers *csync.Map[string, gitignore.Matcher]
+	// combinedPatterns caches the pattern list behind each combined matcher,
+	// so a directory's list is built from its parent's.
+	combinedPatterns *csync.Map[string, []gitignore.Pattern]
 	rootPath         string
 }
 
@@ -152,6 +155,7 @@ func NewDirectoryLister(rootPath string) *directoryLister {
 		rootPath:         rootPath,
 		dirPatterns:      csync.NewMap[string, []gitignore.Pattern](),
 		combinedMatchers: csync.NewMap[string, gitignore.Matcher](),
+		combinedPatterns: csync.NewMap[string, []gitignore.Pattern](),
 	}
 }
 
@@ -189,36 +193,58 @@ func (dl *directoryLister) getDirPatterns(dir string) []gitignore.Pattern {
 
 // getCombinedMatcher returns a matcher that combines all gitignore patterns
 // from the root to the given directory, plus common patterns and home patterns.
-// Results are cached per directory, and we reuse parent directory matchers.
+// Results are cached per directory.
 func (dl *directoryLister) getCombinedMatcher(dir string) gitignore.Matcher {
 	return dl.combinedMatchers.GetOrSet(dir, func() gitignore.Matcher {
-		var allPatterns []gitignore.Pattern
-
-		// Add common patterns first (lowest priority).
-		allPatterns = append(allPatterns, commonIgnorePatterns()...)
-
-		// Add global ignore patterns (git core.excludesFile + deck global ignore).
-		allPatterns = append(allPatterns, gitGlobalIgnorePatterns()...)
-		allPatterns = append(allPatterns, deckGlobalIgnorePatterns()...)
-
-		// Collect patterns from root to this directory.
-		relDir, _ := filepath.Rel(dl.rootPath, dir)
-		var pathParts []string
-		if relDir != "" && relDir != "." {
-			pathParts = pathToComponents(relDir)
-		}
-
-		// Add patterns from each directory from root to current.
-		currentPath := dl.rootPath
-		allPatterns = append(allPatterns, dl.getDirPatterns(currentPath)...)
-
-		for _, part := range pathParts {
-			currentPath = filepath.Join(currentPath, part)
-			allPatterns = append(allPatterns, dl.getDirPatterns(currentPath)...)
-		}
-
-		return gitignore.NewMatcher(allPatterns)
+		return gitignore.NewMatcher(dl.getCombinedPatterns(dir))
 	})
+}
+
+// getCombinedPatterns returns the patterns getCombinedMatcher matches with,
+// lowest priority first: common patterns, global ignores, then each
+// directory's own from the root down to dir. A directory below the root
+// extends its parent's cached list instead of collecting every ancestor
+// again, and shares it outright when it has no ignore file of its own (the
+// usual case). Results are cached per directory.
+func (dl *directoryLister) getCombinedPatterns(dir string) []gitignore.Pattern {
+	return dl.combinedPatterns.GetOrSet(dir, func() []gitignore.Pattern {
+		relDir, _ := filepath.Rel(dl.rootPath, dir)
+		parts := pathToComponents(relDir)
+		if len(parts) == 0 || parts[0] == ".." {
+			return dl.collectPatterns(parts)
+		}
+		parent := dl.getCombinedPatterns(filepath.Join(append([]string{dl.rootPath}, parts[:len(parts)-1]...)...))
+		own := dl.getDirPatterns(filepath.Join(append([]string{dl.rootPath}, parts...)...))
+		if len(own) == 0 {
+			return parent
+		}
+		// Clip so siblings appending to the same parent never share an array.
+		return append(parent[:len(parent):len(parent)], own...)
+	})
+}
+
+// collectPatterns builds the combined pattern list for the directory at
+// pathParts below the root, reading every level.
+func (dl *directoryLister) collectPatterns(pathParts []string) []gitignore.Pattern {
+	var allPatterns []gitignore.Pattern
+
+	// Add common patterns first (lowest priority).
+	allPatterns = append(allPatterns, commonIgnorePatterns()...)
+
+	// Add global ignore patterns (git core.excludesFile + deck global ignore).
+	allPatterns = append(allPatterns, gitGlobalIgnorePatterns()...)
+	allPatterns = append(allPatterns, deckGlobalIgnorePatterns()...)
+
+	// Add patterns from each directory from root to current.
+	currentPath := dl.rootPath
+	allPatterns = append(allPatterns, dl.getDirPatterns(currentPath)...)
+
+	for _, part := range pathParts {
+		currentPath = filepath.Join(currentPath, part)
+		allPatterns = append(allPatterns, dl.getDirPatterns(currentPath)...)
+	}
+
+	return allPatterns
 }
 
 // shouldIgnore checks if a path should be ignored based on gitignore rules.

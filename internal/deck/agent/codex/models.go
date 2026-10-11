@@ -17,23 +17,20 @@ var modelListTimeout = 10 * time.Second
 // Models lists the models the installed codex offers (app-server `model/list`,
 // hidden ones excluded). It spawns a short-lived `codex app-server`
 // (initialize -> model/list -> close) and caches a successful result for the
-// adapter's lifetime. Errors are returned uncached; callers fall back to free
-// text.
+// adapter's lifetime. An error is remembered for modelsRetryAfter only;
+// callers fall back to free text. Concurrent callers share one listing, and
+// one that gives up does not stop it.
 func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
-	a.modelsMu.Lock()
-	defer a.modelsMu.Unlock()
-	if a.models != nil {
-		return append([]agent.ModelInfo(nil), a.models...), nil
-	}
-	ctx, cancel := context.WithTimeout(ctx, modelListTimeout)
-	defer cancel()
-	models, err := a.listModels(ctx)
-	if err != nil {
-		return nil, err
-	}
-	a.models = models
-	return append([]agent.ModelInfo(nil), models...), nil
+	return a.models.Get(ctx, func(ctx context.Context) ([]agent.ModelInfo, error) {
+		ctx, cancel := context.WithTimeout(ctx, modelListTimeout)
+		defer cancel()
+		return a.listModels(ctx)
+	})
 }
+
+// modelsRetryAfter is how long a failed listing is answered from memory
+// rather than by spawning codex again.
+var modelsRetryAfter = 10 * time.Second
 
 func (a *adapter) listModels(ctx context.Context) ([]agent.ModelInfo, error) {
 	bin := a.binary

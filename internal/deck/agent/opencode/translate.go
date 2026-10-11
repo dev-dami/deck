@@ -197,6 +197,9 @@ func (t *translator) tool(c toolCall, raw json.RawMessage) []agent.Event {
 		tool.Output = outputOf(st.call)
 		e := t.ev(agent.KindToolResult, raw)
 		e.Tool = &tool
+		// Keep only a marker, so a late update is still ignored, and let the
+		// call's input, output and diffs go: a long session runs many tools.
+		t.tools[c.ToolCallID] = &toolState{call: toolCall{ToolCallID: c.ToolCallID}, done: true}
 		return append(out, e)
 	}
 	tool.Status = agent.ToolRunning

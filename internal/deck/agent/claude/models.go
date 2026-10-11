@@ -20,13 +20,21 @@ import (
 // the SDK's initialize request, and the models (with their effort levels) are
 // read from its answer. Nothing is prompted, so no model API is called. When
 // that fails the aliases are read from the `--model` entry of `claude --help`,
-// and failing that a static list is returned. The result is cached per adapter.
+// and failing that a static list is returned. The result is cached per adapter;
+// concurrent callers share one load, and a caller that gives up gets the static
+// list while the load goes on for the next one.
 func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
-	a.modelsMu.Lock()
-	defer a.modelsMu.Unlock()
-	if a.models != nil {
-		return append([]agent.ModelInfo(nil), a.models...), nil
+	list, err := a.models.Get(ctx, func(ctx context.Context) ([]agent.ModelInfo, error) {
+		return a.loadModels(ctx), nil
+	})
+	if err != nil {
+		return fallbackModels(), nil
 	}
+	return list, nil
+}
+
+// loadModels asks claude for its models; it never fails (see Models).
+func (a *adapter) loadModels(ctx context.Context) []agent.ModelInfo {
 	var list []agent.ModelInfo
 	if out, err := a.initAnswer(ctx); err == nil {
 		list = modelsFromInit(out)
@@ -39,8 +47,7 @@ func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
 	if list == nil {
 		list = fallbackModels()
 	}
-	a.models = list
-	return append([]agent.ModelInfo(nil), list...), nil
+	return list
 }
 
 const initRequestID = "deck-models"

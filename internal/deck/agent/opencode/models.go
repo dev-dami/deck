@@ -20,22 +20,20 @@ var (
 // configured for, as the "model" option of a throwaway session. Each model is
 // then selected once in that session to read its "effort" option, as long as
 // the budget lasts. The session is deleted afterwards when OpenCode allows it.
-// A successful result is cached for the adapter's lifetime.
+// A successful result is cached for the adapter's lifetime, a failure for
+// modelsRetryAfter. Concurrent callers share one listing, and one that gives
+// up does not stop it.
 func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
-	a.modelsMu.Lock()
-	defer a.modelsMu.Unlock()
-	if a.models != nil {
-		return append([]agent.ModelInfo(nil), a.models...), nil
-	}
-	ctx, cancel := context.WithTimeout(ctx, modelListTimeout)
-	defer cancel()
-	list, err := a.listModels(ctx)
-	if err != nil {
-		return nil, err
-	}
-	a.models = list
-	return append([]agent.ModelInfo(nil), list...), nil
+	return a.models.Get(ctx, func(ctx context.Context) ([]agent.ModelInfo, error) {
+		ctx, cancel := context.WithTimeout(ctx, modelListTimeout)
+		defer cancel()
+		return a.listModels(ctx)
+	})
 }
+
+// modelsRetryAfter is how long a failed listing is answered from memory
+// rather than by starting OpenCode again.
+var modelsRetryAfter = 10 * time.Second
 
 func (a *adapter) listModels(ctx context.Context) ([]agent.ModelInfo, error) {
 	p, err := a.startProc(ctx, "", os.TempDir(), nil)

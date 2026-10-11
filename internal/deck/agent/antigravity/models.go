@@ -28,13 +28,21 @@ var effortDescriptions = map[string]string{
 // suffixes are grouped under that base with the suffixes as efforts, so Deck
 // shows one model with low/medium/high instead of three. Models() never
 // prompts, so no account is used. When the list cannot be read a small static
-// list is returned. The result is cached per adapter.
+// list is returned. The result is cached per adapter; concurrent callers share
+// one load, and a caller that gives up gets the static list while the load
+// goes on for the next one.
 func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
-	a.modelsMu.Lock()
-	defer a.modelsMu.Unlock()
-	if a.models != nil {
-		return append([]agent.ModelInfo(nil), a.models...), nil
+	list, err := a.models.Get(ctx, func(ctx context.Context) ([]agent.ModelInfo, error) {
+		return a.loadModels(ctx), nil
+	})
+	if err != nil {
+		return fallbackModels(), nil
 	}
+	return list, nil
+}
+
+// loadModels reads `agy models`; it never fails (see Models).
+func (a *adapter) loadModels(ctx context.Context) []agent.ModelInfo {
 	var list []agent.ModelInfo
 	if out, err := a.modelsOutput(ctx); err == nil {
 		list = modelsFromList(out)
@@ -42,8 +50,7 @@ func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
 	if list == nil {
 		list = fallbackModels()
 	}
-	a.models = list
-	return append([]agent.ModelInfo(nil), list...), nil
+	return list
 }
 
 func (a *adapter) modelsOutput(ctx context.Context) (string, error) {
@@ -199,17 +206,8 @@ func (a *adapter) resolveSlug(ctx context.Context, base, effort string) string {
 	if base == "" {
 		return ""
 	}
-	a.modelsMu.Lock()
-	defer a.modelsMu.Unlock()
-	if a.models == nil {
-		if out, err := a.modelsOutput(ctx); err == nil {
-			a.models = modelsFromList(out)
-		}
-		if a.models == nil {
-			a.models = fallbackModels()
-		}
-	}
-	for _, m := range a.models {
+	models, _ := a.Models(ctx) // shared with the picker's load; never fails
+	for _, m := range models {
 		if m.ID != base {
 			continue
 		}
