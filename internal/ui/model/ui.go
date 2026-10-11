@@ -457,6 +457,10 @@ type UI struct {
 	// here rather than asking the workspace per frame.
 	gitBranch string
 
+	// git is the git/GitHub state behind the header badge, the sidebar
+	// block and the PR nudge (see git.go).
+	git gitState
+
 	// Prompt history for up/down navigation through previous messages.
 	promptHistory struct {
 		messages []string
@@ -1547,7 +1551,9 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case gitBranchUpdatedMsg:
 		m.gitBranch = msg.branch
 	case gitBranchPollMsg:
-		cmds = append(cmds, m.fetchGitBranch(), m.gitBranchTicker())
+		cmds = append(cmds, m.fetchGitBranch(), m.gitBranchTicker(), m.gitPoll())
+	case gitMsg:
+		cmds = append(cmds, m.handleGitMsg(msg))
 	case util.InfoMsg:
 		if msg.Type == util.InfoTypeError {
 			slog.Error("Error reported", "error", msg.Msg)
@@ -2147,6 +2153,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if msg.Cmd != nil {
 			cmds = append(cmds, msg.Cmd)
 		}
+	case dialog.GitAction:
+		cmds = append(cmds, m.handleGitAction(msg))
 
 	// Session dialog messages.
 	case dialog.ActionSelectSession:
@@ -2707,6 +2715,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				cmds = append(cmds, cmd)
 			}
 			return true
+		case key.Matches(msg, m.keyMap.Git):
+			cmds = append(cmds, m.openGitPanel(dialog.GitTabBranch, false))
+			return true
 		case key.Matches(msg, m.keyMap.Chat.Details) && m.isCompact:
 			m.detailsOpen = !m.detailsOpen
 			m.updateLayoutAndSize()
@@ -3240,6 +3251,7 @@ func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
 		area.Dx(),
 		m.lspErrorCount(),
 		m.gitBranch,
+		m.gitHeaderBadge(),
 	)
 }
 
@@ -3663,6 +3675,7 @@ func (m *UI) FullHelp() [][]key.Binding {
 			k.Models,
 			k.Sessions,
 			k.ToggleYolo,
+			k.Git,
 		)
 		if hasSession {
 			mainBinds = append(mainBinds, k.Chat.NewSession, k.Chat.EndFollow)
@@ -4735,6 +4748,8 @@ func (m *UI) renderEditorView(width int) string {
 	var attachmentsView string
 	if len(m.attachments.List()) > 0 {
 		attachmentsView = m.attachments.Render(width)
+	} else {
+		attachmentsView = m.gitNudgeLine(width)
 	}
 	return strings.Join([]string{
 		attachmentsView,

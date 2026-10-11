@@ -81,6 +81,7 @@ func (h *header) drawHeader(
 	width int,
 	lspErrorCount int,
 	gitBranch string,
+	gitBadge string,
 ) {
 	t := h.com.Styles
 	if width != h.width || compact != h.compact {
@@ -110,6 +111,7 @@ func (h *header) drawHeader(
 		detailsOpen,
 		availDetailWidth,
 		gitBranch,
+		gitBadge,
 	)
 
 	remainingWidth := width -
@@ -142,6 +144,7 @@ func renderHeaderDetails(
 	detailsOpen bool,
 	availWidth int,
 	gitBranch string,
+	gitBadge string,
 ) string {
 	t := com.Styles
 
@@ -182,11 +185,16 @@ func renderHeaderDetails(
 		// Reserve space for the dot separator between branch and path and
 		// at least some of the path.
 		branchSep := t.Header.Separator.Render(" • ")
+		// The branch's pull request and checks ("#12 ✓") follow it.
+		badge := ""
+		if gitBadge != "" {
+			badge = " " + gitBadge
+		}
 		metadataWidth := lipgloss.Width(metadata)
-		maxBranchWidth := max(0, availWidth-metadataWidth-lipgloss.Width(cwd)-lipgloss.Width(branchSep))
+		maxBranchWidth := max(0, availWidth-metadataWidth-lipgloss.Width(cwd)-lipgloss.Width(branchSep)-lipgloss.Width(badge))
 		if maxBranchWidth > 0 {
 			truncBranch := ansi.Truncate(gitBranch, maxBranchWidth, "…")
-			cwd = t.Header.GitBranch.Render(truncBranch) + branchSep + cwd
+			cwd = t.Header.GitBranch.Render(truncBranch) + badge + branchSep + cwd
 		}
 	}
 
