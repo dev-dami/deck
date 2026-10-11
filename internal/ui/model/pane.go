@@ -50,6 +50,23 @@ type pane interface {
 	click(m *UI, x, y int) tea.Cmd
 }
 
+// Scrolling. render gets the body's height. A pane may return more lines
+// than that: the strip then scrolls the body itself, keeping an offset per
+// pane that the wheel and the j/k, ↑/↓, pgup/pgdn and g/G keys move (keys
+// only when the pane's key did not handle them; j/k move to the next pane
+// once the body is at its end). The strip shows ↑/↓ in the header while
+// there is more above/below, and click's y counts content lines, offset
+// included, so a pane can map it straight to its own line. A pane with its
+// own cursor or scroll (a list) instead returns at most height lines,
+// handles the keys in key and may implement paneWheeler to take the wheel.
+
+// paneWheeler is optional: a pane that scrolls itself takes the wheel over
+// its body. delta is in lines, negative up. handled false lets the strip
+// scroll the body.
+type paneWheeler interface {
+	wheel(m *UI, delta int) (handled bool)
+}
+
 // paneFactories builds each kind of pane. Pane files register themselves in
 // an init func, so adding a pane never touches the strip.
 var paneFactories = map[paneID]func() pane{}

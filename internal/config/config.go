@@ -346,6 +346,17 @@ type TUIOptions struct {
 	Scrollbar   string      `json:"scrollbar,omitempty" jsonschema:"description=Chat scrollbar visibility,enum=default,enum=always,enum=never,default=default"`
 	Mouse       *bool       `json:"mouse,omitempty" jsonschema:"description=Enable terminal mouse capture for selection\\, clicks\\, and scrolling in the TUI. Disable to let the terminal emulator or tmux handle text selection and copy/paste,default=true"`
 	ExitBanner  ExitBanner  `json:"exit_banner,omitempty" jsonschema:"description=Exit banner style after quitting Deck,enum=default,enum=compact,enum=none,default=default"`
+	// SidebarLayout is the sidebar's strip of panes as the user left it.
+	SidebarLayout SidebarLayout `json:"sidebar_layout,omitzero" jsonschema:"description=Sidebar pane layout: columns of pane ids with their widths and the closed panes. Managed by the TUI"`
+}
+
+// SidebarLayout is the sidebar's strip of panes: its columns left to right,
+// each a stack of pane ids top to bottom, the width the user gave each
+// column (0 for its natural width), and the panes the user closed.
+type SidebarLayout struct {
+	Columns [][]string `json:"columns,omitempty"`
+	Widths  []int      `json:"widths,omitempty"`
+	Closed  []string   `json:"closed,omitempty"`
 }
 
 // IsTransparent reports whether the TUI draws a transparent background. The

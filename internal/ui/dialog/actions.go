@@ -34,6 +34,13 @@ type ActionSelectSession struct {
 	Session session.Session
 }
 
+// The sidebar's strip of panes: reopen a closed pane, put the default
+// layout back.
+type (
+	ActionSidebarReopen struct{}
+	ActionSidebarReset  struct{}
+)
+
 // Messages for commands
 type (
 	ActionNewSession              struct{}
