@@ -76,8 +76,12 @@ type Config struct {
 	TrackChanges bool `json:"track_changes"`
 	// DeckAttribution credits Deck on commits and pull requests agents make,
 	// and strips every other AI attribution from their commit messages.
-	DeckAttribution bool   `json:"deck_attribution"`
-	Models          Models `json:"models"`
+	DeckAttribution bool `json:"deck_attribution"`
+	// DeckAuthor makes Deck the author of the commits agents make (the user
+	// stays the committer), so Deck counts among a repository's contributors.
+	// It applies while DeckAttribution is on.
+	DeckAuthor bool   `json:"deck_author"`
+	Models     Models `json:"models"`
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
 	Efforts Models `json:"efforts"`
@@ -126,6 +130,7 @@ func Defaults() Config {
 		DefaultMode:       "ask",
 		TrackChanges:      true,
 		DeckAttribution:   true,
+		DeckAuthor:        true,
 	}
 }
 

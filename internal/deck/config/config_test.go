@@ -57,6 +57,7 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 		DefaultMode:       "ask",
 		TrackChanges:      true,
 		DeckAttribution:   true,
+		DeckAuthor:        true,
 	}
 	if cfg != want {
 		t.Errorf("Load() = %+v\nwant %+v", cfg, want)

@@ -61,6 +61,10 @@ sed -E -i.deck \
   -e '/^[[:space:]]*[Cc]o-[Aa]uthored-[Bb]y:.*([Cc]laude|[Aa]nthropic|ANTHROPIC|[Cc]odex|[Oo]pen[Aa][Ii]|ChatGPT|[Oo]pen[Cc]ode|[Gg]emini|[Aa]ntigravity|[Cc]opilot|[Cc]ursor|[Aa]ider|[Dd]evin|[Ww]indsurf)/d' \
   -e '/[Gg]enerated (with|by) .*([Cc]laude|[Cc]odex|[Oo]pen[Aa][Ii]|ChatGPT|[Oo]pen[Cc]ode|[Gg]emini|[Aa]ntigravity|[Cc]opilot|[Cc]ursor|[Aa]ider)/d' \
   "$msg" && rm -f "$msg.deck"
+# A commit Deck authors needs no Deck co-author line.
+case "$(git var GIT_AUTHOR_IDENT 2>/dev/null)" in
+  *` + shellQuote("<"+brand.AuthorEmail+">") + `*) exit 0 ;;
+esac
 exec git interpret-trailers --in-place --if-exists addIfDifferent --trailer ` + shellQuote(brand.CommitTrailer) + ` "$msg"
 `
 
@@ -73,22 +77,29 @@ var (
 )
 
 // Env returns the variables that route an agent's git through the guard,
-// installing the hooks the first time. On error the caller starts the agent
-// without the guard; the instruction to use Deck's trailer still stands.
-func Env() (map[string]string, error) {
+// installing the hooks the first time. With author, the agent's commits are
+// also authored by Deck (the user stays the committer), so Deck counts among
+// the repository's contributors. On error the caller starts the agent without
+// the guard; the instruction to use Deck's trailer still stands.
+func Env(author bool) (map[string]string, error) {
 	once.Do(func() { dir, initErr = install() })
 	if initErr != nil {
 		return nil, initErr
 	}
-	return envFor(dir), nil
+	return envFor(dir, author), nil
 }
 
-func envFor(dir string) map[string]string {
+func envFor(dir string, author bool) map[string]string {
 	v := "'core.hooksPath'=" + shellQuote(filepath.ToSlash(dir))
 	if prev := os.Getenv(EnvKey); prev != "" {
 		v = prev + " " + v // the last setting of a key wins
 	}
-	return map[string]string{EnvKey: v}
+	env := map[string]string{EnvKey: v}
+	if author {
+		env["GIT_AUTHOR_NAME"] = brand.AuthorName
+		env["GIT_AUTHOR_EMAIL"] = brand.AuthorEmail
+	}
+	return env
 }
 
 // install writes the hooks into ~/.deck/hooks, rewriting only what changed.
