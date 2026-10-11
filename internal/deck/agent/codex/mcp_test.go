@@ -21,7 +21,7 @@ const (
 )
 
 // stubMCP is a tiny stdio MCP server (the test binary re-executed with
-// stubMCPFlag). It exposes send_message and read_thread and records every tool
+// stubMCPFlag). It exposes search and execute and records every tool
 // call, plus whether the forwarded token env var reached it, to outPath.
 func stubMCP(outPath string) {
 	out, _ := os.OpenFile(outPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
@@ -46,9 +46,9 @@ func stubMCP(outPath string) {
 	}
 	str := map[string]any{"type": "string"}
 	tools := []map[string]any{
-		{"name": "send_message", "description": "Send a message to another agent in this thread.",
-			"inputSchema": obj(map[string]any{"to": str, "message": str}, "to", "message")},
-		{"name": "read_thread", "description": "Read the shared thread.", "inputSchema": obj(map[string]any{})},
+		{"name": "search", "description": "Search Deck.", "inputSchema": obj(map[string]any{"query": str})},
+		{"name": "execute", "description": "Run one Deck op.",
+			"inputSchema": obj(map[string]any{"op": str, "args": map[string]any{"type": "object"}}, "op")},
 	}
 	in := bufio.NewReaderSize(os.Stdin, 1<<20)
 	for {
@@ -80,8 +80,8 @@ func stubMCP(outPath string) {
 				_ = json.Unmarshal(m.Params, &p)
 				record("call " + p.Name + " " + string(p.Arguments))
 				text := "delivered"
-				if p.Name == "read_thread" {
-					text = "(empty thread)"
+				if p.Name == "search" {
+					text = "(no ops)"
 				}
 				write(map[string]any{"jsonrpc": "2.0", "id": m.ID, "result": map[string]any{
 					"content": []map[string]any{{"type": "text", "text": text}},
@@ -223,15 +223,16 @@ func TestIsDeckToolApproval(t *testing.T) {
 		p    json.RawMessage
 		want bool
 	}{
-		{"send_message by meta", mk("deck", "Allow?", `{"codex_approval_kind":"mcp_tool_call","tool_name":"send_message"}`), true},
-		{"read_thread by title", mk("deck", "Allow?", `{"codex_approval_kind":"mcp_tool_call","tool_title":"read_thread"}`), true},
-		{"send_message by message", mk("deck", `Allow the deck MCP server to run tool "send_message"?`, `null`), true},
+		{"search by meta", mk("deck", "Allow?", `{"codex_approval_kind":"mcp_tool_call","tool_name":"search"}`), true},
+		{"execute by title", mk("deck", "Allow?", `{"codex_approval_kind":"mcp_tool_call","tool_title":"execute"}`), true},
+		{"execute by message", mk("deck", `Allow the deck MCP server to run tool "execute"?`, `null`), true},
 		{"approve tool", mk("deck", "Allow?", `{"codex_approval_kind":"mcp_tool_call","tool_name":"approve"}`), false},
-		{"other server same tool", mk("evil", "Allow?", `{"codex_approval_kind":"mcp_tool_call","tool_name":"send_message"}`), false},
-		{"meta tool beats message", mk("deck", "run send_message", `{"tool_name":"approve"}`), false},
+		{"old tool name", mk("deck", "Allow?", `{"codex_approval_kind":"mcp_tool_call","tool_name":"send_message"}`), false},
+		{"other server same tool", mk("evil", "Allow?", `{"codex_approval_kind":"mcp_tool_call","tool_name":"execute"}`), false},
+		{"meta tool beats message", mk("deck", "run execute", `{"tool_name":"approve"}`), false},
 		{"unidentifiable tool", mk("deck", "Allow the tool?", `{}`), false},
-		{"two tools in message", mk("deck", "send_message and read_thread", `null`), false},
-		{"other approval kind", mk("deck", "x", `{"codex_approval_kind":"plugin_install","tool_name":"send_message"}`), false},
+		{"two tools in message", mk("deck", "search and execute", `null`), false},
+		{"other approval kind", mk("deck", "x", `{"codex_approval_kind":"plugin_install","tool_name":"execute"}`), false},
 		{"garbage", json.RawMessage(`[1]`), false},
 	}
 	for _, c := range cases {
@@ -255,10 +256,10 @@ func TestAdapterElicitationAutoAcceptsOnlyDeckTools(t *testing.T) {
 		send(`{"id":3,"method":"turn/start","params":{}}`),
 		recv(`{"id":3,"result":{"turn":{"id":"turn-syn","status":"inProgress"}}}`),
 		recv(`{"method":"turn/started","params":{"threadId":"thr-syn","turn":{"id":"turn-syn","status":"inProgress"}}}`),
-		el(21, "deck", "send_message"),
-		el(22, "deck", "read_thread"),
+		el(21, "deck", "execute"),
+		el(22, "deck", "search"),
 		el(23, "deck", "approve"),
-		el(24, "github", "send_message"),
+		el(24, "github", "execute"),
 		recv(`{"method":"turn/completed","params":{"threadId":"thr-syn","turn":{"id":"turn-syn","status":"completed"}}}`),
 	)
 	fe := newFakeEnv(t, script)
@@ -293,9 +294,9 @@ func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
 
 func TestTranslateDeckMessageToolCall(t *testing.T) {
 	tr := newTranslator("c1", t.TempDir())
-	args := `{"to":"claude","message":"please review the parser change in internal/parse and tell me what you think about the edge cases\nthanks"}`
+	args := `{"op":"thread.send","args":{"to":"claude","message":"please review the parser change in internal/parse and tell me what you think about the edge cases\nthanks"}}`
 	item := func(status, extra string) string {
-		return `{"threadId":"t","turnId":"u","item":{"type":"mcpToolCall","id":"m1","server":"deck","tool":"send_message","status":"` +
+		return `{"threadId":"t","turnId":"u","item":{"type":"mcpToolCall","id":"m1","server":"deck","tool":"execute","status":"` +
 			status + `","arguments":` + args + extra + `}}`
 	}
 	started := notif(t, tr, noteItemStarted, item("inProgress", ""))
@@ -322,35 +323,44 @@ func TestTranslateDeckMessageToolCall(t *testing.T) {
 
 func TestTranslateDeckToolErrorsAndReadThread(t *testing.T) {
 	tr := newTranslator("c1", t.TempDir())
-	mk := func(tool, status, args, extra string) string {
-		return `{"threadId":"t","turnId":"u","item":{"type":"mcpToolCall","id":"` + tool + `","server":"deck","tool":"` + tool +
+	mk := func(id, tool, status, args, extra string) string {
+		return `{"threadId":"t","turnId":"u","item":{"type":"mcpToolCall","id":"` + id + `","server":"deck","tool":"` + tool +
 			`","status":"` + status + `","arguments":` + args + extra + `}}`
 	}
-	// read_thread
-	s := notif(t, tr, noteItemStarted, mk("read_thread", "inProgress", `{}`, ""))
+	// thread.read
+	s := notif(t, tr, noteItemStarted, mk("r1", "execute", "inProgress", `{"op":"thread.read"}`, ""))
 	if len(s) != 1 || s[0].Tool.Name != "read" || s[0].Tool.Title != "shared thread" {
 		t.Fatalf("read started = %+v", s)
 	}
-	d := notif(t, tr, noteItemCompleted, mk("read_thread", "completed", `{}`, `,"result":{"content":[{"type":"text","text":"[you] hi"},{"type":"text","text":"[claude] yo"}]}`))
+	d := notif(t, tr, noteItemCompleted, mk("r1", "execute", "completed", `{"op":"thread.read"}`, `,"result":{"content":[{"type":"text","text":"[you] hi"},{"type":"text","text":"[claude] yo"}]}`))
 	if d[0].Tool.Name != "read" || d[0].Tool.Title != "shared thread" || d[0].Tool.Output != "[you] hi\n[claude] yo" || d[0].Tool.Status != agent.ToolOK {
 		t.Fatalf("read done = %+v", d[0].Tool)
 	}
-	// failed send_message with no preceding item/started: still translated.
-	d = notif(t, tr, noteItemCompleted, mk("send_message", "failed", `{"to":"all","message":"hi"}`, `,"error":{"message":"hub closed"}`))
+	// failed thread.send (flattened args) with no preceding item/started: still translated.
+	d = notif(t, tr, noteItemCompleted, mk("s1", "execute", "failed", `{"op":"thread.send","to":"all","message":"hi"}`, `,"error":{"message":"hub closed"}`))
 	if len(d) != 1 || d[0].Tool.Name != "message" || d[0].Tool.Title != "to all: hi" || d[0].Tool.Status != agent.ToolError || d[0].Tool.Output != "hub closed" {
 		t.Fatalf("failed done = %+v", d[0].Tool)
+	}
+	// search and other ops render under "deck".
+	s = notif(t, tr, noteItemStarted, mk("q1", "search", "inProgress", `{"query":"git log"}`, ""))
+	if len(s) != 1 || s[0].Tool.Name != "deck" || s[0].Tool.Title != "search git log" {
+		t.Fatalf("search started = %+v", s[0].Tool)
+	}
+	s = notif(t, tr, noteItemStarted, mk("g1", "execute", "inProgress", `{"op":"git.status"}`, ""))
+	if len(s) != 1 || s[0].Tool.Name != "deck" || s[0].Tool.Title != "git.status" {
+		t.Fatalf("op started = %+v", s[0].Tool)
 	}
 }
 
 func TestTranslateOtherMCPServerUnchanged(t *testing.T) {
 	tr := newTranslator("c1", t.TempDir())
-	params := `{"threadId":"t","turnId":"u","item":{"type":"mcpToolCall","id":"x1","server":"other","tool":"send_message","status":"inProgress","arguments":{"to":"a","message":"b"}}}`
+	params := `{"threadId":"t","turnId":"u","item":{"type":"mcpToolCall","id":"x1","server":"other","tool":"execute","status":"inProgress","arguments":{"op":"thread.send","args":{"to":"a","message":"b"}}}}`
 	s := notif(t, tr, noteItemStarted, params)
-	if len(s) != 1 || s[0].Tool.Name != "send_message" || s[0].Tool.Title != "other/send_message" {
+	if len(s) != 1 || s[0].Tool.Name != "execute" || s[0].Tool.Title != "other/execute" {
 		t.Fatalf("started = %+v", s[0].Tool)
 	}
 	// And an unknown tool on the deck server keeps the generic rendering.
-	s = notif(t, tr, noteItemStarted, strings.Replace(strings.Replace(params, `"other"`, `"deck"`, 1), `"send_message"`, `"approve"`, 1))
+	s = notif(t, tr, noteItemStarted, strings.Replace(strings.Replace(params, `"other"`, `"deck"`, 1), `"execute"`, `"approve"`, 1))
 	if s[0].Tool.Name != "approve" || s[0].Tool.Title != "deck/approve" {
 		t.Fatalf("deck/approve = %+v", s[0].Tool)
 	}
@@ -358,7 +368,7 @@ func TestTranslateOtherMCPServerUnchanged(t *testing.T) {
 
 // TestLiveDeckMCPServerVisible starts the real codex app-server with the stub
 // MCP server registered through thread/start config, then (without any model
-// call) asks codex for the server's tool inventory and calls send_message
+// call) asks codex for the server's tool inventory and calls execute
 // through mcpServer/tool/call. It never reads credentials and does not touch
 // ~/.codex/config.toml. Gated: set DECK_LIVE=1.
 func TestLiveDeckMCPServerVisible(t *testing.T) {
@@ -412,7 +422,7 @@ func TestLiveDeckMCPServerVisible(t *testing.T) {
 		names = append(names, n)
 	}
 	t.Logf("tools: %v", names)
-	if s.Tools["send_message"] == nil || s.Tools["read_thread"] == nil {
+	if s.Tools["search"] == nil || s.Tools["execute"] == nil {
 		t.Fatalf("deck tools not visible to codex: %v (toolsError=%q)", names, s.ToolsError)
 	}
 
@@ -423,8 +433,8 @@ func TestLiveDeckMCPServerVisible(t *testing.T) {
 		IsError bool `json:"isError"`
 	}
 	if err := rr.client.Call(ctx, "mcpServer/tool/call", map[string]any{
-		"threadId": tid, "server": "deck", "tool": "send_message",
-		"arguments": map[string]any{"to": "claude", "message": "hello from codex"},
+		"threadId": tid, "server": "deck", "tool": "execute",
+		"arguments": map[string]any{"op": "thread.send", "args": map[string]any{"to": "claude", "message": "hello from codex"}},
 	}, &call); err != nil {
 		t.Fatalf("mcpServer/tool/call: %v", err)
 	}
@@ -433,7 +443,7 @@ func TestLiveDeckMCPServerVisible(t *testing.T) {
 	}
 	b, _ := os.ReadFile(outPath)
 	rec := string(b)
-	if !strings.Contains(rec, `call send_message {"message":"hello from codex","to":"claude"}`) {
+	if !strings.Contains(rec, `call execute `) || !strings.Contains(rec, `"op":"thread.send"`) || !strings.Contains(rec, `"message":"hello from codex"`) {
 		t.Errorf("stub did not record the call:\n%s", rec)
 	}
 	if !strings.Contains(rec, "token=forwarded") {

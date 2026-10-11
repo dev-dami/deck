@@ -156,9 +156,9 @@ type Spec struct {
 	// shared-thread briefing. Claude: --append-system-prompt; Codex: the
 	// thread's developer instructions.
 	Instructions string
-	// MCP is Deck's own stdio MCP server for this agent (approve tool for
-	// Claude, plus the send_message / read_thread messaging tools). Adapters
-	// register it with their CLI under MCP.Name. Nil = none.
+	// MCP is Deck's own stdio MCP server for this agent: the search and
+	// execute tools (see DeckToolSearch), plus the approve tool for Claude.
+	// Adapters register it with their CLI under MCP.Name. Nil = none.
 	MCP *MCPServer
 	// Mode is the starting permission mode; empty means ModeAsk.
 	Mode Mode
@@ -251,7 +251,7 @@ type MCPServer struct {
 }
 
 // Message is an agent-to-agent (or agent-to-thread) message raised through
-// Deck's send_message MCP tool.
+// Deck's execute MCP tool with op thread.send.
 type Message struct {
 	ID   string
 	From string // sending agent id, e.g. "claude"
@@ -262,13 +262,17 @@ type Message struct {
 	Respond func(result string, err error)
 }
 
-// Hub is Deck's side of the messaging tools: it receives send_message calls
-// from every agent and answers read_thread calls.
+// Hub is Deck's side of the search and execute tools: it receives every
+// agent's thread.send calls, answers thread.read and hands the other ops to
+// the Executor.
 type Hub interface {
 	Messages() <-chan Message
-	// SetThreadReader installs the read_thread provider: given the calling
+	// SetThreadReader installs the thread.read provider: given the calling
 	// agent id, return the shared thread as plain text.
 	SetThreadReader(func(agentID string) string)
+	// SetExecutor installs the provider of search and of every execute op
+	// other than thread.send and thread.read.
+	SetExecutor(Executor)
 }
 
 // Run is a live agent process.

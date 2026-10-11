@@ -2,6 +2,7 @@ package fake
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -543,9 +544,13 @@ func TestNewTurnsWithFirstPromptPlaysFirstTurn(t *testing.T) {
 func TestMessageStepGoesThroughTheHub(t *testing.T) {
 	hub := NewHub()
 	hub.SetThreadReader(func(id string) string { return "thread for " + id })
+	hub.SetExecutor(func(id, op string, args json.RawMessage) (string, bool) {
+		return op + " for " + id + " " + string(args), false
+	})
 	script := Script{
 		{Message: &agent.Message{To: "codex", Text: "review this"}},
 		{ReadThread: true},
+		{Exec: &Exec{Op: "git.log", Args: json.RawMessage(`{"n":3}`)}},
 		{Event: agent.Event{Kind: agent.KindTurnDone}},
 	}
 	r, err := NewTurns(0, hub, script).Start(context.Background(), agent.Spec{ID: "claude", FirstPrompt: "go"})
@@ -570,8 +575,8 @@ func TestMessageStepGoesThroughTheHub(t *testing.T) {
 			results = append(results, ev.Tool.Name+"="+ev.Tool.Output+"/"+string(ev.Tool.Status))
 		}
 	}
-	want := []string{"send_message=delivered to codex/ok", "read_thread=thread for claude/ok"}
-	if len(results) != 2 || results[0] != want[0] || results[1] != want[1] {
+	want := []string{"message=delivered to codex/ok", "read=thread for claude/ok", `deck=git.log for claude {"n":3}/ok`}
+	if strings.Join(results, "|") != strings.Join(want, "|") {
 		t.Fatalf("tool results = %q, want %q", results, want)
 	}
 }

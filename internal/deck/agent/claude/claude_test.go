@@ -324,7 +324,7 @@ func TestAdapterStartSendClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := parsed.MCPServers["deck"]
-	if d.Command == "" || len(d.Args) != 5 || d.Args[0] != "mcp-approve" || d.Args[4] != "claude7" {
+	if d.Command == "" || len(d.Args) != 6 || d.Args[0] != "mcp-approve" || d.Args[4] != "claude7" || d.Args[5] != approve.ApproveToolFlag {
 		t.Errorf("mcp config %+v", d)
 	}
 	if d.Env[approve.TokenEnv] == "" || strings.Contains(strings.Join(args, " "), d.Env[approve.TokenEnv]) || strings.Contains(strings.Join(d.Args, " "), d.Env[approve.TokenEnv]) {
@@ -452,7 +452,7 @@ func TestAdapterAllowedToolsAndInstructions(t *testing.T) {
 	defer r.Close()
 	waitKind(t, r, agent.KindTurnDone)
 	args := readArgs(t, argsFile)[0]
-	if v, _ := argAfter(args, "--allowedTools"); v != "mcp__deck__send_message,mcp__deck__read_thread" {
+	if v, _ := argAfter(args, "--allowedTools"); v != "mcp__deck__search,mcp__deck__execute" {
 		t.Errorf("allowedTools %q", v)
 	}
 	if v, _ := argAfter(args, "--permission-prompt-tool"); v != "mcp__deck__approve" {
@@ -507,8 +507,11 @@ func TestAdapterUsesSpecMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := parsed.MCPServers["deck"]
-	if d.Command != "/opt/deck" || len(d.Args) != 5 || d.Args[2] != "127.0.0.1:9" || d.Env[approve.TokenEnv] != "spec-token" {
+	if d.Command != "/opt/deck" || len(d.Args) != 6 || d.Args[5] != approve.ApproveToolFlag || d.Args[2] != "127.0.0.1:9" || d.Env[approve.TokenEnv] != "spec-token" {
 		t.Errorf("config does not reflect spec.MCP: %+v", d)
+	}
+	if len(spec.MCP.Args) != 5 {
+		t.Errorf("the caller's spec.MCP was changed: %v", spec.MCP.Args)
 	}
 	if strings.Contains(strings.Join(args, " "), "spec-token") {
 		t.Error("token on the command line")
@@ -519,27 +522,34 @@ func TestTranslateMessagingTools(t *testing.T) {
 	tr := newTranslator("c1")
 	long := strings.Repeat("abcdefghij", 10)
 	lines := []string{
-		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"m1","name":"mcp__deck__send_message","input":{"to":"codex","message":"` + long + `"}},{"type":"tool_use","id":"m2","name":"mcp__deck__read_thread","input":{}}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"m1","name":"mcp__deck__execute","input":{"op":"thread.send","args":{"to":"codex","message":"` + long + `"}}},{"type":"tool_use","id":"m2","name":"mcp__deck__execute","input":{"op":"thread.read"}}]}}`,
 		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"m1","content":"delivered to codex"},{"type":"tool_result","tool_use_id":"m2","content":"thread"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"m3","name":"mcp__deck__execute","input":{"op":"git.log","args":{"n":5}}},{"type":"tool_use","id":"m4","name":"mcp__deck__search","input":{"query":"pdf"}}]}}`,
 	}
 	var evs []agent.Event
 	for _, l := range lines {
 		evs = append(evs, tr.Line([]byte(l))...)
 	}
-	if len(evs) != 4 {
+	if len(evs) != 6 {
 		t.Fatalf("events %v", kinds(evs))
 	}
 	if c := evs[0].Tool; evs[0].Kind != agent.KindToolCall || c.Name != "message" || c.Title != "to codex: "+long[:60] {
-		t.Errorf("send_message call %+v", c)
+		t.Errorf("thread.send call %+v", c)
 	}
 	if c := evs[1].Tool; c.Name != "read" || c.Title != "shared thread" {
-		t.Errorf("read_thread call %+v", c)
+		t.Errorf("thread.read call %+v", c)
 	}
 	if c := evs[2].Tool; c.Name != "message" || c.Output != "delivered to codex" || c.Status != agent.ToolOK {
-		t.Errorf("send_message result %+v", c)
+		t.Errorf("thread.send result %+v", c)
 	}
 	if c := evs[3].Tool; c.Name != "read" {
-		t.Errorf("read_thread result %+v", c)
+		t.Errorf("thread.read result %+v", c)
+	}
+	if c := evs[4].Tool; c.Name != "deck" || c.Title != `git.log {"n":5}` {
+		t.Errorf("other op %+v", c)
+	}
+	if c := evs[5].Tool; c.Name != "deck" || c.Title != "search pdf" {
+		t.Errorf("search %+v", c)
 	}
 }
 

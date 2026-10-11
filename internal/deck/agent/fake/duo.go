@@ -44,7 +44,7 @@ func tool(id, name, title string, delay time.Duration, out string) []Step {
 // DemoDuoScripts returns per-turn scripts for a claude and a codex that
 // collaborate, for use with NewTurns:
 //
-//	claude turn 1 (the user asks for a plan): plans, then send_message to codex
+//	claude turn 1 (the user asks for a plan): plans, then a thread.send to codex
 //	    asking for a review of the plan.
 //	codex  turn 1 (the relay arrives): reads the thread, checks the code, and
 //	    answers with a line starting "$claude ..." which Deck relays.

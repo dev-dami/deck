@@ -157,7 +157,7 @@ func TestMCPRoundTrip(t *testing.T) {
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	served := make(chan error, 1)
-	go func() { served <- MCPServe(inR, outW, b.Addr(), b.Token(), "a1"); outW.Close() }()
+	go func() { served <- MCPServe(inR, outW, b.Addr(), b.Token(), "a1", true); outW.Close() }()
 
 	out := bufio.NewReader(outR)
 	call := func(line string) map[string]any {
@@ -190,16 +190,20 @@ func TestMCPRoundTrip(t *testing.T) {
 	for _, tl := range tools {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "approve,send_message,read_thread" {
+	if strings.Join(names, ",") != "search,execute,approve" {
 		t.Fatalf("tools/list: %v", m)
 	}
-	sm := tools[1].(map[string]any)
-	if d := sm["description"].(string); !strings.Contains(d, "shared Deck thread") || !strings.Contains(d, "user sees every message") {
-		t.Errorf("send_message description %q", d)
+	ex := tools[1].(map[string]any)
+	if d := ex["description"].(string); !strings.Contains(d, "thread.send") || !strings.Contains(d, "search") || !strings.Contains(d, "user sees every call") {
+		t.Errorf("execute description %q", d)
 	}
-	props := sm["inputSchema"].(map[string]any)["properties"].(map[string]any)
-	if props["to"] == nil || props["message"] == nil {
-		t.Errorf("send_message schema %v", sm["inputSchema"])
+	props := ex["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if props["op"] == nil || props["args"] == nil {
+		t.Errorf("execute schema %v", ex["inputSchema"])
+	}
+	sp := tools[0].(map[string]any)["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if sp["query"] == nil || sp["limit"] == nil {
+		t.Errorf("search schema %v", sp)
 	}
 
 	go func() {
@@ -290,7 +294,7 @@ func TestMessageRoundTrip(t *testing.T) {
 
 	out := make(chan string, 1)
 	go func() {
-		s, _ := rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "message", AgentID: "claude", RequestID: "m1", To: "codex", Text: "hi there"})
+		s, _ := rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "exec", AgentID: "claude", RequestID: "m1", Op: "thread.send", Args: json.RawMessage(`{"to":"codex","message":"hi there"}`)})
 		out <- s
 	}()
 	m := recvMsg(t, hub.Messages())
@@ -304,7 +308,7 @@ func TestMessageRoundTrip(t *testing.T) {
 	}
 
 	go func() {
-		s, _ := rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "message", AgentID: "claude", To: "nobody", Text: "x"})
+		s, _ := rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "exec", AgentID: "claude", Op: "thread.send", Args: json.RawMessage(`{"to":"nobody","message":"x"}`)})
 		out <- s
 	}()
 	m = recvMsg(t, hub.Messages())
@@ -321,7 +325,7 @@ func TestMessageTimeout(t *testing.T) {
 	b, _ := NewBroker()
 	defer b.Close()
 
-	s, err := rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "message", AgentID: "claude", To: "codex", Text: "x"})
+	s, err := rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "exec", AgentID: "claude", Op: "thread.send", Args: json.RawMessage(`{"to":"codex","message":"x"}`)})
 	if err != nil || s != `{"text":"Deck did not answer","is_error":true}` {
 		t.Fatalf("timeout reply %q %v", s, err)
 	}
@@ -334,13 +338,13 @@ func TestReadThread(t *testing.T) {
 	b, _ := NewBroker()
 	defer b.Close()
 
-	s, _ := rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "read", AgentID: "claude"})
+	s, _ := rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "exec", Op: "thread.read", AgentID: "claude"})
 	if s != `{"text":"No shared thread."}` {
 		t.Fatalf("no provider reply %q", s)
 	}
 	var gotID string
 	b.SetThreadReader(func(id string) string { gotID = id; return "you: hi\ncodex: yo" })
-	s, _ = rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "read", AgentID: "claude2"})
+	s, _ = rawReq(t, b.Addr(), wireRequest{Token: b.Token(), Kind: "exec", Op: "thread.read", AgentID: "claude2"})
 	if s != `{"text":"you: hi\ncodex: yo"}` || gotID != "claude2" {
 		t.Fatalf("reader reply %q id=%q", s, gotID)
 	}
@@ -350,11 +354,16 @@ func TestWrongTokenRejectedNewKinds(t *testing.T) {
 	b, _ := NewBroker()
 	defer b.Close()
 	b.SetThreadReader(func(string) string { return "secret transcript" })
-	for _, kind := range []string{"message", "read"} {
-		s, err := rawReq(t, b.Addr(), wireRequest{Token: "nope", Kind: kind, AgentID: "a", To: "codex", Text: "x"})
+	called := false
+	b.SetExecutor(func(string, string, json.RawMessage) (string, bool) { called = true; return "secret", false })
+	for _, op := range []string{"thread.send", "thread.read", "search", "git.status"} {
+		s, err := rawReq(t, b.Addr(), wireRequest{Token: "nope", Kind: "exec", Op: op, AgentID: "a", Args: json.RawMessage(`{"to":"codex","message":"x"}`)})
 		if err == nil || s != "" {
-			t.Fatalf("%s: expected closed connection, got %q err=%v", kind, s, err)
+			t.Fatalf("%s: expected closed connection, got %q err=%v", op, s, err)
 		}
+	}
+	if called {
+		t.Fatal("executor ran for a wrong token")
 	}
 	select {
 	case m := <-b.Messages():
@@ -380,62 +389,4 @@ func TestServerFor(t *testing.T) {
 	if strings.Contains(strings.Join(srv.Args, " "), b.Token()) {
 		t.Fatal("token leaked into args")
 	}
-}
-
-func TestMCPMessageTools(t *testing.T) {
-	b, _ := NewBroker()
-	defer b.Close()
-	b.SetThreadReader(func(id string) string { return "thread for " + id })
-
-	inR, inW := io.Pipe()
-	outR, outW := io.Pipe()
-	go func() { MCPServe(inR, outW, b.Addr(), b.Token(), "claude"); outW.Close() }()
-	out := bufio.NewReader(outR)
-	call := func(line string) map[string]any {
-		t.Helper()
-		io.WriteString(inW, line+"\n")
-		s, err := out.ReadString('\n')
-		if err != nil {
-			t.Fatal(err)
-		}
-		var m map[string]any
-		if err := json.Unmarshal([]byte(s), &m); err != nil {
-			t.Fatalf("bad json %q", s)
-		}
-		return m
-	}
-	text := func(m map[string]any) (string, bool) {
-		res := m["result"].(map[string]any)
-		isErr, _ := res["isError"].(bool)
-		return res["content"].([]any)[0].(map[string]any)["text"].(string), isErr
-	}
-
-	go func() {
-		m := recvMsg(t, b.Messages())
-		if m.From != "claude" || m.To != "codex" || m.Text != "hi" {
-			t.Errorf("bad message %+v", m)
-		}
-		m.Respond("delivered to codex", nil)
-	}()
-	txt, isErr := text(call(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"codex","message":"hi"}}}`))
-	if txt != "delivered to codex" || isErr {
-		t.Fatalf("send_message result %q %v", txt, isErr)
-	}
-
-	go func() { recvMsg(t, b.Messages()).Respond("", errors.New("codex is not in this thread")) }()
-	txt, isErr = text(call(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"codex","message":"hi"}}}`))
-	if txt != "codex is not in this thread" || !isErr {
-		t.Fatalf("send_message error result %q %v", txt, isErr)
-	}
-
-	txt, isErr = text(call(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"send_message","arguments":{"to":"","message":"hi"}}}`))
-	if !isErr {
-		t.Fatalf("empty target should be an error result, got %q", txt)
-	}
-
-	txt, isErr = text(call(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"read_thread","arguments":{}}}`))
-	if txt != "thread for claude" || isErr {
-		t.Fatalf("read_thread result %q %v", txt, isErr)
-	}
-	inW.Close()
 }

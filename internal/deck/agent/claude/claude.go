@@ -26,11 +26,8 @@ import (
 // "deck", tool "approve".
 const MCPToolFlagValue = "mcp__deck__" + approve.MCPToolName
 
-// Messaging tool names as Claude sees them (server "deck").
-const (
-	toolSendMessage = "mcp__deck__" + approve.MCPToolSendMessage
-	toolReadThread  = "mcp__deck__" + approve.MCPToolReadThread
-)
+// deckToolPrefix is how Claude names the tools of Deck's MCP server.
+const deckToolPrefix = "mcp__deck__"
 
 type adapter struct {
 	binary string
@@ -90,6 +87,11 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		server = a.broker.ServerFor(a.self, spec.ID)
 	}
 	if server != nil {
+		// Only Claude gets the approve tool (its --permission-prompt-tool);
+		// every other agent sees just search and execute.
+		s := *server
+		s.Args = withFlag(server.Args, approve.ApproveToolFlag)
+		server = &s
 		cfg, err := writeMCPConfig(server)
 		if err != nil {
 			return nil, err
@@ -126,6 +128,16 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		}
 	}
 	return r, nil
+}
+
+// withFlag is args plus flag, unless it is already there.
+func withFlag(args []string, flag string) []string {
+	for _, a := range args {
+		if a == flag {
+			return args
+		}
+	}
+	return append(append([]string{}, args...), flag)
 }
 
 // writeMCPConfig writes the --mcp-config file (0600; it carries the hub token in
@@ -220,7 +232,7 @@ func (r *run) args(resume string) []string {
 	if r.cfgPath != "" {
 		args = append(args, "--mcp-config", r.cfgPath,
 			"--permission-prompt-tool", "mcp__"+r.mcpName+"__"+approve.MCPToolName,
-			"--allowedTools", "mcp__"+r.mcpName+"__"+approve.MCPToolSendMessage+",mcp__"+r.mcpName+"__"+approve.MCPToolReadThread)
+			"--allowedTools", "mcp__"+r.mcpName+"__"+approve.MCPToolSearch+",mcp__"+r.mcpName+"__"+approve.MCPToolExecute)
 	}
 	if model != "" {
 		args = append(args, "--model", model)

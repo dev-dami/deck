@@ -93,7 +93,7 @@ func TestModeFlags(t *testing.T) {
 			if _, ok := argAfter(args, "--mcp-config"); !ok {
 				t.Error("no --mcp-config")
 			}
-			if v, _ := argAfter(args, "--allowedTools"); v != "mcp__deck__send_message,mcp__deck__read_thread" {
+			if v, _ := argAfter(args, "--allowedTools"); v != "mcp__deck__search,mcp__deck__execute" {
 				t.Errorf("allowedTools %q", v)
 			}
 			if contains(args, "--dangerously-skip-permissions") {

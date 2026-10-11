@@ -440,22 +440,13 @@ func stringifyContent(raw json.RawMessage) string {
 }
 
 // displayTool maps Claude's tool name to Deck's display name and title. Deck's
-// own messaging tools become "message" ("to <to>: <text>") and "read".
+// own search and execute tools render as agent.DeckToolDisplay says: a
+// thread.send is a "message" ("to <to>: <text>"), a thread.read a "read".
 func displayTool(name string, input json.RawMessage) (string, string) {
-	switch name {
-	case toolSendMessage:
-		var in struct {
-			To      string `json:"to"`
-			Message string `json:"message"`
+	if bare, ok := strings.CutPrefix(name, deckToolPrefix); ok {
+		if n, title, ok := agent.DeckToolDisplay(bare, input); ok {
+			return n, title
 		}
-		_ = json.Unmarshal(input, &in)
-		text := strings.Join(strings.Fields(in.Message), " ")
-		if r := []rune(text); len(r) > 60 {
-			text = string(r[:60])
-		}
-		return "message", "to " + in.To + ": " + text
-	case toolReadThread:
-		return "read", "shared thread"
 	}
 	return name, toolTitle(name, input)
 }
