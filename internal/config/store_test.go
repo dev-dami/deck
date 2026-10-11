@@ -612,3 +612,36 @@ func TestConfigStore_SetConfigFields_concurrentInProcess(t *testing.T) {
 		}
 	}
 }
+
+// TestCanSkipReload covers which SetConfigFields writes take the
+// in-memory fast path instead of a full reload.
+func TestCanSkipReload(t *testing.T) {
+	t.Setenv("DECK_GLOBAL_CONFIG", t.TempDir())
+	t.Setenv("DECK_GLOBAL_DATA", t.TempDir())
+	dir := t.TempDir()
+	store, err := Load(dir, dir, false)
+	require.NoError(t, err)
+
+	skip := func(scope Scope, key string, value any) bool {
+		store.writeMu.Lock()
+		defer store.writeMu.Unlock()
+		return store.canSkipReloadLocked(scope, map[string]any{key: value})
+	}
+	// Deck configures no providers, so Load returns before it snapshots
+	// the config files; until a reload takes one there is nothing to
+	// compare against and every write reloads.
+	require.False(t, skip(ScopeGlobal, "options.tui.active_theme", "x"))
+	require.NoError(t, store.ReloadFromDisk(t.Context()))
+
+	require.True(t, skip(ScopeGlobal, "options.tui.active_theme", "x"))
+	require.True(t, skip(ScopeGlobal, "options.tui.mouse", false))
+	require.False(t, skip(ScopeWorkspace, "options.tui.active_theme", "x"))
+	require.False(t, skip(ScopeGlobal, "options.tui.active_theme", ""))
+	require.False(t, skip(ScopeGlobal, "options.tui.mouse", "yes"))
+	require.False(t, skip(ScopeGlobal, "options.tui.sidebar_layout", SidebarLayout{}))
+	require.False(t, skip(ScopeGlobal, "options.debug", true))
+
+	// A config file that appeared since the load must be read by a reload.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "deck.json"), []byte(`{}`), 0o600))
+	require.False(t, skip(ScopeGlobal, "options.tui.active_theme", "x"))
+}
