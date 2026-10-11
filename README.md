@@ -49,11 +49,11 @@ Run `deck`, type, press enter.
 - **Sessions.** `ctrl+n` starts one, `ctrl+s` switches. `deck -C` continues the last one.
 - `ctrl+p` lists every command; `esc` twice stops the agents.
 
-| mode | Claude Code | Codex | OpenCode |
-| --- | --- | --- | --- |
-| plan | `--permission-mode plan` | read-only sandbox | its plan agent |
-| ask | asks you through Deck | `on-request`, `workspace-write` | edits, commands and fetches ask you |
-| yolo | `bypassPermissions` | `never`, `danger-full-access` | everything approved |
+| mode | Claude Code | Codex | OpenCode | Antigravity |
+| --- | --- | --- | --- | --- |
+| plan | `--permission-mode plan` | read-only sandbox | its plan agent | `--mode plan` |
+| ask | asks you through Deck | `on-request`, `workspace-write` | edits, commands and fetches ask you | default mode; tools needing approval are denied with a visible notice (no Deck prompts) |
+| yolo | `bypassPermissions` | `never`, `danger-full-access` | everything approved | `--mode accept-edits` + `--dangerously-skip-permissions` |
 
 ## Config
 
@@ -70,8 +70,9 @@ Run `deck`, type, press enter.
   "claude_binary": "claude",
   "codex_binary": "codex",
   "opencode_binary": "opencode",
-  "models": { "claude": "", "codex": "", "opencode": "" },
-  "efforts": { "claude": "", "codex": "", "opencode": "" }
+  "antigravity_binary": "agy",
+  "models": { "claude": "", "codex": "", "opencode": "", "antigravity": "" },
+  "efforts": { "claude": "", "codex": "", "opencode": "", "antigravity": "" }
 }
 ```
 

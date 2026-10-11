@@ -1,6 +1,6 @@
-// Package engine starts Deck's agent engine: the installed claude, codex and
-// opencode CLIs, driven over their own protocols under the user's own login,
-// and the thread manager that puts them in shared threads.
+// Package engine starts Deck's agent engine: the installed claude, codex,
+// opencode and agy CLIs, driven over their own protocols under the user's own
+// login, and the thread manager that puts them in shared threads.
 //
 // Deck never reads the CLIs' credentials and never calls a model API itself.
 package engine
@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
+	"github.com/dev-dami/deck/internal/deck/agent/antigravity"
 	"github.com/dev-dami/deck/internal/deck/agent/claude"
 	"github.com/dev-dami/deck/internal/deck/agent/codex"
 	"github.com/dev-dami/deck/internal/deck/agent/opencode"
@@ -56,9 +58,12 @@ func Start() (*Engine, error) {
 	if found(cfg.OpencodeBinary, "opencode") {
 		adapters["opencode"] = opencode.New(cfg.OpencodeBinary)
 	}
+	if found(cfg.AntigravityBinary, "agy") {
+		adapters["antigravity"] = antigravity.New(cfg.AntigravityBinary)
+	}
 	if len(adapters) == 0 {
 		broker.Close()
-		return nil, fmt.Errorf("none of claude, codex or opencode was found on PATH — run `deck doctor`")
+		return nil, fmt.Errorf("none of claude, codex, opencode or antigravity was found on PATH — run `deck doctor`")
 	}
 	if adapters[cfg.DefaultAgent] == nil {
 		for _, k := range config.Kinds {
@@ -92,17 +97,27 @@ func found(configured, def string) bool {
 }
 
 // MCPApprove is the stdio MCP server Claude Code launches for
-// --permission-prompt-tool. The broker token arrives via the environment,
-// never on the command line.
+// --permission-prompt-tool. The broker token arrives via the environment, or
+// in a file named by --token-file for CLIs that would otherwise keep it in
+// their own config; never on the command line.
 func MCPApprove(args []string) error {
 	fs := flag.NewFlagSet("mcp-approve", flag.ContinueOnError)
 	addr := fs.String("addr", "", "broker address")
 	id := fs.String("agent", "", "agent id")
+	tokenFile := fs.String("token-file", "", "file holding the broker token")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *addr == "" || *id == "" {
 		return fmt.Errorf("mcp-approve: --addr and --agent are required")
 	}
-	return approve.MCPServe(os.Stdin, os.Stdout, *addr, approve.TokenFromEnv(), *id)
+	token := approve.TokenFromEnv()
+	if *tokenFile != "" {
+		b, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			return fmt.Errorf("mcp-approve: %w", err)
+		}
+		token = strings.TrimSpace(string(b))
+	}
+	return approve.MCPServe(os.Stdin, os.Stdout, *addr, token, *id)
 }

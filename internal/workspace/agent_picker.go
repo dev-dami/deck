@@ -15,7 +15,7 @@ type EffortChoice struct {
 
 // ModelChoice is one model an agent CLI offers, as the model picker shows it.
 type ModelChoice struct {
-	Kind        string // "claude", "codex", "opencode"
+	Kind        string // "claude", "codex", "opencode", "antigravity"
 	ID          string // passed to the CLI; "" = the CLI's default
 	Name        string
 	Description string

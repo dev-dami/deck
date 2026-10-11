@@ -24,7 +24,8 @@ var (
 	cache = map[string]image.Image{}
 )
 
-// Logo is the logo of an agent kind ("claude", "codex", "opencode"), or false.
+// Logo is the logo of an agent kind ("claude", "codex", "opencode"), or
+// false when the kind has no logo yet ("antigravity").
 func Logo(kind string) (image.Image, bool) {
 	mu.Lock()
 	defer mu.Unlock()

@@ -61,11 +61,12 @@ var (
 // Agent tints: each agent's mark and name are drawn in its own CLI's colour,
 // so speakers in a shared thread are told apart at a glance.
 var (
-	Claude   = lipgloss.Color("#D97757") // Claude's spark
-	Codex    = lipgloss.Color("#8C9EFF") // the Codex logo's blue
-	Opencode = lipgloss.Color("#E4E0DF") // OpenCode's monochrome mark
-	Iris     = Codex
-	Clay     = Claude
+	Claude      = lipgloss.Color("#D97757") // Claude's spark
+	Codex       = lipgloss.Color("#8C9EFF") // the Codex logo's blue
+	Opencode    = lipgloss.Color("#E4E0DF") // OpenCode's monochrome mark
+	Antigravity = lipgloss.Color("#A78BFA") // Antigravity's violet
+	Iris        = Codex
+	Clay        = Claude
 )
 
 // Light grounds and inks, for the light theme.
@@ -88,7 +89,7 @@ var (
 	LightIris  = lipgloss.Color("#3D4BE0")
 )
 
-// Tint is an agent kind's colour ("claude", "codex", "opencode").
+// Tint is an agent kind's colour ("claude", "codex", "opencode", "antigravity").
 func Tint(kind string) color.Color {
 	switch kind {
 	case "claude":
@@ -97,13 +98,15 @@ func Tint(kind string) color.Color {
 		return Codex
 	case "opencode":
 		return Opencode
+	case "antigravity":
+		return Antigravity
 	}
 	return Muted
 }
 
 // Mark is how an agent kind is drawn: the mark its own CLI uses in the
-// terminal (Claude Code's ✻, Codex CLI's >_, OpenCode's hollow block ▯), ◆
-// for anything else.
+// terminal (Claude Code's ✻, Codex CLI's >_, OpenCode's hollow block ▯,
+// Antigravity's ◎), ◆ for anything else.
 func Mark(kind string) string {
 	switch kind {
 	case "claude":
@@ -112,6 +115,8 @@ func Mark(kind string) string {
 		return ">_"
 	case "opencode":
 		return "▯"
+	case "antigravity":
+		return "◎"
 	}
 	return "◆"
 }
@@ -123,7 +128,7 @@ var named = map[string]color.Color{
 	"mint": Mint, "teal": Teal, "deepteal": DeepTeal, "seafoam": Seafoam,
 	"amber": Amber, "honey": Honey, "coral": Coral, "ember": Ember, "moss": Moss, "fern": Fern,
 	"sky": Sky, "dusk": Dusk, "plum": Plum, "addbg": AddBg, "delbg": DelBg,
-	"claude": Claude, "codex": Codex, "opencode": Opencode,
+	"claude": Claude, "codex": Codex, "opencode": Opencode, "antigravity": Antigravity,
 }
 
 // Hex is a colour as "#rrggbb".
