@@ -135,7 +135,7 @@ func TestSettingsBinaryRowsAreReadOnly(t *testing.T) {
 	require.Equal(t, "codex not found", rows[5].value)
 	require.Nil(t, rows[4].change)
 
-	for range 3 {
+	for range 4 {
 		press(s, tea.KeyDown)
 	}
 	require.Nil(t, press(s, tea.KeyEnter))
