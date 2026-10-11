@@ -13,7 +13,7 @@ import (
 // newTestUserItem builds a UserMessageItem carrying text.
 func newTestUserItem(t *testing.T, text string) *UserMessageItem {
 	t.Helper()
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	msg := &message.Message{
 		ID:    "user-1",
 		Role:  message.User,

@@ -11,7 +11,7 @@ import (
 
 func TestStyleAnswerMultilineFreeText(t *testing.T) {
 	t.Parallel()
-	s := styles.CharmtonePantera()
+	s := styles.DeckDark()
 	sty := &s
 
 	answer := "User provided: cool flag\n500\nForensics Steganography"
@@ -25,7 +25,7 @@ func TestStyleAnswerMultilineFreeText(t *testing.T) {
 
 func TestStyleAnswerSelectionPlusFreeText(t *testing.T) {
 	t.Parallel()
-	s := styles.CharmtonePantera()
+	s := styles.DeckDark()
 	sty := &s
 
 	answer := "User selected: [\"speed\",\"readability\"]\nUser provided: maintainability"

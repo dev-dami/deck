@@ -15,7 +15,7 @@ import (
 )
 
 func newTestPlanHandoff() *PlanHandoffInline {
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	return NewPlanHandoffInline(&common.Common{Styles: &sty})
 }
 
@@ -238,7 +238,7 @@ func TestPlanHandoffAdaptiveChoiceLayout(t *testing.T) {
 func TestPlanHandoffChoiceQuestionBadgeFollowsFocus(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	p := newTestPlanHandoff()
 
 	p.SetFocused(true)
@@ -284,7 +284,7 @@ func TestPlanHandoffBlurredViewKeepsChoiceLayout(t *testing.T) {
 	require.Contains(t, plain, "Code with YOLO")
 	require.Contains(t, plain, "Revise plan")
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	focusedBg := sty.Button.Focused.GetBackground()
 	inactiveBg := sty.Button.Inactive.GetBackground()
 	require.NotEqual(t, inactiveBg, sty.Button.Blurred.GetBackground(),

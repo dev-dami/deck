@@ -16,7 +16,7 @@ import (
 func TestRenderedInlineCodeHasNoVisibleBackticks(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 
 	render := func(t *testing.T, r *glamour.TermRenderer, src string) string {
 		t.Helper()

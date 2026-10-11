@@ -80,7 +80,7 @@ func TestAllBuiltinThemes_DoNotPanic(t *testing.T) {
 }
 
 func TestCloneDoesNotAlias(t *testing.T) {
-	s := CharmtonePantera()
+	s := DeckDark()
 	clone := s.Clone()
 
 	origColor := s.Markdown.Document.Color

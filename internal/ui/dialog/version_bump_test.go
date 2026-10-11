@@ -3,7 +3,6 @@ package dialog
 import (
 	"testing"
 
-	"charm.land/catwalk/pkg/catwalk"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/ui/list"
 	"github.com/dev-dami/deck/internal/ui/styles"
@@ -61,7 +60,7 @@ func equivMatch(seed fuzzy.Match) fuzzy.Match {
 func TestCommandItem_MutatorsBumpVersion(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	item := NewCommandItem(&sty, "id", "Title", "ctrl+t", nil)
 
 	requireBump(t, "SetFocused[true]", item, func() {
@@ -96,51 +95,12 @@ func TestCommandItem_MutatorsBumpVersion(t *testing.T) {
 	})
 }
 
-// TestModelItem_MutatorsBumpVersion covers F6 §4.5 for the model
-// picker items.
-func TestModelItem_MutatorsBumpVersion(t *testing.T) {
-	t.Parallel()
-
-	sty := styles.CharmtonePantera()
-	prov := catwalk.Provider{ID: "openai", Name: "OpenAI"}
-	model := catwalk.Model{ID: "gpt-4", Name: "GPT-4"}
-	item := NewModelItem(&sty, prov, model, ModelTypeLarge, true)
-
-	requireBump(t, "SetFocused[true]", item, func() {
-		item.SetFocused(true)
-	})
-	requireNoBump(t, "SetFocused[true again]", item, func() {
-		item.SetFocused(true)
-	})
-
-	match := fuzzy.Match{
-		Str:            "GPT-4",
-		Index:          0,
-		Score:          5,
-		MatchedIndexes: []int{0, 1, 2},
-	}
-	requireBump(t, "SetMatch[new]", item, func() {
-		item.SetMatch(match)
-	})
-	requireNoBump(t, "SetMatch[same]", item, func() {
-		item.SetMatch(equivMatch(match))
-	})
-	requireBump(t, "SetMatch[different]", item, func() {
-		item.SetMatch(fuzzy.Match{
-			Str:            "GPT-4",
-			Index:          0,
-			Score:          5,
-			MatchedIndexes: []int{1},
-		})
-	})
-}
-
 // TestSessionItem_MutatorsBumpVersion covers F6 §4.5 for the
 // sessions dialog items.
 func TestSessionItem_MutatorsBumpVersion(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	item := &SessionItem{
 		Versioned: list.NewVersioned(),
 		Session:   session.Session{ID: "sess-1", Title: "My Session"},
@@ -172,48 +132,6 @@ func TestSessionItem_MutatorsBumpVersion(t *testing.T) {
 			Index:          0,
 			Score:          5,
 			MatchedIndexes: []int{3, 4},
-		})
-	})
-}
-
-// TestReasoningItem_MutatorsBumpVersion covers F6 §4.5 for the
-// reasoning effort dialog items.
-func TestReasoningItem_MutatorsBumpVersion(t *testing.T) {
-	t.Parallel()
-
-	sty := styles.CharmtonePantera()
-	item := &ReasoningItem{
-		Versioned: list.NewVersioned(),
-		effort:    "medium",
-		title:     "Medium",
-		t:         &sty,
-	}
-
-	requireBump(t, "SetFocused[true]", item, func() {
-		item.SetFocused(true)
-	})
-	requireNoBump(t, "SetFocused[true again]", item, func() {
-		item.SetFocused(true)
-	})
-
-	match := fuzzy.Match{
-		Str:            "Medium",
-		Index:          0,
-		Score:          5,
-		MatchedIndexes: []int{0, 1, 2},
-	}
-	requireBump(t, "SetMatch[new]", item, func() {
-		item.SetMatch(match)
-	})
-	requireNoBump(t, "SetMatch[same]", item, func() {
-		item.SetMatch(equivMatch(match))
-	})
-	requireBump(t, "SetMatch[different]", item, func() {
-		item.SetMatch(fuzzy.Match{
-			Str:            "Medium",
-			Index:          0,
-			Score:          5,
-			MatchedIndexes: []int{2, 3},
 		})
 	})
 }

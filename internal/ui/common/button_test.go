@@ -11,7 +11,7 @@ import (
 func TestButtonHitCompositorLayouts(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	buttons := []ButtonOpts{
 		{Text: "Implement", Padding: 1, UnderlineIndex: -1},
 		{Text: "Request changes", Padding: 1, UnderlineIndex: -1},

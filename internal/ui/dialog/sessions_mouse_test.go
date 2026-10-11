@@ -32,7 +32,7 @@ func (w *sessionMouseWorkspace) AgentIsReady() bool {
 func newSessionMouseDialog(t *testing.T, sessions []session.Session, selectedSessionID string) *Session {
 	t.Helper()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	dialog, err := NewSessions(&common.Common{
 		Workspace: &sessionMouseWorkspace{sessions: sessions},
 		Styles:    &sty,

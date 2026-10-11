@@ -16,7 +16,7 @@ import (
 func TestEditErrorWithoutDiffHasNoTrailingBlank(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	// Metadata that parses but carries no old/new content, which is what a
 	// pre-edit refusal leaves behind.
 	const noDiffMeta = `{"hook":{"hooks":[{"name":"wakatime","event":"PreToolUse","duration_ms":12}]}}`

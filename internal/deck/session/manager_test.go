@@ -169,7 +169,7 @@ func TestRename(t *testing.T) {
 	if err := r.m.Rename(a, "auth"); err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []string{"", "two words", "@x", "auth", "AUTH", a, "all", "user", "codex"} {
+	for _, bad := range []string{"", "two words", "@x", "$x", "auth", "AUTH", a, "all", "user", "codex"} {
 		if err := r.m.Rename(b, bad); err == nil {
 			t.Errorf("Rename(%q) should fail", bad)
 		}
@@ -181,7 +181,7 @@ func TestRename(t *testing.T) {
 		t.Fatal("unknown agent")
 	}
 	// the new name addresses the member
-	if err := r.m.Post(tid, "@auth hello"); err != nil {
+	if err := r.m.Post(tid, "$auth hello"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "auth to reply", func() bool { return r.c.turnDones(a) == 1 })
@@ -232,9 +232,6 @@ func TestUnknownKind(t *testing.T) {
 	}
 	if got := r.m.Kinds(); len(got) != 2 || got[0] != "claude" || got[1] != "codex" {
 		t.Fatalf("kinds = %v", got)
-	}
-	if err := r.m.Post(tid, "@who hi"); err == nil || !strings.Contains(err.Error(), "who") {
-		t.Fatalf("unknown mention error = %v", err)
 	}
 }
 
@@ -291,7 +288,7 @@ func TestPostAddsMemberForKindMentionAndBriefsItOnTheWholeThread(t *testing.T) {
 	if sp.MCP == nil || sp.MCP.Name != "deck" {
 		t.Errorf("MCP = %+v", sp.MCP)
 	}
-	has(t, sp.Instructions, `"codex"`, "claude", "tester", "send_message", "read_thread", "@name")
+	has(t, sp.Instructions, `"codex"`, "claude", "tester", "send_message", "read_thread", "$name")
 	lacks(t, sp.Instructions, "fix the store", "Store now drops")
 	if len(sp.Instructions) > 1500 {
 		t.Errorf("Instructions are %d bytes", len(sp.Instructions))
@@ -334,9 +331,6 @@ func TestAddressingRoutesAndFansOut(t *testing.T) {
 	// mention-only just adds
 	if err := r.m.Post(tid, "$claude"); err != nil {
 		t.Fatal(err)
-	}
-	if err := r.m.Post(tid, "@nobody hi"); err == nil {
-		t.Fatal("unknown name should fail")
 	}
 	users := r.c.events(func(e EventMsg) bool { return e.FromUser() })
 	if len(users) != 4 || fmt.Sprint(users[3].To) != "[claude codex]" {
@@ -664,7 +658,7 @@ func TestEchoLoopIsDroppedWithNotice(t *testing.T) {
 }
 
 func TestMentionOfSelfOrUnknownIsNotRelayed(t *testing.T) {
-	r := newRig(t, []fake.Script{turn(say("$claude note to self\n\n@nobody hello\n\n@param is a thing"), finish())}, nil)
+	r := newRig(t, []fake.Script{turn(say("$claude note to self\n\n$nobody hello\n\n$param is a thing"), finish())}, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")

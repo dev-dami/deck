@@ -38,7 +38,7 @@ func requireBump(t *testing.T, name string, item versionedItem, mutate func()) {
 func TestAssistantMessageItem_MutatorsBumpVersion(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	build := func(thinking, content string) *message.Message {
 		parts := []message.ContentPart{
 			message.ReasoningContent{
@@ -76,7 +76,7 @@ func TestAssistantMessageItem_MutatorsBumpVersion(t *testing.T) {
 func TestUserMessageItem_MutatorsBumpVersion(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	r := attachments.NewRenderer(sty.Attachments)
 	msg := &message.Message{
 		ID:   "u-mut",
@@ -102,7 +102,7 @@ func TestUserMessageItem_MutatorsBumpVersion(t *testing.T) {
 func TestAssistantInfoItem_VersionedAndFinished(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	cfg := &config.Config{}
 	msg := &message.Message{
 		ID:    "info",
@@ -122,7 +122,7 @@ func TestAssistantInfoItem_VersionedAndFinished(t *testing.T) {
 func TestBaseToolMessageItem_MutatorsBumpVersion(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	tc := message.ToolCall{ID: "tc1", Name: "bash", Input: "{}", Finished: false}
 	item := NewToolMessageItem(&sty, "msg", tc, nil, false, "")
 
@@ -170,7 +170,7 @@ func TestBaseToolMessageItem_MutatorsBumpVersion(t *testing.T) {
 func TestAssistantMessageItem_AdvanceBumpsVersion(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	streaming := &message.Message{
 		ID:   "spin",
 		Role: message.Assistant,
@@ -211,7 +211,7 @@ func TestAssistantMessageItem_AdvanceBumpsVersion(t *testing.T) {
 func TestAssistantMessageItem_FinishedTransition(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 
 	// Streaming: no finish part, no content yet — isSpinning == true.
 	streaming := &message.Message{
@@ -243,7 +243,7 @@ func TestAssistantMessageItem_FinishedTransition(t *testing.T) {
 func TestUserMessageItem_FinishedAlwaysTrue(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	r := attachments.NewRenderer(sty.Attachments)
 	msg := &message.Message{
 		ID:    "u-fin",
@@ -266,7 +266,7 @@ func TestUserMessageItem_FinishedAlwaysTrue(t *testing.T) {
 func TestAgentToolMessageItem_NestedToolMutatorsBumpVersion(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	parent := message.ToolCall{ID: "agent-parent", Name: "agent", Input: `{}`, Finished: false}
 	item := NewAgentToolMessageItem(&sty, parent, nil, false)
 
@@ -303,7 +303,7 @@ func TestAgentToolMessageItem_NestedToolMutatorsBumpVersion(t *testing.T) {
 func TestAgenticFetchToolMessageItem_NestedToolMutatorsBumpVersion(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	parent := message.ToolCall{ID: "fetch-parent", Name: "agentic_fetch", Input: `{}`, Finished: false}
 	item := NewAgenticFetchToolMessageItem(&sty, parent, nil, false)
 
@@ -341,7 +341,7 @@ func TestAgenticFetchToolMessageItem_NestedToolMutatorsBumpVersion(t *testing.T)
 func TestAgentToolMessageItem_NestedChildInPlaceMutationBumpsParent(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	parent := message.ToolCall{ID: "agent-parent", Name: "agent", Input: `{}`, Finished: false}
 	item := NewAgentToolMessageItem(&sty, parent, nil, false)
 
@@ -370,7 +370,7 @@ func TestAgentToolMessageItem_NestedChildInPlaceMutationBumpsParent(t *testing.T
 func TestAgenticFetchToolMessageItem_NestedChildInPlaceMutationBumpsParent(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	parent := message.ToolCall{ID: "fetch-parent", Name: "agentic_fetch", Input: `{}`, Finished: false}
 	item := NewAgenticFetchToolMessageItem(&sty, parent, nil, false)
 
@@ -413,7 +413,7 @@ func requireNoBump(t *testing.T, name string, item versionedItem, mutate func())
 func TestBaseToolMessageItem_AdvanceBumpsVersion(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	tc := message.ToolCall{ID: "tc-spin", Name: "bash", Input: "{}", Finished: false}
 	item := NewToolMessageItem(&sty, "msg", tc, nil, false, "")
 	v := item.(versionedItem)
@@ -447,7 +447,7 @@ func TestBaseToolMessageItem_AdvanceBumpsVersion(t *testing.T) {
 func TestAgentToolMessageItem_AdvanceBumpsVersion(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	parentTC := message.ToolCall{ID: "agent-parent", Name: "agent", Input: `{}`, Finished: false}
 	parent := NewAgentToolMessageItem(&sty, parentTC, nil, false)
 
@@ -482,7 +482,7 @@ func TestAgentToolMessageItem_AdvanceBumpsVersion(t *testing.T) {
 func TestAgenticFetchToolMessageItem_AdvanceBumpsVersion(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	parentTC := message.ToolCall{ID: "fetch-parent", Name: "agentic_fetch", Input: `{}`, Finished: false}
 	parent := NewAgenticFetchToolMessageItem(&sty, parentTC, nil, false)
 
@@ -514,7 +514,7 @@ func TestAgenticFetchToolMessageItem_AdvanceBumpsVersion(t *testing.T) {
 func TestBaseToolMessageItem_FinishedTransition(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	tc := message.ToolCall{ID: "tc-fin", Name: "bash", Input: "{}", Finished: false}
 	item := NewToolMessageItem(&sty, "msg", tc, nil, false, "")
 	require.False(t, item.Finished(), "running tool must not be Finished()")

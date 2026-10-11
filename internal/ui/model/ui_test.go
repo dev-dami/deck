@@ -211,7 +211,7 @@ func TestToggleInputMode(t *testing.T) {
 
 func newPlanUI(t *testing.T, sessionID string) (*UI, *testWorkspace) {
 	t.Helper()
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	cfg := &config.Config{
 		Providers: csync.NewMap[string, config.ProviderConfig](),
 	}
@@ -268,7 +268,7 @@ func TestHandlePlanHandoff_MarkerOpensInline(t *testing.T) {
 func TestToggleSidebarKeyBinding(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	ws := &testWorkspace{cfg: &config.Config{
 		Providers: csync.NewMap[string, config.ProviderConfig](),
 	}}

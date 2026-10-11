@@ -15,7 +15,7 @@ import (
 )
 
 func newTestRenderer() *Renderer {
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	return NewRenderer(sty.Attachments)
 }
 
@@ -515,7 +515,7 @@ func TestRender_MoreHintUsesTheThemeStyle(t *testing.T) {
 
 	n := hintCount(out)
 	require.Positive(t, n, "width 60 must overflow for this to mean anything")
-	want := styles.CharmtonePantera().Attachments.More.Render(fmt.Sprintf("%d more…", n))
+	want := styles.DeckDark().Attachments.More.Render(fmt.Sprintf("%d more…", n))
 	require.Contains(t, want, "\x1b[", "the theme's hint style must actually set a color")
 	require.Contains(t, out, want, "the row must render the hint through the theme style")
 }
@@ -578,7 +578,7 @@ func TestRender_LoneChipTrimsItsNameToKeepTheHint(t *testing.T) {
 	atts := overflowFixture()
 	full := chipWidth(r, "file-0.txt")
 
-	hint := lipgloss.Width(styles.CharmtonePantera().Attachments.More.
+	hint := lipgloss.Width(styles.DeckDark().Attachments.More.
 		Render(fmt.Sprintf("%d more…", len(atts)-1)))
 	width := full + hint - 1
 

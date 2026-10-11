@@ -6,14 +6,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/dev-dami/deck/internal/csync"
-	"github.com/dev-dami/deck/internal/oauth"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
+
+// resetProviderState clears the memoized provider catalogue between tests.
+func resetProviderState() {
+	providerOnce = sync.Once{}
+	providerList = nil
+	providerErr = nil
+	catwalkSyncer = &catwalkSync{}
+}
 
 func TestConfigStore_ConfigPath_GlobalAlwaysWorks(t *testing.T) {
 	t.Parallel()
@@ -546,186 +554,6 @@ func TestSetConfigFields_AutoReloadsAtomically(t *testing.T) {
 
 	// Verify both fields are reflected in memory.
 	require.True(t, store.config.Options.Debug)
-}
-
-func TestLoadTokenFromDisk_ReturnsNewerToken(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "deck.json")
-
-	// Create config file with a newer token on disk
-	configContent := `{
-		"providers": {
-			"hyper": {
-				"oauth": {
-					"access_token": "newer-token-from-disk",
-					"refresh_token": "refresh-abc",
-					"expires_in": 3600,
-					"expires_at": 9999999999
-				}
-			}
-		}
-	}`
-	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0o600))
-
-	store := &ConfigStore{
-		config:         &Config{},
-		globalDataPath: configPath,
-	}
-
-	token, err := store.loadTokenFromDisk(ScopeGlobal, "hyper")
-	require.NoError(t, err)
-	require.NotNil(t, token)
-	require.Equal(t, "newer-token-from-disk", token.AccessToken)
-	require.Equal(t, "refresh-abc", token.RefreshToken)
-	require.Equal(t, 3600, token.ExpiresIn)
-	require.Equal(t, int64(9999999999), token.ExpiresAt)
-}
-
-func TestLoadTokenFromDisk_ReturnsNilWhenSameToken(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "deck.json")
-
-	// Create config file with the same token
-	configContent := `{
-		"providers": {
-			"hyper": {
-				"oauth": {
-					"access_token": "same-token",
-					"refresh_token": "refresh-abc",
-					"expires_in": 3600,
-					"expires_at": 9999999999
-				}
-			}
-		}
-	}`
-	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0o600))
-
-	store := &ConfigStore{
-		config:         &Config{},
-		globalDataPath: configPath,
-	}
-
-	token, err := store.loadTokenFromDisk(ScopeGlobal, "hyper")
-	require.NoError(t, err)
-	require.NotNil(t, token)
-	require.Equal(t, "same-token", token.AccessToken)
-}
-
-func TestLoadTokenFromDisk_ReturnsNilWhenFileMissing(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "nonexistent.json")
-
-	store := &ConfigStore{
-		config:         &Config{},
-		globalDataPath: configPath,
-	}
-
-	token, err := store.loadTokenFromDisk(ScopeGlobal, "hyper")
-	require.NoError(t, err)
-	require.Nil(t, token)
-}
-
-func TestLoadTokenFromDisk_ReturnsNilWhenProviderMissing(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "deck.json")
-
-	// Create config file without the hyper provider
-	configContent := `{"providers": {"openai": {"api_key": "test-key"}}}`
-	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0o600))
-
-	store := &ConfigStore{
-		config:         &Config{},
-		globalDataPath: configPath,
-	}
-
-	token, err := store.loadTokenFromDisk(ScopeGlobal, "hyper")
-	require.NoError(t, err)
-	require.Nil(t, token)
-}
-
-func TestLoadTokenFromDisk_ReturnsNilWhenOAuthMissing(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "deck.json")
-
-	// Create config file with provider but no OAuth token
-	configContent := `{"providers": {"hyper": {"api_key": "test-key"}}}`
-	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0o600))
-
-	store := &ConfigStore{
-		config:         &Config{},
-		globalDataPath: configPath,
-	}
-
-	token, err := store.loadTokenFromDisk(ScopeGlobal, "hyper")
-	require.NoError(t, err)
-	require.Nil(t, token)
-}
-
-func TestRefreshOAuthToken_UsesDiskTokenWhenDifferent(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "deck.json")
-
-	// Create config file with a newer token on disk
-	configContent := `{
-		"providers": {
-			"hyper": {
-				"api_key": "newer-access-token",
-				"oauth": {
-					"access_token": "newer-access-token",
-					"refresh_token": "refresh-abc",
-					"expires_in": 3600,
-					"expires_at": 9999999999
-				}
-			}
-		}
-	}`
-	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0o600))
-
-	// Set up store with an older in-memory token
-	oldToken := &oauth.Token{
-		AccessToken:  "older-access-token",
-		RefreshToken: "refresh-abc",
-		ExpiresIn:    3600,
-		ExpiresAt:    time.Now().Add(-time.Hour).Unix(), // Expired
-	}
-
-	providers := csync.NewMap[string, ProviderConfig]()
-	providers.Set("hyper", ProviderConfig{
-		ID:         "hyper",
-		Name:       "Hyper",
-		APIKey:     oldToken.AccessToken,
-		OAuthToken: oldToken,
-	})
-
-	store := &ConfigStore{
-		config: &Config{
-			Providers: providers,
-		},
-		globalDataPath: configPath,
-	}
-
-	// Refresh should use the disk token without making an external call
-	err := store.RefreshOAuthToken(context.Background(), ScopeGlobal, "hyper")
-	require.NoError(t, err)
-
-	// Verify the in-memory token was updated to the disk token
-	updatedConfig, ok := store.config.Providers.Get("hyper")
-	require.True(t, ok)
-	require.Equal(t, "newer-access-token", updatedConfig.APIKey)
-	require.Equal(t, "newer-access-token", updatedConfig.OAuthToken.AccessToken)
-	require.Equal(t, "refresh-abc", updatedConfig.OAuthToken.RefreshToken)
 }
 
 // TestConfigStore_SetConfigFields_concurrentInProcess verifies that

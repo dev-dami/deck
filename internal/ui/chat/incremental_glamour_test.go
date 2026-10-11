@@ -17,7 +17,7 @@ import (
 // path into a "fresh" rendering path.
 func newTestRenderer(t *testing.T, width int) *glamour.TermRenderer {
 	t.Helper()
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStyles(sty.Markdown),
 		glamour.WithWordWrap(width),
@@ -831,7 +831,7 @@ func TestStreamingMarkdown_LinkRefDefinition(t *testing.T) {
 func TestAssistantStreamingContent_ResetOnClearCache(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	doc := "Para one.\n\nPara two.\n\nPara three."
 	msg := finishedAssistantMessage("stream-clear", doc)
 	item := NewAssistantMessageItem(&sty, msg).(*AssistantMessageItem)

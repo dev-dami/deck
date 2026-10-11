@@ -22,7 +22,7 @@ import (
 func TestToolParamListKeepsHighlightingAcrossWraps(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	// Long enough to break in the middle of the first quoted path.
 	cmd := `for p in ("providers/openrouter/language_model_hooks.go","openai"),("x/y.go","z")`
 	highlighted, err := common.SyntaxHighlightLexerName(&sty, cmd, "bash", nil)
@@ -66,7 +66,7 @@ func sgrPrefix(t *testing.T, rendered string) string {
 func TestToolParamListStylesTruncatedParams(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	long := strings.Repeat("abcdefghij", 20)
 
 	out := toolParamList(&sty, []string{long}, 30, nil)
@@ -83,7 +83,7 @@ func TestToolParamListStylesTruncatedParams(t *testing.T) {
 func TestToolHeaderStaysWithinWidth(t *testing.T) {
 	t.Parallel()
 
-	sty := styles.CharmtonePantera()
+	sty := styles.DeckDark()
 	opts := &ToolRenderOpts{ExpandedContent: true}
 	commands := []string{
 		"go test ./internal/ui/chat -run TestToolParamList -v && echo done",
