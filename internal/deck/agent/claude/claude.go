@@ -20,6 +20,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/approve"
+	"github.com/dev-dami/deck/internal/deck/brand"
 )
 
 // MCPToolFlagValue is the tool name passed to --permission-prompt-tool: server
@@ -102,6 +103,12 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 			r.mcpName = "deck"
 		}
 	}
+	settings, err := writeSettings(spec.Attribution)
+	if err != nil {
+		r.removeConfig()
+		return nil, err
+	}
+	r.settingsPath = settings
 	r.sessionID = spec.ResumeID
 	r.model = spec.Model
 	r.effort = spec.Effort
@@ -194,7 +201,10 @@ type run struct {
 	approvals <-chan agent.ApprovalRequest
 	done      chan struct{}
 	cfgPath   string
-	mcpName   string // server name in the MCP config ("deck")
+	// settingsPath is the --settings file: Deck's commit/PR attribution and
+	// plans folder in place of Claude's own.
+	settingsPath string
+	mcpName      string // server name in the MCP config ("deck")
 
 	tr *translator // used by the single active reader goroutine at a time
 
@@ -229,6 +239,9 @@ func (r *run) args(resume string) []string {
 		"--output-format", "stream-json",
 		"--verbose",
 		"--include-partial-messages",
+	}
+	if r.settingsPath != "" {
+		args = append(args, "--settings", r.settingsPath)
 	}
 	if r.cfgPath != "" {
 		// --strict-mcp-config: only Deck's server, not every MCP server in the
@@ -703,6 +716,35 @@ func (r *run) removeConfig() {
 	if r.cfgPath != "" {
 		os.Remove(r.cfgPath)
 	}
+	if r.settingsPath != "" {
+		os.Remove(r.settingsPath)
+	}
+}
+
+// writeSettings writes the --settings file. Commits and PRs Claude makes in
+// Deck credit Deck, and plan files go to ~/.deck/plans, not ~/.claude/plans.
+func writeSettings(attribution bool) (string, error) {
+	_ = os.MkdirAll(brand.PlansDir(), 0o755)
+	settings := map[string]any{"plansDirectory": brand.PlansDir()}
+	if attribution {
+		settings["attribution"] = map[string]string{"commit": brand.CommitTrailer, "pr": brand.PRFooter}
+		settings["includeCoAuthoredBy"] = false
+		// The guard's hooks are skipped by --no-verify, so Claude may not use it.
+		settings["permissions"] = map[string]any{"deny": []string{
+			"Bash(git commit --no-verify:*)", "Bash(git commit -n:*)",
+		}}
+	}
+	data, _ := json.Marshal(settings)
+	f, err := os.CreateTemp("", "deck-claude-settings-*.json")
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), f.Close()
 }
 
 // tailBuffer keeps the last max bytes written to it.

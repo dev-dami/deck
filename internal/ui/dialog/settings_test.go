@@ -129,10 +129,11 @@ func TestSettingsBinaryRowsAreReadOnly(t *testing.T) {
 		{Kind: "codex", Command: "codex"},
 	}})
 	rows := s.agentRows()
-	require.Len(t, rows, 3+len(deckconfig.Kinds))
-	require.Equal(t, "/usr/bin/claude", rows[3].value)
-	require.Equal(t, "codex not found", rows[4].value)
-	require.Nil(t, rows[3].change)
+	require.Len(t, rows, 4+len(deckconfig.Kinds))
+	require.Equal(t, "Deck attribution", rows[3].label)
+	require.Equal(t, "/usr/bin/claude", rows[4].value)
+	require.Equal(t, "codex not found", rows[5].value)
+	require.Nil(t, rows[4].change)
 
 	for range 3 {
 		press(s, tea.KeyDown)

@@ -56,6 +56,7 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 		AntigravityBinary: "agy",
 		DefaultMode:       "ask",
 		TrackChanges:      true,
+		DeckAttribution:   true,
 	}
 	if cfg != want {
 		t.Errorf("Load() = %+v\nwant %+v", cfg, want)
