@@ -519,6 +519,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	commands = append(commands,
 		NewCommandItem(c.com.Styles, "settings", "Settings", "ctrl+,", ActionOpenDialog{SettingsID}).WithAliases("preferences", "options"),
 		NewCommandItem(c.com.Styles, "usage", "Usage", UsageKey, ActionOpenDialog{UsageID}).WithAliases("cost", "tokens", "analytics", "limits", "traces"),
+		NewCommandItem(c.com.Styles, "team", "Team: link other Decks", "", ActionOpenDialog{SettingsTeamID}).WithAliases("peers", "pair", "teammate"),
 	)
 
 	// Add mouse support toggle.

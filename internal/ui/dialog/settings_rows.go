@@ -1,6 +1,7 @@
 package dialog
 
 import (
+	"image/color"
 	"slices"
 	"strings"
 
@@ -12,12 +13,17 @@ import (
 	"github.com/dev-dami/deck/internal/ui/tone"
 )
 
-// settingsRow is one option on the General or Agents page.
+// settingsRow is one option on the General, Agents or Team page.
 type settingsRow struct {
 	label string
 	value string
 	kind  string // an agent kind whose mark leads the value, if any
-	hint  string // shown under the rows while this one is selected
+	// mark leads the value when kind is unset (a status dot), in markColor.
+	mark      string
+	markColor color.Color
+	section   string // the heading the row sits under; "" for none
+	peer      string // the peer a Team page row is about
+	hint      string // shown under the rows while this one is selected
 	// change steps the option (dir is 1 for the next value, -1 for the
 	// previous; a switch flips either way) and returns what the UI must
 	// do. nil for a read-only row.
@@ -61,6 +67,8 @@ func (s *Settings) rows() []settingsRow {
 		return s.generalRows()
 	case SettingsTabAgents:
 		return s.agentRows()
+	case SettingsTabTeam:
+		return s.teamRows()
 	}
 	return nil
 }
@@ -269,9 +277,12 @@ func (s *Settings) renderRow(r settingsRow, selected bool, width int) string {
 	labelW := min(settingsLabelWidth, text/2)
 	label := padRight(ansi.Truncate(r.label, labelW, "…"), labelW)
 
-	mark := ""
-	if r.kind != "" {
-		mark = padRight(tone.Mark(r.kind), settingsMarkWidth) + " "
+	mark, markColor := "", r.markColor
+	switch {
+	case r.kind != "":
+		mark, markColor = padRight(tone.Mark(r.kind), settingsMarkWidth)+" ", tone.Tint(r.kind)
+	case r.mark != "":
+		mark = padRight(r.mark, settingsMarkWidth) + " "
 	}
 	valueW := max(0, text-labelW-ansi.StringWidth(mark))
 	value := padRight(ansi.Truncate(r.value, valueW, "…"), valueW)
@@ -279,8 +290,8 @@ func (s *Settings) renderRow(r settingsRow, selected bool, width int) string {
 	if selected {
 		return t.Dialog.SelectedItem.Render(label + mark + value)
 	}
-	if mark != "" {
-		mark = lipgloss.NewStyle().Foreground(tone.Tint(r.kind)).Render(mark)
+	if mark != "" && markColor != nil {
+		mark = lipgloss.NewStyle().Foreground(markColor).Render(mark)
 	}
 	valueStyle := t.Dialog.ListItem.InfoFocused
 	if r.change == nil {

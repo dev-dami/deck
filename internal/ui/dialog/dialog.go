@@ -43,6 +43,14 @@ type Dialog interface {
 	Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor
 }
 
+// TargetedMsg is a message for one dialog, by ID, whether or not it is in
+// front: the result of work a dialog started, which must reach it even when
+// another dialog opened on top of it meanwhile. The UI routes it with
+// [Overlay.UpdateDialog]; it is dropped when that dialog has closed.
+type TargetedMsg interface {
+	TargetDialog() string
+}
+
 // LoadingDialog is a dialog that can show a loading state.
 type LoadingDialog interface {
 	StartLoading() tea.Cmd
@@ -248,6 +256,15 @@ func (d *Overlay) Update(msg tea.Msg) tea.Msg {
 	}
 
 	return dialog.HandleMsg(msg)
+}
+
+// UpdateDialog hands msg to the dialog with the given ID, in front or not,
+// and returns its action; nil when no such dialog is open.
+func (d *Overlay) UpdateDialog(dialogID string, msg tea.Msg) Action {
+	if dialog := d.Dialog(dialogID); dialog != nil {
+		return dialog.HandleMsg(msg)
+	}
+	return nil
 }
 
 // StartLoading starts the loading state for the front dialog if it

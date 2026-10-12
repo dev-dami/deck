@@ -11,16 +11,20 @@ import (
 )
 
 // openSettingsDialog opens the settings dialog, on its Usage page when id
-// is [dialog.SettingsUsageID]. An open one is brought to the front on that
+// is [dialog.SettingsUsageID] and its Team page for
+// [dialog.SettingsTeamID]. An open one is brought to the front on that
 // page.
 func (m *UI) openSettingsDialog(id string) tea.Cmd {
 	tab := dialog.SettingsTabGeneral
-	if id == dialog.SettingsUsageID {
+	switch id {
+	case dialog.SettingsUsageID:
 		tab = dialog.SettingsTabUsage
+	case dialog.SettingsTeamID:
+		tab = dialog.SettingsTabTeam
 	}
 	if d, ok := m.dialog.Dialog(dialog.SettingsID).(*dialog.Settings); ok {
 		m.dialog.BringToFront(dialog.SettingsID)
-		if id == dialog.SettingsUsageID && d.Tab() != tab {
+		if id != dialog.SettingsID && d.Tab() != tab {
 			return d.SetTab(tab)
 		}
 		return nil
@@ -28,6 +32,16 @@ func (m *UI) openSettingsDialog(id string) tea.Cmd {
 	d := dialog.NewSettings(m.com, tab)
 	m.dialog.OpenDialog(d)
 	return d.InitialCmd()
+}
+
+// openPeerPairDialog opens the Add a teammate wizard over the settings, or
+// brings an open one to the front.
+func (m *UI) openPeerPairDialog() {
+	if m.dialog.ContainsDialog(dialog.PeerPairID) {
+		m.dialog.BringToFront(dialog.PeerPairID)
+		return
+	}
+	m.dialog.OpenDialog(dialog.NewPeerPair(m.com))
 }
 
 // openUsageDialog opens the full Usage view, or brings an open one to the
