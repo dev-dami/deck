@@ -206,7 +206,17 @@ after key sorting).
   The code travels in the QR URL's fragment (`#pair=…`) and is removed from
   history by the page before anything else runs.
 - The token is sent only in `hello`; it is never in a URL, header or cookie.
-  The phone stores it in `localStorage` keyed by `server_id`.
+  The phone stores it in `localStorage` as `deck.remote.token.<server_id>`,
+  with `deck.remote.server` naming the install last paired at this origin
+  (the page learns `server_id` from the pair response, not from `health`).
+  A `token_invalid` or 4403 clears that install's token only.
+- An invite that names another host:port is not pasted cross-origin: the page
+  shows a link to `https://host:port/#pair=<code>&fp=<fp>` instead (R7).
+- Close reasons: 4401 always carries the reason `token_invalid`; 4429 carries
+  a bare integer, the seconds to wait. The client forgets a token only on
+  4403 or a 4401 whose reason starts with `token_invalid`; every other 4401
+  and every 4429 backs off (the number as a floor, jittered, capped at 60 s)
+  and keeps the token.
 
 ### 3.6 Headers and limits (server)
 
@@ -242,12 +252,24 @@ touches `internal/`.
 - Connects, sends `hello`, and treats 4429 as back off (jittered, capped at
   60 s) with the token kept; treats 4401 `token_invalid` and 4403 as forget
   the token and show pairing; treats `resync` and a fresh epoch as refetch.
-- Re-sends focus through `hello.resume.focus`, and refetches the focused
-  session's messages after any reconnect.
+- Sends `hello.resume.focus` only while a session is open; after a resumed
+  reconnect refetches that session's messages, queue and roster; after a new
+  epoch or `resync` refetches everything and sends `sessions.focus` again.
+- `chat.send` is retried only on timeout or disconnect, up to 3 times, with
+  the one idempotency key minted for that message. `messages.list` is asked
+  with `limit: 100` and `before: <cursor>`.
+- Decodes a Go `null` slice or map as empty and a `{}` result with no `r` as
+  empty; `Session.mode` is accepted as any string so an unexpected mode never
+  drops a session, while `mode.*` is strict.
 - Renders nothing as HTML (the lint stays); keeps only `http(s)` links;
   opens them with `rel="noopener noreferrer"`.
 - Takes every colour from `welcome.server.theme`; has no palette of its own
-  beyond neutral fallbacks used only before `welcome`.
+  beyond neutral-grey fallbacks used only before `welcome`. The launcher
+  icons are the brand mark, not the palette. The page's meta CSP mirrors
+  §3.6 (less `frame-ancestors`, which only a header can set).
+- Pairing over https with a fingerprint shows it as SHA-256 colon-hex and
+  gates the code behind a checkbox (R9); https without one gates behind a
+  plain "I trust this connection"; plain http (loopback) pairs directly.
 - Validates every frame, entity and event at runtime against §3 and drops
   what fails with a console warning, never a crash.
 
