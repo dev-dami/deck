@@ -10,6 +10,7 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode"
 
 	"github.com/dev-dami/deck/internal/deck/config"
 )
@@ -60,13 +61,38 @@ func (c CLI) Fingerprint() error {
 	return nil
 }
 
+// EnvPairCode lets `deck peer add` take the code from the environment
+// instead of its prompt; a code on the command line shows in the process
+// list and the shell history.
+const EnvPairCode = "DECK_PEER_CODE"
+
+// Sanitize makes text that came from a peer safe to print on a terminal:
+// control characters (ESC and the rest of C0 and C1, which drive terminal
+// escape sequences) and Unicode format characters (bidi overrides,
+// zero-width) become '?', newlines and tabs become spaces, and invalid UTF-8
+// becomes U+FFFD.
+func Sanitize(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n' || r == '\t':
+			return ' '
+		case unicode.IsControl(r) || unicode.Is(unicode.Cf, r):
+			return '?'
+		}
+		return r
+	}, s)
+}
+
 // PairArgs are the options of `deck peer pair`.
 type PairArgs struct {
-	Addr   string // where to listen
-	Name   string // name to pin the other Deck under; empty means the name it sends
-	Role   string
-	Yes    bool
-	Expiry time.Duration
+	Addr string // where to listen
+	Name string // name to pin the other Deck under; empty means the name it sends
+	Role string
+	Yes  bool
+	// Replace allows pinning over a different key already pinned under the
+	// name; without it that is refused, --yes or not.
+	Replace bool
+	Expiry  time.Duration
 	// Ready, when set, gets the listening address once the code is shown.
 	Ready func(addr, code string)
 }
@@ -99,7 +125,7 @@ func (c CLI) Pair(ctx context.Context, a PairArgs) error {
 	c.printf("Pairing code:  %s   (single use, valid %s)\n", code, expiry)
 	c.printf("This Deck:     %s  %s\n", self, id.Fingerprint())
 	c.printf("Listening on:  %s\n\n", ln.Addr())
-	c.printf("On the other Deck run:\n  deck peer add %s <this-host>:%s --code %s\n\n", self, portOf(ln.Addr()), code)
+	c.printf("On the other Deck run the line below and type the code when it asks\n(or set %s):\n  deck peer add %s <this-host>:%s\n\n", EnvPairCode, self, portOf(ln.Addr()))
 	if a.Ready != nil {
 		a.Ready(ln.Addr().String(), code)
 	}
@@ -114,13 +140,20 @@ func (c CLI) Pair(ctx context.Context, a PairArgs) error {
 	if !config.ValidPeerName(name) || name == self {
 		return fmt.Errorf("the other Deck calls itself %q, which cannot be used here; run pair again with --name", truncate(name, 40))
 	}
-	return c.pin(name, "", a.Role, res, a.Yes)
+	if err := c.pin(name, "", a.Role, res, a.Yes, a.Replace); err != nil {
+		return err
+	}
+	// Every pinned peer gets an explicit config row: inbound only, the
+	// role chosen here, and the default allow_inbound.
+	c.addRemote(name, "", a.Role)
+	return nil
 }
 
 // AddArgs are the options of `deck peer add`.
 type AddArgs struct {
 	Name, Addr, Code, Role string
 	Yes                    bool
+	Replace                bool // see PairArgs.Replace
 }
 
 // Add dials a Deck running `deck peer pair`, proves the code and pins it.
@@ -134,6 +167,9 @@ func (c CLI) Add(ctx context.Context, a AddArgs) error {
 	if a.Role != "" && a.Role != config.PeerRoleObserver && a.Role != config.PeerRoleContractor {
 		return fmt.Errorf("--role must be observer or contractor")
 	}
+	if a.Code == "" {
+		return fmt.Errorf("no pairing code: type it at the prompt or set %s", EnvPairCode)
+	}
 	id, err := LoadOrCreateIdentity(c.Dir)
 	if err != nil {
 		return err
@@ -142,37 +178,71 @@ func (c CLI) Add(ctx context.Context, a AddArgs) error {
 	if err != nil {
 		return err
 	}
-	if err := c.pin(a.Name, a.Addr, a.Role, res, a.Yes); err != nil {
+	if err := c.pin(a.Name, a.Addr, a.Role, res, a.Yes, a.Replace); err != nil {
 		return err
 	}
-	if c.ConfigPath != "" {
-		added, err := AddRemote(c.ConfigPath, a.Name, a.Addr)
-		switch {
-		case err != nil:
-			c.printf("Could not add %q to %s: %v\n", a.Name, c.ConfigPath, err)
-		case added:
-			c.printf("Added %q to peers.remote in %s (set peers.enabled to true to keep it connected).\n", a.Name, c.ConfigPath)
-		}
-	}
+	c.addRemote(a.Name, a.Addr, a.Role)
 	return nil
 }
 
+// addRemote records a newly pinned peer in the config, saying what it did.
+func (c CLI) addRemote(name, addr, role string) {
+	if c.ConfigPath == "" {
+		return
+	}
+	added, err := AddRemote(c.ConfigPath, name, addr, role)
+	switch {
+	case err != nil:
+		c.printf("Could not add %q to %s: %v\n", name, c.ConfigPath, err)
+	case added && addr != "":
+		c.printf("Added %q to peers.remote in %s (set peers.enabled to true to keep it connected).\n", name, c.ConfigPath)
+	case added:
+		c.printf("Added %q to peers.remote in %s (inbound only; it may run: %s).\n", name, c.ConfigPath, strings.Join(DefaultAllowInbound, ", "))
+	}
+}
+
+// checkReplace refuses to pin key fp over a different key already pinned
+// under name unless replace is set (--yes alone is not enough). The same
+// key again, e.g. to update the address, is fine.
+func (c CLI) checkReplace(name, fp string, replace bool) error {
+	old, ok, err := OpenStore(c.Dir).Get(name)
+	if err != nil {
+		return err
+	}
+	if !ok || replace || old.Fingerprint == fp {
+		return nil
+	}
+	return fmt.Errorf("%q is already pinned with another key (%s); if that Deck really has a new key, run again with --replace", name, old.Fingerprint)
+}
+
 // pin shows both fingerprints and pins the peer once confirmed.
-func (c CLI) pin(name, addr, role string, res PairResult, yes bool) error {
+func (c CLI) pin(name, addr, role string, res PairResult, yes, replace bool) error {
 	store := OpenStore(c.Dir)
-	c.printf("Code accepted by %s (calls itself %q).\n", res.RemoteAddr, truncate(res.PeerName, 40))
+	c.printf("Code accepted by %s (calls itself %q).\n", Sanitize(res.RemoteAddr), Sanitize(truncate(res.PeerName, 40)))
 	c.printf("  their fingerprint:  %s\n", res.PeerFingerprint)
 	c.printf("  this Deck:          %s\n", res.OwnFingerprint)
 	c.printf("Check that the other Deck shows the same two fingerprints.\n")
-	if old, ok, err := store.Get(name); err != nil {
+	if err := c.checkReplace(name, res.PeerFingerprint, replace); err != nil {
 		return err
-	} else if ok && old.Fingerprint != res.PeerFingerprint {
+	}
+	old, ok, err := store.Get(name)
+	if err != nil {
+		return err
+	}
+	swap := ok && old.Fingerprint != res.PeerFingerprint
+	if swap {
 		c.printf("Warning: this replaces the key pinned for %q (%s).\n", name, old.Fingerprint)
 	}
 	if !yes && !c.confirm(fmt.Sprintf("Pin %q?", name)) {
 		return errors.New("not pinned")
 	}
-	if err := store.Pin(NewPinned(name, addr, role, res.PeerKey)); err != nil {
+	p := NewPinned(name, addr, role, res.PeerKey)
+	if swap {
+		err = store.Replace(p)
+	} else {
+		err = store.Pin(p)
+	}
+	if err != nil {
 		return err
 	}
 	c.printf("Pinned %q.\n", name)
@@ -211,7 +281,7 @@ func (c CLI) List(ctx context.Context, probe bool) error {
 		} else {
 			state = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", p.Name, addr, p.Role, state, p.Fingerprint)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", p.Name, Sanitize(addr), Sanitize(p.Role), state, p.Fingerprint)
 	}
 	return tw.Flush()
 }
@@ -234,12 +304,17 @@ func (c CLI) Ping(ctx context.Context, name string) error {
 	}
 	r, err := Probe(ctx, id, pin, c.selfName(), 10*time.Second)
 	if err != nil {
-		return fmt.Errorf("ping %s: %w", name, err)
+		// The error can carry the peer's own text.
+		return fmt.Errorf("ping %s: %s", name, Sanitize(err.Error()))
 	}
 	c.printf("pong from %s in %s\n", name, r.Latency.Round(time.Microsecond))
-	c.printf("  tools:  %s\n", strings.Join(r.Tools, ", "))
+	tools := make([]string, len(r.Tools))
+	for i, t := range r.Tools {
+		tools[i] = Sanitize(truncate(t, 64))
+	}
+	c.printf("  tools:  %s\n", strings.Join(tools, ", "))
 	if r.Status != "" {
-		c.printf("  status: %s\n", truncate(r.Status, 400))
+		c.printf("  status: %s\n", Sanitize(truncate(r.Status, 400)))
 	}
 	return nil
 }

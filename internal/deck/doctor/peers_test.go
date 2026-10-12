@@ -70,7 +70,7 @@ func TestPeersSection(t *testing.T) {
 		"✓ vps       pinned SHA256:abcdefghijkl…, reachable at vps.example.com:7722 (12ms)",
 		"✓ laptop    pinned SHA256:abcdefghijkl…, dials in",
 		"✗ down      pinned SHA256:abcdefghijkl…, unreachable at down.example.com:7722: connection refused",
-		"✗ new       not paired — run: deck peer add new new.example.com:7722 --code <code>",
+		"✗ new       not paired — run: deck peer add new new.example.com:7722\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
@@ -78,6 +78,35 @@ func TestPeersSection(t *testing.T) {
 	}
 	if got := strings.Join(f.probed, ","); got != "vps,down" {
 		t.Errorf("probed %q, want only pinned dialable peers", got)
+	}
+}
+
+// TestPeersSectionStripsEscapes: a probe error can carry the peer's own
+// text, which must not reach the terminal as escape sequences.
+func TestPeersSectionStripsEscapes(t *testing.T) {
+	r := &fakeRunner{}
+	opts := baseOptions(t, r)
+	fp := "SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG"
+	opts.PeerChecker = &fakePeers{
+		fp: fp, path: "/x/id_ed25519",
+		pinned: map[string]string{"vps": fp},
+		probe:  map[string]error{"vps": errors.New("initialize: \x1b[2J\x1b]0;pwned\x07evil\u202etxt.exe\r\nnext")},
+	}
+	opts.Peers = &config.Peers{
+		Listen: config.PeerListen{Enabled: true, Addr: "0.0.0.0:7722"},
+		Remote: []config.PeerRemote{{Name: "vps", Addr: "vps.example.com:7722", Dial: true}},
+	}
+	out := runReport(t, opts)
+	for _, bad := range []string{"\x1b", "\x07", "\u202e", "\r"} {
+		if strings.Contains(out, bad) {
+			t.Fatalf("output has %q:\n%q", bad, out)
+		}
+	}
+	if !strings.Contains(out, "?[2J?]0;pwned?evil?txt.exe") {
+		t.Fatalf("sanitized error missing:\n%s", out)
+	}
+	if !strings.Contains(out, "! listen    0.0.0.0:7722  every interface") {
+		t.Fatalf("no wildcard warning:\n%s", out)
 	}
 }
 

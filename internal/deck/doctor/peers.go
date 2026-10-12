@@ -56,9 +56,12 @@ func peersReport(ctx context.Context, opts Options) string {
 		}
 	}
 
-	if p.Listen.Enabled {
+	switch {
+	case p.Listen.Enabled && p.Listen.AllInterfaces():
+		fmt.Fprintf(&b, "! %-8s  %s  every interface; set peers.listen.addr to one address (e.g. a WireGuard IP)\n", "listen", p.Listen.ListenAddr())
+	case p.Listen.Enabled:
 		fmt.Fprintf(&b, "  %-8s  %s\n", "listen", p.Listen.ListenAddr())
-	} else {
+	default:
 		fmt.Fprintf(&b, "  %-8s  off\n", "listen")
 	}
 
@@ -73,7 +76,7 @@ func peersReport(ctx context.Context, opts Options) string {
 			if addr == "" {
 				addr = "<host:port>"
 			}
-			fmt.Fprintf(&b, "✗ %-8s  not paired — run: deck peer add %s %s --code <code>\n", r.Name, r.Name, addr)
+			fmt.Fprintf(&b, "✗ %-8s  not paired — run: deck peer add %s %s\n", r.Name, r.Name, addr)
 			continue
 		}
 		short := shortFingerprint(pfp)
@@ -103,8 +106,10 @@ func shortFingerprint(fp string) string {
 	return fp
 }
 
+// oneLine squeezes s onto one line of at most n runes. s may be a peer's
+// text (a probe error), so terminal control characters are removed first.
 func oneLine(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
+	s = strings.Join(strings.Fields(peer.Sanitize(s)), " ")
 	if r := []rune(s); len(r) > n {
 		s = string(r[:n-1]) + "…"
 	}
