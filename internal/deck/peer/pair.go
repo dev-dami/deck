@@ -21,7 +21,8 @@ import (
 )
 
 // Pairing: `deck peer pair` listens and shows a one-time code, `deck peer add
-// <name> <addr> --code <code>` dials it. The two run an SSH handshake in which
+// <name> <addr>` dials it with the code typed at its prompt (or taken from
+// DECK_PEER_CODE, never the command line). The two run an SSH handshake in which
 // each side accepts any ed25519 key, then prove to each other that they know
 // the code over a "deck-pair" channel:
 //
@@ -48,7 +49,16 @@ const (
 	pairConnTimeout     = 30 * time.Second
 	pairMaxMessage      = 4 << 10
 	pairVersion         = 1
+	// At most pairMaxConns pairing connections are open at once, and
+	// pairMaxPerIP from one IP, so idle sockets cannot keep the real dialer
+	// out.
+	pairMaxConns = 8
+	pairMaxPerIP = 2
 )
+
+// pairHelloTimeout is how long a pairing connection has from connect to its
+// hello (a var for tests).
+var pairHelloTimeout = 5 * time.Second
 
 // codeAlphabet has no 0/O, 1/I/L or U, so a code read aloud survives.
 const codeAlphabet = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -166,10 +176,71 @@ type PairOptions struct {
 	Logger      *slog.Logger
 }
 
+// pairGate is the state ServePair's connections share: the per-IP and total
+// counts of connections not yet done, and the code's attempts. Proofs are
+// checked one at a time under vmu (the KDF is memory-hard, so they never run
+// side by side), and only a wrong mac uses an attempt: a connection that
+// stalls, speaks junk or never sends a hello costs nothing.
+type pairGate struct {
+	code string
+	max  int
+
+	mu      sync.Mutex
+	conns   map[net.Conn]struct{}
+	perIP   map[string]int
+	closing bool
+
+	vmu   sync.Mutex
+	fails int
+	used  bool // succeeded or burned: no more proofs are checked
+}
+
+// errPairClosed is a connection's error after another one used the code.
+var errPairClosed = errors.New("peer: pairing is over")
+
+func (g *pairGate) admit(raw net.Conn, ip string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closing || len(g.conns) >= pairMaxConns || g.perIP[ip] >= pairMaxPerIP {
+		return false
+	}
+	g.conns[raw] = struct{}{}
+	g.perIP[ip]++
+	return true
+}
+
+func (g *pairGate) release(raw net.Conn, ip string) {
+	raw.Close()
+	g.mu.Lock()
+	delete(g.conns, raw)
+	if g.perIP[ip]--; g.perIP[ip] <= 0 {
+		delete(g.perIP, ip)
+	}
+	g.mu.Unlock()
+}
+
+func (g *pairGate) closeAll() {
+	g.mu.Lock()
+	g.closing = true
+	for c := range g.conns {
+		c.Close()
+	}
+	g.mu.Unlock()
+}
+
+// pairDone is one connection's outcome.
+type pairDone struct {
+	res    PairResult
+	burned bool
+	err    error
+	remote string
+}
+
 // ServePair serves pairing on ln until one peer proves the code. The code
 // is single use: ServePair returns after the first success, after
 // MaxAttempts wrong codes, or when the code expires, and closes ln.
-// Connections are handled one at a time.
+// Connections are served side by side, each with pairHelloTimeout to reach
+// its proof, so idle connections cannot hold the listener.
 func ServePair(ctx context.Context, ln net.Listener, o PairOptions) (PairResult, error) {
 	defer ln.Close()
 	if o.Identity == nil {
@@ -190,60 +261,76 @@ func ServePair(ctx context.Context, ln net.Listener, o PairOptions) (PairResult,
 	}
 	ctx, cancel := context.WithTimeout(ctx, o.Expiry)
 	defer cancel()
-	var (
-		mu  sync.Mutex
-		cur net.Conn
-	)
-	stop := context.AfterFunc(ctx, func() {
+	g := &pairGate{code: code, max: o.MaxAttempts, conns: map[net.Conn]struct{}{}, perIP: map[string]int{}}
+	results := make(chan pairDone)
+	acceptErr := make(chan error, 1)
+	quit := make(chan struct{})
+	var wg sync.WaitGroup
+	defer func() {
+		close(quit)
 		ln.Close()
-		mu.Lock()
-		if cur != nil {
-			cur.Close()
-		}
-		mu.Unlock()
-	})
-	defer stop()
-
-	fails := 0
-	for {
-		raw, err := ln.Accept()
-		if err != nil {
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return PairResult{}, ErrPairExpired
+		g.closeAll()
+		wg.Wait()
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			raw, err := ln.Accept()
+			if err != nil {
+				acceptErr <- err
+				return
 			}
+			ip := lockKey(raw.RemoteAddr())
+			if !g.admit(raw, ip) {
+				raw.Close()
+				continue
+			}
+			wg.Add(1) // this goroutine still counts, so wg is not at zero
+			go func() {
+				defer wg.Done()
+				defer g.release(raw, ip)
+				res, burned, err := pairServeConn(raw, g, o)
+				select {
+				case results <- pairDone{res: res, burned: burned, err: err, remote: raw.RemoteAddr().String()}:
+				case <-quit:
+				}
+			}()
+		}
+	}()
+
+	over := func() error {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return ErrPairExpired
+		}
+		return ctx.Err()
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return PairResult{}, over()
+		case err := <-acceptErr:
 			if ctx.Err() != nil {
-				return PairResult{}, ctx.Err()
+				return PairResult{}, over()
 			}
 			return PairResult{}, err
-		}
-		mu.Lock()
-		cur = raw
-		mu.Unlock()
-		res, tried, err := pairServeConn(raw, code, o)
-		raw.Close()
-		if err == nil {
-			return res, nil
-		}
-		if ctx.Err() != nil {
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return PairResult{}, ErrPairExpired
+		case d := <-results:
+			if d.err == nil {
+				return d.res, nil
 			}
-			return PairResult{}, ctx.Err()
-		}
-		o.Logger.Debug("peer: pairing attempt failed", "remote", raw.RemoteAddr().String(), "error", err)
-		if tried {
-			fails++
-			if fails >= o.MaxAttempts {
+			o.Logger.Debug("peer: pairing attempt failed", "remote", d.remote, "error", d.err)
+			if d.burned {
 				return PairResult{}, ErrPairAttempts
 			}
 		}
 	}
 }
 
-// pairServeConn runs the listener's side on one connection. tried reports
-// whether the peer got as far as presenting a code.
-func pairServeConn(raw net.Conn, code string, o PairOptions) (res PairResult, tried bool, err error) {
-	_ = raw.SetDeadline(time.Now().Add(pairConnTimeout))
+// pairServeConn runs the listener's side on one connection. burned reports
+// that the code cannot be used any more after this connection failed: its
+// wrong proof was the last attempt, or its right one could not be answered.
+func pairServeConn(raw net.Conn, g *pairGate, o PairOptions) (res PairResult, burned bool, err error) {
+	_ = raw.SetDeadline(time.Now().Add(pairHelloTimeout))
 	cfg := &ssh.ServerConfig{
 		Config:                  baseSSHConfig(),
 		PublicKeyAuthAlgorithms: []string{ssh.KeyAlgoED25519},
@@ -297,14 +384,32 @@ func pairServeConn(raw net.Conn, code string, o PairOptions) (res PairResult, tr
 		return res, false, err
 	}
 	if err := json.Unmarshal(line, &hello); err != nil || hello.V != pairVersion || len(hello.MAC) == 0 {
-		return res, true, errors.New("peer: bad pairing hello")
+		// Not a guess at the code, so it uses no attempt.
+		return res, false, errors.New("peer: bad pairing hello")
 	}
+	// The hello is in: the rest (KDF, reply, the dialer reading it) gets the
+	// longer timeout.
+	_ = raw.SetDeadline(time.Now().Add(pairConnTimeout))
 	sid := sc.SessionID()
-	k := pairKey(code, sid)
+	g.vmu.Lock()
+	if g.used {
+		g.vmu.Unlock()
+		return res, false, errPairClosed
+	}
+	k := pairKey(g.code, sid)
 	want := pairMAC(k, "client", sid, o.Identity.PublicKey(), clientKey, hello.Name)
-	if !hmac.Equal(want, hello.MAC) {
+	ok := hmac.Equal(want, hello.MAC)
+	if ok {
+		g.used = true // single use, even if this connection fails from here
+	} else {
+		g.fails++
+		burned = g.fails >= g.max
+		g.used = burned
+	}
+	g.vmu.Unlock()
+	if !ok {
 		_ = writeJSONLine(ch, pairHello{V: pairVersion, Error: "wrong code"})
-		return res, true, ErrPairWrong
+		return res, burned, ErrPairWrong
 	}
 	reply := pairHello{V: pairVersion, OK: true, Name: o.Name,
 		MAC: pairMAC(k, "server", sid, o.Identity.PublicKey(), clientKey, o.Name)}
@@ -319,7 +424,7 @@ func pairServeConn(raw net.Conn, code string, o PairOptions) (res PairResult, tr
 		PeerFingerprint: Fingerprint(clientKey),
 		OwnFingerprint:  o.Identity.Fingerprint(),
 		RemoteAddr:      raw.RemoteAddr().String(),
-	}, true, nil
+	}, false, nil
 }
 
 // DialPair runs the dialing side against addr with the typed code.
@@ -340,7 +445,13 @@ func DialPair(ctx context.Context, addr string, o PairOptions) (PairResult, erro
 	stop := context.AfterFunc(ctx, func() { raw.Close() })
 	defer stop()
 	_ = raw.SetDeadline(time.Now().Add(pairConnTimeout))
-	var hostKey ssh.PublicKey
+	// The callback runs again on every re-key, on x/crypto's own goroutine:
+	// the first key is kept under mu and any other one ends the connection,
+	// so the key the macs bind is the key that gets pinned.
+	var (
+		mu    sync.Mutex
+		first ssh.PublicKey
+	)
 	cfg := &ssh.ClientConfig{
 		Config: baseSSHConfig(),
 		User:   "deck-pair",
@@ -351,7 +462,15 @@ func DialPair(ctx context.Context, addr string, o PairOptions) (PairResult, erro
 			if key.Type() != ssh.KeyAlgoED25519 {
 				return errors.New("peer: host key is not ed25519")
 			}
-			hostKey = key
+			mu.Lock()
+			defer mu.Unlock()
+			if first == nil {
+				first = key
+				return nil
+			}
+			if !sameKey(first, key) {
+				return fmt.Errorf("%w: the other side changed its host key during pairing", ErrHostKeyMismatch)
+			}
 			return nil
 		},
 		HostKeyAlgorithms: []string{ssh.KeyAlgoED25519},
@@ -368,6 +487,9 @@ func DialPair(ctx context.Context, addr string, o PairOptions) (PairResult, erro
 			_ = nc.Reject(ssh.Prohibited, "no channels during pairing")
 		}
 	}()
+	mu.Lock()
+	hostKey := first
+	mu.Unlock()
 	ch, creqs, err := sc.OpenChannel(PairChannelType, nil)
 	if err != nil {
 		return PairResult{}, fmt.Errorf("peer: pairing channel: %w", err)
