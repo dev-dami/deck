@@ -95,7 +95,7 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	}
 	t.mu.Unlock()
 	if live >= maxChildren {
-		return SpawnResult{}, fmt.Errorf("session: %d subagents are already running; wait for one to finish", live)
+		return SpawnResult{}, fmt.Errorf("session: %w: %d are already running; wait for one to finish", errChildLimit, live)
 	}
 
 	// The task: an existing one, or a new one for this brief.

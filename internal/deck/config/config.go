@@ -85,8 +85,11 @@ type Config struct {
 	DeckAuthor bool `json:"deck_author"`
 	// AutoTitle has the default agent's model write a short title for a thread
 	// once its first turn ends; the first prompt stands in until then.
-	AutoTitle bool   `json:"auto_title"`
-	Models    Models `json:"models"`
+	AutoTitle bool `json:"auto_title"`
+	// MaxParallel is how many tasks the scheduler runs at once in a thread with
+	// orchestration on; 0 means 3.
+	MaxParallel int    `json:"max_parallel"`
+	Models      Models `json:"models"`
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
 	Efforts Models `json:"efforts"`

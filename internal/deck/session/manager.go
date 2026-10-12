@@ -1183,6 +1183,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		started = append(started, a)
 	}
 	m.failOrphans(t)
+	m.kick(t)
 	if th.Archived {
 		m.persistMeta(t) // resuming brings it back to the sidebar
 	}
@@ -1356,6 +1357,9 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	if ev.Kind == agent.KindTurnDone {
 		m.afterTurn(a)
 		m.checkAttribution(a)
+	}
+	if ev.Kind == agent.KindExited {
+		m.failOwned(t, a)
 	}
 }
 

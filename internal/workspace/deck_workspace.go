@@ -474,6 +474,17 @@ func (w *DeckWorkspace) pump() {
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorQueueEdit, "", 1)
 		case decks.QueueCancelledMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorQueueCancel, "", 1)
+		case decks.TaskChangedMsg:
+			switch {
+			case m.Task.Status == "failed":
+				detail := "retry"
+				if m.Task.Attempts >= m.Task.Tries() {
+					detail = "final"
+				}
+				w.recordBehavior(w.sessionOf(m.ThreadID), m.Task.Owner, usage.BehaviorTaskFail, detail, 1)
+			case m.From == "failed" && m.Task.Status == "ready":
+				w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorTaskRetry, "", 1)
+			}
 		case decks.TaskSteeredMsg:
 			detail := "user"
 			if m.By != "" {

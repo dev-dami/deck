@@ -51,6 +51,7 @@ type thread struct {
 	worktree *store.Worktree
 	// tasks is the shared task board (tasks.go), guarded by mu.
 	tasks []store.Task
+	sched schedState // one scheduler pass at a time (sched.go)
 	// orchestrate is set while members may spawn subagents and the scheduler
 	// runs the board (spawn.go, sched.go).
 	orchestrate bool

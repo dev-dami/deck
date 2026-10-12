@@ -112,8 +112,14 @@ type Task struct {
 	// Contract is what a delegation of the task promised (see thread.send).
 	Contract *Contract `json:"contract,omitempty"`
 	Run      *RunRef   `json:"run,omitempty"`
-	Created  time.Time `json:"created"`
-	Updated  time.Time `json:"updated"`
+	// Isolate runs the task's subagent on its own git worktree.
+	Isolate bool `json:"isolate,omitempty"`
+	// BlockedBy is the task whose failure blocked this one (the scheduler);
+	// RetryAt is when a failed task is tried again.
+	BlockedBy string    `json:"blocked_by,omitempty"`
+	RetryAt   time.Time `json:"retry_at,omitempty"`
+	Created   time.Time `json:"created"`
+	Updated   time.Time `json:"updated"`
 }
 
 // Contract is the terms a task was handed over under: what to deliver and how

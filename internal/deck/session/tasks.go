@@ -39,6 +39,7 @@ type TaskSpec struct {
 	Deps        []string
 	OnFail      string
 	MaxAttempts int
+	Isolate     bool
 	Contract    *store.Contract
 }
 
@@ -140,34 +141,49 @@ func (m *Manager) announce(t *thread, changes []taskChange) {
 	m.kick(t)
 }
 
-// refreshReadyLocked moves pending tasks whose dependencies are all done to
-// ready, and ready tasks that lost a dependency back to pending. Dependencies
-// that no longer exist count as done. t.mu is held.
+// depSatisfied reports whether dependency d lets what waits on it go: it is
+// done, or it failed for good and its OnFail says to continue.
+func depSatisfied(d store.Task) bool {
+	return d.Status == store.TaskDone || d.Status == store.TaskFailed && d.FailPolicy() == store.OnFailContinue && exhausted(d)
+}
+
+// refreshReadyLocked keeps the board's derived states honest: a blocked task
+// whose blocker is no longer failed or cancelled goes back to pending, a
+// pending task whose dependencies are all satisfied becomes ready, and a ready
+// one that lost a dependency goes back to pending. Dependencies that no longer
+// exist count as satisfied. t.mu is held.
 func (m *Manager) refreshReadyLocked(t *thread) []taskChange {
 	var out []taskChange
+	move := func(tk *store.Task, to store.TaskStatus) {
+		from := tk.Status
+		tk.Status = to
+		tk.Updated = time.Now()
+		out = append(out, m.logTaskLocked(t, *tk, from, "", ""))
+	}
 	for i := range t.tasks {
 		tk := &t.tasks[i]
+		if tk.Status == store.TaskBlocked && tk.BlockedBy != "" {
+			if j := store.FindTask(t.tasks, tk.BlockedBy); j < 0 || t.tasks[j].Status != store.TaskFailed && t.tasks[j].Status != store.TaskCancelled {
+				tk.BlockedBy, tk.Error = "", ""
+				move(tk, store.TaskPending)
+			}
+		}
 		if tk.Status != store.TaskPending && tk.Status != store.TaskReady {
 			continue
 		}
 		ok := true
 		for _, d := range tk.Deps {
-			if j := store.FindTask(t.tasks, d); j >= 0 && t.tasks[j].Status != store.TaskDone {
+			if j := store.FindTask(t.tasks, d); j >= 0 && !depSatisfied(t.tasks[j]) {
 				ok = false
 				break
 			}
 		}
-		from := tk.Status
 		switch {
 		case ok && tk.Status == store.TaskPending:
-			tk.Status = store.TaskReady
+			move(tk, store.TaskReady)
 		case !ok && tk.Status == store.TaskReady:
-			tk.Status = store.TaskPending
-		default:
-			continue
+			move(tk, store.TaskPending)
 		}
-		tk.Updated = time.Now()
-		out = append(out, m.logTaskLocked(t, *tk, from, "", ""))
 	}
 	return out
 }
@@ -203,7 +219,7 @@ func (m *Manager) addTask(t *thread, sp TaskSpec) (store.Task, error) {
 	task := store.Task{
 		ID: id, Title: clipText(title, 120), Brief: clipText(sp.Brief, maxTaskText),
 		Creator: sp.Creator, Owner: sp.Owner, Parent: canonicalID(t.tasks, sp.Parent), Deps: deps,
-		Status: store.TaskPending, OnFail: sp.OnFail, MaxAttempts: sp.MaxAttempts, Contract: sp.Contract,
+		Status: store.TaskPending, OnFail: sp.OnFail, MaxAttempts: sp.MaxAttempts, Contract: sp.Contract, Isolate: sp.Isolate,
 		Created: now, Updated: now,
 	}
 	t.tasks = append(t.tasks, task)
@@ -399,6 +415,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		sp := TaskSpec{
 			Title: str("title"), Brief: str("brief"), Creator: me, Parent: str("parent"),
 			Deps: splitIDs(str("deps")), OnFail: normOnFail(str("on_fail")), MaxAttempts: num("max_attempts"),
+			Isolate: a["isolate"] == true,
 		}
 		if o := str("owner"); o != "" {
 			id, err := b.resolveOwner(o)
