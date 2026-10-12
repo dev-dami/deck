@@ -170,7 +170,11 @@ var ops []Op
 func init() {
 	ops = []Op{
 		{Name: agent.OpThreadSend, Desc: "Message another agent in this thread (to: an agent name, or \"all\"). The user sees it.",
-			Args: []Arg{{Name: "to", Type: tString, Required: true, Desc: "agent name or \"all\""}, {Name: "message", Type: tString, Required: true}}},
+			Args: []Arg{{Name: "to", Type: tString, Required: true, Desc: "agent name or \"all\""}, {Name: "message", Type: tString, Required: true},
+				{Name: "new_task", Type: tString, Desc: "hand it over as a new task with this title (one recipient); they answer with task.done"},
+				{Name: "task", Type: tString, Desc: "hand it over as this existing task id (one recipient)"},
+				{Name: "expect", Type: tString, Desc: "what you expect back"}, {Name: "done_when", Type: tString, Desc: "when the task counts as done"},
+				{Name: "explicit_done", Type: tBool, Desc: "the recipient must report with task.done; its reply alone is not enough"}}},
 		{Name: agent.OpThreadRead, Desc: "Read the current shared thread: what the user and every agent said and did."},
 		{Name: OpTaskCreate, Desc: "Add a task to this thread's shared task board. deps are task ids it waits for (\"t1,t2\"); owner an agent name or \"me\". Returns its id.",
 			Args: []Arg{{Name: "title", Type: tString, Required: true}, {Name: "brief", Type: tString, Desc: "what the owner should do"}, {Name: "deps", Type: tString, Desc: "task ids it waits for, e.g. \"t1,t2\""},

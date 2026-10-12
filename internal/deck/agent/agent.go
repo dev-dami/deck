@@ -338,6 +338,13 @@ type Message struct {
 	From string // sending agent id, e.g. "claude"
 	To   string // agent id/name, or "all"
 	Text string
+	// Task hands the message over as an existing task of the thread (its id);
+	// NewTask creates one from this title. Both need a single recipient.
+	// Expect and DoneWhen are the terms the recipient is held to, and
+	// ExplicitDone says its last reply alone does not finish the task: it
+	// must report it with task.done.
+	Task, NewTask, Expect, DoneWhen string
+	ExplicitDone                    bool
 	// Respond must be called exactly once; result is returned to the sending
 	// agent as the tool result (e.g. "delivered to codex").
 	Respond func(result string, err error)

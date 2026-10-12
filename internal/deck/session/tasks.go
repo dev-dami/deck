@@ -327,6 +327,9 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 	out := cloneTask(t.tasks[i])
 	t.mu.Unlock()
 	m.announce(t, changes)
+	if to == store.TaskDone || to == store.TaskFailed || to == store.TaskBlocked {
+		m.notifyCreator(t, out, by)
+	}
 	return out, nil
 }
 

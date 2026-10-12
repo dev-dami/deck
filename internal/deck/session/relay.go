@@ -136,6 +136,19 @@ func (m *Manager) handleMessage(msg agent.Message) {
 		respond("", err)
 		return
 	}
+	if msg.Task != "" || msg.NewTask != "" {
+		if len(targets) != 1 {
+			respond("", errors.New("a task is handed to one agent: set `to` to a single name, not \"all\""))
+			return
+		}
+		id, err := m.handOver(t, from, targets[0], text, msg)
+		if err != nil {
+			respond("", err)
+			return
+		}
+		respond(m.relayTask(t, from, targets, text, "tool", id), nil)
+		return
+	}
 	respond(m.relay(t, from, targets, text, "tool"), nil)
 }
 
@@ -160,7 +173,17 @@ func validNames(t *thread, from *agentState) string {
 // limit the message is logged but held until Continue. It returns the sentence
 // a thread.send call answers with.
 func (m *Manager) relay(t *thread, from *agentState, targets []*agentState, text, via string) string {
+	return m.relayTask(t, from, targets, text, via, "")
+}
+
+// relayTask is relay for a message that hands over task taskID ("" for a plain
+// message). The task counts as running with the recipient from the moment the
+// message is logged, held by a pause or not.
+func (m *Manager) relayTask(t *thread, from *agentState, targets []*agentState, text, via, taskID string) string {
 	norm := normText(text)
+	if taskID != "" {
+		norm += "#" + taskID // the same words for another task are not a repeat
+	}
 	var pre, post []tea.Msg
 
 	t.mu.Lock()
@@ -184,7 +207,7 @@ func (m *Manager) relay(t *thread, from *agentState, targets []*agentState, text
 	for _, tg := range live {
 		t.lastRelay[from.id+">"+tg.id] = norm
 	}
-	e := store.Entry{Type: store.EntryRelay, Speaker: from.id, To: ids(live), Via: via, Event: eventText(text)}
+	e := store.Entry{Type: store.EntryRelay, Speaker: from.id, To: ids(live), Via: via, TaskID: taskID, Event: eventText(text)}
 
 	if t.hops >= m.maxHops {
 		e.Held = true
@@ -201,12 +224,14 @@ func (m *Manager) relay(t *thread, from *agentState, targets []*agentState, text
 		hops := t.hops
 		t.mu.Unlock()
 		m.emitAll(append(pre, post...)...)
+		m.startHandedTask(t, taskID, live[0], from)
 		return fmt.Sprintf("held: Deck paused this thread after %d agent-to-agent messages; the user will continue it", hops)
 	}
 	t.hops++
 	m.appendLocked(t, e)
 	t.mu.Unlock()
 	m.emitAll(msgFor(t.id, e))
+	m.startHandedTask(t, taskID, live[0], from)
 
 	var res []string
 	for _, tg := range live {
@@ -234,6 +259,9 @@ func (m *Manager) relay(t *thread, from *agentState, targets []*agentState, text
 func (m *Manager) afterTurn(a *agentState) {
 	text, interrupted := a.takeFinal()
 	t := a.thread
+	if !interrupted {
+		m.settleHanded(t, a, text)
+	}
 	if text != "" && !interrupted {
 		m.maybeAutoTitle(t, text)
 		for _, mn := range parseMentions(text) {

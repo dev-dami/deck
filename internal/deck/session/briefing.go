@@ -167,6 +167,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			if v.skipSelf && contains(e.To, v.self) {
 				l.addressed = true
 				l.text = "[" + t.label(e.Speaker, v.self) + " → " + t.name(v.self) + "] " + clip(strings.TrimSpace(e.Text), maxEntryChars)
+				l.text += handoverNote(t, e)
 			}
 			out = append(out, l)
 		case store.EntryMember:
