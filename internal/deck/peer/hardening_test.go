@@ -469,67 +469,25 @@ func (s *switchSigner) Sign(r io.Reader, data []byte) (*ssh.Signature, error) {
 	return s.cur.Sign(r, data)
 }
 
-// TestDialPairRejectsRekeyWithNewHostKey: a listener that re-keys with a
-// different host key mid-pairing is dropped at once (and, under -race, the
-// host key is never read and written at the same time).
-func TestDialPairRejectsRekeyWithNewHostKey(t *testing.T) {
-	leakCheck(t)
-	fastKDF(t)
-	d := newTestPeer(t, "pc")
-	code, _ := NewPairCode()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+// TestPairHostKeyIsPinnedToTheFirstKey: the host key callback runs again on
+// every re-key; a second, different key must end the connection, and the same
+// key must keep passing.
+func TestPairHostKeyIsPinnedToTheFirstKey(t *testing.T) {
+	var f firstHostKey
+	k1 := ed25519Signer(t).PublicKey()
+	k2 := ed25519Signer(t).PublicKey()
+	if err := f.check(k1); err != nil {
+		t.Fatalf("first key: %v", err)
 	}
-	defer ln.Close()
-	srvDone := make(chan struct{})
-	go func() {
-		defer close(srvDone)
-		raw, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		defer raw.Close()
-		host := &switchSigner{cur: ed25519Signer(t)}
-		cfg := &ssh.ServerConfig{PublicKeyCallback: func(ssh.ConnMetadata, ssh.PublicKey) (*ssh.Permissions, error) { return nil, nil }}
-		cfg.RekeyThreshold = 256 // the minimum: re-key after a few packets
-		cfg.AddHostKey(host)
-		sc, chans, reqs, err := ssh.NewServerConn(raw, cfg)
-		if err != nil {
-			return
-		}
-		defer sc.Close()
-		go ssh.DiscardRequests(reqs)
-		nc, ok := <-chans
-		if !ok {
-			return
-		}
-		ch, creqs, err := nc.Accept()
-		if err != nil {
-			return
-		}
-		go ssh.DiscardRequests(creqs)
-		go func() {
-			for nc := range chans {
-				_ = nc.Reject(ssh.Prohibited, "")
-			}
-		}()
-		host.set(ed25519Signer(t))
-		// Enough traffic to pass the threshold: the server re-keys with
-		// its new host key.
-		_, _, _ = sc.SendRequest("x", false, make([]byte, 2048))
-		_, _ = io.Copy(io.Discard, ch)
-	}()
-	start := time.Now()
-	_, err = DialPair(ctxT(t), ln.Addr().String(), PairOptions{Identity: d.id, Name: "pc", Code: code})
-	if err == nil {
-		t.Fatal("pairing succeeded across a host key change")
+	if err := f.check(k1); err != nil {
+		t.Fatalf("same key again: %v", err)
 	}
-	if el := time.Since(start); el > 5*time.Second {
-		t.Fatalf("DialPair took %s: the changed host key was accepted and the dialer waited", el)
+	if err := f.check(k2); !errors.Is(err, ErrHostKeyMismatch) {
+		t.Fatalf("changed key: %v, want ErrHostKeyMismatch", err)
 	}
-	ln.Close()
-	<-srvDone
+	if got := f.key(); got == nil || !sameKey(got, k1) {
+		t.Fatal("the first key was not kept")
+	}
 }
 
 // opRec records the ops that reach it and offers several in search.

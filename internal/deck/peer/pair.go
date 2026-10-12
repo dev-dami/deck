@@ -448,31 +448,14 @@ func DialPair(ctx context.Context, addr string, o PairOptions) (PairResult, erro
 	// The callback runs again on every re-key, on x/crypto's own goroutine:
 	// the first key is kept under mu and any other one ends the connection,
 	// so the key the macs bind is the key that gets pinned.
-	var (
-		mu    sync.Mutex
-		first ssh.PublicKey
-	)
+	var pinned firstHostKey
 	cfg := &ssh.ClientConfig{
 		Config: baseSSHConfig(),
 		User:   "deck-pair",
 		Auth:   []ssh.AuthMethod{ssh.PublicKeys(o.Identity.Signer)},
 		// Any key is accepted here: the code exchange below is what
 		// authenticates it, and nothing is pinned until it passes.
-		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
-			if key.Type() != ssh.KeyAlgoED25519 {
-				return errors.New("peer: host key is not ed25519")
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			if first == nil {
-				first = key
-				return nil
-			}
-			if !sameKey(first, key) {
-				return fmt.Errorf("%w: the other side changed its host key during pairing", ErrHostKeyMismatch)
-			}
-			return nil
-		},
+		HostKeyCallback:   func(_ string, _ net.Addr, key ssh.PublicKey) error { return pinned.check(key) },
 		HostKeyAlgorithms: []string{ssh.KeyAlgoED25519},
 		ClientVersion:     sshVersion,
 	}
@@ -487,9 +470,7 @@ func DialPair(ctx context.Context, addr string, o PairOptions) (PairResult, erro
 			_ = nc.Reject(ssh.Prohibited, "no channels during pairing")
 		}
 	}()
-	mu.Lock()
-	hostKey := first
-	mu.Unlock()
+	hostKey := pinned.key()
 	ch, creqs, err := sc.OpenChannel(PairChannelType, nil)
 	if err != nil {
 		return PairResult{}, fmt.Errorf("peer: pairing channel: %w", err)
@@ -543,4 +524,35 @@ func refuseGlobal(reqs <-chan *ssh.Request) {
 	for r := range reqs {
 		_ = r.Reply(false, nil)
 	}
+}
+
+// firstHostKey keeps the first host key a pairing connection presents and
+// rejects any other one: x/crypto runs the host key callback again on every
+// re-key, on its own goroutine.
+type firstHostKey struct {
+	mu    sync.Mutex
+	first ssh.PublicKey
+}
+
+func (f *firstHostKey) check(key ssh.PublicKey) error {
+	if key.Type() != ssh.KeyAlgoED25519 {
+		return errors.New("peer: host key is not ed25519")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.first == nil {
+		f.first = key
+		return nil
+	}
+	if !sameKey(f.first, key) {
+		return fmt.Errorf("%w: the other side changed its host key during pairing", ErrHostKeyMismatch)
+	}
+	return nil
+}
+
+// key is the first host key seen, or nil.
+func (f *firstHostKey) key() ssh.PublicKey {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.first
 }

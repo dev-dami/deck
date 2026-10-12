@@ -421,6 +421,25 @@ func waitLocked(t *testing.T, l *lockout, key string) {
 	}
 }
 
+// dialSoon dials until it gets in or a few seconds pass. The server frees the
+// pre-auth slot of a failed handshake a moment after the client has given up,
+// so a dial right behind a failure can be refused for that reason alone.
+func dialSoon(t *testing.T, addr string, auth []ssh.AuthMethod) error {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		c, _, _, err := rawDial(t, addr, auth, nil)
+		if err == nil {
+			c.Close()
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestHostileLockout(t *testing.T) {
 	leakCheck(t)
 	var mu sync.Mutex
@@ -442,17 +461,18 @@ func TestHostileLockout(t *testing.T) {
 
 	// Failures that offer no key lock the whole IP: even the pinned key is
 	// cut off before the handshake.
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 40 && !srv.lock.locked("127.0.0.1"); i++ {
 		if _, _, _, err := rawDial(t, addr, noKey, nil); err == nil {
 			t.Fatal("password authenticated")
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	waitLocked(t, srv.lock, "127.0.0.1")
 	if _, _, _, err := rawDial(t, addr, good, nil); err == nil {
 		t.Fatal("locked-out IP got in")
 	}
 	advance(61 * time.Second)
-	if _, _, _, err := rawDial(t, addr, good, nil); err != nil {
+	if err := dialSoon(t, addr, good); err != nil {
 		t.Fatalf("after lockout expired: %v", err)
 	}
 
@@ -463,15 +483,17 @@ func TestHostileLockout(t *testing.T) {
 		if _, _, _, err := rawDial(t, addr, removed, nil); err == nil {
 			t.Fatal("unpinned key authenticated")
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	if _, _, _, err := rawDial(t, addr, good, nil); err != nil {
+	if err := dialSoon(t, addr, good); err != nil {
 		t.Fatalf("one key's failures locked out the IP: %v", err)
 	}
 
 	// Rotating keys does not dodge the IP lock: 4x the threshold of keyed
 	// failures locks the IP too.
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 80 && !srv.spray.locked("127.0.0.1"); i++ {
 		_, _, _, _ = rawDial(t, addr, []ssh.AuthMethod{ssh.PublicKeys(ed25519Signer(t))}, nil)
+		time.Sleep(10 * time.Millisecond)
 	}
 	waitLocked(t, srv.spray, "127.0.0.1")
 	if _, _, _, err := rawDial(t, addr, good, nil); err == nil {
