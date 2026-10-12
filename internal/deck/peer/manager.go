@@ -53,6 +53,9 @@ type Manager struct {
 	store  *Store
 	name   atomic.Pointer[string]
 	perKey *keyLimiter
+	// pairs holds the pairing code armed on the listener. It outlives each
+	// Server, so moving the listener keeps the code armed.
+	pairs *pairSlot
 	// peers is the config snapshot callers are built from, swapped by the
 	// sweep and by Apply; nil is a valid (empty) config.
 	peers atomic.Pointer[config.Peers]
@@ -115,6 +118,7 @@ func NewManager(o ManagerOptions) (*Manager, error) {
 	}
 	m := &Manager{o: o, store: OpenStore(o.Dir), sups: map[string]*managed{}, seen: map[string]time.Time{}}
 	m.perKey = newKeyLimiter(16)
+	m.pairs = newPairSlot(nil)
 	m.peers.Store(o.Peers)
 	m.setName(SelfName(o.Peers))
 	if o.Handler == nil {
@@ -280,6 +284,7 @@ func (m *Manager) applyListener(p *config.Peers) error {
 		old.Close()
 	}
 	if want == "" {
+		m.pairs.stop() // nothing serves an armed code any more
 		return nil
 	}
 	srv, err := Listen(p.Listen.ListenAddr(), ServerOptions{
@@ -287,8 +292,11 @@ func (m *Manager) applyListener(p *config.Peers) error {
 		Name: name, Version: version.Version,
 		Caller: m.caller, Limits: m.o.Limits, Logger: m.o.Logger,
 		OnConn: m.inbound, OnDisconnect: m.inbound,
-		perKey: m.perKey,
+		perKey: m.perKey, pairs: m.pairs,
 	})
+	if err != nil {
+		m.pairs.stop()
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err != nil {
@@ -328,6 +336,32 @@ func (m *Manager) halt() {
 		srv.Close()
 	}
 	wg.Wait()
+	m.pairs.stop()
+}
+
+// ArmPair arms a pairing code (a fresh one when o.Code is empty) on this
+// Deck's listener, so the other Deck pairs on the same port as the link.
+// Identity and Name are this Deck's. The code stays armed when Apply moves
+// the listener, and ends when the listener stops. Without a listener it
+// returns errNoListener.
+func (m *Manager) ArmPair(ctx context.Context, o PairOptions) (*PairWait, error) {
+	m.mu.Lock()
+	srv, id := m.srv, m.id
+	m.mu.Unlock()
+	if srv == nil || srv.Addr() == nil {
+		return nil, errNoListener
+	}
+	o.Identity, o.Name = id, m.Name()
+	if o.Logger == nil {
+		o.Logger = m.o.Logger
+	}
+	w, err := armPair(ctx, m.pairs, o)
+	if err != nil {
+		return nil, err
+	}
+	w.Addr = srv.Addr().String()
+	w.Reachable = Reachable(w.Addr)
+	return w, nil
 }
 
 // closeSups closes supervisors side by side and waits for them.

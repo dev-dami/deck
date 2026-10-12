@@ -37,7 +37,8 @@ type Service struct {
 	mgr      *Manager
 	applied  *config.Peers // the section last put in effect
 	applyErr error
-	pairing  int // pairing exchanges in progress
+	pairing  int       // pairing exchanges in progress
+	wait     *PairWait // the code this Service is waiting with, if any
 	ver      uint64
 	wake     chan struct{} // closed and replaced on every change
 }
@@ -77,6 +78,7 @@ func (s *Service) Start(p *config.Peers) error { return s.apply(p) }
 // Close ends any pairing and stops the link.
 func (s *Service) Close() {
 	s.cancel()
+	s.stopWait()
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()
 	s.mu.Lock()
@@ -356,8 +358,9 @@ func WithDefaultPort(addr string) string {
 	return addr
 }
 
-// PairAddr is where `deck peer pair` and Settings listen for a pairing:
-// peers.listen.addr, else every interface on the default port.
+// PairAddr is where a pairing listener of its own listens (when this Deck's
+// listener is not running): peers.listen.addr, else every interface on the
+// default port.
 func PairAddr(p *config.Peers) string {
 	if p != nil && p.Listen.Addr != "" {
 		return p.Listen.Addr
@@ -365,22 +368,46 @@ func PairAddr(p *config.Peers) string {
 	return ":" + config.DefaultPeerPort
 }
 
-// PairWait is a pairing listener started with StartPairing. Done gets one
-// outcome and is then closed; Cancel ends the pairing early.
+// PairWait is a pairing code armed and waiting for the other Deck. Done gets
+// one outcome and is then closed; Cancel ends the pairing early. Code is the
+// one-time secret: show it to the person, never log it.
 type PairWait struct {
 	Code        string
-	Addr        string // the address it listens on
+	Addr        string // the address it is served on
 	Fingerprint string // this Deck's
 	Name        string // this Deck's name, as the other Deck will see it
-	Expires     time.Time
-	Done        <-chan PairOutcome
-	cancel      context.CancelFunc
+	// Hosts are the addresses another machine may reach it by, best first
+	// (InviteHosts); the invite carries them.
+	Hosts []string
+	// Reachable is false when Addr is loopback: no other machine can
+	// connect.
+	Reachable bool
+	// Shared is set when the code is served by this Deck's own listener
+	// rather than a listener of its own.
+	Shared  bool
+	Expires time.Time
+	Done    <-chan PairOutcome
+	cancel  context.CancelFunc
+	ended   <-chan struct{} // closed once it stopped listening and Done has its outcome
 }
 
 // Cancel stops waiting; Done then gets context.Canceled.
 func (w *PairWait) Cancel() {
 	if w != nil && w.cancel != nil {
 		w.cancel()
+	}
+}
+
+// over reports whether the wait has ended.
+func (w *PairWait) over() bool {
+	if w.ended == nil {
+		return false
+	}
+	select {
+	case <-w.ended:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -391,19 +418,46 @@ type PairOutcome struct {
 	Err    error
 }
 
-// StartPairing listens with a fresh one-time code (what `deck peer pair`
-// does) on addr, or PairAddr when empty. When that address is taken (by this
-// Deck's own listener, say) it listens on another port of the same host. The
-// code is single use and expires after DefaultPairExpiry. Nothing is pinned:
-// once the other side proves the code, Pin does that after the person
-// compared the fingerprints.
-func (s *Service) StartPairing(addr string) (*PairWait, error) {
+// errNoListener: the Manager has no listener to arm a code on.
+var errNoListener = errors.New("peer: not listening")
+
+// StartPairListen arms a fresh one-time code (what Settings and `deck peer
+// pair` do). While this Deck's own listener runs the code is served there,
+// on the same port as the link; otherwise a listener of its own is opened on
+// PairAddr, and a port already taken is an error, never another port. The
+// code is single use and expires after DefaultPairExpiry. A pairing this
+// Service started before is stopped first. Nothing is pinned: once the
+// other side proves the code, Pin does that after the person compared the
+// fingerprints.
+func (s *Service) StartPairListen(ctx context.Context) (*PairWait, error) {
+	s.stopWait()
 	p, err := s.loadPeers()
 	if err != nil {
 		return nil, err
 	}
-	if addr == "" {
-		addr = PairAddr(p)
+	if mgr := s.Manager(); mgr != nil {
+		ctx, cancel := s.bound(ctx)
+		w, err := mgr.ArmPair(ctx, PairOptions{Logger: s.log})
+		if err == nil {
+			w.Hosts = InviteHosts(w.Addr)
+			s.track(w, cancel)
+			return w, nil
+		}
+		cancel()
+		if !errors.Is(err, errNoListener) {
+			return nil, err
+		}
+	}
+	return s.StartPairing(PairAddr(p))
+}
+
+// StartPairing waits for a pairing on a listener of its own on addr: for a
+// Deck whose own listener is not running. An address already in use is an
+// error.
+func (s *Service) StartPairing(addr string) (*PairWait, error) {
+	p, err := s.loadPeers()
+	if err != nil {
+		return nil, err
 	}
 	id, err := LoadOrCreateIdentity(s.dir)
 	if err != nil {
@@ -413,19 +467,25 @@ func (s *Service) StartPairing(addr string) (*PairWait, error) {
 	if err != nil {
 		return nil, err
 	}
-	ln, err := listenPair(addr)
+	ln, err := ListenPair(addr)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithCancel(s.base)
+	ctx, cancel := s.bound(context.Background())
 	out := make(chan PairOutcome, 1)
+	ended := make(chan struct{})
 	w := &PairWait{
 		Code: code, Addr: ln.Addr().String(), Fingerprint: id.Fingerprint(), Name: SelfName(p),
-		Expires: time.Now().Add(DefaultPairExpiry), Done: out, cancel: cancel,
+		Expires: time.Now().Add(DefaultPairExpiry), Done: out, cancel: cancel, ended: ended,
 	}
+	w.Reachable, w.Hosts = Reachable(w.Addr), InviteHosts(w.Addr)
+	s.mu.Lock()
+	s.wait = w
+	s.mu.Unlock()
 	s.setPairing(1)
 	go func() {
 		defer s.setPairing(-1)
+		defer close(ended)
 		defer close(out)
 		defer cancel()
 		res, err := ServePair(ctx, ln, PairOptions{Identity: id, Name: w.Name, Code: code, Expiry: DefaultPairExpiry, Logger: s.log})
@@ -434,27 +494,107 @@ func (s *Service) StartPairing(addr string) (*PairWait, error) {
 	return w, nil
 }
 
-// listenPair listens on addr, or on a free port of its host when addr is
-// taken.
-func listenPair(addr string) (net.Listener, error) {
+// ListenPair opens a pairing listener of its own on addr. A port that is
+// taken (by a Deck already listening there, say) is reported as such; it
+// never falls back to another port the other Deck would not know.
+func ListenPair(addr string) (net.Listener, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err == nil {
 		return ln, nil
 	}
-	host, _, serr := net.SplitHostPort(addr)
-	if serr != nil {
-		return nil, fmt.Errorf("listen %s: %w", addr, err)
+	return nil, fmt.Errorf("cannot wait for a code on %s: %v. Port %s is probably in use by another program (or another Deck): free it, or pick another port in Settings › Team › Listen on (deck peer pair --addr)",
+		addr, err, portOfAddr(addr))
+}
+
+// bound is ctx, also ended when the Service closes.
+func (s *Service) bound(ctx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(s.base, cancel)
+	return ctx, func() {
+		stop()
+		cancel()
 	}
-	if ln, err2 := net.Listen("tcp", net.JoinHostPort(host, "0")); err2 == nil {
-		return ln, nil
+}
+
+// track remembers w, armed on the Manager's listener, as this Service's
+// pairing, and shows it in the Snapshot until it ends.
+func (s *Service) track(w *PairWait, cancel context.CancelFunc) {
+	s.mu.Lock()
+	s.wait = w
+	s.mu.Unlock()
+	s.setPairing(1)
+	ended := w.ended
+	go func() {
+		<-ended
+		cancel()
+		s.setPairing(-1)
+	}()
+}
+
+// stopWait ends the pairing this Service is waiting on, if any, and waits
+// until it has let go of its port.
+func (s *Service) stopWait() {
+	s.mu.Lock()
+	w := s.wait
+	s.wait = nil
+	s.mu.Unlock()
+	if w != nil {
+		w.Cancel()
+		if w.ended != nil {
+			<-w.ended
+		}
 	}
-	return nil, fmt.Errorf("listen %s: %w", addr, err)
+}
+
+// PairListenAll moves pairing to every interface, for a wait whose address
+// only this machine can reach: it saves Listen on as all interfaces on the
+// same port and puts it in effect. A code armed on this Deck's listener
+// stays armed through the move and the wait comes back with its new
+// address; a listener of its own is reopened with a fresh code. The person
+// asked for this: it is never done on its own.
+func (s *Service) PairListenAll(w *PairWait) (*PairWait, error) {
+	if w == nil {
+		return nil, errors.New("peer: no pairing to move")
+	}
+	all := net.JoinHostPort("0.0.0.0", portOfAddr(w.Addr))
+	p, err := s.loadPeers()
+	if err != nil {
+		return nil, err
+	}
+	if !w.Shared {
+		w.Cancel()
+		if w.ended != nil {
+			<-w.ended
+		}
+		enabled := p != nil && p.Listen.Enabled
+		if err := s.SetListen(enabled, all); err != nil {
+			return nil, err
+		}
+		return s.StartPairListen(context.Background())
+	}
+	if err := s.SetListen(true, all); err != nil {
+		return nil, err
+	}
+	mgr := s.Manager()
+	if mgr == nil || mgr.Addr() == "" || w.over() {
+		return s.StartPairListen(context.Background())
+	}
+	moved := *w
+	moved.Addr = mgr.Addr()
+	moved.Reachable, moved.Hosts = Reachable(moved.Addr), InviteHosts(moved.Addr)
+	s.mu.Lock()
+	if s.wait == w {
+		s.wait = &moved
+	}
+	s.mu.Unlock()
+	return &moved, nil
 }
 
 // PairDial proves code to the Deck waiting at addr (what `deck peer add`
-// does) and returns both fingerprints for the person to compare. Nothing is
-// pinned until Pin.
-func (s *Service) PairDial(ctx context.Context, addr, code string) (PairResult, error) {
+// does) and returns both fingerprints for the person to compare. expectFP,
+// from an invite, is the fingerprint the other Deck must have; "" skips that
+// check. Nothing is pinned until Pin.
+func (s *Service) PairDial(ctx context.Context, addr, code, expectFP string) (PairResult, error) {
 	addr = WithDefaultPort(strings.TrimSpace(addr))
 	if err := config.ValidPeerAddr(addr); err != nil {
 		return PairResult{}, fmt.Errorf("%q is not an address: %v (want host:port)", truncate(addr, 60), err)
@@ -469,7 +609,7 @@ func (s *Service) PairDial(ctx context.Context, addr, code string) (PairResult, 
 	}
 	s.setPairing(1)
 	defer s.setPairing(-1)
-	return DialPair(ctx, addr, PairOptions{Identity: id, Name: SelfName(p), Code: code})
+	return DialPair(ctx, addr, PairOptions{Identity: id, Name: SelfName(p), Code: code, ExpectFingerprint: expectFP})
 }
 
 // PinRequest pins a Deck that proved the pairing code, once the person
