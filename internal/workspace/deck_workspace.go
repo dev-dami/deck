@@ -475,6 +475,7 @@ func (w *DeckWorkspace) pump() {
 		case decks.QueueCancelledMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorQueueCancel, "", 1)
 		case decks.TaskChangedMsg:
+			w.projectBoard(m.ThreadID)
 			switch {
 			case m.Task.Status == "failed":
 				detail := "retry"
@@ -748,6 +749,9 @@ func (w *DeckWorkspace) setTodos(sid string, input json.RawMessage) {
 	if json.Unmarshal(input, &in) != nil || len(in.Todos) == 0 {
 		return
 	}
+	if th, ok := w.threadOf(sid); ok && len(w.mgr().Tasks(th.ID)) > 0 {
+		return // the thread's task board is the to-do list (projectBoard)
+	}
 	ctx := context.Background()
 	sess, err := w.app.Sessions.Get(ctx, sid)
 	if err != nil {
@@ -756,6 +760,45 @@ func (w *DeckWorkspace) setTodos(sid string, input json.RawMessage) {
 	sess.Todos = sess.Todos[:0]
 	for _, td := range in.Todos {
 		sess.Todos = append(sess.Todos, session.Todo{Content: td.Content, Status: session.TodoStatus(td.Status), ActiveForm: td.ActiveForm})
+	}
+	_, _ = w.app.Sessions.Save(ctx, sess)
+}
+
+// projectBoard shows the thread's task board as the session's to-do list, so
+// the to-do pill follows the board. Cancelled tasks are left out.
+func (w *DeckWorkspace) projectBoard(threadID string) {
+	sid := w.sessionOf(threadID)
+	tasks := w.mgr().Tasks(threadID)
+	if sid == "" || len(tasks) == 0 {
+		return
+	}
+	names := map[string]string{}
+	if th, ok := w.mgr().Thread(threadID); ok {
+		for _, a := range th.Members {
+			names[a.ID] = a.Name
+		}
+	}
+	ctx := context.Background()
+	sess, err := w.app.Sessions.Get(ctx, sid)
+	if err != nil {
+		return
+	}
+	sess.Todos = sess.Todos[:0]
+	for _, tk := range tasks {
+		status := session.TodoStatusPending
+		switch tk.Status {
+		case "cancelled":
+			continue
+		case "done":
+			status = session.TodoStatusCompleted
+		case "running":
+			status = session.TodoStatusInProgress
+		}
+		text := tk.ID + " " + tk.Title
+		if tk.Owner != "" {
+			text += " (" + names[tk.Owner] + ")"
+		}
+		sess.Todos = append(sess.Todos, session.Todo{Content: text, Status: status, ActiveForm: text})
 	}
 	_, _ = w.app.Sessions.Save(ctx, sess)
 }
