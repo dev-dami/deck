@@ -407,6 +407,20 @@ func TestHostileConnectionLimitAndStalledHandshake(t *testing.T) {
 	}
 }
 
+// waitLocked waits for the server to record the failures it is still
+// processing: a handshake failure is counted after the client has given up,
+// so the lockout can trail the last dial by a moment.
+func waitLocked(t *testing.T, l *lockout, key string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for !l.locked(key) {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s was never locked out", key)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestHostileLockout(t *testing.T) {
 	leakCheck(t)
 	var mu sync.Mutex
@@ -433,6 +447,7 @@ func TestHostileLockout(t *testing.T) {
 			t.Fatal("password authenticated")
 		}
 	}
+	waitLocked(t, srv.lock, "127.0.0.1")
 	if _, _, _, err := rawDial(t, addr, good, nil); err == nil {
 		t.Fatal("locked-out IP got in")
 	}
@@ -458,6 +473,7 @@ func TestHostileLockout(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		_, _, _, _ = rawDial(t, addr, []ssh.AuthMethod{ssh.PublicKeys(ed25519Signer(t))}, nil)
 	}
+	waitLocked(t, srv.spray, "127.0.0.1")
 	if _, _, _, err := rawDial(t, addr, good, nil); err == nil {
 		t.Fatal("key spraying did not lock the IP")
 	}
