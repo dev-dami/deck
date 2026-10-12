@@ -472,23 +472,175 @@ func cancelledResult(ctx context.Context) ToolResult {
 	return textResult(msgCancelled, true)
 }
 
-// Client is the MCP client end of one mcp channel this Deck opened.
+// Client is the MCP client end of one mcp channel this Deck opened. It has its
+// own small request/response layer instead of a jsonrpc2.Conn: that Conn keeps
+// calls it has already failed in its pending map, and a reply that arrives
+// after Close then sends on a closed channel and panics the process, which a
+// peer could time. Here a call leaves the map before it is answered and no
+// channel is ever closed, so a late or repeated reply is ignored.
 type Client struct {
-	rpc *jsonrpc2.Conn
+	st   *lineStream
+	log  *slog.Logger
+	mu   sync.Mutex
+	seq  uint64
+	pend map[uint64]chan clientReply
+	err  error // why the channel ended; nil while it is open
+	done chan struct{}
 }
 
-// refuseHandler answers every request a server sends to a client with
-// "method not found": peers get no sampling, roots or elicitation.
-type refuseHandler struct{}
+type clientReply struct {
+	result json.RawMessage
+	err    error
+}
 
-func (refuseHandler) Handle(ctx context.Context, c *jsonrpc2.Conn, req *jsonrpc2.Request) {
-	if !req.Notif {
-		_ = c.ReplyWithError(ctx, req.ID, rpcErr(codeMethodNotFound, "method not found"))
-	}
+// clientMsg is any message a server may send a client.
+type clientMsg struct {
+	ID     json.RawMessage `json:"id,omitempty"`
+	Method string          `json:"method,omitempty"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  *jsonrpc2.Error `json:"error,omitempty"`
 }
 
 func newClient(ctx context.Context, rwc io.ReadWriteCloser, maxMsg int, log *slog.Logger) *Client {
-	return &Client{rpc: jsonrpc2.NewConn(ctx, newLineStream(rwc, maxMsg), refuseHandler{}, jsonrpc2.SetLogger(slogLogger{log}))}
+	c := &Client{st: newLineStream(rwc, maxMsg), log: log, pend: map[uint64]chan clientReply{}, done: make(chan struct{})}
+	go c.read()
+	go func() {
+		select {
+		case <-ctx.Done():
+			c.finish(jsonrpc2.ErrClosed)
+		case <-c.done:
+		}
+	}()
+	return c
+}
+
+// read dispatches replies to their calls until the stream ends. Requests a
+// server sends to a client get "method not found": peers get no sampling,
+// roots or elicitation.
+func (c *Client) read() {
+	var err error
+	for {
+		var m clientMsg
+		if err = c.st.ReadObject(&m); err != nil {
+			break
+		}
+		hasID := len(m.ID) > 0 && string(m.ID) != "null"
+		switch {
+		case m.Method != "":
+			if hasID {
+				if err = c.st.WriteObject(map[string]any{
+					"jsonrpc": "2.0", "id": m.ID,
+					"error": map[string]any{"code": codeMethodNotFound, "message": "method not found"},
+				}); err != nil {
+					break
+				}
+			}
+		case hasID:
+			var id uint64
+			if json.Unmarshal(m.ID, &id) != nil {
+				continue
+			}
+			c.mu.Lock()
+			ch := c.pend[id]
+			delete(c.pend, id)
+			c.mu.Unlock()
+			if ch == nil {
+				continue // unknown, late or repeated reply
+			}
+			if m.Error != nil {
+				ch <- clientReply{err: m.Error}
+			} else {
+				ch <- clientReply{result: m.Result}
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
+	c.finish(jsonrpc2.ErrClosed)
+}
+
+// finish ends the client once: every waiting call fails with err.
+func (c *Client) finish(err error) {
+	c.mu.Lock()
+	if c.err != nil {
+		c.mu.Unlock()
+		return
+	}
+	c.err = err
+	for id, ch := range c.pend {
+		delete(c.pend, id)
+		ch <- clientReply{err: err} // buffered; one send per entry
+	}
+	close(c.done)
+	c.mu.Unlock()
+	_ = c.st.Close()
+}
+
+func (c *Client) forget(id uint64) {
+	c.mu.Lock()
+	delete(c.pend, id)
+	c.mu.Unlock()
+}
+
+// Call sends a request and decodes its result into result (nil to skip).
+func (c *Client) Call(ctx context.Context, method string, params, result any) error {
+	ch := make(chan clientReply, 1)
+	c.mu.Lock()
+	if c.err != nil {
+		err := c.err
+		c.mu.Unlock()
+		return err
+	}
+	c.seq++
+	id := c.seq
+	c.pend[id] = ch
+	c.mu.Unlock()
+	msg := map[string]any{"jsonrpc": "2.0", "id": id, "method": method}
+	if params != nil {
+		msg["params"] = params
+	}
+	if err := c.st.WriteObject(msg); err != nil {
+		c.forget(id)
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		c.forget(id)
+		return ctx.Err()
+	case r := <-ch:
+		if r.err != nil {
+			return r.err
+		}
+		if result == nil || len(r.result) == 0 {
+			return nil
+		}
+		return json.Unmarshal(r.result, result)
+	}
+}
+
+// Notify sends a notification.
+func (c *Client) Notify(ctx context.Context, method string, params any) error {
+	c.mu.Lock()
+	err := c.err
+	c.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	msg := map[string]any{"jsonrpc": "2.0", "method": method}
+	if params != nil {
+		msg["params"] = params
+	}
+	return c.st.WriteObject(msg)
+}
+
+// Done is closed when the channel ends.
+func (c *Client) Done() <-chan struct{} { return c.done }
+
+// Close closes the channel and fails every call still waiting.
+func (c *Client) Close() error {
+	c.finish(jsonrpc2.ErrClosed)
+	return nil
 }
 
 // Initialize runs MCP's initialize handshake and returns the server's info.
@@ -496,7 +648,7 @@ func (c *Client) Initialize(ctx context.Context) (map[string]any, error) {
 	var res struct {
 		ServerInfo map[string]any `json:"serverInfo"`
 	}
-	err := c.rpc.Call(ctx, "initialize", map[string]any{
+	err := c.Call(ctx, "initialize", map[string]any{
 		"protocolVersion": ProtocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "deck-peer", "version": "1"},
@@ -504,7 +656,7 @@ func (c *Client) Initialize(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return res.ServerInfo, c.rpc.Notify(ctx, "notifications/initialized", map[string]any{})
+	return res.ServerInfo, c.Notify(ctx, "notifications/initialized", map[string]any{})
 }
 
 // ListTools returns the server's tools.
@@ -512,14 +664,14 @@ func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
 	var res struct {
 		Tools []Tool `json:"tools"`
 	}
-	err := c.rpc.Call(ctx, "tools/list", map[string]any{}, &res)
+	err := c.Call(ctx, "tools/list", map[string]any{}, &res)
 	return res.Tools, err
 }
 
 // CallTool calls a tool with args (any JSON-marshalable value).
 func (c *Client) CallTool(ctx context.Context, name string, args any) (ToolResult, error) {
 	var res ToolResult
-	err := c.rpc.Call(ctx, "tools/call", map[string]any{"name": name, "arguments": args}, &res)
+	err := c.Call(ctx, "tools/call", map[string]any{"name": name, "arguments": args}, &res)
 	return res, err
 }
 
@@ -535,23 +687,6 @@ func (c *Client) Execute(ctx context.Context, op string, args any) (ToolResult, 
 func (c *Client) Ping(ctx context.Context) (time.Duration, error) {
 	start := time.Now()
 	var res json.RawMessage
-	err := c.rpc.Call(ctx, "ping", nil, &res)
+	err := c.Call(ctx, "ping", nil, &res)
 	return time.Since(start), err
-}
-
-// Call sends any request; for tests and future ops.
-func (c *Client) Call(ctx context.Context, method string, params, result any) error {
-	return c.rpc.Call(ctx, method, params, result)
-}
-
-// Done is closed when the channel ends.
-func (c *Client) Done() <-chan struct{} { return c.rpc.DisconnectNotify() }
-
-// Close closes the channel.
-func (c *Client) Close() error {
-	err := c.rpc.Close()
-	if errors.Is(err, jsonrpc2.ErrClosed) {
-		return nil
-	}
-	return err
 }

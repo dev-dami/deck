@@ -10,12 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/sourcegraph/jsonrpc2"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -758,4 +760,38 @@ func TestSupervisorPermanentErrorWaitsMax(t *testing.T) {
 	}
 	waitFor(t, 5*time.Second, "permanent status", func() bool { return sup.Status().Permanent })
 	sup.Close()
+}
+
+// TestClientLateReplyAfterClose: a reply that arrives after the client was
+// closed (or a repeated one) is ignored. With jsonrpc2's own Conn this sent on
+// a closed channel and crashed the process.
+func TestClientLateReplyAfterClose(t *testing.T) {
+	cc, sc := net.Pipe()
+	defer sc.Close()
+	c := newClient(context.Background(), cc, 0, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	errc := make(chan error, 1)
+	go func() { errc <- c.Call(ctxT(t), "ping", nil, nil) }()
+	line, err := bufio.NewReader(sc).ReadBytes('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req struct {
+		ID uint64 `json:"id"`
+	}
+	if err := json.Unmarshal(line, &req); err != nil {
+		t.Fatal(err)
+	}
+	_ = c.Close()
+	if err := <-errc; !errors.Is(err, jsonrpc2.ErrClosed) {
+		t.Fatalf("pending call: %v, want ErrClosed", err)
+	}
+	reply := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":%d,\"result\":{}}\n", req.ID)
+	for i := 0; i < 3; i++ {
+		_, _ = sc.Write([]byte(reply))
+	}
+	select {
+	case <-c.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("client did not finish")
+	}
 }
