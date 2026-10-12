@@ -62,3 +62,44 @@ jobs:
 
       - name: go test
         run: go test ./...
+
+  # The phone remote control (pkg/remote) is new code with a full suite, so
+  # its tests fail the run, unlike the suite above.
+  remote:
+    name: remote (go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go test pkg/remote
+        run: go test ./pkg/remote/... ./internal/workspace/ ./internal/cmd/
+
+  # The phone client is built from pkg/remote/web and its dist is committed,
+  # so `go install` needs no JavaScript toolchain. The job fails if the
+  # committed build is stale (docs/remote-contract.md section 7).
+  web:
+    name: web (phone client)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pkg/remote/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun test
+      - run: bun run build
+
+      - name: committed build is current
+        working-directory: .
+        run: git diff --exit-code -- pkg/remote/web/dist
