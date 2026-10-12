@@ -371,7 +371,7 @@ func (u *Usage) behaviourLines(cw int) []string {
 		}
 		lines = append(lines, row)
 	}
-	return lines
+	return append(lines, u.habitLines(cw)...)
 }
 
 // ago is how long before now at was, short: now, 4m, 3h, Jan 2.
@@ -561,6 +561,106 @@ func (u *Usage) costLines(cw int) []string {
 	if len(bars) > 0 {
 		lines = append(lines, st.text.Render("Total reported ")+st.bold.Render(formatCost(total))+
 			st.muted.Render(fmt.Sprintf(" · over %d of %s", costTurns, plural(turns, "turn", "turns"))))
+	}
+	return lines
+}
+
+// habitLines is the Habits section of the Behaviour page: how the user works,
+// from when they work to how fast they approve and which agent gets what.
+func (u *Usage) habitLines(cw int) []string {
+	st := u.styles()
+	h := u.data.habits
+	if h.UserTurns == 0 && h.Approvals.N == 0 && h.Prompt.N == 0 {
+		return nil
+	}
+	dur := func(d time.Duration, n int) string {
+		if n == 0 {
+			return "—"
+		}
+		return graph.Millis(d.Milliseconds())
+	}
+	pct := func(f float64) string { return fmt.Sprintf("%.0f%%", 100*f) }
+	lines := []string{"", st.heading.Render("Habits")}
+	tiles := []tile{
+		{"Active days", fmt.Sprintf("%d · streak %d", h.ActiveDays, h.Streak)},
+		{"Review time", dur(h.Review.Median, h.Review.N) + " med"},
+		{"Approval wait", dur(h.Approvals.Median, h.Approvals.N) + " med"},
+		{"Rubber stamps", fmt.Sprintf("%.0f%%", h.Approvals.FastPct)},
+		{"Redirect rate", pct(h.RedirectRate())},
+		{"Follow-up rate", pct(h.FollowUpRate())},
+		{"Prompt length", fmt.Sprintf("%d chars", h.Prompt.Median)},
+		{"Reverts", fmt.Sprint(h.Reverts)},
+	}
+	if h.EditTurns > 0 {
+		tiles = append(tiles, tile{"Edits / turn", fmt.Sprintf("%.1f files", float64(h.EditFiles)/float64(h.EditTurns))})
+	}
+	lines = append(lines, u.tileLines(cw, tiles)...)
+
+	if wd, hr, n := h.Peak(); n > 0 {
+		var byHour [24]float64
+		for d := range h.Hours {
+			for i, c := range h.Hours[d] {
+				byHour[i] += float64(c)
+			}
+		}
+		line := st.text.Render(padRight("Busiest", 18)) + " " +
+			st.bold.Render(fmt.Sprintf("%s %02d:00", time.Weekday((wd + 1) % 7).String()[:3], hr)) +
+			st.muted.Render(fmt.Sprintf(" · %d turns", n))
+		lines = append(lines, "", line)
+		if w := min(24, cw-19); w >= 12 {
+			lines = append(lines, st.text.Render(padRight("By hour (0-23)", 18))+" "+graph.Spark(byHour[:], w, u.theme, u.theme.Accent))
+		}
+	}
+
+	if len(h.Interrupts) > 0 {
+		where := map[string]int{}
+		total := 0
+		for _, in := range h.Interrupts {
+			where[in.Where] += in.Count
+			total += in.Count
+		}
+		var parts []string
+		for _, k := range []string{usage.SpanWait, usage.SpanThink, usage.SpanText, usage.SpanTool, "none"} {
+			if n := where[k]; n > 0 {
+				label := k
+				if k == "none" {
+					label = "other"
+				}
+				parts = append(parts, fmt.Sprintf("%d %s", n, label))
+			}
+		}
+		lines = append(lines, st.text.Render(padRight("Cancelled during", 18))+" "+st.muted.Render(ansi.Truncate(strings.Join(parts, " · "), max(10, cw-19), "…")))
+	}
+
+	type mix struct{ read, edit, run, other int }
+	byKind := map[string]*mix{}
+	var kinds []string
+	for _, f := range h.Fit {
+		m := byKind[f.Kind]
+		if m == nil {
+			m = &mix{}
+			byKind[f.Kind] = m
+			kinds = append(kinds, f.Kind)
+		}
+		switch f.Class {
+		case usage.ClassRead:
+			m.read += f.Calls
+		case usage.ClassEdit:
+			m.edit += f.Calls
+		case usage.ClassRun:
+			m.run += f.Calls
+		default:
+			m.other += f.Calls
+		}
+	}
+	for _, k := range kinds {
+		m := byKind[k]
+		all := float64(m.read + m.edit + m.run + m.other)
+		if all == 0 {
+			continue
+		}
+		share := fmt.Sprintf("read %.0f%% · edit %.0f%% · run %.0f%%", 100*float64(m.read)/all, 100*float64(m.edit)/all, 100*float64(m.run)/all)
+		lines = append(lines, tint(k).Render(padRight("Your "+k+" work", 18))+" "+st.muted.Render(ansi.Truncate(share, max(10, cw-19), "…")))
 	}
 	return lines
 }

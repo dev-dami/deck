@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -473,6 +474,12 @@ func (w *DeckWorkspace) pump() {
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorQueueEdit, "", 1)
 		case decks.QueueCancelledMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorQueueCancel, "", 1)
+		case decks.RevertedMsg:
+			kind := usage.BehaviorRevert
+			if m.Undo {
+				kind = usage.BehaviorUnrevert
+			}
+			w.recordBehavior(w.sessionOf(m.ThreadID), "", kind, "", max(1, len(m.Files)))
 		case decks.ThreadChangedMsg:
 			if !m.Gone {
 				w.syncTitle(m.ThreadID)
@@ -683,6 +690,13 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		if !began.IsZero() {
 			took = end.Sub(began)
 		}
+		if n := len(t.diffs); n > 0 {
+			added, removed := 0, 0
+			for _, d := range t.diffs {
+				added, removed = added+d.Added, removed+d.Removed
+			}
+			w.recordBehavior(sid, ev.AgentID, usage.BehaviorTurnEdit, fmt.Sprintf("+%d/-%d", added, removed), n)
+		}
 		meta := turnMeta{status: turnStatus(ev, t.failed), trigger: t.trigger, trace: t.trace, end: end}
 		if th, ok := w.mgr().Thread(threadID); ok {
 			meta.mode = string(th.Mode)
@@ -857,6 +871,7 @@ func (w *DeckWorkspace) onApproval(m decks.ApprovalMsg) {
 	w.mu.Lock()
 	w.approvals[req.ID] = cancel
 	w.mu.Unlock()
+	asked := time.Now()
 	go func() {
 		defer cancel()
 		ok, err := w.app.Permissions.Request(ctx, opts)
@@ -876,6 +891,11 @@ func (w *DeckWorkspace) onApproval(m decks.ApprovalMsg) {
 			kind = usage.BehaviorApproveAllow
 		}
 		w.recordBehavior(sid, req.AgentID, kind, "manual", 1)
+		verdict := "deny"
+		if ok {
+			verdict = "allow"
+		}
+		w.recordBehavior(sid, req.AgentID, usage.BehaviorApprovalWait, verdict, int(max(1, time.Since(asked).Milliseconds())))
 		req.Respond(deckagent.Decision{Allow: ok})
 	}()
 }

@@ -94,6 +94,7 @@ type usageData struct {
 	series   usage.Series
 	heat     []usage.Day
 	behavior usage.BehaviorReport
+	habits   usage.Habits
 	limits   []usage.LimitSnapshot // the newest stored row of each window
 	turns    []usage.Turn          // newest first, within the period
 	models   []usage.ModelStat
@@ -418,6 +419,9 @@ func loadUsageData(ctx context.Context, svc usage.Service, p usagePeriod, now ti
 		return d, err
 	}
 	if d.behavior, err = svc.Behavior(ctx, since); err != nil {
+		return d, err
+	}
+	if d.habits, err = svc.Habits(ctx, since); err != nil {
 		return d, err
 	}
 	if d.limits, err = svc.Limits(ctx); err != nil {
