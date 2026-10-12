@@ -106,7 +106,7 @@ func TestServicePairWaitDialAndPin(t *testing.T) {
 	if !a.Snapshot().Pairing {
 		t.Fatal("pairing not shown")
 	}
-	res, err := b.PairDial(ctxT(t), w.Addr, w.Code)
+	res, err := b.PairDial(ctxT(t), w.Addr, w.Code, "")
 	if err != nil {
 		t.Fatal(err)
 	}

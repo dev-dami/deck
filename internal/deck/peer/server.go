@@ -21,6 +21,9 @@ const sshVersion = "SSH-2.0-DeckPeer_1"
 const (
 	extPeer        = "deck-peer"
 	extFingerprint = "deck-peer-fp"
+	// extPairKey marks a PairUser login and carries its (unpinned) key. A
+	// connection with it is only ever served pairing.
+	extPairKey = "deck-pair-key"
 )
 
 var errNotPinned = errors.New("peer: key not pinned")
@@ -97,19 +100,24 @@ type ServerOptions struct {
 	Logger       *slog.Logger
 
 	perKey *keyLimiter      // shared with the Manager's dialers; nil makes one
+	pairs  *pairSlot        // shared with the Manager, so a moved listener keeps an armed code; nil makes one
 	now    func() time.Time // tests
 }
 
 // Server is the embedded SSH listener. It authenticates pinned peers by key,
 // accepts only mcp channels and answers only keepalives; everything else an
-// SSH client can ask for is refused.
+// SSH client can ask for is refused. While a pairing code is armed (ArmPair,
+// or the Manager's) it also lets in the user PairUser with any ed25519 key,
+// and serves that connection the deck-pair exchange and nothing else.
 type Server struct {
-	opts  ServerOptions
-	cfg   *ssh.ServerConfig
-	lock  *lockout // failures with no key offered, per IP
-	keyed *lockout // failures with a key offered, per IP and key
-	spray *lockout // failures with a key offered, per IP, at 4x the threshold
-	log   *slog.Logger
+	opts     ServerOptions
+	cfg      *ssh.ServerConfig
+	lock     *lockout // failures with no key offered, per IP
+	keyed    *lockout // failures with a key offered, per IP and key
+	spray    *lockout // failures with a key offered, per IP, at 4x the threshold
+	log      *slog.Logger
+	pairs    *pairSlot
+	ownPairs bool // pairs is this Server's own: Close ends its session
 
 	mu       sync.Mutex
 	ln       net.Listener
@@ -166,6 +174,10 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		conns:   map[*Conn]struct{}{},
 		preAuth: map[string]int{},
 		perKey:  map[string]int{},
+		pairs:   opts.pairs,
+	}
+	if s.pairs == nil {
+		s.pairs, s.ownPairs = newPairSlot(opts.now), true
 	}
 	s.cfg = &ssh.ServerConfig{
 		Config:                  baseSSHConfig(),
@@ -322,6 +334,7 @@ func (s *Server) handle(raw net.Conn, key string) {
 	var (
 		offered   ssh.PublicKey
 		keyLocked bool
+		pairWith  *pairSession // the session a PairUser login was let in for
 	)
 	cfg := *s.cfg
 	cfg.PublicKeyCallback = func(meta ssh.ConnMetadata, k ssh.PublicKey) (*ssh.Permissions, error) {
@@ -329,6 +342,10 @@ func (s *Server) handle(raw net.Conn, key string) {
 		if s.keyed.locked(key + " " + Fingerprint(k)) {
 			keyLocked = true
 			return nil, errNotPinned
+		}
+		if meta.User() == PairUser {
+			// Never the pinned store: a pairing login is served pairing only.
+			return s.checkPairKey(k, &pairWith)
 		}
 		return s.checkKey(meta, k)
 	}
@@ -351,6 +368,13 @@ func (s *Server) handle(raw net.Conn, key string) {
 			s.lock.fail(key)
 		}
 		s.log.Debug("peer: handshake failed", "remote", key, "error", err)
+		return
+	}
+	if pk, ok := sc.Permissions.Extensions[extPairKey]; ok {
+		// A pairing login: out of the handshake count, into its session's
+		// own limits. It clears no lockout: a code is not a pinned key.
+		s.preAuthDone(key)
+		s.servePair(raw, key, sc, chans, reqs, pairWith, pk)
 		return
 	}
 	name := sc.Permissions.Extensions[extPeer]
@@ -396,6 +420,83 @@ func (s *Server) handle(raw net.Conn, key string) {
 	if s.opts.OnDisconnect != nil {
 		s.opts.OnDisconnect(c)
 	}
+}
+
+// checkPairKey lets a PairUser login in with any plain ed25519 key, but only
+// while a pairing code is armed; *with gets the session. With none armed it
+// fails like an unpinned key, and counts toward the lockout the same way.
+func (s *Server) checkPairKey(key ssh.PublicKey, with **pairSession) (*ssh.Permissions, error) {
+	if key.Type() != ssh.KeyAlgoED25519 {
+		return nil, errNotPinned
+	}
+	ps := s.pairs.get()
+	if ps == nil {
+		return nil, errNotPinned
+	}
+	*with = ps
+	return &ssh.Permissions{Extensions: map[string]string{extPairKey: string(key.Marshal())}}, nil
+}
+
+// servePair serves the pairing exchange of ps on a PairUser connection,
+// within the session's own connection limits, and hands the outcome to it.
+func (s *Server) servePair(raw net.Conn, ip string, sc *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, ps *pairSession, keyData string) {
+	clientKey, err := ssh.ParsePublicKey([]byte(keyData))
+	if err != nil || ps == nil || !ps.live(s.pairs.now()) || !ps.g.admit(raw, ip) {
+		closeUnserved(sc, chans, reqs)
+		return
+	}
+	defer ps.g.release(raw, ip)
+	timer := time.AfterFunc(pairHelloTimeout, func() { raw.Close() })
+	defer timer.Stop()
+	res, burned, err := ps.serve(raw, timer, sc, chans, reqs, clientKey)
+	ps.report(pairDone{res: res, burned: burned, err: err, remote: raw.RemoteAddr().String()})
+}
+
+// ArmPair arms a pairing code on this Server (a fresh one when o.Code is
+// empty; Identity defaults to the Server's): until it is proven, burned,
+// expires, ctx ends or the PairWait is cancelled, PairUser logins may try
+// it. Arming again replaces the code. It is a local call only: nothing a
+// connection sends arms a code.
+func (s *Server) ArmPair(ctx context.Context, o PairOptions) (*PairWait, error) {
+	if o.Identity == nil {
+		o.Identity = s.opts.Identity
+	}
+	if o.Name == "" {
+		o.Name = s.opts.Name
+	}
+	if o.Logger == nil {
+		o.Logger = s.log
+	}
+	// Armed under mu, so a Close cannot slip in between and miss it.
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil, net.ErrClosed
+	}
+	w, err := armPair(ctx, s.pairs, o)
+	if err == nil && s.ln != nil {
+		w.Addr = s.ln.Addr().String()
+	}
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	w.Reachable = Reachable(w.Addr)
+	return w, nil
+}
+
+// Reachable reports whether a listener bound to addr can be reached from
+// another machine: false for a loopback address.
+func Reachable(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || !ip.IsLoopback()
 }
 
 // callerFor is the Caller a pin gets: Name and Fingerprint always from the
@@ -475,6 +576,9 @@ func (s *Server) Close() error {
 	}
 	for _, r := range raws {
 		r.Close()
+	}
+	if s.ownPairs {
+		s.pairs.stop()
 	}
 	s.wg.Wait()
 	return nil

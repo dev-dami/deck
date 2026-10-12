@@ -1266,6 +1266,14 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		return m, tea.Batch(cmds...)
+	case tea.ClipboardMsg:
+		// The terminal's answer to an OSC 52 read; only the Add a teammate
+		// wizard asks for one (v, with no system clipboard), and it ignores
+		// one it did not ask for.
+		if cmd := m.handleDialogAction(m.dialog.UpdateDialog(dialog.PeerPairID, dialog.PairClipboardMsg{Content: msg.Content})); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
 	case dialog.TargetedMsg:
 		// Work a dialog started reports back to it even when another
 		// dialog is in front; it is dropped once that dialog closed.
