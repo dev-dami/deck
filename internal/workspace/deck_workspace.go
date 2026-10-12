@@ -65,6 +65,16 @@ type DeckWorkspace struct {
 	lastMode deckagent.Mode
 
 	act activity // tool calls in flight and background shells, by session
+
+	// deckChanges carries state a headless remote client cannot read from the
+	// message store; see changes().
+	deckChanges *pubsub.Broker[DeckChange]
+
+	// entries maps a user message row to the Deck log entry Manager.Edit takes,
+	// kept on disk so a message sent before a restart can still be edited.
+	entries map[string]string
+	// edited marks the rows the user has rewritten.
+	edited map[string]bool
 }
 
 // turn is what is known about one agent's current reply.
@@ -107,6 +117,20 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 		_ = json.Unmarshal(b, &w.threads)
 		for s, t := range w.threads {
 			w.back[t] = s
+		}
+	}
+	w.entries, w.edited = map[string]string{}, map[string]bool{}
+	if b, err := os.ReadFile(w.entriesPath()); err == nil {
+		var idx editIndex
+		if err := json.Unmarshal(b, &idx); err != nil {
+			slog.Warn("Ignoring unreadable message edit index", "error", err)
+		} else {
+			if idx.Entries != nil {
+				w.entries = idx.Entries
+			}
+			if idx.Edited != nil {
+				w.edited = idx.Edited
+			}
 		}
 	}
 	// The agents' deck.jobs op reads what this workspace's activity tracker sees.
@@ -200,13 +224,16 @@ func (w *DeckWorkspace) AgentRun(ctx context.Context, sessionID, prompt string, 
 		images = append(images, deckagent.Image{Path: p, MediaType: a.MimeType})
 		parts = append(parts, message.BinaryContent{Path: a.FileName, MIMEType: a.MimeType, Data: a.Content})
 	}
-	if _, err := w.app.Messages.Create(ctx, sessionID, message.CreateMessageParams{Role: message.User, Parts: parts}); err != nil {
+	row, err := w.app.Messages.Create(ctx, sessionID, message.CreateMessageParams{Role: message.User, Parts: parts})
+	if err != nil {
 		return err
 	}
-	if _, err := w.mgr().PostWith(tid, send, images); err != nil {
+	res, err := w.mgr().PostWith(tid, send, images)
+	if err != nil {
 		w.notice(sessionID, err.Error())
 		return nil
 	}
+	w.recordEntry(row.ID, res.EntryID)
 	if sess, err := w.app.Sessions.Get(ctx, sessionID); err == nil && (sess.Title == "" || sess.Title == "New Session") {
 		sess.Title = firstLine(prompt, 60)
 		_, _ = w.app.Sessions.Save(ctx, sess)
@@ -400,7 +427,11 @@ func (w *DeckWorkspace) edge(sid string, failed bool) {
 	was, prog := w.busy[sid], w.prog
 	w.busy[sid] = now
 	w.mu.Unlock()
-	if now == was || prog == nil {
+	if now == was {
+		return
+	}
+	w.publish(DeckChange{Kind: ChangeBusy, SessionID: sid, Busy: now})
+	if prog == nil {
 		return
 	}
 	n := notify.Notification{SessionID: sid, Type: notify.TypeAgentStarted}
@@ -445,6 +476,7 @@ func (w *DeckWorkspace) pump() {
 			w.say(m.ThreadID, m.From, "→ "+strings.Join(to, " ")+"\n\n"+m.Text)
 		case decks.NoticeMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.Text)
+			w.publish(DeckChange{Kind: ChangeNotice, SessionID: w.sessionOf(m.ThreadID), Text: m.Text})
 		case decks.PausedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorHopPause, "", m.Hops)
 			w.notice(w.sessionOf(m.ThreadID), "Paused after the agents passed messages back and forth; send a message to go on.")
@@ -452,11 +484,13 @@ func (w *DeckWorkspace) pump() {
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorContinue, "", 1)
 		case decks.MemberAddedMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.AgentID+" joined")
+			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
 		case decks.AutoApprovedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorApproveAllow, "auto", 1)
 		case decks.AutoDeniedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorApproveDeny, "auto", 1)
 		case decks.ModeChangedMsg:
+			w.publish(DeckChange{Kind: ChangeMode, Mode: string(m.Mode)})
 			// One switch in the UI changes every live thread, and a new
 			// thread is put in the current mode: count the switch once.
 			if m.Mode != w.lastMode {
@@ -464,6 +498,7 @@ func (w *DeckWorkspace) pump() {
 				w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorModeChange, string(m.Mode), 1)
 			}
 		case decks.ModelChangedMsg:
+			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
 			if m.Changed == "effort" {
 				w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorEffortChange, m.Effort, 1)
 			} else {
@@ -471,6 +506,8 @@ func (w *DeckWorkspace) pump() {
 			}
 		case decks.EditedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorQueueEdit, "", 1)
+		case decks.QueueChangedMsg:
+			w.publish(DeckChange{Kind: ChangeQueue, SessionID: w.sessionOf(m.ThreadID), Queue: m.Items})
 		case decks.QueueCancelledMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorQueueCancel, "", 1)
 		}
