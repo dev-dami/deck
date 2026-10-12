@@ -88,6 +88,12 @@ deck doctor
 		}
 		defer cleanup()
 
+		stopRemote, err := startRemoteIfAsked(cmd, ws)
+		if err != nil {
+			return err
+		}
+		defer stopRemote()
+
 		if sessionID != "" {
 			sess, err := resolveWorkspaceSessionID(cmd.Context(), ws, sessionID)
 			if err != nil {
