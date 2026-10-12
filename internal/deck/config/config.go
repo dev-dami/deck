@@ -153,6 +153,20 @@ func (l PeerListen) ListenAddr() string {
 	return l.Addr
 }
 
+// AllInterfaces reports whether the listener binds every interface (no host,
+// 0.0.0.0 or ::) rather than one address such as a WireGuard IP.
+func (l PeerListen) AllInterfaces() bool {
+	host, _, err := net.SplitHostPort(l.ListenAddr())
+	if err != nil {
+		return false
+	}
+	if host == "" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsUnspecified()
+}
+
 // RoleOrDefault is the remote's role, "observer" when unset.
 func (r PeerRemote) RoleOrDefault() string {
 	if r.Role == "" {
@@ -242,14 +256,23 @@ func (p *Peers) validate() error {
 		default:
 			return fmt.Errorf("peers.remote[%d].role must be \"observer\" or \"contractor\", got %q", i, r.Role)
 		}
+		// Ops are matched exactly, and execute trims the op it is sent
+		// (agent.ParseExecInput), so an entry with spaces around it could
+		// never match: refuse it instead of silently allowing nothing.
 		for j, op := range r.AllowInbound {
 			if strings.TrimSpace(op) == "" {
 				return fmt.Errorf("peers.remote[%d].allow_inbound[%d] is empty", i, j)
+			}
+			if op != strings.TrimSpace(op) {
+				return fmt.Errorf("peers.remote[%d].allow_inbound[%d] %q has spaces around it", i, j, op)
 			}
 		}
 		for j, s := range r.MaxScope {
 			if strings.TrimSpace(s) == "" {
 				return fmt.Errorf("peers.remote[%d].max_scope[%d] is empty", i, j)
+			}
+			if s != strings.TrimSpace(s) {
+				return fmt.Errorf("peers.remote[%d].max_scope[%d] %q has spaces around it", i, j, s)
 			}
 		}
 	}
@@ -374,7 +397,80 @@ func SaveTo(path string, c Config) error {
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
+	return writeFileAtomic(path, append(data, '\n'))
+}
+
+// LoadPeers reads only the peers section of the config at path and validates
+// it, without the rest of LoadFrom's work (no defaults, no git, no
+// environment): the peer manager re-reads it while Deck runs. A missing file
+// or section is nil.
+func LoadPeers(path string) (*Peers, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("config: read %s: %w", path, err)
+	}
+	var f struct {
+		Peers *Peers `json:"peers"`
+	}
+	if err := json.Unmarshal(data, &f); err != nil {
+		return nil, fmt.Errorf("config: parse %s: %w", path, err)
+	}
+	if f.Peers != nil {
+		if err := f.Peers.validate(); err != nil {
+			return nil, fmt.Errorf("config: %s: %w", path, err)
+		}
+	}
+	return f.Peers, nil
+}
+
+// UpdatePeers edits only the peers section of the config file at path: fn
+// changes it in place and reports whether it did. Every other key is written
+// back as it was, unknown keys included, and nothing that came from the
+// environment (DECK_REDUCED_MOTION) is persisted, unlike a LoadFrom/SaveTo
+// round trip. A missing file is created holding just the peers section.
+// changed reports whether the file was written.
+func UpdatePeers(path string, fn func(p *Peers) bool) (changed bool, err error) {
+	raw := map[string]json.RawMessage{}
+	data, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return false, fmt.Errorf("config: read %s: %w", path, err)
+	default:
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return false, fmt.Errorf("config: parse %s: %w", path, err)
+		}
+	}
+	p := &Peers{}
+	if v, ok := raw["peers"]; ok && string(v) != "null" {
+		if err := json.Unmarshal(v, p); err != nil {
+			return false, fmt.Errorf("config: parse %s: peers: %w", path, err)
+		}
+	}
+	if !fn(p) {
+		return false, nil
+	}
+	if err := p.validate(); err != nil {
+		return false, err
+	}
+	enc, err := json.Marshal(p)
+	if err != nil {
+		return false, err
+	}
+	raw["peers"] = enc
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return true, writeFileAtomic(path, append(out, '\n'))
+}
+
+// writeFileAtomic writes data to a temp file next to path and renames it over
+// path, creating the parent directory.
+func writeFileAtomic(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}

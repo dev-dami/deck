@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -66,6 +67,9 @@ func TestPeersValidate(t *testing.T) {
 		{"observer role", func(p *Peers) { p.Remote[0].Role = "observer" }, ""},
 		{"empty allow entry", func(p *Peers) { p.Remote[0].AllowInbound = []string{"peer.status", " "} }, "allow_inbound[1]"},
 		{"empty scope entry", func(p *Peers) { p.Remote[0].MaxScope = []string{""} }, "max_scope[0]"},
+		{"allow entry with spaces", func(p *Peers) { p.Remote[0].AllowInbound = []string{" peer.status"} }, "spaces around"},
+		{"allow entry with tab", func(p *Peers) { p.Remote[0].AllowInbound = []string{"peer.status\t"} }, "spaces around"},
+		{"scope entry with spaces", func(p *Peers) { p.Remote[0].MaxScope = []string{"podman-read "} }, "spaces around"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -125,6 +129,66 @@ func TestPeersRoundTripAndDefaults(t *testing.T) {
 	var nilPeers *Peers
 	if _, ok := nilPeers.Find("vps"); ok {
 		t.Fatal("nil peers has no remotes")
+	}
+}
+
+func TestUpdatePeersKeepsOtherKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	writeFile(t, path, `{"motion": "on", "some_future_key": {"x": 42}, "peers": {"name": "pc"}}`)
+	t.Setenv(EnvReducedMotion, "1")
+	changed, err := UpdatePeers(path, func(p *Peers) bool {
+		p.Remote = append(p.Remote, PeerRemote{Name: "vps", Role: PeerRoleObserver})
+		return true
+	})
+	if err != nil || !changed {
+		t.Fatalf("UpdatePeers = %v %v", changed, err)
+	}
+	var raw map[string]json.RawMessage
+	data, _ := os.ReadFile(path)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if string(raw["motion"]) != `"on"` {
+		t.Fatalf("motion = %s, the environment override was persisted", raw["motion"])
+	}
+	if !strings.Contains(string(raw["some_future_key"]), "42") {
+		t.Fatalf("unknown key dropped: %s", data)
+	}
+	p, err := LoadPeers(path)
+	if err != nil || p == nil || p.Name != "pc" {
+		t.Fatalf("LoadPeers = %+v %v", p, err)
+	}
+	if r, ok := p.Find("vps"); !ok || r.Dial || r.RoleOrDefault() != PeerRoleObserver {
+		t.Fatalf("remote = %+v %v", r, ok)
+	}
+	// No change, no write; an invalid change is refused.
+	if changed, err := UpdatePeers(path, func(*Peers) bool { return false }); changed || err != nil {
+		t.Fatalf("no-op update: %v %v", changed, err)
+	}
+	if _, err := UpdatePeers(path, func(p *Peers) bool {
+		p.Remote = append(p.Remote, PeerRemote{Name: "Bad Name"})
+		return true
+	}); err == nil {
+		t.Fatal("invalid peers saved")
+	}
+	// A missing file gets just the peers section.
+	fresh := filepath.Join(t.TempDir(), "config.json")
+	if _, err := UpdatePeers(fresh, func(p *Peers) bool { p.Name = "x"; return true }); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := LoadPeers(fresh); err != nil || p == nil || p.Name != "x" {
+		t.Fatalf("fresh: %+v %v", p, err)
+	}
+}
+
+func TestListenAllInterfaces(t *testing.T) {
+	for addr, want := range map[string]bool{
+		"": true, ":7722": true, "0.0.0.0:7722": true, "[::]:7722": true,
+		"127.0.0.1:7722": false, "10.0.0.2:7722": false, "[::1]:7722": false, "vps.example.com:7722": false,
+	} {
+		if got := (PeerListen{Addr: addr}).AllInterfaces(); got != want {
+			t.Errorf("AllInterfaces(%q) = %v, want %v", addr, got, want)
+		}
 	}
 }
 
