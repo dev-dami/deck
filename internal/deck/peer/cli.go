@@ -113,19 +113,39 @@ func (c CLI) Pair(ctx context.Context, a PairArgs) error {
 	if err != nil {
 		return err
 	}
-	ln, err := net.Listen("tcp", a.Addr)
+	ln, err := ListenPair(a.Addr)
 	if err != nil {
-		return fmt.Errorf("listen %s: %w (is Deck already listening there? stop it or pass --addr)", a.Addr, err)
+		// A Deck running here serves pairing on its own listener: pairing
+		// from it needs no second port.
+		return fmt.Errorf("%w\nIf it is this machine's running Deck, pair from it instead: Settings › Team › a › This Deck waits for a code (it uses the same port)", err)
 	}
 	self := c.selfName()
 	expiry := a.Expiry
 	if expiry <= 0 {
 		expiry = DefaultPairExpiry
 	}
+	addr := ln.Addr().String()
+	port := portOf(ln.Addr())
+	w := PairWait{Code: code, Addr: addr, Fingerprint: id.Fingerprint(), Name: self,
+		Hosts: InviteHosts(addr), Expires: time.Now().Add(expiry)}
+	inv := w.Invite()
 	c.printf("Pairing code:  %s   (single use, valid %s)\n", code, expiry)
-	c.printf("This Deck:     %s  %s\n", self, id.Fingerprint())
-	c.printf("Listening on:  %s\n\n", ln.Addr())
-	c.printf("On the other Deck run the line below and type the code when it asks\n(or set %s):\n  deck peer add %s <this-host>:%s\n\n", EnvPairCode, self, portOf(ln.Addr()))
+	c.printf("This Deck:     %s\n", self)
+	c.printf("Fingerprint:   %s\n", id.Fingerprint())
+	c.printf("Listening on:  %s\n", addr)
+	if inv.Host != "" {
+		c.printf("Address:       %s\n", inv.Addr())
+	}
+	c.printf("\n")
+	if !Reachable(addr) {
+		c.printf("Warning: the other Deck cannot reach %s: it only listens on this machine.\nRun again with --addr 0.0.0.0:%s to listen on all interfaces.\n\n", addr, port)
+	}
+	if inv.Host != "" {
+		c.printf("Invite (holds the code: single use, valid %s; paste it on the other Deck):\n  %s\n\n", expiry, inv.Encode())
+		c.printf("On the other Deck: Settings › Team › a › Connect, and paste the invite.\nOr run:  deck peer add --invite -   and paste it at the prompt\n")
+	}
+	c.printf("Or run:  deck peer add %s <this-host>:%s   and type the code when it asks (or set %s)\n", self, port, EnvPairCode)
+	c.printf("Open port %s in your firewall if the other Deck is on another network.\n\n", port)
 	if a.Ready != nil {
 		a.Ready(ln.Addr().String(), code)
 	}
@@ -152,12 +172,42 @@ func (c CLI) Pair(ctx context.Context, a PairArgs) error {
 // AddArgs are the options of `deck peer add`.
 type AddArgs struct {
 	Name, Addr, Code, Role string
-	Yes                    bool
-	Replace                bool // see PairArgs.Replace
+	// Invite, when set, is the line the waiting Deck shows: it gives the
+	// address, the code, the fingerprint to expect and, when Name is empty,
+	// the name. A Code that is an invite counts as one.
+	Invite  string
+	Yes     bool
+	Replace bool // see PairArgs.Replace
 }
 
-// Add dials a Deck running `deck peer pair`, proves the code and pins it.
+// explained is an error worded for a person, keeping the cause for errors.Is.
+type explained struct {
+	msg string
+	err error
+}
+
+func (e explained) Error() string { return e.msg }
+func (e explained) Unwrap() error { return e.err }
+
+// Add dials a waiting Deck, proves the code and pins it.
 func (c CLI) Add(ctx context.Context, a AddArgs) error {
+	if a.Invite == "" && LooksLikeInvite(a.Code) {
+		a.Invite, a.Code = a.Code, ""
+	}
+	var expect string
+	if a.Invite != "" {
+		inv, err := ParseInvite(a.Invite)
+		if err != nil {
+			return err
+		}
+		if a.Addr == "" {
+			a.Addr = inv.Addr()
+		}
+		if a.Name == "" {
+			a.Name = inv.Name
+		}
+		a.Code, expect = inv.Code, inv.Fingerprint
+	}
 	if !config.ValidPeerName(a.Name) {
 		return fmt.Errorf("bad name %q: use 1-32 of a-z, 0-9, '-', '_', '.'", a.Name)
 	}
@@ -174,9 +224,13 @@ func (c CLI) Add(ctx context.Context, a AddArgs) error {
 	if err != nil {
 		return err
 	}
-	res, err := DialPair(ctx, a.Addr, PairOptions{Identity: id, Name: c.selfName(), Code: a.Code})
+	c.printf("Checking the code with %s… (up to %s)\n", a.Addr, PairDialTimeout)
+	res, err := DialPair(ctx, a.Addr, PairOptions{Identity: id, Name: c.selfName(), Code: a.Code, ExpectFingerprint: expect})
 	if err != nil {
-		return err
+		return explained{msg: PairErrText(err, a.Addr), err: err}
+	}
+	if expect != "" {
+		c.printf("✓ The fingerprint matches the invite.\n")
 	}
 	if err := c.pin(a.Name, a.Addr, a.Role, res, a.Yes, a.Replace); err != nil {
 		return err

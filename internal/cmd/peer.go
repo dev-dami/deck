@@ -28,6 +28,9 @@ deck peer pair
 # (or set DECK_PEER_CODE)
 deck peer add vps vps.example.com:7722
 
+# Or paste the invite it printed (it holds the address, code and fingerprint)
+deck peer add --invite -
+
 # Check the link
 deck peer ping vps
   `,
@@ -79,8 +82,14 @@ func pairingCode(cmd *cobra.Command) (string, error) {
 	if code := strings.TrimSpace(os.Getenv(peer.EnvPairCode)); code != "" {
 		return code, nil
 	}
+	return promptSecret(cmd, "Pairing code (or invite): ")
+}
+
+// promptSecret asks for a code or an invite, without echoing it when stdin
+// is a terminal.
+func promptSecret(cmd *cobra.Command, prompt string) (string, error) {
 	errOut := cmd.ErrOrStderr()
-	fmt.Fprint(errOut, "Pairing code: ")
+	fmt.Fprint(errOut, prompt)
 	in := cmd.InOrStdin()
 	if f, ok := in.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		b, err := term.ReadPassword(int(f.Fd()))
@@ -95,7 +104,7 @@ func pairingCode(cmd *cobra.Command) (string, error) {
 func readLine(r io.Reader) (string, error) {
 	var b []byte
 	one := make([]byte, 1)
-	for len(b) < 256 {
+	for len(b) < 2048 { // room for an invite
 		n, err := r.Read(one)
 		if n == 1 {
 			if one[0] == '\n' {
@@ -114,23 +123,42 @@ func readLine(r io.Reader) (string, error) {
 }
 
 var peerAddCmd = &cobra.Command{
-	Use:   "add <name> <host:port>",
-	Short: "Pair with a Deck running deck peer pair",
-	Args:  cobra.ExactArgs(2),
+	Use:   "add [name] [host:port]",
+	Short: "Pair with a Deck that waits for a code",
+	Long: `Pair with a Deck that waits for a code (Settings › Team › a there, or
+deck peer pair). Give its name and address and type the code when asked, or
+paste the invite it shows: --invite - (or no address) asks for it without
+echoing it. The prompt also takes an invite in place of the code.`,
+	Args: cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := peerCLI(cmd)
 		if err != nil {
 			return err
 		}
-		addr := peer.WithDefaultPort(args[1])
-		code, err := pairingCode(cmd)
-		if err != nil {
-			return err
+		a := peer.AddArgs{}
+		a.Role, _ = cmd.Flags().GetString("role")
+		a.Yes, _ = cmd.Flags().GetBool("yes")
+		a.Replace, _ = cmd.Flags().GetBool("replace")
+		a.Invite, _ = cmd.Flags().GetString("invite")
+		if len(args) > 0 {
+			a.Name = args[0]
 		}
-		role, _ := cmd.Flags().GetString("role")
-		yes, _ := cmd.Flags().GetBool("yes")
-		replace, _ := cmd.Flags().GetBool("replace")
-		return c.Add(cmd.Context(), peer.AddArgs{Name: args[0], Addr: addr, Code: code, Role: role, Yes: yes, Replace: replace})
+		if len(args) > 1 {
+			a.Addr = peer.WithDefaultPort(args[1])
+		}
+		switch {
+		case a.Invite == "-" || (a.Invite == "" && a.Addr == ""):
+			// The invite holds the code: read it like one, off the
+			// command line.
+			if a.Invite, err = promptSecret(cmd, "Invite: "); err != nil {
+				return err
+			}
+		case a.Invite == "":
+			if a.Code, err = pairingCode(cmd); err != nil {
+				return err
+			}
+		}
+		return c.Add(cmd.Context(), a)
 	},
 }
 
@@ -199,6 +227,7 @@ func init() {
 	peerAddCmd.Flags().String("code", "", "the code deck peer pair printed (deprecated: use the prompt or DECK_PEER_CODE)")
 	_ = peerAddCmd.Flags().MarkHidden("code")
 	_ = peerAddCmd.Flags().MarkDeprecated("code", "it shows in the process list and shell history; type the code at the prompt or set DECK_PEER_CODE")
+	peerAddCmd.Flags().String("invite", "", "the invite the waiting Deck shows; - asks for it without echoing (it holds the code)")
 	peerAddCmd.Flags().String("role", "", "the other Deck's role here: observer (default) or contractor")
 	peerAddCmd.Flags().Bool("yes", false, "pin without asking (after checking the fingerprints)")
 	peerAddCmd.Flags().Bool("replace", false, "allow replacing a different key already pinned under that name")
