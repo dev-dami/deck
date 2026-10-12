@@ -42,6 +42,20 @@ type ShellItem struct {
 	sty             *styles.Styles
 	pending         bool
 	anim            *anim.Anim
+
+	// outputGen counts changes to output; memo is the last render
+	// without its spinner frame (see RawRender).
+	outputGen uint64
+	memo      shellRenderMemo
+}
+
+// shellRenderMemo is a shell item's render without its spinner frame.
+type shellRenderMemo struct {
+	ok           bool
+	key          shellRenderKey
+	out          string
+	animated     bool
+	maxLineWidth int
 }
 
 var (
@@ -108,10 +122,12 @@ func (s *ShellItem) AppendOutput(chunk string) {
 		return
 	}
 	s.output.WriteString(chunk)
+	s.outputGen++
 	s.Bump()
 }
 
 func (s *ShellItem) replaceOutput(output string) {
+	s.outputGen++
 	s.output.Reset()
 	s.output.Grow(len(output))
 	s.output.WriteString(output)
@@ -203,7 +219,51 @@ func (s *ShellItem) ToggleExpanded() bool {
 	return s.expandedContent
 }
 
+// shellRenderKey is everything a shell item's render reads apart from
+// its spinner frame.
+type shellRenderKey struct {
+	width    int
+	focused  bool
+	output   uint64
+	xOffset  int
+	expanded bool
+	exitCode int
+	pending  bool
+	styles   uint64
+}
+
+func (s *ShellItem) renderKey(width int) shellRenderKey {
+	return shellRenderKey{
+		width:    width,
+		focused:  s.focused,
+		output:   s.outputGen,
+		xOffset:  s.xOffset,
+		expanded: s.expandedContent,
+		exitCode: s.exitCode,
+		pending:  s.pending,
+		styles:   common.StyleGeneration(),
+	}
+}
+
 func (s *ShellItem) RawRender(width int) string {
+	// A finished item is frozen by the list cache, but a running one is
+	// drawn again on every spinner frame; only the spinner changes then,
+	// so the trimmed, styled output is kept between frames.
+	key := s.renderKey(width)
+	if !s.memo.ok || s.memo.key != key {
+		out, animated := s.renderParts(width)
+		s.memo = shellRenderMemo{ok: true, key: key, out: out, animated: animated, maxLineWidth: s.maxLineWidth}
+	}
+	s.maxLineWidth = s.memo.maxLineWidth
+	if s.memo.animated {
+		return s.memo.out + "\n" + s.anim.Render()
+	}
+	return s.memo.out
+}
+
+// renderParts renders the item without its spinner and reports whether
+// the spinner goes on a line below it.
+func (s *ShellItem) renderParts(width int) (string, bool) {
 	cappedWidth := cappedMessageWidth(width)
 
 	cmd := strings.ReplaceAll(s.command, "\n", " ")
@@ -222,14 +282,14 @@ func (s *ShellItem) RawRender(width int) string {
 	if s.pending {
 		if s.output.Len() == 0 {
 			// Nothing streamed yet: show the spinner under the header.
-			return header + "\n" + s.anim.Render()
+			return header, true
 		}
 	} else if s.exitCode != 0 {
 		header += " " + s.sty.Messages.ShellExitCode.Render(fmt.Sprintf("(exit %d)", s.exitCode))
 	}
 
 	if s.output.Len() == 0 {
-		return header
+		return header, false
 	}
 
 	// Remap raw ANSI 16-color codes onto legible Charmtone colors so
@@ -250,7 +310,7 @@ func (s *ShellItem) RawRender(width int) string {
 		raw = trimmed
 	}
 	if raw == "" {
-		return header
+		return header, false
 	}
 
 	// Count lines from the trimmed output directly so truncation
@@ -306,17 +366,13 @@ func (s *ShellItem) RawRender(width int) string {
 		body.WriteString(s.sty.Messages.ShellTruncation.Render(
 			fmt.Sprintf("… %d more lines", truncatedCount),
 		))
-		return header + "\n" + body.String()
+		return header + "\n" + body.String(), false
 	}
 
 	result := header + "\n" + strings.TrimRight(body.String(), "\n")
 
 	// While streaming, keep the spinner pinned below the latest output.
-	if s.pending {
-		result += "\n" + s.anim.Render()
-	}
-
-	return result
+	return result, s.pending
 }
 
 func firstLines(s string, count int) string {

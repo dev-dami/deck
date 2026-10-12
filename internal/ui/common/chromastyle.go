@@ -3,6 +3,7 @@ package common
 import (
 	"image/color"
 	"sync"
+	"sync/atomic"
 
 	"github.com/alecthomas/chroma/v2"
 	chromastyles "github.com/alecthomas/chroma/v2/styles"
@@ -40,6 +41,18 @@ func InvalidateChromaStyleCache() {
 func InvalidateStyleCaches() {
 	InvalidateMarkdownRendererCache()
 	InvalidateChromaStyleCache()
+	styleGeneration.Add(1)
+}
+
+// styleGeneration counts InvalidateStyleCaches calls.
+var styleGeneration atomic.Uint64
+
+// StyleGeneration changes whenever the active theme does (precisely,
+// whenever InvalidateStyleCaches runs). Renders memoized outside the
+// style caches fold it into their key so a theme swapped in place, which
+// keeps the *styles.Styles pointer, still invalidates them.
+func StyleGeneration() uint64 {
+	return styleGeneration.Load()
 }
 
 // ChromaStyle returns the chroma style for the given theme, memoized. When

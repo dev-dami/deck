@@ -17,18 +17,18 @@ import (
 // context is and what it has cost. Before anyone joins it lists the agent
 // CLIs that are installed.
 func (m *UI) modelInfo(width int) string {
-	roster, ok := m.com.Workspace.(workspace.Roster)
-	if !ok {
+	if _, ok := m.roster(); !ok {
 		return ""
 	}
-	sessionID := ""
-	if m.session != nil {
-		sessionID = m.session.ID
-	}
+	return m.modelInfoFor(m.sessionRoster(), width)
+}
+
+// modelInfoFor is modelInfo for the given roster lines.
+func (m *UI) modelInfoFor(agents []workspace.AgentLine, width int) string {
 	t := m.com.Styles
 	muted := t.ModelInfo.Provider
 	var lines []string
-	for _, a := range roster.Roster(sessionID) {
+	for _, a := range agents {
 		tint := lipgloss.NewStyle().Foreground(tone.Tint(a.Kind))
 		head := tint.Render(tone.Mark(a.Kind)) + " " + tint.Bold(true).Render(a.ID)
 		model := a.Model

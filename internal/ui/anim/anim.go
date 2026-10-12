@@ -338,6 +338,11 @@ func (a *Anim) buildFrames() {
 
 // SetLabel updates the label text and re-renders it.
 func (a *Anim) SetLabel(newLabel string) {
+	if newLabel == a.settings.Label {
+		// Callers set the label on every render; the label, its width
+		// and the total width all follow from it, and are already set.
+		return
+	}
 	a.settings.Label = newLabel
 	a.labelWidth = lipgloss.Width(newLabel)
 

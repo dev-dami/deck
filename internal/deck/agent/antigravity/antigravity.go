@@ -29,13 +29,13 @@ import (
 	"time"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
+	"github.com/dev-dami/deck/internal/deck/agent/modelcache"
 )
 
 type adapter struct {
 	binary string
 
-	modelsMu sync.Mutex
-	models   []agent.ModelInfo // cached Models() result
+	models modelcache.Cache // Models() result
 
 	// test hooks
 	extraArgs []string
@@ -151,6 +151,11 @@ type run struct {
 	// running); the process is restarted with the new flags once the turn
 	// is done.
 	dirty bool
+	// spawnedSlug and spawnedMode are what the newest process was started
+	// with, so a restart can tell whether a change that arrived while it was
+	// under way already made it in.
+	spawnedSlug string
+	spawnedMode agent.Mode
 	// restarting: a deliberate restart is in flight; Sends are queued in
 	// queue and written, in order, to the new process when it is up.
 	restarting bool
@@ -161,9 +166,16 @@ type run struct {
 	evClosed   bool
 }
 
+// flagsChangedLocked reports whether the --model slug or the mode differ
+// from what the newest process was started with. Caller holds r.mu.
+func (r *run) flagsChangedLocked() bool {
+	return r.slug != r.spawnedSlug || r.mode != r.spawnedMode
+}
+
 func (r *run) args(resume string) []string {
 	r.mu.Lock()
 	slug, mode := r.slug, r.mode
+	r.spawnedSlug, r.spawnedMode = slug, mode
 	r.mu.Unlock()
 	args := []string{
 		"--input-format", "stream-json",
@@ -234,11 +246,45 @@ func (r *run) emit(ev agent.Event) {
 	}
 }
 
+// readerPool recycles the 1 MiB stdout readers: an interrupt or a mode or
+// model change spawns a new process, and with it a new reader.
+var readerPool = sync.Pool{New: func() any { return bufio.NewReaderSize(nil, 1<<20) }}
+
+// readLine returns the next line of br, newline included. The line is only
+// valid until the next call: it is br's own buffer, or scratch (returned
+// for reuse) for a line longer than that buffer. A scratch grown past 4 MiB
+// is not handed back, so one huge line is not kept alive for the whole run.
+func readLine(br *bufio.Reader, scratch []byte) (line, buf []byte, err error) {
+	line, err = br.ReadSlice('\n')
+	if err != bufio.ErrBufferFull {
+		return line, scratch, err
+	}
+	buf = append(scratch[:0], line...)
+	for err == bufio.ErrBufferFull {
+		line, err = br.ReadSlice('\n')
+		buf = append(buf, line...)
+	}
+	if cap(buf) > 4<<20 {
+		return buf, nil, err
+	}
+	return buf, buf, err
+}
+
 func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 	defer r.readers.Done()
-	sc := bufio.NewReaderSize(stdout, 1<<20)
+	sc := readerPool.Get().(*bufio.Reader)
+	sc.Reset(stdout)
+	defer func() {
+		sc.Reset(nil)
+		readerPool.Put(sc)
+	}()
+	var scratch []byte
 	for {
-		line, err := sc.ReadBytes('\n')
+		// The translator copies what it keeps, so the line can be the
+		// reader's own buffer rather than a fresh copy of every line.
+		var line []byte
+		var err error
+		line, scratch, err = readLine(sc, scratch)
 		if len(bytes.TrimSpace(line)) > 0 {
 			if r.a.tap != nil {
 				r.a.tap(append([]byte(nil), line...))
@@ -564,8 +610,14 @@ func (r *run) restart() {
 			return
 		}
 		if r.dirty && !r.closed {
-			r.mu.Unlock()
-			continue // changed again while restarting
+			if r.flagsChangedLocked() {
+				r.mu.Unlock()
+				continue // changed again while restarting
+			}
+			// Changed again, but before the new process read its flags (a
+			// model and an effort picked together): it already runs with
+			// them, so a second restart would only cost another cold start.
+			r.dirty = false
 		}
 		r.restarting = false
 		q := r.queue

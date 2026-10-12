@@ -1,6 +1,8 @@
 package list
 
 import (
+	"slices"
+
 	"github.com/sahilm/fuzzy"
 )
 
@@ -23,6 +25,20 @@ type FilterableList struct {
 	*List
 	items []FilterableItem
 	query string
+
+	// filtered memoizes the filter result: dialogs ask for it on every
+	// frame (Render does too), and a fuzzy match over every item per
+	// frame is the bulk of a large list's frame. It holds while the
+	// items, their Filter values and the query hold.
+	filtered memoFilter
+}
+
+// memoFilter is a memoized filter result and what it depends on.
+type memoFilter struct {
+	ok    bool
+	query string
+	keys  []string
+	items []Item
 }
 
 // NewFilterableList creates a new filterable list.
@@ -39,6 +55,7 @@ func NewFilterableList(items ...FilterableItem) *FilterableList {
 // SetItems sets the list items and updates the filtered items.
 func (f *FilterableList) SetItems(items ...FilterableItem) {
 	f.items = items
+	f.filtered.ok = false
 	fitems := make([]Item, len(items))
 	for i, item := range items {
 		fitems[i] = item
@@ -49,6 +66,7 @@ func (f *FilterableList) SetItems(items ...FilterableItem) {
 // AppendItems appends items to the list and updates the filtered items.
 func (f *FilterableList) AppendItems(items ...FilterableItem) {
 	f.items = append(f.items, items...)
+	f.filtered.ok = false
 	itms := make([]Item, len(f.items))
 	for i, item := range f.items {
 		itms[i] = item
@@ -59,6 +77,7 @@ func (f *FilterableList) AppendItems(items ...FilterableItem) {
 // PrependItems prepends items to the list and updates the filtered items.
 func (f *FilterableList) PrependItems(items ...FilterableItem) {
 	f.items = append(items, f.items...)
+	f.filtered.ok = false
 	itms := make([]Item, len(f.items))
 	for i, item := range f.items {
 		itms[i] = item
@@ -87,8 +106,39 @@ func (f FilterableItemsSource) String(i int) string {
 	return f[i].Filter()
 }
 
-// FilteredItems returns the visible items after filtering.
+// FilteredItems returns the visible items after filtering. The result is
+// the caller's to keep.
 func (f *FilterableList) FilteredItems() []Item {
+	return slices.Clone(f.filteredItems())
+}
+
+// filteredItems returns the memoized filter result, filtering again when
+// the items' Filter values or the query changed since. The result is
+// shared with the memo and must not be modified.
+func (f *FilterableList) filteredItems() []Item {
+	c := &f.filtered
+	if c.ok && c.query == f.query && len(c.keys) == len(f.items) {
+		same := true
+		for i, item := range f.items {
+			if item.Filter() != c.keys[i] {
+				same = false
+				break
+			}
+		}
+		if same {
+			return c.items
+		}
+	}
+	keys := make([]string, len(f.items))
+	for i, item := range f.items {
+		keys[i] = item.Filter()
+	}
+	*c = memoFilter{ok: true, query: f.query, keys: keys, items: f.filter()}
+	return c.items
+}
+
+// filter matches the items against the query.
+func (f *FilterableList) filter() []Item {
 	if f.query == "" {
 		items := make([]Item, len(f.items))
 		for i, item := range f.items {

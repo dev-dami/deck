@@ -323,19 +323,21 @@ func (m *UI) clickToast(x, y int) bool {
 	return true
 }
 
-// hoverToast holds the toast under the pointer.
-func (m *UI) hoverToast(x, y int) {
+// hoverToast holds the toast under the pointer. It reports whether the
+// toast under the pointer changed.
+func (m *UI) hoverToast(x, y int) (changed bool) {
 	if m.notices.toasts.Len() == 0 {
-		return
+		return false
 	}
 	id := m.toastAt(x, y)
 	if id == m.notices.hover {
-		return
+		return false
 	}
 	m.notices.hover = id
 	if m.notices.toasts.Hover(id, time.Now()) {
 		m.notices.ticking = false
 	}
+	return true
 }
 
 // drawNoticeDot marks unread notifications at the right of the status

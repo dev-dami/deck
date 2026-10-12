@@ -394,10 +394,7 @@ func (c *choiceList) buildLines(innerWidth int, fillInPrefix string, itemFn choi
 // renderDescription renders the markdown description at width.
 func (c *choiceList) renderDescription(width int) string {
 	r := common.MarkdownRenderer(c.Styles, width)
-	mu := common.LockMarkdownRenderer(r)
-	mu.Lock()
-	out, err := r.Render(c.Request.Description)
-	mu.Unlock()
+	out, err := common.RenderMarkdownMemo(r, c.Request.Description)
 	if err != nil {
 		return c.Request.Description
 	}

@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -289,6 +290,21 @@ type UI struct {
 	// way; workSeen is when each busy agent was first seen at work.
 	workTicking bool
 	workSeen    map[string]time.Time
+
+	// canvas is the screen buffer View draws each frame into, kept
+	// between frames while the terminal size holds.
+	canvas uv.ScreenBuffer
+	// frameMemo shares reads between the parts of the frame View is
+	// drawing; nil outside of it. See frameMemo.
+	frameMemo *frameMemo
+	// stylesGen changes whenever the active styles do (refreshStyles), so
+	// text memoized across frames can tell a theme change.
+	stylesGen uint64
+
+	// chatWarmPending asks the end of the current update to start warming
+	// the chat's message cache (see Chat.Warm), after a theme change
+	// dropped it.
+	chatWarmPending bool
 
 	// sendProgressBar instructs the TUI to send progress bar updates to the
 	// terminal.
@@ -885,6 +901,10 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case uv.UnknownOscEvent:
 		m.updateNotificationBackend()
 	case tea.FocusMsg:
+		if m.windowBlurred() {
+			// Catch up on the git reads skipped while blurred.
+			cmds = append(cmds, m.fetchGitBranch(), m.gitPoll())
+		}
 		m.notifyWindowFocused = true
 		m.turnOutcome = ""
 	case tea.BlurMsg:
@@ -902,6 +922,14 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case workspace.LimitsChangedMsg:
 		// An agent's plan limits moved: Deck's mark shows them.
 		m.header.invalidateMark()
+	case themeSwitchedMsg:
+		cmds = append(cmds, m.handleThemeSwitched(msg))
+	case themeCreatedMsg:
+		cmds = append(cmds, m.handleThemeCreated(msg))
+	case themeRenamedMsg:
+		cmds = append(cmds, m.handleThemeRenamed(msg))
+	case themeDeletedMsg:
+		cmds = append(cmds, m.handleThemeDeleted(msg))
 	case busyStateMsg:
 		cmds = append(cmds, m.applyBusyState(msg)...)
 	case promptQueueMsg:
@@ -964,7 +992,12 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, m.startLSPs(msg.lspFilePaths()))
 		msgs := msg.messages
-		if cmd := m.setSessionMessages(msgs); cmd != nil {
+		if cmd := m.setSessionMessagesNested(msgs, msg.nested); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		// Render the transcript into the cache a batch at a time so the
+		// first scroll does not render it all at once.
+		if cmd := m.chat.Warm(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 		if cmd := m.restoreModelFromSession(msgs); cmd != nil {
@@ -1325,8 +1358,13 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// terminal reports every move (see View); a move with no button
 		// held is only that, so it stops here unless something else
 		// asked for hover.
-		m.hoverToast(msg.X, msg.Y)
+		hoverChanged := m.hoverToast(msg.X, msg.Y)
 		if m.notices.toasts.Len() > 0 && msg.Button == uv.MouseNone && m.activeInline == nil && m.state != uiLanding {
+			if !hoverChanged {
+				// A move that holds no new toast changes nothing on
+				// screen; keep the memoized frame.
+				m.markScrollOnly()
+			}
 			return m, tea.Batch(cmds...)
 		}
 		if m.state == uiLanding {
@@ -1478,16 +1516,22 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chat.HideScrollbar(msg.seq)
 		}
 	case chatWarmMsg:
-		// A resize has settled; warm the message cache one batch at a time
-		// so the scrollbar recompute never blocks the UI thread.
+		// A resize has settled (or a session loaded, or the theme changed);
+		// warm the message cache one batch at a time so the scrollbar
+		// recompute never blocks the UI thread.
 		if m.state == uiChat {
 			cmd, done := m.chat.WarmStep(msg.seq)
 			if cmd != nil {
 				cmds = append(cmds, cmd)
-			} else if done {
+			}
+			if done {
 				// Heights are cached now, so the final layout pass (scrollbar
 				// reservation) is cheap.
 				m.updateLayoutAndSize()
+			} else {
+				// Rendering off-screen messages into the cache changes
+				// nothing on screen; keep the memoized frame.
+				m.markScrollOnly()
 			}
 		}
 	case stripSaveMsg:
@@ -1580,7 +1624,16 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case gitBranchUpdatedMsg:
 		m.gitBranch = msg.branch
 	case gitBranchPollMsg:
-		cmds = append(cmds, m.fetchGitBranch(), m.gitBranchTicker(), m.gitPoll())
+		cmds = append(cmds, m.gitBranchTicker())
+		if m.windowBlurred() {
+			// Nobody is looking: skip the local branch and status reads
+			// (FocusMsg catches them up), but keep asking GitHub, whose
+			// finished checks ring the bell.
+			m.gitClient()
+			cmds = append(cmds, m.gitMaybePollPR(time.Now()))
+		} else {
+			cmds = append(cmds, m.fetchGitBranch(), m.gitPoll())
+		}
 	case gitMsg:
 		cmds = append(cmds, m.handleGitMsg(msg))
 	case util.InfoMsg:
@@ -1695,6 +1748,14 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 	}
+	if m.chatWarmPending {
+		// A theme change dropped every message's render; re-render them
+		// a batch at a time rather than all at once on the first scroll.
+		m.chatWarmPending = false
+		if cmd := m.chat.Warm(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
 	if cmd := m.endFrameUpdate(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -1724,6 +1785,14 @@ func (m *UI) handleAnimTick(msg animTickMsg) tea.Cmd {
 
 // setSessionMessages sets the messages for the current session in the chat
 func (m *UI) setSessionMessages(msgs []message.Message) tea.Cmd {
+	return m.setSessionMessagesNested(msgs, nil)
+}
+
+// setSessionMessagesNested is setSessionMessages with the nested agent
+// transcripts the load command already read (see loadNestedMessages),
+// keyed by agent tool session ID. Transcripts missing from nested are
+// read here.
+func (m *UI) setSessionMessagesNested(msgs []message.Message, nested map[string][]message.Message) tea.Cmd {
 	var cmds []tea.Cmd
 	// Build tool result map to link tool calls with their results
 	msgPtrs := make([]*message.Message, len(msgs))
@@ -1754,7 +1823,7 @@ func (m *UI) setSessionMessages(msgs []message.Message) tea.Cmd {
 	}
 
 	// Load nested tool calls for agent/agentic_fetch tools.
-	m.loadNestedToolCalls(items)
+	m.loadNestedToolCalls(items, nested)
 	m.setMessagePlanFlags(items)
 
 	// If the user switches between sessions while the agent is working we
@@ -1814,8 +1883,11 @@ func (m *UI) handleConnectionEvent(msg workspace.ConnectionEvent) []tea.Cmd {
 	return cmds
 }
 
-// loadNestedToolCalls recursively loads nested tool calls for agent/agentic_fetch tools.
-func (m *UI) loadNestedToolCalls(items []chat.MessageItem) {
+// loadNestedToolCalls recursively loads nested tool calls for
+// agent/agentic_fetch tools. Transcripts are taken from nested, keyed by
+// agent tool session ID, when the load command already read them; only
+// the ones it did not are read here, on the event loop.
+func (m *UI) loadNestedToolCalls(items []chat.MessageItem, nested map[string][]message.Message) {
 	for _, item := range items {
 		nestedContainer, ok := item.(chat.NestedToolContainer)
 		if !ok {
@@ -1833,8 +1905,15 @@ func (m *UI) loadNestedToolCalls(items []chat.MessageItem) {
 		agentSessionID := m.com.Workspace.CreateAgentToolSessionID(messageID, tc.ID)
 
 		// Fetch nested messages.
-		nestedMsgs, err := m.com.Workspace.ListMessages(context.Background(), agentSessionID)
-		if err != nil || len(nestedMsgs) == 0 {
+		nestedMsgs, ok := nested[agentSessionID]
+		if !ok {
+			var err error
+			nestedMsgs, err = m.com.Workspace.ListMessages(context.Background(), agentSessionID)
+			if err != nil {
+				continue
+			}
+		}
+		if len(nestedMsgs) == 0 {
 			continue
 		}
 
@@ -1865,7 +1944,7 @@ func (m *UI) loadNestedToolCalls(items []chat.MessageItem) {
 		for i, nt := range nestedTools {
 			nestedMessageItems[i] = nt
 		}
-		m.loadNestedToolCalls(nestedMessageItems)
+		m.loadNestedToolCalls(nestedMessageItems, nested)
 
 		// Set nested tools on the parent.
 		nestedContainer.SetNestedTools(nestedTools)
@@ -2336,19 +2415,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			cmds = append(cmds, util.ReportError(err))
 			break
 		}
-		if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.tui.active_theme", themeName); err != nil {
-			if m.preThemeStyles != nil {
-				m.applyTheme(*m.preThemeStyles)
-				m.preThemeStyles = nil
-			}
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-		m.applyTheme(newStyles)
-		m.preThemeStyles = nil
-		cmds = append(cmds, util.ReportInfo("Theme switched to "+themeName))
-		m.userThemeSelected = true
-		m.dialog.CloseDialog(dialog.ThemeID)
+		// Saved off the event loop; themeSwitchedMsg applies it.
+		cmds = append(cmds, m.switchThemeCmd(themeName, newStyles))
 	case dialog.ActionPreviewTheme:
 		newStyles, err := styles.LoadTheme(msg.Theme)
 		if err != nil {
@@ -2451,82 +2519,18 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if base == "" {
 			base = "deck"
 		}
-		name := msg.Name
-		exported, err := styles.ExportResolvedPalette(base)
-		if err != nil {
-			// Fall back to the default theme when the base theme is no
-			// longer resolvable (e.g. a user theme that was since deleted).
-			base = "deck"
-			exported, err = styles.ExportResolvedPalette(base)
-			if err != nil {
-				cmds = append(cmds, util.ReportError(err))
-				break
-			}
-		}
-		savePath, err := styles.ThemePath(name)
-		if err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-		// ExportResolvedPalette already pins Base to the built-in root the
-		// palette was resolved from. Keep it so the new theme stays
-		// loadable even if a user theme used as the source is later
-		// deleted or renamed.
-		if err := styles.SaveThemeFile(savePath, exported); err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-		if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.tui.active_theme", name); err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-		cmds = append(cmds, util.ReportInfo("Created new theme: "+name))
-		m.dialog.CloseDialog(dialog.ThemeNewID)
-		m.dialog.CloseDialog(dialog.ThemeID)
-		m.openThemeEditorDialog(name)
+		// Written off the event loop; themeCreatedMsg finishes up.
+		cmds = append(cmds, m.createThemeCmd(msg.Name, base))
 	case dialog.ActionRenameTheme:
-		oldName := msg.OldName
-		newName := strings.ToLower(msg.NewName)
-		oldPath, newPath, err := styles.RenameThemeFile(oldName, newName)
-		if err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
 		cfg := m.com.Config()
-		if cfg != nil && cfg.Options != nil && cfg.Options.TUI != nil && strings.EqualFold(cfg.Options.TUI.ActiveTheme, oldName) {
-			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.tui.active_theme", newName); err != nil {
-				if rollbackErr := os.Rename(newPath, oldPath); rollbackErr != nil {
-					slog.Error("Failed to roll back theme rename", "error", rollbackErr)
-				}
-				cmds = append(cmds, util.ReportError(err))
-				break
-			}
-		}
-		cmds = append(cmds, util.ReportInfo("Renamed theme "+oldName+" to "+newName))
-		m.dialog.CloseDialog(dialog.ThemeID)
-		m.openThemeDialog()
+		wasActive := cfg != nil && cfg.Options != nil && cfg.Options.TUI != nil && strings.EqualFold(cfg.Options.TUI.ActiveTheme, msg.OldName)
+		// Renamed off the event loop; themeRenamedMsg finishes up.
+		cmds = append(cmds, m.renameThemeCmd(msg.OldName, strings.ToLower(msg.NewName), wasActive))
 	case dialog.ActionDeleteTheme:
-		if err := styles.DeleteThemeFile(msg.Name); err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-		// If the deleted theme was active, reset to the default theme.
-		if strings.EqualFold(common.ThemeNameFromConfig(m.com.Config()), msg.Name) {
-			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.tui.active_theme", "deck"); err != nil {
-				cmds = append(cmds, util.ReportError(err))
-				break
-			}
-			newStyles, err := styles.LoadTheme("deck")
-			if err != nil {
-				cmds = append(cmds, util.ReportError(err))
-				break
-			}
-			m.applyTheme(newStyles)
-			m.preThemeStyles = nil
-		}
-		cmds = append(cmds, util.ReportInfo("Deleted theme "+msg.Name))
-		m.dialog.CloseDialog(dialog.ThemeID)
-		m.openThemeDialog()
+		// If the deleted theme was active, the command resets to the
+		// default theme; themeDeletedMsg applies it.
+		wasActive := strings.EqualFold(common.ThemeNameFromConfig(m.com.Config()), msg.Name)
+		cmds = append(cmds, m.deleteThemeCmd(msg.Name, wasActive))
 	case dialog.ActionToggleMouseSupport:
 		cfg := m.com.Config()
 		if cfg == nil {
@@ -2669,6 +2673,12 @@ func (m *UI) fetchGitBranch() tea.Cmd {
 		}
 		return gitBranchUpdatedMsg{branch: branch}
 	}
+}
+
+// windowBlurred reports whether the terminal said its window lost focus.
+// Terminals that do not report focus are always treated as focused.
+func (m *UI) windowBlurred() bool {
+	return m.caps.ReportFocusEvents && !m.notifyWindowFocused
 }
 
 // gitBranchTicker schedules the next git branch poll.
@@ -3304,6 +3314,7 @@ func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
 		m.lspErrorCount(),
 		m.gitBranch,
 		m.gitHeaderBadge(),
+		m.rosterOrNil(),
 	)
 }
 
@@ -3431,7 +3442,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 
 	// Debugging rendering (visually see when the tui rerenders)
-	if os.Getenv("DECK_UI_DEBUG") == "true" {
+	if uiDebug() {
 		debugView := lipgloss.NewStyle().Background(lipgloss.ANSIColor(rand.Intn(256))).Width(4).Height(2)
 		debug := uv.NewStyledString(debugView.String())
 		debug.Draw(scr, image.Rectangle{
@@ -3480,6 +3491,11 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	return nil
 }
 
+// uiDebug reports whether DECK_UI_DEBUG asks Draw to mark every redraw.
+// Read once: the environment does not change under a running UI, and
+// Draw runs on every frame.
+var uiDebug = sync.OnceValue(func() bool { return os.Getenv("DECK_UI_DEBUG") == "true" })
+
 // mouseMode determines the Bubble Tea mouse reporting mode to request for
 // the current frame. When mouse support is disabled via configuration, no
 // mouse mode is requested so the terminal emulator (or tmux) can handle
@@ -3522,8 +3538,15 @@ func (m *UI) View() tea.View {
 		}
 	}
 
-	canvas := uv.NewScreenBuffer(m.width, m.height)
+	// Reuse the canvas across frames: Draw clears it first, and a fresh
+	// width*height buffer per frame is pure garbage at animation rates.
+	if m.canvas.RenderBuffer == nil || m.canvas.Width() != m.width || m.canvas.Height() != m.height {
+		m.canvas = uv.NewScreenBuffer(m.width, m.height)
+	}
+	canvas := m.canvas
+	m.beginFrameMemo()
 	v.Cursor = m.Draw(canvas, canvas.Bounds())
+	m.endFrameMemo()
 
 	content := strings.ReplaceAll(canvas.Render(), "\r\n", "\n") // normalize newlines
 	contentLines := strings.Split(content, "\n")
@@ -4886,6 +4909,7 @@ func (m *UI) applyTheme(s styles.Styles) {
 	common.InvalidateStyleCaches()
 	m.refreshStyles()
 	m.chat.InvalidateRenderCaches()
+	m.chatWarmPending = true
 }
 
 // previewTheme applies the given styles for live preview inside an open
@@ -4904,6 +4928,7 @@ func (m *UI) previewTheme(s styles.Styles) {
 // that copies or pre-renders style-dependent values at construction time.
 // Callers are responsible for invalidating chat render caches.
 func (m *UI) refreshStyles() {
+	m.stylesGen++
 	t := m.com.Styles
 	tone.SetLight(!t.IsDark)
 	m.header.refresh()

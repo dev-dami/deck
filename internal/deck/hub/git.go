@@ -7,17 +7,25 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dev-dami/deck/internal/deck/gh"
 )
 
-// git runs a read-only git command in the thread's work tree.
+// git runs a read-only git command in the thread's work tree. With the real
+// runner only as much output as a result can show is kept in memory (a diff
+// of generated files can run to hundreds of megabytes); the rest is counted.
 func git(ctx context.Context, env *Env, args ...string) (string, error) {
 	if env.Dir == "" {
 		return "", errors.New("this thread has no folder")
 	}
-	return env.runner()(ctx, env.Dir, "", "git", args...)
+	if env.Run != nil {
+		return env.Run(ctx, env.Dir, "", "git", args...)
+	}
+	out, total, err := gh.ExecLimit(ctx, env.Dir, "", "git", MaxOutput+capSlack, args...)
+	env.dropped += total - int64(len(out))
+	return out, err
 }
 
 // safeArg refuses a value git could read as an option.
@@ -52,21 +60,18 @@ func opGitDiff(ctx context.Context, env *Env, a args) (string, error) {
 		}
 		tail = []string{"--", p}
 	}
-	stat, err := git(ctx, env, append(append(append([]string{}, base...), "--stat"), tail...)...)
+	// One run: --patch-with-stat prints the stat, a blank line, then the patch.
+	out, err := git(ctx, env, append(append(base, "--patch-with-stat"), tail...)...)
 	if err != nil {
-		return stat, err
+		return out, err
 	}
-	patch, err := git(ctx, env, append(append([]string{}, base...), tail...)...)
-	if err != nil {
-		return patch, err
-	}
-	if strings.TrimSpace(stat) == "" {
+	if strings.TrimSpace(out) == "" {
 		if a.flag("staged") {
 			return "No staged changes.", nil
 		}
 		return "No unstaged changes (pass staged:true for the index).", nil
 	}
-	return stat + "\n" + patch, nil
+	return out, nil
 }
 
 func opGitShow(ctx context.Context, env *Env, a args) (string, error) {
@@ -83,11 +88,42 @@ func opGitBranches(ctx context.Context, env *Env, _ args) (string, error) {
 		"refs/heads")
 }
 
+// ghClients keeps one gh client per folder for a while: a client remembers
+// that gh is signed in, so `gh auth status` no longer runs before every gh
+// op. A client is replaced after ghClientTTL, which asks gh again.
+var ghClients = struct {
+	sync.Mutex
+	m map[string]ghEntry
+}{m: map[string]ghEntry{}}
+
+type ghEntry struct {
+	c  *gh.Client
+	at time.Time
+}
+
+const ghClientTTL = 10 * time.Minute
+
 func ghClient(env *Env) (*gh.Client, error) {
 	if env.Dir == "" {
 		return nil, errors.New("this thread has no folder")
 	}
-	return gh.NewWithRunner(env.Dir, env.runner()), nil
+	if env.Run != nil { // a custom runner (tests) gets a client of its own
+		return gh.NewWithRunner(env.Dir, env.Run), nil
+	}
+	ghClients.Lock()
+	defer ghClients.Unlock()
+	e, ok := ghClients.m[env.Dir]
+	if !ok || time.Since(e.at) > ghClientTTL {
+		if len(ghClients.m) >= 64 {
+			clear(ghClients.m)
+		}
+		e = ghEntry{c: gh.New(env.Dir), at: time.Now()}
+		ghClients.m[env.Dir] = e
+	}
+	// Only a yes is kept: signed out, gh is asked again every time, as the
+	// user may have just run `gh auth login`.
+	e.c.Recheck()
+	return e.c, nil
 }
 
 func checksLine(cs []gh.Check) string {

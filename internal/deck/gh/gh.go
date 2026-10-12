@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -110,7 +111,62 @@ func (c *Client) gh(ctx context.Context, timeout time.Duration, stdin string, ar
 // caller's context), an environment that cannot point git at another
 // repository and never prompts, and the first line of stderr in its error.
 func Exec(ctx context.Context, dir, stdin, name string, args ...string) (string, error) {
-	bin, err := exec.LookPath(name)
+	var out, errb bytes.Buffer
+	return execTo(ctx, dir, stdin, name, args, &out, &errb)
+}
+
+// ExecLimit is [Exec] keeping at most limit bytes of the command's stdout (and
+// of its stderr); the rest is read and dropped, so a huge output costs no
+// memory. total is how many bytes stdout had in all.
+func ExecLimit(ctx context.Context, dir, stdin, name string, limit int, args ...string) (out string, total int64, err error) {
+	o, e := &limitBuffer{max: limit}, &limitBuffer{max: limit}
+	out, err = execTo(ctx, dir, stdin, name, args, o, e)
+	return out, o.total, err
+}
+
+// output is where a command's stdout or stderr goes.
+type output interface {
+	io.Writer
+	String() string
+}
+
+// limitBuffer keeps the first max bytes written to it and counts the rest.
+type limitBuffer struct {
+	buf   bytes.Buffer
+	max   int
+	total int64
+}
+
+func (w *limitBuffer) Write(p []byte) (int, error) {
+	w.total += int64(len(p))
+	if room := w.max - w.buf.Len(); room > 0 {
+		w.buf.Write(p[:min(len(p), room)])
+	}
+	return len(p), nil
+}
+
+func (w *limitBuffer) String() string { return w.buf.String() }
+
+// found remembers where git and gh were found, per PATH: on Windows a
+// LookPath tries every PATH folder with every PATHEXT extension, and the git
+// pane runs a command every few seconds. A miss is not remembered, so a gh
+// installed mid-run is found.
+var found sync.Map // name + "\x00" + PATH -> path
+
+func lookPath(name string) (string, error) {
+	key := name + "\x00" + os.Getenv("PATH")
+	if p, ok := found.Load(key); ok {
+		return p.(string), nil
+	}
+	p, err := exec.LookPath(name)
+	if err == nil {
+		found.Store(key, p)
+	}
+	return p, err
+}
+
+func execTo(ctx context.Context, dir, stdin, name string, args []string, out, errb output) (string, error) {
+	bin, err := lookPath(name)
 	if err != nil {
 		return "", fmt.Errorf("%s is not installed", name)
 	}
@@ -120,8 +176,7 @@ func Exec(ctx context.Context, dir, stdin, name string, args ...string) (string,
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
+	cmd.Stdout, cmd.Stderr = out, errb
 	hide(cmd)
 	err = cmd.Run()
 	if err == nil {

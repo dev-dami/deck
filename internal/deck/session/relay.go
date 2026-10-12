@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,19 +17,65 @@ import (
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
-// hubLoop answers the thread.send calls of every agent.
+// hubLoop answers the thread.send calls of every agent. Each thread's calls
+// are handled in order on a worker of their own, so a delivery that blocks
+// holds up only its own thread, never every other thread's thread.send.
 func (m *Manager) hubLoop(msgs <-chan agent.Message) {
 	defer m.wg.Done()
+	var mu sync.Mutex
+	// queues holds each thread's calls not yet handled; a thread has a key
+	// exactly while its worker runs.
+	queues := map[*thread][]agent.Message{}
+	work := func(t *thread) {
+		defer m.wg.Done()
+		for {
+			mu.Lock()
+			q := queues[t]
+			if len(q) == 0 || m.isDone() {
+				delete(queues, t)
+				mu.Unlock()
+				return
+			}
+			msg := q[0]
+			q[0] = agent.Message{}
+			queues[t] = q[1:]
+			mu.Unlock()
+			m.handleMessage(msg)
+		}
+	}
 	for {
 		select {
 		case msg, ok := <-msgs:
 			if !ok {
 				return
 			}
-			m.handleMessage(msg)
+			from := m.get(msg.From)
+			if from == nil {
+				m.handleMessage(msg) // answered with an error at once
+				continue
+			}
+			t := from.thread
+			mu.Lock()
+			q, running := queues[t]
+			queues[t] = append(q, msg)
+			mu.Unlock()
+			if !running {
+				m.wg.Add(1)
+				go work(t)
+			}
 		case <-m.done:
 			return
 		}
+	}
+}
+
+// isDone reports whether the manager is shutting down.
+func (m *Manager) isDone() bool {
+	select {
+	case <-m.done:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -270,6 +318,23 @@ func (m *Manager) Continue(threadID string) error {
 	return first
 }
 
+// attrib serialises the attribution checks of each folder.
+var attrib = struct {
+	sync.Mutex
+	dirs map[string]*attribDir
+}{dirs: map[string]*attribDir{}}
+
+// attribDir is one folder's checks: run is held while one runs, waiting
+// holds each member's check that has not started yet, and users counts the
+// checks running or waiting (the folder's entry goes when it drops to zero).
+type attribDir struct {
+	run     sync.Mutex
+	waiting map[*agentState]*attribJob
+	users   int
+}
+
+type attribJob struct{ since time.Time }
+
 // checkAttribution is the watcher behind the commit hooks: after a turn it
 // rewrites the turn's unpushed commits that still credit another AI (one made
 // with --no-verify skips the hooks), so Deck's attribution holds whatever the
@@ -282,12 +347,51 @@ func (m *Manager) checkAttribution(a *agentState) {
 	since := a.turnAt
 	a.mu.Unlock()
 	t := a.thread
+	t.mu.Lock()
+	dir := t.dir
+	t.mu.Unlock()
+
+	// One check at a time per folder (members sharing a work tree must not
+	// rewrite its history at once), and at most one waiting per member: a
+	// turn that ends while the member's last check still waits joins it.
+	key := pathKey(filepath.Clean(dir))
+	attrib.Lock()
+	d := attrib.dirs[key]
+	if d == nil {
+		d = &attribDir{waiting: map[*agentState]*attribJob{}}
+		attrib.dirs[key] = d
+	}
+	if j := d.waiting[a]; j != nil {
+		if since.Before(j.since) {
+			j.since = since
+		}
+		attrib.Unlock()
+		return
+	}
+	j := &attribJob{since: since}
+	d.waiting[a] = j
+	d.users++
+	attrib.Unlock()
+
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
+		d.run.Lock()
+		attrib.Lock()
+		delete(d.waiting, a)
+		since := j.since
+		attrib.Unlock()
+		defer func() {
+			d.run.Unlock()
+			attrib.Lock()
+			if d.users--; d.users == 0 {
+				delete(attrib.dirs, key)
+			}
+			attrib.Unlock()
+		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		n, err := attribution.Fix(ctx, t.dir, since)
+		n, err := attribution.Fix(ctx, dir, since)
 		switch {
 		case errors.Is(err, attribution.ErrPushed):
 			m.emit(NoticeMsg{ThreadID: t.id, Text: a.getName() + " pushed a commit crediting another AI; it is on the remote, so Deck left it"})

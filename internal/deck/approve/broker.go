@@ -174,10 +174,32 @@ func (b *Broker) serve(c net.Conn) {
 		case <-stop:
 		}
 	}()
-	r := bufio.NewReaderSize(c, 1<<20)
+	// Lines are read on their own goroutine, so a request waiting for its
+	// answer notices when the helper hangs up (gone closes) and stops
+	// waiting, instead of holding its goroutine and connection until Deck
+	// exits. ReadBytes grows past the reader's buffer for a long line.
+	lines := make(chan []byte)
+	gone := make(chan struct{})
+	go func() {
+		defer close(gone)
+		r := bufio.NewReader(c)
+		for {
+			line, err := r.ReadBytes('\n')
+			if err != nil {
+				return
+			}
+			select {
+			case lines <- line:
+			case <-stop:
+				return
+			}
+		}
+	}()
 	for {
-		line, err := r.ReadBytes('\n')
-		if err != nil {
+		var line []byte
+		select {
+		case line = <-lines:
+		case <-gone:
 			return
 		}
 		var req wireRequest
@@ -190,9 +212,9 @@ func (b *Broker) serve(c net.Conn) {
 		var resp any
 		switch req.Kind {
 		case "", kindApprove:
-			resp = b.handle(req)
+			resp = b.handle(req, gone)
 		case kindExec:
-			resp = b.handleExec(req)
+			resp = b.handleExec(req, gone)
 		default:
 			resp = wireResponse{Behavior: "deny", Message: "unknown request kind"}
 		}
@@ -220,7 +242,7 @@ type wireReply struct {
 // thread.read are answered here; everything else goes to the executor,
 // bounded by execTimeout. Results are capped and never carry the broker
 // token.
-func (b *Broker) handleExec(req wireRequest) wireReply {
+func (b *Broker) handleExec(req wireRequest, gone <-chan struct{}) wireReply {
 	var r wireReply
 	switch strings.TrimSpace(req.Op) {
 	case agent.OpThreadSend:
@@ -232,17 +254,17 @@ func (b *Broker) handleExec(req wireRequest) wireReply {
 			return wireReply{Text: "thread.send needs args {\"to\": an agent name or \"all\", \"message\": the text}", IsError: true}
 		}
 		req.To, req.Text = strings.TrimSpace(a.To), a.Message
-		r = b.handleMessage(req)
+		r = b.handleMessage(req, gone)
 	case agent.OpThreadRead:
 		r = b.handleRead(req)
 	default:
-		r = b.runExec(req)
+		r = b.runExec(req, gone)
 	}
 	r.Text = b.scrub(r.Text)
 	return r
 }
 
-func (b *Broker) runExec(req wireRequest) wireReply {
+func (b *Broker) runExec(req wireRequest, gone <-chan struct{}) wireReply {
 	b.mu.Lock()
 	f := b.exec
 	b.mu.Unlock()
@@ -263,6 +285,8 @@ func (b *Broker) runExec(req wireRequest) wireReply {
 		return wireReply{Text: req.Op + " took too long; Deck gave up after " + execTimeout.String(), IsError: true}
 	case <-b.done:
 		return wireReply{Text: "Deck is shutting down", IsError: true}
+	case <-gone:
+		return wireReply{Text: "the caller went away", IsError: true}
 	}
 }
 
@@ -281,7 +305,7 @@ func (b *Broker) scrub(s string) string {
 	return s[:cut] + "\n[... output truncated at 20 KB; narrow the request ...]"
 }
 
-func (b *Broker) handleMessage(req wireRequest) wireReply {
+func (b *Broker) handleMessage(req wireRequest, gone <-chan struct{}) wireReply {
 	type result struct {
 		text string
 		err  error
@@ -305,6 +329,8 @@ func (b *Broker) handleMessage(req wireRequest) wireReply {
 		return wireReply{Text: "Deck is shutting down", IsError: true}
 	case <-timer.C:
 		return wireReply{Text: "Deck did not answer", IsError: true}
+	case <-gone:
+		return wireReply{Text: "the caller went away", IsError: true}
 	}
 	select {
 	case r := <-reply:
@@ -320,6 +346,8 @@ func (b *Broker) handleMessage(req wireRequest) wireReply {
 		return wireReply{Text: "Deck is shutting down", IsError: true}
 	case <-timer.C:
 		return wireReply{Text: "Deck did not answer", IsError: true}
+	case <-gone:
+		return wireReply{Text: "the caller went away", IsError: true}
 	}
 }
 
@@ -333,7 +361,12 @@ func (b *Broker) handleRead(req wireRequest) wireReply {
 	return wireReply{Text: f(req.AgentID)}
 }
 
-func (b *Broker) handle(req wireRequest) wireResponse {
+// approvalTimeout bounds how long an approval waits for the user. It only
+// frees a request nobody will ever answer (its turn ended, say, while the
+// helper kept its connection); a person answers long before.
+var approvalTimeout = 12 * time.Hour
+
+func (b *Broker) handle(req wireRequest, gone <-chan struct{}) wireResponse {
 	allow := wireResponse{Behavior: "allow", UpdatedInput: req.Input}
 	if len(allow.UpdatedInput) == 0 {
 		allow.UpdatedInput = json.RawMessage(`{}`)
@@ -360,12 +393,22 @@ func (b *Broker) handle(req wireRequest) wireResponse {
 	}
 	fillRequest(&ar, req.Input)
 
+	timer := time.NewTimer(approvalTimeout)
+	defer timer.Stop()
 	select {
 	case st.ch <- ar:
 	case <-b.done:
 		return wireResponse{Behavior: "deny", Message: "Deck is shutting down"}
+	case <-gone:
+		return wireResponse{Behavior: "deny", Message: "the request was abandoned"}
+	case <-timer.C:
+		return wireResponse{Behavior: "deny", Message: "nobody answered in Deck"}
 	}
 	select {
+	case <-gone:
+		return wireResponse{Behavior: "deny", Message: "the request was abandoned"}
+	case <-timer.C:
+		return wireResponse{Behavior: "deny", Message: "nobody answered in Deck"}
 	case d := <-reply:
 		if !d.Allow {
 			msg := d.Reason

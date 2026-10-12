@@ -97,7 +97,7 @@ func Search(env Env, raw json.RawMessage) string {
 	} else if env.Store != nil {
 		b.WriteString("History: execute history.threads, or search with words to find past threads.\n")
 	}
-	return Cap(Redact(b.String()), MaxOutput)
+	return capOut(b.String(), 0)
 }
 
 func argText(o Op) string {
