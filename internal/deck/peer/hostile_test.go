@@ -87,7 +87,7 @@ func TestHostileAuth(t *testing.T) {
 		})
 	}
 	// The pinned key alone gets in.
-	if _, _, _, err := rawDial(t, addr, []ssh.AuthMethod{ssh.PublicKeys(b.id.Signer)}, nil); err != nil {
+	if err := dialSoon(t, addr, []ssh.AuthMethod{ssh.PublicKeys(b.id.Signer)}); err != nil {
 		t.Fatalf("pinned key refused: %v", err)
 	}
 }
@@ -402,7 +402,7 @@ func TestHostileConnectionLimitAndStalledHandshake(t *testing.T) {
 	}
 	// Slots are free again.
 	time.Sleep(50 * time.Millisecond)
-	if _, _, _, err := rawDial(t, addr, []ssh.AuthMethod{ssh.PublicKeys(b.id.Signer)}, nil); err != nil {
+	if err := dialSoon(t, addr, []ssh.AuthMethod{ssh.PublicKeys(b.id.Signer)}); err != nil {
 		t.Fatalf("after limit: %v", err)
 	}
 }

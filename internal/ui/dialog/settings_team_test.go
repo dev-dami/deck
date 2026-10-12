@@ -951,7 +951,7 @@ func TestPairConnectModeFlow(t *testing.T) {
 	p := newPairForTest(link)
 	toConnectConfirm(t, p, link)
 	require.Equal(t, pairConfirm, p.step)
-	require.Contains(t, pairText(p), "SHA256:theirs")
+	require.Contains(t, squash(pairText(p)), theirsFP)
 
 	msg := run(t, p.HandleMsg(tea.KeyPressMsg{Code: 'y', Text: "y"}))
 	require.Len(t, link.pinned, 1)
