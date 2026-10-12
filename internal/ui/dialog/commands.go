@@ -505,6 +505,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	commands = append(
 		commands,
 		NewCommandItem(c.com.Styles, "toggle_yolo", "Toggle Yolo (approve everything)", "ctrl+y", ActionToggleYoloMode{}),
+		NewCommandItem(c.com.Styles, "remote_control", "Remote Control (phone)", "", ActionOpenDialog{DialogID: RemoteID}).WithAliases("phone", "mobile", "qr"),
 		NewCommandItem(c.com.Styles, "toggle_help", "Toggle Help", "ctrl+g", ActionToggleHelp{}),
 	)
 

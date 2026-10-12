@@ -5350,6 +5350,12 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		m.openPeerPairDialog()
 	case dialog.NoticeHistoryID:
 		cmds = append(cmds, m.openNoticeHistory())
+	case dialog.RemoteID:
+		if m.dialog.ContainsDialog(dialog.RemoteID) {
+			m.dialog.BringToFront(dialog.RemoteID)
+		} else {
+			m.dialog.OpenDialog(dialog.NewRemote(m.com))
+		}
 	case dialog.UsageID:
 		cmds = append(cmds, m.openUsageDialog())
 	default:

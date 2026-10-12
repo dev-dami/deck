@@ -79,6 +79,23 @@ The header and sidebar show the branch's pull request and checks (`#12 ✓`, `#1
 
 GitHub goes through your own [`gh`](https://cli.github.com) CLI; Deck never reads your token. Without gh, install it and run `gh auth login`; the git half works either way.
 
+## Remote control
+
+Nothing listens until you ask. Run `deck --remote` (the terminal UI plus a phone connection) or `deck serve` (phone only), then scan the QR with your phone. From the phone you can read every session, send prompts and images, answer approvals with the full command or diff, steer or cancel queued messages, switch models and modes, and see changed files.
+
+| flag | reaches | notes |
+| --- | --- | --- |
+| *(none)* | this machine | for testing |
+| `--lan` | same Wi-Fi | plain http: traffic is readable on the network, and the page cannot be installed to the home screen |
+| `--tunnel` | anywhere | Cloudflare quick tunnel (needs `cloudflared`): https, but a new address every run and Cloudflare relays the traffic |
+| `--tunnel=tailscale` | your tailnet | needs `tailscale` with HTTPS enabled: stable address, private, installable |
+
+- **Pairing.** The QR carries a one-time code (10 minutes) in the link's `#` part, so no server or tunnel log sees it. The phone trades it for its own revocable key; only a hash is kept. `deck serve devices` lists phones, `deck serve revoke <id>|--all` unpairs them, and `ctrl+p` → Remote Control shows the QR and devices inside the TUI.
+- **Edit and notifications.** Tap the pencil on one of your messages to rewrite it: the agents it went to are told what changed, and the terminal shows the new text. Settings → Notifications turns on push for approval requests and for runs that finish after more than 15 seconds. Push needs https (`--tunnel`), and on iPhone the page must be added to the Home Screen first. It is opt-in per phone because the message travels through Google, Mozilla or Apple's push service; the text is encrypted for the phone, so the service sees only that something was sent. Only messages sent from Deck can be edited, and only while Deck keeps the record (`deck-entries.json` in the data folder).
+- **Yolo stays off.** A phone cannot switch on "approve everything" unless you start with `--allow-yolo`; it can always switch it off.
+- **One process per project.** `deck serve` and the TUI cannot both open the same project, so use `deck --remote` to have both.
+- The phone page is built from `web/remote` with bun and committed to `internal/remote/web/dist`; `bun run build` in `web/remote` refreshes it.
+
 ## Config
 
 `~/.deck/config.json`, all keys optional:

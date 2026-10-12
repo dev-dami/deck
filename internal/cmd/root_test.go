@@ -12,7 +12,7 @@ func TestRootCommands(t *testing.T) {
 	for _, c := range rootCmd.Commands() {
 		names[c.Name()] = true
 	}
-	for _, want := range []string{"doctor", "dirs", "projects", "logs", "session"} {
+	for _, want := range []string{"doctor", "dirs", "projects", "logs", "session", "serve"} {
 		require.True(t, names[want], "missing %q command", want)
 	}
 	for _, gone := range []string{"login", "logout", "run", "models", "stats", "schema", "update-providers", "server"} {
@@ -22,7 +22,7 @@ func TestRootCommands(t *testing.T) {
 
 func TestRootFlags(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"yolo", "session", "continue"} {
+	for _, name := range []string{"yolo", "session", "continue", "remote", "lan", "tunnel", "port", "allow-yolo"} {
 		require.NotNil(t, rootCmd.Flags().Lookup(name), "missing --%s", name)
 	}
 	for _, name := range []string{"cwd", "data-dir", "debug"} {

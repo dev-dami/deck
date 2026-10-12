@@ -24,6 +24,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/engine"
 	decklog "github.com/dev-dami/deck/internal/log"
 	"github.com/dev-dami/deck/internal/projects"
+	"github.com/dev-dami/deck/internal/remote"
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/skills"
 	"github.com/dev-dami/deck/internal/ui/common"
@@ -94,6 +95,21 @@ deck doctor
 				return err
 			}
 			sessionID = sess.ID
+		}
+
+		if on, _ := cmd.Flags().GetBool("remote"); on {
+			ro, err := remoteRunOptions(cmd, false)
+			if err != nil {
+				return err
+			}
+			r, err := startRemote(cmd, ro, ws)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				remote.SetActive(nil)
+				r.Stop()
+			}()
 		}
 
 		com := common.DefaultCommon(ws)
