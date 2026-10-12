@@ -52,6 +52,7 @@ func init() {
 		projectsCmd,
 		logsCmd,
 		sessionCmd,
+		peerCmd,
 	)
 }
 

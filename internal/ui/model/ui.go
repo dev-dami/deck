@@ -1266,6 +1266,13 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		return m, tea.Batch(cmds...)
+	case dialog.TargetedMsg:
+		// Work a dialog started reports back to it even when another
+		// dialog is in front; it is dropped once that dialog closed.
+		if cmd := m.handleDialogAction(m.dialog.UpdateDialog(msg.TargetDialog(), msg)); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
 
 	case tea.MouseClickMsg:
 		// Pass mouse events to dialogs first if any are open.
@@ -2236,8 +2243,12 @@ func (m *UI) handleChildSessionMessage(event pubsub.Event[message.Message]) tea.
 }
 
 func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
+	return m.handleDialogAction(m.dialog.Update(msg))
+}
+
+// handleDialogAction does what a dialog's action asks.
+func (m *UI) handleDialogAction(action dialog.Action) tea.Cmd {
 	var cmds []tea.Cmd
-	action := m.dialog.Update(msg)
 	if action == nil {
 		return tea.Batch(cmds...)
 	}
@@ -5331,10 +5342,12 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openQuitDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-	case dialog.SettingsID, dialog.SettingsUsageID:
+	case dialog.SettingsID, dialog.SettingsUsageID, dialog.SettingsTeamID:
 		if cmd := m.openSettingsDialog(id); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.PeerPairID:
+		m.openPeerPairDialog()
 	case dialog.NoticeHistoryID:
 		cmds = append(cmds, m.openNoticeHistory())
 	case dialog.UsageID:

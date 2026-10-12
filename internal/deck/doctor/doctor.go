@@ -54,6 +54,12 @@ type Options struct {
 	// Logo returns the escape sequence that draws a CLI's logo (logoCols x
 	// logoRows cells) at the cursor, or "" when the terminal cannot.
 	Logo func(kind string) string
+	// Peers is the config's peers section. The peers report is printed only
+	// when it is set.
+	Peers *config.Peers
+	// PeerChecker runs the peer checks; nil means the real one on
+	// ~/.deck/peers.
+	PeerChecker PeerChecker
 
 	configErr error
 }
@@ -102,6 +108,7 @@ func DefaultOptions() Options {
 	if cfg.AntigravityBinary != "" {
 		opts.AntigravityBinary = cfg.AntigravityBinary
 	}
+	opts.Peers = cfg.Peers
 	return opts
 }
 
@@ -156,6 +163,9 @@ func RunWith(ctx context.Context, w io.Writer, opts Options) error {
 	b.WriteString(configLine(opts))
 	b.WriteString(dirLine("threads", opts.ThreadsDir))
 	b.WriteString(terminalLine(opts))
+	if opts.Peers != nil {
+		b.WriteString(peersReport(ctx, opts))
+	}
 
 	_, err := io.WriteString(w, b.String())
 	return err

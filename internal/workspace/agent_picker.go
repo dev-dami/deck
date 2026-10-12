@@ -3,8 +3,6 @@ package workspace
 import (
 	"context"
 	"time"
-
-	deckconfig "github.com/dev-dami/deck/internal/deck/config"
 )
 
 // EffortChoice is one reasoning effort a model takes.
@@ -142,7 +140,7 @@ func (w *DeckWorkspace) SetAgentModel(sessionID, kind, model, effort string) err
 	cfg.Efforts.Set(kind, effort)
 	w.eng.Config = cfg
 	w.mgr().SetConfig(cfg)
-	return deckconfig.Save(cfg)
+	return saveDeckConfig(cfg)
 }
 
 // AgentLine is one agent as the sidebar shows it.

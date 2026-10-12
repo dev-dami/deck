@@ -8,6 +8,7 @@ package engine
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/agent/opencode"
 	"github.com/dev-dami/deck/internal/deck/approve"
 	"github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
@@ -28,7 +30,14 @@ type Engine struct {
 	Manager *session.Manager
 	Config  config.Config
 	broker  *approve.Broker
+	// peers is the peer link, made idle; its Manager starts the first time
+	// peers are on, at startup or from Settings. Nil only when the peers
+	// directory cannot be found.
+	peers *peer.Service
 }
+
+// Peers is the peer link, or nil.
+func (e *Engine) Peers() *peer.Service { return e.peers }
 
 // Start finds the CLIs and starts the thread manager.
 func Start() (*Engine, error) {
@@ -77,11 +86,33 @@ func Start() (*Engine, error) {
 		Hub:    broker,
 		MCPFor: func(id string) *agent.MCPServer { return broker.ServerFor(self, id) },
 	})
-	return &Engine{Manager: mgr, Config: cfg, broker: broker}, nil
+	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: startPeers(cfg)}, nil
 }
 
-// Close stops every agent and the approval broker.
+// startPeers makes the peer link and starts it when peers.enabled is set;
+// otherwise it runs nothing at all (no key, no listener, no goroutines)
+// until Settings turns peers on. A failure is logged and leaves Deck running
+// without peers.
+func startPeers(cfg config.Config) *peer.Service {
+	// The config path lets the link pick up role, allow_inbound and remote
+	// edits while Deck runs, and lets Settings change the rest.
+	path, _ := config.Path()
+	svc, err := peer.NewService(peer.ServiceOptions{ConfigPath: path})
+	if err != nil {
+		slog.Warn("Peers not available", "error", err)
+		return nil
+	}
+	if err := svc.Start(cfg.Peers); err != nil {
+		slog.Warn("Peers not started", "error", err)
+	}
+	return svc
+}
+
+// Close stops every agent, the peer link and the approval broker.
 func (e *Engine) Close() {
+	if e.peers != nil {
+		e.peers.Close()
+	}
 	e.Manager.Close()
 	e.broker.Close()
 }

@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
-	"github.com/dev-dami/deck/internal/deck/approve"
 	"github.com/dev-dami/deck/internal/deck/agent/modelcache"
+	"github.com/dev-dami/deck/internal/deck/approve"
 	"github.com/dev-dami/deck/internal/deck/brand"
 )
 
