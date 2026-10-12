@@ -22,12 +22,16 @@ type thread struct {
 	id string
 	m  *Manager
 
-	mu      sync.Mutex
-	title   string
-	dir     string
-	mode    agent.Mode // permission mode; never empty
-	members []*agentState
-	log     []store.Entry
+	mu    sync.Mutex
+	title string
+	// titleSrc is who wrote title (store.Thread.TitleSrc); titling is set while
+	// a model-written title is being fetched (title.go).
+	titleSrc string
+	titling  bool
+	dir      string
+	mode     agent.Mode // permission mode; never empty
+	members  []*agentState
+	log      []store.Entry
 
 	boundary    map[string]int    // speaker -> log index just after its last finished turn
 	inert       map[int]bool      // relay/user entries that must not start a turn
@@ -169,7 +173,7 @@ func (m *Manager) persistMeta(t *thread) {
 func (m *Manager) snapshot(t *thread) store.Thread {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	th := store.Thread{ID: t.id, Title: t.title, Dir: t.dir, Mode: string(t.mode),
+	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
 		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree}
 	for _, a := range t.members {
 		th.Members = append(th.Members, a.memberMeta())

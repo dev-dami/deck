@@ -783,7 +783,7 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState, images [
 	t.paused, t.hops, t.heldIdx = false, 0, nil
 	t.lastRelay = map[string]string{}
 	if t.title == "" {
-		t.title = oneLine(text)
+		t.title = placeholderTitle(text)
 	}
 	if len(images) > 0 {
 		t.images[e.ID] = append([]agent.Image(nil), images...)
@@ -1055,7 +1055,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	}
 	t := newThread(m, th.ID, dir, mode)
 	t.created = true
-	t.title = th.Title
+	t.title, t.titleSrc = th.Title, th.TitleSrc
 	t.pinned, t.resolved = th.Pinned, th.Resolved // resuming un-archives
 	t.worktree = th.Worktree
 	remap := map[string]string{}

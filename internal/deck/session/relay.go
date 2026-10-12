@@ -235,6 +235,7 @@ func (m *Manager) afterTurn(a *agentState) {
 	text, interrupted := a.takeFinal()
 	t := a.thread
 	if text != "" && !interrupted {
+		m.maybeAutoTitle(t, text)
 		for _, mn := range parseMentions(text) {
 			t.mu.Lock()
 			targets := mentionTargets(t, a, mn.Names)

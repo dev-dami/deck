@@ -473,7 +473,29 @@ func (w *DeckWorkspace) pump() {
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorQueueEdit, "", 1)
 		case decks.QueueCancelledMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorQueueCancel, "", 1)
+		case decks.ThreadChangedMsg:
+			if !m.Gone {
+				w.syncTitle(m.ThreadID)
+			}
 		}
+	}
+}
+
+// syncTitle copies a thread's title (model-written or renamed) onto its Crush
+// session, which is what the sidebar and notices show.
+func (w *DeckWorkspace) syncTitle(threadID string) {
+	sid := w.sessionOf(threadID)
+	if sid == "" {
+		return
+	}
+	info, ok := w.mgr().Thread(threadID)
+	if !ok || info.Title == "" {
+		return
+	}
+	ctx := context.Background()
+	if sess, err := w.app.Sessions.Get(ctx, sid); err == nil && sess.Title != info.Title {
+		sess.Title = info.Title
+		_, _ = w.app.Sessions.Save(ctx, sess)
 	}
 }
 

@@ -82,8 +82,11 @@ type Config struct {
 	// DeckAuthor makes Deck the author of the commits agents make (the user
 	// stays the committer), so Deck counts among a repository's contributors.
 	// It applies while DeckAttribution is on.
-	DeckAuthor bool   `json:"deck_author"`
-	Models     Models `json:"models"`
+	DeckAuthor bool `json:"deck_author"`
+	// AutoTitle has the default agent's model write a short title for a thread
+	// once its first turn ends; the first prompt stands in until then.
+	AutoTitle bool   `json:"auto_title"`
+	Models    Models `json:"models"`
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
 	Efforts Models `json:"efforts"`
@@ -323,6 +326,7 @@ func Defaults() Config {
 		TrackChanges:      true,
 		DeckAttribution:   true,
 		DeckAuthor:        true,
+		AutoTitle:         true,
 	}
 }
 

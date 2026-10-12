@@ -89,11 +89,15 @@ type Member struct {
 // migrate old threads (see Normalize) and mirrored from Members on every write
 // so older Deck builds can still list the thread.
 type Thread struct {
-	ID      string   `json:"id"`
-	Version int      `json:"version,omitempty"`
-	Title   string   `json:"title"` // first prompt, truncated
-	Dir     string   `json:"dir"`
-	Members []Member `json:"members,omitempty"`
+	ID      string `json:"id"`
+	Version int    `json:"version,omitempty"`
+	Title   string `json:"title"` // first prompt, truncated; later a model-written title
+	// TitleSrc says who wrote Title: "" (the first-prompt placeholder), "auto"
+	// (written by the default model) or "user" (renamed by hand). Only "" may be
+	// replaced by an automatic title.
+	TitleSrc string   `json:"title_src,omitempty"`
+	Dir      string   `json:"dir"`
+	Members  []Member `json:"members,omitempty"`
 	// Mode is the thread's permission mode: "plan", "ask" or "yolo". Threads
 	// stored before modes existed (and any unknown value) read as "ask".
 	Mode string `json:"mode,omitempty"`
