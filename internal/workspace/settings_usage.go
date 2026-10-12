@@ -53,9 +53,9 @@ var (
 	_ SettingsEditor = (*DeckWorkspace)(nil)
 )
 
-// saveDeckConfig writes the settings; tests stub it so they never touch the
-// user's ~/.deck.
-var saveDeckConfig = deckconfig.Save
+// saveDeckConfig writes the settings, keeping the peers section on disk;
+// tests stub it so they never touch the user's ~/.deck.
+var saveDeckConfig = saveKeepingPeers
 
 // Usage implements [UsageReader].
 func (w *DeckWorkspace) Usage(ctx context.Context, sinceDays int) (UsageReport, error) {
