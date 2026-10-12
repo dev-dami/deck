@@ -18,6 +18,14 @@ import (
 // replaces it. A title the user typed is never replaced.
 
 const (
+	// titleRunPrefix starts the agent id of every one-shot title run.
+	titleRunPrefix = "title-"
+
+	// maxTitleTries is how many turn ends a thread asks for a title at before
+	// it keeps the placeholder: a model that fails or rambles is not asked
+	// again on every turn.
+	maxTitleTries = 2
+
 	titleTimeout   = 20 * time.Second
 	titlePromptMax = 1000 // runes of the first prompt shown to the model
 	titleReplyMax  = 600  // runes of the first reply shown to the model
@@ -34,7 +42,7 @@ func (m *Manager) maybeAutoTitle(t *thread, reply string) {
 		return
 	}
 	t.mu.Lock()
-	if t.titleSrc != "" || t.titling {
+	if t.titleSrc != "" || t.titling || t.titleTries >= maxTitleTries {
 		t.mu.Unlock()
 		return
 	}
@@ -44,6 +52,7 @@ func (m *Manager) maybeAutoTitle(t *thread, reply string) {
 		return
 	}
 	t.titling = true
+	t.titleTries++
 	t.mu.Unlock()
 
 	m.wg.Add(1)
@@ -103,8 +112,10 @@ func (m *Manager) generateTitle(prompt, reply string) string {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return ""
 	}
+	// The id must be unique: adapters key their broker registration and MCP
+	// server on it, and two threads may be titled at once.
 	spec := agent.Spec{
-		ID: "title", Dir: dir, Model: m.defaultModel(cfg, kind), Mode: agent.ModePlan,
+		ID: titleRunPrefix + store.NewID(), Dir: dir, Model: m.defaultModel(cfg, kind), Mode: agent.ModePlan,
 		Instructions: titleInstructions,
 	}
 	if b := cfg.Binary(kind); b != kind {

@@ -117,9 +117,14 @@ func (m *Manager) Delete(threadID string) error {
 		})
 	}
 	t.mu.Lock()
-	wt := t.worktree
+	wts := []*store.Worktree{t.worktree}
+	for _, a := range t.members {
+		wts = append(wts, a.getWorktree()) // a subagent's own worktree (spawn.go)
+	}
 	t.mu.Unlock()
-	m.dropWorktree(wt)
+	for _, wt := range wts {
+		m.dropWorktree(wt)
+	}
 	m.emit(ThreadChangedMsg{ThreadID: threadID, Gone: true})
 	return nil
 }

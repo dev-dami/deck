@@ -39,10 +39,6 @@ func (s TaskStatus) Valid() bool {
 // final: it can be retried.
 func (s TaskStatus) Final() bool { return s == TaskDone || s == TaskCancelled }
 
-// Settled reports whether s is an end state for what depends on the task: done
-// satisfies a dependency, failed and cancelled do not.
-func (s TaskStatus) Settled() bool { return s == TaskDone || s == TaskFailed || s == TaskCancelled }
-
 // taskNext lists the statuses each status may move to.
 var taskNext = map[TaskStatus][]TaskStatus{
 	TaskPending:   {TaskReady, TaskRunning, TaskBlocked, TaskDone, TaskCancelled},
@@ -167,7 +163,6 @@ var (
 	ErrTaskCycle       = errors.New("tasks would depend on each other")
 	ErrTaskUnknownDep  = errors.New("unknown dependency")
 	ErrTaskEmptyTitle  = errors.New("a task needs a title")
-	ErrTaskSelfParent  = errors.New("a task cannot be its own parent")
 	ErrTaskUnknownPart = errors.New("unknown parent task")
 )
 

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 
@@ -51,7 +52,7 @@ type titleAdapter struct {
 }
 
 func (a *titleAdapter) Start(ctx context.Context, sp agent.Spec) (agent.Run, error) {
-	if sp.ID != "title" {
+	if !strings.HasPrefix(sp.ID, titleRunPrefix) {
 		return a.Adapter.Start(ctx, sp)
 	}
 	return &titleRun{a: a, ev: make(chan agent.Event, 4), ap: make(chan agent.ApprovalRequest)}, nil

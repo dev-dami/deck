@@ -21,8 +21,10 @@ import (
 func (m *Manager) handOver(t *thread, from, to *agentState, text string, msg agent.Message) (string, error) {
 	contract := &store.Contract{Expect: msg.Expect, DoneWhen: msg.DoneWhen, ExplicitDone: msg.ExplicitDone}
 	if msg.NewTask != "" {
+		// Claimed: created running with `to` as owner, so the scheduler cannot
+		// hand it to someone else while the relay is still on its way.
 		tk, err := m.addTask(t, TaskSpec{
-			Title: msg.NewTask, Brief: text, Creator: from.id, Owner: to.id, Contract: contract,
+			Title: msg.NewTask, Brief: text, Creator: from.id, Owner: to.id, Contract: contract, Claimed: true,
 		})
 		if err != nil {
 			return "", err
@@ -53,9 +55,20 @@ func (m *Manager) handOver(t *thread, from, to *agentState, text string, msg age
 	}
 	tk.Updated = time.Now()
 	id := tk.ID
-	changes := []taskChange{m.logTaskLocked(t, *tk, tk.Status, from.id, "handed to "+to.getName())}
+	old := tk.Run
+	if old != nil && old.Member != to.id {
+		tk.Run = nil // its subagent is relieved below
+	} else {
+		old = nil
+	}
 	t.mu.Unlock()
-	m.announce(t, changes)
+	// Claim it now, before anything is announced: a ready task that is only
+	// announced would be the scheduler's to hand out.
+	m.startHandedTask(t, id, to, from.id)
+	m.persistMeta(t) // the brief and contract, when the status did not change
+	if old != nil {
+		m.retireMember(t, old.Member)
+	}
 	return id, nil
 }
 
@@ -106,8 +119,10 @@ func (m *Manager) settleHanded(t *thread, a *agentState, reply string) {
 		if tk.Owner != a.id || tk.Status != store.TaskRunning || tk.Contract == nil {
 			continue
 		}
-		if idx := handoverIndex(t, tk.ID, a.id); idx < 0 || idx >= a.cursor {
-			continue // a has not been told about it yet: this turn was about something else
+		// a has not been told about it yet (still ahead of its cursor, or held
+		// by a pause): this turn was about something else.
+		if idx := handoverIndex(t, tk.ID, a.id); idx < 0 || idx >= a.cursor || t.inert[idx] {
+			continue
 		}
 		jobs = append(jobs, job{tk.ID, tk.Contract.ExplicitDone})
 	}

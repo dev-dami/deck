@@ -73,8 +73,8 @@ type ToolUse struct {
 }
 
 // TaskBoard is the thread's shared task board as one agent's task.* ops see it.
-// The session package implements it; op is one of the Optask* names and a the
-// op's checked arguments.
+// The session package implements it; op is one of the OpTask* names (or
+// OpAgentSpawn) and a the op's checked arguments.
 type TaskBoard interface {
 	TaskOp(op string, a map[string]any) (string, error)
 }

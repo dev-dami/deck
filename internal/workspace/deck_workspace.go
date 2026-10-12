@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -477,7 +478,7 @@ func (w *DeckWorkspace) pump() {
 		case decks.TaskChangedMsg:
 			w.projectBoard(m.ThreadID)
 			switch {
-			case m.Task.Status == "failed":
+			case m.Task.Status == "failed" && m.From != "failed": // not an edit of a failed task
 				detail := "retry"
 				if m.Task.Attempts >= m.Task.Tries() {
 					detail = "final"
@@ -783,7 +784,7 @@ func (w *DeckWorkspace) projectBoard(threadID string) {
 	if err != nil {
 		return
 	}
-	sess.Todos = sess.Todos[:0]
+	var todos []session.Todo
 	for _, tk := range tasks {
 		status := session.TodoStatusPending
 		switch tk.Status {
@@ -798,9 +799,28 @@ func (w *DeckWorkspace) projectBoard(threadID string) {
 		if tk.Owner != "" {
 			text += " (" + names[tk.Owner] + ")"
 		}
-		sess.Todos = append(sess.Todos, session.Todo{Content: text, Status: status, ActiveForm: text})
+		todos = append(todos, session.Todo{Content: text, Status: status, ActiveForm: text})
 	}
+	if slices.Equal(todos, sess.Todos) {
+		return // a board change that does not show (a note, a brief): no write
+	}
+	sess.Todos = todos
 	_, _ = w.app.Sessions.Save(ctx, sess)
+}
+
+// SaveSession is AppWorkspace's, and a title the user gave the session is the
+// thread's title from then on (RenameThread): no automatic title replaces it,
+// and syncTitle has nothing to undo.
+func (w *DeckWorkspace) SaveSession(ctx context.Context, sess session.Session) (session.Session, error) {
+	if cur, err := w.app.Sessions.Get(ctx, sess.ID); err == nil && cur.Title != sess.Title {
+		w.mu.Lock()
+		tid, ok := w.threads[sess.ID]
+		w.mu.Unlock()
+		if ok {
+			_ = w.mgr().RenameThread(tid, sess.Title)
+		}
+	}
+	return w.AppWorkspace.SaveSession(ctx, sess)
 }
 
 // addUsage adds a finished turn's tokens and cost to the session and records

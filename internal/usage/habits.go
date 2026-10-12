@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -176,8 +177,10 @@ func (s *service) habits(ctx context.Context, since time.Time, loc *time.Locatio
 	}
 	from := unix(since)
 
+	// Newest first, so the cap drops the oldest turns of a long record, not
+	// today's; reversed below, as the derivations want them oldest first.
 	rows, err := s.conn.QueryContext(ctx, `SELECT session_id, agent_id, status, "trigger", created_at, duration_ms
-		FROM usage WHERE created_at >= ? ORDER BY created_at ASC LIMIT ?`, from, maxHabitTurns)
+		FROM usage WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?`, from, maxHabitTurns)
 	if err != nil {
 		return h, err
 	}
@@ -198,6 +201,7 @@ func (s *service) habits(ctx context.Context, since time.Time, loc *time.Locatio
 		return h, err
 	}
 	rows.Close()
+	slices.Reverse(turns)
 	deriveRhythm(&h, turns)
 
 	if h.Approvals, err = s.approvalHabit(ctx, from); err != nil {

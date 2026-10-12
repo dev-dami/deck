@@ -26,12 +26,13 @@ type thread struct {
 	title string
 	// titleSrc is who wrote title (store.Thread.TitleSrc); titling is set while
 	// a model-written title is being fetched (title.go).
-	titleSrc string
-	titling  bool
-	dir      string
-	mode     agent.Mode // permission mode; never empty
-	members  []*agentState
-	log      []store.Entry
+	titleSrc   string
+	titling    bool
+	titleTries int
+	dir        string
+	mode       agent.Mode // permission mode; never empty
+	members    []*agentState
+	log        []store.Entry
 
 	boundary    map[string]int    // speaker -> log index just after its last finished turn
 	inert       map[int]bool      // relay/user entries that must not start a turn

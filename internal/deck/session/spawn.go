@@ -50,7 +50,7 @@ type SpawnResult struct {
 // Spawn starts a subagent for a task of thread threadID. parentID is the
 // member asking, or "" when the user or Deck's scheduler asks. Members may
 // spawn only in threads with orchestration on, a subagent cannot spawn, and
-// each parent has at most maxChildren live subagents.
+// each member has at most maxChildren live subagents.
 func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, error) {
 	if m.isClosed() {
 		return SpawnResult{}, errClosed
@@ -94,7 +94,9 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		}
 	}
 	t.mu.Unlock()
-	if live >= maxChildren {
+	// The cap is per member; the scheduler (parentID "") is bounded by
+	// MaxParallel, and the user by their own judgement.
+	if parentID != "" && live >= maxChildren {
 		return SpawnResult{}, fmt.Errorf("session: %w: %d are already running; wait for one to finish", errChildLimit, live)
 	}
 
@@ -106,17 +108,29 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		if title == "" {
 			title = clipText(oneLine(brief), 60)
 		}
-		tk, err := m.addTask(t, TaskSpec{Title: title, Brief: brief, Creator: parentID, Contract: &contract})
+		// Claimed: it is created running (nobody's yet), so the scheduler does
+		// not start a second subagent for it while this one is spawning.
+		tk, err := m.addTask(t, TaskSpec{Title: title, Brief: brief, Creator: parentID, Contract: &contract, Claimed: true})
 		if err != nil {
 			return SpawnResult{}, err
 		}
 		taskID, created = tk.ID, true
-	} else if err := m.checkSpawnTask(t, taskID); err != nil {
-		return SpawnResult{}, err
+	} else {
+		if err := m.checkSpawnTask(t, taskID); err != nil {
+			return SpawnResult{}, err
+		}
+		// Same claim for an existing task: running from here on, bound to the
+		// subagent once it is up.
+		if _, err := m.moveTask(t, taskID, store.TaskRunning, parentID, "starting a subagent", nil); err != nil {
+			return SpawnResult{}, err
+		}
 	}
 	fail := func(err error) (SpawnResult, error) {
+		note := "could not start a subagent: " + err.Error()
 		if created {
-			_, _ = m.moveTask(t, taskID, store.TaskCancelled, parentID, "could not start a subagent: "+err.Error(), nil)
+			_, _ = m.moveTask(t, taskID, store.TaskCancelled, parentID, note, nil)
+		} else {
+			_, _ = m.moveTask(t, taskID, store.TaskFailed, parentID, note, nil)
 		}
 		return SpawnResult{}, err
 	}
@@ -181,9 +195,13 @@ func (m *Manager) checkSpawnTask(t *thread, id string) error {
 // bindRun records on the task that subagent a works on it: owner, run, and
 // contract (the spawn's, when the task has none yet).
 func (m *Manager) bindRun(t *thread, taskID string, a *agentState, wt *store.Worktree, sp SpawnSpec, brief, by string) {
+	var old *store.RunRef
 	t.mu.Lock()
 	if i := store.FindTask(t.tasks, taskID); i >= 0 {
 		tk := &t.tasks[i]
+		if tk.Run != nil && tk.Run.Member != a.id {
+			old = tk.Run // relieved below
+		}
 		tk.Owner = a.id
 		ref := &store.RunRef{Member: a.id}
 		if wt != nil {
@@ -203,10 +221,14 @@ func (m *Manager) bindRun(t *thread, taskID string, a *agentState, wt *store.Wor
 	}
 	t.mu.Unlock()
 	m.startHandedTask(t, taskID, a, by)
+	if old != nil {
+		m.retireMember(t, old.Member)
+	}
 }
 
 // deliverBrief logs the brief as a message from speaker to the subagent and
-// delivers it. It does not count as a hop: spawning is bounded by maxChildren.
+// delivers it. It does not count as a hop: spawning is bounded by maxChildren
+// per member and by MaxParallel for the scheduler.
 func (m *Manager) deliverBrief(t *thread, speaker string, to *agentState, text, taskID string) {
 	e := store.Entry{Type: store.EntryRelay, Speaker: speaker, To: []string{to.id}, Via: "spawn", TaskID: taskID, Event: eventText(text)}
 	t.mu.Lock()
@@ -260,21 +282,24 @@ func (m *Manager) retireMember(t *thread, id string) {
 	if a == nil || !a.isEphemeral() {
 		return
 	}
-	_ = m.Interrupt(a.id) // denies what it was waiting on
-	run := a.getRun()
-	if !a.markExited() {
+	a.mu.Lock()
+	run, done := a.run, a.retired || a.base == StatusExited
+	a.retired = true
+	a.mu.Unlock()
+	if done {
 		return
 	}
+	_ = m.Interrupt(a.id) // denies what it was waiting on
 	if run != nil {
-		// Closed off this goroutine: it may be the one draining the run's events.
+		// Closed off this goroutine: it may be the one draining the run's
+		// events. The exit itself is logged by the pump when the run's channels
+		// close, like every other exit, so the others' briefings see it leave.
 		m.wg.Add(1)
 		go func() {
 			defer m.wg.Done()
 			_ = run.Close()
 		}()
 	}
-	m.persistMeta(t)
-	m.emit(ThreadChangedMsg{ThreadID: t.id})
 }
 
 // memberIdle reports whether member id has no turn in progress (or is gone).

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -24,9 +25,6 @@ import (
 //
 // Dispatches are Deck's, not an agent's thread.send, so they are not hops.
 
-// DefaultMaxParallel is how many tasks run at once when the config says 0.
-const DefaultMaxParallel = 3
-
 // retryBackoff is the wait before a failed task's attempt number attempt+1:
 // 2s, 4s, 8s, ... up to a minute. A variable so tests can shorten it.
 var retryBackoff = func(attempt int) time.Duration {
@@ -40,6 +38,9 @@ type schedState struct {
 	mu      sync.Mutex
 	running bool
 	again   bool
+	// retry wakes the scheduler when the next backoff ends; one per thread,
+	// reset by each pass, so kicks during a backoff do not pile timers up.
+	retry *time.Timer
 }
 
 // kick has the scheduler look at the thread's board again, soon and off the
@@ -83,7 +84,7 @@ func (m *Manager) maxParallel() int {
 	if n := m.config().MaxParallel; n > 0 {
 		return n
 	}
-	return DefaultMaxParallel
+	return config.DefaultMaxParallel
 }
 
 // schedule is one pass over the board.
@@ -174,10 +175,17 @@ func (m *Manager) retryFailed(t *thread) {
 		m.persistMeta(t)
 	}
 	if wait > 0 {
-		time.AfterFunc(wait+10*time.Millisecond, func() { m.kick(t) })
+		t.sched.mu.Lock()
+		if t.sched.retry != nil {
+			t.sched.retry.Stop()
+		}
+		t.sched.retry = time.AfterFunc(wait+10*time.Millisecond, func() { m.kick(t) })
+		t.sched.mu.Unlock()
 	}
 	for _, id := range due {
+		var old *store.RunRef
 		_, _ = m.moveTask(t, id, store.TaskReady, "", "retrying", func(tk *store.Task) {
+			old = tk.Run
 			note := tk.Error
 			if note == "" {
 				note = "it failed"
@@ -189,10 +197,13 @@ func (m *Manager) retryFailed(t *thread) {
 			tk.Brief = clipText(base+fmt.Sprintf("\n\n[deck] Attempt %d of %d failed: %s. Try again, and avoid that failure.",
 				tk.Attempts, tk.Tries(), clipText(oneLine(note), 300)), maxTaskText)
 			tk.RetryAt = time.Time{}
-			if tk.Run != nil { // its subagent is gone: a new one takes the retry
+			if tk.Run != nil { // a new subagent takes the retry
 				tk.Owner, tk.Run = "", nil
 			}
 		})
+		if old != nil {
+			m.retireMember(t, old.Member)
+		}
 	}
 }
 
@@ -227,13 +238,13 @@ func (m *Manager) dispatchReady(t *thread) {
 			return
 		}
 		if err := m.dispatch(t, *next, owner); err != nil {
-			if errors.Is(err, errChildLimit) {
-				return // try again when a subagent finishes
+			// Spawn fails the task itself once it has claimed it. A task that
+			// did not get that far counts the attempt here, so it cannot loop
+			// forever: the next passes retry it with a backoff.
+			if cur, ok := m.Task(t.id, next.ID); ok && cur.Status == store.TaskReady {
+				_, _ = m.moveTask(t, next.ID, store.TaskRunning, "", "", nil)
+				_, _ = m.moveTask(t, next.ID, store.TaskFailed, "", "could not start it: "+err.Error(), nil)
 			}
-			// A task that cannot even start counts the attempt, so it cannot
-			// loop forever; the next passes retry it with a backoff.
-			_, _ = m.moveTask(t, next.ID, store.TaskRunning, "", "", nil)
-			_, _ = m.moveTask(t, next.ID, store.TaskFailed, "", "could not start it: "+err.Error(), nil)
 			continue
 		}
 		if cur, ok := m.Task(t.id, next.ID); !ok || cur.Status == store.TaskReady {

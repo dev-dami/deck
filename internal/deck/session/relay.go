@@ -177,8 +177,7 @@ func (m *Manager) relay(t *thread, from *agentState, targets []*agentState, text
 }
 
 // relayTask is relay for a message that hands over task taskID ("" for a plain
-// message). The task counts as running with the recipient from the moment the
-// message is logged, held by a pause or not.
+// message); handOver has already put the task in the recipient's hands.
 func (m *Manager) relayTask(t *thread, from *agentState, targets []*agentState, text, via, taskID string) string {
 	norm := normText(text)
 	if taskID != "" {
@@ -224,14 +223,12 @@ func (m *Manager) relayTask(t *thread, from *agentState, targets []*agentState, 
 		hops := t.hops
 		t.mu.Unlock()
 		m.emitAll(append(pre, post...)...)
-		m.startHandedTask(t, taskID, live[0], from.id)
 		return fmt.Sprintf("held: Deck paused this thread after %d agent-to-agent messages; the user will continue it", hops)
 	}
 	t.hops++
 	m.appendLocked(t, e)
 	t.mu.Unlock()
 	m.emitAll(msgFor(t.id, e))
-	m.startHandedTask(t, taskID, live[0], from.id)
 
 	var res []string
 	for _, tg := range live {

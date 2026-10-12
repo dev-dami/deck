@@ -41,6 +41,10 @@ type TaskSpec struct {
 	MaxAttempts int
 	Isolate     bool
 	Contract    *store.Contract
+	// Claimed creates the task already running (its first attempt under way),
+	// so the scheduler never hands out a task its creator is about to work on
+	// or hand over itself.
+	Claimed bool
 }
 
 // TaskPatch is a change to a task's description; nil fields stay as they are.
@@ -222,6 +226,9 @@ func (m *Manager) addTask(t *thread, sp TaskSpec) (store.Task, error) {
 		Status: store.TaskPending, OnFail: sp.OnFail, MaxAttempts: sp.MaxAttempts, Contract: sp.Contract, Isolate: sp.Isolate,
 		Created: now, Updated: now,
 	}
+	if sp.Claimed {
+		task.Status, task.Attempts = store.TaskRunning, 1
+	}
 	t.tasks = append(t.tasks, task)
 	changes := []taskChange{m.logTaskLocked(t, task, "", sp.Creator, "")}
 	changes = append(changes, m.refreshReadyLocked(t)...)
@@ -350,6 +357,15 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 		tk.Error = clipText(note, maxTaskText)
 	case store.TaskCancelled:
 		tk.Run = nil
+	}
+	// What the scheduler noted about a failure or a block is for that state
+	// only: left behind, it would send a task round again (BlockedBy) or
+	// skip its backoff (RetryAt).
+	if to != store.TaskBlocked {
+		tk.BlockedBy = ""
+	}
+	if to != store.TaskFailed {
+		tk.RetryAt = time.Time{}
 	}
 	changes := []taskChange{m.logTaskLocked(t, *tk, from, by, note)}
 	changes = append(changes, m.refreshReadyLocked(t)...)
@@ -626,10 +642,16 @@ func (m *Manager) RetryTask(threadID, id, by string) (store.Task, error) {
 	if t == nil {
 		return store.Task{}, fmt.Errorf("session: no thread %q", threadID)
 	}
-	return m.moveTask(t, id, store.TaskReady, by, "retry", func(tk *store.Task) {
+	var old *store.RunRef
+	tk, err := m.moveTask(t, id, store.TaskReady, by, "retry", func(tk *store.Task) {
 		tk.Attempts, tk.RetryAt, tk.Error, tk.BlockedBy = 0, time.Time{}, "", ""
+		old = tk.Run
 		if tk.Run != nil {
 			tk.Owner, tk.Run = "", nil
 		}
 	})
+	if err == nil && old != nil {
+		m.retireMember(t, old.Member) // a blocked task's subagent was kept alive for a steer
+	}
+	return tk, err
 }

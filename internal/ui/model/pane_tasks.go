@@ -65,11 +65,13 @@ func (p *tasksPane) key(m *UI, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	case "r":
 		return p.act(m, sel, func(o workspace.Orchestration, sid, id string) error { return o.RetryTask(sid, id) })
 	case "o":
+		// Only with a board to run: otherwise o stays the strip's own key.
 		o, ok := m.com.Workspace.(workspace.Orchestration)
-		if !ok || m.session == nil {
+		board := m.boardReport()
+		if !ok || m.session == nil || len(board.Tasks) == 0 {
 			return false, nil
 		}
-		on, sid := !m.boardReport().Orchestrate, m.session.ID
+		on, sid := !board.Orchestrate, m.session.ID
 		return true, func() tea.Msg {
 			if err := o.SetOrchestrate(sid, on); err != nil {
 				return util.NewErrorMsg(err)

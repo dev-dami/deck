@@ -1439,6 +1439,7 @@ type agentState struct {
 	ephemeral bool
 	dir       string
 	worktree  *store.Worktree
+	retired   bool // retireMember has stopped it (spawn.go)
 }
 
 func (a *agentState) getRun() agent.Run {

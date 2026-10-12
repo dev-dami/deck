@@ -30,9 +30,6 @@ func TestStatusKinds(t *testing.T) {
 	if !TaskDone.Final() || !TaskCancelled.Final() || TaskFailed.Final() {
 		t.Error("done and cancelled are final; failed can be retried")
 	}
-	if !TaskFailed.Settled() || TaskRunning.Settled() {
-		t.Error("failed is settled, running is not")
-	}
 	if TaskStatus("nope").Valid() || !TaskReady.Valid() {
 		t.Error("Valid")
 	}
