@@ -88,7 +88,7 @@ func TestHostileCertAndSKKeysRefused(t *testing.T) {
 		}
 	}
 	// The plain pinned key still gets in.
-	if _, _, _, err := rawDial(t, addr, []ssh.AuthMethod{ssh.PublicKeys(b.id.Signer)}, nil); err != nil {
+	if err := dialSoon(t, addr, []ssh.AuthMethod{ssh.PublicKeys(b.id.Signer)}); err != nil {
 		t.Fatalf("pinned key refused: %v", err)
 	}
 }
