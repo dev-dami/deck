@@ -108,6 +108,8 @@ type Thread struct {
 	Archived bool `json:"archived,omitempty"`
 	// Worktree is set while the thread works apart from the shared tree.
 	Worktree *Worktree `json:"worktree,omitempty"`
+	// Tasks is the thread's shared task board (task.go).
+	Tasks []Task `json:"tasks,omitempty"`
 
 	// Legacy mirror of Members[0] (Name: every member's name joined by "+").
 	AgentKind string `json:"agent_kind"`
@@ -189,6 +191,9 @@ const (
 	// EntryUnrevert: the user undid the revert Ref, taking Files back to that
 	// revert's Snap. Snap is the work tree right before the undo.
 	EntryUnrevert = "unrevert"
+	// EntryTask: a change to the thread's task board; Task says what changed,
+	// Speaker who changed it (a member id, or "" for the user or Deck).
+	EntryTask = "task"
 )
 
 // Entry is one line of a thread log. The embedded Event keeps old logs (bare
@@ -225,6 +230,10 @@ type Entry struct {
 	// Files are the work-tree paths (relative to the repository root, forward
 	// slashes) an EntryRevert or EntryUnrevert put back.
 	Files []string `json:"files,omitempty"`
+	// Task is the change an EntryTask records.
+	Task *TaskEvent `json:"task,omitempty"`
+	// TaskID ties a relay (a handover under a contract) to the task it hands over.
+	TaskID string `json:"task_id,omitempty"`
 }
 
 // flushDelay is how long metadata and index writes are held back so a burst

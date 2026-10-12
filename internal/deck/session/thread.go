@@ -49,6 +49,8 @@ type thread struct {
 	gone atomic.Bool
 	// worktree is set while the thread is isolated (lifecycle.go).
 	worktree *store.Worktree
+	// tasks is the shared task board (tasks.go), guarded by mu.
+	tasks []store.Task
 
 	// Queue of user messages waiting for busy members (queue.go), guarded by mu.
 	queue  []qitem
@@ -174,7 +176,8 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
-		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree}
+		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree,
+		Tasks: cloneTasks(t.tasks)}
 	for _, a := range t.members {
 		th.Members = append(th.Members, a.memberMeta())
 	}

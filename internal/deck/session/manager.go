@@ -1058,6 +1058,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	t.title, t.titleSrc = th.Title, th.TitleSrc
 	t.pinned, t.resolved = th.Pinned, th.Resolved // resuming un-archives
 	t.worktree = th.Worktree
+	t.tasks = cloneTasks(th.Tasks)
 	remap := map[string]string{}
 	var started []*agentState
 	fail := func(err error) (ThreadInfo, []tea.Msg, error) {
