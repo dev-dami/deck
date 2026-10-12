@@ -617,3 +617,19 @@ func normOnFail(s string) string {
 	}
 	return ""
 }
+
+// RetryTask puts a failed, blocked or waiting task back to ready with a fresh
+// set of attempts. A subagent that worked on it is not reused: the scheduler
+// starts a new one.
+func (m *Manager) RetryTask(threadID, id, by string) (store.Task, error) {
+	t := m.thread(threadID)
+	if t == nil {
+		return store.Task{}, fmt.Errorf("session: no thread %q", threadID)
+	}
+	return m.moveTask(t, id, store.TaskReady, by, "retry", func(tk *store.Task) {
+		tk.Attempts, tk.RetryAt, tk.Error, tk.BlockedBy = 0, time.Time{}, "", ""
+		if tk.Run != nil {
+			tk.Owner, tk.Run = "", nil
+		}
+	})
+}
