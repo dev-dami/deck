@@ -474,6 +474,12 @@ func (w *DeckWorkspace) pump() {
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorQueueEdit, "", 1)
 		case decks.QueueCancelledMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorQueueCancel, "", 1)
+		case decks.TaskSteeredMsg:
+			detail := "user"
+			if m.By != "" {
+				detail = "agent"
+			}
+			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorTaskSteer, detail, 1)
 		case decks.RevertedMsg:
 			kind := usage.BehaviorRevert
 			if m.Undo {

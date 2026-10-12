@@ -143,6 +143,9 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				l.user = false
 				l.addressed = v.skipSelf
 				l.text = steerText(raw, e.Old)
+				if e.TaskID != "" {
+					l.text = taskSteerText(t, userLabel(cfg.TellAgentsName, e.Speaker), e.TaskID, raw)
+				}
 				if v.skipSelf {
 					l.images = t.imagesOf(e)
 				}
@@ -168,6 +171,9 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				l.addressed = true
 				l.text = "[" + t.label(e.Speaker, v.self) + " → " + t.name(v.self) + "] " + clip(strings.TrimSpace(e.Text), maxEntryChars)
 				l.text += handoverNote(t, e)
+				if e.Steer {
+					l.text = taskSteerText(t, t.name(e.Speaker), e.TaskID, e.Text)
+				}
 			}
 			out = append(out, l)
 		case store.EntryMember:

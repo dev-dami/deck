@@ -28,6 +28,11 @@ const (
 	BehaviorContinue     = "continue"
 	BehaviorError        = "error"
 	BehaviorRetry        = "retry"
+	// Task orchestration (internal/deck/session/tasks.go): a task steered,
+	// retried by the scheduler, or failed for good.
+	BehaviorTaskSteer = "task_steer"
+	BehaviorTaskRetry = "task_retry"
+	BehaviorTaskFail  = "task_fail"
 )
 
 // Behavior is one thing the user (or Deck on their behalf) did to steer the

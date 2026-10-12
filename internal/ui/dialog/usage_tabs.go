@@ -312,6 +312,9 @@ var behaviourRows = []behaviourRow{
 	{"Mode changes", usage.BehaviorModeChange, false},
 	{"Model changes", usage.BehaviorModelChange, false},
 	{"Effort changes", usage.BehaviorEffortChange, false},
+	{"Task steers", usage.BehaviorTaskSteer, true},
+	{"Task retries", usage.BehaviorTaskRetry, false},
+	{"Task failures", usage.BehaviorTaskFail, false},
 }
 
 // behaviourLines is the Behaviour page: the rates, then a count and a

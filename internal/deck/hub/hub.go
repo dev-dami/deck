@@ -42,6 +42,7 @@ const (
 	OpTaskDone   = "task.done"
 	OpTaskFail   = "task.fail"
 	OpTaskCancel = "task.cancel"
+	OpTaskSteer  = "task.steer"
 )
 
 // Limits.
@@ -193,6 +194,9 @@ func init() {
 			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "reason", Type: tString}}, run: opTask(OpTaskFail)},
 		{Name: OpTaskCancel, Desc: "Abandon a task that is no longer needed.",
 			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "reason", Type: tString}}, run: opTask(OpTaskCancel)},
+		{Name: OpTaskSteer, Desc: "Redirect whoever owns a task you handed over, even mid-turn, without naming them. Only for tasks you created.",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "message", Type: tString, Required: true, Desc: "what to change; the owner sees it as a redirect"}},
+			run:  opTask(OpTaskSteer)},
 		{Name: "history.threads", Desc: "List this project's Deck threads, past and current: id, title, updated, agents.",
 			Args: []Arg{{Name: "limit", Type: tInt}}, run: opHistoryThreads},
 		{Name: "history.search", Desc: "Search this project's Deck threads (chat history) for words; returns thread, speaker and snippet.",
