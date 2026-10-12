@@ -29,10 +29,15 @@ type PeerLink interface {
 	Remove(name string) error
 	Ping(ctx context.Context, name string) (peer.PingResult, error)
 
-	// StartPairing waits for another Deck with a fresh one-time code.
-	StartPairing(addr string) (*peer.PairWait, error)
-	// PairDial proves a code to a Deck waiting at addr.
-	PairDial(ctx context.Context, addr, code string) (peer.PairResult, error)
+	// StartPairListen waits for another Deck with a fresh one-time code, on
+	// this Deck's own listener when it runs (same port as the link).
+	StartPairListen(ctx context.Context) (*peer.PairWait, error)
+	// PairListenAll moves a wait that only this machine can reach to every
+	// interface (Listen on), keeping its code when it can.
+	PairListenAll(w *peer.PairWait) (*peer.PairWait, error)
+	// PairDial proves a code to a Deck waiting at addr; expectFP, from an
+	// invite, is the fingerprint it must have ("" for none).
+	PairDial(ctx context.Context, addr, code, expectFP string) (peer.PairResult, error)
 	// Pin pins a Deck that proved the code, once the person confirmed the
 	// fingerprints.
 	Pin(r peer.PinRequest) error

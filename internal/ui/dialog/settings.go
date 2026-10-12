@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 
 	"github.com/dev-dami/deck/internal/config"
@@ -127,6 +128,8 @@ type Settings struct {
 	compact, transparent, mouse bool
 	exitBanner                  string
 
+	moreHelp bool // ? pressed: every key hint shows
+
 	rng      int
 	report   *workspace.UsageReport
 	usageErr error
@@ -136,7 +139,7 @@ type Settings struct {
 	keyMap struct {
 		Up, Down, Left, Right, Activate  key.Binding
 		NextTab, PrevTab, GoTab, Refresh key.Binding
-		Close, FullView                  key.Binding
+		Close, FullView, More            key.Binding
 		// Team page
 		AddPeer, CopyFingerprint, Edit, ApplyNow key.Binding
 		Save, Back, Run, Yes, No                 key.Binding
@@ -205,6 +208,7 @@ func NewSettings(com *common.Common, tab SettingsTab) *Settings {
 	s.keyMap.Run = key.NewBinding(key.WithKeys("enter", " ", "space"), key.WithHelp("enter", "run"))
 	s.keyMap.Yes = key.NewBinding(key.WithKeys("y", "enter"), key.WithHelp("y", "remove"))
 	s.keyMap.No = key.NewBinding(key.WithKeys("n", "esc", "alt+esc"), key.WithHelp("n", "keep"))
+	s.keyMap.More = MoreKey
 	return s
 }
 
@@ -295,6 +299,9 @@ func (s *Settings) handleKey(msg tea.KeyPressMsg) Action {
 		return ActionCmd{Cmd: s.SetTab(s.tab - 1)}
 	case key.Matches(msg, s.keyMap.GoTab):
 		return ActionCmd{Cmd: s.SetTab(SettingsTab(msg.String()[0] - '1'))}
+	case key.Matches(msg, s.keyMap.More):
+		s.moreHelp = !s.moreHelp
+		return nil
 	}
 
 	if s.tab == SettingsTabUsage {
@@ -404,11 +411,13 @@ func (s *Settings) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	default:
 		body = s.rowLines(innerWidth)
 	}
+	// The key hints never end in an ellipsis: what fits, then "? more".
+	helpView := renderFittedHelp(t, &s.help, s.ShortHelp(), &s.keyMap.More, s.moreHelp, innerWidth)
 	// Keep the frame on screen: drop what does not fit, at the bottom, or
 	// around the focused line when it would fall off.
 	maxBody := area.Dy() - t.Dialog.View.GetVerticalFrameSize() -
 		t.Dialog.Title.GetVerticalFrameSize() - titleContentHeight -
-		t.Dialog.HelpView.GetVerticalFrameSize() - 1
+		lipgloss.Height(helpView) - 1
 	if maxBody >= 0 && len(body) > maxBody {
 		start := 0
 		if focus >= maxBody {
@@ -421,7 +430,7 @@ func (s *Settings) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	rc.Title = "Settings"
 	rc.TitleInfo = s.tabsView(t)
 	rc.AddPart(strings.Join(body, "\n"))
-	rc.Help = renderDialogHelp(t, &s.help, s, innerWidth)
+	rc.Help = helpView
 	DrawCenter(scr, area, rc.Render())
 	return nil
 }

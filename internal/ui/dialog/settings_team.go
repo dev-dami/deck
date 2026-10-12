@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
@@ -735,17 +736,66 @@ func friendlyErr(err error) string {
 	return strings.TrimPrefix(peer.Sanitize(err.Error()), "peer: ")
 }
 
+// renderTeamRow draws a row like renderRow, but a value too long for its
+// column (a fingerprint, an address with its reach) goes on over more lines
+// under the value column instead of being cut off.
+func (s *Settings) renderTeamRow(r settingsRow, selected bool, width int) []string {
+	t := s.com.Styles
+	text := max(0, width-2)
+	labelW := min(settingsLabelWidth, text/2)
+	mark := ""
+	if r.mark != "" {
+		mark = padRight(r.mark, settingsMarkWidth) + " "
+	}
+	valueW := max(1, text-labelW-ansi.StringWidth(mark))
+	if ansi.StringWidth(r.value) <= valueW {
+		return []string{s.renderRow(r, selected, width)}
+	}
+	var values []string
+	for _, v := range strings.Split(ansi.Wrap(r.value, valueW, ""), "\n") {
+		values = append(values, padRight(v, valueW))
+	}
+	label := padRight(ansi.Truncate(r.label, labelW, "…"), labelW)
+	indent := strings.Repeat(" ", labelW+ansi.StringWidth(mark))
+	out := make([]string, 0, len(values))
+	for i, v := range values {
+		pre := indent
+		if i == 0 {
+			pre = label + mark
+		}
+		if selected {
+			out = append(out, t.Dialog.SelectedItem.Render(pre+v))
+			continue
+		}
+		if i == 0 {
+			pre = t.Dialog.NormalItem.UnsetPaddingRight().Render(label)
+			if mark != "" && r.markColor != nil {
+				pre += lipgloss.NewStyle().Foreground(r.markColor).Render(mark)
+			} else {
+				pre += mark
+			}
+		} else {
+			pre = t.Dialog.NormalItem.UnsetPaddingRight().Render(indent)
+		}
+		valueStyle := t.Dialog.ListItem.InfoFocused
+		if r.change == nil {
+			valueStyle = t.Dialog.ListItem.InfoBlurred
+		}
+		out = append(out, pre+valueStyle.Render(v)+" ")
+	}
+	return out
+}
+
 // teamLines renders the Team page, and the line of the selected row.
 func (s *Settings) teamLines(width int) ([]string, int) {
 	t := s.com.Styles
-	text := max(0, width-2)
 	muted := t.Dialog.SecondaryText
-	line := func(str string) string { return muted.Render(ansi.Truncate(str, text, "…")) }
+	wrap := func(str string) []string { return wrapText(muted, str, width) }
 	if s.team.link == nil {
-		return []string{muted.Width(width).Render(teamUnavailable)}, -1
+		return wrap(teamUnavailable), -1
 	}
 	if s.team.snap == nil {
-		return []string{line(teamReading)}, -1
+		return wrap(teamReading), -1
 	}
 	rows := s.teamRows()
 	sel := min(max(0, s.sel[SettingsTabTeam]), len(rows)-1)
@@ -765,7 +815,7 @@ func (s *Settings) teamLines(width int) ([]string, int) {
 		if i == sel && s.team.edit != nil {
 			lines = append(lines, s.renderEditRow(r, width))
 		} else {
-			lines = append(lines, s.renderRow(r, i == sel, width))
+			lines = append(lines, s.renderTeamRow(r, i == sel, width)...)
 		}
 		if r.peer == "" {
 			continue
@@ -774,26 +824,29 @@ func (s *Settings) teamLines(width int) ([]string, int) {
 			lines = append(lines, s.menuLines(r.peer, width)...)
 		}
 		if ping, ok := s.team.pings[r.peer]; ok && i == sel {
-			lines = append(lines, line("    "+pingText(ping)))
+			lines = append(lines, wrapText(muted.PaddingLeft(4), pingText(ping), width)...)
 		}
 	}
 	if snap := s.team.snap; snap.Err != "" {
-		lines = append(lines, "", t.Dialog.TitleError.PaddingLeft(1).Render(ansi.Truncate(snap.Err, text, "…")))
+		lines = append(lines, "")
+		lines = append(lines, wrapText(t.Dialog.TitleError.PaddingLeft(1), snap.Err, width)...)
 	}
-	lines = append(lines, "", line(rows[sel].hint), s.teamOutcome(text))
+	lines = append(lines, "")
+	lines = append(lines, wrap(rows[sel].hint)...)
+	lines = append(lines, s.teamOutcome(width)...)
 	return lines, focus
 }
 
 // teamOutcome is the line under the hint: the change being saved, the last
 // one's outcome, or whether changes here apply now.
-func (s *Settings) teamOutcome(width int) string {
+func (s *Settings) teamOutcome(width int) []string {
 	t := s.com.Styles
 	var str string
 	switch {
 	case s.team.busy != "":
 		str = "Saving: " + s.team.busy + "…"
 	case s.team.err != "":
-		return t.Dialog.TitleError.PaddingLeft(1).Render(ansi.Truncate("Not saved: "+s.team.err, width, "…"))
+		return wrapText(t.Dialog.TitleError.PaddingLeft(1), "Not saved: "+s.team.err, width)
 	case s.team.note != "":
 		str = "Saved: " + s.team.note + " · " + badgeAppliesNow
 	case s.team.snap != nil && s.team.snap.Pending:
@@ -801,7 +854,7 @@ func (s *Settings) teamOutcome(width int) string {
 	default:
 		str = "Changes here " + badgeAppliesNow + ", no restart"
 	}
-	return t.Dialog.SecondaryText.Render(ansi.Truncate(str, width, "…"))
+	return wrapText(t.Dialog.SecondaryText, str, width)
 }
 
 // renderEditRow draws a row whose value is being typed.
@@ -824,11 +877,9 @@ func (s *Settings) menuLines(name string, width int) []string {
 		return nil
 	}
 	if m.confirm {
-		q := fmt.Sprintf("    Remove %s? It can no longer connect, and this Deck stops dialing it.", name)
-		return []string{
-			t.Dialog.TitleError.Render(ansi.Truncate(q, text, "…")),
-			t.Dialog.SecondaryText.Render(ansi.Truncate("    y remove · n keep", text, "…")),
-		}
+		q := fmt.Sprintf("Remove %s? It can no longer connect, and this Deck stops dialing it.", name)
+		return append(wrapText(t.Dialog.TitleError.PaddingLeft(4), q, width),
+			wrapText(t.Dialog.SecondaryText.PaddingLeft(4), "y remove · n keep", width)...)
 	}
 	items := s.peerMenuItems(*p)
 	sel := min(max(0, m.sel), len(items)-1)
