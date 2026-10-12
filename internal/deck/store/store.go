@@ -79,6 +79,14 @@ type Member struct {
 	// window use (0 = unknown), so a resumed thread can show the meter at once.
 	ContextTokens int `json:"context_tokens,omitempty"`
 	ContextWindow int `json:"context_window,omitempty"`
+	// Parent, Ephemeral, Dir and Worktree describe a Deck-managed subagent
+	// (session/spawn.go): the member that asked for it, whether Deck stops it
+	// when its task ends, and the git worktree it works in (Dir is the folder
+	// inside it).
+	Parent    string    `json:"parent,omitempty"`
+	Ephemeral bool      `json:"ephemeral,omitempty"`
+	Dir       string    `json:"dir,omitempty"`
+	Worktree  *Worktree `json:"worktree,omitempty"`
 }
 
 // Thread is the metadata of one conversation between the user and one or more
@@ -110,6 +118,9 @@ type Thread struct {
 	Worktree *Worktree `json:"worktree,omitempty"`
 	// Tasks is the thread's shared task board (task.go).
 	Tasks []Task `json:"tasks,omitempty"`
+	// Orchestrate lets members spawn subagents and has the scheduler run the
+	// board's ready tasks.
+	Orchestrate bool `json:"orchestrate,omitempty"`
 
 	// Legacy mirror of Members[0] (Name: every member's name joined by "+").
 	AgentKind string `json:"agent_kind"`

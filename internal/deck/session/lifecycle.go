@@ -193,6 +193,9 @@ func (m *Manager) Fork(threadID, entryID string) (ThreadInfo, []tea.Msg, string,
 		return ThreadInfo{}, nil, "", errors.New("session: nothing to fork yet")
 	}
 	for _, a := range members {
+		if a.isEphemeral() {
+			continue // a subagent belongs to its own thread's tasks
+		}
 		mm := a.memberMeta()
 		mm.SessionID, mm.Cursor, mm.CostUSD = "", 0, 0 // a fresh session, briefed on everything
 		mm.ContextTokens, mm.ContextWindow = 0, 0

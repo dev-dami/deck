@@ -306,6 +306,19 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 		t.mu.Unlock()
 		return store.Task{}, fmt.Errorf("%w: %s is %s, not %s", store.ErrTaskTransition, tk.ID, from, to)
 	}
+	var run *store.RunRef
+	if tk.Run != nil {
+		r := *tk.Run
+		run = &r
+	}
+	var kids []string
+	if to == store.TaskCancelled {
+		for _, o := range t.tasks {
+			if strings.EqualFold(o.Parent, tk.ID) && !o.Status.Final() {
+				kids = append(kids, o.ID)
+			}
+		}
+	}
 	if mutate != nil {
 		mutate(tk)
 	}
@@ -329,6 +342,14 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 	m.announce(t, changes)
 	if to == store.TaskDone || to == store.TaskFailed || to == store.TaskBlocked {
 		m.notifyCreator(t, out, by)
+	}
+	// A subagent whose task ended is stopped at once if it is idle; a busy one
+	// (it reported through task.done mid-turn) is stopped when its turn ends.
+	if run != nil && (to == store.TaskCancelled || (to == store.TaskDone || to == store.TaskFailed) && m.memberIdle(t, run.Member)) {
+		m.retireMember(t, run.Member)
+	}
+	for _, id := range kids {
+		_, _ = m.moveTask(t, id, store.TaskCancelled, by, "its parent task was cancelled", nil)
 	}
 	return out, nil
 }
@@ -453,6 +474,20 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 			return "", err
 		}
 		return "steered " + str("id"), nil
+	case "agent.spawn":
+		res, err := m.Spawn(t.id, me, SpawnSpec{
+			Kind: str("kind"), Model: str("model"), Title: str("title"), Brief: str("brief"), TaskID: str("task"),
+			Isolate:  a["isolate"] == true,
+			Contract: store.Contract{Expect: str("expect"), DoneWhen: str("done_when"), ExplicitDone: a["explicit_done"] == true},
+		})
+		if err != nil {
+			return "", err
+		}
+		out := fmt.Sprintf("started %s on task %s; its result comes back to you when it finishes", res.AgentID, res.TaskID)
+		if res.Branch != "" {
+			out += " (it works on branch " + res.Branch + ")"
+		}
+		return out, nil
 	case "task.done", "task.fail", "task.cancel":
 		id := str("id")
 		if err := b.mayFinish(id); err != nil {

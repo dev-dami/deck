@@ -186,6 +186,10 @@ type AgentInfo struct {
 	CostUSD  float64
 	Pending  int // approvals waiting for an answer
 	ThreadID string
+	// Parent is the member that started this one when it is a Deck-managed
+	// subagent (Ephemeral); "" otherwise.
+	Parent    string
+	Ephemeral bool
 	// ContextTokens of ContextWindow tokens are in use (0 = not reported yet).
 	ContextTokens int
 	ContextWindow int
@@ -212,6 +216,9 @@ type ThreadInfo struct {
 	Mode        agent.Mode // the thread's permission mode
 	// Pinned threads sort first; Resolved ones are settled until a new message.
 	Pinned, Resolved bool
+	// Orchestrate is on while members may spawn subagents and the scheduler
+	// runs the thread's ready tasks.
+	Orchestrate bool
 	// Branch is the worktree branch of an isolated thread, "" otherwise.
 	Branch string
 	// Active is when anything last happened in the thread.
@@ -385,7 +392,7 @@ func (m *Manager) threadInfo(t *thread) ThreadInfo {
 	info := ThreadInfo{
 		ID: t.id, Title: t.title, Dir: t.dir, Paused: t.paused, Hops: t.hops,
 		MaxHops: m.maxHops, Held: len(t.heldIdx), LastSpeaker: t.lastSpeaker, Mode: t.mode,
-		Pinned: t.pinned, Resolved: t.resolved,
+		Pinned: t.pinned, Resolved: t.resolved, Orchestrate: t.orchestrate,
 	}
 	if t.worktree != nil {
 		info.Branch = t.worktree.Branch
@@ -595,7 +602,7 @@ func (m *Manager) startRun(t *thread, a *agentState, prompt, resumeID string) er
 func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Spec {
 	cfg := m.config()
 	s := agent.Spec{
-		ID: a.id, Dir: t.dir, Model: a.model, Effort: a.effort, ResumeID: resume, FirstPrompt: prompt,
+		ID: a.id, Dir: a.workDir(t.dir), Model: a.model, Effort: a.effort, ResumeID: resume, FirstPrompt: prompt,
 		UserName: cfg.UserName, TellName: cfg.TellAgentsName, Mode: t.getMode(),
 		Attribution: cfg.DeckAttribution,
 	}
@@ -1059,6 +1066,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	t.pinned, t.resolved = th.Pinned, th.Resolved // resuming un-archives
 	t.worktree = th.Worktree
 	t.tasks = cloneTasks(th.Tasks)
+	t.orchestrate = th.Orchestrate
 	remap := map[string]string{}
 	var started []*agentState
 	fail := func(err error) (ThreadInfo, []tea.Msg, error) {
@@ -1102,6 +1110,10 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 			id: id, kind: mem.Kind, name: name, model: model, effort: effort, thread: t, base: StatusIdle,
 			started: time.Now(), costTotal: mem.CostUSD, sessionID: mem.SessionID, cursor: cursor,
 			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow,
+			parent: mem.Parent, ephemeral: mem.Ephemeral, dir: mem.Dir, worktree: mem.Worktree,
+		}
+		if mem.Ephemeral {
+			a.base = StatusExited // a subagent's run does not outlive Deck; its worktree and task stay
 		}
 		// Names are per thread: only another member of this thread can clash.
 		for _, o := range members {
@@ -1116,6 +1128,16 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		members = append(members, a)
 	}
 	t.members = members
+	for _, a := range members {
+		a.parent = mapID(remap, a.parent)
+	}
+	for i := range t.tasks {
+		tk := &t.tasks[i]
+		tk.Owner, tk.Creator = mapID(remap, tk.Owner), mapID(remap, tk.Creator)
+		if tk.Run != nil {
+			tk.Run.Member = mapID(remap, tk.Run.Member)
+		}
+	}
 
 	for i := range entries {
 		e := &entries[i]
@@ -1152,11 +1174,15 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	m.mu.Unlock()
 
 	for i, a := range members {
+		if a.ephemeral {
+			continue
+		}
 		if err := m.startRun(t, a, "", th.Members[i].SessionID); err != nil {
 			return fail(fmt.Errorf("session: resume %s: %w", a.kind, err))
 		}
 		started = append(started, a)
 	}
+	m.failOrphans(t)
 	if th.Archived {
 		m.persistMeta(t) // resuming brings it back to the sidebar
 	}
@@ -1401,6 +1427,14 @@ type agentState struct {
 	ctxTokens   int // context window use, from the latest usage event that reported it
 	ctxWindow   int
 	running     string // model slug the CLI reported at session start
+
+	// A Deck-managed subagent (spawn.go): the member that asked for it, whether
+	// Deck stops it when its task ends, and its own worktree. dir is the folder
+	// it runs in when that is not the thread's.
+	parent    string
+	ephemeral bool
+	dir       string
+	worktree  *store.Worktree
 }
 
 func (a *agentState) getRun() agent.Run {
@@ -1434,8 +1468,13 @@ func (a *agentState) statusLocked() Status {
 func (a *agentState) info() AgentInfo {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	dir := a.thread.dir
+	if a.dir != "" {
+		dir = a.dir
+	}
 	return AgentInfo{
-		ID: a.id, Kind: a.kind, Name: a.name, Dir: a.thread.dir, Model: a.model, Effort: a.effort,
+		ID: a.id, Kind: a.kind, Name: a.name, Dir: dir, Model: a.model, Effort: a.effort,
+		Parent: a.parent, Ephemeral: a.ephemeral,
 		Status: a.statusLocked(), CostUSD: a.costTotal + a.costTurn, Pending: len(a.pending),
 		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow,
 		RunningModel: a.running,
@@ -1459,6 +1498,7 @@ func (a *agentState) memberMeta() store.Member {
 		ID: a.id, Kind: a.kind, Name: a.name, Model: a.model, Effort: a.effort, SessionID: a.sessionID,
 		CostUSD: a.costTotal + a.costTurn, Cursor: a.cursor,
 		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow,
+		Parent: a.parent, Ephemeral: a.ephemeral, Dir: a.dir, Worktree: a.worktree,
 	}
 }
 

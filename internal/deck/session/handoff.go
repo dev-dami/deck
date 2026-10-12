@@ -60,7 +60,7 @@ func (m *Manager) handOver(t *thread, from, to *agentState, text string, msg age
 }
 
 // startHandedTask marks a handed-over task running with its new owner.
-func (m *Manager) startHandedTask(t *thread, taskID string, owner, from *agentState) {
+func (m *Manager) startHandedTask(t *thread, taskID string, owner *agentState, by string) {
 	if taskID == "" {
 		return
 	}
@@ -69,12 +69,12 @@ func (m *Manager) startHandedTask(t *thread, taskID string, owner, from *agentSt
 		return
 	}
 	if tk.Status == store.TaskFailed || tk.Status == store.TaskBlocked {
-		if _, err := m.moveTask(t, taskID, store.TaskReady, from.id, "handed over again", nil); err != nil {
+		if _, err := m.moveTask(t, taskID, store.TaskReady, by, "handed over again", nil); err != nil {
 			return
 		}
 	}
 	note := "handed to " + owner.getName()
-	_, _ = m.moveTask(t, taskID, store.TaskRunning, from.id, note, func(tk *store.Task) { tk.Owner = owner.id })
+	_, _ = m.moveTask(t, taskID, store.TaskRunning, by, note, func(tk *store.Task) { tk.Owner = owner.id })
 }
 
 // handoverIndex is the log index of the relay that handed task id to member
@@ -171,6 +171,9 @@ func (m *Manager) notifyCreator(t *thread, tk store.Task, by string) {
 		what = "done"
 		if tk.Result != "" {
 			what += ": " + tk.Result
+		}
+		if tk.Run != nil && tk.Run.Branch != "" {
+			what += fmt.Sprintf(" [its changes are on branch %s]", tk.Run.Branch)
 		}
 	case store.TaskFailed:
 		what = "failed"

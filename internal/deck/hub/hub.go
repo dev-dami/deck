@@ -43,6 +43,7 @@ const (
 	OpTaskFail   = "task.fail"
 	OpTaskCancel = "task.cancel"
 	OpTaskSteer  = "task.steer"
+	OpAgentSpawn = "agent.spawn"
 )
 
 // Limits.
@@ -197,6 +198,11 @@ func init() {
 		{Name: OpTaskSteer, Desc: "Redirect whoever owns a task you handed over, even mid-turn, without naming them. Only for tasks you created.",
 			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "message", Type: tString, Required: true, Desc: "what to change; the owner sees it as a redirect"}},
 			run:  opTask(OpTaskSteer)},
+		{Name: OpAgentSpawn, Desc: "Start a helper agent for a task (needs the user to have turned orchestration on for this thread). It gets your brief, works on its own, and its result comes back to you. isolate gives it its own git worktree and branch.",
+			Args: []Arg{{Name: "brief", Type: tString, Required: true, Desc: "what the helper should do"}, {Name: "title", Type: tString}, {Name: "kind", Type: tString, Desc: "agent kind; default the user's default agent"},
+				{Name: "model", Type: tString}, {Name: "task", Type: tString, Desc: "bind it to an existing task id instead of making one"}, {Name: "isolate", Type: tBool},
+				{Name: "expect", Type: tString}, {Name: "done_when", Type: tString}, {Name: "explicit_done", Type: tBool}},
+			run: opTask(OpAgentSpawn)},
 		{Name: "history.threads", Desc: "List this project's Deck threads, past and current: id, title, updated, agents.",
 			Args: []Arg{{Name: "limit", Type: tInt}}, run: opHistoryThreads},
 		{Name: "history.search", Desc: "Search this project's Deck threads (chat history) for words; returns thread, speaker and snippet.",

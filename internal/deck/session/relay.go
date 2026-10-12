@@ -224,14 +224,14 @@ func (m *Manager) relayTask(t *thread, from *agentState, targets []*agentState, 
 		hops := t.hops
 		t.mu.Unlock()
 		m.emitAll(append(pre, post...)...)
-		m.startHandedTask(t, taskID, live[0], from)
+		m.startHandedTask(t, taskID, live[0], from.id)
 		return fmt.Sprintf("held: Deck paused this thread after %d agent-to-agent messages; the user will continue it", hops)
 	}
 	t.hops++
 	m.appendLocked(t, e)
 	t.mu.Unlock()
 	m.emitAll(msgFor(t.id, e))
-	m.startHandedTask(t, taskID, live[0], from)
+	m.startHandedTask(t, taskID, live[0], from.id)
 
 	var res []string
 	for _, tg := range live {
@@ -261,6 +261,7 @@ func (m *Manager) afterTurn(a *agentState) {
 	t := a.thread
 	if !interrupted {
 		m.settleHanded(t, a, text)
+		m.retireSpent(t, a)
 	}
 	if text != "" && !interrupted {
 		m.maybeAutoTitle(t, text)
