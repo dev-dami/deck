@@ -20,6 +20,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/approve"
+	"github.com/dev-dami/deck/internal/deck/agent/modelcache"
 	"github.com/dev-dami/deck/internal/deck/brand"
 )
 
@@ -35,14 +36,16 @@ type adapter struct {
 	self   string
 	broker *approve.Broker
 
-	modelsMu sync.Mutex
-	models   []agent.ModelInfo // cached Models() result
+	models modelcache.Cache // Models() result
 
 	// test hooks
 	extraArgs []string
 	tap       func(line []byte)                     // called with every raw stdout line
 	helpFn    func(context.Context) (string, error) // replaces running `claude --help`
 	initFn    func(context.Context) ([]byte, error) // replaces asking claude for its models
+	// beforeRespawn runs in restart between stopping the old process and
+	// starting the new one.
+	beforeRespawn func()
 }
 
 // New returns the Claude Code adapter. binary may be empty (looks up "claude" on
@@ -219,6 +222,13 @@ type run struct {
 	// dirty: model or mode changed while busy (or while a restart was running);
 	// the process is restarted with the new flags once the turn is done.
 	dirty bool
+	// spawned: the model, effort and mode the newest process was started
+	// with, so a restart can tell whether a change that arrived while it was
+	// under way already made it in.
+	spawned struct {
+		model, effort string
+		mode          agent.Mode
+	}
 	// restarting: a deliberate restart is in flight; Sends are queued in
 	// queue and written, in order, to the new process when it is up.
 	restarting bool
@@ -229,9 +239,16 @@ type run struct {
 	evClosed   bool
 }
 
+// flagsChangedLocked reports whether the model, effort or mode differ from
+// what the newest process was started with. Caller holds r.mu.
+func (r *run) flagsChangedLocked() bool {
+	return r.model != r.spawned.model || r.effort != r.spawned.effort || r.mode != r.spawned.mode
+}
+
 func (r *run) args(resume string) []string {
 	r.mu.Lock()
 	model, mode, effort := r.model, r.mode, r.effort
+	r.spawned.model, r.spawned.effort, r.spawned.mode = model, effort, mode
 	r.mu.Unlock()
 	args := []string{
 		"-p",
@@ -340,11 +357,43 @@ func (r *run) emit(ev agent.Event) {
 	}
 }
 
+// readerPool recycles the 1 MiB stdout readers: an interrupt or a mode or
+// model change spawns a new process, and with it a new reader.
+var readerPool = sync.Pool{New: func() any { return bufio.NewReaderSize(nil, 1<<20) }}
+
+// readLine returns the next line of br, newline included. The line is only
+// valid until the next call: it is br's own buffer, or scratch (returned
+// for reuse) for a line longer than that buffer. A scratch grown past 4 MiB
+// is not handed back, so one huge line is not kept alive for the whole run.
+func readLine(br *bufio.Reader, scratch []byte) (line, buf []byte, err error) {
+	line, err = br.ReadSlice('\n')
+	if err != bufio.ErrBufferFull {
+		return line, scratch, err
+	}
+	buf = append(scratch[:0], line...)
+	for err == bufio.ErrBufferFull {
+		line, err = br.ReadSlice('\n')
+		buf = append(buf, line...)
+	}
+	if cap(buf) > 4<<20 {
+		return buf, nil, err
+	}
+	return buf, buf, err
+}
+
 func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 	defer r.readers.Done()
-	sc := bufio.NewReaderSize(stdout, 1<<20)
+	sc := readerPool.Get().(*bufio.Reader)
+	sc.Reset(stdout)
+	defer func() {
+		sc.Reset(nil)
+		readerPool.Put(sc)
+	}()
+	var scratch []byte
 	for {
-		line, err := sc.ReadBytes('\n')
+		var line []byte
+		var err error
+		line, scratch, err = readLine(sc, scratch)
 		if len(bytes.TrimSpace(line)) > 0 {
 			if r.a.tap != nil {
 				r.a.tap(append([]byte(nil), line...))
@@ -446,8 +495,10 @@ func (r *run) SendWithImages(prompt string, images []agent.Image) error {
 // supported route. A mode/model restart already in flight just queues it.
 func (r *run) Steer(prompt string, images []agent.Image) error {
 	// Validate (and read) the images before touching the running turn, so a bad
-	// attachment cannot cost the user their turn.
-	if _, _, err := buildUserMessage(prompt, images); err != nil {
+	// attachment cannot cost the user their turn. The message built here is
+	// the one sent: images are read and encoded once.
+	data, echo, err := buildUserMessage(prompt, images)
+	if err != nil {
 		return err
 	}
 	r.mu.Lock()
@@ -458,7 +509,7 @@ func (r *run) Steer(prompt string, images []agent.Image) error {
 			return err
 		}
 	}
-	return r.send(prompt, images)
+	return r.sendMessage(prompt, data, echo)
 }
 
 func (r *run) send(prompt string, images []agent.Image) error {
@@ -466,7 +517,11 @@ func (r *run) send(prompt string, images []agent.Image) error {
 	if err != nil {
 		return err
 	}
+	return r.sendMessage(prompt, data, echo)
+}
 
+// sendMessage writes a user message built by buildUserMessage.
+func (r *run) sendMessage(prompt string, data, echo []byte) error {
 	r.mu.Lock()
 	if r.closed || r.cur == nil {
 		r.mu.Unlock()
@@ -484,7 +539,7 @@ func (r *run) send(prompt string, images []agent.Image) error {
 	r.mu.Unlock()
 
 	r.sendMu.Lock()
-	_, err = p.stdin.Write(append(data, '\n'))
+	_, err := p.stdin.Write(append(data, '\n'))
 	r.sendMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("writing to claude: %w", err)
@@ -637,6 +692,9 @@ func (r *run) restart() {
 			old.closeStdin()
 			waitProcExit(old)
 		}
+		if r.a.beforeRespawn != nil {
+			r.a.beforeRespawn()
+		}
 		err := r.spawn(sid)
 
 		r.mu.Lock()
@@ -653,8 +711,14 @@ func (r *run) restart() {
 			return
 		}
 		if r.dirty && !r.closed {
-			r.mu.Unlock()
-			continue // changed again while restarting
+			if r.flagsChangedLocked() {
+				r.mu.Unlock()
+				continue // changed again while restarting
+			}
+			// Changed again, but before the new process read its flags (a
+			// model and an effort picked together): it already runs with
+			// them, so a second restart would only cost another cold start.
+			r.dirty = false
 		}
 		r.restarting = false
 		q := r.queue

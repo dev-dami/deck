@@ -112,11 +112,37 @@ func (c *Client) Err() error {
 	return c.err
 }
 
+// readLine returns the next line of br, newline included. The line is only
+// valid until the next call: it is br's own buffer, or scratch (returned for
+// reuse) for a line longer than that buffer. A scratch grown past 4 MiB is
+// not handed back, so one huge line is not kept alive for the whole run.
+func readLine(br *bufio.Reader, scratch []byte) (line, buf []byte, err error) {
+	line, err = br.ReadSlice('\n')
+	if err != bufio.ErrBufferFull {
+		return line, scratch, err
+	}
+	buf = append(scratch[:0], line...)
+	for err == bufio.ErrBufferFull {
+		line, err = br.ReadSlice('\n')
+		buf = append(buf, line...)
+	}
+	if cap(buf) > 4<<20 {
+		return buf, nil, err
+	}
+	return buf, buf, err
+}
+
 func (c *Client) readLoop(r io.Reader) {
 	br := bufio.NewReaderSize(r, 64*1024)
 	var rerr error
+	var scratch []byte
 	for {
-		line, err := br.ReadBytes('\n')
+		// handleLine copies what it keeps (Message.Raw, and the RawMessage
+		// fields json.Unmarshal fills), so the line can be the reader's
+		// buffer rather than a fresh copy of every line.
+		var line []byte
+		var err error
+		line, scratch, err = readLine(br, scratch)
 		if len(bytes.TrimSpace(line)) > 0 {
 			c.handleLine(bytes.TrimRight(line, "\r\n"))
 		}

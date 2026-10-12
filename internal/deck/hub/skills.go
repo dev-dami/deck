@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/skills"
@@ -62,21 +64,61 @@ const (
 	maxSkillDepth = 3 // base/<group>/<name>/SKILL.md at most
 )
 
-// discoverSkills lists every skill visible to any agent: the project's, the
-// user's, then Deck's builtins. A file reached twice is listed once.
-func discoverSkills(env *Env) []skillInfo {
-	var out []skillInfo
-	seen := map[string]bool{}
-	add := func(base, ag, scope string) {
-		for _, f := range findSkillFiles(base) {
-			key := strings.ToLower(filepath.Clean(f))
-			if seen[key] || len(out) >= maxSkills {
-				continue
-			}
-			seen[key] = true
-			out = append(out, readSkillInfo(f, ag, scope))
+// skillCache keeps the last discovery per set of folders. It is used while
+// every folder it listed and every SKILL.md it read looks the same on disk
+// (a stat each, instead of listing every folder and parsing every SKILL.md
+// again), and for skillCacheTTL at most.
+var skillCache = struct {
+	sync.Mutex
+	m map[string]*skillSnap
+}{m: map[string]*skillSnap{}}
+
+const skillCacheTTL = 30 * time.Second
+
+type skillSnap struct {
+	at     time.Time
+	stamps []stamp
+	skills []skillInfo
+}
+
+// stamp is what a path looked like when it was read.
+type stamp struct {
+	path string
+	ok   bool // it existed
+	dir  bool
+	size int64
+	mod  time.Time
+}
+
+func stampOf(p string) stamp {
+	st, err := os.Stat(p)
+	if err != nil {
+		return stamp{path: p}
+	}
+	return stamp{path: p, ok: true, dir: st.IsDir(), size: st.Size(), mod: st.ModTime()}
+}
+
+func (s stamp) same(o stamp) bool {
+	return s.ok == o.ok && s.dir == o.dir && s.size == o.size && s.mod.Equal(o.mod)
+}
+
+// fresh reports whether nothing the snapshot was built from has changed.
+func (s *skillSnap) fresh() bool {
+	if time.Since(s.at) > skillCacheTTL {
+		return false
+	}
+	for _, st := range s.stamps {
+		if !stampOf(st.path).same(st) {
+			return false
 		}
 	}
+	return true
+}
+
+// discoverSkills lists every skill visible to any agent: the project's, the
+// user's, then Deck's builtins. A file reached twice is listed once. The
+// list is shared: callers must not modify it.
+func discoverSkills(env *Env) []skillInfo {
 	var projects []string
 	for _, d := range append([]string{env.Dir}, env.Roots...) {
 		dup := d == ""
@@ -87,12 +129,47 @@ func discoverSkills(env *Env) []skillInfo {
 			projects = append(projects, d)
 		}
 	}
+	home := env.home()
+	key := strings.Join(projects, "\x00") + "\x01" + home
+	skillCache.Lock()
+	snap := skillCache.m[key]
+	skillCache.Unlock()
+	if snap != nil && snap.fresh() {
+		return snap.skills
+	}
+	snap = &skillSnap{at: time.Now()}
+	snap.skills = scanSkills(projects, home, &snap.stamps)
+	skillCache.Lock()
+	if len(skillCache.m) >= 32 {
+		clear(skillCache.m)
+	}
+	skillCache.m[key] = snap
+	skillCache.Unlock()
+	return snap.skills
+}
+
+// scanSkills reads the skill folders of the projects and home from disk,
+// noting in stamps every folder it listed and every SKILL.md it read.
+func scanSkills(projects []string, home string, stamps *[]stamp) []skillInfo {
+	var out []skillInfo
+	seen := map[string]bool{}
+	add := func(base, ag, scope string) {
+		for _, f := range findSkillFiles(base, stamps) {
+			key := strings.ToLower(filepath.Clean(f))
+			if seen[key] || len(out) >= maxSkills {
+				continue
+			}
+			seen[key] = true
+			*stamps = append(*stamps, stampOf(f))
+			out = append(out, readSkillInfo(f, ag, scope))
+		}
+	}
 	for _, p := range projects {
 		for _, sd := range projectSkillDirs {
 			add(filepath.Join(p, filepath.FromSlash(sd.rel)), sd.agent, "project")
 		}
 	}
-	if home := env.home(); home != "" {
+	if home != "" {
 		for _, sd := range userSkillDirs {
 			add(filepath.Join(home, filepath.FromSlash(sd.rel)), sd.agent, "user")
 		}
@@ -107,11 +184,13 @@ func discoverSkills(env *Env) []skillInfo {
 }
 
 // findSkillFiles finds SKILL.md files under base, at most maxSkillDepth
-// folders down. A missing base is no skills.
-func findSkillFiles(base string) []string {
+// folders down, noting in stamps each folder it lists (base too, even when it
+// is missing). A missing base is no skills.
+func findSkillFiles(base string, stamps *[]stamp) []string {
 	var out []string
 	var walk func(dir string, depth int)
 	walk = func(dir string, depth int) {
+		*stamps = append(*stamps, stampOf(dir))
 		ents, err := os.ReadDir(dir)
 		if err != nil {
 			return
@@ -342,6 +421,9 @@ func listSkillFiles(s skillInfo) []string {
 // skillPath finds ".../<name>/SKILL.md" in a command line or path.
 var skillPath = regexp.MustCompile("(?i)([^\\s\"'`/\\\\]+)[/\\\\]SKILL\\.md")
 
+// maxSkillScan is how much of a tool call's input skillPath looks at.
+const maxSkillScan = 4 << 10
+
 // used is one skill seen in use in the thread.
 type used struct {
 	name   string
@@ -406,7 +488,13 @@ func skillsUsed(tools []ToolUse) []used {
 				continue
 			}
 		}
-		for _, m := range skillPath.FindAllStringSubmatch(t.Title+" "+string(t.Input), -1) {
+		// A path to a SKILL.md sits near the start of a Read's or a shell's
+		// input; a Write's input can be a whole file, which is not scanned.
+		in := t.Input
+		if len(in) > maxSkillScan {
+			in = in[:maxSkillScan]
+		}
+		for _, m := range skillPath.FindAllStringSubmatch(t.Title+" "+string(in), -1) {
 			note(m[1], t.Agent, "read SKILL.md")
 		}
 	}

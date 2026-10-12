@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"charm.land/glamour/v2"
+	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/stretchr/testify/require"
 )
@@ -984,4 +985,110 @@ func TestStreamingMarkdown_LastLinesMatchesOutput(t *testing.T) {
 			}
 		})
 	}
+}
+
+// openFenceDoc is a reply whose long Go code block streams in. Every
+// code line holds only single-line tokens, so rendering the block in
+// chunks cannot change any line's colouring.
+func openFenceDoc(lines int) string {
+	var b strings.Builder
+	b.WriteString("Here is the code:\n\n```go\nfunc main() {\n")
+	for i := range lines {
+		fmt.Fprintf(&b, "\tx%d := compute(%d, \"value\") // step %d\n", i, i, i)
+	}
+	b.WriteString("}\n```\n\nThat is all.")
+	return b.String()
+}
+
+// TestStreamingMarkdown_OpenFenceMatchesFullRender streams a long code
+// block and asserts every flush, including those taken through the
+// open-fence shortcut, matches a fresh render. Both the test renderer
+// and the production renderer (with Deck's chroma formatter) are
+// covered.
+func TestStreamingMarkdown_OpenFenceMatchesFullRender(t *testing.T) {
+	t.Parallel()
+
+	const width = 80
+	doc := openFenceDoc(150)
+	renderers := map[string]func() *glamour.TermRenderer{
+		"test": func() *glamour.TermRenderer { return newTestRenderer(t, width) },
+		"production": func() *glamour.TermRenderer {
+			sty := styles.DeckDark()
+			return common.MarkdownRenderer(&sty, width)
+		},
+	}
+	for name, mk := range renderers {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r := mk()
+			var sm streamingMarkdown
+			for i, p := range progressivePrefixes(doc, 20) {
+				if p == "" {
+					continue
+				}
+				out := sm.Render(p, width, r)
+				mu := common.LockMarkdownRenderer(r)
+				mu.Lock()
+				fresh, err := r.Render(p)
+				mu.Unlock()
+				require.NoError(t, err)
+				require.Equalf(t, normalizeRender(strings.TrimSuffix(fresh, "\n")), normalizeRender(out),
+					"step %d (len=%d): streamed output must match a fresh render", i, len(p))
+				require.Equalf(t, countLines(strings.TrimSpace(out)), sm.LastLines(),
+					"step %d (len=%d): tracked line count must match the output", i, len(p))
+			}
+			require.True(t, sm.Approximate(), "the open-fence shortcut must be taken for a long block")
+		})
+	}
+}
+
+// TestStreamingMarkdown_OpenFenceBytesMatch pins byte identity of the
+// stitched code block against a single render of the same open block.
+// It uses the production renderer: Deck's chroma formatter colours
+// deterministically, while glamour's default 256-colour formatter can
+// pick between equally near colours from one render to the next.
+func TestStreamingMarkdown_OpenFenceBytesMatch(t *testing.T) {
+	t.Parallel()
+
+	const width = 81
+	sty := styles.DeckDark()
+	r := common.MarkdownRenderer(&sty, width)
+	mu := common.LockMarkdownRenderer(r)
+	mu.Lock()
+	defer mu.Unlock()
+	var sm streamingMarkdown
+	full := openFenceDoc(400)
+	open := full[:strings.Index(full, "}\n```")]
+	for _, n := range []int{len(open) / 3, len(open) / 2, len(open) - 7, len(open)} {
+		p := open[:n]
+		got, ok := sm.renderOpenFence(p, r)
+		require.Truef(t, ok, "len=%d: a long open block must take the shortcut", n)
+		want, err := r.Render(p)
+		require.NoError(t, err)
+		require.Equalf(t, want, got, "len=%d: stitched render must equal a single render", n)
+	}
+	// A short open block renders whole.
+	_, ok := sm.renderOpenFence(openFenceDoc(10)[:60], r)
+	require.False(t, ok, "a short open block must not take the shortcut")
+}
+
+// TestStreamingMarkdown_OpenFenceSettled asserts a settled document
+// never takes the shortcut and renders like a fresh render.
+func TestStreamingMarkdown_OpenFenceSettled(t *testing.T) {
+	t.Parallel()
+
+	const width = 80
+	r := newTestRenderer(t, width)
+	full := openFenceDoc(200)
+	open := full[:strings.Index(full, "}\n```")]
+
+	var sm streamingMarkdown
+	_ = sm.Render(open, width, r)
+	require.True(t, sm.Approximate(), "an unsettled long open block takes the shortcut")
+
+	sm.SetSettled(true)
+	out := sm.Render(open, width, r)
+	require.Equal(t, normalizeRender(freshRender(t, open, width)), normalizeRender(out),
+		"a settled document renders like a fresh render")
+	require.Empty(t, sm.fence.src, "settling drops the open-fence cache")
 }

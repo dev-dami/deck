@@ -306,6 +306,37 @@ func (s *ConfigStore) SetConfigField(scope Scope, key string, value any) error {
 // The write is protected by an in-process mutex and a cross-process flock
 // to prevent races between concurrent writers in different processes.
 func (s *ConfigStore) SetConfigFields(scope Scope, kv map[string]any) error {
+	// Fast path: a TUI preference (theme, mouse, ...) whose in-memory effect
+	// is known. A full reload re-reads every config file, re-executes any
+	// deckrc and re-resolves models, which is what made a theme pick stall
+	// the UI. When nothing else changed on disk and no higher-priority
+	// config sets the key, that reload would produce the live config with
+	// just these fields changed, so apply them directly instead.
+	if s.workingDir != "" && s.writeMu.TryLock() {
+		defer s.writeMu.Unlock()
+		fast := s.canSkipReloadLocked(scope, kv)
+		if err := s.writeConfigFields(scope, kv); err != nil {
+			return err
+		}
+		if fast {
+			nc := s.Config().cloneForWrite()
+			for key, value := range kv {
+				applyScalarOption(nc, key, value)
+			}
+			s.setConfig(nc)
+			// Re-stat only the file just written, so our own write is not
+			// mistaken for an external edit while any other pending change
+			// stays visible to the staleness check.
+			if path, err := s.configPath(scope); err == nil {
+				s.refreshSnapshotOf(path)
+			}
+			return nil
+		}
+		if err := s.reloadFromDiskLocked(context.Background()); err != nil {
+			slog.Warn("Config file updated but failed to reload in-memory state", "error", err)
+		}
+		return nil
+	}
 	if err := s.writeConfigFields(scope, kv); err != nil {
 		return err
 	}
@@ -345,6 +376,191 @@ func (s *ConfigStore) writeConfigFields(scope Scope, kv map[string]any) error {
 		}
 		return []byte(v), nil
 	})
+}
+
+// scalarOptions are the config keys SetConfigFields can apply in memory
+// without a full reload. Each is a plain string or bool option whose only
+// effect is its own field: nothing in setDefaults or provider/model setup
+// derives from it. Object and array options stay on the reload path,
+// because the multi-file merge combines those rather than replacing them.
+var scalarOptions = map[string]func(c *Config, raw json.RawMessage) error{
+	"options.notifications": func(c *Config, raw json.RawMessage) error {
+		c.ensureTUI() // allocates Options too
+		return json.Unmarshal(raw, &c.Options.Notifications)
+	},
+	"options.tui.active_theme": func(c *Config, raw json.RawMessage) error {
+		return json.Unmarshal(raw, &c.ensureTUI().ActiveTheme)
+	},
+	"options.tui.compact_mode": func(c *Config, raw json.RawMessage) error {
+		return json.Unmarshal(raw, &c.ensureTUI().CompactMode)
+	},
+	"options.tui.diff_mode": func(c *Config, raw json.RawMessage) error {
+		return json.Unmarshal(raw, &c.ensureTUI().DiffMode)
+	},
+	"options.tui.scrollbar": func(c *Config, raw json.RawMessage) error {
+		return json.Unmarshal(raw, &c.ensureTUI().Scrollbar)
+	},
+	"options.tui.exit_banner": func(c *Config, raw json.RawMessage) error {
+		return json.Unmarshal(raw, &c.ensureTUI().ExitBanner)
+	},
+	// The pointer options get a fresh bool: the clone shares the old
+	// pointee with the published config, which must not be written.
+	"options.tui.transparent": func(c *Config, raw json.RawMessage) error {
+		var v bool
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return err
+		}
+		c.ensureTUI().Transparent = &v
+		return nil
+	},
+	"options.tui.mouse": func(c *Config, raw json.RawMessage) error {
+		var v bool
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return err
+		}
+		c.ensureTUI().Mouse = &v
+		return nil
+	},
+}
+
+// scalarOptionJSON returns value's JSON encoding when it is a form the
+// in-memory fast path reproduces exactly: a bool, or a non-empty string
+// (setDefaults rewrites some empty strings, so those take the reload).
+func scalarOptionJSON(value any) (json.RawMessage, bool) {
+	raw, err := json.Marshal(value)
+	if err != nil || len(raw) == 0 {
+		return nil, false
+	}
+	switch {
+	case string(raw) == "true" || string(raw) == "false":
+		return raw, true
+	case raw[0] == '"' && string(raw) != `""`:
+		return raw, true
+	}
+	return nil, false
+}
+
+// applyScalarOption sets one scalarOptions key on c. The key and value
+// have already been vetted by canSkipReloadLocked.
+func applyScalarOption(c *Config, key string, value any) {
+	raw, _ := scalarOptionJSON(value)
+	if err := scalarOptions[key](c, raw); err != nil {
+		slog.Warn("Failed to apply config field in memory", "key", key, "error", err)
+	}
+}
+
+// canSkipReloadLocked reports whether writing kv to the global config can
+// update the in-memory config directly rather than reloading every file.
+// That holds only when the reload is known to produce the live config with
+// just kv applied: every key is a vetted scalar option, no tracked config
+// file changed since the last load or reload, no new config file appeared,
+// and no config that outranks the global data file sets any of the keys
+// (a project deckrc outranks it and cannot be inspected without running
+// it, so its presence alone sends the write down the reload path).
+// Load returns before snapshotting when no provider is configured (always,
+// for Deck), so the first write after startup still reloads; that reload
+// takes the snapshot later writes compare against.
+// Caller must hold writeMu.
+func (s *ConfigStore) canSkipReloadLocked(scope Scope, kv map[string]any) bool {
+	if scope != ScopeGlobal || len(kv) == 0 || len(s.trackedConfigPaths) == 0 || s.Config() == nil {
+		return false
+	}
+	for key, value := range kv {
+		if _, ok := scalarOptions[key]; !ok {
+			return false
+		}
+		raw, ok := scalarOptionJSON(value)
+		if !ok {
+			return false
+		}
+		var probe Config
+		if scalarOptions[key](&probe, raw) != nil {
+			return false
+		}
+	}
+	if s.ConfigStaleness().Dirty {
+		return false
+	}
+	// A config file created since the last load would be picked up by a
+	// reload; the staleness snapshot only knows the files found back then.
+	tracked := make(map[string]struct{}, len(s.trackedConfigPaths))
+	for _, p := range s.trackedConfigPaths {
+		tracked[p] = struct{}{}
+	}
+	for _, p := range lookupConfigs(s.workingDir) {
+		if p == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		if _, ok := tracked[p]; ok {
+			continue
+		}
+		if _, err := os.Stat(p); err == nil {
+			return false
+		}
+	}
+
+	globalData, _ := filepath.Abs(s.globalDataPath)
+	lower := make(map[string]struct{}, 3)
+	for _, p := range []string{systemConfigPath, GlobalConfig(), shellConfigSibling(GlobalConfig())} {
+		if p == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(p); err == nil {
+			lower[abs] = struct{}{}
+		}
+	}
+	higher := false
+	for _, p := range s.loadedPaths {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return false
+		}
+		if abs == globalData {
+			higher = true
+			continue
+		}
+		if !higher {
+			if _, ok := lower[abs]; ok {
+				continue
+			}
+			higher = true
+		}
+		if isShellConfig(abs) {
+			return false
+		}
+		data, err := readFile(abs)
+		if err != nil {
+			return false
+		}
+		for key := range kv {
+			if gjson.GetBytes(data, key).Exists() {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// refreshSnapshotOf re-stats one tracked config file into the staleness
+// snapshot, leaving the others as they were. Caller must hold writeMu.
+func (s *ConfigStore) refreshSnapshotOf(path string) {
+	abs, err := filepath.Abs(path)
+	if err != nil || s.snapshots == nil {
+		return
+	}
+	if _, ok := s.snapshots[abs]; !ok && !slices.Contains(s.trackedConfigPaths, abs) {
+		return
+	}
+	snap := fileSnapshot{Path: abs}
+	if info, err := os.Stat(abs); err == nil && !info.IsDir() {
+		snap.Exists = true
+		snap.Size = info.Size()
+		snap.ModTime = info.ModTime().UnixNano()
+	}
+	s.snapshots[abs] = snap
 }
 
 // mutateInMemory applies a copy-on-write change to the config without

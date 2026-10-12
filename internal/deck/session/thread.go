@@ -59,6 +59,10 @@ type thread struct {
 	repo     *changes.Repo
 
 	created bool // the store knows this thread (touched by the writer goroutine only)
+	// metaQueued is set while a metadata write for the thread waits in the
+	// writer queue: that write snapshots the thread when it runs, so further
+	// changes until then need no write of their own.
+	metaQueued atomic.Bool
 }
 
 // skipKey names one member's copy of a log entry.
@@ -95,6 +99,9 @@ func (m *Manager) appendLocked(t *thread, e store.Entry) int {
 	if e.ID == "" {
 		e.ID = store.NewID()
 	}
+	if len(e.Raw) > 0 && !agent.KeepsRaw(e.Kind) {
+		e.Raw = nil // the log neither needs nor keeps it
+	}
 	idx := len(t.log)
 	t.log = append(t.log, e)
 	if e.Type == store.EntryEvent && (e.Kind == agent.KindTurnDone || e.Kind == agent.KindExited) {
@@ -103,7 +110,9 @@ func (m *Manager) appendLocked(t *thread, e store.Entry) int {
 	if e.Type == store.EntryEvent && e.Kind == agent.KindAssistantText && !e.Delta {
 		t.lastSpeaker = e.AgentID
 	}
-	m.persist(t, func() { _ = m.st.AppendEntry(t.id, e) })
+	if m.st != nil && !t.gone.Load() {
+		m.w.pushAppend(t, e)
+	}
 	return idx
 }
 
@@ -117,19 +126,43 @@ func (m *Manager) persist(t *thread, f func()) {
 		return
 	}
 	m.w.push(func() {
-		if !t.created {
-			t.created = true
-			if _, err := m.st.Create(m.snapshot(t)); err != nil {
-				_ = m.st.UpdateMeta(m.snapshot(t))
-			}
-		}
+		m.ensureStored(t)
 		f()
 	})
 }
 
-// persistMeta queues a write of the thread's metadata as it is when the write runs.
+// ensureStored creates the thread in the store if it is not there yet. It runs
+// on the writer goroutine.
+func (m *Manager) ensureStored(t *thread) {
+	if !t.created {
+		t.created = true
+		if _, err := m.st.Create(m.snapshot(t)); err != nil {
+			_ = m.st.UpdateMeta(m.snapshot(t))
+		}
+	}
+}
+
+// writeEntries is the writer's job for a run of log entries queued by
+// appendLocked: one append to the thread's log for all of them.
+func (m *Manager) writeEntries(t *thread, es []store.Entry) {
+	m.ensureStored(t)
+	_ = m.st.AppendEntries(t.id, es)
+}
+
+// persistMeta queues a write of the thread's metadata as it is when the write
+// runs. While one is queued, another call adds nothing: the queued write will
+// see its change.
 func (m *Manager) persistMeta(t *thread) {
-	m.persist(t, func() { _ = m.st.UpdateMeta(m.snapshot(t)) })
+	if m.st == nil || t.gone.Load() {
+		return
+	}
+	if !t.metaQueued.CompareAndSwap(false, true) {
+		return
+	}
+	m.persist(t, func() {
+		t.metaQueued.Store(false) // before the snapshot, so a later change queues again
+		_ = m.st.UpdateMeta(m.snapshot(t))
+	})
 }
 
 // snapshot is the thread's stored metadata.

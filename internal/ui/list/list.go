@@ -1,6 +1,7 @@
 package list
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -665,11 +666,20 @@ func (l *List) PrependItems(items ...Item) {
 // SetItems sets the items in the list. Cache entries for items that
 // remain after the swap are preserved; entries for removed items are
 // dropped.
+//
+// Setting the items the list already holds (a filterable list does on
+// every render) keeps the cache and the total height as they are: the
+// cache only ever holds entries for the current items, and their heights
+// still add up to the same total.
 func (l *List) SetItems(items ...Item) {
+	same := slices.Equal(items, l.items)
 	l.items = items
 	l.selectedIdx = min(l.selectedIdx, len(l.items)-1)
 	l.offsetIdx = min(l.offsetIdx, len(l.items)-1)
 	l.offsetLine = 0
+	if same {
+		return
+	}
 	l.retainCacheFor(items)
 	l.totalHeightValid = false
 }

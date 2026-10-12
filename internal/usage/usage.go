@@ -5,6 +5,7 @@ package usage
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -170,6 +171,10 @@ type Service interface {
 
 type service struct {
 	q db.Querier
+	// conn and txq, when set, let Record write a turn and its spans in one
+	// transaction: one commit (one WAL sync) instead of one per row.
+	conn *sql.DB
+	txq  *db.Queries
 }
 
 // NewService returns a [Service] over Deck's database.
@@ -177,7 +182,28 @@ func NewService(q db.Querier) Service {
 	return &service{q: q}
 }
 
+// NewServiceWithDB is [NewService] that also writes each recorded turn and
+// its trace spans in a single transaction on conn.
+func NewServiceWithDB(q *db.Queries, conn *sql.DB) Service {
+	return &service{q: q, conn: conn, txq: q}
+}
+
 func (s *service) Record(ctx context.Context, r Record) error {
+	if s.conn == nil || len(r.Spans) == 0 {
+		return s.record(ctx, s.q, r)
+	}
+	tx, err := s.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if err := s.record(ctx, s.txq.WithTx(tx), r); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *service) record(ctx context.Context, q db.Querier, r Record) error {
 	at := r.At
 	if at.IsZero() {
 		at = time.Now()
@@ -190,7 +216,7 @@ func (s *service) Record(ctx context.Context, r Record) error {
 	if status == "" {
 		status = StatusDone
 	}
-	err := s.q.InsertUsage(ctx, db.InsertUsageParams{
+	err := q.InsertUsage(ctx, db.InsertUsageParams{
 		ID:               id,
 		SessionID:        r.SessionID,
 		AgentID:          r.AgentID,
@@ -214,7 +240,7 @@ func (s *service) Record(ctx context.Context, r Record) error {
 		return err
 	}
 	for _, sp := range r.Spans {
-		err := s.q.InsertTraceSpan(ctx, db.InsertTraceSpanParams{
+		err := q.InsertTraceSpan(ctx, db.InsertTraceSpanParams{
 			TurnID:    id,
 			SessionID: r.SessionID,
 			AgentID:   r.AgentID,

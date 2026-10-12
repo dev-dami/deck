@@ -87,6 +87,28 @@ func TestChatDrawCache_MissOnDifferentRender(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+// TestChatDrawCache_MissReusesSameSizeBuffer asserts that a changed render
+// with the same bounds (a spinner frame) decodes into the previous buffer
+// instead of allocating one, and still draws exactly a fresh render.
+func TestChatDrawCache_MissReusesSameSizeBuffer(t *testing.T) {
+	t.Parallel()
+
+	u := newTestUI()
+	u.chat.SetMessages(testMessageItem{id: "a", text: "alpha one"})
+	u.updateLayoutAndSize()
+
+	w, h := 80, 20
+	_ = renderToBuffer(t, u.chat, w, h)
+	firstBuf := u.chat.drawCache.buf.RenderBuffer
+
+	u.chat.SetMessages(testMessageItem{id: "b", text: "omega two"})
+	u.updateLayoutAndSize()
+	got := renderToBuffer(t, u.chat, w, h)
+	require.Same(t, firstBuf, u.chat.drawCache.buf.RenderBuffer,
+		"a same-size render must reuse the buffer")
+	require.Equal(t, freshStyledRender(u.chat.list.Render(), w, h), got)
+}
+
 // TestChatDrawCache_ReusedAcrossDifferentArea asserts that the cached
 // decoded lines do not depend on the screen / area: the same string drawn
 // into a smaller area must hit the cache, and the output must match a fresh

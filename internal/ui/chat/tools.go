@@ -19,6 +19,7 @@ import (
 	tools "github.com/dev-dami/deck/internal/toolspec"
 	"github.com/dev-dami/deck/internal/ui/anim"
 	"github.com/dev-dami/deck/internal/ui/common"
+	"github.com/dev-dami/deck/internal/ui/diffview"
 	"github.com/dev-dami/deck/internal/ui/list"
 	"github.com/dev-dami/deck/internal/ui/styles"
 )
@@ -1006,23 +1007,40 @@ func toolOutputDiffContent(sty *styles.Styles, file, oldContent, newContent stri
 		formatter = formatter.Split()
 	}
 
-	formatted := formatter.String()
-	lines := strings.Split(formatted, "\n")
-
-	// Truncate if needed.
-	maxLines := collapsedMaxLines(len(lines))
-	if expanded {
-		maxLines = len(lines)
-	}
-
-	if len(lines) > maxLines && !expanded {
+	lines, hidden := diffHead(formatter, expanded)
+	formatted := strings.Join(lines, "\n")
+	if hidden > 0 {
 		truncMsg := sty.Tool.DiffTruncation.
 			Width(bodyWidth).
-			Render(fmt.Sprintf(assistantMessageTruncateFormat, len(lines)-maxLines))
-		formatted = strings.Join(lines[:maxLines], "\n") + "\n" + truncMsg
+			Render(fmt.Sprintf(assistantMessageTruncateFormat, hidden))
+		formatted += "\n" + truncMsg
 	}
 
 	return sty.Tool.Body.Render(formatted)
+}
+
+// diffHead returns the rows of the diff to show and how many rows are
+// hidden after them: all of them when expanded, otherwise the first
+// collapsedMaxLines. A collapsed diff renders, and so syntax highlights,
+// only the rows it shows rather than the whole diff.
+func diffHead(formatter *diffview.DiffView, expanded bool) (lines []string, hidden int) {
+	if !expanded {
+		if total := formatter.TotalLines(); total > 0 {
+			if shown := collapsedMaxLines(total); shown < total {
+				head := strings.Split(formatter.MaxRows(shown).String(), "\n")
+				formatter.MaxRows(0)
+				if len(head) == shown {
+					return head, total - shown
+				}
+			}
+		}
+	}
+	lines = strings.Split(formatter.String(), "\n")
+	maxLines := collapsedMaxLines(len(lines))
+	if expanded || len(lines) <= maxLines {
+		return lines, 0
+	}
+	return lines[:maxLines], len(lines) - maxLines
 }
 
 // formatTimeout converts timeout seconds to a duration string (e.g., "30s").
@@ -1056,20 +1074,13 @@ func toolOutputMultiEditDiffContent(sty *styles.Styles, file string, meta tools.
 		formatter = formatter.Split()
 	}
 
-	formatted := formatter.String()
-	lines := strings.Split(formatted, "\n")
-
-	// Truncate if needed.
-	maxLines := collapsedMaxLines(len(lines))
-	if expanded {
-		maxLines = len(lines)
-	}
-
-	if len(lines) > maxLines && !expanded {
+	lines, hidden := diffHead(formatter, expanded)
+	formatted := strings.Join(lines, "\n")
+	if hidden > 0 {
 		truncMsg := sty.Tool.DiffTruncation.
 			Width(bodyWidth).
-			Render(fmt.Sprintf(assistantMessageTruncateFormat, len(lines)-maxLines))
-		formatted = truncMsg + "\n" + strings.Join(lines[:maxLines], "\n")
+			Render(fmt.Sprintf(assistantMessageTruncateFormat, hidden))
+		formatted = truncMsg + "\n" + formatted
 	}
 
 	// Add failed edits note if any exist.

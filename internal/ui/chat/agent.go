@@ -2,12 +2,14 @@ package chat
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/tree"
 	"github.com/dev-dami/deck/internal/message"
 	tools "github.com/dev-dami/deck/internal/toolspec"
+	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/styles"
 )
 
@@ -27,6 +29,8 @@ type AgentToolMessageItem struct {
 	*baseToolMessageItem
 
 	nestedTools []ToolMessageItem
+	// tree keeps the rendered tree between animation frames.
+	tree agentTreeCache
 }
 
 var (
@@ -136,6 +140,55 @@ type AgentToolRenderContext struct {
 	agent *AgentToolMessageItem
 }
 
+// agentTreeCache keeps an agent tool's rendered tree (header, tagged
+// prompt and nested tool calls) between animation frames. While the agent
+// runs, each frame only turns the spinner under the tree, yet the header,
+// the wrapped prompt and the tree were all built again. It is keyed by
+// everything the tree is drawn from; the nested tools' renders are part
+// of the key, so a nested spinner or a new nested call rebuilds it.
+type agentTreeCache struct {
+	ok       bool
+	width    int
+	expanded bool
+	status   ToolStatus
+	input    string
+	gen      uint64
+	children []string
+	tree     string
+}
+
+// get returns the cached tree when it was drawn from the same inputs.
+func (c *agentTreeCache) get(width int, opts *ToolRenderOpts, children []string) (string, bool) {
+	if !c.ok || c.width != width || c.expanded != opts.ExpandedContent || c.status != opts.Status ||
+		c.input != opts.ToolCall.Input || c.gen != common.StyleGeneration() || !slices.Equal(c.children, children) {
+		return "", false
+	}
+	return c.tree, true
+}
+
+// set caches tree as drawn from the given inputs.
+func (c *agentTreeCache) set(width int, opts *ToolRenderOpts, children []string, tree string) {
+	*c = agentTreeCache{
+		ok:       true,
+		width:    width,
+		expanded: opts.ExpandedContent,
+		status:   opts.Status,
+		input:    opts.ToolCall.Input,
+		gen:      common.StyleGeneration(),
+		children: children,
+		tree:     tree,
+	}
+}
+
+// renderNested renders each nested tool at width.
+func renderNested(nested []ToolMessageItem, width int) []string {
+	out := make([]string, len(nested))
+	for i, t := range nested {
+		out[i] = t.Render(width)
+	}
+	return out
+}
+
 // RenderTool implements the [ToolRenderer] interface.
 func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
@@ -143,17 +196,8 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 		return pendingTool(sty, "Agent", opts.Anim, opts.Compact)
 	}
 
-	var params tools.AgentParams
-	_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
-
-	prompt := params.Prompt
-	if !opts.ExpandedContent {
-		prompt = strings.ReplaceAll(prompt, "\n", " ")
-	}
-
-	header := toolHeader(sty, opts.Status, "Agent", cappedWidth, opts)
 	if opts.Compact {
-		return header
+		return toolHeader(sty, opts.Status, "Agent", cappedWidth, opts)
 	}
 
 	// Build the task tag and prompt.
@@ -163,31 +207,44 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 	// Calculate remaining width for prompt.
 	remainingWidth := min(cappedWidth-taskTagWidth-3, maxTextWidth-taskTagWidth-3) // -3 for spacing
 
-	promptText := sty.Tool.AgentPrompt.Width(remainingWidth).Render(prompt)
+	children := renderNested(r.agent.nestedTools, remainingWidth)
+	treeView, ok := r.agent.tree.get(cappedWidth, opts, children)
+	if !ok {
+		var params tools.AgentParams
+		_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
 
-	header = lipgloss.JoinVertical(
-		lipgloss.Left,
-		header,
-		"",
-		lipgloss.JoinHorizontal(
+		prompt := params.Prompt
+		if !opts.ExpandedContent {
+			prompt = strings.ReplaceAll(prompt, "\n", " ")
+		}
+
+		header := toolHeader(sty, opts.Status, "Agent", cappedWidth, opts)
+		promptText := sty.Tool.AgentPrompt.Width(remainingWidth).Render(prompt)
+
+		header = lipgloss.JoinVertical(
 			lipgloss.Left,
-			taskTag,
-			" ",
-			promptText,
-		),
-	)
+			header,
+			"",
+			lipgloss.JoinHorizontal(
+				lipgloss.Left,
+				taskTag,
+				" ",
+				promptText,
+			),
+		)
 
-	// Build tree with nested tool calls.
-	childTools := tree.Root(header)
-
-	for _, nestedTool := range r.agent.nestedTools {
-		childView := nestedTool.Render(remainingWidth)
-		childTools.Child(childView)
+		// Build tree with nested tool calls.
+		childTools := tree.Root(header)
+		for _, childView := range children {
+			childTools.Child(childView)
+		}
+		treeView = roundedTree(childTools, taskTagWidth-5).String()
+		r.agent.tree.set(cappedWidth, opts, children, treeView)
 	}
 
 	// Build parts.
 	var parts []string
-	parts = append(parts, roundedTree(childTools, taskTagWidth-5).String())
+	parts = append(parts, treeView)
 
 	// Show animation if still running.
 	if !opts.HasResult() && !opts.IsCanceled() {
@@ -214,6 +271,8 @@ type AgenticFetchToolMessageItem struct {
 	*baseToolMessageItem
 
 	nestedTools []ToolMessageItem
+	// tree keeps the rendered tree between animation frames.
+	tree agentTreeCache
 }
 
 var (
@@ -308,20 +367,14 @@ func (r *AgenticFetchToolRenderContext) RenderTool(sty *styles.Styles, width int
 	var params agenticFetchParams
 	_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
 
-	prompt := params.Prompt
-	if !opts.ExpandedContent {
-		prompt = strings.ReplaceAll(prompt, "\n", " ")
-	}
-
 	// Build header with optional URL param.
 	var toolParams []string
 	if params.URL != "" {
 		toolParams = append(toolParams, params.URL)
 	}
 
-	header := toolHeader(sty, opts.Status, "Agentic Fetch", cappedWidth, opts, toolParams...)
 	if opts.Compact {
-		return header
+		return toolHeader(sty, opts.Status, "Agentic Fetch", cappedWidth, opts, toolParams...)
 	}
 
 	// Build the prompt tag.
@@ -331,31 +384,41 @@ func (r *AgenticFetchToolRenderContext) RenderTool(sty *styles.Styles, width int
 	// Calculate remaining width for prompt text.
 	remainingWidth := min(cappedWidth-promptTagWidth-3, maxTextWidth-promptTagWidth-3) // -3 for spacing
 
-	promptText := sty.Tool.AgentPrompt.Width(remainingWidth).Render(prompt)
+	children := renderNested(r.fetch.nestedTools, remainingWidth)
+	treeView, ok := r.fetch.tree.get(cappedWidth, opts, children)
+	if !ok {
+		prompt := params.Prompt
+		if !opts.ExpandedContent {
+			prompt = strings.ReplaceAll(prompt, "\n", " ")
+		}
 
-	header = lipgloss.JoinVertical(
-		lipgloss.Left,
-		header,
-		"",
-		lipgloss.JoinHorizontal(
+		header := toolHeader(sty, opts.Status, "Agentic Fetch", cappedWidth, opts, toolParams...)
+		promptText := sty.Tool.AgentPrompt.Width(remainingWidth).Render(prompt)
+
+		header = lipgloss.JoinVertical(
 			lipgloss.Left,
-			promptTag,
-			" ",
-			promptText,
-		),
-	)
+			header,
+			"",
+			lipgloss.JoinHorizontal(
+				lipgloss.Left,
+				promptTag,
+				" ",
+				promptText,
+			),
+		)
 
-	// Build tree with nested tool calls.
-	childTools := tree.Root(header)
-
-	for _, nestedTool := range r.fetch.nestedTools {
-		childView := nestedTool.Render(remainingWidth)
-		childTools.Child(childView)
+		// Build tree with nested tool calls.
+		childTools := tree.Root(header)
+		for _, childView := range children {
+			childTools.Child(childView)
+		}
+		treeView = roundedTree(childTools, promptTagWidth-5).String()
+		r.fetch.tree.set(cappedWidth, opts, children, treeView)
 	}
 
 	// Build parts.
 	var parts []string
-	parts = append(parts, roundedTree(childTools, promptTagWidth-5).String())
+	parts = append(parts, treeView)
 
 	// Show animation if still running.
 	if !opts.HasResult() && !opts.IsCanceled() {

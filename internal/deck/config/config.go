@@ -9,10 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -85,6 +87,173 @@ type Config struct {
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
 	Efforts Models `json:"efforts"`
+	// Peers links this Deck to other Deck instances (docs/peers-design.md).
+	// Nil, the default, means peers are off: no listener, no dialing. Keys
+	// never live here; they are in ~/.deck/peers/.
+	Peers *Peers `json:"peers,omitempty"`
+}
+
+// DefaultPeerPort is the port a peer listener uses when its address names none.
+const DefaultPeerPort = "7722"
+
+// Peer roles: what a remote Deck may ask of this one.
+const (
+	PeerRoleObserver   = "observer"   // read-only ops (the default)
+	PeerRoleContractor = "contractor" // may also propose contracts (later phases)
+)
+
+// Peers is the peers section of the config.
+type Peers struct {
+	// Enabled turns the peer link on: the listener (when Listen.Enabled) and a
+	// supervisor for every remote with Dial set. Off by default.
+	Enabled bool `json:"enabled"`
+	// Name is how this Deck introduces itself to peers; empty means the host name.
+	Name   string       `json:"name,omitempty"`
+	Listen PeerListen   `json:"listen"`
+	Remote []PeerRemote `json:"remote,omitempty"`
+	// Sandbox is reserved for the virtual bash phase; it is parsed but unused.
+	Sandbox *PeerSandbox `json:"sandbox,omitempty"`
+}
+
+// PeerListen is the embedded SSH listener. It is off by default.
+type PeerListen struct {
+	Enabled bool   `json:"enabled"`
+	Addr    string `json:"addr,omitempty"` // host:port; empty means ":7722"
+}
+
+// PeerRemote is one paired Deck.
+type PeerRemote struct {
+	Name string `json:"name"`
+	Addr string `json:"addr,omitempty"` // host:port to dial; empty for inbound-only peers
+	Dial bool   `json:"dial"`           // keep a connection to it open
+	Role string `json:"role,omitempty"` // "observer" (default) or "contractor"
+	// AllowInbound lists the ops this peer may run here; empty means the
+	// defaults (docs/peers-design.md section 2).
+	AllowInbound []string `json:"allow_inbound,omitempty"`
+	// MaxScope is the outer limit for contracts from this peer (later phases).
+	MaxScope []string `json:"max_scope,omitempty"`
+}
+
+// PeerSandbox configures the virtual bash used by contracts (not used yet).
+type PeerSandbox struct {
+	TTL       string              `json:"ttl,omitempty"`
+	ScratchMB int                 `json:"scratch_mb,omitempty"`
+	OutputKB  int                 `json:"output_kb,omitempty"`
+	Presets   map[string][]string `json:"presets,omitempty"`
+}
+
+// PeersEnabled reports whether the peer link is on.
+func (c Config) PeersEnabled() bool { return c.Peers != nil && c.Peers.Enabled }
+
+// ListenAddr is the listener's address, with the default port filled in.
+func (l PeerListen) ListenAddr() string {
+	if l.Addr == "" {
+		return ":" + DefaultPeerPort
+	}
+	return l.Addr
+}
+
+// RoleOrDefault is the remote's role, "observer" when unset.
+func (r PeerRemote) RoleOrDefault() string {
+	if r.Role == "" {
+		return PeerRoleObserver
+	}
+	return r.Role
+}
+
+// Find returns the configured remote with the given name.
+func (p *Peers) Find(name string) (PeerRemote, bool) {
+	if p == nil {
+		return PeerRemote{}, false
+	}
+	for _, r := range p.Remote {
+		if r.Name == name {
+			return r, true
+		}
+	}
+	return PeerRemote{}, false
+}
+
+// ValidPeerName reports whether s can name a peer: 1-32 of a-z, 0-9, '-', '_'
+// and '.', starting with a letter or digit. Names show in the console and in
+// file names, so they stay plain.
+func ValidPeerName(s string) bool {
+	if len(s) == 0 || len(s) > 32 {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case i > 0 && (r == '-' || r == '_' || r == '.'):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ValidPeerAddr reports whether s is a host:port with a port in 1-65535.
+func ValidPeerAddr(s string) error {
+	host, port, err := net.SplitHostPort(s)
+	if err != nil {
+		return err
+	}
+	if strings.ContainsAny(host, " \t/") {
+		return fmt.Errorf("bad host %q", host)
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("bad port %q", port)
+	}
+	return nil
+}
+
+// validate reports the first invalid value in the peers section.
+func (p *Peers) validate() error {
+	if p.Name != "" && !ValidPeerName(p.Name) {
+		return fmt.Errorf("peers.name %q: use 1-32 of a-z, 0-9, '-', '_', '.'", p.Name)
+	}
+	if p.Listen.Addr != "" {
+		if err := ValidPeerAddr(p.Listen.Addr); err != nil {
+			return fmt.Errorf("peers.listen.addr %q: %v", p.Listen.Addr, err)
+		}
+	}
+	seen := map[string]bool{}
+	for i, r := range p.Remote {
+		if !ValidPeerName(r.Name) {
+			return fmt.Errorf("peers.remote[%d].name %q: use 1-32 of a-z, 0-9, '-', '_', '.'", i, r.Name)
+		}
+		if seen[r.Name] {
+			return fmt.Errorf("peers.remote: duplicate name %q", r.Name)
+		}
+		seen[r.Name] = true
+		if p.Name != "" && r.Name == p.Name {
+			return fmt.Errorf("peers.remote[%d].name %q is this Deck's own name", i, r.Name)
+		}
+		if r.Addr != "" {
+			if err := ValidPeerAddr(r.Addr); err != nil {
+				return fmt.Errorf("peers.remote[%d].addr %q: %v", i, r.Addr, err)
+			}
+		} else if r.Dial {
+			return fmt.Errorf("peers.remote[%d] %q: dial needs an addr", i, r.Name)
+		}
+		switch r.Role {
+		case "", PeerRoleObserver, PeerRoleContractor:
+		default:
+			return fmt.Errorf("peers.remote[%d].role must be \"observer\" or \"contractor\", got %q", i, r.Role)
+		}
+		for j, op := range r.AllowInbound {
+			if strings.TrimSpace(op) == "" {
+				return fmt.Errorf("peers.remote[%d].allow_inbound[%d] is empty", i, j)
+			}
+		}
+		for j, s := range r.MaxScope {
+			if strings.TrimSpace(s) == "" {
+				return fmt.Errorf("peers.remote[%d].max_scope[%d] is empty", i, j)
+			}
+		}
+	}
+	return nil
 }
 
 // gitUserName and osUserName are indirections so tests can stub them.
@@ -246,6 +415,11 @@ func (c Config) Validate() error {
 	case "", "plan", "ask", "yolo":
 	default:
 		return fmt.Errorf("default_mode must be \"plan\", \"ask\" or \"yolo\", got %q", c.DefaultMode)
+	}
+	if c.Peers != nil {
+		if err := c.Peers.validate(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

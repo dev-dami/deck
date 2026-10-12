@@ -131,10 +131,7 @@ func (d *YesNo) Height(width int) int {
 	h++                                                              // blank
 	if d.Request.Description != "" {
 		r := common.MarkdownRenderer(d.Styles, w)
-		mu := common.LockMarkdownRenderer(r)
-		mu.Lock()
-		out, err := r.Render(d.Request.Description)
-		mu.Unlock()
+		out, err := common.RenderMarkdownMemo(r, d.Request.Description)
 		if err == nil {
 			out = strings.TrimSuffix(out, "\n")
 			h += strings.Count(out, "\n") + 1
@@ -173,10 +170,7 @@ func (d *YesNo) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	// Draw optional description.
 	if d.Request.Description != "" {
 		r := common.MarkdownRenderer(d.Styles, area.Dx())
-		mu := common.LockMarkdownRenderer(r)
-		mu.Lock()
-		desc, err := r.Render(d.Request.Description)
-		mu.Unlock()
+		desc, err := common.RenderMarkdownMemo(r, d.Request.Description)
 		if err == nil {
 			desc = strings.TrimSuffix(desc, "\n")
 			y += drawStyledText(scr, image.Rect(area.Min.X, y, area.Max.X, area.Max.Y), desc)

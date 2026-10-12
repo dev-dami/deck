@@ -138,6 +138,9 @@ type Chat struct {
 	resizing        bool
 	resizeSettleSeq int
 	warmNext        int
+	// warmWidth is the list width the current warm renders at. A width
+	// change mid-warm (a layout change that is not a resize) restarts it.
+	warmWidth int
 }
 
 // scrollbarHideDuration is how long the scrollbar remains visible after scroll activity.
@@ -246,7 +249,7 @@ func (m *Chat) Draw(scr uv.Screen, area uv.Rectangle) {
 		if m.drawCache == nil ||
 			m.drawCache.rendered != rendered ||
 			m.drawCache.method != method {
-			m.drawCache = newChatDrawCache(rendered, method)
+			m.drawCache = newChatDrawCache(rendered, method, m.drawCache)
 		}
 		drawCachedBuffer(scr, listArea, m.drawCache.buf)
 	}
@@ -282,7 +285,11 @@ func (m *Chat) Draw(scr uv.Screen, area uv.Rectangle) {
 // with `method.StringWidth` per line matches what printString tallies
 // cell-by-cell, since both decode ANSI sequences and use the same width
 // method.
-func newChatDrawCache(rendered string, method ansi.Method) *chatDrawCache {
+//
+// prev, when not nil, is the cache being replaced: its buffer is reused
+// when it has the same size and method, as it does on most frames while a
+// spinner turns, rather than allocating a new one per frame.
+func newChatDrawCache(rendered string, method ansi.Method, prev *chatDrawCache) *chatDrawCache {
 	w, h := renderedBounds(rendered, method)
 	if w <= 0 {
 		w = 1
@@ -290,8 +297,14 @@ func newChatDrawCache(rendered string, method ansi.Method) *chatDrawCache {
 	if h <= 0 {
 		h = 1
 	}
-	buf := uv.NewScreenBuffer(w, h)
-	buf.Method = method
+	var buf uv.ScreenBuffer
+	if prev != nil && prev.method == method && prev.buf.Width() == w && prev.buf.Height() == h {
+		buf = prev.buf
+		buf.Clear()
+	} else {
+		buf = uv.NewScreenBuffer(w, h)
+		buf.Method = method
+	}
 	uv.NewStyledString(rendered).Draw(buf, buf.Bounds())
 	return &chatDrawCache{
 		rendered: rendered,
@@ -339,7 +352,23 @@ func (m *Chat) BeginResize() tea.Cmd {
 	m.resizing = true
 	m.resizeSettleSeq++
 	m.warmNext = 0
+	m.warmWidth = m.list.Width()
 	return chatWarmCmd(m.resizeSettleSeq, resizeSettleDuration)
+}
+
+// Warm starts warming the message cache one batch per step, beginning
+// on the next turn of the event loop. Without it the first scroll after
+// a session load or theme change pays for rendering the whole transcript
+// at once: the scrollbar needs the exact total height. A later resize
+// supersedes it, as a later Warm supersedes an earlier one.
+func (m *Chat) Warm() tea.Cmd {
+	if m.list.Len() == 0 {
+		return nil
+	}
+	m.resizeSettleSeq++
+	m.warmNext = 0
+	m.warmWidth = m.list.Width()
+	return chatWarmCmd(m.resizeSettleSeq, 0)
 }
 
 // WarmStep renders the next batch of messages into the width cache and
@@ -350,6 +379,12 @@ func (m *Chat) BeginResize() tea.Cmd {
 func (m *Chat) WarmStep(seq int) (cmd tea.Cmd, done bool) {
 	if seq != m.resizeSettleSeq {
 		return nil, false
+	}
+	if w := m.list.Width(); w != m.warmWidth {
+		// The width changed since the warm started, dropping what it
+		// had rendered so far.
+		m.warmWidth = w
+		m.warmNext = 0
 	}
 	m.warmNext = m.list.Prewarm(m.warmNext, warmBatchSize)
 	if m.warmNext >= m.list.Len() {

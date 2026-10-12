@@ -117,7 +117,9 @@ type wireLine struct {
 }
 
 // Line translates one raw stdout line. Unknown or malformed lines yield
-// nothing; it never panics on new shapes.
+// nothing; it never panics on new shapes. line is only valid for the
+// duration of the call (the reader reuses its buffer): anything kept must be
+// copied.
 func (t *translator) Line(line []byte) []agent.Event {
 	line = bytes.TrimSpace(line)
 	if len(line) == 0 || line[0] != '{' {
@@ -127,8 +129,12 @@ func (t *translator) Line(line []byte) []agent.Event {
 	if json.Unmarshal(line, &wl) != nil {
 		return nil
 	}
-	raw := json.RawMessage(append([]byte(nil), line...))
+	// The line is copied for Raw only once a line yields an event.
+	var raw json.RawMessage
 	mk := func(k agent.Kind) agent.Event {
+		if raw == nil {
+			raw = json.RawMessage(append([]byte(nil), line...))
+		}
 		return agent.Event{AgentID: t.agentID, Time: t.now(), Kind: k, Raw: raw}
 	}
 

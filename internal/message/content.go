@@ -231,6 +231,17 @@ func (m *Message) ToolCalls() []ToolCall {
 	return toolCalls
 }
 
+// HasToolCalls reports whether the message has a tool call, without building
+// the list ToolCalls returns.
+func (m *Message) HasToolCalls() bool {
+	for _, part := range m.Parts {
+		if _, ok := part.(ToolCall); ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Message) ToolResults() []ToolResult {
 	toolResults := make([]ToolResult, 0)
 	for _, part := range m.Parts {
@@ -315,6 +326,76 @@ func (m *Message) AppendReasoningContent(delta string) {
 	if !found {
 		m.Parts = append(m.Parts, ReasoningContent{
 			Thinking:  delta,
+			StartedAt: time.Now().Unix(),
+		})
+	}
+}
+
+// StreamBuffer holds a streamed text so that appending a delta costs the
+// delta's length rather than a copy of all the text so far, which is what
+// concatenating per delta (AppendContent) costs: quadratic over a long reply.
+// The strings it returns share its storage, which it only ever appends to,
+// so they stay valid. The zero value is ready to use; do not copy one in use.
+type StreamBuffer struct{ b strings.Builder }
+
+// Append returns cur+delta. cur is normally what the previous Append
+// returned; when it is anything else the buffer starts over from it.
+func (s *StreamBuffer) Append(cur, delta string) string {
+	// Equal strings sharing storage compare in constant time.
+	if s.b.Len() != len(cur) || s.b.String() != cur {
+		s.b.Reset()
+		s.b.Grow(len(cur) + len(delta))
+		s.b.WriteString(cur)
+	}
+	s.b.WriteString(delta)
+	return s.b.String()
+}
+
+// AppendContentBuf is AppendContent for a stream of deltas, with buf holding
+// the text so far (see StreamBuffer). Use one buf per message.
+func (m *Message) AppendContentBuf(buf *StreamBuffer, delta string) {
+	found := false
+	for i, part := range m.Parts {
+		if c, ok := part.(TextContent); ok {
+			var text string
+			if !found {
+				text = buf.Append(c.Text, delta)
+			} else {
+				text = c.Text + delta
+			}
+			m.Parts[i] = TextContent{Text: text, Hidden: c.Hidden}
+			found = true
+		}
+	}
+	if !found {
+		m.Parts = append(m.Parts, TextContent{Text: buf.Append("", delta)})
+	}
+}
+
+// AppendReasoningContentBuf is AppendReasoningContent for a stream of deltas,
+// with buf holding the reasoning so far (see StreamBuffer).
+func (m *Message) AppendReasoningContentBuf(buf *StreamBuffer, delta string) {
+	found := false
+	for i, part := range m.Parts {
+		if c, ok := part.(ReasoningContent); ok {
+			var text string
+			if !found {
+				text = buf.Append(c.Thinking, delta)
+			} else {
+				text = c.Thinking + delta
+			}
+			m.Parts[i] = ReasoningContent{
+				Thinking:   text,
+				Signature:  c.Signature,
+				StartedAt:  c.StartedAt,
+				FinishedAt: c.FinishedAt,
+			}
+			found = true
+		}
+	}
+	if !found {
+		m.Parts = append(m.Parts, ReasoningContent{
+			Thinking:  buf.Append("", delta),
 			StartedAt: time.Now().Unix(),
 		})
 	}

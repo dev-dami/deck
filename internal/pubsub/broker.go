@@ -5,7 +5,8 @@
 //
 //   - [Broker.Publish] is best-effort and lossy under contention. If a
 //     subscriber's channel is full, the event is dropped for that
-//     subscriber, a warning is logged, and a counter is incremented.
+//     subscriber, a counter is incremented, and a warning is logged (at
+//     most once a second per broker, with the number dropped).
 //     This is the right choice for high-frequency intermediate updates
 //     (e.g. streaming token deltas) where only the latest state
 //     matters.
@@ -54,6 +55,10 @@ type Broker[T any] struct {
 	mustDeliverTimeout   time.Duration
 	dropCount            atomic.Uint64
 	mustDeliverDropCount atomic.Uint64
+	// dropLoggedAt (unix nanos) and unloggedDrops rate-limit the drop
+	// warning; see warnDropped.
+	dropLoggedAt  atomic.Int64
+	unloggedDrops atomic.Uint64
 }
 
 func NewBroker[T any]() *Broker[T] {
@@ -182,9 +187,30 @@ func (b *Broker[T]) Publish(t EventType, payload T) {
 			// Lossy by design; counted and logged so saturation is
 			// observable.
 			b.dropCount.Add(1)
-			slog.Warn("Pubsub buffer full; dropping event", "type", t)
+			b.warnDropped(t)
 		}
 	}
+}
+
+// dropLogInterval is the least time between two "buffer full" warnings of
+// one broker. A stalled subscriber can drop thousands of events a second;
+// one log line (and JSON encode and file write) each would make the stall
+// worse, so drops in between are counted into the next warning.
+const dropLogInterval = time.Second
+
+// warnDropped logs a dropped event, at most once per dropLogInterval, with
+// how many were dropped since the last warning.
+func (b *Broker[T]) warnDropped(t EventType) {
+	b.unloggedDrops.Add(1)
+	now := time.Now().UnixNano()
+	last := b.dropLoggedAt.Load()
+	if last != 0 && now-last < int64(dropLogInterval) {
+		return
+	}
+	if !b.dropLoggedAt.CompareAndSwap(last, now) {
+		return // another publisher is logging this window
+	}
+	slog.Warn("Pubsub buffer full; dropping event", "type", t, "dropped", b.unloggedDrops.Swap(0))
 }
 
 // PublishMustDeliver delivers an event with bounded-blocking semantics.
