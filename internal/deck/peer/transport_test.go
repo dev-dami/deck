@@ -75,7 +75,8 @@ func TestTwoPeersBothDirections(t *testing.T) {
 	ha := &recHandler{StatusHandler: StatusHandler{Name: "a", Version: "1.0", Started: time.Now().Add(-time.Hour)}}
 	hb := &recHandler{StatusHandler: StatusHandler{Name: "b", Version: "2.0", Started: time.Now()}}
 	inbound := make(chan *Conn, 1)
-	a, b, _, pinA := pairUp(t, ServerOptions{Handler: ha, OnConn: func(c *Conn) { inbound <- c }})
+	a, b, _, pinA := pairUp(t, ServerOptions{Handler: ha, OnConn: func(c *Conn) { inbound <- c },
+		Caller: allowOps(OpPeerStatus, "git.status", "echo")})
 
 	conn := b.dial(t, pinA, hb)
 	if conn.Peer().Name != "a" || conn.Peer().Fingerprint != a.id.Fingerprint() {
@@ -131,6 +132,13 @@ func TestTwoPeersBothDirections(t *testing.T) {
 	if lat, err := cl.Ping(ctx); err != nil || lat < 0 {
 		t.Fatalf("ping: %v %v", lat, err)
 	}
+	// An op the handler knows but the allow list does not name is refused
+	// before the handler sees it.
+	n := ha.calls()
+	res, err = cl.Execute(ctx, "crash", nil)
+	if err != nil || !res.IsError || !strings.Contains(res.Text(), "not allowed") || ha.calls() != n {
+		t.Fatalf("op outside allow_inbound: %+v %v", res, err)
+	}
 
 	// Reverse: the listener calls the dialer over the same link.
 	var in *Conn
@@ -149,6 +157,11 @@ func TestTwoPeersBothDirections(t *testing.T) {
 	}
 	if got := hb.last(); got.Name != "a" {
 		t.Fatalf("dialer's handler saw caller %+v, want a", got)
+	}
+	// The dialer has no config for a: the default allow list applies.
+	res, err = rcl.Execute(ctx, "echo", map[string]any{"x": 1})
+	if err != nil || !res.IsError || !strings.Contains(res.Text(), "not allowed") {
+		t.Fatalf("reverse echo outside the default allow list: %+v %v", res, err)
 	}
 	rtools, err := rcl.ListTools(ctx)
 	if err != nil || len(rtools) != 2 {
@@ -208,7 +221,8 @@ func TestAllowInboundLimitsOps(t *testing.T) {
 func TestHandlerPanicAndBusyAndCancel(t *testing.T) {
 	leakCheck(t)
 	h := &recHandler{StatusHandler: StatusHandler{Name: "a"}, block: make(chan struct{}), panicOp: "crash"}
-	_, b, _, pinA := pairUp(t, ServerOptions{Handler: h, Limits: Limits{MaxInFlight: 1, CallTimeout: 5 * time.Second}})
+	_, b, _, pinA := pairUp(t, ServerOptions{Handler: h, Limits: Limits{MaxInFlight: 1, CallTimeout: 5 * time.Second},
+		Caller: allowOps(OpPeerStatus, "crash", "block")})
 	cl := openInit(t, b.dial(t, pinA, nil))
 	ctx := ctxT(t)
 
@@ -250,10 +264,11 @@ func TestCallTimeout(t *testing.T) {
 	leakCheck(t)
 	h := &recHandler{StatusHandler: StatusHandler{Name: "a"}, block: make(chan struct{})}
 	defer close(h.block)
-	_, b, _, pinA := pairUp(t, ServerOptions{Handler: h, Limits: Limits{CallTimeout: 100 * time.Millisecond}})
+	_, b, _, pinA := pairUp(t, ServerOptions{Handler: h, Limits: Limits{CallTimeout: 100 * time.Millisecond},
+		Caller: allowOps("block")})
 	cl := openInit(t, b.dial(t, pinA, nil))
 	res, err := cl.Execute(ctxT(t), "block", nil)
-	if err != nil || !res.IsError || !strings.Contains(res.Text(), "cancelled") {
+	if err != nil || !res.IsError || res.Text() != msgTimeout {
 		t.Fatalf("timed out call: %+v %v", res, err)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -276,8 +277,8 @@ func TestHostileJSONRPC(t *testing.T) {
 	sendLine(t, ch, `{"jsonrpc":"2.0","method":"evil/notify","params":{}}`)
 	sendLine(t, ch, `{"jsonrpc":"2.0","id":"s1","method":"tools/call","params":{"name":"execute","arguments":{"op":"nope"}}}`)
 	resp := readResp(t, r)
-	if string(resp.ID) != `"s1"` || resp.Error != nil || !strings.Contains(string(resp.Result), "unknown op") {
-		t.Fatalf("unknown op: %+v", resp)
+	if string(resp.ID) != `"s1"` || resp.Error != nil || !strings.Contains(string(resp.Result), "not allowed") {
+		t.Fatalf("op outside the default allow list: %+v", resp)
 	}
 
 	// Malformed JSON: a parse error, then the channel closes.
@@ -370,10 +371,11 @@ func TestHostileWrongHostKey(t *testing.T) {
 
 func TestHostileConnectionLimitAndStalledHandshake(t *testing.T) {
 	leakCheck(t)
-	_, b, srv, _ := pairUp(t, ServerOptions{MaxConns: 2, Limits: Limits{HandshakeTimeout: 300 * time.Millisecond}, LockoutThreshold: 1000})
+	_, b, srv, _ := pairUp(t, ServerOptions{MaxPreAuthPerIP: 2, Limits: Limits{HandshakeTimeout: 300 * time.Millisecond}, LockoutThreshold: 1000})
 	addr := srv.Addr().String()
 
-	// Two connections that never speak take both slots.
+	// Two connections that never speak take both of this IP's handshake
+	// slots.
 	var holds []net.Conn
 	for i := 0; i < 2; i++ {
 		c, err := net.Dial("tcp", addr)
@@ -414,24 +416,77 @@ func TestHostileLockout(t *testing.T) {
 		defer mu.Unlock()
 		return now
 	}
+	advance := func(d time.Duration) {
+		mu.Lock()
+		now = now.Add(d)
+		mu.Unlock()
+	}
 	_, b, srv, _ := pairUp(t, ServerOptions{LockoutThreshold: 3, LockoutBase: time.Minute, now: clock})
 	addr := srv.Addr().String()
-	bad := []ssh.AuthMethod{ssh.PublicKeys(ed25519Signer(t))}
+	noKey := []ssh.AuthMethod{ssh.Password("hunter2")}
 	good := []ssh.AuthMethod{ssh.PublicKeys(b.id.Signer)}
+
+	// Failures that offer no key lock the whole IP: even the pinned key is
+	// cut off before the handshake.
 	for i := 0; i < 3; i++ {
-		if _, _, _, err := rawDial(t, addr, bad, nil); err == nil {
-			t.Fatal("bad key authenticated")
+		if _, _, _, err := rawDial(t, addr, noKey, nil); err == nil {
+			t.Fatal("password authenticated")
 		}
 	}
-	// Locked out: even the pinned key is cut off before the handshake.
 	if _, _, _, err := rawDial(t, addr, good, nil); err == nil {
 		t.Fatal("locked-out IP got in")
 	}
-	mu.Lock()
-	now = now.Add(61 * time.Second)
-	mu.Unlock()
+	advance(61 * time.Second)
 	if _, _, _, err := rawDial(t, addr, good, nil); err != nil {
 		t.Fatalf("after lockout expired: %v", err)
+	}
+
+	// A removed (unpinned) key retrying locks out that key only: another
+	// peer behind the same IP (NAT) still gets in.
+	removed := []ssh.AuthMethod{ssh.PublicKeys(ed25519Signer(t))}
+	for i := 0; i < 5; i++ {
+		if _, _, _, err := rawDial(t, addr, removed, nil); err == nil {
+			t.Fatal("unpinned key authenticated")
+		}
+	}
+	if _, _, _, err := rawDial(t, addr, good, nil); err != nil {
+		t.Fatalf("one key's failures locked out the IP: %v", err)
+	}
+
+	// Rotating keys does not dodge the IP lock: 4x the threshold of keyed
+	// failures locks the IP too.
+	for i := 0; i < 12; i++ {
+		_, _, _, _ = rawDial(t, addr, []ssh.AuthMethod{ssh.PublicKeys(ed25519Signer(t))}, nil)
+	}
+	if _, _, _, err := rawDial(t, addr, good, nil); err == nil {
+		t.Fatal("key spraying did not lock the IP")
+	}
+}
+
+// TestLockoutTableAtCapacity: with the table full of live lockouts a new
+// source is still tracked and locked (the oldest record makes room).
+func TestLockoutTableAtCapacity(t *testing.T) {
+	now := time.Unix(0, 0)
+	l := newLockout(1, time.Hour, time.Hour, func() time.Time { return now })
+	for i := 0; i < maxTracked; i++ {
+		l.fail(fmt.Sprintf("10.%d.%d.%d", i>>16&255, i>>8&255, i&255))
+		now = now.Add(time.Millisecond)
+	}
+	if len(l.m) != maxTracked || !l.locked("10.0.0.0") {
+		t.Fatalf("table %d, first locked %v", len(l.m), l.locked("10.0.0.0"))
+	}
+	l.fail("192.0.2.1")
+	if !l.locked("192.0.2.1") {
+		t.Fatal("new source ignored when the table is full")
+	}
+	if len(l.m) > maxTracked {
+		t.Fatalf("table grew to %d", len(l.m))
+	}
+	if l.locked("10.0.0.0") {
+		t.Fatal("the oldest record was not the one evicted")
+	}
+	if !l.locked("10.0.0.1") {
+		t.Fatal("a newer record was evicted")
 	}
 }
 

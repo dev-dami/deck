@@ -29,7 +29,12 @@ type Status struct {
 	LastError string        // the last failure, if any
 	NextRetry time.Time     // in backoff: when the next dial starts
 	Latency   time.Duration // the last MCP ping's round trip
-	Attempts  int           // failed dials since the last good connection
+	Attempts  int           // failed dials since the last stable connection
+	// Permanent is set when the last failure needs a person, not a retry:
+	// the peer's host key changed, this Deck is not pinned there, or the peer
+	// is no longer pinned here. Retries then wait MaxBackoff; nothing is
+	// ever re-pinned on its own.
+	Permanent bool
 }
 
 // Event is one state change.
@@ -50,8 +55,13 @@ type SupervisorOptions struct {
 	PingTimeout  time.Duration
 	MaxPingFails int
 	// MinBackoff and MaxBackoff bound the retry delay (1s, 60s). It doubles
-	// per failed attempt, with +-20% jitter.
+	// per failed attempt, with +-20% jitter; a permanent failure (see
+	// Status.Permanent) waits MaxBackoff.
 	MinBackoff, MaxBackoff time.Duration
+	// StableAfter is how long a link must stay up before the backoff starts
+	// over from MinBackoff (30s), so a peer that accepts and then drops
+	// every link at once is not redialed every second.
+	StableAfter time.Duration
 	// Jitter returns a number in [0, 1); nil means math/rand.
 	Jitter func() float64
 	// After returns a channel that fires after d; nil means time.After.
@@ -94,6 +104,9 @@ func NewSupervisor(o SupervisorOptions) *Supervisor {
 	}
 	if o.MaxBackoff < o.MinBackoff {
 		o.MaxBackoff = 60 * time.Second
+	}
+	if o.StableAfter <= 0 {
+		o.StableAfter = 30 * time.Second
 	}
 	if o.Jitter == nil {
 		o.Jitter = rand.Float64
@@ -216,16 +229,24 @@ func (s *Supervisor) run(ctx context.Context) {
 	attempts := 0
 	for ctx.Err() == nil {
 		s.set(StateDialing, nil)
-		err := s.session(ctx, func() { attempts = 0 })
+		up, err := s.session(ctx)
 		if ctx.Err() != nil {
 			return
 		}
+		if up >= s.o.StableAfter {
+			attempts = 0
+		}
 		attempts++
 		d := s.backoff(attempts)
+		permanent := IsPermanent(err)
+		if permanent {
+			d = s.o.MaxBackoff
+		}
 		s.set(StateBackoff, func(st *Status) {
 			st.LastError = errText(err)
 			st.Attempts = attempts
 			st.NextRetry = s.o.Now().Add(d)
+			st.Permanent = permanent
 		})
 		select {
 		case <-ctx.Done():
@@ -235,30 +256,31 @@ func (s *Supervisor) run(ctx context.Context) {
 	}
 }
 
-// session dials, initializes and pings until the link fails; good is called
-// once the link is up.
-func (s *Supervisor) session(ctx context.Context, good func()) error {
+// session dials, initializes and pings until the link fails. up is how long
+// the link was connected (0 when it never got there).
+func (s *Supervisor) session(ctx context.Context) (up time.Duration, err error) {
 	conn, err := s.o.Dial(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer conn.Close()
 	cl, err := conn.OpenMCP(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer cl.Close()
 	ictx, cancel := context.WithTimeout(ctx, s.o.PingTimeout)
 	_, err = cl.Initialize(ictx)
 	cancel()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	lat, err := s.ping(ctx, cl)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	good()
+	since := s.o.Now()
+	defer func() { up = s.o.Now().Sub(since) }()
 	s.mu.Lock()
 	s.conn, s.client = conn, cl
 	s.mu.Unlock()
@@ -271,22 +293,23 @@ func (s *Supervisor) session(ctx context.Context, good func()) error {
 		st.Latency = lat
 		st.Attempts = 0
 		st.LastError = ""
+		st.Permanent = false
 	})
 
 	fails := 0
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return 0, ctx.Err()
 		case <-conn.Done():
-			return errors.New("connection lost")
+			return 0, errors.New("connection lost")
 		case <-cl.Done():
-			return errors.New("mcp channel closed")
+			return 0, errors.New("mcp channel closed")
 		case <-s.o.After(s.o.PingInterval):
 		}
 		lat, err := s.ping(ctx, cl)
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return 0, ctx.Err()
 		}
 		if err == nil && conn.KeepaliveMisses() == 0 {
 			fails = 0
@@ -299,7 +322,7 @@ func (s *Supervisor) session(ctx context.Context, good func()) error {
 			fails++
 		}
 		if fails >= s.o.MaxPingFails {
-			return err
+			return 0, err
 		}
 		s.set(StateDegraded, func(st *Status) { st.LastError = errText(err) })
 	}

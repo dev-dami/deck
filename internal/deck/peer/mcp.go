@@ -131,6 +131,9 @@ func (s slogLogger) Printf(format string, v ...any) {
 type serverLimits struct {
 	maxInFlight int           // concurrent tools/call
 	callTimeout time.Duration // per tools/call
+	// perKey, when set, also caps calls in flight per pinned key over every
+	// channel and link of that key.
+	perKey *keyLimiter
 }
 
 // mcpServer answers MCP requests on one channel for one caller.
@@ -140,6 +143,11 @@ type mcpServer struct {
 	info   map[string]any
 	lim    serverLimits
 	log    *slog.Logger
+	// recheck, when set, runs before every call: it returns the caller as
+	// the pins and config say now, or an error when the peer was removed or
+	// re-paired with another key. revoked is then called (it drops the link).
+	recheck func(Caller) (Caller, error)
+	revoked func()
 
 	mu          sync.Mutex
 	initialized bool
@@ -148,6 +156,21 @@ type mcpServer struct {
 	sem chan struct{}
 	wg  sync.WaitGroup
 }
+
+// ErrRevoked means a peer is no longer pinned here, or is pinned with
+// another key than the link was made with.
+var ErrRevoked = errors.New("peer: no longer pinned (removed or re-paired)")
+
+// Fixed answers for failed calls. The handler's own error text is logged here
+// and never sent: it may hold paths, hosts or other local detail.
+const (
+	msgUnknownOp = "unknown op; call search to list the ops"
+	msgFailed    = "op failed"
+	msgInternal  = "internal error"
+	msgTimeout   = "cancelled: the call timed out"
+	msgCancelled = "cancelled"
+	msgRevoked   = "this Deck no longer accepts calls from you"
+)
 
 func newMCPServer(h Handler, caller Caller, name, version string, lim serverLimits, log *slog.Logger) *mcpServer {
 	if lim.maxInFlight <= 0 {
@@ -248,28 +271,36 @@ func (s *mcpServer) Handle(ctx context.Context, c *jsonrpc2.Conn, req *jsonrpc2.
 			fail(rpcErr(codeInvalidParams, "unknown tool"))
 			return
 		}
-		select {
-		case s.sem <- struct{}{}:
-		default:
+		// Handle runs on the read loop, one request at a time, so the
+		// check and the insert below cannot race.
+		key := req.ID.String()
+		s.mu.Lock()
+		_, dup := s.calls[key]
+		s.mu.Unlock()
+		if dup {
+			fail(rpcErr(codeInvalidRequest, "duplicate request id"))
+			return
+		}
+		release, ok := s.acquire()
+		if !ok {
 			fail(rpcErr(codeBusy, "too many calls in flight"))
 			return
 		}
 		cctx, cancel := context.WithTimeout(ctx, s.lim.callTimeout)
-		key := req.ID.String()
 		s.mu.Lock()
 		s.calls[key] = cancel
 		s.mu.Unlock()
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
-			res := s.call(cctx, p.Name, p.Arguments)
-			// Free the slot before replying, so the caller's next call
-			// never finds it still taken.
+			// call frees the slot before it returns when the handler is
+			// done, so the caller's next call never finds it still taken;
+			// a handler still running after the timeout keeps it.
+			res := s.call(cctx, p.Name, p.Arguments, release)
 			s.mu.Lock()
 			delete(s.calls, key)
 			s.mu.Unlock()
 			cancel()
-			<-s.sem
 			reply(res)
 		}()
 	default:
@@ -286,42 +317,159 @@ func (s *mcpServer) ready() bool {
 	return s.initialized
 }
 
-// call runs one tool. A handler panic is turned into an error result: a
-// peer must never be able to crash this Deck through a handler bug.
-func (s *mcpServer) call(ctx context.Context, tool string, args json.RawMessage) (res ToolResult) {
+// acquire takes a call slot on this channel and, when set, one of the
+// caller's key; release frees both, once.
+func (s *mcpServer) acquire() (release func(), ok bool) {
+	select {
+	case s.sem <- struct{}{}:
+	default:
+		return nil, false
+	}
+	fp := s.caller.Fingerprint
+	if s.lim.perKey != nil && !s.lim.perKey.acquire(fp) {
+		<-s.sem
+		return nil, false
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			if s.lim.perKey != nil {
+				s.lim.perKey.release(fp)
+			}
+			<-s.sem
+		})
+	}, true
+}
+
+// call checks one tool call and runs it. release frees the call's slot; it is
+// called by the time call returns, unless a handler that ignored ctx is
+// still running, which keeps its slot until it does return.
+func (s *mcpServer) call(ctx context.Context, tool string, args json.RawMessage, release func()) ToolResult {
+	handed := false
 	defer func() {
-		if r := recover(); r != nil {
-			s.log.Error("peer: handler panic", "peer", s.caller.Name, "tool", tool, "panic", r)
-			res = textResult("internal error", true)
+		if !handed {
+			release()
 		}
 	}()
+	caller := s.caller
+	if s.recheck != nil {
+		c, err := s.recheck(caller)
+		if err != nil {
+			s.log.Warn("peer: refusing a call from a peer no longer pinned; closing its link", "peer", caller.Name, "error", err)
+			if s.revoked != nil {
+				s.revoked()
+			}
+			return textResult(msgRevoked, true)
+		}
+		caller = c
+	}
 	if len(args) == 0 || string(args) == "null" {
 		args = json.RawMessage(`{}`)
 	}
-	var (
-		text string
-		err  error
-	)
 	switch tool {
 	case ToolSearch:
-		text, err = s.h.Search(ctx, s.caller, args)
-	case ToolExecute:
+		var in struct {
+			Query string `json:"query"`
+		}
+		if json.Unmarshal(args, &in) != nil {
+			return textResult("search takes {\"query\": \"words\"}", true)
+		}
+		handed = true
+		return s.run(ctx, caller, tool, release, func(ctx context.Context) (string, error) {
+			ops, err := s.h.Search(ctx, caller, in.Query)
+			if err != nil {
+				return "", err
+			}
+			return searchText(caller, ops), nil
+		})
+	default: // ToolExecute
 		in := agent.ParseExecInput(args)
 		if in.Op == "" {
 			return textResult("execute needs an \"op\". Call search to list the ops.", true)
 		}
-		if !s.caller.allowed(in.Op) {
-			return textResult(fmt.Sprintf("op %q is not allowed for peer %q", in.Op, s.caller.Name), true)
+		if !caller.Allowed(in.Op) {
+			return textResult(fmt.Sprintf("op %q is not allowed for peer %q", truncate(in.Op, 64), caller.Name), true)
 		}
-		text, err = s.h.Execute(ctx, s.caller, in.Op, in.Args)
+		handed = true
+		return s.run(ctx, caller, in.Op, release, func(ctx context.Context) (string, error) {
+			return s.h.Execute(ctx, caller, in.Op, in.Args)
+		})
 	}
-	if err != nil {
-		if ctx.Err() != nil && !errors.Is(err, ErrUnknownOp) {
-			return textResult("cancelled: "+ctx.Err().Error(), true)
+}
+
+// searchText formats the ops the caller may run, one per line.
+func searchText(caller Caller, ops []OpInfo) string {
+	var b strings.Builder
+	for _, op := range ops {
+		if !caller.Allowed(op.Name) {
+			continue
 		}
-		return textResult(err.Error(), true)
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(&b, "%s %s: %s", op.Name, op.Args, op.Desc)
 	}
-	return textResult(text, false)
+	if b.Len() == 0 {
+		return "no ops match"
+	}
+	return b.String()
+}
+
+// run calls fn on its own goroutine and answers when it returns or when ctx
+// ends, whichever comes first, so a handler that ignores ctx can hold neither
+// the channel, nor Conn.Close, nor Server.Close. Such a handler keeps its slot
+// (release) until it returns, so stuck handlers cannot pile up past the
+// limits. A panic becomes "internal error": a peer must never be able to
+// crash this Deck through a handler bug.
+func (s *mcpServer) run(ctx context.Context, caller Caller, what string, release func(), fn func(context.Context) (string, error)) ToolResult {
+	type result struct {
+		text     string
+		err      error
+		panicked bool
+	}
+	done := make(chan result, 1)
+	go func() {
+		var r result
+		defer func() {
+			if p := recover(); p != nil {
+				s.log.Error("peer: handler panic", "peer", caller.Name, "op", truncate(what, 64), "panic", p)
+				r = result{panicked: true}
+			}
+			release()
+			done <- r
+		}()
+		r.text, r.err = fn(ctx)
+	}()
+	var r result
+	select {
+	case r = <-done:
+	case <-ctx.Done():
+		select {
+		case r = <-done: // finished at the same moment: use its answer
+		default:
+			s.log.Warn("peer: handler still running after its call ended", "peer", caller.Name, "op", truncate(what, 64))
+			return cancelledResult(ctx)
+		}
+	}
+	switch {
+	case r.panicked:
+		return textResult(msgInternal, true)
+	case r.err == nil:
+		return textResult(r.text, false)
+	case errors.Is(r.err, ErrUnknownOp):
+		return textResult(msgUnknownOp, true)
+	case ctx.Err() != nil:
+		return cancelledResult(ctx)
+	}
+	s.log.Info("peer: op failed", "peer", caller.Name, "op", truncate(what, 64), "error", r.err)
+	return textResult(msgFailed, true)
+}
+
+func cancelledResult(ctx context.Context) ToolResult {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return textResult(msgTimeout, true)
+	}
+	return textResult(msgCancelled, true)
 }
 
 // Client is the MCP client end of one mcp channel this Deck opened.

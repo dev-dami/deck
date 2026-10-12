@@ -6,9 +6,11 @@ import (
 	"time"
 )
 
-// lockout tracks failed handshakes per remote IP. After threshold failures
-// the IP is refused for a period that doubles with every lockout, from base
-// up to max. A successful handshake clears the IP's record.
+// lockout tracks failed handshakes per source: a remote IP, or an IP and a
+// key fingerprint. After threshold failures the source is refused for a
+// period that doubles with every lockout, from base up to max. A successful
+// handshake clears the source's record. The table holds maxTracked sources;
+// when all of them are locked the one that failed longest ago is forgotten.
 type lockout struct {
 	mu        sync.Mutex
 	m         map[string]*lockState
@@ -24,7 +26,8 @@ type lockState struct {
 	last    time.Time
 }
 
-// maxTracked bounds the table; beyond it, stale entries are dropped.
+// maxTracked bounds the table; beyond it, stale entries are dropped, then the
+// oldest.
 const maxTracked = 4096
 
 // lockKey is the lockout key for a remote address: the IP for IPv4, the /64
@@ -78,7 +81,10 @@ func (l *lockout) fail(ip string) {
 		if len(l.m) >= maxTracked {
 			l.prune(now)
 			if len(l.m) >= maxTracked {
-				return // full of live lockouts; the connection limit still applies
+				// Full of live lockouts: make room by forgetting the
+				// source that failed longest ago, rather than letting a new
+				// source fail without limit.
+				l.evictOldest()
 			}
 		}
 		st = &lockState{}
@@ -122,5 +128,22 @@ func (l *lockout) prune(now time.Time) {
 		if now.After(st.until) {
 			delete(l.m, ip)
 		}
+	}
+}
+
+// evictOldest drops the record whose last failure is the oldest.
+func (l *lockout) evictOldest() {
+	var (
+		oldest string
+		at     time.Time
+		found  bool
+	)
+	for ip, st := range l.m {
+		if !found || st.last.Before(at) {
+			oldest, at, found = ip, st.last, true
+		}
+	}
+	if found {
+		delete(l.m, oldest)
 	}
 }

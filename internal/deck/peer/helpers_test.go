@@ -119,6 +119,14 @@ func pairUp(t *testing.T, opts ServerOptions) (a, b *testPeer, srv *Server, pinA
 	return a, b, srv, pinA
 }
 
+// allowOps is a ServerOptions.Caller that lets the peer run ops (the
+// default allow list is only peer.status).
+func allowOps(ops ...string) func(Pinned) Caller {
+	return func(p Pinned) Caller {
+		return Caller{Name: p.Name, Fingerprint: p.Fingerprint, AllowInbound: ops}
+	}
+}
+
 func ctxT(t *testing.T) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

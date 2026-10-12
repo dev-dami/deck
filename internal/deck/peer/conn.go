@@ -74,6 +74,9 @@ type Conn struct {
 	lim    Limits
 	log    *slog.Logger
 
+	recheck func(Caller) (Caller, error)
+	perKey  *keyLimiter
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -91,13 +94,18 @@ type connParams struct {
 	lim       Limits
 	log       *slog.Logger
 	keepalive bool
+	// recheck re-validates the caller before every call it makes here (see
+	// mcpServer.recheck); nil skips it, for short-lived links like Probe.
+	recheck func(Caller) (Caller, error)
+	// perKey, when set, caps calls in flight per pinned key.
+	perKey *keyLimiter
 }
 
 func newConn(sc ssh.Conn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, p connParams) *Conn {
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Conn{
 		sc: sc, caller: p.caller, h: p.handler, self: p.self, ver: p.ver,
-		lim: p.lim.withDefaults(), log: p.log,
+		lim: p.lim.withDefaults(), log: p.log, recheck: p.recheck, perKey: p.perKey,
 		ctx: ctx, cancel: cancel, done: make(chan struct{}),
 	}
 	if c.log == nil {
@@ -156,6 +164,16 @@ func (c *Conn) Close() error {
 		err = nil
 	}
 	return err
+}
+
+// drop closes the link without waiting for what it started, so it is safe
+// from inside a call and from the Manager's sweep; Close (or the Server)
+// does the waiting.
+func (c *Conn) drop() {
+	c.closed.Do(func() {
+		_ = c.sc.Close()
+		c.cancel()
+	})
 }
 
 // OpenMCP opens an mcp channel to the other side, for calling its tools.
@@ -235,7 +253,8 @@ func (c *Conn) newChannels(chans <-chan ssh.NewChannel) {
 			defer c.wg.Done()
 			defer func() { <-c.chans }()
 			srv := newMCPServer(c.h, c.caller, c.self, c.ver,
-				serverLimits{maxInFlight: c.lim.MaxInFlight, callTimeout: c.lim.CallTimeout}, c.log)
+				serverLimits{maxInFlight: c.lim.MaxInFlight, callTimeout: c.lim.CallTimeout, perKey: c.perKey}, c.log)
+			srv.recheck, srv.revoked = c.recheck, c.drop
 			serveMCP(c.ctx, ch, srv, c.lim.MaxMessage)
 			ch.Close()
 		}()

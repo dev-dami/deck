@@ -91,7 +91,10 @@ func startPeers(cfg config.Config) *peer.Manager {
 	if !cfg.PeersEnabled() {
 		return nil
 	}
-	pm, err := peer.NewManager(peer.ManagerOptions{Peers: cfg.Peers})
+	// The config path lets the manager pick up role, allow_inbound and
+	// remote edits while Deck runs.
+	path, _ := config.Path()
+	pm, err := peer.NewManager(peer.ManagerOptions{Peers: cfg.Peers, ConfigPath: path})
 	if err == nil {
 		err = pm.Start(context.Background())
 	}
