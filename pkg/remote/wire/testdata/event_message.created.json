@@ -1,0 +1,22 @@
+{
+  "created_at": "2026-10-12T09:30:00Z",
+  "editable": true,
+  "finished": true,
+  "id": "msg_3c1c",
+  "parts": [
+    {
+      "text": "Fix the lockout so one bad client cannot log every phone out.",
+      "type": "text"
+    },
+    {
+      "image": {
+        "mime": "image/jpeg",
+        "name": "IMG_2041.jpg"
+      },
+      "type": "image"
+    }
+  ],
+  "role": "user",
+  "session_id": "ses_8f2a",
+  "updated_at": "2026-10-12T09:30:00Z"
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "busy": true,
+    "effort": "high",
+    "id": "claude-1",
+    "kind": "claude",
+    "model": "claude-opus-4-1",
+    "name": "claude"
+  },
+  {
+    "busy": false,
+    "id": "codex-1",
+    "kind": "codex",
+    "model": "gpt-5-codex",
+    "name": "codex"
+  }
+]

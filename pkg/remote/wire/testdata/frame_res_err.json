@@ -1,0 +1,9 @@
+{
+  "err": {
+    "code": "yolo_disabled",
+    "msg": "This phone may not switch to yolo; allow it from the desktop."
+  },
+  "id": "18",
+  "ok": false,
+  "t": "res"
+}

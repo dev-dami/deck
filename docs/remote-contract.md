@@ -169,6 +169,35 @@ fixtures in `pkg/remote/wire/testdata/*.json` (one file per frame, entity and
 event; both sides must decode every fixture and encode it back byte-equal
 after key sorting).
 
+### 3.7 Encoding (fixed by `pkg/remote/wire` and its fixtures)
+
+- `Frame` is flat for `id`, `m`, `ok` (`*bool`), `r`, `err`, `p` (shared by
+  `req` and `ev`); the `hello`, `welcome` and `ev` groups are written whole,
+  so `v`, `replay` and `seq` appear even when zero.
+- Every timestamp is an RFC 3339 string; `Device.last_seen` is absent when
+  the device was never seen.
+- A capped string's flag is `<field>_truncated` (`text_truncated`,
+  `output_truncated`, `diff_truncated`, `command_truncated`,
+  `raw_truncated`); `raw` is capped at 4 KiB like `command`.
+- An image part is `{type: "image", image: {name, mime}}`; the same `Image`
+  with `data_b64` is the `chat.send` upload. v1 has no way to fetch an
+  image's bytes back to the phone.
+- `Approval` has no `cwd`; `path` is relative. `AgentLine` has `id`, which is
+  what `Approval.agent` and `agent.interrupt.agent` name. `Device` has
+  `allow_yolo`.
+- `theme` is `{palette: {token: "#rrggbb"}, kinds: {kind: {tint, mark}}}`.
+- `messages.list` cursors (`before`, `cursor`) are opaque strings.
+- Methods without params or result use `{}`. `sessions.delete`,
+  `sessions.focus` and `devices.revoke` take `{id}`; `chat.cancel`,
+  `chat.continue`, `queue.list`, `roster.get`, `mode.get` and `changes.get`
+  take `{session_id}`.
+- The pair route's error body is `{error: code}`. `welcome.server.features`
+  and `kinds` are always present (possibly empty).
+- Fixture names: `frame_<t>`, `entity_<name>`, `event_<name>`,
+  `req_<method>`, `res_<method>`, `http_<name>`; sorted keys, 2-space
+  indent, trailing newline. The Go test fails on a missing, unregistered or
+  non-canonical fixture; the TypeScript test must do the same.
+
 ### 3.5 Pairing (HTTP)
 
 - `GET /api/v1/health` → `{ok: true, protocol: 2}`; no auth, no other field.

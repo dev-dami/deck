@@ -1,0 +1,47 @@
+{
+  "device": {
+    "expires_at": "2027-01-10T09:30:00Z",
+    "id": "dev_7a1f",
+    "name": "Pixel 9"
+  },
+  "epoch": "ep_c41d9e",
+  "replay": true,
+  "server": {
+    "allow_yolo": false,
+    "features": [
+      "images",
+      "edit",
+      "changes"
+    ],
+    "headless": false,
+    "kinds": [
+      "claude",
+      "codex"
+    ],
+    "project": "deck",
+    "protocol": 2,
+    "push_key": "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM",
+    "server_id": "srv_4f9c2b7e",
+    "theme": {
+      "kinds": {
+        "claude": {
+          "mark": "✻",
+          "tint": "#d97757"
+        },
+        "codex": {
+          "mark": ">_",
+          "tint": "#8b7cf6"
+        }
+      },
+      "palette": {
+        "accent": "#7dd3c0",
+        "bg_base": "#111416",
+        "fg_base": "#e6e8ea",
+        "primary": "#5ec9a8"
+      }
+    },
+    "tunnel": "",
+    "version": "0.12.0"
+  },
+  "t": "welcome"
+}

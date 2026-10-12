@@ -1,0 +1,11 @@
+{
+  "agent": "claude-1",
+  "command": "rm -rf build && go build ./...",
+  "command_truncated": true,
+  "created_at": "2026-10-12T09:30:40Z",
+  "description": "Run a command",
+  "id": "apr_51e9",
+  "kind": "command",
+  "session_id": "ses_8f2a",
+  "tool_call_id": "tc_0b46"
+}

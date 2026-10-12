@@ -1,0 +1,7 @@
+{
+  "added": 4,
+  "diff": "@@ -12,7 +12,7 @@\n-\tglobal.fail()\n+\tl.fail(addr)\n",
+  "diff_truncated": true,
+  "path": "pkg/remote/auth/limit.go",
+  "removed": 1
+}

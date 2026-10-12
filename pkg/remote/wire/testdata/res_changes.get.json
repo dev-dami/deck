@@ -1,0 +1,13 @@
+[
+  {
+    "added": 4,
+    "diff": "@@ -12,7 +12,7 @@\n-\tglobal.fail()\n+\tl.fail(addr)\n",
+    "path": "pkg/remote/auth/limit.go",
+    "removed": 1
+  },
+  {
+    "added": 120,
+    "path": "pkg/remote/auth/limit_test.go",
+    "removed": 0
+  }
+]
