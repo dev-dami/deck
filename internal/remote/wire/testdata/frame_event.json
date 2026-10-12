@@ -1,0 +1,9 @@
+{
+  "t": "ev",
+  "p": {
+    "session_id": "s1",
+    "busy": true
+  },
+  "seq": 4012,
+  "e": "busy"
+}

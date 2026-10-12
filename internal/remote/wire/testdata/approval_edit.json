@@ -1,0 +1,9 @@
+{
+  "id": "p2",
+  "session_id": "s1",
+  "kind": "edit",
+  "description": "Edit a file",
+  "path": "a.go",
+  "diff": "@@ -1 +1 @@\n-a\n+b\n",
+  "created_at": 4
+}

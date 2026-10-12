@@ -1,0 +1,11 @@
+{
+  "subscription": {
+    "endpoint": "https://fcm.googleapis.com/fcm/send/x",
+    "keys": {
+      "p256dh": "",
+      "auth": ""
+    }
+  },
+  "approvals": true,
+  "done": true
+}

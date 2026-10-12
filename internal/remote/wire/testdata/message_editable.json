@@ -1,0 +1,15 @@
+{
+  "id": "m2",
+  "session_id": "s1",
+  "role": "user",
+  "created_at": 0,
+  "updated_at": 0,
+  "finished": true,
+  "editable": true,
+  "parts": [
+    {
+      "type": "text",
+      "text": "hi"
+    }
+  ]
+}

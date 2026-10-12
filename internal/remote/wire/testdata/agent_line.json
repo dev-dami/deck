@@ -1,0 +1,7 @@
+{
+  "name": "claude",
+  "kind": "claude",
+  "model": "opus",
+  "effort": "high",
+  "busy": true
+}

@@ -1,0 +1,33 @@
+{
+  "id": "m1",
+  "session_id": "s1",
+  "role": "assistant",
+  "agent": "claude",
+  "created_at": 1,
+  "updated_at": 2,
+  "finished": true,
+  "parts": [
+    {
+      "type": "text",
+      "text": "hello"
+    },
+    {
+      "type": "tool_call",
+      "id": "t1",
+      "name": "bash",
+      "summary": "go test"
+    },
+    {
+      "type": "tool_result",
+      "name": "bash",
+      "tool_call_id": "t1",
+      "output": "ok",
+      "truncated": true
+    },
+    {
+      "type": "image",
+      "name": "a.png",
+      "mime": "image/png"
+    }
+  ]
+}

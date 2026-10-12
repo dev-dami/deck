@@ -1,0 +1,9 @@
+{
+  "id": "opus",
+  "label": "Opus",
+  "efforts": [
+    "low",
+    "high"
+  ],
+  "selected": true
+}

@@ -1,0 +1,10 @@
+{
+  "id": "p1",
+  "session_id": "s1",
+  "agent": "claude",
+  "kind": "command",
+  "description": "Run a command",
+  "command": "rm -rf build",
+  "cwd": "/work/deck",
+  "created_at": 3
+}

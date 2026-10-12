@@ -1,0 +1,9 @@
+{
+  "t": "req",
+  "id": "c17",
+  "m": "chat.send",
+  "p": {
+    "session_id": "s1",
+    "text": "hi"
+  }
+}

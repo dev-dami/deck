@@ -1,0 +1,9 @@
+{
+  "t": "hello",
+  "v": 1,
+  "token": "dev1.secret",
+  "resume": {
+    "epoch": "e1",
+    "seq": 4011
+  }
+}

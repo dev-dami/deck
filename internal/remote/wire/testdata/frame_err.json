@@ -1,0 +1,9 @@
+{
+  "t": "res",
+  "id": "c18",
+  "ok": false,
+  "err": {
+    "code": "yolo_disabled",
+    "msg": "start deck serve with --allow-yolo"
+  }
+}

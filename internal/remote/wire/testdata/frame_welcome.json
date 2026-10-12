@@ -1,0 +1,21 @@
+{
+  "t": "welcome",
+  "epoch": "e1",
+  "replay": true,
+  "server": {
+    "version": "0.9.0",
+    "project": "deck",
+    "cwd": "/work/deck",
+    "kinds": [
+      "claude",
+      "codex"
+    ],
+    "allow_yolo": false,
+    "protocol": 1,
+    "headless": false
+  },
+  "device": {
+    "id": "dev1",
+    "name": "Pixel"
+  }
+}
