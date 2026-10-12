@@ -504,7 +504,7 @@ func TestServicePairListenAllKeepsTheCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if moved.Code != w.Code || moved.Done != w.Done || !moved.Reachable || !strings.HasPrefix(moved.Addr, "0.0.0.0:") {
+	if moved.Code != w.Code || moved.Done != w.Done || !moved.Reachable || !unspecifiedHost(moved.Addr) {
 		t.Fatalf("moved wait: %+v", moved)
 	}
 	if portOfAddr(moved.Addr) != portOfAddr(w.Addr) {
@@ -516,4 +516,15 @@ func TestServicePairListenAllKeepsTheCode(t *testing.T) {
 	if o := waitOutcome(t, moved); o.Err != nil {
 		t.Fatal(o.Err)
 	}
+}
+
+// unspecifiedHost reports whether addr binds every interface: "0.0.0.0:p" or,
+// where the stack is dual (Linux), "[::]:p".
+func unspecifiedHost(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsUnspecified()
 }
