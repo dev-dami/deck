@@ -1,0 +1,21 @@
+{
+  "name": "deck-remote",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.14",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check . && bun run scripts/lint-innerhtml.ts",
+    "test": "bun test",
+    "build": "bun run build.ts"
+  },
+  "dependencies": {
+    "preact": "^11.0.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/bun": "^1.4.3",
+    "typescript": "^7.0.2"
+  }
+}

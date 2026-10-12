@@ -1,5 +1,5 @@
 bin/
-dist/
+/dist/
 *.exe
 /deck
 .deck/
