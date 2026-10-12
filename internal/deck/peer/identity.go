@@ -82,6 +82,9 @@ func LoadIdentity(dir string) (*Identity, error) {
 	if err != nil {
 		return nil, fmt.Errorf("peer: read identity: %w", err)
 	}
+	if err := checkLoad(path, true); err != nil {
+		return nil, err
+	}
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, fmt.Errorf("peer: identity %s is empty", path)
 	}

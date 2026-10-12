@@ -2,6 +2,7 @@ package peer
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -25,6 +26,20 @@ func ensurePrivateDir(dir string) error {
 		return err
 	}
 	return restrictPath(dir, true)
+}
+
+// checkLoad runs before a file from the peers directory is trusted: the
+// directory and the file must be the current user's alone (checkTrusted), or
+// someone else could have pinned their own key or swapped the identity. It
+// fails closed with a message that says what to fix.
+func checkLoad(path string, secret bool) error {
+	if err := checkTrusted(filepath.Dir(path), false); err != nil {
+		return fmt.Errorf("peer: refusing to use %s: %v", path, err)
+	}
+	if err := checkTrusted(path, secret); err != nil {
+		return fmt.Errorf("peer: refusing to use %s: %v (fix its permissions, or remove it and pair again)", path, err)
+	}
+	return nil
 }
 
 // writePrivateFile writes data to path atomically: a temp file in the same

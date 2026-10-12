@@ -54,7 +54,8 @@ func NewPinned(name, addr, role string, key ssh.PublicKey) Pinned {
 
 // Store is the pinned-peer list on disk. Every read goes to the file, so a
 // peer removed with `deck peer remove` is refused by a running Deck at its
-// next connection attempt.
+// next connection attempt and its next call, and its open links are closed
+// by the Manager's sweep. A file or directory others can write is refused.
 type Store struct {
 	path string
 	mu   sync.Mutex
@@ -82,6 +83,9 @@ func (s *Store) load() ([]Pinned, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("peer: read %s: %w", s.path, err)
+	}
+	if err := checkLoad(s.path, false); err != nil {
+		return nil, err
 	}
 	var f storeFile
 	if err := json.Unmarshal(data, &f); err != nil {
@@ -153,14 +157,30 @@ func (s *Store) ByKey(key ssh.PublicKey) (Pinned, bool, error) {
 	return Pinned{}, false, nil
 }
 
-// Pin adds p, replacing any pin with the same name. A key already pinned
-// under another name is refused: one Deck has one name here.
-func (s *Store) Pin(p Pinned) error {
+// ErrPinTaken is returned by Pin when a different key is already pinned
+// under the name.
+var ErrPinTaken = errors.New("peer: a different key is already pinned under that name")
+
+// Pin adds p, or updates the pin of the same name and key (e.g. its address).
+// A different key already pinned under the name is refused with ErrPinTaken:
+// only Replace swaps a peer's key. A key already pinned under another name is
+// refused too: one Deck has one name here.
+func (s *Store) Pin(p Pinned) error { return s.pin(p, false) }
+
+// Replace is Pin that may also swap the key pinned under p.Name, for a peer
+// that really made a new key (re-paired with --replace).
+func (s *Store) Replace(p Pinned) error { return s.pin(p, true) }
+
+func (s *Store) pin(p Pinned, replace bool) error {
 	if !config.ValidPeerName(p.Name) {
 		return fmt.Errorf("peer: bad name %q: use 1-32 of a-z, 0-9, '-', '_', '.'", p.Name)
 	}
 	if p.key == nil {
 		return errors.New("peer: pin has no key")
+	}
+	// load refuses anything else, so pinning it would lock every peer out.
+	if p.key.Type() != ssh.KeyAlgoED25519 {
+		return fmt.Errorf("peer: key of %q is %s, want ed25519", p.Name, p.key.Type())
 	}
 	if p.Addr != "" {
 		if err := config.ValidPeerAddr(p.Addr); err != nil {
@@ -176,6 +196,9 @@ func (s *Store) Pin(p Pinned) error {
 	out := peers[:0]
 	for _, q := range peers {
 		if q.Name == p.Name {
+			if !replace && !sameKey(q.key, p.key) {
+				return fmt.Errorf("%w (%q is pinned as %s)", ErrPinTaken, q.Name, q.Fingerprint)
+			}
 			continue
 		}
 		if sameKey(q.key, p.key) {

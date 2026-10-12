@@ -49,16 +49,40 @@ func restrictPath(path string, isDir bool) error {
 		nil, nil, acl, nil)
 }
 
-// CheckPrivate reports an error when path's DACL grants access to anyone but
-// the current user (or has no DACL at all, which grants everyone access).
+// ACE types x/sys/windows has no names for. The callback variants carry the
+// same header, mask and SID as the plain ones, followed by application data.
+const (
+	aceDeniedObject         = 0x6
+	aceAllowedCallback      = 0x9
+	aceDeniedCallback       = 0xA
+	aceDeniedCallbackObject = 0xC
+)
+
+// CheckPrivate reports an error unless path is owned by the current user and
+// its DACL grants access to the current user alone. Deny entries are fine; an
+// allow entry for anyone else, or of a kind this check does not read (object
+// ACEs), fails it, and so does a missing DACL, which grants everyone access.
+// The owner matters as much as the DACL: an owner can always rewrite it.
 func CheckPrivate(path string) error {
 	sid, err := currentUserSID()
 	if err != nil {
 		return err
 	}
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		return err
+	}
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return err
+	}
+	if !trustedOwner(owner, sid) {
+		who := "nobody"
+		if owner != nil {
+			who = owner.String()
+		}
+		return fmt.Errorf("%s is owned by %s, not by this user", path, who)
 	}
 	dacl, _, err := sd.DACL()
 	if err != nil {
@@ -72,13 +96,37 @@ func CheckPrivate(path string) error {
 		if err := windows.GetAce(dacl, i, &ace); err != nil {
 			return err
 		}
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
-			continue
-		}
-		who := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		if !who.Equals(sid) {
-			return fmt.Errorf("%s is also accessible by %s", path, who.String())
+		switch ace.Header.AceType {
+		case windows.ACCESS_DENIED_ACE_TYPE, aceDeniedObject, aceDeniedCallback, aceDeniedCallbackObject:
+			continue // only ever takes access away
+		case windows.ACCESS_ALLOWED_ACE_TYPE, aceAllowedCallback:
+			who := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+			if !who.Equals(sid) {
+				return fmt.Errorf("%s is also accessible by %s", path, who.String())
+			}
+		default:
+			return fmt.Errorf("%s has an access entry of type %#x that this check cannot verify", path, ace.Header.AceType)
 		}
 	}
 	return nil
 }
+
+// trustedOwner accepts the current user. An elevated process creates files
+// owned by Administrators (or SYSTEM, for a service), so in one those owners
+// are accepted too: they could change any file of this user's anyway.
+func trustedOwner(owner, user *windows.SID) bool {
+	if owner == nil {
+		return false
+	}
+	if owner.Equals(user) {
+		return true
+	}
+	if !windows.GetCurrentProcessToken().IsElevated() {
+		return false
+	}
+	return owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) || owner.IsWellKnown(windows.WinLocalSystemSid)
+}
+
+// checkTrusted is CheckPrivate: on Windows a file others can read is as bad
+// as one they can write, since the DACL is the only guard.
+func checkTrusted(path string, _ bool) error { return CheckPrivate(path) }

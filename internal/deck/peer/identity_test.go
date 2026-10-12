@@ -120,7 +120,9 @@ func TestIdentityRejectsBadFiles(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, IdentityFile)
 	for _, content := range []string{"", "garbage", "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n"} {
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		// Written private, so the load gets past the permission check to
+		// the parse.
+		if err := writePrivateFile(path, []byte(content), false); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := LoadIdentity(dir); err == nil || errors.Is(err, ErrNoIdentity) {
@@ -133,7 +135,7 @@ func TestIdentityRejectsBadFiles(t *testing.T) {
 	// A non-ed25519 key is refused.
 	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	block, _ := ssh.MarshalPrivateKey(k, "")
-	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
+	if err := writePrivateFile(path, pem.EncodeToMemory(block), false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := LoadIdentity(dir); err == nil || !strings.Contains(err.Error(), "want ed25519") {
@@ -172,9 +174,19 @@ func TestStorePinListRemove(t *testing.T) {
 	if err := s.Pin(NewPinned("other", "", "", k1)); err == nil {
 		t.Fatal("pinned one key under two names")
 	}
-	// Re-pinning a name replaces its key.
+	// Re-pinning a name with another key is refused; Replace swaps it.
 	k3 := newKey(t)
-	if err := s.Pin(NewPinned("vps", "vps.example.com:7722", "", k3)); err != nil {
+	if err := s.Pin(NewPinned("vps", "vps.example.com:7722", "", k3)); !errors.Is(err, ErrPinTaken) {
+		t.Fatalf("Pin over another key = %v, want ErrPinTaken", err)
+	}
+	if _, ok, _ := s.ByKey(k1); !ok {
+		t.Fatal("refused Pin evicted the old key")
+	}
+	// The same key may be pinned again, e.g. with a new address.
+	if err := s.Pin(NewPinned("vps", "vps2.example.com:7722", "", k1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Replace(NewPinned("vps", "vps.example.com:7722", "", k3)); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok, _ := s.ByKey(k1); ok {
@@ -215,7 +227,7 @@ func TestStoreFailsClosedOnDamage(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, StoreFile), []byte(content), 0o600); err != nil {
+			if err := writePrivateFile(filepath.Join(dir, StoreFile), []byte(content), false); err != nil {
 				t.Fatal(err)
 			}
 			s := OpenStore(dir)
@@ -233,9 +245,51 @@ func TestStoreFailsClosedOnDamage(t *testing.T) {
 	dir := t.TempDir()
 	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pub)))
 	content := `{"peers":[{"name":"a","public_key":"` + line + `","fingerprint":"` + Fingerprint(pub) + `"}]}`
-	_ = os.WriteFile(filepath.Join(dir, StoreFile), []byte(content), 0o600)
+	_ = writePrivateFile(filepath.Join(dir, StoreFile), []byte(content), false)
+	if _, err := OpenStore(dir).List(); err == nil || !strings.Contains(err.Error(), "want ed25519") {
+		t.Fatalf("ecdsa pin loaded: %v", err)
+	}
+	// So is a certificate, even one whose key is a plain ed25519 key.
+	signer := ed25519Signer(t)
+	cert := &ssh.Certificate{Key: signer.PublicKey(), CertType: ssh.UserCert, ValidBefore: ssh.CertTimeInfinity}
+	if err := cert.SignCert(rand.Reader, ed25519Signer(t)); err != nil {
+		t.Fatal(err)
+	}
+	line = strings.TrimSpace(string(ssh.MarshalAuthorizedKey(cert)))
+	content = `{"peers":[{"name":"a","public_key":"` + line + `","fingerprint":"` + Fingerprint(cert) + `"}]}`
+	_ = writePrivateFile(filepath.Join(dir, StoreFile), []byte(content), false)
 	if _, err := OpenStore(dir).List(); err == nil {
-		t.Fatal("ecdsa pin loaded")
+		t.Fatal("certificate pin loaded")
+	}
+}
+
+// TestStoreRefusesFilesOthersCanWrite: a pinned.json (or peers directory)
+// another user could write is refused at load, fail closed, with a message
+// that says why.
+func TestStoreRefusesFilesOthersCanWrite(t *testing.T) {
+	dir := t.TempDir()
+	s := OpenStore(dir)
+	if err := s.Pin(NewPinned("vps", "", "", newKey(t))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.List(); err != nil {
+		t.Fatalf("private store refused: %v", err)
+	}
+	shareWithOthers(t, s.Path())
+	if _, err := s.List(); err == nil || !strings.Contains(err.Error(), "refusing to use") {
+		t.Fatalf("store others can write loaded: %v", err)
+	}
+	if _, ok, err := s.ByKey(newKey(t)); ok || err == nil {
+		t.Fatal("shared store answered ByKey")
+	}
+	// The identity key is refused the same way.
+	id := filepath.Join(t.TempDir(), "peers")
+	if _, err := LoadOrCreateIdentity(id); err != nil {
+		t.Fatal(err)
+	}
+	shareWithOthers(t, filepath.Join(id, IdentityFile))
+	if _, err := LoadIdentity(id); err == nil || !strings.Contains(err.Error(), "refusing to use") {
+		t.Fatalf("identity others can read loaded: %v", err)
 	}
 }
 
