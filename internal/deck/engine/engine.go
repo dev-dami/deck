@@ -6,8 +6,10 @@
 package engine
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -19,6 +21,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/agent/opencode"
 	"github.com/dev-dami/deck/internal/deck/approve"
 	"github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
@@ -28,6 +31,7 @@ type Engine struct {
 	Manager *session.Manager
 	Config  config.Config
 	broker  *approve.Broker
+	peers   *peer.Manager // nil unless peers.enabled
 }
 
 // Start finds the CLIs and starts the thread manager.
@@ -77,11 +81,32 @@ func Start() (*Engine, error) {
 		Hub:    broker,
 		MCPFor: func(id string) *agent.MCPServer { return broker.ServerFor(self, id) },
 	})
-	return &Engine{Manager: mgr, Config: cfg, broker: broker}, nil
+	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: startPeers(cfg)}, nil
 }
 
-// Close stops every agent and the approval broker.
+// startPeers starts the peer link when peers.enabled is set; otherwise it
+// does nothing at all (no key, no listener, no goroutines). A failure is
+// logged and leaves Deck running without peers.
+func startPeers(cfg config.Config) *peer.Manager {
+	if !cfg.PeersEnabled() {
+		return nil
+	}
+	pm, err := peer.NewManager(peer.ManagerOptions{Peers: cfg.Peers})
+	if err == nil {
+		err = pm.Start(context.Background())
+	}
+	if err != nil {
+		slog.Warn("Peers not started", "error", err)
+		return nil
+	}
+	return pm
+}
+
+// Close stops every agent, the peer link and the approval broker.
 func (e *Engine) Close() {
+	if e.peers != nil {
+		e.peers.Stop()
+	}
 	e.Manager.Close()
 	e.broker.Close()
 }
