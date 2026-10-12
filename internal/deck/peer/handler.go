@@ -86,10 +86,13 @@ type Handler interface {
 // StatusHandler is the phase 1 handler: execute answers peer.status and
 // nothing else, and search lists that op.
 type StatusHandler struct {
-	Name    string
-	Version string
-	Started time.Time
-	Now     func() time.Time // nil means time.Now
+	Name string
+	// NameFunc, when set, gives the name at each call instead of Name, for a
+	// Deck renamed while it runs.
+	NameFunc func() string
+	Version  string
+	Started  time.Time
+	Now      func() time.Time // nil means time.Now
 }
 
 var statusOps = []OpInfo{{Name: OpPeerStatus, Args: "{}", Desc: "this Deck's name, version and uptime"}}
@@ -130,8 +133,12 @@ func (h *StatusHandler) Execute(_ context.Context, _ Caller, op string, _ json.R
 		now = h.Now
 	}
 	up := now().Sub(h.Started).Truncate(time.Second)
+	name := h.Name
+	if h.NameFunc != nil {
+		name = h.NameFunc()
+	}
 	b, err := json.Marshal(map[string]any{
-		"name":           h.Name,
+		"name":           name,
 		"version":        h.Version,
 		"uptime":         up.String(),
 		"uptime_seconds": int64(up / time.Second),

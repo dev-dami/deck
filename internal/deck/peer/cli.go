@@ -99,7 +99,7 @@ type PairArgs struct {
 
 // Pair listens with a fresh one-time code and pins the Deck that proves it.
 func (c CLI) Pair(ctx context.Context, a PairArgs) error {
-	if a.Role != "" && a.Role != config.PeerRoleObserver && a.Role != config.PeerRoleContractor {
+	if !validRole(a.Role) {
 		return fmt.Errorf("--role must be observer or contractor")
 	}
 	if a.Name != "" && !config.ValidPeerName(a.Name) {
@@ -164,7 +164,7 @@ func (c CLI) Add(ctx context.Context, a AddArgs) error {
 	if err := config.ValidPeerAddr(a.Addr); err != nil {
 		return fmt.Errorf("bad address %q: %v (want host:port)", a.Addr, err)
 	}
-	if a.Role != "" && a.Role != config.PeerRoleObserver && a.Role != config.PeerRoleContractor {
+	if !validRole(a.Role) {
 		return fmt.Errorf("--role must be observer or contractor")
 	}
 	if a.Code == "" {
@@ -205,12 +205,9 @@ func (c CLI) addRemote(name, addr, role string) {
 // under name unless replace is set (--yes alone is not enough). The same
 // key again, e.g. to update the address, is fine.
 func (c CLI) checkReplace(name, fp string, replace bool) error {
-	old, ok, err := OpenStore(c.Dir).Get(name)
-	if err != nil {
+	old, swap, err := pinState(OpenStore(c.Dir), name, fp)
+	if err != nil || !swap || replace {
 		return err
-	}
-	if !ok || replace || old.Fingerprint == fp {
-		return nil
 	}
 	return fmt.Errorf("%q is already pinned with another key (%s); if that Deck really has a new key, run again with --replace", name, old.Fingerprint)
 }
@@ -225,24 +222,17 @@ func (c CLI) pin(name, addr, role string, res PairResult, yes, replace bool) err
 	if err := c.checkReplace(name, res.PeerFingerprint, replace); err != nil {
 		return err
 	}
-	old, ok, err := store.Get(name)
+	old, swap, err := pinState(store, name, res.PeerFingerprint)
 	if err != nil {
 		return err
 	}
-	swap := ok && old.Fingerprint != res.PeerFingerprint
 	if swap {
 		c.printf("Warning: this replaces the key pinned for %q (%s).\n", name, old.Fingerprint)
 	}
 	if !yes && !c.confirm(fmt.Sprintf("Pin %q?", name)) {
 		return errors.New("not pinned")
 	}
-	p := NewPinned(name, addr, role, res.PeerKey)
-	if swap {
-		err = store.Replace(p)
-	} else {
-		err = store.Pin(p)
-	}
-	if err != nil {
+	if err := savePin(store, NewPinned(name, addr, role, res.PeerKey), swap); err != nil {
 		return err
 	}
 	c.printf("Pinned %q.\n", name)
@@ -288,24 +278,9 @@ func (c CLI) List(ctx context.Context, probe bool) error {
 
 // Ping connects to a pinned peer and reports its latency, tools and status.
 func (c CLI) Ping(ctx context.Context, name string) error {
-	pin, ok, err := OpenStore(c.Dir).Get(name)
+	r, err := pingPinned(ctx, c.Dir, name, c.selfName(), 10*time.Second)
 	if err != nil {
 		return err
-	}
-	if !ok {
-		return fmt.Errorf("no peer %q is pinned", name)
-	}
-	if pin.Addr == "" {
-		return fmt.Errorf("peer %q has no address (it dials in)", name)
-	}
-	id, err := LoadIdentity(c.Dir)
-	if err != nil {
-		return err
-	}
-	r, err := Probe(ctx, id, pin, c.selfName(), 10*time.Second)
-	if err != nil {
-		// The error can carry the peer's own text.
-		return fmt.Errorf("ping %s: %s", name, Sanitize(err.Error()))
 	}
 	c.printf("pong from %s in %s\n", name, r.Latency.Round(time.Microsecond))
 	tools := make([]string, len(r.Tools))
@@ -321,15 +296,12 @@ func (c CLI) Ping(ctx context.Context, name string) error {
 
 // Remove unpins a peer and drops it from the config's remotes.
 func (c CLI) Remove(name string) error {
-	ok, err := OpenStore(c.Dir).Remove(name)
+	ok, removedCfg, cfgErr, err := removePeer(c.Dir, c.ConfigPath, name)
 	if err != nil {
 		return err
 	}
-	removedCfg := false
-	if c.ConfigPath != "" {
-		if removedCfg, err = RemoveRemote(c.ConfigPath, name); err != nil {
-			c.printf("Could not update %s: %v\n", c.ConfigPath, err)
-		}
+	if cfgErr != nil {
+		c.printf("Could not update %s: %v\n", c.ConfigPath, cfgErr)
 	}
 	if !ok && !removedCfg {
 		return fmt.Errorf("no peer %q", name)

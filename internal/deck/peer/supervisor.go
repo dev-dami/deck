@@ -35,6 +35,31 @@ type Status struct {
 	// is no longer pinned here. Retries then wait MaxBackoff; nothing is
 	// ever re-pinned on its own.
 	Permanent bool
+	// Cause says which person-needing failure it was; set with Permanent.
+	Cause Cause
+}
+
+// Cause names a failure that retrying will not fix.
+type Cause string
+
+// Causes of a permanent failure.
+const (
+	CauseHostKey Cause = "host-key" // the peer answered with another key than the pinned one
+	CauseRefused Cause = "refused"  // the peer does not accept this Deck's key
+	CauseRevoked Cause = "revoked"  // the peer is no longer pinned here
+)
+
+// CauseOf is the Cause of a permanent dial error, "" for any other.
+func CauseOf(err error) Cause {
+	switch {
+	case errors.Is(err, ErrHostKeyMismatch):
+		return CauseHostKey
+	case errors.Is(err, ErrNotAccepted):
+		return CauseRefused
+	case errors.Is(err, ErrRevoked):
+		return CauseRevoked
+	}
+	return ""
 }
 
 // Event is one state change.
@@ -247,6 +272,7 @@ func (s *Supervisor) run(ctx context.Context) {
 			st.Attempts = attempts
 			st.NextRetry = s.o.Now().Add(d)
 			st.Permanent = permanent
+			st.Cause = CauseOf(err)
 		})
 		select {
 		case <-ctx.Done():
@@ -294,6 +320,7 @@ func (s *Supervisor) session(ctx context.Context) (up time.Duration, err error) 
 		st.Attempts = 0
 		st.LastError = ""
 		st.Permanent = false
+		st.Cause = ""
 	})
 
 	fails := 0

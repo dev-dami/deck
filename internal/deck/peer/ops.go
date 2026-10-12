@@ -79,6 +79,97 @@ func AddRemote(path, name, addr, role string) (added bool, err error) {
 	})
 }
 
+// SetRemote adds r to the config file's remotes, or updates the row of the
+// same name (its addr, dial and role; allow_inbound and max_scope are kept).
+// An empty role keeps the row's, or is observer for a new row. changed
+// reports whether the file changed.
+func SetRemote(path string, r config.PeerRemote) (changed bool, err error) {
+	return config.UpdatePeers(path, func(p *config.Peers) bool {
+		for i := range p.Remote {
+			cur := &p.Remote[i]
+			if cur.Name != r.Name {
+				continue
+			}
+			role := r.Role
+			if role == "" {
+				role = cur.Role
+			}
+			if cur.Addr == r.Addr && cur.Dial == r.Dial && cur.Role == role {
+				return false
+			}
+			cur.Addr, cur.Dial, cur.Role = r.Addr, r.Dial, role
+			return true
+		}
+		if r.Role == "" {
+			r.Role = config.PeerRoleObserver
+		}
+		p.Remote = append(p.Remote, config.PeerRemote{Name: r.Name, Addr: r.Addr, Dial: r.Dial, Role: r.Role})
+		return true
+	})
+}
+
+// validRole reports whether role is a peer role, or empty for the default.
+func validRole(role string) bool {
+	return role == "" || role == config.PeerRoleObserver || role == config.PeerRoleContractor
+}
+
+// pinState is what pinning the key with fingerprint fp under name finds in
+// store: the pin there now, if any, and whether fp would replace a
+// different key.
+func pinState(store *Store, name, fp string) (old Pinned, swap bool, err error) {
+	old, ok, err := store.Get(name)
+	if err != nil {
+		return Pinned{}, false, err
+	}
+	return old, ok && old.Fingerprint != fp, nil
+}
+
+// savePin pins p, replacing the key pinned under its name when swap.
+func savePin(store *Store, p Pinned, swap bool) error {
+	if swap {
+		return store.Replace(p)
+	}
+	return store.Pin(p)
+}
+
+// pingPinned probes the pinned peer name with this Deck's identity in dir.
+// An error from the probe is sanitized: it can carry the peer's own text.
+func pingPinned(ctx context.Context, dir, name, self string, timeout time.Duration) (ProbeResult, error) {
+	pin, ok, err := OpenStore(dir).Get(name)
+	if err != nil {
+		return ProbeResult{}, err
+	}
+	if !ok {
+		return ProbeResult{}, fmt.Errorf("no peer %q is pinned", name)
+	}
+	if pin.Addr == "" {
+		return ProbeResult{}, fmt.Errorf("peer %q has no address (it dials in)", name)
+	}
+	id, err := LoadIdentity(dir)
+	if err != nil {
+		return ProbeResult{}, err
+	}
+	r, err := Probe(ctx, id, pin, self, timeout)
+	if err != nil {
+		return r, fmt.Errorf("ping %s: %s", name, Sanitize(err.Error()))
+	}
+	return r, nil
+}
+
+// removePeer unpins name in dir and drops it from the config file's remotes
+// (when cfgPath is set). A config that could not be updated is cfgErr; the
+// pin is gone either way.
+func removePeer(dir, cfgPath, name string) (unpinned, unconfigured bool, cfgErr, err error) {
+	unpinned, err = OpenStore(dir).Remove(name)
+	if err != nil {
+		return false, false, nil, err
+	}
+	if cfgPath != "" {
+		unconfigured, cfgErr = RemoveRemote(cfgPath, name)
+	}
+	return unpinned, unconfigured, cfgErr, nil
+}
+
 // RemoveRemote drops name from the config file's remotes. removed reports
 // whether the file changed.
 func RemoveRemote(path, name string) (removed bool, err error) {

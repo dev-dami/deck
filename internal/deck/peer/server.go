@@ -90,9 +90,11 @@ type ServerOptions struct {
 	// rotating keys does not dodge it.
 	LockoutThreshold        int
 	LockoutBase, LockoutMax time.Duration
-	// OnConn, when set, is called for every authenticated connection.
-	OnConn func(*Conn)
-	Logger *slog.Logger
+	// OnConn, when set, is called for every authenticated connection, and
+	// OnDisconnect once it has closed.
+	OnConn       func(*Conn)
+	OnDisconnect func(*Conn)
+	Logger       *slog.Logger
 
 	perKey *keyLimiter      // shared with the Manager's dialers; nil makes one
 	now    func() time.Time // tests
@@ -391,6 +393,9 @@ func (s *Server) handle(raw net.Conn, key string) {
 	delete(s.conns, c)
 	s.mu.Unlock()
 	s.log.Info("peer: disconnected", "peer", caller.Name)
+	if s.opts.OnDisconnect != nil {
+		s.opts.OnDisconnect(c)
+	}
 }
 
 // callerFor is the Caller a pin gets: Name and Fingerprint always from the

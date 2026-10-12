@@ -6,7 +6,6 @@
 package engine
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -31,8 +30,14 @@ type Engine struct {
 	Manager *session.Manager
 	Config  config.Config
 	broker  *approve.Broker
-	peers   *peer.Manager // nil unless peers.enabled
+	// peers is the peer link, made idle; its Manager starts the first time
+	// peers are on, at startup or from Settings. Nil only when the peers
+	// directory cannot be found.
+	peers *peer.Service
 }
+
+// Peers is the peer link, or nil.
+func (e *Engine) Peers() *peer.Service { return e.peers }
 
 // Start finds the CLIs and starts the thread manager.
 func Start() (*Engine, error) {
@@ -84,31 +89,29 @@ func Start() (*Engine, error) {
 	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: startPeers(cfg)}, nil
 }
 
-// startPeers starts the peer link when peers.enabled is set; otherwise it
-// does nothing at all (no key, no listener, no goroutines). A failure is
-// logged and leaves Deck running without peers.
-func startPeers(cfg config.Config) *peer.Manager {
-	if !cfg.PeersEnabled() {
-		return nil
-	}
-	// The config path lets the manager pick up role, allow_inbound and
-	// remote edits while Deck runs.
+// startPeers makes the peer link and starts it when peers.enabled is set;
+// otherwise it runs nothing at all (no key, no listener, no goroutines)
+// until Settings turns peers on. A failure is logged and leaves Deck running
+// without peers.
+func startPeers(cfg config.Config) *peer.Service {
+	// The config path lets the link pick up role, allow_inbound and remote
+	// edits while Deck runs, and lets Settings change the rest.
 	path, _ := config.Path()
-	pm, err := peer.NewManager(peer.ManagerOptions{Peers: cfg.Peers, ConfigPath: path})
-	if err == nil {
-		err = pm.Start(context.Background())
-	}
+	svc, err := peer.NewService(peer.ServiceOptions{ConfigPath: path})
 	if err != nil {
-		slog.Warn("Peers not started", "error", err)
+		slog.Warn("Peers not available", "error", err)
 		return nil
 	}
-	return pm
+	if err := svc.Start(cfg.Peers); err != nil {
+		slog.Warn("Peers not started", "error", err)
+	}
+	return svc
 }
 
 // Close stops every agent, the peer link and the approval broker.
 func (e *Engine) Close() {
 	if e.peers != nil {
-		e.peers.Stop()
+		e.peers.Close()
 	}
 	e.Manager.Close()
 	e.broker.Close()

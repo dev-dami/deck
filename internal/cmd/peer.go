@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"strings"
 
@@ -55,10 +54,11 @@ var peerPairCmd = &cobra.Command{
 		}
 		addr, _ := cmd.Flags().GetString("addr")
 		if addr == "" {
-			addr = ":" + deckconfig.DefaultPeerPort
-			if cfg, err := deckconfig.Load(); err == nil && cfg.Peers != nil && cfg.Peers.Listen.Addr != "" {
-				addr = cfg.Peers.Listen.Addr
+			var p *deckconfig.Peers
+			if cfg, err := deckconfig.Load(); err == nil {
+				p = cfg.Peers
 			}
+			addr = peer.PairAddr(p)
 		}
 		name, _ := cmd.Flags().GetString("name")
 		role, _ := cmd.Flags().GetString("role")
@@ -122,10 +122,7 @@ var peerAddCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		addr := args[1]
-		if _, _, err := net.SplitHostPort(addr); err != nil {
-			addr = net.JoinHostPort(addr, deckconfig.DefaultPeerPort)
-		}
+		addr := peer.WithDefaultPort(args[1])
 		code, err := pairingCode(cmd)
 		if err != nil {
 			return err
