@@ -227,7 +227,7 @@ func (b *Backend) Messages(ctx context.Context, sessionID, before string, limit 
 	}
 	out := make([]wire.Message, 0, end-start)
 	for _, m := range rows[start:end] {
-		out = append(out, b.decorate(toMessage(m)))
+		out = append(out, b.decorate(toMessage(m, b.core.WorkingDir())))
 	}
 	if start == 0 {
 		return out, false, "", nil
@@ -381,15 +381,25 @@ func (b *Backend) Answer(sessionID, id, decision string) (bool, error) {
 	if !ok || p.req.SessionID != sessionID {
 		return false, remote.ErrNotFound
 	}
+	var won bool
 	switch decision {
 	case wire.DecisionAllow:
-		return b.core.PermissionGrant(p.req), nil
+		won = b.core.PermissionGrant(p.req)
 	case wire.DecisionAllowSession:
-		return b.core.PermissionGrantPersistent(p.req), nil
+		won = b.core.PermissionGrantPersistent(p.req)
 	case wire.DecisionDeny:
-		return b.core.PermissionDeny(p.req), nil
+		won = b.core.PermissionDeny(p.req)
+	default:
+		return false, remote.ErrInvalid
 	}
-	return false, remote.ErrInvalid
+	if !won {
+		// Decided elsewhere or withdrawn: the service has no such request,
+		// so neither may the waiting set.
+		b.mu.Lock()
+		delete(b.waiting, id)
+		b.mu.Unlock()
+	}
+	return won, nil
 }
 
 func (b *Backend) Changes(ctx context.Context, sessionID string) ([]wire.ChangedFile, error) {

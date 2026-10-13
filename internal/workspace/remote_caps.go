@@ -8,10 +8,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	deckagent "github.com/dev-dami/deck/internal/deck/agent"
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/internal/deck/peer"
 	decks "github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/pubsub"
@@ -226,7 +228,13 @@ func (w *DeckWorkspace) PostMessage(ctx context.Context, sessionID, prompt strin
 type entryRef struct {
 	SessionID string `json:"session_id"`
 	EntryID   string `json:"entry_id"`
+	// N orders the entries, so the oldest go first past maxEntries.
+	N int64 `json:"n,omitempty"`
 }
+
+// maxEntries bounds the edit index: only recent prompts are worth
+// editing from a phone, and the file is rewritten on every prompt.
+const maxEntries = 2000
 
 func (w *DeckWorkspace) entriesPath() string {
 	if w.path == "" {
@@ -248,25 +256,49 @@ func (w *DeckWorkspace) loadEntries() {
 	var idx map[string]entryRef
 	if json.Unmarshal(data, &idx) == nil {
 		w.mu.Lock()
+		for _, ref := range idx {
+			w.entrySeq = max(w.entrySeq, ref.N)
+		}
 		w.entries = idx
 		w.mu.Unlock()
 	}
 }
 
-// saveEntries writes the edit index; the caller holds no lock.
+// saveEntries writes the edit index atomically, one save at a time so an
+// older snapshot never lands last; the caller holds no lock.
 func (w *DeckWorkspace) saveEntries() {
 	path := w.entriesPath()
 	if path == "" {
 		return
 	}
+	w.saveMu.Lock()
+	defer w.saveMu.Unlock()
 	w.mu.Lock()
 	data, err := json.Marshal(w.entries)
 	w.mu.Unlock()
 	if err != nil {
 		return
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := peer.WritePrivateFile(path, data); err != nil {
 		slog.Warn("Could not save the message edit index", "error", err)
+	}
+}
+
+// trimEntries drops the oldest entries past maxEntries; w.mu is held.
+func (w *DeckWorkspace) trimEntries() {
+	if len(w.entries) <= maxEntries {
+		return
+	}
+	ns := make([]int64, 0, len(w.entries))
+	for _, ref := range w.entries {
+		ns = append(ns, ref.N)
+	}
+	slices.Sort(ns)
+	cut := ns[len(ns)-maxEntries]
+	for id, ref := range w.entries {
+		if ref.N < cut {
+			delete(w.entries, id)
+		}
 	}
 }
 
@@ -279,7 +311,9 @@ func (w *DeckWorkspace) recordEntry(sessionID, messageID, entryID string) {
 	if w.entries == nil {
 		w.entries = map[string]entryRef{}
 	}
-	w.entries[messageID] = entryRef{SessionID: sessionID, EntryID: entryID}
+	w.entrySeq++
+	w.entries[messageID] = entryRef{SessionID: sessionID, EntryID: entryID, N: w.entrySeq}
+	w.trimEntries()
 	w.mu.Unlock()
 	w.saveEntries()
 }

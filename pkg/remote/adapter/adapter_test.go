@@ -422,8 +422,10 @@ func TestConvertKeepsNamesNotPaths(t *testing.T) {
 		message.TextContent{Text: "see"},
 		message.BinaryContent{Path: `C:\Users\me\Pictures\shot.png`, MIMEType: "image/png"},
 		message.TextContent{Text: "hidden", Hidden: true},
-	}})
-	require.Len(t, m.Parts, 2)
+		message.ToolCall{ID: "c", Name: "edit", Input: `{"file_path":"/work/src/y.go"}`},
+	}}, "/work")
+	require.Len(t, m.Parts, 3)
+	require.Equal(t, "src/y.go", m.Parts[2].Summary, "a tool path is relative to the root")
 	require.Equal(t, "shot.png", m.Parts[1].Image.Name)
 	require.Equal(t, "image/png", m.Parts[1].Image.Mime)
 	require.True(t, m.Finished)
@@ -434,4 +436,49 @@ func TestConvertKeepsNamesNotPaths(t *testing.T) {
 	require.Equal(t, "src/x.go", a.Path)
 	require.Contains(t, a.Diff, "-a\n+b\n")
 	require.Equal(t, "claude1", a.Agent)
+}
+
+func TestApprovalsLeaveTheWaitingSet(t *testing.T) {
+	r := newRig(t)
+	ask := func(id, call string) {
+		t.Helper()
+		r.app_(pubsub.Event[permission.PermissionRequest]{Type: pubsub.CreatedEvent, Payload: permission.PermissionRequest{
+			ID: id, SessionID: "s1", ToolCallID: call, Params: tools.BashPermissionsParams{Command: "ls"}}})
+		require.Equal(t, wire.EvApprovalRequested, r.next(t).Name)
+		r.next(t) // the session summary
+	}
+	waiting := func() int {
+		t.Helper()
+		list, err := r.b.Approvals("")
+		require.NoError(t, err)
+		return len(list)
+	}
+
+	// The "about to ask" notification, which may arrive after the request,
+	// is not a decision.
+	ask("p1", "c1")
+	r.app_(pubsub.Event[permission.PermissionNotification]{Type: pubsub.CreatedEvent, Payload: permission.PermissionNotification{ToolCallID: "c1"}})
+	r.app_(pubsub.Event[permission.PermissionNotification]{Type: pubsub.CreatedEvent, Payload: permission.PermissionNotification{ToolCallID: "c1", Denied: true}})
+	ev := r.next(t)
+	require.Equal(t, wire.ApprovalResolved{ID: "p1", SessionID: "s1"}, ev.Payload, "the undecided notification resolved nothing")
+	r.next(t)
+	require.Zero(t, waiting())
+
+	// An answer the service no longer knows leaves the set too.
+	ask("p2", "c2")
+	r.core.resolved = false
+	won, err := r.b.Answer("s1", "p2", wire.DecisionAllow)
+	require.NoError(t, err)
+	require.False(t, won)
+	require.Zero(t, waiting())
+
+	// A request withdrawn by a cancelled turn sends no notification: the
+	// turn ending takes it away.
+	ask("p3", "c3")
+	r.rc.changes <- pubsub.Event[workspace.DeckChange]{Payload: workspace.DeckChange{Kind: workspace.ChangeBusy, SessionID: "s1", Busy: false}}
+	require.Equal(t, wire.EvBusy, r.next(t).Name)
+	ev = r.next(t)
+	require.Equal(t, wire.ApprovalResolved{ID: "p3", SessionID: "s1"}, ev.Payload)
+	require.Equal(t, 0, r.next(t).Payload.(wire.Session).Pending)
+	require.Zero(t, waiting())
 }

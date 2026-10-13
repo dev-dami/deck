@@ -279,6 +279,7 @@ func runRemote(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() {
 		server.SetActive(nil)
+		_ = r.Store.Disarm() // a code shown here dies with the server
 		r.Stop()
 	}()
 	printBanner(out, r)
@@ -339,9 +340,15 @@ func runRemotePair(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	// The code is one use and short-lived, but it must not outlive this
+	// command when nobody scanned it (R3).
+	defer func() { _ = store.Disarm() }()
 	var cert auth.Certificate
 	if ad.TLS {
-		cert, _ = store.EnsureCertificate(ad.Hosts)
+		// The running server owns the certificate; read it, never rotate it.
+		if c, err := store.Certificate(); err == nil && c.Fingerprint == ad.Fingerprint {
+			cert = c
+		}
 	}
 	out := cmd.OutOrStdout()
 	if err := printPairing(out, code, server.NewPairing(ad, code, filepath.Base(cwd)), cert); err != nil {

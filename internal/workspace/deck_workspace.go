@@ -72,6 +72,8 @@ type DeckWorkspace struct {
 	// (see remote_caps.go); entries is the message edit index.
 	deckChanges *pubsub.Broker[DeckChange]
 	entries     map[string]entryRef
+	entrySeq    int64      // the last entryRef.N; under mu
+	saveMu      sync.Mutex // one saveEntries at a time
 }
 
 // turn is what is known about one agent's current reply.
