@@ -95,13 +95,13 @@ func TestPostWithImagesGoesToImageSendersOnly(t *testing.T) {
 		t.Fatalf("claude image calls = %+v", calls)
 	}
 	has(t, calls[0].prompt, "look at these")
-	lacks(t, calls[0].prompt, "can't view")
+	lacks(t, calls[0].prompt, "could not pass")
 
 	p := r.codex.prompts("codex")
 	if len(p) != 1 {
 		t.Fatalf("codex prompts = %q", p)
 	}
-	has(t, p[0], "look at these", "[deck] The user attached 2 image(s) that this agent can't view: a.png, b.png")
+	has(t, p[0], "look at these", "[deck] The user attached 2 image(s) Deck could not pass to you directly; open them with your own file tools if you can: /tmp/a.png, /tmp/b.png")
 
 	// the user message carries the id and the image paths, live and stored
 	user := r.c.events(func(e EventMsg) bool { return e.FromUser() })

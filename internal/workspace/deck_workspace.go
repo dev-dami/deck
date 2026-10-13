@@ -308,7 +308,11 @@ func (w *DeckWorkspace) lastAgent() string {
 	return w.last.AgentID
 }
 
-func (w *DeckWorkspace) AgentIsReady() bool   { return true }
+func (w *DeckWorkspace) AgentIsReady() bool { return true }
+
+// AcceptsImages implements [ImageTaker]: the agent CLIs take images, and an
+// agent that cannot is told where they are (see session.PostWith).
+func (w *DeckWorkspace) AcceptsImages() bool  { return true }
 func (w *DeckWorkspace) AgentReadyErr() error { return nil }
 
 func (w *DeckWorkspace) queue(sessionID string) []decks.QueuedItem {

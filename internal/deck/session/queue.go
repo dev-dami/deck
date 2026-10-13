@@ -64,11 +64,17 @@ func (t *thread) imagesOf(e store.Entry) []agent.Image {
 
 // noImageLine tells a member that cannot view images what the user attached.
 func noImageLine(images []agent.Image) string {
-	names := make([]string, 0, len(images))
-	for _, im := range images {
-		names = append(names, filepath.Base(im.Path))
+	return fmt.Sprintf("[deck] The user attached %d image(s) Deck could not pass to you directly; open them with your own file tools if you can: %s", len(images), strings.Join(imagePaths(images), ", "))
+}
+
+// imageNote tells a member who was not addressed that a user message came
+// with images, and where they are, so it can look at them with its own
+// file tools: every agent in the thread sees what the user shared.
+func imageNote(paths []string) string {
+	if len(paths) == 0 {
+		return ""
 	}
-	return fmt.Sprintf("[deck] The user attached %d image(s) that this agent can't view: %s", len(images), strings.Join(names, ", "))
+	return fmt.Sprintf(" [with %d image(s): %s]", len(paths), strings.Join(paths, ", "))
 }
 
 // ---- the queue ----
