@@ -1,0 +1,11 @@
+{
+  "agent": "claude-1",
+  "created_at": "2026-10-12T09:30:42Z",
+  "description": "Call tool mcp_github_create_issue",
+  "id": "apr_51eb",
+  "kind": "other",
+  "raw": "{\"title\":\"Limiter is global\",\"labels\":[\"bug\"]}",
+  "raw_truncated": true,
+  "session_id": "ses_8f2a",
+  "tool_call_id": "tc_0b48"
+}

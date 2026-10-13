@@ -1,0 +1,5 @@
+{
+  "message_id": "msg_3c1c",
+  "session_id": "ses_8f2a",
+  "text": "Fix the lockout so one bad client cannot log every phone out. Keep limits per address."
+}

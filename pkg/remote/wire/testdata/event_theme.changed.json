@@ -1,0 +1,18 @@
+{
+  "kinds": {
+    "claude": {
+      "mark": "✻",
+      "tint": "#b8542f"
+    },
+    "codex": {
+      "mark": ">_",
+      "tint": "#5b4bd6"
+    }
+  },
+  "palette": {
+    "accent": "#1f8f74",
+    "bg_base": "#fbfaf7",
+    "fg_base": "#1d2326",
+    "primary": "#17826a"
+  }
+}

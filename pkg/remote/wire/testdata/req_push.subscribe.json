@@ -1,0 +1,11 @@
+{
+  "approvals": true,
+  "done": true,
+  "subscription": {
+    "endpoint": "https://fcm.googleapis.com/fcm/send/dQw4w9WgXcQ:APA91bF3x",
+    "keys": {
+      "auth": "tBHItJI5svbpez7KI4CCXg",
+      "p256dh": "BIPUL12DLfytvTajnryr2PRdAgXS3HGKiLqndGcJGabyhHheJYlNGCeXl1dn18gSJ1WAkAPIxr4gK0_dQds4yiI"
+    }
+  }
+}

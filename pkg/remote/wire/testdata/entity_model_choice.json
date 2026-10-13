@@ -1,0 +1,10 @@
+{
+  "efforts": [
+    "low",
+    "medium",
+    "high"
+  ],
+  "id": "claude-opus-4-1",
+  "label": "Claude Opus 4.1",
+  "selected": true
+}

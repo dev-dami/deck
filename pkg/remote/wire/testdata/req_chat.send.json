@@ -1,0 +1,12 @@
+{
+  "idempotency_key": "idk_5d2e8c1a",
+  "images": [
+    {
+      "data_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "mime": "image/png",
+      "name": "screenshot.png"
+    }
+  ],
+  "session_id": "ses_8f2a",
+  "text": "Here is the error I see on the phone."
+}

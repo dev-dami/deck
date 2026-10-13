@@ -1,0 +1,16 @@
+[
+  {
+    "efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "id": "claude-opus-4-1",
+    "label": "Claude Opus 4.1",
+    "selected": true
+  },
+  {
+    "id": "claude-sonnet-4-5",
+    "label": "Claude Sonnet 4.5"
+  }
+]

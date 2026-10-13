@@ -1,0 +1,36 @@
+{
+  "cursor": "cur_msg_3b90",
+  "messages": [
+    {
+      "created_at": "2026-10-12T09:29:10Z",
+      "editable": true,
+      "finished": true,
+      "id": "msg_3b91",
+      "parts": [
+        {
+          "text": "Why does the limiter lock everyone out?",
+          "type": "text"
+        }
+      ],
+      "role": "user",
+      "session_id": "ses_8f2a",
+      "updated_at": "2026-10-12T09:29:10Z"
+    },
+    {
+      "agent": "claude-1",
+      "created_at": "2026-10-12T09:29:12Z",
+      "finished": false,
+      "id": "msg_3b92",
+      "parts": [
+        {
+          "text": "It counts failures from every address in one bucket.",
+          "type": "text"
+        }
+      ],
+      "role": "assistant",
+      "session_id": "ses_8f2a",
+      "updated_at": "2026-10-12T09:29:30Z"
+    }
+  ],
+  "more": true
+}
