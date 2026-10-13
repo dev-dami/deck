@@ -29,9 +29,16 @@ func TestShowPath(t *testing.T) {
 		{"trailing separator on home", "/home/me/", "/home/me/.claude/plans/p.md", "plans · p.md"},
 		{"deck memory", "/home/me", "/home/me/.deck/memory/-home-me-app/MEMORY.md", "memory · MEMORY.md"},
 		{"deck plans", `C:\Users\hp`, `C:\Users\hp\.deck\plans\p.md`, "plans · p.md"},
+		{"codex memories", "/home/me", "/home/me/.codex/memories/MEMORY.md", "memory · MEMORY.md"},
+		{"codex memories v2", `C:\Users\hp`, `C:\Users\hp\.codex\memories_v2\rollout_summaries\a.md`, "memory · rollout_summaries/a.md"},
+		{"opencode plans", "/home/me", "/home/me/.local/share/opencode/plans/1700-fix-bug.md", "plans · 1700-fix-bug.md"},
+		{"opencode plan (dev)", "/home/me", "~/.opencode/plan/p.md", "plans · p.md"},
+		{"antigravity brain", `C:\Users\hp`, `C:\Users\hp\.gemini\antigravity\brain\0b1c-uuid\implementation_plan.md`, "plans · implementation_plan.md"},
+		{"antigravity cli brain", "/home/me", "/home/me/.gemini/antigravity-cli/brain/abc/task.md", "plans · task.md"},
 
 		// Left alone.
 		{"transcript is not memory", "/home/me", "/home/me/.claude/projects/slug/abc.jsonl", "/home/me/.claude/projects/slug/abc.jsonl"},
+		{"codex sessions", "/home/me", "/home/me/.codex/sessions/r.jsonl", "/home/me/.codex/sessions/r.jsonl"},
 		{"skills", "/home/me", "/home/me/.claude/skills/pdf/SKILL.md", "/home/me/.claude/skills/pdf/SKILL.md"},
 		{"project .claude", "/home/me", "/home/me/app/.claude/plans/p.md", "/home/me/app/.claude/plans/p.md"},
 		{"another home", "/home/me", "/home/meg/.claude/plans/p.md", "/home/meg/.claude/plans/p.md"},

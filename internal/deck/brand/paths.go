@@ -61,6 +61,18 @@ var cliPlaces = []cliPlace{
 	// but sessions started outside Deck and resumed in it still use these.
 	{[]string{".claude", "projects", "*", "memory"}, "memory"},
 	{[]string{".claude", "plans"}, "plans"},
+
+	// Codex: memories sit under CODEX_HOME, with no key to move only them.
+	{[]string{".codex", "memories"}, "memory"},
+	{[]string{".codex", "memories_v2"}, "memory"},
+
+	// opencode: plans outside a repository, with no key to move them.
+	{[]string{".local", "share", "opencode", "plans"}, "plans"},
+	{[]string{".opencode", "plan"}, "plans"},
+
+	// Antigravity: each conversation's task, plan and walkthrough files.
+	{[]string{".gemini", "antigravity", "brain", "*"}, "plans"},
+	{[]string{".gemini", "antigravity-cli", "brain", "*"}, "plans"},
 }
 
 // ShowPath names a file in a CLI's private folder the way Deck does, for
