@@ -28,7 +28,7 @@ func (m *Manager) RenameThread(threadID, title string) error {
 	if title == "" {
 		return errors.New("session: empty title")
 	}
-	return m.change(threadID, func(t *thread) { t.title = title })
+	return m.change(threadID, func(t *thread) { t.title, t.titleSrc = title, titleUser })
 }
 
 // SetPinned pins a thread to the top of the list, or unpins it.
@@ -117,9 +117,14 @@ func (m *Manager) Delete(threadID string) error {
 		})
 	}
 	t.mu.Lock()
-	wt := t.worktree
+	wts := []*store.Worktree{t.worktree}
+	for _, a := range t.members {
+		wts = append(wts, a.getWorktree()) // a subagent's own worktree (spawn.go)
+	}
 	t.mu.Unlock()
-	m.dropWorktree(wt)
+	for _, wt := range wts {
+		m.dropWorktree(wt)
+	}
 	m.emit(ThreadChangedMsg{ThreadID: threadID, Gone: true})
 	return nil
 }
@@ -187,12 +192,15 @@ func (m *Manager) Fork(threadID, entryID string) (ThreadInfo, []tea.Msg, string,
 	}
 	entries := append([]store.Entry(nil), t.log[:cut]...)
 	members := append([]*agentState(nil), t.members...)
-	th := store.Thread{ID: store.NewID(), Title: "fork · " + t.title, Dir: t.dir, Mode: string(t.mode)}
+	th := store.Thread{ID: store.NewID(), Title: "fork · " + t.title, TitleSrc: titleUser, Dir: t.dir, Mode: string(t.mode)}
 	t.mu.Unlock()
 	if len(members) == 0 {
 		return ThreadInfo{}, nil, "", errors.New("session: nothing to fork yet")
 	}
 	for _, a := range members {
+		if a.isEphemeral() {
+			continue // a subagent belongs to its own thread's tasks
+		}
 		mm := a.memberMeta()
 		mm.SessionID, mm.Cursor, mm.CostUSD = "", 0, 0 // a fresh session, briefed on everything
 		mm.ContextTokens, mm.ContextWindow = 0, 0

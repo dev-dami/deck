@@ -155,6 +155,10 @@ type Service interface {
 	Heat(ctx context.Context, weeks int) ([]Day, error)
 	// Behavior counts what the user did, with rates and a daily series.
 	Behavior(ctx context.Context, since time.Time) (BehaviorReport, error)
+	// Habits derives how the user works (rhythm, review time, approval speed,
+	// cancels, which agent gets what) from the stored turns and behaviour.
+	// It is empty when the service has no database handle.
+	Habits(ctx context.Context, since time.Time) (Habits, error)
 	// Limits is the newest stored row of every plan window, by agent kind.
 	Limits(ctx context.Context) ([]LimitSnapshot, error)
 	// LimitHistory is one window's stored rows since since, oldest first.

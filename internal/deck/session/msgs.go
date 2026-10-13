@@ -121,6 +121,11 @@ func msgFor(threadID string, e store.Entry) tea.Msg {
 		return ContinuedMsg{ThreadID: threadID}
 	case store.EntryNotice:
 		return NoticeMsg{ThreadID: threadID, Text: e.Text}
+	case store.EntryTask:
+		if e.Task == nil {
+			return nil
+		}
+		return TaskEventMsg{ThreadID: threadID, Event: *e.Task, By: e.Speaker}
 	}
 	return nil
 }
@@ -221,4 +226,12 @@ type EditedMsg struct {
 	EntryID  string
 	OldText  string // the text before this edit
 	NewText  string
+}
+
+// TaskEventMsg is a board change as the log recorded it, for a view rebuilt
+// from History. Live changes arrive as TaskChangedMsg, which carries the task.
+type TaskEventMsg struct {
+	ThreadID string
+	Event    store.TaskEvent
+	By       string
 }

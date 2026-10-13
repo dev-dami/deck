@@ -43,7 +43,8 @@ func (fakeUsage) Heat(context.Context, int) ([]usage.Day, error) { return nil, n
 func (fakeUsage) Behavior(context.Context, time.Time) (usage.BehaviorReport, error) {
 	return usage.BehaviorReport{}, nil
 }
-func (fakeUsage) Limits(context.Context) ([]usage.LimitSnapshot, error) { return nil, nil }
+func (fakeUsage) Habits(context.Context, time.Time) (usage.Habits, error) { return usage.Habits{}, nil }
+func (fakeUsage) Limits(context.Context) ([]usage.LimitSnapshot, error)   { return nil, nil }
 func (fakeUsage) LimitHistory(context.Context, string, string, time.Time) ([]usage.LimitSnapshot, error) {
 	return nil, nil
 }

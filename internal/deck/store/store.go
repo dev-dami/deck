@@ -79,6 +79,14 @@ type Member struct {
 	// window use (0 = unknown), so a resumed thread can show the meter at once.
 	ContextTokens int `json:"context_tokens,omitempty"`
 	ContextWindow int `json:"context_window,omitempty"`
+	// Parent, Ephemeral, Dir and Worktree describe a Deck-managed subagent
+	// (session/spawn.go): the member that asked for it, whether Deck stops it
+	// when its task ends, and the git worktree it works in (Dir is the folder
+	// inside it).
+	Parent    string    `json:"parent,omitempty"`
+	Ephemeral bool      `json:"ephemeral,omitempty"`
+	Dir       string    `json:"dir,omitempty"`
+	Worktree  *Worktree `json:"worktree,omitempty"`
 }
 
 // Thread is the metadata of one conversation between the user and one or more
@@ -89,11 +97,15 @@ type Member struct {
 // migrate old threads (see Normalize) and mirrored from Members on every write
 // so older Deck builds can still list the thread.
 type Thread struct {
-	ID      string   `json:"id"`
-	Version int      `json:"version,omitempty"`
-	Title   string   `json:"title"` // first prompt, truncated
-	Dir     string   `json:"dir"`
-	Members []Member `json:"members,omitempty"`
+	ID      string `json:"id"`
+	Version int    `json:"version,omitempty"`
+	Title   string `json:"title"` // first prompt, truncated; later a model-written title
+	// TitleSrc says who wrote Title: "" (the first-prompt placeholder), "auto"
+	// (written by the default model) or "user" (renamed by hand). Only "" may be
+	// replaced by an automatic title.
+	TitleSrc string   `json:"title_src,omitempty"`
+	Dir      string   `json:"dir"`
+	Members  []Member `json:"members,omitempty"`
 	// Mode is the thread's permission mode: "plan", "ask" or "yolo". Threads
 	// stored before modes existed (and any unknown value) read as "ask".
 	Mode string `json:"mode,omitempty"`
@@ -104,6 +116,11 @@ type Thread struct {
 	Archived bool `json:"archived,omitempty"`
 	// Worktree is set while the thread works apart from the shared tree.
 	Worktree *Worktree `json:"worktree,omitempty"`
+	// Tasks is the thread's shared task board (task.go).
+	Tasks []Task `json:"tasks,omitempty"`
+	// Orchestrate lets members spawn subagents and has the scheduler run the
+	// board's ready tasks.
+	Orchestrate bool `json:"orchestrate,omitempty"`
 
 	// Legacy mirror of Members[0] (Name: every member's name joined by "+").
 	AgentKind string `json:"agent_kind"`
@@ -185,6 +202,9 @@ const (
 	// EntryUnrevert: the user undid the revert Ref, taking Files back to that
 	// revert's Snap. Snap is the work tree right before the undo.
 	EntryUnrevert = "unrevert"
+	// EntryTask: a change to the thread's task board; Task says what changed,
+	// Speaker who changed it (a member id, or "" for the user or Deck).
+	EntryTask = "task"
 )
 
 // Entry is one line of a thread log. The embedded Event keeps old logs (bare
@@ -221,6 +241,10 @@ type Entry struct {
 	// Files are the work-tree paths (relative to the repository root, forward
 	// slashes) an EntryRevert or EntryUnrevert put back.
 	Files []string `json:"files,omitempty"`
+	// Task is the change an EntryTask records.
+	Task *TaskEvent `json:"task,omitempty"`
+	// TaskID ties a relay (a handover under a contract) to the task it hands over.
+	TaskID string `json:"task_id,omitempty"`
 }
 
 // flushDelay is how long metadata and index writes are held back so a burst

@@ -33,17 +33,23 @@ var messageTimeout = 30 * time.Second
 
 // wireRequest is one newline-JSON request from the MCP helper process.
 type wireRequest struct {
-	Token     string          `json:"token"`
-	Kind      string          `json:"kind,omitempty"` // approve (default) | exec
-	Op        string          `json:"op,omitempty"`   // exec: the op ("search" for the search tool)
-	Args      json.RawMessage `json:"args,omitempty"` // exec: the op's arguments
-	To        string          `json:"to,omitempty"`   // thread.send: target agent name or "all"
-	Text      string          `json:"text,omitempty"` // thread.send: the text
-	AgentID   string          `json:"agent_id"`
-	RequestID string          `json:"request_id"`
-	ToolName  string          `json:"tool_name"`
-	Input     json.RawMessage `json:"input"`
-	Cwd       string          `json:"cwd,omitempty"`
+	Token string          `json:"token"`
+	Kind  string          `json:"kind,omitempty"` // approve (default) | exec
+	Op    string          `json:"op,omitempty"`   // exec: the op ("search" for the search tool)
+	Args  json.RawMessage `json:"args,omitempty"` // exec: the op's arguments
+	To    string          `json:"to,omitempty"`   // thread.send: target agent name or "all"
+	Text  string          `json:"text,omitempty"` // thread.send: the text
+	// thread.send under a contract: the task and its terms (agent.Message).
+	Task         string          `json:"-"`
+	NewTask      string          `json:"-"`
+	Expect       string          `json:"-"`
+	DoneWhen     string          `json:"-"`
+	ExplicitDone bool            `json:"-"`
+	AgentID      string          `json:"agent_id"`
+	RequestID    string          `json:"request_id"`
+	ToolName     string          `json:"tool_name"`
+	Input        json.RawMessage `json:"input"`
+	Cwd          string          `json:"cwd,omitempty"`
 }
 
 type agentState struct {
@@ -247,13 +253,20 @@ func (b *Broker) handleExec(req wireRequest, gone <-chan struct{}) wireReply {
 	switch strings.TrimSpace(req.Op) {
 	case agent.OpThreadSend:
 		var a struct {
-			To      string `json:"to"`
-			Message string `json:"message"`
+			To           string `json:"to"`
+			Message      string `json:"message"`
+			Task         string `json:"task"`
+			NewTask      string `json:"new_task"`
+			Expect       string `json:"expect"`
+			DoneWhen     string `json:"done_when"`
+			ExplicitDone bool   `json:"explicit_done"`
 		}
 		if json.Unmarshal(req.Args, &a) != nil || strings.TrimSpace(a.To) == "" || strings.TrimSpace(a.Message) == "" {
 			return wireReply{Text: "thread.send needs args {\"to\": an agent name or \"all\", \"message\": the text}", IsError: true}
 		}
 		req.To, req.Text = strings.TrimSpace(a.To), a.Message
+		req.Task, req.NewTask = strings.TrimSpace(a.Task), strings.TrimSpace(a.NewTask)
+		req.Expect, req.DoneWhen, req.ExplicitDone = strings.TrimSpace(a.Expect), strings.TrimSpace(a.DoneWhen), a.ExplicitDone
 		r = b.handleMessage(req, gone)
 	case agent.OpThreadRead:
 		r = b.handleRead(req)
@@ -317,6 +330,7 @@ func (b *Broker) handleMessage(req wireRequest, gone <-chan struct{}) wireReply 
 		From: req.AgentID,
 		To:   req.To,
 		Text: req.Text,
+		Task: req.Task, NewTask: req.NewTask, Expect: req.Expect, DoneWhen: req.DoneWhen, ExplicitDone: req.ExplicitDone,
 		Respond: func(text string, err error) {
 			once.Do(func() { reply <- result{text, err} })
 		},

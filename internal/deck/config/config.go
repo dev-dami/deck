@@ -82,8 +82,14 @@ type Config struct {
 	// DeckAuthor makes Deck the author of the commits agents make (the user
 	// stays the committer), so Deck counts among a repository's contributors.
 	// It applies while DeckAttribution is on.
-	DeckAuthor bool   `json:"deck_author"`
-	Models     Models `json:"models"`
+	DeckAuthor bool `json:"deck_author"`
+	// AutoTitle has the default agent's model write a short title for a thread
+	// once its first turn ends; the first prompt stands in until then.
+	AutoTitle bool `json:"auto_title"`
+	// MaxParallel is how many tasks the scheduler runs at once in a thread with
+	// orchestration on; 0 means DefaultMaxParallel.
+	MaxParallel int    `json:"max_parallel"`
+	Models      Models `json:"models"`
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
 	Efforts Models `json:"efforts"`
@@ -92,6 +98,9 @@ type Config struct {
 	// never live here; they are in ~/.deck/peers/.
 	Peers *Peers `json:"peers,omitempty"`
 }
+
+// DefaultMaxParallel is how many tasks run at once when MaxParallel is 0.
+const DefaultMaxParallel = 3
 
 // DefaultPeerPort is the port a peer listener uses when its address names none.
 const DefaultPeerPort = "7722"
@@ -323,6 +332,7 @@ func Defaults() Config {
 		TrackChanges:      true,
 		DeckAttribution:   true,
 		DeckAuthor:        true,
+		AutoTitle:         true,
 	}
 }
 

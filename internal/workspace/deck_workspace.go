@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -473,7 +475,53 @@ func (w *DeckWorkspace) pump() {
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorQueueEdit, "", 1)
 		case decks.QueueCancelledMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorQueueCancel, "", 1)
+		case decks.TaskChangedMsg:
+			w.projectBoard(m.ThreadID)
+			switch {
+			case m.Task.Status == "failed" && m.From != "failed": // not an edit of a failed task
+				detail := "retry"
+				if m.Task.Attempts >= m.Task.Tries() {
+					detail = "final"
+				}
+				w.recordBehavior(w.sessionOf(m.ThreadID), m.Task.Owner, usage.BehaviorTaskFail, detail, 1)
+			case m.From == "failed" && m.Task.Status == "ready":
+				w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorTaskRetry, "", 1)
+			}
+		case decks.TaskSteeredMsg:
+			detail := "user"
+			if m.By != "" {
+				detail = "agent"
+			}
+			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorTaskSteer, detail, 1)
+		case decks.RevertedMsg:
+			kind := usage.BehaviorRevert
+			if m.Undo {
+				kind = usage.BehaviorUnrevert
+			}
+			w.recordBehavior(w.sessionOf(m.ThreadID), "", kind, "", max(1, len(m.Files)))
+		case decks.ThreadChangedMsg:
+			if !m.Gone {
+				w.syncTitle(m.ThreadID)
+			}
 		}
+	}
+}
+
+// syncTitle copies a thread's title (model-written or renamed) onto its Crush
+// session, which is what the sidebar and notices show.
+func (w *DeckWorkspace) syncTitle(threadID string) {
+	sid := w.sessionOf(threadID)
+	if sid == "" {
+		return
+	}
+	info, ok := w.mgr().Thread(threadID)
+	if !ok || info.Title == "" {
+		return
+	}
+	ctx := context.Background()
+	if sess, err := w.app.Sessions.Get(ctx, sid); err == nil && sess.Title != info.Title {
+		sess.Title = info.Title
+		_, _ = w.app.Sessions.Save(ctx, sess)
 	}
 }
 
@@ -661,6 +709,13 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		if !began.IsZero() {
 			took = end.Sub(began)
 		}
+		if n := len(t.diffs); n > 0 {
+			added, removed := 0, 0
+			for _, d := range t.diffs {
+				added, removed = added+d.Added, removed+d.Removed
+			}
+			w.recordBehavior(sid, ev.AgentID, usage.BehaviorTurnEdit, fmt.Sprintf("+%d/-%d", added, removed), n)
+		}
 		meta := turnMeta{status: turnStatus(ev, t.failed), trigger: t.trigger, trace: t.trace, end: end}
 		if th, ok := w.mgr().Thread(threadID); ok {
 			meta.mode = string(th.Mode)
@@ -695,6 +750,9 @@ func (w *DeckWorkspace) setTodos(sid string, input json.RawMessage) {
 	if json.Unmarshal(input, &in) != nil || len(in.Todos) == 0 {
 		return
 	}
+	if th, ok := w.threadOf(sid); ok && len(w.mgr().Tasks(th.ID)) > 0 {
+		return // the thread's task board is the to-do list (projectBoard)
+	}
 	ctx := context.Background()
 	sess, err := w.app.Sessions.Get(ctx, sid)
 	if err != nil {
@@ -705,6 +763,64 @@ func (w *DeckWorkspace) setTodos(sid string, input json.RawMessage) {
 		sess.Todos = append(sess.Todos, session.Todo{Content: td.Content, Status: session.TodoStatus(td.Status), ActiveForm: td.ActiveForm})
 	}
 	_, _ = w.app.Sessions.Save(ctx, sess)
+}
+
+// projectBoard shows the thread's task board as the session's to-do list, so
+// the to-do pill follows the board. Cancelled tasks are left out.
+func (w *DeckWorkspace) projectBoard(threadID string) {
+	sid := w.sessionOf(threadID)
+	tasks := w.mgr().Tasks(threadID)
+	if sid == "" || len(tasks) == 0 {
+		return
+	}
+	names := map[string]string{}
+	if th, ok := w.mgr().Thread(threadID); ok {
+		for _, a := range th.Members {
+			names[a.ID] = a.Name
+		}
+	}
+	ctx := context.Background()
+	sess, err := w.app.Sessions.Get(ctx, sid)
+	if err != nil {
+		return
+	}
+	var todos []session.Todo
+	for _, tk := range tasks {
+		status := session.TodoStatusPending
+		switch tk.Status {
+		case "cancelled":
+			continue
+		case "done":
+			status = session.TodoStatusCompleted
+		case "running":
+			status = session.TodoStatusInProgress
+		}
+		text := tk.ID + " " + tk.Title
+		if tk.Owner != "" {
+			text += " (" + names[tk.Owner] + ")"
+		}
+		todos = append(todos, session.Todo{Content: text, Status: status, ActiveForm: text})
+	}
+	if slices.Equal(todos, sess.Todos) {
+		return // a board change that does not show (a note, a brief): no write
+	}
+	sess.Todos = todos
+	_, _ = w.app.Sessions.Save(ctx, sess)
+}
+
+// SaveSession is AppWorkspace's, and a title the user gave the session is the
+// thread's title from then on (RenameThread): no automatic title replaces it,
+// and syncTitle has nothing to undo.
+func (w *DeckWorkspace) SaveSession(ctx context.Context, sess session.Session) (session.Session, error) {
+	if cur, err := w.app.Sessions.Get(ctx, sess.ID); err == nil && cur.Title != sess.Title {
+		w.mu.Lock()
+		tid, ok := w.threads[sess.ID]
+		w.mu.Unlock()
+		if ok {
+			_ = w.mgr().RenameThread(tid, sess.Title)
+		}
+	}
+	return w.AppWorkspace.SaveSession(ctx, sess)
 }
 
 // addUsage adds a finished turn's tokens and cost to the session and records
@@ -835,6 +951,7 @@ func (w *DeckWorkspace) onApproval(m decks.ApprovalMsg) {
 	w.mu.Lock()
 	w.approvals[req.ID] = cancel
 	w.mu.Unlock()
+	asked := time.Now()
 	go func() {
 		defer cancel()
 		ok, err := w.app.Permissions.Request(ctx, opts)
@@ -854,6 +971,11 @@ func (w *DeckWorkspace) onApproval(m decks.ApprovalMsg) {
 			kind = usage.BehaviorApproveAllow
 		}
 		w.recordBehavior(sid, req.AgentID, kind, "manual", 1)
+		verdict := "deny"
+		if ok {
+			verdict = "allow"
+		}
+		w.recordBehavior(sid, req.AgentID, usage.BehaviorApprovalWait, verdict, int(max(1, time.Since(asked).Milliseconds())))
 		req.Respond(deckagent.Decision{Allow: ok})
 	}()
 }

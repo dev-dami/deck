@@ -70,17 +70,21 @@ func (h *Hub) ReadThread(agentID string) string {
 // Send raises a thread.send call from agent `from` and waits for the answer.
 // It gives up when stop closes or after 10 seconds.
 func (h *Hub) Send(stop <-chan struct{}, from, to, text string) (string, error) {
+	return h.SendMessage(stop, agent.Message{From: from, To: to, Text: text})
+}
+
+// SendMessage is Send for a message that carries more than a recipient and a
+// text (a handover under a contract); m.ID and m.Respond are set here.
+func (h *Hub) SendMessage(stop <-chan struct{}, m agent.Message) (string, error) {
 	type result struct {
 		res string
 		err error
 	}
 	done := make(chan result, 1)
 	var once sync.Once
-	msg := agent.Message{
-		ID:   fmt.Sprintf("fake-msg-%d", atomic.AddInt64(&h.seq, 1)),
-		From: from, To: to, Text: text,
-		Respond: func(res string, err error) { once.Do(func() { done <- result{res, err} }) },
-	}
+	msg := m
+	msg.ID = fmt.Sprintf("fake-msg-%d", atomic.AddInt64(&h.seq, 1))
+	msg.Respond = func(res string, err error) { once.Do(func() { done <- result{res, err} }) }
 	timeout := time.After(10 * time.Second)
 	select {
 	case h.msgs <- msg:

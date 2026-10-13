@@ -6,7 +6,8 @@
 // [Ops], drives both, so adding a capability never adds a tool.
 //
 // Everything here is read-only except thread.send, which the approval broker
-// runs itself (as it does thread.read). Git and GitHub go through the user's
+// runs itself (as it does thread.read), and the task.* ops, which change the
+// thread's shared task board through [Env.Tasks]. Git and GitHub go through the user's
 // own git and gh, in a clean environment (internal/deck/gh); Deck never reads
 // credentials, and every result is passed through [Redact].
 package hub
@@ -32,6 +33,18 @@ const OpSearch = "search"
 // OpSkillsUsed is the one op that reads [Env.Tools]; callers can skip
 // gathering the thread's tool calls for every other op.
 const OpSkillsUsed = "skills.used"
+
+// The task ops.
+const (
+	OpTaskCreate = "task.create"
+	OpTaskList   = "task.list"
+	OpTaskUpdate = "task.update"
+	OpTaskDone   = "task.done"
+	OpTaskFail   = "task.fail"
+	OpTaskCancel = "task.cancel"
+	OpTaskSteer  = "task.steer"
+	OpAgentSpawn = "agent.spawn"
+)
 
 // Limits.
 const (
@@ -59,6 +72,13 @@ type ToolUse struct {
 	Input json.RawMessage
 }
 
+// TaskBoard is the thread's shared task board as one agent's task.* ops see it.
+// The session package implements it; op is one of the OpTask* names (or
+// OpAgentSpawn) and a the op's checked arguments.
+type TaskBoard interface {
+	TaskOp(op string, a map[string]any) (string, error)
+}
+
 // Env is what one call runs against; the caller resolves it per call.
 type Env struct {
 	AgentID  string
@@ -78,6 +98,8 @@ type Env struct {
 	// Activity reports the commands Deck's agents are running; nil when
 	// unavailable.
 	Activity func() string
+	// Tasks is the thread's task board; nil when unavailable.
+	Tasks TaskBoard
 
 	// dropped counts output bytes a command wrote past what was kept in
 	// memory, so the truncation note still gives the full size.
@@ -150,8 +172,38 @@ var ops []Op
 func init() {
 	ops = []Op{
 		{Name: agent.OpThreadSend, Desc: "Message another agent in this thread (to: an agent name, or \"all\"). The user sees it.",
-			Args: []Arg{{Name: "to", Type: tString, Required: true, Desc: "agent name or \"all\""}, {Name: "message", Type: tString, Required: true}}},
+			Args: []Arg{{Name: "to", Type: tString, Required: true, Desc: "agent name or \"all\""}, {Name: "message", Type: tString, Required: true},
+				{Name: "new_task", Type: tString, Desc: "hand it over as a new task with this title (one recipient); they answer with task.done"},
+				{Name: "task", Type: tString, Desc: "hand it over as this existing task id (one recipient)"},
+				{Name: "expect", Type: tString, Desc: "what you expect back"}, {Name: "done_when", Type: tString, Desc: "when the task counts as done"},
+				{Name: "explicit_done", Type: tBool, Desc: "the recipient must report with task.done; its reply alone is not enough"}}},
 		{Name: agent.OpThreadRead, Desc: "Read the current shared thread: what the user and every agent said and did."},
+		{Name: OpTaskCreate, Desc: "Add a task to this thread's shared task board. deps are task ids it waits for (\"t1,t2\"); owner an agent name or \"me\". Returns its id.",
+			Args: []Arg{{Name: "title", Type: tString, Required: true}, {Name: "brief", Type: tString, Desc: "what the owner should do"}, {Name: "deps", Type: tString, Desc: "task ids it waits for, e.g. \"t1,t2\""},
+				{Name: "owner", Type: tString}, {Name: "parent", Type: tString, Desc: "task id this is part of"},
+				{Name: "on_fail", Type: tString, Desc: "if it fails: block (default), cancel or continue what waits for it"}, {Name: "max_attempts", Type: tInt},
+				{Name: "isolate", Type: tBool, Desc: "its subagent gets its own git worktree"}},
+			run: opTask(OpTaskCreate)},
+		{Name: OpTaskList, Desc: "List the shared task board: id, status, owner, dependencies, title and result.",
+			Args: []Arg{{Name: "status", Type: tString, Desc: "pending, ready, running, blocked, done, failed or cancelled"}}, run: opTask(OpTaskList)},
+		{Name: OpTaskUpdate, Desc: "Change a task: title, brief, deps, owner, or status (pending, ready, running, blocked). Starting a task with no owner claims it.",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "title", Type: tString}, {Name: "brief", Type: tString}, {Name: "deps", Type: tString},
+				{Name: "owner", Type: tString}, {Name: "status", Type: tString}, {Name: "note", Type: tString}},
+			run: opTask(OpTaskUpdate)},
+		{Name: OpTaskDone, Desc: "Report a task finished, with its result. Anything waiting on it can then start.",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "result", Type: tString, Desc: "what you did or found; the delegator reads this"}}, run: opTask(OpTaskDone)},
+		{Name: OpTaskFail, Desc: "Report a task failed, with why. It may be retried.",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "reason", Type: tString}}, run: opTask(OpTaskFail)},
+		{Name: OpTaskCancel, Desc: "Abandon a task that is no longer needed.",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "reason", Type: tString}}, run: opTask(OpTaskCancel)},
+		{Name: OpTaskSteer, Desc: "Redirect whoever owns a task you handed over, even mid-turn, without naming them. Only for tasks you created.",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "message", Type: tString, Required: true, Desc: "what to change; the owner sees it as a redirect"}},
+			run:  opTask(OpTaskSteer)},
+		{Name: OpAgentSpawn, Desc: "Start a helper agent for a task (needs the user to have turned orchestration on for this thread). It gets your brief, works on its own, and its result comes back to you. isolate gives it its own git worktree and branch.",
+			Args: []Arg{{Name: "brief", Type: tString, Required: true, Desc: "what the helper should do"}, {Name: "title", Type: tString}, {Name: "kind", Type: tString, Desc: "agent kind; default the user's default agent"},
+				{Name: "model", Type: tString}, {Name: "task", Type: tString, Desc: "bind it to an existing task id instead of making one"}, {Name: "isolate", Type: tBool},
+				{Name: "expect", Type: tString}, {Name: "done_when", Type: tString}, {Name: "explicit_done", Type: tBool}},
+			run: opTask(OpAgentSpawn)},
 		{Name: "history.threads", Desc: "List this project's Deck threads, past and current: id, title, updated, agents.",
 			Args: []Arg{{Name: "limit", Type: tInt}}, run: opHistoryThreads},
 		{Name: "history.search", Desc: "Search this project's Deck threads (chat history) for words; returns thread, speaker and snippet.",
@@ -353,4 +405,15 @@ func capTotal(s string, n int, total int64) string {
 		cut--
 	}
 	return s[:cut] + fmt.Sprintf("\n[... output truncated at %d KB of %d KB; narrow the request ...]", n>>10, (total+1023)>>10)
+}
+
+// opTask is the runner of the task op name: it hands the op to the thread's
+// board.
+func opTask(name string) func(context.Context, *Env, args) (string, error) {
+	return func(_ context.Context, env *Env, a args) (string, error) {
+		if env.Tasks == nil {
+			return "", fmt.Errorf("the task board is not available here")
+		}
+		return env.Tasks.TaskOp(name, map[string]any(a))
+	}
 }

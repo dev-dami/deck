@@ -329,15 +329,15 @@ func (r *run) play(t *turn, script Script) {
 			r.endTurn(t)
 			return
 		}
-		if st.Message != nil && !r.callHub(t, "message", st.Message.To, st.Message.Text, nil) {
+		if st.Message != nil && !r.callHub(t, "message", st.Message.To, st.Message.Text, nil, st.Message) {
 			r.endTurn(t)
 			return
 		}
-		if st.ReadThread && !r.callHub(t, "read", "", "", nil) {
+		if st.ReadThread && !r.callHub(t, "read", "", "", nil, nil) {
 			r.endTurn(t)
 			return
 		}
-		if st.Exec != nil && !r.callHub(t, "deck", "", "", st.Exec) {
+		if st.Exec != nil && !r.callHub(t, "deck", "", "", st.Exec, nil) {
 			r.endTurn(t)
 			return
 		}
@@ -404,14 +404,25 @@ func (r *run) play(t *turn, script Script) {
 // callHub plays one call of Deck's execute tool, under the name the real
 // adapters show ("message", "read" or "deck"): tool_call, the hub round trip,
 // tool_result. It reports false when the turn was cancelled meanwhile.
-func (r *run) callHub(t *turn, name, to, text string, ex *Exec) bool {
+func (r *run) callHub(t *turn, name, to, text string, ex *Exec, msg *agent.Message) bool {
 	id := fmt.Sprintf("fake-%s-%d", name, atomic.AddInt64(&idCounter, 1))
 	var input json.RawMessage
 	var title string
 	switch {
 	case name == "message":
 		title = "to " + to + ": " + oneLine(text)
-		input, _ = json.Marshal(map[string]any{"op": agent.OpThreadSend, "args": map[string]string{"to": to, "message": text}})
+		args := map[string]any{"to": to, "message": text}
+		if msg != nil {
+			for k, v := range map[string]string{"task": msg.Task, "new_task": msg.NewTask, "expect": msg.Expect, "done_when": msg.DoneWhen} {
+				if v != "" {
+					args[k] = v
+				}
+			}
+			if msg.ExplicitDone {
+				args["explicit_done"] = true
+			}
+		}
+		input, _ = json.Marshal(map[string]any{"op": agent.OpThreadSend, "args": args})
 	case name == "read":
 		title = "shared thread"
 		input = json.RawMessage(`{"op":"` + agent.OpThreadRead + `"}`)
@@ -438,7 +449,13 @@ func (r *run) callHub(t *turn, name, to, text string, ex *Exec) bool {
 			err = errors.New(out)
 		}
 	default:
-		out, err = r.hub.Send(t.cancel, r.agentID, to, text)
+		if msg != nil {
+			m := *msg
+			m.From = r.agentID
+			out, err = r.hub.SendMessage(t.cancel, m)
+		} else {
+			out, err = r.hub.Send(t.cancel, r.agentID, to, text)
+		}
 	}
 	select {
 	case <-t.cancel:

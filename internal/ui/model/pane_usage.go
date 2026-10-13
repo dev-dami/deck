@@ -45,6 +45,7 @@ type usagePaneMsg struct {
 	today  usage.Series // today's tokens per agent kind, by hour
 	limits []usage.LimitSnapshot
 	turns  []usage.Turn // the latest turns, newest first
+	habits usage.Habits // today's habits
 	err    error
 }
 
@@ -190,6 +191,9 @@ func (p *usagePane) text(m *UI, width int, now time.Time) string {
 			lines = append(lines, label("last")+st.muted.Render(ansi.Truncate(last, barW, "…")))
 		}
 	}
+	if h := p.habitLine(); h != "" {
+		lines = append(lines, "", label("you")+st.muted.Render(ansi.Truncate(h, barW, "…")))
+	}
 	lines = append(lines, "", st.muted.Render(ansi.Truncate("enter or "+dialog.UsageKey+" for the full view", width, "…")))
 	return strings.Join(lines, "\n")
 }
@@ -248,6 +252,9 @@ func (m *UI) loadUsagePane() tea.Cmd {
 		if msg.err == nil {
 			msg.turns, msg.err = svc.Traces(ctx, 20)
 		}
+		if msg.err == nil {
+			msg.habits, msg.err = svc.Habits(ctx, usage.Since(1, time.Now()))
+		}
 		return msg
 	}
 }
@@ -268,4 +275,30 @@ func (m *UI) usagePaneTick() tea.Cmd {
 		return m.loadUsagePane()
 	}
 	return tea.Tick(usagePaneInterval, func(time.Time) tea.Msg { return usagePaneTickMsg{} })
+}
+
+// habitLine is today's habits in a line: the median wait to review a turn
+// and to answer an approval, and how many turns were cancelled. "" when
+// there is nothing to say.
+func (p *usagePane) habitLine() string {
+	h := p.data.habits
+	var parts []string
+	if h.Review.N > 0 {
+		parts = append(parts, "review "+graph.Millis(h.Review.Median.Milliseconds()))
+	}
+	if h.Approvals.N > 0 {
+		parts = append(parts, "approve "+graph.Millis(h.Approvals.Median.Milliseconds()))
+	}
+	if n := interruptTotal(h); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d cancelled", n))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func interruptTotal(h usage.Habits) int {
+	n := 0
+	for _, in := range h.Interrupts {
+		n += in.Count
+	}
+	return n
 }

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	deckagent "github.com/dev-dami/deck/internal/deck/agent"
 	decks "github.com/dev-dami/deck/internal/deck/session"
@@ -269,6 +270,9 @@ func (w *DeckWorkspace) expect(threadID string, to []string, trigger string) {
 // onUserMessage handles a message the user posted (or steered in).
 func (w *DeckWorkspace) onUserMessage(m decks.EventMsg) {
 	trigger := usage.TriggerUser
+	if n := utf8.RuneCountInString(m.Text); n > 0 { // the length only, never the text
+		w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorPrompt, "", n)
+	}
 	if m.Steer {
 		trigger = usage.TriggerSteer
 		sid := w.sessionOf(m.ThreadID)

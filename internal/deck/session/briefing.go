@@ -143,6 +143,9 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				l.user = false
 				l.addressed = v.skipSelf
 				l.text = steerText(raw, e.Old)
+				if e.TaskID != "" {
+					l.text = taskSteerText(t, userLabel(cfg.TellAgentsName, e.Speaker), e.TaskID, raw)
+				}
 				if v.skipSelf {
 					l.images = t.imagesOf(e)
 				}
@@ -167,6 +170,10 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			if v.skipSelf && contains(e.To, v.self) {
 				l.addressed = true
 				l.text = "[" + t.label(e.Speaker, v.self) + " → " + t.name(v.self) + "] " + clip(strings.TrimSpace(e.Text), maxEntryChars)
+				l.text += handoverNote(t, e)
+				if e.Steer {
+					l.text = taskSteerText(t, t.name(e.Speaker), e.TaskID, e.Text)
+				}
 			}
 			out = append(out, l)
 		case store.EntryMember:
@@ -187,6 +194,10 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			out = append(out, line{text: "[deck] the user let agent-to-agent messages continue"})
 		case store.EntryRevert, store.EntryUnrevert:
 			out = append(out, line{text: revertText(e, revertSince(t.log, e))})
+		case store.EntryTask:
+			if e.Task != nil {
+				out = append(out, line{text: taskText(t, e)})
+			}
 		}
 	}
 	for _, sp := range order {
@@ -301,6 +312,7 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	if tools {
 		b.WriteString("Deck's MCP server has two tools: search finds Deck ops, skills other agents have and this project's past threads; execute runs one op.\n")
 		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with $name. Op \"thread.read\" shows the whole thread.\n")
+		b.WriteString("Shared task board (execute ops): task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list. Report a task you own with task.done.\n")
 	} else {
 		b.WriteString("To message another agent, start a line of your final reply with $name (or $all).\n")
 	}
@@ -484,4 +496,28 @@ func tail(s string, n int) string {
 		return s
 	}
 	return "[... earlier activity omitted; execute thread.read shows more ...]\n\n" + string(r[len(r)-n:])
+}
+
+// taskText is a board change as one line of briefing.
+func taskText(t *thread, e store.Entry) string {
+	ev := e.Task
+	var b strings.Builder
+	b.WriteString("[deck] task " + ev.ID)
+	if ev.Title != "" {
+		b.WriteString(" \"" + ev.Title + "\"")
+	}
+	if ev.From == "" {
+		b.WriteString(" created")
+	} else if ev.From == ev.To {
+		b.WriteString(" updated")
+	} else {
+		b.WriteString(": " + string(ev.From) + " → " + string(ev.To))
+	}
+	if ev.Owner != "" {
+		b.WriteString(" (" + t.name(ev.Owner) + ")")
+	}
+	if ev.Note != "" && ev.Note != "updated" {
+		b.WriteString(": " + clip(oneLine(ev.Note), 200))
+	}
+	return b.String()
 }

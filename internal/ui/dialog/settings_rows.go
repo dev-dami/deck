@@ -3,6 +3,7 @@ package dialog
 import (
 	"image/color"
 	"slices"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -199,6 +200,24 @@ func (s *Settings) agentRows() []settingsRow {
 			change: func(int) Action {
 				v := !s.deck.TrackChanges
 				return s.deckEdit("Track changes "+onOff(v), func(c *deckconfig.Config) { c.TrackChanges = v })
+			},
+		},
+		{
+			label: "Automatic titles",
+			value: onOff(s.deck.AutoTitle),
+			hint:  "The default agent's model writes a short title for a thread after its first turn; a title you type is never replaced.",
+			change: func(int) Action {
+				v := !s.deck.AutoTitle
+				return s.deckEdit("Automatic titles "+onOff(v), func(c *deckconfig.Config) { c.AutoTitle = v })
+			},
+		},
+		{
+			label: "Parallel tasks",
+			value: strconv.Itoa(max(1, s.deck.MaxParallel)),
+			hint:  "How many tasks a thread with orchestration on runs at once (press o in the Tasks pane).",
+			change: func(dir int) Action {
+				v := max(1, min(8, max(1, s.deck.MaxParallel)+dir))
+				return s.deckEdit("Parallel tasks "+strconv.Itoa(v), func(c *deckconfig.Config) { c.MaxParallel = v })
 			},
 		},
 		{
