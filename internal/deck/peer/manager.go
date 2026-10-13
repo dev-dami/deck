@@ -46,6 +46,9 @@ type ManagerOptions struct {
 	// SubStore, when set with a nil Handler, adds the SUB ops to the
 	// default handler (SubHandler).
 	SubStore func() *sub.Store
+	// Team, when set with a nil Handler, adds the team chat (console.post)
+	// to the default handler and records capsule requests.
+	Team *Team
 }
 
 // Manager runs the peer link for one Deck: the listener when
@@ -128,7 +131,14 @@ func NewManager(o ManagerOptions) (*Manager, error) {
 	if o.Handler == nil {
 		m.o.Handler = &StatusHandler{NameFunc: m.Name, Version: version.Version, Started: time.Now()}
 		if o.SubStore != nil {
-			m.o.Handler = &SubHandler{Base: m.o.Handler, Store: o.SubStore}
+			sh := &SubHandler{Base: m.o.Handler, Store: o.SubStore}
+			if o.Team != nil {
+				sh.OnRequest = func(from Caller, id sub.ID, served bool) { o.Team.AddRequest(from.Name, id, served) }
+			}
+			m.o.Handler = sh
+		}
+		if o.Team != nil {
+			m.o.Handler = &TeamHandler{Base: m.o.Handler, Team: o.Team}
 		}
 	}
 	return m, nil

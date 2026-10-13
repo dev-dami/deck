@@ -176,6 +176,25 @@ func (s *Store) Publish(id ID) ([]ID, error) {
 	return ids, nil
 }
 
+// Unpublish makes the capsule private again: peers can no longer fetch it
+// (nor what only it shared). Copies they fetched before stay theirs.
+func (s *Store) Unpublish(id ID) error {
+	pubMu.Lock()
+	defer pubMu.Unlock()
+	err := os.Remove(filepath.Join(s.pubDir(), strings.TrimPrefix(string(id), idPrefix)))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	s.pubSet = nil // rebuilt on next use
+	return nil
+}
+
+// IsPublished reports whether the capsule itself is published.
+func (s *Store) IsPublished(id ID) bool {
+	_, err := os.Stat(filepath.Join(s.pubDir(), strings.TrimPrefix(string(id), idPrefix)))
+	return err == nil
+}
+
 // Published lists the published capsules.
 func (s *Store) Published() []ID {
 	ents, _ := os.ReadDir(s.pubDir())
