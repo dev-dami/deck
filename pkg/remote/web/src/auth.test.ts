@@ -10,6 +10,7 @@ import {
   pair,
   pairOfferFromHash,
   parseInvite,
+  parseRetryAfter,
   saveToken,
   wsUrl,
 } from "./auth";
@@ -18,6 +19,10 @@ function memory(): KV & { data: Map<string, string> } {
   const data = new Map<string, string>();
   return {
     data,
+    get length() {
+      return data.size;
+    },
+    key: (i) => [...data.keys()][i] ?? null,
     getItem: (k) => data.get(k) ?? null,
     setItem: (k, v) => {
       data.set(k, v);
@@ -38,17 +43,25 @@ describe("token store", () => {
     expect(saveToken(s, "srv_a", "tok_a")).toBe(true);
     expect(loadToken(s)).toEqual({ serverId: "srv_a", token: "tok_a" });
     expect(s.data.get("deck.remote.token.srv_a")).toBe("tok_a");
+    s.data.set("unrelated", "x");
     saveToken(s, "srv_b", "tok_b");
     expect(loadToken(s)).toEqual({ serverId: "srv_b", token: "tok_b" });
-    // Another install's token is kept until that install says it is invalid.
-    expect(s.data.get("deck.remote.token.srv_a")).toBe("tok_a");
+    // One origin serves one install: the other install's token is removed,
+    // so a key no longer in use cannot linger. Other keys are left alone.
+    expect(s.data.has("deck.remote.token.srv_a")).toBe(false);
+    expect(s.data.get("unrelated")).toBe("x");
     clearToken(s, "srv_b");
     expect(loadToken(s)).toBeNull();
-    expect(s.data.get("deck.remote.token.srv_a")).toBe("tok_a");
   });
 
   test("blocked storage never throws", () => {
     const blocked: KV = {
+      get length(): number {
+        throw new Error("blocked");
+      },
+      key: () => {
+        throw new Error("blocked");
+      },
       getItem: () => {
         throw new Error("blocked");
       },
@@ -80,6 +93,14 @@ describe("QR fragment", () => {
     expect(pairOfferFromHash("#/s/x")).toBeNull();
     expect(pairOfferFromHash("#pair=")).toBeNull();
     expect(pairOfferFromHash("#pair=a%00b")).toBeNull();
+  });
+
+  test("a present but malformed fingerprint invalidates the offer (R9)", () => {
+    // Never a fall-through to the no-fingerprint trust gate.
+    expect(pairOfferFromHash("#pair=7H3K-9QWX&fp=SHA256:short")).toBeNull();
+    expect(pairOfferFromHash(`#pair=7H3K-9QWX&fp=${encodeURIComponent(FP)}%E2%80%AE`)).toBeNull();
+    expect(pairOfferFromHash(`#pair=${"A".repeat(65)}`)).toBeNull();
+    expect(pairOfferFromHash("#pair=7H3K%E2%80%A89QWX")).toBeNull();
   });
 });
 
@@ -151,6 +172,19 @@ describe("invite line", () => {
       true,
     );
   });
+
+  test("an IPv6 invite matches the bracketed page it is on", () => {
+    const offer = parseInvite(
+      `deck://pair?v=1&host=fd00%3A%3A5&port=7733&code=ABCDE-23456&fp=${encodeURIComponent(FP)}`,
+    );
+    if (offer === null) throw new Error("invite");
+    expect(
+      inviteOrigin(offer, { protocol: "https:", hostname: "[fd00::5]", port: "7733" }),
+    ).toEqual({ matches: true, url: null });
+    expect(
+      inviteOrigin(offer, { protocol: "https:", hostname: "[fd00::6]", port: "7733" }).matches,
+    ).toBe(false);
+  });
 });
 
 describe("fingerprint", () => {
@@ -214,6 +248,28 @@ describe("pair()", () => {
     expect(down).toMatchObject({ ok: false, retryable: true });
     const odd = await pair(async () => Response.json({ token: "" }), "c", "n");
     expect(odd).toMatchObject({ ok: false, retryable: false });
+  });
+
+  test("a 429 carries Retry-After; a 415 is not a wrong code", async () => {
+    const limited = await pair(
+      async () =>
+        Response.json({ error: "rate_limited" }, { status: 429, headers: { "retry-after": "30" } }),
+      "c",
+      "n",
+    );
+    expect(limited).toMatchObject({ ok: false, retryable: true, retryAfterMs: 30_000 });
+    const media = await pair(async () => new Response("", { status: 415 }), "c", "n");
+    expect(media.ok === false && media.message).toContain("content type");
+    expect(media).toMatchObject({ retryAfterMs: null });
+  });
+
+  test("parseRetryAfter reads seconds and dates", () => {
+    expect(parseRetryAfter("5", 0)).toBe(5_000);
+    expect(parseRetryAfter(null, 0)).toBeNull();
+    expect(parseRetryAfter("soon", 0)).toBeNull();
+    const now = Date.parse("2026-10-13T10:00:00Z");
+    expect(parseRetryAfter("Tue, 13 Oct 2026 10:00:10 GMT", now)).toBe(10_000);
+    expect(parseRetryAfter("Tue, 13 Oct 2026 09:00:00 GMT", now)).toBe(0);
   });
 });
 

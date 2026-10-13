@@ -3,7 +3,7 @@ import {
   CLOSE_RATE_LIMITED,
   CLOSE_REVOKED,
   CLOSE_TOKEN_INVALID,
-  Code,
+  CODE_TOKEN_INVALID,
   decodeResult,
   MAX_IN_FLIGHT,
   type MethodName,
@@ -18,7 +18,6 @@ export interface SocketLike {
   onopen: (() => void) | null;
   onmessage: ((ev: { data: unknown }) => void) | null;
   onclose: ((ev: { code: number; reason: string }) => void) | null;
-  onerror: (() => void) | null;
   send(data: string): void;
   close(code?: number, reason?: string): void;
 }
@@ -98,8 +97,7 @@ interface Pending {
 interface Queued {
   id: string;
   frame: string;
-  pending: Omit<Pending, "timer">;
-  timeoutMs: number;
+  pending: Pending;
 }
 
 export function backoffDelay(attempt: number, base: number, max: number, rand: number): number {
@@ -112,12 +110,6 @@ export function backoffDelay(attempt: number, base: number, max: number, rand: n
 export function retryAfterMs(reason: string): number | null {
   const n = Number.parseInt(reason.trim(), 10);
   return Number.isFinite(n) && n >= 0 ? n * 1000 : null;
-}
-
-// The error code a close reason starts with, if any ("token_invalid", "rate_limited: ...").
-export function closeReasonCode(reason: string): string {
-  const m = /^[a-z_]+/.exec(reason.trim());
-  return m?.[0] ?? "";
 }
 
 export class RpcClient {
@@ -219,7 +211,15 @@ export class RpcClient {
     const timeoutMs = opts.timeoutMs ?? this.requestTimeoutMs;
     const frame = JSON.stringify({ t: "req", id, m, p: params });
     return new Promise<unknown>((resolve, reject) => {
-      const q: Queued = { id, frame, pending: { resolve, reject }, timeoutMs };
+      // The timeout runs from the call, not from the moment a slot frees:
+      // waiting in the queue counts.
+      const timer = this.clock.setTimeout(() => {
+        this.pending.delete(id);
+        this.queue = this.queue.filter((q) => q.id !== id);
+        reject(new RpcError("timeout", "Deck did not answer in time"));
+        this.drain();
+      }, timeoutMs);
+      const q: Queued = { id, frame, pending: { resolve, reject, timer } };
       // At most MAX_IN_FLIGHT requests per connection (§3.6); the rest wait
       // their turn instead of being refused by the server.
       if (this.pending.size < this.maxInFlight) this.dispatch(q);
@@ -235,16 +235,11 @@ export class RpcClient {
   }
 
   private dispatch(q: Queued): void {
-    const timer = this.clock.setTimeout(() => {
-      this.pending.delete(q.id);
-      q.pending.reject(new RpcError("timeout", "Deck did not answer in time"));
-      this.drain();
-    }, q.timeoutMs);
-    this.pending.set(q.id, { ...q.pending, timer });
+    this.pending.set(q.id, q.pending);
     try {
       this.sock?.send(q.frame);
     } catch (err) {
-      this.clock.clearTimeout(timer);
+      this.clock.clearTimeout(q.pending.timer);
       this.pending.delete(q.id);
       q.pending.reject(
         new RpcError("disconnected", err instanceof Error ? err.message : "send failed"),
@@ -280,8 +275,9 @@ export class RpcClient {
         );
       } catch (e) {
         lastErr = e;
-        const offline = e instanceof RpcError && e.code === "offline";
-        if (!isTransient(e) && !offline) throw e;
+        // Only a request that may have reached the server is retried; offline
+        // (never sent) fails fast so the composer can say so.
+        if (!isTransient(e)) throw e;
         if (i === retries) break;
         await this.whenReady(60_000);
       }
@@ -350,10 +346,8 @@ export class RpcClient {
     sock.onmessage = (ev) => {
       if (gen === this.generation) this.handleMessage(ev.data);
     };
+    // A socket error is always followed by close, which carries the code.
     sock.onclose = (ev) => this.handleClose(gen, ev.code, ev.reason);
-    sock.onerror = () => {
-      // The close event that follows carries the code; nothing to do here.
-    };
   }
 
   private handleMessage(data: unknown): void {
@@ -366,6 +360,12 @@ export class RpcClient {
     switch (f.t) {
       case "welcome": {
         this.clearHelloTimer();
+        // A server that speaks another protocol version is a mismatch, not a
+        // peer to talk to; the page says so and never retries (R11).
+        if (f.server.protocol !== PROTOCOL) {
+          this.finish("protocol");
+          return;
+        }
         const resumed = this.sentResume && f.epoch === this.epoch;
         const resync = !(resumed && f.replay);
         if (resync) this.lastSeq = 0;
@@ -409,7 +409,6 @@ export class RpcClient {
       sock.onopen = null;
       sock.onmessage = null;
       sock.onclose = null;
-      sock.onerror = null;
       try {
         sock.close();
       } catch {
@@ -421,11 +420,11 @@ export class RpcClient {
         this.finish("revoked");
         return;
       case CLOSE_TOKEN_INVALID: {
-        // R1: the token is forgotten only when the reason says token_invalid.
-        // Any other reason on 4401, including an empty one (a proxy may strip
-        // close reasons), is treated as a transient refusal: back off and keep
-        // the token, the same path as a 4429 without a number.
-        if (closeReasonCode(reason) === Code.TokenInvalid) {
+        // R1: the token is forgotten only when the reason starts with
+        // token_invalid. Any other reason on 4401, including an empty one (a
+        // proxy may strip close reasons), is treated as a transient refusal:
+        // back off and keep the token, the same path as a 4429 without a number.
+        if (reason.trimStart().startsWith(CODE_TOKEN_INVALID)) {
           this.finish("token_invalid");
           return;
         }
@@ -490,7 +489,6 @@ export class RpcClient {
     sock.onopen = null;
     sock.onmessage = null;
     sock.onclose = null;
-    sock.onerror = null;
     try {
       sock.close(final ? 1000 : 4000);
     } catch {
@@ -507,7 +505,10 @@ export class RpcClient {
       this.clock.clearTimeout(p.timer);
       p.reject(new RpcError("disconnected", "connection lost"));
     }
-    for (const q of queued) q.pending.reject(new RpcError("disconnected", "connection lost"));
+    for (const q of queued) {
+      this.clock.clearTimeout(q.pending.timer);
+      q.pending.reject(new RpcError("disconnected", "connection lost"));
+    }
   }
 
   private clearReconnectTimer(): void {

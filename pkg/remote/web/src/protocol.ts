@@ -11,24 +11,16 @@ export const MAX_FRAME_BYTES = 12 << 20;
 export const MAX_IN_FLIGHT = 8;
 export const MAX_PAGE_LIMIT = 100;
 
+// Close codes the client acts on (§3.1); 4408 slow consumer is an ordinary
+// reconnect and needs no name here.
 export const CLOSE_BAD_HELLO = 4400;
 export const CLOSE_TOKEN_INVALID = 4401;
 export const CLOSE_REVOKED = 4403;
-export const CLOSE_SLOW_CONSUMER = 4408;
 export const CLOSE_RATE_LIMITED = 4429;
 
-export const Code = {
-  Unauthorized: "unauthorized",
-  TokenInvalid: "token_invalid",
-  RateLimited: "rate_limited",
-  Forbidden: "forbidden",
-  NotFound: "not_found",
-  Invalid: "invalid",
-  YoloDisabled: "yolo_disabled",
-  Busy: "busy",
-  TooLarge: "too_large",
-  Internal: "internal",
-} as const;
+// The one error code the client branches on (R1); the others reach the
+// person as the server's message.
+export const CODE_TOKEN_INVALID = "token_invalid";
 
 // ---- decoders -------------------------------------------------------------
 
@@ -451,8 +443,15 @@ const decodeResShape = object(
   { r: raw, err: decodeWireError },
 );
 
+// Go writes an empty RawMessage as null; the phone reads that as absent.
+function nullToAbsent(v: unknown, key: string): unknown {
+  if (!isRecord(v) || v[key] !== null) return v;
+  const { [key]: _null, ...rest } = v;
+  return rest;
+}
+
 export const decodeResFrame: Decoder<ResFrame> = (v) => {
-  const f = decodeResShape(v);
+  const f = decodeResShape(nullToAbsent(v, "r"));
   if (f === null) return null;
   if (f.ok) {
     const out: ResOkFrame = { t: "res", id: f.id, ok: true };
@@ -470,10 +469,9 @@ export interface EvFrame {
   p?: unknown;
 }
 
-export const decodeEvFrame: Decoder<EvFrame> = object(
-  { t: oneOf(["ev"] as const), seq: int, e: str },
-  { p: raw },
-);
+const decodeEvShape = object({ t: oneOf(["ev"] as const), seq: int, e: str }, { p: raw });
+
+export const decodeEvFrame: Decoder<EvFrame> = (v) => decodeEvShape(nullToAbsent(v, "p"));
 
 export interface ResyncFrame {
   t: "resync";

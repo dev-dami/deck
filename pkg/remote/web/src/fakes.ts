@@ -7,7 +7,6 @@ export class FakeSocket implements SocketLike {
   onopen: (() => void) | null = null;
   onmessage: ((ev: { data: unknown }) => void) | null = null;
   onclose: ((ev: { code: number; reason: string }) => void) | null = null;
-  onerror: (() => void) | null = null;
   sent: unknown[] = [];
   closed = false;
   readonly url: string;
