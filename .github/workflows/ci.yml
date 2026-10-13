@@ -100,6 +100,14 @@ jobs:
       - run: bun test
       - run: bun run build
 
+      # git status, not git diff: a new hashed asset that was built but never
+      # committed is untracked, and git diff would not see it.
       - name: committed build is current
         working-directory: .
-        run: git diff --exit-code -- pkg/remote/web/dist
+        run: |
+          changed="$(git status --porcelain -- pkg/remote/web/dist)"
+          if [ -n "$changed" ]; then
+            echo "pkg/remote/web/dist is stale; run bun run build in pkg/remote/web and commit:"
+            echo "$changed"
+            exit 1
+          fi
