@@ -44,9 +44,26 @@ func (b *bitmap) String() string {
 }
 
 var (
-	fullOnce, compactOnce sync.Once
-	fullBM, compactBM     *bitmap
+	fullOnce, compactOnce, hugeOnce sync.Once
+	fullBM, compactBM, hugeBM       *bitmap
 )
+
+// hugeBitmap is the full wordmark at twice the size, for a landing page
+// with the room to make it loud.
+func hugeBitmap() *bitmap {
+	hugeOnce.Do(func() {
+		f := fullBitmap()
+		hugeBM = newBitmap(f.w*2, f.h*2)
+		for y := range hugeBM.h {
+			for x := range hugeBM.w {
+				if f.at(x/2, y/2) {
+					hugeBM.set(x, y)
+				}
+			}
+		}
+	})
+	return hugeBM
+}
 
 func fullBitmap() *bitmap {
 	fullOnce.Do(func() { fullBM = buildFull() })

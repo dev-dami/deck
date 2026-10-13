@@ -64,18 +64,18 @@ func (m *UI) landingAgentsRect(left int) image.Rectangle {
 
 // landingView renders the landing page under the wordmark: the working
 // directory, the agents (unless they sit beside the wordmark) and the hint.
+// The folder and hint always use the full width; when the agents column
+// beside the wordmark runs taller than it, they start below the column.
 func (m *UI) landingView() string {
 	t := m.com.Styles
 	width := m.layout.main.Dx()
-	left, side := m.landingColumns()
-	col := width
-	if side {
-		col = left
-	}
-	cwd := common.PrettyPathInline(t, m.com.Workspace.WorkingDir(), m.gitBranch, col)
+	cwd := common.PrettyPathInline(t, m.com.Workspace.WorkingDir(), m.gitBranch, width)
 
 	parts := []string{cwd}
-	if !side {
+	pad := 1
+	if agents, r := m.landingAgentsView(); agents != "" {
+		pad = max(pad, r.Dy()-m.layout.header.Dy()+1)
+	} else {
 		parts = append(parts, "", m.modelInfo(width))
 	}
 	infoSection := lipgloss.JoinVertical(lipgloss.Left, parts...)
@@ -84,10 +84,10 @@ func (m *UI) landingView() string {
 
 	return lipgloss.NewStyle().
 		Width(width).
-		Height(m.layout.main.Dy() - 1).
-		PaddingTop(1).
+		Height(max(0, m.layout.main.Dy()-1)).
+		PaddingTop(pad).
 		Render(
-			lipgloss.JoinVertical(lipgloss.Left, infoSection, "", lipgloss.NewStyle().Width(min(col, landingHintMax)).Render(hint)),
+			lipgloss.JoinVertical(lipgloss.Left, infoSection, "", lipgloss.NewStyle().Width(min(width, landingHintMax)).Render(hint)),
 		)
 }
 
@@ -99,5 +99,8 @@ func (m *UI) landingAgentsView() (string, image.Rectangle) {
 		return "", image.Rectangle{}
 	}
 	r := m.landingAgentsRect(left)
-	return m.modelInfo(r.Dx()), r
+	agents := m.modelInfo(r.Dx())
+	// Only as tall as the list, so landingView knows where the column ends.
+	r.Max.Y = min(r.Max.Y, r.Min.Y+lipgloss.Height(agents))
+	return agents, r
 }
