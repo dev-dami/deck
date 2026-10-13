@@ -25,7 +25,7 @@ var ErrUnknownOp = errors.New("unknown op")
 //
 // The SUB ops are in it: they only ever serve capsules this Deck's user
 // published (sub.capsule.publish), which is the consent to share them.
-var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects}
+var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects, OpConsolePost}
 
 // contractorOps are the ops only a peer with role contractor may run, on top
 // of allow_inbound. Empty until contracts land (contract.propose goes here),

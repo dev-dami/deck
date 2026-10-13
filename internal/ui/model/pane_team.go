@@ -11,6 +11,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/internal/ui/dialog"
+	"github.com/dev-dami/deck/internal/ui/notice"
 	"github.com/dev-dami/deck/internal/workspace"
 )
 
@@ -67,8 +68,62 @@ func (m *UI) watchTeam() tea.Cmd {
 func (m *UI) applyTeamSnap(msg teamSnapMsg) tea.Cmd {
 	m.teamWatching = false
 	snap := msg.snap
+	first := m.teamSnap == nil
 	m.teamSnap = &snap
-	return m.watchTeam()
+	cmds := []tea.Cmd{m.watchTeam()}
+	if !first {
+		cmds = append(cmds, m.teamNotices(snap)...)
+	}
+	m.teamSeen = teamMaxSeq(snap)
+	return tea.Batch(cmds...)
+}
+
+// teamMaxSeq is the newest chat message or request in snap.
+func teamMaxSeq(snap peer.Snapshot) uint64 {
+	var n uint64
+	for _, c := range snap.Chat {
+		n = max(n, c.Seq)
+	}
+	for _, r := range snap.Requests {
+		n = max(n, r.Seq)
+	}
+	return n
+}
+
+// teamNotices tells the person what is new in the team since the last
+// snapshot: messages from teammates, and capsules they asked for. A
+// private capsule's request offers to share it.
+func (m *UI) teamNotices(snap peer.Snapshot) []tea.Cmd {
+	var cmds []tea.Cmd
+	for _, c := range snap.Chat {
+		if c.Seq <= m.teamSeen || c.Mine {
+			continue
+		}
+		m.Notify(notice.Notice{
+			Level: notice.Info, Source: notice.SourceTeam, Title: c.From, Body: c.Text,
+			Action: &notice.Action{Label: "Open team chat", Msg: focusPaneMsg{id: paneChat}},
+		})
+	}
+	for _, r := range snap.Requests {
+		if r.Seq <= m.teamSeen {
+			continue
+		}
+		short := shortCapsule(string(r.ID))
+		if r.Served {
+			m.Notify(notice.Notice{Level: notice.Info, Source: notice.SourceTeam, Quiet: true,
+				Title: r.From + " fetched capsule " + short})
+			continue
+		}
+		m.Notify(notice.Notice{
+			Level: notice.Warn, Source: notice.SourceTeam,
+			Title: r.From + " asks for capsule " + short,
+			Body:  "It is private. Share it so they can fetch it?",
+			Action: &notice.Action{Label: "Share capsule " + short,
+				Msg: capsuleShareMsg{id: string(r.ID), from: r.From, public: true}},
+		})
+		cmds = append(cmds, m.loadCapsules())
+	}
+	return cmds
 }
 
 type teamPane struct {

@@ -306,6 +306,11 @@ func (m *UI) staleWorkspaceRefreshCmds() []tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 	}
+	if m.hasSession() && time.Since(m.capsulesAt) >= capsulesTTL {
+		if cmd := m.loadCapsules(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
 	if m.hasSession() && time.Since(m.promptQueueCheckedAt) >= promptQueueTTL {
 		if cmd := m.dispatchPromptQueueRefresh(); cmd != nil {
 			cmds = append(cmds, cmd)

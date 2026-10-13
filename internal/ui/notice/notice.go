@@ -41,6 +41,7 @@ const (
 	SourceCI        = "ci"
 	SourceAgent     = "agent"
 	SourceApprovals = "approvals"
+	SourceTeam      = "team"
 )
 
 // Built-in action ids the UI knows how to run. An action can carry its own

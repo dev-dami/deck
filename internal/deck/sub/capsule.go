@@ -62,7 +62,8 @@ func (s *Store) Capsule(id ID) (*Capsule, error) {
 		return nil, err
 	}
 	var c Capsule
-	if err := json.Unmarshal(b, &c); err != nil || c.Version == 0 {
+	// A snapshot decodes too (it has a version); only a capsule has a base.
+	if err := json.Unmarshal(b, &c); err != nil || c.Version == 0 || !c.Base.Valid() {
 		return nil, fmt.Errorf("sub: %s is not a capsule", id.Short())
 	}
 	return &c, nil

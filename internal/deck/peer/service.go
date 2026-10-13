@@ -43,6 +43,9 @@ type Service struct {
 	wait     *PairWait // the code this Service is waiting with, if any
 	ver      uint64
 	wake     chan struct{} // closed and replaced on every change
+
+	// team is the team chat and the capsule requests.
+	team *Team
 }
 
 // ServiceOptions configures a Service.
@@ -73,7 +76,9 @@ func NewService(o ServiceOptions) (*Service, error) {
 		o.Logger = slog.Default()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, base: ctx, cancel: cancel, wake: make(chan struct{})}, nil
+	s := &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, base: ctx, cancel: cancel, wake: make(chan struct{})}
+	s.team = NewTeam(o.Dir, s.changed)
+	return s, nil
 }
 
 // Start puts p, the peers section Deck started with, in effect. With peers
@@ -171,7 +176,7 @@ func (s *Service) apply(p *config.Peers) error {
 	case mgr != nil:
 		err = mgr.Apply(p)
 	case p != nil && p.Enabled:
-		mgr, err = NewManager(ManagerOptions{Dir: s.dir, Peers: p, ConfigPath: s.cfgPath, OnChange: s.changed, Logger: s.log, SubStore: s.subStore})
+		mgr, err = NewManager(ManagerOptions{Dir: s.dir, Peers: p, ConfigPath: s.cfgPath, OnChange: s.changed, Logger: s.log, SubStore: s.subStore, Team: s.team})
 		if err != nil {
 			break
 		}
@@ -704,6 +709,10 @@ type Snapshot struct {
 	Pending bool
 	Err     string // the config or the pins could not be read, or the last change failed
 	Peers   []PeerState
+	// Chat is the team chat, oldest first; Requests the capsules teammates
+	// asked this Deck for.
+	Chat     []ChatMessage
+	Requests []CapsuleRequest
 }
 
 // PeerState is one paired or configured peer.
@@ -782,6 +791,9 @@ func (s *Service) Snapshot() Snapshot {
 	}
 	sort.Slice(snap.Peers, func(i, j int) bool { return snap.Peers[i].Name < snap.Peers[j].Name })
 	snap.Err = Sanitize(strings.Join(errs, "; "))
+	if s.team != nil {
+		snap.Chat, snap.Requests = s.team.Chat(), s.team.Requests()
+	}
 	return snap
 }
 

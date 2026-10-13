@@ -38,6 +38,7 @@ import (
 	"github.com/dev-dami/deck/internal/commands"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/deck/peer"
+	decks "github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/fsext"
 	"github.com/dev-dami/deck/internal/history"
 	"github.com/dev-dami/deck/internal/home"
@@ -362,6 +363,15 @@ type UI struct {
 	// the first read. teamWatching is set while a watch is out.
 	teamSnap     *peer.Snapshot
 	teamWatching bool
+	// teamSeen is the newest chat message or capsule request already
+	// told; newer ones become notices.
+	teamSeen uint64
+
+	// capsules is the session's capsules for the Capsules pane, as last
+	// read; capsulesLoading is set while a read is out.
+	capsules        []decks.CapsuleInfo
+	capsulesLoading bool
+	capsulesAt      time.Time
 
 	// forceCompactMode tracks whether compact mode is forced by user toggle
 	forceCompactMode bool
@@ -873,6 +883,18 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.applyTeamSnap(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case capsulesMsg:
+		m.applyCapsules(msg)
+	case capsuleShareMsg:
+		cmds = append(cmds, m.shareCapsule(msg))
+	case capsuleSharedMsg:
+		cmds = append(cmds, m.applyCapsuleShared(msg))
+	case teamChatSentMsg:
+		if cmd := m.applyTeamChatSent(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case focusPaneMsg:
+		cmds = append(cmds, m.focusOrOpenPane(msg.id))
 	case promptQueueMsg:
 		cmds = append(cmds, m.applyPromptQueue(msg)...)
 	case agentModelChangedMsg:

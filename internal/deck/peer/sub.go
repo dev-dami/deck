@@ -36,6 +36,10 @@ var subOps = []OpInfo{
 type SubHandler struct {
 	Base  Handler
 	Store func() *sub.Store
+	// OnRequest, when set, hears every sub.closure a peer asks for a
+	// capsule this Deck has: served when it was published and handed over,
+	// not served when it is private, so the person can choose to share it.
+	OnRequest func(from Caller, id sub.ID, served bool)
 }
 
 // Search implements Handler.
@@ -64,8 +68,22 @@ func (h *SubHandler) Execute(ctx context.Context, from Caller, op string, args j
 		var a struct {
 			ID sub.ID `json:"id"`
 		}
-		if json.Unmarshal(args, &a) != nil || !a.ID.Valid() || !s.Shareable(a.ID) {
+		if json.Unmarshal(args, &a) != nil || !a.ID.Valid() {
 			return "", fmt.Errorf("%w: not a published capsule", ErrUnknownOp)
+		}
+		if !s.Shareable(a.ID) {
+			// A private capsule this Deck has: the person hears of the request
+			// and can share it. Any other id is just unknown.
+			if _, err := s.Capsule(a.ID); err == nil && h.OnRequest != nil {
+				h.OnRequest(from, a.ID, false)
+				return "", fmt.Errorf("%w: capsule %s is private; its owner was asked to share it, try again once they have", ErrUnknownOp, a.ID.Short())
+			}
+			return "", fmt.Errorf("%w: not a published capsule", ErrUnknownOp)
+		}
+		if h.OnRequest != nil {
+			if _, err := s.Capsule(a.ID); err == nil {
+				h.OnRequest(from, a.ID, true)
+			}
 		}
 		ids, err := s.Closure(a.ID)
 		if err != nil {
