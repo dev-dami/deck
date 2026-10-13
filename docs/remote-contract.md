@@ -249,7 +249,11 @@ The server depends only on this; the adapter implements it over the
 workspace. Signatures as in #47's `backend.go` with these changes: `Mode`,
 `SetMode`, `Approvals`, `Answer`, `Steer`, `CancelQueued` take a session id
 and return `ErrNotFound` for ids outside it; `Queue`, `Roster` and
-`Approvals` return an error too, so an unknown session is `not_found`;
+`Approvals` return an error too, so an unknown session is `not_found`
+(`Approvals("")` is every session's, for `approvals.list` without a
+`session_id`); a `Verify` error that is not a bad, expired or
+out-of-scope token (an I/O error, a contended lock) is never `token_invalid`:
+the socket closes 1011 and the phone keeps its token;
 `Send` returns the new message's id; `Messages` takes a cursor and limit and
 returns `(msgs, more, next, err)` (v1 pages in memory with an opaque
 `created:id` cursor; a real database cursor is a follow-up); `Info` returns
