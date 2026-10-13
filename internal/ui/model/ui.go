@@ -3184,12 +3184,12 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		main.Draw(scr, layout.main)
 
 	case uiLanding:
-		m.drawHeader(scr, layout.header)
-		main := uv.NewStyledString(m.landingView())
-		main.Draw(scr, layout.main)
+		b := m.landingLayout()
+		m.drawHeader(scr, b.header)
+		uv.NewStyledString(b.textView).Draw(scr, b.text)
 		// After the header, so the wordmark's canvas does not paint over it.
-		if agents, r := m.landingAgentsView(); agents != "" {
-			uv.NewStyledString(agents).Draw(scr, r)
+		if b.agentsView != "" {
+			uv.NewStyledString(b.agentsView).Draw(scr, b.agents)
 		}
 
 		if m.activeInline != nil {

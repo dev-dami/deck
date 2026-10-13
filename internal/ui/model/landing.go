@@ -2,8 +2,10 @@ package model
 
 import (
 	"image"
+	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/logo"
 	"github.com/dev-dami/deck/internal/version"
@@ -37,9 +39,7 @@ func (m *UI) selectedLargeModel() *workspace.AgentModel {
 }
 
 // landingColumns returns the width of the wordmark column and whether the
-// agents fit beside it: on a wide terminal the landing page is two columns,
-// the wordmark, folder and hint on the left and the agents on the right,
-// level with the wordmark.
+// agents fit beside it.
 func (m *UI) landingColumns() (int, bool) {
 	w, _ := m.header.anim.Bounds()
 	if w <= 0 {
@@ -52,55 +52,72 @@ func (m *UI) landingColumns() (int, bool) {
 	return left, m.layout.header.Dx() >= left+landingGap+landingAgentsMin
 }
 
-// landingAgentsRect is where the agents column goes beside the wordmark:
-// from the wordmark's top to the bottom of the main area.
-func (m *UI) landingAgentsRect(left int) image.Rectangle {
-	r := m.layout.header
-	r.Min.X += left + landingGap
-	r.Max.X = min(r.Max.X, r.Min.X+landingAgentsMax)
-	r.Max.Y = m.layout.main.Max.Y
-	return r
+// landingBlock is the landing page laid out as one block, centered across
+// the window and in the height above the prompt: the wordmark with the
+// agents beside it on top, the folder and the hint under them.
+type landingBlock struct {
+	header, agents, text image.Rectangle
+	agentsView, textView string
 }
 
-// landingView renders the landing page under the wordmark: the working
-// directory, the agents (unless they sit beside the wordmark) and the hint.
-// The folder and hint always use the full width; when the agents column
-// beside the wordmark runs taller than it, they start below the column.
-func (m *UI) landingView() string {
-	t := m.com.Styles
-	width := m.layout.main.Dx()
-	cwd := common.PrettyPathInline(t, m.com.Workspace.WorkingDir(), m.gitBranch, width)
-
-	parts := []string{cwd}
-	pad := 1
-	if agents, r := m.landingAgentsView(); agents != "" {
-		pad = max(pad, r.Dy()-m.layout.header.Dy()+1)
-	} else {
-		parts = append(parts, "", m.modelInfo(width))
-	}
-	infoSection := lipgloss.JoinVertical(lipgloss.Left, parts...)
-
-	hint := t.ModelInfo.Provider.Render("Type $ to pick an agent and its model ($claude, $codex, $opencode, $antigravity; $all asks everyone). @ adds a file.")
-
-	return lipgloss.NewStyle().
-		Width(width).
-		Height(max(0, m.layout.main.Dy()-1)).
-		PaddingTop(pad).
-		Render(
-			lipgloss.JoinVertical(lipgloss.Left, infoSection, "", lipgloss.NewStyle().Width(min(width, landingHintMax)).Render(hint)),
-		)
-}
-
-// landingAgentsView is the agents column beside the wordmark, or "" when
-// the agents are in landingView.
-func (m *UI) landingAgentsView() (string, image.Rectangle) {
+// landingLayout places the landing block for this frame.
+func (m *UI) landingLayout() landingBlock {
+	var b landingBlock
+	hdr, main := m.layout.header, m.layout.main
 	left, side := m.landingColumns()
-	if !side {
-		return "", image.Rectangle{}
+
+	agentsW := 0
+	if side {
+		agentsW = naturalWidth(m.modelInfo(landingAgentsMax))
+		b.agentsView = m.modelInfo(agentsW)
 	}
-	r := m.landingAgentsRect(left)
-	agents := m.modelInfo(r.Dx())
-	// Only as tall as the list, so landingView knows where the column ends.
-	r.Max.Y = min(r.Max.Y, r.Min.Y+lipgloss.Height(agents))
-	return agents, r
+	blockW := max(left, min(landingHintMax, main.Dx()))
+	if side {
+		blockW = max(blockW, left+landingGap+agentsW)
+	}
+	blockW = min(blockW, hdr.Dx())
+
+	b.textView = m.landingText(blockW, !side)
+	topH := hdr.Dy()
+	agentsH := lipgloss.Height(b.agentsView)
+	if b.agentsView == "" {
+		agentsH = 0
+	}
+	// Under the wordmark, or under the agents when they run taller.
+	gap := 1 + max(0, agentsH-topH)
+	blockH := topH + gap + lipgloss.Height(b.textView)
+
+	x0 := hdr.Min.X + max(0, (hdr.Dx()-blockW)/2)
+	y0 := hdr.Min.Y + max(0, (main.Max.Y-hdr.Min.Y-blockH)/2)
+	b.header = image.Rect(x0, y0, hdr.Max.X, y0+topH)
+	if side {
+		ax := x0 + left + landingGap
+		b.agents = image.Rect(ax, y0, ax+agentsW, y0+agentsH)
+	}
+	b.text = image.Rect(x0, min(y0+topH+gap, main.Max.Y), x0+blockW, main.Max.Y)
+	return b
+}
+
+// landingText is the folder, the agents when they are not beside the
+// wordmark, and the hint, wrapped to width.
+func (m *UI) landingText(width int, withAgents bool) string {
+	t := m.com.Styles
+	parts := []string{common.PrettyPathInline(t, m.com.Workspace.WorkingDir(), m.gitBranch, width)}
+	if withAgents {
+		if info := m.modelInfo(width); info != "" {
+			parts = append(parts, "", info)
+		}
+	}
+	hint := t.ModelInfo.Provider.Render("Type $ to pick an agent and its model ($claude, $codex, $opencode, $antigravity; $all asks everyone). @ adds a file.")
+	parts = append(parts, "", lipgloss.NewStyle().Width(min(width, landingHintMax)).Render(hint))
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// naturalWidth is the widest line of s without its trailing padding.
+func naturalWidth(s string) int {
+	w := 0
+	for line := range strings.SplitSeq(s, "\n") {
+		w = max(w, ansi.StringWidth(strings.TrimRight(ansi.Strip(line), " ")))
+	}
+	return w
 }
