@@ -3764,6 +3764,9 @@ func (m *UI) inlineFocusHelp() key.Binding {
 }
 
 func (m *UI) currentModelSupportsImages() bool {
+	if it, ok := m.com.Workspace.(workspace.ImageTaker); ok {
+		return it.AcceptsImages()
+	}
 	cfg := m.com.Config()
 	if cfg == nil {
 		return false

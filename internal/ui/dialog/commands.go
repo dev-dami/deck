@@ -16,6 +16,7 @@ import (
 	"github.com/dev-dami/deck/internal/ui/list"
 	"github.com/dev-dami/deck/internal/ui/notice"
 	"github.com/dev-dami/deck/internal/ui/styles"
+	"github.com/dev-dami/deck/internal/workspace"
 )
 
 // CommandsID is the identifier for the commands dialog.
@@ -383,7 +384,11 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		cfgPrime := c.com.Config()
 		agentCfg := cfgPrime.Agents[config.AgentCoder]
 		model := cfgPrime.GetModelByType(agentCfg.Model)
-		if model != nil && model.SupportsImages {
+		images := model != nil && model.SupportsImages
+		if it, ok := c.com.Workspace.(workspace.ImageTaker); ok {
+			images = it.AcceptsImages()
+		}
+		if images {
 			commands = append(commands, NewCommandItem(c.com.Styles, "file_picker", "Open File Picker", "ctrl+f", ActionOpenDialog{
 				DialogID: FilePickerID,
 			}))
