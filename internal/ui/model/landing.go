@@ -1,9 +1,26 @@
 package model
 
 import (
+	"image"
+
 	"charm.land/lipgloss/v2"
 	"github.com/dev-dami/deck/internal/ui/common"
+	"github.com/dev-dami/deck/internal/ui/logo"
+	"github.com/dev-dami/deck/internal/version"
 	"github.com/dev-dami/deck/internal/workspace"
+)
+
+const (
+	// landingGap is the space between the wordmark and the agents beside it.
+	landingGap = 6
+	// landingAgentsMin is the narrowest the agents column may be; below it
+	// the agents stack under the wordmark instead.
+	landingAgentsMin = 30
+	// landingAgentsMax keeps the agents column from stretching across a
+	// wide terminal.
+	landingAgentsMax = 56
+	// landingHintMax is the widest the hint wraps to.
+	landingHintMax = 72
 )
 
 // selectedLargeModel returns the currently selected large language model as
@@ -19,18 +36,48 @@ func (m *UI) selectedLargeModel() *workspace.AgentModel {
 	return nil
 }
 
-// landingView renders the landing page view showing the current working
-// directory, model information, and LSP/MCP status in a two-column layout.
+// landingColumns returns the width of the wordmark column and whether the
+// agents fit beside it: on a wide terminal the landing page is two columns,
+// the wordmark, folder and hint on the left and the agents on the right,
+// level with the wordmark.
+func (m *UI) landingColumns() (int, bool) {
+	w, _ := m.header.anim.Bounds()
+	if w <= 0 {
+		return 0, false
+	}
+	left := max(w, lipgloss.Width(logo.Tagline)+2+lipgloss.Width(version.Version))
+	if _, ok := m.roster(); !ok {
+		return left, false
+	}
+	return left, m.layout.header.Dx() >= left+landingGap+landingAgentsMin
+}
+
+// landingAgentsRect is where the agents column goes beside the wordmark:
+// from the wordmark's top to the bottom of the main area.
+func (m *UI) landingAgentsRect(left int) image.Rectangle {
+	r := m.layout.header
+	r.Min.X += left + landingGap
+	r.Max.X = min(r.Max.X, r.Min.X+landingAgentsMax)
+	r.Max.Y = m.layout.main.Max.Y
+	return r
+}
+
+// landingView renders the landing page under the wordmark: the working
+// directory, the agents (unless they sit beside the wordmark) and the hint.
 func (m *UI) landingView() string {
 	t := m.com.Styles
 	width := m.layout.main.Dx()
-	cwd := common.PrettyPathInline(t, m.com.Workspace.WorkingDir(), m.gitBranch, width)
-
-	parts := []string{
-		cwd,
+	left, side := m.landingColumns()
+	col := width
+	if side {
+		col = left
 	}
+	cwd := common.PrettyPathInline(t, m.com.Workspace.WorkingDir(), m.gitBranch, col)
 
-	parts = append(parts, "", m.modelInfo(width))
+	parts := []string{cwd}
+	if !side {
+		parts = append(parts, "", m.modelInfo(width))
+	}
 	infoSection := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	hint := t.ModelInfo.Provider.Render("Type $ to pick an agent and its model ($claude, $codex, $opencode, $antigravity; $all asks everyone). @ adds a file.")
@@ -40,6 +87,17 @@ func (m *UI) landingView() string {
 		Height(m.layout.main.Dy() - 1).
 		PaddingTop(1).
 		Render(
-			lipgloss.JoinVertical(lipgloss.Left, infoSection, "", lipgloss.NewStyle().Width(min(width, 72)).Render(hint)),
+			lipgloss.JoinVertical(lipgloss.Left, infoSection, "", lipgloss.NewStyle().Width(min(col, landingHintMax)).Render(hint)),
 		)
+}
+
+// landingAgentsView is the agents column beside the wordmark, or "" when
+// the agents are in landingView.
+func (m *UI) landingAgentsView() (string, image.Rectangle) {
+	left, side := m.landingColumns()
+	if !side {
+		return "", image.Rectangle{}
+	}
+	r := m.landingAgentsRect(left)
+	return m.modelInfo(r.Dx()), r
 }
