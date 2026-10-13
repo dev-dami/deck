@@ -14,6 +14,7 @@ import (
 	"github.com/charlievieth/fastwalk"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dev-dami/deck/internal/csync"
+	"github.com/dev-dami/deck/internal/deck/brand"
 	"github.com/dev-dami/deck/internal/home"
 )
 
@@ -187,7 +188,13 @@ func ShouldExcludeFile(rootPath, filePath string) bool {
 		shouldIgnore(filePath, nil, isDir)
 }
 
+// PrettyPath shortens path for display: a file in an agent CLI's private
+// folder gets Deck's name for it (see brand.ShowPath), and the home
+// directory becomes ~.
 func PrettyPath(path string) string {
+	if shown, ok := brand.ShowPath(path); ok {
+		return shown
+	}
 	return home.Short(path)
 }
 

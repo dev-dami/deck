@@ -67,6 +67,13 @@ type DeckWorkspace struct {
 	lastMode deckagent.Mode
 
 	act activity // tool calls in flight and background shells, by session
+
+	// deckChanges tells the remote control what the message store cannot
+	// (see remote_caps.go); entries is the message edit index.
+	deckChanges *pubsub.Broker[DeckChange]
+	entries     map[string]entryRef
+	entrySeq    int64      // the last entryRef.N; under mu
+	saveMu      sync.Mutex // one saveEntries at a time
 }
 
 // turn is what is known about one agent's current reply.
@@ -111,6 +118,7 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 			w.back[t] = s
 		}
 	}
+	w.loadEntries()
 	// The agents' deck.jobs op reads what this workspace's activity tracker sees.
 	eng.Manager.SetActivity(w.activityText)
 	go w.pump()
@@ -168,9 +176,15 @@ func (w *DeckWorkspace) threadOf(sessionID string) (decks.ThreadInfo, bool) {
 // AgentRun posts the prompt to the session's thread: to the agents it names
 // ($claude, $codex, $all), or to whoever spoke last.
 func (w *DeckWorkspace) AgentRun(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) error {
+	_, err := w.post(ctx, sessionID, prompt, attachments...)
+	return err
+}
+
+// post is AgentRun, returning the id of the user row it stored.
+func (w *DeckWorkspace) post(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) (string, error) {
 	tid, err := w.thread(sessionID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	var images []deckagent.Image
 	var parts []message.ContentPart
@@ -202,18 +216,21 @@ func (w *DeckWorkspace) AgentRun(ctx context.Context, sessionID, prompt string, 
 		images = append(images, deckagent.Image{Path: p, MediaType: a.MimeType})
 		parts = append(parts, message.BinaryContent{Path: a.FileName, MIMEType: a.MimeType, Data: a.Content})
 	}
-	if _, err := w.app.Messages.Create(ctx, sessionID, message.CreateMessageParams{Role: message.User, Parts: parts}); err != nil {
-		return err
+	row, err := w.app.Messages.Create(ctx, sessionID, message.CreateMessageParams{Role: message.User, Parts: parts})
+	if err != nil {
+		return "", err
 	}
-	if _, err := w.mgr().PostWith(tid, send, images); err != nil {
+	res, err := w.mgr().PostWith(tid, send, images)
+	if err != nil {
 		w.notice(sessionID, err.Error())
-		return nil
+		return row.ID, nil
 	}
+	w.recordEntry(sessionID, row.ID, res.EntryID)
 	if sess, err := w.app.Sessions.Get(ctx, sessionID); err == nil && (sess.Title == "" || sess.Title == "New Session") {
 		sess.Title = firstLine(prompt, 60)
 		_, _ = w.app.Sessions.Save(ctx, sess)
 	}
-	return nil
+	return row.ID, nil
 }
 
 func (w *DeckWorkspace) AgentRunChannel(ctx context.Context, _ string, sessionID, prompt string, attachments ...message.Attachment) error {
@@ -402,7 +419,11 @@ func (w *DeckWorkspace) edge(sid string, failed bool) {
 	was, prog := w.busy[sid], w.prog
 	w.busy[sid] = now
 	w.mu.Unlock()
-	if now == was || prog == nil {
+	if now == was {
+		return
+	}
+	w.publish(DeckChange{Kind: ChangeBusy, SessionID: sid, Busy: now})
+	if prog == nil {
 		return
 	}
 	n := notify.Notification{SessionID: sid, Type: notify.TypeAgentStarted}
@@ -447,13 +468,19 @@ func (w *DeckWorkspace) pump() {
 			w.say(m.ThreadID, m.From, "→ "+strings.Join(to, " ")+"\n\n"+m.Text)
 		case decks.NoticeMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.Text)
+			w.publish(DeckChange{Kind: ChangeNotice, SessionID: w.sessionOf(m.ThreadID), Text: m.Text})
 		case decks.PausedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorHopPause, "", m.Hops)
-			w.notice(w.sessionOf(m.ThreadID), "Paused after the agents passed messages back and forth; send a message to go on.")
+			const paused = "Paused after the agents passed messages back and forth; send a message to go on."
+			w.notice(w.sessionOf(m.ThreadID), paused)
+			w.publish(DeckChange{Kind: ChangeNotice, SessionID: w.sessionOf(m.ThreadID), Text: paused})
 		case decks.ContinuedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorContinue, "", 1)
 		case decks.MemberAddedMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.AgentID+" joined")
+			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
+		case decks.QueueChangedMsg:
+			w.publish(DeckChange{Kind: ChangeQueue, SessionID: w.sessionOf(m.ThreadID), Queue: m.Items})
 		case decks.AutoApprovedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorApproveAllow, "auto", 1)
 		case decks.AutoDeniedMsg:
@@ -465,6 +492,7 @@ func (w *DeckWorkspace) pump() {
 				w.lastMode = m.Mode
 				w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorModeChange, string(m.Mode), 1)
 			}
+			w.publish(DeckChange{Kind: ChangeMode, SessionID: w.sessionOf(m.ThreadID), Mode: string(m.Mode)})
 		case decks.ModelChangedMsg:
 			if m.Changed == "effort" {
 				w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorEffortChange, m.Effort, 1)

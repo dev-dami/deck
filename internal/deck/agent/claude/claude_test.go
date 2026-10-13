@@ -12,6 +12,8 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/approve"
+	"github.com/dev-dami/deck/internal/deck/brand"
+	"github.com/dev-dami/deck/internal/gitutil"
 )
 
 func replay(t *testing.T, path string) []agent.Event {
@@ -698,4 +700,39 @@ func TestSessionStartedCarriesRunningModel(t *testing.T) {
 		}
 	}
 	t.Fatal("no session_started event")
+}
+
+func TestWriteSettingsRedirectsPrivateFolders(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	project := t.TempDir()
+	for _, attribution := range []bool{false, true} {
+		path, err := writeSettings(project, attribution)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(path)
+		os.Remove(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatal(err)
+		}
+		memory := brand.MemoryDir(gitutil.RepoRoot(project))
+		if got["autoMemoryDirectory"] != memory {
+			t.Errorf("attribution=%v: autoMemoryDirectory = %v, want %q", attribution, got["autoMemoryDirectory"], memory)
+		}
+		if !strings.HasPrefix(memory, filepath.Join(home, ".deck", "memory")) {
+			t.Errorf("memory dir %q is not under ~/.deck/memory", memory)
+		}
+		if got["plansDirectory"] != brand.PlansRel {
+			t.Errorf("attribution=%v: plansDirectory = %v, want %q", attribution, got["plansDirectory"], brand.PlansRel)
+		}
+		if _, err := os.Stat(memory); err != nil {
+			t.Errorf("memory dir not created: %v", err)
+		}
+	}
 }

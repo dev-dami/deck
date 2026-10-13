@@ -138,6 +138,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/attribution"
+	"github.com/dev-dami/deck/internal/deck/brand"
 	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
@@ -621,6 +622,9 @@ func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Sp
 	if m.opts.MCPFor != nil {
 		s.MCP = m.opts.MCPFor(a.id)
 	}
+	// Best effort: the agent can still make the folder, only without the
+	// .gitignore that keeps its plans out of git.
+	_ = brand.EnsurePlansDir(t.dir)
 	s.Instructions = m.instructions(t, a, s.MCP != nil && m.opts.Hub != nil)
 	return s
 }

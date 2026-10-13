@@ -162,3 +162,33 @@ func TestCurrentBranch(t *testing.T) {
 		require.Equal(t, "worktree-branch", branch)
 	})
 }
+
+func TestRepoRoot(t *testing.T) {
+	if !gitAvailable() {
+		t.Skip("git is not available")
+	}
+	root := t.TempDir()
+	runGit(t, root, "init")
+	runGit(t, root, "config", "user.email", "test@test.com")
+	runGit(t, root, "config", "user.name", "Test User")
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a.txt"), []byte("a"), 0o644))
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-m", "init")
+	sub := filepath.Join(root, "sub")
+	require.NoError(t, os.Mkdir(sub, 0o755))
+	wt := filepath.Join(t.TempDir(), "wt")
+	runGit(t, root, "worktree", "add", wt)
+
+	same := func(want, got string) {
+		t.Helper()
+		w, _ := filepath.EvalSymlinks(want)
+		g, _ := filepath.EvalSymlinks(got)
+		require.Equal(t, w, g)
+	}
+	same(root, RepoRoot(root))
+	same(root, RepoRoot(sub))
+	same(root, RepoRoot(wt))
+
+	plain := t.TempDir()
+	same(plain, RepoRoot(plain))
+}

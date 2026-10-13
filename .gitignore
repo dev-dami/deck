@@ -1,5 +1,7 @@
 bin/
 dist/
+# The phone client's build is committed: go:embed needs it (pkg/remote/web).
+!pkg/remote/web/dist/
 *.exe
 /deck
 .deck/
