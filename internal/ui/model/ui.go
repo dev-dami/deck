@@ -3373,6 +3373,10 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		m.drawHeader(scr, layout.header)
 		main := uv.NewStyledString(m.landingView())
 		main.Draw(scr, layout.main)
+		// After the header, so the wordmark's canvas does not paint over it.
+		if agents, r := m.landingAgentsView(); agents != "" {
+			uv.NewStyledString(agents).Draw(scr, r)
+		}
 
 		if m.activeInline != nil {
 			m.activeInline.SetFocused(m.focus == uiFocusEditor)
