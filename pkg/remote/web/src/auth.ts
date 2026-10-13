@@ -9,7 +9,10 @@ import { decodePairError, decodePairResponse, type PairResponse } from "./protoc
 const TOKEN_PREFIX = "deck.remote.token.";
 const CURRENT_KEY = "deck.remote.server";
 
+// The subset of Storage the token store uses; length/key enumerate it.
 export interface KV {
+  readonly length: number;
+  key(i: number): string | null;
   getItem(k: string): string | null;
   setItem(k: string, v: string): void;
   removeItem(k: string): void;
@@ -34,9 +37,17 @@ export function loadToken(store: KV | null): StoredToken | null {
   }
 }
 
+// Keeps one token per origin: every other install's token is removed, so a
+// key that is no longer in use cannot linger in storage.
 export function saveToken(store: KV | null, serverId: string, token: string): boolean {
   if (store === null) return false;
   try {
+    const stale: string[] = [];
+    for (let i = 0; i < store.length; i++) {
+      const k = store.key(i);
+      if (k?.startsWith(TOKEN_PREFIX) && k !== TOKEN_PREFIX + serverId) stale.push(k);
+    }
+    for (const k of stale) store.removeItem(k);
     store.setItem(TOKEN_PREFIX + serverId, token);
     store.setItem(CURRENT_KEY, serverId);
     return true;
@@ -79,16 +90,19 @@ export interface PairOffer {
   expires: number | null;
 }
 
-// The QR URL carries `#pair=<code>&fp=<fingerprint>`.
+// The QR URL carries `#pair=<code>&fp=<fingerprint>`. A fingerprint that is
+// present but malformed makes the whole offer invalid: it must never fall
+// through to the no-fingerprint trust gate (R9).
 export function pairOfferFromHash(hash: string): PairOffer | null {
   if (!hash.startsWith("#pair=")) return null;
   const q = new URLSearchParams(hash.slice(1));
   const code = (q.get("pair") ?? "").trim();
-  if (code === "" || hasControl(code)) return null;
+  if (code === "" || code.length > MAX_CODE_LEN || hasControl(code)) return null;
   const fp = (q.get("fp") ?? "").trim();
+  if (fp !== "" && !FINGERPRINT_RE.test(fp)) return null;
   return {
     code,
-    fingerprint: fp === "" || hasControl(fp) ? null : fp,
+    fingerprint: fp === "" ? null : fp,
     host: null,
     port: null,
     name: null,
@@ -103,6 +117,7 @@ export function isPairHash(hash: string): boolean {
 export const INVITE_PREFIX = "deck://pair?";
 const MAX_INVITE_LEN = 1024;
 const MAX_INVITE_ALTS = 3;
+const MAX_CODE_LEN = 64;
 const INVITE_HOST_RE = /^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/;
 const FINGERPRINT_RE = /^SHA256:[A-Za-z0-9+/]{43}$/;
 
@@ -110,10 +125,10 @@ export function looksLikeInvite(s: string): boolean {
   return s.trim().toLowerCase().startsWith("deck://");
 }
 
-// Control and format characters (bidi overrides, zero-width) have no place in
-// an invite or a code.
+// Control, format (bidi overrides, zero-width), line/paragraph separator and
+// private-use characters have no place in an invite or a code.
 function hasControl(s: string): boolean {
-  return /[\p{Cc}\p{Cf}�]/u.test(s);
+  return /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Co}�]/u.test(s);
 }
 
 function validHost(h: string): boolean {
@@ -175,7 +190,7 @@ export function parseInvite(s: string): PairOffer | null {
 export function offerFromInput(s: string): PairOffer | null {
   if (looksLikeInvite(s)) return parseInvite(s);
   const code = s.trim();
-  if (code === "" || hasControl(code) || code.length > 64) return null;
+  if (code === "" || hasControl(code) || code.length > MAX_CODE_LEN) return null;
   return { code, fingerprint: null, host: null, port: null, name: null, expires: null };
 }
 
@@ -188,7 +203,9 @@ export function inviteOrigin(
 ): { matches: boolean; url: string | null } {
   if (offer.host === null || offer.port === null) return { matches: true, url: null };
   const defaultPort = loc.protocol === "https:" ? "443" : "80";
-  const here = `${loc.hostname.toLowerCase()}:${loc.port === "" ? defaultPort : loc.port}`;
+  // location.hostname brackets an IPv6 address; the invite does not.
+  const hostname = loc.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const here = `${hostname}:${loc.port === "" ? defaultPort : loc.port}`;
   const host = offer.host.includes(":") ? `[${offer.host}]` : offer.host;
   const there = `${offer.host.toLowerCase()}:${offer.port}`;
   if (here === there) return { matches: true, url: null };
@@ -238,7 +255,17 @@ export function deviceName(ua: string): string {
 
 export type PairResult =
   | { ok: true; response: PairResponse }
-  | { ok: false; message: string; retryable: boolean };
+  // retryAfterMs: how long the server asked us to wait (429 Retry-After).
+  | { ok: false; message: string; retryable: boolean; retryAfterMs: number | null };
+
+// Retry-After as delay-seconds or an HTTP date, in milliseconds from now.
+export function parseRetryAfter(value: string | null, now: number): number | null {
+  if (value === null || value.trim() === "") return null;
+  const s = value.trim();
+  if (/^\d+$/.test(s)) return Number(s) * 1000;
+  const at = Date.parse(s);
+  return Number.isNaN(at) ? null : Math.max(0, at - now);
+}
 
 export type FetchFn = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -269,6 +296,7 @@ export async function pair(fetchFn: FetchFn, code: string, name: string): Promis
       ok: false,
       message: "Could not reach Deck. Check that you are on the same network.",
       retryable: true,
+      retryAfterMs: null,
     };
   }
   let body: unknown = null;
@@ -281,18 +309,27 @@ export async function pair(fetchFn: FetchFn, code: string, name: string): Promis
     const err = decodePairError(body);
     const code = err?.error ?? "";
     const retryable = res.status === 429 || code === "rate_limited" || res.status >= 500;
+    const retryAfterMs =
+      res.status === 429 ? parseRetryAfter(res.headers.get("retry-after"), Date.now()) : null;
+    const byStatus: Record<number, string> = {
+      429: PAIR_ERRORS["rate_limited"] ?? "",
+      400: PAIR_ERRORS["invalid"] ?? "",
+      // R7: the server wants application/json; a 415 means this page or a
+      // proxy in between sent something else, not that the code was wrong.
+      415: "Deck refused the request's content type. Reload this page and try again.",
+    };
     const message =
-      PAIR_ERRORS[code] ??
-      (res.status === 429
-        ? PAIR_ERRORS["rate_limited"]
-        : res.status === 400
-          ? PAIR_ERRORS["invalid"]
-          : `Pairing failed (HTTP ${res.status}).`);
-    return { ok: false, message: message ?? "Pairing failed.", retryable };
+      PAIR_ERRORS[code] ?? byStatus[res.status] ?? `Pairing failed (HTTP ${res.status}).`;
+    return { ok: false, message, retryable, retryAfterMs };
   }
   const response = decodePairResponse(body);
   if (response === null || response.token === "") {
-    return { ok: false, message: "Deck sent an unexpected pairing response.", retryable: false };
+    return {
+      ok: false,
+      message: "Deck sent an unexpected pairing response.",
+      retryable: false,
+      retryAfterMs: null,
+    };
   }
   return { ok: true, response };
 }

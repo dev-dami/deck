@@ -29,10 +29,12 @@ export function SessionScreen({ state, id }: { state: AppState; id: string }) {
   const stick = useRef(true);
   const [showJump, setShowJump] = useState(false);
 
+  // Keyed on the session only: a disconnect must not close it, so the resume
+  // hello carries the focus and the welcome refetches (R11).
   useEffect(() => {
-    if (online) void controller.openSession(id);
+    void controller.openSession(id);
     return () => controller.closeSession();
-  }, [controller, id, online]);
+  }, [controller, id]);
 
   // Follow the stream only while the reader is at the bottom; scrolling up to
   // read earlier output must not be yanked back.

@@ -37,6 +37,10 @@ function memory(): KV & { data: Map<string, string> } {
   const data = new Map<string, string>();
   return {
     data,
+    get length() {
+      return data.size;
+    },
+    key: (i) => [...data.keys()][i] ?? null,
     getItem: (k) => data.get(k) ?? null,
     setItem: (k, v) => {
       data.set(k, v);
@@ -48,6 +52,12 @@ function memory(): KV & { data: Map<string, string> } {
 }
 
 const blocked: KV = {
+  get length(): number {
+    throw new Error("blocked");
+  },
+  key: () => {
+    throw new Error("blocked");
+  },
   getItem: () => {
     throw new Error("blocked");
   },
@@ -295,6 +305,46 @@ describe("focus and reconnect (R11)", () => {
     expect(sock.requests("sessions.list")).toHaveLength(before + 1);
   });
 
+  test("a session opened while offline is focused by the welcome", async () => {
+    const t = setup();
+    const sock = await paired(t);
+    // Not ready yet: openSession only records the focus.
+    await t.controller.openSession("s1");
+    expect(sock.requests("sessions.focus")).toHaveLength(0);
+    expect(t.controller.focus).toBe("s1");
+    sock.receive(welcomeFrame({}));
+    await flush();
+    expect(sock.requests("sessions.focus")[0]).toMatchObject({ p: { id: "s1" } });
+  });
+
+  test("scoped events for a session that is not open are dropped", async () => {
+    const t = setup();
+    const sock = await paired(t);
+    sock.receive(welcomeFrame({}));
+    void t.controller.openSession("s1");
+    answer(sock, { "sessions.focus": {} });
+    await flush();
+    const row = {
+      id: "m9",
+      session_id: "s2",
+      role: "assistant",
+      created_at: "2026-10-12T09:00:01Z",
+      updated_at: "2026-10-12T09:00:01Z",
+      finished: true,
+      parts: [{ type: "text", text: "elsewhere" }],
+    };
+    sock.receive({ t: "ev", seq: 1, e: "message.created", p: row });
+    expect(t.controller.state.messages["s2"]).toBeUndefined();
+    expect(t.warnings.some((w) => w.includes("message.created"))).toBe(true);
+    sock.receive({
+      t: "ev",
+      seq: 2,
+      e: "message.created",
+      p: { ...row, id: "m10", session_id: "s1" },
+    });
+    expect(t.controller.state.messages["s1"]?.map((m) => m.id)).toContain("m10");
+  });
+
   test("closing a session unfocuses", async () => {
     const t = setup();
     const sock = await paired(t);
@@ -480,6 +530,9 @@ describe("requests", () => {
     const t = setup();
     const sock = await paired(t);
     sock.receive(welcomeFrame({}));
+    void t.controller.openSession("s1");
+    answer(sock, { "sessions.focus": {} });
+    await flush();
     const userMsg = {
       id: "m1",
       session_id: "s1",

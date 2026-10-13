@@ -2,7 +2,7 @@ import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import { fingerprintHex, inviteOrigin, type PairOffer } from "../auth";
 import type { AppState } from "../state";
-import { useController } from "./hooks";
+import { useController, useNow } from "./hooks";
 
 function Shell({ children }: { children: ComponentChildren }) {
   return (
@@ -21,6 +21,10 @@ function Offer({ state, offer }: { state: AppState; offer: PairOffer }) {
   const controller = useController();
   const [checked, setChecked] = useState(false);
   const busy = state.auth === "pairing";
+  const now = useNow(1000);
+  // A 429 Retry-After keeps the button off until the server will accept a retry.
+  const waitS =
+    state.pairRetryAt === null ? 0 : Math.max(0, Math.ceil((state.pairRetryAt - now) / 1000));
   const origin = inviteOrigin(offer, location);
   const hex = offer.fingerprint === null ? null : fingerprintHex(offer.fingerprint);
   const secure = location.protocol === "https:";
@@ -100,10 +104,12 @@ function Offer({ state, offer }: { state: AppState; offer: PairOffer }) {
       <button
         type="button"
         class="btn primary block"
-        disabled={busy || expired || ((offer.fingerprint !== null || secure) && !checked)}
+        disabled={
+          busy || expired || waitS > 0 || ((offer.fingerprint !== null || secure) && !checked)
+        }
         onClick={() => void controller.confirmPair()}
       >
-        {busy ? "Pairing..." : "Pair this phone"}
+        {busy ? "Pairing..." : waitS > 0 ? `Try again in ${waitS} s` : "Pair this phone"}
       </button>
       <button
         type="button"

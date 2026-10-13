@@ -157,6 +157,7 @@ export class Controller {
         type: "offer",
         offer: res.retryable ? offer : null,
         message: res.message,
+        retryAt: res.retryAfterMs === null ? null : Date.now() + res.retryAfterMs,
       });
       return;
     }
@@ -241,7 +242,26 @@ export class Controller {
     this.applyEvent(ev);
   }
 
+  // Scoped events (§3.3) belong to the focused session only; one for another
+  // session is stale (focus moved while it was in flight) and is dropped.
+  private isStaleScoped(ev: ServerEvent): boolean {
+    switch (ev.e) {
+      case "message.created":
+      case "message.updated":
+      case "message.deleted":
+      case "queue.changed":
+      case "notice":
+        return ev.p.session_id !== this.openSessionId;
+      default:
+        return false;
+    }
+  }
+
   private applyEvent(ev: ServerEvent): void {
+    if (this.isStaleScoped(ev)) {
+      this.warn(`dropped scoped event ${ev.e} for a session that is not open`);
+      return;
+    }
     this.store.dispatch({ type: "event", event: ev });
     switch (ev.e) {
       case "theme.changed":
@@ -371,9 +391,13 @@ export class Controller {
 
   // ---- sessions -----------------------------------------------------------
 
+  // The screen opens a session once per visit, whatever the link does in
+  // between: a disconnect keeps the focus, so the resume hello carries it and
+  // the welcome refetches (R11). Offline, the welcome's refetch sends focus.
   async openSession(sessionId: string): Promise<void> {
     if (this.openSessionId === sessionId) return;
     this.openSessionId = sessionId;
+    if (this.rpc?.status !== "ready") return;
     // Focus tells the hub which scoped events this phone wants.
     const focused = await this.guard(this.call("sessions.focus", { id: sessionId }));
     if (focused === null || this.openSessionId !== sessionId) return;
@@ -420,7 +444,12 @@ export class Controller {
       await this.rpc.sendChat(req);
       return true;
     } catch (e) {
-      this.store.dispatch({ type: "toast.add", kind: "error", text: describeError(e) });
+      // Offline fails fast and says so: the draft stays in the composer.
+      const text =
+        e instanceof RpcError && e.code === "offline"
+          ? "You are offline, so the message was not sent. Try again once connected."
+          : describeError(e);
+      this.store.dispatch({ type: "toast.add", kind: "error", text });
       return false;
     }
   }

@@ -3,7 +3,6 @@ import { FakeClock, flush, SocketLog, welcomeFrame } from "./fakes";
 import {
   backoffDelay,
   type ConnStatus,
-  closeReasonCode,
   RpcClient,
   RpcError,
   retryAfterMs,
@@ -329,6 +328,53 @@ describe("requests", () => {
   });
 });
 
+describe("request timing and decoding", () => {
+  test("a queued request's timeout runs from the call, not from dispatch", async () => {
+    const h = harness({ requestTimeoutMs: 1000 });
+    h.rpc.start();
+    connect(h);
+    const busy = Array.from({ length: 8 }, () => h.rpc.call("sessions.list", {}).catch(() => {}));
+    const queued = h.rpc.call("sessions.list", {});
+    let err: unknown = null;
+    queued.catch((e) => {
+      err = e;
+    });
+    h.clock.advance(999);
+    await Promise.resolve();
+    expect(err).toBeNull();
+    h.clock.advance(1);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(err).toBeInstanceOf(RpcError);
+    expect((err as RpcError).code).toBe("timeout");
+    await Promise.all(busy);
+  });
+
+  test("a null r or p is read as absent, not as a bad frame", async () => {
+    const h = harness();
+    h.rpc.start();
+    connect(h);
+    const p = h.rpc.call("sessions.focus", { id: "" });
+    const req = h.log.latest.sent.at(-1) as { id: string };
+    h.log.latest.receive({ t: "res", id: req.id, ok: true, r: null });
+    expect(await p).toEqual({});
+    h.log.latest.receive({ t: "ev", seq: 1, e: "theme.changed", p: null });
+    expect(h.warnings.some((w) => w.includes("frame"))).toBe(false);
+  });
+
+  test("a welcome for another protocol version stops without retrying", () => {
+    const h = harness();
+    h.rpc.start();
+    const s = h.log.latest;
+    s.open();
+    const w = welcomeFrame({});
+    s.receive({ ...w, server: { ...(w["server"] as object), protocol: 3 } });
+    h.clock.advance(60_000);
+    expect(h.stops).toEqual(["protocol"]);
+    expect(h.log.sockets).toHaveLength(1);
+  });
+});
+
 describe("chat.send idempotency", () => {
   test("carries an idempotency key and returns the message id", async () => {
     const h = harness();
@@ -512,14 +558,19 @@ describe("close codes (R1)", () => {
     expect(b.clock.nextDelay()).toBe(60_000);
   });
 
-  test("retryAfterMs and closeReasonCode parse the reason", () => {
+  test("retryAfterMs parses the reason", () => {
     expect(retryAfterMs("30")).toBe(30_000);
     expect(retryAfterMs(" 5 ")).toBe(5_000);
     expect(retryAfterMs("")).toBeNull();
     expect(retryAfterMs("soon")).toBeNull();
-    expect(closeReasonCode("token_invalid")).toBe("token_invalid");
-    expect(closeReasonCode("rate_limited: 30")).toBe("rate_limited");
-    expect(closeReasonCode("")).toBe("");
+  });
+
+  test("4401 whose reason starts with token_invalid stops too", () => {
+    const h = harness();
+    h.rpc.start();
+    connect(h);
+    h.log.latest.drop(4401, "token_invalid: expired");
+    expect(h.stops).toEqual(["token_invalid"]);
   });
 
   test("4401 token_invalid stops and asks to forget the token", () => {

@@ -6,15 +6,14 @@ export class BrowserSocket implements SocketLike {
   onopen: (() => void) | null = null;
   onmessage: ((ev: { data: unknown }) => void) | null = null;
   onclose: ((ev: { code: number; reason: string }) => void) | null = null;
-  onerror: (() => void) | null = null;
   private readonly ws: WebSocket;
 
   constructor(url: string) {
     this.ws = new WebSocket(url);
     this.ws.addEventListener("open", () => this.onopen?.());
     this.ws.addEventListener("message", (ev) => this.onmessage?.({ data: ev.data }));
+    // An error is always followed by a close event, which carries the code.
     this.ws.addEventListener("close", (ev) => this.onclose?.({ code: ev.code, reason: ev.reason }));
-    this.ws.addEventListener("error", () => this.onerror?.());
   }
 
   send(data: string): void {

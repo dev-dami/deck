@@ -37,6 +37,8 @@ export interface AppState {
   auth: AuthPhase;
   authMessage: string | null;
   offer: PairOffer | null;
+  // When a rate-limited pairing may be retried (Date.now() ms), else null.
+  pairRetryAt: number | null;
   link: Link;
   server: ServerInfo | null;
   device: DeviceRef | null;
@@ -59,6 +61,7 @@ export const initialState: AppState = {
   auth: "unpaired",
   authMessage: null,
   offer: null,
+  pairRetryAt: null,
   link: "connecting",
   server: null,
   device: null,
@@ -78,7 +81,7 @@ export const initialState: AppState = {
 export type Action =
   | { type: "event"; event: ServerEvent }
   | { type: "auth"; auth: AuthPhase; message: string | null }
-  | { type: "offer"; offer: PairOffer | null; message: string | null }
+  | { type: "offer"; offer: PairOffer | null; message: string | null; retryAt?: number | null }
   | { type: "link"; link: Link }
   | { type: "welcome"; server: ServerInfo; device: DeviceRef }
   | { type: "sessions.loaded"; sessions: Session[] }
@@ -253,6 +256,7 @@ export function reduce(state: AppState, action: Action): AppState {
         auth: action.offer === null ? "unpaired" : "offer",
         offer: action.offer,
         authMessage: action.message,
+        pairRetryAt: action.retryAt ?? null,
       };
     case "link":
       return state.link === action.link ? state : { ...state, link: action.link };
