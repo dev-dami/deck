@@ -34,9 +34,20 @@ func TestR10_EveryIdIsCheckedAgainstTheSession(t *testing.T) {
 		{wire.MMessageEdit, wire.MessageEditParams{SessionID: "s2", MessageID: "m1", Text: "x"}},
 		{wire.MAgentInterrupt, wire.AgentInterruptParams{SessionID: "s2", Agent: "claude1"}},
 		{wire.MModeGet, wire.SessionParams{SessionID: "ghost"}},
+		{wire.MModeSet, wire.ModeSetParams{SessionID: "ghost", Mode: wire.ModePlan}},
 		{wire.MMessagesList, wire.MessagesListParams{SessionID: "ghost"}},
 		{wire.MChatSend, wire.ChatSendParams{SessionID: "ghost", Text: "hi"}},
 		{wire.MSessionsDelete, wire.IDParams{ID: "ghost"}},
+		{wire.MSessionsRename, wire.SessionsRenameParams{ID: "ghost", Title: "x"}},
+		{wire.MSessionsFocus, wire.IDParams{ID: "ghost"}},
+		{wire.MApprovalsList, wire.ApprovalsListParams{SessionID: "ghost"}},
+		{wire.MModelsList, wire.ModelsListParams{SessionID: "ghost", Kind: "claude"}},
+		{wire.MModelsSet, wire.ModelsSetParams{SessionID: "ghost", Kind: "claude", Model: "m"}},
+		{wire.MRosterGet, wire.SessionParams{SessionID: "ghost"}},
+		{wire.MChangesGet, wire.SessionParams{SessionID: "ghost"}},
+		{wire.MQueueList, wire.SessionParams{SessionID: "ghost"}},
+		{wire.MChatCancel, wire.SessionParams{SessionID: "ghost"}},
+		{wire.MChatContinue, wire.SessionParams{SessionID: "ghost"}},
 	}
 	for _, f := range foreign {
 		res := c.call(f.method, f.params)
@@ -57,6 +68,35 @@ func TestR10_EveryIdIsCheckedAgainstTheSession(t *testing.T) {
 
 	res = c.call(wire.MModeGet, nil)
 	require.Equal(t, wire.CodeInvalid, errCode(t, res), "mode.get needs a session")
+
+	// A focus on an unknown session is refused, and one restored through
+	// hello.resume is dropped: its scoped events never arrive.
+	okRes(t, c.call(wire.MSessionsFocus, wire.IDParams{ID: ""}))
+	c2, welcome := r.welcome(tok, &wire.Resume{Epoch: r.srv.Hub().Epoch(), Seq: r.srv.Hub().Seq(), Focus: "ghost"})
+	require.False(t, welcome.Welcome.Replay)
+	r.be.Inject(remote.Event{Name: wire.EvMessageCreated, SessionID: "ghost", Scoped: true, Payload: wire.Message{ID: "x", Parts: []wire.Part{}}})
+	r.be.Inject(remote.Event{Name: wire.EvBusy, Payload: wire.BusyChanged{SessionID: "s1"}})
+	for f := c2.read(); f.Ev == nil || f.Ev.E != wire.EvBusy; f = c2.read() {
+		require.NotEqual(t, wire.EvMessageCreated, f.Ev.E, "the ghost focus was dropped")
+	}
+}
+
+func TestTitlesAreBounded(t *testing.T) {
+	r := newRig(t)
+	tok, _ := r.token("Pixel")
+	c, _ := r.welcome(tok, nil)
+	long := strings.Repeat("é", maxTitleRunes+1)
+	res := c.call(wire.MSessionsCreate, wire.SessionsCreateParams{Title: long})
+	require.Equal(t, wire.CodeInvalid, errCode(t, res))
+	res = c.call(wire.MSessionsRename, wire.SessionsRenameParams{ID: "s1", Title: long})
+	require.Equal(t, wire.CodeInvalid, errCode(t, res))
+	res = c.call(wire.MSessionsCreate, wire.SessionsCreateParams{Title: long[:2*maxTitleRunes]})
+	require.Len(t, []rune(unmarshal[wire.Session](t, okRes(t, res)).Title), maxTitleRunes)
+
+	// A title the desktop made long is cut on the way out.
+	r.be.Get("s1").Session.Title = long
+	list := unmarshal[[]wire.Session](t, okRes(t, c.call(wire.MSessionsList, nil)))
+	require.Len(t, []rune(list[0].Title), maxTitleRunes)
 }
 
 func TestR11_SeqFocusPagingAndNoGoErrorText(t *testing.T) {
@@ -172,18 +212,19 @@ func TestR12_CapsAndReplayThroughTheBoundedQueue(t *testing.T) {
 	for i := 0; i < wire.OutboundQueue+10; i++ {
 		r.be.Inject(remote.Event{Name: wire.EvBusy, Payload: wire.BusyChanged{SessionID: "s1"}})
 	}
-	require.Eventually(t, func() bool { return r.srv.Hub().Seq() == last+uint64(wire.OutboundQueue+10) }, 3*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return r.srv.Hub().Seq() >= last+uint64(wire.OutboundQueue+10) }, 3*time.Second, 10*time.Millisecond)
 	c2, welcome2 := r.welcome(tok, &wire.Resume{Epoch: welcome.Welcome.Epoch, Seq: last})
 	require.False(t, welcome2.Welcome.Replay)
 	require.Equal(t, wire.FrameResync, c2.read().T)
 	okRes(t, c2.call(wire.MSessionsList, nil)) // the connection is alive after the resync
 
-	c3, welcome3 := r.welcome(tok, &wire.Resume{Epoch: welcome.Welcome.Epoch, Seq: r.srv.Hub().Seq() - 5})
+	top := r.srv.Hub().Seq()
+	c3, welcome3 := r.welcome(tok, &wire.Resume{Epoch: welcome.Welcome.Epoch, Seq: top - 5})
 	require.True(t, welcome3.Welcome.Replay)
 	for i := 4; i >= 0; i-- {
 		ev := c3.read()
 		require.Equal(t, wire.FrameEv, ev.T)
-		require.Equal(t, r.srv.Hub().Seq()-uint64(i), ev.Ev.Seq)
+		require.Equal(t, top-uint64(i), ev.Ev.Seq)
 	}
 }
 
@@ -211,7 +252,7 @@ func TestR11_IdempotencyMapIsBounded(t *testing.T) {
 	for i := 0; i < wire.IdempotencyKeys+10; i++ {
 		m.record("k"+string(rune(i)), "m")
 	}
-	require.Equal(t, wire.IdempotencyKeys, m.size())
+	require.Len(t, m.keys, wire.IdempotencyKeys)
 	_, ok := m.lookup("k" + string(rune(0)))
 	require.False(t, ok, "the oldest key went")
 	_, ok = m.lookup("k" + string(rune(wire.IdempotencyKeys+9)))
@@ -219,5 +260,5 @@ func TestR11_IdempotencyMapIsBounded(t *testing.T) {
 	clk.advance(wire.IdempotencyTTL + time.Second)
 	_, ok = m.lookup("k" + string(rune(wire.IdempotencyKeys+9)))
 	require.False(t, ok, "keys expire")
-	require.Zero(t, m.size())
+	require.Empty(t, m.keys)
 }

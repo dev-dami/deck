@@ -81,7 +81,7 @@ func closeNow(ws *websocket.Conn, code int, text string) {
 // handleWS upgrades, reads the hello under the pre-auth limits (R4),
 // checks the token before the limiter (R1) and runs the connection.
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	addr := clientAddr(r)
+	addr := s.addrOf(r)
 	if !s.sameOrigin(r) {
 		http.Error(w, "origin not allowed", http.StatusForbidden)
 		return
@@ -113,15 +113,28 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dev, err := s.store.Verify(hello.Token)
-	if err != nil {
-		// The limiter is consulted only now, after the lookup failed.
+	switch {
+	case err == nil:
+	case errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrExpired):
+		// Only a token that is wrong, foreign or expired is token_invalid,
+		// and the limiter is consulted only now, after the lookup failed.
+		// The device lockout is keyed by ids that exist in the store.
 		id, _, _ := strings.Cut(hello.Token, ".")
+		if _, gerr := s.store.Get(id); gerr != nil {
+			id = ""
+		}
 		if wait, locked := s.limits.Locked(addr, id); locked {
 			closeNow(ws, wire.CloseRateLimited, strconv.Itoa(retrySeconds(wait)))
 			return
 		}
 		s.limits.Fail(addr, id)
 		closeNow(ws, wire.CloseTokenInvalid, wire.CodeTokenInvalid)
+		return
+	default:
+		// The store could not be read: nothing is known about the token,
+		// so the phone keeps it and nothing is counted against anyone.
+		slog.Warn("remote: could not verify a token", "error", err)
+		closeNow(ws, websocket.CloseInternalServerErr, "try again")
 		return
 	}
 	s.limits.OK(addr, dev.ID)
@@ -133,10 +146,23 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &conn{s: s, ws: ws, dev: dev, ctx: ctx, cancel: cancel, sem: make(chan struct{}, wire.MaxInFlight)}
 	defer cancel()
+	if hello.Resume != nil && hello.Resume.Focus != "" {
+		// The restored focus is checked like sessions.focus (R10).
+		if _, err := s.be.Mode(hello.Resume.Focus); err != nil {
+			hello.Resume.Focus = ""
+		}
+	}
 	client, replay, resync := s.hub.Subscribe(hello.Resume)
 	c.client = client
 	defer s.hub.Unsubscribe(client)
-	s.track(c)
+	if s.beforeTrack != nil {
+		s.beforeTrack()
+	}
+	if !s.track(c) {
+		// Revoked between Verify and now.
+		c.closeWith(wire.CloseRevoked, "revoked")
+		return
+	}
 	defer s.untrack(c)
 
 	if err := c.write(s.welcome(dev, replay)); err != nil {

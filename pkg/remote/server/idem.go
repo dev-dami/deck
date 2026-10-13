@@ -69,9 +69,3 @@ func (m *idem) prune() {
 	}
 	m.order = kept
 }
-
-func (m *idem) size() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.keys)
-}

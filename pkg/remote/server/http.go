@@ -75,7 +75,7 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnsupportedMediaType, wire.PairError{Error: wire.CodeInvalid})
 		return
 	}
-	addr := clientAddr(r)
+	addr := s.addrOf(r) // the socket address: no header is trusted in v1 (R8)
 	if wait, locked := s.limits.Locked(addr, ""); locked {
 		w.Header().Set("Retry-After", strconv.Itoa(retrySeconds(wait)))
 		writeJSON(w, http.StatusTooManyRequests, wire.PairError{Error: wire.CodeRateLimited})
@@ -96,7 +96,7 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.limits.OK(addr, "")
 		writeJSON(w, http.StatusOK, wire.PairResponse{Token: token, DeviceID: dev.ID, ServerID: s.store.ServerID(), ExpiresAt: dev.ExpiresAt()})
-		s.refreshDevices()
+		s.notifyChanged()
 	}
 }
 
@@ -120,7 +120,7 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "index.html"
 	}
-	if strings.HasPrefix(name, "api/") || name == "ws" {
+	if strings.HasPrefix(name, "api/") {
 		http.NotFound(w, r)
 		return
 	}

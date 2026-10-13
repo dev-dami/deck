@@ -2,6 +2,8 @@ package server
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -85,14 +87,64 @@ func TestR1_BadHellosNeverBlockAValidToken(t *testing.T) {
 	code, reason = closeCode(t, c)
 	require.Equal(t, wire.CloseTokenInvalid, code)
 	require.Equal(t, wire.CodeTokenInvalid, reason)
+
+	// The device lockout: wrong secrets for one real device id from many
+	// sources lock that id, not the sources and not unknown ids.
+	_, dev := r.token("Target")
+	for i := 0; i < auth.DeviceFailures; i++ {
+		c, _ := r.dialRawFrom(dev.ID+".wrong", "10.1.0."+strconv.Itoa(i+1)+":1")
+		code, _ := closeCode(t, c)
+		require.Equal(t, wire.CloseTokenInvalid, code)
+	}
+	const fresh = "10.2.0.1:1"
+	c, _ = r.dialRawFrom(dev.ID+".wrong", fresh)
+	code, _ = closeCode(t, c)
+	require.Equal(t, wire.CloseRateLimited, code, "the device is locked from a fresh source")
+	c, _ = r.dialRawFrom("nobody.wrong", fresh)
+	code, _ = closeCode(t, c)
+	require.Equal(t, wire.CloseTokenInvalid, code, "the fresh source itself is not locked")
+	c, _ = r.dialRawFrom(tok, fresh)
+	require.Equal(t, wire.FrameWelcome, (&client{t: t, ws: c}).read().T, "another device's valid token is unaffected")
 }
 
 // dialRaw connects and sends a hello without reading the reply.
-func (r *rig) dialRaw(token string) (*websocket.Conn, error) {
+func (r *rig) dialRaw(token string) (*websocket.Conn, error) { return r.dialRawFrom(token, "") }
+
+// dialRawFrom is dialRaw as seen from source.
+func (r *rig) dialRawFrom(token, source string) (*websocket.Conn, error) {
 	r.t.Helper()
-	ws, _, err := r.connect(r.ts.URL)
+	ws, _, err := r.connectFrom(r.ts.URL, source)
 	require.NoError(r.t, err)
 	return ws, ws.WriteJSON(wire.Frame{T: wire.FrameHello, Hello: &wire.Hello{V: wire.Protocol, Token: token}})
+}
+
+func TestR1_StoreErrorsAreNotTokenInvalid(t *testing.T) {
+	r := newRig(t)
+	tok, _ := r.token("Pixel")
+	path := filepath.Join(r.store.Dir(), auth.DevicesFile)
+	good, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, []byte("{not json"), 0o600))
+
+	c, _ := r.dialRaw(tok)
+	code, _ := closeCode(t, c)
+	require.Equal(t, websocket.CloseInternalServerErr, code, "an unreadable store is 1011, never 4401")
+	require.Zero(t, r.srv.limits.Tracked(), "and counts against nobody")
+
+	require.NoError(t, os.WriteFile(path, good, 0o600))
+	r.welcome(tok, nil)
+}
+
+func TestRevokedBetweenVerifyAndTrack(t *testing.T) {
+	r := newRig(t)
+	tok, dev := r.token("Pixel")
+	r.welcome(tok, nil) // the snapshot knows the device
+	r.srv.beforeTrack = func() { require.NoError(t, r.store.Revoke(dev.ID)) }
+	c, _ := r.dialRaw(tok)
+	code, _ := closeCode(t, c)
+	require.Equal(t, wire.CloseRevoked, code, "closed before it was ever tracked")
+	// The first connection goes when the watcher sees the revoke.
+	require.Eventually(t, func() bool { return r.srv.Connections(dev.ID) == 0 }, 3*time.Second, 20*time.Millisecond)
 }
 
 func TestR4_OversizedPreAuthFrameIsRefused(t *testing.T) {
@@ -154,6 +206,28 @@ func TestR4_UnauthenticatedConnectionsAreCapped(t *testing.T) {
 		defer r.srv.mu.Unlock()
 		return r.srv.unauthTotal == 0
 	}, 2*time.Second, 20*time.Millisecond, "authenticated connections hold no pre-auth slot")
+
+	// The total cap holds across sources: 32 silent sockets from eight
+	// sources, and a ninth source is refused.
+	var silent []*websocket.Conn
+	for src := 0; src < wire.MaxUnauthTotal/wire.MaxUnauthPerSource; src++ {
+		for i := 0; i < wire.MaxUnauthPerSource; i++ {
+			ws, _, err := r.connectFrom(r.ts.URL, "10.9."+strconv.Itoa(src)+".1:1")
+			require.NoError(t, err)
+			silent = append(silent, ws)
+		}
+	}
+	_, resp, err = r.connectFrom(r.ts.URL, "10.9.99.1:1")
+	require.Error(t, err)
+	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+	for _, ws := range silent {
+		ws.Close()
+	}
+	require.Eventually(t, func() bool {
+		r.srv.mu.Lock()
+		defer r.srv.mu.Unlock()
+		return r.srv.unauthTotal == 0
+	}, 3*time.Second, 20*time.Millisecond)
 
 	// The hello deadline closes a silent socket with 4400.
 	helloTimeout = 200 * time.Millisecond

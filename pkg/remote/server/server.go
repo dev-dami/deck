@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -55,6 +56,11 @@ type Server struct {
 	up     websocket.Upgrader
 	idem   *idem
 
+	// addrOf is the client address used for limits; tests replace it.
+	addrOf func(*http.Request) string
+	// beforeTrack runs between Verify and track; tests use it to revoke.
+	beforeTrack func()
+
 	mu     sync.Mutex
 	hosts  map[string]bool
 	conns  map[string]map[*conn]struct{} // by device id
@@ -64,6 +70,8 @@ type Server struct {
 	unauth      map[string]int
 	unauthTotal int
 	changed     chan struct{}
+	// refreshMu serialises refreshDevices: read, diff and apply as one.
+	refreshMu sync.Mutex
 }
 
 // New returns a Server over be, pairing devices through store.
@@ -79,6 +87,7 @@ func New(be remote.Backend, store *auth.Store, opts Options) *Server {
 		known:   map[string]auth.Device{},
 		unauth:  map[string]int{},
 		changed: make(chan struct{}, 1),
+		addrOf:  func(r *http.Request) string { return r.RemoteAddr },
 	}
 	for _, h := range opts.Hosts {
 		s.AddHost(h)
@@ -137,7 +146,11 @@ func (s *Server) notifyChanged() {
 
 // refreshDevices diffs devices.json against the last snapshot: a new
 // device is announced (R3), a missing one is revoked and dropped (R16).
+// One refresh at a time, read to apply, so a stale read never revokes a
+// live device.
 func (s *Server) refreshDevices() {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
 	devs, err := s.store.List()
 	if err != nil {
 		slog.Warn("remote: could not read the devices", "error", err)
@@ -214,13 +227,22 @@ func (s *Server) closeAll(code int, text string) {
 	}
 }
 
-func (s *Server) track(c *conn) {
+// track registers c, unless its device was revoked since Verify. It
+// registers first and looks the device up after, so a revoke either
+// lands before the lookup (refused here) or after the registration
+// (kicked by refreshDevices); there is no window between the two.
+func (s *Server) track(c *conn) bool {
 	s.mu.Lock()
 	if s.conns[c.dev.ID] == nil {
 		s.conns[c.dev.ID] = map[*conn]struct{}{}
 	}
 	s.conns[c.dev.ID][c] = struct{}{}
 	s.mu.Unlock()
+	if _, err := s.store.Get(c.dev.ID); errors.Is(err, auth.ErrNotFound) {
+		s.untrack(c)
+		return false
+	}
+	return true
 }
 
 func (s *Server) untrack(c *conn) {
@@ -304,7 +326,3 @@ func (s *Server) sameOrigin(r *http.Request) bool {
 	o := strings.ToLower(strings.TrimSpace(r.Header.Get("Origin")))
 	return o != "" && o == s.pageOrigin(r)
 }
-
-// clientAddr is the socket address used for limits (R8: no header is
-// trusted in v1).
-func clientAddr(r *http.Request) string { return r.RemoteAddr }

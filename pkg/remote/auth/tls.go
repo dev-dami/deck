@@ -51,6 +51,11 @@ func (s *Store) EnsureCertificate(hosts []string) (Certificate, error) {
 	return s.makeCertificate(hosts)
 }
 
+// Certificate loads the store's certificate without making or renewing
+// one: only the server rotates it, so a process beside it (deck remote
+// pair) never invalidates the fingerprint phones were given.
+func (s *Store) Certificate() (Certificate, error) { return s.loadCertificate() }
+
 func cleanHosts(hosts []string) []string {
 	seen := map[string]bool{"localhost": true, "127.0.0.1": true, "::1": true}
 	out := []string{"localhost", "127.0.0.1", "::1"}

@@ -54,6 +54,14 @@ func newRig(t *testing.T) *rig {
 		Static: fstest.MapFS{"index.html": {Data: []byte("<html>app</html>")}, "app.js": {Data: []byte("js")}},
 	}
 	srv := New(be, store, opts)
+	// Tests name their source address in a header; the real server never
+	// trusts one (R8).
+	srv.addrOf = func(r *http.Request) string {
+		if src := r.Header.Get("X-Test-Source"); src != "" {
+			return src
+		}
+		return r.RemoteAddr
+	}
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -76,10 +84,18 @@ func (r *rig) wsURL() string { return "ws" + strings.TrimPrefix(r.ts.URL, "http"
 
 // connect opens a socket with the page's Origin and sends nothing.
 func (r *rig) connect(origin string) (*websocket.Conn, *http.Response, error) {
+	return r.connectFrom(origin, "")
+}
+
+// connectFrom is connect as seen from source ("" for the socket address).
+func (r *rig) connectFrom(origin, source string) (*websocket.Conn, *http.Response, error) {
 	r.t.Helper()
 	h := http.Header{}
 	if origin != "" {
 		h.Set("Origin", origin)
+	}
+	if source != "" {
+		h.Set("X-Test-Source", source)
 	}
 	ws, resp, err := websocket.DefaultDialer.Dial(r.wsURL(), h)
 	if ws != nil {
@@ -209,10 +225,17 @@ func (r *rig) post(path string, body []byte, headers map[string]string) *http.Re
 }
 
 // pair posts a correct pairing request for code.
-func (r *rig) pair(code, name string) *http.Response {
+func (r *rig) pair(code, name string) *http.Response { return r.pairFrom(code, name, "") }
+
+// pairFrom is pair as seen from source.
+func (r *rig) pairFrom(code, name, source string) *http.Response {
 	r.t.Helper()
 	b, _ := json.Marshal(wire.PairRequest{Code: code, DeviceName: name})
-	return r.post("/api/v1/pair", b, map[string]string{"Origin": r.ts.URL, "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin"})
+	h := map[string]string{"Origin": r.ts.URL, "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin"}
+	if source != "" {
+		h["X-Test-Source"] = source
+	}
+	return r.post("/api/v1/pair", b, h)
 }
 
 func pairError(t *testing.T, resp *http.Response) string {

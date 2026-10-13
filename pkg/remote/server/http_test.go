@@ -97,23 +97,36 @@ func TestR7_PairRequiresSameOriginAndJSON(t *testing.T) {
 
 func TestR7_PairLockoutIsPerSource(t *testing.T) {
 	r := newRig(t)
+	const bad, good = "10.0.0.1:4000", "10.0.0.2:4000"
 	for i := 0; i < auth.SourceFailures; i++ {
-		resp := r.pair("ZZZZZ-ZZZZZ", "x")
+		resp := r.pairFrom("ZZZZZ-ZZZZZ", "x", bad)
 		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	}
-	resp := r.pair("ZZZZZ-ZZZZZ", "x")
+	resp := r.pairFrom("ZZZZZ-ZZZZZ", "x", bad)
 	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
 	require.Equal(t, wire.CodeRateLimited, pairError(t, resp))
 	require.NotEmpty(t, resp.Header.Get("Retry-After"))
 
-	// The lockout is this source's, not a global switch: a valid token
-	// from the same source still connects (R1).
-	tok, _ := r.token("Pixel")
-	r.welcome(tok, nil)
-
-	r.clk.advance(auth.SourceLockout + time.Second)
+	// Another source pairs while the first is locked: the lockout is the
+	// source's, never a global switch.
 	code, err := r.store.Arm()
 	require.NoError(t, err)
-	resp = r.pair(code.Code, "Pixel")
+	resp = r.pairFrom(code.Code, "Pixel", good)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp = r.pairFrom(code.Code, "Pixel", bad)
+	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode, "still locked")
+
+	// A valid token from the locked source still connects (R1).
+	tok, _ := r.token("Pixel")
+	ws, _, err := r.connectFrom(r.ts.URL, bad)
+	require.NoError(t, err)
+	require.NoError(t, ws.WriteJSON(wire.Frame{T: wire.FrameHello, Hello: &wire.Hello{V: wire.Protocol, Token: tok}}))
+	c := &client{t: t, ws: ws}
+	require.Equal(t, wire.FrameWelcome, c.read().T)
+
+	r.clk.advance(auth.SourceLockout + time.Second)
+	code, err = r.store.Arm()
+	require.NoError(t, err)
+	resp = r.pairFrom(code.Code, "Pixel", bad)
 	require.Equal(t, http.StatusOK, resp.StatusCode, "the lockout ends")
 }

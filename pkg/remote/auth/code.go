@@ -39,15 +39,6 @@ func (s *Store) Arm() (Code, error) {
 	return c, nil
 }
 
-// Armed reports whether a code is armed and when it expires.
-func (s *Store) Armed() (time.Time, bool) {
-	a, err := s.readArmed()
-	if err != nil || !s.now().Before(a.ExpiresAt) {
-		return time.Time{}, false
-	}
-	return a.ExpiresAt, true
-}
-
 // Disarm forgets the armed code.
 func (s *Store) Disarm() error {
 	return s.withLock(func() error {
