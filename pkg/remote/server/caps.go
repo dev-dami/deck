@@ -78,6 +78,9 @@ func capChanges(cs []wire.ChangedFile) []wire.ChangedFile {
 
 func capSession(s wire.Session) wire.Session {
 	s.LastText, _ = wire.Truncate(s.LastText, wire.MaxCommandBytes)
+	if r := []rune(s.Title); len(r) > maxTitleRunes {
+		s.Title = string(r[:maxTitleRunes])
+	}
 	return s
 }
 

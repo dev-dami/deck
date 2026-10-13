@@ -13,6 +13,10 @@ import (
 // sends no notification (R16: the fallback, not the mechanism).
 var PollInterval = 3 * time.Second
 
+// newNotifier opens the file-system watcher; tests replace it to exercise
+// the poll alone.
+var newNotifier = fsnotify.NewWatcher
+
 // Watch calls onChange, from its own goroutine, whenever devices.json
 // changes after this call until ctx ends: on a file-system notification,
 // else by a stat every PollInterval. Several changes close together may be
@@ -21,7 +25,7 @@ var PollInterval = 3 * time.Second
 func (s *Store) Watch(ctx context.Context, onChange func()) {
 	last := s.stamp()
 	var notify chan fsnotify.Event
-	if w, err := fsnotify.NewWatcher(); err == nil && w.Add(s.dir) == nil {
+	if w, err := newNotifier(); err == nil && w.Add(s.dir) == nil {
 		notify = make(chan fsnotify.Event, 16)
 		go func() {
 			defer w.Close()

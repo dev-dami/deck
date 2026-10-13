@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dev-dami/deck/internal/deck/peer"
@@ -90,14 +92,16 @@ func TestR3_OneCodeAtATimeAndExpiry(t *testing.T) {
 
 	third, err := s.Arm()
 	require.NoError(t, err)
-	exp, ok := s.Armed()
-	require.True(t, ok)
-	require.Equal(t, clk.now().Add(wire.PairCodeTTL).Truncate(time.Second), exp)
+	require.Equal(t, clk.now().Add(wire.PairCodeTTL).Truncate(time.Second), third.ExpiresAt)
 	clk.advance(wire.PairCodeTTL + time.Second)
-	_, ok = s.Armed()
-	require.False(t, ok)
 	_, _, err = s.Pair(third.Code, "c")
 	require.ErrorIs(t, err, ErrInvalidCode, "an expired code is refused")
+
+	fourth, err := s.Arm()
+	require.NoError(t, err)
+	require.NoError(t, s.Disarm())
+	_, _, err = s.Pair(fourth.Code, "d")
+	require.ErrorIs(t, err, ErrInvalidCode, "a disarmed code is gone")
 }
 
 func TestR3_TokenIsScopedToTheDataDir(t *testing.T) {
@@ -185,11 +189,39 @@ func TestR16_WatcherSeesRevocation(t *testing.T) {
 	// revoke` in another process.
 	other, err := Open(s.Dir(), WithClock(clk.now))
 	require.NoError(t, err)
+	start := time.Now()
 	require.NoError(t, other.Revoke(dev.ID))
 	select {
 	case <-changes:
-	case <-time.After(2 * PollInterval):
-		t.Fatal("the watcher did not report the change")
+		require.Less(t, time.Since(start), PollInterval/2, "the notification, not the poll, reported it")
+	case <-time.After(PollInterval / 2):
+		t.Fatal("the watcher did not report the change in time")
+	}
+}
+
+func TestR16_WatcherPollsWithoutNotifications(t *testing.T) {
+	clk := newClock()
+	s := openStore(t, clk)
+	_, dev := pair(t, s, "Pixel")
+
+	newNotifier = func() (*fsnotify.Watcher, error) { return nil, errors.New("no notifications here") }
+	PollInterval = 100 * time.Millisecond
+	t.Cleanup(func() {
+		newNotifier = fsnotify.NewWatcher
+		PollInterval = 3 * time.Second
+	})
+	changes := make(chan struct{}, 8)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Watch(ctx, func() { changes <- struct{}{} })
+
+	other, err := Open(s.Dir(), WithClock(clk.now))
+	require.NoError(t, err)
+	require.NoError(t, other.Revoke(dev.ID))
+	select {
+	case <-changes:
+	case <-time.After(10 * PollInterval):
+		t.Fatal("the poll did not report the change")
 	}
 }
 

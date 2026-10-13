@@ -19,9 +19,6 @@ func NewLockout(threshold int, base, max time.Duration, now func() time.Time) *L
 	return &Lockout{l: newLockout(threshold, base, max, now)}
 }
 
-// Locked reports whether key is refused right now.
-func (l *Lockout) Locked(key string) bool { return l.l.locked(key) }
-
 // Until is when key's lockout ends; the zero time when it is not locked.
 func (l *Lockout) Until(key string) time.Time {
 	l.l.mu.Lock()

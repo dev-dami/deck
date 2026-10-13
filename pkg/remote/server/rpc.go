@@ -17,6 +17,7 @@ import (
 const (
 	defaultPage   = 50
 	maxImageBytes = 8 << 20
+	maxTitleRunes = 200
 )
 
 var ok = wire.Empty{}
@@ -82,6 +83,9 @@ func (c *conn) call(ctx context.Context, method string, p json.RawMessage) (res 
 		if werr != nil {
 			return nil, werr, nil
 		}
+		if utf8.RuneCountInString(req.Title) > maxTitleRunes {
+			return nil, invalid("a title is at most 200 characters"), nil
+		}
 		v, err := be.CreateSession(ctx, req.Title)
 		if err != nil {
 			return nil, fail(method, err), nil
@@ -94,6 +98,9 @@ func (c *conn) call(ctx context.Context, method string, p json.RawMessage) (res 
 		}
 		if req.ID == "" || strings.TrimSpace(req.Title) == "" {
 			return nil, invalid("id and title are required"), nil
+		}
+		if utf8.RuneCountInString(req.Title) > maxTitleRunes {
+			return nil, invalid("a title is at most 200 characters"), nil
 		}
 		return done(method, be.RenameSession(ctx, req.ID, req.Title))
 	case wire.MSessionsDelete:
@@ -109,6 +116,11 @@ func (c *conn) call(ctx context.Context, method string, p json.RawMessage) (res 
 		req, werr := decode[wire.IDParams](p)
 		if werr != nil {
 			return nil, werr, nil
+		}
+		if req.ID != "" {
+			if _, err := be.Mode(req.ID); err != nil {
+				return nil, fail(method, err), nil
+			}
 		}
 		c.s.hub.Focus(c.client, req.ID)
 		return ok, nil, nil
@@ -394,5 +406,5 @@ func (c *conn) devicesRevoke(p json.RawMessage) (any, *wire.Error, func()) {
 	if err := c.s.store.Revoke(req.ID); err != nil {
 		return nil, fail(wire.MDevicesRevoke, err), nil
 	}
-	return ok, nil, c.s.refreshDevices
+	return ok, nil, c.s.notifyChanged
 }

@@ -8,9 +8,11 @@ import (
 )
 
 // Limits are the two lockouts of R1: one per source address (peer's, keyed
-// by IP or IPv6 /64) and one per device id. There is no global one. Both
-// are consulted only after a token lookup failed, so a valid token is
-// never refused for someone else's failures, and both are pruned on a
+// by IP or IPv6 /64) and one per device id, keyed only by ids that exist.
+// There is no global one. The socket consults them only after a token
+// lookup failed, so a valid token is never refused for someone else's
+// failures; the pair route consults the source lockout first, by design,
+// since a pairing code is short enough to guess. Both are pruned on a
 // timer (R4).
 type Limits struct {
 	sources *peer.Lockout
