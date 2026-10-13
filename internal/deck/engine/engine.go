@@ -86,7 +86,11 @@ func Start() (*Engine, error) {
 		Hub:    broker,
 		MCPFor: func(id string) *agent.MCPServer { return broker.ServerFor(self, id) },
 	})
-	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: startPeers(cfg)}, nil
+	peers := startPeers(cfg)
+	if peers != nil {
+		mgr.SetTeam(peerTeam{peers})
+	}
+	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: peers}, nil
 }
 
 // startPeers makes the peer link and starts it when peers.enabled is set;

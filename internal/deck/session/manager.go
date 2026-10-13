@@ -140,6 +140,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/attribution"
 	"github.com/dev-dami/deck/internal/deck/brand"
 	"github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/internal/deck/hub"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -255,6 +256,8 @@ type Manager struct {
 	torder  []*thread
 	// activity reports a thread's running commands (deck.jobs); see SetActivity.
 	activity func(threadID string) string
+	// team is the peer link for the peers.* ops; see SetTeam.
+	team hub.Team
 }
 
 // NewManager returns a Manager that starts agents from adapters (keyed by kind,

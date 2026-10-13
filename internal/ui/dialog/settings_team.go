@@ -574,6 +574,12 @@ func (s *Settings) teamStatus(snap peer.Snapshot) (string, color.Color) {
 	return text, c
 }
 
+// PeerStatus is a peer's dot, its color and a few words on its state, as
+// the Team page shows them; the sidebar's Team pane shows the same.
+func PeerStatus(t *styles.Styles, p peer.PeerState, snap peer.Snapshot, now time.Time) (string, color.Color, string) {
+	return peerStatus(t, p, snap, now)
+}
+
 // peerStatus is a peer's dot, its color and a few words on its state.
 func peerStatus(t *styles.Styles, p peer.PeerState, snap peer.Snapshot, now time.Time) (string, color.Color, string) {
 	dot, text := peerStatusText(p, snap, now)

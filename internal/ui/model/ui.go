@@ -37,6 +37,7 @@ import (
 	"github.com/dev-dami/deck/internal/clipboard"
 	"github.com/dev-dami/deck/internal/commands"
 	"github.com/dev-dami/deck/internal/config"
+	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/internal/fsext"
 	"github.com/dev-dami/deck/internal/history"
 	"github.com/dev-dami/deck/internal/home"
@@ -357,6 +358,11 @@ type UI struct {
 	// custom commands
 	customCommands []commands.CustomCommand
 
+	// teamSnap is the peer link as last read, for the Team pane; nil until
+	// the first read. teamWatching is set while a watch is out.
+	teamSnap     *peer.Snapshot
+	teamWatching bool
+
 	// forceCompactMode tracks whether compact mode is forced by user toggle
 	forceCompactMode bool
 
@@ -585,6 +591,10 @@ func (m *UI) Init() tea.Cmd {
 	}
 	// load the user commands async
 	cmds = append(cmds, m.loadCustomCommands())
+	// Follow the peer link for the Team pane.
+	if cmd := m.watchTeam(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 	// load initial session if specified
 	initialSession := m.loadInitialSession()
 	if initialSession != nil {
@@ -859,6 +869,10 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.handleThemeDeleted(msg))
 	case busyStateMsg:
 		cmds = append(cmds, m.applyBusyState(msg)...)
+	case teamSnapMsg:
+		if cmd := m.applyTeamSnap(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case promptQueueMsg:
 		cmds = append(cmds, m.applyPromptQueue(msg)...)
 	case agentModelChangedMsg:
