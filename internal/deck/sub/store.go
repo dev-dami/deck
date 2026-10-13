@@ -51,7 +51,8 @@ var ErrNotFound = errors.New("sub: object not found")
 // Store is a directory of objects, shared by every work tree on the machine:
 // handing an ID to another agent here moves no bytes at all.
 type Store struct {
-	dir string
+	dir    string
+	pubSet map[ID]bool // closures of the published capsules; nil until read
 }
 
 // Open opens (creating if needed) the store in dir.
@@ -116,6 +117,11 @@ func (s *Store) Get(id ID) ([]byte, error) {
 		return nil, fmt.Errorf("sub: object %s is corrupt", id.Short())
 	}
 	return b, nil
+}
+
+// readTree reads root/p, a slash path.
+func readTree(root, p string) ([]byte, error) {
+	return os.ReadFile(filepath.Join(root, filepath.FromSlash(p)))
 }
 
 // writeAtomic writes b to a temporary file beside p and renames it into

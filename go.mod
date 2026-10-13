@@ -36,6 +36,7 @@ require (
 	github.com/invopop/jsonschema v0.14.0
 	github.com/itchyny/gojq v0.12.19
 	github.com/jordanella/go-ansi-paintbrush v0.0.0-20240728195301-b7ad996ecf3d
+	github.com/klauspost/compress v1.19.2
 	github.com/lucasb-eyer/go-colorful v1.4.1
 	github.com/modelcontextprotocol/go-sdk v1.7.1-0.20260825092617-32404652e60b
 	github.com/ncruces/go-sqlite3 v0.35.4
@@ -94,7 +95,6 @@ require (
 	github.com/itchyny/timefmt-go v0.1.8 // indirect
 	github.com/jackmordaunt/icns/v3 v3.0.1 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
-	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/lrstanley/bubblezone/v2 v2.0.0 // indirect

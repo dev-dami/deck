@@ -61,7 +61,7 @@ func TestCaptureApply(t *testing.T) {
 	write(t, a, "bin.dat", "\x00\xff")
 	os.Remove(filepath.Join(a, "gone.txt"))
 
-	id, err := s.Capture(ctx, a, base, Meta{Source: "a", Task: "t1"})
+	id, err := s.Capture(ctx, a, base, "", Meta{Source: "a", Task: "t1"})
 	if err != nil || id == "" {
 		t.Fatalf("capture: %q %v", id, err)
 	}
@@ -95,7 +95,7 @@ func TestConflictWritesNothing(t *testing.T) {
 	base, _ := s.Snap(ctx, a)
 	write(t, a, "edit.txt", "from a\n")
 	write(t, a, "keep.txt", "also a\n")
-	id, _ := s.Capture(ctx, a, base, Meta{})
+	id, _ := s.Capture(ctx, a, base, "", Meta{})
 	write(t, b, "edit.txt", "from b\n")
 
 	err := s.Apply(ctx, b, id)
@@ -115,7 +115,7 @@ func TestChainSplit(t *testing.T) {
 	for i := range MaxFiles + 7 {
 		write(t, a, fmt.Sprintf("many/%03d", i), fmt.Sprint(i))
 	}
-	id, err := s.Capture(ctx, a, base, Meta{})
+	id, err := s.Capture(ctx, a, base, "", Meta{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,5 +173,145 @@ func TestRestore(t *testing.T) {
 	}
 	if err := s.Restore(ctx, a, snap, []string{"../x"}); err == nil {
 		t.Fatal("bad path accepted")
+	}
+}
+
+func TestMerge3(t *testing.T) {
+	base := "a\nb\nc\nd\ne\n"
+	got, ok := Merge3(base, "A\nb\nc\nd\ne\n", "a\nb\nc\nd\nE\n")
+	if !ok || got != "A\nb\nc\nd\nE\n" {
+		t.Fatalf("clean merge: %q %v", got, ok)
+	}
+	if _, ok := Merge3(base, "a\nX\nc\nd\ne\n", "a\nY\nc\nd\ne\n"); ok {
+		t.Fatal("same line changed both ways merged")
+	}
+	if _, ok := Merge3(base, base+"ours\n", base+"theirs\n"); ok {
+		t.Fatal("two insertions at one point merged")
+	}
+}
+
+func TestMergeApply(t *testing.T) {
+	ctx := context.Background()
+	s, a, b := trees(t)
+	lines := "1\n2\n3\n4\n5\n6\n7\n8\n"
+	write(t, a, "m.txt", lines)
+	write(t, b, "m.txt", lines)
+	base, _ := s.Snap(ctx, a)
+	write(t, a, "m.txt", "one\n2\n3\n4\n5\n6\n7\n8\n")
+	write(t, a, "edit.txt", "a's\n")
+	id, _ := s.Capture(ctx, a, base, "", Meta{})
+	write(t, b, "m.txt", "1\n2\n3\n4\n5\n6\n7\neight\n")
+	write(t, b, "edit.txt", "b's\n")
+
+	if _, err := s.MergeApply(ctx, b, id, Refuse); err == nil {
+		t.Fatal("conflict on edit.txt not refused")
+	}
+	if read(t, b, "m.txt") != "1\n2\n3\n4\n5\n6\n7\neight\n" {
+		t.Fatal("refused merge wrote")
+	}
+	prev, err := s.MergeApply(ctx, b, id, Ours)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read(t, b, "m.txt") != "one\n2\n3\n4\n5\n6\n7\neight\n" || read(t, b, "edit.txt") != "b's\n" {
+		t.Fatalf("ours: %q %q", read(t, b, "m.txt"), read(t, b, "edit.txt"))
+	}
+	states := map[string]State{}
+	for _, p := range prev {
+		states[p.Path] = p.State
+	}
+	if states["m.txt"] != StateMerge || states["edit.txt"] != StateConflict {
+		t.Fatalf("states = %v", states)
+	}
+}
+
+func TestPackUnpack(t *testing.T) {
+	ctx := context.Background()
+	s, a, _ := trees(t)
+	base, _ := s.Snap(ctx, a)
+	write(t, a, "edit.txt", "new\n")
+	id, _ := s.Capture(ctx, a, base, "", Meta{})
+
+	far, _ := Open(t.TempDir())
+	ids, err := s.Closure(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := far.Missing(ids)
+	var buf bytes.Buffer
+	if err := s.Pack(&buf, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := far.Unpack(&buf, 1<<20)
+	if err != nil || len(got) != len(want) {
+		t.Fatalf("unpack %d of %d: %v", len(got), len(want), err)
+	}
+	if len(far.Missing(ids)) != 0 {
+		t.Fatal("still missing objects")
+	}
+	b := t.TempDir()
+	write(t, b, "edit.txt", "old\n")
+	if err := far.Apply(ctx, b, id); err != nil || read(t, b, "edit.txt") != "new\n" {
+		t.Fatalf("apply from unpacked: %v", err)
+	}
+
+	if s.Shareable(id) {
+		t.Fatal("unpublished capsule shareable")
+	}
+	if _, err := s.Publish(id); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Shareable(id) || s.Shareable(base) || len(s.Published()) != 1 {
+		t.Fatal("publish")
+	}
+}
+
+func TestGC(t *testing.T) {
+	ctx := context.Background()
+	s, a, _ := trees(t)
+	keep, _ := s.Snap(ctx, a)
+	write(t, a, "edit.txt", "garbage\n")
+	drop, _ := s.Snap(ctx, a)
+	n, err := s.GC([]ID{keep}, 0)
+	if err != nil || n == 0 {
+		t.Fatalf("gc removed %d: %v", n, err)
+	}
+	if s.Has(drop) || !s.Has(keep) {
+		t.Fatal("gc kept the wrong objects")
+	}
+	if err := s.Restore(ctx, a, keep, []string{"edit.txt"}); err != nil || read(t, a, "edit.txt") != "old\n" {
+		t.Fatalf("restore after gc: %v", err)
+	}
+}
+
+// A reviewer applies a's capsule, fixes the same file and captures on top:
+// the fix chains onto a's capsule, so applying it to an untouched tree
+// brings both, and a tree that already has a's change takes just the fix.
+func TestParentChain(t *testing.T) {
+	ctx := context.Background()
+	s, a, b := trees(t)
+	main := t.TempDir()
+	write(t, main, "edit.txt", "old\n")
+	base, _ := s.Snap(ctx, a)
+	write(t, a, "edit.txt", "v1\n")
+	first, _ := s.Capture(ctx, a, base, "", Meta{Source: "a"})
+
+	if err := s.Apply(ctx, b, first); err != nil {
+		t.Fatal(err)
+	}
+	rbase, _ := s.Snap(ctx, b)
+	write(t, b, "edit.txt", "v2\n")
+	fix, err := s.Capture(ctx, b, rbase, first, Meta{Source: "reviewer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Apply(ctx, main, fix); err != nil || read(t, main, "edit.txt") != "v2\n" {
+		t.Fatalf("fresh tree: %v %q", err, read(t, main, "edit.txt"))
+	}
+	if err := s.Apply(ctx, a, fix); err != nil || read(t, a, "edit.txt") != "v2\n" {
+		t.Fatalf("tree with the first capsule: %v", err)
+	}
+	if err := s.Revert(ctx, main, fix); err != nil || read(t, main, "edit.txt") != "old\n" {
+		t.Fatalf("revert chain: %v %q", err, read(t, main, "edit.txt"))
 	}
 }

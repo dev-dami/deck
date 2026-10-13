@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -23,6 +24,8 @@ type Op struct {
 	Before ID     `json:"before,omitempty"`
 	After  ID     `json:"after,omitempty"`
 	Exec   bool   `json:"exec,omitempty"`
+	// BeforeExec is whether the file was executable before, for a revert.
+	BeforeExec bool `json:"before_exec,omitempty"`
 }
 
 // Kind is "add", "modify" or "delete".
@@ -87,8 +90,11 @@ func (s *Store) Chain(id ID) ([]*Capsule, error) {
 
 // Capture records how the tree at root differs from snapshot base and
 // returns the capsule holding it (the last of a chain when it changes more
-// than MaxFiles files); empty when nothing changed.
-func (s *Store) Capture(ctx context.Context, root string, base ID, meta Meta) (ID, error) {
+// than MaxFiles files); empty when nothing changed. parent, when set, is a
+// capsule base already includes (one applied to this tree before base was
+// taken): the new capsule chains onto it, so applying it elsewhere brings
+// both.
+func (s *Store) Capture(ctx context.Context, root string, base, parent ID, meta Meta) (ID, error) {
 	from, err := s.Snapshot(base)
 	if err != nil {
 		return "", err
@@ -98,7 +104,10 @@ func (s *Store) Capture(ctx context.Context, root string, base ID, meta Meta) (I
 		return "", err
 	}
 	ops := diff(from, now)
-	var head ID
+	if len(ops) == 0 {
+		return "", nil
+	}
+	head := parent
 	for len(ops) > 0 {
 		n := min(len(ops), MaxFiles)
 		b, err := json.Marshal(Capsule{Version: 1, Base: base, Parent: head, Meta: meta, Ops: ops[:n]})
@@ -118,12 +127,13 @@ func diff(a, b *Snapshot) []Op {
 	var ops []Op
 	for p, eb := range b.Files {
 		if ea, ok := a.Files[p]; !ok || ea != eb {
-			ops = append(ops, Op{Path: p, Before: a.Files[p].File, After: eb.File, Exec: eb.Exec})
+			ea := a.Files[p]
+			ops = append(ops, Op{Path: p, Before: ea.File, After: eb.File, Exec: eb.Exec, BeforeExec: ea.Exec})
 		}
 	}
 	for p, ea := range a.Files {
 		if _, ok := b.Files[p]; !ok {
-			ops = append(ops, Op{Path: p, Before: ea.File})
+			ops = append(ops, Op{Path: p, Before: ea.File, BeforeExec: ea.Exec})
 		}
 	}
 	sort.Slice(ops, func(i, j int) bool { return ops[i].Path < ops[j].Path })
@@ -146,84 +156,148 @@ func (e *ConflictError) Error() string {
 	return s
 }
 
-// ops is a capsule chain's ops in order.
-func (s *Store) ops(id ID) ([]Op, error) {
+// change is one path's part in a capsule chain: the op from its first
+// version to its last, and every version it passes through on the way (a
+// chain can change a file more than once).
+type change struct {
+	Op
+	states []ID
+}
+
+// changes flattens a capsule chain into one change per path, in the order
+// paths first appear.
+func (s *Store) changes(id ID) ([]change, error) {
 	chain, err := s.Chain(id)
 	if err != nil {
 		return nil, err
 	}
-	var ops []Op
+	at := map[string]int{}
+	var out []change
 	for _, c := range chain {
-		ops = append(ops, c.Ops...)
+		for _, o := range c.Ops {
+			if err := validPath(o.Path); err != nil {
+				return nil, err
+			}
+			i, ok := at[o.Path]
+			if !ok {
+				at[o.Path] = len(out)
+				out = append(out, change{Op: o, states: []ID{o.Before, o.After}})
+				continue
+			}
+			ch := &out[i]
+			if ch.After != o.Before {
+				return nil, fmt.Errorf("sub: capsule chain breaks at %s", o.Path)
+			}
+			ch.After, ch.Exec = o.After, o.Exec
+			ch.states = append(ch.states, o.After)
+		}
+	}
+	return out, nil
+}
+
+// reversed is the changes undone: last version back to the first.
+func reversed(chs []change) []change {
+	out := make([]change, len(chs))
+	for i, ch := range chs {
+		st := make([]ID, len(ch.states))
+		for j, id := range ch.states {
+			st[len(st)-1-j] = id
+		}
+		out[i] = change{Op: Op{Path: ch.Path, Before: ch.After, After: ch.Before, Exec: ch.BeforeExec, BeforeExec: ch.Exec}, states: st}
+	}
+	return out
+}
+
+// current is the file ID at root/p now; "" when there is none.
+func (s *Store) current(sc *statCache, root, p string) (ID, error) {
+	e, ok, err := s.entry(sc, root, p, false)
+	if err != nil || !ok {
+		return "", err
+	}
+	return e.File, nil
+}
+
+// pending checks the changes fit the tree at root — each file is at one of
+// the versions its change passes through — and returns the ops still to
+// write, each from the version the file is at now.
+func (s *Store) pending(root string, chs []change) ([]Op, error) {
+	sc := s.stats(root)
+	defer sc.save()
+	var bad []string
+	var ops []Op
+	for _, ch := range chs {
+		cur, err := s.current(sc, root, ch.Path)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(ch.states, cur) {
+			bad = append(bad, ch.Path)
+			continue
+		}
+		if cur != ch.After {
+			op := ch.Op
+			op.Before = cur
+			ops = append(ops, op)
+		}
+	}
+	if len(bad) > 0 {
+		return nil, &ConflictError{Paths: bad}
 	}
 	return ops, nil
 }
 
 // Verify checks the capsule (with its chain) fits the tree at root: every
-// file it touches is still what it was captured against. Only the touched
-// files are looked at.
+// file it touches is still what it was captured against, or already has the
+// change. Only the touched files are looked at.
 func (s *Store) Verify(ctx context.Context, root string, id ID) error {
-	ops, err := s.ops(id)
+	chs, err := s.changes(id)
 	if err != nil {
 		return err
 	}
-	return s.check(root, ops)
-}
-
-func (s *Store) check(root string, ops []Op) error {
-	sc := s.stats(root)
-	defer sc.save()
-	var bad []string
-	for _, o := range ops {
-		if err := validPath(o.Path); err != nil {
-			return err
-		}
-		e, ok, err := s.entry(sc, root, o.Path, false)
-		if err != nil {
-			return err
-		}
-		var cur ID
-		if ok {
-			cur = e.File
-		}
-		if cur != o.Before && cur != o.After { // already applied counts as fitting
-			bad = append(bad, o.Path)
-		}
-	}
-	if len(bad) > 0 {
-		return &ConflictError{Paths: bad}
-	}
-	return nil
+	_, err = s.pending(root, chs)
+	return err
 }
 
 // Apply verifies the capsule (with its chain) against the tree at root and
-// writes it: all of it or, on any conflict or failure, none of it.
+// writes it: all of it or, on any conflict or failure, none of it. Files
+// that already have the change are left alone, so applying twice is safe.
 func (s *Store) Apply(ctx context.Context, root string, id ID) error {
-	ops, err := s.ops(id)
+	chs, err := s.changes(id)
 	if err != nil {
 		return err
 	}
-	if err := s.check(root, ops); err != nil {
+	ops, err := s.pending(root, chs)
+	if err != nil {
 		return err
 	}
 	return s.write(ctx, root, ops)
 }
 
-// Revert undoes an applied capsule: the same ops with before and after
-// swapped, under the same all-or-nothing check.
+// Revert undoes an applied capsule (with its chain), under the same
+// all-or-nothing check.
 func (s *Store) Revert(ctx context.Context, root string, id ID) error {
-	ops, err := s.ops(id)
+	chs, err := s.changes(id)
 	if err != nil {
 		return err
 	}
-	rev := make([]Op, len(ops))
-	for i, o := range ops {
-		rev[len(ops)-1-i] = Op{Path: o.Path, Before: o.After, After: o.Before, Exec: o.Exec}
-	}
-	if err := s.check(root, rev); err != nil {
+	ops, err := s.pending(root, reversed(chs))
+	if err != nil {
 		return err
 	}
-	return s.write(ctx, root, rev)
+	return s.write(ctx, root, ops)
+}
+
+// Ops is a capsule chain's net change, one op per path.
+func (s *Store) Ops(id ID) ([]Op, error) {
+	chs, err := s.changes(id)
+	if err != nil {
+		return nil, err
+	}
+	ops := make([]Op, len(chs))
+	for i, ch := range chs {
+		ops[i] = ch.Op
+	}
+	return ops, nil
 }
 
 // Restore puts each path back the way snapshot snap has it: its content
