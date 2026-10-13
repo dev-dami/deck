@@ -110,10 +110,19 @@ func (c *Client) gh(ctx context.Context, timeout time.Duration, stdin string, ar
 // Exec is the real [Runner]: a hidden process with a bounded lifetime (the
 // caller's context), an environment that cannot point git at another
 // repository and never prompts, and the first line of stderr in its error.
+// Output past maxExec bytes is an error, not a truncated result, so a runaway
+// command cannot use unbounded memory and JSON is never parsed half-read.
 func Exec(ctx context.Context, dir, stdin, name string, args ...string) (string, error) {
-	var out, errb bytes.Buffer
-	return execTo(ctx, dir, stdin, name, args, &out, &errb)
+	o, e := &limitBuffer{max: maxExec}, &limitBuffer{max: maxExec}
+	out, err := execTo(ctx, dir, stdin, name, args, o, e)
+	if err == nil && o.total > int64(maxExec) {
+		return "", fmt.Errorf("%s: output over %d bytes", name, maxExec)
+	}
+	return out, err
 }
+
+// maxExec caps what [Exec] keeps of a command's output.
+const maxExec = 16 << 20
 
 // ExecLimit is [Exec] keeping at most limit bytes of the command's stdout (and
 // of its stderr); the rest is read and dropped, so a huge output costs no

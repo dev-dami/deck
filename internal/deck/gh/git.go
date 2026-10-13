@@ -18,6 +18,7 @@ type Status struct {
 	Behind   int
 	Dirty    int // changed, staged, unmerged and untracked files
 	Detached bool
+	Head     string // HEAD's commit id; "(initial)" before the first commit
 }
 
 // Status reads `git status --porcelain=v2 --branch`.
@@ -43,6 +44,8 @@ func parseStatus(out string) Status {
 				} else {
 					s.Branch = v
 				}
+			case "branch.oid":
+				s.Head = v
 			case "branch.upstream":
 				s.Upstream = v
 			case "branch.ab":

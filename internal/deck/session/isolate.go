@@ -121,7 +121,7 @@ func (m *Manager) ApplyIsolated(threadID string) ([]string, error) {
 		return nil, fmt.Errorf("the changes do not apply cleanly to your tree (it changed the same lines): %w", err)
 	}
 	t.mu.Lock()
-	t.worktree = &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: now}
+	t.worktree = &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: now, SubBase: wt.SubBase, SubParent: wt.SubParent}
 	t.mu.Unlock()
 	m.persistMeta(t)
 	m.emit(NoticeMsg{ThreadID: threadID, Text: fmt.Sprintf("applied %d changed files to %s", len(files), wt.Main)})

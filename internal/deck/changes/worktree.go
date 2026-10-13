@@ -50,19 +50,14 @@ func (r *Repo) Pending(ctx context.Context, wt *Repo, base string) (patch string
 	if err != nil {
 		return "", nil, "", err
 	}
-	patch, err = r.run(ctx, r.Root, nil, nil, "diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", "-M", base, now, "--")
+	// One diff gives both: --patch-with-raw -z prints the raw entries
+	// (NUL-separated, renames and copies carrying two paths), an empty
+	// field, then the patch.
+	out, err := r.run(ctx, r.Root, nil, nil, "diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "--patch-with-raw", "-z", base, now, "--")
 	if err != nil {
 		return "", nil, "", err
 	}
-	names, err := r.run(ctx, r.Root, nil, nil, "diff", "--name-only", "-z", "-M", base, now, "--")
-	if err != nil {
-		return "", nil, "", err
-	}
-	for _, n := range strings.Split(names, nul) {
-		if n != "" {
-			files = append(files, n)
-		}
-	}
+	files, patch = splitRaw(out)
 	return patch, files, now, nil
 }
 
@@ -74,4 +69,31 @@ func (r *Repo) Apply(ctx context.Context, patch string) error {
 	}
 	_, err := r.run(ctx, r.Root, nil, strings.NewReader(patch), "apply", "--whitespace=nowarn", "-")
 	return err
+}
+
+// splitRaw splits --patch-with-raw -z output into the paths it touches (the
+// new path for a rename or copy) and the patch that follows them.
+func splitRaw(out string) (files []string, patch string) {
+	for strings.HasPrefix(out, ":") {
+		i := strings.IndexByte(out, 0)
+		if i < 0 {
+			return files, ""
+		}
+		meta := out[:i]
+		out = out[i+1:]
+		n := 1
+		if st := meta[strings.LastIndexByte(meta, ' ')+1:]; st != "" && (st[0] == 'R' || st[0] == 'C') {
+			n = 2
+		}
+		var p string
+		for ; n > 0; n-- {
+			j := strings.IndexByte(out, 0)
+			if j < 0 {
+				return append(files, out), ""
+			}
+			p, out = out[:j], out[j+1:]
+		}
+		files = append(files, p)
+	}
+	return files, strings.TrimPrefix(out, nul)
 }

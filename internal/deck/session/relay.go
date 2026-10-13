@@ -136,6 +136,13 @@ func (m *Manager) handleMessage(msg agent.Message) {
 		respond("", err)
 		return
 	}
+	capsule := strings.TrimSpace(msg.Capsule)
+	if capsule != "" {
+		if err := m.knownCapsule(capsule); err != nil {
+			respond("", err)
+			return
+		}
+	}
 	if msg.Task != "" || msg.NewTask != "" {
 		if len(targets) != 1 {
 			respond("", errors.New("a task is handed to one agent: set `to` to a single name, not \"all\""))
@@ -146,8 +153,24 @@ func (m *Manager) handleMessage(msg agent.Message) {
 			respond("", err)
 			return
 		}
+		if capsule != "" {
+			note, err := m.handCapsule(t, targets, id, capsule)
+			if err != nil {
+				respond("", err)
+				return
+			}
+			text += "\n\n" + note
+		}
 		respond(m.relayTask(t, from, targets, text, "tool", id), nil)
 		return
+	}
+	if capsule != "" {
+		note, err := m.handCapsule(t, targets, "", capsule)
+		if err != nil {
+			respond("", err)
+			return
+		}
+		text += "\n\n" + note
 	}
 	respond(m.relay(t, from, targets, text, "tool"), nil)
 }

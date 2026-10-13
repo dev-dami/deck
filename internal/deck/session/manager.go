@@ -142,6 +142,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/hub"
 	"github.com/dev-dami/deck/internal/deck/store"
+	"github.com/dev-dami/deck/internal/deck/sub"
 )
 
 // Status is the coarse state of one agent.
@@ -231,6 +232,9 @@ type ThreadInfo struct {
 type Manager struct {
 	adapters map[string]agent.Adapter
 	st       *store.Store
+	subOnce  sync.Once
+	sub      *sub.Store // SUB objects, for checkpoints (subStore)
+	subFetch SubFetcher // sub.capsule.fetch from peers; nil without them
 	opts     Options
 	maxHops  int
 
@@ -1447,6 +1451,11 @@ type agentState struct {
 	dir       string
 	worktree  *store.Worktree
 	retired   bool // retireMember has stopped it (spawn.go)
+
+	// subBase is the SUB snapshot its next sub.patch.capture diffs from, and
+	// subParent the capsule that snapshot already includes (subops.go).
+	subBase   sub.ID
+	subParent sub.ID
 }
 
 func (a *agentState) getRun() agent.Run {

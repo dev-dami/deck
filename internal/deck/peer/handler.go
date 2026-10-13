@@ -22,7 +22,10 @@ var ErrUnknownOp = errors.New("unknown op")
 // no allow_inbound, or when it has no row at all. It grows with the ops of
 // docs/peers-design.md section 2 as they land; an op is never reachable just
 // because a handler happens to know it.
-var DefaultAllowInbound = []string{OpPeerStatus}
+//
+// The SUB ops are in it: they only ever serve capsules this Deck's user
+// published (sub.capsule.publish), which is the consent to share them.
+var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects}
 
 // contractorOps are the ops only a peer with role contractor may run, on top
 // of allow_inbound. Empty until contracts land (contract.propose goes here),

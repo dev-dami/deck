@@ -152,6 +152,9 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		a.mu.Lock()
 		a.worktree, a.dir = wt, dir
 		a.mu.Unlock()
+		if note := m.seedWorktree(t, a, wt, taskID); note != "" {
+			brief += "\n\n" + note
+		}
 	}
 	m.persistMeta(t)
 	if err := m.startRun(t, a, "", ""); err != nil {
@@ -391,7 +394,7 @@ func (m *Manager) ApplyMember(threadID, memberID string) ([]string, error) {
 		return nil, fmt.Errorf("the changes do not apply cleanly to your tree (it changed the same lines): %w", err)
 	}
 	a.mu.Lock()
-	a.worktree = &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: now}
+	a.worktree = &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: now, SubBase: wt.SubBase, SubParent: wt.SubParent}
 	a.mu.Unlock()
 	m.persistMeta(t)
 	m.emit(NoticeMsg{ThreadID: threadID, Text: fmt.Sprintf("applied %d files from %s to %s", len(files), a.getName(), wt.Main)})

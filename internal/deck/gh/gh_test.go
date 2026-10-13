@@ -73,7 +73,7 @@ func TestStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Status{Branch: "feature/login", Upstream: "origin/feature/login", Ahead: 2, Behind: 1, Dirty: 3}
+	want := Status{Branch: "feature/login", Upstream: "origin/feature/login", Ahead: 2, Behind: 1, Dirty: 3, Head: "1234567890abcdef"}
 	if st != want {
 		t.Fatalf("got %+v, want %+v", st, want)
 	}
