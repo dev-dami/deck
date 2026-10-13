@@ -728,8 +728,8 @@ func TestWriteSettingsRedirectsPrivateFolders(t *testing.T) {
 		if !strings.HasPrefix(memory, filepath.Join(home, ".deck", "memory")) {
 			t.Errorf("memory dir %q is not under ~/.deck/memory", memory)
 		}
-		if got["plansDirectory"] != brand.PlansDir() {
-			t.Errorf("attribution=%v: plansDirectory = %v, want %q", attribution, got["plansDirectory"], brand.PlansDir())
+		if got["plansDirectory"] != brand.PlansRel {
+			t.Errorf("attribution=%v: plansDirectory = %v, want %q", attribution, got["plansDirectory"], brand.PlansRel)
 		}
 		if _, err := os.Stat(memory); err != nil {
 			t.Errorf("memory dir not created: %v", err)

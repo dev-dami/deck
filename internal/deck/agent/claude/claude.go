@@ -787,15 +787,16 @@ func (r *run) removeConfig() {
 }
 
 // writeSettings writes the --settings file. Commits and PRs Claude makes in
-// Deck credit Deck, plan files go to ~/.deck/plans, not ~/.claude/plans, and
-// auto memory to ~/.deck/memory/<project>, not ~/.claude/projects/<project>/memory.
-// The project is the repository's main working tree, so worktrees share one
-// memory, as Claude Code's own does.
+// Deck credit Deck, plan files go to the project's .deck/plans, not
+// ~/.claude/plans, and auto memory to ~/.deck/memory/<project>, not
+// ~/.claude/projects/<project>/memory. Claude ignores an absolute
+// plansDirectory, so that one is relative to the working directory. The
+// memory's project is the repository's main working tree, so worktrees share
+// one memory, as Claude Code's own does.
 func writeSettings(dir string, attribution bool) (string, error) {
 	memory := brand.MemoryDir(gitutil.RepoRoot(dir))
-	_ = os.MkdirAll(brand.PlansDir(), 0o755)
 	_ = os.MkdirAll(memory, 0o755)
-	settings := map[string]any{"plansDirectory": brand.PlansDir(), "autoMemoryDirectory": memory}
+	settings := map[string]any{"plansDirectory": brand.PlansRel, "autoMemoryDirectory": memory}
 	if attribution {
 		settings["attribution"] = map[string]string{"commit": brand.CommitTrailer, "pr": brand.PRFooter}
 		settings["includeCoAuthoredBy"] = false

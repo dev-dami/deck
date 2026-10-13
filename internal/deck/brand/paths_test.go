@@ -2,6 +2,7 @@ package brand
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -28,7 +29,6 @@ func TestShowPath(t *testing.T) {
 		{"folder itself", "/home/me", "/home/me/.claude/plans", "plans"},
 		{"trailing separator on home", "/home/me/", "/home/me/.claude/plans/p.md", "plans · p.md"},
 		{"deck memory", "/home/me", "/home/me/.deck/memory/-home-me-app/MEMORY.md", "memory · MEMORY.md"},
-		{"deck plans", `C:\Users\hp`, `C:\Users\hp\.deck\plans\p.md`, "plans · p.md"},
 		{"codex memories", "/home/me", "/home/me/.codex/memories/MEMORY.md", "memory · MEMORY.md"},
 		{"codex memories v2", `C:\Users\hp`, `C:\Users\hp\.codex\memories_v2\rollout_summaries\a.md`, "memory · rollout_summaries/a.md"},
 		{"opencode plans", "/home/me", "/home/me/.local/share/opencode/plans/1700-fix-bug.md", "plans · 1700-fix-bug.md"},
@@ -80,7 +80,32 @@ func TestMemoryDir(t *testing.T) {
 			t.Errorf("MemoryDir(%q) = %q, want %q", tc.project, got, want)
 		}
 	}
-	if got, want := PlansDir(), filepath.Join(home, ".deck", "plans"); got != want {
-		t.Errorf("PlansDir() = %q, want %q", got, want)
+}
+
+func TestEnsurePlansDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := EnsurePlansDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := PlansDir(dir), filepath.Join(dir, ".deck", "plans"); got != want {
+		t.Errorf("PlansDir = %q, want %q", got, want)
+	}
+	if fi, err := os.Stat(filepath.Join(dir, ".deck", "plans")); err != nil || !fi.IsDir() {
+		t.Fatalf("plans folder missing: %v", err)
+	}
+	ignore := filepath.Join(dir, ".deck", ".gitignore")
+	if b, err := os.ReadFile(ignore); err != nil || string(b) != "*\n" {
+		t.Fatalf(".gitignore = %q, %v", b, err)
+	}
+
+	// A project's own .gitignore is left alone.
+	if err := os.WriteFile(ignore, []byte("custom\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsurePlansDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(ignore); string(b) != "custom\n" {
+		t.Fatalf(".gitignore overwritten: %q", b)
 	}
 }

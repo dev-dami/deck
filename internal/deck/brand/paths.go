@@ -18,10 +18,28 @@ func deckDir(elem ...string) string {
 	return filepath.Join(append([]string{home, ".deck"}, elem...)...)
 }
 
-// PlansDir is where agents in Deck keep plan files: ~/.deck/plans, beside the
-// threads, rather than each CLI's own folder (~/.claude/plans).
-func PlansDir() string {
-	return deckDir("plans")
+// PlansRel is where agents in Deck keep plan files, relative to the thread's
+// folder: .deck/plans, which Deck's .deck/.gitignore keeps out of git. It is
+// per project because Claude Code only honours a plansDirectory inside the
+// project; any other path falls back to its own ~/.claude/plans.
+const PlansRel = ".deck/plans"
+
+// PlansDir is the plans folder for a thread working in dir.
+func PlansDir(dir string) string {
+	return filepath.Join(dir, filepath.FromSlash(PlansRel))
+}
+
+// EnsurePlansDir creates dir's plans folder and, when the project has none
+// yet, a .deck/.gitignore so the plans never show up in git.
+func EnsurePlansDir(dir string) error {
+	if err := os.MkdirAll(PlansDir(dir), 0o755); err != nil {
+		return err
+	}
+	ignore := filepath.Join(dir, ".deck", ".gitignore")
+	if _, err := os.Stat(ignore); os.IsNotExist(err) {
+		return os.WriteFile(ignore, []byte("*\n"), 0o644)
+	}
+	return nil
 }
 
 // MemoryDir is where agents in Deck keep memory for a project:
@@ -55,10 +73,10 @@ type cliPlace struct {
 // either way. A new CLI or folder goes here.
 var cliPlaces = []cliPlace{
 	{[]string{".deck", "memory", "*"}, "memory"},
-	{[]string{".deck", "plans"}, "plans"},
 
 	// Claude Code. Deck redirects both (see agent/claude writeSettings),
-	// but sessions started outside Deck and resumed in it still use these.
+	// but sessions started outside Deck and resumed in it, and plans written
+	// before Deck kept them in the project, still use these.
 	{[]string{".claude", "projects", "*", "memory"}, "memory"},
 	{[]string{".claude", "plans"}, "plans"},
 
