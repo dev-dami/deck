@@ -3981,7 +3981,12 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 		sidebarWidth = m.sidebarWidth(w - 2)
 	}
 	// The header height
-	const landingHeaderHeight = 7 // the wordmark and its tagline
+	// The wordmark and its tagline: twice the size when the window has the
+	// room, so the landing page reads loud rather than empty.
+	landingHeaderHeight := 7
+	if h >= 34 && w >= 110 {
+		landingHeaderHeight = 12
+	}
 
 	var helpKeyMap help.KeyMap = m
 	if m.status != nil && m.status.ShowingAll() {

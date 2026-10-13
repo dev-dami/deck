@@ -87,6 +87,7 @@ const (
 	kindTiny          // one line: the small mark, then "deck"
 	kindCompact
 	kindFull
+	kindHuge // the full wordmark at twice the size
 )
 
 type ripple struct {
@@ -362,14 +363,14 @@ func (m *Model) Advance(now time.Time) (moving bool) {
 }
 
 func (m *Model) splashRadius() float64 {
-	if m.kind == kindFull {
+	if m.kind >= kindFull {
 		return splashRadiusFull
 	}
 	return splashRadiusCompact
 }
 
 func (m *Model) splashPush() float64 {
-	if m.kind == kindFull {
+	if m.kind >= kindFull {
 		return splashPushFull
 	}
 	return splashPushCompact
@@ -381,6 +382,8 @@ func (m *Model) rebuild() {
 	ew := m.edgesWidth()
 	tiny := smallWidth(len(m.edges)) + tinyName
 	switch {
+	case m.aw >= ew+(hugeBitmap().w+1)/2 && m.ah >= hugeBitmap().h/4:
+		m.kind, bm = kindHuge, hugeBitmap()
 	case m.aw >= ew+(fullBitmap().w+1)/2 && m.ah >= fullBitmap().h/4:
 		m.kind, bm = kindFull, fullBitmap()
 	case m.aw >= ew+(compactBitmap().w+1)/2 && m.ah >= compactBitmap().h/4:
