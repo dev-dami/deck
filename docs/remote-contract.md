@@ -200,6 +200,22 @@ after key sorting).
 
 ### 3.5 Pairing (HTTP)
 
+- Routes: `GET /api/v1/health`, `POST /api/v1/pair`, `GET /api/v1/ws` (the
+  WebSocket), everything else the static page. The fingerprint in `fp=` and
+  in the server advert is `SHA256:<base64, 43 chars, no padding>` of the
+  DER certificate; the page converts it to colon-separated hex pairs, which
+  is how browsers show it, and `deck remote` prints the hex form.
+- `welcome.server.features` in v1 is `["images", "edit", "changes", "queue",
+  "models", "devices"]`. `messages.list` defaults to 50 when `limit` is
+  absent. A `chat.send` image over 8 MiB is `too_large`. `devices.revoke` of
+  another device from a phone is `forbidden`; revoking itself answers `{}`
+  and then closes 4403.
+- Pair route statuses: 403 `forbidden` (origin or `Sec-Fetch-Site`), 415
+  `invalid` (content type), 400 `invalid` or `unauthorized` (bad or wrong
+  code), 429 `rate_limited` with `Retry-After`, 500 `internal`. The pair
+  lockout is consulted *before* the code is checked: the code is the secret
+  there, so brute force must be slowed; the WebSocket token path consults it
+  after the token lookup, as R1 says.
 - `GET /api/v1/health` → `{ok: true, protocol: 2}`; no auth, no other field.
 - `POST /api/v1/pair` with `{code, device_name}` (≤ 4 KiB, rules R7) →
   `{token, device_id, server_id, expires_at}` or `{error: code}` with 400/429.
@@ -232,9 +248,27 @@ timeout, 30-second ping, 256-frame outbound queue (4408 when full).
 The server depends only on this; the adapter implements it over the
 workspace. Signatures as in #47's `backend.go` with these changes: `Mode`,
 `SetMode`, `Approvals`, `Answer`, `Steer`, `CancelQueued` take a session id
-and return `ErrNotFound` for ids outside it; `Messages` takes a cursor and
-limit and returns `(msgs, more, next, err)`; `Info` returns `Project` (a
-name) and `Theme`, never `Cwd`; `Events` also yields `theme.changed`.
+and return `ErrNotFound` for ids outside it; `Queue`, `Roster` and
+`Approvals` return an error too, so an unknown session is `not_found`
+(`Approvals("")` is every session's, for `approvals.list` without a
+`session_id`); a `Verify` error that is not a bad, expired or
+out-of-scope token (an I/O error, a contended lock) is never `token_invalid`:
+the socket closes 1011 and the phone keeps its token;
+`Send` returns the new message's id; `Messages` takes a cursor and limit and
+returns `(msgs, more, next, err)` (v1 pages in memory with an opaque
+`created:id` cursor; a real database cursor is a follow-up); `Info` returns
+`Project` (a name) and `Theme`, never `Cwd`; `Events` also yields
+`theme.changed` (v1 notices a theme change by comparing `Theme()` every 5 s,
+there being no config-change event).
+
+Pairing works across processes through files in `<data dir>/remote/`:
+`pair.json` (the armed code's hash and expiry) and `server.json` (the running
+server's advert: url, hosts, port, tls, fingerprint, pid), so `deck remote
+pair` works beside `deck remote` or `deck --remote`. The invite line is
+printed only over `--lan` (an invite needs `fp=`); loopback prints the URL.
+`deck remote devices` takes `--allow-yolo <id>` and `--deny-yolo <id>`. An
+oversized hello may be closed with 1009 by the WebSocket library before the
+server's 4400; the client treats both as a protocol problem.
 
 ## 5. Workspace boundary (Go)
 
@@ -243,9 +277,14 @@ from `DeckWorkspace`: `RemoteMode(sid)`, `SetRemoteMode(sid, mode)`,
 `QueueItems(sid)`, `SteerQueued(sid, item)`, `CancelQueued(sid, item)`,
 `InterruptAgent(sid, agent)`, `ContinueThread(sid)`, `ChangedFiles(ctx, sid)`,
 `EditableMessage(sid, mid)`, `EditMessage(ctx, sid, mid, text)`,
-`SubscribeDeck(ctx) <-chan pubsub.Event[DeckChange]`, `Theme() Theme`. The
-backend builder owns this file; it is the only part of the rebuild that
-touches `internal/`.
+`SubscribeDeck(ctx) <-chan pubsub.Event[DeckChange]`, `Theme() Theme`, and
+`PostMessage(ctx, sid, text, images) (messageID, error)` (an `AgentRun` that
+returns the row it made). `DeckWorkspace` publishes the busy, queue, mode,
+roster and notice changes from its existing hooks (small additions in
+`deck_workspace.go`). `internal/deck/peer/shared.go` exports the lockout and
+private-file helpers the phone's `auth` package reuses (`Lockout`,
+`LockKey`, `RestrictPrivate`, `WritePrivateFile`). Those three places are
+the whole of the rebuild's footprint in `internal/`.
 
 ## 6. Client contract (phone)
 
