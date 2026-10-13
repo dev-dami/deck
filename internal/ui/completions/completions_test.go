@@ -14,7 +14,7 @@ func TestFilterPrefersExactBasenameStem(t *testing.T) {
 	c.SetItems([]FileCompletionValue{
 		{Path: "internal/ui/chat/search.go"},
 		{Path: "internal/ui/chat/user.go"},
-	}, nil)
+	})
 
 	c.Filter("user")
 
@@ -33,7 +33,7 @@ func TestFilterPrefersBasenamePrefix(t *testing.T) {
 	c.SetItems([]FileCompletionValue{
 		{Path: "internal/ui/chat/mcp.go"},
 		{Path: "internal/ui/model/chat.go"},
-	}, nil)
+	})
 
 	c.Filter("chat.g")
 
@@ -96,7 +96,7 @@ func TestFilterPrefersPathSegmentExact(t *testing.T) {
 	c.SetItems([]FileCompletionValue{
 		{Path: "internal/ui/model/xychat.go"},
 		{Path: "internal/ui/chat/mcp.go"},
-	}, nil)
+	})
 
 	c.Filter("chat")
 

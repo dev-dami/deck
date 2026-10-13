@@ -10,12 +10,12 @@ package model
 // yolo and ready/model caches synchronously so the first frame has values to
 // render; Init then refreshes them off-thread.)
 //
-//   - Reads (isAgentBusy, yoloModeCached, promptQueue, selectedLargeModel,
-//     lspInfo) always return the memoized value, stale or not.
+//   - Reads (isAgentBusy, yoloModeCached, promptQueue, selectedLargeModel)
+//     always return the memoized value, stale or not.
 //   - State edges (message created, agent finished/errored, prompt
-//     submitted, cancel, session switch, yolo toggle, model change, LSP
-//     events) invalidate or write through the caches and dispatch an
-//     off-thread refresh cmd.
+//     submitted, cancel, session switch, yolo toggle, model change)
+//     invalidate or write through the caches and dispatch an off-thread
+//     refresh cmd.
 //   - A TTL backstop at the end of Update re-dispatches a refresh whenever
 //     the memoized state has gone stale, so unrelated churn (typing,
 //     resize storms, spinner ticks) only ever schedules async work.
@@ -308,16 +308,6 @@ func (m *UI) staleWorkspaceRefreshCmds() []tea.Cmd {
 	}
 	if m.hasSession() && time.Since(m.promptQueueCheckedAt) >= promptQueueTTL {
 		if cmd := m.dispatchPromptQueueRefresh(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-	}
-	if time.Since(m.lspCheckedAt) >= lspStatesTTL {
-		if cmd := m.dispatchLSPRefresh(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-	}
-	if time.Since(m.mcpCheckedAt) >= mcpStatesTTL {
-		if cmd := m.dispatchMCPRefresh(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	}

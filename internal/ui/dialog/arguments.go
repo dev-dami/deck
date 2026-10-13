@@ -215,9 +215,6 @@ func (a *Arguments) HandleMsg(msg tea.Msg) Action {
 				case ActionRunCustomCommand:
 					action.Args = args
 					return action
-				case ActionRunMCPPrompt:
-					action.Args = args
-					return action
 				}
 			}
 			a.focusInput(a.focused + 1)

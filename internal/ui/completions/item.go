@@ -24,14 +24,6 @@ type AgentCompletionValue struct {
 	Current bool   // the agent runs this model already
 }
 
-// ResourceCompletionValue represents a MCP resource completion value.
-type ResourceCompletionValue struct {
-	MCPName  string
-	URI      string
-	Title    string
-	MIMEType string
-}
-
 // CompletionItem represents an item in the completions list.
 type CompletionItem struct {
 	*list.Versioned

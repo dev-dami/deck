@@ -3,19 +3,15 @@ package workspace
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dev-dami/deck/internal/app"
-	"github.com/dev-dami/deck/internal/commands"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/gitutil"
 	"github.com/dev-dami/deck/internal/history"
-	"github.com/dev-dami/deck/internal/lsp"
-	mcptools "github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/proto"
@@ -81,10 +77,6 @@ func (w *AppWorkspace) SetCurrentSession(ctx context.Context, sessionID string) 
 	return nil
 }
 
-// RoutesChannelEvents reports false: in-process mode has no server to
-// route channel events, so the frontend injects them itself.
-func (w *AppWorkspace) RoutesChannelEvents() bool { return false }
-
 // -- Messages --
 
 func (w *AppWorkspace) ListMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
@@ -113,10 +105,6 @@ func (w *AppWorkspace) ListAllUserMessages(ctx context.Context) ([]message.Messa
 var errNoAgent = errors.New("no agent: Deck's engine drives the agents")
 
 func (w *AppWorkspace) AgentRun(context.Context, string, string, ...message.Attachment) error {
-	return errNoAgent
-}
-
-func (w *AppWorkspace) AgentRunChannel(context.Context, string, string, string, ...message.Attachment) error {
 	return errNoAgent
 }
 
@@ -234,37 +222,6 @@ func (w *AppWorkspace) ListSessionHistory(ctx context.Context, sessionID string)
 
 // -- LSP --
 
-func (w *AppWorkspace) LSPStart(ctx context.Context, path string) {
-	w.app.LSPManager.Start(ctx, path)
-}
-
-func (w *AppWorkspace) LSPStopAll(ctx context.Context) {
-	w.app.LSPManager.StopAll(ctx)
-}
-
-func (w *AppWorkspace) LSPGetStates() map[string]LSPClientInfo {
-	states := app.GetLSPStates()
-	result := make(map[string]LSPClientInfo, len(states))
-	for k, v := range states {
-		result[k] = LSPClientInfo{
-			Name:            v.Name,
-			State:           v.State,
-			Error:           v.Error,
-			DiagnosticCount: v.DiagnosticCount,
-			ConnectedAt:     v.ConnectedAt,
-		}
-	}
-	return result
-}
-
-func (w *AppWorkspace) LSPGetDiagnosticCounts(name string) lsp.DiagnosticCounts {
-	state, ok := app.GetLSPState(name)
-	if !ok || state.Client == nil {
-		return lsp.DiagnosticCounts{}
-	}
-	return state.Client.GetDiagnosticCounts()
-}
-
 // -- Config (read-only) --
 
 func (w *AppWorkspace) Config() *config.Config {
@@ -342,129 +299,6 @@ func (w *AppWorkspace) ReadSkill(_ context.Context, skillID string) ([]byte, ski
 }
 
 // -- MCP operations --
-
-func (w *AppWorkspace) MCPGetStates() map[string]mcptools.ClientInfo {
-	return mcptools.GetStates()
-}
-
-func (w *AppWorkspace) MCPRefreshPrompts(ctx context.Context, name string) {
-	mcptools.RefreshPrompts(ctx, name)
-}
-
-func (w *AppWorkspace) MCPRefreshResources(ctx context.Context, name string) {
-	mcptools.RefreshResources(ctx, name)
-}
-
-func (w *AppWorkspace) RefreshMCPTools(ctx context.Context, name string) {
-	mcptools.RefreshTools(ctx, w.store, name)
-}
-
-func (w *AppWorkspace) ReadMCPResource(ctx context.Context, name, uri string) ([]MCPResourceContents, error) {
-	contents, err := mcptools.ReadResource(ctx, w.store, name, uri)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]MCPResourceContents, len(contents))
-	for i, c := range contents {
-		result[i] = MCPResourceContents{
-			URI:      c.URI,
-			MIMEType: c.MIMEType,
-			Text:     c.Text,
-			Blob:     c.Blob,
-		}
-	}
-	return result, nil
-}
-
-func (w *AppWorkspace) ListMCPPrompts(context.Context) ([]commands.MCPPrompt, error) {
-	return commands.LoadMCPPrompts()
-}
-
-func (w *AppWorkspace) GetMCPPrompt(clientID, promptID string, args map[string]string) (string, error) {
-	return commands.GetMCPPrompt(w.store, clientID, promptID, args)
-}
-
-func (w *AppWorkspace) EnableDockerMCP(ctx context.Context) error {
-	mcpConfig, err := w.store.PrepareDockerMCPConfig()
-	if err != nil {
-		return err
-	}
-
-	if err := mcptools.InitializeSingle(ctx, config.DockerMCPName, w.store); err != nil {
-		disableErr := mcptools.DisableSingle(w.store, config.DockerMCPName)
-		w.store.RemoveDockerMCPInMemory()
-		return fmt.Errorf("failed to start docker MCP: %w", errors.Join(err, disableErr))
-	}
-
-	if err := w.store.PersistDockerMCPConfig(mcpConfig); err != nil {
-		disableErr := mcptools.DisableSingle(w.store, config.DockerMCPName)
-		w.store.RemoveDockerMCPInMemory()
-		return fmt.Errorf("docker MCP started but failed to persist configuration: %w", errors.Join(err, disableErr))
-	}
-
-	return nil
-}
-
-func (w *AppWorkspace) DisableDockerMCP() error {
-	if err := mcptools.DisableSingle(w.store, config.DockerMCPName); err != nil {
-		return fmt.Errorf("failed to disable docker MCP: %w", err)
-	}
-	return w.store.DisableDockerMCP()
-}
-
-// MCPServersDisabled returns the MCP servers disabled for this
-// repository. The override set is shared by every session, including
-// sub-agent sessions.
-func (w *AppWorkspace) MCPServersDisabled(ctx context.Context) ([]string, error) {
-	return w.app.Sessions.MCPDisabledServers(ctx)
-}
-
-// MCPServersEnabled returns the MCP servers with a repository-scoped
-// enabled override: config-disabled servers the user enabled here. Startup
-// force-starts them so the toggle survives restarts.
-func (w *AppWorkspace) MCPServersEnabled(ctx context.Context) ([]string, error) {
-	return w.app.Sessions.MCPServersEnabled(ctx)
-}
-
-// MCPSetServerDisabled adds or removes a repository-scoped MCP override
-// and applies it to the running client. Config files are never touched.
-func (w *AppWorkspace) MCPSetServerDisabled(ctx context.Context, name string, disabled bool) error {
-	if err := w.app.Sessions.SetMCPServerDisabled(ctx, name, disabled); err != nil {
-		return err
-	}
-	return mcptools.SetLocalDisabled(ctx, w.store, name, disabled)
-}
-
-// MCPSetServerConfigDisabled toggles an MCP server's disabled flag in the
-// global config and applies the change to the running client unless a
-// repository-scoped override takes precedence.
-func (w *AppWorkspace) MCPSetServerConfigDisabled(ctx context.Context, name string, disabled bool) error {
-	override, err := session.HasMCPOverride(ctx, w.app.Sessions, name)
-	if err != nil {
-		return err
-	}
-	return mcptools.SetConfigDisabled(ctx, w.store, config.ScopeGlobal, name, disabled, override)
-}
-
-// MCPStartServer starts the named MCP server even when its config entry is
-// disabled. The repository-scoped enabled override recorded by
-// MCPSetServerDisabled makes the start survive restarts. Config files are
-// never touched.
-func (w *AppWorkspace) MCPStartServer(ctx context.Context, name string) error {
-	return mcptools.InitializeSingleForced(ctx, name, w.store)
-}
-
-func (w *AppWorkspace) MCPAuthenticate(ctx context.Context, name string) error {
-	return mcptools.AuthenticateMCP(ctx, w.store, name)
-}
-
-func (w *AppWorkspace) MCPPendingAuth() []mcptools.PendingAuthServer {
-	return mcptools.PendingAuthMCPs(w.store)
-}
-
-func (w *AppWorkspace) MCPAuthURL(name string) string {
-	return mcptools.MCPAuthURL(name)
-}
 
 // -- Lifecycle --
 

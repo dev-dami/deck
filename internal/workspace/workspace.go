@@ -11,11 +11,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
-	"github.com/dev-dami/deck/internal/commands"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/history"
-	"github.com/dev-dami/deck/internal/lsp"
-	mcptools "github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/proto"
@@ -75,34 +72,6 @@ type ConnectionEvent struct {
 	Stuck bool
 }
 
-// LSPClientInfo holds information about an LSP client's state. This is
-// the frontend-facing type; implementations translate from the
-// underlying app or proto representation.
-type LSPClientInfo struct {
-	Name            string
-	State           lsp.ServerState
-	Error           error
-	DiagnosticCount int
-	ConnectedAt     time.Time
-}
-
-// LSPEventType represents the type of LSP event.
-type LSPEventType string
-
-const (
-	LSPEventStateChanged       LSPEventType = "state_changed"
-	LSPEventDiagnosticsChanged LSPEventType = "diagnostics_changed"
-)
-
-// LSPEvent represents an LSP event forwarded to the TUI.
-type LSPEvent struct {
-	Type            LSPEventType
-	Name            string
-	State           lsp.ServerState
-	Error           error
-	DiagnosticCount int
-}
-
 // AgentModel holds the model information exposed to the UI.
 type AgentModel struct {
 	CatwalkCfg catwalk.Model
@@ -134,18 +103,8 @@ type Workspace interface {
 	ListUserMessages(ctx context.Context, sessionID string) ([]message.Message, error)
 	ListAllUserMessages(ctx context.Context) ([]message.Message, error)
 
-	// RoutesChannelEvents reports whether the workspace's backing
-	// process routes MCP channel events into sessions itself. When
-	// true (client/server mode), frontends must not inject channel
-	// messages on EventChannelMessage — the server injects each event
-	// exactly once and the resulting turn arrives through the normal
-	// session/message event stream. When false (in-process mode), the
-	// frontend owns injection.
-	RoutesChannelEvents() bool
-
 	// Agent
 	AgentRun(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) error
-	AgentRunChannel(ctx context.Context, channel, sessionID, prompt string, attachments ...message.Attachment) error
 	AgentRunShellCommand(ctx context.Context, sessionID, command string, termWidth int, onProgress func(string), isFirstMessage bool) (proto.ShellCommandResponse, error)
 	AgentCancel(sessionID string)
 	AgentIsBusy() bool
@@ -200,12 +159,6 @@ type Workspace interface {
 	// History
 	ListSessionHistory(ctx context.Context, sessionID string) ([]history.File, error)
 
-	// LSP
-	LSPStart(ctx context.Context, path string)
-	LSPStopAll(ctx context.Context)
-	LSPGetStates() map[string]LSPClientInfo
-	LSPGetDiagnosticCounts(name string) lsp.DiagnosticCounts
-
 	// Config (read-only data)
 	Config() *config.Config
 	WorkingDir() string
@@ -228,34 +181,7 @@ type Workspace interface {
 	ListSkills(ctx context.Context) ([]skills.CatalogEntry, error)
 	ReadSkill(ctx context.Context, skillID string) ([]byte, skills.SkillReadResult, error)
 
-	// MCP operations (server-side in client mode)
-	MCPGetStates() map[string]mcptools.ClientInfo
-	MCPRefreshPrompts(ctx context.Context, name string)
-	MCPRefreshResources(ctx context.Context, name string)
-	RefreshMCPTools(ctx context.Context, name string)
-	ReadMCPResource(ctx context.Context, name, uri string) ([]MCPResourceContents, error)
-	ListMCPPrompts(ctx context.Context) ([]commands.MCPPrompt, error)
-	GetMCPPrompt(clientID, promptID string, args map[string]string) (string, error)
-	EnableDockerMCP(ctx context.Context) error
-	DisableDockerMCP() error
-	MCPServersDisabled(ctx context.Context) ([]string, error)
-	MCPSetServerDisabled(ctx context.Context, name string, disabled bool) error
-	MCPSetServerConfigDisabled(ctx context.Context, name string, disabled bool) error
-	MCPServersEnabled(ctx context.Context) ([]string, error)
-	MCPStartServer(ctx context.Context, name string) error
-	MCPAuthenticate(ctx context.Context, name string) error
-	MCPPendingAuth() []mcptools.PendingAuthServer
-	MCPAuthURL(name string) string
-
 	// Events
 	Subscribe(program *tea.Program)
 	Shutdown()
-}
-
-// MCPResourceContents holds the contents of an MCP resource.
-type MCPResourceContents struct {
-	URI      string `json:"uri"`
-	MIMEType string `json:"mime_type,omitempty"`
-	Text     string `json:"text,omitempty"`
-	Blob     []byte `json:"blob,omitempty"`
 }
