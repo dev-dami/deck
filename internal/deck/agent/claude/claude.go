@@ -22,6 +22,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/agent/modelcache"
 	"github.com/dev-dami/deck/internal/deck/approve"
 	"github.com/dev-dami/deck/internal/deck/brand"
+	"github.com/dev-dami/deck/internal/gitutil"
 )
 
 // MCPToolFlagValue is the tool name passed to --permission-prompt-tool: server
@@ -106,7 +107,7 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 			r.mcpName = "deck"
 		}
 	}
-	settings, err := writeSettings(spec.Attribution)
+	settings, err := writeSettings(spec.Dir, spec.Attribution)
 	if err != nil {
 		r.removeConfig()
 		return nil, err
@@ -786,10 +787,15 @@ func (r *run) removeConfig() {
 }
 
 // writeSettings writes the --settings file. Commits and PRs Claude makes in
-// Deck credit Deck, and plan files go to ~/.deck/plans, not ~/.claude/plans.
-func writeSettings(attribution bool) (string, error) {
+// Deck credit Deck, plan files go to ~/.deck/plans, not ~/.claude/plans, and
+// auto memory to ~/.deck/memory/<project>, not ~/.claude/projects/<project>/memory.
+// The project is the repository's main working tree, so worktrees share one
+// memory, as Claude Code's own does.
+func writeSettings(dir string, attribution bool) (string, error) {
+	memory := brand.MemoryDir(gitutil.RepoRoot(dir))
 	_ = os.MkdirAll(brand.PlansDir(), 0o755)
-	settings := map[string]any{"plansDirectory": brand.PlansDir()}
+	_ = os.MkdirAll(memory, 0o755)
+	settings := map[string]any{"plansDirectory": brand.PlansDir(), "autoMemoryDirectory": memory}
 	if attribution {
 		settings["attribution"] = map[string]string{"commit": brand.CommitTrailer, "pr": brand.PRFooter}
 		settings["includeCoAuthoredBy"] = false
