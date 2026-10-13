@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dev-dami/deck/internal/deck/sub"
 	"log/slog"
 	"os"
 	"sort"
@@ -42,6 +43,9 @@ type ManagerOptions struct {
 	// held, and must not block.
 	OnChange func()
 	Logger   *slog.Logger
+	// SubStore, when set with a nil Handler, adds the SUB ops to the
+	// default handler (SubHandler).
+	SubStore func() *sub.Store
 }
 
 // Manager runs the peer link for one Deck: the listener when
@@ -123,6 +127,9 @@ func NewManager(o ManagerOptions) (*Manager, error) {
 	m.setName(SelfName(o.Peers))
 	if o.Handler == nil {
 		m.o.Handler = &StatusHandler{NameFunc: m.Name, Version: version.Version, Started: time.Now()}
+		if o.SubStore != nil {
+			m.o.Handler = &SubHandler{Base: m.o.Handler, Store: o.SubStore}
+		}
 	}
 	return m, nil
 }

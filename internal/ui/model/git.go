@@ -22,13 +22,13 @@ import (
 // while checks run, and never when gh is missing or signed out (opening the
 // git pane asks again).
 const (
-	gitStatusInterval    = 10 * time.Second
+	gitStatusInterval = 10 * time.Second
 	// gitListEvery is how many status polls go by between reads of the
 	// recent branches and commits while HEAD stays put (other worktrees can
 	// still add branches).
 	gitListEvery = 6
 	// gitPollTimeout bounds one status poll.
-	gitPollTimeout = 15 * time.Second
+	gitPollTimeout       = 15 * time.Second
 	gitStatusErrBackoff  = time.Minute
 	gitPRPendingInterval = 20 * time.Second
 	gitPRIdleInterval    = 2 * time.Minute

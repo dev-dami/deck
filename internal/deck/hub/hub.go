@@ -7,7 +7,9 @@
 //
 // Everything here is read-only except thread.send, which the approval broker
 // runs itself (as it does thread.read), and the task.* ops, which change the
-// thread's shared task board through [Env.Tasks]. Git and GitHub go through the user's
+// thread's shared task board through [Env.Tasks], and the sub.* ops, which
+// snapshot, capture and apply code changes in the calling agent's own work
+// tree through [Env.Sub]. Git and GitHub go through the user's
 // own git and gh, in a clean environment (internal/deck/gh); Deck never reads
 // credentials, and every result is passed through [Redact].
 package hub
@@ -79,6 +81,13 @@ type TaskBoard interface {
 	TaskOp(op string, a map[string]any) (string, error)
 }
 
+// SubBridge is the Source Update Bridge as one agent's sub.* ops see it: the
+// session package implements it against the agent's own work tree; op is
+// one of the sub.* names and a the op's checked arguments.
+type SubBridge interface {
+	SubOp(ctx context.Context, op string, a map[string]any) (string, error)
+}
+
 // Env is what one call runs against; the caller resolves it per call.
 type Env struct {
 	AgentID  string
@@ -100,6 +109,8 @@ type Env struct {
 	Activity func() string
 	// Tasks is the thread's task board; nil when unavailable.
 	Tasks TaskBoard
+	// Sub is the Source Update Bridge; nil when unavailable.
+	Sub SubBridge
 
 	// dropped counts output bytes a command wrote past what was kept in
 	// memory, so the truncation note still gives the full size.
@@ -176,7 +187,8 @@ func init() {
 				{Name: "new_task", Type: tString, Desc: "hand it over as a new task with this title (one recipient); they answer with task.done"},
 				{Name: "task", Type: tString, Desc: "hand it over as this existing task id (one recipient)"},
 				{Name: "expect", Type: tString, Desc: "what you expect back"}, {Name: "done_when", Type: tString, Desc: "when the task counts as done"},
-				{Name: "explicit_done", Type: tBool, Desc: "the recipient must report with task.done; its reply alone is not enough"}}},
+				{Name: "explicit_done", Type: tBool, Desc: "the recipient must report with task.done; its reply alone is not enough"},
+				{Name: "capsule", Type: tString, Desc: "a SUB capsule id (sub.patch.capture) to hand over with the message; an isolated recipient gets it applied"}}},
 		{Name: agent.OpThreadRead, Desc: "Read the current shared thread: what the user and every agent said and did."},
 		{Name: OpTaskCreate, Desc: "Add a task to this thread's shared task board. deps are task ids it waits for (\"t1,t2\"); owner an agent name or \"me\". Returns its id.",
 			Args: []Arg{{Name: "title", Type: tString, Required: true}, {Name: "brief", Type: tString, Desc: "what the owner should do"}, {Name: "deps", Type: tString, Desc: "task ids it waits for, e.g. \"t1,t2\""},
@@ -191,7 +203,8 @@ func init() {
 				{Name: "owner", Type: tString}, {Name: "status", Type: tString}, {Name: "note", Type: tString}},
 			run: opTask(OpTaskUpdate)},
 		{Name: OpTaskDone, Desc: "Report a task finished, with its result. Anything waiting on it can then start.",
-			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "result", Type: tString, Desc: "what you did or found; the delegator reads this"}}, run: opTask(OpTaskDone)},
+			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "result", Type: tString, Desc: "what you did or found; the delegator reads this"},
+				{Name: "capsule", Type: tString, Desc: "a SUB capsule id holding the task's changes"}}, run: opTask(OpTaskDone)},
 		{Name: OpTaskFail, Desc: "Report a task failed, with why. It may be retried.",
 			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "reason", Type: tString}}, run: opTask(OpTaskFail)},
 		{Name: OpTaskCancel, Desc: "Abandon a task that is no longer needed.",
@@ -204,6 +217,31 @@ func init() {
 				{Name: "model", Type: tString}, {Name: "task", Type: tString, Desc: "bind it to an existing task id instead of making one"}, {Name: "isolate", Type: tBool},
 				{Name: "expect", Type: tString}, {Name: "done_when", Type: tString}, {Name: "explicit_done", Type: tBool}},
 			run: opTask(OpAgentSpawn)},
+		{Name: "sub.snapshot.create", Desc: "Record your work tree as a SUB snapshot (content-addressed; unchanged files cost nothing). It becomes your base for sub.patch.capture.",
+			run: opSub("sub.snapshot.create")},
+		{Name: "sub.snapshot.inspect", Desc: "List a SUB snapshot's files (optionally those under a path prefix).",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "path", Type: tString}}, run: opSub("sub.snapshot.inspect")},
+		{Name: "sub.patch.capture", Desc: "Capture what you changed since your base snapshot as an immutable capsule, and return its id. Send the id to another agent (thread.send capsule) instead of describing the edits. base defaults to your worktree's start, else the last checkpoint.",
+			Args: []Arg{{Name: "base", Type: tString, Desc: "snapshot id to diff from"}, {Name: "task", Type: tString, Desc: "task id to record the capsule on"}, {Name: "note", Type: tString}},
+			run:  opSub("sub.patch.capture")},
+		{Name: "sub.patch.inspect", Desc: "Show a capsule: who made it, for which task, each file added/modified/deleted; diff shows the patch.",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "diff", Type: tBool}}, run: opSub("sub.patch.inspect")},
+		{Name: "sub.patch.verify", Desc: "Check a capsule applies to your work tree as is: every file it touches is still what it was captured against.",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}}, run: opSub("sub.patch.verify")},
+		{Name: "sub.patch.apply", Desc: "Apply a capsule to your work tree, all of it or nothing. Refuses when a file it touches changed here; use sub.merge.preview then.",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}}, run: opSub("sub.patch.apply")},
+		{Name: "sub.patch.revert", Desc: "Undo an applied capsule in your work tree, all of it or nothing.",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}}, run: opSub("sub.patch.revert")},
+		{Name: "sub.merge.preview", Desc: "Show file by file how a capsule would land on your work tree: fits, already applied, merges cleanly, or conflicts.",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}}, run: opSub("sub.merge.preview")},
+		{Name: "sub.merge.resolve", Desc: "Apply a capsule with a three-way merge of files changed on both sides. strategy settles conflicts: none (refuse, default), theirs (take the capsule's file) or ours (keep yours).",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "strategy", Type: tString, Desc: "none, theirs or ours"}}, run: opSub("sub.merge.resolve")},
+		{Name: "sub.capsule.list", Desc: "Capsules on this thread's task board (or one task's), newest last.",
+			Args: []Arg{{Name: "task", Type: tString}}, run: opSub("sub.capsule.list")},
+		{Name: "sub.capsule.publish", Desc: "Let paired peer Decks fetch a capsule (by default they can read nothing in the store).",
+			Args: []Arg{{Name: "id", Type: tString, Required: true}}, run: opSub("sub.capsule.publish")},
+		{Name: "sub.capsule.fetch", Desc: "Fetch a capsule a paired peer Deck published, sending only the chunks this Deck lacks.",
+			Args: []Arg{{Name: "peer", Type: tString, Required: true}, {Name: "id", Type: tString, Required: true}}, run: opSub("sub.capsule.fetch")},
 		{Name: "history.threads", Desc: "List this project's Deck threads, past and current: id, title, updated, agents.",
 			Args: []Arg{{Name: "limit", Type: tInt}}, run: opHistoryThreads},
 		{Name: "history.search", Desc: "Search this project's Deck threads (chat history) for words; returns thread, speaker and snippet.",
@@ -405,6 +443,16 @@ func capTotal(s string, n int, total int64) string {
 		cut--
 	}
 	return s[:cut] + fmt.Sprintf("\n[... output truncated at %d KB of %d KB; narrow the request ...]", n>>10, (total+1023)>>10)
+}
+
+// opSub is the runner of a sub.* op: it hands the op to the bridge.
+func opSub(name string) func(context.Context, *Env, args) (string, error) {
+	return func(ctx context.Context, env *Env, a args) (string, error) {
+		if env.Sub == nil {
+			return "", fmt.Errorf("the Source Update Bridge is not available here")
+		}
+		return env.Sub.SubOp(ctx, name, map[string]any(a))
+	}
 }
 
 // opTask is the runner of the task op name: it hands the op to the thread's

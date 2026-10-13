@@ -6,6 +6,7 @@
 package engine
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -23,6 +24,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/deck/store"
+	"github.com/dev-dami/deck/internal/deck/sub"
 )
 
 // Engine is a running thread manager and what it needs.
@@ -86,18 +88,25 @@ func Start() (*Engine, error) {
 		Hub:    broker,
 		MCPFor: func(id string) *agent.MCPServer { return broker.ServerFor(self, id) },
 	})
-	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: startPeers(cfg)}, nil
+	peers := startPeers(cfg, mgr.SubStore)
+	if peers != nil {
+		mgr.SetSubFetch(func(ctx context.Context, name string, id sub.ID, s *sub.Store) (int, error) {
+			return peers.FetchCapsule(ctx, name, id, s)
+		})
+	}
+	go mgr.CollectSub()
+	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: peers}, nil
 }
 
 // startPeers makes the peer link and starts it when peers.enabled is set;
 // otherwise it runs nothing at all (no key, no listener, no goroutines)
 // until Settings turns peers on. A failure is logged and leaves Deck running
 // without peers.
-func startPeers(cfg config.Config) *peer.Service {
+func startPeers(cfg config.Config, subStore func() *sub.Store) *peer.Service {
 	// The config path lets the link pick up role, allow_inbound and remote
 	// edits while Deck runs, and lets Settings change the rest.
 	path, _ := config.Path()
-	svc, err := peer.NewService(peer.ServiceOptions{ConfigPath: path})
+	svc, err := peer.NewService(peer.ServiceOptions{ConfigPath: path, SubStore: subStore})
 	if err != nil {
 		slog.Warn("Peers not available", "error", err)
 		return nil

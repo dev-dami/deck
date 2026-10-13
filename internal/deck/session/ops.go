@@ -27,12 +27,14 @@ func (m *Manager) execOp(agentID, op string, args json.RawMessage) (string, bool
 		return "Deck does not know agent " + agentID, true
 	}
 	t := a.thread
-	env := hub.Env{AgentID: agentID, Tasks: taskBoard{m: m, a: a}}
+	env := hub.Env{AgentID: agentID, Tasks: taskBoard{m: m, a: a}, Sub: subBoard{m: m, a: a}}
 	if m.st != nil { // a nil *store.Store must stay a nil interface
 		env.Store = m.st
 	}
 	t.mu.Lock()
-	env.ThreadID, env.Dir = t.id, t.dir
+	// git and gh run where the agent works: its own worktree when it has
+	// one, so an isolated subagent's git.diff is its own changes.
+	env.ThreadID, env.Dir = t.id, a.workDir(t.dir)
 	env.Roots = []string{t.dir}
 	if t.worktree != nil && t.worktree.Main != "" {
 		env.Roots = append(env.Roots, t.worktree.Main)

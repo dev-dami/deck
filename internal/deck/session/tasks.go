@@ -57,6 +57,7 @@ type TaskPatch struct {
 
 func cloneTask(t store.Task) store.Task {
 	t.Deps = append([]string(nil), t.Deps...)
+	t.Capsules = append([]string(nil), t.Capsules...)
 	if t.Contract != nil {
 		c := *t.Contract
 		t.Contract = &c
@@ -530,7 +531,16 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		var err error
 		switch op {
 		case "task.done":
-			tk, err = m.moveTask(t, id, store.TaskDone, me, str("result"), nil)
+			result, capsule := str("result"), str("capsule")
+			var add func(*store.Task)
+			if capsule != "" {
+				if err := m.knownCapsule(capsule); err != nil {
+					return "", err
+				}
+				add = func(tk *store.Task) { tk.Capsules = appendCapsule(tk.Capsules, capsule) }
+				result = strings.TrimSpace(result + "\ncapsule: " + capsule)
+			}
+			tk, err = m.moveTask(t, id, store.TaskDone, me, result, add)
 		case "task.fail":
 			tk, err = m.moveTask(t, id, store.TaskFailed, me, str("reason"), nil)
 		default:
@@ -617,6 +627,13 @@ func taskLine(t *thread, tk store.Task) string {
 		b.WriteString(" → " + clipText(oneLine(tk.Result), 200))
 	case tk.Error != "" && (tk.Status == store.TaskFailed || tk.Status == store.TaskBlocked):
 		b.WriteString(" ✗ " + clipText(oneLine(tk.Error), 200))
+	}
+	if n := len(tk.Capsules); n > 0 {
+		b.WriteString(fmt.Sprintf(" [capsule %s", tk.Capsules[n-1]))
+		if n > 1 {
+			b.WriteString(fmt.Sprintf(", %d in all", n))
+		}
+		b.WriteString("]")
 	}
 	return b.String()
 }

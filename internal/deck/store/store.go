@@ -709,6 +709,12 @@ type Worktree struct {
 	Branch string `json:"branch"` // its branch, deck/<id>
 	Main   string `json:"main"`   // the shared work tree it came from
 	Base   string `json:"base"`   // the commit it started from
+	// SubBase is the SUB snapshot of the worktree as it was made, the base
+	// its agent's capsules are captured from.
+	SubBase string `json:"sub_base,omitempty"`
+	// SubParent is the capsule SubBase already includes (applied there
+	// before it was taken), which its agent's capsules chain onto.
+	SubParent string `json:"sub_parent,omitempty"`
 }
 
 // Dir is the folder the store keeps threads in.
