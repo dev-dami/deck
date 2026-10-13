@@ -12,6 +12,7 @@ import (
 
 	"github.com/aymanbagabas/go-udiff"
 
+	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/store"
 	"github.com/dev-dami/deck/internal/deck/sub"
 )
@@ -350,6 +351,12 @@ func (b subBoard) SubOp(ctx context.Context, op string, a map[string]any) (strin
 		if err := needCapsule(); err != nil {
 			return "", err
 		}
+		if err := s.Verify(ctx, root, id); err != nil {
+			return "", fmt.Errorf("%w; nothing was written (sub.merge.preview shows what can merge)", err)
+		}
+		if err := m.askWrite(ctx, me, op, s, id, root); err != nil {
+			return "", err
+		}
 		if err := s.Apply(ctx, root, id); err != nil {
 			return "", fmt.Errorf("%w; nothing was written (sub.merge.preview shows what can merge)", err)
 		}
@@ -359,6 +366,9 @@ func (b subBoard) SubOp(ctx context.Context, op string, a map[string]any) (strin
 
 	case "sub.patch.revert":
 		if err := needCapsule(); err != nil {
+			return "", err
+		}
+		if err := m.askWrite(ctx, me, op, s, id, root); err != nil {
 			return "", err
 		}
 		if err := s.Revert(ctx, root, id); err != nil {
@@ -389,6 +399,23 @@ func (b subBoard) SubOp(ctx context.Context, op string, a map[string]any) (strin
 		strategy := sub.Strategy(strings.ToLower(str("strategy")))
 		if strategy == "none" {
 			strategy = sub.Refuse
+		}
+		if strategy != sub.Refuse && strategy != sub.Theirs && strategy != sub.Ours {
+			return "", fmt.Errorf("unknown strategy %q: none, theirs or ours", strategy)
+		}
+		if strategy == sub.Refuse {
+			prev, err := s.PreviewMerge(ctx, root, id)
+			if err != nil {
+				return "", err
+			}
+			for _, p := range prev {
+				if p.State == sub.StateConflict {
+					return previewText(prev), errors.New("conflicts; nothing was written: settle them with strategy theirs or ours")
+				}
+			}
+		}
+		if err := m.askWrite(ctx, me, op, s, id, root); err != nil {
+			return "", err
 		}
 		prev, err := s.MergeApply(ctx, root, id, strategy)
 		if err != nil {
@@ -630,4 +657,62 @@ func memberWorktrees(ms []store.Member) []*store.Worktree {
 		out = append(out, mb.Worktree)
 	}
 	return out
+}
+
+// askMargin is the time an approved write keeps for itself out of the op's
+// deadline.
+const askMargin = 10 * time.Second
+
+// askWrite asks permission for a sub op that writes the agent's tree, the
+// way an agent's own file edit is asked: the thread's mode answers in plan
+// (no) and yolo (yes), the user in ask. An unanswered request is withdrawn
+// before the op's deadline, so it never applies after the agent gave up.
+func (m *Manager) askWrite(ctx context.Context, a *agentState, op string, s *sub.Store, id sub.ID, root string) error {
+	ops, err := s.Ops(id)
+	if err != nil {
+		return err
+	}
+	var names []string
+	for i, o := range ops {
+		if i == 5 {
+			names = append(names, fmt.Sprintf("+%d more", len(ops)-i))
+			break
+		}
+		names = append(names, o.Path)
+	}
+	summary := fmt.Sprintf("%s %s: %d files (%s) in %s", op, id.Short(), len(ops), strings.Join(names, ", "), root)
+	decided := make(chan agent.Decision, 1)
+	req := agent.ApprovalRequest{
+		ID: "sub-" + store.NewID(), Kind: agent.ApproveEdit, ToolName: op, Summary: summary, Cwd: root,
+		Respond: func(d agent.Decision) { decided <- d },
+	}
+	m.onApproval(a, req)
+	wait := 50 * time.Second
+	if dl, ok := ctx.Deadline(); ok {
+		wait = time.Until(dl) - askMargin
+	}
+	timer := time.NewTimer(max(wait, time.Second))
+	defer timer.Stop()
+	select {
+	case d := <-decided:
+		if !d.Allow {
+			reason := "the user declined"
+			if d.Reason != "" {
+				reason += ": " + d.Reason
+			}
+			return errors.New(reason)
+		}
+		return nil
+	case <-timer.C:
+	case <-ctx.Done():
+	}
+	if a.claimPending(req.ID) {
+		m.emit(ApprovalGoneMsg{ThreadID: a.thread.id, AgentID: a.id, ID: req.ID})
+		return errors.New("the user did not answer in time; nothing was written (ask them, then call it again)")
+	}
+	// Answered just as time ran out.
+	if d := <-decided; !d.Allow {
+		return errors.New("the user declined")
+	}
+	return nil
 }

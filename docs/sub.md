@@ -55,6 +55,11 @@ Agents use the ops through `execute`:
 `sub.snapshot.create|inspect`, `sub.patch.capture|inspect|verify|apply|revert`,
 `sub.merge.preview|resolve`, `sub.capsule.list|publish|fetch`.
 
+- `sub.patch.apply`, `sub.patch.revert` and `sub.merge.resolve` are asked
+  like a file edit: refused in plan mode, approved in yolo, and put to the
+  user in ask mode (after the capsule is checked, so nobody is asked about
+  one that would conflict). An unanswered request is withdrawn before the
+  op's deadline and writes nothing.
 - Each agent's root is its own worktree when it has one, else the
   repository root of the thread's folder; capsule paths are
   repository-relative, so they mean the same in every worktree.

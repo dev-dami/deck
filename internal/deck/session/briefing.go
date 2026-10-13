@@ -313,6 +313,7 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 		b.WriteString("Deck's MCP server has two tools: search finds Deck ops, skills other agents have and this project's past threads; execute runs one op.\n")
 		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with $name. Op \"thread.read\" shows the whole thread.\n")
 		b.WriteString("Shared task board (execute ops): task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list. Report a task you own with task.done.\n")
+		b.WriteString("Pass code as a capsule: sub.patch.capture, then thread.send {capsule}.\n")
 	} else {
 		b.WriteString("To message another agent, start a line of your final reply with $name (or $all).\n")
 	}
