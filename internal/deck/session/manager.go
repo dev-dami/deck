@@ -140,6 +140,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/attribution"
 	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/store"
+	"github.com/dev-dami/deck/internal/deck/sub"
 )
 
 // Status is the coarse state of one agent.
@@ -229,6 +230,8 @@ type ThreadInfo struct {
 type Manager struct {
 	adapters map[string]agent.Adapter
 	st       *store.Store
+	subOnce  sync.Once
+	sub      *sub.Store // SUB objects, for checkpoints (subStore)
 	opts     Options
 	maxHops  int
 

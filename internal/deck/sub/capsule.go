@@ -334,3 +334,16 @@ func validPath(p string) error {
 	}
 	return nil
 }
+
+// Diff is the ops that turn snapshot a into snapshot b.
+func (s *Store) Diff(a, b ID) ([]Op, error) {
+	sa, err := s.Snapshot(a)
+	if err != nil {
+		return nil, err
+	}
+	sb, err := s.Snapshot(b)
+	if err != nil {
+		return nil, err
+	}
+	return diff(sa, sb), nil
+}
