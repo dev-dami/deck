@@ -44,7 +44,7 @@ func (b *Backend) Events(ctx context.Context) <-chan remote.Event {
 		flush := func() {
 			for id, m := range dirty {
 				delete(dirty, id)
-				emit(remote.Event{Name: wire.EvMessageUpdated, SessionID: m.SessionID, Scoped: true, Payload: b.decorate(toMessage(m))})
+				emit(remote.Event{Name: wire.EvMessageUpdated, SessionID: m.SessionID, Scoped: true, Payload: b.decorate(toMessage(m, b.core.WorkingDir()))})
 			}
 		}
 		for {
@@ -96,7 +96,7 @@ func (b *Backend) onApp(msg tea.Msg, dirty map[string]message.Message, emit func
 			return
 		}
 		delete(dirty, m.ID)
-		emit(remote.Event{Name: name, SessionID: m.SessionID, Scoped: true, Payload: b.decorate(toMessage(m))})
+		emit(remote.Event{Name: name, SessionID: m.SessionID, Scoped: true, Payload: b.decorate(toMessage(m, b.core.WorkingDir()))})
 	case pubsub.Event[session.Session]:
 		s := ev.Payload
 		if s.ParentSessionID != "" {
@@ -108,6 +108,7 @@ func (b *Backend) onApp(msg tea.Msg, dirty map[string]message.Message, emit func
 			name = wire.EvSessionCreated
 		case pubsub.DeletedEvent:
 			name = wire.EvSessionDeleted
+			b.dropSession(s.ID, emit)
 		}
 		emit(remote.Event{Name: name, SessionID: s.ID, Payload: b.wireSession(s)})
 	case pubsub.Event[permission.PermissionRequest]:
@@ -120,20 +121,43 @@ func (b *Backend) onApp(msg tea.Msg, dirty map[string]message.Message, emit func
 		b.emitSessionState(r.SessionID, emit)
 	case pubsub.Event[permission.PermissionNotification]:
 		n := ev.Payload
-		b.mu.Lock()
-		var gone []pending
-		for id, p := range b.waiting {
-			if p.req.ToolCallID == n.ToolCallID {
-				gone = append(gone, p)
-				delete(b.waiting, id) // answered: out of the waiting set at once (R14)
-			}
+		// The service also notifies when a request is about to be asked
+		// (neither granted nor denied), and the two streams are not
+		// ordered against each other: only a decision resolves one.
+		if !n.Granted && !n.Denied {
+			return
 		}
-		b.mu.Unlock()
-		for _, p := range gone {
-			emit(remote.Event{Name: wire.EvApprovalResolved, SessionID: p.req.SessionID, Payload: wire.ApprovalResolved{ID: p.req.ID, SessionID: p.req.SessionID, Granted: n.Granted}})
-			b.emitSessionState(p.req.SessionID, emit)
+		b.resolve(func(p pending) bool { return p.req.ToolCallID == n.ToolCallID }, n.Granted, emit)
+	}
+}
+
+// resolve takes every waiting approval match accepts out of the waiting
+// set at once (R14) and announces it.
+func (b *Backend) resolve(match func(pending) bool, granted bool, emit func(remote.Event)) {
+	b.mu.Lock()
+	var gone []pending
+	for id, p := range b.waiting {
+		if match(p) {
+			gone = append(gone, p)
+			delete(b.waiting, id)
 		}
 	}
+	b.mu.Unlock()
+	sessions := map[string]bool{}
+	for _, p := range gone {
+		emit(remote.Event{Name: wire.EvApprovalResolved, SessionID: p.req.SessionID, Payload: wire.ApprovalResolved{ID: p.req.ID, SessionID: p.req.SessionID, Granted: granted}})
+		sessions[p.req.SessionID] = true
+	}
+	for id := range sessions {
+		b.emitSessionState(id, emit)
+	}
+}
+
+// dropSession forgets the approvals of a session whose turn ended or that
+// was deleted: a cancelled request is withdrawn without a notification,
+// and nothing can answer it any more.
+func (b *Backend) dropSession(sessionID string, emit func(remote.Event)) {
+	b.resolve(func(p pending) bool { return p.req.SessionID == sessionID }, false, emit)
 }
 
 // emitSessionState refreshes a session's summary after its pending count
@@ -150,6 +174,10 @@ func (b *Backend) onDeck(c workspace.DeckChange, emit func(remote.Event)) {
 	switch c.Kind {
 	case workspace.ChangeBusy:
 		emit(remote.Event{Name: wire.EvBusy, SessionID: c.SessionID, Payload: wire.BusyChanged{SessionID: c.SessionID, Busy: c.Busy}})
+		if !c.Busy && b.pendingFor(c.SessionID) > 0 {
+			b.dropSession(c.SessionID, emit) // also refreshes the session
+			return
+		}
 		b.emitSessionState(c.SessionID, emit)
 	case workspace.ChangeQueue:
 		emit(remote.Event{Name: wire.EvQueueChanged, SessionID: c.SessionID, Scoped: true, Payload: wire.QueueChanged{SessionID: c.SessionID, Items: toQueue(c.Queue)}})

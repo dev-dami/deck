@@ -34,11 +34,16 @@ func unix(sec int64) time.Time {
 // card, most telling first.
 var summaryKeys = []string{"command", "file_path", "path", "pattern", "url", "query", "description"}
 
-func toolSummary(input string) string {
+// toolSummary picks the most telling input field; a path is shown
+// relative to root, so the phone never sees the machine's layout.
+func toolSummary(input, root string) string {
 	var obj map[string]any
 	if json.Unmarshal([]byte(input), &obj) == nil {
 		for _, k := range summaryKeys {
 			if v, ok := obj[k].(string); ok && v != "" {
+				if k == "file_path" || k == "path" {
+					return relPath(root, v)
+				}
 				return v
 			}
 		}
@@ -62,7 +67,7 @@ func role(r message.MessageRole) string {
 
 // toMessage converts a stored row. Rows Deck writes for itself carry
 // provider "deck"; agent rows carry the agent's id in Model.
-func toMessage(m message.Message) wire.Message {
+func toMessage(m message.Message, root string) wire.Message {
 	out := wire.Message{
 		ID: m.ID, SessionID: m.SessionID, Role: role(m.Role),
 		CreatedAt: unix(m.CreatedAt), UpdatedAt: unix(m.UpdatedAt),
@@ -83,7 +88,7 @@ func toMessage(m message.Message) wire.Message {
 				out.Parts = append(out.Parts, wire.Part{Type: wire.PartReasoning, Text: v.Thinking})
 			}
 		case message.ToolCall:
-			out.Parts = append(out.Parts, wire.Part{Type: wire.PartToolCall, ID: v.ID, Name: v.Name, Summary: toolSummary(v.Input)})
+			out.Parts = append(out.Parts, wire.Part{Type: wire.PartToolCall, ID: v.ID, Name: v.Name, Summary: toolSummary(v.Input, root)})
 		case message.ToolResult:
 			part := wire.Part{Type: wire.PartToolResult, ToolCallID: v.ToolCallID, Name: v.Name, IsError: v.IsError, Output: v.Content}
 			var meta tools.EditResponseMetadata
