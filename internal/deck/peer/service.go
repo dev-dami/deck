@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dev-dami/deck/internal/deck/sub"
 	"log/slog"
 	"net"
 	"sort"
@@ -27,6 +28,7 @@ const LocalListenAddr = "127.0.0.1:" + config.DefaultPeerPort
 type Service struct {
 	dir, cfgPath string
 	log          *slog.Logger
+	subStore     func() *sub.Store
 	base         context.Context
 	cancel       context.CancelFunc
 
@@ -50,6 +52,9 @@ type ServiceOptions struct {
 	// ConfigPath is Deck's config.json. Without it nothing can be changed.
 	ConfigPath string
 	Logger     *slog.Logger
+	// SubStore, when set, is the Source Update Bridge store published
+	// capsules are served from (sub.closure, sub.objects).
+	SubStore func() *sub.Store
 }
 
 // errNoConfig is returned by every change when the Service has no config file.
@@ -68,7 +73,7 @@ func NewService(o ServiceOptions) (*Service, error) {
 		o.Logger = slog.Default()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, base: ctx, cancel: cancel, wake: make(chan struct{})}, nil
+	return &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, base: ctx, cancel: cancel, wake: make(chan struct{})}, nil
 }
 
 // Start puts p, the peers section Deck started with, in effect. With peers
@@ -166,7 +171,7 @@ func (s *Service) apply(p *config.Peers) error {
 	case mgr != nil:
 		err = mgr.Apply(p)
 	case p != nil && p.Enabled:
-		mgr, err = NewManager(ManagerOptions{Dir: s.dir, Peers: p, ConfigPath: s.cfgPath, OnChange: s.changed, Logger: s.log})
+		mgr, err = NewManager(ManagerOptions{Dir: s.dir, Peers: p, ConfigPath: s.cfgPath, OnChange: s.changed, Logger: s.log, SubStore: s.subStore})
 		if err != nil {
 			break
 		}

@@ -45,6 +45,7 @@ type wireRequest struct {
 	Expect       string          `json:"-"`
 	DoneWhen     string          `json:"-"`
 	ExplicitDone bool            `json:"-"`
+	Capsule      string          `json:"-"`
 	AgentID      string          `json:"agent_id"`
 	RequestID    string          `json:"request_id"`
 	ToolName     string          `json:"tool_name"`
@@ -260,6 +261,7 @@ func (b *Broker) handleExec(req wireRequest, gone <-chan struct{}) wireReply {
 			Expect       string `json:"expect"`
 			DoneWhen     string `json:"done_when"`
 			ExplicitDone bool   `json:"explicit_done"`
+			Capsule      string `json:"capsule"`
 		}
 		if json.Unmarshal(req.Args, &a) != nil || strings.TrimSpace(a.To) == "" || strings.TrimSpace(a.Message) == "" {
 			return wireReply{Text: "thread.send needs args {\"to\": an agent name or \"all\", \"message\": the text}", IsError: true}
@@ -267,6 +269,7 @@ func (b *Broker) handleExec(req wireRequest, gone <-chan struct{}) wireReply {
 		req.To, req.Text = strings.TrimSpace(a.To), a.Message
 		req.Task, req.NewTask = strings.TrimSpace(a.Task), strings.TrimSpace(a.NewTask)
 		req.Expect, req.DoneWhen, req.ExplicitDone = strings.TrimSpace(a.Expect), strings.TrimSpace(a.DoneWhen), a.ExplicitDone
+		req.Capsule = strings.TrimSpace(a.Capsule)
 		r = b.handleMessage(req, gone)
 	case agent.OpThreadRead:
 		r = b.handleRead(req)
@@ -331,6 +334,7 @@ func (b *Broker) handleMessage(req wireRequest, gone <-chan struct{}) wireReply 
 		To:   req.To,
 		Text: req.Text,
 		Task: req.Task, NewTask: req.NewTask, Expect: req.Expect, DoneWhen: req.DoneWhen, ExplicitDone: req.ExplicitDone,
+		Capsule: req.Capsule,
 		Respond: func(text string, err error) {
 			once.Do(func() { reply <- result{text, err} })
 		},

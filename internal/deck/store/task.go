@@ -108,6 +108,9 @@ type Task struct {
 	// Contract is what a delegation of the task promised (see thread.send).
 	Contract *Contract `json:"contract,omitempty"`
 	Run      *RunRef   `json:"run,omitempty"`
+	// Capsules are the SUB capsules holding the task's code changes, oldest
+	// first (sub.patch.capture, thread.send capsule, task.done capsule).
+	Capsules []string `json:"capsules,omitempty"`
 	// Isolate runs the task's subagent on its own git worktree.
 	Isolate bool `json:"isolate,omitempty"`
 	// BlockedBy is the task whose failure blocked this one (the scheduler);

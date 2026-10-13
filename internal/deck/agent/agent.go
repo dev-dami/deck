@@ -345,6 +345,9 @@ type Message struct {
 	// must report it with task.done.
 	Task, NewTask, Expect, DoneWhen string
 	ExplicitDone                    bool
+	// Capsule is a SUB capsule id handed over with the message: the code
+	// change itself, by reference, instead of a description of it.
+	Capsule string
 	// Respond must be called exactly once; result is returned to the sending
 	// agent as the tool result (e.g. "delivered to codex").
 	Respond func(result string, err error)

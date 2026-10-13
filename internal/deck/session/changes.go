@@ -109,7 +109,7 @@ func (m *Manager) checkpoint(t *thread, entryID string) {
 	if r == nil {
 		return
 	}
-	tree, err := r.Snapshot(m.ctx)
+	tree, err := m.snapLike(m.ctx, r, "")
 	if err != nil {
 		return
 	}
@@ -190,13 +190,13 @@ func (m *Manager) Changes(ctx context.Context, threadID, since string) (ChangeSe
 	case snaps[at] == "":
 		cs.Note = "no snapshot for that message: showing what the agents reported"
 	default:
-		now, err := r.Snapshot(ctx)
+		now, err := m.snapLike(ctx, r, snaps[at])
 		if err != nil {
 			return cs, err
 		}
-		diffs, err := r.Diff(ctx, snaps[at], now)
+		diffs, err := m.diffSnaps(ctx, r, snaps[at], now)
 		if err != nil {
-			if r.Exists(ctx, snaps[at]) {
+			if m.snapExists(ctx, r, snaps[at]) {
 				return cs, err
 			}
 			cs.Note = "that snapshot is gone (git gc): showing what the agents reported"
@@ -312,11 +312,11 @@ func (m *Manager) Revert(ctx context.Context, threadID, since string, paths []st
 	if base == "" {
 		return "", errors.New("session: that message has no snapshot to revert to")
 	}
-	pre, err := r.Snapshot(ctx)
+	pre, err := m.snapLike(ctx, r, "")
 	if err != nil {
 		return "", err
 	}
-	if err := r.Restore(ctx, base, paths); err != nil {
+	if err := m.restoreSnap(ctx, r, base, paths); err != nil {
 		return "", err
 	}
 	e := store.Entry{Type: store.EntryRevert, ID: store.NewID(), Ref: since, Snap: pre, Files: append([]string(nil), paths...)}
@@ -346,11 +346,11 @@ func (m *Manager) UndoRevert(ctx context.Context, threadID, revertID string) err
 	if rev.ID == "" || rev.Snap == "" {
 		return errors.New("session: no such revert")
 	}
-	pre, err := r.Snapshot(ctx)
+	pre, err := m.snapLike(ctx, r, "")
 	if err != nil {
 		return err
 	}
-	if err := r.Restore(ctx, rev.Snap, rev.Files); err != nil {
+	if err := m.restoreSnap(ctx, r, rev.Snap, rev.Files); err != nil {
 		return err
 	}
 	m.logRevert(t, store.Entry{Type: store.EntryUnrevert, ID: store.NewID(), Ref: rev.ID, Snap: pre, Files: rev.Files})

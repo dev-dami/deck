@@ -22,7 +22,13 @@ import (
 // while checks run, and never when gh is missing or signed out (opening the
 // git pane asks again).
 const (
-	gitStatusInterval    = 10 * time.Second
+	gitStatusInterval = 10 * time.Second
+	// gitListEvery is how many status polls go by between reads of the
+	// recent branches and commits while HEAD stays put (other worktrees can
+	// still add branches).
+	gitListEvery = 6
+	// gitPollTimeout bounds one status poll.
+	gitPollTimeout       = 15 * time.Second
 	gitStatusErrBackoff  = time.Minute
 	gitPRPendingInterval = 20 * time.Second
 	gitPRIdleInterval    = 2 * time.Minute
@@ -48,6 +54,7 @@ type gitState struct {
 	statusOK   bool
 	statusAt   time.Time
 	statusBusy bool
+	polls      int // status polls so far, for gitListEvery
 	// statusErr says why there is no status ("Not a git repository").
 	statusErr string
 	files     []gh.ChangedFile
@@ -98,6 +105,7 @@ type (
 		files   []gh.ChangedFile
 		recent  []gh.Branch
 		commits []gh.Commit
+		same    bool // recent and commits were not read: keep the old ones
 		err     error
 	}
 	// gitPRMsg is a pull request poll's result. prs is set when the open
@@ -189,7 +197,8 @@ func (m *UI) gitPoll() tea.Cmd {
 	var cmds []tea.Cmd
 	if !g.statusBusy && now.Sub(g.statusAt) >= gitStatusInterval {
 		g.statusBusy = true
-		cmds = append(cmds, gitFetchStatus(cli))
+		g.polls++
+		cmds = append(cmds, gitFetchStatus(cli, g.status.Head, g.statusOK && g.polls%gitListEvery != 0))
 	}
 	if cmd := m.gitMaybePollPR(now); cmd != nil {
 		cmds = append(cmds, cmd)
@@ -304,7 +313,10 @@ func (m *UI) applyGitMsg(msg gitMsg) tea.Cmd {
 			return nil
 		}
 		g.status, g.statusOK, g.statusErr = msg.status, true, ""
-		g.files, g.recent, g.commits = msg.files, msg.recent, msg.commits
+		g.files = msg.files
+		if !msg.same {
+			g.recent, g.commits = msg.recent, msg.commits
+		}
 		cmd := m.gitMaybePollPR(now)
 		if !g.prBusy {
 			p.refreshing = false
@@ -530,13 +542,19 @@ func gitErrText(err error) string {
 }
 
 // gitFetchStatus reads the status with the changed files, the recent
-// branches and the recent commits.
-func gitFetchStatus(cli *gh.Client) tea.Cmd {
+// branches and the recent commits. When reuse is set and HEAD is still head,
+// the branches and commits are not read again (msg.same), so a quiet poll is
+// one git process instead of three.
+func gitFetchStatus(cli *gh.Client, head string, reuse bool) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), gitPollTimeout)
+		defer cancel()
 		st, files, err := cli.StatusFiles(ctx)
 		if err != nil {
 			return gitStatusMsg{err: err}
+		}
+		if reuse && head != "" && st.Head == head {
+			return gitStatusMsg{status: st, files: files, same: true}
 		}
 		recent, _ := cli.RecentBranches(ctx, gitRecentBranches)
 		commits, _ := cli.Graph(ctx, gitRecentCommits)
@@ -621,7 +639,7 @@ func (m *UI) gitRefreshAll() tea.Cmd {
 	var cmds []tea.Cmd
 	if !g.statusBusy {
 		g.statusBusy = true
-		cmds = append(cmds, gitFetchStatus(cli))
+		cmds = append(cmds, gitFetchStatus(cli, "", false))
 	}
 	if v := g.pane.top(); v.kind == gitViewPR && !v.loading {
 		v.loading = true
