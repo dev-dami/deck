@@ -50,6 +50,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/tidwall/gjson v1.19.0
 	github.com/tidwall/sjson v1.2.5
+	github.com/zeebo/blake3 v0.2.4
 	github.com/zeebo/xxh3 v1.1.0
 	golang.design/x/clipboard v0.9.0
 	golang.org/x/crypto v0.55.0
