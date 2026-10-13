@@ -1,7 +1,6 @@
 package dialog
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -115,42 +114,6 @@ type (
 	ActionAttachSkill struct {
 		ID   string
 		Name string
-	}
-	// ActionRunMCPPrompt is a message to run a custom command.
-	ActionRunMCPPrompt struct {
-		Title       string
-		Description string
-		PromptID    string
-		ClientID    string
-		Arguments   []commands.Argument
-		Args        map[string]string // Actual argument values
-	}
-	// ActionEnableDockerMCP is a message to enable Docker MCP.
-	ActionEnableDockerMCP struct{}
-	// ActionDisableDockerMCP is a message to disable Docker MCP.
-	ActionDisableDockerMCP struct{}
-)
-
-// Messages for MCP OAuth authentication dialog.
-type (
-	// ActionMCPAuthStarted is sent when the user approves authentication
-	// for an MCP server. The UI should initiate the actual auth flow
-	// using the provided context, which the dialog will cancel if the
-	// user closes it.
-	ActionMCPAuthStarted struct {
-		Name string
-		Ctx  context.Context
-	}
-
-	// ActionMCPAuthComplete is sent when MCP authentication succeeds.
-	ActionMCPAuthComplete struct {
-		Name string
-	}
-
-	// ActionMCPAuthErrored is sent when MCP authentication fails.
-	ActionMCPAuthErrored struct {
-		Name  string
-		Error error
 	}
 )
 

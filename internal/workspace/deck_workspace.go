@@ -34,7 +34,7 @@ import (
 // Deck's own agent: every session is a Deck thread, its agents are the
 // user's installed claude, codex, opencode and agy CLIs, and what they do is
 // written into the message store the UI draws from. Sessions, messages,
-// history, LSP, MCP and config still come from the embedded AppWorkspace.
+// history and config still come from the embedded AppWorkspace.
 type DeckWorkspace struct {
 	*AppWorkspace
 	eng   *engine.Engine
@@ -231,10 +231,6 @@ func (w *DeckWorkspace) post(ctx context.Context, sessionID, prompt string, atta
 		_, _ = w.app.Sessions.Save(ctx, sess)
 	}
 	return row.ID, nil
-}
-
-func (w *DeckWorkspace) AgentRunChannel(ctx context.Context, _ string, sessionID, prompt string, attachments ...message.Attachment) error {
-	return w.AgentRun(ctx, sessionID, prompt, attachments...)
 }
 
 // AgentCancel interrupts every agent at work in the session.
@@ -1141,7 +1137,3 @@ func firstLine(s string, n int) string {
 	}
 	return s
 }
-
-// LSPStart does nothing: Deck's agents run their own language tooling, so
-// Deck starts no language servers of its own.
-func (w *DeckWorkspace) LSPStart(context.Context, string) {}

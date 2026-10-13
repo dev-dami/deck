@@ -1,17 +1,14 @@
 package commands
 
 import (
-	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/home"
-	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/skills"
 )
 
@@ -28,16 +25,6 @@ type Argument struct {
 	Title       string
 	Description string
 	Required    bool
-}
-
-// MCPPrompt represents a custom command loaded from an MCP server.
-type MCPPrompt struct {
-	ID          string
-	Title       string
-	Description string
-	PromptID    string
-	ClientID    string
-	Arguments   []Argument
 }
 
 // CustomCommand represents a user-defined custom command loaded from markdown files.
@@ -84,38 +71,6 @@ func FromSkillCatalog(entries []skills.CatalogEntry) []CustomCommand {
 		})
 	}
 	return commands
-}
-
-// LoadMCPPrompts loads custom commands from available MCP servers.
-func LoadMCPPrompts() ([]MCPPrompt, error) {
-	var commands []MCPPrompt
-	for mcpName, prompts := range mcp.Prompts() {
-		for _, prompt := range prompts {
-			key := mcpName + ":" + prompt.Name
-			var args []Argument
-			for _, arg := range prompt.Arguments {
-				title := arg.Title
-				if title == "" {
-					title = arg.Name
-				}
-				args = append(args, Argument{
-					ID:          arg.Name,
-					Title:       title,
-					Description: arg.Description,
-					Required:    arg.Required,
-				})
-			}
-			commands = append(commands, MCPPrompt{
-				ID:          key,
-				Title:       prompt.Title,
-				Description: prompt.Description,
-				PromptID:    prompt.Name,
-				ClientID:    mcpName,
-				Arguments:   args,
-			})
-		}
-	}
-	return commands, nil
 }
 
 func buildCommandSources(cfg *config.Config) []commandSource {
@@ -223,17 +178,4 @@ func buildCommandID(path, baseDir, prefix string) string {
 
 func isMarkdownFile(name string) bool {
 	return strings.HasSuffix(strings.ToLower(name), ".md")
-}
-
-func GetMCPPrompt(cfg *config.ConfigStore, clientID, promptID string, args map[string]string) (string, error) {
-	// Create a context with timeout since tea.Cmd doesn't support context passing.
-	// The MCP client has its own timeout, but this provides an additional safeguard.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	result, err := mcp.GetPromptMessages(ctx, cfg, clientID, promptID, args)
-	if err != nil {
-		return "", err
-	}
-	return strings.Join(result, " "), nil
 }

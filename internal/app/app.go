@@ -17,8 +17,6 @@ import (
 	"github.com/dev-dami/deck/internal/herdr"
 	"github.com/dev-dami/deck/internal/history"
 	"github.com/dev-dami/deck/internal/log"
-	"github.com/dev-dami/deck/internal/lsp"
-	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/notify"
 	"github.com/dev-dami/deck/internal/permission"
@@ -46,8 +44,6 @@ type App struct {
 	FileTracker filetracker.Service
 	// Usage records what each agent turn used, for the local Usage view.
 	Usage usage.Service
-
-	LSPManager *lsp.Manager
 
 	Skills *skills.Manager
 
@@ -99,7 +95,6 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		Questions:   question.NewService(),
 		FileTracker: filetracker.NewService(q),
 		Usage:       usage.NewServiceWithDB(q, conn),
-		LSPManager:  lsp.NewManager(store),
 		Skills:      skillsMgr,
 
 		globalCtx: ctx,
@@ -136,7 +131,6 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	app.cleanupFuncs = append(
 		app.cleanupFuncs,
 		func(context.Context) error { return db.Release(dataDir) },
-		func(ctx context.Context) error { return mcp.Close(ctx) },
 	)
 
 	return app, nil
@@ -197,9 +191,6 @@ func (app *App) setupEvents() {
 	app.subscribe(ctx, "history", app.History.Subscribe)
 	app.subscribe(ctx, "agent-notifications", app.agentNotifications.Subscribe)
 	app.subscribeMustDeliver(ctx, "run-completions", app.runCompletions.Subscribe)
-	app.subscribe(ctx, "mcp", mcp.SubscribeEvents)
-	app.subscribe(ctx, "mcp-channels", app.subscribeScopedChannelEvents)
-	app.subscribe(ctx, "lsp", SubscribeLSPEvents)
 	if app.Skills != nil {
 		app.subscribe(ctx, "skills", app.Skills.SubscribeEvents)
 	}
@@ -210,37 +201,6 @@ func (app *App) setupEvents() {
 		return nil
 	}
 	app.cleanupFuncs = append(app.cleanupFuncs, cleanupFunc)
-}
-
-// subscribeScopedChannelEvents forwards channel message events for servers
-// this workspace both declares in its MCP config and opted in (via
-// --channels or channel_enabled; see mcp.ChannelOptIn).
-// The MCP broker is process-global and channel events carry no workspace
-// identity, so this per-app scoping is what keeps another workspace's channel
-// messages out of this app's event stream (see mcp.SubscribeChannelEvents).
-// The scoped events feed the TUI's in-process injection and, in server mode,
-// the SSE stream to attached clients.
-func (app *App) subscribeScopedChannelEvents(ctx context.Context) <-chan pubsub.Event[mcp.Event] {
-	raw := mcp.SubscribeChannelEvents(ctx)
-	scoped := make(chan pubsub.Event[mcp.Event], 64)
-	go func() {
-		defer close(scoped)
-		for ev := range raw {
-			mcpCfg, declared := app.config.Config().MCP[ev.Payload.Name]
-			if !declared {
-				continue
-			}
-			if !mcp.ChannelOptIn(mcpCfg, app.config.Overrides().EnabledChannels, ev.Payload.Name) {
-				continue
-			}
-			select {
-			case scoped <- ev:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	return scoped
 }
 
 // subscribe fans a service's event stream into the shared app.events
@@ -367,11 +327,6 @@ func (app *App) Shutdown() {
 
 	// Close herdr client to stop its background writer.
 	app.herdrClient.Close()
-
-	// Shutdown all LSP clients.
-	wg.Go(func() {
-		app.LSPManager.KillAll(shutdownCtx)
-	})
 
 	// Call all cleanup functions.
 	for _, cleanup := range app.cleanupFuncs {

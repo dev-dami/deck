@@ -2,7 +2,6 @@ package model
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -41,8 +40,6 @@ import (
 	"github.com/dev-dami/deck/internal/fsext"
 	"github.com/dev-dami/deck/internal/history"
 	"github.com/dev-dami/deck/internal/home"
-	"github.com/dev-dami/deck/internal/lsp"
-	"github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/pubsub"
@@ -154,23 +151,11 @@ type (
 	userCommandsLoadedMsg struct {
 		Commands []commands.CustomCommand
 	}
-	// mcpPromptsLoadedMsg is sent when mcp prompts are loaded.
-	mcpPromptsLoadedMsg struct {
-		Prompts []commands.MCPPrompt
-	}
-	// mcpStateChangedMsg is sent when there is a change in MCP client states.
-	mcpStateChangedMsg struct {
-		states map[string]mcp.ClientInfo
-	}
-	// sendMessageMsg is sent to send a message.
-	// currently only used for mcp prompts.
+	// sendMessageMsg is sent to send a message (the project init prompt).
 	sendMessageMsg struct {
 		Content     string
 		Attachments []message.Attachment
 	}
-
-	// closeDialogMsg is sent to close the current dialog.
-	closeDialogMsg struct{}
 
 	// copyChatHighlightMsg is sent to copy the current chat highlight to clipboard.
 	copyChatHighlightMsg struct{}
@@ -357,36 +342,6 @@ type UI struct {
 		yesInitializeSelected bool
 	}
 
-	// lspStates / lspDiagnostics memoize the workspace LSP state and
-	// per-server severity counts (each probe behind them is a synchronous
-	// HTTP round-trip in client/server mode, and the sidebar, landing view,
-	// and compact header render them every frame). LSP events refresh them
-	// off-thread with a TTL backstop; see lsp.go.
-	lspStates        map[string]workspace.LSPClientInfo
-	lspDiagnostics   map[string]lsp.DiagnosticCounts
-	lspFetchInFlight bool
-	// lspRefreshQueued records that an LSP event arrived while a fetch was
-	// already in flight; applyLSPStates re-dispatches so the freshest state
-	// still lands.
-	lspRefreshQueued bool
-	lspCheckedAt     time.Time
-
-	// mcpStates memoizes the workspace MCP state (a synchronous probe in
-	// client/server mode) and its off-thread refresh bookkeeping. MCP
-	// state_changed events refresh it off-thread with a TTL backstop and a
-	// retry loop while servers are starting; see mcp.go.
-	mcpStates        map[string]mcp.ClientInfo
-	mcpFetchInFlight bool
-	// mcpRefreshQueued records that a refresh was requested while a fetch
-	// was already in flight; applyMCPStates re-dispatches so the freshest
-	// state still lands.
-	mcpRefreshQueued bool
-	mcpCheckedAt     time.Time
-	// mcpStartingRetries counts the consecutive starting-state re-probes
-	// driving the retry loop's exponential backoff. Event-driven refreshes
-	// renew the budget; settled states reset it.
-	mcpStartingRetries int
-
 	// skills
 	skillStates []*skills.SkillState
 
@@ -399,9 +354,8 @@ type UI struct {
 	// Notification state
 	notifyBackend       notification.Backend
 	notifyWindowFocused bool
-	// custom commands & mcp commands
+	// custom commands
 	customCommands []commands.CustomCommand
-	mcpPrompts     []commands.MCPPrompt
 
 	// forceCompactMode tracks whether compact mode is forced by user toggle
 	forceCompactMode bool
@@ -554,8 +508,6 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		attachments:         attachments,
 		todoSpinner:         todoSpinner,
 		frames:              newFrameCache(frameCacheTTL, frameCacheMaxEntries),
-		lspStates:           make(map[string]workspace.LSPClientInfo),
-		mcpStates:           make(map[string]mcp.ClientInfo),
 		notifyBackend:       notification.NoopBackend{},
 		notifyWindowFocused: true,
 		initialSessionID:    initialSessionID,
@@ -633,10 +585,6 @@ func (m *UI) Init() tea.Cmd {
 	}
 	// load the user commands async
 	cmds = append(cmds, m.loadCustomCommands())
-	// Prime the memoized LSP state off-thread.
-	if cmd := m.requestLSPRefresh(); cmd != nil {
-		cmds = append(cmds, cmd)
-	}
 	// load initial session if specified
 	initialSession := m.loadInitialSession()
 	if initialSession != nil {
@@ -666,14 +614,6 @@ func (m *UI) Init() tea.Cmd {
 	cmds = append(cmds, m.fetchGitBranch(), m.gitBranchTicker())
 	// The Usage pane reads today's tokens off-thread, then every so often.
 	cmds = append(cmds, m.loadUsagePane())
-	// Prime the memoized MCP state off-thread. There is deliberately no
-	// wait for server-side MCP initialization: the init gate is
-	// process-local and only armed where mcp.Initialize runs (the server),
-	// so waiting here is a no-op in client/server mode. The retry loop and
-	// TTL backstop in mcp.go converge on the settled states instead.
-	if cmd := m.requestMCPRefresh(); cmd != nil {
-		cmds = append(cmds, cmd)
-	}
 	return tea.Batch(cmds...)
 }
 
@@ -829,19 +769,6 @@ func (m *UI) applyChatScroll(lines int) {
 	m.chat.SelectNearestInView(lines < 0)
 }
 
-// loadMCPrompts loads the MCP prompts asynchronously.
-func (m *UI) loadMCPrompts() tea.Msg {
-	prompts, err := m.com.Workspace.ListMCPPrompts(context.Background())
-	if err != nil {
-		slog.Error("Failed to load MCP prompts", "error", err)
-	}
-	if prompts == nil {
-		// flag them as loaded even if there is none or an error
-		prompts = []commands.MCPPrompt{}
-	}
-	return mcpPromptsLoadedMsg{Prompts: prompts}
-}
-
 // Update handles updates to the UI model, and keeps the yolo shockwave's
 // frames coming while it plays.
 func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -934,10 +861,6 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.applyBusyState(msg)...)
 	case promptQueueMsg:
 		cmds = append(cmds, m.applyPromptQueue(msg)...)
-	case lspStatesMsg:
-		if cmd := m.applyLSPStates(msg); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
 	case agentModelChangedMsg:
 		// The coordinator model changed (selection, thinking, reasoning):
 		// re-fetch the memoized ready/model state off-thread.
@@ -990,7 +913,6 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.dispatchPromptQueueRefresh(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-		cmds = append(cmds, m.startLSPs(msg.lspFilePaths()))
 		msgs := msg.messages
 		if cmd := m.setSessionMessagesNested(msgs, msg.nested); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1027,11 +949,6 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionFilesUpdatesMsg:
 		m.sessionFiles = msg.sessionFiles
-		var paths []string
-		for _, f := range msg.sessionFiles {
-			paths = append(paths, f.LatestVersion.Path)
-		}
-		cmds = append(cmds, m.startLSPs(paths))
 
 	case modeSwitchedMsg:
 		m.modeSwitching = false
@@ -1052,41 +969,10 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			commands.SetCustomCommands(m.customCommands)
 		}
 
-	case mcpStateChangedMsg:
-		if dia := m.dialog.Dialog(dialog.MCPTogglesID); dia != nil {
-			if toggles, ok := dia.(*dialog.MCPToggles); ok {
-				for name, info := range msg.states {
-					toggles.SetItemStatus(name, mcpStatusText(info))
-				}
-			}
-		}
-		cmds = append(cmds, m.applyMCPStates(msg)...)
-	case mcpStartingRetryMsg:
-		// A server was still connecting when the last fetch landed; re-probe
-		// so "starting..." converges without depending on state_changed
-		// events (which can be missed in client/server mode).
-		if cmd := m.requestMCPRefresh(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-	case mcpPromptsLoadedMsg:
-		m.mcpPrompts = msg.Prompts
-		dia := m.dialog.Dialog(dialog.CommandsID)
-		if dia == nil {
-			break
-		}
-
-		commands, ok := dia.(*dialog.Commands)
-		if ok {
-			commands.SetMCPPrompts(m.mcpPrompts)
-		}
-
 	case promptHistoryLoadedMsg:
 		m.promptHistory.messages = msg.messages
 		m.promptHistory.index = -1
 		m.promptHistory.draft = ""
-
-	case closeDialogMsg:
-		m.dialog.CloseFrontDialog()
 
 	case pubsub.Event[session.Session]:
 		if msg.Type == pubsub.DeletedEvent {
@@ -1167,32 +1053,8 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.renderPills()
 	case pubsub.Event[history.File]:
 		cmds = append(cmds, m.handleFileEvent(msg.Payload))
-	case pubsub.Event[app.LSPEvent]:
-		// Refresh the memoized LSP state off-thread: LSPGetStates is a
-		// synchronous HTTP round-trip in client/server mode and diagnostics
-		// events can arrive per edited file.
-		if cmd := m.requestLSPRefresh(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-	case pubsub.Event[workspace.LSPEvent]:
-		if cmd := m.requestLSPRefresh(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
 	case pubsub.Event[skills.Event]:
 		m.skillStates = msg.Payload.States
-	case pubsub.Event[mcp.Event]:
-		switch msg.Payload.Type {
-		case mcp.EventStateChanged:
-			return m, tea.Batch(m.handleStateChanged()...)
-		case mcp.EventPromptsListChanged:
-			return m, handleMCPPromptsEvent(m.com.Workspace, msg.Payload.Name)
-		case mcp.EventToolsListChanged:
-			return m, handleMCPToolsEvent(m.com.Workspace, msg.Payload.Name)
-		case mcp.EventResourcesListChanged:
-			return m, handleMCPResourcesEvent(m.com.Workspace, msg.Payload.Name)
-		case mcp.EventChannelMessage:
-			return m, m.handleChannelMessage(msg.Payload)
-		}
 	case pubsub.Event[permission.PermissionRequest]:
 		if cmd := m.openPermissionsDialog(msg.Payload); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1691,27 +1553,13 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case completions.CompletionItemsLoadedMsg:
 		if m.completionsOpen && m.completionsSigil != "$" {
-			m.completions.SetItems(msg.Files, msg.Resources)
+			m.completions.SetItems(msg.Files)
 		}
 	case uv.KittyGraphicsEvent:
 		if !bytes.HasPrefix(msg.Payload, []byte("OK")) {
 			slog.Warn("Unexpected Kitty graphics response",
 				"response", string(msg.Payload),
 				"options", msg.Options)
-		}
-	case dialog.ActionMCPAuthStarted:
-		cmds = append(cmds, m.authenticateMCP(msg.Ctx, msg.Name))
-	case dialog.ActionMCPAuthComplete, dialog.ActionMCPAuthErrored:
-		// The OAuth flow finished server-side: refresh the memoized states
-		// so the sidebar reflects the outcome even when the state_changed
-		// event was missed.
-		if cmd := m.requestMCPRefresh(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-		if m.dialog.HasDialogs() {
-			if cmd := m.handleDialogMsg(msg); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
 		}
 	default:
 		if m.dialog.HasDialogs() {
@@ -1886,11 +1734,6 @@ func (m *UI) handleConnectionEvent(msg workspace.ConnectionEvent) []tea.Cmd {
 	m.status.SetInfoMsg(info)
 	cmds := []tea.Cmd{clearInfoMsgCmd(info.TTL)}
 	if msg.State == workspace.ConnectionRecovered {
-		// Events published while the stream was down are gone: re-sync the
-		// memoized MCP states alongside the session reload.
-		if cmd := m.requestMCPRefresh(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
 		if m.session != nil {
 			cmds = append(cmds, m.loadSession(m.session.ID))
 		}
@@ -2576,14 +2419,6 @@ func (m *UI) handleDialogAction(action dialog.Action) tea.Cmd {
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionQuit:
 		cmds = append(cmds, tea.Quit)
-	case dialog.ActionEnableDockerMCP:
-		m.dialog.CloseDialog(dialog.CommandsID)
-		cmds = append(cmds, m.enableDockerMCP)
-	case dialog.ActionDisableDockerMCP:
-		m.dialog.CloseDialog(dialog.CommandsID)
-		cmds = append(cmds, m.disableDockerMCP)
-	case dialog.ActionToggleMCP:
-		cmds = append(cmds, m.applyMCPToggle(msg))
 	case dialog.ActionInitializeProject:
 		if m.isAgentBusy() {
 			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before summarizing session..."))
@@ -2648,21 +2483,6 @@ func (m *UI) handleDialogAction(action dialog.Action) tea.Cmd {
 	case dialog.ActionAttachSkill:
 		m.dialog.CloseFrontDialog()
 		cmds = append(cmds, m.attachSkill(msg.ID, msg.Name))
-	case dialog.ActionRunMCPPrompt:
-		if len(msg.Arguments) > 0 && msg.Args == nil {
-			m.dialog.CloseFrontDialog()
-			title := cmp.Or(msg.Title, "MCP Prompt Arguments")
-			argsDialog := dialog.NewArguments(
-				m.com,
-				title,
-				msg.Description,
-				msg.Arguments,
-				msg, // Pass the action as the result
-			)
-			m.dialog.OpenDialog(argsDialog)
-			break
-		}
-		cmds = append(cmds, m.runMCPPrompt(msg.ClientID, msg.PromptID, msg.Args))
 	default:
 		cmds = append(cmds, util.CmdHandler(msg))
 	}
@@ -2967,11 +2787,6 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					case completions.SelectionMsg[completions.AgentCompletionValue]:
 						cmds = append(cmds, m.insertAgentCompletion(msg.Value))
 						m.closeCompletions()
-					case completions.SelectionMsg[completions.ResourceCompletionValue]:
-						cmds = append(cmds, m.insertMCPResourceCompletion(msg.Value))
-						if !msg.KeepOpen {
-							m.closeCompletions()
-						}
 					case completions.ClosedMsg:
 						m.completionsOpen = false
 					}
@@ -3330,7 +3145,6 @@ func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
 		m.isCompact,
 		m.detailsOpen,
 		area.Dx(),
-		m.lspErrorCount(),
 		m.gitBranch,
 		m.gitHeaderBadge(),
 		m.rosterOrNil(),
@@ -4750,64 +4564,6 @@ func (m *UI) insertFileCompletion(path string) tea.Cmd {
 	return tea.Batch(heightCmd, fileCmd)
 }
 
-// insertMCPResourceCompletion inserts the selected resource into the textarea,
-// replacing the @query, and adds the resource as an attachment.
-func (m *UI) insertMCPResourceCompletion(item completions.ResourceCompletionValue) tea.Cmd {
-	displayText := cmp.Or(item.Title, item.URI)
-
-	prevHeight := m.textarea.Height()
-	if !m.insertCompletionText(displayText) {
-		return nil
-	}
-	heightCmd := m.handleTextareaHeightChange(prevHeight)
-
-	resourceCmd := func() tea.Msg {
-		contents, err := m.com.Workspace.ReadMCPResource(
-			context.Background(),
-			item.MCPName,
-			item.URI,
-		)
-		if err != nil {
-			slog.Warn("Failed to read MCP resource", "uri", item.URI, "error", err)
-			return nil
-		}
-		if len(contents) == 0 {
-			return nil
-		}
-
-		content := contents[0]
-		var data []byte
-		if content.Text != "" {
-			data = []byte(content.Text)
-		} else if len(content.Blob) > 0 {
-			data = content.Blob
-		}
-		if len(data) == 0 {
-			return nil
-		}
-
-		mimeType := item.MIMEType
-		if mimeType == "" && content.MIMEType != "" {
-			mimeType = content.MIMEType
-		}
-		if mimeType == "" {
-			mimeType = "text/plain"
-		}
-
-		if !m.currentModelSupportsImages() && strings.HasPrefix(mimeType, "image/") {
-			return util.NewWarnMsg("The current model does not support image attachments")
-		}
-
-		return message.Attachment{
-			FilePath: item.URI,
-			FileName: displayText,
-			MimeType: mimeType,
-			Content:  data,
-		}
-	}
-	return tea.Batch(heightCmd, resourceCmd)
-}
-
 // completionsPosition returns the X and Y position for the completions popup.
 func (m *UI) completionsPosition() image.Point {
 	cur := m.textarea.Cursor()
@@ -5080,7 +4836,6 @@ func (m *UI) sendMessageInternal(content string, hidden bool, attachments ...mes
 	cmds = append(cmds, func() tea.Msg {
 		for _, path := range m.sessionFileReads {
 			m.com.Workspace.FileTrackerRecordRead(ctx, m.session.ID, path)
-			m.com.Workspace.LSPStart(ctx, path)
 		}
 		return nil
 	})
@@ -5115,53 +4870,6 @@ func (m *UI) sendMessageInternal(content string, hidden bool, attachments ...mes
 		return agentRunSubmittedMsg{}
 	})
 	return tea.Batch(cmds...)
-}
-
-// handleChannelMessage injects a channel event pushed by an MCP server into a
-// session so the agent reacts to it on its next turn. The rendered <channel>
-// element is already validated and escaped by the mcp package. If no session is
-// active yet, one is created so a pushed event is never silently dropped; if the
-// agent is busy, AgentRun enqueues the message and it is picked up on the next
-// step.
-//
-// Injection is skipped entirely when the workspace routes channel events
-// itself (client/server mode): the server injects each event exactly once,
-// and injecting here as well would duplicate the turn once per attached
-// client. The injected turn still reaches this client through the normal
-// session/message event stream.
-func (m *UI) handleChannelMessage(ev mcp.Event) tea.Cmd {
-	if m.com.Workspace.RoutesChannelEvents() {
-		return nil
-	}
-	if ev.ChannelMessage == "" || !m.com.Workspace.AgentIsReady() {
-		return nil
-	}
-	loadCmd, err := m.ensureSession()
-	if err != nil {
-		slog.Debug("Failed to create session for channel message", "error", err)
-		return nil
-	}
-	if !m.hasSession() {
-		slog.Debug("Channel message dropped: no active session after ensureSession", "channel", ev.Name)
-		return loadCmd
-	}
-	// The coordinator sets the channel binding during the turn
-	// (syncSessionChannel), so there is no need to write it here —
-	// doing so would race with the coordinator's own write and
-	// publish a duplicate session update.
-	sessionID := m.session.ID
-	channel := ev.Name
-	content := ev.ChannelMessage
-	runCmd := func() tea.Msg {
-		if err := m.com.Workspace.AgentRunChannel(context.Background(), channel, sessionID, content); err != nil {
-			slog.Debug("Failed to inject channel message", "error", err, "session", sessionID)
-		}
-		return nil
-	}
-	if loadCmd != nil {
-		return tea.Batch(loadCmd, runCmd)
-	}
-	return runCmd
 }
 
 // runShellCommand executes a shell command server-side without triggering
@@ -5336,10 +5044,6 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openNotificationsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-	case dialog.MCPTogglesID:
-		if cmd := m.openMCPTogglesDialog(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
 	case dialog.FilePickerID:
 		if cmd := m.openFilesDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -5478,14 +5182,14 @@ func (m *UI) openCommandsDialog() tea.Cmd {
 	hasTodos := hasSession && hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
 
-	commands, err := dialog.NewCommands(m.com, sessionID, hasSession, hasTodos, hasQueue, m.customCommands, m.mcpPrompts)
+	commands, err := dialog.NewCommands(m.com, sessionID, hasSession, hasTodos, hasQueue, m.customCommands)
 	if err != nil {
 		return util.ReportError(err)
 	}
 
 	m.dialog.OpenDialog(commands)
 
-	return commands.InitialCmd()
+	return nil
 }
 
 // openReasoningDialog opens the reasoning effort dialog.
@@ -5800,10 +5504,6 @@ func (m *UI) newSession() tea.Cmd {
 	m.historyReset()
 	return tea.Batch(
 		planCmd,
-		func() tea.Msg {
-			m.com.Workspace.LSPStopAll(context.Background())
-			return nil
-		},
 		m.loadPromptHistory(),
 		m.reportCurrentSession(""),
 	)
@@ -6074,11 +5774,9 @@ func (m *UI) drawSessionDetails(scr uv.Screen, area uv.Rectangle) {
 	sectionWidth := max(1, min(maxSectionWidth, width/4-2)) // account for spacing between sections
 	maxItemsPerSection := remainingHeight - 3               // Account for section title and spacing
 
-	lspSection := m.lspInfo(sectionWidth, maxItemsPerSection, false)
-	mcpSection := m.mcpInfo(sectionWidth, maxItemsPerSection, false)
 	skillsSection := m.skillsInfo(sectionWidth, maxItemsPerSection, false)
 	filesSection := m.filesInfo(m.com.Workspace.WorkingDir(), sectionWidth, maxItemsPerSection, false)
-	sections := lipgloss.JoinHorizontal(lipgloss.Top, filesSection, " ", lspSection, " ", mcpSection, " ", skillsSection)
+	sections := lipgloss.JoinHorizontal(lipgloss.Top, filesSection, " ", skillsSection)
 	uv.NewStyledString(
 		s.CompactDetails.View.
 			Width(area.Dx()).
@@ -6093,69 +5791,6 @@ func (m *UI) drawSessionDetails(scr uv.Screen, area uv.Rectangle) {
 	).Draw(scr, area)
 }
 
-func (m *UI) runMCPPrompt(clientID, promptID string, arguments map[string]string) tea.Cmd {
-	load := func() tea.Msg {
-		prompt, err := m.com.Workspace.GetMCPPrompt(clientID, promptID, arguments)
-		if err != nil {
-			// TODO: make this better
-			return util.ReportError(err)()
-		}
-
-		if prompt == "" {
-			return nil
-		}
-		return sendMessageMsg{
-			Content: prompt,
-		}
-	}
-
-	var cmds []tea.Cmd
-	if cmd := m.dialog.StartLoading(); cmd != nil {
-		cmds = append(cmds, cmd)
-	}
-	cmds = append(cmds, load, func() tea.Msg {
-		return closeDialogMsg{}
-	})
-
-	return tea.Sequence(cmds...)
-}
-
-// handleStateChanged reacts to an MCP state change: the memoized sidebar
-// states refresh off-thread (an authoritative re-fetch rather than the event
-// payload, so a missed field cannot drift), the coordinator rebuilds to pick
-// up newly registered tools, and the MCP prompts reload.
-func (m *UI) handleStateChanged() []tea.Cmd {
-	return []tea.Cmd{
-		m.requestMCPRefresh(),
-		m.updateAgentModelCmd(func() tea.Msg {
-			m.com.Workspace.UpdateAgentModel(context.Background())
-			return nil
-		}),
-		m.loadMCPrompts,
-	}
-}
-
-func handleMCPPromptsEvent(ws workspace.Workspace, name string) tea.Cmd {
-	return func() tea.Msg {
-		ws.MCPRefreshPrompts(context.Background(), name)
-		return nil
-	}
-}
-
-func handleMCPToolsEvent(ws workspace.Workspace, name string) tea.Cmd {
-	return func() tea.Msg {
-		ws.RefreshMCPTools(context.Background(), name)
-		return nil
-	}
-}
-
-func handleMCPResourcesEvent(ws workspace.Workspace, name string) tea.Cmd {
-	return func() tea.Msg {
-		ws.MCPRefreshResources(context.Background(), name)
-		return nil
-	}
-}
-
 func (m *UI) copyChatHighlight() tea.Cmd {
 	text := m.chat.HighlightContent()
 	return common.CopyToClipboardWithCallback(
@@ -6166,23 +5801,6 @@ func (m *UI) copyChatHighlight() tea.Cmd {
 			return nil
 		},
 	)
-}
-
-func (m *UI) enableDockerMCP() tea.Msg {
-	ctx := context.Background()
-	if err := m.com.Workspace.EnableDockerMCP(ctx); err != nil {
-		return util.ReportError(err)()
-	}
-
-	return util.NewInfoMsg("Docker MCP enabled and started successfully")
-}
-
-func (m *UI) disableDockerMCP() tea.Msg {
-	if err := m.com.Workspace.DisableDockerMCP(); err != nil {
-		return util.ReportError(err)()
-	}
-
-	return util.NewInfoMsg("Docker MCP disabled successfully")
 }
 
 // renderLogo renders the Deck logo with the given styles and dimensions.

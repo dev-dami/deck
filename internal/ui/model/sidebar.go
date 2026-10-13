@@ -6,8 +6,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/dev-dami/deck/internal/config"
-	mcp "github.com/dev-dami/deck/internal/mcp"
 	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/dev-dami/deck/internal/workspace"
 )
@@ -74,17 +72,6 @@ func fileChangeCount(files []SessionFile) int {
 			continue
 		}
 		count++
-	}
-	return count
-}
-
-// mcpCount returns the number of MCP servers that have a state entry.
-func mcpCount(mcpCfgs []config.MCP, states map[string]mcp.ClientInfo) int {
-	count := 0
-	for _, cfg := range mcpCfgs {
-		if _, ok := states[cfg.Name]; ok {
-			count++
-		}
 	}
 	return count
 }

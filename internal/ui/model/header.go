@@ -93,9 +93,7 @@ func (h *header) mark(edges []decklogo.Edge) string {
 }
 
 // drawHeader draws the header for the given session. edges are the agents'
-// card edges in Deck's mark (see UI.markLevels). lspErrorCount comes
-// from the UI's memoized LSP state: drawing runs on every frame and must not
-// probe the workspace (a synchronous HTTP round-trip in client/server mode).
+// card edges in Deck's mark (see UI.markLevels).
 func (h *header) drawHeader(
 	scr uv.Screen,
 	area uv.Rectangle,
@@ -104,7 +102,6 @@ func (h *header) drawHeader(
 	compact bool,
 	detailsOpen bool,
 	width int,
-	lspErrorCount int,
 	gitBranch string,
 	gitBadge string,
 	roster workspace.Roster,
@@ -133,7 +130,6 @@ func (h *header) drawHeader(
 	details := renderHeaderDetails(
 		h.com,
 		session,
-		lspErrorCount,
 		detailsOpen,
 		availDetailWidth,
 		gitBranch,
@@ -167,7 +163,6 @@ func (h *header) drawHeader(
 func renderHeaderDetails(
 	com *common.Common,
 	session *session.Session,
-	lspErrorCount int,
 	detailsOpen bool,
 	availWidth int,
 	gitBranch string,
@@ -177,10 +172,6 @@ func renderHeaderDetails(
 	t := com.Styles
 
 	var parts []string
-
-	if lspErrorCount > 0 {
-		parts = append(parts, t.LSP.ErrorDiagnostic.Render(fmt.Sprintf("%s%d", styles.LSPErrorIcon, lspErrorCount)))
-	}
 
 	if percentage, ok := contextPercent(com, roster, session); ok {
 		percentageText := fmt.Sprintf("%d%%", percentage)
