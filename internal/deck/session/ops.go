@@ -18,6 +18,14 @@ func (m *Manager) SetActivity(f func(threadID string) string) {
 	m.mu.Unlock()
 }
 
+// SetTeam installs the peer link the peers.* ops read: the teammates this
+// Deck is paired with. The engine installs it when the link exists.
+func (m *Manager) SetTeam(t hub.Team) {
+	m.mu.Lock()
+	m.team = t
+	m.mu.Unlock()
+}
+
 // execOp answers Deck's search tool (op "search") and every execute op other
 // than thread.send and thread.read, for the agent that called it. It runs in
 // the caller's thread: its folder, its project's history, its tool calls.
@@ -54,6 +62,9 @@ func (m *Manager) execOp(agentID, op string, args json.RawMessage) (string, bool
 
 	m.mu.Lock()
 	activity := m.activity
+	if m.team != nil {
+		env.Team = m.team
+	}
 	m.mu.Unlock()
 	if activity != nil {
 		tid := env.ThreadID

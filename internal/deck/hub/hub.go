@@ -100,6 +100,8 @@ type Env struct {
 	Activity func() string
 	// Tasks is the thread's task board; nil when unavailable.
 	Tasks TaskBoard
+	// Team is this Deck's peer link (its teammates); nil when there is none.
+	Team Team
 
 	// dropped counts output bytes a command wrote past what was kept in
 	// memory, so the truncation note still gives the full size.
@@ -228,6 +230,9 @@ func init() {
 			Args: []Arg{{Name: "number", Type: tInt, Required: true}}, run: opGHPR},
 		{Name: "gh.runs", Desc: "Recent GitHub Actions workflow runs (default 10).", Args: []Arg{{Name: "limit", Type: tInt}}, run: opGHRuns},
 		{Name: "deck.jobs", Desc: "Commands Deck's agents are running now and shells left running in the background.", run: opDeckJobs},
+		{Name: OpPeersList, Desc: "Your teammates: the other Decks paired with this one over the peer link (peers), with each one's role and whether it is connected.", run: opPeersList},
+		{Name: OpPeersStatus, Desc: "Ask one teammate's Deck (a peer from peers.list) how it is: its name, version and uptime, over the link.",
+			Args: []Arg{{Name: "peer", Type: tString, Required: true, Desc: "the teammate's name"}}, run: opPeersStatus},
 	}
 }
 
