@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	gioui.org v0.10.3
 	github.com/dev-dami/deck v0.0.0
+	golang.org/x/sys v0.48.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
@@ -16,7 +17,6 @@ require (
 	golang.org/x/exp/shiny v0.0.0-20250606033433-dcc06ee1d476 // indirect
 	golang.org/x/image v0.46.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260831171406-18b4a7587f8a // indirect
 	rsc.io/qr v0.2.0 // indirect

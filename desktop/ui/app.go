@@ -1,16 +1,18 @@
 // Package ui is the Deck desktop window, drawn with Gio: a rail of
-// projects and threads, the chat, approvals and a composer. Everything it
-// shows comes from state; everything it does is a call to the project's
-// engine over gRPC.
+// projects and threads, the chat with approvals and a composer, a side
+// panel (changes, agents, queue) and Settings. Everything it shows comes
+// from state; everything it does is a call to the project's engine over
+// gRPC.
 package ui
 
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +24,8 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/dev-dami/deck/desktop/backend"
+	"github.com/dev-dami/deck/desktop/platform"
+	"github.com/dev-dami/deck/desktop/settings"
 	"github.com/dev-dami/deck/desktop/state"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 	"github.com/dev-dami/deck/pkg/rpc/deckv1"
@@ -32,60 +36,129 @@ type (
 	D = layout.Dimensions
 )
 
-const callTimeout = 15 * time.Second
+const (
+	callTimeout   = 15 * time.Second
+	maxImageBytes = 16 << 20
+)
+
+type page int
+
+const (
+	pageChat page = iota
+	pageSettings
+)
+
+type tab int
+
+const (
+	tabChanges tab = iota
+	tabAgents
+	tabQueue
+)
+
+type attachment struct {
+	name, mime string
+	data       []byte
+}
 
 // App is the window and what it drives.
 type App struct {
-	w     *app.Window
-	th    *material.Theme
-	col   Colors
-	pool  *backend.Pool
-	store *state.Store
-	ctx   context.Context
+	version string
+	w       *app.Window
+	th      *material.Theme
+	col     Colors
+	pool    *backend.Pool
+	store   *state.Store
+	ctx     context.Context
+	hwnd    uintptr
 
 	mu       sync.Mutex
+	set      settings.Settings
 	projects map[string]*backend.Project
 	opening  map[string]bool
 	status   string
 	proj     string // selected project key
 	sess     string // selected session id
-	recents  []string
+	// pendingAttach is picked images on their way to attach.
+	pendingAttach []attachment
 
-	pathEd   widget.Editor
-	composer widget.Editor
-	rail     widget.List
-	chat     widget.List
-	sendBtn  widget.Clickable
-	stopBtn  widget.Clickable
-	clicks   map[string]*widget.Clickable
+	// UI goroutine only.
+	page      page
+	tab       tab
+	title     string
+	attach    []attachment
+	renaming  bool
+	deleteAt  time.Time
+	menuOpen  map[string]bool
+	openDiff  map[string]bool
+	pathEd    widget.Editor
+	searchEd  widget.Editor
+	composer  widget.Editor
+	renameEd  widget.Editor
+	deckEd    widget.Editor
+	rail      widget.List
+	chat      widget.List
+	panel     widget.List
+	settingsL widget.List
+	clicks    map[string]*widget.Clickable
+	sels      map[string]*widget.Selectable
+	reopen    widget.Bool
+	atLogin   widget.Bool
 }
 
-// Run opens the window, starts an engine for each of dirs and returns when
-// the window closes, after stopping every engine.
-func Run(dirs []string) error {
+// Run opens the window, starts an engine for each of dirs (and the
+// projects open at the last quit, if Settings say so) and returns when the
+// window closes, after stopping every engine.
+func Run(version string, dirs []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	a := &App{
-		w: new(app.Window), col: dark, pool: backend.NewPool(), store: &state.Store{}, ctx: ctx,
-		projects: map[string]*backend.Project{}, opening: map[string]bool{}, clicks: map[string]*widget.Clickable{},
+		version: version, w: new(app.Window), pool: backend.NewPool(), store: &state.Store{}, ctx: ctx,
+		set: settings.Load(), projects: map[string]*backend.Project{}, opening: map[string]bool{},
+		clicks: map[string]*widget.Clickable{}, sels: map[string]*widget.Selectable{},
+		menuOpen: map[string]bool{}, openDiff: map[string]bool{},
 	}
-	a.th = newTheme(a.col)
+	a.applyTheme()
 	a.store.Changed = a.w.Invalidate
 	a.pathEd = widget.Editor{SingleLine: true, Submit: true}
+	a.searchEd = widget.Editor{SingleLine: true}
+	a.renameEd = widget.Editor{SingleLine: true, Submit: true}
+	a.deckEd = widget.Editor{SingleLine: true, Submit: true}
+	a.deckEd.SetText(a.set.DeckPath)
 	a.composer = widget.Editor{Submit: true}
 	a.rail.Axis = layout.Vertical
+	a.panel.Axis = layout.Vertical
+	a.settingsL.Axis = layout.Vertical
 	a.chat.Axis = layout.Vertical
 	a.chat.ScrollToEnd = true
-	a.recents = loadRecents()
-	a.w.Option(app.Title("Deck"), app.Size(unit.Dp(1280), unit.Dp(820)), app.MinSize(unit.Dp(760), unit.Dp(480)))
+	a.reopen.Value = a.set.ReopenProjects
+	a.atLogin.Value = platform.LaunchAtLogin()
+	// Maximised, like other desktop apps: a fixed size overflows small screens.
+	a.w.Option(app.Title("Deck"), app.Size(unit.Dp(1180), unit.Dp(720)), app.MinSize(unit.Dp(820), unit.Dp(480)), app.Maximized.Option())
+
+	if a.set.ReopenProjects {
+		dirs = append(dirs, a.set.Open...)
+	}
 	for _, d := range dirs {
 		a.open(d)
 	}
-	defer a.pool.CloseAll()
+	defer func() {
+		a.mu.Lock()
+		a.set.Open = a.set.Open[:0]
+		for d := range a.projects {
+			a.set.Open = append(a.set.Open, d)
+		}
+		slices.Sort(a.set.Open)
+		_ = a.set.Save()
+		a.mu.Unlock()
+		a.pool.CloseAll()
+	}()
 
 	var ops op.Ops
 	for {
 		switch e := a.w.Event().(type) {
+		case app.Win32ViewEvent:
+			a.hwnd = e.HWND
 		case app.DestroyEvent:
 			return e.Err
 		case app.FrameEvent:
@@ -94,6 +167,32 @@ func Run(dirs []string) error {
 			e.Frame(gtx.Ops)
 		}
 	}
+}
+
+func (a *App) applyTheme() {
+	a.col = dark
+	if a.set.Theme == "light" {
+		a.col = light
+	}
+	a.th = newTheme(a.col, a.set.TextSize)
+}
+
+// saveSettings edits and persists the settings.
+func (a *App) saveSettings(f func(s *settings.Settings)) {
+	a.mu.Lock()
+	f(&a.set)
+	err := a.set.Save()
+	a.mu.Unlock()
+	if err != nil {
+		a.setStatus("Could not save settings: " + err.Error())
+	}
+	a.w.Invalidate()
+}
+
+func (a *App) settings() settings.Settings {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.set
 }
 
 func (a *App) click(key string) *widget.Clickable {
@@ -105,11 +204,27 @@ func (a *App) click(key string) *widget.Clickable {
 	return c
 }
 
+func (a *App) sel(key, text string) *widget.Selectable {
+	s := a.sels[key]
+	if s == nil {
+		s = new(widget.Selectable)
+		a.sels[key] = s
+	}
+	s.SetText(text)
+	return s
+}
+
 func (a *App) setStatus(s string) {
 	a.mu.Lock()
 	a.status = s
 	a.mu.Unlock()
 	a.w.Invalidate()
+}
+
+func (a *App) fail(err error) {
+	if err != nil {
+		a.setStatus(err.Error())
+	}
 }
 
 func (a *App) selected() (proj, sess string) {
@@ -128,9 +243,25 @@ func (a *App) call() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(a.ctx, callTimeout)
 }
 
+// pickFolder shows the system folder picker and opens what was chosen.
+func (a *App) pickFolder() {
+	go func() {
+		dir, err := platform.PickFolder(a.hwnd, "Open a project folder")
+		switch {
+		case err == platform.ErrCancelled:
+		case err == platform.ErrUnsupported:
+			a.setStatus("Paste the folder's path in the box above.")
+		case err != nil:
+			a.setStatus(err.Error())
+		default:
+			a.open(dir)
+		}
+	}()
+}
+
 // open starts (or reuses) the engine for dir in the background.
 func (a *App) open(dir string) {
-	abs, err := filepath.Abs(dir)
+	abs, err := filepath.Abs(strings.Trim(strings.TrimSpace(dir), `"`))
 	if err != nil {
 		a.setStatus(err.Error())
 		return
@@ -141,42 +272,66 @@ func (a *App) open(dir string) {
 	}
 	a.mu.Lock()
 	if a.opening[abs] || a.projects[abs] != nil {
+		if a.projects[abs] != nil {
+			a.proj, a.sess = abs, ""
+		}
 		a.mu.Unlock()
 		return
 	}
 	a.opening[abs] = true
-	a.status = "Starting Deck in " + filepath.Base(abs) + "…"
+	a.status = ""
+	override := a.set.DeckPath
 	a.mu.Unlock()
 	a.w.Invalidate()
 	go func() {
-		p, err := a.pool.Open(a.ctx, abs, a.onEvent)
+		bin, err := backend.FindDeck(override)
+		var p *backend.Project
+		if err == nil {
+			p, err = a.pool.Open(a.ctx, bin, abs, a.onEvent)
+		}
 		a.mu.Lock()
 		delete(a.opening, abs)
 		if err != nil {
-			a.status = err.Error()
+			a.status = filepath.Base(abs) + ": " + err.Error()
 			a.mu.Unlock()
 			a.w.Invalidate()
 			return
 		}
 		a.projects[p.Dir] = p
-		a.status = ""
-		if a.proj == "" {
-			a.proj = p.Dir
-		}
-		a.recents = append([]string{p.Dir}, slices.DeleteFunc(a.recents, func(d string) bool { return d == p.Dir })...)
-		if len(a.recents) > 12 {
-			a.recents = a.recents[:12]
-		}
-		saveRecents(a.recents)
+		a.proj, a.sess = p.Dir, ""
+		a.set.Touch(p.Dir)
+		_ = a.set.Save()
 		a.mu.Unlock()
 		a.store.Add(p.Dir, p.Info)
 		a.refetch(p)
 	}()
 }
 
+// closeProject stops a project's engine and forgets its state.
+func (a *App) closeProject(key string) {
+	a.mu.Lock()
+	delete(a.projects, key)
+	if a.proj == key {
+		a.proj, a.sess = "", ""
+		for k := range a.projects {
+			a.proj = k
+			break
+		}
+	}
+	a.mu.Unlock()
+	a.store.Remove(key)
+	go a.pool.Close(key)
+}
+
 func (a *App) onEvent(p *backend.Project, ev *deckv1.Event) {
 	if a.store.Apply(p.Dir, ev) {
 		go a.refetch(p)
+	}
+	// A turn ended: what it changed is worth a look.
+	if b := ev.GetBusy(); b != nil && !b.GetBusy() {
+		if proj, sess := a.selected(); proj == p.Dir && sess == b.GetSessionId() {
+			go a.loadChanges(p, sess)
+		}
 	}
 }
 
@@ -209,13 +364,36 @@ func (a *App) loadSession(p *backend.Project, sid string) {
 	if r, err := p.Client.ListMessages(ctx, &deckv1.ListMessagesRequest{SessionId: sid, Limit: wire.MaxPageLimit}); err == nil {
 		a.store.SetMessages(p.Dir, sid, r.GetMessages())
 	} else {
-		a.setStatus(err.Error())
+		a.fail(err)
 	}
 	if r, err := p.Client.Roster(ctx, ref); err == nil {
 		a.store.SetRoster(p.Dir, sid, r.GetAgents())
+		a.loadModels(ctx, p, sid, r.GetAgents())
 	}
 	if r, err := p.Client.Queue(ctx, ref); err == nil {
 		a.store.SetQueue(p.Dir, sid, r.GetItems())
+	}
+	a.loadChanges(p, sid)
+}
+
+func (a *App) loadModels(ctx context.Context, p *backend.Project, sid string, roster []*deckv1.AgentLine) {
+	seen := map[string]bool{}
+	for _, ag := range roster {
+		if seen[ag.GetKind()] {
+			continue
+		}
+		seen[ag.GetKind()] = true
+		if r, err := p.Client.Models(ctx, &deckv1.ModelsRequest{SessionId: sid, Kind: ag.GetKind()}); err == nil {
+			a.store.SetModels(p.Dir, sid, ag.GetKind(), r.GetModels())
+		}
+	}
+}
+
+func (a *App) loadChanges(p *backend.Project, sid string) {
+	ctx, cancel := a.call()
+	defer cancel()
+	if r, err := p.Client.Changes(ctx, &deckv1.SessionRef{SessionId: sid}); err == nil {
+		a.store.SetChanges(p.Dir, sid, r.GetFiles())
 	}
 }
 
@@ -224,6 +402,9 @@ func (a *App) selectSession(proj, sid string) {
 	a.proj, a.sess = proj, sid
 	p := a.projects[proj]
 	a.mu.Unlock()
+	a.page = pageChat
+	a.renaming = false
+	a.attach = nil
 	if p != nil {
 		go a.loadSession(p, sid)
 	}
@@ -232,25 +413,34 @@ func (a *App) selectSession(proj, sid string) {
 func (a *App) newThread(proj string) {
 	p := a.project(proj)
 	if p == nil {
+		a.setStatus("Open a project first.")
 		return
 	}
+	mode := a.settings().DefaultMode
 	go func() {
 		ctx, cancel := a.call()
 		defer cancel()
 		s, err := p.Client.CreateSession(ctx, &deckv1.CreateSessionRequest{})
 		if err != nil {
-			a.setStatus(err.Error())
+			a.fail(err)
 			return
 		}
+		if mode != "" {
+			if _, err := p.Client.SetMode(ctx, &deckv1.SetModeRequest{SessionId: s.GetId(), Mode: mode}); err == nil {
+				s.Mode = mode
+			}
+		}
 		a.store.Apply(p.Dir, &deckv1.Event{Kind: &deckv1.Event_SessionCreated{SessionCreated: s}})
-		a.selectSession(p.Dir, s.GetId())
-		a.w.Invalidate()
+		a.mu.Lock()
+		a.proj, a.sess = p.Dir, s.GetId()
+		a.mu.Unlock()
+		a.loadSession(p, s.GetId())
 	}()
 }
 
-// do runs one call against the selected project in the background and
-// reports its error.
-func (a *App) do(proj string, f func(ctx context.Context, c deckv1.DeckClient) error) {
+// do runs one call against a project in the background and reports its
+// error; after, if set, runs once it succeeded.
+func (a *App) do(proj string, f func(ctx context.Context, c deckv1.DeckClient) error, after ...func(p *backend.Project)) {
 	p := a.project(proj)
 	if p == nil {
 		return
@@ -259,35 +449,92 @@ func (a *App) do(proj string, f func(ctx context.Context, c deckv1.DeckClient) e
 		ctx, cancel := a.call()
 		defer cancel()
 		if err := f(ctx, p.Client); err != nil {
-			a.setStatus(err.Error())
+			a.fail(err)
+			return
+		}
+		for _, g := range after {
+			g(p)
 		}
 	}()
 }
 
-func recentsPath() string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return ""
+func mimeOf(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
 	}
-	return filepath.Join(dir, "Deck", "recent.json")
+	return ""
 }
 
-func loadRecents() []string {
-	var out []string
-	if p := recentsPath(); p != "" {
-		if b, err := os.ReadFile(p); err == nil {
-			_ = json.Unmarshal(b, &out)
+// pickImages adds images to the next message.
+func (a *App) pickImages() {
+	go func() {
+		paths, err := platform.PickFiles(a.hwnd, "Attach images", platform.Filter{Name: "Images", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.webp"})
+		if err == platform.ErrCancelled {
+			return
 		}
-	}
-	return out
+		if err != nil {
+			a.fail(err)
+			return
+		}
+		var add []attachment
+		for _, p := range paths {
+			m := mimeOf(p)
+			if m == "" {
+				a.setStatus(filepath.Base(p) + " is not an image Deck can send")
+				continue
+			}
+			st, err := os.Stat(p)
+			if err != nil || st.Size() > maxImageBytes {
+				a.setStatus(filepath.Base(p) + " is larger than 16 MB")
+				continue
+			}
+			b, err := os.ReadFile(p)
+			if err != nil {
+				a.fail(err)
+				continue
+			}
+			add = append(add, attachment{name: filepath.Base(p), mime: m, data: b})
+		}
+		a.mu.Lock()
+		a.pendingAttach = append(a.pendingAttach, add...)
+		a.mu.Unlock()
+		a.w.Invalidate()
+	}()
 }
 
-func saveRecents(r []string) {
-	p := recentsPath()
-	if p == "" {
+func (a *App) send(proj, sid string) {
+	text := strings.TrimSpace(a.composer.Text())
+	if text == "" && len(a.attach) == 0 {
 		return
 	}
-	_ = os.MkdirAll(filepath.Dir(p), 0o700)
-	b, _ := json.Marshal(r)
-	_ = os.WriteFile(p, b, 0o600)
+	images := make([]*deckv1.Image, 0, len(a.attach))
+	for _, at := range a.attach {
+		images = append(images, &deckv1.Image{Name: at.name, Mime: at.mime, Data: at.data})
+	}
+	a.composer.SetText("")
+	a.attach = nil
+	a.do(proj, func(ctx context.Context, c deckv1.DeckClient) error {
+		_, err := c.Send(ctx, &deckv1.SendRequest{SessionId: sid, Text: text, Images: images})
+		return err
+	})
+}
+
+// windowTitle shows how many approvals wait, so a minimised Deck says it
+// needs you.
+func (a *App) windowTitle(waiting int) {
+	t := "Deck"
+	if waiting > 0 {
+		t = fmt.Sprintf("Deck (%d waiting)", waiting)
+	}
+	if t != a.title {
+		a.title = t
+		a.w.Option(app.Title(t))
+	}
 }

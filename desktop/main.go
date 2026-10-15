@@ -13,10 +13,13 @@ import (
 	"github.com/dev-dami/deck/desktop/ui"
 )
 
+// version is set at build time with -ldflags "-X main.version=…".
+var version = "dev"
+
 func main() {
 	dirs := os.Args[1:]
 	go func() {
-		if err := ui.Run(dirs); err != nil {
+		if err := ui.Run(version, dirs); err != nil {
 			log.Println(err)
 		}
 		os.Exit(0)

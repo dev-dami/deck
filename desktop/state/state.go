@@ -24,6 +24,9 @@ type Project struct {
 	Approvals map[string][]*deckv1.Approval
 	Queue     map[string][]*deckv1.QueuedItem
 	Roster    map[string][]*deckv1.AgentLine
+	Changes   map[string][]*deckv1.ChangedFile
+	// Models is keyed by session id + "|" + agent kind.
+	Models map[string][]*deckv1.ModelChoice
 	Notices   []string
 }
 
@@ -71,6 +74,7 @@ func (s *Store) Add(key string, info *deckv1.InfoResponse) {
 			Key: key, Name: info.GetProject(), Kinds: info.GetKinds(), Theme: info.GetTheme(),
 			Messages: map[string][]*deckv1.Message{}, Approvals: map[string][]*deckv1.Approval{},
 			Queue: map[string][]*deckv1.QueuedItem{}, Roster: map[string][]*deckv1.AgentLine{},
+			Changes: map[string][]*deckv1.ChangedFile{}, Models: map[string][]*deckv1.ModelChoice{},
 		})
 	})
 }
@@ -128,6 +132,16 @@ func (s *Store) SetApprovals(key string, as []*deckv1.Approval) {
 // SetRoster replaces one session's agents.
 func (s *Store) SetRoster(key, session string, as []*deckv1.AgentLine) {
 	s.with(key, func(p *Project) { p.Roster[session] = as })
+}
+
+// SetChanges replaces one session's changed files.
+func (s *Store) SetChanges(key, session string, fs []*deckv1.ChangedFile) {
+	s.with(key, func(p *Project) { p.Changes[session] = fs })
+}
+
+// SetModels replaces the model choices of one agent kind in a session.
+func (s *Store) SetModels(key, session, kind string, ms []*deckv1.ModelChoice) {
+	s.with(key, func(p *Project) { p.Models[session+"|"+kind] = ms })
 }
 
 // SetQueue replaces one session's queue.

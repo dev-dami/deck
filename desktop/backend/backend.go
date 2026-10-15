@@ -42,9 +42,15 @@ type Project struct {
 // EventFunc receives every event of a project, Ready included.
 type EventFunc func(p *Project, ev *deckv1.Event)
 
-// FindDeck returns the deck binary: the one bundled next to the app (or in
-// its bin folder) first, then the one on PATH.
-func FindDeck() (string, error) {
+// FindDeck returns the deck binary: override when set, else the one bundled
+// next to the app (or in its bin folder), then the one on PATH.
+func FindDeck(override string) (string, error) {
+	if override != "" {
+		if st, err := os.Stat(override); err != nil || st.IsDir() {
+			return "", fmt.Errorf("the deck set in Settings (%s) is not a file", override)
+		}
+		return override, nil
+	}
 	name := "deck"
 	if runtime.GOOS == "windows" {
 		name = "deck.exe"
@@ -69,11 +75,7 @@ func FindDeck() (string, error) {
 
 // Open starts an engine for dir, dials it and streams its events to on
 // until Close. The stream reconnects and resumes on its own.
-func Open(ctx context.Context, dir string, on EventFunc) (*Project, error) {
-	bin, err := FindDeck()
-	if err != nil {
-		return nil, err
-	}
+func Open(ctx context.Context, bin, dir string, on EventFunc) (*Project, error) {
 	cmd := exec.Command(bin, "serve", "--rpc", "-c", dir)
 	hideWindow(cmd)
 	cmd.Stderr = io.Discard
@@ -206,7 +208,7 @@ type Pool struct {
 func NewPool() *Pool { return &Pool{open: map[string]*Project{}} }
 
 // Open returns the running project for dir, starting it if needed.
-func (pl *Pool) Open(ctx context.Context, dir string, on EventFunc) (*Project, error) {
+func (pl *Pool) Open(ctx context.Context, bin, dir string, on EventFunc) (*Project, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
@@ -217,7 +219,7 @@ func (pl *Pool) Open(ctx context.Context, dir string, on EventFunc) (*Project, e
 		return p, nil
 	}
 	pl.mu.Unlock()
-	p, err := Open(ctx, abs, on)
+	p, err := Open(ctx, bin, abs, on)
 	if err != nil {
 		return nil, err
 	}
@@ -229,6 +231,17 @@ func (pl *Pool) Open(ctx context.Context, dir string, on EventFunc) (*Project, e
 	}
 	pl.open[abs] = p
 	return p, nil
+}
+
+// Close stops the engine for dir, if one runs.
+func (pl *Pool) Close(dir string) {
+	pl.mu.Lock()
+	p := pl.open[dir]
+	delete(pl.open, dir)
+	pl.mu.Unlock()
+	if p != nil {
+		p.Close()
+	}
 }
 
 // CloseAll stops every engine.
