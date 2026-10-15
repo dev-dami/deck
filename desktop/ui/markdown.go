@@ -2,178 +2,135 @@ package ui
 
 import (
 	"fmt"
-	"io"
 	"strings"
 
 	"gioui.org/font"
-	"gioui.org/io/clipboard"
 	"gioui.org/layout"
-	"gioui.org/widget/material"
+	"gioui.org/x/markdown"
+	"gioui.org/x/richtext"
+
+	"github.com/dev-dami/deck/desktop/platform"
 )
 
-type blockKind int
+// A message is prose and fenced code. Prose goes through gio-x's markdown
+// renderer (bold, italics, inline code, lists, headings, links) into
+// richtext; code goes through chroma into a code view with Copy.
 
-const (
-	bPara blockKind = iota
-	bHeading
-	bBullet
-	bCode
-	bQuote
-)
-
-type block struct {
-	kind  blockKind
-	text  string
-	level int // heading level, or bullet indent
-	lang  string
+type segment struct {
+	code bool
+	lang string
+	text string
 }
 
-// parseMarkdown splits text into the blocks agents write: paragraphs,
-// headings, bullets, quotes and fenced code. Inline marks are dropped.
-func parseMarkdown(s string) []block {
-	var out []block
-	var para []string
+// splitFences cuts text at ``` fences. An unclosed fence runs to the end.
+func splitFences(s string) []segment {
+	var out []segment
+	var prose []string
 	flush := func() {
-		if len(para) > 0 {
-			out = append(out, block{kind: bPara, text: inline(strings.Join(para, " "))})
-			para = nil
+		if t := strings.TrimSpace(strings.Join(prose, "\n")); t != "" {
+			out = append(out, segment{text: t})
 		}
+		prose = nil
 	}
 	lines := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
 	for i := 0; i < len(lines); i++ {
-		ln := lines[i]
-		t := strings.TrimSpace(ln)
-		switch {
-		case strings.HasPrefix(t, "```"):
-			flush()
-			lang := strings.TrimSpace(strings.TrimPrefix(t, "```"))
-			var code []string
-			for i++; i < len(lines) && !strings.HasPrefix(strings.TrimSpace(lines[i]), "```"); i++ {
-				code = append(code, lines[i])
-			}
-			out = append(out, block{kind: bCode, text: strings.Join(code, "\n"), lang: lang})
-		case t == "":
-			flush()
-		case strings.HasPrefix(t, "#"):
-			flush()
-			lvl := len(t) - len(strings.TrimLeft(t, "#"))
-			out = append(out, block{kind: bHeading, level: lvl, text: inline(strings.TrimSpace(t[lvl:]))})
-		case strings.HasPrefix(t, "- "), strings.HasPrefix(t, "* "), strings.HasPrefix(t, "+ "):
-			flush()
-			indent := (len(ln) - len(strings.TrimLeft(ln, " \t"))) / 2
-			out = append(out, block{kind: bBullet, level: indent, text: inline(t[2:])})
-		case numbered(t) > 0:
-			flush()
-			n := numbered(t)
-			out = append(out, block{kind: bBullet, level: -1, text: t[:n] + " " + inline(strings.TrimSpace(t[n:]))})
-		case strings.HasPrefix(t, ">"):
-			flush()
-			out = append(out, block{kind: bQuote, text: inline(strings.TrimSpace(strings.TrimPrefix(t, ">")))})
-		default:
-			para = append(para, t)
+		t := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(t, "```") {
+			prose = append(prose, lines[i])
+			continue
 		}
+		flush()
+		lang := strings.TrimSpace(strings.TrimPrefix(t, "```"))
+		var code []string
+		for i++; i < len(lines) && !strings.HasPrefix(strings.TrimSpace(lines[i]), "```"); i++ {
+			code = append(code, lines[i])
+		}
+		out = append(out, segment{code: true, lang: lang, text: strings.Join(code, "\n")})
 	}
 	flush()
 	return out
 }
 
-// numbered is the length of a "12." list marker at the start of t, or 0.
-func numbered(t string) int {
-	i := 0
-	for i < len(t) && t[i] >= '0' && t[i] <= '9' {
-		i++
-	}
-	if i > 0 && i < len(t)-1 && (t[i] == '.' || t[i] == ')') && t[i+1] == ' ' {
-		return i + 1
-	}
-	return 0
+type proseCache struct {
+	text  string
+	spans []richtext.SpanStyle
 }
 
-func inline(s string) string {
-	s = strings.NewReplacer("**", "", "__", "").Replace(s)
-	// A line wrapped whole in _…_ or *…* is emphasis, not text.
-	for _, m := range []string{"_", "*"} {
-		if len(s) > 2 && strings.HasPrefix(s, m) && strings.HasSuffix(s, m) {
-			s = s[1 : len(s)-1]
-		}
+func (a *App) renderer() *markdown.Renderer {
+	if a.md == nil {
+		a.md = markdown.NewRenderer()
+	}
+	a.md.Config = markdown.Config{
+		DefaultFont:      font.Font{Typeface: a.th.Face},
+		MonospaceFont:    mono,
+		DefaultSize:      a.sp(14),
+		H1Size:           a.sp(20),
+		H2Size:           a.sp(18),
+		H3Size:           a.sp(16),
+		H4Size:           a.sp(15),
+		H5Size:           a.sp(14),
+		H6Size:           a.sp(14),
+		DefaultColor:     a.col.Fg,
+		InteractiveColor: a.col.Accent,
+	}
+	return a.md
+}
+
+func (a *App) proseSpans(key, text string) []richtext.SpanStyle {
+	if c, ok := a.proseCache[key]; ok && c.text == text {
+		return c.spans
+	}
+	spans, err := a.renderer().Render([]byte(text))
+	if err != nil || len(spans) == 0 {
+		spans = []richtext.SpanStyle{{Font: font.Font{Typeface: a.th.Face}, Size: a.sp(14), Color: a.col.Fg, Content: text}}
+	}
+	a.proseCache[key] = proseCache{text: text, spans: spans}
+	return spans
+}
+
+func (a *App) richState(key string) *richtext.InteractiveText {
+	s := a.rich[key]
+	if s == nil {
+		s = new(richtext.InteractiveText)
+		a.rich[key] = s
 	}
 	return s
 }
 
-// layoutMarkdown draws text as blocks; key keeps the selection state of
-// each block between frames.
-func (a *App) layoutMarkdown(gtx C, key, text string) D {
-	blocks := parseMarkdown(text)
-	kids := make([]layout.FlexChild, 0, len(blocks))
-	for i, b := range blocks {
-		bk := fmt.Sprintf("%s/%d", key, i)
+// prose draws markdown prose; links open in the browser.
+func (a *App) prose(gtx C, key, text string) D {
+	st := a.richState(key)
+	for {
+		span, ev, ok := st.Update(gtx)
+		if !ok {
+			break
+		}
+		if ev.Type == richtext.Click {
+			if u, ok := span.Get(markdown.MetadataURL).(string); ok {
+				a.fail(platform.OpenURL(u))
+			}
+		}
+	}
+	spans := a.proseSpans(key, text)
+	cp := make([]richtext.SpanStyle, len(spans))
+	copy(cp, spans)
+	return richtext.Text(st, a.th.Shaper, cp...).Layout(gtx)
+}
+
+// markdownView draws a message body.
+func (a *App) markdownView(gtx C, key, text string) D {
+	segs := splitFences(text)
+	kids := make([]layout.FlexChild, 0, len(segs))
+	for i, s := range segs {
+		k := fmt.Sprintf("%s/%d", key, i)
 		kids = append(kids, layout.Rigid(func(gtx C) D {
-			return layout.Inset{Bottom: 6}.Layout(gtx, func(gtx C) D { return a.layoutBlock(gtx, bk, b) })
+			return layout.Inset{Bottom: 8}.Layout(gtx, func(gtx C) D {
+				if s.code {
+					return a.codeView(gtx, k, s.text, s.lang, "")
+				}
+				return a.prose(gtx, k, s.text)
+			})
 		}))
 	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, kids...)
-}
-
-func (a *App) selectable(key, text string, size float32) material.LabelStyle {
-	l := a.label(sp(size), a.col.Fg, text)
-	l.State = a.sel(key, text)
-	return l
-}
-
-func (a *App) layoutBlock(gtx C, key string, b block) D {
-	switch b.kind {
-	case bHeading:
-		size := float32(17)
-		if b.level >= 3 {
-			size = 15
-		}
-		l := a.selectable(key, b.text, size)
-		l.Font.Weight = font.Bold
-		return layout.Inset{Top: 4}.Layout(gtx, l.Layout)
-	case bBullet:
-		mark := "•"
-		if b.level < 0 {
-			mark = ""
-		}
-		left := 4 + 14*max(b.level, 0)
-		return layout.Inset{Left: unitDp(left)}.Layout(gtx, func(gtx C) D {
-			return layout.Flex{}.Layout(gtx,
-				layout.Rigid(func(gtx C) D {
-					if mark == "" {
-						return D{}
-					}
-					return layout.Inset{Right: 8}.Layout(gtx, a.label(sp(14), a.col.Muted, mark).Layout)
-				}),
-				layout.Flexed(1, a.selectable(key, b.text, 14).Layout),
-			)
-		})
-	case bQuote:
-		l := a.selectable(key, "▍ "+b.text, 14)
-		l.Color = a.col.Muted
-		return layout.Inset{Left: 4}.Layout(gtx, l.Layout)
-	case bCode:
-		copyBtn := a.click(key + "/copy")
-		if copyBtn.Clicked(gtx) {
-			gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(b.text))})
-			a.setStatus("✓ Copied to the clipboard")
-		}
-		return card(gtx, a.col.Code, 10, func(gtx C) D {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(func(gtx C) D {
-					return layout.Flex{}.Layout(gtx,
-						layout.Flexed(1, a.label(sp(11), a.col.Muted, b.lang).Layout),
-						layout.Rigid(func(gtx C) D {
-							return material.Clickable(gtx, copyBtn, a.label(sp(11), a.col.Accent, "Copy").Layout)
-						}),
-					)
-				}),
-				layout.Rigid(func(gtx C) D {
-					l := a.selectable(key, b.text, 13)
-					l.Font.Typeface = "Go Mono"
-					return layout.Inset{Top: 4}.Layout(gtx, l.Layout)
-				}),
-			)
-		})
-	}
-	return a.selectable(key, b.text, 14).Layout(gtx)
 }

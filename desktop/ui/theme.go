@@ -15,39 +15,26 @@ import (
 
 // Colors is the app's palette; Deck's theme tints the agents.
 type Colors struct {
-	Bg, Rail, Card, Code, Line, Fg, Muted, Accent, OnAccent, Danger, Busy, Add, Del color.NRGBA
+	Bg, Rail, Raised, Field, Hover, Selected, Code, Line color.NRGBA
+	Fg, Muted, Accent, OnAccent, Danger, Busy, Add, Del  color.NRGBA
+	// Chroma is the syntax-highlighting style for code.
+	Chroma string
 }
 
 var dark = Colors{
-	Bg:       rgb(0x111114),
-	Rail:     rgb(0x18181c),
-	Card:     rgb(0x1f1f25),
-	Code:     rgb(0x0b0b0d),
-	Line:     rgb(0x2a2a31),
-	Fg:       rgb(0xe8e8ea),
-	Muted:    rgb(0x8b8b96),
-	Accent:   rgb(0x5fd7af),
-	OnAccent: rgb(0x0d1512),
-	Danger:   rgb(0xe5646e),
-	Busy:     rgb(0xf0b35b),
-	Add:      rgb(0x6cc98a),
-	Del:      rgb(0xe5646e),
+	Bg: rgb(0x141416), Rail: rgb(0x18181b), Raised: rgb(0x232327), Field: rgb(0x1b1b1f),
+	Hover: rgb(0x25252a), Selected: rgb(0x2c2c33), Code: rgb(0x0f0f12), Line: rgb(0x2b2b31),
+	Fg: rgb(0xececef), Muted: rgb(0x8e8e99), Accent: rgb(0x5fd7af), OnAccent: rgb(0x0b1310),
+	Danger: rgb(0xef6b73), Busy: rgb(0xf2b45c), Add: rgb(0x6cc98a), Del: rgb(0xef6b73),
+	Chroma: "github-dark",
 }
 
 var light = Colors{
-	Bg:       rgb(0xfbfbfc),
-	Rail:     rgb(0xf1f1f4),
-	Card:     rgb(0xe9e9ee),
-	Code:     rgb(0xf4f4f7),
-	Line:     rgb(0xdcdce3),
-	Fg:       rgb(0x1b1b20),
-	Muted:    rgb(0x6b6b76),
-	Accent:   rgb(0x1f9e78),
-	OnAccent: rgb(0xffffff),
-	Danger:   rgb(0xc93c48),
-	Busy:     rgb(0xb7791f),
-	Add:      rgb(0x1f8a4c),
-	Del:      rgb(0xc93c48),
+	Bg: rgb(0xffffff), Rail: rgb(0xf6f6f8), Raised: rgb(0xededf1), Field: rgb(0xffffff),
+	Hover: rgb(0xececf0), Selected: rgb(0xe3e3e9), Code: rgb(0xf6f6f8), Line: rgb(0xe2e2e8),
+	Fg: rgb(0x18181b), Muted: rgb(0x6b6b76), Accent: rgb(0x13906b), OnAccent: rgb(0xffffff),
+	Danger: rgb(0xd0414c), Busy: rgb(0xb7791f), Add: rgb(0x1f8a4c), Del: rgb(0xc93c48),
+	Chroma: "github",
 }
 
 func rgb(v uint32) color.NRGBA {
@@ -75,6 +62,17 @@ func (c Colors) tint(th *deckv1.Theme, kind string) color.NRGBA {
 		}
 	}
 	return c.Accent
+}
+
+// mark is an agent kind's glyph from Deck's theme, or its initial.
+func mark(th *deckv1.Theme, kind, name string) string {
+	if k := th.GetKinds()[kind]; k != nil && k.GetMark() != "" {
+		return k.GetMark()
+	}
+	for _, r := range strings.ToUpper(name) {
+		return string(r)
+	}
+	return "•"
 }
 
 func newTheme(c Colors, size int) *material.Theme {

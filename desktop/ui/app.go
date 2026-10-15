@@ -1,27 +1,37 @@
-// Package ui is the Deck desktop window, drawn with Gio: a rail of
-// projects and threads, the chat with approvals and a composer, a side
-// panel (changes, agents, queue) and Settings. Everything it shows comes
-// from state; everything it does is a call to the project's engine over
-// gRPC.
+// Package ui is the Deck desktop window, drawn with Gio and the gio-x
+// (markdown, richtext, menus, tooltips, resizer, notifications) and
+// gioview (file tree) components: a rail of projects and threads, the chat
+// with approvals and a composer, a resizable side panel (changes, files,
+// agents, queue) and Settings. Everything it shows comes from state;
+// everything it does is a call to the project's engine over gRPC.
 package ui
 
 import (
 	"cmp"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gioui.org/app"
+	"gioui.org/io/clipboard"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"gioui.org/x/component"
+	"gioui.org/x/markdown"
+	"gioui.org/x/notify"
+	"gioui.org/x/richtext"
+	"github.com/oligo/gioview/navi"
 
 	"github.com/dev-dami/deck/desktop/backend"
 	"github.com/dev-dami/deck/desktop/platform"
@@ -39,6 +49,8 @@ type (
 const (
 	callTimeout   = 15 * time.Second
 	maxImageBytes = 16 << 20
+	toastFor      = 6 * time.Second
+	maxPreview    = 512 << 10
 )
 
 type page int
@@ -52,13 +64,31 @@ type tab int
 
 const (
 	tabChanges tab = iota
+	tabFiles
 	tabAgents
 	tabQueue
 )
 
+var tabNames = []string{tabChanges: "changes", tabFiles: "files", tabAgents: "agents", tabQueue: "queue"}
+
+func tabNamed(n string) tab {
+	for i, s := range tabNames {
+		if s == n {
+			return tab(i)
+		}
+	}
+	return tabChanges
+}
+
 type attachment struct {
 	name, mime string
 	data       []byte
+}
+
+// popup is a gio-x context menu: a ContextArea and the menu it opens.
+type popup struct {
+	area  component.ContextArea
+	state component.MenuState
 }
 
 // App is the window and what it drives.
@@ -71,39 +101,51 @@ type App struct {
 	store   *state.Store
 	ctx     context.Context
 	hwnd    uintptr
+	focused atomic.Bool
 
 	mu       sync.Mutex
 	set      settings.Settings
 	projects map[string]*backend.Project
 	opening  map[string]bool
-	status   string
+	toast    string
+	toastErr bool
+	toastAt  time.Time
 	proj     string // selected project key
 	sess     string // selected session id
 	// pendingAttach is picked images on their way to attach.
 	pendingAttach []attachment
 
 	// UI goroutine only.
-	page      page
-	tab       tab
-	title     string
-	attach    []attachment
-	renaming  bool
-	deleteAt  time.Time
-	menuOpen  map[string]bool
-	openDiff  map[string]bool
-	pathEd    widget.Editor
-	searchEd  widget.Editor
-	composer  widget.Editor
-	renameEd  widget.Editor
-	deckEd    widget.Editor
-	rail      widget.List
-	chat      widget.List
-	panel     widget.List
-	settingsL widget.List
-	clicks    map[string]*widget.Clickable
-	sels      map[string]*widget.Selectable
-	reopen    widget.Bool
-	atLogin   widget.Bool
+	page       page
+	tab        tab
+	title      string
+	attach     []attachment
+	renaming   bool
+	confirm    string // session id awaiting delete confirmation
+	expanded   map[string]bool
+	pathEd     widget.Editor
+	searchEd   widget.Editor
+	composer   widget.Editor
+	renameEd   widget.Editor
+	deckEd     widget.Editor
+	rail       widget.List
+	chat       widget.List
+	panel      widget.List
+	settingsL  widget.List
+	split      component.Resize
+	clicks     map[string]*widget.Clickable
+	tips       map[string]*component.TipArea
+	popups     map[string]*popup
+	rich       map[string]*richtext.InteractiveText
+	md         *markdown.Renderer
+	proseCache map[string]proseCache
+	codeCache  map[string]codeCache
+	trees      map[string]*navi.NavTree
+	copyQueue  []string
+	preview    string // file shown in the Files tab
+	previewTx  string
+	reopen     widget.Bool
+	atLogin    widget.Bool
 }
 
 // Run opens the window, starts an engine for each of dirs (and the
@@ -115,10 +157,14 @@ func Run(version string, dirs []string) error {
 	a := &App{
 		version: version, w: new(app.Window), pool: backend.NewPool(), store: &state.Store{}, ctx: ctx,
 		set: settings.Load(), projects: map[string]*backend.Project{}, opening: map[string]bool{},
-		clicks: map[string]*widget.Clickable{}, sels: map[string]*widget.Selectable{},
-		menuOpen: map[string]bool{}, openDiff: map[string]bool{},
+		expanded: map[string]bool{}, clicks: map[string]*widget.Clickable{}, tips: map[string]*component.TipArea{},
+		popups: map[string]*popup{}, rich: map[string]*richtext.InteractiveText{},
+		proseCache: map[string]proseCache{}, codeCache: map[string]codeCache{}, trees: map[string]*navi.NavTree{},
+		split: component.Resize{Ratio: 0.7},
 	}
 	a.applyTheme()
+	a.split.Ratio = a.set.PanelRatio
+	a.tab = tabNamed(a.set.PanelTab)
 	a.store.Changed = a.w.Invalidate
 	a.pathEd = widget.Editor{SingleLine: true, Submit: true}
 	a.searchEd = widget.Editor{SingleLine: true}
@@ -133,6 +179,7 @@ func Run(version string, dirs []string) error {
 	a.chat.ScrollToEnd = true
 	a.reopen.Value = a.set.ReopenProjects
 	a.atLogin.Value = platform.LaunchAtLogin()
+	a.focused.Store(true)
 	// Maximised, like other desktop apps: a fixed size overflows small screens.
 	a.w.Option(app.Title("Deck"), app.Size(unit.Dp(1180), unit.Dp(720)), app.MinSize(unit.Dp(820), unit.Dp(480)), app.Maximized.Option())
 
@@ -149,6 +196,7 @@ func Run(version string, dirs []string) error {
 			a.set.Open = append(a.set.Open, d)
 		}
 		slices.Sort(a.set.Open)
+		a.set.PanelRatio = a.split.Ratio
 		_ = a.set.Save()
 		a.mu.Unlock()
 		a.pool.CloseAll()
@@ -159,6 +207,8 @@ func Run(version string, dirs []string) error {
 		switch e := a.w.Event().(type) {
 		case app.Win32ViewEvent:
 			a.hwnd = e.HWND
+		case app.ConfigEvent:
+			a.focused.Store(e.Config.Focused)
 		case app.DestroyEvent:
 			return e.Err
 		case app.FrameEvent:
@@ -175,6 +225,9 @@ func (a *App) applyTheme() {
 		a.col = light
 	}
 	a.th = newTheme(a.col, a.set.TextSize)
+	// Cached spans carry the old colours and sizes.
+	a.proseCache = map[string]proseCache{}
+	a.codeCache = map[string]codeCache{}
 }
 
 // saveSettings edits and persists the settings.
@@ -184,15 +237,9 @@ func (a *App) saveSettings(f func(s *settings.Settings)) {
 	err := a.set.Save()
 	a.mu.Unlock()
 	if err != nil {
-		a.setStatus("Could not save settings: " + err.Error())
+		a.fail(fmt.Errorf("could not save settings: %w", err))
 	}
 	a.w.Invalidate()
-}
-
-func (a *App) settings() settings.Settings {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.set
 }
 
 func (a *App) click(key string) *widget.Clickable {
@@ -204,28 +251,36 @@ func (a *App) click(key string) *widget.Clickable {
 	return c
 }
 
-func (a *App) sel(key, text string) *widget.Selectable {
-	s := a.sels[key]
-	if s == nil {
-		s = new(widget.Selectable)
-		a.sels[key] = s
+func (a *App) popup(key string) *popup {
+	p := a.popups[key]
+	if p == nil {
+		p = new(popup)
+		a.popups[key] = p
 	}
-	s.SetText(text)
-	return s
+	return p
 }
 
-func (a *App) setStatus(s string) {
+// note shows a short message in the corner for a few seconds.
+func (a *App) note(s string, isErr bool) {
 	a.mu.Lock()
-	a.status = s
+	a.toast, a.toastErr, a.toastAt = s, isErr, time.Now()
 	a.mu.Unlock()
 	a.w.Invalidate()
+	go func() { time.Sleep(toastFor + 50*time.Millisecond); a.w.Invalidate() }()
 }
 
 func (a *App) fail(err error) {
 	if err != nil {
-		a.setStatus(err.Error())
+		a.note(err.Error(), true)
 	}
 }
+
+func (a *App) copyText(s string) {
+	a.copyQueue = append(a.copyQueue, s)
+	a.note("Copied to the clipboard", false)
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
 
 func (a *App) selected() (proj, sess string) {
 	a.mu.Lock()
@@ -243,6 +298,14 @@ func (a *App) call() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(a.ctx, callTimeout)
 }
 
+// notify raises a system notification while the window is not in front.
+func (a *App) notify(title, text string) {
+	if a.focused.Load() {
+		return
+	}
+	go func() { _, _ = notify.Push(title, text) }()
+}
+
 // pickFolder shows the system folder picker and opens what was chosen.
 func (a *App) pickFolder() {
 	go func() {
@@ -250,9 +313,9 @@ func (a *App) pickFolder() {
 		switch {
 		case err == platform.ErrCancelled:
 		case err == platform.ErrUnsupported:
-			a.setStatus("Paste the folder's path in the box above.")
+			a.note("Paste the folder's path in the box on the left.", false)
 		case err != nil:
-			a.setStatus(err.Error())
+			a.fail(err)
 		default:
 			a.open(dir)
 		}
@@ -263,11 +326,11 @@ func (a *App) pickFolder() {
 func (a *App) open(dir string) {
 	abs, err := filepath.Abs(strings.Trim(strings.TrimSpace(dir), `"`))
 	if err != nil {
-		a.setStatus(err.Error())
+		a.fail(err)
 		return
 	}
 	if st, err := os.Stat(abs); err != nil || !st.IsDir() {
-		a.setStatus("Not a folder: " + abs)
+		a.note("Not a folder: "+abs, true)
 		return
 	}
 	a.mu.Lock()
@@ -279,7 +342,6 @@ func (a *App) open(dir string) {
 		return
 	}
 	a.opening[abs] = true
-	a.status = ""
 	override := a.set.DeckPath
 	a.mu.Unlock()
 	a.w.Invalidate()
@@ -292,9 +354,8 @@ func (a *App) open(dir string) {
 		a.mu.Lock()
 		delete(a.opening, abs)
 		if err != nil {
-			a.status = filepath.Base(abs) + ": " + err.Error()
 			a.mu.Unlock()
-			a.w.Invalidate()
+			a.note(filepath.Base(abs)+": "+err.Error(), true)
 			return
 		}
 		a.projects[p.Dir] = p
@@ -319,6 +380,7 @@ func (a *App) closeProject(key string) {
 		}
 	}
 	a.mu.Unlock()
+	delete(a.trees, key)
 	a.store.Remove(key)
 	go a.pool.Close(key)
 }
@@ -327,11 +389,19 @@ func (a *App) onEvent(p *backend.Project, ev *deckv1.Event) {
 	if a.store.Apply(p.Dir, ev) {
 		go a.refetch(p)
 	}
-	// A turn ended: what it changed is worth a look.
-	if b := ev.GetBusy(); b != nil && !b.GetBusy() {
-		if proj, sess := a.selected(); proj == p.Dir && sess == b.GetSessionId() {
+	switch k := ev.GetKind().(type) {
+	case *deckv1.Event_ApprovalRequested:
+		ap := k.ApprovalRequested
+		a.notify("Deck: "+ap.GetAgent()+" needs your OK", ap.GetDescription())
+	case *deckv1.Event_Busy:
+		if k.Busy.GetBusy() {
+			break
+		}
+		// A turn ended: what it changed is worth a look.
+		if proj, sess := a.selected(); proj == p.Dir && sess == k.Busy.GetSessionId() {
 			go a.loadChanges(p, sess)
 		}
+		a.notify("Deck", "The agents finished in "+filepath.Base(p.Dir)+".")
 	}
 }
 
@@ -404,6 +474,7 @@ func (a *App) selectSession(proj, sid string) {
 	a.mu.Unlock()
 	a.page = pageChat
 	a.renaming = false
+	a.confirm = ""
 	a.attach = nil
 	if p != nil {
 		go a.loadSession(p, sid)
@@ -413,10 +484,13 @@ func (a *App) selectSession(proj, sid string) {
 func (a *App) newThread(proj string) {
 	p := a.project(proj)
 	if p == nil {
-		a.setStatus("Open a project first.")
+		a.note("Open a project first.", false)
 		return
 	}
-	mode := a.settings().DefaultMode
+	a.mu.Lock()
+	mode := a.set.DefaultMode
+	a.mu.Unlock()
+	a.page = pageChat
 	go func() {
 		ctx, cancel := a.call()
 		defer cancel()
@@ -458,6 +532,20 @@ func (a *App) do(proj string, f func(ctx context.Context, c deckv1.DeckClient) e
 	}()
 }
 
+func (a *App) deleteThread(proj, sid string) {
+	a.do(proj, func(ctx context.Context, c deckv1.DeckClient) error {
+		_, err := c.DeleteSession(ctx, &deckv1.SessionRef{SessionId: sid})
+		return err
+	}, func(p *backend.Project) {
+		a.mu.Lock()
+		if a.sess == sid {
+			a.sess = ""
+		}
+		a.mu.Unlock()
+		a.refetch(p)
+	})
+}
+
 func mimeOf(name string) string {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".png":
@@ -487,12 +575,11 @@ func (a *App) pickImages() {
 		for _, p := range paths {
 			m := mimeOf(p)
 			if m == "" {
-				a.setStatus(filepath.Base(p) + " is not an image Deck can send")
+				a.note(filepath.Base(p)+" is not an image Deck can send", true)
 				continue
 			}
-			st, err := os.Stat(p)
-			if err != nil || st.Size() > maxImageBytes {
-				a.setStatus(filepath.Base(p) + " is larger than 16 MB")
+			if st, err := os.Stat(p); err != nil || st.Size() > maxImageBytes {
+				a.note(filepath.Base(p)+" is larger than 16 MB", true)
 				continue
 			}
 			b, err := os.ReadFile(p)
@@ -526,6 +613,25 @@ func (a *App) send(proj, sid string) {
 	})
 }
 
+// openPreview loads a project file for the Files tab.
+func (a *App) openPreview(path string) {
+	st, err := os.Stat(path)
+	if err != nil {
+		a.fail(err)
+		return
+	}
+	if st.Size() > maxPreview {
+		a.preview, a.previewTx = path, fmt.Sprintf("(%s is %d KB; open it in your editor)", filepath.Base(path), st.Size()>>10)
+		return
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		a.fail(err)
+		return
+	}
+	a.preview, a.previewTx = path, string(b)
+}
+
 // windowTitle shows how many approvals wait, so a minimised Deck says it
 // needs you.
 func (a *App) windowTitle(waiting int) {
@@ -537,4 +643,13 @@ func (a *App) windowTitle(waiting int) {
 		a.title = t
 		a.w.Option(app.Title(t))
 	}
+}
+
+// flushClipboard writes what copyText queued; clipboard writes need a
+// frame's context.
+func (a *App) flushClipboard(gtx C) {
+	for _, s := range a.copyQueue {
+		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(s))})
+	}
+	a.copyQueue = nil
 }

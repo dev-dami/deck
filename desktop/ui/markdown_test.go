@@ -2,29 +2,30 @@ package ui
 
 import "testing"
 
-func TestParseMarkdown(t *testing.T) {
-	src := "# Plan\n\nFirst **bold** line\ncontinues here.\n\n- one\n  - nested\n2. two\n> quoted\n```go\nfunc x() {}\n\n```\ntail"
-	got := parseMarkdown(src)
-	want := []block{
-		{kind: bHeading, level: 1, text: "Plan"},
-		{kind: bPara, text: "First bold line continues here."},
-		{kind: bBullet, level: 0, text: "one"},
-		{kind: bBullet, level: 1, text: "nested"},
-		{kind: bBullet, level: -1, text: "2. two"},
-		{kind: bQuote, text: "quoted"},
-		{kind: bCode, lang: "go", text: "func x() {}\n"},
-		{kind: bPara, text: "tail"},
+func TestSplitFences(t *testing.T) {
+	src := "# Plan\n\nSome **bold** text.\n```go\nfunc x() {}\n\n```\ntail\n```\nunclosed"
+	got := splitFences(src)
+	want := []segment{
+		{text: "# Plan\n\nSome **bold** text."},
+		{code: true, lang: "go", text: "func x() {}\n"},
+		{text: "tail"},
+		{code: true, text: "unclosed"},
 	}
 	if len(got) != len(want) {
-		t.Fatalf("got %d blocks: %+v", len(got), got)
+		t.Fatalf("got %d segments: %+v", len(got), got)
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Errorf("block %d = %+v, want %+v", i, got[i], want[i])
+			t.Errorf("segment %d = %+v, want %+v", i, got[i], want[i])
 		}
 	}
-	// An unclosed fence runs to the end instead of losing text.
-	if b := parseMarkdown("```\nstill code"); len(b) != 1 || b[0].kind != bCode || b[0].text != "still code" {
-		t.Fatalf("unclosed fence: %+v", b)
+}
+
+func TestCapLines(t *testing.T) {
+	if s, more := capLines("a\nb\nc", 2); s != "a\nb" || more != 1 {
+		t.Fatalf("capLines = %q, %d", s, more)
+	}
+	if s, more := capLines("a", 2); s != "a" || more != 0 {
+		t.Fatalf("capLines short = %q, %d", s, more)
 	}
 }

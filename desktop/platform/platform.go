@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 // ErrCancelled is returned when the person closes a picker.
@@ -40,7 +41,22 @@ func Reveal(dir string) error {
 	return start(dir, "xdg-open", dir)
 }
 
-// OpenEditor opens dir in VS Code (or $VISUAL / $EDITOR when code is not
+// OpenURL opens an http(s) link in the default browser; any other scheme
+// is refused, since links come from agents' text.
+func OpenURL(u string) error {
+	if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		return errors.New("only web links open from the chat")
+	}
+	switch runtime.GOOS {
+	case "windows":
+		return start("", "rundll32.exe", "url.dll,FileProtocolHandler", u)
+	case "darwin":
+		return start("", "open", u)
+	}
+	return start("", "xdg-open", u)
+}
+
+// OpenEditor opens dir (or a file) in VS Code (or $VISUAL / $EDITOR when code is not
 // installed).
 func OpenEditor(dir string) error {
 	if p, err := exec.LookPath("code"); err == nil {

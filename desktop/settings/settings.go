@@ -3,6 +3,7 @@
 package settings
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -25,6 +26,10 @@ type Settings struct {
 	ReopenProjects bool `json:"reopen_projects"`
 	// PanelOpen keeps the side panel open.
 	PanelOpen bool `json:"panel_open"`
+	// PanelTab is the panel's last tab: changes, files, agents or queue.
+	PanelTab string `json:"panel_tab,omitempty"`
+	// PanelRatio is the chat's share of the width beside the panel.
+	PanelRatio float32 `json:"panel_ratio,omitempty"`
 	// Open is the projects open at the last quit.
 	Open []string `json:"open,omitempty"`
 	// Recents is the most recently opened projects, newest first.
@@ -49,11 +54,15 @@ func Load() Settings {
 	s := Defaults()
 	if p := path(); p != "" {
 		if b, err := os.ReadFile(p); err == nil {
-			_ = json.Unmarshal(b, &s)
+			// A file saved by an editor may start with a BOM.
+			_ = json.Unmarshal(bytes.TrimPrefix(b, []byte("\xef\xbb\xbf")), &s)
 		}
 	}
 	if s.Theme != "light" {
 		s.Theme = "dark"
+	}
+	if s.PanelRatio < 0.4 || s.PanelRatio > 0.85 {
+		s.PanelRatio = 0.64
 	}
 	if !slices.Contains([]int{13, 14, 16}, s.TextSize) {
 		s.TextSize = 14
