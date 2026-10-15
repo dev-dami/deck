@@ -26,8 +26,8 @@ type Project struct {
 	Roster    map[string][]*deckv1.AgentLine
 	Changes   map[string][]*deckv1.ChangedFile
 	// Models is keyed by session id + "|" + agent kind.
-	Models map[string][]*deckv1.ModelChoice
-	Notices   []string
+	Models  map[string][]*deckv1.ModelChoice
+	Notices []string
 }
 
 // Store holds every project. Changed is called after each write, outside

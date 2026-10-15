@@ -154,7 +154,9 @@ func (a *App) layoutSettings(gtx C, v view) D {
 						}),
 					)
 				}),
-				layout.Rigid(func(gtx C) D { return layout.Inset{Top: 8}.Layout(gtx, a.label(12, a.col.Muted, "Using: "+resolved).Layout) }),
+				layout.Rigid(func(gtx C) D {
+					return layout.Inset{Top: 8}.Layout(gtx, a.label(12, a.col.Muted, "Using: "+resolved).Layout)
+				}),
 				layout.Rigid(func(gtx C) D { return layout.Inset{Top: 2}.Layout(gtx, a.label(12, a.col.Muted, engine).Layout) }),
 			)
 		}),

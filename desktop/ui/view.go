@@ -563,7 +563,9 @@ func (a *App) centered(gtx C, title, sub string, btn *widget.Clickable, btnText 
 	return layout.Center.Layout(gtx, func(gtx C) D {
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(a.bold(20, a.col.Fg, title).Layout),
-			layout.Rigid(func(gtx C) D { return layout.Inset{Top: 6, Bottom: 16}.Layout(gtx, a.label(14, a.col.Muted, sub).Layout) }),
+			layout.Rigid(func(gtx C) D {
+				return layout.Inset{Top: 6, Bottom: 16}.Layout(gtx, a.label(14, a.col.Muted, sub).Layout)
+			}),
 			layout.Rigid(func(gtx C) D {
 				if btn == nil {
 					return D{}
@@ -803,7 +805,9 @@ func (a *App) layoutMessage(gtx C, v view, m *deckv1.Message) D {
 				w = a.label(12, a.col.Danger, clipLines(p.GetOutput(), 6)).Layout
 			}
 		case "image":
-			w = func(gtx C) D { return card(gtx, a.col.Card, 6, a.line(12, a.col.Muted, "🖼 "+p.GetImage().GetName())) }
+			w = func(gtx C) D {
+				return card(gtx, a.col.Card, 6, a.line(12, a.col.Muted, "🖼 "+p.GetImage().GetName()))
+			}
 		}
 		if w != nil {
 			kids = append(kids, layout.Rigid(func(gtx C) D { return layout.Inset{Bottom: 2}.Layout(gtx, w) }))
