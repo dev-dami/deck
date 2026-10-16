@@ -46,7 +46,19 @@ describe("fixtures", () => {
     const names = new Set(FIXTURES.map(([n]) => n));
     const files = readdirSync(TESTDATA)
       .filter((f) => f.endsWith(".json"))
-      .map((f) => f.slice(0, -".json".length));
+      .map((f) => f.slice(0, -".json".length))
+      // v3, relay, Noise and future vector fixtures belong to protocol3, the
+      // Noise suite and later workstreams; the Go v2 test skips the same prefixes.
+      .filter(
+        (f) =>
+          !f.startsWith("v3_") &&
+          !f.startsWith("relay_") &&
+          !f.startsWith("noise_") &&
+          !f.startsWith("assert_") &&
+          !f.startsWith("pair_") &&
+          !f.startsWith("hostauth_") &&
+          !f.startsWith("push_"),
+      );
     expect(files.length).toBeGreaterThan(0);
     const unregistered = files.filter((f) => !names.has(f));
     expect(unregistered).toEqual([]);

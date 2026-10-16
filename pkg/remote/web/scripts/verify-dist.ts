@@ -3,9 +3,11 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { build } from "../build";
+import { build, buildTarget } from "../build";
 
-const committed = resolve(import.meta.dir, "..", "dist");
+const target = buildTarget(process.argv.slice(2));
+const folder = target === "hosted" ? "dist-hosted" : "dist";
+const committed = resolve(import.meta.dir, "..", folder);
 
 function listFiles(dir: string, prefix = ""): string[] {
   const out: string[] = [];
@@ -40,14 +42,14 @@ export function compareDirs(a: string, b: string): string[] {
 async function main(): Promise<void> {
   const fresh = mkdtempSync(join(tmpdir(), "deck-remote-dist-"));
   try {
-    await build(fresh, true);
+    await build(fresh, true, target);
     const problems = compareDirs(committed, fresh);
     if (problems.length > 0) {
       for (const p of problems) console.error(p);
-      console.error("dist/ is stale: run `bun run build` and commit the result");
+      console.error(`${folder}/ is stale: run bun run build --target ${target}`);
       process.exit(1);
     }
-    console.log(`dist/ matches a fresh build (${listFiles(committed).length} files)`);
+    console.log(`${folder}/ matches a fresh build (${listFiles(committed).length} files)`);
   } finally {
     rmSync(fresh, { recursive: true, force: true });
   }

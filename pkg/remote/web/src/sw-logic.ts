@@ -1,5 +1,5 @@
 // What the service worker decides, kept free of worker globals so it can be
-// tested. v1 caches the app shell only: no push, no API, no chat data.
+// tested. Only the app shell is cached: no API or chat data.
 
 export interface FetchInfo {
   method: string;
@@ -22,7 +22,7 @@ export function strategyFor(req: FetchInfo, origin: string, shell: ReadonlySet<s
     return "bypass";
   }
   if (u.origin !== origin) return "bypass";
-  if (u.pathname.startsWith("/api/")) return "bypass";
+  if (u.pathname.startsWith("/api/") || u.pathname.startsWith("/r/v1/")) return "bypass";
   if (req.mode === "navigate") return "navigate";
   return shell.has(u.pathname) ? "cache-first" : "bypass";
 }
