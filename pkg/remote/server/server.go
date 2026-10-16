@@ -113,9 +113,17 @@ func (s *Server) AddHost(h string) {
 // last-seen times and applies device changes made by any process, until
 // ctx ends.
 func (s *Server) Run(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	var workers sync.WaitGroup
+	defer func() {
+		// Auth.Run performs a final disk write on cancellation. Join it before
+		// returning ownership of the data directory to the caller.
+		cancel()
+		workers.Wait()
+	}()
 	events := s.be.Events(ctx)
-	go s.store.Run(ctx)
-	go s.limits.Run(ctx)
+	workers.Go(func() { s.store.Run(ctx) })
+	workers.Go(func() { s.limits.Run(ctx) })
 	// The watch's baseline comes first, so no change slips between it and
 	// the snapshot.
 	s.store.Watch(ctx, s.notifyChanged)

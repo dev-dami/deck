@@ -51,6 +51,7 @@ type Running struct {
 	httpSrv *http.Server
 	cancel  context.CancelFunc
 	done    chan struct{}
+	runDone chan struct{}
 }
 
 // Start listens and serves be until Stop.
@@ -69,7 +70,7 @@ func Start(ctx context.Context, be remote.Backend, ro RunOptions) (*Running, err
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	r := &Running{Store: store, Port: port, TLS: ro.LAN, done: make(chan struct{})}
+	r := &Running{Store: store, Port: port, TLS: ro.LAN, done: make(chan struct{}), runDone: make(chan struct{})}
 	opts := Options{Version: ro.Version, Headless: ro.Headless, TLS: ro.LAN, Paired: ro.Paired}
 	scheme := "http"
 	if ro.LAN {
@@ -97,7 +98,7 @@ func Start(ctx context.Context, be remote.Backend, ro RunOptions) (*Running, err
 			cancel()
 		}
 	}()
-	go r.Server.Run(runCtx)
+	go func() { defer close(r.runDone); r.Server.Run(runCtx) }()
 	_ = store.WriteAdvert(auth.Advert{
 		URL: r.URL, Hosts: r.Hosts, Port: port, TLS: ro.LAN, Fingerprint: r.Cert.Fingerprint,
 		PID: os.Getpid(), StartedAt: time.Now().UTC(),
@@ -114,6 +115,7 @@ func (r *Running) Stop() {
 	_ = r.httpSrv.Shutdown(ctx)
 	_ = r.httpSrv.Close() // sockets Shutdown left behind: WebSockets are hijacked
 	<-r.done
+	<-r.runDone
 }
 
 // Done is closed once the HTTP server has stopped.

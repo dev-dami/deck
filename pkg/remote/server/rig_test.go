@@ -63,10 +63,10 @@ func newRig(t *testing.T) *rig {
 		return r.RemoteAddr
 	}
 	ts := httptest.NewServer(srv.Handler())
-	t.Cleanup(ts.Close)
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go srv.Run(ctx)
+	done := make(chan struct{})
+	go func() { defer close(done); srv.Run(ctx) }()
+	t.Cleanup(func() { cancel(); ts.Close(); <-done })
 	return &rig{t: t, be: be, store: store, srv: srv, ts: ts, clk: clk}
 }
 
