@@ -1,0 +1,44 @@
+# EAS archives from the Git repository root. Include only the native app and
+# the shared TypeScript sources/public interoperability vectors it imports.
+/*
+!/.easignore
+!/apps
+/apps/*
+!/apps/mobile
+!/pkg
+/pkg/*
+!/pkg/remote
+/pkg/remote/*
+!/pkg/remote/web
+/pkg/remote/web/*
+!/pkg/remote/web/src
+!/pkg/remote/wire
+/pkg/remote/wire/*
+!/pkg/remote/wire/testdata
+/pkg/remote/wire/testdata/*
+!/pkg/remote/wire/testdata/noise_ik.json
+!/pkg/remote/wire/testdata/noise_ikpsk2.json
+!/pkg/remote/wire/testdata/noise_k.json
+!/pkg/remote/wire/testdata/pair_id.json
+
+# Native folders are generated on EAS from app.config.ts.
+**/node_modules
+**/.expo
+/apps/mobile/android
+/apps/mobile/ios
+/apps/mobile/dist
+**/coverage
+**/*.test.ts
+**/*.test.tsx
+**/.env
+**/.env.*
+**/credentials.json
+**/*.keystore
+**/*.jks
+**/*.p12
+**/*.pem
+**/*.key
+**/*.apk
+**/*.aab
+**/*.ipa
+**/*.log
