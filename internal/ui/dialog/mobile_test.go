@@ -18,7 +18,7 @@ func TestMobilePaletteActions(t *testing.T) {
 	com := &common.Common{Styles: &s, Workspace: &settingsWorkspace{cfg: &config.Config{Options: &config.Options{}}}}
 	c, err := NewCommands(com, "", false, false, false, nil)
 	require.NoError(t, err)
-	want := map[string]string{"mobile": MobileID, "mobile_pair": MobilePairID, "mobile_start": MobileStartID, "mobile_lan": MobileLANID, "mobile_stop": MobileStopID}
+	want := map[string]string{"mobile": MobileID, "mobile_pair": MobilePairID, "mobile_start": MobileStartID, "mobile_lan": MobileLANID, "mobile_stop": MobileStopID, "remote": MobileLANID, "link": MobilePairID}
 	for _, item := range c.defaultCommands() {
 		if id, ok := want[item.id]; ok {
 			require.Equal(t, ActionOpenDialog{DialogID: id}, item.action)
@@ -32,7 +32,7 @@ func TestMobileCommandsAreDeferredAndLANExplicit(t *testing.T) {
 	for _, tc := range []struct {
 		key, action string
 		lan         bool
-	}{{"s", "start", false}, {"l", "start", true}, {"p", "pair", false}, {"r", "status", false}, {"x", "stop", false}} {
+	}{{"s", "start", false}, {"l", "start", true}, {"p", "link", false}, {"r", "status", false}, {"x", "stop", false}} {
 		t.Run(tc.key, func(t *testing.T) {
 			calls := 0
 			m := NewMobile(nil, "project", func(owner *Mobile, request uint64, action string, lan bool) tea.Cmd {
@@ -86,4 +86,35 @@ func TestMobileSmallLayoutKeepsSecretOffScreen(t *testing.T) {
 		require.LessOrEqual(t, lipgloss.Width(line), 30)
 	}
 	require.LessOrEqual(t, lipgloss.Height(m.body(8, 3)), 3)
+}
+
+func TestDisconnectRequiresSelectingAndConfirmingExactPhone(t *testing.T) {
+	var action string
+	m := NewMobile(nil, "project", func(_ *Mobile, _ uint64, a string, _ bool) tea.Cmd {
+		action = a
+		return func() tea.Msg { return nil }
+	})
+	m.status.DeviceList = []MobileDevice{{ID: "one", Name: "First"}, {ID: "two", Name: "Second"}}
+	key := func(k string) Action { return m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter, Text: k}) }
+	m.HandleMsg(tea.KeyPressMsg{Code: 'd', Text: "d"})
+	require.True(t, m.choosingPhone)
+	m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyDown})
+	key("enter")
+	require.True(t, m.confirmDisconnect)
+	require.Empty(t, action)
+	m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEscape})
+	require.False(t, m.choosingPhone)
+	require.Empty(t, action)
+	m.HandleMsg(tea.KeyPressMsg{Code: 'd', Text: "d"})
+	m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyDown})
+	key("enter")
+	require.IsType(t, ActionCmd{}, key("enter"))
+	require.Equal(t, "revoke:two", action)
+}
+
+func TestMobileShowsManagedStopExplanation(t *testing.T) {
+	m := NewMobile(nil, "project", func(*Mobile, uint64, string, bool) tea.Cmd { return nil })
+	m.Start("stop", false)
+	m.HandleMsg(MobileResultMsg{Owner: m, Request: m.request, Status: MobileStatus{Message: "The separately started daemon is still running; stop it in its own terminal."}})
+	require.Contains(t, m.body(100, 20), "separately started daemon")
 }

@@ -17,25 +17,47 @@ import (
 	"time"
 
 	"github.com/dev-dami/deck/internal/lock"
+	"github.com/dev-dami/deck/pkg/remote/devstore"
 	"github.com/dev-dami/deck/pkg/remote/ipc"
 	"github.com/dev-dami/deck/pkg/remote/mobile"
 	"github.com/dev-dami/deck/pkg/remote/projects"
 )
 
 type Options struct {
-	Dir, Executable, Action, Project, RelayDir, LANIP string
-	LAN                                               bool
-	Port                                              int
+	Dir, Executable, Action, Project, RelayDir, LANIP, DeviceID string
+	LAN                                                         bool
+	Port                                                        int
 }
 type Result struct {
-	Name      string     `json:"name"`
-	RelayURL  string     `json:"relay_url"`
-	Online    bool       `json:"online"`
-	Devices   int        `json:"devices"`
-	Projects  int        `json:"projects"`
-	PairURL   string     `json:"pair_url,omitempty"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	Message   string     `json:"message,omitempty"`
+	Name       string      `json:"name"`
+	RelayURL   string      `json:"relay_url"`
+	Online     bool        `json:"online"`
+	Devices    int         `json:"devices"`
+	DeviceList []DeviceRef `json:"device_list"`
+	Projects   int         `json:"projects"`
+	PairURL    string      `json:"pair_url,omitempty"`
+	ExpiresAt  *time.Time  `json:"expires_at,omitempty"`
+	Message    string      `json:"message,omitempty"`
+}
+
+// DeviceRef is the public paired-phone summary. Keys and relay tokens never
+// cross this CLI/UI boundary.
+type DeviceRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func withDevices(dir string, r Result) (Result, error) {
+	store, err := devstore.Open(dir)
+	if err != nil {
+		return Result{}, err
+	}
+	r.DeviceList = make([]DeviceRef, 0)
+	for _, d := range store.List() {
+		r.DeviceList = append(r.DeviceList, DeviceRef{ID: d.ID, Name: d.Name})
+	}
+	r.Devices = len(r.DeviceList)
+	return r, nil
 }
 
 func control(ctx context.Context, dir string, method string, out any) error {
@@ -57,7 +79,41 @@ func status(ctx context.Context, dir string) (Result, error) {
 	if err := control(ctx, dir, "status", &st); err != nil {
 		return Result{}, err
 	}
-	return Result{Name: st.Name, RelayURL: st.RelayURL, Online: st.RelayOnline, Devices: st.Devices, Projects: len(st.Projects)}, nil
+	return withDevices(dir, Result{Name: st.Name, RelayURL: st.RelayURL, Online: st.RelayOnline, Projects: len(st.Projects)})
+}
+
+func currentStatus(ctx context.Context, dir string) (Result, error) {
+	if r, err := status(ctx, dir); err == nil {
+		return r, nil
+	}
+	cfg, err := mobile.LoadConfig(dir)
+	if err != nil {
+		return Result{}, err
+	}
+	reg, err := projects.Open(dir)
+	if err != nil {
+		return Result{}, err
+	}
+	count := 0
+	for _, p := range reg.List() {
+		if p.Enabled {
+			count++
+		}
+	}
+	name := cfg.Name
+	if name == "" {
+		name, _ = os.Hostname()
+	}
+	return withDevices(dir, Result{Name: name, RelayURL: cfg.RelayURL, Projects: count, Message: "Background process is not running."})
+}
+
+// A link uses saved settings, including hosted HTTPS, and falls back to LAN
+// only on a fresh installation. It does not replace an existing relay choice.
+func linkOptions(opt Options, cfg mobile.Config) Options {
+	if opt.Action == "link" {
+		opt.LAN = cfg.RelayURL == ""
+	}
+	return opt
 }
 
 // Run performs one action. Pairing secrets are returned to the caller only;
@@ -85,28 +141,41 @@ func Run(ctx context.Context, opt Options) (Result, error) {
 	defer release()
 	switch opt.Action {
 	case "status":
-		r, err := status(ctx, opt.Dir)
-		if err == nil {
-			return r, nil
-		}
-		cfg, e := mobile.LoadConfig(opt.Dir)
-		if e != nil {
-			return Result{}, e
-		}
-		return Result{Name: cfg.Name, RelayURL: cfg.RelayURL, Message: "Background process is not running."}, nil
+		return currentStatus(ctx, opt.Dir)
 	case "stop":
 		return stopManaged(ctx, opt.Dir)
 	case "pair":
 		return pair(ctx, opt.Dir)
-	case "start":
+	case "revoke":
+		if opt.DeviceID == "" {
+			return Result{}, errors.New("choose a phone to disconnect with --device ID (see --action status --json)")
+		}
+		store, err := devstore.Open(opt.Dir)
+		if err != nil {
+			return Result{}, err
+		}
+		if err := store.Revoke(opt.DeviceID); err != nil {
+			if errors.Is(err, devstore.ErrNotFound) {
+				return Result{}, errors.New("that phone is no longer paired; refresh the phone list")
+			}
+			return Result{}, err
+		}
+		r, err := currentStatus(ctx, opt.Dir)
+		if err != nil {
+			return Result{}, err
+		}
+		r.Message = "Phone disconnected. Its active connection will close within seconds."
+		return r, nil
+	case "start", "link":
 	default:
-		return Result{}, errors.New("action must be start, status, pair or stop")
+		return Result{}, errors.New("action must be start, link, status, pair, revoke or stop")
 	}
 	cfg, err := mobile.LoadConfig(opt.Dir)
 	if err != nil {
 		return Result{}, err
 	}
 	previous := cfg
+	opt = linkOptions(opt, cfg)
 	local := opt.LAN
 	if !local && cfg.AllowLANHTTP {
 		u, _ := url.Parse(cfg.RelayURL)
@@ -220,6 +289,11 @@ func pair(ctx context.Context, dir string) (Result, error) {
 		return Result{}, errors.New("relay is offline; start the relay or use deck mobile connect first")
 	}
 	var p mobile.PairResult
+	// Explicitly requesting another QR rotates the one-use pairing secret. The
+	// previous code stops working immediately, including when its slot is busy.
+	if err := control(ctx, dir, "unpair", nil); err != nil {
+		return Result{}, fmt.Errorf("could not replace the previous pairing code: %w", err)
+	}
 	if err := control(ctx, dir, "pair", &p); err != nil {
 		return Result{}, err
 	}

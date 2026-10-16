@@ -13,12 +13,17 @@ verified domain and are not enabled by this LAN setup.
 
 ## 1. Update the desktop
 
-The latest desktop source also supports one-step remote control. Once running
-that build, type `/mobile` (or `/remote`) in Deck to open the remote-control
-panel. Press **l** to start the local Wi-Fi relay and daemon, share the current
-project, and show a pairing QR. Press **s** to reuse the saved relay settings,
-**p** for a fresh QR, **r** for status, and **x** to stop services that the
-panel started. If the QR will not fit, enlarge the terminal or press **c** and
+Type **`/remote`** in Deck to start the local Wi-Fi relay and daemon, share
+the current project, and show the pairing QR in one step. Existing services
+are reused. Type **`/link`** to link another phone: it shows a fresh QR, starts
+services if necessary, and retains your saved relay settings. If no relay has
+been configured, `/link` sets up LAN access automatically.
+
+The same panel shows status and offers **p** New QR, **d** Disconnect phone,
+**r** Refresh, and **x** Stop remote access. Disconnect asks you to select a
+phone with up/down and confirm with Enter, then press Enter again to revoke
+only that phone; Esc cancels. `/mobile` and older subcommands remain available.
+If the QR will not fit, enlarge the terminal or press **c** and
 paste the private link into the phone app. Separately launched relay/daemon
 processes are reused where possible and are not stopped by this panel.
 

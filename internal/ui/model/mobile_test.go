@@ -58,13 +58,14 @@ func TestMobileConnectArgs(t *testing.T) {
 	require.Equal(t, []string{"mobile", "connect", "--json", "--project", "C:/project with spaces", "--action", "start"}, args)
 	require.NotContains(t, args, "--lan")
 	require.Contains(t, mobileConnectArgs("project", "start", true), "--lan")
+	require.Equal(t, []string{"mobile", "connect", "--json", "--project", "project", "--action", "revoke", "--device", "phone_2"}, mobileConnectArgs("project", "revoke:phone_2", false))
 }
 
 func TestMobileSlashActions(t *testing.T) {
 	for _, tc := range []struct {
 		input, action string
 		lan           bool
-	}{{"/mobile lan", "start", true}, {"/mobile start", "start", false}, {"/mobile pair", "pair", false}, {"/mobile stop", "stop", false}, {"/remote", "status", false}} {
+	}{{"/mobile lan", "start", true}, {"/mobile start", "start", false}, {"/mobile pair", "pair", false}, {"/mobile stop", "stop", false}, {"/remote", "start", true}, {"/link", "link", false}} {
 		action, lan, ok := mobileSlashAction(tc.input)
 		require.True(t, ok)
 		require.Equal(t, tc.action, action)
@@ -73,7 +74,7 @@ func TestMobileSlashActions(t *testing.T) {
 }
 
 func TestMobileSlashOpensPanelWithoutSendingPrompt(t *testing.T) {
-	for _, input := range []string{"/mobile", "/remote", " /mobile status ", "/mobile pair", "/mobile lan", "/mobile start", "/mobile stop"} {
+	for _, input := range []string{"/mobile", "/remote", "/link", " /mobile status ", "/mobile pair", "/mobile lan", "/mobile start", "/mobile stop"} {
 		m := newTestUIWithConfig(t, nil)
 		m.dialog = dialog.NewOverlay()
 		cmd := m.sendMessage(input)

@@ -367,7 +367,9 @@ func (c *Commands) setCommandItems(commandType CommandType) {
 // defaultCommands returns the list of default system commands.
 func (c *Commands) defaultCommands() []*CommandItem {
 	commands := []*CommandItem{
-		NewCommandItem(c.com.Styles, "mobile", "Mobile remote control", "", ActionOpenDialog{MobileID}).WithAliases("remote", "mobile status"),
+		NewCommandItem(c.com.Styles, "remote", "Remote: start Wi-Fi and show QR", "", ActionOpenDialog{MobileLANID}).WithAliases("remote"),
+		NewCommandItem(c.com.Styles, "link", "Link another phone", "", ActionOpenDialog{MobilePairID}).WithAliases("link"),
+		NewCommandItem(c.com.Styles, "mobile", "Mobile remote control", "", ActionOpenDialog{MobileID}).WithAliases("mobile status"),
 		NewCommandItem(c.com.Styles, "mobile_pair", "Mobile: pair phone", "", ActionOpenDialog{MobilePairID}).WithAliases("mobile pair"),
 		NewCommandItem(c.com.Styles, "mobile_start", "Mobile: start and share project", "", ActionOpenDialog{MobileStartID}).WithAliases("mobile start"),
 		NewCommandItem(c.com.Styles, "mobile_lan", "Mobile: start on trusted Wi-Fi", "", ActionOpenDialog{MobileLANID}).WithAliases("mobile lan"),

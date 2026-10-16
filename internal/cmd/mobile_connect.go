@@ -32,6 +32,9 @@ func init() {
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Computer: %s\nRelay: %s\nOnline: %t | Phones: %d | Projects: %d\n", result.Name, result.RelayURL, result.Online, result.Devices, result.Projects)
+		for _, device := range result.DeviceList {
+			fmt.Fprintf(cmd.OutOrStdout(), "Phone: %s (%s)\n", device.Name, device.ID)
+		}
 		if result.Message != "" {
 			fmt.Fprintln(cmd.OutOrStdout(), result.Message)
 		}
@@ -45,9 +48,10 @@ func init() {
 		return nil
 	}}
 	f := command.Flags()
-	f.StringVar(&opt.Action, "action", "start", "Action: start, status, pair or stop")
+	f.StringVar(&opt.Action, "action", "start", "Action: start, link, status, pair, revoke or stop")
+	f.StringVar(&opt.DeviceID, "device", "", "Exact paired phone ID to disconnect (revoke action)")
 	f.BoolVar(&opt.LAN, "lan", false, "Start a local relay on this PC for trusted Wi-Fi testing")
-	f.StringVar(&opt.Project, "project", "", "Explicitly share this project directory (start only)")
+	f.StringVar(&opt.Project, "project", "", "Explicitly share this project directory (start/link only)")
 	f.StringVar(&opt.RelayDir, "relay-dir", "", "Directory containing the local relay runtime")
 	f.StringVar(&opt.LANIP, "lan-ip", "", "Private IPv4 address advertised to the phone")
 	f.IntVar(&opt.Port, "port", 8787, "Local relay port")

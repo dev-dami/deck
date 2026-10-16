@@ -14,12 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dev-dami/deck/pkg/remote/devstore"
 	"github.com/dev-dami/deck/pkg/remote/ipc"
 	"github.com/dev-dami/deck/pkg/remote/mobile"
 	"github.com/dev-dami/deck/pkg/remote/projects"
 )
 
-func fakeControl(t *testing.T, dir string, st mobile.StatusResult) {
+func fakeControl(t *testing.T, dir string, st mobile.StatusResult, hooks ...ipc.ControlHandler) {
 	t.Helper()
 	listener, err := ipc.Listen()
 	if err != nil {
@@ -39,6 +40,9 @@ func fakeControl(t *testing.T, dir string, st mobile.StatusResult) {
 			go func() {
 				defer conn.Close()
 				_ = ipc.ServeControl(context.Background(), conn, func(_ context.Context, cmd string, _ json.RawMessage) (any, error) {
+					if len(hooks) > 0 {
+						return hooks[0](context.Background(), cmd, nil)
+					}
 					if cmd == "pair" {
 						return mobile.PairResult{URL: "https://relay.test/#secret-pair", ExpiresAt: time.Now().Add(time.Minute)}, nil
 					}
@@ -56,6 +60,17 @@ func TestReuseDaemonAndExplicitSharing(t *testing.T) {
 		t.Fatal(err)
 	}
 	fakeControl(t, dir, mobile.StatusResult{Name: "PC", RelayURL: cfg.RelayURL, RelayOnline: true, Devices: 2})
+	store, err := devstore.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := byte(1); i <= 2; i++ {
+		key := make([]byte, 32)
+		key[0] = i
+		if _, _, err := store.Add("phone", key); err != nil {
+			t.Fatal(err)
+		}
+	}
 	project := t.TempDir()
 	result, err := Run(context.Background(), Options{Dir: dir, Project: project})
 	if err != nil {

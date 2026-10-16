@@ -5115,7 +5115,7 @@ func (m *UI) openDialog(id string) tea.Cmd {
 	case dialog.MobileID:
 		cmds = append(cmds, m.openMobileDialog())
 	case dialog.MobilePairID:
-		cmds = append(cmds, m.openMobileDialogAction("pair"))
+		cmds = append(cmds, m.openMobileDialogAction("link"))
 	case dialog.MobileStartID:
 		cmds = append(cmds, m.openMobileDialogAction("start"))
 	case dialog.MobileLANID:

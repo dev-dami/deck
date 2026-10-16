@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -22,14 +23,20 @@ const MobileStopID = "mobile:stop"
 // MobileStatus is mobile connect's response. PairURL contains a short-lived
 // secret and is retained only by this dialog, never sent to notices or history.
 type MobileStatus struct {
-	Name      string    `json:"name"`
-	RelayURL  string    `json:"relay_url"`
-	Online    bool      `json:"online"`
-	Devices   int       `json:"devices"`
-	Projects  int       `json:"projects"`
-	PairURL   string    `json:"pair_url"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Message   string    `json:"message"`
+	Name       string         `json:"name"`
+	RelayURL   string         `json:"relay_url"`
+	Online     bool           `json:"online"`
+	Devices    int            `json:"devices"`
+	DeviceList []MobileDevice `json:"device_list"`
+	Projects   int            `json:"projects"`
+	PairURL    string         `json:"pair_url"`
+	ExpiresAt  time.Time      `json:"expires_at"`
+	Message    string         `json:"message"`
+}
+
+type MobileDevice struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type MobileResultMsg struct {
@@ -61,14 +68,17 @@ func (mobileCopyMsg) TargetDialog() string { return MobileID }
 type MobileRunner func(owner *Mobile, request uint64, action string, lan bool) tea.Cmd
 
 type Mobile struct {
-	com     *common.Common
-	run     MobileRunner
-	project string
-	request uint64
-	busy    bool
-	status  MobileStatus
-	qr      string
-	info    string
+	com               *common.Common
+	run               MobileRunner
+	project           string
+	request           uint64
+	busy              bool
+	status            MobileStatus
+	qr                string
+	info              string
+	choosingPhone     bool
+	phoneIndex        int
+	confirmDisconnect bool
 }
 
 func NewMobile(com *common.Common, project string, run MobileRunner) *Mobile {
@@ -81,6 +91,8 @@ func (m *Mobile) Start(action string, lan bool) tea.Cmd {
 	}
 	m.request++
 	m.busy = true
+	m.choosingPhone = false
+	m.confirmDisconnect = false
 	m.qr = ""
 	m.status.PairURL = ""
 	m.info = "Working…"
@@ -107,6 +119,9 @@ func (m *Mobile) HandleMsg(msg tea.Msg) Action {
 		if m.status.PairURL == "" {
 			m.info = "Status refreshed."
 		}
+		if m.status.Message != "" {
+			m.info = m.status.Message
+		}
 		if m.status.PairURL != "" {
 			return ActionCmd{Cmd: m.tick()}
 		}
@@ -129,6 +144,31 @@ func (m *Mobile) HandleMsg(msg tea.Msg) Action {
 			}
 		}
 	case tea.KeyPressMsg:
+		if m.choosingPhone {
+			switch msg.String() {
+			case "esc":
+				m.choosingPhone, m.confirmDisconnect = false, false
+			case "up", "down":
+				count := len(m.status.DeviceList)
+				if count > 0 {
+					step := 1
+					if msg.String() == "up" {
+						step = -1
+					}
+					m.phoneIndex = (m.phoneIndex + step + count) % count
+					m.confirmDisconnect = false
+				}
+			case "enter":
+				if m.phoneIndex < len(m.status.DeviceList) {
+					if !m.confirmDisconnect {
+						m.confirmDisconnect = true
+						return nil
+					}
+					return ActionCmd{Cmd: m.Start("revoke:"+m.status.DeviceList[m.phoneIndex].ID, false)}
+				}
+			}
+			return nil
+		}
 		switch msg.String() {
 		case "esc":
 			return ActionClose{}
@@ -137,7 +177,17 @@ func (m *Mobile) HandleMsg(msg tea.Msg) Action {
 		case "l":
 			return ActionCmd{Cmd: m.Start("start", true)}
 		case "p":
-			return ActionCmd{Cmd: m.Start("pair", false)}
+			return ActionCmd{Cmd: m.Start("link", false)}
+		case "d":
+			if m.busy {
+				return nil
+			}
+			if len(m.status.DeviceList) == 0 {
+				m.info = "No linked phones. Press p to link one."
+				return nil
+			}
+			m.choosingPhone, m.confirmDisconnect, m.phoneIndex = true, false, 0
+			return nil
 		case "r":
 			return ActionCmd{Cmd: m.Start("status", false)}
 		case "x":
@@ -153,7 +203,7 @@ func (m *Mobile) HandleMsg(msg tea.Msg) Action {
 }
 
 func (m *Mobile) body(width, height int) string {
-	lines := []string{"s Start / share current project", "l Start on trusted Wi-Fi (local relay)", "p Pair phone   r Refresh   x Stop managed services", "c Copy pairing link   esc Close", "Project: " + m.project}
+	lines := []string{"p New QR / link phone   d Disconnect phone", "r Refresh status   x Stop remote access", "c Copy pairing link   esc Close", "Project: " + m.project}
 	if m.status.RelayURL != "" {
 		state := "offline"
 		if m.status.Online {
@@ -162,7 +212,23 @@ func (m *Mobile) body(width, height int) string {
 		lines = append(lines, fmt.Sprintf("%s · %s · %d phones · %d projects", m.status.Name, state, m.status.Devices, m.status.Projects), m.status.RelayURL)
 	}
 	lines = append(lines, m.info)
-	if m.qr != "" && time.Now().Before(m.status.ExpiresAt) {
+	if m.choosingPhone {
+		lines = append(lines, "Choose phone: up/down, enter to select, esc to cancel")
+		visible := max(1, height-len(lines)-1)
+		first := max(0, m.phoneIndex-visible+1)
+		last := min(len(m.status.DeviceList), first+visible)
+		for i := first; i < last; i++ {
+			phone := m.status.DeviceList[i]
+			prefix := "  "
+			if i == m.phoneIndex {
+				prefix = "> "
+			}
+			lines = append(lines, prefix+phone.Name)
+		}
+		if m.confirmDisconnect {
+			lines = append(lines, "Disconnect selected phone? Enter confirms; esc cancels.")
+		}
+	} else if m.qr != "" && time.Now().Before(m.status.ExpiresAt) {
 		if lipgloss.Width(m.qr) <= width && lipgloss.Height(m.qr)+len(lines) <= height {
 			lines = append(lines, m.qr)
 		} else {
@@ -172,7 +238,13 @@ func (m *Mobile) body(width, height int) string {
 	// Control text and process errors must never inject terminal escapes.
 	for i, line := range lines {
 		if line != m.qr {
-			lines[i] = ansi.Truncate(ansi.Strip(strings.ReplaceAll(line, "\n", " ")), max(0, width), "…")
+			plain := strings.Map(func(r rune) rune {
+				if unicode.IsControl(r) {
+					return ' '
+				}
+				return r
+			}, ansi.Strip(line))
+			lines[i] = ansi.Truncate(plain, max(0, width), "…")
 		}
 	}
 	if len(lines) > height {

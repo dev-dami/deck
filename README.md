@@ -53,6 +53,16 @@ Run `deck`, type, press enter.
 - **Sessions.** `ctrl+n` starts one, `ctrl+s` switches. `deck -C` continues the last one.
 - `ctrl+p` lists every command; `esc` twice stops the agents.
 
+### Phone remote control
+
+Type **`/remote`** to start local Wi-Fi access and show a pairing QR in one
+step. Type **`/link`** for a fresh QR to link another phone; services start if
+needed. The panel includes status, new QR, phone disconnection and stop actions.
+The native app can start conversations in shared projects. Local Wi-Fi setup
+uses the LAN APK and Node.js/relay runtime from this checkout; see
+[the setup guide](docs/mobile-lan.md). For hosted access, see
+[deployment](docs/mobile-deploy.md) and [the native client](apps/mobile/README.md).
+
 | mode | Claude Code | Codex | OpenCode | Antigravity |
 | --- | --- | --- | --- | --- |
 | plan | `--permission-mode plan` | read-only sandbox | its plan agent | `--mode plan` |

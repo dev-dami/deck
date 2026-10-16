@@ -77,7 +77,7 @@ func stopRole(ctx context.Context, dir, role string) error {
 	return fmt.Errorf("managed %s did not stop", role)
 }
 func stopManaged(ctx context.Context, dir string) (Result, error) {
-	r, _ := status(ctx, dir)
+	r, _ := currentStatus(ctx, dir)
 	var messages []string
 	if managedAlive(ctx, dir, "daemon") {
 		if err := stopRole(ctx, dir, "daemon"); err != nil {

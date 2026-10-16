@@ -54,7 +54,11 @@ func isMobileSlash(content string) bool {
 
 func mobileSlashAction(content string) (string, bool, bool) {
 	switch strings.TrimSpace(content) {
-	case "/mobile", "/remote", "/mobile status":
+	case "/remote":
+		return "start", true, true
+	case "/link":
+		return "link", false, true
+	case "/mobile", "/mobile status":
 		return "status", false, true
 	case "/mobile pair":
 		return "pair", false, true
@@ -69,7 +73,14 @@ func mobileSlashAction(content string) (string, bool, bool) {
 }
 
 func mobileConnectArgs(project, action string, lan bool) []string {
+	device, revoke := strings.CutPrefix(action, "revoke:")
+	if revoke {
+		action = "revoke"
+	}
 	args := []string{"mobile", "connect", "--json", "--project", project, "--action", action}
+	if revoke {
+		args = append(args, "--device", device)
+	}
 	if lan {
 		args = append(args, "--lan")
 	}
@@ -94,7 +105,7 @@ func mobileConnectCmdUsing(owner *dialog.Mobile, request uint64, project, action
 	return func() tea.Msg {
 		result := dialog.MobileResultMsg{Owner: owner, Request: request}
 		timeout := 60 * time.Second
-		if action == "start" {
+		if action == "start" || action == "link" {
 			timeout = 150 * time.Second
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
