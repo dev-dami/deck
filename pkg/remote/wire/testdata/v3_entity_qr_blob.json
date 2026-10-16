@@ -1,0 +1,13 @@
+{
+  "cid": "Zk3p0Jq8vYb1nT5cR2sWxA",
+  "exp": 1792006200,
+  "fp": "4b:1e:aa:09",
+  "lan": [
+    "192.168.1.20:7879"
+  ],
+  "name": "erioluwa-pc",
+  "psk": "vJ0b8xkP2mQ7sT1dN4yR9uLwE3cZ6aGhF5iOtXqKnYs",
+  "relay": "https://app.example.dev",
+  "s": "3q2-7w9tYl0mQeXy1c8dKpR5uVnB4aZs6HfG0jTiOWc",
+  "v": 1
+}

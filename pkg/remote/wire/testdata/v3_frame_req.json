@@ -1,0 +1,10 @@
+{
+  "id": "7",
+  "m": "chat.send",
+  "p": {
+    "session_id": "ses_8f2a",
+    "text": "run the tests"
+  },
+  "pj": "prj_a1",
+  "t": "req"
+}

@@ -1,0 +1,10 @@
+{
+  "approvals": 2,
+  "last_activity": "2026-10-14T09:41:00Z",
+  "pj": "prj_a1",
+  "session_id": "ses_8f2a",
+  "state": "needs_you",
+  "summary": "Waiting to run: rm -rf build",
+  "title": "Fix flaky queue test",
+  "unread": true
+}

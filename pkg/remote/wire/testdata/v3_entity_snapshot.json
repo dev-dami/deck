@@ -1,0 +1,32 @@
+{
+  "approvals": [
+    {
+      "approval": {
+        "agent": "claude-1",
+        "command": "go test ./...",
+        "created_at": "2026-10-14T21:04:00Z",
+        "description": "Run a command",
+        "digest": "9f2c1a7e5b3d48c0a6e1f7d2b9c4a835e0d1f6b7c2a94e8d3b5f0a1c7e6d2b48",
+        "id": "apr_51e9",
+        "kind": "command",
+        "session_id": "ses_8f2a",
+        "tier": "normal"
+      },
+      "pj": "prj_a1"
+    }
+  ],
+  "at": "2026-10-14T21:04:50Z",
+  "inbox": [
+    {
+      "approvals": 1,
+      "last_activity": "2026-10-14T21:04:00Z",
+      "pj": "prj_a1",
+      "session_id": "ses_8f2a",
+      "state": "needs_you",
+      "summary": "Waiting to run: go test ./...",
+      "title": "Fix flaky queue test",
+      "unread": false
+    }
+  ],
+  "receipts": []
+}

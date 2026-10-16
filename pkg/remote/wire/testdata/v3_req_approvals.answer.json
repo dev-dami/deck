@@ -1,0 +1,6 @@
+{
+  "decision": "deny",
+  "id": "apr_51e9",
+  "reason": "use --force-with-lease instead",
+  "session_id": "ses_8f2a"
+}

@@ -1,0 +1,10 @@
+{
+  "assertion": {
+    "authenticator_data": "SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2MFAAAAAQ",
+    "client_data_json": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0In0",
+    "credential_id": "AaBbCc_dEf",
+    "signature": "MEUCIQDx1y2z"
+  },
+  "mode": "yolo",
+  "session_id": "ses_8f2a"
+}
