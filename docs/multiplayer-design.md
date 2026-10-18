@@ -1,6 +1,6 @@
 # Deck multiplayer: many agents, subagent trees, peers
 
-Status: proposal, nothing in this document is implemented. It builds on what
+Status: proposal. Phase 1 (§3) is implemented; the rest is not. It builds on what
 already ships (verified against `main` at 4508226): spawn and tasks
 (`session/spawn.go`, `tasks.go`, `sched.go`), SUB capsules (`docs/sub.md`),
 and the peer link (`internal/deck/peer`: SSH transport, pairing, pinning,
@@ -56,23 +56,32 @@ exchange by content-addressed capsules instead of branches, nested trees,
 pinned-key SSH with capability-scoped ops, and the only scheduler that
 knows each subscription's remaining plan window.
 
-## 3. Same-kind agents (pools)
+## 3. Same-kind agents (pools) — implemented
 
-- **Add an instance.** `$claude+` in the composer, `Agents: add` in `ctrl+p`
-  and `a` in the Team pane call `AddMember`. Thread names are `claude`,
-  `claude-b`, `claude-c` (or a user rename); ids stay global and unique.
-- **Pool addressing.** A kind token means the pool:
-  - `$claude`: the idle member of that kind with the shortest queue, else the least busy one. The chosen name shows in the message line.
-  - `$claude*`: every member of that kind.
-  - `$claude-b`: exactly that member.
-  - `$claude×3 …`: a race (§6).
-  Same rule for agents: `thread.send {to:"claude"}` routes to the pool and returns the name it chose, instead of failing in `thread.find`.
-- **Live roster.** Membership changes (join, exit, rename, spawn) are added
-  to the next prompt as one line (`roster: + claude-b (opus), - codex`), and
-  a `thread.roster` op returns members with kind, model, status, task and
-  worktree. The 1400-char start instruction stops listing names.
-- **Per-instance settings.** Model, effort and mode are already per member;
-  the Team pane shows them, so two claudes on different models are easy to tell apart.
+- **Add an instance.** `$claude+` in the composer (and a `claude+` row in
+  the `$` popup) adds one; `$claude+ $claude+` adds two. The first member of
+  a kind is called `claude`; when a second joins, a first still called
+  `claude` is renamed `claude1` and the new one is `claude2`, so every
+  instance keeps a name of its own (`thread.freeName`). Ids stay global and
+  unique. Renaming a member to its kind's name is refused while its thread
+  has another of that kind, and names cannot contain `*` or `+`.
+- **Pool addressing.** A kind token means the pool (`choose` in `address.go`):
+  - `$claude`: an idle member of that kind, else the one with the fewest
+    queued messages; among equals the last speaker, then the first to join.
+    With none running it starts a fresh one. The message line shows who got it.
+  - `$claude*`: every live member of that kind.
+  - `$claude2`: exactly that member.
+  - `$claude×3 …`: a race (§6, not yet).
+  Agents use the same rule: `thread.send {to:"claude"}` routes to the pool
+  (excluding the sender), `to:"claude*"` fans out, and `$claude*` lines in a
+  final reply relay to all of them. The error listing valid recipients
+  names the pools.
+- **Roster.** The `thread.roster` op lists members with kind, model/effort,
+  status, running task, parent, branch and context use, and how to reach
+  each pool. The join line in briefings explains the pool once, when a
+  second member of a kind arrives. The start instruction mentions
+  `thread.roster` and stays under its 1400-char cap.
+- **Per-instance settings.** Model, effort and mode are already per member.
 
 ## 4. Subagent trees
 
@@ -92,7 +101,7 @@ knows each subscription's remaining plan window.
 - **Review stage.** Task status `review` between `running` and `done`
   (opt-in per task, `review: "codex"`): the result goes to a reviewer of
   another kind first. Cross-vendor review is something single-vendor tools cannot offer.
-- **UI.** The Team pane renders the tree (`├ claude-b ▸ task 4 · worktree`);
+- **UI.** The Team pane renders the tree (`├ claude2 ▸ task 4 · worktree`);
   `enter` on a subagent shows its transcript, `A` applies its worktree
   (`ApplyMember`), `D` discards it, `I` isolates the thread (`Isolate`).
 
@@ -112,7 +121,7 @@ knows each subscription's remaining plan window.
   (path → member, turn) raises a notice and a one-line steer to both agents
   when two members touch the same file in overlapping turns. Edits that
   come through Deck's approval (ask mode) are checked *before* they run.
-- **Presence.** The changes panel and Team pane show `path ← claude-b`
+- **Presence.** The changes panel and Team pane show `path ← claude2`
   for open leases and recent touches. Peers see the same, summarized (§8).
 - **Approvals bound to capsules.** An approval for apply/merge records the
   capsule id; a different capsule asks again.
@@ -154,7 +163,7 @@ MCP tools; new inbound ops are opt-in per peer (`allow_inbound`).
 2. **Presence.** `peer.status` adds agents (kind, status, task title,
    context %), plan headroom per kind (opt-in), and lease paths for
    repositories both sides have (matched by root commit and remote URL).
-   Team pane: `vps/claude-b ▸ working · task 3`.
+   Team pane: `vps/claude2 ▸ working · task 3`.
 3. **Agents in team chat.** `team.read {since}` and `team.post {text}` ops.
    Each post shows its origin (local human, local agent, peer human, peer
    agent) and is rendered as text only.
@@ -206,9 +215,9 @@ MCP tools; new inbound ops are opt-in per peer (`allow_inbound`).
 
 Each phase is one or two PRs and useful alone.
 
-1. **Instances.** `$claude+`/Agents: add, pool addressing for users and
-   agents, `thread.roster`, roster deltas in prompts, Team pane per-member
-   model. Fix `peers-design.md`'s status line.
+1. **Instances** (done). `$claude+`, pool addressing for users and agents,
+   `$kind*`, `thread.roster`, pool hint in join lines, `$` popup rows.
+   `peers-design.md`'s status line fixed.
 2. **Trees.** Depth and budgets, cascade, ancestor fallback for results,
    task kind/model/effort, scoped briefing, tree UI with apply/discard/isolate.
 3. **Brakes.** Work budget, task/thread budgets, loop guards, routing
@@ -228,7 +237,7 @@ Each phase is one or two PRs and useful alone.
 ## 11. Risks
 
 - Pool addressing changes what `$claude` means once there are two; the
-  chosen name must always show, and `$claude-b` must stay exact.
+  chosen name must always show, and `$claude2` must stay exact.
 - Overlap detection from tool events is best-effort (agents can write via
   shell); apply-time enforcement is the guarantee, notices are the help.
 - Deeper trees multiply plan usage quickly; budgets and the work limit must

@@ -350,12 +350,13 @@ func TestAddMemberOfSameKindGetsNextID(t *testing.T) {
 	if c != "claude3" {
 		t.Fatalf("ids are unique across the deck, got %s", c)
 	}
-	// Names restart in each thread: the first claude of a new session is "claude".
+	// Names restart in each thread: the first claude of a new session is
+	// "claude", and becomes "claude1" when a second claude joins its thread.
 	names := map[string]string{}
 	for _, a := range r.m.Agents() {
 		names[a.ID] = a.Name
 	}
-	if names["claude"] != "claude" || names["claude2"] != "claude2" || names[c] != "claude" {
+	if names["claude"] != "claude1" || names["claude2"] != "claude2" || names[c] != "claude" {
 		t.Fatalf("names %v", names)
 	}
 	// $claude in the second thread is its own claude, not the first thread's.
@@ -651,8 +652,18 @@ func TestMessageToExitedAgentFailsFast(t *testing.T) {
 	}
 	has(t, res[0], "codex is not running")
 	has(t, res[1], "nobody else")
-	if err := r.m.Post(tid, "$codex are you there"); err == nil || !strings.Contains(err.Error(), "exited") {
+	// By name, an exited member is refused; by kind, a fresh one starts.
+	if err := r.m.Rename("codex", "rev"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.m.Post(tid, "$rev are you there"); err == nil || !strings.Contains(err.Error(), "exited") {
 		t.Fatalf("post to an exited member: %v", err)
+	}
+	if err := r.m.Post(tid, "$codex"); err != nil {
+		t.Fatalf("post to an exited kind: %v", err)
+	}
+	if a, ok := r.m.Agent("codex2"); !ok || a.Status == StatusExited {
+		t.Fatalf("no fresh codex: %+v", a)
 	}
 }
 

@@ -193,9 +193,44 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 func (t *thread) refs() []MemberRef {
 	out := make([]MemberRef, 0, len(t.members))
 	for _, a := range t.members {
-		out = append(out, MemberRef{ID: a.id, Name: a.getName(), Kind: a.kind, Exited: a.status() == StatusExited})
+		out = append(out, MemberRef{
+			ID: a.id, Name: a.getName(), Kind: a.kind, Exited: a.status() == StatusExited,
+			Busy: a.busy(), Waiting: t.waiting(a), Last: a.id == t.lastSpeaker,
+		})
 	}
 	return out
+}
+
+// ofKind counts the live members of kind. t.mu is held.
+func (t *thread) ofKind(kind string) int {
+	n := 0
+	for _, a := range t.members {
+		if a.kind == kind && a.status() != StatusExited {
+			n++
+		}
+	}
+	return n
+}
+
+// firstOf is the name of the first member of kind to join, or "". t.mu is held.
+func (t *thread) firstOf(kind string) string {
+	for _, a := range t.members {
+		if a.kind == kind {
+			return a.getName()
+		}
+	}
+	return ""
+}
+
+// waiting counts the queued messages waiting for a. t.mu is held.
+func (t *thread) waiting(a *agentState) int {
+	n := 0
+	for _, q := range t.queue {
+		if q.AgentID == a.id {
+			n++
+		}
+	}
+	return n
 }
 
 func (t *thread) member(id string) *agentState {
@@ -231,32 +266,72 @@ func (t *thread) defaultTarget() *agentState {
 	return live[0]
 }
 
-// freeName is the first of kind, kind2, kind3, ... that no member of the thread
-// is called. t.mu is held or the caller owns t.
+// freeName names a new member of kind: the kind itself for the first of its
+// kind in the thread, else the first of kind2, kind3, ... no member is called
+// (after unshadow has renamed a first one still called by the kind's name).
+// t.mu is held or the caller owns t.
 func (t *thread) freeName(kind string) string {
-	for n := 1; ; n++ {
-		name := kind
-		if n > 1 {
-			name = fmt.Sprintf("%s%d", kind, n)
-		}
-		taken := false
-		for _, a := range t.members {
-			if strings.EqualFold(a.getName(), name) {
-				taken = true
-				break
-			}
-		}
-		if !taken {
+	if t.firstOf(kind) == "" && !t.taken(kind) {
+		return kind
+	}
+	t.unshadow(kind, 1)
+	for n := 2; ; n++ {
+		if name := fmt.Sprintf("%s%d", kind, n); !t.taken(name) {
 			return name
 		}
 	}
 }
 
-// find resolves a name as a recipient among members other than self: a name or
-// id (case-insensitive; names win, as an id can look like another member's
-// name), or a kind with exactly one member in the thread.
+// unshadow renames a member still called by its kind's name to kind1 (or the
+// next free kindN) once the thread has, counting extra members about to join,
+// two or more of that kind: the kind's name then reaches whichever is free
+// (see choose), and each one keeps a name of its own. t.mu is held or the
+// caller owns t.
+func (t *thread) unshadow(kind string, extra int) {
+	n := extra
+	for _, a := range t.members {
+		if a.kind == kind {
+			n++
+		}
+	}
+	if n < 2 {
+		return
+	}
+	for _, a := range t.members {
+		if a.kind != kind || !strings.EqualFold(a.getName(), kind) {
+			continue
+		}
+		for i := 1; ; i++ {
+			if name := fmt.Sprintf("%s%d", kind, i); !t.taken(name) {
+				a.setName(name)
+				break
+			}
+		}
+	}
+}
+
+// taken reports whether a member of the thread is called name. t.mu is held.
+func (t *thread) taken(name string) bool {
+	for _, a := range t.members {
+		if strings.EqualFold(a.getName(), name) {
+			return true
+		}
+	}
+	return false
+}
+
+// find resolves a name as a recipient among members other than self. A kind
+// reaches one member of that kind other than self (see choose), or one that
+// has exited when none is running, so the caller can say so; otherwise a name
+// or id matches (case-insensitive; names win, as an id can look like another
+// member's name).
 func (t *thread) find(self *agentState, tok string) *agentState {
 	tok = TrimSigil(tok)
+	if kind, ok := kindOf(tok, t.m.Kinds()); ok {
+		if a := t.pick(self, kind); a != nil {
+			return a
+		}
+	}
 	for _, a := range t.members {
 		if strings.EqualFold(a.getName(), tok) {
 			return a
@@ -267,16 +342,46 @@ func (t *thread) find(self *agentState, tok string) *agentState {
 			return a
 		}
 	}
-	var hit *agentState
-	for _, a := range t.members {
-		if a != self && strings.EqualFold(a.kind, tok) {
-			if hit != nil {
-				return nil
-			}
-			hit = a
+	return nil
+}
+
+// pick is choose over the members other than self: a live member of kind, or
+// else one that exited, or nil. t.mu is held.
+func (t *thread) pick(self *agentState, kind string) *agentState {
+	var refs []MemberRef
+	var gone *agentState
+	for _, r := range t.refs() {
+		if self != nil && r.ID == self.id {
+			continue
+		}
+		refs = append(refs, r)
+		if r.Exited && gone == nil && strings.EqualFold(r.Kind, kind) {
+			gone = t.member(r.ID)
 		}
 	}
-	return hit
+	if r, ok := choose(refs, kind); ok {
+		return t.member(r.ID)
+	}
+	return gone
+}
+
+// findAll resolves "claude*" to every live member of that kind other than
+// self; ok is false when tok is no kind with that suffix. t.mu is held.
+func (t *thread) findAll(self *agentState, tok string) (out []*agentState, ok bool) {
+	base, suf := splitSuffix(TrimSigil(tok))
+	if suf != suffixAll {
+		return nil, false
+	}
+	kind, isKind := kindOf(base, t.m.Kinds())
+	if !isKind {
+		return nil, false
+	}
+	for _, a := range t.members {
+		if a != self && a.kind == kind && a.status() != StatusExited {
+			out = append(out, a)
+		}
+	}
+	return out, true
 }
 
 // triggers reports whether e is the kind of entry that is delivered to the

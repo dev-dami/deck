@@ -43,6 +43,7 @@ deck doctor
 Run `deck`, type, press enter.
 
 - **Who answers.** Type `$` to pick an agent and the model it should run: `$claude`, `$codex`, `$opencode` bring that agent in, `$all` asks everyone; otherwise whoever spoke last answers. `$` names that are not agents (`$HOME`) stay plain text.
+- **More than one of an agent.** `$claude+` starts another Claude (`$claude+ $claude+` two). With two or more, the first is renamed `claude1` and each answers to its own name (`$claude2`); `$claude` goes to whichever is free (idle first, then the one with the fewest messages waiting), and `$claude*` to all of them. Agents address them the same way.
 - **Files.** Type `@` to search the folder's files and add one to the message. Each agent speaks under its own CLI's mark and colour: `✻ claude`, `>_ codex`, `▯ opencode`.
 - **Agents talk to each other.** An agent can hand work to another; every hand-off shows in the chat as `→ $codex …`. After six agent-to-agent hand-offs Deck pauses until you write.
 - **Working.** While agents work, the bottom line says who and for how long, with a spinner in each agent's colour.
@@ -136,8 +137,9 @@ Capabilities are ops, not tools, so adding one never adds a tool:
 
 | Op | What it does |
 | --- | --- |
-| `thread.send {to, message}` | Message another agent in the thread, or `all`. It shows in the thread like a `$name` mention. |
+| `thread.send {to, message}` | Message another agent in the thread, or `all`; a kind (`claude`) reaches whichever of that kind is free, `claude*` all of them. It shows in the thread like a `$name` mention. |
 | `thread.read` | The current shared thread. |
+| `thread.roster` | Who is in the thread: each agent's name, kind, model, status, task, parent and branch. |
 | `history.threads {limit?}` | This project's Deck threads: id, title, updated time, agents. |
 | `history.search {query, limit?}` | Search what was said in this project's threads. |
 | `history.read {thread, last?}` | The last entries of one of them. |

@@ -4528,7 +4528,7 @@ func (m *UI) agentCompletionItems() []completions.AgentItem {
 	}
 	var cur, rest []completions.AgentItem
 	for _, c := range picker.CachedAgentModelChoices(sessionID) {
-		label := tone.Mark(c.Kind) + " " + c.Kind + " Â· " + c.Name
+		label := tone.Mark(c.Kind) + " " + c.Kind + " · " + c.Name
 		effort := c.CurrentEffort
 		if c.Current {
 			label += "  (now)"
@@ -4544,15 +4544,26 @@ func (m *UI) agentCompletionItems() []completions.AgentItem {
 			rest = append(rest, it)
 		}
 	}
-	return append(cur, rest...)
+	var lines []workspace.AgentLine
+	if roster, ok := m.com.Workspace.(workspace.Roster); ok && m.session != nil {
+		lines = roster.Roster(m.session.ID)
+	}
+	return append(append(cur, instanceItems(lines)...), rest...)
 }
 
 // insertAgentCompletion puts $agent in the message and, when another model
 // was picked, switches the agent to it.
 func (m *UI) insertAgentCompletion(v completions.AgentCompletionValue) tea.Cmd {
 	prevHeight := m.textarea.Height()
-	if !m.insertCompletionText("$" + v.Kind) {
+	text := "$" + v.Kind
+	if v.Insert != "" {
+		text = v.Insert
+	}
+	if !m.insertCompletionText(text) {
 		return nil
+	}
+	if v.Insert != "" {
+		return m.handleTextareaHeightChange(prevHeight)
 	}
 	cmds := []tea.Cmd{m.handleTextareaHeightChange(prevHeight)}
 	if !v.Current {
@@ -5204,7 +5215,7 @@ func (m *UI) selectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 			label = "its default model"
 		}
 		if msg.Effort != "" {
-			label += " Â· " + msg.Effort + " effort"
+			label += " · " + msg.Effort + " effort"
 		}
 		return util.NewInfoMsg(msg.Kind + " now runs " + label)
 	}

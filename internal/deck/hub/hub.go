@@ -46,6 +46,9 @@ const (
 	OpTaskCancel = "task.cancel"
 	OpTaskSteer  = "task.steer"
 	OpAgentSpawn = "agent.spawn"
+	// OpThreadRoster lists the thread's members; it goes through the
+	// TaskBoard, which knows the caller's thread.
+	OpThreadRoster = "thread.roster"
 )
 
 // Limits.
@@ -192,6 +195,8 @@ func init() {
 				{Name: "explicit_done", Type: tBool, Desc: "the recipient must report with task.done; its reply alone is not enough"},
 				{Name: "capsule", Type: tString, Desc: "a SUB capsule id (sub.patch.capture) to hand over with the message; an isolated recipient gets it applied"}}},
 		{Name: agent.OpThreadRead, Desc: "Read the current shared thread: what the user and every agent said and did."},
+		{Name: OpThreadRoster, Desc: "Who is in this thread now: each agent's name, kind, model, status, task, parent and branch, and how to reach several agents of one kind (\"claude\" reaches whichever is free, \"claude*\" all of them).",
+			run: opTask(OpThreadRoster)},
 		{Name: OpTaskCreate, Desc: "Add a task to this thread's shared task board. deps are task ids it waits for (\"t1,t2\"); owner an agent name or \"me\". Returns its id.",
 			Args: []Arg{{Name: "title", Type: tString, Required: true}, {Name: "brief", Type: tString, Desc: "what the owner should do"}, {Name: "deps", Type: tString, Desc: "task ids it waits for, e.g. \"t1,t2\""},
 				{Name: "owner", Type: tString}, {Name: "parent", Type: tString, Desc: "task id this is part of"},

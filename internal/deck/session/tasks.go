@@ -503,6 +503,8 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 			return "", errors.New("nothing to change: give title, brief, deps, owner or status")
 		}
 		return "updated " + b.line(tk), nil
+	case "thread.roster":
+		return m.roster(b.a), nil
 	case "task.steer":
 		if err := m.SteerTask(t.id, str("id"), me, str("message")); err != nil {
 			return "", err

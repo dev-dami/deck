@@ -16,13 +16,14 @@
 //
 // The user: Post(threadID, text) or PostWith(threadID, text, images). "$name" at the start of a clause addresses
 // that member (ParseAddressing has the exact rules); "$claude" / "$codex" naming
-// a kind the thread has no live member of adds a new member of that kind;
+// a kind reaches whichever live member of that kind is free, or adds one when
+// there is none; "$claude*" addresses all of them and "$claude+" adds another;
 // "$all" addresses everyone; with no mention the message goes to the member who
 // spoke last (or the only member; or, in an empty thread, a new member of the
 // default kind). Several addressees receive it concurrently.
 //
 // Agents: through the deck MCP tool execute with op thread.send (Options.Hub
-// receives the calls; Message.To is a member id/name or "all"), or by starting a line of their
+// receives the calls; Message.To is a member id/name, a kind, "claude*" or "all"), or by starting a line of their
 // final reply with "$name". Both are relayed, logged in the thread and reported
 // to the UI as RelayMsg. At most Options.MaxHops (default 6) relays happen after
 // each user message; the next one is held, the thread is paused (PausedMsg) and
@@ -987,11 +988,12 @@ func (m *Manager) Interrupt(id string) error {
 }
 
 // Rename changes an agent's display name. Names must be unique, non-empty and
-// free of whitespace, '$' and '@' (used for agents and files), and cannot be "all",
-// "user", "deck" or another kind's name.
+// free of whitespace, '$' and '@' (used for agents and files) and '*' and '+'
+// (kind suffixes), and cannot be "all", "user", "deck", another kind's name, or
+// its own kind's name while its thread has another member of that kind.
 func (m *Manager) Rename(id, name string) error {
 	name = strings.TrimSpace(name)
-	if name == "" || strings.ContainsAny(name, " \t\r\n@$/") {
+	if name == "" || strings.ContainsAny(name, " \t\r\n@$/*+") {
 		return fmt.Errorf("session: invalid name %q", name)
 	}
 	m.mu.Lock()
@@ -1004,6 +1006,15 @@ func (m *Manager) Rename(id, name string) error {
 	for k := range m.adapters {
 		if strings.EqualFold(name, k) && k != a.kind {
 			reserved = true
+		}
+	}
+	// Its own kind's name is free only while it is the one member of that
+	// kind in its thread: with two, "$claude" means whichever is free.
+	if strings.EqualFold(name, a.kind) {
+		for _, o := range m.order {
+			if o != a && o.thread == a.thread && o.kind == a.kind {
+				reserved = true
+			}
 		}
 	}
 	if reserved {
@@ -1141,6 +1152,11 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	t.members = members
 	for _, a := range members {
 		a.parent = mapID(remap, a.parent)
+	}
+	// Threads saved before kind names reached a pool may hold "claude" and
+	// "claude2": free "claude" for the pool.
+	for _, k := range m.Kinds() {
+		t.unshadow(k, 0)
 	}
 	for i := range t.tasks {
 		tk := &t.tasks[i]
@@ -1468,6 +1484,12 @@ func (a *agentState) getName() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.name
+}
+
+func (a *agentState) setName(name string) {
+	a.mu.Lock()
+	a.name = name
+	a.mu.Unlock()
 }
 
 func (a *agentState) status() Status {

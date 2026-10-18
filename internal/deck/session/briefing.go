@@ -40,6 +40,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 	cfg := m.config()
 	var out []line
 	hold := map[string]int{}
+	hinted := map[string]bool{} // kinds whose pool was explained in this walk
 	// The edits of the user messages in range, read from the first of them on
 	// (a briefing covers the end of a long log).
 	var edited map[string]string
@@ -187,7 +188,12 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			if e.Speaker == v.self {
 				who = "you (" + who + ")"
 			}
-			out = append(out, line{text: "[deck] " + who + " joined the thread"})
+			text := "[deck] " + who + " joined the thread"
+			if n := t.ofKind(e.Text); n > 1 && !hinted[e.Text] && t.name(e.Speaker) != t.firstOf(e.Text) {
+				hinted[e.Text] = true
+				text += fmt.Sprintf("; with %d %s here, %q reaches whichever is free and %q all of them", n, e.Text, e.Text, e.Text+"*")
+			}
+			out = append(out, line{text: text})
 		case store.EntryPause:
 			out = append(out, line{text: "[deck] agent-to-agent messages paused after " + e.Text + " hops; waiting for the user"})
 		case store.EntryContinue:
@@ -311,7 +317,7 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	b.WriteString("What others said since your last turn is summarised first; messages from other agents are prefixed with their name, like \"[codex] ...\".\n")
 	if tools {
 		b.WriteString("Deck's MCP server has two tools: search finds Deck ops, skills other agents have and this project's past threads; execute runs one op.\n")
-		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with $name. Op \"thread.read\" shows the whole thread.\n")
+		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with $name. Op \"thread.read\" shows the whole thread, \"thread.roster\" who is in it.\n")
 		b.WriteString("Shared task board (execute ops): task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list. Report a task you own with task.done.\n")
 		b.WriteString("Pass code as a capsule: sub.patch.capture, then thread.send {capsule}.\n")
 	} else {
