@@ -1,6 +1,6 @@
 # Deck peers: team link between Deck instances
 
-Status: proposal v3, nothing implemented.
+Status: proposal v3. Phase 1 (transport, pairing, pinning, supervisor, `deck peer` commands) and part of phase 2 (`peer.status`, `console.post` team chat, capsule transfer via `sub.closure`/`sub.objects`) are implemented in `internal/deck/peer`; contracts, vsh, outbox, `console.read`, thread mirror and `deck serve` are not. Next steps: `docs/multiplayer-design.md` §8.
 
 Decisions:
 - Peer-to-peer mesh between Deck instances.
