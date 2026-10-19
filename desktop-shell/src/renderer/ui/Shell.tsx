@@ -7,6 +7,7 @@ import {
   FileDiff,
   Folder,
   ListOrdered,
+  MessageCircleQuestion,
   PanelLeft,
   PanelRight,
   Settings as SettingsIcon,
@@ -19,6 +20,7 @@ import { agentKind } from "../agents";
 import type { DeckClient } from "../client";
 import { addAgentMention } from "../completion";
 import { cn } from "../lib/cn";
+import { isSide } from "../sideChat";
 import { setPrefs, usePrefs } from "../prefs";
 import { initialUi, PANELS, type Panel, reduceUi, SETTINGS_SECTIONS } from "../ui";
 import { AgentPicker, AgentsStrip } from "./AgentsStrip";
@@ -50,7 +52,11 @@ function useForeignThreads(others: OpenProject[]): ForeignThread[] {
       // Only a changed session list makes new rows.
       if (next.length === lists.length && next.every((l, i) => l === lists[i])) return;
       lists = next;
-      setRows(others.flatMap((o) => o.c.store.state.sessions.map((s) => ({ source: o.source, project: o.name, s, c: o.c }))));
+      setRows(
+        others.flatMap((o) =>
+          o.c.store.state.sessions.filter((s) => !isSide(s)).map((s) => ({ source: o.source, project: o.name, s, c: o.c })),
+        ),
+      );
     };
     read();
     const offs = others.map((o) => o.c.store.subscribe(read));
@@ -126,6 +132,9 @@ function MoreMenu({
       <MenuItem onClick={run(() => onPanel("approvals"))}>
         <ShieldQuestion /> <span className="flex-1">Approvals</span>
         {pending > 0 && <Badge variant="warning">{pending}</Badge>}
+      </MenuItem>
+      <MenuItem onClick={run(() => onPanel("side"))}>
+        <MessageCircleQuestion /> <span className="flex-1">Side chat</span>
       </MenuItem>
       <MenuItem onClick={run(() => onPanel("queue"))}>
         <ListOrdered /> <span className="flex-1">Queue</span>
@@ -342,6 +351,7 @@ export function Shell({
       { id: "switch", label: "Switch Deck", run: onDisconnect },
     ];
     for (const s of state.sessions) {
+      if (isSide(s)) continue;
       list.push({
         id: `open-${s.id}`,
         label: `Open ${sessionTitle(s)}`,
@@ -449,6 +459,16 @@ export function Shell({
         )}
         <Button
           variant="outline"
+          size="icon-sm"
+          aria-label="Side chat"
+          title="Side chat: ask about what the agents are doing"
+          aria-pressed={ui.panel === "side"}
+          onClick={() => showPanel("side")}
+        >
+          <MessageCircleQuestion />
+        </Button>
+        <Button
+          variant="outline"
           size="sm"
           className="px-2 font-normal"
           aria-label="Approvals"
@@ -547,7 +567,7 @@ export function Shell({
           onCloseProject={onCloseProject}
           onConnect={onConnect}
           link={state.link}
-          sessions={state.sessions}
+          sessions={state.sessions.filter((s) => !isSide(s))}
           openId={ui.openId}
           unread={ui.unread}
           now={now}

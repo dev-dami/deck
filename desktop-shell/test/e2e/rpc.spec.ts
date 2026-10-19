@@ -180,3 +180,22 @@ test("projects: two folders open at once, their threads in one sidebar", async (
   await page.getByRole("menu", { name: "Projects" }).getByRole("button", { name: `Close ${basename(second)}` }).click();
   await expect(sidebar(page).locator(".session")).toHaveCount(3);
 });
+
+test("side chat: asks another agent about the thread without touching it", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await page.locator(".panel-toggles").getByRole("button", { name: "Side chat" }).click();
+  const side = page.getByRole("region", { name: "Side chat" });
+  await side.getByRole("radio", { name: /codex/ }).click();
+  await side.getByLabel("Side question").fill("what is claude-1 doing?");
+  await side.getByLabel("Side question").press("Enter");
+  // The panel shows the question alone; the agent got it with a snapshot.
+  await expect(side.locator(".side-question")).toHaveText("what is claude-1 doing?");
+  await expect(side.locator('[data-agent="codex-1"]').last()).toContainText("You asked");
+  const sent = fake.deck.sent.at(-1)?.text ?? "";
+  expect(sent.startsWith("$codex what is claude-1 doing?")).toBe(true);
+  expect(sent).toContain("Agents: claude-1");
+  // The side thread stays out of the thread list, and the main thread got nothing.
+  await expect(sidebar(page).locator(".session")).toHaveCount(3);
+  expect(fake.deck.sent.filter((s) => s.session_id === "ses_main")).toHaveLength(0);
+});

@@ -10,6 +10,7 @@ import {
   FileText,
   ListOrdered,
   type LucideIcon,
+  MessageCircleQuestion,
   Maximize2,
   Minimize2,
   RefreshCw,
@@ -23,11 +24,17 @@ import { cn } from "../lib/cn";
 import { PANELS, type Panel } from "../ui";
 import { ApprovalCard } from "./ApprovalCard";
 import { DiffView } from "./DiffView";
+import { SideChat } from "./SideChat";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
 
-const TAB_ICONS: Record<Panel, LucideIcon> = { changes: FileDiff, approvals: ShieldQuestion, queue: ListOrdered };
-const TAB_LABELS: Record<Panel, string> = { changes: "Diff", approvals: "Approvals", queue: "Queue" };
+const TAB_ICONS: Record<Panel, LucideIcon> = {
+  changes: FileDiff,
+  approvals: ShieldQuestion,
+  queue: ListOrdered,
+  side: MessageCircleQuestion,
+};
+const TAB_LABELS: Record<Panel, string> = { changes: "Diff", approvals: "Approvals", queue: "Queue", side: "Side chat" };
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="empty px-4 py-16 text-center text-muted-foreground/60 text-sm">{children}</p>;
@@ -285,6 +292,12 @@ export function RightPanel({
           ))}
         {panel === "queue" &&
           (open === undefined ? <Empty>Open a thread to see its queue.</Empty> : <Queue c={c} state={state} sessionId={open.id} />)}
+        {panel === "side" &&
+          (open === undefined ? (
+            <Empty>Open a thread to ask about it.</Empty>
+          ) : (
+            <SideChat key={open.id} c={c} state={state} main={open} api={c.project} theme={state.theme} />
+          ))}
       </div>
     </aside>
   );

@@ -294,6 +294,8 @@ export class ProjectApi {
   constructor(
     private readonly bridge: DeckBridge,
     private readonly deckId: string,
+    // Loads a thread's messages without opening it.
+    readonly loadThread: (id: string) => Promise<void> = async () => {},
   ) {
     this.off = bridge.onRpc((id, ev) => {
       if (id !== deckId || (ev.type !== "term" && ev.type !== "term-exit" && ev.type !== "term-end")) return;

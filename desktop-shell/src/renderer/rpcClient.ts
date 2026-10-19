@@ -49,7 +49,7 @@ export class RpcDeckClient implements DeckClient {
     readonly deck: LocalDeck,
     private readonly theme: ThemeTarget | null,
   ) {
-    this.project = new ProjectApi(bridge, deck.id);
+    this.project = new ProjectApi(bridge, deck.id, (id) => this.ensureLoaded(id));
     this.off = bridge.onRpc((id, ev) => {
       if (id === deck.id && !this.stopped) this.onStream(ev);
     });
@@ -206,6 +206,12 @@ export class RpcDeckClient implements DeckClient {
     this.openId = id;
     // No focus call: the stream already carries every session's events.
     await this.loadSession(id);
+  }
+
+  // Loads a session's latest messages once, without opening it (the side
+  // chat reads its own thread beside the open one).
+  async ensureLoaded(id: string): Promise<void> {
+    if (this.state.pages[id] === undefined) await this.loadSession(id);
   }
 
   closeSession(): void {

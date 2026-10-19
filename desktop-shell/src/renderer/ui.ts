@@ -3,12 +3,13 @@ import type { Session } from "@web/protocol";
 // The desktop's own state, beside the shared reducer's AppState (which
 // holds what Deck sent). Pure, so the tests drive it directly.
 
-export type Panel = "changes" | "approvals" | "queue";
+export type Panel = "changes" | "approvals" | "queue" | "side";
 
 export const PANELS: ReadonlyArray<{ panel: Panel; label: string }> = [
   { panel: "changes", label: "Changes" },
   { panel: "approvals", label: "Approvals" },
   { panel: "queue", label: "Queue" },
+  { panel: "side", label: "Side chat" },
 ];
 
 export type SettingsSection = "general" | "appearance" | "agents" | "connection" | "keybindings";
