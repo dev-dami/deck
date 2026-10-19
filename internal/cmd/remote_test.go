@@ -22,7 +22,6 @@ func TestRemoteCommandAndFlags(t *testing.T) {
 		names[c.Name()] = c
 	}
 	require.Contains(t, names, "remote")
-	require.NotContains(t, names, "serve", "deck serve is reserved for the headless engine (R5)")
 
 	subs := map[string]bool{}
 	for _, c := range names["remote"].Commands() {

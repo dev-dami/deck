@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
 
 	"github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/internal/deck/hub"
 	"github.com/dev-dami/deck/internal/deck/sub"
 	"github.com/dev-dami/deck/internal/version"
 )
@@ -27,6 +29,11 @@ import (
 // OpConsolePost posts a line to this Deck's team chat.
 const OpConsolePost = "console.post"
 
+// OpConsoleRead reads this Deck's team chat. It is not in
+// DefaultAllowInbound: the chat holds what other teammates wrote to this
+// Deck, so the person allows it per peer (allow_inbound).
+const OpConsoleRead = "console.read"
+
 const (
 	// maxChatText bounds one chat message, in bytes.
 	maxChatText = 4000
@@ -39,10 +46,21 @@ const (
 	requestRepeat = time.Minute
 	// chatTimeout bounds delivering chat to one teammate.
 	chatTimeout = 15 * time.Second
+	// maxReadMessages and maxReadBytes cap one console.read answer.
+	maxReadMessages = 100
+	maxReadBytes    = 32 << 10
 )
 
 var consoleOps = []OpInfo{
 	{Name: OpConsolePost, Args: "{text*, id, agent}", Desc: "post a message to this Deck's team chat; id drops a repeat, agent names the agent that wrote it"},
+	{Name: OpConsoleRead, Args: "{since}", Desc: "read this Deck's team chat: the newest messages after seq since, and the seq to pass next time"},
+}
+
+// ConsoleFeed is a team chat as console.read returns it.
+type ConsoleFeed struct {
+	// Seq is the newest seq of the feed: pass it as since next time.
+	Seq      uint64        `json:"seq"`
+	Messages []ChatMessage `json:"messages"`
 }
 
 // ChatMessage is one line of the team chat.
@@ -193,6 +211,24 @@ func (t *Team) Chat() []ChatMessage {
 	return append([]ChatMessage(nil), t.chat...)
 }
 
+// ChatAfter returns the kept chat after seq since, oldest first, and the
+// newest seq. A since past the newest seq is from before this Deck
+// restarted, so all the kept chat comes back.
+func (t *Team) ChatAfter(since uint64) ([]ChatMessage, uint64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if since > t.seq {
+		since = 0
+	}
+	var out []ChatMessage
+	for _, m := range t.chat {
+		if m.Seq > since {
+			out = append(out, m)
+		}
+	}
+	return out, t.seq
+}
+
 // Requests are the kept capsule requests, oldest first.
 func (t *Team) Requests() []CapsuleRequest {
 	t.mu.Lock()
@@ -218,7 +254,8 @@ func cleanChat(s string) string {
 	return s
 }
 
-// TeamHandler is Base plus console.post, recording into Team.
+// TeamHandler is Base plus console.post, recording into Team, and
+// console.read, reading from it.
 type TeamHandler struct {
 	Base Handler
 	Team *Team
@@ -235,6 +272,15 @@ func (h *TeamHandler) Search(ctx context.Context, from Caller, query string) ([]
 
 // Execute implements Handler.
 func (h *TeamHandler) Execute(ctx context.Context, from Caller, op string, args json.RawMessage) (string, error) {
+	if op == OpConsoleRead {
+		var a struct {
+			Since uint64 `json:"since"`
+		}
+		_ = json.Unmarshal(args, &a)
+		msgs, seq := h.Team.ChatAfter(a.Since)
+		b, err := json.Marshal(ConsoleFeed{Seq: seq, Messages: newestFit(msgs)})
+		return string(b), err
+	}
 	if op != OpConsolePost {
 		return h.Base.Execute(ctx, from, op, args)
 	}
@@ -251,6 +297,39 @@ func (h *TeamHandler) Execute(ctx context.Context, from Caller, op string, args 
 	}
 	h.Team.AddChat(ChatMessage{From: from.Name, Agent: a.Agent, Text: a.Text, ID: truncate(a.ID, 64)})
 	return "posted", nil
+}
+
+// newestFit keeps the newest of msgs that fit maxReadMessages and
+// maxReadBytes, oldest first, with credentials redacted. It drops the fields
+// only this Deck needs (To names its other teammates).
+func newestFit(msgs []ChatMessage) []ChatMessage {
+	var out []ChatMessage
+	size := 0
+	for i := len(msgs) - 1; i >= 0 && len(out) < maxReadMessages; i-- {
+		m := msgs[i]
+		m.Text = hub.Redact(m.Text)
+		if size += len(m.Text) + len(m.From) + len(m.Agent) + 64; size > maxReadBytes {
+			break
+		}
+		out = append(out, ChatMessage{Seq: m.Seq, From: m.From, Agent: m.Agent, Text: m.Text, At: m.At})
+	}
+	slices.Reverse(out)
+	return out
+}
+
+// ReadConsole reads the team chat of teammate name after seq since. Pass
+// the feed's Seq as since next time. That Deck must list console.read in
+// allow_inbound for this one.
+func (s *Service) ReadConsole(ctx context.Context, name string, since uint64) (ConsoleFeed, error) {
+	var f ConsoleFeed
+	err := s.shareCall(ctx, name, OpConsoleRead, map[string]any{"since": since}, &f)
+	if len(f.Messages) > maxReadMessages {
+		f.Messages = f.Messages[len(f.Messages)-maxReadMessages:]
+	}
+	for i, m := range f.Messages {
+		f.Messages[i] = ChatMessage{Seq: m.Seq, From: cleanLine(m.From, 32), Agent: cleanLine(m.Agent, 32), Text: hub.Redact(cleanChat(m.Text)), At: m.At}
+	}
+	return f, err
 }
 
 // SendChat posts text from this Deck's person to the team chat of every

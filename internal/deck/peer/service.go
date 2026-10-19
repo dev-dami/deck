@@ -61,6 +61,8 @@ type Service struct {
 	hooks     ContractHooks
 	answerMu  sync.Mutex
 	shared    Shared
+	// draining is set by Drain: teammates can start no new work here.
+	draining atomic.Bool
 }
 
 // ServiceOptions configures a Service.
@@ -129,6 +131,17 @@ func (s *Service) Close() {
 		mgr.Stop()
 	}
 }
+
+// errDraining refuses new work while the Service drains.
+var errDraining = errors.New("peer: this Deck is shutting down and takes no new work")
+
+// Drain makes teammates unable to start new work here (contract.propose,
+// thread.post) before the Deck stops. The link stays up, so work under way
+// can still report and the outbox can still deliver.
+func (s *Service) Drain() { s.draining.Store(true) }
+
+// Waiting is how many calls wait in the outbox for a teammate.
+func (s *Service) Waiting() int { return s.out.len() }
 
 // Manager is the running Manager, or nil before peers were first on.
 func (s *Service) Manager() *Manager {

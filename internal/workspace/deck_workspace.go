@@ -127,6 +127,9 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 
 func (w *DeckWorkspace) mgr() *decks.Manager { return w.eng.Manager }
 
+// Engine is the Deck engine the workspace drives.
+func (w *DeckWorkspace) Engine() *engine.Engine { return w.eng }
+
 // thread returns the live Deck thread for a session, creating or resuming it.
 func (w *DeckWorkspace) thread(sessionID string) (string, error) {
 	w.mu.Lock()
