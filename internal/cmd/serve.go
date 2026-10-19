@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -15,8 +18,11 @@ import (
 
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/engine"
+	"github.com/dev-dami/deck/internal/version"
 	"github.com/dev-dami/deck/internal/workspace"
+	"github.com/dev-dami/deck/pkg/remote/adapter"
 	"github.com/dev-dami/deck/pkg/remote/server"
+	"github.com/dev-dami/deck/pkg/rpc"
 )
 
 var serveCmd = &cobra.Command{
@@ -32,7 +38,12 @@ A second one stops at once and names the lock file.
 
 On SIGTERM or ctrl+c, Deck refuses new work from teammates, gives running
 agents the --drain time to end their turns and the outbox time to deliver,
-and then stops. A second signal stops it at once. Logs go to stderr.`,
+and then stops. A second signal stops it at once. Logs go to stderr.
+
+With --rpc, Deck instead serves this project to the Deck desktop app over
+gRPC (proto/deck/v1) on a Unix socket only this user can open. It prints one
+JSON line on stdout with the socket path and a token made for this run, and
+stops when stdin closes, so it lives as long as the app that started it.`,
 	Example: `
 # On a server (see docs/examples/deck-serve.service)
 deck serve
@@ -42,6 +53,9 @@ deck serve --drain 5m
 
 # Also serve to your phone on the same network
 deck serve --remote --lan
+
+# Serve this project to the desktop app (the app runs this itself)
+deck serve --rpc
 `,
 	Args: cobra.NoArgs,
 	RunE: runServe,
@@ -50,13 +64,15 @@ deck serve --remote --lan
 func init() {
 	serveCmd.Flags().Duration("drain", 2*time.Minute, "How long running agents get to end their turns when Deck stops")
 	serveCmd.Flags().Bool("remote", false, "Also serve Deck to your phone (see 'deck remote --help')")
+	serveCmd.Flags().Bool("rpc", false, "Serve this project to the desktop app: gRPC on a local socket, until stdin closes")
 	addRemoteFlags(serveCmd.Flags())
 	rootCmd.AddCommand(serveCmd)
 }
 
 func runServe(cmd *cobra.Command, _ []string) error {
-	// A --rpc mode for the desktop app (gRPC on a local socket) goes here,
-	// before the peer mode: if --rpc is set, return runServeRPC(cmd).
+	if on, _ := cmd.Flags().GetBool("rpc"); on {
+		return runServeRPC(cmd)
+	}
 	limit, _ := cmd.Flags().GetDuration("drain")
 	remoteOn, _ := cmd.Flags().GetBool("remote")
 	logToStderr(cmd)
@@ -217,4 +233,61 @@ func waitUntil(ctx context.Context, cond func() bool) bool {
 		}
 	}
 	return true
+}
+
+// runServeRPC serves the desktop app: Deck's engine for this project over
+// gRPC (proto/deck/v1) on a Unix socket only this user can open. It prints
+// one JSON line on stdout with the socket path and a token made for this
+// run, and stops when stdin closes, so it lives as long as the app.
+func runServeRPC(cmd *cobra.Command) error {
+	dataDir, err := remoteDataDir(cmd)
+	if err != nil {
+		return err
+	}
+	ws, cleanup, err := setupWorkspace(cmd)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	cwd, err := ResolveCwd(cmd)
+	if err != nil {
+		return err
+	}
+	be, err := adapter.New(ws, version.Version, filepath.Base(cwd))
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	l, sock, closeSock, err := rpc.Listen(dataDir)
+	if err != nil {
+		return err
+	}
+	defer closeSock()
+
+	token := rpc.NewToken()
+	srv := rpc.New(be, token)
+	go srv.Run(ctx)
+	g := srv.GRPC()
+	go func() { _ = g.Serve(l) }()
+
+	hs, _ := json.Marshal(rpc.Handshake{V: rpc.Protocol, Sock: sock, Token: token, PID: os.Getpid(), Version: version.Version})
+	if _, err := cmd.OutOrStdout().Write(append(hs, '\n')); err != nil {
+		g.Stop()
+		return err
+	}
+
+	// The app holds our stdin; when it goes away, so do we.
+	go func() {
+		_, _ = io.Copy(io.Discard, cmd.InOrStdin())
+		cancel()
+	}()
+	<-ctx.Done()
+	g.Stop()
+	return nil
 }
