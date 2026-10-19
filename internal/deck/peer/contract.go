@@ -641,11 +641,22 @@ func (s *Service) AnswerContract(peer, id string, accept bool, agent string) err
 		if err != nil {
 			return err
 		}
+		// Run fetches the base, which takes a while: the requester may have
+		// called the contract off, or it may have run out of time, meanwhile.
+		// Then it does not start.
 		c, err = s.contracts.update(peer, id, true, func(c *Contract) error {
+			if c.State != ContractProposed {
+				return fmt.Errorf("contract %s is %s", c.ID, c.State)
+			}
 			c.State, c.Agent, c.Thread, c.Task = ContractAccepted, agent, thread, task
 			return nil
 		})
 		if err != nil {
+			if s.hooks.Cancel != nil && task != "" {
+				k := c
+				k.Thread, k.Task = thread, task
+				s.hooks.Cancel(k)
+			}
 			return err
 		}
 		if start != nil {
