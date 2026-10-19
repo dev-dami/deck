@@ -186,7 +186,7 @@ func TestReplaySession1(t *testing.T) {
 	if len(finals) != 2 || finals[1] != "DONE" {
 		t.Fatalf("final texts = %q", finals)
 	}
-	// The recorded text came through mojibake'd ("â€™"); the translator repairs it.
+	// The recorded text came through mojibake'd ("\u00e2\u20ac\u2122"); the translator repairs it.
 	if !strings.Contains(finals[0], "I’ll create hello.txt") && !strings.Contains(finals[0], "I'll create hello.txt") {
 		t.Errorf("first final text = %q", finals[0])
 	}
@@ -370,14 +370,14 @@ func TestTranslateFailedCommandAndReasoning(t *testing.T) {
 
 func TestFixMojibake(t *testing.T) {
 	cases := map[string]string{
-		"Iâ€™ll":         "I’ll",
-		"plain ascii":    "plain ascii",
-		"café":           "café", // valid already: untouched
-		"already ’ fine": "already ’ fine",
-		"â€“ dash":       "– dash",
-		"Ã©":             "é",
-		"日本":             "日本",
-		"â€":             "â€", // truncated sequence: not valid UTF-8, untouched
+		"I\u00e2\u20ac\u2122ll":   "I’ll",
+		"plain ascii":             "plain ascii",
+		"café":                    "café", // valid already: untouched
+		"already ’ fine":          "already ’ fine",
+		"\u00e2\u20ac\u201c dash": "– dash",
+		"\u00c3\u00a9":            "é",
+		"日本":                      "日本",
+		"\u00e2\u20ac":            "\u00e2\u20ac", // truncated sequence: not valid UTF-8, untouched
 	}
 	for in, want := range cases {
 		if got := fixMojibake(in); got != want {
