@@ -1,0 +1,35 @@
+{
+  "name": "deck-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deck desktop: a window onto the agents of a running Deck",
+  "main": "dist/app/main/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && tsc -p tsconfig.main.json && node -e \"require('fs').cpSync('../proto/deck/v1/deck.proto', 'dist/app/proto/deck.proto')\"",
+    "start": "electron .",
+    "test": "vitest run",
+    "e2e": "npm run build && playwright test",
+    "smoke": "npm run build && electron . --smoke",
+    "lint": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "1.14.6",
+    "@grpc/proto-loader": "0.8.1",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "22.18.12",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "@types/ws": "8.18.1",
+    "@vitejs/plugin-react": "5.0.4",
+    "electron": "44.9.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vitest": "5.0.5"
+  }
+}

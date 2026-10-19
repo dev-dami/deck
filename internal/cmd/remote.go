@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -109,6 +110,7 @@ var remoteRevokeCmd = &cobra.Command{
 
 func init() {
 	addRemoteFlags(remoteCmd.Flags())
+	remotePairCmd.Flags().Bool("json", false, "Print the code and the server's address as JSON lines, for programs")
 	remoteDevicesCmd.Flags().String("allow-yolo", "", "Let this phone switch Deck into yolo mode (approve everything)")
 	remoteDevicesCmd.Flags().String("deny-yolo", "", "Take yolo away from this phone")
 	remoteCmd.AddCommand(remotePairCmd, remoteDevicesCmd, remoteRevokeCmd)
@@ -351,7 +353,14 @@ func runRemotePair(cmd *cobra.Command, _ []string) error {
 		}
 	}
 	out := cmd.OutOrStdout()
-	if err := printPairing(out, code, server.NewPairing(ad, code, filepath.Base(cwd)), cert); err != nil {
+	p := server.NewPairing(ad, code, filepath.Base(cwd))
+	asJSON, _ := cmd.Flags().GetBool("json")
+	if asJSON {
+		err = json.NewEncoder(out).Encode(newPairOffer(ad, code, p, cert))
+	} else {
+		err = printPairing(out, code, p, cert)
+	}
+	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -360,12 +369,56 @@ func runRemotePair(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	if asJSON {
+		return json.NewEncoder(out).Encode(newPairResult(paired))
+	}
 	if paired.ID == "" {
 		fmt.Fprintln(out, "The code expired; run 'deck remote pair' again.")
 		return nil
 	}
 	fmt.Fprintf(out, "\nPaired %s (%s).\n", paired.Name, paired.ID)
 	return nil
+}
+
+// pairOffer is the first line 'deck remote pair --json' prints: what a
+// program (the desktop app) needs to pair with the running server. The
+// fingerprint is set only over TLS, and only when the certificate on disk
+// is the one the server advertises.
+type pairOffer struct {
+	URL         string    `json:"url"`
+	Hosts       []string  `json:"hosts"`
+	Port        int       `json:"port"`
+	TLS         bool      `json:"tls"`
+	Fingerprint string    `json:"fingerprint,omitempty"`
+	Code        string    `json:"code"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	Invite      string    `json:"invite,omitempty"`
+}
+
+func newPairOffer(ad auth.Advert, code auth.Code, p server.Pairing, cert auth.Certificate) pairOffer {
+	return pairOffer{
+		URL: ad.URL, Hosts: ad.Hosts, Port: ad.Port, TLS: ad.TLS, Fingerprint: cert.Fingerprint,
+		Code: code.Code, ExpiresAt: code.ExpiresAt, Invite: p.Invite,
+	}
+}
+
+// pairResult is the last line 'deck remote pair --json' prints: the new
+// device, or expired when nobody used the code.
+type pairResult struct {
+	Paired  *pairedDevice `json:"paired,omitempty"`
+	Expired bool          `json:"expired,omitempty"`
+}
+
+type pairedDevice struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func newPairResult(d auth.Device) pairResult {
+	if d.ID == "" {
+		return pairResult{Expired: true}
+	}
+	return pairResult{Paired: &pairedDevice{ID: d.ID, Name: d.Name}}
 }
 
 // waitPaired watches the device store until a new device appears, the

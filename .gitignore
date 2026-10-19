@@ -13,6 +13,12 @@ coverage.html
 *.coverprofile
 cover.out
 
+# Desktop shell (desktop-shell/): dependencies and build and test output
+desktop-shell/node_modules/
+desktop-shell/dist/
+desktop-shell/test-results/
+desktop-shell/playwright-report/
+
 # Claude Code agent worktrees
 .claude/worktrees/
 

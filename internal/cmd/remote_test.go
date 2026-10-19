@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -104,4 +105,44 @@ func TestWaitPairedSeesANewDevice(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("the pairing was not announced")
 	}
+}
+
+func TestPairJSONLines(t *testing.T) {
+	t.Parallel()
+	var pair *cobra.Command
+	for _, c := range remoteCmd.Commands() {
+		if c.Name() == "pair" {
+			pair = c
+		}
+	}
+	require.NotNil(t, pair.Flags().Lookup("json"))
+
+	code := auth.Code{Code: "ABCDE-FGHIJ", ExpiresAt: time.Date(2026, 10, 19, 9, 5, 0, 0, time.UTC)}
+	fp := "SHA256:" + strings.Repeat("A", 43)
+	ad := auth.Advert{URL: "https://192.168.1.5:7878", Hosts: []string{"192.168.1.5"}, Port: 7878, TLS: true, Fingerprint: fp}
+	var out bytes.Buffer
+	require.NoError(t, json.NewEncoder(&out).Encode(newPairOffer(ad, code, server.NewPairing(ad, code, "deck"), auth.Certificate{Fingerprint: fp})))
+	var offer map[string]any
+	require.NoError(t, json.Unmarshal(out.Bytes(), &offer))
+	require.Equal(t, "https://192.168.1.5:7878", offer["url"])
+	require.Equal(t, "ABCDE-FGHIJ", offer["code"])
+	require.Equal(t, fp, offer["fingerprint"])
+	require.Equal(t, true, offer["tls"])
+	require.Equal(t, float64(7878), offer["port"])
+	require.Equal(t, "2026-10-19T09:05:00Z", offer["expires_at"])
+	require.Contains(t, offer["invite"], "deck://pair?v=1")
+	require.Equal(t, 1, strings.Count(out.String(), "\n"), "one line")
+
+	loop := auth.Advert{URL: "http://127.0.0.1:7878", Hosts: []string{"127.0.0.1"}, Port: 7878}
+	out.Reset()
+	require.NoError(t, json.NewEncoder(&out).Encode(newPairOffer(loop, code, server.NewPairing(loop, code, "deck"), auth.Certificate{})))
+	require.NotContains(t, out.String(), "fingerprint", "no fingerprint over plain loopback")
+	require.NotContains(t, out.String(), "invite")
+
+	out.Reset()
+	require.NoError(t, json.NewEncoder(&out).Encode(newPairResult(auth.Device{ID: "dev_1", Name: "Deck desktop"})))
+	require.JSONEq(t, `{"paired":{"id":"dev_1","name":"Deck desktop"}}`, out.String())
+	out.Reset()
+	require.NoError(t, json.NewEncoder(&out).Encode(newPairResult(auth.Device{})))
+	require.JSONEq(t, `{"expired":true}`, out.String())
 }
