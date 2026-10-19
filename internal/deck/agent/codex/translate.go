@@ -529,9 +529,9 @@ var cp1252 = map[rune]byte{
 
 // fixMojibake repairs UTF-8 text that codex on Windows sometimes emits having
 // been decoded as Windows-1252 and re-encoded (for example the right single
-// quote arriving as "â€™"). It only rewrites a string when every rune maps back
-// to a byte and the resulting bytes form valid UTF-8, so well-formed text is
-// left untouched.
+// quote U+2019 arriving as "\u00e2\u20ac\u2122"). It only rewrites a string
+// when every rune maps back to a byte and the resulting bytes form valid
+// UTF-8, so well-formed text is left untouched.
 func fixMojibake(s string) string {
 	ascii := true
 	for i := 0; i < len(s); i++ {
