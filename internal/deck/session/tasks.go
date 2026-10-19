@@ -551,6 +551,14 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		return m.releaseLeases(b.a, str("paths")), nil
 	case "lease.list":
 		return m.listLeases(b.a), nil
+	case "memory.add":
+		return m.addNote(b.a, str("text"), str("paths"), str("lines"))
+	case "memory.read":
+		return m.readNotes(b.a, str("path"))
+	case "memory.list":
+		return m.listNotes(b.a)
+	case "memory.drop":
+		return m.dropNote(b.a, str("id"))
 	case "team.post":
 		return m.teamPost(b.a, str("text"))
 	case "task.steer":

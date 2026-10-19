@@ -328,3 +328,41 @@ func TestRedactAndCap(t *testing.T) {
 		t.Errorf("cap: %d bytes", len(c))
 	}
 }
+
+// boardSpy is a TaskBoard that records the last op it is handed.
+type boardSpy struct {
+	op string
+	a  map[string]any
+}
+
+func (b *boardSpy) TaskOp(op string, a map[string]any) (string, error) {
+	b.op, b.a = op, a
+	return "ok " + op, nil
+}
+
+func TestMemoryOpsGoToTheBoard(t *testing.T) {
+	env := testEnv(t)
+	if got, isErr := run(t, env, "memory.list", ""); !isErr || !strings.Contains(got, "not available") {
+		t.Errorf("memory.list with no board = %q %v", got, isErr)
+	}
+	b := &boardSpy{}
+	env.Tasks = b
+	got, isErr := run(t, env, "memory.add", `{"text":"x","paths":"a.go","lines":"3-4"}`)
+	if isErr || got != "ok memory.add" || b.a["paths"] != "a.go" || b.a["lines"] != "3-4" || b.a["text"] != "x" {
+		t.Fatalf("memory.add = %q %v, board got %s %v", got, isErr, b.op, b.a)
+	}
+	for _, op := range []string{"memory.read", "memory.list"} {
+		if got, isErr := run(t, env, op, ""); isErr || b.op != op {
+			t.Errorf("%s = %q %v, board got %s", op, got, isErr, b.op)
+		}
+	}
+	if got, isErr := run(t, env, "memory.drop", `{"id":"m1"}`); isErr || b.op != "memory.drop" || b.a["id"] != "m1" {
+		t.Errorf("memory.drop = %q %v", got, isErr)
+	}
+	if got, isErr := run(t, env, "memory.add", `{"text":"x"}`); !isErr || !strings.Contains(got, `missing argument "paths"`) {
+		t.Errorf("memory.add with no paths = %q", got)
+	}
+	if out := Search(env, json.RawMessage(`{"query":"pinned notes"}`)); !strings.Contains(out, "memory.") {
+		t.Errorf("search misses the memory ops:\n%s", out)
+	}
+}

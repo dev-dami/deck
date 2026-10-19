@@ -300,6 +300,9 @@ func (m *Manager) bindRun(t *thread, taskID string, a *agentState, wt *store.Wor
 // delivers it. It does not count as a hop: spawning is bounded by maxChildren
 // per member and by MaxParallel for the scheduler.
 func (m *Manager) deliverBrief(t *thread, speaker string, to *agentState, text, taskID string) {
+	if h := m.memHint(to, t.leasedBy(to.id), text); h != "" {
+		text += "\n\n" + h
+	}
 	e := store.Entry{Type: store.EntryRelay, Speaker: speaker, To: []string{to.id}, Via: "spawn", TaskID: taskID, Event: eventText(text)}
 	t.mu.Lock()
 	m.appendLocked(t, e)
