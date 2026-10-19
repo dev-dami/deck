@@ -1580,7 +1580,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case JobDoneMsg:
 		m.jobDone(msg.ID, msg.Err)
 	case app.UpdateAvailableMsg:
-		text := fmt.Sprintf("Deck update available: v%s â†’ v%s.", msg.CurrentVersion, msg.LatestVersion)
+		text := fmt.Sprintf("Deck update available: v%s → v%s.", msg.CurrentVersion, msg.LatestVersion)
 		if msg.IsDevelopment {
 			text = fmt.Sprintf("This is a development version of Deck. The latest version is v%s.", msg.LatestVersion)
 		}
@@ -5529,7 +5529,7 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	default:
 		return nil
 	}
-	// TypeAgentFinished / TypeAgentError are the busyâ†’idle edge: the agent
+	// TypeAgentFinished / TypeAgentError are the busy→idle edge: the agent
 	// clears its active request before publishing precisely so observers
 	// can re-probe. Drop the memoized busy state and re-fetch it and the
 	// prompt queue off-thread.

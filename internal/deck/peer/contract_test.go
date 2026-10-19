@@ -1,6 +1,7 @@
 package peer
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -222,6 +223,53 @@ func TestContractWaitsForTheLinkAndCanBeCalledOff(t *testing.T) {
 	}
 	if b.CancelContract("T", "t2", "again") {
 		t.Fatal("cancelled twice")
+	}
+}
+
+// A contract called off while its base is being fetched does not start,
+// and the thread made for it is stopped.
+func TestContractCalledOffWhileAccepting(t *testing.T) {
+	s := openSub(t)
+	ctx := ctxT(t)
+	tree := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tree, "a.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base, _ := s.Snap(ctx, tree)
+	var a *Service
+	started := false
+	stopped := make(chan Contract, 1)
+	run := func(c Contract) (string, string, func(), error) {
+		// The requester's call-off lands while the base is fetched.
+		if _, err := a.cancelled(Caller{Name: "b"}, json.RawMessage(`{"id":"`+c.ID+`","note":"never mind"}`)); err != nil {
+			return "", "", nil, err
+		}
+		return "th", "t1", func() { started = true }, nil
+	}
+	a, b := linkedWith(t,
+		ServiceOptions{Contracts: ContractHooks{Run: run, Cancel: func(c Contract) { stopped <- c }}},
+		ServiceOptions{SubStore: func() *sub.Store { return s }},
+		config.PeerRoleContractor)
+	c, err := b.ProposeContract(ctx, "a", Contract{Title: "one", Base: base, Thread: "T", Task: "t1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.AnswerContract("b", c.ID, true, "claude"); err == nil {
+		t.Fatal("accepted a contract its requester called off")
+	}
+	if started {
+		t.Fatal("the work started")
+	}
+	if got := a.Contracts()[0]; got.State != ContractCancelled {
+		t.Fatalf("a's record = %+v", got)
+	}
+	select {
+	case k := <-stopped:
+		if k.Thread != "th" || k.Task != "t1" {
+			t.Fatalf("stopped %+v", k)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the thread made for it was not stopped")
 	}
 }
 

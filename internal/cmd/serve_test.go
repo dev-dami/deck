@@ -16,7 +16,7 @@ func TestServeCommandAndFlags(t *testing.T) {
 	// other parallel tests.
 	require.Same(t, rootCmd, serveCmd.Parent(), "missing deck serve")
 	require.Equal(t, "2m0s", serveCmd.Flags().Lookup("drain").DefValue)
-	for _, flag := range []string{"remote", "port", "lan"} {
+	for _, flag := range []string{"remote", "port", "lan", "rpc"} {
 		require.NotNil(t, serveCmd.Flags().Lookup(flag), "deck serve --%s", flag)
 	}
 	require.Error(t, serveCmd.Args(serveCmd, []string{"extra"}))

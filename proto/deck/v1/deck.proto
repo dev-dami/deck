@@ -1,0 +1,336 @@
+// The Deck RPC: what a local desktop app speaks to `deck serve --rpc` over
+// a Unix socket. It mirrors pkg/remote.Backend one method each, so the
+// phone (WebSocket, docs/remote-contract.md) and the desktop (gRPC) drive
+// the same engine adapter. Times are Unix milliseconds; images travel as
+// raw bytes.
+syntax = "proto3";
+
+package deck.v1;
+
+option go_package = "github.com/dev-dami/deck/pkg/rpc/deckv1;deckv1";
+
+service Deck {
+  rpc Info(Empty) returns (InfoResponse);
+
+  rpc ListSessions(Empty) returns (ListSessionsResponse);
+  rpc CreateSession(CreateSessionRequest) returns (Session);
+  rpc RenameSession(RenameSessionRequest) returns (Empty);
+  rpc DeleteSession(SessionRef) returns (Empty);
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+
+  rpc Send(SendRequest) returns (SendResponse);
+  rpc EditMessage(EditMessageRequest) returns (Empty);
+  rpc Cancel(SessionRef) returns (Empty);
+  rpc Interrupt(InterruptRequest) returns (Empty);
+  rpc Continue(SessionRef) returns (Empty);
+
+  rpc Queue(SessionRef) returns (QueueResponse);
+  rpc Steer(QueueItemRef) returns (Empty);
+  rpc CancelQueued(QueueItemRef) returns (Empty);
+
+  rpc Roster(SessionRef) returns (RosterResponse);
+  rpc Models(ModelsRequest) returns (ModelsResponse);
+  rpc SetModel(SetModelRequest) returns (Empty);
+
+  rpc GetMode(SessionRef) returns (ModeResponse);
+  rpc SetMode(SetModeRequest) returns (Empty);
+
+  // Approvals lists one session's pending approvals, or every session's
+  // when session_id is empty.
+  rpc Approvals(SessionRef) returns (ApprovalsResponse);
+  rpc Answer(AnswerRequest) returns (AnswerResponse);
+
+  rpc Changes(SessionRef) returns (ChangesResponse);
+
+  // Events streams everything that happens, starting with a Ready. Pass the
+  // epoch and seq of the last event seen to replay what was missed; Ready
+  // says resync when that cannot be done and the client must refetch.
+  rpc Events(Subscribe) returns (stream Event);
+}
+
+message Empty {}
+
+message SessionRef {
+  string session_id = 1;
+}
+
+message QueueItemRef {
+  string session_id = 1;
+  string item_id = 2;
+}
+
+message InfoResponse {
+  string version = 1;
+  string project = 2;
+  repeated string kinds = 3;
+  Theme theme = 4;
+}
+
+message Theme {
+  map<string, string> palette = 1;
+  map<string, KindTone> kinds = 2;
+}
+
+message KindTone {
+  string tint = 1;
+  string mark = 2;
+}
+
+message Session {
+  string id = 1;
+  string title = 2;
+  int64 updated_at = 3;
+  bool busy = 4;
+  int32 pending = 5;
+  string mode = 6;
+  string last_text = 7;
+}
+
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+}
+
+message CreateSessionRequest {
+  string title = 1;
+}
+
+message RenameSessionRequest {
+  string session_id = 1;
+  string title = 2;
+}
+
+message Message {
+  string id = 1;
+  string session_id = 2;
+  string role = 3;
+  string agent = 4;
+  int64 created_at = 5;
+  int64 updated_at = 6;
+  bool finished = 7;
+  bool editable = 8;
+  bool edited = 9;
+  repeated Part parts = 10;
+}
+
+message Part {
+  string type = 1;
+  string text = 2;
+  string id = 3;
+  string name = 4;
+  string summary = 5;
+  string tool_call_id = 6;
+  bool is_error = 7;
+  string output = 8;
+  string diff = 9;
+  ImageRef image = 10;
+}
+
+message ImageRef {
+  string name = 1;
+  string mime = 2;
+}
+
+message ListMessagesRequest {
+  string session_id = 1;
+  // before is the cursor of a previous page; empty fetches the newest.
+  string before = 2;
+  int32 limit = 3;
+}
+
+message ListMessagesResponse {
+  repeated Message messages = 1;
+  bool more = 2;
+  string cursor = 3;
+}
+
+message Image {
+  string name = 1;
+  string mime = 2;
+  bytes data = 3;
+}
+
+message SendRequest {
+  string session_id = 1;
+  string text = 2;
+  repeated Image images = 3;
+}
+
+message SendResponse {
+  string message_id = 1;
+}
+
+message EditMessageRequest {
+  string session_id = 1;
+  string message_id = 2;
+  string text = 3;
+}
+
+message InterruptRequest {
+  string session_id = 1;
+  string agent = 2;
+}
+
+message QueuedItem {
+  string id = 1;
+  string agent = 2;
+  string text = 3;
+  int64 at = 4;
+}
+
+message QueueResponse {
+  repeated QueuedItem items = 1;
+}
+
+message AgentLine {
+  string id = 1;
+  string name = 2;
+  string kind = 3;
+  string model = 4;
+  string effort = 5;
+  bool busy = 6;
+}
+
+message RosterResponse {
+  repeated AgentLine agents = 1;
+}
+
+message ModelsRequest {
+  string session_id = 1;
+  string kind = 2;
+}
+
+message ModelChoice {
+  string id = 1;
+  string label = 2;
+  repeated string efforts = 3;
+  bool selected = 4;
+}
+
+message ModelsResponse {
+  repeated ModelChoice models = 1;
+}
+
+message SetModelRequest {
+  string session_id = 1;
+  string kind = 2;
+  string model = 3;
+  string effort = 4;
+}
+
+message ModeResponse {
+  string mode = 1;
+}
+
+message SetModeRequest {
+  string session_id = 1;
+  string mode = 2;
+}
+
+message Approval {
+  string id = 1;
+  string session_id = 2;
+  string tool_call_id = 3;
+  string agent = 4;
+  string kind = 5;
+  string description = 6;
+  string command = 7;
+  string path = 8;
+  string diff = 9;
+  string raw = 10;
+  int64 created_at = 11;
+}
+
+message ApprovalsResponse {
+  repeated Approval approvals = 1;
+}
+
+message AnswerRequest {
+  string session_id = 1;
+  string id = 2;
+  // decision is allow, allow_session or deny.
+  string decision = 3;
+}
+
+message AnswerResponse {
+  // resolved is false when another UI answered first.
+  bool resolved = 1;
+}
+
+message ChangedFile {
+  string path = 1;
+  int32 added = 2;
+  int32 removed = 3;
+  string diff = 4;
+}
+
+message ChangesResponse {
+  repeated ChangedFile files = 1;
+}
+
+message Subscribe {
+  string epoch = 1;
+  uint64 seq = 2;
+}
+
+// Ready opens every Events stream.
+message Ready {
+  string epoch = 1;
+  uint64 seq = 2;
+  // resync is true when the events since the subscriber's position cannot
+  // be replayed: refetch sessions, messages and approvals.
+  bool resync = 3;
+}
+
+message MessageDeleted {
+  string id = 1;
+  string session_id = 2;
+}
+
+message ApprovalResolved {
+  string id = 1;
+  string session_id = 2;
+  bool granted = 3;
+}
+
+message Busy {
+  string session_id = 1;
+  bool busy = 2;
+}
+
+message QueueChanged {
+  string session_id = 1;
+  repeated QueuedItem items = 2;
+}
+
+message ModeChanged {
+  string session_id = 1;
+  string mode = 2;
+}
+
+message Notice {
+  string session_id = 1;
+  string text = 2;
+}
+
+message Event {
+  // seq numbers the events of one epoch; Ready carries 0.
+  uint64 seq = 1;
+  string session_id = 2;
+  oneof kind {
+    Ready ready = 10;
+    Session session_created = 11;
+    Session session_updated = 12;
+    Session session_deleted = 13;
+    Message message_created = 14;
+    Message message_updated = 15;
+    MessageDeleted message_deleted = 16;
+    Approval approval_requested = 17;
+    ApprovalResolved approval_resolved = 18;
+    Busy busy = 19;
+    QueueChanged queue_changed = 20;
+    SessionRef roster_changed = 21;
+    ModeChanged mode_changed = 22;
+    Notice notice = 23;
+    Theme theme_changed = 24;
+  }
+}

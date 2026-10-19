@@ -98,8 +98,15 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
-// goFiles lists every .go file under root, skipping hidden directories and vendor/.
+// goFiles lists every .go file under root.
 func goFiles(t *testing.T, root string) []string {
+	t.Helper()
+	return walkFiles(t, root, func(path string) bool { return strings.HasSuffix(path, ".go") })
+}
+
+// walkFiles lists the files under root that keep accepts, skipping hidden
+// directories, vendor/ and node_modules/.
+func walkFiles(t *testing.T, root string, keep func(path string) bool) []string {
 	t.Helper()
 	var out []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -108,12 +115,12 @@ func goFiles(t *testing.T, root string) []string {
 		}
 		if d.IsDir() {
 			name := d.Name()
-			if path != root && (strings.HasPrefix(name, ".") || name == "vendor") {
+			if path != root && (strings.HasPrefix(name, ".") || name == "vendor" || name == "node_modules") {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if strings.HasSuffix(path, ".go") {
+		if keep(path) {
 			out = append(out, path)
 		}
 		return nil
