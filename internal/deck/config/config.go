@@ -163,6 +163,10 @@ type Peers struct {
 	// ShareLimits lets teammates see how full this Deck's CLI plans are, in
 	// peer.status. Off by default.
 	ShareLimits bool `json:"share_limits,omitempty"`
+	// Relay lets this Deck pass links between two peers pinned here, for
+	// Decks that cannot reach each other. The two ends run SSH inside the
+	// relayed channel, so this Deck sees only ciphertext. Off by default.
+	Relay bool `json:"relay,omitempty"`
 	// Sandbox is reserved for the virtual bash phase; it is parsed but unused.
 	Sandbox *PeerSandbox `json:"sandbox,omitempty"`
 }
@@ -179,6 +183,12 @@ type PeerRemote struct {
 	Addr string `json:"addr,omitempty"` // host:port to dial; empty for inbound-only peers
 	Dial bool   `json:"dial"`           // keep a connection to it open
 	Role string `json:"role,omitempty"` // "observer" (default) or "contractor"
+	// Via names another remote that relays the link to this one: the dial
+	// goes through it when Addr is empty or a direct dial fails.
+	Via string `json:"via,omitempty"`
+	// Relay lets this peer bring links from other peers pinned here (it
+	// relays for them). Off by default.
+	Relay bool `json:"relay,omitempty"`
 	// AllowInbound lists the ops this peer may run here; empty means the
 	// defaults (docs/peers-design.md section 2).
 	AllowInbound []string `json:"allow_inbound,omitempty"`
@@ -300,8 +310,11 @@ func (p *Peers) validate() error {
 			if err := ValidPeerAddr(r.Addr); err != nil {
 				return fmt.Errorf("peers.remote[%d].addr %q: %v", i, r.Addr, err)
 			}
-		} else if r.Dial {
-			return fmt.Errorf("peers.remote[%d] %q: dial needs an addr", i, r.Name)
+		} else if r.Dial && r.Via == "" {
+			return fmt.Errorf("peers.remote[%d] %q: dial needs an addr or a via relay", i, r.Name)
+		}
+		if r.Via != "" && (!ValidPeerName(r.Via) || r.Via == r.Name) {
+			return fmt.Errorf("peers.remote[%d].via %q: name another remote", i, r.Via)
 		}
 		switch r.Role {
 		case "", PeerRoleObserver, PeerRoleContractor:
@@ -326,6 +339,11 @@ func (p *Peers) validate() error {
 			if s != strings.TrimSpace(s) {
 				return fmt.Errorf("peers.remote[%d].max_scope[%d] %q has spaces around it", i, j, s)
 			}
+		}
+	}
+	for i, r := range p.Remote {
+		if r.Via != "" && !seen[r.Via] {
+			return fmt.Errorf("peers.remote[%d].via %q is not in peers.remote", i, r.Via)
 		}
 	}
 	return nil

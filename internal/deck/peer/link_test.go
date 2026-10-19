@@ -14,6 +14,29 @@ import (
 	"github.com/dev-dami/deck/internal/deck/config"
 )
 
+// newService makes a running Service named name with peers on, in a temp
+// dir.
+func newService(t *testing.T, name string, o ServiceOptions) *Service {
+	t.Helper()
+	dir := t.TempDir()
+	o.Dir, o.ConfigPath, o.Logger = filepath.Join(dir, "peers"), filepath.Join(dir, "config.json"), quietLog
+	s, err := NewService(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	if err := s.Start(nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetName(name); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetEnabled(true); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
 // linkedServices makes Services a (listening) and b (dialing a), pinned to
 // each other, and waits until b's link to a is up. local is a's own work.
 func linkedServices(t *testing.T, aLocal, bLocal Local) (a, b *Service) {
@@ -25,26 +48,7 @@ func linkedServices(t *testing.T, aLocal, bLocal Local) (a, b *Service) {
 // role a gives b.
 func linkedWith(t *testing.T, ao, bo ServiceOptions, role string) (a, b *Service) {
 	t.Helper()
-	mk := func(name string, o ServiceOptions) *Service {
-		dir := t.TempDir()
-		o.Dir, o.ConfigPath, o.Logger = filepath.Join(dir, "peers"), filepath.Join(dir, "config.json"), quietLog
-		s, err := NewService(o)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(s.Close)
-		if err := s.Start(nil); err != nil {
-			t.Fatal(err)
-		}
-		if err := s.SetName(name); err != nil {
-			t.Fatal(err)
-		}
-		if err := s.SetEnabled(true); err != nil {
-			t.Fatal(err)
-		}
-		return s
-	}
-	a, b = mk("a", ao), mk("b", bo)
+	a, b = newService(t, "a", ao), newService(t, "b", bo)
 	if err := a.SetListen(true, freeAddr(t)); err != nil {
 		t.Fatal(err)
 	}

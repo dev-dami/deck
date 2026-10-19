@@ -30,6 +30,7 @@ type Status struct {
 	NextRetry time.Time     // in backoff: when the next dial starts
 	Latency   time.Duration // the last MCP ping's round trip
 	Attempts  int           // failed dials since the last stable connection
+	Via       string        // the relay the link runs through; "" when direct
 	// Permanent is set when the last failure needs a person, not a retry:
 	// the peer's host key changed, this Deck is not pinned there, or the peer
 	// is no longer pinned here. Retries then wait MaxBackoff; nothing is
@@ -273,6 +274,7 @@ func (s *Supervisor) run(ctx context.Context) {
 			st.NextRetry = s.o.Now().Add(d)
 			st.Permanent = permanent
 			st.Cause = CauseOf(err)
+			st.Via = ""
 		})
 		select {
 		case <-ctx.Done():
@@ -317,6 +319,7 @@ func (s *Supervisor) session(ctx context.Context) (up time.Duration, err error) 
 	}()
 	s.set(StateConnected, func(st *Status) {
 		st.Latency = lat
+		st.Via = conn.Via()
 		st.Attempts = 0
 		st.LastError = ""
 		st.Permanent = false

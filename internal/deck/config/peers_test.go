@@ -61,6 +61,12 @@ func TestPeersValidate(t *testing.T) {
 		{"own name", func(p *Peers) { p.Remote[0].Name = "pc" }, "own name"},
 		{"bad remote addr", func(p *Peers) { p.Remote[0].Addr = "vps.example.com" }, "remote[0].addr"},
 		{"dial without addr", func(p *Peers) { p.Remote[0].Addr = "" }, "dial needs an addr"},
+		{"dial via a relay", func(p *Peers) {
+			p.Remote = append(p.Remote, PeerRemote{Name: "pc2", Dial: true, Via: "vps"})
+		}, ""},
+		{"via itself", func(p *Peers) { p.Remote[0].Via = "vps" }, "remote[0].via"},
+		{"via unknown", func(p *Peers) { p.Remote[0].Via = "nas" }, "not in peers.remote"},
+		{"via bad name", func(p *Peers) { p.Remote[0].Via = "No Name" }, "remote[0].via"},
 		{"inbound only without addr", func(p *Peers) { p.Remote[0].Addr = ""; p.Remote[0].Dial = false }, ""},
 		{"bad role", func(p *Peers) { p.Remote[0].Role = "admin" }, "role"},
 		{"empty role ok", func(p *Peers) { p.Remote[0].Role = "" }, ""},
