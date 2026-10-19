@@ -1,6 +1,6 @@
 # Deck peers: team link between Deck instances
 
-Status: proposal v3. Phase 1 (transport, pairing, pinning, supervisor, `deck peer` commands) and part of phase 2 (`peer.status` with presence, `console.post` team chat with idempotency keys, the outbox for chat, capsule transfer via `sub.closure`/`sub.objects`) are implemented in `internal/deck/peer`; agents read and post the chat through Deck's own `team.read`/`team.post`. Code contracts (`contract.propose`, `contract.status`, `contract.result`) are implemented as `docs/multiplayer-design.md` §8.4 describes, and shared threads (`thread.mirror`, `thread.post`, `thread.answer`) as §8.5 does; ops contracts, vsh, `console.read` for peers, thread mirror and `deck serve` are not. The outbox is one file, `~/.deck/peers/outbox.json`, not one per peer. Next steps: `docs/multiplayer-design.md` §8.
+Status: implemented on branch feat/agent-pools. In `internal/deck/peer`: the transport, pairing, pinning, supervisor and `deck peer` commands; `peer.status` with presence; `console.post` and `console.read` team chat with idempotency keys and the outbox; capsule transfer (`sub.closure`/`sub.objects`); code contracts and shared threads (`docs/multiplayer-design.md` §8.4, §8.5); ops contracts (§3) run in the `internal/deck/vsh` sandbox (§4); relaying through a paired Deck (§1); and `deck serve` (§8 step 7). Not built: the full-screen team console (§5; the Team, Chat and Shared panes cover its parts) and the per-peer mirror store of §6 (shared threads are read live instead). The outbox is one file, `~/.deck/peers/outbox.json`, not one per peer.
 
 Decisions:
 - Peer-to-peer mesh between Deck instances.
@@ -21,6 +21,7 @@ PC Deck                                              VPS Deck
 
 - **Nothing a person can use.** The server rejects every SSH request except opening an `mcp` channel: no `shell`, `exec`, `pty-req`, `subsystem`, `direct-tcpip`, `tcpip-forward`, `env`, agent or X11 forwarding. Auth is public-key only, and the key is a *Deck instance* key (pinned peer), not a user account. There are no passwords, no `authorized_keys`, no `~/.ssh` and no host sshd involved.
 - **Two-way:** SSH lets the accepting side open channels back to the dialer, so after one outbound connection each Deck can call the other's two tools. A PC behind NAT only needs to dial out.
+- **Relaying:** a Deck with `peers.relay` on passes links between two of its pinned peers. The origin opens a `relay@deck` channel that names the target by key fingerprint. The relay accepts it only when both peers are pinned there and the target has a direct link to it. It then opens `relayed@deck` on the target and copies bytes between the two channels (16 relays in total and 4 per key, a 90 s idle timeout). The target accepts `relayed@deck` only from a peer whose row has `relay: true`, and only for a key pinned there. It serves the link through its normal server path: the same handshake limits and lockout, its own connection caps, and login only with the key the relay named. The inner link is a normal peer link: mcp channels only, and the normal allow list. `peers.remote[].via` makes the supervisor dial through a relay when the row has no address or the direct dial fails. The relay types are refused on every other link and on relayed links.
 - **Own identity and pinning:** each Deck makes its own ed25519 identity in `~/.deck/peers/` (restricted ACL). Pairing (Settings › Team › Add a teammate, or `deck peer pair` / `deck peer add`) exchanges a short one-time code, shows both fingerprints for confirmation, and pins the other side's key. Only pinned keys connect. Host keys are pinned, never trust-on-first-use.
 - **Pairing runs on the same listener.** While Deck's listener runs, a pairing code is armed on it: same port as the link (7722), nothing extra to open. While a code is armed, and only then, the server also lets in the SSH user `deck-pair` with any ed25519 key; that connection gets the `deck-pair` channel and nothing else (no `mcp`, no other channel, no global request but keepalive), runs the code exchange (argon2id + HMAC bound to the session id and both keys; single use, 3 wrong codes burn it, 5-minute expiry, per-IP and total connection caps), and never touches the pinned store. With no code armed `deck-pair` is refused like an unpinned key and counts toward the lockout; pre-auth limits and lockout apply to pairing logins as to any other, and a pairing login clears no lockout. Pinned peers keep connecting as before while a code is armed. Only the local person arms a code (one at a time; a new one replaces the old), and it disarms on success, burn, expiry, cancel or when the listener stops; moving the listener (e.g. to all interfaces) keeps it armed. Without a running listener, pairing opens a listener of its own on `peers.listen.addr` (else all interfaces :7722) and reports a busy port instead of picking another. The waiting side says when its address is loopback only (the other Deck cannot reach it) and offers one key to listen on all interfaces.
 - **Invite.** The waiting side copies one line, `deck://pair?v=1&host=…&port=…&code=…&fp=SHA256:…&name=…&exp=…` (host from `$SSH_CONNECTION`, else the interfaces, else the host name; `alt=` for other addresses), which the other Deck pastes to fill address, code and expected fingerprint. A host key other than the invite's fingerprint ends pairing before the code is used. The invite holds the code: it is never logged or put in a snapshot or error.
@@ -46,6 +47,8 @@ Agents on the local Deck reach a peer with the same tools: `execute {op: "peer.c
 
 ## 3. Contracts: word-based grants for working together
 
+As built: the person asks in the Team pane (`o` on a teammate). The parser knows the presets `podman-read` and `systemd-read`, and makes every field a string of at most 200 characters. The requester confirms the card; the contractor runs a contract at once when its scope is inside `max_scope`, at most 2 at a time per teammate. Only Claude can run one (`agent.OpsSafe`: `--tools ""` and its built-in tools disallowed); the other CLIs fail closed. The audit log is `~/.deck/peers/audit.jsonl`, not the console log; it keeps the last 5000 lines.
+
 A contract is an agreement between a person and agents: what to do, what they may touch, and what comes back.
 
 ```
@@ -66,6 +69,16 @@ Contract {
 - **Audit:** every contract, command run, denial and result is written to the console log.
 
 ## 4. Virtual bash instance (sandbox)
+
+As built (`internal/deck/vsh`):
+- It parses each script with mvdan.cc/sh and refuses the whole script, before anything runs, when it uses loops, case, functions, aliases, variables, substitutions, arithmetic, here-docs, background jobs or unquoted braces.
+- A command name must be a plain word that names an allowed builtin (echo, printf, true, false, :, test, [, cat, head, tail, grep, sort, uniq, wc, cut, tr, jq) or a configured shim, so `env`, `command`, `\podman` and `/usr/bin/podman` are refused.
+- Every refusal gives exit 126 and one stderr line that starts with `vsh:` and says why; a timeout gives exit 124.
+- Redirections, globs, `test` and the builtins see only the scratch directory through an `os.Root`, so absolute paths, `..` and symlinks that lead out are refused, and writes count against the scratch quota. jq reads only scratch files and sees an empty environment.
+- A shim runs its fixed binary with os/exec, no shell, the environment `PATH=/usr/bin:/bin LANG=C`, no stdin and the scratch directory as cwd, in a process group that is killed at the timeout.
+- Shim argv must match an allowed pattern word by word: literals, `{target}`, `{n}` (0 to 100000), `{format}`, `{time}` and optional groups in brackets.
+- Package runners, fetchers, shells, interpreters, sudo, su and runner wrappers such as env and xargs are never grantable as shims, and neither are destructive podman or docker verbs such as rm, run, exec, cp and build.
+- The presets are `podman-read` and `systemd-read`; a preset whose binaries are not on PATH is left out, and a contract that asks for it is refused. Files a shim writes itself do not count against the quota, so shims stay read-only.
 
 All commands for a contract run through a **virtual bash** built on the interpreter already in the repo (`mvdan.cc/sh/v3`, see `internal/shell`), but as a strict **allow-list**, not the existing deny-list `BlockFunc`:
 
@@ -121,7 +134,7 @@ Keys and pinned peer keys live in `~/.deck/peers/`, not in the JSON.
 4. **Contracts:** model, word parser + confirmation, `max_scope`, `contract.*` ops, schema-validated results, adapter lockdown (`ContractSafe`), audit log.
 5. **Team console UI:** feed, header, cards, input, results tables, docked pane.
 6. **Thread mirror:** `Manager.Subscribe`, paged `history.read`, mirror store.
-7. **`deck serve`:** headless engine + listener + drain, cross-process lock on `~/.deck/threads` (reuse `internal/lock`), systemd/podman unit example.
+7. **`deck serve`:** headless engine + listener + drain, cross-process lock on `~/.deck/threads` (reuse `internal/lock`), systemd/podman unit example. Done: it refuses new contracts and shared-thread posts on SIGTERM, waits up to `--drain` for agents and up to 15 s for the outbox, and then stops. It locks `~/.deck/threads/deck.lock` exclusively; terminal Decks take it shared. `console.read` is not in the default allow list: the chat holds what other teammates wrote to this Deck, so the owner allows it per peer; one answer holds at most 100 messages or 32 KB, redacted.
 
 ## 9. Risks
 

@@ -1,11 +1,11 @@
 # Deck multiplayer: many agents, subagent trees, peers
 
-Status: proposal. Phases 1 to 8 (§3 to §7, and §8.1 to §8.5) are
-implemented, except the review stage; the rest is not. It builds on what
-already ships (verified against `main` at 4508226): spawn and tasks
-(`session/spawn.go`, `tasks.go`, `sched.go`), SUB capsules (`docs/sub.md`),
-and the peer link (`internal/deck/peer`: SSH transport, pairing, pinning,
-supervisor, team chat, capsule pull).
+Status: implemented. Phases 1 to 10 (§3 to §8, §10) are built on branch
+feat/agent-pools. What each phase leaves out is listed where it is
+described. It builds on what already ships (verified against `main` at
+4508226): spawn and tasks (`session/spawn.go`, `tasks.go`, `sched.go`), SUB
+capsules (`docs/sub.md`), and the peer link (`internal/deck/peer`: SSH
+transport, pairing, pinning, supervisor, team chat, capsule pull).
 
 Goal: one Deck runs any number of agents of any kind, lets them start
 subagents that start subagents, and works with other Decks (teammates and
@@ -45,7 +45,7 @@ Its internals were read from search extracts only; the site blocked direct
 fetches.
 
 What Deck takes from them:
-- Amoeba: overlap warnings *before* an edit; role-gated actions; memory pinned to code.
+- Amoeba: overlap warnings *before* an edit; role-gated actions; memory pinned to code (done: `memory.*`, local, keyed by the repository's root commit).
 - Agent Mail / amux: path leases with TTL and heartbeat; a `review` stage before `done`.
 - manycode: approvals bound to content (here: the capsule hash); one driver per agent with an attributed prompt queue and a side chat.
 - mpai / Claude Code: a message from a peer never approves anything; remote turns run restricted.
@@ -84,7 +84,7 @@ knows each subscription's remaining plan window.
   `thread.roster` and stays under its 1400-char cap.
 - **Per-instance settings.** Model, effort and mode are already per member.
 
-## 4. Subagent trees — implemented (review stage not yet)
+## 4. Subagent trees — implemented
 
 - **Depth and limits** (`session/tree.go`). A member the user brought in is
   at depth 0; a subagent is one below the member that started it (the
@@ -109,8 +109,25 @@ knows each subscription's remaining plan window.
 - **Scoped briefing.** A subagent's view starts at its own brief: no thread
   history, plus one line saying who started it, for which task, and whether
   it may spawn in turn. `thread.read` is still there.
-- **Review stage** (not yet). Task status `review` between `running` and
-  `done`, with a reviewer of another kind; moved to phase 10.
+- **Review stage** (`session/review.go`). `task.create`, `agent.spawn` and
+  `task.race` take `review`: an agent kind, `other` (any installed kind but
+  the worker's, the one with the most plan room first) or `none`. Config
+  `review` is the default for tasks run by subagents. When the owner
+  finishes, the task moves to `review` instead of `done`, and Deck starts a
+  reviewer subagent with the task, the result and where the changes are
+  (the worker's worktree diff, the task's capsules applied to the
+  reviewer's own worktree, or the shared tree). The reviewer answers with
+  `review.approve {id, note}` (done, with the note added to the result) or
+  `review.changes {id, notes}` (back to the owner with the notes; when the
+  owner has stopped, a new subagent of its kind takes over its worktree).
+  Only the reviewer may answer. After two rounds of changes, or when the
+  reviewer stops without an answer, the task is blocked for the user. With
+  one kind installed the task is done with a note that says it was not
+  reviewed. Tasks that wait on it wait through the review, and the creator
+  hears once, at the end. The reviewer is Deck's subagent: it counts toward
+  `max_work`, `max_subagents` and the task's budget, and waits for a free
+  slot. Not done: a user-side way to ask for a review besides the config
+  default, and earlier rounds' notes in a new reviewer's brief.
 - **UI.** The agents pane lists members as a tree (subagents indented under
   their parent, with their branch); stopped subagents drop out unless their
   worktree still holds work. In the Tasks pane, `a` on an isolated task
@@ -328,7 +345,7 @@ MCP tools; new inbound ops are opt-in per peer (`allow_inbound`).
    recommend Tailscale or WireGuard in the docs. Add relaying through any
    paired Deck with a public address, which forwards an opaque channel
    while the two ends run SSH inside it, so it stays end-to-end and the
-   relay sees nothing.
+   relay sees nothing. Done: see phase 9 in §10.
 
 ## 9. Security rules (all phases)
 
@@ -368,9 +385,33 @@ Each phase is one or two PRs and useful alone.
    `peer/agent` owners.
 8. **Shared threads** (done). Mirror, then join with roles and attributed
    queue.
-9. **Reach and ops.** Deck-as-relay, `vsh` and ops contracts, `deck serve`.
-10. **Review and memory.** The `review` stage with cross-kind reviewers;
+9. **Reach and ops** (done). Deck-as-relay, `vsh` and ops contracts,
+   `deck serve`.
+   - Relaying (`peer/relay.go`): `relay@deck` from the origin names the
+     target by key fingerprint; the relay opens `relayed@deck` on the
+     target and copies bytes, never ending the inner SSH session. The relay
+     opts in (`peers.relay`), the target opts in per relay
+     (`peers.remote[].relay`), and the dialer per remote (`via`). Not done:
+     Settings controls for relaying, and relaying in one-shot dials.
+   - `internal/deck/vsh`: the allow-list sandbox of `peers-design.md` §4.
+   - Ops contracts: `o` in the Team pane, a fixed parser and a confirmation
+     card, a `max_scope` check with no live approver, a run by an agent
+     with no tools of its own (Claude only, `agent.OpsSafe`) and only
+     `sh.run` and `contract.result`, in a vsh sandbox per contract. The
+     result is checked against the schema on both Decks and shown as a
+     table. Every event goes to `~/.deck/peers/audit.jsonl`. Not done: ops
+     state across a restart, an amend flow, typed fields in the parser.
+   - `deck serve`: headless engine and peer link, drain on SIGTERM, an
+     exclusive lock on `~/.deck/threads` that terminal Decks share.
+10. **Review and memory** (done). The `review` stage with cross-kind reviewers;
     notes pinned to capsule/file hashes that get flagged when the code moves.
+    Memory (`session/memory.go`): the `memory.*` ops pin notes to file
+    hashes (`sub.FileID`) and, optionally, to a line range with its own
+    hash, per repository in `~/.deck/memory/<root commit>.json` (at most 500
+    notes of 2 KB, redacted). A read flags each note fresh, moved to lines
+    X-Y, changed or gone; task briefs and `lease.acquire` name the notes on
+    their files. Not done: a hint in every turn's briefing, re-anchoring
+    moved notes, a UI for notes.
 
 ## 11. Risks
 
