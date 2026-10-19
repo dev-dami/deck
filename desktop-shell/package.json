@@ -14,9 +14,9 @@
     "lint": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json"
   },
   "dependencies": {
-    "@grpc/grpc-js": "1.14.0",
-    "@grpc/proto-loader": "0.8.0",
-    "ws": "8.18.3"
+    "@grpc/grpc-js": "1.14.6",
+    "@grpc/proto-loader": "0.8.1",
+    "ws": "8.22.0"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",
@@ -25,11 +25,11 @@
     "@types/react-dom": "19.2.2",
     "@types/ws": "8.18.1",
     "@vitejs/plugin-react": "5.0.4",
-    "electron": "38.3.0",
+    "electron": "44.9.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "typescript": "5.9.3",
-    "vite": "7.1.10",
-    "vitest": "3.2.4"
+    "vite": "7.3.7",
+    "vitest": "5.0.5"
   }
 }
