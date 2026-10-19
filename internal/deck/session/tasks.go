@@ -665,7 +665,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 			return "", err
 		}
 		if cur, ok := m.Task(t.id, tk.ID); ok && tk.Status == store.TaskReview {
-			tk = cur // with its reviewer, who started meanwhile
+			tk = cur // with its reviewer: startReview returns once it is bound
 		}
 		return b.line(tk), nil
 	}

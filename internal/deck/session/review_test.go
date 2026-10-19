@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -37,15 +38,22 @@ func (r *runsOf) Start(ctx context.Context, sp agent.Spec) (agent.Run, error) {
 // Each list of claude's and codex's is one run; codex nil leaves it out.
 func reviewRig(t *testing.T, cfg config.Config, claude, codex [][]fake.Script) (*rig, string) {
 	t.Helper()
+	return reviewRigWith(t, cfg, claude, codex, func(_ string, a agent.Adapter) agent.Adapter { return a })
+}
+
+// reviewRigWith is reviewRig with each kind's adapter passed through wrap
+// before the spy.
+func reviewRigWith(t *testing.T, cfg config.Config, claude, codex [][]fake.Script, wrap func(kind string, a agent.Adapter) agent.Adapter) (*rig, string) {
+	t.Helper()
 	st, err := store.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	hub := fake.NewHub()
-	r := &rig{st: st, hub: hub, claude: newSpy(&runsOf{hub: hub, runs: claude})}
+	r := &rig{st: st, hub: hub, claude: newSpy(wrap("claude", &runsOf{hub: hub, runs: claude}))}
 	ads := map[string]agent.Adapter{"claude": r.claude}
 	if codex != nil {
-		r.codex = newSpy(&runsOf{hub: hub, runs: codex})
+		r.codex = newSpy(wrap("codex", &runsOf{hub: hub, runs: codex}))
 		ads["codex"] = r.codex
 	}
 	r.m = NewManager(ads, st, cfg, Options{Hub: hub, MCPFor: fake.MCPFor})
@@ -191,6 +199,30 @@ func TestOnlyTheReviewerAnswers(t *testing.T) {
 	approvalOf(t, r, tk.Reviewer).Respond(agent.Decision{Allow: true})
 	waitFor(t, "t1 done", func() bool { return taskOf(t, r, tid, "t1").Status == store.TaskDone })
 	lacks(t, taskOf(t, r, tid, "t1").Result, "mine is fine")
+}
+
+// The move to review and the scheduler can both try to start the reviewer.
+// The one that comes second waits for the first, so that it too returns with
+// the reviewer bound: task.done names the reviewer whichever one won.
+func TestASecondReviewStartWaitsForTheFirst(t *testing.T) {
+	var g *gatedAdapter
+	gated := func(kind string, a agent.Adapter) agent.Adapter {
+		if kind != "claude" {
+			return a
+		}
+		g = newGate(a, func(sp agent.Spec) bool { return sp.ID != "claude" }) // the lead starts at once
+		return g
+	}
+	waits := []fake.Script{turn(blockStep("ap-review"), callOp("review.approve", `{"id": "t1"}`), finish())}
+	r, tid := reviewRigWith(t, testCfg(), [][]fake.Script{lead, waits}, [][]fake.Script{{turn(say("fixed"), finish())}}, gated)
+	t.Cleanup(g.release) // runs before Close: a start still held must not stall it
+	spawnReviewed(t, r, tid)
+	<-g.entered // a first caller is starting the reviewer
+	time.AfterFunc(50*time.Millisecond, g.release)
+	r.m.startReview(r.m.thread(tid), "t1")
+	if tk := taskOf(t, r, tid, "t1"); tk.Status != store.TaskReview || tk.Reviewer == "" {
+		t.Fatalf("startReview returned before the reviewer was bound: %+v", tk)
+	}
 }
 
 func TestReviewerThatStopsBlocksTheTask(t *testing.T) {
