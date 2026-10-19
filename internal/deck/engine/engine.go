@@ -43,14 +43,18 @@ type Engine struct {
 // Peers is the peer link, or nil.
 func (e *Engine) Peers() *peer.Service { return e.peers }
 
+// ExclusiveStore makes Start take the thread store alone (deck serve);
+// otherwise it shares it with other terminal Decks (store.Lock).
+var ExclusiveStore bool
+
 // Start finds the CLIs and starts the thread manager. It takes the lock on
-// the thread store first, so only one Deck process at a time runs an engine.
+// the thread store first (store.Lock).
 func Start() (_ *Engine, err error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
-	unlock, err := store.Lock("")
+	unlock, err := store.Lock("", ExclusiveStore)
 	if err != nil {
 		return nil, err
 	}

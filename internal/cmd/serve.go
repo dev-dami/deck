@@ -60,6 +60,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	limit, _ := cmd.Flags().GetDuration("drain")
 	remoteOn, _ := cmd.Flags().GetBool("remote")
 	logToStderr(cmd)
+	// serve has the thread store alone: no terminal Deck writes it meanwhile.
+	engine.ExclusiveStore = true
 	cfg, err := deckconfig.Load()
 	if err != nil {
 		return err

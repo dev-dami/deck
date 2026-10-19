@@ -6,22 +6,31 @@ import (
 	"testing"
 )
 
-func TestLockFailsFastWhileHeld(t *testing.T) {
+// Terminal Decks share the store; deck serve has it alone.
+func TestLockSharedAndExclusive(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "threads")
-	release, err := Lock(dir)
+	a, err := Lock(dir, false)
 	if err != nil {
-		t.Fatalf("first Lock: %v", err)
+		t.Fatal(err)
 	}
-	_, err = Lock(dir)
-	if err == nil {
-		t.Fatal("a second Lock got the store too")
+	b, err := Lock(dir, false)
+	if err != nil {
+		t.Fatalf("a second terminal Deck: %v", err)
 	}
-	want := filepath.Join(dir, lockFile)
-	if !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "pid ") {
-		t.Fatalf("the error must name the lock file and the owner: %v", err)
+	if _, err := Lock(dir, true); err == nil || !strings.Contains(err.Error(), filepath.Join(dir, lockFile)) {
+		t.Fatalf("serve while terminal Decks run: %v", err)
 	}
-	release()
-	again, err := Lock(dir)
+	a()
+	b()
+	serve, err := Lock(dir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Lock(dir, false); err == nil || !strings.Contains(err.Error(), "deck serve (pid ") {
+		t.Fatalf("a terminal Deck while serve runs: %v", err)
+	}
+	serve()
+	again, err := Lock(dir, false)
 	if err != nil {
 		t.Fatalf("Lock after release: %v", err)
 	}

@@ -282,8 +282,9 @@ func TestUnansweredProposalExpires(t *testing.T) {
 	if b.granted("a", base) {
 		t.Fatal("the base is still shared")
 	}
+	// a ends it too: by its own sweep, or because b's call-off came first.
 	a.sweepContracts(later)
-	if got := a.Contracts()[0]; got.State != ContractDeclined || !strings.Contains(got.Note, "not answered") {
+	if got := a.Contracts()[0]; !got.Final() || !strings.Contains(got.Note, "answer") {
 		t.Fatalf("a's record = %+v", got)
 	}
 	if err := a.AnswerContract("b", c.ID, true, "claude"); err == nil {

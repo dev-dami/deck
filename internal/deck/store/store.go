@@ -295,10 +295,11 @@ func DefaultDir() (string, error) {
 const lockFile = "deck.lock"
 
 // Lock takes the cross-process lock on the threads directory dir ("" means
-// DefaultDir), so a terminal Deck and `deck serve` never write the same
-// store at once. When another process holds it, Lock fails at once and the
-// error names the lock file. The returned func drops the lock.
-func Lock(dir string) (func(), error) {
+// DefaultDir). Terminal Decks take it shared, so several run at once as
+// before; `deck serve` takes it exclusive, so it never writes the store
+// while another Deck does. When it cannot be had, Lock fails at once and
+// the error names the lock file. The returned func drops the lock.
+func Lock(dir string, exclusive bool) (func(), error) {
 	if dir == "" {
 		d, err := DefaultDir()
 		if err != nil {
@@ -310,19 +311,27 @@ func Lock(dir string) (func(), error) {
 		return nil, fmt.Errorf("store: create %s: %w", dir, err)
 	}
 	path := filepath.Join(dir, lockFile)
-	release, err := lock.TryFile(path)
-	if errors.Is(err, lock.ErrContended) {
+	try := lock.TryShared
+	if exclusive {
+		try = lock.TryFile
+	}
+	release, err := try(path)
+	switch {
+	case errors.Is(err, lock.ErrContended) && exclusive:
+		return nil, fmt.Errorf("another Deck uses the threads in %s: stop it first, or wait for it to stop (lock file %s)", dir, path)
+	case errors.Is(err, lock.ErrContended):
 		owner := ""
 		if b, _ := os.ReadFile(path); len(bytes.TrimSpace(b)) > 0 {
 			owner = " (pid " + string(bytes.TrimSpace(b)) + ")"
 		}
-		return nil, fmt.Errorf("another Deck%s uses the threads in %s: stop it first, or wait for it to stop (lock file %s)", owner, dir, path)
-	}
-	if err != nil {
+		return nil, fmt.Errorf("deck serve%s uses the threads in %s: stop it first (lock file %s)", owner, dir, path)
+	case err != nil:
 		return nil, err
 	}
-	// The pid only helps the message above; the flock is the lock.
-	_ = os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600)
+	if exclusive {
+		// The pid only helps the message above; the flock is the lock.
+		_ = os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600)
+	}
 	return release, nil
 }
 
