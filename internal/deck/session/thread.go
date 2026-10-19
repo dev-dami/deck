@@ -216,7 +216,7 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	defer t.mu.Unlock()
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
 		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree,
-		Tasks: cloneTasks(t.tasks), Orchestrate: t.orchestrate, Contract: t.contract}
+		Tasks: cloneTasks(t.tasks), Orchestrate: t.orchestrate, Contract: t.contract, Ops: t.ops != nil}
 	for _, peer := range slices.Sorted(maps.Keys(t.shares)) {
 		th.Shares = append(th.Shares, store.Share{Peer: peer, Role: t.shares[peer]})
 	}

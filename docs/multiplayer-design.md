@@ -400,8 +400,9 @@ Each phase is one or two PRs and useful alone.
      with no tools of its own (Claude only, `agent.OpsSafe`) and only
      `sh.run` and `contract.result`, in a vsh sandbox per contract. The
      result is checked against the schema on both Decks and shown as a
-     table. Every event goes to `~/.deck/peers/audit.jsonl`. Not done: ops
-     state across a restart, an amend flow, typed fields in the parser.
+     table. Every event goes to `~/.deck/peers/audit.jsonl`. A contract that
+     runs when Deck stops fails at the next start, and its thread stays
+     locked. Not done: an amend flow, typed fields in the parser.
    - `deck serve`: headless engine and peer link, drain on SIGTERM, an
      exclusive lock on `~/.deck/threads` that terminal Decks share.
 10. **Review and memory** (done). The `review` stage with cross-kind reviewers;

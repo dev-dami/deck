@@ -201,3 +201,94 @@ func TestRunOpsFails(t *testing.T) {
 		t.Fatalf("an adapter that cannot turn its tools off: %v", err)
 	}
 }
+
+// An agent that ends its turn without a result fails its contract at
+// once, with or without a reply: no person waits to unblock it.
+func TestRunOpsFailsATurnWithoutAResult(t *testing.T) {
+	for _, script := range []fake.Script{turn(finish()), turn(say("all good"), finish())} {
+		r := newRigWith(t, t.TempDir(), false, testCfg(), []fake.Script{script}, nil)
+		r.m.SetSandbox(func([]string, []string, string) (Sandbox, error) { return &fakeBox{}, nil })
+		ended := make(chan store.Task, 4)
+		r.m.SetTaskEnd(func(_ string, tk store.Task) { ended <- tk })
+		tid, task, err := r.m.RunOps(OpsRun{Peer: "vps", Title: "x", Brief: "x", Scope: []string{"podman-read"}, Check: checkName})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.m.StartContract(tid, task); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case tk := <-ended:
+			if tk.ID != task || tk.Status != store.TaskFailed || tk.Error != "its agent ended its turn without a result" {
+				t.Fatalf("ended = %+v", tk)
+			}
+		case <-time.After(5 * time.Second):
+			tk, _ := r.m.Task(tid, task)
+			t.Fatalf("the task did not end: %+v", tk)
+		}
+	}
+}
+
+// An ops thread stays locked down after a restart: its running task fails,
+// and its agent gets no tools back.
+func TestOpsThreadStaysLockedAfterARestart(t *testing.T) {
+	dir := t.TempDir()
+	hang := fake.Step{Exec: &fake.Exec{Op: "sh.run", Args: json.RawMessage(`{"cmd": "podman logs -f web"}`)}}
+	r := newRigWith(t, dir, false, testCfg(), []fake.Script{turn(hang, finish())}, nil)
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	r.m.SetSandbox(func([]string, []string, string) (Sandbox, error) { return hangBox(release), nil })
+	tid, task, err := r.m.RunOps(OpsRun{Peer: "vps", Title: "x", Brief: "x", Scope: []string{"podman-read"}, Check: checkName})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.m.StartContract(tid, task); err != nil {
+		t.Fatal(err)
+	}
+	tk, _ := r.m.Task(tid, task)
+	waitFor(t, "the command", func() bool {
+		return len(r.c.events(func(e EventMsg) bool { return e.AgentID == tk.Owner && e.Kind == agent.KindToolCall })) > 0
+	})
+	r.m.Close()
+
+	r2 := newRigWith(t, dir, false, testCfg(), nil, nil)
+	ended := make(chan store.Task, 4)
+	r2.m.SetTaskEnd(func(_ string, tk store.Task) { ended <- tk })
+	info, _, err := r2.m.Resume(tid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case tk := <-ended:
+		if tk.ID != task || tk.Status != store.TaskFailed || tk.Error != OpsRestarted {
+			t.Fatalf("ended = %+v", tk)
+		}
+	case <-time.After(5 * time.Second):
+		got, _ := r2.m.Task(tid, task)
+		t.Fatalf("the task did not end: %+v", got)
+	}
+	owner := info.Members[0].ID
+	if owner != tk.Owner {
+		t.Fatalf("resumed as %s, not %s", owner, tk.Owner)
+	}
+	if spec, ok := r2.claude.spec(owner); !ok || !spec.NoTools || spec.Instructions != opsInstructions {
+		t.Fatalf("resumed spec %+v", spec)
+	}
+	if err := r2.m.SetMode(tid, agent.ModeYolo); err == nil {
+		t.Fatal("a resumed ops thread went yolo")
+	}
+	has(t, execErr(t, r2, owner, "sh.run", `{"cmd": "podman ps"}`), "this contract is over")
+	has(t, execErr(t, r2, owner, "contract.result", `{"result": {"rows": [{"name": "web"}]}}`), "this contract is over")
+	has(t, execErr(t, r2, owner, "git.status", `{}`), `Unknown op "git.status"`)
+	has(t, r2.m.readThread(owner), "only sh.run and contract.result")
+	sent := make(chan error, 1)
+	r2.m.handleMessage(agent.Message{From: owner, To: "all", Text: "hello", Respond: func(_ string, err error) { sent <- err }})
+	if err := <-sent; err == nil || !strings.Contains(err.Error(), "only sh.run and contract.result") {
+		t.Fatalf("thread.send: %v", err)
+	}
+	denied := make(chan agent.Decision, 1)
+	r2.m.onApproval(r2.m.get(owner), agent.ApprovalRequest{ID: "x", Kind: agent.ApproveCommand, Respond: func(d agent.Decision) { denied <- d }})
+	if d := <-denied; d.Allow {
+		t.Fatal("a resumed ops agent's approval was allowed")
+	}
+}
