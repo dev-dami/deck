@@ -33,8 +33,9 @@ links that peers in the config ask for), with no terminal UI. Add --remote to
 also serve Deck to your phone (see 'deck remote --help').
 
 Peers must be on (peers.enabled in Deck's config.json), unless you add --remote.
-Only one Deck process at a time can use the thread store (~/.deck/threads).
-A second one stops at once and names the lock file.
+deck serve has the thread store (~/.deck/threads) to itself: it does not
+start while a terminal Deck runs, and a terminal Deck does not start while it
+runs. Either one stops at once and names the lock file.
 
 On SIGTERM or ctrl+c, Deck refuses new work from teammates, gives running
 agents the --drain time to end their turns and the outbox time to deliver,
