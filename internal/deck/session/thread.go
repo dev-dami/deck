@@ -74,6 +74,9 @@ type thread struct {
 	// contract is the teammate whose code contract this thread runs: its
 	// mode is never yolo (contract.go).
 	contract string
+	// ops is the teammate's ops contract the thread runs, or nil: its
+	// agents have no tools but sh.run and contract.result (opscontract.go).
+	ops *opsState
 	// shares are the teammates the thread is shared with, by name, and
 	// their roles; grew is closed when the log grows (share.go).
 	shares map[string]string

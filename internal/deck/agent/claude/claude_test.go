@@ -736,3 +736,28 @@ func TestWriteSettingsRedirectsPrivateFolders(t *testing.T) {
 		}
 	}
 }
+
+// With NoTools, Claude starts with none of its own tools: only Deck's.
+func TestAdapterNoTools(t *testing.T) {
+	a, spec, argsFile := newFake(t)
+	if s, ok := a.(agent.OpsSafe); !ok || !s.OpsSafe() {
+		t.Fatal("claude is not ops safe")
+	}
+	spec.FirstPrompt, spec.NoTools = "go", true
+	r, err := a.Start(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	waitKind(t, r, agent.KindTurnDone)
+	args := readArgs(t, argsFile)[0]
+	if v, ok := argAfter(args, "--tools"); !ok || v != "" {
+		t.Errorf("--tools %q %v", v, ok)
+	}
+	if v, _ := argAfter(args, "--disallowedTools"); !strings.Contains(v, "Bash,") || !strings.Contains(v, "WebFetch") {
+		t.Errorf("--disallowedTools %q", v)
+	}
+	if v, _ := argAfter(args, "--allowedTools"); v != "mcp__deck__search,mcp__deck__execute" {
+		t.Errorf("allowedTools %q", v)
+	}
+}

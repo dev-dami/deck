@@ -31,7 +31,7 @@ func Search(env Env, raw json.RawMessage) string {
 		score int
 	}
 	var hits []scored
-	for _, o := range ops {
+	for _, o := range catalog(&env) {
 		s := 1
 		if len(terms) > 0 {
 			s = score(terms, o.Name, o.Desc+" "+argText(o))
@@ -54,6 +54,9 @@ func Search(env Env, raw json.RawMessage) string {
 	}
 	for _, h := range hits {
 		fmt.Fprintf(&b, "  %s %s - %s\n", h.op.Name, h.op.Signature(), h.op.Desc)
+	}
+	if env.Ops != nil {
+		return capOut(b.String(), 0) // an ops contract's agent sees no skills and no history
 	}
 
 	// (b) skills
@@ -161,14 +164,14 @@ func wordHit(t string, words []string) int {
 }
 
 // nearestOps are op names sharing a word with name.
-func nearestOps(name string, n int) []string {
+func nearestOps(env *Env, name string, n int) []string {
 	terms := keywords(name)
 	type sc struct {
 		name  string
 		score int
 	}
 	var out []sc
-	for _, o := range ops {
+	for _, o := range catalog(env) {
 		if s := score(terms, o.Name, ""); s > 0 {
 			out = append(out, sc{o.Name, s})
 		}

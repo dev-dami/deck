@@ -274,6 +274,8 @@ type Manager struct {
 	// every task that ends (contract.go).
 	contractor Contractor
 	taskEnd    func(threadID string, tk store.Task)
+	// sandbox makes the sandbox of each ops contract (opscontract.go).
+	sandbox NewSandbox
 }
 
 // NewManager returns a Manager that starts agents from adapters (keyed by kind,
@@ -645,6 +647,9 @@ func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Sp
 	// .gitignore that keeps its plans out of git.
 	_ = brand.EnsurePlansDir(t.dir)
 	s.Instructions = m.instructions(t, a, s.MCP != nil && m.opts.Hub != nil)
+	if t.opsOf() != nil {
+		s.NoTools, s.Instructions = true, opsInstructions
+	}
 	return s
 }
 
@@ -1460,6 +1465,12 @@ func (m *Manager) onApproval(a *agentState, req agent.ApprovalRequest) {
 	if a.thread.gone.Load() {
 		if req.Respond != nil {
 			req.Respond(agent.Decision{Allow: false, Reason: "the thread was closed"})
+		}
+		return
+	}
+	if a.thread.opsOf() != nil {
+		if req.Respond != nil {
+			req.Respond(agent.Decision{Allow: false, Reason: errOpsOnly.Error()})
 		}
 		return
 	}

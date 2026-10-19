@@ -51,6 +51,12 @@ func (s *spyAdapter) ContractSafe() bool {
 	return ok && cs.ContractSafe()
 }
 
+// OpsSafe forwards to the adapter it wraps.
+func (s *spyAdapter) OpsSafe() bool {
+	o, ok := s.Adapter.(agent.OpsSafe)
+	return ok && o.OpsSafe()
+}
+
 func newSpy(a agent.Adapter) *spyAdapter { return &spyAdapter{Adapter: a, runs: map[string]*spyRun{}} }
 
 func (s *spyAdapter) Start(ctx context.Context, sp agent.Spec) (agent.Run, error) {

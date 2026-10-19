@@ -58,6 +58,17 @@ func TestSearchEmptyQueryListsCatalog(t *testing.T) {
 	}
 }
 
+// Only an ops contract's agent has sh.run and contract.result.
+func TestOpsContractOpsAreTheirAgentsOnly(t *testing.T) {
+	out := Search(testEnv(t), json.RawMessage(`{}`))
+	if strings.Contains(out, OpShRun) || strings.Contains(out, OpContractResult) {
+		t.Fatalf("search shows an ops contract's ops:\n%s", out)
+	}
+	if got, isErr := run(t, testEnv(t), OpShRun, `{"cmd": "ls"}`); !isErr || !strings.Contains(got, "Unknown op") {
+		t.Fatalf("sh.run without a contract: %s", got)
+	}
+}
+
 func TestSearchRanking(t *testing.T) {
 	env := testEnv(t)
 	out := Search(env, json.RawMessage(`{"query":"git log"}`))

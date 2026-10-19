@@ -95,6 +95,8 @@ func Start() (*Engine, error) {
 	if peers != nil {
 		deals.svc.Store(peers)
 		mgr.SetContractor(deals)
+		// shortcut: no mgr.SetSandbox yet, so every ops contract is refused;
+		// set the vsh sandbox here once internal/deck/vsh lands.
 		mgr.SetTaskEnd(deals.taskEnd)
 		mgr.SetTeam(peerTeam{peers})
 		mgr.SetSubFetch(func(ctx context.Context, name string, id sub.ID, s *sub.Store) (int, error) {

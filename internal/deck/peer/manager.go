@@ -496,6 +496,7 @@ func (m *Manager) caller(p Pinned) Caller {
 	if r, ok := m.peers.Load().Find(p.Name); ok {
 		c.Role = r.RoleOrDefault()
 		c.AllowInbound = r.AllowInbound
+		c.MaxScope = r.MaxScope
 	}
 	return c
 }
