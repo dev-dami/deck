@@ -1,9 +1,12 @@
 # Deck desktop shell
 
-A desktop window onto Deck. It shows the sessions (threads) of a project,
-the agents in each thread and their work, and it lets you run many agents
-at once. The layout is a sidebar of sessions, a chat timeline, a composer
-with its agents, and a side panel for the diff, approvals and the queue.
+The Deck desktop app. Like Claude Desktop with Claude Code, it carries the
+Deck engine inside it: open a project folder and work with its agents, no
+separate CLI to install. It shows the threads of every open project, the
+agents in each thread and their work, and it runs many agents at once. The
+layout is a sidebar of projects and threads, a chat timeline, a composer
+with its agents, a side panel (diff, approvals, queue, side chat, agents)
+and a terminal drawer.
 
 ![The main window](docs/screenshot.png)
 
@@ -12,7 +15,7 @@ with its agents, and a side panel for the diff, approvals and the queue.
 | | Open a folder | Pair with a Deck |
 |---|---|---|
 | For | A project on this computer | A Deck on another computer, or one you started yourself |
-| Deck command | The app runs `deck serve --rpc` | You run `deck remote` (`--lan` for another computer) |
+| Deck command | The app runs its own engine (`deck serve --rpc`) | You run `deck remote` (`--lan` for another computer) |
 | Transport | gRPC (`proto/deck/v1/deck.proto`) on a Unix socket | WebSocket, protocol v2 (`docs/remote-contract.md`) |
 | Trust | A token made for this launch, printed on Deck's stdout | A one-time pairing code, then a device token |
 | Lifetime | Deck stops when you close the folder or quit the app | Deck runs until you stop it |
@@ -20,28 +23,37 @@ with its agents, and a side panel for the diff, approvals and the queue.
 | Yolo mode | Allowed | Only with `deck remote devices --allow-yolo <id>` |
 
 Use **Open a folder** for your own projects on this computer. It is the
-default when `deck` is on your PATH. Use **Pair with a Deck** for a Deck on
+default. Use **Pair with a Deck** for a Deck on
 another machine, or when Deck already runs in a terminal and you want to
 watch it from the window too.
 
 ## Run it
 
-You need Node 22 and a `deck` binary.
+You need Node 22 and Go (to build the engine).
 
 ```sh
 cd desktop-shell
 npm ci
 npm run build
+npm run build:deck   # the engine, into bin/deck
 npm start
 ```
 
-The app opens the last folder when `deck` is on your PATH, else the newest
-pairing, else the "Connect to Deck" screen:
+The app finds its engine in this order: `DECK_BIN`, the engine it ships
+with (`bin/` here, `resources/bin` in an installed app), then `deck` on
+your PATH. It starts the engine with your login shell's PATH, so agent CLIs
+installed in `~/.local/bin`, Homebrew or similar are found even when the
+app is opened from a dock or launcher. The engine needs at least one agent
+CLI (claude, codex, opencode or antigravity); when it finds none, the app
+shows the engine's own message.
 
-- **Open a folder.** Click "Open a folder…" and pick the project, or click
-  a recent folder. The app runs `deck serve --rpc` in that folder. Close the
-  folder with "Switch Deck"; that stops Deck. The app remembers the last
-  eight folders.
+The app reopens the projects that were open when it quit, else shows
+"What should we work on?":
+
+- **Open a folder.** Click "Add project" and pick the folder, or click a
+  recent one. Several projects can be open at once; each runs its own
+  engine, which stops when you close the project. The app remembers the
+  last eight folders.
 - **Pair with a Deck.** In the project, run `deck remote`. In another
   terminal, run `deck remote pair`. Paste the link it prints
   (`http://127.0.0.1:7878/#pair=…`) and click Pair. For another computer,
@@ -59,9 +71,11 @@ The window is a remake of [T3 Code](https://github.com/pingdotgg/t3code)'s
 settings, with Deck's sessions as threads and Deck's agents in place of
 T3's providers.
 
-- **Projects.** The folder button in the sidebar switches between recent
-  folders and paired Decks, or adds a project (Deck starts
-  `deck serve --rpc` in it). One Deck is open at a time.
+- **Projects.** As in T3 Code, the sidebar lists the threads of every open
+  project together, grouped by project (or in one list, in Settings). The
+  project filter at the top shows all projects or one, adds a project,
+  reopens a recent one or pairs with a Deck. Each group has its own new
+  thread and close buttons.
 - **Threads.** Each card shows the project, the title, the last message and
   the agents that wrote. A thread that works says Working, one that waits
   for you says Approval, one that finished while you looked elsewhere says
@@ -85,9 +99,29 @@ T3's providers.
   those of every thread.
 - **Side panel.** Diff shows every changed file with line numbers; Queue
   shows the messages that wait for a busy agent: send now or cancel.
+- **Side chat.** Ask another agent about what the open thread's agents are
+  doing, without writing into that thread. The side chat gets a digest of
+  the thread and lives in its own hidden thread.
+- **Agents** (multi-agent). The tree of agents and sub-agents with the tool
+  each one runs, the task board (cancel, retry, steer, apply or discard a
+  worktree result), orchestration on or off, and races: start several
+  agents on one brief and keep the best entry.
+- **Team** (multiplayer). Teammates and whether they are online, team chat,
+  contracts (propose, accept, decline), and shared threads: share the open
+  thread as observer, participant or editor, or follow a teammate's thread
+  and write in it if your role allows.
+- **Git.** The strip under the composer shows the branch; switch or create
+  one there. The header's git menu commits (all changes, with a message),
+  pushes, pulls, and opens or merges a pull request (through `gh`).
+- **Terminal** (Ctrl+J). A drawer of shells in the project folder. Tabs keep
+  running while the drawer is hidden; drag its top edge to resize it.
+- **Usage.** Tokens and cost per day, agent and model, the plan's limits,
+  a heat map of the last 20 weeks and when you work.
 - **Settings** (the gear, or Ctrl+,): send key, Yolo confirmation, folding,
-  time format, light or dark (or Deck's theme, or the system's), card or
-  compact thread rows, the agent kinds, the connection and the shortcuts.
+  time format, light or dark or the system's, the theme (T3's default,
+  Tokyo Night, Catppuccin Mocha, Nord, Rosé Pine, Dracula, Solarized Light, GitHub
+  Light) and accent colour, card or compact thread rows, grouping by
+  project, the agent kinds, the connection and the shortcuts.
 - **Keys.** Ctrl+K (Cmd+K) searches threads and commands. Ctrl+B hides the
   sidebar. Enter sends. Shift+Enter adds a line.
 - **Images.** Paste, drop or attach an image to send it.
@@ -103,6 +137,8 @@ T3's providers.
 | `npm run e2e` | Build, then Playwright: the renderer in Chromium over both transports, and the whole app in Electron |
 | `npm run smoke` | Build, then open the window, check that the app mounts, and quit |
 | `npm run lint` | `tsc --noEmit` for the renderer and for main |
+| `npm run build:deck` | The Deck engine from the repository root into `bin/deck` |
+| `npm run dist` | Build the app and the engine, then package with electron-builder into `release/` |
 
 On a Linux machine without a display, run `xvfb-run -a npm run e2e` and
 `xvfb-run -a npm run smoke`. As root in a container, Chromium needs
@@ -119,9 +155,13 @@ The tests use fakes in `test/`:
 - `fake-deck.cjs` stands in for the `deck` binary. It prints the fake gRPC
   server's handshake and lives until its stdin closes, as Deck does.
 
-Packaging is not set up. electron-builder can package `dist/`,
-`package.json` and the dependencies (`ws`, `@grpc/grpc-js`,
-`@grpc/proto-loader`); it needs no other file.
+`npm run dist` makes a dmg and zip on macOS, an AppImage and deb on Linux,
+and an NSIS installer on Windows, for the machine it runs on. The engine
+goes into `resources/bin`; build on each platform (or set `GOOS` and
+`GOARCH` for `build:deck`) to package for it. `npx electron-builder --linux
+dir` makes an unpacked app in `release/linux-unpacked`, which
+`test/e2e/packaged.spec.ts` opens with a bare PATH to check that the app
+starts its own engine.
 
 ## Architecture
 
@@ -153,7 +193,9 @@ renderer (React, sandboxed)                  main process (Node)                
   `DiffPanel`, the settings layout). `src/renderer/styles.css` holds the
   theme tokens, `src/renderer/ui/kit/` the primitives (button, badge, menu)
   after T3's `components/ui`, and lucide-react draws the icons. Tailwind
-  builds one stylesheet, so the CSP's `style-src 'self'` holds. The
+  builds one stylesheet, so the CSP's `style-src 'self'` holds. xterm.js
+  writes its rules into `<style>` elements, which the CSP blocks;
+  `ui/Terminal.tsx` copies them into a constructed stylesheet instead. The
   window's own settings (`prefs.ts`) live in its localStorage.
 
 ### What the rpc transport adds, and what the app uses
