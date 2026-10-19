@@ -89,4 +89,12 @@ describe("settings", () => {
     expect(st.settings).toBe("appearance");
     expect(reduceUi(st, { type: "open", id: "a" }).settings).toBeNull();
   });
+
+  test("usage and settings replace each other; a thread closes both", () => {
+    const st = run({ type: "settings", section: "general" }, { type: "usage", open: true });
+    expect(st.usage).toBe(true);
+    expect(st.settings).toBeNull();
+    expect(reduceUi(st, { type: "settings", section: "agents" }).usage).toBe(false);
+    expect(reduceUi(st, { type: "open", id: "a" }).usage).toBe(false);
+  });
 });

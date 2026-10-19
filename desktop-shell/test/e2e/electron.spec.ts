@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -33,6 +34,8 @@ test("over rpc: the app reopens the last folder and runs two agents", async () =
   symlinkSync(FAKE_DECK, join(bin, "deck"));
   const stopped = join(folder, "stopped");
   const app = await launch(userData, {
+    // The fake stands in for the bundled engine.
+    DECK_BIN: join(bin, "deck"),
     PATH: `${bin}${delimiter}${process.env["PATH"] ?? ""}`,
     DECK_FAKE_HANDSHAKE: fake.handshake,
     DECK_FAKE_STOPPED: stopped,
@@ -41,7 +44,7 @@ test("over rpc: the app reopens the last folder and runs two agents", async () =
     const win = await app.firstWindow();
     await win.setViewportSize({ width: 1360, height: 860 });
     await expect(win.locator(".project")).toHaveText("deck");
-    await expect(win.locator(".where")).toContainText(folder);
+    await expect(win.locator(".link")).toHaveText("Connected");
     const text = await win.evaluate(() => document.body.innerText);
     expect(text).not.toContain(fake.token);
 
@@ -81,6 +84,9 @@ test("over v2: the app pairs, connects and runs two agents", async () => {
     }, `http://127.0.0.1:${fake.port}/api/v1/health`);
     expect(fetched).toBe("blocked");
 
+    // The pairing form opens on demand when the app's engine is there.
+    const pairButton = win.getByRole("button", { name: "Pair with a Deck" });
+    if ((await pairButton.getAttribute("aria-expanded")) !== "true") await pairButton.click();
     await win.getByLabel("Pairing link or invite line").fill(fake.pairLink);
     await win.getByRole("button", { name: "Pair", exact: true }).click();
     await expect(win.locator(".project")).toHaveText("deck");
@@ -98,5 +104,48 @@ test("over v2: the app pairs, connects and runs two agents", async () => {
   } finally {
     await app.close();
     await fake.close();
+  }
+});
+
+// The real engine the app bundles (npm run build:deck), in a real git work
+// tree: the window reads its branch and runs a shell under the CSP.
+const engine = join(root, "bin", process.platform === "win32" ? "deck.exe" : "deck");
+test("with the bundled engine: git status and a terminal", async () => {
+  test.skip(!existsSync(engine) || process.platform === "win32", "needs `npm run build:deck`");
+  const folder = mkdtempSync(join(tmpdir(), "deck-real-"));
+  const git = (...args: string[]) =>
+    execFileSync("git", args, {
+      cwd: folder,
+      env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@e", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@e" },
+    });
+  git("init", "-q", "-b", "main");
+  writeFileSync(join(folder, "a.txt"), "a\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "first");
+  writeFileSync(join(folder, "b.txt"), "b\n");
+  const userData = mkdtempSync(join(tmpdir(), "deck-desktop-"));
+  writeFileSync(join(userData, "recent.json"), JSON.stringify([folder]));
+  const app = await launch(userData, { DECK_BIN: engine, HOME: mkdtempSync(join(tmpdir(), "deck-home-")) });
+  try {
+    const win = await app.firstWindow();
+    await win.setViewportSize({ width: 1360, height: 860 });
+    await expect(win.locator(".link")).toHaveText("Connected", { timeout: 20_000 });
+    // One changed file: the next git step is a commit.
+    await expect(win.locator(".git-actions").getByRole("button", { name: "Commit" })).toBeVisible();
+
+    await win.keyboard.press("Control+j");
+    const drawer = win.getByRole("region", { name: "Terminal" });
+    await drawer.locator(".xterm").click();
+    await win.keyboard.type("echo $((6*7)) && git branch --show-current");
+    await win.keyboard.press("Enter");
+    await expect(drawer.locator(".xterm-rows")).toContainText("42");
+    await expect(drawer.locator(".xterm-rows")).toContainText("main");
+    // xterm's own layout rules reach the page through the constructed
+    // stylesheet, though the CSP refuses its <style> elements.
+    const display = await drawer.locator(".xterm-rows span").first().evaluate((e) => getComputedStyle(e).display);
+    expect(display).toBe("inline-block");
+    await win.screenshot({ path: join(root, "docs", "terminal.png") });
+  } finally {
+    await app.close();
   }
 });

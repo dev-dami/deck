@@ -28,6 +28,8 @@ const bridge: DeckBridge = {
   recentFolders: () => invoke("recentFolders"),
   rpcCall: (id, method, request) => invoke("rpcCall", id, method, request),
   rpcSubscribe: (id, epoch, seq) => invoke("rpcSubscribe", id, epoch, seq),
+  termSubscribe: (id, term) => invoke("termSubscribe", id, term),
+  termUnsubscribe: (id, term) => invoke("termUnsubscribe", id, term),
   onSocket: (fn) => listen<[number, SocketEvent]>("deck:socket", fn),
   onRpc: (fn) => listen<[string, RpcStreamEvent]>("deck:rpc", fn),
 };

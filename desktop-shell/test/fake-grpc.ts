@@ -90,6 +90,19 @@ export class FakeRpcDeck {
   private readonly streams = new Set<grpc.ServerWritableStream<Obj, Obj>>();
   private seq = 0;
 
+  // The project's work tree, as the git calls change it.
+  readonly git = {
+    branch: "main",
+    branches: ["main", "feature/limiter"],
+    dirty: 2,
+    ahead: 1,
+    commits: [] as string[],
+    pushed: 0,
+    pr: null as Obj | null,
+  };
+  // Each terminal: what it printed and who watches it.
+  private readonly terms = new Map<string, { out: string; line: string; subs: Set<grpc.ServerWritableStream<Obj, Obj>> }>();
+
   private constructor(readonly deck: FakeDeck) {}
 
   static async start(opts: FakeOptions = {}): Promise<FakeRpcDeck> {
@@ -156,6 +169,127 @@ export class FakeRpcDeck {
         this.streams.add(call);
         call.on("cancelled", () => this.streams.delete(call));
       },
+    };
+    const unary = (name: string, f: (r: Obj) => Obj) => {
+      h[name] = (call: grpc.ServerUnaryCall<Obj, Obj>, cb: grpc.sendUnaryData<Obj>) => {
+        if (!this.authorized(call.metadata)) return cb({ code: grpc.status.UNAUTHENTICATED, details: "missing or wrong token" });
+        this.calls.push(name);
+        try {
+          cb(null, f(call.request));
+        } catch (e) {
+          cb({ code: grpc.status.FAILED_PRECONDITION, details: e instanceof Error ? e.message : "fake failed" });
+        }
+      };
+    };
+    const g = this.git;
+    unary("GitStatus", () => ({
+      repo: true,
+      branch: g.branch,
+      upstream: `origin/${g.branch}`,
+      ahead: g.ahead,
+      behind: 0,
+      dirty: g.dirty,
+      default_branch: "main",
+      gh: true,
+      branches: g.branches.map((name, i) => ({ name, upstream: `origin/${name}`, committed_at: Date.now() - i * 3_600_000, subject: `Work on ${name}` })),
+      pull_request: g.pr,
+    }));
+    unary("GitCheckout", (r) => {
+      const b = String(r["branch"]);
+      if (r["create"] === true) g.branches.unshift(b);
+      else if (!g.branches.includes(b)) throw new Error(`error: pathspec '${b}' did not match any file(s) known to git`);
+      g.branch = b;
+      return {};
+    });
+    unary("GitCommit", (r) => {
+      g.commits.push(String(r["message"]));
+      g.dirty = 0;
+      g.ahead++;
+      return {};
+    });
+    unary("GitPush", () => {
+      g.pushed++;
+      g.ahead = 0;
+      return {};
+    });
+    unary("GitPull", () => ({}));
+    unary("GitCreatePR", (r) => {
+      g.pr = { number: 7723, title: r["title"], state: "OPEN", url: "https://github.com/dev-dami/deck/pull/7723", draft: r["draft"] === true, base: "main", checks: [{ name: "ci", bucket: "pending", link: "" }] };
+      return g.pr;
+    });
+    unary("GitMergePR", () => {
+      if (g.pr !== null) g.pr = { ...g.pr, state: "MERGED" };
+      return {};
+    });
+    unary("Usage", (r) => {
+      const days = Number(r["days"] ?? 0) || 30;
+      const day = 86_400_000;
+      const midnight = new Date(new Date().toDateString()).getTime();
+      return {
+        available: true,
+        overview: { turns: 42, all_turns: 120, input_tokens: 1_250_000, output_tokens: 310_000, cached_tokens: 900_000, cost_usd: 18.42, duration_ms: 5_400_000, ttft_avg_ms: 1800, ttft_p95_ms: 4200, cache_hit_pct: 62.5, done: 38, interrupted: 3, failed: 1 },
+        days: Array.from({ length: days }, (_, i) => ({ day: midnight - (days - 1 - i) * day, turns: (i * 7) % 9, tokens: ((i * 37) % 11) * 40_000, cost_usd: ((i * 37) % 11) * 0.4 })),
+        kinds: [
+          { kind: "claude", turns: 25, input_tokens: 800_000, output_tokens: 200_000, cost_usd: 12.1 },
+          { kind: "codex", turns: 17, input_tokens: 450_000, output_tokens: 110_000, cost_usd: 6.32 },
+        ],
+        models: [
+          { kind: "claude", model: "opus", turns: 15, input_tokens: 600_000, output_tokens: 150_000, cost_usd: 10 },
+          { kind: "claude", model: "sonnet", turns: 10, input_tokens: 200_000, output_tokens: 50_000, cost_usd: 2.1 },
+          { kind: "codex", model: "gpt-5", turns: 17, input_tokens: 450_000, output_tokens: 110_000, cost_usd: 6.32 },
+        ],
+        sessions: [{ session_id: "ses_main", title: "Fix the pairing lockout", turns: 20, tokens: 700_000, cost_usd: 9.5 }],
+        limits: [{ agent_kind: "claude", window_id: "five_hour", kind: "session", label: "5-hour", used_pct: 64, resets_at: Date.now() + 2 * 3_600_000, plan: "max" }],
+        heat: Array.from({ length: 140 }, (_, i) => ({ day: midnight - (139 - i) * day, turns: (i * 13) % 7, tokens: ((i * 13) % 7) * 50_000 })),
+        habits: { active_days: 18, streak: 6, hours: Array.from({ length: 168 }, (_, i) => ((i % 24) >= 9 && (i % 24) <= 18 ? (i * 5) % 6 : 0)), review_median_ms: 95_000, review_p90_ms: 600_000, approval_median_ms: 2_400, approval_fast_pct: 35, user_turns: 40, redirects: 4, follow_ups: 12, prompt_median: 140, edit_turns: 20, edit_files: 64, lines_added: 2300, lines_removed: 800, reverts: 2, fit: [{ kind: "claude", class: "edit", calls: 120 }, { kind: "codex", class: "run", calls: 90 }] },
+      };
+    });
+    const termOut = (id: string, text: string) => {
+      const t = this.terms.get(id);
+      if (t === undefined) return;
+      t.out += text;
+      for (const sub of t.subs) sub.write({ data: Buffer.from(text) });
+    };
+    unary("TerminalOpen", () => {
+      const id = `term_${this.terms.size + 1}`;
+      this.terms.set(id, { out: "fake shell\r\n$ ", line: "", subs: new Set() });
+      return { terminal_id: id };
+    });
+    unary("TerminalWrite", (r) => {
+      const id = String(r["terminal_id"]);
+      const t = this.terms.get(id);
+      if (t === undefined) throw new Error("no such terminal");
+      for (const ch of Buffer.from(r["data"] as Uint8Array).toString("utf8")) {
+        if (ch === "\r") {
+          termOut(id, `\r\nran: ${t.line}\r\n$ `);
+          t.line = "";
+        } else {
+          t.line += ch;
+          termOut(id, ch);
+        }
+      }
+      return {};
+    });
+    unary("TerminalResize", () => ({}));
+    unary("TerminalClose", (r) => {
+      const t = this.terms.get(String(r["terminal_id"]));
+      for (const sub of t?.subs ?? []) {
+        sub.write({ exited: true, exit_code: 0 });
+        sub.end();
+      }
+      this.terms.delete(String(r["terminal_id"]));
+      return {};
+    });
+    h["TerminalOutput"] = (call: grpc.ServerWritableStream<Obj, Obj>) => {
+      const t = this.terms.get(String(call.request["terminal_id"]));
+      if (!this.authorized(call.metadata) || t === undefined) {
+        call.destroy({ code: grpc.status.NOT_FOUND, details: "no such terminal" } as grpc.ServiceError);
+        return;
+      }
+      this.calls.push("TerminalOutput");
+      call.write({ data: Buffer.from(t.out) });
+      t.subs.add(call);
+      call.on("cancelled", () => t.subs.delete(call));
     };
     for (const [name, spec] of Object.entries(UNARY)) {
       h[name] = (call: grpc.ServerUnaryCall<Obj, Obj>, cb: grpc.sendUnaryData<Obj>) => {

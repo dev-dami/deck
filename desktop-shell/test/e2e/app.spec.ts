@@ -17,6 +17,7 @@ test.afterEach(async () => {
 async function pair(page: Page): Promise<void> {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "What should we work on?" })).toBeVisible();
+  await page.getByRole("button", { name: "Pair with a Deck" }).click();
   await page.getByLabel("Pairing link or invite line").fill(fake.pairLink);
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await expect(page.locator(".project")).toHaveText("deck");
@@ -123,7 +124,7 @@ test("a live approval makes its agent wait", async ({ page }) => {
   await openMain(page);
   fake.requestApproval("ses_main", "codex-1", "rm -rf build");
   await expect(page.locator('.agent[data-agent="codex-1"] .agent-status')).toHaveText("waiting");
-  await expect(page.locator(".panel-toggles").getByRole("button", { name: /Approvals/ })).toHaveText("Approvals2");
+  await expect(page.locator(".panel-toggles").getByRole("button", { name: "Approvals" })).toHaveText("2");
 });
 
 test("pages older messages, switches with the palette and makes a session", async ({ page }) => {

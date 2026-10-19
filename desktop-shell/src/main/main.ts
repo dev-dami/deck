@@ -13,7 +13,7 @@ import {
 } from "electron";
 import { HOST_METHODS, hostChannel, RPC_EVENT_CHANNEL, SOCKET_EVENT_CHANNEL } from "../shared/bridge";
 import { RENDERER_CSP } from "../shared/csp";
-import { findOnPath, loadService, RpcDecks } from "./decks";
+import { findDeck, loadService, RpcDecks } from "./decks";
 import { callHost, createHost } from "./host";
 import { LinkHost } from "./link";
 import { RecentFolders } from "./recent";
@@ -146,7 +146,9 @@ async function main(): Promise<void> {
 
   const store = new ServerStore(join(app.getPath("userData"), "servers.json"), sealer);
   const links = new LinkHost(store, (id, ev) => win?.webContents.send(SOCKET_EVENT_CHANNEL, id, ev));
-  const deckPath = findOnPath("deck");
+  // The bundled engine: resources/bin in the packaged app, bin/ beside
+  // package.json in a checkout.
+  const deckPath = findDeck(app.isPackaged ? join(process.resourcesPath, "bin") : join(app.getAppPath(), "bin"));
   // build copies proto/deck/v1/deck.proto to dist/app/proto.
   const Service = loadService(join(__dirname, "..", "proto", "deck.proto"));
   const decks = new RpcDecks(deckPath, Service, (id, ev) => win?.webContents.send(RPC_EVENT_CHANNEL, id, ev));

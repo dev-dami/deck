@@ -222,7 +222,7 @@ function Agents({ state }: { state: AppState }) {
           description={
             state.server?.allow_yolo === true
               ? "Allowed: a thread may run every command and edit without asking."
-              : "Not allowed for this window. Run deck remote devices --allow-yolo <id> to allow it."
+              : "Not allowed for this window: the paired Deck has to allow it."
           }
         />
         <Row title="Models" description="Each agent's model and effort are picked per thread, from the composer's agent picker." />

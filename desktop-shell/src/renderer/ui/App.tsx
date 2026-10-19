@@ -25,8 +25,9 @@ function base(dir: string): string {
 
 const noSubscribe = () => () => {};
 
-function hostPort(s: SavedServer): string {
-  return `${s.host.includes(":") ? `[${s.host}]` : s.host}:${s.port}`;
+// A paired Deck as the window names it: where it runs, never its address.
+function pairedName(s: SavedServer): string {
+  return s.tls ? "Paired Deck (another computer)" : "Paired Deck (this computer)";
 }
 
 export function App({ bridge }: { bridge: DeckBridge }) {
@@ -59,9 +60,9 @@ export function App({ bridge }: { bridge: DeckBridge }) {
       setMessage(null);
       swap({
         key: `v2:${s.id}`,
-        where: hostPort(s),
+        where: pairedName(s),
         source: `paired:${s.id}`,
-        transport: "Paired over WebSocket (deck remote, protocol v2)",
+        transport: "Paired Deck",
         c: connect(bridge, s.id),
       });
     },
@@ -75,7 +76,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
         key: `rpc:${d.id}`,
         where: d.dir,
         source: `folder:${d.dir}`,
-        transport: "Local folder over gRPC (deck serve --rpc)",
+        transport: "Project on this computer",
         c: openLocal(bridge, d),
       });
     },
@@ -105,7 +106,8 @@ export function App({ bridge }: { bridge: DeckBridge }) {
     [swap, refresh],
   );
 
-  // On start: the last folder when deck is on PATH, else the newest pairing.
+  // On start: the last folder (the engine ships with the app), else the
+  // newest pairing.
   useEffect(() => {
     void (async () => {
       const [s, r, d] = await Promise.all([bridge.listServers(), bridge.recentFolders(), bridge.findDeck()]);
@@ -147,8 +149,8 @@ export function App({ bridge }: { bridge: DeckBridge }) {
     })),
     ...(servers ?? []).map((s) => ({
       key: `paired:${s.id}`,
-      name: hostPort(s),
-      detail: s.tls ? "https, pinned" : "this computer",
+      name: "Paired Deck",
+      detail: s.tls ? "Another computer" : "This computer",
       kind: "paired" as const,
       active: active?.source === `paired:${s.id}`,
     })),
@@ -162,7 +164,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   };
 
   const addProject = async (): Promise<string | null> => {
-    if (deck === null) return "Put the deck command on your PATH to open a folder.";
+    if (deck === null) return "This install of Deck is missing its engine. Reinstall Deck.";
     const dir = await bridge.pickFolder();
     return dir === null ? null : openFolder(dir);
   };

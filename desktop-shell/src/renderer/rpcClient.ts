@@ -2,6 +2,7 @@ import { describeError, Store } from "@web/controller";
 import type { ChangedFile, Decision, Image, Mode, ModelChoice, ServerEvent, ServerInfo, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import { applyTheme, type ThemeTarget } from "@web/theme";
+import { ProjectApi } from "./project";
 import type { DeckBridge, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
 import type { DeckClient } from "./client";
 import {
@@ -41,11 +42,14 @@ export class RpcDeckClient implements DeckClient {
   private themeVars: string[] = [];
   private readonly off: () => void;
 
+  readonly project: ProjectApi;
+
   constructor(
     private readonly bridge: DeckBridge,
     readonly deck: LocalDeck,
     private readonly theme: ThemeTarget | null,
   ) {
+    this.project = new ProjectApi(bridge, deck.id);
     this.off = bridge.onRpc((id, ev) => {
       if (id === deck.id && !this.stopped) this.onStream(ev);
     });
@@ -288,6 +292,7 @@ export class RpcDeckClient implements DeckClient {
 
   // Closes the folder: main closes the Deck's stdin and it stops.
   forget(message: string | null = null): void {
+    this.project.dispose();
     if (!this.stopped) void this.bridge.closeFolder(this.deck.id);
     this.stop();
     this.store.dispatch({ type: "reset", auth: "unpaired", message });

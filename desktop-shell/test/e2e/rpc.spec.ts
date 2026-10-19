@@ -31,7 +31,8 @@ async function openFolder(page: Page): Promise<void> {
   await page.goto("/");
   await page.getByRole("button", { name: "Add project" }).click();
   await expect(page.locator(".project")).toHaveText("deck");
-  await expect(page.locator(".where")).toContainText(dir);
+  // The sidebar names the project, never an address.
+  await expect(page.locator(".link")).toHaveText("Connected");
 }
 
 test("opens a folder and runs two agents in one thread", async ({ page }) => {
@@ -83,4 +84,74 @@ test("answers an approval and closes the folder", async ({ page }) => {
   await page.getByRole("button", { name: "Switch Deck" }).click();
   await expect(page.getByRole("heading", { name: "What should we work on?" })).toBeVisible();
   await expect(page.getByRole("list", { name: "Recent folders" })).toContainText(dir);
+});
+
+test("git: switches and makes a branch, commits, pushes and opens a pull request", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  // The branch sits in the composer's strip; the next git step in the header.
+  const branch = page.locator(".branch-picker");
+  await expect(branch).toContainText("main");
+  await branch.click();
+  await page.getByRole("dialog", { name: "Branches" }).getByRole("menuitem", { name: /feature\/limiter/ }).click();
+  await expect(branch).toContainText("feature/limiter");
+  await branch.click();
+  await page.getByLabel("Find or create a branch").fill("fix/lockout");
+  await page.getByLabel("Find or create a branch").press("Enter");
+  await expect(branch).toContainText("fix/lockout");
+
+  const git = page.locator(".git-actions");
+  await git.getByRole("button", { name: "Commit" }).click();
+  const commit = page.getByRole("dialog", { name: "Commit changes" });
+  await commit.getByLabel("Commit message").fill("Key the limiter by address");
+  await commit.getByRole("button", { name: "Commit and push" }).click();
+  await expect(git.getByRole("button", { name: "Create PR" })).toBeVisible();
+  expect(fake.git.commits).toEqual(["Key the limiter by address"]);
+  expect(fake.git.pushed).toBe(1);
+
+  await git.getByRole("button", { name: "Create PR" }).click();
+  const pr = page.getByRole("dialog", { name: "Create pull request" });
+  await expect(pr.getByLabel("Title")).toHaveValue("Fix the pairing lockout");
+  await pr.getByRole("button", { name: "Create pull request" }).click();
+  await expect(git.getByRole("link", { name: "#7723" })).toBeVisible();
+});
+
+test("git: a refused checkout shows git's words", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await page.locator(".branch-picker").click();
+  fake.git.branches = ["main"];
+  await page.getByRole("dialog", { name: "Branches" }).getByRole("menuitem", { name: /feature\/limiter/ }).click();
+  await expect(page.locator(".toast")).toContainText("did not match any file");
+});
+
+test("terminal: opens in the drawer and runs what you type", async ({ page }) => {
+  await openFolder(page);
+  await page.keyboard.press("Control+j");
+  const drawer = page.getByRole("region", { name: "Terminal" });
+  await expect(drawer.locator(".xterm-rows")).toContainText("fake shell");
+  await drawer.locator(".xterm").click();
+  await page.keyboard.type("ls");
+  await page.keyboard.press("Enter");
+  await expect(drawer.locator(".xterm-rows")).toContainText("ran: ls");
+  // A second tab is a second shell.
+  await drawer.getByRole("button", { name: "New terminal" }).click();
+  await expect(drawer.getByRole("tab")).toHaveCount(2);
+  await drawer.getByRole("button", { name: "Hide the terminal" }).click();
+  await expect(drawer).toBeHidden();
+});
+
+test("usage: the page shows totals, agents, models and limits", async ({ page }) => {
+  await openFolder(page);
+  await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Usage" }).click();
+  const usage = page.locator("[data-usage]");
+  await expect(usage.locator('[data-tile="Tokens"]')).toContainText("1.6M");
+  await expect(usage.locator('[data-tile="Cost"]')).toContainText("$18.42");
+  await expect(usage).toContainText("opus");
+  await expect(usage).toContainText("64% used");
+  await usage.getByRole("radio", { name: "7 days" }).click();
+  await usage.getByRole("button", { name: "Table" }).click();
+  await expect(usage.locator("table").first().locator("tbody tr")).toHaveCount(7);
+  await usage.getByRole("button", { name: /Fix the pairing lockout/ }).click();
+  await expect(page.locator(".title")).toHaveText("Fix the pairing lockout");
 });

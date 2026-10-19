@@ -5,6 +5,7 @@ import { kindColour, kindMark } from "@web/theme";
 import { relativeTime } from "@web/time";
 import {
   ArrowLeft,
+  BarChart3,
   Check,
   ChevronDown,
   ChevronRight,
@@ -338,6 +339,8 @@ function ProjectSwitcher({
   );
 }
 
+const LINK_LABEL: Record<Link, string> = { online: "Connected", connecting: "Connecting…", offline: "Offline" };
+
 const linkDot: Record<Link, string> = {
   online: "bg-success",
   connecting: "bg-warning animate-deck-pulse",
@@ -346,7 +349,6 @@ const linkDot: Record<Link, string> = {
 
 export function Sidebar({
   project,
-  where,
   link,
   sessions,
   openId,
@@ -368,9 +370,10 @@ export function Sidebar({
   onProject,
   onAddProject,
   onCollapse,
+  usage,
+  onUsage,
 }: {
   project: string;
-  where: string;
   link: Link;
   sessions: Session[];
   openId: string | null;
@@ -392,6 +395,8 @@ export function Sidebar({
   onProject: (key: string) => void;
   onAddProject: () => void;
   onCollapse: () => void;
+  usage: boolean;
+  onUsage: () => void;
 }) {
   const [showSettled, setShowSettled] = useState(false);
   const { live, settled } = splitSettled(sessions, now, openId, unread);
@@ -507,18 +512,25 @@ export function Sidebar({
         <HeaderButton label="Settings" onClick={() => onSettings(settings === null ? "general" : null)}>
           <Settings />
         </HeaderButton>
+        <Button
+          variant="ghost-muted"
+          size="icon-sm"
+          aria-label="Usage"
+          title="Usage"
+          aria-pressed={usage}
+          onClick={onUsage}
+        >
+          <BarChart3 />
+        </Button>
         <HeaderButton label="Commands" onClick={onPalette}>
           <Command />
         </HeaderButton>
         <HeaderButton label="Switch Deck" onClick={onDisconnect}>
           <Unplug />
         </HeaderButton>
-        <span
-          className="where ml-auto flex min-w-0 items-center gap-1.5 px-1 text-2xs text-muted-foreground"
-          title={where}
-        >
+        <span className="link ml-auto flex min-w-0 items-center gap-1.5 px-1 text-2xs text-muted-foreground">
           <span className={cn("dot size-1.5 shrink-0 rounded-full", linkDot[link])} />
-          <span className="truncate">{link === "online" ? where : link}</span>
+          <span className="truncate">{LINK_LABEL[link]}</span>
         </span>
       </footer>
     </nav>

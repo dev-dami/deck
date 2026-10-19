@@ -64,6 +64,8 @@ export function createHost(d: HostDeps): DeckHost {
     rpcCall: (id: string, method: RpcMethod, request: Record<string, unknown>) =>
       d.decks.call(id, method, request),
     rpcSubscribe: async (id: string, epoch: string, seq: number) => d.decks.subscribe(id, epoch, seq),
+    termSubscribe: async (id: string, term: string) => d.decks.termSubscribe(id, term),
+    termUnsubscribe: async (id: string, term: string) => d.decks.termUnsubscribe(id, term),
   };
 }
 
@@ -101,6 +103,8 @@ const ARGS: Record<HostMethod, Check[]> = {
   // The request's fields are checked by the proto encoder.
   rpcCall: [isStr, isRpcMethod, isObject],
   rpcSubscribe: [isStr, isStr, isNat],
+  termSubscribe: [isStr, isStr],
+  termUnsubscribe: [isStr, isStr],
 };
 
 // Calls method m with args from the renderer, or rejects when they are not

@@ -24,6 +24,27 @@ export function findOnPath(name: string, env: NodeJS.ProcessEnv = process.env): 
   return null;
 }
 
+// The Deck engine the app runs, like Claude Desktop runs the Claude Code it
+// ships: DECK_BIN when set (tests, a custom build), else the binary bundled
+// in bundledDir (resources/bin of the packaged app, bin/ in a checkout
+// after `npm run build:deck`), else a deck on PATH.
+export function findDeck(bundledDir: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  const own = env["DECK_BIN"];
+  if (own !== undefined && own !== "" && isExecutable(own)) return own;
+  const bundled = join(bundledDir, process.platform === "win32" ? "deck.exe" : "deck");
+  if (isExecutable(bundled)) return bundled;
+  return findOnPath("deck", env);
+}
+
+function isExecutable(p: string): boolean {
+  try {
+    accessSync(p, constants.X_OK);
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
 // The one JSON line `deck serve --rpc` prints on stdout once it listens
 // (pkg/rpc/socket.go, Handshake).
 export interface Handshake {
@@ -116,6 +137,8 @@ interface Open {
   child: ChildProcess;
   client: DeckClient;
   stream: grpc.ClientReadableStream<unknown> | null;
+  // The output stream of each terminal the window watches.
+  terms: Map<string, grpc.ClientReadableStream<unknown>>;
 }
 
 type Emit = (id: string, ev: RpcStreamEvent) => void;
@@ -165,7 +188,7 @@ export class RpcDecks {
   ) {}
 
   async open(dir: string): Promise<OpenOutcome> {
-    if (this.deck === null) return { ok: false, message: "The deck command is not on PATH." };
+    if (this.deck === null) return { ok: false, message: "This install of Deck is missing its engine. Reinstall Deck." };
     try {
       if (!statSync(dir).isDirectory()) return { ok: false, message: "That is not a folder." };
     } catch {
@@ -198,7 +221,7 @@ export class RpcDecks {
       project: typeof project === "string" && project !== "" ? project : dir,
       version: hs.version,
     };
-    this.open_.set(id, { deck, child, client, stream: null });
+    this.open_.set(id, { deck, child, client, stream: null, terms: new Map() });
     child.on("exit", (code) => {
       if (this.open_.get(id)?.child !== child) return;
       this.drop(id);
@@ -239,6 +262,46 @@ export class RpcDecks {
     });
   }
 
+  // Streams a terminal's output to the window: its scrollback first, then
+  // what it prints, then its exit. A second subscribe replaces the first.
+  termSubscribe(id: string, term: string): void {
+    const o = this.open_.get(id);
+    if (o === undefined) {
+      this.emit(id, { type: "term-end", term, code: grpc.status.UNAVAILABLE, message: "That Deck is closed." });
+      return;
+    }
+    o.terms.get(term)?.cancel();
+    const stream = (o.client["TerminalOutput"] as (req: object) => grpc.ClientReadableStream<unknown>).call(
+      o.client,
+      { terminal_id: term },
+    );
+    o.terms.set(term, stream);
+    const mine = () => o.terms.get(term) === stream;
+    stream.on("data", (chunk: { data?: Uint8Array; exited?: boolean; exit_code?: number }) => {
+      if (!mine()) return;
+      if (chunk.data !== undefined && chunk.data.length > 0) {
+        this.emit(id, { type: "term", term, data: Buffer.from(chunk.data).toString("base64") });
+      }
+      if (chunk.exited === true) this.emit(id, { type: "term-exit", term, code: chunk.exit_code ?? 0 });
+    });
+    stream.on("error", (e: grpc.ServiceError) => {
+      if (!mine() || e.code === grpc.status.CANCELLED) return;
+      o.terms.delete(term);
+      this.emit(id, { type: "term-end", term, code: e.code, message: e.details || e.message });
+    });
+    stream.on("end", () => {
+      if (mine()) o.terms.delete(term);
+    });
+  }
+
+  termUnsubscribe(id: string, term: string): void {
+    const o = this.open_.get(id);
+    const s = o?.terms.get(term);
+    if (o === undefined || s === undefined) return;
+    o.terms.delete(term);
+    s.cancel();
+  }
+
   // Ends the event streams and keeps the Decks: a reloaded window opens
   // its folder again and gets the same Deck.
   cancelStreams(): void {
@@ -246,6 +309,8 @@ export class RpcDecks {
       const s = o.stream;
       o.stream = null;
       s?.cancel();
+      for (const t of o.terms.values()) t.cancel();
+      o.terms.clear();
     }
   }
 
@@ -271,6 +336,8 @@ export class RpcDecks {
     const s = o.stream;
     o.stream = null;
     s?.cancel();
+    for (const t of o.terms.values()) t.cancel();
+    o.terms.clear();
     o.client.close();
   }
 }

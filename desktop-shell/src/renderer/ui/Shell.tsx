@@ -12,6 +12,7 @@ import {
   Settings as SettingsIcon,
   ShieldQuestion,
   Square,
+  SquareTerminal,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { agentKind } from "../agents";
@@ -23,6 +24,7 @@ import { initialUi, PANELS, type Panel, reduceUi, SETTINGS_SECTIONS } from "../u
 import { AgentPicker, AgentsStrip } from "./AgentsStrip";
 import { ApprovalCard } from "./ApprovalCard";
 import { Composer } from "./Composer";
+import { BranchPicker, GitActions, useGit } from "./Git";
 import { isMac, modKey } from "./keys";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
@@ -31,6 +33,8 @@ import { ModePicker } from "./ModePicker";
 import { type Command, Palette } from "./Palette";
 import { RightPanel } from "./RightPanel";
 import { SettingsPage } from "./Settings";
+import { TerminalDrawer } from "./Terminal";
+import { UsagePage } from "./Usage";
 import { type ProjectEntry, Sidebar } from "./Sidebar";
 import { Timeline } from "./Timeline";
 
@@ -138,6 +142,9 @@ export function Shell({
   const [sidebar, setSidebar] = useState(true);
   const [wide, setWide] = useState(false);
   const [focus, setFocus] = useState<string | null>(null);
+  const [terminal, setTerminal] = useState(false);
+  const api = c.project;
+  const git = useGit(api);
   const [changes, setChanges] = useState<{ id: string; files: ChangedFile[] } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mac = useMemo(isMac, []);
@@ -191,6 +198,11 @@ export function Shell({
     };
   }, [c, sid, busy, tick]);
   const files = changes !== null && changes.id === sid ? changes.files : null;
+  // The agents' edits change the work tree: look again when they stop.
+  const refreshGit = git.refresh;
+  useEffect(() => {
+    if (!busy) void refreshGit();
+  }, [busy, refreshGit]);
 
   const focusInput = useCallback(() => requestAnimationFrame(() => inputRef.current?.focus()), []);
 
@@ -249,11 +261,14 @@ export function Shell({
       } else if (k === ",") {
         e.preventDefault();
         dispatch({ type: "settings", section: "general" });
+      } else if ((k === "j" || k === "`") && api !== undefined) {
+        e.preventDefault();
+        setTerminal((v) => !v);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [ui.palette, newSession]);
+  }, [ui.palette, newSession, api]);
 
   const addProject = useCallback(async () => {
     const e = await onAddProject();
@@ -274,6 +289,10 @@ export function Shell({
         label: `Settings: ${x.label}`,
         run: () => dispatch({ type: "settings", section: x.section }),
       })),
+      { id: "usage", label: "Open usage", run: () => dispatch({ type: "usage", open: true }) },
+      ...(api === undefined
+        ? []
+        : [{ id: "terminal", label: "Toggle terminal", hint: `${modKey(mac)}J`, run: () => setTerminal((v) => !v) }]),
       { id: "theme-light", label: "Theme: light", run: () => setPrefs({ theme: "light" }) },
       { id: "theme-dark", label: "Theme: dark", run: () => setPrefs({ theme: "dark" }) },
       { id: "theme-deck", label: "Theme: follow Deck", run: () => setPrefs({ theme: "deck" }) },
@@ -289,7 +308,7 @@ export function Shell({
       });
     }
     return list;
-  }, [state.sessions, now, mac, newSession, onDisconnect, addProject, openSession]);
+  }, [state.sessions, now, mac, newSession, onDisconnect, addProject, openSession, api]);
 
   const online = state.link === "online";
   const roster = sid === null ? [] : (state.roster[sid] ?? []);
@@ -298,7 +317,8 @@ export function Shell({
   const pending = sid === null ? [] : state.approvals.filter((a) => a.session_id === sid);
   const queued = sid === null ? 0 : (state.queue[sid]?.length ?? 0);
   const imagesOn = state.server?.features.includes("images") ?? false;
-  const toast = (text: string) => c.store.dispatch({ type: "toast.add", kind: "error", text });
+  const toast = useCallback((text: string) => c.store.dispatch({ type: "toast.add", kind: "error", text }), [c]);
+  const info = useCallback((text: string) => c.store.dispatch({ type: "toast.add", kind: "info", text }), [c]);
   const added = files?.reduce((n, f) => n + f.added, 0) ?? 0;
   const removed = files?.reduce((n, f) => n + f.removed, 0) ?? 0;
 
@@ -361,27 +381,50 @@ export function Shell({
           </li>
         </ol>
       </nav>
+      {api !== undefined && (
+        <GitActions
+          git={git}
+          project={api}
+          threadTitle={open === undefined ? "" : sessionTitle(open)}
+          onError={toast}
+          onInfo={info}
+        />
+      )}
       <div className="panel-toggles flex shrink-0 items-center gap-1">
+        {api !== undefined && (
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Terminal"
+            title={`Terminal (${modKey(mac)}J)`}
+            aria-pressed={terminal}
+            onClick={() => setTerminal((v) => !v)}
+          >
+            <SquareTerminal />
+          </Button>
+        )}
         <Button
           variant="outline"
           size="sm"
-          className="font-normal"
+          className="px-2 font-normal"
+          aria-label="Approvals"
+          title="Approvals"
           aria-pressed={ui.panel === "approvals"}
           onClick={() => showPanel("approvals")}
         >
           <ShieldQuestion />
-          Approvals
           {state.approvals.length > 0 && <Badge variant="warning">{state.approvals.length}</Badge>}
         </Button>
         <Button
           variant="outline"
           size="sm"
-          className="font-normal"
+          className="px-2 font-normal"
+          aria-label="Queue"
+          title="Queue"
           aria-pressed={ui.panel === "queue"}
           onClick={() => showPanel("queue")}
         >
           <ListOrdered />
-          Queue
           {queued > 0 && <Badge variant="muted">{queued}</Badge>}
         </Button>
         <Button
@@ -436,9 +479,15 @@ export function Shell({
           listModels={(kind) => c.listModels(open.id, kind)}
           setModel={(kind, model, effort) => void c.setModel(open.id, kind, model, effort)}
         />
-        <span className="ml-auto flex min-w-0 shrink items-center gap-1.5 px-1.5 text-muted-foreground/70 text-xs" title={where}>
-          <Folder className="size-3.5 shrink-0" />
-          <span className="truncate">{project || where}</span>
+        <span className="ml-auto flex min-w-0 shrink items-center">
+          {api !== undefined && git.status?.repo === true ? (
+            <BranchPicker git={git} project={api} onError={toast} />
+          ) : (
+            <span className="flex min-w-0 items-center gap-1.5 px-1.5 text-muted-foreground/70 text-xs">
+              <Folder className="size-3.5 shrink-0" />
+              <span className="truncate">{project || "Deck"}</span>
+            </span>
+          )}
         </span>
       </>
     );
@@ -448,7 +497,6 @@ export function Shell({
       {sidebar && (
         <Sidebar
           project={project}
-          where={where}
           link={state.link}
           sessions={state.sessions}
           openId={ui.openId}
@@ -467,118 +515,129 @@ export function Shell({
           onDisconnect={onDisconnect}
           onPalette={() => dispatch({ type: "palette", open: true })}
           onSettings={(section) => dispatch({ type: "settings", section })}
+          usage={ui.usage}
+          onUsage={() => dispatch({ type: "usage", open: !ui.usage })}
           onProject={(k) => void onProject(k).then((e) => e !== null && toast(e))}
           onAddProject={() => void addProject()}
           onCollapse={() => setSidebar(false)}
         />
       )}
-      {ui.settings !== null ? (
-        <main className="center flex min-w-0 flex-1 flex-col bg-background">
-          <SettingsPage
-            section={ui.settings}
-            state={state}
-            where={where}
-            transport={transport}
-            mac={mac}
-            onDisconnect={onDisconnect}
-          />
-        </main>
-      ) : (
-        <main className="center flex min-w-0 flex-1 flex-col bg-background">
-          {header}
-          {open === undefined ? (
-            <div className="welcome flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-5 pb-[14vh]">
-              <h2 className="welcome-title text-balance text-center font-medium text-2xl tracking-tight sm:text-3xl">
-                {state.sessionsLoaded ? (
-                  <>
-                    What should we build{project === "" ? "" : " in "}
-                    {project !== "" && (
-                      <span className="underline decoration-foreground/30 decoration-dotted underline-offset-4">{project}</span>
-                    )}
-                    ?
-                  </>
-                ) : (
-                  "Connecting to Deck…"
-                )}
-              </h2>
-              <Composer
-                key={NEW}
-                draft={draft}
-                setDraft={setDraft}
-                roster={[]}
-                kinds={kinds}
-                images={imagesOn}
-                online={online && state.sessionsLoaded}
-                onSend={start}
-                onError={toast}
-                inputRef={inputRef}
-                sendKey={prefs.sendKey}
-                toolbar={picker}
-                placeholder="Ask anything. $ picks an agent, $codex+ starts another."
-              />
-            </div>
-          ) : (
-            <>
-              <Timeline
-                messages={state.messages[open.id] ?? []}
-                roster={roster}
-                theme={state.theme}
-                more={state.pages[open.id]?.more ?? false}
-                onOlder={() => c.loadOlder(open.id)}
-                changes={files}
-                onOpenDiff={(path) => openPanel("changes", path)}
-              />
-              <div className="shrink-0 px-5 pb-3">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {ui.usage ? (
+          <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+            <UsagePage project={api} theme={state.theme} onOpenThread={openSession} />
+          </main>
+        ) : ui.settings !== null ? (
+          <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+            <SettingsPage
+              section={ui.settings}
+              state={state}
+              where={where}
+              transport={transport}
+              mac={mac}
+              onDisconnect={onDisconnect}
+            />
+          </main>
+        ) : (
+          <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+            {header}
+            {open === undefined ? (
+              <div className="welcome flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-5 pb-[14vh]">
+                <h2 className="welcome-title text-balance text-center font-medium text-2xl tracking-tight sm:text-3xl">
+                  {state.sessionsLoaded ? (
+                    <>
+                      What should we build{project === "" ? "" : " in "}
+                      {project !== "" && (
+                        <span className="underline decoration-foreground/30 decoration-dotted underline-offset-4">{project}</span>
+                      )}
+                      ?
+                    </>
+                  ) : (
+                    "Connecting to Deck…"
+                  )}
+                </h2>
                 <Composer
-                  key={open.id}
+                  key={NEW}
                   draft={draft}
                   setDraft={setDraft}
-                  roster={roster}
+                  roster={[]}
                   kinds={kinds}
                   images={imagesOn}
-                  online={online}
-                  onSend={(text: string, images: Image[]) => c.send(open.id, text, images)}
+                  online={online && state.sessionsLoaded}
+                  onSend={start}
                   onError={toast}
                   inputRef={inputRef}
                   sendKey={prefs.sendKey}
-                  busy={open.busy}
-                  onStop={() => void c.cancel(open.id)}
-                  banner={
-                    pending.length > 0 && (
-                      <div className="flex flex-col gap-1" aria-label="Approvals for this thread">
-                        {pending[0] !== undefined && (
-                          <ApprovalCard
-                            a={pending[0]}
-                            index={0}
-                            count={pending.length}
-                            className="border-0 bg-transparent"
-                            onAnswer={(d) => void c.answerApproval(pending[0]!.session_id, pending[0]!.id, d)}
-                          />
-                        )}
-                      </div>
-                    )
-                  }
-                  toolbar={
-                    <>
-                      {picker}
-                      <MoreMenu
-                        busy={open.busy}
-                        queued={queued}
-                        pending={state.approvals.length}
-                        onStop={() => void c.cancel(open.id)}
-                        onPanel={(p) => openPanel(p)}
-                        onSettings={() => dispatch({ type: "settings", section: "general" })}
-                      />
-                    </>
-                  }
-                  strip={strip}
+                  toolbar={picker}
+                  placeholder="Ask anything. $ picks an agent, $codex+ starts another."
                 />
               </div>
-            </>
-          )}
-        </main>
-      )}
-      {ui.panel !== null && ui.settings === null && (
+            ) : (
+              <>
+                <Timeline
+                  messages={state.messages[open.id] ?? []}
+                  roster={roster}
+                  theme={state.theme}
+                  more={state.pages[open.id]?.more ?? false}
+                  onOlder={() => c.loadOlder(open.id)}
+                  changes={files}
+                  onOpenDiff={(path) => openPanel("changes", path)}
+                />
+                <div className="shrink-0 px-5 pb-3">
+                  <Composer
+                    key={open.id}
+                    draft={draft}
+                    setDraft={setDraft}
+                    roster={roster}
+                    kinds={kinds}
+                    images={imagesOn}
+                    online={online}
+                    onSend={(text: string, images: Image[]) => c.send(open.id, text, images)}
+                    onError={toast}
+                    inputRef={inputRef}
+                    sendKey={prefs.sendKey}
+                    busy={open.busy}
+                    onStop={() => void c.cancel(open.id)}
+                    banner={
+                      pending.length > 0 && (
+                        <div className="flex flex-col gap-1" aria-label="Approvals for this thread">
+                          {pending[0] !== undefined && (
+                            <ApprovalCard
+                              a={pending[0]}
+                              index={0}
+                              count={pending.length}
+                              className="border-0 bg-transparent"
+                              onAnswer={(d) => void c.answerApproval(pending[0]!.session_id, pending[0]!.id, d)}
+                            />
+                          )}
+                        </div>
+                      )
+                    }
+                    toolbar={
+                      <>
+                        {picker}
+                        <MoreMenu
+                          busy={open.busy}
+                          queued={queued}
+                          pending={state.approvals.length}
+                          onStop={() => void c.cancel(open.id)}
+                          onPanel={(p) => openPanel(p)}
+                          onSettings={() => dispatch({ type: "settings", section: "general" })}
+                        />
+                      </>
+                    }
+                    strip={strip}
+                  />
+                </div>
+              </>
+            )}
+          </main>
+        )}
+        {api !== undefined && (
+          <TerminalDrawer project={api} shown={terminal && ui.settings === null && !ui.usage} onHide={() => setTerminal(false)} onError={toast} />
+        )}
+      </div>
+      {ui.panel !== null && ui.settings === null && !ui.usage && (
         <RightPanel
           c={c}
           state={state}

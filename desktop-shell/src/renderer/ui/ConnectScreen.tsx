@@ -4,11 +4,6 @@ import type { DeckBridge, PairOutcome, SavedServer } from "../../shared/bridge";
 import { parsePairText } from "../connect";
 import { Button } from "./kit/button";
 
-function label(s: SavedServer): string {
-  const host = s.host.includes(":") ? `[${s.host}]` : s.host;
-  return `${host}:${s.port}`;
-}
-
 // The last part of a folder path, for the recent list.
 function base(dir: string): string {
   return dir.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || dir;
@@ -70,8 +65,7 @@ function OpenFolder({
         </ul>
       ) : (
         <p className="px-3 text-muted-foreground text-xs">
-          Add a project: Deck runs <code className="font-mono">deck serve --rpc</code> in the folder and stops it when you
-          close the folder or quit.
+          No projects yet. Add a folder and Deck opens it; agents work there until you close it or quit.
         </p>
       )}
     </Section>
@@ -138,9 +132,9 @@ function Pair({
                   <Laptop className="size-4 shrink-0 text-muted-foreground" />
                 )}
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-mono text-[13px]">{label(s)}</span>
+                  <span className="truncate text-[13px]">Paired Deck</span>
                   <span className="truncate text-2xs text-muted-foreground">
-                    {s.tls ? "https, pinned" : "this computer"}
+                    {s.tls ? "Another computer" : "This computer"}
                     {s.persisted ? "" : " · until the app quits"}
                   </span>
                 </span>
@@ -198,8 +192,8 @@ function Pair({
 }
 
 // Two ways in, after T3 Code's "no projects" hero: a folder on this
-// computer (deck serve --rpc, the default when deck is on PATH) or a Deck
-// to pair with (deck remote, protocol v2).
+// computer, which the app's own engine opens (the default), or a Deck on
+// another computer to pair with.
 export function ConnectScreen({
   bridge,
   deck,
@@ -224,6 +218,9 @@ export function ConnectScreen({
   onForget: (s: SavedServer) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  // Pairing is the way in for a Deck on another computer; folders on this
+  // one come first.
+  const [pairing, setPairing] = useState(deck === null || servers.length > 0);
   const addProject = async () => {
     const dir = await bridge.pickFolder();
     if (dir === null) return;
@@ -240,7 +237,7 @@ export function ConnectScreen({
               <h1 className="text-balance font-medium text-2xl tracking-tight sm:text-3xl">What should we work on?</h1>
               <p className="text-muted-foreground text-sm">
                 {deck === null
-                  ? "Put the deck command on your PATH to add a project, or pair with a running Deck."
+                  ? "This install of Deck is missing its engine. Reinstall Deck, or pair with a Deck on another computer."
                   : "Add a project, or pair with a Deck on another computer."}
               </p>
             </div>
@@ -252,7 +249,11 @@ export function ConnectScreen({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => document.getElementById("pair-input")?.focus()}
+                aria-expanded={pairing}
+                onClick={() => {
+                  setPairing(true);
+                  requestAnimationFrame(() => document.getElementById("pair-input")?.focus());
+                }}
               >
                 <Link2 />
                 Pair with a Deck
@@ -275,6 +276,7 @@ export function ConnectScreen({
               setError={setError}
             />
           )}
+          {pairing && (
           <Pair
             bridge={bridge}
             servers={servers}
@@ -283,6 +285,7 @@ export function ConnectScreen({
             onForget={onForget}
             setError={setError}
           />
+          )}
         </div>
       </div>
     </main>
