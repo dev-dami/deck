@@ -11,6 +11,7 @@ import {
   ListOrdered,
   type LucideIcon,
   MessageCircleQuestion,
+  Network,
   Maximize2,
   Minimize2,
   RefreshCw,
@@ -24,6 +25,7 @@ import { cn } from "../lib/cn";
 import { PANELS, type Panel } from "../ui";
 import { ApprovalCard } from "./ApprovalCard";
 import { DiffView } from "./DiffView";
+import { AgentsPanel } from "./AgentsPanel";
 import { SideChat } from "./SideChat";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
@@ -33,8 +35,15 @@ const TAB_ICONS: Record<Panel, LucideIcon> = {
   approvals: ShieldQuestion,
   queue: ListOrdered,
   side: MessageCircleQuestion,
+  agents: Network,
 };
-const TAB_LABELS: Record<Panel, string> = { changes: "Diff", approvals: "Approvals", queue: "Queue", side: "Side chat" };
+const TAB_LABELS: Record<Panel, string> = {
+  changes: "Diff",
+  approvals: "Approvals",
+  queue: "Queue",
+  side: "Side chat",
+  agents: "Agents",
+};
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="empty px-4 py-16 text-center text-muted-foreground/60 text-sm">{children}</p>;
@@ -214,6 +223,8 @@ export function RightPanel({
   focus,
   wide,
   onRefresh,
+  onError,
+  onInfo,
   onPanel,
   onWide,
   onClose,
@@ -227,6 +238,8 @@ export function RightPanel({
   focus: string | null;
   wide: boolean;
   onRefresh: () => void;
+  onError: (t: string) => void;
+  onInfo: (t: string) => void;
   onPanel: (p: Panel) => void;
   onWide: () => void;
   onClose: () => void;
@@ -240,7 +253,7 @@ export function RightPanel({
     >
       <header className="panel-head drag flex h-12 shrink-0 items-center gap-1 border-b px-2">
         <h2 className="sr-only">{PANELS.find((p) => p.panel === panel)?.label}</h2>
-        <div className="flex items-center gap-0.5" role="tablist" aria-label="Panels">
+        <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Panels">
           {PANELS.map((p) => {
             const Icon = TAB_ICONS[p.panel];
             return (
@@ -250,7 +263,7 @@ export function RightPanel({
                 role="tab"
                 aria-selected={panel === p.panel}
                 className={cn(
-                  "flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-sm",
+                  "flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-[13px]",
                   panel === p.panel
                     ? "bg-accent font-medium text-foreground"
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
@@ -292,6 +305,24 @@ export function RightPanel({
           ))}
         {panel === "queue" &&
           (open === undefined ? <Empty>Open a thread to see its queue.</Empty> : <Queue c={c} state={state} sessionId={open.id} />)}
+        {panel === "agents" &&
+          (open === undefined ? (
+            <Empty>Open a thread to see its agents and tasks.</Empty>
+          ) : c.project === undefined ? (
+            <Empty>Agents and tasks show for a project on this computer.</Empty>
+          ) : (
+            <AgentsPanel
+              key={open.id}
+              api={c.project}
+              sessionId={open.id}
+              busy={open.busy}
+              kinds={state.server?.kinds ?? []}
+              theme={state.theme}
+              onRace={(text) => c.send(open.id, text, [])}
+              onError={onError}
+              onInfo={onInfo}
+            />
+          ))}
         {panel === "side" &&
           (open === undefined ? (
             <Empty>Open a thread to ask about it.</Empty>

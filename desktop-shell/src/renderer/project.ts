@@ -1,4 +1,5 @@
 import type { DeckBridge, RpcMethod, TermEvent } from "../shared/bridge";
+import { type Board, type Crew, type SharedMirror, type Team, toBoard, toCrew, toMirror, toTeam } from "./crew";
 
 // What a local Deck adds to the shared DeckClient: the project's git work
 // tree, the usage record and terminals (proto/deck/v1, Git*, Usage,
@@ -337,6 +338,82 @@ export class ProjectApi {
   async usage(days: number): Promise<Usage | string> {
     const r = await this.call("Usage", { days });
     return r.ok ? toUsage(r.value) : r.message;
+  }
+
+  async board(sessionId: string): Promise<Board | string> {
+    const r = await this.call("Board", { session_id: sessionId });
+    return r.ok ? toBoard(r.value) : r.message;
+  }
+
+  // cancel, retry, steer (with text), apply or discard; the files an apply
+  // wrote, or the error.
+  async taskAction(sessionId: string, taskId: string, action: string, text = ""): Promise<string[] | string> {
+    const r = await this.call("TaskAction", { session_id: sessionId, task_id: taskId, action, text });
+    if (!r.ok) return r.message;
+    const files = (r.value as { files?: unknown }).files;
+    return Array.isArray(files) ? files.filter((f): f is string => typeof f === "string") : [];
+  }
+
+  async setOrchestrate(sessionId: string, on: boolean): Promise<string | null> {
+    const r = await this.call("SetOrchestrate", { session_id: sessionId, on });
+    return r.ok ? null : r.message;
+  }
+
+  async agents(sessionId: string): Promise<Crew | string> {
+    const r = await this.call("Agents", { session_id: sessionId });
+    return r.ok ? toCrew(r.value) : r.message;
+  }
+
+  async team(): Promise<Team | string> {
+    const r = await this.call("Team", {});
+    return r.ok ? toTeam(r.value) : r.message;
+  }
+
+  // The teammates a post reached, or the error.
+  async teamPost(text: string): Promise<string[] | string> {
+    const r = await this.call("TeamPost", { text });
+    if (!r.ok) return r.message;
+    const reached = (r.value as { reached?: unknown }).reached;
+    return Array.isArray(reached) ? reached.filter((f): f is string => typeof f === "string") : [];
+  }
+
+  async shareThread(sessionId: string, peer: string, role: string): Promise<string | null> {
+    const r = await this.call("ShareThread", { session_id: sessionId, peer, role });
+    return r.ok ? null : r.message;
+  }
+
+  async threadShares(sessionId: string): Promise<Record<string, string> | string> {
+    const r = await this.call("ThreadShares", { session_id: sessionId });
+    if (!r.ok) return r.message;
+    const shares = obj(obj(r.value)["shares"]);
+    return Object.fromEntries(Object.entries(shares).filter((e): e is [string, string] => typeof e[1] === "string"));
+  }
+
+  async proposeContract(sessionId: string, peer: string, brief: string): Promise<{ taskId: string; queued: boolean } | string> {
+    const r = await this.call("ProposeContract", { session_id: sessionId, peer, brief });
+    if (!r.ok) return r.message;
+    const o = obj(r.value);
+    return { taskId: str(o, "task_id"), queued: bool(o, "queued") };
+  }
+
+  async answerContract(peer: string, id: string, accept: boolean, agent: string): Promise<string | null> {
+    const r = await this.call("AnswerContract", { peer, id, accept, agent });
+    return r.ok ? null : r.message;
+  }
+
+  async readShared(peer: string, thread: string, after: number): Promise<SharedMirror | string> {
+    const r = await this.call("ReadShared", { peer, thread, after });
+    return r.ok ? toMirror(r.value) : r.message;
+  }
+
+  async postShared(peer: string, thread: string, text: string): Promise<string | null> {
+    const r = await this.call("PostShared", { peer, thread, text });
+    return r.ok ? null : r.message;
+  }
+
+  async answerShared(peer: string, thread: string, approval: string, allow: boolean): Promise<string | null> {
+    const r = await this.call("AnswerShared", { peer, thread, approval, allow });
+    return r.ok ? null : r.message;
   }
 
   async terminalOpen(cols: number, rows: number): Promise<string | { error: string }> {

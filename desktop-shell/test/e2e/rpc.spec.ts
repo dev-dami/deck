@@ -201,3 +201,63 @@ test("side chat: asks another agent about the thread without touching it", async
   await expect(sidebar(page).locator(".session")).toHaveCount(3);
   expect(fake.deck.sent.filter((s) => s.session_id === "ses_main")).toHaveLength(0);
 });
+
+test("agents: the tree, the task board, keeping a race entry and starting a race", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await page.locator(".panel-toggles").getByRole("button", { name: "Agents" }).click();
+  const panel = page.getByRole("region", { name: "Agents" });
+  // The tree: the subagent under the member that started it, with what runs now.
+  await expect(panel.locator('.crew-agent[data-agent="codex-sub"]')).toContainText("deck/t3");
+  await expect(panel.locator('.crew-agent[data-agent="claude-1"]')).toContainText("go test ./pkg/remote/...");
+  await expect(panel.locator('.crew-agent[data-agent="claude-1"]')).toContainText("30% context");
+  // The board: a race with its entries; keep the finished one.
+  const race = panel.locator('.board-task[data-task="t2"]');
+  await expect(race.locator(".race-entry")).toHaveCount(2);
+  await race.locator('.race-entry[data-task="t3"]').getByRole("button", { name: "Keep" }).click();
+  await expect(page.locator(".toast")).toContainText("Applied 1 file from t3");
+  await expect(race.locator(".task-status").first()).toHaveText("done");
+  // A failed task retries; a running one is steered.
+  await panel.locator('.board-task[data-task="t5"]').getByRole("button", { name: "Retry" }).click();
+  await panel.getByRole("switch", { name: "Orchestrate" }).click();
+  await expect(panel.getByRole("switch", { name: "Orchestrate" })).toHaveAttribute("aria-checked", "true");
+  expect(fake.board.actions).toEqual(["apply t3", "retry t5"]);
+  // A race goes to the thread in the composer's syntax.
+  await panel.getByRole("button", { name: "New race" }).click();
+  await panel.getByLabel("Race brief").fill("make the limiter per address");
+  await panel.getByRole("button", { name: "More codex" }).click();
+  await panel.getByRole("button", { name: /Start race \(3\)/ }).click();
+  await expect.poll(() => fake.deck.sent.at(-1)?.text).toBe("$claude×2 $codex×1 make the limiter per address");
+});
+
+test("team: presence, chat, a contract, sharing and following a shared thread", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  // Share the open thread with a teammate as an editor.
+  await page.getByRole("button", { name: "Share" }).click();
+  await page.getByRole("radiogroup", { name: "Share with vps" }).getByRole("radio", { name: "Editor" }).click();
+  await expect.poll(() => fake.team.shares).toEqual({ vps: "editor" });
+  await page.keyboard.press("Escape");
+
+  await sidebar(page).getByRole("button", { name: "Team" }).click();
+  const team = page.locator("[data-team]");
+  await expect(team.locator('.teammate[data-peer="vps"]')).toContainText("fix the flaky test");
+  // The team chat.
+  await expect(team.locator(".team-chat")).toContainText("I am on the flaky test.");
+  await team.getByLabel("Message the team").fill("shipping at five");
+  await team.getByLabel("Message the team").press("Enter");
+  await expect(team.locator(".team-chat")).toContainText("shipping at five");
+  // A teammate's contract, accepted with codex; one proposed for this thread.
+  await team.getByLabel("Agent for the contract").selectOption("codex");
+  await team.locator('.contract[data-contract="c1"]').getByRole("button", { name: "Accept" }).click();
+  await expect(team.locator('.contract[data-contract="c1"]')).toContainText("accepted · codex");
+  await team.getByLabel("Contract brief").fill("review the limiter");
+  await team.getByRole("button", { name: "Ask" }).click();
+  await expect(page.locator(".toast")).toContainText("Asked vps (task t9)");
+  // Follow the thread vps shares, and write in it.
+  await team.locator('.teammate[data-peer="vps"]').getByRole("button", { name: "Follow" }).click();
+  await expect(team.locator(".shared-thread")).toContainText("[claude2] building the image");
+  await team.getByLabel("Post to the shared thread").fill("ping me when it is up");
+  await team.getByLabel("Post to the shared thread").press("Enter");
+  await expect(team.locator(".shared-thread")).toContainText("[laptop] ping me when it is up");
+});

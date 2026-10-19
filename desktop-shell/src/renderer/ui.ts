@@ -3,13 +3,14 @@ import type { Session } from "@web/protocol";
 // The desktop's own state, beside the shared reducer's AppState (which
 // holds what Deck sent). Pure, so the tests drive it directly.
 
-export type Panel = "changes" | "approvals" | "queue" | "side";
+export type Panel = "changes" | "approvals" | "queue" | "side" | "agents";
 
 export const PANELS: ReadonlyArray<{ panel: Panel; label: string }> = [
   { panel: "changes", label: "Changes" },
   { panel: "approvals", label: "Approvals" },
   { panel: "queue", label: "Queue" },
   { panel: "side", label: "Side chat" },
+  { panel: "agents", label: "Agents" },
 ];
 
 export type SettingsSection = "general" | "appearance" | "agents" | "connection" | "keybindings";
@@ -26,8 +27,9 @@ export interface UiState {
   openId: string | null;
   // The Settings page, when it is open, in place of the chat.
   settings: SettingsSection | null;
-  // The Usage page, likewise.
+  // The Usage and Team pages, likewise.
   usage: boolean;
+  team: boolean;
   panel: Panel | null;
   palette: boolean;
   // Sessions with news the person has not seen.
@@ -42,6 +44,7 @@ export const initialUi: UiState = {
   openId: null,
   settings: null,
   usage: false,
+  team: false,
   panel: null,
   palette: false,
   unread: {},
@@ -56,6 +59,7 @@ export type UiAction =
   | { type: "palette"; open: boolean }
   | { type: "settings"; section: SettingsSection | null }
   | { type: "usage"; open: boolean }
+  | { type: "team"; open: boolean }
   | { type: "sessions"; sessions: Session[] }
   // The reducer's messages by session (AppState.messages).
   | { type: "messages"; messages: Record<string, readonly unknown[]> };
@@ -91,6 +95,7 @@ export function reduceUi(state: UiState, a: UiAction): UiState {
         openId: a.id,
         settings: null,
         usage: false,
+        team: false,
         palette: false,
         unread: a.id === null ? state.unread : without(state.unread, a.id),
       };
@@ -99,9 +104,17 @@ export function reduceUi(state: UiState, a: UiAction): UiState {
     case "palette":
       return state.palette === a.open ? state : { ...state, palette: a.open };
     case "settings":
-      return { ...state, settings: a.section, usage: a.section === null ? state.usage : false, palette: false };
+      return a.section === null
+        ? { ...state, settings: null, palette: false }
+        : { ...state, settings: a.section, usage: false, team: false, palette: false };
     case "usage":
-      return { ...state, usage: a.open, settings: a.open ? null : state.settings, palette: false };
+      return a.open
+        ? { ...state, usage: true, team: false, settings: null, palette: false }
+        : { ...state, usage: false, palette: false };
+    case "team":
+      return a.open
+        ? { ...state, team: true, usage: false, settings: null, palette: false }
+        : { ...state, team: false, palette: false };
     case "sessions": {
       const next = trackUnread(state, a.sessions);
       // A deleted open session closes.

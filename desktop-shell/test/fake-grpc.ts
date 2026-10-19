@@ -100,6 +100,26 @@ export class FakeRpcDeck {
     pushed: 0,
     pr: null as Obj | null,
   };
+  // The task board of the open thread, and what was done to it.
+  readonly board = {
+    orchestrate: false,
+    actions: [] as string[],
+    tasks: [
+      { id: "t1", title: "Map the limiter", status: "done", owner: "claude-1", result: "It keys on nothing.", attempts: 1, tries: 1 },
+      { id: "t2", title: "Race the fix", status: "running", race: true },
+      { id: "t3", title: "entry", status: "done", entry: true, owner: "claude-sub", stats: "2 files +10 -3 · 12k tokens · 4 min", files: ["a.go", "b.go"] },
+      { id: "t4", title: "entry", status: "running", entry: true, owner: "codex-sub" },
+      { id: "t5", title: "Add a regression test", status: "failed", owner: "codex-1", error: "go test failed", attempts: 2, tries: 2 },
+    ] as Obj[],
+  };
+  // The team link.
+  readonly team = {
+    chat: [{ seq: 1, from: "vps", agent: "claude2", text: "I am on the flaky test.", at: Date.now() }] as Obj[],
+    contracts: [{ id: "c1", peer: "vps", inbound: true, title: "Port the cache", brief: "Move the cache to the new store.", state: "proposed" }] as Obj[],
+    shares: {} as Record<string, string>,
+    proposed: [] as string[],
+    mirror: ["[vps] deploy the relay", "[claude2] building the image"],
+  };
   // Each terminal: what it printed and who watches it.
   private readonly terms = new Map<string, { out: string; line: string; subs: Set<grpc.ServerWritableStream<Obj, Obj>> }>();
 
@@ -291,6 +311,87 @@ export class FakeRpcDeck {
       t.subs.add(call);
       call.on("cancelled", () => t.subs.delete(call));
     };
+    // The task board, agent tree and team link.
+    const b = this.board;
+    unary("Board", () => ({ orchestrate: b.orchestrate, tasks: b.tasks }));
+    unary("TaskAction", (r) => {
+      const t = b.tasks.find((x) => x["id"] === r["task_id"]);
+      if (t === undefined) throw new Error(`no task ${String(r["task_id"])}`);
+      const action = String(r["action"]);
+      b.actions.push(`${action} ${String(t["id"])}${r["text"] ? ` ${String(r["text"])}` : ""}`);
+      if (action === "cancel") t["status"] = "cancelled";
+      if (action === "retry") t["status"] = "ready";
+      if (action === "apply" && t["entry"] === true) {
+        for (const x of b.tasks) if (x["race"] === true) x["status"] = "done";
+        return { files: ["pkg/remote/auth/limit.go"] };
+      }
+      return {};
+    });
+    unary("SetOrchestrate", (r) => {
+      b.orchestrate = r["on"] === true;
+      return {};
+    });
+    unary("Agents", () => ({
+      agents: [
+        { name: "claude-1", kind: "claude", model: "opus", status: "tool", depth: 0, context_tokens: 60000, context_window: 200000, since: Date.now() - 65_000 },
+        { name: "codex-sub", kind: "codex", model: "gpt-5", status: "working", depth: 1, parent: "claude-1", branch: "deck/t3", leases: "pkg/remote/** (exclusive)" },
+      ],
+      running: [{ agent: "claude-1", kind: "claude", name: "Bash", summary: "go test ./pkg/remote/...", started: Date.now() - 12_000, command: true }],
+    }));
+    const tm = this.team;
+    unary("Team", () => ({
+      available: true,
+      enabled: true,
+      name: "laptop",
+      teammates: [
+        {
+          name: "vps",
+          role: "contractor",
+          pinned: true,
+          link: "online",
+          present: true,
+          agents: [{ name: "claude2", kind: "claude", status: "working", task: "fix the flaky test", context_pct: 40 }],
+          threads: [{ id: "th1", title: "Deploy the relay", role: "participant", mode: "ask", entries: 3 }],
+        },
+      ],
+      chat: tm.chat,
+      contracts: tm.contracts,
+      contract_kinds: ["claude", "codex"],
+    }));
+    unary("TeamPost", (r) => {
+      tm.chat.push({ seq: tm.chat.length + 1, from: "laptop", text: r["text"], at: Date.now(), mine: true });
+      return { reached: ["vps"] };
+    });
+    unary("ShareThread", (r) => {
+      if (r["role"] === "") delete tm.shares[String(r["peer"])];
+      else tm.shares[String(r["peer"])] = String(r["role"]);
+      return {};
+    });
+    unary("ThreadShares", () => ({ shares: tm.shares }));
+    unary("ProposeContract", (r) => {
+      tm.proposed.push(String(r["brief"]));
+      return { task_id: "t9", queued: false };
+    });
+    unary("AnswerContract", (r) => {
+      const c = tm.contracts.find((x) => x["id"] === r["id"]);
+      if (c !== undefined) {
+        c["state"] = r["accept"] === true ? "accepted" : "declined";
+        c["agent"] = r["agent"];
+      }
+      return {};
+    });
+    unary("ReadShared", (r) => {
+      const after = Number(r["after"] ?? 0);
+      const lines = tm.mirror.slice(after);
+      return { thread: { id: "th1", title: "Deploy the relay", role: "participant", mode: "ask" }, lines, next: tm.mirror.length };
+    });
+    unary("PostShared", (r) => {
+      tm.mirror.push(`[laptop] ${String(r["text"])}`);
+      return {};
+    });
+    unary("AnswerShared", () => {
+      throw new Error("only an editor answers approvals");
+    });
     for (const [name, spec] of Object.entries(UNARY)) {
       h[name] = (call: grpc.ServerUnaryCall<Obj, Obj>, cb: grpc.sendUnaryData<Obj>) => {
         if (!this.authorized(call.metadata)) return cb({ code: grpc.status.UNAUTHENTICATED, details: "missing or wrong token" });

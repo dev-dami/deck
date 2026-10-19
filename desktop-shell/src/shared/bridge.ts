@@ -91,6 +91,19 @@ export const RPC_METHODS = [
   "TerminalWrite",
   "TerminalResize",
   "TerminalClose",
+  "Board",
+  "TaskAction",
+  "SetOrchestrate",
+  "Agents",
+  "Team",
+  "TeamPost",
+  "ShareThread",
+  "ThreadShares",
+  "ProposeContract",
+  "AnswerContract",
+  "ReadShared",
+  "PostShared",
+  "AnswerShared",
 ] as const;
 
 export type RpcMethod = (typeof RPC_METHODS)[number];

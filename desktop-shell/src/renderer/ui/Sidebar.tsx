@@ -23,6 +23,7 @@ import {
   SquarePen,
   Trash2,
   Unplug,
+  Users,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -449,6 +450,8 @@ export function Sidebar({
   onCollapse,
   usage,
   onUsage,
+  team,
+  onTeam,
 }: {
   project: string;
   // The current project's source, and the threads of the other open ones.
@@ -486,6 +489,8 @@ export function Sidebar({
   onCollapse: () => void;
   usage: boolean;
   onUsage: () => void;
+  team: boolean;
+  onTeam: () => void;
 }) {
   const [showSettled, setShowSettled] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -743,6 +748,9 @@ export function Sidebar({
           onClick={onUsage}
         >
           <BarChart3 />
+        </Button>
+        <Button variant="ghost-muted" size="icon-sm" aria-label="Team" title="Team" aria-pressed={team} onClick={onTeam}>
+          <Users />
         </Button>
         <HeaderButton label="Commands" onClick={onPalette}>
           <Command />

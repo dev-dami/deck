@@ -8,6 +8,7 @@ import {
   Folder,
   ListOrdered,
   MessageCircleQuestion,
+  Network,
   PanelLeft,
   PanelRight,
   Settings as SettingsIcon,
@@ -37,6 +38,7 @@ import { RightPanel } from "./RightPanel";
 import { SettingsPage } from "./Settings";
 import { TerminalDrawer } from "./Terminal";
 import { UsagePage } from "./Usage";
+import { ShareControl, TeamPage } from "./Team";
 import { type ForeignThread, type ProjectEntry, Sidebar } from "./Sidebar";
 import type { Landing } from "./App";
 import type { OpenProject } from "../openProjects";
@@ -341,6 +343,7 @@ export function Shell({
         run: () => dispatch({ type: "settings", section: x.section }),
       })),
       { id: "usage", label: "Open usage", run: () => dispatch({ type: "usage", open: true }) },
+      { id: "team", label: "Open team", run: () => dispatch({ type: "team", open: true }) },
       ...(api === undefined
         ? []
         : [{ id: "terminal", label: "Toggle terminal", hint: `${modKey(mac)}J`, run: () => setTerminal((v) => !v) }]),
@@ -428,7 +431,7 @@ export function Shell({
           <li aria-hidden className="text-muted-foreground/50">
             /
           </li>
-          <li className="min-w-10 flex-1">
+          <li className="min-w-24 flex-1">
             <h1 className="title min-w-0 truncate font-medium text-foreground">
               {open === undefined ? (state.sessionsLoaded ? "New thread" : "Connecting…") : sessionTitle(open)}
             </h1>
@@ -444,7 +447,20 @@ export function Shell({
           onInfo={info}
         />
       )}
+      {api !== undefined && open !== undefined && <ShareControl api={api} thread={open} onError={toast} />}
       <div className="panel-toggles flex shrink-0 items-center gap-1">
+        {api !== undefined && (
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Agents"
+            title="Agents and tasks"
+            aria-pressed={ui.panel === "agents"}
+            onClick={() => showPanel("agents")}
+          >
+            <Network />
+          </Button>
+        )}
         {api !== undefined && (
           <Button
             variant="outline"
@@ -467,30 +483,34 @@ export function Shell({
         >
           <MessageCircleQuestion />
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="px-2 font-normal"
-          aria-label="Approvals"
-          title="Approvals"
-          aria-pressed={ui.panel === "approvals"}
-          onClick={() => showPanel("approvals")}
-        >
-          <ShieldQuestion />
-          {state.approvals.length > 0 && <Badge variant="warning">{state.approvals.length}</Badge>}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="px-2 font-normal"
-          aria-label="Queue"
-          title="Queue"
-          aria-pressed={ui.panel === "queue"}
-          onClick={() => showPanel("queue")}
-        >
-          <ListOrdered />
-          {queued > 0 && <Badge variant="muted">{queued}</Badge>}
-        </Button>
+        {state.approvals.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="px-2 font-normal"
+            aria-label="Approvals"
+            title="Approvals"
+            aria-pressed={ui.panel === "approvals"}
+            onClick={() => showPanel("approvals")}
+          >
+            <ShieldQuestion />
+            <Badge variant="warning">{state.approvals.length}</Badge>
+          </Button>
+        )}
+        {queued > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="px-2 font-normal"
+            aria-label="Queue"
+            title="Queue"
+            aria-pressed={ui.panel === "queue"}
+            onClick={() => showPanel("queue")}
+          >
+            <ListOrdered />
+            <Badge variant="muted">{queued}</Badge>
+          </Button>
+        )}
         <Button
           variant="outline"
           size="sm"
@@ -588,6 +608,8 @@ export function Shell({
           onSettings={(section) => dispatch({ type: "settings", section })}
           usage={ui.usage}
           onUsage={() => dispatch({ type: "usage", open: !ui.usage })}
+          team={ui.team}
+          onTeam={() => dispatch({ type: "team", open: !ui.team })}
           onProject={(k) => void onProject(k, "new").then((e) => e !== null && toast(e))}
           onAddProject={() => void addProject()}
           onCollapse={() => setSidebar(false)}
@@ -597,6 +619,10 @@ export function Shell({
         {ui.usage ? (
           <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
             <UsagePage project={api} theme={state.theme} onOpenThread={openSession} />
+          </main>
+        ) : ui.team ? (
+          <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+            <TeamPage api={api} thread={open} onError={toast} onInfo={info} />
           </main>
         ) : ui.settings !== null ? (
           <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
@@ -705,10 +731,10 @@ export function Shell({
           </main>
         )}
         {api !== undefined && (
-          <TerminalDrawer project={api} shown={terminal && ui.settings === null && !ui.usage} onHide={() => setTerminal(false)} onError={toast} />
+          <TerminalDrawer project={api} shown={terminal && ui.settings === null && !ui.usage && !ui.team} onHide={() => setTerminal(false)} onError={toast} />
         )}
       </div>
-      {ui.panel !== null && ui.settings === null && !ui.usage && (
+      {ui.panel !== null && ui.settings === null && !ui.usage && !ui.team && (
         <RightPanel
           c={c}
           state={state}
@@ -718,6 +744,8 @@ export function Shell({
           focus={focus}
           wide={wide}
           onRefresh={refreshChanges}
+          onError={toast}
+          onInfo={info}
           onPanel={(p) => openPanel(p)}
           onWide={() => setWide((w) => !w)}
           onClose={() => dispatch({ type: "panel", panel: null })}
