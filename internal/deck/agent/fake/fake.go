@@ -94,6 +94,10 @@ type adapter struct {
 // Name returns "fake".
 func (a *adapter) Name() string { return "fake" }
 
+// ContractSafe implements agent.ContractSafe: a fake asks for what its
+// script asks.
+func (a *adapter) ContractSafe() bool { return true }
+
 // Start begins a run and plays the start script on a goroutine. If
 // spec.FirstPrompt is set it is echoed as a user_text event first. The run is
 // closed when ctx is done.

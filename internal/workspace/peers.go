@@ -2,9 +2,11 @@ package workspace
 
 import (
 	"context"
+	"errors"
 
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/peer"
+	decks "github.com/dev-dami/deck/internal/deck/session"
 )
 
 // PeerLink is the team link between Deck instances (docs/peers-design.md)
@@ -56,6 +58,34 @@ type Peers interface {
 }
 
 var _ Peers = (*DeckWorkspace)(nil)
+
+// Contracts are code contracts as the person drives them: asking a
+// teammate for one, and which agents may run one here.
+type Contracts interface {
+	// ProposeContract asks teammate name to do brief for the session's
+	// thread, and returns the task it becomes on the board. queued is set
+	// when the teammate cannot be reached and the request waits for its
+	// link. It snapshots the tree and uses the network: call it off the UI
+	// loop.
+	ProposeContract(sessionID, name, brief string) (taskID string, queued bool, err error)
+	// ContractKinds are the agent kinds that may run a teammate's contract.
+	ContractKinds() []string
+}
+
+var _ Contracts = (*DeckWorkspace)(nil)
+
+// ProposeContract implements [Contracts].
+func (w *DeckWorkspace) ProposeContract(sessionID, name, brief string) (string, bool, error) {
+	th, ok := w.threadOf(sessionID)
+	if !ok {
+		return "", false, errors.New("no thread for this session")
+	}
+	tk, queued, err := w.mgr().Contract(th.ID, "", decks.ContractSpec{Peer: name, Brief: brief})
+	return tk.ID, queued, err
+}
+
+// ContractKinds implements [Contracts].
+func (w *DeckWorkspace) ContractKinds() []string { return w.mgr().ContractKinds() }
 
 // PeerLink implements [Peers].
 func (w *DeckWorkspace) PeerLink() PeerLink {

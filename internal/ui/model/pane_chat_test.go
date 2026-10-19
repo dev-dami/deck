@@ -114,6 +114,12 @@ func (w *contractWorkspace) DeckSettings() deckconfig.Config {
 func (w *contractWorkspace) SetDeckSettings(func(*deckconfig.Config)) error { return nil }
 func (w *contractWorkspace) AgentKinds() []string                           { return []string{"claude", "codex"} }
 
+func (w *contractWorkspace) ContractKinds() []string { return []string{"claude", "codex"} }
+func (w *contractWorkspace) ProposeContract(sid, name, brief string) (string, bool, error) {
+	w.link.answers = append(w.link.answers, "propose "+sid+" "+name+" "+brief)
+	return "t4", name == "pc", nil
+}
+
 type answerLink struct {
 	workspace.PeerLink
 	answers []string
@@ -165,4 +171,35 @@ func TestTeamPaneConfirmsAContract(t *testing.T) {
 	m.teamSnap.Contracts[1].State = peer.ContractAccepted // no card waits: y is not the pane's
 	handled, _ = p.key(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
 	require.False(t, handled)
+}
+
+func TestTeamPaneAsksATeammateForAContract(t *testing.T) {
+	link := &answerLink{}
+	m := newBusyUI(&countingWorkspace{})
+	m.com = common.DefaultCommon(&contractWorkspace{countingWorkspace: &countingWorkspace{}, link: link})
+	m.teamSnap = &peer.Snapshot{Name: "me", Peers: []peer.PeerState{{Name: "vps"}}}
+	p := &teamPane{}
+	p.list.cursor = 1 // vps
+	handled, _ := p.key(m, tea.KeyPressMsg{Code: 'c', Text: "c"})
+	require.True(t, handled)
+	for _, r := range "fix it" {
+		p.key(m, tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	var out []string
+	for _, r := range p.rows(m, 100) {
+		out = append(out, r.lines...)
+	}
+	require.Contains(t, ansi.Strip(strings.Join(out, "\n")), "contract for vps: fix it")
+	_, cmd := p.key(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	msg := cmd()
+	require.Equal(t, []string{"propose s1 vps fix it"}, link.answers)
+	require.Contains(t, fmt.Sprint(msg), "Asked vps to do t4")
+	require.Empty(t, p.asking)
+
+	p.key(m, tea.KeyPressMsg{Code: 'c', Text: "c"})
+	p.key(m, tea.KeyPressMsg{Code: 'x', Text: "x"})
+	p.key(m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	require.Empty(t, p.asking, "esc drops the brief")
+	require.Len(t, link.answers, 1)
 }

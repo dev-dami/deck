@@ -583,11 +583,15 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		}
 		return fmt.Sprintf("started race %s with entries %s; when all have ended, a summary comes back to you, and the user keeps one", res.TaskID, strings.Join(res.Entries, ", ")), nil
 	case "task.contract":
-		tk, err := m.Contract(t.id, me, ContractSpec{Peer: str("peer"), Title: str("title"), Brief: str("brief")})
+		tk, queued, err := m.Contract(t.id, me, ContractSpec{Peer: str("peer"), Title: str("title"), Brief: str("brief")})
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("asked %s to do %s %q; its person confirms it first. When it ends, its result comes back to you, with a capsule of its changes.", tk.Remote, tk.ID, tk.Title), nil
+		how := "its person confirms it first"
+		if queued {
+			how = tk.Remote + " cannot be reached now: the request goes when its link is back, then its person confirms it"
+		}
+		return fmt.Sprintf("asked %s to do %s %q; %s. When it ends, its result comes back to you, with a capsule of its changes.", tk.Remote, tk.ID, tk.Title, how), nil
 	case "task.done", "task.fail", "task.cancel":
 		id := str("id")
 		if err := b.mayFinish(id); err != nil {

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync/atomic"
@@ -14,8 +15,14 @@ import (
 	"github.com/dev-dami/deck/internal/deck/sub"
 )
 
-// fetchTimeout bounds fetching a contract's base or result from a teammate.
+// fetchTimeout bounds one fetch of a contract's base or result from a
+// teammate.
 const fetchTimeout = 5 * time.Minute
+
+// resultWaits are the pauses between tries to fetch a contract's result
+// capsule: a teammate whose link dropped just after it reported has about
+// an hour to come back.
+var resultWaits = []time.Duration{10 * time.Second, time.Minute, 5 * time.Minute, 15 * time.Minute, 45 * time.Minute}
 
 // contracts joins code contracts on the peer link to the threads: the
 // session sends its contracts through it, and it runs the ones this Deck's
@@ -23,24 +30,44 @@ const fetchTimeout = 5 * time.Minute
 type contracts struct {
 	mgr *session.Manager
 	svc atomic.Pointer[peer.Service]
+	// waits are the pauses between tries to fetch a result (resultWaits),
+	// and fetch is one try.
+	waits []time.Duration
+	fetch func(ctx context.Context, name string, id sub.ID) error
 }
 
 var _ session.Contractor = (*contracts)(nil)
 
+func newContracts(mgr *session.Manager) *contracts {
+	c := &contracts{mgr: mgr, waits: resultWaits}
+	c.fetch = func(ctx context.Context, name string, id sub.ID) error {
+		svc, s := c.svc.Load(), c.mgr.SubStore()
+		if svc == nil || s == nil {
+			return fmt.Errorf("the peer link is not running")
+		}
+		_, err := svc.FetchCapsule(ctx, name, id, s)
+		return err
+	}
+	return c
+}
+
 func (c *contracts) hooks() peer.ContractHooks {
-	return peer.ContractHooks{Run: c.run, Updated: c.updated}
+	return peer.ContractHooks{Run: c.run, Updated: c.updated, Cancel: c.cancel}
 }
 
 // Propose implements session.Contractor.
-func (c *contracts) Propose(ctx context.Context, name string, p session.Proposal) error {
+func (c *contracts) Propose(ctx context.Context, name string, p session.Proposal) (bool, error) {
 	svc := c.svc.Load()
 	if svc == nil {
-		return fmt.Errorf("the peer link is not running")
+		return false, fmt.Errorf("the peer link is not running")
 	}
 	_, err := svc.ProposeContract(ctx, name, peer.Contract{
 		Title: p.Title, Brief: p.Brief, Base: p.Base, Repo: p.Repo, Files: p.Files, Thread: p.Thread, Task: p.Task,
 	})
-	return err
+	if errors.As(err, new(peer.QueuedError)) {
+		return true, nil
+	}
+	return false, err
 }
 
 // run readies a contract this Deck's person accepted: it fetches the base
@@ -67,19 +94,23 @@ func (c *contracts) run(k peer.Contract) (string, string, func(), error) {
 	return tid, task, start, nil
 }
 
+// cancel stops the work on a contract its requester called off.
+func (c *contracts) cancel(k peer.Contract) {
+	go func() {
+		if err := c.mgr.CancelContractRun(k.Thread, k.Task, k.Peer+" called off its contract"); err != nil {
+			slog.Warn("Contract not stopped", "peer", k.Peer, "error", err)
+		}
+	}()
+}
+
 // updated puts a teammate's word on a contract this Deck proposed on its
-// task, fetching the result capsule first.
+// task, fetching the result capsule first. A fetch that fails is tried
+// again after each of c.waits.
 func (c *contracts) updated(k peer.Contract) {
 	go func() {
 		n := session.ContractNews{State: k.State, Agent: k.Agent, Note: k.Note, Summary: k.Summary}
 		if k.State == peer.ContractDone && k.Capsule != "" {
-			err := fmt.Errorf("the peer link is not running")
-			if svc, s := c.svc.Load(), c.mgr.SubStore(); svc != nil && s != nil {
-				ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-				_, err = svc.FetchCapsule(ctx, k.Peer, k.Capsule, s)
-				cancel()
-			}
-			if err != nil {
+			if err := c.fetchResult(k); err != nil {
 				n.State, n.Note, n.Summary = peer.ContractFailed, "its result could not be fetched: "+err.Error(), ""
 			} else {
 				n.Capsule = string(k.Capsule)
@@ -91,11 +122,33 @@ func (c *contracts) updated(k peer.Contract) {
 	}()
 }
 
-// taskEnd sends the result of a contract this Deck did, when its task ends:
-// a capsule of what changed and the agent's last reply, or why it failed.
+// fetchResult fetches the result capsule of contract k, trying again after
+// each of c.waits.
+func (c *contracts) fetchResult(k peer.Contract) error {
+	for i := 0; ; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		err := c.fetch(ctx, k.Peer, k.Capsule)
+		cancel()
+		if err == nil || i == len(c.waits) {
+			return err
+		}
+		slog.Info("Contract result not fetched yet", "peer", k.Peer, "try", i+1, "error", err)
+		time.Sleep(c.waits[i])
+	}
+}
+
+// taskEnd follows the end of a task that a contract is about. On the
+// contractor, it sends the result: a capsule of what changed and the
+// agent's last reply, or why it failed. On the requester, a contract task
+// ended here (cancelled by the person, or finished by an agent) calls the
+// contract off.
 func (c *contracts) taskEnd(threadID string, tk store.Task) {
 	svc := c.svc.Load()
 	if svc == nil {
+		return
+	}
+	if tk.Remote != "" {
+		svc.CancelContract(threadID, tk.ID, "its requester's task was "+string(tk.Status))
 		return
 	}
 	var base sub.ID

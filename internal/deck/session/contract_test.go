@@ -17,21 +17,22 @@ import (
 )
 
 type fakeContractor struct {
-	mu  sync.Mutex
-	got []Proposal
-	err error
+	mu     sync.Mutex
+	got    []Proposal
+	err    error
+	queued bool
 }
 
-func (f *fakeContractor) Propose(_ context.Context, peer string, p Proposal) error {
+func (f *fakeContractor) Propose(_ context.Context, peer string, p Proposal) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.err != nil {
-		return f.err
+		return false, f.err
 	}
 	if peer == "vps" {
 		f.got = append(f.got, p)
 	}
-	return nil
+	return f.queued, nil
 }
 
 func (f *fakeContractor) proposals() []Proposal {
@@ -110,15 +111,15 @@ func TestContractTaskWaitsForTheTeammate(t *testing.T) {
 func TestContractRefusals(t *testing.T) {
 	r := newRig(t, nil, nil)
 	tid := r.thread(t)
-	if _, err := r.m.Contract(tid, "", ContractSpec{Peer: "vps", Brief: "x"}); err == nil || !strings.Contains(err.Error(), "peer link is off") {
+	if _, _, err := r.m.Contract(tid, "", ContractSpec{Peer: "vps", Brief: "x"}); err == nil || !strings.Contains(err.Error(), "peer link is off") {
 		t.Fatalf("without peers: %v", err)
 	}
 	fc := &fakeContractor{err: errors.New("vps did not take the contract: unreachable")}
 	r.m.SetContractor(fc)
-	if _, err := r.m.Contract(tid, "", ContractSpec{Peer: "a b", Brief: "x"}); err == nil {
+	if _, _, err := r.m.Contract(tid, "", ContractSpec{Peer: "a b", Brief: "x"}); err == nil {
 		t.Fatal("a bad peer name")
 	}
-	if _, err := r.m.Contract(tid, "", ContractSpec{Peer: "vps", Brief: "x"}); err == nil {
+	if _, _, err := r.m.Contract(tid, "", ContractSpec{Peer: "vps", Brief: "x"}); err == nil {
 		t.Fatal("an unreachable teammate")
 	}
 	tk := taskOf(t, r, tid, "t1")
@@ -180,4 +181,30 @@ func TestRunContractWorksOnACopy(t *testing.T) {
 	if _, _, err := r.m.RunContract(ContractRun{Peer: "vps", Title: "x", Base: base, Kind: "gemini"}); err == nil {
 		t.Fatal("ran with an agent this Deck does not have")
 	}
+}
+
+// An adapter that does not say it is contract safe never runs a contract.
+type plainAdapter struct{ agent.Adapter }
+
+func TestContractKindsAndQueuedProposals(t *testing.T) {
+	r := newRig(t, nil, nil)
+	if got := strings.Join(r.m.ContractKinds(), ","); got != "claude,codex" {
+		t.Fatalf("ContractKinds = %s", got)
+	}
+	m := NewManager(map[string]agent.Adapter{"agy": plainAdapter{fake.NewTurns(0, nil)}}, nil, testCfg())
+	t.Cleanup(m.Close)
+	if got := m.ContractKinds(); len(got) != 0 {
+		t.Fatalf("an adapter without ContractSafe may run contracts: %v", got)
+	}
+
+	tid := r.thread(t)
+	r.m.SetContractor(&fakeContractor{queued: true})
+	tk, queued, err := r.m.Contract(tid, "", ContractSpec{Peer: "vps", Brief: "later"})
+	if err != nil || !queued || tk.Status != store.TaskRunning {
+		t.Fatalf("queued contract: %+v %v %v", tk, queued, err)
+	}
+	if err := r.m.ContractNews(tid, tk.ID, ContractNews{State: "failed", Note: "vps did not answer within 24 hours"}); err != nil {
+		t.Fatal(err)
+	}
+	has(t, taskOf(t, r, tid, tk.ID).Error, "the contract with vps ended: vps did not answer")
 }

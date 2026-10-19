@@ -384,3 +384,12 @@ type Adapter interface {
 	Name() string // "claude" | "codex" | "fake"
 	Start(ctx context.Context, spec Spec) (Run, error)
 }
+
+// ContractSafe is implemented by an adapter whose agent Deck can hold to a
+// thread's mode, at most ask, when it runs a teammate's code contract:
+// every edit and command it makes asks the person through Deck, or is
+// denied. Deck never runs a contract with an adapter that lacks it or
+// answers false.
+type ContractSafe interface {
+	ContractSafe() bool
+}

@@ -87,6 +87,10 @@ func (m *Manager) SetMode(threadID string, mode agent.Mode) error {
 		return errClosed
 	}
 	t.mu.Lock()
+	if mode == agent.ModeYolo && t.contract != "" {
+		t.mu.Unlock()
+		return fmt.Errorf("this thread runs a contract from %s: it runs in ask mode at most", t.contract)
+	}
 	prev := t.mode
 	if prev == mode {
 		t.mu.Unlock()

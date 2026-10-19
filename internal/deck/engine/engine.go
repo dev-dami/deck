@@ -89,7 +89,7 @@ func Start() (*Engine, error) {
 		MCPFor: func(id string) *agent.MCPServer { return broker.ServerFor(self, id) },
 	})
 	work := &localWork{mgr: mgr}
-	deals := &contracts{mgr: mgr}
+	deals := newContracts(mgr)
 	peers := startPeers(cfg, peer.ServiceOptions{SubStore: mgr.SubStore, Local: peer.Local{Presence: work.Presence, Repos: work.Repos}, Contracts: deals.hooks()})
 	if peers != nil {
 		deals.svc.Store(peers)

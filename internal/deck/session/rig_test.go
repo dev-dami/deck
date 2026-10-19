@@ -45,6 +45,12 @@ type sentImages struct {
 	images []agent.Image
 }
 
+// ContractSafe forwards to the adapter it wraps.
+func (s *spyAdapter) ContractSafe() bool {
+	cs, ok := s.Adapter.(agent.ContractSafe)
+	return ok && cs.ContractSafe()
+}
+
 func newSpy(a agent.Adapter) *spyAdapter { return &spyAdapter{Adapter: a, runs: map[string]*spyRun{}} }
 
 func (s *spyAdapter) Start(ctx context.Context, sp agent.Spec) (agent.Run, error) {

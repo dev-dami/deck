@@ -121,6 +121,9 @@ type Thread struct {
 	// Orchestrate lets members spawn subagents and has the scheduler run the
 	// board's ready tasks.
 	Orchestrate bool `json:"orchestrate,omitempty"`
+	// Contract is the teammate whose code contract runs in this thread: its
+	// mode is at most ask.
+	Contract string `json:"contract,omitempty"`
 
 	// Legacy mirror of Members[0] (Name: every member's name joined by "+").
 	AgentKind string `json:"agent_kind"`

@@ -213,6 +213,7 @@ func (s *Service) apply(p *config.Peers) error {
 		s.mu.Unlock()
 		err = mgr.Start(s.base)
 		go s.presenceLoop()
+		go s.contractLoop()
 	}
 	if err != nil {
 		s.log.Warn("Peers: not all of the config is in effect", "error", err)

@@ -278,10 +278,21 @@ MCP tools; new inbound ops are opt-in per peer (`allow_inbound`).
    and `contract.result` through the outbox. The requester fetches the
    capsule, records it on the task and finishes the task, which tells the
    agent that asked. The summary is redacted and capped at 4 KB and shown
-   as the teammate's words, not instructions. Not done: cancelling a
-   contract from the requester's side, a timeout for a proposal no one
-   answers, a person proposing from the UI, and the `ContractSafe` flag
-   (the contract runs as an ordinary thread the person watches).
+   as the teammate's words, not instructions. A capsule that cannot be
+   fetched at once is tried again five times over about an hour.
+
+   The person proposes from the Team pane (`c` on a teammate) for the open
+   session's thread, without the share approval: they act themselves. A
+   proposal to a teammate that cannot be reached waits in the outbox; one
+   it refuses when it arrives fails the task. Ending the task on the
+   requester (cancel, or an agent's `task.done`) calls the contract off
+   (`contract.cancel`): a proposal still in the outbox is dropped, an
+   accepted one has its task cancelled and its agent stopped. A proposal no
+   one answers within 24 hours fails on the requester and is declined on
+   the contractor. Adapters say whether they are contract safe
+   (`agent.ContractSafe`): claude, codex and opencode ask through Deck in
+   ask mode; antigravity cannot, so it never runs a contract. A contract
+   thread can never be switched to yolo.
 5. **Shared threads.** First a read-only mirror (`history.read`, paged,
    only threads the owner marks shared). Then *join*: a teammate's messages
    enter the owner's thread through an attributed FIFO queue

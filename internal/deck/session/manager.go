@@ -1115,6 +1115,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	t.worktree = th.Worktree
 	t.tasks = cloneTasks(th.Tasks)
 	t.orchestrate = th.Orchestrate
+	t.contract = th.Contract
 	remap := map[string]string{}
 	var started []*agentState
 	fail := func(err error) (ThreadInfo, []tea.Msg, error) {

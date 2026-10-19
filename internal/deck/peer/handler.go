@@ -27,9 +27,10 @@ var ErrUnknownOp = errors.New("unknown op")
 // published (sub.capsule.publish), which is the consent to share them.
 //
 // The contract ops are in it too: contract.propose also needs role
-// contractor, and contract.status and contract.result only touch contracts
-// this Deck proposed to the caller.
-var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects, OpConsolePost, OpContractPropose, OpContractStatus, OpContractResult}
+// contractor; contract.status and contract.result only touch contracts this
+// Deck proposed to the caller, and contract.cancel only those the caller
+// proposed here.
+var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects, OpConsolePost, OpContractPropose, OpContractStatus, OpContractResult, OpContractCancel}
 
 // contractorOps are the ops only a peer with role contractor may run, on top
 // of allow_inbound.

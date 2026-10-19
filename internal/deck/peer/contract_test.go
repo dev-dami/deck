@@ -162,3 +162,131 @@ func TestContractRefusals(t *testing.T) {
 		t.Fatal("the contract ops are not allowed as documented")
 	}
 }
+
+// A proposal to a teammate that is away waits in the outbox; once it
+// arrives the requester can still call it off, and an accepted contract's
+// work is stopped.
+func TestContractWaitsForTheLinkAndCanBeCalledOff(t *testing.T) {
+	s := openSub(t)
+	ctx := ctxT(t)
+	tree := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tree, "a.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base, _ := s.Snap(ctx, tree)
+	stopped := make(chan Contract, 1)
+	run := func(c Contract) (string, string, func(), error) { return "th", "t1", nil, nil }
+	a, b := linkedWith(t,
+		ServiceOptions{Contracts: ContractHooks{Run: run, Cancel: func(c Contract) { stopped <- c }}},
+		ServiceOptions{SubStore: func() *sub.Store { return s }},
+		config.PeerRoleContractor)
+
+	if err := a.SetEnabled(false); err != nil {
+		t.Fatal(err)
+	}
+	c, err := b.ProposeContract(ctx, "a", Contract{Title: "one", Base: base, Thread: "T", Task: "t1"})
+	if !errors.As(err, new(QueuedError)) || c.ID == "" || b.out.len() != 1 {
+		t.Fatalf("to an absent teammate: %+v, %v (outbox %d)", c, err, b.out.len())
+	}
+	// Called off before it left: it never goes.
+	if !b.CancelContract("T", "t1", "not needed") || b.out.len() != 0 {
+		t.Fatalf("cancel of a queued proposal left %d calls", b.out.len())
+	}
+	c2, err := b.ProposeContract(ctx, "a", Contract{Title: "two", Base: base, Thread: "T", Task: "t2"})
+	if !errors.As(err, new(QueuedError)) {
+		t.Fatal(err)
+	}
+	if err := a.SetEnabled(true); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 20*time.Second, "the queued proposal", func() bool { return len(a.Contracts()) == 1 })
+	if got := a.Contracts()[0]; got.ID != c2.ID || got.Title != "two" || got.State != ContractProposed {
+		t.Fatalf("a's contract = %+v", got)
+	}
+	if err := a.AnswerContract("b", c2.ID, true, "claude"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 20*time.Second, "b hears it was accepted", func() bool {
+		return b.Contracts()[1].State == ContractAccepted
+	})
+	if !b.CancelContract("T", "t2", "changed my mind") {
+		t.Fatal("no open contract for t2")
+	}
+	select {
+	case k := <-stopped:
+		if k.ID != c2.ID || k.Thread != "th" || k.State != ContractCancelled {
+			t.Fatalf("stopped %+v", k)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the work was not stopped")
+	}
+	if b.CancelContract("T", "t2", "again") {
+		t.Fatal("cancelled twice")
+	}
+}
+
+// A proposal the teammate refuses once it arrives from the outbox ends on
+// the requester, which hears of it.
+func TestQueuedContractRefused(t *testing.T) {
+	s := openSub(t)
+	ctx := ctxT(t)
+	tree := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tree, "a.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base, _ := s.Snap(ctx, tree)
+	news := make(chan Contract, 2)
+	a, b := linkedWith(t, ServiceOptions{},
+		ServiceOptions{SubStore: func() *sub.Store { return s }, Contracts: ContractHooks{Updated: func(c Contract) { news <- c }}},
+		"") // b is only an observer on a
+	if err := a.SetEnabled(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.ProposeContract(ctx, "a", Contract{Title: "x", Base: base}); !errors.As(err, new(QueuedError)) {
+		t.Fatal(err)
+	}
+	if err := a.SetEnabled(true); err != nil {
+		t.Fatal(err)
+	}
+	got := waitNews(t, news)
+	if got.State != ContractFailed || !strings.Contains(got.Note, "a refused it") {
+		t.Fatalf("news = %+v", got)
+	}
+}
+
+// A proposal no one answers ends on both sides after proposalTTL.
+func TestUnansweredProposalExpires(t *testing.T) {
+	s := openSub(t)
+	ctx := ctxT(t)
+	tree := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tree, "a.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base, _ := s.Snap(ctx, tree)
+	news := make(chan Contract, 2)
+	a, b := linkedWith(t, ServiceOptions{},
+		ServiceOptions{SubStore: func() *sub.Store { return s }, Contracts: ContractHooks{Updated: func(c Contract) { news <- c }}},
+		config.PeerRoleContractor)
+	c, err := b.ProposeContract(ctx, "a", Contract{Title: "x", Base: base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !b.granted("a", base) {
+		t.Fatal("the base is not shared while the proposal is open")
+	}
+	later := time.Now().Add(proposalTTL + time.Minute)
+	b.sweepContracts(later)
+	if got := waitNews(t, news); got.ID != c.ID || got.State != ContractFailed || !strings.Contains(got.Note, "did not answer within 24 hours") {
+		t.Fatalf("news = %+v", got)
+	}
+	if b.granted("a", base) {
+		t.Fatal("the base is still shared")
+	}
+	a.sweepContracts(later)
+	if got := a.Contracts()[0]; got.State != ContractDeclined || !strings.Contains(got.Note, "not answered") {
+		t.Fatalf("a's record = %+v", got)
+	}
+	if err := a.AnswerContract("b", c.ID, true, "claude"); err == nil {
+		t.Fatal("accepted an expired proposal")
+	}
+}

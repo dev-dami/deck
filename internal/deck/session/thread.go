@@ -69,6 +69,9 @@ type thread struct {
 	// orchestrate is set while members may spawn subagents and the scheduler
 	// runs the board (spawn.go, sched.go).
 	orchestrate bool
+	// contract is the teammate whose code contract this thread runs: its
+	// mode is never yolo (contract.go).
+	contract string
 
 	// Queue of user messages waiting for busy members (queue.go), guarded by mu.
 	queue  []qitem
@@ -195,7 +198,7 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	defer t.mu.Unlock()
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
 		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree,
-		Tasks: cloneTasks(t.tasks), Orchestrate: t.orchestrate}
+		Tasks: cloneTasks(t.tasks), Orchestrate: t.orchestrate, Contract: t.contract}
 	for _, a := range t.members {
 		th.Members = append(th.Members, a.memberMeta())
 	}

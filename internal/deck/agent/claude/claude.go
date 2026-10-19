@@ -59,6 +59,10 @@ func New(binary string, selfExe string, broker *approve.Broker) agent.Adapter {
 
 func (a *adapter) Name() string { return "claude" }
 
+// ContractSafe implements agent.ContractSafe: in ask mode every tool use asks
+// through Deck's permission-prompt tool.
+func (a *adapter) ContractSafe() bool { return true }
+
 func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error) {
 	bin := spec.Binary
 	if bin == "" {

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -24,7 +25,8 @@ import (
 // fix the flaky test"), the files they hold in repositories both Decks have,
 // and its plan windows when it shares them. A code contract a teammate
 // proposes shows as a card at the top: y runs it with the agent shown, a
-// picks another agent, n declines. The pane reads a snapshot a command keeps
+// picks another agent, n declines. c on a teammate asks it for a contract:
+// the person types the brief, and enter sends it for the open session. The pane reads a snapshot a command keeps
 // current through PeerLink.Wait; it never touches the link in Update or
 // render.
 
@@ -163,6 +165,9 @@ type teamPane struct {
 	list paneList
 	// kind counts a presses: it picks the agent a contract runs with.
 	kind int
+	// asking is the teammate the person writes a contract's brief for
+	// (c on its row), draft the brief so far.
+	asking, draft string
 }
 
 // agentKind is the agent a confirmed contract runs with: the default agent
@@ -173,6 +178,9 @@ func (p *teamPane) agentKind(m *UI) string {
 		return ""
 	}
 	kinds := editor.AgentKinds()
+	if c, ok := m.com.Workspace.(workspace.Contracts); ok {
+		kinds = c.ContractKinds()
+	}
 	if len(kinds) == 0 {
 		return ""
 	}
@@ -184,6 +192,66 @@ func (p *teamPane) agentKind(m *UI) string {
 		}
 	}
 	return kinds[p.kind%len(kinds)]
+}
+
+// isTeammate reports whether row key sel is a teammate's row.
+func (m *UI) isTeammate(sel string) bool {
+	if m.teamSnap == nil || sel == "" {
+		return false
+	}
+	for _, ps := range m.teamSnap.Peers {
+		if ps.Name == sel {
+			return true
+		}
+	}
+	return false
+}
+
+// briefKey types the brief of a contract for p.asking: enter sends it, esc
+// drops it.
+func (p *teamPane) briefKey(m *UI, msg tea.KeyPressMsg) (bool, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		p.asking, p.draft = "", ""
+		return true, nil
+	case "enter":
+		brief, name := strings.TrimSpace(p.draft), p.asking
+		if brief == "" {
+			return true, nil
+		}
+		p.asking, p.draft = "", ""
+		cs, ok := m.com.Workspace.(workspace.Contracts)
+		if !ok || m.session == nil {
+			return true, nil
+		}
+		sid := m.session.ID
+		return true, func() tea.Msg {
+			id, queued, err := cs.ProposeContract(sid, name, brief)
+			switch {
+			case err != nil:
+				return util.NewErrorMsg(err)
+			case queued:
+				return util.NewInfoMsg(name + " cannot be reached now: " + id + " goes to it when its link is back")
+			}
+			return util.NewInfoMsg("Asked " + name + " to do " + id + "; its person confirms it first")
+		}
+	case "backspace":
+		if p.draft != "" {
+			_, n := utf8.DecodeLastRuneInString(p.draft)
+			p.draft = p.draft[:len(p.draft)-n]
+		}
+		return true, nil
+	case "ctrl+u":
+		p.draft = ""
+		return true, nil
+	}
+	if msg.Text != "" && msg.Mod&(tea.ModCtrl|tea.ModAlt) == 0 {
+		if len(p.draft) < 4000 {
+			p.draft += msg.Text
+		}
+		return true, nil
+	}
+	return true, nil // the brief keeps the keys until enter or esc
 }
 
 // waitingContract is the contract that row key sel names, when it waits for the
@@ -227,11 +295,22 @@ func (p *teamPane) render(m *UI, width, height int, focused bool) string {
 }
 
 func (p *teamPane) key(m *UI, msg tea.KeyPressMsg) (bool, tea.Cmd) {
+	if p.asking != "" {
+		return p.briefKey(m, msg)
+	}
 	rows := p.rows(m, 80)
 	if p.list.navKey(rows, msg) {
 		return true, nil
 	}
-	c, ok := m.waitingContract(p.list.selected(rows))
+	sel := p.list.selected(rows)
+	if msg.String() == "c" && m.isTeammate(sel) {
+		if _, ok := m.com.Workspace.(workspace.Contracts); !ok || m.session == nil {
+			return true, util.ReportInfo("Open a session first: the contract is a task on its board")
+		}
+		p.asking, p.draft = sel, ""
+		return true, nil
+	}
+	c, ok := m.waitingContract(sel)
 	link := m.peerLink()
 	if !ok || link == nil {
 		return false, nil
@@ -307,7 +386,15 @@ func (p *teamPane) rows(m *UI, width int) []paneRow {
 		for _, l := range presenceLines(ps) {
 			lines = append(lines, ansi.Truncate("  "+muted.Render(l), width, "…"))
 		}
+		if p.asking == ps.Name {
+			lines = append(lines,
+				ansi.Truncate("  contract for "+ps.Name+": "+p.draft+"▏", width, "…"),
+				ansi.Truncate("  "+muted.Render("enter asks · esc drops"), width, "…"))
+		}
 		rows = append(rows, paneRow{key: ps.Name, selectable: true, lines: lines})
+	}
+	if _, ok := m.com.Workspace.(workspace.Contracts); ok && p.asking == "" {
+		rows = append(rows, paneRow{lines: []string{ansi.Truncate(muted.Render("c on a teammate asks it for a contract"), width, "…")}})
 	}
 	return rows
 }

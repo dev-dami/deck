@@ -26,11 +26,16 @@ import (
 // Each side shares only what the contract needs, and only with the other
 // Deck: the requester the base snapshot while the contract is open, the
 // contractor the result capsule. Nothing is published to other teammates.
+//
+// A proposal to a teammate that cannot be reached waits in the outbox. The
+// requester can cancel a contract at any time (contract.cancel), and a
+// proposal no one answers within proposalTTL ends on both sides.
 
 const (
 	OpContractPropose = "contract.propose"
 	OpContractStatus  = "contract.status"
 	OpContractResult  = "contract.result"
+	OpContractCancel  = "contract.cancel"
 )
 
 // The states of a contract.
@@ -40,6 +45,8 @@ const (
 	ContractDeclined = "declined"
 	ContractDone     = "done"
 	ContractFailed   = "failed"
+	// ContractCancelled is a contract its requester called off.
+	ContractCancelled = "cancelled"
 )
 
 const (
@@ -55,12 +62,19 @@ const (
 	maxContractText  = 4000
 	// contractTimeout bounds proposing a contract to a teammate.
 	contractTimeout = 30 * time.Second
+	// contractSweep is how often proposals are checked for proposalTTL.
+	contractSweep = time.Minute
 )
+
+// proposalTTL ends a proposal no one answered in this time, on both sides;
+// a variable for tests.
+var proposalTTL = 24 * time.Hour
 
 var contractOps = []OpInfo{
 	{Name: OpContractPropose, Args: "{id*, title*, brief, base*, repo, files}", Desc: "propose a coding contract to this Deck: its person confirms it, an agent does it on a copy of the base snapshot, and a capsule comes back"},
 	{Name: OpContractStatus, Args: "{id*, state*, agent, note}", Desc: "how a contract this Deck proposed goes: accepted or declined"},
 	{Name: OpContractResult, Args: "{id*, state*, capsule, summary}", Desc: "the result of a contract this Deck proposed: done or failed, the capsule and a summary"},
+	{Name: OpContractCancel, Args: "{id*, note}", Desc: "call off a contract the caller proposed to this Deck: its agent stops"},
 }
 
 // Contract is one contract as either Deck records it.
@@ -96,7 +110,7 @@ type Contract struct {
 
 // Final reports whether c can no longer change.
 func (c Contract) Final() bool {
-	return c.State == ContractDeclined || c.State == ContractDone || c.State == ContractFailed
+	return c.State == ContractDeclined || c.State == ContractDone || c.State == ContractFailed || c.State == ContractCancelled
 }
 
 // ContractHooks connect contracts to the engine's threads.
@@ -105,9 +119,13 @@ type ContractHooks struct {
 	// kind c.Agent, and returns the thread and task it runs as, and start,
 	// which starts the work once the contract records them.
 	Run func(c Contract) (thread, task string, start func(), err error)
-	// Updated hears every change a teammate made to a contract this Deck
-	// proposed. It is called from the link's goroutine and must not block.
+	// Updated hears every change to a contract this Deck proposed that
+	// this Deck did not make itself: the teammate's answers and results, a
+	// refusal, a proposal that ran out of time. It must not block.
 	Updated func(c Contract)
+	// Cancel stops the work on an accepted contract its requester called
+	// off. It must not block.
+	Cancel func(c Contract)
 }
 
 // errNoContract is the error for a contract id this Deck does not have.
@@ -283,6 +301,8 @@ func (h *ContractHandler) Execute(ctx context.Context, from Caller, op string, a
 		return h.S.proposed(from, args)
 	case OpContractStatus, OpContractResult:
 		return h.S.reported(from, op, args)
+	case OpContractCancel:
+		return h.S.cancelled(from, args)
 	}
 	return h.Base.Execute(ctx, from, op, args)
 }
@@ -414,7 +434,25 @@ func (s *Service) ProposeContract(ctx context.Context, peer string, c Contract) 
 	args := map[string]any{"id": c.ID, "title": c.Title, "brief": c.Brief, "base": c.Base, "repo": c.Repo, "files": c.Files}
 	cctx, cancel := context.WithTimeout(ctx, contractTimeout)
 	defer cancel()
-	err := s.withPeer(cctx, peer, func(cl *Client) error { return execOK(cctx, cl, OpContractPropose, args) })
+	answered := false
+	err := s.withPeer(cctx, peer, func(cl *Client) error {
+		r, err := cl.Execute(cctx, OpContractPropose, args)
+		if err != nil {
+			return err
+		}
+		answered = true
+		if r.IsError {
+			return errors.New(Sanitize(truncate(r.Text(), 200)))
+		}
+		return nil
+	})
+	if err != nil && !answered {
+		// Not reached: the proposal waits in the outbox, and the base stays
+		// shared with the peer for when it comes.
+		s.queue(peer, OpContractPropose, c.ID+"p", args)
+		s.changed()
+		return c, QueuedError{Peers: []string{peer}}
+	}
 	if err != nil {
 		b.mu.Lock()
 		if i := b.findLocked(peer, c.ID, false); i >= 0 {
@@ -426,6 +464,153 @@ func (s *Service) ProposeContract(ctx context.Context, peer string, c Contract) 
 	}
 	s.changed()
 	return c, nil
+}
+
+// CancelContract calls off the open contract this Deck proposed for task
+// on thread: the teammate's agent stops, and the base is no longer shared.
+// It reports whether there was one.
+func (s *Service) CancelContract(thread, task, note string) bool {
+	b := s.contracts
+	b.mu.Lock()
+	var c *Contract
+	for i := range b.list {
+		if k := &b.list[i]; !k.Inbound && !k.Final() && k.Thread == thread && k.Task == task {
+			c = k
+		}
+	}
+	if c == nil {
+		b.mu.Unlock()
+		return false
+	}
+	c.State, c.Note, c.Updated = ContractCancelled, cleanLine(note, 300), time.Now()
+	out := *c
+	b.saveLocked()
+	b.mu.Unlock()
+	s.changed()
+	s.callOff(out)
+	return true
+}
+
+// callOff tells the peer that the outbound contract c is off, unless the
+// proposal never left the outbox: then it just does not go.
+func (s *Service) callOff(c Contract) {
+	if s.out.remove(c.Peer, c.ID+"p") {
+		return
+	}
+	s.queue(c.Peer, OpContractCancel, c.ID+"c", map[string]any{"id": c.ID, "note": c.Note})
+}
+
+// cancelled is the requester calling off a contract it proposed here.
+func (s *Service) cancelled(from Caller, args json.RawMessage) (string, error) {
+	var a struct {
+		ID   string `json:"id"`
+		Note string `json:"note"`
+	}
+	if json.Unmarshal(args, &a) != nil || !validKey(a.ID) {
+		return "", fmt.Errorf("%w: no such contract", ErrUnknownOp)
+	}
+	was := ""
+	c, err := s.contracts.update(from.Name, a.ID, true, func(c *Contract) error {
+		if was = c.State; c.Final() {
+			return nil
+		}
+		c.State, c.Note = ContractCancelled, cleanLine("called off by "+from.Name+": "+a.Note, 300)
+		return nil
+	})
+	if errors.Is(err, errNoContract) {
+		return "", fmt.Errorf("%w: no such contract", ErrUnknownOp)
+	} else if err != nil {
+		return "", err
+	}
+	s.changed()
+	if was == ContractAccepted && s.hooks.Cancel != nil {
+		s.hooks.Cancel(c)
+	}
+	return "cancelled", nil
+}
+
+// failOutbound ends the open contract id this Deck proposed to peer as
+// failed, with note, and tells the engine.
+func (s *Service) failOutbound(peer, id, note string) {
+	changed := false
+	c, err := s.contracts.update(peer, id, false, func(c *Contract) error {
+		if !c.Final() {
+			c.State, c.Note, changed = ContractFailed, cleanLine(note, 300), true
+		}
+		return nil
+	})
+	if err != nil || !changed {
+		return
+	}
+	s.changed()
+	if s.hooks.Updated != nil {
+		s.hooks.Updated(c)
+	}
+}
+
+// refused hears a call from the outbox that the peer answered with an
+// error: a proposal it refused ends here too.
+func (s *Service) refused(peer string, it outItem, text string) {
+	if it.Op != OpContractPropose {
+		return
+	}
+	var a struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(it.Args, &a) == nil {
+		s.failOutbound(peer, a.ID, peer+" refused it: "+text)
+	}
+}
+
+// sweepContracts ends the proposals no one answered within proposalTTL: an
+// outbound one fails and is called off, an inbound one is declined.
+func (s *Service) sweepContracts(now time.Time) {
+	b := s.contracts
+	b.mu.Lock()
+	var out, in []Contract
+	for _, c := range b.list {
+		if c.State == ContractProposed && now.Sub(c.At) > proposalTTL {
+			if c.Inbound {
+				in = append(in, c)
+			} else {
+				out = append(out, c)
+			}
+		}
+	}
+	b.mu.Unlock()
+	hours := fmt.Sprintf("%.0f hours", proposalTTL.Hours())
+	for _, c := range out {
+		s.failOutbound(c.Peer, c.ID, c.Peer+" did not answer within "+hours)
+		if k, err := s.contracts.update(c.Peer, c.ID, false, func(*Contract) error { return nil }); err == nil {
+			s.callOff(k)
+		}
+	}
+	for _, c := range in {
+		note := "not answered within " + hours
+		if _, err := s.contracts.update(c.Peer, c.ID, true, func(k *Contract) error {
+			k.State, k.Note = ContractDeclined, note
+			return nil
+		}); err == nil {
+			s.queue(c.Peer, OpContractStatus, c.ID+"s", map[string]any{"id": c.ID, "state": ContractDeclined, "note": note})
+		}
+	}
+	if len(out)+len(in) > 0 {
+		s.changed()
+	}
+}
+
+// contractLoop sweeps the contracts until the Service closes.
+func (s *Service) contractLoop() {
+	t := time.NewTicker(contractSweep)
+	defer t.Stop()
+	for {
+		select {
+		case <-s.base.Done():
+			return
+		case now := <-t.C:
+			s.sweepContracts(now)
+		}
+	}
 }
 
 // AnswerContract is this Deck's person accepting a teammate's contract,

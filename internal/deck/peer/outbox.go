@@ -18,7 +18,7 @@ import (
 // be delivered wait in outbox.json in the peers directory, oldest first, and
 // go when its link is back. Each carries an idempotency key the receiver
 // drops a repeat by, so a call that arrived but whose answer was lost does
-// nothing the second time. Only team chat goes through it today.
+// nothing the second time. Team chat and code contracts go through it.
 
 const (
 	// maxOutbox caps the waiting calls; the oldest go first.
@@ -103,8 +103,9 @@ func (o *outbox) add(it outItem) {
 	o.save()
 }
 
-// remove drops the call with key id for peer.
-func (o *outbox) remove(peer, id string) {
+// remove drops the call with key id for peer, and reports whether it was
+// still waiting.
+func (o *outbox) remove(peer, id string) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	kept := o.items[:0]
@@ -113,8 +114,10 @@ func (o *outbox) remove(peer, id string) {
 			kept = append(kept, it)
 		}
 	}
+	found := len(kept) < len(o.items)
 	o.items = kept
 	o.save()
+	return found
 }
 
 // byPeer is the waiting calls, by peer, oldest first.
@@ -201,11 +204,15 @@ func (s *Service) flush(ctx context.Context) int {
 		cctx, cancel := context.WithTimeout(ctx, chatTimeout)
 		_ = s.withPeer(cctx, p, func(cl *Client) error {
 			for _, it := range byPeer[p] {
-				if _, err := cl.Execute(cctx, it.Op, it.Args); err != nil {
+				r, err := cl.Execute(cctx, it.Op, it.Args)
+				if err != nil {
 					return err // the link failed: later
 				}
 				// Answered, even when refused: trying again would not change it.
 				s.out.remove(p, it.ID)
+				if r.IsError {
+					s.refused(p, it, Sanitize(truncate(r.Text(), 200)))
+				}
 			}
 			return nil
 		})
