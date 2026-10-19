@@ -93,6 +93,10 @@ func (m *Manager) handleMessage(msg agent.Message) {
 		return
 	}
 	t := from.thread
+	if t.opsOf() != nil {
+		respond("", errOpsOnly)
+		return
+	}
 	if from.status() == StatusExited {
 		respond("", fmt.Errorf("%s is not running", from.getName()))
 		return

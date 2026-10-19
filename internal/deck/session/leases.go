@@ -151,6 +151,9 @@ func (m *Manager) acquireLease(a *agentState, raw string, minutes int, exclusive
 	if len(also) > 0 {
 		out += "\nalso held, talk to them first:\n" + strings.Join(also, "\n")
 	}
+	if h := m.memHint(a, paths, ""); h != "" {
+		out += "\n" + h
+	}
 	return out, nil
 }
 

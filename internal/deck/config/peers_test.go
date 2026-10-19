@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func validPeers() *Peers {
@@ -70,6 +71,11 @@ func TestPeersValidate(t *testing.T) {
 		{"allow entry with spaces", func(p *Peers) { p.Remote[0].AllowInbound = []string{" peer.status"} }, "spaces around"},
 		{"allow entry with tab", func(p *Peers) { p.Remote[0].AllowInbound = []string{"peer.status\t"} }, "spaces around"},
 		{"scope entry with spaces", func(p *Peers) { p.Remote[0].MaxScope = []string{"podman-read "} }, "spaces around"},
+		{"unknown preset", func(p *Peers) { p.Remote[0].MaxScope = []string{"podman-write"} }, "is not a preset"},
+		{"both presets", func(p *Peers) { p.Remote[0].MaxScope = []string{"podman-read", "systemd-read"} }, ""},
+		{"bad ttl", func(p *Peers) { p.Sandbox = &PeerSandbox{TTL: "soon"} }, "peers.sandbox.ttl"},
+		{"zero ttl", func(p *Peers) { p.Sandbox = &PeerSandbox{TTL: "0s"} }, "peers.sandbox.ttl"},
+		{"negative scratch", func(p *Peers) { p.Sandbox = &PeerSandbox{ScratchMB: -1} }, "negative"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -199,5 +205,16 @@ func TestLoadRejectsInvalidPeers(t *testing.T) {
 	writeFile(t, path, `{"peers": {"remote": [{"name": "vps", "role": "root"}]}}`)
 	if _, err := LoadFrom(path); err == nil || !strings.Contains(err.Error(), "role") {
 		t.Fatalf("want role error, got %v", err)
+	}
+}
+
+func TestSandboxLimits(t *testing.T) {
+	var none *Peers
+	if ttl, mb, kb := none.SandboxLimits(); ttl != 2*time.Hour || mb != 64 || kb != 64 {
+		t.Fatalf("defaults = %v %d %d", ttl, mb, kb)
+	}
+	p := &Peers{Sandbox: &PeerSandbox{TTL: "30m", OutputKB: 16}}
+	if ttl, mb, kb := p.SandboxLimits(); ttl != 30*time.Minute || mb != 64 || kb != 16 {
+		t.Fatalf("limits = %v %d %d", ttl, mb, kb)
 	}
 }

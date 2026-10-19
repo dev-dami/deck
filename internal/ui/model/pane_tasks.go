@@ -224,6 +224,8 @@ func taskGlyph(status, frame string) string {
 		return frame
 	case "ready":
 		return "○"
+	case "review":
+		return "◇"
 	case "blocked":
 		return "!"
 	case "done":
@@ -243,6 +245,9 @@ func taskLines(m *UI, t workspace.BoardTask, width int, now time.Time, frame str
 	right := ""
 	if t.Owner != "" {
 		right = muted.Render(t.Owner)
+	}
+	if t.Reviewer != "" {
+		right = muted.Render(t.Owner + " · review: " + t.Reviewer)
 	}
 	if t.Entry {
 		// Under its race, which has the title: the entry is who ran it and
@@ -268,6 +273,9 @@ func taskLines(m *UI, t workspace.BoardTask, width int, now time.Time, frame str
 	info := t.Status
 	if t.Attempts > 0 {
 		info += fmt.Sprintf(" · attempt %d of %d", t.Attempts, t.Tries)
+	}
+	if t.Reviews > 0 {
+		info += fmt.Sprintf(" · %d reviews", t.Reviews)
 	}
 	if len(t.Deps) > 0 {
 		info += " · after " + strings.Join(t.Deps, ",")

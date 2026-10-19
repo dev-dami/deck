@@ -36,17 +36,33 @@ type Engine struct {
 	// peers are on, at startup or from Settings. Nil only when the peers
 	// directory cannot be found.
 	peers *peer.Service
+	// unlock drops the lock on the thread store; nil when none was taken.
+	unlock func()
 }
 
 // Peers is the peer link, or nil.
 func (e *Engine) Peers() *peer.Service { return e.peers }
 
-// Start finds the CLIs and starts the thread manager.
-func Start() (*Engine, error) {
+// ExclusiveStore makes Start take the thread store alone (deck serve);
+// otherwise it shares it with other terminal Decks (store.Lock).
+var ExclusiveStore bool
+
+// Start finds the CLIs and starts the thread manager. It takes the lock on
+// the thread store first (store.Lock).
+func Start() (_ *Engine, err error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
+	unlock, err := store.Lock("", ExclusiveStore)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			unlock()
+		}
+	}()
 	st, err := store.New("")
 	if err != nil {
 		return nil, fmt.Errorf("threads: %w", err)
@@ -95,6 +111,7 @@ func Start() (*Engine, error) {
 	if peers != nil {
 		deals.svc.Store(peers)
 		mgr.SetContractor(deals)
+		mgr.SetSandbox(opsSandbox(cfg.Peers))
 		mgr.SetTaskEnd(deals.taskEnd)
 		mgr.SetTeam(peerTeam{peers})
 		mgr.SetSubFetch(func(ctx context.Context, name string, id sub.ID, s *sub.Store) (int, error) {
@@ -102,7 +119,7 @@ func Start() (*Engine, error) {
 		})
 	}
 	go mgr.CollectSub()
-	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: peers}, nil
+	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: peers, unlock: unlock}, nil
 }
 
 // startPeers makes the peer link and starts it when peers.enabled is set;
@@ -124,13 +141,45 @@ func startPeers(cfg config.Config, o peer.ServiceOptions) *peer.Service {
 	return svc
 }
 
-// Close stops every agent, the peer link and the approval broker.
+// Drain makes teammates unable to start new work here: new contracts and
+// posts to shared threads are refused. Work under way goes on.
+func (e *Engine) Drain() {
+	if e.peers != nil {
+		e.peers.Drain()
+	}
+}
+
+// Busy is how many agents are in a turn, or wait for an approval in one.
+func (e *Engine) Busy() int {
+	n := 0
+	for _, a := range e.Manager.Agents() {
+		switch a.Status {
+		case session.StatusWorking, session.StatusTool, session.StatusApproval:
+			n++
+		}
+	}
+	return n
+}
+
+// Waiting is how many peer calls wait in the outbox for a teammate.
+func (e *Engine) Waiting() int {
+	if e.peers == nil {
+		return 0
+	}
+	return e.peers.Waiting()
+}
+
+// Close stops every agent, the peer link and the approval broker, and then
+// drops the lock on the thread store.
 func (e *Engine) Close() {
 	if e.peers != nil {
 		e.peers.Close()
 	}
 	e.Manager.Close()
 	e.broker.Close()
+	if e.unlock != nil {
+		e.unlock()
+	}
 }
 
 // found reports whether the configured binary (or the default name) is runnable.

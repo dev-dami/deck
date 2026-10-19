@@ -98,6 +98,9 @@ func (a *adapter) Name() string { return "fake" }
 // script asks.
 func (a *adapter) ContractSafe() bool { return true }
 
+// OpsSafe implements agent.OpsSafe: a fake has no tools of its own.
+func (a *adapter) OpsSafe() bool { return true }
+
 // Start begins a run and plays the start script on a goroutine. If
 // spec.FirstPrompt is set it is echoed as a user_text event first. The run is
 // closed when ctx is done.

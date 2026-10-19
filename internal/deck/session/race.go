@@ -32,6 +32,8 @@ type RaceSpec struct {
 	Kinds []string
 	// Judge is the kind of agent that ranks the entries; "" is none.
 	Judge string
+	// Review is who reviews each entry before it ends (review.go).
+	Review string
 }
 
 // RaceResult says what Race started.
@@ -62,6 +64,9 @@ func (m *Manager) Race(threadID, parentID string, sp RaceSpec) (RaceResult, erro
 			return RaceResult{}, fmt.Errorf("session: unknown agent kind %q", k)
 		}
 	}
+	if err := m.checkReview(sp.Review); err != nil {
+		return RaceResult{}, err
+	}
 	// Check all that can refuse before the first entry starts.
 	if _, _, err := m.spawnRoom(t, parentID, len(sp.Kinds)); err != nil {
 		return RaceResult{}, err
@@ -85,7 +90,7 @@ func (m *Manager) Race(threadID, parentID string, sp RaceSpec) (RaceResult, erro
 	// Every entry is on the board before the first starts: an entry that
 	// cannot start ends at once, and must not end the race alone.
 	for _, k := range sp.Kinds {
-		tk, err := m.addTask(t, TaskSpec{Title: title, Brief: brief, Creator: parentID, Parent: race.ID, MaxAttempts: 1, Isolate: true, Kind: k, Claimed: true})
+		tk, err := m.addTask(t, TaskSpec{Title: title, Brief: brief, Creator: parentID, Parent: race.ID, MaxAttempts: 1, Isolate: true, Kind: k, Claimed: true, Review: sp.Review})
 		if err != nil {
 			_, _ = m.moveTask(t, race.ID, store.TaskCancelled, parentID, "could not start: "+err.Error(), nil)
 			return RaceResult{}, err
@@ -226,7 +231,7 @@ func (m *Manager) settleRace(t *thread, id string) {
 	// After the race is done, so that its summary arrives before the ranking.
 	brief := fmt.Sprintf("Rank %d attempts at one task, best first, with one line on why for each. Each worked on a git worktree of its own. Read their changes, and run the tests if that helps, but do not change any files.\n\nThe task: %s\n\nThe attempts:\n%s",
 		len(ranks), race.Brief, strings.Join(ranks, "\n"))
-	if _, err := m.Spawn(t.id, race.Creator, SpawnSpec{Kind: race.Judge, Title: "rank the entries of " + race.ID, Brief: brief}); err != nil {
+	if _, err := m.Spawn(t.id, race.Creator, SpawnSpec{Kind: race.Judge, Title: "rank the entries of " + race.ID, Brief: brief, Review: store.ReviewNone}); err != nil {
 		m.notice(t, "the judge of "+race.ID+" could not start: "+err.Error())
 	}
 }
@@ -285,8 +290,8 @@ func (m *Manager) KeepEntry(threadID, taskID string) ([]string, error) {
 		return nil, fmt.Errorf("session: %s is not a race entry", tk.ID)
 	case tk.Run == nil || tk.Run.Branch == "":
 		return nil, fmt.Errorf("session: %s has no worktree to keep", tk.ID)
-	case tk.Status == store.TaskRunning:
-		return nil, fmt.Errorf("session: %s is still running; wait for it to end, or cancel it", tk.ID)
+	case tk.Status == store.TaskRunning, tk.Status == store.TaskReview:
+		return nil, fmt.Errorf("session: %s is still %s; wait for it to end, or cancel it", tk.ID, tk.Status)
 	}
 	files, err := m.ApplyMember(threadID, tk.Run.Member)
 	if err != nil {

@@ -14,8 +14,10 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // EnvReducedMotion, when set to "1", forces Motion to "off".
@@ -113,8 +115,12 @@ type Config struct {
 	// agent when one of that CLI's plan windows is at least this full, to the
 	// installed kind with the most room; 0 means DefaultRouteAbovePct, and 100
 	// or more never moves it.
-	RouteAbovePct int    `json:"route_above_pct"`
-	Models        Models `json:"models"`
+	RouteAbovePct int `json:"route_above_pct"`
+	// Review is the kind of agent that reviews a task run by subagents before
+	// it is done, when the task names none: "" or "none" is no review,
+	// "other" any installed kind other than the worker's, or a kind.
+	Review string `json:"review"`
+	Models Models `json:"models"`
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
 	Efforts Models `json:"efforts"`
@@ -163,7 +169,8 @@ type Peers struct {
 	// ShareLimits lets teammates see how full this Deck's CLI plans are, in
 	// peer.status. Off by default.
 	ShareLimits bool `json:"share_limits,omitempty"`
-	// Sandbox is reserved for the virtual bash phase; it is parsed but unused.
+	// Sandbox sets the limits of the sandbox that ops contracts run in
+	// (SandboxLimits).
 	Sandbox *PeerSandbox `json:"sandbox,omitempty"`
 }
 
@@ -182,16 +189,49 @@ type PeerRemote struct {
 	// AllowInbound lists the ops this peer may run here; empty means the
 	// defaults (docs/peers-design.md section 2).
 	AllowInbound []string `json:"allow_inbound,omitempty"`
-	// MaxScope is the outer limit for contracts from this peer (later phases).
+	// MaxScope is the outer limit for ops contracts from this peer: the
+	// presets (OpsPresets) it may ask for. Empty allows none.
 	MaxScope []string `json:"max_scope,omitempty"`
 }
 
-// PeerSandbox configures the virtual bash used by contracts (not used yet).
+// OpsPresets are the sandbox presets an ops contract can ask for: each
+// lets the contract's agent run a fixed set of read-only commands.
+var OpsPresets = []string{"podman-read", "systemd-read"}
+
+// PeerSandbox sets the limits of the sandbox that ops contracts run in.
+// Presets is reserved: it is parsed but not used.
 type PeerSandbox struct {
 	TTL       string              `json:"ttl,omitempty"`
 	ScratchMB int                 `json:"scratch_mb,omitempty"`
 	OutputKB  int                 `json:"output_kb,omitempty"`
 	Presets   map[string][]string `json:"presets,omitempty"`
+}
+
+// The sandbox limits when peers.sandbox leaves them out.
+const (
+	DefaultSandboxTTL       = 2 * time.Hour
+	DefaultSandboxScratchMB = 64
+	DefaultSandboxOutputKB  = 64
+)
+
+// SandboxLimits are how long an ops contract may run, and the sizes of its
+// scratch folder (MB) and of each command's output (KB), with the defaults
+// for what peers.sandbox leaves out. p may be nil.
+func (p *Peers) SandboxLimits() (ttl time.Duration, scratchMB, outputKB int) {
+	ttl, scratchMB, outputKB = DefaultSandboxTTL, DefaultSandboxScratchMB, DefaultSandboxOutputKB
+	if p == nil || p.Sandbox == nil {
+		return
+	}
+	if d, err := time.ParseDuration(p.Sandbox.TTL); err == nil && d > 0 {
+		ttl = d
+	}
+	if p.Sandbox.ScratchMB > 0 {
+		scratchMB = p.Sandbox.ScratchMB
+	}
+	if p.Sandbox.OutputKB > 0 {
+		outputKB = p.Sandbox.OutputKB
+	}
+	return
 }
 
 // PeersEnabled reports whether the peer link is on.
@@ -326,6 +366,17 @@ func (p *Peers) validate() error {
 			if s != strings.TrimSpace(s) {
 				return fmt.Errorf("peers.remote[%d].max_scope[%d] %q has spaces around it", i, j, s)
 			}
+			if !slices.Contains(OpsPresets, s) {
+				return fmt.Errorf("peers.remote[%d].max_scope[%d] %q is not a preset (use %s)", i, j, s, strings.Join(OpsPresets, ", "))
+			}
+		}
+	}
+	if sb := p.Sandbox; sb != nil {
+		if d, err := time.ParseDuration(sb.TTL); sb.TTL != "" && (err != nil || d <= 0) {
+			return fmt.Errorf("peers.sandbox.ttl %q: use a duration such as \"2h\"", sb.TTL)
+		}
+		if sb.ScratchMB < 0 || sb.OutputKB < 0 {
+			return errors.New("peers.sandbox: scratch_mb and output_kb cannot be negative")
 		}
 	}
 	return nil
@@ -576,6 +627,9 @@ func (c Config) Validate() error {
 	}
 	if c.Budget.CostUSD < 0 {
 		return fmt.Errorf("budget.cost_usd must be 0 (no limit) or more, got %v", c.Budget.CostUSD)
+	}
+	if c.Review != "" && c.Review != "none" && c.Review != "other" && !slices.Contains(Kinds, c.Review) {
+		return fmt.Errorf("review must be \"none\", \"other\" or an agent kind, got %q", c.Review)
 	}
 	if c.Peers != nil {
 		if err := c.Peers.validate(); err != nil {

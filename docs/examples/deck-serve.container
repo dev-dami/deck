@@ -1,0 +1,51 @@
+# Deck headless on a server, as a rootless podman quadlet.
+#
+# Install:
+#   cp deck-serve.container ~/.config/containers/systemd/
+#   systemctl --user daemon-reload
+#   systemctl --user start deck-serve
+#   loginctl enable-linger "$USER"    # keep it running after you log out
+# Logs:
+#   journalctl --user -u deck-serve -f
+#
+# The image is yours to build: it needs deck and the agent CLIs (claude,
+# codex) on PATH, and a user whose home is /home/deck. Inside the container,
+# set peers.listen.addr to 0.0.0.0:7722 in ~/.deck/config.json, so the
+# published port reaches the listener. Stop any other Deck that uses the same
+# ~/.deck first: only one Deck process at a time can use ~/.deck/threads.
+
+[Unit]
+Description=Deck headless for teammates (deck serve)
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=localhost/deck:latest
+Exec=deck serve --drain 2m
+Environment=HOME=/home/deck
+UserNS=keep-id
+# A small init reaps the agents' processes and passes SIGTERM to deck only.
+RunInit=true
+# The peer link. Bind it to one address (for example a WireGuard one) to
+# keep it off the public interface: PublishPort=10.0.0.1:7722:7722
+PublishPort=7722:7722
+# Deck's config, threads, peer keys and pins.
+Volume=%h/.deck:/home/deck/.deck:Z
+# The agent CLIs' logins and sessions, and the projects agents work in.
+Volume=%h/.claude:/home/deck/.claude:Z
+Volume=%h/.codex:/home/deck/.codex:Z
+#Volume=%h/src:/home/deck/src:Z
+# Hardening: a read-only root with a private /tmp, no new privileges, no
+# capabilities.
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+# Deck drains on SIGTERM. Give it more time than --drain before SIGKILL.
+PodmanArgs=--stop-timeout=150
+
+[Service]
+Restart=on-failure
+TimeoutStopSec=160
+
+[Install]
+WantedBy=default.target

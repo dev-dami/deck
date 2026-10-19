@@ -49,6 +49,8 @@ type TaskSpec struct {
 	// Race and Judge make it a race (race.go).
 	Race  bool
 	Judge string
+	// Review is who reviews it before it is done (review.go).
+	Review string
 	// Remote is the teammate that does it under a code contract
 	// (contract.go).
 	Remote string
@@ -233,6 +235,10 @@ func (m *Manager) addTask(t *thread, sp TaskSpec) (store.Task, error) {
 			return store.Task{}, fmt.Errorf("session: unknown agent kind %q", sp.Kind)
 		}
 	}
+	if err := m.checkReview(sp.Review); err != nil {
+		t.mu.Unlock()
+		return store.Task{}, err
+	}
 	if sp.Parent != "" {
 		if store.FindTask(t.tasks, sp.Parent) < 0 {
 			t.mu.Unlock()
@@ -250,7 +256,7 @@ func (m *Manager) addTask(t *thread, sp TaskSpec) (store.Task, error) {
 		Creator: sp.Creator, Owner: sp.Owner, Parent: canonicalID(t.tasks, sp.Parent), Deps: deps,
 		Status: store.TaskPending, OnFail: sp.OnFail, MaxAttempts: sp.MaxAttempts, Contract: sp.Contract, Isolate: sp.Isolate,
 		Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort, Budget: sp.Budget, Race: sp.Race, Judge: sp.Judge, Remote: sp.Remote,
-		Created: now, Updated: now,
+		Review: sp.Review, Created: now, Updated: now,
 	}
 	if sp.Claimed {
 		task.Status, task.Attempts, task.Started = store.TaskRunning, 1, now
@@ -363,6 +369,22 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 		t.mu.Unlock()
 		return store.Task{}, fmt.Errorf("%w: %s is %s, not %s", store.ErrTaskTransition, tk.ID, from, to)
 	}
+	// Work that ends goes to review first when the task asks for one.
+	unreviewed := ""
+	if to == store.TaskDone && from == store.TaskRunning {
+		switch want, worker := m.reviewOf(*tk), t.workerKind(*tk); {
+		case want == "":
+		case m.reviewKind(want, worker) != "":
+			to = store.TaskReview
+		default:
+			unreviewed = fmt.Sprintf("%s was not reviewed: no agent kind other than %s is installed", tk.ID, worker)
+			note = strings.TrimSpace(note + "\n[" + unreviewed + "]")
+		}
+	}
+	reviewer := ""
+	if to != store.TaskReview {
+		reviewer, tk.Reviewer = tk.Reviewer, ""
+	}
 	var run *store.RunRef
 	if tk.Run != nil {
 		r := *tk.Run
@@ -381,12 +403,12 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 	}
 	tk.Status = to
 	tk.Updated = time.Now()
-	if to == store.TaskRunning && from != store.TaskRunning {
+	if to == store.TaskRunning && from != store.TaskRunning && from != store.TaskReview { // a review's changes are the same attempt
 		tk.Attempts++
 		tk.Started, tk.Spent = time.Now(), store.Spend{} // each attempt has the whole budget
 	}
 	switch to {
-	case store.TaskDone:
+	case store.TaskDone, store.TaskReview:
 		tk.Result, tk.Error = clipText(note, maxTaskText), ""
 	case store.TaskFailed, store.TaskBlocked:
 		tk.Error = clipText(note, maxTaskText)
@@ -407,8 +429,18 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 	out := cloneTask(t.tasks[i])
 	t.mu.Unlock()
 	m.announce(t, changes)
+	if unreviewed != "" {
+		m.notice(t, unreviewed)
+	}
 	if to == store.TaskDone || to == store.TaskFailed || to == store.TaskBlocked {
 		m.notifyCreator(t, out, by)
+	}
+	// A reviewer that did not make this move itself is done with the task.
+	if reviewer != "" && reviewer != by {
+		m.retireMember(t, reviewer)
+	}
+	if to == store.TaskReview && from != store.TaskReview {
+		m.startReview(t, out.ID)
 	}
 	// A subagent whose task ended is stopped at once if it is idle; a busy one
 	// (it reported through task.done mid-turn) is stopped when its turn ends.
@@ -471,7 +503,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 			Title: str("title"), Brief: str("brief"), Creator: me, Parent: str("parent"),
 			Deps: splitIDs(str("deps")), OnFail: normOnFail(str("on_fail")), MaxAttempts: num("max_attempts"),
 			Isolate: a["isolate"] == true, Kind: strings.ToLower(str("kind")), Model: str("model"), Effort: str("effort"),
-			Budget: budgetArgs(a),
+			Budget: budgetArgs(a), Review: strings.ToLower(str("review")),
 		}
 		if o := str("owner"); o != "" {
 			id, err := b.resolveOwner(o)
@@ -551,6 +583,14 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		return m.releaseLeases(b.a, str("paths")), nil
 	case "lease.list":
 		return m.listLeases(b.a), nil
+	case "memory.add":
+		return m.addNote(b.a, str("text"), str("paths"), str("lines"))
+	case "memory.read":
+		return m.readNotes(b.a, str("path"))
+	case "memory.list":
+		return m.listNotes(b.a)
+	case "memory.drop":
+		return m.dropNote(b.a, str("id"))
 	case "team.post":
 		return m.teamPost(b.a, str("text"))
 	case "task.steer":
@@ -561,7 +601,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 	case "agent.spawn":
 		res, err := m.Spawn(t.id, me, SpawnSpec{
 			Kind: strings.ToLower(str("kind")), Model: str("model"), Effort: str("effort"), Title: str("title"), Brief: str("brief"), TaskID: str("task"),
-			Isolate:  a["isolate"] == true,
+			Isolate: a["isolate"] == true, Review: strings.ToLower(str("review")),
 			Contract: store.Contract{Expect: str("expect"), DoneWhen: str("done_when"), ExplicitDone: a["explicit_done"] == true},
 		})
 		if err != nil {
@@ -577,7 +617,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		res, err := m.Race(t.id, me, RaceSpec{Title: str("title"), Brief: str("brief"), Kinds: kinds, Judge: strings.ToLower(str("judge"))})
+		res, err := m.Race(t.id, me, RaceSpec{Title: str("title"), Brief: str("brief"), Kinds: kinds, Judge: strings.ToLower(str("judge")), Review: strings.ToLower(str("review"))})
 		if err != nil {
 			return "", err
 		}
@@ -592,6 +632,10 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 			how = tk.Remote + " cannot be reached now: the request goes when its link is back, then its person confirms it"
 		}
 		return fmt.Sprintf("asked %s to do %s %q; %s. When it ends, its result comes back to you, with a capsule of its changes.", tk.Remote, tk.ID, tk.Title, how), nil
+	case "review.approve":
+		return m.answerReview(b.a, str("id"), true, str("note"))
+	case "review.changes":
+		return m.answerReview(b.a, str("id"), false, str("notes"))
 	case "task.done", "task.fail", "task.cancel":
 		id := str("id")
 		if err := b.mayFinish(id); err != nil {
@@ -618,6 +662,9 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		}
 		if err != nil {
 			return "", err
+		}
+		if cur, ok := m.Task(t.id, tk.ID); ok && tk.Status == store.TaskReview {
+			tk = cur // with its reviewer, who started meanwhile
 		}
 		return b.line(tk), nil
 	}
@@ -713,6 +760,9 @@ func taskLine(t *thread, tk store.Task) string {
 	if tk.Owner != "" {
 		b.WriteString(" " + t.name(tk.Owner))
 	}
+	if tk.Reviewer != "" {
+		b.WriteString(", reviewed by " + t.name(tk.Reviewer))
+	}
 	if len(tk.Deps) > 0 {
 		b.WriteString(" after " + strings.Join(tk.Deps, ","))
 	}
@@ -759,7 +809,7 @@ func (m *Manager) RetryTask(threadID, id, by string) (store.Task, error) {
 	}
 	var old *store.RunRef
 	tk, err := m.moveTask(t, id, store.TaskReady, by, "retry", func(tk *store.Task) {
-		tk.Attempts, tk.RetryAt, tk.Error, tk.BlockedBy = 0, time.Time{}, "", ""
+		tk.Attempts, tk.Reviews, tk.RetryAt, tk.Error, tk.BlockedBy = 0, 0, time.Time{}, "", ""
 		old = tk.Run
 		if tk.Run != nil {
 			tk.Owner, tk.Run = "", nil

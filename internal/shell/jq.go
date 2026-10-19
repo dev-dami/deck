@@ -47,6 +47,13 @@ Options:
 // github.com/itchyny/gojq, and we'd ideally get the CLI exposed upstream to
 // avoid this falling out of sync.
 func handleJQ(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	return JQ(ctx, args, stdin, stdout, stderr, func(name string) (io.ReadCloser, error) { return os.Open(name) }, os.Environ)
+}
+
+// JQ runs jq like handleJQ. open opens the file operands and environ
+// supplies jq's env and $ENV, so a sandbox can confine files and hide the
+// process environment.
+func JQ(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, open func(string) (io.ReadCloser, error), environ func() []string) error {
 	// Fast-fail when ctx is already cancelled so callers don't pay for
 	// flag parsing and gojq compilation on a doomed request.
 	if err := ctx.Err(); err != nil {
@@ -143,7 +150,7 @@ func handleJQ(ctx context.Context, args []string, stdin io.Reader, stdout, stder
 	}
 
 	opts := []gojq.CompilerOption{
-		gojq.WithEnvironLoader(os.Environ),
+		gojq.WithEnvironLoader(environ),
 	}
 	if len(argNames) > 0 {
 		opts = append(opts, gojq.WithVariables(argNames))
@@ -156,7 +163,7 @@ func handleJQ(ctx context.Context, args []string, stdin io.Reader, stdout, stder
 	}
 
 	// Build input values.
-	inputs, err := readInputs(ctx, stdin, fileArgs, nullInput, rawInput, slurp)
+	inputs, err := readInputs(ctx, stdin, fileArgs, nullInput, rawInput, slurp, open)
 	if err != nil {
 		// Prefer surfacing ctx cancellation verbatim so timeouts are
 		// distinguishable from user input errors.
@@ -169,7 +176,7 @@ func handleJQ(ctx context.Context, args []string, stdin io.Reader, stdout, stder
 
 	var lastFalsy bool
 	for _, input := range inputs {
-		iter := code.Run(input, argValues...)
+		iter := code.RunWithContext(ctx, input, argValues...)
 		for {
 			// Poll ctx on every value so a long-running filter (e.g. a
 			// generator over a slurped array) can be interrupted by hook
@@ -182,6 +189,10 @@ func handleJQ(ctx context.Context, args []string, stdin io.Reader, stdout, stder
 				break
 			}
 			if err, ok := v.(error); ok {
+				// RunWithContext stops a long filter with the ctx error.
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return ctxErr
+				}
 				fmt.Fprintf(stderr, "jq: %s\n", err)
 				return interp.ExitStatus(5)
 			}
@@ -216,7 +227,7 @@ func handleJQ(ctx context.Context, args []string, stdin io.Reader, stdout, stder
 // still outlast ctx; the outer abandon-goroutine path in the hook
 // runner (internal/hooks/runner.go) is the authoritative enforcer for
 // that case.
-func readInputs(ctx context.Context, stdin io.Reader, files []string, nullInput, rawInput, slurp bool) ([]any, error) {
+func readInputs(ctx context.Context, stdin io.Reader, files []string, nullInput, rawInput, slurp bool, open func(string) (io.ReadCloser, error)) ([]any, error) {
 	if nullInput {
 		return []any{nil}, nil
 	}
@@ -224,7 +235,7 @@ func readInputs(ctx context.Context, stdin io.Reader, files []string, nullInput,
 	var readers []io.Reader
 	if len(files) > 0 {
 		for _, f := range files {
-			file, err := os.Open(f)
+			file, err := open(f)
 			if err != nil {
 				return nil, err
 			}
