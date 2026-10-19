@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/dev-dami/deck/internal/deck/gh"
+	"github.com/dev-dami/deck/internal/usage"
 	"github.com/dev-dami/deck/pkg/remote"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 	"github.com/dev-dami/deck/pkg/rpc/deckv1"
@@ -36,6 +38,13 @@ type Server struct {
 	be    remote.Backend
 	feed  *feed
 	token string
+
+	// The project (WithProject): where git runs and terminals start, and
+	// Deck's usage record. Without it those calls fail or say unavailable.
+	dir   string
+	git   *gh.Client
+	usage usage.Service
+	terms *terminals
 }
 
 // New returns a server for be that admits callers presenting token.

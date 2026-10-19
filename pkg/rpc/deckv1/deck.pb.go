@@ -2940,6 +2940,1753 @@ func (*Event_Notice) isEvent_Kind() {}
 
 func (*Event_ThemeChanged) isEvent_Kind() {}
 
+type GitBranch struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// upstream is empty when the branch was never pushed.
+	Upstream      string `protobuf:"bytes,2,opt,name=upstream,proto3" json:"upstream,omitempty"`
+	CommittedAt   int64  `protobuf:"varint,3,opt,name=committed_at,json=committedAt,proto3" json:"committed_at,omitempty"`
+	Subject       string `protobuf:"bytes,4,opt,name=subject,proto3" json:"subject,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GitBranch) Reset() {
+	*x = GitBranch{}
+	mi := &file_deck_v1_deck_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitBranch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitBranch) ProtoMessage() {}
+
+func (x *GitBranch) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitBranch.ProtoReflect.Descriptor instead.
+func (*GitBranch) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *GitBranch) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *GitBranch) GetUpstream() string {
+	if x != nil {
+		return x.Upstream
+	}
+	return ""
+}
+
+func (x *GitBranch) GetCommittedAt() int64 {
+	if x != nil {
+		return x.CommittedAt
+	}
+	return 0
+}
+
+func (x *GitBranch) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+type GitCheck struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// bucket is "pass", "fail", "pending", "skipping" or "cancel".
+	Bucket        string `protobuf:"bytes,2,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	Link          string `protobuf:"bytes,3,opt,name=link,proto3" json:"link,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GitCheck) Reset() {
+	*x = GitCheck{}
+	mi := &file_deck_v1_deck_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitCheck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitCheck) ProtoMessage() {}
+
+func (x *GitCheck) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitCheck.ProtoReflect.Descriptor instead.
+func (*GitCheck) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *GitCheck) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *GitCheck) GetBucket() string {
+	if x != nil {
+		return x.Bucket
+	}
+	return ""
+}
+
+func (x *GitCheck) GetLink() string {
+	if x != nil {
+		return x.Link
+	}
+	return ""
+}
+
+type GitPullRequest struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Number int32                  `protobuf:"varint,1,opt,name=number,proto3" json:"number,omitempty"`
+	Title  string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	// state is OPEN, CLOSED or MERGED.
+	State          string      `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	Url            string      `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
+	Draft          bool        `protobuf:"varint,5,opt,name=draft,proto3" json:"draft,omitempty"`
+	ReviewDecision string      `protobuf:"bytes,6,opt,name=review_decision,json=reviewDecision,proto3" json:"review_decision,omitempty"`
+	Mergeable      string      `protobuf:"bytes,7,opt,name=mergeable,proto3" json:"mergeable,omitempty"`
+	Base           string      `protobuf:"bytes,8,opt,name=base,proto3" json:"base,omitempty"`
+	Checks         []*GitCheck `protobuf:"bytes,9,rep,name=checks,proto3" json:"checks,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GitPullRequest) Reset() {
+	*x = GitPullRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitPullRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitPullRequest) ProtoMessage() {}
+
+func (x *GitPullRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitPullRequest.ProtoReflect.Descriptor instead.
+func (*GitPullRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *GitPullRequest) GetNumber() int32 {
+	if x != nil {
+		return x.Number
+	}
+	return 0
+}
+
+func (x *GitPullRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *GitPullRequest) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *GitPullRequest) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *GitPullRequest) GetDraft() bool {
+	if x != nil {
+		return x.Draft
+	}
+	return false
+}
+
+func (x *GitPullRequest) GetReviewDecision() string {
+	if x != nil {
+		return x.ReviewDecision
+	}
+	return ""
+}
+
+func (x *GitPullRequest) GetMergeable() string {
+	if x != nil {
+		return x.Mergeable
+	}
+	return ""
+}
+
+func (x *GitPullRequest) GetBase() string {
+	if x != nil {
+		return x.Base
+	}
+	return ""
+}
+
+func (x *GitPullRequest) GetChecks() []*GitCheck {
+	if x != nil {
+		return x.Checks
+	}
+	return nil
+}
+
+type GitStatusResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// repo is false when the project folder is not a git work tree; the
+	// rest is then empty.
+	Repo     bool   `protobuf:"varint,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	Branch   string `protobuf:"bytes,2,opt,name=branch,proto3" json:"branch,omitempty"`
+	Upstream string `protobuf:"bytes,3,opt,name=upstream,proto3" json:"upstream,omitempty"`
+	Ahead    int32  `protobuf:"varint,4,opt,name=ahead,proto3" json:"ahead,omitempty"`
+	Behind   int32  `protobuf:"varint,5,opt,name=behind,proto3" json:"behind,omitempty"`
+	// dirty counts changed, staged, unmerged and untracked files.
+	Dirty         int32        `protobuf:"varint,6,opt,name=dirty,proto3" json:"dirty,omitempty"`
+	Detached      bool         `protobuf:"varint,7,opt,name=detached,proto3" json:"detached,omitempty"`
+	Head          string       `protobuf:"bytes,8,opt,name=head,proto3" json:"head,omitempty"`
+	DefaultBranch string       `protobuf:"bytes,9,opt,name=default_branch,json=defaultBranch,proto3" json:"default_branch,omitempty"`
+	Branches      []*GitBranch `protobuf:"bytes,10,rep,name=branches,proto3" json:"branches,omitempty"`
+	// gh is true when the GitHub CLI is installed and signed in.
+	Gh            bool            `protobuf:"varint,11,opt,name=gh,proto3" json:"gh,omitempty"`
+	PullRequest   *GitPullRequest `protobuf:"bytes,12,opt,name=pull_request,json=pullRequest,proto3" json:"pull_request,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GitStatusResponse) Reset() {
+	*x = GitStatusResponse{}
+	mi := &file_deck_v1_deck_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitStatusResponse) ProtoMessage() {}
+
+func (x *GitStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitStatusResponse.ProtoReflect.Descriptor instead.
+func (*GitStatusResponse) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *GitStatusResponse) GetRepo() bool {
+	if x != nil {
+		return x.Repo
+	}
+	return false
+}
+
+func (x *GitStatusResponse) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *GitStatusResponse) GetUpstream() string {
+	if x != nil {
+		return x.Upstream
+	}
+	return ""
+}
+
+func (x *GitStatusResponse) GetAhead() int32 {
+	if x != nil {
+		return x.Ahead
+	}
+	return 0
+}
+
+func (x *GitStatusResponse) GetBehind() int32 {
+	if x != nil {
+		return x.Behind
+	}
+	return 0
+}
+
+func (x *GitStatusResponse) GetDirty() int32 {
+	if x != nil {
+		return x.Dirty
+	}
+	return 0
+}
+
+func (x *GitStatusResponse) GetDetached() bool {
+	if x != nil {
+		return x.Detached
+	}
+	return false
+}
+
+func (x *GitStatusResponse) GetHead() string {
+	if x != nil {
+		return x.Head
+	}
+	return ""
+}
+
+func (x *GitStatusResponse) GetDefaultBranch() string {
+	if x != nil {
+		return x.DefaultBranch
+	}
+	return ""
+}
+
+func (x *GitStatusResponse) GetBranches() []*GitBranch {
+	if x != nil {
+		return x.Branches
+	}
+	return nil
+}
+
+func (x *GitStatusResponse) GetGh() bool {
+	if x != nil {
+		return x.Gh
+	}
+	return false
+}
+
+func (x *GitStatusResponse) GetPullRequest() *GitPullRequest {
+	if x != nil {
+		return x.PullRequest
+	}
+	return nil
+}
+
+type GitCheckoutRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Branch        string                 `protobuf:"bytes,1,opt,name=branch,proto3" json:"branch,omitempty"`
+	Create        bool                   `protobuf:"varint,2,opt,name=create,proto3" json:"create,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GitCheckoutRequest) Reset() {
+	*x = GitCheckoutRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitCheckoutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitCheckoutRequest) ProtoMessage() {}
+
+func (x *GitCheckoutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitCheckoutRequest.ProtoReflect.Descriptor instead.
+func (*GitCheckoutRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *GitCheckoutRequest) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *GitCheckoutRequest) GetCreate() bool {
+	if x != nil {
+		return x.Create
+	}
+	return false
+}
+
+type GitCommitRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GitCommitRequest) Reset() {
+	*x = GitCommitRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitCommitRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitCommitRequest) ProtoMessage() {}
+
+func (x *GitCommitRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitCommitRequest.ProtoReflect.Descriptor instead.
+func (*GitCommitRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *GitCommitRequest) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type GitCreatePRRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Title string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Body  string                 `protobuf:"bytes,2,opt,name=body,proto3" json:"body,omitempty"`
+	// base is empty for the repository's default branch.
+	Base          string `protobuf:"bytes,3,opt,name=base,proto3" json:"base,omitempty"`
+	Draft         bool   `protobuf:"varint,4,opt,name=draft,proto3" json:"draft,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GitCreatePRRequest) Reset() {
+	*x = GitCreatePRRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitCreatePRRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitCreatePRRequest) ProtoMessage() {}
+
+func (x *GitCreatePRRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitCreatePRRequest.ProtoReflect.Descriptor instead.
+func (*GitCreatePRRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *GitCreatePRRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *GitCreatePRRequest) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *GitCreatePRRequest) GetBase() string {
+	if x != nil {
+		return x.Base
+	}
+	return ""
+}
+
+func (x *GitCreatePRRequest) GetDraft() bool {
+	if x != nil {
+		return x.Draft
+	}
+	return false
+}
+
+type GitMergePRRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// method is "squash", "merge" or "rebase".
+	Method        string `protobuf:"bytes,1,opt,name=method,proto3" json:"method,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GitMergePRRequest) Reset() {
+	*x = GitMergePRRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitMergePRRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitMergePRRequest) ProtoMessage() {}
+
+func (x *GitMergePRRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitMergePRRequest.ProtoReflect.Descriptor instead.
+func (*GitMergePRRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *GitMergePRRequest) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
+type UsageRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// days is the range: the last so many days, or 0 for all time.
+	Days          int32 `protobuf:"varint,1,opt,name=days,proto3" json:"days,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageRequest) Reset() {
+	*x = UsageRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageRequest) ProtoMessage() {}
+
+func (x *UsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageRequest.ProtoReflect.Descriptor instead.
+func (*UsageRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *UsageRequest) GetDays() int32 {
+	if x != nil {
+		return x.Days
+	}
+	return 0
+}
+
+type UsageOverview struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Turns            int32                  `protobuf:"varint,1,opt,name=turns,proto3" json:"turns,omitempty"`
+	AllTurns         int32                  `protobuf:"varint,2,opt,name=all_turns,json=allTurns,proto3" json:"all_turns,omitempty"`
+	InputTokens      int64                  `protobuf:"varint,3,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
+	OutputTokens     int64                  `protobuf:"varint,4,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"`
+	CachedTokens     int64                  `protobuf:"varint,5,opt,name=cached_tokens,json=cachedTokens,proto3" json:"cached_tokens,omitempty"`
+	CacheWriteTokens int64                  `protobuf:"varint,6,opt,name=cache_write_tokens,json=cacheWriteTokens,proto3" json:"cache_write_tokens,omitempty"`
+	ReasoningTokens  int64                  `protobuf:"varint,7,opt,name=reasoning_tokens,json=reasoningTokens,proto3" json:"reasoning_tokens,omitempty"`
+	CostUsd          float64                `protobuf:"fixed64,8,opt,name=cost_usd,json=costUsd,proto3" json:"cost_usd,omitempty"`
+	DurationMs       int64                  `protobuf:"varint,9,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	TtftAvgMs        int64                  `protobuf:"varint,10,opt,name=ttft_avg_ms,json=ttftAvgMs,proto3" json:"ttft_avg_ms,omitempty"`
+	TtftP95Ms        int64                  `protobuf:"varint,11,opt,name=ttft_p95_ms,json=ttftP95Ms,proto3" json:"ttft_p95_ms,omitempty"`
+	CacheHitPct      float64                `protobuf:"fixed64,12,opt,name=cache_hit_pct,json=cacheHitPct,proto3" json:"cache_hit_pct,omitempty"`
+	Done             int32                  `protobuf:"varint,13,opt,name=done,proto3" json:"done,omitempty"`
+	Interrupted      int32                  `protobuf:"varint,14,opt,name=interrupted,proto3" json:"interrupted,omitempty"`
+	Failed           int32                  `protobuf:"varint,15,opt,name=failed,proto3" json:"failed,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *UsageOverview) Reset() {
+	*x = UsageOverview{}
+	mi := &file_deck_v1_deck_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageOverview) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageOverview) ProtoMessage() {}
+
+func (x *UsageOverview) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageOverview.ProtoReflect.Descriptor instead.
+func (*UsageOverview) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *UsageOverview) GetTurns() int32 {
+	if x != nil {
+		return x.Turns
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetAllTurns() int32 {
+	if x != nil {
+		return x.AllTurns
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetInputTokens() int64 {
+	if x != nil {
+		return x.InputTokens
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetOutputTokens() int64 {
+	if x != nil {
+		return x.OutputTokens
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetCachedTokens() int64 {
+	if x != nil {
+		return x.CachedTokens
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetCacheWriteTokens() int64 {
+	if x != nil {
+		return x.CacheWriteTokens
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetReasoningTokens() int64 {
+	if x != nil {
+		return x.ReasoningTokens
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetCostUsd() float64 {
+	if x != nil {
+		return x.CostUsd
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetDurationMs() int64 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetTtftAvgMs() int64 {
+	if x != nil {
+		return x.TtftAvgMs
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetTtftP95Ms() int64 {
+	if x != nil {
+		return x.TtftP95Ms
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetCacheHitPct() float64 {
+	if x != nil {
+		return x.CacheHitPct
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetDone() int32 {
+	if x != nil {
+		return x.Done
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetInterrupted() int32 {
+	if x != nil {
+		return x.Interrupted
+	}
+	return 0
+}
+
+func (x *UsageOverview) GetFailed() int32 {
+	if x != nil {
+		return x.Failed
+	}
+	return 0
+}
+
+type UsageDay struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// day is local midnight.
+	Day           int64   `protobuf:"varint,1,opt,name=day,proto3" json:"day,omitempty"`
+	Turns         int32   `protobuf:"varint,2,opt,name=turns,proto3" json:"turns,omitempty"`
+	Tokens        int64   `protobuf:"varint,3,opt,name=tokens,proto3" json:"tokens,omitempty"`
+	CostUsd       float64 `protobuf:"fixed64,4,opt,name=cost_usd,json=costUsd,proto3" json:"cost_usd,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageDay) Reset() {
+	*x = UsageDay{}
+	mi := &file_deck_v1_deck_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageDay) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageDay) ProtoMessage() {}
+
+func (x *UsageDay) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageDay.ProtoReflect.Descriptor instead.
+func (*UsageDay) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *UsageDay) GetDay() int64 {
+	if x != nil {
+		return x.Day
+	}
+	return 0
+}
+
+func (x *UsageDay) GetTurns() int32 {
+	if x != nil {
+		return x.Turns
+	}
+	return 0
+}
+
+func (x *UsageDay) GetTokens() int64 {
+	if x != nil {
+		return x.Tokens
+	}
+	return 0
+}
+
+func (x *UsageDay) GetCostUsd() float64 {
+	if x != nil {
+		return x.CostUsd
+	}
+	return 0
+}
+
+type UsageGroup struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Model         string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
+	Turns         int32                  `protobuf:"varint,3,opt,name=turns,proto3" json:"turns,omitempty"`
+	InputTokens   int64                  `protobuf:"varint,4,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
+	OutputTokens  int64                  `protobuf:"varint,5,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"`
+	CachedTokens  int64                  `protobuf:"varint,6,opt,name=cached_tokens,json=cachedTokens,proto3" json:"cached_tokens,omitempty"`
+	CostUsd       float64                `protobuf:"fixed64,7,opt,name=cost_usd,json=costUsd,proto3" json:"cost_usd,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageGroup) Reset() {
+	*x = UsageGroup{}
+	mi := &file_deck_v1_deck_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageGroup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageGroup) ProtoMessage() {}
+
+func (x *UsageGroup) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageGroup.ProtoReflect.Descriptor instead.
+func (*UsageGroup) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *UsageGroup) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *UsageGroup) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *UsageGroup) GetTurns() int32 {
+	if x != nil {
+		return x.Turns
+	}
+	return 0
+}
+
+func (x *UsageGroup) GetInputTokens() int64 {
+	if x != nil {
+		return x.InputTokens
+	}
+	return 0
+}
+
+func (x *UsageGroup) GetOutputTokens() int64 {
+	if x != nil {
+		return x.OutputTokens
+	}
+	return 0
+}
+
+func (x *UsageGroup) GetCachedTokens() int64 {
+	if x != nil {
+		return x.CachedTokens
+	}
+	return 0
+}
+
+func (x *UsageGroup) GetCostUsd() float64 {
+	if x != nil {
+		return x.CostUsd
+	}
+	return 0
+}
+
+type UsageSession struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Turns         int32                  `protobuf:"varint,3,opt,name=turns,proto3" json:"turns,omitempty"`
+	Tokens        int64                  `protobuf:"varint,4,opt,name=tokens,proto3" json:"tokens,omitempty"`
+	CostUsd       float64                `protobuf:"fixed64,5,opt,name=cost_usd,json=costUsd,proto3" json:"cost_usd,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageSession) Reset() {
+	*x = UsageSession{}
+	mi := &file_deck_v1_deck_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageSession) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageSession) ProtoMessage() {}
+
+func (x *UsageSession) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageSession.ProtoReflect.Descriptor instead.
+func (*UsageSession) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *UsageSession) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *UsageSession) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *UsageSession) GetTurns() int32 {
+	if x != nil {
+		return x.Turns
+	}
+	return 0
+}
+
+func (x *UsageSession) GetTokens() int64 {
+	if x != nil {
+		return x.Tokens
+	}
+	return 0
+}
+
+func (x *UsageSession) GetCostUsd() float64 {
+	if x != nil {
+		return x.CostUsd
+	}
+	return 0
+}
+
+type UsageLimit struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	AgentKind string                 `protobuf:"bytes,1,opt,name=agent_kind,json=agentKind,proto3" json:"agent_kind,omitempty"`
+	WindowId  string                 `protobuf:"bytes,2,opt,name=window_id,json=windowId,proto3" json:"window_id,omitempty"`
+	// kind is "session", "weekly", "monthly" or "other".
+	Kind          string  `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	Label         string  `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
+	UsedPct       float64 `protobuf:"fixed64,5,opt,name=used_pct,json=usedPct,proto3" json:"used_pct,omitempty"`
+	ResetsAt      int64   `protobuf:"varint,6,opt,name=resets_at,json=resetsAt,proto3" json:"resets_at,omitempty"`
+	DurationMins  int32   `protobuf:"varint,7,opt,name=duration_mins,json=durationMins,proto3" json:"duration_mins,omitempty"`
+	Plan          string  `protobuf:"bytes,8,opt,name=plan,proto3" json:"plan,omitempty"`
+	At            int64   `protobuf:"varint,9,opt,name=at,proto3" json:"at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageLimit) Reset() {
+	*x = UsageLimit{}
+	mi := &file_deck_v1_deck_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageLimit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageLimit) ProtoMessage() {}
+
+func (x *UsageLimit) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageLimit.ProtoReflect.Descriptor instead.
+func (*UsageLimit) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *UsageLimit) GetAgentKind() string {
+	if x != nil {
+		return x.AgentKind
+	}
+	return ""
+}
+
+func (x *UsageLimit) GetWindowId() string {
+	if x != nil {
+		return x.WindowId
+	}
+	return ""
+}
+
+func (x *UsageLimit) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *UsageLimit) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *UsageLimit) GetUsedPct() float64 {
+	if x != nil {
+		return x.UsedPct
+	}
+	return 0
+}
+
+func (x *UsageLimit) GetResetsAt() int64 {
+	if x != nil {
+		return x.ResetsAt
+	}
+	return 0
+}
+
+func (x *UsageLimit) GetDurationMins() int32 {
+	if x != nil {
+		return x.DurationMins
+	}
+	return 0
+}
+
+func (x *UsageLimit) GetPlan() string {
+	if x != nil {
+		return x.Plan
+	}
+	return ""
+}
+
+func (x *UsageLimit) GetAt() int64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+type UsageFit struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Kind  string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	// class is "read", "edit", "run" or "other".
+	Class         string `protobuf:"bytes,2,opt,name=class,proto3" json:"class,omitempty"`
+	Calls         int32  `protobuf:"varint,3,opt,name=calls,proto3" json:"calls,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageFit) Reset() {
+	*x = UsageFit{}
+	mi := &file_deck_v1_deck_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageFit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageFit) ProtoMessage() {}
+
+func (x *UsageFit) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageFit.ProtoReflect.Descriptor instead.
+func (*UsageFit) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *UsageFit) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *UsageFit) GetClass() string {
+	if x != nil {
+		return x.Class
+	}
+	return ""
+}
+
+func (x *UsageFit) GetCalls() int32 {
+	if x != nil {
+		return x.Calls
+	}
+	return 0
+}
+
+type UsageHabits struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ActiveDays int32                  `protobuf:"varint,1,opt,name=active_days,json=activeDays,proto3" json:"active_days,omitempty"`
+	Streak     int32                  `protobuf:"varint,2,opt,name=streak,proto3" json:"streak,omitempty"`
+	// hours counts finished turns by weekday (Monday first) and hour: 7 x 24.
+	Hours            []int32     `protobuf:"varint,3,rep,packed,name=hours,proto3" json:"hours,omitempty"`
+	ReviewMedianMs   int64       `protobuf:"varint,4,opt,name=review_median_ms,json=reviewMedianMs,proto3" json:"review_median_ms,omitempty"`
+	ReviewP90Ms      int64       `protobuf:"varint,5,opt,name=review_p90_ms,json=reviewP90Ms,proto3" json:"review_p90_ms,omitempty"`
+	ApprovalMedianMs int64       `protobuf:"varint,6,opt,name=approval_median_ms,json=approvalMedianMs,proto3" json:"approval_median_ms,omitempty"`
+	ApprovalFastPct  float64     `protobuf:"fixed64,7,opt,name=approval_fast_pct,json=approvalFastPct,proto3" json:"approval_fast_pct,omitempty"`
+	UserTurns        int32       `protobuf:"varint,8,opt,name=user_turns,json=userTurns,proto3" json:"user_turns,omitempty"`
+	Redirects        int32       `protobuf:"varint,9,opt,name=redirects,proto3" json:"redirects,omitempty"`
+	FollowUps        int32       `protobuf:"varint,10,opt,name=follow_ups,json=followUps,proto3" json:"follow_ups,omitempty"`
+	PromptMedian     int32       `protobuf:"varint,11,opt,name=prompt_median,json=promptMedian,proto3" json:"prompt_median,omitempty"`
+	EditTurns        int32       `protobuf:"varint,12,opt,name=edit_turns,json=editTurns,proto3" json:"edit_turns,omitempty"`
+	EditFiles        int32       `protobuf:"varint,13,opt,name=edit_files,json=editFiles,proto3" json:"edit_files,omitempty"`
+	LinesAdded       int32       `protobuf:"varint,14,opt,name=lines_added,json=linesAdded,proto3" json:"lines_added,omitempty"`
+	LinesRemoved     int32       `protobuf:"varint,15,opt,name=lines_removed,json=linesRemoved,proto3" json:"lines_removed,omitempty"`
+	Reverts          int32       `protobuf:"varint,16,opt,name=reverts,proto3" json:"reverts,omitempty"`
+	Fit              []*UsageFit `protobuf:"bytes,17,rep,name=fit,proto3" json:"fit,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *UsageHabits) Reset() {
+	*x = UsageHabits{}
+	mi := &file_deck_v1_deck_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageHabits) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageHabits) ProtoMessage() {}
+
+func (x *UsageHabits) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageHabits.ProtoReflect.Descriptor instead.
+func (*UsageHabits) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *UsageHabits) GetActiveDays() int32 {
+	if x != nil {
+		return x.ActiveDays
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetStreak() int32 {
+	if x != nil {
+		return x.Streak
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetHours() []int32 {
+	if x != nil {
+		return x.Hours
+	}
+	return nil
+}
+
+func (x *UsageHabits) GetReviewMedianMs() int64 {
+	if x != nil {
+		return x.ReviewMedianMs
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetReviewP90Ms() int64 {
+	if x != nil {
+		return x.ReviewP90Ms
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetApprovalMedianMs() int64 {
+	if x != nil {
+		return x.ApprovalMedianMs
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetApprovalFastPct() float64 {
+	if x != nil {
+		return x.ApprovalFastPct
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetUserTurns() int32 {
+	if x != nil {
+		return x.UserTurns
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetRedirects() int32 {
+	if x != nil {
+		return x.Redirects
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetFollowUps() int32 {
+	if x != nil {
+		return x.FollowUps
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetPromptMedian() int32 {
+	if x != nil {
+		return x.PromptMedian
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetEditTurns() int32 {
+	if x != nil {
+		return x.EditTurns
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetEditFiles() int32 {
+	if x != nil {
+		return x.EditFiles
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetLinesAdded() int32 {
+	if x != nil {
+		return x.LinesAdded
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetLinesRemoved() int32 {
+	if x != nil {
+		return x.LinesRemoved
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetReverts() int32 {
+	if x != nil {
+		return x.Reverts
+	}
+	return 0
+}
+
+func (x *UsageHabits) GetFit() []*UsageFit {
+	if x != nil {
+		return x.Fit
+	}
+	return nil
+}
+
+type UsageResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// available is false when Deck keeps no record (no database).
+	Available bool           `protobuf:"varint,1,opt,name=available,proto3" json:"available,omitempty"`
+	Overview  *UsageOverview `protobuf:"bytes,2,opt,name=overview,proto3" json:"overview,omitempty"`
+	// days has one entry per day of the range, oldest first.
+	Days   []*UsageDay   `protobuf:"bytes,3,rep,name=days,proto3" json:"days,omitempty"`
+	Kinds  []*UsageGroup `protobuf:"bytes,4,rep,name=kinds,proto3" json:"kinds,omitempty"`
+	Models []*UsageGroup `protobuf:"bytes,5,rep,name=models,proto3" json:"models,omitempty"`
+	// sessions are the costliest of the range.
+	Sessions []*UsageSession `protobuf:"bytes,6,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	Limits   []*UsageLimit   `protobuf:"bytes,7,rep,name=limits,proto3" json:"limits,omitempty"`
+	// heat is every day of the last weeks, from a Monday.
+	Heat          []*UsageDay  `protobuf:"bytes,8,rep,name=heat,proto3" json:"heat,omitempty"`
+	Habits        *UsageHabits `protobuf:"bytes,9,opt,name=habits,proto3" json:"habits,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageResponse) Reset() {
+	*x = UsageResponse{}
+	mi := &file_deck_v1_deck_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageResponse) ProtoMessage() {}
+
+func (x *UsageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageResponse.ProtoReflect.Descriptor instead.
+func (*UsageResponse) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *UsageResponse) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
+}
+
+func (x *UsageResponse) GetOverview() *UsageOverview {
+	if x != nil {
+		return x.Overview
+	}
+	return nil
+}
+
+func (x *UsageResponse) GetDays() []*UsageDay {
+	if x != nil {
+		return x.Days
+	}
+	return nil
+}
+
+func (x *UsageResponse) GetKinds() []*UsageGroup {
+	if x != nil {
+		return x.Kinds
+	}
+	return nil
+}
+
+func (x *UsageResponse) GetModels() []*UsageGroup {
+	if x != nil {
+		return x.Models
+	}
+	return nil
+}
+
+func (x *UsageResponse) GetSessions() []*UsageSession {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+func (x *UsageResponse) GetLimits() []*UsageLimit {
+	if x != nil {
+		return x.Limits
+	}
+	return nil
+}
+
+func (x *UsageResponse) GetHeat() []*UsageDay {
+	if x != nil {
+		return x.Heat
+	}
+	return nil
+}
+
+func (x *UsageResponse) GetHabits() *UsageHabits {
+	if x != nil {
+		return x.Habits
+	}
+	return nil
+}
+
+type TerminalOpenRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Cols          int32                  `protobuf:"varint,1,opt,name=cols,proto3" json:"cols,omitempty"`
+	Rows          int32                  `protobuf:"varint,2,opt,name=rows,proto3" json:"rows,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminalOpenRequest) Reset() {
+	*x = TerminalOpenRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminalOpenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminalOpenRequest) ProtoMessage() {}
+
+func (x *TerminalOpenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminalOpenRequest.ProtoReflect.Descriptor instead.
+func (*TerminalOpenRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *TerminalOpenRequest) GetCols() int32 {
+	if x != nil {
+		return x.Cols
+	}
+	return 0
+}
+
+func (x *TerminalOpenRequest) GetRows() int32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+type TerminalRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminalRef) Reset() {
+	*x = TerminalRef{}
+	mi := &file_deck_v1_deck_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminalRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminalRef) ProtoMessage() {}
+
+func (x *TerminalRef) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminalRef.ProtoReflect.Descriptor instead.
+func (*TerminalRef) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *TerminalRef) GetTerminalId() string {
+	if x != nil {
+		return x.TerminalId
+	}
+	return ""
+}
+
+type TerminalInput struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminalInput) Reset() {
+	*x = TerminalInput{}
+	mi := &file_deck_v1_deck_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminalInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminalInput) ProtoMessage() {}
+
+func (x *TerminalInput) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminalInput.ProtoReflect.Descriptor instead.
+func (*TerminalInput) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *TerminalInput) GetTerminalId() string {
+	if x != nil {
+		return x.TerminalId
+	}
+	return ""
+}
+
+func (x *TerminalInput) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+type TerminalSize struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TerminalId    string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	Cols          int32                  `protobuf:"varint,2,opt,name=cols,proto3" json:"cols,omitempty"`
+	Rows          int32                  `protobuf:"varint,3,opt,name=rows,proto3" json:"rows,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminalSize) Reset() {
+	*x = TerminalSize{}
+	mi := &file_deck_v1_deck_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminalSize) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminalSize) ProtoMessage() {}
+
+func (x *TerminalSize) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminalSize.ProtoReflect.Descriptor instead.
+func (*TerminalSize) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *TerminalSize) GetTerminalId() string {
+	if x != nil {
+		return x.TerminalId
+	}
+	return ""
+}
+
+func (x *TerminalSize) GetCols() int32 {
+	if x != nil {
+		return x.Cols
+	}
+	return 0
+}
+
+func (x *TerminalSize) GetRows() int32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+type TerminalChunk struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Data  []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	// exited is set on the last chunk, when the shell has ended.
+	Exited        bool  `protobuf:"varint,2,opt,name=exited,proto3" json:"exited,omitempty"`
+	ExitCode      int32 `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminalChunk) Reset() {
+	*x = TerminalChunk{}
+	mi := &file_deck_v1_deck_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminalChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminalChunk) ProtoMessage() {}
+
+func (x *TerminalChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminalChunk.ProtoReflect.Descriptor instead.
+func (*TerminalChunk) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *TerminalChunk) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *TerminalChunk) GetExited() bool {
+	if x != nil {
+		return x.Exited
+	}
+	return false
+}
+
+func (x *TerminalChunk) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
 var File_deck_v1_deck_proto protoreflect.FileDescriptor
 
 const file_deck_v1_deck_proto_rawDesc = "" +
@@ -3175,8 +4922,163 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\fmode_changed\x18\x16 \x01(\v2\x14.deck.v1.ModeChangedH\x00R\vmodeChanged\x12)\n" +
 	"\x06notice\x18\x17 \x01(\v2\x0f.deck.v1.NoticeH\x00R\x06notice\x125\n" +
 	"\rtheme_changed\x18\x18 \x01(\v2\x0e.deck.v1.ThemeH\x00R\fthemeChangedB\x06\n" +
-	"\x04kind2\x96\n" +
+	"\x04kind\"x\n" +
+	"\tGitBranch\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
+	"\bupstream\x18\x02 \x01(\tR\bupstream\x12!\n" +
+	"\fcommitted_at\x18\x03 \x01(\x03R\vcommittedAt\x12\x18\n" +
+	"\asubject\x18\x04 \x01(\tR\asubject\"J\n" +
+	"\bGitCheck\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06bucket\x18\x02 \x01(\tR\x06bucket\x12\x12\n" +
+	"\x04link\x18\x03 \x01(\tR\x04link\"\x82\x02\n" +
+	"\x0eGitPullRequest\x12\x16\n" +
+	"\x06number\x18\x01 \x01(\x05R\x06number\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12\x10\n" +
+	"\x03url\x18\x04 \x01(\tR\x03url\x12\x14\n" +
+	"\x05draft\x18\x05 \x01(\bR\x05draft\x12'\n" +
+	"\x0freview_decision\x18\x06 \x01(\tR\x0ereviewDecision\x12\x1c\n" +
+	"\tmergeable\x18\a \x01(\tR\tmergeable\x12\x12\n" +
+	"\x04base\x18\b \x01(\tR\x04base\x12)\n" +
+	"\x06checks\x18\t \x03(\v2\x11.deck.v1.GitCheckR\x06checks\"\xf2\x02\n" +
+	"\x11GitStatusResponse\x12\x12\n" +
+	"\x04repo\x18\x01 \x01(\bR\x04repo\x12\x16\n" +
+	"\x06branch\x18\x02 \x01(\tR\x06branch\x12\x1a\n" +
+	"\bupstream\x18\x03 \x01(\tR\bupstream\x12\x14\n" +
+	"\x05ahead\x18\x04 \x01(\x05R\x05ahead\x12\x16\n" +
+	"\x06behind\x18\x05 \x01(\x05R\x06behind\x12\x14\n" +
+	"\x05dirty\x18\x06 \x01(\x05R\x05dirty\x12\x1a\n" +
+	"\bdetached\x18\a \x01(\bR\bdetached\x12\x12\n" +
+	"\x04head\x18\b \x01(\tR\x04head\x12%\n" +
+	"\x0edefault_branch\x18\t \x01(\tR\rdefaultBranch\x12.\n" +
+	"\bbranches\x18\n" +
+	" \x03(\v2\x12.deck.v1.GitBranchR\bbranches\x12\x0e\n" +
+	"\x02gh\x18\v \x01(\bR\x02gh\x12:\n" +
+	"\fpull_request\x18\f \x01(\v2\x17.deck.v1.GitPullRequestR\vpullRequest\"D\n" +
+	"\x12GitCheckoutRequest\x12\x16\n" +
+	"\x06branch\x18\x01 \x01(\tR\x06branch\x12\x16\n" +
+	"\x06create\x18\x02 \x01(\bR\x06create\",\n" +
+	"\x10GitCommitRequest\x12\x18\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\"h\n" +
+	"\x12GitCreatePRRequest\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12\x12\n" +
+	"\x04body\x18\x02 \x01(\tR\x04body\x12\x12\n" +
+	"\x04base\x18\x03 \x01(\tR\x04base\x12\x14\n" +
+	"\x05draft\x18\x04 \x01(\bR\x05draft\"+\n" +
+	"\x11GitMergePRRequest\x12\x16\n" +
+	"\x06method\x18\x01 \x01(\tR\x06method\"\"\n" +
+	"\fUsageRequest\x12\x12\n" +
+	"\x04days\x18\x01 \x01(\x05R\x04days\"\xf6\x03\n" +
+	"\rUsageOverview\x12\x14\n" +
+	"\x05turns\x18\x01 \x01(\x05R\x05turns\x12\x1b\n" +
+	"\tall_turns\x18\x02 \x01(\x05R\ballTurns\x12!\n" +
+	"\finput_tokens\x18\x03 \x01(\x03R\vinputTokens\x12#\n" +
+	"\routput_tokens\x18\x04 \x01(\x03R\foutputTokens\x12#\n" +
+	"\rcached_tokens\x18\x05 \x01(\x03R\fcachedTokens\x12,\n" +
+	"\x12cache_write_tokens\x18\x06 \x01(\x03R\x10cacheWriteTokens\x12)\n" +
+	"\x10reasoning_tokens\x18\a \x01(\x03R\x0freasoningTokens\x12\x19\n" +
+	"\bcost_usd\x18\b \x01(\x01R\acostUsd\x12\x1f\n" +
+	"\vduration_ms\x18\t \x01(\x03R\n" +
+	"durationMs\x12\x1e\n" +
+	"\vttft_avg_ms\x18\n" +
+	" \x01(\x03R\tttftAvgMs\x12\x1e\n" +
+	"\vttft_p95_ms\x18\v \x01(\x03R\tttftP95Ms\x12\"\n" +
+	"\rcache_hit_pct\x18\f \x01(\x01R\vcacheHitPct\x12\x12\n" +
+	"\x04done\x18\r \x01(\x05R\x04done\x12 \n" +
+	"\vinterrupted\x18\x0e \x01(\x05R\vinterrupted\x12\x16\n" +
+	"\x06failed\x18\x0f \x01(\x05R\x06failed\"e\n" +
+	"\bUsageDay\x12\x10\n" +
+	"\x03day\x18\x01 \x01(\x03R\x03day\x12\x14\n" +
+	"\x05turns\x18\x02 \x01(\x05R\x05turns\x12\x16\n" +
+	"\x06tokens\x18\x03 \x01(\x03R\x06tokens\x12\x19\n" +
+	"\bcost_usd\x18\x04 \x01(\x01R\acostUsd\"\xd4\x01\n" +
 	"\n" +
+	"UsageGroup\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05model\x18\x02 \x01(\tR\x05model\x12\x14\n" +
+	"\x05turns\x18\x03 \x01(\x05R\x05turns\x12!\n" +
+	"\finput_tokens\x18\x04 \x01(\x03R\vinputTokens\x12#\n" +
+	"\routput_tokens\x18\x05 \x01(\x03R\foutputTokens\x12#\n" +
+	"\rcached_tokens\x18\x06 \x01(\x03R\fcachedTokens\x12\x19\n" +
+	"\bcost_usd\x18\a \x01(\x01R\acostUsd\"\x8c\x01\n" +
+	"\fUsageSession\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
+	"\x05turns\x18\x03 \x01(\x05R\x05turns\x12\x16\n" +
+	"\x06tokens\x18\x04 \x01(\x03R\x06tokens\x12\x19\n" +
+	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xf3\x01\n" +
+	"\n" +
+	"UsageLimit\x12\x1d\n" +
+	"\n" +
+	"agent_kind\x18\x01 \x01(\tR\tagentKind\x12\x1b\n" +
+	"\twindow_id\x18\x02 \x01(\tR\bwindowId\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05label\x18\x04 \x01(\tR\x05label\x12\x19\n" +
+	"\bused_pct\x18\x05 \x01(\x01R\ausedPct\x12\x1b\n" +
+	"\tresets_at\x18\x06 \x01(\x03R\bresetsAt\x12#\n" +
+	"\rduration_mins\x18\a \x01(\x05R\fdurationMins\x12\x12\n" +
+	"\x04plan\x18\b \x01(\tR\x04plan\x12\x0e\n" +
+	"\x02at\x18\t \x01(\x03R\x02at\"J\n" +
+	"\bUsageFit\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05class\x18\x02 \x01(\tR\x05class\x12\x14\n" +
+	"\x05calls\x18\x03 \x01(\x05R\x05calls\"\xc8\x04\n" +
+	"\vUsageHabits\x12\x1f\n" +
+	"\vactive_days\x18\x01 \x01(\x05R\n" +
+	"activeDays\x12\x16\n" +
+	"\x06streak\x18\x02 \x01(\x05R\x06streak\x12\x14\n" +
+	"\x05hours\x18\x03 \x03(\x05R\x05hours\x12(\n" +
+	"\x10review_median_ms\x18\x04 \x01(\x03R\x0ereviewMedianMs\x12\"\n" +
+	"\rreview_p90_ms\x18\x05 \x01(\x03R\vreviewP90Ms\x12,\n" +
+	"\x12approval_median_ms\x18\x06 \x01(\x03R\x10approvalMedianMs\x12*\n" +
+	"\x11approval_fast_pct\x18\a \x01(\x01R\x0fapprovalFastPct\x12\x1d\n" +
+	"\n" +
+	"user_turns\x18\b \x01(\x05R\tuserTurns\x12\x1c\n" +
+	"\tredirects\x18\t \x01(\x05R\tredirects\x12\x1d\n" +
+	"\n" +
+	"follow_ups\x18\n" +
+	" \x01(\x05R\tfollowUps\x12#\n" +
+	"\rprompt_median\x18\v \x01(\x05R\fpromptMedian\x12\x1d\n" +
+	"\n" +
+	"edit_turns\x18\f \x01(\x05R\teditTurns\x12\x1d\n" +
+	"\n" +
+	"edit_files\x18\r \x01(\x05R\teditFiles\x12\x1f\n" +
+	"\vlines_added\x18\x0e \x01(\x05R\n" +
+	"linesAdded\x12#\n" +
+	"\rlines_removed\x18\x0f \x01(\x05R\flinesRemoved\x12\x18\n" +
+	"\areverts\x18\x10 \x01(\x05R\areverts\x12#\n" +
+	"\x03fit\x18\x11 \x03(\v2\x11.deck.v1.UsageFitR\x03fit\"\x95\x03\n" +
+	"\rUsageResponse\x12\x1c\n" +
+	"\tavailable\x18\x01 \x01(\bR\tavailable\x122\n" +
+	"\boverview\x18\x02 \x01(\v2\x16.deck.v1.UsageOverviewR\boverview\x12%\n" +
+	"\x04days\x18\x03 \x03(\v2\x11.deck.v1.UsageDayR\x04days\x12)\n" +
+	"\x05kinds\x18\x04 \x03(\v2\x13.deck.v1.UsageGroupR\x05kinds\x12+\n" +
+	"\x06models\x18\x05 \x03(\v2\x13.deck.v1.UsageGroupR\x06models\x121\n" +
+	"\bsessions\x18\x06 \x03(\v2\x15.deck.v1.UsageSessionR\bsessions\x12+\n" +
+	"\x06limits\x18\a \x03(\v2\x13.deck.v1.UsageLimitR\x06limits\x12%\n" +
+	"\x04heat\x18\b \x03(\v2\x11.deck.v1.UsageDayR\x04heat\x12,\n" +
+	"\x06habits\x18\t \x01(\v2\x14.deck.v1.UsageHabitsR\x06habits\"=\n" +
+	"\x13TerminalOpenRequest\x12\x12\n" +
+	"\x04cols\x18\x01 \x01(\x05R\x04cols\x12\x12\n" +
+	"\x04rows\x18\x02 \x01(\x05R\x04rows\".\n" +
+	"\vTerminalRef\x12\x1f\n" +
+	"\vterminal_id\x18\x01 \x01(\tR\n" +
+	"terminalId\"D\n" +
+	"\rTerminalInput\x12\x1f\n" +
+	"\vterminal_id\x18\x01 \x01(\tR\n" +
+	"terminalId\x12\x12\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"W\n" +
+	"\fTerminalSize\x12\x1f\n" +
+	"\vterminal_id\x18\x01 \x01(\tR\n" +
+	"terminalId\x12\x12\n" +
+	"\x04cols\x18\x02 \x01(\x05R\x04cols\x12\x12\n" +
+	"\x04rows\x18\x03 \x01(\x05R\x04rows\"X\n" +
+	"\rTerminalChunk\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\x12\x16\n" +
+	"\x06exited\x18\x02 \x01(\bR\x06exited\x12\x1b\n" +
+	"\texit_code\x18\x03 \x01(\x05R\bexitCode2\xff\x0f\n" +
 	"\x04Deck\x12-\n" +
 	"\x04Info\x12\x0e.deck.v1.Empty\x1a\x15.deck.v1.InfoResponse\x12=\n" +
 	"\fListSessions\x12\x0e.deck.v1.Empty\x1a\x1d.deck.v1.ListSessionsResponse\x12@\n" +
@@ -3199,7 +5101,21 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\aSetMode\x12\x17.deck.v1.SetModeRequest\x1a\x0e.deck.v1.Empty\x12<\n" +
 	"\tApprovals\x12\x13.deck.v1.SessionRef\x1a\x1a.deck.v1.ApprovalsResponse\x129\n" +
 	"\x06Answer\x12\x16.deck.v1.AnswerRequest\x1a\x17.deck.v1.AnswerResponse\x128\n" +
-	"\aChanges\x12\x13.deck.v1.SessionRef\x1a\x18.deck.v1.ChangesResponse\x12.\n" +
+	"\aChanges\x12\x13.deck.v1.SessionRef\x1a\x18.deck.v1.ChangesResponse\x127\n" +
+	"\tGitStatus\x12\x0e.deck.v1.Empty\x1a\x1a.deck.v1.GitStatusResponse\x12:\n" +
+	"\vGitCheckout\x12\x1b.deck.v1.GitCheckoutRequest\x1a\x0e.deck.v1.Empty\x126\n" +
+	"\tGitCommit\x12\x19.deck.v1.GitCommitRequest\x1a\x0e.deck.v1.Empty\x12)\n" +
+	"\aGitPush\x12\x0e.deck.v1.Empty\x1a\x0e.deck.v1.Empty\x12)\n" +
+	"\aGitPull\x12\x0e.deck.v1.Empty\x1a\x0e.deck.v1.Empty\x12C\n" +
+	"\vGitCreatePR\x12\x1b.deck.v1.GitCreatePRRequest\x1a\x17.deck.v1.GitPullRequest\x128\n" +
+	"\n" +
+	"GitMergePR\x12\x1a.deck.v1.GitMergePRRequest\x1a\x0e.deck.v1.Empty\x126\n" +
+	"\x05Usage\x12\x15.deck.v1.UsageRequest\x1a\x16.deck.v1.UsageResponse\x12B\n" +
+	"\fTerminalOpen\x12\x1c.deck.v1.TerminalOpenRequest\x1a\x14.deck.v1.TerminalRef\x127\n" +
+	"\rTerminalWrite\x12\x16.deck.v1.TerminalInput\x1a\x0e.deck.v1.Empty\x127\n" +
+	"\x0eTerminalResize\x12\x15.deck.v1.TerminalSize\x1a\x0e.deck.v1.Empty\x125\n" +
+	"\rTerminalClose\x12\x14.deck.v1.TerminalRef\x1a\x0e.deck.v1.Empty\x12@\n" +
+	"\x0eTerminalOutput\x12\x14.deck.v1.TerminalRef\x1a\x16.deck.v1.TerminalChunk0\x01\x12.\n" +
 	"\x06Events\x12\x12.deck.v1.Subscribe\x1a\x0e.deck.v1.Event0\x01B0Z.github.com/dev-dami/deck/pkg/rpc/deckv1;deckv1b\x06proto3"
 
 var (
@@ -3214,7 +5130,7 @@ func file_deck_v1_deck_proto_rawDescGZIP() []byte {
 	return file_deck_v1_deck_proto_rawDescData
 }
 
-var file_deck_v1_deck_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
+var file_deck_v1_deck_proto_msgTypes = make([]protoimpl.MessageInfo, 69)
 var file_deck_v1_deck_proto_goTypes = []any{
 	(*Empty)(nil),                // 0: deck.v1.Empty
 	(*SessionRef)(nil),           // 1: deck.v1.SessionRef
@@ -3261,13 +5177,35 @@ var file_deck_v1_deck_proto_goTypes = []any{
 	(*ModeChanged)(nil),          // 42: deck.v1.ModeChanged
 	(*Notice)(nil),               // 43: deck.v1.Notice
 	(*Event)(nil),                // 44: deck.v1.Event
-	nil,                          // 45: deck.v1.Theme.PaletteEntry
-	nil,                          // 46: deck.v1.Theme.KindsEntry
+	(*GitBranch)(nil),            // 45: deck.v1.GitBranch
+	(*GitCheck)(nil),             // 46: deck.v1.GitCheck
+	(*GitPullRequest)(nil),       // 47: deck.v1.GitPullRequest
+	(*GitStatusResponse)(nil),    // 48: deck.v1.GitStatusResponse
+	(*GitCheckoutRequest)(nil),   // 49: deck.v1.GitCheckoutRequest
+	(*GitCommitRequest)(nil),     // 50: deck.v1.GitCommitRequest
+	(*GitCreatePRRequest)(nil),   // 51: deck.v1.GitCreatePRRequest
+	(*GitMergePRRequest)(nil),    // 52: deck.v1.GitMergePRRequest
+	(*UsageRequest)(nil),         // 53: deck.v1.UsageRequest
+	(*UsageOverview)(nil),        // 54: deck.v1.UsageOverview
+	(*UsageDay)(nil),             // 55: deck.v1.UsageDay
+	(*UsageGroup)(nil),           // 56: deck.v1.UsageGroup
+	(*UsageSession)(nil),         // 57: deck.v1.UsageSession
+	(*UsageLimit)(nil),           // 58: deck.v1.UsageLimit
+	(*UsageFit)(nil),             // 59: deck.v1.UsageFit
+	(*UsageHabits)(nil),          // 60: deck.v1.UsageHabits
+	(*UsageResponse)(nil),        // 61: deck.v1.UsageResponse
+	(*TerminalOpenRequest)(nil),  // 62: deck.v1.TerminalOpenRequest
+	(*TerminalRef)(nil),          // 63: deck.v1.TerminalRef
+	(*TerminalInput)(nil),        // 64: deck.v1.TerminalInput
+	(*TerminalSize)(nil),         // 65: deck.v1.TerminalSize
+	(*TerminalChunk)(nil),        // 66: deck.v1.TerminalChunk
+	nil,                          // 67: deck.v1.Theme.PaletteEntry
+	nil,                          // 68: deck.v1.Theme.KindsEntry
 }
 var file_deck_v1_deck_proto_depIdxs = []int32{
 	4,  // 0: deck.v1.InfoResponse.theme:type_name -> deck.v1.Theme
-	45, // 1: deck.v1.Theme.palette:type_name -> deck.v1.Theme.PaletteEntry
-	46, // 2: deck.v1.Theme.kinds:type_name -> deck.v1.Theme.KindsEntry
+	67, // 1: deck.v1.Theme.palette:type_name -> deck.v1.Theme.PaletteEntry
+	68, // 2: deck.v1.Theme.kinds:type_name -> deck.v1.Theme.KindsEntry
 	6,  // 3: deck.v1.ListSessionsResponse.sessions:type_name -> deck.v1.Session
 	11, // 4: deck.v1.Message.parts:type_name -> deck.v1.Part
 	12, // 5: deck.v1.Part.image:type_name -> deck.v1.ImageRef
@@ -3294,58 +5232,96 @@ var file_deck_v1_deck_proto_depIdxs = []int32{
 	42, // 26: deck.v1.Event.mode_changed:type_name -> deck.v1.ModeChanged
 	43, // 27: deck.v1.Event.notice:type_name -> deck.v1.Notice
 	4,  // 28: deck.v1.Event.theme_changed:type_name -> deck.v1.Theme
-	5,  // 29: deck.v1.Theme.KindsEntry.value:type_name -> deck.v1.KindTone
-	0,  // 30: deck.v1.Deck.Info:input_type -> deck.v1.Empty
-	0,  // 31: deck.v1.Deck.ListSessions:input_type -> deck.v1.Empty
-	8,  // 32: deck.v1.Deck.CreateSession:input_type -> deck.v1.CreateSessionRequest
-	9,  // 33: deck.v1.Deck.RenameSession:input_type -> deck.v1.RenameSessionRequest
-	1,  // 34: deck.v1.Deck.DeleteSession:input_type -> deck.v1.SessionRef
-	13, // 35: deck.v1.Deck.ListMessages:input_type -> deck.v1.ListMessagesRequest
-	16, // 36: deck.v1.Deck.Send:input_type -> deck.v1.SendRequest
-	18, // 37: deck.v1.Deck.EditMessage:input_type -> deck.v1.EditMessageRequest
-	1,  // 38: deck.v1.Deck.Cancel:input_type -> deck.v1.SessionRef
-	19, // 39: deck.v1.Deck.Interrupt:input_type -> deck.v1.InterruptRequest
-	1,  // 40: deck.v1.Deck.Continue:input_type -> deck.v1.SessionRef
-	1,  // 41: deck.v1.Deck.Queue:input_type -> deck.v1.SessionRef
-	2,  // 42: deck.v1.Deck.Steer:input_type -> deck.v1.QueueItemRef
-	2,  // 43: deck.v1.Deck.CancelQueued:input_type -> deck.v1.QueueItemRef
-	1,  // 44: deck.v1.Deck.Roster:input_type -> deck.v1.SessionRef
-	24, // 45: deck.v1.Deck.Models:input_type -> deck.v1.ModelsRequest
-	27, // 46: deck.v1.Deck.SetModel:input_type -> deck.v1.SetModelRequest
-	1,  // 47: deck.v1.Deck.GetMode:input_type -> deck.v1.SessionRef
-	29, // 48: deck.v1.Deck.SetMode:input_type -> deck.v1.SetModeRequest
-	1,  // 49: deck.v1.Deck.Approvals:input_type -> deck.v1.SessionRef
-	32, // 50: deck.v1.Deck.Answer:input_type -> deck.v1.AnswerRequest
-	1,  // 51: deck.v1.Deck.Changes:input_type -> deck.v1.SessionRef
-	36, // 52: deck.v1.Deck.Events:input_type -> deck.v1.Subscribe
-	3,  // 53: deck.v1.Deck.Info:output_type -> deck.v1.InfoResponse
-	7,  // 54: deck.v1.Deck.ListSessions:output_type -> deck.v1.ListSessionsResponse
-	6,  // 55: deck.v1.Deck.CreateSession:output_type -> deck.v1.Session
-	0,  // 56: deck.v1.Deck.RenameSession:output_type -> deck.v1.Empty
-	0,  // 57: deck.v1.Deck.DeleteSession:output_type -> deck.v1.Empty
-	14, // 58: deck.v1.Deck.ListMessages:output_type -> deck.v1.ListMessagesResponse
-	17, // 59: deck.v1.Deck.Send:output_type -> deck.v1.SendResponse
-	0,  // 60: deck.v1.Deck.EditMessage:output_type -> deck.v1.Empty
-	0,  // 61: deck.v1.Deck.Cancel:output_type -> deck.v1.Empty
-	0,  // 62: deck.v1.Deck.Interrupt:output_type -> deck.v1.Empty
-	0,  // 63: deck.v1.Deck.Continue:output_type -> deck.v1.Empty
-	21, // 64: deck.v1.Deck.Queue:output_type -> deck.v1.QueueResponse
-	0,  // 65: deck.v1.Deck.Steer:output_type -> deck.v1.Empty
-	0,  // 66: deck.v1.Deck.CancelQueued:output_type -> deck.v1.Empty
-	23, // 67: deck.v1.Deck.Roster:output_type -> deck.v1.RosterResponse
-	26, // 68: deck.v1.Deck.Models:output_type -> deck.v1.ModelsResponse
-	0,  // 69: deck.v1.Deck.SetModel:output_type -> deck.v1.Empty
-	28, // 70: deck.v1.Deck.GetMode:output_type -> deck.v1.ModeResponse
-	0,  // 71: deck.v1.Deck.SetMode:output_type -> deck.v1.Empty
-	31, // 72: deck.v1.Deck.Approvals:output_type -> deck.v1.ApprovalsResponse
-	33, // 73: deck.v1.Deck.Answer:output_type -> deck.v1.AnswerResponse
-	35, // 74: deck.v1.Deck.Changes:output_type -> deck.v1.ChangesResponse
-	44, // 75: deck.v1.Deck.Events:output_type -> deck.v1.Event
-	53, // [53:76] is the sub-list for method output_type
-	30, // [30:53] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	46, // 29: deck.v1.GitPullRequest.checks:type_name -> deck.v1.GitCheck
+	45, // 30: deck.v1.GitStatusResponse.branches:type_name -> deck.v1.GitBranch
+	47, // 31: deck.v1.GitStatusResponse.pull_request:type_name -> deck.v1.GitPullRequest
+	59, // 32: deck.v1.UsageHabits.fit:type_name -> deck.v1.UsageFit
+	54, // 33: deck.v1.UsageResponse.overview:type_name -> deck.v1.UsageOverview
+	55, // 34: deck.v1.UsageResponse.days:type_name -> deck.v1.UsageDay
+	56, // 35: deck.v1.UsageResponse.kinds:type_name -> deck.v1.UsageGroup
+	56, // 36: deck.v1.UsageResponse.models:type_name -> deck.v1.UsageGroup
+	57, // 37: deck.v1.UsageResponse.sessions:type_name -> deck.v1.UsageSession
+	58, // 38: deck.v1.UsageResponse.limits:type_name -> deck.v1.UsageLimit
+	55, // 39: deck.v1.UsageResponse.heat:type_name -> deck.v1.UsageDay
+	60, // 40: deck.v1.UsageResponse.habits:type_name -> deck.v1.UsageHabits
+	5,  // 41: deck.v1.Theme.KindsEntry.value:type_name -> deck.v1.KindTone
+	0,  // 42: deck.v1.Deck.Info:input_type -> deck.v1.Empty
+	0,  // 43: deck.v1.Deck.ListSessions:input_type -> deck.v1.Empty
+	8,  // 44: deck.v1.Deck.CreateSession:input_type -> deck.v1.CreateSessionRequest
+	9,  // 45: deck.v1.Deck.RenameSession:input_type -> deck.v1.RenameSessionRequest
+	1,  // 46: deck.v1.Deck.DeleteSession:input_type -> deck.v1.SessionRef
+	13, // 47: deck.v1.Deck.ListMessages:input_type -> deck.v1.ListMessagesRequest
+	16, // 48: deck.v1.Deck.Send:input_type -> deck.v1.SendRequest
+	18, // 49: deck.v1.Deck.EditMessage:input_type -> deck.v1.EditMessageRequest
+	1,  // 50: deck.v1.Deck.Cancel:input_type -> deck.v1.SessionRef
+	19, // 51: deck.v1.Deck.Interrupt:input_type -> deck.v1.InterruptRequest
+	1,  // 52: deck.v1.Deck.Continue:input_type -> deck.v1.SessionRef
+	1,  // 53: deck.v1.Deck.Queue:input_type -> deck.v1.SessionRef
+	2,  // 54: deck.v1.Deck.Steer:input_type -> deck.v1.QueueItemRef
+	2,  // 55: deck.v1.Deck.CancelQueued:input_type -> deck.v1.QueueItemRef
+	1,  // 56: deck.v1.Deck.Roster:input_type -> deck.v1.SessionRef
+	24, // 57: deck.v1.Deck.Models:input_type -> deck.v1.ModelsRequest
+	27, // 58: deck.v1.Deck.SetModel:input_type -> deck.v1.SetModelRequest
+	1,  // 59: deck.v1.Deck.GetMode:input_type -> deck.v1.SessionRef
+	29, // 60: deck.v1.Deck.SetMode:input_type -> deck.v1.SetModeRequest
+	1,  // 61: deck.v1.Deck.Approvals:input_type -> deck.v1.SessionRef
+	32, // 62: deck.v1.Deck.Answer:input_type -> deck.v1.AnswerRequest
+	1,  // 63: deck.v1.Deck.Changes:input_type -> deck.v1.SessionRef
+	0,  // 64: deck.v1.Deck.GitStatus:input_type -> deck.v1.Empty
+	49, // 65: deck.v1.Deck.GitCheckout:input_type -> deck.v1.GitCheckoutRequest
+	50, // 66: deck.v1.Deck.GitCommit:input_type -> deck.v1.GitCommitRequest
+	0,  // 67: deck.v1.Deck.GitPush:input_type -> deck.v1.Empty
+	0,  // 68: deck.v1.Deck.GitPull:input_type -> deck.v1.Empty
+	51, // 69: deck.v1.Deck.GitCreatePR:input_type -> deck.v1.GitCreatePRRequest
+	52, // 70: deck.v1.Deck.GitMergePR:input_type -> deck.v1.GitMergePRRequest
+	53, // 71: deck.v1.Deck.Usage:input_type -> deck.v1.UsageRequest
+	62, // 72: deck.v1.Deck.TerminalOpen:input_type -> deck.v1.TerminalOpenRequest
+	64, // 73: deck.v1.Deck.TerminalWrite:input_type -> deck.v1.TerminalInput
+	65, // 74: deck.v1.Deck.TerminalResize:input_type -> deck.v1.TerminalSize
+	63, // 75: deck.v1.Deck.TerminalClose:input_type -> deck.v1.TerminalRef
+	63, // 76: deck.v1.Deck.TerminalOutput:input_type -> deck.v1.TerminalRef
+	36, // 77: deck.v1.Deck.Events:input_type -> deck.v1.Subscribe
+	3,  // 78: deck.v1.Deck.Info:output_type -> deck.v1.InfoResponse
+	7,  // 79: deck.v1.Deck.ListSessions:output_type -> deck.v1.ListSessionsResponse
+	6,  // 80: deck.v1.Deck.CreateSession:output_type -> deck.v1.Session
+	0,  // 81: deck.v1.Deck.RenameSession:output_type -> deck.v1.Empty
+	0,  // 82: deck.v1.Deck.DeleteSession:output_type -> deck.v1.Empty
+	14, // 83: deck.v1.Deck.ListMessages:output_type -> deck.v1.ListMessagesResponse
+	17, // 84: deck.v1.Deck.Send:output_type -> deck.v1.SendResponse
+	0,  // 85: deck.v1.Deck.EditMessage:output_type -> deck.v1.Empty
+	0,  // 86: deck.v1.Deck.Cancel:output_type -> deck.v1.Empty
+	0,  // 87: deck.v1.Deck.Interrupt:output_type -> deck.v1.Empty
+	0,  // 88: deck.v1.Deck.Continue:output_type -> deck.v1.Empty
+	21, // 89: deck.v1.Deck.Queue:output_type -> deck.v1.QueueResponse
+	0,  // 90: deck.v1.Deck.Steer:output_type -> deck.v1.Empty
+	0,  // 91: deck.v1.Deck.CancelQueued:output_type -> deck.v1.Empty
+	23, // 92: deck.v1.Deck.Roster:output_type -> deck.v1.RosterResponse
+	26, // 93: deck.v1.Deck.Models:output_type -> deck.v1.ModelsResponse
+	0,  // 94: deck.v1.Deck.SetModel:output_type -> deck.v1.Empty
+	28, // 95: deck.v1.Deck.GetMode:output_type -> deck.v1.ModeResponse
+	0,  // 96: deck.v1.Deck.SetMode:output_type -> deck.v1.Empty
+	31, // 97: deck.v1.Deck.Approvals:output_type -> deck.v1.ApprovalsResponse
+	33, // 98: deck.v1.Deck.Answer:output_type -> deck.v1.AnswerResponse
+	35, // 99: deck.v1.Deck.Changes:output_type -> deck.v1.ChangesResponse
+	48, // 100: deck.v1.Deck.GitStatus:output_type -> deck.v1.GitStatusResponse
+	0,  // 101: deck.v1.Deck.GitCheckout:output_type -> deck.v1.Empty
+	0,  // 102: deck.v1.Deck.GitCommit:output_type -> deck.v1.Empty
+	0,  // 103: deck.v1.Deck.GitPush:output_type -> deck.v1.Empty
+	0,  // 104: deck.v1.Deck.GitPull:output_type -> deck.v1.Empty
+	47, // 105: deck.v1.Deck.GitCreatePR:output_type -> deck.v1.GitPullRequest
+	0,  // 106: deck.v1.Deck.GitMergePR:output_type -> deck.v1.Empty
+	61, // 107: deck.v1.Deck.Usage:output_type -> deck.v1.UsageResponse
+	63, // 108: deck.v1.Deck.TerminalOpen:output_type -> deck.v1.TerminalRef
+	0,  // 109: deck.v1.Deck.TerminalWrite:output_type -> deck.v1.Empty
+	0,  // 110: deck.v1.Deck.TerminalResize:output_type -> deck.v1.Empty
+	0,  // 111: deck.v1.Deck.TerminalClose:output_type -> deck.v1.Empty
+	66, // 112: deck.v1.Deck.TerminalOutput:output_type -> deck.v1.TerminalChunk
+	44, // 113: deck.v1.Deck.Events:output_type -> deck.v1.Event
+	78, // [78:114] is the sub-list for method output_type
+	42, // [42:78] is the sub-list for method input_type
+	42, // [42:42] is the sub-list for extension type_name
+	42, // [42:42] is the sub-list for extension extendee
+	0,  // [0:42] is the sub-list for field type_name
 }
 
 func init() { file_deck_v1_deck_proto_init() }
@@ -3376,7 +5352,7 @@ func file_deck_v1_deck_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_deck_v1_deck_proto_rawDesc), len(file_deck_v1_deck_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   47,
+			NumMessages:   69,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

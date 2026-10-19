@@ -120,6 +120,22 @@ func (c *Client) Checkout(ctx context.Context, branch string) error {
 	return err
 }
 
+// CreateBranch makes branch at HEAD and switches to it.
+func (c *Client) CreateBranch(ctx context.Context, branch string) error {
+	if branch == "" || strings.HasPrefix(branch, "-") {
+		return errors.New("git checkout: bad branch name")
+	}
+	_, err := c.git(ctx, localTimeout, "checkout", "-b", branch)
+	return err
+}
+
+// Pull fast-forwards the current branch from its upstream; it never makes
+// a merge commit.
+func (c *Client) Pull(ctx context.Context) error {
+	_, err := c.git(ctx, networkTimeout, "pull", "--ff-only")
+	return err
+}
+
 // CommitAll stages everything (`git add -A`) and commits it with msg.
 func (c *Client) CommitAll(ctx context.Context, msg string) error {
 	if strings.TrimSpace(msg) == "" {

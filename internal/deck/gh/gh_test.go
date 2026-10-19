@@ -368,3 +368,22 @@ func TestCheckLinks(t *testing.T) {
 		t.Fatal("non-Actions link parsed")
 	}
 }
+
+func TestCreateBranchAndPull(t *testing.T) {
+	c, f := newFake(reply{prefix: "git checkout -b"}, reply{prefix: "git pull"})
+	if err := c.CreateBranch(context.Background(), "feature/x"); err != nil {
+		t.Fatal(err)
+	}
+	if f.saw("git checkout -b feature/x") == nil {
+		t.Fatalf("calls %+v", f.calls)
+	}
+	if err := c.CreateBranch(context.Background(), "-x"); err == nil {
+		t.Fatal("a branch name that reads as a flag must be refused")
+	}
+	if err := c.Pull(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if f.saw("git pull --ff-only") == nil {
+		t.Fatalf("calls %+v", f.calls)
+	}
+}

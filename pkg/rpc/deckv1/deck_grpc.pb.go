@@ -25,29 +25,42 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Deck_Info_FullMethodName          = "/deck.v1.Deck/Info"
-	Deck_ListSessions_FullMethodName  = "/deck.v1.Deck/ListSessions"
-	Deck_CreateSession_FullMethodName = "/deck.v1.Deck/CreateSession"
-	Deck_RenameSession_FullMethodName = "/deck.v1.Deck/RenameSession"
-	Deck_DeleteSession_FullMethodName = "/deck.v1.Deck/DeleteSession"
-	Deck_ListMessages_FullMethodName  = "/deck.v1.Deck/ListMessages"
-	Deck_Send_FullMethodName          = "/deck.v1.Deck/Send"
-	Deck_EditMessage_FullMethodName   = "/deck.v1.Deck/EditMessage"
-	Deck_Cancel_FullMethodName        = "/deck.v1.Deck/Cancel"
-	Deck_Interrupt_FullMethodName     = "/deck.v1.Deck/Interrupt"
-	Deck_Continue_FullMethodName      = "/deck.v1.Deck/Continue"
-	Deck_Queue_FullMethodName         = "/deck.v1.Deck/Queue"
-	Deck_Steer_FullMethodName         = "/deck.v1.Deck/Steer"
-	Deck_CancelQueued_FullMethodName  = "/deck.v1.Deck/CancelQueued"
-	Deck_Roster_FullMethodName        = "/deck.v1.Deck/Roster"
-	Deck_Models_FullMethodName        = "/deck.v1.Deck/Models"
-	Deck_SetModel_FullMethodName      = "/deck.v1.Deck/SetModel"
-	Deck_GetMode_FullMethodName       = "/deck.v1.Deck/GetMode"
-	Deck_SetMode_FullMethodName       = "/deck.v1.Deck/SetMode"
-	Deck_Approvals_FullMethodName     = "/deck.v1.Deck/Approvals"
-	Deck_Answer_FullMethodName        = "/deck.v1.Deck/Answer"
-	Deck_Changes_FullMethodName       = "/deck.v1.Deck/Changes"
-	Deck_Events_FullMethodName        = "/deck.v1.Deck/Events"
+	Deck_Info_FullMethodName           = "/deck.v1.Deck/Info"
+	Deck_ListSessions_FullMethodName   = "/deck.v1.Deck/ListSessions"
+	Deck_CreateSession_FullMethodName  = "/deck.v1.Deck/CreateSession"
+	Deck_RenameSession_FullMethodName  = "/deck.v1.Deck/RenameSession"
+	Deck_DeleteSession_FullMethodName  = "/deck.v1.Deck/DeleteSession"
+	Deck_ListMessages_FullMethodName   = "/deck.v1.Deck/ListMessages"
+	Deck_Send_FullMethodName           = "/deck.v1.Deck/Send"
+	Deck_EditMessage_FullMethodName    = "/deck.v1.Deck/EditMessage"
+	Deck_Cancel_FullMethodName         = "/deck.v1.Deck/Cancel"
+	Deck_Interrupt_FullMethodName      = "/deck.v1.Deck/Interrupt"
+	Deck_Continue_FullMethodName       = "/deck.v1.Deck/Continue"
+	Deck_Queue_FullMethodName          = "/deck.v1.Deck/Queue"
+	Deck_Steer_FullMethodName          = "/deck.v1.Deck/Steer"
+	Deck_CancelQueued_FullMethodName   = "/deck.v1.Deck/CancelQueued"
+	Deck_Roster_FullMethodName         = "/deck.v1.Deck/Roster"
+	Deck_Models_FullMethodName         = "/deck.v1.Deck/Models"
+	Deck_SetModel_FullMethodName       = "/deck.v1.Deck/SetModel"
+	Deck_GetMode_FullMethodName        = "/deck.v1.Deck/GetMode"
+	Deck_SetMode_FullMethodName        = "/deck.v1.Deck/SetMode"
+	Deck_Approvals_FullMethodName      = "/deck.v1.Deck/Approvals"
+	Deck_Answer_FullMethodName         = "/deck.v1.Deck/Answer"
+	Deck_Changes_FullMethodName        = "/deck.v1.Deck/Changes"
+	Deck_GitStatus_FullMethodName      = "/deck.v1.Deck/GitStatus"
+	Deck_GitCheckout_FullMethodName    = "/deck.v1.Deck/GitCheckout"
+	Deck_GitCommit_FullMethodName      = "/deck.v1.Deck/GitCommit"
+	Deck_GitPush_FullMethodName        = "/deck.v1.Deck/GitPush"
+	Deck_GitPull_FullMethodName        = "/deck.v1.Deck/GitPull"
+	Deck_GitCreatePR_FullMethodName    = "/deck.v1.Deck/GitCreatePR"
+	Deck_GitMergePR_FullMethodName     = "/deck.v1.Deck/GitMergePR"
+	Deck_Usage_FullMethodName          = "/deck.v1.Deck/Usage"
+	Deck_TerminalOpen_FullMethodName   = "/deck.v1.Deck/TerminalOpen"
+	Deck_TerminalWrite_FullMethodName  = "/deck.v1.Deck/TerminalWrite"
+	Deck_TerminalResize_FullMethodName = "/deck.v1.Deck/TerminalResize"
+	Deck_TerminalClose_FullMethodName  = "/deck.v1.Deck/TerminalClose"
+	Deck_TerminalOutput_FullMethodName = "/deck.v1.Deck/TerminalOutput"
+	Deck_Events_FullMethodName         = "/deck.v1.Deck/Events"
 )
 
 // DeckClient is the client API for Deck service.
@@ -78,6 +91,30 @@ type DeckClient interface {
 	Approvals(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*ApprovalsResponse, error)
 	Answer(ctx context.Context, in *AnswerRequest, opts ...grpc.CallOption) (*AnswerResponse, error)
 	Changes(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*ChangesResponse, error)
+	// Git is the project's work tree: its branch and how it stands, its
+	// recent branches and the pull request of its branch (when gh is set up).
+	GitStatus(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*GitStatusResponse, error)
+	// GitCheckout switches to a branch, or makes it first when create is set.
+	GitCheckout(ctx context.Context, in *GitCheckoutRequest, opts ...grpc.CallOption) (*Empty, error)
+	// GitCommit stages every change and commits it.
+	GitCommit(ctx context.Context, in *GitCommitRequest, opts ...grpc.CallOption) (*Empty, error)
+	GitPush(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
+	// GitPull fast-forwards the branch from its upstream.
+	GitPull(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
+	// GitCreatePR opens a pull request from the branch (gh must be set up).
+	GitCreatePR(ctx context.Context, in *GitCreatePRRequest, opts ...grpc.CallOption) (*GitPullRequest, error)
+	// GitMergePR merges the branch's pull request.
+	GitMergePR(ctx context.Context, in *GitMergePRRequest, opts ...grpc.CallOption) (*Empty, error)
+	// Usage is what the agents used (tokens, cost, time, plan limits) and how
+	// the user works, from Deck's local record. Nothing leaves the machine.
+	Usage(ctx context.Context, in *UsageRequest, opts ...grpc.CallOption) (*UsageResponse, error)
+	// A terminal in the project folder: a shell on a pseudo-terminal. Open
+	// starts one; TerminalOutput streams what it prints until it exits.
+	TerminalOpen(ctx context.Context, in *TerminalOpenRequest, opts ...grpc.CallOption) (*TerminalRef, error)
+	TerminalWrite(ctx context.Context, in *TerminalInput, opts ...grpc.CallOption) (*Empty, error)
+	TerminalResize(ctx context.Context, in *TerminalSize, opts ...grpc.CallOption) (*Empty, error)
+	TerminalClose(ctx context.Context, in *TerminalRef, opts ...grpc.CallOption) (*Empty, error)
+	TerminalOutput(ctx context.Context, in *TerminalRef, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TerminalChunk], error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -312,9 +349,148 @@ func (c *deckClient) Changes(ctx context.Context, in *SessionRef, opts ...grpc.C
 	return out, nil
 }
 
+func (c *deckClient) GitStatus(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*GitStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GitStatusResponse)
+	err := c.cc.Invoke(ctx, Deck_GitStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) GitCheckout(ctx context.Context, in *GitCheckoutRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_GitCheckout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) GitCommit(ctx context.Context, in *GitCommitRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_GitCommit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) GitPush(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_GitPush_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) GitPull(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_GitPull_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) GitCreatePR(ctx context.Context, in *GitCreatePRRequest, opts ...grpc.CallOption) (*GitPullRequest, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GitPullRequest)
+	err := c.cc.Invoke(ctx, Deck_GitCreatePR_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) GitMergePR(ctx context.Context, in *GitMergePRRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_GitMergePR_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) Usage(ctx context.Context, in *UsageRequest, opts ...grpc.CallOption) (*UsageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UsageResponse)
+	err := c.cc.Invoke(ctx, Deck_Usage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) TerminalOpen(ctx context.Context, in *TerminalOpenRequest, opts ...grpc.CallOption) (*TerminalRef, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TerminalRef)
+	err := c.cc.Invoke(ctx, Deck_TerminalOpen_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) TerminalWrite(ctx context.Context, in *TerminalInput, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_TerminalWrite_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) TerminalResize(ctx context.Context, in *TerminalSize, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_TerminalResize_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) TerminalClose(ctx context.Context, in *TerminalRef, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_TerminalClose_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) TerminalOutput(ctx context.Context, in *TerminalRef, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TerminalChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Deck_ServiceDesc.Streams[0], Deck_TerminalOutput_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[TerminalRef, TerminalChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Deck_TerminalOutputClient = grpc.ServerStreamingClient[TerminalChunk]
+
 func (c *deckClient) Events(ctx context.Context, in *Subscribe, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Deck_ServiceDesc.Streams[0], Deck_Events_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Deck_ServiceDesc.Streams[1], Deck_Events_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -359,6 +535,30 @@ type DeckServer interface {
 	Approvals(context.Context, *SessionRef) (*ApprovalsResponse, error)
 	Answer(context.Context, *AnswerRequest) (*AnswerResponse, error)
 	Changes(context.Context, *SessionRef) (*ChangesResponse, error)
+	// Git is the project's work tree: its branch and how it stands, its
+	// recent branches and the pull request of its branch (when gh is set up).
+	GitStatus(context.Context, *Empty) (*GitStatusResponse, error)
+	// GitCheckout switches to a branch, or makes it first when create is set.
+	GitCheckout(context.Context, *GitCheckoutRequest) (*Empty, error)
+	// GitCommit stages every change and commits it.
+	GitCommit(context.Context, *GitCommitRequest) (*Empty, error)
+	GitPush(context.Context, *Empty) (*Empty, error)
+	// GitPull fast-forwards the branch from its upstream.
+	GitPull(context.Context, *Empty) (*Empty, error)
+	// GitCreatePR opens a pull request from the branch (gh must be set up).
+	GitCreatePR(context.Context, *GitCreatePRRequest) (*GitPullRequest, error)
+	// GitMergePR merges the branch's pull request.
+	GitMergePR(context.Context, *GitMergePRRequest) (*Empty, error)
+	// Usage is what the agents used (tokens, cost, time, plan limits) and how
+	// the user works, from Deck's local record. Nothing leaves the machine.
+	Usage(context.Context, *UsageRequest) (*UsageResponse, error)
+	// A terminal in the project folder: a shell on a pseudo-terminal. Open
+	// starts one; TerminalOutput streams what it prints until it exits.
+	TerminalOpen(context.Context, *TerminalOpenRequest) (*TerminalRef, error)
+	TerminalWrite(context.Context, *TerminalInput) (*Empty, error)
+	TerminalResize(context.Context, *TerminalSize) (*Empty, error)
+	TerminalClose(context.Context, *TerminalRef) (*Empty, error)
+	TerminalOutput(*TerminalRef, grpc.ServerStreamingServer[TerminalChunk]) error
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -438,6 +638,45 @@ func (UnimplementedDeckServer) Answer(context.Context, *AnswerRequest) (*AnswerR
 }
 func (UnimplementedDeckServer) Changes(context.Context, *SessionRef) (*ChangesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Changes not implemented")
+}
+func (UnimplementedDeckServer) GitStatus(context.Context, *Empty) (*GitStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitStatus not implemented")
+}
+func (UnimplementedDeckServer) GitCheckout(context.Context, *GitCheckoutRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitCheckout not implemented")
+}
+func (UnimplementedDeckServer) GitCommit(context.Context, *GitCommitRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitCommit not implemented")
+}
+func (UnimplementedDeckServer) GitPush(context.Context, *Empty) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitPush not implemented")
+}
+func (UnimplementedDeckServer) GitPull(context.Context, *Empty) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitPull not implemented")
+}
+func (UnimplementedDeckServer) GitCreatePR(context.Context, *GitCreatePRRequest) (*GitPullRequest, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitCreatePR not implemented")
+}
+func (UnimplementedDeckServer) GitMergePR(context.Context, *GitMergePRRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitMergePR not implemented")
+}
+func (UnimplementedDeckServer) Usage(context.Context, *UsageRequest) (*UsageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Usage not implemented")
+}
+func (UnimplementedDeckServer) TerminalOpen(context.Context, *TerminalOpenRequest) (*TerminalRef, error) {
+	return nil, status.Error(codes.Unimplemented, "method TerminalOpen not implemented")
+}
+func (UnimplementedDeckServer) TerminalWrite(context.Context, *TerminalInput) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method TerminalWrite not implemented")
+}
+func (UnimplementedDeckServer) TerminalResize(context.Context, *TerminalSize) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method TerminalResize not implemented")
+}
+func (UnimplementedDeckServer) TerminalClose(context.Context, *TerminalRef) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method TerminalClose not implemented")
+}
+func (UnimplementedDeckServer) TerminalOutput(*TerminalRef, grpc.ServerStreamingServer[TerminalChunk]) error {
+	return status.Error(codes.Unimplemented, "method TerminalOutput not implemented")
 }
 func (UnimplementedDeckServer) Events(*Subscribe, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method Events not implemented")
@@ -859,6 +1098,233 @@ func _Deck_Changes_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Deck_GitStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).GitStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_GitStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).GitStatus(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_GitCheckout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitCheckoutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).GitCheckout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_GitCheckout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).GitCheckout(ctx, req.(*GitCheckoutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_GitCommit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitCommitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).GitCommit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_GitCommit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).GitCommit(ctx, req.(*GitCommitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_GitPush_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).GitPush(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_GitPush_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).GitPush(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_GitPull_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).GitPull(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_GitPull_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).GitPull(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_GitCreatePR_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitCreatePRRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).GitCreatePR(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_GitCreatePR_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).GitCreatePR(ctx, req.(*GitCreatePRRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_GitMergePR_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitMergePRRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).GitMergePR(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_GitMergePR_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).GitMergePR(ctx, req.(*GitMergePRRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_Usage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UsageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).Usage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_Usage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).Usage(ctx, req.(*UsageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_TerminalOpen_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TerminalOpenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).TerminalOpen(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_TerminalOpen_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).TerminalOpen(ctx, req.(*TerminalOpenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_TerminalWrite_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TerminalInput)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).TerminalWrite(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_TerminalWrite_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).TerminalWrite(ctx, req.(*TerminalInput))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_TerminalResize_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TerminalSize)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).TerminalResize(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_TerminalResize_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).TerminalResize(ctx, req.(*TerminalSize))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_TerminalClose_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TerminalRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).TerminalClose(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_TerminalClose_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).TerminalClose(ctx, req.(*TerminalRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_TerminalOutput_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(TerminalRef)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DeckServer).TerminalOutput(m, &grpc.GenericServerStream[TerminalRef, TerminalChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Deck_TerminalOutputServer = grpc.ServerStreamingServer[TerminalChunk]
+
 func _Deck_Events_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(Subscribe)
 	if err := stream.RecvMsg(m); err != nil {
@@ -965,8 +1431,61 @@ var Deck_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "Changes",
 			Handler:    _Deck_Changes_Handler,
 		},
+		{
+			MethodName: "GitStatus",
+			Handler:    _Deck_GitStatus_Handler,
+		},
+		{
+			MethodName: "GitCheckout",
+			Handler:    _Deck_GitCheckout_Handler,
+		},
+		{
+			MethodName: "GitCommit",
+			Handler:    _Deck_GitCommit_Handler,
+		},
+		{
+			MethodName: "GitPush",
+			Handler:    _Deck_GitPush_Handler,
+		},
+		{
+			MethodName: "GitPull",
+			Handler:    _Deck_GitPull_Handler,
+		},
+		{
+			MethodName: "GitCreatePR",
+			Handler:    _Deck_GitCreatePR_Handler,
+		},
+		{
+			MethodName: "GitMergePR",
+			Handler:    _Deck_GitMergePR_Handler,
+		},
+		{
+			MethodName: "Usage",
+			Handler:    _Deck_Usage_Handler,
+		},
+		{
+			MethodName: "TerminalOpen",
+			Handler:    _Deck_TerminalOpen_Handler,
+		},
+		{
+			MethodName: "TerminalWrite",
+			Handler:    _Deck_TerminalWrite_Handler,
+		},
+		{
+			MethodName: "TerminalResize",
+			Handler:    _Deck_TerminalResize_Handler,
+		},
+		{
+			MethodName: "TerminalClose",
+			Handler:    _Deck_TerminalClose_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "TerminalOutput",
+			Handler:       _Deck_TerminalOutput_Handler,
+			ServerStreams: true,
+		},
 		{
 			StreamName:    "Events",
 			Handler:       _Deck_Events_Handler,

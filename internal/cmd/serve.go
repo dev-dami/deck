@@ -18,6 +18,7 @@ import (
 
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/engine"
+	"github.com/dev-dami/deck/internal/usage"
 	"github.com/dev-dami/deck/internal/version"
 	"github.com/dev-dami/deck/internal/workspace"
 	"github.com/dev-dami/deck/pkg/remote/adapter"
@@ -272,7 +273,14 @@ func runServeRPC(cmd *cobra.Command) error {
 	defer closeSock()
 
 	token := rpc.NewToken()
-	srv := rpc.New(be, token)
+	// The project folder is where git runs and terminals start; the usage
+	// record is Deck's own, when the workspace keeps one.
+	var record usage.Service
+	if u, ok := ws.(interface{ UsageService() usage.Service }); ok {
+		record = u.UsageService()
+	}
+	srv := rpc.New(be, token).WithProject(cwd, record)
+	defer srv.Close()
 	go srv.Run(ctx)
 	g := srv.GRPC()
 	go func() { _ = g.Serve(l) }()
