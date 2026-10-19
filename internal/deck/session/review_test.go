@@ -234,7 +234,11 @@ func TestChangesForAStoppedWorkerGoToANewOneOnItsWorktree(t *testing.T) {
 	if _, err := r.m.Spawn(tid, "claude", SpawnSpec{Kind: "codex", Brief: "fix the parser", Review: "other", Isolate: true}); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "t1 in review", func() bool { return taskOf(t, r, tid, "t1").Reviewer != "" })
+	// Spawn binds the reviewer before it sends the brief: wait for both.
+	waitFor(t, "t1 in review", func() bool {
+		rev := taskOf(t, r, tid, "t1").Reviewer
+		return rev != "" && len(r.claude.prompts(rev)) > 0
+	})
 	first := taskOf(t, r, tid, "t1")
 	has(t, r.claude.prompts(first.Reviewer)[0], "git -C "+first.Run.Path+" diff")
 	r.m.retireMember(r.m.thread(tid), first.Owner)

@@ -65,7 +65,9 @@ func TestBudgetCountsSubagentsAndBlocksTheTask(t *testing.T) {
 	r, tid := treeRig(t, testCfg(),
 		[]fake.Script{turn(usage(150, 50), blockStep("ap-b"), say("never"), finish())},
 		[]fake.Script{turn(blockStep("ap-a"), say("never"), finish())})
-	tk, err := r.m.CreateTask(tid, TaskSpec{Title: "lead", Creator: "claude", Budget: &store.Budget{Tokens: 150}})
+	// Claimed: claude hands it over itself, so the scheduler does not give it
+	// to a subagent of its own (which could spend the budget) before the spawn.
+	tk, err := r.m.CreateTask(tid, TaskSpec{Title: "lead", Creator: "claude", Budget: &store.Budget{Tokens: 150}, Claimed: true})
 	if err != nil {
 		t.Fatal(err)
 	}

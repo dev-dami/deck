@@ -600,9 +600,20 @@ func (m *Manager) dropMember(t *thread, a *agentState) {
 }
 
 // startRun launches the member's CLI. prompt, when non-empty, is its first turn.
+// A new member joins the thread before its CLI starts, so a message to it can
+// start the CLI from deliver at the same time. The second caller finds the run
+// already there: it does not start a second CLI, it only sends its prompt.
 func (m *Manager) startRun(t *thread, a *agentState, prompt, resumeID string) error {
 	if m.isClosed() {
 		return errClosed
+	}
+	a.startMu.Lock()
+	defer a.startMu.Unlock()
+	if run := a.getRun(); run != nil {
+		if prompt == "" {
+			return nil
+		}
+		return run.Send(prompt)
 	}
 	ad := m.adapters[a.kind]
 	if ad == nil {
@@ -1525,6 +1536,9 @@ type agentState struct {
 	// knownMode is the permission mode the member was last told about (its
 	// Spec.Mode, or the line at the top of its last prompt); guarded by thread.mu.
 	knownMode agent.Mode
+
+	// startMu lets one startRun at a time start the member's CLI.
+	startMu sync.Mutex
 
 	mu          sync.Mutex
 	run         agent.Run
