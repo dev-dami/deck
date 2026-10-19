@@ -566,8 +566,6 @@ func TestAllowInboundOpVariants(t *testing.T) {
 }
 
 func TestContractorOpsNeedRole(t *testing.T) {
-	contractorOps["contract.propose"] = true
-	t.Cleanup(func() { delete(contractorOps, "contract.propose") })
 	allow := []string{OpPeerStatus, "contract.propose"}
 	if (Caller{Role: "observer", AllowInbound: allow}).Allowed("contract.propose") {
 		t.Fatal("observer may run a contractor op")
@@ -578,8 +576,11 @@ func TestContractorOpsNeedRole(t *testing.T) {
 	if !(Caller{Role: "contractor", AllowInbound: allow}).Allowed("contract.propose") {
 		t.Fatal("contractor refused an allowed contractor op")
 	}
-	if (Caller{Role: "contractor"}).Allowed("contract.propose") {
-		t.Fatal("contractor op allowed without allow_inbound naming it")
+	if !(Caller{Role: "contractor"}).Allowed("contract.propose") {
+		t.Fatal("the default allow list refused a contractor its op")
+	}
+	if (Caller{Role: "contractor", AllowInbound: []string{OpPeerStatus}}).Allowed("contract.propose") {
+		t.Fatal("contractor op allowed by an allow_inbound that leaves it out")
 	}
 	if !(Caller{}).Allowed(OpPeerStatus) || (Caller{}).Allowed("console.read") || (Caller{}).Allowed("") {
 		t.Fatal("default allow list")

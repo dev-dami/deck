@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -111,4 +112,25 @@ func (r *Repo) RootCommit(ctx context.Context) (string, error) {
 		return "", ErrNoRepo
 	}
 	return lines[len(lines)-1], nil
+}
+
+// Init makes dir a new repository whose first commit, with message msg,
+// holds every file in it that is not ignored.
+func Init(ctx context.Context, dir, msg string) error {
+	bin, err := exec.LookPath("git")
+	if err != nil {
+		return ErrNoRepo
+	}
+	r := &Repo{git: bin, Root: dir}
+	id := []string{"GIT_AUTHOR_NAME=deck", "GIT_AUTHOR_EMAIL=deck@localhost", "GIT_COMMITTER_NAME=deck", "GIT_COMMITTER_EMAIL=deck@localhost"}
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"add", "-A"},
+		{"-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "--allow-empty", "-m", msg},
+	} {
+		if _, err := r.run(ctx, dir, id, nil, args...); err != nil {
+			return err
+		}
+	}
+	return nil
 }

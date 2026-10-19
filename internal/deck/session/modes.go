@@ -71,8 +71,9 @@ func (t *thread) getMode() agent.Mode {
 // yolo every approval request is answered Allow at once and reported as an
 // AutoApprovedMsg instead of an ApprovalMsg; switching into yolo answers the
 // requests already waiting the same way (ApprovalGoneMsg, then AutoApprovedMsg
-// for each). In plan, edit and command requests are denied and reported as an
-// AutoDeniedMsg; other kinds still ask. Each member's next prompt starts with
+// for each). In plan, edit, command and share requests are denied and
+// reported as an AutoDeniedMsg; other kinds still ask. A share (a contract
+// to a teammate) is never answered by yolo. Each member's next prompt starts with
 // "[deck] Permission mode is now <mode>." once.
 func (m *Manager) SetMode(threadID string, mode agent.Mode) error {
 	if !validMode(mode) {
@@ -122,9 +123,10 @@ func (m *Manager) SetMode(threadID string, mode agent.Mode) error {
 	return nil
 }
 
-// drainPending answers every approval a member has waiting with Allow.
+// drainPending answers every approval a member has waiting with Allow, but
+// a share, which stays for the person.
 func (m *Manager) drainPending(t *thread, a *agentState) {
-	for _, p := range a.takePending() {
+	for _, p := range a.takePending(agent.ApproveShare) {
 		p.respond(agent.Decision{Allow: true})
 		m.emit(ApprovalGoneMsg{ThreadID: t.id, AgentID: a.id, ID: p.id})
 		m.emit(AutoApprovedMsg{ThreadID: t.id, AgentID: a.id, Summary: p.summary})
@@ -138,9 +140,11 @@ func (m *Manager) enforce(t *thread, a *agentState, req agent.ApprovalRequest) b
 	mode := t.getMode()
 	var d agent.Decision
 	switch {
+	case req.Kind == agent.ApproveShare && mode != agent.ModePlan:
+		return false // only the person sends work out
 	case mode == agent.ModeYolo:
 		d = agent.Decision{Allow: true}
-	case mode == agent.ModePlan && (req.Kind == agent.ApproveEdit || req.Kind == agent.ApproveCommand):
+	case mode == agent.ModePlan && (req.Kind == agent.ApproveEdit || req.Kind == agent.ApproveCommand || req.Kind == agent.ApproveShare):
 		d = agent.Decision{Allow: false, Reason: planDenyReason}
 	default:
 		return false

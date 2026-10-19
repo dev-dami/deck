@@ -131,6 +131,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -269,6 +270,10 @@ type Manager struct {
 	activity func(threadID string) string
 	// team is the peer link for the peers.* ops; see SetTeam.
 	team hub.Team
+	// contractor sends code contracts to teammates, and taskEnd hears of
+	// every task that ends (contract.go).
+	contractor Contractor
+	taskEnd    func(threadID string, tk store.Task)
 }
 
 // NewManager returns a Manager that starts agents from adapters (keyed by kind,
@@ -1660,12 +1665,21 @@ func (a *agentState) removePending(id string) {
 	a.mu.Unlock()
 }
 
-func (a *agentState) takePending() []pendingApproval {
+// takePending removes and returns the pending approvals, but those of kind
+// keep, which stay.
+func (a *agentState) takePending(keep ...agent.ApprovalKind) []pendingApproval {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	p := a.pending
-	a.pending = nil
-	return p
+	var out, kept []pendingApproval
+	for _, p := range a.pending {
+		if slices.Contains(keep, p.kind) {
+			kept = append(kept, p)
+		} else {
+			out = append(out, p)
+		}
+	}
+	a.pending = kept
+	return out
 }
 
 func (a *agentState) markExited() bool {

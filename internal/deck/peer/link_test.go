@@ -18,9 +18,17 @@ import (
 // each other, and waits until b's link to a is up. local is a's own work.
 func linkedServices(t *testing.T, aLocal, bLocal Local) (a, b *Service) {
 	t.Helper()
-	mk := func(name string, local Local) *Service {
+	return linkedWith(t, ServiceOptions{Local: aLocal}, ServiceOptions{Local: bLocal}, "")
+}
+
+// linkedWith is linkedServices with more options for each Service, and the
+// role a gives b.
+func linkedWith(t *testing.T, ao, bo ServiceOptions, role string) (a, b *Service) {
+	t.Helper()
+	mk := func(name string, o ServiceOptions) *Service {
 		dir := t.TempDir()
-		s, err := NewService(ServiceOptions{Dir: filepath.Join(dir, "peers"), ConfigPath: filepath.Join(dir, "config.json"), Logger: quietLog, Local: local})
+		o.Dir, o.ConfigPath, o.Logger = filepath.Join(dir, "peers"), filepath.Join(dir, "config.json"), quietLog
+		s, err := NewService(o)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -36,14 +44,14 @@ func linkedServices(t *testing.T, aLocal, bLocal Local) (a, b *Service) {
 		}
 		return s
 	}
-	a, b = mk("a", aLocal), mk("b", bLocal)
+	a, b = mk("a", ao), mk("b", bo)
 	if err := a.SetListen(true, freeAddr(t)); err != nil {
 		t.Fatal(err)
 	}
 	addr := a.Snapshot().Listening
 	ida, _ := LoadIdentity(a.dir)
 	idb, _ := LoadIdentity(b.dir)
-	if err := OpenStore(a.dir).Pin(NewPinned("b", "", "", idb.PublicKey())); err != nil {
+	if err := OpenStore(a.dir).Pin(NewPinned("b", "", role, idb.PublicKey())); err != nil {
 		t.Fatal(err)
 	}
 	if err := OpenStore(b.dir).Pin(NewPinned("a", addr, "", ida.PublicKey())); err != nil {

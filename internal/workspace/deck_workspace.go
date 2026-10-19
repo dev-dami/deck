@@ -977,6 +977,7 @@ func (w *DeckWorkspace) onApproval(m decks.ApprovalMsg) {
 		if opts.ToolName == "" {
 			opts.ToolName = "tool"
 		}
+		opts.MustAsk = req.Kind == deckagent.ApproveShare
 		b, _ := json.Marshal(map[string]string{"agent": req.AgentID, "request": req.Summary})
 		opts.Params = string(b)
 	}

@@ -25,12 +25,15 @@ var ErrUnknownOp = errors.New("unknown op")
 //
 // The SUB ops are in it: they only ever serve capsules this Deck's user
 // published (sub.capsule.publish), which is the consent to share them.
-var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects, OpConsolePost}
+//
+// The contract ops are in it too: contract.propose also needs role
+// contractor, and contract.status and contract.result only touch contracts
+// this Deck proposed to the caller.
+var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects, OpConsolePost, OpContractPropose, OpContractStatus, OpContractResult}
 
 // contractorOps are the ops only a peer with role contractor may run, on top
-// of allow_inbound. Empty until contracts land (contract.propose goes here),
-// but every call already goes through it.
-var contractorOps = map[string]bool{}
+// of allow_inbound.
+var contractorOps = map[string]bool{OpContractPropose: true}
 
 // Caller is the pinned peer on the other end of a connection, as this Deck
 // knows it. Name and Fingerprint come from the pinned store, never from the

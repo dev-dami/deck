@@ -89,8 +89,12 @@ func Start() (*Engine, error) {
 		MCPFor: func(id string) *agent.MCPServer { return broker.ServerFor(self, id) },
 	})
 	work := &localWork{mgr: mgr}
-	peers := startPeers(cfg, mgr.SubStore, peer.Local{Presence: work.Presence, Repos: work.Repos})
+	deals := &contracts{mgr: mgr}
+	peers := startPeers(cfg, peer.ServiceOptions{SubStore: mgr.SubStore, Local: peer.Local{Presence: work.Presence, Repos: work.Repos}, Contracts: deals.hooks()})
 	if peers != nil {
+		deals.svc.Store(peers)
+		mgr.SetContractor(deals)
+		mgr.SetTaskEnd(deals.taskEnd)
 		mgr.SetTeam(peerTeam{peers})
 		mgr.SetSubFetch(func(ctx context.Context, name string, id sub.ID, s *sub.Store) (int, error) {
 			return peers.FetchCapsule(ctx, name, id, s)
@@ -104,11 +108,11 @@ func Start() (*Engine, error) {
 // otherwise it runs nothing at all (no key, no listener, no goroutines)
 // until Settings turns peers on. A failure is logged and leaves Deck running
 // without peers.
-func startPeers(cfg config.Config, subStore func() *sub.Store, local peer.Local) *peer.Service {
+func startPeers(cfg config.Config, o peer.ServiceOptions) *peer.Service {
 	// The config path lets the link pick up role, allow_inbound and remote
 	// edits while Deck runs, and lets Settings change the rest.
-	path, _ := config.Path()
-	svc, err := peer.NewService(peer.ServiceOptions{ConfigPath: path, SubStore: subStore, Local: local})
+	o.ConfigPath, _ = config.Path()
+	svc, err := peer.NewService(o)
 	if err != nil {
 		slog.Warn("Peers not available", "error", err)
 		return nil

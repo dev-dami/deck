@@ -49,6 +49,9 @@ type TaskSpec struct {
 	// Race and Judge make it a race (race.go).
 	Race  bool
 	Judge string
+	// Remote is the teammate that does it under a code contract
+	// (contract.go).
+	Remote string
 	// Claimed creates the task already running (its first attempt under way),
 	// so the scheduler never hands out a task its creator is about to work on
 	// or hand over itself.
@@ -246,7 +249,7 @@ func (m *Manager) addTask(t *thread, sp TaskSpec) (store.Task, error) {
 		ID: id, Title: clipText(title, 120), Brief: clipText(sp.Brief, maxTaskText),
 		Creator: sp.Creator, Owner: sp.Owner, Parent: canonicalID(t.tasks, sp.Parent), Deps: deps,
 		Status: store.TaskPending, OnFail: sp.OnFail, MaxAttempts: sp.MaxAttempts, Contract: sp.Contract, Isolate: sp.Isolate,
-		Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort, Budget: sp.Budget, Race: sp.Race, Judge: sp.Judge,
+		Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort, Budget: sp.Budget, Race: sp.Race, Judge: sp.Judge, Remote: sp.Remote,
 		Created: now, Updated: now,
 	}
 	if sp.Claimed {
@@ -416,6 +419,9 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 		_, _ = m.moveTask(t, id, store.TaskCancelled, by, "its parent task was cancelled", nil)
 	}
 	m.raceStep(t, out)
+	if from != to {
+		m.taskEnded(t, out)
+	}
 	return out, nil
 }
 
@@ -576,6 +582,12 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 			return "", err
 		}
 		return fmt.Sprintf("started race %s with entries %s; when all have ended, a summary comes back to you, and the user keeps one", res.TaskID, strings.Join(res.Entries, ", ")), nil
+	case "task.contract":
+		tk, err := m.Contract(t.id, me, ContractSpec{Peer: str("peer"), Title: str("title"), Brief: str("brief")})
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("asked %s to do %s %q; its person confirms it first. When it ends, its result comes back to you, with a capsule of its changes.", tk.Remote, tk.ID, tk.Title), nil
 	case "task.done", "task.fail", "task.cancel":
 		id := str("id")
 		if err := b.mayFinish(id); err != nil {
@@ -737,6 +749,9 @@ func (m *Manager) RetryTask(threadID, id, by string) (store.Task, error) {
 	t := m.thread(threadID)
 	if t == nil {
 		return store.Task{}, fmt.Errorf("session: no thread %q", threadID)
+	}
+	if tk, ok := m.Task(threadID, id); ok && tk.Remote != "" {
+		return store.Task{}, fmt.Errorf("%s was a contract with %s: ask again with task.contract", tk.ID, tk.Remote)
 	}
 	var old *store.RunRef
 	tk, err := m.moveTask(t, id, store.TaskReady, by, "retry", func(tk *store.Task) {

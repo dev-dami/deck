@@ -171,8 +171,13 @@ func TestRestore(t *testing.T) {
 	if read(t, a, "edit.txt") != "old\n" || read(t, a, "extra.txt") != "<missing>" {
 		t.Fatal("restore")
 	}
-	if err := s.Restore(ctx, a, snap, []string{"../x"}); err == nil {
-		t.Fatal("bad path accepted")
+	for _, p := range []string{"../x", ".git/config", "a/.GIT/hooks/x", ".git./config", ".g\u200cit/config", "GIT~1/config"} {
+		if err := s.Restore(ctx, a, snap, []string{p}); err == nil {
+			t.Fatalf("bad path %q accepted", p)
+		}
+	}
+	if err := validPath(".github/workflows/ci.yml"); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -263,6 +268,37 @@ func TestPackUnpack(t *testing.T) {
 	}
 	if !s.Shareable(id) || s.Shareable(base) || len(s.Published()) != 1 {
 		t.Fatal("publish")
+	}
+}
+
+// A contract's base: a snapshot's closure carries the whole tree, and a
+// store that got it checks the tree out into an empty folder.
+func TestSnapshotTravels(t *testing.T) {
+	ctx := context.Background()
+	s, a, _ := trees(t)
+	write(t, a, "dir/new.txt", "x\n")
+	snap, _ := s.Snap(ctx, a)
+	ids, err := s.Closure(snap)
+	if err != nil || len(ids) < 3 || ids[0] != snap {
+		t.Fatalf("closure = %v, %v", ids, err)
+	}
+	far, _ := Open(t.TempDir())
+	var buf bytes.Buffer
+	if err := s.Pack(&buf, ids); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := far.Unpack(&buf, 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	b := t.TempDir()
+	if err := far.Checkout(ctx, b, snap); err != nil {
+		t.Fatal(err)
+	}
+	if read(t, b, "edit.txt") != read(t, a, "edit.txt") || read(t, b, "dir/new.txt") != "x\n" {
+		t.Fatal("the checkout differs from the tree")
+	}
+	if again, _ := far.Snap(ctx, b); again != snap {
+		t.Fatalf("snapshot of the checkout = %s, want %s", again, snap)
 	}
 }
 

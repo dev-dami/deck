@@ -699,9 +699,15 @@ func (m *Manager) askWrite(ctx context.Context, a *agentState, op string, s *sub
 		}
 	}
 	summary := fmt.Sprintf("%s %s: %d files (%s) in %s", op, id.Short(), len(ops), strings.Join(names, ", "), root)
+	return m.ask(ctx, a, agent.ApproveEdit, op, summary, root)
+}
+
+// ask raises an approval request for agent a and waits for the answer: nil
+// when allowed. The thread's mode answers what it answers (enforce).
+func (m *Manager) ask(ctx context.Context, a *agentState, kind agent.ApprovalKind, op, summary, cwd string) error {
 	decided := make(chan agent.Decision, 1)
 	req := agent.ApprovalRequest{
-		ID: "sub-" + store.NewID(), Kind: agent.ApproveEdit, ToolName: op, Summary: summary, Cwd: root,
+		ID: "sub-" + store.NewID(), Kind: kind, ToolName: op, Summary: summary, Cwd: cwd,
 		Respond: func(d agent.Decision) { decided <- d },
 	}
 	m.onApproval(a, req)
@@ -726,7 +732,7 @@ func (m *Manager) askWrite(ctx context.Context, a *agentState, op string, s *sub
 	}
 	if a.claimPending(req.ID) {
 		m.emit(ApprovalGoneMsg{ThreadID: a.thread.id, AgentID: a.id, ID: req.ID})
-		return errors.New("the user did not answer in time; nothing was written (ask them, then call it again)")
+		return errors.New("the user did not answer in time; nothing was done (ask them, then call it again)")
 	}
 	// Answered just as time ran out.
 	if d := <-decided; !d.Allow {

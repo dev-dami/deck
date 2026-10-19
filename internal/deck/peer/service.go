@@ -55,6 +55,11 @@ type Service struct {
 	// its own, by name (presence.go).
 	local    Local
 	presence map[string]Presence
+	// contracts are the code contracts both ways (contract.go); hooks run
+	// them in the engine's threads.
+	contracts *contractBook
+	hooks     ContractHooks
+	answerMu  sync.Mutex
 }
 
 // ServiceOptions configures a Service.
@@ -69,6 +74,9 @@ type ServiceOptions struct {
 	SubStore func() *sub.Store
 	// Local is this Deck's own work, for peer.status; zero tells nothing.
 	Local Local
+	// Contracts runs the contracts this Deck's person accepts, and hears of
+	// the ones it proposed; zero runs none.
+	Contracts ContractHooks
 }
 
 // errNoConfig is returned by every change when the Service has no config file.
@@ -87,9 +95,10 @@ func NewService(o ServiceOptions) (*Service, error) {
 		o.Logger = slog.Default()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, local: o.Local, base: ctx, cancel: cancel, wake: make(chan struct{})}
+	s := &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, local: o.Local, hooks: o.Contracts, base: ctx, cancel: cancel, wake: make(chan struct{})}
 	s.team = NewTeam(o.Dir, s.changed)
 	s.out = newOutbox(o.Dir)
+	s.contracts = newContractBook(o.Dir)
 	return s, nil
 }
 
@@ -194,7 +203,8 @@ func (s *Service) apply(p *config.Peers) error {
 	case mgr != nil:
 		err = mgr.Apply(p)
 	case p != nil && p.Enabled:
-		mgr, err = NewManager(ManagerOptions{Dir: s.dir, Peers: p, ConfigPath: s.cfgPath, OnChange: s.changed, Logger: s.log, SubStore: s.subStore, Team: s.team, Local: s.local})
+		mgr, err = NewManager(ManagerOptions{Dir: s.dir, Peers: p, ConfigPath: s.cfgPath, OnChange: s.changed, Logger: s.log, SubStore: s.subStore, Team: s.team, Local: s.local,
+			Granted: s.granted, Extra: func(h Handler) Handler { return &ContractHandler{Base: h, S: s} }})
 		if err != nil {
 			break
 		}
@@ -732,6 +742,8 @@ type Snapshot struct {
 	// asked this Deck for.
 	Chat     []ChatMessage
 	Requests []CapsuleRequest
+	// Contracts are the code contracts both ways, oldest first.
+	Contracts []Contract
 }
 
 // PeerState is one paired or configured peer.
@@ -820,6 +832,7 @@ func (s *Service) Snapshot() Snapshot {
 	if s.team != nil {
 		snap.Chat, snap.Requests = s.team.Chat(), s.team.Requests()
 	}
+	snap.Contracts = s.contracts.all()
 	return snap
 }
 

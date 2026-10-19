@@ -14,6 +14,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/internal/ui/dialog"
 	"github.com/dev-dami/deck/internal/ui/notice"
+	"github.com/dev-dami/deck/internal/ui/util"
 	"github.com/dev-dami/deck/internal/workspace"
 )
 
@@ -21,8 +22,11 @@ import (
 // the peer link (docs/peers-design.md), each with a status dot, how the link
 // is doing and its role, then what its agents do ("vps/claude2 ▸ working ·
 // fix the flaky test"), the files they hold in repositories both Decks have,
-// and its plan windows when it shares them. The pane reads a snapshot a command keeps current
-// through PeerLink.Wait; it never touches the link in Update or render.
+// and its plan windows when it shares them. A code contract a teammate
+// proposes shows as a card at the top: y runs it with the agent shown, a
+// picks another agent, n declines. The pane reads a snapshot a command keeps
+// current through PeerLink.Wait; it never touches the link in Update or
+// render.
 
 const paneTeam paneID = "team"
 
@@ -73,10 +77,12 @@ func (m *UI) applyTeamSnap(msg teamSnapMsg) tea.Cmd {
 	m.teamWatching = false
 	snap := msg.snap
 	first := m.teamSnap == nil
+	prev := m.teamSnap
 	m.teamSnap = &snap
 	cmds := []tea.Cmd{m.watchTeam()}
 	if !first {
 		cmds = append(cmds, m.teamNotices(snap)...)
+		m.contractNotices(*prev, snap)
 	}
 	m.teamSeen = teamMaxSeq(snap)
 	return tea.Batch(cmds...)
@@ -130,8 +136,69 @@ func (m *UI) teamNotices(snap peer.Snapshot) []tea.Cmd {
 	return cmds
 }
 
+// contractNotices tells the person of each contract a teammate proposed
+// since prev.
+func (m *UI) contractNotices(prev, snap peer.Snapshot) {
+	known := map[string]bool{}
+	for _, c := range prev.Contracts {
+		known[c.Peer+"/"+c.ID] = true
+	}
+	for _, c := range snap.Contracts {
+		if !c.Inbound || c.State != peer.ContractProposed || known[c.Peer+"/"+c.ID] {
+			continue
+		}
+		m.Notify(notice.Notice{
+			Level: notice.Warn, Source: notice.SourceTeam,
+			Title: c.Peer + " proposes a contract", Body: c.Title,
+			Action: &notice.Action{Label: "Open the Team pane", Msg: focusPaneMsg{id: paneTeam}},
+		})
+	}
+}
+
+// contractKeyPrefix starts the row key of a contract that waits for the
+// person: "contract:<peer>/<id>".
+const contractKeyPrefix = "contract:"
+
 type teamPane struct {
 	list paneList
+	// kind counts a presses: it picks the agent a contract runs with.
+	kind int
+}
+
+// agentKind is the agent a confirmed contract runs with: the default agent
+// first, then the others in turn as a is pressed.
+func (p *teamPane) agentKind(m *UI) string {
+	editor, ok := m.com.Workspace.(workspace.SettingsEditor)
+	if !ok {
+		return ""
+	}
+	kinds := editor.AgentKinds()
+	if len(kinds) == 0 {
+		return ""
+	}
+	def := editor.DeckSettings().DefaultAgent
+	for i, k := range kinds {
+		if k == def {
+			kinds = append([]string{k}, append(kinds[:i:i], kinds[i+1:]...)...)
+			break
+		}
+	}
+	return kinds[p.kind%len(kinds)]
+}
+
+// waitingContract is the contract that row key sel names, when it waits for the
+// person.
+func (m *UI) waitingContract(sel string) (peer.Contract, bool) {
+	ref, ok := strings.CutPrefix(sel, contractKeyPrefix)
+	if !ok || m.teamSnap == nil {
+		return peer.Contract{}, false
+	}
+	for _, c := range m.teamSnap.Contracts {
+		if c.Inbound && c.State == peer.ContractProposed && c.Peer+"/"+c.ID == ref {
+			return c, true
+		}
+	}
+	return peer.Contract{}, false
 }
 
 func (p *teamPane) id() paneID       { return paneTeam }
@@ -160,7 +227,35 @@ func (p *teamPane) render(m *UI, width, height int, focused bool) string {
 }
 
 func (p *teamPane) key(m *UI, msg tea.KeyPressMsg) (bool, tea.Cmd) {
-	return p.list.navKey(p.rows(m, 80), msg), nil
+	rows := p.rows(m, 80)
+	if p.list.navKey(rows, msg) {
+		return true, nil
+	}
+	c, ok := m.waitingContract(p.list.selected(rows))
+	link := m.peerLink()
+	if !ok || link == nil {
+		return false, nil
+	}
+	switch msg.String() {
+	case "a":
+		p.kind++
+		return true, nil
+	case "y", "n":
+		accept, kind := msg.String() == "y", p.agentKind(m)
+		if accept && kind == "" {
+			return true, util.ReportError(fmt.Errorf("no agent on this Deck can run it"))
+		}
+		return true, func() tea.Msg {
+			if err := link.AnswerContract(c.Peer, c.ID, accept, kind); err != nil {
+				return util.NewErrorMsg(err)
+			}
+			if accept {
+				return util.NewInfoMsg("Accepted " + c.Peer + "'s contract: " + kind + " works on it in a new thread")
+			}
+			return util.NewInfoMsg("Declined " + c.Peer + "'s contract")
+		}
+	}
+	return false, nil
 }
 
 func (p *teamPane) click(m *UI, _, y int) tea.Cmd {
@@ -189,6 +284,7 @@ func (p *teamPane) rows(m *UI, width int) []paneRow {
 		self += " · listening"
 	}
 	rows := []paneRow{{lines: []string{ansi.Truncate(muted.Render(self), width, "…")}}}
+	rows = append(rows, p.contractRows(m, width)...)
 	if len(snap.Peers) == 0 {
 		rows = append(rows, paneRow{lines: []string{
 			ansi.Truncate(muted.Render("No teammates yet."), width, "…"),
@@ -212,6 +308,50 @@ func (p *teamPane) rows(m *UI, width int) []paneRow {
 			lines = append(lines, ansi.Truncate("  "+muted.Render(l), width, "…"))
 		}
 		rows = append(rows, paneRow{key: ps.Name, selectable: true, lines: lines})
+	}
+	return rows
+}
+
+// maxContractLines caps the contracts listed besides those that wait.
+const maxContractLines = 4
+
+// contractRows are the contracts teammates proposed that wait for the
+// person, as cards, then the latest others, one line each.
+func (p *teamPane) contractRows(m *UI, width int) []paneRow {
+	t := m.com.Styles
+	muted := t.ModelInfo.Provider
+	var rows []paneRow
+	var others []string
+	for _, c := range m.teamSnap.Contracts {
+		if !c.Inbound || c.State != peer.ContractProposed {
+			arrow, state := "→ ", c.State
+			if c.Inbound {
+				arrow = "← "
+			}
+			if c.Agent != "" && c.State == peer.ContractAccepted {
+				state += " by " + c.Agent
+			}
+			others = append(others, arrow+c.Peer+" · "+c.Title+" · "+state)
+			continue
+		}
+		lines := []string{ansi.Truncate("▸ "+t.ModelInfo.Name.Bold(true).Render(c.Peer)+" asks: "+c.Title, width, "…")}
+		if brief, _, _ := strings.Cut(c.Brief, "\n"); brief != "" && brief != c.Title {
+			lines = append(lines, ansi.Truncate("  "+muted.Render(brief), width, "…"))
+		}
+		files := "a copy of its tree"
+		if c.Files > 0 {
+			files = fmt.Sprintf("a copy of its tree (%d files)", c.Files)
+		}
+		lines = append(lines,
+			ansi.Truncate("  "+muted.Render("runs on "+files+" in a new thread"), width, "…"),
+			ansi.Truncate("  "+muted.Render("y run with "+p.agentKind(m)+" · a other agent · n decline"), width, "…"))
+		rows = append(rows, paneRow{key: contractKeyPrefix + c.Peer + "/" + c.ID, selectable: true, lines: lines})
+	}
+	if n := len(others); n > maxContractLines {
+		others = others[n-maxContractLines:]
+	}
+	for _, l := range others {
+		rows = append(rows, paneRow{lines: []string{ansi.Truncate(muted.Render(l), width, "…")}})
 	}
 	return rows
 }

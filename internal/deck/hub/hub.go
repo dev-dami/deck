@@ -47,6 +47,8 @@ const (
 	OpTaskSteer  = "task.steer"
 	OpAgentSpawn = "agent.spawn"
 	OpTaskRace   = "task.race"
+	// OpTaskContract asks a teammate's Deck to do a task (a code contract).
+	OpTaskContract = "task.contract"
 	// OpThreadRoster lists the thread's members; it goes through the
 	// TaskBoard, which knows the caller's thread.
 	OpThreadRoster = "thread.roster"
@@ -244,6 +246,9 @@ func init() {
 			Args: []Arg{{Name: "brief", Type: tString, Required: true}, {Name: "agents", Type: tString, Required: true, Desc: "one kind for each entry, with counts: \"claude*2, codex\""},
 				{Name: "title", Type: tString}, {Name: "judge", Type: tString, Desc: "agent kind that ranks the entries"}},
 			run: opTask(OpTaskRace)},
+		{Name: OpTaskContract, Desc: "Ask a teammate's Deck (peers.list) to do a coding task: the user allows it first, a copy of your tree goes to that Deck alone, and its person confirms and picks the agent. It becomes a task on the board that the teammate owns; when it ends, its reply and a capsule of its changes come back to you (apply it with sub.patch.apply).",
+			Args: []Arg{{Name: "peer", Type: tString, Required: true, Desc: "the teammate's name"}, {Name: "brief", Type: tString, Required: true}, {Name: "title", Type: tString}},
+			run:  opTask(OpTaskContract)},
 		{Name: "sub.snapshot.create", Desc: "Record your work tree as a SUB snapshot (content-addressed; unchanged files cost nothing). It becomes your base for sub.patch.capture.",
 			run: opSub("sub.snapshot.create")},
 		{Name: "sub.snapshot.inspect", Desc: "List a SUB snapshot's files (optionally those under a path prefix).",

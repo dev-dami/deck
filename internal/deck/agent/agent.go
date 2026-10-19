@@ -196,6 +196,9 @@ const (
 	ApproveCommand ApprovalKind = "command"
 	ApproveEdit    ApprovalKind = "edit"
 	ApproveOther   ApprovalKind = "other"
+	// ApproveShare is sending work out of this Deck (a code contract to a
+	// teammate). The person answers it in every mode: yolo does not.
+	ApproveShare ApprovalKind = "share"
 )
 
 // Decision is the user's answer to an approval request.

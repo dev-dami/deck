@@ -218,6 +218,9 @@ func (m *Manager) dispatchReady(t *thread) {
 		running := 0
 		var next *store.Task
 		for i := range t.tasks {
+			if t.tasks[i].Remote != "" {
+				continue // a teammate's Deck does it
+			}
 			switch t.tasks[i].Status {
 			case store.TaskRunning:
 				running++

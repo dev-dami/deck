@@ -148,7 +148,7 @@ const DefaultPeerPort = "7722"
 // Peer roles: what a remote Deck may ask of this one.
 const (
 	PeerRoleObserver   = "observer"   // read-only ops (the default)
-	PeerRoleContractor = "contractor" // may also propose contracts (later phases)
+	PeerRoleContractor = "contractor" // may also propose code contracts
 )
 
 // Peers is the peers section of the config.

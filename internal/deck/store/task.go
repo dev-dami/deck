@@ -121,6 +121,10 @@ type Task struct {
 	// Diff is what a race entry changed on its worktree, recorded when it
 	// ended.
 	Diff *DiffStat `json:"diff,omitempty"`
+	// Remote is the teammate's Deck that does the task under a code
+	// contract; Owner then names it, and its agent once one took the task
+	// ("vps/claude").
+	Remote string `json:"remote,omitempty"`
 	// Kind, Model and Effort pick the agent a subagent for the task runs; ""
 	// is the default agent and the configured model and effort.
 	Kind   string `json:"kind,omitempty"`

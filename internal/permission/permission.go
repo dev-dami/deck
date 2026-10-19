@@ -43,6 +43,9 @@ type CreatePermissionRequest struct {
 	Action      string `json:"action"`
 	Params      any    `json:"params"`
 	Path        string `json:"path"`
+	// MustAsk has the person answer it whatever is allowed already: skipped
+	// requests, allowed tools and allowed sessions do not apply.
+	MustAsk bool `json:"must_ask,omitempty"`
 }
 
 type PermissionNotification struct {
@@ -179,13 +182,13 @@ func (s *permissionService) Deny(permission PermissionRequest) bool {
 }
 
 func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRequest) (bool, error) {
-	if s.skip.Load() {
+	if s.skip.Load() && !opts.MustAsk {
 		return true, nil
 	}
 
 	// Check if the tool/action combination is in the allowlist
 	commandKey := opts.ToolName + ":" + opts.Action
-	if slices.Contains(s.allowedTools, commandKey) || slices.Contains(s.allowedTools, opts.ToolName) {
+	if !opts.MustAsk && (slices.Contains(s.allowedTools, commandKey) || slices.Contains(s.allowedTools, opts.ToolName)) {
 		return true, nil
 	}
 
@@ -193,7 +196,7 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 	// with the tool call ID. Treat that as a pre-approval and skip the
 	// prompt entirely. We still publish a granted notification so the UI
 	// and audit subscribers see the outcome.
-	if hookApproved(ctx, opts.ToolCallID) {
+	if !opts.MustAsk && hookApproved(ctx, opts.ToolCallID) {
 		s.notificationBroker.Publish(pubsub.CreatedEvent, PermissionNotification{
 			ToolCallID: opts.ToolCallID,
 			Granted:    true,
@@ -213,7 +216,7 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 	autoApprove := s.autoApproveSessions[opts.SessionID]
 	s.autoApproveSessionsMu.RUnlock()
 
-	if autoApprove {
+	if autoApprove && !opts.MustAsk {
 		s.notificationBroker.Publish(pubsub.CreatedEvent, PermissionNotification{
 			ToolCallID: opts.ToolCallID,
 			Granted:    true,
@@ -250,7 +253,7 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 		ToolName:  permission.ToolName,
 		Action:    permission.Action,
 		Path:      permission.Path,
-	}); ok {
+	}); ok && !opts.MustAsk {
 		s.notificationBroker.Publish(pubsub.CreatedEvent, PermissionNotification{
 			ToolCallID: opts.ToolCallID,
 			Granted:    true,

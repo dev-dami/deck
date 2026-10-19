@@ -148,7 +148,7 @@ func (m *Manager) checkBudgets(t *thread, a *agentState, extra store.Spend) {
 	}
 	for _, i := range idx {
 		tk := t.tasks[i]
-		if tk.Status != store.TaskRunning {
+		if tk.Status != store.TaskRunning || tk.Remote != "" { // a teammate's Deck keeps its own budget
 			continue
 		}
 		if note := overBudget(m.budgetOf(tk), tk.Spent, extra, tk.Started, now); note != "" {

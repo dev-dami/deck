@@ -1,6 +1,6 @@
 # Deck peers: team link between Deck instances
 
-Status: proposal v3. Phase 1 (transport, pairing, pinning, supervisor, `deck peer` commands) and part of phase 2 (`peer.status` with presence, `console.post` team chat with idempotency keys, the outbox for chat, capsule transfer via `sub.closure`/`sub.objects`) are implemented in `internal/deck/peer`; agents read and post the chat through Deck's own `team.read`/`team.post`. Contracts, vsh, `console.read` for peers, thread mirror and `deck serve` are not. The outbox is one file, `~/.deck/peers/outbox.json`, not one per peer. Next steps: `docs/multiplayer-design.md` §8.
+Status: proposal v3. Phase 1 (transport, pairing, pinning, supervisor, `deck peer` commands) and part of phase 2 (`peer.status` with presence, `console.post` team chat with idempotency keys, the outbox for chat, capsule transfer via `sub.closure`/`sub.objects`) are implemented in `internal/deck/peer`; agents read and post the chat through Deck's own `team.read`/`team.post`. Code contracts (`contract.propose`, `contract.status`, `contract.result`) are implemented as `docs/multiplayer-design.md` §8.4 describes; ops contracts, vsh, `console.read` for peers, thread mirror and `deck serve` are not. The outbox is one file, `~/.deck/peers/outbox.json`, not one per peer. Next steps: `docs/multiplayer-design.md` §8.
 
 Decisions:
 - Peer-to-peer mesh between Deck instances.

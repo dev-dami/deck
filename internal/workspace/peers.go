@@ -41,6 +41,10 @@ type PeerLink interface {
 	// Pin pins a Deck that proved the code, once the person confirmed the
 	// fingerprints.
 	Pin(r peer.PinRequest) error
+	// AnswerContract accepts a contract a teammate proposed, with an agent
+	// of kind agent, or declines it. Accepting fetches the teammate's tree:
+	// call it off the UI loop.
+	AnswerContract(name, id string, accept bool, agent string) error
 }
 
 var _ PeerLink = (*peer.Service)(nil)

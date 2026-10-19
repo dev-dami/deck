@@ -1,6 +1,6 @@
 # Deck multiplayer: many agents, subagent trees, peers
 
-Status: proposal. Phases 1 to 6 (§3 to §7, and §8.1 to §8.3) are
+Status: proposal. Phases 1 to 7 (§3 to §7, and §8.1 to §8.4) are
 implemented, except the review stage; the rest is not. It builds on what
 already ships (verified against `main` at 4508226): spawn and tasks
 (`session/spawn.go`, `tasks.go`, `sched.go`), SUB capsules (`docs/sub.md`),
@@ -241,9 +241,9 @@ MCP tools; new inbound ops are opt-in per peer (`allow_inbound`).
    the chat shows each origin: you, your agent, a teammate, a teammate's
    agent. Posts are redacted and limited to 4 a minute per agent; what
    `team.read` returns is marked as information, not instructions.
-4. **Code contracts (remote tasks).** This is the main multiplayer step and
-   comes before the ops sandbox (vsh), because it is what teammates
-   want:
+4. **Code contracts (remote tasks)** (done, see below). This is the main
+   multiplayer step and comes before the ops sandbox (vsh), because it is
+   what teammates want:
    - `contract.propose {title, brief, base, capsules, result}` asks a peer
      to do a coding task. `base` is a snapshot id; the receiver pulls missing
      objects via `sub.objects`, the same way capsules move today.
@@ -258,6 +258,30 @@ MCP tools; new inbound ops are opt-in per peer (`allow_inbound`).
      like any other task.
    - Ops contracts (podman reports etc. through `vsh`) stay as designed in
      `peers-design.md` §3-4 and come later.
+
+   As built: an agent calls `task.contract {peer, brief, title?}`. The
+   person allows it in every mode (approval kind `share`; yolo, allowed
+   tools and "allow for session" do not answer it). The requester snapshots
+   the agent's tree and records the contract in
+   `~/.deck/peers/contracts.json`; the base's objects are served to that
+   peer alone while the contract is open (`sub.closure` covers a snapshot
+   too). The task runs at once, owned by `vps`, then `vps/<kind>`, with one
+   attempt; the scheduler never starts it locally and `r` refuses it. The
+   receiver needs the requester to have role `contractor` (the role is the
+   consent; `contract.propose` is in the default allow list), keeps at most
+   5 proposals per teammate waiting, and shows each as a Team pane card.
+   Accepting fetches the base, checks it out into
+   `~/.deck/contracts/<peer>-*` as a new repository, and starts a thread
+   there with the chosen agent and the brief as its task, in the configured
+   mode. When the task ends, the receiver captures a capsule against the
+   base, shares it with the requester alone, and sends `contract.status`
+   and `contract.result` through the outbox. The requester fetches the
+   capsule, records it on the task and finishes the task, which tells the
+   agent that asked. The summary is redacted and capped at 4 KB and shown
+   as the teammate's words, not instructions. Not done: cancelling a
+   contract from the requester's side, a timeout for a proposal no one
+   answers, a person proposing from the UI, and the `ContractSafe` flag
+   (the contract runs as an ordinary thread the person watches).
 5. **Shared threads.** First a read-only mirror (`history.read`, paged,
    only threads the owner marks shared). Then *join*: a teammate's messages
    enter the owner's thread through an attributed FIFO queue
@@ -306,8 +330,9 @@ Each phase is one or two PRs and useful alone.
 6. **Peer plumbing and presence** (done). Chat over live links, outbox,
    rich `peer.status`, `team.read`/`team.post`. `Manager.Subscribe` moves
    to phase 8.
-7. **Code contracts.** `contract.*`, confirmation card, remote worktree
-   runs, capsule results, federated task board, `peer/agent` owners.
+7. **Code contracts** (done). `contract.*`, confirmation card, remote
+   runs on a copy of the tree, capsule results, federated task board,
+   `peer/agent` owners.
 8. **Shared threads.** Mirror, then join with roles and attributed queue.
 9. **Reach and ops.** Deck-as-relay, `vsh` and ops contracts, `deck serve`.
 10. **Review and memory.** The `review` stage with cross-kind reviewers;

@@ -52,6 +52,11 @@ type ManagerOptions struct {
 	// Local, with a nil Handler, is what peer.status tells of this Deck's
 	// work (presence.go).
 	Local Local
+	// Granted, with SubStore, also serves a peer the objects a contract
+	// shares with it alone (contract.go).
+	Granted func(peer string, id sub.ID) bool
+	// Extra, with a nil Handler, wraps the default handler with more ops.
+	Extra func(Handler) Handler
 }
 
 // Manager runs the peer link for one Deck: the listener when
@@ -141,7 +146,7 @@ func NewManager(o ManagerOptions) (*Manager, error) {
 		}
 		m.o.Handler = sh
 		if o.SubStore != nil {
-			sh := &SubHandler{Base: m.o.Handler, Store: o.SubStore}
+			sh := &SubHandler{Base: m.o.Handler, Store: o.SubStore, Granted: o.Granted}
 			if o.Team != nil {
 				sh.OnRequest = func(from Caller, id sub.ID, served bool) { o.Team.AddRequest(from.Name, id, served) }
 			}
@@ -149,6 +154,9 @@ func NewManager(o ManagerOptions) (*Manager, error) {
 		}
 		if o.Team != nil {
 			m.o.Handler = &TeamHandler{Base: m.o.Handler, Team: o.Team}
+		}
+		if o.Extra != nil {
+			m.o.Handler = o.Extra(m.o.Handler)
 		}
 	}
 	return m, nil

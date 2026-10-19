@@ -24,12 +24,9 @@ import (
 // Closure is every object a capsule (with its chain) needs to be verified,
 // merged and applied elsewhere: the capsules, and each file's manifest and
 // chunks before and after. The base snapshot is not included; applying never
-// needs it.
+// needs it. For a snapshot id it is the snapshot, and each file's manifest
+// and chunks: what restoring it elsewhere needs.
 func (s *Store) Closure(id ID) ([]ID, error) {
-	chain, err := s.Chain(id)
-	if err != nil {
-		return nil, err
-	}
 	seen := map[ID]bool{}
 	var out []ID
 	add := func(i ID) {
@@ -37,6 +34,39 @@ func (s *Store) Closure(id ID) ([]ID, error) {
 			seen[i] = true
 			out = append(out, i)
 		}
+	}
+	addFile := func(f ID) error {
+		if f == "" || seen[f] {
+			return nil
+		}
+		add(f)
+		chunks, err := s.Chunks(f)
+		if err != nil {
+			return err
+		}
+		for _, ch := range chunks {
+			add(ch)
+		}
+		return nil
+	}
+	chain, err := s.Chain(id)
+	if err != nil {
+		snap, serr := s.Snapshot(id)
+		if serr != nil {
+			return nil, err
+		}
+		add(id)
+		paths := make([]string, 0, len(snap.Files))
+		for p := range snap.Files {
+			paths = append(paths, p)
+		}
+		sort.Strings(paths)
+		for _, p := range paths {
+			if err := addFile(snap.Files[p].File); err != nil {
+				return nil, err
+			}
+		}
+		return out, nil
 	}
 	for c := id; c != ""; {
 		add(c)
@@ -49,16 +79,8 @@ func (s *Store) Closure(id ID) ([]ID, error) {
 	for _, c := range chain {
 		for _, o := range c.Ops {
 			for _, f := range []ID{o.Before, o.After} {
-				if f == "" || seen[f] {
-					continue
-				}
-				add(f)
-				chunks, err := s.Chunks(f)
-				if err != nil {
+				if err := addFile(f); err != nil {
 					return nil, err
-				}
-				for _, ch := range chunks {
-					add(ch)
 				}
 			}
 		}

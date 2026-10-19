@@ -109,6 +109,10 @@ func (f *fakePeerLink) Pin(r peer.PinRequest) error {
 	f.pinned = append(f.pinned, r)
 	return nil
 }
+func (f *fakePeerLink) AnswerContract(name, id string, accept bool, agent string) error {
+	f.record("AnswerContract")
+	return nil
+}
 
 func (f *fakePeerLink) called(call string) bool {
 	f.mu.Lock()

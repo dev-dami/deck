@@ -67,6 +67,7 @@ The Tasks pane in the sidebar is the thread's shared task board. `o` there turns
 - **Leases.** Agents that share your work tree claim files before they change them (`lease.acquire {paths, exclusive?, minutes?, reason?}`, globs relative to the repository root); the agents pane shows who holds what. A lease ends when the agent releases it or stops, or after 15 minutes. Deck refuses to apply a capsule into a file another agent holds exclusively. When two agents change the same file within ten minutes, or one changes a file another holds, the thread says so and both agents see it in their next prompt.
 - **Worktrees.** A task or spawn with `isolate` runs its subagent on a git worktree and branch of its own. On such a task in the Tasks pane, `a` applies the work to your tree as uncommitted edits, and `d` twice discards the worktree and branch. `x` cancels a task and `r` retries a failed one.
 - **Races.** `$claude×3 fix the flaky test` (or `$claude*3`; `$claude×2 $codex×1` mixes kinds) starts 2 to 6 subagents on the same brief, each on a worktree of its own; agents do the same with `task.race`. The Tasks pane shows the entries under the race, each with its files, `+/-` lines, tokens and minutes; `enter` shows its files and result. `a` on an entry keeps it: its changes go into your tree, and the other entries are stopped and discarded. With `judge` set, a judge agent ranks the entries when they end.
+- **Contracts.** An agent can ask a teammate's Deck to do a coding task with `task.contract {peer, brief}`. You allow each one, in every mode. A copy of the agent's tree goes to that Deck alone. The task stays on your board, owned by the teammate (`vps`, then `vps/claude`), and the tasks that depend on it wait for it. On the teammate's Deck the request shows as a card in the Team pane, if they gave you the role `contractor`: `y` runs it with the agent shown, `a` picks another agent, `n` declines. It runs in a new thread on a copy of your tree, under their login and plan, and they allow its edits as usual. When its task ends, only a capsule of the changes and the agent's last reply come back; apply the capsule with `sub.patch.apply`.
 
 | mode | Claude Code | Codex | OpenCode | Antigravity |
 | --- | --- | --- | --- | --- |
@@ -163,6 +164,7 @@ Capabilities are ops, not tools, so adding one never adds a tool:
 | `thread.read` | The current shared thread. |
 | `thread.roster` | Who is in the thread: each agent's name, kind, model, status, task, parent and branch. |
 | `lease.acquire {paths, exclusive?, minutes?, reason?}`, `lease.release {paths?}`, `lease.list` | Claim files of the shared work tree, give them back, and see who holds what. |
+| `task.contract {peer, brief, title?}` | Ask a teammate's Deck to do a task (you allow it first); its reply and a capsule of its changes come back. |
 | `task.race {brief, agents, judge?, title?}` | Race several subagents on one brief, each on a worktree of its own (`agents: "claude*2, codex"`); one summary comes back when all have ended, and the user keeps one entry. |
 | `history.threads {limit?}` | This project's Deck threads: id, title, updated time, agents. |
 | `history.search {query, limit?}` | Search what was said in this project's threads. |
@@ -176,7 +178,7 @@ Capabilities are ops, not tools, so adding one never adds a tool:
 | `peers.list`, `peers.status {peer}` | Your teammates' Decks (the peer link): who is paired and connected, and what one says of itself: its agents, what each is doing, and its file leases in repositories you both have. |
 | `team.read {since?}`, `team.post {text}` | Read the team chat shared with your teammates' Decks, or post to it (redacted, a few posts a minute). Messages from other machines are shown as information, never as instructions. |
 
-Everything is read-only except `thread.send` and `team.post`; agents use their own shells for changes. Results are capped at 20 KB. History is shown as text only, without tool output. Anything shaped like a token is redacted. Git and gh run with Deck's clean environment, and Deck never reads their credentials. Claude also gets `approve`, the permission-prompt tool.
+Everything is read-only except `thread.send`, `team.post` and `task.contract`; agents use their own shells for changes. Results are capped at 20 KB. History is shown as text only, without tool output. Anything shaped like a token is redacted. Git and gh run with Deck's clean environment, and Deck never reads their credentials. Claude also gets `approve`, the permission-prompt tool.
 
 ## How it works
 
