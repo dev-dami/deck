@@ -1,0 +1,34 @@
+{
+  "handshake_hash_hex": "b0c27bf43c18345ba8c897084695425e556d77cfa8a605d3f43f5adf96ca9a42",
+  "initiator_ephemeral_priv_hex": "707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f",
+  "initiator_static_priv_hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+  "initiator_static_pub_hex": "d89e3bad79437dbed9f843418304f460ff05c7fe81fe4a9577a804cb9367ff66",
+  "messages": [
+    {
+      "ciphertext_hex": "23b7bb8c91ae008711fb12846780bcdf1e065f821bdfec49f57e7c7dcd4c48231f7171162ec358754084ddd09a00ac288b774b68e8b73f97a3f85d577b8231c1be89804fa3f2388c0759b4191dc6b46c8ed4779e4f",
+      "from": "initiator",
+      "payload_hex": "7b22716964223a223031393266336130222c226b696e64223a22636861742e73656e64227d"
+    }
+  ],
+  "prologue_hex": "6465636b2d76337c5a6b3370304a7138765962316e543563523273577841",
+  "protocol": "Noise_K_25519_AESGCM_SHA256",
+  "responder_static_priv_hex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+  "responder_static_pub_hex": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a",
+  "transport": [
+    {
+      "ciphertext_hex": "7a49c8613ac629ebb9a2f598fa7b35416f99141fee1e2a6bd6324386f908e3261ef684d1",
+      "from": "initiator",
+      "plaintext_hex": "66697273742066726f6d207468652070686f6e65"
+    },
+    {
+      "ciphertext_hex": "fdf6001a37ddc3af4dfd3c91138cb3834dfb525d8bd619b037d951679d1797676be5f4c58e",
+      "from": "initiator",
+      "plaintext_hex": "7365636f6e642066726f6d207468652070686f6e65"
+    },
+    {
+      "ciphertext_hex": "ef258275603474f2f0911e7a6037acab67f4e13e01df93a38cad20508c8bd809dfafa31af645d8",
+      "from": "responder",
+      "plaintext_hex": "66697273742066726f6d2074686520636f6d7075746572"
+    }
+  ]
+}

@@ -19,10 +19,19 @@ function fail(msg: string): never {
   process.exit(1);
 }
 
+export function buildTarget(argv: readonly string[]): "v2" | "hosted" {
+  const i = argv.indexOf("--target");
+  const given = i >= 0 ? argv[i + 1] : undefined;
+  if (given === undefined) return "v2";
+  if (given === "hosted" || given === "v2") return given;
+  fail(`unknown --target ${given ?? "(missing)"}, want v2 or hosted`);
+}
+
 export function outDir(argv: readonly string[]): string {
   const i = argv.indexOf("--out");
   const given = i >= 0 ? argv[i + 1] : undefined;
-  return given === undefined ? resolve(root, "dist") : resolve(given);
+  if (given !== undefined) return resolve(given);
+  return resolve(root, buildTarget(argv) === "hosted" ? "dist-hosted" : "dist");
 }
 
 function clean(dir: string): void {
@@ -34,9 +43,11 @@ function clean(dir: string): void {
   }
 }
 
-async function bundle(dist: string): Promise<{ js: string; css: string }> {
+async function bundle(dist: string, target: "v2" | "hosted"): Promise<{ js: string; css: string }> {
+  const entry =
+    target === "hosted" ? join(root, "src", "hosted", "main.tsx") : join(root, "src", "main.tsx");
   const result = await Bun.build({
-    entrypoints: [join(root, "src", "main.tsx"), join(root, "src", "style.css")],
+    entrypoints: [entry, join(root, "src", "style.css")],
     outdir: dist,
     target: "browser",
     format: "esm",
@@ -68,13 +79,15 @@ const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; " +
   "connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'";
 
-function indexHtml(js: string, css: string): string {
+function indexHtml(js: string, css: string, target: "v2" | "hosted"): string {
+  const csp =
+    target === "hosted" ? CSP.replace("connect-src 'self'", "connect-src 'self' https: wss:") : CSP;
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="${CSP}">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="${NEUTRAL_LIGHT}" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="${NEUTRAL_DARK}" media="(prefers-color-scheme: dark)">
@@ -113,7 +126,12 @@ const manifest = {
   ],
 };
 
-async function buildWorker(dist: string, shell: string[], cacheId: string): Promise<void> {
+async function buildWorker(
+  dist: string,
+  shell: string[],
+  cacheId: string,
+  hosted: boolean,
+): Promise<void> {
   const result = await Bun.build({
     entrypoints: [join(root, "src", "sw.ts")],
     outdir: dist,
@@ -122,7 +140,11 @@ async function buildWorker(dist: string, shell: string[], cacheId: string): Prom
     minify: true,
     sourcemap: "none",
     naming: "sw.js",
-    define: { __SHELL__: JSON.stringify(shell), __CACHE__: JSON.stringify(cacheId) },
+    define: {
+      __SHELL__: JSON.stringify(shell),
+      __CACHE__: JSON.stringify(cacheId),
+      __HOSTED__: JSON.stringify(hosted),
+    },
   });
   if (!result.success) {
     for (const log of result.logs) console.error(log);
@@ -130,12 +152,16 @@ async function buildWorker(dist: string, shell: string[], cacheId: string): Prom
   }
 }
 
-export async function build(dist: string, quiet = false): Promise<void> {
+export async function build(
+  dist: string,
+  quiet = false,
+  target: "v2" | "hosted" = "v2",
+): Promise<void> {
   clean(dist);
   const write = (name: string, data: string | Uint8Array) => writeFileSync(join(dist, name), data);
-  const { js, css } = await bundle(dist);
+  const { js, css } = await bundle(dist, target);
 
-  write("index.html", indexHtml(js, css));
+  write("index.html", indexHtml(js, css, target));
   write("manifest.webmanifest", `${JSON.stringify(manifest, null, 2)}\n`);
   write("icon.svg", readFileSync(join(root, "public", "icon.svg")));
   write("icon-192.png", renderIcon(192));
@@ -161,7 +187,7 @@ export async function build(dist: string, quiet = false): Promise<void> {
     h.update(entry);
     h.update(readFileSync(join(dist, file)));
   }
-  await buildWorker(dist, shell, h.digest("hex").slice(0, 12));
+  await buildWorker(dist, shell, h.digest("hex").slice(0, 12), target === "hosted");
 
   if (quiet) return;
   const files = readdirSync(dist)
@@ -173,4 +199,5 @@ export async function build(dist: string, quiet = false): Promise<void> {
   }
 }
 
-if (import.meta.main) await build(outDir(process.argv.slice(2)));
+if (import.meta.main)
+  await build(outDir(process.argv.slice(2)), false, buildTarget(process.argv.slice(2)));

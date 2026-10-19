@@ -1,0 +1,55 @@
+{
+  "device": {
+    "expires_at": "2027-01-12T09:30:00Z",
+    "id": "dev_7a1f",
+    "name": "Pixel 9"
+  },
+  "epoch": "ep_c41d9e",
+  "replay": true,
+  "server": {
+    "allow_yolo": false,
+    "cid": "Zk3p0Jq8vYb1nT5cR2sWxA",
+    "features": [
+      "images",
+      "inbox",
+      "offline_queue",
+      "passkey",
+      "push_e2e"
+    ],
+    "kinds": [
+      "claude",
+      "codex"
+    ],
+    "name": "erioluwa-pc",
+    "projects": [
+      {
+        "id": "prj_a1",
+        "name": "deck",
+        "online": true
+      },
+      {
+        "id": "prj_b2",
+        "name": "site",
+        "online": false
+      }
+    ],
+    "protocol": 3,
+    "push_key": "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM",
+    "theme": {
+      "kinds": {
+        "claude": {
+          "mark": "✻",
+          "tint": "#d97757"
+        }
+      },
+      "palette": {
+        "accent": "#7dd3c0",
+        "bg_base": "#111416",
+        "fg_base": "#e6e8ea"
+      }
+    },
+    "tunnel": "",
+    "version": "0.9.0"
+  },
+  "t": "welcome"
+}

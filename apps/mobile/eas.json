@@ -1,0 +1,19 @@
+{
+  "cli": { "version": ">= 18.0.0", "appVersionSource": "local" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": { "buildType": "apk" }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": { "buildType": "apk" }
+    },
+    "lan": {
+      "extends": "preview",
+      "env": { "EXPO_PUBLIC_DECK_LAN_HTTP": "1" }
+    },
+    "production": { "android": { "buildType": "app-bundle" } }
+  }
+}

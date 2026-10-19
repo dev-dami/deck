@@ -1,0 +1,37 @@
+{
+  "note": "challenge = SHA-256(\"deck-assert-v1\" || 0x00 cid || 0x00 device_id || 0x00 action_digest || 0x00 nonce); a queued action uses its qid as the nonce.",
+  "cases": [
+    {
+      "cid": "Zk3p0Jq8vYb1nT5cR2sWxA",
+      "device_id": "dev_7a1f",
+      "action_digest": "9f2c1a7e5b3d48c0a6e1f7d2b9c4a835e0d1f6b7c2a94e8d3b5f0a1c7e6d2b48",
+      "nonce": "n_5c1d8e2f6a10b7",
+      "challenge_hex": "5a6aacdd81d412589f1da042769d1b7ba340a2aff727dd0102f5e7cde5b24713",
+      "challenge_b64url": "Wmqs3YHUElifHaBCdp0be6NAoq_3J90BAvXnzeWyRxM"
+    },
+    {
+      "cid": "Zk3p0Jq8vYb1nT5cR2sWxA",
+      "device_id": "dev_7a1f",
+      "action_digest": "9f2c1a7e5b3d48c0a6e1f7d2b9c4a835e0d1f6b7c2a94e8d3b5f0a1c7e6d2b48",
+      "nonce": "0192f3a0-7b1c-7d2e-9a44-5c1d8e2f6a11",
+      "challenge_hex": "e55f7ca3db278cb7a3fab93d7de36dcd3884241c79abd151b1d9bf58da7e3dd1",
+      "challenge_b64url": "5V98o9snjLej-rk9feNtzTiEJBx5q9FRsdm_WNp-PdE"
+    },
+    {
+      "cid": "c",
+      "device_id": "d",
+      "action_digest": "x",
+      "nonce": "",
+      "challenge_hex": "eea44db12850ef8e2abce6b9d2f14e6734752f42ea77912278aefc36302bd17d",
+      "challenge_b64url": "7qRNsShQ744qvOa50vFOZzR1L0Lqd5EieK78NjAr0X0"
+    },
+    {
+      "cid": "Zk3p0Jq8vYb1nT5cR2sWxA",
+      "device_id": "dev_é",
+      "action_digest": "9f2c1a7e5b3d48c0a6e1f7d2b9c4a835e0d1f6b7c2a94e8d3b5f0a1c7e6d2b48",
+      "nonce": "n",
+      "challenge_hex": "f8035d2d56bf30d39c2f676c551025a856d1f919c1ee18264e94d60c5a98d0c2",
+      "challenge_b64url": "-ANdLVa_MNOcL2dsVRAlqFbR-RnB7hgmTpTWDFqY0MI"
+    }
+  ]
+}

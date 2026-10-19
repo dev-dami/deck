@@ -1,0 +1,54 @@
+{
+  "note": "Each frame is split into chunks of at most 65518 plaintext bytes, each prefixed with a flag byte (0 more, 1 last), then Noise-encrypted; keys follow noise_ik.json.",
+  "frames": [
+    {
+      "from": "initiator",
+      "plaintext_length": 36,
+      "plaintext_sha256_hex": "f755c885facead07d1541968961f1cc0ef49f273a3a43e71fd9574234b7525d9",
+      "chunk_ciphertext_lengths": [
+        53
+      ],
+      "chunk_ciphertext_sha256_hex": [
+        "f2bf71dd9ce19386c8188afa507c20ebb559324287ea2513dffbdf1b3e66d298"
+      ]
+    },
+    {
+      "from": "initiator",
+      "plaintext_length": 0,
+      "plaintext_sha256_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "chunk_ciphertext_lengths": [
+        17
+      ],
+      "chunk_ciphertext_sha256_hex": [
+        "82da7a37d3f868e42d4eff07f22582a9a7b61e6c180491c36693653d4e530f31"
+      ]
+    },
+    {
+      "from": "initiator",
+      "plaintext_length": 140000,
+      "plaintext_sha256_hex": "d53d9d55273120dd87cd69c7948a367b250c5f93689e400ce0d63eb00504a083",
+      "chunk_ciphertext_lengths": [
+        65535,
+        65535,
+        8981
+      ],
+      "chunk_ciphertext_sha256_hex": [
+        "0031cb4af4aeb27edb40eac917e678a4634c88f510c3e6fda7615955affef9c6",
+        "a808931789fb8d7a196aa2e1e7bd9879cb3f1b8546d2d9686019ce3d0077ddbd",
+        "6fba481942c8deae21cbd888095b0c89e1d8696efe0a6c2e26ff30f53aa17d41"
+      ]
+    },
+    {
+      "from": "responder",
+      "plaintext_length": 37,
+      "plaintext_sha256_hex": "d46e7b54d8fdcdba81c20f2f89d987485eca333c6c428b2b2f3f56a975a4e1c4",
+      "chunk_ciphertext_lengths": [
+        54
+      ],
+      "chunk_ciphertext_sha256_hex": [
+        "bb404a9d69e204093c50adcb5594acf7d448da1a394c4687ec7e5275deb50465"
+      ]
+    }
+  ],
+  "rekey_every": 10000
+}

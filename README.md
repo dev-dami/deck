@@ -79,6 +79,16 @@ Two Decks that cannot reach each other (both behind NAT) can link through a thir
 
 `deck serve` runs Deck with no terminal UI, for a server that teammates link to: the agents and the peer link, and the phone remote with `--remote`. On SIGTERM it refuses new contracts and shared-thread posts, gives running agents `--drain` (default 2m) to end their turns, waits up to 15 seconds for queued messages to go out, and then stops; a second signal stops it at once. `docs/examples/deck-serve.service` (systemd) and `docs/examples/deck-serve.container` (podman) are starting points. `deck serve` has `~/.deck/threads` to itself: it will not start while a terminal Deck runs, and a terminal Deck will not start while it runs (the lock file is `~/.deck/threads/deck.lock`). Terminal Decks still share the store with each other.
 
+### Phone remote control
+
+Type **`/remote`** to start local Wi-Fi access and show a pairing QR in one
+step. Type **`/link`** for a fresh QR to link another phone; services start if
+needed. The panel includes status, new QR, phone disconnection and stop actions.
+The native app can start conversations in shared projects. Local Wi-Fi setup
+uses the LAN APK and Node.js/relay runtime from this checkout; see
+[the setup guide](docs/mobile-lan.md). For hosted access, see
+[deployment](docs/mobile-deploy.md) and [the native client](apps/mobile/README.md).
+
 | mode | Claude Code | Codex | OpenCode | Antigravity |
 | --- | --- | --- | --- | --- |
 | plan | `--permission-mode plan` | read-only sandbox | its plan agent | `--mode plan` |

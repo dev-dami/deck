@@ -1,0 +1,15 @@
+node_modules/
+.expo/
+dist/
+android/
+ios/
+*.apk
+*.aab
+*.ipa
+*.jks
+*.keystore
+credentials.json
+.env
+.env.*
+!.env.example
+expo-env.d.ts

@@ -30,21 +30,22 @@ export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-const str: Decoder<string> = (v) => (typeof v === "string" ? v : null);
-const int: Decoder<number> = (v) => (typeof v === "number" && Number.isInteger(v) ? v : null);
-const bool: Decoder<boolean> = (v) => (typeof v === "boolean" ? v : null);
+export const str: Decoder<string> = (v) => (typeof v === "string" ? v : null);
+export const int: Decoder<number> = (v) =>
+  typeof v === "number" && Number.isInteger(v) ? v : null;
+export const bool: Decoder<boolean> = (v) => (typeof v === "boolean" ? v : null);
 // Timestamps are RFC 3339 strings; the client keeps them as strings.
-const time: Decoder<string> = (v) =>
+export const time: Decoder<string> = (v) =>
   typeof v === "string" && !Number.isNaN(Date.parse(v)) ? v : null;
 // Raw JSON (req params, ev payloads): anything but undefined.
-const raw: Decoder<unknown> = (v) => (v === undefined ? null : v);
+export const raw: Decoder<unknown> = (v) => (v === undefined ? null : v);
 
-function oneOf<const T extends readonly string[]>(values: T): Decoder<T[number]> {
+export function oneOf<const T extends readonly string[]>(values: T): Decoder<T[number]> {
   return (v) => (typeof v === "string" && values.includes(v) ? (v as T[number]) : null);
 }
 
 // Go marshals a nil slice or map as null; the client reads that as empty.
-function list<T>(d: Decoder<T>): Decoder<T[]> {
+export function list<T>(d: Decoder<T>): Decoder<T[]> {
   return (v) => {
     if (v === null) return [];
     if (!Array.isArray(v)) return null;
@@ -79,7 +80,7 @@ type Opt<S extends Shape> = { [K in keyof S]?: Out<S[K]> };
 
 // An object with the required fields of `req` and the optional ones of
 // `opt`. Optional fields are those Go writes with omitempty: absent or typed.
-function object<R extends Shape, O extends Shape>(req: R, opt: O): Decoder<Req<R> & Opt<O>> {
+export function object<R extends Shape, O extends Shape>(req: R, opt: O): Decoder<Req<R> & Opt<O>> {
   return (v) => {
     if (!isRecord(v)) return null;
     const out: Record<string, unknown> = {};

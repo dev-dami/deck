@@ -115,12 +115,16 @@ func (s *Server) AddHost(h string) {
 // times are on disk by then.
 func (s *Server) Run(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
-	var wg sync.WaitGroup
-	defer wg.Wait()
-	defer cancel() // also stops the helpers when the backend closes
+	var workers sync.WaitGroup
+	defer func() {
+		// Auth.Run performs a final disk write on cancellation. Join it before
+		// returning ownership of the data directory to the caller.
+		cancel()
+		workers.Wait()
+	}()
 	events := s.be.Events(ctx)
-	wg.Go(func() { s.store.Run(ctx) })
-	wg.Go(func() { s.limits.Run(ctx) })
+	workers.Go(func() { s.store.Run(ctx) })
+	workers.Go(func() { s.limits.Run(ctx) })
 	// The watch's baseline comes first, so no change slips between it and
 	// the snapshot.
 	s.store.Watch(ctx, s.notifyChanged)

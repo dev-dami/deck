@@ -1,0 +1,40 @@
+{
+  "handshake_hash_hex": "f7979d283c3fd3f0ab9d6255daaffcee1a23f902464c2c051cc10ffd9cbb138b",
+  "initiator_ephemeral_priv_hex": "707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f",
+  "initiator_static_priv_hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+  "initiator_static_pub_hex": "d89e3bad79437dbed9f843418304f460ff05c7fe81fe4a9577a804cb9367ff66",
+  "messages": [
+    {
+      "ciphertext_hex": "23b7bb8c91ae008711fb12846780bcdf1e065f821bdfec49f57e7c7dcd4c48239143bc72ad730cc92fc9852109e310988b9bf98f6cf611a96b333cb1ba325c436147c4ac1b928704fc923f0e805598cba780e10eef89ad0c53b58efbd94c2c4fd88b5c888263686946d9b7b47443d14caf9537",
+      "from": "initiator",
+      "payload_hex": "7b2274223a2268656c6c6f222c2276223a337d"
+    },
+    {
+      "ciphertext_hex": "605a725d2a4adfeeb1a29e17edd621c1b7593ee8cdbc44ac6c4ab6e2f805d23caaef19d28886aa1bcb48a5bbaa765f24bc5c4f4f9d6ba0b692cc6b7dfc616d",
+      "from": "responder",
+      "payload_hex": "7b2274223a2277656c636f6d65227d"
+    }
+  ],
+  "prologue_hex": "6465636b2d76337c5a6b3370304a7138765962316e543563523273577841",
+  "protocol": "Noise_IK_25519_AESGCM_SHA256",
+  "responder_ephemeral_priv_hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+  "responder_static_priv_hex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+  "responder_static_pub_hex": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a",
+  "transport": [
+    {
+      "ciphertext_hex": "d24b3c83069ad97ef821c88e7941d4c092f58392c6170e999996ef1c255ed6d7fa0b34d8",
+      "from": "initiator",
+      "plaintext_hex": "66697273742066726f6d207468652070686f6e65"
+    },
+    {
+      "ciphertext_hex": "627cc25d228942a8fffdf5c87b87dd257d6efbe4ce69d042f5e45079ff5460381042ce290d",
+      "from": "initiator",
+      "plaintext_hex": "7365636f6e642066726f6d207468652070686f6e65"
+    },
+    {
+      "ciphertext_hex": "b82e4f636b5d0a86bd22d8d724adb68a72f5ebf092abf7bd4c4043b8450ad01a318edc4796a9d1",
+      "from": "responder",
+      "plaintext_hex": "66697273742066726f6d2074686520636f6d7075746572"
+    }
+  ]
+}

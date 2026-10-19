@@ -85,6 +85,10 @@ func TestFixtures(t *testing.T) {
 	}
 	for _, file := range files {
 		name := strings.TrimSuffix(filepath.Base(file), ".json")
+		// v3, relay and Noise fixtures are checked by their own tests.
+		if strings.HasPrefix(name, "v3_") || strings.HasPrefix(name, "relay_") || strings.HasPrefix(name, "noise_") || strings.HasPrefix(name, "assert_") || strings.HasPrefix(name, "pair_") || strings.HasPrefix(name, "hostauth_") || strings.HasPrefix(name, "push_") {
+			continue
+		}
 		if !seen[name] {
 			t.Errorf("testdata/%s.json is not registered in Fixtures()", name)
 		}

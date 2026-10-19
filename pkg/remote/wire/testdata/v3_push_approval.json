@@ -1,0 +1,11 @@
+{
+  "approval_id": "apr_51e9",
+  "at": "2026-10-14T21:04:00Z",
+  "body": "Run: go test ./...",
+  "digest": "9f2c1a7e5b3d48c0a6e1f7d2b9c4a835e0d1f6b7c2a94e8d3b5f0a1c7e6d2b48",
+  "kind": "approval",
+  "pj": "prj_a1",
+  "session_id": "ses_8f2a",
+  "tier": "normal",
+  "title": "deck"
+}
