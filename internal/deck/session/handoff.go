@@ -211,7 +211,7 @@ func (m *Manager) notifyCreator(t *thread, tk store.Task, by string) {
 	}
 	t.mu.Lock()
 	cr := t.ancestor(tk.Creator)
-	if cr == nil || cr.id == tk.Owner {
+	if cr == nil || cr.id == tk.Owner || t.raceOf(tk) >= 0 { // a race reports once, for all its entries
 		t.mu.Unlock()
 		return
 	}

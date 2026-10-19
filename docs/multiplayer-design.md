@@ -1,7 +1,7 @@
 # Deck multiplayer: many agents, subagent trees, peers
 
-Status: proposal. Phases 1 to 4 (§3, §4, §5, §7) are implemented, except
-the review stage; the rest is not. It builds on what
+Status: proposal. Phases 1 to 5 (§3 to §7) are implemented, except the
+review stage; the rest is not. It builds on what
 already ships (verified against `main` at 4508226): spawn and tasks
 (`session/spawn.go`, `tasks.go`, `sched.go`), SUB capsules (`docs/sub.md`),
 and the peer link (`internal/deck/peer`: SSH transport, pairing, pinning,
@@ -151,15 +151,37 @@ All in `session/leases.go`.
   ask mode that would mean matching each edit approval against leases),
   and lease paths in `peer.status` (phase 6).
 
-## 6. Races (best of N)
+## 6. Races (best of N) — implemented
 
-`$claude×3 fix the flaky test` or `$claude,codex,opencode …` spawns N
-isolated subagents with the same brief. Each finishes by capturing a
-capsule. A compare view lists them: files, `+/-`, the tests each ran and
-their results, tokens and time. `enter` diffs one, `a` applies it, and the
-others are discarded. Optionally a judge agent writes a ranking.
-Worktrees and capsules already exist, so this is mostly UI and one op
-(`task.race {brief, agents}`).
+All in `session/race.go`.
+
+- **Starting one.** The user writes `$claude×3 fix the flaky test` (`*`
+  does for `×`; `$claude×2 $codex×1 …` mixes kinds). Agents call
+  `task.race {brief, agents: "claude*2, codex", judge?, title?}`, which
+  needs orchestration on. A race has 2 to 6 entries and needs a git
+  repository. All of Spawn's limits are checked for every entry before the
+  first starts.
+- **The board.** A race is a task (`Race`) that Deck owns. Its entries are
+  its subtasks, one for each subagent, each isolated on a worktree with one
+  attempt. Each entry's brief says that it is a race, that it works alone,
+  and that it ends with what it changed and which tests it ran.
+- **Results.** When an entry ends, Deck records what its worktree changed
+  (`Diff`: files, added and removed lines). When the last one ends, the
+  race is done with one line for each entry (status, diff, tokens,
+  minutes, result). That summary goes to whoever started the race; the
+  entries do not report one by one. With a `judge` kind, a judge subagent
+  then gets each worktree's path and base (`git -C <path> diff <base>`) and
+  ranks the entries in a task of its own, after the summary.
+- **Compare and keep.** In the Tasks pane the entries sit under their race,
+  each with "2 files +10 -3 · 12k tokens · 4 min"; `enter` shows its files
+  and result. `a` on an entry that has ended keeps it (`KeepEntry`): its
+  changes are applied to your tree, the entries still running are
+  cancelled, the other entries' worktrees are discarded, and the race says
+  which one was kept.
+- Not done: an inline diff in the compare view (the entry's branch and
+  files are shown; open the branch to read it), test results other than
+  what the entry reports, and keeping an entry from an agent (the summary
+  goes to the agent; the user keeps one).
 
 ## 7. Budgets, brakes and plan-aware routing — implemented
 
@@ -269,7 +291,8 @@ Each phase is one or two PRs and useful alone.
 4. **Leases and overlap** (done). `lease.*`, apply-time enforcement,
    overlap notices that reach the agents' next prompts, leases in the agents
    pane; capsule-bound approvals already held.
-5. **Races.** `task.race`, `$kind×N`, compare view, optional judge.
+5. **Races** (done). `task.race`, `$kind×N`, entries compared in the Tasks
+   pane, keep one, optional judge.
 6. **Peer plumbing and presence.** Supervisor-connection chat, outbox,
    `Manager.Subscribe`, rich `peer.status`, `team.read`/`team.post`.
 7. **Code contracts.** `contract.*`, confirmation card, remote worktree

@@ -74,32 +74,11 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		return SpawnResult{}, fmt.Errorf("session: unknown agent kind %q", kind)
 	}
 
-	t.mu.Lock()
-	var parent *agentState
-	switch {
-	case parentID != "" && !t.orchestrate:
-		t.mu.Unlock()
-		return SpawnResult{}, errors.New("session: orchestration is off for this thread; the user turns it on")
-	case parentID != "":
-		if parent = t.member(parentID); parent == nil {
-			t.mu.Unlock()
-			return SpawnResult{}, fmt.Errorf("session: no member %q", parentID)
-		}
+	parent, depth, err := m.spawnRoom(t, parentID, 1)
+	if err != nil {
+		return SpawnResult{}, err
 	}
-	depth := t.depth(parent) + 1
-	live, all := len(t.children(parentID)), t.liveSubagents()
-	t.mu.Unlock()
-	// The per-member cap is for members; the scheduler (parentID "") is
-	// bounded by MaxParallel, and the user by their own judgement. The
-	// thread's cap holds for everyone.
-	switch maxD := m.maxDepth(); {
-	case depth > maxD:
-		return SpawnResult{}, fmt.Errorf("session: %w: subagents go %d levels deep and you are at the last; do the work yourself", errChildLimit, maxD)
-	case parentID != "" && live >= m.maxChildren():
-		return SpawnResult{}, fmt.Errorf("session: %w: %d of yours are already running; wait for one to finish", errChildLimit, live)
-	case all >= m.maxSubagents():
-		return SpawnResult{}, fmt.Errorf("session: %w: %d are running in this thread; wait for one to finish", errChildLimit, all)
-	case parentID != "" && !m.takeWork(t):
+	if parentID != "" && !m.takeWork(t) {
 		return SpawnResult{}, fmt.Errorf("session: %w", errPaused)
 	}
 	if routed != "" {
@@ -191,6 +170,39 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		res.Branch = wt.Branch
 	}
 	return res, nil
+}
+
+// spawnRoom checks that parentID ("" for the user and the scheduler) may
+// start n more subagents in t, and returns the parent and the depth they
+// would have.
+func (m *Manager) spawnRoom(t *thread, parentID string, n int) (*agentState, int, error) {
+	t.mu.Lock()
+	var parent *agentState
+	switch {
+	case parentID != "" && !t.orchestrate:
+		t.mu.Unlock()
+		return nil, 0, errors.New("session: orchestration is off for this thread; the user turns it on")
+	case parentID != "":
+		if parent = t.member(parentID); parent == nil {
+			t.mu.Unlock()
+			return nil, 0, fmt.Errorf("session: no member %q", parentID)
+		}
+	}
+	depth := t.depth(parent) + 1
+	live, all := len(t.children(parentID)), t.liveSubagents()
+	t.mu.Unlock()
+	// The per-member cap is for members; the scheduler (parentID "") is
+	// bounded by MaxParallel, and the user by their own judgement. The
+	// thread's cap holds for everyone.
+	switch maxD := m.maxDepth(); {
+	case depth > maxD:
+		return nil, 0, fmt.Errorf("session: %w: subagents go %d levels deep and you are at the last; do the work yourself", errChildLimit, maxD)
+	case parentID != "" && live+n > m.maxChildren():
+		return nil, 0, fmt.Errorf("session: %w: %d of yours are already running; wait for one to finish", errChildLimit, live)
+	case all+n > m.maxSubagents():
+		return nil, 0, fmt.Errorf("session: %w: %d are running in this thread; wait for one to finish", errChildLimit, all)
+	}
+	return parent, depth, nil
 }
 
 // placeNote tells a new subagent where it sits: who started it, for which

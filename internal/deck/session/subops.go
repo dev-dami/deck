@@ -640,8 +640,12 @@ func (m *Manager) seedWorktree(t *thread, a *agentState, wt *store.Worktree, tas
 	ctx, cancel := context.WithTimeout(m.ctx, gitTimeout)
 	defer cancel()
 	if base, err := s.Snap(ctx, wt.Path); err == nil {
+		// A new value, not an edit of wt: saved metadata may share wt and be
+		// read by the store's writer.
+		seeded := *wt
+		seeded.SubBase, seeded.SubParent = string(base), string(parent)
 		a.mu.Lock()
-		wt.SubBase, wt.SubParent = string(base), string(parent) // wt is a.worktree
+		a.worktree = &seeded
 		a.subBase, a.subParent = "", ""
 		a.mu.Unlock()
 	}

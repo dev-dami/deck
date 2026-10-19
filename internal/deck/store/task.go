@@ -113,6 +113,14 @@ type Task struct {
 	Capsules []string `json:"capsules,omitempty"`
 	// Isolate runs the task's subagent on its own git worktree.
 	Isolate bool `json:"isolate,omitempty"`
+	// Race marks a race: each of its subtasks (its entries) does the whole
+	// brief on a worktree of its own, and the user keeps one. Judge is the
+	// kind of agent that ranks the entries when they end; "" is none.
+	Race  bool   `json:"race,omitempty"`
+	Judge string `json:"judge,omitempty"`
+	// Diff is what a race entry changed on its worktree, recorded when it
+	// ended.
+	Diff *DiffStat `json:"diff,omitempty"`
 	// Kind, Model and Effort pick the agent a subagent for the task runs; ""
 	// is the default agent and the configured model and effort.
 	Kind   string `json:"kind,omitempty"`
@@ -138,6 +146,14 @@ type Budget struct {
 	Tokens  int     `json:"tokens,omitempty"`
 	CostUSD float64 `json:"cost_usd,omitempty"`
 	Minutes int     `json:"minutes,omitempty"`
+}
+
+// DiffStat is the size of a change: the files it touches and its added and
+// removed lines.
+type DiffStat struct {
+	Files   []string `json:"files,omitempty"`
+	Added   int      `json:"added,omitempty"`
+	Removed int      `json:"removed,omitempty"`
 }
 
 // Spend is what was spent on a task: tokens (input and output) and the cost

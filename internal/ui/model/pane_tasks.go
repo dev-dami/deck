@@ -21,7 +21,8 @@ import (
 // failed or blocked one, and o turns orchestration on or off: the scheduler
 // then runs ready tasks, and members may start subagents. On a task whose
 // subagent worked on a worktree of its own, a applies that work to your tree
-// and d (twice) discards it.
+// and d (twice) discards it. A race's entries sit under it, each with what it
+// changed, spent and took; a on an entry keeps it and discards the others.
 
 func init() { registerPane(paneTasks, func() pane { return &tasksPane{} }) }
 
@@ -121,10 +122,10 @@ func (p *tasksPane) worktree(m *UI, sel string, discard bool) (bool, tea.Cmd) {
 	if !ok || !isW || m.session == nil {
 		return false, nil
 	}
-	branch := ""
+	branch, entry := "", false
 	for _, t := range m.boardReport().Tasks {
 		if t.ID == id {
-			branch = t.Branch
+			branch, entry = t.Branch, t.Entry
 		}
 	}
 	if branch == "" {
@@ -137,6 +138,8 @@ func (p *tasksPane) worktree(m *UI, sel string, discard bool) (bool, tea.Cmd) {
 			switch {
 			case err != nil:
 				return util.NewErrorMsg(err)
+			case entry:
+				return util.NewInfoMsg(fmt.Sprintf("Kept %s: applied %d files from %s and discarded the other entries", id, len(files), branch))
 			case len(files) == 0:
 				return util.NewInfoMsg(branch + " has nothing to apply")
 			}
@@ -241,6 +244,12 @@ func taskLines(m *UI, t workspace.BoardTask, width int, now time.Time, frame str
 	if t.Owner != "" {
 		right = muted.Render(t.Owner)
 	}
+	if t.Entry {
+		// Under its race, which has the title: the entry is who ran it and
+		// how it compares.
+		left = "  " + taskGlyph(t.Status, frame) + " " + muted.Render(t.ID) + " " + t.Owner
+		right = muted.Render(t.Stats)
+	}
 	lines := []string{spread(left, right, width)}
 	if !open {
 		return lines
@@ -264,10 +273,16 @@ func taskLines(m *UI, t workspace.BoardTask, width int, now time.Time, frame str
 		info += " · after " + strings.Join(t.Deps, ",")
 	}
 	add("", info, 2)
-	add("", t.Brief, 4)
+	if !t.Entry { // an entry's brief is its race's
+		add("", t.Brief, 4)
+	}
 	add("→ ", t.Result, 6)
 	add("✗ ", t.Error, 4)
-	if t.Branch != "" {
+	add("files ", strings.Join(t.Files, ", "), 3)
+	switch {
+	case t.Branch != "" && t.Entry:
+		add("branch ", t.Branch+" · a keep this one · d discard", 1)
+	case t.Branch != "":
 		add("branch ", t.Branch+" · a apply · d discard", 1)
 	}
 	return lines

@@ -64,6 +64,8 @@ type thread struct {
 	// tasks is the shared task board (tasks.go), guarded by mu.
 	tasks []store.Task
 	sched schedState // one scheduler pass at a time (sched.go)
+	// raced holds the races already reported or kept (race.go).
+	raced map[string]bool
 	// orchestrate is set while members may spawn subagents and the scheduler
 	// runs the board (spawn.go, sched.go).
 	orchestrate bool

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"strconv"
 	"strings"
 )
 
@@ -74,6 +75,9 @@ type Addressing struct {
 	Body string
 	// Unknown lists $names that matched no member and no kind.
 	Unknown []string
+	// Race has one kind for each entry of a race the leading mentions ask for
+	// ("$claude×2 $codex×1 fix it"; "*" does for "×").
+	Race []string
 }
 
 // Mentioned reports whether the text addressed anyone explicitly.
@@ -139,6 +143,15 @@ func ParseAddressing(text string, members []MemberRef, kinds []string) Addressin
 			p++
 		}
 		if p < len(text) && text[p] == Sigil {
+			if name, n, end, ok := scanRace(text, p); ok {
+				if kind, isKind := kindOf(name, kinds); isKind {
+					for range n {
+						out.Race = append(out.Race, kind)
+					}
+					p = end
+					continue
+				}
+			}
 			if name, end, ok := scanMention(text, p); ok && add(name) {
 				p = end
 				continue
@@ -243,6 +256,33 @@ func scanMention(s string, i int) (name string, end int, ok bool) {
 		}
 	}
 	return s[i+1 : j], j, true
+}
+
+// scanRace reads "$claude×3" (or "$claude*3") at s[i]: a name and how many
+// race, followed by what may follow a mention.
+func scanRace(s string, i int) (name string, n, end int, ok bool) {
+	j := i + 1
+	for j < len(s) && isNameByte(s[j]) {
+		j++
+	}
+	name = s[i+1 : j]
+	switch {
+	case strings.HasPrefix(s[j:], "×"):
+		j += len("×")
+	case j < len(s) && s[j] == suffixAll:
+		j++
+	default:
+		return "", 0, 0, false
+	}
+	k := j
+	for k < len(s) && k-j < 2 && s[k] >= '0' && s[k] <= '9' {
+		k++
+	}
+	if k == j || k < len(s) && !isSpaceByte(s[k]) && s[k] != ',' && s[k] != ':' {
+		return "", 0, 0, false
+	}
+	n, _ = strconv.Atoi(s[j:k])
+	return name, n, k, n > 0 && name != ""
 }
 
 // clauseStart reports whether the '$' at s[i] begins a clause.

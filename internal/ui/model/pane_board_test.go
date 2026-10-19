@@ -164,3 +164,34 @@ func TestTasksPaneAppliesAndDiscardsWorktrees(t *testing.T) {
 	handled, _ = p.key(m, tea.KeyPressMsg{Code: 'a', Text: "a"})
 	require.False(t, handled)
 }
+
+func TestTasksPaneComparesRaceEntriesAndKeepsOne(t *testing.T) {
+	t.Parallel()
+	w := &worktreeWorkspace{boardWorkspace: boardWorkspace{board: workspace.BoardReport{Tasks: []workspace.BoardTask{
+		{ID: "t1", Title: "race: fix the flaky test", Status: "done", Owner: "deck", Race: true},
+		{ID: "t2", Title: "fix the flaky test", Status: "done", Owner: "claude2", Entry: true, Branch: "deck/ab-claude2",
+			Stats: "2 files +10 -3 · 12k tokens · 4 min", Files: []string{"a.go", "a_test.go"}, Result: "go test passes"},
+		{ID: "t3", Title: "fix the flaky test", Status: "failed", Owner: "codex2", Entry: true, Error: "gave up"},
+	}}}}
+	m := newBoardUI(&w.boardWorkspace)
+	m.com = common.DefaultCommon(w)
+	p := paneFactories[paneTasks]()
+
+	out := ansi.Strip(p.render(m, 80, 10, true))
+	require.Contains(t, out, "race: fix the flaky test")
+	require.Contains(t, out, "  ✓ t2 claude2")
+	require.Contains(t, out, "2 files +10 -3 · 12k tokens · 4 min")
+	require.Contains(t, out, "  ✗ t3 codex2")
+
+	// enter on t2 shows its files and what a does there.
+	p.key(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
+	p.key(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	out = ansi.Strip(p.render(m, 80, 20, true))
+	require.Contains(t, out, "files a.go, a_test.go")
+	require.Contains(t, out, "a keep this one")
+
+	handled, cmd := p.key(m, tea.KeyPressMsg{Code: 'a', Text: "a"})
+	require.True(t, handled)
+	require.Contains(t, fmt.Sprint(cmd()), "Kept t2: applied 2 files from deck/ab-claude2 and discarded the other entries")
+	require.Equal(t, []string{"t2"}, w.applied)
+}

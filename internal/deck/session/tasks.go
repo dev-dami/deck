@@ -46,6 +46,9 @@ type TaskSpec struct {
 	Kind, Model, Effort string
 	// Budget is what it may spend (brakes.go); nil is the config's.
 	Budget *store.Budget
+	// Race and Judge make it a race (race.go).
+	Race  bool
+	Judge string
 	// Claimed creates the task already running (its first attempt under way),
 	// so the scheduler never hands out a task its creator is about to work on
 	// or hand over itself.
@@ -72,6 +75,11 @@ func cloneTask(t store.Task) store.Task {
 	if t.Run != nil {
 		r := *t.Run
 		t.Run = &r
+	}
+	if t.Diff != nil {
+		d := *t.Diff
+		d.Files = append([]string(nil), d.Files...)
+		t.Diff = &d
 	}
 	return t
 }
@@ -238,11 +246,11 @@ func (m *Manager) addTask(t *thread, sp TaskSpec) (store.Task, error) {
 		ID: id, Title: clipText(title, 120), Brief: clipText(sp.Brief, maxTaskText),
 		Creator: sp.Creator, Owner: sp.Owner, Parent: canonicalID(t.tasks, sp.Parent), Deps: deps,
 		Status: store.TaskPending, OnFail: sp.OnFail, MaxAttempts: sp.MaxAttempts, Contract: sp.Contract, Isolate: sp.Isolate,
-		Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort, Budget: sp.Budget,
+		Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort, Budget: sp.Budget, Race: sp.Race, Judge: sp.Judge,
 		Created: now, Updated: now,
 	}
 	if sp.Claimed {
-		task.Status, task.Attempts = store.TaskRunning, 1
+		task.Status, task.Attempts, task.Started = store.TaskRunning, 1, now
 	}
 	t.tasks = append(t.tasks, task)
 	changes := []taskChange{m.logTaskLocked(t, task, "", sp.Creator, "")}
@@ -407,6 +415,7 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 	for _, id := range kids {
 		_, _ = m.moveTask(t, id, store.TaskCancelled, by, "its parent task was cancelled", nil)
 	}
+	m.raceStep(t, out)
 	return out, nil
 }
 
@@ -555,6 +564,16 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 			out += " (it works on branch " + res.Branch + ")"
 		}
 		return out, nil
+	case "task.race":
+		kinds, err := parseEntries(str("agents"), m.Kinds())
+		if err != nil {
+			return "", err
+		}
+		res, err := m.Race(t.id, me, RaceSpec{Title: str("title"), Brief: str("brief"), Kinds: kinds, Judge: strings.ToLower(str("judge"))})
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("started race %s with entries %s; when all have ended, a summary comes back to you, and the user keeps one", res.TaskID, strings.Join(res.Entries, ", ")), nil
 	case "task.done", "task.fail", "task.cancel":
 		id := str("id")
 		if err := b.mayFinish(id); err != nil {

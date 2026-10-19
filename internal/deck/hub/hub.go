@@ -46,6 +46,7 @@ const (
 	OpTaskCancel = "task.cancel"
 	OpTaskSteer  = "task.steer"
 	OpAgentSpawn = "agent.spawn"
+	OpTaskRace   = "task.race"
 	// OpThreadRoster lists the thread's members; it goes through the
 	// TaskBoard, which knows the caller's thread.
 	OpThreadRoster = "thread.roster"
@@ -239,6 +240,10 @@ func init() {
 				{Name: "model", Type: tString}, {Name: "effort", Type: tString}, {Name: "task", Type: tString, Desc: "bind it to an existing task id instead of making one"}, {Name: "isolate", Type: tBool},
 				{Name: "expect", Type: tString}, {Name: "done_when", Type: tString}, {Name: "explicit_done", Type: tBool}},
 			run: opTask(OpAgentSpawn)},
+		{Name: OpTaskRace, Desc: "Race several helpers on one brief (needs orchestration on): each works on a git worktree of its own, and when all have ended you get one summary of them (files, +/- lines, tokens, time, result). The user keeps one entry; the others are discarded. judge names an agent kind that then ranks them.",
+			Args: []Arg{{Name: "brief", Type: tString, Required: true}, {Name: "agents", Type: tString, Required: true, Desc: "one kind for each entry, with counts: \"claude*2, codex\""},
+				{Name: "title", Type: tString}, {Name: "judge", Type: tString, Desc: "agent kind that ranks the entries"}},
+			run: opTask(OpTaskRace)},
 		{Name: "sub.snapshot.create", Desc: "Record your work tree as a SUB snapshot (content-addressed; unchanged files cost nothing). It becomes your base for sub.patch.capture.",
 			run: opSub("sub.snapshot.create")},
 		{Name: "sub.snapshot.inspect", Desc: "List a SUB snapshot's files (optionally those under a path prefix).",
