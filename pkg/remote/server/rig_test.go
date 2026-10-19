@@ -66,6 +66,7 @@ func newRig(t *testing.T) *rig {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { defer close(done); srv.Run(ctx) }()
+	// Wait for Run so its final flush lands before TempDir is removed.
 	t.Cleanup(func() { cancel(); ts.Close(); <-done })
 	return &rig{t: t, be: be, store: store, srv: srv, ts: ts, clk: clk}
 }

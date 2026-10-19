@@ -111,7 +111,8 @@ func (s *Server) AddHost(h string) {
 
 // Run feeds backend events to the hub, prunes the limits, flushes
 // last-seen times and applies device changes made by any process, until
-// ctx ends.
+// ctx ends. It returns only after the store's final flush, so last-seen
+// times are on disk by then.
 func (s *Server) Run(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	var workers sync.WaitGroup
