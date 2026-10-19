@@ -14,6 +14,7 @@ import {
 import { HOST_METHODS, hostChannel, RPC_EVENT_CHANNEL, SOCKET_EVENT_CHANNEL } from "../shared/bridge";
 import { RENDERER_CSP } from "../shared/csp";
 import { findDeck, loadService, RpcDecks } from "./decks";
+import { enginePath } from "./shellPath";
 import { callHost, createHost } from "./host";
 import { LinkHost } from "./link";
 import { RecentFolders } from "./recent";
@@ -151,7 +152,13 @@ async function main(): Promise<void> {
   const deckPath = findDeck(app.isPackaged ? join(process.resourcesPath, "bin") : join(app.getAppPath(), "bin"));
   // build copies proto/deck/v1/deck.proto to dist/app/proto.
   const Service = loadService(join(__dirname, "..", "proto", "deck.proto"));
-  const decks = new RpcDecks(deckPath, Service, (id, ev) => win?.webContents.send(RPC_EVENT_CHANNEL, id, ev));
+  const decks = new RpcDecks(
+    deckPath,
+    Service,
+    (id, ev) => win?.webContents.send(RPC_EVENT_CHANNEL, id, ev),
+    // Started now, ready by the first open: the login shell's PATH.
+    enginePath(),
+  );
   const reset = () => {
     links.closeAll();
     decks.cancelStreams();

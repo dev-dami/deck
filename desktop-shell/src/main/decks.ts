@@ -167,7 +167,9 @@ function readHandshake(child: ChildProcess): Promise<Handshake | string> {
     }
     child.on("error", (e) => finish(`Could not run deck: ${e.message}`));
     child.on("exit", () => {
-      const tail = stderr.trim().split("\n").slice(-2).join(" ");
+      // Deck's own error line, not the usage text cobra prints after it.
+      const lines = stderr.trim().split("\n");
+      const tail = (lines.find((l) => l.startsWith("Error: "))?.slice("Error: ".length) ?? lines.slice(-2).join(" ")).trim();
       finish(`Deck stopped before it was ready${tail === "" ? "." : `: ${tail}`}`);
     });
   });
@@ -185,6 +187,8 @@ export class RpcDecks {
     private readonly deck: string | null,
     private readonly Service: DeckClientCtor,
     private readonly emit: Emit,
+    // The PATH the engine runs with (shellPath.ts); the app's own when unset.
+    private readonly path: Promise<string> | null = null,
   ) {}
 
   async open(dir: string): Promise<OpenOutcome> {
@@ -196,8 +200,10 @@ export class RpcDecks {
     }
     for (const o of this.open_.values()) if (o.deck.dir === dir) return { ok: true, deck: o.deck };
 
+    const env = this.path === null ? process.env : { ...process.env, PATH: await this.path };
     const child = spawn(this.deck, ["serve", "--rpc"], {
       cwd: dir,
+      env,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
