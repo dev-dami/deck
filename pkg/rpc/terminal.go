@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"os"
 	"sync"
 
 	"google.golang.org/grpc/codes"
@@ -28,7 +27,8 @@ const (
 	subscriberBuffer = 256
 )
 
-// pty is a started shell on a pseudo-terminal (terminal_unix.go).
+// pty is a started shell on a pseudo-terminal (terminal_unix.go,
+// terminal_windows.go).
 type pty interface {
 	io.ReadWriter
 	Resize(cols, rows uint16) error
@@ -286,12 +286,4 @@ func follow(t *terminal, c chan []byte, stream deckv1.Deck_TerminalOutputServer)
 			}
 		}
 	}
-}
-
-// shell is the user's login shell, or a POSIX one.
-func shell() string {
-	if sh := os.Getenv("SHELL"); sh != "" {
-		return sh
-	}
-	return "/bin/sh"
 }

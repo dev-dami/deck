@@ -152,10 +152,15 @@ func TestUsage(t *testing.T) {
 }
 
 func TestTerminal(t *testing.T) {
+	// The shell prints its folder (pwd, or the prompt on Windows), works out
+	// hi-3 and exits with 7.
+	script := "pwd; echo hi-$((1+2)); exit 7\n"
 	if runtime.GOOS == "windows" {
-		t.Skip("no pty on Windows")
+		// PowerShell or cmd; both echo and both take exit 7.
+		script = "echo hi-3\r\nexit 7\r\n"
+	} else {
+		t.Setenv("SHELL", "/bin/sh")
 	}
-	t.Setenv("SHELL", "/bin/sh")
 	dir := t.TempDir()
 	c := projectRig(t, dir, nil)
 	ctx := ctxT(t)
@@ -170,7 +175,7 @@ func TestTerminal(t *testing.T) {
 	if _, err := c.TerminalResize(ctx, &deckv1.TerminalSize{TerminalId: ref.GetTerminalId(), Cols: 120, Rows: 40}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.TerminalWrite(ctx, &deckv1.TerminalInput{TerminalId: ref.GetTerminalId(), Data: []byte("pwd; echo hi-$((1+2)); exit 7\n")}); err != nil {
+	if _, err := c.TerminalWrite(ctx, &deckv1.TerminalInput{TerminalId: ref.GetTerminalId(), Data: []byte(script)}); err != nil {
 		t.Fatal(err)
 	}
 	var seen strings.Builder
@@ -208,5 +213,31 @@ func TestTerminal(t *testing.T) {
 	}
 	if _, err := c.TerminalWrite(context.Background(), &deckv1.TerminalInput{TerminalId: ref.GetTerminalId(), Data: []byte("x")}); err == nil {
 		t.Fatal("a closed terminal must be gone")
+	}
+}
+
+func TestTerminalCloseEndsAShell(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Setenv("SHELL", "/bin/sh")
+	}
+	c := projectRig(t, t.TempDir(), nil)
+	ctx := ctxT(t)
+	ref, err := c.TerminalOpen(ctx, &deckv1.TerminalOpenRequest{Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.TerminalOutput(ctx, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.TerminalClose(ctx, ref); err != nil {
+		t.Fatal(err)
+	}
+	// The stream ends (with or without an exit chunk) instead of hanging.
+	for {
+		ch, err := out.Recv()
+		if err != nil || ch.GetExited() {
+			return
+		}
 	}
 }

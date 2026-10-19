@@ -45,6 +45,12 @@ jobs:
       - name: go build
         run: go build ./...
 
+      # The full suite runs on Linux only; this checks the ConPTY terminal
+      # driver on a real Windows console.
+      - name: terminal (Windows)
+        if: runner.os == 'Windows'
+        run: go test -run "^TestTerminal" ./pkg/rpc/
+
   # Live tests are gated on DECK_LIVE and skip here.
   test:
     name: test (ubuntu-latest)

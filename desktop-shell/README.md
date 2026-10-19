@@ -114,7 +114,10 @@ T3's providers.
   one there. The header's git menu commits (all changes, with a message),
   pushes, pulls, and opens or merges a pull request (through `gh`).
 - **Terminal** (Ctrl+J). A drawer of shells in the project folder. Tabs keep
-  running while the drawer is hidden; drag its top edge to resize it.
+  running while the drawer is hidden; drag its top edge to resize it. The
+  shell is `$SHELL` on macOS and Linux. On Windows (10 version 1809 or
+  later, through ConPTY) it is PowerShell 7, else Windows PowerShell, else
+  the command prompt.
 - **Usage.** Tokens and cost per day, agent and model, the plan's limits,
   a heat map of the last 20 weeks and when you work.
 - **Settings** (the gear, or Ctrl+,): send key, Yolo confirmation, folding,

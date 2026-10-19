@@ -55,3 +55,11 @@ func startPTY(dir string, cols, rows uint16) (pty, error) {
 	}
 	return &unixPTY{f: f, cmd: cmd}, nil
 }
+
+// shell is the user's login shell, or a POSIX one.
+func shell() string {
+	if sh := os.Getenv("SHELL"); sh != "" {
+		return sh
+	}
+	return "/bin/sh"
+}
