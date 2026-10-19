@@ -14,7 +14,9 @@
 // (shell, exec, pty-req, subsystem, env, ...) and every other global request
 // (tcpip-forward, ...) is refused. Connections, handshakes, idle time, channel
 // count, in-flight calls and message size are capped, and repeated failed
-// handshakes lock an IP out with growing delays.
+// handshakes lock an IP out with growing delays. The one exception is
+// relaying (relay.go): on a Manager's direct links, relay@deck and
+// relayed@deck are taken under the relay rules, and refused otherwise.
 //
 // Protocol on an mcp channel: newline-delimited JSON-RPC 2.0 (one message per
 // line, at most DefaultMaxMessage bytes; a longer or malformed line gets an

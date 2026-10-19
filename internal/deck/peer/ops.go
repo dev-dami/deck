@@ -170,8 +170,9 @@ func removePeer(dir, cfgPath, name string) (unpinned, unconfigured bool, cfgErr,
 	return unpinned, unconfigured, cfgErr, nil
 }
 
-// RemoveRemote drops name from the config file's remotes. removed reports
-// whether the file changed.
+// RemoveRemote drops name from the config file's remotes, and as the relay
+// of any other remote: one with no address left is no longer dialed.
+// removed reports whether the file changed.
 func RemoveRemote(path, name string) (removed bool, err error) {
 	return config.UpdatePeers(path, func(p *config.Peers) bool {
 		out := p.Remote[:0]
@@ -179,6 +180,9 @@ func RemoveRemote(path, name string) (removed bool, err error) {
 			if r.Name == name {
 				removed = true
 				continue
+			}
+			if r.Via == name {
+				r.Via, r.Dial = "", r.Dial && r.Addr != ""
 			}
 			out = append(out, r)
 		}
