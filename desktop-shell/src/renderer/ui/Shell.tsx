@@ -35,8 +35,31 @@ import { RightPanel } from "./RightPanel";
 import { SettingsPage } from "./Settings";
 import { TerminalDrawer } from "./Terminal";
 import { UsagePage } from "./Usage";
-import { type ProjectEntry, Sidebar } from "./Sidebar";
+import { type ForeignThread, type ProjectEntry, Sidebar } from "./Sidebar";
+import type { Landing } from "./App";
+import type { OpenProject } from "../openProjects";
 import { Timeline } from "./Timeline";
+
+// The threads of the other open projects, kept current from their stores.
+function useForeignThreads(others: OpenProject[]): ForeignThread[] {
+  const [rows, setRows] = useState<ForeignThread[]>([]);
+  useEffect(() => {
+    let lists: unknown[] = [];
+    const read = () => {
+      const next = others.map((o) => o.c.store.state.sessions);
+      // Only a changed session list makes new rows.
+      if (next.length === lists.length && next.every((l, i) => l === lists[i])) return;
+      lists = next;
+      setRows(others.flatMap((o) => o.c.store.state.sessions.map((s) => ({ source: o.source, project: o.name, s, c: o.c }))));
+    };
+    read();
+    const offs = others.map((o) => o.c.store.subscribe(read));
+    return () => {
+      for (const off of offs) off();
+    };
+  }, [others]);
+  return rows;
+}
 
 // The draft of the composer on the new-thread screen, before a thread exists.
 const NEW = "";
@@ -119,20 +142,32 @@ function MoreMenu({
 // where names the Deck: host:port for a paired one, the folder for a local one.
 export function Shell({
   c,
+  name,
   where,
   transport,
+  others,
+  landing,
   projects,
   onProject,
   onAddProject,
+  onCloseProject,
   onDisconnect,
+  onConnect,
 }: {
   c: DeckClient;
+  name: string;
   where: string;
   transport: string;
+  // The other open projects, whose threads the sidebar lists too.
+  others: OpenProject[];
+  // Where to land: a thread of this project, the new-thread screen, or null.
+  landing: Landing;
   projects: ProjectEntry[];
-  onProject: (key: string) => Promise<string | null>;
+  onProject: (source: string, to?: Landing) => Promise<string | null>;
   onAddProject: () => Promise<string | null>;
+  onCloseProject: (source: string) => void;
   onDisconnect: () => void;
+  onConnect: () => void;
 }) {
   const state = useSyncExternalStore(c.store.subscribe, () => c.store.state);
   const prefs = usePrefs();
@@ -148,6 +183,13 @@ export function Shell({
   const [changes, setChanges] = useState<{ id: string; files: ChangedFile[] } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mac = useMemo(isMac, []);
+  const foreign = useForeignThreads(others);
+
+  // A thread picked in another project, or its new-thread screen.
+  useEffect(() => {
+    if (landing === "new") dispatch({ type: "open", id: null });
+    else if (landing !== null) dispatch({ type: "open", id: landing });
+  }, [landing]);
 
   const open: Session | undefined = state.sessions.find((s) => s.id === ui.openId);
   const sid = open?.id ?? null;
@@ -313,7 +355,9 @@ export function Shell({
   const online = state.link === "online";
   const roster = sid === null ? [] : (state.roster[sid] ?? []);
   const kinds = state.server?.kinds ?? [];
-  const project = state.server?.project ?? "";
+  const source = projects.find((p) => p.active)?.key ?? "";
+  // A folder is named after itself; a paired Deck by what it says.
+  const project = source.startsWith("folder:") ? name : state.server?.project || name;
   const pending = sid === null ? [] : state.approvals.filter((a) => a.session_id === sid);
   const queued = sid === null ? 0 : (state.queue[sid]?.length ?? 0);
   const imagesOn = state.server?.features.includes("images") ?? false;
@@ -369,7 +413,7 @@ export function Shell({
         <ol className="m-0 flex min-w-0 list-none items-center gap-3 p-0 text-sm">
           <li className="flex min-w-0 shrink items-center gap-1.5 text-muted-foreground">
             <Folder className="size-3.5 shrink-0" />
-            <span className="max-w-40 truncate">{project || "Deck"}</span>
+            <span className="project max-w-40 truncate">{project || "Deck"}</span>
           </li>
           <li aria-hidden className="text-muted-foreground/50">
             /
@@ -497,6 +541,11 @@ export function Shell({
       {sidebar && (
         <Sidebar
           project={project}
+          source={source}
+          foreign={foreign}
+          onForeign={(src, id) => void onProject(src, id).then((e) => e !== null && toast(e))}
+          onCloseProject={onCloseProject}
+          onConnect={onConnect}
           link={state.link}
           sessions={state.sessions}
           openId={ui.openId}
@@ -517,7 +566,7 @@ export function Shell({
           onSettings={(section) => dispatch({ type: "settings", section })}
           usage={ui.usage}
           onUsage={() => dispatch({ type: "usage", open: !ui.usage })}
-          onProject={(k) => void onProject(k).then((e) => e !== null && toast(e))}
+          onProject={(k) => void onProject(k, "new").then((e) => e !== null && toast(e))}
           onAddProject={() => void addProject()}
           onCollapse={() => setSidebar(false)}
         />

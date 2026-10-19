@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { basename, delimiter, join } from "node:path";
 import { _electron as electron, type ElectronApplication, expect, test } from "@playwright/test";
 import { FAKE_DECK } from "../bridge";
 import { FakeRpcDeck } from "../fake-grpc";
@@ -43,7 +43,7 @@ test("over rpc: the app reopens the last folder and runs two agents", async () =
   try {
     const win = await app.firstWindow();
     await win.setViewportSize({ width: 1360, height: 860 });
-    await expect(win.locator(".project")).toHaveText("deck");
+    await expect(win.locator(".project")).toHaveText(basename(folder));
     await expect(win.locator(".link")).toHaveText("Connected");
     const text = await win.evaluate(() => document.body.innerText);
     expect(text).not.toContain(fake.token);

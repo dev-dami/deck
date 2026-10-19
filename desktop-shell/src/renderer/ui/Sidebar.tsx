@@ -2,7 +2,7 @@ import type { Session, Theme } from "@web/protocol";
 import type { Link } from "@web/state";
 import { sessionTitle } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
-import { relativeTime } from "@web/time";
+import { relativeTime, toMillis } from "@web/time";
 import {
   ArrowLeft,
   BarChart3,
@@ -23,24 +23,37 @@ import {
   SquarePen,
   Trash2,
   Unplug,
+  X,
 } from "lucide-react";
 import { useState } from "react";
+import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
 import type { RowStyle } from "../prefs";
-import { splitSettled, type ThreadStatus, threadStatus } from "../threads";
+import { SETTLE_AFTER_MS, type ThreadStatus, threadStatus } from "../threads";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
 import { MenuItem, MenuLabel, MenuSeparator, Popover } from "./kit/menu";
 import { modKey } from "./keys";
 
-// A project the sidebar can switch to: a recent folder or a paired Deck.
+// A project the sidebar knows: a recent folder or a paired Deck. key is its
+// source ("folder:<dir>", "paired:<id>").
 export interface ProjectEntry {
   key: string;
   name: string;
   detail: string;
   kind: "folder" | "paired";
+  // The current project: its thread is open.
   active: boolean;
+  open: boolean;
+}
+
+// A thread of another open project, with that project's client.
+export interface ForeignThread {
+  source: string;
+  project: string;
+  s: Session;
+  c: DeckClient;
 }
 
 const STATUS: Record<Exclude<ThreadStatus, null>, { label: string; icon: LucideIcon; className: string }> = {
@@ -251,67 +264,114 @@ function HeaderButton({ label, onClick, children }: { label: string; onClick: ()
   );
 }
 
-function ProjectSwitcher({
-  project,
+// The project filter, after T3 Code's "All projects" control: the threads
+// of every open project or of one, the projects to open and close, and the
+// ways to add one.
+function ProjectFilter({
+  filter,
   projects,
+  onFilter,
   onProject,
+  onCloseProject,
   onAddProject,
   onPair,
 }: {
-  project: string;
+  filter: string | null;
   projects: ProjectEntry[];
-  onProject: (key: string) => void;
+  onFilter: (source: string | null) => void;
+  onProject: (source: string) => void;
+  onCloseProject: (source: string) => void;
   onAddProject: () => void;
   onPair: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const folders = projects.filter((p) => p.kind === "folder");
-  const paired = projects.filter((p) => p.kind === "paired");
-  const row = (p: ProjectEntry) => (
-    <MenuItem
-      key={p.key}
-      className="items-start"
-      onClick={() => {
-        setOpen(false);
-        if (!p.active) onProject(p.key);
-      }}
-    >
-      {p.kind === "folder" ? <Folder className="mt-0.5" /> : <Laptop className="mt-0.5" />}
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate">{p.name}</span>
-        <span className="truncate text-2xs text-muted-foreground">{p.detail}</span>
-      </span>
-      {p.active && <Check className="mt-0.5" />}
-    </MenuItem>
-  );
+  const openOnes = projects.filter((p) => p.open);
+  const rest = projects.filter((p) => !p.open);
+  const shown = projects.find((p) => p.key === filter);
+  const icon = (p: ProjectEntry) => (p.kind === "folder" ? <Folder className="mt-0.5" /> : <Laptop className="mt-0.5" />);
   return (
     <div className="flex items-center gap-1">
       <Popover
         open={open}
         onClose={() => setOpen(false)}
         label="Projects"
-        className="w-64"
+        className="w-72"
         trigger={
           <button
             type="button"
-            className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 text-left font-medium text-muted-foreground text-sm hover:bg-sidebar-row-hover hover:text-foreground"
+            className="project-filter flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 text-left font-medium text-muted-foreground text-sm hover:bg-sidebar-row-hover hover:text-foreground"
             aria-expanded={open}
+            aria-label="Projects"
             onClick={() => setOpen((o) => !o)}
           >
             <Folder className="size-4 shrink-0" />
-            <span className="project min-w-0 flex-1 truncate text-foreground">{project || "Deck"}</span>
+            <span className="min-w-0 flex-1 truncate text-foreground">{shown === undefined ? "All projects" : shown.name}</span>
             <ChevronDown className="size-3.5 shrink-0" />
           </button>
         }
       >
-        <MenuLabel>Recent projects</MenuLabel>
-        {folders.length === 0 && <p className="px-2 py-1 text-muted-foreground text-xs">No folders yet.</p>}
-        {folders.map(row)}
-        {paired.length > 0 && (
+        <MenuItem
+          onClick={() => {
+            setOpen(false);
+            onFilter(null);
+          }}
+        >
+          <Folder />
+          <span className="flex-1">All projects</span>
+          {filter === null && <Check />}
+        </MenuItem>
+        {openOnes.length > 0 && <MenuLabel>Open</MenuLabel>}
+        {openOnes.map((p) => (
+          <div key={p.key} className="group flex items-center">
+            <MenuItem
+              className="flex-1 items-start"
+              onClick={() => {
+                setOpen(false);
+                onFilter(p.key);
+              }}
+            >
+              {icon(p)}
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate">{p.name}</span>
+                <span className="truncate text-2xs text-muted-foreground">{p.detail}</span>
+              </span>
+              {filter === p.key && <Check className="mt-0.5" />}
+            </MenuItem>
+            <button
+              type="button"
+              aria-label={`Close ${p.name}`}
+              title="Close project"
+              className="mr-1 grid size-6 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100"
+              onClick={() => {
+                setOpen(false);
+                if (filter === p.key) onFilter(null);
+                onCloseProject(p.key);
+              }}
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ))}
+        {rest.length > 0 && (
           <>
             <MenuSeparator />
-            <MenuLabel>Paired Decks</MenuLabel>
-            {paired.map(row)}
+            <MenuLabel>Recent</MenuLabel>
+            {rest.map((p) => (
+              <MenuItem
+                key={p.key}
+                className="items-start"
+                onClick={() => {
+                  setOpen(false);
+                  onProject(p.key);
+                }}
+              >
+                {icon(p)}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{p.name}</span>
+                  <span className="truncate text-2xs text-muted-foreground">{p.detail}</span>
+                </span>
+              </MenuItem>
+            ))}
           </>
         )}
         <MenuSeparator />
@@ -349,6 +409,11 @@ const linkDot: Record<Link, string> = {
 
 export function Sidebar({
   project,
+  source,
+  foreign,
+  onForeign,
+  onCloseProject,
+  onConnect,
   link,
   sessions,
   openId,
@@ -374,6 +439,13 @@ export function Sidebar({
   onUsage,
 }: {
   project: string;
+  // The current project's source, and the threads of the other open ones.
+  source: string;
+  foreign: ForeignThread[];
+  onForeign: (source: string, id: string) => void;
+  onCloseProject: (source: string) => void;
+  // The screen to add a folder or pair with a Deck.
+  onConnect: () => void;
   link: Link;
   sessions: Session[];
   openId: string | null;
@@ -399,23 +471,42 @@ export function Sidebar({
   onUsage: () => void;
 }) {
   const [showSettled, setShowSettled] = useState(false);
-  const { live, settled } = splitSettled(sessions, now, openId, unread);
-  const row = (s: Session) => (
-    <ThreadRow
-      key={s.id}
-      s={s}
-      project={project || "Deck"}
-      active={s.id === openId && settings === null}
-      unread={unread[s.id] === true}
-      now={now}
-      variant={rows}
-      kinds={kindsOf(s.id)}
-      theme={theme}
-      onOpen={() => onOpen(s.id)}
-      onRename={(t) => onRename(s.id, t)}
-      onDelete={() => onDelete(s.id)}
-    />
-  );
+  const [filter, setFilter] = useState<string | null>(null);
+  // Every open project's threads, newest first, as T3 Code lists them.
+  type Item = { s: Session; source: string; project: string; foreign: ForeignThread | null };
+  const items: Item[] = [
+    ...sessions.map((s) => ({ s, source, project: project || "Deck", foreign: null })),
+    ...foreign.map((f) => ({ s: f.s, source: f.source, project: f.project, foreign: f })),
+  ]
+    .filter((x) => filter === null || x.source === filter)
+    .sort((a, b) => toMillis(b.s.updated_at) - toMillis(a.s.updated_at));
+  const live: Item[] = [];
+  const settled: Item[] = [];
+  for (const x of items) {
+    const mine = x.foreign === null;
+    const holds = x.s.busy || x.s.pending > 0 || (mine && (unread[x.s.id] === true || x.s.id === openId));
+    (now - toMillis(x.s.updated_at) > SETTLE_AFTER_MS && !holds ? settled : live).push(x);
+  }
+  const row = (x: Item) => {
+    const s = x.s;
+    const f = x.foreign;
+    return (
+      <ThreadRow
+        key={`${x.source}/${s.id}`}
+        s={s}
+        project={x.project}
+        active={f === null && s.id === openId && settings === null}
+        unread={f === null && unread[s.id] === true}
+        now={now}
+        variant={rows}
+        kinds={f === null ? kindsOf(s.id) : []}
+        theme={theme}
+        onOpen={() => (f === null ? onOpen(s.id) : onForeign(f.source, s.id))}
+        onRename={(t) => void (f === null ? onRename(s.id, t) : f.c.renameSession(s.id, t))}
+        onDelete={() => void (f === null ? onDelete(s.id) : f.c.deleteSession(s.id))}
+      />
+    );
+  };
   return (
     <nav className="sidebar flex w-64 shrink-0 flex-col border-r bg-sidebar" aria-label="Threads">
       <header className={cn("brand-glow drag flex h-12 shrink-0 items-center gap-2 px-3", mac && "pl-20")}>
@@ -475,12 +566,14 @@ export function Sidebar({
                 <SquarePen />
               </HeaderButton>
             </div>
-            <ProjectSwitcher
-              project={project}
+            <ProjectFilter
+              filter={filter}
               projects={projects}
+              onFilter={setFilter}
               onProject={onProject}
+              onCloseProject={onCloseProject}
               onAddProject={onAddProject}
-              onPair={onDisconnect}
+              onPair={onConnect}
             />
           </div>
           <ul className="sessions flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
@@ -500,7 +593,7 @@ export function Sidebar({
               </li>
             )}
             {showSettled && settled.map(row)}
-            {sessions.length === 0 && (
+            {items.length === 0 && (
               <li className="flex list-none flex-col items-center gap-2 px-2 py-6 text-center text-muted-foreground/60 text-xs">
                 No threads yet
               </li>
@@ -525,7 +618,7 @@ export function Sidebar({
         <HeaderButton label="Commands" onClick={onPalette}>
           <Command />
         </HeaderButton>
-        <HeaderButton label="Switch Deck" onClick={onDisconnect}>
+        <HeaderButton label="Close project" onClick={onDisconnect}>
           <Unplug />
         </HeaderButton>
         <span className="link ml-auto flex min-w-0 items-center gap-1.5 px-1 text-2xs text-muted-foreground">

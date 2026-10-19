@@ -1,6 +1,6 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import type { TestHost } from "../bridge";
 import { FakeRpcDeck } from "../fake-grpc";
@@ -11,12 +11,15 @@ import { attachBridge } from "./harness";
 let fake: FakeRpcDeck;
 let host: TestHost;
 let dir: string;
+// Folders the picker hands back, in turn, before dir.
+let picks: string[] = [];
 
 test.beforeEach(async ({ page }) => {
   fake = await FakeRpcDeck.start({ tickMs: 250 });
   dir = mkdtempSync(join(tmpdir(), "deck-folder-"));
   process.env["DECK_FAKE_HANDSHAKE"] = fake.handshake;
-  host = await attachBridge(page, async () => dir);
+  picks = [];
+  host = await attachBridge(page, async () => picks.shift() ?? dir);
 });
 
 test.afterEach(async () => {
@@ -30,7 +33,8 @@ const composer = (page: Page) => page.getByRole("textbox", { name: "Message" });
 async function openFolder(page: Page): Promise<void> {
   await page.goto("/");
   await page.getByRole("button", { name: "Add project" }).click();
-  await expect(page.locator(".project")).toHaveText("deck");
+  // A folder is named after itself.
+  await expect(page.locator(".project")).toHaveText(basename(dir));
   // The sidebar names the project, never an address.
   await expect(page.locator(".link")).toHaveText("Connected");
 }
@@ -81,7 +85,7 @@ test("answers an approval and closes the folder", async ({ page }) => {
   await page.getByRole("button", { name: "Approve", exact: true }).click();
   await expect(page.getByText("No approvals wait for you.")).toBeVisible();
   expect(fake.deck.answered).toEqual([{ id: "apr_docs", decision: "allow" }]);
-  await page.getByRole("button", { name: "Switch Deck" }).click();
+  await page.getByRole("button", { name: "Close project" }).click();
   await expect(page.getByRole("heading", { name: "What should we work on?" })).toBeVisible();
   await expect(page.getByRole("list", { name: "Recent folders" })).toContainText(dir);
 });
@@ -154,4 +158,25 @@ test("usage: the page shows totals, agents, models and limits", async ({ page })
   await expect(usage.locator("table").first().locator("tbody tr")).toHaveCount(7);
   await usage.getByRole("button", { name: /Fix the pairing lockout/ }).click();
   await expect(page.locator(".title")).toHaveText("Fix the pairing lockout");
+});
+
+test("projects: two folders open at once, their threads in one sidebar", async ({ page }) => {
+  const second = mkdtempSync(join(tmpdir(), "deck-second-"));
+  await openFolder(page);
+  picks = [second];
+  await expect(sidebar(page).locator(".session")).toHaveCount(3);
+  await sidebar(page).getByRole("button", { name: "Add project" }).click();
+  // The new project opens on its new-thread screen; both projects' threads list.
+  await expect(page.locator(".title")).toHaveText("New thread");
+  await expect(page.locator(".project")).toHaveText(basename(second));
+  await expect(sidebar(page).locator(".session")).toHaveCount(6);
+  // A thread of the first project makes it current again.
+  const first = sidebar(page).locator(".session").filter({ hasText: basename(dir) }).filter({ hasText: "Docs pass" });
+  await first.getByRole("button", { name: "Docs pass", exact: true }).click();
+  await expect(page.locator(".project")).toHaveText(basename(dir));
+  await expect(page.locator(".title")).toHaveText("Docs pass");
+  // The filter shows one project; closing one leaves the other.
+  await sidebar(page).getByRole("button", { name: "Projects" }).click();
+  await page.getByRole("menu", { name: "Projects" }).getByRole("button", { name: `Close ${basename(second)}` }).click();
+  await expect(sidebar(page).locator(".session")).toHaveCount(3);
 });

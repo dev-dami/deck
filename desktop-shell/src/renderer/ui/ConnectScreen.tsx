@@ -1,4 +1,4 @@
-import { ChevronRight, Folder, Laptop, Link2, Loader2, Lock, Plus, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, Folder, Laptop, Link2, Loader2, Lock, Plus, X } from "lucide-react";
 import { useState } from "react";
 import type { DeckBridge, PairOutcome, SavedServer } from "../../shared/bridge";
 import { parsePairText } from "../connect";
@@ -205,6 +205,7 @@ export function ConnectScreen({
   onPaired,
   onOpen,
   onForget,
+  onBack,
 }: {
   bridge: DeckBridge;
   deck: string | null;
@@ -216,6 +217,8 @@ export function ConnectScreen({
   onPaired: (s: SavedServer) => void;
   onOpen: (s: SavedServer) => void;
   onForget: (s: SavedServer) => void;
+  // Back to the open projects, when there are some.
+  onBack?: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   // Pairing is the way in for a Deck on another computer; folders on this
@@ -229,7 +232,14 @@ export function ConnectScreen({
   };
   return (
     <main className="connect flex h-full flex-col overflow-y-auto" data-screen="connect">
-      <div className="drag h-12 shrink-0" />
+      <div className="drag flex h-12 shrink-0 items-center px-3">
+        {onBack !== undefined && (
+          <Button variant="ghost-muted" size="sm" onClick={onBack}>
+            <ArrowLeft />
+            Back to threads
+          </Button>
+        )}
+      </div>
       <div className="flex flex-1 justify-center px-6">
         <div className="connect-card flex w-full max-w-lg flex-col gap-10 pt-[8vh] pb-16">
           <div className="flex flex-col items-center gap-6 text-center">
