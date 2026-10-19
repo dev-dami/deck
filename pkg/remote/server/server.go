@@ -111,11 +111,16 @@ func (s *Server) AddHost(h string) {
 
 // Run feeds backend events to the hub, prunes the limits, flushes
 // last-seen times and applies device changes made by any process, until
-// ctx ends.
+// ctx ends. It returns only after the store's final flush, so last-seen
+// times are on disk by then.
 func (s *Server) Run(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	defer cancel() // also stops the helpers when the backend closes
 	events := s.be.Events(ctx)
-	go s.store.Run(ctx)
-	go s.limits.Run(ctx)
+	wg.Go(func() { s.store.Run(ctx) })
+	wg.Go(func() { s.limits.Run(ctx) })
 	// The watch's baseline comes first, so no change slips between it and
 	// the snapshot.
 	s.store.Watch(ctx, s.notifyChanged)
