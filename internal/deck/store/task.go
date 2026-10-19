@@ -118,12 +118,33 @@ type Task struct {
 	Kind   string `json:"kind,omitempty"`
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
+	// Budget is what the task may spend, over the config's default budget;
+	// Spent is what its owner and the owner's subagents have spent on it
+	// since Started, when it last started running.
+	Budget  *Budget   `json:"budget,omitempty"`
+	Spent   Spend     `json:"spent,omitzero"`
+	Started time.Time `json:"started,omitzero"`
 	// BlockedBy is the task whose failure blocked this one (the scheduler);
 	// RetryAt is when a failed task is tried again.
 	BlockedBy string    `json:"blocked_by,omitempty"`
 	RetryAt   time.Time `json:"retry_at,omitempty"`
 	Created   time.Time `json:"created"`
 	Updated   time.Time `json:"updated"`
+}
+
+// Budget is what a task may spend; zero fields are no limit (see the config's
+// budget for the defaults).
+type Budget struct {
+	Tokens  int     `json:"tokens,omitempty"`
+	CostUSD float64 `json:"cost_usd,omitempty"`
+	Minutes int     `json:"minutes,omitempty"`
+}
+
+// Spend is what was spent on a task: tokens (input and output) and the cost
+// the CLIs reported.
+type Spend struct {
+	Tokens  int     `json:"tokens,omitempty"`
+	CostUSD float64 `json:"cost_usd,omitempty"`
 }
 
 // Contract is the terms a task was handed over under: what to deliver and how

@@ -72,6 +72,9 @@ type RelayMsg struct {
 type PausedMsg struct {
 	ThreadID string
 	Hops     int
+	// Reason is what else the thread paused after ("24 subagents and
+	// handed-out tasks"); "" for the hop limit.
+	Reason string
 }
 
 // ContinuedMsg says a pause ended (Continue, or the user posted).
@@ -115,7 +118,10 @@ func msgFor(threadID string, e store.Entry) tea.Msg {
 	case store.EntryMember:
 		return MemberAddedMsg{ThreadID: threadID, AgentID: e.Speaker, Kind: e.Text}
 	case store.EntryPause:
-		n, _ := strconv.Atoi(e.Text)
+		n, err := strconv.Atoi(e.Text)
+		if err != nil {
+			return PausedMsg{ThreadID: threadID, Reason: e.Text}
+		}
 		return PausedMsg{ThreadID: threadID, Hops: n}
 	case store.EntryContinue:
 		return ContinuedMsg{ThreadID: threadID}

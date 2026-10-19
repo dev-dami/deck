@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
@@ -195,6 +196,10 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			}
 			out = append(out, line{text: text})
 		case store.EntryPause:
+			if _, err := strconv.Atoi(e.Text); err != nil {
+				out = append(out, line{text: "[deck] Deck paused this thread after " + e.Text + "; waiting for the user"})
+				break
+			}
 			out = append(out, line{text: "[deck] agent-to-agent messages paused after " + e.Text + " hops; waiting for the user"})
 		case store.EntryContinue:
 			out = append(out, line{text: "[deck] the user let agent-to-agent messages continue"})

@@ -234,6 +234,9 @@ type ThreadInfo struct {
 // Manager owns every thread and agent.
 type Manager struct {
 	adapters map[string]agent.Adapter
+	// limits is the last plan limits each kind's CLI reported (brakes.go);
+	// guarded by mu.
+	limits   map[string]agent.Limits
 	st       *store.Store
 	subOnce  sync.Once
 	sub      *sub.Store // SUB objects, for checkpoints (subStore)
@@ -801,7 +804,7 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState, images [
 	var msgs []tea.Msg
 	t.mu.Lock()
 	wasPaused := t.paused
-	t.paused, t.hops, t.heldIdx = false, 0, nil
+	t.paused, t.hops, t.heldIdx, t.work = false, 0, nil, 0
 	t.lastRelay = map[string]string{}
 	if t.title == "" {
 		t.title = placeholderTitle(text)
@@ -1390,6 +1393,18 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		m.emit(ApprovalGoneMsg{ThreadID: t.id, AgentID: a.id, ID: id})
 	}
 	m.emit(EventMsg{Event: ev, ThreadID: t.id})
+	switch {
+	case ev.Kind == agent.KindLimits && ev.Limits != nil:
+		m.setLimits(a.kind, *ev.Limits)
+	case ev.Kind == agent.KindTurnDone || ev.Kind == agent.KindExited:
+		m.charge(t, a, res.spent)
+	case ev.Kind == agent.KindUsage || ev.Kind == agent.KindToolCall && !ev.Delta:
+		// Mid-turn: a turn that runs past a budget is stopped, not finished.
+		a.mu.Lock()
+		turn := store.Spend{Tokens: a.tokTurn, CostUSD: a.costTurn}
+		a.mu.Unlock()
+		m.checkBudgets(t, a, turn)
+	}
 	if ev.Kind == agent.KindTurnDone {
 		m.afterTurn(a)
 		m.checkAttribution(a)
@@ -1466,6 +1481,7 @@ type agentState struct {
 	pending     []pendingApproval
 	costTotal   float64 // folded turns
 	costTurn    float64 // current turn, cumulative as reported
+	tokTurn     int     // current turn's input and output tokens, as last reported
 	sessionID   string
 	lastText    string // the last assistant text of the running turn
 	interrupted bool
@@ -1648,6 +1664,8 @@ func (a *agentState) markExited() bool {
 type applyResult struct {
 	gone      []string
 	metaDirty bool
+	// spent is what a turn that just ended spent (KindTurnDone, KindExited).
+	spent store.Spend
 }
 
 // apply folds one event into the agent's status and cost.
@@ -1682,6 +1700,9 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 			if u.CostUSD > 0 {
 				a.costTurn = u.CostUSD
 			}
+			if n := u.InputTokens + u.OutputTokens; n > 0 {
+				a.tokTurn = n
+			}
 			if u.ContextTokens > 0 {
 				a.ctxTokens = u.ContextTokens
 			}
@@ -1692,14 +1713,16 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 	case agent.KindError:
 		a.base = StatusError
 	case agent.KindTurnDone:
+		res.spent = store.Spend{Tokens: a.tokTurn, CostUSD: a.costTurn}
 		a.costTotal += a.costTurn
-		a.costTurn = 0
+		a.costTurn, a.tokTurn = 0, 0
 		a.base = StatusIdle
 		res.gone = a.clearPendingLocked()
 		res.metaDirty = true
 	case agent.KindExited:
+		res.spent = store.Spend{Tokens: a.tokTurn, CostUSD: a.costTurn}
 		a.costTotal += a.costTurn
-		a.costTurn = 0
+		a.costTurn, a.tokTurn = 0, 0
 		a.base = StatusExited
 		res.gone = a.clearPendingLocked()
 		res.metaDirty = true

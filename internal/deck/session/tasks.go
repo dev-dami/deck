@@ -3,6 +3,7 @@ package session
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,6 +44,8 @@ type TaskSpec struct {
 	Contract    *store.Contract
 	// Kind, Model and Effort pick the agent its subagent runs (store.Task).
 	Kind, Model, Effort string
+	// Budget is what it may spend (brakes.go); nil is the config's.
+	Budget *store.Budget
 	// Claimed creates the task already running (its first attempt under way),
 	// so the scheduler never hands out a task its creator is about to work on
 	// or hand over itself.
@@ -55,6 +58,8 @@ type TaskPatch struct {
 	Brief *string
 	Owner *string
 	Deps  *[]string
+	// Budget replaces the task's budget; only its creator (or the user) may.
+	Budget *store.Budget
 }
 
 func cloneTask(t store.Task) store.Task {
@@ -233,7 +238,7 @@ func (m *Manager) addTask(t *thread, sp TaskSpec) (store.Task, error) {
 		ID: id, Title: clipText(title, 120), Brief: clipText(sp.Brief, maxTaskText),
 		Creator: sp.Creator, Owner: sp.Owner, Parent: canonicalID(t.tasks, sp.Parent), Deps: deps,
 		Status: store.TaskPending, OnFail: sp.OnFail, MaxAttempts: sp.MaxAttempts, Contract: sp.Contract, Isolate: sp.Isolate,
-		Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort,
+		Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort, Budget: sp.Budget,
 		Created: now, Updated: now,
 	}
 	if sp.Claimed {
@@ -312,6 +317,14 @@ func (m *Manager) UpdateTask(threadID, id, by string, p TaskPatch) (store.Task, 
 	if p.Owner != nil {
 		tk.Owner = *p.Owner
 	}
+	if p.Budget != nil {
+		if by != "" && by != tk.Creator {
+			t.mu.Unlock()
+			return store.Task{}, fmt.Errorf("only whoever created %s can change its budget", tk.ID)
+		}
+		b := *p.Budget
+		tk.Budget = &b
+	}
 	tk.Updated = time.Now()
 	changes := []taskChange{m.logTaskLocked(t, *tk, tk.Status, by, "updated")}
 	changes = append(changes, m.refreshReadyLocked(t)...)
@@ -359,6 +372,7 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 	tk.Updated = time.Now()
 	if to == store.TaskRunning && from != store.TaskRunning {
 		tk.Attempts++
+		tk.Started, tk.Spent = time.Now(), store.Spend{} // each attempt has the whole budget
 	}
 	switch to {
 	case store.TaskDone:
@@ -442,6 +456,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 			Title: str("title"), Brief: str("brief"), Creator: me, Parent: str("parent"),
 			Deps: splitIDs(str("deps")), OnFail: normOnFail(str("on_fail")), MaxAttempts: num("max_attempts"),
 			Isolate: a["isolate"] == true, Kind: strings.ToLower(str("kind")), Model: str("model"), Effort: str("effort"),
+			Budget: budgetArgs(a),
 		}
 		if o := str("owner"); o != "" {
 			id, err := b.resolveOwner(o)
@@ -484,6 +499,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 			}
 			p.Owner = &owner
 		}
+		p.Budget = budgetArgs(a)
 		var tk store.Task
 		var err error
 		if p != (TaskPatch{}) {
@@ -563,6 +579,31 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		return b.line(tk), nil
 	}
 	return "", fmt.Errorf("unknown task op %q", op)
+}
+
+// budgetArgs reads budget_tokens, budget_usd and budget_minutes; nil when
+// none is given.
+func budgetArgs(a map[string]any) *store.Budget {
+	var b store.Budget
+	given := false
+	if n, ok := a["budget_tokens"].(int); ok {
+		b.Tokens, given = max(0, n), true
+	}
+	if n, ok := a["budget_minutes"].(int); ok {
+		b.Minutes, given = max(0, n), true
+	}
+	switch v := a["budget_usd"].(type) {
+	case string: // the hub has no float type: "1.50"
+		if f, err := strconv.ParseFloat(strings.TrimPrefix(strings.TrimSpace(v), "$"), 64); err == nil {
+			b.CostUSD, given = max(0, f), true
+		}
+	case float64:
+		b.CostUSD, given = max(0, v), true
+	}
+	if !given {
+		return nil
+	}
+	return &b
 }
 
 // line renders tk as taskLine does, taking the thread's lock.

@@ -138,6 +138,9 @@ func (m *Manager) handleMessage(msg agent.Message) {
 			targets = []*agentState{a}
 		}
 	}
+	if err == nil {
+		targets, err = t.guardSend(from, targets, time.Now())
+	}
 	t.mu.Unlock()
 	if err != nil {
 		respond("", err)
@@ -357,7 +360,7 @@ func (m *Manager) Continue(threadID string) error {
 		return nil
 	}
 	t.paused = false
-	t.hops = 0
+	t.hops, t.work = 0, 0
 	var targets []*agentState
 	for _, idx := range t.heldIdx {
 		delete(t.inert, idx)
@@ -373,6 +376,7 @@ func (m *Manager) Continue(threadID string) error {
 	t.mu.Unlock()
 	m.emitAll(msgFor(t.id, e))
 
+	m.kick(t) // the scheduler stopped at the pause
 	seen := map[*agentState]bool{}
 	var first error
 	for _, a := range targets {

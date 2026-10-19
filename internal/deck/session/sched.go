@@ -92,6 +92,7 @@ func (m *Manager) schedule(t *thread) {
 	if m.isClosed() || t.gone.Load() {
 		return
 	}
+	m.checkBudgets(t, nil, store.Spend{}) // minutes pass without events
 	m.propagateFailures(t)
 	m.retryFailed(t)
 	m.dispatchReady(t)
@@ -237,6 +238,9 @@ func (m *Manager) dispatchReady(t *thread) {
 		t.mu.Unlock()
 		if next == nil || running >= limit || owner == nil && full {
 			return // a subagent stopping kicks the scheduler again
+		}
+		if !m.takeWork(t) {
+			return // paused; Continue or the user's next message kicks it again
 		}
 		if err := m.dispatch(t, *next, owner); err != nil {
 			// Spawn fails the task itself once it has claimed it. A task that

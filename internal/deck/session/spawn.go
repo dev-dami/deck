@@ -66,9 +66,9 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 			sp.Kind, sp.Model, sp.Effort = or(sp.Kind, tk.Kind), or(sp.Model, tk.Model), or(sp.Effort, tk.Effort)
 		}
 	}
-	kind := sp.Kind
+	kind, routed := sp.Kind, ""
 	if kind == "" {
-		kind = m.defaultKind()
+		kind, routed = m.routeKind(m.defaultKind())
 	}
 	if _, ok := m.adapters[kind]; !ok {
 		return SpawnResult{}, fmt.Errorf("session: unknown agent kind %q", kind)
@@ -99,6 +99,11 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		return SpawnResult{}, fmt.Errorf("session: %w: %d of yours are already running; wait for one to finish", errChildLimit, live)
 	case all >= m.maxSubagents():
 		return SpawnResult{}, fmt.Errorf("session: %w: %d are running in this thread; wait for one to finish", errChildLimit, all)
+	case parentID != "" && !m.takeWork(t):
+		return SpawnResult{}, fmt.Errorf("session: %w", errPaused)
+	}
+	if routed != "" {
+		m.notice(t, routed)
 	}
 
 	// The task: an existing one, or a new one for this brief.

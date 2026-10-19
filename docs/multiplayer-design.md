@@ -1,6 +1,6 @@
 # Deck multiplayer: many agents, subagent trees, peers
 
-Status: proposal. Phases 1 and 2 (§3, §4) are implemented, except the
+Status: proposal. Phases 1 to 3 (§3, §4, §7) are implemented, except the
 review stage; the rest is not. It builds on what
 already ships (verified against `main` at 4508226): spawn and tasks
 (`session/spawn.go`, `tasks.go`, `sched.go`), SUB capsules (`docs/sub.md`),
@@ -147,20 +147,37 @@ others are discarded. Optionally a judge agent writes a ranking.
 Worktrees and capsules already exist, so this is mostly UI and one op
 (`task.race {brief, agents}`).
 
-## 7. Budgets, brakes and plan-aware routing
+## 7. Budgets, brakes and plan-aware routing — implemented
 
-- **Work budget per user turn.** Hops, spawns, dispatches and results all
-  count against `max_work` (default 24 units). Crossing it pauses the
-  thread like the hop limit does today (`relay.go:234`), with one line saying why.
-- **Budgets.** Per thread and per task: tokens, reported cost (where the
-  CLI reports it; no prices of Deck's own), wall time. Exceeding one blocks
-  the task and asks the user.
-- **Loop guards.** Per-sender throttle, duplicate drop (generalizing
-  `lastRelay`), queue depth cap per member.
-- **Routing by plan headroom.** `KindLimits` already reports each
-  CLI's windows. When a task has no kind, or `$any`, the scheduler picks the
-  kind with the most headroom in its 5-hour window, skipping a kind above 90%.
-  The Limits pane shows which kind a pool will pick next.
+All in `session/brakes.go`.
+
+- **Work budget per user message.** Spawns by members and the scheduler's
+  dispatches count against `max_work` (default 24); hops keep their own
+  limit of 6. Reaching either pauses the thread (`EntryPause`, with a reason
+  for the work limit); while paused, spawns are refused and the scheduler
+  hands out nothing. The user's next message or Continue resets both
+  counters and kicks the scheduler. Results coming back are not counted:
+  they finish work rather than start it.
+- **Task budgets.** `store.Task` has `Budget` (tokens, cost, minutes),
+  `Spent` and `Started`. Config `budget` applies to tasks run by subagents;
+  a task's own budget wins field by field, and only its creator (or the
+  user) can change it, so an agent cannot raise its own limit. A turn's
+  tokens and reported cost are charged when it ends to every running or
+  blocked task its member owns and every task owned by a member above it,
+  so a parent's task pays for its subagents. Budgets are also checked
+  mid-turn (usage and tool events, counting the turn so far) and at each
+  scheduler pass (minutes). Over budget, the task is blocked with the
+  reason, the owner and its subtree are interrupted (nothing cancelled),
+  and the creator is told. Each new attempt starts with an empty `Spent`.
+- **Loop guards.** One member may `thread.send` 12 times a minute; a
+  recipient with 8 relays it has not read takes no more (with `all`, the
+  others still get it). The existing duplicate drop stays.
+- **Routing by plan headroom.** The session keeps each kind's last
+  `KindLimits`. A spawn with no kind from the spawn or the task goes to the
+  default agent unless that CLI's fullest current window (one that has not
+  reset since it was reported) is `route_above_pct` full (default 90); then to
+  the kind with the lowest fullest window under the limit, with kinds that
+  report no limits after those, and a notice says so. 100 turns it off.
 
 ## 8. Peers: from chat to teamwork
 
@@ -232,8 +249,9 @@ Each phase is one or two PRs and useful alone.
 2. **Trees** (done). Depth and limits, cascade, ancestor fallback for
    results, waiting for children, task kind/model/effort, scoped briefing,
    tree in the agents pane, apply/discard in the Tasks pane.
-3. **Brakes.** Work budget, task/thread budgets, loop guards, routing
-   by plan headroom.
+3. **Brakes** (done). Work budget, task budgets counted up the tree, loop
+   guards, routing by plan headroom. A thread-wide spend budget is left
+   out: the work limit and per-task budgets cover the runaway cases.
 4. **Leases and overlap.** `lease.*`, apply-time enforcement, `touched` map
    with notices and steers, presence in panes, capsule-bound approvals.
 5. **Races.** `task.race`, `$kind×N`, compare view, optional judge.

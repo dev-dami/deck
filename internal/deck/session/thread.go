@@ -41,6 +41,11 @@ type thread struct {
 	lastSpeaker string            // member who most recently wrote a reply
 	hops        int
 	paused      bool
+	// work counts the subagents members started and the tasks the scheduler
+	// handed out since the user's last message (brakes.go); sends the times of
+	// each member's recent thread.send calls.
+	work  int
+	sends map[string][]time.Time
 
 	// Lifecycle (lifecycle.go): pinned to the top, resolved (settled until a
 	// new message wakes it), archived (off the sidebar, still resumable).

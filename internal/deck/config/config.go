@@ -101,8 +101,20 @@ type Config struct {
 	MaxSubagents int `json:"max_subagents"`
 	// KeepOrphans leaves a member's subagents running when it stops; by
 	// default they are stopped with it and their tasks cancelled.
-	KeepOrphans bool   `json:"keep_orphans"`
-	Models      Models `json:"models"`
+	KeepOrphans bool `json:"keep_orphans"`
+	// MaxWork is how many subagents agents may start, and tasks the scheduler
+	// may hand out, after each message of the user before the thread pauses
+	// for them; 0 means DefaultMaxWork.
+	MaxWork int `json:"max_work"`
+	// Budget limits what a task run by subagents may spend (the task's own
+	// budget, when it has one, wins field by field); zero fields are no limit.
+	Budget Budget `json:"budget"`
+	// RouteAbovePct moves a task that names no agent kind off the default
+	// agent when one of that CLI's plan windows is at least this full, to the
+	// installed kind with the most room; 0 means DefaultRouteAbovePct, and 100
+	// or more never moves it.
+	RouteAbovePct int    `json:"route_above_pct"`
+	Models        Models `json:"models"`
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
 	Efforts Models `json:"efforts"`
@@ -114,11 +126,21 @@ type Config struct {
 
 // Defaults for the orchestration limits left at 0.
 const (
-	DefaultMaxParallel  = 3  // tasks the scheduler runs at once per thread
-	DefaultMaxDepth     = 3  // levels of subagents below the user's agents
-	DefaultMaxChildren  = 4  // live subagents per member
-	DefaultMaxSubagents = 12 // live subagents per thread
+	DefaultMaxParallel   = 3  // tasks the scheduler runs at once per thread
+	DefaultMaxDepth      = 3  // levels of subagents below the user's agents
+	DefaultMaxChildren   = 4  // live subagents per member
+	DefaultMaxSubagents  = 12 // live subagents per thread
+	DefaultMaxWork       = 24 // subagent starts and dispatches per user message
+	DefaultRouteAbovePct = 90
 )
+
+// Budget is what a task may spend: tokens (input and output), the cost the
+// CLIs report, and minutes since it started. 0 is no limit.
+type Budget struct {
+	Tokens  int     `json:"tokens,omitempty"`
+	CostUSD float64 `json:"cost_usd,omitempty"`
+	Minutes int     `json:"minutes,omitempty"`
+}
 
 // DefaultPeerPort is the port a peer listener uses when its address names none.
 const DefaultPeerPort = "7722"
@@ -543,10 +565,14 @@ func (c Config) Validate() error {
 	for _, l := range []struct {
 		key string
 		n   int
-	}{{"max_parallel", c.MaxParallel}, {"max_depth", c.MaxDepth}, {"max_children", c.MaxChildren}, {"max_subagents", c.MaxSubagents}} {
+	}{{"max_parallel", c.MaxParallel}, {"max_depth", c.MaxDepth}, {"max_children", c.MaxChildren}, {"max_subagents", c.MaxSubagents},
+		{"max_work", c.MaxWork}, {"route_above_pct", c.RouteAbovePct}, {"budget.tokens", c.Budget.Tokens}, {"budget.minutes", c.Budget.Minutes}} {
 		if l.n < 0 {
 			return fmt.Errorf("%s must be 0 (the default) or more, got %d", l.key, l.n)
 		}
+	}
+	if c.Budget.CostUSD < 0 {
+		return fmt.Errorf("budget.cost_usd must be 0 (no limit) or more, got %v", c.Budget.CostUSD)
 	}
 	if c.Peers != nil {
 		if err := c.Peers.validate(); err != nil {
