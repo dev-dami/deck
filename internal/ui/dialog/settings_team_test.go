@@ -337,6 +337,8 @@ func TestTeamPeerStates(t *testing.T) {
 		text string
 	}{
 		{"connected", pinned(sup(peer.Status{State: peer.StateConnected})), on, peerDotOK, "connected"},
+		{"relayed", pinned(sup(peer.Status{State: peer.StateConnected, Via: "vps"})), on, peerDotOK, "connected via vps"},
+		{"relayed inbound", peer.PeerState{Name: "pc2", Role: "observer", Pinned: true, Link: peer.Link{Inbound: 1, Via: "vps"}}, on, peerDotOK, "dialed in via vps"},
 		{"degraded", pinned(sup(peer.Status{State: peer.StateDegraded})), on, peerDotWarn, "degraded"},
 		{"backoff", pinned(sup(peer.Status{State: peer.StateBackoff, NextRetry: teamNow.Add(12 * time.Second)})), on, peerDotOff, "retry in 12s"},
 		{"host key", pinned(sup(peer.Status{State: peer.StateBackoff, Permanent: true, Cause: peer.CauseHostKey})), on, peerDotBad, "host key changed"},
