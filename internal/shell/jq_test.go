@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -208,5 +210,35 @@ func TestJQ_Success(t *testing.T) {
 	}
 	if got := stdout.String(); got != "1\n" {
 		t.Fatalf("stdout = %q, want %q", got, "1\n")
+	}
+}
+
+// TestJQ_RelativeFileUsesShellDir verifies that jq opens a relative file
+// operand from the shell's cwd, which cd changes, and not from the cwd of
+// the test process.
+func TestJQ_RelativeFileUsesShellDir(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "data.json"), []byte(`{"where":"sub"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sh := NewShell(&Options{WorkingDir: dir})
+
+	stdout, stderr, err := sh.Exec(t.Context(), "cd sub && jq -r .where data.json")
+	if err != nil {
+		t.Fatalf("jq in sub: %v (stderr %q)", err, stderr)
+	}
+	if strings.TrimSpace(stdout) != "sub" {
+		t.Fatalf("jq in sub: got %q, want %q", stdout, "sub")
+	}
+
+	// jq_test.go exists in the process cwd (this package dir) but not in
+	// the shell's cwd, so jq must fail to open it.
+	if _, _, err := sh.Exec(t.Context(), "jq -R . jq_test.go"); err == nil {
+		t.Fatal("jq opened jq_test.go from the process cwd")
 	}
 }

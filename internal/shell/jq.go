@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/dev-dami/deck/internal/filepathext"
 	"github.com/itchyny/gojq"
 	"mvdan.cc/sh/v3/interp"
 )
@@ -46,8 +47,14 @@ Options:
 // Note that this is somewhat of a reimplmentation of the CLI of the glorious
 // github.com/itchyny/gojq, and we'd ideally get the CLI exposed upstream to
 // avoid this falling out of sync.
+//
+// Relative file operands resolve against the shell's cwd (which cd
+// changes), not the cwd of the Deck process.
 func handleJQ(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	return JQ(ctx, args, stdin, stdout, stderr, func(name string) (io.ReadCloser, error) { return os.Open(name) }, os.Environ)
+	open := func(name string) (io.ReadCloser, error) {
+		return os.Open(filepathext.SmartJoin(interp.HandlerCtx(ctx).Dir, name))
+	}
+	return JQ(ctx, args, stdin, stdout, stderr, open, os.Environ)
 }
 
 // JQ runs jq like handleJQ. open opens the file operands and environ
