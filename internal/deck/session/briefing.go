@@ -280,6 +280,9 @@ func (m *Manager) readThread(agentID string) string {
 	t := a.thread
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.ops != nil {
+		return errOpsOnly.Error()
+	}
 	start := len(t.log) - readThreadLast
 	if start < 0 {
 		start = 0

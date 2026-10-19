@@ -3,6 +3,7 @@ package vsh
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -192,6 +193,9 @@ var presets = map[string][]Shim{
 		}},
 	},
 }
+
+// PresetNames are the names of every preset, installed here or not, sorted.
+func PresetNames() []string { return slices.Sorted(maps.Keys(presets)) }
 
 // Presets are named shim sets. Each call resolves the binaries with
 // exec.LookPath, and leaves a preset out when one of its binaries is missing.

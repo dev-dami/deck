@@ -53,6 +53,9 @@ const (
 	// OpThreadRoster lists the thread's members; it goes through the
 	// TaskBoard, which knows the caller's thread.
 	OpThreadRoster = "thread.roster"
+	// The two ops of an ops contract's agent (Env.Ops).
+	OpShRun          = "sh.run"
+	OpContractResult = "contract.result"
 )
 
 // Limits.
@@ -95,6 +98,14 @@ type SubBridge interface {
 	SubOp(ctx context.Context, op string, a map[string]any) (string, error)
 }
 
+// OpsRunner is a teammate's ops contract as its agent's two ops see it:
+// sh.run runs a command in the contract's sandbox, and contract.result
+// delivers the result, which must fit the contract's schema.
+type OpsRunner interface {
+	ShRun(ctx context.Context, cmd string) (string, error)
+	Deliver(result json.RawMessage) (string, error)
+}
+
 // Env is what one call runs against; the caller resolves it per call.
 type Env struct {
 	AgentID  string
@@ -120,6 +131,10 @@ type Env struct {
 	Team Team
 	// Sub is the Source Update Bridge; nil when unavailable.
 	Sub SubBridge
+	// Ops is set only for the agent of an ops contract: it then has
+	// sh.run and contract.result and no other op, and search shows only
+	// those two.
+	Ops OpsRunner
 
 	// dropped counts output bytes a command wrote past what was kept in
 	// memory, so the truncation note still gives the full size.
@@ -146,12 +161,14 @@ const (
 	tString = "string"
 	tInt    = "int"
 	tBool   = "bool"
+	// tJSON is any JSON value, passed on as json.RawMessage.
+	tJSON = "json"
 )
 
 // Arg is one argument of an op.
 type Arg struct {
 	Name     string
-	Type     string // "string", "int" or "bool"
+	Type     string // "string", "int", "bool" or "json"
 	Required bool
 	Desc     string
 }
@@ -188,6 +205,28 @@ func (o Op) Signature() string {
 func Ops() []Op { return ops }
 
 var ops []Op
+
+// opsOps are the only ops of an ops contract's agent (Env.Ops). No other
+// agent has them.
+var opsOps = []Op{
+	{Name: OpShRun, Desc: "Run a command in this contract's sandbox: only the commands its scope allows run, on its targets. Returns stdout, stderr and the exit code.",
+		Args: []Arg{{Name: "cmd", Type: tString, Required: true, Desc: "the command line, e.g. \"podman ps --all\""}},
+		run:  func(ctx context.Context, env *Env, a args) (string, error) { return env.Ops.ShRun(ctx, a.str("cmd")) }},
+	{Name: OpContractResult, Desc: "Deliver this contract's result: {\"rows\": [{field: value, ...}]} with only the contract's fields. Deck checks it and sends it to the teammate. A result that does not fit comes back with the reason.",
+		Args: []Arg{{Name: "result", Type: tJSON, Required: true, Desc: "the JSON object"}},
+		run: func(_ context.Context, env *Env, a args) (string, error) {
+			raw, _ := a["result"].(json.RawMessage)
+			return env.Ops.Deliver(raw)
+		}},
+}
+
+// catalog is the ops the agent of env has.
+func catalog(env *Env) []Op {
+	if env.Ops != nil {
+		return opsOps
+	}
+	return ops
+}
 
 func init() {
 	ops = []Op{
@@ -318,8 +357,8 @@ func init() {
 	}
 }
 
-func findOp(name string) (Op, bool) {
-	for _, o := range ops {
+func findOp(env *Env, name string) (Op, bool) {
+	for _, o := range catalog(env) {
 		if o.Name == name {
 			return o, true
 		}
@@ -403,6 +442,8 @@ func parseArgs(o Op, raw json.RawMessage) (args, error) {
 				f = float64(n)
 			}
 			out[a.Name] = int(f)
+		case tJSON:
+			out[a.Name] = v
 		case tBool:
 			var b bool
 			if json.Unmarshal(v, &b) != nil {
@@ -429,10 +470,10 @@ func Execute(ctx context.Context, env Env, op string, raw json.RawMessage) (text
 	if op == OpSearch {
 		return Search(env, raw), false
 	}
-	o, ok := findOp(op)
+	o, ok := findOp(&env, op)
 	if !ok {
 		msg := fmt.Sprintf("Unknown op %q.", op)
-		if near := nearestOps(op, 3); len(near) > 0 {
+		if near := nearestOps(&env, op, 3); len(near) > 0 {
 			msg += " Did you mean " + strings.Join(near, ", ") + "?"
 		}
 		return msg + " Call search (an empty query lists every op).", true

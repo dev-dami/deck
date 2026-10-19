@@ -113,6 +113,10 @@ func (f *fakePeerLink) AnswerContract(name, id string, accept bool, agent string
 	f.record("AnswerContract")
 	return nil
 }
+func (f *fakePeerLink) ProposeContract(_ context.Context, _ string, c peer.Contract) (peer.Contract, error) {
+	f.record("ProposeContract")
+	return c, nil
+}
 func (f *fakePeerLink) ReadShared(context.Context, string, string, int, time.Duration) (peer.Mirror, error) {
 	return peer.Mirror{}, nil
 }

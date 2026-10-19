@@ -111,6 +111,7 @@ func Start() (_ *Engine, err error) {
 	if peers != nil {
 		deals.svc.Store(peers)
 		mgr.SetContractor(deals)
+		mgr.SetSandbox(opsSandbox(cfg.Peers))
 		mgr.SetTaskEnd(deals.taskEnd)
 		mgr.SetTeam(peerTeam{peers})
 		mgr.SetSubFetch(func(ctx context.Context, name string, id sub.ID, s *sub.Store) (int, error) {

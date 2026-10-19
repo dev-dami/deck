@@ -246,6 +246,10 @@ type Spec struct {
 	MCP *MCPServer
 	// Mode is the starting permission mode; empty means ModeAsk.
 	Mode Mode
+	// NoTools starts the agent with none of its CLI's own tools (shell,
+	// edits, web): only the tools of MCP. Deck sets it only for adapters
+	// that implement OpsSafe.
+	NoTools bool
 }
 
 // Mode is the permission mode of a thread.
@@ -392,4 +396,11 @@ type Adapter interface {
 // answers false.
 type ContractSafe interface {
 	ContractSafe() bool
+}
+
+// OpsSafe is implemented by an adapter that honors Spec.NoTools: its agent
+// then has Deck's MCP tools and nothing else. Deck runs a teammate's ops
+// contract only with an adapter that has it and answers true.
+type OpsSafe interface {
+	OpsSafe() bool
 }

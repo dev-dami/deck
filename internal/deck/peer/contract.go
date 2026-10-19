@@ -71,9 +71,9 @@ const (
 var proposalTTL = 24 * time.Hour
 
 var contractOps = []OpInfo{
-	{Name: OpContractPropose, Args: "{id*, title*, brief, base*, repo, files}", Desc: "propose a coding contract to this Deck: its person confirms it, an agent does it on a copy of the base snapshot, and a capsule comes back"},
+	{Name: OpContractPropose, Args: "{id*, title*, brief, base*, repo, files} or {id*, kind*: \"ops\", title*, scope*, targets, schema*}", Desc: "propose a coding contract to this Deck: its person confirms it, an agent does it on a copy of the base snapshot, and a capsule comes back. An ops contract (a report) runs at once when its scope is inside your max_scope here, and its result comes back"},
 	{Name: OpContractStatus, Args: "{id*, state*, agent, note}", Desc: "how a contract this Deck proposed goes: accepted or declined"},
-	{Name: OpContractResult, Args: "{id*, state*, capsule, summary}", Desc: "the result of a contract this Deck proposed: done or failed, the capsule and a summary"},
+	{Name: OpContractResult, Args: "{id*, state*, capsule, summary, result}", Desc: "the result of a contract this Deck proposed: done or failed, the capsule and a summary, or an ops contract's result"},
 	{Name: OpContractCancel, Args: "{id*, note}", Desc: "call off a contract the caller proposed to this Deck: its agent stops"},
 }
 
@@ -100,6 +100,15 @@ type Contract struct {
 	// agent's last report.
 	Capsule sub.ID `json:"capsule,omitempty"`
 	Summary string `json:"summary,omitempty"`
+	// Kind is KindOps for an ops contract (opscontract.go), "" for a code
+	// contract. An ops contract has no Base: it has the presets it may use
+	// (Scope), what it is about (Targets, empty for all), the fields of
+	// its result (Schema), and the result, checked against them (Result).
+	Kind    string          `json:"kind,omitempty"`
+	Scope   []string        `json:"scope,omitempty"`
+	Targets []string        `json:"targets,omitempty"`
+	Schema  []Field         `json:"schema,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
 	// Thread and Task are where the contract lives on this Deck: the task
 	// on the requester's board, or the thread and task the contractor runs.
 	Thread  string    `json:"thread,omitempty"`
@@ -321,8 +330,13 @@ func (s *Service) proposed(from Caller, args json.RawMessage) (string, error) {
 		Base  sub.ID `json:"base"`
 		Repo  string `json:"repo"`
 		Files int    `json:"files"`
+		// An ops contract's parts.
+		Kind    string   `json:"kind"`
+		Scope   []string `json:"scope"`
+		Targets []string `json:"targets"`
+		Schema  []Field  `json:"schema"`
 	}
-	if json.Unmarshal(args, &a) != nil || !validKey(a.ID) || !a.Base.Valid() {
+	if json.Unmarshal(args, &a) != nil || !validKey(a.ID) || a.Kind == "" && !a.Base.Valid() {
 		return "", errors.New("contract.propose needs an id and a base snapshot")
 	}
 	c := Contract{
@@ -332,38 +346,103 @@ func (s *Service) proposed(from Caller, args json.RawMessage) (string, error) {
 	if c.Title == "" {
 		return "", errors.New("contract.propose needs a title")
 	}
+	if a.Kind != "" {
+		c = Contract{ID: c.ID, Peer: c.Peer, Inbound: true, Title: c.Title, Kind: a.Kind, Scope: a.Scope, Targets: a.Targets, Schema: a.Schema,
+			State: ContractProposed, At: c.At, Updated: c.Updated}
+		if err := s.checkInboundOps(from, c); err != nil {
+			s.Audit(c.Peer, c.ID, "refused", err.Error())
+			return "", err
+		}
+	}
 	b := s.contracts
 	b.mu.Lock()
 	if b.findLocked(c.Peer, c.ID, true) >= 0 {
 		b.mu.Unlock()
 		return "proposed", nil // a repeat
 	}
-	n := 0
+	n, running := 0, 0
 	for _, o := range b.list {
 		if o.Inbound && o.Peer == c.Peer && o.State == ContractProposed {
 			n++
+		}
+		if o.Inbound && o.Peer == c.Peer && o.Kind == KindOps && o.State == ContractAccepted {
+			running++
 		}
 	}
 	if n >= maxProposed {
 		b.mu.Unlock()
 		return "", fmt.Errorf("%d contracts from you already wait for this Deck's person", n)
 	}
+	if c.Kind == KindOps && running >= maxOpsRunning {
+		b.mu.Unlock()
+		why := fmt.Sprintf("%d ops contracts from you already run on this Deck", running)
+		s.Audit(c.Peer, c.ID, "refused", why)
+		return "", Refusal(why)
+	}
 	b.list = append(b.list, c)
 	b.saveLocked()
 	b.mu.Unlock()
 	s.changed()
+	if c.Kind == KindOps {
+		return s.runOps(c)
+	}
 	return "proposed: it waits for this Deck's person to confirm it", nil
+}
+
+// checkInboundOps reports why this Deck refuses the ops contract c from
+// caller from, as a Refusal: a contract that is not valid, or a scope
+// outside the max_scope this Deck gave from.
+func (s *Service) checkInboundOps(from Caller, c Contract) error {
+	if c.Kind != KindOps {
+		return Refusal(fmt.Sprintf("this Deck does not know contracts of kind %q", truncate(c.Kind, 20)))
+	}
+	if err := checkOps(c); err != nil {
+		return Refusal("the ops contract is not valid: " + err.Error())
+	}
+	if out := outside(c.Scope, from.MaxScope); len(out) > 0 {
+		allowed := strings.Join(from.MaxScope, ", ")
+		if allowed == "" {
+			allowed = "none"
+		}
+		return Refusal(fmt.Sprintf("%s is outside the scope this Deck allows you (max_scope: %s)", strings.Join(out, ", "), allowed))
+	}
+	return nil
+}
+
+// runOps runs the ops contract c at once: its scope is inside the
+// caller's max_scope, which is this Deck's person's consent, so no person
+// confirms it. The person sees it in the Team pane.
+func (s *Service) runOps(c Contract) (string, error) {
+	targets := strings.Join(c.Targets, ", ")
+	if targets == "" {
+		targets = "all"
+	}
+	s.Audit(c.Peer, c.ID, "proposed", c.Title+"; scope "+strings.Join(c.Scope, ", ")+"; targets "+targets)
+	if err := s.AnswerContract(c.Peer, c.ID, true, ""); err != nil {
+		note := cleanLine(err.Error(), 300)
+		_, _ = s.contracts.update(c.Peer, c.ID, true, func(k *Contract) error {
+			k.State, k.Note = ContractDeclined, note
+			return nil
+		})
+		s.changed()
+		s.Audit(c.Peer, c.ID, "refused", note)
+		// The reason stays here: it can hold local detail.
+		return "", Refusal("this Deck cannot run ops contracts now; its person can see why")
+	}
+	s.Audit(c.Peer, c.ID, "accepted", "")
+	return "accepted: it runs now, and its result comes back", nil
 }
 
 // reported takes a teammate's word on a contract this Deck proposed to it.
 func (s *Service) reported(from Caller, op string, args json.RawMessage) (string, error) {
 	var a struct {
-		ID      string `json:"id"`
-		State   string `json:"state"`
-		Agent   string `json:"agent"`
-		Note    string `json:"note"`
-		Capsule sub.ID `json:"capsule"`
-		Summary string `json:"summary"`
+		ID      string          `json:"id"`
+		State   string          `json:"state"`
+		Agent   string          `json:"agent"`
+		Note    string          `json:"note"`
+		Capsule sub.ID          `json:"capsule"`
+		Summary string          `json:"summary"`
+		Result  json.RawMessage `json:"result"`
 	}
 	if json.Unmarshal(args, &a) != nil || !validKey(a.ID) {
 		return "", fmt.Errorf("%w: no such contract", ErrUnknownOp)
@@ -388,7 +467,15 @@ func (s *Service) reported(from Caller, op string, args json.RawMessage) (string
 		if config.ValidPeerName(a.Agent) {
 			c.Agent = a.Agent
 		}
-		if op == OpContractResult {
+		switch {
+		case op == OpContractResult && c.Kind == KindOps && c.State == ContractDone:
+			// Never trust the teammate: its result is checked here again.
+			res, err := CheckResult(c.Schema, a.Result)
+			if err != nil {
+				c.State, c.Note = ContractFailed, cleanLine("its result does not fit the contract: "+err.Error(), 300)
+			}
+			c.Result = res
+		case op == OpContractResult && c.Kind != KindOps:
 			c.Capsule, c.Summary = a.Capsule, cleanText(a.Summary, maxContractText)
 		}
 		return nil
@@ -397,6 +484,13 @@ func (s *Service) reported(from Caller, op string, args json.RawMessage) (string
 		return "", fmt.Errorf("%w: no such contract", ErrUnknownOp)
 	} else if err != nil {
 		return "", err
+	}
+	if !same && c.Kind == KindOps {
+		event := c.State
+		if op == OpContractResult {
+			event = "result " + c.State
+		}
+		s.Audit(c.Peer, c.ID, event, c.Note)
 	}
 	if !same {
 		s.changed()
@@ -430,12 +524,23 @@ func (s *Service) ProposeContract(ctx context.Context, peer string, c Contract) 
 	c.ID, c.Peer, c.Inbound, c.State = newCallKey(), peer, false, ContractProposed
 	c.Title, c.Brief = cleanLine(c.Title, maxContractTitle), cleanText(c.Brief, maxContractBrief)
 	c.At, c.Updated = time.Now(), time.Now()
+	args := map[string]any{"id": c.ID, "title": c.Title, "brief": c.Brief, "base": c.Base, "repo": c.Repo, "files": c.Files}
+	if c.Kind != "" {
+		if c.Kind != KindOps || c.Title == "" {
+			return Contract{}, errors.New("an ops contract needs kind ops and a title")
+		}
+		if err := checkOps(c); err != nil {
+			return Contract{}, err
+		}
+		c.Brief, c.Base, c.Repo, c.Files = "", "", "", 0
+		args = map[string]any{"id": c.ID, "kind": c.Kind, "title": c.Title, "scope": c.Scope, "targets": c.Targets, "schema": c.Schema}
+		s.Audit(peer, c.ID, "proposed", c.Title+"; scope "+strings.Join(c.Scope, ", "))
+	}
 	b := s.contracts
 	b.mu.Lock()
 	b.list = append(b.list, c)
 	b.saveLocked()
 	b.mu.Unlock()
-	args := map[string]any{"id": c.ID, "title": c.Title, "brief": c.Brief, "base": c.Base, "repo": c.Repo, "files": c.Files}
 	cctx, cancel := context.WithTimeout(ctx, contractTimeout)
 	defer cancel()
 	answered := false
@@ -464,6 +569,9 @@ func (s *Service) ProposeContract(ctx context.Context, peer string, c Contract) 
 			b.saveLocked()
 		}
 		b.mu.Unlock()
+		if c.Kind == KindOps {
+			s.Audit(peer, c.ID, "refused", err.Error())
+		}
 		return Contract{}, fmt.Errorf("%s did not take the contract: %w", peer, err)
 	}
 	s.changed()
@@ -694,6 +802,49 @@ func (s *Service) FinishContract(thread, task string, done bool, capsule sub.ID,
 	args := map[string]any{"id": out.ID, "state": out.State, "summary": out.Summary}
 	if out.Capsule != "" {
 		args["capsule"] = out.Capsule
+	}
+	s.queue(out.Peer, OpContractResult, out.ID+"r", args)
+	return true
+}
+
+// FinishOps reports the inbound ops contract that runs as task on thread
+// to its requester: done with result, which is checked against the
+// schema once more, or failed with why when why is set. It reports
+// whether that task was an ops contract's.
+func (s *Service) FinishOps(thread, task string, result json.RawMessage, why string) bool {
+	b := s.contracts
+	b.mu.Lock()
+	i := -1
+	for j, c := range b.list {
+		if c.Inbound && c.Kind == KindOps && c.State == ContractAccepted && c.Thread == thread && c.Task == task {
+			i = j
+		}
+	}
+	if i < 0 {
+		b.mu.Unlock()
+		return false
+	}
+	c := &b.list[i]
+	c.State, c.Updated = ContractFailed, time.Now()
+	if why == "" {
+		res, err := CheckResult(c.Schema, result)
+		if err != nil {
+			why = "its result does not fit the contract: " + err.Error()
+		} else {
+			c.State, c.Result = ContractDone, res
+		}
+	}
+	c.Note = cleanLine(why, 300)
+	out := *c
+	b.saveLocked()
+	b.mu.Unlock()
+	s.changed()
+	args := map[string]any{"id": out.ID, "state": out.State, "note": out.Note}
+	if out.State == ContractDone {
+		args["result"] = out.Result
+		s.Audit(out.Peer, out.ID, "result sent", fmt.Sprintf("%d bytes", len(out.Result)))
+	} else {
+		s.Audit(out.Peer, out.ID, "failed", out.Note)
 	}
 	s.queue(out.Peer, OpContractResult, out.ID+"r", args)
 	return true

@@ -172,6 +172,12 @@ const (
 	msgRevoked   = "this Deck no longer accepts calls from you"
 )
 
+// Refusal is a handler error whose text the peer gets: why this Deck
+// refused its call. Only text made for the peer goes in it.
+type Refusal string
+
+func (r Refusal) Error() string { return string(r) }
+
 func newMCPServer(h Handler, caller Caller, name, version string, lim serverLimits, log *slog.Logger) *mcpServer {
 	if lim.maxInFlight <= 0 {
 		lim.maxInFlight = 8
@@ -451,6 +457,7 @@ func (s *mcpServer) run(ctx context.Context, caller Caller, what string, release
 			return cancelledResult(ctx)
 		}
 	}
+	var refusal Refusal
 	switch {
 	case r.panicked:
 		return textResult(msgInternal, true)
@@ -458,6 +465,8 @@ func (s *mcpServer) run(ctx context.Context, caller Caller, what string, release
 		return textResult(r.text, false)
 	case errors.Is(r.err, ErrUnknownOp):
 		return textResult(msgUnknownOp, true)
+	case errors.As(r.err, &refusal):
+		return textResult(string(refusal), true)
 	case ctx.Err() != nil:
 		return cancelledResult(ctx)
 	}

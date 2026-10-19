@@ -48,6 +48,11 @@ type PeerLink interface {
 	// of kind agent, or declines it. Accepting fetches the teammate's tree:
 	// call it off the UI loop.
 	AnswerContract(name, id string, accept bool, agent string) error
+	// ProposeContract proposes contract c (an ops contract the person
+	// confirmed) to teammate name. A teammate that cannot be reached gets
+	// it later: the error is then a peer.QueuedError. It uses the network:
+	// call it off the UI loop.
+	ProposeContract(ctx context.Context, name string, c peer.Contract) (peer.Contract, error)
 
 	// ReadShared reads a thread teammate name shares with this Deck, from
 	// log entry after on, waiting up to wait for something new.

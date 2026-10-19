@@ -63,6 +63,8 @@ type Service struct {
 	shared    Shared
 	// draining is set by Drain: teammates can start no new work here.
 	draining atomic.Bool
+	// audit logs every event of the ops contracts (audit.go).
+	audit *auditLog
 }
 
 // ServiceOptions configures a Service.
@@ -105,6 +107,7 @@ func NewService(o ServiceOptions) (*Service, error) {
 	s.team = NewTeam(o.Dir, s.changed)
 	s.out = newOutbox(o.Dir)
 	s.contracts = newContractBook(o.Dir)
+	s.audit = newAuditLog(o.Dir)
 	return s, nil
 }
 
