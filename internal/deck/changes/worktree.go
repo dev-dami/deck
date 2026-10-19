@@ -97,3 +97,18 @@ func splitRaw(out string) (files []string, patch string) {
 	}
 	return files, strings.TrimPrefix(out, nul)
 }
+
+// RootCommit is the oldest commit of the repository's history with no
+// parent. It is the same in every clone, so two Decks can tell they work on
+// one project without showing each other more.
+func (r *Repo) RootCommit(ctx context.Context) (string, error) {
+	out, err := r.run(ctx, r.Root, nil, nil, "rev-list", "--max-parents=0", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Fields(out)
+	if len(lines) == 0 {
+		return "", ErrNoRepo
+	}
+	return lines[len(lines)-1], nil
+}

@@ -2,7 +2,9 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -17,7 +19,9 @@ import (
 
 // The Team pane: this Deck's teammates, the other Decks paired with it over
 // the peer link (docs/peers-design.md), each with a status dot, how the link
-// is doing and its role. The pane reads a snapshot a command keeps current
+// is doing and its role, then what its agents do ("vps/claude2 ▸ working ·
+// fix the flaky test"), the files they hold in repositories both Decks have,
+// and its plan windows when it shares them. The pane reads a snapshot a command keeps current
 // through PeerLink.Wait; it never touches the link in Update or render.
 
 const paneTeam paneID = "team"
@@ -100,7 +104,7 @@ func (m *UI) teamNotices(snap peer.Snapshot) []tea.Cmd {
 			continue
 		}
 		m.Notify(notice.Notice{
-			Level: notice.Info, Source: notice.SourceTeam, Title: c.From, Body: c.Text,
+			Level: notice.Info, Source: notice.SourceTeam, Title: c.Author(), Body: c.Text,
 			Action: &notice.Action{Label: "Open team chat", Msg: focusPaneMsg{id: paneChat}},
 		})
 	}
@@ -200,14 +204,55 @@ func (p *teamPane) rows(m *UI, width int) []paneRow {
 			role = "observer"
 		}
 		head := lipgloss.NewStyle().Foreground(c).Render(dot) + " " + t.ModelInfo.Name.Bold(true).Render(ps.Name) + " " + muted.Render(role)
-		rows = append(rows, paneRow{
-			key:        ps.Name,
-			selectable: true,
-			lines: []string{
-				ansi.Truncate(head, width, "…"),
-				ansi.Truncate("  "+muted.Render(text), width, "…"),
-			},
-		})
+		lines := []string{
+			ansi.Truncate(head, width, "…"),
+			ansi.Truncate("  "+muted.Render(text), width, "…"),
+		}
+		for _, l := range presenceLines(ps) {
+			lines = append(lines, ansi.Truncate("  "+muted.Render(l), width, "…"))
+		}
+		rows = append(rows, paneRow{key: ps.Name, selectable: true, lines: lines})
 	}
 	return rows
+}
+
+// maxPresenceLines caps the agents and leases shown for one teammate.
+const maxPresenceLines = 6
+
+// presenceLines is what a teammate said of its work: its agents, the files
+// they hold, and its plan windows.
+func presenceLines(ps peer.PeerState) []string {
+	p := ps.Presence
+	if p == nil {
+		return nil
+	}
+	var out []string
+	for _, a := range p.Agents {
+		l := ps.Name + "/" + a.Name + " ▸ " + a.Status
+		if a.Task != "" {
+			l += " · " + a.Task
+		}
+		if a.ContextPct > 0 {
+			l += " · " + strconv.Itoa(a.ContextPct) + "%"
+		}
+		out = append(out, l)
+	}
+	for _, le := range p.Leases {
+		l := le.Agent + " holds " + strings.Join(le.Paths, ", ")
+		if le.Exclusive {
+			l += " (exclusive)"
+		}
+		out = append(out, l)
+	}
+	if n := len(out); n > maxPresenceLines {
+		out = append(out[:maxPresenceLines-1], fmt.Sprintf("and %d more", n-maxPresenceLines+1))
+	}
+	var plans []string
+	for _, w := range p.Limits {
+		plans = append(plans, fmt.Sprintf("%s %s %.0f%%", w.Kind, w.Window, w.UsedPct))
+	}
+	if len(plans) > 0 {
+		out = append(out, "plans: "+strings.Join(plans, " · "))
+	}
+	return out
 }

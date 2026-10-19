@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dev-dami/deck/internal/deck/config"
@@ -46,6 +47,14 @@ type Service struct {
 
 	// team is the team chat and the capsule requests.
 	team *Team
+	// out holds the calls waiting for a teammate (outbox.go); flushing is
+	// set while a loop delivers them.
+	out      *outbox
+	flushing atomic.Bool
+	// local is this Deck's own work; presence what each teammate said of
+	// its own, by name (presence.go).
+	local    Local
+	presence map[string]Presence
 }
 
 // ServiceOptions configures a Service.
@@ -58,6 +67,8 @@ type ServiceOptions struct {
 	// SubStore, when set, is the Source Update Bridge store published
 	// capsules are served from (sub.closure, sub.objects).
 	SubStore func() *sub.Store
+	// Local is this Deck's own work, for peer.status; zero tells nothing.
+	Local Local
 }
 
 // errNoConfig is returned by every change when the Service has no config file.
@@ -76,14 +87,21 @@ func NewService(o ServiceOptions) (*Service, error) {
 		o.Logger = slog.Default()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, base: ctx, cancel: cancel, wake: make(chan struct{})}
+	s := &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, local: o.Local, base: ctx, cancel: cancel, wake: make(chan struct{})}
 	s.team = NewTeam(o.Dir, s.changed)
+	s.out = newOutbox(o.Dir)
 	return s, nil
 }
 
 // Start puts p, the peers section Deck started with, in effect. With peers
 // off it makes nothing: no key, no listener, no goroutines.
-func (s *Service) Start(p *config.Peers) error { return s.apply(p) }
+func (s *Service) Start(p *config.Peers) error {
+	err := s.apply(p)
+	if p != nil && p.Enabled {
+		s.flushSoon() // what waited when Deck last stopped
+	}
+	return err
+}
 
 // Close ends any pairing and stops the link.
 func (s *Service) Close() {
@@ -176,7 +194,7 @@ func (s *Service) apply(p *config.Peers) error {
 	case mgr != nil:
 		err = mgr.Apply(p)
 	case p != nil && p.Enabled:
-		mgr, err = NewManager(ManagerOptions{Dir: s.dir, Peers: p, ConfigPath: s.cfgPath, OnChange: s.changed, Logger: s.log, SubStore: s.subStore, Team: s.team})
+		mgr, err = NewManager(ManagerOptions{Dir: s.dir, Peers: p, ConfigPath: s.cfgPath, OnChange: s.changed, Logger: s.log, SubStore: s.subStore, Team: s.team, Local: s.local})
 		if err != nil {
 			break
 		}
@@ -184,6 +202,7 @@ func (s *Service) apply(p *config.Peers) error {
 		s.mgr = mgr
 		s.mu.Unlock()
 		err = mgr.Start(s.base)
+		go s.presenceLoop()
 	}
 	if err != nil {
 		s.log.Warn("Peers: not all of the config is in effect", "error", err)
@@ -725,6 +744,9 @@ type PeerState struct {
 	Pinned      bool // its key is pinned: it can connect
 	Configured  bool // it has a peers.remote row
 	Link        Link
+	// Presence is what it said of its work the last time it was asked; nil
+	// while no link to it is up.
+	Presence *Presence
 }
 
 // Snapshot reads the config, the pins and the link state.
@@ -732,6 +754,7 @@ func (s *Service) Snapshot() Snapshot {
 	s.mu.Lock()
 	snap := Snapshot{Version: s.ver, Pairing: s.pairing > 0}
 	mgr, applied, applyErr := s.mgr, s.applied, s.applyErr
+	presence := s.presence
 	s.mu.Unlock()
 
 	var errs []string
@@ -786,6 +809,9 @@ func (s *Service) Snapshot() Snapshot {
 			ps.Role = config.PeerRoleObserver
 		}
 		ps.Link = links[ps.Name]
+		if pr, ok := presence[ps.Name]; ok {
+			ps.Presence = &pr
+		}
 		ps.Link.Status.LastError = Sanitize(truncate(ps.Link.Status.LastError, 200))
 		snap.Peers = append(snap.Peers, *ps)
 	}

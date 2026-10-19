@@ -96,9 +96,12 @@ type StatusHandler struct {
 	Version  string
 	Started  time.Time
 	Now      func() time.Time // nil means time.Now
+	// Presence, when set, adds what this Deck's agents do (presence.go);
+	// repos are the root commits of the repositories the caller has.
+	Presence func(repos []string) Presence
 }
 
-var statusOps = []OpInfo{{Name: OpPeerStatus, Args: "{}", Desc: "this Deck's name, version and uptime"}}
+var statusOps = []OpInfo{{Name: OpPeerStatus, Args: "{repos}", Desc: "this Deck's name, version and uptime, its agents and what they do, and its file leases in the repositories (root commits) given"}}
 
 // Search implements Handler.
 func (h *StatusHandler) Search(_ context.Context, _ Caller, query string) ([]OpInfo, error) {
@@ -127,7 +130,7 @@ func matchOps(ops []OpInfo, query string) []OpInfo {
 }
 
 // Execute implements Handler.
-func (h *StatusHandler) Execute(_ context.Context, _ Caller, op string, _ json.RawMessage) (string, error) {
+func (h *StatusHandler) Execute(_ context.Context, _ Caller, op string, args json.RawMessage) (string, error) {
 	if op != OpPeerStatus {
 		return "", fmt.Errorf("%w %q (call search to list ops)", ErrUnknownOp, op)
 	}
@@ -140,11 +143,19 @@ func (h *StatusHandler) Execute(_ context.Context, _ Caller, op string, _ json.R
 	if h.NameFunc != nil {
 		name = h.NameFunc()
 	}
-	b, err := json.Marshal(map[string]any{
+	out := map[string]any{
 		"name":           name,
 		"version":        h.Version,
 		"uptime":         up.String(),
 		"uptime_seconds": int64(up / time.Second),
-	})
+	}
+	if h.Presence != nil {
+		var a struct {
+			Repos []string `json:"repos"`
+		}
+		_ = json.Unmarshal(args, &a)
+		out["presence"] = h.Presence(a.Repos[:min(len(a.Repos), maxRepos)])
+	}
+	b, err := json.Marshal(out)
 	return string(b), err
 }

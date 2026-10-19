@@ -545,6 +545,8 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		return m.releaseLeases(b.a, str("paths")), nil
 	case "lease.list":
 		return m.listLeases(b.a), nil
+	case "team.post":
+		return m.teamPost(b.a, str("text"))
 	case "task.steer":
 		if err := m.SteerTask(t.id, str("id"), me, str("message")); err != nil {
 			return "", err

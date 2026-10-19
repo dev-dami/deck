@@ -49,6 +49,9 @@ type ManagerOptions struct {
 	// Team, when set with a nil Handler, adds the team chat (console.post)
 	// to the default handler and records capsule requests.
 	Team *Team
+	// Local, with a nil Handler, is what peer.status tells of this Deck's
+	// work (presence.go).
+	Local Local
 }
 
 // Manager runs the peer link for one Deck: the listener when
@@ -129,7 +132,14 @@ func NewManager(o ManagerOptions) (*Manager, error) {
 	m.peers.Store(o.Peers)
 	m.setName(SelfName(o.Peers))
 	if o.Handler == nil {
-		m.o.Handler = &StatusHandler{NameFunc: m.Name, Version: version.Version, Started: time.Now()}
+		sh := &StatusHandler{NameFunc: m.Name, Version: version.Version, Started: time.Now()}
+		if o.Local.Presence != nil {
+			sh.Presence = func(repos []string) Presence {
+				p := m.peers.Load()
+				return o.Local.Presence(repos, p != nil && p.ShareLimits)
+			}
+		}
+		m.o.Handler = sh
 		if o.SubStore != nil {
 			sh := &SubHandler{Base: m.o.Handler, Store: o.SubStore}
 			if o.Team != nil {
@@ -656,6 +666,39 @@ func (m *Manager) Links() map[string]Link {
 		}
 	}
 	return out
+}
+
+// channel is an MCP channel to the peer name on a link that is already up:
+// the client its supervisor keeps, else a new channel on a link the peer
+// opened to this Deck. release ends what channel opened. It returns nil when
+// no link is up.
+func (m *Manager) channel(ctx context.Context, name string) (*Client, func()) {
+	if sup := m.Supervisor(name); sup != nil {
+		if cl := sup.Client(); cl != nil {
+			return cl, func() {}
+		}
+	}
+	m.mu.Lock()
+	srv := m.srv
+	m.mu.Unlock()
+	if srv == nil {
+		return nil, nil
+	}
+	for _, c := range srv.Conns() {
+		if c.Peer().Name != name {
+			continue
+		}
+		cl, err := c.OpenMCP(ctx)
+		if err != nil {
+			continue
+		}
+		if _, err := cl.Initialize(ctx); err != nil {
+			_ = cl.Close()
+			continue
+		}
+		return cl, func() { _ = cl.Close() }
+	}
+	return nil, nil
 }
 
 // Supervisor returns the supervisor for name, or nil.

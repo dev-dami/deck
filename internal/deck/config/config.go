@@ -160,6 +160,9 @@ type Peers struct {
 	Name   string       `json:"name,omitempty"`
 	Listen PeerListen   `json:"listen"`
 	Remote []PeerRemote `json:"remote,omitempty"`
+	// ShareLimits lets teammates see how full this Deck's CLI plans are, in
+	// peer.status. Off by default.
+	ShareLimits bool `json:"share_limits,omitempty"`
 	// Sandbox is reserved for the virtual bash phase; it is parsed but unused.
 	Sandbox *PeerSandbox `json:"sandbox,omitempty"`
 }

@@ -1,9 +1,11 @@
 package model
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dev-dami/deck/internal/deck/peer"
@@ -69,4 +71,27 @@ func TestChatPaneTyping(t *testing.T) {
 	require.True(t, handled)
 	require.NotNil(t, cmd, "enter sends (here: reports that there is no peer link)")
 	require.Empty(t, p.draft)
+}
+
+func TestTeamPaneShowsPresenceAndChatShowsAgents(t *testing.T) {
+	ps := peer.PeerState{Name: "vps", Presence: &peer.Presence{
+		Agents: []peer.AgentPresence{{Name: "claude2", Kind: "claude", Status: "working", Task: "fix the flaky test", ContextPct: 40}},
+		Leases: []peer.LeasePresence{{Agent: "claude2", Paths: []string{"a.go", "b/**"}, Exclusive: true}},
+		Limits: []peer.LimitPresence{{Kind: "claude", Window: "5h", UsedPct: 80}},
+	}}
+	require.Equal(t, []string{
+		"vps/claude2 ▸ working · fix the flaky test · 40%",
+		"claude2 holds a.go, b/** (exclusive)",
+		"plans: claude 5h 80%",
+	}, presenceLines(ps))
+	require.Nil(t, presenceLines(peer.PeerState{Name: "pc"}), "no link, nothing said")
+
+	m := newBusyUI(&countingWorkspace{})
+	m.teamSnap = &peer.Snapshot{Chat: []peer.ChatMessage{
+		{Seq: 1, From: "vps", Agent: "claude2", Text: "build is green"},
+		{Seq: 2, From: "pc", Agent: "codex", Text: "thanks", Mine: true},
+	}}
+	out := ansi.Strip(strings.Join((&chatPane{}).lines(m, 60), "\n"))
+	require.Contains(t, out, "vps/claude2")
+	require.Contains(t, out, "your codex")
 }

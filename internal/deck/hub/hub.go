@@ -296,6 +296,10 @@ func init() {
 		{Name: OpPeersList, Desc: "Your teammates: the other Decks paired with this one over the peer link (peers), with each one's role and whether it is connected.", run: opPeersList},
 		{Name: OpPeersStatus, Desc: "Ask one teammate's Deck (a peer from peers.list) how it is: its name, version and uptime, over the link.",
 			Args: []Arg{{Name: "peer", Type: tString, Required: true, Desc: "the teammate's name"}}, run: opPeersStatus},
+		{Name: OpTeamRead, Desc: "Read the team chat shared with your teammates' Decks: people and agents on other machines, and this Deck's. Each line has its number; since skips what you read already.",
+			Args: []Arg{{Name: "since", Type: tInt, Desc: "the last message number you read"}}, run: opTeamRead},
+		{Name: OpTeamPost, Desc: "Post a short message to the team chat, which your teammates (people and their agents on other machines) read. Only for things they need to know: a status, a question, a hand-off. A few per minute at most.",
+			Args: []Arg{{Name: "text", Type: tString, Required: true}}, run: opTask(OpTeamPost)},
 	}
 }
 

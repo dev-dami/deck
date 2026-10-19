@@ -7,10 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/dev-dami/deck/internal/deck/sub"
-	"github.com/dev-dami/deck/internal/version"
 )
 
 // The Source Update Bridge between Decks: a peer fetches a capsule this Deck
@@ -126,41 +124,16 @@ func (h *SubHandler) Execute(ctx context.Context, from Caller, op string, args j
 // FetchCapsule pulls capsule id from the pinned peer name into s and returns
 // how many objects were transferred: none when s has them all already.
 func (s *Service) FetchCapsule(ctx context.Context, name string, id sub.ID, store *sub.Store) (int, error) {
-	p, _ := s.loadPeers()
-	return fetchCapsule(ctx, s.dir, name, SelfName(p), id, store)
+	var got int
+	err := s.withPeer(ctx, name, func(cl *Client) error {
+		var err error
+		got, err = fetchCapsule(ctx, cl, name, id, store)
+		return err
+	})
+	return got, err
 }
 
-func fetchCapsule(ctx context.Context, dir, name, self string, id sub.ID, store *sub.Store) (int, error) {
-	pin, ok, err := OpenStore(dir).Get(name)
-	if err != nil {
-		return 0, err
-	}
-	if !ok {
-		return 0, fmt.Errorf("no peer %q is paired", name)
-	}
-	if pin.Addr == "" {
-		return 0, fmt.Errorf("peer %q has no address (it dials in)", name)
-	}
-	ident, err := LoadIdentity(dir)
-	if err != nil {
-		return 0, err
-	}
-	conn, err := Dial(ctx, DialOptions{
-		Identity: ident, Peer: pin, Name: self, Version: version.Version,
-		DialTimeout: 10 * time.Second, Limits: Limits{HandshakeTimeout: 10 * time.Second},
-	})
-	if err != nil {
-		return 0, fmt.Errorf("fetch from %s: %s", name, Sanitize(err.Error()))
-	}
-	defer conn.Close()
-	cl, err := conn.OpenMCP(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer cl.Close()
-	if _, err := cl.Initialize(ctx); err != nil {
-		return 0, fmt.Errorf("initialize: %w", err)
-	}
+func fetchCapsule(ctx context.Context, cl *Client, name string, id sub.ID, store *sub.Store) (int, error) {
 	call := func(op string, args any, out any) error {
 		r, err := cl.Execute(ctx, op, args)
 		if err != nil {

@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -270,6 +271,13 @@ func (m *Manager) setLimits(kind string, l agent.Limits) {
 		m.limits = map[string]agent.Limits{}
 	}
 	m.limits[kind] = l
+}
+
+// PlanLimits are the plan limits each kind's CLI last reported.
+func (m *Manager) PlanLimits() map[string]agent.Limits {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return maps.Clone(m.limits)
 }
 
 // fullest is how full the fullest current window of kind's plan is, and that

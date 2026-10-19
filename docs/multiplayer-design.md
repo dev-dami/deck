@@ -1,7 +1,7 @@
 # Deck multiplayer: many agents, subagent trees, peers
 
-Status: proposal. Phases 1 to 5 (§3 to §7) are implemented, except the
-review stage; the rest is not. It builds on what
+Status: proposal. Phases 1 to 6 (§3 to §7, and §8.1 to §8.3) are
+implemented, except the review stage; the rest is not. It builds on what
 already ships (verified against `main` at 4508226): spawn and tasks
 (`session/spawn.go`, `tasks.go`, `sched.go`), SUB capsules (`docs/sub.md`),
 and the peer link (`internal/deck/peer`: SSH transport, pairing, pinning,
@@ -20,7 +20,7 @@ calling a model API or reading a credential.
 | Subagents | `agent.spawn`, ephemeral members with `parent`, optional worktree, results back via `notifyCreator` | Depth 1 (`spawn.go:85`), 4 per member, no cascade when a parent exits, full 40k-rune briefing, scheduler always spawns the default kind, no UI for apply/discard (`ApplyMember`/`DiscardMember` unused) |
 | Shared tree | Capsule verify/apply/three-way merge | No leases, no overlap warning, no "who is editing what"; agents in one tree overwrite each other silently |
 | Runaway brakes | 6 hops per user turn | Spawns, dispatches and results are not hops; no token/cost/time budget; no plan-limit-aware scheduling |
-| Peers | Pairing, pinned SSH, `peer.status`, `console.post` (human chat), `sub.closure`/`sub.objects` | A peer cannot give another node work; agents cannot read or post team chat; chat dials fresh per send; no outbox, no presence beyond up/down, no shared thread; `docs/peers-design.md` status line is stale |
+| Peers | Pairing, pinned SSH, `peer.status`, `console.post` (human chat), `sub.closure`/`sub.objects` | A peer cannot give another node work; agents cannot read or post team chat; chat dials fresh per send; no outbox, no presence beyond up/down, no shared thread; `docs/peers-design.md` status line is stale (phase 6 closed all but the first and the shared thread) |
 
 ## 2. What others do (October 2026)
 
@@ -220,17 +220,27 @@ All in `session/brakes.go`.
 Everything below goes through the existing pinned SSH link and the two
 MCP tools; new inbound ops are opt-in per peer (`allow_inbound`).
 
-1. **Plumbing.** Team chat and every peer op go over the supervisor's
-   connection instead of dialing per send. Add an on-disk outbox with
-   idempotency keys (design §1 of `peers-design.md`). Add `Manager.Subscribe`
-   (a fan-out of `emit`) for live mirrors.
-2. **Presence.** `peer.status` adds agents (kind, status, task title,
-   context %), plan headroom per kind (opt-in), and lease paths for
-   repositories both sides have (matched by root commit and remote URL).
-   Team pane: `vps/claude2 ▸ working · task 3`.
-3. **Agents in team chat.** `team.read {since}` and `team.post {text}` ops.
-   Each post shows its origin (local human, local agent, peer human, peer
-   agent) and is rendered as text only.
+1. **Plumbing** (done). Team chat, `peers.status` and capsule fetches use
+   a link that is already up: the supervisor's MCP client, else a new
+   channel on a link the peer opened, and dial only when neither exists
+   (`Service.withPeer`). Chat that reaches nobody waits in
+   `~/.deck/peers/outbox.json` (200 calls, 7 days) and goes when the link
+   is back; each call carries an idempotency key, and `console.post` drops
+   a repeat. A call the peer answers, even with a refusal, leaves the
+   outbox. `Manager.Subscribe` moves to phase 8, its first consumer.
+2. **Presence** (done). `peer.status {repos}` adds the agents (name, kind,
+   status, task title, context %), the file leases in the repositories the
+   caller named by root commit, and the plan windows when
+   `peers.share_limits` is on. Each Deck asks the peers it has a link to
+   every 20 seconds, over that link only, and the Team pane shows
+   `vps/claude2 ▸ working · fix the flaky test · 40%`, the leases and the
+   plans. Not done: matching by remote URL (the root commit alone names
+   the project; forks share it).
+3. **Agents in team chat** (done). `team.read {since}` and
+   `team.post {text}`. A post carries the agent's name (`vps/claude2`), so
+   the chat shows each origin: you, your agent, a teammate, a teammate's
+   agent. Posts are redacted and limited to 4 a minute per agent; what
+   `team.read` returns is marked as information, not instructions.
 4. **Code contracts (remote tasks).** This is the main multiplayer step and
    comes before the ops sandbox (vsh), because it is what teammates
    want:
@@ -293,8 +303,9 @@ Each phase is one or two PRs and useful alone.
    pane; capsule-bound approvals already held.
 5. **Races** (done). `task.race`, `$kind×N`, entries compared in the Tasks
    pane, keep one, optional judge.
-6. **Peer plumbing and presence.** Supervisor-connection chat, outbox,
-   `Manager.Subscribe`, rich `peer.status`, `team.read`/`team.post`.
+6. **Peer plumbing and presence** (done). Chat over live links, outbox,
+   rich `peer.status`, `team.read`/`team.post`. `Manager.Subscribe` moves
+   to phase 8.
 7. **Code contracts.** `contract.*`, confirmation card, remote worktree
    runs, capsule results, federated task board, `peer/agent` owners.
 8. **Shared threads.** Mirror, then join with roles and attributed queue.
