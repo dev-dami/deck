@@ -54,6 +54,9 @@ func Start() (_ *Engine, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
+	// Only a Deck that is alone on the thread store knows that the ops
+	// contracts still marked running are not another Deck's.
+	alone := ExclusiveStore || store.Unused("")
 	unlock, err := store.Lock("", ExclusiveStore)
 	if err != nil {
 		return nil, err
@@ -117,6 +120,11 @@ func Start() (_ *Engine, err error) {
 		mgr.SetSubFetch(func(ctx context.Context, name string, id sub.ID, s *sub.Store) (int, error) {
 			return peers.FetchCapsule(ctx, name, id, s)
 		})
+		if alone {
+			// Deck does not resume an ops contract: its requester hears it
+			// failed.
+			peers.FailRunningOps(session.OpsRestarted)
+		}
 	}
 	go mgr.CollectSub()
 	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: peers, unlock: unlock}, nil

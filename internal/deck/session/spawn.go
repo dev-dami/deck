@@ -452,10 +452,11 @@ func (m *Manager) retireSpent(t *thread, a *agentState) {
 }
 
 // failOrphans fails the running tasks whose subagent did not survive a
-// restart of Deck: its process is gone, so nothing will ever report them. A
-// task whose reviewer was lost is blocked for the user.
+// restart of Deck: its process is gone, so nothing will ever report them. An
+// ops contract's running task fails too: its contract does not survive a
+// restart. A task whose reviewer was lost is blocked for the user.
 func (m *Manager) failOrphans(t *thread) {
-	var ids, reviews []string
+	var ids, ops, reviews []string
 	t.mu.Lock()
 	for _, tk := range t.tasks {
 		if tk.Status == store.TaskReview && tk.Reviewer != "" {
@@ -466,11 +467,16 @@ func (m *Manager) failOrphans(t *thread) {
 		}
 		if o := t.member(tk.Owner); o != nil && o.isEphemeral() {
 			ids = append(ids, tk.ID)
+		} else if t.ops != nil {
+			ops = append(ops, tk.ID)
 		}
 	}
 	t.mu.Unlock()
 	for _, id := range ids {
 		_, _ = m.moveTask(t, id, store.TaskFailed, "", "its subagent was lost when Deck stopped", nil)
+	}
+	for _, id := range ops {
+		_, _ = m.moveTask(t, id, store.TaskFailed, "", OpsRestarted, nil)
 	}
 	for _, id := range reviews {
 		_, _ = m.moveTask(t, id, store.TaskBlocked, "", "its reviewer was lost when Deck stopped", nil)

@@ -1143,6 +1143,14 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	t.tasks = cloneTasks(th.Tasks)
 	t.orchestrate = th.Orchestrate
 	t.contract = th.Contract
+	if th.Ops {
+		// Its contract ended when Deck stopped, but the thread stays locked
+		// down: its agents get no tools, approvals, thread.send and
+		// thread.read are refused, and sh.run and contract.result answer that
+		// the contract is over. The thread resumes, so its person can still
+		// read it; a refusal would hide its history.
+		t.ops = &opsState{}
+	}
 	for _, sh := range th.Shares {
 		if validShareRole(sh.Role) {
 			if t.shares == nil {

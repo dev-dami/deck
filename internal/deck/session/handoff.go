@@ -107,8 +107,10 @@ func handoverIndex(t *thread, id, to string) int {
 // finished by the turn: its last reply becomes the result. When the contract
 // wants an explicit task.done, when the reply is empty, or when one reply
 // would have to cover several tasks, the task is blocked instead, so it never
-// hangs unnoticed. While a has live subagents of its own nothing is settled:
-// the task waits for their results, which start a's next turn.
+// hangs unnoticed. An ops contract's task fails instead: only
+// contract.result ends it, and no person waits to unblock it. While a has
+// live subagents of its own nothing is settled: the task waits for their
+// results, which start a's next turn.
 func (m *Manager) settleHanded(t *thread, a *agentState, reply string) {
 	type job struct {
 		id       string
@@ -120,6 +122,7 @@ func (m *Manager) settleHanded(t *thread, a *agentState, reply string) {
 		t.mu.Unlock()
 		return
 	}
+	ops := t.ops != nil
 	for _, tk := range t.tasks {
 		if tk.Owner != a.id || tk.Status != store.TaskRunning || tk.Contract == nil {
 			continue
@@ -135,6 +138,12 @@ func (m *Manager) settleHanded(t *thread, a *agentState, reply string) {
 
 	for _, j := range jobs {
 		switch {
+		case ops && m.isClosed():
+			// Deck's stop cut the turn short: the task stays running, and the
+			// next start fails it and its contract (failOrphans,
+			// peer.Service.FailRunningOps).
+		case ops:
+			_, _ = m.moveTask(t, j.id, store.TaskFailed, a.id, "its agent ended its turn without a result", nil)
 		case len(jobs) > 1:
 			_, _ = m.moveTask(t, j.id, store.TaskBlocked, a.id, "one reply covered several tasks; report each with task.done", nil)
 		case j.explicit:

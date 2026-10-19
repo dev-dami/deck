@@ -30,6 +30,9 @@ type deck struct {
 	dir   string
 	// onApproval answers each approval its agents raise.
 	onApproval func(session.ApprovalMsg)
+	// ran, when set, hears the thread of each contract readied here before
+	// it starts.
+	ran func(thread string)
 }
 
 func say(text string) fake.Step {
@@ -60,8 +63,16 @@ func newDeck(t *testing.T, name string, claude, codex []fake.Script) *deck {
 	t.Cleanup(mgr.Close)
 	d := &deck{mgr: mgr, dir: dir, deals: newContracts(mgr)}
 	d.deals.waits = nil
+	hooks := d.deals.hooks()
+	hooks.Run = func(k peer.Contract) (string, string, func(), error) {
+		tid, task, start, err := d.deals.run(k)
+		if err == nil && d.ran != nil {
+			d.ran(tid)
+		}
+		return tid, task, start, err
+	}
 	svc, err := peer.NewService(peer.ServiceOptions{Dir: filepath.Join(dir, "peers"), ConfigPath: filepath.Join(dir, "config.json"),
-		Logger: slog.New(slog.DiscardHandler), SubStore: mgr.SubStore, Contracts: d.deals.hooks(), Shared: sharing{mgr},
+		Logger: slog.New(slog.DiscardHandler), SubStore: mgr.SubStore, Contracts: hooks, Shared: sharing{mgr},
 		Local: peer.Local{Presence: (&localWork{mgr: mgr}).Presence}})
 	if err != nil {
 		t.Fatal(err)

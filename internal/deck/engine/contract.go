@@ -116,6 +116,10 @@ func (c *contracts) runOps(k peer.Contract) (string, string, func(), error) {
 	start := func() {
 		if err := c.mgr.StartContract(tid, task); err != nil {
 			slog.Warn("Ops contract not started", "peer", k.Peer, "error", err)
+			// The task never ran, so its end does not report the contract:
+			// it fails here, and the task is called off.
+			svc.FinishOps(tid, task, nil, "it did not start: "+hub.Redact(err.Error()))
+			_, _ = c.mgr.SetTaskStatus(tid, task, store.TaskCancelled, "", "its contract failed: it did not start")
 		}
 	}
 	return tid, task, start, nil

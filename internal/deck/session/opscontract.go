@@ -182,10 +182,16 @@ func (m *Manager) OpsResult(threadID string) (json.RawMessage, bool) {
 	return t.ops.result, true
 }
 
+// OpsRestarted is why an ops contract that ran when Deck stopped failed.
+const OpsRestarted = "Deck restarted while it ran"
+
 // failOps fails the ops contract task taskID with why and stops its
-// agent. A task that already ended stays as it is.
+// agent. A task that no longer runs stays as it is.
 func (m *Manager) failOps(t *thread, taskID, why string) {
 	if m.isClosed() {
+		return
+	}
+	if tk, ok := m.Task(t.id, taskID); !ok || tk.Status != store.TaskRunning {
 		return
 	}
 	tk, err := m.moveTask(t, taskID, store.TaskFailed, "", why, nil)
