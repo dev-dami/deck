@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -17,7 +18,7 @@ func TestTeamChatPostsAndPersists(t *testing.T) {
 	h := &TeamHandler{Base: &StatusHandler{Name: "me"}, Team: team}
 	ctx := context.Background()
 
-	ops, err := h.Search(ctx, Caller{Name: "vps"}, "chat")
+	ops, err := h.Search(ctx, Caller{Name: "vps"}, "post chat")
 	if err != nil || len(ops) != 1 || ops[0].Name != OpConsolePost {
 		t.Fatalf("search chat = %+v, %v", ops, err)
 	}
@@ -93,5 +94,80 @@ func TestPrivateCapsuleRequestIsRecorded(t *testing.T) {
 	}
 	if err := closure(id); !errors.Is(err, ErrUnknownOp) {
 		t.Fatalf("closure after unpublish: %v", err)
+	}
+}
+
+func TestConsoleReadIsCappedAndRedacted(t *testing.T) {
+	team := NewTeam("", nil)
+	h := &TeamHandler{Base: &StatusHandler{Name: "me"}, Team: team}
+	read := func(since uint64) ConsoleFeed {
+		t.Helper()
+		out, err := h.Execute(context.Background(), Caller{Name: "vps"}, OpConsoleRead, json.RawMessage(`{"since":`+strconv.FormatUint(since, 10)+`}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var f ConsoleFeed
+		if err := json.Unmarshal([]byte(out), &f); err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	for i := range 150 {
+		team.AddChat(ChatMessage{From: "c", Text: "line " + strconv.Itoa(i)})
+	}
+	f := read(0)
+	if len(f.Messages) != maxReadMessages || f.Messages[0].Text != "line 50" || f.Messages[99].Text != "line 149" || f.Seq != 150 {
+		t.Fatalf("150 messages read as %d, %q..%q, seq %d", len(f.Messages), f.Messages[0].Text, f.Messages[len(f.Messages)-1].Text, f.Seq)
+	}
+	if got := read(148); len(got.Messages) != 2 || got.Messages[0].Seq != 149 {
+		t.Fatalf("since 148 = %+v", got.Messages)
+	}
+	if got := read(1 << 40); len(got.Messages) != maxReadMessages {
+		t.Fatalf("a since from before a restart must read from the start: %d", len(got.Messages))
+	}
+
+	big := strings.Repeat("x", maxChatText)
+	for range 20 {
+		team.AddChat(ChatMessage{From: "c", Text: big})
+	}
+	team.AddChat(ChatMessage{From: "me", Text: "key ghp_" + strings.Repeat("a", 30), Mine: true, To: "c, vps", ID: "k1"})
+	f = read(150)
+	size := 0
+	for _, m := range f.Messages {
+		size += len(m.Text)
+	}
+	last := f.Messages[len(f.Messages)-1]
+	if size > maxReadBytes || len(f.Messages) >= 21 || strings.Contains(last.Text, "ghp_") || !strings.Contains(last.Text, "[redacted]") {
+		t.Fatalf("read %d messages, %d bytes, last %+v", len(f.Messages), size, last)
+	}
+	if last.To != "" || last.Mine || last.ID != "" {
+		t.Fatalf("fields only this Deck needs leak: %+v", last)
+	}
+}
+
+func TestConsoleReadIsNotADefault(t *testing.T) {
+	if (Caller{Name: "b"}).Allowed(OpConsoleRead) {
+		t.Fatal("console.read must be opted in per peer")
+	}
+	if !(Caller{Name: "b", AllowInbound: []string{OpConsoleRead}}).Allowed(OpConsoleRead) {
+		t.Fatal("an explicit allow_inbound must allow console.read")
+	}
+}
+
+func TestDrainRefusesNewWork(t *testing.T) {
+	s, err := NewService(ServiceOptions{Dir: t.TempDir(), Logger: quietLog})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &ContractHandler{Base: &TeamHandler{Base: &StatusHandler{Name: "me"}, Team: s.Team()}, S: s}
+	ctx := context.Background()
+	s.Drain()
+	for _, op := range []string{OpContractPropose, OpThreadPost} {
+		if _, err := h.Execute(ctx, Caller{Name: "b"}, op, json.RawMessage(`{}`)); !errors.Is(err, errDraining) {
+			t.Fatalf("%s while draining: %v", op, err)
+		}
+	}
+	if _, err := h.Execute(ctx, Caller{Name: "b"}, OpConsolePost, json.RawMessage(`{"text":"bye"}`)); err != nil {
+		t.Fatalf("chat must still work while draining: %v", err)
 	}
 }

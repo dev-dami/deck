@@ -168,3 +168,37 @@ func TestPresenceComesWithPeerStatus(t *testing.T) {
 		t.Fatalf("PeerStatus = %q, %v", out, err)
 	}
 }
+
+func TestConsoleReadOverTheLink(t *testing.T) {
+	a, b := linkedServices(t, Local{}, Local{})
+	ctx := ctxT(t)
+	a.Team().AddChat(ChatMessage{From: "c", Agent: "codex1", Text: "deploy key sk-ant-" + strings.Repeat("z", 30)})
+	a.Team().AddChat(ChatMessage{From: "a", Text: "on it", Mine: true, To: "b, c", ID: "k1"})
+
+	if _, err := b.ReadConsole(ctx, "a", 0); err == nil || !strings.Contains(err.Error(), "not allowed") {
+		t.Fatalf("console.read without allow_inbound: %v", err)
+	}
+	// a's person lets b read the chat.
+	if _, err := config.UpdatePeers(a.cfgPath, func(p *config.Peers) bool {
+		p.Remote = append(p.Remote, config.PeerRemote{Name: "b", AllowInbound: append(slices.Clone(DefaultAllowInbound), OpConsoleRead)})
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	f, err := b.ReadConsole(ctx, "a", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Messages) != 2 || f.Messages[0].Author() != "c/codex1" || strings.Contains(f.Messages[0].Text, "sk-ant-") || f.Messages[1].Text != "on it" || f.Messages[1].To != "" {
+		t.Fatalf("feed = %+v", f)
+	}
+
+	a.Team().AddChat(ChatMessage{From: "c", Text: "done"})
+	next, err := b.ReadConsole(ctx, "a", f.Seq)
+	if err != nil || len(next.Messages) != 1 || next.Messages[0].Text != "done" || next.Seq <= f.Seq {
+		t.Fatalf("read since %d = %+v, %v", f.Seq, next, err)
+	}
+}

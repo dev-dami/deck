@@ -294,8 +294,12 @@ func (h *ContractHandler) Search(ctx context.Context, from Caller, query string)
 	return append(ops, matchOps(contractOps, query)...), nil
 }
 
-// Execute implements Handler.
+// Execute implements Handler. While the Service drains, it refuses the ops
+// that start new work here: a contract, or a post to a shared thread.
 func (h *ContractHandler) Execute(ctx context.Context, from Caller, op string, args json.RawMessage) (string, error) {
+	if (op == OpContractPropose || op == OpThreadPost) && h.S.draining.Load() {
+		return "", errDraining
+	}
 	switch op {
 	case OpContractPropose:
 		return h.S.proposed(from, args)
