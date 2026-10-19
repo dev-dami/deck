@@ -43,11 +43,12 @@ func TestRosterIndentsSubagents(t *testing.T) {
 	m := newBoardUI(&boardWorkspace{})
 	out := ansi.Strip(m.modelInfoFor([]workspace.AgentLine{
 		{ID: "claude", Kind: "claude", Status: "idle"},
-		{ID: "codex", Kind: "codex", Status: "working", Depth: 1, Parent: "claude", Branch: "deck/ab12cd-codex"},
-	}, 60))
+		{ID: "codex", Kind: "codex", Status: "working", Depth: 1, Parent: "claude", Branch: "deck/ab12cd-codex", Leases: "a.go (exclusive)"},
+	}, 90))
 	lines := strings.Split(out, "\n")
 	require.Len(t, lines, 4)
 	require.False(t, strings.HasPrefix(lines[0], " "), "a member the user brought in is not indented: %q", lines[0])
 	require.True(t, strings.HasPrefix(lines[2], "  "), "a subagent is indented: %q", lines[2])
 	require.Contains(t, lines[3], "deck/ab12cd-codex")
+	require.Contains(t, lines[3], "holds a.go (exclusive)")
 }

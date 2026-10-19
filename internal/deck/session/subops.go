@@ -680,6 +680,20 @@ func (m *Manager) askWrite(ctx context.Context, a *agentState, op string, s *sub
 		}
 		names = append(names, o.Path)
 	}
+	if a.getWorktree() == nil {
+		// Into the shared tree: not over another member's exclusive lease.
+		paths := make([]string, len(ops))
+		for i, o := range ops {
+			paths[i] = o.Path
+		}
+		t := a.thread
+		t.mu.Lock()
+		err := t.leaseBlock(a, paths)
+		t.mu.Unlock()
+		if err != nil {
+			return err
+		}
+	}
 	summary := fmt.Sprintf("%s %s: %d files (%s) in %s", op, id.Short(), len(ops), strings.Join(names, ", "), root)
 	decided := make(chan agent.Decision, 1)
 	req := agent.ApprovalRequest{

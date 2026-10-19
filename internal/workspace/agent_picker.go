@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	decks "github.com/dev-dami/deck/internal/deck/session"
@@ -161,6 +162,10 @@ type AgentLine struct {
 	Depth  int
 	Parent string
 	Branch string
+	// Leases are the files of the shared tree it claimed (lease.acquire),
+	// "(exclusive)" after the paths of an exclusive one, "; " between leases.
+	// A string, not a slice: the agents pane compares lines with ==.
+	Leases string
 }
 
 // Roster lists the agents in a session, or, before anyone has joined, the
@@ -179,6 +184,17 @@ func (w *DeckWorkspace) Roster(sessionID string) []AgentLine {
 	if th, ok := w.threadOf(sessionID); ok {
 		names := map[string]string{}
 		kids := map[string][]decks.AgentInfo{}
+		leases := map[string]string{}
+		for _, l := range w.mgr().Leases(th.ID) {
+			s := strings.Join(l.Paths, ", ")
+			if l.Exclusive {
+				s += " (exclusive)"
+			}
+			if leases[l.Member] != "" {
+				s = leases[l.Member] + "; " + s
+			}
+			leases[l.Member] = s
+		}
 		for _, a := range th.Members {
 			names[a.ID] = a.Name
 			if a.Status == decks.StatusExited && a.Ephemeral && a.Branch == "" {
@@ -203,7 +219,7 @@ func (w *DeckWorkspace) Roster(sessionID string) []AgentLine {
 				out = append(out, AgentLine{
 					ID: a.Name, Kind: a.Kind, Model: model, Effort: a.Effort, Status: string(a.Status),
 					ContextTokens: a.ContextTokens, ContextWindow: a.ContextWindow, CostUSD: a.CostUSD, Pending: a.Pending,
-					Since: since, Depth: depth, Parent: names[a.Parent], Branch: a.Branch,
+					Since: since, Depth: depth, Parent: names[a.Parent], Branch: a.Branch, Leases: leases[a.ID],
 				})
 				if depth < 16 {
 					walk(a.ID, depth+1)

@@ -64,6 +64,9 @@ func (m *UI) modelInfoFor(agents []workspace.AgentLine, width int) string {
 		if a.Branch != "" {
 			facts = append(facts, muted.Render(a.Branch))
 		}
+		if a.Leases != "" {
+			facts = append(facts, muted.Render("holds "+a.Leases))
+		}
 		lines = append(lines, ansi.Truncate(indent+"  "+strings.Join(facts, muted.Render(" · ")), width, "…"))
 	}
 	return lipgloss.NewStyle().Width(width).Render(lipgloss.JoinVertical(lipgloss.Left, lines...))

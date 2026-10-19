@@ -87,6 +87,9 @@ type MemberAddedMsg struct {
 	Kind     string
 }
 
+// LeasesChangedMsg says a member took or gave back a lease on files.
+type LeasesChangedMsg struct{ ThreadID string }
+
 // NoticeMsg is a note from Deck itself, shown inline (for example a dropped
 // duplicate relay).
 type NoticeMsg struct {

@@ -479,6 +479,8 @@ func (w *DeckWorkspace) pump() {
 			w.publish(DeckChange{Kind: ChangeNotice, SessionID: w.sessionOf(m.ThreadID), Text: paused})
 		case decks.ContinuedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorContinue, "", 1)
+		case decks.LeasesChangedMsg:
+			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
 		case decks.MemberAddedMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.AgentID+" joined")
 			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})

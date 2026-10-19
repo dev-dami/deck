@@ -64,6 +64,7 @@ The Tasks pane in the sidebar is the thread's shared task board. `o` there turns
 - **Brakes.** After each of your messages, agents may start `max_work` subagents and tasks between them (default 24) before the thread pauses, as it does after six agent-to-agent hand-offs; your next message or Continue goes on. An agent may send at most 12 messages a minute, and an agent with 8 unread messages from others takes no more until it catches up.
 - **Budgets.** `budget` limits each task run by subagents: `tokens`, `cost_usd` (as the CLIs report it) and `minutes`. A task's own budget (`budget_tokens`, `budget_usd`, `budget_minutes` on `task.create`; only whoever created it can change it) wins field by field. What a subagent spends counts toward its task and every task above it; a task over budget is blocked, its agents are stopped mid-turn, and whoever created it is told. `r` retries it with a fresh budget.
 - **Plan limits.** A task that names no agent goes to your default agent, unless one of that CLI's plan windows is `route_above_pct` full (default 90): then to the installed agent with the most room, and the thread says so.
+- **Leases.** Agents that share your work tree claim files before they change them (`lease.acquire {paths, exclusive?, minutes?, reason?}`, globs relative to the repository root); the agents pane shows who holds what. A lease ends when the agent releases it or stops, or after 15 minutes. Deck refuses to apply a capsule into a file another agent holds exclusively. When two agents change the same file within ten minutes, or one changes a file another holds, the thread says so and both agents see it in their next prompt.
 - **Worktrees.** A task or spawn with `isolate` runs its subagent on a git worktree and branch of its own. On such a task in the Tasks pane, `a` applies the work to your tree as uncommitted edits, and `d` twice discards the worktree and branch. `x` cancels a task and `r` retries a failed one.
 
 | mode | Claude Code | Codex | OpenCode | Antigravity |
@@ -160,6 +161,7 @@ Capabilities are ops, not tools, so adding one never adds a tool:
 | `thread.send {to, message}` | Message another agent in the thread, or `all`; a kind (`claude`) reaches whichever of that kind is free, `claude*` all of them. It shows in the thread like a `$name` mention. |
 | `thread.read` | The current shared thread. |
 | `thread.roster` | Who is in the thread: each agent's name, kind, model, status, task, parent and branch. |
+| `lease.acquire {paths, exclusive?, minutes?, reason?}`, `lease.release {paths?}`, `lease.list` | Claim files of the shared work tree, give them back, and see who holds what. |
 | `history.threads {limit?}` | This project's Deck threads: id, title, updated time, agents. |
 | `history.search {query, limit?}` | Search what was said in this project's threads. |
 | `history.read {thread, last?}` | The last entries of one of them. |

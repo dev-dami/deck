@@ -195,6 +195,10 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				text += fmt.Sprintf("; with %d %s here, %q reaches whichever is free and %q all of them", n, e.Text, e.Text, e.Text+"*")
 			}
 			out = append(out, line{text: text})
+		case store.EntryNotice:
+			if e.Via == viaOverlap {
+				out = append(out, line{text: "[deck] " + e.Text})
+			}
 		case store.EntryPause:
 			if _, err := strconv.Atoi(e.Text); err != nil {
 				out = append(out, line{text: "[deck] Deck paused this thread after " + e.Text + "; waiting for the user"})

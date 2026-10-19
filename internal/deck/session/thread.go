@@ -46,6 +46,12 @@ type thread struct {
 	// each member's recent thread.send calls.
 	work  int
 	sends map[string][]time.Time
+	// leases are the members' claims on files of the shared tree; edits the
+	// last change to each of its files (by pathKey), and warned when an
+	// overlap at a file and member was last reported (leases.go).
+	leases []lease
+	edits  map[string]edit
+	warned map[string]time.Time
 
 	// Lifecycle (lifecycle.go): pinned to the top, resolved (settled until a
 	// new message wakes it), archived (off the sidebar, still resumable).

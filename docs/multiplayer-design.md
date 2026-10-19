@@ -1,7 +1,7 @@
 # Deck multiplayer: many agents, subagent trees, peers
 
-Status: proposal. Phases 1 to 3 (§3, §4, §7) are implemented, except the
-review stage; the rest is not. It builds on what
+Status: proposal. Phases 1 to 4 (§3, §4, §5, §7) are implemented, except
+the review stage; the rest is not. It builds on what
 already ships (verified against `main` at 4508226): spawn and tasks
 (`session/spawn.go`, `tasks.go`, `sched.go`), SUB capsules (`docs/sub.md`),
 and the peer link (`internal/deck/peer`: SSH transport, pairing, pinning,
@@ -116,26 +116,40 @@ knows each subscription's remaining plan window.
   worktree still holds work. In the Tasks pane, `a` on an isolated task
   applies its worktree (`ApplyMember`) and `d` twice discards it.
 
-## 5. Working in one tree: leases, overlap, presence
+## 5. Working in one tree: leases, overlap, presence — implemented
 
-- **Leases.** New ops `lease.acquire {paths, ttl?, exclusive?, reason}`,
-  `lease.release`, `lease.list`. Globs are repo-relative. A lease ends when
-  its member's turn ends, the member exits, or the TTL (default 15 min)
-  passes. Conflicting acquires are granted but return who holds what (as
-  in Agent Mail), so agents can coordinate instead of stalling.
+All in `session/leases.go`.
+
+- **Leases.** Ops `lease.acquire {paths, minutes?, exclusive?, reason}`,
+  `lease.release {paths?}`, `lease.list`. Paths are globs relative to the
+  repository root (absolute paths and `..` are refused). A lease ends when
+  its member releases it or exits, or after its time (default 15 minutes,
+  at most 2 hours); it does not end with a turn, because work spans turns.
+  Overlapping acquires are granted, and the answer names who else holds
+  what, so agents coordinate instead of stalling. Leases live in memory
+  only: a restart restarts the agents too.
 - **Enforcement where Deck owns the write.** `sub.patch.apply`,
-  `sub.merge.resolve` and `ApplyMember` refuse to write into paths under
-  another member's exclusive lease, unless the user approves.
-- **Overlap detection where it does not.** Agents in a shared tree write
-  with their own tools. Deck already sees every tool call's paths in the
-  event stream and diffs the tree per turn (`diffdetect`). A `touched` map
-  (path → member, turn) raises a notice and a one-line steer to both agents
-  when two members touch the same file in overlapping turns. Edits that
-  come through Deck's approval (ask mode) are checked *before* they run.
-- **Presence.** The changes panel and Team pane show `path ← claude2`
-  for open leases and recent touches. Peers see the same, summarized (§8).
-- **Approvals bound to capsules.** An approval for apply/merge records the
-  capsule id; a different capsule asks again.
+  `sub.patch.revert` and `sub.merge.resolve` into the shared tree refuse
+  any path under another member's exclusive lease, before the user is
+  asked. Writes into a member's own worktree are not checked. The user's
+  own ApplyMember from the Tasks pane is not checked either: the user
+  decides.
+- **Overlap detection where it does not.** Every `KindFileChange` in the
+  shared tree is recorded per file. When a member changes a file another
+  live member changed in the last ten minutes, or one another member holds,
+  Deck logs a notice (once per file and member in that window). Notices
+  with `Via: overlap` are also shown in the agents' briefings, so both
+  agents see it in their next prompt without starting a turn. Changes in
+  isolated worktrees are left to capsules and merges.
+- **Presence.** The agents pane shows each member's leases ("holds
+  internal/** (exclusive)"); it refreshes when a lease changes
+  (`LeasesChangedMsg`).
+- **Approvals bound to capsules** (already so). An apply, revert or merge
+  approval is asked with the capsule id in its summary, which is the key a
+  session-wide allow is remembered by, so a different capsule asks again.
+- Not done: Amoeba-style warnings before an agent's own edit tool runs (in
+  ask mode that would mean matching each edit approval against leases),
+  and lease paths in `peer.status` (phase 6).
 
 ## 6. Races (best of N)
 
@@ -252,8 +266,9 @@ Each phase is one or two PRs and useful alone.
 3. **Brakes** (done). Work budget, task budgets counted up the tree, loop
    guards, routing by plan headroom. A thread-wide spend budget is left
    out: the work limit and per-task budgets cover the runaway cases.
-4. **Leases and overlap.** `lease.*`, apply-time enforcement, `touched` map
-   with notices and steers, presence in panes, capsule-bound approvals.
+4. **Leases and overlap** (done). `lease.*`, apply-time enforcement,
+   overlap notices that reach the agents' next prompts, leases in the agents
+   pane; capsule-bound approvals already held.
 5. **Races.** `task.race`, `$kind×N`, compare view, optional judge.
 6. **Peer plumbing and presence.** Supervisor-connection chat, outbox,
    `Manager.Subscribe`, rich `peer.status`, `team.read`/`team.post`.

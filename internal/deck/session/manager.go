@@ -1396,6 +1396,8 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	switch {
 	case ev.Kind == agent.KindLimits && ev.Limits != nil:
 		m.setLimits(a.kind, *ev.Limits)
+	case ev.Kind == agent.KindFileChange && ev.Diff != nil:
+		m.noteEdit(t, a, ev.Diff.Path)
 	case ev.Kind == agent.KindTurnDone || ev.Kind == agent.KindExited:
 		m.charge(t, a, res.spent)
 	case ev.Kind == agent.KindUsage || ev.Kind == agent.KindToolCall && !ev.Delta:
