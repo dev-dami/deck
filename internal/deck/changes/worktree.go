@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -96,4 +97,40 @@ func splitRaw(out string) (files []string, patch string) {
 		files = append(files, p)
 	}
 	return files, strings.TrimPrefix(out, nul)
+}
+
+// RootCommit is the oldest commit of the repository's history with no
+// parent. It is the same in every clone, so two Decks can tell they work on
+// one project without showing each other more.
+func (r *Repo) RootCommit(ctx context.Context) (string, error) {
+	out, err := r.run(ctx, r.Root, nil, nil, "rev-list", "--max-parents=0", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Fields(out)
+	if len(lines) == 0 {
+		return "", ErrNoRepo
+	}
+	return lines[len(lines)-1], nil
+}
+
+// Init makes dir a new repository whose first commit, with message msg,
+// holds every file in it that is not ignored.
+func Init(ctx context.Context, dir, msg string) error {
+	bin, err := exec.LookPath("git")
+	if err != nil {
+		return ErrNoRepo
+	}
+	r := &Repo{git: bin, Root: dir}
+	id := []string{"GIT_AUTHOR_NAME=deck", "GIT_AUTHOR_EMAIL=deck@localhost", "GIT_COMMITTER_NAME=deck", "GIT_COMMITTER_EMAIL=deck@localhost"}
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"add", "-A"},
+		{"-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "--allow-empty", "-m", msg},
+	} {
+		if _, err := r.run(ctx, dir, id, nil, args...); err != nil {
+			return err
+		}
+	}
+	return nil
 }

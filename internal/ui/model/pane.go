@@ -77,7 +77,7 @@ func registerPane(id paneID, f func() pane) { paneFactories[id] = f }
 // defaultColumns is the strip a new session starts with.
 var defaultColumns = [][]paneID{
 	{paneSession, paneAgents, paneTeam},
-	{paneChat, paneCapsules},
+	{paneChat, paneShared, paneCapsules},
 	{paneGit},
 	{paneTasks, paneCommands},
 	{paneUsage},

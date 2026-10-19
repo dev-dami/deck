@@ -107,7 +107,10 @@ func handoverIndex(t *thread, id, to string) int {
 // finished by the turn: its last reply becomes the result. When the contract
 // wants an explicit task.done, when the reply is empty, or when one reply
 // would have to cover several tasks, the task is blocked instead, so it never
-// hangs unnoticed.
+// hangs unnoticed. An ops contract's task fails instead: only
+// contract.result ends it, and no person waits to unblock it. While a has
+// live subagents of its own nothing is settled: the task waits for their
+// results, which start a's next turn.
 func (m *Manager) settleHanded(t *thread, a *agentState, reply string) {
 	type job struct {
 		id       string
@@ -115,13 +118,18 @@ func (m *Manager) settleHanded(t *thread, a *agentState, reply string) {
 	}
 	var jobs []job
 	t.mu.Lock()
+	if t.waitsOnChildren(a) {
+		t.mu.Unlock()
+		return
+	}
+	ops := t.ops != nil
 	for _, tk := range t.tasks {
 		if tk.Owner != a.id || tk.Status != store.TaskRunning || tk.Contract == nil {
 			continue
 		}
 		// a has not been told about it yet (still ahead of its cursor, or held
 		// by a pause): this turn was about something else.
-		if idx := handoverIndex(t, tk.ID, a.id); idx < 0 || idx >= a.cursor || t.inert[idx] {
+		if idx := handoverIndex(t, tk.ID, a.id); idx < 0 || idx >= a.answered || t.inert[idx] {
 			continue
 		}
 		jobs = append(jobs, job{tk.ID, tk.Contract.ExplicitDone})
@@ -130,6 +138,12 @@ func (m *Manager) settleHanded(t *thread, a *agentState, reply string) {
 
 	for _, j := range jobs {
 		switch {
+		case ops && m.isClosed():
+			// Deck's stop cut the turn short: the task stays running, and the
+			// next start fails it and its contract (failOrphans,
+			// peer.Service.FailRunningOps).
+		case ops:
+			_, _ = m.moveTask(t, j.id, store.TaskFailed, a.id, "its agent ended its turn without a result", nil)
 		case len(jobs) > 1:
 			_, _ = m.moveTask(t, j.id, store.TaskBlocked, a.id, "one reply covered several tasks; report each with task.done", nil)
 		case j.explicit:
@@ -174,8 +188,9 @@ func handoverNote(t *thread, e store.Entry) string {
 // notifyCreator tells the member who handed a task over how it ended: the
 // result, the failure or why it is blocked, as a relay entry that reaches them
 // like any other message (queued when they are busy). It does nothing when the
-// task has no owner or creator, when the creator made the change themselves,
-// or when the creator has left.
+// task has no owner or creator, or when the creator made the change
+// themselves. When the creator has left, its nearest live ancestor is told
+// instead (a subagent's parent, and so on); with none, nobody is.
 func (m *Manager) notifyCreator(t *thread, tk store.Task, by string) {
 	if tk.Creator == "" || tk.Owner == "" || tk.Creator == tk.Owner || by == tk.Creator {
 		return
@@ -204,12 +219,15 @@ func (m *Manager) notifyCreator(t *thread, tk store.Task, by string) {
 		return
 	}
 	t.mu.Lock()
-	cr := t.member(tk.Creator)
-	if cr == nil || cr.status() == StatusExited {
+	cr := t.ancestor(tk.Creator)
+	if cr == nil || cr.id == tk.Owner || t.raceOf(tk) >= 0 { // a race reports once, for all its entries
 		t.mu.Unlock()
 		return
 	}
 	text := fmt.Sprintf("task %s \"%s\" %s", tk.ID, tk.Title, clipText(what, maxEntryChars))
+	if cr.id != tk.Creator {
+		text += fmt.Sprintf(" [it was for %s, who has stopped]", t.name(tk.Creator))
+	}
 	e := store.Entry{Type: store.EntryRelay, Speaker: tk.Owner, To: []string{cr.id}, Via: "task", TaskID: tk.ID, Event: eventText(text)}
 	m.appendLocked(t, e)
 	t.mu.Unlock()

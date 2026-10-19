@@ -614,6 +614,9 @@ func peerStatusText(p peer.PeerState, snap peer.Snapshot, now time.Time) (peerDo
 		st := l.Status
 		switch st.State {
 		case peer.StateConnected:
+			if st.Via != "" {
+				return peerDotOK, "connected via " + st.Via
+			}
 			return peerDotOK, "connected"
 		case peer.StateDegraded:
 			return peerDotWarn, "degraded"
@@ -627,6 +630,8 @@ func peerStatusText(p peer.PeerState, snap peer.Snapshot, now time.Time) (peerDo
 			return peerDotOff, "not reachable · retry in " + formatSpan(wait)
 		}
 		return peerDotOff, "idle"
+	case l.Inbound > 0 && l.Via != "":
+		return peerDotOK, "connected (it dialed in via " + l.Via + ")"
 	case l.Inbound > 0:
 		return peerDotOK, "connected (it dialed in)"
 	case !snap.Enabled:

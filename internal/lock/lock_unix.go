@@ -43,3 +43,13 @@ func tryLockFile(f *os.File) (func(), error) {
 	}
 	return func() { _ = unix.Flock(int(f.Fd()), unix.LOCK_UN) }, nil
 }
+
+func trySharedFile(f *os.File) (func(), error) {
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_SH|unix.LOCK_NB); err != nil {
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			return nil, ErrContended
+		}
+		return nil, fmt.Errorf("flock: %w", err)
+	}
+	return func() { _ = unix.Flock(int(f.Fd()), unix.LOCK_UN) }, nil
+}

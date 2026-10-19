@@ -59,6 +59,18 @@ func New(binary string, selfExe string, broker *approve.Broker) agent.Adapter {
 
 func (a *adapter) Name() string { return "claude" }
 
+// ContractSafe implements agent.ContractSafe: in ask mode every tool use asks
+// through Deck's permission-prompt tool.
+func (a *adapter) ContractSafe() bool { return true }
+
+// OpsSafe implements agent.OpsSafe: Spec.NoTools turns Claude's own tools
+// off (--tools "" and --disallowedTools), so only Deck's search and execute
+// stay.
+func (a *adapter) OpsSafe() bool { return true }
+
+// builtinTools are Claude's own tools, denied when Spec.NoTools is set.
+const builtinTools = "Bash,BashOutput,KillShell,Edit,MultiEdit,Write,NotebookEdit,Read,Glob,Grep,LS,WebFetch,WebSearch,Task,TodoWrite,SlashCommand,Skill"
+
 func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error) {
 	bin := spec.Binary
 	if bin == "" {
@@ -267,6 +279,11 @@ func (r *run) args(resume string) []string {
 		args = append(args, "--mcp-config", r.cfgPath, "--strict-mcp-config",
 			"--permission-prompt-tool", "mcp__"+r.mcpName+"__"+approve.MCPToolName,
 			"--allowedTools", "mcp__"+r.mcpName+"__"+approve.MCPToolSearch+",mcp__"+r.mcpName+"__"+approve.MCPToolExecute)
+	}
+	if r.spec.NoTools {
+		// --tools "" turns every built-in tool off; the deny list is a second
+		// lock for a claude that would still offer one of them.
+		args = append(args, "--tools", "", "--disallowedTools", builtinTools)
 	}
 	if model != "" {
 		args = append(args, "--model", model)

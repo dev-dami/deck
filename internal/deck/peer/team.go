@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
 
+	"github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/internal/deck/hub"
 	"github.com/dev-dami/deck/internal/deck/sub"
 	"github.com/dev-dami/deck/internal/version"
 )
@@ -26,6 +29,11 @@ import (
 // OpConsolePost posts a line to this Deck's team chat.
 const OpConsolePost = "console.post"
 
+// OpConsoleRead reads this Deck's team chat. It is not in
+// DefaultAllowInbound: the chat holds what other teammates wrote to this
+// Deck, so the person allows it per peer (allow_inbound).
+const OpConsoleRead = "console.read"
+
 const (
 	// maxChatText bounds one chat message, in bytes.
 	maxChatText = 4000
@@ -36,20 +44,46 @@ const (
 	// requestRepeat folds a teammate asking for the same capsule again
 	// within this window into the first request.
 	requestRepeat = time.Minute
+	// chatTimeout bounds delivering chat to one teammate.
+	chatTimeout = 15 * time.Second
+	// maxReadMessages and maxReadBytes cap one console.read answer.
+	maxReadMessages = 100
+	maxReadBytes    = 32 << 10
 )
 
 var consoleOps = []OpInfo{
-	{Name: OpConsolePost, Args: "{text*}", Desc: "post a message to this Deck's team chat"},
+	{Name: OpConsolePost, Args: "{text*, id, agent}", Desc: "post a message to this Deck's team chat; id drops a repeat, agent names the agent that wrote it"},
+	{Name: OpConsoleRead, Args: "{since}", Desc: "read this Deck's team chat: the newest messages after seq since, and the seq to pass next time"},
+}
+
+// ConsoleFeed is a team chat as console.read returns it.
+type ConsoleFeed struct {
+	// Seq is the newest seq of the feed: pass it as since next time.
+	Seq      uint64        `json:"seq"`
+	Messages []ChatMessage `json:"messages"`
 }
 
 // ChatMessage is one line of the team chat.
 type ChatMessage struct {
-	Seq  uint64    `json:"seq"`
-	From string    `json:"from"` // the Deck that wrote it
-	To   string    `json:"to,omitempty"`
-	Text string    `json:"text"`
-	At   time.Time `json:"at"`
-	Mine bool      `json:"mine,omitempty"` // written on this Deck
+	Seq  uint64 `json:"seq"`
+	From string `json:"from"` // the Deck that wrote it
+	// Agent is the agent of that Deck that wrote it; "" for its person.
+	Agent string    `json:"agent,omitempty"`
+	To    string    `json:"to,omitempty"`
+	Text  string    `json:"text"`
+	At    time.Time `json:"at"`
+	Mine  bool      `json:"mine,omitempty"` // written on this Deck
+	// ID is the sender's key for the message: a repeat of it is dropped.
+	ID string `json:"id,omitempty"`
+}
+
+// Author is who wrote m: the Deck, and its agent after a slash
+// ("vps/claude2").
+func (m ChatMessage) Author() string {
+	if m.Agent != "" {
+		return m.From + "/" + m.Agent
+	}
+	return m.From
 }
 
 // CapsuleRequest is a teammate asking this Deck for a capsule.
@@ -113,13 +147,21 @@ func (t *Team) changed() {
 	}
 }
 
-// AddChat records a chat message and keeps it on disk.
+// AddChat records a chat message and keeps it on disk. A message whose ID
+// is already kept from the same Deck is a repeat: it is dropped, and the
+// kept one returned.
 func (t *Team) AddChat(m ChatMessage) ChatMessage {
 	m.Text = cleanChat(m.Text)
 	if m.At.IsZero() {
 		m.At = time.Now()
 	}
 	t.mu.Lock()
+	for _, c := range t.chat {
+		if m.ID != "" && c.ID == m.ID && c.From == m.From {
+			t.mu.Unlock()
+			return c
+		}
+	}
 	t.seq++
 	m.Seq = t.seq
 	t.chat = append(t.chat, m)
@@ -169,6 +211,24 @@ func (t *Team) Chat() []ChatMessage {
 	return append([]ChatMessage(nil), t.chat...)
 }
 
+// ChatAfter returns the kept chat after seq since, oldest first, and the
+// newest seq. A since past the newest seq is from before this Deck
+// restarted, so all the kept chat comes back.
+func (t *Team) ChatAfter(since uint64) ([]ChatMessage, uint64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if since > t.seq {
+		since = 0
+	}
+	var out []ChatMessage
+	for _, m := range t.chat {
+		if m.Seq > since {
+			out = append(out, m)
+		}
+	}
+	return out, t.seq
+}
+
 // Requests are the kept capsule requests, oldest first.
 func (t *Team) Requests() []CapsuleRequest {
 	t.mu.Lock()
@@ -194,7 +254,8 @@ func cleanChat(s string) string {
 	return s
 }
 
-// TeamHandler is Base plus console.post, recording into Team.
+// TeamHandler is Base plus console.post, recording into Team, and
+// console.read, reading from it.
 type TeamHandler struct {
 	Base Handler
 	Team *Team
@@ -211,23 +272,77 @@ func (h *TeamHandler) Search(ctx context.Context, from Caller, query string) ([]
 
 // Execute implements Handler.
 func (h *TeamHandler) Execute(ctx context.Context, from Caller, op string, args json.RawMessage) (string, error) {
+	if op == OpConsoleRead {
+		var a struct {
+			Since uint64 `json:"since"`
+		}
+		_ = json.Unmarshal(args, &a)
+		msgs, seq := h.Team.ChatAfter(a.Since)
+		b, err := json.Marshal(ConsoleFeed{Seq: seq, Messages: newestFit(msgs)})
+		return string(b), err
+	}
 	if op != OpConsolePost {
 		return h.Base.Execute(ctx, from, op, args)
 	}
 	var a struct {
-		Text string `json:"text"`
+		Text  string `json:"text"`
+		ID    string `json:"id"`
+		Agent string `json:"agent"`
 	}
 	if json.Unmarshal(args, &a) != nil || strings.TrimSpace(a.Text) == "" {
 		return "", errors.New("console.post needs text")
 	}
-	h.Team.AddChat(ChatMessage{From: from.Name, Text: a.Text})
+	if !config.ValidPeerName(a.Agent) {
+		a.Agent = "" // a label only; one that is not a plain name is dropped
+	}
+	h.Team.AddChat(ChatMessage{From: from.Name, Agent: a.Agent, Text: a.Text, ID: truncate(a.ID, 64)})
 	return "posted", nil
 }
 
-// SendChat posts text to the team chat of every paired teammate this Deck
-// can dial, and records it here. It returns the teammates it reached and an
-// error naming the ones it could not.
+// newestFit keeps the newest of msgs that fit maxReadMessages and
+// maxReadBytes, oldest first, with credentials redacted. It drops the fields
+// only this Deck needs (To names its other teammates).
+func newestFit(msgs []ChatMessage) []ChatMessage {
+	var out []ChatMessage
+	size := 0
+	for i := len(msgs) - 1; i >= 0 && len(out) < maxReadMessages; i-- {
+		m := msgs[i]
+		m.Text = hub.Redact(m.Text)
+		if size += len(m.Text) + len(m.From) + len(m.Agent) + 64; size > maxReadBytes {
+			break
+		}
+		out = append(out, ChatMessage{Seq: m.Seq, From: m.From, Agent: m.Agent, Text: m.Text, At: m.At})
+	}
+	slices.Reverse(out)
+	return out
+}
+
+// ReadConsole reads the team chat of teammate name after seq since. Pass
+// the feed's Seq as since next time. That Deck must list console.read in
+// allow_inbound for this one.
+func (s *Service) ReadConsole(ctx context.Context, name string, since uint64) (ConsoleFeed, error) {
+	var f ConsoleFeed
+	err := s.shareCall(ctx, name, OpConsoleRead, map[string]any{"since": since}, &f)
+	if len(f.Messages) > maxReadMessages {
+		f.Messages = f.Messages[len(f.Messages)-maxReadMessages:]
+	}
+	for i, m := range f.Messages {
+		f.Messages[i] = ChatMessage{Seq: m.Seq, From: cleanLine(m.From, 32), Agent: cleanLine(m.Agent, 32), Text: hub.Redact(cleanChat(m.Text)), At: m.At}
+	}
+	return f, err
+}
+
+// SendChat posts text from this Deck's person to the team chat of every
+// paired teammate, and records it here. A teammate that cannot be reached
+// gets it from the outbox once its link is back. It returns the teammates
+// it reached; QueuedError names the ones it waits for, another error the
+// ones that refused it.
 func (s *Service) SendChat(ctx context.Context, text string) ([]string, error) {
+	return s.PostChat(ctx, "", text)
+}
+
+// PostChat is SendChat for agent, an agent of this Deck ("" for its person).
+func (s *Service) PostChat(ctx context.Context, agent, text string) ([]string, error) {
 	text = cleanChat(text)
 	if text == "" {
 		return nil, errors.New("nothing to send")
@@ -241,31 +356,61 @@ func (s *Service) SendChat(ctx context.Context, text string) ([]string, error) {
 	}
 	p, _ := s.loadPeers()
 	self := SelfName(p)
-	var reached, failed []string
+	id := newCallKey()
+	args := map[string]any{"text": text, "id": id}
+	if agent != "" {
+		args["agent"] = agent
+	}
+	var reached, refused, queued []string
 	for _, pin := range pins {
-		err := callPeer(ctx, s.dir, pin.Name, self, func(cl *Client) error {
-			r, err := cl.Execute(ctx, OpConsolePost, map[string]any{"text": text})
+		var answered bool
+		cctx, cancel := context.WithTimeout(ctx, chatTimeout)
+		err := s.withPeer(cctx, pin.Name, func(cl *Client) error {
+			r, err := cl.Execute(cctx, OpConsolePost, args)
 			if err != nil {
 				return err
 			}
+			answered = true
 			if r.IsError {
 				return errors.New(Sanitize(truncate(r.Text(), 200)))
 			}
 			return nil
 		})
-		if err != nil {
-			failed = append(failed, pin.Name+" ("+Sanitize(truncate(err.Error(), 120))+")")
-			continue
+		cancel()
+		switch {
+		case err == nil:
+			reached = append(reached, pin.Name)
+		case answered:
+			refused = append(refused, pin.Name+" ("+Sanitize(truncate(err.Error(), 120))+")")
+		default:
+			s.queue(pin.Name, OpConsolePost, id, args)
+			queued = append(queued, pin.Name)
 		}
-		reached = append(reached, pin.Name)
 	}
-	if len(reached) > 0 {
-		s.team.AddChat(ChatMessage{From: self, To: strings.Join(reached, ", "), Text: text, Mine: true})
+	if len(reached)+len(queued) > 0 {
+		s.team.AddChat(ChatMessage{From: self, Agent: agent, To: strings.Join(append(reached, queued...), ", "), Text: text, Mine: true, ID: id})
 	}
-	if len(failed) > 0 {
-		return reached, fmt.Errorf("could not reach %s", strings.Join(failed, ", "))
+	switch {
+	case len(refused) > 0:
+		return reached, fmt.Errorf("refused by %s", strings.Join(refused, ", "))
+	case len(queued) > 0:
+		return reached, QueuedError{Peers: queued}
 	}
 	return reached, nil
+}
+
+// withPeer runs fn on an MCP channel to the pinned peer name: the one its
+// supervisor keeps open, else a new channel on a link the peer opened to
+// this Deck, else a link dialed for this call alone.
+func (s *Service) withPeer(ctx context.Context, name string, fn func(cl *Client) error) error {
+	if mgr := s.Manager(); mgr != nil {
+		if cl, release := mgr.channel(ctx, name); cl != nil {
+			defer release()
+			return fn(cl)
+		}
+	}
+	p, _ := s.loadPeers()
+	return callPeer(ctx, s.dir, name, SelfName(p), fn)
 }
 
 // Team is the team chat and the capsule requests.

@@ -363,6 +363,11 @@ type UI struct {
 	// the first read. teamWatching is set while a watch is out.
 	teamSnap     *peer.Snapshot
 	teamWatching bool
+	// shared is the thread a teammate shares that the person follows in
+	// the Shared pane; sharedGen counts what was followed, so a read for a
+	// thread left behind is dropped.
+	shared    *sharedView
+	sharedGen int
 	// teamSeen is the newest chat message or capsule request already
 	// told; newer ones become notices.
 	teamSeen uint64
@@ -881,6 +886,14 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.applyBusyState(msg)...)
 	case teamSnapMsg:
 		if cmd := m.applyTeamSnap(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case sharedMirrorMsg:
+		if cmd := m.applySharedMirror(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case sharedRetryMsg:
+		if cmd := m.applySharedRetry(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case capsulesMsg:
@@ -1567,7 +1580,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case JobDoneMsg:
 		m.jobDone(msg.ID, msg.Err)
 	case app.UpdateAvailableMsg:
-		text := fmt.Sprintf("Deck update available: v%s â†’ v%s.", msg.CurrentVersion, msg.LatestVersion)
+		text := fmt.Sprintf("Deck update available: v%s → v%s.", msg.CurrentVersion, msg.LatestVersion)
 		if msg.IsDevelopment {
 			text = fmt.Sprintf("This is a development version of Deck. The latest version is v%s.", msg.LatestVersion)
 		}
@@ -4528,7 +4541,7 @@ func (m *UI) agentCompletionItems() []completions.AgentItem {
 	}
 	var cur, rest []completions.AgentItem
 	for _, c := range picker.CachedAgentModelChoices(sessionID) {
-		label := tone.Mark(c.Kind) + " " + c.Kind + " Â· " + c.Name
+		label := tone.Mark(c.Kind) + " " + c.Kind + " · " + c.Name
 		effort := c.CurrentEffort
 		if c.Current {
 			label += "  (now)"
@@ -4544,15 +4557,26 @@ func (m *UI) agentCompletionItems() []completions.AgentItem {
 			rest = append(rest, it)
 		}
 	}
-	return append(cur, rest...)
+	var lines []workspace.AgentLine
+	if roster, ok := m.com.Workspace.(workspace.Roster); ok && m.session != nil {
+		lines = roster.Roster(m.session.ID)
+	}
+	return append(append(cur, instanceItems(lines)...), rest...)
 }
 
 // insertAgentCompletion puts $agent in the message and, when another model
 // was picked, switches the agent to it.
 func (m *UI) insertAgentCompletion(v completions.AgentCompletionValue) tea.Cmd {
 	prevHeight := m.textarea.Height()
-	if !m.insertCompletionText("$" + v.Kind) {
+	text := "$" + v.Kind
+	if v.Insert != "" {
+		text = v.Insert
+	}
+	if !m.insertCompletionText(text) {
 		return nil
+	}
+	if v.Insert != "" {
+		return m.handleTextareaHeightChange(prevHeight)
 	}
 	cmds := []tea.Cmd{m.handleTextareaHeightChange(prevHeight)}
 	if !v.Current {
@@ -5218,7 +5242,7 @@ func (m *UI) selectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 			label = "its default model"
 		}
 		if msg.Effort != "" {
-			label += " Â· " + msg.Effort + " effort"
+			label += " · " + msg.Effort + " effort"
 		}
 		return util.NewInfoMsg(msg.Kind + " now runs " + label)
 	}
@@ -5519,7 +5543,7 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	default:
 		return nil
 	}
-	// TypeAgentFinished / TypeAgentError are the busyâ†’idle edge: the agent
+	// TypeAgentFinished / TypeAgentError are the busy→idle edge: the agent
 	// clears its active request before publishing precisely so observers
 	// can re-probe. Drop the memoized busy state and re-fetch it and the
 	// prompt queue off-thread.

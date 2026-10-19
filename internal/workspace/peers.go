@@ -2,9 +2,12 @@ package workspace
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/peer"
+	decks "github.com/dev-dami/deck/internal/deck/session"
 )
 
 // PeerLink is the team link between Deck instances (docs/peers-design.md)
@@ -41,6 +44,53 @@ type PeerLink interface {
 	// Pin pins a Deck that proved the code, once the person confirmed the
 	// fingerprints.
 	Pin(r peer.PinRequest) error
+	// AnswerContract accepts a contract a teammate proposed, with an agent
+	// of kind agent, or declines it. Accepting fetches the teammate's tree:
+	// call it off the UI loop.
+	AnswerContract(name, id string, accept bool, agent string) error
+	// ProposeContract proposes contract c (an ops contract the person
+	// confirmed) to teammate name. A teammate that cannot be reached gets
+	// it later: the error is then a peer.QueuedError. It uses the network:
+	// call it off the UI loop.
+	ProposeContract(ctx context.Context, name string, c peer.Contract) (peer.Contract, error)
+
+	// ReadShared reads a thread teammate name shares with this Deck, from
+	// log entry after on, waiting up to wait for something new.
+	ReadShared(ctx context.Context, name, thread string, after int, wait time.Duration) (peer.Mirror, error)
+	// PostShared posts to it, as participant or editor.
+	PostShared(ctx context.Context, name, thread, text string) error
+	// AnswerShared answers one of its approvals, as editor.
+	AnswerShared(ctx context.Context, name, thread, approval string, allow bool) error
+}
+
+// Sharing is sharing this Deck's threads with teammates.
+type Sharing interface {
+	// ShareThread shares the session's thread with teammate name in role
+	// (observer, participant or editor), or stops sharing it ("").
+	ShareThread(sessionID, name, role string) error
+	// ThreadShares are the teammates the session's thread is shared with,
+	// and their roles.
+	ThreadShares(sessionID string) map[string]string
+}
+
+var _ Sharing = (*DeckWorkspace)(nil)
+
+// ShareThread implements [Sharing].
+func (w *DeckWorkspace) ShareThread(sessionID, name, role string) error {
+	th, ok := w.threadOf(sessionID)
+	if !ok {
+		return errors.New("no thread for this session")
+	}
+	return w.mgr().SetShare(th.ID, name, role)
+}
+
+// ThreadShares implements [Sharing].
+func (w *DeckWorkspace) ThreadShares(sessionID string) map[string]string {
+	th, ok := w.threadOf(sessionID)
+	if !ok {
+		return nil
+	}
+	return w.mgr().Shares(th.ID)
 }
 
 var _ PeerLink = (*peer.Service)(nil)
@@ -52,6 +102,34 @@ type Peers interface {
 }
 
 var _ Peers = (*DeckWorkspace)(nil)
+
+// Contracts are code contracts as the person drives them: asking a
+// teammate for one, and which agents may run one here.
+type Contracts interface {
+	// ProposeContract asks teammate name to do brief for the session's
+	// thread, and returns the task it becomes on the board. queued is set
+	// when the teammate cannot be reached and the request waits for its
+	// link. It snapshots the tree and uses the network: call it off the UI
+	// loop.
+	ProposeContract(sessionID, name, brief string) (taskID string, queued bool, err error)
+	// ContractKinds are the agent kinds that may run a teammate's contract.
+	ContractKinds() []string
+}
+
+var _ Contracts = (*DeckWorkspace)(nil)
+
+// ProposeContract implements [Contracts].
+func (w *DeckWorkspace) ProposeContract(sessionID, name, brief string) (string, bool, error) {
+	th, ok := w.threadOf(sessionID)
+	if !ok {
+		return "", false, errors.New("no thread for this session")
+	}
+	tk, queued, err := w.mgr().Contract(th.ID, "", decks.ContractSpec{Peer: name, Brief: brief})
+	return tk.ID, queued, err
+}
+
+// ContractKinds implements [Contracts].
+func (w *DeckWorkspace) ContractKinds() []string { return w.mgr().ContractKinds() }
 
 // PeerLink implements [Peers].
 func (w *DeckWorkspace) PeerLink() PeerLink {

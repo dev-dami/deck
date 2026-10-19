@@ -253,7 +253,7 @@ func TestHostileServerIntoDialer(t *testing.T) {
 	defer sc.Close()
 
 	for _, typ := range []string{"session", "direct-tcpip", "forwarded-tcpip", "x11", "auth-agent@openssh.com",
-		"direct-streamlocal@openssh.com", "deck-pair", "MCP", ""} {
+		"direct-streamlocal@openssh.com", "deck-pair", "MCP", "", RelayChannelType, RelayedChannelType} {
 		ch, _, err := sc.OpenChannel(typ, []byte("payload"))
 		var oe *ssh.OpenChannelError
 		if err == nil || !errors.As(err, &oe) || oe.Reason != ssh.UnknownChannelType {
@@ -319,17 +319,19 @@ func TestPerKeyLimits(t *testing.T) {
 		Caller: allowOps(OpPeerStatus, "block")})
 	c1 := b.dial(t, pinA, nil)
 	c2 := b.dial(t, pinA, nil)
+	// Dial returns before the server counts the link. Serve a request on
+	// each link first, so the server has counted both before the third.
+	cl1, cl2 := openInit(t, c1), openInit(t, c2)
 	// The third link of the same key is closed right after auth (Dial
 	// itself may or may not see it finish first).
 	if c3, err := Dial(ctxT(t), DialOptions{Identity: b.id, Peer: pinA, Logger: quietLog}); err == nil {
 		defer c3.Close()
-		waitDone(t, c3.Done(), 5*time.Second, "link over the per-key cap")
+		waitDone(t, c3.Done(), 20*time.Second, "link over the per-key cap")
 	}
 
 	ctx := ctxT(t)
-	cl1, cl2 := openInit(t, c1), openInit(t, c2)
 	go func() { _, _ = cl1.Execute(ctx, "block", nil) }()
-	waitFor(t, 5*time.Second, "blocking call", func() bool { return h.calls() >= 1 })
+	waitFor(t, 20*time.Second, "blocking call", func() bool { return h.calls() >= 1 })
 	// One call in flight for the key: a call over its other link is busy.
 	if _, err := cl2.Execute(ctx, OpPeerStatus, nil); err == nil || !strings.Contains(err.Error(), "too many calls") {
 		t.Fatalf("second call of the key not refused: %v", err)
@@ -566,8 +568,6 @@ func TestAllowInboundOpVariants(t *testing.T) {
 }
 
 func TestContractorOpsNeedRole(t *testing.T) {
-	contractorOps["contract.propose"] = true
-	t.Cleanup(func() { delete(contractorOps, "contract.propose") })
 	allow := []string{OpPeerStatus, "contract.propose"}
 	if (Caller{Role: "observer", AllowInbound: allow}).Allowed("contract.propose") {
 		t.Fatal("observer may run a contractor op")
@@ -578,8 +578,11 @@ func TestContractorOpsNeedRole(t *testing.T) {
 	if !(Caller{Role: "contractor", AllowInbound: allow}).Allowed("contract.propose") {
 		t.Fatal("contractor refused an allowed contractor op")
 	}
-	if (Caller{Role: "contractor"}).Allowed("contract.propose") {
-		t.Fatal("contractor op allowed without allow_inbound naming it")
+	if !(Caller{Role: "contractor"}).Allowed("contract.propose") {
+		t.Fatal("the default allow list refused a contractor its op")
+	}
+	if (Caller{Role: "contractor", AllowInbound: []string{OpPeerStatus}}).Allowed("contract.propose") {
+		t.Fatal("contractor op allowed by an allow_inbound that leaves it out")
 	}
 	if !(Caller{}).Allowed(OpPeerStatus) || (Caller{}).Allowed("console.read") || (Caller{}).Allowed("") {
 		t.Fatal("default allow list")

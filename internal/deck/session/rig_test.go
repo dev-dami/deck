@@ -45,6 +45,18 @@ type sentImages struct {
 	images []agent.Image
 }
 
+// ContractSafe forwards to the adapter it wraps.
+func (s *spyAdapter) ContractSafe() bool {
+	cs, ok := s.Adapter.(agent.ContractSafe)
+	return ok && cs.ContractSafe()
+}
+
+// OpsSafe forwards to the adapter it wraps.
+func (s *spyAdapter) OpsSafe() bool {
+	o, ok := s.Adapter.(agent.OpsSafe)
+	return ok && o.OpsSafe()
+}
+
 func newSpy(a agent.Adapter) *spyAdapter { return &spyAdapter{Adapter: a, runs: map[string]*spyRun{}} }
 
 func (s *spyAdapter) Start(ctx context.Context, sp agent.Spec) (agent.Run, error) {
@@ -175,6 +187,38 @@ func (s *spyAdapter) run(id string) agent.Run {
 	defer s.mu.Unlock()
 	return s.runs[id]
 }
+
+// ---- gated adapter: holds one start until the test lets it go ----
+
+// gatedAdapter holds the first Start that hold accepts (any Start when hold
+// is nil) until release. Its member then stays between the claim of its task
+// and its bind for as long as the test needs.
+type gatedAdapter struct {
+	agent.Adapter
+	hold    func(agent.Spec) bool
+	held    sync.Once
+	entered chan struct{} // closed when the held Start begins
+	open    chan struct{}
+	opened  sync.Once
+}
+
+func newGate(a agent.Adapter, hold func(agent.Spec) bool) *gatedAdapter {
+	return &gatedAdapter{Adapter: a, hold: hold, entered: make(chan struct{}), open: make(chan struct{})}
+}
+
+func (g *gatedAdapter) Start(ctx context.Context, sp agent.Spec) (agent.Run, error) {
+	if g.hold == nil || g.hold(sp) {
+		first := false
+		g.held.Do(func() { first = true })
+		if first {
+			close(g.entered)
+			<-g.open
+		}
+	}
+	return g.Adapter.Start(ctx, sp)
+}
+
+func (g *gatedAdapter) release() { g.opened.Do(func() { close(g.open) }) }
 
 // ---- collector: drains Updates and answers questions about what came out ----
 

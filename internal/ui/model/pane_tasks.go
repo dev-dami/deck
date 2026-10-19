@@ -19,7 +19,10 @@ import (
 // have running (Claude Code's Task/Agent, OpenCode's task, …) with how long it
 // has run. enter shows a row's detail. On a task, x cancels it, r retries a
 // failed or blocked one, and o turns orchestration on or off: the scheduler
-// then runs ready tasks, and members may start subagents.
+// then runs ready tasks, and members may start subagents. On a task whose
+// subagent worked on a worktree of its own, a applies that work to your tree
+// and d (twice) discards it. A race's entries sit under it, each with what it
+// changed, spent and took; a on an entry keeps it and discards the others.
 
 func init() { registerPane(paneTasks, func() pane { return &tasksPane{} }) }
 
@@ -28,7 +31,13 @@ const taskKeyPrefix = "task:"
 type tasksPane struct {
 	list paneList
 	open map[string]bool // expanded rows, by task key or tool id
+	// discard is the task whose worktree a first d asked to discard, and
+	// when: a second d on it within discardWindow does it.
+	discard   string
+	discardAt time.Time
 }
+
+const discardWindow = 3 * time.Second
 
 func (p *tasksPane) id() paneID       { return paneTasks }
 func (p *tasksPane) title(*UI) string { return "Tasks" }
@@ -60,6 +69,8 @@ func (p *tasksPane) key(m *UI, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	case "enter", "space":
 		p.toggle(sel)
 		return true, nil
+	case "a", "d":
+		return p.worktree(m, sel, msg.String() == "d")
 	case "x":
 		return p.act(m, sel, func(o workspace.Orchestration, sid, id string) error { return o.CancelTask(sid, id) })
 	case "r":
@@ -99,6 +110,52 @@ func (p *tasksPane) act(m *UI, sel string, f func(o workspace.Orchestration, ses
 			return util.NewErrorMsg(err)
 		}
 		return nil
+	}
+}
+
+// worktree applies, or with discard set discards, the work the selected
+// task's subagent did on its own worktree. Discarding asks for a second d.
+// Not handled when the selection is no such task.
+func (p *tasksPane) worktree(m *UI, sel string, discard bool) (bool, tea.Cmd) {
+	id, ok := strings.CutPrefix(sel, taskKeyPrefix)
+	w, isW := m.com.Workspace.(workspace.Worktrees)
+	if !ok || !isW || m.session == nil {
+		return false, nil
+	}
+	branch, entry := "", false
+	for _, t := range m.boardReport().Tasks {
+		if t.ID == id {
+			branch, entry = t.Branch, t.Entry
+		}
+	}
+	if branch == "" {
+		return false, nil
+	}
+	sid := m.session.ID
+	if !discard {
+		return true, func() tea.Msg {
+			files, err := w.ApplyTask(sid, id)
+			switch {
+			case err != nil:
+				return util.NewErrorMsg(err)
+			case entry:
+				return util.NewInfoMsg(fmt.Sprintf("Kept %s: applied %d files from %s and discarded the other entries", id, len(files), branch))
+			case len(files) == 0:
+				return util.NewInfoMsg(branch + " has nothing to apply")
+			}
+			return util.NewInfoMsg(fmt.Sprintf("Applied %d files from %s", len(files), branch))
+		}
+	}
+	if p.discard != id || time.Since(p.discardAt) > discardWindow {
+		p.discard, p.discardAt = id, time.Now()
+		return true, util.ReportInfo("Press d again to discard " + branch + " and everything on it")
+	}
+	p.discard = ""
+	return true, func() tea.Msg {
+		if err := w.DiscardTask(sid, id); err != nil {
+			return util.NewErrorMsg(err)
+		}
+		return util.NewInfoMsg("Discarded " + branch)
 	}
 }
 
@@ -167,6 +224,8 @@ func taskGlyph(status, frame string) string {
 		return frame
 	case "ready":
 		return "○"
+	case "review":
+		return "◇"
 	case "blocked":
 		return "!"
 	case "done":
@@ -187,6 +246,15 @@ func taskLines(m *UI, t workspace.BoardTask, width int, now time.Time, frame str
 	if t.Owner != "" {
 		right = muted.Render(t.Owner)
 	}
+	if t.Reviewer != "" {
+		right = muted.Render(t.Owner + " · review: " + t.Reviewer)
+	}
+	if t.Entry {
+		// Under its race, which has the title: the entry is who ran it and
+		// how it compares.
+		left = "  " + taskGlyph(t.Status, frame) + " " + muted.Render(t.ID) + " " + t.Owner
+		right = muted.Render(t.Stats)
+	}
 	lines := []string{spread(left, right, width)}
 	if !open {
 		return lines
@@ -206,15 +274,24 @@ func taskLines(m *UI, t workspace.BoardTask, width int, now time.Time, frame str
 	if t.Attempts > 0 {
 		info += fmt.Sprintf(" · attempt %d of %d", t.Attempts, t.Tries)
 	}
+	if t.Reviews > 0 {
+		info += fmt.Sprintf(" · %d reviews", t.Reviews)
+	}
 	if len(t.Deps) > 0 {
 		info += " · after " + strings.Join(t.Deps, ",")
 	}
 	add("", info, 2)
-	add("", t.Brief, 4)
+	if !t.Entry { // an entry's brief is its race's
+		add("", t.Brief, 4)
+	}
 	add("→ ", t.Result, 6)
 	add("✗ ", t.Error, 4)
-	if t.Branch != "" {
-		add("branch ", t.Branch, 1)
+	add("files ", strings.Join(t.Files, ", "), 3)
+	switch {
+	case t.Branch != "" && t.Entry:
+		add("branch ", t.Branch+" · a keep this one · d discard", 1)
+	case t.Branch != "":
+		add("branch ", t.Branch+" · a apply · d discard", 1)
 	}
 	return lines
 }

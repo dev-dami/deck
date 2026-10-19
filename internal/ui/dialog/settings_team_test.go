@@ -109,6 +109,21 @@ func (f *fakePeerLink) Pin(r peer.PinRequest) error {
 	f.pinned = append(f.pinned, r)
 	return nil
 }
+func (f *fakePeerLink) AnswerContract(name, id string, accept bool, agent string) error {
+	f.record("AnswerContract")
+	return nil
+}
+func (f *fakePeerLink) ProposeContract(_ context.Context, _ string, c peer.Contract) (peer.Contract, error) {
+	f.record("ProposeContract")
+	return c, nil
+}
+func (f *fakePeerLink) ReadShared(context.Context, string, string, int, time.Duration) (peer.Mirror, error) {
+	return peer.Mirror{}, nil
+}
+func (f *fakePeerLink) PostShared(context.Context, string, string, string) error { return nil }
+func (f *fakePeerLink) AnswerShared(context.Context, string, string, string, bool) error {
+	return nil
+}
 
 func (f *fakePeerLink) called(call string) bool {
 	f.mu.Lock()
@@ -322,6 +337,8 @@ func TestTeamPeerStates(t *testing.T) {
 		text string
 	}{
 		{"connected", pinned(sup(peer.Status{State: peer.StateConnected})), on, peerDotOK, "connected"},
+		{"relayed", pinned(sup(peer.Status{State: peer.StateConnected, Via: "vps"})), on, peerDotOK, "connected via vps"},
+		{"relayed inbound", peer.PeerState{Name: "pc2", Role: "observer", Pinned: true, Link: peer.Link{Inbound: 1, Via: "vps"}}, on, peerDotOK, "dialed in via vps"},
 		{"degraded", pinned(sup(peer.Status{State: peer.StateDegraded})), on, peerDotWarn, "degraded"},
 		{"backoff", pinned(sup(peer.Status{State: peer.StateBackoff, NextRetry: teamNow.Add(12 * time.Second)})), on, peerDotOff, "retry in 12s"},
 		{"host key", pinned(sup(peer.Status{State: peer.StateBackoff, Permanent: true, Cause: peer.CauseHostKey})), on, peerDotBad, "host key changed"},

@@ -9,6 +9,7 @@ func TestCanTransition(t *testing.T) {
 	ok := [][2]TaskStatus{
 		{TaskPending, TaskReady}, {TaskReady, TaskRunning}, {TaskRunning, TaskDone}, {TaskRunning, TaskFailed},
 		{TaskFailed, TaskReady}, {TaskBlocked, TaskPending}, {TaskPending, TaskCancelled}, {TaskRunning, TaskRunning},
+		{TaskRunning, TaskReview}, {TaskReview, TaskDone}, {TaskReview, TaskRunning}, {TaskReview, TaskBlocked},
 	}
 	for _, c := range ok {
 		if !CanTransition(c[0], c[1]) {
@@ -18,6 +19,7 @@ func TestCanTransition(t *testing.T) {
 	bad := [][2]TaskStatus{
 		{TaskDone, TaskRunning}, {TaskDone, TaskPending}, {TaskCancelled, TaskReady},
 		{TaskPending, TaskFailed}, {TaskReady, TaskFailed}, {TaskBlocked, TaskDone},
+		{TaskReady, TaskReview}, {TaskReview, TaskReady},
 	}
 	for _, c := range bad {
 		if CanTransition(c[0], c[1]) {
@@ -30,7 +32,7 @@ func TestStatusKinds(t *testing.T) {
 	if !TaskDone.Final() || !TaskCancelled.Final() || TaskFailed.Final() {
 		t.Error("done and cancelled are final; failed can be retried")
 	}
-	if TaskStatus("nope").Valid() || !TaskReady.Valid() {
+	if TaskStatus("nope").Valid() || !TaskReady.Valid() || !TaskReview.Valid() || TaskReview.Final() {
 		t.Error("Valid")
 	}
 }

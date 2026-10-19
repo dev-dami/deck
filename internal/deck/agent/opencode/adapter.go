@@ -62,6 +62,10 @@ func NewWithOptions(binary string, opts Options) agent.Adapter {
 
 func (a *adapter) Name() string { return "opencode" }
 
+// ContractSafe implements agent.ContractSafe: in ask mode its edits,
+// commands and fetches ask through Deck.
+func (a *adapter) ContractSafe() bool { return true }
+
 const rpcTimeout = 60 * time.Second
 
 // askFirst makes OpenCode ask before it edits a file, runs a command or

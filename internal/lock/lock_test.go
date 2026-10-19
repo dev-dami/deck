@@ -166,3 +166,28 @@ func TestFile_ConcurrentAcquirers(t *testing.T) {
 	require.Equal(t, n, finished)
 	require.Equal(t, 1, maxSeen, "lock must be mutually exclusive")
 }
+
+func TestTryShared_ManySharedNoExclusive(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.lock")
+	r1, err := TryShared(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, err := TryShared(path)
+	if err != nil {
+		t.Fatalf("a second shared lock: %v", err)
+	}
+	if _, err := TryFile(path); !errors.Is(err, ErrContended) {
+		t.Fatalf("exclusive while shared held: %v", err)
+	}
+	r1()
+	r2()
+	rx, err := TryFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := TryShared(path); !errors.Is(err, ErrContended) {
+		t.Fatalf("shared while exclusive held: %v", err)
+	}
+	rx()
+}

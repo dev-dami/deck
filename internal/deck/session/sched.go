@@ -24,6 +24,7 @@ import (
 //     new subagent, while fewer than MaxParallel tasks are running.
 //
 // Dispatches are Deck's, not an agent's thread.send, so they are not hops.
+// With orchestration off, a pass only starts the reviews that wait for room.
 
 // retryBackoff is the wait before a failed task's attempt number attempt+1:
 // 2s, 4s, 8s, ... up to a minute. A variable so tests can shorten it.
@@ -44,15 +45,10 @@ type schedState struct {
 }
 
 // kick has the scheduler look at the thread's board again, soon and off the
-// caller's goroutine. It does nothing when orchestration is off.
+// caller's goroutine. When orchestration is off, it only starts the reviews
+// that wait for room.
 func (m *Manager) kick(t *thread) {
 	if m.isClosed() || t.gone.Load() {
-		return
-	}
-	t.mu.Lock()
-	on := t.orchestrate
-	t.mu.Unlock()
-	if !on {
 		return
 	}
 	t.sched.mu.Lock()
@@ -92,8 +88,17 @@ func (m *Manager) schedule(t *thread) {
 	if m.isClosed() || t.gone.Load() {
 		return
 	}
+	t.mu.Lock()
+	on := t.orchestrate
+	t.mu.Unlock()
+	if !on {
+		m.startReviews(t) // the review stage runs without orchestration too
+		return
+	}
+	m.checkBudgets(t, nil, store.Spend{}) // minutes pass without events
 	m.propagateFailures(t)
 	m.retryFailed(t)
+	m.startReviews(t)
 	m.dispatchReady(t)
 }
 
@@ -217,6 +222,9 @@ func (m *Manager) dispatchReady(t *thread) {
 		running := 0
 		var next *store.Task
 		for i := range t.tasks {
+			if t.tasks[i].Remote != "" {
+				continue // a teammate's Deck does it
+			}
 			switch t.tasks[i].Status {
 			case store.TaskRunning:
 				running++
@@ -233,9 +241,13 @@ func (m *Manager) dispatchReady(t *thread) {
 				owner = o
 			}
 		}
+		full := t.liveSubagents() >= m.maxSubagents()
 		t.mu.Unlock()
-		if next == nil || running >= limit {
-			return
+		if next == nil || running >= limit || owner == nil && full {
+			return // a subagent stopping kicks the scheduler again
+		}
+		if !m.takeWork(t) {
+			return // paused; Continue or the user's next message kicks it again
 		}
 		if err := m.dispatch(t, *next, owner); err != nil {
 			// Spawn fails the task itself once it has claimed it. A task that
@@ -273,11 +285,13 @@ func (m *Manager) dispatch(t *thread, tk store.Task, owner *agentState) error {
 	return err
 }
 
-// failOwned fails the running tasks whose owner has just exited.
+// failOwned fails the running tasks whose owner has just exited, and blocks
+// the review it had not answered (reviewerGone).
 func (m *Manager) failOwned(t *thread, a *agentState) {
 	if m.isClosed() || t.gone.Load() {
 		return
 	}
+	m.reviewerGone(t, a)
 	var ids []string
 	t.mu.Lock()
 	for _, tk := range t.tasks {

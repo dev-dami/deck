@@ -196,6 +196,9 @@ const (
 	ApproveCommand ApprovalKind = "command"
 	ApproveEdit    ApprovalKind = "edit"
 	ApproveOther   ApprovalKind = "other"
+	// ApproveShare is sending work out of this Deck (a code contract to a
+	// teammate). The person answers it in every mode: yolo does not.
+	ApproveShare ApprovalKind = "share"
 )
 
 // Decision is the user's answer to an approval request.
@@ -243,6 +246,10 @@ type Spec struct {
 	MCP *MCPServer
 	// Mode is the starting permission mode; empty means ModeAsk.
 	Mode Mode
+	// NoTools starts the agent with none of its CLI's own tools (shell,
+	// edits, web): only the tools of MCP. Deck sets it only for adapters
+	// that implement OpsSafe.
+	NoTools bool
 }
 
 // Mode is the permission mode of a thread.
@@ -380,4 +387,20 @@ type Run interface {
 type Adapter interface {
 	Name() string // "claude" | "codex" | "fake"
 	Start(ctx context.Context, spec Spec) (Run, error)
+}
+
+// ContractSafe is implemented by an adapter whose agent Deck can hold to a
+// thread's mode, at most ask, when it runs a teammate's code contract:
+// every edit and command it makes asks the person through Deck, or is
+// denied. Deck never runs a contract with an adapter that lacks it or
+// answers false.
+type ContractSafe interface {
+	ContractSafe() bool
+}
+
+// OpsSafe is implemented by an adapter that honors Spec.NoTools: its agent
+// then has Deck's MCP tools and nothing else. Deck runs a teammate's ops
+// contract only with an adapter that has it and answers true.
+type OpsSafe interface {
+	OpsSafe() bool
 }

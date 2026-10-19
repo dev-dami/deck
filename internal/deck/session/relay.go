@@ -93,6 +93,10 @@ func (m *Manager) handleMessage(msg agent.Message) {
 		return
 	}
 	t := from.thread
+	if t.opsOf() != nil {
+		respond("", errOpsOnly)
+		return
+	}
 	if from.status() == StatusExited {
 		respond("", fmt.Errorf("%s is not running", from.getName()))
 		return
@@ -119,6 +123,13 @@ func (m *Manager) handleMessage(msg agent.Message) {
 			err = errors.New("there is nobody else running in this thread")
 		}
 	default:
+		if all, ok := t.findAll(from, to); ok {
+			targets = all
+			if len(targets) == 0 {
+				err = fmt.Errorf("no other %s is running in this thread: valid recipients are %s", strings.TrimSuffix(to, "*"), valid)
+			}
+			break
+		}
 		a := t.find(from, to)
 		switch {
 		case a == nil:
@@ -130,6 +141,9 @@ func (m *Manager) handleMessage(msg agent.Message) {
 		default:
 			targets = []*agentState{a}
 		}
+	}
+	if err == nil {
+		targets, err = t.guardSend(from, targets, time.Now())
 	}
 	t.mu.Unlock()
 	if err != nil {
@@ -175,14 +189,20 @@ func (m *Manager) handleMessage(msg agent.Message) {
 	respond(m.relay(t, from, targets, text, "tool"), nil)
 }
 
-// validNames lists who a member can message. t.mu is held.
+// validNames lists who a member can message: names, then "claude" and
+// "claude*" for a kind with several live members, then "all". t.mu is held.
 func validNames(t *thread, from *agentState) string {
-	var names []string
+	var names, pools []string
+	count := map[string]int{}
 	for _, a := range t.members {
 		if a != from && a.status() != StatusExited {
 			names = append(names, a.getName())
+			if count[a.kind]++; count[a.kind] == 2 {
+				pools = append(pools, a.kind+" (any free one)", a.kind+"* (every one)")
+			}
 		}
 	}
+	names = append(names, pools...)
 	if len(names) > 0 {
 		names = append(names, "all")
 	}
@@ -319,6 +339,12 @@ func mentionTargets(t *thread, from *agentState, names []string) []*agentState {
 			}
 			continue
 		}
+		if all, ok := t.findAll(from, n); ok {
+			for _, a := range all {
+				add(a)
+			}
+			continue
+		}
 		add(t.find(from, n))
 	}
 	return out
@@ -338,7 +364,7 @@ func (m *Manager) Continue(threadID string) error {
 		return nil
 	}
 	t.paused = false
-	t.hops = 0
+	t.hops, t.work = 0, 0
 	var targets []*agentState
 	for _, idx := range t.heldIdx {
 		delete(t.inert, idx)
@@ -354,6 +380,7 @@ func (m *Manager) Continue(threadID string) error {
 	t.mu.Unlock()
 	m.emitAll(msgFor(t.id, e))
 
+	m.kick(t) // the scheduler stopped at the pause
 	seen := map[*agentState]bool{}
 	var first error
 	for _, a := range targets {

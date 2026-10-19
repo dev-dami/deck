@@ -25,12 +25,18 @@ var ErrUnknownOp = errors.New("unknown op")
 //
 // The SUB ops are in it: they only ever serve capsules this Deck's user
 // published (sub.capsule.publish), which is the consent to share them.
-var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects, OpConsolePost}
+//
+// The contract ops are in it too: contract.propose also needs role
+// contractor; contract.status and contract.result only touch contracts this
+// Deck proposed to the caller, and contract.cancel only those the caller
+// proposed here. The thread ops only touch threads shared with the caller,
+// in the role it was given.
+var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects, OpConsolePost, OpContractPropose, OpContractStatus, OpContractResult, OpContractCancel,
+	OpThreadMirror, OpThreadPost, OpThreadAnswer}
 
 // contractorOps are the ops only a peer with role contractor may run, on top
-// of allow_inbound. Empty until contracts land (contract.propose goes here),
-// but every call already goes through it.
-var contractorOps = map[string]bool{}
+// of allow_inbound.
+var contractorOps = map[string]bool{OpContractPropose: true}
 
 // Caller is the pinned peer on the other end of a connection, as this Deck
 // knows it. Name and Fingerprint come from the pinned store, never from the
@@ -42,6 +48,9 @@ type Caller struct {
 	// AllowInbound is the ops this peer may run here (config
 	// peers.remote[].allow_inbound); empty means DefaultAllowInbound.
 	AllowInbound []string
+	// MaxScope is the presets its ops contracts may ask for here (config
+	// peers.remote[].max_scope); empty allows none.
+	MaxScope []string
 }
 
 // Allowed reports whether the caller may run op. The match is exact: no case
@@ -96,9 +105,12 @@ type StatusHandler struct {
 	Version  string
 	Started  time.Time
 	Now      func() time.Time // nil means time.Now
+	// Presence, when set, adds what this Deck's agents do (presence.go);
+	// repos are the root commits of the repositories the caller has.
+	Presence func(peer string, repos []string) Presence
 }
 
-var statusOps = []OpInfo{{Name: OpPeerStatus, Args: "{}", Desc: "this Deck's name, version and uptime"}}
+var statusOps = []OpInfo{{Name: OpPeerStatus, Args: "{repos}", Desc: "this Deck's name, version and uptime, its agents and what they do, and its file leases in the repositories (root commits) given"}}
 
 // Search implements Handler.
 func (h *StatusHandler) Search(_ context.Context, _ Caller, query string) ([]OpInfo, error) {
@@ -127,7 +139,7 @@ func matchOps(ops []OpInfo, query string) []OpInfo {
 }
 
 // Execute implements Handler.
-func (h *StatusHandler) Execute(_ context.Context, _ Caller, op string, _ json.RawMessage) (string, error) {
+func (h *StatusHandler) Execute(_ context.Context, from Caller, op string, args json.RawMessage) (string, error) {
 	if op != OpPeerStatus {
 		return "", fmt.Errorf("%w %q (call search to list ops)", ErrUnknownOp, op)
 	}
@@ -140,11 +152,19 @@ func (h *StatusHandler) Execute(_ context.Context, _ Caller, op string, _ json.R
 	if h.NameFunc != nil {
 		name = h.NameFunc()
 	}
-	b, err := json.Marshal(map[string]any{
+	out := map[string]any{
 		"name":           name,
 		"version":        h.Version,
 		"uptime":         up.String(),
 		"uptime_seconds": int64(up / time.Second),
-	})
+	}
+	if h.Presence != nil {
+		var a struct {
+			Repos []string `json:"repos"`
+		}
+		_ = json.Unmarshal(args, &a)
+		out["presence"] = h.Presence(from.Name, a.Repos[:min(len(a.Repos), maxRepos)])
+	}
+	b, err := json.Marshal(out)
 	return string(b), err
 }

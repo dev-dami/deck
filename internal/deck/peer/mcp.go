@@ -152,6 +152,9 @@ type mcpServer struct {
 	mu          sync.Mutex
 	initialized bool
 	calls       map[string]context.CancelFunc
+	// closed is set once the channel is gone: no call starts after it, so
+	// wg.Add never races serveMCP's wg.Wait.
+	closed bool
 
 	sem chan struct{}
 	wg  sync.WaitGroup
@@ -171,6 +174,12 @@ const (
 	msgCancelled = "cancelled"
 	msgRevoked   = "this Deck no longer accepts calls from you"
 )
+
+// Refusal is a handler error whose text the peer gets: why this Deck
+// refused its call. Only text made for the peer goes in it.
+type Refusal string
+
+func (r Refusal) Error() string { return string(r) }
 
 func newMCPServer(h Handler, caller Caller, name, version string, lim serverLimits, log *slog.Logger) *mcpServer {
 	if lim.maxInFlight <= 0 {
@@ -192,6 +201,9 @@ func newMCPServer(h Handler, caller Caller, name, version string, lim serverLimi
 func serveMCP(ctx context.Context, rwc io.ReadWriteCloser, s *mcpServer, maxMsg int) {
 	rpc := jsonrpc2.NewConn(ctx, newLineStream(rwc, maxMsg), s, jsonrpc2.SetLogger(slogLogger{s.log}))
 	<-rpc.DisconnectNotify()
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
 	s.wg.Wait()
 }
 
@@ -288,9 +300,16 @@ func (s *mcpServer) Handle(ctx context.Context, c *jsonrpc2.Conn, req *jsonrpc2.
 		}
 		cctx, cancel := context.WithTimeout(ctx, s.lim.callTimeout)
 		s.mu.Lock()
+		if s.closed {
+			// The channel is gone: there is no one to answer.
+			s.mu.Unlock()
+			cancel()
+			release()
+			return
+		}
 		s.calls[key] = cancel
-		s.mu.Unlock()
 		s.wg.Add(1)
+		s.mu.Unlock()
 		go func() {
 			defer s.wg.Done()
 			// call frees the slot before it returns when the handler is
@@ -451,6 +470,7 @@ func (s *mcpServer) run(ctx context.Context, caller Caller, what string, release
 			return cancelledResult(ctx)
 		}
 	}
+	var refusal Refusal
 	switch {
 	case r.panicked:
 		return textResult(msgInternal, true)
@@ -458,6 +478,8 @@ func (s *mcpServer) run(ctx context.Context, caller Caller, what string, release
 		return textResult(r.text, false)
 	case errors.Is(r.err, ErrUnknownOp):
 		return textResult(msgUnknownOp, true)
+	case errors.As(r.err, &refusal):
+		return textResult(string(refusal), true)
 	case ctx.Err() != nil:
 		return cancelledResult(ctx)
 	}

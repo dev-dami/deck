@@ -640,8 +640,12 @@ func (m *Manager) seedWorktree(t *thread, a *agentState, wt *store.Worktree, tas
 	ctx, cancel := context.WithTimeout(m.ctx, gitTimeout)
 	defer cancel()
 	if base, err := s.Snap(ctx, wt.Path); err == nil {
+		// A new value, not an edit of wt: saved metadata may share wt and be
+		// read by the store's writer.
+		seeded := *wt
+		seeded.SubBase, seeded.SubParent = string(base), string(parent)
 		a.mu.Lock()
-		wt.SubBase, wt.SubParent = string(base), string(parent) // wt is a.worktree
+		a.worktree = &seeded
 		a.subBase, a.subParent = "", ""
 		a.mu.Unlock()
 	}
@@ -680,10 +684,30 @@ func (m *Manager) askWrite(ctx context.Context, a *agentState, op string, s *sub
 		}
 		names = append(names, o.Path)
 	}
+	if a.getWorktree() == nil {
+		// Into the shared tree: not over another member's exclusive lease.
+		paths := make([]string, len(ops))
+		for i, o := range ops {
+			paths[i] = o.Path
+		}
+		t := a.thread
+		t.mu.Lock()
+		err := t.leaseBlock(a, paths)
+		t.mu.Unlock()
+		if err != nil {
+			return err
+		}
+	}
 	summary := fmt.Sprintf("%s %s: %d files (%s) in %s", op, id.Short(), len(ops), strings.Join(names, ", "), root)
+	return m.ask(ctx, a, agent.ApproveEdit, op, summary, root)
+}
+
+// ask raises an approval request for agent a and waits for the answer: nil
+// when allowed. The thread's mode answers what it answers (enforce).
+func (m *Manager) ask(ctx context.Context, a *agentState, kind agent.ApprovalKind, op, summary, cwd string) error {
 	decided := make(chan agent.Decision, 1)
 	req := agent.ApprovalRequest{
-		ID: "sub-" + store.NewID(), Kind: agent.ApproveEdit, ToolName: op, Summary: summary, Cwd: root,
+		ID: "sub-" + store.NewID(), Kind: kind, ToolName: op, Summary: summary, Cwd: cwd,
 		Respond: func(d agent.Decision) { decided <- d },
 	}
 	m.onApproval(a, req)
@@ -708,7 +732,7 @@ func (m *Manager) askWrite(ctx context.Context, a *agentState, op string, s *sub
 	}
 	if a.claimPending(req.ID) {
 		m.emit(ApprovalGoneMsg{ThreadID: a.thread.id, AgentID: a.id, ID: req.ID})
-		return errors.New("the user did not answer in time; nothing was written (ask them, then call it again)")
+		return errors.New("the user did not answer in time; nothing was done (ask them, then call it again)")
 	}
 	// Answered just as time ran out.
 	if d := <-decided; !d.Allow {
