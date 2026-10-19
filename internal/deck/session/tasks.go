@@ -384,6 +384,7 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 	reviewer := ""
 	if to != store.TaskReview {
 		reviewer, tk.Reviewer = tk.Reviewer, ""
+		delete(t.reviewWaits, tk.ID) // a later review that waits gets a new notice
 	}
 	var run *store.RunRef
 	if tk.Run != nil {

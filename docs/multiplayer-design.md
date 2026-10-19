@@ -126,7 +126,8 @@ knows each subscription's remaining plan window.
   reviewed. Tasks that wait on it wait through the review, and the creator
   hears once, at the end. The reviewer is Deck's subagent: it counts toward
   `max_work`, `max_subagents` and the task's budget, and waits for a free
-  slot. Not done: a user-side way to ask for a review besides the config
+  slot, with orchestration on or off; a notice says that the review waits.
+  Not done: a user-side way to ask for a review besides the config
   default, and earlier rounds' notes in a new reviewer's brief.
 - **UI.** The agents pane lists members as a tree (subagents indented under
   their parent, with their branch); stopped subagents drop out unless their

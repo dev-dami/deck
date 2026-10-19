@@ -79,7 +79,8 @@ func (m *Manager) reviewKind(want, worker string) string {
 
 // startReview starts a reviewer for task id, which is in review without one.
 // When the thread has no room for another subagent, or is paused, the review
-// waits: the scheduler tries again (startReviews).
+// waits with one notice, and each kick tries again (startReviews), also while
+// orchestration is off.
 func (m *Manager) startReview(t *thread, id string) {
 	t.mu.Lock()
 	i := store.FindTask(t.tasks, id)
@@ -120,7 +121,25 @@ func (m *Manager) startReview(t *thread, id string) {
 		"Answer with execute review.approve {id: %q, note} when the work is right, or review.changes {id: %q, notes} with what must change. Your reply alone does not answer. This is review %d; after %d rounds of changes the user decides.",
 		tk.ID, tk.Title, worker, wkind, or(tk.Brief, tk.Title), or(tk.Result, "(none)"), where, tk.ID, tk.ID, tk.Reviews+1, store.MaxReviewChanges)
 	_, err := m.Spawn(t.id, "", SpawnSpec{Kind: kind, Title: "review " + tk.ID, Brief: brief, ReviewOf: tk.ID, Isolate: isolate})
-	if err != nil && !errors.Is(err, errChildLimit) && !errors.Is(err, errPaused) {
+	switch {
+	case err == nil:
+	case errors.Is(err, errChildLimit) || errors.Is(err, errPaused):
+		t.mu.Lock()
+		noted := t.reviewWaits[tk.ID]
+		if t.reviewWaits == nil {
+			t.reviewWaits = map[string]bool{}
+		}
+		t.reviewWaits[tk.ID] = true
+		t.mu.Unlock()
+		if noted {
+			return
+		}
+		if errors.Is(err, errPaused) {
+			m.notice(t, tk.ID+" waits for its review until the user continues the thread")
+		} else {
+			m.notice(t, tk.ID+" waits for a free agent slot for its review")
+		}
+	default:
 		_, _ = m.moveTask(t, tk.ID, store.TaskBlocked, "", "could not start a reviewer: "+err.Error(), nil)
 	}
 }

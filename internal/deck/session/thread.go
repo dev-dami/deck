@@ -70,6 +70,9 @@ type thread struct {
 	raced map[string]bool
 	// reviewing holds the tasks whose reviewer is starting (review.go).
 	reviewing map[string]bool
+	// reviewWaits holds the tasks in review whose wait for a reviewer the
+	// thread has a notice about (review.go).
+	reviewWaits map[string]bool
 	// orchestrate is set while members may spawn subagents and the scheduler
 	// runs the board (spawn.go, sched.go).
 	orchestrate bool

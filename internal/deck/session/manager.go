@@ -857,6 +857,9 @@ func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentStat
 	m.persistMeta(t)
 	m.emitAll(msgs...)
 	m.checkpoint(t, e.ID)
+	if wasPaused {
+		m.kick(t) // the scheduler and the waiting reviews stopped at the pause
+	}
 
 	var first error
 	for _, a := range targets {
