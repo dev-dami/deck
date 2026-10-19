@@ -61,7 +61,8 @@ func newDeck(t *testing.T, name string, claude, codex []fake.Script) *deck {
 	d := &deck{mgr: mgr, dir: dir, deals: newContracts(mgr)}
 	d.deals.waits = nil
 	svc, err := peer.NewService(peer.ServiceOptions{Dir: filepath.Join(dir, "peers"), ConfigPath: filepath.Join(dir, "config.json"),
-		Logger: slog.New(slog.DiscardHandler), SubStore: mgr.SubStore, Contracts: d.deals.hooks()})
+		Logger: slog.New(slog.DiscardHandler), SubStore: mgr.SubStore, Contracts: d.deals.hooks(), Shared: sharing{mgr},
+		Local: peer.Local{Presence: (&localWork{mgr: mgr}).Presence}})
 	if err != nil {
 		t.Fatal(err)
 	}

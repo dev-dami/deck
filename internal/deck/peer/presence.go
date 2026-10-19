@@ -29,6 +29,8 @@ type Presence struct {
 	Leases []LeasePresence `json:"leases,omitempty"`
 	// Limits are its CLIs' plan windows, when it shares them.
 	Limits []LimitPresence `json:"limits,omitempty"`
+	// Threads are the threads it shares with the asking Deck (share.go).
+	Threads []SharedThread `json:"threads,omitempty"`
 }
 
 // AgentPresence is one running agent.
@@ -58,9 +60,10 @@ type LimitPresence struct {
 
 // Local is this Deck's own work, as the engine reads it from its threads.
 type Local struct {
-	// Presence is what peer.status tells a teammate: leases only in repos
-	// (root commits), plan windows only with limits set.
-	Presence func(repos []string, limits bool) Presence
+	// Presence is what peer.status tells teammate peer: leases only in
+	// repos (root commits), plan windows only with limits set, and the
+	// threads shared with peer.
+	Presence func(peer string, repos []string, limits bool) Presence
 	// Repos are the root commits of the repositories this Deck works in.
 	Repos func() []string
 }
@@ -81,6 +84,9 @@ func (p Presence) clean() Presence {
 	}
 	for _, l := range p.Limits[:min(len(p.Limits), 16)] {
 		out.Limits = append(out.Limits, LimitPresence{Kind: str(l.Kind, 32), Window: str(l.Window, 32), UsedPct: l.UsedPct})
+	}
+	for _, th := range p.Threads[:min(len(p.Threads), maxPresenceItems)] {
+		out.Threads = append(out.Threads, th.clean())
 	}
 	return out
 }

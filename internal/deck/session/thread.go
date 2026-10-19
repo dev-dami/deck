@@ -2,6 +2,8 @@ package session
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -72,6 +74,10 @@ type thread struct {
 	// contract is the teammate whose code contract this thread runs: its
 	// mode is never yolo (contract.go).
 	contract string
+	// shares are the teammates the thread is shared with, by name, and
+	// their roles; grew is closed when the log grows (share.go).
+	shares map[string]string
+	grew   chan struct{}
 
 	// Queue of user messages waiting for busy members (queue.go), guarded by mu.
 	queue  []qitem
@@ -131,6 +137,10 @@ func (m *Manager) appendLocked(t *thread, e store.Entry) int {
 	}
 	idx := len(t.log)
 	t.log = append(t.log, e)
+	if t.grew != nil {
+		close(t.grew) // wakes the teammates that wait for it (WaitShared)
+		t.grew = nil
+	}
 	if e.Type == store.EntryEvent && (e.Kind == agent.KindTurnDone || e.Kind == agent.KindExited) {
 		t.boundary[e.AgentID] = idx + 1
 	}
@@ -199,6 +209,9 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
 		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree,
 		Tasks: cloneTasks(t.tasks), Orchestrate: t.orchestrate, Contract: t.contract}
+	for _, peer := range slices.Sorted(maps.Keys(t.shares)) {
+		th.Shares = append(th.Shares, store.Share{Peer: peer, Role: t.shares[peer]})
+	}
 	for _, a := range t.members {
 		th.Members = append(th.Members, a.memberMeta())
 	}

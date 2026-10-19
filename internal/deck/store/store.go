@@ -124,6 +124,8 @@ type Thread struct {
 	// Contract is the teammate whose code contract runs in this thread: its
 	// mode is at most ask.
 	Contract string `json:"contract,omitempty"`
+	// Shares are the teammates the thread is shared with, and their roles.
+	Shares []Share `json:"shares,omitempty"`
 
 	// Legacy mirror of Members[0] (Name: every member's name joined by "+").
 	AgentKind string `json:"agent_kind"`
@@ -134,6 +136,14 @@ type Thread struct {
 	Created time.Time `json:"created"`
 	Updated time.Time `json:"updated"`
 	CostUSD float64   `json:"cost_usd"` // sum over members
+}
+
+// Share is a thread shared with a teammate's Deck: Role is "observer"
+// (reads it), "participant" (also posts) or "editor" (also answers its
+// approvals).
+type Share struct {
+	Peer string `json:"peer"`
+	Role string `json:"role"`
 }
 
 // Normalize migrates a pre-shared-thread record in place: when there are no

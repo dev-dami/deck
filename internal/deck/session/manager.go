@@ -817,6 +817,12 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState, images [
 	if speaker == "" {
 		speaker = "user"
 	}
+	return m.postFrom(t, speaker, text, targets, images, true)
+}
+
+// postFrom is postTo for speaker. A message from a teammate (local false)
+// does not end a pause or reset the brakes: only the user does.
+func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentState, images []agent.Image, local bool) (PostResult, error) {
 	e := store.Entry{Type: store.EntryUser, ID: store.NewID(), Speaker: speaker, To: ids(targets), Event: agent.Event{Kind: agent.KindUserText, Text: text}}
 	if len(images) > 0 {
 		e.Images = imagePaths(images)
@@ -824,9 +830,11 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState, images [
 
 	var msgs []tea.Msg
 	t.mu.Lock()
-	wasPaused := t.paused
-	t.paused, t.hops, t.heldIdx, t.work = false, 0, nil, 0
-	t.lastRelay = map[string]string{}
+	wasPaused := t.paused && local
+	if local {
+		t.paused, t.hops, t.heldIdx, t.work = false, 0, nil, 0
+		t.lastRelay = map[string]string{}
+	}
 	if t.title == "" {
 		t.title = placeholderTitle(text)
 	}
@@ -1116,6 +1124,14 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	t.tasks = cloneTasks(th.Tasks)
 	t.orchestrate = th.Orchestrate
 	t.contract = th.Contract
+	for _, sh := range th.Shares {
+		if validShareRole(sh.Role) {
+			if t.shares == nil {
+				t.shares = map[string]string{}
+			}
+			t.shares[sh.Peer] = sh.Role
+		}
+	}
 	remap := map[string]string{}
 	var started []*agentState
 	fail := func(err error) (ThreadInfo, []tea.Msg, error) {

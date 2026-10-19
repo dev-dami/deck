@@ -90,7 +90,8 @@ func Start() (*Engine, error) {
 	})
 	work := &localWork{mgr: mgr}
 	deals := newContracts(mgr)
-	peers := startPeers(cfg, peer.ServiceOptions{SubStore: mgr.SubStore, Local: peer.Local{Presence: work.Presence, Repos: work.Repos}, Contracts: deals.hooks()})
+	peers := startPeers(cfg, peer.ServiceOptions{SubStore: mgr.SubStore, Local: peer.Local{Presence: work.Presence, Repos: work.Repos},
+		Contracts: deals.hooks(), Shared: sharing{mgr}})
 	if peers != nil {
 		deals.svc.Store(peers)
 		mgr.SetContractor(deals)

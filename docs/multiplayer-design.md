@@ -1,6 +1,6 @@
 # Deck multiplayer: many agents, subagent trees, peers
 
-Status: proposal. Phases 1 to 7 (§3 to §7, and §8.1 to §8.4) are
+Status: proposal. Phases 1 to 8 (§3 to §7, and §8.1 to §8.5) are
 implemented, except the review stage; the rest is not. It builds on what
 already ships (verified against `main` at 4508226): spawn and tasks
 (`session/spawn.go`, `tasks.go`, `sched.go`), SUB capsules (`docs/sub.md`),
@@ -293,7 +293,7 @@ MCP tools; new inbound ops are opt-in per peer (`allow_inbound`).
    (`agent.ContractSafe`): claude, codex and opencode ask through Deck in
    ask mode; antigravity cannot, so it never runs a contract. A contract
    thread can never be switched to yolo.
-5. **Shared threads.** First a read-only mirror (`history.read`, paged,
+5. **Shared threads** (done, see below). First a read-only mirror (`history.read`, paged,
    only threads the owner marks shared). Then *join*: a teammate's messages
    enter the owner's thread through an attributed FIFO queue
    (`[ana@laptop] …`). Roles decide what they can do:
@@ -302,6 +302,28 @@ MCP tools; new inbound ops are opt-in per peer (`allow_inbound`).
    - editor: can also answer approvals.
    Approvals never travel by default. Remote-originated turns run in the
    owner's current mode, capped at ask.
+
+   As built (done): `s` on a teammate in the Team pane shares the open
+   thread, stepping through observer, participant, editor and not shared;
+   the roles are stored with the thread (`store.Thread.Shares`). A
+   teammate finds the threads shared with it in `peer.status`
+   (`presence.threads`) and follows one in its Shared pane with
+   `thread.mirror {thread, after, wait}`: the thread's lines from log
+   entry `after` on, rendered as agents read them and redacted, with a
+   read that waits up to 20 seconds for news. That wait (a channel each
+   log append closes) is what `Manager.Subscribe` was planned for.
+   `thread.post` (participant) enters the owner's thread like the
+   person's own message, through the same queue, as `[vps] …`; `$` in it
+   is never a mention, so it cannot pick agents, add one or start a race.
+   It does not end a pause or reset the brakes, posts are limited to 6 a
+   minute per teammate and thread, and a thread in yolo mode goes to ask
+   mode first. `thread.answer` (editor) answers a waiting approval; a
+   contract's share approval never travels. The owner checks the role at
+   every call; a thread not shared with the caller is as good as absent.
+   Not done: sharing by an agent, a mirror with tool output, shares bound
+   to a key rather than a teammate's name (a teammate re-paired under the
+   same name keeps them), and serving a thread Deck has not loaded since it
+   started (it is shared again once its owner opens it).
 6. **Reachability.** Keep direct SSH and the invite's `alt=` addresses;
    recommend Tailscale or WireGuard in the docs. Add relaying through any
    paired Deck with a public address, which forwards an opaque channel
@@ -344,7 +366,8 @@ Each phase is one or two PRs and useful alone.
 7. **Code contracts** (done). `contract.*`, confirmation card, remote
    runs on a copy of the tree, capsule results, federated task board,
    `peer/agent` owners.
-8. **Shared threads.** Mirror, then join with roles and attributed queue.
+8. **Shared threads** (done). Mirror, then join with roles and attributed
+   queue.
 9. **Reach and ops.** Deck-as-relay, `vsh` and ops contracts, `deck serve`.
 10. **Review and memory.** The `review` stage with cross-kind reviewers;
     notes pinned to capsule/file hashes that get flagged when the code moves.

@@ -200,12 +200,15 @@ func (w *localWork) Repos() []string {
 }
 
 // Presence implements peer.Local.
-func (w *localWork) Presence(repos []string, limits bool) peer.Presence {
+func (w *localWork) Presence(asker string, repos []string, limits bool) peer.Presence {
 	want := map[string]bool{}
 	for _, r := range repos {
 		want[r] = true
 	}
 	var p peer.Presence
+	for _, st := range w.mgr.SharedWith(asker) {
+		p.Threads = append(p.Threads, sharedThread(st))
+	}
 	for _, th := range w.mgr.Threads() {
 		running := map[string]string{} // owner -> the title of the task it runs
 		for _, tk := range w.mgr.Tasks(th.ID) {

@@ -57,6 +57,8 @@ type ManagerOptions struct {
 	Granted func(peer string, id sub.ID) bool
 	// Extra, with a nil Handler, wraps the default handler with more ops.
 	Extra func(Handler) Handler
+	// Shared, with a nil Handler, serves this Deck's shared threads.
+	Shared Shared
 }
 
 // Manager runs the peer link for one Deck: the listener when
@@ -139,9 +141,9 @@ func NewManager(o ManagerOptions) (*Manager, error) {
 	if o.Handler == nil {
 		sh := &StatusHandler{NameFunc: m.Name, Version: version.Version, Started: time.Now()}
 		if o.Local.Presence != nil {
-			sh.Presence = func(repos []string) Presence {
+			sh.Presence = func(peer string, repos []string) Presence {
 				p := m.peers.Load()
-				return o.Local.Presence(repos, p != nil && p.ShareLimits)
+				return o.Local.Presence(peer, repos, p != nil && p.ShareLimits)
 			}
 		}
 		m.o.Handler = sh
@@ -154,6 +156,9 @@ func NewManager(o ManagerOptions) (*Manager, error) {
 		}
 		if o.Team != nil {
 			m.o.Handler = &TeamHandler{Base: m.o.Handler, Team: o.Team}
+		}
+		if o.Shared != nil {
+			m.o.Handler = &ShareHandler{Base: m.o.Handler, Shared: o.Shared}
 		}
 		if o.Extra != nil {
 			m.o.Handler = o.Extra(m.o.Handler)

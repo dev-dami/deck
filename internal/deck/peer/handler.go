@@ -29,8 +29,10 @@ var ErrUnknownOp = errors.New("unknown op")
 // The contract ops are in it too: contract.propose also needs role
 // contractor; contract.status and contract.result only touch contracts this
 // Deck proposed to the caller, and contract.cancel only those the caller
-// proposed here.
-var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects, OpConsolePost, OpContractPropose, OpContractStatus, OpContractResult, OpContractCancel}
+// proposed here. The thread ops only touch threads shared with the caller,
+// in the role it was given.
+var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects, OpConsolePost, OpContractPropose, OpContractStatus, OpContractResult, OpContractCancel,
+	OpThreadMirror, OpThreadPost, OpThreadAnswer}
 
 // contractorOps are the ops only a peer with role contractor may run, on top
 // of allow_inbound.
@@ -102,7 +104,7 @@ type StatusHandler struct {
 	Now      func() time.Time // nil means time.Now
 	// Presence, when set, adds what this Deck's agents do (presence.go);
 	// repos are the root commits of the repositories the caller has.
-	Presence func(repos []string) Presence
+	Presence func(peer string, repos []string) Presence
 }
 
 var statusOps = []OpInfo{{Name: OpPeerStatus, Args: "{repos}", Desc: "this Deck's name, version and uptime, its agents and what they do, and its file leases in the repositories (root commits) given"}}
@@ -134,7 +136,7 @@ func matchOps(ops []OpInfo, query string) []OpInfo {
 }
 
 // Execute implements Handler.
-func (h *StatusHandler) Execute(_ context.Context, _ Caller, op string, args json.RawMessage) (string, error) {
+func (h *StatusHandler) Execute(_ context.Context, from Caller, op string, args json.RawMessage) (string, error) {
 	if op != OpPeerStatus {
 		return "", fmt.Errorf("%w %q (call search to list ops)", ErrUnknownOp, op)
 	}
@@ -158,7 +160,7 @@ func (h *StatusHandler) Execute(_ context.Context, _ Caller, op string, args jso
 			Repos []string `json:"repos"`
 		}
 		_ = json.Unmarshal(args, &a)
-		out["presence"] = h.Presence(a.Repos[:min(len(a.Repos), maxRepos)])
+		out["presence"] = h.Presence(from.Name, a.Repos[:min(len(a.Repos), maxRepos)])
 	}
 	b, err := json.Marshal(out)
 	return string(b), err

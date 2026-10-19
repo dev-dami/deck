@@ -133,7 +133,7 @@ func TestPresenceComesWithPeerStatus(t *testing.T) {
 	var mu sync.Mutex
 	var asked []string
 	var limits []bool
-	aLocal := Local{Presence: func(repos []string, lim bool) Presence {
+	aLocal := Local{Presence: func(_ string, repos []string, lim bool) Presence {
 		mu.Lock()
 		asked, limits = repos, append(limits, lim)
 		mu.Unlock()

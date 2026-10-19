@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"time"
 
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/peer"
@@ -47,6 +48,44 @@ type PeerLink interface {
 	// of kind agent, or declines it. Accepting fetches the teammate's tree:
 	// call it off the UI loop.
 	AnswerContract(name, id string, accept bool, agent string) error
+
+	// ReadShared reads a thread teammate name shares with this Deck, from
+	// log entry after on, waiting up to wait for something new.
+	ReadShared(ctx context.Context, name, thread string, after int, wait time.Duration) (peer.Mirror, error)
+	// PostShared posts to it, as participant or editor.
+	PostShared(ctx context.Context, name, thread, text string) error
+	// AnswerShared answers one of its approvals, as editor.
+	AnswerShared(ctx context.Context, name, thread, approval string, allow bool) error
+}
+
+// Sharing is sharing this Deck's threads with teammates.
+type Sharing interface {
+	// ShareThread shares the session's thread with teammate name in role
+	// (observer, participant or editor), or stops sharing it ("").
+	ShareThread(sessionID, name, role string) error
+	// ThreadShares are the teammates the session's thread is shared with,
+	// and their roles.
+	ThreadShares(sessionID string) map[string]string
+}
+
+var _ Sharing = (*DeckWorkspace)(nil)
+
+// ShareThread implements [Sharing].
+func (w *DeckWorkspace) ShareThread(sessionID, name, role string) error {
+	th, ok := w.threadOf(sessionID)
+	if !ok {
+		return errors.New("no thread for this session")
+	}
+	return w.mgr().SetShare(th.ID, name, role)
+}
+
+// ThreadShares implements [Sharing].
+func (w *DeckWorkspace) ThreadShares(sessionID string) map[string]string {
+	th, ok := w.threadOf(sessionID)
+	if !ok {
+		return nil
+	}
+	return w.mgr().Shares(th.ID)
 }
 
 var _ PeerLink = (*peer.Service)(nil)

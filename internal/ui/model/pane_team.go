@@ -26,7 +26,9 @@ import (
 // and its plan windows when it shares them. A code contract a teammate
 // proposes shows as a card at the top: y runs it with the agent shown, a
 // picks another agent, n declines. c on a teammate asks it for a contract:
-// the person types the brief, and enter sends it for the open session. The pane reads a snapshot a command keeps
+// the person types the brief, and enter sends it for the open session. s
+// on a teammate shares the open session's thread with it, stepping through
+// observer, participant, editor and not shared. The pane reads a snapshot a command keeps
 // current through PeerLink.Wait; it never touches the link in Update or
 // render.
 
@@ -85,6 +87,7 @@ func (m *UI) applyTeamSnap(msg teamSnapMsg) tea.Cmd {
 	if !first {
 		cmds = append(cmds, m.teamNotices(snap)...)
 		m.contractNotices(*prev, snap)
+		m.sharedNotices(*prev, snap)
 	}
 	m.teamSeen = teamMaxSeq(snap)
 	return tea.Batch(cmds...)
@@ -192,6 +195,46 @@ func (p *teamPane) agentKind(m *UI) string {
 		}
 	}
 	return kinds[p.kind%len(kinds)]
+}
+
+// shareRoles are the roles s steps through on a teammate: "" is not
+// shared.
+var shareRoles = []string{"", "observer", "participant", "editor"}
+
+// threadShares are the teammates the open session's thread is shared with,
+// and their roles; nil without a session or sharing.
+func (m *UI) threadShares() map[string]string {
+	sh, ok := m.com.Workspace.(workspace.Sharing)
+	if !ok || m.session == nil {
+		return nil
+	}
+	return sh.ThreadShares(m.session.ID)
+}
+
+// cycleShare shares the open session's thread with teammate name in the
+// next role, or stops sharing it after editor.
+func (m *UI) cycleShare(name string) tea.Cmd {
+	sh, ok := m.com.Workspace.(workspace.Sharing)
+	if !ok || m.session == nil {
+		return util.ReportInfo("Open a session first: s shares its thread")
+	}
+	cur := m.threadShares()[name]
+	next := shareRoles[0]
+	for i, r := range shareRoles {
+		if r == cur {
+			next = shareRoles[(i+1)%len(shareRoles)]
+		}
+	}
+	sid := m.session.ID
+	return func() tea.Msg {
+		if err := sh.ShareThread(sid, name, next); err != nil {
+			return util.NewErrorMsg(err)
+		}
+		if next == "" {
+			return util.NewInfoMsg("This thread is no longer shared with " + name)
+		}
+		return util.NewInfoMsg("Shared this thread with " + name + " as " + next)
+	}
 }
 
 // isTeammate reports whether row key sel is a teammate's row.
@@ -303,6 +346,9 @@ func (p *teamPane) key(m *UI, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		return true, nil
 	}
 	sel := p.list.selected(rows)
+	if msg.String() == "s" && m.isTeammate(sel) {
+		return true, m.cycleShare(sel)
+	}
 	if msg.String() == "c" && m.isTeammate(sel) {
 		if _, ok := m.com.Workspace.(workspace.Contracts); !ok || m.session == nil {
 			return true, util.ReportInfo("Open a session first: the contract is a task on its board")
@@ -372,6 +418,7 @@ func (p *teamPane) rows(m *UI, width int) []paneRow {
 		return rows
 	}
 	now := time.Now()
+	shares := m.threadShares()
 	for _, ps := range snap.Peers {
 		dot, c, text := dialog.PeerStatus(t, ps, *snap, now)
 		role := ps.Role
@@ -386,6 +433,9 @@ func (p *teamPane) rows(m *UI, width int) []paneRow {
 		for _, l := range presenceLines(ps) {
 			lines = append(lines, ansi.Truncate("  "+muted.Render(l), width, "…"))
 		}
+		if role := shares[ps.Name]; role != "" {
+			lines = append(lines, ansi.Truncate("  "+muted.Render("sees this thread as "+role), width, "…"))
+		}
 		if p.asking == ps.Name {
 			lines = append(lines,
 				ansi.Truncate("  contract for "+ps.Name+": "+p.draft+"▏", width, "…"),
@@ -394,7 +444,7 @@ func (p *teamPane) rows(m *UI, width int) []paneRow {
 		rows = append(rows, paneRow{key: ps.Name, selectable: true, lines: lines})
 	}
 	if _, ok := m.com.Workspace.(workspace.Contracts); ok && p.asking == "" {
-		rows = append(rows, paneRow{lines: []string{ansi.Truncate(muted.Render("c on a teammate asks it for a contract"), width, "…")}})
+		rows = append(rows, paneRow{lines: []string{ansi.Truncate(muted.Render("on a teammate: c asks for a contract · s shares this thread"), width, "…")}})
 	}
 	return rows
 }

@@ -363,6 +363,11 @@ type UI struct {
 	// the first read. teamWatching is set while a watch is out.
 	teamSnap     *peer.Snapshot
 	teamWatching bool
+	// shared is the thread a teammate shares that the person follows in
+	// the Shared pane; sharedGen counts what was followed, so a read for a
+	// thread left behind is dropped.
+	shared    *sharedView
+	sharedGen int
 	// teamSeen is the newest chat message or capsule request already
 	// told; newer ones become notices.
 	teamSeen uint64
@@ -881,6 +886,14 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.applyBusyState(msg)...)
 	case teamSnapMsg:
 		if cmd := m.applyTeamSnap(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case sharedMirrorMsg:
+		if cmd := m.applySharedMirror(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case sharedRetryMsg:
+		if cmd := m.applySharedRetry(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case capsulesMsg:

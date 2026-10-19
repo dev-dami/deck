@@ -60,6 +60,7 @@ type Service struct {
 	contracts *contractBook
 	hooks     ContractHooks
 	answerMu  sync.Mutex
+	shared    Shared
 }
 
 // ServiceOptions configures a Service.
@@ -77,6 +78,9 @@ type ServiceOptions struct {
 	// Contracts runs the contracts this Deck's person accepts, and hears of
 	// the ones it proposed; zero runs none.
 	Contracts ContractHooks
+	// Shared serves this Deck's shared threads to teammates; nil serves
+	// none.
+	Shared Shared
 }
 
 // errNoConfig is returned by every change when the Service has no config file.
@@ -95,7 +99,7 @@ func NewService(o ServiceOptions) (*Service, error) {
 		o.Logger = slog.Default()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, local: o.Local, hooks: o.Contracts, base: ctx, cancel: cancel, wake: make(chan struct{})}
+	s := &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, local: o.Local, hooks: o.Contracts, shared: o.Shared, base: ctx, cancel: cancel, wake: make(chan struct{})}
 	s.team = NewTeam(o.Dir, s.changed)
 	s.out = newOutbox(o.Dir)
 	s.contracts = newContractBook(o.Dir)
@@ -204,7 +208,7 @@ func (s *Service) apply(p *config.Peers) error {
 		err = mgr.Apply(p)
 	case p != nil && p.Enabled:
 		mgr, err = NewManager(ManagerOptions{Dir: s.dir, Peers: p, ConfigPath: s.cfgPath, OnChange: s.changed, Logger: s.log, SubStore: s.subStore, Team: s.team, Local: s.local,
-			Granted: s.granted, Extra: func(h Handler) Handler { return &ContractHandler{Base: h, S: s} }})
+			Granted: s.granted, Shared: s.shared, Extra: func(h Handler) Handler { return &ContractHandler{Base: h, S: s} }})
 		if err != nil {
 			break
 		}
