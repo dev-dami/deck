@@ -9,6 +9,7 @@ require (
 	charm.land/glamour/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	charm.land/log/v2 v2.0.1
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/NimbleMarkets/ntcharts/v2 v2.8.0
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/aymanbagabas/go-udiff v0.4.1
@@ -31,6 +32,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/disintegration/imaging v1.6.2
 	github.com/dustin/go-humanize v1.0.1
+	github.com/flynn/noise v1.1.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gen2brain/beeep v0.11.2
 	github.com/go-git/go-git/v5 v5.19.2
@@ -85,7 +87,6 @@ require (
 	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
 	github.com/ebitengine/purego v0.11.0-alpha.9 // indirect
 	github.com/esiqveland/notify v0.13.3 // indirect
-	github.com/flynn/noise v1.1.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
 	github.com/go-logfmt/logfmt v0.6.1 // indirect

@@ -4,10 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"net"
-	"os"
-	"path/filepath"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -31,37 +28,11 @@ type Handshake struct {
 	Version string `json:"version"`
 }
 
-// maxSockPath keeps the path inside sockaddr_un on every OS (104 on macOS).
-const maxSockPath = 100
-
 // NewToken returns a random per-launch token.
 func NewToken() string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
-}
-
-// Listen opens a Unix socket for this process under dataDir/run, or in the
-// temp dir when that path would be too long. AF_UNIX works on Windows 10
-// 1803 and later as well. The directory is private to the user and the
-// socket is removed by the returned cleanup.
-func Listen(dataDir string) (net.Listener, string, func(), error) {
-	name := fmt.Sprintf("deck-%d.sock", os.Getpid())
-	dir := filepath.Join(dataDir, "run")
-	if len(filepath.Join(dir, name)) > maxSockPath {
-		dir = filepath.Join(os.TempDir(), "deck-run")
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, "", nil, err
-	}
-	sock := filepath.Join(dir, name)
-	_ = os.Remove(sock) // a stale one from a crashed run with our pid
-	l, err := net.Listen("unix", sock)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("listen on %s: %w", sock, err)
-	}
-	_ = os.Chmod(sock, 0o600)
-	return l, sock, func() { _ = l.Close(); _ = os.Remove(sock) }, nil
 }
 
 type bearer string
@@ -79,7 +50,7 @@ func Dial(sock, token string) (*grpc.ClientConn, deckv1.DeckClient, error) {
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithPerRPCCredentials(bearer(token)),
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", sock)
+			return dialSocket(ctx, sock)
 		}),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(MaxMessageBytes), grpc.MaxCallSendMsgSize(MaxMessageBytes)),
 	)
