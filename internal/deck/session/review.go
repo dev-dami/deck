@@ -80,19 +80,28 @@ func (m *Manager) reviewKind(want, worker string) string {
 // startReview starts a reviewer for task id, which is in review without one.
 // When the thread has no room for another subagent, or is paused, the review
 // waits with one notice, and each kick tries again (startReviews), also while
-// orchestration is off.
+// orchestration is off. A caller that finds the start under way waits for it
+// to end: the move to review and the scheduler both call this, and each one
+// returns with the reviewer bound, whichever one starts it (task.done names
+// the reviewer).
 func (m *Manager) startReview(t *thread, id string) {
 	t.mu.Lock()
 	i := store.FindTask(t.tasks, id)
-	if i < 0 || t.tasks[i].Status != store.TaskReview || t.tasks[i].Reviewer != "" || t.reviewing[t.tasks[i].ID] {
+	if i < 0 || t.tasks[i].Status != store.TaskReview || t.tasks[i].Reviewer != "" {
 		t.mu.Unlock()
+		return
+	}
+	if start := t.reviewing[t.tasks[i].ID]; start != nil {
+		t.mu.Unlock()
+		<-start
 		return
 	}
 	tk := cloneTask(t.tasks[i])
 	if t.reviewing == nil {
-		t.reviewing = map[string]bool{}
+		t.reviewing = map[string]chan struct{}{}
 	}
-	t.reviewing[tk.ID] = true
+	start := make(chan struct{})
+	t.reviewing[tk.ID] = start
 	worker, wkind := t.name(tk.Owner), t.workerKind(tk)
 	var wt *store.Worktree
 	if o := t.member(tk.Owner); o != nil {
@@ -103,6 +112,7 @@ func (m *Manager) startReview(t *thread, id string) {
 		t.mu.Lock()
 		delete(t.reviewing, tk.ID)
 		t.mu.Unlock()
+		close(start)
 	}()
 
 	kind := m.reviewKind(m.reviewOf(tk), wkind)

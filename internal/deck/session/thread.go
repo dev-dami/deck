@@ -68,8 +68,12 @@ type thread struct {
 	sched schedState // one scheduler pass at a time (sched.go)
 	// raced holds the races already reported or kept (race.go).
 	raced map[string]bool
-	// reviewing holds the tasks whose reviewer is starting (review.go).
-	reviewing map[string]bool
+	// spawns holds the tasks a subagent is starting for, each with the claim
+	// of the Spawn that starts it (spawn.go).
+	spawns map[string]string
+	// reviewing holds the tasks whose reviewer is starting; each channel
+	// closes when that start ends (review.go).
+	reviewing map[string]chan struct{}
 	// reviewWaits holds the tasks in review whose wait for a reviewer the
 	// thread has a notice about (review.go).
 	reviewWaits map[string]bool
