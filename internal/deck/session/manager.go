@@ -1536,7 +1536,8 @@ type agentState struct {
 	ephemeral bool
 	dir       string
 	worktree  *store.Worktree
-	retired   bool // retireMember has stopped it (spawn.go)
+	retired   bool   // retireMember has stopped it (spawn.go)
+	reviews   string // the task it was started to review (review.go)
 
 	// subBase is the SUB snapshot its next sub.patch.capture diffs from, and
 	// subParent the capsule that snapshot already includes (subops.go).

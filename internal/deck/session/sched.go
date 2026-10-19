@@ -95,6 +95,7 @@ func (m *Manager) schedule(t *thread) {
 	m.checkBudgets(t, nil, store.Spend{}) // minutes pass without events
 	m.propagateFailures(t)
 	m.retryFailed(t)
+	m.startReviews(t)
 	m.dispatchReady(t)
 }
 
@@ -281,11 +282,13 @@ func (m *Manager) dispatch(t *thread, tk store.Task, owner *agentState) error {
 	return err
 }
 
-// failOwned fails the running tasks whose owner has just exited.
+// failOwned fails the running tasks whose owner has just exited, and blocks
+// the review it had not answered (reviewerGone).
 func (m *Manager) failOwned(t *thread, a *agentState) {
 	if m.isClosed() || t.gone.Load() {
 		return
 	}
+	m.reviewerGone(t, a)
 	var ids []string
 	t.mu.Lock()
 	for _, tk := range t.tasks {

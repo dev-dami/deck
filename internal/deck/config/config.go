@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -113,8 +114,12 @@ type Config struct {
 	// agent when one of that CLI's plan windows is at least this full, to the
 	// installed kind with the most room; 0 means DefaultRouteAbovePct, and 100
 	// or more never moves it.
-	RouteAbovePct int    `json:"route_above_pct"`
-	Models        Models `json:"models"`
+	RouteAbovePct int `json:"route_above_pct"`
+	// Review is the kind of agent that reviews a task run by subagents before
+	// it is done, when the task names none: "" or "none" is no review,
+	// "other" any installed kind other than the worker's, or a kind.
+	Review string `json:"review"`
+	Models Models `json:"models"`
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
 	Efforts Models `json:"efforts"`
@@ -576,6 +581,9 @@ func (c Config) Validate() error {
 	}
 	if c.Budget.CostUSD < 0 {
 		return fmt.Errorf("budget.cost_usd must be 0 (no limit) or more, got %v", c.Budget.CostUSD)
+	}
+	if c.Review != "" && c.Review != "none" && c.Review != "other" && !slices.Contains(Kinds, c.Review) {
+		return fmt.Errorf("review must be \"none\", \"other\" or an agent kind, got %q", c.Review)
 	}
 	if c.Peers != nil {
 		if err := c.Peers.validate(); err != nil {

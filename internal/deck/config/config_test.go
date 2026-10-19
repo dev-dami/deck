@@ -260,3 +260,15 @@ func TestDefaultModeValidationAndStartMode(t *testing.T) {
 		t.Error("SaveTo accepted an invalid default_mode")
 	}
 }
+
+func TestValidateReview(t *testing.T) {
+	cfg := Defaults()
+	for _, v := range []string{"", "none", "other", "codex"} {
+		if cfg.Review = v; cfg.Validate() != nil {
+			t.Errorf("review %q should validate", v)
+		}
+	}
+	if cfg.Review = "gpt"; cfg.Validate() == nil {
+		t.Error("review gpt validated")
+	}
+}
