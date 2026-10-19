@@ -58,6 +58,9 @@ type TaskSpec struct {
 	// so the scheduler never hands out a task its creator is about to work on
 	// or hand over itself.
 	Claimed bool
+	// spawn is the claim of the Spawn that creates the task for its subagent
+	// (spawn.go).
+	spawn string
 }
 
 // TaskPatch is a change to a task's description; nil fields stay as they are.
@@ -260,6 +263,9 @@ func (m *Manager) addTask(t *thread, sp TaskSpec) (store.Task, error) {
 	}
 	if sp.Claimed {
 		task.Status, task.Attempts, task.Started = store.TaskRunning, 1, now
+		if sp.spawn != "" {
+			t.claimLocked(id, sp.spawn)
+		}
 	}
 	t.tasks = append(t.tasks, task)
 	changes := []taskChange{m.logTaskLocked(t, task, "", sp.Creator, "")}
@@ -354,6 +360,13 @@ func (m *Manager) UpdateTask(threadID, id, by string, p TaskPatch) (store.Task, 
 // moveTask moves a task to status to, applying mutate (which may be nil) under
 // the thread's lock. note is the result, error or reason that goes with it.
 func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note string, mutate func(*store.Task)) (store.Task, error) {
+	return m.moveTaskIf(t, id, to, by, note, nil, mutate)
+}
+
+// moveTaskIf is moveTask when check (which may be nil) accepts the task. check
+// runs under the same lock as the move, so nothing changes the task between
+// the two.
+func (m *Manager) moveTaskIf(t *thread, id string, to store.TaskStatus, by, note string, check func(store.Task) error, mutate func(*store.Task)) (store.Task, error) {
 	if !to.Valid() {
 		return store.Task{}, fmt.Errorf("%q is not a task status", to)
 	}
@@ -364,6 +377,12 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 		return store.Task{}, store.ErrNoTask
 	}
 	tk := &t.tasks[i]
+	if check != nil {
+		if err := check(*tk); err != nil {
+			t.mu.Unlock()
+			return store.Task{}, err
+		}
+	}
 	from := tk.Status
 	if !store.CanTransition(from, to) {
 		t.mu.Unlock()
@@ -385,6 +404,9 @@ func (m *Manager) moveTask(t *thread, id string, to store.TaskStatus, by, note s
 	if to != store.TaskReview {
 		reviewer, tk.Reviewer = tk.Reviewer, ""
 		delete(t.reviewWaits, tk.ID) // a later review that waits gets a new notice
+	}
+	if to != store.TaskRunning {
+		delete(t.spawns, tk.ID) // a subagent still starting for it is not bound (bindRun)
 	}
 	var run *store.RunRef
 	if tk.Run != nil {
