@@ -1567,7 +1567,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case JobDoneMsg:
 		m.jobDone(msg.ID, msg.Err)
 	case app.UpdateAvailableMsg:
-		text := fmt.Sprintf("Deck update available: v%s â†’ v%s.", msg.CurrentVersion, msg.LatestVersion)
+		text := fmt.Sprintf("Deck update available: v%s → v%s.", msg.CurrentVersion, msg.LatestVersion)
 		if msg.IsDevelopment {
 			text = fmt.Sprintf("This is a development version of Deck. The latest version is v%s.", msg.LatestVersion)
 		}
@@ -4528,7 +4528,7 @@ func (m *UI) agentCompletionItems() []completions.AgentItem {
 	}
 	var cur, rest []completions.AgentItem
 	for _, c := range picker.CachedAgentModelChoices(sessionID) {
-		label := tone.Mark(c.Kind) + " " + c.Kind + " Â· " + c.Name
+		label := tone.Mark(c.Kind) + " " + c.Kind + " · " + c.Name
 		effort := c.CurrentEffort
 		if c.Current {
 			label += "  (now)"
@@ -5204,7 +5204,7 @@ func (m *UI) selectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 			label = "its default model"
 		}
 		if msg.Effort != "" {
-			label += " Â· " + msg.Effort + " effort"
+			label += " · " + msg.Effort + " effort"
 		}
 		return util.NewInfoMsg(msg.Kind + " now runs " + label)
 	}
@@ -5505,7 +5505,7 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	default:
 		return nil
 	}
-	// TypeAgentFinished / TypeAgentError are the busyâ†’idle edge: the agent
+	// TypeAgentFinished / TypeAgentError are the busy→idle edge: the agent
 	// clears its active request before publishing precisely so observers
 	// can re-probe. Drop the memoized busy state and re-fetch it and the
 	// prompt queue off-thread.
