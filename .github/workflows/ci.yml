@@ -45,13 +45,10 @@ jobs:
       - name: go build
         run: go build ./...
 
-  # The suite is still being brought over from the Crush fork, so a failing
-  # test is reported here without failing the run. Drop continue-on-error once
-  # it is green. Live tests are gated on DECK_LIVE and skip here.
+  # Live tests are gated on DECK_LIVE and skip here.
   test:
     name: test (ubuntu-latest)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
