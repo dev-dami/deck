@@ -168,3 +168,19 @@ test("changes panel and screenshot", async ({ page }) => {
   await page.waitForTimeout(500);
   await page.screenshot({ path: join(__dirname, "..", "..", "docs", "renderer.png") });
 });
+
+test("themes: a theme from the catalog and an accent recolor the window", async ({ page }) => {
+  await pair(page);
+  await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Appearance" }).click();
+  await page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: /Tokyo Night/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-palette", "tokyo-night");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(26, 27, 38)");
+  await page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: /GitHub Light/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-mode", "light");
+  await page.getByRole("radiogroup", { name: "Accent" }).getByRole("radio", { name: "Green" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-accent", "green");
+  // The choice is kept for the next start.
+  const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("deck.desktop.prefs") ?? "{}"));
+  expect(kept).toMatchObject({ palette: "github-light", accent: "green" });
+});

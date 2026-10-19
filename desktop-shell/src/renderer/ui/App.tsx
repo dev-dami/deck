@@ -195,7 +195,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   }, [open, close]);
 
   const prefs = usePrefs();
-  useAppearance(prefs.theme);
+  useAppearance(prefs.theme, prefs.palette, prefs.accent);
 
   const current = open.find((p) => p.key === currentKey) ?? null;
   const isOpen = (source: string) => open.some((p) => p.source === source);

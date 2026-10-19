@@ -4,6 +4,7 @@ import { Monitor, Moon, Palette, Sun } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 import { type Prefs, setPrefs, usePrefs } from "../prefs";
+import { ACCENTS, THEMES } from "../themes";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
@@ -153,7 +154,7 @@ function Appearance({ p }: { p: Prefs }) {
       <Section title="Theme">
         <Row
           title="Color mode"
-          description="Deck follows the theme of the Deck you are connected to."
+          description="Light or dark for the T3 theme: Deck's own, the system's, or yours. The other themes have their own."
           control={
             <Segmented
               label="Color mode"
@@ -166,6 +167,58 @@ function Appearance({ p }: { p: Prefs }) {
                 { value: "dark", label: "Dark", icon: <Moon className="size-3.5" /> },
               ]}
             />
+          }
+        />
+      </Section>
+      <Section title="Theme catalog">
+        <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4" role="radiogroup" aria-label="Theme">
+          {THEMES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="radio"
+              aria-checked={p.palette === t.id}
+              onClick={() => setPrefs({ palette: t.id })}
+              className={cn(
+                "flex cursor-pointer flex-col gap-2 rounded-lg border p-2 text-left text-xs transition-colors hover:bg-accent",
+                p.palette === t.id && "border-primary ring-1 ring-primary",
+              )}
+            >
+              <span className="flex h-10 overflow-hidden rounded-md border" style={{ background: t.swatch[0] }}>
+                <span className="w-1/3" style={{ background: t.swatch[1] }} />
+                <span className="flex flex-1 flex-col justify-center gap-1 px-1.5">
+                  <span className="h-1 w-3/4 rounded-full" style={{ background: t.swatch[2] }} />
+                  <span className="h-1 w-1/2 rounded-full" style={{ background: t.swatch[3] }} />
+                </span>
+              </span>
+              <span className="font-medium">{t.label}</span>
+            </button>
+          ))}
+        </div>
+        <Row
+          title="Accent"
+          description="The color of buttons, links and highlights."
+          control={
+            <div className="flex items-center gap-1.5" role="radiogroup" aria-label="Accent">
+              {ACCENTS.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={p.accent === a.id}
+                  aria-label={a.label}
+                  title={a.label}
+                  onClick={() => setPrefs({ accent: a.id })}
+                  className={cn(
+                    "grid size-6 cursor-pointer place-items-center rounded-full border text-2xs",
+                    p.accent === a.id && "ring-2 ring-foreground/60 ring-offset-1 ring-offset-background",
+                  )}
+                  style={a.color === "" ? undefined : { background: a.color }}
+                >
+                  {a.color === "" ? "T" : ""}
+                </button>
+              ))}
+            </div>
           }
         />
       </Section>

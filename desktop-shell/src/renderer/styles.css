@@ -423,3 +423,154 @@
   flex: 1;
   background: var(--border);
 }
+
+/* Themes (themes.ts): each sets the tokens on top of its mode's defaults.
+   The selectors carry data-mode too, so they outrank the light block. */
+:root[data-palette="tokyo-night"][data-mode] {
+  --background: #1a1b26;
+  --foreground: #c0caf5;
+  --card: #1f2133;
+  --popover: #24283b;
+  --primary: #7aa2f7;
+  --primary-foreground: #1a1b26;
+  --muted-foreground: #8089b3;
+  --secondary-label: #737aa2;
+  --accent: rgb(122 162 247 / 10%);
+  --border: rgb(169 177 214 / 12%);
+  --input: rgb(169 177 214 / 16%);
+  --message: #292e42;
+  --sidebar: #16161e;
+  --sidebar-row-hover: rgb(122 162 247 / 8%);
+  --sidebar-row-active: rgb(122 162 247 / 14%);
+  --code: #16161e;
+}
+:root[data-palette="catppuccin"][data-mode] {
+  --background: #1e1e2e;
+  --foreground: #cdd6f4;
+  --card: #232336;
+  --popover: #313244;
+  --primary: #cba6f7;
+  --primary-foreground: #1e1e2e;
+  --muted-foreground: #a6adc8;
+  --secondary-label: #9399b2;
+  --accent: rgb(203 166 247 / 10%);
+  --border: rgb(205 214 244 / 10%);
+  --input: rgb(205 214 244 / 14%);
+  --message: #313244;
+  --sidebar: #181825;
+  --sidebar-row-hover: rgb(203 166 247 / 8%);
+  --sidebar-row-active: rgb(203 166 247 / 14%);
+  --code: #181825;
+}
+:root[data-palette="nord"][data-mode] {
+  --background: #2e3440;
+  --foreground: #eceff4;
+  --card: #333a47;
+  --popover: #3b4252;
+  --primary: #88c0d0;
+  --primary-foreground: #2e3440;
+  --muted-foreground: #a7b1c2;
+  --secondary-label: #9aa5b8;
+  --accent: rgb(136 192 208 / 10%);
+  --border: rgb(236 239 244 / 10%);
+  --input: rgb(236 239 244 / 15%);
+  --message: #3b4252;
+  --sidebar: #292e39;
+  --sidebar-row-hover: rgb(136 192 208 / 8%);
+  --sidebar-row-active: rgb(136 192 208 / 14%);
+  --code: #292e39;
+}
+:root[data-palette="rose-pine"][data-mode] {
+  --background: #191724;
+  --foreground: #e0def4;
+  --card: #1f1d2e;
+  --popover: #26233a;
+  --primary: #ebbcba;
+  --primary-foreground: #191724;
+  --muted-foreground: #908caa;
+  --secondary-label: #817c9c;
+  --accent: rgb(235 188 186 / 9%);
+  --border: rgb(224 222 244 / 9%);
+  --input: rgb(224 222 244 / 14%);
+  --message: #26233a;
+  --sidebar: #16141f;
+  --sidebar-row-hover: rgb(235 188 186 / 7%);
+  --sidebar-row-active: rgb(235 188 186 / 13%);
+  --code: #16141f;
+}
+:root[data-palette="dracula"][data-mode] {
+  --background: #282a36;
+  --foreground: #f8f8f2;
+  --card: #2d2f3d;
+  --popover: #343746;
+  --primary: #bd93f9;
+  --primary-foreground: #282a36;
+  --muted-foreground: #a4a8c4;
+  --secondary-label: #9599b8;
+  --accent: rgb(189 147 249 / 10%);
+  --border: rgb(248 248 242 / 9%);
+  --input: rgb(248 248 242 / 14%);
+  --message: #3a3d4e;
+  --sidebar: #21222c;
+  --sidebar-row-hover: rgb(189 147 249 / 8%);
+  --sidebar-row-active: rgb(189 147 249 / 14%);
+  --code: #21222c;
+}
+:root[data-palette="solarized-light"][data-mode] {
+  --background: #fdf6e3;
+  --foreground: #3b4c52;
+  --card: #fffbf0;
+  --popover: #fffbf0;
+  --primary: #268bd2;
+  --primary-foreground: #fdf6e3;
+  --muted-foreground: #657b83;
+  --secondary-label: #74888f;
+  --accent: #eee8d5;
+  --border: #e4dcc6;
+  --input: #d6cfba;
+  --message: #eee8d5;
+  --sidebar: #f5eedb;
+  --sidebar-row-hover: #eee8d5;
+  --sidebar-row-active: #fffbf0;
+  --code: #eee8d5;
+}
+:root[data-palette="github-light"][data-mode] {
+  --background: #ffffff;
+  --foreground: #1f2328;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --primary: #0969da;
+  --primary-foreground: #ffffff;
+  --muted-foreground: #59636e;
+  --secondary-label: #656d76;
+  --accent: #f3f4f6;
+  --border: #d1d9e0;
+  --input: #c4cdd5;
+  --message: #f6f8fa;
+  --sidebar: #f6f8fa;
+  --sidebar-row-hover: #eff2f5;
+  --sidebar-row-active: #ffffff;
+  --code: #f6f8fa;
+}
+
+/* An accent overrides the theme's primary. */
+:root[data-accent="blue"][data-mode] {
+  --primary: oklch(0.571 0.21 264);
+  --primary-foreground: #fff;
+}
+:root[data-accent="violet"][data-mode] {
+  --primary: oklch(0.58 0.22 295);
+  --primary-foreground: #fff;
+}
+:root[data-accent="green"][data-mode] {
+  --primary: oklch(0.62 0.16 155);
+  --primary-foreground: #fff;
+}
+:root[data-accent="orange"][data-mode] {
+  --primary: oklch(0.68 0.17 50);
+  --primary-foreground: #fff;
+}
+:root[data-accent="pink"][data-mode] {
+  --primary: oklch(0.64 0.2 350);
+  --primary-foreground: #fff;
+}

@@ -91,7 +91,7 @@ function TerminalView({ project, id, visible }: { project: ProjectApi; id: strin
     const mode = new MutationObserver(() => {
       term.options.theme = themeNow();
     });
-    mode.observe(document.documentElement, { attributes: true, attributeFilter: ["data-mode"] });
+    mode.observe(document.documentElement, { attributes: true, attributeFilter: ["data-mode", "data-palette", "data-accent"] });
     refit();
     return () => {
       ro.disconnect();

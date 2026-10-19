@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { ACCENTS, THEMES } from "./themes";
 
 // The window's own settings (the Settings page). They live in this
 // renderer's localStorage: nothing here is secret and Deck never sees them.
@@ -11,6 +12,9 @@ export type SendKey = "enter" | "mod-enter";
 
 export interface Prefs {
   theme: ThemePref;
+  // The theme from themes.ts and the accent over it.
+  palette: string;
+  accent: string;
   rows: RowStyle;
   grouping: Grouping;
   clock: ClockPref;
@@ -21,6 +25,8 @@ export interface Prefs {
 
 export const defaultPrefs: Prefs = {
   theme: "deck",
+  palette: "default",
+  accent: "theme",
   rows: "cards",
   grouping: "projects",
   clock: "12h",
@@ -49,6 +55,8 @@ function merge(v: Record<string, unknown>): Prefs {
   const bool = (k: string, d: boolean): boolean => (typeof v[k] === "boolean" ? (v[k] as boolean) : d);
   return {
     theme: pick("theme", ["deck", "system", "light", "dark"] as const, defaultPrefs.theme),
+    palette: pick("palette", THEMES.map((t) => t.id), defaultPrefs.palette),
+    accent: pick("accent", ACCENTS.map((a) => a.id), defaultPrefs.accent),
     rows: pick("rows", ["cards", "compact"] as const, defaultPrefs.rows),
     grouping: pick("grouping", ["projects", "recent"] as const, defaultPrefs.grouping),
     clock: pick("clock", ["12h", "24h"] as const, defaultPrefs.clock),
