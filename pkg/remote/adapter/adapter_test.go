@@ -3,6 +3,7 @@ package adapter
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -100,6 +101,7 @@ type fakeRC struct {
 	editable map[string]string // message id -> session
 	calls    []string
 	changes  chan pubsub.Event[workspace.DeckChange]
+	themeMu  sync.Mutex // Theme is polled from the backend's goroutine
 	theme    workspace.Theme
 }
 
@@ -175,7 +177,16 @@ func (r *fakeRC) EditMessage(_ context.Context, sid, mid, text string) error {
 func (r *fakeRC) SubscribeDeck(context.Context) <-chan pubsub.Event[workspace.DeckChange] {
 	return r.changes
 }
-func (r *fakeRC) Theme() workspace.Theme { return r.theme }
+func (r *fakeRC) Theme() workspace.Theme {
+	r.themeMu.Lock()
+	defer r.themeMu.Unlock()
+	return r.theme
+}
+func (r *fakeRC) setTheme(th workspace.Theme) {
+	r.themeMu.Lock()
+	r.theme = th
+	r.themeMu.Unlock()
+}
 
 type fakeRoster struct{}
 
@@ -380,7 +391,7 @@ func TestDeckChangesAndTheme(t *testing.T) {
 	require.Equal(t, wire.EvNotice, ev.Name)
 	require.True(t, ev.Scoped)
 
-	r.rc.theme = workspace.Theme{Palette: map[string]string{"primary": "#222222"}, Kinds: map[string]workspace.KindTone{}}
+	r.rc.setTheme(workspace.Theme{Palette: map[string]string{"primary": "#222222"}, Kinds: map[string]workspace.KindTone{}})
 	ev = r.next(t)
 	require.Equal(t, wire.EvThemeChanged, ev.Name)
 	require.Equal(t, "#222222", ev.Payload.(wire.Theme).Palette["primary"])
