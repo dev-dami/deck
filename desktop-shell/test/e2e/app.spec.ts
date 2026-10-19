@@ -97,7 +97,7 @@ test("adds an agent with $codex+", async ({ page }) => {
   expect(fake.sent.map((s) => s.text)).toEqual(["$codex+ review the limiter"]);
 
   // The add-agent menu writes the same mention.
-  await page.getByRole("button", { name: "+ Add agent" }).click();
+  await page.getByRole("button", { name: "Add agent" }).click();
   await page.getByRole("menu", { name: "Add agent" }).getByRole("menuitem", { name: /opencode/ }).click();
   await expect(composer(page)).toHaveValue("$opencode+ ");
 });
@@ -137,9 +137,16 @@ test("pages older messages, switches with the palette and makes a session", asyn
   await palette.getByRole("textbox").press("Enter");
   await expect(page.locator(".title")).toHaveText("Docs pass");
 
+  // A new session starts on the start screen; the first message makes it,
+  // titled after the message.
   await page.keyboard.press("Control+n");
+  await expect(page.locator(".title")).toHaveText("New session");
+  await composer(page).fill("$claude write the release notes");
+  await composer(page).press("Enter");
   await expect(sidebar(page).locator(".session")).toHaveCount(4);
-  await expect(page.locator(".title")).toHaveText("Untitled");
+  await expect(page.locator(".title")).toHaveText("write the release notes");
+  await expect(page.locator('[data-agent="claude-1"].msg').last()).toContainText("write the release notes");
+  expect(fake.sent.map((s) => s.text)).toEqual(["$claude write the release notes"]);
 });
 
 test("changes panel and screenshot", async ({ page }) => {

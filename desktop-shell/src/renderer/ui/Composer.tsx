@@ -2,9 +2,15 @@ import { canSend } from "@web/composer";
 import { checkImage, displayName, readAsBase64 } from "@web/images";
 import type { AgentLine, Image } from "@web/protocol";
 import { kindColour } from "@web/theme";
-import { type ClipboardEvent, type KeyboardEvent, useMemo, useRef, useState } from "react";
+import { ArrowUp, ImageIcon, Paperclip, Square, X } from "lucide-react";
+import { type KeyboardEvent, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { applySuggestion, type Mention, mentionAt, suggestions } from "../completion";
+import { cn } from "../lib/cn";
+import { Button } from "./kit/button";
 
+// The floating composer, after T3 Code's ChatComposer: the prompt on top,
+// a toolbar below it with the agents and the mode on the left and send (or
+// stop, while agents work) on the right.
 export function Composer({
   draft,
   setDraft,
@@ -15,6 +21,11 @@ export function Composer({
   onSend,
   onError,
   inputRef,
+  toolbar,
+  busy = false,
+  onStop,
+  placeholder,
+  className,
 }: {
   draft: string;
   setDraft: (s: string) => void;
@@ -25,17 +36,32 @@ export function Composer({
   onSend: (text: string, images: Image[]) => Promise<boolean>;
   onError: (text: string) => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  toolbar?: ReactNode;
+  busy?: boolean;
+  onStop?: () => void;
+  placeholder?: string;
+  className?: string;
 }) {
   const [images, setImages] = useState<Image[]>([]);
   const [mention, setMention] = useState<Mention | null>(null);
   const [pick, setPick] = useState(0);
   const [sending, setSending] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const composing = useRef(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const options = useMemo(
     () => (mention === null ? [] : suggestions(mention.query, roster, kinds).slice(0, 8)),
     [mention, roster, kinds],
   );
+
+  // The prompt grows with its text up to a cap, then scrolls.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (el === null) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 280)}px`;
+  }, [draft, inputRef]);
 
   const track = (el: HTMLTextAreaElement) => {
     setMention(mentionAt(el.value, el.selectionStart));
@@ -54,6 +80,8 @@ export function Composer({
       el.setSelectionRange(next.caret, next.caret);
     });
   };
+
+  const ready = online && !sending && canSend(draft, images.length);
 
   const send = async () => {
     if (sending || !canSend(draft, images.length)) return;
@@ -93,11 +121,9 @@ export function Composer({
     }
   };
 
-  const onPaste = async (e: ClipboardEvent<HTMLTextAreaElement>) => {
-    if (!imagesOn) return;
-    const files = [...e.clipboardData.files].filter((f) => f.type.startsWith("image/"));
+  const addFiles = async (all: File[]) => {
+    const files = all.filter((f) => f.type.startsWith("image/"));
     if (files.length === 0) return;
-    e.preventDefault();
     let used = images.reduce((n, im) => n + (im.data_b64?.length ?? 0), 0);
     const added: Image[] = [];
     for (const f of files) {
@@ -114,59 +140,102 @@ export function Composer({
   };
 
   return (
-    <div className="composer">
+    <div className={cn("composer relative mx-auto w-full max-w-(--chat-max)", className)}>
       {options.length > 0 && (
-        <ul className="suggest" role="listbox" aria-label="Agents">
+        <ul
+          className="suggest absolute right-0 bottom-full left-0 z-40 mb-2 overflow-hidden rounded-xl border bg-popover p-1 shadow-xl shadow-black/30"
+          role="listbox"
+          aria-label="Agents"
+        >
           {options.map((s, i) => (
             <li
               key={s.insert}
               role="option"
               aria-selected={i === pick}
-              className={i === pick ? "on" : ""}
+              className={cn(
+                "flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-1.5 text-[13px]",
+                i === pick && "on bg-accent",
+              )}
+              onMouseEnter={() => setPick(i)}
               onMouseDown={(e) => {
                 e.preventDefault();
                 accept(i);
               }}
             >
-              <span className="suggest-insert" style={{ color: s.kind === null ? undefined : kindColour(s.kind) }}>
+              <span
+                className="suggest-insert font-medium font-mono text-xs"
+                style={{ color: s.kind === null ? undefined : kindColour(s.kind) }}
+              >
                 {s.insert}
               </span>
-              <span className="suggest-detail">{s.detail}</span>
+              <span className="suggest-detail text-muted-foreground text-xs">{s.detail}</span>
             </li>
           ))}
         </ul>
       )}
-      {images.length > 0 && (
-        <div className="attachments">
-          {images.map((im, i) => (
-            <span key={i} className="chip">
-              {im.name}
-              <button
-                type="button"
-                className="chip-x"
-                aria-label={`Remove ${im.name}`}
-                onClick={() => setImages((cur) => cur.filter((_, j) => j !== i))}
+      <div
+        className={cn(
+          "composer-box relative rounded-3xl border bg-card shadow-composer transition-colors focus-within:border-foreground/15",
+          dragging && "border-primary/60",
+        )}
+        onDragOver={(e) => {
+          if (!imagesOn) return;
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          setDragging(false);
+          if (!imagesOn) return;
+          e.preventDefault();
+          void addFiles([...e.dataTransfer.files]);
+        }}
+      >
+        {images.length > 0 && (
+          <div className="attachments flex flex-wrap gap-1.5 px-4 pt-3">
+            {images.map((im, i) => (
+              <span
+                key={i}
+                className="chip inline-flex items-center gap-1.5 rounded-md border bg-background py-1 pr-1 pl-2 text-xs"
               >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="composer-box">
+                <ImageIcon className="size-3.5 text-muted-foreground" />
+                <span className="max-w-40 truncate">{im.name}</span>
+                <button
+                  type="button"
+                  className="chip-x grid size-4 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                  aria-label={`Remove ${im.name}`}
+                  onClick={() => setImages((cur) => cur.filter((_, j) => j !== i))}
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <textarea
           ref={inputRef}
           aria-label="Message"
-          placeholder={online ? "Message the agents. Type $ to pick one, $codex+ to start another." : "Offline. Reconnecting…"}
+          placeholder={
+            online
+              ? (placeholder ?? "Ask the agents anything. Type $ to pick one, $codex+ to start another.")
+              : "Offline. Reconnecting…"
+          }
           value={draft}
-          rows={Math.min(10, Math.max(2, draft.split("\n").length))}
+          rows={1}
+          className="block max-h-[280px] min-h-[52px] w-full resize-none bg-transparent px-5 pt-4 pb-2 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/70"
           onChange={(e) => {
             setDraft(e.target.value);
             track(e.target);
           }}
           onSelect={(e) => track(e.currentTarget)}
           onKeyDown={onKeyDown}
-          onPaste={(e) => void onPaste(e)}
+          onPaste={(e) => {
+            if (!imagesOn) return;
+            const files = [...e.clipboardData.files];
+            if (!files.some((f) => f.type.startsWith("image/"))) return;
+            e.preventDefault();
+            void addFiles(files);
+          }}
           onCompositionStart={() => {
             composing.current = true;
           }}
@@ -175,16 +244,61 @@ export function Composer({
           }}
           onBlur={() => setMention(null)}
         />
-        <button
-          type="button"
-          className="send"
-          onClick={() => void send()}
-          disabled={!online || sending || !canSend(draft, images.length)}
-        >
-          Send
-        </button>
+        <div className="flex items-end gap-2 px-3 pb-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            {imagesOn && (
+              <>
+                <Button
+                  variant="ghost-muted"
+                  size="icon-sm"
+                  className="rounded-full"
+                  aria-label="Attach an image"
+                  title="Attach an image"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <Paperclip />
+                </Button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  hidden
+                  onChange={(e) => {
+                    void addFiles([...(e.currentTarget.files ?? [])]);
+                    e.currentTarget.value = "";
+                  }}
+                />
+              </>
+            )}
+            {toolbar}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {busy && onStop !== undefined && (
+              <Button
+                variant="outline"
+                size="icon"
+                className="stop-all rounded-full"
+                aria-label="Stop all agents"
+                title="Stop all agents"
+                onClick={onStop}
+              >
+                <Square className="size-3.5 fill-current" />
+              </Button>
+            )}
+            <Button
+              size="icon"
+              className={cn("send rounded-full", !ready && "border-transparent bg-accent text-muted-foreground opacity-100")}
+              onClick={() => void send()}
+              disabled={!ready}
+              aria-label="Send"
+              title="Send (Enter)"
+            >
+              <ArrowUp className="size-4.5" />
+            </Button>
+          </div>
+        </div>
       </div>
-      <p className="hint">Enter sends. Shift+Enter adds a line.</p>
     </div>
   );
 }

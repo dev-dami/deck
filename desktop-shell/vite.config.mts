@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 import { RENDERER_CSP } from "./src/shared/csp";
@@ -12,6 +13,7 @@ export default defineConfig({
   base: "./",
   plugins: [
     react(),
+    tailwindcss(),
     {
       // The dev server injects inline styles for hot reload, so only the
       // build carries the strict policy.

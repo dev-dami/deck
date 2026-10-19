@@ -3,8 +3,7 @@
 A desktop window onto Deck. It shows the sessions (threads) of a project,
 the agents in each thread and their work, and it lets you run many agents
 at once. The layout is a sidebar of sessions, a chat timeline, a composer
-with an agents strip, and a side panel for changes, approvals and the
-queue.
+with its agents, and a side panel for changes, approvals and the queue.
 
 ![The main window](docs/screenshot.png)
 
@@ -55,23 +54,33 @@ Electron with `DECK_DESKTOP_DEV_URL=http://localhost:5173 npm start`.
 
 ## Use it
 
-- **Sessions.** Click a session to open it. A pulsing dot means that agents
-  work in it. A still accent dot means new messages. A number means
-  approvals wait. Hover a session to rename or delete it.
+The look follows [T3 Code](https://github.com/pingdotgg/t3code) (MIT): a
+quiet sidebar of sessions, a centred chat, and a floating composer.
+
+- **Start.** "New session" (Ctrl+N, Cmd+N) opens the start screen. Write a
+  task and send it: that makes the session, names it after the first line
+  and sends the message. Pick who works on it with `$claude`, `$codex` and
+  so on, or with the + button.
+- **Sessions.** Click a session to open it. A spinner means that agents
+  work in it. An accent dot means new messages. A number means approvals
+  wait. Hover a session to rename or delete it.
 - **Many agents.** Type `$` in the composer to pick an agent. `$codex`
   reaches a free codex or starts one. `$codex+` always starts another one.
-  `$codex*` reaches every codex. `$all` reaches every agent. "+ Add agent"
-  above the composer writes `$kind+ ` for you.
-- **Agents strip.** Each agent shows its kind, its model and its state:
-  busy, waiting (for an approval) or idle. Click the model to change it.
-  Click Stop to interrupt one agent.
-- **Side panel.** Changes shows the diff of each changed file. Approvals
-  lists the approvals of every session: Allow, Allow for session or Deny.
-  Queue shows the messages that wait for a busy agent: send now or cancel.
-- **Mode.** Plan, Ask or Yolo for each session.
-- **Keys.** Ctrl+K (Cmd+K) opens the command palette. Ctrl+N (Cmd+N) makes a
-  new session. Enter sends. Shift+Enter adds a line.
-- **Images.** Paste an image into the composer to send it.
+  `$codex*` reaches every codex. `$all` reaches every agent. The + above the
+  composer writes `$kind+ ` for you.
+- **Agents.** Each agent above the composer shows its kind, its model and
+  its state: busy, waiting (for an approval) or idle. Click it to change its
+  model and effort, to address it, or to stop it. The square button by Send
+  stops every agent of the session.
+- **Approvals.** An approval of the open session shows above the composer:
+  Allow, Allow for session or Deny. The Approvals panel lists those of every
+  session.
+- **Side panel.** Changes shows the diff of each changed file. Queue shows
+  the messages that wait for a busy agent: send now or cancel.
+- **Mode.** Plan, Ask or Yolo for each session, from the composer.
+- **Keys.** Ctrl+K (Cmd+K) searches sessions and commands. Enter sends.
+  Shift+Enter adds a line.
+- **Images.** Paste, drop or attach an image to send it.
 
 ## Build, test and package
 
@@ -129,6 +138,11 @@ renderer (React, sandboxed)                  main process (Node)                
 - `src/preload/preload.ts` exposes `window.deck`: the host methods over IPC
   and the socket and rpc event streams. Nothing else.
 - `src/shared/` holds the bridge types and the CSP.
+- **The UI** is React with Tailwind CSS v4. `src/renderer/styles.css` holds
+  the theme tokens (dark and light, after T3 Code's), `src/renderer/ui/kit/`
+  the small primitives (button, badge, menu) after T3 Code's
+  `components/ui`, and lucide-react draws the icons. Tailwind builds one
+  stylesheet, so the CSP's `style-src 'self'` holds.
 
 ### What the rpc transport adds, and what the app uses
 

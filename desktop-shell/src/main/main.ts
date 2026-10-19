@@ -86,7 +86,10 @@ function createWindow(reset: () => void): BrowserWindow {
     minWidth: 960,
     minHeight: 560,
     title: "Deck",
-    backgroundColor: "#111416",
+    backgroundColor: "#0a0a0a",
+    // The renderer draws its own title strips (the "drag" class): on a Mac the
+    // traffic lights sit over the sidebar; elsewhere the menu bar hides until Alt.
+    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const } : { autoHideMenuBar: true }),
     webPreferences: {
       preload: join(__dirname, "..", "preload", "preload.js"),
       contextIsolation: true,

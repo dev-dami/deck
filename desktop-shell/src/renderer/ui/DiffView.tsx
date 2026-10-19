@@ -4,7 +4,7 @@ import { useMemo } from "react";
 export function DiffView({ diff, truncated }: { diff: string; truncated?: boolean | undefined }) {
   const lines = useMemo(() => parseDiff(diff), [diff]);
   return (
-    <div className="diff" role="table" aria-label="Diff">
+    <div className="diff py-1" role="table" aria-label="Diff">
       {lines.map((l, i) => (
         <div key={i} className={`diff-line diff-${l.kind}`} role="row">
           {l.text === "" ? " " : l.text}

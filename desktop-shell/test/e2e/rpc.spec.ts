@@ -50,7 +50,8 @@ test("opens a folder and runs two agents in one thread", async ({ page }) => {
   await expect(codex).toContainText("split the work");
   await expect(page.locator(".streaming")).toHaveCount(0);
   // Yolo is offered: the rpc server allows it for the person at this machine.
-  await expect(page.getByRole("radio", { name: "Yolo" })).toBeVisible();
+  await page.locator(".mode-picker").click();
+  await expect(page.getByRole("radio", { name: /Yolo/ })).toBeVisible();
 });
 
 test("a session in the background updates live", async ({ page }) => {

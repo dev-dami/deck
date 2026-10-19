@@ -112,11 +112,11 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   }, [active, auth, leave]);
 
   return (
-    <div className="app" data-app="">
+    <div className="app h-full" data-app="">
       {active !== null ? (
         <Shell key={active.key} c={active.c} where={active.where} onDisconnect={() => leave(null)} />
       ) : servers === null ? (
-        <div className="loading">Loading…</div>
+        <div className="loading grid h-full place-items-center text-muted-foreground text-sm">Loading…</div>
       ) : (
         <ConnectScreen
           bridge={bridge}
