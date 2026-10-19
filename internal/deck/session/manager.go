@@ -274,6 +274,8 @@ type Manager struct {
 	// every task that ends (contract.go).
 	contractor Contractor
 	taskEnd    func(threadID string, tk store.Task)
+	// sandbox makes the sandbox of each ops contract (opscontract.go).
+	sandbox NewSandbox
 }
 
 // NewManager returns a Manager that starts agents from adapters (keyed by kind,
@@ -645,6 +647,9 @@ func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Sp
 	// .gitignore that keeps its plans out of git.
 	_ = brand.EnsurePlansDir(t.dir)
 	s.Instructions = m.instructions(t, a, s.MCP != nil && m.opts.Hub != nil)
+	if t.opsOf() != nil {
+		s.NoTools, s.Instructions = true, opsInstructions
+	}
 	return s
 }
 
@@ -1463,6 +1468,12 @@ func (m *Manager) onApproval(a *agentState, req agent.ApprovalRequest) {
 		}
 		return
 	}
+	if a.thread.opsOf() != nil {
+		if req.Respond != nil {
+			req.Respond(agent.Decision{Allow: false, Reason: errOpsOnly.Error()})
+		}
+		return
+	}
 	req.AgentID = a.id
 	orig := req.Respond
 	var once sync.Once
@@ -1536,7 +1547,8 @@ type agentState struct {
 	ephemeral bool
 	dir       string
 	worktree  *store.Worktree
-	retired   bool // retireMember has stopped it (spawn.go)
+	retired   bool   // retireMember has stopped it (spawn.go)
+	reviews   string // the task it was started to review (review.go)
 
 	// subBase is the SUB snapshot its next sub.patch.capture diffs from, and
 	// subParent the capsule that snapshot already includes (subops.go).

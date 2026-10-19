@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -73,6 +74,9 @@ func (c *contracts) Propose(ctx context.Context, name string, p session.Proposal
 // run readies a contract this Deck's person accepted: it fetches the base
 // from the teammate and makes the contract's thread.
 func (c *contracts) run(k peer.Contract) (string, string, func(), error) {
+	if k.Kind == peer.KindOps {
+		return c.runOps(k)
+	}
 	svc, s := c.svc.Load(), c.mgr.SubStore()
 	if svc == nil || s == nil {
 		return "", "", nil, fmt.Errorf("contracts cannot run without the peer link and the Deck store")
@@ -94,6 +98,29 @@ func (c *contracts) run(k peer.Contract) (string, string, func(), error) {
 	return tid, task, start, nil
 }
 
+// runOps readies an ops contract that is inside its requester's
+// max_scope: its thread, its sandbox and its agent.
+func (c *contracts) runOps(k peer.Contract) (string, string, func(), error) {
+	svc := c.svc.Load()
+	if svc == nil {
+		return "", "", nil, fmt.Errorf("ops contracts cannot run without the peer link")
+	}
+	tid, task, err := c.mgr.RunOps(session.OpsRun{
+		Peer: k.Peer, Title: k.Title, Brief: peer.OpsBrief(k), Scope: k.Scope, Targets: k.Targets,
+		Check: func(raw json.RawMessage) (json.RawMessage, error) { return peer.CheckResult(k.Schema, raw) },
+		Audit: func(event, detail string) { svc.Audit(k.Peer, k.ID, event, detail) },
+	})
+	if err != nil {
+		return "", "", nil, err
+	}
+	start := func() {
+		if err := c.mgr.StartContract(tid, task); err != nil {
+			slog.Warn("Ops contract not started", "peer", k.Peer, "error", err)
+		}
+	}
+	return tid, task, start, nil
+}
+
 // cancel stops the work on a contract its requester called off.
 func (c *contracts) cancel(k peer.Contract) {
 	go func() {
@@ -107,6 +134,9 @@ func (c *contracts) cancel(k peer.Contract) {
 // task, fetching the result capsule first. A fetch that fails is tried
 // again after each of c.waits.
 func (c *contracts) updated(k peer.Contract) {
+	if k.Kind == peer.KindOps {
+		return // no task waits for it: the Team pane shows it
+	}
 	go func() {
 		n := session.ContractNews{State: k.State, Agent: k.Agent, Note: k.Note, Summary: k.Summary}
 		if k.State == peer.ContractDone && k.Capsule != "" {
@@ -153,9 +183,24 @@ func (c *contracts) taskEnd(threadID string, tk store.Task) {
 	}
 	var base sub.ID
 	for _, k := range svc.Contracts() {
-		if k.Inbound && k.State == peer.ContractAccepted && k.Thread == threadID && k.Task == tk.ID {
-			base = k.Base
+		if !k.Inbound || k.State != peer.ContractAccepted || k.Thread != threadID || k.Task != tk.ID {
+			continue
 		}
+		if k.Kind == peer.KindOps {
+			res, ok := c.mgr.OpsResult(threadID)
+			why := ""
+			switch {
+			case tk.Status == store.TaskCancelled:
+				why = "its person cancelled it"
+			case tk.Status == store.TaskFailed:
+				why = hub.Redact(tk.Error)
+			case !ok:
+				why = "its agent ended without a result that fits"
+			}
+			svc.FinishOps(threadID, tk.ID, res, why)
+			return
+		}
+		base = k.Base
 	}
 	if base == "" {
 		return

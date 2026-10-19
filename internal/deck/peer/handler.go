@@ -48,6 +48,9 @@ type Caller struct {
 	// AllowInbound is the ops this peer may run here (config
 	// peers.remote[].allow_inbound); empty means DefaultAllowInbound.
 	AllowInbound []string
+	// MaxScope is the presets its ops contracts may ask for here (config
+	// peers.remote[].max_scope); empty allows none.
+	MaxScope []string
 }
 
 // Allowed reports whether the caller may run op. The match is exact: no case

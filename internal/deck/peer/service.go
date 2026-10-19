@@ -63,6 +63,8 @@ type Service struct {
 	shared    Shared
 	// draining is set by Drain: teammates can start no new work here.
 	draining atomic.Bool
+	// audit logs every event of the ops contracts (audit.go).
+	audit *auditLog
 }
 
 // ServiceOptions configures a Service.
@@ -105,6 +107,7 @@ func NewService(o ServiceOptions) (*Service, error) {
 	s.team = NewTeam(o.Dir, s.changed)
 	s.out = newOutbox(o.Dir)
 	s.contracts = newContractBook(o.Dir)
+	s.audit = newAuditLog(o.Dir)
 	return s, nil
 }
 
@@ -773,7 +776,11 @@ type PeerState struct {
 	Dial        bool
 	Pinned      bool // its key is pinned: it can connect
 	Configured  bool // it has a peers.remote row
-	Link        Link
+	// Via is the relay this Deck dials it through (peers.remote[].via);
+	// Relay is set when it may relay links to this Deck.
+	Via   string
+	Relay bool
+	Link  Link
 	// Presence is what it said of its work the last time it was asked; nil
 	// while no link to it is up.
 	Presence *Presence
@@ -828,7 +835,7 @@ func (s *Service) Snapshot() Snapshot {
 			ps = &PeerState{Name: r.Name}
 			byName[r.Name] = ps
 		}
-		ps.Configured, ps.Dial, ps.Role = true, r.Dial, r.RoleOrDefault()
+		ps.Configured, ps.Dial, ps.Role, ps.Via, ps.Relay = true, r.Dial, r.RoleOrDefault(), r.Via, r.Relay
 		if r.Addr != "" {
 			ps.Addr = r.Addr
 		}

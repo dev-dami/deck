@@ -12,8 +12,19 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ChannelType is the only SSH channel type a peer accepts.
+// ChannelType is the SSH channel type a peer serves MCP on.
 const ChannelType = "mcp"
+
+// The relay channel types (relay.go). A Manager's own links take them only
+// under the relay rules; every other link refuses them like any unknown
+// type.
+const (
+	// RelayChannelType asks the Deck at the other end to relay a link to
+	// one of its peers.
+	RelayChannelType = "relay@deck"
+	// RelayedChannelType brings a relayed link from another peer.
+	RelayedChannelType = "relayed@deck"
+)
 
 // keepaliveRequest is the only global request a peer answers.
 const keepaliveRequest = "keepalive@openssh.com"
@@ -76,6 +87,8 @@ type Conn struct {
 
 	recheck func(Caller) (Caller, error)
 	perKey  *keyLimiter
+	relay   func(*Conn, ssh.NewChannel)
+	via     string
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -99,6 +112,11 @@ type connParams struct {
 	recheck func(Caller) (Caller, error)
 	// perKey, when set, caps calls in flight per pinned key.
 	perKey *keyLimiter
+	// relay, when set, takes the relay channel types; it must not block.
+	// Nil refuses them.
+	relay func(*Conn, ssh.NewChannel)
+	// via names the relay this link runs through; "" for a direct link.
+	via string
 }
 
 func newConn(sc ssh.Conn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, p connParams) *Conn {
@@ -106,6 +124,7 @@ func newConn(sc ssh.Conn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request,
 	c := &Conn{
 		sc: sc, caller: p.caller, h: p.handler, self: p.self, ver: p.ver,
 		lim: p.lim.withDefaults(), log: p.log, recheck: p.recheck, perKey: p.perKey,
+		relay: p.relay, via: p.via,
 		ctx: ctx, cancel: cancel, done: make(chan struct{}),
 	}
 	if c.log == nil {
@@ -146,6 +165,9 @@ func (c *Conn) Peer() Caller { return c.caller }
 // RemoteAddr is the other end's network address.
 func (c *Conn) RemoteAddr() net.Addr { return c.sc.RemoteAddr() }
 
+// Via is the peer this link is relayed through, "" for a direct link.
+func (c *Conn) Via() string { return c.via }
+
 // Done is closed when the link is down.
 func (c *Conn) Done() <-chan struct{} { return c.done }
 
@@ -179,6 +201,16 @@ func (c *Conn) drop() {
 // OpenMCP opens an mcp channel to the other side, for calling its tools.
 // Close the Client when done; closing the Conn closes it too.
 func (c *Conn) OpenMCP(ctx context.Context) (*Client, error) {
+	ch, err := c.openChannel(ctx, ChannelType, nil)
+	if err != nil {
+		return nil, err
+	}
+	return newClient(c.ctx, ch, c.lim.MaxMessage, c.log), nil
+}
+
+// openChannel opens a channel of typ to the other side, until ctx ends. The
+// channel's requests are refused.
+func (c *Conn) openChannel(ctx context.Context, typ string, payload []byte) (ssh.Channel, error) {
 	type opened struct {
 		ch   ssh.Channel
 		reqs <-chan *ssh.Request
@@ -186,7 +218,7 @@ func (c *Conn) OpenMCP(ctx context.Context) (*Client, error) {
 	}
 	res := make(chan opened, 1)
 	go func() {
-		ch, reqs, err := c.sc.OpenChannel(ChannelType, nil)
+		ch, reqs, err := c.sc.OpenChannel(typ, payload)
 		res <- opened{ch, reqs, err}
 	}()
 	var o opened
@@ -206,8 +238,7 @@ func (c *Conn) OpenMCP(ctx context.Context) (*Client, error) {
 		return nil, o.err
 	}
 	go refuseRequests(o.reqs)
-	cl := newClient(c.ctx, o.ch, c.lim.MaxMessage, c.log)
-	return cl, nil
+	return o.ch, nil
 }
 
 // globalRequests answers keepalives and refuses every other global request
@@ -223,12 +254,18 @@ func (c *Conn) globalRequests(reqs <-chan *ssh.Request) {
 	}
 }
 
-// newChannels accepts mcp channels, up to MaxChannels at once, and rejects
-// every other type (session, direct-tcpip, forwarded-tcpip, x11,
+// newChannels accepts mcp channels, up to MaxChannels at once, hands the
+// relay types to the relay hook when the link has one, and rejects every
+// other type (session, direct-tcpip, forwarded-tcpip, x11,
 // auth-agent@openssh.com, ...).
 func (c *Conn) newChannels(chans <-chan ssh.NewChannel) {
 	for nc := range chans {
-		if nc.ChannelType() != ChannelType {
+		typ := nc.ChannelType()
+		if (typ == RelayChannelType || typ == RelayedChannelType) && c.relay != nil {
+			c.relay(c, nc)
+			continue
+		}
+		if typ != ChannelType {
 			c.log.Debug("peer: rejected channel", "peer", c.caller.Name, "type", truncate(nc.ChannelType(), 64))
 			_ = nc.Reject(ssh.UnknownChannelType, "only mcp channels are accepted")
 			continue

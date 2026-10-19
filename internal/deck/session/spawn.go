@@ -34,6 +34,12 @@ type SpawnSpec struct {
 	// Isolate gives the subagent its own git worktree and branch.
 	Isolate  bool
 	Contract store.Contract
+	// Review is who reviews the task before it is done (review.go).
+	Review string
+	// ReviewOf makes the subagent the reviewer of that task instead of the
+	// owner of one. Adopt gives it the worktree of that stopped member, whose
+	// task it takes over.
+	ReviewOf, Adopt string
 }
 
 // SpawnResult says what Spawn started.
@@ -78,7 +84,7 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	if err != nil {
 		return SpawnResult{}, err
 	}
-	if parentID != "" && !m.takeWork(t) {
+	if (parentID != "" || sp.ReviewOf != "") && !m.takeWork(t) {
 		return SpawnResult{}, fmt.Errorf("session: %w", errPaused)
 	}
 	if routed != "" {
@@ -88,7 +94,10 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	// The task: an existing one, or a new one for this brief.
 	taskID, created := sp.TaskID, false
 	contract := sp.Contract
-	if taskID == "" {
+	switch {
+	case sp.ReviewOf != "":
+		taskID = sp.ReviewOf // it stays its owner's
+	case taskID == "":
 		title := sp.Title
 		if title == "" {
 			title = clipText(oneLine(brief), 60)
@@ -96,26 +105,33 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		// Claimed: it is created running (nobody's yet), so the scheduler does
 		// not start a second subagent for it while this one is spawning.
 		tk, err := m.addTask(t, TaskSpec{Title: title, Brief: brief, Creator: parentID, Contract: &contract, Claimed: true,
-			Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort})
+			Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort, Review: sp.Review})
 		if err != nil {
 			return SpawnResult{}, err
 		}
 		taskID, created = tk.ID, true
-	} else {
+	default:
 		if err := m.checkSpawnTask(t, taskID); err != nil {
+			return SpawnResult{}, err
+		}
+		if err := m.checkReview(sp.Review); err != nil {
 			return SpawnResult{}, err
 		}
 		// Same claim for an existing task: running from here on, bound to the
 		// subagent once it is up.
-		if _, err := m.moveTask(t, taskID, store.TaskRunning, parentID, "starting a subagent", nil); err != nil {
+		if _, err := m.moveTask(t, taskID, store.TaskRunning, parentID, "starting a subagent", func(tk *store.Task) { tk.Review = or(sp.Review, tk.Review) }); err != nil {
 			return SpawnResult{}, err
 		}
 	}
 	fail := func(err error) (SpawnResult, error) {
 		note := "could not start a subagent: " + err.Error()
-		if created {
+		switch {
+		case sp.ReviewOf != "": // the caller decides
+		case created:
 			_, _ = m.moveTask(t, taskID, store.TaskCancelled, parentID, note, nil)
-		} else {
+		case sp.Adopt != "": // a retry would lose the work on that worktree
+			_, _ = m.moveTask(t, taskID, store.TaskBlocked, parentID, note, nil)
+		default:
 			_, _ = m.moveTask(t, taskID, store.TaskFailed, parentID, note, nil)
 		}
 		return SpawnResult{}, err
@@ -126,7 +142,7 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		return fail(err)
 	}
 	a.mu.Lock()
-	a.parent, a.ephemeral = parentID, true
+	a.parent, a.ephemeral, a.reviews = parentID, true, sp.ReviewOf
 	if sp.Effort != "" {
 		a.effort = sp.Effort
 	}
@@ -139,7 +155,21 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	t.mu.Unlock()
 	brief += m.placeNote(t, a, parent, depth, taskID)
 	var wt *store.Worktree
-	if sp.Isolate {
+	var old *agentState
+	if sp.Adopt != "" {
+		t.mu.Lock()
+		old = t.member(sp.Adopt)
+		t.mu.Unlock()
+		if old != nil {
+			var dir string
+			old.mu.Lock()
+			wt, dir = old.worktree, old.dir
+			old.mu.Unlock()
+			a.mu.Lock()
+			a.worktree, a.dir = wt, dir
+			a.mu.Unlock()
+		}
+	} else if sp.Isolate {
 		var dir string
 		if wt, dir, err = m.memberWorktree(t, a); err != nil {
 			m.dropMember(t, a)
@@ -154,17 +184,32 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	}
 	m.persistMeta(t)
 	if err := m.startRun(t, a, "", ""); err != nil {
-		m.dropWorktree(wt)
+		if old == nil {
+			m.dropWorktree(wt)
+		}
 		m.dropMember(t, a)
 		return fail(err)
 	}
+	if old != nil {
+		old.mu.Lock()
+		old.worktree = nil // a's now
+		old.mu.Unlock()
+	}
 
-	m.bindRun(t, taskID, a, wt, sp, brief, parentID)
 	speaker := deckSpeaker
 	if parent != nil {
 		speaker = parent.id
 	}
-	m.deliverBrief(t, speaker, a, brief, taskID)
+	if sp.ReviewOf != "" {
+		if err := m.bindReviewer(t, taskID, a); err != nil {
+			m.retireMember(t, a.id)
+			return fail(err)
+		}
+		m.deliverBrief(t, speaker, a, brief, "") // it hands no task over
+	} else {
+		m.bindRun(t, taskID, a, wt, sp, brief, parentID)
+		m.deliverBrief(t, speaker, a, brief, taskID)
+	}
 	res := SpawnResult{AgentID: a.id, TaskID: taskID}
 	if wt != nil {
 		res.Branch = wt.Branch
@@ -385,7 +430,8 @@ func (m *Manager) memberIdle(t *thread, id string) bool {
 }
 
 // retireSpent stops subagent a when its turn ended and nothing it owns is
-// still running or blocked (a blocked task keeps it for the user to steer).
+// still running, in review or blocked (a task in review keeps it for the
+// changes, a blocked one for the user to steer).
 func (m *Manager) retireSpent(t *thread, a *agentState) {
 	if !a.isEphemeral() {
 		return
@@ -396,7 +442,7 @@ func (m *Manager) retireSpent(t *thread, a *agentState) {
 		return
 	}
 	for _, tk := range t.tasks {
-		if tk.Owner == a.id && (tk.Status == store.TaskRunning || tk.Status == store.TaskBlocked) {
+		if tk.Owner == a.id && tk.Status.Active() {
 			t.mu.Unlock()
 			return
 		}
@@ -406,11 +452,15 @@ func (m *Manager) retireSpent(t *thread, a *agentState) {
 }
 
 // failOrphans fails the running tasks whose subagent did not survive a
-// restart of Deck: its process is gone, so nothing will ever report them.
+// restart of Deck: its process is gone, so nothing will ever report them. A
+// task whose reviewer was lost is blocked for the user.
 func (m *Manager) failOrphans(t *thread) {
-	var ids []string
+	var ids, reviews []string
 	t.mu.Lock()
 	for _, tk := range t.tasks {
+		if tk.Status == store.TaskReview && tk.Reviewer != "" {
+			reviews = append(reviews, tk.ID)
+		}
 		if tk.Status != store.TaskRunning {
 			continue
 		}
@@ -421,6 +471,9 @@ func (m *Manager) failOrphans(t *thread) {
 	t.mu.Unlock()
 	for _, id := range ids {
 		_, _ = m.moveTask(t, id, store.TaskFailed, "", "its subagent was lost when Deck stopped", nil)
+	}
+	for _, id := range reviews {
+		_, _ = m.moveTask(t, id, store.TaskBlocked, "", "its reviewer was lost when Deck stopped", nil)
 	}
 }
 

@@ -68,12 +68,17 @@ type thread struct {
 	sched schedState // one scheduler pass at a time (sched.go)
 	// raced holds the races already reported or kept (race.go).
 	raced map[string]bool
+	// reviewing holds the tasks whose reviewer is starting (review.go).
+	reviewing map[string]bool
 	// orchestrate is set while members may spawn subagents and the scheduler
 	// runs the board (spawn.go, sched.go).
 	orchestrate bool
 	// contract is the teammate whose code contract this thread runs: its
 	// mode is never yolo (contract.go).
 	contract string
+	// ops is the teammate's ops contract the thread runs, or nil: its
+	// agents have no tools but sh.run and contract.result (opscontract.go).
+	ops *opsState
 	// shares are the teammates the thread is shared with, by name, and
 	// their roles; grew is closed when the log grows (share.go).
 	shares map[string]string

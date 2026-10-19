@@ -95,7 +95,7 @@ func (m *Manager) cascade(t *thread, a *agentState) {
 	var owned []own
 	for _, k := range kids {
 		for _, tk := range t.tasks {
-			if tk.Owner == k.id && (tk.Status == store.TaskRunning || tk.Status == store.TaskBlocked) {
+			if tk.Owner == k.id && tk.Status.Active() {
 				owned = append(owned, own{k.id, tk.ID})
 			}
 		}
@@ -118,7 +118,7 @@ func (t *thread) waitsOnChildren(a *agentState) bool {
 	// A child whose task is over no longer counts, even before it is retired.
 	for _, k := range t.children(a.id) {
 		for _, tk := range t.tasks {
-			if tk.Owner == k.id && (tk.Status == store.TaskRunning || tk.Status == store.TaskBlocked) {
+			if tk.Owner == k.id && tk.Status.Active() {
 				return true
 			}
 		}

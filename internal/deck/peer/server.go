@@ -102,6 +102,9 @@ type ServerOptions struct {
 	perKey *keyLimiter      // shared with the Manager's dialers; nil makes one
 	pairs  *pairSlot        // shared with the Manager, so a moved listener keeps an armed code; nil makes one
 	now    func() time.Time // tests
+	// relay takes the relay channel types on direct links (the Manager's
+	// relay rules); nil refuses them. Relayed links never get it.
+	relay func(*Conn, ssh.NewChannel)
 }
 
 // Server is the embedded SSH listener. It authenticates pinned peers by key,
@@ -253,17 +256,23 @@ func (s *Server) Serve(ln net.Listener) error {
 			time.Sleep(50 * time.Millisecond) // e.g. too many open files
 			continue
 		}
-		key := lockKey(raw.RemoteAddr())
-		if s.lock.locked(key) || s.spray.locked(key) || !s.admit(raw, key) {
-			raw.Close()
-			continue
-		}
-		go func() {
-			defer s.wg.Done()
-			defer s.untrack(raw)
-			s.handle(raw, key)
-		}()
+		s.accept(raw, lockKey(raw.RemoteAddr()), nil)
 	}
+}
+
+// accept serves raw as one accepted connection from the source key, and
+// closes it at once when key is locked out or over the handshake caps. rel
+// is set for a relayed link (relay.go).
+func (s *Server) accept(raw net.Conn, key string, rel *relayFrom) {
+	if s.lock.locked(key) || s.spray.locked(key) || !s.admit(raw, key) {
+		raw.Close()
+		return
+	}
+	go func() {
+		defer s.wg.Done()
+		defer s.untrack(raw)
+		s.handle(raw, key, rel)
+	}()
 }
 
 // admit registers raw as a handshake in progress, within MaxPreAuth and
@@ -327,8 +336,9 @@ func (s *Server) untrack(raw net.Conn) {
 }
 
 // handle runs one connection: the handshake under PreAuthTimeout, then the
-// link until it ends.
-func (s *Server) handle(raw net.Conn, key string) {
+// link until it ends. A relayed connection (rel set) may only log in with
+// the key its relay named, and never as PairUser.
+func (s *Server) handle(raw net.Conn, key string, rel *relayFrom) {
 	lim := s.opts.Limits
 	// The callbacks run on this goroutine, inside NewServerConn.
 	var (
@@ -341,6 +351,9 @@ func (s *Server) handle(raw net.Conn, key string) {
 		offered = k
 		if s.keyed.locked(key + " " + Fingerprint(k)) {
 			keyLocked = true
+			return nil, errNotPinned
+		}
+		if rel != nil && (meta.User() == PairUser || Fingerprint(k) != rel.fp) {
 			return nil, errNotPinned
 		}
 		if meta.User() == PairUser {
@@ -395,10 +408,14 @@ func (s *Server) handle(raw net.Conn, key string) {
 	}
 	defer s.linkDone(fp)
 	caller := s.callerFor(p)
-	c := newConn(sc, chans, reqs, connParams{
+	cp := connParams{
 		caller: caller, handler: s.opts.Handler, self: s.opts.Name, ver: s.opts.Version,
-		lim: lim, log: s.log, recheck: s.recheck, perKey: s.opts.perKey,
-	})
+		lim: lim, log: s.log, recheck: s.recheck, perKey: s.opts.perKey, relay: s.opts.relay,
+	}
+	if rel != nil {
+		cp.relay, cp.via = nil, rel.via
+	}
+	c := newConn(sc, chans, reqs, cp)
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -618,6 +635,10 @@ type DialOptions struct {
 	Peer Pinned
 	// Addr overrides Peer.Addr when set.
 	Addr string
+	// Via, when set, reaches the peer through this link to a relay Deck
+	// instead of over TCP (relay.go). The handshake inside is the same as
+	// a direct one: the peer must answer with the pinned host key.
+	Via *Conn
 	// Handler answers the peer's calls back over this link; nil means a
 	// StatusHandler.
 	Handler Handler
@@ -635,6 +656,7 @@ type DialOptions struct {
 	Logger      *slog.Logger
 
 	perKey *keyLimiter // the Manager's, shared with its Server
+	relay  func(*Conn, ssh.NewChannel)
 }
 
 // Dial connects to a pinned peer. The peer's host key must be exactly the
@@ -651,7 +673,7 @@ func Dial(ctx context.Context, o DialOptions) (*Conn, error) {
 	if addr == "" {
 		addr = o.Peer.Addr
 	}
-	if addr == "" {
+	if addr == "" && o.Via == nil {
 		return nil, fmt.Errorf("peer: %q has no address", o.Peer.Name)
 	}
 	if o.Logger == nil {
@@ -661,8 +683,19 @@ func Dial(ctx context.Context, o DialOptions) (*Conn, error) {
 	if o.DialTimeout <= 0 {
 		o.DialTimeout = 10 * time.Second
 	}
-	d := net.Dialer{Timeout: o.DialTimeout}
-	raw, err := d.DialContext(ctx, "tcp", addr)
+	var (
+		raw net.Conn
+		err error
+		via string
+	)
+	if o.Via != nil {
+		via = o.Via.Peer().Name
+		addr = "relay:" + via
+		raw, err = o.Via.openRelay(ctx, o.Peer.Fingerprint, o.DialTimeout)
+	} else {
+		d := net.Dialer{Timeout: o.DialTimeout}
+		raw, err = d.DialContext(ctx, "tcp", addr)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -694,10 +727,15 @@ func Dial(ctx context.Context, o DialOptions) (*Conn, error) {
 		caller = Caller{Name: o.Peer.Name, Role: o.Peer.Role}
 	}
 	caller.Fingerprint = o.Peer.Fingerprint
-	return newConn(sc, chans, reqs, connParams{
+	cp := connParams{
 		caller: caller, handler: o.Handler, self: o.Name, ver: o.Version,
 		lim: lim, log: o.Logger, keepalive: o.Keepalive, recheck: o.Recheck, perKey: o.perKey,
-	}), nil
+		relay: o.relay, via: via,
+	}
+	if via != "" {
+		cp.relay = nil // no relay over a relayed link
+	}
+	return newConn(sc, chans, reqs, cp), nil
 }
 
 // pinnedHostKey accepts exactly the pinned key, on the first key exchange and

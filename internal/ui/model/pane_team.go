@@ -2,6 +2,8 @@ package model
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -26,7 +28,10 @@ import (
 // and its plan windows when it shares them. A code contract a teammate
 // proposes shows as a card at the top: y runs it with the agent shown, a
 // picks another agent, n declines. c on a teammate asks it for a contract:
-// the person types the brief, and enter sends it for the open session. s
+// the person types the brief, and enter sends it for the open session. o
+// on a teammate asks it for a report (an ops contract): the person types
+// the request, enter shows it as a card, y proposes it and n drops it. Its
+// result shows as a table (enter on its row). s
 // on a teammate shares the open session's thread with it, stepping through
 // observer, participant, editor and not shared. The pane reads a snapshot a command keeps
 // current through PeerLink.Wait; it never touches the link in Update or
@@ -144,18 +149,34 @@ func (m *UI) teamNotices(snap peer.Snapshot) []tea.Cmd {
 // contractNotices tells the person of each contract a teammate proposed
 // since prev.
 func (m *UI) contractNotices(prev, snap peer.Snapshot) {
-	known := map[string]bool{}
+	known := map[string]string{}
 	for _, c := range prev.Contracts {
-		known[c.Peer+"/"+c.ID] = true
+		known[c.Peer+"/"+c.ID] = c.State
 	}
+	open := &notice.Action{Label: "Open the Team pane", Msg: focusPaneMsg{id: paneTeam}}
 	for _, c := range snap.Contracts {
-		if !c.Inbound || c.State != peer.ContractProposed || known[c.Peer+"/"+c.ID] {
+		was, seen := known[c.Peer+"/"+c.ID]
+		switch {
+		case c.Kind == peer.KindOps && c.Inbound && !seen:
+			// It ran without the person: it was inside the teammate's
+			// max_scope. The person hears of it.
+			m.Notify(notice.Notice{Level: notice.Info, Source: notice.SourceTeam,
+				Title: c.Peer + " runs a report here: " + c.Title, Body: "scope " + strings.Join(c.Scope, ", ") + ", inside its max_scope", Action: open})
+			continue
+		case c.Kind == peer.KindOps && !c.Inbound && was != c.State && c.Final():
+			level, title := notice.Info, c.Peer+" reported: "+c.Title
+			if c.State != peer.ContractDone {
+				level, title = notice.Warn, c.Peer+" did not report: "+c.Title
+			}
+			m.Notify(notice.Notice{Level: level, Source: notice.SourceTeam, Title: title, Body: c.Note, Action: open})
+			continue
+		}
+		if !c.Inbound || c.State != peer.ContractProposed || c.Kind == peer.KindOps || seen {
 			continue
 		}
 		m.Notify(notice.Notice{
 			Level: notice.Warn, Source: notice.SourceTeam,
-			Title: c.Peer + " proposes a contract", Body: c.Title,
-			Action: &notice.Action{Label: "Open the Team pane", Msg: focusPaneMsg{id: paneTeam}},
+			Title: c.Peer + " proposes a contract", Body: c.Title, Action: open,
 		})
 	}
 }
@@ -171,7 +192,28 @@ type teamPane struct {
 	// asking is the teammate the person writes a contract's brief for
 	// (c on its row), draft the brief so far.
 	asking, draft string
+	// opsFor is the teammate the person writes an ops request for (o on
+	// its row), in draft. card is the request as parsed: it waits for y
+	// or n.
+	opsFor string
+	card   *opsCard
+	// open is the row key of the ops contract whose result shows as a
+	// table (enter on its row).
+	open string
 }
+
+// opsCard is an ops request the person typed, as ParseOps read it.
+type opsCard struct {
+	peer string
+	c    peer.Contract
+}
+
+// opsKeyPrefix starts the row key of an ops contract with a result:
+// "ops:<peer>/<id>".
+const opsKeyPrefix = "ops:"
+
+// opsProposeTimeout bounds proposing an ops contract from the pane.
+const opsProposeTimeout = 40 * time.Second
 
 // agentKind is the agent a confirmed contract runs with: the default agent
 // first, then the others in turn as a is pressed.
@@ -278,23 +320,75 @@ func (p *teamPane) briefKey(m *UI, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 			}
 			return util.NewInfoMsg("Asked " + name + " to do " + id + "; its person confirms it first")
 		}
+	}
+	p.typeDraft(msg)
+	return true, nil // the brief keeps the keys until enter or esc
+}
+
+// typeDraft edits p.draft with one key: text, backspace or ctrl+u.
+func (p *teamPane) typeDraft(msg tea.KeyPressMsg) {
+	switch msg.String() {
 	case "backspace":
 		if p.draft != "" {
 			_, n := utf8.DecodeLastRuneInString(p.draft)
 			p.draft = p.draft[:len(p.draft)-n]
 		}
-		return true, nil
+		return
 	case "ctrl+u":
 		p.draft = ""
-		return true, nil
+		return
 	}
-	if msg.Text != "" && msg.Mod&(tea.ModCtrl|tea.ModAlt) == 0 {
-		if len(p.draft) < 4000 {
-			p.draft += msg.Text
+	if msg.Text != "" && msg.Mod&(tea.ModCtrl|tea.ModAlt) == 0 && len(p.draft) < 4000 {
+		p.draft += msg.Text
+	}
+}
+
+// opsKey types an ops request for p.opsFor: enter reads it into a card,
+// esc drops it.
+func (p *teamPane) opsKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		p.opsFor, p.draft = "", ""
+		return true, nil
+	case "enter":
+		name, c, err := peer.ParseOps(p.draft)
+		if err != nil {
+			return true, util.ReportError(err)
 		}
+		p.opsFor, p.draft, p.card = "", "", &opsCard{peer: name, c: c}
 		return true, nil
 	}
-	return true, nil // the brief keeps the keys until enter or esc
+	p.typeDraft(msg)
+	return true, nil
+}
+
+// cardKey answers the ops card: y proposes the contract, n or esc drops
+// it. Nothing is proposed until the person presses y.
+func (p *teamPane) cardKey(m *UI, msg tea.KeyPressMsg) (bool, tea.Cmd) {
+	switch msg.String() {
+	case "n", "esc":
+		p.card = nil
+		return true, util.ReportInfo("Dropped the request")
+	case "y":
+		card, link := *p.card, m.peerLink()
+		p.card = nil
+		if link == nil {
+			return true, util.ReportError(fmt.Errorf("no peer link in this Deck"))
+		}
+		return true, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), opsProposeTimeout)
+			defer cancel()
+			_, err := link.ProposeContract(ctx, card.peer, card.c)
+			switch {
+			case errors.As(err, new(peer.QueuedError)):
+				return util.NewInfoMsg(card.peer + " cannot be reached now: the request goes when its link is back")
+			case err != nil:
+				return util.NewErrorMsg(err)
+			}
+			return util.NewInfoMsg("Asked " + card.peer + " to " + card.c.Title + "; the result shows in the Team pane")
+		}
+	}
+	return true, nil // the card keeps the keys until y or n
 }
 
 // waitingContract is the contract that row key sel names, when it waits for the
@@ -338,8 +432,13 @@ func (p *teamPane) render(m *UI, width, height int, focused bool) string {
 }
 
 func (p *teamPane) key(m *UI, msg tea.KeyPressMsg) (bool, tea.Cmd) {
-	if p.asking != "" {
+	switch {
+	case p.asking != "":
 		return p.briefKey(m, msg)
+	case p.opsFor != "":
+		return p.opsKey(msg)
+	case p.card != nil:
+		return p.cardKey(m, msg)
 	}
 	rows := p.rows(m, 80)
 	if p.list.navKey(rows, msg) {
@@ -348,6 +447,18 @@ func (p *teamPane) key(m *UI, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	sel := p.list.selected(rows)
 	if msg.String() == "s" && m.isTeammate(sel) {
 		return true, m.cycleShare(sel)
+	}
+	if msg.String() == "o" && m.isTeammate(sel) && m.peerLink() != nil {
+		p.opsFor, p.draft = sel, "ask "+sel+" to report "
+		return true, nil
+	}
+	if msg.String() == "enter" && strings.HasPrefix(sel, opsKeyPrefix) {
+		if p.open == sel {
+			p.open = ""
+		} else {
+			p.open = sel
+		}
+		return true, nil
 	}
 	if msg.String() == "c" && m.isTeammate(sel) {
 		if _, ok := m.com.Workspace.(workspace.Contracts); !ok || m.session == nil {
@@ -409,6 +520,9 @@ func (p *teamPane) rows(m *UI, width int) []paneRow {
 		self += " · listening"
 	}
 	rows := []paneRow{{lines: []string{ansi.Truncate(muted.Render(self), width, "…")}}}
+	if p.card != nil {
+		rows = append(rows, p.cardRow(m, width))
+	}
 	rows = append(rows, p.contractRows(m, width)...)
 	if len(snap.Peers) == 0 {
 		rows = append(rows, paneRow{lines: []string{
@@ -441,12 +555,39 @@ func (p *teamPane) rows(m *UI, width int) []paneRow {
 				ansi.Truncate("  contract for "+ps.Name+": "+p.draft+"▏", width, "…"),
 				ansi.Truncate("  "+muted.Render("enter asks · esc drops"), width, "…"))
 		}
+		if p.opsFor == ps.Name {
+			lines = append(lines,
+				ansi.Truncate("  report: "+p.draft+"▏", width, "…"),
+				ansi.Truncate("  "+muted.Render("e.g. ask "+ps.Name+" to report podman containers: name, state for web · enter checks it · esc drops"), width, "…"))
+		}
 		rows = append(rows, paneRow{key: ps.Name, selectable: true, lines: lines})
 	}
-	if _, ok := m.com.Workspace.(workspace.Contracts); ok && p.asking == "" {
-		rows = append(rows, paneRow{lines: []string{ansi.Truncate(muted.Render("on a teammate: c asks for a contract · s shares this thread"), width, "…")}})
+	if _, ok := m.com.Workspace.(workspace.Contracts); ok && p.asking == "" && p.opsFor == "" {
+		rows = append(rows, paneRow{lines: []string{ansi.Truncate(muted.Render("on a teammate: c asks for a contract · o asks for a report · s shares this thread"), width, "…")}})
 	}
 	return rows
+}
+
+// cardRow is the ops request the person typed, as it would be proposed:
+// nothing goes until y.
+func (p *teamPane) cardRow(m *UI, width int) paneRow {
+	t := m.com.Styles
+	muted := t.ModelInfo.Provider
+	c := p.card.c
+	targets := "all"
+	if len(c.Targets) > 0 {
+		targets = strings.Join(c.Targets, ", ")
+	}
+	fields := make([]string, len(c.Schema))
+	for i, f := range c.Schema {
+		fields[i] = f.Name
+	}
+	return paneRow{lines: []string{
+		ansi.Truncate("▸ ask "+t.ModelInfo.Name.Bold(true).Render(p.card.peer)+" to "+c.Title, width, "…"),
+		ansi.Truncate("  "+muted.Render("scope: "+strings.Join(c.Scope, ", ")+" · targets: "+targets), width, "…"),
+		ansi.Truncate("  "+muted.Render("fields: "+strings.Join(fields, ", ")+" (text, at most 200 characters)"), width, "…"),
+		ansi.Truncate("  "+muted.Render("y proposes · n drops"), width, "…"),
+	}}
 }
 
 // maxContractLines caps the contracts listed besides those that wait.
@@ -457,10 +598,9 @@ const maxContractLines = 4
 func (p *teamPane) contractRows(m *UI, width int) []paneRow {
 	t := m.com.Styles
 	muted := t.ModelInfo.Provider
-	var rows []paneRow
-	var others []string
+	var rows, others []paneRow
 	for _, c := range m.teamSnap.Contracts {
-		if !c.Inbound || c.State != peer.ContractProposed {
+		if !c.Inbound || c.State != peer.ContractProposed || c.Kind == peer.KindOps {
 			arrow, state := "→ ", c.State
 			if c.Inbound {
 				arrow = "← "
@@ -468,7 +608,19 @@ func (p *teamPane) contractRows(m *UI, width int) []paneRow {
 			if c.Agent != "" && c.State == peer.ContractAccepted {
 				state += " by " + c.Agent
 			}
-			others = append(others, arrow+c.Peer+" · "+c.Title+" · "+state)
+			line := arrow + c.Peer + " · " + c.Title + " · " + state
+			if c.Kind != peer.KindOps || c.Inbound || c.Result == nil {
+				others = append(others, paneRow{lines: []string{ansi.Truncate(muted.Render(line), width, "…")}})
+				continue
+			}
+			key := opsKeyPrefix + c.Peer + "/" + c.ID
+			if p.open != key {
+				others = append(others, paneRow{key: key, selectable: true, lines: []string{
+					ansi.Truncate(muted.Render(line+" (enter shows the rows)"), width, "…")}})
+				continue
+			}
+			others = append(others, paneRow{key: key, selectable: true, lines: append([]string{
+				ansi.Truncate(muted.Render(line+" (enter hides the rows)"), width, "…")}, opsTable(c, width)...)})
 			continue
 		}
 		lines := []string{ansi.Truncate("▸ "+t.ModelInfo.Name.Bold(true).Render(c.Peer)+" asks: "+c.Title, width, "…")}
@@ -487,10 +639,65 @@ func (p *teamPane) contractRows(m *UI, width int) []paneRow {
 	if n := len(others); n > maxContractLines {
 		others = others[n-maxContractLines:]
 	}
-	for _, l := range others {
-		rows = append(rows, paneRow{lines: []string{ansi.Truncate(muted.Render(l), width, "…")}})
+	return append(rows, others...)
+}
+
+// maxTableRows caps the rows of a result table; maxCellWidth its columns.
+const (
+	maxTableRows = 50
+	maxCellWidth = 30
+)
+
+// opsTable is the result of ops contract c as lines at width: a header of
+// its fields, then one line a row. The receiver and this Deck both checked
+// the result against the schema, and it is shown as text.
+func opsTable(c peer.Contract, width int) []string {
+	var res struct {
+		Rows []map[string]any `json:"rows"`
 	}
-	return rows
+	if json.Unmarshal(c.Result, &res) != nil {
+		return nil
+	}
+	cells := make([][]string, 0, len(res.Rows)+1)
+	head := make([]string, len(c.Schema))
+	for i, f := range c.Schema {
+		head[i] = f.Name
+	}
+	cells = append(cells, head)
+	for _, r := range res.Rows {
+		line := make([]string, len(c.Schema))
+		for i, f := range c.Schema {
+			switch v := r[f.Name].(type) {
+			case string:
+				line[i] = v
+			case float64:
+				line[i] = strconv.FormatFloat(v, 'f', -1, 64)
+			case bool:
+				line[i] = strconv.FormatBool(v)
+			}
+		}
+		cells = append(cells, line)
+	}
+	widths := make([]int, len(head))
+	for _, line := range cells {
+		for i, s := range line {
+			widths[i] = min(max(widths[i], ansi.StringWidth(s)), maxCellWidth)
+		}
+	}
+	var out []string
+	for n, line := range cells {
+		if n > maxTableRows {
+			out = append(out, fmt.Sprintf("  and %d more rows", len(cells)-n))
+			break
+		}
+		var b strings.Builder
+		for i, s := range line {
+			s = ansi.Truncate(s, widths[i], "…")
+			b.WriteString(s + strings.Repeat(" ", widths[i]-ansi.StringWidth(s)+2))
+		}
+		out = append(out, ansi.Truncate("  "+strings.TrimRight(b.String(), " "), width, "…"))
+	}
+	return out
 }
 
 // maxPresenceLines caps the agents and leases shown for one teammate.

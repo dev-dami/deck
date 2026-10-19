@@ -59,6 +59,10 @@ type ManagerOptions struct {
 	Extra func(Handler) Handler
 	// Shared, with a nil Handler, serves this Deck's shared threads.
 	Shared Shared
+	// MaxRelays caps relayed channels on this Deck at once (16), both the
+	// ones it relays and the ones relayed to it; MaxRelaysPerPeer caps those
+	// of one pinned key (4). See relay.go.
+	MaxRelays, MaxRelaysPerPeer int
 }
 
 // Manager runs the peer link for one Deck: the listener when
@@ -76,6 +80,8 @@ type Manager struct {
 	// peers is the config snapshot callers are built from, swapped by the
 	// sweep and by Apply; nil is a valid (empty) config.
 	peers atomic.Pointer[config.Peers]
+	// relays counts and runs relayed channels (relay.go).
+	relays *relayer
 
 	// applyMu serializes Start, Apply and Stop.
 	applyMu sync.Mutex
@@ -83,8 +89,9 @@ type Manager struct {
 	mu        sync.Mutex
 	id        *Identity
 	srv       *Server
-	srvKey    string // the address and name srv was started with
-	listenErr error  // why the listener the config asks for is not up
+	rsrv      *Server // serves links relayed to this Deck; made on first use
+	srvKey    string  // the address and name srv was started with
+	listenErr error   // why the listener the config asks for is not up
 	sups      map[string]*managed
 	seen      map[string]time.Time // when each peer was last connected
 	started   bool                 // Start was called, and Stop was not
@@ -101,6 +108,7 @@ type managed struct {
 	sup  *Supervisor
 	fp   string // the pin's fingerprint
 	addr string // the address it dials
+	via  string // the relay it dials through
 }
 
 // fileStamp tells whether a file changed since it was last read.
@@ -136,6 +144,7 @@ func NewManager(o ManagerOptions) (*Manager, error) {
 	m := &Manager{o: o, store: OpenStore(o.Dir), sups: map[string]*managed{}, seen: map[string]time.Time{}}
 	m.perKey = newKeyLimiter(16)
 	m.pairs = newPairSlot(nil)
+	m.relays = newRelayer(o.MaxRelays, o.MaxRelaysPerPeer, o.Limits.withDefaults().IdleTimeout)
 	m.peers.Store(o.Peers)
 	m.setName(SelfName(o.Peers))
 	if o.Handler == nil {
@@ -256,10 +265,13 @@ func (m *Manager) apply(p *config.Peers) error {
 		// Supervisors dial with the name they started with: stop them all
 		// and let the sweep start them again under the new one.
 		m.mu.Lock()
-		sups := m.sups
-		m.sups = map[string]*managed{}
+		sups, rsrv := m.sups, m.rsrv
+		m.sups, m.rsrv = map[string]*managed{}, nil
 		m.mu.Unlock()
 		closeSups(sups)
+		if rsrv != nil {
+			rsrv.Close()
+		}
 	}
 	err := m.applyListener(p)
 	m.sweep()
@@ -332,7 +344,7 @@ func (m *Manager) applyListener(p *config.Peers) error {
 		Name: name, Version: version.Version,
 		Caller: m.caller, Limits: m.o.Limits, Logger: m.o.Logger,
 		OnConn: m.inbound, OnDisconnect: m.inbound,
-		perKey: m.perKey, pairs: m.pairs,
+		perKey: m.perKey, pairs: m.pairs, relay: m.relayChannel,
 	})
 	if err != nil {
 		m.pairs.stop()
@@ -355,8 +367,8 @@ func (m *Manager) applyListener(p *config.Peers) error {
 // Manager stays started, so a later Apply brings them back. applyMu is held.
 func (m *Manager) halt() {
 	m.mu.Lock()
-	srv, sups, stop, done := m.srv, m.sups, m.stop, m.sweepDone
-	m.srv, m.srvKey, m.listenErr = nil, "", nil
+	srv, rsrv, sups, stop, done := m.srv, m.rsrv, m.sups, m.stop, m.sweepDone
+	m.srv, m.rsrv, m.srvKey, m.listenErr = nil, nil, "", nil
 	m.sups = map[string]*managed{}
 	m.live, m.stop, m.sweepDone = false, nil, nil
 	m.mu.Unlock()
@@ -366,16 +378,20 @@ func (m *Manager) halt() {
 	if done != nil {
 		<-done
 	}
+	m.relays.stopAll()
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		closeSups(sups)
 	}()
-	if srv != nil {
-		srv.Close()
+	for _, s := range []*Server{srv, rsrv} {
+		if s != nil {
+			s.Close()
+		}
 	}
 	wg.Wait()
+	m.relays.wg.Wait()
 	m.pairs.stop()
 }
 
@@ -446,8 +462,10 @@ func (m *Manager) markSeen(name string) {
 }
 
 // startSup starts a supervisor for remote r, pinned as pin. m.mu is held.
+// With r.Via set it dials through that relay when r has no address, or when
+// the direct dial fails.
 func (m *Manager) startSup(r config.PeerRemote, pin Pinned) {
-	name, addr, fp, id, self := r.Name, r.Addr, pin.Fingerprint, m.id, m.Name()
+	name, addr, via, fp, id, self := r.Name, r.Addr, r.Via, pin.Fingerprint, m.id, m.Name()
 	sup := NewSupervisor(SupervisorOptions{
 		Peer: name,
 		Dial: func(ctx context.Context) (*Conn, error) {
@@ -461,11 +479,35 @@ func (m *Manager) startSup(r config.PeerRemote, pin Pinned) {
 			if !ok || cur.Fingerprint != fp {
 				return nil, fmt.Errorf("peer: %q: %w", name, ErrRevoked)
 			}
-			return Dial(ctx, DialOptions{
-				Identity: id, Peer: cur, Addr: addr, Handler: m.o.Handler,
-				Caller: m.caller(cur), Recheck: m.recheck, Name: self, Version: version.Version,
-				Limits: m.o.Limits, Keepalive: true, Logger: m.o.Logger, perKey: m.perKey,
-			})
+			dial := func(relay *Conn) (*Conn, error) {
+				return Dial(ctx, DialOptions{
+					Identity: id, Peer: cur, Addr: addr, Via: relay, Handler: m.o.Handler,
+					Caller: m.caller(cur), Recheck: m.recheck, Name: self, Version: version.Version,
+					Limits: m.o.Limits, Keepalive: true, Logger: m.o.Logger, perKey: m.perKey,
+					relay: m.relayChannel,
+				})
+			}
+			var direct error
+			if addr != "" {
+				c, err := dial(nil)
+				if err == nil || via == "" || ctx.Err() != nil {
+					return c, err
+				}
+				direct = err
+			}
+			relay := m.directLink(via)
+			if relay == nil {
+				err = fmt.Errorf("peer: no link to the relay %q", via)
+			} else {
+				var c *Conn
+				if c, err = dial(relay); err == nil {
+					return c, nil
+				}
+			}
+			if direct != nil {
+				err = fmt.Errorf("%w; through %s: %w", direct, via, err)
+			}
+			return nil, err
 		},
 	})
 	// Subscribed before Start, so the first change is not missed; the
@@ -486,7 +528,7 @@ func (m *Manager) startSup(r config.PeerRemote, pin Pinned) {
 			}
 		}
 	}()
-	m.sups[name] = &managed{sup: sup, fp: fp, addr: addr}
+	m.sups[name] = &managed{sup: sup, fp: fp, addr: addr, via: via}
 }
 
 // caller adds config (role, allow_inbound) to a pinned peer, from the
@@ -496,6 +538,7 @@ func (m *Manager) caller(p Pinned) Caller {
 	if r, ok := m.peers.Load().Find(p.Name); ok {
 		c.Role = r.RoleOrDefault()
 		c.AllowInbound = r.AllowInbound
+		c.MaxScope = r.MaxScope
 	}
 	return c
 }
@@ -567,7 +610,7 @@ func (m *Manager) sweep() {
 	for name, ms := range m.sups {
 		p, pinned := byName[name]
 		r, configured := cfg.Find(name)
-		if !pinned || p.Fingerprint != ms.fp || !configured || !r.Dial || r.Addr != ms.addr {
+		if !pinned || p.Fingerprint != ms.fp || !configured || !r.Dial || r.Addr != ms.addr || r.Via != ms.via {
 			m.o.Logger.Info("peer: stopping the link to a peer whose pin or config changed", "peer", name)
 			stop = append(stop, ms.sup)
 			delete(m.sups, name)
@@ -580,20 +623,23 @@ func (m *Manager) sweep() {
 			}
 		}
 	}
-	srv := m.srv
 	m.mu.Unlock()
 
 	for _, s := range stop {
 		s.Close()
 	}
-	if srv != nil {
-		for _, c := range srv.Conns() {
-			who := c.Peer()
-			if p, ok := byName[who.Name]; !ok || p.Fingerprint != who.Fingerprint {
-				m.o.Logger.Info("peer: closing the link of a peer no longer pinned", "peer", who.Name)
-				c.drop()
-			}
+	for _, c := range m.inboundConns() {
+		who := c.Peer()
+		if p, ok := byName[who.Name]; !ok || p.Fingerprint != who.Fingerprint {
+			m.o.Logger.Info("peer: closing the link of a peer no longer pinned", "peer", who.Name)
+			c.drop()
+		} else if r, ok := cfg.Find(c.Via()); c.Via() != "" && (!ok || !r.Relay) {
+			m.o.Logger.Info("peer: closing a link relayed by a peer no longer allowed to relay", "peer", who.Name, "via", c.Via())
+			c.drop()
 		}
+	}
+	if cfg == nil || !cfg.Relay {
+		m.relays.stopAll()
 	}
 	if len(stop) > 0 {
 		m.changed()
@@ -647,12 +693,29 @@ func (m *Manager) Statuses() []Status {
 	return out
 }
 
+// inboundConns are the links peers opened to this Deck: to its listener,
+// and relayed to it.
+func (m *Manager) inboundConns() []*Conn {
+	m.mu.Lock()
+	srv, rsrv := m.srv, m.rsrv
+	m.mu.Unlock()
+	var out []*Conn
+	for _, s := range []*Server{srv, rsrv} {
+		if s != nil {
+			out = append(out, s.Conns()...)
+		}
+	}
+	return out
+}
+
 // Link is one peer's links as a status view shows them.
 type Link struct {
 	Status     Status // the supervisor's; zero when Supervised is false
 	Supervised bool   // this Deck dials it
-	Inbound    int    // links it opened to this Deck's listener
-	LastSeen   time.Time
+	Inbound    int    // links it opened to this Deck, directly or relayed
+	// Via is the relay a link to it runs through; "" when all are direct.
+	Via      string
+	LastSeen time.Time
 }
 
 // Links returns what is known of every peer with a link or a record of
@@ -666,17 +729,18 @@ func (m *Manager) Links() map[string]Link {
 	for name, ms := range m.sups {
 		l := out[name]
 		l.Status, l.Supervised = ms.sup.Status(), true
+		l.Via = l.Status.Via
 		out[name] = l
 	}
-	srv := m.srv
 	m.mu.Unlock()
-	if srv != nil {
-		for _, c := range srv.Conns() {
-			name := c.Peer().Name
-			l := out[name]
-			l.Inbound++
-			out[name] = l
+	for _, c := range m.inboundConns() {
+		name := c.Peer().Name
+		l := out[name]
+		l.Inbound++
+		if c.Via() != "" {
+			l.Via = c.Via()
 		}
+		out[name] = l
 	}
 	return out
 }
@@ -691,13 +755,7 @@ func (m *Manager) channel(ctx context.Context, name string) (*Client, func()) {
 			return cl, func() {}
 		}
 	}
-	m.mu.Lock()
-	srv := m.srv
-	m.mu.Unlock()
-	if srv == nil {
-		return nil, nil
-	}
-	for _, c := range srv.Conns() {
+	for _, c := range m.inboundConns() {
 		if c.Peer().Name != name {
 			continue
 		}

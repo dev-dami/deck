@@ -253,7 +253,7 @@ func TestHostileServerIntoDialer(t *testing.T) {
 	defer sc.Close()
 
 	for _, typ := range []string{"session", "direct-tcpip", "forwarded-tcpip", "x11", "auth-agent@openssh.com",
-		"direct-streamlocal@openssh.com", "deck-pair", "MCP", ""} {
+		"direct-streamlocal@openssh.com", "deck-pair", "MCP", "", RelayChannelType, RelayedChannelType} {
 		ch, _, err := sc.OpenChannel(typ, []byte("payload"))
 		var oe *ssh.OpenChannelError
 		if err == nil || !errors.As(err, &oe) || oe.Reason != ssh.UnknownChannelType {

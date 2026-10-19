@@ -16,7 +16,7 @@ import (
 // BoardTask is one task of the board, ready to draw.
 type BoardTask struct {
 	ID, Title string
-	Status    string // pending, ready, running, blocked, done, failed, cancelled
+	Status    string // pending, ready, running, review, blocked, done, failed, cancelled
 	Owner     string // the owner's name in the thread; "" for nobody
 	Deps      []string
 	Brief     string
@@ -32,6 +32,10 @@ type BoardTask struct {
 	Race, Entry bool
 	Stats       string
 	Files       []string
+	// Reviewer is the name of the agent reviewing it; Reviews counts the
+	// reviews that ended.
+	Reviewer string
+	Reviews  int
 }
 
 // BoardReport is a thread's task board.
@@ -89,7 +93,10 @@ func (w *DeckWorkspace) Board(sessionID string) BoardReport {
 		bt := BoardTask{
 			ID: tk.ID, Title: tk.Title, Status: string(tk.Status), Deps: tk.Deps, Brief: tk.Brief,
 			Result: tk.Result, Error: tk.Error, Attempts: tk.Attempts, Tries: tk.Tries(), Updated: tk.Updated,
-			Race: tk.Race, Entry: races[tk.Parent],
+			Race: tk.Race, Entry: races[tk.Parent], Reviews: tk.Reviews,
+		}
+		if tk.Reviewer != "" {
+			bt.Reviewer = names[tk.Reviewer]
 		}
 		if bt.Entry {
 			bt.Stats = entryStats(tk)
