@@ -424,7 +424,9 @@ func validPath(p string) error {
 		return fmt.Errorf("sub: bad path %q", p)
 	}
 	for _, seg := range strings.Split(p, "/") {
-		if isGitDir(seg) {
+		// "" and "." name a folder ("a//b", "a/.", "."), not a file: writing
+		// there would replace that folder, or the root itself.
+		if seg == "" || seg == "." || isGitDir(seg) {
 			return fmt.Errorf("sub: bad path %q", p)
 		}
 	}
@@ -434,9 +436,11 @@ func validPath(p string) error {
 // isGitDir reports whether a path segment can name the .git directory on
 // some file system: in any case (macOS, Windows), with the characters HFS+
 // ignores, with the trailing dots and spaces Windows drops, or as its short
-// name. A capsule or snapshot from a teammate never writes there: git runs
-// in the trees they are applied to.
+// name, or with an NTFS stream suffix (".git::$INDEX_ALLOCATION"). A capsule
+// or snapshot from a teammate never writes there: git runs in the trees they
+// are applied to.
 func isGitDir(seg string) bool {
+	seg, _, _ = strings.Cut(seg, ":")
 	seg = strings.Map(func(r rune) rune {
 		if unicode.Is(unicode.Cf, r) {
 			return -1

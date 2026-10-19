@@ -171,7 +171,7 @@ func TestRestore(t *testing.T) {
 	if read(t, a, "edit.txt") != "old\n" || read(t, a, "extra.txt") != "<missing>" {
 		t.Fatal("restore")
 	}
-	for _, p := range []string{"../x", ".git/config", "a/.GIT/hooks/x", ".git./config", ".g\u200cit/config", "GIT~1/config"} {
+	for _, p := range []string{"../x", ".git/config", "a/.GIT/hooks/x", ".git./config", ".g\u200cit/config", "GIT~1/config", ".git::$INDEX_ALLOCATION/config", ".", "a/.", "a//b", "a/"} {
 		if err := s.Restore(ctx, a, snap, []string{p}); err == nil {
 			t.Fatalf("bad path %q accepted", p)
 		}
