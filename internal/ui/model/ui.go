@@ -4876,6 +4876,10 @@ func (m *UI) ensureSession() (tea.Cmd, error) {
 
 // sendMessage sends a message with the given content and attachments.
 func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.Cmd {
+	if len(attachments) == 0 && isMobileSlash(content) {
+		action, lan, _ := mobileSlashAction(content)
+		return m.openMobileDialogRequest(action, lan)
+	}
 	return m.sendMessageInternal(content, false, attachments...)
 }
 
@@ -5132,6 +5136,16 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		}
 	case dialog.PeerPairID:
 		m.openPeerPairDialog()
+	case dialog.MobileID:
+		cmds = append(cmds, m.openMobileDialog())
+	case dialog.MobilePairID:
+		cmds = append(cmds, m.openMobileDialogAction("link"))
+	case dialog.MobileStartID:
+		cmds = append(cmds, m.openMobileDialogAction("start"))
+	case dialog.MobileLANID:
+		cmds = append(cmds, m.openMobileDialogRequest("start", true))
+	case dialog.MobileStopID:
+		cmds = append(cmds, m.openMobileDialogAction("stop"))
 	case dialog.NoticeHistoryID:
 		cmds = append(cmds, m.openNoticeHistory())
 	case dialog.UsageID:

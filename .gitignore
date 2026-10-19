@@ -21,3 +21,20 @@ desktop-shell/playwright-report/
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# JavaScript dependencies, local Worker state and mobile build artifacts.
+node_modules/
+.wrangler/
+.expo/
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/artifacts/
+*.apk
+*.aab
+*.ipa
+*.jks
+*.keystore
+credentials.json
+.env
+.env.*
+!.env.example

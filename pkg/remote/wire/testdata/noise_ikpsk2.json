@@ -1,0 +1,41 @@
+{
+  "handshake_hash_hex": "9a90cfed4b884b98fa20e70579d163e2cd220a6fffddec34ed73c7c7ddaad24f",
+  "initiator_ephemeral_priv_hex": "707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f",
+  "initiator_static_priv_hex": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+  "initiator_static_pub_hex": "d89e3bad79437dbed9f843418304f460ff05c7fe81fe4a9577a804cb9367ff66",
+  "messages": [
+    {
+      "ciphertext_hex": "23b7bb8c91ae008711fb12846780bcdf1e065f821bdfec49f57e7c7dcd4c48234e401f35585439751932c0c2801cff6d74a3b510276dcb61ab647e1346ebf73f5c8ed4fde23bcc3089ee8b3aa3e38a8d1cd44b6f892330eb8aa44f54baa8de67cb47ae908e122f2d8d227251a00fc572b2c1901ea070b3bc74",
+      "from": "initiator",
+      "payload_hex": "7b226465766963655f6e616d65223a22506978656c2039227d"
+    },
+    {
+      "ciphertext_hex": "605a725d2a4adfeeb1a29e17edd621c1b7593ee8cdbc44ac6c4ab6e2f805d23cfc3a58a00def5c7c073f9de941b582ef7dcce6170a2f522b03c92182e1c1b38204db652379964b89",
+      "from": "responder",
+      "payload_hex": "7b226465766963655f6964223a226465765f37613166227d"
+    }
+  ],
+  "prologue_hex": "6465636b2d76337c5a6b3370304a7138765962316e543563523273577841",
+  "protocol": "Noise_IKpsk2_25519_AESGCM_SHA256",
+  "psk_hex": "d0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeef",
+  "responder_ephemeral_priv_hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+  "responder_static_priv_hex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+  "responder_static_pub_hex": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a",
+  "transport": [
+    {
+      "ciphertext_hex": "c6d5a1abb7baf6e1f613068908cfaa5f2d9f8d12ece98c7bf3f0d0b09f7d3f6c48a8adb6",
+      "from": "initiator",
+      "plaintext_hex": "66697273742066726f6d207468652070686f6e65"
+    },
+    {
+      "ciphertext_hex": "f7d26525f695bfcb8068ee3ed7a33a671233420780fd5e9acae3bc592512d6736135074988",
+      "from": "initiator",
+      "plaintext_hex": "7365636f6e642066726f6d207468652070686f6e65"
+    },
+    {
+      "ciphertext_hex": "4dbbe0a8af4ef436bf7b583a4c1c5cf5314d520e49a985bcbf0034fc281500230b3f925ba21de2",
+      "from": "responder",
+      "plaintext_hex": "66697273742066726f6d2074686520636f6d7075746572"
+    }
+  ]
+}

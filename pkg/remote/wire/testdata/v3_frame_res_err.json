@@ -1,0 +1,9 @@
+{
+  "err": {
+    "code": "assertion_required",
+    "msg": "This approval needs your fingerprint or face."
+  },
+  "id": "8",
+  "ok": false,
+  "t": "res"
+}

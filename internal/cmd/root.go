@@ -93,6 +93,7 @@ deck doctor
 			return err
 		}
 		defer stopRemote()
+		defer startMobileProvider(cmd, ws)()
 
 		if sessionID != "" {
 			sess, err := resolveWorkspaceSessionID(cmd.Context(), ws, sessionID)
@@ -114,6 +115,7 @@ deck doctor
 			tea.WithFilter(inputFilter.Filter),
 		)
 		go ws.Subscribe(program)
+		setMobileNotifier(program)
 
 		if _, err := program.Run(); err != nil {
 			slog.Error("TUI run error", "error", err)

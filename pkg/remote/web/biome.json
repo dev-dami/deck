@@ -4,7 +4,7 @@
     "enabled": false
   },
   "files": {
-    "includes": ["**", "!node_modules", "!bun.lock", "!public", "!dist"]
+    "includes": ["**", "!node_modules", "!bun.lock", "!public", "!dist", "!dist-hosted"]
   },
   "formatter": {
     "enabled": true,

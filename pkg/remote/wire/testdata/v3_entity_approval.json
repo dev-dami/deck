@@ -1,0 +1,11 @@
+{
+  "agent": "claude-1",
+  "command": "git push --force origin main",
+  "created_at": "2026-10-14T09:40:40Z",
+  "description": "Run a command",
+  "digest": "9f2c1a7e5b3d48c0a6e1f7d2b9c4a835e0d1f6b7c2a94e8d3b5f0a1c7e6d2b48",
+  "id": "apr_51e9",
+  "kind": "command",
+  "session_id": "ses_8f2a",
+  "tier": "destructive"
+}

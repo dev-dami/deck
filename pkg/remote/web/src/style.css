@@ -4,6 +4,58 @@
  * values here are neutral greys used only until the welcome arrives; nothing
  * below names an agent colour or a theme colour of its own.
  */
+.hosted-app {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+.hosted-app > main,
+.hosted-app > section,
+.hosted-app > p {
+  width: min(100%, 52rem);
+  margin-inline: auto;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+.hosted-app section,
+.hosted-app fieldset {
+  min-width: 0;
+}
+.hosted-app input,
+.hosted-app select,
+.hosted-app textarea {
+  max-width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  background: var(--p-bg-less-visible);
+  border: 1px solid var(--p-separator);
+  border-radius: var(--radius);
+  padding: 0.65rem;
+}
+.hosted-app label {
+  display: grid;
+  gap: 0.5rem;
+  margin-block: 0.75rem;
+}
+.hosted-app button {
+  min-height: 44px;
+  margin: 0.2rem;
+}
+.hosted-app p,
+.hosted-app li {
+  overflow-wrap: anywhere;
+}
+.hosted-app .session-screen > section[aria-label="Approvals"] {
+  max-height: 35dvh;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding-inline: 1rem;
+}
 :root {
   color-scheme: dark;
   --p-bg-base: #161616;

@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "deck-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [{ "name": "COMPUTER", "class_name": "ComputerDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ComputerDO"] }],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "../web/dist-hosted",
+    "run_worker_first": ["/r/*"],
+    "not_found_handling": "single-page-application"
+  },
+  "vars": {
+    "VAPID_SUBJECT": "mailto:relay@example.invalid"
+  }
+}

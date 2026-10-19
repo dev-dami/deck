@@ -1,0 +1,20 @@
+{
+  "cases": [
+    {
+      "psk_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "pair_id": "xcwrU0GGxsVF4hoVyH3fZWD8UEYUDQ-TXZ_dvEOgO5M",
+      "pair_id_hash": "55912fc6d32f3c8a29baf959b10a06b17189c5b9c41d8b8140ee2c3ce4a5717f"
+    },
+    {
+      "psk_hex": "abababababababababababababababababababababababababababababababab",
+      "pair_id": "YuEmUR9khJTpjdd23GQVvipL7fbpSWQ5SzYRpCLXe9I",
+      "pair_id_hash": "5651a0a98e97c516d4a593d966a4fe2f00176e8c0bf0159a02e1eacd761bc724"
+    },
+    {
+      "psk_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "pair_id": "F_2GBB7G2CG501Hnn7tuijzO12QrvOklmR8YdBrJO20",
+      "pair_id_hash": "1c9a60623fe6c661a3bfde2ba95298bb90407f472f55212e0b065ac51d203c58"
+    }
+  ],
+  "note": "pair_id = base64url(HKDF-SHA256(ikm=psk, salt=none, info=\"deck-pair-id\", L=32)); pair_id_hash = hex(SHA-256(pair_id as UTF-8))."
+}

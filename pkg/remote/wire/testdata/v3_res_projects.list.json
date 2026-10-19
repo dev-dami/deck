@@ -1,0 +1,12 @@
+[
+  {
+    "id": "prj_a1",
+    "name": "deck",
+    "online": true
+  },
+  {
+    "id": "prj_b2",
+    "name": "site",
+    "online": false
+  }
+]
