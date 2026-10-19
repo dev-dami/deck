@@ -5,6 +5,7 @@ import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useSta
 import type { SharedMirror, Team, Teammate, TeamThread } from "../crew";
 import { cn } from "../lib/cn";
 import type { ProjectApi } from "../project";
+import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
 import { fieldClass } from "./kit/dialog";
 import { Popover } from "./kit/menu";
@@ -465,7 +466,8 @@ export function ShareControl({ api, thread, onError }: { api: ProjectApi; thread
       trigger={
         <Button variant="outline" size="sm" className="font-normal" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           <Users />
-          Share{count > 0 ? ` · ${count}` : ""}
+          <span className="sr-only @3xl/top:not-sr-only">Share</span>
+          {count > 0 && <Badge variant="muted">{count}</Badge>}
         </Button>
       }
     >

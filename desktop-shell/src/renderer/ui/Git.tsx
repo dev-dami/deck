@@ -343,7 +343,7 @@ export function GitActions({
               {next !== null && (
                 <Button variant="outline" size="sm" className="rounded-r-none border-r-0 font-normal" disabled={busy} onClick={next.run}>
                   {busy ? <Loader2 className="animate-spin" /> : next.icon}
-                  {busy ? git.working : next.label}
+                  <span className="sr-only @3xl/top:not-sr-only">{busy ? git.working : next.label}</span>
                 </Button>
               )}
               <Button
@@ -355,7 +355,7 @@ export function GitActions({
                 onClick={() => setMenu((m) => !m)}
               >
                 {next === null && (busy ? <Loader2 className="animate-spin" /> : <GitBranch />)}
-                {next === null && (busy ? git.working : "Git")}
+                {next === null && <span className="sr-only @3xl/top:not-sr-only">{busy ? git.working : "Git"}</span>}
                 <ChevronDown className="size-3.5" />
               </Button>
             </div>

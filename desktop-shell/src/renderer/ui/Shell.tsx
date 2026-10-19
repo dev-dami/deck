@@ -416,17 +416,17 @@ export function Shell({
   );
 
   const header = (
-    <header className="topbar drag flex h-12 shrink-0 items-center gap-2 px-4">
+    <header className="topbar drag @container/top flex h-12 shrink-0 items-center gap-2 px-4">
       {!sidebar && (
         <Button variant="ghost-muted" size="icon-sm" aria-label="Show the sidebar" title="Show the sidebar" onClick={() => setSidebar(true)}>
           <PanelLeft />
         </Button>
       )}
-      <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
+      <nav aria-label="Breadcrumb" className="min-w-28 flex-1">
         <ol className="m-0 flex min-w-0 list-none items-center gap-3 p-0 text-sm">
           <li className="flex min-w-0 shrink items-center gap-1.5 text-muted-foreground">
             <Folder className="size-3.5 shrink-0" />
-            <span className="project max-w-40 truncate">{project || "Deck"}</span>
+            <span className="project max-w-24 truncate @3xl/top:max-w-40">{project || "Deck"}</span>
           </li>
           <li aria-hidden className="text-muted-foreground/50">
             /
@@ -519,7 +519,7 @@ export function Shell({
           onClick={() => showPanel("changes")}
         >
           <FileDiff />
-          Diff
+          <span className="sr-only @3xl/top:not-sr-only">Diff</span>
           {files !== null && files.length > 0 && (
             <span className="font-mono text-xs">
               <span className="text-diff-addition-foreground">+{added}</span>{" "}
