@@ -1,15 +1,26 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { DeckBridge, LocalDeck, SavedServer } from "../../shared/bridge";
+import { useAppearance } from "../appearance";
 import type { DeckClient } from "../client";
 import { connect, openLocal } from "../connection";
+import { usePrefs } from "../prefs";
 import { ConnectScreen } from "./ConnectScreen";
 import { Shell } from "./Shell";
+import type { ProjectEntry } from "./Sidebar";
 
 interface Active {
   key: string;
   // Where the Deck is, for the sidebar.
   where: string;
+  // The sidebar's project entry it came from: "folder:<dir>" or "paired:<id>".
+  source: string;
+  transport: string;
   c: DeckClient;
+}
+
+// The last part of a folder path.
+function base(dir: string): string {
+  return dir.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || dir;
 }
 
 const noSubscribe = () => () => {};
@@ -46,7 +57,13 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   const pairedOpen = useCallback(
     (s: SavedServer) => {
       setMessage(null);
-      swap({ key: `v2:${s.id}`, where: hostPort(s), c: connect(bridge, s.id) });
+      swap({
+        key: `v2:${s.id}`,
+        where: hostPort(s),
+        source: `paired:${s.id}`,
+        transport: "Paired over WebSocket (deck remote, protocol v2)",
+        c: connect(bridge, s.id),
+      });
     },
     [bridge, swap],
   );
@@ -54,7 +71,13 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   const localOpen = useCallback(
     (d: LocalDeck) => {
       setMessage(null);
-      swap({ key: `rpc:${d.id}`, where: d.dir, c: openLocal(bridge, d) });
+      swap({
+        key: `rpc:${d.id}`,
+        where: d.dir,
+        source: `folder:${d.dir}`,
+        transport: "Local folder over gRPC (deck serve --rpc)",
+        c: openLocal(bridge, d),
+      });
     },
     [bridge, swap],
   );
@@ -111,10 +134,52 @@ export function App({ bridge }: { bridge: DeckBridge }) {
     else if (auth === "protocol") leave("This Deck speaks another protocol version. Update Deck or this app.");
   }, [active, auth, leave]);
 
+  const prefs = usePrefs();
+  useAppearance(prefs.theme);
+
+  const projects: ProjectEntry[] = [
+    ...recent.map((dir) => ({
+      key: `folder:${dir}`,
+      name: base(dir),
+      detail: dir,
+      kind: "folder" as const,
+      active: active?.source === `folder:${dir}`,
+    })),
+    ...(servers ?? []).map((s) => ({
+      key: `paired:${s.id}`,
+      name: hostPort(s),
+      detail: s.tls ? "https, pinned" : "this computer",
+      kind: "paired" as const,
+      active: active?.source === `paired:${s.id}`,
+    })),
+  ];
+
+  const toProject = async (key: string): Promise<string | null> => {
+    if (key.startsWith("folder:")) return openFolder(key.slice("folder:".length));
+    const s = servers?.find((x) => `paired:${x.id}` === key);
+    if (s !== undefined) pairedOpen(s);
+    return null;
+  };
+
+  const addProject = async (): Promise<string | null> => {
+    if (deck === null) return "Put the deck command on your PATH to open a folder.";
+    const dir = await bridge.pickFolder();
+    return dir === null ? null : openFolder(dir);
+  };
+
   return (
     <div className="app h-full" data-app="">
       {active !== null ? (
-        <Shell key={active.key} c={active.c} where={active.where} onDisconnect={() => leave(null)} />
+        <Shell
+          key={active.key}
+          c={active.c}
+          where={active.where}
+          transport={active.transport}
+          projects={projects}
+          onProject={toProject}
+          onAddProject={addProject}
+          onDisconnect={() => leave(null)}
+        />
       ) : servers === null ? (
         <div className="loading grid h-full place-items-center text-muted-foreground text-sm">Loading…</div>
       ) : (

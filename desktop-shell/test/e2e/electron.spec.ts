@@ -45,14 +45,13 @@ test("over rpc: the app reopens the last folder and runs two agents", async () =
     const text = await win.evaluate(() => document.body.innerText);
     expect(text).not.toContain(fake.token);
 
-    await win.getByRole("navigation", { name: "Sessions" }).getByRole("button", { name: /Fix the pairing lockout/ }).click();
+    await win.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
     const box = win.getByRole("textbox", { name: "Message" });
     await box.fill("$claude $codex+ split the work and compare");
     await box.press("Enter");
     await expect(win.locator('.agent[data-agent="codex-2"]')).toBeVisible();
     await expect(win.locator('[data-agent="claude-1"].msg').last().locator(".streaming")).toBeVisible();
-    await win.locator(".panel-toggles").getByRole("button", { name: /Changes/ }).click();
-    await win.getByRole("button", { name: /limit\.go/ }).first().click();
+    await win.locator(".panel-toggles").getByRole("button", { name: /Diff/ }).click();
     await win.waitForTimeout(700);
     await win.screenshot({ path: join(root, "docs", "screenshot.png") });
   } finally {
@@ -68,7 +67,7 @@ test("over v2: the app pairs, connects and runs two agents", async () => {
   const app = await launch(mkdtempSync(join(tmpdir(), "deck-desktop-")));
   try {
     const win = await app.firstWindow();
-    await expect(win.getByRole("heading", { name: "Connect to Deck" })).toBeVisible();
+    await expect(win.getByRole("heading", { name: "What should we work on?" })).toBeVisible();
 
     // No Node in the page, and no network of its own.
     expect(await win.evaluate(() => typeof (globalThis as { require?: unknown }).require)).toBe("undefined");
@@ -90,7 +89,7 @@ test("over v2: the app pairs, connects and runs two agents", async () => {
     );
     expect(JSON.stringify(servers)).not.toMatch(/token/i);
 
-    await win.getByRole("navigation", { name: "Sessions" }).getByRole("button", { name: /Fix the pairing lockout/ }).click();
+    await win.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
     const box = win.getByRole("textbox", { name: "Message" });
     await box.fill("$claude $codex+ split the work and compare");
     await box.press("Enter");

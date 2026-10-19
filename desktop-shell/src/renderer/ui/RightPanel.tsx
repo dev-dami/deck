@@ -1,7 +1,22 @@
 import type { ChangedFile, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
-import { ChevronRight, CornerDownLeft, RefreshCw, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  CornerDownLeft,
+  FileDiff,
+  FileText,
+  ListOrdered,
+  type LucideIcon,
+  Maximize2,
+  Minimize2,
+  RefreshCw,
+  ShieldQuestion,
+  X,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { groupApprovals } from "../approvals";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
@@ -11,83 +26,115 @@ import { DiffView } from "./DiffView";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
 
+const TAB_ICONS: Record<Panel, LucideIcon> = { changes: FileDiff, approvals: ShieldQuestion, queue: ListOrdered };
+const TAB_LABELS: Record<Panel, string> = { changes: "Diff", approvals: "Approvals", queue: "Queue" };
+
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="empty px-2 py-10 text-center text-muted-foreground text-sm">{children}</p>;
+  return <p className="empty px-4 py-16 text-center text-muted-foreground/60 text-sm">{children}</p>;
 }
 
-// "pkg/remote/auth/limit.go" → the name, then the folder in muted text.
-function PathLabel({ path }: { path: string }) {
-  const cut = path.lastIndexOf("/");
+function FileSection({
+  f,
+  open,
+  focus,
+  onToggle,
+}: {
+  f: ChangedFile;
+  open: boolean;
+  focus: boolean;
+  onToggle: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focus) ref.current?.scrollIntoView({ block: "start" });
+  }, [focus]);
   return (
-    <span className="file-path flex min-w-0 flex-1 items-baseline gap-1.5 truncate font-mono text-xs">
-      <span className="text-foreground">{cut < 0 ? path : path.slice(cut + 1)}</span>
-      {cut > 0 && <span className="truncate text-muted-foreground text-2xs">{path.slice(0, cut)}</span>}
-    </span>
+    <div ref={ref} className="file border-border/60 border-b">
+      <button
+        type="button"
+        className="file-head sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 bg-background px-3 py-2 text-left hover:bg-accent/40"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        {open ? (
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
+        <FileText className="size-3.5 shrink-0 text-info-foreground" />
+        <span className="file-path min-w-0 flex-1 truncate font-mono text-xs">{f.path}</span>
+        <span className="del font-mono text-diff-deletion-foreground text-xs">−{f.removed}</span>
+        <span className="add font-mono text-diff-addition-foreground text-xs">+{f.added}</span>
+      </button>
+      {open && <DiffView diff={f.diff ?? ""} truncated={f.diff_truncated} numbered />}
+    </div>
   );
 }
 
-function Changes({ c, sessionId }: { c: DeckClient; sessionId: string }) {
-  const [files, setFiles] = useState<ChangedFile[] | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let live = true;
-    setFiles(null);
-    void c.changes(sessionId).then((f) => {
-      if (live) setFiles(f ?? []);
-    });
-    return () => {
-      live = false;
-    };
-  }, [c, sessionId, tick]);
+function Changes({
+  files,
+  focus,
+  onRefresh,
+}: {
+  files: ChangedFile[] | null;
+  focus: string | null;
+  onRefresh: () => void;
+}) {
+  // Files the person folded; the rest show their diff, as T3 Code opens them.
+  const [closed, setClosed] = useState<Record<string, true>>({});
   const added = files?.reduce((n, f) => n + f.added, 0) ?? 0;
   const removed = files?.reduce((n, f) => n + f.removed, 0) ?? 0;
+  const allClosed = files !== null && files.length > 0 && files.every((f) => closed[f.path] === true);
   return (
-    <section aria-label="Changes" className="flex flex-col gap-2">
-      <div className="panel-tools flex items-center gap-2 px-1 text-xs">
-        <span className="text-muted-foreground">
-          {files === null ? "Loading…" : `${files.length} ${files.length === 1 ? "file" : "files"} changed`}
-        </span>
+    <section aria-label="Changes" className="flex min-h-0 flex-1 flex-col">
+      <div className="panel-tools flex h-11 shrink-0 items-center gap-2 border-b px-3 text-xs">
+        <span className="font-medium text-foreground">All changes</span>
         {files !== null && files.length > 0 && (
-          <span className="font-mono text-2xs">
-            <span className="text-success-foreground">+{added}</span>{" "}
-            <span className="text-destructive-foreground">−{removed}</span>
+          <span className="font-mono">
+            <span className="text-diff-addition-foreground">+{added}</span>{" "}
+            <span className="text-diff-deletion-foreground">−{removed}</span>
           </span>
         )}
-        <Button
-          variant="ghost-muted"
-          size="icon-xs"
-          className="ml-auto"
-          aria-label="Refresh"
-          title="Refresh"
-          onClick={() => setTick((t) => t + 1)}
-        >
-          <RefreshCw />
-        </Button>
-      </div>
-      {files?.length === 0 && <Empty>No changes yet.</Empty>}
-      {files?.map((f) => (
-        <div key={f.path} className="file overflow-hidden rounded-lg border bg-card">
-          <button
-            type="button"
-            className="file-head flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left hover:bg-accent/60"
-            onClick={() => setOpen(open === f.path ? null : f.path)}
-            aria-expanded={open === f.path}
+        <span className="text-muted-foreground">
+          {files === null ? "Loading…" : `${files.length} ${files.length === 1 ? "file" : "files"}`}
+        </span>
+        <div className="ml-auto flex items-center gap-0.5">
+          <Button
+            variant="ghost-muted"
+            size="icon-xs"
+            aria-label={allClosed ? "Expand all files" : "Collapse all files"}
+            title={allClosed ? "Expand all files" : "Collapse all files"}
+            onClick={() =>
+              setClosed(allClosed || files === null ? {} : Object.fromEntries(files.map((f) => [f.path, true as const])))
+            }
           >
-            <ChevronRight
-              className={cn("size-3 shrink-0 text-muted-foreground transition-transform", open === f.path && "rotate-90")}
-            />
-            <PathLabel path={f.path} />
-            <span className="add font-mono text-2xs text-success-foreground">+{f.added}</span>
-            <span className="del font-mono text-2xs text-destructive-foreground">−{f.removed}</span>
-          </button>
-          {open === f.path && (
-            <div className="border-t">
-              <DiffView diff={f.diff ?? ""} truncated={f.diff_truncated} />
-            </div>
-          )}
+            {allClosed ? <ChevronsUpDown /> : <ChevronsDownUp />}
+          </Button>
+          <Button variant="ghost-muted" size="icon-xs" aria-label="Refresh" title="Refresh" onClick={onRefresh}>
+            <RefreshCw />
+          </Button>
         </div>
-      ))}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {files?.length === 0 && <Empty>No changes yet.</Empty>}
+        {files?.map((f) => (
+          <FileSection
+            key={f.path}
+            f={f}
+            open={closed[f.path] !== true}
+            focus={focus === f.path}
+            onToggle={() =>
+              setClosed((c) => {
+                if (c[f.path] === true) {
+                  const { [f.path]: _gone, ...rest } = c;
+                  return rest;
+                }
+                return { ...c, [f.path]: true };
+              })
+            }
+          />
+        ))}
+      </div>
     </section>
   );
 }
@@ -106,12 +153,12 @@ function Approvals({
   const groups = groupApprovals(state.approvals, state.sessions, openId);
   if (groups.length === 0) return <Empty>No approvals wait for you.</Empty>;
   return (
-    <section aria-label="Approvals" className="flex flex-col gap-4">
+    <section aria-label="Approvals" className="flex flex-col gap-5 overflow-y-auto p-3">
       {groups.map((g) => (
         <div key={g.sessionId} className="approval-group flex flex-col gap-2">
           <button
             type="button"
-            className="group-head flex w-fit cursor-pointer items-center gap-1 px-1 font-medium text-muted-foreground text-xs hover:text-foreground"
+            className="group-head flex w-fit cursor-pointer items-center px-1 font-medium text-muted-foreground text-xs hover:text-foreground"
             onClick={() => onOpen(g.sessionId)}
           >
             {g.title}
@@ -129,18 +176,18 @@ function Queue({ c, state, sessionId }: { c: DeckClient; state: AppState; sessio
   const items = state.queue[sessionId] ?? [];
   if (items.length === 0) return <Empty>Nothing waits in the queue.</Empty>;
   return (
-    <section aria-label="Queue" className="flex flex-col gap-2">
+    <section aria-label="Queue" className="flex flex-col gap-2 overflow-y-auto p-3">
       {items.map((q) => (
-        <div key={q.id} className="queued flex flex-col gap-2 rounded-lg border bg-card p-3">
-          <div className="text-xs">
-            <span className="approval-agent font-medium">for {q.agent}</span>
+        <div key={q.id} className="queued flex flex-col gap-2 rounded-xl border bg-card p-3">
+          <div className="text-muted-foreground text-xs">
+            Waiting for <span className="approval-agent font-medium text-foreground">{q.agent}</span>
           </div>
-          <p className="whitespace-pre-wrap text-[13px]">{q.text}</p>
+          <p className="whitespace-pre-wrap text-sm">{q.text}</p>
           <div className="approval-actions flex justify-end gap-1.5">
-            <Button size="sm" variant="ghost-muted" onClick={() => void c.cancelQueued(sessionId, q.id)}>
+            <Button size="xs" variant="ghost-muted" onClick={() => void c.cancelQueued(sessionId, q.id)}>
               Cancel
             </Button>
-            <Button size="sm" variant="outline" onClick={() => void c.steer(sessionId, q.id)}>
+            <Button size="xs" variant="outline" onClick={() => void c.steer(sessionId, q.id)}>
               <CornerDownLeft />
               Send now
             </Button>
@@ -156,6 +203,12 @@ export function RightPanel({
   state,
   panel,
   open,
+  files,
+  focus,
+  wide,
+  onRefresh,
+  onPanel,
+  onWide,
   onClose,
   onOpen,
 }: {
@@ -163,32 +216,75 @@ export function RightPanel({
   state: AppState;
   panel: Panel;
   open: Session | undefined;
+  files: ChangedFile[] | null;
+  focus: string | null;
+  wide: boolean;
+  onRefresh: () => void;
+  onPanel: (p: Panel) => void;
+  onWide: () => void;
   onClose: () => void;
   onOpen: (id: string) => void;
 }) {
+  const queued = open === undefined ? 0 : (state.queue[open.id]?.length ?? 0);
   return (
-    <aside className="panel flex w-[440px] shrink-0 flex-col border-l bg-background" aria-label="Side panel">
-      <header className="panel-head drag flex h-12 shrink-0 items-center gap-1.5 border-b px-2">
-        <h2 className="px-2 font-medium text-[13px]">{PANELS.find((p) => p.panel === panel)?.label}</h2>
-        {panel === "approvals" && state.approvals.length > 0 && (
-          <Badge variant="warning">{state.approvals.length}</Badge>
-        )}
-        <Button
-          variant="ghost-muted"
-          size="icon-sm"
-          className="ml-auto"
-          aria-label="Close the panel"
-          onClick={onClose}
-        >
-          <X />
-        </Button>
+    <aside
+      className={cn("panel flex shrink-0 flex-col border-l bg-background", wide ? "w-[min(60vw,900px)]" : "w-[480px]")}
+      aria-label="Side panel"
+    >
+      <header className="panel-head drag flex h-12 shrink-0 items-center gap-1 border-b px-2">
+        <h2 className="sr-only">{PANELS.find((p) => p.panel === panel)?.label}</h2>
+        <div className="flex items-center gap-0.5" role="tablist" aria-label="Panels">
+          {PANELS.map((p) => {
+            const Icon = TAB_ICONS[p.panel];
+            return (
+              <button
+                key={p.panel}
+                type="button"
+                role="tab"
+                aria-selected={panel === p.panel}
+                className={cn(
+                  "flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-sm",
+                  panel === p.panel
+                    ? "bg-accent font-medium text-foreground"
+                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                )}
+                onClick={() => onPanel(p.panel)}
+              >
+                <Icon className="size-3.5" />
+                {TAB_LABELS[p.panel]}
+                {p.panel === "approvals" && state.approvals.length > 0 && (
+                  <Badge variant="warning">{state.approvals.length}</Badge>
+                )}
+                {p.panel === "queue" && queued > 0 && <Badge variant="muted">{queued}</Badge>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="ml-auto flex items-center gap-0.5">
+          <Button
+            variant="ghost-muted"
+            size="icon-sm"
+            aria-label={wide ? "Narrow the panel" : "Widen the panel"}
+            title={wide ? "Narrow the panel" : "Widen the panel"}
+            onClick={onWide}
+          >
+            {wide ? <Minimize2 /> : <Maximize2 />}
+          </Button>
+          <Button variant="ghost-muted" size="icon-sm" aria-label="Close the panel" title="Close the panel" onClick={onClose}>
+            <X />
+          </Button>
+        </div>
       </header>
-      <div className="panel-body min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="panel-body flex min-h-0 flex-1 flex-col overflow-y-auto">
         {panel === "approvals" && <Approvals c={c} state={state} openId={open?.id ?? null} onOpen={onOpen} />}
         {panel === "changes" &&
-          (open === undefined ? <Empty>Open a session to see its changes.</Empty> : <Changes c={c} sessionId={open.id} />)}
+          (open === undefined ? (
+            <Empty>Open a thread to see its changes.</Empty>
+          ) : (
+            <Changes files={files} focus={focus} onRefresh={onRefresh} />
+          ))}
         {panel === "queue" &&
-          (open === undefined ? <Empty>Open a session to see its queue.</Empty> : <Queue c={c} state={state} sessionId={open.id} />)}
+          (open === undefined ? <Empty>Open a thread to see its queue.</Empty> : <Queue c={c} state={state} sessionId={open.id} />)}
       </div>
     </aside>
   );

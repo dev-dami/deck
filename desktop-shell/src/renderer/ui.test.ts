@@ -82,3 +82,11 @@ describe("panel and palette", () => {
     expect(run({ type: "palette", open: true }, { type: "open", id: "a" }).palette).toBe(false);
   });
 });
+
+describe("settings", () => {
+  test("settings open in place of the chat and a thread closes them", () => {
+    const st = run({ type: "settings", section: "appearance" });
+    expect(st.settings).toBe("appearance");
+    expect(reduceUi(st, { type: "open", id: "a" }).settings).toBeNull();
+  });
+});

@@ -6,11 +6,13 @@ import { ArrowUp, ImageIcon, Paperclip, Square, X } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { applySuggestion, type Mention, mentionAt, suggestions } from "../completion";
 import { cn } from "../lib/cn";
+import type { SendKey } from "../prefs";
 import { Button } from "./kit/button";
 
-// The floating composer, after T3 Code's ChatComposer: the prompt on top,
-// a toolbar below it with the agents and the mode on the left and send (or
-// stop, while agents work) on the right.
+// The composer, after T3 Code's ChatComposer: an attached banner on top (a
+// pending approval), the prompt, a footer with the agent picker and the
+// "more" menu on the left and attach and send (stop, while agents work and
+// nothing is typed) on the right, and a context strip underneath.
 export function Composer({
   draft,
   setDraft,
@@ -22,9 +24,12 @@ export function Composer({
   onError,
   inputRef,
   toolbar,
+  banner,
+  strip,
   busy = false,
   onStop,
   placeholder,
+  sendKey,
   className,
 }: {
   draft: string;
@@ -37,9 +42,12 @@ export function Composer({
   onError: (text: string) => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   toolbar?: ReactNode;
+  banner?: ReactNode;
+  strip?: ReactNode;
   busy?: boolean;
   onStop?: () => void;
   placeholder?: string;
+  sendKey: SendKey;
   className?: string;
 }) {
   const [images, setImages] = useState<Image[]>([]);
@@ -60,7 +68,7 @@ export function Composer({
     const el = inputRef.current;
     if (el === null) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 280)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 300)}px`;
   }, [draft, inputRef]);
 
   const track = (el: HTMLTextAreaElement) => {
@@ -81,10 +89,12 @@ export function Composer({
     });
   };
 
-  const ready = online && !sending && canSend(draft, images.length);
+  const sendable = canSend(draft, images.length);
+  const ready = online && !sending && sendable;
+  const stopping = busy && onStop !== undefined && !sendable;
 
   const send = async () => {
-    if (sending || !canSend(draft, images.length)) return;
+    if (sending || !sendable) return;
     setSending(true);
     const ok = await onSend(draft, images);
     setSending(false);
@@ -115,7 +125,9 @@ export function Composer({
         return;
       }
     }
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (sendKey === "enter" || mod) {
       e.preventDefault();
       void send();
     }
@@ -152,10 +164,7 @@ export function Composer({
               key={s.insert}
               role="option"
               aria-selected={i === pick}
-              className={cn(
-                "flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-1.5 text-[13px]",
-                i === pick && "on bg-accent",
-              )}
+              className={cn("flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-1.5 text-sm", i === pick && "on bg-accent")}
               onMouseEnter={() => setPick(i)}
               onMouseDown={(e) => {
                 e.preventDefault();
@@ -175,7 +184,7 @@ export function Composer({
       )}
       <div
         className={cn(
-          "composer-box relative rounded-3xl border bg-card shadow-composer transition-colors focus-within:border-foreground/15",
+          "composer-box relative z-10 rounded-[20px] border bg-card shadow-composer transition-colors focus-within:border-foreground/15",
           dragging && "border-primary/60",
         )}
         onDragOver={(e) => {
@@ -191,13 +200,15 @@ export function Composer({
           void addFiles([...e.dataTransfer.files]);
         }}
       >
+        {banner !== undefined && banner !== null && banner !== false && (
+          <div className="border-b px-1 pt-1 pb-1" data-composer-banner="">
+            {banner}
+          </div>
+        )}
         {images.length > 0 && (
           <div className="attachments flex flex-wrap gap-1.5 px-4 pt-3">
             {images.map((im, i) => (
-              <span
-                key={i}
-                className="chip inline-flex items-center gap-1.5 rounded-md border bg-background py-1 pr-1 pl-2 text-xs"
-              >
+              <span key={i} className="chip inline-flex items-center gap-1.5 rounded-md bg-secondary py-1 pr-1 pl-2 text-xs">
                 <ImageIcon className="size-3.5 text-muted-foreground" />
                 <span className="max-w-40 truncate">{im.name}</span>
                 <button
@@ -216,13 +227,11 @@ export function Composer({
           ref={inputRef}
           aria-label="Message"
           placeholder={
-            online
-              ? (placeholder ?? "Ask the agents anything. Type $ to pick one, $codex+ to start another.")
-              : "Offline. Reconnecting…"
+            online ? (placeholder ?? "Ask for changes, send follow-ups, or attach images") : "Offline. Reconnecting…"
           }
           value={draft}
-          rows={1}
-          className="block max-h-[280px] min-h-[52px] w-full resize-none bg-transparent px-5 pt-4 pb-2 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/70"
+          rows={2}
+          className="block max-h-[300px] min-h-[68px] w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70"
           onChange={(e) => {
             setDraft(e.target.value);
             track(e.target);
@@ -244,16 +253,17 @@ export function Composer({
           }}
           onBlur={() => setMention(null)}
         />
-        <div className="flex items-end gap-2 px-3 pb-3">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <div className="flex items-center gap-1 px-2.5 pb-2.5">
+          <div className="flex min-w-0 flex-1 items-center gap-0.5">{toolbar}</div>
+          <div className="flex shrink-0 items-center gap-1">
             {imagesOn && (
               <>
                 <Button
                   variant="ghost-muted"
-                  size="icon-sm"
+                  size="icon"
                   className="rounded-full"
-                  aria-label="Attach an image"
-                  title="Attach an image"
+                  aria-label="Attach images"
+                  title="Attach images"
                   onClick={() => fileRef.current?.click()}
                 >
                   <Paperclip />
@@ -271,34 +281,36 @@ export function Composer({
                 />
               </>
             )}
-            {toolbar}
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {busy && onStop !== undefined && (
+            {stopping ? (
               <Button
-                variant="outline"
                 size="icon"
                 className="stop-all rounded-full"
                 aria-label="Stop all agents"
                 title="Stop all agents"
                 onClick={onStop}
               >
-                <Square className="size-3.5 fill-current" />
+                <Square className="size-3 fill-current" />
+              </Button>
+            ) : (
+              <Button
+                size="icon"
+                className={cn("send rounded-full", !ready && "opacity-40")}
+                onClick={() => void send()}
+                disabled={!ready}
+                aria-label="Send"
+                title={sendKey === "enter" ? "Send (Enter)" : "Send (Ctrl+Enter)"}
+              >
+                <ArrowUp className="size-4.5" />
               </Button>
             )}
-            <Button
-              size="icon"
-              className={cn("send rounded-full", !ready && "border-transparent bg-accent text-muted-foreground opacity-100")}
-              onClick={() => void send()}
-              disabled={!ready}
-              aria-label="Send"
-              title="Send (Enter)"
-            >
-              <ArrowUp className="size-4.5" />
-            </Button>
           </div>
         </div>
       </div>
+      {strip !== undefined && (
+        <div className="composer-strip relative mx-auto -mt-3 flex w-[calc(100%-2.75rem)] items-center gap-2 rounded-b-2xl border border-t-0 bg-background px-2 pt-4 pb-1">
+          {strip}
+        </div>
+      )}
     </div>
   );
 }

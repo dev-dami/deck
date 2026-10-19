@@ -1,53 +1,63 @@
 import type { Approval, Decision } from "@web/protocol";
-import { FilePen, ShieldAlert, SquareTerminal } from "lucide-react";
 import { approvalSummary, DECISIONS } from "../approvals";
 import { cn } from "../lib/cn";
 import { DiffView } from "./DiffView";
 import { Button } from "./kit/button";
 
-// One request from an agent to run a command or make an edit, with the
-// three answers. Above the composer for the open session (as T3 Code shows
-// pending approvals) and in the side panel for every session.
+function kindLabel(a: Approval): string {
+  return a.kind === "command" ? "Command approval" : a.kind === "edit" ? "File change approval" : "Approval";
+}
+
+// A request from an agent, after T3 Code's pending approval panel: the
+// kind and agent on top, what it wants to run or change, then the answers.
+// Attached above the composer for the open thread; in the side panel for
+// every thread.
 export function ApprovalCard({
   a,
   onAnswer,
+  index,
+  count,
   className,
 }: {
   a: Approval;
   onAnswer: (d: Decision) => void;
+  index?: number;
+  count?: number;
   className?: string;
 }) {
-  const Icon = a.kind === "command" ? SquareTerminal : a.kind === "edit" ? FilePen : ShieldAlert;
-  const verb = a.kind === "command" ? "wants to run" : a.kind === "edit" ? "wants to edit" : "asks";
   return (
     <div
-      className={cn("approval overflow-hidden rounded-2xl border border-warning/30 bg-card", className)}
+      role="group"
+      aria-label={kindLabel(a)}
+      className={cn("approval flex flex-col gap-2 rounded-2xl border bg-card px-4 py-3", className)}
       data-approval={a.id}
     >
-      <div className="approval-head flex items-center gap-2 px-4 pt-3 text-xs">
-        <Icon className="size-3.5 text-warning-foreground" />
-        <span className="approval-agent font-medium">{a.agent}</span>
-        <span className="text-muted-foreground">{verb}</span>
-        {a.description !== "" && a.description !== approvalSummary(a) && (
-          <span className="min-w-0 truncate text-muted-foreground" title={a.description}>
-            · {a.description}
+      <span className="approval-head flex w-full min-w-0 items-center gap-2 text-2xs text-muted-foreground">
+        <span className="shrink-0 font-medium text-warning">{kindLabel(a)}</span>
+        <span className="approval-agent min-w-0 truncate">
+          {a.agent}
+          {a.description !== "" && a.description !== approvalSummary(a) ? ` · ${a.description}` : ""}
+        </span>
+        {count !== undefined && count > 1 && (
+          <span className="ml-auto shrink-0 tabular-nums">
+            {(index ?? 0) + 1}/{count}
           </span>
         )}
-      </div>
-      <pre className="approval-what mx-4 mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-code px-3 py-2 font-mono text-xs">
+      </span>
+      <code className="approval-what block max-h-40 w-full min-w-0 overflow-auto whitespace-pre-wrap break-all font-mono text-foreground text-xs">
         {approvalSummary(a)}
-      </pre>
+      </code>
       {a.diff !== undefined && a.diff !== "" && (
-        <div className="mx-4 mt-2 max-h-60 overflow-auto rounded-lg border">
-          <DiffView diff={a.diff} truncated={a.diff_truncated} />
+        <div className="max-h-60 overflow-auto rounded-lg border">
+          <DiffView diff={a.diff} truncated={a.diff_truncated} numbered />
         </div>
       )}
-      <div className="approval-actions flex flex-wrap items-center justify-end gap-1.5 px-4 pt-3 pb-3">
-        {DECISIONS.map((d) => (
+      <div className="approval-actions flex flex-wrap items-center justify-end gap-1.5">
+        {[...DECISIONS].reverse().map((d) => (
           <Button
             key={d.decision}
-            size="sm"
-            variant={d.decision === "allow" ? "default" : d.decision === "deny" ? "destructive-outline" : "outline"}
+            size="xs"
+            variant={d.decision === "allow" ? "default" : d.decision === "deny" ? "ghost-muted" : "outline"}
             className={`decide decide-${d.decision}`}
             onClick={() => onAnswer(d.decision)}
           >

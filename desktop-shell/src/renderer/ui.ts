@@ -11,8 +11,20 @@ export const PANELS: ReadonlyArray<{ panel: Panel; label: string }> = [
   { panel: "queue", label: "Queue" },
 ];
 
+export type SettingsSection = "general" | "appearance" | "agents" | "connection" | "keybindings";
+
+export const SETTINGS_SECTIONS: ReadonlyArray<{ section: SettingsSection; label: string }> = [
+  { section: "general", label: "General" },
+  { section: "appearance", label: "Appearance" },
+  { section: "agents", label: "Agents" },
+  { section: "connection", label: "Connection" },
+  { section: "keybindings", label: "Keyboard shortcuts" },
+];
+
 export interface UiState {
   openId: string | null;
+  // The Settings page, when it is open, in place of the chat.
+  settings: SettingsSection | null;
   panel: Panel | null;
   palette: boolean;
   // Sessions with news the person has not seen.
@@ -23,13 +35,22 @@ export interface UiState {
   lists: Record<string, readonly unknown[]>;
 }
 
-export const initialUi: UiState = { openId: null, panel: null, palette: false, unread: {}, seen: {}, lists: {} };
+export const initialUi: UiState = {
+  openId: null,
+  settings: null,
+  panel: null,
+  palette: false,
+  unread: {},
+  seen: {},
+  lists: {},
+};
 
 export type UiAction =
   | { type: "open"; id: string | null }
   // A panel toggles; null closes whichever is open.
   | { type: "panel"; panel: Panel | null }
   | { type: "palette"; open: boolean }
+  | { type: "settings"; section: SettingsSection | null }
   | { type: "sessions"; sessions: Session[] }
   // The reducer's messages by session (AppState.messages).
   | { type: "messages"; messages: Record<string, readonly unknown[]> };
@@ -63,6 +84,7 @@ export function reduceUi(state: UiState, a: UiAction): UiState {
       return {
         ...state,
         openId: a.id,
+        settings: null,
         palette: false,
         unread: a.id === null ? state.unread : without(state.unread, a.id),
       };
@@ -70,6 +92,8 @@ export function reduceUi(state: UiState, a: UiAction): UiState {
       return { ...state, panel: a.panel === state.panel ? null : a.panel };
     case "palette":
       return state.palette === a.open ? state : { ...state, palette: a.open };
+    case "settings":
+      return { ...state, settings: a.section, palette: false };
     case "sessions": {
       const next = trackUnread(state, a.sessions);
       // A deleted open session closes.

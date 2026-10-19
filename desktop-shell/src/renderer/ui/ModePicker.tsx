@@ -3,7 +3,6 @@ import type { Mode } from "@web/protocol";
 import { Check, ChevronDown, Flame, ListChecks, MessageCircleQuestion } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/cn";
-import { Button } from "./kit/button";
 import { MenuLabel, Popover } from "./kit/menu";
 
 const ICONS = { plan: ListChecks, ask: MessageCircleQuestion, yolo: Flame } as const;
@@ -12,10 +11,12 @@ const ICONS = { plan: ListChecks, ask: MessageCircleQuestion, yolo: Flame } as c
 export function ModePicker({
   mode,
   allowYolo,
+  confirmYolo,
   onSet,
 }: {
   mode: Mode | null;
   allowYolo: boolean;
+  confirmYolo: boolean;
   onSet: (m: Mode) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -31,18 +32,20 @@ export function ModePicker({
       role="dialog"
       className="w-72"
       trigger={
-        <Button
-          variant="ghost-muted"
-          size="xs"
-          className={cn("mode-picker h-7 rounded-full", mode === "yolo" && "text-destructive-foreground")}
+        <button
+          type="button"
+          className={cn(
+            "mode-picker flex h-6 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground/80 text-xs hover:bg-accent hover:text-foreground aria-expanded:bg-accent",
+            mode === "yolo" && "text-destructive-foreground",
+          )}
           aria-expanded={open}
           title={current?.blurb ?? "Mode"}
           onClick={() => setOpen((o) => !o)}
         >
-          <Icon />
+          <Icon className="size-3.5" />
           {current?.label ?? "Mode"}
           <ChevronDown className="size-3" />
-        </Button>
+        </button>
       }
     >
       <MenuLabel>Mode</MenuLabel>
@@ -59,7 +62,7 @@ export function ModePicker({
               onClick={() => {
                 setOpen(false);
                 if (mode === m.mode) return;
-                if (needsConfirm(m.mode) && !window.confirm(`${m.blurb} Switch to ${m.label}?`)) return;
+                if (confirmYolo && needsConfirm(m.mode) && !window.confirm(`${m.blurb} Switch to ${m.label}?`)) return;
                 onSet(m.mode);
               }}
             >

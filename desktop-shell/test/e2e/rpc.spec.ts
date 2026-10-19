@@ -24,12 +24,12 @@ test.afterEach(async () => {
   await fake.close();
 });
 
-const sidebar = (page: Page) => page.getByRole("navigation", { name: "Sessions" });
+const sidebar = (page: Page) => page.getByRole("navigation", { name: "Threads" });
 const composer = (page: Page) => page.getByRole("textbox", { name: "Message" });
 
 async function openFolder(page: Page): Promise<void> {
   await page.goto("/");
-  await page.getByRole("button", { name: "Open a folder…" }).click();
+  await page.getByRole("button", { name: "Add project" }).click();
   await expect(page.locator(".project")).toHaveText("deck");
   await expect(page.locator(".where")).toContainText(dir);
 }
@@ -37,7 +37,7 @@ async function openFolder(page: Page): Promise<void> {
 test("opens a folder and runs two agents in one thread", async ({ page }) => {
   await openFolder(page);
   await expect(sidebar(page).locator(".session")).toHaveCount(3);
-  await sidebar(page).getByRole("button", { name: /Fix the pairing lockout/ }).click();
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
   await composer(page).fill("$claude $codex+ split the work");
   await composer(page).press("Enter");
@@ -56,29 +56,31 @@ test("opens a folder and runs two agents in one thread", async ({ page }) => {
 
 test("a session in the background updates live", async ({ page }) => {
   await openFolder(page);
-  await sidebar(page).getByRole("button", { name: /Docs pass/ }).click();
+  await sidebar(page).getByRole("button", { name: "Docs pass", exact: true }).click();
   await expect(page.locator(".title")).toHaveText("Docs pass");
   // Another UI (the terminal) writes to the main session meanwhile.
   fake.deck.invoke("chat.send", { session_id: "ses_main", text: "$codex check the limiter tests" });
   const row = sidebar(page).locator('[data-session="ses_main"]');
-  await expect(row.locator(".dot.busy")).toBeVisible();
-  await expect(row.locator(".dot.unread")).toBeVisible();
-  await expect(row.locator(".dot.busy")).toHaveCount(0);
+  // T3's thread statuses: Working while the agent writes, Done once it
+  // finished in the background.
+  await expect(row.locator('[data-status="working"]')).toBeVisible();
+  await expect(row.locator('[data-status="done"]')).toBeVisible();
+  await expect(row.locator('[data-status="working"]')).toHaveCount(0);
   const lists = fake.calls.filter((m) => m === "ListMessages").length;
-  await row.getByRole("button", { name: /Fix the pairing lockout/ }).click();
+  await row.getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   // The reply streamed in while the session was in the background.
   await expect(page.locator('[data-agent="codex-1"].msg').last()).toContainText("check the limiter tests");
-  await expect(row.locator(".dot.unread")).toHaveCount(0);
+  await expect(row.locator('[data-status="done"]')).toHaveCount(0);
   expect(lists).toBe(1);
 });
 
 test("answers an approval and closes the folder", async ({ page }) => {
   await openFolder(page);
   await page.locator(".panel-toggles").getByRole("button", { name: /Approvals/ }).click();
-  await page.getByRole("button", { name: "Allow", exact: true }).click();
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
   await expect(page.getByText("No approvals wait for you.")).toBeVisible();
   expect(fake.deck.answered).toEqual([{ id: "apr_docs", decision: "allow" }]);
   await page.getByRole("button", { name: "Switch Deck" }).click();
-  await expect(page.getByRole("heading", { name: "Connect to Deck" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What should we work on?" })).toBeVisible();
   await expect(page.getByRole("list", { name: "Recent folders" })).toContainText(dir);
 });

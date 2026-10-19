@@ -48,8 +48,9 @@ export function approvalSummary(a: Approval): string {
   return a.description;
 }
 
+// T3 Code's wording for the three answers.
 export const DECISIONS: ReadonlyArray<{ decision: Decision; label: string }> = [
-  { decision: "allow", label: "Allow" },
-  { decision: "allow_session", label: "Allow for session" },
-  { decision: "deny", label: "Deny" },
+  { decision: "allow", label: "Approve" },
+  { decision: "allow_session", label: "Always allow this session" },
+  { decision: "deny", label: "Decline" },
 ];

@@ -1,118 +1,340 @@
-import type { Session } from "@web/protocol";
+import type { Session, Theme } from "@web/protocol";
 import type { Link } from "@web/state";
 import { sessionTitle } from "@web/state";
+import { kindColour, kindMark } from "@web/theme";
 import { relativeTime } from "@web/time";
-import { FolderOpen, Loader2, PencilLine, Search, SquarePen, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  CircleCheck,
+  CircleDashed,
+  Command,
+  Folder,
+  FolderPlus,
+  Laptop,
+  type LucideIcon,
+  PanelLeft,
+  Search,
+  Settings,
+  ShieldQuestion,
+  SquarePen,
+  Trash2,
+  Unplug,
+} from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/cn";
-import { Badge, Kbd } from "./kit/badge";
+import type { RowStyle } from "../prefs";
+import { splitSettled, type ThreadStatus, threadStatus } from "../threads";
+import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
+import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
+import { MenuItem, MenuLabel, MenuSeparator, Popover } from "./kit/menu";
 import { modKey } from "./keys";
 
-function Row({
+// A project the sidebar can switch to: a recent folder or a paired Deck.
+export interface ProjectEntry {
+  key: string;
+  name: string;
+  detail: string;
+  kind: "folder" | "paired";
+  active: boolean;
+}
+
+const STATUS: Record<Exclude<ThreadStatus, null>, { label: string; icon: LucideIcon; className: string }> = {
+  working: { label: "Working", icon: CircleDashed, className: "text-info-foreground" },
+  approval: { label: "Approval", icon: ShieldQuestion, className: "text-warning-foreground" },
+  done: { label: "Done", icon: CircleCheck, className: "text-success-foreground" },
+};
+
+// The agents that wrote in a thread, as T3 Code stacks provider icons.
+function KindStack({ kinds, theme }: { kinds: string[]; theme: Theme | null }) {
+  if (kinds.length === 0) return null;
+  return (
+    <span className="ml-auto inline-flex shrink-0 items-center -space-x-0.5">
+      {kinds.slice(0, 3).map((k) => (
+        <span
+          key={k}
+          className="grid size-4 place-items-center rounded-full bg-sidebar font-mono text-[10px] ring-1 ring-sidebar"
+          style={{ color: kindColour(k) }}
+          title={k}
+        >
+          {kindMark(theme, k) || k.slice(0, 1)}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function ThreadRow({
   s,
-  open,
+  project,
+  active,
   unread,
   now,
+  variant,
+  kinds,
+  theme,
   onOpen,
   onRename,
   onDelete,
 }: {
   s: Session;
-  open: boolean;
+  project: string;
+  active: boolean;
   unread: boolean;
   now: number;
+  variant: RowStyle;
+  kinds: string[];
+  theme: Theme | null;
   onOpen: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  if (editing) {
+  const status = threadStatus(s, unread);
+  const st = status === null ? null : STATUS[status];
+  const recede = !active && status === null;
+  const surface = cn(
+    "session-main group/sidebar-row relative block w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    active
+      ? "bg-sidebar-row-active text-foreground"
+      : recede
+        ? "text-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-foreground"
+        : "text-foreground hover:bg-sidebar-row-hover",
+  );
+  const title = renaming ? (
+    <input
+      autoFocus
+      defaultValue={s.title}
+      aria-label="Thread title"
+      onClick={(e) => e.stopPropagation()}
+      onFocus={(e) => e.currentTarget.select()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          const t = e.currentTarget.value.trim();
+          if (t !== "") onRename(t);
+          setRenaming(false);
+        } else if (e.key === "Escape") setRenaming(false);
+      }}
+      onBlur={() => setRenaming(false)}
+      className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 font-medium text-sm outline-none focus:border-foreground"
+    />
+  ) : (
+    <span
+      className={cn(
+        "session-title min-w-0 flex-1 truncate text-sm",
+        recede ? "font-normal text-secondary-label" : "font-medium",
+        active || unread ? "text-foreground" : !recede && "text-foreground/90",
+      )}
+    >
+      {sessionTitle(s)}
+    </span>
+  );
+  const statusSlot = (
+    <span className="relative ml-auto flex h-5 min-w-8 shrink-0 items-center justify-end text-xs">
+      <span
+        className={cn(
+          "flex items-center tabular-nums text-secondary-label transition-opacity group-hover/sidebar-row:pointer-events-none group-hover/sidebar-row:opacity-0",
+        )}
+      >
+        {st !== null ? (
+          <span className={cn("inline-flex items-center gap-1 font-medium", st.className)} data-status={status}>
+            <st.icon className={cn("size-4 shrink-0", status === "working" && "animate-spin [animation-duration:3s]")} />
+            <span role="status">{st.label}</span>
+            {status === "approval" && s.pending > 1 && <span>{s.pending}</span>}
+          </span>
+        ) : (
+          relativeTime(s.updated_at, now)
+        )}
+      </span>
+      <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center opacity-0 transition-opacity group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100">
+        {confirm ? (
+          <span className="flex items-center gap-1 text-xs">
+            <button
+              type="button"
+              className="rounded px-1 text-destructive-foreground hover:underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+            >
+              Delete
+            </button>
+            <button
+              type="button"
+              className="rounded px-1 text-muted-foreground hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirm(false);
+              }}
+            >
+              Keep
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            aria-label={`Delete ${sessionTitle(s)}`}
+            title="Delete thread"
+            className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 text-muted-foreground text-xs hover:text-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirm(true);
+            }}
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        )}
+      </span>
+    </span>
+  );
+  const common = {
+    role: "button" as const,
+    tabIndex: 0,
+    "aria-label": sessionTitle(s),
+    "aria-current": active ? ("page" as const) : undefined,
+    onClick: onOpen,
+    onDoubleClick: (e: React.MouseEvent) => {
+      if ((e.target as HTMLElement).closest("button, input")) return;
+      setRenaming(true);
+    },
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      onOpen();
+    },
+  };
+  if (variant === "compact") {
     return (
-      <li className="session editing px-1">
-        <input
-          aria-label="Session title"
-          defaultValue={s.title}
-          autoFocus
-          className="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] outline-none focus:border-primary"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              const t = e.currentTarget.value.trim();
-              if (t !== "") onRename(t);
-              setEditing(false);
-            } else if (e.key === "Escape") setEditing(false);
-          }}
-          onBlur={() => setEditing(false)}
-        />
+      <li className={cn("session list-none", active && "open")} data-session={s.id}>
+        <div {...common} className={cn(surface, "flex h-9 items-center gap-2.5 px-2.5")}>
+          {title}
+          {statusSlot}
+        </div>
       </li>
     );
   }
   return (
-    <li className={cn("session group/row relative", open && "open")} data-session={s.id}>
-      <button
-        type="button"
-        className={cn(
-          "session-main flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-          open ? "bg-sidebar-row-active text-foreground" : "text-foreground/80 hover:bg-sidebar-row-hover",
-        )}
-        onClick={onOpen}
-        aria-current={open ? "page" : undefined}
-      >
-        <span className="flex w-3 shrink-0 justify-center">
-          {s.busy ? (
-            <Loader2 className="dot busy size-3 animate-spin text-muted-foreground" aria-label="Agents are working" />
-          ) : unread ? (
-            <span className="dot unread size-1.5 rounded-full bg-primary" title="New messages" />
-          ) : null}
-        </span>
-        <span className={cn("session-title min-w-0 flex-1 truncate", unread && "font-medium text-foreground")}>
-          {sessionTitle(s)}
-        </span>
-        {s.busy && unread && <span className="dot unread size-1.5 shrink-0 rounded-full bg-primary" title="New messages" />}
-        <span className="session-meta flex shrink-0 items-center gap-1.5 group-hover/row:invisible">
-          {s.pending > 0 && (
-            <Badge variant="warning" title="Approvals waiting">
-              {s.pending}
-            </Badge>
-          )}
-          <span className="text-2xs text-muted-foreground tabular-nums">{relativeTime(s.updated_at, now)}</span>
-        </span>
-      </button>
-      {confirm ? (
-        <span className="absolute inset-y-0 right-1 flex items-center gap-1 rounded-md bg-sidebar pl-2 text-2xs">
-          <span className="text-muted-foreground">Delete?</span>
-          <Button size="xs" variant="destructive" onClick={onDelete}>
-            Yes
-          </Button>
-          <Button size="xs" variant="ghost" onClick={() => setConfirm(false)}>
-            No
-          </Button>
-        </span>
-      ) : (
-        <span className="session-tools absolute inset-y-0 right-1 hidden items-center gap-0.5 group-hover/row:flex">
-          <Button
-            size="icon-xs"
-            variant="ghost-muted"
-            aria-label={`Rename ${sessionTitle(s)}`}
-            title="Rename"
-            onClick={() => setEditing(true)}
-          >
-            <PencilLine />
-          </Button>
-          <Button
-            size="icon-xs"
-            variant="ghost-muted"
-            className="hover:text-destructive-foreground"
-            aria-label={`Delete ${sessionTitle(s)}`}
-            title="Delete"
-            onClick={() => setConfirm(true)}
-          >
-            <Trash2 />
-          </Button>
-        </span>
-      )}
+    <li className={cn("session list-none", active && "open")} data-session={s.id}>
+      <div {...common} className={surface}>
+        <div className="relative h-[4.875rem] px-2.5 py-2">
+          <div className="flex h-5 min-w-0 items-center gap-1.5">
+            <Folder className="size-3.5 shrink-0 text-muted-foreground/70" />
+            <span className={cn("min-w-0 flex-1 truncate text-secondary-label text-xs", !recede && "font-medium")}>
+              {project}
+            </span>
+            {statusSlot}
+          </div>
+          <div className="mt-1 flex min-w-0">{title}</div>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
+            <span className="min-w-0 flex-1 truncate text-muted-foreground/50">
+              {s.last_text !== undefined && s.last_text !== "" ? s.last_text : `${s.mode} mode`}
+            </span>
+            <KindStack kinds={kinds} theme={theme} />
+          </div>
+        </div>
+      </div>
     </li>
+  );
+}
+
+function HeaderButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Button variant="ghost-muted" size="icon-sm" aria-label={label} title={label} onClick={onClick}>
+      {children}
+    </Button>
+  );
+}
+
+function ProjectSwitcher({
+  project,
+  projects,
+  onProject,
+  onAddProject,
+  onPair,
+}: {
+  project: string;
+  projects: ProjectEntry[];
+  onProject: (key: string) => void;
+  onAddProject: () => void;
+  onPair: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const folders = projects.filter((p) => p.kind === "folder");
+  const paired = projects.filter((p) => p.kind === "paired");
+  const row = (p: ProjectEntry) => (
+    <MenuItem
+      key={p.key}
+      className="items-start"
+      onClick={() => {
+        setOpen(false);
+        if (!p.active) onProject(p.key);
+      }}
+    >
+      {p.kind === "folder" ? <Folder className="mt-0.5" /> : <Laptop className="mt-0.5" />}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate">{p.name}</span>
+        <span className="truncate text-2xs text-muted-foreground">{p.detail}</span>
+      </span>
+      {p.active && <Check className="mt-0.5" />}
+    </MenuItem>
+  );
+  return (
+    <div className="flex items-center gap-1">
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        label="Projects"
+        className="w-64"
+        trigger={
+          <button
+            type="button"
+            className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 text-left font-medium text-muted-foreground text-sm hover:bg-sidebar-row-hover hover:text-foreground"
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+          >
+            <Folder className="size-4 shrink-0" />
+            <span className="project min-w-0 flex-1 truncate text-foreground">{project || "Deck"}</span>
+            <ChevronDown className="size-3.5 shrink-0" />
+          </button>
+        }
+      >
+        <MenuLabel>Recent projects</MenuLabel>
+        {folders.length === 0 && <p className="px-2 py-1 text-muted-foreground text-xs">No folders yet.</p>}
+        {folders.map(row)}
+        {paired.length > 0 && (
+          <>
+            <MenuSeparator />
+            <MenuLabel>Paired Decks</MenuLabel>
+            {paired.map(row)}
+          </>
+        )}
+        <MenuSeparator />
+        <MenuItem
+          onClick={() => {
+            setOpen(false);
+            onAddProject();
+          }}
+        >
+          <FolderPlus /> Add project…
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setOpen(false);
+            onPair();
+          }}
+        >
+          <Unplug /> Pair with a Deck…
+        </MenuItem>
+      </Popover>
+      <HeaderButton label="Add project" onClick={onAddProject}>
+        <FolderPlus />
+      </HeaderButton>
+    </div>
   );
 }
 
@@ -131,12 +353,21 @@ export function Sidebar({
   unread,
   now,
   mac,
+  rows,
+  theme,
+  kindsOf,
+  projects,
+  settings,
   onOpen,
   onNew,
   onRename,
   onDelete,
   onDisconnect,
   onPalette,
+  onSettings,
+  onProject,
+  onAddProject,
+  onCollapse,
 }: {
   project: string;
   where: string;
@@ -146,70 +377,149 @@ export function Sidebar({
   unread: Record<string, true>;
   now: number;
   mac: boolean;
+  rows: RowStyle;
+  theme: Theme | null;
+  kindsOf: (id: string) => string[];
+  projects: ProjectEntry[];
+  settings: SettingsSection | null;
   onOpen: (id: string) => void;
   onNew: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onDisconnect: () => void;
   onPalette: () => void;
+  onSettings: (s: SettingsSection | null) => void;
+  onProject: (key: string) => void;
+  onAddProject: () => void;
+  onCollapse: () => void;
 }) {
+  const [showSettled, setShowSettled] = useState(false);
+  const { live, settled } = splitSettled(sessions, now, openId, unread);
+  const row = (s: Session) => (
+    <ThreadRow
+      key={s.id}
+      s={s}
+      project={project || "Deck"}
+      active={s.id === openId && settings === null}
+      unread={unread[s.id] === true}
+      now={now}
+      variant={rows}
+      kinds={kindsOf(s.id)}
+      theme={theme}
+      onOpen={() => onOpen(s.id)}
+      onRename={(t) => onRename(s.id, t)}
+      onDelete={() => onDelete(s.id)}
+    />
+  );
   return (
-    <nav className="sidebar flex w-64 shrink-0 flex-col border-r bg-sidebar" aria-label="Sessions">
-      <header className={cn("drag flex flex-col gap-0.5 px-4 pb-3", mac ? "pt-10" : "pt-4")}>
-        <div className="flex items-center gap-2">
-          <span className="grid size-5 place-items-center rounded-md bg-foreground font-bold text-[11px] text-background">
-            d
-          </span>
-          <div className="project min-w-0 truncate font-semibold text-[15px] tracking-tight">{project || "Deck"}</div>
+    <nav className="sidebar flex w-64 shrink-0 flex-col border-r bg-sidebar" aria-label="Threads">
+      <header className={cn("brand-glow drag flex h-12 shrink-0 items-center gap-2 px-3", mac && "pl-20")}>
+        <Button variant="ghost-muted" size="icon-sm" aria-label="Hide the sidebar" title="Hide the sidebar" onClick={onCollapse}>
+          <PanelLeft />
+        </Button>
+        <span className="inline-flex items-baseline gap-1 font-medium text-sm tracking-tight">
+          <span className="font-semibold">Deck</span>
+          <span className="text-muted-foreground">Code</span>
+        </span>
+      </header>
+      {settings !== null ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-1 px-2 pt-2">
+          <button
+            type="button"
+            className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 font-medium text-muted-foreground text-sm hover:bg-sidebar-row-hover hover:text-foreground"
+            onClick={() => onSettings(null)}
+          >
+            <ArrowLeft className="size-4" />
+            Back to threads
+          </button>
+          <div className="px-2 pt-3 pb-1 font-medium text-muted-foreground text-xs">Settings</div>
+          <ul className="flex flex-col gap-px" aria-label="Settings sections">
+            {SETTINGS_SECTIONS.map((x) => (
+              <li key={x.section}>
+                <button
+                  type="button"
+                  aria-current={settings === x.section ? "page" : undefined}
+                  className={cn(
+                    "flex h-8 w-full cursor-pointer items-center rounded-md px-2.5 text-left text-sm",
+                    settings === x.section
+                      ? "bg-sidebar-row-active font-medium text-foreground"
+                      : "text-muted-foreground hover:bg-sidebar-row-hover hover:text-foreground",
+                  )}
+                  onClick={() => onSettings(x.section)}
+                >
+                  {x.label}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
-        <div className="where flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground" title={where}>
+      ) : (
+        <>
+          <div className="flex flex-col gap-1 px-2 pt-2 pb-1">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 text-left font-medium text-muted-foreground text-sm hover:bg-sidebar-row-hover hover:text-foreground"
+                onClick={onPalette}
+              >
+                <Search className="size-4 shrink-0" />
+                Search
+                <Kbd className="ml-auto bg-transparent">{modKey(mac)}K</Kbd>
+              </button>
+              <HeaderButton label="New thread" onClick={onNew}>
+                <SquarePen />
+              </HeaderButton>
+            </div>
+            <ProjectSwitcher
+              project={project}
+              projects={projects}
+              onProject={onProject}
+              onAddProject={onAddProject}
+              onPair={onDisconnect}
+            />
+          </div>
+          <ul className="sessions flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
+            {live.map(row)}
+            {settled.length > 0 && (
+              <li className="list-none">
+                <button
+                  type="button"
+                  className="mt-2 flex h-7 w-full cursor-pointer items-center gap-2 px-2.5 text-muted-foreground/70 text-xs hover:text-foreground"
+                  aria-expanded={showSettled}
+                  onClick={() => setShowSettled((v) => !v)}
+                >
+                  <span>{showSettled ? "Settled" : `Settled (${settled.length})`}</span>
+                  <span className="h-px flex-1 bg-border" />
+                  {showSettled ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                </button>
+              </li>
+            )}
+            {showSettled && settled.map(row)}
+            {sessions.length === 0 && (
+              <li className="flex list-none flex-col items-center gap-2 px-2 py-6 text-center text-muted-foreground/60 text-xs">
+                No threads yet
+              </li>
+            )}
+          </ul>
+        </>
+      )}
+      <footer className="side-foot flex items-center gap-0.5 px-2 py-2">
+        <HeaderButton label="Settings" onClick={() => onSettings(settings === null ? "general" : null)}>
+          <Settings />
+        </HeaderButton>
+        <HeaderButton label="Commands" onClick={onPalette}>
+          <Command />
+        </HeaderButton>
+        <HeaderButton label="Switch Deck" onClick={onDisconnect}>
+          <Unplug />
+        </HeaderButton>
+        <span
+          className="where ml-auto flex min-w-0 items-center gap-1.5 px-1 text-2xs text-muted-foreground"
+          title={where}
+        >
           <span className={cn("dot size-1.5 shrink-0 rounded-full", linkDot[link])} />
           <span className="truncate">{link === "online" ? where : link}</span>
-        </div>
-      </header>
-      <div className="px-2 pb-2">
-        <Button
-          variant="ghost"
-          className="new-session h-8 w-full justify-start gap-2 px-2 font-normal text-[13px]"
-          onClick={onNew}
-        >
-          <SquarePen className="text-muted-foreground" />
-          New session
-          <Kbd className="ml-auto">{modKey(mac)}N</Kbd>
-        </Button>
-      </div>
-      <div className="px-4 pt-2 pb-1 font-medium text-2xs text-muted-foreground">Sessions</div>
-      <ul className="sessions flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-2 pb-2">
-        {sessions.map((s) => (
-          <Row
-            key={s.id}
-            s={s}
-            open={s.id === openId}
-            unread={unread[s.id] === true}
-            now={now}
-            onOpen={() => onOpen(s.id)}
-            onRename={(t) => onRename(s.id, t)}
-            onDelete={() => onDelete(s.id)}
-          />
-        ))}
-        {sessions.length === 0 && <li className="px-2 py-1.5 text-muted-foreground text-xs">No sessions yet.</li>}
-      </ul>
-      <footer className="side-foot flex items-center gap-1 border-t px-2 py-2">
-        <Button variant="ghost-muted" size="sm" className="font-normal" onClick={onDisconnect}>
-          <FolderOpen />
-          Switch Deck
-        </Button>
-        <Button
-          variant="ghost-muted"
-          size="sm"
-          className="ml-auto font-normal"
-          onClick={onPalette}
-          aria-label="Commands"
-          title="Commands"
-        >
-          <Search />
-          <Kbd>{modKey(mac)}K</Kbd>
-        </Button>
+        </span>
       </footer>
     </nav>
   );

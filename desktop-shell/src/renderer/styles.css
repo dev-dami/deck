@@ -3,10 +3,11 @@
 
 /* The look follows T3 Code (github.com/pingdotgg/t3code, MIT): a quiet
    neutral canvas, one blue primary, hairline borders and a floating
-   composer. Deck's server theme still picks light or dark (data-scheme on
-   <html>) and tints each agent kind (--kind-*); the surfaces are ours. */
+   composer. data-mode on <html> picks light or dark: Deck's server theme
+   (data-scheme), the system or the person's choice in Settings
+   (appearance.ts). Deck's theme still tints each agent kind (--kind-*). */
 
-@custom-variant light (&:is([data-scheme="light"], [data-scheme="light"] *));
+@custom-variant light (&:is([data-mode="light"], [data-mode="light"] *));
 
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -27,6 +28,13 @@
   --color-secondary: var(--secondary);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-secondary-label: var(--secondary-label);
+  --color-message-foreground: var(--foreground);
+  --color-info-foreground: var(--info-foreground);
+  --color-sidebar-foreground: var(--foreground);
+  --color-sidebar-muted-foreground: var(--muted-foreground);
+  --color-diff-addition-foreground: var(--diff-add-fg);
+  --color-diff-deletion-foreground: var(--diff-del-fg);
   --color-accent: var(--accent);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -71,6 +79,8 @@
   --secondary: rgb(255 255 255 / 5%);
   --muted: rgb(255 255 255 / 4%);
   --muted-foreground: #9a9a9a;
+  --secondary-label: #8a8a8a;
+  --info-foreground: #60a5fa;
   --accent: rgb(255 255 255 / 6%);
   --border: rgb(255 255 255 / 8%);
   --input: rgb(255 255 255 / 10%);
@@ -97,7 +107,7 @@
   --scrollbar-hover: rgb(255 255 255 / 14%);
 }
 
-:root[data-scheme="light"] {
+:root[data-mode="light"] {
   color-scheme: light;
   --background: #fcfcfc;
   --foreground: #27272a;
@@ -107,6 +117,8 @@
   --secondary: #f4f4f5;
   --muted: #f4f4f5;
   --muted-foreground: #71717a;
+  --secondary-label: #71717a;
+  --info-foreground: #1d4ed8;
   --accent: #f0f0f2;
   --border: #e4e4e7;
   --input: #d4d4d8;
@@ -343,4 +355,71 @@
 .diff-meta {
   color: var(--muted-foreground);
   font-style: italic;
+}
+
+/* The sidebar's brand strip: T3 Code's blue glow behind the wordmark. */
+.brand-glow {
+  background:
+    radial-gradient(120% 140% at 10% 0%, rgb(59 130 246 / 38%) 0%, rgb(37 99 235 / 14%) 45%, transparent 75%),
+    linear-gradient(180deg, rgb(59 130 246 / 10%), transparent);
+}
+[data-mode="light"] .brand-glow {
+  background:
+    radial-gradient(120% 140% at 10% 0%, rgb(59 130 246 / 22%) 0%, rgb(37 99 235 / 8%) 45%, transparent 75%);
+}
+
+/* The diff panel: a gutter of line numbers and a bar for each added or
+   removed line, as T3 Code's diff viewer draws them. */
+.diff-numbered .diff-row {
+  display: grid;
+  grid-template-columns: 3.25rem 1fr;
+  min-width: max-content;
+}
+.diff-numbered .diff-gutter {
+  position: sticky;
+  left: 0;
+  padding-right: 0.75rem;
+  text-align: right;
+  color: color-mix(in srgb, var(--muted-foreground) 70%, transparent);
+  background: var(--background);
+  border-left: 3px solid transparent;
+  user-select: none;
+}
+.diff-numbered .diff-row.diff-add .diff-gutter {
+  border-left-color: var(--success);
+  background: color-mix(in srgb, var(--diff-add) 100%, var(--background));
+}
+.diff-numbered .diff-row.diff-del .diff-gutter {
+  border-left-color: var(--destructive);
+  background: color-mix(in srgb, var(--diff-del) 100%, var(--background));
+}
+.diff-numbered .diff-code {
+  white-space: pre;
+  padding: 0 12px 0 4px;
+}
+.diff-numbered .diff-row.diff-add,
+.diff-numbered .diff-row.diff-del {
+  color: var(--foreground);
+}
+.diff-numbered .diff-row.diff-add .diff-code {
+  background: var(--diff-add);
+}
+.diff-numbered .diff-row.diff-del .diff-code {
+  background: var(--diff-del);
+}
+.diff-fold {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.25rem 0.75rem;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 11px;
+}
+.diff-fold::before,
+.diff-fold::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--border);
 }

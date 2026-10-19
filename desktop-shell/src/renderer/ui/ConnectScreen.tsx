@@ -1,4 +1,4 @@
-import { ChevronRight, Folder, FolderOpen, Laptop, Link2, Loader2, Lock, X } from "lucide-react";
+import { ChevronRight, Folder, Laptop, Link2, Loader2, Lock, Plus, X } from "lucide-react";
 import { useState } from "react";
 import type { DeckBridge, PairOutcome, SavedServer } from "../../shared/bridge";
 import { parsePairText } from "../connect";
@@ -26,48 +26,25 @@ function Section({ title, children, label: aria }: { title: string; children: Re
   );
 }
 
+// The recent folders: a click starts Deck in one.
 function OpenFolder({
-  bridge,
-  deck,
   recent,
   opening,
   onFolder,
   setError,
 }: {
-  bridge: DeckBridge;
-  deck: string | null;
   recent: string[];
   opening: string | null;
   onFolder: (dir: string) => Promise<string | null>;
   setError: (e: string | null) => void;
 }) {
-  const open = async (dir: string | null) => {
-    if (dir === null) return;
+  const open = async (dir: string) => {
     setError(null);
     setError(await onFolder(dir));
   };
-  if (deck === null) {
-    return (
-      <Section title="Open a folder" label="Open a folder">
-        <p className="rounded-xl border border-dashed px-4 py-3 text-muted-foreground text-xs leading-relaxed">
-          Put the <code className="font-mono text-foreground">deck</code> command on your PATH. Then this app can run
-          Deck in a project folder on this computer.
-        </p>
-      </Section>
-    );
-  }
   return (
-    <Section title="Open a folder" label="Open a folder">
-      <Button
-        size="lg"
-        className="primary h-11 w-full rounded-xl text-[14px]"
-        disabled={opening !== null}
-        onClick={() => void bridge.pickFolder().then(open)}
-      >
-        {opening === null ? <FolderOpen /> : <Loader2 className="animate-spin" />}
-        {opening === null ? "Open a folder…" : `Starting Deck in ${base(opening)}…`}
-      </Button>
-      {recent.length > 0 && (
+    <Section title="Recent projects" label="Open a folder">
+      {recent.length > 0 ? (
         <ul className="servers recent flex flex-col gap-px" aria-label="Recent folders">
           {recent.map((dir) => (
             <li key={dir}>
@@ -77,9 +54,13 @@ function OpenFolder({
                 disabled={opening !== null}
                 onClick={() => void open(dir)}
               >
-                <Folder className="size-4 shrink-0 text-muted-foreground" />
+                {opening === dir ? (
+                  <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                ) : (
+                  <Folder className="size-4 shrink-0 text-muted-foreground" />
+                )}
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-[13px]">{base(dir)}</span>
+                  <span className="truncate text-sm">{base(dir)}</span>
                   <span className="truncate text-2xs text-muted-foreground">{dir}</span>
                 </span>
                 <ChevronRight className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100" />
@@ -87,11 +68,12 @@ function OpenFolder({
             </li>
           ))}
         </ul>
+      ) : (
+        <p className="px-3 text-muted-foreground text-xs">
+          Add a project: Deck runs <code className="font-mono">deck serve --rpc</code> in the folder and stops it when you
+          close the folder or quit.
+        </p>
       )}
-      <p className="px-1 text-2xs text-muted-foreground leading-relaxed">
-        The app runs <code className="font-mono">deck serve --rpc</code> in the folder and stops it when you close the
-        folder or quit.
-      </p>
     </Section>
   );
 }
@@ -190,6 +172,7 @@ function Pair({
         <label className="field flex flex-col gap-1.5">
           <span className="font-medium text-xs">Pairing link or invite line</span>
           <input
+            id="pair-input"
             className={input}
             value={text}
             placeholder="http://127.0.0.1:7878/#pair=…  or  deck://pair?…"
@@ -214,8 +197,9 @@ function Pair({
   );
 }
 
-// Two ways in: a folder on this computer (deck serve --rpc, the default
-// when deck is on PATH) or a Deck to pair with (deck remote, protocol v2).
+// Two ways in, after T3 Code's "no projects" hero: a folder on this
+// computer (deck serve --rpc, the default when deck is on PATH) or a Deck
+// to pair with (deck remote, protocol v2).
 export function ConnectScreen({
   bridge,
   deck,
@@ -240,39 +224,66 @@ export function ConnectScreen({
   onForget: (s: SavedServer) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const folder = (
-    <OpenFolder bridge={bridge} deck={deck} recent={recent} opening={opening} onFolder={onFolder} setError={setError} />
-  );
+  const addProject = async () => {
+    const dir = await bridge.pickFolder();
+    if (dir === null) return;
+    setError(null);
+    setError(await onFolder(dir));
+  };
   return (
-    <main className="connect drag flex h-full justify-center overflow-y-auto px-6" data-screen="connect">
-      <div className="connect-card no-drag flex w-full max-w-md flex-col gap-8 py-[10vh]">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <span className="grid size-11 place-items-center rounded-xl bg-foreground font-bold text-background text-xl">
-            d
-          </span>
-          <h1 className="font-semibold text-2xl tracking-tight">Connect to Deck</h1>
-          <p className="max-w-sm text-muted-foreground text-sm">
-            Run many coding agents at once, in one window. Open a project to start.
-          </p>
+    <main className="connect flex h-full flex-col overflow-y-auto" data-screen="connect">
+      <div className="drag h-12 shrink-0" />
+      <div className="flex flex-1 justify-center px-6">
+        <div className="connect-card flex w-full max-w-lg flex-col gap-10 pt-[8vh] pb-16">
+          <div className="flex flex-col items-center gap-6 text-center">
+            <div className="flex flex-col items-center gap-2">
+              <h1 className="text-balance font-medium text-2xl tracking-tight sm:text-3xl">What should we work on?</h1>
+              <p className="text-muted-foreground text-sm">
+                {deck === null
+                  ? "Put the deck command on your PATH to add a project, or pair with a running Deck."
+                  : "Add a project, or pair with a Deck on another computer."}
+              </p>
+            </div>
+            <div className="flex justify-center gap-2">
+              <Button size="sm" className="primary" disabled={deck === null || opening !== null} onClick={() => void addProject()}>
+                {opening === null ? <Plus /> : <Loader2 className="animate-spin" />}
+                {opening === null ? "Add project" : `Starting Deck in ${base(opening)}…`}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => document.getElementById("pair-input")?.focus()}
+              >
+                <Link2 />
+                Pair with a Deck
+              </Button>
+            </div>
+          </div>
+          {message !== null && (
+            <p className="notice rounded-xl border border-warning/30 bg-warning/8 px-4 py-3 text-sm">{message}</p>
+          )}
+          {error !== null && (
+            <p className="error rounded-xl border border-destructive/40 bg-destructive/8 px-4 py-3 text-sm" role="alert">
+              {error}
+            </p>
+          )}
+          {deck !== null && (
+            <OpenFolder
+              recent={recent}
+              opening={opening}
+              onFolder={onFolder}
+              setError={setError}
+            />
+          )}
+          <Pair
+            bridge={bridge}
+            servers={servers}
+            onPaired={onPaired}
+            onOpen={onOpen}
+            onForget={onForget}
+            setError={setError}
+          />
         </div>
-        {message !== null && (
-          <p className="notice rounded-xl border border-warning/30 bg-warning/8 px-4 py-3 text-[13px]">{message}</p>
-        )}
-        {error !== null && (
-          <p className="error rounded-xl border border-destructive/40 bg-destructive/8 px-4 py-3 text-[13px]" role="alert">
-            {error}
-          </p>
-        )}
-        {deck !== null && folder}
-        <Pair
-          bridge={bridge}
-          servers={servers}
-          onPaired={onPaired}
-          onOpen={onOpen}
-          onForget={onForget}
-          setError={setError}
-        />
-        {deck === null && folder}
       </div>
     </main>
   );
