@@ -84,7 +84,9 @@ func TestCancelTaskStopsItsSubagentAndSubtasks(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the child's approval", func() bool { return len(r.c.approvals()) == 1 })
-	sub, err := r.m.CreateTask(tid, TaskSpec{Title: "part of it", Parent: res.TaskID})
+	// It waits on its parent, so the scheduler does not hand it to a
+	// subagent of its own (which could finish it) before the cancel.
+	sub, err := r.m.CreateTask(tid, TaskSpec{Title: "part of it", Parent: res.TaskID, Deps: []string{res.TaskID}})
 	if err != nil {
 		t.Fatal(err)
 	}
