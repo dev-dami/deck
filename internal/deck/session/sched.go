@@ -24,6 +24,7 @@ import (
 //     new subagent, while fewer than MaxParallel tasks are running.
 //
 // Dispatches are Deck's, not an agent's thread.send, so they are not hops.
+// With orchestration off, a pass only starts the reviews that wait for room.
 
 // retryBackoff is the wait before a failed task's attempt number attempt+1:
 // 2s, 4s, 8s, ... up to a minute. A variable so tests can shorten it.
@@ -44,15 +45,10 @@ type schedState struct {
 }
 
 // kick has the scheduler look at the thread's board again, soon and off the
-// caller's goroutine. It does nothing when orchestration is off.
+// caller's goroutine. When orchestration is off, it only starts the reviews
+// that wait for room.
 func (m *Manager) kick(t *thread) {
 	if m.isClosed() || t.gone.Load() {
-		return
-	}
-	t.mu.Lock()
-	on := t.orchestrate
-	t.mu.Unlock()
-	if !on {
 		return
 	}
 	t.sched.mu.Lock()
@@ -90,6 +86,13 @@ func (m *Manager) maxParallel() int {
 // schedule is one pass over the board.
 func (m *Manager) schedule(t *thread) {
 	if m.isClosed() || t.gone.Load() {
+		return
+	}
+	t.mu.Lock()
+	on := t.orchestrate
+	t.mu.Unlock()
+	if !on {
+		m.startReviews(t) // the review stage runs without orchestration too
 		return
 	}
 	m.checkBudgets(t, nil, store.Spend{}) // minutes pass without events

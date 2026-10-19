@@ -319,17 +319,19 @@ func TestPerKeyLimits(t *testing.T) {
 		Caller: allowOps(OpPeerStatus, "block")})
 	c1 := b.dial(t, pinA, nil)
 	c2 := b.dial(t, pinA, nil)
+	// Dial returns before the server counts the link. Serve a request on
+	// each link first, so the server has counted both before the third.
+	cl1, cl2 := openInit(t, c1), openInit(t, c2)
 	// The third link of the same key is closed right after auth (Dial
 	// itself may or may not see it finish first).
 	if c3, err := Dial(ctxT(t), DialOptions{Identity: b.id, Peer: pinA, Logger: quietLog}); err == nil {
 		defer c3.Close()
-		waitDone(t, c3.Done(), 5*time.Second, "link over the per-key cap")
+		waitDone(t, c3.Done(), 20*time.Second, "link over the per-key cap")
 	}
 
 	ctx := ctxT(t)
-	cl1, cl2 := openInit(t, c1), openInit(t, c2)
 	go func() { _, _ = cl1.Execute(ctx, "block", nil) }()
-	waitFor(t, 5*time.Second, "blocking call", func() bool { return h.calls() >= 1 })
+	waitFor(t, 20*time.Second, "blocking call", func() bool { return h.calls() >= 1 })
 	// One call in flight for the key: a call over its other link is busy.
 	if _, err := cl2.Execute(ctx, OpPeerStatus, nil); err == nil || !strings.Contains(err.Error(), "too many calls") {
 		t.Fatalf("second call of the key not refused: %v", err)

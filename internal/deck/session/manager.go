@@ -600,9 +600,20 @@ func (m *Manager) dropMember(t *thread, a *agentState) {
 }
 
 // startRun launches the member's CLI. prompt, when non-empty, is its first turn.
+// A new member joins the thread before its CLI starts, so a message to it can
+// start the CLI from deliver at the same time. The second caller finds the run
+// already there: it does not start a second CLI, it only sends its prompt.
 func (m *Manager) startRun(t *thread, a *agentState, prompt, resumeID string) error {
 	if m.isClosed() {
 		return errClosed
+	}
+	a.startMu.Lock()
+	defer a.startMu.Unlock()
+	if run := a.getRun(); run != nil {
+		if prompt == "" {
+			return nil
+		}
+		return run.Send(prompt)
 	}
 	ad := m.adapters[a.kind]
 	if ad == nil {
@@ -857,6 +868,9 @@ func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentStat
 	m.persistMeta(t)
 	m.emitAll(msgs...)
 	m.checkpoint(t, e.ID)
+	if wasPaused {
+		m.kick(t) // the scheduler and the waiting reviews stopped at the pause
+	}
 
 	var first error
 	for _, a := range targets {
@@ -1129,6 +1143,14 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	t.tasks = cloneTasks(th.Tasks)
 	t.orchestrate = th.Orchestrate
 	t.contract = th.Contract
+	if th.Ops {
+		// Its contract ended when Deck stopped, but the thread stays locked
+		// down: its agents get no tools, approvals, thread.send and
+		// thread.read are refused, and sh.run and contract.result answer that
+		// the contract is over. The thread resumes, so its person can still
+		// read it; a refusal would hide its history.
+		t.ops = &opsState{}
+	}
 	for _, sh := range th.Shares {
 		if validShareRole(sh.Role) {
 			if t.shares == nil {
@@ -1522,6 +1544,9 @@ type agentState struct {
 	// knownMode is the permission mode the member was last told about (its
 	// Spec.Mode, or the line at the top of its last prompt); guarded by thread.mu.
 	knownMode agent.Mode
+
+	// startMu lets one startRun at a time start the member's CLI.
+	startMu sync.Mutex
 
 	mu          sync.Mutex
 	run         agent.Run

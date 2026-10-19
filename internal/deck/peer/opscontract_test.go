@@ -229,3 +229,71 @@ func TestAuditLogKeepsTheLastLines(t *testing.T) {
 		t.Fatalf("lines = %d", l.lines)
 	}
 }
+
+// An ops contract that ran when a stopped fails when a starts again, and
+// its requester hears why. One that ended before stays as it is.
+func TestOpsContractFailsAfterARestart(t *testing.T) {
+	ctx := ctxT(t)
+	run := func(c Contract) (string, string, func(), error) { return "th-" + c.ID, "t1", nil, nil }
+	news := make(chan Contract, 8)
+	a, b := linkedWith(t,
+		ServiceOptions{Contracts: ContractHooks{Run: run}},
+		ServiceOptions{Contracts: ContractHooks{Updated: func(c Contract) { news <- c }}},
+		config.PeerRoleContractor)
+	if _, err := config.UpdatePeers(a.cfgPath, func(p *config.Peers) bool {
+		p.Remote = append(p.Remote, config.PeerRemote{Name: "b", Role: config.PeerRoleContractor, MaxScope: []string{"podman-read"}})
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	propose := func() Contract {
+		_, c, _ := ParseOps("ask a to report podman containers: name")
+		sent, err := b.ProposeContract(ctx, "a", c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := waitNews(t, news); got.State != ContractAccepted || got.ID != sent.ID {
+			t.Fatalf("accepted news = %+v", got)
+		}
+		return sent
+	}
+	ended := propose()
+	if !a.FinishOps("th-"+ended.ID, "t1", nil, "its person cancelled it") {
+		t.Fatal("the first contract did not end")
+	}
+	waitNews(t, news)
+	running := propose()
+
+	// a stops, and starts again on the same files.
+	a.Close()
+	a2, err := NewService(ServiceOptions{Dir: a.dir, ConfigPath: a.cfgPath, Logger: quietLog, Contracts: ContractHooks{Run: run}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(a2.Close)
+	p, err := config.LoadPeers(a.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a2.Start(p); err != nil {
+		t.Fatal(err)
+	}
+	const why = "Deck restarted while it ran"
+	if n := a2.FailRunningOps(why); n != 1 {
+		t.Fatalf("failed %d contracts, want 1", n)
+	}
+	for _, c := range a2.Contracts() {
+		if c.State != ContractFailed || c.ID == running.ID && c.Note != why || c.ID == ended.ID && c.Note != "its person cancelled it" {
+			t.Fatalf("after the restart: %+v", c)
+		}
+	}
+	if got := waitNews(t, news); got.ID != running.ID || got.State != ContractFailed || got.Note != why {
+		t.Fatalf("b hears %+v", got)
+	}
+	if n := a2.FailRunningOps("again"); n != 0 {
+		t.Fatalf("failed %d contracts the second time", n)
+	}
+}

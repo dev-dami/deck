@@ -860,3 +860,17 @@ func (s *Service) FinishOps(thread, task string, result json.RawMessage, why str
 	s.queue(out.Peer, OpContractResult, out.ID+"r", args)
 	return true
 }
+
+// FailRunningOps fails every inbound ops contract that is still accepted,
+// with why, and queues each result to its requester. Deck calls it at
+// start: an ops contract does not survive a restart, so each one that is
+// still accepted ran when Deck stopped. It returns how many it failed.
+func (s *Service) FailRunningOps(why string) int {
+	n := 0
+	for _, c := range s.contracts.all() {
+		if c.Inbound && c.Kind == KindOps && c.State == ContractAccepted && s.FinishOps(c.Thread, c.Task, nil, why) {
+			n++
+		}
+	}
+	return n
+}

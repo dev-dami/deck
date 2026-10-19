@@ -125,6 +125,9 @@ type Thread struct {
 	// Contract is the teammate whose code contract runs in this thread: its
 	// mode is at most ask.
 	Contract string `json:"contract,omitempty"`
+	// Ops is set when the thread runs, or ran, a teammate's ops contract:
+	// its agents stay locked down to sh.run and contract.result.
+	Ops bool `json:"ops,omitempty"`
 	// Shares are the teammates the thread is shared with, and their roles.
 	Shares []Share `json:"shares,omitempty"`
 
@@ -333,6 +336,25 @@ func Lock(dir string, exclusive bool) (func(), error) {
 		_ = os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600)
 	}
 	return release, nil
+}
+
+// Unused reports whether no Deck holds the lock on the threads directory
+// dir ("" means DefaultDir) now. Call it before Lock: Lock's own hold makes
+// it false.
+func Unused(dir string) bool {
+	if dir == "" {
+		d, err := DefaultDir()
+		if err != nil {
+			return false
+		}
+		dir = d
+	}
+	release, err := lock.TryFile(filepath.Join(dir, lockFile))
+	if err != nil {
+		return false
+	}
+	release()
+	return true
 }
 
 // New opens the store in dir, creating it if needed. An empty dir means

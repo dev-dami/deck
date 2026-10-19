@@ -68,8 +68,15 @@ type thread struct {
 	sched schedState // one scheduler pass at a time (sched.go)
 	// raced holds the races already reported or kept (race.go).
 	raced map[string]bool
-	// reviewing holds the tasks whose reviewer is starting (review.go).
-	reviewing map[string]bool
+	// spawns holds the tasks a subagent is starting for, each with the claim
+	// of the Spawn that starts it (spawn.go).
+	spawns map[string]string
+	// reviewing holds the tasks whose reviewer is starting; each channel
+	// closes when that start ends (review.go).
+	reviewing map[string]chan struct{}
+	// reviewWaits holds the tasks in review whose wait for a reviewer the
+	// thread has a notice about (review.go).
+	reviewWaits map[string]bool
 	// orchestrate is set while members may spawn subagents and the scheduler
 	// runs the board (spawn.go, sched.go).
 	orchestrate bool
@@ -213,7 +220,7 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	defer t.mu.Unlock()
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
 		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree,
-		Tasks: cloneTasks(t.tasks), Orchestrate: t.orchestrate, Contract: t.contract}
+		Tasks: cloneTasks(t.tasks), Orchestrate: t.orchestrate, Contract: t.contract, Ops: t.ops != nil}
 	for _, peer := range slices.Sorted(maps.Keys(t.shares)) {
 		th.Shares = append(th.Shares, store.Share{Peer: peer, Role: t.shares[peer]})
 	}

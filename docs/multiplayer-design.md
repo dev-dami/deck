@@ -126,7 +126,8 @@ knows each subscription's remaining plan window.
   reviewed. Tasks that wait on it wait through the review, and the creator
   hears once, at the end. The reviewer is Deck's subagent: it counts toward
   `max_work`, `max_subagents` and the task's budget, and waits for a free
-  slot. Not done: a user-side way to ask for a review besides the config
+  slot, with orchestration on or off; a notice says that the review waits.
+  Not done: a user-side way to ask for a review besides the config
   default, and earlier rounds' notes in a new reviewer's brief.
 - **UI.** The agents pane lists members as a tree (subagents indented under
   their parent, with their branch); stopped subagents drop out unless their
@@ -399,8 +400,9 @@ Each phase is one or two PRs and useful alone.
      with no tools of its own (Claude only, `agent.OpsSafe`) and only
      `sh.run` and `contract.result`, in a vsh sandbox per contract. The
      result is checked against the schema on both Decks and shown as a
-     table. Every event goes to `~/.deck/peers/audit.jsonl`. Not done: ops
-     state across a restart, an amend flow, typed fields in the parser.
+     table. Every event goes to `~/.deck/peers/audit.jsonl`. A contract that
+     runs when Deck stops fails at the next start, and its thread stays
+     locked. Not done: an amend flow, typed fields in the parser.
    - `deck serve`: headless engine and peer link, drain on SIGTERM, an
      exclusive lock on `~/.deck/threads` that terminal Decks share.
 10. **Review and memory** (done). The `review` stage with cross-kind reviewers;
