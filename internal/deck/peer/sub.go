@@ -7,10 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/dev-dami/deck/internal/deck/sub"
-	"github.com/dev-dami/deck/internal/version"
 )
 
 // The Source Update Bridge between Decks: a peer fetches a capsule this Deck
@@ -40,6 +38,14 @@ type SubHandler struct {
 	// capsule this Deck has: served when it was published and handed over,
 	// not served when it is private, so the person can choose to share it.
 	OnRequest func(from Caller, id sub.ID, served bool)
+	// Granted, when set, says which other objects a peer may fetch: those a
+	// contract shares with it alone (contract.go).
+	Granted func(peer string, id sub.ID) bool
+}
+
+// shared reports whether from may fetch id.
+func (h *SubHandler) shared(s *sub.Store, from Caller, id sub.ID) bool {
+	return s.Shareable(id) || h.Granted != nil && h.Granted(from.Name, id)
 }
 
 // Search implements Handler.
@@ -71,7 +77,7 @@ func (h *SubHandler) Execute(ctx context.Context, from Caller, op string, args j
 		if json.Unmarshal(args, &a) != nil || !a.ID.Valid() {
 			return "", fmt.Errorf("%w: not a published capsule", ErrUnknownOp)
 		}
-		if !s.Shareable(a.ID) {
+		if !h.shared(s, from, a.ID) {
 			// A private capsule this Deck has: the person hears of the request
 			// and can share it. Any other id is just unknown.
 			if _, err := s.Capsule(a.ID); err == nil && h.OnRequest != nil {
@@ -80,7 +86,7 @@ func (h *SubHandler) Execute(ctx context.Context, from Caller, op string, args j
 			}
 			return "", fmt.Errorf("%w: not a published capsule", ErrUnknownOp)
 		}
-		if h.OnRequest != nil {
+		if h.OnRequest != nil && s.Shareable(a.ID) {
 			if _, err := s.Capsule(a.ID); err == nil {
 				h.OnRequest(from, a.ID, true)
 			}
@@ -101,7 +107,7 @@ func (h *SubHandler) Execute(ctx context.Context, from Caller, op string, args j
 		var take []sub.ID
 		size := 0
 		for _, id := range a.IDs {
-			if !id.Valid() || !s.Shareable(id) {
+			if !id.Valid() || !h.shared(s, from, id) {
 				return "", fmt.Errorf("%w: object not shared", ErrUnknownOp)
 			}
 			b, err := s.Get(id)
@@ -124,43 +130,19 @@ func (h *SubHandler) Execute(ctx context.Context, from Caller, op string, args j
 }
 
 // FetchCapsule pulls capsule id from the pinned peer name into s and returns
-// how many objects were transferred: none when s has them all already.
+// how many objects were transferred: none when s has them all already. id
+// may also be a snapshot a contract shares.
 func (s *Service) FetchCapsule(ctx context.Context, name string, id sub.ID, store *sub.Store) (int, error) {
-	p, _ := s.loadPeers()
-	return fetchCapsule(ctx, s.dir, name, SelfName(p), id, store)
+	var got int
+	err := s.withPeer(ctx, name, func(cl *Client) error {
+		var err error
+		got, err = fetchCapsule(ctx, cl, name, id, store)
+		return err
+	})
+	return got, err
 }
 
-func fetchCapsule(ctx context.Context, dir, name, self string, id sub.ID, store *sub.Store) (int, error) {
-	pin, ok, err := OpenStore(dir).Get(name)
-	if err != nil {
-		return 0, err
-	}
-	if !ok {
-		return 0, fmt.Errorf("no peer %q is paired", name)
-	}
-	if pin.Addr == "" {
-		return 0, fmt.Errorf("peer %q has no address (it dials in)", name)
-	}
-	ident, err := LoadIdentity(dir)
-	if err != nil {
-		return 0, err
-	}
-	conn, err := Dial(ctx, DialOptions{
-		Identity: ident, Peer: pin, Name: self, Version: version.Version,
-		DialTimeout: 10 * time.Second, Limits: Limits{HandshakeTimeout: 10 * time.Second},
-	})
-	if err != nil {
-		return 0, fmt.Errorf("fetch from %s: %s", name, Sanitize(err.Error()))
-	}
-	defer conn.Close()
-	cl, err := conn.OpenMCP(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer cl.Close()
-	if _, err := cl.Initialize(ctx); err != nil {
-		return 0, fmt.Errorf("initialize: %w", err)
-	}
+func fetchCapsule(ctx context.Context, cl *Client, name string, id sub.ID, store *sub.Store) (int, error) {
 	call := func(op string, args any, out any) error {
 		r, err := cl.Execute(ctx, op, args)
 		if err != nil {
@@ -199,7 +181,9 @@ func fetchCapsule(ctx context.Context, dir, name, self string, id sub.ID, store 
 		want = store.Missing(want[r.N:])
 	}
 	if _, err := store.Capsule(id); err != nil {
-		return got, fmt.Errorf("%s did not send capsule %s", name, id.Short())
+		if _, err := store.Snapshot(id); err != nil {
+			return got, fmt.Errorf("%s did not send capsule %s", name, id.Short())
+		}
 	}
 	return got, nil
 }

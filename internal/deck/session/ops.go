@@ -44,6 +44,9 @@ func (m *Manager) execOp(agentID, op string, args json.RawMessage) (string, bool
 	// one, so an isolated subagent's git.diff is its own changes.
 	env.ThreadID, env.Dir = t.id, a.workDir(t.dir)
 	env.Roots = []string{t.dir}
+	if t.ops != nil {
+		env.Ops = opsBoard{m: m, t: t, o: t.ops}
+	}
 	if t.worktree != nil && t.worktree.Main != "" {
 		env.Roots = append(env.Roots, t.worktree.Main)
 	}

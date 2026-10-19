@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -14,6 +15,13 @@ func (f *fakeTeam) Status(_ context.Context, name string) (string, error) {
 	f.asked = name
 	return name + " answered in 12ms.", nil
 }
+
+func (f *fakeTeam) Read(since int) string {
+	f.asked = fmt.Sprint("since ", since)
+	return "#3 vps/claude2: build is green"
+}
+
+func (f *fakeTeam) Post(context.Context, string, string) (string, error) { return "posted", nil }
 
 func TestPeersOps(t *testing.T) {
 	env := testEnv(t)
@@ -31,6 +39,9 @@ func TestPeersOps(t *testing.T) {
 	}
 	if got, isErr := run(t, env, OpPeersStatus, `{"peer":"vps"}`); isErr || team.asked != "vps" || !strings.Contains(got, "12ms") {
 		t.Fatalf("peers.status = %q (error %v, asked %q)", got, isErr, team.asked)
+	}
+	if got, isErr := run(t, env, OpTeamRead, `{"since":2}`); isErr || team.asked != "since 2" || !strings.Contains(got, "build is green") {
+		t.Fatalf("team.read = %q (error %v, asked %q)", got, isErr, team.asked)
 	}
 	// An agent looking for its teammates finds the ops by the word peer.
 	if out := Search(env, []byte(`{"query":"peer"}`)); !strings.Contains(out, OpPeersList) {

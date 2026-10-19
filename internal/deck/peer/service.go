@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dev-dami/deck/internal/deck/config"
@@ -46,6 +47,24 @@ type Service struct {
 
 	// team is the team chat and the capsule requests.
 	team *Team
+	// out holds the calls waiting for a teammate (outbox.go); flushing is
+	// set while a loop delivers them.
+	out      *outbox
+	flushing atomic.Bool
+	// local is this Deck's own work; presence what each teammate said of
+	// its own, by name (presence.go).
+	local    Local
+	presence map[string]Presence
+	// contracts are the code contracts both ways (contract.go); hooks run
+	// them in the engine's threads.
+	contracts *contractBook
+	hooks     ContractHooks
+	answerMu  sync.Mutex
+	shared    Shared
+	// draining is set by Drain: teammates can start no new work here.
+	draining atomic.Bool
+	// audit logs every event of the ops contracts (audit.go).
+	audit *auditLog
 }
 
 // ServiceOptions configures a Service.
@@ -58,6 +77,14 @@ type ServiceOptions struct {
 	// SubStore, when set, is the Source Update Bridge store published
 	// capsules are served from (sub.closure, sub.objects).
 	SubStore func() *sub.Store
+	// Local is this Deck's own work, for peer.status; zero tells nothing.
+	Local Local
+	// Contracts runs the contracts this Deck's person accepts, and hears of
+	// the ones it proposed; zero runs none.
+	Contracts ContractHooks
+	// Shared serves this Deck's shared threads to teammates; nil serves
+	// none.
+	Shared Shared
 }
 
 // errNoConfig is returned by every change when the Service has no config file.
@@ -76,14 +103,23 @@ func NewService(o ServiceOptions) (*Service, error) {
 		o.Logger = slog.Default()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, base: ctx, cancel: cancel, wake: make(chan struct{})}
+	s := &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, local: o.Local, hooks: o.Contracts, shared: o.Shared, base: ctx, cancel: cancel, wake: make(chan struct{})}
 	s.team = NewTeam(o.Dir, s.changed)
+	s.out = newOutbox(o.Dir)
+	s.contracts = newContractBook(o.Dir)
+	s.audit = newAuditLog(o.Dir)
 	return s, nil
 }
 
 // Start puts p, the peers section Deck started with, in effect. With peers
 // off it makes nothing: no key, no listener, no goroutines.
-func (s *Service) Start(p *config.Peers) error { return s.apply(p) }
+func (s *Service) Start(p *config.Peers) error {
+	err := s.apply(p)
+	if p != nil && p.Enabled {
+		s.flushSoon() // what waited when Deck last stopped
+	}
+	return err
+}
 
 // Close ends any pairing and stops the link.
 func (s *Service) Close() {
@@ -98,6 +134,17 @@ func (s *Service) Close() {
 		mgr.Stop()
 	}
 }
+
+// errDraining refuses new work while the Service drains.
+var errDraining = errors.New("peer: this Deck is shutting down and takes no new work")
+
+// Drain makes teammates unable to start new work here (contract.propose,
+// thread.post) before the Deck stops. The link stays up, so work under way
+// can still report and the outbox can still deliver.
+func (s *Service) Drain() { s.draining.Store(true) }
+
+// Waiting is how many calls wait in the outbox for a teammate.
+func (s *Service) Waiting() int { return s.out.len() }
 
 // Manager is the running Manager, or nil before peers were first on.
 func (s *Service) Manager() *Manager {
@@ -176,7 +223,8 @@ func (s *Service) apply(p *config.Peers) error {
 	case mgr != nil:
 		err = mgr.Apply(p)
 	case p != nil && p.Enabled:
-		mgr, err = NewManager(ManagerOptions{Dir: s.dir, Peers: p, ConfigPath: s.cfgPath, OnChange: s.changed, Logger: s.log, SubStore: s.subStore, Team: s.team})
+		mgr, err = NewManager(ManagerOptions{Dir: s.dir, Peers: p, ConfigPath: s.cfgPath, OnChange: s.changed, Logger: s.log, SubStore: s.subStore, Team: s.team, Local: s.local,
+			Granted: s.granted, Shared: s.shared, Extra: func(h Handler) Handler { return &ContractHandler{Base: h, S: s} }})
 		if err != nil {
 			break
 		}
@@ -184,6 +232,8 @@ func (s *Service) apply(p *config.Peers) error {
 		s.mgr = mgr
 		s.mu.Unlock()
 		err = mgr.Start(s.base)
+		go s.presenceLoop()
+		go s.contractLoop()
 	}
 	if err != nil {
 		s.log.Warn("Peers: not all of the config is in effect", "error", err)
@@ -713,6 +763,8 @@ type Snapshot struct {
 	// asked this Deck for.
 	Chat     []ChatMessage
 	Requests []CapsuleRequest
+	// Contracts are the code contracts both ways, oldest first.
+	Contracts []Contract
 }
 
 // PeerState is one paired or configured peer.
@@ -724,7 +776,14 @@ type PeerState struct {
 	Dial        bool
 	Pinned      bool // its key is pinned: it can connect
 	Configured  bool // it has a peers.remote row
-	Link        Link
+	// Via is the relay this Deck dials it through (peers.remote[].via);
+	// Relay is set when it may relay links to this Deck.
+	Via   string
+	Relay bool
+	Link  Link
+	// Presence is what it said of its work the last time it was asked; nil
+	// while no link to it is up.
+	Presence *Presence
 }
 
 // Snapshot reads the config, the pins and the link state.
@@ -732,6 +791,7 @@ func (s *Service) Snapshot() Snapshot {
 	s.mu.Lock()
 	snap := Snapshot{Version: s.ver, Pairing: s.pairing > 0}
 	mgr, applied, applyErr := s.mgr, s.applied, s.applyErr
+	presence := s.presence
 	s.mu.Unlock()
 
 	var errs []string
@@ -775,7 +835,7 @@ func (s *Service) Snapshot() Snapshot {
 			ps = &PeerState{Name: r.Name}
 			byName[r.Name] = ps
 		}
-		ps.Configured, ps.Dial, ps.Role = true, r.Dial, r.RoleOrDefault()
+		ps.Configured, ps.Dial, ps.Role, ps.Via, ps.Relay = true, r.Dial, r.RoleOrDefault(), r.Via, r.Relay
 		if r.Addr != "" {
 			ps.Addr = r.Addr
 		}
@@ -786,6 +846,9 @@ func (s *Service) Snapshot() Snapshot {
 			ps.Role = config.PeerRoleObserver
 		}
 		ps.Link = links[ps.Name]
+		if pr, ok := presence[ps.Name]; ok {
+			ps.Presence = &pr
+		}
 		ps.Link.Status.LastError = Sanitize(truncate(ps.Link.Status.LastError, 200))
 		snap.Peers = append(snap.Peers, *ps)
 	}
@@ -794,6 +857,7 @@ func (s *Service) Snapshot() Snapshot {
 	if s.team != nil {
 		snap.Chat, snap.Requests = s.team.Chat(), s.team.Requests()
 	}
+	snap.Contracts = s.contracts.all()
 	return snap
 }
 

@@ -19,6 +19,7 @@ const (
 	TaskPending   TaskStatus = "pending"   // created; waiting for its dependencies or for someone to start it
 	TaskReady     TaskStatus = "ready"     // every dependency is done; can be started
 	TaskRunning   TaskStatus = "running"   // an owner is working on it
+	TaskReview    TaskStatus = "review"    // the owner finished; a reviewer of another kind checks the work
 	TaskBlocked   TaskStatus = "blocked"   // cannot go on: a dependency failed, or it needs the user
 	TaskDone      TaskStatus = "done"      // finished; Result says how
 	TaskFailed    TaskStatus = "failed"    // ended without success; Error says why. May be retried
@@ -28,11 +29,15 @@ const (
 // Valid reports whether s is a status.
 func (s TaskStatus) Valid() bool {
 	switch s {
-	case TaskPending, TaskReady, TaskRunning, TaskBlocked, TaskDone, TaskFailed, TaskCancelled:
+	case TaskPending, TaskReady, TaskRunning, TaskReview, TaskBlocked, TaskDone, TaskFailed, TaskCancelled:
 		return true
 	}
 	return false
 }
+
+// Active reports whether a task in status s still holds its owner: running,
+// in review, or blocked until the user steps in.
+func (s TaskStatus) Active() bool { return s == TaskRunning || s == TaskReview || s == TaskBlocked }
 
 // Final reports whether no further work will happen on a task in status s
 // unless it is reopened by hand: done and cancelled. A failed task is not
@@ -43,7 +48,8 @@ func (s TaskStatus) Final() bool { return s == TaskDone || s == TaskCancelled }
 var taskNext = map[TaskStatus][]TaskStatus{
 	TaskPending:   {TaskReady, TaskRunning, TaskBlocked, TaskDone, TaskCancelled},
 	TaskReady:     {TaskPending, TaskRunning, TaskBlocked, TaskDone, TaskCancelled},
-	TaskRunning:   {TaskReady, TaskBlocked, TaskDone, TaskFailed, TaskCancelled},
+	TaskRunning:   {TaskReady, TaskReview, TaskBlocked, TaskDone, TaskFailed, TaskCancelled},
+	TaskReview:    {TaskRunning, TaskBlocked, TaskDone, TaskCancelled},
 	TaskBlocked:   {TaskPending, TaskReady, TaskCancelled},
 	TaskFailed:    {TaskPending, TaskReady, TaskCancelled},
 	TaskDone:      nil,
@@ -73,6 +79,16 @@ const (
 
 // DefaultMaxAttempts is how many times a task is tried when it says nothing.
 const DefaultMaxAttempts = 2
+
+// MaxReviewChanges is how many times reviewers may send a task back to its
+// owner; the next request for changes blocks it for the user.
+const MaxReviewChanges = 2
+
+// What Task.Review can name besides an agent kind.
+const (
+	ReviewNone  = "none"  // no review, whatever the config says
+	ReviewOther = "other" // any installed kind other than the owner's
+)
 
 // RunRef says which Deck-managed run is working on a task.
 type RunRef struct {
@@ -113,12 +129,64 @@ type Task struct {
 	Capsules []string `json:"capsules,omitempty"`
 	// Isolate runs the task's subagent on its own git worktree.
 	Isolate bool `json:"isolate,omitempty"`
+	// Race marks a race: each of its subtasks (its entries) does the whole
+	// brief on a worktree of its own, and the user keeps one. Judge is the
+	// kind of agent that ranks the entries when they end; "" is none.
+	Race  bool   `json:"race,omitempty"`
+	Judge string `json:"judge,omitempty"`
+	// Review is the kind of agent that reviews the task before it is done:
+	// ReviewOther, ReviewNone, or "" for the config's. Reviewer is the
+	// member reviewing it now; Reviews counts the reviews that ended.
+	Review   string `json:"review,omitempty"`
+	Reviewer string `json:"reviewer,omitempty"`
+	Reviews  int    `json:"reviews,omitempty"`
+	// Diff is what a race entry changed on its worktree, recorded when it
+	// ended.
+	Diff *DiffStat `json:"diff,omitempty"`
+	// Remote is the teammate's Deck that does the task under a code
+	// contract; Owner then names it, and its agent once one took the task
+	// ("vps/claude").
+	Remote string `json:"remote,omitempty"`
+	// Kind, Model and Effort pick the agent a subagent for the task runs; ""
+	// is the default agent and the configured model and effort.
+	Kind   string `json:"kind,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
+	// Budget is what the task may spend, over the config's default budget;
+	// Spent is what its owner and the owner's subagents have spent on it
+	// since Started, when it last started running.
+	Budget  *Budget   `json:"budget,omitempty"`
+	Spent   Spend     `json:"spent,omitzero"`
+	Started time.Time `json:"started,omitzero"`
 	// BlockedBy is the task whose failure blocked this one (the scheduler);
 	// RetryAt is when a failed task is tried again.
 	BlockedBy string    `json:"blocked_by,omitempty"`
 	RetryAt   time.Time `json:"retry_at,omitempty"`
 	Created   time.Time `json:"created"`
 	Updated   time.Time `json:"updated"`
+}
+
+// Budget is what a task may spend; zero fields are no limit (see the config's
+// budget for the defaults).
+type Budget struct {
+	Tokens  int     `json:"tokens,omitempty"`
+	CostUSD float64 `json:"cost_usd,omitempty"`
+	Minutes int     `json:"minutes,omitempty"`
+}
+
+// DiffStat is the size of a change: the files it touches and its added and
+// removed lines.
+type DiffStat struct {
+	Files   []string `json:"files,omitempty"`
+	Added   int      `json:"added,omitempty"`
+	Removed int      `json:"removed,omitempty"`
+}
+
+// Spend is what was spent on a task: tokens (input and output) and the cost
+// the CLIs reported.
+type Spend struct {
+	Tokens  int     `json:"tokens,omitempty"`
+	CostUSD float64 `json:"cost_usd,omitempty"`
 }
 
 // Contract is the terms a task was handed over under: what to deliver and how

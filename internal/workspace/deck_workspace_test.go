@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -339,4 +340,39 @@ func TestRosterListsThreadMembers(t *testing.T) {
 
 	// a session with no thread still lists the installed CLIs.
 	require.Len(t, w.Roster("other"), 2)
+}
+
+func TestRosterListsSubagentsUnderTheirParent(t *testing.T) {
+	// Agents that stop at an approval nobody answers, so they stay running.
+	block := fake.Script{{
+		Event:    deckagent.Event{Kind: deckagent.KindToolCall, Tool: &deckagent.Tool{ID: "b", Name: "Bash", Title: "make", Status: deckagent.ToolRunning}},
+		Approval: &deckagent.ApprovalRequest{ID: "b", Kind: deckagent.ApproveCommand, ToolName: "Bash", Summary: "make"},
+	}}
+	w := newPickerWorkspace(t, pickerCfg())
+	st, err := store.New(t.TempDir())
+	require.NoError(t, err)
+	m := decks.NewManager(map[string]deckagent.Adapter{
+		"claude": fake.NewTurns(0, nil, block), "codex": fake.NewTurns(0, nil, block),
+	}, st, pickerCfg())
+	t.Cleanup(m.Close)
+	w.eng = &engine.Engine{Manager: m, Config: pickerCfg()}
+
+	tid, err := m.NewThread(t.TempDir())
+	require.NoError(t, err)
+	w.threads["s1"], w.back[tid] = tid, "s1"
+	lead, err := m.AddMember(tid, "codex", "")
+	require.NoError(t, err)
+	_, err = m.AddMember(tid, "claude", "")
+	require.NoError(t, err)
+	require.NoError(t, m.SetOrchestrate(tid, true))
+	a, err := m.Spawn(tid, lead, decks.SpawnSpec{Kind: "claude", Brief: "one"})
+	require.NoError(t, err)
+	_, err = m.Spawn(tid, a.AgentID, decks.SpawnSpec{Kind: "codex", Brief: "two"})
+	require.NoError(t, err)
+
+	var got []string
+	for _, l := range w.Roster("s1") {
+		got = append(got, fmt.Sprintf("%d %s<%s", l.Depth, l.ID, l.Parent))
+	}
+	require.Equal(t, []string{"0 codex1<", "1 claude2<codex1", "2 codex2<claude2", "0 claude1<"}, got)
 }

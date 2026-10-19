@@ -1,0 +1,60 @@
+# Deck headless on a server, as a systemd user unit.
+#
+# Install:
+#   cp deck-serve.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now deck-serve
+#   loginctl enable-linger "$USER"    # keep it running after you log out
+# Logs:
+#   journalctl --user -u deck-serve -f
+#
+# Before you start it: turn peers on and pair your teammates' Decks
+# ('deck peer pair'), and log in to the agent CLIs (claude, codex) once as
+# this user. Stop any other Deck of this user first: only one Deck process at
+# a time can use ~/.deck/threads.
+
+[Unit]
+Description=Deck headless for teammates (deck serve)
+Documentation=https://github.com/dev-dami/deck
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+# The agent CLIs must be on PATH.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/bin/deck serve --drain 2m
+# Deck drains on SIGTERM. KillMode=mixed sends it to deck only, so the
+# agents keep working while Deck drains. Give it more time than --drain
+# before SIGKILL.
+KillSignal=SIGTERM
+KillMode=mixed
+TimeoutStopSec=150
+Restart=on-failure
+RestartSec=5s
+
+# Hardening. In a user unit these need unprivileged user namespaces.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+# Deck writes only to ~/.deck. The agent CLIs keep their logins and
+# sessions in their own folders, and agents edit the projects they work
+# in: add each of those here ('-' skips a path that does not exist).
+ReadWritePaths=%h/.deck
+ReadWritePaths=-%h/.claude -%h/.claude.json -%h/.codex -%h/.config -%h/.cache
+#ReadWritePaths=%h/src
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=default.target

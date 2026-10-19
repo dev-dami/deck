@@ -127,6 +127,9 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 
 func (w *DeckWorkspace) mgr() *decks.Manager { return w.eng.Manager }
 
+// Engine is the Deck engine the workspace drives.
+func (w *DeckWorkspace) Engine() *engine.Engine { return w.eng }
+
 // thread returns the live Deck thread for a session, creating or resuming it.
 func (w *DeckWorkspace) thread(sessionID string) (string, error) {
 	w.mu.Lock()
@@ -471,11 +474,16 @@ func (w *DeckWorkspace) pump() {
 			w.publish(DeckChange{Kind: ChangeNotice, SessionID: w.sessionOf(m.ThreadID), Text: m.Text})
 		case decks.PausedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorHopPause, "", m.Hops)
-			const paused = "Paused after the agents passed messages back and forth; send a message to go on."
+			paused := "Paused after the agents passed messages back and forth; send a message to go on."
+			if m.Reason != "" {
+				paused = "Paused after " + m.Reason + "; send a message to go on."
+			}
 			w.notice(w.sessionOf(m.ThreadID), paused)
 			w.publish(DeckChange{Kind: ChangeNotice, SessionID: w.sessionOf(m.ThreadID), Text: paused})
 		case decks.ContinuedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorContinue, "", 1)
+		case decks.LeasesChangedMsg:
+			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
 		case decks.MemberAddedMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.AgentID+" joined")
 			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
@@ -972,6 +980,7 @@ func (w *DeckWorkspace) onApproval(m decks.ApprovalMsg) {
 		if opts.ToolName == "" {
 			opts.ToolName = "tool"
 		}
+		opts.MustAsk = req.Kind == deckagent.ApproveShare
 		b, _ := json.Marshal(map[string]string{"agent": req.AgentID, "request": req.Summary})
 		opts.Params = string(b)
 	}

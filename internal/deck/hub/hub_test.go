@@ -58,6 +58,17 @@ func TestSearchEmptyQueryListsCatalog(t *testing.T) {
 	}
 }
 
+// Only an ops contract's agent has sh.run and contract.result.
+func TestOpsContractOpsAreTheirAgentsOnly(t *testing.T) {
+	out := Search(testEnv(t), json.RawMessage(`{}`))
+	if strings.Contains(out, OpShRun) || strings.Contains(out, OpContractResult) {
+		t.Fatalf("search shows an ops contract's ops:\n%s", out)
+	}
+	if got, isErr := run(t, testEnv(t), OpShRun, `{"cmd": "ls"}`); !isErr || !strings.Contains(got, "Unknown op") {
+		t.Fatalf("sh.run without a contract: %s", got)
+	}
+}
+
 func TestSearchRanking(t *testing.T) {
 	env := testEnv(t)
 	out := Search(env, json.RawMessage(`{"query":"git log"}`))
@@ -326,5 +337,43 @@ func TestRedactAndCap(t *testing.T) {
 	c := Cap(long, MaxOutput)
 	if len(c) > MaxOutput+200 || !strings.Contains(c, "truncated") {
 		t.Errorf("cap: %d bytes", len(c))
+	}
+}
+
+// boardSpy is a TaskBoard that records the last op it is handed.
+type boardSpy struct {
+	op string
+	a  map[string]any
+}
+
+func (b *boardSpy) TaskOp(op string, a map[string]any) (string, error) {
+	b.op, b.a = op, a
+	return "ok " + op, nil
+}
+
+func TestMemoryOpsGoToTheBoard(t *testing.T) {
+	env := testEnv(t)
+	if got, isErr := run(t, env, "memory.list", ""); !isErr || !strings.Contains(got, "not available") {
+		t.Errorf("memory.list with no board = %q %v", got, isErr)
+	}
+	b := &boardSpy{}
+	env.Tasks = b
+	got, isErr := run(t, env, "memory.add", `{"text":"x","paths":"a.go","lines":"3-4"}`)
+	if isErr || got != "ok memory.add" || b.a["paths"] != "a.go" || b.a["lines"] != "3-4" || b.a["text"] != "x" {
+		t.Fatalf("memory.add = %q %v, board got %s %v", got, isErr, b.op, b.a)
+	}
+	for _, op := range []string{"memory.read", "memory.list"} {
+		if got, isErr := run(t, env, op, ""); isErr || b.op != op {
+			t.Errorf("%s = %q %v, board got %s", op, got, isErr, b.op)
+		}
+	}
+	if got, isErr := run(t, env, "memory.drop", `{"id":"m1"}`); isErr || b.op != "memory.drop" || b.a["id"] != "m1" {
+		t.Errorf("memory.drop = %q %v", got, isErr)
+	}
+	if got, isErr := run(t, env, "memory.add", `{"text":"x"}`); !isErr || !strings.Contains(got, `missing argument "paths"`) {
+		t.Errorf("memory.add with no paths = %q", got)
+	}
+	if out := Search(env, json.RawMessage(`{"query":"pinned notes"}`)); !strings.Contains(out, "memory.") {
+		t.Errorf("search misses the memory ops:\n%s", out)
 	}
 }

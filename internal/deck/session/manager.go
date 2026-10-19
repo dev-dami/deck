@@ -16,13 +16,15 @@
 //
 // The user: Post(threadID, text) or PostWith(threadID, text, images). "$name" at the start of a clause addresses
 // that member (ParseAddressing has the exact rules); "$claude" / "$codex" naming
-// a kind the thread has no live member of adds a new member of that kind;
-// "$all" addresses everyone; with no mention the message goes to the member who
+// a kind reaches whichever live member of that kind is free, or adds one when
+// there is none; "$claude*" addresses all of them and "$claude+" adds another;
+// "$all" addresses everyone; "$claude×3 brief" (or "$claude*3") starts a race
+// (race.go); with no mention the message goes to the member who
 // spoke last (or the only member; or, in an empty thread, a new member of the
 // default kind). Several addressees receive it concurrently.
 //
 // Agents: through the deck MCP tool execute with op thread.send (Options.Hub
-// receives the calls; Message.To is a member id/name or "all"), or by starting a line of their
+// receives the calls; Message.To is a member id/name, a kind, "claude*" or "all"), or by starting a line of their
 // final reply with "$name". Both are relayed, logged in the thread and reported
 // to the UI as RelayMsg. At most Options.MaxHops (default 6) relays happen after
 // each user message; the next one is held, the thread is paused (PausedMsg) and
@@ -129,6 +131,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -193,6 +196,8 @@ type AgentInfo struct {
 	// subagent (Ephemeral); "" otherwise.
 	Parent    string
 	Ephemeral bool
+	// Branch is the git branch of the member's own worktree, when it has one.
+	Branch string
 	// ContextTokens of ContextWindow tokens are in use (0 = not reported yet).
 	ContextTokens int
 	ContextWindow int
@@ -231,6 +236,9 @@ type ThreadInfo struct {
 // Manager owns every thread and agent.
 type Manager struct {
 	adapters map[string]agent.Adapter
+	// limits is the last plan limits each kind's CLI reported (brakes.go);
+	// guarded by mu.
+	limits   map[string]agent.Limits
 	st       *store.Store
 	subOnce  sync.Once
 	sub      *sub.Store // SUB objects, for checkpoints (subStore)
@@ -262,6 +270,12 @@ type Manager struct {
 	activity func(threadID string) string
 	// team is the peer link for the peers.* ops; see SetTeam.
 	team hub.Team
+	// contractor sends code contracts to teammates, and taskEnd hears of
+	// every task that ends (contract.go).
+	contractor Contractor
+	taskEnd    func(threadID string, tk store.Task)
+	// sandbox makes the sandbox of each ops contract (opscontract.go).
+	sandbox NewSandbox
 }
 
 // NewManager returns a Manager that starts agents from adapters (keyed by kind,
@@ -586,9 +600,20 @@ func (m *Manager) dropMember(t *thread, a *agentState) {
 }
 
 // startRun launches the member's CLI. prompt, when non-empty, is its first turn.
+// A new member joins the thread before its CLI starts, so a message to it can
+// start the CLI from deliver at the same time. The second caller finds the run
+// already there: it does not start a second CLI, it only sends its prompt.
 func (m *Manager) startRun(t *thread, a *agentState, prompt, resumeID string) error {
 	if m.isClosed() {
 		return errClosed
+	}
+	a.startMu.Lock()
+	defer a.startMu.Unlock()
+	if run := a.getRun(); run != nil {
+		if prompt == "" {
+			return nil
+		}
+		return run.Send(prompt)
 	}
 	ad := m.adapters[a.kind]
 	if ad == nil {
@@ -633,6 +658,9 @@ func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Sp
 	// .gitignore that keeps its plans out of git.
 	_ = brand.EnsurePlansDir(t.dir)
 	s.Instructions = m.instructions(t, a, s.MCP != nil && m.opts.Hub != nil)
+	if t.opsOf() != nil {
+		s.NoTools, s.Instructions = true, opsInstructions
+	}
 	return s
 }
 
@@ -723,6 +751,21 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 
 	m.wake(t)
 
+	if len(ad.Race) > 0 {
+		switch {
+		case ad.All || len(ad.Members) > 0 || len(ad.NewKinds) > 0:
+			return PostResult{}, errors.New("a race ($claude×3) cannot also address other agents")
+		case ad.Body == "":
+			return PostResult{}, errors.New("say what the race is for: $claude×3 fix the flaky test")
+		}
+		res, err := m.postTo(t, text, nil, images)
+		if err != nil {
+			return res, err
+		}
+		_, err = m.Race(threadID, "", RaceSpec{Brief: ad.Body, Kinds: ad.Race})
+		return res, err
+	}
+
 	var targets []*agentState
 	newKinds := ad.NewKinds
 	t.mu.Lock()
@@ -790,6 +833,12 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState, images [
 	if speaker == "" {
 		speaker = "user"
 	}
+	return m.postFrom(t, speaker, text, targets, images, true)
+}
+
+// postFrom is postTo for speaker. A message from a teammate (local false)
+// does not end a pause or reset the brakes: only the user does.
+func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentState, images []agent.Image, local bool) (PostResult, error) {
 	e := store.Entry{Type: store.EntryUser, ID: store.NewID(), Speaker: speaker, To: ids(targets), Event: agent.Event{Kind: agent.KindUserText, Text: text}}
 	if len(images) > 0 {
 		e.Images = imagePaths(images)
@@ -797,9 +846,11 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState, images [
 
 	var msgs []tea.Msg
 	t.mu.Lock()
-	wasPaused := t.paused
-	t.paused, t.hops, t.heldIdx = false, 0, nil
-	t.lastRelay = map[string]string{}
+	wasPaused := t.paused && local
+	if local {
+		t.paused, t.hops, t.heldIdx, t.work = false, 0, nil, 0
+		t.lastRelay = map[string]string{}
+	}
 	if t.title == "" {
 		t.title = placeholderTitle(text)
 	}
@@ -817,6 +868,9 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState, images [
 	m.persistMeta(t)
 	m.emitAll(msgs...)
 	m.checkpoint(t, e.ID)
+	if wasPaused {
+		m.kick(t) // the scheduler and the waiting reviews stopped at the pause
+	}
 
 	var first error
 	for _, a := range targets {
@@ -987,11 +1041,12 @@ func (m *Manager) Interrupt(id string) error {
 }
 
 // Rename changes an agent's display name. Names must be unique, non-empty and
-// free of whitespace, '$' and '@' (used for agents and files), and cannot be "all",
-// "user", "deck" or another kind's name.
+// free of whitespace, '$' and '@' (used for agents and files) and '*' and '+'
+// (kind suffixes), and cannot be "all", "user", "deck", another kind's name, or
+// its own kind's name while its thread has another member of that kind.
 func (m *Manager) Rename(id, name string) error {
 	name = strings.TrimSpace(name)
-	if name == "" || strings.ContainsAny(name, " \t\r\n@$/") {
+	if name == "" || strings.ContainsAny(name, " \t\r\n@$/*+") {
 		return fmt.Errorf("session: invalid name %q", name)
 	}
 	m.mu.Lock()
@@ -1004,6 +1059,15 @@ func (m *Manager) Rename(id, name string) error {
 	for k := range m.adapters {
 		if strings.EqualFold(name, k) && k != a.kind {
 			reserved = true
+		}
+	}
+	// Its own kind's name is free only while it is the one member of that
+	// kind in its thread: with two, "$claude" means whichever is free.
+	if strings.EqualFold(name, a.kind) {
+		for _, o := range m.order {
+			if o != a && o.thread == a.thread && o.kind == a.kind {
+				reserved = true
+			}
 		}
 	}
 	if reserved {
@@ -1078,6 +1142,23 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	t.worktree = th.Worktree
 	t.tasks = cloneTasks(th.Tasks)
 	t.orchestrate = th.Orchestrate
+	t.contract = th.Contract
+	if th.Ops {
+		// Its contract ended when Deck stopped, but the thread stays locked
+		// down: its agents get no tools, approvals, thread.send and
+		// thread.read are refused, and sh.run and contract.result answer that
+		// the contract is over. The thread resumes, so its person can still
+		// read it; a refusal would hide its history.
+		t.ops = &opsState{}
+	}
+	for _, sh := range th.Shares {
+		if validShareRole(sh.Role) {
+			if t.shares == nil {
+				t.shares = map[string]string{}
+			}
+			t.shares[sh.Peer] = sh.Role
+		}
+	}
 	remap := map[string]string{}
 	var started []*agentState
 	fail := func(err error) (ThreadInfo, []tea.Msg, error) {
@@ -1141,6 +1222,11 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	t.members = members
 	for _, a := range members {
 		a.parent = mapID(remap, a.parent)
+	}
+	// Threads saved before kind names reached a pool may hold "claude" and
+	// "claude2": free "claude" for the pool.
+	for _, k := range m.Kinds() {
+		t.unshadow(k, 0)
 	}
 	for i := range t.tasks {
 		tk := &t.tasks[i]
@@ -1350,6 +1436,13 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		return // the thread was archived, deleted or moved
 	}
 	t := a.thread
+	if ev.Kind == agent.KindTurnDone {
+		// Taken before apply makes a idle: from then on its next turn can
+		// start, and move cursor, before afterTurn settles this one.
+		t.mu.Lock()
+		a.answered = a.cursor
+		t.mu.Unlock()
+	}
 	res := a.apply(ev)
 	// Plan limits are about the account, not the conversation: they are not
 	// part of the thread's log.
@@ -1365,12 +1458,28 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		m.emit(ApprovalGoneMsg{ThreadID: t.id, AgentID: a.id, ID: id})
 	}
 	m.emit(EventMsg{Event: ev, ThreadID: t.id})
+	switch {
+	case ev.Kind == agent.KindLimits && ev.Limits != nil:
+		m.setLimits(a.kind, *ev.Limits)
+	case ev.Kind == agent.KindFileChange && ev.Diff != nil:
+		m.noteEdit(t, a, ev.Diff.Path)
+	case ev.Kind == agent.KindTurnDone || ev.Kind == agent.KindExited:
+		m.charge(t, a, res.spent)
+	case ev.Kind == agent.KindUsage || ev.Kind == agent.KindToolCall && !ev.Delta:
+		// Mid-turn: a turn that runs past a budget is stopped, not finished.
+		a.mu.Lock()
+		turn := store.Spend{Tokens: a.tokTurn, CostUSD: a.costTurn}
+		a.mu.Unlock()
+		m.checkBudgets(t, a, turn)
+	}
 	if ev.Kind == agent.KindTurnDone {
 		m.afterTurn(a)
 		m.checkAttribution(a)
 	}
 	if ev.Kind == agent.KindExited {
 		m.failOwned(t, a)
+		m.cascade(t, a)
+		m.kick(t) // a subagent's slot is free (MaxSubagents)
 	}
 }
 
@@ -1378,6 +1487,12 @@ func (m *Manager) onApproval(a *agentState, req agent.ApprovalRequest) {
 	if a.thread.gone.Load() {
 		if req.Respond != nil {
 			req.Respond(agent.Decision{Allow: false, Reason: "the thread was closed"})
+		}
+		return
+	}
+	if a.thread.opsOf() != nil {
+		if req.Respond != nil {
+			req.Respond(agent.Decision{Allow: false, Reason: errOpsOnly.Error()})
 		}
 		return
 	}
@@ -1423,9 +1538,15 @@ type agentState struct {
 	// the first log index of its still-running turn that was held back.
 	cursor   int
 	holdFrom map[string]int
+	// answered is cursor as it was when the member's last turn ended: what
+	// that turn was briefed on (settleHanded).
+	answered int
 	// knownMode is the permission mode the member was last told about (its
 	// Spec.Mode, or the line at the top of its last prompt); guarded by thread.mu.
 	knownMode agent.Mode
+
+	// startMu lets one startRun at a time start the member's CLI.
+	startMu sync.Mutex
 
 	mu          sync.Mutex
 	run         agent.Run
@@ -1436,6 +1557,7 @@ type agentState struct {
 	pending     []pendingApproval
 	costTotal   float64 // folded turns
 	costTurn    float64 // current turn, cumulative as reported
+	tokTurn     int     // current turn's input and output tokens, as last reported
 	sessionID   string
 	lastText    string // the last assistant text of the running turn
 	interrupted bool
@@ -1450,7 +1572,8 @@ type agentState struct {
 	ephemeral bool
 	dir       string
 	worktree  *store.Worktree
-	retired   bool // retireMember has stopped it (spawn.go)
+	retired   bool   // retireMember has stopped it (spawn.go)
+	reviews   string // the task it was started to review (review.go)
 
 	// subBase is the SUB snapshot its next sub.patch.capture diffs from, and
 	// subParent the capsule that snapshot already includes (subops.go).
@@ -1468,6 +1591,12 @@ func (a *agentState) getName() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.name
+}
+
+func (a *agentState) setName(name string) {
+	a.mu.Lock()
+	a.name = name
+	a.mu.Unlock()
 }
 
 func (a *agentState) status() Status {
@@ -1493,9 +1622,13 @@ func (a *agentState) info() AgentInfo {
 	if a.dir != "" {
 		dir = a.dir
 	}
+	branch := ""
+	if a.worktree != nil {
+		branch = a.worktree.Branch
+	}
 	return AgentInfo{
 		ID: a.id, Kind: a.kind, Name: a.name, Dir: dir, Model: a.model, Effort: a.effort,
-		Parent: a.parent, Ephemeral: a.ephemeral,
+		Parent: a.parent, Ephemeral: a.ephemeral, Branch: branch,
 		Status: a.statusLocked(), CostUSD: a.costTotal + a.costTurn, Pending: len(a.pending),
 		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow,
 		RunningModel: a.running,
@@ -1586,12 +1719,21 @@ func (a *agentState) removePending(id string) {
 	a.mu.Unlock()
 }
 
-func (a *agentState) takePending() []pendingApproval {
+// takePending removes and returns the pending approvals, but those of kind
+// keep, which stay.
+func (a *agentState) takePending(keep ...agent.ApprovalKind) []pendingApproval {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	p := a.pending
-	a.pending = nil
-	return p
+	var out, kept []pendingApproval
+	for _, p := range a.pending {
+		if slices.Contains(keep, p.kind) {
+			kept = append(kept, p)
+		} else {
+			out = append(out, p)
+		}
+	}
+	a.pending = kept
+	return out
 }
 
 func (a *agentState) markExited() bool {
@@ -1608,6 +1750,8 @@ func (a *agentState) markExited() bool {
 type applyResult struct {
 	gone      []string
 	metaDirty bool
+	// spent is what a turn that just ended spent (KindTurnDone, KindExited).
+	spent store.Spend
 }
 
 // apply folds one event into the agent's status and cost.
@@ -1642,6 +1786,9 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 			if u.CostUSD > 0 {
 				a.costTurn = u.CostUSD
 			}
+			if n := u.InputTokens + u.OutputTokens; n > 0 {
+				a.tokTurn = n
+			}
 			if u.ContextTokens > 0 {
 				a.ctxTokens = u.ContextTokens
 			}
@@ -1652,14 +1799,16 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 	case agent.KindError:
 		a.base = StatusError
 	case agent.KindTurnDone:
+		res.spent = store.Spend{Tokens: a.tokTurn, CostUSD: a.costTurn}
 		a.costTotal += a.costTurn
-		a.costTurn = 0
+		a.costTurn, a.tokTurn = 0, 0
 		a.base = StatusIdle
 		res.gone = a.clearPendingLocked()
 		res.metaDirty = true
 	case agent.KindExited:
+		res.spent = store.Spend{Tokens: a.tokTurn, CostUSD: a.costTurn}
 		a.costTotal += a.costTurn
-		a.costTurn = 0
+		a.costTurn, a.tokTurn = 0, 0
 		a.base = StatusExited
 		res.gone = a.clearPendingLocked()
 		res.metaDirty = true

@@ -1,0 +1,10 @@
+version: v2
+inputs:
+  - directory: proto
+plugins:
+  - local: protoc-gen-go
+    out: pkg/rpc
+    opt: module=github.com/dev-dami/deck/pkg/rpc
+  - local: protoc-gen-go-grpc
+    out: pkg/rpc
+    opt: module=github.com/dev-dami/deck/pkg/rpc

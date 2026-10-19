@@ -18,26 +18,28 @@ import (
 // result. The same member machinery (adapters, briefing, steering) runs it;
 // only the lifecycle is Deck's.
 
-// Limits on subagents.
-const (
-	// maxChildren is how many live subagents one member (or the user) may have.
-	maxChildren = 4
-	// deckSpeaker is the speaker of briefs Deck itself sends (the scheduler,
-	// a spawn from the UI): not a member, shown as "deck".
-	deckSpeaker = "deck"
-)
+// deckSpeaker is the speaker of briefs Deck itself sends (the scheduler, a
+// spawn from the UI): not a member, shown as "deck".
+const deckSpeaker = "deck"
 
 // SpawnSpec describes a subagent to start.
 type SpawnSpec struct {
-	Kind  string // agent kind; "" is the default agent
-	Model string // "" is the configured model for the kind
-	Title string // the task's title; "" takes it from the brief
-	Brief string // what the subagent is asked to do
+	Kind   string // agent kind; "" is the task's, else the default agent
+	Model  string // "" is the task's, else the configured model for the kind
+	Effort string // "" is the task's, else the configured effort for the kind
+	Title  string // the task's title; "" takes it from the brief
+	Brief  string // what the subagent is asked to do
 	// TaskID binds the subagent to a task already on the board; "" creates one.
 	TaskID string
 	// Isolate gives the subagent its own git worktree and branch.
 	Isolate  bool
 	Contract store.Contract
+	// Review is who reviews the task before it is done (review.go).
+	Review string
+	// ReviewOf makes the subagent the reviewer of that task instead of the
+	// owner of one. Adopt gives it the worktree of that stopped member, whose
+	// task it takes over.
+	ReviewOf, Adopt string
 }
 
 // SpawnResult says what Spawn started.
@@ -49,8 +51,9 @@ type SpawnResult struct {
 
 // Spawn starts a subagent for a task of thread threadID. parentID is the
 // member asking, or "" when the user or Deck's scheduler asks. Members may
-// spawn only in threads with orchestration on, a subagent cannot spawn, and
-// each member has at most maxChildren live subagents.
+// spawn only in threads with orchestration on, within the limits of tree.go:
+// MaxDepth levels, MaxChildren live subagents per member and MaxSubagents per
+// thread.
 func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, error) {
 	if m.isClosed() {
 		return SpawnResult{}, errClosed
@@ -63,74 +66,75 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	if brief == "" {
 		return SpawnResult{}, errors.New("session: a subagent needs a brief")
 	}
-	kind := sp.Kind
+	if sp.TaskID != "" {
+		// The task says which agent it wants when the spawn does not.
+		if tk, ok := m.Task(threadID, sp.TaskID); ok {
+			sp.Kind, sp.Model, sp.Effort = or(sp.Kind, tk.Kind), or(sp.Model, tk.Model), or(sp.Effort, tk.Effort)
+		}
+	}
+	kind, routed := sp.Kind, ""
 	if kind == "" {
-		kind = m.defaultKind()
+		kind, routed = m.routeKind(m.defaultKind())
 	}
 	if _, ok := m.adapters[kind]; !ok {
 		return SpawnResult{}, fmt.Errorf("session: unknown agent kind %q", kind)
 	}
 
-	t.mu.Lock()
-	var parent *agentState
-	switch {
-	case parentID != "" && !t.orchestrate:
-		t.mu.Unlock()
-		return SpawnResult{}, errors.New("session: orchestration is off for this thread; the user turns it on")
-	case parentID != "":
-		if parent = t.member(parentID); parent == nil {
-			t.mu.Unlock()
-			return SpawnResult{}, fmt.Errorf("session: no member %q", parentID)
-		}
-		if parent.isEphemeral() {
-			t.mu.Unlock()
-			return SpawnResult{}, errors.New("session: a subagent cannot start subagents")
-		}
+	parent, depth, err := m.spawnRoom(t, parentID, 1)
+	if err != nil {
+		return SpawnResult{}, err
 	}
-	live := 0
-	for _, o := range t.members {
-		if o.isEphemeral() && o.parentID() == parentID && o.status() != StatusExited {
-			live++
-		}
+	if (parentID != "" || sp.ReviewOf != "") && !m.takeWork(t) {
+		return SpawnResult{}, fmt.Errorf("session: %w", errPaused)
 	}
-	t.mu.Unlock()
-	// The cap is per member; the scheduler (parentID "") is bounded by
-	// MaxParallel, and the user by their own judgement.
-	if parentID != "" && live >= maxChildren {
-		return SpawnResult{}, fmt.Errorf("session: %w: %d are already running; wait for one to finish", errChildLimit, live)
+	if routed != "" {
+		m.notice(t, routed)
 	}
 
-	// The task: an existing one, or a new one for this brief.
+	// The task: an existing one, or a new one for this brief. Both are
+	// claimed for this Spawn alone until its subagent is bound (bindRun).
 	taskID, created := sp.TaskID, false
 	contract := sp.Contract
-	if taskID == "" {
+	claim := store.NewID()
+	switch {
+	case sp.ReviewOf != "":
+		taskID = sp.ReviewOf // it stays its owner's
+	case taskID == "":
 		title := sp.Title
 		if title == "" {
 			title = clipText(oneLine(brief), 60)
 		}
 		// Claimed: it is created running (nobody's yet), so the scheduler does
 		// not start a second subagent for it while this one is spawning.
-		tk, err := m.addTask(t, TaskSpec{Title: title, Brief: brief, Creator: parentID, Contract: &contract, Claimed: true})
+		tk, err := m.addTask(t, TaskSpec{Title: title, Brief: brief, Creator: parentID, Contract: &contract, Claimed: true,
+			Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort, Review: sp.Review, spawn: claim})
 		if err != nil {
 			return SpawnResult{}, err
 		}
 		taskID, created = tk.ID, true
-	} else {
-		if err := m.checkSpawnTask(t, taskID); err != nil {
+	default:
+		if err := m.checkReview(sp.Review); err != nil {
 			return SpawnResult{}, err
 		}
-		// Same claim for an existing task: running from here on, bound to the
-		// subagent once it is up.
-		if _, err := m.moveTask(t, taskID, store.TaskRunning, parentID, "starting a subagent", nil); err != nil {
+		tk, err := m.claimTask(t, taskID, parentID, claim, sp.Review)
+		if err != nil {
 			return SpawnResult{}, err
 		}
+		taskID = tk.ID
 	}
 	fail := func(err error) (SpawnResult, error) {
 		note := "could not start a subagent: " + err.Error()
-		if created {
-			_, _ = m.moveTask(t, taskID, store.TaskCancelled, parentID, note, nil)
-		} else {
-			_, _ = m.moveTask(t, taskID, store.TaskFailed, parentID, note, nil)
+		// Only while the claim holds: a task that moved on meanwhile is
+		// someone else's to settle.
+		ours := func(tk store.Task) error { return t.claimedLocked(tk.ID, claim) }
+		switch {
+		case sp.ReviewOf != "": // the caller decides
+		case created:
+			_, _ = m.moveTaskIf(t, taskID, store.TaskCancelled, parentID, note, ours, nil)
+		case sp.Adopt != "": // a retry would lose the work on that worktree
+			_, _ = m.moveTaskIf(t, taskID, store.TaskBlocked, parentID, note, ours, nil)
+		default:
+			_, _ = m.moveTaskIf(t, taskID, store.TaskFailed, parentID, note, ours, nil)
 		}
 		return SpawnResult{}, err
 	}
@@ -140,10 +144,34 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		return fail(err)
 	}
 	a.mu.Lock()
-	a.parent, a.ephemeral = parentID, true
+	a.parent, a.ephemeral, a.reviews = parentID, true, sp.ReviewOf
+	if sp.Effort != "" {
+		a.effort = sp.Effort
+	}
 	a.mu.Unlock()
+	// A subagent's view of the thread starts at its brief: what came before
+	// is not its business unless it asks (thread.read), which keeps a deep
+	// tree's prompts small.
+	t.mu.Lock()
+	a.cursor = len(t.log)
+	t.mu.Unlock()
+	brief += m.placeNote(t, a, parent, depth, taskID)
 	var wt *store.Worktree
-	if sp.Isolate {
+	var old *agentState
+	if sp.Adopt != "" {
+		t.mu.Lock()
+		old = t.member(sp.Adopt)
+		t.mu.Unlock()
+		if old != nil {
+			var dir string
+			old.mu.Lock()
+			wt, dir = old.worktree, old.dir
+			old.mu.Unlock()
+			a.mu.Lock()
+			a.worktree, a.dir = wt, dir
+			a.mu.Unlock()
+		}
+	} else if sp.Isolate {
 		var dir string
 		if wt, dir, err = m.memberWorktree(t, a); err != nil {
 			m.dropMember(t, a)
@@ -158,17 +186,35 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	}
 	m.persistMeta(t)
 	if err := m.startRun(t, a, "", ""); err != nil {
-		m.dropWorktree(wt)
+		if old == nil {
+			m.dropWorktree(wt)
+		}
 		m.dropMember(t, a)
 		return fail(err)
 	}
+	if old != nil {
+		old.mu.Lock()
+		old.worktree = nil // a's now
+		old.mu.Unlock()
+	}
 
-	m.bindRun(t, taskID, a, wt, sp, brief, parentID)
 	speaker := deckSpeaker
 	if parent != nil {
 		speaker = parent.id
 	}
-	m.deliverBrief(t, speaker, a, brief, taskID)
+	if sp.ReviewOf != "" {
+		if err := m.bindReviewer(t, taskID, a); err != nil {
+			m.retireMember(t, a.id)
+			return fail(err)
+		}
+		m.deliverBrief(t, speaker, a, brief, "") // it hands no task over
+	} else {
+		if err := m.bindRun(t, taskID, claim, a, wt, sp, brief, parentID); err != nil {
+			m.retireMember(t, a.id) // it never gets the brief
+			return SpawnResult{}, err
+		}
+		m.deliverBrief(t, speaker, a, brief, taskID)
+	}
 	res := SpawnResult{AgentID: a.id, TaskID: taskID}
 	if wt != nil {
 		res.Branch = wt.Branch
@@ -176,30 +222,127 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	return res, nil
 }
 
-// checkSpawnTask refuses a task that cannot take a new owner. It is not
-// racing a live owner: a running task with a live owner is already being worked.
-func (m *Manager) checkSpawnTask(t *thread, id string) error {
+// spawnRoom checks that parentID ("" for the user and the scheduler) may
+// start n more subagents in t, and returns the parent and the depth they
+// would have.
+func (m *Manager) spawnRoom(t *thread, parentID string, n int) (*agentState, int, error) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	i := store.FindTask(t.tasks, id)
-	if i < 0 {
-		return fmt.Errorf("%w %q", store.ErrNoTask, id)
+	var parent *agentState
+	switch {
+	case parentID != "" && !t.orchestrate:
+		t.mu.Unlock()
+		return nil, 0, errors.New("session: orchestration is off for this thread; the user turns it on")
+	case parentID != "":
+		if parent = t.member(parentID); parent == nil {
+			t.mu.Unlock()
+			return nil, 0, fmt.Errorf("session: no member %q", parentID)
+		}
 	}
-	tk := t.tasks[i]
-	if tk.Status.Final() {
-		return fmt.Errorf("session: %s is already %s", tk.ID, tk.Status)
+	depth := t.depth(parent) + 1
+	live, all := len(t.children(parentID)), t.liveSubagents()
+	t.mu.Unlock()
+	// The per-member cap is for members; the scheduler (parentID "") is
+	// bounded by MaxParallel, and the user by their own judgement. The
+	// thread's cap holds for everyone.
+	switch maxD := m.maxDepth(); {
+	case depth > maxD:
+		return nil, 0, fmt.Errorf("session: %w: subagents go %d levels deep and you are at the last; do the work yourself", errChildLimit, maxD)
+	case parentID != "" && live+n > m.maxChildren():
+		return nil, 0, fmt.Errorf("session: %w: %d of yours are already running; wait for one to finish", errChildLimit, live)
+	case all+n > m.maxSubagents():
+		return nil, 0, fmt.Errorf("session: %w: %d are running in this thread; wait for one to finish", errChildLimit, all)
 	}
-	if o := t.member(tk.Owner); tk.Status == store.TaskRunning && o != nil && o.status() != StatusExited {
-		return fmt.Errorf("session: %s is already being worked on by %s", tk.ID, o.getName())
+	return parent, depth, nil
+}
+
+// placeNote tells a new subagent where it sits: who started it, for which
+// task, that it sees only what is sent to it, and whether it may start
+// subagents of its own.
+func (m *Manager) placeNote(t *thread, a, parent *agentState, depth int, taskID string) string {
+	who := "Deck"
+	if parent != nil {
+		who = parent.getName()
+	}
+	t.mu.Lock()
+	title, orchestrate := t.title, t.orchestrate
+	t.mu.Unlock()
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n\n[deck] You are %s, a subagent %s started for task %s", a.getName(), who, taskID)
+	if title != "" {
+		fmt.Fprintf(&b, " in the thread %q", clipText(oneLine(title), 80))
+	}
+	b.WriteString(". You see only what is sent to you; op thread.read shows the whole thread.")
+	switch {
+	case !orchestrate:
+	case depth < m.maxDepth():
+		b.WriteString(" You may start subagents of your own (agent.spawn); your task then waits for their results.")
+	default:
+		b.WriteString(" You cannot start subagents: do the work yourself.")
+	}
+	return b.String()
+}
+
+func or(s, alt string) string {
+	if s != "" {
+		return s
+	}
+	return alt
+}
+
+// claimTask moves an existing task to running for the subagent a Spawn starts
+// under claim. The checks and the move are one step under t.mu, so only one
+// Spawn gets the task: it refuses a task that is over, one that another
+// Spawn is starting a subagent for, and a running one with a live owner.
+func (m *Manager) claimTask(t *thread, id, by, claim, review string) (store.Task, error) {
+	tk, err := m.moveTaskIf(t, id, store.TaskRunning, by, "starting a subagent", func(tk store.Task) error {
+		switch o := t.member(tk.Owner); {
+		case tk.Status.Final():
+			return fmt.Errorf("session: %s is already %s", tk.ID, tk.Status)
+		case t.spawns[tk.ID] != "":
+			return fmt.Errorf("session: %s already has a subagent starting", tk.ID)
+		case tk.Status == store.TaskRunning && o != nil && o.status() != StatusExited:
+			return fmt.Errorf("session: %s is already being worked on by %s", tk.ID, o.getName())
+		}
+		return nil
+	}, func(tk *store.Task) {
+		tk.Review = or(review, tk.Review)
+		t.claimLocked(tk.ID, claim)
+	})
+	if errors.Is(err, store.ErrNoTask) {
+		err = fmt.Errorf("%w %q", store.ErrNoTask, id)
+	}
+	return tk, err
+}
+
+// claimLocked records that a Spawn under claim starts a subagent for task id.
+// t.mu is held.
+func (t *thread) claimLocked(id, claim string) {
+	if t.spawns == nil {
+		t.spawns = map[string]string{}
+	}
+	t.spawns[id] = claim
+}
+
+// claimedLocked refuses task id unless claim still holds it: the task left
+// running, or another Spawn claimed it after that. t.mu is held.
+func (t *thread) claimedLocked(id, claim string) error {
+	if t.spawns[id] != claim {
+		return fmt.Errorf("session: %s left running while its subagent started", id)
 	}
 	return nil
 }
 
 // bindRun records on the task that subagent a works on it: owner, run, and
-// contract (the spawn's, when the task has none yet).
-func (m *Manager) bindRun(t *thread, taskID string, a *agentState, wt *store.Worktree, sp SpawnSpec, brief, by string) {
+// contract (the spawn's, when the task has none yet). It fails, and binds
+// nothing, when claim no longer holds the task.
+func (m *Manager) bindRun(t *thread, taskID, claim string, a *agentState, wt *store.Worktree, sp SpawnSpec, brief, by string) error {
 	var old *store.RunRef
 	t.mu.Lock()
+	if err := t.claimedLocked(taskID, claim); err != nil {
+		t.mu.Unlock()
+		return err
+	}
+	delete(t.spawns, taskID)
 	if i := store.FindTask(t.tasks, taskID); i >= 0 {
 		tk := &t.tasks[i]
 		if tk.Run != nil && tk.Run.Member != a.id {
@@ -221,18 +364,26 @@ func (m *Manager) bindRun(t *thread, taskID string, a *agentState, wt *store.Wor
 		if tk.Brief == "" {
 			tk.Brief = clipText(brief, maxTaskText)
 		}
+		// A retry starts the same kind of agent again.
+		if tk.Kind == "" {
+			tk.Kind, tk.Model, tk.Effort = a.kind, sp.Model, sp.Effort
+		}
 	}
 	t.mu.Unlock()
 	m.startHandedTask(t, taskID, a, by)
 	if old != nil {
 		m.retireMember(t, old.Member)
 	}
+	return nil
 }
 
 // deliverBrief logs the brief as a message from speaker to the subagent and
 // delivers it. It does not count as a hop: spawning is bounded by maxChildren
 // per member and by MaxParallel for the scheduler.
 func (m *Manager) deliverBrief(t *thread, speaker string, to *agentState, text, taskID string) {
+	if h := m.memHint(to, t.leasedBy(to.id), text); h != "" {
+		text += "\n\n" + h
+	}
 	e := store.Entry{Type: store.EntryRelay, Speaker: speaker, To: []string{to.id}, Via: "spawn", TaskID: taskID, Event: eventText(text)}
 	t.mu.Lock()
 	m.appendLocked(t, e)
@@ -293,6 +444,7 @@ func (m *Manager) retireMember(t *thread, id string) {
 		return
 	}
 	_ = m.Interrupt(a.id) // denies what it was waiting on
+	defer m.cascade(t, a)
 	if run != nil {
 		// Closed off this goroutine: it may be the one draining the run's
 		// events. The exit itself is logged by the pump when the run's channels
@@ -314,14 +466,19 @@ func (m *Manager) memberIdle(t *thread, id string) bool {
 }
 
 // retireSpent stops subagent a when its turn ended and nothing it owns is
-// still running or blocked (a blocked task keeps it for the user to steer).
+// still running, in review or blocked (a task in review keeps it for the
+// changes, a blocked one for the user to steer).
 func (m *Manager) retireSpent(t *thread, a *agentState) {
 	if !a.isEphemeral() {
 		return
 	}
 	t.mu.Lock()
+	if t.waitsOnChildren(a) {
+		t.mu.Unlock()
+		return
+	}
 	for _, tk := range t.tasks {
-		if tk.Owner == a.id && (tk.Status == store.TaskRunning || tk.Status == store.TaskBlocked) {
+		if tk.Owner == a.id && tk.Status.Active() {
 			t.mu.Unlock()
 			return
 		}
@@ -331,21 +488,34 @@ func (m *Manager) retireSpent(t *thread, a *agentState) {
 }
 
 // failOrphans fails the running tasks whose subagent did not survive a
-// restart of Deck: its process is gone, so nothing will ever report them.
+// restart of Deck: its process is gone, so nothing will ever report them. An
+// ops contract's running task fails too: its contract does not survive a
+// restart. A task whose reviewer was lost is blocked for the user.
 func (m *Manager) failOrphans(t *thread) {
-	var ids []string
+	var ids, ops, reviews []string
 	t.mu.Lock()
 	for _, tk := range t.tasks {
+		if tk.Status == store.TaskReview && tk.Reviewer != "" {
+			reviews = append(reviews, tk.ID)
+		}
 		if tk.Status != store.TaskRunning {
 			continue
 		}
 		if o := t.member(tk.Owner); o != nil && o.isEphemeral() {
 			ids = append(ids, tk.ID)
+		} else if t.ops != nil {
+			ops = append(ops, tk.ID)
 		}
 	}
 	t.mu.Unlock()
 	for _, id := range ids {
 		_, _ = m.moveTask(t, id, store.TaskFailed, "", "its subagent was lost when Deck stopped", nil)
+	}
+	for _, id := range ops {
+		_, _ = m.moveTask(t, id, store.TaskFailed, "", OpsRestarted, nil)
+	}
+	for _, id := range reviews {
+		_, _ = m.moveTask(t, id, store.TaskBlocked, "", "its reviewer was lost when Deck stopped", nil)
 	}
 }
 

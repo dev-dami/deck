@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +61,13 @@ func (m *UI) sendTeamChat(text string) tea.Cmd {
 }
 
 func (m *UI) applyTeamChatSent(msg teamChatSentMsg) tea.Cmd {
+	var queued peer.QueuedError
+	if errors.As(msg.err, &queued) {
+		if len(msg.reached) > 0 {
+			return util.ReportInfo("Sent to " + strings.Join(msg.reached, ", ") + "; " + queued.Error())
+		}
+		return util.ReportInfo("Sent: " + queued.Error())
+	}
 	if msg.err != nil {
 		if len(msg.reached) > 0 {
 			return util.ReportWarn("Sent to " + strings.Join(msg.reached, ", ") + "; " + msg.err.Error())
@@ -151,10 +159,13 @@ func (p *chatPane) lines(m *UI, width int) []string {
 	}
 	var out []string
 	for _, c := range snap.Chat {
-		name := c.From
+		name := c.Author()
 		style := t.ModelInfo.Name.Bold(true)
 		if c.Mine {
 			name = "you"
+			if c.Agent != "" {
+				name = "your " + c.Agent
+			}
 			style = lipgloss.NewStyle().Foreground(t.Header.Mark.GetForeground()).Bold(true)
 		}
 		out = append(out, ansi.Truncate(style.Render(name)+" "+muted.Render(c.At.Local().Format("15:04")), width, "…"))

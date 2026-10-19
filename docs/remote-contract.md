@@ -349,3 +349,29 @@ pairing code and the paired devices.
 5. Tunnels and push (each its own PR; both opt-in).
 
 #47 is closed when PR 3 lands, with a note pointing here.
+
+## 10. gRPC transport (desktop app)
+
+The Deck desktop app does not use the WebSocket above. It runs
+`deck serve --rpc -c <project>` and speaks gRPC, defined in
+`proto/deck/v1/deck.proto` (Go code in `pkg/rpc/deckv1`, regenerated with
+`buf generate`). The server, `pkg/rpc`, is a thin layer over the same
+`remote.Backend` (§4), so both transports drive the same adapter.
+
+- **Transport.** A Unix socket under `<data dir>/run/`, or under the temp
+  dir if that path is too long. It works on Windows 10 1803+ too, and there
+  is no TCP port. The socket is mode 0600 inside a 0700 directory.
+- **Handshake.** Once listening, the CLI prints one JSON line on stdout:
+  `{"v":1,"sock":…,"token":…,"pid":…,"version":…}`. Every call carries
+  `authorization: Bearer <token>`. The token is minted per launch and never
+  stored. The process exits when its stdin closes.
+- **Events.** `Events(Subscribe{epoch, seq})` opens with `Ready`, replays
+  what was missed from a 4000-event ring, then streams live. `Ready.resync`
+  means refetch. A subscriber that falls 2048 events behind is ended with
+  `RESOURCE_EXHAUSTED` and resumes from its last seq. Nothing is scoped to
+  a focused session; the desktop gets every event.
+- **Differences from the phone.**
+  - Images are raw `bytes`, up to 16 MB each.
+  - Text is not capped.
+  - Yolo is allowed, because the caller is the user at this machine.
+  - Errors carry their message.

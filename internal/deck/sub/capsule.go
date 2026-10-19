@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // MaxFiles is the most files one capsule changes. A larger change is a
@@ -320,6 +321,21 @@ func (s *Store) Restore(ctx context.Context, root string, snap ID, paths []strin
 	return s.write(ctx, root, ops)
 }
 
+// Checkout writes every file of snapshot snap under root: a copy of the
+// tree snap recorded, in a folder that starts empty.
+func (s *Store) Checkout(ctx context.Context, root string, snap ID) error {
+	sn, err := s.Snapshot(snap)
+	if err != nil {
+		return err
+	}
+	paths := make([]string, 0, len(sn.Files))
+	for p := range sn.Files {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	return s.Restore(ctx, root, snap, paths)
+}
+
 // write makes the ops' After states real. New contents are staged in
 // temporary files first, then the old files are moved aside and the new
 // ones moved in; any failure moves everything back.
@@ -404,10 +420,35 @@ func (s *Store) write(ctx context.Context, root string, ops []Op) error {
 
 func validPath(p string) error {
 	if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "\\") ||
-		strings.Contains("/"+p+"/", "/../") || strings.Contains("/"+p+"/", "/.git/") || filepath.IsAbs(p) {
+		strings.Contains("/"+p+"/", "/../") || filepath.IsAbs(p) {
 		return fmt.Errorf("sub: bad path %q", p)
 	}
+	for _, seg := range strings.Split(p, "/") {
+		// "" and "." name a folder ("a//b", "a/.", "."), not a file: writing
+		// there would replace that folder, or the root itself.
+		if seg == "" || seg == "." || isGitDir(seg) {
+			return fmt.Errorf("sub: bad path %q", p)
+		}
+	}
 	return nil
+}
+
+// isGitDir reports whether a path segment can name the .git directory on
+// some file system: in any case (macOS, Windows), with the characters HFS+
+// ignores, with the trailing dots and spaces Windows drops, or as its short
+// name, or with an NTFS stream suffix (".git::$INDEX_ALLOCATION"). A capsule
+// or snapshot from a teammate never writes there: git runs in the trees they
+// are applied to.
+func isGitDir(seg string) bool {
+	seg, _, _ = strings.Cut(seg, ":")
+	seg = strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) {
+			return -1
+		}
+		return r
+	}, seg)
+	seg = strings.ToLower(strings.TrimRight(seg, ". "))
+	return seg == ".git" || seg == "git~1"
 }
 
 // Diff is the ops that turn snapshot a into snapshot b.

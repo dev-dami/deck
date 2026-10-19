@@ -27,8 +27,11 @@ func (m *UI) modelInfoFor(agents []workspace.AgentLine, width int) string {
 	muted := t.ModelInfo.Provider
 	var lines []string
 	for _, a := range agents {
+		// Subagents sit under the member that started them, one step in per
+		// level.
+		indent := strings.Repeat("  ", min(a.Depth, 6))
 		tint := lipgloss.NewStyle().Foreground(tone.Tint(a.Kind))
-		head := tint.Render(tone.Mark(a.Kind)) + " " + tint.Bold(true).Render(a.ID)
+		head := indent + tint.Render(tone.Mark(a.Kind)) + " " + tint.Bold(true).Render(a.ID)
 		model := a.Model
 		if model == "" {
 			model = "default model"
@@ -58,7 +61,13 @@ func (m *UI) modelInfoFor(agents []workspace.AgentLine, width int) string {
 		if a.CostUSD > 0 {
 			facts = append(facts, muted.Render(fmt.Sprintf("$%.2f", a.CostUSD)))
 		}
-		lines = append(lines, ansi.Truncate("  "+strings.Join(facts, muted.Render(" · ")), width, "…"))
+		if a.Branch != "" {
+			facts = append(facts, muted.Render(a.Branch))
+		}
+		if a.Leases != "" {
+			facts = append(facts, muted.Render("holds "+a.Leases))
+		}
+		lines = append(lines, ansi.Truncate(indent+"  "+strings.Join(facts, muted.Render(" · ")), width, "…"))
 	}
 	return lipgloss.NewStyle().Width(width).Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }

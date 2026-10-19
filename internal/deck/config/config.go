@@ -14,8 +14,10 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // EnvReducedMotion, when set to "1", forces Motion to "off".
@@ -88,8 +90,37 @@ type Config struct {
 	AutoTitle bool `json:"auto_title"`
 	// MaxParallel is how many tasks the scheduler runs at once in a thread with
 	// orchestration on; 0 means DefaultMaxParallel.
-	MaxParallel int    `json:"max_parallel"`
-	Models      Models `json:"models"`
+	MaxParallel int `json:"max_parallel"`
+	// MaxDepth is how deep subagent trees go: 1 lets only the user's agents
+	// start subagents, 2 lets those start their own, and so on; 0 means
+	// DefaultMaxDepth.
+	MaxDepth int `json:"max_depth"`
+	// MaxChildren is how many live subagents one member may have; 0 means
+	// DefaultMaxChildren.
+	MaxChildren int `json:"max_children"`
+	// MaxSubagents is how many subagents may be live in one thread at once,
+	// whoever started them; 0 means DefaultMaxSubagents.
+	MaxSubagents int `json:"max_subagents"`
+	// KeepOrphans leaves a member's subagents running when it stops; by
+	// default they are stopped with it and their tasks cancelled.
+	KeepOrphans bool `json:"keep_orphans"`
+	// MaxWork is how many subagents agents may start, and tasks the scheduler
+	// may hand out, after each message of the user before the thread pauses
+	// for them; 0 means DefaultMaxWork.
+	MaxWork int `json:"max_work"`
+	// Budget limits what a task run by subagents may spend (the task's own
+	// budget, when it has one, wins field by field); zero fields are no limit.
+	Budget Budget `json:"budget"`
+	// RouteAbovePct moves a task that names no agent kind off the default
+	// agent when one of that CLI's plan windows is at least this full, to the
+	// installed kind with the most room; 0 means DefaultRouteAbovePct, and 100
+	// or more never moves it.
+	RouteAbovePct int `json:"route_above_pct"`
+	// Review is the kind of agent that reviews a task run by subagents before
+	// it is done, when the task names none: "" or "none" is no review,
+	// "other" any installed kind other than the worker's, or a kind.
+	Review string `json:"review"`
+	Models Models `json:"models"`
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
 	Efforts Models `json:"efforts"`
@@ -99,8 +130,23 @@ type Config struct {
 	Peers *Peers `json:"peers,omitempty"`
 }
 
-// DefaultMaxParallel is how many tasks run at once when MaxParallel is 0.
-const DefaultMaxParallel = 3
+// Defaults for the orchestration limits left at 0.
+const (
+	DefaultMaxParallel   = 3  // tasks the scheduler runs at once per thread
+	DefaultMaxDepth      = 3  // levels of subagents below the user's agents
+	DefaultMaxChildren   = 4  // live subagents per member
+	DefaultMaxSubagents  = 12 // live subagents per thread
+	DefaultMaxWork       = 24 // subagent starts and dispatches per user message
+	DefaultRouteAbovePct = 90
+)
+
+// Budget is what a task may spend: tokens (input and output), the cost the
+// CLIs report, and minutes since it started. 0 is no limit.
+type Budget struct {
+	Tokens  int     `json:"tokens,omitempty"`
+	CostUSD float64 `json:"cost_usd,omitempty"`
+	Minutes int     `json:"minutes,omitempty"`
+}
 
 // DefaultPeerPort is the port a peer listener uses when its address names none.
 const DefaultPeerPort = "7722"
@@ -108,7 +154,7 @@ const DefaultPeerPort = "7722"
 // Peer roles: what a remote Deck may ask of this one.
 const (
 	PeerRoleObserver   = "observer"   // read-only ops (the default)
-	PeerRoleContractor = "contractor" // may also propose contracts (later phases)
+	PeerRoleContractor = "contractor" // may also propose code contracts
 )
 
 // Peers is the peers section of the config.
@@ -120,7 +166,15 @@ type Peers struct {
 	Name   string       `json:"name,omitempty"`
 	Listen PeerListen   `json:"listen"`
 	Remote []PeerRemote `json:"remote,omitempty"`
-	// Sandbox is reserved for the virtual bash phase; it is parsed but unused.
+	// ShareLimits lets teammates see how full this Deck's CLI plans are, in
+	// peer.status. Off by default.
+	ShareLimits bool `json:"share_limits,omitempty"`
+	// Relay lets this Deck pass links between two peers pinned here, for
+	// Decks that cannot reach each other. The two ends run SSH inside the
+	// relayed channel, so this Deck sees only ciphertext. Off by default.
+	Relay bool `json:"relay,omitempty"`
+	// Sandbox sets the limits of the sandbox that ops contracts run in
+	// (SandboxLimits).
 	Sandbox *PeerSandbox `json:"sandbox,omitempty"`
 }
 
@@ -136,19 +190,58 @@ type PeerRemote struct {
 	Addr string `json:"addr,omitempty"` // host:port to dial; empty for inbound-only peers
 	Dial bool   `json:"dial"`           // keep a connection to it open
 	Role string `json:"role,omitempty"` // "observer" (default) or "contractor"
+	// Via names another remote that relays the link to this one: the dial
+	// goes through it when Addr is empty or a direct dial fails.
+	Via string `json:"via,omitempty"`
+	// Relay lets this peer bring links from other peers pinned here (it
+	// relays for them). Off by default.
+	Relay bool `json:"relay,omitempty"`
 	// AllowInbound lists the ops this peer may run here; empty means the
 	// defaults (docs/peers-design.md section 2).
 	AllowInbound []string `json:"allow_inbound,omitempty"`
-	// MaxScope is the outer limit for contracts from this peer (later phases).
+	// MaxScope is the outer limit for ops contracts from this peer: the
+	// presets (OpsPresets) it may ask for. Empty allows none.
 	MaxScope []string `json:"max_scope,omitempty"`
 }
 
-// PeerSandbox configures the virtual bash used by contracts (not used yet).
+// OpsPresets are the sandbox presets an ops contract can ask for: each
+// lets the contract's agent run a fixed set of read-only commands.
+var OpsPresets = []string{"podman-read", "systemd-read"}
+
+// PeerSandbox sets the limits of the sandbox that ops contracts run in.
+// Presets is reserved: it is parsed but not used.
 type PeerSandbox struct {
 	TTL       string              `json:"ttl,omitempty"`
 	ScratchMB int                 `json:"scratch_mb,omitempty"`
 	OutputKB  int                 `json:"output_kb,omitempty"`
 	Presets   map[string][]string `json:"presets,omitempty"`
+}
+
+// The sandbox limits when peers.sandbox leaves them out.
+const (
+	DefaultSandboxTTL       = 2 * time.Hour
+	DefaultSandboxScratchMB = 64
+	DefaultSandboxOutputKB  = 64
+)
+
+// SandboxLimits are how long an ops contract may run, and the sizes of its
+// scratch folder (MB) and of each command's output (KB), with the defaults
+// for what peers.sandbox leaves out. p may be nil.
+func (p *Peers) SandboxLimits() (ttl time.Duration, scratchMB, outputKB int) {
+	ttl, scratchMB, outputKB = DefaultSandboxTTL, DefaultSandboxScratchMB, DefaultSandboxOutputKB
+	if p == nil || p.Sandbox == nil {
+		return
+	}
+	if d, err := time.ParseDuration(p.Sandbox.TTL); err == nil && d > 0 {
+		ttl = d
+	}
+	if p.Sandbox.ScratchMB > 0 {
+		scratchMB = p.Sandbox.ScratchMB
+	}
+	if p.Sandbox.OutputKB > 0 {
+		outputKB = p.Sandbox.OutputKB
+	}
+	return
 }
 
 // PeersEnabled reports whether the peer link is on.
@@ -257,8 +350,11 @@ func (p *Peers) validate() error {
 			if err := ValidPeerAddr(r.Addr); err != nil {
 				return fmt.Errorf("peers.remote[%d].addr %q: %v", i, r.Addr, err)
 			}
-		} else if r.Dial {
-			return fmt.Errorf("peers.remote[%d] %q: dial needs an addr", i, r.Name)
+		} else if r.Dial && r.Via == "" {
+			return fmt.Errorf("peers.remote[%d] %q: dial needs an addr or a via relay", i, r.Name)
+		}
+		if r.Via != "" && (!ValidPeerName(r.Via) || r.Via == r.Name) {
+			return fmt.Errorf("peers.remote[%d].via %q: name another remote", i, r.Via)
 		}
 		switch r.Role {
 		case "", PeerRoleObserver, PeerRoleContractor:
@@ -283,6 +379,22 @@ func (p *Peers) validate() error {
 			if s != strings.TrimSpace(s) {
 				return fmt.Errorf("peers.remote[%d].max_scope[%d] %q has spaces around it", i, j, s)
 			}
+			if !slices.Contains(OpsPresets, s) {
+				return fmt.Errorf("peers.remote[%d].max_scope[%d] %q is not a preset (use %s)", i, j, s, strings.Join(OpsPresets, ", "))
+			}
+		}
+	}
+	if sb := p.Sandbox; sb != nil {
+		if d, err := time.ParseDuration(sb.TTL); sb.TTL != "" && (err != nil || d <= 0) {
+			return fmt.Errorf("peers.sandbox.ttl %q: use a duration such as \"2h\"", sb.TTL)
+		}
+		if sb.ScratchMB < 0 || sb.OutputKB < 0 {
+			return errors.New("peers.sandbox: scratch_mb and output_kb cannot be negative")
+		}
+	}
+	for i, r := range p.Remote {
+		if r.Via != "" && !seen[r.Via] {
+			return fmt.Errorf("peers.remote[%d].via %q is not in peers.remote", i, r.Via)
 		}
 	}
 	return nil
@@ -521,6 +633,21 @@ func (c Config) Validate() error {
 	case "", "plan", "ask", "yolo":
 	default:
 		return fmt.Errorf("default_mode must be \"plan\", \"ask\" or \"yolo\", got %q", c.DefaultMode)
+	}
+	for _, l := range []struct {
+		key string
+		n   int
+	}{{"max_parallel", c.MaxParallel}, {"max_depth", c.MaxDepth}, {"max_children", c.MaxChildren}, {"max_subagents", c.MaxSubagents},
+		{"max_work", c.MaxWork}, {"route_above_pct", c.RouteAbovePct}, {"budget.tokens", c.Budget.Tokens}, {"budget.minutes", c.Budget.Minutes}} {
+		if l.n < 0 {
+			return fmt.Errorf("%s must be 0 (the default) or more, got %d", l.key, l.n)
+		}
+	}
+	if c.Budget.CostUSD < 0 {
+		return fmt.Errorf("budget.cost_usd must be 0 (no limit) or more, got %v", c.Budget.CostUSD)
+	}
+	if c.Review != "" && c.Review != "none" && c.Review != "other" && !slices.Contains(Kinds, c.Review) {
+		return fmt.Errorf("review must be \"none\", \"other\" or an agent kind, got %q", c.Review)
 	}
 	if c.Peers != nil {
 		if err := c.Peers.validate(); err != nil {
