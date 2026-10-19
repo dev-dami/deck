@@ -1,12 +1,12 @@
-import type { Controller } from "@web/controller";
 import type { ChangedFile, Decision, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import { useEffect, useState } from "react";
 import { approvalSummary, DECISIONS, groupApprovals } from "../approvals";
+import type { DeckClient } from "../client";
 import { PANELS, type Panel } from "../ui";
 import { DiffView } from "./DiffView";
 
-function Changes({ c, sessionId }: { c: Controller; sessionId: string }) {
+function Changes({ c, sessionId }: { c: DeckClient; sessionId: string }) {
   const [files, setFiles] = useState<ChangedFile[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -48,7 +48,7 @@ function Approvals({
   openId,
   onOpen,
 }: {
-  c: Controller;
+  c: DeckClient;
   state: AppState;
   openId: string | null;
   onOpen: (id: string) => void;
@@ -91,7 +91,7 @@ function Approvals({
   );
 }
 
-function Queue({ c, state, sessionId }: { c: Controller; state: AppState; sessionId: string }) {
+function Queue({ c, state, sessionId }: { c: DeckClient; state: AppState; sessionId: string }) {
   const items = state.queue[sessionId] ?? [];
   if (items.length === 0) return <p className="empty">Nothing waits in the queue.</p>;
   return (
@@ -124,7 +124,7 @@ export function RightPanel({
   onClose,
   onOpen,
 }: {
-  c: Controller;
+  c: DeckClient;
   state: AppState;
   panel: Panel;
   open: Session | undefined;

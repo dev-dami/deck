@@ -1135,6 +1135,10 @@ kbd {
   margin-bottom: 6px;
 }
 
+.servers.recent {
+  margin-top: 10px;
+}
+
 .server-open {
   flex: 1;
   display: flex;

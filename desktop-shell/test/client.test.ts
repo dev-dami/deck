@@ -1,4 +1,4 @@
-import type { Controller } from "@web/controller";
+import type { DeckClient } from "../src/renderer/client";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { isRequest, sealHello } from "../src/main/link";
 import { TOKEN_PLACEHOLDER } from "../src/shared/bridge";
@@ -36,7 +36,7 @@ describe("hello and frame filter", () => {
 
 describe("the protocol client against a fake Deck", () => {
   let fake: FakeDeck;
-  let c: Controller | null = null;
+  let c: DeckClient | null = null;
 
   beforeEach(async () => {
     fake = await FakeDeck.start({ tickMs: 20 });

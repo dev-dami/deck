@@ -54,6 +54,22 @@ describe("unread", () => {
   });
 });
 
+describe("activity in the background", () => {
+  test("a new message list for a session that is not open marks it", () => {
+    const a1: unknown[] = [];
+    const b1: unknown[] = [];
+    let st = run({ type: "open", id: "a" }, { type: "messages", messages: { a: a1 } });
+    expect(st.unread).toEqual({});
+    // The open session changes: no mark. Another one appears: a mark.
+    st = reduceUi(st, { type: "messages", messages: { a: [...a1], b: b1 } });
+    expect(st.unread).toEqual({ b: true });
+    // Switching away from a leaves it read while its list stays the same.
+    st = reduceUi(st, { type: "open", id: "b" });
+    st = reduceUi(st, { type: "messages", messages: st.lists });
+    expect(st.unread).toEqual({});
+  });
+});
+
 describe("panel and palette", () => {
   test("a panel toggles and another one replaces it", () => {
     expect(run({ type: "panel", panel: "changes" }).panel).toBe("changes");

@@ -44,7 +44,7 @@ interface Client {
   focus: string;
 }
 
-class Fail extends Error {
+export class Fail extends Error {
   constructor(
     readonly code: string,
     msg: string,
@@ -76,7 +76,7 @@ export class FakeDeck {
   private approvals: Approval[] = [];
   private readonly idem = new Map<string, string>();
   private readonly timers = new Set<NodeJS.Timeout>();
-  private readonly theme = fixtureTheme();
+  readonly theme = fixtureTheme();
   private epoch = `ep_${randomBytes(4).toString("hex")}`;
   private seq = 0;
   private next = 100;
@@ -261,18 +261,30 @@ export class FakeDeck {
     for (const c of this.clients) {
       if (scope === null || c.focus === scope) this.write(c, { t: "ev", seq: this.seq, e, p });
     }
+    for (const l of this.listeners) l(e, p);
   }
 
   private broadcast(e: string, p: unknown): void {
     this.emit(e, p, null);
   }
 
+  // ---- for the gRPC fake (fake-grpc.ts) ------------------------------------
+
+  // Every event, of every session, as the rpc transport sends them.
+  readonly listeners = new Set<(e: string, p: unknown) => void>();
+
+  // Runs a v2 method, for a socket's client or none; throws Fail like a
+  // refused request.
+  invoke(m: MethodName, p: unknown, c: Client | null = null): unknown {
+    const params = METHODS[m].req(p);
+    if (params === null) throw new Fail("invalid", `bad params for ${m}`);
+    return this.call(c, m, params as Record<string, unknown>);
+  }
+
   private answer(c: Client, id: string, m: string, p: unknown): void {
     try {
       if (!(m in METHODS)) throw new Fail("invalid", `unknown method ${m}`);
-      const params = METHODS[m as MethodName].req(p);
-      if (params === null) throw new Fail("invalid", `bad params for ${m}`);
-      const r = this.call(c, m as MethodName, params as Record<string, unknown>);
+      const r = this.invoke(m as MethodName, p, c);
       this.write(c, { t: "res", id, ok: true, r });
     } catch (e) {
       const err = e instanceof Fail ? { code: e.code, msg: e.message } : { code: "internal", msg: "fake failed" };
@@ -286,7 +298,7 @@ export class FakeDeck {
     return t;
   }
 
-  private call(c: Client, m: MethodName, p: Record<string, unknown>): unknown {
+  private call(c: Client | null, m: MethodName, p: Record<string, unknown>): unknown {
     switch (m) {
       case "sessions.list":
         return [...this.threads.values()].map((t) => this.withPending(t.session));
@@ -307,7 +319,7 @@ export class FakeDeck {
       }
       case "sessions.focus":
         if (p["id"] !== "") this.get(p["id"]);
-        c.focus = String(p["id"]);
+        if (c !== null) c.focus = String(p["id"]);
         return {};
       case "messages.list":
         return this.page(this.get(p["session_id"]), p["before"], p["limit"]);

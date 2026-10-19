@@ -11,11 +11,12 @@ import {
   session,
   shell,
 } from "electron";
-import { HOST_METHODS, hostChannel, SOCKET_EVENT_CHANNEL } from "../shared/bridge";
+import { HOST_METHODS, hostChannel, RPC_EVENT_CHANNEL, SOCKET_EVENT_CHANNEL } from "../shared/bridge";
 import { RENDERER_CSP } from "../shared/csp";
+import { findOnPath, loadService, RpcDecks } from "./decks";
 import { callHost, createHost } from "./host";
 import { LinkHost } from "./link";
-import { findOnPath, LocalServers } from "./local";
+import { RecentFolders } from "./recent";
 import { type Sealer, ServerStore } from "./servers";
 
 const SCHEME = "app";
@@ -77,7 +78,8 @@ function devURL(): string | null {
 
 let win: BrowserWindow | null = null;
 
-function createWindow(links: LinkHost): BrowserWindow {
+// reset ends what a renderer had open: its sockets and event streams.
+function createWindow(reset: () => void): BrowserWindow {
   const w = new BrowserWindow({
     width: 1320,
     height: 840,
@@ -99,10 +101,10 @@ function createWindow(links: LinkHost): BrowserWindow {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
-  // A reload starts a new renderer state; its old sockets have no reader.
-  w.webContents.on("did-start-loading", () => links.closeAll());
+  // A reload starts a new renderer state; the old streams have no reader.
+  w.webContents.on("did-start-loading", reset);
   w.on("closed", () => {
-    links.closeAll();
+    reset();
     if (win === w) win = null;
   });
   void w.loadURL(devURL() ?? `${ORIGIN}/index.html`);
@@ -142,11 +144,18 @@ async function main(): Promise<void> {
   const store = new ServerStore(join(app.getPath("userData"), "servers.json"), sealer);
   const links = new LinkHost(store, (id, ev) => win?.webContents.send(SOCKET_EVENT_CHANNEL, id, ev));
   const deckPath = findOnPath("deck");
-  const local = deckPath === null ? null : new LocalServers(deckPath);
+  // build copies proto/deck/v1/deck.proto to dist/app/proto.
+  const Service = loadService(join(__dirname, "..", "proto", "deck.proto"));
+  const decks = new RpcDecks(deckPath, Service, (id, ev) => win?.webContents.send(RPC_EVENT_CHANNEL, id, ev));
+  const reset = () => {
+    links.closeAll();
+    decks.cancelStreams();
+  };
   const host = createHost({
     store,
     links,
-    local,
+    decks,
+    recent: new RecentFolders(join(app.getPath("userData"), "recent.json")),
     deckPath,
     deviceName: `Deck desktop (${hostname()})`.slice(0, 64),
     pickFolder: async () => {
@@ -178,7 +187,7 @@ async function main(): Promise<void> {
     });
   }
 
-  win = createWindow(links);
+  win = createWindow(reset);
   if (smoke) runSmoke(win);
 
   app.on("second-instance", () => {
@@ -186,14 +195,15 @@ async function main(): Promise<void> {
     win?.focus();
   });
   app.on("activate", () => {
-    if (win === null) win = createWindow(links);
+    if (win === null) win = createWindow(reset);
   });
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
   });
+  // Every local Deck stops with the app: its stdin closes.
   app.on("before-quit", () => {
     links.closeAll();
-    local?.stopAll();
+    decks.closeAll();
   });
 }
 

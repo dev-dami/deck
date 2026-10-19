@@ -1,10 +1,9 @@
-import type { Controller } from "@web/controller";
 import { availableModes, needsConfirm } from "@web/modes";
 import type { Image, Mode, Session } from "@web/protocol";
 import { sessionMode, sessionTitle } from "@web/state";
 import { relativeTime } from "@web/time";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import type { SavedServer } from "../../shared/bridge";
+import type { DeckClient } from "../client";
 import { addAgentMention } from "../completion";
 import { initialUi, PANELS, reduceUi } from "../ui";
 import { AgentsStrip } from "./AgentsStrip";
@@ -46,7 +45,8 @@ function ModeSwitch({
   );
 }
 
-export function Shell({ c, server, onDisconnect }: { c: Controller; server: SavedServer; onDisconnect: () => void }) {
+// where names the Deck: host:port for a paired one, the folder for a local one.
+export function Shell({ c, where, onDisconnect }: { c: DeckClient; where: string; onDisconnect: () => void }) {
   const state = useSyncExternalStore(c.store.subscribe, () => c.store.state);
   const [ui, dispatch] = useReducer(reduceUi, initialUi);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -66,6 +66,10 @@ export function Shell({ c, server, onDisconnect }: { c: Controller; server: Save
   useEffect(() => {
     if (state.sessionsLoaded) dispatch({ type: "sessions", sessions: state.sessions });
   }, [state.sessions, state.sessionsLoaded]);
+
+  useEffect(() => {
+    dispatch({ type: "messages", messages: state.messages });
+  }, [state.messages]);
 
   useEffect(() => {
     if (ui.openId === null) c.closeSession();
@@ -136,7 +140,6 @@ export function Shell({ c, server, onDisconnect }: { c: Controller; server: Save
   const online = state.link === "online";
   const roster = sid === null ? [] : (state.roster[sid] ?? []);
   const kinds = state.server?.kinds ?? [];
-  const where = `${server.host.includes(":") ? `[${server.host}]` : server.host}:${server.port}`;
 
   return (
     <div className={`shell${ui.panel === null ? "" : " with-panel"}`}>

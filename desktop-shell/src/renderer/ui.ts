@@ -19,16 +19,20 @@ export interface UiState {
   unread: Record<string, true>;
   // The last_text each session had when this window last looked.
   seen: Record<string, string>;
+  // Each session's message list as last seen, by reference.
+  lists: Record<string, readonly unknown[]>;
 }
 
-export const initialUi: UiState = { openId: null, panel: null, palette: false, unread: {}, seen: {} };
+export const initialUi: UiState = { openId: null, panel: null, palette: false, unread: {}, seen: {}, lists: {} };
 
 export type UiAction =
   | { type: "open"; id: string | null }
   // A panel toggles; null closes whichever is open.
   | { type: "panel"; panel: Panel | null }
   | { type: "palette"; open: boolean }
-  | { type: "sessions"; sessions: Session[] };
+  | { type: "sessions"; sessions: Session[] }
+  // The reducer's messages by session (AppState.messages).
+  | { type: "messages"; messages: Record<string, readonly unknown[]> };
 
 function without(rec: Record<string, true>, id: string): Record<string, true> {
   if (!(id in rec)) return rec;
@@ -72,5 +76,18 @@ export function reduceUi(state: UiState, a: UiAction): UiState {
       const open = state.openId;
       return open !== null && !a.sessions.some((s) => s.id === open) ? { ...next, openId: null } : next;
     }
+    case "messages":
+      return trackActivity(state, a.messages);
   }
+}
+
+// A transport that streams every session (rpc) changes the message list of
+// a session in the background; that marks it unread at once. Over v2 only
+// the open session's list changes, so this marks nothing there.
+function trackActivity(state: UiState, lists: Record<string, readonly unknown[]>): UiState {
+  let unread = state.unread;
+  for (const [id, list] of Object.entries(lists)) {
+    if (id !== state.openId && list !== state.lists[id] && unread[id] !== true) unread = { ...unread, [id]: true };
+  }
+  return { ...state, unread, lists };
 }
