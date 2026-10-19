@@ -113,6 +113,11 @@ type Task struct {
 	Capsules []string `json:"capsules,omitempty"`
 	// Isolate runs the task's subagent on its own git worktree.
 	Isolate bool `json:"isolate,omitempty"`
+	// Kind, Model and Effort pick the agent a subagent for the task runs; ""
+	// is the default agent and the configured model and effort.
+	Kind   string `json:"kind,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
 	// BlockedBy is the task whose failure blocked this one (the scheduler);
 	// RetryAt is when a failed task is tried again.
 	BlockedBy string    `json:"blocked_by,omitempty"`

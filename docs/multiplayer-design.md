@@ -1,6 +1,7 @@
 # Deck multiplayer: many agents, subagent trees, peers
 
-Status: proposal. Phase 1 (§3) is implemented; the rest is not. It builds on what
+Status: proposal. Phases 1 and 2 (§3, §4) are implemented, except the
+review stage; the rest is not. It builds on what
 already ships (verified against `main` at 4508226): spawn and tasks
 (`session/spawn.go`, `tasks.go`, `sched.go`), SUB capsules (`docs/sub.md`),
 and the peer link (`internal/deck/peer`: SSH transport, pairing, pinning,
@@ -83,27 +84,37 @@ knows each subscription's remaining plan window.
   `thread.roster` and stays under its 1400-char cap.
 - **Per-instance settings.** Model, effort and mode are already per member.
 
-## 4. Subagent trees
+## 4. Subagent trees — implemented (review stage not yet)
 
-- **Depth and budget instead of fixed caps.** `orchestrate.max_depth` (default 3) and
-  `max_children` (default 4) replace the hard `isEphemeral` refusal. Every
-  spawn carries a budget (spawns, tokens, wall time) taken from its
-  parent's remaining budget, so a tree cannot outgrow what the user started.
-- **Cascade.** Interrupting or exiting a member cancels its live descendants
-  (setting `orchestrate.orphans: "keep"` turns this off). A result whose creator is gone goes
-  to the nearest live ancestor, then to the thread, never dropped.
-- **Tasks carry kind, model and effort.** `store.Task` gains `Kind`, `Model`,
-  `Effort`; `dispatch` (`sched.go:257`) spawns that kind, falling back to
-  the routing in §7 when empty.
-- **Scoped briefing.** A subagent's first prompt is its task brief, the
-  capsules on the task, the parent's last message and the roster, not
-  the 40k-rune thread tail; `thread.read` is still there when it needs more.
-- **Review stage.** Task status `review` between `running` and `done`
-  (opt-in per task, `review: "codex"`): the result goes to a reviewer of
-  another kind first. Cross-vendor review is something single-vendor tools cannot offer.
-- **UI.** The Team pane renders the tree (`├ claude2 ▸ task 4 · worktree`);
-  `enter` on a subagent shows its transcript, `A` applies its worktree
-  (`ApplyMember`), `D` discards it, `I` isolates the thread (`Isolate`).
+- **Depth and limits** (`session/tree.go`). A member the user brought in is
+  at depth 0; a subagent is one below the member that started it (the
+  scheduler's are at 1). Config `max_depth` (default 3), `max_children` live
+  subagents per member (4) and `max_subagents` per thread (12, the scheduler
+  included: it waits for a free slot instead of failing the task) replace the
+  old "a subagent cannot spawn" rule and the fixed cap of 4. Budgets in
+  tokens and time are phase 3.
+- **Cascade.** When a member exits, or a subagent is retired, its live
+  subagents are stopped and the tasks they own cancelled, recursively.
+  `keep_orphans` turns this off. A result whose creator has stopped goes to
+  the creator's nearest live ancestor, marked "it was for X, who has stopped".
+- **Waiting for children.** A member's turn ending does not settle its task
+  while it has live subagents still working, or a task result its turn was
+  not briefed on (a child can finish mid-turn). The result arrives as a
+  message, starts its next turn, and that turn's reply settles the task.
+  Settlement reads the cursor as it was when the turn ended (`answered`),
+  so a next turn starting before `afterTurn` runs cannot confuse it.
+- **Tasks carry kind, model and effort.** `store.Task` has `Kind`, `Model`,
+  `Effort` (task.create and agent.spawn take them); the scheduler spawns
+  that agent, and a retry starts the same kind again.
+- **Scoped briefing.** A subagent's view starts at its own brief: no thread
+  history, plus one line saying who started it, for which task, and whether
+  it may spawn in turn. `thread.read` is still there.
+- **Review stage** (not yet). Task status `review` between `running` and
+  `done`, with a reviewer of another kind; moved to phase 10.
+- **UI.** The agents pane lists members as a tree (subagents indented under
+  their parent, with their branch); stopped subagents drop out unless their
+  worktree still holds work. In the Tasks pane, `a` on an isolated task
+  applies its worktree (`ApplyMember`) and `d` twice discards it.
 
 ## 5. Working in one tree: leases, overlap, presence
 
@@ -218,8 +229,9 @@ Each phase is one or two PRs and useful alone.
 1. **Instances** (done). `$claude+`, pool addressing for users and agents,
    `$kind*`, `thread.roster`, pool hint in join lines, `$` popup rows.
    `peers-design.md`'s status line fixed.
-2. **Trees.** Depth and budgets, cascade, ancestor fallback for results,
-   task kind/model/effort, scoped briefing, tree UI with apply/discard/isolate.
+2. **Trees** (done). Depth and limits, cascade, ancestor fallback for
+   results, waiting for children, task kind/model/effort, scoped briefing,
+   tree in the agents pane, apply/discard in the Tasks pane.
 3. **Brakes.** Work budget, task/thread budgets, loop guards, routing
    by plan headroom.
 4. **Leases and overlap.** `lease.*`, apply-time enforcement, `touched` map

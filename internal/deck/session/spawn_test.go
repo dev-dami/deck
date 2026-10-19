@@ -61,7 +61,7 @@ func TestSpawnLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the child's approval", func() bool { return len(r.c.approvals()) == 1 })
-	if _, err := r.m.Spawn(tid, res.AgentID, SpawnSpec{Kind: "codex", Brief: "nested"}); err == nil || !strings.Contains(err.Error(), "cannot start subagents") {
+	if _, err := r.m.Spawn(tid, res.AgentID, SpawnSpec{Kind: "codex", Brief: "nested"}); err != nil {
 		t.Errorf("a subagent spawning: %v", err)
 	}
 	if _, err := r.m.Spawn(tid, "claude", SpawnSpec{Kind: "codex", Brief: "again", TaskID: res.TaskID}); err == nil || !strings.Contains(err.Error(), "already being worked on") {

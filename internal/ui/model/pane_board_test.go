@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -111,4 +112,55 @@ func TestTasksPaneWithoutABoardIsAsBefore(t *testing.T) {
 	handled, cmd := p.key(m, tea.KeyPressMsg{Code: 'x', Text: "x"})
 	require.False(t, handled)
 	require.Nil(t, cmd)
+}
+
+// worktreeWorkspace is a board workspace whose tasks' worktrees can be
+// applied and discarded.
+type worktreeWorkspace struct {
+	boardWorkspace
+	applied, discarded []string
+}
+
+func (w *worktreeWorkspace) ApplyTask(_, id string) ([]string, error) {
+	w.applied = append(w.applied, id)
+	return []string{"a.go", "b.go"}, nil
+}
+func (w *worktreeWorkspace) DiscardTask(_, id string) error {
+	w.discarded = append(w.discarded, id)
+	return nil
+}
+
+func TestTasksPaneAppliesAndDiscardsWorktrees(t *testing.T) {
+	t.Parallel()
+	w := &worktreeWorkspace{boardWorkspace: boardWorkspace{board: workspace.BoardReport{Tasks: []workspace.BoardTask{
+		{ID: "t1", Title: "isolated", Status: "done", Owner: "codex2", Branch: "deck/ab12cd-codex2"},
+		{ID: "t2", Title: "shared tree", Status: "done", Owner: "claude"},
+	}}}}
+	m := newBoardUI(&w.boardWorkspace)
+	m.com = common.DefaultCommon(w)
+	p := paneFactories[paneTasks]()
+	run := func(cmd tea.Cmd) tea.Msg {
+		require.NotNil(t, cmd)
+		return cmd()
+	}
+
+	// On t1: a applies.
+	handled, cmd := p.key(m, tea.KeyPressMsg{Code: 'a', Text: "a"})
+	require.True(t, handled)
+	require.Contains(t, fmt.Sprint(run(cmd)), "Applied 2 files from deck/ab12cd-codex2")
+	require.Equal(t, []string{"t1"}, w.applied)
+
+	// d asks first; the second d discards.
+	handled, cmd = p.key(m, tea.KeyPressMsg{Code: 'd', Text: "d"})
+	require.True(t, handled)
+	require.Contains(t, fmt.Sprint(run(cmd)), "Press d again")
+	require.Empty(t, w.discarded)
+	_, cmd = p.key(m, tea.KeyPressMsg{Code: 'd', Text: "d"})
+	run(cmd)
+	require.Equal(t, []string{"t1"}, w.discarded)
+
+	// t2 has no worktree: a and d are not the pane's.
+	p.key(m, tea.KeyPressMsg{Code: 'j', Text: "j"})
+	handled, _ = p.key(m, tea.KeyPressMsg{Code: 'a', Text: "a"})
+	require.False(t, handled)
 }

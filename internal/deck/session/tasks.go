@@ -41,6 +41,8 @@ type TaskSpec struct {
 	MaxAttempts int
 	Isolate     bool
 	Contract    *store.Contract
+	// Kind, Model and Effort pick the agent its subagent runs (store.Task).
+	Kind, Model, Effort string
 	// Claimed creates the task already running (its first attempt under way),
 	// so the scheduler never hands out a task its creator is about to work on
 	// or hand over itself.
@@ -209,6 +211,12 @@ func (m *Manager) addTask(t *thread, sp TaskSpec) (store.Task, error) {
 	}
 	t.mu.Lock()
 	id := store.NextTaskID(t.tasks)
+	if sp.Kind != "" {
+		if _, ok := m.adapters[sp.Kind]; !ok {
+			t.mu.Unlock()
+			return store.Task{}, fmt.Errorf("session: unknown agent kind %q", sp.Kind)
+		}
+	}
 	if sp.Parent != "" {
 		if store.FindTask(t.tasks, sp.Parent) < 0 {
 			t.mu.Unlock()
@@ -225,6 +233,7 @@ func (m *Manager) addTask(t *thread, sp TaskSpec) (store.Task, error) {
 		ID: id, Title: clipText(title, 120), Brief: clipText(sp.Brief, maxTaskText),
 		Creator: sp.Creator, Owner: sp.Owner, Parent: canonicalID(t.tasks, sp.Parent), Deps: deps,
 		Status: store.TaskPending, OnFail: sp.OnFail, MaxAttempts: sp.MaxAttempts, Contract: sp.Contract, Isolate: sp.Isolate,
+		Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort,
 		Created: now, Updated: now,
 	}
 	if sp.Claimed {
@@ -432,7 +441,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		sp := TaskSpec{
 			Title: str("title"), Brief: str("brief"), Creator: me, Parent: str("parent"),
 			Deps: splitIDs(str("deps")), OnFail: normOnFail(str("on_fail")), MaxAttempts: num("max_attempts"),
-			Isolate: a["isolate"] == true,
+			Isolate: a["isolate"] == true, Kind: strings.ToLower(str("kind")), Model: str("model"), Effort: str("effort"),
 		}
 		if o := str("owner"); o != "" {
 			id, err := b.resolveOwner(o)
@@ -512,7 +521,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		return "steered " + str("id"), nil
 	case "agent.spawn":
 		res, err := m.Spawn(t.id, me, SpawnSpec{
-			Kind: str("kind"), Model: str("model"), Title: str("title"), Brief: str("brief"), TaskID: str("task"),
+			Kind: strings.ToLower(str("kind")), Model: str("model"), Effort: str("effort"), Title: str("title"), Brief: str("brief"), TaskID: str("task"),
 			Isolate:  a["isolate"] == true,
 			Contract: store.Contract{Expect: str("expect"), DoneWhen: str("done_when"), ExplicitDone: a["explicit_done"] == true},
 		})

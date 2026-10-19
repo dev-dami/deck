@@ -54,6 +54,15 @@ Run `deck`, type, press enter.
 - **Sessions.** `ctrl+n` starts one, `ctrl+s` switches. `deck -C` continues the last one.
 - `ctrl+p` lists every command; `esc` twice stops the agents.
 
+### Tasks and subagents
+
+The Tasks pane in the sidebar is the thread's shared task board. `o` there turns orchestration on: ready tasks then run by themselves (at most `max_parallel` at once), each with a new subagent of the kind, model and effort the task names, and agents may start subagents of their own with `agent.spawn`.
+
+- **Trees.** Subagents can start subagents, `max_depth` levels below the agents you brought in (default 3), with at most `max_children` live per agent (4) and `max_subagents` per thread (12). The agents pane shows each subagent indented under the one that started it.
+- **Waiting.** An agent with subagents running does not finish its task when its turn ends; it waits for their results, which come back to it as messages. A subagent sees only its brief, not the thread so far; `thread.read` shows the rest.
+- **Stopping.** When an agent stops, its subagents stop with it and their tasks are cancelled. `keep_orphans` leaves them running; their results then go to the nearest agent above that still runs.
+- **Worktrees.** A task or spawn with `isolate` runs its subagent on a git worktree and branch of its own. On such a task in the Tasks pane, `a` applies the work to your tree as uncommitted edits, and `d` twice discards the worktree and branch. `x` cancels a task and `r` retries a failed one.
+
 | mode | Claude Code | Codex | OpenCode | Antigravity |
 | --- | --- | --- | --- | --- |
 | plan | `--permission-mode plan` | read-only sandbox | its plan agent | `--mode plan` |
@@ -92,6 +101,11 @@ GitHub goes through your own [`gh`](https://cli.github.com) CLI; Deck never read
   "bell": true,
   "tell_agents_name": false,
   "track_changes": true,
+  "max_parallel": 3,
+  "max_depth": 3,
+  "max_children": 4,
+  "max_subagents": 12,
+  "keep_orphans": false,
   "claude_binary": "claude",
   "codex_binary": "codex",
   "opencode_binary": "opencode",

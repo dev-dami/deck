@@ -194,6 +194,8 @@ type AgentInfo struct {
 	// subagent (Ephemeral); "" otherwise.
 	Parent    string
 	Ephemeral bool
+	// Branch is the git branch of the member's own worktree, when it has one.
+	Branch string
 	// ContextTokens of ContextWindow tokens are in use (0 = not reported yet).
 	ContextTokens int
 	ContextWindow int
@@ -1366,6 +1368,13 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		return // the thread was archived, deleted or moved
 	}
 	t := a.thread
+	if ev.Kind == agent.KindTurnDone {
+		// Taken before apply makes a idle: from then on its next turn can
+		// start, and move cursor, before afterTurn settles this one.
+		t.mu.Lock()
+		a.answered = a.cursor
+		t.mu.Unlock()
+	}
 	res := a.apply(ev)
 	// Plan limits are about the account, not the conversation: they are not
 	// part of the thread's log.
@@ -1387,6 +1396,8 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	}
 	if ev.Kind == agent.KindExited {
 		m.failOwned(t, a)
+		m.cascade(t, a)
+		m.kick(t) // a subagent's slot is free (MaxSubagents)
 	}
 }
 
@@ -1439,6 +1450,9 @@ type agentState struct {
 	// the first log index of its still-running turn that was held back.
 	cursor   int
 	holdFrom map[string]int
+	// answered is cursor as it was when the member's last turn ended: what
+	// that turn was briefed on (settleHanded).
+	answered int
 	// knownMode is the permission mode the member was last told about (its
 	// Spec.Mode, or the line at the top of its last prompt); guarded by thread.mu.
 	knownMode agent.Mode
@@ -1515,9 +1529,13 @@ func (a *agentState) info() AgentInfo {
 	if a.dir != "" {
 		dir = a.dir
 	}
+	branch := ""
+	if a.worktree != nil {
+		branch = a.worktree.Branch
+	}
 	return AgentInfo{
 		ID: a.id, Kind: a.kind, Name: a.name, Dir: dir, Model: a.model, Effort: a.effort,
-		Parent: a.parent, Ephemeral: a.ephemeral,
+		Parent: a.parent, Ephemeral: a.ephemeral, Branch: branch,
 		Status: a.statusLocked(), CostUSD: a.costTotal + a.costTurn, Pending: len(a.pending),
 		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow,
 		RunningModel: a.running,

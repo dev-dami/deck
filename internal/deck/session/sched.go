@@ -233,9 +233,10 @@ func (m *Manager) dispatchReady(t *thread) {
 				owner = o
 			}
 		}
+		full := t.liveSubagents() >= m.maxSubagents()
 		t.mu.Unlock()
-		if next == nil || running >= limit {
-			return
+		if next == nil || running >= limit || owner == nil && full {
+			return // a subagent stopping kicks the scheduler again
 		}
 		if err := m.dispatch(t, *next, owner); err != nil {
 			// Spawn fails the task itself once it has claimed it. A task that

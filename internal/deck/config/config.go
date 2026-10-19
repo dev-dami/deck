@@ -88,7 +88,20 @@ type Config struct {
 	AutoTitle bool `json:"auto_title"`
 	// MaxParallel is how many tasks the scheduler runs at once in a thread with
 	// orchestration on; 0 means DefaultMaxParallel.
-	MaxParallel int    `json:"max_parallel"`
+	MaxParallel int `json:"max_parallel"`
+	// MaxDepth is how deep subagent trees go: 1 lets only the user's agents
+	// start subagents, 2 lets those start their own, and so on; 0 means
+	// DefaultMaxDepth.
+	MaxDepth int `json:"max_depth"`
+	// MaxChildren is how many live subagents one member may have; 0 means
+	// DefaultMaxChildren.
+	MaxChildren int `json:"max_children"`
+	// MaxSubagents is how many subagents may be live in one thread at once,
+	// whoever started them; 0 means DefaultMaxSubagents.
+	MaxSubagents int `json:"max_subagents"`
+	// KeepOrphans leaves a member's subagents running when it stops; by
+	// default they are stopped with it and their tasks cancelled.
+	KeepOrphans bool   `json:"keep_orphans"`
 	Models      Models `json:"models"`
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
@@ -99,8 +112,13 @@ type Config struct {
 	Peers *Peers `json:"peers,omitempty"`
 }
 
-// DefaultMaxParallel is how many tasks run at once when MaxParallel is 0.
-const DefaultMaxParallel = 3
+// Defaults for the orchestration limits left at 0.
+const (
+	DefaultMaxParallel  = 3  // tasks the scheduler runs at once per thread
+	DefaultMaxDepth     = 3  // levels of subagents below the user's agents
+	DefaultMaxChildren  = 4  // live subagents per member
+	DefaultMaxSubagents = 12 // live subagents per thread
+)
 
 // DefaultPeerPort is the port a peer listener uses when its address names none.
 const DefaultPeerPort = "7722"
@@ -521,6 +539,14 @@ func (c Config) Validate() error {
 	case "", "plan", "ask", "yolo":
 	default:
 		return fmt.Errorf("default_mode must be \"plan\", \"ask\" or \"yolo\", got %q", c.DefaultMode)
+	}
+	for _, l := range []struct {
+		key string
+		n   int
+	}{{"max_parallel", c.MaxParallel}, {"max_depth", c.MaxDepth}, {"max_children", c.MaxChildren}, {"max_subagents", c.MaxSubagents}} {
+		if l.n < 0 {
+			return fmt.Errorf("%s must be 0 (the default) or more, got %d", l.key, l.n)
+		}
 	}
 	if c.Peers != nil {
 		if err := c.Peers.validate(); err != nil {

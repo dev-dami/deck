@@ -66,9 +66,9 @@ func (w *DeckWorkspace) Board(sessionID string) BoardReport {
 	if !ok {
 		return BoardReport{}
 	}
-	names := map[string]string{}
+	names, branches := map[string]string{}, map[string]string{}
 	for _, a := range th.Members {
-		names[a.ID] = a.Name
+		names[a.ID], branches[a.ID] = a.Name, a.Branch
 	}
 	rep := BoardReport{Orchestrate: th.Orchestrate}
 	for _, tk := range w.mgr().Tasks(th.ID) {
@@ -83,7 +83,7 @@ func (w *DeckWorkspace) Board(sessionID string) BoardReport {
 			}
 		}
 		if tk.Run != nil {
-			bt.Branch = tk.Run.Branch
+			bt.Branch = branches[tk.Run.Member] // "" once applied work is discarded
 		}
 		rep.Tasks = append(rep.Tasks, bt)
 	}
@@ -125,6 +125,52 @@ func (w *DeckWorkspace) SteerTask(sessionID, taskID, text string) error {
 		return err
 	}
 	return w.mgr().SteerTask(tid, taskID, "", strings.TrimSpace(text))
+}
+
+// Worktrees acts on the work an isolated subagent did on its own worktree,
+// found through the task it ran.
+type Worktrees interface {
+	// ApplyTask writes what task taskID's subagent changed into the session's
+	// tree, as uncommitted edits, whole or not at all, and returns the files.
+	ApplyTask(sessionID, taskID string) ([]string, error)
+	// DiscardTask removes that worktree and its branch.
+	DiscardTask(sessionID, taskID string) error
+}
+
+var _ Worktrees = (*DeckWorkspace)(nil)
+
+// taskMember is the subagent with a worktree that ran task taskID.
+func (w *DeckWorkspace) taskMember(sessionID, taskID string) (threadID, member string, err error) {
+	tid, err := w.boardThread(sessionID)
+	if err != nil {
+		return "", "", err
+	}
+	tk, ok := w.mgr().Task(tid, taskID)
+	if !ok {
+		return "", "", errors.New("no task " + taskID)
+	}
+	if tk.Run == nil || tk.Run.Branch == "" {
+		return "", "", errors.New(taskID + " did not run on a worktree of its own")
+	}
+	return tid, tk.Run.Member, nil
+}
+
+// ApplyTask implements [Worktrees].
+func (w *DeckWorkspace) ApplyTask(sessionID, taskID string) ([]string, error) {
+	tid, member, err := w.taskMember(sessionID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return w.mgr().ApplyMember(tid, member)
+}
+
+// DiscardTask implements [Worktrees].
+func (w *DeckWorkspace) DiscardTask(sessionID, taskID string) error {
+	tid, member, err := w.taskMember(sessionID, taskID)
+	if err != nil {
+		return err
+	}
+	return w.mgr().DiscardMember(tid, member)
 }
 
 // SetOrchestrate implements [Orchestration].

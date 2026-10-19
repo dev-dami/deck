@@ -18,21 +18,17 @@ import (
 // result. The same member machinery (adapters, briefing, steering) runs it;
 // only the lifecycle is Deck's.
 
-// Limits on subagents.
-const (
-	// maxChildren is how many live subagents one member (or the user) may have.
-	maxChildren = 4
-	// deckSpeaker is the speaker of briefs Deck itself sends (the scheduler,
-	// a spawn from the UI): not a member, shown as "deck".
-	deckSpeaker = "deck"
-)
+// deckSpeaker is the speaker of briefs Deck itself sends (the scheduler, a
+// spawn from the UI): not a member, shown as "deck".
+const deckSpeaker = "deck"
 
 // SpawnSpec describes a subagent to start.
 type SpawnSpec struct {
-	Kind  string // agent kind; "" is the default agent
-	Model string // "" is the configured model for the kind
-	Title string // the task's title; "" takes it from the brief
-	Brief string // what the subagent is asked to do
+	Kind   string // agent kind; "" is the task's, else the default agent
+	Model  string // "" is the task's, else the configured model for the kind
+	Effort string // "" is the task's, else the configured effort for the kind
+	Title  string // the task's title; "" takes it from the brief
+	Brief  string // what the subagent is asked to do
 	// TaskID binds the subagent to a task already on the board; "" creates one.
 	TaskID string
 	// Isolate gives the subagent its own git worktree and branch.
@@ -49,8 +45,9 @@ type SpawnResult struct {
 
 // Spawn starts a subagent for a task of thread threadID. parentID is the
 // member asking, or "" when the user or Deck's scheduler asks. Members may
-// spawn only in threads with orchestration on, a subagent cannot spawn, and
-// each member has at most maxChildren live subagents.
+// spawn only in threads with orchestration on, within the limits of tree.go:
+// MaxDepth levels, MaxChildren live subagents per member and MaxSubagents per
+// thread.
 func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, error) {
 	if m.isClosed() {
 		return SpawnResult{}, errClosed
@@ -62,6 +59,12 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	brief := strings.TrimSpace(sp.Brief)
 	if brief == "" {
 		return SpawnResult{}, errors.New("session: a subagent needs a brief")
+	}
+	if sp.TaskID != "" {
+		// The task says which agent it wants when the spawn does not.
+		if tk, ok := m.Task(threadID, sp.TaskID); ok {
+			sp.Kind, sp.Model, sp.Effort = or(sp.Kind, tk.Kind), or(sp.Model, tk.Model), or(sp.Effort, tk.Effort)
+		}
 	}
 	kind := sp.Kind
 	if kind == "" {
@@ -82,22 +85,20 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 			t.mu.Unlock()
 			return SpawnResult{}, fmt.Errorf("session: no member %q", parentID)
 		}
-		if parent.isEphemeral() {
-			t.mu.Unlock()
-			return SpawnResult{}, errors.New("session: a subagent cannot start subagents")
-		}
 	}
-	live := 0
-	for _, o := range t.members {
-		if o.isEphemeral() && o.parentID() == parentID && o.status() != StatusExited {
-			live++
-		}
-	}
+	depth := t.depth(parent) + 1
+	live, all := len(t.children(parentID)), t.liveSubagents()
 	t.mu.Unlock()
-	// The cap is per member; the scheduler (parentID "") is bounded by
-	// MaxParallel, and the user by their own judgement.
-	if parentID != "" && live >= maxChildren {
-		return SpawnResult{}, fmt.Errorf("session: %w: %d are already running; wait for one to finish", errChildLimit, live)
+	// The per-member cap is for members; the scheduler (parentID "") is
+	// bounded by MaxParallel, and the user by their own judgement. The
+	// thread's cap holds for everyone.
+	switch maxD := m.maxDepth(); {
+	case depth > maxD:
+		return SpawnResult{}, fmt.Errorf("session: %w: subagents go %d levels deep and you are at the last; do the work yourself", errChildLimit, maxD)
+	case parentID != "" && live >= m.maxChildren():
+		return SpawnResult{}, fmt.Errorf("session: %w: %d of yours are already running; wait for one to finish", errChildLimit, live)
+	case all >= m.maxSubagents():
+		return SpawnResult{}, fmt.Errorf("session: %w: %d are running in this thread; wait for one to finish", errChildLimit, all)
 	}
 
 	// The task: an existing one, or a new one for this brief.
@@ -110,7 +111,8 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		}
 		// Claimed: it is created running (nobody's yet), so the scheduler does
 		// not start a second subagent for it while this one is spawning.
-		tk, err := m.addTask(t, TaskSpec{Title: title, Brief: brief, Creator: parentID, Contract: &contract, Claimed: true})
+		tk, err := m.addTask(t, TaskSpec{Title: title, Brief: brief, Creator: parentID, Contract: &contract, Claimed: true,
+			Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort})
 		if err != nil {
 			return SpawnResult{}, err
 		}
@@ -141,7 +143,17 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	}
 	a.mu.Lock()
 	a.parent, a.ephemeral = parentID, true
+	if sp.Effort != "" {
+		a.effort = sp.Effort
+	}
 	a.mu.Unlock()
+	// A subagent's view of the thread starts at its brief: what came before
+	// is not its business unless it asks (thread.read), which keeps a deep
+	// tree's prompts small.
+	t.mu.Lock()
+	a.cursor = len(t.log)
+	t.mu.Unlock()
+	brief += m.placeNote(t, a, parent, depth, taskID)
 	var wt *store.Worktree
 	if sp.Isolate {
 		var dir string
@@ -174,6 +186,40 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		res.Branch = wt.Branch
 	}
 	return res, nil
+}
+
+// placeNote tells a new subagent where it sits: who started it, for which
+// task, that it sees only what is sent to it, and whether it may start
+// subagents of its own.
+func (m *Manager) placeNote(t *thread, a, parent *agentState, depth int, taskID string) string {
+	who := "Deck"
+	if parent != nil {
+		who = parent.getName()
+	}
+	t.mu.Lock()
+	title, orchestrate := t.title, t.orchestrate
+	t.mu.Unlock()
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n\n[deck] You are %s, a subagent %s started for task %s", a.getName(), who, taskID)
+	if title != "" {
+		fmt.Fprintf(&b, " in the thread %q", clipText(oneLine(title), 80))
+	}
+	b.WriteString(". You see only what is sent to you; op thread.read shows the whole thread.")
+	switch {
+	case !orchestrate:
+	case depth < m.maxDepth():
+		b.WriteString(" You may start subagents of your own (agent.spawn); your task then waits for their results.")
+	default:
+		b.WriteString(" You cannot start subagents: do the work yourself.")
+	}
+	return b.String()
+}
+
+func or(s, alt string) string {
+	if s != "" {
+		return s
+	}
+	return alt
 }
 
 // checkSpawnTask refuses a task that cannot take a new owner. It is not
@@ -220,6 +266,10 @@ func (m *Manager) bindRun(t *thread, taskID string, a *agentState, wt *store.Wor
 		}
 		if tk.Brief == "" {
 			tk.Brief = clipText(brief, maxTaskText)
+		}
+		// A retry starts the same kind of agent again.
+		if tk.Kind == "" {
+			tk.Kind, tk.Model, tk.Effort = a.kind, sp.Model, sp.Effort
 		}
 	}
 	t.mu.Unlock()
@@ -293,6 +343,7 @@ func (m *Manager) retireMember(t *thread, id string) {
 		return
 	}
 	_ = m.Interrupt(a.id) // denies what it was waiting on
+	defer m.cascade(t, a)
 	if run != nil {
 		// Closed off this goroutine: it may be the one draining the run's
 		// events. The exit itself is logged by the pump when the run's channels
@@ -320,6 +371,10 @@ func (m *Manager) retireSpent(t *thread, a *agentState) {
 		return
 	}
 	t.mu.Lock()
+	if t.waitsOnChildren(a) {
+		t.mu.Unlock()
+		return
+	}
 	for _, tk := range t.tasks {
 		if tk.Owner == a.id && (tk.Status == store.TaskRunning || tk.Status == store.TaskBlocked) {
 			t.mu.Unlock()

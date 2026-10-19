@@ -3,6 +3,8 @@ package workspace
 import (
 	"context"
 	"time"
+
+	decks "github.com/dev-dami/deck/internal/deck/session"
 )
 
 // EffortChoice is one reasoning effort a model takes.
@@ -153,6 +155,12 @@ type AgentLine struct {
 	CostUSD       float64
 	Pending       int       // approvals waiting
 	Since         time.Time // when its current turn began; zero when idle
+	// Depth is how many subagent levels it is below the user's agents (0 for
+	// those); Parent the name of the member that started it; Branch its own
+	// worktree's branch, when it has one.
+	Depth  int
+	Parent string
+	Branch string
 }
 
 // Roster lists the agents in a session, or, before anyone has joined, the
@@ -163,23 +171,56 @@ type Roster interface {
 
 var _ Roster = (*DeckWorkspace)(nil)
 
-// Roster implements [Roster].
+// Roster implements [Roster]. Members are listed as a tree: each subagent
+// right under the member that started it. A subagent that has stopped is left
+// out unless its worktree still holds work to apply or discard.
 func (w *DeckWorkspace) Roster(sessionID string) []AgentLine {
 	var out []AgentLine
 	if th, ok := w.threadOf(sessionID); ok {
+		names := map[string]string{}
+		kids := map[string][]decks.AgentInfo{}
 		for _, a := range th.Members {
-			model := a.RunningModel
-			if model == "" {
-				model = a.Model
+			names[a.ID] = a.Name
+			if a.Status == decks.StatusExited && a.Ephemeral && a.Branch == "" {
+				continue
 			}
-			w.mu.Lock()
-			since := w.since[a.ID]
-			w.mu.Unlock()
-			out = append(out, AgentLine{
-				ID: a.Name, Kind: a.Kind, Model: model, Effort: a.Effort, Status: string(a.Status),
-				ContextTokens: a.ContextTokens, ContextWindow: a.ContextWindow, CostUSD: a.CostUSD, Pending: a.Pending,
-				Since: since,
-			})
+			parent := a.Parent
+			if !a.Ephemeral {
+				parent = ""
+			}
+			kids[parent] = append(kids[parent], a)
+		}
+		var walk func(parent string, depth int)
+		walk = func(parent string, depth int) {
+			for _, a := range kids[parent] {
+				model := a.RunningModel
+				if model == "" {
+					model = a.Model
+				}
+				w.mu.Lock()
+				since := w.since[a.ID]
+				w.mu.Unlock()
+				out = append(out, AgentLine{
+					ID: a.Name, Kind: a.Kind, Model: model, Effort: a.Effort, Status: string(a.Status),
+					ContextTokens: a.ContextTokens, ContextWindow: a.ContextWindow, CostUSD: a.CostUSD, Pending: a.Pending,
+					Since: since, Depth: depth, Parent: names[a.Parent], Branch: a.Branch,
+				})
+				if depth < 16 {
+					walk(a.ID, depth+1)
+				}
+			}
+		}
+		walk("", 0)
+		// Live subagents of a parent that is not listed (it stopped and was
+		// left out) go last, in join order.
+		shown := map[string]bool{}
+		for _, l := range out {
+			shown[l.ID] = true
+		}
+		for _, a := range th.Members {
+			if !shown[a.Name] && len(kids[a.ID]) > 0 && !shown[kids[a.ID][0].Name] {
+				walk(a.ID, 1)
+			}
 		}
 	}
 	if len(out) > 0 {
