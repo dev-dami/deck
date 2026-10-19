@@ -1,75 +1,74 @@
+import { ArrowLeft, ChevronRight, Folder, Laptop, Link2, Loader2, Lock, Plus, X } from "lucide-react";
 import { useState } from "react";
 import type { DeckBridge, PairOutcome, SavedServer } from "../../shared/bridge";
 import { parsePairText } from "../connect";
-
-function label(s: SavedServer): string {
-  const host = s.host.includes(":") ? `[${s.host}]` : s.host;
-  return `${host}:${s.port}`;
-}
+import { Button } from "./kit/button";
 
 // The last part of a folder path, for the recent list.
 function base(dir: string): string {
   return dir.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || dir;
 }
 
+const input =
+  "h-9 w-full rounded-lg border border-input bg-background px-3 text-[13px] outline-none placeholder:text-muted-foreground/70 focus:border-primary";
+
+function Section({ title, children, label: aria }: { title: string; children: React.ReactNode; label: string }) {
+  return (
+    <section aria-label={aria} className="flex flex-col gap-3">
+      <h2 className="px-1 font-medium text-muted-foreground text-xs">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+// The recent folders: a click starts Deck in one.
 function OpenFolder({
-  bridge,
-  deck,
   recent,
   opening,
   onFolder,
   setError,
 }: {
-  bridge: DeckBridge;
-  deck: string | null;
   recent: string[];
   opening: string | null;
   onFolder: (dir: string) => Promise<string | null>;
   setError: (e: string | null) => void;
 }) {
-  const open = async (dir: string | null) => {
-    if (dir === null) return;
+  const open = async (dir: string) => {
     setError(null);
     setError(await onFolder(dir));
   };
-  if (deck === null) {
-    return (
-      <section aria-label="Open a folder">
-        <h2>Open a folder</h2>
-        <p className="muted">
-          Put the <code>deck</code> command on your PATH. Then this app can run Deck in a project folder on this
-          computer.
-        </p>
-      </section>
-    );
-  }
   return (
-    <section aria-label="Open a folder">
-      <h2>Open a folder</h2>
-      <p className="muted">
-        The app runs <code>deck serve --rpc</code> in the folder and stops it when you close the folder or quit.
-      </p>
-      <button
-        type="button"
-        className="primary"
-        disabled={opening !== null}
-        onClick={() => void bridge.pickFolder().then(open)}
-      >
-        {opening === null ? "Open a folder…" : `Starting Deck in ${base(opening)}…`}
-      </button>
-      {recent.length > 0 && (
-        <ul className="servers recent" aria-label="Recent folders">
+    <Section title="Recent projects" label="Open a folder">
+      {recent.length > 0 ? (
+        <ul className="servers recent flex flex-col gap-px" aria-label="Recent folders">
           {recent.map((dir) => (
             <li key={dir}>
-              <button type="button" className="server-open" disabled={opening !== null} onClick={() => void open(dir)}>
-                <span>{base(dir)}</span>
-                <span className="muted">{dir}</span>
+              <button
+                type="button"
+                className="server-open group flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-accent disabled:cursor-default disabled:opacity-50"
+                disabled={opening !== null}
+                onClick={() => void open(dir)}
+              >
+                {opening === dir ? (
+                  <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                ) : (
+                  <Folder className="size-4 shrink-0 text-muted-foreground" />
+                )}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm">{base(dir)}</span>
+                  <span className="truncate text-2xs text-muted-foreground">{dir}</span>
+                </span>
+                <ChevronRight className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100" />
               </button>
             </li>
           ))}
         </ul>
+      ) : (
+        <p className="px-3 text-muted-foreground text-xs">
+          No projects yet. Add a folder and Deck opens it; agents work there until you close it or quit.
+        </p>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -117,62 +116,84 @@ function Pair({
   const https = text.trim().toLowerCase().startsWith("https:");
 
   return (
-    <section aria-label="Pair">
-      <h2>Pair with a Deck</h2>
-      <p className="muted">For a Deck on another computer, or one that you started yourself.</p>
+    <Section title="Pair with a Deck" label="Pair">
       {servers.length > 0 && (
-        <ul className="servers" aria-label="Paired servers">
+        <ul className="servers flex flex-col gap-px" aria-label="Paired servers">
           {servers.map((s) => (
-            <li key={s.id}>
-              <button type="button" className="server-open" onClick={() => onOpen(s)}>
-                <span>{label(s)}</span>
-                <span className="muted">
-                  {s.tls ? "https, pinned" : "this computer"}
-                  {s.persisted ? "" : " · until the app quits"}
+            <li key={s.id} className="group flex items-center gap-1 rounded-lg hover:bg-accent">
+              <button
+                type="button"
+                className="server-open flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-3 py-2 text-left"
+                onClick={() => onOpen(s)}
+              >
+                {s.tls ? (
+                  <Lock className="size-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <Laptop className="size-4 shrink-0 text-muted-foreground" />
+                )}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-[13px]">Paired Deck</span>
+                  <span className="truncate text-2xs text-muted-foreground">
+                    {s.tls ? "Another computer" : "This computer"}
+                    {s.persisted ? "" : " · until the app quits"}
+                  </span>
                 </span>
               </button>
-              <button type="button" className="link-button" onClick={() => onForget(s)}>
+              <Button
+                variant="ghost-muted"
+                size="xs"
+                className="mr-1 opacity-0 group-hover:opacity-100"
+                onClick={() => onForget(s)}
+              >
+                <X />
                 Forget
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
       )}
-      <ol className="steps">
-        <li>
-          In the project, run <code>deck remote</code> (add <code>--lan</code> for another computer).
-        </li>
-        <li>
-          In another terminal, run <code>deck remote pair</code>.
-        </li>
-        <li>Paste the link or the invite line it prints.</li>
-      </ol>
-      <label className="field">
-        <span>Pairing link or invite line</span>
-        <input
-          value={text}
-          placeholder="http://127.0.0.1:7878/#pair=…  or  deck://pair?…"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void pair();
-          }}
-        />
-      </label>
-      {https && (
-        <label className="field">
-          <span>Certificate fingerprint (SHA-256, as deck remote prints it)</span>
-          <input value={fp} placeholder="AB:CD:…" onChange={(e) => setFp(e.target.value)} />
+      <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+        <ol className="steps flex list-decimal flex-col gap-1 pl-4 text-muted-foreground text-xs leading-relaxed marker:text-muted-foreground/60">
+          <li>
+            In the project, run <code className="font-mono text-foreground/80">deck remote</code> (add{" "}
+            <code className="font-mono text-foreground/80">--lan</code> for another computer).
+          </li>
+          <li>
+            In another terminal, run <code className="font-mono text-foreground/80">deck remote pair</code>.
+          </li>
+          <li>Paste the link or the invite line it prints.</li>
+        </ol>
+        <label className="field flex flex-col gap-1.5">
+          <span className="font-medium text-xs">Pairing link or invite line</span>
+          <input
+            id="pair-input"
+            className={input}
+            value={text}
+            placeholder="http://127.0.0.1:7878/#pair=…  or  deck://pair?…"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void pair();
+            }}
+          />
         </label>
-      )}
-      <button type="button" onClick={() => void pair()} disabled={busy || text.trim() === ""}>
-        {busy ? "Pairing…" : "Pair"}
-      </button>
-    </section>
+        {https && (
+          <label className="field flex flex-col gap-1.5">
+            <span className="font-medium text-xs">Certificate fingerprint (SHA-256, as deck remote prints it)</span>
+            <input className={input} value={fp} placeholder="AB:CD:…" onChange={(e) => setFp(e.target.value)} />
+          </label>
+        )}
+        <Button variant="outline" className="self-end" onClick={() => void pair()} disabled={busy || text.trim() === ""}>
+          {busy ? <Loader2 className="animate-spin" /> : <Link2 />}
+          {busy ? "Pairing…" : "Pair"}
+        </Button>
+      </div>
+    </Section>
   );
 }
 
-// Two ways in: a folder on this computer (deck serve --rpc, the default
-// when deck is on PATH) or a Deck to pair with (deck remote, protocol v2).
+// Two ways in, after T3 Code's "no projects" hero: a folder on this
+// computer, which the app's own engine opens (the default), or a Deck on
+// another computer to pair with.
 export function ConnectScreen({
   bridge,
   deck,
@@ -184,6 +205,7 @@ export function ConnectScreen({
   onPaired,
   onOpen,
   onForget,
+  onBack,
 }: {
   bridge: DeckBridge;
   deck: string | null;
@@ -195,32 +217,86 @@ export function ConnectScreen({
   onPaired: (s: SavedServer) => void;
   onOpen: (s: SavedServer) => void;
   onForget: (s: SavedServer) => void;
+  // Back to the open projects, when there are some.
+  onBack?: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const folder = (
-    <OpenFolder bridge={bridge} deck={deck} recent={recent} opening={opening} onFolder={onFolder} setError={setError} />
-  );
+  // Pairing is the way in for a Deck on another computer; folders on this
+  // one come first.
+  const [pairing, setPairing] = useState(deck === null || servers.length > 0);
+  const addProject = async () => {
+    const dir = await bridge.pickFolder();
+    if (dir === null) return;
+    setError(null);
+    setError(await onFolder(dir));
+  };
   return (
-    <main className="connect" data-screen="connect">
-      <div className="connect-card">
-        <h1>Connect to Deck</h1>
-        <p className="muted">This app shows the sessions and agents of a Deck and lets you run many agents at once.</p>
-        {message !== null && <p className="notice">{message}</p>}
-        {deck !== null && folder}
-        <Pair
-          bridge={bridge}
-          servers={servers}
-          onPaired={onPaired}
-          onOpen={onOpen}
-          onForget={onForget}
-          setError={setError}
-        />
-        {deck === null && folder}
-        {error !== null && (
-          <p className="error" role="alert">
-            {error}
-          </p>
+    <main className="connect flex h-full flex-col overflow-y-auto" data-screen="connect">
+      <div className="drag flex h-12 shrink-0 items-center px-3">
+        {onBack !== undefined && (
+          <Button variant="ghost-muted" size="sm" onClick={onBack}>
+            <ArrowLeft />
+            Back to threads
+          </Button>
         )}
+      </div>
+      <div className="flex flex-1 justify-center px-6">
+        <div className="connect-card flex w-full max-w-lg flex-col gap-10 pt-[8vh] pb-16">
+          <div className="flex flex-col items-center gap-6 text-center">
+            <div className="flex flex-col items-center gap-2">
+              <h1 className="text-balance font-medium text-2xl tracking-tight sm:text-3xl">What should we work on?</h1>
+              <p className="text-muted-foreground text-sm">
+                {deck === null
+                  ? "This install of Deck is missing its engine. Reinstall Deck, or pair with a Deck on another computer."
+                  : "Add a project, or pair with a Deck on another computer."}
+              </p>
+            </div>
+            <div className="flex justify-center gap-2">
+              <Button size="sm" className="primary" disabled={deck === null || opening !== null} onClick={() => void addProject()}>
+                {opening === null ? <Plus /> : <Loader2 className="animate-spin" />}
+                {opening === null ? "Add project" : `Starting Deck in ${base(opening)}…`}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                aria-expanded={pairing}
+                onClick={() => {
+                  setPairing(true);
+                  requestAnimationFrame(() => document.getElementById("pair-input")?.focus());
+                }}
+              >
+                <Link2 />
+                Pair with a Deck
+              </Button>
+            </div>
+          </div>
+          {message !== null && (
+            <p className="notice rounded-xl border border-warning/30 bg-warning/8 px-4 py-3 text-sm">{message}</p>
+          )}
+          {error !== null && (
+            <p className="error rounded-xl border border-destructive/40 bg-destructive/8 px-4 py-3 text-sm" role="alert">
+              {error}
+            </p>
+          )}
+          {deck !== null && (
+            <OpenFolder
+              recent={recent}
+              opening={opening}
+              onFolder={onFolder}
+              setError={setError}
+            />
+          )}
+          {pairing && (
+          <Pair
+            bridge={bridge}
+            servers={servers}
+            onPaired={onPaired}
+            onOpen={onOpen}
+            onForget={onForget}
+            setError={setError}
+          />
+          )}
+        </div>
       </div>
     </main>
   );

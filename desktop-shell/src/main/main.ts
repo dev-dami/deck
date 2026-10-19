@@ -13,7 +13,8 @@ import {
 } from "electron";
 import { HOST_METHODS, hostChannel, RPC_EVENT_CHANNEL, SOCKET_EVENT_CHANNEL } from "../shared/bridge";
 import { RENDERER_CSP } from "../shared/csp";
-import { findOnPath, loadService, RpcDecks } from "./decks";
+import { findDeck, loadService, RpcDecks } from "./decks";
+import { enginePath } from "./shellPath";
 import { callHost, createHost } from "./host";
 import { LinkHost } from "./link";
 import { RecentFolders } from "./recent";
@@ -86,7 +87,10 @@ function createWindow(reset: () => void): BrowserWindow {
     minWidth: 960,
     minHeight: 560,
     title: "Deck",
-    backgroundColor: "#111416",
+    backgroundColor: "#0a0a0a",
+    // The renderer draws its own title strips (the "drag" class): on a Mac the
+    // traffic lights sit over the sidebar; elsewhere the menu bar hides until Alt.
+    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const } : { autoHideMenuBar: true }),
     webPreferences: {
       preload: join(__dirname, "..", "preload", "preload.js"),
       contextIsolation: true,
@@ -143,10 +147,18 @@ async function main(): Promise<void> {
 
   const store = new ServerStore(join(app.getPath("userData"), "servers.json"), sealer);
   const links = new LinkHost(store, (id, ev) => win?.webContents.send(SOCKET_EVENT_CHANNEL, id, ev));
-  const deckPath = findOnPath("deck");
+  // The bundled engine: resources/bin in the packaged app, bin/ beside
+  // package.json in a checkout.
+  const deckPath = findDeck(app.isPackaged ? join(process.resourcesPath, "bin") : join(app.getAppPath(), "bin"));
   // build copies proto/deck/v1/deck.proto to dist/app/proto.
   const Service = loadService(join(__dirname, "..", "proto", "deck.proto"));
-  const decks = new RpcDecks(deckPath, Service, (id, ev) => win?.webContents.send(RPC_EVENT_CHANNEL, id, ev));
+  const decks = new RpcDecks(
+    deckPath,
+    Service,
+    (id, ev) => win?.webContents.send(RPC_EVENT_CHANNEL, id, ev),
+    // Started now, ready by the first open: the login shell's PATH.
+    enginePath(),
+  );
   const reset = () => {
     links.closeAll();
     decks.cancelStreams();

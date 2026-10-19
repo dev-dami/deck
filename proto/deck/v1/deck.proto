@@ -42,6 +42,64 @@ service Deck {
 
   rpc Changes(SessionRef) returns (ChangesResponse);
 
+  // Git is the project's work tree: its branch and how it stands, its
+  // recent branches and the pull request of its branch (when gh is set up).
+  rpc GitStatus(Empty) returns (GitStatusResponse);
+  // GitCheckout switches to a branch, or makes it first when create is set.
+  rpc GitCheckout(GitCheckoutRequest) returns (Empty);
+  // GitCommit stages every change and commits it.
+  rpc GitCommit(GitCommitRequest) returns (Empty);
+  rpc GitPush(Empty) returns (Empty);
+  // GitPull fast-forwards the branch from its upstream.
+  rpc GitPull(Empty) returns (Empty);
+  // GitCreatePR opens a pull request from the branch (gh must be set up).
+  rpc GitCreatePR(GitCreatePRRequest) returns (GitPullRequest);
+  // GitMergePR merges the branch's pull request.
+  rpc GitMergePR(GitMergePRRequest) returns (Empty);
+
+  // Usage is what the agents used (tokens, cost, time, plan limits) and how
+  // the user works, from Deck's local record. Nothing leaves the machine.
+  rpc Usage(UsageRequest) returns (UsageResponse);
+
+  // A terminal in the project folder: a shell on a pseudo-terminal. Open
+  // starts one; TerminalOutput streams what it prints until it exits.
+  rpc TerminalOpen(TerminalOpenRequest) returns (TerminalRef);
+  rpc TerminalWrite(TerminalInput) returns (Empty);
+  rpc TerminalResize(TerminalSize) returns (Empty);
+  rpc TerminalClose(TerminalRef) returns (Empty);
+  rpc TerminalOutput(TerminalRef) returns (stream TerminalChunk);
+
+  // The thread's task board: what its agents split the work into, who
+  // runs each task, races and their entries, reviews.
+  rpc Board(SessionRef) returns (BoardResponse);
+  // TaskAction acts on a task: cancel, retry, steer (with text), apply (a
+  // worktree's work into the tree; keeps a race entry) or discard.
+  rpc TaskAction(TaskActionRequest) returns (TaskActionResponse);
+  // SetOrchestrate turns the scheduler and agents' subagents on or off.
+  rpc SetOrchestrate(SetOrchestrateRequest) returns (Empty);
+  // Agents is the thread's agents as a tree (subagents under the member
+  // that started them) with what each runs right now.
+  rpc Agents(SessionRef) returns (AgentsResponse);
+
+  // Team is the link to teammates' Decks: who they are, whether they are
+  // reachable, what their agents do, the threads they share with this one,
+  // the team chat and the contracts both ways.
+  rpc Team(Empty) returns (TeamResponse);
+  rpc TeamPost(TeamPostRequest) returns (TeamPostResponse);
+  // ShareThread shares a thread with a teammate as observer, participant
+  // or editor, or stops sharing it (role "").
+  rpc ShareThread(ShareThreadRequest) returns (Empty);
+  rpc ThreadShares(SessionRef) returns (ThreadSharesResponse);
+  // ProposeContract asks a teammate's Deck to do a task for the thread.
+  rpc ProposeContract(ProposeContractRequest) returns (ProposeContractResponse);
+  // AnswerContract accepts (with an agent kind) or declines one proposed
+  // to this Deck.
+  rpc AnswerContract(AnswerContractRequest) returns (Empty);
+  // ReadShared follows a thread a teammate shares with this Deck.
+  rpc ReadShared(ReadSharedRequest) returns (SharedMirror);
+  rpc PostShared(PostSharedRequest) returns (Empty);
+  rpc AnswerShared(AnswerSharedRequest) returns (Empty);
+
   // Events streams everything that happens, starting with a Ready. Pass the
   // epoch and seq of the last event seen to replay what was missed; Ready
   // says resync when that cannot be done and the client must refetch.
@@ -333,4 +391,422 @@ message Event {
     Notice notice = 23;
     Theme theme_changed = 24;
   }
+}
+
+message GitBranch {
+  string name = 1;
+  // upstream is empty when the branch was never pushed.
+  string upstream = 2;
+  int64 committed_at = 3;
+  string subject = 4;
+}
+
+message GitCheck {
+  string name = 1;
+  // bucket is "pass", "fail", "pending", "skipping" or "cancel".
+  string bucket = 2;
+  string link = 3;
+}
+
+message GitPullRequest {
+  int32 number = 1;
+  string title = 2;
+  // state is OPEN, CLOSED or MERGED.
+  string state = 3;
+  string url = 4;
+  bool draft = 5;
+  string review_decision = 6;
+  string mergeable = 7;
+  string base = 8;
+  repeated GitCheck checks = 9;
+}
+
+message GitStatusResponse {
+  // repo is false when the project folder is not a git work tree; the
+  // rest is then empty.
+  bool repo = 1;
+  string branch = 2;
+  string upstream = 3;
+  int32 ahead = 4;
+  int32 behind = 5;
+  // dirty counts changed, staged, unmerged and untracked files.
+  int32 dirty = 6;
+  bool detached = 7;
+  string head = 8;
+  string default_branch = 9;
+  repeated GitBranch branches = 10;
+  // gh is true when the GitHub CLI is installed and signed in.
+  bool gh = 11;
+  GitPullRequest pull_request = 12;
+}
+
+message GitCheckoutRequest {
+  string branch = 1;
+  bool create = 2;
+}
+
+message GitCommitRequest {
+  string message = 1;
+}
+
+message GitCreatePRRequest {
+  string title = 1;
+  string body = 2;
+  // base is empty for the repository's default branch.
+  string base = 3;
+  bool draft = 4;
+}
+
+message GitMergePRRequest {
+  // method is "squash", "merge" or "rebase".
+  string method = 1;
+}
+
+message UsageRequest {
+  // days is the range: the last so many days, or 0 for all time.
+  int32 days = 1;
+}
+
+message UsageOverview {
+  int32 turns = 1;
+  int32 all_turns = 2;
+  int64 input_tokens = 3;
+  int64 output_tokens = 4;
+  int64 cached_tokens = 5;
+  int64 cache_write_tokens = 6;
+  int64 reasoning_tokens = 7;
+  double cost_usd = 8;
+  int64 duration_ms = 9;
+  int64 ttft_avg_ms = 10;
+  int64 ttft_p95_ms = 11;
+  double cache_hit_pct = 12;
+  int32 done = 13;
+  int32 interrupted = 14;
+  int32 failed = 15;
+}
+
+message UsageDay {
+  // day is local midnight.
+  int64 day = 1;
+  int32 turns = 2;
+  int64 tokens = 3;
+  double cost_usd = 4;
+}
+
+message UsageGroup {
+  string kind = 1;
+  string model = 2;
+  int32 turns = 3;
+  int64 input_tokens = 4;
+  int64 output_tokens = 5;
+  int64 cached_tokens = 6;
+  double cost_usd = 7;
+}
+
+message UsageSession {
+  string session_id = 1;
+  string title = 2;
+  int32 turns = 3;
+  int64 tokens = 4;
+  double cost_usd = 5;
+}
+
+message UsageLimit {
+  string agent_kind = 1;
+  string window_id = 2;
+  // kind is "session", "weekly", "monthly" or "other".
+  string kind = 3;
+  string label = 4;
+  double used_pct = 5;
+  int64 resets_at = 6;
+  int32 duration_mins = 7;
+  string plan = 8;
+  int64 at = 9;
+}
+
+message UsageFit {
+  string kind = 1;
+  // class is "read", "edit", "run" or "other".
+  string class = 2;
+  int32 calls = 3;
+}
+
+message UsageHabits {
+  int32 active_days = 1;
+  int32 streak = 2;
+  // hours counts finished turns by weekday (Monday first) and hour: 7 x 24.
+  repeated int32 hours = 3;
+  int64 review_median_ms = 4;
+  int64 review_p90_ms = 5;
+  int64 approval_median_ms = 6;
+  double approval_fast_pct = 7;
+  int32 user_turns = 8;
+  int32 redirects = 9;
+  int32 follow_ups = 10;
+  int32 prompt_median = 11;
+  int32 edit_turns = 12;
+  int32 edit_files = 13;
+  int32 lines_added = 14;
+  int32 lines_removed = 15;
+  int32 reverts = 16;
+  repeated UsageFit fit = 17;
+}
+
+message UsageResponse {
+  // available is false when Deck keeps no record (no database).
+  bool available = 1;
+  UsageOverview overview = 2;
+  // days has one entry per day of the range, oldest first.
+  repeated UsageDay days = 3;
+  repeated UsageGroup kinds = 4;
+  repeated UsageGroup models = 5;
+  // sessions are the costliest of the range.
+  repeated UsageSession sessions = 6;
+  repeated UsageLimit limits = 7;
+  // heat is every day of the last weeks, from a Monday.
+  repeated UsageDay heat = 8;
+  UsageHabits habits = 9;
+}
+
+message TerminalOpenRequest {
+  int32 cols = 1;
+  int32 rows = 2;
+}
+
+message TerminalRef {
+  string terminal_id = 1;
+}
+
+message TerminalInput {
+  string terminal_id = 1;
+  bytes data = 2;
+}
+
+message TerminalSize {
+  string terminal_id = 1;
+  int32 cols = 2;
+  int32 rows = 3;
+}
+
+message TerminalChunk {
+  bytes data = 1;
+  // exited is set on the last chunk, when the shell has ended.
+  bool exited = 2;
+  int32 exit_code = 3;
+}
+
+message BoardTask {
+  string id = 1;
+  string title = 2;
+  // status is pending, ready, running, review, blocked, done, failed or
+  // cancelled.
+  string status = 3;
+  string owner = 4;
+  repeated string deps = 5;
+  string brief = 6;
+  string result = 7;
+  string error = 8;
+  int32 attempts = 9;
+  int32 tries = 10;
+  string branch = 11;
+  int64 updated_at = 12;
+  bool race = 13;
+  bool entry = 14;
+  string stats = 15;
+  repeated string files = 16;
+  string reviewer = 17;
+  int32 reviews = 18;
+}
+
+message BoardResponse {
+  bool orchestrate = 1;
+  repeated BoardTask tasks = 2;
+}
+
+message TaskActionRequest {
+  string session_id = 1;
+  string task_id = 2;
+  // action is cancel, retry, steer, apply or discard.
+  string action = 3;
+  string text = 4;
+}
+
+message TaskActionResponse {
+  // files are what an apply wrote into the tree.
+  repeated string files = 1;
+}
+
+message SetOrchestrateRequest {
+  string session_id = 1;
+  bool on = 2;
+}
+
+message AgentNode {
+  string name = 1;
+  string kind = 2;
+  string model = 3;
+  string effort = 4;
+  // status is idle, working, tool, approval, error, exited or ready.
+  string status = 5;
+  int32 context_tokens = 6;
+  int32 context_window = 7;
+  double cost_usd = 8;
+  int32 pending = 9;
+  int64 since = 10;
+  int32 depth = 11;
+  string parent = 12;
+  string branch = 13;
+  string leases = 14;
+}
+
+message RunningTool {
+  string agent = 1;
+  string kind = 2;
+  string name = 3;
+  string summary = 4;
+  string detail = 5;
+  int64 started = 6;
+  // subagent is set for a CLI's own subagent (Claude's Task), command for a
+  // shell command.
+  bool subagent = 7;
+  bool command = 8;
+}
+
+message AgentsResponse {
+  repeated AgentNode agents = 1;
+  repeated RunningTool running = 2;
+}
+
+message TeamAgent {
+  string name = 1;
+  string kind = 2;
+  string status = 3;
+  string task = 4;
+  int32 context_pct = 5;
+}
+
+message TeamThread {
+  string id = 1;
+  string title = 2;
+  string role = 3;
+  string mode = 4;
+  repeated string members = 5;
+  int32 entries = 6;
+}
+
+message Teammate {
+  string name = 1;
+  string role = 2;
+  bool pinned = 3;
+  // link is "online", "connecting", "offline" or "" when never linked.
+  string link = 4;
+  int64 last_seen = 5;
+  bool present = 6;
+  repeated TeamAgent agents = 7;
+  repeated TeamThread threads = 8;
+}
+
+message TeamChat {
+  uint64 seq = 1;
+  string from = 2;
+  string agent = 3;
+  string text = 4;
+  int64 at = 5;
+  bool mine = 6;
+}
+
+message TeamContract {
+  string id = 1;
+  string peer = 2;
+  bool inbound = 3;
+  string title = 4;
+  string brief = 5;
+  // state is proposed, accepted, declined, done, failed or cancelled.
+  string state = 6;
+  string agent = 7;
+  string note = 8;
+  string summary = 9;
+  string kind = 10;
+}
+
+message TeamResponse {
+  // available is false when this Deck has no peer link.
+  bool available = 1;
+  bool enabled = 2;
+  string name = 3;
+  string fingerprint = 4;
+  repeated Teammate teammates = 5;
+  repeated TeamChat chat = 6;
+  repeated TeamContract contracts = 7;
+  // contract_kinds are the agent kinds that may run a teammate's contract.
+  repeated string contract_kinds = 8;
+}
+
+message TeamPostRequest {
+  string text = 1;
+}
+
+message TeamPostResponse {
+  repeated string reached = 1;
+}
+
+message ShareThreadRequest {
+  string session_id = 1;
+  string peer = 2;
+  string role = 3;
+}
+
+message ThreadSharesResponse {
+  map<string, string> shares = 1;
+}
+
+message ProposeContractRequest {
+  string session_id = 1;
+  string peer = 2;
+  string brief = 3;
+}
+
+message ProposeContractResponse {
+  string task_id = 1;
+  bool queued = 2;
+}
+
+message AnswerContractRequest {
+  string peer = 1;
+  string id = 2;
+  bool accept = 3;
+  string agent = 4;
+}
+
+message ReadSharedRequest {
+  string peer = 1;
+  string thread = 2;
+  int32 after = 3;
+}
+
+message SharedApproval {
+  string id = 1;
+  string agent = 2;
+  string kind = 3;
+  string summary = 4;
+}
+
+message SharedMirror {
+  TeamThread thread = 1;
+  repeated string lines = 2;
+  int32 next = 3;
+  repeated SharedApproval pending = 4;
+}
+
+message PostSharedRequest {
+  string peer = 1;
+  string thread = 2;
+  string text = 3;
+}
+
+message AnswerSharedRequest {
+  string peer = 1;
+  string thread = 2;
+  string approval = 3;
+  bool allow = 4;
 }

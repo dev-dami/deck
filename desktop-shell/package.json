@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && tsc -p tsconfig.main.json && node -e \"require('fs').cpSync('../proto/deck/v1/deck.proto', 'dist/app/proto/deck.proto')\"",
+    "build:deck": "node scripts/build-deck.mjs",
+    "dist": "npm run build && npm run build:deck && electron-builder",
     "start": "electron .",
     "test": "vitest run",
     "e2e": "npm run build && playwright test",
@@ -20,16 +22,66 @@
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",
+    "@tailwindcss/vite": "4.3.3",
     "@types/node": "22.18.12",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "@types/ws": "8.18.1",
     "@vitejs/plugin-react": "5.0.4",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
     "electron": "44.9.0",
+    "electron-builder": "26.17.0",
+    "lucide-react": "1.49.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "tailwind-merge": "3.7.0",
+    "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
     "vite": "7.3.7",
     "vitest": "5.0.5"
+  },
+  "build": {
+    "appId": "dev.deck.desktop",
+    "productName": "Deck",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": [
+          "deck",
+          "deck.exe"
+        ]
+      }
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "linux": {
+      "category": "Development",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
   }
 }

@@ -18,6 +18,7 @@ desktop-shell/node_modules/
 desktop-shell/dist/
 desktop-shell/test-results/
 desktop-shell/playwright-report/
+desktop-shell/release/
 
 # Claude Code agent worktrees
 .claude/worktrees/

@@ -54,7 +54,8 @@ export interface LocalDeck {
 export type OpenOutcome = { ok: true; deck: LocalDeck } | { ok: false; message: string };
 
 // The unary methods of deck.v1.Deck (proto/deck/v1/deck.proto) the window
-// may call. Events is a stream and goes through rpcSubscribe.
+// may call. Events and TerminalOutput are streams and go through
+// rpcSubscribe and termSubscribe.
 export const RPC_METHODS = [
   "Info",
   "ListSessions",
@@ -78,6 +79,31 @@ export const RPC_METHODS = [
   "Approvals",
   "Answer",
   "Changes",
+  "GitStatus",
+  "GitCheckout",
+  "GitCommit",
+  "GitPush",
+  "GitPull",
+  "GitCreatePR",
+  "GitMergePR",
+  "Usage",
+  "TerminalOpen",
+  "TerminalWrite",
+  "TerminalResize",
+  "TerminalClose",
+  "Board",
+  "TaskAction",
+  "SetOrchestrate",
+  "Agents",
+  "Team",
+  "TeamPost",
+  "ShareThread",
+  "ThreadShares",
+  "ProposeContract",
+  "AnswerContract",
+  "ReadShared",
+  "PostShared",
+  "AnswerShared",
 ] as const;
 
 export type RpcMethod = (typeof RPC_METHODS)[number];
@@ -92,7 +118,16 @@ export type RpcResult = { ok: true; value: unknown } | { ok: false; code: number
 export type RpcStreamEvent =
   | { type: "event"; event: unknown }
   | { type: "end"; code: number; message: string }
-  | { type: "exit"; message: string };
+  | { type: "exit"; message: string }
+  | TermEvent;
+
+// What a terminal's output stream sends: what the shell printed (base64,
+// as the bytes may split a UTF-8 sequence), its exit, or the end of the
+// stream (the window subscribes again, and gets the scrollback).
+export type TermEvent =
+  | { type: "term"; term: string; data: string }
+  | { type: "term-exit"; term: string; code: number }
+  | { type: "term-end"; term: string; code: number; message: string };
 
 // What main does for the renderer. The Electron main process serves it over
 // IPC; the end-to-end tests serve the same object to a browser page.
@@ -114,6 +149,9 @@ export interface DeckHost {
   rpcCall(id: string, method: RpcMethod, request: Record<string, unknown>): Promise<RpcResult>;
   // Opens the Events stream from (epoch, seq) and closes the one open before.
   rpcSubscribe(id: string, epoch: string, seq: number): Promise<void>;
+  // Streams a terminal's output (from its scrollback) as TermEvents.
+  termSubscribe(id: string, term: string): Promise<void>;
+  termUnsubscribe(id: string, term: string): Promise<void>;
 }
 
 // The renderer's view: the host plus the socket and rpc event streams.
@@ -136,6 +174,8 @@ export const HOST_METHODS = [
   "recentFolders",
   "rpcCall",
   "rpcSubscribe",
+  "termSubscribe",
+  "termUnsubscribe",
 ] as const satisfies ReadonlyArray<keyof DeckHost>;
 
 export type HostMethod = (typeof HOST_METHODS)[number];

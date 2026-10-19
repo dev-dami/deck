@@ -1,8 +1,8 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { findOnPath, parseHandshake } from "../src/main/decks";
+import { findDeck, findOnPath, parseHandshake } from "../src/main/decks";
 import { openLocal } from "../src/renderer/connection";
 import type { DeckClient } from "../src/renderer/client";
 import { inProcessBridge } from "./bridge";
@@ -36,6 +36,16 @@ describe("the handshake of deck serve --rpc", () => {
     expect(parseHandshake(line({ token: "short" }))).toBeNull();
     expect(parseHandshake(line({ pid: "1" }))).toBeNull();
     expect(parseHandshake("Deck is starting")).toBeNull();
+  });
+
+  test("findDeck prefers DECK_BIN, then the bundled engine, then PATH", () => {
+    const node = process.execPath;
+    expect(findDeck("/no/such/dir", { PATH: "", DECK_BIN: node })).toBe(node);
+    const bundled = mkdtempSync(join(tmpdir(), "deck-bundled-"));
+    const exe = join(bundled, process.platform === "win32" ? "deck.exe" : "deck");
+    writeFileSync(exe, "#!/bin/sh\n", { mode: 0o755 });
+    expect(findDeck(bundled, { PATH: "" })).toBe(exe);
+    expect(findDeck("/no/such/dir", { PATH: "" })).toBeNull();
   });
 
   test("findOnPath finds an executable", () => {
