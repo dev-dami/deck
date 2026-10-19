@@ -5,12 +5,14 @@ import { useSyncExternalStore } from "react";
 
 export type ThemePref = "deck" | "system" | "light" | "dark";
 export type RowStyle = "cards" | "compact";
+export type Grouping = "projects" | "recent";
 export type ClockPref = "12h" | "24h";
 export type SendKey = "enter" | "mod-enter";
 
 export interface Prefs {
   theme: ThemePref;
   rows: RowStyle;
+  grouping: Grouping;
   clock: ClockPref;
   sendKey: SendKey;
   confirmYolo: boolean;
@@ -20,6 +22,7 @@ export interface Prefs {
 export const defaultPrefs: Prefs = {
   theme: "deck",
   rows: "cards",
+  grouping: "projects",
   clock: "12h",
   sendKey: "enter",
   confirmYolo: true,
@@ -47,6 +50,7 @@ function merge(v: Record<string, unknown>): Prefs {
   return {
     theme: pick("theme", ["deck", "system", "light", "dark"] as const, defaultPrefs.theme),
     rows: pick("rows", ["cards", "compact"] as const, defaultPrefs.rows),
+    grouping: pick("grouping", ["projects", "recent"] as const, defaultPrefs.grouping),
     clock: pick("clock", ["12h", "24h"] as const, defaultPrefs.clock),
     sendKey: pick("sendKey", ["enter", "mod-enter"] as const, defaultPrefs.sendKey),
     confirmYolo: bool("confirmYolo", defaultPrefs.confirmYolo),

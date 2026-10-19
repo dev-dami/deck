@@ -171,6 +171,21 @@ function Appearance({ p }: { p: Prefs }) {
       </Section>
       <Section title="Sidebar">
         <Row
+          title="Threads"
+          description="Under their project folders, or in one list across projects, newest first."
+          control={
+            <Segmented
+              label="Threads"
+              value={p.grouping}
+              onChange={set("grouping")}
+              options={[
+                { value: "projects", label: "By project" },
+                { value: "recent", label: "By recent" },
+              ]}
+            />
+          }
+        />
+        <Row
           title="Thread rows"
           description="Cards show the project, the last message and the agents; compact rows show the title only."
           control={

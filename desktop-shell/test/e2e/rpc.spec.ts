@@ -171,7 +171,9 @@ test("projects: two folders open at once, their threads in one sidebar", async (
   await expect(page.locator(".project")).toHaveText(basename(second));
   await expect(sidebar(page).locator(".session")).toHaveCount(6);
   // A thread of the first project makes it current again.
-  const first = sidebar(page).locator(".session").filter({ hasText: basename(dir) }).filter({ hasText: "Docs pass" });
+  // Threads sit under their project folders, as in T3 Code.
+  await expect(sidebar(page).locator(".project-group")).toHaveCount(2);
+  const first = sidebar(page).locator(`[data-project="${basename(dir)}"] .session`).filter({ hasText: "Docs pass" });
   await first.getByRole("button", { name: "Docs pass", exact: true }).click();
   await expect(page.locator(".project")).toHaveText(basename(dir));
   await expect(page.locator(".title")).toHaveText("Docs pass");

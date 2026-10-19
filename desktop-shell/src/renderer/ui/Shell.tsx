@@ -566,6 +566,8 @@ export function Shell({
           onForeign={(src, id) => void onProject(src, id).then((e) => e !== null && toast(e))}
           onCloseProject={onCloseProject}
           onConnect={onConnect}
+          onNewIn={(src) => (src === source ? newSession() : void onProject(src, "new").then((e) => e !== null && toast(e)))}
+          grouping={prefs.grouping}
           link={state.link}
           sessions={state.sessions.filter((s) => !isSide(s))}
           openId={ui.openId}

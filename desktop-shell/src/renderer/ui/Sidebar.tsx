@@ -90,12 +90,15 @@ function ThreadRow({
   variant,
   kinds,
   theme,
+  hideProject = false,
   onOpen,
   onRename,
   onDelete,
 }: {
   s: Session;
   project: string;
+  // Under its project's heading the card leaves the project out.
+  hideProject?: boolean;
   active: boolean;
   unread: boolean;
   now: number;
@@ -235,15 +238,22 @@ function ThreadRow({
   return (
     <li className={cn("session list-none", active && "open")} data-session={s.id}>
       <div {...common} className={surface}>
-        <div className="relative h-[4.875rem] px-2.5 py-2">
-          <div className="flex h-5 min-w-0 items-center gap-1.5">
-            <Folder className="size-3.5 shrink-0 text-muted-foreground/70" />
-            <span className={cn("min-w-0 flex-1 truncate text-secondary-label text-xs", !recede && "font-medium")}>
-              {project}
-            </span>
-            {statusSlot}
-          </div>
-          <div className="mt-1 flex min-w-0">{title}</div>
+        <div className={cn("relative px-2.5 py-2", hideProject ? "h-[3.625rem]" : "h-[4.875rem]")}>
+          {hideProject ? (
+            <div className="flex h-5 min-w-0 items-center gap-1.5">
+              {title}
+              {statusSlot}
+            </div>
+          ) : (
+            <div className="flex h-5 min-w-0 items-center gap-1.5">
+              <Folder className="size-3.5 shrink-0 text-muted-foreground/70" />
+              <span className={cn("min-w-0 flex-1 truncate text-secondary-label text-xs", !recede && "font-medium")}>
+                {project}
+              </span>
+              {statusSlot}
+            </div>
+          )}
+          {!hideProject && <div className="mt-1 flex min-w-0">{title}</div>}
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
             <span className="min-w-0 flex-1 truncate text-muted-foreground/50">
               {s.last_text !== undefined && s.last_text !== "" ? s.last_text : `${s.mode} mode`}
@@ -414,6 +424,8 @@ export function Sidebar({
   onForeign,
   onCloseProject,
   onConnect,
+  onNewIn,
+  grouping,
   link,
   sessions,
   openId,
@@ -446,6 +458,11 @@ export function Sidebar({
   onCloseProject: (source: string) => void;
   // The screen to add a folder or pair with a Deck.
   onConnect: () => void;
+  // A new thread in a project, by its source.
+  onNewIn: (source: string) => void;
+  // Threads under their project folders (T3 Code's projects), or one list
+  // across projects, newest first.
+  grouping: "projects" | "recent";
   link: Link;
   sessions: Session[];
   openId: string | null;
@@ -470,7 +487,8 @@ export function Sidebar({
   usage: boolean;
   onUsage: () => void;
 }) {
-  const [showSettled, setShowSettled] = useState(false);
+  const [showSettled, setShowSettled] = useState<Record<string, boolean>>({});
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState<string | null>(null);
   // Every open project's threads, newest first, as T3 Code lists them.
   type Item = { s: Session; source: string; project: string; foreign: ForeignThread | null };
@@ -480,13 +498,17 @@ export function Sidebar({
   ]
     .filter((x) => filter === null || x.source === filter)
     .sort((a, b) => toMillis(b.s.updated_at) - toMillis(a.s.updated_at));
-  const live: Item[] = [];
-  const settled: Item[] = [];
-  for (const x of items) {
-    const mine = x.foreign === null;
-    const holds = x.s.busy || x.s.pending > 0 || (mine && (unread[x.s.id] === true || x.s.id === openId));
-    (now - toMillis(x.s.updated_at) > SETTLE_AFTER_MS && !holds ? settled : live).push(x);
-  }
+  const split = (list: Item[]) => {
+    const live: Item[] = [];
+    const settled: Item[] = [];
+    for (const x of list) {
+      const mine = x.foreign === null;
+      const holds = x.s.busy || x.s.pending > 0 || (mine && (unread[x.s.id] === true || x.s.id === openId));
+      (now - toMillis(x.s.updated_at) > SETTLE_AFTER_MS && !holds ? settled : live).push(x);
+    }
+    return { live, settled };
+  };
+  const grouped = grouping === "projects";
   const row = (x: Item) => {
     const s = x.s;
     const f = x.foreign;
@@ -501,12 +523,45 @@ export function Sidebar({
         variant={rows}
         kinds={f === null ? kindsOf(s.id) : []}
         theme={theme}
+        hideProject={grouped}
         onOpen={() => (f === null ? onOpen(s.id) : onForeign(f.source, s.id))}
         onRename={(t) => void (f === null ? onRename(s.id, t) : f.c.renameSession(s.id, t))}
         onDelete={() => void (f === null ? onDelete(s.id) : f.c.deleteSession(s.id))}
       />
     );
   };
+  // The live threads, then the settled ones behind a fold (per group).
+  const threads = (list: Item[], key: string) => {
+    const { live, settled } = split(list);
+    const shown = showSettled[key] === true;
+    return (
+      <>
+        {live.map(row)}
+        {settled.length > 0 && (
+          <li className="list-none">
+            <button
+              type="button"
+              className="mt-1 flex h-7 w-full cursor-pointer items-center gap-2 px-2.5 text-muted-foreground/70 text-xs hover:text-foreground"
+              aria-expanded={shown}
+              onClick={() => setShowSettled((v) => ({ ...v, [key]: !shown }))}
+            >
+              <span>{shown ? "Settled" : `Settled (${settled.length})`}</span>
+              <span className="h-px flex-1 bg-border" />
+              {shown ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+            </button>
+          </li>
+        )}
+        {shown && settled.map(row)}
+      </>
+    );
+  };
+  // The open projects, the current one first, then the others by name.
+  const current = projects.find((p) => p.key === source);
+  const groups = [
+    ...(current === undefined ? [{ key: source, name: project || "Deck", detail: "", kind: "folder" as const, active: true, open: true }] : [current]),
+    ...projects.filter((p) => p.open && p.key !== source).sort((a, b) => a.name.localeCompare(b.name)),
+  ].filter((p) => filter === null || p.key === filter);
+  const recentClosed = projects.filter((p) => !p.open && p.kind === "folder");
   return (
     <nav className="sidebar flex w-64 shrink-0 flex-col border-r bg-sidebar" aria-label="Threads">
       <header className={cn("brand-glow drag flex h-12 shrink-0 items-center gap-2 px-3", mac && "pl-20")}>
@@ -577,23 +632,97 @@ export function Sidebar({
             />
           </div>
           <ul className="sessions flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
-            {live.map(row)}
-            {settled.length > 0 && (
-              <li className="list-none">
-                <button
-                  type="button"
-                  className="mt-2 flex h-7 w-full cursor-pointer items-center gap-2 px-2.5 text-muted-foreground/70 text-xs hover:text-foreground"
-                  aria-expanded={showSettled}
-                  onClick={() => setShowSettled((v) => !v)}
-                >
-                  <span>{showSettled ? "Settled" : `Settled (${settled.length})`}</span>
-                  <span className="h-px flex-1 bg-border" />
-                  {showSettled ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-                </button>
+            {grouped
+              ? groups.map((g) => {
+                  const mine = items.filter((x) => x.source === g.key);
+                  const shut = collapsed[g.key] === true;
+                  return (
+                    <li key={g.key} className="project-group list-none" data-project={g.name}>
+                      <div className="group/proj flex h-8 items-center gap-1 rounded-md pr-1 hover:bg-sidebar-row-hover">
+                        <button
+                          type="button"
+                          className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-1.5 pl-2 text-left text-sm"
+                          aria-expanded={!shut}
+                          aria-label={`${g.name}: ${mine.length} ${mine.length === 1 ? "thread" : "threads"}`}
+                          onClick={() => setCollapsed((c) => ({ ...c, [g.key]: !shut }))}
+                        >
+                          {shut ? (
+                            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                          )}
+                          {g.kind === "paired" ? (
+                            <Laptop className="size-4 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <Folder className="size-4 shrink-0 text-muted-foreground" />
+                          )}
+                          <span className={cn("min-w-0 truncate font-medium", g.key === source ? "text-foreground" : "text-foreground/80")}>
+                            {g.name}
+                          </span>
+                          <span className="shrink-0 text-2xs text-muted-foreground/70 tabular-nums">{mine.length}</span>
+                        </button>
+                        <span className="flex items-center opacity-0 transition-opacity group-hover/proj:opacity-100">
+                          <Button
+                            variant="ghost-muted"
+                            size="icon-xs"
+                            aria-label={`New thread in ${g.name}`}
+                            title="New thread"
+                            onClick={() => onNewIn(g.key)}
+                          >
+                            <SquarePen />
+                          </Button>
+                          <Button
+                            variant="ghost-muted"
+                            size="icon-xs"
+                            aria-label={`Close ${g.name}`}
+                            title="Close project"
+                            onClick={() => onCloseProject(g.key)}
+                          >
+                            <X />
+                          </Button>
+                        </span>
+                      </div>
+                      {!shut && (
+                        <ul className="flex flex-col gap-1 pt-0.5 pb-2 pl-2">
+                          {threads(mine, g.key)}
+                          {mine.length === 0 && (
+                            <li className="list-none">
+                              <button
+                                type="button"
+                                className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-muted-foreground/70 text-xs hover:bg-sidebar-row-hover hover:text-foreground"
+                                onClick={() => onNewIn(g.key)}
+                              >
+                                <SquarePen className="size-3.5" /> Start a thread
+                              </button>
+                            </li>
+                          )}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                })
+              : threads(items, "all")}
+            {grouped && filter === null && recentClosed.length > 0 && (
+              <li className="list-none pt-3">
+                <div className="px-2.5 pb-1 text-muted-foreground/70 text-xs">Recent projects</div>
+                <ul className="flex flex-col">
+                  {recentClosed.slice(0, 6).map((p) => (
+                    <li key={p.key} className="list-none">
+                      <button
+                        type="button"
+                        className="recent-project flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-muted-foreground text-sm hover:bg-sidebar-row-hover hover:text-foreground"
+                        title={p.detail}
+                        onClick={() => onProject(p.key)}
+                      >
+                        <Folder className="size-4 shrink-0" />
+                        <span className="truncate">{p.name}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </li>
             )}
-            {showSettled && settled.map(row)}
-            {items.length === 0 && (
+            {!grouped && items.length === 0 && (
               <li className="flex list-none flex-col items-center gap-2 px-2 py-6 text-center text-muted-foreground/60 text-xs">
                 No threads yet
               </li>
