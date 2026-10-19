@@ -91,15 +91,15 @@ func (m *Manager) budgetOf(tk store.Task) store.Budget {
 }
 
 // chargedTasks are the indexes of the tasks a's spending counts toward: the
-// running or blocked tasks a owns, and those of every member above it. t.mu
-// is held.
+// running, in review or blocked tasks a owns, the task a reviews, and those
+// of every member above it. t.mu is held.
 func (t *thread) chargedTasks(a *agentState) []int {
 	var out []int
 	seen := map[string]bool{}
 	for i := 0; a != nil && i < 64 && !seen[a.id]; i++ {
 		seen[a.id] = true
 		for j, tk := range t.tasks {
-			if tk.Owner == a.id && (tk.Status == store.TaskRunning || tk.Status == store.TaskBlocked) {
+			if tk.Owner == a.id && tk.Status.Active() || tk.Reviewer == a.id {
 				out = append(out, j)
 			}
 		}
@@ -127,9 +127,9 @@ func (m *Manager) charge(t *thread, a *agentState, s store.Spend) {
 	m.checkBudgets(t, a, store.Spend{})
 }
 
-// checkBudgets blocks the running tasks a counts toward that are over budget,
-// counting extra (a's turn so far) as spent, or every running task of the
-// thread when a is nil.
+// checkBudgets blocks the running or reviewed tasks a counts toward that are
+// over budget, counting extra (a's turn so far) as spent, or every such task
+// of the thread when a is nil.
 func (m *Manager) checkBudgets(t *thread, a *agentState, extra store.Spend) {
 	if t.gone.Load() || m.isClosed() {
 		return
@@ -148,7 +148,7 @@ func (m *Manager) checkBudgets(t *thread, a *agentState, extra store.Spend) {
 	}
 	for _, i := range idx {
 		tk := t.tasks[i]
-		if tk.Status != store.TaskRunning || tk.Remote != "" { // a teammate's Deck keeps its own budget
+		if tk.Status != store.TaskRunning && tk.Status != store.TaskReview || tk.Remote != "" { // a teammate's Deck keeps its own budget
 			continue
 		}
 		if note := overBudget(m.budgetOf(tk), tk.Spent, extra, tk.Started, now); note != "" {

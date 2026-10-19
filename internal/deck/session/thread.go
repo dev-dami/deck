@@ -68,6 +68,8 @@ type thread struct {
 	sched schedState // one scheduler pass at a time (sched.go)
 	// raced holds the races already reported or kept (race.go).
 	raced map[string]bool
+	// reviewing holds the tasks whose reviewer is starting (review.go).
+	reviewing map[string]bool
 	// orchestrate is set while members may spawn subagents and the scheduler
 	// runs the board (spawn.go, sched.go).
 	orchestrate bool
