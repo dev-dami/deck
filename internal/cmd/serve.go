@@ -279,7 +279,7 @@ func runServeRPC(cmd *cobra.Command) error {
 	if u, ok := ws.(interface{ UsageService() usage.Service }); ok {
 		record = u.UsageService()
 	}
-	srv := rpc.New(be, token).WithProject(cwd, record)
+	srv := rpc.New(be, token).WithProject(cwd, record).WithWorkspace(ws)
 	defer srv.Close()
 	go srv.Run(ctx)
 	g := srv.GRPC()

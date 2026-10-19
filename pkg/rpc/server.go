@@ -1,7 +1,10 @@
 // Package rpc serves Deck to a local desktop app over gRPC (proto/deck/v1):
 // a thin layer over pkg/remote.Backend, the same engine adapter the phone's
-// WebSocket uses, with a typed event feed that resumes by seq. It listens
-// on a Unix socket and accepts only callers holding the per-launch token.
+// WebSocket uses, with a typed event feed that resumes by seq. With the
+// project (WithProject) and the workspace (WithWorkspace) it also serves
+// git, usage, terminals, the task board, the agent tree and the team link,
+// as the terminal UI drives them. It listens on a Unix socket and accepts
+// only callers holding the per-launch token.
 package rpc
 
 import (
@@ -45,6 +48,8 @@ type Server struct {
 	git   *gh.Client
 	usage usage.Service
 	terms *terminals
+	// The workspace's task board, agent tree and team link (WithWorkspace).
+	crew *crew
 }
 
 // New returns a server for be that admits callers presenting token.

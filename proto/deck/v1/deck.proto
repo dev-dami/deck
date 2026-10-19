@@ -69,6 +69,37 @@ service Deck {
   rpc TerminalClose(TerminalRef) returns (Empty);
   rpc TerminalOutput(TerminalRef) returns (stream TerminalChunk);
 
+  // The thread's task board: what its agents split the work into, who
+  // runs each task, races and their entries, reviews.
+  rpc Board(SessionRef) returns (BoardResponse);
+  // TaskAction acts on a task: cancel, retry, steer (with text), apply (a
+  // worktree's work into the tree; keeps a race entry) or discard.
+  rpc TaskAction(TaskActionRequest) returns (TaskActionResponse);
+  // SetOrchestrate turns the scheduler and agents' subagents on or off.
+  rpc SetOrchestrate(SetOrchestrateRequest) returns (Empty);
+  // Agents is the thread's agents as a tree (subagents under the member
+  // that started them) with what each runs right now.
+  rpc Agents(SessionRef) returns (AgentsResponse);
+
+  // Team is the link to teammates' Decks: who they are, whether they are
+  // reachable, what their agents do, the threads they share with this one,
+  // the team chat and the contracts both ways.
+  rpc Team(Empty) returns (TeamResponse);
+  rpc TeamPost(TeamPostRequest) returns (TeamPostResponse);
+  // ShareThread shares a thread with a teammate as observer, participant
+  // or editor, or stops sharing it (role "").
+  rpc ShareThread(ShareThreadRequest) returns (Empty);
+  rpc ThreadShares(SessionRef) returns (ThreadSharesResponse);
+  // ProposeContract asks a teammate's Deck to do a task for the thread.
+  rpc ProposeContract(ProposeContractRequest) returns (ProposeContractResponse);
+  // AnswerContract accepts (with an agent kind) or declines one proposed
+  // to this Deck.
+  rpc AnswerContract(AnswerContractRequest) returns (Empty);
+  // ReadShared follows a thread a teammate shares with this Deck.
+  rpc ReadShared(ReadSharedRequest) returns (SharedMirror);
+  rpc PostShared(PostSharedRequest) returns (Empty);
+  rpc AnswerShared(AnswerSharedRequest) returns (Empty);
+
   // Events streams everything that happens, starting with a Ready. Pass the
   // epoch and seq of the last event seen to replay what was missed; Ready
   // says resync when that cannot be done and the client must refetch.
@@ -562,4 +593,220 @@ message TerminalChunk {
   // exited is set on the last chunk, when the shell has ended.
   bool exited = 2;
   int32 exit_code = 3;
+}
+
+message BoardTask {
+  string id = 1;
+  string title = 2;
+  // status is pending, ready, running, review, blocked, done, failed or
+  // cancelled.
+  string status = 3;
+  string owner = 4;
+  repeated string deps = 5;
+  string brief = 6;
+  string result = 7;
+  string error = 8;
+  int32 attempts = 9;
+  int32 tries = 10;
+  string branch = 11;
+  int64 updated_at = 12;
+  bool race = 13;
+  bool entry = 14;
+  string stats = 15;
+  repeated string files = 16;
+  string reviewer = 17;
+  int32 reviews = 18;
+}
+
+message BoardResponse {
+  bool orchestrate = 1;
+  repeated BoardTask tasks = 2;
+}
+
+message TaskActionRequest {
+  string session_id = 1;
+  string task_id = 2;
+  // action is cancel, retry, steer, apply or discard.
+  string action = 3;
+  string text = 4;
+}
+
+message TaskActionResponse {
+  // files are what an apply wrote into the tree.
+  repeated string files = 1;
+}
+
+message SetOrchestrateRequest {
+  string session_id = 1;
+  bool on = 2;
+}
+
+message AgentNode {
+  string name = 1;
+  string kind = 2;
+  string model = 3;
+  string effort = 4;
+  // status is idle, working, tool, approval, error, exited or ready.
+  string status = 5;
+  int32 context_tokens = 6;
+  int32 context_window = 7;
+  double cost_usd = 8;
+  int32 pending = 9;
+  int64 since = 10;
+  int32 depth = 11;
+  string parent = 12;
+  string branch = 13;
+  string leases = 14;
+}
+
+message RunningTool {
+  string agent = 1;
+  string kind = 2;
+  string name = 3;
+  string summary = 4;
+  string detail = 5;
+  int64 started = 6;
+  // subagent is set for a CLI's own subagent (Claude's Task), command for a
+  // shell command.
+  bool subagent = 7;
+  bool command = 8;
+}
+
+message AgentsResponse {
+  repeated AgentNode agents = 1;
+  repeated RunningTool running = 2;
+}
+
+message TeamAgent {
+  string name = 1;
+  string kind = 2;
+  string status = 3;
+  string task = 4;
+  int32 context_pct = 5;
+}
+
+message TeamThread {
+  string id = 1;
+  string title = 2;
+  string role = 3;
+  string mode = 4;
+  repeated string members = 5;
+  int32 entries = 6;
+}
+
+message Teammate {
+  string name = 1;
+  string role = 2;
+  bool pinned = 3;
+  // link is "online", "connecting", "offline" or "" when never linked.
+  string link = 4;
+  int64 last_seen = 5;
+  bool present = 6;
+  repeated TeamAgent agents = 7;
+  repeated TeamThread threads = 8;
+}
+
+message TeamChat {
+  uint64 seq = 1;
+  string from = 2;
+  string agent = 3;
+  string text = 4;
+  int64 at = 5;
+  bool mine = 6;
+}
+
+message TeamContract {
+  string id = 1;
+  string peer = 2;
+  bool inbound = 3;
+  string title = 4;
+  string brief = 5;
+  // state is proposed, accepted, declined, done, failed or cancelled.
+  string state = 6;
+  string agent = 7;
+  string note = 8;
+  string summary = 9;
+  string kind = 10;
+}
+
+message TeamResponse {
+  // available is false when this Deck has no peer link.
+  bool available = 1;
+  bool enabled = 2;
+  string name = 3;
+  string fingerprint = 4;
+  repeated Teammate teammates = 5;
+  repeated TeamChat chat = 6;
+  repeated TeamContract contracts = 7;
+  // contract_kinds are the agent kinds that may run a teammate's contract.
+  repeated string contract_kinds = 8;
+}
+
+message TeamPostRequest {
+  string text = 1;
+}
+
+message TeamPostResponse {
+  repeated string reached = 1;
+}
+
+message ShareThreadRequest {
+  string session_id = 1;
+  string peer = 2;
+  string role = 3;
+}
+
+message ThreadSharesResponse {
+  map<string, string> shares = 1;
+}
+
+message ProposeContractRequest {
+  string session_id = 1;
+  string peer = 2;
+  string brief = 3;
+}
+
+message ProposeContractResponse {
+  string task_id = 1;
+  bool queued = 2;
+}
+
+message AnswerContractRequest {
+  string peer = 1;
+  string id = 2;
+  bool accept = 3;
+  string agent = 4;
+}
+
+message ReadSharedRequest {
+  string peer = 1;
+  string thread = 2;
+  int32 after = 3;
+}
+
+message SharedApproval {
+  string id = 1;
+  string agent = 2;
+  string kind = 3;
+  string summary = 4;
+}
+
+message SharedMirror {
+  TeamThread thread = 1;
+  repeated string lines = 2;
+  int32 next = 3;
+  repeated SharedApproval pending = 4;
+}
+
+message PostSharedRequest {
+  string peer = 1;
+  string thread = 2;
+  string text = 3;
+}
+
+message AnswerSharedRequest {
+  string peer = 1;
+  string thread = 2;
+  string approval = 3;
+  bool allow = 4;
 }
