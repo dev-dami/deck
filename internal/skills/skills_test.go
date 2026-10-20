@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -276,6 +277,58 @@ description: Name doesn't match directory.
 	}
 	require.True(t, names["skill-one"])
 	require.True(t, names["skill-two"])
+}
+
+func writeTestSkill(tb testing.TB, dir, name string) {
+	tb.Helper()
+	require.NoError(tb, os.MkdirAll(dir, 0o755))
+	require.NoError(tb, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: "+name+"\ndescription: A test skill.\n---\n"), 0o644))
+}
+
+func TestDiscoverSkipsDependencyAndGitDirs(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	writeTestSkill(t, filepath.Join(tmpDir, "tool"), "tool")
+	// A dependency can ship its own SKILL.md; it is not one of the user's skills.
+	writeTestSkill(t, filepath.Join(tmpDir, "tool", "node_modules", "dep", "vendored"), "vendored")
+	writeTestSkill(t, filepath.Join(tmpDir, ".git", "history"), "history")
+
+	skills, states := DiscoverWithStates([]string{tmpDir})
+	require.Len(t, skills, 1)
+	require.Equal(t, "tool", skills[0].Name)
+	require.Len(t, states, 1)
+}
+
+func TestDiscoverSkippedNameAsRoot(t *testing.T) {
+	t.Parallel()
+
+	// A skills path that is itself named like a skipped dir is still walked.
+	root := filepath.Join(t.TempDir(), "node_modules")
+	writeTestSkill(t, filepath.Join(root, "inside"), "inside")
+
+	skills, _ := DiscoverWithStates([]string{root})
+	require.Len(t, skills, 1)
+}
+
+// BenchmarkDiscoverWithDependencies walks a skills folder where one skill
+// carries a node_modules tree, as installed tool skills often do.
+func BenchmarkDiscoverWithDependencies(b *testing.B) {
+	tmpDir := b.TempDir()
+	for i := range 20 {
+		writeTestSkill(b, filepath.Join(tmpDir, fmt.Sprintf("skill-%d", i)), fmt.Sprintf("skill-%d", i))
+	}
+	for i := range 200 {
+		dir := filepath.Join(tmpDir, "skill-0", "node_modules", fmt.Sprintf("pkg-%d", i), "lib")
+		require.NoError(b, os.MkdirAll(dir, 0o755))
+		for j := range 10 {
+			require.NoError(b, os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%d.js", j)), nil, 0o644))
+		}
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		DiscoverWithStates([]string{tmpDir})
+	}
 }
 
 func TestDiscoverEmptyDir(t *testing.T) {

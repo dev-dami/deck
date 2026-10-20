@@ -32,6 +32,11 @@ var (
 
 	latestStates   []*SkillState
 	latestStatesMu sync.RWMutex
+
+	// skipDirs are never walked for skills: they hold a skill's own
+	// dependencies or history, not skills, and can be tens of thousands
+	// of files (a single node_modules was most of a 23k-file walk).
+	skipDirs = map[string]bool{"node_modules": true, ".git": true}
 )
 
 // Skill represents a parsed SKILL.md file.
@@ -249,7 +254,13 @@ func DiscoverWithStates(paths []string) ([]*Skill, []*SkillState) {
 				addState("", path, StateError, err)
 				return nil
 			}
-			if d.IsDir() || d.Name() != SkillFileName {
+			if d.IsDir() {
+				if skipDirs[d.Name()] && filepath.Clean(path) != filepath.Clean(base) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if d.Name() != SkillFileName {
 				return nil
 			}
 			mu.Lock()
