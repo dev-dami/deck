@@ -1,154 +1,133 @@
 import { FlashList } from "@shopify/flash-list";
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, Text, View } from "react-native";
 import { type ChatSession, newIdempotencyKey } from "../../../../pkg/remote/web/src/chat3";
-import type { Message, ModelChoice } from "../../../../pkg/remote/web/src/protocol";
-import { Button, EmptyState, Notice, ScreenHeader } from "../ui/components";
-import { styles, tokens } from "../ui/theme";
+import type { Message } from "../../../../pkg/remote/web/src/protocol";
+import { Button, Composer, EmptyState, IconButton, Notice, TopBar } from "../ui/components";
+import { Icon } from "../ui/icons";
+import { splitMessage } from "../ui/tasks";
+import { mono, useTheme } from "../ui/theme";
 
 export interface ChatScreenProps {
   chat: ChatSession;
+  title: string;
   online: boolean;
   onBack(): void;
-  onOpenQueue(): void;
+  onOpenChanges(): void;
+  onOpenSession(): void;
   onQueuePrompt?(text: string): Promise<void>;
-  onOpenSession?(sessionId: string): void;
-  children?: ReactNode;
+  // Pending approvals dock above the composer.
+  docked?: ReactNode;
 }
 
-const MessageRow = memo(function MessageRow({ message }: { message: Message }) {
-  const own = message.role === "user";
-  const occurrences = new Map<string, number>();
-  return (
-    <View style={{ paddingHorizontal: 20, paddingVertical: 10 }}>
-      <View
-        style={{
-          padding: 16,
-          borderRadius: 16,
-          gap: 10,
-          backgroundColor: own ? tokens.elevated : tokens.surface,
-          borderWidth: 1,
-          borderColor: tokens.border,
-        }}
-      >
-        <View style={styles.between}>
-          <Text style={[styles.eyebrow, { color: own ? tokens.accent : tokens.secondary }]}>
-            {own ? "You" : message.agent || message.role}
-          </Text>
-          <Text style={[styles.secondary, { fontSize: 11 }]}>
-            {new Date(message.created_at).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+const MODE_LABEL = { ask: "Ask", plan: "Plan", yolo: "Yolo" } as const;
+
+const MessageRow = memo(function MessageRow({
+  message,
+  showAgent,
+}: {
+  message: Message;
+  showAgent: boolean;
+}) {
+  const { t, s } = useTheme();
+  const [open, setOpen] = useState(false);
+  if (message.role === "user") {
+    const text = message.parts
+      .map((p) => p.text ?? "")
+      .join("\n")
+      .trim();
+    return (
+      <View style={{ paddingHorizontal: 20, paddingVertical: 8, alignItems: "flex-end" }}>
+        <View
+          style={{
+            maxWidth: "82%",
+            borderRadius: 22,
+            paddingHorizontal: 16,
+            paddingVertical: 11,
+            backgroundColor: t.chip,
+          }}
+        >
+          <Text selectable style={{ fontSize: 16, lineHeight: 24, color: t.fg }}>
+            {text || "Attachment"}
           </Text>
         </View>
-        {message.parts.map((part) => {
-          const identity = `${part.type}:${part.id ?? part.tool_call_id ?? part.name ?? part.image?.name ?? "body"}`;
-          const occurrence = occurrences.get(identity) ?? 0;
-          occurrences.set(identity, occurrence + 1);
-          const key = `${identity}:${occurrence}`;
-          const text = part.text ?? part.output ?? part.diff ?? part.summary;
-          if (text !== undefined)
-            return (
-              <View key={key} style={{ gap: 4 }}>
-                {part.name && <Text style={styles.eyebrow}>{part.name}</Text>}
-                <Text
-                  selectable
-                  style={
-                    part.type === "text"
-                      ? styles.body
-                      : [styles.code, part.is_error ? { color: tokens.danger } : {}]
-                  }
-                >
-                  {text.slice(0, 24_000)}
-                </Text>
-                {(part.text_truncated ||
-                  part.output_truncated ||
-                  part.diff_truncated ||
-                  text.length > 24_000) && (
-                  <Text style={styles.secondary}>
-                    Preview truncated. Review the complete output on your computer.
-                  </Text>
-                )}
-              </View>
-            );
-          if (part.image)
-            return (
-              <Text key={key} style={styles.secondary}>
-                Attachment · {part.image.name}
-              </Text>
-            );
-          return (
-            <Text key={key} style={styles.secondary}>
-              {part.name || part.type}
-            </Text>
-          );
-        })}
-        {!message.finished && (
-          <Text accessibilityLiveRegion="polite" style={{ color: tokens.accent, fontSize: 12 }}>
-            Writing…
-          </Text>
-        )}
       </View>
+    );
+  }
+  const { prose, steps } = splitMessage(message.parts);
+  return (
+    <View style={{ paddingHorizontal: 20, paddingVertical: 8, gap: 10 }}>
+      {showAgent && message.agent && (
+        <Text style={[s.small, { fontWeight: "600", color: t.muted }]}>{message.agent}</Text>
+      )}
+      {steps.length > 0 && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
+          onPress={() => setOpen(!open)}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            minHeight: 30,
+            alignSelf: "flex-start",
+          }}
+        >
+          <Text style={s.secondary}>
+            {message.finished ? "Worked" : "Working"} · {steps.length} step
+            {steps.length === 1 ? "" : "s"}
+            {steps.some((x) => x.error) ? " · 1+ failed" : ""}
+          </Text>
+          <View style={{ transform: [{ rotate: open ? "90deg" : "0deg" }] }}>
+            <Icon name="chevron-right" color={t.muted} size={14} weight={2.2} />
+          </View>
+        </Pressable>
+      )}
+      {open && (
+        <View style={{ gap: 8, paddingLeft: 14, borderLeftWidth: 2, borderLeftColor: t.line }}>
+          {steps.map((step) => (
+            <Text key={step.key} numberOfLines={2} style={{ fontSize: 14, color: t.soft }}>
+              <Text style={{ color: step.error ? t.danger : t.muted }}>{step.label} </Text>
+              <Text style={{ fontFamily: mono, fontSize: 13 }}>{step.detail}</Text>
+            </Text>
+          ))}
+        </View>
+      )}
+      {prose.map((text, i) => (
+        <Text key={`${message.id}:${i}`} selectable style={s.body}>
+          {text.slice(0, 24_000)}
+        </Text>
+      ))}
+      {!message.finished && prose.length === 0 && steps.length === 0 && (
+        <Text accessibilityLiveRegion="polite" style={s.secondary}>
+          Thinking…
+        </Text>
+      )}
     </View>
   );
 });
 
 export function ChatScreen({
   chat,
+  title,
   online,
   onBack,
-  onOpenQueue,
-  onQueuePrompt,
+  onOpenChanges,
   onOpenSession,
-  children,
+  onQueuePrompt,
+  docked,
 }: ChatScreenProps) {
+  const { t, s } = useTheme();
   const [, tick] = useState(0);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"models" | "changes" | null>(null);
-  const [choices, setChoices] = useState<ModelChoice[]>([]);
-  const [kind, setKind] = useState("");
   const retrySend = useRef<{ text: string; key: string } | null>(null);
-  const acting = useRef(false);
-  const identity = `${chat.pj}\0${chat.sessionId}`;
-  const draftIdentity = useRef(identity);
-  const modelBinding = useRef(chat);
-  const modelRequest = useRef(0);
   const live = online && !chat.resyncing;
-  useEffect(() => {
-    const unsubscribe = chat.subscribe(() => tick((value) => value + 1));
-    return () => {
-      modelRequest.current++;
-      unsubscribe();
-    };
-  }, [chat]);
-  useEffect(() => {
-    if (draftIdentity.current === identity) return;
-    draftIdentity.current = identity;
-    setText("");
-    setError(null);
-    retrySend.current = null;
-  }, [identity]);
-  useEffect(() => {
-    if (modelBinding.current === chat) return;
-    modelBinding.current = chat;
-    modelRequest.current++;
-    setPanel(null);
-    setChoices([]);
-  }, [chat]);
+  useEffect(() => chat.subscribe(() => tick((n) => n + 1)), [chat]);
+
   async function act(action: () => Promise<unknown>): Promise<void> {
-    if (acting.current) return;
-    acting.current = true;
+    if (busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -156,284 +135,177 @@ export function ChatScreen({
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "The action failed.");
     } finally {
-      acting.current = false;
       setBusy(false);
     }
   }
-  async function send(): Promise<void> {
-    if (!text.trim()) return;
-    const value = text;
-    await act(async () => {
+
+  function send(): void {
+    const value = text.trim();
+    if (!value) return;
+    void act(async () => {
       if (online) {
         if (!live) throw new Error("Wait for the conversation to finish syncing.");
-        if (retrySend.current?.text !== value.trim())
-          retrySend.current = { text: value.trim(), key: newIdempotencyKey() };
+        if (retrySend.current?.text !== value)
+          retrySend.current = { text: value, key: newIdempotencyKey() };
         await chat.send(value, retrySend.current.key);
         retrySend.current = null;
       } else if (onQueuePrompt) await onQueuePrompt(value);
       else throw new Error("Reconnect to send this message.");
-      setText((current) => (current === value ? "" : current));
+      setText("");
     });
   }
-  async function loadModels(selected: string): Promise<void> {
-    const request = ++modelRequest.current;
-    const binding = chat;
-    setKind(selected);
-    setChoices([]);
-    await act(async () => {
-      try {
-        const models = await binding.models(selected);
-        if (modelRequest.current === request && modelBinding.current === binding)
-          setChoices(models);
-      } catch (failure) {
-        if (modelRequest.current === request && modelBinding.current === binding) throw failure;
-      }
-    });
-  }
+
+  const agents = new Set(chat.roster.map((a) => a.name));
+  const model = chat.roster[0]?.model;
+  const subtitle = [
+    online ? null : "Offline",
+    model ?? null,
+    chat.mode ? MODE_LABEL[chat.mode] : null,
+    agents.size > 1 ? `${agents.size} agents` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const added = chat.changes.reduce((n, f) => n + f.added, 0);
+  const removed = chat.changes.reduce((n, f) => n + f.removed, 0);
+
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScreenHeader
-        title="Conversation"
-        subtitle={
-          online
-            ? chat.busy
-              ? "Agent is working"
-              : "Ready when you are"
-            : "Offline · prompts can wait for your computer"
-        }
-        onBack={onBack}
+    <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <TopBar
+        title={title}
+        subtitle={subtitle || undefined}
+        left={<IconButton icon="back" label="Back to tasks" onPress={onBack} />}
+        right={<IconButton icon="sliders" label="Session settings" onPress={onOpenSession} />}
       />
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ flexGrow: 0 }}
-        contentContainerStyle={{ paddingHorizontal: 20, gap: 8, paddingBottom: 12 }}
-      >
-        <Button
-          title={chat.busy ? "Interrupt" : "Continue"}
-          tone={chat.busy ? "danger" : "default"}
-          disabled={!live || busy}
-          onPress={() => void act(() => (chat.busy ? chat.interrupt() : chat.cont()))}
-        />
-        <Button
-          title="New session"
-          disabled={!live || busy || !onOpenSession}
-          onPress={() =>
-            void act(async () => {
-              const id = await chat.createSession();
-              onOpenSession?.(id);
-            })
-          }
-        />
-        <Button
-          title="Models"
-          disabled={!live || busy}
-          onPress={() => {
-            setPanel("models");
-            const first = chat.roster[0]?.kind;
-            if (first) void loadModels(first);
-          }}
-        />
-        <Button
-          title={`Changes${chat.changes.length ? ` · ${chat.changes.length}` : ""}`}
-          onPress={() => {
-            setPanel("changes");
-            if (live) void act(() => chat.refreshChanges());
-          }}
-        />
-        <Button title="Queue" onPress={onOpenQueue} />
-      </ScrollView>
       {(error || chat.error) && (
-        <View style={{ paddingHorizontal: 20, paddingBottom: 10 }}>
+        <View style={{ paddingHorizontal: 16, gap: 8 }}>
           <Notice error>{error || chat.error}</Notice>
           {chat.error && (
             <Button
-              title="Retry conversation sync"
-              busy={busy}
+              title="Retry sync"
+              icon="refresh"
+              size="sm"
               disabled={!online || chat.resyncing}
               onPress={() => void act(() => chat.refresh())}
             />
           )}
         </View>
       )}
-      {children && (
-        <ScrollView
-          nestedScrollEnabled
-          style={{ flexGrow: 0, maxHeight: "35%" }}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12, gap: 12 }}
-        >
-          {children}
-        </ScrollView>
-      )}
       <FlashList
         data={chat.messages}
-        keyExtractor={(message) => message.id}
-        renderItem={({ item }) => <MessageRow message={item} />}
+        keyExtractor={(m) => m.id}
+        renderItem={({ item }) => <MessageRow message={item} showAgent={agents.size > 1} />}
         maintainVisibleContentPosition={{
           startRenderingFromBottom: true,
           autoscrollToBottomThreshold: 0.15,
         }}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 16 }}
+        contentContainerStyle={{ paddingVertical: 12 }}
         ListHeaderComponent={
-          <View style={{ padding: 20, paddingTop: 0, gap: 12 }}>
-            {chat.more && (
+          chat.more ? (
+            <View style={{ padding: 16 }}>
               <Button
                 title="Load earlier messages"
-                busy={busy}
+                size="sm"
                 disabled={!live}
                 onPress={() => void act(() => chat.loadOlder())}
               />
-            )}
-          </View>
+            </View>
+          ) : null
         }
         ListEmptyComponent={
           <EmptyState
             title={chat.resyncing ? "Loading conversation…" : "Make something happen"}
-            detail="Send a prompt to your agents. Their work will appear here."
+            detail="Send a prompt to your agents. Their work appears here."
           />
         }
+        ListFooterComponent={
+          <View style={{ paddingHorizontal: 20, paddingTop: 4, gap: 12 }}>
+            {chat.changes.length > 0 && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${chat.changes.length} files changed, review`}
+                onPress={onOpenChanges}
+                style={[
+                  s.card,
+                  {
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: 12,
+                    paddingLeft: 14,
+                    borderRadius: 18,
+                  },
+                ]}
+              >
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 11,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: t.chip,
+                  }}
+                >
+                  <Icon name="file" color={t.fg} size={17} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={s.heading}>
+                    {chat.changes.length} file{chat.changes.length === 1 ? "" : "s"} changed
+                  </Text>
+                  <Text style={{ fontFamily: mono, fontSize: 13 }}>
+                    <Text style={{ color: t.success }}>+{added}</Text>{" "}
+                    <Text style={{ color: t.danger }}>−{removed}</Text>
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    minHeight: 34,
+                    paddingHorizontal: 14,
+                    borderRadius: 17,
+                    justifyContent: "center",
+                    backgroundColor: t.chip,
+                  }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: t.fg }}>Review</Text>
+                </View>
+              </Pressable>
+            )}
+            {chat.busy && (
+              <View
+                accessibilityLiveRegion="polite"
+                style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+              >
+                <View
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 5,
+                    backgroundColor: t.primary,
+                    boxShadow: `0 0 0 4px ${t.tint(t.primary)}`,
+                  }}
+                />
+                <Text style={s.secondary}>Working</Text>
+              </View>
+            )}
+          </View>
+        }
       />
-      <View
-        style={{
-          padding: 16,
-          paddingTop: 10,
-          gap: 10,
-          borderTopWidth: 1,
-          borderTopColor: tokens.border,
-        }}
-      >
-        <TextInput
-          accessibilityLabel="Message to agents"
+      {docked && (
+        <View style={{ paddingHorizontal: 12, paddingBottom: 10, gap: 10 }}>{docked}</View>
+      )}
+      <View style={{ paddingHorizontal: 12, paddingBottom: 16 }}>
+        <Composer
           value={text}
           onChangeText={setText}
-          placeholder="What should we work on?"
-          placeholderTextColor={tokens.muted}
-          multiline
-          maxLength={60_000}
-          style={[styles.input, { maxHeight: 160, paddingTop: 14 }]}
-          editable={!busy}
-        />
-        <Button
-          title={
-            online
-              ? chat.resyncing
-                ? "Syncing conversation…"
-                : "Send message ↑"
-              : "Queue prompt for later"
-          }
-          tone="primary"
+          placeholder={online ? "Reply to your agents" : "Queue a message for later"}
+          canSend={text.trim() !== "" && (online ? live : onQueuePrompt !== undefined)}
           busy={busy}
-          disabled={!text.trim() || (online && !live) || (!online && !onQueuePrompt)}
-          onPress={() => void send()}
+          onSend={send}
+          onStop={online && chat.busy ? () => void act(() => chat.interrupt()) : undefined}
+          sendLabel={online ? "Send message" : "Queue message"}
         />
       </View>
-      <Modal
-        visible={panel !== null}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setPanel(null)}
-      >
-        <View style={styles.screen} accessibilityViewIsModal>
-          <ScreenHeader
-            title={panel === "models" ? "Choose a model" : "Changes"}
-            onBack={() => setPanel(null)}
-            subtitle={
-              panel === "changes"
-                ? "Read-only summaries of your agent's work."
-                : "Choose the agent, then its next model."
-            }
-          />
-          <ScrollView contentContainerStyle={styles.content}>
-            {panel === "models" ? (
-              <>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                  {[...new Set(chat.roster.map((agent) => agent.kind))].map((agentKind) => (
-                    <Button
-                      key={agentKind}
-                      title={agentKind}
-                      disabled={busy || !live}
-                      tone={kind === agentKind ? "primary" : "default"}
-                      onPress={() => void loadModels(agentKind)}
-                    />
-                  ))}
-                </View>
-                {!chat.roster.length && (
-                  <Notice>No agents are attached to this conversation yet.</Notice>
-                )}
-                {choices.map((model) => (
-                  <View key={model.id} style={styles.card}>
-                    <Text style={styles.heading}>
-                      {model.label}
-                      {model.selected ? " · current" : ""}
-                    </Text>
-                    <Button
-                      title="Use this model"
-                      disabled={busy || !live}
-                      onPress={() =>
-                        void act(async () => {
-                          await chat.setModel(kind, model.id);
-                          setPanel(null);
-                        })
-                      }
-                    />
-                    {!!model.efforts?.length && (
-                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                        {model.efforts.map((effort) => (
-                          <Button
-                            key={effort}
-                            title={effort}
-                            disabled={busy || !live}
-                            label={`Use ${model.label} with ${effort} effort`}
-                            onPress={() =>
-                              void act(async () => {
-                                await chat.setModel(kind, model.id, effort);
-                                setPanel(null);
-                              })
-                            }
-                          />
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                ))}
-              </>
-            ) : chat.changes.length ? (
-              chat.changes.map((file) => (
-                <View key={file.path} style={styles.card}>
-                  <Text selectable style={styles.code}>
-                    {file.path}
-                  </Text>
-                  <Text style={{ color: tokens.success }}>
-                    +{file.added} <Text style={{ color: tokens.danger }}>−{file.removed}</Text>
-                  </Text>
-                  {file.diff ? (
-                    <Text selectable style={styles.code}>
-                      {file.diff.slice(0, 32_000)}
-                    </Text>
-                  ) : (
-                    <Text style={styles.secondary}>Diff preview not provided.</Text>
-                  )}
-                  {(file.diff_truncated || (file.diff?.length ?? 0) > 32_000) && (
-                    <Text style={styles.secondary}>
-                      Diff truncated. Open the computer to review it in full.
-                    </Text>
-                  )}
-                </View>
-              ))
-            ) : (
-              <EmptyState
-                title="No changes yet"
-                detail="File changes will appear as your agents work."
-              />
-            )}
-            {error && <Notice error>{error}</Notice>}
-          </ScrollView>
-        </View>
-      </Modal>
     </KeyboardAvoidingView>
   );
 }

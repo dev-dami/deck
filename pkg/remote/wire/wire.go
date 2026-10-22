@@ -311,6 +311,15 @@ type AgentLine struct {
 	Busy   bool   `json:"busy"`
 }
 
+// AgentKind is an installed agent CLI that can join a session. Model is
+// what a new member of the kind runs; Joined is true when the session has
+// a live member of the kind already.
+type AgentKind struct {
+	Kind   string `json:"kind"`
+	Model  string `json:"model,omitempty"`
+	Joined bool   `json:"joined"`
+}
+
 // ModelChoice is one model an agent kind offers.
 type ModelChoice struct {
 	ID       string   `json:"id"`
@@ -357,6 +366,8 @@ const (
 	MQueueSteer      = "queue.steer"
 	MQueueCancel     = "queue.cancel"
 	MRosterGet       = "roster.get"
+	MRosterKinds     = "roster.kinds"
+	MRosterAdd       = "roster.add"
 	MModelsList      = "models.list"
 	MModelsSet       = "models.set"
 	MModeGet         = "mode.get"
@@ -453,6 +464,14 @@ type (
 	ModelsListParams struct {
 		SessionID string `json:"session_id"`
 		Kind      string `json:"kind"`
+	}
+
+	// RosterAddParams is the params of roster.add. An empty Model means the
+	// model configured for the kind.
+	RosterAddParams struct {
+		SessionID string `json:"session_id"`
+		Kind      string `json:"kind"`
+		Model     string `json:"model,omitempty"`
 	}
 
 	// ModelsSetParams is the params of models.set.
@@ -759,6 +778,10 @@ func Fixtures() []Fixture {
 		{"res_queue.cancel", Empty{}},
 		{"req_roster.get", SessionParams{}},
 		{"res_roster.get", []AgentLine{}},
+		{"req_roster.kinds", SessionParams{}},
+		{"res_roster.kinds", []AgentKind{}},
+		{"req_roster.add", RosterAddParams{}},
+		{"res_roster.add", AgentLine{}},
 		{"req_models.list", ModelsListParams{}},
 		{"res_models.list", []ModelChoice{}},
 		{"req_models.set", ModelsSetParams{}},

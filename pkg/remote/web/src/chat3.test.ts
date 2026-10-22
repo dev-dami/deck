@@ -46,6 +46,8 @@ class FakeSession implements SessionLike {
   page: unknown = { messages: [], more: false };
   roster: unknown[] = [];
   models: unknown[] = [];
+  kinds: unknown[] = [];
+  mode: unknown = { mode: "ask" };
   changes: unknown[] = [];
   pageWait: Promise<void> | null = null;
   rosterWait: Promise<void> | null = null;
@@ -66,6 +68,18 @@ class FakeSession implements SessionLike {
         return [...this.roster] as unknown as T;
       case "models.list":
         return [...this.models] as unknown as T;
+      case "roster.kinds":
+        return [...this.kinds] as unknown as T;
+      case "roster.add": {
+        const p = params as { kind: string; model?: string };
+        const line = { id: p.kind, name: p.kind, kind: p.kind, model: p.model, busy: false };
+        this.roster.push(line);
+        return line as unknown as T;
+      }
+      case "mode.get":
+        return this.mode as unknown as T;
+      case "mode.set":
+        return { mode: (params as { mode: string }).mode } as unknown as T;
       case "changes.get":
         return [...this.changes] as unknown as T;
       case "sessions.create":
@@ -391,6 +405,68 @@ describe("actions", () => {
     expect(chat.changes).toEqual([]);
     await chat.refreshChanges();
     expect(chat.changes).toEqual([]);
+  });
+
+  test("agent kinds decode and bad rows drop", async () => {
+    const s = collection([]);
+    s.kinds = [
+      { kind: "claude", model: "opus", joined: true },
+      { kind: "codex", joined: false },
+      { kind: 3, joined: false },
+    ];
+    const chat = await ChatSession.open(s, "prj_a1", "ses_1");
+    expect(await chat.agentKinds()).toEqual([
+      { kind: "claude", model: "opus", joined: true },
+      { kind: "codex", joined: false },
+    ]);
+  });
+
+  test("addAgent posts roster.add to the project and refreshes the roster", async () => {
+    const s = collection([]);
+    const chat = await ChatSession.open(s, "prj_a1", "ses_1");
+    await chat.addAgent("codex", "gpt-5-codex");
+    const add = s.calls.find((c) => c.method === "roster.add");
+    expect(add?.params).toEqual({ session_id: "ses_1", kind: "codex", model: "gpt-5-codex" });
+    expect(add?.pj).toBe("prj_a1");
+    expect(chat.roster.map((a) => a.kind)).toEqual(["codex"]);
+  });
+
+  test("addAgent leaves the model out when none is picked", async () => {
+    const s = collection([]);
+    const chat = await ChatSession.open(s, "prj_a1", "ses_1");
+    await chat.addAgent("claude");
+    expect(s.calls.find((c) => c.method === "roster.add")?.params).toEqual({
+      session_id: "ses_1",
+      kind: "claude",
+    });
+  });
+
+  test("mode loads on open, follows events and updates on set", async () => {
+    const s = collection([]);
+    s.mode = { mode: "plan" };
+    const chat = await ChatSession.open(s, "prj_a1", "ses_1");
+    expect(chat.mode).toBe("plan");
+    s.emit("mode.changed", { session_id: "ses_other", mode: "yolo" });
+    expect(chat.mode).toBe("plan");
+    s.emit("mode.changed", { session_id: "ses_1", mode: "yolo" });
+    expect(chat.mode).toBe("yolo");
+    await chat.setMode("ask");
+    expect(chat.mode).toBe("ask");
+    expect(s.calls.find((c) => c.method === "mode.set")?.params).toEqual({
+      session_id: "ses_1",
+      mode: "ask",
+    });
+  });
+
+  test("setMode forwards the passkey assertion", async () => {
+    const s = collection([]);
+    const chat = await ChatSession.open(s, "prj_a1", "ses_1");
+    await chat.setMode("yolo", { id: "cred" });
+    expect(s.calls.find((c) => c.method === "mode.set")?.params).toEqual({
+      session_id: "ses_1",
+      mode: "yolo",
+      assertion: { id: "cred" },
+    });
   });
 
   test("createSession returns the new id", async () => {

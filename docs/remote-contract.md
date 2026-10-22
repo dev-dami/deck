@@ -116,6 +116,8 @@ Unchanged from #47 unless noted. Every method that names a session takes
 | `queue.list` | `{session_id}` | `QueuedItem[]` |
 | `queue.steer` / `queue.cancel` | `{session_id, item_id}` | `{}` |
 | `roster.get` | `{session_id}` | `AgentLine[]` |
+| `roster.kinds` | `{session_id}` | `{kind, model?, joined}[]`: installed agent CLIs; `joined` when the session has a live member of the kind |
+| `roster.add` | `{session_id, kind, model?}` | `AgentLine`: starts a member without sending it anything; unknown kind is `invalid` |
 | `models.list` | `{session_id, kind}` | `ModelChoice[]` |
 | `models.set` | `{session_id, kind, model, effort?}` | `{}` |
 | `mode.get` | `{session_id}` | `{mode}` |
@@ -189,7 +191,8 @@ after key sorting).
 - `messages.list` cursors (`before`, `cursor`) are opaque strings.
 - Methods without params or result use `{}`. `sessions.delete`,
   `sessions.focus` and `devices.revoke` take `{id}`; `chat.cancel`,
-  `chat.continue`, `queue.list`, `roster.get`, `mode.get` and `changes.get`
+  `chat.continue`, `queue.list`, `roster.get`, `roster.kinds`, `mode.get` and
+  `changes.get`
   take `{session_id}`.
 - The pair route's error body is `{error: code}`. `welcome.server.features`
   and `kinds` are always present (possibly empty).

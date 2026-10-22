@@ -191,6 +191,14 @@ func toRoster(lines []workspace.AgentLine) []wire.AgentLine {
 	return out
 }
 
+func toKinds(kinds []workspace.AgentKind) []wire.AgentKind {
+	out := make([]wire.AgentKind, 0, len(kinds))
+	for _, k := range kinds {
+		out = append(out, wire.AgentKind{Kind: k.Kind, Model: k.Model, Joined: k.Joined})
+	}
+	return out
+}
+
 func toModels(choices []workspace.ModelChoice, kind string) []wire.ModelChoice {
 	out := make([]wire.ModelChoice, 0, len(choices))
 	for _, c := range choices {

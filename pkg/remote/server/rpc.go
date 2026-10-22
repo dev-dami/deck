@@ -137,7 +137,7 @@ func (c *conn) call(ctx context.Context, method string, p json.RawMessage) (res 
 			return nil, invalid("session_id, message_id and text are required"), nil
 		}
 		return done(method, be.EditMessage(ctx, req.SessionID, req.MessageID, req.Text))
-	case wire.MChatCancel, wire.MChatContinue, wire.MQueueList, wire.MRosterGet, wire.MModeGet, wire.MChangesGet:
+	case wire.MChatCancel, wire.MChatContinue, wire.MQueueList, wire.MRosterGet, wire.MRosterKinds, wire.MModeGet, wire.MChangesGet:
 		req, werr := decode[wire.SessionParams](p)
 		if werr != nil {
 			return nil, werr, nil
@@ -189,6 +189,19 @@ func (c *conn) call(ctx context.Context, method string, p json.RawMessage) (res 
 			return nil, invalid("session_id and kind are required"), nil
 		}
 		return done(method, be.SetModel(req.SessionID, req.Kind, req.Model, req.Effort))
+	case wire.MRosterAdd:
+		req, werr := decode[wire.RosterAddParams](p)
+		if werr != nil {
+			return nil, werr, nil
+		}
+		if req.SessionID == "" || req.Kind == "" {
+			return nil, invalid("session_id and kind are required"), nil
+		}
+		v, err := be.AddAgent(req.SessionID, req.Kind, req.Model)
+		if err != nil {
+			return nil, fail(method, err), nil
+		}
+		return v, nil, nil
 	case wire.MModeSet:
 		return c.modeSet(p)
 	case wire.MApprovalsList:
@@ -253,6 +266,12 @@ func (c *conn) sessionCall(ctx context.Context, method, sid string) (any, *wire.
 		return capQueue(nonNil(v)), nil, nil
 	case wire.MRosterGet:
 		v, err := be.Roster(sid)
+		if err != nil {
+			return nil, fail(method, err), nil
+		}
+		return nonNil(v), nil, nil
+	case wire.MRosterKinds:
+		v, err := be.AgentKinds(sid)
 		if err != nil {
 			return nil, fail(method, err), nil
 		}

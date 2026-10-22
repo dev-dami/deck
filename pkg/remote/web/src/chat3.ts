@@ -2,16 +2,21 @@
 // transcript with paging, send, interrupt/continue, models and read-only
 // change summaries. UI-free so bun test covers it; the screen renders it.
 import {
+  type AgentKind,
   type AgentLine,
   bool,
   type ChangedFile,
   type Decoder,
+  decodeAgentKind,
   decodeAgentLine,
   decodeChangedFile,
   decodeMessage,
   decodeMessageDeleted,
+  decodeMode,
+  decodeModeChanged,
   decodeModelChoice,
   type Message,
+  type Mode,
   type ModelChoice,
   object,
   str,
@@ -88,6 +93,8 @@ export class ChatSession {
   messages: Message[] = [];
   busy = false;
   roster: AgentLine[] = [];
+  // null until the computer has said; older computers may never say.
+  mode: Mode | null = null;
   changes: ChangedFile[] = [];
   more = false;
   error: string | null = null;
@@ -133,7 +140,7 @@ export class ChatSession {
     this.error = null;
     this.emit();
     try {
-      const [listed, roster] = await Promise.all([
+      const [listed, roster, mode] = await Promise.all([
         this.session.call(
           "messages.list",
           { session_id: this.sessionId, limit: PAGE_LIMIT },
@@ -142,6 +149,9 @@ export class ChatSession {
         this.session
           .call("roster.get", { session_id: this.sessionId }, this.pj)
           .catch(() => [] as unknown),
+        this.session
+          .call("mode.get", { session_id: this.sessionId }, this.pj)
+          .catch(() => null as unknown),
       ]);
       if (this.detached || revision !== this.refreshRevision) return;
       const page = decodePage(listed);
@@ -152,6 +162,7 @@ export class ChatSession {
       this.more = page.more;
       this.cursor = page.cursor;
       this.roster = decodeAgentList(roster);
+      this.mode = decodeModeResult(mode) ?? this.mode;
       if (busyRevision === this.busyRevision) this.busy = this.roster.some((agent) => agent.busy);
       await this.refreshChanges();
     } catch (error) {
@@ -264,6 +275,38 @@ export class ChatSession {
     await this.refreshRoster();
   }
 
+  // The agent CLIs installed on the computer, and whether each is in this
+  // conversation already.
+  async agentKinds(): Promise<AgentKind[]> {
+    const v = await this.session.call("roster.kinds", { session_id: this.sessionId }, this.pj);
+    if (!Array.isArray(v)) return [];
+    const out: AgentKind[] = [];
+    for (const item of v) {
+      const decoded = decodeAgentKind(item);
+      if (decoded !== null) out.push(decoded);
+    }
+    return out;
+  }
+
+  // Starts an agent of kind in this conversation without sending it
+  // anything; it reads the thread so far when someone first addresses it.
+  async addAgent(kind: string, model?: string): Promise<void> {
+    const params: Record<string, unknown> = { session_id: this.sessionId, kind };
+    if (model !== undefined && model !== "") params["model"] = model;
+    await this.session.call("roster.add", params, this.pj);
+    await this.refreshRoster();
+  }
+
+  // Yolo needs a passkey assertion over the action digest; the computer
+  // refuses it without one.
+  async setMode(mode: Mode, assertion?: unknown): Promise<void> {
+    const params: Record<string, unknown> = { session_id: this.sessionId, mode };
+    if (assertion !== undefined) params["assertion"] = assertion;
+    const result = decodeModeResult(await this.session.call("mode.set", params, this.pj));
+    this.mode = result ?? mode;
+    this.emit();
+  }
+
   async refreshChanges(): Promise<void> {
     const revision = this.refreshRevision;
     try {
@@ -331,6 +374,11 @@ export class ChatSession {
         this.emit();
         if (!this.busy) void this.refreshChanges();
       }
+    } else if (name === "mode.changed") {
+      const changed = decodeModeChanged(payload);
+      if (changed === null || changed.session_id !== this.sessionId) return;
+      this.mode = changed.mode;
+      this.emit();
     } else if (name === "roster.changed") {
       if (!isRecord(payload) || payload["session_id"] !== this.sessionId) return;
       void this.refreshRoster();
@@ -339,6 +387,10 @@ export class ChatSession {
       void this.refresh().catch(() => {});
     }
   }
+}
+
+function decodeModeResult(v: unknown): Mode | null {
+  return isRecord(v) ? decodeMode(v["mode"]) : null;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

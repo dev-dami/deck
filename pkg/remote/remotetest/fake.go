@@ -321,6 +321,65 @@ func (f *Fake) Roster(sessionID string) ([]wire.AgentLine, error) {
 	return append([]wire.AgentLine(nil), s.Roster...), nil
 }
 
+// fakeKinds are the agent CLIs the fake pretends are installed.
+var fakeKinds = []wire.AgentKind{{Kind: "claude", Model: "claude-big"}, {Kind: "codex", Model: "codex-big"}}
+
+func (f *Fake) AgentKinds(sessionID string) ([]wire.AgentKind, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, err := f.session(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	out := append([]wire.AgentKind(nil), fakeKinds...)
+	for i := range out {
+		for _, l := range s.Roster {
+			if l.Kind == out[i].Kind {
+				out[i].Joined = true
+			}
+		}
+	}
+	return out, nil
+}
+
+func (f *Fake) AddAgent(sessionID, kind, model string) (wire.AgentLine, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, err := f.session(sessionID)
+	if err != nil {
+		return wire.AgentLine{}, err
+	}
+	var known *wire.AgentKind
+	for i := range fakeKinds {
+		if fakeKinds[i].Kind == kind {
+			known = &fakeKinds[i]
+		}
+	}
+	if known == nil {
+		return wire.AgentLine{}, remote.ErrInvalid
+	}
+	if model == "" {
+		model = known.Model
+	}
+	name := kind
+	for n := 2; f.hasAgent(s, name); n++ {
+		name = fmt.Sprintf("%s%d", kind, n)
+	}
+	line := wire.AgentLine{ID: name, Name: name, Kind: kind, Model: model}
+	s.Roster = append(s.Roster, line)
+	f.note("add:" + name + "=" + model)
+	return line, nil
+}
+
+func (f *Fake) hasAgent(s *Session, name string) bool {
+	for _, l := range s.Roster {
+		if l.ID == name {
+			return true
+		}
+	}
+	return false
+}
+
 func (f *Fake) Models(_ context.Context, sessionID, kind string) ([]wire.ModelChoice, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
