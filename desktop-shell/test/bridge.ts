@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { loadService, RpcDecks } from "../src/main/decks";
 import { createHost } from "../src/main/host";
 import { LinkHost } from "../src/main/link";
+import { PhoneLink } from "../src/main/phone";
 import { RecentFolders } from "../src/main/recent";
 import { type Sealer, ServerStore } from "../src/main/servers";
 import type { DeckBridge, DeckHost, RpcStreamEvent, SocketEvent } from "../src/shared/bridge";
@@ -44,6 +45,7 @@ export function testHost(
     store,
     links,
     decks,
+    phone: new PhoneLink(null),
     recent: new RecentFolders(null),
     deckPath: FAKE_DECK,
     deviceName: "Deck desktop (test)",

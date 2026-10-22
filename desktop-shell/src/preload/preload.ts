@@ -30,6 +30,11 @@ const bridge: DeckBridge = {
   rpcSubscribe: (id, epoch, seq) => invoke("rpcSubscribe", id, epoch, seq),
   termSubscribe: (id, term) => invoke("termSubscribe", id, term),
   termUnsubscribe: (id, term) => invoke("termUnsubscribe", id, term),
+  phoneStatus: () => invoke("phoneStatus"),
+  phoneLink: (folder, relayDir) => invoke("phoneLink", folder, relayDir),
+  phoneNewCode: () => invoke("phoneNewCode"),
+  phoneRevoke: (deviceId) => invoke("phoneRevoke", deviceId),
+  phoneStop: () => invoke("phoneStop"),
   onSocket: (fn) => listen<[number, SocketEvent]>("deck:socket", fn),
   onRpc: (fn) => listen<[string, RpcStreamEvent]>("deck:rpc", fn),
 };

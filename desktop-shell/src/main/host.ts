@@ -3,6 +3,7 @@ import type { RpcDecks } from "./decks";
 import type { LinkHost } from "./link";
 import { codeError, type Connect, pairWith } from "./pair";
 import { connectPinned, normalizeFingerprint, targetError } from "./pin";
+import type { PhoneService } from "./phone";
 import type { RecentFolders } from "./recent";
 import type { ServerStore } from "./servers";
 
@@ -10,6 +11,7 @@ export interface HostDeps {
   store: ServerStore;
   links: LinkHost;
   decks: RpcDecks;
+  phone: PhoneService;
   recent: RecentFolders;
   // Null when deck is not on PATH.
   deckPath: string | null;
@@ -66,6 +68,13 @@ export function createHost(d: HostDeps): DeckHost {
     rpcSubscribe: async (id: string, epoch: string, seq: number) => d.decks.subscribe(id, epoch, seq),
     termSubscribe: async (id: string, term: string) => d.decks.termSubscribe(id, term),
     termUnsubscribe: async (id: string, term: string) => d.decks.termUnsubscribe(id, term),
+    phoneStatus: () => d.phone.status(),
+    // Only a folder this app has open is shared, whatever the renderer asks.
+    phoneLink: (folder: string | null, relayDir: string | null) =>
+      d.phone.link(folder !== null && d.decks.isOpenDir(folder) ? folder : null, relayDir),
+    phoneNewCode: () => d.phone.newCode(),
+    phoneRevoke: (deviceId: string) => d.phone.revoke(deviceId),
+    phoneStop: () => d.phone.stop(),
   };
 }
 
@@ -76,6 +85,7 @@ const isNat: Check = (v) => Number.isSafeInteger(v) && (v as number) >= 0;
 const isObject: Check = (v) =>
   typeof v === "object" && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
 const isRpcMethod: Check = (v) => (RPC_METHODS as readonly unknown[]).includes(v);
+const isStrOrNull: Check = (v) => v === null || typeof v === "string";
 const isPairInput: Check = (v) => {
   if (!isObject(v)) return false;
   const p = v as Record<string, unknown>;
@@ -105,6 +115,11 @@ const ARGS: Record<HostMethod, Check[]> = {
   rpcSubscribe: [isStr, isStr, isNat],
   termSubscribe: [isStr, isStr],
   termUnsubscribe: [isStr, isStr],
+  phoneStatus: [],
+  phoneLink: [isStrOrNull, isStrOrNull],
+  phoneNewCode: [],
+  phoneRevoke: [isStr],
+  phoneStop: [],
 };
 
 // Calls method m with args from the renderer, or rejects when they are not

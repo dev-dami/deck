@@ -237,6 +237,8 @@ export function App({ bridge }: { bridge: DeckBridge }) {
         <Shell
           key={current.key}
           c={current.c}
+          bridge={bridge}
+          folder={current.source.startsWith("folder:") ? current.source.slice("folder:".length) : null}
           name={current.name}
           where={current.where}
           transport={current.transport}

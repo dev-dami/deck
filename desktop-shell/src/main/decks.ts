@@ -236,6 +236,12 @@ export class RpcDecks {
     return { ok: true, deck };
   }
 
+  // Whether dir is a folder this app has a Deck open in.
+  isOpenDir(dir: string): boolean {
+    for (const o of this.open_.values()) if (o.deck.dir === dir) return true;
+    return false;
+  }
+
   call(id: string, method: RpcMethod, request: Record<string, unknown>): Promise<RpcResult> {
     const o = this.open_.get(id);
     if (o === undefined) return Promise.resolve({ ok: false, code: grpc.status.UNAVAILABLE, message: "That Deck is closed." });

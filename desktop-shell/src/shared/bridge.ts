@@ -53,6 +53,34 @@ export interface LocalDeck {
 
 export type OpenOutcome = { ok: true; deck: LocalDeck } | { ok: false; message: string };
 
+// A phone paired with this computer through `deck mobile connect`. Keys and
+// relay tokens never reach the window.
+export interface PhoneDevice {
+  id: string;
+  name: string;
+}
+
+// What `deck mobile connect --json` reports, for the Phone page.
+export interface PhoneState {
+  name: string;
+  relayUrl: string;
+  online: boolean;
+  projects: number;
+  devices: PhoneDevice[];
+  // The pairing link and its QR (rows of "1" dark and "0" light modules,
+  // quiet zone included); set only just after a link or a new code.
+  pairUrl: string | null;
+  qr: string[] | null;
+  expiresAt: string | null;
+  message: string | null;
+}
+
+export type PhoneOutcome =
+  | { ok: true; phone: PhoneState }
+  // needsRelayDir: the local relay runtime was not found; the page asks for
+  // the folder that holds it (pkg/remote/relay with its dependencies).
+  | { ok: false; message: string; needsRelayDir: boolean };
+
 // The unary methods of deck.v1.Deck (proto/deck/v1/deck.proto) the window
 // may call. Events and TerminalOutput are streams and go through
 // rpcSubscribe and termSubscribe.
@@ -152,6 +180,15 @@ export interface DeckHost {
   // Streams a terminal's output (from its scrollback) as TermEvents.
   termSubscribe(id: string, term: string): Promise<void>;
   termUnsubscribe(id: string, term: string): Promise<void>;
+  // The phone link of this computer (`deck mobile connect`). Status reads
+  // it; link starts the relay and daemon (sharing the open folder, when one
+  // is given) and returns a fresh QR; newCode replaces the QR; revoke
+  // disconnects one phone; stop ends remote access.
+  phoneStatus(): Promise<PhoneOutcome>;
+  phoneLink(folder: string | null, relayDir: string | null): Promise<PhoneOutcome>;
+  phoneNewCode(): Promise<PhoneOutcome>;
+  phoneRevoke(deviceId: string): Promise<PhoneOutcome>;
+  phoneStop(): Promise<PhoneOutcome>;
 }
 
 // The renderer's view: the host plus the socket and rpc event streams.
@@ -176,6 +213,11 @@ export const HOST_METHODS = [
   "rpcSubscribe",
   "termSubscribe",
   "termUnsubscribe",
+  "phoneStatus",
+  "phoneLink",
+  "phoneNewCode",
+  "phoneRevoke",
+  "phoneStop",
 ] as const satisfies ReadonlyArray<keyof DeckHost>;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
