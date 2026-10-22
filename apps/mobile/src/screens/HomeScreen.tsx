@@ -1,6 +1,8 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import type { ModelChoice } from "../../../../pkg/remote/web/src/protocol";
 import type { ComputerView } from "../../../../pkg/remote/web/src/state3";
+import { AgentRail } from "../ui/agents";
 import {
   Badge,
   Button,
@@ -16,12 +18,22 @@ import {
 import { Icon } from "../ui/icons";
 import { defaultTab, type TaskTab, tabCounts, taskRows } from "../ui/tasks";
 import { useTheme } from "../ui/theme";
+import { ModelPicker } from "./ModelPicker";
+
+export interface AgentPick {
+  kind: string;
+  model?: string;
+  label?: string;
+}
 
 export interface HomeScreenProps {
   computer: ComputerView | null;
   waiting: boolean;
   onOpenTask(pj: string, sessionId: string): void;
-  onStartTask(pj: string, text: string): Promise<void>;
+  onStartTask(pj: string, text: string, agents: AgentPick[]): Promise<void>;
+  // The agent CLIs installed on the computer.
+  kinds: readonly string[];
+  listModels(pj: string, kind: string): Promise<ModelChoice[]>;
   onOpenComputers(): void;
   onOpenActivity(): void;
   onOpenSettings(): void;
@@ -64,6 +76,8 @@ export function HomeScreen({
   waiting,
   onOpenTask,
   onStartTask,
+  kinds,
+  listModels,
   onOpenComputers,
   onOpenActivity,
   onOpenSettings,
@@ -78,12 +92,15 @@ export function HomeScreen({
   const [project, setProject] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [picks, setPicks] = useState<AgentPick[]>([]);
+  const [choosing, setChoosing] = useState<string | null>(null);
   const cid = computer?.record.cid;
   // A different computer has its own tasks and projects.
   useEffect(() => {
     void cid;
     setTab(null);
     setProject(null);
+    setPicks([]);
   }, [cid]);
 
   if (computer === null)
@@ -111,8 +128,11 @@ export function HomeScreen({
     if (!text || !chosen) return;
     setBusy(true);
     setError(null);
-    void onStartTask(chosen.id, text)
-      .then(() => setDraft(""))
+    void onStartTask(chosen.id, text, picks)
+      .then(() => {
+        setDraft("");
+        setPicks([]);
+      })
       .catch((err: unknown) =>
         setError(err instanceof Error ? err.message : "Could not start the task."),
       )
@@ -189,6 +209,49 @@ export function HomeScreen({
         contentContainerStyle={{ padding: 16, paddingTop: 10, paddingBottom: 40, gap: 12 }}
         keyboardShouldPersistTaps="handled"
       >
+        {online && kinds.length > 0 && (
+          <View style={{ gap: 8 }}>
+            <Text style={s.label}>Agents for this task</Text>
+            <AgentRail
+              agents={kinds.map((kind) => {
+                const pick = picks.find((p) => p.kind === kind);
+                return {
+                  key: kind,
+                  name: kind,
+                  kind,
+                  detail: pick ? (pick.label ?? "default model") : "tap to add",
+                  on: pick !== undefined,
+                };
+              })}
+              onToggle={(kind) =>
+                setPicks((now) =>
+                  now.some((p) => p.kind === kind)
+                    ? now.filter((p) => p.kind !== kind)
+                    : [...now, { kind }],
+                )
+              }
+              onLongPress={(kind) => setChoosing(kind)}
+            />
+            {picks.length > 0 && (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                {picks.map((p) => (
+                  <Chip
+                    key={p.kind}
+                    title={`${p.kind} · ${p.label ?? "default model"}`}
+                    trailing="chevron-down"
+                    label={`Choose the model for ${p.kind}`}
+                    onPress={() => setChoosing(p.kind)}
+                  />
+                ))}
+              </View>
+            )}
+            {picks.length === 0 && (
+              <Text style={[s.small, { marginHorizontal: 4 }]}>
+                None picked: your computer's default agent takes the task.
+              </Text>
+            )}
+          </View>
+        )}
         {online ? (
           <Composer
             tall
@@ -324,6 +387,24 @@ export function HomeScreen({
           )}
         </Group>
       </ScrollView>
+      {chosen && (
+        <ModelPicker
+          visible={choosing !== null}
+          kind={choosing ?? ""}
+          selected={picks.find((p) => p.kind === choosing)?.model}
+          load={() => listModels(chosen.id, choosing ?? "")}
+          onClose={() => setChoosing(null)}
+          onPick={(model) => {
+            const kind = choosing;
+            if (kind === null) return;
+            setPicks((now) => [
+              ...now.filter((p) => p.kind !== kind),
+              { kind, model: model?.id, label: model?.label },
+            ]);
+            setChoosing(null);
+          }}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }

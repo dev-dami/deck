@@ -157,6 +157,24 @@ describe("chat open", () => {
   });
 });
 
+describe("focus", () => {
+  test("open focuses the session so its messages stream, detach releases it", async () => {
+    const s = collection([]);
+    const chat = await ChatSession.open(s, "prj_a1", "ses_1");
+    const focus = s.calls.filter((c) => c.method === "sessions.focus");
+    expect(focus).toEqual([{ method: "sessions.focus", params: { id: "ses_1" }, pj: "prj_a1" }]);
+    expect(s.calls.indexOf(focus[0] as (typeof s.calls)[number])).toBeLessThan(
+      s.calls.findIndex((c) => c.method === "messages.list"),
+    );
+    chat.detach();
+    chat.detach();
+    expect(s.calls.filter((c) => c.method === "sessions.focus").map((c) => c.params)).toEqual([
+      { id: "ses_1" },
+      { id: "" },
+    ]);
+  });
+});
+
 describe("paging", () => {
   test("loadOlder merges and tracks the cursor", async () => {
     const s = collection([]);

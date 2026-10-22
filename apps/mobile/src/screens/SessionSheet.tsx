@@ -14,6 +14,8 @@ export interface SessionSheetProps {
   chat: ChatSession;
   session: SessionLike | null;
   relayUrl: string | null;
+  // The composer's "Add agent" opens straight on the list of agent CLIs.
+  startAt?: "main" | "kinds";
 }
 
 type Pane = { at: "main" } | { at: "models"; kind: string; adding: boolean } | { at: "kinds" };
@@ -39,7 +41,14 @@ async function yoloDigest(pj: string, sessionId: string): Promise<string> {
   return Array.from(new Uint8Array(raw), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export function SessionSheet({ visible, onClose, chat, session, relayUrl }: SessionSheetProps) {
+export function SessionSheet({
+  visible,
+  onClose,
+  chat,
+  session,
+  relayUrl,
+  startAt = "main",
+}: SessionSheetProps) {
   const { t, s } = useTheme();
   const [, tick] = useState(0);
   const [view, setView] = useState<Pane>({ at: "main" });
@@ -54,8 +63,26 @@ export function SessionSheet({ visible, onClose, chat, session, relayUrl }: Sess
     if (!visible) {
       setView({ at: "main" });
       setError(null);
+      return;
     }
-  }, [visible]);
+    if (startAt !== "kinds") return;
+    let active = true;
+    setKinds(null);
+    setView({ at: "kinds" });
+    void chat
+      .agentKinds()
+      .then((found) => {
+        if (active) setKinds(found);
+      })
+      .catch((failure: unknown) => {
+        if (!active) return;
+        setKinds([]);
+        setError(failure instanceof Error ? failure.message : "Could not list agents.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [visible, startAt, chat]);
 
   async function run(work: () => Promise<void>): Promise<void> {
     if (busy) return;

@@ -21,7 +21,7 @@ const CHEVRON: ReadonlyArray<readonly [number, number]> = [
 ];
 const CHEVRON_HALF_WIDTH = 0.032;
 const CHEVRON_COLOR: RGB = [0xf0, 0xa7, 0x40];
-const BAR = { x: 0.434, y: 0.672, w: 0.164, h: 0.066 };
+const BAR = { x: 0.435, y: 0.672, w: 0.164, h: 0.066 };
 const BAR_COLOR: RGB = [0xf4, 0xf3, 0xee];
 const SAMPLES = 3;
 

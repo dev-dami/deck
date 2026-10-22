@@ -1,7 +1,7 @@
-import { activeAgent } from "@web/composer";
+import { activeAgents, toggleAgent } from "@web/composer";
 import type { AgentLine, Approval, ModelChoice, Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
-import { AtSign, Check, ChevronDown, Loader2, Plus, Sparkles, Square } from "lucide-react";
+import { AtSign, Check, Loader2, Plus, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { agentColour } from "../agents";
 import { agentStatus } from "../approvals";
@@ -68,146 +68,6 @@ function Mark({ kind, theme, className }: { kind: string; theme: Theme | null; c
     <span className={cn("grid size-4 shrink-0 place-items-center font-mono text-[11px]", className)} style={{ color: kindColour(kind) }}>
       {kindMark(theme, kind) || "●"}
     </span>
-  );
-}
-
-// The composer's picker, where T3 Code picks a provider and model: who the
-// next message goes to, another agent to start, and the model of the agent
-// it goes to.
-export function AgentPicker({
-  draft,
-  roster,
-  kinds,
-  theme,
-  onAddress,
-  onAuto,
-  onAdd,
-  listModels,
-  setModel,
-}: {
-  draft: string;
-  roster: AgentLine[];
-  kinds: string[];
-  theme: Theme | null;
-  onAddress: (agent: string) => void;
-  onAuto: () => void;
-  onAdd: (kind: string) => void;
-  listModels: (kind: string) => Promise<ModelChoice[] | null>;
-  setModel: (kind: string, model: string, effort?: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [load, setLoad] = useState<Promise<ModelChoice[] | null> | null>(null);
-  const mention = activeAgent(draft);
-  const target = mention === null ? undefined : roster.find((l) => l.id === mention);
-  const targetKind = target?.kind ?? (mention !== null && kinds.includes(mention.replace(/[+*]$/, "")) ? mention : null);
-  const close = () => {
-    setOpen(false);
-    setLoad(null);
-  };
-  return (
-    <Popover
-      open={open}
-      onClose={close}
-      side="top"
-      label="Agents"
-      className="w-72"
-      trigger={
-        <button
-          type="button"
-          className="agent-picker flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-muted-foreground text-sm hover:bg-accent hover:text-foreground aria-expanded:bg-accent"
-          aria-expanded={open}
-          aria-label="Pick an agent"
-          onClick={() => {
-            if (open) return close();
-            setOpen(true);
-            // The models of the agent the draft addresses.
-            if (target !== undefined) setLoad(listModels(target.kind));
-          }}
-        >
-          {target !== undefined ? (
-            <>
-              <Mark kind={target.kind} theme={theme} />
-              <span className="truncate text-foreground">{target.id}</span>
-              {target.model !== undefined && <span className="truncate">{target.model}</span>}
-            </>
-          ) : targetKind !== null && mention !== null ? (
-            <>
-              <Mark kind={targetKind} theme={theme} />
-              <span className="truncate text-foreground">${mention}</span>
-            </>
-          ) : (
-            <>
-              <Sparkles className="size-4 shrink-0" />
-              <span className="truncate text-foreground">{roster.length === 0 ? "Pick an agent" : "Any agent"}</span>
-            </>
-          )}
-          <ChevronDown className="size-3.5 shrink-0" />
-        </button>
-      }
-    >
-      {roster.length > 0 && (
-        <>
-          <MenuLabel>Send to</MenuLabel>
-          <MenuItem
-            onClick={() => {
-              close();
-              onAuto();
-            }}
-          >
-            <Sparkles />
-            <span className="flex-1">Any agent</span>
-            {mention === null && <Check />}
-          </MenuItem>
-          {roster.map((l) => (
-            <MenuItem
-              key={l.id}
-              onClick={() => {
-                close();
-                onAddress(l.id);
-              }}
-            >
-              <Mark kind={l.kind} theme={theme} />
-              <span className="flex-1 truncate">
-                {l.id} <span className="text-muted-foreground">{l.model ?? ""}</span>
-              </span>
-              {l.busy && <span className="text-2xs text-muted-foreground">busy</span>}
-              {mention === l.id && <Check />}
-            </MenuItem>
-          ))}
-          <MenuSeparator />
-        </>
-      )}
-      <MenuLabel>Start another</MenuLabel>
-      {kinds.map((k) => (
-        <MenuItem
-          key={k}
-          aria-label={`Start another ${k}`}
-          onClick={() => {
-            close();
-            onAdd(k);
-          }}
-        >
-          <Mark kind={k} theme={theme} />
-          <span className="flex-1">{k}</span>
-          <Plus className="text-muted-foreground" />
-        </MenuItem>
-      ))}
-      {kinds.length === 0 && <p className="px-2 py-1.5 text-muted-foreground text-xs">This Deck names no agents.</p>}
-      {target !== undefined && load !== null && (
-        <>
-          <MenuSeparator />
-          <MenuLabel>Model for {target.id}</MenuLabel>
-          <Models
-            line={target}
-            load={load}
-            choose={(model, effort) => {
-              setModel(target.kind, model, effort);
-              close();
-            }}
-          />
-        </>
-      )}
-    </Popover>
   );
 }
 
@@ -345,6 +205,131 @@ export function AgentsStrip({
         />
       ))}
       {roster.length === 0 && <span className="px-1.5 text-muted-foreground/60 text-xs">No agents yet</span>}
+    </div>
+  );
+}
+
+// The agents a message can go to, each in a card of its own: tapping one
+// addresses it ("$codex"), tapping several addresses each, and none leaves
+// the message to whoever spoke last. Starting another agent is a separate
+// action. Before anyone has joined, the cards are the installed CLIs.
+export function AgentCards({
+  draft,
+  setDraft,
+  roster,
+  kinds,
+  theme,
+  sessionId,
+  approvals,
+  onAdd,
+  onFocus,
+}: {
+  draft: string;
+  setDraft: (s: string) => void;
+  roster: AgentLine[];
+  kinds: string[];
+  theme: Theme | null;
+  sessionId: string | null;
+  approvals: Approval[];
+  onAdd: (kind: string) => void;
+  onFocus: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const addressed = activeAgents(draft);
+  const cards =
+    roster.length > 0
+      ? roster.map((l) => ({
+          id: l.id,
+          name: l.name,
+          kind: l.kind,
+          detail: l.model ?? "default model",
+          status: sessionId === null ? ("idle" as const) : agentStatus(l, sessionId, approvals),
+        }))
+      : kinds.map((k) => ({ id: k, name: k, kind: k, detail: "starts on send", status: null }));
+  return (
+    <div className="agent-cards flex flex-wrap items-stretch gap-2" role="group" aria-label="Send to">
+      {cards.map((c) => {
+        const on = addressed.includes(c.id);
+        const colour = kindColour(c.kind);
+        return (
+          <button
+            key={c.id}
+            type="button"
+            role="checkbox"
+            aria-checked={on}
+            aria-label={`Send to ${c.id}`}
+            data-agent={c.id}
+            className={cn(
+              "agent-card flex min-w-40 cursor-pointer items-center gap-2.5 rounded-xl bg-card px-2.5 py-2 text-left shadow-[inset_0_0_0_1px_var(--border)] transition-[box-shadow,background-color] hover:bg-accent",
+              on && "on bg-accent",
+            )}
+            style={on ? { boxShadow: `inset 0 0 0 1.5px ${colour}, 0 6px 18px rgb(0 0 0 / 0.25)` } : undefined}
+            onClick={() => {
+              setDraft(toggleAgent(draft, c.id));
+              onFocus();
+            }}
+          >
+            <span
+              className="grid size-7 shrink-0 place-items-center rounded-lg font-mono text-xs"
+              style={{ color: colour, background: `color-mix(in srgb, ${colour} 16%, transparent)` }}
+            >
+              {kindMark(theme, c.kind) || "●"}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium text-foreground text-sm leading-4">{c.name}</span>
+              <span className="block truncate text-muted-foreground text-xs leading-4">
+                {c.detail}
+                {c.status === "busy" ? " · working" : c.status === "waiting" ? " · needs you" : ""}
+              </span>
+            </span>
+            {c.status !== null && (
+              <span
+                className={cn("size-1.5 shrink-0 rounded-full", c.status === "busy" && "animate-deck-pulse")}
+                style={{
+                  background:
+                    c.status === "waiting" ? "var(--warning)" : c.status === "busy" ? "var(--info)" : "var(--success)",
+                }}
+              />
+            )}
+          </button>
+        );
+      })}
+      {roster.length > 0 && (
+        <Popover
+          open={adding}
+          onClose={() => setAdding(false)}
+          side="top"
+          label="Add an agent"
+          className="w-64"
+          trigger={
+            <button
+              type="button"
+              className="add-agent flex cursor-pointer items-center gap-1.5 rounded-xl border border-dashed px-3.5 text-muted-foreground text-sm hover:border-foreground/30 hover:text-foreground aria-expanded:text-foreground"
+              aria-expanded={adding}
+              onClick={() => setAdding(!adding)}
+            >
+              <Plus className="size-4" /> Add agent
+            </button>
+          }
+        >
+          <MenuLabel>Start another agent</MenuLabel>
+          {kinds.map((k) => (
+            <MenuItem
+              key={k}
+              aria-label={`Start another ${k}`}
+              onClick={() => {
+                setAdding(false);
+                onAdd(k);
+              }}
+            >
+              <Mark kind={k} theme={theme} />
+              <span className="flex-1">{k}</span>
+              {roster.some((l) => l.kind === k) && <span className="text-2xs text-muted-foreground">another</span>}
+            </MenuItem>
+          ))}
+          {kinds.length === 0 && <p className="px-2 py-1.5 text-muted-foreground text-xs">This Deck names no agents.</p>}
+        </Popover>
+      )}
     </div>
   );
 }

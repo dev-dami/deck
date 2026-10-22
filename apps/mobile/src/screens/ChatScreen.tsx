@@ -2,7 +2,9 @@ import { FlashList } from "@shopify/flash-list";
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, Text, View } from "react-native";
 import { type ChatSession, newIdempotencyKey } from "../../../../pkg/remote/web/src/chat3";
+import { activeAgents, canSend, toggleAgent } from "../../../../pkg/remote/web/src/composer";
 import type { Message } from "../../../../pkg/remote/web/src/protocol";
+import { AgentRail } from "../ui/agents";
 import { Button, Composer, EmptyState, IconButton, Notice, TopBar } from "../ui/components";
 import { Icon } from "../ui/icons";
 import { splitMessage } from "../ui/tasks";
@@ -15,6 +17,7 @@ export interface ChatScreenProps {
   onBack(): void;
   onOpenChanges(): void;
   onOpenSession(): void;
+  onAddAgent(): void;
   onQueuePrompt?(text: string): Promise<void>;
   // Pending approvals dock above the composer.
   docked?: ReactNode;
@@ -114,6 +117,7 @@ export function ChatScreen({
   onBack,
   onOpenChanges,
   onOpenSession,
+  onAddAgent,
   onQueuePrompt,
   docked,
 }: ChatScreenProps) {
@@ -156,6 +160,15 @@ export function ChatScreen({
   }
 
   const agents = new Set(chat.roster.map((a) => a.name));
+  const addressed = activeAgents(text);
+  const names = chat.roster.map((a) => a.name);
+  const placeholder = !online
+    ? "Queue a message for later"
+    : names.length === 0
+      ? "Message your agents"
+      : addressed.length > 0
+        ? `Message ${addressed.join(" and ")}`
+        : `Message ${names.slice(0, 2).join(" or ")}${names.length > 2 ? "…" : ""}`;
   const model = chat.roster[0]?.model;
   const subtitle = [
     online ? null : "Offline",
@@ -294,12 +307,26 @@ export function ChatScreen({
       {docked && (
         <View style={{ paddingHorizontal: 12, paddingBottom: 10, gap: 10 }}>{docked}</View>
       )}
-      <View style={{ paddingHorizontal: 12, paddingBottom: 16 }}>
+      <View style={{ paddingHorizontal: 12, paddingBottom: 16, gap: 10 }}>
+        {online && (
+          <AgentRail
+            agents={chat.roster.map((a) => ({
+              key: a.id,
+              name: a.name,
+              kind: a.kind,
+              detail: [a.model ?? a.kind, a.busy ? "working" : null].filter(Boolean).join(" · "),
+              on: addressed.includes(a.id) || addressed.includes(a.name),
+              status: a.busy ? "busy" : "idle",
+            }))}
+            onToggle={(id) => setText(toggleAgent(text, id))}
+            onAdd={onAddAgent}
+          />
+        )}
         <Composer
           value={text}
           onChangeText={setText}
-          placeholder={online ? "Reply to your agents" : "Queue a message for later"}
-          canSend={text.trim() !== "" && (online ? live : onQueuePrompt !== undefined)}
+          placeholder={placeholder}
+          canSend={canSend(text, 0) && (online ? live : onQueuePrompt !== undefined)}
           busy={busy}
           onSend={send}
           onStop={online && chat.busy ? () => void act(() => chat.interrupt()) : undefined}

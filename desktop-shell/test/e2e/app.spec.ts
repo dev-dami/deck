@@ -100,10 +100,17 @@ test("adds an agent with $codex+", async ({ page }) => {
   await expect(page.locator('[data-agent="codex-2"].msg')).toContainText("review the limiter");
   expect(fake.sent.map((s) => s.text)).toEqual(["$codex+ review the limiter"]);
 
-  // The agent picker writes the same mention.
-  await page.getByRole("button", { name: "Pick an agent" }).click();
-  await page.getByRole("menu", { name: "Agents" }).getByRole("menuitem", { name: "Start another opencode" }).click();
+  // "Add agent" writes the same mention.
+  await page.getByRole("button", { name: "Add agent" }).click();
+  await page.getByRole("menu", { name: "Add an agent" }).getByRole("menuitem", { name: "Start another opencode" }).click();
   await expect(composer(page)).toHaveValue("$opencode+ ");
+
+  // Each agent's card addresses it; a second card addresses both.
+  await composer(page).fill("compare");
+  await page.getByRole("checkbox", { name: "Send to codex-1" }).click();
+  await expect(composer(page)).toHaveValue("$codex-1 compare");
+  await page.getByRole("checkbox", { name: "Send to codex-1" }).click();
+  await expect(composer(page)).toHaveValue("compare");
 });
 
 test("approves an approval from another session", async ({ page }) => {

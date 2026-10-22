@@ -13,8 +13,14 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { ActivityIndicator, AppState, StatusBar, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { ChatSession } from "../../pkg/remote/web/src/chat3";
+import { setAgents } from "../../pkg/remote/web/src/composer";
 import type { LoadedSnapshot } from "../../pkg/remote/web/src/offline/snapshot";
-import { type ChangedFile, decodeChangedFile } from "../../pkg/remote/web/src/protocol";
+import {
+  type ChangedFile,
+  decodeChangedFile,
+  decodeModelChoice,
+  type ModelChoice,
+} from "../../pkg/remote/web/src/protocol";
 import {
   type ApprovalV3,
   decodeApprovalV3,
@@ -121,6 +127,15 @@ function HomeRoute({ navigation: nav }: NativeStackScreenProps<Routes, "Home">) 
         }
       : computer;
   const session = cid === null ? null : client.session(cid);
+  // Choosing a model needs a session to ask; the task then starts in it.
+  const draft = useRef<{ cid: string; pj: string; id: string } | null>(null);
+  const draftSession = async (open: SessionLike, pj: string): Promise<string> => {
+    const held = draft.current;
+    if (held !== null && held.cid === cid && held.pj === pj) return held.id;
+    const created = await open.call<{ id: string }>("sessions.create", {}, pj);
+    if (cid !== null) draft.current = { cid, pj, id: created.id };
+    return created.id;
+  };
 
   return (
     <>
@@ -139,17 +154,32 @@ function HomeRoute({ navigation: nav }: NativeStackScreenProps<Routes, "Home">) 
           if (status === "online") void client.ack(cid, pj, sessionId).catch(() => undefined);
           nav.navigate("Chat", { cid, pj, sessionId });
         }}
-        onStartTask={async (pj, text) => {
+        kinds={session?.welcome.server.kinds ?? []}
+        listModels={async (pj, kind) => {
+          if (session === null) throw new Error("Reconnect to list models.");
+          const id = await draftSession(session, pj);
+          const raw = await session.call<unknown>("models.list", { session_id: id, kind }, pj);
+          const list = Array.isArray(raw) ? raw.map(decodeModelChoice) : [];
+          return list.filter((m): m is ModelChoice => m !== null);
+        }}
+        onStartTask={async (pj, text, agents) => {
           if (cid === null || session === null)
             throw new Error("Reconnect before starting a task.");
-          const created = await session.call<{ id: string }>("sessions.create", {}, pj);
-          const chat = await client.chat(cid, pj, created.id);
+          const id = await draftSession(session, pj);
+          draft.current = null;
+          const chat = await client.chat(cid, pj, id);
           try {
-            await chat.send(text);
+            const names: string[] = [];
+            for (const pick of agents) {
+              await chat.addAgent(pick.kind, pick.model);
+              const joined = chat.roster.filter((a) => a.kind === pick.kind).at(-1);
+              names.push(joined?.id ?? pick.kind);
+            }
+            await chat.send(setAgents(text, names));
           } finally {
             chat.detach();
           }
-          nav.navigate("Chat", { cid, pj, sessionId: created.id });
+          nav.navigate("Chat", { cid, pj, sessionId: id });
         }}
       >
         {error && <Notice error>{error}</Notice>}
@@ -303,7 +333,7 @@ function ChatRoute({ navigation: nav, route }: NativeStackScreenProps<Routes, "C
       : null;
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
-  const [sheet, setSheet] = useState(false);
+  const [sheet, setSheet] = useState<"main" | "kinds" | null>(null);
   useEffect(() => {
     let active = true;
     let opened: ChatSession | undefined;
@@ -371,7 +401,8 @@ function ChatRoute({ navigation: nav, route }: NativeStackScreenProps<Routes, "C
         online={online}
         onBack={() => nav.goBack()}
         onOpenChanges={() => nav.navigate("Changes", { cid, pj, sessionId })}
-        onOpenSession={() => setSheet(true)}
+        onOpenSession={() => setSheet("main")}
+        onAddAgent={() => setSheet("kinds")}
         onQueuePrompt={queue}
         docked={
           session !== null ? (
@@ -386,8 +417,9 @@ function ChatRoute({ navigation: nav, route }: NativeStackScreenProps<Routes, "C
         }
       />
       <SessionSheet
-        visible={sheet}
-        onClose={() => setSheet(false)}
+        visible={sheet !== null}
+        startAt={sheet ?? "main"}
+        onClose={() => setSheet(null)}
         chat={chat}
         session={online ? session : null}
         relayUrl={computer.record.relayUrl}

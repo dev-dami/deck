@@ -120,6 +120,9 @@ export class ChatSession {
       if (ev.pj === undefined || ev.pj === pj) chat.onEvent(ev.name, ev.payload);
     });
     if (typeof unsubscribe === "function") chat.unsubscribe = unsubscribe;
+    // The computer streams a conversation's messages only to the clients
+    // focused on it; without this the transcript freezes until a resync.
+    void session.call("sessions.focus", { id: sessionId }, pj).catch(() => undefined);
     try {
       await chat.refresh();
       return chat;
@@ -190,6 +193,8 @@ export class ChatSession {
   }
 
   detach(): void {
+    if (!this.detached)
+      void this.session.call("sessions.focus", { id: "" }, this.pj).catch(() => undefined);
     this.detached = true;
     this.unsubscribe?.();
     this.unsubscribe = null;
