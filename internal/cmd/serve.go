@@ -266,6 +266,11 @@ func runServeRPC(cmd *cobra.Command) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// The desktop app's project is the phone's too once it is shared: offer
+	// it to the background process as the terminal UI does, or the phone
+	// lists the project with no conversations.
+	defer startMobileProvider(cmd, ws)()
+
 	l, sock, closeSock, err := rpc.Listen(dataDir)
 	if err != nil {
 		return err
