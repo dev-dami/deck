@@ -1,22 +1,35 @@
 import { FlatList, Pressable, Text, View } from "react-native";
 import type { ComputerView } from "../../../../pkg/remote/web/src/state3";
 import { Button, EmptyState, ScreenHeader } from "../ui/components";
-import { styles, tokens } from "../ui/theme";
+import { useTheme } from "../ui/ThemeContext";
 
 export interface ComputersScreenProps {
   computers: ComputerView[];
   onSelect(cid: string): void;
   onPair(): void;
   onRetry(cid: string): void;
+  onAppearance(): void;
 }
 
-export function ComputersScreen({ computers, onSelect, onPair, onRetry }: ComputersScreenProps) {
+export function ComputersScreen({
+  computers,
+  onSelect,
+  onPair,
+  onRetry,
+  onAppearance,
+}: ComputersScreenProps) {
+  const { styles, tokens } = useTheme();
   return (
     <View style={styles.screen}>
       <ScreenHeader
         title="Your computers"
         subtitle="A little closer to your work, wherever you are."
-        action={<Button title="+ Pair" tone="primary" onPress={onPair} />}
+        action={
+          <View style={styles.row}>
+            <Button compact title="Appearance" onPress={onAppearance} />
+            <Button compact title="+ Pair" tone="primary" onPress={onPair} />
+          </View>
+        }
       />
       <FlatList
         data={computers}

@@ -19,7 +19,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       projectId: "6da6d2a1-0650-421e-a017-f4ef3b57fed0",
     },
   },
-  version: "0.1.1",
+  version: "0.2.0",
   scheme: "deck-mobile",
   orientation: "default",
   userInterfaceStyle: "automatic",
@@ -37,7 +37,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: "com.deckcli.mobile",
-    versionCode: 2,
+    versionCode: 3,
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       backgroundColor: "#141824",

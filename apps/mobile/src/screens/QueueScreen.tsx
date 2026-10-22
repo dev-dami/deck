@@ -2,7 +2,7 @@ import { useState } from "react";
 import { FlatList, Text, View } from "react-native";
 import type { Receipt } from "../../../../pkg/remote/web/src/protocol3";
 import { Button, EmptyState, Notice, ScreenHeader } from "../ui/components";
-import { styles, tokens } from "../ui/theme";
+import { useTheme } from "../ui/ThemeContext";
 
 export interface QueueRow {
   qid: string;
@@ -22,6 +22,7 @@ export interface QueueScreenProps {
 type Row = { type: "action"; item: QueueRow } | { type: "receipt"; item: Receipt };
 
 export function QueueScreen({ rows, receipts, onBack, onRefresh, onCancel }: QueueScreenProps) {
+  const { styles, tokens } = useTheme();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);

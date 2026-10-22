@@ -4,7 +4,7 @@ import { decodePasskeyInfo, type PasskeyInfo } from "../../../../pkg/remote/web/
 import type { SessionLike } from "../../../../pkg/remote/web/src/state3";
 import { assertNativeAction, registerNativePasskey } from "../native/passkeys";
 import { Button, Notice } from "../ui/components";
-import { styles } from "../ui/theme";
+import { useTheme } from "../ui/ThemeContext";
 
 export function SessionControls({
   session,
@@ -17,6 +17,7 @@ export function SessionControls({
   pj: string;
   sessionId: string;
 }) {
+  const { styles } = useTheme();
   const [open, setOpen] = useState(false);
   const [keys, setKeys] = useState<PasskeyInfo[]>([]);
   const [busy, setBusy] = useState(false);

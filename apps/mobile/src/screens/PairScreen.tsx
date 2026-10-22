@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { Button, Notice, ScreenHeader } from "../ui/components";
 import { previewPairing } from "../ui/pairing";
-import { styles, tokens } from "../ui/theme";
+import { useTheme } from "../ui/ThemeContext";
 
 export interface PairScreenProps {
   onPair(link: string, deviceName: string): Promise<void>;
@@ -13,6 +13,7 @@ export interface PairScreenProps {
 }
 
 export function PairScreen({ onPair, onBack, error: externalError, initialUrl }: PairScreenProps) {
+  const { styles, tokens } = useTheme();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
   const [link, setLink] = useState(initialUrl ?? "");
