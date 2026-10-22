@@ -1,33 +1,68 @@
 import { deflateSync } from "node:zlib";
 
-// The launcher icon: three stacked cards, Deck's mark. These are the icon's
-// own colours, not the app palette (R6 is about the UI, which takes every
-// colour from welcome.server.theme).
+// The launcher icon, shared with the desktop app: a terminal prompt on a
+// deck of three cards. These are the icon's own colours, not the app palette
+// (R6 is about the UI, which takes every colour from welcome.server.theme).
 type RGB = readonly [number, number, number];
 
-const BG: RGB = [0x14, 0x18, 0x24];
-const CARDS: ReadonlyArray<{ x: number; y: number; w: number; h: number; color: RGB }> = [
-  { x: 0.24, y: 0.2, w: 0.4, h: 0.54, color: [0x4c, 0x5a, 0x8a] },
-  { x: 0.31, y: 0.26, w: 0.4, h: 0.54, color: [0x74, 0x8f, 0xfc] },
-  { x: 0.38, y: 0.32, w: 0.4, h: 0.54, color: [0xf1, 0xf3, 0xf9] },
+const BG: RGB = [0xf7, 0xf7, 0xf7];
+const CARD = 0.635;
+const RADIUS = 0.13;
+const CARDS: ReadonlyArray<{ x: number; y: number; color: RGB }> = [
+  { x: 0.318, y: 0.049, color: [0x8b, 0x8f, 0x9a] },
+  { x: 0.201, y: 0.166, color: [0x3a, 0x3d, 0x46] },
+  { x: 0.082, y: 0.283, color: [0x17, 0x18, 0x1d] },
 ];
-const RADIUS = 0.05;
+// The prompt: a chevron and a cursor bar on the front card.
+const CHEVRON: ReadonlyArray<readonly [number, number]> = [
+  [0.241, 0.475],
+  [0.371, 0.593],
+  [0.241, 0.711],
+];
+const CHEVRON_HALF_WIDTH = 0.032;
+const CHEVRON_COLOR: RGB = [0xf0, 0xa7, 0x40];
+const BAR = { x: 0.434, y: 0.672, w: 0.164, h: 0.066 };
+const BAR_COLOR: RGB = [0xf4, 0xf3, 0xee];
 const SAMPLES = 3;
 
 function inRoundedRect(
   u: number,
   v: number,
   c: { x: number; y: number; w: number; h: number },
+  r: number,
 ): boolean {
   if (u < c.x || u > c.x + c.w || v < c.y || v > c.y + c.h) return false;
-  const cx = Math.min(Math.max(u, c.x + RADIUS), c.x + c.w - RADIUS);
-  const cy = Math.min(Math.max(v, c.y + RADIUS), c.y + c.h - RADIUS);
-  return (u - cx) ** 2 + (v - cy) ** 2 <= RADIUS ** 2;
+  const cx = Math.min(Math.max(u, c.x + r), c.x + c.w - r);
+  const cy = Math.min(Math.max(v, c.y + r), c.y + c.h - r);
+  return (u - cx) ** 2 + (v - cy) ** 2 <= r ** 2;
+}
+
+function nearSegment(
+  u: number,
+  v: number,
+  a: readonly [number, number],
+  b: readonly [number, number],
+): number {
+  const [ax, ay] = a;
+  const [bx, by] = b;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const k = Math.min(1, Math.max(0, ((u - ax) * dx + (v - ay) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(u - (ax + k * dx), v - (ay + k * dy));
 }
 
 function colorAt(u: number, v: number): RGB {
   let out = BG;
-  for (const card of CARDS) if (inRoundedRect(u, v, card)) out = card.color;
+  for (const card of CARDS)
+    if (inRoundedRect(u, v, { x: card.x, y: card.y, w: CARD, h: CARD }, RADIUS)) out = card.color;
+  const [p0, p1, p2] = CHEVRON as [
+    readonly [number, number],
+    readonly [number, number],
+    readonly [number, number],
+  ];
+  if (Math.min(nearSegment(u, v, p0, p1), nearSegment(u, v, p1, p2)) <= CHEVRON_HALF_WIDTH)
+    out = CHEVRON_COLOR;
+  if (inRoundedRect(u, v, BAR, BAR.h / 2)) out = BAR_COLOR;
   return out;
 }
 

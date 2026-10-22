@@ -40,7 +40,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     versionCode: 2,
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
-      backgroundColor: "#141824",
+      backgroundColor: "#F7F7F7",
     },
     ...(passkeyDomain
       ? {
