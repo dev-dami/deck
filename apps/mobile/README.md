@@ -64,7 +64,6 @@ The `preview` profile produces an internally distributed, standalone APK with
 JavaScript embedded. No login secrets or signing credentials are stored in
 this repository. Expo holds the Android signing credentials;
 the public account/project identifiers are in `app.config.ts`.
-`production` builds an AAB for Google Play.
 
 The repository-root `.easignore` preserves the app's relative path and the
 shared sources in `pkg/remote/web/src`, plus four public crypto vectors.
@@ -136,17 +135,17 @@ The EAS build completed successfully on 2026-10-16. Follow
 [the local Wi-Fi guide](../../docs/mobile-lan.md) for the companion desktop
 update, relay startup, firewall configuration and QR pairing.
 
-The `lan` EAS profile builds version 0.1.1 (Android version code 2) with
+The single `preview` EAS profile builds version 0.1.1 (Android version code 2) with
 `EXPO_PUBLIC_DECK_LAN_HTTP=1`. It permits HTTP relay origins only for literal
 private IPv4 addresses (10/8, 172.16/12 and 192.168/16), plus existing loopback
 support. Production/ordinary preview builds retain HTTPS requirements. The
-Android manifest plugin enables HTTP/WS only for the LAN profile; it does not
+Android manifest plugin enables HTTP/WS only for this build; it does not
 disable TLS certificate verification. Noise still encrypts messages end to end,
 but relay authentication tokens and connection metadata lack TLS protection:
-use this profile only on a trusted private network. Native passkeys still
+use plain-HTTP relays only on a trusted private network. HTTPS relays work too. Native passkeys still
 require a verified domain and signing-certificate association.
 
-Build with `eas build --platform android --profile lan`. Use the companion
+Build with `eas build --platform android --profile preview`. Use the companion
 desktop build, which adds `deck mobile setup --allow-lan-http --relay
 http://YOUR_PC_PRIVATE_IPV4:8787`. Restart the daemon after changing its relay.
 The PC and phone must share a reachable Wi-Fi network, and the relay's port
