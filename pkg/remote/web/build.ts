@@ -86,7 +86,7 @@ function indexHtml(js: string, css: string, target: "v2" | "hosted"): string {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="${NEUTRAL_LIGHT}" media="(prefers-color-scheme: light)">

@@ -1,6 +1,7 @@
 import { render } from "preact";
 import { defaultStorage, deviceName, isPairHash, pairOfferFromHash, wsUrl } from "./auth";
 import { Controller } from "./controller";
+import { trackKeyboard } from "./keyboard";
 import { documentTarget } from "./theme";
 import { App } from "./ui/App";
 import { ControllerContext } from "./ui/hooks";
@@ -29,6 +30,7 @@ function boot(): void {
 
   const root = document.getElementById("app");
   if (root === null) throw new Error("#app is missing");
+  trackKeyboard();
 
   const controller = new Controller({
     storage: defaultStorage(),
