@@ -2,8 +2,9 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import type { ChangedFile } from "../../../../pkg/remote/web/src/protocol";
 import { EmptyState, IconButton, Notice, TopBar } from "../ui/components";
+import { diffRows } from "../ui/diff-rows";
 import { Icon } from "../ui/icons";
-import { type DiffKind, diffLines, splitPath } from "../ui/tasks";
+import { splitPath } from "../ui/tasks";
 import { mono, useTheme } from "../ui/theme";
 import { rgba } from "../ui/themes";
 
@@ -24,12 +25,11 @@ export function ChangesScreen({
   const [open, setOpen] = useState(0);
   const added = files.reduce((n, f) => n + f.added, 0);
   const removed = files.reduce((n, f) => n + f.removed, 0);
-  const tone = (kind: DiffKind) => {
+  const tone = (kind: "add" | "del" | "ctx") => {
     if (kind === "add")
       return { bg: rgba(t.success, t.dark ? 0.12 : 0.1), mark: t.success, sign: "+" };
     if (kind === "del")
       return { bg: rgba(t.danger, t.dark ? 0.12 : 0.09), mark: t.danger, sign: "−" };
-    if (kind === "hunk") return { bg: rgba(t.info, 0.06), mark: t.muted, sign: "" };
     return { bg: "transparent", mark: t.muted, sign: "" };
   };
   return (
@@ -96,16 +96,62 @@ export function ChangesScreen({
                   {file.diff ? (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                       <View style={{ minWidth: "100%" }}>
-                        {diffLines(file.diff.slice(0, MAX_DIFF)).map((line, n) => {
-                          const c = tone(line.kind);
+                        {diffRows(file.diff.slice(0, MAX_DIFF)).map((row, n) => {
+                          if (row.k === "fold") {
+                            return (
+                              <Text
+                                key={`${n}:${row.k}:${row.skipped}`}
+                                style={{
+                                  paddingHorizontal: 14,
+                                  fontFamily: mono,
+                                  fontSize: 11,
+                                  lineHeight: 21,
+                                  color: t.muted,
+                                  backgroundColor: rgba(t.info, 0.06),
+                                }}
+                              >
+                                {row.skipped === null ? "⋯" : `⋯ ${row.skipped} unchanged lines`}
+                              </Text>
+                            );
+                          }
+                          if (row.k === "meta") {
+                            return (
+                              <Text
+                                key={`${n}:${row.text}`}
+                                style={{
+                                  paddingHorizontal: 14,
+                                  fontFamily: mono,
+                                  fontSize: 12,
+                                  lineHeight: 21,
+                                  color: t.muted,
+                                }}
+                              >
+                                {row.text}
+                              </Text>
+                            );
+                          }
+                          const c = tone(row.kind);
                           return (
                             <View
-                              key={`${n}:${line.text}`}
+                              key={`${n}:${row.text}`}
                               style={{ flexDirection: "row", backgroundColor: c.bg }}
                             >
                               <Text
                                 style={{
-                                  width: 22,
+                                  width: 40,
+                                  paddingRight: 6,
+                                  textAlign: "right",
+                                  fontFamily: mono,
+                                  fontSize: 11,
+                                  lineHeight: 21,
+                                  color: t.muted,
+                                }}
+                              >
+                                {row.num ?? ""}
+                              </Text>
+                              <Text
+                                style={{
+                                  width: 18,
                                   textAlign: "center",
                                   fontFamily: mono,
                                   fontSize: 12,
@@ -122,11 +168,10 @@ export function ChangesScreen({
                                   fontFamily: mono,
                                   fontSize: 12,
                                   lineHeight: 21,
-                                  color:
-                                    line.kind === "hunk" || line.kind === "meta" ? t.muted : t.soft,
+                                  color: t.soft,
                                 }}
                               >
-                                {line.text || " "}
+                                {row.text || " "}
                               </Text>
                             </View>
                           );

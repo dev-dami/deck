@@ -6,7 +6,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -21,6 +23,7 @@ type result struct {
 type fakeRunner struct {
 	paths   map[string]string
 	results map[string]result
+	mu      sync.Mutex // doctor checks agents concurrently
 	calls   []string
 }
 
@@ -33,7 +36,9 @@ func (f *fakeRunner) LookPath(name string) (string, error) {
 
 func (f *fakeRunner) Run(_ context.Context, path string, args ...string) (string, int, error) {
 	key := strings.Join(append([]string{path}, args...), " ")
+	f.mu.Lock()
 	f.calls = append(f.calls, key)
+	f.mu.Unlock()
 	if r, ok := f.results[key]; ok {
 		return r.out, r.code, r.err
 	}
@@ -100,6 +105,9 @@ func TestSignedInBothAndNoIdentifiersPrinted(t *testing.T) {
 		"/bin/codex --help",
 		"/bin/codex login status",
 	}
+	// Agents are checked concurrently, so only the set of commands is fixed.
+	slices.Sort(r.calls)
+	slices.Sort(wantCalls)
 	if strings.Join(r.calls, "|") != strings.Join(wantCalls, "|") {
 		t.Errorf("commands run:\n got %v\nwant %v", r.calls, wantCalls)
 	}
