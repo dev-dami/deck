@@ -1,5 +1,7 @@
 import { applyAgentChip } from "@web/composer";
 import type { ChangedFile, Image, Session } from "@web/protocol";
+import { needsConfirm } from "@web/modes";
+import type { Mode } from "@web/protocol";
 import { sessionMode, sessionTitle } from "@web/state";
 import { relativeTime } from "@web/time";
 import {
@@ -32,6 +34,7 @@ import { isMac, modKey } from "./keys";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
 import { MenuItem, MenuSeparator, Popover } from "./kit/menu";
+import type { DeckBridge } from "../../shared/bridge";
 import { ModePicker } from "./ModePicker";
 import { type Command, Palette } from "./Palette";
 import { RightPanel } from "./RightPanel";
@@ -43,6 +46,7 @@ import { type ForeignThread, type ProjectEntry, Sidebar } from "./Sidebar";
 import type { Landing } from "./App";
 import type { OpenProject } from "../openProjects";
 import { Timeline } from "./Timeline";
+import { yoloMove } from "../yolo";
 
 // The threads of the other open projects, kept current from their stores.
 function useForeignThreads(others: OpenProject[]): ForeignThread[] {
@@ -153,6 +157,8 @@ function MoreMenu({
 // where names the Deck: host:port for a paired one, the folder for a local one.
 export function Shell({
   c,
+  bridge,
+  folder,
   name,
   where,
   transport,
@@ -166,6 +172,9 @@ export function Shell({
   onConnect,
 }: {
   c: DeckClient;
+  bridge: DeckBridge;
+  // The open project's folder when it is a local one.
+  folder: string | null;
   name: string;
   where: string;
   transport: string;
@@ -298,6 +307,21 @@ export function Shell({
     [ui.panel],
   );
 
+  // The mode each thread had before Ctrl+Y put it in yolo, to go back to.
+  const beforeYolo = useRef<Record<string, Mode>>({});
+  const toggleYolo = useCallback(() => {
+    if (open === undefined) return;
+    const current = sessionMode(open);
+    const move = yoloMove(current, beforeYolo.current[open.id] ?? null, state.server?.allow_yolo ?? false);
+    if ("refused" in move) {
+      c.store.dispatch({ type: "toast.add", kind: "error", text: move.refused });
+      return;
+    }
+    if (needsConfirm(move.to) && prefs.confirmYolo && !window.confirm("Agents run everything without asking. Switch to Yolo?")) return;
+    if (move.to === "yolo" && current !== null) beforeYolo.current[open.id] = current;
+    void c.setMode(open.id, move.to);
+  }, [open, c, state.server?.allow_yolo, prefs.confirmYolo]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
@@ -314,6 +338,10 @@ export function Shell({
       } else if (k === ",") {
         e.preventDefault();
         dispatch({ type: "settings", section: "general" });
+      } else if (k === "y") {
+        // Also redo in a text field; a thread's mode is the more useful key here.
+        e.preventDefault();
+        toggleYolo();
       } else if ((k === "j" || k === "`") && api !== undefined) {
         e.preventDefault();
         setTerminal((v) => !v);
@@ -321,7 +349,7 @@ export function Shell({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [ui.palette, newSession, api]);
+  }, [ui.palette, newSession, api, toggleYolo]);
 
   const addProject = useCallback(async () => {
     const e = await onAddProject();
@@ -632,6 +660,8 @@ export function Shell({
               where={where}
               transport={transport}
               mac={mac}
+              bridge={bridge}
+              folder={folder}
               onDisconnect={onDisconnect}
             />
           </main>

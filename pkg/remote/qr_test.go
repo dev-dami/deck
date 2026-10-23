@@ -19,3 +19,16 @@ func TestRenderQR(t *testing.T) {
 	}
 	require.Contains(t, out, "█")
 }
+
+func TestQRRows(t *testing.T) {
+	t.Parallel()
+	rows, err := QRRows("https://127.0.0.1:7878/#pair=ABCDE-23456")
+	require.NoError(t, err)
+	require.Greater(t, len(rows), 21)
+	for _, r := range rows {
+		require.Len(t, r, len(rows), "the code is square")
+		require.Regexp(t, "^[01]+$", r)
+	}
+	require.Equal(t, strings.Repeat("0", len(rows)), rows[0], "the quiet zone is light")
+	require.Contains(t, strings.Join(rows, ""), "1")
+}

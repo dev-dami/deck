@@ -17,6 +17,7 @@ import { findDeck, loadService, RpcDecks } from "./decks";
 import { enginePath } from "./shellPath";
 import { callHost, createHost } from "./host";
 import { LinkHost } from "./link";
+import { execRun, PhoneLink, readRelayHint, type Run } from "./phone";
 import { RecentFolders } from "./recent";
 import { type Sealer, ServerStore } from "./servers";
 
@@ -149,16 +150,18 @@ async function main(): Promise<void> {
   const links = new LinkHost(store, (id, ev) => win?.webContents.send(SOCKET_EVENT_CHANNEL, id, ev));
   // The bundled engine: resources/bin in the packaged app, bin/ beside
   // package.json in a checkout.
-  const deckPath = findDeck(app.isPackaged ? join(process.resourcesPath, "bin") : join(app.getAppPath(), "bin"));
+  const bundledDir = app.isPackaged ? join(process.resourcesPath, "bin") : join(app.getAppPath(), "bin");
+  const deckPath = findDeck(bundledDir);
   // build copies proto/deck/v1/deck.proto to dist/app/proto.
   const Service = loadService(join(__dirname, "..", "proto", "deck.proto"));
-  const decks = new RpcDecks(
-    deckPath,
-    Service,
-    (id, ev) => win?.webContents.send(RPC_EVENT_CHANNEL, id, ev),
-    // Started now, ready by the first open: the login shell's PATH.
-    enginePath(),
-  );
+  // Started now, ready by the first open: the login shell's PATH.
+  const path = enginePath();
+  const decks = new RpcDecks(deckPath, Service, (id, ev) => win?.webContents.send(RPC_EVENT_CHANNEL, id, ev), path);
+  // The phone link runs the engine's `mobile connect`; the relay it starts
+  // needs Node, which the same PATH finds.
+  const phoneRun: Run | null =
+    deckPath === null ? null : async (args) => execRun(deckPath, { ...process.env, PATH: await path })(args);
+  const phone = new PhoneLink(phoneRun, readRelayHint(join(bundledDir, "relay-dir.txt")));
   const reset = () => {
     links.closeAll();
     decks.cancelStreams();
@@ -167,6 +170,7 @@ async function main(): Promise<void> {
     store,
     links,
     decks,
+    phone,
     recent: new RecentFolders(join(app.getPath("userData"), "recent.json")),
     deckPath,
     deviceName: `Deck desktop (${hostname()})`.slice(0, 64),

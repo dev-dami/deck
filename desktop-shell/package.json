@@ -59,7 +59,8 @@
         "to": "bin",
         "filter": [
           "deck",
-          "deck.exe"
+          "deck.exe",
+          "relay-dir.txt"
         ]
       }
     ],
