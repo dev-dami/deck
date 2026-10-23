@@ -1,8 +1,18 @@
 import { useState } from "react";
-import { FlatList, Text, View } from "react-native";
+import { RefreshControl, ScrollView, Text, View } from "react-native";
 import type { Receipt } from "../../../../pkg/remote/web/src/protocol3";
-import { Button, EmptyState, Notice, ScreenHeader } from "../ui/components";
-import { useTheme } from "../ui/ThemeContext";
+import {
+  Button,
+  Dot,
+  EmptyState,
+  Group,
+  IconButton,
+  LargeTitle,
+  Notice,
+  Row,
+  TopBar,
+} from "../ui/components";
+import { useTheme } from "../ui/theme";
 
 export interface QueueRow {
   qid: string;
@@ -12,6 +22,7 @@ export interface QueueRow {
   expiresAt: string;
   label?: string;
 }
+
 export interface QueueScreenProps {
   rows: QueueRow[];
   receipts: Receipt[];
@@ -19,19 +30,23 @@ export interface QueueScreenProps {
   onRefresh(): Promise<void>;
   onCancel(qid: string): Promise<void>;
 }
-type Row = { type: "action"; item: QueueRow } | { type: "receipt"; item: Receipt };
+
+const KIND_LABEL: Record<string, string> = {
+  "chat.send": "Send message",
+  "session.new": "Start task",
+  "chat.continue": "Continue",
+  "models.set": "Change model",
+  "approvals.answer": "Answer approval",
+  "queue.cancel": "Cancel queued action",
+};
 
 export function QueueScreen({ rows, receipts, onBack, onRefresh, onCancel }: QueueScreenProps) {
-  const { styles, tokens } = useTheme();
+  const { t, s } = useTheme();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const data: Row[] = [
-    ...rows.map((item): Row => ({ type: "action", item })),
-    ...[...receipts]
-      .sort((a, b) => b.at.localeCompare(a.at))
-      .map((item): Row => ({ type: "receipt", item })),
-  ];
+  const sorted = [...receipts].sort((a, b) => b.at.localeCompare(a.at));
+
   async function cancel(qid: string): Promise<void> {
     setBusy(qid);
     setError(null);
@@ -43,87 +58,106 @@ export function QueueScreen({ rows, receipts, onBack, onRefresh, onCancel }: Que
       setBusy(null);
     }
   }
+
+  const time = (iso: string) =>
+    new Date(iso).toLocaleString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      day: "numeric",
+      month: "short",
+    });
+
   return (
-    <View style={styles.screen}>
-      <ScreenHeader
-        title="Waiting & receipts"
-        subtitle="A clear record of what happens next."
-        onBack={onBack}
-      />
-      <FlatList
-        data={data}
-        keyExtractor={(row) => `${row.type}:${row.item.qid}`}
-        contentContainerStyle={styles.content}
-        refreshing={refreshing}
-        onRefresh={() => {
-          setRefreshing(true);
-          void onRefresh()
-            .catch((failure) =>
-              setError(failure instanceof Error ? failure.message : "Could not refresh."),
-            )
-            .finally(() => setRefreshing(false));
-        }}
-        ListHeaderComponent={
-          <View style={{ gap: 12, marginBottom: 12 }}>
-            <Notice>
-              Actions expire if your computer cannot run them in time. Interrupt and yolo cannot be
-              queued.
-            </Notice>
-            {error && <Notice error>{error}</Notice>}
-          </View>
-        }
-        ListEmptyComponent={
-          <EmptyState
-            title="Nothing waiting"
-            detail="Queued prompts and their delivery receipts will appear here."
+    <View style={s.screen}>
+      <TopBar left={<IconButton icon="back" label="Back to tasks" onPress={onBack} />} />
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 40, gap: 10 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            tintColor={t.primary}
+            colors={[t.primary]}
+            onRefresh={() => {
+              setRefreshing(true);
+              void onRefresh()
+                .catch((failure: unknown) =>
+                  setError(failure instanceof Error ? failure.message : "Could not refresh."),
+                )
+                .finally(() => setRefreshing(false));
+            }}
           />
         }
-        renderItem={({ item: row }) =>
-          row.type === "action" ? (
-            <View style={[styles.card, { marginBottom: 12 }]}>
-              <Text style={styles.eyebrow}>
-                {row.item.state === "outbox"
-                  ? "On this phone · not delivered"
-                  : "At relay · waiting for computer"}
-              </Text>
-              <Text style={styles.heading}>{row.item.label ?? row.item.kind}</Text>
-              <Text style={styles.secondary}>
-                Expires {new Date(row.item.expiresAt).toLocaleString()}
-              </Text>
-              <Button
-                title={row.item.state === "outbox" ? "Remove from phone" : "Request cancellation"}
-                busy={busy === row.item.qid}
-                disabled={busy !== null}
-                onPress={() => void cancel(row.item.qid)}
+      >
+        <LargeTitle title="Activity" subtitle="What's waiting, and what happened." />
+        <View style={{ paddingHorizontal: 16, paddingTop: 10, gap: 10 }}>
+          {error && <Notice error>{error}</Notice>}
+          <Text style={s.label}>Waiting · {rows.length}</Text>
+          <Group>
+            {rows.length === 0 ? (
+              <EmptyState
+                title="Nothing waiting"
+                detail="Messages you queue while a computer is offline show up here."
               />
-            </View>
-          ) : (
-            <View style={[styles.card, { marginBottom: 12 }]}>
-              <View style={styles.between}>
-                <Text
-                  style={[
-                    styles.heading,
-                    { color: row.item.status === "applied" ? tokens.success : tokens.warning },
-                  ]}
-                >
-                  {row.item.status === "applied"
-                    ? "Applied"
-                    : row.item.status === "dropped"
-                      ? "Dropped"
-                      : "Failed"}
-                </Text>
-                <Text style={styles.secondary}>{new Date(row.item.at).toLocaleTimeString()}</Text>
-              </View>
-              {row.item.reason && (
-                <Text style={styles.secondary}>{row.item.reason.replaceAll("_", " ")}</Text>
-              )}
-              <Text selectable style={styles.code}>
-                {row.item.qid}
-              </Text>
-            </View>
-          )
-        }
-      />
+            ) : (
+              rows.map((row, i) => (
+                <Row
+                  key={row.qid}
+                  divider={i > 0}
+                  title={row.label ?? KIND_LABEL[row.kind] ?? row.kind}
+                  subtitle={`${row.state === "outbox" ? "On this phone" : "At the relay"} · expires ${time(row.expiresAt)}`}
+                  leading={<Dot color={t.info} />}
+                  trailing={
+                    <Button
+                      title={row.state === "outbox" ? "Remove" : "Cancel"}
+                      size="sm"
+                      busy={busy === row.qid}
+                      disabled={busy !== null}
+                      onPress={() => void cancel(row.qid)}
+                    />
+                  }
+                />
+              ))
+            )}
+          </Group>
+          {sorted.length > 0 && (
+            <>
+              <Text style={[s.label, { marginTop: 14 }]}>Receipts</Text>
+              <Group>
+                {sorted.map((r, i) => (
+                  <Row
+                    key={r.qid}
+                    divider={i > 0}
+                    title={
+                      r.status === "applied"
+                        ? "Applied"
+                        : r.status === "dropped"
+                          ? "Dropped"
+                          : "Failed"
+                    }
+                    subtitle={r.reason ? r.reason.replaceAll("_", " ") : r.qid}
+                    leading={
+                      <Dot
+                        color={
+                          r.status === "applied"
+                            ? t.success
+                            : r.status === "dropped"
+                              ? t.warn
+                              : t.danger
+                        }
+                      />
+                    }
+                    trailing={<Text style={s.small}>{time(r.at)}</Text>}
+                  />
+                ))}
+              </Group>
+            </>
+          )}
+          <Text style={[s.small, { marginHorizontal: 6, marginTop: 8 }]}>
+            Queued actions expire if your computer can't run them in time. Interrupt and yolo can't
+            be queued.
+          </Text>
+        </View>
+      </ScrollView>
     </View>
   );
 }

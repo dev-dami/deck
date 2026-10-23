@@ -117,6 +117,10 @@ func dispatch(ctx context.Context, b remote.Backend, m string, a args) (any, err
 		return struct{}{}, b.CancelQueued(a.SessionID, a.ID)
 	case "roster":
 		return b.Roster(a.SessionID)
+	case "agent_kinds":
+		return b.AgentKinds(a.SessionID)
+	case "add_agent":
+		return b.AddAgent(a.SessionID, a.Kind, a.Model)
 	case "models":
 		return b.Models(ctx, a.SessionID, a.Kind)
 	case "set_model":

@@ -59,6 +59,7 @@ type Backend struct {
 	core   Core
 	rc     workspace.RemoteControl
 	picker workspace.AgentPicker
+	adder  workspace.AgentAdder
 	roster workspace.Roster
 	events Events
 
@@ -87,8 +88,10 @@ func New(ws workspace.Workspace, version, project string) (*Backend, error) {
 
 // NewWith builds a Backend from its parts; tests use it with fakes.
 func NewWith(core Core, rc workspace.RemoteControl, picker workspace.AgentPicker, roster workspace.Roster, events Events, version, project string) *Backend {
+	// The workspace that picks models also adds agents; fakes may not.
+	adder, _ := picker.(workspace.AgentAdder)
 	return &Backend{
-		core: core, rc: rc, picker: picker, roster: roster, events: events,
+		core: core, rc: rc, picker: picker, adder: adder, roster: roster, events: events,
 		version: version, project: project, themePoll: 5 * time.Second,
 		waiting: map[string]pending{},
 	}
@@ -315,6 +318,44 @@ func (b *Backend) Roster(sessionID string) ([]wire.AgentLine, error) {
 		return nil, nil
 	}
 	return toRoster(b.roster.Roster(sessionID)), nil
+}
+
+func (b *Backend) AgentKinds(sessionID string) ([]wire.AgentKind, error) {
+	if _, err := b.check(context.Background(), sessionID); err != nil {
+		return nil, err
+	}
+	if b.adder == nil {
+		return nil, nil
+	}
+	return toKinds(b.adder.JoinableKinds(sessionID)), nil
+}
+
+func (b *Backend) AddAgent(sessionID, kind, model string) (wire.AgentLine, error) {
+	if _, err := b.check(context.Background(), sessionID); err != nil {
+		return wire.AgentLine{}, err
+	}
+	if b.adder == nil {
+		return wire.AgentLine{}, remote.ErrInvalid
+	}
+	known := false
+	for _, k := range b.adder.JoinableKinds(sessionID) {
+		known = known || k.Kind == kind
+	}
+	if !known {
+		return wire.AgentLine{}, remote.ErrInvalid
+	}
+	id, err := b.adder.AddAgent(sessionID, kind, model)
+	if err != nil {
+		return wire.AgentLine{}, mapErr(err)
+	}
+	if b.roster != nil {
+		for _, l := range toRoster(b.roster.Roster(sessionID)) {
+			if l.ID == id {
+				return l, nil
+			}
+		}
+	}
+	return wire.AgentLine{ID: id, Name: id, Kind: kind, Model: model}, nil
 }
 
 func (b *Backend) Models(ctx context.Context, sessionID, kind string) ([]wire.ModelChoice, error) {

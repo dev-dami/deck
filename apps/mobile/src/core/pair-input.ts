@@ -44,6 +44,10 @@ export function parseNativePairInput(
       (parts[0] === 172 && (parts[1] ?? -1) >= 16 && (parts[1] ?? -1) <= 31) ||
       (parts[0] === 192 && parts[1] === 168));
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(relay.hostname);
+  if (relay.protocol === "http:" && privateIPv4 && !allowLAN)
+    throw new Error(
+      "This computer uses a local-network relay, and this build of Deck only accepts secure (HTTPS) relays. Install the LAN build of the app, or give the computer an HTTPS relay.",
+    );
   if (
     (relay.protocol !== "https:" &&
       !(relay.protocol === "http:" && (local || (allowLAN && privateIPv4)))) ||

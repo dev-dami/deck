@@ -1,11 +1,10 @@
 import { useRef, useState } from "react";
-import { ScrollView, Text, TextInput, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import type { PendingApproval, Snapshot } from "../../../../pkg/remote/web/src/protocol3";
 import type { NativeClient } from "../core/client";
-import { Button, Notice } from "../ui/components";
-import { DiffView } from "../ui/DiffView";
+import { Button, Dot, Notice } from "../ui/components";
 import { offlineApprovalInput } from "../ui/offline-approvals";
-import { useTheme } from "../ui/ThemeContext";
+import { useTheme } from "../ui/theme";
 
 export interface OfflineApprovalsProps {
   client: Pick<NativeClient, "queue">;
@@ -20,26 +19,28 @@ function SavedApproval({
   pending,
   onQueued,
 }: Omit<OfflineApprovalsProps, "snapshot"> & { pending: PendingApproval }) {
-  const { styles, tokens } = useTheme();
-  const [reason, setReason] = useState("");
+  const { t, s } = useTheme();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [answered, setAnswered] = useState(false);
   const locked = useRef(false);
   const { approval } = pending;
+  const destructive = approval.tier !== "normal";
+  const preview = approval.command || approval.diff || approval.raw || "";
+
   async function queue(decision: "allow" | "deny"): Promise<void> {
     if (locked.current || answered) return;
     locked.current = true;
     setBusy(true);
     setError(null);
     try {
-      const result = await client.queue(cid, offlineApprovalInput(pending, decision, reason));
+      const result = await client.queue(cid, offlineApprovalInput(pending, decision, ""));
       setAnswered(true);
       setNotice(
         result.state === "sent"
-          ? "Answer delivered to the relay. It will only run if this exact approval is still pending."
-          : "Answer saved on this phone. It has not reached the relay yet.",
+          ? "Answer is at the relay. It only applies if this exact approval is still waiting."
+          : "Answer saved on this phone. It hasn't reached the relay yet.",
       );
       onQueued?.();
     } catch (failure) {
@@ -49,86 +50,65 @@ function SavedApproval({
       setBusy(false);
     }
   }
+
   return (
-    <View style={[styles.card, { borderColor: tokens.warning }]}>
-      <View style={styles.between}>
-        <Text style={[styles.eyebrow, { color: tokens.warning }]}>Saved approval</Text>
-        <Text style={styles.secondary}>{approval.agent}</Text>
+    <View style={[s.card, { padding: 16, gap: 12 }]}>
+      <View style={s.row}>
+        <Dot color={destructive ? t.danger : t.warn} />
+        <Text style={[s.heading, { flex: 1 }]} numberOfLines={2}>
+          {approval.description || approval.kind}
+        </Text>
+        <Text style={s.small}>{approval.agent}</Text>
       </View>
-      <Text style={styles.heading}>{approval.description || approval.kind}</Text>
       {approval.path && (
-        <Text selectable style={styles.code}>
+        <Text selectable style={s.code}>
           {approval.path}
         </Text>
       )}
-      {(approval.command || approval.raw) && (
-        <ScrollView nestedScrollEnabled style={{ maxHeight: 200 }}>
-          <Text selectable style={styles.code}>
-            {(approval.command || approval.raw || "").slice(0, 24_000)}
+      {preview !== "" && (
+        <ScrollView nestedScrollEnabled style={{ maxHeight: 160 }}>
+          <Text selectable style={s.code}>
+            {preview.slice(0, 24_000)}
           </Text>
         </ScrollView>
       )}
-      {approval.diff ? (
-        <ScrollView nestedScrollEnabled style={{ maxHeight: 280 }}>
-          <DiffView diff={approval.diff.slice(0, 24_000)} truncated={approval.diff_truncated} />
-        </ScrollView>
-      ) : null}
-      {(approval.command_truncated ||
-        approval.diff_truncated ||
-        approval.raw_truncated ||
-        (approval.command || approval.diff || approval.raw || "").length > 24_000) && (
-        <Text style={styles.secondary}>
-          Preview truncated. Review the full action on your computer.
-        </Text>
+      {answered ? (
+        notice && <Text style={s.small}>{notice}</Text>
+      ) : (
+        <>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Button
+              title="Queue denial"
+              style={{ flex: 1 }}
+              disabled={busy}
+              onPress={() => void queue("deny")}
+            />
+            {!destructive && (
+              <Button
+                title="Approve when back"
+                tone="primary"
+                style={{ flex: 1.3 }}
+                busy={busy}
+                onPress={() => void queue("allow")}
+              />
+            )}
+          </View>
+          {destructive && <Text style={s.small}>Approving needs a live passkey check.</Text>}
+        </>
       )}
-      {approval.tier !== "normal" && (
-        <Notice>
-          Destructive approval requires live passkey verification. You can still queue a denial.
-        </Notice>
-      )}
-      <TextInput
-        accessibilityLabel="Reason for queued denial, optional"
-        placeholder="Reason for denying (optional)"
-        placeholderTextColor={tokens.muted}
-        style={styles.input}
-        value={reason}
-        onChangeText={setReason}
-        maxLength={2_000}
-        multiline
-        editable={!busy && !answered}
-      />
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        <Button
-          title="Approve when online"
-          tone="primary"
-          busy={busy}
-          disabled={answered || approval.tier !== "normal"}
-          onPress={() => void queue("allow")}
-        />
-        <Button
-          title="Queue denial"
-          tone="danger"
-          disabled={busy || answered}
-          onPress={() => void queue("deny")}
-        />
-      </View>
-      {notice && <Notice>{notice}</Notice>}
-      {error && <Notice error>{error}</Notice>}
+      {error && <Text style={s.error}>{error}</Text>}
     </View>
   );
 }
 
 export function OfflineApprovals({ client, cid, snapshot, onQueued }: OfflineApprovalsProps) {
-  const { styles } = useTheme();
+  const { s } = useTheme();
   if (!snapshot.approvals.length) return null;
   return (
-    <View style={{ gap: 12 }}>
-      <Text accessibilityRole="header" style={styles.heading}>
-        Saved approvals
-      </Text>
+    <View style={{ gap: 10 }}>
+      <Text style={[s.label, { marginTop: 4 }]}>Saved approvals</Text>
       <Notice>
-        These requests may already have changed. Answers expire after 1 hour and are bound to the
-        saved approval ID and digest.
+        These may have changed. Answers expire after 1 hour and only apply to this exact request.
       </Notice>
       {snapshot.approvals.map((pending) => (
         <SavedApproval

@@ -26,7 +26,7 @@ import { cn } from "../lib/cn";
 import { isSide } from "../sideChat";
 import { setPrefs, usePrefs } from "../prefs";
 import { initialUi, PANELS, type Panel, reduceUi, SETTINGS_SECTIONS } from "../ui";
-import { AgentPicker, AgentsStrip } from "./AgentsStrip";
+import { AgentCards, AgentsStrip } from "./AgentsStrip";
 import { ApprovalCard } from "./ApprovalCard";
 import { Composer } from "./Composer";
 import { BranchPicker, GitActions, useGit } from "./Git";
@@ -420,26 +420,20 @@ export function Shell({
     [state.roster, state.messages],
   );
 
-  const picker = (
-    <AgentPicker
+  const cards = (
+    <AgentCards
       draft={draft}
+      setDraft={setDraft}
       roster={roster}
       kinds={kinds}
       theme={state.theme}
-      onAddress={(agent) => {
-        setDraft(applyAgentChip(draft, agent));
-        inputRef.current?.focus();
-      }}
-      onAuto={() => {
-        setDraft(draft.replace(/^\$[\w-]+[+*]?[ \t]*/, ""));
-        inputRef.current?.focus();
-      }}
+      sessionId={sid}
+      approvals={state.approvals}
       onAdd={(kind) => {
         setDraft(addAgentMention(draft, kind));
         inputRef.current?.focus();
       }}
-      listModels={(kind) => (sid === null ? Promise.resolve(null) : c.listModels(sid, kind))}
-      setModel={(kind, model, effort) => sid !== null && void c.setModel(sid, kind, model, effort)}
+      onFocus={() => inputRef.current?.focus()}
     />
   );
 
@@ -695,7 +689,7 @@ export function Shell({
                   onError={toast}
                   inputRef={inputRef}
                   sendKey={prefs.sendKey}
-                  toolbar={picker}
+                  agents={cards}
                   placeholder="Ask anything. $ picks an agent, $codex+ starts another."
                 />
               </div>
@@ -740,9 +734,9 @@ export function Shell({
                         </div>
                       )
                     }
+                    agents={cards}
                     toolbar={
                       <>
-                        {picker}
                         <MoreMenu
                           busy={open.busy}
                           queued={queued}

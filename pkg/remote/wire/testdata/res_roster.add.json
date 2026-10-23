@@ -1,0 +1,7 @@
+{
+  "busy": false,
+  "id": "codex",
+  "kind": "codex",
+  "model": "gpt-5-codex",
+  "name": "codex"
+}

@@ -44,6 +44,8 @@ func TestR10_EveryIdIsCheckedAgainstTheSession(t *testing.T) {
 		{wire.MModelsList, wire.ModelsListParams{SessionID: "ghost", Kind: "claude"}},
 		{wire.MModelsSet, wire.ModelsSetParams{SessionID: "ghost", Kind: "claude", Model: "m"}},
 		{wire.MRosterGet, wire.SessionParams{SessionID: "ghost"}},
+		{wire.MRosterKinds, wire.SessionParams{SessionID: "ghost"}},
+		{wire.MRosterAdd, wire.RosterAddParams{SessionID: "ghost", Kind: "codex"}},
 		{wire.MChangesGet, wire.SessionParams{SessionID: "ghost"}},
 		{wire.MQueueList, wire.SessionParams{SessionID: "ghost"}},
 		{wire.MChatCancel, wire.SessionParams{SessionID: "ghost"}},
@@ -79,6 +81,29 @@ func TestR10_EveryIdIsCheckedAgainstTheSession(t *testing.T) {
 	for f := c2.read(); f.Ev == nil || f.Ev.E != wire.EvBusy; f = c2.read() {
 		require.NotEqual(t, wire.EvMessageCreated, f.Ev.E, "the ghost focus was dropped")
 	}
+}
+
+func TestRosterKindsAndAdd(t *testing.T) {
+	r := newRig(t)
+	r.be.Get("s1").Roster = []wire.AgentLine{{ID: "claude", Name: "claude", Kind: "claude"}}
+	tok, _ := r.token("Pixel")
+	c, _ := r.welcome(tok, nil)
+
+	kinds := unmarshal[[]wire.AgentKind](t, okRes(t, c.call(wire.MRosterKinds, wire.SessionParams{SessionID: "s1"})))
+	require.Equal(t, []wire.AgentKind{
+		{Kind: "claude", Model: "claude-big", Joined: true},
+		{Kind: "codex", Model: "codex-big"},
+	}, kinds)
+
+	line := unmarshal[wire.AgentLine](t, okRes(t, c.call(wire.MRosterAdd, wire.RosterAddParams{SessionID: "s1", Kind: "codex"})))
+	require.Equal(t, wire.AgentLine{ID: "codex", Name: "codex", Kind: "codex", Model: "codex-big"}, line)
+	line = unmarshal[wire.AgentLine](t, okRes(t, c.call(wire.MRosterAdd, wire.RosterAddParams{SessionID: "s1", Kind: "codex", Model: "codex-small"})))
+	require.Equal(t, "codex2", line.ID, "a second member of a kind gets its own id")
+	require.Equal(t, []string{"add:codex=codex-big", "add:codex2=codex-small"}, r.be.Calls())
+
+	require.Equal(t, wire.CodeInvalid, errCode(t, c.call(wire.MRosterAdd, wire.RosterAddParams{SessionID: "s1"})), "kind is required")
+	require.Equal(t, wire.CodeInvalid, errCode(t, c.call(wire.MRosterAdd, wire.RosterAddParams{SessionID: "s1", Kind: "nope"})), "unknown kinds are refused")
+	require.Equal(t, wire.CodeInvalid, errCode(t, c.call(wire.MRosterKinds, wire.SessionParams{})), "roster.kinds needs a session")
 }
 
 func TestTitlesAreBounded(t *testing.T) {

@@ -282,6 +282,19 @@ export const decodeAgentLine: Decoder<AgentLine> = object(
   { model: str, effort: str },
 );
 
+// An installed agent CLI that can join a session; joined when the session
+// has a live member of the kind already.
+export interface AgentKind {
+  kind: string;
+  model?: string;
+  joined: boolean;
+}
+
+export const decodeAgentKind: Decoder<AgentKind> = object(
+  { kind: str, joined: bool },
+  { model: str },
+);
+
 export interface ModelChoice {
   id: string;
   label: string;
@@ -696,6 +709,12 @@ export interface ModelsListParams {
   kind: string;
 }
 
+export interface RosterAddParams {
+  session_id: string;
+  kind: string;
+  model?: string;
+}
+
 export interface ModelsSetParams {
   session_id: string;
   kind: string;
@@ -784,6 +803,10 @@ export const decodeModelsListParams: Decoder<ModelsListParams> = object(
   { session_id: str, kind: str },
   {},
 );
+export const decodeRosterAddParams: Decoder<RosterAddParams> = object(
+  { session_id: str, kind: str },
+  { model: str },
+);
 export const decodeModelsSetParams: Decoder<ModelsSetParams> = object(
   { session_id: str, kind: str, model: str },
   { effort: str },
@@ -834,6 +857,8 @@ export interface MethodTable {
   "queue.steer": { req: QueueItemParams; res: Empty };
   "queue.cancel": { req: QueueItemParams; res: Empty };
   "roster.get": { req: SessionParams; res: AgentLine[] };
+  "roster.kinds": { req: SessionParams; res: AgentKind[] };
+  "roster.add": { req: RosterAddParams; res: AgentLine };
   "models.list": { req: ModelsListParams; res: ModelChoice[] };
   "models.set": { req: ModelsSetParams; res: Empty };
   "mode.get": { req: SessionParams; res: ModeResult };
@@ -872,6 +897,8 @@ export const METHODS: { [M in MethodName]: MethodCodec<M> } = {
   "queue.steer": { req: decodeQueueItemParams, res: empty },
   "queue.cancel": { req: decodeQueueItemParams, res: empty },
   "roster.get": { req: decodeSessionParams, res: list(decodeAgentLine) },
+  "roster.kinds": { req: decodeSessionParams, res: list(decodeAgentKind) },
+  "roster.add": { req: decodeRosterAddParams, res: decodeAgentLine },
   "models.list": { req: decodeModelsListParams, res: list(decodeModelChoice) },
   "models.set": { req: decodeModelsSetParams, res: empty },
   "mode.get": { req: decodeSessionParams, res: decodeModeResult },

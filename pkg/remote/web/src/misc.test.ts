@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { activeAgent, applyAgentChip, canSaveEdit, canSend } from "./composer";
+import {
+  activeAgent,
+  activeAgents,
+  applyAgentChip,
+  canSaveEdit,
+  canSend,
+  toggleAgent,
+} from "./composer";
 import { diffStats, parseDiff } from "./diff";
 import { base64Length, checkImage, displayName } from "./images";
 import { availableModes, modeLabel, needsConfirm } from "./modes";
@@ -150,5 +157,25 @@ describe("service worker strategy", () => {
       strategyFor({ method: "POST", url: `${origin}/`, mode: "navigate" }, origin, shell),
     ).toBe("bypass");
     expect(strategyFor(get("not a url"), origin, shell)).toBe("bypass");
+  });
+});
+
+describe("addressing several agents", () => {
+  test("reads every leading mention", () => {
+    expect(activeAgents("$claude $codex compare")).toEqual(["claude", "codex"]);
+    expect(activeAgents("$codex+ start")).toEqual(["codex"]);
+    expect(activeAgents("ask $claude later")).toEqual([]);
+  });
+
+  test("toggles an agent in and out of the addressees", () => {
+    expect(toggleAgent("fix it", "codex")).toBe("$codex fix it");
+    expect(toggleAgent("$codex fix it", "claude")).toBe("$codex $claude fix it");
+    expect(toggleAgent("$codex $claude fix it", "codex")).toBe("$claude fix it");
+    expect(toggleAgent("$claude fix it", "claude")).toBe("fix it");
+  });
+
+  test("a message of mentions only has nothing to send", () => {
+    expect(canSend("$claude $codex ", 0)).toBe(false);
+    expect(canSend("$claude $codex hi", 0)).toBe(true);
   });
 });

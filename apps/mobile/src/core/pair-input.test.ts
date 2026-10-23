@@ -65,7 +65,9 @@ test("invalid-link errors never echo QR secrets", () => {
 for (const host of ["10.0.0.2", "172.16.0.2", "172.31.255.254", "192.168.1.2"]) {
   test(`LAN HTTP requires explicit opt-in (${host})`, () => {
     const { fragment } = code({ relay: `http://${host}:8787` });
-    expect(() => parseNativePairInput(fragment, 1_800_000_000_000, false)).toThrow();
+    expect(() => parseNativePairInput(fragment, 1_800_000_000_000, false)).toThrow(
+      "local-network relay",
+    );
     expect(parseNativePairInput(fragment, 1_800_000_000_000, true).relay).toBe(
       `http://${host}:8787`,
     );

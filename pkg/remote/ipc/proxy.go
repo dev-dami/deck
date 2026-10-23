@@ -241,6 +241,16 @@ func (p *Proxy) Roster(sessionID string) ([]wire.AgentLine, error) {
 	return out, p.call(context.Background(), "roster", args{SessionID: sessionID}, &out)
 }
 
+func (p *Proxy) AgentKinds(sessionID string) ([]wire.AgentKind, error) {
+	var out []wire.AgentKind
+	return out, p.call(context.Background(), "agent_kinds", args{SessionID: sessionID}, &out)
+}
+
+func (p *Proxy) AddAgent(sessionID, kind, model string) (wire.AgentLine, error) {
+	var out wire.AgentLine
+	return out, p.call(context.Background(), "add_agent", args{SessionID: sessionID, Kind: kind, Model: model}, &out)
+}
+
 func (p *Proxy) Models(ctx context.Context, sessionID, kind string) ([]wire.ModelChoice, error) {
 	var out []wire.ModelChoice
 	return out, p.call(ctx, "models", args{SessionID: sessionID, Kind: kind}, &out)

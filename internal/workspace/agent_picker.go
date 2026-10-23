@@ -176,6 +176,63 @@ type Roster interface {
 
 var _ Roster = (*DeckWorkspace)(nil)
 
+// AgentKind is an installed agent CLI as a session sees it: the model a new
+// member of it would run, and whether one is in the session already.
+type AgentKind struct {
+	Kind, Model string
+	Joined      bool
+}
+
+// AgentAdder adds agents to a session from outside the TUI (the phone).
+type AgentAdder interface {
+	JoinableKinds(sessionID string) []AgentKind
+	// AddAgent starts an agent of kind in the session without sending it
+	// anything and returns its roster id. An empty model means the one
+	// configured for the kind.
+	AddAgent(sessionID, kind, model string) (string, error)
+}
+
+var _ AgentAdder = (*DeckWorkspace)(nil)
+
+// JoinableKinds implements [AgentAdder].
+func (w *DeckWorkspace) JoinableKinds(sessionID string) []AgentKind {
+	th, _ := w.threadOf(sessionID)
+	cfg := w.DeckSettings()
+	var out []AgentKind
+	for _, kind := range w.mgr().Kinds() {
+		k := AgentKind{Kind: kind, Model: cfg.Models.For(kind)}
+		for _, a := range th.Members {
+			if a.Kind == kind && !a.Ephemeral && a.Status != decks.StatusExited {
+				k.Joined = true
+			}
+		}
+		out = append(out, k)
+	}
+	return out
+}
+
+// AddAgent implements [AgentAdder]. It opens the session's thread first when
+// nobody has spoken in it yet.
+func (w *DeckWorkspace) AddAgent(sessionID, kind, model string) (string, error) {
+	tid, err := w.thread(sessionID)
+	if err != nil {
+		return "", err
+	}
+	id, err := w.mgr().AddMember(tid, kind, model)
+	if err != nil {
+		return "", err
+	}
+	// The roster names members by their name in the thread, not their id.
+	if th, ok := w.mgr().Thread(tid); ok {
+		for _, a := range th.Members {
+			if a.ID == id {
+				return a.Name, nil
+			}
+		}
+	}
+	return id, nil
+}
+
 // Roster implements [Roster]. Members are listed as a tree: each subagent
 // right under the member that started it. A subagent that has stopped is left
 // out unless its worktree still holds work to apply or discard.

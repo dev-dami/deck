@@ -24,6 +24,7 @@ export function Composer({
   onError,
   inputRef,
   toolbar,
+  agents,
   banner,
   strip,
   busy = false,
@@ -42,6 +43,8 @@ export function Composer({
   onError: (text: string) => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   toolbar?: ReactNode;
+  // Who the message goes to, one card per agent, above the prompt.
+  agents?: ReactNode;
   banner?: ReactNode;
   strip?: ReactNode;
   busy?: boolean;
@@ -182,6 +185,7 @@ export function Composer({
           ))}
         </ul>
       )}
+      {agents !== undefined && <div className="composer-agents mb-2">{agents}</div>}
       <div
         className={cn(
           "composer-box relative z-10 rounded-[20px] border bg-card shadow-composer transition-colors focus-within:border-foreground/15",

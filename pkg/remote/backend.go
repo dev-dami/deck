@@ -74,6 +74,12 @@ type Backend interface {
 	CancelQueued(sessionID, itemID string) error
 
 	Roster(sessionID string) ([]wire.AgentLine, error)
+	// AgentKinds lists the agent CLIs that can join the session.
+	AgentKinds(sessionID string) ([]wire.AgentKind, error)
+	// AddAgent starts an agent of kind in the session without sending it
+	// anything. An empty model means the one configured for the kind; an
+	// unknown kind is ErrInvalid.
+	AddAgent(sessionID, kind, model string) (wire.AgentLine, error)
 	Models(ctx context.Context, sessionID, kind string) ([]wire.ModelChoice, error)
 	SetModel(sessionID, kind, model, effort string) error
 

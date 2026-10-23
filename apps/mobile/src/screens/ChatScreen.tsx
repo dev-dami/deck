@@ -1,228 +1,137 @@
 import { FlashList } from "@shopify/flash-list";
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Pressable, Text, View } from "react-native";
 import { type ChatSession, newIdempotencyKey } from "../../../../pkg/remote/web/src/chat3";
-import type { ChangedFile, Message } from "../../../../pkg/remote/web/src/protocol";
-import { agentMark, agentTint, type KindTones } from "../ui/agents";
-import { Button, Chip, EmptyState, Notice, ScreenHeader } from "../ui/components";
-import { DiffView } from "../ui/DiffView";
-import { useTheme } from "../ui/ThemeContext";
-import { AgentsSheet } from "./AgentsSheet";
+import { activeAgents, canSend, toggleAgent } from "../../../../pkg/remote/web/src/composer";
+import type { Message } from "../../../../pkg/remote/web/src/protocol";
+import { AgentRail } from "../ui/agents";
+import { Button, Composer, EmptyState, IconButton, Notice, TopBar } from "../ui/components";
+import { Icon } from "../ui/icons";
+import { splitMessage } from "../ui/tasks";
+import { mono, useTheme } from "../ui/theme";
 
 export interface ChatScreenProps {
   chat: ChatSession;
+  title: string;
   online: boolean;
-  // The computer's per-kind tints and marks, from its welcome theme.
-  tones: KindTones;
   onBack(): void;
-  onOpenQueue(): void;
+  onOpenChanges(): void;
+  onOpenSession(): void;
+  onAddAgent(): void;
   onQueuePrompt?(text: string): Promise<void>;
-  onOpenSession?(sessionId: string): void;
-  children?: ReactNode;
+  // Pending approvals dock above the composer.
+  docked?: ReactNode;
 }
 
-const PREVIEW_LIMIT = 24_000;
+const MODE_LABEL = { ask: "Ask", plan: "Plan", yolo: "Yolo" } as const;
 
 const MessageRow = memo(function MessageRow({
   message,
-  tones,
+  showAgent,
 }: {
   message: Message;
-  tones: KindTones;
+  showAgent: boolean;
 }) {
-  const { styles, tokens } = useTheme();
-  const own = message.role === "user";
-  const occurrences = new Map<string, number>();
-  const kind = message.agent ? message.agent.replace(/[-_]?\d+$/, "") : "";
-  const tint = own ? tokens.accent : agentTint(tones, message.agent ?? "", kind, tokens.secondary);
-  return (
-    <View
-      style={{
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        alignItems: own ? "flex-end" : "stretch",
-      }}
-    >
-      <View
-        style={
-          own
-            ? {
-                maxWidth: "88%",
-                padding: 12,
-                gap: 8,
-                borderRadius: 18,
-                backgroundColor: tokens.elevated,
-              }
-            : { gap: 8 }
-        }
-      >
-        {!own && (
-          <View style={styles.row}>
-            <Text style={{ color: tint, fontSize: 12, fontWeight: "700" }}>
-              {agentMark(tones, kind)} {message.agent || message.role}
-            </Text>
-            <Text style={[styles.secondary, { fontSize: 11 }]}>
-              {new Date(message.created_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </Text>
-          </View>
-        )}
-        {message.parts.map((part) => {
-          const identity = `${part.type}:${part.id ?? part.tool_call_id ?? part.name ?? part.image?.name ?? "body"}`;
-          const occurrence = occurrences.get(identity) ?? 0;
-          occurrences.set(identity, occurrence + 1);
-          const key = `${identity}:${occurrence}`;
-          if (part.diff)
-            return (
-              <View key={key} style={{ gap: 4 }}>
-                {part.name && <Text style={styles.eyebrow}>{part.name}</Text>}
-                <DiffView
-                  diff={part.diff.slice(0, PREVIEW_LIMIT)}
-                  truncated={part.diff_truncated || part.diff.length > PREVIEW_LIMIT}
-                />
-              </View>
-            );
-          const text = part.text ?? part.output ?? part.summary;
-          if (text !== undefined)
-            return (
-              <View key={key} style={{ gap: 4 }}>
-                {part.name && <Text style={styles.eyebrow}>{part.name}</Text>}
-                {part.type === "text" ? (
-                  <Text selectable style={styles.body}>
-                    {text.slice(0, PREVIEW_LIMIT)}
-                  </Text>
-                ) : (
-                  <View
-                    style={{
-                      padding: 10,
-                      borderRadius: 10,
-                      borderWidth: 1,
-                      borderColor: tokens.border,
-                      backgroundColor: tokens.code,
-                    }}
-                  >
-                    <Text
-                      selectable
-                      style={[styles.code, part.is_error ? { color: tokens.danger } : {}]}
-                    >
-                      {text.slice(0, PREVIEW_LIMIT)}
-                    </Text>
-                  </View>
-                )}
-                {(part.text_truncated || part.output_truncated || text.length > PREVIEW_LIMIT) && (
-                  <Text style={styles.secondary}>
-                    Preview truncated. Review the complete output on your computer.
-                  </Text>
-                )}
-              </View>
-            );
-          if (part.image)
-            return (
-              <Text key={key} style={styles.secondary}>
-                Attachment · {part.image.name}
-              </Text>
-            );
-          return (
-            <Text key={key} style={styles.secondary}>
-              {part.name || part.type}
-            </Text>
-          );
-        })}
-        {!message.finished && (
-          <Text accessibilityLiveRegion="polite" style={{ color: tokens.accent, fontSize: 12 }}>
-            Writing…
+  const { t, s } = useTheme();
+  const [open, setOpen] = useState(false);
+  if (message.role === "user") {
+    const text = message.parts
+      .map((p) => p.text ?? "")
+      .join("\n")
+      .trim();
+    return (
+      <View style={{ paddingHorizontal: 20, paddingVertical: 8, alignItems: "flex-end" }}>
+        <View
+          style={{
+            maxWidth: "82%",
+            borderRadius: 22,
+            paddingHorizontal: 16,
+            paddingVertical: 11,
+            backgroundColor: t.chip,
+          }}
+        >
+          <Text selectable style={{ fontSize: 16, lineHeight: 24, color: t.fg }}>
+            {text || "Attachment"}
           </Text>
-        )}
+        </View>
       </View>
+    );
+  }
+  const { prose, steps } = splitMessage(message.parts);
+  return (
+    <View style={{ paddingHorizontal: 20, paddingVertical: 8, gap: 10 }}>
+      {showAgent && message.agent && (
+        <Text style={[s.small, { fontWeight: "600", color: t.muted }]}>{message.agent}</Text>
+      )}
+      {steps.length > 0 && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
+          onPress={() => setOpen(!open)}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            minHeight: 30,
+            alignSelf: "flex-start",
+          }}
+        >
+          <Text style={s.secondary}>
+            {message.finished ? "Worked" : "Working"} · {steps.length} step
+            {steps.length === 1 ? "" : "s"}
+            {steps.some((x) => x.error) ? " · 1+ failed" : ""}
+          </Text>
+          <View style={{ transform: [{ rotate: open ? "90deg" : "0deg" }] }}>
+            <Icon name="chevron-right" color={t.muted} size={14} weight={2.2} />
+          </View>
+        </Pressable>
+      )}
+      {open && (
+        <View style={{ gap: 8, paddingLeft: 14, borderLeftWidth: 2, borderLeftColor: t.line }}>
+          {steps.map((step) => (
+            <Text key={step.key} numberOfLines={2} style={{ fontSize: 14, color: t.soft }}>
+              <Text style={{ color: step.error ? t.danger : t.muted }}>{step.label} </Text>
+              <Text style={{ fontFamily: mono, fontSize: 13 }}>{step.detail}</Text>
+            </Text>
+          ))}
+        </View>
+      )}
+      {prose.map((text, i) => (
+        <Text key={`${message.id}:${i}`} selectable style={s.body}>
+          {text.slice(0, 24_000)}
+        </Text>
+      ))}
+      {!message.finished && prose.length === 0 && steps.length === 0 && (
+        <Text accessibilityLiveRegion="polite" style={s.secondary}>
+          Thinking…
+        </Text>
+      )}
     </View>
   );
 });
 
-function ChangeCard({ file }: { file: ChangedFile }) {
-  const { styles, tokens } = useTheme();
-  const [open, setOpen] = useState(false);
-  const hasDiff = !!file.diff;
-  return (
-    <View style={[styles.card, { padding: 0, overflow: "hidden" }]}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open, disabled: !hasDiff }}
-        accessibilityLabel={`${file.path}, ${file.added} added, ${file.removed} removed`}
-        disabled={!hasDiff}
-        onPress={() => setOpen(!open)}
-        style={[styles.between, { padding: 14, minHeight: 52 }]}
-      >
-        <Text selectable style={[styles.code, { flex: 1 }]} numberOfLines={2}>
-          {file.path}
-        </Text>
-        <Text style={{ fontSize: 12, fontWeight: "600" }}>
-          <Text style={{ color: tokens.diffAddFg }}>+{file.added}</Text>{" "}
-          <Text style={{ color: tokens.diffDelFg }}>−{file.removed}</Text>
-        </Text>
-      </Pressable>
-      {open && file.diff && (
-        <View style={{ padding: 10, paddingTop: 0 }}>
-          <DiffView
-            diff={file.diff.slice(0, 32_000)}
-            truncated={file.diff_truncated || file.diff.length > 32_000}
-          />
-        </View>
-      )}
-      {!hasDiff && (
-        <Text style={[styles.secondary, { paddingHorizontal: 14, paddingBottom: 12 }]}>
-          Diff preview not provided.
-        </Text>
-      )}
-    </View>
-  );
-}
-
 export function ChatScreen({
   chat,
+  title,
   online,
-  tones,
   onBack,
-  onOpenQueue,
-  onQueuePrompt,
+  onOpenChanges,
   onOpenSession,
-  children,
+  onAddAgent,
+  onQueuePrompt,
+  docked,
 }: ChatScreenProps) {
-  const { styles, tokens } = useTheme();
+  const { t, s } = useTheme();
   const [, tick] = useState(0);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"agents" | "changes" | null>(null);
   const retrySend = useRef<{ text: string; key: string } | null>(null);
-  const acting = useRef(false);
-  const identity = `${chat.pj}\0${chat.sessionId}`;
-  const draftIdentity = useRef(identity);
   const live = online && !chat.resyncing;
-  useEffect(() => {
-    return chat.subscribe(() => tick((value) => value + 1));
-  }, [chat]);
-  useEffect(() => {
-    if (draftIdentity.current === identity) return;
-    draftIdentity.current = identity;
-    setText("");
-    setError(null);
-    retrySend.current = null;
-  }, [identity]);
+  useEffect(() => chat.subscribe(() => tick((n) => n + 1)), [chat]);
+
   async function act(action: () => Promise<unknown>): Promise<void> {
-    if (acting.current) return;
-    acting.current = true;
+    if (busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -230,262 +139,200 @@ export function ChatScreen({
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "The action failed.");
     } finally {
-      acting.current = false;
       setBusy(false);
     }
   }
-  async function send(): Promise<void> {
-    if (!text.trim()) return;
-    const value = text;
-    await act(async () => {
+
+  function send(): void {
+    const value = text.trim();
+    if (!value) return;
+    void act(async () => {
       if (online) {
         if (!live) throw new Error("Wait for the conversation to finish syncing.");
-        if (retrySend.current?.text !== value.trim())
-          retrySend.current = { text: value.trim(), key: newIdempotencyKey() };
+        if (retrySend.current?.text !== value)
+          retrySend.current = { text: value, key: newIdempotencyKey() };
         await chat.send(value, retrySend.current.key);
         retrySend.current = null;
       } else if (onQueuePrompt) await onQueuePrompt(value);
       else throw new Error("Reconnect to send this message.");
-      setText((current) => (current === value ? "" : current));
+      setText("");
     });
   }
-  const added = chat.changes.reduce((n, file) => n + file.added, 0);
-  const removed = chat.changes.reduce((n, file) => n + file.removed, 0);
-  const canSend = !!text.trim() && !(online && !live) && !(!online && !onQueuePrompt);
+
+  const agents = new Set(chat.roster.map((a) => a.name));
+  const addressed = activeAgents(text);
+  const names = chat.roster.map((a) => a.name);
+  const placeholder = !online
+    ? "Queue a message for later"
+    : names.length === 0
+      ? "Message your agents"
+      : addressed.length > 0
+        ? `Message ${addressed.join(" and ")}`
+        : `Message ${names.slice(0, 2).join(" or ")}${names.length > 2 ? "…" : ""}`;
+  const model = chat.roster[0]?.model;
+  const subtitle = [
+    online ? null : "Offline",
+    model ?? null,
+    chat.mode ? MODE_LABEL[chat.mode] : null,
+    agents.size > 1 ? `${agents.size} agents` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const added = chat.changes.reduce((n, f) => n + f.added, 0);
+  const removed = chat.changes.reduce((n, f) => n + f.removed, 0);
+
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScreenHeader
-        title="Conversation"
-        subtitle={
-          online
-            ? chat.busy
-              ? "Agent is working"
-              : "Ready when you are"
-            : "Offline · prompts can wait for your computer"
-        }
-        onBack={onBack}
+    <KeyboardAvoidingView style={s.screen} behavior="padding">
+      <TopBar
+        title={title}
+        subtitle={subtitle || undefined}
+        left={<IconButton icon="back" label="Back to tasks" onPress={onBack} />}
+        right={<IconButton icon="sliders" label="Session settings" onPress={onOpenSession} />}
       />
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ flexGrow: 0 }}
-        contentContainerStyle={{ paddingHorizontal: 20, gap: 8, paddingBottom: 8 }}
-      >
-        <Chip title="Agents" active={panel === "agents"} onPress={() => setPanel("agents")} />
-        {chat.roster.map((agent) => (
-          <Chip
-            key={agent.id}
-            title={`${agentMark(tones, agent.kind)} ${agent.name}`}
-            label={`${agent.name}, ${agent.busy ? "working" : "idle"}`}
-            tint={agentTint(tones, agent.id, agent.kind, tokens.text)}
-            busy={agent.busy}
-            onPress={() => setPanel("agents")}
-          />
-        ))}
-      </ScrollView>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ flexGrow: 0 }}
-        contentContainerStyle={{ paddingHorizontal: 20, gap: 8, paddingBottom: 12 }}
-      >
-        <Button
-          compact
-          title={chat.busy ? "Interrupt" : "Continue"}
-          tone={chat.busy ? "danger" : "default"}
-          disabled={!live || busy}
-          onPress={() => void act(() => (chat.busy ? chat.interrupt() : chat.cont()))}
-        />
-        <Button
-          compact
-          title={
-            chat.changes.length
-              ? `Changes · ${chat.changes.length} file${chat.changes.length === 1 ? "" : "s"}`
-              : "Changes"
-          }
-          onPress={() => {
-            setPanel("changes");
-            if (live) void act(() => chat.refreshChanges());
-          }}
-        />
-        <Button
-          compact
-          title="New session"
-          disabled={!live || busy || !onOpenSession}
-          onPress={() =>
-            void act(async () => {
-              const id = await chat.createSession();
-              onOpenSession?.(id);
-            })
-          }
-        />
-        <Button compact title="Queue" onPress={onOpenQueue} />
-      </ScrollView>
       {(error || chat.error) && (
-        <View style={{ paddingHorizontal: 20, paddingBottom: 10 }}>
+        <View style={{ paddingHorizontal: 16, gap: 8 }}>
           <Notice error>{error || chat.error}</Notice>
           {chat.error && (
             <Button
-              title="Retry conversation sync"
-              busy={busy}
+              title="Retry sync"
+              icon="refresh"
+              size="sm"
               disabled={!online || chat.resyncing}
               onPress={() => void act(() => chat.refresh())}
             />
           )}
         </View>
       )}
-      {children && (
-        <ScrollView
-          nestedScrollEnabled
-          style={{ flexGrow: 0, maxHeight: "40%" }}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 12, gap: 12 }}
-        >
-          {children}
-        </ScrollView>
-      )}
       <FlashList
         data={chat.messages}
-        keyExtractor={(message) => message.id}
-        renderItem={({ item }) => <MessageRow message={item} tones={tones} />}
+        keyExtractor={(m) => m.id}
+        renderItem={({ item }) => <MessageRow message={item} showAgent={agents.size > 1} />}
         maintainVisibleContentPosition={{
           startRenderingFromBottom: true,
           autoscrollToBottomThreshold: 0.15,
         }}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 16 }}
+        contentContainerStyle={{ paddingVertical: 12 }}
         ListHeaderComponent={
-          <View style={{ padding: 20, paddingTop: 0, gap: 12 }}>
-            {chat.more && (
+          chat.more ? (
+            <View style={{ padding: 16 }}>
               <Button
                 title="Load earlier messages"
-                busy={busy}
+                size="sm"
                 disabled={!live}
                 onPress={() => void act(() => chat.loadOlder())}
               />
-            )}
-          </View>
+            </View>
+          ) : null
         }
         ListEmptyComponent={
           <EmptyState
             title={chat.resyncing ? "Loading conversation…" : "Make something happen"}
-            detail="Send a prompt to your agents. Their work will appear here."
+            detail="Send a prompt to your agents. Their work appears here."
           />
         }
-      />
-      <View style={{ paddingHorizontal: 12, paddingBottom: 12, paddingTop: 6 }}>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "flex-end",
-            gap: 8,
-            padding: 8,
-            paddingLeft: 14,
-            borderRadius: 24,
-            borderWidth: 1,
-            borderColor: tokens.input,
-            backgroundColor: tokens.surface,
-          }}
-        >
-          <TextInput
-            accessibilityLabel="Message to agents"
-            value={text}
-            onChangeText={setText}
-            placeholder={online ? "What should we work on?" : "Queue a prompt for later"}
-            placeholderTextColor={tokens.muted}
-            multiline
-            maxLength={60_000}
-            style={{
-              flex: 1,
-              color: tokens.text,
-              fontSize: 16,
-              maxHeight: 160,
-              minHeight: 40,
-              paddingTop: 9,
-              paddingBottom: 9,
-            }}
-            editable={!busy}
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              online
-                ? chat.resyncing
-                  ? "Syncing conversation"
-                  : "Send message"
-                : "Queue prompt for later"
-            }
-            accessibilityState={{ disabled: !canSend || busy, busy }}
-            disabled={!canSend || busy}
-            onPress={() => void send()}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: tokens.accent,
-              opacity: !canSend || busy ? 0.4 : 1,
-            }}
-          >
-            {busy ? (
-              <ActivityIndicator size="small" color={tokens.accentInk} />
-            ) : (
-              <Text style={{ color: tokens.accentInk, fontSize: 20, fontWeight: "700" }}>
-                {online ? "↑" : "⏲"}
-              </Text>
+        ListFooterComponent={
+          <View style={{ paddingHorizontal: 20, paddingTop: 4, gap: 12 }}>
+            {chat.changes.length > 0 && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${chat.changes.length} files changed, review`}
+                onPress={onOpenChanges}
+                style={[
+                  s.card,
+                  {
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: 12,
+                    paddingLeft: 14,
+                    borderRadius: 18,
+                  },
+                ]}
+              >
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 11,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: t.chip,
+                  }}
+                >
+                  <Icon name="file" color={t.fg} size={17} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={s.heading}>
+                    {chat.changes.length} file{chat.changes.length === 1 ? "" : "s"} changed
+                  </Text>
+                  <Text style={{ fontFamily: mono, fontSize: 13 }}>
+                    <Text style={{ color: t.success }}>+{added}</Text>{" "}
+                    <Text style={{ color: t.danger }}>−{removed}</Text>
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    minHeight: 34,
+                    paddingHorizontal: 14,
+                    borderRadius: 17,
+                    justifyContent: "center",
+                    backgroundColor: t.chip,
+                  }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: t.fg }}>Review</Text>
+                </View>
+              </Pressable>
             )}
-          </Pressable>
-        </View>
-      </View>
-      <AgentsSheet
-        chat={chat}
-        tones={tones}
-        live={live}
-        visible={panel === "agents"}
-        onClose={() => setPanel(null)}
-      />
-      <Modal
-        visible={panel === "changes"}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setPanel(null)}
-      >
-        <View style={styles.screen} accessibilityViewIsModal>
-          <ScreenHeader
-            title="Changes"
-            onBack={() => setPanel(null)}
-            subtitle={
-              chat.changes.length
-                ? `${chat.changes.length} file${chat.changes.length === 1 ? "" : "s"}  +${added}  −${removed}`
-                : "Read-only summaries of your agent's work."
-            }
-            action={
-              live ? (
-                <Button
-                  compact
-                  title="Refresh"
-                  disabled={busy}
-                  onPress={() => void act(() => chat.refreshChanges())}
+            {chat.busy && (
+              <View
+                accessibilityLiveRegion="polite"
+                style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+              >
+                <View
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 5,
+                    backgroundColor: t.primary,
+                    boxShadow: `0 0 0 4px ${t.tint(t.primary)}`,
+                  }}
                 />
-              ) : undefined
-            }
-          />
-          <ScrollView contentContainerStyle={styles.content}>
-            {chat.changes.length ? (
-              chat.changes.map((file) => <ChangeCard key={file.path} file={file} />)
-            ) : (
-              <EmptyState
-                title="No changes yet"
-                detail="File changes will appear as your agents work."
-              />
+                <Text style={s.secondary}>Working</Text>
+              </View>
             )}
-            {error && <Notice error>{error}</Notice>}
-          </ScrollView>
-        </View>
-      </Modal>
+          </View>
+        }
+      />
+      {docked && (
+        <View style={{ paddingHorizontal: 12, paddingBottom: 10, gap: 10 }}>{docked}</View>
+      )}
+      <View style={{ paddingHorizontal: 12, paddingBottom: 16, gap: 10 }}>
+        {online && (
+          <AgentRail
+            agents={chat.roster.map((a) => ({
+              key: a.id,
+              name: a.name,
+              kind: a.kind,
+              detail: [a.model ?? a.kind, a.busy ? "working" : null].filter(Boolean).join(" · "),
+              on: addressed.includes(a.id) || addressed.includes(a.name),
+              status: a.busy ? "busy" : "idle",
+            }))}
+            onToggle={(id) => setText(toggleAgent(text, id))}
+            onAdd={onAddAgent}
+          />
+        )}
+        <Composer
+          value={text}
+          onChangeText={setText}
+          placeholder={placeholder}
+          canSend={canSend(text, 0) && (online ? live : onQueuePrompt !== undefined)}
+          busy={busy}
+          onSend={send}
+          onStop={online && chat.busy ? () => void act(() => chat.interrupt()) : undefined}
+          sendLabel={online ? "Send message" : "Queue message"}
+        />
+      </View>
     </KeyboardAvoidingView>
   );
 }
