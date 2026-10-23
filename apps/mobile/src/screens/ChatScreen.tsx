@@ -1,6 +1,6 @@
 import { FlashList } from "@shopify/flash-list";
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, Text, View } from "react-native";
+import { KeyboardAvoidingView, Pressable, Text, View } from "react-native";
 import { type ChatSession, newIdempotencyKey } from "../../../../pkg/remote/web/src/chat3";
 import { activeAgents, canSend, toggleAgent } from "../../../../pkg/remote/web/src/composer";
 import type { Message } from "../../../../pkg/remote/web/src/protocol";
@@ -182,7 +182,7 @@ export function ChatScreen({
   const removed = chat.changes.reduce((n, f) => n + f.removed, 0);
 
   return (
-    <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={s.screen} behavior="padding">
       <TopBar
         title={title}
         subtitle={subtitle || undefined}
