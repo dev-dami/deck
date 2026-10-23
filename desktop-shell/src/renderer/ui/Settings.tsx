@@ -2,40 +2,16 @@ import type { AppState } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
 import { Monitor, Moon, Palette, Sun } from "lucide-react";
 import type { ReactNode } from "react";
+import type { DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";
 import { type Prefs, setPrefs, usePrefs } from "../prefs";
 import { ACCENTS, THEMES } from "../themes";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
+import { Row, Section } from "./kit/settings";
+import { PhonePage } from "./Phone";
 import { modKey } from "./keys";
-
-// After T3 Code's settings layout: a section title, then a rounded group
-// of rows, each with a title, a description and a control on the right.
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="space-y-2.5">
-      <div className="flex min-h-7 items-center px-4">
-        <h2 className="text-foreground/70 text-sm">{title}</h2>
-      </div>
-      <div className="rounded-xl border border-border/60 bg-card/40 shadow-xs/5 [&>*+*]:border-border/50 [&>*+*]:border-t">
-        {children}
-      </div>
-    </section>
-  );
-}
-
-function Row({ title, description, control }: { title: ReactNode; description?: ReactNode; control?: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between" data-slot="settings-row">
-      <div className="min-w-0 space-y-1">
-        <h3 className="font-medium text-sm">{title}</h3>
-        {description !== undefined && <p className="text-muted-foreground text-xs leading-relaxed">{description}</p>}
-      </div>
-      {control !== undefined && <div className="flex shrink-0 items-center gap-2">{control}</div>}
-    </div>
-  );
-}
 
 function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -334,6 +310,7 @@ function Keybindings({ mac }: { mac: boolean }) {
     ["New thread", [m, "N"]],
     ["Send the message", ["Enter"]],
     ["New line", ["Shift", "Enter"]],
+    ["Toggle Yolo mode", [m, "Y"]],
     ["Pick an agent", ["$"]],
     ["Rename a thread", ["Double-click"]],
   ];
@@ -362,6 +339,8 @@ export function SettingsPage({
   where,
   transport,
   mac,
+  bridge,
+  folder,
   onDisconnect,
 }: {
   section: SettingsSection;
@@ -369,6 +348,9 @@ export function SettingsPage({
   where: string;
   transport: string;
   mac: boolean;
+  bridge: DeckBridge;
+  // The folder of the open project when it is a local one, which a phone link shares.
+  folder: string | null;
   onDisconnect: () => void;
 }) {
   const p = usePrefs();
@@ -388,6 +370,7 @@ export function SettingsPage({
           {section === "connection" && (
             <Connection state={state} where={where} transport={transport} onDisconnect={onDisconnect} />
           )}
+          {section === "phone" && <PhonePage bridge={bridge} folder={folder} />}
           {section === "keybindings" && <Keybindings mac={mac} />}
         </div>
       </div>

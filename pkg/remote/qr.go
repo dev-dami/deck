@@ -43,3 +43,27 @@ func RenderQR(text string) (string, error) {
 	}
 	return sb.String(), nil
 }
+
+// QRRows encodes text as rows of "1" (dark) and "0" (light) modules, quiet
+// zone included, for callers that draw the code themselves (the desktop
+// app's phone-link page).
+func QRRows(text string) ([]string, error) {
+	code, err := qr.Encode(text, qr.M)
+	if err != nil {
+		return nil, err
+	}
+	side := code.Size + 2*quietZone
+	rows := make([]string, 0, side)
+	for y := -quietZone; y < code.Size+quietZone; y++ {
+		var sb strings.Builder
+		for x := -quietZone; x < code.Size+quietZone; x++ {
+			if x >= 0 && y >= 0 && x < code.Size && y < code.Size && code.Black(x, y) {
+				sb.WriteByte('1')
+			} else {
+				sb.WriteByte('0')
+			}
+		}
+		rows = append(rows, sb.String())
+	}
+	return rows, nil
+}

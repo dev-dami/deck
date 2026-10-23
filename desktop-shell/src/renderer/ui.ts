@@ -13,13 +13,14 @@ export const PANELS: ReadonlyArray<{ panel: Panel; label: string }> = [
   { panel: "agents", label: "Agents" },
 ];
 
-export type SettingsSection = "general" | "appearance" | "agents" | "connection" | "keybindings";
+export type SettingsSection = "general" | "appearance" | "agents" | "connection" | "phone" | "keybindings";
 
 export const SETTINGS_SECTIONS: ReadonlyArray<{ section: SettingsSection; label: string }> = [
   { section: "general", label: "General" },
   { section: "appearance", label: "Appearance" },
   { section: "agents", label: "Agents" },
   { section: "connection", label: "Connection" },
+  { section: "phone", label: "Phone" },
   { section: "keybindings", label: "Keyboard shortcuts" },
 ];
 

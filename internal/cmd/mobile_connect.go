@@ -29,7 +29,17 @@ func init() {
 			return err
 		}
 		if jsonOutput {
-			return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+			// The QR modules let a GUI draw the code without its own encoder.
+			out := struct {
+				mobilecontrol.Result
+				QR []string `json:"qr,omitempty"`
+			}{Result: result}
+			if result.PairURL != "" {
+				if out.QR, err = remote.QRRows(result.PairURL); err != nil {
+					return err
+				}
+			}
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(out)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Computer: %s\nRelay: %s\nOnline: %t | Phones: %d | Projects: %d\n", result.Name, result.RelayURL, result.Online, result.Devices, result.Projects)
 		for _, device := range result.DeviceList {
