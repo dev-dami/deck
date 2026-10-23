@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/term"
@@ -124,39 +125,52 @@ func RunWith(ctx context.Context, w io.Writer, opts Options) error {
 		opts.Terminal = stdoutTerminal
 	}
 
-	var b strings.Builder
-	b.WriteString("deck doctor\n\n")
-	b.WriteString(withLogo(opts, "claude", checkAgent(ctx, opts, agentSpec{
+	specs := []agentSpec{{
 		name:       "claude",
 		binary:     opts.ClaudeBinary,
 		helpWord:   authWord,
 		statusArgs: []string{"auth", "status"},
 		install:    "npm install -g @anthropic-ai/claude-code",
-	})))
-	b.WriteString(withLogo(opts, "codex", checkAgent(ctx, opts, agentSpec{
+	}, {
 		name:       "codex",
 		binary:     opts.CodexBinary,
 		helpWord:   loginWord,
 		statusArgs: []string{"login", "status"},
 		install:    "npm install -g @openai/codex",
-	})))
+	}}
+	// OpenCode and Antigravity are optional: listed only when installed.
 	if opts.OpencodeBinary != "" {
 		if _, err := opts.Runner.LookPath(opts.OpencodeBinary); err == nil {
-			b.WriteString(withLogo(opts, "opencode", checkAgent(ctx, opts, agentSpec{
+			specs = append(specs, agentSpec{
 				name:   "opencode",
 				binary: opts.OpencodeBinary,
 				note:   "uses its own providers (opencode auth login)",
-			})))
+			})
 		}
 	}
 	if opts.AntigravityBinary != "" {
 		if _, err := opts.Runner.LookPath(opts.AntigravityBinary); err == nil {
-			b.WriteString(withLogo(opts, "antigravity", checkAgent(ctx, opts, agentSpec{
+			specs = append(specs, agentSpec{
 				name:   "antigravity",
 				binary: opts.AntigravityBinary,
 				note:   "uses its own login (run agy once to sign in)",
-			})))
+			})
 		}
+	}
+
+	// Each check starts up to three of the CLI's own processes; they are
+	// independent, so the agents are checked at once. lines keeps the order.
+	lines := make([]string, len(specs))
+	var wg sync.WaitGroup
+	for i, s := range specs {
+		wg.Go(func() { lines[i] = withLogo(opts, s.name, checkAgent(ctx, opts, s)) })
+	}
+	wg.Wait()
+
+	var b strings.Builder
+	b.WriteString("deck doctor\n\n")
+	for _, l := range lines {
+		b.WriteString(l)
 	}
 	b.WriteString("\n")
 
