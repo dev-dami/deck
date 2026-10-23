@@ -172,7 +172,7 @@ body {
 
 @supports (height: 100dvh) {
   #app {
-    height: var(--app-height, 100dvh);
+    height: 100dvh;
   }
 }
 

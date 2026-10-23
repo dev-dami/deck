@@ -1,7 +1,6 @@
 import type { JSX } from "preact";
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { trackKeyboard } from "../keyboard";
 import { flushOutbox, queueAction } from "../offline/queue";
 import type { LoadedSnapshot } from "../offline/snapshot";
 import type { QRBlob } from "../protocol3";
@@ -260,7 +259,6 @@ function boot(): void {
   const offer = readPairOffer(location.hash, () => stripPairFragment());
   const root = document.getElementById("app");
   if (root === null) throw new Error("#app is missing");
-  trackKeyboard();
   render(
     <div class="hosted-app">
       <App fleet={new FleetState()} offer={offer} />
