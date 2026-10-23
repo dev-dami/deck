@@ -6,16 +6,45 @@ import type {
   Assertion,
 } from "../../../../pkg/remote/web/src/protocol3";
 import { Button, Notice } from "../ui/components";
-import { styles, tokens } from "../ui/theme";
+import { DiffView } from "../ui/DiffView";
+import { useTheme } from "../ui/ThemeContext";
 
 export interface ApprovalPanelProps {
   approval: ApprovalV3;
   online: boolean;
   onAnswer(decision: AnswerDecision, reason?: string, assertion?: Assertion): Promise<void>;
   authenticate?: () => Promise<Assertion>;
+  // Position among the session's open approvals, as the desktop card shows it.
+  index?: number;
+  count?: number;
 }
 
-export function ApprovalPanel({ approval, onAnswer, authenticate, online }: ApprovalPanelProps) {
+const PREVIEW_LIMIT = 24_000;
+
+function kindLabel(approval: ApprovalV3): string {
+  return approval.kind === "command"
+    ? "Command approval"
+    : approval.kind === "edit"
+      ? "File change approval"
+      : "Approval";
+}
+
+// The one line that says what the agent wants to do (the desktop's approvalSummary).
+function summary(approval: ApprovalV3): string {
+  if (approval.kind === "command" && approval.command) return approval.command;
+  if (approval.kind === "edit" && approval.path) return approval.path;
+  return approval.description;
+}
+
+export function ApprovalPanel({
+  approval,
+  onAnswer,
+  authenticate,
+  online,
+  index,
+  count,
+}: ApprovalPanelProps) {
+  const { styles, tokens } = useTheme();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,36 +76,66 @@ export function ApprovalPanel({ approval, onAnswer, authenticate, online }: Appr
       setBusy(false);
     }
   }
+  const what = summary(approval);
+  const preview = approval.command || approval.raw || "";
+  const showCommand = approval.kind !== "edit" && preview !== "" && preview !== what;
+  const truncated =
+    approval.command_truncated ||
+    approval.diff_truncated ||
+    approval.raw_truncated ||
+    preview.length > PREVIEW_LIMIT;
   return (
     <View
+      accessibilityRole="summary"
+      accessibilityLabel={kindLabel(approval)}
       style={[
         styles.card,
-        { borderColor: destructive ? "#765C36" : tokens.border, marginBottom: 12 },
+        { borderColor: destructive ? tokens.warning : tokens.border, borderRadius: 18 },
       ]}
     >
       <View style={styles.between}>
-        <Text style={[styles.eyebrow, { color: tokens.warning }]}>
-          {destructive ? "Passkey required" : "Needs your approval"}
+        <Text style={{ color: tokens.warning, fontSize: 12, fontWeight: "600" }}>
+          {destructive ? "Passkey required" : kindLabel(approval)}
         </Text>
-        <Text style={styles.secondary}>{approval.agent}</Text>
+        <Text style={[styles.secondary, { fontSize: 12 }]} numberOfLines={1}>
+          {approval.agent}
+          {count !== undefined && count > 1 ? `  ·  ${(index ?? 0) + 1}/${count}` : ""}
+        </Text>
       </View>
-      <Text style={styles.heading}>{approval.description || approval.kind}</Text>
-      {approval.path && (
-        <Text selectable style={styles.code}>
-          {approval.path}
-        </Text>
+      {approval.description !== "" && approval.description !== what && (
+        <Text style={styles.secondary}>{approval.description}</Text>
       )}
-      {(approval.command || approval.diff || approval.raw) && (
-        <ScrollView style={{ maxHeight: 240 }} nestedScrollEnabled>
-          <Text selectable style={styles.code}>
-            {(approval.command || approval.diff || approval.raw || "").slice(0, 24_000)}
+      <ScrollView
+        style={{
+          maxHeight: 160,
+          borderRadius: 10,
+          borderWidth: 1,
+          borderColor: tokens.border,
+          backgroundColor: tokens.code,
+        }}
+        nestedScrollEnabled
+        contentContainerStyle={{ padding: 10 }}
+      >
+        <Text selectable style={styles.code}>
+          {what.slice(0, PREVIEW_LIMIT)}
+        </Text>
+      </ScrollView>
+      {showCommand && (
+        <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+          <Text selectable style={[styles.code, { color: tokens.secondary }]}>
+            {preview.slice(0, PREVIEW_LIMIT)}
           </Text>
         </ScrollView>
       )}
-      {(approval.command_truncated ||
-        approval.diff_truncated ||
-        approval.raw_truncated ||
-        (approval.command || approval.diff || approval.raw || "").length > 24_000) && (
+      {approval.diff ? (
+        <ScrollView style={{ maxHeight: 320 }} nestedScrollEnabled>
+          <DiffView
+            diff={approval.diff.slice(0, PREVIEW_LIMIT)}
+            truncated={approval.diff_truncated}
+          />
+        </ScrollView>
+      ) : null}
+      {truncated && (
         <Text style={styles.secondary}>
           Preview is truncated. Review the full action on your computer before approving.
         </Text>
@@ -88,36 +147,36 @@ export function ApprovalPanel({ approval, onAnswer, authenticate, online }: Appr
       )}
       {!online && <Notice>Reconnect to answer this approval.</Notice>}
       <TextInput
-        accessibilityLabel="Reason for denying approval, optional"
-        placeholder="Reason for denying (optional)"
+        accessibilityLabel="Reason for declining, optional"
+        placeholder="Reason for declining (optional)"
         placeholderTextColor={tokens.muted}
         value={reason}
         onChangeText={setReason}
         maxLength={2_000}
         multiline
-        style={styles.input}
+        style={[styles.input, { minHeight: 44, paddingVertical: 10 }]}
         editable={!busy}
       />
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
         <Button
-          title={destructive ? "Verify & approve" : "Approve once"}
-          tone="primary"
-          busy={busy}
-          disabled={!online || (destructive && !authenticate)}
-          onPress={() => void answer("allow")}
+          title="Decline"
+          tone="ghost"
+          disabled={busy || !online}
+          onPress={() => void answer("deny")}
         />
         {!destructive && (
           <Button
-            title="Allow session"
+            title="Always allow this session"
             disabled={busy || !online}
             onPress={() => void answer("allow_session")}
           />
         )}
         <Button
-          title="Deny"
-          tone="danger"
-          disabled={busy || !online}
-          onPress={() => void answer("deny")}
+          title={destructive ? "Verify & approve" : "Approve"}
+          tone="primary"
+          busy={busy}
+          disabled={!online || (destructive && !authenticate)}
+          onPress={() => void answer("allow")}
         />
       </View>
       {error && <Notice error>{error}</Notice>}

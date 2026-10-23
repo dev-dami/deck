@@ -1,6 +1,7 @@
 import {
   createNavigationContainerRef,
   DarkTheme,
+  DefaultTheme,
   NavigationContainer,
 } from "@react-navigation/native";
 import {
@@ -8,7 +9,15 @@ import {
   type NativeStackScreenProps,
 } from "@react-navigation/native-stack";
 import * as Linking from "expo-linking";
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -30,6 +39,7 @@ import {
 import type { SessionLike } from "../../pkg/remote/web/src/state3";
 import { NativeClient } from "./src/core/client";
 import { assertNativeAction } from "./src/native/passkeys";
+import { AppearanceScreen } from "./src/screens/AppearanceScreen";
 import { ApprovalPanel } from "./src/screens/ApprovalPanel";
 import { ChatScreen } from "./src/screens/ChatScreen";
 import { ComputersScreen } from "./src/screens/ComputersScreen";
@@ -38,11 +48,13 @@ import { OfflineApprovals } from "./src/screens/OfflineApprovals";
 import { PairScreen } from "./src/screens/PairScreen";
 import { type QueueRow, QueueScreen } from "./src/screens/QueueScreen";
 import { SessionControls } from "./src/screens/SessionControls";
+import { kindTones } from "./src/ui/agents";
 import { Button, Notice, ScreenHeader } from "./src/ui/components";
-import { styles, tokens } from "./src/ui/theme";
+import { ThemeProvider, useTheme } from "./src/ui/ThemeContext";
 
 type Routes = {
   Computers: undefined;
+  Appearance: undefined;
   Pair: { initialUrl?: string } | undefined;
   Inbox: { cid: string };
   Chat: { cid: string; pj: string; sessionId: string };
@@ -63,6 +75,7 @@ const message = (error: unknown): string =>
   error instanceof Error ? error.message : "The action could not be completed.";
 
 function ComputersRoute({ navigation: nav }: NativeStackScreenProps<Routes, "Computers">) {
+  const { styles } = useTheme();
   const client = useClient();
   const [error, setError] = useState<string | null>(null);
   return (
@@ -72,12 +85,17 @@ function ComputersRoute({ navigation: nav }: NativeStackScreenProps<Routes, "Com
         computers={client.views()}
         onSelect={(cid) => nav.navigate("Inbox", { cid })}
         onPair={() => nav.navigate("Pair")}
+        onAppearance={() => nav.navigate("Appearance")}
         onRetry={(cid) => {
           void client.connect(cid).catch((err: unknown) => setError(message(err)));
         }}
       />
     </View>
   );
+}
+
+function AppearanceRoute({ navigation: nav }: NativeStackScreenProps<Routes, "Appearance">) {
+  return <AppearanceScreen onBack={() => nav.goBack()} />;
 }
 
 function PairRoute({ navigation: nav, route }: NativeStackScreenProps<Routes, "Pair">) {
@@ -95,6 +113,7 @@ function PairRoute({ navigation: nav, route }: NativeStackScreenProps<Routes, "P
 }
 
 function InboxRoute({ navigation: nav, route }: NativeStackScreenProps<Routes, "Inbox">) {
+  const { styles } = useTheme();
   const client = useClient();
   const computer = client.get(route.params.cid);
   const [snapshotEntry, setSnapshot] = useState<{
@@ -234,10 +253,12 @@ function LiveApprovals({
           sessionId={sessionId}
         />
       )}
-      {approvals.map((approval) => (
+      {approvals.map((approval, index) => (
         <ApprovalPanel
           key={approval.id}
           approval={approval}
+          index={index}
+          count={approvals.length}
           online
           authenticate={
             record ? () => assertNativeAction(session, record.relayUrl, approval.digest) : undefined
@@ -263,10 +284,12 @@ function LiveApprovals({
 }
 
 function ChatRoute({ navigation: nav, route }: NativeStackScreenProps<Routes, "Chat">) {
+  const { styles, tokens } = useTheme();
   const client = useClient();
   const { cid, pj, sessionId } = route.params;
   const computer = client.get(cid);
   const session = client.session(cid);
+  const tones = useMemo(() => kindTones(session?.welcome.server.theme), [session]);
   const [binding, setChat] = useState<{
     cid: string;
     chat: ChatSession;
@@ -316,6 +339,7 @@ function ChatRoute({ navigation: nav, route }: NativeStackScreenProps<Routes, "C
         <ChatScreen
           key={`${cid}:${pj}:${sessionId}`}
           chat={chat}
+          tones={tones}
           online={computer.status === "online" && session !== null && binding?.session === session}
           onBack={() => nav.goBack()}
           onOpenQueue={() => nav.navigate("Queue", { cid })}
@@ -362,6 +386,7 @@ function ChatRoute({ navigation: nav, route }: NativeStackScreenProps<Routes, "C
 }
 
 function OfflineComposer({ onQueue }: { onQueue(text: string, hours: number): Promise<void> }) {
+  const { styles, tokens } = useTheme();
   const [text, setText] = useState("");
   const [hours, setHours] = useState(8);
   const [busy, setBusy] = useState(false);
@@ -413,6 +438,7 @@ function OfflineComposer({ onQueue }: { onQueue(text: string, hours: number): Pr
 }
 
 function QueueRoute({ navigation: nav, route }: NativeStackScreenProps<Routes, "Queue">) {
+  const { styles } = useTheme();
   const client = useClient();
   const { cid } = route.params;
   const session = client.session(cid);
@@ -502,6 +528,7 @@ function QueueRoute({ navigation: nav, route }: NativeStackScreenProps<Routes, "
 }
 
 function Unavailable({ onBack }: { onBack(): void }) {
+  const { styles } = useTheme();
   return (
     <View style={[styles.screen, styles.content]}>
       <Notice>This computer is no longer paired on this phone.</Notice>
@@ -511,6 +538,16 @@ function Unavailable({ onBack }: { onBack(): void }) {
 }
 
 export default function App() {
+  return (
+    <ThemeProvider>
+      <AppShell />
+    </ThemeProvider>
+  );
+}
+
+function AppShell() {
+  const { styles, tokens } = useTheme();
+  const base = tokens.mode === "dark" ? DarkTheme : DefaultTheme;
   const [client, setClient] = useState<NativeClient | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -564,7 +601,10 @@ export default function App() {
   }, [client, pendingLink]);
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor={tokens.background} />
+      <StatusBar
+        barStyle={tokens.mode === "dark" ? "light-content" : "dark-content"}
+        backgroundColor={tokens.background}
+      />
       <SafeAreaView style={styles.screen}>
         {client === null ? (
           <View style={[styles.content, { flex: 1, justifyContent: "center" }]}>
@@ -586,9 +626,9 @@ export default function App() {
             <NavigationContainer
               ref={navigation}
               theme={{
-                ...DarkTheme,
+                ...base,
                 colors: {
-                  ...DarkTheme.colors,
+                  ...base.colors,
                   background: tokens.background,
                   card: tokens.surface,
                   text: tokens.text,
@@ -609,6 +649,7 @@ export default function App() {
                 }}
               >
                 <Stack.Screen name="Computers" component={ComputersRoute} />
+                <Stack.Screen name="Appearance" component={AppearanceRoute} />
                 <Stack.Screen name="Pair" component={PairRoute} />
                 <Stack.Screen name="Inbox" component={InboxRoute} />
                 <Stack.Screen name="Chat" component={ChatRoute} />

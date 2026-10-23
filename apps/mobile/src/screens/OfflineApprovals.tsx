@@ -3,8 +3,9 @@ import { ScrollView, Text, TextInput, View } from "react-native";
 import type { PendingApproval, Snapshot } from "../../../../pkg/remote/web/src/protocol3";
 import type { NativeClient } from "../core/client";
 import { Button, Notice } from "../ui/components";
+import { DiffView } from "../ui/DiffView";
 import { offlineApprovalInput } from "../ui/offline-approvals";
-import { styles, tokens } from "../ui/theme";
+import { useTheme } from "../ui/ThemeContext";
 
 export interface OfflineApprovalsProps {
   client: Pick<NativeClient, "queue">;
@@ -19,6 +20,7 @@ function SavedApproval({
   pending,
   onQueued,
 }: Omit<OfflineApprovalsProps, "snapshot"> & { pending: PendingApproval }) {
+  const { styles, tokens } = useTheme();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -48,7 +50,7 @@ function SavedApproval({
     }
   }
   return (
-    <View style={[styles.card, { borderColor: "#765C36" }]}>
+    <View style={[styles.card, { borderColor: tokens.warning }]}>
       <View style={styles.between}>
         <Text style={[styles.eyebrow, { color: tokens.warning }]}>Saved approval</Text>
         <Text style={styles.secondary}>{approval.agent}</Text>
@@ -59,13 +61,18 @@ function SavedApproval({
           {approval.path}
         </Text>
       )}
-      {(approval.command || approval.diff || approval.raw) && (
+      {(approval.command || approval.raw) && (
         <ScrollView nestedScrollEnabled style={{ maxHeight: 200 }}>
           <Text selectable style={styles.code}>
-            {(approval.command || approval.diff || approval.raw || "").slice(0, 24_000)}
+            {(approval.command || approval.raw || "").slice(0, 24_000)}
           </Text>
         </ScrollView>
       )}
+      {approval.diff ? (
+        <ScrollView nestedScrollEnabled style={{ maxHeight: 280 }}>
+          <DiffView diff={approval.diff.slice(0, 24_000)} truncated={approval.diff_truncated} />
+        </ScrollView>
+      ) : null}
       {(approval.command_truncated ||
         approval.diff_truncated ||
         approval.raw_truncated ||
@@ -112,6 +119,7 @@ function SavedApproval({
 }
 
 export function OfflineApprovals({ client, cid, snapshot, onQueued }: OfflineApprovalsProps) {
+  const { styles } = useTheme();
   if (!snapshot.approvals.length) return null;
   return (
     <View style={{ gap: 12 }}>
