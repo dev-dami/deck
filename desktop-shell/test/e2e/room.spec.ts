@@ -56,6 +56,9 @@ test("a plan-mode reply shows a plan card, and Approve switches the mode and sen
   const card = page.locator(".plan-card");
   await expect(card).toBeVisible();
   await expect(card.locator(".plan-heading")).toHaveText("Plan");
+  // The card carries the room's corner index, as the header does.
+  await expect(card.locator(".plan-index")).toContainText("ain");
+  await expect(page.locator(".room-index")).toContainText("ain");
   await expect(card.locator(".plan-steps li")).toHaveCount(3);
   // The prose around the plan stays prose.
   await expect(page.locator('[data-agent="claude-1"].msg').last()).toContainText("I will not touch pairing.");

@@ -115,26 +115,43 @@ export function buildLanes({
   return lanes;
 }
 
-// Claude Code's idle collapse: past six agents, the idle ones fold into
-// "+N idle". An agent that works, waits or failed always shows.
-export function collapseIdle(lanes: Lane[], max = 6): { shown: Lane[]; idle: Lane[] } {
-  const shown: Lane[] = [];
-  const idle: Lane[] = [];
-  const agents = lanes.filter((l) => l.kind === "agent").length;
-  let seen = 0;
-  for (const l of lanes) {
-    if (l.kind !== "agent") {
-      shown.push(l);
-      continue;
-    }
-    const quiet = l.status === "idle" || l.status === "exited";
-    if (agents > max && quiet && seen >= max) idle.push(l);
-    else {
-      shown.push(l);
-      seen++;
-    }
+// How many lines chips of these widths take in a row of width, as
+// flex-wrap lays them out with gap between them.
+export function lineCount(widths: readonly number[], width: number, gap: number): number {
+  let lines = 0;
+  let used = 0;
+  for (const w of widths) {
+    if (lines === 0 || used + gap + w > width) {
+      lines++;
+      used = w;
+    } else used += gap + w;
   }
-  return { shown, idle };
+  return lines;
+}
+
+// A lane that never folds: the person, and an agent that works, waits or failed.
+export const pinnedLane = (l: Lane): boolean =>
+  l.kind === "you" || (l.kind === "agent" && (l.status === "working" || l.status === "waiting" || l.status === "error"));
+
+// The lanes that fit in lines rows of width, and the ones that fold into
+// "+N" (a chip of width more). Lanes fold from the end, so teammates fold
+// before agents; a pinned lane never folds.
+export function fitLanes(
+  lanes: readonly Lane[],
+  widthOf: (l: Lane) => number,
+  width: number,
+  { gap, lines, more }: { gap: number; lines: number; more: number },
+): { shown: Lane[]; folded: Lane[] } {
+  const all = lanes.map(widthOf);
+  if (width <= 0 || lineCount(all, width, gap) <= lines) return { shown: [...lanes], folded: [] };
+  const keep = lanes.map(() => true);
+  for (let i = lanes.length - 1; i >= 0; i--) {
+    if (pinnedLane(lanes[i]!)) continue;
+    keep[i] = false;
+    const widths = [...all.filter((_, j) => keep[j]), more];
+    if (lineCount(widths, width, gap) <= lines) break;
+  }
+  return { shown: lanes.filter((_, i) => keep[i]), folded: lanes.filter((_, i) => !keep[i]) };
 }
 
 // A teammate's post enters the owner's thread as "[peer] text".
@@ -154,8 +171,10 @@ export function filterLane(messages: Message[], lane: string | null): Message[] 
   return lane === null ? messages : messages.filter((m) => laneOf(m) === lane);
 }
 
-// The short id of the room's corner index: "ses_a7f3…" reads "a7f".
+// The short id of a room's corner index: the last three base36 characters
+// of its id, so "ses_01HZ7A3F" reads "a3f". The header, the sidebar rows
+// and the plan cards all show this one.
 export function shortId(id: string): string {
-  const tail = id.slice(id.lastIndexOf("_") + 1);
-  return (tail === "" ? id : tail).slice(0, 3);
+  const tail = id.toLowerCase().replace(/[^0-9a-z]/g, "").slice(-3);
+  return tail === "" ? id.slice(-3) : tail;
 }

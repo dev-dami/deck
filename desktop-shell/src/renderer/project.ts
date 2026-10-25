@@ -1,5 +1,6 @@
 import type { DeckBridge, RpcMethod, TermEvent } from "../shared/bridge";
 import { type Board, type Crew, type SharedMirror, type Team, toBoard, toCrew, toMirror, toTeam } from "./crew";
+import { bool, list, num, type Obj, obj, str } from "./guards";
 
 // What a local Deck adds to the shared DeckClient: the project's git work
 // tree, the usage record and terminals (proto/deck/v1, Git*, Usage,
@@ -131,15 +132,6 @@ export interface Usage {
   heat: UsageDay[];
   habits: UsageHabits | null;
 }
-
-// Readers for the plain objects the proto loader makes: snake_case keys,
-// int64 as numbers, defaults filled in. Anything else reads as empty.
-type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Obj) : {});
-const str = (o: Obj, k: string): string => (typeof o[k] === "string" ? (o[k] as string) : "");
-const num = (o: Obj, k: string): number => (typeof o[k] === "number" && Number.isFinite(o[k]) ? (o[k] as number) : 0);
-const bool = (o: Obj, k: string): boolean => o[k] === true;
-const list = <T>(o: Obj, k: string, f: (v: Obj) => T): T[] => (Array.isArray(o[k]) ? (o[k] as unknown[]).map((v) => f(obj(v))) : []);
 
 function toPR(o: Obj): PullRequest {
   return {

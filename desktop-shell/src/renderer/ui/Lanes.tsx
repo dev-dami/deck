@@ -1,9 +1,9 @@
 import type { ModelChoice, Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
 import { CornerDownRight, Lock, Square } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { agentColour } from "../agents";
-import { collapseIdle, type Lane } from "../lanes";
+import { fitLanes, type Lane } from "../lanes";
 import { cn } from "../lib/cn";
 import { Models } from "./AgentsStrip";
 import { MenuItem, MenuLabel, MenuSeparator, Popover } from "./kit/menu";
@@ -21,8 +21,26 @@ const WORD: Record<Lane["status"], string> = {
   exited: "exited",
 };
 
-const chip =
-  "lane relative flex h-6 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-selected aria-pressed:text-foreground";
+const chipBase =
+  "relative flex h-6 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-selected aria-pressed:text-foreground";
+const chip = `lane ${chipBase}`;
+
+// The strip wraps to this many lines, then folds lanes into "+N".
+const LINES = 2;
+const GAP = 2;
+// The width of a chip not measured yet, and of "+N".
+const GUESS = 96;
+const MORE = 34;
+
+// One line in the "+N" popover: a lane that did not fit.
+function FoldedLane({ lane, on, onFilter }: { lane: Lane; on: boolean; onFilter: () => void }) {
+  return (
+    <MenuItem className={cn(on && "on bg-selected")} onClick={onFilter}>
+      <span className="min-w-0 flex-1 truncate font-mono text-2xs">{lane.name}</span>
+      <span className="shrink-0 text-2xs text-faint">{lane.kind === "mate" ? lane.role : lane.kind === "agent" ? WORD[lane.status] : ""}</span>
+    </MenuItem>
+  );
+}
 
 function AgentChip({
   lane,
@@ -148,13 +166,41 @@ export function Lanes({
   onStop: (agent: string) => void;
   onSteer: (agent: string) => void;
 }) {
-  const [all, setAll] = useState(false);
-  const { shown, idle } = collapseIdle(lanes);
-  const list = all ? lanes : shown;
+  const [more, setMore] = useState(false);
+  // The row's inner width, and each chip's width as it last rendered.
+  const box = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  const widths = useRef(new Map<string, number>());
+  const [, setMeasured] = useState(0);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (el === null) return;
+    const ro = new ResizeObserver(([e]) => setWidth(Math.floor(e?.contentRect.width ?? 0)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    let changed = false;
+    for (const el of box.current?.querySelectorAll<HTMLElement>("[data-lane]") ?? []) {
+      const id = el.dataset["lane"] ?? "";
+      const w = Math.ceil(el.getBoundingClientRect().width);
+      if (w > 0 && widths.current.get(id) !== w) {
+        widths.current.set(id, w);
+        changed = true;
+      }
+    }
+    if (changed) setMeasured((n) => n + 1);
+  });
+  const { shown, folded } = fitLanes(lanes, (l) => widths.current.get(l.id) ?? GUESS, width, { gap: GAP, lines: LINES, more: MORE });
   const toggle = (id: string) => onFilter(filter === id ? null : id);
   return (
-    <div className="lanes flex min-h-8 shrink-0 items-center gap-0.5 overflow-x-auto border-hairline border-b px-3 pb-1" role="toolbar" aria-label="Lanes">
-      {list.map((l) =>
+    <div
+      ref={box}
+      className="lanes flex min-h-8 shrink-0 flex-wrap content-center items-center gap-0.5 border-hairline border-b px-3 pb-1"
+      role="toolbar"
+      aria-label="Lanes"
+    >
+      {shown.map((l) =>
         l.kind === "agent" ? (
           <AgentChip
             key={l.id}
@@ -189,16 +235,37 @@ export function Lanes({
           </button>
         ),
       )}
-      {idle.length > 0 && (
-        <button
-          type="button"
-          className={cn(chip, "lane-idle font-mono text-2xs text-faint")}
-          aria-expanded={all}
-          title={idle.map((l) => l.name).join(", ")}
-          onClick={() => setAll((v) => !v)}
+      {folded.length > 0 && (
+        <Popover
+          open={more}
+          onClose={() => setMore(false)}
+          label="More lanes"
+          className="w-56"
+          trigger={
+            <button
+              type="button"
+              className={cn(chipBase, "lane-more font-mono text-2xs text-faint aria-expanded:bg-selected")}
+              aria-expanded={more}
+              aria-label={`${folded.length} more`}
+              title={folded.map((l) => l.name).join(", ")}
+              onClick={() => setMore((v) => !v)}
+            >
+              +{folded.length}
+            </button>
+          }
         >
-          {all ? "fewer" : `+${idle.length} idle`}
-        </button>
+          {folded.map((l) => (
+            <FoldedLane
+              key={l.id}
+              lane={l}
+              on={filter === l.id}
+              onFilter={() => {
+                setMore(false);
+                toggle(l.id);
+              }}
+            />
+          ))}
+        </Popover>
       )}
     </div>
   );

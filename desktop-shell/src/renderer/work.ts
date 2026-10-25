@@ -12,6 +12,15 @@ export function splitWork(chunks: Chunk[]): { work: Chunk[]; answer: Chunk[] } {
   return { work: chunks.slice(0, last + 1), answer: chunks.slice(last + 1) };
 }
 
+// A tool's output cut to its first max lines: the text to show, the number
+// of lines in all, and whether lines were left out. A trailing newline does
+// not count as a line.
+export function capLines(text: string, max: number): { text: string; count: number; cut: boolean } {
+  const lines = text.split("\n");
+  const count = lines.at(-1) === "" ? lines.length - 1 : lines.length;
+  return count > max ? { text: lines.slice(0, max).join("\n"), count, cut: true } : { text, count, cut: false };
+}
+
 // "45s", "3m 43s", "1h 2m".
 export function formatDuration(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));

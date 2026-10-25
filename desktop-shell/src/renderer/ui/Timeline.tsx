@@ -24,17 +24,21 @@ import {
   SquareTerminal,
   Wrench,
 } from "lucide-react";
-import { memo, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { agentColour, agentKind } from "../agents";
+import { shortId } from "../lanes";
 import { cn } from "../lib/cn";
 import { lastReplyId, messageText } from "../messages";
 import { detectPlan, findPlan } from "../plans";
 import { formatClock, usePrefs } from "../prefs";
-import { formatDuration, splitWork } from "../work";
+import { capLines, formatDuration, splitWork } from "../work";
 import { DiffView } from "./DiffView";
 import { Button } from "./kit/button";
+import { VIRTUAL_AFTER, VirtualList } from "./kit/virtual";
 import { Markdown } from "./Markdown";
 import { type PlanActions, PlanCard, wasApproved } from "./PlanCard";
+
+const messageKey = (m: Message) => m.id;
 
 // What the open room lets a person do from its timeline. A read-only room
 // gets none of it.
@@ -57,6 +61,29 @@ function toolIcon(name: string): LucideIcon {
   if (/read|view|cat|open/.test(n)) return Eye;
   if (/fetch|web|http|browse/.test(n)) return Globe;
   return Wrench;
+}
+
+// A tool's output shows this many lines until the person asks for all.
+const OUTPUT_LINES = 40;
+
+function ToolOutput({ output }: { output: string }) {
+  const [all, setAll] = useState(false);
+  const capped = useMemo(() => capLines(output, OUTPUT_LINES), [output]);
+  const cut = !all && capped.cut;
+  return (
+    <div className="mt-1 mb-2 overflow-hidden rounded-lg border border-hairline bg-code">
+      <pre className="tool-output max-h-72 overflow-auto px-3 py-2 font-mono text-code text-foreground/85">{cut ? capped.text : output}</pre>
+      {cut && (
+        <button
+          type="button"
+          className="tool-more flex w-full cursor-pointer items-center gap-1.5 border-hairline border-t px-3 py-1 text-left font-mono text-2xs text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          onClick={() => setAll(true)}
+        >
+          Show all <span className="tabular-nums">({capped.count} lines)</span>
+        </button>
+      )}
+    </div>
+  );
 }
 
 // One line of the work log: thinking or a tool call, folded to a row.
@@ -108,11 +135,7 @@ function WorkRow({ c, running }: { c: Chunk; running: boolean }) {
           <ChevronDown className="size-3 shrink-0 text-faint transition-transform group-open/fold:rotate-180" />
         )}
       </summary>
-      {output !== "" && (
-        <pre className="tool-output mt-1 mb-2 max-h-72 overflow-auto rounded-lg border border-hairline bg-code px-3 py-2 font-mono text-code text-foreground/85">
-          {output}
-        </pre>
-      )}
+      {output !== "" && <ToolOutput output={output} />}
       {diff !== "" && (
         <div className="mt-1 mb-2 overflow-hidden rounded-lg border border-hairline">
           <DiffView diff={diff} truncated={c.result?.diff_truncated} />
@@ -271,7 +294,14 @@ function AgentMessage({
     plan !== null && c === planChunk ? (
       <div key={key} className="flex flex-col gap-3">
         {plan.before !== "" && <Markdown text={plan.before} />}
-        <PlanCard id={m.id} plan={plan} agent={agent} colour={colour} actions={last ? actions : null} />
+        <PlanCard
+          id={m.id}
+          plan={plan}
+          agent={agent}
+          colour={colour}
+          index={`${kindMark(theme, kind) || "●"} ${shortId(m.session_id)}`}
+          actions={last ? actions : null}
+        />
         {plan.after !== "" && <Markdown text={plan.after} />}
       </div>
     ) : (
@@ -494,8 +524,14 @@ export function Timeline({
     if (el === null) return;
     stick.current = true;
     setAway(false);
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    // A long list measures its rows on the way down, so it jumps there.
+    el.scrollTo({ top: el.scrollHeight, behavior: messages.length > VIRTUAL_AFTER ? "instant" : "smooth" });
   };
+  // Rows measured after a render change the height: stay at the bottom.
+  const pin = useCallback(() => {
+    const el = ref.current;
+    if (el !== null && stick.current && keep.current === null) el.scrollTop = el.scrollHeight;
+  }, []);
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -524,22 +560,28 @@ export function Timeline({
               Send a message to start the conversation.
             </p>
           )}
-          {messages.map((m) => (
-            <MessageView key={m.id} m={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />
-          ))}
+          <VirtualList
+            items={messages}
+            keyOf={messageKey}
+            scroller={ref}
+            estimate={120}
+            gap={24}
+            className="flex flex-col gap-6"
+            onResize={pin}
+            render={(m) => <MessageView m={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />}
+          />
           {changes !== null && changes.length > 0 && <ChangedFilesCard files={changes} onOpen={onOpenDiff} />}
         </div>
       </div>
       {away && (
-        <Button
-          variant="outline"
-          size="icon-sm"
-          className="-translate-x-1/2 absolute bottom-3 left-1/2 rounded-full shadow-popover"
-          aria-label="Scroll to the latest message"
+        <button
+          type="button"
+          className="jump -translate-x-1/2 absolute bottom-3 left-1/2 flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-2 px-3 text-muted-foreground text-xs shadow-popover outline-none inset-shadow-hl hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           onClick={toBottom}
         >
-          <ArrowDown />
-        </Button>
+          <ArrowDown className="size-3.5" />
+          Jump to latest
+        </button>
       )}
     </div>
   );

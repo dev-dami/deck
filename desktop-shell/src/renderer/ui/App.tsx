@@ -14,12 +14,7 @@ import { ConnectScreen } from "./ConnectScreen";
 import { Shell } from "./Shell";
 import type { ProjectEntry } from "./Sidebar";
 import { closeTerminals } from "./Terminal";
-import { type StartFailure, Welcome } from "./Welcome";
-
-// The last part of a folder path.
-function base(dir: string): string {
-  return dir.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || dir;
-}
+import { base, type StartFailure, Welcome } from "./Welcome";
 
 // A paired Deck as the window names it: where it runs, never its address.
 function pairedName(s: SavedServer): string {

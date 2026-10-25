@@ -51,7 +51,6 @@ export function Composer({
   onError,
   inputRef,
   toolbar,
-  agents,
   banner,
   notice,
   strip,
@@ -77,8 +76,6 @@ export function Composer({
   onError: (text: string) => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   toolbar?: ReactNode;
-  // Who the message goes to, one card per agent, above the prompt.
-  agents?: ReactNode;
   banner?: ReactNode;
   // A line above the prompt: an edit in progress, or the take-over after a stop.
   notice?: ReactNode;
@@ -314,12 +311,11 @@ export function Composer({
           ))}
         </ul>
       )}
-      {agents !== undefined && <div className="composer-agents mb-2">{agents}</div>}
       {notice}
       <div
         className={cn(
-          // The hero surface: the one place with a ring of amber on focus.
-          "composer-box relative z-10 rounded-xl border border-hairline-strong bg-surface-1 inset-shadow-hl transition-[border-color,box-shadow] focus-within:border-primary/50 focus-within:ring-[3px] focus-within:ring-ring",
+          // The hero surface: on focus its hairline turns amber, with a faint outer ring.
+          "composer-box relative z-10 rounded-xl border border-hairline-strong bg-surface-1 inset-shadow-hl transition-[border-color,box-shadow] focus-within:border-signal/40 focus-within:ring-2 focus-within:ring-signal/15",
           dragging && "border-primary/60",
         )}
         onDragOver={(e) => {

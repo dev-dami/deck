@@ -369,7 +369,7 @@ test("lane strip: the people in the room, a lane filter and an agent's popover",
   await expect(claude).toHaveAttribute("data-status", "working");
   await expect(claude.locator(".lane-ring")).toBeVisible();
   await expect(lanes.locator('[data-lane="agent:codex-sub"] .lane-leases')).toHaveText("1");
-  await expect(page.locator(".room-index")).toContainText("mai");
+  await expect(page.locator(".room-index")).toContainText("ain");
 
   // A click on codex-1 shows its lane alone and opens its popover.
   await lanes.locator('[data-lane="agent:codex-1"]').click();

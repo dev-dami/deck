@@ -3,12 +3,7 @@ import { useEffect, useState } from "react";
 import type { DeckBridge, PairOutcome, SavedServer } from "../../shared/bridge";
 import { parsePairText } from "../connect";
 import { Button } from "./kit/button";
-import { StartFailed, type StartFailure } from "./Welcome";
-
-// The last part of a folder path, for the recent list.
-function base(dir: string): string {
-  return dir.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || dir;
-}
+import { base, StartFailed, type StartFailure } from "./Welcome";
 
 const input =
   "h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-[border-color,box-shadow] placeholder:text-faint focus:border-primary/50 focus:ring-[3px] focus:ring-ring";

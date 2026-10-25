@@ -60,6 +60,8 @@ export interface FakeOptions {
   allowYolo?: boolean;
   // Milliseconds between streamed updates.
   tickMs?: number;
+  // Adds the thread "Big room" with this many messages.
+  bigRoom?: number;
 }
 
 export class FakeDeck {
@@ -595,6 +597,14 @@ export class FakeDeck {
     long.roster = [{ id: "claude-1", name: "claude-1", kind: "claude", model: "default", busy: false }];
     for (let i = 1; i <= 130; i++) {
       this.message(long, i % 2 === 1 ? "user" : "assistant", i % 2 === 1 ? undefined : "claude-1", `Note ${i}`, true);
+    }
+
+    if (this.opts.bigRoom !== undefined) {
+      const big = this.addThread("ses_big", "Big room");
+      big.roster = [{ id: "claude-1", name: "claude-1", kind: "claude", model: "default", busy: false }];
+      for (let i = 1; i <= this.opts.bigRoom; i++) {
+        this.message(big, i % 2 === 1 ? "user" : "assistant", i % 2 === 1 ? undefined : "claude-1", `Big ${i}`, true);
+      }
     }
 
     const docs = this.addThread("ses_docs", "Docs pass");

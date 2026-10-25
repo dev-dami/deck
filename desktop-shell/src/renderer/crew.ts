@@ -1,13 +1,7 @@
 // The multi-agent and multiplayer side of a local Deck (proto/deck/v1:
 // Board, Agents, Team and friends), as plain typed objects.
 
-type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Obj) : {});
-const str = (o: Obj, k: string): string => (typeof o[k] === "string" ? (o[k] as string) : "");
-const num = (o: Obj, k: string): number => (typeof o[k] === "number" && Number.isFinite(o[k]) ? (o[k] as number) : 0);
-const bool = (o: Obj, k: string): boolean => o[k] === true;
-const strs = (o: Obj, k: string): string[] => (Array.isArray(o[k]) ? (o[k] as unknown[]).filter((x): x is string => typeof x === "string") : []);
-const list = <T>(o: Obj, k: string, f: (v: Obj) => T): T[] => (Array.isArray(o[k]) ? (o[k] as unknown[]).map((v) => f(obj(v))) : []);
+import { bool, list, num, type Obj, obj, str, strs } from "./guards";
 
 export type TaskStatus = "pending" | "ready" | "running" | "review" | "blocked" | "done" | "failed" | "cancelled";
 

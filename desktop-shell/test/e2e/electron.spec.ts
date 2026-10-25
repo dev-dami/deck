@@ -153,7 +153,7 @@ test("with the bundled engine: git status and a terminal", async () => {
     expect(display).toBe("inline-block");
     await win.screenshot({ path: join(root, "docs", "terminal.png") });
     // The real workspace answers the team call: no link in a fresh home.
-    await win.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Team" }).click();
+    await win.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Team", exact: true }).click();
     await expect(win.locator("[data-team]")).toContainText(/No team link yet|Teammates/);
   } finally {
     await app.close();

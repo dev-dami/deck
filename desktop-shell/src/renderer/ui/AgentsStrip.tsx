@@ -1,15 +1,16 @@
 import { activeAgents, toggleAgent } from "@web/composer";
 import type { AgentLine, Approval, ModelChoice, Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
-import { AtSign, Check, Loader2, Plus, Square } from "lucide-react";
+import { Check, ChevronRight, Loader2, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { agentColour } from "../agents";
 import { agentStatus } from "../approvals";
+import { addAgentMention } from "../completion";
 import type { AgentNode } from "../crew";
 import { contextPct, nodeOf } from "../lanes";
 import { cn } from "../lib/cn";
 import type { ProjectApi, UsageLimit } from "../project";
-import { MenuItem, MenuLabel, MenuSeparator, Popover } from "./kit/menu";
+import { MenuItem, MenuLabel, Popover } from "./kit/menu";
 import { Ring } from "./kit/ring";
 
 export function Models({
@@ -75,8 +76,6 @@ function Mark({ kind, theme, className }: { kind: string; theme: Theme | null; c
   );
 }
 
-const statusRail = { busy: "", waiting: "", idle: "opacity-50" } as const;
-
 // A plan window past this share shows on the chip, before it stops a turn.
 const LIMIT_PCT = 80;
 const LIMITS_MS = 60_000;
@@ -125,283 +124,121 @@ function useLimits(api: ProjectApi | undefined): UsageLimit[] {
 
 const resetTime = (ms: number) => new Date(ms).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
 
+const DOT = {
+  busy: "animate-deck-pulse bg-signal",
+  waiting: "bg-warning",
+  idle: "bg-muted-foreground/40",
+} as const;
+
+// One agent as a send target: its glyph, name, context ring and a status
+// dot. A click adds it to the message's addressees or takes it out. The
+// status word stays for screen readers; the lane strip shows it.
 function Chip({
   line,
   status,
+  on,
   theme,
   context,
   limit,
-  onInterrupt,
-  onMention,
-  listModels,
-  setModel,
+  onToggle,
 }: {
   line: AgentLine;
   status: "busy" | "waiting" | "idle";
+  on: boolean;
   theme: Theme | null;
   context: number | null;
   limit: UsageLimit | null;
-  onInterrupt: () => void;
-  onMention: () => void;
-  listModels: () => Promise<ModelChoice[] | null>;
-  setModel: (model: string, effort?: string) => void;
+  onToggle: () => void;
 }) {
-  const [load, setLoad] = useState<Promise<ModelChoice[] | null> | null>(null);
-  const colour = agentColour(line.id, line.kind);
-  const close = () => setLoad(null);
   return (
-    <div className={`agent agent-${status}`} data-agent={line.id}>
-      <Popover
-        open={load !== null}
-        onClose={close}
-        side="top"
-        label={`Models for ${line.kind}`}
-        className="w-64"
-        trigger={
-          <button
-            type="button"
-            className={cn(
-              "agent-model relative flex h-6 max-w-64 cursor-pointer items-center gap-1.5 rounded-md pr-1.5 pl-2.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-              load !== null && "bg-selected text-foreground",
-            )}
-            title={`${line.id}: ${line.model ?? "default model"} (${status})`}
-            aria-label={`${line.id} (${status})`}
-            onClick={() => (load === null ? setLoad(listModels()) : close())}
-          >
-            {/* The agent's hue as a 2px rail, never as a fill. */}
-            <span
-              aria-hidden
-              className={cn("agent-dot absolute inset-y-1 left-1 w-0.5 rounded-full bg-current", statusRail[status])}
-              style={{ color: status === "waiting" ? "var(--warning)" : colour }}
-            />
-            <span className="agent-name truncate font-mono text-2xs">
-              {kindMark(theme, line.kind)} {line.name}
-            </span>
-            {status === "busy" && <span aria-hidden className="size-1.5 shrink-0 animate-deck-pulse rounded-full bg-signal" />}
-            <span
-              className={cn(
-                "agent-status shrink-0",
-                status === "busy" && "status-busy text-info-foreground",
-                status === "waiting" && "status-waiting text-warning-foreground",
-                status === "idle" && "sr-only",
-              )}
-            >
-              {status}
-            </span>
-            {context !== null && (
-              <span className="agent-context flex items-center" title={`${context}% of its context`}>
-                <Ring pct={context} />
-              </span>
-            )}
-            {limit !== null && (
-              <span
-                className="agent-limit shrink-0 rounded bg-warning/14 px-1 font-mono text-3xs text-warning-foreground tabular-nums"
-                title={`${line.kind} ${limit.label || limit.kind} window: ${Math.round(limit.usedPct)}% used${limit.resetsAt > 0 ? `. Resets ${resetTime(limit.resetsAt)}` : ""}`}
-              >
-                limit {Math.round(limit.usedPct)}%
-              </span>
-            )}
-          </button>
-        }
-      >
-        <MenuLabel>
-          {line.id} · {line.model ?? "default model"}
-        </MenuLabel>
-        <Models
-          line={line}
-          load={load ?? Promise.resolve(null)}
-          choose={(model, effort) => {
-            setModel(model, effort);
-            close();
-          }}
-        />
-        <MenuSeparator />
-        <MenuItem
-          onClick={() => {
-            close();
-            onMention();
-          }}
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={on}
+      aria-label={`Send to ${line.id}`}
+      data-agent={line.id}
+      className={cn(
+        `agent agent-${status} flex h-6 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring`,
+        on && "on bg-selected text-foreground",
+      )}
+      title={`${line.id}: ${line.model ?? "default model"} (${status})`}
+      onClick={onToggle}
+    >
+      <span aria-hidden className="font-mono text-[11px]" style={{ color: agentColour(line.id, line.kind) }}>
+        {kindMark(theme, line.kind) || "●"}
+      </span>
+      <span className="agent-name truncate font-mono text-2xs">{line.name}</span>
+      {context !== null && (
+        <span className="agent-context flex items-center" title={`${context}% of its context`}>
+          <Ring pct={context} />
+        </span>
+      )}
+      <span aria-hidden className={cn("agent-dot size-1.5 shrink-0 rounded-full", DOT[status])} />
+      <span className="agent-status sr-only">{status}</span>
+      {limit !== null && (
+        <span
+          className="agent-limit shrink-0 rounded bg-warning/14 px-1 font-mono text-3xs text-warning-foreground tabular-nums"
+          title={`${line.kind} ${limit.label || limit.kind} window: ${Math.round(limit.usedPct)}% used${limit.resetsAt > 0 ? `. Resets ${resetTime(limit.resetsAt)}` : ""}`}
         >
-          <AtSign /> Message ${line.id}
-        </MenuItem>
-        {line.busy && (
-          <MenuItem
-            className="agent-stop text-destructive-foreground"
-            aria-label={`Interrupt ${line.id}`}
-            onClick={() => {
-              close();
-              onInterrupt();
-            }}
-          >
-            <Square /> Stop {line.id}
-          </MenuItem>
-        )}
-      </Popover>
-    </div>
+          limit {Math.round(limit.usedPct)}%
+        </span>
+      )}
+    </button>
   );
 }
 
-// Every agent in the thread, in the composer's context strip: its state
-// (busy, waiting for an approval, idle), its context use, a plan window
-// close to its limit, and a menu for its model. hint says what Enter does
-// while an agent works.
-export function AgentsStrip({
-  sessionId,
-  roster,
-  approvals,
-  theme,
-  api,
-  agents,
-  hint,
-  onInterrupt,
-  onMention,
-  listModels,
-  setModel,
-}: {
-  sessionId: string;
-  roster: AgentLine[];
-  approvals: Approval[];
-  theme: Theme | null;
-  // Usage (plan limits): a local Deck only.
-  api: ProjectApi | undefined;
-  // The agents tree, for each agent's context; null before it loads.
-  agents: AgentNode[] | null;
-  hint: string | null;
-  onInterrupt: (agent: string) => void;
-  onMention: (agent: string) => void;
-  listModels: (kind: string) => Promise<ModelChoice[] | null>;
-  setModel: (kind: string, model: string, effort?: string) => void;
-}) {
-  const limits = useLimits(api);
-  return (
-    <div className="agents flex min-w-0 flex-wrap items-center gap-0.5" aria-label="Agents in this thread">
-      {roster.map((l) => (
-        <Chip
-          key={l.id}
-          line={l}
-          status={agentStatus(l, sessionId, approvals)}
-          theme={theme}
-          context={contextPct(nodeOf(l, agents))}
-          limit={planLimit(l.kind, limits)}
-          onInterrupt={() => onInterrupt(l.id)}
-          onMention={() => onMention(l.id)}
-          listModels={() => listModels(l.kind)}
-          setModel={(model, effort) => setModel(l.kind, model, effort)}
-        />
-      ))}
-      {roster.length === 0 && <span className="px-1.5 text-muted-foreground/60 text-xs">No agents yet</span>}
-      {hint !== null && <span className="send-hint shrink-0 px-1.5 text-[11px] text-faint">{hint}</span>}
-    </div>
-  );
-}
-
-// The agents a message can go to, each in a card of its own: tapping one
-// addresses it ("$codex"), tapping several addresses each, and none leaves
-// the message to whoever spoke last. Starting another agent is a separate
-// action. Before anyone has joined, the cards are the installed CLIs.
-export function AgentCards({
-  draft,
-  setDraft,
+// The ghost "+": starts another agent of a kind, with a model and effort
+// when the person picks one.
+function AddAgent({
   roster,
   kinds,
   theme,
-  sessionId,
-  approvals,
   onAdd,
-  onFocus,
+  listModels,
+  setModel,
 }: {
-  draft: string;
-  setDraft: (s: string) => void;
   roster: AgentLine[];
   kinds: string[];
   theme: Theme | null;
-  sessionId: string | null;
-  approvals: Approval[];
   onAdd: (kind: string) => void;
-  onFocus: () => void;
+  listModels: (kind: string) => Promise<ModelChoice[] | null>;
+  setModel: (kind: string, model: string, effort?: string) => void;
 }) {
-  const [adding, setAdding] = useState(false);
-  const addressed = activeAgents(draft);
-  const cards =
-    roster.length > 0
-      ? roster.map((l) => ({
-          id: l.id,
-          name: l.name,
-          kind: l.kind,
-          detail: l.model ?? "default model",
-          status: sessionId === null ? ("idle" as const) : agentStatus(l, sessionId, approvals),
-        }))
-      : kinds.map((k) => ({ id: k, name: k, kind: k, detail: "starts on send", status: null }));
+  const [open, setOpen] = useState(false);
+  const [models, setModels] = useState<{ kind: string; load: Promise<ModelChoice[] | null> } | null>(null);
+  const close = () => {
+    setOpen(false);
+    setModels(null);
+  };
   return (
-    <div className="agent-cards flex flex-wrap items-stretch gap-2" role="group" aria-label="Send to">
-      {cards.map((c) => {
-        const on = addressed.includes(c.id);
-        const colour = kindColour(c.kind);
-        return (
-          <button
-            key={c.id}
-            type="button"
-            role="checkbox"
-            aria-checked={on}
-            aria-label={`Send to ${c.id}`}
-            data-agent={c.id}
-            className={cn(
-              "agent-card relative flex min-w-40 cursor-pointer items-center gap-2.5 overflow-hidden rounded-lg border border-hairline bg-surface-1 py-2 pr-2.5 pl-3.5 text-left outline-none inset-shadow-hl transition-colors before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-current hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring",
-              on && "on border-foreground/25 bg-surface-2",
-            )}
-            style={{ color: colour }}
-            onClick={() => {
-              setDraft(toggleAgent(draft, c.id));
-              onFocus();
-            }}
-          >
-            <span aria-hidden className="grid size-5 shrink-0 place-items-center font-mono text-xs">
-              {kindMark(theme, c.kind) || "●"}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium text-foreground text-sm leading-4">{c.name}</span>
-              <span className="block truncate font-mono text-2xs text-muted-foreground leading-4">
-                {c.detail}
-                {c.status === "busy" ? " · working" : c.status === "waiting" ? " · needs you" : ""}
-              </span>
-            </span>
-            {c.status !== null && (
-              <span
-                aria-hidden
-                className={cn(
-                  "size-1.5 shrink-0 rounded-full",
-                  c.status === "busy" ? "animate-deck-pulse bg-signal" : c.status === "waiting" ? "bg-warning" : "bg-success/70",
-                )}
-              />
-            )}
-          </button>
-        );
-      })}
-      {roster.length > 0 && (
-        <Popover
-          open={adding}
-          onClose={() => setAdding(false)}
-          side="top"
-          label="Add an agent"
-          className="w-64"
-          trigger={
-            <button
-              type="button"
-              className="add-agent flex cursor-pointer items-center gap-1.5 rounded-lg border border-hairline-strong border-dashed px-3.5 text-muted-foreground text-sm outline-none transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
-              aria-expanded={adding}
-              onClick={() => setAdding(!adding)}
-            >
-              <Plus className="size-4" /> Add agent
-            </button>
-          }
+    <Popover
+      open={open}
+      onClose={close}
+      side="top"
+      label="Add an agent"
+      className="w-64"
+      trigger={
+        <button
+          type="button"
+          className="add-agent grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-selected aria-expanded:text-foreground"
+          aria-label="Add agent"
+          title="Add agent"
+          aria-expanded={open}
+          onClick={() => (open ? close() : setOpen(true))}
         >
-          <MenuLabel>Start another agent</MenuLabel>
-          {kinds.map((k) => (
+          <Plus className="size-3.5" />
+        </button>
+      }
+    >
+      <MenuLabel>Start another agent</MenuLabel>
+      {kinds.map((k) => (
+        <div key={k}>
+          <div className="flex items-center">
             <MenuItem
-              key={k}
+              className="flex-1"
               aria-label={`Start another ${k}`}
               onClick={() => {
-                setAdding(false);
+                close();
                 onAdd(k);
               }}
             >
@@ -409,10 +246,103 @@ export function AgentCards({
               <span className="flex-1">{k}</span>
               {roster.some((l) => l.kind === k) && <span className="text-2xs text-muted-foreground">another</span>}
             </MenuItem>
-          ))}
-          {kinds.length === 0 && <p className="px-2 py-1.5 text-muted-foreground text-xs">This Deck names no agents.</p>}
-        </Popover>
-      )}
+            <button
+              type="button"
+              className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`Model for another ${k}`}
+              title="Model and effort"
+              aria-expanded={models?.kind === k}
+              onClick={() => setModels(models?.kind === k ? null : { kind: k, load: listModels(k) })}
+            >
+              <ChevronRight className={cn("size-3.5 transition-transform", models?.kind === k && "rotate-90")} />
+            </button>
+          </div>
+          {models?.kind === k && (
+            <div className="ml-6">
+              <Models
+                line={{ id: k, name: k, kind: k, busy: false }}
+                load={models.load}
+                choose={(model, effort) => {
+                  setModel(k, model, effort);
+                  close();
+                  onAdd(k);
+                }}
+              />
+            </div>
+          )}
+        </div>
+      ))}
+      {kinds.length === 0 && <p className="px-2 py-1.5 text-muted-foreground text-xs">This Deck names no agents.</p>}
+    </Popover>
+  );
+}
+
+// The send-target picker under the composer: one chip per agent in the
+// thread, then the ghost "+" to start another. hint says what Enter does
+// while an agent works.
+export function AgentsStrip({
+  sessionId,
+  roster,
+  kinds,
+  approvals,
+  theme,
+  api,
+  agents,
+  draft,
+  setDraft,
+  hint,
+  onFocus,
+  listModels,
+  setModel,
+}: {
+  sessionId: string;
+  roster: AgentLine[];
+  kinds: string[];
+  approvals: Approval[];
+  theme: Theme | null;
+  // Usage (plan limits): a local Deck only.
+  api: ProjectApi | undefined;
+  // The agents tree, for each agent's context; null before it loads.
+  agents: AgentNode[] | null;
+  draft: string;
+  setDraft: (s: string) => void;
+  hint: string | null;
+  onFocus: () => void;
+  listModels: (kind: string) => Promise<ModelChoice[] | null>;
+  setModel: (kind: string, model: string, effort?: string) => void;
+}) {
+  const limits = useLimits(api);
+  const addressed = activeAgents(draft);
+  return (
+    <div className="agents flex min-w-0 flex-wrap items-center gap-0.5" role="group" aria-label="Send to">
+      {roster.map((l) => (
+        <Chip
+          key={l.id}
+          line={l}
+          status={agentStatus(l, sessionId, approvals)}
+          on={addressed.includes(l.id)}
+          theme={theme}
+          context={contextPct(nodeOf(l, agents))}
+          limit={planLimit(l.kind, limits)}
+          onToggle={() => {
+            setDraft(toggleAgent(draft, l.id));
+            onFocus();
+          }}
+        />
+      ))}
+      {roster.length === 0 && <span className="px-1.5 text-muted-foreground/60 text-xs">No agents yet</span>}
+      <AddAgent
+        roster={roster}
+        kinds={kinds}
+        theme={theme}
+        onAdd={(k) => {
+          setDraft(addAgentMention(draft, k));
+          onFocus();
+        }}
+        listModels={listModels}
+        setModel={setModel}
+      />
+      {hint !== null && <span className="send-hint shrink-0 px-1.5 text-[11px] text-faint">{hint}</span>}
     </div>
   );
 }

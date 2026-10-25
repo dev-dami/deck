@@ -16,10 +16,11 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
 import type { DeckClient } from "../client";
 import type { Crew } from "../crew";
 import { cn } from "../lib/cn";
+import { panelSlice, shallowEqual, useAppSlice } from "../select";
 import { PANELS, type Panel } from "../ui";
 import { AgentsTree } from "./AgentsTree";
 import { CommentsBadge, DiffView } from "./DiffView";
@@ -194,7 +195,11 @@ export function RightPanel({
   const queued = open === undefined ? 0 : (state.queue[open.id]?.length ?? 0);
   return (
     <aside
-      className={cn("panel flex shrink-0 flex-col border-l bg-background", wide ? "w-[min(60vw,900px)]" : "w-[480px]")}
+      className={cn(
+        // Below 1100px the panel floats over the room, which keeps its width.
+        "panel flex shrink-0 flex-col border-l bg-background max-[1100px]:absolute max-[1100px]:inset-y-0 max-[1100px]:right-0 max-[1100px]:z-30 max-[1100px]:max-w-[calc(100%-3rem)] max-[1100px]:shadow-popover",
+        wide ? "w-[min(60vw,900px)]" : "w-[480px]",
+      )}
       aria-label="Side panel"
     >
       <header className="panel-head drag flex h-12 shrink-0 items-center gap-1 border-b px-2">
@@ -271,4 +276,13 @@ export function RightPanel({
       </div>
     </aside>
   );
+}
+
+const wholeState = (s: AppState): AppState => s;
+
+// The side panel takes the whole state but reads only the panel slice (the
+// side chat reads messages too), so it renders when that slice changes.
+export function LiveRightPanel(props: Omit<ComponentProps<typeof RightPanel>, "state">) {
+  useAppSlice(props.c.store, props.panel === "side" ? wholeState : panelSlice, shallowEqual);
+  return <RightPanel {...props} state={props.c.store.state} />;
 }

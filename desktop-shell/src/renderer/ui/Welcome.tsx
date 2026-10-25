@@ -7,7 +7,7 @@ import { Button } from "./kit/button";
 import { AGENT_HELP } from "./landing";
 
 // The last part of a folder path.
-function base(dir: string): string {
+export function base(dir: string): string {
   return dir.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || dir;
 }
 

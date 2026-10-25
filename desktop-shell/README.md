@@ -125,20 +125,27 @@ T3's look stays in the theme catalog.
   (`$claude×3 `). The first message makes the thread, named after its first
   line. Empty tabs and pages say what shows there and how it gets there.
 - **Chat.** A finished reply folds its tool calls and thinking behind
-  "Worked for …"; the answer stays in view. The thread's changed files show
-  under the last reply; "Open diff" opens them in the diff panel.
-- **Composer.** The agent picker (where T3 picks a model) sends the next
-  message to any agent or to one of the thread's agents, starts another
-  agent of a kind, and changes the model and effort of the agent it sends
-  to. Typing `$` does the same: `$codex` reaches a free codex or starts one,
-  `$codex+` starts another, `$codex*` reaches every codex, `$all` every
-  agent. The strip under the composer holds the mode (Plan, Ask or Yolo)
-  and each agent's state: busy, waiting (for an approval) or idle, with its
-  context use as a thin ring. When the engine reports a plan window of the
-  agent's kind over 80% full, the chip shows an amber "limit 85%" tag; its
-  tooltip says when the window resets. The app asks for the limits at most
-  once a minute, and only while the strip shows. While agents work and the
-  prompt is empty, send turns into stop.
+  "Worked for …"; the answer stays in view. A tool's output shows its first
+  40 lines; "Show all" shows the rest. The thread's changed files show
+  under the last reply; "Open diff" opens them in the diff panel. The
+  timeline follows new messages while you are at the bottom. When you
+  scroll up, it stops, and "Jump to latest" takes you back. A room of more
+  than 200 messages renders only the messages in view; so does a list of
+  more than 200 threads in the sidebar.
+- **Composer.** The strip under the composer holds the mode (Plan, Ask or
+  Yolo) and picks who the message goes to: one chip per agent of the
+  thread, with its glyph, name, context use as a thin ring and a status
+  dot (amber while it works, the warning colour while it waits for an
+  approval). Click a chip to address the agent (`$codex-1`), again to take
+  it out; several chips address each. The ghost "+" starts another agent
+  of a kind, with a model and effort when you pick one. Typing `$` does
+  the same: `$codex` reaches a free codex or starts one, `$codex+` starts
+  another, `$codex*` reaches every codex, `$all` every agent. When the
+  engine reports a plan window of the agent's kind over 80% full, the chip
+  shows an amber "limit 85%" tag; its tooltip says when the window resets.
+  The app asks for the limits at most once a minute, and only while the
+  strip shows. While agents work and the prompt is empty, send turns into
+  stop.
   - **Slash commands.** Type `/` at the start of the message for the
     commands: `/plan`, `/ask` and `/yolo` set the mode (Yolo still asks
     first), `/new [title]` starts a thread, `/race <n> [kind] <brief>`
@@ -164,15 +171,20 @@ T3's look stays in the theme catalog.
   you, and the teammates the thread is shared with as editors. The Inbox
   lists the approvals of every room.
 - **Room.** A thread is a room. The header shows the room's index (the
-  glyph of its first agent and a short id, in that agent's hue), the title
-  (double-click it to rename), the git actions, who follows the room, and
-  the side panel's toggles. Under it, the lane strip has a chip for each
-  one in the room: you, each agent with its state (working, waiting, idle
-  or error), its context use as a ring and the number of paths it holds,
-  and each teammate who follows the room with their role. Click a chip to
-  show that lane's messages alone; click it again to show all. An agent's
-  chip also opens its model and effort, Stop, and Steer, which addresses
-  the composer to it. Past six agents, the idle ones fold into "+N idle".
+  glyph of its first agent and the last three characters of the thread's
+  id, in that agent's hue), the title (double-click it to rename), the git
+  actions, who follows the room, and the side panel's toggles. The sidebar
+  rows and the plan cards show the same index. Under the header, the lane
+  strip has a chip for each one in the room: you, each agent with its
+  state (working, waiting, idle or error), its context use as a ring and
+  the number of paths it holds, and after the agents each teammate who
+  follows the room with their role. Click a chip to show that lane's
+  messages alone; click it again to show all. An agent's chip also opens
+  its model and effort, Stop, and Steer, which addresses the composer to
+  it. The strip wraps to two lines at most. Past that, the lanes that do
+  not fit fold into "+N", from the end: teammates first, then idle agents.
+  You and the agents that work, wait or failed always show. Click "+N" for
+  a list of the folded lanes.
 - **Tasks and agents.** The side panel holds the room's tabs: Changes,
   Tasks, Agents and Side chat. Changes shows every changed file with line
   numbers. Tasks shows the messages that wait for a busy agent (send now,
@@ -182,7 +194,9 @@ T3's look stays in the theme catalog.
   task's branch, and ask. A race starts two to six agents of one kind on
   one brief, each on a worktree of its own; you keep the best entry. Agents
   shows the tree of agents and subagents, each with its model, effort,
-  context, cost, leases and the tool it runs.
+  context, cost, leases and the tool it runs. In a window narrower than
+  1100px, the side panel floats over the room; its toggle in the header
+  shows and hides it.
 - **Plans.** In Plan mode, an agent's numbered steps show as a card with
   Approve, Edit and Ask. Approve switches the thread to Ask (or back to
   Yolo when it was Yolo before Plan) and tells the agent to go ahead. Edit
@@ -213,7 +227,9 @@ T3's look stays in the theme catalog.
   for a participant or editor, and with Approve and Decline for an editor.
   The sidebar footer counts the teammates online; click it for the Team
   page: teammates and what their agents do, team chat, and contracts
-  (propose, accept, decline).
+  (propose, accept, decline). Beside the count, a dot shows the connection
+  (its tooltip names it); click it for the connection settings. A sidebar
+  wider than 260px also shows the word.
 - **Git.** The strip under the composer shows the branch; switch or create
   one there. The header's git menu commits (all changes, with a message),
   pushes, pulls, and opens or merges a pull request (through `gh`).
@@ -306,6 +322,12 @@ The tests use fakes in `test/`:
 - `fake-deck.cjs` stands in for the `deck` binary. It prints the fake gRPC
   server's handshake and lives until its stdin closes, as Deck does.
 
+Each e2e test starts a fake, pairs with it or opens a folder through it,
+and then plays the Deck's part from the test: a reply, an approval or a
+notice (`test/e2e/harness.ts` gives the page the real main-process host).
+To use a Chromium that is already installed, set `PLAYWRIGHT_BROWSERS_PATH`
+to its folder.
+
 `npm run dist` makes a dmg and zip on macOS, an AppImage and deb on Linux,
 and an NSIS installer on Windows, for the machine it runs on. The engine
 goes into `resources/bin`; build on each platform (or set `GOOS` and
@@ -357,6 +379,16 @@ renderer (React, sandboxed)                  main process (Node)                
   writes its rules into `<style>` elements, which the CSP blocks;
   `ui/Terminal.tsx` copies them into a constructed stylesheet instead. The
   window's own settings (`prefs.ts`) live in its localStorage.
+- **The UI's files.** `ui/Shell.tsx` lays out one project's window and
+  picks the page; `ui/useShell.ts` holds its navigation, keys, menu and
+  palette commands, and `ui/useRoom.ts` the open room's state and send path
+  (first message, steer, slash commands, Yolo). `ui/Room.tsx` draws the
+  room (header, lanes, timeline, composer), `ui/NewThread.tsx` the empty
+  room, and `ui/Toasts.tsx` and `ui/EngineStopped.tsx` what their names
+  say. The sidebar is `ui/Sidebar.tsx` with `ui/ThreadRow.tsx`,
+  `ui/ProjectGroup.tsx` (groups, the project filter, shared rooms) and
+  `ui/SidebarFooter.tsx`. `ui/kit/virtual.tsx` renders only the rows in
+  view of a list longer than 200 rows (the timeline and the thread list).
 - **App state.** `appState.ts` keeps each open project's UI state (open
   thread, panel, unread marks, drafts) outside the React tree, so a switch
   between projects keeps it; drafts also persist in localStorage

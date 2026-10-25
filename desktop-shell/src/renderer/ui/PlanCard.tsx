@@ -24,12 +24,15 @@ export function PlanCard({
   plan,
   agent,
   colour,
+  index,
   actions,
 }: {
   id: string;
   plan: Plan;
   agent: string;
   colour: string;
+  // The room's corner index: the agent's glyph and the room's short id.
+  index: string;
   actions: PlanActions | null;
 }) {
   const prefs = usePrefs();
@@ -59,6 +62,9 @@ export function PlanCard({
     >
       <span aria-hidden className="absolute inset-y-0 left-0 w-0.5" style={{ background: colour }} />
       <header className="mb-2 flex items-baseline gap-2">
+        <span className="plan-index shrink-0 font-mono text-2xs" style={{ color: colour }}>
+          {index}
+        </span>
         <h3 className="plan-heading min-w-0 truncate font-medium text-[13px] text-foreground">{plan.heading ?? "Plan"}</h3>
         <span className="font-mono text-2xs text-faint tabular-nums">
           {plan.steps.length} steps
