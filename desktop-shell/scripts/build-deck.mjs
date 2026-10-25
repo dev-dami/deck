@@ -12,7 +12,11 @@ const repo = join(shell, "..");
 const goos = process.env.GOOS ?? { win32: "windows", darwin: "darwin" }[process.platform] ?? "linux";
 const out = join(shell, "bin", goos === "windows" ? "deck.exe" : "deck");
 mkdirSync(dirname(out), { recursive: true });
-execFileSync("go", ["build", "-trimpath", "-ldflags", "-s -w", "-o", out, "."], {
+// A release build names its version (DECK_VERSION, without the "v"), as
+// GoReleaser does for the CLI.
+const version = process.env.DECK_VERSION;
+const ldflags = version ? `-s -w -X github.com/dev-dami/deck/internal/version.Version=${version}` : "-s -w";
+execFileSync("go", ["build", "-trimpath", "-ldflags", ldflags, "-o", out, "."], {
   cwd: repo,
   stdio: "inherit",
   env: { ...process.env, CGO_ENABLED: process.env.CGO_ENABLED ?? "0" },
