@@ -35,6 +35,10 @@ export async function attachBridge(page: Page, pickFolder?: () => Promise<string
     for (const [on, emit] of [
       ["onSocket", "__deckSocketEmit"],
       ["onRpc", "__deckRpcEmit"],
+      // Main's menu, link and update events; a test may emit them.
+      ["onMenu", "__deckMenuEmit"],
+      ["onLink", "__deckLinkEmit"],
+      ["onUpdate", "__deckUpdateEmit"],
     ] as const) {
       const listeners = new Set<(id: unknown, ev: unknown) => void>();
       deck[on] = (fn: (id: unknown, ev: unknown) => void) => {
@@ -45,6 +49,8 @@ export async function attachBridge(page: Page, pickFolder?: () => Promise<string
         for (const l of listeners) l(id, ev);
       };
     }
+    // A page in Chromium has no file paths.
+    deck["folderPath"] = () => "";
     w["deck"] = deck;
   }, HOST_METHODS);
   return t;

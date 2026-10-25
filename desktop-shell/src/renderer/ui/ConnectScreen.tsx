@@ -75,6 +75,7 @@ function OpenFolder({
 function Pair({
   bridge,
   servers,
+  invite,
   onPaired,
   onOpen,
   onForget,
@@ -82,12 +83,13 @@ function Pair({
 }: {
   bridge: DeckBridge;
   servers: SavedServer[];
+  invite: string;
   onPaired: (s: SavedServer) => void;
   onOpen: (s: SavedServer) => void;
   onForget: (s: SavedServer) => void;
   setError: (e: string | null) => void;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(invite);
   const [fp, setFp] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -201,6 +203,7 @@ export function ConnectScreen({
   recent,
   opening,
   message,
+  invite,
   onFolder,
   onPaired,
   onOpen,
@@ -213,6 +216,9 @@ export function ConnectScreen({
   recent: string[];
   opening: string | null;
   message: string | null;
+  // The invite line of a deck://pair link, put in the pairing form for the
+  // person to confirm.
+  invite: string | null;
   onFolder: (dir: string) => Promise<string | null>;
   onPaired: (s: SavedServer) => void;
   onOpen: (s: SavedServer) => void;
@@ -223,7 +229,7 @@ export function ConnectScreen({
   const [error, setError] = useState<string | null>(null);
   // Pairing is the way in for a Deck on another computer; folders on this
   // one come first.
-  const [pairing, setPairing] = useState(deck === null || servers.length > 0);
+  const [pairing, setPairing] = useState(deck === null || servers.length > 0 || invite !== null);
   const addProject = async () => {
     const dir = await bridge.pickFolder();
     if (dir === null) return;
@@ -290,6 +296,7 @@ export function ConnectScreen({
           <Pair
             bridge={bridge}
             servers={servers}
+            invite={invite ?? ""}
             onPaired={onPaired}
             onOpen={onOpen}
             onForget={onForget}

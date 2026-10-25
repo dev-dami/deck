@@ -6,6 +6,13 @@ import { App } from "./ui/App";
 // The preload script puts the bridge on window; without it (a plain
 // browser) there is nothing to talk to.
 const bridge = (window as Window & { deck?: DeckBridge }).deck;
+// Errors the page does not catch go to the app's log file.
+if (bridge !== undefined) {
+  const report = (what: unknown) =>
+    void bridge.logFromRenderer("error", what instanceof Error ? (what.stack ?? what.message) : String(what)).catch(() => {});
+  window.addEventListener("error", (e) => report(e.error ?? `${e.message} (${e.filename}:${e.lineno})`));
+  window.addEventListener("unhandledrejection", (e) => report(e.reason));
+}
 const root = document.getElementById("root");
 if (root !== null) {
   createRoot(root).render(

@@ -191,3 +191,23 @@ test("themes: a theme from the catalog and an accent recolor the window", async 
   const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("deck.desktop.prefs") ?? "{}"));
   expect(kept).toMatchObject({ palette: "github-light", accent: "green" });
 });
+
+test("menu commands, a downloaded update and a pair link reach the window", async ({ page }) => {
+  await pair(page);
+  // What main sends on the menu, update and link channels.
+  const emit = (fn: string, ev: unknown) =>
+    page.evaluate(([f, e]) => (window as unknown as Record<string, (e: unknown) => void>)[f]?.(e), [fn, ev] as const);
+  await emit("__deckMenuEmit", "toggle-sidebar");
+  await expect(sidebar(page)).toHaveCount(0);
+  await emit("__deckMenuEmit", "toggle-sidebar");
+  await expect(sidebar(page)).toBeVisible();
+  await emit("__deckMenuEmit", "settings");
+  await expect(page.locator("[data-settings]")).toHaveAttribute("data-settings", "general");
+
+  await emit("__deckUpdateEmit", { type: "ready", version: "0.2.0" });
+  await expect(sidebar(page).getByRole("button", { name: "Update ready · Restart" })).toBeVisible();
+
+  // A pair link fills the form; the person still clicks Pair.
+  await emit("__deckLinkEmit", { type: "pair", url: "deck://pair?c=ABCDE" });
+  await expect(page.getByLabel("Pairing link or invite line")).toHaveValue("deck://pair?c=ABCDE");
+});

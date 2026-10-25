@@ -231,8 +231,56 @@ export function App({ bridge }: { bridge: DeckBridge }) {
     return dir === null ? null : openFolder(dir, "new");
   };
 
+  // A deck:// link, a folder argument or a dropped folder: a folder opens,
+  // an invite fills the pairing form. An error shows on the connect screen.
+  const [invite, setInvite] = useState<string | null>(null);
+  const openFrom = useCallback(
+    async (dir: string) => {
+      const e = await openFolder(dir, "new");
+      if (e === null) return;
+      setMessage(e);
+      setConnecting(true);
+    },
+    [openFolder],
+  );
+  useEffect(
+    () =>
+      bridge.onLink((l) => {
+        if (l.type === "open") void openFrom(l.path);
+        else {
+          setInvite(l.url);
+          setConnecting(true);
+        }
+      }),
+    [bridge, openFrom],
+  );
+  const onDrop = (e: React.DragEvent) => {
+    const dirs = [...e.dataTransfer.items]
+      .filter((i) => i.kind === "file" && i.webkitGetAsEntry()?.isDirectory === true)
+      .map((i) => i.getAsFile())
+      .filter((f) => f !== null);
+    if (dirs.length === 0) return;
+    e.preventDefault();
+    for (const f of dirs) {
+      const dir = bridge.folderPath(f);
+      if (dir !== "") void openFrom(dir);
+    }
+  };
+  // The project view runs the menu's Open folder; without one, it is here.
+  const menuOpen = useRef<(() => void) | null>(null);
+  menuOpen.current =
+    current !== null && !connecting ? null : () => void addProject().then((e) => e !== null && setMessage(e));
+  useEffect(() => bridge.onMenu((m) => m === "open-folder" && menuOpen.current?.()), [bridge]);
+
   return (
-    <div className="app h-full" data-app="">
+    <div
+      className="app h-full"
+      data-app=""
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+      }}
+      onDrop={onDrop}
+    >
       {current !== null && !connecting ? (
         <Shell
           key={current.key}
@@ -258,6 +306,8 @@ export function App({ bridge }: { bridge: DeckBridge }) {
         <div className="loading grid h-full place-items-center text-muted-foreground text-sm">Loading…</div>
       ) : (
         <ConnectScreen
+          key={invite ?? ""}
+          invite={invite}
           bridge={bridge}
           deck={deck}
           servers={servers}
@@ -266,12 +316,20 @@ export function App({ bridge }: { bridge: DeckBridge }) {
           message={message}
           onFolder={(dir) => openFolder(dir)}
           onPaired={(s) => {
+            setInvite(null);
             void refresh();
             pairedOpen(s);
           }}
           onOpen={(s) => pairedOpen(s)}
           onForget={(s) => void bridge.forgetServer(s.id).then(refresh)}
-          {...(current !== null ? { onBack: () => setConnecting(false) } : {})}
+          {...(current !== null
+            ? {
+                onBack: () => {
+                  setInvite(null);
+                  setConnecting(false);
+                },
+              }
+            : {})}
         />
       )}
     </div>

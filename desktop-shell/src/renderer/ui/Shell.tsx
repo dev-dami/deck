@@ -34,7 +34,7 @@ import { isMac, modKey } from "./keys";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
 import { MenuItem, MenuSeparator, Popover } from "./kit/menu";
-import type { DeckBridge } from "../../shared/bridge";
+import type { DeckBridge, MenuCommand } from "../../shared/bridge";
 import { ModePicker } from "./ModePicker";
 import { type Command, Palette } from "./Palette";
 import { RightPanel } from "./RightPanel";
@@ -72,6 +72,17 @@ function useForeignThreads(others: OpenProject[]): ForeignThread[] {
   }, [others]);
   return rows;
 }
+
+// The palette command each menu command runs ("palette" opens the palette).
+const MENU_COMMAND: Record<Exclude<MenuCommand, "palette">, string> = {
+  "new-thread": "new",
+  "open-folder": "add-project",
+  settings: "settings-general",
+  "toggle-sidebar": "sidebar",
+  "toggle-panel": "panel",
+  "toggle-terminal": "terminal",
+  about: "settings-connection",
+};
 
 // The draft of the composer on the new-thread screen, before a thread exists.
 const NEW = "";
@@ -307,7 +318,7 @@ export function Shell({
     [ui.panel],
   );
 
-  // The mode each thread had before Ctrl+Y put it in yolo, to go back to.
+  // The mode each thread had before Ctrl+Shift+Y put it in yolo, to go back to.
   const beforeYolo = useRef<Record<string, Mode>>({});
   const toggleYolo = useCallback(() => {
     if (open === undefined) return;
@@ -324,8 +335,16 @@ export function Shell({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
       const k = e.key.toLowerCase();
+      if (e.shiftKey) {
+        // With Shift, so Ctrl+Y stays Redo in a text field.
+        if (k === "y") {
+          e.preventDefault();
+          toggleYolo();
+        }
+        return;
+      }
       if (k === "k") {
         e.preventDefault();
         dispatch({ type: "palette", open: !ui.palette });
@@ -338,10 +357,6 @@ export function Shell({
       } else if (k === ",") {
         e.preventDefault();
         dispatch({ type: "settings", section: "general" });
-      } else if (k === "y") {
-        // Also redo in a text field; a thread's mode is the more useful key here.
-        e.preventDefault();
-        toggleYolo();
       } else if ((k === "j" || k === "`") && api !== undefined) {
         e.preventDefault();
         setTerminal((v) => !v);
@@ -365,6 +380,7 @@ export function Shell({
         run: () => dispatch({ type: "panel", panel: p.panel }),
       })),
       { id: "sidebar", label: "Toggle sidebar", hint: `${modKey(mac)}B`, run: () => setSidebar((v) => !v) },
+      { id: "panel", label: "Toggle side panel", run: () => dispatch({ type: "panel", panel: ui.panel ?? "changes" }) },
       ...SETTINGS_SECTIONS.map((x) => ({
         id: `settings-${x.section}`,
         label: `Settings: ${x.label}`,
@@ -391,7 +407,31 @@ export function Shell({
       });
     }
     return list;
-  }, [state.sessions, now, mac, newSession, onDisconnect, addProject, openSession, api]);
+  }, [state.sessions, now, mac, newSession, onDisconnect, addProject, openSession, api, ui.panel]);
+
+  // The application menu runs the palette's commands.
+  const commandsRef = useRef(commands);
+  commandsRef.current = commands;
+  useEffect(
+    () =>
+      bridge.onMenu((m) => {
+        if (m === "palette") dispatch({ type: "palette", open: true });
+        else commandsRef.current.find((x) => x.id === MENU_COMMAND[m])?.run();
+      }),
+    [bridge],
+  );
+
+  // A downloaded update waits for a restart; "Check for updates" answers
+  // in a toast.
+  const [update, setUpdate] = useState<string | null>(null);
+  useEffect(
+    () =>
+      bridge.onUpdate((ev) => {
+        if (ev.type === "ready") setUpdate(ev.version);
+        else c.store.dispatch({ type: "toast.add", kind: "info", text: ev.message });
+      }),
+    [bridge, c],
+  );
 
   const online = state.link === "online";
   const roster = sid === null ? [] : (state.roster[sid] ?? []);
@@ -625,6 +665,8 @@ export function Shell({
           onNew={newSession}
           onRename={(id, title) => void c.renameSession(id, title)}
           onDelete={(id) => void c.deleteSession(id)}
+          onThreadMenu={(id, title) => bridge.threadMenu({ id, title })}
+          update={update === null ? null : { version: update, onRestart: () => void bridge.installUpdate() }}
           onDisconnect={onDisconnect}
           onPalette={() => dispatch({ type: "palette", open: true })}
           onSettings={(section) => dispatch({ type: "settings", section })}

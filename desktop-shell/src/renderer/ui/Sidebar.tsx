@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import type { ThreadChoice } from "../../shared/bridge";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
 import type { RowStyle } from "../prefs";
@@ -91,6 +92,7 @@ function ThreadRow({
   onOpen,
   onRename,
   onDelete,
+  onMenu,
 }: {
   s: Session;
   project: string;
@@ -105,6 +107,8 @@ function ThreadRow({
   onOpen: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
+  // The native menu of the row: Rename, or Delete (main asks first).
+  onMenu: () => Promise<ThreadChoice>;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [confirm, setConfirm] = useState(false);
@@ -230,6 +234,14 @@ function ThreadRow({
     onDoubleClick: (e: React.MouseEvent) => {
       if ((e.target as HTMLElement).closest("button, input")) return;
       setRenaming(true);
+    },
+    onContextMenu: (e: React.MouseEvent) => {
+      if ((e.target as HTMLElement).closest("input")) return;
+      e.preventDefault();
+      void onMenu().then((choice) => {
+        if (choice === "rename") setRenaming(true);
+        else if (choice === "delete") onDelete();
+      });
     },
     onKeyDown: (e: React.KeyboardEvent) => {
       if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
@@ -456,6 +468,8 @@ export function Sidebar({
   onNew,
   onRename,
   onDelete,
+  onThreadMenu,
+  update,
   onDisconnect,
   onPalette,
   onSettings,
@@ -495,6 +509,9 @@ export function Sidebar({
   onNew: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
+  onThreadMenu: (id: string, title: string) => Promise<ThreadChoice>;
+  // A downloaded update that waits for a restart.
+  update: { version: string; onRestart: () => void } | null;
   onDisconnect: () => void;
   onPalette: () => void;
   onSettings: (s: SettingsSection | null) => void;
@@ -546,6 +563,7 @@ export function Sidebar({
         onOpen={() => (f === null ? onOpen(s.id) : onForeign(f.source, s.id))}
         onRename={(t) => void (f === null ? onRename(s.id, t) : f.c.renameSession(s.id, t))}
         onDelete={() => void (f === null ? onDelete(s.id) : f.c.deleteSession(s.id))}
+        onMenu={() => onThreadMenu(s.id, sessionTitle(s))}
       />
     );
   };
@@ -764,7 +782,17 @@ export function Sidebar({
         <HeaderButton label="Close project" onClick={onDisconnect}>
           <Unplug />
         </HeaderButton>
-        <span className="link ml-auto flex min-w-0 items-center gap-1.5 px-1 text-2xs text-muted-foreground">
+        {update !== null && (
+          <button
+            type="button"
+            className="update ml-auto min-w-0 cursor-pointer truncate rounded px-1 text-2xs text-muted-foreground hover:text-foreground"
+            title={`Deck ${update.version} is downloaded. Restart to install it.`}
+            onClick={update.onRestart}
+          >
+            Update ready · Restart
+          </button>
+        )}
+        <span className={cn("link flex min-w-0 items-center gap-1.5 px-1 text-2xs text-muted-foreground", update === null && "ml-auto")}>
           <span className={cn("dot size-1.5 shrink-0 rounded-full", linkDot[link])} />
           <span className="truncate">{LINK_LABEL[link]}</span>
         </span>

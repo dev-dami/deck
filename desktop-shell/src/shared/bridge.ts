@@ -157,6 +157,42 @@ export type TermEvent =
   | { type: "term-exit"; term: string; code: number }
   | { type: "term-end"; term: string; code: number; message: string };
 
+// The commands of the application menu. Main sends one on MENU_EVENT_CHANNEL;
+// the renderer runs the palette command that matches it.
+export const MENU_COMMANDS = [
+  "new-thread",
+  "open-folder",
+  "settings",
+  "toggle-sidebar",
+  "toggle-panel",
+  "toggle-terminal",
+  "palette",
+  "about",
+] as const;
+
+export type MenuCommand = (typeof MENU_COMMANDS)[number];
+
+// A deck:// link or a folder argument, sent on LINK_EVENT_CHANNEL. "pair"
+// carries the invite line for the pairing form; "open" a folder that exists.
+export type LinkEvent = { type: "pair"; url: string } | { type: "open"; path: string };
+
+// What the updater tells the window: an update is downloaded and waits for
+// a restart, or the answer to "Check for updates" in the Help menu.
+export type UpdateEvent = { type: "ready"; version: string } | { type: "status"; message: string };
+
+export const LOG_LEVELS = ["error", "warn", "info"] as const;
+export type LogLevel = (typeof LOG_LEVELS)[number];
+
+export interface AppInfo {
+  version: string;
+  electron: string;
+  chromium: string;
+  platform: string;
+}
+
+// The item picked in a thread row's native menu, or null.
+export type ThreadChoice = "rename" | "delete" | null;
+
 // What main does for the renderer. The Electron main process serves it over
 // IPC; the end-to-end tests serve the same object to a browser page.
 export interface DeckHost {
@@ -189,12 +225,28 @@ export interface DeckHost {
   phoneNewCode(): Promise<PhoneOutcome>;
   phoneRevoke(deviceId: string): Promise<PhoneOutcome>;
   phoneStop(): Promise<PhoneOutcome>;
+  // The app's version and its runtime, for Settings > About.
+  appInfo(): Promise<AppInfo>;
+  openLogs(): Promise<void>;
+  // Writes an error of the window to the app's log file.
+  logFromRenderer(level: LogLevel, message: string): Promise<void>;
+  // Quits and starts the downloaded update.
+  installUpdate(): Promise<void>;
+  // Shows the native menu of a thread row and resolves with the choice.
+  threadMenu(thread: { id: string; title: string }): Promise<ThreadChoice>;
 }
 
-// The renderer's view: the host plus the socket and rpc event streams.
+// The renderer's view: the host, the event streams, and the path of a
+// folder dropped on the window.
 export interface DeckBridge extends DeckHost {
   onSocket(fn: (id: number, ev: SocketEvent) => void): () => void;
   onRpc(fn: (id: string, ev: RpcStreamEvent) => void): () => void;
+  onMenu(fn: (command: MenuCommand) => void): () => void;
+  onLink(fn: (link: LinkEvent) => void): () => void;
+  onUpdate(fn: (ev: UpdateEvent) => void): () => void;
+  // The path of a dropped folder. The window passes only folders, and main
+  // checks that the path is one before it opens it.
+  folderPath(file: File): string;
 }
 
 export const HOST_METHODS = [
@@ -218,12 +270,20 @@ export const HOST_METHODS = [
   "phoneNewCode",
   "phoneRevoke",
   "phoneStop",
+  "appInfo",
+  "openLogs",
+  "logFromRenderer",
+  "installUpdate",
+  "threadMenu",
 ] as const satisfies ReadonlyArray<keyof DeckHost>;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
 
 export const SOCKET_EVENT_CHANNEL = "deck:socket";
 export const RPC_EVENT_CHANNEL = "deck:rpc";
+export const MENU_EVENT_CHANNEL = "deck:menu";
+export const LINK_EVENT_CHANNEL = "deck:link";
+export const UPDATE_EVENT_CHANNEL = "deck:update";
 
 export function hostChannel(m: HostMethod): string {
   return `deck:${m}`;
