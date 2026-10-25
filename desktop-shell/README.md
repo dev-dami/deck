@@ -136,10 +136,10 @@ T3's look stays in the theme catalog.
 - **Keys.** Ctrl+K (Cmd+K) searches threads and commands. Ctrl+B hides the
   sidebar. Enter sends. Shift+Enter adds a line.
 - **Images.** Paste, drop or attach an image to send it.
-- **Fonts.** The window uses Geist Sans and Geist Mono from the `geist`
-  package, under the SIL Open Font License 1.1. The build bundles the two
-  variable woff2 files. The `geist` package names Next.js as a peer, so
-  `.npmrc` sets `legacy-peer-deps` and npm leaves Next.js out.
+- **Fonts.** The window uses Geist Sans and Geist Mono, under the SIL Open
+  Font License 1.1. The two variable woff2 files and the licence are copied
+  from the `geist` npm package (1.7.2) into `src/renderer/fonts/`, and the
+  build bundles them.
 
 ## Build, test and package
 
