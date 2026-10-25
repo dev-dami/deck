@@ -1,19 +1,129 @@
 import type { AgentLine, ChangedFile, Session, Theme } from "@web/protocol";
 import { sessionTitle } from "@web/state";
 import { kindMark } from "@web/theme";
-import { FileDiff, PanelLeft, PanelRight, SquareTerminal } from "lucide-react";
+import { ArrowDownToLine, FileDiff, GitBranch, PanelLeft, PanelRight, SquareTerminal, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { agentColour } from "../agents";
+import { type DeckClient, serves } from "../client";
 import type { Team } from "../crew";
 import { shortId } from "../lanes";
 import type { ProjectApi } from "../project";
 import { type Git, GitActions } from "./Git";
 import { Button } from "./kit/button";
+import { Confirm } from "./kit/dialog";
+import { MenuItem, Popover } from "./kit/menu";
 import { ShareStack } from "./Team";
+
+const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
+
+// The room's branch beside its title, and what can be done with it: apply
+// its changes to the shared tree or discard it when the room is isolated,
+// or move the room onto a branch of its own. Each item needs its call.
+function BranchMenu({
+  c,
+  open,
+  branch,
+  files,
+  onChanged,
+  onInfo,
+}: {
+  c: DeckClient;
+  open: Session;
+  branch: string;
+  files: ChangedFile[] | null;
+  onChanged: () => void;
+  onInfo: (t: string) => void;
+}) {
+  const [menu, setMenu] = useState(false);
+  const [discard, setDiscard] = useState(false);
+  const isolated = branch !== "";
+  const items = isolated ? ["ApplyIsolated", "UnisolateSession"] : ["IsolateSession"];
+  if (!items.some((m) => serves(c, m))) return null;
+  const run = (f: () => Promise<void>) => () => {
+    setMenu(false);
+    void f().then(onChanged);
+  };
+  const changed = files?.length ?? 0;
+  return (
+    <>
+      <Popover
+        open={menu}
+        onClose={() => setMenu(false)}
+        label="Branch"
+        className="w-60"
+        trigger={
+          <button
+            type="button"
+            className="room-branch flex h-6 min-w-0 max-w-48 shrink cursor-pointer items-center gap-1 rounded-md px-1.5 font-mono text-2xs text-faint outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={isolated ? `Branch ${branch}` : "Branch"}
+            aria-expanded={menu}
+            title={isolated ? branch : "This thread works in the shared tree"}
+            onClick={() => setMenu((m) => !m)}
+          >
+            <GitBranch className="size-3 shrink-0" />
+            {isolated && <span className="truncate">{branch}</span>}
+          </button>
+        }
+      >
+        {isolated ? (
+          <>
+            <MenuItem
+              disabled={!serves(c, "ApplyIsolated")}
+              onClick={run(async () => {
+                const applied = await c.applyIsolated?.(open.id);
+                if (applied === null || applied === undefined) return;
+                onInfo(applied.length === 0 ? "Nothing to apply." : `Applied ${count(applied.length, "file")} to your tree: ${applied.join(", ")}`);
+              })}
+            >
+              <ArrowDownToLine /> Apply to my tree
+            </MenuItem>
+            <MenuItem
+              className="text-destructive-foreground"
+              disabled={!serves(c, "UnisolateSession")}
+              onClick={() => {
+                setMenu(false);
+                setDiscard(true);
+              }}
+            >
+              <Trash2 /> Discard branch
+            </MenuItem>
+          </>
+        ) : (
+          <MenuItem
+            disabled={open.busy}
+            title={open.busy ? "Stop the agents first" : undefined}
+            onClick={run(async () => {
+              if (await c.isolateSession?.(open.id)) onInfo("The thread works on a branch of its own now.");
+            })}
+          >
+            <GitBranch /> Move to its own branch
+          </MenuItem>
+        )}
+      </Popover>
+      {discard && (
+        <Confirm
+          title={`Discard ${branch}?`}
+          description={`Deck removes the branch ${branch} and its worktree, with ${count(changed, "changed file")} you did not apply. The thread goes back to the shared tree.`}
+          action="Discard branch"
+          onClose={() => setDiscard(false)}
+          onConfirm={() => {
+            void c.unisolate?.(open.id).then((ok) => {
+              if (ok) onInfo(`Discarded ${branch}.`);
+              onChanged();
+            });
+          }}
+        />
+      )}
+    </>
+  );
+}
 
 // The room header, one row: the room's corner index and title, the git
 // actions, who follows the room, and the side panel's toggles.
 export function RoomHeader({
+  c,
+  branch,
+  onChanged,
   sidebar,
   onShowSidebar,
   project,
@@ -39,6 +149,11 @@ export function RoomHeader({
   onError,
   onInfo,
 }: {
+  c: DeckClient;
+  // The room's own branch when it is isolated, else "".
+  branch: string;
+  // The room's changed files may have changed (apply, discard).
+  onChanged: () => void;
   sidebar: boolean;
   onShowSidebar: () => void;
   project: string;
@@ -113,12 +228,15 @@ export function RoomHeader({
           />
         ) : (
           <h1
-            className="title min-w-0 flex-1 truncate font-medium text-foreground"
+            className="title min-w-0 truncate font-medium text-foreground"
             title={open === undefined ? undefined : "Double-click to rename"}
             onDoubleClick={() => open !== undefined && setRenaming(true)}
           >
             {title}
           </h1>
+        )}
+        {open !== undefined && (
+          <BranchMenu c={c} open={open} branch={branch} files={files} onChanged={onChanged} onInfo={onInfo} />
         )}
       </div>
       {api !== undefined && <GitActions git={git} project={api} threadTitle={open === undefined ? "" : sessionTitle(open)} onError={onError} onInfo={onInfo} />}

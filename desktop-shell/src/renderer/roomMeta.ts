@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react";
+
 // What a local Deck says of a room beyond the shared Session: what it waits
 // for, its branch and whether it is archived (deck.v1 Session), the leases
 // its agents hold (lease_changed) and the notices the engine marked
@@ -99,4 +101,13 @@ export class RoomMetaStore {
     this.rooms = next;
     for (const l of this.listeners) l();
   }
+}
+
+const NO_ROOMS: ReadonlyMap<string, RoomMeta> = new Map();
+const noRooms = () => NO_ROOMS;
+const noSubscribe = () => () => {};
+
+// Every room of a client, for React; empty without a store.
+export function useRoomMetas(store: RoomMetaStore | undefined): ReadonlyMap<string, RoomMeta> {
+  return useSyncExternalStore(store?.subscribe ?? noSubscribe, store?.snapshot ?? noRooms);
 }

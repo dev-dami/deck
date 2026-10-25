@@ -86,6 +86,7 @@ const room = (extra: Partial<RoomInput> = {}): RoomInput => ({
   unread: false,
   open: false,
   changed: 0,
+  attention: null,
   ...extra,
 });
 
@@ -135,7 +136,7 @@ describe("roomStatus", () => {
   });
 
   test("an unseen overlap notice shows until it is seen", () => {
-    const notice = { session: "a", text: OVERLAP, at: T0 + 3, seen: false };
+    const notice = { session: "a", text: OVERLAP, at: T0 + 3, seen: false, via: null };
     expect(roomStatus(room({ session: session("a", { busy: true }), notices: [notice] }))).toEqual({
       state: "overlap",
       label: "codex-2 and claude-1 both changed auth.go",
@@ -156,10 +157,40 @@ describe("roomStatus", () => {
   });
 
   test("needs-you wins over an overlap, an overlap over work", () => {
-    const notice = { session: "a", text: OVERLAP, at: T0, seen: false };
+    const notice = { session: "a", text: OVERLAP, at: T0, seen: false, via: null };
     const busy = session("a", { busy: true });
     expect(roomStatus(room({ session: busy, notices: [notice], approvals: [approval("p", "a", T0)] })).state).toBe("needs-you");
     expect(roomStatus(room({ session: busy, notices: [notice] })).state).toBe("overlap");
+  });
+
+  test("an engine that marks its notices: via overlap is an overlap, the text alone is not", () => {
+    const marked = { session: "a", text: OVERLAP, at: T0 + 3, seen: false, via: "overlap" };
+    expect(roomStatus(room({ notices: [marked] }))).toEqual({ state: "overlap", label: "codex-2 and claude-1 both changed auth.go", at: T0 + 3 });
+    // A note in other words is still an overlap, under its own text.
+    expect(roomStatus(room({ notices: [{ ...marked, text: "claude-1 and codex-2 touch a.go" }] })).label).toBe("claude-1 and codex-2 touch a.go");
+    // The same words without the mark: a plain notice.
+    expect(roomStatus(room({ notices: [{ ...marked, via: "" }] })).state).toBe("idle");
+    expect(roomStatus(room({ notices: [{ ...marked, via: "local", text: "You reverted a.go" }] })).state).toBe("idle");
+  });
+
+  test("the engine's attention needs you, and the shell keeps its clearing rules", () => {
+    expect(roomStatus(room({ attention: "approval" }))).toEqual({ state: "needs-you", label: "Approve a request", at: T0 });
+    expect(roomStatus(room({ attention: "question" })).label).toBe("Answer a question");
+    // The shell's own list names the thing better.
+    expect(roomStatus(room({ attention: "approval", approvals: [approval("p1", "a", T0 + 5)] })).label).toBe("Approve command");
+    expect(roomStatus(room({ attention: "" })).state).toBe("idle");
+    // An error clears when the person writes again.
+    expect(roomStatus(room({ attention: "error" })).label).toBe("An agent stopped with an error");
+    expect(roomStatus(room({ attention: "error", actedAt: T0 })).state).toBe("idle");
+    expect(roomStatus(room({ attention: "error", agents: [agent("codex-2", "error", T0 - 5)], actedAt: T0 })).state).toBe("idle");
+  });
+
+  test("the engine's blocked holds until the task changes, whatever the person writes", () => {
+    const tasks = [task("t1", "blocked", T0 + 9)];
+    expect(roomStatus(room({ attention: "blocked", tasks, actedAt: T0 + 100 }))).toEqual({ state: "needs-you", label: "Task blocked: Task t1", at: T0 + 9 });
+    expect(roomStatus(room({ attention: "blocked" })).label).toBe("Task blocked");
+    // A retry or a cancel: the engine says nothing more, and the board no longer counts.
+    expect(roomStatus(room({ attention: "", tasks })).state).toBe("idle");
   });
 });
 
@@ -244,9 +275,10 @@ describe("inboxItems", () => {
       },
       approvals: [approval("p1", "a", T0 + 1)],
       notices: [
-        { session: "b", text: "PR #12 opened", at: T0 + 60, seen: false },
-        { session: "b", text: "old news", at: T0 + 2, seen: true },
-        { session: "b", text: OVERLAP, at: T0 + 61, seen: false },
+        { session: "b", text: "PR #12 opened", at: T0 + 60, seen: false, via: null },
+        { session: "b", text: "old news", at: T0 + 2, seen: true, via: null },
+        { session: "b", text: OVERLAP, at: T0 + 61, seen: false, via: null },
+        { session: "b", text: "codex-2 touches a.go too", at: T0 + 62, seen: false, via: "overlap" },
       ],
       contracts: [contract("c1", "proposed"), contract("c2", "accepted"), contract("c3", "proposed", false)],
     });

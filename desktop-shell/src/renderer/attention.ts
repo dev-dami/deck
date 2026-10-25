@@ -2,6 +2,7 @@ import type { Approval, Message, QueuedItem, Session } from "@web/protocol";
 import { sessionTitle } from "@web/state";
 import { toMillis } from "@web/time";
 import type { AgentNode, BoardTask, TeamContract } from "./crew";
+import type { Attention } from "./roomMeta";
 
 // One status per room, derived from what Deck sent and what the person did.
 // The sidebar, the inbox, the badge and the notifications all read it.
@@ -23,6 +24,10 @@ export interface RoomNotice {
   text: string;
   at: number;
   seen: boolean;
+  // How the notice is marked: "overlap" (the engine's overlap note), "local"
+  // (the shell's own, such as a revert) or "". null when the Deck does not
+  // mark its notices (an older engine, or a paired Deck).
+  via: string | null;
 }
 
 export interface Overlap {
@@ -30,9 +35,8 @@ export interface Overlap {
   file: string;
 }
 
-// The engine writes overlap notes as plain notices: "claude-1 and codex-2
-// both changed a.go in the last few minutes; one may undo the other". It
-// will mark them with a via field; this function is the one to swap then.
+// The engine's overlap note: "claude-1 and codex-2 both changed a.go in the
+// last few minutes; one may undo the other".
 export function parseOverlap(text: string): Overlap | null {
   const m = /^(\S+) and (\S+) both changed (.+?)(?: in the last few minutes\b.*)?$/s.exec(text.trim());
   if (m === null) return null;
@@ -40,6 +44,16 @@ export function parseOverlap(text: string): Overlap | null {
 }
 
 const base = (path: string): string => path.split(/[\\/]/).pop() || path;
+
+// The label of an overlap notice, or null for another notice. The engine
+// marks its overlap notes (via); the text is matched only for a Deck that
+// does not mark them.
+export function overlapLabel(n: RoomNotice): string | null {
+  if (n.via !== null && n.via !== "overlap") return null;
+  const o = parseOverlap(n.text);
+  if (o === null) return n.via === "overlap" ? n.text : null;
+  return `${o.agents[0]} and ${o.agents[1]} both changed ${base(o.file)}`;
+}
 
 export function approvalLabel(a: Approval): string {
   if (a.kind === "command") return "Approve command";
@@ -64,7 +78,15 @@ export interface RoomInput {
   open: boolean;
   // The files the room changed, as of its last finish.
   changed: number;
+  // What the engine says the room waits for; null when it does not say.
+  attention: Attention | null;
 }
+
+const ENGINE_LABEL: Record<"approval" | "question" | "error", string> = {
+  approval: "Approve a request",
+  question: "Answer a question",
+  error: "An agent stopped with an error",
+};
 
 function needsYou(r: RoomInput, updated: number): RoomStatus | null {
   const first = r.approvals[0];
@@ -78,12 +100,29 @@ function needsYou(r: RoomInput, updated: number): RoomStatus | null {
     // An error stands until the person writes again or the agent moves on.
     if (a.status === "error" && at > r.actedAt) return { state: "needs-you", label: `${a.name} stopped with an error`, at };
   }
-  for (const t of r.tasks) {
-    // A task without a time never outranks what the person did.
-    if ((t.status === "blocked" || t.status === "failed") && t.updatedAt > r.actedAt) {
-      const what = t.status === "blocked" ? "Task blocked" : "Task failed";
-      return { state: "needs-you", label: `${what}: ${t.title || t.id}`, at: t.updatedAt };
+  const stuck = (t: BoardTask) => t.status === "blocked" || t.status === "failed";
+  const taskLabel = (t: BoardTask) => `${t.status === "blocked" ? "Task blocked" : "Task failed"}: ${t.title || t.id}`;
+  if (r.attention === null) {
+    for (const t of r.tasks) {
+      // A task without a time never outranks what the person did.
+      if (stuck(t) && t.updatedAt > r.actedAt) return { state: "needs-you", label: taskLabel(t), at: t.updatedAt };
     }
+    return null;
+  }
+  // The engine's word. Its blocked holds until a retry or a cancel changes
+  // the task, so a message from the person does not clear it.
+  switch (r.attention) {
+    case "blocked": {
+      const t = r.tasks.find((x) => stuck(x) && !x.entry);
+      return { state: "needs-you", label: t === undefined ? "Task blocked" : taskLabel(t), at: t?.updatedAt || updated };
+    }
+    case "approval":
+    case "question":
+      return { state: "needs-you", label: ENGINE_LABEL[r.attention], at: updated };
+    case "error":
+      // The agents tree names the agent, and the loop above weighed it.
+      if (r.agents.some((a) => a.status === "error") || updated <= r.actedAt) return null;
+      return { state: "needs-you", label: ENGINE_LABEL.error, at: updated };
   }
   return null;
 }
@@ -104,15 +143,12 @@ export function roomStatus(r: RoomInput): RoomStatus {
   const updated = toMillis(r.session.updated_at);
   const need = needsYou(r, updated);
   if (need !== null) return need;
-  let overlap: { n: RoomNotice; o: Overlap } | null = null;
+  let overlap: { n: RoomNotice; label: string } | null = null;
   for (const n of r.notices) {
-    const o = n.seen ? null : parseOverlap(n.text);
-    if (o !== null && (overlap === null || n.at >= overlap.n.at)) overlap = { n, o };
+    const label = n.seen ? null : overlapLabel(n);
+    if (label !== null && (overlap === null || n.at >= overlap.n.at)) overlap = { n, label };
   }
-  if (overlap !== null) {
-    const { o, n } = overlap;
-    return { state: "overlap", label: `${o.agents[0]} and ${o.agents[1]} both changed ${base(o.file)}`, at: n.at };
-  }
+  if (overlap !== null) return { state: "overlap", label: overlap.label, at: overlap.n.at };
   if (r.session.busy) return { state: "working", label: workingLabel(r.agents), at: updated };
   if (r.unread && !r.open) {
     return r.changed > 0 ? { state: "review", label: "Changes to review", at: updated } : { state: "done", label: "Finished", at: updated };
@@ -234,7 +270,7 @@ export function inboxItems(projects: InboxProject[]): InboxItem[] {
       out.push({ ...head, id: `${p.key}/room/${s.id}`, room: s.id, title: sessionTitle(s), state: st.state, label: st.label, at: st.at, action: "open" });
     }
     for (const n of p.notices) {
-      if (n.seen || !ids.has(n.session) || parseOverlap(n.text) !== null) continue;
+      if (n.seen || !ids.has(n.session) || overlapLabel(n) !== null) continue;
       out.push({ ...head, id: `${p.key}/notice/${n.session}/${n.at}/${n.text}`, room: n.session, title: title(n.session), state: "notice", label: n.text, at: n.at, action: "open" });
     }
     for (const c of p.contracts) {

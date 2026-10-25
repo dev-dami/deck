@@ -2,6 +2,7 @@ import { Store } from "@web/controller";
 import type { Approval, Message, Session } from "@web/protocol";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
+  addLocalNotice,
   addNotice,
   attachProject,
   dispatchUi,
@@ -15,6 +16,7 @@ import {
   subscribe,
 } from "./appState";
 import { loadDraft } from "./drafts";
+import { RoomMetaStore } from "./roomMeta";
 
 const s = (id: string, last_text = ""): Session => ({
   id,
@@ -214,6 +216,30 @@ describe("the per-project app state", () => {
     // A dropped project's store toasts every notice again.
     store.dispatch({ type: "event", event: { e: "notice", p: { session_id: "b", text: "late" } } });
     expect(store.state.toasts.at(-1)?.text).toBe("late");
+  });
+
+  test("a Deck that marks its rooms: its attention and its overlap marks feed the status", () => {
+    const store = deck();
+    const rooms = new RoomMetaStore();
+    attachProject("r6", "folder:/r6", store, { changes: async () => [], rooms, capabilities: () => ["ArchiveSession"] });
+    rooms.apply({ k: "session", id: "a", attention: "question", branch: "", archived: false });
+    expect(projectState("r6").rooms["a"]).toMatchObject({ state: "needs-you", label: "Answer a question" });
+    rooms.apply({ k: "session", id: "a", attention: "", branch: "", archived: false });
+    expect(projectState("r6").rooms["a"]?.state).toBe("idle");
+    // The rpc client keeps the mark just before the notice reaches the store.
+    rooms.apply({ k: "note", session: "b", note: { text: "codex-2 touches auth.go too", via: "overlap" } });
+    store.dispatch({ type: "event", event: { e: "notice", p: { session_id: "b", text: "codex-2 touches auth.go too" } } });
+    expect(projectState("r6").rooms["b"]).toMatchObject({ state: "overlap", label: "codex-2 touches auth.go too" });
+    // Overlap words without the mark are a plain notice.
+    const words = "claude-1 and codex-2 both changed a.go in the last few minutes; one may undo the other";
+    store.dispatch({ type: "event", event: { e: "notice", p: { session_id: "a", text: words } } });
+    expect(projectState("r6").rooms["a"]?.state).toBe("idle");
+    expect(projectState("r6").notices.map((n) => n.via)).toEqual(["overlap", ""]);
+    // The shell's own note shows in the room and never toasts.
+    addLocalNotice("r6", "a", "You reverted a.go");
+    expect(projectState("r6").notices.at(-1)).toMatchObject({ session: "a", text: "You reverted a.go", via: "local" });
+    expect(store.state.toasts).toEqual([]);
+    dropProject("r6");
   });
 
   test("the engine state is the project's", () => {

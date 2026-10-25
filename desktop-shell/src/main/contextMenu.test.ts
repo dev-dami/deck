@@ -1,6 +1,7 @@
 import type { MenuItemConstructorOptions } from "electron";
 import { describe, expect, test } from "vitest";
-import { type ContextActions, type ContextParams, contextMenuTemplate } from "./contextMenu";
+import type { ThreadChoice } from "../shared/bridge";
+import { type ContextActions, type ContextParams, contextMenuTemplate, threadMenuTemplate } from "./contextMenu";
 
 const none: ContextParams = {
   x: 10,
@@ -77,5 +78,24 @@ describe("contextMenuTemplate", () => {
     expect(names(t)).toEqual(["copy", "-", "Copy image"]);
     click(t, "Copy image");
     expect(calls).toEqual(["image 10,20"]);
+  });
+});
+
+describe("threadMenuTemplate", () => {
+  test("a thread row offers Rename, Archive and Delete; Archive picks archive", () => {
+    const picked: ThreadChoice[] = [];
+    const t = threadMenuTemplate("on", (c) => picked.push(c));
+    expect(names(t)).toEqual(["Rename…", "Archive", "-", "Delete…"]);
+    expect(t[1]?.enabled).toBe(true);
+    click(t, "Archive");
+    click(t, "Rename…");
+    expect(picked).toEqual(["archive", "rename"]);
+  });
+
+  test("Archive is off while an agent works, and gone for a Deck that cannot archive", () => {
+    const busy = threadMenuTemplate("busy", () => {});
+    expect(names(busy)).toEqual(["Rename…", "Archive (stop its agents first)", "-", "Delete…"]);
+    expect(busy[1]?.enabled).toBe(false);
+    expect(names(threadMenuTemplate("none", () => {}))).toEqual(["Rename…", "-", "Delete…"]);
   });
 });

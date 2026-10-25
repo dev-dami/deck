@@ -17,7 +17,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { name: "ask", args: "", detail: "Switch to Ask mode" },
   { name: "yolo", args: "", detail: "Switch to Yolo mode" },
   { name: "new", args: "[title]", detail: "Start a new thread" },
-  { name: "race", args: "<n> [kind] <brief>", detail: `Race ${RACE_MIN} to ${RACE_MAX} agents on one brief` },
+  { name: "race", args: "<n> [kind] [judge] <brief>", detail: `Race ${RACE_MIN} to ${RACE_MAX} agents on one brief` },
   { name: "share", args: "", detail: "Share this room" },
   { name: "stop", args: "", detail: "Stop all agents" },
   { name: "clear", args: "", detail: "Clear the draft" },
@@ -26,14 +26,16 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
 export type Slash =
   | { cmd: "mode"; mode: Mode }
   | { cmd: "new"; title: string }
-  | { cmd: "race"; text: string }
+  // text is the race as a message, for a Deck without StartRace; judge
+  // asks one more agent to rank the entries.
+  | { cmd: "race"; text: string; kind: string; count: number; brief: string; judge: boolean }
   | { cmd: "share" }
   | { cmd: "stop" }
   | { cmd: "clear" };
 
 export type SlashParse = Slash | { error: string } | null;
 
-const RACE_USAGE = "Use /race <n> [kind] <brief>, for example /race 3 codex fix the flaky test.";
+const RACE_USAGE = "Use /race <n> [kind] [judge] <brief>, for example /race 3 codex judge fix the flaky test.";
 
 // Reads a whole message as a slash command: null when it is not one. kinds
 // are the agent kinds a race may name; fallback is the kind of a race that
@@ -77,8 +79,12 @@ function race(rest: string, kinds: readonly string[], fallback: string | null): 
     brief = (first[2] ?? "").trim();
   }
   if (kind === null) return { error: "Name the kind of agent to race: /race 3 codex <brief>." };
+  // judge alone is a race without a brief too.
+  if (brief.toLowerCase() === "judge") return { error: RACE_USAGE };
+  const judged = /^judge\s+([\s\S]+)$/i.exec(brief);
+  if (judged !== null) brief = (judged[1] ?? "").trim();
   const text = raceText(kind, n, brief);
-  return text === null ? { error: RACE_USAGE } : { cmd: "race", text };
+  return text === null ? { error: RACE_USAGE } : { cmd: "race", text, kind, count: n, brief, judge: judged !== null };
 }
 
 export function slashCommand(name: string): SlashCommand | undefined {

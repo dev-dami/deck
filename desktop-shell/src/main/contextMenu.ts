@@ -1,4 +1,5 @@
 import type { MenuItemConstructorOptions } from "electron";
+import type { ArchiveOffer, ThreadChoice } from "../shared/bridge";
 
 // The parts of Electron's ContextMenuParams the menu reads.
 export interface ContextParams {
@@ -51,4 +52,14 @@ export function contextMenuTemplate(p: ContextParams, a: ContextActions): MenuIt
     groups.push([{ label: "Copy image", click: () => a.copyImage(p.x, p.y) }]);
   }
   return groups.flatMap((g, i) => (i === 0 ? g : [{ type: "separator" as const }, ...g]));
+}
+
+// A thread row's menu: Rename, Archive (off while an agent works; a native
+// menu has no tooltip, so the label says why) and Delete.
+export function threadMenuTemplate(archive: ArchiveOffer, pick: (c: ThreadChoice) => void): MenuItemConstructorOptions[] {
+  const items: MenuItemConstructorOptions[] = [{ label: "Rename…", click: () => pick("rename") }];
+  if (archive !== "none") {
+    items.push({ label: archive === "on" ? "Archive" : "Archive (stop its agents first)", enabled: archive === "on", click: () => pick("archive") });
+  }
+  return [...items, { type: "separator" }, { label: "Delete…", click: () => pick("delete") }];
 }

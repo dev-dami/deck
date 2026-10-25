@@ -26,13 +26,35 @@ export interface SharedEntry {
 
 const itemKey = (x: SidebarItem) => `${x.source}/${x.s.id}`;
 
-// The live threads, then the settled ones behind a fold. A list past
-// VIRTUAL_AFTER rows renders the rows in view only.
+// A fold of threads: its name and count, and a line to the chevron.
+function Fold({ name, count, shown, onToggle }: { name: string; count: number; shown: boolean; onToggle: () => void }) {
+  return (
+    <li className="list-none">
+      <button
+        type="button"
+        className="mt-1 flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-2xs text-faint outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        aria-expanded={shown}
+        onClick={onToggle}
+      >
+        <span>{shown ? name : `${name} (${count})`}</span>
+        <span className="h-px flex-1 bg-hairline" />
+        {shown ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+      </button>
+    </li>
+  );
+}
+
+// The live threads, then the settled ones behind a fold, then the archived
+// ones behind another, closed at first. A list past VIRTUAL_AFTER rows
+// renders the rows in view only.
 export function ThreadList({
   live,
   settled,
   shown,
   onToggle,
+  archived,
+  archivedShown,
+  onToggleArchived,
   row,
   scroller,
   estimate,
@@ -42,6 +64,9 @@ export function ThreadList({
   // The settled threads show.
   shown: boolean;
   onToggle: () => void;
+  archived: SidebarItem[];
+  archivedShown: boolean;
+  onToggleArchived: () => void;
   row: (x: SidebarItem) => ReactElement;
   scroller: RefObject<HTMLElement | null>;
   // A row's height before it is measured.
@@ -53,21 +78,10 @@ export function ThreadList({
   return (
     <>
       {list(live)}
-      {settled.length > 0 && (
-        <li className="list-none">
-          <button
-            type="button"
-            className="mt-1 flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-2xs text-faint outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            aria-expanded={shown}
-            onClick={onToggle}
-          >
-            <span>{shown ? "Settled" : `Settled (${settled.length})`}</span>
-            <span className="h-px flex-1 bg-hairline" />
-            {shown ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-          </button>
-        </li>
-      )}
+      {settled.length > 0 && <Fold name="Settled" count={settled.length} shown={shown} onToggle={onToggle} />}
       {shown && list(settled)}
+      {archived.length > 0 && <Fold name="Archived" count={archived.length} shown={archivedShown} onToggle={onToggleArchived} />}
+      {archivedShown && list(archived)}
     </>
   );
 }

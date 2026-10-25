@@ -29,6 +29,8 @@ export interface Prefs {
   // Native notifications while the window is in the background.
   notifications: NotifyPref;
   sound: boolean;
+  // A new thread starts on a branch of its own (a Deck that can isolate).
+  isolate: boolean;
 }
 
 export const defaultPrefs: Prefs = {
@@ -45,6 +47,7 @@ export const defaultPrefs: Prefs = {
   terminalHeight: 280,
   notifications: "all",
   sound: true,
+  isolate: true,
 };
 
 const KEY = "deck.desktop.prefs";
@@ -83,6 +86,7 @@ function merge(v: Record<string, unknown>): Prefs {
     terminalHeight: size("terminalHeight", defaultPrefs.terminalHeight),
     notifications: pick("notifications", ["all", "needs-you", "none"] as const, defaultPrefs.notifications),
     sound: bool("sound", defaultPrefs.sound),
+    isolate: bool("isolate", defaultPrefs.isolate),
   };
 }
 

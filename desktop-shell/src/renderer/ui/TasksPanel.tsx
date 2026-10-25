@@ -44,6 +44,7 @@ import { DiffView } from "./DiffView";
 import { Button } from "./kit/button";
 import { EmptyState } from "./kit/empty";
 import { Dialog, fieldClass } from "./kit/dialog";
+import { Switch } from "./kit/switch";
 
 // The Tasks tab of a room: what waits for a busy agent, the task board the
 // agents split the work into (races and their entries, reviews), the
@@ -271,12 +272,33 @@ function TaskCard({
   );
 }
 
-// A race as a form: the brief, one kind, two to six entries. It sends the
-// message the composer would ("$codex×3 brief").
-function RaceForm({ kinds, theme, onRace }: { kinds: string[]; theme: Theme | null; onRace: (text: string) => Promise<boolean> }) {
+// A race the form starts: text is the message the composer would send
+// ("$codex×3 brief") for a Deck without StartRace.
+export interface RaceStart {
+  text: string;
+  kind: string;
+  count: number;
+  brief: string;
+  judge: boolean;
+}
+
+// A race as a form: the brief, one kind, two to six entries, and a judge
+// to rank them when the Deck starts races itself (canJudge).
+function RaceForm({
+  kinds,
+  theme,
+  canJudge,
+  onRace,
+}: {
+  kinds: string[];
+  theme: Theme | null;
+  canJudge: boolean;
+  onRace: (r: RaceStart) => Promise<boolean>;
+}) {
   const [brief, setBrief] = useState("");
   const [kind, setKind] = useState(kinds[0] ?? "");
   const [count, setCount] = useState(3);
+  const [judge, setJudge] = useState(true);
   const text = raceText(kind, count, brief);
   return (
     <form
@@ -284,7 +306,7 @@ function RaceForm({ kinds, theme, onRace }: { kinds: string[]; theme: Theme | nu
       onSubmit={(e) => {
         e.preventDefault();
         if (text === null) return;
-        void onRace(text).then((sent) => {
+        void onRace({ text, kind, count, brief: brief.trim(), judge: canJudge && judge }).then((sent) => {
           if (sent) setBrief("");
         });
       }}
@@ -335,6 +357,12 @@ function RaceForm({ kinds, theme, onRace }: { kinds: string[]; theme: Theme | nu
             <Plus className="size-3" />
           </button>
         </span>
+        {canJudge && (
+          <span className="race-judge flex items-center gap-1.5 text-muted-foreground" title="One more agent ranks the entries">
+            <Switch label="Judge" checked={judge} onChange={setJudge} />
+            Judge
+          </span>
+        )}
         <Button type="submit" size="xs" className="ml-auto" disabled={text === null}>
           <Flag /> Start race ({count})
         </Button>
@@ -413,6 +441,7 @@ export function TasksPanel({
   kinds,
   theme,
   branch,
+  canJudge,
   onRace,
   onEditQueued,
   onError,
@@ -428,7 +457,9 @@ export function TasksPanel({
   theme: Theme | null;
   // The work tree's branch, to tell whether Changes holds a task's diff.
   branch: string | null;
-  onRace: (text: string) => Promise<boolean>;
+  // Races start through StartRace and may have a judge.
+  canJudge: boolean;
+  onRace: (r: RaceStart) => Promise<boolean>;
   // Puts a queued message back in the composer.
   onEditQueued?: (text: string) => void;
   onError: (t: string) => void;
@@ -527,7 +558,7 @@ export function TasksPanel({
               </Button>
             }
           >
-            {racing && <RaceForm kinds={kinds} theme={theme} onRace={onRace} />}
+            {racing && <RaceForm kinds={kinds} theme={theme} canJudge={canJudge} onRace={onRace} />}
           </Section>
         </>
       )}

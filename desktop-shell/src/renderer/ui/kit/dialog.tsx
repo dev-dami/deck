@@ -17,7 +17,7 @@ export function Dialog({
   title: string;
   description?: ReactNode;
   onClose: () => void;
-  children: ReactNode;
+  children?: ReactNode;
   footer?: ReactNode;
   className?: string;
 }) {
@@ -53,10 +53,51 @@ export function Dialog({
             <X />
           </Button>
         </header>
-        <div className="flex flex-col gap-3 px-5 py-2">{children}</div>
+        {children !== undefined && <div className="flex flex-col gap-3 px-5 py-2">{children}</div>}
         {footer !== undefined && <footer className="flex items-center justify-end gap-2 px-5 pt-2 pb-4">{footer}</footer>}
       </div>
     </div>
+  );
+}
+
+// The question before a destructive action. The title and the description
+// name what it acts on; the button names the action.
+export function Confirm({
+  title,
+  description,
+  action,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  description: ReactNode;
+  action: string;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog
+      title={title}
+      description={description}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              onClose();
+              onConfirm();
+            }}
+          >
+            {action}
+          </Button>
+        </>
+      }
+    />
   );
 }
 

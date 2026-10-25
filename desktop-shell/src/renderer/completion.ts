@@ -138,3 +138,41 @@ export function matchPaths(query: string, paths: readonly string[], limit = 8): 
 export function fileSuggestions(query: string, paths: readonly string[]): Suggestion[] {
   return matchPaths(query, paths).map((p) => ({ insert: `\`${p}\``, label: p, detail: "changed", kind: null }));
 }
+
+// How many files "@" asks Deck for, and how long it waits for the typing to stop.
+export const FILES_LIMIT = 20;
+export const FILES_DEBOUNCE_MS = 120;
+
+// The room's changed files that match first, then the tree's other files
+// (ListFiles, already matched by Deck), each once.
+export function mergeFiles(query: string, changed: readonly string[], listed: readonly string[]): Suggestion[] {
+  const first = fileSuggestions(query, changed);
+  const seen = new Set(first.map((s) => s.label));
+  const rest = listed.filter((p) => !seen.has(p)).map((p) => ({ insert: `\`${p}\``, label: p, detail: "", kind: null }));
+  return [...first, ...rest].slice(0, FILES_LIMIT);
+}
+
+// Asks list for the files of a query once the typing stops for
+// FILES_DEBOUNCE_MS. Only the latest query's answer reaches found.
+export function fileLister(
+  list: (query: string) => Promise<readonly string[] | null>,
+  found: (query: string, paths: readonly string[]) => void,
+): { ask: (query: string) => void; stop: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let latest = 0;
+  return {
+    ask: (query) => {
+      clearTimeout(timer);
+      const n = ++latest;
+      timer = setTimeout(() => {
+        void list(query).then((paths) => {
+          if (n === latest && paths !== null) found(query, paths);
+        });
+      }, FILES_DEBOUNCE_MS);
+    },
+    stop: () => {
+      clearTimeout(timer);
+      latest++;
+    },
+  };
+}

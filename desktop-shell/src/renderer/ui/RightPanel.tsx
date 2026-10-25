@@ -14,10 +14,12 @@ import {
   Maximize2,
   Minimize2,
   RefreshCw,
+  Undo2,
   X,
 } from "lucide-react";
 import { type ComponentProps, useEffect, useRef, useState } from "react";
-import type { DeckClient } from "../client";
+import { addLocalNotice } from "../appState";
+import { type DeckClient, serves } from "../client";
 import type { Crew } from "../crew";
 import { cn } from "../lib/cn";
 import { panelSlice, shallowEqual, useAppSlice } from "../select";
@@ -25,9 +27,11 @@ import { PANELS, type Panel } from "../ui";
 import { AgentsTree } from "./AgentsTree";
 import { CommentsBadge, DiffView } from "./DiffView";
 import { SideChat } from "./SideChat";
-import { TasksPanel } from "./TasksPanel";
+import { type RaceStart, TasksPanel } from "./TasksPanel";
+import { actionToast } from "./Toasts";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
+import { Confirm } from "./kit/dialog";
 import { EmptyState } from "./kit/empty";
 
 // The room's tabs: Changes, Tasks (the queue, the board and races), Agents
@@ -44,16 +48,43 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <p className="empty px-4 py-16 text-center text-muted-foreground/60 text-sm">{children}</p>;
 }
 
+// How long the Undo of a revert stays.
+const REVERT_UNDO_MS = 10_000;
+
+const fileCount = (n: number) => `${n} ${n === 1 ? "file" : "files"}`;
+
+// Puts files back as they were before the room changed them (the base its
+// Changes show), then says so in the room and offers Undo. Null when the
+// Deck cannot revert.
+function revertWith(c: DeckClient, projectKey: string, sid: string, onRefresh: () => void): ((paths: string[]) => void) | null {
+  if (!serves(c, "RevertFiles")) return null;
+  return (paths) =>
+    void c.revertFiles?.(sid, paths).then((done) => {
+      if (done === null || done === undefined) return;
+      onRefresh();
+      addLocalNotice(projectKey, sid, `You reverted ${done.length === 1 ? done[0] : `${fileCount(done.length)}: ${done.join(", ")}`}`);
+      const text = `Reverted ${fileCount(done.length)}.`;
+      if (!serves(c, "UndoRevert")) {
+        c.store.dispatch({ type: "toast.add", kind: "info", text });
+        return;
+      }
+      actionToast(c.store, text, { label: "Undo", ms: REVERT_UNDO_MS, run: () => void c.undoRevert?.(sid).then(onRefresh) });
+    });
+}
+
 function FileSection({
   f,
   open,
   focus,
   onToggle,
+  onRevert,
 }: {
   f: ChangedFile;
   open: boolean;
   focus: boolean;
   onToggle: () => void;
+  // Asks first, then reverts the file; null when the Deck cannot.
+  onRevert: (() => void) | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -61,22 +92,29 @@ function FileSection({
   }, [focus]);
   return (
     <div ref={ref} className="file border-border/60 border-b">
-      <button
-        type="button"
-        className="file-head sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 bg-background px-3 py-2 text-left hover:bg-accent/40"
-        aria-expanded={open}
-        onClick={onToggle}
-      >
-        {open ? (
-          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+      <div className="file-head sticky top-0 z-10 flex items-center bg-background pr-2 hover:bg-accent/40">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-2 text-left"
+          aria-expanded={open}
+          onClick={onToggle}
+        >
+          {open ? (
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+          )}
+          <FileText className="size-3.5 shrink-0 text-info-foreground" />
+          <span className="file-path min-w-0 flex-1 truncate font-mono text-xs">{f.path}</span>
+          <span className="del font-mono text-diff-deletion-foreground text-xs">−{f.removed}</span>
+          <span className="add font-mono text-diff-addition-foreground text-xs">+{f.added}</span>
+        </button>
+        {onRevert !== null && (
+          <Button variant="ghost-muted" size="xs" className="file-revert font-normal" aria-label={`Revert ${f.path}`} title="Put the file back" onClick={onRevert}>
+            <Undo2 /> Revert
+          </Button>
         )}
-        <FileText className="size-3.5 shrink-0 text-info-foreground" />
-        <span className="file-path min-w-0 flex-1 truncate font-mono text-xs">{f.path}</span>
-        <span className="del font-mono text-diff-deletion-foreground text-xs">−{f.removed}</span>
-        <span className="add font-mono text-diff-addition-foreground text-xs">+{f.added}</span>
-      </button>
+      </div>
       {open && <DiffView diff={f.diff ?? ""} truncated={f.diff_truncated} numbered path={f.path} />}
     </div>
   );
@@ -86,13 +124,17 @@ function Changes({
   files,
   focus,
   onRefresh,
+  revert,
 }: {
   files: ChangedFile[] | null;
   focus: string | null;
   onRefresh: () => void;
+  revert: ((paths: string[]) => void) | null;
 }) {
   // Files the person folded; the rest show their diff, as T3 Code opens them.
   const [closed, setClosed] = useState<Record<string, true>>({});
+  // The paths a revert waits to confirm.
+  const [asking, setAsking] = useState<string[] | null>(null);
   const added = files?.reduce((n, f) => n + f.added, 0) ?? 0;
   const removed = files?.reduce((n, f) => n + f.removed, 0) ?? 0;
   const allClosed = files !== null && files.length > 0 && files.every((f) => closed[f.path] === true);
@@ -111,6 +153,11 @@ function Changes({
         </span>
         <CommentsBadge />
         <div className="ml-auto flex items-center gap-0.5">
+          {revert !== null && files !== null && files.length > 0 && (
+            <Button variant="ghost-muted" size="xs" className="revert-all font-normal" onClick={() => setAsking(files.map((f) => f.path))}>
+              <Undo2 /> Revert all
+            </Button>
+          )}
           <Button
             variant="ghost-muted"
             size="icon-xs"
@@ -137,6 +184,7 @@ function Changes({
             f={f}
             open={closed[f.path] !== true}
             focus={focus === f.path}
+            onRevert={revert === null ? null : () => setAsking([f.path])}
             onToggle={() =>
               setClosed((c) => {
                 if (c[f.path] === true) {
@@ -149,12 +197,26 @@ function Changes({
           />
         ))}
       </div>
+      {asking !== null && revert !== null && (
+        <Confirm
+          title={asking.length === 1 ? `Revert ${asking[0]}?` : `Revert all ${asking.length} files?`}
+          description={
+            asking.length === 1
+              ? "The file goes back to how it was before this thread changed it. Undo stays for 10 seconds."
+              : `Every file this thread changed goes back to how it was before: ${asking.join(", ")}. Undo stays for 10 seconds.`
+          }
+          action={asking.length === 1 ? "Revert" : "Revert all"}
+          onClose={() => setAsking(null)}
+          onConfirm={() => revert(asking)}
+        />
+      )}
     </section>
   );
 }
 
 export function RightPanel({
   c,
+  projectKey,
   state,
   panel,
   open,
@@ -173,6 +235,8 @@ export function RightPanel({
   onClose,
 }: {
   c: DeckClient;
+  // The project's key in the app state, for the room's own notes.
+  projectKey: string;
   state: AppState;
   panel: Panel;
   open: Session | undefined;
@@ -247,7 +311,7 @@ export function RightPanel({
         {open === undefined ? (
           <Empty>Open a thread to see its changes, tasks and agents.</Empty>
         ) : panel === "changes" ? (
-          <Changes files={files} focus={focus} onRefresh={onRefresh} />
+          <Changes files={files} focus={focus} onRefresh={onRefresh} revert={revertWith(c, projectKey, open.id, onRefresh)} />
         ) : panel === "tasks" ? (
           <TasksPanel
             key={open.id}
@@ -259,7 +323,10 @@ export function RightPanel({
             kinds={state.server?.kinds ?? []}
             theme={state.theme}
             branch={branch}
-            onRace={(text) => c.send(open.id, text, [])}
+            canJudge={serves(c, "StartRace")}
+            onRace={async (r: RaceStart) =>
+              serves(c, "StartRace") ? ((await c.startRace?.(open.id, r.brief, r.kind, r.count, r.judge)) ?? null) !== null : c.send(open.id, r.text, [])
+            }
             onEditQueued={onEditQueued}
             onError={onError}
             onInfo={onInfo}

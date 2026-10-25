@@ -184,7 +184,7 @@ export function Shell(props: ShellProps) {
             onNew: newSession,
             onRename: (id, title) => void c.renameSession(id, title),
             onDelete: (id) => void c.deleteSession(id),
-            onThreadMenu: (id, title) => bridge.threadMenu({ id, title }),
+            onThreadMenu: (id, title, archive) => bridge.threadMenu({ id, title, archive }),
             onForeign: (src, id) => orToast(onProject(src, id)),
             onNewIn: (src) => (src === source ? newSession() : orToast(onProject(src, "new"))),
             onProject: (k) => orToast(onProject(k, "new")),
@@ -262,6 +262,7 @@ export function Shell(props: ShellProps) {
       {ui.panel !== null && !away && shared === null && (
         <LineComments.Provider value={r.room.comments}>
           <LiveRightPanel
+            projectKey={projectKey}
             c={c}
             panel={ui.panel}
             open={open}

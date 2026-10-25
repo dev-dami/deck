@@ -7,8 +7,12 @@ import { type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useMemo
 import {
   applySuggestion,
   fileAt,
+  fileLister,
   fileSuggestions,
+  FILES_LIMIT,
+  matchPaths,
   type Mention,
+  mergeFiles,
   mentionAt,
   slashAt,
   slashSuggestions,
@@ -57,6 +61,7 @@ export function Composer({
   busy = false,
   onStop,
   paths,
+  listFiles,
   history,
   placeholder,
   sendKey,
@@ -84,6 +89,9 @@ export function Composer({
   onStop?: () => void;
   // The room's changed files, for "@".
   paths?: readonly string[];
+  // The files of the room's tree that match a query (ListFiles), for "@"
+  // after the changed ones. A stable function: a new one asks again.
+  listFiles?: ((query: string) => Promise<readonly string[] | null>) | undefined;
   // Where ↑ finds what the person sent: the project's source and the room.
   history?: { project: string; room: string } | null;
   placeholder?: string;
@@ -119,12 +127,23 @@ export function Composer({
       }),
     );
 
+  // The tree's files for the last query Deck answered.
+  const [found, setFound] = useState<{ query: string; paths: readonly string[] } | null>(null);
+  const lister = useMemo(() => (listFiles === undefined ? null : fileLister(listFiles, (query, p) => setFound({ query, paths: p }))), [listFiles]);
+  useEffect(() => () => lister?.stop(), [lister]);
+
   const options = useMemo(() => {
     if (picker === null) return [];
     if (picker.type === "/") return slashSuggestions(picker.m.query);
-    if (picker.type === "@") return fileSuggestions(picker.m.query, paths ?? []);
+    if (picker.type === "@") {
+      const q = picker.m.query;
+      if (lister === null) return fileSuggestions(q, paths ?? []);
+      // While Deck looks, the last answer narrows to what is typed.
+      const tree = found === null ? [] : found.query === q ? found.paths : matchPaths(q, found.paths, FILES_LIMIT);
+      return mergeFiles(q, paths ?? [], tree);
+    }
     return suggestions(picker.m.query, roster, kinds).slice(0, 8);
-  }, [picker, roster, kinds, paths]);
+  }, [picker, roster, kinds, paths, lister, found]);
 
   // The prompt grows with its text up to a cap, then scrolls.
   useLayoutEffect(() => {
@@ -138,7 +157,8 @@ export function Composer({
     const text = el.value;
     const caret = el.selectionStart;
     const slash = onSlash === undefined ? null : slashAt(text, caret);
-    const file = slash !== null || (paths ?? []).length === 0 ? null : fileAt(text, caret);
+    const file = slash !== null || ((paths ?? []).length === 0 && lister === null) ? null : fileAt(text, caret);
+    if (file !== null) lister?.ask(file.query);
     const agent = slash !== null || file !== null ? null : mentionAt(text, caret);
     setPicker(slash !== null ? { type: "/", m: slash } : file !== null ? { type: "@", m: file } : agent !== null ? { type: "$", m: agent } : null);
     setPick(0);
@@ -284,7 +304,7 @@ export function Composer({
     <div className={cn("composer relative mx-auto w-full max-w-(--chat-max)", className)}>
       {picker !== null && options.length > 0 && (
         <ul
-          className="suggest absolute right-0 bottom-full left-0 z-40 mb-2 animate-enter overflow-hidden rounded-xl border border-hairline-strong bg-surface-2 p-1 shadow-popover inset-shadow-hl"
+          className="suggest absolute right-0 bottom-full left-0 z-40 mb-2 max-h-80 animate-enter overflow-y-auto rounded-xl border border-hairline-strong bg-surface-2 p-1 shadow-popover inset-shadow-hl"
           role="listbox"
           aria-label={PICKER_LABEL[picker.type]}
         >
@@ -293,6 +313,7 @@ export function Composer({
               key={s.insert}
               role="option"
               aria-selected={i === pick}
+              ref={i === pick ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
               className={cn("flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-1.5 text-sm", i === pick && "on bg-selected")}
               onMouseEnter={() => setPick(i)}
               onMouseDown={(e) => {

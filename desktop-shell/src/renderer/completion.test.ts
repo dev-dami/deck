@@ -1,10 +1,13 @@
 import type { AgentLine } from "@web/protocol";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   addAgentMention,
   applySuggestion,
+  FILES_DEBOUNCE_MS,
   fileAt,
+  fileLister,
   fileSuggestions,
+  mergeFiles,
   matchPaths,
   mentionAt,
   slashAt,
@@ -93,7 +96,7 @@ describe("slash commands", () => {
   test("list the commands by prefix", () => {
     expect(slashSuggestions("").map((s) => s.insert)).toEqual(["/plan", "/ask", "/yolo", "/new", "/race", "/share", "/stop", "/clear"]);
     expect(slashSuggestions("S").map((s) => s.insert)).toEqual(["/share", "/stop"]);
-    expect(slashSuggestions("race")[0]?.label).toBe("/race <n> [kind] <brief>");
+    expect(slashSuggestions("race")[0]?.label).toBe("/race <n> [kind] [judge] <brief>");
   });
 
   test("accepting one replaces the typed name", () => {
@@ -133,5 +136,55 @@ describe("the @ file picker", () => {
     const s = fileSuggestions("lim", paths)[0];
     if (m === null || s === undefined) throw new Error("no file");
     expect(applySuggestion(text, m, s)).toEqual({ text: "check `docs/limits.md` please", caret: 23 });
+  });
+});
+
+describe("the @ file picker over ListFiles", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("the room's changed files come first, then the rest of the tree, each once", () => {
+    const changed = ["pkg/remote/auth/limit.go", "README.md"];
+    const listed = ["main.go", "pkg/remote/auth/limit.go", "pkg/remote/auth/limit_test.go"];
+    expect(mergeFiles("limit", changed, listed).map((s) => [s.label, s.detail])).toEqual([
+      ["pkg/remote/auth/limit.go", "changed"],
+      ["main.go", ""],
+      ["pkg/remote/auth/limit_test.go", ""],
+    ]);
+    expect(mergeFiles("", [], listed).map((s) => s.insert)).toEqual(["`main.go`", "`pkg/remote/auth/limit.go`", "`pkg/remote/auth/limit_test.go`"]);
+    expect(mergeFiles("x", [], Array.from({ length: 30 }, (_, i) => `f${i}`))).toHaveLength(20);
+  });
+
+  test("asks once the typing stops, and only the latest answer counts", async () => {
+    vi.useFakeTimers();
+    const asked: string[] = [];
+    const answers = new Map<string, (p: string[]) => void>();
+    const found: [string, readonly string[]][] = [];
+    const l = fileLister(
+      (q) => {
+        asked.push(q);
+        return new Promise((r) => answers.set(q, r));
+      },
+      (q, p) => found.push([q, p]),
+    );
+    l.ask("l");
+    vi.advanceTimersByTime(FILES_DEBOUNCE_MS - 1);
+    l.ask("li");
+    vi.advanceTimersByTime(FILES_DEBOUNCE_MS - 1);
+    expect(asked).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(asked).toEqual(["li"]);
+    l.ask("lim");
+    vi.advanceTimersByTime(FILES_DEBOUNCE_MS);
+    expect(asked).toEqual(["li", "lim"]);
+    // The older query answers last: too late, it is dropped.
+    answers.get("lim")?.(["limit.go"]);
+    answers.get("li")?.(["list.go"]);
+    await vi.waitFor(() => expect(found).toEqual([["lim", ["limit.go"]]]));
+    l.ask("x");
+    l.stop();
+    vi.advanceTimersByTime(FILES_DEBOUNCE_MS);
+    expect(asked).toEqual(["li", "lim"]);
   });
 });

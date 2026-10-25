@@ -1,7 +1,7 @@
 import type { Store } from "@web/controller";
 import type { Notice, Session } from "@web/protocol";
 import type { Action, AppState } from "@web/state";
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import type { EngineStop } from "../shared/bridge";
 import { actedAt, type RoomNotice, type RoomStatus, roomStatus, sameStatus } from "./attention";
 import type { DeckClient } from "./client";
@@ -33,7 +33,11 @@ const EMPTY: ProjectState = { ui: initialUi, engine: null, rooms: {}, notices: [
 const MAX_NOTICES = 50;
 
 // What a project's state is fed from.
-export type ProjectClient = Pick<DeckClient, "project" | "changes">;
+export type ProjectClient = Pick<DeckClient, "project" | "changes" | "rooms" | "capabilities">;
+
+// A Deck that serves the room calls also marks its notices and says what
+// each room waits for (Session.attention); an older one does neither.
+const marks = (c: ProjectClient | null): boolean => c?.rooms !== undefined && (c.capabilities?.().length ?? 0) > 0;
 
 interface Attached {
   source: string;
@@ -86,6 +90,7 @@ function withRooms(key: string, p: ProjectState): ProjectState {
     if (isSide(session)) continue;
     const id = session.id;
     const crew = crewOf(a.client?.project, id);
+    const engine = marks(a.client) ? (a.client?.rooms?.get(id).attention ?? "") : null;
     const next = roomStatus({
       session,
       approvals: s.approvals.filter((x) => x.session_id === id),
@@ -96,6 +101,7 @@ function withRooms(key: string, p: ProjectState): ProjectState {
       unread: p.ui.unread[id] === true,
       open: id === open,
       changed: a.changed.get(id) ?? 0,
+      attention: engine,
     });
     const before = p.rooms[id];
     const kept = before !== undefined && sameStatus(before, next) ? before : next;
@@ -136,14 +142,28 @@ export function showProject(key: string | null): void {
 // A notice for the room the person sees shows as a toast; one for another
 // room waits in that room's status and in the inbox. Returns whether it
 // toasts.
-export function addNotice(key: string, n: Notice, at = Date.now()): boolean {
+export function addNotice(key: string, n: Notice, at = Date.now(), via: string | null = null): boolean {
   if (n.session_id === "") return true;
   const seen = n.session_id === onScreen(projectState(key).ui);
   update(key, (cur) => ({
     ...cur,
-    notices: [...cur.notices, { session: n.session_id, text: n.text, at, seen }].slice(-MAX_NOTICES),
+    notices: [...cur.notices, { session: n.session_id, text: n.text, at, seen, via }].slice(-MAX_NOTICES),
   }));
   return seen;
+}
+
+// The shell's own one-line note in a room, such as a revert. The room's
+// timeline shows it; it never toasts.
+export function addLocalNotice(key: string, session: string, text: string): void {
+  addNotice(key, { session_id: session, text }, Date.now(), "local");
+}
+
+const sameNotes = (a: RoomNotice[], b: RoomNotice[]): boolean => a.length === b.length && a.every((n, i) => n === b[i]);
+
+// The shell's own notes in a room, oldest first.
+export function useLocalNotices(key: string, session: string): RoomNotice[] {
+  const select = useMemo(() => (p: ProjectState) => p.notices.filter((n) => n.session === session && n.via === "local"), [session]);
+  return useSelect(subscribe, () => projectState(key), select, sameNotes);
 }
 
 export function setEngine(key: string, engine: EngineStop | null): void {
@@ -219,14 +239,22 @@ export function attachProject(key: string, source: string, store: Store, client:
   };
   // The shared reducer turns every notice into a toast; the store's
   // dispatch is wrapped so that a notice for a room off screen does not.
+  // The rpc client keeps the notice's via in its rooms just before.
+  const viaOf = (n: Notice): string | null => {
+    if (!marks(client)) return null;
+    const last = client?.rooms?.get(n.session_id).notes.at(-1);
+    return last !== undefined && last.text === n.text ? last.via : "";
+  };
   const raw = store.dispatch;
   store.dispatch = (a: Action) => {
-    if (a.type === "event" && a.event.e === "notice" && !addNotice(key, a.event.p)) return;
+    if (a.type === "event" && a.event.e === "notice" && !addNotice(key, a.event.p, Date.now(), viaOf(a.event.p))) return;
     raw(a);
   };
   const api = client?.project;
   const stopCrew = api === undefined ? () => {} : watchCrew(api, store, () => projectState(key).ui.openId, () => update(key, same));
   const off = store.subscribe(feed);
+  // The engine's attention changes without a shared event.
+  const offRooms = client?.rooms?.subscribe(() => update(key, same)) ?? (() => {});
   attached.set(key, {
     source,
     store,
@@ -234,6 +262,7 @@ export function attachProject(key: string, source: string, store: Store, client:
     changed,
     off: () => {
       off();
+      offRooms();
       stopCrew();
       store.dispatch = raw;
     },

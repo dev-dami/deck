@@ -102,10 +102,13 @@ function AgentChip({
               <Ring pct={lane.contextPct} className="lane-ring" />
             </span>
           )}
-          {lane.leases > 0 && (
-            <span className="lane-leases flex items-center gap-0.5 font-mono text-3xs text-faint tabular-nums" title={`Holds ${lane.leases} ${lane.leases === 1 ? "path" : "paths"}`}>
+          {lane.leases.length > 0 && (
+            <span
+              className="lane-leases flex items-center gap-0.5 font-mono text-3xs text-faint tabular-nums"
+              title={`Holds ${lane.leases.length} ${lane.leases.length === 1 ? "path" : "paths"}`}
+            >
               <Lock aria-hidden className="size-2.5" />
-              {lane.leases}
+              {lane.leases.length}
             </span>
           )}
         </button>
@@ -123,6 +126,20 @@ function AgentChip({
           close();
         }}
       />
+      {lane.leases.length > 0 && (
+        <>
+          <MenuSeparator />
+          <MenuLabel>Holds</MenuLabel>
+          <ul className="lane-leased flex max-h-32 flex-col overflow-y-auto px-2 pb-1" aria-label={`Paths ${lane.name} holds`}>
+            {lane.leases.map((p) => (
+              <li key={p} className="flex items-center gap-1.5 truncate py-0.5 font-mono text-2xs text-muted-foreground" title={p}>
+                <Lock aria-hidden className="size-2.5 shrink-0 text-faint" />
+                <span className="truncate">{p}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <MenuSeparator />
       <MenuItem
         onClick={() => {

@@ -239,7 +239,18 @@ export interface AppInfo {
 }
 
 // The item picked in a thread row's native menu, or null.
-export type ThreadChoice = "rename" | "delete" | null;
+export type ThreadChoice = "rename" | "archive" | "delete" | null;
+
+// Archive in a thread row's menu: offered, shown but off while an agent
+// works, or left out for a Deck that cannot archive.
+export const ARCHIVE_OFFERS = ["on", "busy", "none"] as const;
+export type ArchiveOffer = (typeof ARCHIVE_OFFERS)[number];
+
+export interface ThreadMenuInput {
+  id: string;
+  title: string;
+  archive: ArchiveOffer;
+}
 
 // A native notification. tag names the room; a click on the notification
 // sends it back on NOTIFICATION_EVENT_CHANNEL. silent: no sound.
@@ -295,7 +306,7 @@ export interface DeckHost {
   // Quits and starts the downloaded update.
   installUpdate(): Promise<void>;
   // Shows the native menu of a thread row and resolves with the choice.
-  threadMenu(thread: { id: string; title: string }): Promise<ThreadChoice>;
+  threadMenu(thread: ThreadMenuInput): Promise<ThreadChoice>;
   // Shows a native notification; main sends it, the window needs no
   // permission for it.
   notify(n: NotifyInput): Promise<void>;

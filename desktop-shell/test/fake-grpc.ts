@@ -478,6 +478,8 @@ export class FakeRpcDeck {
           const out = protoOf(spec.res(this.deck.invoke(spec.m, clean(spec.req(call.request))))) as Obj;
           if (name === "CreateSession" && call.request["isolate"] === true) {
             this.room.meta[String(out["id"])] = { branch: `deck/${String(out["id"]).slice(0, 6)}` };
+            // As pkg/rpc: session_created goes out bare, then session_updated with the branch.
+            this.roomChanged(String(out["id"]));
           }
           if (name === "CreateSession") return cb(null, this.withRoom(out));
           if (name === "ListSessions") return cb(null, { sessions: (out["sessions"] as Obj[]).map((x) => this.withRoom(x)) });

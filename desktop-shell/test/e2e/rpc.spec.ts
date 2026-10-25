@@ -2,9 +2,9 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import type { NotifyInput } from "../../src/shared/bridge";
+import type { NotifyInput, ThreadChoice, ThreadMenuInput } from "../../src/shared/bridge";
 import type { TestHost } from "../bridge";
-import { FakeRpcDeck } from "../fake-grpc";
+import { FakeRpcDeck, protoOf } from "../fake-grpc";
 import { attachBridge } from "./harness";
 
 // The renderer over the rpc transport: "Open a folder" starts the fake deck
@@ -18,6 +18,9 @@ let picks: string[] = [];
 let focused = true;
 let notes: NotifyInput[] = [];
 let badges: number[] = [];
+// The thread menus main showed, and what the person picks in the next one.
+let menus: ThreadMenuInput[] = [];
+let menuPick: ThreadChoice = null;
 
 test.beforeEach(async ({ page }) => {
   fake = await FakeRpcDeck.start({ tickMs: 250 });
@@ -27,10 +30,16 @@ test.beforeEach(async ({ page }) => {
   focused = true;
   notes = [];
   badges = [];
+  menus = [];
+  menuPick = null;
   host = await attachBridge(page, async () => picks.shift() ?? dir, {
     focused: () => focused,
     notify: (n) => notes.push(n),
     badge: (c) => badges.push(c),
+    threadMenu: async (t) => {
+      menus.push(t);
+      return menuPick;
+    },
   });
 });
 
@@ -349,13 +358,211 @@ test("room tabs: the agents tree, the task board, keeping a race entry after its
   await tasks.getByRole("switch", { name: "Orchestrate" }).click();
   await expect(tasks.getByRole("switch", { name: "Orchestrate" })).toHaveAttribute("aria-checked", "true");
   expect(fake.board.actions).toEqual(["apply t3", "retry t5"]);
-  // The race form sends the composer's syntax.
+  // The race form starts the race through StartRace, with a judge by default.
   await tasks.getByRole("button", { name: "New race" }).click();
   await tasks.getByLabel("Race brief").fill("make the limiter per address");
   await tasks.getByLabel("Race kind").selectOption("codex");
   await tasks.getByRole("button", { name: "More entries" }).click();
+  await expect(tasks.getByRole("switch", { name: "Judge" })).toHaveAttribute("aria-checked", "true");
   await tasks.getByRole("button", { name: /Start race \(4\)/ }).click();
-  await expect.poll(() => fake.deck.sent.at(-1)?.text).toBe("$codex×4 make the limiter per address");
+  await expect.poll(() => fake.room.asked).toContain("race codex×4 judged: make the limiter per address");
+  await expect(tasks.getByLabel("Race brief")).toHaveValue("");
+  // Without the judge.
+  await tasks.getByLabel("Race brief").fill("try again");
+  await tasks.getByRole("switch", { name: "Judge" }).click();
+  await tasks.getByRole("button", { name: /Start race \(4\)/ }).click();
+  await expect.poll(() => fake.room.asked).toContain("race codex×4: try again");
+  // /race takes judge after the kind.
+  await composer(page).fill("/race 2 codex judge fix the flaky test");
+  await composer(page).press("Enter");
+  await expect.poll(() => fake.room.asked).toContain("race codex×2 judged: fix the flaky test");
+  await expect(composer(page)).toHaveValue("");
+});
+
+test("branches: a thread starts on its own branch, applies it, discards it and moves again", async ({ page }) => {
+  await openFolder(page);
+  const own = page.getByRole("switch", { name: "On its own branch" });
+  await expect(own).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator(".own-branch")).toContainText("deck/<id>");
+  await composer(page).fill("$claude make the limiter per address");
+  await composer(page).press("Enter");
+  // The fake names the branch after the session.
+  const branch = page.locator(".room-branch");
+  await expect(branch).toContainText("deck/ses_");
+  const name = (await branch.textContent()) ?? "";
+  await expect(sidebar(page).locator(".session.open .row-branch")).toHaveText(name);
+  await expect(page.locator(".streaming")).toHaveCount(0);
+
+  await branch.click();
+  await page.getByRole("menuitem", { name: "Apply to my tree" }).click();
+  await expect(page.locator(".toast").last()).toContainText("Applied 1 file to your tree: pkg/remote/auth/limit.go");
+
+  await branch.click();
+  await page.getByRole("menuitem", { name: "Discard branch" }).click();
+  const ask = page.getByRole("dialog", { name: `Discard ${name}?` });
+  await expect(ask).toContainText(`Deck removes the branch ${name}`);
+  await expect(ask).toContainText("changed file");
+  await ask.getByRole("button", { name: "Cancel" }).click();
+  expect(fake.room.asked.filter((a) => a.startsWith("UnisolateSession"))).toEqual([]);
+  await branch.click();
+  await page.getByRole("menuitem", { name: "Discard branch" }).click();
+  await page.getByRole("dialog", { name: `Discard ${name}?` }).getByRole("button", { name: "Discard branch" }).click();
+  await expect(page.locator(".room-branch")).not.toContainText("deck/");
+  await expect(sidebar(page).locator(".session.open .row-branch")).toHaveCount(0);
+
+  // A thread in the shared tree can move to a branch of its own.
+  await page.getByRole("button", { name: "Branch", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Move to its own branch" }).click();
+  await expect(page.locator(".room-branch")).toContainText("deck/ses_");
+  expect(fake.room.asked.filter((a) => !a.startsWith("since")).map((a) => a.split(" ")[0])).toEqual([
+    "ApplyIsolated",
+    "UnisolateSession",
+    "IsolateSession",
+  ]);
+
+  // Off is remembered for the next thread.
+  await page.getByRole("button", { name: "New thread" }).first().click();
+  await page.getByRole("switch", { name: "On its own branch" }).click();
+  await expect(page.getByRole("switch", { name: "On its own branch" })).toHaveAttribute("aria-checked", "false");
+  expect(await page.evaluate(() => localStorage.getItem("deck.desktop.prefs"))).toContain('"isolate":false');
+});
+
+test("revert: a file or all of them, after a question, with Undo and a note in the room", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await roomTab(page, "Changes");
+  const changes = page.getByRole("region", { name: "Changes" });
+  await changes.getByRole("button", { name: "Revert pkg/remote/auth/limit.go" }).click();
+  const ask = page.getByRole("dialog", { name: "Revert pkg/remote/auth/limit.go?" });
+  await ask.getByRole("button", { name: "Cancel" }).click();
+  expect(fake.room.asked).toEqual([]);
+  await changes.getByRole("button", { name: "Revert pkg/remote/auth/limit.go" }).click();
+  await ask.getByRole("button", { name: "Revert", exact: true }).click();
+  await expect.poll(() => fake.room.asked).toEqual(["RevertFiles ses_main", "since 0"]);
+  const toast = page.locator(".toast").filter({ hasText: "Reverted 1 file." });
+  await expect(toast).toBeVisible();
+  // The timeline says what the person did; the composer stays empty.
+  await expect(page.locator(".room-note")).toHaveText("You reverted pkg/remote/auth/limit.go");
+  await expect(composer(page)).toHaveValue("");
+  await toast.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(() => fake.room.asked).toContain("UndoRevert ses_main");
+  await expect(toast).toHaveCount(0);
+
+  await changes.getByRole("button", { name: "Revert all" }).click();
+  const all = page.getByRole("dialog", { name: "Revert all 2 files?" });
+  await expect(all).toContainText("pkg/remote/auth/limit_test.go");
+  await all.getByRole("button", { name: "Revert all" }).click();
+  await expect(page.locator(".toast").filter({ hasText: "Reverted 2 files." })).toBeVisible();
+  await expect(page.locator(".room-note").last()).toHaveText("You reverted 2 files: pkg/remote/auth/limit.go, pkg/remote/auth/limit_test.go");
+  // The line comment and its count stay in the diff.
+  await expect(changes.locator(".file").first()).toBeVisible();
+});
+
+test("archive: the row goes, Undo brings it back, and after five seconds Deck archives it", async ({ page }) => {
+  await openFolder(page);
+  const row = sidebar(page).locator('[data-session="ses_long"]');
+  await row.hover();
+  await row.getByRole("button", { name: "Archive Long history" }).click();
+  await expect(row).toHaveCount(0);
+  const toast = page.locator(".toast").filter({ hasText: 'Archived "Long history".' });
+  await toast.getByRole("button", { name: "Undo" }).click();
+  await expect(row).toBeVisible();
+  await page.waitForTimeout(5500);
+  expect(fake.room.asked).toEqual([]);
+
+  // The row's menu archives too; Deck hears of it after the Undo time.
+  menuPick = "archive";
+  await row.click({ button: "right" });
+  await expect.poll(() => menus.at(-1)).toEqual({ id: "ses_long", title: "Long history", archive: "on" });
+  await expect(row).toHaveCount(0);
+  await expect.poll(() => fake.room.asked, { timeout: 8000 }).toEqual(["ArchiveSession ses_long"]);
+  // The archived room waits behind a fold, closed at first.
+  const fold = sidebar(page).getByRole("button", { name: "Archived (1)" });
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  await fold.click();
+  await expect(row).toBeVisible();
+
+  // Never for a room whose agents work.
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await composer(page).fill("$claude go on");
+  await composer(page).press("Enter");
+  const busy = sidebar(page).locator('[data-session="ses_main"]');
+  await busy.hover();
+  await expect(busy.getByRole("button", { name: "Archive Fix the pairing lockout" })).toHaveAttribute("aria-disabled", "true");
+  menuPick = null;
+  await busy.click({ button: "right" });
+  await expect.poll(() => menus.at(-1)?.archive).toBe("busy");
+});
+
+test("@ lists the tree's files after the changed ones, and leases show in the lane strip", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await composer(page).pressSequentially("look at @limit");
+  const files = page.getByRole("listbox", { name: "Files" });
+  await expect(files.getByRole("option").first()).toContainText("pkg/remote/auth/limit.go");
+  await expect(files.getByRole("option").first()).toContainText("changed");
+  await composer(page).fill("");
+  await composer(page).pressSequentially("look at @READ");
+  await expect(files.getByRole("option")).toHaveText(["README.md"]);
+  await page.keyboard.press("Enter");
+  await expect(composer(page)).toHaveValue("look at `README.md` ");
+  expect(fake.calls).toContain("ListFiles");
+
+  // A lease the engine reports lands on the agent's chip and in its popover.
+  fake.emit("lease_changed", { session_id: "ses_main", agent: "claude-1", paths: ["pkg/rpc/**", "docs/a.md"], exclusive: true, released: false });
+  const lanes = page.getByRole("toolbar", { name: "Lanes" });
+  await expect(lanes.locator('[data-lane="agent:claude-1"] .lane-leases')).toHaveText("2");
+  await lanes.locator('[data-lane="agent:claude-1"]').click();
+  await expect(page.getByRole("list", { name: "Paths claude-1 holds" }).getByRole("listitem")).toHaveText(["pkg/rpc/**", "docs/a.md"]);
+});
+
+test("attention from the engine: a room that waits for an answer needs you", async ({ page }) => {
+  await openFolder(page);
+  fake.room.meta["ses_long"] = { attention: "question" };
+  const s = (fake.deck.invoke("sessions.list", {}) as Record<string, unknown>[]).find((x) => x["id"] === "ses_long");
+  fake.emit("session_updated", protoOf(s) as Record<string, unknown>);
+  const row = sidebar(page).locator('[data-session="ses_long"]');
+  await expect(row.locator('[data-status="needs-you"]')).toBeVisible();
+  await expect(row.locator(".status-label")).toHaveText("Answer a question");
+});
+
+test("an older Deck: no branch, no Revert, no Archive, races as text and @ lists the changed files", async ({ page }) => {
+  fake.room.caps = [];
+  await openFolder(page);
+  await expect(page.getByRole("heading", { name: `What should we build in ${basename(dir)}?` })).toBeVisible();
+  await expect(page.getByRole("switch", { name: "On its own branch" })).toHaveCount(0);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await expect(page.locator(".room-branch")).toHaveCount(0);
+  const row = sidebar(page).locator('[data-session="ses_long"]');
+  await row.hover();
+  await expect(row.getByRole("button", { name: "Archive Long history" })).toHaveCount(0);
+  await row.click({ button: "right" });
+  await expect.poll(() => menus.at(-1)?.archive).toBe("none");
+
+  await roomTab(page, "Changes");
+  await expect(page.getByRole("region", { name: "Changes" }).locator(".file")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: /^Revert/ })).toHaveCount(0);
+
+  await composer(page).pressSequentially("look at @READ");
+  await expect(page.getByRole("listbox", { name: "Files" })).toHaveCount(0);
+  await composer(page).fill("");
+  await composer(page).pressSequentially("look at @limit");
+  await expect(page.getByRole("listbox", { name: "Files" }).getByRole("option")).toHaveCount(2);
+  await composer(page).fill("");
+
+  await roomTab(page, "Tasks");
+  const tasks = page.getByRole("region", { name: "Tasks" });
+  await tasks.getByRole("button", { name: "New race" }).click();
+  await expect(tasks.getByRole("switch", { name: "Judge" })).toHaveCount(0);
+  await tasks.getByLabel("Race brief").fill("make the limiter per address");
+  await tasks.getByRole("button", { name: /Start race \(3\)/ }).click();
+  await expect.poll(() => fake.deck.sent.at(-1)?.text).toBe("$claude×3 make the limiter per address");
+  await composer(page).fill("/race 2 codex judge fix it");
+  await composer(page).press("Enter");
+  await expect.poll(() => fake.deck.sent.at(-1)?.text).toBe("$codex×2 fix it");
+  expect(fake.room.asked).toEqual([]);
+  expect(fake.calls).not.toContain("ListFiles");
+  expect(fake.calls).not.toContain("StartRace");
 });
 
 test("lane strip: the people in the room, a lane filter and an agent's popover", async ({ page }) => {
@@ -455,8 +662,10 @@ test("attention: a room that needs you, the inbox, notifications, and a finished
   focused = false;
 
   // A notice for a room off screen waits in its status, not in a toast; one
-  // for the open room toasts, and the toast can be dismissed.
-  fake.deck.notice("ses_long", "codex-2 and claude-1 both changed internal/auth/auth.go in the last few minutes; one may undo the other");
+  // for the open room toasts, and the toast can be dismissed. The engine
+  // marks its overlap notes.
+  const overlap = "codex-2 and claude-1 both changed internal/auth/auth.go in the last few minutes; one may undo the other";
+  fake.emit("notice", { session_id: "ses_long", text: overlap, via: "overlap" });
   await expect(long.locator('[data-status="overlap"]')).toBeVisible();
   await expect(long.locator(".status-label")).toHaveText("codex-2 and claude-1 both changed auth.go");
   fake.deck.notice("ses_main", "Saved a checkpoint");

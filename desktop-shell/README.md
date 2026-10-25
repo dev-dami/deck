@@ -104,7 +104,12 @@ T3's look stays in the theme catalog.
   working row carries a rail in the hue of its agent. Card rows (in
   Settings) add the project and the last message. Quiet threads older than
   three days fold into Settled. Double-click a title to rename it; hover or
-  focus a row to delete it. Right-click a row for Rename and Delete.
+  focus a row to delete it. Right-click a row for Rename, Archive and
+  Delete. With a local Deck, the engine also says what a room waits for
+  (an approval, a question, an error or a blocked task), and the room needs
+  you at once, before the next poll of its agents. A blocked task holds
+  until a retry or a cancel changes it. The engine marks its overlap notes;
+  against an older engine the app reads them by their words.
 - **Inbox.** The sidebar's Inbox (or "Open inbox" in the palette) lists,
   across every open project, what waits for you: approvals with Approve,
   Decline and Always allow, contract proposals with Accept and Decline,
@@ -148,13 +153,17 @@ T3's look stays in the theme catalog.
   stop.
   - **Slash commands.** Type `/` at the start of the message for the
     commands: `/plan`, `/ask` and `/yolo` set the mode (Yolo still asks
-    first), `/new [title]` starts a thread, `/race <n> [kind] <brief>`
-    races two to six agents of a kind (the room's first kind when you name
-    none), `/share` opens the share popover, `/stop` stops all agents and
-    `/clear` clears the draft. Other text after a `/` is an ordinary
-    message.
+    first), `/new [title]` starts a thread, `/race <n> [kind] [judge]
+    <brief>` races two to six agents of a kind (the room's first kind when
+    you name none), `/share` opens the share popover, `/stop` stops all
+    agents and `/clear` clears the draft. Other text after a `/` is an
+    ordinary message.
   - **Files.** Type `@` for the room's changed files, matched loosely by
-    name and path; the pick goes in as a path in backticks.
+    name and path; the pick goes in as a path in backticks. A local Deck
+    that serves `ListFiles` adds the other files of the room's tree after
+    the changed ones (up to 20, through the repository's ignore rules). The
+    app asks once the typing stops for 120 ms, and only the latest answer
+    shows.
   - **Queue or steer.** While an agent works, Enter queues the message
     until its turn ends, and Ctrl+Enter steers it into the running turn. A
     line in the strip and the send button's tooltip say which. With
@@ -180,8 +189,10 @@ T3's look stays in the theme catalog.
   the number of paths it holds, and after the agents each teammate who
   follows the room with their role. Click a chip to show that lane's
   messages alone; click it again to show all. An agent's chip also opens
-  its model and effort, Stop, and Steer, which addresses the composer to
-  it. The strip wraps to two lines at most. Past that, the lanes that do
+  its model and effort, the paths it holds, Stop, and Steer, which
+  addresses the composer to it. A local Deck reports each lease as the
+  agent takes or ends it; the app reads the agents tree for an agent it
+  has no report for. The strip wraps to two lines at most. Past that, the lanes that do
   not fit fold into "+N", from the end: teammates first, then idle agents.
   You and the agents that work, wait or failed always show. Click "+N" for
   a list of the folded lanes.
@@ -197,6 +208,32 @@ T3's look stays in the theme catalog.
   context, cost, leases and the tool it runs. In a window narrower than
   1100px, the side panel floats over the room; its toggle in the header
   shows and hides it.
+- **Branches.** Under the start cards, "On its own branch" starts the new
+  thread on a git worktree and branch of its own (`deck/<id>`). It is on
+  by default, the app remembers the choice, and it shows only for a Deck
+  that can do it. The row shows the branch in small mono type, and the room
+  header shows it next to the title. Its menu offers Apply to my tree
+  (writes the branch's changes into your tree, then lists the files),
+  Discard branch (asks first, with the branch and the count of changed
+  files) and, for a thread in the shared tree, Move to its own branch (not
+  while agents work).
+- **Revert.** In Changes, each file has a Revert button and the header has
+  Revert all. Each asks first and names the file or the count. The files go
+  back to how they were before the thread changed them. A toast offers
+  Undo for 10 seconds, and the room's timeline shows a line such as "You
+  reverted a.go". Nothing goes to the agents.
+- **Archive.** Hover a row, or right-click it, to archive the thread. A room
+  whose agents work cannot be archived; the button says why. The row goes
+  at once, and a toast offers Undo for 5 seconds. Deck has no call to
+  unarchive, so the app waits those 5 seconds before it asks Deck to
+  archive, and Undo cancels the wait. Archived rooms wait in an Archived
+  fold at the bottom of their project, closed at first. A new message in
+  an archived room brings it back.
+- **Races.** The race form in Tasks has a Judge switch, on by default: one
+  more agent of the kind ranks the entries. With a Deck that serves
+  `StartRace`, the form and `/race` start the race through it
+  (`/race 3 codex judge <brief>`). An older Deck gets the race as a message
+  (`$codex×3 <brief>`), and the form has no Judge switch.
 - **Plans.** In Plan mode, an agent's numbered steps show as a card with
   Approve, Edit and Ask. Approve switches the thread to Ask (or back to
   Yolo when it was Yolo before Plan) and tells the agent to go ahead. Edit
@@ -426,7 +463,8 @@ renderer (React, sandboxed)                  main process (Node)                
 - **Revert.** `revertFiles` puts files back as they were before a message,
   and `undoRevert` undoes the latest revert.
 - **Archive.** `archiveSession` stops a thread's agents and marks it
-  archived. A new message brings it back.
+  archived. A new message brings it back. There is no call to unarchive,
+  so the app's Undo holds the call back for 5 seconds (`archive.ts`).
 - **Races.** `startRace` has several agents of one kind do one brief, each
   on a worktree of its own, with an optional judge.
 - **Files.** `listFiles` lists the thread's tree through the repository's

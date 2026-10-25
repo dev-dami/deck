@@ -25,10 +25,11 @@ import {
   RPC_EVENT_CHANNEL,
   SOCKET_EVENT_CHANNEL,
   type ThreadChoice,
+  type ThreadMenuInput,
   UPDATE_EVENT_CHANNEL,
 } from "../shared/bridge";
 import { RENDERER_CSP } from "../shared/csp";
-import { contextMenuTemplate } from "./contextMenu";
+import { contextMenuTemplate, threadMenuTemplate } from "./contextMenu";
 import { findAgentClis, findDeck, loadService, RpcDecks } from "./decks";
 import { enginePath } from "./shellPath";
 import { callHost, createHost } from "./host";
@@ -145,16 +146,12 @@ async function arrive(a: Arrival): Promise<void> {
   deliver(a.link);
 }
 
-// The window's menu for a thread row: Rename, or Delete after a dialog.
-async function threadMenu(t: { id: string; title: string }): Promise<ThreadChoice> {
+// The window's menu for a thread row: Rename, Archive, or Delete after a dialog.
+async function threadMenu(t: ThreadMenuInput): Promise<ThreadChoice> {
   const w = win;
   if (w === null) return null;
   const picked = await new Promise<ThreadChoice>((done) => {
-    const menu = Menu.buildFromTemplate([
-      { label: "Rename…", click: () => done("rename") },
-      { type: "separator" },
-      { label: "Delete…", click: () => done("delete") },
-    ]);
+    const menu = Menu.buildFromTemplate(threadMenuTemplate(t.archive, done));
     // On Linux and Windows the menu closes before its click runs.
     menu.popup({ window: w, callback: () => setTimeout(() => done(null), 100) });
   });

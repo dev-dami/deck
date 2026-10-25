@@ -3,8 +3,9 @@ import { needsConfirm } from "@web/modes";
 import type { ChangedFile, Image, Mode, QueuedItem, Session } from "@web/protocol";
 import { sessionMode } from "@web/state";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { setDraft as storeDraft, useDraft } from "../appState";
-import type { DeckClient } from "../client";
+import { setDraft as storeDraft, useDraft, useLocalNotices } from "../appState";
+import { type DeckClient, serves } from "../client";
+import { getPrefs } from "../prefs";
 import { newQueued } from "../queue";
 import type { ShellSlice } from "../select";
 import type { Slash } from "../slash";
@@ -99,10 +100,11 @@ function useRoomSend({
 }) {
   const sid = open?.id ?? null;
 
-  // Sends from the new-thread screen: makes the thread, opens it and sends.
+  // Sends from the new-thread screen: makes the thread (on a branch of its
+  // own when the person keeps that on), opens it and sends.
   const start = useCallback(
     async (text: string, images: Image[]): Promise<boolean> => {
-      const s = await c.createSession(titleFrom(text) || undefined);
+      const s = await c.createSession(titleFrom(text) || undefined, serves(c, "IsolateSession") && getPrefs().isolate);
       if (s === null) return false;
       storeDraft(projectKey, NEW, "");
       openSession(s.id);
@@ -156,7 +158,17 @@ function useRoomSend({
         if (made !== null) openSession(made.id);
         return made !== null;
       }
-      if (s.cmd === "race") return open === undefined ? start(s.text, []) : send(s.text, []);
+      if (s.cmd === "race") {
+        if (!serves(c, "StartRace")) return open === undefined ? start(s.text, []) : send(s.text, []);
+        let id = open?.id;
+        if (id === undefined) {
+          const made = await c.createSession(titleFrom(s.brief) || undefined, serves(c, "IsolateSession") && getPrefs().isolate);
+          if (made === null) return false;
+          openSession(made.id);
+          id = made.id;
+        }
+        return ((await c.startRace?.(id, s.brief, s.kind, s.count, s.judge)) ?? null) !== null;
+      }
       if (open === undefined) {
         info("Open a thread first.");
         return false;
@@ -236,6 +248,8 @@ export function useOpenRoom({
   // /share opens the room header's share popover.
   const [shareAsk, setShareAsk] = useState(0);
   const changes = useChanges(c, sid, busy);
+  // The shell's own notes in the room, for its timeline.
+  const notes = useLocalNotices(projectKey, key);
   // The composer's "@" lists these.
   const paths = useMemo(() => changes.files?.map((f) => f.path) ?? [], [changes.files]);
   useEffect(() => {
@@ -268,6 +282,7 @@ export function useOpenRoom({
     files: changes.files,
     refreshChanges: changes.refresh,
     paths,
+    notes,
     crew,
     crewAt,
     shares,

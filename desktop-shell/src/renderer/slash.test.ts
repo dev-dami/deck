@@ -28,12 +28,34 @@ describe("parseSlash", () => {
   });
 
   test("a race composes the race text", () => {
-    expect(parse("/race 3 codex fix the flaky test")).toEqual({ cmd: "race", text: "$codex×3 fix the flaky test" });
-    expect(parse("/race 2 Codex fix it")).toEqual({ cmd: "race", text: "$codex×2 fix it" });
+    expect(parse("/race 3 codex fix the flaky test")).toEqual({
+      cmd: "race",
+      text: "$codex×3 fix the flaky test",
+      kind: "codex",
+      count: 3,
+      brief: "fix the flaky test",
+      judge: false,
+    });
+    expect(parse("/race 2 Codex fix it")).toMatchObject({ text: "$codex×2 fix it", kind: "codex" });
     // No kind: the fallback's.
-    expect(parse("/race 4 fix the flaky test")).toEqual({ cmd: "race", text: "$claude×4 fix the flaky test" });
+    expect(parse("/race 4 fix the flaky test")).toMatchObject({ text: "$claude×4 fix the flaky test", kind: "claude", count: 4 });
     // A brief whose first word is not a kind keeps it.
-    expect(parse("/race 2 refactor auth", "opencode")).toEqual({ cmd: "race", text: "$opencode×2 refactor auth" });
+    expect(parse("/race 2 refactor auth", "opencode")).toMatchObject({ text: "$opencode×2 refactor auth", brief: "refactor auth" });
+  });
+
+  test("judge after the kind asks one more agent to rank the entries", () => {
+    expect(parse("/race 3 codex judge fix the flaky test")).toEqual({
+      cmd: "race",
+      text: "$codex×3 fix the flaky test",
+      kind: "codex",
+      count: 3,
+      brief: "fix the flaky test",
+      judge: true,
+    });
+    expect(parse("/race 2 Judge fix it")).toMatchObject({ kind: "claude", brief: "fix it", judge: true });
+    // judge later in the brief is a word of the brief.
+    expect(parse("/race 2 codex fix the judge")).toMatchObject({ brief: "fix the judge", judge: false });
+    expect(parse("/race 3 codex judge")).toHaveProperty("error");
   });
 
   test("a race that cannot start says why", () => {

@@ -206,7 +206,7 @@ describe("platform methods", () => {
     await expect(callHost(missing.host, "agentClis", [false])).resolves.toMatchObject({ engine: false });
   });
 
-  test("threadMenu takes an id and a title and nothing else", async () => {
+  test("threadMenu takes an id, a title and the archive offer, and nothing else", async () => {
     const seen: unknown[] = [];
     const { host } = testHost(noEmit, noEmit, undefined, {
       threadMenu: async (t) => {
@@ -218,14 +218,16 @@ describe("platform methods", () => {
       [],
       ["ses_1"],
       [{ id: "ses_1" }],
-      [{ id: "ses_1", title: 3 }],
-      [{ id: "ses_1", title: "T", extra: true }],
-      [["ses_1", "T"]],
-      [{ id: "ses_1", title: "T" }, "more"],
+      [{ id: "ses_1", title: 3, archive: "on" }],
+      [{ id: "ses_1", title: "T" }],
+      [{ id: "ses_1", title: "T", archive: "yes" }],
+      [{ id: "ses_1", title: "T", archive: "on", extra: true }],
+      [["ses_1", "T", "on"]],
+      [{ id: "ses_1", title: "T", archive: "on" }, "more"],
     ]) {
       await expect(callHost(host, "threadMenu", bad)).rejects.toThrow(/bad arguments/);
     }
-    await expect(callHost(host, "threadMenu", [{ id: "ses_1", title: "Fix it" }])).resolves.toBe("rename");
-    expect(seen).toEqual([{ id: "ses_1", title: "Fix it" }]);
+    await expect(callHost(host, "threadMenu", [{ id: "ses_1", title: "Fix it", archive: "busy" }])).resolves.toBe("rename");
+    expect(seen).toEqual([{ id: "ses_1", title: "Fix it", archive: "busy" }]);
   });
 });

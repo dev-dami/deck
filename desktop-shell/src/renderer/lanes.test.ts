@@ -1,7 +1,7 @@
 import type { AgentLine, Message } from "@web/protocol";
 import { describe, expect, test } from "vitest";
 import type { AgentNode } from "./crew";
-import { buildLanes, filterLane, fitLanes, type Lane, laneOf, leaseCount, lineCount, pinnedLane, shortId } from "./lanes";
+import { buildLanes, filterLane, fitLanes, type Lane, laneOf, leasePaths, lineCount, pinnedLane, shortId } from "./lanes";
 
 const line = (id: string, busy = false): AgentLine => ({ id, name: id, kind: id.replace(/-\d+$/, ""), busy });
 
@@ -48,11 +48,25 @@ describe("buildLanes", () => {
     });
     expect(lanes.map((l) => l.id)).toEqual(["you", "agent:claude-1", "agent:codex-2", "agent:codex-sub", "mate:ana", "mate:vps"]);
     const claude = lanes[1]!;
-    expect(claude).toMatchObject({ status: "working", model: "opus", contextPct: 25, leases: 3, agentKind: "claude" });
+    expect(claude).toMatchObject({ status: "working", model: "opus", contextPct: 25, leases: ["a/**", "b.go", "c/**"], agentKind: "claude" });
     // An open approval wins over the roster's busy flag.
-    expect(lanes[2]).toMatchObject({ status: "waiting", contextPct: null, leases: 0 });
+    expect(lanes[2]).toMatchObject({ status: "waiting", contextPct: null, leases: [] });
     expect(lanes[3]).toMatchObject({ depth: 1, agentKind: "codex" });
     expect(lanes[5]).toMatchObject({ kind: "mate", name: "vps", role: "editor" });
+  });
+
+  test("live leases win over the tree's summary; an agent without any falls back to it", () => {
+    const lanes = buildLanes({
+      roster: [line("claude-1", true), line("codex-2")],
+      agents: [node("claude-1", { leases: "old/**" }), node("codex-2", { leases: "b.go" })],
+      shares: {},
+      waiting: [],
+      leases: [
+        { agent: "claude-1", paths: ["pkg/rpc/**"], exclusive: true },
+        { agent: "claude-1", paths: ["docs/a.md"], exclusive: false },
+      ],
+    });
+    expect(lanes.map((l) => l.leases)).toEqual([[], ["pkg/rpc/**", "docs/a.md"], ["b.go"]]);
   });
 
   test("without the tree, the roster's busy flag says working or idle", () => {
@@ -126,10 +140,10 @@ describe("lane filter", () => {
   });
 });
 
-test("lease counts and short ids", () => {
-  expect(leaseCount("")).toBe(0);
-  expect(leaseCount("internal/** (exclusive)")).toBe(1);
-  expect(leaseCount("a, b; c (exclusive)")).toBe(3);
+test("the paths of a lease summary", () => {
+  expect(leasePaths("")).toEqual([]);
+  expect(leasePaths("internal/** (exclusive)")).toEqual(["internal/**"]);
+  expect(leasePaths("a, b; c (exclusive)")).toEqual(["a", "b", "c"]);
 });
 
 test("a short id is the last three base36 characters of the id", () => {

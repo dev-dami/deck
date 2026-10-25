@@ -1,5 +1,6 @@
 import type { AgentLine, Message } from "@web/protocol";
 import type { AgentNode } from "./crew";
+import type { Lease } from "./roomMeta";
 
 // The lane strip of a room (docs/plan.md §3): one lane per participant.
 // The person, each agent (the roster merged with the agents tree), and each
@@ -19,8 +20,8 @@ export interface Lane {
   effort: string;
   // Context use in percent, when the agents tree knows the window.
   contextPct: number | null;
-  // How many paths the agent holds a lease on.
-  leases: number;
+  // The paths the agent holds a lease on.
+  leases: string[];
   // A teammate's role: observer, participant or editor.
   role: string;
   depth: number;
@@ -40,13 +41,13 @@ const NODE_STATUS: Record<string, LaneStatus> = {
   ready: "idle",
 };
 
-// The number of paths in an agent's lease summary: "a/**, b.go (exclusive); c/**".
-export function leaseCount(leases: string): number {
-  if (leases.trim() === "") return 0;
+// The paths in an agent's lease summary: "a/**, b.go (exclusive); c/**".
+export function leasePaths(leases: string): string[] {
   return leases
     .split(";")
     .flatMap((group) => group.replace(/\(exclusive\)/g, "").split(","))
-    .filter((p) => p.trim() !== "").length;
+    .map((p) => p.trim())
+    .filter((p) => p !== "");
 }
 
 // How full an agent's context is, in percent; null when it reports none.
@@ -71,6 +72,7 @@ export function buildLanes({
   agents,
   shares,
   waiting,
+  leases = [],
 }: {
   roster: AgentLine[];
   // The agents tree, or null before it loads (a paired Deck has none).
@@ -79,10 +81,17 @@ export function buildLanes({
   shares: Record<string, string>;
   // The ids of agents with an open approval in this room.
   waiting: string[];
+  // The room's live leases (lease_changed), when the Deck reports them.
+  leases?: readonly Lease[];
 }): Lane[] {
   const lanes: Lane[] = [
-    { id: YOU, kind: "you", name: "you", agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: 0, role: "", depth: 0 },
+    { id: YOU, kind: "you", name: "you", agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role: "", depth: 0 },
   ];
+  // An agent's live leases, else what the agents tree last said.
+  const leased = (name: string, n: AgentNode | undefined): string[] => {
+    const live = leases.filter((l) => l.agent === name).flatMap((l) => l.paths);
+    return live.length > 0 ? live : leasePaths(n?.leases ?? "");
+  };
   const nodes = agents ?? [];
   const used = new Set<AgentNode>();
   const agent = (name: string, line: AgentLine | undefined, n: AgentNode | undefined): Lane => ({
@@ -94,7 +103,7 @@ export function buildLanes({
     model: n?.model || line?.model || "",
     effort: n?.effort || line?.effort || "",
     contextPct: contextPct(n),
-    leases: n === undefined ? 0 : leaseCount(n.leases),
+    leases: leased(name, n),
     role: "",
     depth: n?.depth ?? 0,
   });
@@ -110,7 +119,7 @@ export function buildLanes({
   }
   for (const [peer, role] of Object.entries(shares).sort(([a], [b]) => a.localeCompare(b))) {
     if (role === "") continue;
-    lanes.push({ id: mateLane(peer), kind: "mate", name: peer, agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: 0, role, depth: 0 });
+    lanes.push({ id: mateLane(peer), kind: "mate", name: peer, agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role, depth: 0 });
   }
   return lanes;
 }

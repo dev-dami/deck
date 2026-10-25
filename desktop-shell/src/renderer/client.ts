@@ -61,3 +61,6 @@ export interface DeckClient {
   startRace?(sessionId: string, brief: string, kind: string, count: number, judge?: boolean): Promise<string | null>;
   listFiles?(sessionId: string, query: string, limit?: number): Promise<FileList | null>;
 }
+
+// Whether the Deck serves the optional method (Info.capabilities).
+export const serves = (c: Pick<DeckClient, "capabilities">, method: string): boolean => c.capabilities?.().includes(method) === true;

@@ -4,13 +4,15 @@ import { sessionTitle } from "@web/state";
 import { toMillis } from "@web/time";
 import { ArrowLeft, Inbox as InboxIcon, PanelLeft, Search, SquarePen, TerminalIcon } from "lucide-react";
 import { type MutableRefObject, useEffect, useRef, useState } from "react";
-import type { ThreadChoice } from "../../shared/bridge";
+import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import { useRooms } from "../appState";
+import { ARCHIVE_UNDO_MS, archiving, useArchiving } from "../archive";
 import { byAttention } from "../attention";
-import type { DeckClient } from "../client";
+import { type DeckClient, serves } from "../client";
 import type { TeamThread } from "../crew";
 import { cn } from "../lib/cn";
 import { usePrefs } from "../prefs";
+import { EMPTY_ROOM, useRoomMetas } from "../roomMeta";
 import { kindsBySession, sameKinds, useAppSlice } from "../select";
 import { SETTLE_AFTER_MS } from "../threads";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
@@ -21,6 +23,7 @@ import { modKey } from "./keys";
 import { ProjectFilter, ProjectGroup, RecentProjects, SharedGroup, type SharedEntry, type SidebarItem, ThreadList } from "./ProjectGroup";
 import { SidebarFooter } from "./SidebarFooter";
 import { ThreadRow } from "./ThreadRow";
+import { actionToast } from "./Toasts";
 
 // A project the sidebar knows: a recent folder or a paired Deck. key is its
 // source ("folder:<dir>", "paired:<id>").
@@ -87,7 +90,7 @@ export interface SidebarActions {
   onNew: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
-  onThreadMenu: (id: string, title: string) => Promise<ThreadChoice>;
+  onThreadMenu: (id: string, title: string, archive: ArchiveOffer) => Promise<ThreadChoice>;
   onForeign: (source: string, id: string) => void;
   // A new thread in a project, by its source.
   onNewIn: (source: string) => void;
@@ -129,12 +132,29 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
   // The kinds that wrote in each thread, for the row's index.
   const kinds = useAppSlice(data.c.store, kindsBySession, sameKinds);
   const [showSettled, setShowSettled] = useState<Record<string, boolean>>({});
+  const [showArchived, setShowArchived] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState<string | null>(null);
   const latest = useRef(actions);
   latest.current = actions;
   const scroller = useRef<HTMLUListElement>(null);
   const rooms = useRooms();
+  // What each room's Deck says of it beyond the session (branch, archived),
+  // and the rooms that wait out their archive Undo.
+  const metas = useRoomMetas(data.c.rooms);
+  const waiting = useArchiving();
+  const clientOf = (x: SidebarItem) => x.foreign?.c ?? data.c;
+  const metaOf = (x: SidebarItem) => (x.foreign === null ? metas.get(x.s.id) : x.foreign.c.rooms?.get(x.s.id)) ?? EMPTY_ROOM;
+  const isArchived = (x: SidebarItem) => metaOf(x).archived || waiting.has(`${x.source}/${x.s.id}`);
+  // Never for a room whose agents work.
+  const archiveOffer = (x: SidebarItem): ArchiveOffer =>
+    isArchived(x) || !serves(clientOf(x), "ArchiveSession") ? "none" : x.s.busy || x.status?.state === "working" ? "busy" : "on";
+  const archive = (x: SidebarItem) => {
+    const c = clientOf(x);
+    const key = `${x.source}/${x.s.id}`;
+    archiving.schedule(key, () => c.archiveSession?.(x.s.id) ?? Promise.resolve(false));
+    actionToast(data.c.store, `Archived "${sessionTitle(x.s)}".`, { label: "Undo", ms: ARCHIVE_UNDO_MS, run: () => archiving.undo(key) });
+  };
   // Every open project's threads, as T3 Code lists them: a room that needs
   // the person, finished or overlaps comes first, then the newest.
   const items: SidebarItem[] = [
@@ -147,12 +167,17 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
   const split = (list: SidebarItem[]) => {
     const live: SidebarItem[] = [];
     const settled: SidebarItem[] = [];
+    const archived: SidebarItem[] = [];
     for (const x of list) {
+      if (isArchived(x)) {
+        archived.push(x);
+        continue;
+      }
       const mine = x.foreign === null;
       const holds = (x.status !== undefined && x.status.state !== "idle") || x.s.busy || x.s.pending > 0 || (mine && (unread[x.s.id] === true || x.s.id === openId));
       (now - toMillis(x.s.updated_at) > SETTLE_AFTER_MS && !holds ? settled : live).push(x);
     }
-    return { live, settled };
+    return { live, settled, archived };
   };
   const grouped = grouping === "projects";
   // The open projects, the current one first, then the others by name.
@@ -163,7 +188,8 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
   ].filter((p) => filter === null || p.key === filter);
   const lists = (grouped ? groups.map((g) => g.key) : ["all"]).map((key) => {
     const mine = grouped ? items.filter((x) => x.source === key) : items;
-    return { key, count: mine.length, ...split(mine) };
+    const parts = split(mine);
+    return { key, count: mine.length - parts.archived.length, ...parts };
   });
   // The rows in the order they show, for Ctrl/Cmd+1 to 9: a virtual list
   // leaves rows out of the page, so the order comes from the lists.
@@ -176,6 +202,7 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
   const row = (x: SidebarItem) => {
     const s = x.s;
     const f = x.foreign;
+    const offer = archiveOffer(x);
     return (
       <ThreadRow
         key={`${x.source}/${s.id}`}
@@ -191,10 +218,13 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
         kinds={f === null ? (kinds[s.id] ?? NO_KINDS) : NO_KINDS}
         theme={theme}
         hideProject={grouped}
+        branch={metaOf(x).branch}
+        archive={offer}
         onOpen={() => (f === null ? latest.current.onOpen(s.id) : latest.current.onForeign(f.source, s.id))}
         onRename={(t) => void (f === null ? latest.current.onRename(s.id, t) : f.c.renameSession(s.id, t))}
         onDelete={() => void (f === null ? latest.current.onDelete(s.id) : f.c.deleteSession(s.id))}
-        onMenu={() => latest.current.onThreadMenu(s.id, sessionTitle(s))}
+        onArchive={() => archive(x)}
+        onMenu={() => latest.current.onThreadMenu(s.id, sessionTitle(s), offer)}
       />
     );
   };
@@ -204,6 +234,9 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
       settled={l.settled}
       shown={showSettled[l.key] === true}
       onToggle={() => setShowSettled((v) => ({ ...v, [l.key]: v[l.key] !== true }))}
+      archived={l.archived}
+      archivedShown={showArchived[l.key] === true}
+      onToggleArchived={() => setShowArchived((v) => ({ ...v, [l.key]: v[l.key] !== true }))}
       row={row}
       scroller={scroller}
       estimate={rows === "compact" ? 37 : grouped ? 59 : 79}

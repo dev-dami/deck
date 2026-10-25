@@ -378,15 +378,22 @@ Scope: `.github/workflows/ci.yml`, `desktop-shell/test/e2e/*`,
   `via`; `Event` gains `lease_changed`, `board_changed`, `agents_changed`
   and `team_changed` so the desktop stops polling; `Session` gains
   `attention` (none, approval, question, blocked, error) and `branch`.
+  Status: done. The room status reads `attention` and `via`, and the lane
+  strip reads the live leases.
 - **WP-E2 Files.** `ListFiles {session_id, query, limit}` over the tree
   with the repo's ignore rules, for the `@` picker; `ReadImage` for
   `ImageRef` bytes.
+  Status: done for `ListFiles`, which the `@` picker uses. The engine has
+  no `ReadImage` yet.
 - **WP-E3 Expose what the engine has.** `CreateSessionRequest.isolate`
   and `ApplyIsolated`/`Unisolate` (`isolate.go`), `Revert` and
   `UndoRevert` (`changes.go`), `ArchiveSession` (`lifecycle.go`) with a
   five-second Undo toast in the shell and never for a working room,
   `StartRace` as a structured call, `Info` with the detected CLIs and
   their login state.
+  Status: done. The new-thread toggle, the branch menu in the room header,
+  Revert in Changes, Archive on the rows and the race form with a judge
+  use these calls.
 - **WP-E4 Ports and search.** A terminal or agent command that opens a
   listening port is reported on the room (`port_opened`), so the shell
   shows it as a chip and opens it in the browser; `SearchMessages

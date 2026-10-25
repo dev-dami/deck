@@ -12,6 +12,8 @@ import {
   RPC_METHODS,
   type RpcMethod,
   type ThreadChoice,
+  ARCHIVE_OFFERS,
+  type ThreadMenuInput,
 } from "../shared/bridge";
 import type { RpcDecks } from "./decks";
 import type { LinkHost } from "./link";
@@ -36,7 +38,7 @@ export interface HostDeps {
   log: (level: LogLevel, message: string) => void;
   openLogs: () => Promise<void>;
   installUpdate: () => void;
-  threadMenu: (thread: { id: string; title: string }) => Promise<ThreadChoice>;
+  threadMenu: (thread: ThreadMenuInput) => Promise<ThreadChoice>;
   notify: (n: NotifyInput) => void;
   badge: (count: number) => void;
   focused: () => boolean;
@@ -108,7 +110,7 @@ export function createHost(d: HostDeps): DeckHost {
     openLogs: () => d.openLogs(),
     logFromRenderer: async (level: LogLevel, message: string) => d.log(level, `renderer: ${message.slice(0, MAX_LOG)}`),
     installUpdate: async () => d.installUpdate(),
-    threadMenu: (thread: { id: string; title: string }) => d.threadMenu({ id: thread.id, title: thread.title }),
+    threadMenu: (thread: ThreadMenuInput) => d.threadMenu({ id: thread.id, title: thread.title, archive: thread.archive }),
     notify: async (n: NotifyInput) => {
       d.notify({ title: n.title, body: n.body, tag: n.tag, silent: n.silent });
     },
@@ -147,7 +149,7 @@ const isLogLevel: Check = (v) => (LOG_LEVELS as readonly unknown[]).includes(v);
 const isThread: Check = (v) => {
   if (!isObject(v)) return false;
   const t = v as Record<string, unknown>;
-  return Object.keys(t).length === 2 && isStr(t["id"]) && isStr(t["title"]);
+  return Object.keys(t).length === 3 && isStr(t["id"]) && isStr(t["title"]) && (ARCHIVE_OFFERS as readonly unknown[]).includes(t["archive"]);
 };
 const isText = (max: number): Check => (v) => typeof v === "string" && v.length <= max;
 const isNotify: Check = (v) => {

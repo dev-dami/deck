@@ -2,9 +2,9 @@ import type { Session, Theme } from "@web/protocol";
 import { sessionTitle } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
 import { relativeTime } from "@web/time";
-import { CircleCheck, FileDiff, Folder, GitCompareArrows, type LucideIcon, ShieldQuestion, Trash2 } from "lucide-react";
+import { Archive, CircleCheck, FileDiff, Folder, GitCompareArrows, type LucideIcon, ShieldQuestion, Trash2 } from "lucide-react";
 import { memo, useState } from "react";
-import type { ThreadChoice } from "../../shared/bridge";
+import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import type { RoomState, RoomStatus } from "../attention";
 import { shortId } from "../lanes";
 import { cn } from "../lib/cn";
@@ -52,9 +52,12 @@ export const ThreadRow = memo(function ThreadRow({
   kinds,
   theme,
   hideProject = false,
+  branch,
+  archive,
   onOpen,
   onRename,
   onDelete,
+  onArchive,
   onMenu,
 }: {
   s: Session;
@@ -73,10 +76,14 @@ export const ThreadRow = memo(function ThreadRow({
   variant: RowStyle;
   kinds: string[];
   theme: Theme | null;
+  // The room's own branch when it is isolated, else "".
+  branch: string;
+  archive: ArchiveOffer;
   onOpen: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
-  // The native menu of the row: Rename, or Delete (main asks first).
+  onArchive: () => void;
+  // The native menu of the row: Rename, Archive, or Delete (main asks first).
   onMenu: () => Promise<ThreadChoice>;
 }) {
   const [renaming, setRenaming] = useState(false);
@@ -181,20 +188,42 @@ export const ThreadRow = memo(function ThreadRow({
             </button>
           </span>
         ) : (
-          <button
-            type="button"
-            aria-label={`Delete ${sessionTitle(s)}`}
-            title="Delete thread"
-            className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 text-muted-foreground text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirm(true);
-            }}
-          >
-            <Trash2 className="size-3.5" />
-          </button>
+          <>
+            {archive !== "none" && (
+              <button
+                type="button"
+                aria-label={`Archive ${sessionTitle(s)}`}
+                title={archive === "on" ? "Archive thread" : "Stop its agents to archive it"}
+                aria-disabled={archive !== "on"}
+                className="inline-flex cursor-pointer items-center rounded-md px-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-disabled:cursor-default aria-disabled:opacity-40"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (archive === "on") onArchive();
+                }}
+              >
+                <Archive className="size-3.5" />
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label={`Delete ${sessionTitle(s)}`}
+              title="Delete thread"
+              className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 text-muted-foreground text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirm(true);
+              }}
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </>
         )}
       </span>
+    </span>
+  );
+  const branchTag = branch !== "" && (
+    <span className="row-branch min-w-0 max-w-24 shrink truncate font-mono text-3xs text-faint" title={branch}>
+      {branch}
     </span>
   );
   const common = {
@@ -212,6 +241,7 @@ export const ThreadRow = memo(function ThreadRow({
       e.preventDefault();
       void onMenu().then((choice) => {
         if (choice === "rename") setRenaming(true);
+        else if (choice === "archive") onArchive();
         else if (choice === "delete") onDelete();
       });
     },
@@ -228,6 +258,7 @@ export const ThreadRow = memo(function ThreadRow({
           {rail}
           <div className="flex h-7 min-w-0 items-center gap-2">
             {title}
+            {branchTag}
             <RowIndex id={s.id} kinds={kinds} theme={theme} />
             {statusSlot}
           </div>
@@ -269,6 +300,7 @@ export const ThreadRow = memo(function ThreadRow({
             <span className={cn("min-w-0 flex-1 truncate text-faint", label !== "" && "status-label text-2xs")}>
               {label !== "" ? label : s.last_text !== undefined && s.last_text !== "" ? s.last_text : `${s.mode} mode`}
             </span>
+            {branchTag}
             <RowIndex id={s.id} kinds={kinds} theme={theme} />
           </div>
         </div>

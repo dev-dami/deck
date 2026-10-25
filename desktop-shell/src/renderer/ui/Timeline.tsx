@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { memo, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { agentColour, agentKind } from "../agents";
+import type { RoomNotice } from "../attention";
 import { shortId } from "../lanes";
 import { cn } from "../lib/cn";
 import { lastReplyId, messageText } from "../messages";
@@ -38,7 +39,23 @@ import { VIRTUAL_AFTER, VirtualList } from "./kit/virtual";
 import { Markdown } from "./Markdown";
 import { type PlanActions, PlanCard, wasApproved } from "./PlanCard";
 
-const messageKey = (m: Message) => m.id;
+// A row of the timeline: a message, or the shell's own note in the room
+// (a revert), in time order.
+type Row = Message | RoomNotice;
+
+const rowKey = (r: Row) => ("role" in r ? r.id : `note:${r.at}:${r.text}`);
+
+function withNotes(messages: Message[], notes: readonly RoomNotice[]): Row[] {
+  if (notes.length === 0) return messages;
+  const out: Row[] = [];
+  let i = 0;
+  for (const m of messages) {
+    const at = toMillis(m.created_at);
+    while (i < notes.length && notes[i]!.at < at) out.push(notes[i++]!);
+    out.push(m);
+  }
+  return [...out, ...notes.slice(i)];
+}
 
 // What the open room lets a person do from its timeline. A read-only room
 // gets none of it.
@@ -477,6 +494,7 @@ export function Timeline({
   mode = null,
   readOnly = false,
   actions,
+  notes = [],
 }: {
   messages: Message[];
   roster: AgentLine[];
@@ -489,8 +507,11 @@ export function Timeline({
   mode?: Mode | null;
   readOnly?: boolean;
   actions?: RoomActions;
+  // The shell's own notes in the room, oldest first.
+  notes?: readonly RoomNotice[];
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const rows = useMemo(() => withNotes(messages, notes), [messages, notes]);
   const lastId = useMemo(() => lastReplyId(messages), [messages]);
   const verbs = readOnly || actions === undefined ? null : actions;
   const stick = useRef(true);
@@ -508,7 +529,7 @@ export function Timeline({
     } else if (stick.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages, changes]);
+  }, [rows, changes]);
 
   const older = async () => {
     const el = ref.current;
@@ -561,14 +582,20 @@ export function Timeline({
             </p>
           )}
           <VirtualList
-            items={messages}
-            keyOf={messageKey}
+            items={rows}
+            keyOf={rowKey}
             scroller={ref}
             estimate={120}
             gap={24}
             className="flex flex-col gap-6"
             onResize={pin}
-            render={(m) => <MessageView m={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />}
+            render={(m) =>
+              "role" in m ? (
+                <MessageView m={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />
+              ) : (
+                <p className="room-note text-center text-faint text-xs">{m.text}</p>
+              )
+            }
           />
           {changes !== null && changes.length > 0 && <ChangedFilesCard files={changes} onOpen={onOpenDiff} />}
         </div>

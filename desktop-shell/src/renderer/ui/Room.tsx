@@ -4,11 +4,13 @@ import { sessionMode } from "@web/state";
 import { Ellipsis, FileDiff, Folder, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "lucide-react";
 import { type ComponentProps, type RefObject, useMemo, useState } from "react";
 import type { EngineStop } from "../../shared/bridge";
-import type { DeckClient } from "../client";
+import { type DeckClient, serves } from "../client";
+import { FILES_LIMIT } from "../completion";
 import type { Team } from "../crew";
 import { buildLanes, filterLane } from "../lanes";
 import { usePrefs } from "../prefs";
 import { sendHint } from "../queue";
+import { EMPTY_ROOM, useRoomMetas } from "../roomMeta";
 import { type ShellSlice, shallowEqual, threadSlice, useAppSlice } from "../select";
 import type { Panel } from "../ui";
 import { AgentsStrip } from "./AgentsStrip";
@@ -157,6 +159,14 @@ export function Room({
   const prefs = usePrefs();
   const api = c.project;
   const sid = open?.id ?? null;
+  // What the Deck says of the room beyond the session: its branch and leases.
+  const metas = useRoomMetas(c.rooms);
+  const meta = (sid === null ? undefined : metas.get(sid)) ?? EMPTY_ROOM;
+  // "@" lists the tree's files too when the Deck serves ListFiles.
+  const listFiles = useMemo(
+    () => (sid === null || !serves(c, "ListFiles") ? undefined : async (q: string) => (await c.listFiles?.(sid, q, FILES_LIMIT))?.paths ?? null),
+    [c, sid],
+  );
   const roster = sid === null ? [] : (state.roster[sid] ?? []);
   const kinds = state.server?.kinds ?? [];
   const pending = sid === null ? [] : state.approvals.filter((a) => a.session_id === sid);
@@ -174,6 +184,9 @@ export function Room({
   return (
     <>
       <RoomHeader
+        c={c}
+        branch={meta.branch}
+        onChanged={r.refreshChanges}
         sidebar={sidebar}
         onShowSidebar={onShowSidebar}
         project={project}
@@ -201,7 +214,7 @@ export function Room({
       />
       {open !== undefined && (
         <Lanes
-          lanes={buildLanes({ roster, agents: crew?.agents ?? null, shares: r.shares, waiting: pending.map((a) => a.agent) })}
+          lanes={buildLanes({ roster, agents: crew?.agents ?? null, shares: r.shares, waiting: pending.map((a) => a.agent), leases: meta.leases })}
           theme={state.theme}
           filter={lane}
           onFilter={r.setLane}
@@ -214,7 +227,15 @@ export function Room({
       {engine !== null ? (
         <EngineStopped stop={engine} onRestart={() => c.restart?.() ?? Promise.resolve()} />
       ) : open === undefined ? (
-        <NewThread loaded={state.sessionsLoaded} project={project} kinds={kinds} draft={draft} setDraft={setDraft} onFocus={focusInput}>
+        <NewThread
+          loaded={state.sessionsLoaded}
+          project={project}
+          kinds={kinds}
+          draft={draft}
+          setDraft={setDraft}
+          onFocus={focusInput}
+          canIsolate={serves(c, "IsolateSession")}
+        >
           <Composer
             key={NEW}
             {...common}
@@ -235,6 +256,7 @@ export function Room({
             onOpenDiff={(path) => onPanel("changes", path)}
             mode={room.mode}
             actions={room.actions}
+            notes={r.notes}
           />
           <div className="shrink-0 px-5 pb-3">
             <Composer
@@ -245,6 +267,7 @@ export function Room({
               onSend={room.send}
               onSteer={send.steer}
               paths={paths}
+              listFiles={listFiles}
               history={{ project: source, room: open.id }}
               busy={open.busy}
               onStop={room.stop}
