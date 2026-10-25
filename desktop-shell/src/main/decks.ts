@@ -132,6 +132,15 @@ export function unary(client: DeckClient, method: string, request: object, timeo
   });
 }
 
+// A Deck that started and answered Info, not yet kept.
+interface Started {
+  ok: true;
+  deck: LocalDeck;
+  child: ChildProcess;
+  client: DeckClient;
+  tail: Tail;
+}
+
 interface Open {
   deck: LocalDeck;
   child: ChildProcess;
@@ -143,11 +152,25 @@ interface Open {
 
 type Emit = (id: string, ev: RpcStreamEvent) => void;
 
+// The end of what a Deck wrote to stderr, kept for the life of the process:
+// it says why the Deck stopped.
+interface Tail {
+  text: string;
+}
+
+const TAIL_LINES = 12;
+
+function tailLines(t: Tail): string[] {
+  return t.text
+    .split("\n")
+    .filter((l) => l.trim() !== "")
+    .slice(-TAIL_LINES);
+}
+
 // Waits for the handshake on the child's stdout. It keeps reading after
 // that, so the pipe never fills.
-function readHandshake(child: ChildProcess): Promise<Handshake | string> {
+function readHandshake(child: ChildProcess, tail: Tail): Promise<Handshake | string> {
   return new Promise((resolve) => {
-    let stderr = "";
     let done = false;
     const finish = (v: Handshake | string) => {
       if (done) return;
@@ -157,7 +180,7 @@ function readHandshake(child: ChildProcess): Promise<Handshake | string> {
     };
     const timer = setTimeout(() => finish("Deck did not start in time."), START_TIMEOUT_MS);
     child.stderr?.on("data", (c: Buffer) => {
-      stderr = (stderr + c.toString("utf8")).slice(-2000);
+      tail.text = (tail.text + c.toString("utf8")).slice(-2000);
     });
     if (child.stdout !== null) {
       createInterface({ input: child.stdout }).on("line", (line) => {
@@ -168,9 +191,9 @@ function readHandshake(child: ChildProcess): Promise<Handshake | string> {
     child.on("error", (e) => finish(`Could not run deck: ${e.message}`));
     child.on("exit", () => {
       // Deck's own error line, not the usage text cobra prints after it.
-      const lines = stderr.trim().split("\n");
-      const tail = (lines.find((l) => l.startsWith("Error: "))?.slice("Error: ".length) ?? lines.slice(-2).join(" ")).trim();
-      finish(`Deck stopped before it was ready${tail === "" ? "." : `: ${tail}`}`);
+      const lines = tail.text.trim().split("\n");
+      const last = (lines.find((l) => l.startsWith("Error: "))?.slice("Error: ".length) ?? lines.slice(-2).join(" ")).trim();
+      finish(`Deck stopped before it was ready${last === "" ? "." : `: ${last}`}`);
     });
   });
 }
@@ -181,6 +204,9 @@ function readHandshake(child: ChildProcess): Promise<Handshake | string> {
 // LocalDeck, call results and events, none of which carry it.
 export class RpcDecks {
   private readonly open_ = new Map<string, Open>();
+  // Decks whose process ended by itself, until restart() or close().
+  private readonly stopped_ = new Map<string, LocalDeck>();
+  private readonly restarting = new Map<string, Promise<OpenOutcome>>();
   private next = 1;
 
   constructor(
@@ -192,14 +218,47 @@ export class RpcDecks {
   ) {}
 
   async open(dir: string): Promise<OpenOutcome> {
+    for (const o of this.open_.values()) if (o.deck.dir === dir) return { ok: true, deck: o.deck };
+    // A reloaded window opens its folder again: a stopped Deck restarts.
+    for (const d of this.stopped_.values()) if (d.dir === dir) return this.restart(d.id);
+    const out = await this.start(dir, `local-${this.next++}`);
+    return out.ok ? { ok: true, deck: this.keep(out) } : out;
+  }
+
+  // Starts a Deck that stopped by itself again, in its folder and under the
+  // same id, so the window keeps its project. Calls made while it starts
+  // share the one start.
+  restart(id: string): Promise<OpenOutcome> {
+    const o = this.open_.get(id);
+    if (o !== undefined) return Promise.resolve({ ok: true, deck: o.deck });
+    const d = this.stopped_.get(id);
+    if (d === undefined) return Promise.resolve({ ok: false, message: "That Deck is closed." });
+    let p = this.restarting.get(id);
+    if (p === undefined) {
+      p = this.start(d.dir, id).then((out): OpenOutcome => {
+        if (!out.ok) return out;
+        // The window closed the project while the Deck started.
+        if (this.stopped_.get(id) !== d) {
+          out.client.close();
+          out.child.stdin?.end();
+          return { ok: false, message: "That Deck is closed." };
+        }
+        this.stopped_.delete(id);
+        return { ok: true, deck: this.keep(out) };
+      });
+      p = p.finally(() => this.restarting.delete(id));
+      this.restarting.set(id, p);
+    }
+    return p;
+  }
+
+  private async start(dir: string, id: string): Promise<Started | { ok: false; message: string }> {
     if (this.deck === null) return { ok: false, message: "This install of Deck is missing its engine. Reinstall Deck." };
     try {
       if (!statSync(dir).isDirectory()) return { ok: false, message: "That is not a folder." };
     } catch {
       return { ok: false, message: "That folder does not exist." };
     }
-    for (const o of this.open_.values()) if (o.deck.dir === dir) return { ok: true, deck: o.deck };
-
     const env = this.path === null ? process.env : { ...process.env, PATH: await this.path };
     const child = spawn(this.deck, ["serve", "--rpc"], {
       cwd: dir,
@@ -207,7 +266,8 @@ export class RpcDecks {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
-    const hs = await readHandshake(child);
+    const tail: Tail = { text: "" };
+    const hs = await readHandshake(child, tail);
     if (typeof hs === "string") {
       child.kill("SIGTERM");
       return { ok: false, message: hs };
@@ -220,20 +280,31 @@ export class RpcDecks {
       return { ok: false, message: `Deck did not answer: ${info.message}` };
     }
     const project = (info.value as { project?: unknown }).project;
-    const id = `local-${this.next++}`;
     const deck: LocalDeck = {
       id,
       dir,
       project: typeof project === "string" && project !== "" ? project : dir,
       version: hs.version,
     };
+    return { ok: true, deck, child, client, tail };
+  }
+
+  // Keeps a started Deck. When its process ends by itself, the window gets
+  // "stopped" with the last stderr lines, and the project stays open.
+  private keep({ deck, child, client, tail }: Started): LocalDeck {
+    const id = deck.id;
     this.open_.set(id, { deck, child, client, stream: null, terms: new Map() });
     child.on("exit", (code) => {
       if (this.open_.get(id)?.child !== child) return;
       this.drop(id);
-      this.emit(id, { type: "exit", message: code === 0 ? "Deck stopped." : `Deck stopped (exit ${code}).` });
+      this.stopped_.set(id, deck);
+      this.emit(id, {
+        type: "stopped",
+        message: code === 0 ? "Deck stopped." : `Deck stopped (exit ${code}).`,
+        stderr: tailLines(tail),
+      });
     });
-    return { ok: true, deck };
+    return deck;
   }
 
   // Whether dir is a folder this app has a Deck open in.
@@ -251,7 +322,8 @@ export class RpcDecks {
   subscribe(id: string, epoch: string, seq: number): void {
     const o = this.open_.get(id);
     if (o === undefined) {
-      this.emit(id, { type: "exit", message: "That Deck is closed." });
+      // A stopped Deck waits for a restart; the window already knows.
+      if (!this.stopped_.has(id)) this.emit(id, { type: "exit", message: "That Deck is closed." });
       return;
     }
     o.stream?.cancel();
@@ -327,6 +399,7 @@ export class RpcDecks {
   }
 
   close(id: string): void {
+    this.stopped_.delete(id);
     const o = this.open_.get(id);
     if (o === undefined) return;
     this.drop(id);

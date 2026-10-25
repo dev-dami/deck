@@ -183,6 +183,44 @@ test("projects: two folders open at once, their threads in one sidebar", async (
   await expect(sidebar(page).locator(".session")).toHaveCount(3);
 });
 
+test("projects: a switch and back keeps the terminal, the draft and the unread thread", async ({ page }) => {
+  const second = mkdtempSync(join(tmpdir(), "deck-second-"));
+  await openFolder(page);
+  const mine = sidebar(page).locator(`[data-project="${basename(dir)}"]`);
+  // A shell that runs something.
+  await page.keyboard.press("Control+j");
+  const drawer = page.getByRole("region", { name: "Terminal" });
+  await drawer.locator(".xterm").click();
+  await page.keyboard.type("ls");
+  await page.keyboard.press("Enter");
+  await expect(drawer.locator(".xterm-rows")).toContainText("ran: ls");
+  // A draft on the new-thread screen.
+  await composer(page).fill("a draft for later");
+  // A thread with news the person has not read.
+  fake.deck.invoke("chat.send", { session_id: "ses_main", text: "$codex check the limiter tests" });
+  await expect(mine.locator('[data-session="ses_main"] [data-status="done"]')).toBeVisible();
+
+  picks = [second];
+  await sidebar(page).getByRole("button", { name: "Add project" }).click();
+  await expect(page.locator(".project")).toHaveText(basename(second));
+  await expect(composer(page)).toHaveValue("");
+  await expect(drawer).toBeHidden();
+
+  await mine.getByRole("button", { name: `New thread in ${basename(dir)}` }).click();
+  await expect(page.locator(".project")).toHaveText(basename(dir));
+  await expect(composer(page)).toHaveValue("a draft for later");
+  await expect(mine.locator('[data-session="ses_main"] [data-status="done"]')).toBeVisible();
+  // The same shell, still running, with what it printed.
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("tab")).toHaveCount(1);
+  await expect(drawer.locator(".xterm-rows")).toContainText("ran: ls");
+  await drawer.locator(".xterm").click();
+  await page.keyboard.type("pwd");
+  await page.keyboard.press("Enter");
+  await expect(drawer.locator(".xterm-rows")).toContainText("ran: pwd");
+  expect(fake.calls.filter((m) => m === "TerminalClose")).toHaveLength(0);
+});
+
 test("side chat: asks another agent about the thread without touching it", async ({ page }) => {
   await openFolder(page);
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();

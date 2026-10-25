@@ -26,10 +26,11 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { memo, useRef, useState } from "react";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
 import type { RowStyle } from "../prefs";
+import { sameData } from "../select";
 import { SETTLE_AFTER_MS, type ThreadStatus, threadStatus } from "../threads";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
@@ -57,6 +58,8 @@ export interface ForeignThread {
   c: DeckClient;
 }
 
+const NO_KINDS: string[] = [];
+
 const STATUS: Record<Exclude<ThreadStatus, null>, { label: string; icon: LucideIcon; className: string }> = {
   working: { label: "Working", icon: CircleDashed, className: "text-info-foreground" },
   approval: { label: "Approval", icon: ShieldQuestion, className: "text-warning-foreground" },
@@ -82,7 +85,9 @@ function KindStack({ kinds, theme }: { kinds: string[]; theme: Theme | null }) {
   );
 }
 
-function ThreadRow({
+// A row renders again only when its data changes: its handlers call
+// through the Sidebar's latest props.
+const ThreadRow = memo(function ThreadRow({
   s,
   project,
   active,
@@ -265,7 +270,7 @@ function ThreadRow({
       </div>
     </li>
   );
-}
+}, sameData);
 
 function HeaderButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -495,6 +500,8 @@ export function Sidebar({
   const [showSettled, setShowSettled] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState<string | null>(null);
+  const latest = useRef({ onOpen, onForeign, onRename, onDelete });
+  latest.current = { onOpen, onForeign, onRename, onDelete };
   // Every open project's threads, newest first, as T3 Code lists them.
   type Item = { s: Session; source: string; project: string; foreign: ForeignThread | null };
   const items: Item[] = [
@@ -526,12 +533,12 @@ export function Sidebar({
         unread={f === null && unread[s.id] === true}
         now={now}
         variant={rows}
-        kinds={f === null ? kindsOf(s.id) : []}
+        kinds={f === null ? kindsOf(s.id) : NO_KINDS}
         theme={theme}
         hideProject={grouped}
-        onOpen={() => (f === null ? onOpen(s.id) : onForeign(f.source, s.id))}
-        onRename={(t) => void (f === null ? onRename(s.id, t) : f.c.renameSession(s.id, t))}
-        onDelete={() => void (f === null ? onDelete(s.id) : f.c.deleteSession(s.id))}
+        onOpen={() => (f === null ? latest.current.onOpen(s.id) : latest.current.onForeign(f.source, s.id))}
+        onRename={(t) => void (f === null ? latest.current.onRename(s.id, t) : f.c.renameSession(s.id, t))}
+        onDelete={() => void (f === null ? latest.current.onDelete(s.id) : f.c.deleteSession(s.id))}
       />
     );
   };

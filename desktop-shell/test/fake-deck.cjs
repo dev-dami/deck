@@ -19,7 +19,11 @@ if (handshake === undefined) {
 process.stdout.write("Deck is starting\n");
 process.stdout.write(`${handshake}\n`);
 // DECK_FAKE_EXIT_AFTER (ms) makes it stop by itself, as a crash would.
-if (process.env.DECK_FAKE_EXIT_AFTER) setTimeout(() => process.exit(3), Number(process.env.DECK_FAKE_EXIT_AFTER));
+if (process.env.DECK_FAKE_EXIT_AFTER) {
+  setTimeout(() => {
+    process.stderr.write("fake deck: the store is locked\npanic: fake crash\n", () => process.exit(3));
+  }, Number(process.env.DECK_FAKE_EXIT_AFTER));
+}
 process.stdin.resume();
 process.stdin.on("end", () => {
   if (process.env.DECK_FAKE_STOPPED) fs.writeFileSync(process.env.DECK_FAKE_STOPPED, "stopped");

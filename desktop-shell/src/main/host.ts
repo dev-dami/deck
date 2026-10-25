@@ -62,6 +62,7 @@ export function createHost(d: HostDeps): DeckHost {
       return out;
     },
     closeFolder: async (id: string) => d.decks.close(id),
+    restartFolder: (id: string) => d.decks.restart(id),
     recentFolders: async () => d.recent.list(),
     rpcCall: (id: string, method: RpcMethod, request: Record<string, unknown>) =>
       d.decks.call(id, method, request),
@@ -109,6 +110,7 @@ const ARGS: Record<HostMethod, Check[]> = {
   socketClose: [isInt, isInt, isStr],
   openFolder: [isStr],
   closeFolder: [isStr],
+  restartFolder: [isStr],
   recentFolders: [],
   // The request's fields are checked by the proto encoder.
   rpcCall: [isStr, isRpcMethod, isObject],

@@ -3,7 +3,7 @@ import type { ChangedFile, Decision, Image, Mode, ModelChoice, ServerEvent, Serv
 import type { AppState } from "@web/state";
 import { applyTheme, type ThemeTarget } from "@web/theme";
 import { ProjectApi } from "./project";
-import type { DeckBridge, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
+import type { DeckBridge, EngineStop, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
 import type { DeckClient } from "./client";
 import {
   toApprovals,
@@ -37,6 +37,9 @@ export class RpcDeckClient implements DeckClient {
   private epoch = "";
   private seq = 0;
   private stopped = false;
+  // The engine stopped by itself; restart() starts it again.
+  private halted = false;
+  private restarting = false;
   private attempt = 0;
   private retry: ReturnType<typeof setTimeout> | null = null;
   private themeVars: string[] = [];
@@ -48,6 +51,7 @@ export class RpcDeckClient implements DeckClient {
     private readonly bridge: DeckBridge,
     readonly deck: LocalDeck,
     private readonly theme: ThemeTarget | null,
+    private readonly onEngine: (stop: EngineStop | null) => void = () => {},
   ) {
     this.project = new ProjectApi(bridge, deck.id, (id) => this.ensureLoaded(id));
     this.off = bridge.onRpc((id, ev) => {
@@ -139,11 +143,44 @@ export class RpcDeckClient implements DeckClient {
         this.retry = setTimeout(() => this.subscribe(), wait);
         return;
       }
+      case "stopped":
+        // The project stays open with what it showed; the window offers a restart.
+        this.halted = true;
+        if (this.retry !== null) clearTimeout(this.retry);
+        this.retry = null;
+        this.store.dispatch({ type: "link", link: "offline" });
+        this.onEngine({ message: ev.message, stderr: ev.stderr });
+        return;
       case "exit":
         this.stop();
         this.store.dispatch({ type: "reset", auth: "unpaired", message: ev.message });
         return;
     }
+  }
+
+  // Starts the stopped engine in the same folder, then resyncs from scratch:
+  // the new process has a new epoch.
+  async restart(): Promise<void> {
+    if (!this.halted || this.stopped || this.restarting) return;
+    this.restarting = true;
+    let out: Awaited<ReturnType<DeckBridge["restartFolder"]>>;
+    try {
+      out = await this.bridge.restartFolder(this.deck.id);
+    } catch (e) {
+      out = { ok: false, message: describeError(e) };
+    }
+    this.restarting = false;
+    if (this.stopped) return;
+    if (!out.ok) {
+      this.onEngine({ message: out.message, stderr: [] });
+      return;
+    }
+    this.halted = false;
+    this.epoch = "";
+    this.seq = 0;
+    this.attempt = 0;
+    this.onEngine(null);
+    await this.boot();
   }
 
   private apply(ev: ServerEvent): void {

@@ -2,7 +2,7 @@ import { applyAgentChip } from "@web/composer";
 import type { ChangedFile, Image, Session } from "@web/protocol";
 import { needsConfirm } from "@web/modes";
 import type { Mode } from "@web/protocol";
-import { sessionMode, sessionTitle } from "@web/state";
+import { type AppState, sessionMode, sessionTitle } from "@web/state";
 import { relativeTime } from "@web/time";
 import {
   Ellipsis,
@@ -18,14 +18,15 @@ import {
   Square,
   SquareTerminal,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import { agentKind } from "../agents";
+import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { dispatchUi, setDraft as storeDraft, useDraft, useEngine, useProjectUi } from "../appState";
 import type { DeckClient } from "../client";
 import { addAgentMention } from "../completion";
 import { cn } from "../lib/cn";
 import { isSide } from "../sideChat";
 import { setPrefs, usePrefs } from "../prefs";
-import { initialUi, PANELS, type Panel, reduceUi, SETTINGS_SECTIONS } from "../ui";
+import { kindsBySession, panelSlice, sameKinds, shallowEqual, shellSlice, threadSlice, useAppSlice } from "../select";
+import { PANELS, type Panel, SETTINGS_SECTIONS, type UiAction } from "../ui";
 import { AgentCards, AgentsStrip } from "./AgentsStrip";
 import { ApprovalCard } from "./ApprovalCard";
 import { Composer } from "./Composer";
@@ -39,12 +40,13 @@ import { ModePicker } from "./ModePicker";
 import { type Command, Palette } from "./Palette";
 import { RightPanel } from "./RightPanel";
 import { SettingsPage } from "./Settings";
-import { TerminalDrawer } from "./Terminal";
+import { TerminalDrawer, useTerminalShown } from "./Terminal";
 import { UsagePage } from "./Usage";
 import { ShareControl, TeamPage } from "./Team";
 import { type ForeignThread, type ProjectEntry, Sidebar } from "./Sidebar";
 import type { Landing } from "./App";
 import type { OpenProject } from "../openProjects";
+import type { EngineStop } from "../../shared/bridge";
 import { Timeline } from "./Timeline";
 import { yoloMove } from "../yolo";
 
@@ -82,6 +84,54 @@ function titleFrom(text: string): string {
   const line = text.replace(/(^|\s)\$[\w-]+[+*]?/g, " ").trim().split("\n")[0] ?? "";
   const t = line.replace(/\s+/g, " ").trim();
   return t.length > 60 ? `${t.slice(0, 57).trimEnd()}…` : t;
+}
+
+const NO_KINDS: string[] = [];
+const wholeState = (s: AppState): AppState => s;
+
+// The open thread's timeline. It reads that thread's messages alone, so
+// tokens in other threads do not render it, nor the shell around it.
+function LiveTimeline({ c, sid, ...rest }: { c: DeckClient; sid: string } & Omit<ComponentProps<typeof Timeline>, "messages" | "roster" | "more" | "onOlder">) {
+  const select = useMemo(() => threadSlice(sid), [sid]);
+  const t = useAppSlice(c.store, select, shallowEqual);
+  return <Timeline messages={t.messages} roster={t.roster} more={t.more} onOlder={() => c.loadOlder(sid)} {...rest} />;
+}
+
+// The side panel and the Settings page take the whole state but read only
+// the panel slice (the side chat reads messages too), so they render when
+// that slice changes.
+function LiveRightPanel(props: Omit<ComponentProps<typeof RightPanel>, "state">) {
+  useAppSlice(props.c.store, props.panel === "side" ? wholeState : panelSlice, shallowEqual);
+  return <RightPanel {...props} state={props.c.store.state} />;
+}
+
+function LiveSettings({ c, ...props }: { c: DeckClient } & Omit<ComponentProps<typeof SettingsPage>, "state">) {
+  useAppSlice(c.store, panelSlice, shallowEqual);
+  return <SettingsPage {...props} state={c.store.state} />;
+}
+
+// In place of the thread when the project's engine stopped by itself.
+function EngineStopped({ stop, onRestart }: { stop: EngineStop; onRestart: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="engine-stopped flex min-h-0 flex-1 flex-col items-center justify-center gap-4 overflow-y-auto px-5 pb-[14vh]" role="alert">
+      <h2 className="text-balance text-center font-medium text-xl">{stop.message}</h2>
+      {stop.stderr.length > 0 && (
+        <pre className="engine-log max-h-64 w-full max-w-2xl overflow-auto rounded-lg border bg-code px-3 py-2 font-mono text-muted-foreground text-xs" aria-label="The engine's last output">
+          {stop.stderr.join("\n")}
+        </pre>
+      )}
+      <Button
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          void onRestart().finally(() => setBusy(false));
+        }}
+      >
+        {busy ? "Restarting…" : "Restart"}
+      </Button>
+    </div>
+  );
 }
 
 function MoreMenu({
@@ -157,13 +207,13 @@ function MoreMenu({
 // where names the Deck: host:port for a paired one, the folder for a local one.
 export function Shell({
   c,
+  projectKey,
   bridge,
   folder,
   name,
   where,
   transport,
   others,
-  landing,
   projects,
   onProject,
   onAddProject,
@@ -172,6 +222,8 @@ export function Shell({
   onConnect,
 }: {
   c: DeckClient;
+  // The project's key in the app state (appState.ts).
+  projectKey: string;
   bridge: DeckBridge;
   // The open project's folder when it is a local one.
   folder: string | null;
@@ -180,8 +232,6 @@ export function Shell({
   transport: string;
   // The other open projects, whose threads the sidebar lists too.
   others: OpenProject[];
-  // Where to land: a thread of this project, the new-thread screen, or null.
-  landing: Landing;
   projects: ProjectEntry[];
   onProject: (source: string, to?: Landing) => Promise<string | null>;
   onAddProject: () => Promise<string | null>;
@@ -189,41 +239,28 @@ export function Shell({
   onDisconnect: () => void;
   onConnect: () => void;
 }) {
-  const state = useSyncExternalStore(c.store.subscribe, () => c.store.state);
+  const state = useAppSlice(c.store, shellSlice, shallowEqual);
   const prefs = usePrefs();
-  const [ui, dispatch] = useReducer(reduceUi, initialUi);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const ui = useProjectUi(projectKey);
+  const dispatch = useCallback((a: UiAction) => dispatchUi(projectKey, a), [projectKey]);
+  const engine = useEngine(projectKey);
   const [now, setNow] = useState(() => Date.now());
   const [sidebar, setSidebar] = useState(true);
   const [wide, setWide] = useState(false);
   const [focus, setFocus] = useState<string | null>(null);
-  const [terminal, setTerminal] = useState(false);
   const api = c.project;
+  const [terminal, setTerminal] = useTerminalShown(api);
   const git = useGit(api);
   const [changes, setChanges] = useState<{ id: string; files: ChangedFile[] } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mac = useMemo(isMac, []);
   const foreign = useForeignThreads(others);
 
-  // A thread picked in another project, or its new-thread screen.
-  useEffect(() => {
-    if (landing === "new") dispatch({ type: "open", id: null });
-    else if (landing !== null) dispatch({ type: "open", id: landing });
-  }, [landing]);
-
   const open: Session | undefined = state.sessions.find((s) => s.id === ui.openId);
   const sid = open?.id ?? null;
   const key = sid ?? NEW;
-  const draft = drafts[key] ?? "";
-  const setDraft = useCallback((text: string) => setDrafts((d) => ({ ...d, [key]: text })), [key]);
-
-  useEffect(() => {
-    if (state.sessionsLoaded) dispatch({ type: "sessions", sessions: state.sessions });
-  }, [state.sessions, state.sessionsLoaded]);
-
-  useEffect(() => {
-    dispatch({ type: "messages", messages: state.messages });
-  }, [state.messages]);
+  const draft = useDraft(projectKey, key);
+  const setDraft = useCallback((text: string) => storeDraft(projectKey, key, text), [projectKey, key]);
 
   useEffect(() => {
     if (ui.openId === null) c.closeSession();
@@ -284,14 +321,14 @@ export function Shell({
     async (text: string, images: Image[]): Promise<boolean> => {
       const s = await c.createSession(titleFrom(text) || undefined);
       if (s === null) return false;
-      setDrafts((d) => ({ ...d, [NEW]: "" }));
+      storeDraft(projectKey, NEW, "");
       openSession(s.id);
       const ok = await c.send(s.id, text, images);
       // The thread's own composer keeps the text of a failed send.
-      if (!ok) setDrafts((d) => ({ ...d, [s.id]: text }));
+      if (!ok) storeDraft(projectKey, s.id, text);
       return ok;
     },
-    [c, openSession],
+    [c, projectKey, openSession],
   );
 
   const showPanel = useCallback((p: Panel, path?: string) => {
@@ -408,17 +445,8 @@ export function Shell({
   const removed = files?.reduce((n, f) => n + f.removed, 0) ?? 0;
 
   // The kinds that wrote in a thread, for the sidebar's stack of marks.
-  const kindsOf = useCallback(
-    (id: string): string[] => {
-      const list = state.roster[id] ?? [];
-      const seen = new Set(list.map((l) => l.kind));
-      for (const m of state.messages[id] ?? []) {
-        if (m.role === "assistant" && m.agent !== undefined) seen.add(agentKind(m.agent, list));
-      }
-      return [...seen];
-    },
-    [state.roster, state.messages],
-  );
+  const kindsMap = useAppSlice(c.store, kindsBySession, sameKinds);
+  const kindsOf = useCallback((id: string): string[] => kindsMap[id] ?? NO_KINDS, [kindsMap]);
 
   const cards = (
     <AgentCards
@@ -648,9 +676,9 @@ export function Shell({
           </main>
         ) : ui.settings !== null ? (
           <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-            <SettingsPage
+            <LiveSettings
+              c={c}
               section={ui.settings}
-              state={state}
               where={where}
               transport={transport}
               mac={mac}
@@ -662,7 +690,9 @@ export function Shell({
         ) : (
           <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
             {header}
-            {open === undefined ? (
+            {engine !== null ? (
+              <EngineStopped stop={engine} onRestart={() => c.restart?.() ?? Promise.resolve()} />
+            ) : open === undefined ? (
               <div className="welcome flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-5 pb-[14vh]">
                 <h2 className="welcome-title text-balance text-center font-medium text-2xl tracking-tight sm:text-3xl">
                   {state.sessionsLoaded ? (
@@ -695,12 +725,10 @@ export function Shell({
               </div>
             ) : (
               <>
-                <Timeline
-                  messages={state.messages[open.id] ?? []}
-                  roster={roster}
+                <LiveTimeline
+                  c={c}
+                  sid={open.id}
                   theme={state.theme}
-                  more={state.pages[open.id]?.more ?? false}
-                  onOlder={() => c.loadOlder(open.id)}
                   changes={files}
                   onOpenDiff={(path) => openPanel("changes", path)}
                 />
@@ -759,9 +787,8 @@ export function Shell({
         )}
       </div>
       {ui.panel !== null && ui.settings === null && !ui.usage && !ui.team && (
-        <RightPanel
+        <LiveRightPanel
           c={c}
-          state={state}
           panel={ui.panel}
           open={open}
           files={files}

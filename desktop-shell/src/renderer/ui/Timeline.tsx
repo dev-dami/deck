@@ -19,7 +19,7 @@ import {
   SquareTerminal,
   Wrench,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { agentColour, agentKind } from "../agents";
 import { cn } from "../lib/cn";
 import { formatClock, usePrefs } from "../prefs";
@@ -220,7 +220,9 @@ function AgentMessage({ m, roster, theme }: { m: Message; roster: AgentLine[]; t
   );
 }
 
-export function MessageView({ m, roster, theme }: { m: Message; roster: AgentLine[]; theme: Theme | null }) {
+// A message renders again only when it changes: a token re-renders the row
+// it lands in, not the whole timeline.
+export const MessageView = memo(function MessageView({ m, roster, theme }: { m: Message; roster: AgentLine[]; theme: Theme | null }) {
   if (m.role === "user") return <UserMessage m={m} />;
   if (m.role === "system") {
     return (
@@ -230,7 +232,7 @@ export function MessageView({ m, roster, theme }: { m: Message; roster: AgentLin
     );
   }
   return <AgentMessage m={m} roster={roster} theme={theme} />;
-}
+});
 
 // "N changed files +a −r … Open diff", under the last reply, as T3 Code
 // shows a run's changes.

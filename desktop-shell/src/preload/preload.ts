@@ -25,6 +25,7 @@ const bridge: DeckBridge = {
   socketClose: (id, code, reason) => invoke("socketClose", id, code, reason),
   openFolder: (dir) => invoke("openFolder", dir),
   closeFolder: (id) => invoke("closeFolder", id),
+  restartFolder: (id) => invoke("restartFolder", id),
   recentFolders: () => invoke("recentFolders"),
   rpcCall: (id, method, request) => invoke("rpcCall", id, method, request),
   rpcSubscribe: (id, epoch, seq) => invoke("rpcSubscribe", id, epoch, seq),

@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DeckBridge, LocalDeck, SavedServer } from "../../shared/bridge";
 import { useAppearance } from "../appearance";
+import { attachProject, dispatchUi, dropProject, setEngine } from "../appState";
+import type { DeckClient } from "../client";
 import { connect, openLocal } from "../connection";
 import { forgetOpen, type OpenProject, rememberOpen, restoredOpen } from "../openProjects";
 import { usePrefs } from "../prefs";
 import { ConnectScreen } from "./ConnectScreen";
 import { Shell } from "./Shell";
 import type { ProjectEntry } from "./Sidebar";
+import { closeTerminals } from "./Terminal";
 
 // The last part of a folder path.
 function base(dir: string): string {
@@ -22,6 +25,10 @@ function pairedName(s: SavedServer): string {
 // ("new"), or wherever the project was (null).
 export type Landing = string | "new" | null;
 
+function land(key: string, to: Landing): void {
+  if (to !== null) dispatchUi(key, { type: "open", id: to === "new" ? null : to });
+}
+
 // Like Claude Desktop, several projects stay open at once: each runs its
 // own Deck, the sidebar lists the threads of all of them, and the one whose
 // thread is open is current. The open set comes back on the next start.
@@ -31,7 +38,6 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   const [deck, setDeck] = useState<string | null>(null);
   const [open, setOpen] = useState<OpenProject[]>([]);
   const [currentKey, setCurrentKey] = useState<string | null>(null);
-  const [landing, setLanding] = useState<Landing>(null);
   const [message, setMessage] = useState<string | null>(null);
   // The connect screen over open projects, to add or pair another.
   const [connecting, setConnecting] = useState(false);
@@ -53,13 +59,15 @@ export function App({ bridge }: { bridge: DeckBridge }) {
     if (had !== undefined) {
       if (had.c !== p.c) p.c.forget();
       setCurrentKey(had.key);
+      land(had.key, to);
     } else {
       live.current = [...live.current, p];
+      attachProject(p.key, p.source, p.c.store);
       setOpen(live.current);
       setCurrentKey(p.key);
       rememberOpen(p.source);
+      land(p.key, to);
     }
-    setLanding(to);
     setMessage(null);
     setConnecting(false);
   }, []);
@@ -70,7 +78,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
       const had = live.current.find((x) => x.source === source);
       if (had !== undefined) {
         setCurrentKey(had.key);
-        setLanding(to);
+        land(had.key, to);
         setConnecting(false);
         return;
       }
@@ -95,21 +103,17 @@ export function App({ bridge }: { bridge: DeckBridge }) {
       const had = live.current.find((x) => x.source === source);
       if (had !== undefined) {
         setCurrentKey(had.key);
-        setLanding(to);
+        land(had.key, to);
         setConnecting(false);
         return;
       }
-      add(
-        {
-          key: `rpc:${d.id}`,
-          source,
-          name: base(d.dir),
-          where: d.dir,
-          transport: "Project on this computer",
-          c: openLocal(bridge, d),
-        },
-        to,
-      );
+      const key = `rpc:${d.id}`;
+      // The project stays open when its engine stops; its shells died with it.
+      const c: DeckClient = openLocal(bridge, d, (stop) => {
+        if (stop !== null) closeTerminals(c.project);
+        setEngine(key, stop);
+      });
+      add({ key, source, name: base(d.dir), where: d.dir, transport: "Project on this computer", c }, to);
     },
     [bridge, add],
   );
@@ -120,7 +124,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
       const had = live.current.find((x) => x.source === `folder:${dir}`);
       if (had !== undefined) {
         setCurrentKey(had.key);
-        setLanding(to);
+        land(had.key, to);
         setConnecting(false);
         return null;
       }
@@ -143,8 +147,9 @@ export function App({ bridge }: { bridge: DeckBridge }) {
     setOpen(live.current);
     forgetOpen(p.source);
     setCurrentKey((cur) => (cur === key ? (live.current[0]?.key ?? null) : cur));
-    setLanding(null);
     if (why !== null) setMessage(why);
+    closeTerminals(p.c.project);
+    dropProject(key);
     p.c.forget();
   }, []);
 
@@ -161,10 +166,20 @@ export function App({ bridge }: { bridge: DeckBridge }) {
         const first = d !== null && r[0] !== undefined ? `folder:${r[0]}` : s[0] !== undefined ? `paired:${s[0].id}` : null;
         sources = first === null ? [] : [first];
       }
+      // The folders' Decks start together; the projects then open in the
+      // order they were listed.
+      const folders = sources.filter((src) => src.startsWith("folder:") && d !== null);
+      setOpening(folders[0]?.slice("folder:".length) ?? null);
+      const started = await Promise.allSettled(folders.map((src) => bridge.openFolder(src.slice("folder:".length))));
+      setOpening(null);
+      if (folders.length > 0) void refresh();
       let err: string | null = null;
       for (const src of sources) {
-        if (src.startsWith("folder:") && d !== null) {
-          err = (await openFolder(src.slice("folder:".length))) ?? err;
+        const got = started[folders.indexOf(src)];
+        if (got !== undefined) {
+          if (got.status === "rejected") err = String(got.reason);
+          else if (got.value.ok) localOpen(got.value.deck, null);
+          else err = got.value.message;
         } else if (src.startsWith("paired:")) {
           const srv = s.find((x) => `paired:${x.id}` === src);
           if (srv !== undefined) pairedOpen(srv);
@@ -175,10 +190,10 @@ export function App({ bridge }: { bridge: DeckBridge }) {
       if (live.current[0] !== undefined) setCurrentKey(live.current[0].key);
       if (err !== null) setMessage(err);
     })();
-  }, [bridge, openFolder, pairedOpen]);
+  }, [bridge, localOpen, pairedOpen, refresh]);
 
   // A client resets to "unpaired" when its Deck ends the connection for good
-  // (a refused token over v2, a stopped process over rpc) and to "protocol"
+  // (a refused token over v2, a closed Deck over rpc) and to "protocol"
   // on a version mismatch: that project closes, the others stay.
   useEffect(() => {
     const check = () => {
@@ -237,13 +252,13 @@ export function App({ bridge }: { bridge: DeckBridge }) {
         <Shell
           key={current.key}
           c={current.c}
+          projectKey={current.key}
           bridge={bridge}
           folder={current.source.startsWith("folder:") ? current.source.slice("folder:".length) : null}
           name={current.name}
           where={current.where}
           transport={current.transport}
           others={open.filter((p) => p !== current)}
-          landing={landing}
           projects={projects}
           onProject={toProject}
           onAddProject={addProject}

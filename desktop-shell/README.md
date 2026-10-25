@@ -186,7 +186,9 @@ renderer (React, sandboxed)                  main process (Node)                
     guard, so the state holds only what a v2 server could also send.
 - **Main process** (`src/main/`): `host.ts` is the one surface the window
   calls. `decks.ts` starts `deck serve --rpc`, reads the handshake, dials
-  the socket and keeps the process. `pin.ts`, `pair.ts` and `link.ts` are
+  the socket and keeps the process. When the process stops by itself, the
+  window gets its last stderr lines and `restartFolder` starts it again
+  under the same id. `pin.ts`, `pair.ts` and `link.ts` are
   the v2 side. `servers.ts` keeps pairings, `recent.ts` the recent folders.
 - `src/preload/preload.ts` exposes `window.deck`: the host methods over IPC
   and the socket and rpc event streams. Nothing else.
@@ -200,6 +202,14 @@ renderer (React, sandboxed)                  main process (Node)                
   writes its rules into `<style>` elements, which the CSP blocks;
   `ui/Terminal.tsx` copies them into a constructed stylesheet instead. The
   window's own settings (`prefs.ts`) live in its localStorage.
+- **App state.** `appState.ts` keeps each open project's UI state (open
+  thread, panel, unread marks, drafts) outside the React tree, so a switch
+  between projects keeps it; drafts also persist in localStorage
+  (`drafts.ts`). Terminals belong to their project in a module store in
+  `ui/Terminal.tsx`, so their shells run on while another project shows.
+  Components read slices of the shared `AppState` (`select.ts`), so the
+  tokens of a thread in the background do not render the sidebar or the
+  open timeline.
 
 ### What the rpc transport adds, and what the app uses
 

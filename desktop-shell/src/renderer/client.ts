@@ -30,4 +30,6 @@ export interface DeckClient {
   changes(sessionId: string): Promise<ChangedFile[] | null>;
   // Stops the client and resets its state to "unpaired".
   forget(message?: string | null): void;
+  // A local Deck only: starts its stopped engine again and resyncs.
+  restart?(): Promise<void>;
 }

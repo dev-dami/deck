@@ -53,6 +53,13 @@ export interface LocalDeck {
 
 export type OpenOutcome = { ok: true; deck: LocalDeck } | { ok: false; message: string };
 
+// Why a local Deck's engine stopped by itself: main's message and the last
+// lines it wrote to stderr. The project stays open and can restart.
+export interface EngineStop {
+  message: string;
+  stderr: string[];
+}
+
 // A phone paired with this computer through `deck mobile connect`. Keys and
 // relay tokens never reach the window.
 export interface PhoneDevice {
@@ -141,11 +148,13 @@ export type RpcMethod = (typeof RPC_METHODS)[number];
 export type RpcResult = { ok: true; value: unknown } | { ok: false; code: number; message: string };
 
 // What the Events stream of a local Deck sends to the window: one event (a
-// deck.v1.Event as a plain object), the end of the stream, or the end of
-// the Deck process.
+// deck.v1.Event as a plain object), the end of the stream, the end of the
+// Deck process on its own (stopped: restartFolder starts it again), or a
+// Deck that is closed for good (exit).
 export type RpcStreamEvent =
   | { type: "event"; event: unknown }
   | { type: "end"; code: number; message: string }
+  | ({ type: "stopped" } & EngineStop)
   | { type: "exit"; message: string }
   | TermEvent;
 
@@ -173,6 +182,9 @@ export interface DeckHost {
   openFolder(dir: string): Promise<OpenOutcome>;
   // Closes the Deck's stdin, which stops it.
   closeFolder(id: string): Promise<void>;
+  // Starts the engine of a Deck that stopped by itself again, in the same
+  // folder and with the same id.
+  restartFolder(id: string): Promise<OpenOutcome>;
   recentFolders(): Promise<string[]>;
   rpcCall(id: string, method: RpcMethod, request: Record<string, unknown>): Promise<RpcResult>;
   // Opens the Events stream from (epoch, seq) and closes the one open before.
@@ -208,6 +220,7 @@ export const HOST_METHODS = [
   "socketClose",
   "openFolder",
   "closeFolder",
+  "restartFolder",
   "recentFolders",
   "rpcCall",
   "rpcSubscribe",

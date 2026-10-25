@@ -21,6 +21,8 @@ export interface Prefs {
   sendKey: SendKey;
   confirmYolo: boolean;
   foldWork: boolean;
+  // The terminal drawer's height in pixels.
+  terminalHeight: number;
 }
 
 export const defaultPrefs: Prefs = {
@@ -33,6 +35,7 @@ export const defaultPrefs: Prefs = {
   sendKey: "enter",
   confirmYolo: true,
   foldWork: true,
+  terminalHeight: 280,
 };
 
 const KEY = "deck.desktop.prefs";
@@ -53,6 +56,10 @@ function merge(v: Record<string, unknown>): Prefs {
   const pick = <T extends string>(k: string, allowed: readonly T[], d: T): T =>
     allowed.includes(v[k] as T) ? (v[k] as T) : d;
   const bool = (k: string, d: boolean): boolean => (typeof v[k] === "boolean" ? (v[k] as boolean) : d);
+  const size = (k: string, d: number): number => {
+    const n = v[k];
+    return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : d;
+  };
   return {
     theme: pick("theme", ["deck", "system", "light", "dark"] as const, defaultPrefs.theme),
     palette: pick("palette", THEMES.map((t) => t.id), defaultPrefs.palette),
@@ -63,6 +70,7 @@ function merge(v: Record<string, unknown>): Prefs {
     sendKey: pick("sendKey", ["enter", "mod-enter"] as const, defaultPrefs.sendKey),
     confirmYolo: bool("confirmYolo", defaultPrefs.confirmYolo),
     foldWork: bool("foldWork", defaultPrefs.foldWork),
+    terminalHeight: size("terminalHeight", defaultPrefs.terminalHeight),
   };
 }
 

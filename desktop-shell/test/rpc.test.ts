@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { findDeck, findOnPath, parseHandshake } from "../src/main/decks";
 import { openLocal } from "../src/renderer/connection";
 import type { DeckClient } from "../src/renderer/client";
+import type { EngineStop } from "../src/shared/bridge";
 import { inProcessBridge } from "./bridge";
 import { FakeRpcDeck } from "./fake-grpc";
 
@@ -173,10 +174,37 @@ describe("a local Deck over rpc", () => {
     expect(readFileSync(stopped, "utf8")).toBe("stopped");
   });
 
-  test("a Deck that stops sends the window back to the connect screen", async () => {
+  test("a Deck that stops keeps the project, shows why and restarts", async () => {
     process.env["DECK_FAKE_EXIT_AFTER"] = "600";
-    const { ctl } = await open();
-    await until(() => ctl.state.auth === "unpaired", 5000);
-    expect(ctl.state.authMessage).toMatch(/Deck stopped/);
+    const bridge = inProcessBridge();
+    const out = await bridge.openFolder(dir);
+    if (!out.ok) throw new Error(out.message);
+    let stop: EngineStop | null = null;
+    const ctl = openLocal(bridge, out.deck, (s) => {
+      stop = s;
+    });
+    c = ctl;
+    await until(() => ctl.state.sessionsLoaded);
+    await until(() => stop !== null, 5000);
+    expect(stop).toEqual({ message: "Deck stopped (exit 3).", stderr: ["fake deck: the store is locked", "panic: fake crash"] });
+    expect(ctl.state.auth).toBe("paired");
+    expect(ctl.state.link).toBe("offline");
+    expect(ctl.state.sessions.length).toBeGreaterThan(0);
+
+    delete process.env["DECK_FAKE_EXIT_AFTER"];
+    const events = fake.calls.filter((m) => m === "Events").length;
+    await ctl.restart?.();
+    expect(stop).toBeNull();
+    await until(() => ctl.state.link === "online");
+    // The same Deck id in the same folder, subscribed again and resynced.
+    expect(await bridge.openFolder(dir)).toEqual({ ok: true, deck: out.deck });
+    expect(fake.calls.filter((m) => m === "Events").length).toBe(events + 1);
+    await until(() => fake.calls.filter((m) => m === "ListSessions").length >= 2);
+  });
+
+  test("a restart of a closed Deck is refused", async () => {
+    const { bridge, deck } = await open();
+    await bridge.closeFolder(deck.id);
+    expect(await bridge.restartFolder(deck.id)).toEqual({ ok: false, message: "That Deck is closed." });
   });
 });
