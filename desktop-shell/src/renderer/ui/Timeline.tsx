@@ -555,7 +555,7 @@ export function Timeline({
   }, []);
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="relative min-h-0 flex-1" data-yolo-region="">
       <div
         className="timeline h-full overflow-y-auto"
         ref={ref}

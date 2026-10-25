@@ -274,6 +274,7 @@ export function RightPanel({
         wide ? "w-[min(60vw,900px)]" : "w-[480px]",
       )}
       aria-label="Side panel"
+      data-yolo-region=""
     >
       <header className="panel-head drag flex h-12 shrink-0 items-center gap-1 border-b px-2">
         <h2 className="sr-only">{PANELS.find((p) => p.panel === panel)?.label}</h2>

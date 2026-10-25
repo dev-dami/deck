@@ -151,6 +151,14 @@ T3's look stays in the theme catalog.
   The app asks for the limits at most once a minute, and only while the
   strip shows. While agents work and the prompt is empty, send turns into
   stop.
+  - **Modes.** When the open thread switches to Yolo (the mode chip,
+    Ctrl+Shift+Y, `/yolo` or another device), a shockwave crosses the
+    window, as in the terminal, and the Yolo chip keeps a
+    slow rainbow border while the thread stays in Yolo. A click or Escape
+    ends the wave. Settings > Appearance > Motion follows the system by
+    default; Reduced turns the wave off with the rest of the motion, and
+    "Play the Yolo effect" turns off the wave alone. Without the wave the
+    chip flashes amber.
   - **Slash commands.** Type `/` at the start of the message for the
     commands: `/plan`, `/ask` and `/yolo` set the mode (Yolo still asks
     first), `/new [title]` starts a thread, `/race <n> [kind] [judge]
@@ -290,7 +298,7 @@ T3's look stays in the theme catalog.
 - **Usage.** Tokens and cost per day, agent and model, the plan's limits,
   a heat map of the last 20 weeks and when you work.
 - **Settings** (the gear, or Ctrl+,): send key, Yolo confirmation, folding,
-  time format, light or dark or the system's, the theme (Tabletop, T3,
+  time format, motion and the Yolo effect, light or dark or the system's, the theme (Tabletop, T3,
   Tokyo Night, Catppuccin Mocha, Nord, Rosé Pine, Dracula, Solarized Light, GitHub
   Light) and accent colour, card or compact thread rows, grouping by
   project, the agent kinds, the connection and the shortcuts.

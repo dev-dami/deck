@@ -194,7 +194,7 @@ export function RoomHeader({
   const removed = files?.reduce((n, f) => n + f.removed, 0) ?? 0;
   const title = open === undefined ? (loaded ? "New thread" : "Connecting…") : sessionTitle(open);
   return (
-    <header className="topbar drag @container/top flex h-12 shrink-0 items-center gap-2 px-4">
+    <header className="topbar drag @container/top flex h-12 shrink-0 items-center gap-2 px-4" data-yolo-region="">
       {!sidebar && (
         <Button variant="ghost-muted" size="icon-sm" aria-label="Show the sidebar" title="Show the sidebar" onClick={onShowSidebar}>
           <PanelLeft />
