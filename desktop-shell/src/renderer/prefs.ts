@@ -21,6 +21,8 @@ export interface Prefs {
   sendKey: SendKey;
   confirmYolo: boolean;
   foldWork: boolean;
+  // A plan card approves itself once when it appears.
+  autoApprovePlans: boolean;
   // The terminal drawer's height in pixels.
   terminalHeight: number;
 }
@@ -35,6 +37,7 @@ export const defaultPrefs: Prefs = {
   sendKey: "enter",
   confirmYolo: true,
   foldWork: true,
+  autoApprovePlans: false,
   terminalHeight: 280,
 };
 
@@ -70,6 +73,7 @@ function merge(v: Record<string, unknown>): Prefs {
     sendKey: pick("sendKey", ["enter", "mod-enter"] as const, defaultPrefs.sendKey),
     confirmYolo: bool("confirmYolo", defaultPrefs.confirmYolo),
     foldWork: bool("foldWork", defaultPrefs.foldWork),
+    autoApprovePlans: bool("autoApprovePlans", defaultPrefs.autoApprovePlans),
     terminalHeight: size("terminalHeight", defaultPrefs.terminalHeight),
   };
 }

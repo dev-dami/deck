@@ -30,6 +30,7 @@ import { PANELS, type Panel, SETTINGS_SECTIONS, type UiAction } from "../ui";
 import { AgentCards, AgentsStrip } from "./AgentsStrip";
 import { ApprovalCard } from "./ApprovalCard";
 import { Composer } from "./Composer";
+import { LineComments } from "./DiffView";
 import { BranchPicker, GitActions, useGit } from "./Git";
 import { isMac, modKey } from "./keys";
 import { Badge } from "./kit/badge";
@@ -48,6 +49,7 @@ import type { Landing } from "./App";
 import type { OpenProject } from "../openProjects";
 import type { EngineStop } from "../../shared/bridge";
 import { Timeline } from "./Timeline";
+import { useRoomVerbs } from "./RoomVerbs";
 import { yoloMove } from "../yolo";
 
 // The threads of the other open projects, kept current from their stores.
@@ -488,6 +490,8 @@ export function Shell({
   const kindsMap = useAppSlice(c.store, kindsBySession, sameKinds);
   const kindsOf = useCallback((id: string): string[] => kindsMap[id] ?? NO_KINDS, [kindsMap]);
 
+  const room = useRoomVerbs({ c, projectKey, open, roster, draft, asking: pending.length > 0, inputRef });
+
   const cards = (
     <AgentCards
       draft={draft}
@@ -645,7 +649,7 @@ export function Shell({
           roster={roster}
           approvals={state.approvals}
           theme={state.theme}
-          onInterrupt={(agent) => void c.interrupt(open.id, agent)}
+          onInterrupt={room.interrupt}
           onMention={(agent) => {
             setDraft(applyAgentChip(draft, agent));
             inputRef.current?.focus();
@@ -773,6 +777,8 @@ export function Shell({
                   theme={state.theme}
                   changes={files}
                   onOpenDiff={(path) => openPanel("changes", path)}
+                  mode={room.mode}
+                  actions={room.actions}
                 />
                 <div className="shrink-0 px-5 pb-3">
                   <Composer
@@ -783,12 +789,13 @@ export function Shell({
                     kinds={kinds}
                     images={imagesOn}
                     online={online}
-                    onSend={(text: string, images: Image[]) => c.send(open.id, text, images)}
+                    onSend={room.send}
                     onError={toast}
                     inputRef={inputRef}
                     sendKey={prefs.sendKey}
                     busy={open.busy}
-                    onStop={() => void c.cancel(open.id)}
+                    onStop={room.stop}
+                    notice={room.notice}
                     banner={
                       pending.length > 0 && (
                         <div className="flex flex-col gap-1" aria-label="Approvals for this thread">
@@ -798,6 +805,7 @@ export function Shell({
                               index={0}
                               count={pending.length}
                               className="border-0 bg-transparent"
+                              answerers={room.answerers}
                               onAnswer={(d) => void c.answerApproval(pending[0]!.session_id, pending[0]!.id, d)}
                             />
                           )}
@@ -811,7 +819,7 @@ export function Shell({
                           busy={open.busy}
                           queued={queued}
                           pending={state.approvals.length}
-                          onStop={() => void c.cancel(open.id)}
+                          onStop={room.stop}
                           onPanel={(p) => openPanel(p)}
                           onSettings={() => dispatch({ type: "settings", section: "general" })}
                         />
@@ -829,21 +837,23 @@ export function Shell({
         )}
       </div>
       {ui.panel !== null && ui.settings === null && !ui.usage && !ui.team && (
-        <LiveRightPanel
-          c={c}
-          panel={ui.panel}
-          open={open}
-          files={files}
-          focus={focus}
-          wide={wide}
-          onRefresh={refreshChanges}
-          onError={toast}
-          onInfo={info}
-          onPanel={(p) => openPanel(p)}
-          onWide={() => setWide((w) => !w)}
-          onClose={() => dispatch({ type: "panel", panel: null })}
-          onOpen={openSession}
-        />
+        <LineComments.Provider value={room.comments}>
+          <LiveRightPanel
+            c={c}
+            panel={ui.panel}
+            open={open}
+            files={files}
+            focus={focus}
+            wide={wide}
+            onRefresh={refreshChanges}
+            onError={toast}
+            onInfo={info}
+            onPanel={(p) => openPanel(p)}
+            onWide={() => setWide((w) => !w)}
+            onClose={() => dispatch({ type: "panel", panel: null })}
+            onOpen={openSession}
+          />
+        </LineComments.Provider>
       )}
       {ui.palette && <Palette commands={commands} onClose={() => dispatch({ type: "palette", open: false })} />}
       <div className="toasts pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2" aria-live="polite">

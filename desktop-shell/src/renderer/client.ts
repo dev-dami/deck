@@ -19,6 +19,10 @@ export interface DeckClient {
   renameSession(id: string, title: string): Promise<void>;
   deleteSession(id: string): Promise<boolean>;
   send(sessionId: string, text: string, images: Image[]): Promise<boolean>;
+  // Replaces the person's message and runs the thread again from it.
+  editMessage(sessionId: string, messageId: string, text: string): Promise<boolean>;
+  // Asks the agents to go on from where they stopped.
+  continueRun(sessionId: string): Promise<void>;
   cancel(sessionId: string): Promise<void>;
   interrupt(sessionId: string, agentId: string): Promise<void>;
   steer(sessionId: string, itemId: string): Promise<void>;

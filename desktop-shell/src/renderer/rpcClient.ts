@@ -291,6 +291,14 @@ export class RpcDeckClient implements DeckClient {
     return r !== null;
   }
 
+  async editMessage(sessionId: string, messageId: string, text: string): Promise<boolean> {
+    return (await this.call("EditMessage", { session_id: sessionId, message_id: messageId, text })) !== null;
+  }
+
+  async continueRun(sessionId: string): Promise<void> {
+    await this.call("Continue", { session_id: sessionId });
+  }
+
   async cancel(sessionId: string): Promise<void> {
     await this.call("Cancel", { session_id: sessionId });
   }

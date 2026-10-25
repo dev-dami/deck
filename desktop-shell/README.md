@@ -103,8 +103,27 @@ T3's look stays in the theme catalog.
   and each agent's state: busy, waiting (for an approval) or idle. While
   agents work and the prompt is empty, send turns into stop.
 - **Approvals.** The open thread's approval sits on top of the composer:
-  Decline, Always allow this session, or Approve. The Approvals panel lists
-  those of every thread.
+  Decline, Always allow this session, or Approve. It names who may answer:
+  you, and the teammates the thread is shared with as editors. The
+  Approvals panel lists those of every thread.
+- **Plans.** In Plan mode, an agent's numbered steps show as a card with
+  Approve, Edit and Ask. Approve switches the thread to Ask (or back to
+  Yolo when it was Yolo before Plan) and tells the agent to go ahead. Edit
+  puts the steps in the composer; Ask addresses the agent there. Settings,
+  Agents, "Approve plans automatically" approves each plan as it appears
+  and says so on the card.
+- **Message actions.** Hover a message to copy it. Your own messages offer
+  Edit and resend: the text goes back to the composer, and Send replaces
+  the message and runs the thread again from it. The last reply offers
+  Retry (your message again, to the same agent) and Continue.
+- **Line comments.** In the diff panel, hover a line and click `+`. The
+  comment goes to the composer with the file, the line number and the line
+  quoted, addressed to the agent that last changed the file. Comments
+  collect in one draft; the diff header counts them and sends them.
+- **Take-over.** Stop the agents, change the files yourself, and a line
+  over the composer says how many files you changed since the stop.
+  "Continue with my changes" tells the stopped agent to go on and lists
+  those files.
 - **Side panel.** Diff shows every changed file with line numbers; Queue
   shows the messages that wait for a busy agent: send now or cancel.
 - **Side chat.** Ask another agent about what the open thread's agents are
