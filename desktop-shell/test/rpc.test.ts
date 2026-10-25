@@ -214,6 +214,75 @@ describe("a local Deck over rpc", () => {
     expect(fake.calls.filter((m) => m === "EditMessage" || m === "Continue")).toEqual(["EditMessage", "EditMessage", "Continue"]);
   });
 
+  test("the room calls reach Deck and the rooms follow its answers and events", async () => {
+    fake.room.meta["ses_docs"] = { attention: "approval" };
+    const { ctl } = await open();
+    const rooms = ctl.rooms;
+    if (rooms === undefined) throw new Error("a local Deck keeps rooms");
+    expect(ctl.capabilities?.()).toContain("StartRace");
+    expect(rooms.get("ses_docs").attention).toBe("approval");
+
+    expect(await ctl.isolateSession?.("ses_main")).toBe(true);
+    await until(() => rooms.get("ses_main").branch === "deck/ses_ma");
+    expect(await ctl.applyIsolated?.("ses_main")).toEqual(["pkg/remote/auth/limit.go"]);
+    expect(await ctl.unisolate?.("ses_main")).toBe(true);
+    await until(() => rooms.get("ses_main").branch === "");
+    // A refusal carries the engine's words.
+    expect(await ctl.applyIsolated?.("ses_main")).toBeNull();
+    expect(ctl.state.toasts.at(-1)?.text).toBe("session: this thread is not isolated");
+
+    expect(await ctl.revertFiles?.("ses_main", ["a.go"], 1760000000000)).toEqual(["a.go"]);
+    expect(await ctl.undoRevert?.("ses_main")).toBe(true);
+    expect(await ctl.startRace?.("ses_main", "fix the limiter", "claude", 3, true)).toBe("t6");
+    expect(await ctl.listFiles?.("ses_main", "limit", 1)).toEqual({ paths: ["pkg/remote/auth/limit.go"], truncated: true });
+    expect(await ctl.archiveSession?.("ses_docs")).toBe(true);
+    await until(() => rooms.get("ses_docs").archived);
+
+    const s = await ctl.createSession("Isolated", true);
+    expect(s).not.toBeNull();
+    expect(rooms.get(s?.id ?? "").branch).toMatch(/^deck\//);
+    expect(fake.room.asked).toEqual([
+      "IsolateSession ses_main",
+      "ApplyIsolated ses_main",
+      "UnisolateSession ses_main",
+      "ApplyIsolated ses_main",
+      "RevertFiles ses_main",
+      "since 1760000000000",
+      "UndoRevert ses_main",
+      "StartRace ses_main",
+      "race claude×3 judged: fix the limiter",
+      "ArchiveSession ses_docs",
+    ]);
+  });
+
+  test("leases and overlap notes land in the room", async () => {
+    const { ctl } = await open();
+    const rooms = ctl.rooms;
+    if (rooms === undefined) throw new Error("a local Deck keeps rooms");
+    const lease = { session_id: "ses_main", agent: "claude-1", paths: ["pkg/remote/**"], exclusive: true };
+    fake.emit("lease_changed", { ...lease, released: false });
+    await until(() => rooms.get("ses_main").leases.length === 1);
+    expect(rooms.get("ses_main").leases[0]).toEqual({ agent: "claude-1", paths: ["pkg/remote/**"], exclusive: true });
+    fake.emit("notice", { session_id: "ses_main", text: "claude-1 and codex-2 both changed a.go", via: "overlap" });
+    await until(() => rooms.get("ses_main").notes.length === 1);
+    expect(rooms.get("ses_main").notes[0]?.via).toBe("overlap");
+    fake.emit("lease_changed", { ...lease, released: true });
+    await until(() => rooms.get("ses_main").leases.length === 0);
+  });
+
+  test("against an older Deck the room calls do nothing", async () => {
+    fake.room.caps = [];
+    const { ctl } = await open();
+    const calls = fake.calls.length;
+    expect(ctl.capabilities?.()).toEqual([]);
+    expect(await ctl.isolateSession?.("ses_main")).toBe(false);
+    expect(await ctl.startRace?.("ses_main", "fix it", "claude", 2)).toBeNull();
+    expect(await ctl.listFiles?.("ses_main", "")).toBeNull();
+    expect(await ctl.createSession("Isolated", true)).toBeNull();
+    expect(fake.calls.length).toBe(calls);
+    expect(ctl.state.toasts).toEqual([]);
+  });
+
   test("a dropped event stream resumes and refetches", async () => {
     const { ctl } = await open();
     fake.dropStreams();

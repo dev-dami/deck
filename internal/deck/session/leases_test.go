@@ -67,6 +67,23 @@ func TestLeaseOps(t *testing.T) {
 	if got := r.m.listLeases(codex); got != "no leases" {
 		t.Fatalf("after expiry: %q", got)
 	}
+
+	// Each lease taken and ended is announced; one that ran out at the sweep.
+	r.m.sweepLeases(th)
+	leases := func(f func(LeasesChangedMsg) bool) int {
+		return r.c.count(func(m tea.Msg) bool { l, ok := m.(LeasesChangedMsg); return ok && f(l) })
+	}
+	waitFor(t, "the ended leases", func() bool {
+		return leases(func(l LeasesChangedMsg) bool { return l.Released }) == 2
+	})
+	if n := leases(func(l LeasesChangedMsg) bool {
+		return !l.Released && l.Agent == "claude" && l.Exclusive && len(l.Paths) == 2
+	}); n != 1 {
+		t.Fatalf("claude's lease announced %d times", n)
+	}
+	if n := leases(func(l LeasesChangedMsg) bool { return l.Released && l.Agent == "codex" }); n != 1 {
+		t.Fatalf("codex's release announced %d times", n)
+	}
 }
 
 func TestExclusiveLeaseRefusesCapsuleApply(t *testing.T) {
@@ -132,7 +149,10 @@ func TestOverlappingEditsAreReported(t *testing.T) {
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 
 	notes := func(sub string) int {
-		return r.c.count(func(m tea.Msg) bool { n, ok := m.(NoticeMsg); return ok && strings.Contains(n.Text, sub) })
+		return r.c.count(func(m tea.Msg) bool {
+			n, ok := m.(NoticeMsg)
+			return ok && n.Via == viaOverlap && strings.Contains(n.Text, sub)
+		})
 	}
 	waitFor(t, "the overlap notice", func() bool { return notes("claude and codex both changed a.go") == 1 })
 	waitFor(t, "the lease notice", func() bool { return notes("codex changed b.go, which claude holds b.go") == 1 })

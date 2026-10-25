@@ -325,7 +325,7 @@ func (m *Manager) Revert(ctx context.Context, threadID, since string, paths []st
 }
 
 // UndoRevert takes the files of the revert revertID back to how they were
-// just before it.
+// just before it. An empty revertID means the latest revert not undone yet.
 func (m *Manager) UndoRevert(ctx context.Context, threadID, revertID string) error {
 	t := m.thread(threadID)
 	if t == nil {
@@ -338,8 +338,11 @@ func (m *Manager) UndoRevert(ctx context.Context, threadID, revertID string) err
 	var rev store.Entry
 	t.mu.Lock()
 	for _, e := range t.log {
-		if e.Type == store.EntryRevert && e.ID == revertID {
+		switch {
+		case e.Type == store.EntryRevert && (e.ID == revertID || revertID == ""):
 			rev = e
+		case e.Type == store.EntryUnrevert && revertID == "" && e.Ref == rev.ID:
+			rev = store.Entry{}
 		}
 	}
 	t.mu.Unlock()

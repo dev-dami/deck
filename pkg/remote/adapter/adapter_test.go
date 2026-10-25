@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -386,10 +387,18 @@ func TestDeckChangesAndTheme(t *testing.T) {
 	require.Equal(t, wire.ModeChanged{SessionID: "s1", Mode: "plan"}, ev.Payload)
 	r.next(t) // the session summary
 
-	r.rc.changes <- pubsub.Event[workspace.DeckChange]{Payload: workspace.DeckChange{Kind: workspace.ChangeNotice, SessionID: "s1", Text: "hi"}}
+	r.rc.changes <- pubsub.Event[workspace.DeckChange]{Payload: workspace.DeckChange{Kind: workspace.ChangeNotice, SessionID: "s1", Text: "hi", Via: "overlap"}}
 	ev = r.next(t)
 	require.Equal(t, wire.EvNotice, ev.Name)
 	require.True(t, ev.Scoped)
+	require.Equal(t, wire.Notice{SessionID: "s1", Text: "hi", Via: "overlap"}, ev.Payload)
+	// The phone's JSON leaves Via out.
+	b, err := json.Marshal(ev.Payload)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"session_id":"s1","text":"hi"}`, string(b))
+
+	// A lease change is the desktop's alone.
+	r.rc.changes <- pubsub.Event[workspace.DeckChange]{Payload: workspace.DeckChange{Kind: workspace.ChangeLease, SessionID: "s1"}}
 
 	r.rc.setTheme(workspace.Theme{Palette: map[string]string{"primary": "#222222"}, Kinds: map[string]workspace.KindTone{}})
 	ev = r.next(t)

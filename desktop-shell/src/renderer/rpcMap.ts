@@ -20,6 +20,7 @@ import {
   type Session,
   type Theme,
 } from "@web/protocol";
+import { ATTENTION, type Attention, type Lease, type RoomEvent, type RoomUpdate } from "./roomMeta";
 
 // deck.v1 messages (proto/deck/v1/deck.proto, as plain objects from main:
 // snake_case fields, int64 as numbers, every field present) mapped to the
@@ -152,7 +153,12 @@ export interface Ready {
   resync: boolean;
 }
 
-export type RpcEvent = { k: "ready"; ready: Ready } | { k: "event"; seq: number; event: ServerEvent };
+// An event, with what it says of a room beyond the shared state when it
+// says anything (roomMeta.ts); a lease change is about the room alone.
+export type RpcEvent =
+  | { k: "ready"; ready: Ready }
+  | { k: "event"; seq: number; event: ServerEvent; room?: RoomEvent }
+  | { k: "room"; seq: number; room: RoomEvent };
 
 // The v2 name and payload of each deck.v1.Event kind.
 const EVENTS: Record<string, { e: string; map: (p: Obj) => unknown }> = {
@@ -189,8 +195,66 @@ export function toEvent(v: unknown): RpcEvent | null {
   if (kind === "ready") {
     return { k: "ready", ready: { epoch: s(payload["epoch"]), seq: n(payload["seq"]), resync: payload["resync"] === true } };
   }
+  const seq = n(v["seq"]);
+  if (kind === "lease_changed") {
+    const room = toLeaseEvent(payload);
+    return room === null ? null : { k: "room", seq, room };
+  }
   const spec = EVENTS[kind];
   if (spec === undefined) return null;
   const event = parseEvent(spec.e, spec.map(payload));
-  return event === null ? null : { k: "event", seq: n(v["seq"]), event };
+  if (event === null) return null;
+  const room = roomOf(kind, payload);
+  return room === null ? { k: "event", seq, event } : { k: "event", seq, event, room };
 }
+
+// ---- rooms (roomMeta.ts): desktop-side guards for what deck.v1 says
+// beyond the shared entities.
+
+const attentionOf = (v: unknown): Attention => ((ATTENTION as readonly unknown[]).includes(v) ? (v as Attention) : "");
+
+const stringList = (v: unknown): string[] | null =>
+  Array.isArray(v) && v.every((x) => typeof x === "string") ? (v as string[]) : null;
+
+// A deck.v1 Session's room fields; null without an id.
+export function toRoom(v: unknown): RoomUpdate | null {
+  if (!isRecord(v) || s(v["id"]) === "") return null;
+  return { k: "session", id: s(v["id"]), attention: attentionOf(v["attention"]), branch: s(v["branch"]), archived: v["archived"] === true };
+}
+
+export function toRooms(r: unknown): RoomUpdate[] {
+  const v = field(r, "sessions");
+  if (!Array.isArray(v)) return [];
+  return v.map(toRoom).filter((x): x is RoomUpdate => x !== null);
+}
+
+function toLeaseEvent(p: Obj): RoomEvent | null {
+  const paths = stringList(p["paths"]);
+  if (s(p["session_id"]) === "" || s(p["agent"]) === "" || paths === null || paths.length === 0) return null;
+  const lease: Lease = { agent: s(p["agent"]), paths, exclusive: p["exclusive"] === true };
+  return { k: "lease", session: s(p["session_id"]), lease, released: p["released"] === true };
+}
+
+function roomOf(kind: string, p: Obj): RoomEvent | null {
+  switch (kind) {
+    case "session_created":
+    case "session_updated":
+      return toRoom(p);
+    case "session_deleted":
+      return s(p["id"]) === "" ? null : { k: "deleted", id: s(p["id"]) };
+    case "notice":
+      return s(p["via"]) === "" ? null : { k: "note", session: s(p["session_id"]), note: { text: s(p["text"]), via: s(p["via"]) } };
+  }
+  return null;
+}
+
+export interface FileList {
+  paths: string[];
+  truncated: boolean;
+}
+
+export const toFiles = (r: unknown): string[] => stringList(field(r, "files")) ?? [];
+
+export const toFileList = (r: unknown): FileList => ({ paths: stringList(field(r, "paths")) ?? [], truncated: field(r, "truncated") === true });
+
+export const toCapabilities = (info: unknown): string[] => stringList(field(info, "capabilities")) ?? [];

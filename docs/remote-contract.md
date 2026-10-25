@@ -378,3 +378,10 @@ The Deck desktop app does not use the WebSocket above. It runs
   - Text is not capped.
   - Yolo is allowed, because the caller is the user at this machine.
   - Errors carry their message.
+  - Rooms. `Session` carries `attention`, `branch` and `archived`,
+    `Notice.via` marks overlap notes, and `lease_changed` reports a lease
+    taken or ended. The phone gets none of these.
+- **Optional calls.** `Info.capabilities` names the optional methods this
+  Deck serves: the room calls (isolate, apply, unisolate, revert, undo,
+  archive, race) and `ListFiles`. A client checks it before it calls one.
+  `Info.clis` lists the agent CLIs Deck looks for and where it found them.

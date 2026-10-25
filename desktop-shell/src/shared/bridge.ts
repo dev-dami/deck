@@ -158,6 +158,15 @@ export const RPC_METHODS = [
   "ReadShared",
   "PostShared",
   "AnswerShared",
+  // Optional: Info.capabilities says whether the Deck serves them.
+  "IsolateSession",
+  "ApplyIsolated",
+  "UnisolateSession",
+  "RevertFiles",
+  "UndoRevert",
+  "ArchiveSession",
+  "StartRace",
+  "ListFiles",
 ] as const;
 
 export type RpcMethod = (typeof RPC_METHODS)[number];

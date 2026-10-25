@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/dev-dami/deck/internal/deck/peer"
+	"github.com/dev-dami/deck/internal/pubsub"
 	"github.com/dev-dami/deck/internal/workspace"
 	"github.com/dev-dami/deck/pkg/rpc/deckv1"
 )
@@ -29,6 +30,15 @@ type crew struct {
 	sharing   workspace.Sharing
 	contracts workspace.Contracts
 	desk      workspace.TeamDesk
+	rooms     workspace.Rooms
+	settings  workspace.SettingsEditor
+	changes   deckChanges
+}
+
+// deckChanges is the workspace's stream of what the message store cannot
+// say, the one the remote adapter reads too.
+type deckChanges interface {
+	SubscribeDeck(ctx context.Context) <-chan pubsub.Event[workspace.DeckChange]
 }
 
 // WithWorkspace gives the server Deck's workspace for the task board, the
@@ -43,6 +53,9 @@ func (s *Server) WithWorkspace(ws any) *Server {
 	c.sharing, _ = ws.(workspace.Sharing)
 	c.contracts, _ = ws.(workspace.Contracts)
 	c.desk, _ = ws.(workspace.TeamDesk)
+	c.rooms, _ = ws.(workspace.Rooms)
+	c.settings, _ = ws.(workspace.SettingsEditor)
+	c.changes, _ = ws.(deckChanges)
 	s.crew = c
 	return s
 }

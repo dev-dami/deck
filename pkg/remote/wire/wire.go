@@ -601,6 +601,9 @@ type (
 	Notice struct {
 		SessionID string `json:"session_id"`
 		Text      string `json:"text"`
+		// Via is for the desktop's gRPC (deck.v1 Notice.via); the phone
+		// protocol leaves it out.
+		Via string `json:"-"`
 	}
 
 	// DeviceRevoked is the payload of device.revoked.

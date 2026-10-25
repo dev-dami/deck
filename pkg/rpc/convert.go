@@ -126,7 +126,7 @@ func toEvent(ev remote.Event) (out *deckv1.Event, ok bool) {
 	case wire.ModeChanged:
 		out.Kind = &deckv1.Event_ModeChanged{ModeChanged: &deckv1.ModeChanged{SessionId: p.SessionID, Mode: p.Mode}}
 	case wire.Notice:
-		out.Kind = &deckv1.Event_Notice{Notice: &deckv1.Notice{SessionId: p.SessionID, Text: p.Text}}
+		out.Kind = &deckv1.Event_Notice{Notice: &deckv1.Notice{SessionId: p.SessionID, Text: p.Text, Via: p.Via}}
 	case wire.Theme:
 		out.Kind = &deckv1.Event_ThemeChanged{ThemeChanged: toTheme(p)}
 	default:
