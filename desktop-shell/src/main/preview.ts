@@ -11,6 +11,7 @@ import type { PreviewBounds, PreviewNav, PreviewState } from "../shared/bridge";
 export const PREVIEW_PARTITION = "preview";
 
 const PROBE_MS = 300;
+export const EXTERNAL_GAP_MS = 1000;
 
 // Whether something accepts a TCP connection on host:port within ms.
 export function listening(port: number, host: string, ms = PROBE_MS): Promise<boolean> {
@@ -67,10 +68,21 @@ export function lockSession(ses: Session): void {
 
 // Keeps a page on the open ports: main checks each navigation, redirect and
 // new window against judgeUrl.
-export function guardPage(wc: WebContents, open: ReadonlySet<number>, openExternal: (url: string) => void): void {
+export function guardPage(
+  wc: WebContents,
+  open: ReadonlySet<number>,
+  openExternal: (url: string) => void,
+  now: () => number = Date.now,
+): void {
+  // A page can navigate from script in a loop: at most one browser tab per
+  // EXTERNAL_GAP_MS, so a dev page cannot flood the system browser.
+  let last = Number.NEGATIVE_INFINITY;
   const away = (url: string): boolean => {
     const v = judgeUrl(url, open);
-    if (v === "external") openExternal(url);
+    if (v === "external" && now() - last >= EXTERNAL_GAP_MS) {
+      last = now();
+      openExternal(url);
+    }
     return v !== "load";
   };
   wc.on("will-navigate", (e) => {

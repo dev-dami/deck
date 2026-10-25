@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import type { Session, WebContents, WebContentsView, WebPreferences } from "electron";
 import { describe, expect, test } from "vitest";
 import type { PreviewState } from "../shared/bridge";
-import { guardPage, judgeUrl, lockSession, Preview, PREVIEW_PARTITION, previewPrefs } from "./preview";
+import { EXTERNAL_GAP_MS, guardPage, judgeUrl, lockSession, Preview, PREVIEW_PARTITION, previewPrefs } from "./preview";
 
 // A webContents with what the preview calls, and the events main listens to.
 class FakePage extends EventEmitter {
@@ -118,7 +118,9 @@ test("the session denies every permission and cancels every download", () => {
 test("main checks each navigation, redirect and new window of the page", () => {
   const page = new FakePage();
   const opened: string[] = [];
-  guardPage(page as unknown as WebContents, OPEN, (u) => opened.push(u));
+  // Each check runs a second after the last, so the rate limit lets each through.
+  let t = 0;
+  guardPage(page as unknown as WebContents, OPEN, (u) => opened.push(u), () => (t += EXTERNAL_GAP_MS));
   expect(page.navigate("will-navigate", "http://localhost:3000/next")).toBe(true);
   expect(page.navigate("will-navigate", "https://example.com/")).toBe(false);
   expect(page.navigate("will-redirect", "http://localhost:4000/")).toBe(false);
@@ -130,6 +132,18 @@ test("main checks each navigation, redirect and new window of the page", () => {
   expect(page.openHandler?.({ url: "javascript:alert(1)" })).toEqual({ action: "deny" });
   expect(page.loads).toEqual(["http://localhost:3000/popup"]);
   expect(opened).toEqual(["https://example.com/", "http://localhost:4000/", "https://example.org/"]);
+});
+
+test("a page that navigates away in a loop opens one browser tab a second", () => {
+  const page = new FakePage();
+  const opened: string[] = [];
+  let t = 0;
+  guardPage(page as unknown as WebContents, OPEN, (u) => opened.push(u), () => t);
+  for (let i = 0; i < 50; i++) expect(page.navigate("will-navigate", `https://example.com/${i}`)).toBe(false);
+  expect(opened).toEqual(["https://example.com/0"]);
+  t += EXTERNAL_GAP_MS;
+  page.navigate("will-navigate", "https://example.com/later");
+  expect(opened).toEqual(["https://example.com/0", "https://example.com/later"]);
 });
 
 describe("the view", () => {
