@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { NotifyPref } from "./attention";
-import { ACCENTS, THEMES } from "./themes";
+import { ACCENTS, DIFF_THEMES, THEMES } from "./themes";
 
 // The window's own settings (the Settings page). They live in this
 // renderer's localStorage: nothing here is secret and Deck never sees them.
@@ -10,6 +10,7 @@ export type RowStyle = "cards" | "compact";
 export type Grouping = "projects" | "recent";
 export type ClockPref = "12h" | "24h";
 export type SendKey = "enter" | "mod-enter";
+export type DiffLayout = "unified" | "split";
 
 export interface Prefs {
   theme: ThemePref;
@@ -31,6 +32,11 @@ export interface Prefs {
   sound: boolean;
   // A new thread starts on a branch of its own (a Deck that can isolate).
   isolate: boolean;
+  // Diffs: the theme from themes.ts, unified or split, and whether long
+  // lines wrap or scroll.
+  diffTheme: string;
+  diffView: DiffLayout;
+  diffWrap: boolean;
 }
 
 export const defaultPrefs: Prefs = {
@@ -48,6 +54,9 @@ export const defaultPrefs: Prefs = {
   notifications: "all",
   sound: true,
   isolate: true,
+  diffTheme: "match",
+  diffView: "unified",
+  diffWrap: false,
 };
 
 const KEY = "deck.desktop.prefs";
@@ -87,6 +96,9 @@ function merge(v: Record<string, unknown>): Prefs {
     notifications: pick("notifications", ["all", "needs-you", "none"] as const, defaultPrefs.notifications),
     sound: bool("sound", defaultPrefs.sound),
     isolate: bool("isolate", defaultPrefs.isolate),
+    diffTheme: pick("diffTheme", DIFF_THEMES.map((t) => t.id), defaultPrefs.diffTheme),
+    diffView: pick("diffView", ["unified", "split"] as const, defaultPrefs.diffView),
+    diffWrap: bool("diffWrap", defaultPrefs.diffWrap),
   };
 }
 

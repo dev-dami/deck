@@ -424,7 +424,9 @@
 .md pre.codeblock {
   margin: 0;
   margin-top: 0.75em;
-  background: var(--code);
+  background: var(--diff-bg, var(--code));
+  color: var(--diff-fg, inherit);
+  tab-size: 4;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px 14px;
@@ -454,6 +456,7 @@
   font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.6;
+  font-variant-numeric: tabular-nums;
   overflow-x: auto;
 }
 .diff-line {
@@ -493,29 +496,41 @@
 }
 
 /* The diff panel: a gutter of line numbers and a bar for each added or
-   removed line, as T3 Code's diff viewer draws them. */
+   removed line, as T3 Code's diff viewer draws them. The colours come from
+   the diff theme (the end of this file). The whole file scrolls sideways
+   as one, so every row is as wide as the widest. */
+.diff-numbered {
+  container-type: inline-size;
+  background: var(--diff-bg, transparent);
+  color: var(--diff-fg, inherit);
+}
+.diff-numbered .diff-body {
+  width: max-content;
+  min-width: 100%;
+}
 .diff-numbered .diff-row {
   display: grid;
   grid-template-columns: 3.25rem 1fr;
-  min-width: max-content;
 }
 .diff-numbered .diff-gutter {
   position: sticky;
   left: 0;
   padding-right: 0.75rem;
   text-align: right;
-  color: var(--text-faint);
-  background: var(--background);
+  color: var(--diff-faint);
+  background: var(--diff-gutter);
   border-left: 2px solid transparent;
   user-select: none;
 }
-.diff-numbered .diff-row.diff-add .diff-gutter {
-  border-left-color: var(--success);
-  background: color-mix(in oklab, var(--diff-add) 100%, var(--background));
+.diff-numbered .diff-row.diff-add .diff-gutter,
+.diff-split .diff-gutter.is-add {
+  border-left-color: var(--diff-add-fg);
+  background: var(--diff-add);
 }
-.diff-numbered .diff-row.diff-del .diff-gutter {
-  border-left-color: var(--destructive);
-  background: color-mix(in oklab, var(--diff-del) 100%, var(--background));
+.diff-numbered .diff-row.diff-del .diff-gutter,
+.diff-split .diff-gutter.is-del {
+  border-left-color: var(--diff-del-fg);
+  background: var(--diff-del);
 }
 /* The line comment's "+" sits in the gutter and shows on hover. */
 .diff-numbered .diff-add-comment {
@@ -533,7 +548,9 @@
   cursor: pointer;
   opacity: 0;
 }
-.diff-numbered .diff-row:hover .diff-add-comment,
+.diff-numbered:not(.diff-split) .diff-row:hover .diff-add-comment,
+.diff-split .diff-gutter:hover .diff-add-comment,
+.diff-split .diff-gutter:has(+ .diff-code:hover) .diff-add-comment,
 .diff-numbered .diff-add-comment:focus-visible {
   opacity: 1;
 }
@@ -546,22 +563,82 @@
 }
 .diff-numbered .diff-row.diff-add,
 .diff-numbered .diff-row.diff-del {
-  color: var(--foreground);
+  color: var(--diff-fg, var(--foreground));
 }
-.diff-numbered .diff-row.diff-add .diff-code {
+.diff-numbered .diff-row.diff-add .diff-code,
+.diff-split .diff-code.is-add {
   background: var(--diff-add);
 }
-.diff-numbered .diff-row.diff-del .diff-code {
+.diff-numbered .diff-row.diff-del .diff-code,
+.diff-split .diff-code.is-del {
   background: var(--diff-del);
+}
+/* Changed words inside a changed line. */
+.diff-numbered .diff-row.diff-add .diff-word,
+.diff-split .diff-code.is-add .diff-word {
+  background: var(--diff-add-word);
+  border-radius: 2px;
+}
+.diff-numbered .diff-row.diff-del .diff-word,
+.diff-split .diff-code.is-del .diff-word {
+  background: var(--diff-del-word);
+  border-radius: 2px;
+}
+/* Wrap: long lines break and nothing scrolls sideways. */
+.diff-wrap .diff-body {
+  width: auto;
+}
+.diff-wrap .diff-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* A hunk's header: the @@ range in faint mono, the function it is in, and
+   how many lines it skips. It stays in view when the file scrolls. */
+.diff-hunk-row,
+.diff-fold-row {
+  position: sticky;
+  left: 0;
+  width: 100cqw;
+}
+.diff-hunk-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  min-width: 0;
+  margin-top: 0.25rem;
+  padding: 0.125rem 0.75rem 0.125rem calc(3.25rem + 6px);
+  white-space: nowrap;
+  color: var(--diff-faint);
+  border-block: 1px solid var(--hairline);
+}
+.diff-hunk-row:first-child {
+  margin-top: 0;
+  border-top: 0;
+}
+.diff-hunk-ctx {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--diff-muted);
+}
+.diff-hunk-skip {
+  margin-left: auto;
+  font-family: var(--font-sans);
+  font-size: 11px;
 }
 .diff-fold {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  width: 100%;
   padding: 0.25rem 0.75rem;
   color: var(--muted-foreground);
   font-family: var(--font-sans);
   font-size: 11px;
+  cursor: pointer;
+}
+.diff-fold:hover {
+  color: var(--foreground);
 }
 .diff-fold::before,
 .diff-fold::after {
@@ -824,4 +901,419 @@
 :root[data-accent="pink"][data-mode] {
   --primary: oklch(0.64 0.2 350);
   --primary-foreground: #fff;
+}
+
+/* The split view: old on the left, new on the right, aligned row by row,
+   with a blank across from a line the other side lacks. Lines wrap, so
+   both halves stay in view. */
+.diff-split .diff-grid {
+  display: grid;
+  grid-template-columns: 3.25rem minmax(0, 1fr) 3.25rem minmax(0, 1fr);
+}
+.diff-split .diff-row.diff-pair {
+  display: contents;
+}
+.diff-split .diff-gutter {
+  position: relative;
+}
+.diff-split .diff-gutter[data-side="new"] {
+  box-shadow: inset 1px 0 0 var(--hairline);
+}
+.diff-split .diff-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diff-split .diff-code.is-empty,
+.diff-split .diff-gutter.is-empty {
+  background: var(--diff-empty);
+}
+.diff-split .diff-hunk-row,
+.diff-split .diff-fold-row,
+.diff-split .diff-meta,
+.diff-split .diff-comment {
+  grid-column: 1 / -1;
+}
+
+/* Syntax colour. Prism's tokens become spans with these classes
+   (highlight.ts); the colours come from the diff theme. */
+.syn-scope .syn-keyword {
+  color: var(--syn-keyword);
+}
+.syn-scope .syn-string {
+  color: var(--syn-string);
+}
+.syn-scope .syn-comment {
+  color: var(--syn-comment);
+}
+.syn-scope .syn-number {
+  color: var(--syn-number);
+}
+.syn-scope .syn-function {
+  color: var(--syn-function);
+}
+.syn-scope .syn-type {
+  color: var(--syn-type);
+}
+.syn-scope .syn-punct {
+  color: var(--syn-punct);
+}
+.syn-scope .syn-variable {
+  color: var(--syn-variable);
+}
+.syn-scope .syn-tag {
+  color: var(--syn-tag);
+}
+.syn-scope .syn-attr {
+  color: var(--syn-attr);
+}
+.syn-scope .syn-operator {
+  color: var(--syn-operator);
+}
+.diff-preview {
+  background: var(--canvas);
+}
+
+/* Diff themes (themes.ts DIFF_THEMES), on <html data-diff-theme>.
+   "Match app theme" derives the added and removed tints from the theme's
+   success and destructive colours over its canvas, as the terminal app
+   does, and takes the syntax colours each theme sets below. Monochrome
+   keeps the tints and drops the syntax colour. The named themes bring a
+   background of their own, so their colours read the same in light and
+   dark windows. */
+.syn-scope {
+  --diff-gutter: var(--background);
+  --diff-faint: var(--text-faint);
+  --diff-muted: var(--text-muted);
+  --diff-empty: var(--hover);
+}
+:root:not([data-diff-theme]) .syn-scope,
+:root[data-diff-theme="match"] .syn-scope,
+:root[data-diff-theme="monochrome"] .syn-scope {
+  --diff-add: color-mix(in oklab, var(--success) 20%, var(--canvas));
+  --diff-del: color-mix(in oklab, var(--destructive) 15%, var(--canvas));
+  --diff-add-word: color-mix(in oklab, var(--success) 40%, var(--canvas));
+  --diff-del-word: color-mix(in oklab, var(--destructive) 35%, var(--canvas));
+}
+:root[data-diff-theme="monochrome"] .syn-scope {
+  --syn-keyword: currentColor;
+  --syn-string: currentColor;
+  --syn-comment: currentColor;
+  --syn-number: currentColor;
+  --syn-function: currentColor;
+  --syn-type: currentColor;
+  --syn-punct: currentColor;
+  --syn-variable: currentColor;
+  --syn-tag: currentColor;
+  --syn-attr: currentColor;
+  --syn-operator: currentColor;
+}
+/* A named theme's faint and muted text, from its own text and background. */
+:root[data-diff-theme]:not([data-diff-theme="match"]):not([data-diff-theme="monochrome"]) .syn-scope {
+  --diff-gutter: var(--diff-bg);
+  --diff-faint: color-mix(in oklab, var(--diff-fg) 42%, var(--diff-bg));
+  --diff-muted: color-mix(in oklab, var(--diff-fg) 68%, var(--diff-bg));
+  --diff-empty: color-mix(in oklab, var(--diff-fg) 4%, var(--diff-bg));
+}
+
+/* Each window theme's syntax colours, for "Match app theme". Tabletop
+   keeps them muted and leaves amber to state. */
+:root {
+  --syn-keyword: oklch(0.75 0.08 15);
+  --syn-string: oklch(0.8 0.08 145);
+  --syn-comment: oklch(0.56 0.012 75);
+  --syn-number: oklch(0.79 0.07 200);
+  --syn-function: oklch(0.8 0.07 255);
+  --syn-type: oklch(0.8 0.07 175);
+  --syn-punct: oklch(0.66 0.012 75);
+  --syn-variable: oklch(0.88 0.01 80);
+  --syn-tag: oklch(0.75 0.08 15);
+  --syn-attr: oklch(0.78 0.06 320);
+  --syn-operator: oklch(0.72 0.03 75);
+}
+:root[data-mode="light"] {
+  --syn-keyword: oklch(0.5 0.13 20);
+  --syn-string: oklch(0.48 0.11 145);
+  --syn-comment: oklch(0.6 0.012 75);
+  --syn-number: oklch(0.5 0.1 220);
+  --syn-function: oklch(0.48 0.12 260);
+  --syn-type: oklch(0.48 0.09 180);
+  --syn-punct: oklch(0.5 0.012 75);
+  --syn-variable: oklch(0.3 0.01 70);
+  --syn-tag: oklch(0.5 0.13 20);
+  --syn-attr: oklch(0.5 0.11 320);
+  --syn-operator: oklch(0.45 0.03 75);
+}
+:root[data-palette="default"][data-mode] {
+  --syn-keyword: #c586c0;
+  --syn-string: #ce9178;
+  --syn-comment: #6a9955;
+  --syn-number: #b5cea8;
+  --syn-function: #dcdcaa;
+  --syn-type: #4ec9b0;
+  --syn-punct: #a0a0a0;
+  --syn-variable: #9cdcfe;
+  --syn-tag: #569cd6;
+  --syn-attr: #9cdcfe;
+  --syn-operator: #d4d4d4;
+}
+:root[data-palette="default"][data-mode="light"] {
+  --syn-keyword: #af00db;
+  --syn-string: #a31515;
+  --syn-comment: #008000;
+  --syn-number: #098658;
+  --syn-function: #795e26;
+  --syn-type: #267f99;
+  --syn-punct: #555555;
+  --syn-variable: #001080;
+  --syn-tag: #800000;
+  --syn-attr: #e50000;
+  --syn-operator: #000000;
+}
+:root[data-palette="tokyo-night"][data-mode] {
+  --syn-keyword: #bb9af7;
+  --syn-string: #9ece6a;
+  --syn-comment: #565f89;
+  --syn-number: #ff9e64;
+  --syn-function: #7aa2f7;
+  --syn-type: #2ac3de;
+  --syn-punct: #a9b1d6;
+  --syn-variable: #c0caf5;
+  --syn-tag: #f7768e;
+  --syn-attr: #7dcfff;
+  --syn-operator: #89ddff;
+}
+:root[data-palette="catppuccin"][data-mode] {
+  --syn-keyword: #cba6f7;
+  --syn-string: #a6e3a1;
+  --syn-comment: #7f849c;
+  --syn-number: #fab387;
+  --syn-function: #89b4fa;
+  --syn-type: #f9e2af;
+  --syn-punct: #9399b2;
+  --syn-variable: #cdd6f4;
+  --syn-tag: #f38ba8;
+  --syn-attr: #89dceb;
+  --syn-operator: #89dceb;
+}
+:root[data-palette="nord"][data-mode] {
+  --syn-keyword: #81a1c1;
+  --syn-string: #a3be8c;
+  --syn-comment: #616e88;
+  --syn-number: #b48ead;
+  --syn-function: #88c0d0;
+  --syn-type: #8fbcbb;
+  --syn-punct: #eceff4;
+  --syn-variable: #d8dee9;
+  --syn-tag: #81a1c1;
+  --syn-attr: #8fbcbb;
+  --syn-operator: #81a1c1;
+}
+:root[data-palette="rose-pine"][data-mode] {
+  --syn-keyword: #31748f;
+  --syn-string: #f6c177;
+  --syn-comment: #6e6a86;
+  --syn-number: #c4a7e7;
+  --syn-function: #ebbcba;
+  --syn-type: #9ccfd8;
+  --syn-punct: #908caa;
+  --syn-variable: #e0def4;
+  --syn-tag: #9ccfd8;
+  --syn-attr: #c4a7e7;
+  --syn-operator: #908caa;
+}
+:root[data-palette="dracula"][data-mode] {
+  --syn-keyword: #ff79c6;
+  --syn-string: #f1fa8c;
+  --syn-comment: #6272a4;
+  --syn-number: #bd93f9;
+  --syn-function: #50fa7b;
+  --syn-type: #8be9fd;
+  --syn-punct: #f8f8f2;
+  --syn-variable: #f8f8f2;
+  --syn-tag: #ff79c6;
+  --syn-attr: #50fa7b;
+  --syn-operator: #ff79c6;
+}
+:root[data-palette="solarized-light"][data-mode] {
+  --syn-keyword: #859900;
+  --syn-string: #2aa198;
+  --syn-comment: #93a1a1;
+  --syn-number: #d33682;
+  --syn-function: #268bd2;
+  --syn-type: #b58900;
+  --syn-punct: #657b83;
+  --syn-variable: #586e75;
+  --syn-tag: #268bd2;
+  --syn-attr: #cb4b16;
+  --syn-operator: #859900;
+}
+:root[data-palette="github-light"][data-mode] {
+  --syn-keyword: #cf222e;
+  --syn-string: #0a3069;
+  --syn-comment: #6e7781;
+  --syn-number: #0550ae;
+  --syn-function: #8250df;
+  --syn-type: #953800;
+  --syn-punct: #1f2328;
+  --syn-variable: #1f2328;
+  --syn-tag: #116329;
+  --syn-attr: #0550ae;
+  --syn-operator: #cf222e;
+}
+
+/* The named diff themes. */
+:root[data-diff-theme="github-dark"] .syn-scope {
+  --diff-bg: #0d1117;
+  --diff-fg: #e6edf3;
+  --diff-add: color-mix(in srgb, #2ea043 15%, #0d1117);
+  --diff-add-fg: #3fb950;
+  --diff-add-word: color-mix(in srgb, #2ea043 40%, #0d1117);
+  --diff-del: color-mix(in srgb, #f85149 12%, #0d1117);
+  --diff-del-fg: #f85149;
+  --diff-del-word: color-mix(in srgb, #f85149 38%, #0d1117);
+  --syn-keyword: #ff7b72;
+  --syn-string: #a5d6ff;
+  --syn-comment: #8b949e;
+  --syn-number: #79c0ff;
+  --syn-function: #d2a8ff;
+  --syn-type: #ffa657;
+  --syn-punct: #c9d1d9;
+  --syn-variable: #e6edf3;
+  --syn-tag: #7ee787;
+  --syn-attr: #79c0ff;
+  --syn-operator: #ff7b72;
+}
+:root[data-diff-theme="github-light"] .syn-scope {
+  --diff-bg: #ffffff;
+  --diff-fg: #1f2328;
+  --diff-add: #dafbe1;
+  --diff-add-fg: #1a7f37;
+  --diff-add-word: #aceebb;
+  --diff-del: #ffebe9;
+  --diff-del-fg: #cf222e;
+  --diff-del-word: #ffcecb;
+  --syn-keyword: #cf222e;
+  --syn-string: #0a3069;
+  --syn-comment: #6e7781;
+  --syn-number: #0550ae;
+  --syn-function: #8250df;
+  --syn-type: #953800;
+  --syn-punct: #1f2328;
+  --syn-variable: #1f2328;
+  --syn-tag: #116329;
+  --syn-attr: #0550ae;
+  --syn-operator: #cf222e;
+}
+:root[data-diff-theme="one-dark"] .syn-scope {
+  --diff-bg: #282c34;
+  --diff-fg: #abb2bf;
+  --diff-add: color-mix(in srgb, #98c379 14%, #282c34);
+  --diff-add-fg: #98c379;
+  --diff-add-word: color-mix(in srgb, #98c379 34%, #282c34);
+  --diff-del: color-mix(in srgb, #e06c75 14%, #282c34);
+  --diff-del-fg: #e06c75;
+  --diff-del-word: color-mix(in srgb, #e06c75 34%, #282c34);
+  --syn-keyword: #c678dd;
+  --syn-string: #98c379;
+  --syn-comment: #7f848e;
+  --syn-number: #d19a66;
+  --syn-function: #61afef;
+  --syn-type: #e5c07b;
+  --syn-punct: #abb2bf;
+  --syn-variable: #e06c75;
+  --syn-tag: #e06c75;
+  --syn-attr: #d19a66;
+  --syn-operator: #56b6c2;
+}
+:root[data-diff-theme="dracula"] .syn-scope {
+  --diff-bg: #282a36;
+  --diff-fg: #f8f8f2;
+  --diff-add: color-mix(in srgb, #50fa7b 12%, #282a36);
+  --diff-add-fg: #50fa7b;
+  --diff-add-word: color-mix(in srgb, #50fa7b 30%, #282a36);
+  --diff-del: color-mix(in srgb, #ff5555 14%, #282a36);
+  --diff-del-fg: #ff5555;
+  --diff-del-word: color-mix(in srgb, #ff5555 34%, #282a36);
+  --syn-keyword: #ff79c6;
+  --syn-string: #f1fa8c;
+  --syn-comment: #6272a4;
+  --syn-number: #bd93f9;
+  --syn-function: #50fa7b;
+  --syn-type: #8be9fd;
+  --syn-punct: #f8f8f2;
+  --syn-variable: #f8f8f2;
+  --syn-tag: #ff79c6;
+  --syn-attr: #50fa7b;
+  --syn-operator: #ff79c6;
+}
+:root[data-diff-theme="tokyo-night"] .syn-scope {
+  --diff-bg: #1a1b26;
+  --diff-fg: #c0caf5;
+  --diff-add: #20303b;
+  --diff-add-fg: #9ece6a;
+  --diff-add-word: #2c5a66;
+  --diff-del: #37222c;
+  --diff-del-fg: #f7768e;
+  --diff-del-word: #713137;
+  --syn-keyword: #bb9af7;
+  --syn-string: #9ece6a;
+  --syn-comment: #565f89;
+  --syn-number: #ff9e64;
+  --syn-function: #7aa2f7;
+  --syn-type: #2ac3de;
+  --syn-punct: #a9b1d6;
+  --syn-variable: #c0caf5;
+  --syn-tag: #f7768e;
+  --syn-attr: #7dcfff;
+  --syn-operator: #89ddff;
+}
+:root[data-diff-theme="catppuccin-mocha"] .syn-scope {
+  --diff-bg: #1e1e2e;
+  --diff-fg: #cdd6f4;
+  --diff-add: color-mix(in srgb, #a6e3a1 13%, #1e1e2e);
+  --diff-add-fg: #a6e3a1;
+  --diff-add-word: color-mix(in srgb, #a6e3a1 30%, #1e1e2e);
+  --diff-del: color-mix(in srgb, #f38ba8 13%, #1e1e2e);
+  --diff-del-fg: #f38ba8;
+  --diff-del-word: color-mix(in srgb, #f38ba8 30%, #1e1e2e);
+  --syn-keyword: #cba6f7;
+  --syn-string: #a6e3a1;
+  --syn-comment: #7f849c;
+  --syn-number: #fab387;
+  --syn-function: #89b4fa;
+  --syn-type: #f9e2af;
+  --syn-punct: #9399b2;
+  --syn-variable: #cdd6f4;
+  --syn-tag: #f38ba8;
+  --syn-attr: #89dceb;
+  --syn-operator: #89dceb;
+}
+/* Solarized follows the window: dark by default, light in a light one. */
+:root[data-diff-theme="solarized"] .syn-scope {
+  --diff-bg: #002b36;
+  --diff-fg: #93a1a1;
+  --diff-add: color-mix(in srgb, #859900 16%, var(--diff-bg));
+  --diff-add-fg: #859900;
+  --diff-add-word: color-mix(in srgb, #859900 36%, var(--diff-bg));
+  --diff-del: color-mix(in srgb, #dc322f 14%, var(--diff-bg));
+  --diff-del-fg: #dc322f;
+  --diff-del-word: color-mix(in srgb, #dc322f 34%, var(--diff-bg));
+  --syn-keyword: #859900;
+  --syn-string: #2aa198;
+  --syn-comment: #586e75;
+  --syn-number: #d33682;
+  --syn-function: #268bd2;
+  --syn-type: #b58900;
+  --syn-punct: #839496;
+  --syn-variable: #93a1a1;
+  --syn-tag: #268bd2;
+  --syn-attr: #cb4b16;
+  --syn-operator: #859900;
+}
+:root[data-diff-theme="solarized"][data-mode="light"] .syn-scope {
+  --diff-bg: #fdf6e3;
+  --diff-fg: #586e75;
+  --syn-comment: #93a1a1;
+  --syn-punct: #657b83;
+  --syn-variable: #586e75;
 }

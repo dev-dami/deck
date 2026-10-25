@@ -21,11 +21,12 @@ import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { addLocalNotice } from "../appState";
 import { type DeckClient, serves } from "../client";
 import type { Crew } from "../crew";
+import { langName, langOf } from "../highlight";
 import { cn } from "../lib/cn";
 import { panelSlice, shallowEqual, useAppSlice } from "../select";
 import { PANELS, type Panel } from "../ui";
 import { AgentsTree } from "./AgentsTree";
-import { CommentsBadge, DiffView } from "./DiffView";
+import { CommentsBadge, DiffToggles, DiffView, SplitAllowed } from "./DiffView";
 import { SideChat } from "./SideChat";
 import { type RaceStart, TasksPanel } from "./TasksPanel";
 import { actionToast } from "./Toasts";
@@ -106,8 +107,9 @@ function FileSection({
           )}
           <FileText className="size-3.5 shrink-0 text-info-foreground" />
           <span className="file-path min-w-0 flex-1 truncate font-mono text-xs">{f.path}</span>
-          <span className="del font-mono text-diff-deletion-foreground text-xs">−{f.removed}</span>
-          <span className="add font-mono text-diff-addition-foreground text-xs">+{f.added}</span>
+          <FileLang path={f.path} />
+          <span className="del font-mono text-diff-deletion-foreground text-xs tabular-nums">−{f.removed}</span>
+          <span className="add font-mono text-diff-addition-foreground text-xs tabular-nums">+{f.added}</span>
         </button>
         {onRevert !== null && (
           <Button variant="ghost-muted" size="xs" className="file-revert font-normal" aria-label={`Revert ${f.path}`} title="Put the file back" onClick={onRevert}>
@@ -120,14 +122,23 @@ function FileSection({
   );
 }
 
+// The language of a changed file, in faint mono.
+function FileLang({ path }: { path: string }) {
+  const lang = langOf(path);
+  return lang === null ? null : <span className="file-lang font-mono text-3xs text-faint">{langName(lang)}</span>;
+}
+
 function Changes({
   files,
   focus,
+  wide,
   onRefresh,
   revert,
 }: {
   files: ChangedFile[] | null;
   focus: string | null;
+  // The panel is expanded, so a diff may show split.
+  wide: boolean;
   onRefresh: () => void;
   revert: ((paths: string[]) => void) | null;
 }) {
@@ -143,7 +154,7 @@ function Changes({
       <div className="panel-tools flex h-11 shrink-0 items-center gap-2 border-b px-3 text-xs">
         <span className="font-medium text-foreground">All changes</span>
         {files !== null && files.length > 0 && (
-          <span className="font-mono">
+          <span className="font-mono tabular-nums">
             <span className="text-diff-addition-foreground">+{added}</span>{" "}
             <span className="text-diff-deletion-foreground">−{removed}</span>
           </span>
@@ -153,6 +164,7 @@ function Changes({
         </span>
         <CommentsBadge />
         <div className="ml-auto flex items-center gap-0.5">
+          <DiffToggles splitOk={wide} />
           {revert !== null && files !== null && files.length > 0 && (
             <Button variant="ghost-muted" size="xs" className="revert-all font-normal" onClick={() => setAsking(files.map((f) => f.path))}>
               <Undo2 /> Revert all
@@ -174,29 +186,31 @@ function Changes({
           </Button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {files?.length === 0 && (
-          <EmptyState icon={FileDiff} title="No changes yet." hint="Files an agent edits show here with their diff." className="py-16" />
-        )}
-        {files?.map((f) => (
-          <FileSection
-            key={f.path}
-            f={f}
-            open={closed[f.path] !== true}
-            focus={focus === f.path}
-            onRevert={revert === null ? null : () => setAsking([f.path])}
-            onToggle={() =>
-              setClosed((c) => {
-                if (c[f.path] === true) {
-                  const { [f.path]: _gone, ...rest } = c;
-                  return rest;
-                }
-                return { ...c, [f.path]: true };
-              })
-            }
-          />
-        ))}
-      </div>
+      <SplitAllowed.Provider value={wide}>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {files?.length === 0 && (
+            <EmptyState icon={FileDiff} title="No changes yet." hint="Files an agent edits show here with their diff." className="py-16" />
+          )}
+          {files?.map((f) => (
+            <FileSection
+              key={f.path}
+              f={f}
+              open={closed[f.path] !== true}
+              focus={focus === f.path}
+              onRevert={revert === null ? null : () => setAsking([f.path])}
+              onToggle={() =>
+                setClosed((c) => {
+                  if (c[f.path] === true) {
+                    const { [f.path]: _gone, ...rest } = c;
+                    return rest;
+                  }
+                  return { ...c, [f.path]: true };
+                })
+              }
+            />
+          ))}
+        </div>
+      </SplitAllowed.Provider>
       {asking !== null && revert !== null && (
         <Confirm
           title={asking.length === 1 ? `Revert ${asking[0]}?` : `Revert all ${asking.length} files?`}
@@ -311,7 +325,7 @@ export function RightPanel({
         {open === undefined ? (
           <Empty>Open a thread to see its changes, tasks and agents.</Empty>
         ) : panel === "changes" ? (
-          <Changes files={files} focus={focus} onRefresh={onRefresh} revert={revertWith(c, projectKey, open.id, onRefresh)} />
+          <Changes files={files} focus={focus} wide={wide} onRefresh={onRefresh} revert={revertWith(c, projectKey, open.id, onRefresh)} />
         ) : panel === "tasks" ? (
           <TasksPanel
             key={open.id}

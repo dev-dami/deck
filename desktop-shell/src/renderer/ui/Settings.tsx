@@ -5,10 +5,11 @@ import { type ReactNode, useEffect, useState } from "react";
 import type { AppInfo, DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";
 import { type Prefs, setPrefs, usePrefs } from "../prefs";
-import { ACCENTS, THEMES } from "../themes";
+import { ACCENTS, DIFF_THEMES, THEMES } from "../themes";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
+import { DiffView, LineComments } from "./DiffView";
 import { Row, Section } from "./kit/settings";
 import { Switch } from "./kit/switch";
 import { PhonePage } from "./Phone";
@@ -199,6 +200,7 @@ function Appearance({ p }: { p: Prefs }) {
           }
         />
       </Section>
+      <Diffs p={p} />
       <Section title="Sidebar">
         <Row
           title="Threads"
@@ -232,6 +234,79 @@ function Appearance({ p }: { p: Prefs }) {
         />
       </Section>
     </>
+  );
+}
+
+// A small change for the diff theme's preview: a keyword, a string, a
+// number, a comment and a changed word.
+const PREVIEW = [
+  "@@ -1,6 +1,6 @@ export function retry(times: number) {",
+  " // Wait a little longer after each failure.",
+  "-const delay = 100;",
+  "+const delay = 250;",
+  ' const label = "retry";',
+  "-for (let i = 0; i < times; i++) wait(delay);",
+  "+for (let i = 0; i < times; i++) wait(delay * (i + 1));",
+  " return label;",
+].join("\n");
+
+function Diffs({ p }: { p: Prefs }) {
+  return (
+    <Section title="Diffs">
+      <Row
+        title="Diff theme"
+        description="Match app theme takes the window's colours. The others set their own colours for added and removed lines and for code."
+      />
+      <div className="space-y-3 p-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Diff theme">
+          {DIFF_THEMES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="radio"
+              aria-checked={p.diffTheme === t.id}
+              onClick={() => setPrefs({ diffTheme: t.id })}
+              className={cn(
+                "flex cursor-pointer items-center gap-2 rounded-lg border border-hairline p-2 text-left text-xs outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
+                p.diffTheme === t.id && "border-foreground/40 bg-selected",
+              )}
+            >
+              <span aria-hidden className="flex h-6 w-9 shrink-0 flex-col justify-center gap-0.5 overflow-hidden rounded border border-hairline px-1" style={{ background: t.swatch[0] }}>
+                <span className="h-1 w-full rounded-full opacity-70" style={{ background: t.swatch[1] }} />
+                <span className="h-1 w-2/3 rounded-full opacity-70" style={{ background: t.swatch[2] }} />
+                <span className="h-1 w-1/2 rounded-full" style={{ background: t.swatch[3] }} />
+              </span>
+              <span className="min-w-0 truncate font-medium">{t.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="diff-preview overflow-hidden rounded-lg border border-hairline" aria-label="Diff theme preview">
+          <LineComments.Provider value={null}>
+            <DiffView diff={PREVIEW} numbered path="retry.ts" />
+          </LineComments.Provider>
+        </div>
+      </div>
+      <Row
+        title="Split view"
+        description="Show the old file next to the new one when the side panel is expanded."
+        control={
+          <Segmented
+            label="Diff view"
+            value={p.diffView}
+            onChange={set("diffView")}
+            options={[
+              { value: "unified", label: "Unified" },
+              { value: "split", label: "Split" },
+            ]}
+          />
+        }
+      />
+      <Row
+        title="Wrap long lines"
+        description="Wrap lines that do not fit. Otherwise each file scrolls sideways."
+        control={<Switch label="Wrap long lines" checked={p.diffWrap} onChange={set("diffWrap")} />}
+      />
+    </Section>
   );
 }
 

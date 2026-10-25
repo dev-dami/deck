@@ -39,6 +39,28 @@ export const ACCENTS: readonly { id: string; label: string; color: string }[] = 
   { id: "pink", label: "Pink", color: "oklch(0.64 0.2 350)" },
 ];
 
+// Diff themes: the colours of added and removed lines and of the syntax in
+// diffs and code blocks. "match" derives them from the window's theme;
+// each other one is a block under [data-diff-theme="<id>"] in styles.css.
+// The swatch: background, added, removed, keyword.
+export interface DiffThemeInfo {
+  id: string;
+  label: string;
+  swatch: [string, string, string, string];
+}
+
+export const DIFF_THEMES: readonly DiffThemeInfo[] = [
+  { id: "match", label: "Match app theme", swatch: ["var(--canvas)", "var(--success)", "var(--destructive)", "var(--syn-keyword)"] },
+  { id: "github-dark", label: "GitHub Dark", swatch: ["#0d1117", "#3fb950", "#f85149", "#ff7b72"] },
+  { id: "github-light", label: "GitHub Light", swatch: ["#ffffff", "#1a7f37", "#cf222e", "#cf222e"] },
+  { id: "one-dark", label: "One Dark", swatch: ["#282c34", "#98c379", "#e06c75", "#c678dd"] },
+  { id: "dracula", label: "Dracula", swatch: ["#282a36", "#50fa7b", "#ff5555", "#ff79c6"] },
+  { id: "tokyo-night", label: "Tokyo Night", swatch: ["#1a1b26", "#9ece6a", "#f7768e", "#bb9af7"] },
+  { id: "catppuccin-mocha", label: "Catppuccin Mocha", swatch: ["#1e1e2e", "#a6e3a1", "#f38ba8", "#cba6f7"] },
+  { id: "solarized", label: "Solarized", swatch: ["#002b36", "#859900", "#dc322f", "#859900"] },
+  { id: "monochrome", label: "Monochrome", swatch: ["var(--canvas)", "var(--success)", "var(--destructive)", "var(--foreground)"] },
+];
+
 export function themeInfo(id: string): ThemeInfo {
   return THEMES.find((t) => t.id === id) ?? (THEMES[0] as ThemeInfo);
 }

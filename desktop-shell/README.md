@@ -217,6 +217,16 @@ T3's look stays in the theme catalog.
   Discard branch (asks first, with the branch and the count of changed
   files) and, for a thread in the shared tree, Move to its own branch (not
   while agents work).
+- **Diffs.** Changes colours each file's code by its language (Go,
+  TypeScript, Python, Rust and twenty more) and names the language in the
+  file's header. Each hunk opens with its `@@` range and the function it
+  sits in. A changed line marks the words that changed. Long runs of
+  unchanged lines fold; click to show them. In an expanded panel, the
+  header's toggle shows the old file next to the new one, line by line,
+  and the wrap toggle wraps long lines instead of scrolling each file
+  sideways. Tabs show as four spaces. Code blocks in agent replies take the
+  same colours. Prism (`prismjs`) only splits the text into tokens; each
+  token becomes a span, never HTML.
 - **Revert.** In Changes, each file has a Revert button and the header has
   Revert all. Each asks first and names the file or the count. The files go
   back to how they were before the thread changed them. A toast offers
@@ -280,8 +290,11 @@ T3's look stays in the theme catalog.
 - **Settings** (the gear, or Ctrl+,): send key, Yolo confirmation, folding,
   time format, light or dark or the system's, the theme (Tabletop, T3,
   Tokyo Night, Catppuccin Mocha, Nord, Rosé Pine, Dracula, Solarized Light, GitHub
-  Light) and accent colour, card or compact thread rows, grouping by
-  project, the agent kinds, the connection and the shortcuts.
+  Light) and accent colour, the diff theme (Match app theme, GitHub Dark,
+  GitHub Light, One Dark, Dracula, Tokyo Night, Catppuccin Mocha,
+  Solarized or Monochrome, with a live preview), unified or split diffs and
+  wrap, card or compact thread rows, grouping by project, the agent kinds,
+  the connection and the shortcuts.
 - **Keys.** On a Mac, Cmd takes the place of Ctrl. Ctrl+K searches threads
   and commands. Ctrl+N starts a thread, Ctrl+O opens a folder, Ctrl+,
   opens Settings. Ctrl+B hides the sidebar, Ctrl+J the terminal.
@@ -505,7 +518,9 @@ For both transports:
 - **Safe rendering.** Agent text becomes a node tree (the shared
   `markdown.ts`), never HTML. A test bans `innerHTML` and its relatives in
   `src/`. Links open in the system browser, and only http(s) links are
-  links.
+  links. Syntax colour comes from Prism's token stream, drawn as React
+  spans. Prism runs in manual mode, so it never scans or writes the page,
+  and its grammars are bundled, so nothing loads at run time.
 - **Locked window.** The window cannot navigate away or open a new window.
   Permission requests (camera, notifications and others) are denied. Main
   shows Deck's notifications itself (`notify.ts`), from a title, a body and

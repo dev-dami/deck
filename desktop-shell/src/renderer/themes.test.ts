@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { defaultPrefs } from "./prefs";
-import { ACCENTS, THEMES, themeInfo } from "./themes";
+import { ACCENTS, DIFF_THEMES, THEMES, themeInfo } from "./themes";
 
 const css = readFileSync(join(__dirname, "styles.css"), "utf8");
 
@@ -29,6 +29,34 @@ describe("themes", () => {
   test("styles.css has a block for every theme and accent", () => {
     for (const t of THEMES) expect(css).toContain(`[data-palette="${t.id}"]`);
     for (const a of ACCENTS.filter((x) => x.id !== "theme")) expect(css).toContain(`[data-accent="${a.id}"]`);
+  });
+
+  test("diff themes: Match app theme comes first and is the default", () => {
+    expect(DIFF_THEMES[0]).toMatchObject({ id: "match", label: "Match app theme" });
+    expect(defaultPrefs.diffTheme).toBe("match");
+    expect(new Set(DIFF_THEMES.map((t) => t.id)).size).toBe(DIFF_THEMES.length);
+  });
+
+  test("styles.css has a block for every diff theme, and each named one sets every token", () => {
+    const tokens = ["keyword", "string", "comment", "number", "function", "type", "punct", "variable", "tag", "attr", "operator"].map(
+      (t) => `--syn-${t}:`,
+    );
+    const diff = ["--diff-bg:", "--diff-fg:", "--diff-add:", "--diff-add-fg:", "--diff-del:", "--diff-del-fg:", "--diff-add-word:", "--diff-del-word:"];
+    for (const t of DIFF_THEMES) {
+      expect(css).toContain(`[data-diff-theme="${t.id}"]`);
+      if (t.id === "match") continue;
+      const block = css.slice(css.lastIndexOf(`:root[data-diff-theme="${t.id}"] .syn-scope {`)).split("}")[0] ?? "";
+      for (const k of t.id === "monochrome" ? tokens : [...tokens, ...diff]) expect(block, `${t.id} ${k}`).toContain(k);
+    }
+    // The derived tints and the gutter apply to every diff.
+    expect(css).toContain("--diff-gutter:");
+  });
+
+  test("every window theme sets its own syntax colours for Match app theme", () => {
+    for (const t of THEMES.filter((x) => x.id !== "tabletop")) {
+      const at = css.lastIndexOf(`:root[data-palette="${t.id}"][data-mode] {`);
+      expect(css.slice(at).split("}")[0], t.id).toContain("--syn-keyword:");
+    }
   });
 
   test("the Tabletop swatches match its tokens", () => {
