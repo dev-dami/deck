@@ -216,6 +216,7 @@ export function Lanes({
       className="lanes flex min-h-8 shrink-0 flex-wrap content-center items-center gap-0.5 border-hairline border-b px-3 pb-1"
       role="toolbar"
       aria-label="Lanes"
+      data-yolo-region=""
     >
       {shown.map((l) =>
         l.kind === "agent" ? (

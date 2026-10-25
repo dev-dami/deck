@@ -1,4 +1,5 @@
 import type { Decision, Session } from "@web/protocol";
+import { sessionMode } from "@web/state";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DeckBridge } from "../../shared/bridge";
 import { dispatchUi, useEngine, useProjectUi } from "../appState";
@@ -26,6 +27,7 @@ import { Toasts } from "./Toasts";
 import { UsagePage } from "./Usage";
 import { useOpenRoom } from "./useRoom";
 import { useForeignThreads, useModDigits, usePaletteRooms, useShellCommands, useShellNav, useUpdate } from "./useShell";
+import { useYoloTrigger, YoloFx } from "./YoloFx";
 
 // What App hands each project view: the inbox across projects and how to
 // act on it.
@@ -89,6 +91,7 @@ export function Shell(props: ShellProps) {
   const digits = useModDigits();
   const update = useUpdate(bridge, c);
   const open: Session | undefined = state.sessions.find((s) => s.id === ui.openId);
+  const yoloPlays = useYoloTrigger(projectKey, open?.id ?? null, sessionMode(open));
 
   useEffect(() => {
     if (ui.openId === null) c.closeSession();
@@ -287,6 +290,7 @@ export function Shell(props: ShellProps) {
       )}
       {ui.palette && <Palette commands={commands} rooms={paletteRooms} onOpenRoom={openRoom} onClose={() => dispatch({ type: "palette", open: false })} />}
       <Toasts c={c} toasts={state.toasts} />
+      <YoloFx play={yoloPlays} />
     </div>
   );
 }
