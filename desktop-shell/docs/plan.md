@@ -235,11 +235,21 @@ Scope: new `src/renderer/attention.ts` (pure), new `ui/Inbox.tsx`,
 `src/shared/bridge.ts`, `src/preload/preload.ts`.
 
 - `roomStatus(...)` returns the state and label of §3, with tests for
-  each state.
+  each state. `needs-you` clears only when the person acts (answers,
+  replies, or the agent moves on), never because the room was looked
+  at; `review` and `done` clear when the room is opened (the lesson of
+  Superset's issue 8634).
 - Inbox page and sidebar entry with a count; keyboard navigation;
   shared approvals an editor may answer appear in it too.
+- Ctrl/Cmd+Alt+L jumps to the next room that needs you, across
+  projects; Ctrl/Cmd+1 to 9 open the first nine rooms of the sidebar,
+  and holding the modifier shows the digits on the rows (Conductor).
+- A room that finishes, fails, or needs an answer moves to the top of
+  its group (T3 Code).
 - Native notification when a room needs a person or finishes while the
-  window is unfocused; click focuses the window and opens the room.
+  window is unfocused; it names the project and the room; click focuses
+  the window and opens the room. No notification while the person has
+  a message queued for that room (they are already on it).
   `app.setBadgeCount` on macOS and Linux; the overlay icon on Windows.
   Main sends notifications itself; the renderer's permission handlers
   stay as they are.
@@ -314,10 +324,18 @@ Scope: `ui/Composer.tsx`, `src/renderer/completion.ts`, `ui/Palette.tsx`,
   client call.
 - `@` picker for the changed files of the room (from `Changes`); a full
   file picker waits for the engine's `ListFiles` (WP-E2).
+- Queue or steer on a modifier: Enter queues for a busy agent (as now),
+  Ctrl/Cmd+Enter steers into its running turn; the send button says
+  which. The engine has both (`Queue`, `Steer`). The queue panel lets the
+  person edit and reorder what waits.
 - Prompt history on `↑` in an empty composer. Image thumbnails on
   attachments.
-- The palette lists every menu command with its shortcut, and searches
-  threads of every open project.
+- The composer strip shows the agent's context use as a small ring and
+  its plan window when the engine reports one (`Usage`), so limits are
+  visible before they stop a turn.
+- The palette lists every menu command with its shortcut, searches
+  threads of every open project by title and branch, and by message text
+  for the rooms that are loaded; `>` filters to actions.
 
 ### WP6 First run and empty states
 
@@ -365,9 +383,14 @@ Scope: `.github/workflows/ci.yml`, `desktop-shell/test/e2e/*`,
   `ImageRef` bytes.
 - **WP-E3 Expose what the engine has.** `CreateSessionRequest.isolate`
   and `ApplyIsolated`/`Unisolate` (`isolate.go`), `Revert` and
-  `UndoRevert` (`changes.go`), `ArchiveSession` (`lifecycle.go`),
+  `UndoRevert` (`changes.go`), `ArchiveSession` (`lifecycle.go`) with a
+  five-second Undo toast in the shell and never for a working room,
   `StartRace` as a structured call, `Info` with the detected CLIs and
   their login state.
+- **WP-E4 Ports and search.** A terminal or agent command that opens a
+  listening port is reported on the room (`port_opened`), so the shell
+  shows it as a chip and opens it in the browser; `SearchMessages
+  {query, limit}` across the project's threads for the palette.
 
 Each engine package comes with its `rpc.ts`/`rpcMap.ts` mapping and
 guards on the TypeScript side, behind a capability check so the shell
