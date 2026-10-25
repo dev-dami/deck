@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import type { NotifyInput } from "../../src/shared/bridge";
 import type { TestHost } from "../bridge";
 import { FakeRpcDeck } from "../fake-grpc";
 import { attachBridge } from "./harness";
@@ -13,13 +14,24 @@ let host: TestHost;
 let dir: string;
 // Folders the picker hands back, in turn, before dir.
 let picks: string[] = [];
+// Whether the window has the focus, and the notifications main showed.
+let focused = true;
+let notes: NotifyInput[] = [];
+let badges: number[] = [];
 
 test.beforeEach(async ({ page }) => {
   fake = await FakeRpcDeck.start({ tickMs: 250 });
   dir = mkdtempSync(join(tmpdir(), "deck-folder-"));
   process.env["DECK_FAKE_HANDSHAKE"] = fake.handshake;
   picks = [];
-  host = await attachBridge(page, async () => picks.shift() ?? dir);
+  focused = true;
+  notes = [];
+  badges = [];
+  host = await attachBridge(page, async () => picks.shift() ?? dir, {
+    focused: () => focused,
+    notify: (n) => notes.push(n),
+    badge: (c) => badges.push(c),
+  });
 });
 
 test.afterEach(async () => {
@@ -66,16 +78,16 @@ test("a session in the background updates live", async ({ page }) => {
   // Another UI (the terminal) writes to the main session meanwhile.
   fake.deck.invoke("chat.send", { session_id: "ses_main", text: "$codex check the limiter tests" });
   const row = sidebar(page).locator('[data-session="ses_main"]');
-  // T3's thread statuses: Working while the agent writes, Done once it
-  // finished in the background.
+  // Working while the agent writes; once it finished in the background, its
+  // changed files wait for review.
   await expect(row.locator('[data-status="working"]')).toBeVisible();
-  await expect(row.locator('[data-status="done"]')).toBeVisible();
+  await expect(row.locator('[data-status="review"]')).toBeVisible();
   await expect(row.locator('[data-status="working"]')).toHaveCount(0);
   const lists = fake.calls.filter((m) => m === "ListMessages").length;
   await row.getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   // The reply streamed in while the session was in the background.
   await expect(page.locator('[data-agent="codex-1"].msg').last()).toContainText("check the limiter tests");
-  await expect(row.locator('[data-status="done"]')).toHaveCount(0);
+  await expect(row.locator('[data-status="review"]')).toHaveCount(0);
   expect(lists).toBe(1);
 });
 
@@ -198,7 +210,7 @@ test("projects: a switch and back keeps the terminal, the draft and the unread t
   await composer(page).fill("a draft for later");
   // A thread with news the person has not read.
   fake.deck.invoke("chat.send", { session_id: "ses_main", text: "$codex check the limiter tests" });
-  await expect(mine.locator('[data-session="ses_main"] [data-status="done"]')).toBeVisible();
+  await expect(mine.locator('[data-session="ses_main"] [data-status="review"]')).toBeVisible();
 
   picks = [second];
   await sidebar(page).getByRole("button", { name: "Add project" }).click();
@@ -209,7 +221,7 @@ test("projects: a switch and back keeps the terminal, the draft and the unread t
   await mine.getByRole("button", { name: `New thread in ${basename(dir)}` }).click();
   await expect(page.locator(".project")).toHaveText(basename(dir));
   await expect(composer(page)).toHaveValue("a draft for later");
-  await expect(mine.locator('[data-session="ses_main"] [data-status="done"]')).toBeVisible();
+  await expect(mine.locator('[data-session="ses_main"] [data-status="review"]')).toBeVisible();
   // The same shell, still running, with what it printed.
   await expect(drawer).toBeVisible();
   await expect(drawer.getByRole("tab")).toHaveCount(1);
@@ -298,4 +310,71 @@ test("team: presence, chat, a contract, sharing and following a shared thread", 
   await team.getByLabel("Post to the shared thread").fill("ping me when it is up");
   await team.getByLabel("Post to the shared thread").press("Enter");
   await expect(team.locator(".shared-thread")).toContainText("[laptop] ping me when it is up");
+});
+
+test("attention: a room that needs you, the inbox, notifications, and a finished room", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  const long = sidebar(page).locator('[data-session="ses_long"]');
+  // The window is in the background from here on.
+  focused = false;
+
+  // A notice for a room off screen waits in its status, not in a toast; one
+  // for the open room toasts, and the toast can be dismissed.
+  fake.deck.notice("ses_long", "codex-2 and claude-1 both changed internal/auth/auth.go in the last few minutes; one may undo the other");
+  await expect(long.locator('[data-status="overlap"]')).toBeVisible();
+  await expect(long.locator(".status-label")).toHaveText("codex-2 and claude-1 both changed auth.go");
+  fake.deck.notice("ses_main", "Saved a checkpoint");
+  const toast = page.locator(".toast").filter({ hasText: "Saved a checkpoint" });
+  await expect(toast).toBeVisible();
+  await expect(page.locator(".toast").filter({ hasText: "both changed" })).toHaveCount(0);
+  await toast.getByRole("button", { name: "Dismiss" }).click();
+  await expect(toast).toHaveCount(0);
+
+  // An approval: the room needs you, says what for, and a notification
+  // names the project and the room.
+  const asked = fake.deck.requestApproval("ses_long", "claude-1", "rm -rf build");
+  await expect(long.locator('[data-status="needs-you"]')).toBeVisible();
+  await expect(long.locator(".status-label")).toHaveText("Approve command");
+  await expect.poll(() => notes.map((n) => `${n.title}: ${n.body}`)).toContain(`${basename(dir)} · Long history: Approve command`);
+  expect(notes[0]?.tag).toContain("ses_long");
+  await expect.poll(() => badges.at(-1) ?? 0).toBeGreaterThanOrEqual(2);
+
+  // Ctrl+Alt+L goes to the newest room that needs you; opening it does not
+  // clear the state, only an answer does.
+  await page.keyboard.press("Control+Alt+l");
+  await expect(page.locator(".title")).toHaveText("Long history");
+  await expect(long.locator('[data-status="needs-you"]')).toBeVisible();
+  // While Ctrl is held the rows show their keys; Ctrl+2 opens the second.
+  await page.keyboard.down("Control");
+  await expect(sidebar(page).locator(".row-digit").first()).toHaveText("1");
+  await page.keyboard.press("2");
+  await page.keyboard.up("Control");
+  await expect(page.locator(".title")).toHaveText("Docs pass");
+  await expect(sidebar(page).locator(".row-digit")).toHaveCount(0);
+
+  // The inbox lists both approvals, newest first; y approves the selected one.
+  await sidebar(page).getByRole("button", { name: /^Inbox/ }).click();
+  const inbox = page.getByRole("listbox", { name: "Waiting for you" });
+  const first = inbox.getByRole("option").first();
+  await expect(first).toContainText("Long history");
+  await expect(first).toContainText("Approve command");
+  await expect(first).toContainText("rm -rf build");
+  await expect(inbox.getByRole("option").filter({ hasText: "Docs pass" })).toContainText("go test ./...");
+  await expect(inbox).toBeFocused();
+  await page.keyboard.press("y");
+  await expect.poll(() => fake.deck.answered).toEqual([{ id: asked.id, decision: "allow" }]);
+  await expect(long.locator('[data-status="needs-you"]')).toHaveCount(0);
+  await expect(inbox.getByRole("option").filter({ hasText: "rm -rf build" })).toHaveCount(0);
+
+  // A room that finishes out of sight is done until it is opened.
+  fake.deck.invoke("chat.send", { session_id: "ses_long", text: "tidy the notes" });
+  await expect(long.locator('[data-status="done"]')).toBeVisible();
+  await expect.poll(() => notes.map((n) => `${n.title}: ${n.body}`)).toContain(`${basename(dir)} · Long history: Finished`);
+  const done = inbox.locator('[data-state="done"]').filter({ hasText: "Long history" });
+  await expect(done).toContainText("Finished");
+  await done.click();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".title")).toHaveText("Long history");
+  await expect(long.locator('[data-status="done"]')).toHaveCount(0);
 });

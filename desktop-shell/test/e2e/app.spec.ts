@@ -39,7 +39,8 @@ test("connects, lists sessions and opens one", async ({ page }) => {
   await pair(page);
   const nav = sidebar(page);
   await expect(nav.locator(".session")).toHaveCount(3);
-  await expect(nav.locator('[data-session="ses_docs"] [data-status="approval"]')).toHaveText("Approval");
+  await expect(nav.locator('[data-session="ses_docs"] [data-status="needs-you"]')).toHaveText("Needs you");
+  await expect(nav.locator('[data-session="ses_docs"] .status-label')).toHaveText("Approve command");
   await openMain(page);
   // Markdown renders as elements; a finished reply folds its work behind
   // "Worked for …", and its tool calls start folded too.
@@ -122,7 +123,7 @@ test("approves an approval from another session", async ({ page }) => {
   await expect(panel.locator(".approval-what")).toHaveText("go test ./...");
   await panel.getByRole("button", { name: "Always allow this session" }).click();
   await expect(panel.getByText("No approvals wait for you.")).toBeVisible();
-  await expect(sidebar(page).locator('[data-session="ses_docs"] [data-status="approval"]')).toHaveCount(0);
+  await expect(sidebar(page).locator('[data-session="ses_docs"] [data-status="needs-you"]')).toHaveCount(0);
   expect(fake.answered).toEqual([{ id: "apr_docs", decision: "allow_session" }]);
 });
 

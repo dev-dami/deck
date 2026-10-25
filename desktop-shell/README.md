@@ -82,13 +82,34 @@ T3's look stays in the theme catalog.
   project filter at the top shows all projects or one, adds a project,
   reopens a recent one or pairs with a Deck. Each group has its own new
   thread and close buttons.
-- **Threads.** Each row shows the title, the glyphs of the agents that
-  wrote and a status glyph: an amber dot while it works, a shield while it
-  waits for you, a check when it finished while you looked elsewhere. A
+- **Threads.** Each thread is a room in one state: working (an amber dot),
+  needs you (a shield: an approval, a question, a blocked or failed task),
+  overlap (two agents changed the same file), changes to review, done (a
+  check), or idle. Under the title a line in small type names the thing:
+  "Approve command", "Task blocked: Map the limiter", "codex-2 and claude-1
+  both changed auth.go", "Finished". Rows of the open project show it
+  always; rows of other projects show it on hover. A room that needs you,
+  finished or overlaps moves to the top of its group. "Needs you" holds
+  until you answer, write in the room or the agent moves on; opening the
+  room does not clear it. Review and done clear when you open the room. A
   working row carries a rail in the hue of its agent. Card rows (in
   Settings) add the project and the last message. Quiet threads older than
   three days fold into Settled. Double-click a title to rename it; hover or
   focus a row to delete it. Right-click a row for Rename and Delete.
+- **Inbox.** The sidebar's Inbox (or "Open inbox" in the palette) lists,
+  across every open project, what waits for you: approvals with Approve,
+  Decline and Always allow, contract proposals with Accept and Decline,
+  overlaps, rooms to review, finished rooms and notices from rooms you are
+  not in. `j` and `k` move, `y` and `n` answer, Enter opens the room, in
+  its own project. Notices from the room you are in show as toasts; each
+  toast has a close button.
+- **Notifications.** While the window is in the background, the app sends a
+  notification when a room needs you or finishes, named "project · room:
+  what". A click brings the window up on that room. There is none while you
+  have a message queued in that room. The dock or taskbar shows how many
+  items need you: a count on macOS and Linux, a dot on Windows. Settings >
+  General sets notifications to all, needs you only or none, and the sound
+  on or off.
 - **New thread** (Ctrl+N, Cmd+N) opens the empty screen. The first message
   makes the thread, named after its first line.
 - **Chat.** A finished reply folds its tool calls and thinking behind
@@ -137,8 +158,10 @@ T3's look stays in the theme catalog.
   and commands. Ctrl+N starts a thread, Ctrl+O opens a folder, Ctrl+,
   opens Settings. Ctrl+B hides the sidebar, Ctrl+J the terminal.
   Ctrl+Shift+Y turns Yolo mode on and off, so Ctrl+Y stays Redo in a text
-  field. Ctrl+= and Ctrl+- zoom, Ctrl+0 goes back to 100%; the app keeps
-  the zoom. Enter sends. Shift+Enter adds a line.
+  field. Ctrl+Alt+L goes to the next room that needs you, in any open
+  project. Ctrl+1 to Ctrl+9 open the first nine rooms of the sidebar; hold
+  Ctrl to see their numbers. Ctrl+= and Ctrl+- zoom, Ctrl+0 goes back to
+  100%; the app keeps the zoom. Enter sends. Shift+Enter adds a line.
 - **Menus.** The menu bar holds every command and its key. Reload and the
   developer tools are there only in a development build. Right-click a
   text field, a selection, a link or an image for the usual actions; a link
@@ -239,7 +262,8 @@ renderer (React, sandboxed)                  main process (Node)                
   `launch.ts` reads deck:// links and folder arguments. Menu commands,
   links and updates reach the window as events, like the rpc stream.
 - `src/preload/preload.ts` exposes `window.deck`: the host methods over IPC,
-  the socket, rpc, menu, link and update event streams, and the path of a
+  the socket, rpc, menu, link, update and notification-click event streams,
+  and the path of a
   folder dropped on the window. Nothing else.
 - `src/shared/` holds the bridge types and the CSP.
 - **The UI** is React with Tailwind CSS v4, rebuilt after T3 Code's
@@ -259,6 +283,11 @@ renderer (React, sandboxed)                  main process (Node)                
   Components read slices of the shared `AppState` (`select.ts`), so the
   tokens of a thread in the background do not render the sidebar or the
   open timeline.
+- **Attention.** `appState.ts` computes each room's state once per
+  project with the pure `roomStatus` (`attention.ts`), from the project's
+  store and one poller for its board and agents (`crewState.ts`, every 3
+  seconds while an agent works, else every 10), and the sidebar, the inbox,
+  the badge and the notifications all read that result.
 
 ### What the rpc transport adds, and what the app uses
 
@@ -306,7 +335,9 @@ For both transports:
   `src/`. Links open in the system browser, and only http(s) links are
   links.
 - **Locked window.** The window cannot navigate away or open a new window.
-  Permission requests (camera, notifications and others) are denied.
+  Permission requests (camera, notifications and others) are denied. Main
+  shows Deck's notifications itself (`notify.ts`), from a title, a body and
+  a tag that `host.ts` checks.
 
 Open a folder (rpc):
 

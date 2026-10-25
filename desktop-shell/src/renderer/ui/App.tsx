@@ -1,9 +1,13 @@
+import type { Decision } from "@web/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DeckBridge, LocalDeck, SavedServer } from "../../shared/bridge";
 import { useAppearance } from "../appearance";
-import { attachProject, dispatchUi, dropProject, setEngine } from "../appState";
+import { attachProject, dispatchUi, dropProject, setEngine, showProject } from "../appState";
+import type { InboxItem } from "../attention";
 import type { DeckClient } from "../client";
 import { connect, openLocal } from "../connection";
+import { refreshTeam, teamOf } from "../crewState";
+import { parseTag, useBadge, useInbox, useNotifications } from "../inbox";
 import { forgetOpen, type OpenProject, rememberOpen, restoredOpen } from "../openProjects";
 import { usePrefs } from "../prefs";
 import { ConnectScreen } from "./ConnectScreen";
@@ -62,7 +66,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
       land(had.key, to);
     } else {
       live.current = [...live.current, p];
-      attachProject(p.key, p.source, p.c.store);
+      attachProject(p.key, p.source, p.c.store, p.c);
       setOpen(live.current);
       setCurrentKey(p.key);
       rememberOpen(p.source);
@@ -212,6 +216,54 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   const prefs = usePrefs();
   useAppearance(prefs.theme, prefs.palette, prefs.accent);
 
+  // The project on screen sees its open room; the others gather news.
+  const shownKey = connecting ? null : currentKey;
+  useEffect(() => showProject(shownKey), [shownKey, open]);
+
+  // The inbox, the badge and the notifications, across the open projects.
+  const inbox = useInbox(open);
+  useBadge(bridge, inbox);
+  useNotifications(bridge, open);
+
+  // The inbox is a page of the project it opened in; a switch leaves it.
+  const left = useRef(currentKey);
+  useEffect(() => {
+    if (left.current !== null && left.current !== currentKey) dispatchUi(left.current, { type: "inbox", open: false });
+    left.current = currentKey;
+  }, [currentKey]);
+
+  // Opens a room of any open project.
+  const openRoom = useCallback((key: string, room: string) => {
+    if (!live.current.some((p) => p.key === key)) return;
+    setCurrentKey(key);
+    land(key, room);
+    setConnecting(false);
+  }, []);
+  useEffect(
+    () =>
+      bridge.onNotificationClick(({ tag }) => {
+        const t = parseTag(tag);
+        if (t !== null) openRoom(t.project, t.room);
+      }),
+    [bridge, openRoom],
+  );
+  const attention = {
+    items: inbox,
+    onOpenRoom: openRoom,
+    onAnswer: (item: InboxItem, d: Decision) => {
+      const p = live.current.find((x) => x.key === item.project);
+      if (p !== undefined && item.approval !== undefined) void p.c.answerApproval(item.approval.session_id, item.approval.id, d);
+    },
+    onContract: async (item: InboxItem, accept: boolean): Promise<string | null> => {
+      const api = live.current.find((x) => x.key === item.project)?.c.project;
+      const c = item.contract;
+      if (api === undefined || c === undefined) return null;
+      const err = await api.answerContract(c.peer, c.id, accept, teamOf(api)?.contractKinds[0] ?? "");
+      await refreshTeam(api);
+      return err;
+    },
+  };
+
   const current = open.find((p) => p.key === currentKey) ?? null;
   const isOpen = (source: string) => open.some((p) => p.source === source);
   const projects: ProjectEntry[] = [
@@ -307,6 +359,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
           where={current.where}
           transport={current.transport}
           others={open.filter((p) => p !== current)}
+          attention={attention}
           projects={projects}
           onProject={toProject}
           onAddProject={addProject}

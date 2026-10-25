@@ -120,6 +120,29 @@ function General({ p }: { p: Prefs }) {
           }
         />
       </Section>
+      <Section title="Notifications">
+        <Row
+          title="Notify me"
+          description="While the window is in the background: when a room needs you, and when a room finishes."
+          control={
+            <Segmented
+              label="Notify me"
+              value={p.notifications}
+              onChange={set("notifications")}
+              options={[
+                { value: "all", label: "All" },
+                { value: "needs-you", label: "Needs you only" },
+                { value: "none", label: "None" },
+              ]}
+            />
+          }
+        />
+        <Row
+          title="Sound"
+          description="Play the system sound with each notification."
+          control={<Switch label="Sound" checked={p.sound} onChange={set("sound")} />}
+        />
+      </Section>
     </>
   );
 }
@@ -339,6 +362,8 @@ function Keybindings({ mac }: { mac: boolean }) {
     ["Settings", [m, ","]],
     ["Toggle the sidebar", [m, "B"]],
     ["Toggle the terminal", [m, "J"]],
+    ["Next room that needs you", [m, mac ? "⌥" : "Alt", "L"]],
+    ["Open room 1 to 9 of the sidebar (hold to see the numbers)", [m, "1…9"]],
     ["Zoom in, out, actual size", [m, "=", "-", "0"]],
     ["Send the message", ["Enter"]],
     ["New line", ["Shift", "Enter"]],

@@ -1,13 +1,18 @@
 import type { Page } from "@playwright/test";
 import { callHost } from "../../src/main/host";
 import { HOST_METHODS } from "../../src/shared/bridge";
+import type { HostDeps } from "../../src/main/host";
 import { type TestHost, testHost } from "../bridge";
 
 // Serves the main-process host to the page as window.deck, the way the
 // preload does over IPC. Calls from the page reach the real host (pairing,
 // tokens, the socket relay, local Decks over rpc) in this Node process;
 // socket and rpc events go back in order.
-export async function attachBridge(page: Page, pickFolder?: () => Promise<string | null>): Promise<TestHost> {
+export async function attachBridge(
+  page: Page,
+  pickFolder?: () => Promise<string | null>,
+  deps: Partial<HostDeps> = {},
+): Promise<TestHost> {
   let chain: Promise<unknown> = Promise.resolve();
   const send = (fn: string, id: number | string, ev: unknown) => {
     chain = chain
@@ -22,6 +27,7 @@ export async function attachBridge(page: Page, pickFolder?: () => Promise<string
     (id, ev) => send("__deckSocketEmit", id, ev),
     (id, ev) => send("__deckRpcEmit", id, ev),
     pickFolder,
+    deps,
   );
   for (const m of HOST_METHODS) {
     await page.exposeFunction(`__deck_${m}`, (...args: unknown[]) => callHost(t.host, m, args));
@@ -39,6 +45,7 @@ export async function attachBridge(page: Page, pickFolder?: () => Promise<string
       ["onMenu", "__deckMenuEmit"],
       ["onLink", "__deckLinkEmit"],
       ["onUpdate", "__deckUpdateEmit"],
+      ["onNotificationClick", "__deckNotificationEmit"],
     ] as const) {
       const listeners = new Set<(id: unknown, ev: unknown) => void>();
       deck[on] = (fn: (id: unknown, ev: unknown) => void) => {

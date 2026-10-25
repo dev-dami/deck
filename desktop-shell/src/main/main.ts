@@ -21,6 +21,7 @@ import {
   LINK_EVENT_CHANNEL,
   type LinkEvent,
   MENU_EVENT_CHANNEL,
+  NOTIFICATION_EVENT_CHANNEL,
   RPC_EVENT_CHANNEL,
   SOCKET_EVENT_CHANNEL,
   type ThreadChoice,
@@ -35,6 +36,7 @@ import { type Arrival, linkFromUrl, linksFromArgs, mustConfirm } from "./launch"
 import { LinkHost } from "./link";
 import { guardProcess, openLogs, setupLog, writeLog } from "./log";
 import { menuTemplate } from "./menu";
+import { Notifier } from "./notify";
 import { execRun, PhoneLink, readRelayHint, type Run } from "./phone";
 import { RecentFolders } from "./recent";
 import { type Sealer, ServerStore } from "./servers";
@@ -266,6 +268,9 @@ async function main(): Promise<void> {
   // Only an installed app claims deck://; a checkout would point the system
   // at its development build.
   if (app.isPackaged) app.setAsDefaultProtocolClient("deck");
+  // Windows shows notifications only for an app with a user model id; the
+  // installer sets the same one.
+  if (process.platform === "win32") app.setAppUserModelId("dev.deck.desktop");
 
   const store = new ServerStore(join(app.getPath("userData"), "servers.json"), sealer);
   const links = new LinkHost(store, (id, ev) => win?.webContents.send(SOCKET_EVENT_CHANNEL, id, ev));
@@ -289,6 +294,17 @@ async function main(): Promise<void> {
   };
   const windowState = new WindowStateFile(join(app.getPath("userData"), "window.json"));
   const updater = new Updater((ev) => win?.webContents.send(UPDATE_EVENT_CHANNEL, ev));
+  // A click on a notification brings the window up on that room.
+  const notifier = new Notifier(
+    () => win,
+    (tag) => {
+      if (win === null) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      if (loaded) win.webContents.send(NOTIFICATION_EVENT_CHANNEL, { tag });
+    },
+  );
   const host = createHost({
     store,
     links,
@@ -312,6 +328,9 @@ async function main(): Promise<void> {
     openLogs,
     installUpdate: () => updater.install(),
     threadMenu,
+    notify: (n) => notifier.notify(n),
+    badge: (count) => notifier.badge(count),
+    focused: () => notifier.focused(),
   });
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(

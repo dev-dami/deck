@@ -1,7 +1,19 @@
 import { Store } from "@web/controller";
-import type { Message, Session } from "@web/protocol";
+import type { Approval, Message, Session } from "@web/protocol";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { attachProject, dispatchUi, draftOf, dropProject, projectState, setDraft, setEngine, subscribe } from "./appState";
+import {
+  addNotice,
+  attachProject,
+  dispatchUi,
+  draftOf,
+  dropProject,
+  projectState,
+  roomsBySource,
+  setDraft,
+  setEngine,
+  showProject,
+  subscribe,
+} from "./appState";
 import { loadDraft } from "./drafts";
 
 const s = (id: string, last_text = ""): Session => ({
@@ -122,6 +134,86 @@ describe("the per-project app state", () => {
     expect(draftOf("p7", "a")).toBe("fix the limiter");
     expect(draftOf("p7", "")).toBe("a new thread");
     dropProject("p7");
+  });
+
+  test("each room's status is kept with the project, and the sidebar reads it by source", () => {
+    const store = deck();
+    attachProject("r1", "folder:/r1", store);
+    expect(projectState("r1").rooms["a"]?.state).toBe("idle");
+    store.dispatch({ type: "event", event: { e: "busy", p: { session_id: "a", busy: true } } });
+    expect(projectState("r1").rooms["a"]?.state).toBe("working");
+    const working = projectState("r1").rooms["a"];
+    // A token elsewhere keeps the room's status object.
+    store.dispatch({ type: "event", event: { e: "message.created", p: msg("m1", "b", "x") } });
+    expect(projectState("r1").rooms["a"]).toBe(working);
+    expect(roomsBySource()["folder:/r1"]).toBe(projectState("r1").rooms);
+    dropProject("r1");
+    expect(roomsBySource()["folder:/r1"]).toBeUndefined();
+  });
+
+  test("needs-you stays when the room is opened; done goes", () => {
+    const store = deck();
+    attachProject("r2", "folder:/r2", store);
+    const a: Approval = {
+      id: "p1",
+      session_id: "a",
+      agent: "claude-1",
+      kind: "command",
+      description: "Run a command",
+      command: "go test",
+      created_at: "2026-10-19T09:00:00Z",
+    };
+    store.dispatch({ type: "event", event: { e: "approval.requested", p: a } });
+    expect(projectState("r2").rooms["a"]).toMatchObject({ state: "needs-you", label: "Approve command" });
+    dispatchUi("r2", { type: "open", id: "a" });
+    expect(projectState("r2").rooms["a"]?.state).toBe("needs-you");
+    store.dispatch({ type: "event", event: { e: "approval.resolved", p: { id: "p1", session_id: "a", granted: true } } });
+    expect(projectState("r2").rooms["a"]?.state).toBe("idle");
+    // b finishes out of sight: done until the person opens it.
+    store.dispatch({ type: "event", event: { e: "session.updated", p: s("b", "all done") } });
+    expect(projectState("r2").rooms["b"]).toMatchObject({ state: "done", label: "Finished" });
+    dispatchUi("r2", { type: "open", id: "b" });
+    expect(projectState("r2").rooms["b"]?.state).toBe("idle");
+    dropProject("r2");
+  });
+
+  test("a room open in a project off screen gathers news", () => {
+    const store = deck();
+    attachProject("r3", "folder:/r3", store);
+    attachProject("r4", "folder:/r4", deck());
+    dispatchUi("r3", { type: "open", id: "a" });
+    showProject("r4");
+    store.dispatch({ type: "event", event: { e: "session.updated", p: s("a", "finished") } });
+    expect(projectState("r3").rooms["a"]?.state).toBe("done");
+    // Back on screen, the open room is read.
+    showProject("r3");
+    expect(projectState("r3").rooms["a"]?.state).toBe("idle");
+    dropProject("r3");
+    dropProject("r4");
+  });
+
+  test("a notice toasts only for the room on screen; the others wait in the inbox", () => {
+    const store = deck();
+    attachProject("r5", "folder:/r5", store);
+    dispatchUi("r5", { type: "open", id: "a" });
+    const overlap = "codex-2 and claude-1 both changed auth.go in the last few minutes; one may undo the other";
+    store.dispatch({ type: "event", event: { e: "notice", p: { session_id: "a", text: "on screen" } } });
+    store.dispatch({ type: "event", event: { e: "notice", p: { session_id: "b", text: overlap } } });
+    store.dispatch({ type: "event", event: { e: "notice", p: { session_id: "", text: "for everyone" } } });
+    expect(store.state.toasts.map((t) => t.text)).toEqual(["on screen", "for everyone"]);
+    expect(projectState("r5").notices.map((n) => [n.session, n.seen])).toEqual([
+      ["a", true],
+      ["b", false],
+    ]);
+    expect(projectState("r5").rooms["b"]).toMatchObject({ state: "overlap", label: "codex-2 and claude-1 both changed auth.go" });
+    // Opening the room sees the notice.
+    dispatchUi("r5", { type: "open", id: "b" });
+    expect(projectState("r5").rooms["b"]?.state).toBe("idle");
+    expect(addNotice("r5", { session_id: "b", text: "seen at once" })).toBe(true);
+    dropProject("r5");
+    // A dropped project's store toasts every notice again.
+    store.dispatch({ type: "event", event: { e: "notice", p: { session_id: "b", text: "late" } } });
+    expect(store.state.toasts.at(-1)?.text).toBe("late");
   });
 
   test("the engine state is the project's", () => {

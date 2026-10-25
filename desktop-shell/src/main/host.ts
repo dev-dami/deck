@@ -4,6 +4,8 @@ import {
   type HostMethod,
   LOG_LEVELS,
   type LogLevel,
+  NOTIFY_LIMITS,
+  type NotifyInput,
   type PairInput,
   RPC_METHODS,
   type RpcMethod,
@@ -33,6 +35,9 @@ export interface HostDeps {
   openLogs: () => Promise<void>;
   installUpdate: () => void;
   threadMenu: (thread: { id: string; title: string }) => Promise<ThreadChoice>;
+  notify: (n: NotifyInput) => void;
+  badge: (count: number) => void;
+  focused: () => boolean;
 }
 
 // The longest renderer log line kept: a stack trace, not a flood.
@@ -99,6 +104,13 @@ export function createHost(d: HostDeps): DeckHost {
     logFromRenderer: async (level: LogLevel, message: string) => d.log(level, `renderer: ${message.slice(0, MAX_LOG)}`),
     installUpdate: async () => d.installUpdate(),
     threadMenu: (thread: { id: string; title: string }) => d.threadMenu({ id: thread.id, title: thread.title }),
+    notify: async (n: NotifyInput) => {
+      d.notify({ title: n.title, body: n.body, tag: n.tag, silent: n.silent });
+    },
+    badge: async (count: number) => {
+      d.badge(count);
+    },
+    focused: async () => d.focused(),
   };
 }
 
@@ -128,6 +140,19 @@ const isThread: Check = (v) => {
   const t = v as Record<string, unknown>;
   return Object.keys(t).length === 2 && isStr(t["id"]) && isStr(t["title"]);
 };
+const isText = (max: number): Check => (v) => typeof v === "string" && v.length <= max;
+const isNotify: Check = (v) => {
+  if (!isObject(v)) return false;
+  const n = v as Record<string, unknown>;
+  return (
+    Object.keys(n).length === 4 &&
+    isText(NOTIFY_LIMITS.title)(n["title"]) &&
+    isText(NOTIFY_LIMITS.body)(n["body"]) &&
+    isText(NOTIFY_LIMITS.tag)(n["tag"]) &&
+    typeof n["silent"] === "boolean"
+  );
+};
+const isBadge: Check = (v) => isNat(v) && (v as number) <= NOTIFY_LIMITS.badge;
 
 const ARGS: Record<HostMethod, Check[]> = {
   listServers: [],
@@ -157,6 +182,9 @@ const ARGS: Record<HostMethod, Check[]> = {
   logFromRenderer: [isLogLevel, isStr],
   installUpdate: [],
   threadMenu: [isThread],
+  notify: [isNotify],
+  badge: [isBadge],
+  focused: [],
 };
 
 // Calls method m with args from the renderer, or rejects when they are not

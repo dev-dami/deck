@@ -1,17 +1,6 @@
 import type { Session } from "@web/protocol";
 import { toMillis } from "@web/time";
 
-// The sidebar's view of a thread, after T3 Code's thread rows: a status
-// that a person may need to act on, else the time.
-export type ThreadStatus = "approval" | "working" | "done" | null;
-
-export function threadStatus(s: Session, unread: boolean): ThreadStatus {
-  if (s.pending > 0) return "approval";
-  if (s.busy) return "working";
-  if (unread) return "done";
-  return null;
-}
-
 // A thread settles when nothing has happened in it for this long.
 export const SETTLE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
 

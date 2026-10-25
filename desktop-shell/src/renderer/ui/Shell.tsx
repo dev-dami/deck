@@ -43,7 +43,11 @@ import { SettingsPage } from "./Settings";
 import { TerminalDrawer, useTerminalShown } from "./Terminal";
 import { UsagePage } from "./Usage";
 import { ShareControl, TeamPage } from "./Team";
-import { type ForeignThread, type ProjectEntry, Sidebar } from "./Sidebar";
+import { type ForeignThread, type ProjectEntry, type RowRef, Sidebar } from "./Sidebar";
+import { Inbox } from "./Inbox";
+import { type InboxItem, needsYouRooms, nextNeedsYou } from "../attention";
+import type { Decision } from "@web/protocol";
+import { X } from "lucide-react";
 import type { Landing } from "./App";
 import type { OpenProject } from "../openProjects";
 import type { EngineStop } from "../../shared/bridge";
@@ -84,7 +88,30 @@ const MENU_COMMAND: Record<Exclude<MenuCommand, "palette">, string> = {
   "toggle-panel": "panel",
   "toggle-terminal": "terminal",
   about: "settings-connection",
+  inbox: "inbox",
+  "next-attention": "next-attention",
+  "room-1": "room-1",
+  "room-2": "room-2",
+  "room-3": "room-3",
+  "room-4": "room-4",
+  "room-5": "room-5",
+  "room-6": "room-6",
+  "room-7": "room-7",
+  "room-8": "room-8",
+  "room-9": "room-9",
 };
+
+// What App hands each project view: the inbox across projects and how to
+// act on it.
+export interface ShellAttention {
+  items: InboxItem[];
+  onOpenRoom: (project: string, room: string) => void;
+  onAnswer: (item: InboxItem, d: Decision) => void;
+  onContract: (item: InboxItem, accept: boolean) => Promise<string | null>;
+}
+
+// How long a toast stays.
+const TOAST_MS = 6000;
 
 // The draft of the composer on the new-thread screen, before a thread exists.
 const NEW = "";
@@ -225,6 +252,7 @@ export function Shell({
   where,
   transport,
   others,
+  attention,
   projects,
   onProject,
   onAddProject,
@@ -232,6 +260,7 @@ export function Shell({
   onDisconnect,
   onConnect,
 }: {
+  attention: ShellAttention;
   c: DeckClient;
   // The project's key in the app state (appState.ts).
   projectKey: string;
@@ -283,14 +312,30 @@ export function Shell({
     return () => clearInterval(t);
   }, []);
 
+  // Each toast gets one timer when it appears; a change to the list does not
+  // start the others again.
+  const toastTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const dismissToast = useCallback((id: number) => c.store.dispatch({ type: "toast.dismiss", id }), [c]);
   useEffect(() => {
-    const timers = state.toasts.map((t) =>
-      setTimeout(() => c.store.dispatch({ type: "toast.dismiss", id: t.id }), 6000),
-    );
+    const timers = toastTimers.current;
+    const ids = new Set(state.toasts.map((t) => t.id));
+    for (const [id, t] of timers) {
+      if (!ids.has(id)) {
+        clearTimeout(t);
+        timers.delete(id);
+      }
+    }
+    for (const id of ids) {
+      if (!timers.has(id)) timers.set(id, setTimeout(() => dismissToast(id), TOAST_MS));
+    }
+  }, [state.toasts, dismissToast]);
+  useEffect(() => {
+    const timers = toastTimers.current;
     return () => {
-      for (const t of timers) clearTimeout(t);
+      for (const t of timers.values()) clearTimeout(t);
+      timers.clear();
     };
-  }, [c, state.toasts]);
+  }, []);
 
   // The open thread's changed files: for the card under the last reply and
   // the diff panel. Fetched on opening and each time the agents finish.
@@ -370,10 +415,55 @@ export function Shell({
     void c.setMode(open.id, move.to);
   }, [open, c, state.server?.allow_yolo, prefs.confirmYolo]);
 
+  // The sidebar's rows in order, for Ctrl/Cmd+1 to 9; the digits show on
+  // the rows while Ctrl or Cmd is held.
+  const order = useRef<RowRef[]>([]);
+  const [digits, setDigits] = useState(false);
+  // Set below, once the project's source and the toast are known.
+  const jump = useRef({ row: (_n: number) => {}, next: () => {} });
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const hide = () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+      setDigits(false);
+    };
+    const isMod = (e: KeyboardEvent) => e.key === "Control" || e.key === "Meta";
+    const down = (e: KeyboardEvent) => {
+      if (!isMod(e)) hide();
+      else if (!e.repeat && timer === null) timer = setTimeout(() => setDigits(true), 300);
+    };
+    const up = (e: KeyboardEvent) => {
+      if (isMod(e)) hide();
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", hide);
+    return () => {
+      hide();
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", hide);
+    };
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Ctrl/Cmd+Alt+L: the next room that needs the person. The code, as
+      // Alt changes the key a Mac reports.
+      if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.code === "KeyL") {
+        e.preventDefault();
+        jump.current.next();
+        return;
+      }
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
       const k = e.key.toLowerCase();
+      const digit = /^Digit([1-9])$/.exec(e.code);
+      if (digit !== null && !e.shiftKey) {
+        e.preventDefault();
+        jump.current.row(Number(digit[1]));
+        return;
+      }
       if (e.shiftKey) {
         // With Shift, so Ctrl+Y stays Redo in a text field.
         if (k === "y") {
@@ -425,6 +515,19 @@ export function Shell({
       })),
       { id: "usage", label: "Open usage", run: () => dispatch({ type: "usage", open: true }) },
       { id: "team", label: "Open team", run: () => dispatch({ type: "team", open: true }) },
+      { id: "inbox", label: "Open inbox", run: () => dispatch({ type: "inbox", open: true }) },
+      {
+        id: "next-attention",
+        label: "Next room that needs you",
+        hint: `${modKey(mac)}${mac ? "⌥" : "Alt "}L`,
+        run: () => jump.current.next(),
+      },
+      ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({
+        id: `room-${n}`,
+        label: `Open room ${n} of the sidebar`,
+        hint: `${modKey(mac)}${n}`,
+        run: () => jump.current.row(n),
+      })),
       ...(api === undefined
         ? []
         : [{ id: "terminal", label: "Toggle terminal", hint: `${modKey(mac)}J`, run: () => setTerminal((v) => !v) }]),
@@ -481,6 +584,21 @@ export function Shell({
   const imagesOn = state.server?.features.includes("images") ?? false;
   const toast = useCallback((text: string) => c.store.dispatch({ type: "toast.add", kind: "error", text }), [c]);
   const info = useCallback((text: string) => c.store.dispatch({ type: "toast.add", kind: "info", text }), [c]);
+  // A room of this project opens here; one of another project through App.
+  const openRoom = (project: string, room: string) => (project === projectKey ? openSession(room) : attention.onOpenRoom(project, room));
+  jump.current = {
+    row: (n) => {
+      const r = order.current[n - 1];
+      if (r === undefined) return;
+      if (r.source === source) openSession(r.id);
+      else void onProject(r.source, r.id).then((e) => e !== null && toast(e));
+    },
+    next: () => {
+      const to = nextNeedsYou(needsYouRooms(attention.items), { project: projectKey, room: ui.inbox ? null : ui.openId });
+      if (to === null) info("No room needs you.");
+      else openRoom(to.project, to.room);
+    },
+  };
   const added = files?.reduce((n, f) => n + f.added, 0) ?? 0;
   const removed = files?.reduce((n, f) => n + f.removed, 0) ?? 0;
 
@@ -705,10 +823,25 @@ export function Shell({
           onProject={(k) => void onProject(k, "new").then((e) => e !== null && toast(e))}
           onAddProject={() => void addProject()}
           onCollapse={() => setSidebar(false)}
+          inbox={ui.inbox}
+          inboxCount={attention.items.length}
+          onInbox={() => dispatch({ type: "inbox", open: !ui.inbox })}
+          digits={digits}
+          order={order}
         />
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-        {ui.usage ? (
+        {ui.inbox ? (
+          <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+            <Inbox
+              items={attention.items}
+              mac={mac}
+              onAnswer={attention.onAnswer}
+              onContract={(item, accept) => void attention.onContract(item, accept).then((e) => e !== null && toast(e))}
+              onOpen={(item) => item.room !== null && openRoom(item.project, item.room)}
+            />
+          </main>
+        ) : ui.usage ? (
           <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
             <UsagePage project={api} theme={state.theme} onOpenThread={openSession} />
           </main>
@@ -825,10 +958,10 @@ export function Shell({
           </main>
         )}
         {api !== undefined && (
-          <TerminalDrawer project={api} shown={terminal && ui.settings === null && !ui.usage && !ui.team} onHide={() => setTerminal(false)} onError={toast} />
+          <TerminalDrawer project={api} shown={terminal && ui.settings === null && !ui.usage && !ui.team && !ui.inbox} onHide={() => setTerminal(false)} onError={toast} />
         )}
       </div>
-      {ui.panel !== null && ui.settings === null && !ui.usage && !ui.team && (
+      {ui.panel !== null && ui.settings === null && !ui.usage && !ui.team && !ui.inbox && (
         <LiveRightPanel
           c={c}
           panel={ui.panel}
@@ -851,11 +984,20 @@ export function Shell({
           <div
             key={t.id}
             className={cn(
-              `toast toast-${t.kind} pointer-events-auto animate-enter rounded-xl border border-hairline-strong bg-surface-2 px-4 py-3 text-sm shadow-popover inset-shadow-hl`,
+              `toast toast-${t.kind} pointer-events-auto flex animate-enter items-start gap-2 rounded-xl border border-hairline-strong bg-surface-2 py-3 pr-2 pl-4 text-sm shadow-popover inset-shadow-hl`,
               t.kind === "error" && "border-destructive/40",
             )}
           >
-            {t.text}
+            <span className="toast-text min-w-0 flex-1 break-words">{t.text}</span>
+            <button
+              type="button"
+              aria-label="Dismiss"
+              title="Dismiss"
+              className="-my-0.5 grid size-5 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => dismissToast(t.id)}
+            >
+              <X className="size-3.5" />
+            </button>
           </div>
         ))}
       </div>

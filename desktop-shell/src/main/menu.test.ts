@@ -61,6 +61,10 @@ describe("menuTemplate", () => {
       ["Toggle terminal", "toggle-terminal", "CmdOrCtrl+J"],
       ["Command palette", "palette", "CmdOrCtrl+K"],
       ["About Deck", "about", undefined],
+      ["Inbox", "inbox", undefined],
+      ["Next room that needs you", "next-attention", "CmdOrCtrl+Alt+L"],
+      ["Room 1", "room-1", "CmdOrCtrl+1"],
+      ["Room 9", "room-9", "CmdOrCtrl+9"],
     ];
     for (const [label, command, accelerator] of want) {
       const item = byLabel(t, label);
@@ -74,7 +78,7 @@ describe("menuTemplate", () => {
   test("keys the window handles are shown but not registered", () => {
     const { a } = record();
     const t = menuTemplate({ isMac: false, packaged: true, name: "Deck" }, a);
-    for (const label of ["New thread", "Settings", "Toggle sidebar", "Toggle terminal", "Command palette"]) {
+    for (const label of ["New thread", "Settings", "Toggle sidebar", "Toggle terminal", "Command palette", "Next room that needs you", "Room 3"]) {
       expect(byLabel(t, label)?.registerAccelerator).toBe(false);
     }
     // Only the menu answers Open folder and the zoom keys.

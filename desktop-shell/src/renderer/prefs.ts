@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import type { NotifyPref } from "./attention";
 import { ACCENTS, THEMES } from "./themes";
 
 // The window's own settings (the Settings page). They live in this
@@ -23,6 +24,9 @@ export interface Prefs {
   foldWork: boolean;
   // The terminal drawer's height in pixels.
   terminalHeight: number;
+  // Native notifications while the window is in the background.
+  notifications: NotifyPref;
+  sound: boolean;
 }
 
 export const defaultPrefs: Prefs = {
@@ -36,6 +40,8 @@ export const defaultPrefs: Prefs = {
   confirmYolo: true,
   foldWork: true,
   terminalHeight: 280,
+  notifications: "all",
+  sound: true,
 };
 
 const KEY = "deck.desktop.prefs";
@@ -71,6 +77,8 @@ function merge(v: Record<string, unknown>): Prefs {
     confirmYolo: bool("confirmYolo", defaultPrefs.confirmYolo),
     foldWork: bool("foldWork", defaultPrefs.foldWork),
     terminalHeight: size("terminalHeight", defaultPrefs.terminalHeight),
+    notifications: pick("notifications", ["all", "needs-you", "none"] as const, defaultPrefs.notifications),
+    sound: bool("sound", defaultPrefs.sound),
   };
 }
 

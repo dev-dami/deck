@@ -129,6 +129,11 @@ export class FakeDeck {
     this.restart();
   }
 
+  // A notice for one session, such as Deck's overlap notes.
+  notice(sessionId: string, text: string): void {
+    this.emit("notice", { session_id: sessionId, text }, sessionId);
+  }
+
   requestApproval(sessionId: string, agent: string, command: string): Approval {
     const a: Approval = {
       id: this.id("apr"),

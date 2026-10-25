@@ -1,6 +1,6 @@
 import type { Session } from "@web/protocol";
 import { describe, expect, test } from "vitest";
-import { splitSettled, threadStatus } from "./threads";
+import { splitSettled } from "./threads";
 import { formatDuration, splitWork } from "./work";
 
 const now = Date.parse("2026-10-19T12:00:00Z");
@@ -12,15 +12,6 @@ const s = (id: string, updated: string, extra: Partial<Session> = {}): Session =
   pending: 0,
   mode: "ask",
   ...extra,
-});
-
-describe("thread status", () => {
-  test("an approval wins over work, work over news", () => {
-    expect(threadStatus(s("a", "2026-10-19T11:00:00Z", { busy: true, pending: 1 }), true)).toBe("approval");
-    expect(threadStatus(s("a", "2026-10-19T11:00:00Z", { busy: true }), true)).toBe("working");
-    expect(threadStatus(s("a", "2026-10-19T11:00:00Z"), true)).toBe("done");
-    expect(threadStatus(s("a", "2026-10-19T11:00:00Z"), false)).toBeNull();
-  });
 });
 
 describe("settled threads", () => {

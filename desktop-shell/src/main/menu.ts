@@ -79,6 +79,13 @@ export function menuTemplate(o: { isMac: boolean; packaged: boolean; name: strin
     submenu: [
       cmd("Command palette", "palette", "CmdOrCtrl+K", true),
       sep,
+      cmd("Inbox", "inbox"),
+      cmd("Next room that needs you", "next-attention", "CmdOrCtrl+Alt+L", true),
+      {
+        label: "Open room",
+        submenu: ([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) => cmd(`Room ${n}`, `room-${n}`, `CmdOrCtrl+${n}`, true)),
+      },
+      sep,
       cmd("Toggle sidebar", "toggle-sidebar", "CmdOrCtrl+B", true),
       cmd("Toggle side panel", "toggle-panel"),
       cmd("Toggle terminal", "toggle-terminal", "CmdOrCtrl+J", true),

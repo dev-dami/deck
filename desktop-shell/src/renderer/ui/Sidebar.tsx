@@ -11,8 +11,11 @@ import {
   ChevronRight,
   CircleCheck,
   Command,
+  FileDiff,
   Folder,
   FolderPlus,
+  GitCompareArrows,
+  Inbox as InboxIcon,
   Laptop,
   type LucideIcon,
   PanelLeft,
@@ -26,13 +29,15 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { memo, useRef, useState } from "react";
+import { memo, type MutableRefObject, useEffect, useRef, useState } from "react";
 import type { ThreadChoice } from "../../shared/bridge";
+import { useRooms } from "../appState";
+import { byAttention, type RoomState, type RoomStatus } from "../attention";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
 import type { RowStyle } from "../prefs";
 import { sameData } from "../select";
-import { SETTLE_AFTER_MS, type ThreadStatus, threadStatus } from "../threads";
+import { SETTLE_AFTER_MS } from "../threads";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
@@ -61,12 +66,20 @@ export interface ForeignThread {
 
 const NO_KINDS: string[] = [];
 
-// Each status is a glyph; the word stays for screen readers and the tooltip.
-const STATUS: Record<Exclude<ThreadStatus, null>, { label: string; icon: LucideIcon | null; className: string }> = {
+// Each state is a glyph; the word stays for screen readers and the tooltip.
+const STATUS: Record<Exclude<RoomState, "idle">, { label: string; icon: LucideIcon | null; className: string }> = {
   working: { label: "Working", icon: null, className: "text-signal" },
-  approval: { label: "Approval", icon: ShieldQuestion, className: "text-warning-foreground" },
+  "needs-you": { label: "Needs you", icon: ShieldQuestion, className: "text-warning-foreground" },
+  overlap: { label: "Overlap", icon: GitCompareArrows, className: "text-warning-foreground" },
+  review: { label: "To review", icon: FileDiff, className: "text-info-foreground" },
   done: { label: "Done", icon: CircleCheck, className: "text-success-foreground" },
 };
+
+// Where a row is in the sidebar, for Ctrl/Cmd+1 to 9.
+export interface RowRef {
+  source: string;
+  id: string;
+}
 
 // The agents that wrote in a thread, as T3 Code stacks provider icons.
 function KindStack({ kinds, theme }: { kinds: string[]; theme: Theme | null }) {
@@ -89,6 +102,9 @@ const ThreadRow = memo(function ThreadRow({
   project,
   active,
   unread,
+  status,
+  showLabel,
+  digit,
   now,
   variant,
   kinds,
@@ -105,6 +121,12 @@ const ThreadRow = memo(function ThreadRow({
   hideProject?: boolean;
   active: boolean;
   unread: boolean;
+  status: RoomStatus | undefined;
+  // A compact row shows its status label always (the current project's
+  // rows) or on hover.
+  showLabel: boolean;
+  // Shown while Ctrl/Cmd is held: the row's key, 1 to 9.
+  digit: number | null;
   now: number;
   variant: RowStyle;
   kinds: string[];
@@ -117,9 +139,10 @@ const ThreadRow = memo(function ThreadRow({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const status = threadStatus(s, unread);
-  const st = status === null ? null : STATUS[status];
-  const recede = !active && status === null;
+  const state = status === undefined || status.state === "idle" ? null : status.state;
+  const st = state === null ? null : STATUS[state];
+  const label = status?.label ?? "";
+  const recede = !active && state === null;
   // The open thread is lifted one surface; hover is a white alpha.
   const surface = cn(
     "session-main group/sidebar-row relative block w-full cursor-pointer overflow-hidden rounded-md text-left outline-none transition-colors select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -130,7 +153,7 @@ const ThreadRow = memo(function ThreadRow({
         : "text-foreground hover:bg-sidebar-row-hover",
   );
   // A working thread carries a 2px rail in the hue of an agent in it.
-  const rail = status === "working" && (
+  const rail = state === "working" && (
     <span
       aria-hidden
       className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-current"
@@ -173,8 +196,10 @@ const ThreadRow = memo(function ThreadRow({
           "flex items-center font-mono text-2xs text-faint transition-opacity group-focus-within/sidebar-row:pointer-events-none group-focus-within/sidebar-row:opacity-0 group-hover/sidebar-row:pointer-events-none group-hover/sidebar-row:opacity-0",
         )}
       >
-        {st !== null ? (
-          <span className={cn("inline-flex items-center gap-1", st.className)} data-status={status} title={st.label}>
+        {digit !== null ? (
+          <span className="row-digit font-mono text-2xs text-faint">{digit}</span>
+        ) : st !== null ? (
+          <span className={cn("inline-flex items-center gap-1", st.className)} data-status={state} title={label || st.label}>
             {st.icon === null ? (
               <span aria-hidden className="size-1.5 shrink-0 animate-deck-pulse rounded-full bg-current" />
             ) : (
@@ -183,7 +208,7 @@ const ThreadRow = memo(function ThreadRow({
             <span role="status" className="sr-only">
               {st.label}
             </span>
-            {status === "approval" && s.pending > 1 && <span>{s.pending}</span>}
+            {state === "needs-you" && s.pending > 1 && <span>{s.pending}</span>}
           </span>
         ) : (
           relativeTime(s.updated_at, now)
@@ -257,11 +282,23 @@ const ThreadRow = memo(function ThreadRow({
   if (variant === "compact") {
     return (
       <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id}>
-        <div {...common} className={cn(surface, "flex h-9 items-center gap-2 px-2.5")}>
+        <div {...common} className={cn(surface, "flex min-h-9 flex-col justify-center px-2.5 py-1")}>
           {rail}
-          {title}
-          <KindStack kinds={kinds} theme={theme} />
-          {statusSlot}
+          <div className="flex h-7 min-w-0 items-center gap-2">
+            {title}
+            <KindStack kinds={kinds} theme={theme} />
+            {statusSlot}
+          </div>
+          {label !== "" && (
+            <span
+              className={cn(
+                "status-label -mt-1 truncate pb-0.5 text-2xs text-faint",
+                showLabel ? "block" : "hidden group-focus-within/sidebar-row:block group-hover/sidebar-row:block",
+              )}
+            >
+              {label}
+            </span>
+          )}
         </div>
       </li>
     );
@@ -287,8 +324,8 @@ const ThreadRow = memo(function ThreadRow({
           )}
           {!hideProject && <div className="mt-1 flex min-w-0">{title}</div>}
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
-            <span className="min-w-0 flex-1 truncate text-faint">
-              {s.last_text !== undefined && s.last_text !== "" ? s.last_text : `${s.mode} mode`}
+            <span className={cn("min-w-0 flex-1 truncate text-faint", label !== "" && "status-label text-2xs")}>
+              {label !== "" ? label : s.last_text !== undefined && s.last_text !== "" ? s.last_text : `${s.mode} mode`}
             </span>
             <KindStack kinds={kinds} theme={theme} />
           </div>
@@ -485,7 +522,20 @@ export function Sidebar({
   onUsage,
   team,
   onTeam,
+  inbox,
+  inboxCount,
+  onInbox,
+  digits,
+  order,
 }: {
+  // The inbox page is open; how many items wait in it.
+  inbox: boolean;
+  inboxCount: number;
+  onInbox: () => void;
+  // Ctrl/Cmd is held: rows show their digit.
+  digits: boolean;
+  // Filled with the rows in the order they show.
+  order: MutableRefObject<RowRef[]>;
   project: string;
   // The current project's source, and the threads of the other open ones.
   source: string;
@@ -533,35 +583,45 @@ export function Sidebar({
   const [filter, setFilter] = useState<string | null>(null);
   const latest = useRef({ onOpen, onForeign, onRename, onDelete, onThreadMenu });
   latest.current = { onOpen, onForeign, onRename, onDelete, onThreadMenu };
-  // Every open project's threads, newest first, as T3 Code lists them.
-  type Item = { s: Session; source: string; project: string; foreign: ForeignThread | null };
+  const rooms = useRooms();
+  // Every open project's threads, as T3 Code lists them: a room that needs
+  // the person, finished or overlaps comes first, then the newest.
+  type Item = { s: Session; source: string; project: string; foreign: ForeignThread | null; status: RoomStatus | undefined };
   const items: Item[] = [
     ...sessions.map((s) => ({ s, source, project: project || "Deck", foreign: null })),
     ...foreign.map((f) => ({ s: f.s, source: f.source, project: f.project, foreign: f })),
   ]
     .filter((x) => filter === null || x.source === filter)
-    .sort((a, b) => toMillis(b.s.updated_at) - toMillis(a.s.updated_at));
+    .map((x) => ({ ...x, status: rooms[x.source]?.[x.s.id] }))
+    .sort(byAttention);
   const split = (list: Item[]) => {
     const live: Item[] = [];
     const settled: Item[] = [];
     for (const x of list) {
       const mine = x.foreign === null;
-      const holds = x.s.busy || x.s.pending > 0 || (mine && (unread[x.s.id] === true || x.s.id === openId));
+      const holds = (x.status !== undefined && x.status.state !== "idle") || x.s.busy || x.s.pending > 0 || (mine && (unread[x.s.id] === true || x.s.id === openId));
       (now - toMillis(x.s.updated_at) > SETTLE_AFTER_MS && !holds ? settled : live).push(x);
     }
     return { live, settled };
   };
   const grouped = grouping === "projects";
+  // The rows in the order they render, for Ctrl/Cmd+1 to 9.
+  const shownRows: RowRef[] = [];
   const row = (x: Item) => {
     const s = x.s;
     const f = x.foreign;
+    shownRows.push({ source: x.source, id: s.id });
+    const n = shownRows.length;
     return (
       <ThreadRow
         key={`${x.source}/${s.id}`}
         s={s}
         project={x.project}
-        active={f === null && s.id === openId && settings === null}
+        active={f === null && s.id === openId && settings === null && !inbox}
         unread={f === null && unread[s.id] === true}
+        status={x.status}
+        showLabel={f === null}
+        digit={digits && n <= 9 ? n : null}
         now={now}
         variant={rows}
         kinds={f === null ? kindsOf(s.id) : NO_KINDS}
@@ -606,6 +666,9 @@ export function Sidebar({
     ...projects.filter((p) => p.open && p.key !== source).sort((a, b) => a.name.localeCompare(b.name)),
   ].filter((p) => filter === null || p.key === filter);
   const recentClosed = projects.filter((p) => !p.open && p.kind === "folder");
+  useEffect(() => {
+    if (settings === null) order.current = shownRows;
+  });
   return (
     <nav className="sidebar flex w-64 shrink-0 flex-col bg-sidebar" aria-label="Threads">
       <header className={cn("brand-glow drag flex h-12 shrink-0 items-center gap-2 px-3", mac && "pl-20")}>
@@ -667,6 +730,21 @@ export function Sidebar({
                 <SquarePen />
               </HeaderButton>
             </div>
+            <button
+              type="button"
+              aria-current={inbox ? "page" : undefined}
+              className={cn(
+                "inbox-entry flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left font-medium text-sm",
+                inbox ? "bg-sidebar-row-active text-foreground inset-shadow-hl" : "text-muted-foreground hover:bg-sidebar-row-hover hover:text-foreground",
+              )}
+              onClick={onInbox}
+            >
+              <InboxIcon className="size-4 shrink-0" />
+              Inbox
+              {inboxCount > 0 && (
+                <span className="inbox-count ml-auto rounded-full bg-selected px-1.5 font-mono text-2xs text-foreground tabular-nums">{inboxCount}</span>
+              )}
+            </button>
             <ProjectFilter
               filter={filter}
               projects={projects}

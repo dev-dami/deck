@@ -177,6 +177,17 @@ export const MENU_COMMANDS = [
   "toggle-terminal",
   "palette",
   "about",
+  "inbox",
+  "next-attention",
+  "room-1",
+  "room-2",
+  "room-3",
+  "room-4",
+  "room-5",
+  "room-6",
+  "room-7",
+  "room-8",
+  "room-9",
 ] as const;
 
 export type MenuCommand = (typeof MENU_COMMANDS)[number];
@@ -201,6 +212,17 @@ export interface AppInfo {
 
 // The item picked in a thread row's native menu, or null.
 export type ThreadChoice = "rename" | "delete" | null;
+
+// A native notification. tag names the room; a click on the notification
+// sends it back on NOTIFICATION_EVENT_CHANNEL. silent: no sound.
+export interface NotifyInput {
+  title: string;
+  body: string;
+  tag: string;
+  silent: boolean;
+}
+
+export const NOTIFY_LIMITS = { title: 200, body: 500, tag: 500, badge: 9999 } as const;
 
 // What main does for the renderer. The Electron main process serves it over
 // IPC; the end-to-end tests serve the same object to a browser page.
@@ -246,6 +268,13 @@ export interface DeckHost {
   installUpdate(): Promise<void>;
   // Shows the native menu of a thread row and resolves with the choice.
   threadMenu(thread: { id: string; title: string }): Promise<ThreadChoice>;
+  // Shows a native notification; main sends it, the window needs no
+  // permission for it.
+  notify(n: NotifyInput): Promise<void>;
+  // The count on the dock or taskbar icon; 0 clears it.
+  badge(count: number): Promise<void>;
+  // Whether the window has the focus.
+  focused(): Promise<boolean>;
 }
 
 // The renderer's view: the host, the event streams, and the path of a
@@ -256,6 +285,8 @@ export interface DeckBridge extends DeckHost {
   onMenu(fn: (command: MenuCommand) => void): () => void;
   onLink(fn: (link: LinkEvent) => void): () => void;
   onUpdate(fn: (ev: UpdateEvent) => void): () => void;
+  // A click on a notification, with its tag.
+  onNotificationClick(fn: (ev: { tag: string }) => void): () => void;
   // The path of a dropped folder. The window passes only folders, and main
   // checks that the path is one before it opens it.
   folderPath(file: File): string;
@@ -288,6 +319,9 @@ export const HOST_METHODS = [
   "logFromRenderer",
   "installUpdate",
   "threadMenu",
+  "notify",
+  "badge",
+  "focused",
 ] as const satisfies ReadonlyArray<keyof DeckHost>;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
@@ -297,6 +331,7 @@ export const RPC_EVENT_CHANNEL = "deck:rpc";
 export const MENU_EVENT_CHANNEL = "deck:menu";
 export const LINK_EVENT_CHANNEL = "deck:link";
 export const UPDATE_EVENT_CHANNEL = "deck:update";
+export const NOTIFICATION_EVENT_CHANNEL = "deck:notification-click";
 
 export function hostChannel(m: HostMethod): string {
   return `deck:${m}`;

@@ -53,6 +53,53 @@ describe("callHost", () => {
   });
 });
 
+describe("notifications, badge and focus", () => {
+  const notes: unknown[] = [];
+  const badges: number[] = [];
+  let focused = false;
+  const { host } = testHost(
+    () => {},
+    () => {},
+    undefined,
+    { notify: (n) => notes.push(n), badge: (c) => badges.push(c), focused: () => focused },
+  );
+  const note = { title: "deck · Docs pass", body: "Approve command", tag: "rpc:1\nses_docs", silent: false };
+
+  test("notify takes a title, a body, a tag and the sound flag, and nothing else", async () => {
+    await expect(callHost(host, "notify", [note])).resolves.toBeUndefined();
+    expect(notes).toEqual([note]);
+    for (const bad of [
+      [],
+      ["text"],
+      [{ ...note, silent: "no" }],
+      [{ ...note, extra: 1 }],
+      [{ title: "t", body: "b", tag: "x" }],
+      [{ ...note, title: "x".repeat(201) }],
+      [{ ...note, body: "x".repeat(501) }],
+      [note, note],
+    ]) {
+      await expect(callHost(host, "notify", bad)).rejects.toThrow(/bad arguments/);
+    }
+    expect(notes).toHaveLength(1);
+  });
+
+  test("badge takes a count from 0 to 9999", async () => {
+    await callHost(host, "badge", [3]);
+    await callHost(host, "badge", [0]);
+    expect(badges).toEqual([3, 0]);
+    for (const bad of [[-1], [1.5], ["3"], [10_000], []]) {
+      await expect(callHost(host, "badge", bad)).rejects.toThrow(/bad arguments/);
+    }
+  });
+
+  test("focused says whether the window has the focus", async () => {
+    await expect(callHost(host, "focused", [])).resolves.toBe(false);
+    focused = true;
+    await expect(callHost(host, "focused", [])).resolves.toBe(true);
+    await expect(callHost(host, "focused", [1])).rejects.toThrow(/bad arguments/);
+  });
+});
+
 describe("a Deck that stops by itself", () => {
   let fake: FakeRpcDeck;
   beforeEach(async () => {

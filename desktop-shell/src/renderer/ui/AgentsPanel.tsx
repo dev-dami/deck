@@ -16,8 +16,9 @@ import {
   Trophy,
   X,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import { type AgentNode, type Board, type BoardTask, boardRows, type Crew, raceMessage, type RunningTool } from "../crew";
+import { refreshCrew, useCrew } from "../crewState";
 import { cn } from "../lib/cn";
 import type { ProjectApi } from "../project";
 import { formatDuration } from "../work";
@@ -300,7 +301,6 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
 export function AgentsPanel({
   api,
   sessionId,
-  busy,
   kinds,
   theme,
   onRace,
@@ -309,30 +309,20 @@ export function AgentsPanel({
 }: {
   api: ProjectApi;
   sessionId: string;
-  busy: boolean;
+  busy?: boolean;
   kinds: string[];
   theme: Theme | null;
   onRace: (text: string) => Promise<boolean>;
   onError: (t: string) => void;
   onInfo: (t: string) => void;
 }) {
-  const [board, setBoard] = useState<Board | null>(null);
-  const [crew, setCrew] = useState<Crew | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  // The project polls the board and agents once for the whole window.
+  const room = useCrew(api, sessionId);
+  const board: Board | null = room?.board ?? null;
+  const crew: Crew | null = room?.crew ?? null;
+  const now = room?.at ?? Date.now();
   const [racing, setRacing] = useState(false);
-
-  const load = useCallback(async () => {
-    const [b, c] = await Promise.all([api.board(sessionId), api.agents(sessionId)]);
-    if (typeof b !== "string") setBoard(b);
-    if (typeof c !== "string") setCrew(c);
-    setNow(Date.now());
-  }, [api, sessionId]);
-
-  useEffect(() => {
-    void load();
-    const t = setInterval(() => void load(), busy ? 2000 : 6000);
-    return () => clearInterval(t);
-  }, [load, busy]);
+  const load = useCallback(() => refreshCrew(api, sessionId), [api, sessionId]);
 
   const act = async (task: BoardTask, action: string, text = "") => {
     const r = await api.taskAction(sessionId, task.id, action, text);

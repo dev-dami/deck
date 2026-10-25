@@ -59,6 +59,9 @@ export function testHost(
     openLogs: async () => {},
     installUpdate: () => {},
     threadMenu: async () => null,
+    notify: () => {},
+    badge: () => {},
+    focused: () => true,
     ...deps,
   });
   return { host, store, links, decks, logged };
@@ -107,6 +110,7 @@ export function inProcessBridge(): DeckBridge & TestHost & { seen: unknown[] } {
     onMenu: () => () => {},
     onLink: () => () => {},
     onUpdate: () => () => {},
+    onNotificationClick: () => () => {},
     folderPath: () => "",
   };
 }

@@ -65,11 +65,15 @@ const bridge: DeckBridge = {
   logFromRenderer: (level, message) => invoke("logFromRenderer", level, message),
   installUpdate: () => invoke("installUpdate"),
   threadMenu: (thread) => invoke("threadMenu", thread),
+  notify: (n) => invoke("notify", n),
+  badge: (count) => invoke("badge", count),
+  focused: () => invoke("focused"),
   onSocket: (fn) => listen<[number, SocketEvent]>("deck:socket", fn),
   onRpc: (fn) => listen<[string, RpcStreamEvent]>("deck:rpc", fn),
   onMenu: (fn) => listen<[MenuCommand]>("deck:menu", fn),
   onLink: held<LinkEvent>("deck:link", () => false),
   onUpdate: held<UpdateEvent>("deck:update", (ev) => ev.type === "ready"),
+  onNotificationClick: (fn) => listen<[{ tag: string }]>("deck:notification-click", fn),
   folderPath: (file) => webUtils.getPathForFile(file),
 };
 
