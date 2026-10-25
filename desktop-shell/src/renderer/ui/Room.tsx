@@ -144,6 +144,7 @@ export function Room({
   onDiff,
   onTogglePanel,
   onSettings,
+  onPreview,
   toast,
   info,
 }: {
@@ -171,6 +172,8 @@ export function Room({
   onDiff: () => void;
   onTogglePanel: () => void;
   onSettings: () => void;
+  // Opens a dev server's URL in the Preview tab.
+  onPreview: (url: string) => void;
   toast: (text: string) => void;
   info: (text: string) => void;
 }) {
@@ -230,6 +233,7 @@ export function Room({
         onPanel={onTogglePanel}
         onError={toast}
         onInfo={info}
+        onPreview={onPreview}
       />
       {open !== undefined && (
         <Lanes

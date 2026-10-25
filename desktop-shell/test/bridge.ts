@@ -6,8 +6,10 @@ import { loadService, RpcDecks } from "../src/main/decks";
 import { createHost, type HostDeps } from "../src/main/host";
 import { LinkHost } from "../src/main/link";
 import { PhoneLink } from "../src/main/phone";
+import { Preview } from "../src/main/preview";
 import { RecentFolders } from "../src/main/recent";
 import { type Sealer, ServerStore } from "../src/main/servers";
+import type { Session } from "electron";
 import type { DeckBridge, DeckHost, LogLevel, RpcStreamEvent, SocketEvent } from "../src/shared/bridge";
 import { PROTO } from "./fake-grpc";
 
@@ -68,6 +70,15 @@ export function testHost(
       { kind: "opencode", path: null },
       { kind: "antigravity", path: null },
     ],
+    // A real probe; no window, so no view.
+    preview: new Preview({
+      create: () => null,
+      remove: () => {},
+      zoom: () => 1,
+      openExternal: () => {},
+      send: () => {},
+      session: () => ({}) as Session,
+    }),
     ...deps,
   });
   return { host, store, links, decks, logged };
@@ -117,6 +128,7 @@ export function inProcessBridge(): DeckBridge & TestHost & { seen: unknown[] } {
     onLink: () => () => {},
     onUpdate: () => () => {},
     onNotificationClick: () => () => {},
+    onPreview: () => () => {},
     folderPath: () => "",
   };
 }

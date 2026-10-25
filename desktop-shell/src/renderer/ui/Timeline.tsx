@@ -232,7 +232,7 @@ function ImagePart({ c, chip }: { c: ImageChunk; chip: ReactElement }) {
 // Scrolls a message into view and lights its row once.
 function reveal(el: HTMLElement): void {
   el.scrollIntoView({ block: "center" });
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (document.documentElement.dataset["motion"] === "reduced") return;
   const selected = getComputedStyle(el).getPropertyValue("--selected").trim();
   if (selected !== "") el.animate([{ backgroundColor: selected }, { backgroundColor: "transparent" }], { duration: 1200, easing: "ease-out" });
 }
@@ -686,7 +686,7 @@ export function Timeline({
 
   return (
     <Images.Provider value={readImage ?? null}>
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1" data-yolo-region="">
         <div
           className="timeline h-full overflow-y-auto"
           ref={ref}

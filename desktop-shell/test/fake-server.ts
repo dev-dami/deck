@@ -145,6 +145,29 @@ export class FakeDeck {
     return this.message(this.get(sessionId), "assistant", agent, text, true);
   }
 
+  // A finished command an agent ran, with what it printed.
+  toolRun(sessionId: string, agent: string, command: string, output: string): Message {
+    const t = this.get(sessionId);
+    const at = this.now();
+    const call = this.id("tc");
+    const m: Message = {
+      id: this.id("msg"),
+      session_id: sessionId,
+      role: "assistant",
+      agent,
+      created_at: at,
+      updated_at: at,
+      finished: true,
+      parts: [
+        { type: "tool_call", id: call, name: "bash", summary: command },
+        { type: "tool_result", tool_call_id: call, name: "bash", output },
+      ],
+    };
+    t.messages = [...t.messages, m];
+    this.emit("message.created", m, sessionId);
+    return m;
+  }
+
   // The thread's changed files, as if someone edited the tree.
   setChanges(sessionId: string, changes: ChangedFile[]): void {
     this.get(sessionId).changes = changes;

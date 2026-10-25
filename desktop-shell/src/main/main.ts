@@ -14,6 +14,7 @@ import {
   screen,
   session,
   shell,
+  WebContentsView,
 } from "electron";
 import {
   HOST_METHODS,
@@ -22,6 +23,7 @@ import {
   type LinkEvent,
   MENU_EVENT_CHANNEL,
   NOTIFICATION_EVENT_CHANNEL,
+  PREVIEW_EVENT_CHANNEL,
   RPC_EVENT_CHANNEL,
   SOCKET_EVENT_CHANNEL,
   type ThreadChoice,
@@ -32,13 +34,14 @@ import { RENDERER_CSP } from "../shared/csp";
 import { contextMenuTemplate, threadMenuTemplate } from "./contextMenu";
 import { findAgentClis, findDeck, loadService, RpcDecks } from "./decks";
 import { enginePath } from "./shellPath";
-import { callHost, createHost } from "./host";
+import { callHost, createHost, fromApp } from "./host";
 import { type Arrival, linkFromUrl, linksFromArgs, mustConfirm } from "./launch";
 import { LinkHost } from "./link";
 import { guardProcess, openLogs, setupLog, writeLog } from "./log";
 import { menuTemplate } from "./menu";
 import { Notifier } from "./notify";
 import { execRun, PhoneLink, readRelayHint, type Run } from "./phone";
+import { lockSession, Preview, PREVIEW_PARTITION } from "./preview";
 import { RecentFolders } from "./recent";
 import { type Sealer, ServerStore } from "./servers";
 import { Updater } from "./update";
@@ -285,9 +288,29 @@ async function main(): Promise<void> {
   const phoneRun: Run | null =
     deckPath === null ? null : async (args) => execRun(deckPath, { ...process.env, PATH: await path })(args);
   const phone = new PhoneLink(phoneRun, readRelayHint(join(bundledDir, "relay-dir.txt")));
+  const previewSession = session.fromPartition(PREVIEW_PARTITION);
+  lockSession(previewSession);
+  const preview = new Preview({
+    create: (webPreferences) => {
+      if (win === null) return null;
+      const view = new WebContentsView({ webPreferences });
+      win.contentView.addChildView(view);
+      return view;
+    },
+    remove: (view) => {
+      if (win !== null && !win.isDestroyed()) win.contentView.removeChildView(view);
+    },
+    zoom: () => win?.webContents.getZoomFactor() ?? 1,
+    openExternal: (url) => void shell.openExternal(url),
+    send: (s) => win?.webContents.send(PREVIEW_EVENT_CHANNEL, s),
+    session: () => previewSession,
+  });
+  // A reload or a closed window ends what the renderer had open, the
+  // preview's page with it.
   const reset = () => {
     links.closeAll();
     decks.cancelStreams();
+    preview.close();
   };
   const windowState = new WindowStateFile(join(app.getPath("userData"), "window.json"));
   const updater = new Updater((ev) => win?.webContents.send(UPDATE_EVENT_CHANNEL, ev));
@@ -329,6 +352,7 @@ async function main(): Promise<void> {
     badge: (count) => notifier.badge(count),
     focused: () => notifier.focused(),
     agentClis: async () => findAgentClis(await path),
+    preview,
   });
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
@@ -364,7 +388,7 @@ async function main(): Promise<void> {
 
   for (const m of HOST_METHODS) {
     ipcMain.handle(hostChannel(m), (e, ...args: unknown[]) => {
-      if (win === null || e.sender !== win.webContents || !e.senderFrame?.url.startsWith(devURL() ?? ORIGIN)) {
+      if (!fromApp(e.sender, e.senderFrame?.url, win?.webContents ?? null, devURL() ?? ORIGIN)) {
         throw new Error("unknown sender");
       }
       return callHost(host, m, args);

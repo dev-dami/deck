@@ -401,8 +401,8 @@ Scope: `.github/workflows/ci.yml`, `desktop-shell/test/e2e/*`,
   shows it as a chip and opens it in the browser; `SearchMessages
   {query, limit}` across the project's threads for the palette.
   Status: `SearchMessages` is done; the palette asks every open project
-  and opens a hit's room at its message. The shell finds the ports
-  itself.
+  and opens a hit's room at its message. Ports are done in the shell
+  (the Preview tab), without an engine event.
 
 Each engine package comes with its `rpc.ts`/`rpcMap.ts` mapping and
 guards on the TypeScript side, behind a capability check so the shell

@@ -1,12 +1,14 @@
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { type ITheme, Terminal as XTerm } from "@xterm/xterm";
-import { Plus, SquareTerminal, X } from "lucide-react";
+import { Plus, Square, SquareTerminal, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { cn } from "../lib/cn";
 import { getPrefs, setPrefs } from "../prefs";
 import { base64Bytes, type ProjectApi } from "../project";
 import { Button } from "./kit/button";
+import { PortChip } from "./PreviewPanel";
+import { dropPorts, feedTerminal, useOpenPorts } from "./usePorts";
 
 // xterm.js writes its layout rules into <style> elements, which the
 // window's CSP (style-src 'self') does not apply. This keeps the same rules
@@ -78,9 +80,13 @@ function createTerm(project: ProjectApi, id: string, n: number): Term {
   const fit = new FitAddon();
   xterm.loadAddon(fit);
   // xterm keeps what it gets before it is opened and draws it on open.
+  const text = new TextDecoder();
   const unwatch = project.watchTerminal(id, (ev) => {
-    if (ev.type === "term") xterm.write(base64Bytes(ev.data));
-    else if (ev.type === "term-exit") xterm.write(`\r\n\x1b[2m[process exited with code ${ev.code}]\x1b[0m\r\n`);
+    if (ev.type === "term") {
+      const bytes = base64Bytes(ev.data);
+      xterm.write(bytes);
+      feedTerminal(project, id, `Terminal ${n}`, text.decode(bytes, { stream: true }));
+    } else if (ev.type === "term-exit") xterm.write(`\r\n\x1b[2m[process exited with code ${ev.code}]\x1b[0m\r\n`);
   });
   const input = xterm.onData((d) => project.terminalWrite(id, d));
   const resize = xterm.onResize(({ cols, rows }) => project.terminalResize(id, cols, rows));
@@ -199,6 +205,7 @@ function closeTerminal(project: ProjectApi, id: string): void {
 
 // Every shell of a project ends: it closed, or its engine stopped.
 export function closeTerminals(project: ProjectApi | undefined): void {
+  dropPorts(project);
   if (project === undefined) return;
   const e = drawers.get(project);
   if (e === undefined) return;
@@ -263,13 +270,17 @@ export function TerminalDrawer({
   shown,
   onHide,
   onError,
+  onPreview,
 }: {
   project: ProjectApi;
   shown: boolean;
   onHide: () => void;
   onError: (text: string) => void;
+  // Opens a dev server's URL in the Preview tab.
+  onPreview: (url: string) => void;
 }) {
   const { tabs, active } = useSyncExternalStore(subscribeDrawers, () => drawerOf(project));
+  const ports = useOpenPorts(project);
   const [height, setHeight] = useState(() => Math.max(MIN_HEIGHT, getPrefs().terminalHeight));
 
   const add = useCallback(() => openTerminal(project, onError), [project, onError]);
@@ -318,28 +329,47 @@ export function TerminalDrawer({
       />
       <header className="flex h-9 shrink-0 items-center gap-1 border-b px-2">
         <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Terminals">
-          {tabs.map((t) => (
-            <div
-              key={t.id}
-              className={cn(
-                "group flex h-7 items-center gap-1.5 rounded-md pr-1 pl-2.5 text-xs",
-                active === t.id ? "bg-selected text-foreground" : "text-muted-foreground hover:bg-hover",
-              )}
-            >
-              <button type="button" role="tab" aria-selected={active === t.id} className="flex cursor-pointer items-center gap-1.5" onClick={() => setActive(t.id)}>
-                <SquareTerminal className="size-3.5" />
-                Terminal {t.n}
-              </button>
-              <button
-                type="button"
-                aria-label={`Close terminal ${t.n}`}
-                className="grid size-4 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 outline-none hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within:opacity-100 group-hover:opacity-100"
-                onClick={() => close(t.id)}
+          {tabs.map((t) => {
+            const own = ports.filter((p) => p.source.kind === "terminal" && p.source.term === t.id);
+            return (
+              <div
+                key={t.id}
+                className={cn(
+                  "group flex h-7 items-center gap-1.5 rounded-md pr-1 pl-2.5 text-xs",
+                  active === t.id ? "bg-selected text-foreground" : "text-muted-foreground hover:bg-hover",
+                )}
               >
-                <X className="size-3" />
-              </button>
-            </div>
-          ))}
+                <button type="button" role="tab" aria-selected={active === t.id} className="flex cursor-pointer items-center gap-1.5" onClick={() => setActive(t.id)}>
+                  <SquareTerminal className="size-3.5" />
+                  Terminal {t.n}
+                </button>
+                {own.length > 0 && (
+                  <>
+                    {own.map((p) => (
+                      <PortChip key={p.port} p={p} onPreview={onPreview} className="h-5" />
+                    ))}
+                    <button
+                      type="button"
+                      aria-label={`Stop the dev server in terminal ${t.n}`}
+                      title="Stop (sends Ctrl+C)"
+                      className="grid size-5 cursor-pointer place-items-center rounded text-muted-foreground outline-none hover:bg-hover hover:text-destructive-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => project.terminalWrite(t.id, "\x03")}
+                    >
+                      <Square className="size-3" />
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  aria-label={`Close terminal ${t.n}`}
+                  className="grid size-4 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 outline-none hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within:opacity-100 group-hover:opacity-100"
+                  onClick={() => close(t.id)}
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            );
+          })}
           <Button variant="ghost-muted" size="icon-xs" aria-label="New terminal" title="New terminal" onClick={() => void add()}>
             <Plus />
           </Button>

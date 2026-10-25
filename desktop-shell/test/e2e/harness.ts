@@ -1,8 +1,41 @@
 import type { Page } from "@playwright/test";
+import type { Session } from "electron";
 import { callHost } from "../../src/main/host";
-import { HOST_METHODS } from "../../src/shared/bridge";
+import { HOST_METHODS, type PreviewBounds, type PreviewNav } from "../../src/shared/bridge";
 import type { HostDeps } from "../../src/main/host";
+import { judgeUrl, Preview } from "../../src/main/preview";
 import { type TestHost, testHost } from "../bridge";
+
+export type PreviewCall = ["open", string] | ["nav", PreviewNav] | ["bounds", PreviewBounds] | ["hide"] | ["close"];
+
+// The preview's view needs Electron. In Chromium, main's preview probes for
+// real and records what the page asks of the view; an open answers as
+// main would.
+export function stubPreview(): { calls: PreviewCall[]; preview: HostDeps["preview"] } {
+  const calls: PreviewCall[] = [];
+  const real = new Preview({
+    create: () => null,
+    remove: () => {},
+    zoom: () => 1,
+    openExternal: () => {},
+    send: () => {},
+    session: () => ({}) as Session,
+  });
+  return {
+    calls,
+    preview: {
+      probe: (ports) => real.probe(ports),
+      load: (url) => {
+        calls.push(["open", url]);
+        return judgeUrl(url, real.open) === "load";
+      },
+      nav: (n) => void calls.push(["nav", n]),
+      bounds: (b) => void calls.push(["bounds", b]),
+      hide: () => void calls.push(["hide"]),
+      close: () => void calls.push(["close"]),
+    },
+  };
+}
 
 // Serves the main-process host to the page as window.deck, the way the
 // preload does over IPC. Calls from the page reach the real host (pairing,
@@ -56,6 +89,7 @@ export async function attachBridge(
       ["onLink", "__deckLinkEmit"],
       ["onUpdate", "__deckUpdateEmit"],
       ["onNotificationClick", "__deckNotificationEmit"],
+      ["onPreview", "__deckPreviewEmit"],
     ] as const) {
       const listeners = new Set<(id: unknown, ev: unknown) => void>();
       deck[on] = (fn: (id: unknown, ev: unknown) => void) => {
