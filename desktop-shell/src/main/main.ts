@@ -31,7 +31,7 @@ import { contextMenuTemplate } from "./contextMenu";
 import { findDeck, loadService, RpcDecks } from "./decks";
 import { enginePath } from "./shellPath";
 import { callHost, createHost } from "./host";
-import { linkFromUrl, linksFromArgs } from "./launch";
+import { type Arrival, linkFromUrl, linksFromArgs, mustConfirm } from "./launch";
 import { LinkHost } from "./link";
 import { guardProcess, openLogs, setupLog, writeLog } from "./log";
 import { menuTemplate } from "./menu";
@@ -123,6 +123,24 @@ function deliver(link: LinkEvent): void {
   else pendingLinks.push(link);
   if (win?.isMinimized()) win.restore();
   win?.focus();
+}
+
+// Delivers what reached the app; a folder from a deck:// link only after
+// the person says Open.
+async function arrive(a: Arrival): Promise<void> {
+  if (mustConfirm(a) && a.link.type === "open") {
+    const opts = {
+      type: "question" as const,
+      buttons: ["Open", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+      message: `Open ${a.link.path} in Deck?`,
+      detail: "A deck:// link asks to open this folder. Deck starts its engine there.",
+    };
+    const r = win === null ? await dialog.showMessageBox(opts) : await dialog.showMessageBox(win, opts);
+    if (r.response !== 0) return;
+  }
+  deliver(a.link);
 }
 
 // The window's menu for a thread row: Rename, or Delete after a dialog.
@@ -240,7 +258,8 @@ async function main(): Promise<void> {
   app.on("open-url", (e, url) => {
     e.preventDefault();
     const link = linkFromUrl(url, isDir);
-    if (link !== null) deliver(link);
+    // A dialog needs the app to be ready.
+    if (link !== null) void app.whenReady().then(() => arrive({ link, fromLink: true }));
   });
   await app.whenReady();
   setupLog();
@@ -337,7 +356,7 @@ async function main(): Promise<void> {
 
   win = createWindow(reset, windowState, updater);
   if (smoke) runSmoke(win);
-  for (const link of linksFromArgs(launchArgs(process.argv, process.cwd()), process.cwd(), isDir)) deliver(link);
+  for (const a of linksFromArgs(launchArgs(process.argv, process.cwd()), process.cwd(), isDir)) void arrive(a);
   updater.start();
 
   // Windows and Linux start a second instance for a deck:// link or a
@@ -345,7 +364,7 @@ async function main(): Promise<void> {
   app.on("second-instance", (_e, argv, cwd) => {
     if (win?.isMinimized()) win.restore();
     win?.focus();
-    for (const link of linksFromArgs(launchArgs(argv, cwd), cwd, isDir)) deliver(link);
+    for (const a of linksFromArgs(launchArgs(argv, cwd), cwd, isDir)) void arrive(a);
   });
   app.on("activate", () => {
     if (win === null) win = createWindow(reset, windowState, updater);

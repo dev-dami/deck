@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { linkFromUrl, linksFromArgs } from "./launch";
+import { linkFromUrl, linksFromArgs, mustConfirm } from "./launch";
 
 const dirs = new Set(["/home/me/app", "/home/me/src/app"]);
 const isDir = (p: string) => dirs.has(p);
@@ -34,9 +34,25 @@ describe("linksFromArgs", () => {
         isDir,
       ),
     ).toEqual([
-      { type: "open", path: "/home/me/src/app" },
-      { type: "open", path: "/home/me/app" },
-      { type: "pair", url: "deck://pair?c=X" },
+      { link: { type: "open", path: "/home/me/src/app" }, fromLink: false },
+      { link: { type: "open", path: "/home/me/app" }, fromLink: true },
+      { link: { type: "pair", url: "deck://pair?c=X" }, fromLink: true },
     ]);
+  });
+});
+
+describe("mustConfirm", () => {
+  test("a folder from a deck:// link asks first; a typed folder and a pair link do not", () => {
+    const [typed, linked, pair] = linksFromArgs(
+      ["src/app", "deck://open?path=%2Fhome%2Fme%2Fapp", "deck://pair?c=X"],
+      "/home/me",
+      isDir,
+    );
+    expect(typed !== undefined && mustConfirm(typed)).toBe(false);
+    expect(linked !== undefined && mustConfirm(linked)).toBe(true);
+    expect(pair !== undefined && mustConfirm(pair)).toBe(false);
+    // macOS hands a link over through open-url.
+    const viaOpenUrl = linkFromUrl("deck://open?path=%2Fhome%2Fme%2Fapp", isDir);
+    expect(viaOpenUrl !== null && mustConfirm({ link: viaOpenUrl, fromLink: true })).toBe(true);
   });
 });

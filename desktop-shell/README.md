@@ -147,10 +147,11 @@ T3's look stays in the theme catalog.
   was maximized, and opens it on a display that is still there.
 - **Images.** Paste, drop or attach an image to send it.
 - **Folders and links.** Drop a folder on the window to open it. So does
-  `deck-desktop <folder>` (or `Deck <folder>`) on the command line, and a
-  `deck://open?path=<folder>` link. A `deck://pair?…` link opens the pairing
-  form with the invite filled in; click Pair to confirm. An installed app
-  registers `deck://`; a development build does not.
+  `deck-desktop <folder>` (or `Deck <folder>`) on the command line. A
+  `deck://open?path=<folder>` link asks first ("Open <folder> in Deck?"),
+  since any web page can open such a link. A `deck://pair?…` link opens
+  the pairing form with the invite filled in; click Pair to confirm. An
+  installed app registers `deck://`; a development build does not.
 - **Updates.** An installed app checks the GitHub releases of
   `dev-dami/deck-releases` 10 seconds after it starts and every 6 hours,
   and downloads a new version in the background. "Update ready · Restart"
