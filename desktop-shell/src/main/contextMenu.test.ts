@@ -98,4 +98,12 @@ describe("threadMenuTemplate", () => {
     expect(busy[1]?.enabled).toBe(false);
     expect(names(threadMenuTemplate("none", () => {}))).toEqual(["Rename…", "-", "Delete…"]);
   });
+
+  test("an archived room offers Unarchive", () => {
+    const picked: ThreadChoice[] = [];
+    const t = threadMenuTemplate("archived", (c) => picked.push(c));
+    expect(names(t)).toEqual(["Rename…", "Unarchive", "-", "Delete…"]);
+    click(t, "Unarchive");
+    expect(picked).toEqual(["unarchive"]);
+  });
 });

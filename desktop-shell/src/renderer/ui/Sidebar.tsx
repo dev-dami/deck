@@ -208,7 +208,7 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
   const row = (x: SidebarItem) => {
     const s = x.s;
     const f = x.foreign;
-    const offer = archiveOffer(x);
+    const offer: ArchiveOffer = unarchiveOf(x) !== undefined ? "archived" : archiveOffer(x);
     return (
       <ThreadRow
         key={`${x.source}/${s.id}`}

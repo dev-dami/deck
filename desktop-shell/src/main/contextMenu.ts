@@ -58,7 +58,9 @@ export function contextMenuTemplate(p: ContextParams, a: ContextActions): MenuIt
 // menu has no tooltip, so the label says why) and Delete.
 export function threadMenuTemplate(archive: ArchiveOffer, pick: (c: ThreadChoice) => void): MenuItemConstructorOptions[] {
   const items: MenuItemConstructorOptions[] = [{ label: "Rename…", click: () => pick("rename") }];
-  if (archive !== "none") {
+  if (archive === "archived") {
+    items.push({ label: "Unarchive", click: () => pick("unarchive") });
+  } else if (archive !== "none") {
     items.push({ label: archive === "on" ? "Archive" : "Archive (stop its agents first)", enabled: archive === "on", click: () => pick("archive") });
   }
   return [...items, { type: "separator" }, { label: "Delete…", click: () => pick("delete") }];

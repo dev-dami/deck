@@ -202,7 +202,7 @@ export const ThreadRow = memo(function ThreadRow({
                 <ArchiveRestore className="size-3.5" />
               </button>
             )}
-            {archive !== "none" && (
+            {(archive === "on" || archive === "busy") && (
               <button
                 type="button"
                 aria-label={`Archive ${sessionTitle(s)}`}
@@ -255,6 +255,7 @@ export const ThreadRow = memo(function ThreadRow({
       void onMenu().then((choice) => {
         if (choice === "rename") setRenaming(true);
         else if (choice === "archive") onArchive();
+        else if (choice === "unarchive") onUnarchive?.();
         else if (choice === "delete") onDelete();
       });
     },

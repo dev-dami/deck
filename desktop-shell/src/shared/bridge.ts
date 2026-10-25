@@ -244,11 +244,12 @@ export interface AppInfo {
 }
 
 // The item picked in a thread row's native menu, or null.
-export type ThreadChoice = "rename" | "archive" | "delete" | null;
+export type ThreadChoice = "rename" | "archive" | "unarchive" | "delete" | null;
 
 // Archive in a thread row's menu: offered, shown but off while an agent
-// works, or left out for a Deck that cannot archive.
-export const ARCHIVE_OFFERS = ["on", "busy", "none"] as const;
+// works, left out for a Deck that cannot archive, or Unarchive for an
+// archived room.
+export const ARCHIVE_OFFERS = ["on", "busy", "none", "archived"] as const;
 export type ArchiveOffer = (typeof ARCHIVE_OFFERS)[number];
 
 export interface ThreadMenuInput {
