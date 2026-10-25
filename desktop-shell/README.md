@@ -5,8 +5,8 @@ Deck engine inside it: open a project folder and work with its agents, no
 separate CLI to install. It shows the threads of every open project, the
 agents in each thread and their work, and it runs many agents at once. The
 layout is a sidebar of projects and threads, a chat timeline, a composer
-with its agents, a side panel (diff, approvals, queue, side chat, agents)
-and a terminal drawer.
+with its agents, the room's tabs (changes, tasks, agents, side chat) and a
+terminal drawer.
 
 ![The main window](docs/screenshot.png)
 
@@ -103,21 +103,40 @@ T3's look stays in the theme catalog.
   and each agent's state: busy, waiting (for an approval) or idle. While
   agents work and the prompt is empty, send turns into stop.
 - **Approvals.** The open thread's approval sits on top of the composer:
-  Decline, Always allow this session, or Approve. The Approvals panel lists
-  those of every thread.
-- **Side panel.** Diff shows every changed file with line numbers; Queue
-  shows the messages that wait for a busy agent: send now or cancel.
+  Decline, Always allow this session, or Approve.
+- **Room.** A thread is a room. The header shows the room's index (the
+  glyph of its first agent and a short id, in that agent's hue), the title
+  (double-click it to rename), the git actions, who follows the room, and
+  the side panel's toggles. Under it, the lane strip has a chip for each
+  one in the room: you, each agent with its state (working, waiting, idle
+  or error), its context use as a ring and the number of paths it holds,
+  and each teammate who follows the room with their role. Click a chip to
+  show that lane's messages alone; click it again to show all. An agent's
+  chip also opens its model and effort, Stop, and Steer, which addresses
+  the composer to it. Past six agents, the idle ones fold into "+N idle".
+- **Tasks and agents.** The side panel holds the room's tabs: Changes,
+  Tasks, Agents and Side chat. Changes shows every changed file with line
+  numbers. Tasks shows the messages that wait for a busy agent (send now or
+  cancel), the task board (cancel, retry, steer, apply or discard a
+  worktree result), orchestration on or off, and races. Apply and Discard
+  first show the task's files, with their diff when the work tree is on the
+  task's branch, and ask. A race starts two to six agents of one kind on
+  one brief, each on a worktree of its own; you keep the best entry. Agents
+  shows the tree of agents and subagents, each with its model, effort,
+  context, cost, leases and the tool it runs.
 - **Side chat.** Ask another agent about what the open thread's agents are
   doing, without writing into that thread. The side chat gets a digest of
   the thread and lives in its own hidden thread.
-- **Agents** (multi-agent). The tree of agents and sub-agents with the tool
-  each one runs, the task board (cancel, retry, steer, apply or discard a
-  worktree result), orchestration on or off, and races: start several
-  agents on one brief and keep the best entry.
-- **Team** (multiplayer). Teammates and whether they are online, team chat,
-  contracts (propose, accept, decline), and shared threads: share the open
-  thread as observer, participant or editor, or follow a teammate's thread
-  and write in it if your role allows.
+- **Sharing** (multiplayer). Share in the room header shares the room with
+  a teammate as observer (reads it), participant (also writes in it) or
+  editor (also answers its approvals). When someone follows the room, the
+  button shows their initials. Rooms that teammates share with you are in
+  the sidebar under "Shared with you", with the teammate and your role.
+  One opens in the room view: read-only for an observer, with a composer
+  for a participant or editor, and with Approve and Decline for an editor.
+  The sidebar footer counts the teammates online; click it for the Team
+  page: teammates and what their agents do, team chat, and contracts
+  (propose, accept, decline).
 - **Git.** The strip under the composer shows the branch; switch or create
   one there. The header's git menu commits (all changes, with a message),
   pushes, pulls, and opens or merges a pull request (through `gh`).

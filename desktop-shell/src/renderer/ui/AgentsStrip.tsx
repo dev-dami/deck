@@ -8,7 +8,7 @@ import { agentStatus } from "../approvals";
 import { cn } from "../lib/cn";
 import { MenuItem, MenuLabel, MenuSeparator, Popover } from "./kit/menu";
 
-function Models({
+export function Models({
   line,
   load,
   choose,

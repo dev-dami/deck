@@ -5,44 +5,37 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
-  CornerDownLeft,
   FileDiff,
   FileText,
-  ListOrdered,
+  ListChecks,
   type LucideIcon,
   MessageCircleQuestion,
   Network,
   Maximize2,
   Minimize2,
   RefreshCw,
-  ShieldQuestion,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { groupApprovals } from "../approvals";
 import type { DeckClient } from "../client";
+import type { Crew } from "../crew";
 import { cn } from "../lib/cn";
 import { PANELS, type Panel } from "../ui";
-import { ApprovalCard } from "./ApprovalCard";
+import { AgentsTree } from "./AgentsTree";
 import { DiffView } from "./DiffView";
-import { AgentsPanel } from "./AgentsPanel";
 import { SideChat } from "./SideChat";
+import { TasksPanel } from "./TasksPanel";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
 
+// The room's tabs: Changes, Tasks (the queue, the board and races), Agents
+// (the tree) and Side chat.
+
 const TAB_ICONS: Record<Panel, LucideIcon> = {
   changes: FileDiff,
-  approvals: ShieldQuestion,
-  queue: ListOrdered,
-  side: MessageCircleQuestion,
+  tasks: ListChecks,
   agents: Network,
-};
-const TAB_LABELS: Record<Panel, string> = {
-  changes: "Diff",
-  approvals: "Approvals",
-  queue: "Queue",
-  side: "Side chat",
-  agents: "Agents",
+  side: MessageCircleQuestion,
 };
 
 function Empty({ children }: { children: React.ReactNode }) {
@@ -155,65 +148,6 @@ function Changes({
   );
 }
 
-function Approvals({
-  c,
-  state,
-  openId,
-  onOpen,
-}: {
-  c: DeckClient;
-  state: AppState;
-  openId: string | null;
-  onOpen: (id: string) => void;
-}) {
-  const groups = groupApprovals(state.approvals, state.sessions, openId);
-  if (groups.length === 0) return <Empty>No approvals wait for you.</Empty>;
-  return (
-    <section aria-label="Approvals" className="flex flex-col gap-5 overflow-y-auto p-3">
-      {groups.map((g) => (
-        <div key={g.sessionId} className="approval-group flex flex-col gap-2">
-          <button
-            type="button"
-            className="group-head flex w-fit cursor-pointer items-center px-1 font-medium text-muted-foreground text-xs hover:text-foreground"
-            onClick={() => onOpen(g.sessionId)}
-          >
-            {g.title}
-          </button>
-          {g.items.map((a) => (
-            <ApprovalCard key={a.id} a={a} onAnswer={(d) => void c.answerApproval(a.session_id, a.id, d)} />
-          ))}
-        </div>
-      ))}
-    </section>
-  );
-}
-
-function Queue({ c, state, sessionId }: { c: DeckClient; state: AppState; sessionId: string }) {
-  const items = state.queue[sessionId] ?? [];
-  if (items.length === 0) return <Empty>Nothing waits in the queue.</Empty>;
-  return (
-    <section aria-label="Queue" className="flex flex-col gap-2 overflow-y-auto p-3">
-      {items.map((q) => (
-        <div key={q.id} className="queued flex flex-col gap-2 rounded-xl border bg-card p-3">
-          <div className="text-muted-foreground text-xs">
-            Waiting for <span className="approval-agent font-medium text-foreground">{q.agent}</span>
-          </div>
-          <p className="whitespace-pre-wrap text-sm">{q.text}</p>
-          <div className="approval-actions flex justify-end gap-1.5">
-            <Button size="xs" variant="ghost-muted" onClick={() => void c.cancelQueued(sessionId, q.id)}>
-              Cancel
-            </Button>
-            <Button size="xs" variant="outline" onClick={() => void c.steer(sessionId, q.id)}>
-              <CornerDownLeft />
-              Send now
-            </Button>
-          </div>
-        </div>
-      ))}
-    </section>
-  );
-}
-
 export function RightPanel({
   c,
   state,
@@ -222,13 +156,15 @@ export function RightPanel({
   files,
   focus,
   wide,
+  crew,
+  crewAt,
+  branch,
   onRefresh,
   onError,
   onInfo,
   onPanel,
   onWide,
   onClose,
-  onOpen,
 }: {
   c: DeckClient;
   state: AppState;
@@ -237,13 +173,16 @@ export function RightPanel({
   files: ChangedFile[] | null;
   focus: string | null;
   wide: boolean;
+  // The room's agents tree (the Shell reads it for the lane strip too).
+  crew: Crew | null;
+  crewAt: number;
+  branch: string | null;
   onRefresh: () => void;
   onError: (t: string) => void;
   onInfo: (t: string) => void;
   onPanel: (p: Panel) => void;
   onWide: () => void;
   onClose: () => void;
-  onOpen: (id: string) => void;
 }) {
   const queued = open === undefined ? 0 : (state.queue[open.id]?.length ?? 0);
   return (
@@ -253,7 +192,7 @@ export function RightPanel({
     >
       <header className="panel-head drag flex h-12 shrink-0 items-center gap-1 border-b px-2">
         <h2 className="sr-only">{PANELS.find((p) => p.panel === panel)?.label}</h2>
-        <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Panels">
+        <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Room">
           {PANELS.map((p) => {
             const Icon = TAB_ICONS[p.panel];
             return (
@@ -271,11 +210,8 @@ export function RightPanel({
                 onClick={() => onPanel(p.panel)}
               >
                 <Icon className="size-3.5" />
-                {TAB_LABELS[p.panel]}
-                {p.panel === "approvals" && state.approvals.length > 0 && (
-                  <Badge variant="warning">{state.approvals.length}</Badge>
-                )}
-                {p.panel === "queue" && queued > 0 && <Badge variant="muted">{queued}</Badge>}
+                {p.label}
+                {p.panel === "tasks" && queued > 0 && <Badge variant="muted">{queued}</Badge>}
               </button>
             );
           })}
@@ -296,39 +232,34 @@ export function RightPanel({
         </div>
       </header>
       <div className="panel-body flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {panel === "approvals" && <Approvals c={c} state={state} openId={open?.id ?? null} onOpen={onOpen} />}
-        {panel === "changes" &&
-          (open === undefined ? (
-            <Empty>Open a thread to see its changes.</Empty>
+        {open === undefined ? (
+          <Empty>Open a thread to see its changes, tasks and agents.</Empty>
+        ) : panel === "changes" ? (
+          <Changes files={files} focus={focus} onRefresh={onRefresh} />
+        ) : panel === "tasks" ? (
+          <TasksPanel
+            key={open.id}
+            c={c}
+            api={c.project}
+            sessionId={open.id}
+            busy={open.busy}
+            queue={state.queue[open.id] ?? []}
+            kinds={state.server?.kinds ?? []}
+            theme={state.theme}
+            branch={branch}
+            onRace={(text) => c.send(open.id, text, [])}
+            onError={onError}
+            onInfo={onInfo}
+          />
+        ) : panel === "agents" ? (
+          c.project === undefined ? (
+            <Empty>The agents tree shows for a project on this computer.</Empty>
           ) : (
-            <Changes files={files} focus={focus} onRefresh={onRefresh} />
-          ))}
-        {panel === "queue" &&
-          (open === undefined ? <Empty>Open a thread to see its queue.</Empty> : <Queue c={c} state={state} sessionId={open.id} />)}
-        {panel === "agents" &&
-          (open === undefined ? (
-            <Empty>Open a thread to see its agents and tasks.</Empty>
-          ) : c.project === undefined ? (
-            <Empty>Agents and tasks show for a project on this computer.</Empty>
-          ) : (
-            <AgentsPanel
-              key={open.id}
-              api={c.project}
-              sessionId={open.id}
-              busy={open.busy}
-              kinds={state.server?.kinds ?? []}
-              theme={state.theme}
-              onRace={(text) => c.send(open.id, text, [])}
-              onError={onError}
-              onInfo={onInfo}
-            />
-          ))}
-        {panel === "side" &&
-          (open === undefined ? (
-            <Empty>Open a thread to ask about it.</Empty>
-          ) : (
-            <SideChat key={open.id} c={c} state={state} main={open} api={c.project} theme={state.theme} />
-          ))}
+            <AgentsTree crew={crew} at={crewAt} theme={state.theme} />
+          )
+        ) : (
+          <SideChat key={open.id} c={c} state={state} main={open} api={c.project} theme={state.theme} />
+        )}
       </div>
     </aside>
   );

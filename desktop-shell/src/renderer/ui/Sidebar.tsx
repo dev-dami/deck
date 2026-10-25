@@ -29,6 +29,7 @@ import {
 import { memo, useRef, useState } from "react";
 import type { ThreadChoice } from "../../shared/bridge";
 import type { DeckClient } from "../client";
+import type { TeamThread } from "../crew";
 import { cn } from "../lib/cn";
 import type { RowStyle } from "../prefs";
 import { sameData } from "../select";
@@ -441,6 +442,45 @@ function ProjectFilter({
   );
 }
 
+// A room a teammate shares with you (Team presence).
+export interface SharedEntry {
+  peer: string;
+  thread: TeamThread;
+}
+
+// "Shared with you", under the projects: one row per room, with the
+// teammate and your role in it.
+function SharedGroup({ shared, open, onOpen }: { shared: SharedEntry[]; open: string | null; onOpen: (peer: string, t: TeamThread) => void }) {
+  return (
+    <li className="shared-group list-none pt-1 pb-3">
+      <div className="flex h-7 items-center gap-1.5 pl-2 font-medium text-2xs text-faint">Shared with you</div>
+      <ul className="flex flex-col gap-px">
+        {shared.map(({ peer, thread }) => {
+          const active = open === `${peer}/${thread.id}`;
+          return (
+            <li key={`${peer}/${thread.id}`} className="list-none" data-shared={`${peer}/${thread.id}`}>
+              <button
+                type="button"
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  active ? "bg-sidebar-row-active text-foreground inset-shadow-hl" : "text-foreground/90 hover:bg-sidebar-row-hover",
+                )}
+                onClick={() => onOpen(peer, thread)}
+              >
+                <span className="min-w-0 flex-1 truncate text-sm">{thread.title || thread.id}</span>
+                <span className="shrink-0 font-mono text-2xs text-faint">
+                  {peer} · {thread.role}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </li>
+  );
+}
+
 const LINK_LABEL: Record<Link, string> = { online: "Connected", connecting: "Connecting…", offline: "Offline" };
 
 const linkDot: Record<Link, string> = {
@@ -485,6 +525,10 @@ export function Sidebar({
   onUsage,
   team,
   onTeam,
+  shared,
+  openShared,
+  onShared,
+  online,
 }: {
   project: string;
   // The current project's source, and the threads of the other open ones.
@@ -527,6 +571,12 @@ export function Sidebar({
   onUsage: () => void;
   team: boolean;
   onTeam: () => void;
+  // Rooms teammates share with you, the one open ("peer/thread"), and how
+  // many teammates are online (null without a team link).
+  shared: SharedEntry[];
+  openShared: string | null;
+  onShared: (peer: string, thread: TeamThread) => void;
+  online: number | null;
 }) {
   const [showSettled, setShowSettled] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -738,6 +788,7 @@ export function Sidebar({
                   );
                 })
               : threads(items, "all")}
+            {shared.length > 0 && <SharedGroup shared={shared} open={openShared} onOpen={onShared} />}
             {grouped && filter === null && recentClosed.length > 0 && (
               <li className="list-none pt-3">
                 <div className="px-2 pb-1 font-medium text-2xs text-faint">Recent projects</div>
@@ -803,6 +854,19 @@ export function Sidebar({
           <span className={cn("dot size-1.5 shrink-0 rounded-full", linkDot[link])} />
           <span className="truncate">{LINK_LABEL[link]}</span>
         </span>
+        {online !== null && (
+          <button
+            type="button"
+            className="presence flex shrink-0 cursor-pointer items-center gap-1 rounded px-1 text-2xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={`${online} ${online === 1 ? "teammate" : "teammates"} online`}
+            title="Open the team"
+            onClick={onTeam}
+          >
+            <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", online > 0 ? "bg-success" : "bg-muted-foreground/40")} />
+            <Users aria-hidden className="size-3" />
+            <span className="tabular-nums">{online}</span>
+          </button>
+        )}
       </footer>
     </nav>
   );

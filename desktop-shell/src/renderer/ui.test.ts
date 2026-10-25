@@ -74,7 +74,7 @@ describe("panel and palette", () => {
   test("a panel toggles and another one replaces it", () => {
     expect(run({ type: "panel", panel: "changes" }).panel).toBe("changes");
     expect(run({ type: "panel", panel: "changes" }, { type: "panel", panel: "changes" }).panel).toBeNull();
-    expect(run({ type: "panel", panel: "changes" }, { type: "panel", panel: "queue" }).panel).toBe("queue");
+    expect(run({ type: "panel", panel: "changes" }, { type: "panel", panel: "tasks" }).panel).toBe("tasks");
     expect(run({ type: "panel", panel: "changes" }, { type: "panel", panel: null }).panel).toBeNull();
   });
 

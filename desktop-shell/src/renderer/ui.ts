@@ -3,14 +3,15 @@ import type { Session } from "@web/protocol";
 // The desktop's own state, beside the shared reducer's AppState (which
 // holds what Deck sent). Pure, so the tests drive it directly.
 
-export type Panel = "changes" | "approvals" | "queue" | "side" | "agents";
+// The room's tabs. The queue is the first section of Tasks; approvals sit
+// over the composer and in the inbox.
+export type Panel = "changes" | "tasks" | "agents" | "side";
 
 export const PANELS: ReadonlyArray<{ panel: Panel; label: string }> = [
   { panel: "changes", label: "Changes" },
-  { panel: "approvals", label: "Approvals" },
-  { panel: "queue", label: "Queue" },
-  { panel: "side", label: "Side chat" },
+  { panel: "tasks", label: "Tasks" },
   { panel: "agents", label: "Agents" },
+  { panel: "side", label: "Side chat" },
 ];
 
 export type SettingsSection = "general" | "appearance" | "agents" | "connection" | "phone" | "keybindings";

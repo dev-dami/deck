@@ -279,3 +279,77 @@ export function raceMessage(counts: Record<string, number>, brief: string): stri
     .map(([k, n]) => `$${k}×${n}`);
   return `${picks.join(" ")} ${brief.trim()}`;
 }
+
+// One line of a teammate's shared thread, as the engine writes it for
+// agents: "[claude2] text", "[ana → claude-1] text", or a note such as
+// "[claude2 ran: go test]".
+export interface MirrorRow {
+  who: string;
+  to: string;
+  text: string;
+  note: boolean;
+}
+
+export function mirrorRow(line: string): MirrorRow {
+  const said = /^\[([^\]\n]+)\] ([\s\S]*)$/.exec(line);
+  if (said !== null) {
+    const [who = "", to = ""] = (said[1] ?? "").split(" → ");
+    return { who: who.trim(), to: to.trim(), text: said[2] ?? "", note: false };
+  }
+  const did = /^\[(\S+) ((?:changed|ran)\b[\s\S]*)\]$/.exec(line);
+  if (did !== null) return { who: did[1] ?? "", to: "", text: did[2] ?? "", note: true };
+  return { who: "", to: "", text: line, note: true };
+}
+
+export const RACE_MIN = 2;
+export const RACE_MAX = 6;
+
+// The race form's message: one kind, two to six entries. null while the
+// form cannot start a race.
+export function raceText(kind: string, count: number, brief: string): string | null {
+  if (kind === "" || brief.trim() === "") return null;
+  const n = Math.min(RACE_MAX, Math.max(RACE_MIN, Math.round(count)));
+  return raceMessage({ [kind]: n }, brief);
+}
+
+// Apply and discard change the tree or drop work, so the board asks first.
+export type Decision = "apply" | "discard";
+
+export const asks = (action: string): action is Decision => action === "apply" || action === "discard";
+
+export interface PreviewFile {
+  path: string;
+  // The file's diff from the thread's Changes, when the tree is on the
+  // task's branch; else null and the dialog lists the path alone.
+  diff: string | null;
+  added: number;
+  removed: number;
+}
+
+// What the dialog shows before an apply or a discard. Changes reads the
+// thread's work tree, so its diff is the task's only while that tree is on
+// the task's branch.
+export function taskPreview(
+  task: BoardTask,
+  branch: string | null,
+  changes: { path: string; added: number; removed: number; diff?: string }[] | null,
+): PreviewFile[] {
+  const diffs = branch !== null && task.branch !== "" && task.branch === branch ? (changes ?? []) : [];
+  const paths = task.files.length > 0 ? task.files : diffs.map((f) => f.path);
+  return paths.map((path) => {
+    const f = diffs.find((d) => d.path === path);
+    return { path, diff: f?.diff ?? null, added: f?.added ?? 0, removed: f?.removed ?? 0 };
+  });
+}
+
+export function decisionText(action: Decision, task: BoardTask, files: number): { title: string; description: string; button: string } {
+  const name = task.entry ? `${task.owner || task.id}'s entry` : task.title || task.id;
+  const what = files === 0 ? "its work" : `${files} ${files === 1 ? "file" : "files"}`;
+  return action === "apply"
+    ? {
+        title: `Apply ${name}?`,
+        description: `Deck writes ${what} from ${task.branch || task.id} into the work tree.${task.entry ? " The other entries of the race are discarded." : ""}`,
+        button: "Apply",
+      }
+    : { title: `Discard ${name}?`, description: `Deck drops ${what} and its worktree. This cannot be undone.`, button: "Discard" };
+}
