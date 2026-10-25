@@ -490,7 +490,7 @@ export function Shell({
             <Folder className="size-3.5 shrink-0" />
             <span className="project max-w-24 truncate @3xl/top:max-w-40">{project || "Deck"}</span>
           </li>
-          <li aria-hidden className="text-muted-foreground/50">
+          <li aria-hidden className="text-faint">
             /
           </li>
           <li className="min-w-24 flex-1">
@@ -824,7 +824,7 @@ export function Shell({
           <div
             key={t.id}
             className={cn(
-              `toast toast-${t.kind} pointer-events-auto rounded-xl border bg-popover px-4 py-3 text-sm shadow-xl shadow-black/30`,
+              `toast toast-${t.kind} pointer-events-auto animate-enter rounded-xl border border-hairline-strong bg-surface-2 px-4 py-3 text-sm shadow-popover inset-shadow-hl`,
               t.kind === "error" && "border-destructive/40",
             )}
           >

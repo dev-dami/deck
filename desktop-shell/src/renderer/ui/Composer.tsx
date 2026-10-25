@@ -158,7 +158,7 @@ export function Composer({
     <div className={cn("composer relative mx-auto w-full max-w-(--chat-max)", className)}>
       {options.length > 0 && (
         <ul
-          className="suggest absolute right-0 bottom-full left-0 z-40 mb-2 overflow-hidden rounded-xl border bg-popover p-1 shadow-xl shadow-black/30"
+          className="suggest absolute right-0 bottom-full left-0 z-40 mb-2 animate-enter overflow-hidden rounded-xl border border-hairline-strong bg-surface-2 p-1 shadow-popover inset-shadow-hl"
           role="listbox"
           aria-label="Agents"
         >
@@ -167,7 +167,7 @@ export function Composer({
               key={s.insert}
               role="option"
               aria-selected={i === pick}
-              className={cn("flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-1.5 text-sm", i === pick && "on bg-accent")}
+              className={cn("flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-1.5 text-sm", i === pick && "on bg-selected")}
               onMouseEnter={() => setPick(i)}
               onMouseDown={(e) => {
                 e.preventDefault();
@@ -188,7 +188,8 @@ export function Composer({
       {agents !== undefined && <div className="composer-agents mb-2">{agents}</div>}
       <div
         className={cn(
-          "composer-box relative z-10 rounded-[20px] border bg-card shadow-composer transition-colors focus-within:border-foreground/15",
+          // The hero surface: the one place with a ring of amber on focus.
+          "composer-box relative z-10 rounded-xl border border-hairline-strong bg-surface-1 inset-shadow-hl transition-[border-color,box-shadow] focus-within:border-primary/50 focus-within:ring-[3px] focus-within:ring-ring",
           dragging && "border-primary/60",
         )}
         onDragOver={(e) => {
@@ -205,19 +206,19 @@ export function Composer({
         }}
       >
         {banner !== undefined && banner !== null && banner !== false && (
-          <div className="border-b px-1 pt-1 pb-1" data-composer-banner="">
+          <div className="border-hairline border-b px-1 pt-1 pb-1" data-composer-banner="">
             {banner}
           </div>
         )}
         {images.length > 0 && (
           <div className="attachments flex flex-wrap gap-1.5 px-4 pt-3">
             {images.map((im, i) => (
-              <span key={i} className="chip inline-flex items-center gap-1.5 rounded-md bg-secondary py-1 pr-1 pl-2 text-xs">
+              <span key={i} className="chip inline-flex items-center gap-1.5 rounded-md border border-hairline bg-secondary py-1 pr-1 pl-2 text-xs">
                 <ImageIcon className="size-3.5 text-muted-foreground" />
                 <span className="max-w-40 truncate">{im.name}</span>
                 <button
                   type="button"
-                  className="chip-x grid size-4 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                  className="chip-x grid size-4 place-items-center rounded text-muted-foreground hover:bg-hover hover:text-foreground"
                   aria-label={`Remove ${im.name}`}
                   onClick={() => setImages((cur) => cur.filter((_, j) => j !== i))}
                 >
@@ -235,7 +236,7 @@ export function Composer({
           }
           value={draft}
           rows={2}
-          className="block max-h-[300px] min-h-[68px] w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70"
+          className="block max-h-[300px] min-h-[68px] w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-relaxed outline-none placeholder:text-faint"
           onChange={(e) => {
             setDraft(e.target.value);
             track(e.target);
@@ -298,7 +299,8 @@ export function Composer({
             ) : (
               <Button
                 size="icon"
-                className={cn("send rounded-full", !ready && "opacity-40")}
+                // The only amber fill in the app.
+                className={cn("send rounded-full border-primary bg-primary text-primary-foreground hover:bg-primary/90", !ready && "opacity-40")}
                 onClick={() => void send()}
                 disabled={!ready}
                 aria-label="Send"
@@ -311,7 +313,7 @@ export function Composer({
         </div>
       </div>
       {strip !== undefined && (
-        <div className="composer-strip relative mx-auto -mt-3 flex w-[calc(100%-2.75rem)] items-center gap-2 rounded-b-2xl border border-t-0 bg-background px-2 pt-4 pb-1">
+        <div className="composer-strip relative mx-auto -mt-3 flex w-[calc(100%-2.75rem)] items-center gap-2 rounded-b-xl border border-hairline border-t-0 bg-canvas px-2 pt-4 pb-1">
           {strip}
         </div>
       )}

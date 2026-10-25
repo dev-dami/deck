@@ -48,7 +48,7 @@ function Segmented<T extends string>({
   label: string;
 }) {
   return (
-    <div className="inline-flex rounded-lg border bg-background p-0.5" role="radiogroup" aria-label={label}>
+    <div className="inline-flex rounded-lg border border-hairline bg-canvas p-0.5" role="radiogroup" aria-label={label}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -58,7 +58,7 @@ function Segmented<T extends string>({
           onClick={() => onChange(o.value)}
           className={cn(
             "flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs",
-            value === o.value ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+            value === o.value ? "bg-selected text-foreground inset-shadow-hl" : "text-muted-foreground hover:text-foreground",
           )}
         >
           {o.icon}
@@ -130,7 +130,7 @@ function Appearance({ p }: { p: Prefs }) {
       <Section title="Theme">
         <Row
           title="Color mode"
-          description="Light or dark for the T3 theme: Deck's own, the system's, or yours. The other themes have their own."
+          description="Light or dark for Tabletop and T3: Deck's own, the system's, or yours. The other themes have their own."
           control={
             <Segmented
               label="Color mode"
@@ -156,11 +156,11 @@ function Appearance({ p }: { p: Prefs }) {
               aria-checked={p.palette === t.id}
               onClick={() => setPrefs({ palette: t.id })}
               className={cn(
-                "flex cursor-pointer flex-col gap-2 rounded-lg border p-2 text-left text-xs transition-colors hover:bg-accent",
-                p.palette === t.id && "border-primary ring-1 ring-primary",
+                "flex cursor-pointer flex-col gap-2 rounded-lg border border-hairline p-2 text-left text-xs outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
+                p.palette === t.id && "border-foreground/40 bg-selected",
               )}
             >
-              <span className="flex h-10 overflow-hidden rounded-md border" style={{ background: t.swatch[0] }}>
+              <span className="flex h-10 overflow-hidden rounded-md border border-hairline" style={{ background: t.swatch[0] }}>
                 <span className="w-1/3" style={{ background: t.swatch[1] }} />
                 <span className="flex flex-1 flex-col justify-center gap-1 px-1.5">
                   <span className="h-1 w-3/4 rounded-full" style={{ background: t.swatch[2] }} />

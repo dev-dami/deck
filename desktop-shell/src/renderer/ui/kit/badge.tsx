@@ -10,9 +10,9 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground",
-        warning: "bg-warning text-black",
-        muted: "bg-accent text-muted-foreground",
-        outline: "border border-border text-muted-foreground",
+        warning: "bg-warning/15 text-warning-foreground",
+        muted: "bg-selected text-muted-foreground",
+        outline: "border border-hairline-strong text-muted-foreground",
         success: "bg-success/12 text-success-foreground",
         error: "bg-destructive/12 text-destructive-foreground",
       },
@@ -32,7 +32,7 @@ export function Kbd({ className, ...props }: ComponentProps<"kbd">) {
   return (
     <kbd
       className={cn(
-        "pointer-events-none inline-flex h-5 min-w-5 select-none items-center justify-center gap-1 rounded bg-muted px-1 font-medium font-sans text-2xs text-muted-foreground",
+        "pointer-events-none inline-flex h-5 min-w-5 select-none items-center justify-center gap-1 rounded border border-hairline px-1 font-mono text-3xs text-faint",
         className,
       )}
       {...props}

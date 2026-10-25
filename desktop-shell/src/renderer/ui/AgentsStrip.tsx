@@ -71,7 +71,7 @@ function Mark({ kind, theme, className }: { kind: string; theme: Theme | null; c
   );
 }
 
-const statusDot = { busy: "animate-deck-pulse", waiting: "", idle: "opacity-50" } as const;
+const statusRail = { busy: "", waiting: "", idle: "opacity-50" } as const;
 
 function Chip({
   line,
@@ -105,20 +105,23 @@ function Chip({
           <button
             type="button"
             className={cn(
-              "agent-model flex h-6 max-w-48 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground/80 text-xs transition-colors hover:bg-accent hover:text-foreground",
-              load !== null && "bg-accent text-foreground",
+              "agent-model relative flex h-6 max-w-48 cursor-pointer items-center gap-1.5 rounded-md pr-1.5 pl-2.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+              load !== null && "bg-selected text-foreground",
             )}
             title={`${line.id}: ${line.model ?? "default model"} (${status})`}
             aria-label={`${line.id} (${status})`}
             onClick={() => (load === null ? setLoad(listModels()) : close())}
           >
+            {/* The agent's hue as a 2px rail, never as a fill. */}
             <span
-              className={cn("agent-dot size-1.5 shrink-0 rounded-full", statusDot[status])}
-              style={{ background: status === "waiting" ? "var(--warning)" : colour }}
+              aria-hidden
+              className={cn("agent-dot absolute inset-y-1 left-1 w-0.5 rounded-full bg-current", statusRail[status])}
+              style={{ color: status === "waiting" ? "var(--warning)" : colour }}
             />
-            <span className="agent-name truncate">
+            <span className="agent-name truncate font-mono text-2xs">
               {kindMark(theme, line.kind)} {line.name}
             </span>
+            {status === "busy" && <span aria-hidden className="size-1.5 shrink-0 animate-deck-pulse rounded-full bg-signal" />}
             <span
               className={cn(
                 "agent-status shrink-0",
@@ -260,35 +263,32 @@ export function AgentCards({
             aria-label={`Send to ${c.id}`}
             data-agent={c.id}
             className={cn(
-              "agent-card flex min-w-40 cursor-pointer items-center gap-2.5 rounded-xl bg-card px-2.5 py-2 text-left shadow-[inset_0_0_0_1px_var(--border)] transition-[box-shadow,background-color] hover:bg-accent",
-              on && "on bg-accent",
+              "agent-card relative flex min-w-40 cursor-pointer items-center gap-2.5 overflow-hidden rounded-lg border border-hairline bg-surface-1 py-2 pr-2.5 pl-3.5 text-left outline-none inset-shadow-hl transition-colors before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-current hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring",
+              on && "on border-foreground/25 bg-surface-2",
             )}
-            style={on ? { boxShadow: `inset 0 0 0 1.5px ${colour}, 0 6px 18px rgb(0 0 0 / 0.25)` } : undefined}
+            style={{ color: colour }}
             onClick={() => {
               setDraft(toggleAgent(draft, c.id));
               onFocus();
             }}
           >
-            <span
-              className="grid size-7 shrink-0 place-items-center rounded-lg font-mono text-xs"
-              style={{ color: colour, background: `color-mix(in srgb, ${colour} 16%, transparent)` }}
-            >
+            <span aria-hidden className="grid size-5 shrink-0 place-items-center font-mono text-xs">
               {kindMark(theme, c.kind) || "●"}
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate font-medium text-foreground text-sm leading-4">{c.name}</span>
-              <span className="block truncate text-muted-foreground text-xs leading-4">
+              <span className="block truncate font-mono text-2xs text-muted-foreground leading-4">
                 {c.detail}
                 {c.status === "busy" ? " · working" : c.status === "waiting" ? " · needs you" : ""}
               </span>
             </span>
             {c.status !== null && (
               <span
-                className={cn("size-1.5 shrink-0 rounded-full", c.status === "busy" && "animate-deck-pulse")}
-                style={{
-                  background:
-                    c.status === "waiting" ? "var(--warning)" : c.status === "busy" ? "var(--info)" : "var(--success)",
-                }}
+                aria-hidden
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  c.status === "busy" ? "animate-deck-pulse bg-signal" : c.status === "waiting" ? "bg-warning" : "bg-success/70",
+                )}
               />
             )}
           </button>
@@ -304,7 +304,7 @@ export function AgentCards({
           trigger={
             <button
               type="button"
-              className="add-agent flex cursor-pointer items-center gap-1.5 rounded-xl border border-dashed px-3.5 text-muted-foreground text-sm hover:border-foreground/30 hover:text-foreground aria-expanded:text-foreground"
+              className="add-agent flex cursor-pointer items-center gap-1.5 rounded-lg border border-hairline-strong border-dashed px-3.5 text-muted-foreground text-sm outline-none transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
               aria-expanded={adding}
               onClick={() => setAdding(!adding)}
             >

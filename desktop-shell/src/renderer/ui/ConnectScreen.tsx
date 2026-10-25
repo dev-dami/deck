@@ -10,7 +10,7 @@ function base(dir: string): string {
 }
 
 const input =
-  "h-9 w-full rounded-lg border border-input bg-background px-3 text-[13px] outline-none placeholder:text-muted-foreground/70 focus:border-primary";
+  "h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-[border-color,box-shadow] placeholder:text-faint focus:border-primary/50 focus:ring-[3px] focus:ring-ring";
 
 function Section({ title, children, label: aria }: { title: string; children: React.ReactNode; label: string }) {
   return (
@@ -58,7 +58,7 @@ function OpenFolder({
                   <span className="truncate text-sm">{base(dir)}</span>
                   <span className="truncate text-2xs text-muted-foreground">{dir}</span>
                 </span>
-                <ChevronRight className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100" />
+                <ChevronRight className="size-3.5 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100" />
               </button>
             </li>
           ))}
@@ -144,7 +144,7 @@ function Pair({
               <Button
                 variant="ghost-muted"
                 size="xs"
-                className="mr-1 opacity-0 group-hover:opacity-100"
+                className="mr-1 opacity-0 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
                 onClick={() => onForget(s)}
               >
                 <X />

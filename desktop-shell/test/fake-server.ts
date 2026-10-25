@@ -80,9 +80,8 @@ export class FakeDeck {
   private epoch = `ep_${randomBytes(4).toString("hex")}`;
   private seq = 0;
   private next = 100;
-  // An hour ago, not a fixed date: three days after a fixed date, every
-  // thread folds into Settled and the tests no longer see it.
-  private clock = Date.now() - 3_600_000;
+  // Twelve hours ago, so the fixture threads are recent, not settled.
+  private clock = Date.now() - 12 * 3_600_000;
   port = 0;
 
   private constructor(private readonly opts: FakeOptions) {
