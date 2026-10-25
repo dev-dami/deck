@@ -255,6 +255,40 @@ describe("a local Deck over rpc", () => {
     ]);
   });
 
+  test("unarchive, undo an apply, an image's bytes and a search across rooms", async () => {
+    const { ctl } = await open();
+    const rooms = ctl.rooms;
+    if (rooms === undefined) throw new Error("a local Deck keeps rooms");
+    expect(await ctl.archiveSession?.("ses_docs")).toBe(true);
+    // The room shows archived at once, before session_updated.
+    expect(rooms.get("ses_docs").archived).toBe(true);
+    expect(await ctl.unarchiveSession?.("ses_docs")).toBe(true);
+    expect(rooms.get("ses_docs").archived).toBe(false);
+    expect(await ctl.unarchiveSession?.("ses_docs")).toBe(false);
+    expect(ctl.state.toasts.at(-1)?.text).toBe("this session is not archived");
+
+    expect(await ctl.isolateSession?.("ses_main")).toBe(true);
+    expect(await ctl.undoApply?.("ses_main")).toEqual(["pkg/remote/auth/limit.go"]);
+
+    const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+    const m = fake.deck.sendImage("ses_docs", "Here is the screen.", "shot.png", "image/png", png);
+    const img = await ctl.readImage?.("ses_docs", m.id, 0);
+    expect(img?.mime).toBe("image/png");
+    expect([...(img?.data ?? [])]).toEqual([...png]);
+    // Asked once, then kept.
+    await ctl.readImage?.("ses_docs", m.id, 0);
+    expect(fake.calls.filter((c) => c === "ReadImage")).toHaveLength(1);
+    // Another session's message, or a part that is not there: null, quietly.
+    const toasts = ctl.state.toasts.length;
+    expect(await ctl.readImage?.("ses_main", m.id, 0)).toBeNull();
+    expect(await ctl.readImage?.("ses_docs", m.id, 1)).toBeNull();
+    expect(ctl.state.toasts).toHaveLength(toasts);
+
+    const hits = await ctl.searchMessages?.("note 17");
+    expect(hits?.map((h) => [h.session_id, h.snippet])).toEqual([["ses_long", "Note 17"]]);
+    expect(await ctl.searchMessages?.("no such words")).toEqual([]);
+  });
+
   test("leases and overlap notes land in the room", async () => {
     const { ctl } = await open();
     const rooms = ctl.rooms;
@@ -279,6 +313,10 @@ describe("a local Deck over rpc", () => {
     expect(await ctl.startRace?.("ses_main", "fix it", "claude", 2)).toBeNull();
     expect(await ctl.listFiles?.("ses_main", "")).toBeNull();
     expect(await ctl.createSession("Isolated", true)).toBeNull();
+    expect(await ctl.unarchiveSession?.("ses_main")).toBe(false);
+    expect(await ctl.undoApply?.("ses_main")).toBeNull();
+    expect(await ctl.readImage?.("ses_main", "msg_1", 0)).toBeNull();
+    expect(await ctl.searchMessages?.("limiter")).toBeNull();
     expect(fake.calls.length).toBe(calls);
     expect(ctl.state.toasts).toEqual([]);
   });

@@ -118,12 +118,24 @@ service Deck {
   // ArchiveSession stops the thread's agents and marks it archived. The
   // next message brings it back.
   rpc ArchiveSession(SessionRef) returns (Empty);
+  // UnarchiveSession brings an archived thread back to the list.
+  rpc UnarchiveSession(SessionRef) returns (Empty);
+  // UndoApply takes the shared tree back to how it was before the thread's
+  // last ApplyIsolated, if those files have not changed since. It returns
+  // the files it put back.
+  rpc UndoApply(SessionRef) returns (FilesResponse);
   // StartRace has count agents of kind do one brief, each on a worktree of
   // its own, as the agents' task.race does.
   rpc StartRace(StartRaceRequest) returns (StartRaceResponse);
   // ListFiles lists the files of the thread's tree (its worktree when
   // isolated) that match query, minus what the repository ignores.
   rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
+  // ReadImage returns the bytes of a message's image part: index counts
+  // the message's image parts from 0.
+  rpc ReadImage(ReadImageRequest) returns (ReadImageResponse);
+  // SearchMessages finds text in the messages of every thread of the
+  // project that is not archived, newest first.
+  rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
 
   // Events streams everything that happens, starting with a Ready. Pass the
   // epoch and seq of the last event seen to replay what was missed; Ready
@@ -910,4 +922,35 @@ message ListFilesResponse {
   // paths are relative to the thread's folder, with forward slashes.
   repeated string paths = 1;
   bool truncated = 2;
+}
+
+message ReadImageRequest {
+  string session_id = 1;
+  string message_id = 2;
+  int32 index = 3;
+}
+
+message ReadImageResponse {
+  bytes data = 1;
+  string mime = 2;
+}
+
+message SearchMessagesRequest {
+  string query = 1;
+  // limit is at most 200; 0 means 30.
+  int32 limit = 2;
+}
+
+message SearchHit {
+  string session_id = 1;
+  string message_id = 2;
+  string agent = 3;
+  // snippet is the text around the first match, on one line.
+  string snippet = 4;
+  // at is when the message was written (Unix ms).
+  int64 at = 5;
+}
+
+message SearchMessagesResponse {
+  repeated SearchHit hits = 1;
 }

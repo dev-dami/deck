@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { EMPTY_ROOM, RoomMetaStore } from "./roomMeta";
-import { isoOf, toCapabilities, toEvent, toFileList, toFiles, toMessages, toRooms, toRoster, toSessions } from "./rpcMap";
+import { isoOf, toCapabilities, toEvent, toFileList, toFiles, toImage, toMessages, toRooms, toRoster, toSearchHits, toSessions } from "./rpcMap";
 
 const at = Date.parse("2026-10-19T09:00:00Z");
 
@@ -150,5 +150,23 @@ describe("what deck.v1 says of a room", () => {
     expect(toFileList({ paths: ["a.go"], truncated: true })).toEqual({ paths: ["a.go"], truncated: true });
     expect(toCapabilities({ capabilities: ["ListFiles"] })).toEqual(["ListFiles"]);
     expect(toCapabilities({})).toEqual([]);
+  });
+
+  test("an image's bytes and the messages a search found", () => {
+    const data = new Uint8Array([137, 80, 78, 71]);
+    expect(toImage({ data, mime: "image/png" })).toEqual({ data, mime: "image/png" });
+    expect(toImage({ data, mime: "text/plain" })).toBeNull();
+    expect(toImage({ data: "iVBO", mime: "image/png" })).toBeNull();
+    expect(toImage({ data: new Uint8Array(), mime: "image/png" })).toBeNull();
+    expect(
+      toSearchHits({
+        hits: [
+          { session_id: "s1", message_id: "m1", agent: "claude-1", snippet: "…the lockout…", at },
+          { session_id: "", message_id: "m2", agent: "", snippet: "x", at },
+          "junk",
+        ],
+      }),
+    ).toEqual([{ session_id: "s1", message_id: "m1", agent: "claude-1", snippet: "…the lockout…", at }]);
+    expect(toSearchHits({})).toEqual([]);
   });
 });

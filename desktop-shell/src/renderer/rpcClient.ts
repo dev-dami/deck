@@ -8,18 +8,22 @@ import type { DeckClient } from "./client";
 import { RoomMetaStore } from "./roomMeta";
 import {
   type FileList,
+  type ImageBytes,
+  type SearchHit,
   toApprovals,
   toCapabilities,
   toChanges,
   toEvent,
   toFileList,
   toFiles,
+  toImage,
   toMessages,
   toModels,
   toQueue,
   toRoom,
   toRooms,
   toRoster,
+  toSearchHits,
   toSession,
   toSessions,
   toTheme,
@@ -53,6 +57,9 @@ export class RpcDeckClient implements DeckClient {
   private readonly off: () => void;
   // The optional methods the Deck serves, from Info.
   private caps: readonly string[] = [];
+  // Each image part asked for, by session, message and index; a failure is
+  // forgotten so the next look asks again.
+  private readonly images = new Map<string, Promise<ImageBytes | null>>();
 
   readonly project: ProjectApi;
   readonly rooms = new RoomMetaStore();
@@ -82,17 +89,18 @@ export class RpcDeckClient implements DeckClient {
     this.store.dispatch({ type: "toast.add", kind: "error", text });
   }
 
-  // One unary call; a failure becomes a toast and null.
-  private async call(method: RpcMethod, request: Record<string, unknown>): Promise<unknown> {
+  // One unary call; a failure becomes a toast and null. A quiet call fails
+  // with null alone.
+  private async call(method: RpcMethod, request: Record<string, unknown>, quiet = false): Promise<unknown> {
     let r: Awaited<ReturnType<DeckBridge["rpcCall"]>>;
     try {
       r = await this.bridge.rpcCall(this.deck.id, method, request);
     } catch (e) {
-      this.toast(describeError(e));
+      if (!quiet) this.toast(describeError(e));
       return null;
     }
     if (r.ok) return r.value;
-    this.toast(r.code === UNAVAILABLE ? "Deck is not reachable." : r.message || `Deck refused ${method}.`);
+    if (!quiet) this.toast(r.code === UNAVAILABLE ? "Deck is not reachable." : r.message || `Deck refused ${method}.`);
     return null;
   }
 
@@ -384,6 +392,11 @@ export class RpcDeckClient implements DeckClient {
     return r === null ? null : toFiles(r);
   }
 
+  async undoApply(sessionId: string): Promise<string[] | null> {
+    const r = await this.optional("UndoApply", { session_id: sessionId });
+    return r === null ? null : toFiles(r);
+  }
+
   async unisolate(sessionId: string): Promise<boolean> {
     return (await this.optional("UnisolateSession", { session_id: sessionId })) !== null;
   }
@@ -398,7 +411,19 @@ export class RpcDeckClient implements DeckClient {
   }
 
   async archiveSession(sessionId: string): Promise<boolean> {
-    return (await this.optional("ArchiveSession", { session_id: sessionId })) !== null;
+    return this.markArchived(sessionId, true, await this.optional("ArchiveSession", { session_id: sessionId }));
+  }
+
+  async unarchiveSession(sessionId: string): Promise<boolean> {
+    return this.markArchived(sessionId, false, await this.optional("UnarchiveSession", { session_id: sessionId }));
+  }
+
+  // The room shows its new state at once; session_updated may come later.
+  private markArchived(id: string, archived: boolean, answer: unknown): boolean {
+    if (answer === null) return false;
+    const m = this.rooms.get(id);
+    this.rooms.apply({ k: "session", id, attention: m.attention, branch: m.branch, archived });
+    return true;
   }
 
   async startRace(sessionId: string, brief: string, kind: string, count: number, judge = false): Promise<string | null> {
@@ -411,6 +436,27 @@ export class RpcDeckClient implements DeckClient {
   async listFiles(sessionId: string, query: string, limit = 0): Promise<FileList | null> {
     const r = await this.optional("ListFiles", { session_id: sessionId, query, limit });
     return r === null ? null : toFileList(r);
+  }
+
+  readImage(sessionId: string, messageId: string, index: number): Promise<ImageBytes | null> {
+    if (!this.serves("ReadImage")) return Promise.resolve(null);
+    const key = `${sessionId}/${messageId}/${index}`;
+    let p = this.images.get(key);
+    if (p === undefined) {
+      p = this.call("ReadImage", { session_id: sessionId, message_id: messageId, index }, true).then((r) => {
+        const img = r === null ? null : toImage(r);
+        if (img === null) this.images.delete(key);
+        return img;
+      });
+      this.images.set(key, p);
+    }
+    return p;
+  }
+
+  async searchMessages(query: string, limit = 0): Promise<SearchHit[] | null> {
+    if (!this.serves("SearchMessages")) return null;
+    const r = await this.call("SearchMessages", { query, limit }, true);
+    return r === null ? null : toSearchHits(r);
   }
 
   // Closes the folder: main closes the Deck's stdin and it stops.

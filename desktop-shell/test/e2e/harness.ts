@@ -41,6 +41,16 @@ export function stubPreview(): { calls: PreviewCall[]; preview: HostDeps["previe
 // preload does over IPC. Calls from the page reach the real host (pairing,
 // tokens, the socket relay, local Decks over rpc) in this Node process;
 // socket and rpc events go back in order.
+// Electron's IPC hands the window a Buffer as a Uint8Array; Playwright
+// carries a Uint8Array but not a Buffer, so the harness turns one into the
+// other.
+function plain(v: unknown): unknown {
+  if (Buffer.isBuffer(v)) return new Uint8Array(v);
+  if (Array.isArray(v)) return v.map(plain);
+  if (typeof v === "object" && v !== null) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)]));
+  return v;
+}
+
 export async function attachBridge(
   page: Page,
   pickFolder?: () => Promise<string | null>,
@@ -63,7 +73,7 @@ export async function attachBridge(
     deps,
   );
   for (const m of HOST_METHODS) {
-    await page.exposeFunction(`__deck_${m}`, (...args: unknown[]) => callHost(t.host, m, args));
+    await page.exposeFunction(`__deck_${m}`, (...args: unknown[]) => callHost(t.host, m, args).then(plain));
   }
   await page.addInitScript((methods: readonly string[]) => {
     const w = window as unknown as Record<string, unknown>;

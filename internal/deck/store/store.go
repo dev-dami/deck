@@ -796,6 +796,19 @@ type Worktree struct {
 	// SubParent is the capsule SubBase already includes (applied there
 	// before it was taken), which its agent's capsules chain onto.
 	SubParent string `json:"sub_parent,omitempty"`
+	// Applied is the last apply to Main, kept until it is undone or the
+	// next apply replaces it.
+	Applied *Applied `json:"applied,omitempty"`
+}
+
+// Applied is what undoing an apply needs: Main as snapshots before and
+// after it, the files it wrote there (both names of a rename), and the
+// Base it moved on from.
+type Applied struct {
+	Before string   `json:"before"`
+	After  string   `json:"after"`
+	Files  []string `json:"files"`
+	Base   string   `json:"base"`
 }
 
 // Dir is the folder the store keeps threads in.

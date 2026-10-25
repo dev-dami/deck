@@ -1,38 +1,83 @@
 import { Search } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
-import { type Command, type PaletteItem, type PaletteRoom, searchPalette } from "../palette";
+import { type Command, focusMessage, markMatch, type MessageHit, type PaletteItem, type PaletteRoom, searchPalette, TEXT_MIN } from "../palette";
 import { useFocusTrap } from "./kit/focus";
 
 export type { Command } from "../palette";
 
+// A Deck the palette asks for messages (SearchMessages): an open project.
+export interface SearchSource {
+  key: string;
+  c: DeckClient;
+}
+
+// The pause after a keystroke before the Decks are asked.
+const SEARCH_MS = 150;
+
 // Ctrl/Cmd+K: type to filter, arrows to move, Enter to run, Escape to close.
 // It finds rooms of every open project by title, branch and the text of
-// loaded messages; "> " lists the actions alone. rooms is read once, as the
-// palette opens.
+// loaded messages, and from three letters on the messages each Deck finds
+// in rooms not loaded too; "> " lists the actions alone. rooms is read
+// once, as the palette opens.
 export function Palette({
   commands,
   rooms,
+  sources,
   onOpenRoom,
   onClose,
 }: {
   commands: Command[];
   rooms: () => PaletteRoom[];
+  sources: SearchSource[];
   onOpenRoom: (project: string, room: string) => void;
   onClose: () => void;
 }) {
   const [q, setQ] = useState("");
   const [pick, setPick] = useState(0);
   const [all] = useState(rooms);
+  const [hits, setHits] = useState<MessageHit[]>([]);
   const box = useRef<HTMLDivElement>(null);
+  const from = useRef(sources);
+  from.current = sources;
+  const asked = useRef(0);
   useFocusTrap(box);
-  const shown = useMemo(() => searchPalette(q, commands, all), [q, commands, all]);
+  // Each Deck is asked after a pause; the latest question wins.
+  useEffect(() => {
+    const text = q.trim();
+    const n = ++asked.current;
+    if (text.startsWith(">") || text.length < TEXT_MIN) {
+      setHits([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      void Promise.all(
+        from.current.map(async (p) =>
+          ((await p.c.searchMessages?.(text)) ?? []).flatMap((h): MessageHit[] => {
+            const room = all.find((r) => r.project === p.key && r.id === h.session_id);
+            return room === undefined ? [] : [{ room, message: h.message_id, snippet: h.snippet, at: h.at }];
+          }),
+        ),
+      ).then((lists) => {
+        if (n === asked.current) setHits(lists.flat().sort((a, b) => b.at - a.at));
+      });
+    }, SEARCH_MS);
+    return () => clearTimeout(t);
+  }, [q, all]);
+  const shown = useMemo(() => searchPalette(q, commands, all, 12, hits), [q, commands, all, hits]);
   const run = (item: PaletteItem | undefined) => {
     if (item === undefined) return;
     onClose();
     if (item.type === "action") item.c.run();
-    else onOpenRoom(item.room.project, item.room.id);
+    else if (item.type === "room") onOpenRoom(item.room.project, item.room.id);
+    else {
+      focusMessage(item.hit.room.id, item.hit.message);
+      onOpenRoom(item.hit.room.project, item.hit.room.id);
+    }
   };
+  const keyOf = (item: PaletteItem) =>
+    item.type === "action" ? item.c.id : item.type === "room" ? `${item.room.project}/${item.room.id}` : `${item.hit.room.project}/${item.hit.message}`;
   return (
     <div
       className="overlay fixed inset-0 z-50 flex justify-center bg-black/40 pt-[14vh] backdrop-blur-[2px]"
@@ -72,7 +117,7 @@ export function Palette({
         <ul role="listbox" className="overflow-y-auto p-1.5">
           {shown.map((item, i) => (
             <li
-              key={item.type === "action" ? item.c.id : `${item.room.project}/${item.room.id}`}
+              key={keyOf(item)}
               role="option"
               aria-selected={i === pick}
               data-kind={item.type}
@@ -91,10 +136,11 @@ export function Palette({
               ) : (
                 <>
                   <span className="flex min-w-0 flex-col">
-                    <span className="truncate">{item.room.title || "Untitled"}</span>
-                    {item.line !== null && <span className="palette-line truncate text-[11px] text-faint">{item.line}</span>}
+                    <span className="truncate">{(item.type === "room" ? item.room : item.hit.room).title || "Untitled"}</span>
+                    {item.type === "room" && item.line !== null && <span className="palette-line truncate text-[11px] text-faint">{item.line}</span>}
+                    {item.type === "hit" && <Snippet text={item.hit.snippet} query={q} />}
                   </span>
-                  <span className="shrink-0 text-2xs text-faint">{item.room.name}</span>
+                  <span className="shrink-0 text-2xs text-faint">{(item.type === "room" ? item.room : item.hit.room).name}</span>
                 </>
               )}
             </li>
@@ -103,5 +149,23 @@ export function Palette({
         </ul>
       </div>
     </div>
+  );
+}
+
+// The text around a found message's match, the match in the text colour.
+function Snippet({ text, query }: { text: string; query: string }) {
+  const parts = markMatch(text, query);
+  return (
+    <span className="palette-line palette-snippet truncate text-[11px] text-faint">
+      {parts === null ? (
+        text
+      ) : (
+        <>
+          {parts[0]}
+          <mark className="bg-transparent text-foreground">{parts[1]}</mark>
+          {parts[2]}
+        </>
+      )}
+    </span>
   );
 }

@@ -1,10 +1,12 @@
+import { useSyncExternalStore } from "react";
 import type { MenuCommand } from "../shared/bridge";
 import { type FoundPort, portLabel } from "./ports";
 import { PANELS, type Panel, SETTINGS_SECTIONS, type SettingsSection } from "./ui";
 import { modKey } from "./ui/keys";
 
 // The command palette (Ctrl/Cmd+K): its actions, the menu commands they
-// run, and the search over actions and the rooms of every open project.
+// run, and the search over actions, the rooms of every open project and
+// the messages their Decks find.
 
 export interface Command {
   id: string;
@@ -115,11 +117,22 @@ export interface PaletteRoom {
   texts: string[] | null;
 }
 
-export type PaletteItem = { type: "action"; c: Command } | { type: "room"; room: PaletteRoom; line: string | null };
+// A message a Deck found (SearchMessages) in a room of an open project.
+export interface MessageHit {
+  room: PaletteRoom;
+  message: string;
+  snippet: string;
+  at: number;
+}
+
+export type PaletteItem =
+  | { type: "action"; c: Command }
+  | { type: "room"; room: PaletteRoom; line: string | null }
+  | { type: "hit"; hit: MessageHit };
 
 // Message text is searched from this many letters on, so a single letter
 // does not match every room.
-const TEXT_MIN = 3;
+export const TEXT_MIN = 3;
 const RECENT = 5;
 const ROOMS_MAX = 8;
 
@@ -134,9 +147,17 @@ function lineWith(texts: readonly string[], phrase: string): string | null {
   return null;
 }
 
-// Rooms first (by title and branch, then by message text), then actions.
-// "> query" lists actions alone. An empty query shows the newest rooms.
-export function searchPalette(query: string, commands: readonly Command[], rooms: readonly PaletteRoom[], limit = 12): PaletteItem[] {
+// Rooms first (by title and branch), then the messages the Decks found,
+// newest first, then rooms by the text of their loaded messages, then
+// actions. "> query" lists actions alone. An empty query shows the newest
+// rooms.
+export function searchPalette(
+  query: string,
+  commands: readonly Command[],
+  rooms: readonly PaletteRoom[],
+  limit = 12,
+  hits: readonly MessageHit[] = [],
+): PaletteItem[] {
   const q = query.trim();
   const actionsOnly = q.startsWith(">");
   const text = (actionsOnly ? q.slice(1) : q).trim().toLowerCase();
@@ -151,15 +172,48 @@ export function searchPalette(query: string, commands: readonly Command[], rooms
     found = sorted.slice(0, RECENT).map((room) => ({ type: "room", room, line: null }));
   } else {
     const byName = sorted.filter((r) => has(`${r.title} ${r.branches.join(" ")}`));
+    const byDeck: PaletteItem[] = [];
     const byText: PaletteItem[] = [];
     if (text.length >= TEXT_MIN) {
+      for (const hit of hits) byDeck.push({ type: "hit", hit });
       for (const r of sorted) {
-        if (r.texts === null || byName.includes(r)) continue;
+        if (r.texts === null || byName.includes(r) || hits.some((h) => h.room === r)) continue;
         const line = lineWith(r.texts, text);
         if (line !== null) byText.push({ type: "room", room: r, line });
       }
     }
-    found = [...byName.map((room): PaletteItem => ({ type: "room", room, line: null })), ...byText].slice(0, ROOMS_MAX);
+    found = [...byName.map((room): PaletteItem => ({ type: "room", room, line: null })), ...byDeck, ...byText].slice(0, ROOMS_MAX);
   }
   return [...found, ...actions].slice(0, limit);
+}
+
+// A snippet split around the first match of query, ignoring case; null
+// when it does not hold it.
+export function markMatch(snippet: string, query: string): [string, string, string] | null {
+  const q = query.trim().toLowerCase();
+  const at = q === "" ? -1 : snippet.toLowerCase().indexOf(q);
+  if (at < 0) return null;
+  return [snippet.slice(0, at), snippet.slice(at, at + q.length), snippet.slice(at + q.length)];
+}
+
+// The message a palette hit opens its room at, by session, until the
+// timeline has shown it.
+const focused = new Map<string, string>();
+const focusListeners = new Set<() => void>();
+
+export function focusMessage(sessionId: string, messageId: string | null): void {
+  if (messageId === null) focused.delete(sessionId);
+  else focused.set(sessionId, messageId);
+  for (const l of focusListeners) l();
+}
+
+const subscribeFocus = (fn: () => void): (() => void) => {
+  focusListeners.add(fn);
+  return () => {
+    focusListeners.delete(fn);
+  };
+};
+
+export function useFocusedMessage(sessionId: string): string | null {
+  return useSyncExternalStore(subscribeFocus, () => focused.get(sessionId) ?? null);
 }

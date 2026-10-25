@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,43 @@ func (f *fakeRooms) Archive(_ context.Context, sid string) error {
 	}
 	f.rooms[sid] = workspace.Room{Archived: true}
 	return nil
+}
+
+func (f *fakeRooms) UndoApply(_ context.Context, sid string) ([]string, error) {
+	if err := f.known(sid); err != nil {
+		return nil, err
+	}
+	f.did = append(f.did, "undo apply "+sid)
+	return []string{"a.go"}, nil
+}
+
+func (f *fakeRooms) Unarchive(_ context.Context, sid string) error {
+	if err := f.known(sid); err != nil {
+		return err
+	}
+	if !f.rooms[sid].Archived {
+		return errors.New("this session is not archived")
+	}
+	f.rooms[sid] = workspace.Room{}
+	return nil
+}
+
+func (f *fakeRooms) ReadImage(_ context.Context, sid, mid string, index int) ([]byte, string, error) {
+	if err := f.known(sid); err != nil {
+		return nil, "", err
+	}
+	switch {
+	case mid != "m1" || index > 1:
+		return nil, "", workspace.ErrNotFound
+	case index == 1:
+		return make([]byte, maxImageRead+1), "image/png", nil
+	}
+	return []byte("PNG"), "image/png", nil
+}
+
+func (f *fakeRooms) SearchMessages(_ context.Context, query string, limit int) ([]workspace.MessageHit, error) {
+	f.did = append(f.did, "search "+query+" "+strconv.Itoa(limit))
+	return []workspace.MessageHit{{SessionID: "s1", MessageID: "m1", Agent: "claude", Snippet: "…the lockout…", At: time.UnixMilli(1760000000123)}}, nil
 }
 
 func (f *fakeRooms) StartRace(_ context.Context, sid, brief, kind string, count int, judge bool) (string, error) {
@@ -306,7 +344,7 @@ func TestInfoListsCLIsAndCapabilities(t *testing.T) {
 	if cx := clis["codex"]; cx.GetFound() || cx.GetPath() != "" {
 		t.Fatalf("codex %v", cx)
 	}
-	for _, m := range []string{"IsolateSession", "StartRace", "ListFiles"} {
+	for _, m := range []string{"IsolateSession", "StartRace", "ListFiles", "UnarchiveSession", "UndoApply", "ReadImage", "SearchMessages"} {
 		if !slices.Contains(info.GetCapabilities(), m) {
 			t.Fatalf("capabilities %v lack %s", info.GetCapabilities(), m)
 		}
@@ -443,5 +481,110 @@ func TestListFiles(t *testing.T) {
 	}
 	if _, err := c.ListFiles(ctx, &deckv1.ListFilesRequest{}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("no session: %v", err)
+	}
+}
+
+func TestUndoApplyAndUnarchive(t *testing.T) {
+	f := newFakeRooms()
+	_, c := roomRig(t, f, "")
+	ctx := ctxT(t)
+	st := events(t, c)
+
+	if r, err := c.UndoApply(ctx, &deckv1.SessionRef{SessionId: "s1"}); err != nil || len(r.GetFiles()) != 1 {
+		t.Fatalf("undo apply %v %v", r, err)
+	}
+	// The engine's own words come back.
+	_, err := c.UnarchiveSession(ctx, &deckv1.SessionRef{SessionId: "s1"})
+	if status.Code(err) != codes.FailedPrecondition || status.Convert(err).Message() != "this session is not archived" {
+		t.Fatalf("unarchive a live session: %v", err)
+	}
+	if _, err := c.ArchiveSession(ctx, &deckv1.SessionRef{SessionId: "s1"}); err != nil {
+		t.Fatal(err)
+	}
+	until(t, st, func(e *deckv1.Event) bool { return e.GetSessionUpdated().GetArchived() })
+	if _, err := c.UnarchiveSession(ctx, &deckv1.SessionRef{SessionId: "s1"}); err != nil {
+		t.Fatal(err)
+	}
+	if ev := until(t, st, func(e *deckv1.Event) bool { return e.GetSessionUpdated() != nil }); ev.GetSessionUpdated().GetArchived() {
+		t.Fatalf("after unarchiving: %v", ev)
+	}
+	if !slices.Equal(f.did, []string{"undo apply s1"}) {
+		t.Fatalf("did %q", f.did)
+	}
+	for _, call := range []func(*deckv1.SessionRef) error{
+		func(r *deckv1.SessionRef) error { _, err := c.UndoApply(ctx, r); return err },
+		func(r *deckv1.SessionRef) error { _, err := c.UnarchiveSession(ctx, r); return err },
+	} {
+		if err := call(&deckv1.SessionRef{}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("no session: %v", err)
+		}
+		if err := call(&deckv1.SessionRef{SessionId: "nope"}); status.Code(err) != codes.NotFound {
+			t.Fatalf("unknown session: %v", err)
+		}
+	}
+}
+
+func TestReadImage(t *testing.T) {
+	_, c := roomRig(t, newFakeRooms(), "")
+	ctx := ctxT(t)
+	r, err := c.ReadImage(ctx, &deckv1.ReadImageRequest{SessionId: "s1", MessageId: "m1"})
+	if err != nil || string(r.GetData()) != "PNG" || r.GetMime() != "image/png" {
+		t.Fatalf("read %v %v", r, err)
+	}
+	for _, tc := range []struct {
+		req  *deckv1.ReadImageRequest
+		code codes.Code
+	}{
+		{&deckv1.ReadImageRequest{SessionId: "s1", MessageId: "m1", Index: 1}, codes.ResourceExhausted},
+		{&deckv1.ReadImageRequest{SessionId: "s1", MessageId: "m2"}, codes.NotFound},
+		{&deckv1.ReadImageRequest{SessionId: "nope", MessageId: "m1"}, codes.NotFound},
+		{&deckv1.ReadImageRequest{MessageId: "m1"}, codes.InvalidArgument},
+		{&deckv1.ReadImageRequest{SessionId: "s1"}, codes.InvalidArgument},
+		{&deckv1.ReadImageRequest{SessionId: "s1", MessageId: "m1", Index: -1}, codes.InvalidArgument},
+	} {
+		if _, err := c.ReadImage(ctx, tc.req); status.Code(err) != tc.code {
+			t.Fatalf("read %v: %v, want %v", tc.req, err, tc.code)
+		}
+	}
+}
+
+func TestSearchMessages(t *testing.T) {
+	f := newFakeRooms()
+	_, c := roomRig(t, f, "")
+	ctx := ctxT(t)
+	r, err := c.SearchMessages(ctx, &deckv1.SearchMessagesRequest{Query: "lockout"})
+	if err != nil || len(r.GetHits()) != 1 {
+		t.Fatalf("search %v %v", r, err)
+	}
+	if h := r.GetHits()[0]; h.GetSessionId() != "s1" || h.GetMessageId() != "m1" || h.GetAgent() != "claude" || h.GetSnippet() != "…the lockout…" || h.GetAt() != 1760000000123 {
+		t.Fatalf("hit %v", h)
+	}
+	if _, err := c.SearchMessages(ctx, &deckv1.SearchMessagesRequest{Query: "lockout", Limit: 1000}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(f.did, []string{"search lockout 30", "search lockout 200"}) {
+		t.Fatalf("did %q", f.did)
+	}
+	for _, bad := range []*deckv1.SearchMessagesRequest{{Query: "  "}, {Query: "x", Limit: -1}} {
+		if _, err := c.SearchMessages(ctx, bad); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("search %v: %v", bad, err)
+		}
+	}
+}
+
+func TestMessageCallsWithoutAWorkspace(t *testing.T) {
+	_, c := roomRig(t, nil, "")
+	ctx := ctxT(t)
+	if _, err := c.ReadImage(ctx, &deckv1.ReadImageRequest{SessionId: "s1", MessageId: "m1"}); status.Code(err) != codes.Unimplemented {
+		t.Fatalf("read image: %v", err)
+	}
+	if _, err := c.SearchMessages(ctx, &deckv1.SearchMessagesRequest{Query: "x"}); status.Code(err) != codes.Unimplemented {
+		t.Fatalf("search: %v", err)
+	}
+	if _, err := c.UnarchiveSession(ctx, &deckv1.SessionRef{SessionId: "s1"}); status.Code(err) != codes.Unimplemented {
+		t.Fatalf("unarchive: %v", err)
+	}
+	if _, err := c.UndoApply(ctx, &deckv1.SessionRef{SessionId: "s1"}); status.Code(err) != codes.Unimplemented {
+		t.Fatalf("undo apply: %v", err)
 	}
 }

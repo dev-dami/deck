@@ -2,7 +2,7 @@ import type { MenuItemConstructorOptions } from "electron";
 import { describe, expect, test } from "vitest";
 import { type MenuActions, menuTemplate } from "../main/menu";
 import { MENU_COMMANDS, type MenuCommand } from "../shared/bridge";
-import { type Command, type CommandDeps, MENU_PALETTE, type PaletteRoom, paletteCommands, previewCommands, searchPalette } from "./palette";
+import { type Command, type CommandDeps, MENU_PALETTE, markMatch, type PaletteRoom, paletteCommands, previewCommands, searchPalette } from "./palette";
 
 const noop = () => {};
 const deps = (mac: boolean, terminal = true): CommandDeps => ({
@@ -97,7 +97,8 @@ describe("searchPalette", () => {
     room({ id: "b", title: "Docs pass", project: "p2", name: "site", updated: "2026-01-02T00:00:00Z", texts: ["Done.\nThe README now lists --lan.", "Update the README"] }),
     room({ id: "c", title: "Long history", updated: "2026-01-01T00:00:00Z", texts: ["nothing here"] }),
   ];
-  const ids = (items: ReturnType<typeof searchPalette>) => items.map((i) => (i.type === "action" ? i.c.id : `room:${i.room.id}`));
+  const ids = (items: ReturnType<typeof searchPalette>) =>
+    items.map((i) => (i.type === "action" ? i.c.id : i.type === "room" ? `room:${i.room.id}` : `hit:${i.hit.message}`));
 
   test("an empty query shows the newest rooms, then the actions", () => {
     expect(ids(searchPalette("", commands, rooms))).toEqual(["room:a", "room:b", "room:c", "new", "inbox", "theme-dark"]);
@@ -114,6 +115,22 @@ describe("searchPalette", () => {
     expect(r).toEqual([{ type: "room", room: rooms[1], line: "The README now lists --lan." }]);
     // Too short to search messages.
     expect(ids(searchPalette("li", commands, rooms))).toEqual([]);
+  });
+
+  test("the messages a Deck found come after title matches and before loaded text", () => {
+    const c = rooms[2]!;
+    const hits = [{ room: c, message: "m7", snippet: "…the README of old…", at: 7 }];
+    expect(ids(searchPalette("readme", commands, rooms, 12, hits))).toEqual(["hit:m7", "room:b"]);
+    // A room the Deck found is not listed again by its loaded text.
+    const inB = [{ room: rooms[1]!, message: "m2", snippet: "Update the README", at: 9 }];
+    expect(ids(searchPalette("readme", commands, rooms, 12, inB))).toEqual(["hit:m2"]);
+    // Below three letters the Decks are not asked, and old hits do not show.
+    expect(ids(searchPalette("re", commands, rooms, 12, hits))).toEqual(["new"]);
+  });
+
+  test("a snippet splits around its match", () => {
+    expect(markMatch("…keys the count by addr…", "COUNT")).toEqual(["…keys the ", "count", " by addr…"]);
+    expect(markMatch("nothing", "count")).toBeNull();
   });
 
   test("a title match is listed once, without a line", () => {

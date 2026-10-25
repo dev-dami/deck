@@ -304,7 +304,15 @@ export function Shell(props: ShellProps) {
           />
         </LineComments.Provider>
       )}
-      {ui.palette && <Palette commands={commands} rooms={paletteRooms} onOpenRoom={openRoom} onClose={() => dispatch({ type: "palette", open: false })} />}
+      {ui.palette && (
+        <Palette
+          commands={commands}
+          rooms={paletteRooms}
+          sources={[{ key: projectKey, c }, ...others.map((o) => ({ key: o.key, c: o.c }))]}
+          onOpenRoom={openRoom}
+          onClose={() => dispatch({ type: "palette", open: false })}
+        />
+      )}
       <Toasts c={c} toasts={state.toasts} />
       <YoloFx play={yoloPlays} />
     </div>
