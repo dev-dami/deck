@@ -27,7 +27,7 @@ const composer = (page: Page) => page.getByRole("textbox", { name: "Message" });
 
 async function openMain(page: Page): Promise<void> {
   await page.goto("/");
-  await page.getByRole("button", { name: "Add project" }).click();
+  await page.getByRole("button", { name: "Open a folder" }).click();
   await expect(page.locator(".project")).toHaveText(basename(dir));
   await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();

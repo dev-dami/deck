@@ -27,6 +27,7 @@ export function RoomHeader({
   team,
   shares,
   onShare,
+  shareAsk,
   files,
   terminal,
   terminalKey,
@@ -52,6 +53,8 @@ export function RoomHeader({
   team: Team | string | null;
   shares: Record<string, string>;
   onShare: (peer: string, role: string) => Promise<string | null>;
+  // Opens the share popover each time it changes (/share).
+  shareAsk: number;
   files: ChangedFile[] | null;
   terminal: boolean;
   terminalKey: string;
@@ -119,7 +122,7 @@ export function RoomHeader({
         )}
       </div>
       {api !== undefined && <GitActions git={git} project={api} threadTitle={open === undefined ? "" : sessionTitle(open)} onError={onError} onInfo={onInfo} />}
-      {api !== undefined && open !== undefined && <ShareStack team={team} shares={shares} onSet={onShare} onError={onError} />}
+      {api !== undefined && open !== undefined && <ShareStack team={team} shares={shares} onSet={onShare} onError={onError} ask={shareAsk} />}
       <div className="panel-toggles flex shrink-0 items-center gap-1">
         {api !== undefined && (
           <Button variant="outline" size="icon-sm" aria-label="Terminal" title={`Terminal (${terminalKey})`} aria-pressed={terminal} onClick={onTerminal}>

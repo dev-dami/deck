@@ -1,8 +1,8 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { findDeck, findOnPath, parseHandshake } from "../src/main/decks";
+import { findAgentClis, findDeck, findOnPath, noAgentCli, parseHandshake } from "../src/main/decks";
 import { openLocal } from "../src/renderer/connection";
 import type { DeckClient } from "../src/renderer/client";
 import type { EngineStop } from "../src/shared/bridge";
@@ -52,6 +52,35 @@ describe("the handshake of deck serve --rpc", () => {
   test("findOnPath finds an executable", () => {
     expect(findOnPath("node")).not.toBeNull();
     expect(findOnPath("no-such-deck-binary")).toBeNull();
+  });
+});
+
+describe("the agent CLIs", () => {
+  test.skipIf(process.platform === "win32")("are looked for on the engine's PATH, in its order", () => {
+    const root = mkdtempSync(join(tmpdir(), "deck-clis-"));
+    const a = join(root, "a");
+    const b = join(root, "b");
+    mkdirSync(a);
+    mkdirSync(b);
+    writeFileSync(join(a, "claude"), "#!/bin/sh\n", { mode: 0o755 });
+    writeFileSync(join(b, "claude"), "#!/bin/sh\n", { mode: 0o755 });
+    // Antigravity's CLI is agy; a file that does not run is no CLI.
+    writeFileSync(join(b, "agy"), "#!/bin/sh\n", { mode: 0o755 });
+    writeFileSync(join(b, "codex"), "not a program", { mode: 0o644 });
+    mkdirSync(join(b, "opencode"));
+    expect(findAgentClis(["/no/such/dir", a, b].join(delimiter))).toEqual([
+      { kind: "claude", path: join(a, "claude") },
+      { kind: "codex", path: null },
+      { kind: "opencode", path: null },
+      { kind: "antigravity", path: join(b, "agy") },
+    ]);
+    expect(findAgentClis("").every((c) => c.path === null)).toBe(true);
+  });
+
+  test("the engine's own message says that it found none", () => {
+    expect(noAgentCli("Error: none of claude, codex, opencode or antigravity was found on PATH — run `deck doctor`\n")).toBe(true);
+    expect(noAgentCli("Error: open store: the store is locked")).toBe(false);
+    expect(noAgentCli("")).toBe(false);
   });
 });
 
@@ -105,6 +134,19 @@ describe("a local Deck over rpc", () => {
     expect(bridge.seen.length).toBeGreaterThan(10);
     expect(JSON.stringify(bridge.seen)).not.toContain(fake.token);
     expect(JSON.stringify(ctl.state)).not.toContain(fake.token);
+  });
+
+  test("an engine that finds no agent CLI says so, apart from other start errors", async () => {
+    process.env["DECK_FAKE_NO_AGENTS"] = "1";
+    try {
+      const out = await inProcessBridge().openFolder(dir);
+      expect(out).toMatchObject({ ok: false, start: { noAgents: true, lines: [expect.stringContaining("none of claude")] } });
+    } finally {
+      delete process.env["DECK_FAKE_NO_AGENTS"];
+    }
+    delete process.env["DECK_FAKE_HANDSHAKE"];
+    const out = await inProcessBridge().openFolder(dir);
+    expect(out).toMatchObject({ ok: false, start: { noAgents: false, lines: ["fake deck: DECK_FAKE_HANDSHAKE is not set"] } });
   });
 
   test("a wrong token is refused", async () => {

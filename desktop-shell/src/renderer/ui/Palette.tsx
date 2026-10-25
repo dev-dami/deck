@@ -1,29 +1,37 @@
 import { Search } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { cn } from "../lib/cn";
+import { type Command, type PaletteItem, type PaletteRoom, searchPalette } from "../palette";
 import { useFocusTrap } from "./kit/focus";
 
-export interface Command {
-  id: string;
-  label: string;
-  hint?: string;
-  run: () => void;
-}
+export type { Command } from "../palette";
 
 // Ctrl/Cmd+K: type to filter, arrows to move, Enter to run, Escape to close.
-export function Palette({ commands, onClose }: { commands: Command[]; onClose: () => void }) {
+// It finds rooms of every open project by title, branch and the text of
+// loaded messages; "> " lists the actions alone. rooms is read once, as the
+// palette opens.
+export function Palette({
+  commands,
+  rooms,
+  onOpenRoom,
+  onClose,
+}: {
+  commands: Command[];
+  rooms: () => PaletteRoom[];
+  onOpenRoom: (project: string, room: string) => void;
+  onClose: () => void;
+}) {
   const [q, setQ] = useState("");
   const [pick, setPick] = useState(0);
+  const [all] = useState(rooms);
   const box = useRef<HTMLDivElement>(null);
   useFocusTrap(box);
-  const shown = useMemo(() => {
-    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-    return commands.filter((c) => words.every((w) => c.label.toLowerCase().includes(w))).slice(0, 12);
-  }, [q, commands]);
-  const run = (c: Command | undefined) => {
-    if (c === undefined) return;
+  const shown = useMemo(() => searchPalette(q, commands, all), [q, commands, all]);
+  const run = (item: PaletteItem | undefined) => {
+    if (item === undefined) return;
     onClose();
-    c.run();
+    if (item.type === "action") item.c.run();
+    else onOpenRoom(item.room.project, item.room.id);
   };
   return (
     <div
@@ -43,7 +51,7 @@ export function Palette({ commands, onClose }: { commands: Command[]; onClose: (
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <input
             aria-label="Search commands and sessions"
-            placeholder="Search sessions and commands…"
+            placeholder="Search threads and messages, or > for commands…"
             value={q}
             autoFocus
             className="h-12 w-full bg-transparent text-[14px] outline-none placeholder:text-faint"
@@ -62,20 +70,33 @@ export function Palette({ commands, onClose }: { commands: Command[]; onClose: (
           />
         </div>
         <ul role="listbox" className="overflow-y-auto p-1.5">
-          {shown.map((c, i) => (
+          {shown.map((item, i) => (
             <li
-              key={c.id}
+              key={item.type === "action" ? item.c.id : `${item.room.project}/${item.room.id}`}
               role="option"
               aria-selected={i === pick}
+              data-kind={item.type}
               className={cn(
                 "flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm",
                 i === pick && "on bg-selected",
               )}
               onMouseEnter={() => setPick(i)}
-              onClick={() => run(c)}
+              onClick={() => run(item)}
             >
-              <span className="truncate">{c.label}</span>
-              {c.hint !== undefined && <span className="shrink-0 font-mono text-2xs text-faint">{c.hint}</span>}
+              {item.type === "action" ? (
+                <>
+                  <span className="truncate">{item.c.label}</span>
+                  {item.c.hint !== undefined && <span className="shrink-0 font-mono text-2xs text-faint">{item.c.hint}</span>}
+                </>
+              ) : (
+                <>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate">{item.room.title || "Untitled"}</span>
+                    {item.line !== null && <span className="palette-line truncate text-[11px] text-faint">{item.line}</span>}
+                  </span>
+                  <span className="shrink-0 text-2xs text-faint">{item.room.name}</span>
+                </>
+              )}
             </li>
           ))}
           {shown.length === 0 && <li className="px-3 py-6 text-center text-muted-foreground text-sm">Nothing matches.</li>}

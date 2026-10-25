@@ -49,6 +49,16 @@ export function leaseCount(leases: string): number {
     .filter((p) => p.trim() !== "").length;
 }
 
+// How full an agent's context is, in percent; null when it reports none.
+export function contextPct(n: AgentNode | undefined): number | null {
+  return n !== undefined && n.contextWindow > 0 ? Math.min(100, Math.round((n.contextTokens / n.contextWindow) * 100)) : null;
+}
+
+// The tree node of a roster line.
+export function nodeOf(line: AgentLine, nodes: readonly AgentNode[] | null): AgentNode | undefined {
+  return nodes?.find((x) => x.name === line.id || x.name === line.name);
+}
+
 function fromNode(n: AgentNode | undefined, line: AgentLine | undefined, waiting: boolean): LaneStatus {
   // An open approval wins: it is the state a person must act on.
   if (waiting) return "waiting";
@@ -83,13 +93,13 @@ export function buildLanes({
     status: fromNode(n, line, waiting.includes(name)),
     model: n?.model || line?.model || "",
     effort: n?.effort || line?.effort || "",
-    contextPct: n !== undefined && n.contextWindow > 0 ? Math.min(100, Math.round((n.contextTokens / n.contextWindow) * 100)) : null,
+    contextPct: contextPct(n),
     leases: n === undefined ? 0 : leaseCount(n.leases),
     role: "",
     depth: n?.depth ?? 0,
   });
   for (const line of roster) {
-    const n = nodes.find((x) => x.name === line.id || x.name === line.name);
+    const n = nodeOf(line, nodes);
     if (n !== undefined) used.add(n);
     lanes.push(agent(line.id, line, n));
   }

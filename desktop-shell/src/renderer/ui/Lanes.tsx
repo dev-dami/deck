@@ -7,6 +7,7 @@ import { collapseIdle, type Lane } from "../lanes";
 import { cn } from "../lib/cn";
 import { Models } from "./AgentsStrip";
 import { MenuItem, MenuLabel, MenuSeparator, Popover } from "./kit/menu";
+import { Ring } from "./kit/ring";
 
 // The lane strip under the room header: one chip per participant. A click
 // filters the timeline to that lane; on an agent it also opens its model,
@@ -19,27 +20,6 @@ const WORD: Record<Lane["status"], string> = {
   idle: "idle",
   exited: "exited",
 };
-
-// Context use as a 12px ring, amber-free: it is a measure, not a state.
-function Ring({ pct }: { pct: number }) {
-  const r = 4.5;
-  const c = 2 * Math.PI * r;
-  return (
-    <svg aria-hidden viewBox="0 0 12 12" className="lane-ring size-3 shrink-0 -rotate-90">
-      <circle cx="6" cy="6" r={r} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-hairline-strong" />
-      <circle
-        cx="6"
-        cy="6"
-        r={r}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeDasharray={`${(c * pct) / 100} ${c}`}
-        className={pct >= 85 ? "text-warning" : "text-muted-foreground"}
-      />
-    </svg>
-  );
-}
 
 const chip =
   "lane relative flex h-6 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-selected aria-pressed:text-foreground";
@@ -101,7 +81,7 @@ function AgentChip({
           </span>
           {lane.contextPct !== null && (
             <span className="flex items-center" title={`${lane.contextPct}% of its context`}>
-              <Ring pct={lane.contextPct} />
+              <Ring pct={lane.contextPct} className="lane-ring" />
             </span>
           )}
           {lane.leases > 0 && (

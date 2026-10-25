@@ -70,6 +70,8 @@ export class FakeDeck {
   readonly interrupted: string[] = [];
   readonly edited: Array<{ message_id: string; text: string }> = [];
   readonly continued: string[] = [];
+  // The queue items steered into a running turn.
+  readonly steered: string[] = [];
   private readonly http: http.Server;
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 13 << 20 });
   private readonly clients = new Set<Client>();
@@ -350,9 +352,15 @@ export class FakeDeck {
       case "queue.steer":
       case "queue.cancel": {
         const t = this.get(p["session_id"]);
-        if (!t.queue.some((q) => q.id === p["item_id"])) throw new Fail("not_found", "no such item");
-        t.queue = t.queue.filter((q) => q.id !== p["item_id"]);
+        const item = t.queue.find((q) => q.id === p["item_id"]);
+        if (item === undefined) throw new Fail("not_found", "no such item");
+        t.queue = t.queue.filter((q) => q !== item);
         this.emit("queue.changed", { session_id: t.session.id, items: t.queue }, t.session.id);
+        if (m === "queue.steer") {
+          this.steered.push(item.id);
+          const agent = t.roster.find((l) => l.id === item.agent);
+          if (agent !== undefined) this.stream(t, agent, item.text, 0);
+        }
         return {};
       }
       case "changes.get":
@@ -473,7 +481,14 @@ export class FakeDeck {
       }
     }
     if (targets.length === 0) targets.push(t.roster[0] ?? this.addMember(t, "claude"));
-    for (const [i, agent] of [...new Set(targets)].entries()) this.stream(t, agent, rest, i);
+    // A busy agent gets the message when its turn ends, as Deck's queue does:
+    // one item per agent, its text without the mentions.
+    for (const [i, agent] of [...new Set(targets)].entries()) {
+      if (agent.busy) {
+        t.queue = [...t.queue, { id: `${user.id}:${agent.id}`, agent: agent.id, text: rest, at: this.now() }];
+        this.emit("queue.changed", { session_id: t.session.id, items: t.queue }, t.session.id);
+      } else this.stream(t, agent, rest, i);
+    }
     return { message_id: user.id };
   }
 

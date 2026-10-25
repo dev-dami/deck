@@ -44,11 +44,20 @@ with (`bin/` here, `resources/bin` in an installed app), then `deck` on
 your PATH. It starts the engine with your login shell's PATH, so agent CLIs
 installed in `~/.local/bin`, Homebrew or similar are found even when the
 app is opened from a dock or launcher. The engine needs at least one agent
-CLI (claude, codex, opencode or antigravity); when it finds none, the app
-shows the engine's own message.
+CLI (claude, codex, opencode or antigravity, which runs as `agy`).
 
-The app reopens the projects that were open when it quit, else shows
-"What should we work on?":
+**First run.** With no recent folder and no pairing, the app opens on the
+Welcome: Open a folder, Pair with a Deck, and Your agents. Your agents lists
+each agent CLI with the path where the app found it on the login shell's
+PATH, or with an install line and a link. "Check again" looks again after an
+install. When the engine finds no agent CLI, the Welcome shows this list in
+place of the error. Any other start error shows the engine's last lines,
+Open logs and Try again. When the app cannot find its engine, the Welcome
+says so: run `npm run build:deck`, or set `DECK_BIN`. "Welcome" in the
+palette (Ctrl+K) opens it again.
+
+On later launches the app reopens the projects that were open when it quit,
+else shows "What should we work on?":
 
 - **Open a folder.** Click "Add project" and pick the folder, or click a
   recent one. Several projects can be open at once; each runs its own
@@ -110,8 +119,11 @@ T3's look stays in the theme catalog.
   items need you: a count on macOS and Linux, a dot on Windows. Settings >
   General sets notifications to all, needs you only or none, and the sound
   on or off.
-- **New thread** (Ctrl+N, Cmd+N) opens the empty screen. The first message
-  makes the thread, named after its first line.
+- **New thread** (Ctrl+N, Cmd+N) opens the empty screen. Three cards there
+  start the message: One agent (`$claude `), Split the work (`$claude
+  $codex+ `, with the kinds that are installed) and Race three
+  (`$claude×3 `). The first message makes the thread, named after its first
+  line. Empty tabs and pages say what shows there and how it gets there.
 - **Chat.** A finished reply folds its tool calls and thinking behind
   "Worked for …"; the answer stays in view. The thread's changed files show
   under the last reply; "Open diff" opens them in the diff panel.
@@ -121,8 +133,32 @@ T3's look stays in the theme catalog.
   to. Typing `$` does the same: `$codex` reaches a free codex or starts one,
   `$codex+` starts another, `$codex*` reaches every codex, `$all` every
   agent. The strip under the composer holds the mode (Plan, Ask or Yolo)
-  and each agent's state: busy, waiting (for an approval) or idle. While
-  agents work and the prompt is empty, send turns into stop.
+  and each agent's state: busy, waiting (for an approval) or idle, with its
+  context use as a thin ring. When the engine reports a plan window of the
+  agent's kind over 80% full, the chip shows an amber "limit 85%" tag; its
+  tooltip says when the window resets. The app asks for the limits at most
+  once a minute, and only while the strip shows. While agents work and the
+  prompt is empty, send turns into stop.
+  - **Slash commands.** Type `/` at the start of the message for the
+    commands: `/plan`, `/ask` and `/yolo` set the mode (Yolo still asks
+    first), `/new [title]` starts a thread, `/race <n> [kind] <brief>`
+    races two to six agents of a kind (the room's first kind when you name
+    none), `/share` opens the share popover, `/stop` stops all agents and
+    `/clear` clears the draft. Other text after a `/` is an ordinary
+    message.
+  - **Files.** Type `@` for the room's changed files, matched loosely by
+    name and path; the pick goes in as a path in backticks.
+  - **Queue or steer.** While an agent works, Enter queues the message
+    until its turn ends, and Ctrl+Enter steers it into the running turn. A
+    line in the strip and the send button's tooltip say which. With
+    Ctrl+Enter to send (Settings), Ctrl+Enter queues and Ctrl+Shift+Enter
+    steers. In Tasks, each waiting message moves up or down, and Edit puts
+    it back in the composer and takes it out of the queue.
+  - **History.** `↑` in an empty composer brings back what you sent in this
+    room, newest first, up to the last 50; `↓` goes forward again, and
+    typing leaves the history.
+  - **Images.** Paste, drop or attach an image; each shows as a small
+    thumbnail with a remove button.
 - **Approvals.** The open thread's approval sits on top of the composer:
   Decline, Always allow this session, or Approve. It names who may answer:
   you, and the teammates the thread is shared with as editors. The Inbox
@@ -139,8 +175,8 @@ T3's look stays in the theme catalog.
   the composer to it. Past six agents, the idle ones fold into "+N idle".
 - **Tasks and agents.** The side panel holds the room's tabs: Changes,
   Tasks, Agents and Side chat. Changes shows every changed file with line
-  numbers. Tasks shows the messages that wait for a busy agent (send now or
-  cancel), the task board (cancel, retry, steer, apply or discard a
+  numbers. Tasks shows the messages that wait for a busy agent (send now,
+  edit, move up or down, or cancel), the task board (cancel, retry, steer, apply or discard a
   worktree result), orchestration on or off, and races. Apply and Discard
   first show the task's files, with their diff when the work tree is on the
   task's branch, and ask. A race starts two to six agents of one kind on
@@ -200,14 +236,21 @@ T3's look stays in the theme catalog.
   field. Ctrl+Alt+L goes to the next room that needs you, in any open
   project. Ctrl+1 to Ctrl+9 open the first nine rooms of the sidebar; hold
   Ctrl to see their numbers. Ctrl+= and Ctrl+- zoom, Ctrl+0 goes back to
-  100%; the app keeps the zoom. Enter sends. Shift+Enter adds a line.
+  100%; the app keeps the zoom. Enter sends, or queues for a busy agent;
+  Ctrl+Enter steers a busy agent. Shift+Enter adds a line. `↑` in an empty
+  composer recalls what you sent.
+- **Palette** (Ctrl+K). It searches the threads of every open project by
+  title and by the branch their agents work on, and the messages of the
+  rooms the window has loaded; a message hit shows its line under the
+  title. Each result names its project, and opening one switches to that
+  project. Every menu command is there with its key. Start with `>` to list
+  commands alone.
 - **Menus.** The menu bar holds every command and its key. Reload and the
   developer tools are there only in a development build. Right-click a
   text field, a selection, a link or an image for the usual actions; a link
   opens in the browser.
 - **Window.** The app remembers the window's size, place and whether it
   was maximized, and opens it on a display that is still there.
-- **Images.** Paste, drop or attach an image to send it.
 - **Folders and links.** Drop a folder on the window to open it. So does
   `deck-desktop <folder>` (or `Deck <folder>`) on the command line. A
   `deck://open?path=<folder>` link asks first ("Open <folder> in Deck?"),

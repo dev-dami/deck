@@ -7,6 +7,7 @@ import type { InboxItem, InboxState } from "../attention";
 import { cn } from "../lib/cn";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
+import { EmptyState } from "./kit/empty";
 
 const GLYPH: Record<InboxState, { icon: typeof Info; className: string }> = {
   "needs-you": { icon: ShieldQuestion, className: "text-warning-foreground" },
@@ -160,10 +161,12 @@ export function Inbox({ items, mac, ...actions }: { items: InboxItem[]; mac: boo
         </span>
       </header>
       {empty ? (
-        <div className="inbox-empty flex flex-1 flex-col items-center justify-center gap-1 pb-[14vh] text-center">
-          <p className="text-sm">Nothing waits for you.</p>
-          <p className="text-muted-foreground text-xs">Approvals, finished rooms and overlaps show up here.</p>
-        </div>
+        <EmptyState
+          icon={InboxIcon}
+          title="Nothing waits for you."
+          hint="Approvals, finished rooms and overlaps show up here."
+          className="inbox-empty flex-1 justify-center pb-[14vh]"
+        />
       ) : (
         <ul
           ref={list}
