@@ -340,6 +340,26 @@ renderer (React, sandboxed)                  main process (Node)                
 - **No caps.** Text and diffs are not cut; images travel as bytes.
 - **Error messages.** A refused call carries Deck's own message; the app
   shows it in a toast.
+- **Room events.** `Notice.via` marks the engine's overlap notes,
+  `lease_changed` reports each lease an agent takes or ends, and each
+  `Session` carries `attention` (approval, question, error or blocked), its
+  isolated `branch` and `archived`. `rpcMap.ts` keeps them by session id in
+  `roomMeta.ts`, beside the shared state.
+- **Isolation.** `createSession(title, true)` and `isolateSession` put a
+  thread on a worktree and branch of its own. `applyIsolated` writes its
+  changes into the shared tree, and `unisolate` discards the worktree.
+- **Revert.** `revertFiles` puts files back as they were before a message,
+  and `undoRevert` undoes the latest revert.
+- **Archive.** `archiveSession` stops a thread's agents and marks it
+  archived. A new message brings it back.
+- **Races.** `startRace` has several agents of one kind do one brief, each
+  on a worktree of its own, with an optional judge.
+- **Files.** `listFiles` lists the thread's tree through the repository's
+  ignore rules, fuzzy on a query, for the `@` picker.
+- **Capabilities.** `Info.capabilities` names the optional methods. Each
+  call above does nothing against a Deck that lacks its method, so the app
+  works with an older engine. `Info.clis` lists the agent CLIs Deck looks
+  for and where it found them.
 
 `AgentLine` is the same in both: `busy` only, no richer status.
 

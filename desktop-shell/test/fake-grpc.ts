@@ -125,6 +125,14 @@ export class FakeRpcDeck {
     proposed: [] as string[],
     mirror: ["[vps] deploy the relay", "[claude2] building the image"],
   };
+  // The rooms: the optional calls Info names, what each session's room says
+  // beyond the v2 session, and what was asked of them.
+  readonly room = {
+    caps: ["IsolateSession", "ApplyIsolated", "UnisolateSession", "RevertFiles", "UndoRevert", "ArchiveSession", "StartRace", "ListFiles"],
+    meta: {} as Record<string, { attention?: string; branch?: string; archived?: boolean }>,
+    asked: [] as string[],
+    files: ["main.go", "pkg/remote/auth/limit.go", "pkg/remote/auth/limit_test.go", "README.md"],
+  };
   // Each terminal: what it printed and who watches it.
   private readonly terms = new Map<string, { out: string; line: string; subs: Set<grpc.ServerWritableStream<Obj, Obj>> }>();
 
@@ -168,9 +176,25 @@ export class FakeRpcDeck {
   }
 
   private publish(e: string, p: unknown): void {
+    this.emit(e.replace(".", "_"), protoOf(p) as Obj);
+  }
+
+  // Sends one deck.v1 event; a session carries its room.
+  emit(kind: string, payload: Obj): void {
     this.seq++;
-    const event = { seq: this.seq, [e.replace(".", "_")]: protoOf(p) };
+    const p = kind.startsWith("session_") ? this.withRoom(payload) : payload;
+    const event = { seq: this.seq, [kind]: p };
     for (const s of this.streams) s.write(event);
+  }
+
+  private withRoom(session: Obj): Obj {
+    return { ...session, ...this.room.meta[String(session["id"])] };
+  }
+
+  // Sends session_updated for a session whose room changed.
+  private roomChanged(id: string): void {
+    const s = (this.deck.invoke("sessions.list", {}) as Obj[]).find((x) => x["id"] === id);
+    if (s !== undefined) this.emit("session_updated", protoOf(s) as Obj);
   }
 
   private handlers(): grpc.UntypedServiceImplementation {
@@ -178,7 +202,14 @@ export class FakeRpcDeck {
       Info: (call: grpc.ServerUnaryCall<Obj, Obj>, cb: grpc.sendUnaryData<Obj>) => {
         if (!this.authorized(call.metadata)) return cb({ code: grpc.status.UNAUTHENTICATED, details: "missing or wrong token" });
         this.calls.push("Info");
-        cb(null, { version: "fake", project: "deck", kinds: ["claude", "codex", "opencode"], theme: protoOf(this.deck.theme) });
+        cb(null, {
+          version: "fake",
+          project: "deck",
+          kinds: ["claude", "codex", "opencode"],
+          theme: protoOf(this.deck.theme),
+          clis: [{ kind: "claude", path: "/usr/bin/claude", found: true }],
+          capabilities: this.room.caps,
+        });
       },
       Events: (call: grpc.ServerWritableStream<Obj, Obj>) => {
         if (!this.authorized(call.metadata)) {
@@ -397,12 +428,60 @@ export class FakeRpcDeck {
     unary("AnswerShared", () => {
       throw new Error("only an editor answers approvals");
     });
+    // The room calls, as pkg/rpc serves them.
+    const rm = this.room;
+    const meta = (id: string) => (rm.meta[id] ??= {});
+    const room = (name: string, f: (r: Obj, id: string) => Obj) =>
+      unary(name, (r) => {
+        const id = String(r["session_id"]);
+        rm.asked.push(`${name} ${id}`);
+        const out = f(r, id);
+        this.roomChanged(id);
+        return out;
+      });
+    room("IsolateSession", (_, id) => {
+      meta(id).branch = `deck/${id.slice(0, 6)}`;
+      return {};
+    });
+    room("ApplyIsolated", (_, id) => {
+      if (!meta(id).branch) throw new Error("session: this thread is not isolated");
+      return { files: ["pkg/remote/auth/limit.go"] };
+    });
+    room("UnisolateSession", (_, id) => {
+      delete meta(id).branch;
+      return {};
+    });
+    room("RevertFiles", (r) => {
+      rm.asked.push(`since ${String(r["since"])}`);
+      return { files: r["paths"] as string[] };
+    });
+    room("UndoRevert", () => ({}));
+    room("ArchiveSession", (_, id) => {
+      meta(id).archived = true;
+      return {};
+    });
+    room("StartRace", (r) => {
+      rm.asked.push(`race ${String(r["kind"])}×${String(r["count"])}${r["judge"] === true ? " judged" : ""}: ${String(r["brief"])}`);
+      return { task_id: "t6" };
+    });
+    unary("ListFiles", (r) => {
+      const q = String(r["query"] ?? "");
+      const limit = Number(r["limit"] ?? 0) || 100;
+      const hits = rm.files.filter((p) => p.includes(q));
+      return { paths: hits.slice(0, limit), truncated: hits.length > limit };
+    });
     for (const [name, spec] of Object.entries(UNARY)) {
       h[name] = (call: grpc.ServerUnaryCall<Obj, Obj>, cb: grpc.sendUnaryData<Obj>) => {
         if (!this.authorized(call.metadata)) return cb({ code: grpc.status.UNAUTHENTICATED, details: "missing or wrong token" });
         this.calls.push(name);
         try {
-          cb(null, protoOf(spec.res(this.deck.invoke(spec.m, clean(spec.req(call.request))))) as Obj);
+          const out = protoOf(spec.res(this.deck.invoke(spec.m, clean(spec.req(call.request))))) as Obj;
+          if (name === "CreateSession" && call.request["isolate"] === true) {
+            this.room.meta[String(out["id"])] = { branch: `deck/${String(out["id"]).slice(0, 6)}` };
+          }
+          if (name === "CreateSession") return cb(null, this.withRoom(out));
+          if (name === "ListSessions") return cb(null, { sessions: (out["sessions"] as Obj[]).map((x) => this.withRoom(x)) });
+          cb(null, out);
         } catch (e) {
           const code = e instanceof Fail ? (CODES[e.code] ?? grpc.status.INTERNAL) : grpc.status.INTERNAL;
           cb({ code, details: e instanceof Error ? e.message : "fake failed" });

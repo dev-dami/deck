@@ -2,6 +2,8 @@ import type { Store } from "@web/controller";
 import type { ChangedFile, Decision, Image, Mode, ModelChoice, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import type { ProjectApi } from "./project";
+import type { RoomMetaStore } from "./roomMeta";
+import type { FileList } from "./rpcMap";
 
 // What the window needs from a Deck, whatever the transport. The phone
 // client's Controller (protocol v2 through main's socket) has this shape;
@@ -15,7 +17,9 @@ export interface DeckClient {
   openSession(id: string): Promise<void>;
   closeSession(): void;
   loadOlder(id: string): Promise<boolean>;
-  createSession(title?: string): Promise<Session | null>;
+  // isolate starts the thread on a worktree and branch of its own (a local
+  // Deck that serves IsolateSession).
+  createSession(title?: string, isolate?: boolean): Promise<Session | null>;
   renameSession(id: string, title: string): Promise<void>;
   deleteSession(id: string): Promise<boolean>;
   send(sessionId: string, text: string, images: Image[]): Promise<boolean>;
@@ -36,4 +40,24 @@ export interface DeckClient {
   forget(message?: string | null): void;
   // A local Deck only: starts its stopped engine again and resyncs.
   restart?(): Promise<void>;
+
+  // A local Deck only: what it says of each room beyond the shared Session.
+  readonly rooms?: RoomMetaStore;
+  // The optional deck.v1 methods the Deck serves (Info.capabilities). Each
+  // call below is a no-op that answers null or false, without a toast, when
+  // its method is not listed, so the shell works against an older engine.
+  capabilities?(): readonly string[];
+  isolateSession?(sessionId: string): Promise<boolean>;
+  // Writes what the isolated thread changed into the shared tree; the files.
+  applyIsolated?(sessionId: string): Promise<string[] | null>;
+  // Moves the thread back to the shared tree and discards its worktree.
+  unisolate?(sessionId: string): Promise<boolean>;
+  // Puts paths back as they were before the first message at or after since
+  // (Unix ms; 0 or none: the checkpoint changes() measures from).
+  revertFiles?(sessionId: string, paths: string[], since?: number): Promise<string[] | null>;
+  undoRevert?(sessionId: string): Promise<boolean>;
+  archiveSession?(sessionId: string): Promise<boolean>;
+  // count agents of kind do brief; with judge, one more ranks them. The race's task id.
+  startRace?(sessionId: string, brief: string, kind: string, count: number, judge?: boolean): Promise<string | null>;
+  listFiles?(sessionId: string, query: string, limit?: number): Promise<FileList | null>;
 }
