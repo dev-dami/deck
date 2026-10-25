@@ -113,6 +113,15 @@ jobs:
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - run: xvfb-run -a npm run e2e
+
+      # What the page showed when a test failed (error-context.md, traces).
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: desktop-test-results
+          path: desktop-shell/test-results/
+          retention-days: 7
+
       - run: xvfb-run -a npm run smoke
 
   # The phone client is built from pkg/remote/web and its dist is committed,

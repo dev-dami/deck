@@ -116,10 +116,13 @@ test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill
   await starts.getByRole("button", { name: /One agent/ }).click();
   await expect(composer(page)).toHaveValue("$claude fix the limiter");
 
-  // The palette opens the Welcome again, with a way back.
+  // The palette opens the Welcome again, with a way back. Enter waits for
+  // the Welcome to be the picked line.
   await page.keyboard.press("Control+k");
-  await page.keyboard.type("Welcome");
-  await page.keyboard.press("Enter");
+  const palette = page.getByRole("dialog", { name: "Commands" });
+  await palette.getByRole("textbox").fill("Welcome");
+  await expect(palette.getByRole("option", { selected: true })).toHaveText(/Welcome/);
+  await palette.getByRole("textbox").press("Enter");
   await expect(page.getByRole("heading", { name: "One deck for all your agents" })).toBeVisible();
   await page.getByRole("button", { name: "Back to threads" }).click();
   await expect(page.locator(".project")).toHaveText(basename(dir));
