@@ -26,7 +26,17 @@ const (
 
 // roomMethods are the optional calls a workspace with rooms serves; Info
 // lists them in capabilities.
-var roomMethods = []string{"IsolateSession", "ApplyIsolated", "UnisolateSession", "RevertFiles", "UndoRevert", "ArchiveSession", "StartRace"}
+var roomMethods = []string{
+	"IsolateSession", "ApplyIsolated", "UndoApply", "UnisolateSession", "RevertFiles", "UndoRevert",
+	"ArchiveSession", "UnarchiveSession", "StartRace", "ReadImage", "SearchMessages",
+}
+
+const (
+	// maxImageRead is the largest image ReadImage returns.
+	maxImageRead = 10 << 20
+	defaultHits  = 30
+	maxHits      = 200
+)
 
 // maxRaceCount only keeps a request from asking for a huge slice; the
 // engine has its own, lower, limit and says so.
@@ -234,6 +244,19 @@ func (s *Server) ApplyIsolated(ctx context.Context, r *deckv1.SessionRef) (*deck
 	return out, nil
 }
 
+func (s *Server) UndoApply(ctx context.Context, r *deckv1.SessionRef) (*deckv1.FilesResponse, error) {
+	sid := r.GetSessionId()
+	out := &deckv1.FilesResponse{}
+	err := s.onRoom(ctx, sid, func(w workspace.Rooms) (err error) {
+		out.Files, err = w.UndoApply(ctx, sid)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (s *Server) UnisolateSession(ctx context.Context, r *deckv1.SessionRef) (*deckv1.Empty, error) {
 	sid := r.GetSessionId()
 	if err := s.onRoom(ctx, sid, func(w workspace.Rooms) error { return w.Unisolate(ctx, sid) }); err != nil {
@@ -281,6 +304,14 @@ func (s *Server) ArchiveSession(ctx context.Context, r *deckv1.SessionRef) (*dec
 	return empty, nil
 }
 
+func (s *Server) UnarchiveSession(ctx context.Context, r *deckv1.SessionRef) (*deckv1.Empty, error) {
+	sid := r.GetSessionId()
+	if err := s.onRoom(ctx, sid, func(w workspace.Rooms) error { return w.Unarchive(ctx, sid) }); err != nil {
+		return nil, err
+	}
+	return empty, nil
+}
+
 func (s *Server) StartRace(ctx context.Context, r *deckv1.StartRaceRequest) (*deckv1.StartRaceResponse, error) {
 	sid := r.GetSessionId()
 	if strings.TrimSpace(r.GetBrief()) == "" || r.GetKind() == "" {
@@ -296,6 +327,53 @@ func (s *Server) StartRace(ctx context.Context, r *deckv1.StartRaceRequest) (*de
 	})
 	if err != nil {
 		return nil, err
+	}
+	return out, nil
+}
+
+// ReadImage resolves the image inside the engine from the session and the
+// message; the client never names a path.
+func (s *Server) ReadImage(ctx context.Context, r *deckv1.ReadImageRequest) (*deckv1.ReadImageResponse, error) {
+	if s.crew == nil || s.crew.rooms == nil {
+		return nil, errNoCrew
+	}
+	if err := needSession(r.GetSessionId()); err != nil {
+		return nil, err
+	}
+	if r.GetMessageId() == "" || r.GetIndex() < 0 {
+		return nil, invalid("message_id and a non-negative index are required")
+	}
+	data, mime, err := s.crew.rooms.ReadImage(ctx, r.GetSessionId(), r.GetMessageId(), int(r.GetIndex()))
+	if err != nil {
+		return nil, roomFail(err)
+	}
+	if len(data) > maxImageRead {
+		return nil, status.Error(codes.ResourceExhausted, "the image is larger than 10 MB")
+	}
+	return &deckv1.ReadImageResponse{Data: data, Mime: mime}, nil
+}
+
+func (s *Server) SearchMessages(ctx context.Context, r *deckv1.SearchMessagesRequest) (*deckv1.SearchMessagesResponse, error) {
+	if s.crew == nil || s.crew.rooms == nil {
+		return nil, errNoCrew
+	}
+	if strings.TrimSpace(r.GetQuery()) == "" {
+		return nil, invalid("query is required")
+	}
+	limit := int(r.GetLimit())
+	switch {
+	case limit < 0:
+		return nil, invalid("limit must not be negative")
+	case limit == 0:
+		limit = defaultHits
+	}
+	hits, err := s.crew.rooms.SearchMessages(ctx, r.GetQuery(), min(limit, maxHits))
+	if err != nil {
+		return nil, roomFail(err)
+	}
+	out := &deckv1.SearchMessagesResponse{Hits: make([]*deckv1.SearchHit, 0, len(hits))}
+	for _, h := range hits {
+		out.Hits = append(out.Hits, &deckv1.SearchHit{SessionId: h.SessionID, MessageId: h.MessageID, Agent: h.Agent, Snippet: h.Snippet, At: ms(h.At)})
 	}
 	return out, nil
 }

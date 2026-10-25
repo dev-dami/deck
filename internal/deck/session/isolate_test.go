@@ -89,3 +89,63 @@ func TestIsolateApplyUnisolate(t *testing.T) {
 		t.Fatalf("the branch is still there: %q", b)
 	}
 }
+
+func TestUndoApply(t *testing.T) {
+	repo := gitRepo(t)
+	r := newRig(t, []fake.Script{turn(say("hi"), finish()), turn(say("ok"), finish())}, nil)
+	tid, _ := r.m.NewThread(repo)
+	if err := r.m.Post(tid, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "first turn", func() bool { return r.c.turnDones("claude") >= 1 })
+	if _, err := r.m.UndoApply(tid); err == nil {
+		t.Fatal("undo before isolating")
+	}
+	info, _, err := r.m.Isolate(tid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := info.Dir
+	if _, err := r.m.UndoApply(tid); err == nil || !strings.Contains(err.Error(), "no apply to undo") {
+		t.Fatalf("undo with nothing applied: %v", err)
+	}
+
+	writeFile(t, wt, "a.txt", "ONE\ntwo\n")
+	writeFile(t, wt, "b.txt", "new\n")
+	if _, err := r.m.ApplyIsolated(tid); err != nil {
+		t.Fatal(err)
+	}
+	base := stored(t, r, tid).Worktree.Applied.Base
+	files, err := r.m.UndoApply(tid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(files, ",") != "a.txt,b.txt" {
+		t.Fatalf("undid %v", files)
+	}
+	if got := readFile(t, repo, "a.txt"); got != "one\ntwo\n" {
+		t.Fatalf("shared a.txt = %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "b.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("b.txt is still there: %v", err)
+	}
+	if th := stored(t, r, tid); th.Worktree.Applied != nil || th.Worktree.Base != base {
+		t.Fatalf("stored after undo = %+v", th.Worktree)
+	}
+	if _, err := r.m.UndoApply(tid); err == nil {
+		t.Fatal("one level of undo")
+	}
+
+	// The same changes apply again, and a later edit of an applied file
+	// blocks the undo.
+	if files, err := r.m.ApplyIsolated(tid); err != nil || len(files) != 2 {
+		t.Fatalf("apply again: %v %v", files, err)
+	}
+	writeFile(t, repo, "a.txt", "mine\n")
+	if _, err := r.m.UndoApply(tid); err == nil || !strings.Contains(err.Error(), "a.txt changed in your tree") {
+		t.Fatalf("undo over a later edit: %v", err)
+	}
+	if got := readFile(t, repo, "b.txt"); got != "new\n" {
+		t.Fatalf("a refused undo touched b.txt: %q", got)
+	}
+}

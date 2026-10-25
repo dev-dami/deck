@@ -213,8 +213,9 @@ T3's look stays in the theme catalog.
   by default, the app remembers the choice, and it shows only for a Deck
   that can do it. The row shows the branch in small mono type, and the room
   header shows it next to the title. Its menu offers Apply to my tree
-  (writes the branch's changes into your tree, then lists the files),
-  Discard branch (asks first, with the branch and the count of changed
+  (writes the branch's changes into your tree, then lists the files; the
+  toast offers Undo for 10 seconds, and the menu offers Undo last apply
+  until you apply again), Discard branch (asks first, with the branch and the count of changed
   files) and, for a thread in the shared tree, Move to its own branch (not
   while agents work).
 - **Revert.** In Changes, each file has a Revert button and the header has
@@ -223,12 +224,15 @@ T3's look stays in the theme catalog.
   Undo for 10 seconds, and the room's timeline shows a line such as "You
   reverted a.go". Nothing goes to the agents.
 - **Archive.** Hover a row, or right-click it, to archive the thread. A room
-  whose agents work cannot be archived; the button says why. The row goes
-  at once, and a toast offers Undo for 5 seconds. Deck has no call to
-  unarchive, so the app waits those 5 seconds before it asks Deck to
-  archive, and Undo cancels the wait. Archived rooms wait in an Archived
-  fold at the bottom of their project, closed at first. A new message in
-  an archived room brings it back.
+  whose agents work cannot be archived; the button says why. Deck archives
+  it at once, the row goes, and a toast offers Undo for 5 seconds; Undo
+  asks Deck to unarchive it. With an older Deck that cannot unarchive, the
+  app waits those 5 seconds before it asks Deck to archive, and Undo
+  cancels the wait. Archived rooms wait in an Archived fold at the bottom
+  of their project, closed at first; hover a row there to unarchive it. A
+  new message in an archived room brings it back too.
+- **Images.** An image in a message shows as a thumbnail; click it to see
+  it larger. With an older Deck, the image shows as its name.
 - **Races.** The race form in Tasks has a Judge switch, on by default: one
   more agent of the kind ranks the entries. With a Deck that serves
   `StartRace`, the form and `/race` start the race through it
@@ -293,9 +297,11 @@ T3's look stays in the theme catalog.
   Ctrl+Enter steers a busy agent. Shift+Enter adds a line. `↑` in an empty
   composer recalls what you sent.
 - **Palette** (Ctrl+K). It searches the threads of every open project by
-  title and by the branch their agents work on, and the messages of the
-  rooms the window has loaded; a message hit shows its line under the
-  title. Each result names its project, and opening one switches to that
+  title and by the branch their agents work on. From three letters on it
+  also asks each Deck for the messages that hold the words, in every room
+  that is not archived, loaded or not; a message hit shows the text around
+  the match under the title, and opening it opens the room at that
+  message. The messages of loaded rooms are searched too. Each result names its project, and opening one switches to that
   project. Every menu command is there with its key. Start with `>` to list
   commands alone.
 - **Menus.** The menu bar holds every command and its key. Reload and the
@@ -459,16 +465,27 @@ renderer (React, sandboxed)                  main process (Node)                
   `roomMeta.ts`, beside the shared state.
 - **Isolation.** `createSession(title, true)` and `isolateSession` put a
   thread on a worktree and branch of its own. `applyIsolated` writes its
-  changes into the shared tree, and `unisolate` discards the worktree.
+  changes into the shared tree, `undoApply` takes the last apply back
+  while its files are as the apply left them, and `unisolate` discards the
+  worktree.
 - **Revert.** `revertFiles` puts files back as they were before a message,
   and `undoRevert` undoes the latest revert.
 - **Archive.** `archiveSession` stops a thread's agents and marks it
-  archived. A new message brings it back. There is no call to unarchive,
-  so the app's Undo holds the call back for 5 seconds (`archive.ts`).
+  archived, and `unarchiveSession` brings it back without starting them; a
+  new message brings it back too. An empty thread can be archived. Against
+  a Deck without `UnarchiveSession`, the app's Undo holds the archive back
+  for 5 seconds (`archive.ts`).
 - **Races.** `startRace` has several agents of one kind do one brief, each
   on a worktree of its own, with an optional judge.
 - **Files.** `listFiles` lists the thread's tree through the repository's
   ignore rules, fuzzy on a query, for the `@` picker.
+- **Images.** `readImage` returns the bytes of a message's image part, up
+  to 10 MB, by session, message and index; Deck finds them, so no path
+  leaves the window. Main hands them over as a `Uint8Array`, and the
+  timeline shows them through a `blob:` URL.
+- **Search.** `searchMessages` finds words in the messages of every room of
+  the project that is not archived, newest first, from Deck's message
+  store, without loading the rooms.
 - **Capabilities.** `Info.capabilities` names the optional methods. Each
   call above does nothing against a Deck that lacks its method, so the app
   works with an older engine. `Info.clis` lists the agent CLIs Deck looks

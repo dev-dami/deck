@@ -128,7 +128,20 @@ export class FakeRpcDeck {
   // The rooms: the optional calls Info names, what each session's room says
   // beyond the v2 session, and what was asked of them.
   readonly room = {
-    caps: ["IsolateSession", "ApplyIsolated", "UnisolateSession", "RevertFiles", "UndoRevert", "ArchiveSession", "StartRace", "ListFiles"],
+    caps: [
+      "IsolateSession",
+      "ApplyIsolated",
+      "UndoApply",
+      "UnisolateSession",
+      "RevertFiles",
+      "UndoRevert",
+      "ArchiveSession",
+      "UnarchiveSession",
+      "StartRace",
+      "ListFiles",
+      "ReadImage",
+      "SearchMessages",
+    ],
     meta: {} as Record<string, { attention?: string; branch?: string; archived?: boolean }>,
     asked: [] as string[],
     files: ["main.go", "pkg/remote/auth/limit.go", "pkg/remote/auth/limit_test.go", "README.md"],
@@ -460,9 +473,41 @@ export class FakeRpcDeck {
       meta(id).archived = true;
       return {};
     });
+    room("UnarchiveSession", (_, id) => {
+      if (meta(id).archived !== true) throw new Error("this session is not archived");
+      delete meta(id).archived;
+      return {};
+    });
+    room("UndoApply", (_, id) => {
+      if (!meta(id).branch) throw new Error("session: this thread is not isolated");
+      return { files: ["pkg/remote/auth/limit.go"] };
+    });
     room("StartRace", (r) => {
       rm.asked.push(`race ${String(r["kind"])}×${String(r["count"])}${r["judge"] === true ? " judged" : ""}: ${String(r["brief"])}`);
       return { task_id: "t6" };
+    });
+    // Only a message of the session it names, as pkg/rpc checks.
+    unary("ReadImage", (r) => {
+      const m = this.deck.allMessages().find((x) => x.id === r["message_id"] && x.session_id === r["session_id"]);
+      const img = m === undefined ? undefined : this.deck.images.get(m.id)?.[Number(r["index"] ?? 0)];
+      if (img === undefined) throw new Error("not found");
+      return { data: img.data, mime: img.mime };
+    });
+    unary("SearchMessages", (r) => {
+      const q = String(r["query"] ?? "").toLowerCase();
+      const limit = Number(r["limit"] ?? 0) || 30;
+      const hits = this.deck
+        .allMessages()
+        .filter((m) => rm.meta[m.session_id]?.archived !== true)
+        .flatMap((m) => {
+          const text = m.parts.map((p) => (p.type === "text" ? (p.text ?? "") : "")).find((t) => t.toLowerCase().includes(q));
+          if (text === undefined) return [];
+          const at = text.toLowerCase().indexOf(q);
+          const snippet = text.slice(Math.max(0, at - 60), at + q.length + 60).replace(/\s+/g, " ");
+          return [{ session_id: m.session_id, message_id: m.id, agent: m.agent ?? "", snippet, at: Date.parse(m.created_at) }];
+        })
+        .sort((a, b) => b.at - a.at);
+      return { hits: hits.slice(0, limit) };
     });
     unary("ListFiles", (r) => {
       const q = String(r["query"] ?? "");

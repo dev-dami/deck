@@ -258,3 +258,34 @@ export const toFiles = (r: unknown): string[] => stringList(field(r, "files")) ?
 export const toFileList = (r: unknown): FileList => ({ paths: stringList(field(r, "paths")) ?? [], truncated: field(r, "truncated") === true });
 
 export const toCapabilities = (info: unknown): string[] => stringList(field(info, "capabilities")) ?? [];
+
+// ReadImage's answer: the bytes come through IPC as a Uint8Array.
+export interface ImageBytes {
+  data: Uint8Array;
+  mime: string;
+}
+
+export function toImage(r: unknown): ImageBytes | null {
+  const data = field(r, "data");
+  const mime = s(field(r, "mime"));
+  return data instanceof Uint8Array && data.length > 0 && mime.startsWith("image/") ? { data, mime } : null;
+}
+
+// One message SearchMessages found; at is Unix ms.
+export interface SearchHit {
+  session_id: string;
+  message_id: string;
+  agent: string;
+  snippet: string;
+  at: number;
+}
+
+export function toSearchHits(r: unknown): SearchHit[] {
+  const v = field(r, "hits");
+  if (!Array.isArray(v)) return [];
+  return v.filter(isRecord).flatMap((h) =>
+    s(h["session_id"]) === "" || s(h["message_id"]) === ""
+      ? []
+      : [{ session_id: s(h["session_id"]), message_id: s(h["message_id"]), agent: s(h["agent"]), snippet: s(h["snippet"]), at: n(h["at"]) }],
+  );
+}

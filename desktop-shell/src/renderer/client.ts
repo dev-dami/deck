@@ -3,7 +3,7 @@ import type { ChangedFile, Decision, Image, Mode, ModelChoice, Session } from "@
 import type { AppState } from "@web/state";
 import type { ProjectApi } from "./project";
 import type { RoomMetaStore } from "./roomMeta";
-import type { FileList } from "./rpcMap";
+import type { FileList, ImageBytes, SearchHit } from "./rpcMap";
 
 // What the window needs from a Deck, whatever the transport. The phone
 // client's Controller (protocol v2 through main's socket) has this shape;
@@ -50,6 +50,8 @@ export interface DeckClient {
   isolateSession?(sessionId: string): Promise<boolean>;
   // Writes what the isolated thread changed into the shared tree; the files.
   applyIsolated?(sessionId: string): Promise<string[] | null>;
+  // Takes the shared tree back to before the last apply; the files.
+  undoApply?(sessionId: string): Promise<string[] | null>;
   // Moves the thread back to the shared tree and discards its worktree.
   unisolate?(sessionId: string): Promise<boolean>;
   // Puts paths back as they were before the first message at or after since
@@ -57,9 +59,15 @@ export interface DeckClient {
   revertFiles?(sessionId: string, paths: string[], since?: number): Promise<string[] | null>;
   undoRevert?(sessionId: string): Promise<boolean>;
   archiveSession?(sessionId: string): Promise<boolean>;
+  unarchiveSession?(sessionId: string): Promise<boolean>;
   // count agents of kind do brief; with judge, one more ranks them. The race's task id.
   startRace?(sessionId: string, brief: string, kind: string, count: number, judge?: boolean): Promise<string | null>;
   listFiles?(sessionId: string, query: string, limit?: number): Promise<FileList | null>;
+  // The bytes of a message's index'th image part. Quiet: no toast.
+  readImage?(sessionId: string, messageId: string, index: number): Promise<ImageBytes | null>;
+  // Messages of every room that is not archived that hold query, newest
+  // first. Quiet: no toast.
+  searchMessages?(query: string, limit?: number): Promise<SearchHit[] | null>;
 }
 
 // Whether the Deck serves the optional method (Info.capabilities).

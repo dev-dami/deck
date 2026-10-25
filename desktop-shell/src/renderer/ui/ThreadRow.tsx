@@ -2,7 +2,7 @@ import type { Session, Theme } from "@web/protocol";
 import { sessionTitle } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
 import { relativeTime } from "@web/time";
-import { Archive, CircleCheck, FileDiff, Folder, GitCompareArrows, type LucideIcon, ShieldQuestion, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, CircleCheck, FileDiff, Folder, GitCompareArrows, type LucideIcon, ShieldQuestion, Trash2 } from "lucide-react";
 import { memo, useState } from "react";
 import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import type { RoomState, RoomStatus } from "../attention";
@@ -50,6 +50,7 @@ export const ThreadRow = memo(function ThreadRow({
   hideProject = false,
   branch,
   archive,
+  onUnarchive,
   onOpen,
   onRename,
   onDelete,
@@ -75,6 +76,8 @@ export const ThreadRow = memo(function ThreadRow({
   // The room's own branch when it is isolated, else "".
   branch: string;
   archive: ArchiveOffer;
+  // Set for an archived row whose Deck can bring it back.
+  onUnarchive: (() => void) | undefined;
   onOpen: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
@@ -185,6 +188,20 @@ export const ThreadRow = memo(function ThreadRow({
           </span>
         ) : (
           <>
+            {onUnarchive !== undefined && (
+              <button
+                type="button"
+                aria-label={`Unarchive ${sessionTitle(s)}`}
+                title="Unarchive thread"
+                className="inline-flex cursor-pointer items-center rounded-md px-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUnarchive();
+                }}
+              >
+                <ArchiveRestore className="size-3.5" />
+              </button>
+            )}
             {archive !== "none" && (
               <button
                 type="button"

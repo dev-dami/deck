@@ -53,6 +53,8 @@ interface ListProps<T> {
   // Called after rows change their height, to keep a scroll pinned.
   onResize?: () => void;
   overscan?: number;
+  // An index to scroll into view, by its measured or estimated place.
+  reveal?: number | null;
 }
 
 // A list that renders all its rows up to VIRTUAL_AFTER, and past that only
@@ -70,7 +72,7 @@ export function VirtualList<T>(props: ListProps<T>) {
   return <Windowed {...props} />;
 }
 
-function Windowed<T>({ items, keyOf, render, scroller, estimate, gap, as = "div", className, onResize, overscan = 6 }: ListProps<T>) {
+function Windowed<T>({ items, keyOf, render, scroller, estimate, gap, as = "div", className, onResize, overscan = 6, reveal = null }: ListProps<T>) {
   const heights = useRef(new Map<string, number>());
   const [measured, setMeasured] = useState(0);
   const outer = useRef<HTMLElement | null>(null);
@@ -108,6 +110,15 @@ function Windowed<T>({ items, keyOf, render, scroller, estimate, gap, as = "div"
       ro.disconnect();
     };
   }, [scroller, estimate, overscan]);
+
+  // Scroll to a row: its place puts it in the window, which then renders it.
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const list = outer.current;
+    if (reveal === null || el === null || list === null) return;
+    const top = list.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+    el.scrollTop = top + (latest.current.offsets[reveal] ?? 0) - el.clientHeight / 3;
+  }, [reveal, scroller]);
 
   // Measure each rendered row now, and again when it changes size.
   const keyOfEl = useRef(new WeakMap<Element, string>());

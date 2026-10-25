@@ -8,6 +8,7 @@ import { type DeckClient, serves } from "../client";
 import { FILES_LIMIT } from "../completion";
 import type { Team } from "../crew";
 import { buildLanes, filterLane } from "../lanes";
+import { focusMessage, useFocusedMessage } from "../palette";
 import { usePrefs } from "../prefs";
 import { sendHint } from "../queue";
 import { EMPTY_ROOM, useRoomMetas } from "../roomMeta";
@@ -41,7 +42,25 @@ function LiveTimeline({
   const select = useMemo(() => threadSlice(sid), [sid]);
   const t = useAppSlice(c.store, select, shallowEqual);
   const messages = useMemo(() => filterLane(t.messages, lane), [t.messages, lane]);
-  return <Timeline messages={messages} roster={t.roster} more={t.more} onOlder={() => c.loadOlder(sid)} {...rest} />;
+  // Image parts and a palette hit's message, for a Deck that serves them.
+  const images = serves(c, "ReadImage");
+  const readImage = useMemo(
+    () => (images ? (mid: string, index: number) => c.readImage?.(sid, mid, index) ?? Promise.resolve(null) : undefined),
+    [c, sid, images],
+  );
+  const focus = useFocusedMessage(sid);
+  return (
+    <Timeline
+      messages={messages}
+      roster={t.roster}
+      more={t.more}
+      onOlder={() => c.loadOlder(sid)}
+      {...(readImage === undefined ? {} : { readImage })}
+      focusMessage={focus}
+      onFocused={() => focusMessage(sid, null)}
+      {...rest}
+    />
+  );
 }
 
 function MoreMenu({

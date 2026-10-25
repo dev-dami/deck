@@ -7222,6 +7222,293 @@ func (x *ListFilesResponse) GetTruncated() bool {
 	return false
 }
 
+type ReadImageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	MessageId     string                 `protobuf:"bytes,2,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
+	Index         int32                  `protobuf:"varint,3,opt,name=index,proto3" json:"index,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadImageRequest) Reset() {
+	*x = ReadImageRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[101]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadImageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadImageRequest) ProtoMessage() {}
+
+func (x *ReadImageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[101]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadImageRequest.ProtoReflect.Descriptor instead.
+func (*ReadImageRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{101}
+}
+
+func (x *ReadImageRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ReadImageRequest) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
+}
+
+func (x *ReadImageRequest) GetIndex() int32 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+type ReadImageResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	Mime          string                 `protobuf:"bytes,2,opt,name=mime,proto3" json:"mime,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadImageResponse) Reset() {
+	*x = ReadImageResponse{}
+	mi := &file_deck_v1_deck_proto_msgTypes[102]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadImageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadImageResponse) ProtoMessage() {}
+
+func (x *ReadImageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[102]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadImageResponse.ProtoReflect.Descriptor instead.
+func (*ReadImageResponse) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{102}
+}
+
+func (x *ReadImageResponse) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *ReadImageResponse) GetMime() string {
+	if x != nil {
+		return x.Mime
+	}
+	return ""
+}
+
+type SearchMessagesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Query string                 `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
+	// limit is at most 200; 0 means 30.
+	Limit         int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchMessagesRequest) Reset() {
+	*x = SearchMessagesRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[103]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchMessagesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchMessagesRequest) ProtoMessage() {}
+
+func (x *SearchMessagesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[103]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchMessagesRequest.ProtoReflect.Descriptor instead.
+func (*SearchMessagesRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{103}
+}
+
+func (x *SearchMessagesRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *SearchMessagesRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type SearchHit struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	MessageId string                 `protobuf:"bytes,2,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
+	Agent     string                 `protobuf:"bytes,3,opt,name=agent,proto3" json:"agent,omitempty"`
+	// snippet is the text around the first match, on one line.
+	Snippet string `protobuf:"bytes,4,opt,name=snippet,proto3" json:"snippet,omitempty"`
+	// at is when the message was written (Unix ms).
+	At            int64 `protobuf:"varint,5,opt,name=at,proto3" json:"at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchHit) Reset() {
+	*x = SearchHit{}
+	mi := &file_deck_v1_deck_proto_msgTypes[104]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchHit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchHit) ProtoMessage() {}
+
+func (x *SearchHit) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[104]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchHit.ProtoReflect.Descriptor instead.
+func (*SearchHit) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{104}
+}
+
+func (x *SearchHit) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *SearchHit) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
+}
+
+func (x *SearchHit) GetAgent() string {
+	if x != nil {
+		return x.Agent
+	}
+	return ""
+}
+
+func (x *SearchHit) GetSnippet() string {
+	if x != nil {
+		return x.Snippet
+	}
+	return ""
+}
+
+func (x *SearchHit) GetAt() int64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+type SearchMessagesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hits          []*SearchHit           `protobuf:"bytes,1,rep,name=hits,proto3" json:"hits,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchMessagesResponse) Reset() {
+	*x = SearchMessagesResponse{}
+	mi := &file_deck_v1_deck_proto_msgTypes[105]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchMessagesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchMessagesResponse) ProtoMessage() {}
+
+func (x *SearchMessagesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[105]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchMessagesResponse.ProtoReflect.Descriptor instead.
+func (*SearchMessagesResponse) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{105}
+}
+
+func (x *SearchMessagesResponse) GetHits() []*SearchHit {
+	if x != nil {
+		return x.Hits
+	}
+	return nil
+}
+
 var File_deck_v1_deck_proto protoreflect.FileDescriptor
 
 const file_deck_v1_deck_proto_rawDesc = "" +
@@ -7826,7 +8113,29 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"G\n" +
 	"\x11ListFilesResponse\x12\x14\n" +
 	"\x05paths\x18\x01 \x03(\tR\x05paths\x12\x1c\n" +
-	"\ttruncated\x18\x02 \x01(\bR\ttruncated2\x9b\x1a\n" +
+	"\ttruncated\x18\x02 \x01(\bR\ttruncated\"f\n" +
+	"\x10ReadImageRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\x02 \x01(\tR\tmessageId\x12\x14\n" +
+	"\x05index\x18\x03 \x01(\x05R\x05index\";\n" +
+	"\x11ReadImageResponse\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\x12\x12\n" +
+	"\x04mime\x18\x02 \x01(\tR\x04mime\"C\n" +
+	"\x15SearchMessagesRequest\x12\x14\n" +
+	"\x05query\x18\x01 \x01(\tR\x05query\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"\x89\x01\n" +
+	"\tSearchHit\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\x02 \x01(\tR\tmessageId\x12\x14\n" +
+	"\x05agent\x18\x03 \x01(\tR\x05agent\x12\x18\n" +
+	"\asnippet\x18\x04 \x01(\tR\asnippet\x12\x0e\n" +
+	"\x02at\x18\x05 \x01(\x03R\x02at\"@\n" +
+	"\x16SearchMessagesResponse\x12&\n" +
+	"\x04hits\x18\x01 \x03(\v2\x12.deck.v1.SearchHitR\x04hits2\xa5\x1c\n" +
 	"\x04Deck\x12-\n" +
 	"\x04Info\x12\x0e.deck.v1.Empty\x1a\x15.deck.v1.InfoResponse\x12=\n" +
 	"\fListSessions\x12\x0e.deck.v1.Empty\x1a\x1d.deck.v1.ListSessionsResponse\x12@\n" +
@@ -7886,9 +8195,13 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\vRevertFiles\x12\x1b.deck.v1.RevertFilesRequest\x1a\x16.deck.v1.FilesResponse\x121\n" +
 	"\n" +
 	"UndoRevert\x12\x13.deck.v1.SessionRef\x1a\x0e.deck.v1.Empty\x125\n" +
-	"\x0eArchiveSession\x12\x13.deck.v1.SessionRef\x1a\x0e.deck.v1.Empty\x12B\n" +
+	"\x0eArchiveSession\x12\x13.deck.v1.SessionRef\x1a\x0e.deck.v1.Empty\x127\n" +
+	"\x10UnarchiveSession\x12\x13.deck.v1.SessionRef\x1a\x0e.deck.v1.Empty\x128\n" +
+	"\tUndoApply\x12\x13.deck.v1.SessionRef\x1a\x16.deck.v1.FilesResponse\x12B\n" +
 	"\tStartRace\x12\x19.deck.v1.StartRaceRequest\x1a\x1a.deck.v1.StartRaceResponse\x12B\n" +
-	"\tListFiles\x12\x19.deck.v1.ListFilesRequest\x1a\x1a.deck.v1.ListFilesResponse\x12.\n" +
+	"\tListFiles\x12\x19.deck.v1.ListFilesRequest\x1a\x1a.deck.v1.ListFilesResponse\x12B\n" +
+	"\tReadImage\x12\x19.deck.v1.ReadImageRequest\x1a\x1a.deck.v1.ReadImageResponse\x12Q\n" +
+	"\x0eSearchMessages\x12\x1e.deck.v1.SearchMessagesRequest\x1a\x1f.deck.v1.SearchMessagesResponse\x12.\n" +
 	"\x06Events\x12\x12.deck.v1.Subscribe\x1a\x0e.deck.v1.Event0\x01B0Z.github.com/dev-dami/deck/pkg/rpc/deckv1;deckv1b\x06proto3"
 
 var (
@@ -7903,7 +8216,7 @@ func file_deck_v1_deck_proto_rawDescGZIP() []byte {
 	return file_deck_v1_deck_proto_rawDescData
 }
 
-var file_deck_v1_deck_proto_msgTypes = make([]protoimpl.MessageInfo, 104)
+var file_deck_v1_deck_proto_msgTypes = make([]protoimpl.MessageInfo, 109)
 var file_deck_v1_deck_proto_goTypes = []any{
 	(*Empty)(nil),                   // 0: deck.v1.Empty
 	(*SessionRef)(nil),              // 1: deck.v1.SessionRef
@@ -8006,15 +8319,20 @@ var file_deck_v1_deck_proto_goTypes = []any{
 	(*StartRaceResponse)(nil),       // 98: deck.v1.StartRaceResponse
 	(*ListFilesRequest)(nil),        // 99: deck.v1.ListFilesRequest
 	(*ListFilesResponse)(nil),       // 100: deck.v1.ListFilesResponse
-	nil,                             // 101: deck.v1.Theme.PaletteEntry
-	nil,                             // 102: deck.v1.Theme.KindsEntry
-	nil,                             // 103: deck.v1.ThreadSharesResponse.SharesEntry
+	(*ReadImageRequest)(nil),        // 101: deck.v1.ReadImageRequest
+	(*ReadImageResponse)(nil),       // 102: deck.v1.ReadImageResponse
+	(*SearchMessagesRequest)(nil),   // 103: deck.v1.SearchMessagesRequest
+	(*SearchHit)(nil),               // 104: deck.v1.SearchHit
+	(*SearchMessagesResponse)(nil),  // 105: deck.v1.SearchMessagesResponse
+	nil,                             // 106: deck.v1.Theme.PaletteEntry
+	nil,                             // 107: deck.v1.Theme.KindsEntry
+	nil,                             // 108: deck.v1.ThreadSharesResponse.SharesEntry
 }
 var file_deck_v1_deck_proto_depIdxs = []int32{
 	5,   // 0: deck.v1.InfoResponse.theme:type_name -> deck.v1.Theme
 	4,   // 1: deck.v1.InfoResponse.clis:type_name -> deck.v1.AgentCli
-	101, // 2: deck.v1.Theme.palette:type_name -> deck.v1.Theme.PaletteEntry
-	102, // 3: deck.v1.Theme.kinds:type_name -> deck.v1.Theme.KindsEntry
+	106, // 2: deck.v1.Theme.palette:type_name -> deck.v1.Theme.PaletteEntry
+	107, // 3: deck.v1.Theme.kinds:type_name -> deck.v1.Theme.KindsEntry
 	7,   // 4: deck.v1.ListSessionsResponse.sessions:type_name -> deck.v1.Session
 	12,  // 5: deck.v1.Message.parts:type_name -> deck.v1.Part
 	13,  // 6: deck.v1.Part.image:type_name -> deck.v1.ImageRef
@@ -8062,129 +8380,138 @@ var file_deck_v1_deck_proto_depIdxs = []int32{
 	79,  // 48: deck.v1.TeamResponse.teammates:type_name -> deck.v1.Teammate
 	80,  // 49: deck.v1.TeamResponse.chat:type_name -> deck.v1.TeamChat
 	81,  // 50: deck.v1.TeamResponse.contracts:type_name -> deck.v1.TeamContract
-	103, // 51: deck.v1.ThreadSharesResponse.shares:type_name -> deck.v1.ThreadSharesResponse.SharesEntry
+	108, // 51: deck.v1.ThreadSharesResponse.shares:type_name -> deck.v1.ThreadSharesResponse.SharesEntry
 	78,  // 52: deck.v1.SharedMirror.thread:type_name -> deck.v1.TeamThread
 	91,  // 53: deck.v1.SharedMirror.pending:type_name -> deck.v1.SharedApproval
-	6,   // 54: deck.v1.Theme.KindsEntry.value:type_name -> deck.v1.KindTone
-	0,   // 55: deck.v1.Deck.Info:input_type -> deck.v1.Empty
-	0,   // 56: deck.v1.Deck.ListSessions:input_type -> deck.v1.Empty
-	9,   // 57: deck.v1.Deck.CreateSession:input_type -> deck.v1.CreateSessionRequest
-	10,  // 58: deck.v1.Deck.RenameSession:input_type -> deck.v1.RenameSessionRequest
-	1,   // 59: deck.v1.Deck.DeleteSession:input_type -> deck.v1.SessionRef
-	14,  // 60: deck.v1.Deck.ListMessages:input_type -> deck.v1.ListMessagesRequest
-	17,  // 61: deck.v1.Deck.Send:input_type -> deck.v1.SendRequest
-	19,  // 62: deck.v1.Deck.EditMessage:input_type -> deck.v1.EditMessageRequest
-	1,   // 63: deck.v1.Deck.Cancel:input_type -> deck.v1.SessionRef
-	20,  // 64: deck.v1.Deck.Interrupt:input_type -> deck.v1.InterruptRequest
-	1,   // 65: deck.v1.Deck.Continue:input_type -> deck.v1.SessionRef
-	1,   // 66: deck.v1.Deck.Queue:input_type -> deck.v1.SessionRef
-	2,   // 67: deck.v1.Deck.Steer:input_type -> deck.v1.QueueItemRef
-	2,   // 68: deck.v1.Deck.CancelQueued:input_type -> deck.v1.QueueItemRef
-	1,   // 69: deck.v1.Deck.Roster:input_type -> deck.v1.SessionRef
-	25,  // 70: deck.v1.Deck.Models:input_type -> deck.v1.ModelsRequest
-	28,  // 71: deck.v1.Deck.SetModel:input_type -> deck.v1.SetModelRequest
-	1,   // 72: deck.v1.Deck.GetMode:input_type -> deck.v1.SessionRef
-	30,  // 73: deck.v1.Deck.SetMode:input_type -> deck.v1.SetModeRequest
-	1,   // 74: deck.v1.Deck.Approvals:input_type -> deck.v1.SessionRef
-	33,  // 75: deck.v1.Deck.Answer:input_type -> deck.v1.AnswerRequest
-	1,   // 76: deck.v1.Deck.Changes:input_type -> deck.v1.SessionRef
-	0,   // 77: deck.v1.Deck.GitStatus:input_type -> deck.v1.Empty
-	51,  // 78: deck.v1.Deck.GitCheckout:input_type -> deck.v1.GitCheckoutRequest
-	52,  // 79: deck.v1.Deck.GitCommit:input_type -> deck.v1.GitCommitRequest
-	0,   // 80: deck.v1.Deck.GitPush:input_type -> deck.v1.Empty
-	0,   // 81: deck.v1.Deck.GitPull:input_type -> deck.v1.Empty
-	53,  // 82: deck.v1.Deck.GitCreatePR:input_type -> deck.v1.GitCreatePRRequest
-	54,  // 83: deck.v1.Deck.GitMergePR:input_type -> deck.v1.GitMergePRRequest
-	55,  // 84: deck.v1.Deck.Usage:input_type -> deck.v1.UsageRequest
-	64,  // 85: deck.v1.Deck.TerminalOpen:input_type -> deck.v1.TerminalOpenRequest
-	66,  // 86: deck.v1.Deck.TerminalWrite:input_type -> deck.v1.TerminalInput
-	67,  // 87: deck.v1.Deck.TerminalResize:input_type -> deck.v1.TerminalSize
-	65,  // 88: deck.v1.Deck.TerminalClose:input_type -> deck.v1.TerminalRef
-	65,  // 89: deck.v1.Deck.TerminalOutput:input_type -> deck.v1.TerminalRef
-	1,   // 90: deck.v1.Deck.Board:input_type -> deck.v1.SessionRef
-	71,  // 91: deck.v1.Deck.TaskAction:input_type -> deck.v1.TaskActionRequest
-	73,  // 92: deck.v1.Deck.SetOrchestrate:input_type -> deck.v1.SetOrchestrateRequest
-	1,   // 93: deck.v1.Deck.Agents:input_type -> deck.v1.SessionRef
-	0,   // 94: deck.v1.Deck.Team:input_type -> deck.v1.Empty
-	83,  // 95: deck.v1.Deck.TeamPost:input_type -> deck.v1.TeamPostRequest
-	85,  // 96: deck.v1.Deck.ShareThread:input_type -> deck.v1.ShareThreadRequest
-	1,   // 97: deck.v1.Deck.ThreadShares:input_type -> deck.v1.SessionRef
-	87,  // 98: deck.v1.Deck.ProposeContract:input_type -> deck.v1.ProposeContractRequest
-	89,  // 99: deck.v1.Deck.AnswerContract:input_type -> deck.v1.AnswerContractRequest
-	90,  // 100: deck.v1.Deck.ReadShared:input_type -> deck.v1.ReadSharedRequest
-	93,  // 101: deck.v1.Deck.PostShared:input_type -> deck.v1.PostSharedRequest
-	94,  // 102: deck.v1.Deck.AnswerShared:input_type -> deck.v1.AnswerSharedRequest
-	1,   // 103: deck.v1.Deck.IsolateSession:input_type -> deck.v1.SessionRef
-	1,   // 104: deck.v1.Deck.ApplyIsolated:input_type -> deck.v1.SessionRef
-	1,   // 105: deck.v1.Deck.UnisolateSession:input_type -> deck.v1.SessionRef
-	96,  // 106: deck.v1.Deck.RevertFiles:input_type -> deck.v1.RevertFilesRequest
-	1,   // 107: deck.v1.Deck.UndoRevert:input_type -> deck.v1.SessionRef
-	1,   // 108: deck.v1.Deck.ArchiveSession:input_type -> deck.v1.SessionRef
-	97,  // 109: deck.v1.Deck.StartRace:input_type -> deck.v1.StartRaceRequest
-	99,  // 110: deck.v1.Deck.ListFiles:input_type -> deck.v1.ListFilesRequest
-	37,  // 111: deck.v1.Deck.Events:input_type -> deck.v1.Subscribe
-	3,   // 112: deck.v1.Deck.Info:output_type -> deck.v1.InfoResponse
-	8,   // 113: deck.v1.Deck.ListSessions:output_type -> deck.v1.ListSessionsResponse
-	7,   // 114: deck.v1.Deck.CreateSession:output_type -> deck.v1.Session
-	0,   // 115: deck.v1.Deck.RenameSession:output_type -> deck.v1.Empty
-	0,   // 116: deck.v1.Deck.DeleteSession:output_type -> deck.v1.Empty
-	15,  // 117: deck.v1.Deck.ListMessages:output_type -> deck.v1.ListMessagesResponse
-	18,  // 118: deck.v1.Deck.Send:output_type -> deck.v1.SendResponse
-	0,   // 119: deck.v1.Deck.EditMessage:output_type -> deck.v1.Empty
-	0,   // 120: deck.v1.Deck.Cancel:output_type -> deck.v1.Empty
-	0,   // 121: deck.v1.Deck.Interrupt:output_type -> deck.v1.Empty
-	0,   // 122: deck.v1.Deck.Continue:output_type -> deck.v1.Empty
-	22,  // 123: deck.v1.Deck.Queue:output_type -> deck.v1.QueueResponse
-	0,   // 124: deck.v1.Deck.Steer:output_type -> deck.v1.Empty
-	0,   // 125: deck.v1.Deck.CancelQueued:output_type -> deck.v1.Empty
-	24,  // 126: deck.v1.Deck.Roster:output_type -> deck.v1.RosterResponse
-	27,  // 127: deck.v1.Deck.Models:output_type -> deck.v1.ModelsResponse
-	0,   // 128: deck.v1.Deck.SetModel:output_type -> deck.v1.Empty
-	29,  // 129: deck.v1.Deck.GetMode:output_type -> deck.v1.ModeResponse
-	0,   // 130: deck.v1.Deck.SetMode:output_type -> deck.v1.Empty
-	32,  // 131: deck.v1.Deck.Approvals:output_type -> deck.v1.ApprovalsResponse
-	34,  // 132: deck.v1.Deck.Answer:output_type -> deck.v1.AnswerResponse
-	36,  // 133: deck.v1.Deck.Changes:output_type -> deck.v1.ChangesResponse
-	50,  // 134: deck.v1.Deck.GitStatus:output_type -> deck.v1.GitStatusResponse
-	0,   // 135: deck.v1.Deck.GitCheckout:output_type -> deck.v1.Empty
-	0,   // 136: deck.v1.Deck.GitCommit:output_type -> deck.v1.Empty
-	0,   // 137: deck.v1.Deck.GitPush:output_type -> deck.v1.Empty
-	0,   // 138: deck.v1.Deck.GitPull:output_type -> deck.v1.Empty
-	49,  // 139: deck.v1.Deck.GitCreatePR:output_type -> deck.v1.GitPullRequest
-	0,   // 140: deck.v1.Deck.GitMergePR:output_type -> deck.v1.Empty
-	63,  // 141: deck.v1.Deck.Usage:output_type -> deck.v1.UsageResponse
-	65,  // 142: deck.v1.Deck.TerminalOpen:output_type -> deck.v1.TerminalRef
-	0,   // 143: deck.v1.Deck.TerminalWrite:output_type -> deck.v1.Empty
-	0,   // 144: deck.v1.Deck.TerminalResize:output_type -> deck.v1.Empty
-	0,   // 145: deck.v1.Deck.TerminalClose:output_type -> deck.v1.Empty
-	68,  // 146: deck.v1.Deck.TerminalOutput:output_type -> deck.v1.TerminalChunk
-	70,  // 147: deck.v1.Deck.Board:output_type -> deck.v1.BoardResponse
-	72,  // 148: deck.v1.Deck.TaskAction:output_type -> deck.v1.TaskActionResponse
-	0,   // 149: deck.v1.Deck.SetOrchestrate:output_type -> deck.v1.Empty
-	76,  // 150: deck.v1.Deck.Agents:output_type -> deck.v1.AgentsResponse
-	82,  // 151: deck.v1.Deck.Team:output_type -> deck.v1.TeamResponse
-	84,  // 152: deck.v1.Deck.TeamPost:output_type -> deck.v1.TeamPostResponse
-	0,   // 153: deck.v1.Deck.ShareThread:output_type -> deck.v1.Empty
-	86,  // 154: deck.v1.Deck.ThreadShares:output_type -> deck.v1.ThreadSharesResponse
-	88,  // 155: deck.v1.Deck.ProposeContract:output_type -> deck.v1.ProposeContractResponse
-	0,   // 156: deck.v1.Deck.AnswerContract:output_type -> deck.v1.Empty
-	92,  // 157: deck.v1.Deck.ReadShared:output_type -> deck.v1.SharedMirror
-	0,   // 158: deck.v1.Deck.PostShared:output_type -> deck.v1.Empty
-	0,   // 159: deck.v1.Deck.AnswerShared:output_type -> deck.v1.Empty
-	0,   // 160: deck.v1.Deck.IsolateSession:output_type -> deck.v1.Empty
-	95,  // 161: deck.v1.Deck.ApplyIsolated:output_type -> deck.v1.FilesResponse
-	0,   // 162: deck.v1.Deck.UnisolateSession:output_type -> deck.v1.Empty
-	95,  // 163: deck.v1.Deck.RevertFiles:output_type -> deck.v1.FilesResponse
-	0,   // 164: deck.v1.Deck.UndoRevert:output_type -> deck.v1.Empty
-	0,   // 165: deck.v1.Deck.ArchiveSession:output_type -> deck.v1.Empty
-	98,  // 166: deck.v1.Deck.StartRace:output_type -> deck.v1.StartRaceResponse
-	100, // 167: deck.v1.Deck.ListFiles:output_type -> deck.v1.ListFilesResponse
-	46,  // 168: deck.v1.Deck.Events:output_type -> deck.v1.Event
-	112, // [112:169] is the sub-list for method output_type
-	55,  // [55:112] is the sub-list for method input_type
-	55,  // [55:55] is the sub-list for extension type_name
-	55,  // [55:55] is the sub-list for extension extendee
-	0,   // [0:55] is the sub-list for field type_name
+	104, // 54: deck.v1.SearchMessagesResponse.hits:type_name -> deck.v1.SearchHit
+	6,   // 55: deck.v1.Theme.KindsEntry.value:type_name -> deck.v1.KindTone
+	0,   // 56: deck.v1.Deck.Info:input_type -> deck.v1.Empty
+	0,   // 57: deck.v1.Deck.ListSessions:input_type -> deck.v1.Empty
+	9,   // 58: deck.v1.Deck.CreateSession:input_type -> deck.v1.CreateSessionRequest
+	10,  // 59: deck.v1.Deck.RenameSession:input_type -> deck.v1.RenameSessionRequest
+	1,   // 60: deck.v1.Deck.DeleteSession:input_type -> deck.v1.SessionRef
+	14,  // 61: deck.v1.Deck.ListMessages:input_type -> deck.v1.ListMessagesRequest
+	17,  // 62: deck.v1.Deck.Send:input_type -> deck.v1.SendRequest
+	19,  // 63: deck.v1.Deck.EditMessage:input_type -> deck.v1.EditMessageRequest
+	1,   // 64: deck.v1.Deck.Cancel:input_type -> deck.v1.SessionRef
+	20,  // 65: deck.v1.Deck.Interrupt:input_type -> deck.v1.InterruptRequest
+	1,   // 66: deck.v1.Deck.Continue:input_type -> deck.v1.SessionRef
+	1,   // 67: deck.v1.Deck.Queue:input_type -> deck.v1.SessionRef
+	2,   // 68: deck.v1.Deck.Steer:input_type -> deck.v1.QueueItemRef
+	2,   // 69: deck.v1.Deck.CancelQueued:input_type -> deck.v1.QueueItemRef
+	1,   // 70: deck.v1.Deck.Roster:input_type -> deck.v1.SessionRef
+	25,  // 71: deck.v1.Deck.Models:input_type -> deck.v1.ModelsRequest
+	28,  // 72: deck.v1.Deck.SetModel:input_type -> deck.v1.SetModelRequest
+	1,   // 73: deck.v1.Deck.GetMode:input_type -> deck.v1.SessionRef
+	30,  // 74: deck.v1.Deck.SetMode:input_type -> deck.v1.SetModeRequest
+	1,   // 75: deck.v1.Deck.Approvals:input_type -> deck.v1.SessionRef
+	33,  // 76: deck.v1.Deck.Answer:input_type -> deck.v1.AnswerRequest
+	1,   // 77: deck.v1.Deck.Changes:input_type -> deck.v1.SessionRef
+	0,   // 78: deck.v1.Deck.GitStatus:input_type -> deck.v1.Empty
+	51,  // 79: deck.v1.Deck.GitCheckout:input_type -> deck.v1.GitCheckoutRequest
+	52,  // 80: deck.v1.Deck.GitCommit:input_type -> deck.v1.GitCommitRequest
+	0,   // 81: deck.v1.Deck.GitPush:input_type -> deck.v1.Empty
+	0,   // 82: deck.v1.Deck.GitPull:input_type -> deck.v1.Empty
+	53,  // 83: deck.v1.Deck.GitCreatePR:input_type -> deck.v1.GitCreatePRRequest
+	54,  // 84: deck.v1.Deck.GitMergePR:input_type -> deck.v1.GitMergePRRequest
+	55,  // 85: deck.v1.Deck.Usage:input_type -> deck.v1.UsageRequest
+	64,  // 86: deck.v1.Deck.TerminalOpen:input_type -> deck.v1.TerminalOpenRequest
+	66,  // 87: deck.v1.Deck.TerminalWrite:input_type -> deck.v1.TerminalInput
+	67,  // 88: deck.v1.Deck.TerminalResize:input_type -> deck.v1.TerminalSize
+	65,  // 89: deck.v1.Deck.TerminalClose:input_type -> deck.v1.TerminalRef
+	65,  // 90: deck.v1.Deck.TerminalOutput:input_type -> deck.v1.TerminalRef
+	1,   // 91: deck.v1.Deck.Board:input_type -> deck.v1.SessionRef
+	71,  // 92: deck.v1.Deck.TaskAction:input_type -> deck.v1.TaskActionRequest
+	73,  // 93: deck.v1.Deck.SetOrchestrate:input_type -> deck.v1.SetOrchestrateRequest
+	1,   // 94: deck.v1.Deck.Agents:input_type -> deck.v1.SessionRef
+	0,   // 95: deck.v1.Deck.Team:input_type -> deck.v1.Empty
+	83,  // 96: deck.v1.Deck.TeamPost:input_type -> deck.v1.TeamPostRequest
+	85,  // 97: deck.v1.Deck.ShareThread:input_type -> deck.v1.ShareThreadRequest
+	1,   // 98: deck.v1.Deck.ThreadShares:input_type -> deck.v1.SessionRef
+	87,  // 99: deck.v1.Deck.ProposeContract:input_type -> deck.v1.ProposeContractRequest
+	89,  // 100: deck.v1.Deck.AnswerContract:input_type -> deck.v1.AnswerContractRequest
+	90,  // 101: deck.v1.Deck.ReadShared:input_type -> deck.v1.ReadSharedRequest
+	93,  // 102: deck.v1.Deck.PostShared:input_type -> deck.v1.PostSharedRequest
+	94,  // 103: deck.v1.Deck.AnswerShared:input_type -> deck.v1.AnswerSharedRequest
+	1,   // 104: deck.v1.Deck.IsolateSession:input_type -> deck.v1.SessionRef
+	1,   // 105: deck.v1.Deck.ApplyIsolated:input_type -> deck.v1.SessionRef
+	1,   // 106: deck.v1.Deck.UnisolateSession:input_type -> deck.v1.SessionRef
+	96,  // 107: deck.v1.Deck.RevertFiles:input_type -> deck.v1.RevertFilesRequest
+	1,   // 108: deck.v1.Deck.UndoRevert:input_type -> deck.v1.SessionRef
+	1,   // 109: deck.v1.Deck.ArchiveSession:input_type -> deck.v1.SessionRef
+	1,   // 110: deck.v1.Deck.UnarchiveSession:input_type -> deck.v1.SessionRef
+	1,   // 111: deck.v1.Deck.UndoApply:input_type -> deck.v1.SessionRef
+	97,  // 112: deck.v1.Deck.StartRace:input_type -> deck.v1.StartRaceRequest
+	99,  // 113: deck.v1.Deck.ListFiles:input_type -> deck.v1.ListFilesRequest
+	101, // 114: deck.v1.Deck.ReadImage:input_type -> deck.v1.ReadImageRequest
+	103, // 115: deck.v1.Deck.SearchMessages:input_type -> deck.v1.SearchMessagesRequest
+	37,  // 116: deck.v1.Deck.Events:input_type -> deck.v1.Subscribe
+	3,   // 117: deck.v1.Deck.Info:output_type -> deck.v1.InfoResponse
+	8,   // 118: deck.v1.Deck.ListSessions:output_type -> deck.v1.ListSessionsResponse
+	7,   // 119: deck.v1.Deck.CreateSession:output_type -> deck.v1.Session
+	0,   // 120: deck.v1.Deck.RenameSession:output_type -> deck.v1.Empty
+	0,   // 121: deck.v1.Deck.DeleteSession:output_type -> deck.v1.Empty
+	15,  // 122: deck.v1.Deck.ListMessages:output_type -> deck.v1.ListMessagesResponse
+	18,  // 123: deck.v1.Deck.Send:output_type -> deck.v1.SendResponse
+	0,   // 124: deck.v1.Deck.EditMessage:output_type -> deck.v1.Empty
+	0,   // 125: deck.v1.Deck.Cancel:output_type -> deck.v1.Empty
+	0,   // 126: deck.v1.Deck.Interrupt:output_type -> deck.v1.Empty
+	0,   // 127: deck.v1.Deck.Continue:output_type -> deck.v1.Empty
+	22,  // 128: deck.v1.Deck.Queue:output_type -> deck.v1.QueueResponse
+	0,   // 129: deck.v1.Deck.Steer:output_type -> deck.v1.Empty
+	0,   // 130: deck.v1.Deck.CancelQueued:output_type -> deck.v1.Empty
+	24,  // 131: deck.v1.Deck.Roster:output_type -> deck.v1.RosterResponse
+	27,  // 132: deck.v1.Deck.Models:output_type -> deck.v1.ModelsResponse
+	0,   // 133: deck.v1.Deck.SetModel:output_type -> deck.v1.Empty
+	29,  // 134: deck.v1.Deck.GetMode:output_type -> deck.v1.ModeResponse
+	0,   // 135: deck.v1.Deck.SetMode:output_type -> deck.v1.Empty
+	32,  // 136: deck.v1.Deck.Approvals:output_type -> deck.v1.ApprovalsResponse
+	34,  // 137: deck.v1.Deck.Answer:output_type -> deck.v1.AnswerResponse
+	36,  // 138: deck.v1.Deck.Changes:output_type -> deck.v1.ChangesResponse
+	50,  // 139: deck.v1.Deck.GitStatus:output_type -> deck.v1.GitStatusResponse
+	0,   // 140: deck.v1.Deck.GitCheckout:output_type -> deck.v1.Empty
+	0,   // 141: deck.v1.Deck.GitCommit:output_type -> deck.v1.Empty
+	0,   // 142: deck.v1.Deck.GitPush:output_type -> deck.v1.Empty
+	0,   // 143: deck.v1.Deck.GitPull:output_type -> deck.v1.Empty
+	49,  // 144: deck.v1.Deck.GitCreatePR:output_type -> deck.v1.GitPullRequest
+	0,   // 145: deck.v1.Deck.GitMergePR:output_type -> deck.v1.Empty
+	63,  // 146: deck.v1.Deck.Usage:output_type -> deck.v1.UsageResponse
+	65,  // 147: deck.v1.Deck.TerminalOpen:output_type -> deck.v1.TerminalRef
+	0,   // 148: deck.v1.Deck.TerminalWrite:output_type -> deck.v1.Empty
+	0,   // 149: deck.v1.Deck.TerminalResize:output_type -> deck.v1.Empty
+	0,   // 150: deck.v1.Deck.TerminalClose:output_type -> deck.v1.Empty
+	68,  // 151: deck.v1.Deck.TerminalOutput:output_type -> deck.v1.TerminalChunk
+	70,  // 152: deck.v1.Deck.Board:output_type -> deck.v1.BoardResponse
+	72,  // 153: deck.v1.Deck.TaskAction:output_type -> deck.v1.TaskActionResponse
+	0,   // 154: deck.v1.Deck.SetOrchestrate:output_type -> deck.v1.Empty
+	76,  // 155: deck.v1.Deck.Agents:output_type -> deck.v1.AgentsResponse
+	82,  // 156: deck.v1.Deck.Team:output_type -> deck.v1.TeamResponse
+	84,  // 157: deck.v1.Deck.TeamPost:output_type -> deck.v1.TeamPostResponse
+	0,   // 158: deck.v1.Deck.ShareThread:output_type -> deck.v1.Empty
+	86,  // 159: deck.v1.Deck.ThreadShares:output_type -> deck.v1.ThreadSharesResponse
+	88,  // 160: deck.v1.Deck.ProposeContract:output_type -> deck.v1.ProposeContractResponse
+	0,   // 161: deck.v1.Deck.AnswerContract:output_type -> deck.v1.Empty
+	92,  // 162: deck.v1.Deck.ReadShared:output_type -> deck.v1.SharedMirror
+	0,   // 163: deck.v1.Deck.PostShared:output_type -> deck.v1.Empty
+	0,   // 164: deck.v1.Deck.AnswerShared:output_type -> deck.v1.Empty
+	0,   // 165: deck.v1.Deck.IsolateSession:output_type -> deck.v1.Empty
+	95,  // 166: deck.v1.Deck.ApplyIsolated:output_type -> deck.v1.FilesResponse
+	0,   // 167: deck.v1.Deck.UnisolateSession:output_type -> deck.v1.Empty
+	95,  // 168: deck.v1.Deck.RevertFiles:output_type -> deck.v1.FilesResponse
+	0,   // 169: deck.v1.Deck.UndoRevert:output_type -> deck.v1.Empty
+	0,   // 170: deck.v1.Deck.ArchiveSession:output_type -> deck.v1.Empty
+	0,   // 171: deck.v1.Deck.UnarchiveSession:output_type -> deck.v1.Empty
+	95,  // 172: deck.v1.Deck.UndoApply:output_type -> deck.v1.FilesResponse
+	98,  // 173: deck.v1.Deck.StartRace:output_type -> deck.v1.StartRaceResponse
+	100, // 174: deck.v1.Deck.ListFiles:output_type -> deck.v1.ListFilesResponse
+	102, // 175: deck.v1.Deck.ReadImage:output_type -> deck.v1.ReadImageResponse
+	105, // 176: deck.v1.Deck.SearchMessages:output_type -> deck.v1.SearchMessagesResponse
+	46,  // 177: deck.v1.Deck.Events:output_type -> deck.v1.Event
+	117, // [117:178] is the sub-list for method output_type
+	56,  // [56:117] is the sub-list for method input_type
+	56,  // [56:56] is the sub-list for extension type_name
+	56,  // [56:56] is the sub-list for extension extendee
+	0,   // [0:56] is the sub-list for field type_name
 }
 
 func init() { file_deck_v1_deck_proto_init() }
@@ -8217,7 +8544,7 @@ func file_deck_v1_deck_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_deck_v1_deck_proto_rawDesc), len(file_deck_v1_deck_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   104,
+			NumMessages:   109,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

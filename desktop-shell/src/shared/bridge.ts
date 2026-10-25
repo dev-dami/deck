@@ -165,8 +165,13 @@ export const RPC_METHODS = [
   "RevertFiles",
   "UndoRevert",
   "ArchiveSession",
+  "UnarchiveSession",
+  "UndoApply",
   "StartRace",
   "ListFiles",
+  // Bytes arrive as a Uint8Array.
+  "ReadImage",
+  "SearchMessages",
 ] as const;
 
 export type RpcMethod = (typeof RPC_METHODS)[number];

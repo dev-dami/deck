@@ -427,6 +427,76 @@ test("branches: a thread starts on its own branch, applies it, discards it and m
   expect(await page.evaluate(() => localStorage.getItem("deck.desktop.prefs"))).toContain('"isolate":false');
 });
 
+test("branches: Undo takes an apply back, from the toast or the branch menu", async ({ page }) => {
+  await openFolder(page);
+  await composer(page).fill("$claude make the limiter per address");
+  await composer(page).press("Enter");
+  const branch = page.locator(".room-branch");
+  await expect(branch).toContainText("deck/ses_");
+  await expect(page.locator(".streaming")).toHaveCount(0);
+  const asked = () => fake.room.asked.map((a) => a.split(" ")[0]);
+
+  await branch.click();
+  await expect(page.getByRole("menuitem", { name: "Undo last apply" })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Apply to my tree" }).click();
+  const applied = page.locator(".toast").filter({ hasText: "Applied 1 file to your tree" });
+  await applied.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(asked).toEqual(["ApplyIsolated", "UndoApply"]);
+  await expect(page.locator(".toast").filter({ hasText: "Undid the apply: 1 file as before." })).toBeVisible();
+
+  // While an apply is recorded, the branch menu offers to undo it.
+  await branch.click();
+  await expect(page.getByRole("menuitem", { name: "Undo last apply" })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Apply to my tree" }).click();
+  await branch.click();
+  await page.getByRole("menuitem", { name: "Undo last apply" }).click();
+  await expect.poll(asked).toEqual(["ApplyIsolated", "UndoApply", "ApplyIsolated", "UndoApply"]);
+  await branch.click();
+  await expect(page.getByRole("menuitem", { name: "Undo last apply" })).toHaveCount(0);
+});
+
+// A 1×1 PNG.
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
+
+test("an image in a message shows as a thumbnail and opens larger", async ({ page }) => {
+  await openFolder(page);
+  fake.deck.sendImage("ses_docs", "Here is the screen.", "shot.png", "image/png", PNG);
+  await sidebar(page).getByRole("button", { name: "Docs pass", exact: true }).click();
+  const thumb = page.getByRole("button", { name: "Open shot.png" });
+  await expect(thumb.locator("img")).toHaveAttribute("src", /^blob:/);
+  await expect.poll(() => thumb.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
+  await thumb.click();
+  const lightbox = page.getByRole("dialog", { name: "shot.png" });
+  await expect(lightbox.locator("img")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(lightbox).toHaveCount(0);
+  expect(fake.calls.filter((c) => c === "ReadImage")).toHaveLength(1);
+});
+
+test("palette: finds a message in a room whose messages are not loaded and opens the room at it", async ({ page }) => {
+  // A room long enough to page and to render only the rows in view.
+  await fake.close();
+  fake = await FakeRpcDeck.start({ tickMs: 250, bigRoom: 300 });
+  process.env["DECK_FAKE_HANDSHAKE"] = fake.handshake;
+  const needle = fake.deck.allMessages().find((m) => m.session_id === "ses_big" && m.parts[0]?.text === "Big 7");
+  if (needle === undefined) throw new Error("no Big 7");
+  needle.parts = [{ type: "text", text: "Big 7 holds the needle" }];
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: "Commands" });
+  await palette.getByRole("textbox").fill("needle");
+  const hit = palette.locator('[data-kind="hit"]');
+  await expect(hit).toHaveCount(1);
+  await expect(hit).toContainText("Big room");
+  await expect(hit.locator("mark")).toHaveText("needle");
+  await hit.click();
+  await expect(page.locator(".topbar .title")).toHaveText("Big room");
+  await expect(page.locator(".user-text", { hasText: "Big 7 holds the needle" })).toBeInViewport();
+  expect(fake.calls.filter((c) => c === "SearchMessages").length).toBeGreaterThanOrEqual(1);
+});
+
 test("revert: a file or all of them, after a question, with Undo and a note in the room", async ({ page }) => {
   await openFolder(page);
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
@@ -458,7 +528,33 @@ test("revert: a file or all of them, after a question, with Undo and a note in t
   await expect(changes.locator(".file").first()).toBeVisible();
 });
 
-test("archive: the row goes, Undo brings it back, and after five seconds Deck archives it", async ({ page }) => {
+test("archive: Deck archives at once, Undo unarchives, and the fold brings a room back", async ({ page }) => {
+  await openFolder(page);
+  const row = sidebar(page).locator('[data-session="ses_long"]');
+  await row.hover();
+  await row.getByRole("button", { name: "Archive Long history" }).click();
+  await expect(row).toHaveCount(0);
+  await expect.poll(() => fake.room.asked).toEqual(["ArchiveSession ses_long"]);
+  const toast = page.locator(".toast").filter({ hasText: 'Archived "Long history".' });
+  await toast.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(() => fake.room.asked).toEqual(["ArchiveSession ses_long", "UnarchiveSession ses_long"]);
+  await expect(row).toBeVisible();
+
+  // Archived again, the room waits in the fold, and its row brings it back.
+  await row.hover();
+  await row.getByRole("button", { name: "Archive Long history" }).click();
+  const fold = sidebar(page).getByRole("button", { name: "Archived (1)" });
+  await fold.click();
+  await row.hover();
+  await expect(row.getByRole("button", { name: "Archive Long history", exact: true })).toHaveCount(0);
+  await row.getByRole("button", { name: "Unarchive Long history" }).click();
+  await expect.poll(() => fake.room.asked.at(-1)).toBe("UnarchiveSession ses_long");
+  await expect(fold).toHaveCount(0);
+  await expect(row).toBeVisible();
+});
+
+test("archive: with a Deck that cannot unarchive, the row goes, Undo brings it back, and after five seconds Deck archives it", async ({ page }) => {
+  fake.room.caps = fake.room.caps.filter((m) => m !== "UnarchiveSession");
   await openFolder(page);
   const row = sidebar(page).locator('[data-session="ses_long"]');
   await row.hover();
@@ -481,6 +577,8 @@ test("archive: the row goes, Undo brings it back, and after five seconds Deck ar
   await expect(fold).toHaveAttribute("aria-expanded", "false");
   await fold.click();
   await expect(row).toBeVisible();
+  await row.hover();
+  await expect(row.getByRole("button", { name: "Unarchive Long history" })).toHaveCount(0);
 
   // Never for a room whose agents work.
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();

@@ -31,6 +31,34 @@ describe("archive with Undo", () => {
     await vi.waitFor(() => expect(q.snapshot().size).toBe(0));
   });
 
+  test("a Deck that can unarchive archives at once, and Undo unarchives after the archive", async () => {
+    const q = new ArchiveQueue();
+    const calls: string[] = [];
+    let answer = () => {};
+    q.schedule(
+      "k",
+      () => {
+        calls.push("archive");
+        return new Promise<void>((r) => {
+          answer = r;
+        });
+      },
+      async () => {
+        calls.push("unarchive");
+      },
+    );
+    expect(calls).toEqual(["archive"]);
+    expect(q.snapshot().has("k")).toBe(true);
+    // Undo while Deck still archives: the unarchive waits for its answer.
+    expect(q.undo("k")).toBe(true);
+    await Promise.resolve();
+    expect(calls).toEqual(["archive"]);
+    answer();
+    await vi.waitFor(() => expect(calls).toEqual(["archive", "unarchive"]));
+    expect(q.snapshot().size).toBe(0);
+    expect(q.undo("k")).toBe(false);
+  });
+
   test("Undo in time cancels the call", () => {
     const q = new ArchiveQueue();
     const archive = vi.fn(async () => {});

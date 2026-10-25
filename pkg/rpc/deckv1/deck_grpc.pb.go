@@ -79,8 +79,12 @@ const (
 	Deck_RevertFiles_FullMethodName      = "/deck.v1.Deck/RevertFiles"
 	Deck_UndoRevert_FullMethodName       = "/deck.v1.Deck/UndoRevert"
 	Deck_ArchiveSession_FullMethodName   = "/deck.v1.Deck/ArchiveSession"
+	Deck_UnarchiveSession_FullMethodName = "/deck.v1.Deck/UnarchiveSession"
+	Deck_UndoApply_FullMethodName        = "/deck.v1.Deck/UndoApply"
 	Deck_StartRace_FullMethodName        = "/deck.v1.Deck/StartRace"
 	Deck_ListFiles_FullMethodName        = "/deck.v1.Deck/ListFiles"
+	Deck_ReadImage_FullMethodName        = "/deck.v1.Deck/ReadImage"
+	Deck_SearchMessages_FullMethodName   = "/deck.v1.Deck/SearchMessages"
 	Deck_Events_FullMethodName           = "/deck.v1.Deck/Events"
 )
 
@@ -183,12 +187,24 @@ type DeckClient interface {
 	// ArchiveSession stops the thread's agents and marks it archived. The
 	// next message brings it back.
 	ArchiveSession(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error)
+	// UnarchiveSession brings an archived thread back to the list.
+	UnarchiveSession(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error)
+	// UndoApply takes the shared tree back to how it was before the thread's
+	// last ApplyIsolated, if those files have not changed since. It returns
+	// the files it put back.
+	UndoApply(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*FilesResponse, error)
 	// StartRace has count agents of kind do one brief, each on a worktree of
 	// its own, as the agents' task.race does.
 	StartRace(ctx context.Context, in *StartRaceRequest, opts ...grpc.CallOption) (*StartRaceResponse, error)
 	// ListFiles lists the files of the thread's tree (its worktree when
 	// isolated) that match query, minus what the repository ignores.
 	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
+	// ReadImage returns the bytes of a message's image part: index counts
+	// the message's image parts from 0.
+	ReadImage(ctx context.Context, in *ReadImageRequest, opts ...grpc.CallOption) (*ReadImageResponse, error)
+	// SearchMessages finds text in the messages of every thread of the
+	// project that is not archived, newest first.
+	SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -752,6 +768,26 @@ func (c *deckClient) ArchiveSession(ctx context.Context, in *SessionRef, opts ..
 	return out, nil
 }
 
+func (c *deckClient) UnarchiveSession(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_UnarchiveSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) UndoApply(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*FilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FilesResponse)
+	err := c.cc.Invoke(ctx, Deck_UndoApply_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *deckClient) StartRace(ctx context.Context, in *StartRaceRequest, opts ...grpc.CallOption) (*StartRaceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StartRaceResponse)
@@ -766,6 +802,26 @@ func (c *deckClient) ListFiles(ctx context.Context, in *ListFilesRequest, opts .
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListFilesResponse)
 	err := c.cc.Invoke(ctx, Deck_ListFiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) ReadImage(ctx context.Context, in *ReadImageRequest, opts ...grpc.CallOption) (*ReadImageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadImageResponse)
+	err := c.cc.Invoke(ctx, Deck_ReadImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SearchMessagesResponse)
+	err := c.cc.Invoke(ctx, Deck_SearchMessages_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -890,12 +946,24 @@ type DeckServer interface {
 	// ArchiveSession stops the thread's agents and marks it archived. The
 	// next message brings it back.
 	ArchiveSession(context.Context, *SessionRef) (*Empty, error)
+	// UnarchiveSession brings an archived thread back to the list.
+	UnarchiveSession(context.Context, *SessionRef) (*Empty, error)
+	// UndoApply takes the shared tree back to how it was before the thread's
+	// last ApplyIsolated, if those files have not changed since. It returns
+	// the files it put back.
+	UndoApply(context.Context, *SessionRef) (*FilesResponse, error)
 	// StartRace has count agents of kind do one brief, each on a worktree of
 	// its own, as the agents' task.race does.
 	StartRace(context.Context, *StartRaceRequest) (*StartRaceResponse, error)
 	// ListFiles lists the files of the thread's tree (its worktree when
 	// isolated) that match query, minus what the repository ignores.
 	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
+	// ReadImage returns the bytes of a message's image part: index counts
+	// the message's image parts from 0.
+	ReadImage(context.Context, *ReadImageRequest) (*ReadImageResponse, error)
+	// SearchMessages finds text in the messages of every thread of the
+	// project that is not archived, newest first.
+	SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -1072,11 +1140,23 @@ func (UnimplementedDeckServer) UndoRevert(context.Context, *SessionRef) (*Empty,
 func (UnimplementedDeckServer) ArchiveSession(context.Context, *SessionRef) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method ArchiveSession not implemented")
 }
+func (UnimplementedDeckServer) UnarchiveSession(context.Context, *SessionRef) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnarchiveSession not implemented")
+}
+func (UnimplementedDeckServer) UndoApply(context.Context, *SessionRef) (*FilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UndoApply not implemented")
+}
 func (UnimplementedDeckServer) StartRace(context.Context, *StartRaceRequest) (*StartRaceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartRace not implemented")
 }
 func (UnimplementedDeckServer) ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListFiles not implemented")
+}
+func (UnimplementedDeckServer) ReadImage(context.Context, *ReadImageRequest) (*ReadImageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadImage not implemented")
+}
+func (UnimplementedDeckServer) SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SearchMessages not implemented")
 }
 func (UnimplementedDeckServer) Events(*Subscribe, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method Events not implemented")
@@ -2067,6 +2147,42 @@ func _Deck_ArchiveSession_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Deck_UnarchiveSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).UnarchiveSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_UnarchiveSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).UnarchiveSession(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_UndoApply_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).UndoApply(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_UndoApply_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).UndoApply(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Deck_StartRace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StartRaceRequest)
 	if err := dec(in); err != nil {
@@ -2099,6 +2215,42 @@ func _Deck_ListFiles_Handler(srv interface{}, ctx context.Context, dec func(inte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DeckServer).ListFiles(ctx, req.(*ListFilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_ReadImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).ReadImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_ReadImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).ReadImage(ctx, req.(*ReadImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_SearchMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).SearchMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_SearchMessages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).SearchMessages(ctx, req.(*SearchMessagesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2334,12 +2486,28 @@ var Deck_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Deck_ArchiveSession_Handler,
 		},
 		{
+			MethodName: "UnarchiveSession",
+			Handler:    _Deck_UnarchiveSession_Handler,
+		},
+		{
+			MethodName: "UndoApply",
+			Handler:    _Deck_UndoApply_Handler,
+		},
+		{
 			MethodName: "StartRace",
 			Handler:    _Deck_StartRace_Handler,
 		},
 		{
 			MethodName: "ListFiles",
 			Handler:    _Deck_ListFiles_Handler,
+		},
+		{
+			MethodName: "ReadImage",
+			Handler:    _Deck_ReadImage_Handler,
+		},
+		{
+			MethodName: "SearchMessages",
+			Handler:    _Deck_SearchMessages_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

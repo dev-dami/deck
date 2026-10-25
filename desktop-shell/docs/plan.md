@@ -383,8 +383,8 @@ Scope: `.github/workflows/ci.yml`, `desktop-shell/test/e2e/*`,
 - **WP-E2 Files.** `ListFiles {session_id, query, limit}` over the tree
   with the repo's ignore rules, for the `@` picker; `ReadImage` for
   `ImageRef` bytes.
-  Status: done for `ListFiles`, which the `@` picker uses. The engine has
-  no `ReadImage` yet.
+  Status: done. `ListFiles` feeds the `@` picker, and `ReadImage` the
+  thumbnails of image parts in the timeline, with a lightbox.
 - **WP-E3 Expose what the engine has.** `CreateSessionRequest.isolate`
   and `ApplyIsolated`/`Unisolate` (`isolate.go`), `Revert` and
   `UndoRevert` (`changes.go`), `ArchiveSession` (`lifecycle.go`) with a
@@ -393,11 +393,16 @@ Scope: `.github/workflows/ci.yml`, `desktop-shell/test/e2e/*`,
   their login state.
   Status: done. The new-thread toggle, the branch menu in the room header,
   Revert in Changes, Archive on the rows and the race form with a judge
-  use these calls.
+  use these calls. `UnarchiveSession` makes the archive Undo real (and
+  the Archived fold can bring a room back), and `UndoApply` takes an apply
+  back from its toast or the branch menu.
 - **WP-E4 Ports and search.** A terminal or agent command that opens a
   listening port is reported on the room (`port_opened`), so the shell
   shows it as a chip and opens it in the browser; `SearchMessages
   {query, limit}` across the project's threads for the palette.
+  Status: `SearchMessages` is done; the palette asks every open project
+  and opens a hit's room at its message. The shell finds the ports
+  itself.
 
 Each engine package comes with its `rpc.ts`/`rpcMap.ts` mapping and
 guards on the TypeScript side, behind a capability check so the shell

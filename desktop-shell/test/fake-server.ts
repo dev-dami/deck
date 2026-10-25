@@ -294,6 +294,24 @@ export class FakeDeck {
 
   // Every event, of every session, as the rpc transport sends them.
   readonly listeners = new Set<(e: string, p: unknown) => void>();
+  // The bytes of each message's image parts, in part order.
+  readonly images = new Map<string, { data: Buffer; mime: string }[]>();
+
+  // Every message of every thread, for the gRPC fake's search.
+  allMessages(): Message[] {
+    return [...this.threads.values()].flatMap((t) => t.messages);
+  }
+
+  // A message of the person with an image, as if they had just sent it.
+  sendImage(sessionId: string, text: string, name: string, mime: string, data: Buffer): Message {
+    const t = this.get(sessionId);
+    const m = this.message(t, "user", undefined, text, true);
+    const withImage: Message = { ...m, parts: [...m.parts, { type: "image", image: { name, mime } }] };
+    t.messages = t.messages.map((x) => (x.id === m.id ? withImage : x));
+    this.images.set(m.id, [{ data, mime }]);
+    this.emit("message.updated", withImage, t.session.id);
+    return withImage;
+  }
 
   // Runs a v2 method, for a socket's client or none; throws Fail like a
   // refused request.

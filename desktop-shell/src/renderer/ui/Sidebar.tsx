@@ -152,8 +152,14 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
   const archive = (x: SidebarItem) => {
     const c = clientOf(x);
     const key = `${x.source}/${x.s.id}`;
-    archiving.schedule(key, () => c.archiveSession?.(x.s.id) ?? Promise.resolve(false));
+    const unarchive = serves(c, "UnarchiveSession") ? () => c.unarchiveSession?.(x.s.id) ?? Promise.resolve(false) : undefined;
+    archiving.schedule(key, () => c.archiveSession?.(x.s.id) ?? Promise.resolve(false), unarchive);
     actionToast(data.c.store, `Archived "${sessionTitle(x.s)}".`, { label: "Undo", ms: ARCHIVE_UNDO_MS, run: () => archiving.undo(key) });
+  };
+  // An archived room comes back from the fold, when its Deck can do it.
+  const unarchiveOf = (x: SidebarItem) => {
+    const c = clientOf(x);
+    return metaOf(x).archived && serves(c, "UnarchiveSession") ? () => void c.unarchiveSession?.(x.s.id) : undefined;
   };
   // Every open project's threads, as T3 Code lists them: a room that needs
   // the person, finished or overlaps comes first, then the newest.
@@ -220,6 +226,7 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
         hideProject={grouped}
         branch={metaOf(x).branch}
         archive={offer}
+        onUnarchive={unarchiveOf(x)}
         onOpen={() => (f === null ? latest.current.onOpen(s.id) : latest.current.onForeign(f.source, s.id))}
         onRename={(t) => void (f === null ? latest.current.onRename(s.id, t) : f.c.renameSession(s.id, t))}
         onDelete={() => void (f === null ? latest.current.onDelete(s.id) : f.c.deleteSession(s.id))}
