@@ -161,6 +161,7 @@ export function RightPanel({
   crewAt,
   branch,
   onRefresh,
+  onEditQueued,
   onError,
   onInfo,
   onPanel,
@@ -179,6 +180,8 @@ export function RightPanel({
   crewAt: number;
   branch: string | null;
   onRefresh: () => void;
+  // Puts a queued message back in the composer (Tasks, Edit).
+  onEditQueued: (text: string) => void;
   onError: (t: string) => void;
   onInfo: (t: string) => void;
   onPanel: (p: Panel) => void;
@@ -249,6 +252,7 @@ export function RightPanel({
             theme={state.theme}
             branch={branch}
             onRace={(text) => c.send(open.id, text, [])}
+            onEditQueued={onEditQueued}
             onError={onError}
             onInfo={onInfo}
           />

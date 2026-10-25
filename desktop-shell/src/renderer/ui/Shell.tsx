@@ -1,9 +1,9 @@
 import { applyAgentChip } from "@web/composer";
-import type { ChangedFile, Image, Session } from "@web/protocol";
+import type { Store } from "@web/controller";
+import type { ChangedFile, Image, QueuedItem, Session } from "@web/protocol";
 import { needsConfirm } from "@web/modes";
 import type { Mode } from "@web/protocol";
 import { type AppState, sessionMode, sessionTitle } from "@web/state";
-import { relativeTime } from "@web/time";
 import {
   Ellipsis,
   FileDiff,
@@ -18,12 +18,17 @@ import { dispatchUi, setDraft as storeDraft, useDraft, useEngine, useProjectUi }
 import type { DeckClient } from "../client";
 import { addAgentMention } from "../completion";
 import type { TeamThread } from "../crew";
+import { crewOf } from "../crewState";
 import { buildLanes, filterLane } from "../lanes";
 import { cn } from "../lib/cn";
+import { messageText } from "../messages";
+import { MENU_PALETTE, type PaletteRoom, paletteCommands } from "../palette";
 import { isSide } from "../sideChat";
 import { setPrefs, usePrefs } from "../prefs";
+import { newQueued, sendHint } from "../queue";
 import { kindsBySession, panelSlice, sameKinds, shallowEqual, shellSlice, threadSlice, useAppSlice } from "../select";
-import { PANELS, type Panel, SETTINGS_SECTIONS, type UiAction } from "../ui";
+import type { Slash } from "../slash";
+import type { Panel, UiAction } from "../ui";
 import { AgentCards, AgentsStrip } from "./AgentsStrip";
 import { useCrew } from "./AgentsTree";
 import { ApprovalCard } from "./ApprovalCard";
@@ -34,10 +39,10 @@ import { isMac, modKey } from "./keys";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
 import { MenuItem, MenuSeparator, Popover } from "./kit/menu";
-import type { DeckBridge, MenuCommand } from "../../shared/bridge";
+import type { DeckBridge } from "../../shared/bridge";
 import { Lanes } from "./Lanes";
 import { ModePicker } from "./ModePicker";
-import { type Command, Palette } from "./Palette";
+import { Palette } from "./Palette";
 import { RightPanel } from "./RightPanel";
 import { RoomHeader } from "./RoomHeader";
 import { SettingsPage } from "./Settings";
@@ -82,27 +87,30 @@ function useForeignThreads(others: OpenProject[]): ForeignThread[] {
   return rows;
 }
 
-// The palette command each menu command runs ("palette" opens the palette).
-const MENU_COMMAND: Record<Exclude<MenuCommand, "palette">, string> = {
-  "new-thread": "new",
-  "open-folder": "add-project",
-  settings: "settings-general",
-  "toggle-sidebar": "sidebar",
-  "toggle-panel": "panel",
-  "toggle-terminal": "terminal",
-  about: "settings-connection",
-  inbox: "inbox",
-  "next-attention": "next-attention",
-  "room-1": "room-1",
-  "room-2": "room-2",
-  "room-3": "room-3",
-  "room-4": "room-4",
-  "room-5": "room-5",
-  "room-6": "room-6",
-  "room-7": "room-7",
-  "room-8": "room-8",
-  "room-9": "room-9",
-};
+// How long a steer waits for its message to show in the queue. A message
+// to an agent that is not busy is delivered at once and never queues.
+const STEER_WAIT_MS = 3000;
+
+// The items a send adds to a room's queue, once the queue shows them.
+function queuedAfter(store: Store, sid: string, before: ReadonlySet<string>): Promise<QueuedItem[]> {
+  return new Promise((resolve) => {
+    const look = () => newQueued(before, store.state.queue[sid] ?? []);
+    let off = () => {};
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = (items: QueuedItem[]) => {
+      off();
+      clearTimeout(timer);
+      resolve(items);
+    };
+    const now = look();
+    if (now.length > 0) return done(now);
+    off = store.subscribe(() => {
+      const items = look();
+      if (items.length > 0) done(items);
+    });
+    timer = setTimeout(() => done([]), STEER_WAIT_MS);
+  });
+}
 
 // What App hands each project view: the inbox across projects and how to
 // act on it.
@@ -120,9 +128,9 @@ const TOAST_MS = 6000;
 const NEW = "";
 
 // A title for a thread started from its first message: the first line,
-// without the agent mentions.
+// without the agent mentions (a race's "$codex×3" too).
 function titleFrom(text: string): string {
-  const line = text.replace(/(^|\s)\$[\w-]+[+*]?/g, " ").trim().split("\n")[0] ?? "";
+  const line = text.replace(/(^|\s)\$[\w-]+(?:[+*]|×\d+)?/g, " ").trim().split("\n")[0] ?? "";
   const t = line.replace(/\s+/g, " ").trim();
   return t.length > 60 ? `${t.slice(0, 57).trimEnd()}…` : t;
 }
@@ -362,6 +370,8 @@ export function Shell({
     };
   }, [c, sid, busy, tick]);
   const files = changes !== null && changes.id === sid ? changes.files : null;
+  // The composer's "@" lists these.
+  const paths = useMemo(() => files?.map((f) => f.path) ?? [], [files]);
   // The agents' edits change the work tree: look again when they stop.
   const refreshGit = git.refresh;
   useEffect(() => {
@@ -514,56 +524,28 @@ export function Shell({
     if (e !== null) c.store.dispatch({ type: "toast.add", kind: "error", text: e });
   }, [c, onAddProject]);
 
-  const commands = useMemo((): Command[] => {
-    const list: Command[] = [
-      { id: "new", label: "New thread", hint: `${modKey(mac)}N`, run: newSession },
-      ...PANELS.map((p) => ({
-        id: `panel-${p.panel}`,
-        label: `Toggle ${p.panel === "changes" ? "diff" : p.label.toLowerCase()}`,
-        run: () => dispatch({ type: "panel", panel: p.panel }),
-      })),
-      { id: "sidebar", label: "Toggle sidebar", hint: `${modKey(mac)}B`, run: () => setSidebar((v) => !v) },
-      { id: "panel", label: "Toggle side panel", run: () => dispatch({ type: "panel", panel: ui.panel ?? "changes" }) },
-      ...SETTINGS_SECTIONS.map((x) => ({
-        id: `settings-${x.section}`,
-        label: `Settings: ${x.label}`,
-        run: () => dispatch({ type: "settings", section: x.section }),
-      })),
-      { id: "usage", label: "Open usage", run: () => dispatch({ type: "usage", open: true }) },
-      { id: "team", label: "Open team", run: () => dispatch({ type: "team", open: true }) },
-      { id: "inbox", label: "Open inbox", run: () => dispatch({ type: "inbox", open: true }) },
-      {
-        id: "next-attention",
-        label: "Next room that needs you",
-        hint: `${modKey(mac)}${mac ? "⌥" : "Alt "}L`,
-        run: () => jump.current.next(),
-      },
-      ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({
-        id: `room-${n}`,
-        label: `Open room ${n} of the sidebar`,
-        hint: `${modKey(mac)}${n}`,
-        run: () => jump.current.row(n),
-      })),
-      ...(api === undefined
-        ? []
-        : [{ id: "terminal", label: "Toggle terminal", hint: `${modKey(mac)}J`, run: () => setTerminal((v) => !v) }]),
-      { id: "theme-light", label: "Theme: light", run: () => setPrefs({ theme: "light" }) },
-      { id: "theme-dark", label: "Theme: dark", run: () => setPrefs({ theme: "dark" }) },
-      { id: "theme-deck", label: "Theme: follow Deck", run: () => setPrefs({ theme: "deck" }) },
-      { id: "add-project", label: "Add project…", run: () => void addProject() },
-      { id: "switch", label: "Switch Deck", run: onDisconnect },
-    ];
-    for (const s of state.sessions) {
-      if (isSide(s)) continue;
-      list.push({
-        id: `open-${s.id}`,
-        label: `Open ${sessionTitle(s)}`,
-        hint: relativeTime(s.updated_at, now),
-        run: () => openSession(s.id),
-      });
-    }
-    return list;
-  }, [state.sessions, now, mac, newSession, onDisconnect, addProject, openSession, api, ui.panel]);
+  const commands = useMemo(
+    () =>
+      paletteCommands({
+        mac,
+        terminal: api !== undefined,
+        newThread: newSession,
+        togglePanel: (p) => dispatch({ type: "panel", panel: p }),
+        toggleSidePanel: () => dispatch({ type: "panel", panel: ui.panel ?? "changes" }),
+        toggleSidebar: () => setSidebar((v) => !v),
+        settings: (section) => dispatch({ type: "settings", section }),
+        usage: () => dispatch({ type: "usage", open: true }),
+        team: () => dispatch({ type: "team", open: true }),
+        inbox: () => dispatch({ type: "inbox", open: true }),
+        nextAttention: () => jump.current.next(),
+        room: (n) => jump.current.row(n),
+        toggleTerminal: () => setTerminal((v) => !v),
+        theme: (theme) => setPrefs({ theme }),
+        addProject: () => void addProject(),
+        switchDeck: onDisconnect,
+      }),
+    [mac, newSession, onDisconnect, addProject, api, ui.panel],
+  );
 
   // The application menu runs the palette's commands.
   const commandsRef = useRef(commands);
@@ -572,7 +554,7 @@ export function Shell({
     () =>
       bridge.onMenu((m) => {
         if (m === "palette") dispatch({ type: "palette", open: true });
-        else commandsRef.current.find((x) => x.id === MENU_COMMAND[m])?.run();
+        else commandsRef.current.find((x) => x.id === MENU_PALETTE[m])?.run();
       }),
     [bridge],
   );
@@ -634,6 +616,94 @@ export function Shell({
 
   const room = useRoomVerbs({ c, projectKey, open, roster, draft, asking: pending.length > 0, inputRef });
 
+  // A steer sends the message, which queues for the busy agent, then takes
+  // its queue items into the running turn.
+  const roomSend = room.send;
+  const steer = useCallback(
+    async (text: string, images: Image[]): Promise<boolean> => {
+      if (sid === null) return false;
+      const before = new Set((c.store.state.queue[sid] ?? []).map((q) => q.id));
+      if (!(await roomSend(text, images))) return false;
+      void queuedAfter(c.store, sid, before).then((items) => {
+        for (const q of items) void c.steer(sid, q.id);
+      });
+      return true;
+    },
+    [c, sid, roomSend],
+  );
+
+  // /share opens the room header's share popover.
+  const [shareAsk, setShareAsk] = useState(0);
+  const canShare = api !== undefined && teamOn !== null && teamOn.teammates.length > 0;
+
+  const roomStop = room.stop;
+  const runSlash = useCallback(
+    async (s: Slash): Promise<boolean> => {
+      if (s.cmd === "clear") return true;
+      if (s.cmd === "new") {
+        if (s.title === "") {
+          newSession();
+          return true;
+        }
+        const made = await c.createSession(s.title);
+        if (made !== null) openSession(made.id);
+        return made !== null;
+      }
+      if (s.cmd === "race") return open === undefined ? start(s.text, []) : roomSend(s.text, []);
+      if (open === undefined) {
+        info("Open a thread first.");
+        return false;
+      }
+      if (s.cmd === "stop") {
+        if (open.busy) roomStop();
+        else info("No agent is working.");
+        return true;
+      }
+      if (s.cmd === "share") {
+        if (!canShare) {
+          info("Sharing needs a team link with teammates.");
+          return false;
+        }
+        setShareAsk((n) => n + 1);
+        return true;
+      }
+      const current = sessionMode(open);
+      if (current === s.mode) return true;
+      if (s.mode === "yolo") {
+        const move = yoloMove(current, null, state.server?.allow_yolo ?? false);
+        if ("refused" in move) {
+          toast(move.refused);
+          return false;
+        }
+        if (prefs.confirmYolo && needsConfirm("yolo") && !window.confirm("Agents run everything without asking. Switch to Yolo?")) return false;
+        if (current !== null) beforeYolo.current[open.id] = current;
+      }
+      return c.setMode(open.id, s.mode);
+    },
+    [c, open, start, roomSend, roomStop, newSession, openSession, canShare, info, toast, state.server?.allow_yolo, prefs.confirmYolo],
+  );
+
+  // Every open project's rooms for the palette, read as it opens.
+  const paletteRooms = useCallback((): PaletteRoom[] => {
+    const of = (key: string, name: string, client: DeckClient): PaletteRoom[] =>
+      client.store.state.sessions
+        .filter((s) => !isSide(s))
+        .map((s) => {
+          const crewNow = crewOf(client.project, s.id);
+          const msgs = client.store.state.messages[s.id];
+          return {
+            project: key,
+            name,
+            id: s.id,
+            title: sessionTitle(s),
+            updated: s.updated_at,
+            branches: [...(crewNow?.crew?.agents ?? []), ...(crewNow?.board?.tasks ?? [])].map((x) => x.branch).filter((b) => b !== ""),
+            texts: msgs === undefined ? null : msgs.map(messageText).filter((t) => t !== "").reverse(),
+          };
+        });
+    return [...of(projectKey, project, c), ...others.flatMap((o) => of(o.key, o.name, o.c))];
+  }, [c, projectKey, project, others]);
+
   const cards = (
     <AgentCards
       draft={draft}
@@ -667,6 +737,7 @@ export function Shell({
         team={team}
         shares={shares}
         onShare={setShare}
+        shareAsk={shareAsk}
         files={files}
         terminal={terminal}
         terminalKey={`${modKey(mac)}J`}
@@ -711,6 +782,9 @@ export function Shell({
           roster={roster}
           approvals={state.approvals}
           theme={state.theme}
+          api={api}
+          agents={crew?.agents ?? null}
+          hint={open.busy ? sendHint(prefs.sendKey, mac) : null}
           onInterrupt={room.interrupt}
           onMention={(agent) => {
             setDraft(applyAgentChip(draft, agent));
@@ -856,6 +930,7 @@ export function Shell({
                   images={imagesOn}
                   online={online && state.sessionsLoaded}
                   onSend={start}
+                  onSlash={runSlash}
                   onError={toast}
                   inputRef={inputRef}
                   sendKey={prefs.sendKey}
@@ -885,9 +960,13 @@ export function Shell({
                     images={imagesOn}
                     online={online}
                     onSend={room.send}
+                    onSteer={steer}
+                    onSlash={runSlash}
                     onError={toast}
                     inputRef={inputRef}
                     sendKey={prefs.sendKey}
+                    paths={paths}
+                    history={{ project: source, room: open.id }}
                     busy={open.busy}
                     onStop={room.stop}
                     notice={room.notice}
@@ -943,6 +1022,10 @@ export function Shell({
             crewAt={crewAt}
             branch={git.status?.repo === true && !git.status.detached ? git.status.branch : null}
             onRefresh={refreshChanges}
+            onEditQueued={(text) => {
+              setDraft(text);
+              focusInput();
+            }}
             onError={toast}
             onInfo={info}
             onPanel={(p) => openPanel(p)}
@@ -951,7 +1034,9 @@ export function Shell({
           />
         </LineComments.Provider>
       )}
-      {ui.palette && <Palette commands={commands} onClose={() => dispatch({ type: "palette", open: false })} />}
+      {ui.palette && (
+        <Palette commands={commands} rooms={paletteRooms} onOpenRoom={openRoom} onClose={() => dispatch({ type: "palette", open: false })} />
+      )}
       <div className="toasts pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2" aria-live="polite">
         {state.toasts.map((t) => (
           <div

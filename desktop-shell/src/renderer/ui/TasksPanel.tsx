@@ -1,6 +1,8 @@
 import type { ChangedFile, QueuedItem, Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
 import {
+  ArrowDown,
+  ArrowUp,
   Check,
   ChevronDown,
   ChevronRight,
@@ -11,6 +13,7 @@ import {
   GitBranch,
   Loader2,
   Minus,
+  Pencil,
   Plus,
   RotateCcw,
   Trash2,
@@ -35,6 +38,7 @@ import {
 import { refreshCrew, useRoomCrew } from "../crewState";
 import { cn } from "../lib/cn";
 import type { ProjectApi } from "../project";
+import { moveQueued, queuedText } from "../queue";
 import { DiffView } from "./DiffView";
 import { Button } from "./kit/button";
 import { Dialog, fieldClass } from "./kit/dialog";
@@ -72,17 +76,65 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
   );
 }
 
-function Queue({ c, sessionId, items }: { c: DeckClient; sessionId: string; items: QueuedItem[] }) {
+function Queue({
+  c,
+  sessionId,
+  items,
+  onEdit,
+}: {
+  c: DeckClient;
+  sessionId: string;
+  items: QueuedItem[];
+  // Puts an item's text in the composer.
+  onEdit?: (text: string) => void;
+}) {
+  const [moving, setMoving] = useState(false);
   if (items.length === 0) return <p className="px-1 text-muted-foreground text-xs">Nothing waits for a busy agent.</p>;
+  const move = async (i: number, dir: -1 | 1) => {
+    const plan = moveQueued(items, i, dir);
+    if (plan === null) return;
+    setMoving(true);
+    for (const q of plan.cancel) await c.cancelQueued(sessionId, q.id);
+    for (const q of plan.resend) await c.send(sessionId, queuedText(q), []);
+    setMoving(false);
+  };
   return (
     <ul aria-label="Queue" className="flex flex-col gap-2">
-      {items.map((q) => (
+      {items.map((q, i) => (
         <li key={q.id} className="queued flex flex-col gap-2 rounded-xl border bg-card p-3">
-          <div className="text-muted-foreground text-xs">
-            Waiting for <span className="approval-agent font-medium text-foreground">{q.agent}</span>
+          <div className="flex items-center gap-1 text-muted-foreground text-xs">
+            <span className="flex-1">
+              Waiting for <span className="approval-agent font-medium text-foreground">{q.agent}</span>
+            </span>
+            <Button size="icon-xs" variant="ghost-muted" aria-label="Move up" title="Move up" disabled={moving || i === 0} onClick={() => void move(i, -1)}>
+              <ArrowUp />
+            </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost-muted"
+              aria-label="Move down"
+              title="Move down"
+              disabled={moving || i === items.length - 1}
+              onClick={() => void move(i, 1)}
+            >
+              <ArrowDown />
+            </Button>
           </div>
           <p className="whitespace-pre-wrap text-sm">{q.text}</p>
           <div className="approval-actions flex justify-end gap-1.5">
+            {onEdit !== undefined && (
+              <Button
+                size="xs"
+                variant="ghost-muted"
+                onClick={() => {
+                  onEdit(queuedText(q));
+                  void c.cancelQueued(sessionId, q.id);
+                }}
+              >
+                <Pencil />
+                Edit
+              </Button>
+            )}
             <Button size="xs" variant="ghost-muted" onClick={() => void c.cancelQueued(sessionId, q.id)}>
               Cancel
             </Button>
@@ -360,6 +412,7 @@ export function TasksPanel({
   theme,
   branch,
   onRace,
+  onEditQueued,
   onError,
   onInfo,
 }: {
@@ -374,6 +427,8 @@ export function TasksPanel({
   // The work tree's branch, to tell whether Changes holds a task's diff.
   branch: string | null;
   onRace: (text: string) => Promise<boolean>;
+  // Puts a queued message back in the composer.
+  onEditQueued?: (text: string) => void;
   onError: (t: string) => void;
   onInfo: (t: string) => void;
 }) {
@@ -415,7 +470,7 @@ export function TasksPanel({
     <section aria-label="Tasks" className="flex flex-col gap-6 overflow-y-auto p-3">
       {(queue.length > 0 || api === undefined) && (
         <Section title="Queue">
-          <Queue c={c} sessionId={sessionId} items={queue} />
+          <Queue c={c} sessionId={sessionId} items={queue} {...(onEditQueued === undefined ? {} : { onEdit: onEditQueued })} />
         </Section>
       )}
       {api === undefined ? (

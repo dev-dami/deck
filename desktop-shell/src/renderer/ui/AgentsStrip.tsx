@@ -5,8 +5,12 @@ import { AtSign, Check, Loader2, Plus, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { agentColour } from "../agents";
 import { agentStatus } from "../approvals";
+import type { AgentNode } from "../crew";
+import { contextPct, nodeOf } from "../lanes";
 import { cn } from "../lib/cn";
+import type { ProjectApi, UsageLimit } from "../project";
 import { MenuItem, MenuLabel, MenuSeparator, Popover } from "./kit/menu";
+import { Ring } from "./kit/ring";
 
 export function Models({
   line,
@@ -73,10 +77,60 @@ function Mark({ kind, theme, className }: { kind: string; theme: Theme | null; c
 
 const statusRail = { busy: "", waiting: "", idle: "opacity-50" } as const;
 
+// A plan window past this share shows on the chip, before it stops a turn.
+const LIMIT_PCT = 80;
+const LIMITS_MS = 60_000;
+
+// The fullest plan window of a kind past LIMIT_PCT, or null.
+export function planLimit(kind: string, limits: readonly UsageLimit[]): UsageLimit | null {
+  let worst: UsageLimit | null = null;
+  for (const l of limits) {
+    if (l.agentKind === kind && l.usedPct > LIMIT_PCT && (worst === null || l.usedPct > worst.usedPct)) worst = l;
+  }
+  return worst;
+}
+
+// The plan limits from Usage, fetched at most once a minute per project,
+// and only while a strip shows.
+const limitsCache = new WeakMap<ProjectApi, { at: number; limits: UsageLimit[] }>();
+
+function useLimits(api: ProjectApi | undefined): UsageLimit[] {
+  const [limits, setLimits] = useState<UsageLimit[]>(() => (api === undefined ? [] : (limitsCache.get(api)?.limits ?? [])));
+  useEffect(() => {
+    if (api === undefined) return;
+    let live = true;
+    const look = () => {
+      const cached = limitsCache.get(api);
+      if (cached !== undefined && Date.now() - cached.at < LIMITS_MS) {
+        setLimits(cached.limits);
+        return;
+      }
+      // Marked before the answer, so two strips do not both ask.
+      limitsCache.set(api, { at: Date.now(), limits: cached?.limits ?? [] });
+      void api.usage(1).then((u) => {
+        if (typeof u === "string") return;
+        limitsCache.set(api, { at: Date.now(), limits: u.limits });
+        if (live) setLimits(u.limits);
+      });
+    };
+    look();
+    const t = setInterval(look, LIMITS_MS);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [api]);
+  return limits;
+}
+
+const resetTime = (ms: number) => new Date(ms).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
+
 function Chip({
   line,
   status,
   theme,
+  context,
+  limit,
   onInterrupt,
   onMention,
   listModels,
@@ -85,6 +139,8 @@ function Chip({
   line: AgentLine;
   status: "busy" | "waiting" | "idle";
   theme: Theme | null;
+  context: number | null;
+  limit: UsageLimit | null;
   onInterrupt: () => void;
   onMention: () => void;
   listModels: () => Promise<ModelChoice[] | null>;
@@ -105,7 +161,7 @@ function Chip({
           <button
             type="button"
             className={cn(
-              "agent-model relative flex h-6 max-w-48 cursor-pointer items-center gap-1.5 rounded-md pr-1.5 pl-2.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+              "agent-model relative flex h-6 max-w-64 cursor-pointer items-center gap-1.5 rounded-md pr-1.5 pl-2.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
               load !== null && "bg-selected text-foreground",
             )}
             title={`${line.id}: ${line.model ?? "default model"} (${status})`}
@@ -132,6 +188,19 @@ function Chip({
             >
               {status}
             </span>
+            {context !== null && (
+              <span className="agent-context flex items-center" title={`${context}% of its context`}>
+                <Ring pct={context} />
+              </span>
+            )}
+            {limit !== null && (
+              <span
+                className="agent-limit shrink-0 rounded bg-warning/14 px-1 font-mono text-3xs text-warning-foreground tabular-nums"
+                title={`${line.kind} ${limit.label || limit.kind} window: ${Math.round(limit.usedPct)}% used${limit.resetsAt > 0 ? `. Resets ${resetTime(limit.resetsAt)}` : ""}`}
+              >
+                limit {Math.round(limit.usedPct)}%
+              </span>
+            )}
           </button>
         }
       >
@@ -173,12 +242,17 @@ function Chip({
 }
 
 // Every agent in the thread, in the composer's context strip: its state
-// (busy, waiting for an approval, idle) and a menu for its model.
+// (busy, waiting for an approval, idle), its context use, a plan window
+// close to its limit, and a menu for its model. hint says what Enter does
+// while an agent works.
 export function AgentsStrip({
   sessionId,
   roster,
   approvals,
   theme,
+  api,
+  agents,
+  hint,
   onInterrupt,
   onMention,
   listModels,
@@ -188,11 +262,17 @@ export function AgentsStrip({
   roster: AgentLine[];
   approvals: Approval[];
   theme: Theme | null;
+  // Usage (plan limits): a local Deck only.
+  api: ProjectApi | undefined;
+  // The agents tree, for each agent's context; null before it loads.
+  agents: AgentNode[] | null;
+  hint: string | null;
   onInterrupt: (agent: string) => void;
   onMention: (agent: string) => void;
   listModels: (kind: string) => Promise<ModelChoice[] | null>;
   setModel: (kind: string, model: string, effort?: string) => void;
 }) {
+  const limits = useLimits(api);
   return (
     <div className="agents flex min-w-0 flex-wrap items-center gap-0.5" aria-label="Agents in this thread">
       {roster.map((l) => (
@@ -201,6 +281,8 @@ export function AgentsStrip({
           line={l}
           status={agentStatus(l, sessionId, approvals)}
           theme={theme}
+          context={contextPct(nodeOf(l, agents))}
+          limit={planLimit(l.kind, limits)}
           onInterrupt={() => onInterrupt(l.id)}
           onMention={() => onMention(l.id)}
           listModels={() => listModels(l.kind)}
@@ -208,6 +290,7 @@ export function AgentsStrip({
         />
       ))}
       {roster.length === 0 && <span className="px-1.5 text-muted-foreground/60 text-xs">No agents yet</span>}
+      {hint !== null && <span className="send-hint shrink-0 px-1.5 text-[11px] text-faint">{hint}</span>}
     </div>
   );
 }

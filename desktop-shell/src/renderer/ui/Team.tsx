@@ -371,13 +371,19 @@ export function ShareStack({
   shares,
   onSet,
   onError,
+  ask = 0,
 }: {
   team: Team | string | null;
   shares: Record<string, string>;
   onSet: (peer: string, role: string) => Promise<string | null>;
   onError: (t: string) => void;
+  // Opens the popover each time it changes (the composer's /share).
+  ask?: number;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (ask > 0) setOpen(true);
+  }, [ask]);
   if (typeof team !== "object" || team === null || !team.available || team.teammates.length === 0) return null;
   const followers = Object.keys(shares)
     .filter((p) => shares[p] !== "")

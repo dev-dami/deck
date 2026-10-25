@@ -1,4 +1,5 @@
 import type { AgentLine } from "@web/protocol";
+import { SLASH_COMMANDS } from "./slash";
 
 // The `$` popup of the composer, after Deck's own addressing rules
 // (internal/deck/session/address.go): "$codex" reaches a free codex or
@@ -13,7 +14,7 @@ export interface Suggestion {
 }
 
 export interface Mention {
-  // Index of the "$".
+  // Index of the trigger: "$", "@" or "/".
   start: number;
   query: string;
 }
@@ -79,4 +80,61 @@ export function applySuggestion(
 // of that kind. A mention right after another one still counts.
 export function addAgentMention(draft: string, kind: string): string {
   return `$${kind}+ ${draft.replace(/^\s+/, "")}`;
+}
+
+// The "/command" being typed at the start of the message: the slash
+// commands run only as a whole message (slash.ts).
+export function slashAt(text: string, caret: number): Mention | null {
+  const m = /^\/([\w-]*)$/.exec(text.slice(0, caret));
+  return m === null ? null : { start: 0, query: m[1] ?? "" };
+}
+
+export function slashSuggestions(query: string): Suggestion[] {
+  const q = query.toLowerCase();
+  return SLASH_COMMANDS.filter((c) => c.name.startsWith(q)).map((c) => ({
+    insert: `/${c.name}`,
+    label: c.args === "" ? `/${c.name}` : `/${c.name} ${c.args}`,
+    detail: c.detail,
+    kind: null,
+  }));
+}
+
+// The "@path" that ends at the caret, when it starts the text or follows
+// whitespace.
+export function fileAt(text: string, caret: number): Mention | null {
+  const m = /(^|\s)@([^\s@`]*)$/.exec(text.slice(0, caret));
+  if (m === null) return null;
+  const query = m[2] ?? "";
+  return { start: caret - query.length - 1, query };
+}
+
+// How well a path matches: its file name starts with the query, then holds
+// it, then the path holds it, then the path holds its letters in order.
+function pathScore(q: string, path: string): number | null {
+  if (q === "") return 0;
+  const p = path.toLowerCase();
+  const base = p.slice(p.lastIndexOf("/") + 1);
+  if (base.startsWith(q)) return 0;
+  if (base.includes(q)) return 1;
+  if (p.includes(q)) return 2;
+  let i = 0;
+  for (const ch of p) if (ch === q[i]) i++;
+  return i === q.length ? 3 : null;
+}
+
+// The paths that match query, best first; ties keep the shorter path, then
+// the given order.
+export function matchPaths(query: string, paths: readonly string[], limit = 8): string[] {
+  const q = query.toLowerCase();
+  if (q === "") return paths.slice(0, limit);
+  return paths
+    .map((path, i) => ({ path, i, score: pathScore(q, path) }))
+    .filter((x): x is { path: string; i: number; score: number } => x.score !== null)
+    .sort((a, b) => a.score - b.score || a.path.length - b.path.length || a.i - b.i)
+    .slice(0, limit)
+    .map((x) => x.path);
+}
+
+export function fileSuggestions(query: string, paths: readonly string[]): Suggestion[] {
+  return matchPaths(query, paths).map((p) => ({ insert: `\`${p}\``, label: p, detail: "changed", kind: null }));
 }
