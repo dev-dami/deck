@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { type ThemePref, usePrefs } from "./prefs";
+import { type MotionPref, type ThemePref, usePrefs } from "./prefs";
 import { themeInfo } from "./themes";
 
 // Picks light or dark for the window and writes it to <html data-mode>.
@@ -40,4 +40,21 @@ export function useAppearance(pref: ThemePref, palette = "tabletop", accent = "t
       media.removeEventListener("change", apply);
     };
   }, [pref, palette, accent]);
+}
+
+// Writes <html data-motion="reduced"> when the window should hold still: the
+// person chose Reduced, or left it to the system and the system asks for less
+// motion. styles.css and the Yolo effect read it.
+export function useMotion(pref: MotionPref): void {
+  useEffect(() => {
+    const root = document.documentElement;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => {
+      if (pref === "reduced" || (pref === "system" && media.matches)) root.setAttribute("data-motion", "reduced");
+      else root.removeAttribute("data-motion");
+    };
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [pref]);
 }

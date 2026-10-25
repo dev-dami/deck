@@ -233,7 +233,36 @@ function Appearance({ p }: { p: Prefs }) {
           }
         />
       </Section>
+      <MotionSettings p={p} />
     </>
+  );
+}
+
+function MotionSettings({ p }: { p: Prefs }) {
+  return (
+    <Section title="Motion">
+      <Row
+        title="Motion"
+        description="Reduced holds the window still: no shockwave, no slide-ins, no pulses. System follows the operating system."
+        control={
+          <Segmented
+            label="Motion"
+            value={p.motion}
+            onChange={set("motion")}
+            options={[
+              { value: "system", label: "System" },
+              { value: "full", label: "Full" },
+              { value: "reduced", label: "Reduced" },
+            ]}
+          />
+        }
+      />
+      <Row
+        title="Play the Yolo effect"
+        description="A shockwave crosses the window when the open thread switches to Yolo. Off, the mode chip flashes instead."
+        control={<Switch label="Play the Yolo effect" checked={p.yoloEffect} onChange={set("yoloEffect")} />}
+      />
+    </Section>
   );
 }
 

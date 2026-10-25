@@ -247,7 +247,7 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
     if (settings === null) order.current = shownRows;
   });
   return (
-    <nav className="sidebar flex w-64 shrink-0 flex-col bg-sidebar" aria-label="Threads">
+    <nav className="sidebar flex w-64 shrink-0 flex-col bg-sidebar" aria-label="Threads" data-yolo-region="">
       <header className={cn("brand-glow drag flex h-12 shrink-0 items-center gap-2 px-3", data.mac && "pl-20")}>
         <Button variant="ghost-muted" size="icon-sm" aria-label="Hide the sidebar" title="Hide the sidebar" onClick={actions.onCollapse}>
           <PanelLeft />

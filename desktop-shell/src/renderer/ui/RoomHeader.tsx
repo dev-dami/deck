@@ -12,7 +12,9 @@ import { type Git, GitActions } from "./Git";
 import { Button } from "./kit/button";
 import { Confirm } from "./kit/dialog";
 import { MenuItem, Popover } from "./kit/menu";
+import { PortChip } from "./PreviewPanel";
 import { ShareStack } from "./Team";
+import { useOpenPorts } from "./usePorts";
 
 const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 
@@ -148,6 +150,7 @@ export function RoomHeader({
   onPanel,
   onError,
   onInfo,
+  onPreview,
 }: {
   c: DeckClient;
   // The room's own branch when it is isolated, else "".
@@ -181,14 +184,17 @@ export function RoomHeader({
   onPanel: () => void;
   onError: (t: string) => void;
   onInfo: (t: string) => void;
+  // Opens a dev server's URL in the Preview tab.
+  onPreview: (url: string) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const ports = useOpenPorts(api);
   const first = roster[0];
   const added = files?.reduce((n, f) => n + f.added, 0) ?? 0;
   const removed = files?.reduce((n, f) => n + f.removed, 0) ?? 0;
   const title = open === undefined ? (loaded ? "New thread" : "Connecting…") : sessionTitle(open);
   return (
-    <header className="topbar drag @container/top flex h-12 shrink-0 items-center gap-2 px-4">
+    <header className="topbar drag @container/top flex h-12 shrink-0 items-center gap-2 px-4" data-yolo-region="">
       {!sidebar && (
         <Button variant="ghost-muted" size="icon-sm" aria-label="Show the sidebar" title="Show the sidebar" onClick={onShowSidebar}>
           <PanelLeft />
@@ -237,6 +243,13 @@ export function RoomHeader({
         )}
         {open !== undefined && (
           <BranchMenu c={c} open={open} branch={branch} files={files} onChanged={onChanged} onInfo={onInfo} />
+        )}
+        {ports.length > 0 && (
+          <span className="room-ports flex shrink-0 items-center gap-1" role="group" aria-label="Dev servers">
+            {ports.map((p) => (
+              <PortChip key={p.port} p={p} onPreview={onPreview} />
+            ))}
+          </span>
         )}
       </div>
       {api !== undefined && <GitActions git={git} project={api} threadTitle={open === undefined ? "" : sessionTitle(open)} onError={onError} onInfo={onInfo} />}

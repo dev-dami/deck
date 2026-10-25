@@ -10,6 +10,8 @@ export type RowStyle = "cards" | "compact";
 export type Grouping = "projects" | "recent";
 export type ClockPref = "12h" | "24h";
 export type SendKey = "enter" | "mod-enter";
+// "system" follows the operating system's reduced-motion setting.
+export type MotionPref = "system" | "full" | "reduced";
 export type DiffLayout = "unified" | "split";
 
 export interface Prefs {
@@ -32,6 +34,9 @@ export interface Prefs {
   sound: boolean;
   // A new thread starts on a branch of its own (a Deck that can isolate).
   isolate: boolean;
+  motion: MotionPref;
+  // The shockwave when the open room switches to Yolo.
+  yoloEffect: boolean;
   // Diffs: the theme from themes.ts, unified or split, and whether long
   // lines wrap or scroll.
   diffTheme: string;
@@ -54,6 +59,8 @@ export const defaultPrefs: Prefs = {
   notifications: "all",
   sound: true,
   isolate: true,
+  motion: "system",
+  yoloEffect: true,
   diffTheme: "match",
   diffView: "unified",
   diffWrap: false,
@@ -96,6 +103,8 @@ function merge(v: Record<string, unknown>): Prefs {
     notifications: pick("notifications", ["all", "needs-you", "none"] as const, defaultPrefs.notifications),
     sound: bool("sound", defaultPrefs.sound),
     isolate: bool("isolate", defaultPrefs.isolate),
+    motion: pick("motion", ["system", "full", "reduced"] as const, defaultPrefs.motion),
+    yoloEffect: bool("yoloEffect", defaultPrefs.yoloEffect),
     diffTheme: pick("diffTheme", DIFF_THEMES.map((t) => t.id), defaultPrefs.diffTheme),
     diffView: pick("diffView", ["unified", "split"] as const, defaultPrefs.diffView),
     diffWrap: bool("diffWrap", defaultPrefs.diffWrap),

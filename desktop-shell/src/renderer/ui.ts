@@ -5,13 +5,15 @@ import type { Session } from "@web/protocol";
 
 // The room's tabs. The queue is the first section of Tasks; approvals sit
 // over the composer and in the inbox.
-export type Panel = "changes" | "tasks" | "agents" | "side";
+export type Panel = "changes" | "tasks" | "agents" | "side" | "preview";
 
 export const PANELS: ReadonlyArray<{ panel: Panel; label: string }> = [
   { panel: "changes", label: "Changes" },
   { panel: "tasks", label: "Tasks" },
   { panel: "agents", label: "Agents" },
   { panel: "side", label: "Side chat" },
+  // Shown while a dev server of the project answers.
+  { panel: "preview", label: "Preview" },
 ];
 
 export type SettingsSection = "general" | "appearance" | "agents" | "connection" | "phone" | "keybindings";

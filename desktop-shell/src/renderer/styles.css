@@ -335,20 +335,84 @@
   animation: deck-shimmer 2.2s linear infinite;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .animate-deck-pulse,
-  .animate-spin,
-  .animate-pulse,
-  .animate-enter,
-  .shimmer {
-    animation: none;
+/* Reduced motion: the person's choice in Settings, or the system's when
+   they leave it to the system (appearance.ts writes data-motion). */
+[data-motion="reduced"] .animate-deck-pulse,
+[data-motion="reduced"] .animate-spin,
+[data-motion="reduced"] .animate-pulse,
+[data-motion="reduced"] .animate-enter,
+[data-motion="reduced"] .shimmer {
+  animation: none;
+}
+[data-motion="reduced"],
+[data-motion="reduced"] *,
+[data-motion="reduced"] ::before,
+[data-motion="reduced"] ::after {
+  transition-duration: 0s !important;
+  scroll-behavior: auto !important;
+}
+
+/* Yolo. The shockwave is a canvas over the window (ui/YoloFx.tsx). */
+.yolo-fx {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 2147483000;
+}
+
+/* While a room is in yolo its mode chip keeps a rainbow border. It turns
+   in 24 steps over 6s, so it costs four frames a second. */
+@property --yolo-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes yolo-turn {
+  to {
+    --yolo-angle: 360deg;
   }
-  *,
-  ::before,
-  ::after {
-    transition-duration: 0s !important;
-    scroll-behavior: auto !important;
+}
+.mode-picker[data-mode="yolo"] {
+  position: relative;
+}
+.mode-picker[data-mode="yolo"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--yolo-angle),
+    hsl(0 90% 62%),
+    hsl(60 90% 58%),
+    hsl(120 75% 52%),
+    hsl(180 80% 55%),
+    hsl(240 85% 66%),
+    hsl(300 85% 64%),
+    hsl(360 90% 62%)
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  animation: yolo-turn 6s steps(24) infinite;
+  pointer-events: none;
+}
+[data-motion="reduced"] .mode-picker[data-mode="yolo"]::before {
+  animation: none;
+}
+
+/* In place of the shockwave (reduced motion, or the effect off), the mode
+   chip flashes amber once. */
+@keyframes yolo-flash {
+  from {
+    background-color: color-mix(in oklab, var(--signal) 55%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--signal) 60%, transparent);
   }
+}
+.mode-picker[data-yolo-flash] {
+  animation: yolo-flash 700ms var(--ease) 1;
 }
 
 /* Agent prose: the shared markdown parser's node tree. */

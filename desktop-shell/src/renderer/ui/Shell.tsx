@@ -1,4 +1,5 @@
 import type { Decision, Session } from "@web/protocol";
+import { sessionMode } from "@web/state";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DeckBridge } from "../../shared/bridge";
 import { dispatchUi, useEngine, useProjectUi } from "../appState";
@@ -24,8 +25,10 @@ import { TeamPage, useTeam } from "./Team";
 import { TerminalDrawer, useTerminalShown } from "./Terminal";
 import { Toasts } from "./Toasts";
 import { UsagePage } from "./Usage";
+import { setPreviewTarget, useOpenPorts, useWatchPorts } from "./usePorts";
 import { useOpenRoom } from "./useRoom";
 import { useForeignThreads, useModDigits, usePaletteRooms, useShellCommands, useShellNav, useUpdate } from "./useShell";
+import { useYoloTrigger, YoloFx } from "./YoloFx";
 
 // What App hands each project view: the inbox across projects and how to
 // act on it.
@@ -89,11 +92,16 @@ export function Shell(props: ShellProps) {
   const digits = useModDigits();
   const update = useUpdate(bridge, c);
   const open: Session | undefined = state.sessions.find((s) => s.id === ui.openId);
+  useWatchPorts(c, bridge);
+  const ports = useOpenPorts(api);
+  const yoloPlays = useYoloTrigger(projectKey, open?.id ?? null, sessionMode(open));
 
   useEffect(() => {
     if (ui.openId === null) c.closeSession();
     else void c.openSession(ui.openId);
   }, [c, ui.openId]);
+  // Closing the room or the project closes the preview's page.
+  useEffect(() => () => void bridge.previewClose(), [bridge, ui.openId]);
 
   const focusInput = useCallback(() => requestAnimationFrame(() => inputRef.current?.focus()), []);
   const toast = useCallback((text: string) => c.store.dispatch({ type: "toast.add", kind: "error", text }), [c]);
@@ -127,6 +135,11 @@ export function Shell(props: ShellProps) {
   };
   const togglePanel = () => dispatch({ type: "panel", panel: ui.panel ?? "changes" });
   const toggleTerminal = () => setTerminal((v) => !v);
+  const preview = (url: string) => {
+    if (api === undefined) return;
+    setPreviewTarget(api, url);
+    openPanel("preview");
+  };
   const addProject = () => orToast(onAddProject());
   const commands = useShellCommands(
     {
@@ -144,6 +157,8 @@ export function Shell(props: ShellProps) {
       switchDeck: onDisconnect,
       welcome: onWelcome,
       toggleYolo: r.send.toggleYolo,
+      ports,
+      preview,
     },
     bridge,
   );
@@ -252,18 +267,22 @@ export function Shell(props: ShellProps) {
               onDiff={() => dispatch({ type: "panel", panel: "changes" })}
               onTogglePanel={togglePanel}
               onSettings={() => dispatch({ type: "settings", section: "general" })}
+              onPreview={preview}
               toast={toast}
               info={info}
             />
           )}
         </main>
-        {api !== undefined && <TerminalDrawer project={api} shown={terminal && !away} onHide={() => setTerminal(false)} onError={toast} />}
+        {api !== undefined && (
+          <TerminalDrawer project={api} shown={terminal && !away} onHide={() => setTerminal(false)} onError={toast} onPreview={preview} />
+        )}
       </div>
       {ui.panel !== null && !away && shared === null && (
         <LineComments.Provider value={r.room.comments}>
           <LiveRightPanel
             projectKey={projectKey}
             c={c}
+            bridge={bridge}
             panel={ui.panel}
             open={open}
             files={r.files}
@@ -287,6 +306,7 @@ export function Shell(props: ShellProps) {
       )}
       {ui.palette && <Palette commands={commands} rooms={paletteRooms} onOpenRoom={openRoom} onClose={() => dispatch({ type: "palette", open: false })} />}
       <Toasts c={c} toasts={state.toasts} />
+      <YoloFx play={yoloPlays} />
     </div>
   );
 }

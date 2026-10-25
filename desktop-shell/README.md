@@ -151,6 +151,14 @@ T3's look stays in the theme catalog.
   The app asks for the limits at most once a minute, and only while the
   strip shows. While agents work and the prompt is empty, send turns into
   stop.
+  - **Modes.** When the open thread switches to Yolo (the mode chip,
+    Ctrl+Shift+Y, `/yolo` or another device), a shockwave crosses the
+    window, as in the terminal, and the Yolo chip keeps a
+    slow rainbow border while the thread stays in Yolo. A click or Escape
+    ends the wave. Settings > Appearance > Motion follows the system by
+    default; Reduced turns the wave off with the rest of the motion, and
+    "Play the Yolo effect" turns off the wave alone. Without the wave the
+    chip flashes amber.
   - **Slash commands.** Type `/` at the start of the message for the
     commands: `/plan`, `/ask` and `/yolo` set the mode (Yolo still asks
     first), `/new [title]` starts a thread, `/race <n> [kind] [judge]
@@ -285,10 +293,22 @@ T3's look stays in the theme catalog.
   shell is `$SHELL` on macOS and Linux. On Windows (10 version 1809 or
   later, through ConPTY) it is PowerShell 7, else Windows PowerShell, else
   the command prompt.
+- **Ports and preview.** When a terminal or an agent's command prints where
+  a dev server listens (`Local: http://localhost:5173/`, `listening on port
+  3000`), the port shows as a chip, such as `:3000` with a green dot, in the
+  room header and in the terminal tab that printed it. Main checks every 5
+  seconds that something still listens there; when it stops, the chip goes.
+  Click a chip to open the page in the Preview tab of the side panel; its
+  arrow also has Open in browser and Copy URL. The palette has "Preview
+  :3000" for each open port. The Preview tab has Back, Forward, Reload, Open
+  in browser, an address bar (the host is fixed, the path is yours) and a
+  width: Responsive, 390, 768 or 1280 (a width wider than the panel zooms
+  the page out). A terminal that runs a dev server has a Stop button, which
+  sends Ctrl+C. Ports show for a project on this computer only.
 - **Usage.** Tokens and cost per day, agent and model, the plan's limits,
   a heat map of the last 20 weeks and when you work.
 - **Settings** (the gear, or Ctrl+,): send key, Yolo confirmation, folding,
-  time format, light or dark or the system's, the theme (Tabletop, T3,
+  time format, motion and the Yolo effect, light or dark or the system's, the theme (Tabletop, T3,
   Tokyo Night, Catppuccin Mocha, Nord, Rosé Pine, Dracula, Solarized Light, GitHub
   Light) and accent colour, the diff theme (Match app theme, GitHub Dark,
   GitHub Light, One Dark, Dracula, Tokyo Night, Catppuccin Mocha,
@@ -413,8 +433,9 @@ renderer (React, sandboxed)                  main process (Node)                
   `menu.ts` and `contextMenu.ts` build the menus from plain templates;
   `windowState.ts` keeps `window.json`; `log.ts` writes the log and keeps
   the app alive after an error; `update.ts` runs electron-updater;
-  `launch.ts` reads deck:// links and folder arguments. Menu commands,
-  links and updates reach the window as events, like the rpc stream.
+  `launch.ts` reads deck:// links and folder arguments. `preview.ts` probes
+  ports and owns the Preview tab's view. Menu commands, links, updates and
+  the preview's state reach the window as events, like the rpc stream.
 - `src/preload/preload.ts` exposes `window.deck`: the host methods over IPC,
   the socket, rpc, menu, link, update and notification-click event streams,
   and the path of a
@@ -525,6 +546,23 @@ For both transports:
   Permission requests (camera, notifications and others) are denied. Main
   shows Deck's notifications itself (`notify.ts`), from a title, a body and
   a tag that `host.ts` checks.
+
+Preview:
+
+- **A view of its own.** The Preview tab's page is not part of the window.
+  Main shows it in a separate `WebContentsView` with its own session (the
+  `preview` partition, kept in memory only), `sandbox`, `contextIsolation`,
+  no `nodeIntegration`, `webSecurity` and no preload. It has no bridge and
+  no IPC: main accepts a host call only from the window's own page, and a
+  test checks that a call from the view is refused. The page runs with its
+  own headers; the window's CSP does not change.
+- **Loopback only.** The view loads only `http://localhost:<port>` or
+  `http://127.0.0.1:<port>`, for a port that main's own probe found open.
+  Main checks each navigation, redirect and new window: another http(s)
+  page opens in the system browser, and anything else is refused. The
+  view's session denies every permission and cancels every download.
+- **It ends with the room.** Closing the room or the project, a reload and
+  quitting the app destroy the view and its page.
 
 Open a folder (rpc):
 

@@ -9,6 +9,9 @@ import {
   NOTIFY_LIMITS,
   type NotifyInput,
   type PairInput,
+  PREVIEW_LIMITS,
+  type PreviewBounds,
+  type PreviewNav,
   RPC_METHODS,
   type RpcMethod,
   type ThreadChoice,
@@ -20,6 +23,7 @@ import type { LinkHost } from "./link";
 import { codeError, type Connect, pairWith } from "./pair";
 import { connectPinned, normalizeFingerprint, targetError } from "./pin";
 import type { PhoneService } from "./phone";
+import type { Preview } from "./preview";
 import type { RecentFolders } from "./recent";
 import type { ServerStore } from "./servers";
 
@@ -44,6 +48,7 @@ export interface HostDeps {
   focused: () => boolean;
   // Looks for the agent CLIs on the engine's PATH.
   agentClis: () => Promise<AgentCli[]>;
+  preview: Pick<Preview, "probe" | "load" | "nav" | "bounds" | "hide" | "close">;
 }
 
 // The longest renderer log line kept: a stack trace, not a flood.
@@ -122,7 +127,20 @@ export function createHost(d: HostDeps): DeckHost {
       if (refresh || clis === null) clis = d.agentClis().then((list) => ({ engine: d.deckPath !== null, clis: list }));
       return clis;
     },
+    probePorts: (ports: number[]) => d.preview.probe(ports),
+    previewOpen: async (input: { url: string }) => d.preview.load(input.url),
+    previewNav: async (nav: PreviewNav) => d.preview.nav(nav.action === "path" ? { action: "path", path: nav.path } : { action: nav.action }),
+    previewBounds: async (b: PreviewBounds) => d.preview.bounds({ x: b.x, y: b.y, w: b.w, h: b.h, zoom: b.zoom }),
+    previewHide: async () => d.preview.hide(),
+    previewClose: async () => d.preview.close(),
   };
+}
+
+// Whether an IPC message comes from the app's page in its window. Any other
+// sender is refused: the preview's page has a webContents of its own, and a
+// frame of another origin is not the app.
+export function fromApp(sender: unknown, frameUrl: string | undefined, window: unknown, origin: string): boolean {
+  return window !== null && sender === window && frameUrl !== undefined && frameUrl.startsWith(origin);
 }
 
 type Check = (v: unknown) => boolean;
@@ -164,6 +182,31 @@ const isNotify: Check = (v) => {
   );
 };
 const isBadge: Check = (v) => isNat(v) && (v as number) <= NOTIFY_LIMITS.badge;
+const isPorts: Check = (v) =>
+  Array.isArray(v) &&
+  v.length <= PREVIEW_LIMITS.ports &&
+  v.every((p) => Number.isInteger(p) && (p as number) >= 1 && (p as number) <= 65535);
+const isKeys = (v: unknown, keys: string[]): v is Record<string, unknown> =>
+  isObject(v) && Object.keys(v as object).length === keys.length && keys.every((k) => k in (v as object));
+const isPreviewOpen: Check = (v) => isKeys(v, ["url"]) && isText(PREVIEW_LIMITS.url)(v["url"]);
+const isPreviewNav: Check = (v) => {
+  if (isKeys(v, ["action"])) return ["back", "forward", "reload"].includes(v["action"] as string);
+  return (
+    isKeys(v, ["action", "path"]) &&
+    v["action"] === "path" &&
+    isText(PREVIEW_LIMITS.url)(v["path"]) &&
+    (v["path"] as string).startsWith("/")
+  );
+};
+const isCoord = (v: unknown) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= 100_000;
+const isPreviewBounds: Check = (v) =>
+  isKeys(v, ["x", "y", "w", "h", "zoom"]) &&
+  ["x", "y", "w", "h"].every((k) => isCoord(v[k])) &&
+  (v["w"] as number) >= 0 &&
+  (v["h"] as number) >= 0 &&
+  typeof v["zoom"] === "number" &&
+  v["zoom"] >= 0.25 &&
+  v["zoom"] <= 1;
 
 const ARGS: Record<HostMethod, Check[]> = {
   listServers: [],
@@ -197,6 +240,12 @@ const ARGS: Record<HostMethod, Check[]> = {
   badge: [isBadge],
   focused: [],
   agentClis: [(v) => typeof v === "boolean"],
+  probePorts: [isPorts],
+  previewOpen: [isPreviewOpen],
+  previewNav: [isPreviewNav],
+  previewBounds: [isPreviewBounds],
+  previewHide: [],
+  previewClose: [],
 };
 
 // Calls method m with args from the renderer, or rejects when they are not

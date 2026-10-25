@@ -1,11 +1,12 @@
 import { mkdtempSync } from "node:fs";
+import { type AddressInfo, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { testHost } from "../../test/bridge";
 import { FakeRpcDeck } from "../../test/fake-grpc";
-import type { LocalDeck, OpenOutcome, RpcStreamEvent } from "../shared/bridge";
-import { callHost } from "./host";
+import type { HostMethod, LocalDeck, OpenOutcome, RpcStreamEvent } from "../shared/bridge";
+import { callHost, fromApp } from "./host";
 
 describe("callHost", () => {
   const { host } = testHost(
@@ -229,5 +230,93 @@ describe("platform methods", () => {
     }
     await expect(callHost(host, "threadMenu", [{ id: "ses_1", title: "Fix it", archive: "busy" }])).resolves.toBe("rename");
     expect(seen).toEqual([{ id: "ses_1", title: "Fix it", archive: "busy" }]);
+  });
+});
+
+describe("ports and the preview", () => {
+  const listen = async () => {
+    const server = createServer();
+    await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+    return { server, port: (server.address() as AddressInfo).port };
+  };
+
+  test("probePorts finds a port a real server listens on, and not one that closed", async () => {
+    const up = await listen();
+    const gone = await listen();
+    await new Promise((done) => gone.server.close(done));
+    const { host } = testHost(noEmit, noEmit);
+    try {
+      await expect(callHost(host, "probePorts", [[up.port, gone.port]])).resolves.toEqual([up.port]);
+      await expect(callHost(host, "probePorts", [[]])).resolves.toEqual([]);
+    } finally {
+      up.server.close();
+    }
+  });
+
+  test("probePorts takes up to 32 ports from 1 to 65535", async () => {
+    const { host } = testHost(noEmit, noEmit);
+    for (const bad of [[], [3000], [[0]], [[65536]], [[3000.5]], [["3000"]], [Array.from({ length: 33 }, (_, i) => 3000 + i)], [[3000], 1]]) {
+      await expect(callHost(host, "probePorts", bad)).rejects.toThrow(/bad arguments/);
+    }
+  });
+
+  test("the preview methods check their arguments before main sees them", async () => {
+    const seen: unknown[] = [];
+    const preview = {
+      probe: async () => [],
+      load: (url: string) => (seen.push(["load", url]), true),
+      nav: (n: unknown) => void seen.push(["nav", n]),
+      bounds: (b: unknown) => void seen.push(["bounds", b]),
+      hide: () => void seen.push(["hide"]),
+      close: () => void seen.push(["close"]),
+    };
+    const { host } = testHost(noEmit, noEmit, undefined, { preview });
+    const bounds = { x: 10, y: 20, w: 300, h: 400, zoom: 1 };
+    const bad: [HostMethod, unknown[]][] = [
+      ["previewOpen", []],
+      ["previewOpen", ["http://localhost:3000/"]],
+      ["previewOpen", [{ url: 3000 }]],
+      ["previewOpen", [{ url: "http://localhost:3000/", extra: 1 }]],
+      ["previewOpen", [{ url: `http://localhost:3000/${"x".repeat(2048)}` }]],
+      ["previewNav", [{ action: "home" }]],
+      ["previewNav", [{ action: "path" }]],
+      ["previewNav", [{ action: "path", path: "docs" }]],
+      ["previewNav", [{ action: "back", path: "/" }]],
+      ["previewBounds", [{ ...bounds, w: -1 }]],
+      ["previewBounds", [{ ...bounds, x: Number.NaN }]],
+      ["previewBounds", [{ ...bounds, zoom: 2 }]],
+      ["previewBounds", [{ x: 1, y: 2, w: 3, h: 4 }]],
+      ["previewHide", [true]],
+      ["previewClose", ["now"]],
+    ];
+    for (const [m, args] of bad) {
+      await expect(callHost(host, m, args), `${m} ${JSON.stringify(args)}`).rejects.toThrow(/bad arguments/);
+    }
+    expect(seen).toEqual([]);
+    await expect(callHost(host, "previewOpen", [{ url: "http://localhost:3000/" }])).resolves.toBe(true);
+    await callHost(host, "previewNav", [{ action: "path", path: "/docs?q=1" }]);
+    await callHost(host, "previewNav", [{ action: "reload" }]);
+    await callHost(host, "previewBounds", [{ ...bounds, zoom: 0.5 }]);
+    await callHost(host, "previewHide", []);
+    await callHost(host, "previewClose", []);
+    expect(seen).toEqual([
+      ["load", "http://localhost:3000/"],
+      ["nav", { action: "path", path: "/docs?q=1" }],
+      ["nav", { action: "reload" }],
+      ["bounds", { ...bounds, zoom: 0.5 }],
+      ["hide"],
+      ["close"],
+    ]);
+  });
+
+  test("a message from the preview's page is refused: only the window's own page may call", () => {
+    const window = { id: 1 };
+    const previewPage = { id: 2 };
+    expect(fromApp(window, "app://deck/index.html", window, "app://deck")).toBe(true);
+    expect(fromApp(previewPage, "app://deck/index.html", window, "app://deck")).toBe(false);
+    expect(fromApp(previewPage, "http://localhost:3000/", window, "app://deck")).toBe(false);
+    expect(fromApp(window, "http://localhost:3000/", window, "app://deck")).toBe(false);
+    expect(fromApp(window, undefined, window, "app://deck")).toBe(false);
+    expect(fromApp(window, "app://deck/index.html", null, "app://deck")).toBe(false);
   });
 });

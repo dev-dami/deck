@@ -39,6 +39,7 @@ export function ModePicker({
             mode === "yolo" && "text-destructive-foreground",
           )}
           aria-expanded={open}
+          data-mode={mode ?? undefined}
           title={current?.blurb ?? "Mode"}
           onClick={() => setOpen((o) => !o)}
         >
