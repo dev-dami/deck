@@ -155,6 +155,23 @@ describe("a local Deck over rpc", () => {
     expect(await ctl.changes("ses_main")).toHaveLength(2);
   });
 
+  test("edits a message and continues a run", async () => {
+    const { ctl } = await open();
+    await ctl.openSession("ses_main");
+    await until(() => (ctl.state.messages["ses_main"] ?? []).length > 0);
+    const first = (ctl.state.messages["ses_main"] ?? []).find((m) => m.role === "user");
+    if (first === undefined) throw new Error("no user message");
+    expect(await ctl.editMessage("ses_main", first.id, "$claude Why only some phones?")).toBe(true);
+    expect(fake.deck.edited).toEqual([{ message_id: first.id, text: "$claude Why only some phones?" }]);
+    await until(() => (ctl.state.messages["ses_main"] ?? []).some((m) => m.id === first.id && m.edited === true));
+    // An unknown message is refused with a toast, not thrown.
+    expect(await ctl.editMessage("ses_main", "msg_none", "x")).toBe(false);
+    expect(ctl.state.toasts.at(-1)?.text).toBe("no such message");
+    await ctl.continueRun("ses_main");
+    expect(fake.deck.continued).toEqual(["ses_main"]);
+    expect(fake.calls.filter((m) => m === "EditMessage" || m === "Continue")).toEqual(["EditMessage", "EditMessage", "Continue"]);
+  });
+
   test("a dropped event stream resumes and refetches", async () => {
     const { ctl } = await open();
     fake.dropStreams();

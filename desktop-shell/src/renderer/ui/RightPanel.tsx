@@ -22,7 +22,7 @@ import type { Crew } from "../crew";
 import { cn } from "../lib/cn";
 import { PANELS, type Panel } from "../ui";
 import { AgentsTree } from "./AgentsTree";
-import { DiffView } from "./DiffView";
+import { CommentsBadge, DiffView } from "./DiffView";
 import { SideChat } from "./SideChat";
 import { TasksPanel } from "./TasksPanel";
 import { Badge } from "./kit/badge";
@@ -75,7 +75,7 @@ function FileSection({
         <span className="del font-mono text-diff-deletion-foreground text-xs">−{f.removed}</span>
         <span className="add font-mono text-diff-addition-foreground text-xs">+{f.added}</span>
       </button>
-      {open && <DiffView diff={f.diff ?? ""} truncated={f.diff_truncated} numbered />}
+      {open && <DiffView diff={f.diff ?? ""} truncated={f.diff_truncated} numbered path={f.path} />}
     </div>
   );
 }
@@ -107,6 +107,7 @@ function Changes({
         <span className="text-muted-foreground">
           {files === null ? "Loading…" : `${files.length} ${files.length === 1 ? "file" : "files"}`}
         </span>
+        <CommentsBadge />
         <div className="ml-auto flex items-center gap-0.5">
           <Button
             variant="ghost-muted"

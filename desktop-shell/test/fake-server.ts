@@ -68,6 +68,8 @@ export class FakeDeck {
   readonly sent: Array<{ session_id: string; text: string }> = [];
   readonly answered: Array<{ id: string; decision: string }> = [];
   readonly interrupted: string[] = [];
+  readonly edited: Array<{ message_id: string; text: string }> = [];
+  readonly continued: string[] = [];
   private readonly http: http.Server;
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 13 << 20 });
   private readonly clients = new Set<Client>();
@@ -127,6 +129,16 @@ export class FakeDeck {
   revokeAll(): void {
     this.tokens.clear();
     this.restart();
+  }
+
+  // A finished reply from an agent, as if it had just written it.
+  reply(sessionId: string, agent: string, text: string): Message {
+    return this.message(this.get(sessionId), "assistant", agent, text, true);
+  }
+
+  // The thread's changed files, as if someone edited the tree.
+  setChanges(sessionId: string, changes: ChangedFile[]): void {
+    this.get(sessionId).changes = changes;
   }
 
   requestApproval(sessionId: string, agent: string, command: string): Approval {
@@ -390,10 +402,21 @@ export class FakeDeck {
         return {};
       }
       case "chat.cancel":
-      case "chat.continue":
-      case "message.edit":
         this.get(p["session_id"]);
         return {};
+      case "chat.continue":
+        this.continued.push(this.get(p["session_id"]).session.id);
+        return {};
+      case "message.edit": {
+        const t = this.get(p["session_id"]);
+        const m = t.messages.find((x) => x.id === p["message_id"] && x.role === "user");
+        if (m === undefined) throw new Fail("not_found", "no such message");
+        this.edited.push({ message_id: m.id, text: String(p["text"]) });
+        const next: Message = { ...m, edited: true, updated_at: this.now(), parts: [{ type: "text", text: String(p["text"]) }] };
+        t.messages = t.messages.map((x) => (x.id === m.id ? next : x));
+        this.emit("message.updated", next, t.session.id);
+        return {};
+      }
       case "devices.list":
         return [];
       case "devices.revoke":

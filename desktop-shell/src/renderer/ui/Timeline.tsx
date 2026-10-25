@@ -1,13 +1,15 @@
-import type { AgentLine, ChangedFile, Message, Theme } from "@web/protocol";
+import type { AgentLine, ChangedFile, Message, Mode, Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
 import { type Chunk, groupParts, isNearBottom } from "@web/transcript";
 import { toMillis } from "@web/time";
 import {
   ArrowDown,
   Brain,
+  Check,
   ChevronDown,
   ChevronRight,
   CircleAlert,
+  Copy,
   Eye,
   FileDiff,
   FilePen,
@@ -15,18 +17,34 @@ import {
   Globe,
   ImageIcon,
   type LucideIcon,
+  Pencil,
+  Play,
+  RotateCcw,
   Search,
   SquareTerminal,
   Wrench,
 } from "lucide-react";
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { agentColour, agentKind } from "../agents";
 import { cn } from "../lib/cn";
+import { lastReplyId, messageText } from "../messages";
+import { detectPlan, findPlan } from "../plans";
 import { formatClock, usePrefs } from "../prefs";
 import { formatDuration, splitWork } from "../work";
 import { DiffView } from "./DiffView";
 import { Button } from "./kit/button";
 import { Markdown } from "./Markdown";
+import { type PlanActions, PlanCard, wasApproved } from "./PlanCard";
+
+// What the open room lets a person do from its timeline. A read-only room
+// gets none of it.
+export interface RoomActions extends PlanActions {
+  editMessage(m: Message): void;
+  retry(replyId: string): void;
+  continueRun(): void;
+}
+
+type TextChunk = Extract<Chunk, { k: "text" }>;
 
 const COMMAND = /bash|shell|exec|command|terminal|run/;
 
@@ -104,12 +122,16 @@ function WorkRow({ c, running }: { c: Chunk; running: boolean }) {
   );
 }
 
-function Prose({ chunks }: { chunks: Chunk[] }) {
+function Prose({ chunks, text }: { chunks: Chunk[]; text?: (c: TextChunk, key: number) => ReactNode }) {
   return (
     <>
       {chunks.map((c, i) =>
         c.k === "text" ? (
-          <Markdown key={i} text={c.text} />
+          text !== undefined ? (
+            text(c, i)
+          ) : (
+            <Markdown key={i} text={c.text} />
+          )
         ) : c.k === "image" ? (
           <span key={i} className="chip inline-flex w-fit items-center gap-1.5 rounded-md bg-secondary px-2 py-1 text-xs">
             <ImageIcon className="size-3.5" />
@@ -123,7 +145,67 @@ function Prose({ chunks }: { chunks: Chunk[] }) {
   );
 }
 
-function UserMessage({ m }: { m: Message }) {
+// Copy, and the room's verbs for one message, shown on hover.
+function MessageActions({ m, actions, last }: { m: Message; actions: RoomActions; last: boolean }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  const icon = "text-faint hover:text-foreground";
+  const reply = m.role === "assistant" && last && m.finished;
+  return (
+    <span className="msg-actions flex items-center gap-0.5 font-sans opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+      <Button
+        variant="ghost-muted"
+        size="icon-xs"
+        className={icon}
+        aria-label={copied ? "Copied" : "Copy"}
+        title="Copy"
+        onClick={() => {
+          void navigator.clipboard
+            .writeText(messageText(m))
+            .then(() => setCopied(true))
+            .catch(() => {});
+        }}
+      >
+        {copied ? <Check /> : <Copy />}
+      </Button>
+      {m.role === "user" && m.editable !== false && (
+        <Button
+          variant="ghost-muted"
+          size="icon-xs"
+          className={icon}
+          aria-label="Edit and resend"
+          title="Edit and resend"
+          onClick={() => actions.editMessage(m)}
+        >
+          <Pencil />
+        </Button>
+      )}
+      {reply && (
+        <>
+          <Button
+            variant="ghost-muted"
+            size="icon-xs"
+            className={icon}
+            aria-label="Retry"
+            title="Retry: send your message again"
+            onClick={() => actions.retry(m.id)}
+          >
+            <RotateCcw />
+          </Button>
+          <Button variant="ghost-muted" size="icon-xs" className={icon} aria-label="Continue" title="Continue" onClick={() => actions.continueRun()}>
+            <Play />
+          </Button>
+        </>
+      )}
+    </span>
+  );
+}
+
+function UserMessage({ m, actions }: { m: Message; actions: RoomActions | null }) {
   const prefs = usePrefs();
   const chunks = groupParts(m.parts);
   return (
@@ -149,12 +231,27 @@ function UserMessage({ m }: { m: Message }) {
         <span className="msg-who sr-only">You</span>
         {m.edited === true && <span>edited</span>}
         <time>{formatClock(m.created_at, prefs.clock)}</time>
+        {actions !== null && <MessageActions m={m} actions={actions} last={false} />}
       </header>
     </article>
   );
 }
 
-function AgentMessage({ m, roster, theme }: { m: Message; roster: AgentLine[]; theme: Theme | null }) {
+function AgentMessage({
+  m,
+  roster,
+  theme,
+  mode,
+  actions,
+  last,
+}: {
+  m: Message;
+  roster: AgentLine[];
+  theme: Theme | null;
+  mode: Mode | null;
+  actions: RoomActions | null;
+  last: boolean;
+}) {
   const prefs = usePrefs();
   const agent = m.agent ?? "agent";
   const kind = agentKind(agent, roster);
@@ -163,6 +260,23 @@ function AgentMessage({ m, roster, theme }: { m: Message; roster: AgentLine[]; t
   const { work, answer } = splitWork(chunks);
   const [open, setOpen] = useState(false);
   const folds = m.finished && prefs.foldWork && work.length > 0;
+  // A finished reply in plan mode whose last text holds a step list is a
+  // plan: that text renders as a card.
+  const planChunk = m.finished ? [...answer].reverse().find((c): c is TextChunk => c.k === "text") : undefined;
+  const plan = useMemo(() => {
+    if (planChunk === undefined) return null;
+    return detectPlan(planChunk.text, { mode }) ?? (wasApproved(m.id) ? findPlan(planChunk.text) : null);
+  }, [planChunk, mode, m.id]);
+  const text = (c: TextChunk, key: number): ReactNode =>
+    plan !== null && c === planChunk ? (
+      <div key={key} className="flex flex-col gap-3">
+        {plan.before !== "" && <Markdown text={plan.before} />}
+        <PlanCard id={m.id} plan={plan} agent={agent} colour={colour} actions={last ? actions : null} />
+        {plan.after !== "" && <Markdown text={plan.after} />}
+      </div>
+    ) : (
+      <Markdown key={key} text={c.text} />
+    );
   const ms = toMillis(m.updated_at) - toMillis(m.created_at);
   const took = ms >= 1000 ? `Worked for ${formatDuration(ms)}` : "Worked";
   const [tick, setTick] = useState(() => Date.now());
@@ -211,14 +325,14 @@ function AgentMessage({ m, roster, theme }: { m: Message; roster: AgentLine[]; t
             </div>
           )}
           <div className="mt-2 flex flex-col gap-3 text-foreground text-prose">
-            <Prose chunks={answer} />
+            <Prose chunks={answer} text={text} />
           </div>
         </>
       ) : (
         <div className="flex flex-col gap-2 text-foreground text-prose">
           {chunks.map((c, i) =>
             c.k === "text" ? (
-              <Markdown key={i} text={c.text} />
+              text(c, i)
             ) : c.k === "image" ? (
               <Prose key={i} chunks={[c]} />
             ) : (
@@ -233,14 +347,33 @@ function AgentMessage({ m, roster, theme }: { m: Message; roster: AgentLine[]; t
           <span className="shimmer">Working for {formatDuration(tick - toMillis(m.created_at))}</span>
         </div>
       )}
+      {m.finished && actions !== null && (
+        <footer className="-ml-1 flex items-center">
+          <MessageActions m={m} actions={actions} last={last} />
+        </footer>
+      )}
     </article>
   );
 }
 
 // A message renders again only when it changes: a token re-renders the row
 // it lands in, not the whole timeline.
-export const MessageView = memo(function MessageView({ m, roster, theme }: { m: Message; roster: AgentLine[]; theme: Theme | null }) {
-  if (m.role === "user") return <UserMessage m={m} />;
+export const MessageView = memo(function MessageView({
+  m,
+  roster,
+  theme,
+  mode = null,
+  actions = null,
+  last = false,
+}: {
+  m: Message;
+  roster: AgentLine[];
+  theme: Theme | null;
+  mode?: Mode | null;
+  actions?: RoomActions | null;
+  last?: boolean;
+}) {
+  if (m.role === "user") return <UserMessage m={m} actions={actions} />;
   if (m.role === "system") {
     return (
       <article className="msg msg-system mx-auto max-w-[90%] text-center text-muted-foreground text-xs" data-role="system">
@@ -248,7 +381,7 @@ export const MessageView = memo(function MessageView({ m, roster, theme }: { m: 
       </article>
     );
   }
-  return <AgentMessage m={m} roster={roster} theme={theme} />;
+  return <AgentMessage m={m} roster={roster} theme={theme} mode={mode} actions={actions} last={last} />;
 });
 
 // "N changed files +a −r … Open diff", under the last reply, as T3 Code
@@ -311,6 +444,9 @@ export function Timeline({
   onOlder,
   changes,
   onOpenDiff,
+  mode = null,
+  readOnly = false,
+  actions,
 }: {
   messages: Message[];
   roster: AgentLine[];
@@ -319,8 +455,14 @@ export function Timeline({
   onOlder: () => Promise<unknown>;
   changes: ChangedFile[] | null;
   onOpenDiff: (path?: string) => void;
+  // The room's mode, for plan cards.
+  mode?: Mode | null;
+  readOnly?: boolean;
+  actions?: RoomActions;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const lastId = useMemo(() => lastReplyId(messages), [messages]);
+  const verbs = readOnly || actions === undefined ? null : actions;
   const stick = useRef(true);
   // Distance from the bottom before an older page loads, so the view stays put.
   const keep = useRef<number | null>(null);
@@ -383,7 +525,7 @@ export function Timeline({
             </p>
           )}
           {messages.map((m) => (
-            <MessageView key={m.id} m={m} roster={roster} theme={theme} />
+            <MessageView key={m.id} m={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />
           ))}
           {changes !== null && changes.length > 0 && <ChangedFilesCard files={changes} onOpen={onOpenDiff} />}
         </div>

@@ -517,6 +517,29 @@
   border-left-color: var(--destructive);
   background: color-mix(in oklab, var(--diff-del) 100%, var(--background));
 }
+/* The line comment's "+" sits in the gutter and shows on hover. */
+.diff-numbered .diff-add-comment {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  translate: 0 -50%;
+  border-radius: 4px;
+  color: var(--text-faint);
+  background: var(--surface-2);
+  cursor: pointer;
+  opacity: 0;
+}
+.diff-numbered .diff-row:hover .diff-add-comment,
+.diff-numbered .diff-add-comment:focus-visible {
+  opacity: 1;
+}
+.diff-numbered .diff-add-comment:hover {
+  color: var(--foreground);
+}
 .diff-numbered .diff-code {
   white-space: pre;
   padding: 0 12px 0 4px;

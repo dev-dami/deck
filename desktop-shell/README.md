@@ -103,7 +103,8 @@ T3's look stays in the theme catalog.
   and each agent's state: busy, waiting (for an approval) or idle. While
   agents work and the prompt is empty, send turns into stop.
 - **Approvals.** The open thread's approval sits on top of the composer:
-  Decline, Always allow this session, or Approve.
+  Decline, Always allow this session, or Approve. It names who may answer:
+  you, and the teammates the thread is shared with as editors.
 - **Room.** A thread is a room. The header shows the room's index (the
   glyph of its first agent and a short id, in that agent's hue), the title
   (double-click it to rename), the git actions, who follows the room, and
@@ -124,6 +125,24 @@ T3's look stays in the theme catalog.
   one brief, each on a worktree of its own; you keep the best entry. Agents
   shows the tree of agents and subagents, each with its model, effort,
   context, cost, leases and the tool it runs.
+- **Plans.** In Plan mode, an agent's numbered steps show as a card with
+  Approve, Edit and Ask. Approve switches the thread to Ask (or back to
+  Yolo when it was Yolo before Plan) and tells the agent to go ahead. Edit
+  puts the steps in the composer; Ask addresses the agent there. Settings,
+  Agents, "Approve plans automatically" approves each plan as it appears
+  and says so on the card.
+- **Message actions.** Hover a message to copy it. Your own messages offer
+  Edit and resend: the text goes back to the composer, and Send replaces
+  the message and runs the thread again from it. The last reply offers
+  Retry (your message again, to the same agent) and Continue.
+- **Line comments.** In the diff panel, hover a line and click `+`. The
+  comment goes to the composer with the file, the line number and the line
+  quoted, addressed to the agent that last changed the file. Comments
+  collect in one draft; the diff header counts them and sends them.
+- **Take-over.** Stop the agents, change the files yourself, and a line
+  over the composer says how many files you changed since the stop.
+  "Continue with my changes" tells the stopped agent to go on and lists
+  those files.
 - **Side chat.** Ask another agent about what the open thread's agents are
   doing, without writing into that thread. The side chat gets a digest of
   the thread and lives in its own hidden thread.

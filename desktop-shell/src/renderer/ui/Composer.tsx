@@ -26,6 +26,7 @@ export function Composer({
   toolbar,
   agents,
   banner,
+  notice,
   strip,
   busy = false,
   onStop,
@@ -46,6 +47,8 @@ export function Composer({
   // Who the message goes to, one card per agent, above the prompt.
   agents?: ReactNode;
   banner?: ReactNode;
+  // A line above the prompt: an edit in progress, or the take-over after a stop.
+  notice?: ReactNode;
   strip?: ReactNode;
   busy?: boolean;
   onStop?: () => void;
@@ -186,6 +189,7 @@ export function Composer({
         </ul>
       )}
       {agents !== undefined && <div className="composer-agents mb-2">{agents}</div>}
+      {notice}
       <div
         className={cn(
           // The hero surface: the one place with a ring of amber on focus.
