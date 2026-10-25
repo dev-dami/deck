@@ -8,6 +8,7 @@
     "name": "dev-dami",
     "email": "141376183+dev-dami@users.noreply.github.com"
   },
+  "desktopName": "deck-desktop.desktop",
   "main": "dist/app/main/main.js",
   "scripts": {
     "dev": "vite",
@@ -94,14 +95,17 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "icon": "build/icon-mac.png"
     },
     "linux": {
       "category": "Development",
       "target": [
         "AppImage",
         "deb"
-      ]
+      ],
+      "syncDesktopName": true,
+      "icon": "build/icons"
     },
     "win": {
       "target": [
