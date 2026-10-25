@@ -66,21 +66,29 @@ Electron with `DECK_DESKTOP_DEV_URL=http://localhost:5173 npm start`.
 
 ## Use it
 
-The window is a remake of [T3 Code](https://github.com/pingdotgg/t3code)'s
-(MIT) pages on Deck: the same sidebar, chat, composer, diff panel and
-settings, with Deck's sessions as threads and Deck's agents in place of
-T3's providers.
+The window takes its structure from [T3 Code](https://github.com/pingdotgg/t3code)
+(MIT): the same sidebar, chat, composer, diff panel and settings, with
+Deck's sessions as threads and Deck's agents in place of T3's providers.
+The look is Deck's own, called Tabletop: a felt table at night, with warm
+ink, paper text and one amber lamp. Amber marks only what runs, what has
+the focus and the send button; each agent kind has a hue of its own, shown
+as a thin rail, a glyph or a dot. Agent replies have no bubble, your turns
+sit on a card with a faint rail, and every reply starts with a small mono
+index such as `✳ claude-1`. Tabletop is the default in light and dark, and
+T3's look stays in the theme catalog.
 
 - **Projects.** As in T3 Code, the sidebar lists the threads of every open
   project together, grouped by project (or in one list, in Settings). The
   project filter at the top shows all projects or one, adds a project,
   reopens a recent one or pairs with a Deck. Each group has its own new
   thread and close buttons.
-- **Threads.** Each card shows the project, the title, the last message and
-  the agents that wrote. A thread that works says Working, one that waits
-  for you says Approval, one that finished while you looked elsewhere says
-  Done. Quiet threads older than three days fold into Settled. Double-click
-  a title to rename it; hover a card to delete it.
+- **Threads.** Each row shows the title, the glyphs of the agents that
+  wrote and a status glyph: an amber dot while it works, a shield while it
+  waits for you, a check when it finished while you looked elsewhere. A
+  working row carries a rail in the hue of its agent. Card rows (in
+  Settings) add the project and the last message. Quiet threads older than
+  three days fold into Settled. Double-click a title to rename it; hover or
+  focus a row to delete it.
 - **New thread** (Ctrl+N, Cmd+N) opens the empty screen. The first message
   makes the thread, named after its first line.
 - **Chat.** A finished reply folds its tool calls and thinking behind
@@ -121,13 +129,17 @@ T3's providers.
 - **Usage.** Tokens and cost per day, agent and model, the plan's limits,
   a heat map of the last 20 weeks and when you work.
 - **Settings** (the gear, or Ctrl+,): send key, Yolo confirmation, folding,
-  time format, light or dark or the system's, the theme (T3's default,
+  time format, light or dark or the system's, the theme (Tabletop, T3,
   Tokyo Night, Catppuccin Mocha, Nord, Rosé Pine, Dracula, Solarized Light, GitHub
   Light) and accent colour, card or compact thread rows, grouping by
   project, the agent kinds, the connection and the shortcuts.
 - **Keys.** Ctrl+K (Cmd+K) searches threads and commands. Ctrl+B hides the
   sidebar. Enter sends. Shift+Enter adds a line.
 - **Images.** Paste, drop or attach an image to send it.
+- **Fonts.** The window uses Geist Sans and Geist Mono, under the SIL Open
+  Font License 1.1. The two variable woff2 files and the licence are copied
+  from the `geist` npm package (1.7.2) into `src/renderer/fonts/`, and the
+  build bundles them.
 
 ## Build, test and package
 

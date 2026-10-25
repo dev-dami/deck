@@ -80,7 +80,8 @@ export class FakeDeck {
   private epoch = `ep_${randomBytes(4).toString("hex")}`;
   private seq = 0;
   private next = 100;
-  private clock = Date.parse("2026-10-19T09:00:00Z");
+  // Twelve hours ago, so the fixture threads are recent, not settled.
+  private clock = Date.now() - 12 * 3_600_000;
   port = 0;
 
   private constructor(private readonly opts: FakeOptions) {

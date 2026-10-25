@@ -6,9 +6,9 @@ export function Section({ title, children }: { title: string; children: ReactNod
   return (
     <section className="space-y-2.5">
       <div className="flex min-h-7 items-center px-4">
-        <h2 className="text-foreground/70 text-sm">{title}</h2>
+        <h2 className="font-medium text-2xs text-faint">{title}</h2>
       </div>
-      <div className="rounded-xl border border-border/60 bg-card/40 shadow-xs/5 [&>*+*]:border-border/50 [&>*+*]:border-t">
+      <div className="rounded-xl border border-hairline bg-surface-1 inset-shadow-hl [&>*+*]:border-hairline [&>*+*]:border-t">
         {children}
       </div>
     </section>

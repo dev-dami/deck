@@ -96,7 +96,7 @@ export function SideChat({
         )}
       </div>
       <div className="border-t p-3">
-        <div className="rounded-2xl border bg-card focus-within:border-foreground/15">
+        <div className="rounded-xl border border-hairline-strong bg-surface-1 inset-shadow-hl transition-[border-color,box-shadow] focus-within:border-primary/50 focus-within:ring-[3px] focus-within:ring-ring">
           <textarea
             aria-label="Side question"
             placeholder="Ask about what the agents are doing…"

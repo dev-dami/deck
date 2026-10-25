@@ -7,7 +7,7 @@ import { themeInfo } from "./themes";
 // data-scheme; "system" follows the operating system. A theme with a mode
 // of its own (themes.ts) sets it instead; data-palette and data-accent name
 // the theme and accent for styles.css.
-export function useAppearance(pref: ThemePref, palette = "default", accent = "theme"): void {
+export function useAppearance(pref: ThemePref, palette = "tabletop", accent = "theme"): void {
   useEffect(() => {
     const root = document.documentElement;
     const media = window.matchMedia("(prefers-color-scheme: light)");
