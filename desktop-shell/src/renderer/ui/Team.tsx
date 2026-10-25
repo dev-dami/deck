@@ -6,6 +6,7 @@ import type { Team, Teammate, TeamThread } from "../crew";
 import { cn } from "../lib/cn";
 import type { ProjectApi } from "../project";
 import { Button } from "./kit/button";
+import { EmptyState } from "./kit/empty";
 import { fieldClass } from "./kit/dialog";
 import { Popover } from "./kit/menu";
 
@@ -286,7 +287,7 @@ export function TeamPage({
         <div className="flex flex-col gap-6">
           <Card title="Teammates" icon={<Users className="size-4" />}>
             {team.teammates.length === 0 ? (
-              <p className="px-4 py-3 text-muted-foreground text-xs">No teammates paired yet.</p>
+              <EmptyState icon={Users} title="No teammates yet." hint="Pair with a Deck from Settings → Connection." className="py-6" />
             ) : (
               <ul className="divide-y divide-border/50">
                 {team.teammates.map((m) => (

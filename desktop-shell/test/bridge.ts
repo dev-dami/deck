@@ -62,6 +62,12 @@ export function testHost(
     notify: () => {},
     badge: () => {},
     focused: () => true,
+    agentClis: async () => [
+      { kind: "claude", path: "/usr/local/bin/claude" },
+      { kind: "codex", path: "/opt/homebrew/bin/codex" },
+      { kind: "opencode", path: null },
+      { kind: "antigravity", path: null },
+    ],
     ...deps,
   });
   return { host, store, links, decks, logged };

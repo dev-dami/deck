@@ -51,7 +51,8 @@ async function roomTab(page: Page, name: string): Promise<void> {
 
 async function openFolder(page: Page): Promise<void> {
   await page.goto("/");
-  await page.getByRole("button", { name: "Add project" }).click();
+  // A fresh install has no recent folder and no pairing: the Welcome.
+  await page.getByRole("button", { name: "Open a folder" }).click();
   // A folder is named after itself.
   await expect(page.locator(".project")).toHaveText(basename(dir));
   // The sidebar names the project, never an address.
@@ -76,6 +77,63 @@ test("opens a folder and runs two agents in one thread", async ({ page }) => {
   // Yolo is offered: the rpc server allows it for the person at this machine.
   await page.locator(".mode-picker").click();
   await expect(page.getByRole("radio", { name: /Yolo/ })).toBeVisible();
+});
+
+test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill the composer", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "One deck for all your agents" })).toBeVisible();
+  const clis = page.getByRole("list", { name: "Agent CLIs" });
+  await expect(clis.locator('[data-kind="claude"]')).toContainText("found");
+  await expect(clis.locator('[data-kind="claude"]')).toContainText("/usr/local/bin/claude");
+  await expect(clis.locator('[data-kind="codex"]')).toContainText("/opt/homebrew/bin/codex");
+  await expect(clis.locator('[data-kind="opencode"]')).toContainText("not found");
+  await expect(clis.getByRole("link", { name: "Install guide" })).toHaveAttribute("href", "https://opencode.ai");
+  // Antigravity: its name only.
+  await expect(clis.locator('[data-kind="antigravity"]').getByRole("link")).toHaveCount(0);
+  await page.getByRole("button", { name: "Check again" }).click();
+  await expect(clis.locator('[data-found="true"]')).toHaveCount(2);
+
+  // A new project opens on the new-thread screen.
+  await page.getByRole("button", { name: "Open a folder" }).click();
+  await expect(page.locator(".project")).toHaveText(basename(dir));
+  await expect(page.getByRole("heading", { name: `What should we build in ${basename(dir)}?` })).toBeVisible();
+  const starts = page.getByRole("list", { name: "Ways to start" });
+  await starts.getByRole("button", { name: /Split the work/ }).click();
+  await expect(composer(page)).toHaveValue("$claude $codex+ ");
+  await expect(composer(page)).toBeFocused();
+  await composer(page).pressSequentially("fix the limiter");
+  await starts.getByRole("button", { name: /Race three/ }).click();
+  await expect(composer(page)).toHaveValue("$claude×3 fix the limiter");
+  await starts.getByRole("button", { name: /One agent/ }).click();
+  await expect(composer(page)).toHaveValue("$claude fix the limiter");
+
+  // The palette opens the Welcome again, with a way back.
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type("Welcome");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "One deck for all your agents" })).toBeVisible();
+  await page.getByRole("button", { name: "Back to threads" }).click();
+  await expect(page.locator(".project")).toHaveText(basename(dir));
+});
+
+test("first run: an engine that finds no agent CLI shows the agents, any other error its last lines", async ({ page }) => {
+  process.env["DECK_FAKE_NO_AGENTS"] = "1";
+  try {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Open a folder" }).click();
+    const agents = page.getByRole("region", { name: "Your agents" });
+    await expect(agents).toContainText("Deck found no agent CLI");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  } finally {
+    delete process.env["DECK_FAKE_NO_AGENTS"];
+  }
+  delete process.env["DECK_FAKE_HANDSHAKE"];
+  await page.getByRole("region", { name: "Your agents" }).getByRole("button", { name: "Try again" }).click();
+  const failed = page.getByRole("alert", { name: "Deck did not start" });
+  await expect(failed.locator("pre")).toHaveText("fake deck: DECK_FAKE_HANDSHAKE is not set");
+  process.env["DECK_FAKE_HANDSHAKE"] = fake.handshake;
+  await failed.getByRole("button", { name: "Try again" }).click();
+  await expect(page.locator(".project")).toHaveText(basename(dir));
 });
 
 test("a session in the background updates live", async ({ page }) => {

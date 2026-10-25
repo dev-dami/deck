@@ -44,11 +44,20 @@ with (`bin/` here, `resources/bin` in an installed app), then `deck` on
 your PATH. It starts the engine with your login shell's PATH, so agent CLIs
 installed in `~/.local/bin`, Homebrew or similar are found even when the
 app is opened from a dock or launcher. The engine needs at least one agent
-CLI (claude, codex, opencode or antigravity); when it finds none, the app
-shows the engine's own message.
+CLI (claude, codex, opencode or antigravity, which runs as `agy`).
 
-The app reopens the projects that were open when it quit, else shows
-"What should we work on?":
+**First run.** With no recent folder and no pairing, the app opens on the
+Welcome: Open a folder, Pair with a Deck, and Your agents. Your agents lists
+each agent CLI with the path where the app found it on the login shell's
+PATH, or with an install line and a link. "Check again" looks again after an
+install. When the engine finds no agent CLI, the Welcome shows this list in
+place of the error. Any other start error shows the engine's last lines,
+Open logs and Try again. When the app cannot find its engine, the Welcome
+says so: run `npm run build:deck`, or set `DECK_BIN`. "Welcome" in the
+palette (Ctrl+K) opens it again.
+
+On later launches the app reopens the projects that were open when it quit,
+else shows "What should we work on?":
 
 - **Open a folder.** Click "Add project" and pick the folder, or click a
   recent one. Several projects can be open at once; each runs its own
@@ -110,8 +119,11 @@ T3's look stays in the theme catalog.
   items need you: a count on macOS and Linux, a dot on Windows. Settings >
   General sets notifications to all, needs you only or none, and the sound
   on or off.
-- **New thread** (Ctrl+N, Cmd+N) opens the empty screen. The first message
-  makes the thread, named after its first line.
+- **New thread** (Ctrl+N, Cmd+N) opens the empty screen. Three cards there
+  start the message: One agent (`$claude `), Split the work (`$claude
+  $codex+ `, with the kinds that are installed) and Race three
+  (`$claude×3 `). The first message makes the thread, named after its first
+  line. Empty tabs and pages say what shows there and how it gets there.
 - **Chat.** A finished reply folds its tool calls and thinking behind
   "Worked for …"; the answer stays in view. The thread's changed files show
   under the last reply; "Open diff" opens them in the diff panel.

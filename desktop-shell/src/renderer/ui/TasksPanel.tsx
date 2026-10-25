@@ -11,6 +11,7 @@ import {
   FileText,
   Flag,
   GitBranch,
+  ListChecks,
   Loader2,
   Minus,
   Pencil,
@@ -41,6 +42,7 @@ import type { ProjectApi } from "../project";
 import { moveQueued, queuedText } from "../queue";
 import { DiffView } from "./DiffView";
 import { Button } from "./kit/button";
+import { EmptyState } from "./kit/empty";
 import { Dialog, fieldClass } from "./kit/dialog";
 
 // The Tasks tab of a room: what waits for a busy agent, the task board the
@@ -502,9 +504,12 @@ export function TasksPanel({
                 <Loader2 className="size-3 animate-spin" /> Loading…
               </p>
             ) : rows.length === 0 ? (
-              <p className="px-1 text-muted-foreground text-xs leading-relaxed">
-                No tasks. Agents split work into tasks and subagents when orchestration is on. A race shows here too.
-              </p>
+              <EmptyState
+                icon={ListChecks}
+                title="No tasks."
+                hint="Agents post tasks here, or turn on Orchestrate and ask for a plan."
+                className="py-6"
+              />
             ) : (
               <ul className="flex flex-col gap-2">
                 {rows.map((r) => (

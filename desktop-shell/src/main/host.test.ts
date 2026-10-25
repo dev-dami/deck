@@ -186,6 +186,26 @@ describe("platform methods", () => {
     expect(installs).toBe(1);
   });
 
+  test("agentClis takes the refresh flag, looks once and looks again on refresh", async () => {
+    let looks = 0;
+    const { host } = testHost(noEmit, noEmit, undefined, {
+      agentClis: async () => {
+        looks++;
+        return [{ kind: "claude", path: looks > 1 ? "/bin/claude" : null }];
+      },
+    });
+    for (const bad of [[], ["yes"], [1], [true, true]]) {
+      await expect(callHost(host, "agentClis", bad)).rejects.toThrow(/bad arguments/);
+    }
+    await expect(callHost(host, "agentClis", [false])).resolves.toEqual({ engine: true, clis: [{ kind: "claude", path: null }] });
+    await callHost(host, "agentClis", [false]);
+    expect(looks).toBe(1);
+    await expect(callHost(host, "agentClis", [true])).resolves.toEqual({ engine: true, clis: [{ kind: "claude", path: "/bin/claude" }] });
+    expect(looks).toBe(2);
+    const missing = testHost(noEmit, noEmit, undefined, { deckPath: null });
+    await expect(callHost(missing.host, "agentClis", [false])).resolves.toMatchObject({ engine: false });
+  });
+
   test("threadMenu takes an id and a title and nothing else", async () => {
     const seen: unknown[] = [];
     const { host } = testHost(noEmit, noEmit, undefined, {

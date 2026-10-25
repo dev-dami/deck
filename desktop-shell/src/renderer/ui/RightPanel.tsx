@@ -27,6 +27,7 @@ import { SideChat } from "./SideChat";
 import { TasksPanel } from "./TasksPanel";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
+import { EmptyState } from "./kit/empty";
 
 // The room's tabs: Changes, Tasks (the queue, the board and races), Agents
 // (the tree) and Side chat.
@@ -126,7 +127,9 @@ function Changes({
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {files?.length === 0 && <Empty>No changes yet.</Empty>}
+        {files?.length === 0 && (
+          <EmptyState icon={FileDiff} title="No changes yet." hint="Files an agent edits show here with their diff." className="py-16" />
+        )}
         {files?.map((f) => (
           <FileSection
             key={f.path}

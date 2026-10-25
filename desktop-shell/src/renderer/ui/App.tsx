@@ -1,6 +1,6 @@
 import type { Decision } from "@web/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DeckBridge, LocalDeck, SavedServer } from "../../shared/bridge";
+import type { DeckBridge, LocalDeck, SavedServer, StartError } from "../../shared/bridge";
 import { useAppearance } from "../appearance";
 import { attachProject, dispatchUi, dropProject, setEngine, showProject } from "../appState";
 import type { InboxItem } from "../attention";
@@ -14,6 +14,7 @@ import { ConnectScreen } from "./ConnectScreen";
 import { Shell } from "./Shell";
 import type { ProjectEntry } from "./Sidebar";
 import { closeTerminals } from "./Terminal";
+import { type StartFailure, Welcome } from "./Welcome";
 
 // The last part of a folder path.
 function base(dir: string): string {
@@ -47,6 +48,11 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   const [connecting, setConnecting] = useState(false);
   // The folder whose Deck is starting.
   const [opening, setOpening] = useState<string | null>(null);
+  // The Welcome: on the first launch, from the palette, and when the engine
+  // finds no agent CLI.
+  const [welcome, setWelcome] = useState(false);
+  // The engine's last start error, until a project opens.
+  const [failure, setFailure] = useState<StartFailure | null>(null);
   const live = useRef<OpenProject[]>([]);
   live.current = open;
 
@@ -74,6 +80,8 @@ export function App({ bridge }: { bridge: DeckBridge }) {
     }
     setMessage(null);
     setConnecting(false);
+    setWelcome(false);
+    setFailure(null);
   }, []);
 
   const pairedOpen = useCallback(
@@ -122,6 +130,17 @@ export function App({ bridge }: { bridge: DeckBridge }) {
     [bridge, add],
   );
 
+  // An engine that did not start shows on the landing screens: no agent CLI
+  // on the Welcome, any other error with its last lines. The error text for
+  // the caller, or null when a screen shows it.
+  const failStart = useCallback((dir: string, out: { message: string; start?: StartError }): string | null => {
+    if (out.start === undefined) return out.message;
+    setFailure({ dir, message: out.message, ...out.start });
+    if (out.start.noAgents) setWelcome(true);
+    else setConnecting(true);
+    return null;
+  }, []);
+
   // Starts (or finds) the Deck of a folder; the error text, or null.
   const openFolder = useCallback(
     async (dir: string, to: Landing = null): Promise<string | null> => {
@@ -136,11 +155,11 @@ export function App({ bridge }: { bridge: DeckBridge }) {
       const out = await bridge.openFolder(dir);
       setOpening(null);
       void refresh();
-      if (!out.ok) return out.message;
+      if (!out.ok) return failStart(dir, out);
       localOpen(out.deck, to);
       return null;
     },
-    [bridge, localOpen, refresh],
+    [bridge, localOpen, refresh, failStart],
   );
 
   // Closes one project: its Deck stops (a folder) or its link ends (paired).
@@ -165,6 +184,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
       setServers(s);
       setRecent(r);
       setDeck(d);
+      if (r.length === 0 && s.length === 0) setWelcome(true);
       let sources = restoredOpen();
       if (sources.length === 0) {
         const first = d !== null && r[0] !== undefined ? `folder:${r[0]}` : s[0] !== undefined ? `paired:${s[0].id}` : null;
@@ -183,7 +203,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
         if (got !== undefined) {
           if (got.status === "rejected") err = String(got.reason);
           else if (got.value.ok) localOpen(got.value.deck, null);
-          else err = got.value.message;
+          else err = failStart(src.slice("folder:".length), got.value);
         } else if (src.startsWith("paired:")) {
           const srv = s.find((x) => `paired:${x.id}` === src);
           if (srv !== undefined) pairedOpen(srv);
@@ -194,7 +214,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
       if (live.current[0] !== undefined) setCurrentKey(live.current[0].key);
       if (err !== null) setMessage(err);
     })();
-  }, [bridge, localOpen, pairedOpen, refresh]);
+  }, [bridge, localOpen, pairedOpen, refresh, failStart]);
 
   // A client resets to "unpaired" when its Deck ends the connection for good
   // (a refused token over v2, a closed Deck over rpc) and to "protocol"
@@ -217,7 +237,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   useAppearance(prefs.theme, prefs.palette, prefs.accent);
 
   // The project on screen sees its open room; the others gather news.
-  const shownKey = connecting ? null : currentKey;
+  const shownKey = connecting || welcome ? null : currentKey;
   useEffect(() => showProject(shownKey), [shownKey, open]);
 
   // The inbox, the badge and the notifications, across the open projects.
@@ -297,6 +317,17 @@ export function App({ bridge }: { bridge: DeckBridge }) {
     const dir = await bridge.pickFolder();
     return dir === null ? null : openFolder(dir, "new");
   };
+  const retry = async (): Promise<string | null> => (failure === null ? null : openFolder(failure.dir, "new"));
+  const back =
+    current === null
+      ? {}
+      : {
+          onBack: () => {
+            setInvite(null);
+            setConnecting(false);
+            setWelcome(false);
+          },
+        };
 
   // A deck:// link, a folder argument or a dropped folder: a folder opens,
   // an invite fills the pairing form. An error shows on the connect screen.
@@ -306,6 +337,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
       const e = await openFolder(dir, "new");
       if (e === null) return;
       setMessage(e);
+      setWelcome(false);
       setConnecting(true);
     },
     [openFolder],
@@ -316,6 +348,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
         if (l.type === "open") void openFrom(l.path);
         else {
           setInvite(l.url);
+          setWelcome(false);
           setConnecting(true);
         }
       }),
@@ -336,7 +369,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   // The project view runs the menu's Open folder; without one, it is here.
   const menuOpen = useRef<(() => void) | null>(null);
   menuOpen.current =
-    current !== null && !connecting ? null : () => void addProject().then((e) => e !== null && setMessage(e));
+    current !== null && !connecting && !welcome ? null : () => void addProject().then((e) => e !== null && setMessage(e));
   useEffect(() => bridge.onMenu((m) => m === "open-folder" && menuOpen.current?.()), [bridge]);
 
   return (
@@ -348,7 +381,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
       }}
       onDrop={onDrop}
     >
-      {current !== null && !connecting ? (
+      {current !== null && !connecting && !welcome ? (
         <Shell
           key={current.key}
           c={current.c}
@@ -369,9 +402,24 @@ export function App({ bridge }: { bridge: DeckBridge }) {
           }}
           onDisconnect={() => close(current.key)}
           onConnect={() => setConnecting(true)}
+          onWelcome={() => setWelcome(true)}
         />
       ) : servers === null ? (
         <div className="loading grid h-full place-items-center text-muted-foreground text-sm">Loading…</div>
+      ) : welcome ? (
+        <Welcome
+          bridge={bridge}
+          opening={opening}
+          failure={failure}
+          onAdd={addProject}
+          onPair={() => {
+            setWelcome(false);
+            setInvite("");
+            setConnecting(true);
+          }}
+          onRetry={retry}
+          {...back}
+        />
       ) : (
         <ConnectScreen
           key={invite ?? ""}
@@ -382,7 +430,10 @@ export function App({ bridge }: { bridge: DeckBridge }) {
           recent={recent}
           opening={opening}
           message={message}
+          failure={failure}
+          onAdd={addProject}
           onFolder={(dir) => openFolder(dir)}
+          onRetry={retry}
           onPaired={(s) => {
             setInvite(null);
             void refresh();
@@ -390,14 +441,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
           }}
           onOpen={(s) => pairedOpen(s)}
           onForget={(s) => void bridge.forgetServer(s.id).then(refresh)}
-          {...(current !== null
-            ? {
-                onBack: () => {
-                  setInvite(null);
-                  setConnecting(false);
-                },
-              }
-            : {})}
+          {...back}
         />
       )}
     </div>

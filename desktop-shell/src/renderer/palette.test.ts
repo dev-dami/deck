@@ -22,6 +22,7 @@ const deps = (mac: boolean, terminal = true): CommandDeps => ({
   theme: noop,
   addProject: noop,
   switchDeck: noop,
+  welcome: noop,
 });
 
 // Each menu item that sends a command, with its key.

@@ -1,4 +1,6 @@
 import {
+  type AgentCli,
+  type AgentClis,
   type AppInfo,
   type DeckHost,
   type HostMethod,
@@ -38,6 +40,8 @@ export interface HostDeps {
   notify: (n: NotifyInput) => void;
   badge: (count: number) => void;
   focused: () => boolean;
+  // Looks for the agent CLIs on the engine's PATH.
+  agentClis: () => Promise<AgentCli[]>;
 }
 
 // The longest renderer log line kept: a stack trace, not a flood.
@@ -47,6 +51,7 @@ const MAX_LOG = 4000;
 // renderer, so callHost checks its type before a method sees it.
 export function createHost(d: HostDeps): DeckHost {
   const connect = d.connect ?? connectPinned;
+  let clis: Promise<AgentClis> | null = null;
   return {
     listServers: async () => d.store.list(),
     pair: async (input: PairInput) => {
@@ -111,6 +116,10 @@ export function createHost(d: HostDeps): DeckHost {
       d.badge(count);
     },
     focused: async () => d.focused(),
+    agentClis: (refresh: boolean) => {
+      if (refresh || clis === null) clis = d.agentClis().then((list) => ({ engine: d.deckPath !== null, clis: list }));
+      return clis;
+    },
   };
 }
 
@@ -185,6 +194,7 @@ const ARGS: Record<HostMethod, Check[]> = {
   notify: [isNotify],
   badge: [isBadge],
   focused: [],
+  agentClis: [(v) => typeof v === "boolean"],
 };
 
 // Calls method m with args from the renderer, or rejects when they are not

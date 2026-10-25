@@ -52,6 +52,7 @@ export interface CommandDeps {
   theme: (t: "light" | "dark" | "deck") => void;
   addProject: () => void;
   switchDeck: () => void;
+  welcome: () => void;
 }
 
 export function paletteCommands(d: CommandDeps): Command[] {
@@ -87,6 +88,7 @@ export function paletteCommands(d: CommandDeps): Command[] {
     { id: "theme-deck", label: "Theme: follow Deck", run: () => d.theme("deck") },
     { id: "add-project", label: "Add project…", hint: `${mod}O`, run: d.addProject },
     { id: "switch", label: "Switch Deck", run: d.switchDeck },
+    { id: "welcome", label: "Welcome", run: d.welcome },
   ];
 }
 
