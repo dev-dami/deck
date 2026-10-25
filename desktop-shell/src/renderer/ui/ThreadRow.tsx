@@ -6,7 +6,6 @@ import { Archive, CircleCheck, FileDiff, Folder, GitCompareArrows, type LucideIc
 import { memo, useState } from "react";
 import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import type { RoomState, RoomStatus } from "../attention";
-import { shortId } from "../lanes";
 import { cn } from "../lib/cn";
 import type { RowStyle } from "../prefs";
 import { sameData } from "../select";
@@ -20,9 +19,9 @@ const STATUS: Record<Exclude<RoomState, "idle">, { label: string; icon: LucideIc
   done: { label: "Done", icon: CircleCheck, className: "text-success-foreground" },
 };
 
-// The row's corner index: the agents that wrote in the thread, as T3 Code
-// stacks provider icons, then the room's short id in the first one's hue.
-function RowIndex({ id, kinds, theme }: { id: string; kinds: string[]; theme: Theme | null }) {
+// The agents that wrote in the thread, as T3 Code stacks provider icons.
+// The room's short id stays in the room header.
+function RowIndex({ kinds, theme }: { kinds: string[]; theme: Theme | null }) {
   return (
     <span className="kind-stack ml-auto inline-flex shrink-0 items-center gap-0.5 font-mono text-3xs">
       {kinds.slice(0, 3).map((k) => (
@@ -30,9 +29,6 @@ function RowIndex({ id, kinds, theme }: { id: string; kinds: string[]; theme: Th
           {kindMark(theme, k) || k.slice(0, 1)}
         </span>
       ))}
-      <span className="row-id" style={{ color: kinds[0] === undefined ? "var(--text-faint)" : kindColour(kinds[0]) }} title={id}>
-        {shortId(id)}
-      </span>
     </span>
   );
 }
@@ -259,7 +255,7 @@ export const ThreadRow = memo(function ThreadRow({
           <div className="flex h-7 min-w-0 items-center gap-2">
             {title}
             {branchTag}
-            <RowIndex id={s.id} kinds={kinds} theme={theme} />
+            <RowIndex kinds={kinds} theme={theme} />
             {statusSlot}
           </div>
           {label !== "" && (
@@ -301,7 +297,7 @@ export const ThreadRow = memo(function ThreadRow({
               {label !== "" ? label : s.last_text !== undefined && s.last_text !== "" ? s.last_text : `${s.mode} mode`}
             </span>
             {branchTag}
-            <RowIndex id={s.id} kinds={kinds} theme={theme} />
+            <RowIndex kinds={kinds} theme={theme} />
           </div>
         </div>
       </div>

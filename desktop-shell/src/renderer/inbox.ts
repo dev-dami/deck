@@ -27,7 +27,7 @@ export function useInbox(open: OpenProject[]): InboxItem[] {
       const next = open.flatMap((p) => {
         const ps = projectState(p.key);
         const s = p.c.store.state;
-        return [ps.rooms, ps.notices, s.sessions, s.approvals, teamOf(p.c.project)];
+        return [ps.rooms, ps.notices, s.sessions, s.approvals, teamOf(p.c.project), p.c.rooms?.snapshot()];
       });
       if (next.length === parts.length && next.every((x, i) => x === parts[i])) return;
       parts = next;
@@ -40,7 +40,8 @@ export function useInbox(open: OpenProject[]): InboxItem[] {
               key: p.key,
               source: p.source,
               name: p.name,
-              sessions: s.sessions.filter((x) => !isSide(x)),
+              // An archived room asks for nothing.
+              sessions: s.sessions.filter((x) => !isSide(x) && p.c.rooms?.get(x.id).archived !== true),
               rooms: ps.rooms,
               approvals: s.approvals,
               notices: ps.notices,
@@ -51,7 +52,12 @@ export function useInbox(open: OpenProject[]): InboxItem[] {
       );
     };
     read();
-    const offs = [subscribe(read), subscribeCrew(read), ...open.map((p) => p.c.store.subscribe(read))];
+    const offs = [
+      subscribe(read),
+      subscribeCrew(read),
+      ...open.map((p) => p.c.store.subscribe(read)),
+      ...open.flatMap((p) => (p.c.rooms === undefined ? [] : [p.c.rooms.subscribe(read)])),
+    ];
     return () => {
       for (const off of offs) off();
     };
