@@ -1,5 +1,14 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { DeckBridge, HostMethod, LinkEvent, MenuCommand, RpcStreamEvent, SocketEvent, UpdateEvent } from "../shared/bridge";
+import type {
+  DeckBridge,
+  HostMethod,
+  LinkEvent,
+  MenuCommand,
+  PreviewState,
+  RpcStreamEvent,
+  SocketEvent,
+  UpdateEvent,
+} from "../shared/bridge";
 
 // A sandboxed preload cannot require local files, so the bridge module is
 // imported for its types only and the channel names are spelled out here;
@@ -69,12 +78,19 @@ const bridge: DeckBridge = {
   badge: (count) => invoke("badge", count),
   focused: () => invoke("focused"),
   agentClis: (refresh) => invoke("agentClis", refresh),
+  probePorts: (ports) => invoke("probePorts", ports),
+  previewOpen: (input) => invoke("previewOpen", input),
+  previewNav: (nav) => invoke("previewNav", nav),
+  previewBounds: (bounds) => invoke("previewBounds", bounds),
+  previewHide: () => invoke("previewHide"),
+  previewClose: () => invoke("previewClose"),
   onSocket: (fn) => listen<[number, SocketEvent]>("deck:socket", fn),
   onRpc: (fn) => listen<[string, RpcStreamEvent]>("deck:rpc", fn),
   onMenu: (fn) => listen<[MenuCommand]>("deck:menu", fn),
   onLink: held<LinkEvent>("deck:link", () => false),
   onUpdate: held<UpdateEvent>("deck:update", (ev) => ev.type === "ready"),
   onNotificationClick: (fn) => listen<[{ tag: string }]>("deck:notification-click", fn),
+  onPreview: (fn) => listen<[PreviewState]>("deck:preview", fn),
   folderPath: (file) => webUtils.getPathForFile(file),
 };
 

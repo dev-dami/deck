@@ -2,7 +2,7 @@ import type { MenuItemConstructorOptions } from "electron";
 import { describe, expect, test } from "vitest";
 import { type MenuActions, menuTemplate } from "../main/menu";
 import { MENU_COMMANDS, type MenuCommand } from "../shared/bridge";
-import { type Command, type CommandDeps, MENU_PALETTE, type PaletteRoom, paletteCommands, searchPalette } from "./palette";
+import { type Command, type CommandDeps, MENU_PALETTE, type PaletteRoom, paletteCommands, previewCommands, searchPalette } from "./palette";
 
 const noop = () => {};
 const deps = (mac: boolean, terminal = true): CommandDeps => ({
@@ -60,6 +60,21 @@ describe("the menu and the palette", () => {
     expect(paletteCommands(deps(false, false)).some((c) => c.id === "terminal")).toBe(false);
     expect(paletteCommands(deps(false, true)).find((c) => c.id === "terminal")?.hint).toBe("Ctrl J");
     expect(paletteCommands(deps(true, true)).find((c) => c.id === "new")?.hint).toBe("⌘N");
+  });
+
+  test("Preview opens on an open http port, not as a bare toggle", () => {
+    expect(paletteCommands(deps(false)).some((c) => c.id === "panel-preview")).toBe(false);
+    const seen: string[] = [];
+    const cmds = previewCommands(
+      [
+        { port: 3000, url: "http://localhost:3000/app" },
+        { port: 8443, url: "https://localhost:8443/" },
+      ],
+      (url) => seen.push(url),
+    );
+    expect(cmds.map((c) => [c.id, c.label])).toEqual([["preview-3000", "Preview :3000"]]);
+    cmds[0]?.run();
+    expect(seen).toEqual(["http://localhost:3000/app"]);
   });
 });
 

@@ -5,7 +5,8 @@ import type { DeckClient } from "../client";
 import { crewOf } from "../crewState";
 import { messageText } from "../messages";
 import type { OpenProject } from "../openProjects";
-import { type Command, type CommandDeps, MENU_PALETTE, type PaletteRoom, paletteCommands } from "../palette";
+import { type Command, type CommandDeps, MENU_PALETTE, type PaletteRoom, paletteCommands, previewCommands } from "../palette";
+import type { FoundPort } from "../ports";
 import { setPrefs } from "../prefs";
 import { isSide } from "../sideChat";
 import { type InboxItem, needsYouRooms, nextNeedsYou } from "../attention";
@@ -211,6 +212,8 @@ export function useShellCommands(
     panel,
     palette,
     toggleYolo,
+    ports,
+    preview,
     ...rest
   }: Omit<CommandFns, UiCommands> & {
     mac: boolean;
@@ -220,6 +223,9 @@ export function useShellCommands(
     panel: Panel | null;
     palette: boolean;
     toggleYolo: () => void;
+    // The project's open ports, and how one opens in the Preview tab.
+    ports: readonly FoundPort[];
+    preview: (url: string) => void;
   },
   bridge: DeckBridge,
 ): Command[] {
@@ -234,8 +240,8 @@ export function useShellCommands(
   };
   const openPalette = () => dispatch({ type: "palette", open: true });
   const togglePalette = () => dispatch({ type: "palette", open: !palette });
-  const latest = useRef({ fns, openPalette });
-  latest.current = { fns, openPalette };
+  const latest = useRef({ fns, openPalette, preview });
+  latest.current = { fns, openPalette, preview };
   useShellKeys({
     nextAttention: fns.nextAttention,
     room: fns.room,
@@ -251,7 +257,7 @@ export function useShellCommands(
       <K extends keyof CommandFns>(k: K) =>
       (...a: Parameters<CommandFns[K]>) =>
         (latest.current.fns[k] as (...x: Parameters<CommandFns[K]>) => void)(...a);
-    return paletteCommands({
+    const list = paletteCommands({
       mac,
       terminal,
       newThread: live("newThread"),
@@ -270,7 +276,9 @@ export function useShellCommands(
       switchDeck: live("switchDeck"),
       welcome: live("welcome"),
     });
-  }, [mac, terminal]);
+    return [...list, ...previewCommands(ports, (url) => latest.current.preview(url))];
+    // A new probe makes a new ports array; the commands change with its URLs.
+  }, [mac, terminal, ports.map((p) => p.url).join(" ")]);
   useEffect(
     () =>
       bridge.onMenu((m) => {

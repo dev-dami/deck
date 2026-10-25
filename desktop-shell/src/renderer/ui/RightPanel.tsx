@@ -10,6 +10,7 @@ import {
   ListChecks,
   type LucideIcon,
   MessageCircleQuestion,
+  MonitorPlay,
   Network,
   Maximize2,
   Minimize2,
@@ -18,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { type ComponentProps, useEffect, useRef, useState } from "react";
+import type { DeckBridge } from "../../shared/bridge";
 import { addLocalNotice } from "../appState";
 import { type DeckClient, serves } from "../client";
 import type { Crew } from "../crew";
@@ -25,6 +27,7 @@ import { cn } from "../lib/cn";
 import { panelSlice, shallowEqual, useAppSlice } from "../select";
 import { PANELS, type Panel } from "../ui";
 import { AgentsTree } from "./AgentsTree";
+import { PreviewPanel } from "./PreviewPanel";
 import { CommentsBadge, DiffView } from "./DiffView";
 import { SideChat } from "./SideChat";
 import { type RaceStart, TasksPanel } from "./TasksPanel";
@@ -33,15 +36,17 @@ import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
 import { Confirm } from "./kit/dialog";
 import { EmptyState } from "./kit/empty";
+import { useOpenPorts } from "./usePorts";
 
 // The room's tabs: Changes, Tasks (the queue, the board and races), Agents
-// (the tree) and Side chat.
+// (the tree), Side chat and, while a dev server answers, Preview.
 
 const TAB_ICONS: Record<Panel, LucideIcon> = {
   changes: FileDiff,
   tasks: ListChecks,
   agents: Network,
   side: MessageCircleQuestion,
+  preview: MonitorPlay,
 };
 
 function Empty({ children }: { children: React.ReactNode }) {
@@ -216,6 +221,7 @@ function Changes({
 
 export function RightPanel({
   c,
+  bridge,
   projectKey,
   state,
   panel,
@@ -235,6 +241,7 @@ export function RightPanel({
   onClose,
 }: {
   c: DeckClient;
+  bridge: DeckBridge;
   // The project's key in the app state, for the room's own notes.
   projectKey: string;
   state: AppState;
@@ -257,6 +264,8 @@ export function RightPanel({
   onClose: () => void;
 }) {
   const queued = open === undefined ? 0 : (state.queue[open.id]?.length ?? 0);
+  const ports = useOpenPorts(c.project);
+  const tabs = PANELS.filter((p) => p.panel !== "preview" || panel === "preview" || ports.length > 0);
   return (
     <aside
       className={cn(
@@ -269,7 +278,7 @@ export function RightPanel({
       <header className="panel-head drag flex h-12 shrink-0 items-center gap-1 border-b px-2">
         <h2 className="sr-only">{PANELS.find((p) => p.panel === panel)?.label}</h2>
         <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Room">
-          {PANELS.map((p) => {
+          {tabs.map((p) => {
             const Icon = TAB_ICONS[p.panel];
             return (
               <button
@@ -308,7 +317,14 @@ export function RightPanel({
         </div>
       </header>
       <div className="panel-body flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {open === undefined ? (
+        {panel === "preview" ? (
+          // A dev server belongs to the project, not to one thread.
+          c.project === undefined ? (
+            <Empty>The preview shows for a project on this computer.</Empty>
+          ) : (
+            <PreviewPanel key={open?.id ?? ""} api={c.project} bridge={bridge} />
+          )
+        ) : open === undefined ? (
           <Empty>Open a thread to see its changes, tasks and agents.</Empty>
         ) : panel === "changes" ? (
           <Changes files={files} focus={focus} onRefresh={onRefresh} revert={revertWith(c, projectKey, open.id, onRefresh)} />

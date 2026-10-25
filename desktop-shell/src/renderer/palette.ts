@@ -1,4 +1,5 @@
 import type { MenuCommand } from "../shared/bridge";
+import { type FoundPort, portLabel } from "./ports";
 import { PANELS, type Panel, SETTINGS_SECTIONS, type SettingsSection } from "./ui";
 import { modKey } from "./ui/keys";
 
@@ -59,7 +60,8 @@ export function paletteCommands(d: CommandDeps): Command[] {
   const mod = modKey(d.mac);
   return [
     { id: "new", label: "New thread", hint: `${mod}N`, run: d.newThread },
-    ...PANELS.map((p) => ({
+    // The Preview tab opens on a port (previewCommands).
+    ...PANELS.filter((p) => p.panel !== "preview").map((p) => ({
       id: `panel-${p.panel}`,
       label: `Toggle ${p.panel === "changes" ? "diff" : p.label.toLowerCase()}`,
       run: () => d.togglePanel(p.panel),
@@ -90,6 +92,13 @@ export function paletteCommands(d: CommandDeps): Command[] {
     { id: "switch", label: "Switch Deck", run: d.switchDeck },
     { id: "welcome", label: "Welcome", run: d.welcome },
   ];
+}
+
+// "Preview :3000" for each open http port.
+export function previewCommands(ports: readonly FoundPort[], preview: (url: string) => void): Command[] {
+  return ports
+    .filter((p) => p.url.startsWith("http:"))
+    .map((p) => ({ id: `preview-${p.port}`, label: `Preview ${portLabel(p.port)}`, run: () => preview(p.url) }));
 }
 
 // A room the palette can find.
