@@ -95,9 +95,14 @@ test("adds an agent with $codex+", async ({ page }) => {
   await composer(page).pressSequentially("$codex+");
   const pop = page.getByRole("listbox", { name: "Agents" });
   await expect(pop.getByRole("option")).toHaveText([/\$codex\+.*start another codex/]);
+  // A slow frame, as on a busy machine: keys typed right after the pick
+  // still land after the mention.
+  await page.evaluate(() => {
+    window.requestAnimationFrame = (fn) => window.setTimeout(() => fn(performance.now()), 400);
+  });
   await composer(page).press("Enter");
-  await expect(composer(page)).toHaveValue("$codex+ ");
-  await composer(page).pressSequentially("review the limiter");
+  await composer(page).pressSequentially("review the limiter", { delay: 50 });
+  await expect(composer(page)).toHaveValue("$codex+ review the limiter");
   await composer(page).press("Enter");
   await expect(page.locator('.agent[data-agent="codex-2"]')).toBeVisible();
   await expect(page.locator('[data-agent="codex-2"].msg')).toContainText("review the limiter");

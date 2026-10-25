@@ -164,13 +164,27 @@ export function Composer({
     setPick(0);
   };
 
-  const caretTo = (at: number) =>
-    requestAnimationFrame(() => {
-      const el = inputRef.current;
-      if (el === null) return;
+  // Where the caret goes once the text the composer just set is in the box.
+  // It moves as React writes that text, not a frame later: a key typed in
+  // between would land before the caret and split the word.
+  const caretAt = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const at = caretAt.current;
+    const el = inputRef.current;
+    if (at === null || el === null) return;
+    caretAt.current = null;
+    el.focus();
+    el.setSelectionRange(at, at);
+  });
+  const caretTo = (text: string, at: number) => {
+    const el = inputRef.current;
+    if (el === null) return;
+    // The same text makes no new render, so the caret moves now.
+    if (el.value === text) {
       el.focus();
       el.setSelectionRange(at, at);
-    });
+    } else caretAt.current = at;
+  };
 
   const sendable = canSend(draft, images.length);
   const ready = online && !sending && sendable;
@@ -230,7 +244,7 @@ export function Composer({
     const next = applySuggestion(draft, picker.m, s);
     setDraft(next.text);
     setPicker(null);
-    caretTo(next.caret);
+    caretTo(next.text, next.caret);
   };
 
   // ↑ in an empty prompt walks back through what the person sent here; ↓
@@ -243,7 +257,7 @@ export function Composer({
     if (step === null) return walking;
     walkAt.current = step.at;
     setDraft(step.text);
-    caretTo(step.text.length);
+    caretTo(step.text, step.text.length);
     return true;
   };
 
