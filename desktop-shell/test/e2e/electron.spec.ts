@@ -67,10 +67,17 @@ test("over rpc: the app reopens the last folder and runs two agents", async () =
 
 test("over v2: the app pairs, connects and runs two agents", async () => {
   const fake = await FakeDeck.start({ tickMs: 300 });
-  const app = await launch(mkdtempSync(join(tmpdir(), "deck-desktop-")));
+  // A claude on PATH, for the Welcome to find.
+  const bin = mkdtempSync(join(tmpdir(), "deck-clis-"));
+  writeFileSync(join(bin, "claude"), "#!/bin/sh\n", { mode: 0o755 });
+  const app = await launch(mkdtempSync(join(tmpdir(), "deck-desktop-")), {
+    PATH: `${bin}${delimiter}${process.env["PATH"] ?? ""}`,
+  });
   try {
     const win = await app.firstWindow();
-    await expect(win.getByRole("heading", { name: "What should we work on?" })).toBeVisible();
+    // A fresh user data folder: the Welcome, with the CLIs main found.
+    await expect(win.getByRole("heading", { name: "One deck for all your agents" })).toBeVisible();
+    await expect(win.getByRole("list", { name: "Agent CLIs" }).locator('[data-kind="claude"]')).toContainText(join(bin, "claude"));
 
     // No Node in the page, and no network of its own.
     expect(await win.evaluate(() => typeof (globalThis as { require?: unknown }).require)).toBe("undefined");

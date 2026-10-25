@@ -4,7 +4,16 @@ import { delimiter, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
-import type { LocalDeck, LogLevel, OpenOutcome, RpcMethod, RpcResult, RpcStreamEvent } from "../shared/bridge";
+import type {
+  AgentCli,
+  LocalDeck,
+  LogLevel,
+  OpenOutcome,
+  RpcMethod,
+  RpcResult,
+  RpcStreamEvent,
+  StartError,
+} from "../shared/bridge";
 
 // The deck binary on PATH, or null.
 export function findOnPath(name: string, env: NodeJS.ProcessEnv = process.env): string | null {
@@ -34,6 +43,26 @@ export function findDeck(bundledDir: string, env: NodeJS.ProcessEnv = process.en
   const bundled = join(bundledDir, process.platform === "win32" ? "deck.exe" : "deck");
   if (isExecutable(bundled)) return bundled;
   return findOnPath("deck", env);
+}
+
+// The binary the engine looks for, per agent kind (internal/deck/engine:
+// Antigravity's CLI is agy).
+const AGENT_BINARIES: [kind: string, binary: string][] = [
+  ["claude", "claude"],
+  ["codex", "codex"],
+  ["opencode", "opencode"],
+  ["antigravity", "agy"],
+];
+
+// The agent CLIs on path, as the engine finds them.
+export function findAgentClis(path: string): AgentCli[] {
+  return AGENT_BINARIES.map(([kind, bin]) => ({ kind, path: findOnPath(bin, { PATH: path }) }));
+}
+
+// Whether the engine's stderr says it found no agent CLI on PATH
+// (internal/deck/engine, Start).
+export function noAgentCli(stderr: string): boolean {
+  return /none of [a-z, ]+ was found on PATH/.test(stderr);
 }
 
 function isExecutable(p: string): boolean {
@@ -257,7 +286,7 @@ export class RpcDecks {
     return p;
   }
 
-  private async start(dir: string, id: string): Promise<Started | { ok: false; message: string }> {
+  private async start(dir: string, id: string): Promise<Started | { ok: false; message: string; start?: StartError }> {
     if (this.deck === null) return { ok: false, message: "This install of Deck is missing its engine. Reinstall Deck." };
     try {
       if (!statSync(dir).isDirectory()) return { ok: false, message: "That is not a folder." };
@@ -276,7 +305,7 @@ export class RpcDecks {
     if (typeof hs === "string") {
       this.log("error", `deck (${dir}) did not start: ${hs}`);
       child.kill("SIGTERM");
-      return { ok: false, message: hs };
+      return { ok: false, message: hs, start: { lines: tailLines(tail), noAgents: noAgentCli(tail.text) } };
     }
     const client = dial(this.Service, hs.sock, hs.token);
     const info = await unary(client, "Info", {}, 15_000);
@@ -284,7 +313,7 @@ export class RpcDecks {
       this.log("error", `deck (${dir}) did not answer: ${info.message}`);
       client.close();
       child.stdin?.end();
-      return { ok: false, message: `Deck did not answer: ${info.message}` };
+      return { ok: false, message: `Deck did not answer: ${info.message}`, start: { lines: tailLines(tail), noAgents: false } };
     }
     this.log("info", `deck ${hs.version} started in ${dir}`);
     const project = (info.value as { project?: unknown }).project;

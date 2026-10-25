@@ -56,6 +56,7 @@ import type { EngineStop } from "../../shared/bridge";
 import { Timeline } from "./Timeline";
 import { useRoomVerbs } from "./RoomVerbs";
 import { yoloMove } from "../yolo";
+import { startCards, withStart } from "./landing";
 
 // The threads of the other open projects, kept current from their stores.
 function useForeignThreads(others: OpenProject[]): ForeignThread[] {
@@ -263,6 +264,7 @@ export function Shell({
   onCloseProject,
   onDisconnect,
   onConnect,
+  onWelcome,
 }: {
   attention: ShellAttention;
   c: DeckClient;
@@ -282,6 +284,7 @@ export function Shell({
   onCloseProject: (source: string) => void;
   onDisconnect: () => void;
   onConnect: () => void;
+  onWelcome: () => void;
 }) {
   const state = useAppSlice(c.store, shellSlice, shallowEqual);
   const prefs = usePrefs();
@@ -552,6 +555,7 @@ export function Shell({
       { id: "theme-deck", label: "Theme: follow Deck", run: () => setPrefs({ theme: "deck" }) },
       { id: "add-project", label: "Add project…", run: () => void addProject() },
       { id: "switch", label: "Switch Deck", run: onDisconnect },
+      { id: "welcome", label: "Welcome", run: onWelcome },
     ];
     for (const s of state.sessions) {
       if (isSide(s)) continue;
@@ -563,7 +567,7 @@ export function Shell({
       });
     }
     return list;
-  }, [state.sessions, now, mac, newSession, onDisconnect, addProject, openSession, api, ui.panel]);
+  }, [state.sessions, now, mac, newSession, onDisconnect, onWelcome, addProject, openSession, api, ui.panel]);
 
   // The application menu runs the palette's commands.
   const commandsRef = useRef(commands);
@@ -834,19 +838,34 @@ export function Shell({
               <EngineStopped stop={engine} onRestart={() => c.restart?.() ?? Promise.resolve()} />
             ) : open === undefined ? (
               <div className="welcome flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-5 pb-[14vh]">
-                <h2 className="welcome-title text-balance text-center font-medium text-2xl tracking-tight sm:text-3xl">
+                <h2 className="welcome-title text-balance text-center font-medium text-[20px] tracking-tight">
                   {state.sessionsLoaded ? (
                     <>
                       What should we build{project === "" ? "" : " in "}
-                      {project !== "" && (
-                        <span className="underline decoration-foreground/30 decoration-dotted underline-offset-4">{project}</span>
-                      )}
-                      ?
+                      {project !== "" && <span className="font-mono">{project}</span>}?
                     </>
                   ) : (
                     "Connecting to Deck…"
                   )}
                 </h2>
+                <ul className="start-cards grid w-full max-w-3xl grid-cols-3 gap-2" aria-label="Ways to start">
+                  {startCards(kinds).map((s) => (
+                    <li key={s.id} className="flex">
+                      <button
+                        type="button"
+                        className="flex w-full animate-enter cursor-pointer flex-col gap-1 rounded-xl border border-hairline bg-surface-1 px-3.5 py-3 text-left hover:bg-hover"
+                        onClick={() => {
+                          setDraft(withStart(s.prefix, draft));
+                          focusInput();
+                        }}
+                      >
+                        <span className="font-medium text-sm">{s.title}</span>
+                        <span className="text-muted-foreground text-xs">{s.line}</span>
+                        <span className="font-mono text-2xs text-faint">{s.prefix.trim()}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
                 <Composer
                   key={NEW}
                   draft={draft}

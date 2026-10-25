@@ -10,6 +10,14 @@ if (args[0] !== "serve" || !args.includes("--rpc")) {
   process.stderr.write("fake deck: only 'serve --rpc' is known\n");
   process.exit(2);
 }
+// DECK_FAKE_NO_AGENTS: the engine finds no agent CLI and exits, as Deck does.
+if (process.env.DECK_FAKE_NO_AGENTS) {
+  process.stderr.write(
+    "Error: none of claude, codex, opencode or antigravity was found on PATH — run `deck doctor`\n",
+    () => process.exit(1),
+  );
+  return;
+}
 const handshake = process.env.DECK_FAKE_HANDSHAKE;
 if (handshake === undefined) {
   process.stderr.write("fake deck: DECK_FAKE_HANDSHAKE is not set\n");

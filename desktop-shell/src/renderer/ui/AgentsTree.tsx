@@ -1,11 +1,12 @@
 import type { Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
-import { CornerDownRight, GitBranch, Loader2, Lock } from "lucide-react";
+import { CornerDownRight, GitBranch, Loader2, Lock, Network } from "lucide-react";
 import type { AgentNode, Crew, RunningTool } from "../crew";
 import { useRoomCrew } from "../crewState";
 import { cn } from "../lib/cn";
 import type { ProjectApi } from "../project";
 import { formatDuration } from "../work";
+import { EmptyState } from "./kit/empty";
 
 // The Agents tab of a room, after the terminal UI's Agents pane: the agents
 // as a tree, each with its model, effort, context, cost, leases and the
@@ -92,7 +93,7 @@ export function AgentsTree({ crew, at, theme }: { crew: Crew | null; at: number;
           <Loader2 className="size-3 animate-spin" /> Loading…
         </p>
       ) : crew.agents.length === 0 ? (
-        <p className="px-1 text-muted-foreground text-xs">No agents yet. The first message starts one.</p>
+        <EmptyState icon={Network} title="No agents yet." hint="Send a message to start one." />
       ) : (
         <ul className="crew divide-y divide-border/50 rounded-xl border bg-card/40 px-3">
           {crew.agents.map((a) => (

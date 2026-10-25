@@ -51,7 +51,26 @@ export interface LocalDeck {
   version: string;
 }
 
-export type OpenOutcome = { ok: true; deck: LocalDeck } | { ok: false; message: string };
+// Why the engine did not start: the last lines it wrote to stderr, and
+// whether it found no agent CLI on PATH.
+export interface StartError {
+  lines: string[];
+  noAgents: boolean;
+}
+
+export type OpenOutcome = { ok: true; deck: LocalDeck } | { ok: false; message: string; start?: StartError };
+
+// An agent CLI the engine can drive, and where it is on the engine's PATH.
+export interface AgentCli {
+  kind: string;
+  path: string | null;
+}
+
+// The agent CLIs on the engine's PATH, and whether the engine was found.
+export interface AgentClis {
+  engine: boolean;
+  clis: AgentCli[];
+}
 
 // Why a local Deck's engine stopped by itself: main's message and the last
 // lines it wrote to stderr. The project stays open and can restart.
@@ -275,6 +294,8 @@ export interface DeckHost {
   badge(count: number): Promise<void>;
   // Whether the window has the focus.
   focused(): Promise<boolean>;
+  // The agent CLIs on the engine's PATH. Main looks once; refresh looks again.
+  agentClis(refresh: boolean): Promise<AgentClis>;
 }
 
 // The renderer's view: the host, the event streams, and the path of a
@@ -322,6 +343,7 @@ export const HOST_METHODS = [
   "notify",
   "badge",
   "focused",
+  "agentClis",
 ] as const satisfies ReadonlyArray<keyof DeckHost>;
 
 export type HostMethod = (typeof HOST_METHODS)[number];

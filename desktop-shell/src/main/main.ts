@@ -29,7 +29,7 @@ import {
 } from "../shared/bridge";
 import { RENDERER_CSP } from "../shared/csp";
 import { contextMenuTemplate } from "./contextMenu";
-import { findDeck, loadService, RpcDecks } from "./decks";
+import { findAgentClis, findDeck, loadService, RpcDecks } from "./decks";
 import { enginePath } from "./shellPath";
 import { callHost, createHost } from "./host";
 import { type Arrival, linkFromUrl, linksFromArgs, mustConfirm } from "./launch";
@@ -331,6 +331,7 @@ async function main(): Promise<void> {
     notify: (n) => notifier.notify(n),
     badge: (count) => notifier.badge(count),
     focused: () => notifier.focused(),
+    agentClis: async () => findAgentClis(await path),
   });
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(

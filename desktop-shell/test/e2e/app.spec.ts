@@ -16,8 +16,10 @@ test.afterEach(async () => {
 
 async function pair(page: Page): Promise<void> {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "What should we work on?" })).toBeVisible();
+  // A fresh install: the Welcome's Pair goes to the pairing form.
+  await expect(page.getByRole("heading", { name: "One deck for all your agents" })).toBeVisible();
   await page.getByRole("button", { name: "Pair with a Deck" }).click();
+  await expect(page.getByLabel("Pairing link or invite line")).toBeFocused();
   await page.getByLabel("Pairing link or invite line").fill(fake.pairLink);
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await expect(page.locator(".project")).toHaveText("deck");
