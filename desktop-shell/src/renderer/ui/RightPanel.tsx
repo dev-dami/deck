@@ -5,48 +5,77 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
-  CornerDownLeft,
   FileDiff,
   FileText,
-  ListOrdered,
+  ListChecks,
   type LucideIcon,
   MessageCircleQuestion,
+  MonitorPlay,
   Network,
   Maximize2,
   Minimize2,
   RefreshCw,
-  ShieldQuestion,
+  Undo2,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { groupApprovals } from "../approvals";
-import type { DeckClient } from "../client";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
+import type { DeckBridge } from "../../shared/bridge";
+import { addLocalNotice } from "../appState";
+import { type DeckClient, serves } from "../client";
+import type { Crew } from "../crew";
+import { langName, langOf } from "../highlight";
 import { cn } from "../lib/cn";
+import { panelSlice, shallowEqual, useAppSlice } from "../select";
 import { PANELS, type Panel } from "../ui";
-import { ApprovalCard } from "./ApprovalCard";
-import { DiffView } from "./DiffView";
-import { AgentsPanel } from "./AgentsPanel";
+import { AgentsTree } from "./AgentsTree";
+import { PreviewPanel } from "./PreviewPanel";
+import { CommentsBadge, DiffToggles, DiffView, SplitAllowed } from "./DiffView";
 import { SideChat } from "./SideChat";
+import { type RaceStart, TasksPanel } from "./TasksPanel";
+import { actionToast } from "./Toasts";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
+import { Confirm } from "./kit/dialog";
+import { EmptyState } from "./kit/empty";
+import { useOpenPorts } from "./usePorts";
+
+// The room's tabs: Changes, Tasks (the queue, the board and races), Agents
+// (the tree), Side chat and, while a dev server answers, Preview.
 
 const TAB_ICONS: Record<Panel, LucideIcon> = {
   changes: FileDiff,
-  approvals: ShieldQuestion,
-  queue: ListOrdered,
-  side: MessageCircleQuestion,
+  tasks: ListChecks,
   agents: Network,
-};
-const TAB_LABELS: Record<Panel, string> = {
-  changes: "Diff",
-  approvals: "Approvals",
-  queue: "Queue",
-  side: "Side chat",
-  agents: "Agents",
+  side: MessageCircleQuestion,
+  preview: MonitorPlay,
 };
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="empty px-4 py-16 text-center text-muted-foreground/60 text-sm">{children}</p>;
+}
+
+// How long the Undo of a revert stays.
+const REVERT_UNDO_MS = 10_000;
+
+const fileCount = (n: number) => `${n} ${n === 1 ? "file" : "files"}`;
+
+// Puts files back as they were before the room changed them (the base its
+// Changes show), then says so in the room and offers Undo. Null when the
+// Deck cannot revert.
+function revertWith(c: DeckClient, projectKey: string, sid: string, onRefresh: () => void): ((paths: string[]) => void) | null {
+  if (!serves(c, "RevertFiles")) return null;
+  return (paths) =>
+    void c.revertFiles?.(sid, paths).then((done) => {
+      if (done === null || done === undefined) return;
+      onRefresh();
+      addLocalNotice(projectKey, sid, `You reverted ${done.length === 1 ? done[0] : `${fileCount(done.length)}: ${done.join(", ")}`}`);
+      const text = `Reverted ${fileCount(done.length)}.`;
+      if (!serves(c, "UndoRevert")) {
+        c.store.dispatch({ type: "toast.add", kind: "info", text });
+        return;
+      }
+      actionToast(c.store, text, { label: "Undo", ms: REVERT_UNDO_MS, run: () => void c.undoRevert?.(sid).then(onRefresh) });
+    });
 }
 
 function FileSection({
@@ -54,11 +83,14 @@ function FileSection({
   open,
   focus,
   onToggle,
+  onRevert,
 }: {
   f: ChangedFile;
   open: boolean;
   focus: boolean;
   onToggle: () => void;
+  // Asks first, then reverts the file; null when the Deck cannot.
+  onRevert: (() => void) | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -66,38 +98,59 @@ function FileSection({
   }, [focus]);
   return (
     <div ref={ref} className="file border-border/60 border-b">
-      <button
-        type="button"
-        className="file-head sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 bg-background px-3 py-2 text-left hover:bg-accent/40"
-        aria-expanded={open}
-        onClick={onToggle}
-      >
-        {open ? (
-          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+      <div className="file-head sticky top-0 z-10 flex items-center bg-background pr-2 hover:bg-accent/40">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-2 text-left"
+          aria-expanded={open}
+          onClick={onToggle}
+        >
+          {open ? (
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+          )}
+          <FileText className="size-3.5 shrink-0 text-info-foreground" />
+          <span className="file-path min-w-0 flex-1 truncate font-mono text-xs">{f.path}</span>
+          <FileLang path={f.path} />
+          <span className="del font-mono text-diff-deletion-foreground text-xs tabular-nums">−{f.removed}</span>
+          <span className="add font-mono text-diff-addition-foreground text-xs tabular-nums">+{f.added}</span>
+        </button>
+        {onRevert !== null && (
+          <Button variant="ghost-muted" size="xs" className="file-revert font-normal" aria-label={`Revert ${f.path}`} title="Put the file back" onClick={onRevert}>
+            <Undo2 /> Revert
+          </Button>
         )}
-        <FileText className="size-3.5 shrink-0 text-info-foreground" />
-        <span className="file-path min-w-0 flex-1 truncate font-mono text-xs">{f.path}</span>
-        <span className="del font-mono text-diff-deletion-foreground text-xs">−{f.removed}</span>
-        <span className="add font-mono text-diff-addition-foreground text-xs">+{f.added}</span>
-      </button>
-      {open && <DiffView diff={f.diff ?? ""} truncated={f.diff_truncated} numbered />}
+      </div>
+      {open && <DiffView diff={f.diff ?? ""} truncated={f.diff_truncated} numbered path={f.path} />}
     </div>
   );
+}
+
+// The language of a changed file, in faint mono.
+function FileLang({ path }: { path: string }) {
+  const lang = langOf(path);
+  return lang === null ? null : <span className="file-lang font-mono text-3xs text-faint">{langName(lang)}</span>;
 }
 
 function Changes({
   files,
   focus,
+  wide,
   onRefresh,
+  revert,
 }: {
   files: ChangedFile[] | null;
   focus: string | null;
+  // The panel is expanded, so a diff may show split.
+  wide: boolean;
   onRefresh: () => void;
+  revert: ((paths: string[]) => void) | null;
 }) {
   // Files the person folded; the rest show their diff, as T3 Code opens them.
   const [closed, setClosed] = useState<Record<string, true>>({});
+  // The paths a revert waits to confirm.
+  const [asking, setAsking] = useState<string[] | null>(null);
   const added = files?.reduce((n, f) => n + f.added, 0) ?? 0;
   const removed = files?.reduce((n, f) => n + f.removed, 0) ?? 0;
   const allClosed = files !== null && files.length > 0 && files.every((f) => closed[f.path] === true);
@@ -106,7 +159,7 @@ function Changes({
       <div className="panel-tools flex h-11 shrink-0 items-center gap-2 border-b px-3 text-xs">
         <span className="font-medium text-foreground">All changes</span>
         {files !== null && files.length > 0 && (
-          <span className="font-mono">
+          <span className="font-mono tabular-nums">
             <span className="text-diff-addition-foreground">+{added}</span>{" "}
             <span className="text-diff-deletion-foreground">−{removed}</span>
           </span>
@@ -114,7 +167,14 @@ function Changes({
         <span className="text-muted-foreground">
           {files === null ? "Loading…" : `${files.length} ${files.length === 1 ? "file" : "files"}`}
         </span>
+        <CommentsBadge />
         <div className="ml-auto flex items-center gap-0.5">
+          <DiffToggles splitOk={wide} />
+          {revert !== null && files !== null && files.length > 0 && (
+            <Button variant="ghost-muted" size="xs" className="revert-all font-normal" onClick={() => setAsking(files.map((f) => f.path))}>
+              <Undo2 /> Revert all
+            </Button>
+          )}
           <Button
             variant="ghost-muted"
             size="icon-xs"
@@ -131,130 +191,109 @@ function Changes({
           </Button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {files?.length === 0 && <Empty>No changes yet.</Empty>}
-        {files?.map((f) => (
-          <FileSection
-            key={f.path}
-            f={f}
-            open={closed[f.path] !== true}
-            focus={focus === f.path}
-            onToggle={() =>
-              setClosed((c) => {
-                if (c[f.path] === true) {
-                  const { [f.path]: _gone, ...rest } = c;
-                  return rest;
-                }
-                return { ...c, [f.path]: true };
-              })
-            }
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Approvals({
-  c,
-  state,
-  openId,
-  onOpen,
-}: {
-  c: DeckClient;
-  state: AppState;
-  openId: string | null;
-  onOpen: (id: string) => void;
-}) {
-  const groups = groupApprovals(state.approvals, state.sessions, openId);
-  if (groups.length === 0) return <Empty>No approvals wait for you.</Empty>;
-  return (
-    <section aria-label="Approvals" className="flex flex-col gap-5 overflow-y-auto p-3">
-      {groups.map((g) => (
-        <div key={g.sessionId} className="approval-group flex flex-col gap-2">
-          <button
-            type="button"
-            className="group-head flex w-fit cursor-pointer items-center px-1 font-medium text-muted-foreground text-xs hover:text-foreground"
-            onClick={() => onOpen(g.sessionId)}
-          >
-            {g.title}
-          </button>
-          {g.items.map((a) => (
-            <ApprovalCard key={a.id} a={a} onAnswer={(d) => void c.answerApproval(a.session_id, a.id, d)} />
+      <SplitAllowed.Provider value={wide}>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {files?.length === 0 && (
+            <EmptyState icon={FileDiff} title="No changes yet." hint="Files an agent edits show here with their diff." className="py-16" />
+          )}
+          {files?.map((f) => (
+            <FileSection
+              key={f.path}
+              f={f}
+              open={closed[f.path] !== true}
+              focus={focus === f.path}
+              onRevert={revert === null ? null : () => setAsking([f.path])}
+              onToggle={() =>
+                setClosed((c) => {
+                  if (c[f.path] === true) {
+                    const { [f.path]: _gone, ...rest } = c;
+                    return rest;
+                  }
+                  return { ...c, [f.path]: true };
+                })
+              }
+            />
           ))}
         </div>
-      ))}
-    </section>
-  );
-}
-
-function Queue({ c, state, sessionId }: { c: DeckClient; state: AppState; sessionId: string }) {
-  const items = state.queue[sessionId] ?? [];
-  if (items.length === 0) return <Empty>Nothing waits in the queue.</Empty>;
-  return (
-    <section aria-label="Queue" className="flex flex-col gap-2 overflow-y-auto p-3">
-      {items.map((q) => (
-        <div key={q.id} className="queued flex flex-col gap-2 rounded-xl border bg-card p-3">
-          <div className="text-muted-foreground text-xs">
-            Waiting for <span className="approval-agent font-medium text-foreground">{q.agent}</span>
-          </div>
-          <p className="whitespace-pre-wrap text-sm">{q.text}</p>
-          <div className="approval-actions flex justify-end gap-1.5">
-            <Button size="xs" variant="ghost-muted" onClick={() => void c.cancelQueued(sessionId, q.id)}>
-              Cancel
-            </Button>
-            <Button size="xs" variant="outline" onClick={() => void c.steer(sessionId, q.id)}>
-              <CornerDownLeft />
-              Send now
-            </Button>
-          </div>
-        </div>
-      ))}
+      </SplitAllowed.Provider>
+      {asking !== null && revert !== null && (
+        <Confirm
+          title={asking.length === 1 ? `Revert ${asking[0]}?` : `Revert all ${asking.length} files?`}
+          description={
+            asking.length === 1
+              ? "The file goes back to how it was before this thread changed it. Undo stays for 10 seconds."
+              : `Every file this thread changed goes back to how it was before: ${asking.join(", ")}. Undo stays for 10 seconds.`
+          }
+          action={asking.length === 1 ? "Revert" : "Revert all"}
+          onClose={() => setAsking(null)}
+          onConfirm={() => revert(asking)}
+        />
+      )}
     </section>
   );
 }
 
 export function RightPanel({
   c,
+  bridge,
+  projectKey,
   state,
   panel,
   open,
   files,
   focus,
   wide,
+  crew,
+  crewAt,
+  branch,
   onRefresh,
+  onEditQueued,
   onError,
   onInfo,
   onPanel,
   onWide,
   onClose,
-  onOpen,
 }: {
   c: DeckClient;
+  bridge: DeckBridge;
+  // The project's key in the app state, for the room's own notes.
+  projectKey: string;
   state: AppState;
   panel: Panel;
   open: Session | undefined;
   files: ChangedFile[] | null;
   focus: string | null;
   wide: boolean;
+  // The room's agents tree (the Shell reads it for the lane strip too).
+  crew: Crew | null;
+  crewAt: number;
+  branch: string | null;
   onRefresh: () => void;
+  // Puts a queued message back in the composer (Tasks, Edit).
+  onEditQueued: (text: string) => void;
   onError: (t: string) => void;
   onInfo: (t: string) => void;
   onPanel: (p: Panel) => void;
   onWide: () => void;
   onClose: () => void;
-  onOpen: (id: string) => void;
 }) {
   const queued = open === undefined ? 0 : (state.queue[open.id]?.length ?? 0);
+  const ports = useOpenPorts(c.project);
+  const tabs = PANELS.filter((p) => p.panel !== "preview" || panel === "preview" || ports.length > 0);
   return (
     <aside
-      className={cn("panel flex shrink-0 flex-col border-l bg-background", wide ? "w-[min(60vw,900px)]" : "w-[480px]")}
+      className={cn(
+        // Below 1100px the panel floats over the room, which keeps its width.
+        "panel flex shrink-0 flex-col border-l bg-background max-[1100px]:absolute max-[1100px]:inset-y-0 max-[1100px]:right-0 max-[1100px]:z-30 max-[1100px]:max-w-[calc(100%-3rem)] max-[1100px]:shadow-popover",
+        wide ? "w-[min(60vw,900px)] min-w-[480px] shrink" : "w-[480px]",
+      )}
       aria-label="Side panel"
+      data-yolo-region=""
     >
-      <header className="panel-head drag flex h-12 shrink-0 items-center gap-1 border-b px-2">
+      <header className="panel-head drag @container/head flex h-12 shrink-0 items-center gap-1 border-b px-2">
         <h2 className="sr-only">{PANELS.find((p) => p.panel === panel)?.label}</h2>
-        <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Panels">
-          {PANELS.map((p) => {
+        <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Room">
+          {tabs.map((p) => {
             const Icon = TAB_ICONS[p.panel];
             return (
               <button
@@ -262,6 +301,8 @@ export function RightPanel({
                 type="button"
                 role="tab"
                 aria-selected={panel === p.panel}
+                aria-label={p.label}
+                title={p.label}
                 className={cn(
                   "flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-[13px]",
                   panel === p.panel
@@ -271,11 +312,9 @@ export function RightPanel({
                 onClick={() => onPanel(p.panel)}
               >
                 <Icon className="size-3.5" />
-                {TAB_LABELS[p.panel]}
-                {p.panel === "approvals" && state.approvals.length > 0 && (
-                  <Badge variant="warning">{state.approvals.length}</Badge>
-                )}
-                {p.panel === "queue" && queued > 0 && <Badge variant="muted">{queued}</Badge>}
+                {/* Five tabs in a narrow panel: only the open one keeps its name. */}
+                <span className={panel === p.panel || tabs.length < 5 ? undefined : "hidden @[34rem]/head:inline"}>{p.label}</span>
+                {p.panel === "tasks" && queued > 0 && <Badge variant="muted">{queued}</Badge>}
               </button>
             );
           })}
@@ -296,40 +335,55 @@ export function RightPanel({
         </div>
       </header>
       <div className="panel-body flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {panel === "approvals" && <Approvals c={c} state={state} openId={open?.id ?? null} onOpen={onOpen} />}
-        {panel === "changes" &&
-          (open === undefined ? (
-            <Empty>Open a thread to see its changes.</Empty>
+        {panel === "preview" ? (
+          // A dev server belongs to the project, not to one thread.
+          c.project === undefined ? (
+            <Empty>The preview shows for a project on this computer.</Empty>
           ) : (
-            <Changes files={files} focus={focus} onRefresh={onRefresh} />
-          ))}
-        {panel === "queue" &&
-          (open === undefined ? <Empty>Open a thread to see its queue.</Empty> : <Queue c={c} state={state} sessionId={open.id} />)}
-        {panel === "agents" &&
-          (open === undefined ? (
-            <Empty>Open a thread to see its agents and tasks.</Empty>
-          ) : c.project === undefined ? (
-            <Empty>Agents and tasks show for a project on this computer.</Empty>
+            <PreviewPanel key={open?.id ?? ""} api={c.project} bridge={bridge} />
+          )
+        ) : open === undefined ? (
+          <Empty>Open a thread to see its changes, tasks and agents.</Empty>
+        ) : panel === "changes" ? (
+          <Changes files={files} focus={focus} wide={wide} onRefresh={onRefresh} revert={revertWith(c, projectKey, open.id, onRefresh)} />
+        ) : panel === "tasks" ? (
+          <TasksPanel
+            key={open.id}
+            c={c}
+            api={c.project}
+            sessionId={open.id}
+            busy={open.busy}
+            queue={state.queue[open.id] ?? []}
+            kinds={state.server?.kinds ?? []}
+            theme={state.theme}
+            branch={branch}
+            canJudge={serves(c, "StartRace")}
+            onRace={async (r: RaceStart) =>
+              serves(c, "StartRace") ? ((await c.startRace?.(open.id, r.brief, r.kind, r.count, r.judge)) ?? null) !== null : c.send(open.id, r.text, [])
+            }
+            onEditQueued={onEditQueued}
+            onError={onError}
+            onInfo={onInfo}
+          />
+        ) : panel === "agents" ? (
+          c.project === undefined ? (
+            <Empty>The agents tree shows for a project on this computer.</Empty>
           ) : (
-            <AgentsPanel
-              key={open.id}
-              api={c.project}
-              sessionId={open.id}
-              busy={open.busy}
-              kinds={state.server?.kinds ?? []}
-              theme={state.theme}
-              onRace={(text) => c.send(open.id, text, [])}
-              onError={onError}
-              onInfo={onInfo}
-            />
-          ))}
-        {panel === "side" &&
-          (open === undefined ? (
-            <Empty>Open a thread to ask about it.</Empty>
-          ) : (
-            <SideChat key={open.id} c={c} state={state} main={open} api={c.project} theme={state.theme} />
-          ))}
+            <AgentsTree crew={crew} at={crewAt} theme={state.theme} />
+          )
+        ) : (
+          <SideChat key={open.id} c={c} state={state} main={open} api={c.project} theme={state.theme} />
+        )}
       </div>
     </aside>
   );
+}
+
+const wholeState = (s: AppState): AppState => s;
+
+// The side panel takes the whole state but reads only the panel slice (the
+// side chat reads messages too), so it renders when that slice changes.
+export function LiveRightPanel(props: Omit<ComponentProps<typeof RightPanel>, "state">) {
+  useAppSlice(props.c.store, props.panel === "side" ? wholeState : panelSlice, shallowEqual);
+  return <RightPanel {...props} state={props.c.store.state} />;
 }

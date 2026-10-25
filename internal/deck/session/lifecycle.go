@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -82,7 +83,7 @@ func (m *Manager) change(threadID string, f func(*thread)) error {
 }
 
 // Archive stops a thread's agents and takes it off the live list. It stays in
-// the store, marked archived, and /resume brings it back.
+// the store, marked archived, and /resume or Unarchive brings it back.
 func (m *Manager) Archive(threadID string) error {
 	t, err := m.drop(threadID)
 	if err != nil {
@@ -94,12 +95,53 @@ func (m *Manager) Archive(threadID string) error {
 	if m.st != nil {
 		th := m.snapshot(t)
 		m.w.push(func() {
-			if t.created { // a thread that never had content was never stored
+			if t.created {
 				_ = m.st.UpdateMeta(th)
+				return
 			}
+			// A thread that never had content was never stored: store its
+			// metadata alone, so the mark has somewhere to live.
+			_, _ = m.st.Create(th)
 		})
 	}
 	m.emit(ThreadChangedMsg{ThreadID: threadID, Gone: true})
+	return nil
+}
+
+// Unarchive brings an archived thread back to the list without starting its
+// agents; its next message resumes it. A thread archived before anyone wrote
+// in it was stored only to hold the mark, so it leaves the store again.
+func (m *Manager) Unarchive(threadID string) error {
+	if m.st == nil {
+		return errors.New("session: no store")
+	}
+	if m.thread(threadID) != nil {
+		return errors.New("session: the thread is not archived")
+	}
+	errc := make(chan error, 1)
+	m.w.push(func() { // after the archive's own write
+		ts, err := m.st.List()
+		if err != nil {
+			errc <- err
+			return
+		}
+		i := slices.IndexFunc(ts, func(t store.Thread) bool { return t.ID == threadID })
+		switch {
+		case i < 0:
+			errc <- fmt.Errorf("session: no thread %q", threadID)
+		case !ts[i].Archived:
+			errc <- errors.New("session: the thread is not archived")
+		case len(ts[i].Members) == 0:
+			errc <- m.st.Delete(threadID)
+		default:
+			ts[i].Archived = false
+			errc <- m.st.UpdateMeta(ts[i])
+		}
+	})
+	if err := <-errc; err != nil {
+		return err
+	}
+	m.emit(ThreadChangedMsg{ThreadID: threadID})
 	return nil
 }
 

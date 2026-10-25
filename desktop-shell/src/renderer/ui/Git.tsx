@@ -126,7 +126,7 @@ export function BranchPicker({ git, project, onError }: { git: Git; project: Pro
           aria-label="Find or create a branch"
           placeholder="Find or create a branch…"
           value={q}
-          className="h-8 w-full rounded-md bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
+          className="h-8 w-full rounded-md bg-transparent px-2 text-sm outline-none transition-shadow placeholder:text-faint focus-visible:ring-2 focus-visible:ring-ring"
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
             if (e.key !== "Enter") return;

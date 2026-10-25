@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "description": "Deck desktop: a window onto the agents of a running Deck",
+  "homepage": "https://github.com/dev-dami/deck",
+  "author": {
+    "name": "dev-dami",
+    "email": "141376183+dev-dami@users.noreply.github.com"
+  },
+  "desktopName": "deck-desktop.desktop",
   "main": "dist/app/main/main.js",
   "scripts": {
     "dev": "vite",
@@ -18,12 +24,15 @@
   "dependencies": {
     "@grpc/grpc-js": "1.14.6",
     "@grpc/proto-loader": "0.8.1",
+    "electron-log": "5.4.4",
+    "electron-updater": "6.8.10",
     "ws": "8.22.0"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "22.18.12",
+    "@types/prismjs": "1.26.6",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "@types/ws": "8.18.1",
@@ -35,6 +44,7 @@
     "electron": "44.9.0",
     "electron-builder": "26.17.0",
     "lucide-react": "1.49.0",
+    "prismjs": "1.30.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "tailwind-merge": "3.7.0",
@@ -49,6 +59,21 @@
     "directories": {
       "output": "release"
     },
+    "protocols": [
+      {
+        "name": "Deck",
+        "schemes": [
+          "deck"
+        ]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "dev-dami",
+        "repo": "deck-releases"
+      }
+    ],
     "files": [
       "dist/**",
       "package.json"
@@ -70,14 +95,17 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "icon": "build/icon-mac.png"
     },
     "linux": {
       "category": "Development",
       "target": [
         "AppImage",
         "deb"
-      ]
+      ],
+      "syncDesktopName": true,
+      "icon": "build/icons"
     },
     "win": {
       "target": [

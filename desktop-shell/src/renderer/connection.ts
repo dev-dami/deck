@@ -1,7 +1,7 @@
 import type { KV } from "@web/auth";
 import { Controller } from "@web/controller";
 import { documentTarget, type ThemeTarget } from "@web/theme";
-import { type DeckBridge, type LocalDeck, TOKEN_PLACEHOLDER } from "../shared/bridge";
+import { type DeckBridge, type EngineStop, type LocalDeck, TOKEN_PLACEHOLDER } from "../shared/bridge";
 import { BridgeSocket } from "./bridgeSocket";
 import type { DeckClient } from "./client";
 import { RpcDeckClient } from "./rpcClient";
@@ -51,9 +51,10 @@ export function connect(bridge: DeckBridge, serverId: string): DeckClient {
   return c;
 }
 
-// A Deck on this machine that main runs with deck serve --rpc.
-export function openLocal(bridge: DeckBridge, deck: LocalDeck): DeckClient {
-  const c = new RpcDeckClient(bridge, deck, themeTarget());
+// A Deck on this machine that main runs with deck serve --rpc. onEngine
+// hears when its engine stops by itself (and null once it runs again).
+export function openLocal(bridge: DeckBridge, deck: LocalDeck, onEngine: (stop: EngineStop | null) => void = () => {}): DeckClient {
+  const c = new RpcDeckClient(bridge, deck, themeTarget(), onEngine);
   c.start();
   return c;
 }

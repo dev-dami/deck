@@ -100,6 +100,43 @@ service Deck {
   rpc PostShared(PostSharedRequest) returns (Empty);
   rpc AnswerShared(AnswerSharedRequest) returns (Empty);
 
+  // The room calls. Info.capabilities names the ones this Deck serves.
+  // IsolateSession moves the thread onto a git worktree and branch of its
+  // own; its agents restart there.
+  rpc IsolateSession(SessionRef) returns (Empty);
+  // ApplyIsolated writes what an isolated thread changed since it started
+  // (or since the last apply) into the shared tree as uncommitted edits.
+  rpc ApplyIsolated(SessionRef) returns (FilesResponse);
+  // UnisolateSession moves the thread back to the shared tree and removes
+  // its worktree and branch, discarding what was never applied.
+  rpc UnisolateSession(SessionRef) returns (Empty);
+  // RevertFiles puts files back the way they were before a message.
+  rpc RevertFiles(RevertFilesRequest) returns (FilesResponse);
+  // UndoRevert takes the files of the thread's latest revert back to how
+  // they were just before it.
+  rpc UndoRevert(SessionRef) returns (Empty);
+  // ArchiveSession stops the thread's agents and marks it archived. The
+  // next message brings it back.
+  rpc ArchiveSession(SessionRef) returns (Empty);
+  // UnarchiveSession brings an archived thread back to the list.
+  rpc UnarchiveSession(SessionRef) returns (Empty);
+  // UndoApply takes the shared tree back to how it was before the thread's
+  // last ApplyIsolated, if those files have not changed since. It returns
+  // the files it put back.
+  rpc UndoApply(SessionRef) returns (FilesResponse);
+  // StartRace has count agents of kind do one brief, each on a worktree of
+  // its own, as the agents' task.race does.
+  rpc StartRace(StartRaceRequest) returns (StartRaceResponse);
+  // ListFiles lists the files of the thread's tree (its worktree when
+  // isolated) that match query, minus what the repository ignores.
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
+  // ReadImage returns the bytes of a message's image part: index counts
+  // the message's image parts from 0.
+  rpc ReadImage(ReadImageRequest) returns (ReadImageResponse);
+  // SearchMessages finds text in the messages of every thread of the
+  // project that is not archived, newest first.
+  rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
+
   // Events streams everything that happens, starting with a Ready. Pass the
   // epoch and seq of the last event seen to replay what was missed; Ready
   // says resync when that cannot be done and the client must refetch.
@@ -122,6 +159,19 @@ message InfoResponse {
   string project = 2;
   repeated string kinds = 3;
   Theme theme = 4;
+  repeated AgentCli clis = 5;
+  // capabilities names the optional methods this Deck serves, such as
+  // "IsolateSession" or "ListFiles".
+  repeated string capabilities = 6;
+}
+
+message AgentCli {
+  string kind = 1;
+  string path = 2;
+  bool found = 3;
+  // logged_in is never set: telling means running the CLI's own status
+  // command, which takes seconds (deck doctor does it).
+  optional bool logged_in = 4;
 }
 
 message Theme {
@@ -142,6 +192,14 @@ message Session {
   int32 pending = 5;
   string mode = 6;
   string last_text = 7;
+  // attention says what the session waits for from the person: "" for
+  // nothing, "approval" (a command or an edit), "question" (an agent asks
+  // something else), "error" (an agent stopped with an error) or "blocked"
+  // (a task is blocked or failed).
+  string attention = 8;
+  // branch is the thread's worktree branch when it is isolated.
+  string branch = 9;
+  bool archived = 10;
 }
 
 message ListSessionsResponse {
@@ -150,6 +208,8 @@ message ListSessionsResponse {
 
 message CreateSessionRequest {
   string title = 1;
+  // isolate starts the thread on a worktree and branch of its own.
+  bool isolate = 2;
 }
 
 message RenameSessionRequest {
@@ -368,6 +428,19 @@ message ModeChanged {
 message Notice {
   string session_id = 1;
   string text = 2;
+  // via marks a kind of note: "overlap" when two agents changed the same
+  // file, or one changed a file another holds.
+  string via = 3;
+}
+
+// LeaseChanged says an agent took a lease on files, gave it back, or that
+// it ran out (released).
+message LeaseChanged {
+  string session_id = 1;
+  string agent = 2;
+  repeated string paths = 3;
+  bool exclusive = 4;
+  bool released = 5;
 }
 
 message Event {
@@ -390,6 +463,7 @@ message Event {
     ModeChanged mode_changed = 22;
     Notice notice = 23;
     Theme theme_changed = 24;
+    LeaseChanged lease_changed = 25;
   }
 }
 
@@ -809,4 +883,74 @@ message AnswerSharedRequest {
   string thread = 2;
   string approval = 3;
   bool allow = 4;
+}
+
+message FilesResponse {
+  repeated string files = 1;
+}
+
+message RevertFilesRequest {
+  string session_id = 1;
+  // since is a time (Unix ms): the files go back to how they were before
+  // the first message at or after it. 0 means the checkpoint Changes
+  // measures from.
+  int64 since = 2;
+  repeated string paths = 3;
+}
+
+message StartRaceRequest {
+  string session_id = 1;
+  string brief = 2;
+  string kind = 3;
+  int32 count = 4;
+  // judge has an agent of the same kind rank the entries.
+  bool judge = 5;
+}
+
+message StartRaceResponse {
+  string task_id = 1;
+}
+
+message ListFilesRequest {
+  string session_id = 1;
+  string query = 2;
+  // limit is at most 500; 0 means 100.
+  int32 limit = 3;
+}
+
+message ListFilesResponse {
+  // paths are relative to the thread's folder, with forward slashes.
+  repeated string paths = 1;
+  bool truncated = 2;
+}
+
+message ReadImageRequest {
+  string session_id = 1;
+  string message_id = 2;
+  int32 index = 3;
+}
+
+message ReadImageResponse {
+  bytes data = 1;
+  string mime = 2;
+}
+
+message SearchMessagesRequest {
+  string query = 1;
+  // limit is at most 200; 0 means 30.
+  int32 limit = 2;
+}
+
+message SearchHit {
+  string session_id = 1;
+  string message_id = 2;
+  string agent = 3;
+  // snippet is the text around the first match, on one line.
+  string snippet = 4;
+  // at is when the message was written (Unix ms).
+  int64 at = 5;
+}
+
+message SearchMessagesResponse {
+  repeated SearchHit hits = 1;
 }

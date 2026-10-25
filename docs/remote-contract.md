@@ -378,3 +378,18 @@ The Deck desktop app does not use the WebSocket above. It runs
   - Text is not capped.
   - Yolo is allowed, because the caller is the user at this machine.
   - Errors carry their message.
+  - Rooms. `Session` carries `attention`, `branch` and `archived`,
+    `Notice.via` marks overlap notes, and `lease_changed` reports a lease
+    taken or ended. The phone gets none of these.
+  - `ReadImage {session_id, message_id, index}` returns the bytes and type
+    of a message's image part, up to 10 MB. The engine finds them from the
+    session and the message; the client never names a path.
+  - `SearchMessages {query, limit}` finds text, ignoring case, in the
+    messages of every thread that is not archived, newest first: up to
+    `limit` hits (30 by default, at most 200), each with the text around
+    the match.
+- **Optional calls.** `Info.capabilities` names the optional methods this
+  Deck serves: the room calls (isolate, apply, undo an apply, unisolate,
+  revert, undo a revert, archive, unarchive, race), `ListFiles`,
+  `ReadImage` and `SearchMessages`. A client checks it before it calls one.
+  `Info.clis` lists the agent CLIs Deck looks for and where it found them.

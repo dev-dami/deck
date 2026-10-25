@@ -3,12 +3,14 @@
 // tests serve it to a page.
 import { join } from "node:path";
 import { loadService, RpcDecks } from "../src/main/decks";
-import { createHost } from "../src/main/host";
+import { createHost, type HostDeps } from "../src/main/host";
 import { LinkHost } from "../src/main/link";
 import { PhoneLink } from "../src/main/phone";
+import { Preview } from "../src/main/preview";
 import { RecentFolders } from "../src/main/recent";
 import { type Sealer, ServerStore } from "../src/main/servers";
-import type { DeckBridge, DeckHost, RpcStreamEvent, SocketEvent } from "../src/shared/bridge";
+import type { Session } from "electron";
+import type { DeckBridge, DeckHost, LogLevel, RpcStreamEvent, SocketEvent } from "../src/shared/bridge";
 import { PROTO } from "./fake-grpc";
 
 // The deck binary the tests run: it prints DECK_FAKE_HANDSHAKE and lives
@@ -31,16 +33,20 @@ export interface TestHost {
   store: ServerStore;
   links: LinkHost;
   decks: RpcDecks;
+  // What the host wrote to the log, as [level, message].
+  logged: [LogLevel, string][];
 }
 
 export function testHost(
   emit: (id: number, ev: SocketEvent) => void,
   emitRpc: (id: string, ev: RpcStreamEvent) => void,
   pickFolder: () => Promise<string | null> = async () => null,
+  deps: Partial<HostDeps> = {},
 ): TestHost {
   const store = new ServerStore(null, noKeychain);
   const links = new LinkHost(store, emit);
   const decks = new RpcDecks(FAKE_DECK, loadService(PROTO), emitRpc);
+  const logged: [LogLevel, string][] = [];
   const host = createHost({
     store,
     links,
@@ -50,8 +56,32 @@ export function testHost(
     deckPath: FAKE_DECK,
     deviceName: "Deck desktop (test)",
     pickFolder,
+    appInfo: { version: "0.1.0", electron: "test", chromium: "test", platform: process.platform },
+    log: (level, message) => logged.push([level, message]),
+    openLogs: async () => {},
+    installUpdate: () => {},
+    threadMenu: async () => null,
+    notify: () => {},
+    badge: () => {},
+    focused: () => true,
+    agentClis: async () => [
+      { kind: "claude", path: "/usr/local/bin/claude" },
+      { kind: "codex", path: "/opt/homebrew/bin/codex" },
+      { kind: "opencode", path: null },
+      { kind: "antigravity", path: null },
+    ],
+    // A real probe; no window, so no view.
+    preview: new Preview({
+      create: () => null,
+      remove: () => {},
+      zoom: () => 1,
+      openExternal: () => {},
+      send: () => {},
+      session: () => ({}) as Session,
+    }),
+    ...deps,
   });
-  return { host, store, links, decks };
+  return { host, store, links, decks, logged };
 }
 
 // A bridge as the preload builds it, wired straight to the host. seen
@@ -93,5 +123,12 @@ export function inProcessBridge(): DeckBridge & TestHost & { seen: unknown[] } {
     seen,
     onSocket: (fn) => listen(sockets, fn),
     onRpc: (fn) => listen(rpcs, fn),
+    // No menu, links or updates outside Electron.
+    onMenu: () => () => {},
+    onLink: () => () => {},
+    onUpdate: () => () => {},
+    onNotificationClick: () => () => {},
+    onPreview: () => () => {},
+    folderPath: () => "",
   };
 }

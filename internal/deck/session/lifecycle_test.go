@@ -79,6 +79,52 @@ func TestRenamePinResolveAreStoredAndSurviveArchiveAndResume(t *testing.T) {
 	}
 }
 
+func TestUnarchiveBringsAThreadBackWithoutStartingIt(t *testing.T) {
+	r, tid := lifeRig(t)
+	if err := r.m.Unarchive(tid); err == nil {
+		t.Fatal("a live thread is not archived")
+	}
+	if err := r.m.Archive(tid); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.m.Unarchive(tid); err != nil {
+		t.Fatal(err)
+	}
+	if th := stored(t, r, tid); th.Archived || len(th.Members) == 0 {
+		t.Fatalf("stored = %+v", th)
+	}
+	if _, live := r.m.Thread(tid); live {
+		t.Fatal("unarchiving starts nothing")
+	}
+	if err := r.m.Unarchive(tid); err == nil || !strings.Contains(err.Error(), "not archived") {
+		t.Fatalf("twice: %v", err)
+	}
+	waitFor(t, "a ThreadChangedMsg that keeps the thread", func() bool {
+		return r.c.count(func(m tea.Msg) bool { c, ok := m.(ThreadChangedMsg); return ok && c.ThreadID == tid && !c.Gone }) >= 1
+	})
+}
+
+func TestAnEmptyThreadCanBeArchivedAndUnarchived(t *testing.T) {
+	r := newRig(t, nil, nil)
+	tid, err := r.m.NewThread(r.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.m.Archive(tid); err != nil {
+		t.Fatal(err)
+	}
+	if th := stored(t, r, tid); !th.Archived {
+		t.Fatalf("stored = %+v", th)
+	}
+	if err := r.m.Unarchive(tid); err != nil {
+		t.Fatal(err)
+	}
+	r.m.Flush()
+	if _, _, err := r.st.LoadEntries(tid); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the empty thread stays stored: %v", err)
+	}
+}
+
 func TestANewMessageWakesAResolvedThread(t *testing.T) {
 	r, tid := lifeRig(t)
 	if err := r.m.Resolve(tid); err != nil {

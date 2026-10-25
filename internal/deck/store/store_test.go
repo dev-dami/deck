@@ -491,3 +491,22 @@ func TestMetaWithoutModeMigratesToAsk(t *testing.T) {
 		t.Errorf("Version changed to %d; migration must not bump it", th.Version)
 	}
 }
+
+func TestAppliedRoundTrips(t *testing.T) {
+	s, dir := newStore(t)
+	th := mustCreate(t, s, Thread{Title: "iso"})
+	th.Worktree = &Worktree{Path: "/wt", Branch: "deck/x", Main: "/main", Base: "b2",
+		Applied: &Applied{Before: "t1", After: "t2", Files: []string{"a.go", "old.go"}, Base: "b1"}}
+	if err := s.UpdateMeta(th); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, _ := s2.List()
+	a := list[0].Worktree.Applied
+	if a == nil || a.Before != "t1" || a.After != "t2" || a.Base != "b1" || strings.Join(a.Files, ",") != "a.go,old.go" {
+		t.Fatalf("applied = %+v", a)
+	}
+}

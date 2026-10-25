@@ -51,7 +51,33 @@ export interface LocalDeck {
   version: string;
 }
 
-export type OpenOutcome = { ok: true; deck: LocalDeck } | { ok: false; message: string };
+// Why the engine did not start: the last lines it wrote to stderr, and
+// whether it found no agent CLI on PATH.
+export interface StartError {
+  lines: string[];
+  noAgents: boolean;
+}
+
+export type OpenOutcome = { ok: true; deck: LocalDeck } | { ok: false; message: string; start?: StartError };
+
+// An agent CLI the engine can drive, and where it is on the engine's PATH.
+export interface AgentCli {
+  kind: string;
+  path: string | null;
+}
+
+// The agent CLIs on the engine's PATH, and whether the engine was found.
+export interface AgentClis {
+  engine: boolean;
+  clis: AgentCli[];
+}
+
+// Why a local Deck's engine stopped by itself: main's message and the last
+// lines it wrote to stderr. The project stays open and can restart.
+export interface EngineStop {
+  message: string;
+  stderr: string[];
+}
 
 // A phone paired with this computer through `deck mobile connect`. Keys and
 // relay tokens never reach the window.
@@ -132,6 +158,20 @@ export const RPC_METHODS = [
   "ReadShared",
   "PostShared",
   "AnswerShared",
+  // Optional: Info.capabilities says whether the Deck serves them.
+  "IsolateSession",
+  "ApplyIsolated",
+  "UnisolateSession",
+  "RevertFiles",
+  "UndoRevert",
+  "ArchiveSession",
+  "UnarchiveSession",
+  "UndoApply",
+  "StartRace",
+  "ListFiles",
+  // Bytes arrive as a Uint8Array.
+  "ReadImage",
+  "SearchMessages",
 ] as const;
 
 export type RpcMethod = (typeof RPC_METHODS)[number];
@@ -141,11 +181,13 @@ export type RpcMethod = (typeof RPC_METHODS)[number];
 export type RpcResult = { ok: true; value: unknown } | { ok: false; code: number; message: string };
 
 // What the Events stream of a local Deck sends to the window: one event (a
-// deck.v1.Event as a plain object), the end of the stream, or the end of
-// the Deck process.
+// deck.v1.Event as a plain object), the end of the stream, the end of the
+// Deck process on its own (stopped: restartFolder starts it again), or a
+// Deck that is closed for good (exit).
 export type RpcStreamEvent =
   | { type: "event"; event: unknown }
   | { type: "end"; code: number; message: string }
+  | ({ type: "stopped" } & EngineStop)
   | { type: "exit"; message: string }
   | TermEvent;
 
@@ -156,6 +198,101 @@ export type TermEvent =
   | { type: "term"; term: string; data: string }
   | { type: "term-exit"; term: string; code: number }
   | { type: "term-end"; term: string; code: number; message: string };
+
+// The commands of the application menu. Main sends one on MENU_EVENT_CHANNEL;
+// the renderer runs the palette command that matches it.
+export const MENU_COMMANDS = [
+  "new-thread",
+  "open-folder",
+  "settings",
+  "toggle-sidebar",
+  "toggle-panel",
+  "toggle-terminal",
+  "palette",
+  "about",
+  "inbox",
+  "next-attention",
+  "room-1",
+  "room-2",
+  "room-3",
+  "room-4",
+  "room-5",
+  "room-6",
+  "room-7",
+  "room-8",
+  "room-9",
+] as const;
+
+export type MenuCommand = (typeof MENU_COMMANDS)[number];
+
+// A deck:// link or a folder argument, sent on LINK_EVENT_CHANNEL. "pair"
+// carries the invite line for the pairing form; "open" a folder that exists.
+export type LinkEvent = { type: "pair"; url: string } | { type: "open"; path: string };
+
+// What the updater tells the window: an update is downloaded and waits for
+// a restart, or the answer to "Check for updates" in the Help menu.
+export type UpdateEvent = { type: "ready"; version: string } | { type: "status"; message: string };
+
+export const LOG_LEVELS = ["error", "warn", "info"] as const;
+export type LogLevel = (typeof LOG_LEVELS)[number];
+
+export interface AppInfo {
+  version: string;
+  electron: string;
+  chromium: string;
+  platform: string;
+}
+
+// The item picked in a thread row's native menu, or null.
+export type ThreadChoice = "rename" | "archive" | "unarchive" | "delete" | null;
+
+// Archive in a thread row's menu: offered, shown but off while an agent
+// works, left out for a Deck that cannot archive, or Unarchive for an
+// archived room.
+export const ARCHIVE_OFFERS = ["on", "busy", "none", "archived"] as const;
+export type ArchiveOffer = (typeof ARCHIVE_OFFERS)[number];
+
+export interface ThreadMenuInput {
+  id: string;
+  title: string;
+  archive: ArchiveOffer;
+}
+
+// A native notification. tag names the room; a click on the notification
+// sends it back on NOTIFICATION_EVENT_CHANNEL. silent: no sound.
+export interface NotifyInput {
+  title: string;
+  body: string;
+  tag: string;
+  silent: boolean;
+}
+
+export const NOTIFY_LIMITS = { title: 200, body: 500, tag: 500, badge: 9999 } as const;
+
+// The preview pane: a page of a dev server on this computer, in a view that
+// main owns and lays over the window where the renderer asks.
+export const PREVIEW_LIMITS = { ports: 32, url: 2048 } as const;
+
+export type PreviewNav = { action: "back" | "forward" | "reload" } | { action: "path"; path: string };
+
+// Where the view goes, in the window's CSS pixels, and the page's zoom (a
+// device width wider than the box zooms the page out to fit).
+export interface PreviewBounds {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  zoom: number;
+}
+
+// What main sends on PREVIEW_EVENT_CHANNEL for the address bar.
+export interface PreviewState {
+  url: string;
+  canBack: boolean;
+  canForward: boolean;
+  loading: boolean;
+  title: string;
+}
 
 // What main does for the renderer. The Electron main process serves it over
 // IPC; the end-to-end tests serve the same object to a browser page.
@@ -173,6 +310,9 @@ export interface DeckHost {
   openFolder(dir: string): Promise<OpenOutcome>;
   // Closes the Deck's stdin, which stops it.
   closeFolder(id: string): Promise<void>;
+  // Starts the engine of a Deck that stopped by itself again, in the same
+  // folder and with the same id.
+  restartFolder(id: string): Promise<OpenOutcome>;
   recentFolders(): Promise<string[]>;
   rpcCall(id: string, method: RpcMethod, request: Record<string, unknown>): Promise<RpcResult>;
   // Opens the Events stream from (epoch, seq) and closes the one open before.
@@ -189,12 +329,51 @@ export interface DeckHost {
   phoneNewCode(): Promise<PhoneOutcome>;
   phoneRevoke(deviceId: string): Promise<PhoneOutcome>;
   phoneStop(): Promise<PhoneOutcome>;
+  // The app's version and its runtime, for Settings > About.
+  appInfo(): Promise<AppInfo>;
+  openLogs(): Promise<void>;
+  // Writes an error of the window to the app's log file.
+  logFromRenderer(level: LogLevel, message: string): Promise<void>;
+  // Quits and starts the downloaded update.
+  installUpdate(): Promise<void>;
+  // Shows the native menu of a thread row and resolves with the choice.
+  threadMenu(thread: ThreadMenuInput): Promise<ThreadChoice>;
+  // Shows a native notification; main sends it, the window needs no
+  // permission for it.
+  notify(n: NotifyInput): Promise<void>;
+  // The count on the dock or taskbar icon; 0 clears it.
+  badge(count: number): Promise<void>;
+  // Whether the window has the focus.
+  focused(): Promise<boolean>;
+  // The agent CLIs on the engine's PATH. Main looks once; refresh looks again.
+  agentClis(refresh: boolean): Promise<AgentClis>;
+  // The ports (at most 32) that accept a connection on this computer now.
+  probePorts(ports: number[]): Promise<number[]>;
+  // Loads a loopback http URL of an open port in the preview view; false
+  // when main refuses it.
+  previewOpen(input: { url: string }): Promise<boolean>;
+  previewNav(nav: PreviewNav): Promise<void>;
+  // Shows the view at these bounds.
+  previewBounds(bounds: PreviewBounds): Promise<void>;
+  previewHide(): Promise<void>;
+  // Destroys the view and its page.
+  previewClose(): Promise<void>;
 }
 
-// The renderer's view: the host plus the socket and rpc event streams.
+// The renderer's view: the host, the event streams, and the path of a
+// folder dropped on the window.
 export interface DeckBridge extends DeckHost {
   onSocket(fn: (id: number, ev: SocketEvent) => void): () => void;
   onRpc(fn: (id: string, ev: RpcStreamEvent) => void): () => void;
+  onMenu(fn: (command: MenuCommand) => void): () => void;
+  onLink(fn: (link: LinkEvent) => void): () => void;
+  onUpdate(fn: (ev: UpdateEvent) => void): () => void;
+  // A click on a notification, with its tag.
+  onNotificationClick(fn: (ev: { tag: string }) => void): () => void;
+  onPreview(fn: (s: PreviewState) => void): () => void;
+  // The path of a dropped folder. The window passes only folders, and main
+  // checks that the path is one before it opens it.
+  folderPath(file: File): string;
 }
 
 export const HOST_METHODS = [
@@ -208,6 +387,7 @@ export const HOST_METHODS = [
   "socketClose",
   "openFolder",
   "closeFolder",
+  "restartFolder",
   "recentFolders",
   "rpcCall",
   "rpcSubscribe",
@@ -218,12 +398,32 @@ export const HOST_METHODS = [
   "phoneNewCode",
   "phoneRevoke",
   "phoneStop",
+  "appInfo",
+  "openLogs",
+  "logFromRenderer",
+  "installUpdate",
+  "threadMenu",
+  "notify",
+  "badge",
+  "focused",
+  "agentClis",
+  "probePorts",
+  "previewOpen",
+  "previewNav",
+  "previewBounds",
+  "previewHide",
+  "previewClose",
 ] as const satisfies ReadonlyArray<keyof DeckHost>;
 
 export type HostMethod = (typeof HOST_METHODS)[number];
 
 export const SOCKET_EVENT_CHANNEL = "deck:socket";
 export const RPC_EVENT_CHANNEL = "deck:rpc";
+export const MENU_EVENT_CHANNEL = "deck:menu";
+export const LINK_EVENT_CHANNEL = "deck:link";
+export const UPDATE_EVENT_CHANNEL = "deck:update";
+export const NOTIFICATION_EVENT_CHANNEL = "deck:notification-click";
+export const PREVIEW_EVENT_CHANNEL = "deck:preview";
 
 export function hostChannel(m: HostMethod): string {
   return `deck:${m}`;

@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join } from "node:path";
 import { _electron as electron, type ElectronApplication, expect, test } from "@playwright/test";
@@ -67,10 +69,17 @@ test("over rpc: the app reopens the last folder and runs two agents", async () =
 
 test("over v2: the app pairs, connects and runs two agents", async () => {
   const fake = await FakeDeck.start({ tickMs: 300 });
-  const app = await launch(mkdtempSync(join(tmpdir(), "deck-desktop-")));
+  // A claude on PATH, for the Welcome to find.
+  const bin = mkdtempSync(join(tmpdir(), "deck-clis-"));
+  writeFileSync(join(bin, "claude"), "#!/bin/sh\n", { mode: 0o755 });
+  const app = await launch(mkdtempSync(join(tmpdir(), "deck-desktop-")), {
+    PATH: `${bin}${delimiter}${process.env["PATH"] ?? ""}`,
+  });
   try {
     const win = await app.firstWindow();
-    await expect(win.getByRole("heading", { name: "What should we work on?" })).toBeVisible();
+    // A fresh user data folder: the Welcome, with the CLIs main found.
+    await expect(win.getByRole("heading", { name: "One deck for all your agents" })).toBeVisible();
+    await expect(win.getByRole("list", { name: "Agent CLIs" }).locator('[data-kind="claude"]')).toContainText(join(bin, "claude"));
 
     // No Node in the page, and no network of its own.
     expect(await win.evaluate(() => typeof (globalThis as { require?: unknown }).require)).toBe("undefined");
@@ -103,6 +112,105 @@ test("over v2: the app pairs, connects and runs two agents", async () => {
     await expect(win.locator('[data-agent="codex-2"].msg').last()).toContainText("split the work");
   } finally {
     await app.close();
+    await fake.close();
+  }
+});
+
+test("ports: a terminal's dev server opens in the preview view, which keeps to its port", async () => {
+  const fake = await FakeRpcDeck.start({ tickMs: 300 });
+  const folder = mkdtempSync(join(tmpdir(), "deck-folder-"));
+  const userData = mkdtempSync(join(tmpdir(), "deck-desktop-"));
+  writeFileSync(join(userData, "recent.json"), JSON.stringify([folder]));
+  const bin = join(mkdtempSync(join(tmpdir(), "deck-bin-")), "bin");
+  mkdirSync(bin);
+  symlinkSync(FAKE_DECK, join(bin, "deck"));
+  const server = createServer((_req, res) => {
+    res.setHeader("content-type", "text/html");
+    res.end(
+      '<title>Fixture</title><h1>Preview fixture</h1><a id="out" href="http://deck-preview.invalid/">out</a>' +
+        '<a id="pop" href="http://deck-preview.invalid/pop" target="_blank">pop</a><a id="file" href="file:///etc/hosts">file</a>',
+    );
+  });
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  const port = (server.address() as AddressInfo).port;
+  const app = await launch(userData, {
+    DECK_BIN: join(bin, "deck"),
+    PATH: `${bin}${delimiter}${process.env["PATH"] ?? ""}`,
+    DECK_FAKE_HANDSHAKE: fake.handshake,
+  });
+  // The view's page, read from main through Playwright: the app has no hook for it.
+  const viewUrl = () =>
+    app.evaluate(({ webContents }, p) => webContents.getAllWebContents().find((w) => w.getURL().includes(`:${p}/`))?.getURL() ?? null, port);
+  const inView = (code: string) =>
+    app.evaluate(
+      ({ webContents }, [p, js]) => webContents.getAllWebContents().find((w) => w.getURL().includes(`:${p}/`))?.executeJavaScript(js),
+      [port, code] as const,
+    );
+  const shown = () =>
+    app.evaluate(({ BrowserWindow }) => {
+      const views = BrowserWindow.getAllWindows()[0]?.contentView.children ?? [];
+      return views.map((v) => ({ visible: v.getVisible(), width: v.getBounds().width }));
+    });
+  try {
+    const win = await app.firstWindow();
+    await win.setViewportSize({ width: 1360, height: 860 });
+    await expect(win.locator(".link")).toHaveText("Connected");
+    // What the app hands the system browser, kept here instead.
+    await app.evaluate(({ shell }) => {
+      const g = globalThis as unknown as { opened: string[] };
+      g.opened = [];
+      shell.openExternal = async (url: string) => {
+        g.opened.push(url);
+      };
+    });
+    const opened = () => app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened);
+
+    await win.keyboard.press("Control+j");
+    const drawer = win.getByRole("region", { name: "Terminal" });
+    await expect(drawer.locator(".xterm-rows")).toContainText("fake shell");
+    await drawer.locator(".xterm").click();
+    await win.keyboard.type(`echo Local: http://localhost:${port}/`);
+    await win.keyboard.press("Enter");
+    await win.getByRole("group", { name: "Dev servers" }).getByRole("button", { name: `Preview :${port}` }).click();
+    await expect(win.getByRole("complementary", { name: "Side panel" }).getByRole("tab", { name: "Preview" })).toHaveAttribute("aria-selected", "true");
+
+    await expect.poll(viewUrl, { timeout: 10_000 }).toBe(`http://localhost:${port}/`);
+    await expect.poll(() => inView("document.querySelector('h1')?.textContent")).toBe("Preview fixture");
+    await expect.poll(shown).toEqual([{ visible: true, width: expect.any(Number) }]);
+    expect((await shown())[0]?.width).toBeGreaterThan(100);
+    // The page has none of the app: no bridge, no Node, its own session.
+    expect(await inView("[typeof window.deck, typeof require, typeof process].join(' ')")).toBe("undefined undefined undefined");
+    const own = await app.evaluate(({ webContents, session }, p) => {
+      const wc = webContents.getAllWebContents().find((w) => w.getURL().includes(`:${p}/`));
+      return wc !== undefined && wc.session !== session.defaultSession && wc.session === session.fromPartition("preview");
+    }, port);
+    expect(own).toBe(true);
+    await expect(win.getByRole("region", { name: "Preview" }).locator(".preview-host")).toHaveText(`localhost:${port}`);
+
+    // A link to another site goes to the browser, a new window too, and a
+    // file link nowhere; the view stays on the port. Main opens at most one
+    // browser tab a second, so the second click waits out that gap.
+    await inView("document.getElementById('out').click()");
+    await expect.poll(opened).toEqual(["http://deck-preview.invalid/"]);
+    await win.waitForTimeout(1100);
+    await inView("document.getElementById('pop').click()");
+    await inView("document.getElementById('file').click()");
+    await expect.poll(opened).toEqual(["http://deck-preview.invalid/", "http://deck-preview.invalid/pop"]);
+    await win.waitForTimeout(500);
+    expect(await viewUrl()).toBe(`http://localhost:${port}/`);
+
+    // The palette covers the view, so main hides it.
+    await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await win.keyboard.press("Control+k");
+    await expect.poll(shown).toEqual([{ visible: false, width: expect.any(Number) }]);
+    await win.keyboard.press("Escape");
+    await expect.poll(shown).toEqual([{ visible: true, width: expect.any(Number) }]);
+    // Another tab hides it; closing the panel too.
+    await win.getByRole("complementary", { name: "Side panel" }).getByRole("tab", { name: "Changes" }).click();
+    await expect.poll(shown).toEqual([{ visible: false, width: expect.any(Number) }]);
+  } finally {
+    await app.close();
+    server.close();
     await fake.close();
   }
 });
@@ -146,7 +254,7 @@ test("with the bundled engine: git status and a terminal", async () => {
     expect(display).toBe("inline-block");
     await win.screenshot({ path: join(root, "docs", "terminal.png") });
     // The real workspace answers the team call: no link in a fresh home.
-    await win.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Team" }).click();
+    await win.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Team", exact: true }).click();
     await expect(win.locator("[data-team]")).toContainText(/No team link yet|Teammates/);
   } finally {
     await app.close();

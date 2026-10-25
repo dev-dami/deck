@@ -128,11 +128,75 @@ jobs:
           esac
           ./dl/deck --help >/dev/null
 
+  # The desktop app on each system, with this commit's engine inside, added
+  # to the same release: the Windows installer (.exe), the macOS .dmg and
+  # .zip, and the Linux AppImage and .deb, with the latest*.yml files the
+  # app's updater reads. The apps are not code-signed.
+  desktop:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop-shell
+    env:
+      TAG: ${{ needs.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop-shell/package-lock.json
+
+      - run: npm ci
+
+      # The app's version is the tag's, without the "v" or build metadata.
+      - name: Version
+        run: |
+          v="${TAG#v}"
+          npm version "${v%%+*}" --no-git-tag-version --allow-same-version
+
+      - name: Package
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm run build
+          DECK_VERSION="${TAG#v}" npm run build:deck
+          npx electron-builder --publish never
+
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob
+          files=(release/*.exe release/*.dmg release/*.zip release/*.AppImage release/*.deb release/*.blockmap release/latest*.yml)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::electron-builder made no installer"
+            exit 1
+          fi
+          printf '%s\n' "${files[@]}"
+          gh release upload "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+
   # Copy the verified release to the public releases repository, which is where
   # the installers download from. Needs a RELEASES_TOKEN secret: a fine-grained
-  # token with Contents: read and write on dev-dami/deck-releases only.
+  # token with Contents: read and write on dev-dami/deck-releases only. The
+  # CLI is copied even when a desktop build failed.
   publish:
-    needs: [release, verify]
+    needs: [release, verify, desktop]
+    if: ${{ !cancelled() && needs.verify.result == 'success' }}
     runs-on: ubuntu-latest
     env:
       TAG: ${{ needs.release.outputs.tag }}

@@ -87,14 +87,23 @@ type MemberAddedMsg struct {
 	Kind     string
 }
 
-// LeasesChangedMsg says a member took or gave back a lease on files.
-type LeasesChangedMsg struct{ ThreadID string }
+// LeasesChangedMsg says a member took a lease on files, or that one ended
+// (Released): given back, run out, or its member exited. Agent is the
+// member's name.
+type LeasesChangedMsg struct {
+	ThreadID  string
+	Agent     string
+	Paths     []string
+	Exclusive bool
+	Released  bool
+}
 
 // NoticeMsg is a note from Deck itself, shown inline (for example a dropped
-// duplicate relay).
+// duplicate relay). Via is "overlap" for an overlap note (leases.go).
 type NoticeMsg struct {
 	ThreadID string
 	Text     string
+	Via      string
 }
 
 // msgFor converts a log entry to the message the live stream carries for it.
@@ -129,7 +138,7 @@ func msgFor(threadID string, e store.Entry) tea.Msg {
 	case store.EntryContinue:
 		return ContinuedMsg{ThreadID: threadID}
 	case store.EntryNotice:
-		return NoticeMsg{ThreadID: threadID, Text: e.Text}
+		return NoticeMsg{ThreadID: threadID, Text: e.Text, Via: e.Via}
 	case store.EntryTask:
 		if e.Task == nil {
 			return nil

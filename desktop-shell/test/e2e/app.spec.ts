@@ -16,8 +16,10 @@ test.afterEach(async () => {
 
 async function pair(page: Page): Promise<void> {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "What should we work on?" })).toBeVisible();
+  // A fresh install: the Welcome's Pair goes to the pairing form.
+  await expect(page.getByRole("heading", { name: "One deck for all your agents" })).toBeVisible();
   await page.getByRole("button", { name: "Pair with a Deck" }).click();
+  await expect(page.getByLabel("Pairing link or invite line")).toBeFocused();
   await page.getByLabel("Pairing link or invite line").fill(fake.pairLink);
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await expect(page.locator(".project")).toHaveText("deck");
@@ -39,7 +41,8 @@ test("connects, lists sessions and opens one", async ({ page }) => {
   await pair(page);
   const nav = sidebar(page);
   await expect(nav.locator(".session")).toHaveCount(3);
-  await expect(nav.locator('[data-session="ses_docs"] [data-status="approval"]')).toHaveText("Approval");
+  await expect(nav.locator('[data-session="ses_docs"] [data-status="needs-you"]')).toHaveText("Needs you");
+  await expect(nav.locator('[data-session="ses_docs"] .status-label')).toHaveText("Approve command");
   await openMain(page);
   // Markdown renders as elements; a finished reply folds its work behind
   // "Worked for …", and its tool calls start folded too.
@@ -92,9 +95,14 @@ test("adds an agent with $codex+", async ({ page }) => {
   await composer(page).pressSequentially("$codex+");
   const pop = page.getByRole("listbox", { name: "Agents" });
   await expect(pop.getByRole("option")).toHaveText([/\$codex\+.*start another codex/]);
+  // A slow frame, as on a busy machine: keys typed right after the pick
+  // still land after the mention.
+  await page.evaluate(() => {
+    window.requestAnimationFrame = (fn) => window.setTimeout(() => fn(performance.now()), 400);
+  });
   await composer(page).press("Enter");
-  await expect(composer(page)).toHaveValue("$codex+ ");
-  await composer(page).pressSequentially("review the limiter");
+  await composer(page).pressSequentially("review the limiter", { delay: 50 });
+  await expect(composer(page)).toHaveValue("$codex+ review the limiter");
   await composer(page).press("Enter");
   await expect(page.locator('.agent[data-agent="codex-2"]')).toBeVisible();
   await expect(page.locator('[data-agent="codex-2"].msg')).toContainText("review the limiter");
@@ -113,16 +121,15 @@ test("adds an agent with $codex+", async ({ page }) => {
   await expect(composer(page)).toHaveValue("compare");
 });
 
-test("approves an approval from another session", async ({ page }) => {
+test("approves the approval of another thread over its composer", async ({ page }) => {
   await pair(page);
   await openMain(page);
-  await page.locator(".panel-toggles").getByRole("button", { name: /Approvals/ }).click();
-  const panel = page.getByRole("complementary", { name: "Side panel" });
-  await expect(panel.locator(".group-head")).toHaveText("Docs pass");
-  await expect(panel.locator(".approval-what")).toHaveText("go test ./...");
-  await panel.getByRole("button", { name: "Always allow this session" }).click();
-  await expect(panel.getByText("No approvals wait for you.")).toBeVisible();
-  await expect(sidebar(page).locator('[data-session="ses_docs"] [data-status="approval"]')).toHaveCount(0);
+  await sidebar(page).getByRole("button", { name: "Docs pass", exact: true }).click();
+  const card = page.locator('[aria-label="Approvals for this thread"]');
+  await expect(page.locator(".approval-what")).toHaveText("go test ./...");
+  await page.getByRole("button", { name: "Always allow this session" }).click();
+  await expect(card).toHaveCount(0);
+  await expect(sidebar(page).locator('[data-session="ses_docs"] [data-status="needs-you"]')).toHaveCount(0);
   expect(fake.answered).toEqual([{ id: "apr_docs", decision: "allow_session" }]);
 });
 
@@ -131,7 +138,8 @@ test("a live approval makes its agent wait", async ({ page }) => {
   await openMain(page);
   fake.requestApproval("ses_main", "codex-1", "rm -rf build");
   await expect(page.locator('.agent[data-agent="codex-1"] .agent-status')).toHaveText("waiting");
-  await expect(page.locator(".panel-toggles").getByRole("button", { name: "Approvals" })).toHaveText("2");
+  // Its lane says so too.
+  await expect(page.locator('.lane[data-lane="agent:codex-1"]')).toHaveAttribute("data-status", "waiting");
 });
 
 test("pages older messages, switches with the palette and makes a session", async ({ page }) => {
@@ -176,18 +184,106 @@ test("changes panel and screenshot", async ({ page }) => {
   await page.screenshot({ path: join(__dirname, "..", "..", "docs", "renderer.png") });
 });
 
+test("diffs: syntax colour, changed words and a split view", async ({ page }) => {
+  await pair(page);
+  await openMain(page);
+  // The reply's fenced Go block is coloured as tokens.
+  await expect(page.locator("pre.codeblock .syn-function").first()).toHaveText("fail");
+  await page.locator(".panel-toggles").getByRole("button", { name: /Diff/ }).click();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  const file = panel.locator(".file").first();
+  await expect(file.locator(".file-lang")).toHaveText("Go");
+  // The hunk header and the function it is in.
+  await expect(file.locator(".diff-hunk-row").first()).toContainText("@@ -12,7 +12,9 @@");
+  await expect(file.locator(".diff-hunk-ctx").first()).toHaveText("func (l *Limiter) Fail(addr string) {");
+  // The fake .go diff shows highlighted tokens.
+  await expect(file.locator(".diff-row.diff-add .syn-comment")).toHaveText("// Per address, never global (R1).");
+  await expect(file.locator(".diff-row.diff-add .syn-function").first()).toHaveText("fail");
+  const fn = await file.locator(".diff-row.diff-add .syn-function").first().evaluate((e) => getComputedStyle(e).color);
+  const plainColour = await file.locator(".diff-row.diff-add").first().evaluate((e) => getComputedStyle(e).color);
+  expect(fn).not.toBe(plainColour);
+  // The removed and the added line mark the words that changed.
+  await expect(file.locator(".diff-row.diff-del .diff-word")).toHaveText(["global"]);
+  await expect(file.locator(".diff-row.diff-add .diff-word")).toHaveText(["l", "addr"]);
+
+  // Split is offered once the panel is expanded.
+  await expect(panel.getByRole("button", { name: "Split view" })).toHaveCount(0);
+  await panel.getByRole("button", { name: "Widen the panel" }).click();
+  await panel.getByRole("button", { name: "Split view" }).click();
+  const split = file.locator(".diff-split");
+  await expect(split).toBeVisible();
+  const old = split.locator('.diff-code[data-side="old"]', { hasText: "global.fail()" });
+  const next = split.locator('.diff-code[data-side="new"]', { hasText: "l.fail(addr)" });
+  await expect(old).toBeVisible();
+  await expect(next).toBeVisible();
+  // Two columns: the old line sits left of the new one, on the same row.
+  const a = await old.boundingBox();
+  const b = await next.boundingBox();
+  expect(a !== null && b !== null && a.x + a.width <= b.x && Math.abs(a.y - b.y) < 2).toBe(true);
+  // A removed line takes a comment on the old side.
+  await old.hover();
+  await split.locator('.diff-gutter[data-side="old"]').getByRole("button", { name: "Comment on line 13" }).click();
+  await expect(panel.getByRole("textbox", { name: "Comment on pkg/remote/auth/limit.go:13" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  // The choice is kept; unified comes back with one click.
+  const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("deck.desktop.prefs") ?? "{}"));
+  expect(kept).toMatchObject({ diffView: "split" });
+  await panel.getByRole("button", { name: "Unified view" }).click();
+  await expect(file.locator(".diff-split")).toHaveCount(0);
+});
+
+test("diffs: a diff theme recolours the tokens", async ({ page }) => {
+  await pair(page);
+  await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Appearance" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-diff-theme", "match");
+  const keyword = page.locator(".diff-preview .syn-keyword").first();
+  await expect(keyword).toHaveText("const");
+  const before = await keyword.evaluate((e) => getComputedStyle(e).color);
+  await page.getByRole("radiogroup", { name: "Diff theme" }).getByRole("radio", { name: "GitHub Dark" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-diff-theme", "github-dark");
+  await expect(keyword).toHaveCSS("color", "rgb(255, 123, 114)");
+  expect(before).not.toBe("rgb(255, 123, 114)");
+  // Monochrome drops the syntax colour.
+  await page.getByRole("radiogroup", { name: "Diff theme" }).getByRole("radio", { name: "Monochrome" }).click();
+  const mono = await keyword.evaluate((e) => [getComputedStyle(e).color, getComputedStyle(e.parentElement as Element).color]);
+  expect(mono[0]).toBe(mono[1]);
+  const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("deck.desktop.prefs") ?? "{}"));
+  expect(kept).toMatchObject({ diffTheme: "monochrome" });
+});
+
 test("themes: a theme from the catalog and an accent recolor the window", async ({ page }) => {
   await pair(page);
   await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Appearance" }).click();
-  await page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: /Tokyo Night/ }).click();
+  await page.getByRole("radiogroup", { name: "Theme", exact: true }).getByRole("radio", { name: /Tokyo Night/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-palette", "tokyo-night");
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(26, 27, 38)");
-  await page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: /GitHub Light/ }).click();
+  await page.getByRole("radiogroup", { name: "Theme", exact: true }).getByRole("radio", { name: /GitHub Light/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-mode", "light");
   await page.getByRole("radiogroup", { name: "Accent" }).getByRole("radio", { name: "Green" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-accent", "green");
   // The choice is kept for the next start.
   const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("deck.desktop.prefs") ?? "{}"));
   expect(kept).toMatchObject({ palette: "github-light", accent: "green" });
+});
+
+test("menu commands, a downloaded update and a pair link reach the window", async ({ page }) => {
+  await pair(page);
+  // What main sends on the menu, update and link channels.
+  const emit = (fn: string, ev: unknown) =>
+    page.evaluate(([f, e]) => (window as unknown as Record<string, (e: unknown) => void>)[f]?.(e), [fn, ev] as const);
+  await emit("__deckMenuEmit", "toggle-sidebar");
+  await expect(sidebar(page)).toHaveCount(0);
+  await emit("__deckMenuEmit", "toggle-sidebar");
+  await expect(sidebar(page)).toBeVisible();
+  await emit("__deckMenuEmit", "settings");
+  await expect(page.locator("[data-settings]")).toHaveAttribute("data-settings", "general");
+
+  await emit("__deckUpdateEmit", { type: "ready", version: "0.2.0" });
+  await expect(sidebar(page).getByRole("button", { name: "Update ready · Restart" })).toBeVisible();
+
+  // A pair link fills the form; the person still clicks Pair.
+  await emit("__deckLinkEmit", { type: "pair", url: "deck://pair?c=ABCDE" });
+  await expect(page.getByLabel("Pairing link or invite line")).toHaveValue("deck://pair?c=ABCDE");
 });

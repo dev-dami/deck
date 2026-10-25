@@ -1,11 +1,14 @@
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { type ITheme, Terminal as XTerm } from "@xterm/xterm";
-import { Plus, SquareTerminal, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Plus, Square, SquareTerminal, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { cn } from "../lib/cn";
+import { getPrefs, setPrefs } from "../prefs";
 import { base64Bytes, type ProjectApi } from "../project";
 import { Button } from "./kit/button";
+import { PortChip } from "./PreviewPanel";
+import { dropPorts, feedTerminal, useOpenPorts } from "./usePorts";
 
 // xterm.js writes its layout rules into <style> elements, which the
 // window's CSP (style-src 'self') does not apply. This keeps the same rules
@@ -47,82 +50,214 @@ function themeNow(): ITheme {
 }
 
 const MONO = 'ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace';
+// One shell's terminal. It belongs to its project, not to the drawer: the
+// drawer mounts el while it shows, and a project switch only takes el out
+// of the page, so the shell and its scrollback keep running.
+interface Term {
+  id: string;
+  n: number;
+  xterm: XTerm;
+  fit: FitAddon;
+  el: HTMLDivElement;
+  opened: boolean;
+  dispose: () => void;
+}
 
-function TerminalView({ project, id, visible }: { project: ProjectApi; id: string; visible: boolean }) {
-  const host = useRef<HTMLDivElement>(null);
-  const fitRef = useRef<FitAddon | null>(null);
-  const termRef = useRef<XTerm | null>(null);
-
-  useEffect(() => {
-    const el = host.current;
-    if (el === null) return;
-    const unmirror = mirrorStyles(el);
-    const term = new XTerm({
-      fontFamily: MONO,
-      fontSize: 12.5,
-      lineHeight: 1.2,
-      cursorBlink: true,
-      allowProposedApi: false,
-      scrollback: 5000,
-      theme: themeNow(),
-    });
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.open(el);
-    termRef.current = term;
-    fitRef.current = fit;
-    const unwatch = project.watchTerminal(id, (ev) => {
-      if (ev.type === "term") term.write(base64Bytes(ev.data));
-      else if (ev.type === "term-exit") term.write(`\r\n\x1b[2m[process exited with code ${ev.code}]\x1b[0m\r\n`);
-    });
-    const input = term.onData((d) => project.terminalWrite(id, d));
-    const resize = term.onResize(({ cols, rows }) => project.terminalResize(id, cols, rows));
-    const refit = () => {
-      if (el.offsetParent === null) return;
-      try {
-        fit.fit();
-      } catch {
-        // Not laid out yet.
-      }
-    };
-    const ro = new ResizeObserver(refit);
-    ro.observe(el);
-    // The window's light or dark follows into the terminal.
-    const mode = new MutationObserver(() => {
-      term.options.theme = themeNow();
-    });
-    mode.observe(document.documentElement, { attributes: true, attributeFilter: ["data-mode", "data-palette", "data-accent"] });
-    refit();
-    return () => {
+function createTerm(project: ProjectApi, id: string, n: number): Term {
+  const el = document.createElement("div");
+  el.style.height = "100%";
+  el.style.width = "100%";
+  const unmirror = mirrorStyles(el);
+  const xterm = new XTerm({
+    fontFamily: MONO,
+    fontSize: 12.5,
+    lineHeight: 1.2,
+    cursorBlink: true,
+    allowProposedApi: false,
+    scrollback: 5000,
+    theme: themeNow(),
+  });
+  const fit = new FitAddon();
+  xterm.loadAddon(fit);
+  // xterm keeps what it gets before it is opened and draws it on open.
+  const text = new TextDecoder();
+  const unwatch = project.watchTerminal(id, (ev) => {
+    if (ev.type === "term") {
+      const bytes = base64Bytes(ev.data);
+      xterm.write(bytes);
+      feedTerminal(project, id, `Terminal ${n}`, text.decode(bytes, { stream: true }));
+    } else if (ev.type === "term-exit") xterm.write(`\r\n\x1b[2m[process exited with code ${ev.code}]\x1b[0m\r\n`);
+  });
+  const input = xterm.onData((d) => project.terminalWrite(id, d));
+  const resize = xterm.onResize(({ cols, rows }) => project.terminalResize(id, cols, rows));
+  const ro = new ResizeObserver(() => refit(t));
+  ro.observe(el);
+  // The window's light or dark follows into the terminal.
+  const mode = new MutationObserver(() => {
+    xterm.options.theme = themeNow();
+  });
+  mode.observe(document.documentElement, { attributes: true, attributeFilter: ["data-mode", "data-palette", "data-accent"] });
+  const t: Term = {
+    id,
+    n,
+    xterm,
+    fit,
+    el,
+    opened: false,
+    dispose: () => {
       ro.disconnect();
       mode.disconnect();
       input.dispose();
       resize.dispose();
       unwatch();
-      term.dispose();
+      xterm.dispose();
       unmirror();
-      termRef.current = null;
+      el.remove();
+    },
+  };
+  return t;
+}
+
+function refit(t: Term): void {
+  if (!t.opened || t.el.offsetParent === null) return;
+  try {
+    t.fit.fit();
+  } catch {
+    // Not laid out yet.
+  }
+}
+
+// The terminals of each project, keyed by its ProjectApi (one per open
+// local Deck). Shells close when the project closes or the app quits.
+interface Drawer {
+  tabs: Term[];
+  active: string | null;
+  shown: boolean;
+}
+
+interface DrawerEntry {
+  view: Drawer;
+  next: number;
+  opening: boolean;
+}
+
+const NO_DRAWER: Drawer = { tabs: [], active: null, shown: false };
+const drawers = new Map<ProjectApi, DrawerEntry>();
+const drawerListeners = new Set<() => void>();
+
+function drawerEntry(project: ProjectApi): DrawerEntry {
+  let e = drawers.get(project);
+  if (e === undefined) {
+    e = { view: NO_DRAWER, next: 1, opening: false };
+    drawers.set(project, e);
+  }
+  return e;
+}
+
+function updateDrawer(project: ProjectApi, f: (d: Drawer) => Drawer): void {
+  const e = drawerEntry(project);
+  const view = f(e.view);
+  if (view === e.view) return;
+  e.view = view;
+  for (const l of drawerListeners) l();
+}
+
+function subscribeDrawers(l: () => void): () => void {
+  drawerListeners.add(l);
+  return () => {
+    drawerListeners.delete(l);
+  };
+}
+
+function drawerOf(project: ProjectApi | undefined): Drawer {
+  return project === undefined ? NO_DRAWER : (drawers.get(project)?.view ?? NO_DRAWER);
+}
+
+async function openTerminal(project: ProjectApi, onError: (text: string) => void): Promise<void> {
+  const e = drawerEntry(project);
+  if (e.opening) return;
+  e.opening = true;
+  const r = await project.terminalOpen(100, 24);
+  e.opening = false;
+  if (typeof r !== "string") {
+    onError(r.error);
+    return;
+  }
+  // The project closed while the shell started.
+  if (drawers.get(project) !== e) {
+    project.terminalClose(r);
+    return;
+  }
+  const t = createTerm(project, r, e.next++);
+  updateDrawer(project, (d) => ({ ...d, tabs: [...d.tabs, t], active: r }));
+}
+
+function closeTerminal(project: ProjectApi, id: string): void {
+  const t = drawerOf(project).tabs.find((x) => x.id === id);
+  if (t === undefined) return;
+  t.dispose();
+  project.terminalClose(id);
+  updateDrawer(project, (d) => {
+    const tabs = d.tabs.filter((x) => x.id !== id);
+    return { ...d, tabs, active: d.active === id ? (tabs[tabs.length - 1]?.id ?? null) : d.active };
+  });
+}
+
+// Every shell of a project ends: it closed, or its engine stopped.
+export function closeTerminals(project: ProjectApi | undefined): void {
+  dropPorts(project);
+  if (project === undefined) return;
+  const e = drawers.get(project);
+  if (e === undefined) return;
+  drawers.delete(project);
+  for (const t of e.view.tabs) {
+    t.dispose();
+    project.terminalClose(t.id);
+  }
+  for (const l of drawerListeners) l();
+}
+
+// Whether the project's drawer shows, kept with its terminals.
+export function useTerminalShown(project: ProjectApi | undefined): [boolean, (v: boolean | ((v: boolean) => boolean)) => void] {
+  const shown = useSyncExternalStore(subscribeDrawers, () => drawerOf(project).shown);
+  const set = useCallback(
+    (v: boolean | ((v: boolean) => boolean)) => {
+      if (project !== undefined) updateDrawer(project, (d) => {
+        const next = typeof v === "function" ? v(d.shown) : v;
+        return next === d.shown ? d : { ...d, shown: next };
+      });
+    },
+    [project],
+  );
+  return [shown, set];
+}
+
+function TerminalView({ t, visible }: { t: Term; visible: boolean }) {
+  const host = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = host.current;
+    if (el === null) return;
+    el.appendChild(t.el);
+    if (!t.opened) {
+      t.xterm.open(t.el);
+      t.opened = true;
+    }
+    refit(t);
+    return () => {
+      if (t.el.parentElement === el) t.el.remove();
     };
-  }, [project, id]);
+  }, [t]);
 
   useEffect(() => {
     if (!visible) return;
     requestAnimationFrame(() => {
-      try {
-        fitRef.current?.fit();
-      } catch {
-        // Not laid out yet.
-      }
-      termRef.current?.focus();
+      refit(t);
+      t.xterm.focus();
     });
-  }, [visible]);
+  }, [t, visible]);
 
-  return <div ref={host} className={cn("terminal-view h-full w-full px-3 py-2", !visible && "hidden")} data-terminal={id} />;
-}
-
-interface Tab {
-  id: string;
-  n: number;
+  return <div ref={host} className={cn("terminal-view h-full w-full px-3 py-2", !visible && "hidden")} data-terminal={t.id} />;
 }
 
 const MIN_HEIGHT = 140;
@@ -135,31 +270,20 @@ export function TerminalDrawer({
   shown,
   onHide,
   onError,
+  onPreview,
 }: {
   project: ProjectApi;
   shown: boolean;
   onHide: () => void;
   onError: (text: string) => void;
+  // Opens a dev server's URL in the Preview tab.
+  onPreview: (url: string) => void;
 }) {
-  const [tabs, setTabs] = useState<Tab[]>([]);
-  const [active, setActive] = useState<string | null>(null);
-  const [height, setHeight] = useState(280);
-  const next = useRef(1);
-  const opening = useRef(false);
+  const { tabs, active } = useSyncExternalStore(subscribeDrawers, () => drawerOf(project));
+  const ports = useOpenPorts(project);
+  const [height, setHeight] = useState(() => Math.max(MIN_HEIGHT, getPrefs().terminalHeight));
 
-  const add = useCallback(async () => {
-    if (opening.current) return;
-    opening.current = true;
-    const r = await project.terminalOpen(100, 24);
-    opening.current = false;
-    if (typeof r !== "string") {
-      onError(r.error);
-      return;
-    }
-    const tab = { id: r, n: next.current++ };
-    setTabs((t) => [...t, tab]);
-    setActive(r);
-  }, [project, onError]);
+  const add = useCallback(() => openTerminal(project, onError), [project, onError]);
 
   // The first time the drawer shows, it starts a shell.
   useEffect(() => {
@@ -167,32 +291,24 @@ export function TerminalDrawer({
   }, [shown, tabs.length, add]);
 
   const close = (id: string) => {
-    project.terminalClose(id);
-    setTabs((t) => {
-      const rest = t.filter((x) => x.id !== id);
-      if (active === id) setActive(rest[rest.length - 1]?.id ?? null);
-      if (rest.length === 0) onHide();
-      return rest;
-    });
+    closeTerminal(project, id);
+    if (drawerOf(project).tabs.length === 0) onHide();
   };
-
-  // Every shell ends with the drawer's Deck.
-  const live = useRef(tabs);
-  live.current = tabs;
-  useEffect(() => () => {
-    for (const t of live.current) project.terminalClose(t.id);
-  }, [project]);
+  const setActive = (id: string) => updateDrawer(project, (d) => ({ ...d, active: id }));
 
   const drag = (e: React.PointerEvent) => {
     const startY = e.clientY;
     const startH = height;
+    let h = startH;
     const move = (ev: PointerEvent) => {
       const max = window.innerHeight * 0.75;
-      setHeight(Math.min(max, Math.max(MIN_HEIGHT, startH + (startY - ev.clientY))));
+      h = Math.min(max, Math.max(MIN_HEIGHT, startH + (startY - ev.clientY)));
+      setHeight(h);
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      if (h !== startH) setPrefs({ terminalHeight: Math.round(h) });
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -213,28 +329,47 @@ export function TerminalDrawer({
       />
       <header className="flex h-9 shrink-0 items-center gap-1 border-b px-2">
         <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Terminals">
-          {tabs.map((t) => (
-            <div
-              key={t.id}
-              className={cn(
-                "group flex h-7 items-center gap-1.5 rounded-md pr-1 pl-2.5 text-xs",
-                active === t.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60",
-              )}
-            >
-              <button type="button" role="tab" aria-selected={active === t.id} className="flex cursor-pointer items-center gap-1.5" onClick={() => setActive(t.id)}>
-                <SquareTerminal className="size-3.5" />
-                Terminal {t.n}
-              </button>
-              <button
-                type="button"
-                aria-label={`Close terminal ${t.n}`}
-                className="grid size-4 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100"
-                onClick={() => close(t.id)}
+          {tabs.map((t) => {
+            const own = ports.filter((p) => p.source.kind === "terminal" && p.source.term === t.id);
+            return (
+              <div
+                key={t.id}
+                className={cn(
+                  "group flex h-7 items-center gap-1.5 rounded-md pr-1 pl-2.5 text-xs",
+                  active === t.id ? "bg-selected text-foreground" : "text-muted-foreground hover:bg-hover",
+                )}
               >
-                <X className="size-3" />
-              </button>
-            </div>
-          ))}
+                <button type="button" role="tab" aria-selected={active === t.id} className="flex cursor-pointer items-center gap-1.5" onClick={() => setActive(t.id)}>
+                  <SquareTerminal className="size-3.5" />
+                  Terminal {t.n}
+                </button>
+                {own.length > 0 && (
+                  <>
+                    {own.map((p) => (
+                      <PortChip key={p.port} p={p} onPreview={onPreview} className="h-5" />
+                    ))}
+                    <button
+                      type="button"
+                      aria-label={`Stop the dev server in terminal ${t.n}`}
+                      title="Stop (sends Ctrl+C)"
+                      className="grid size-5 cursor-pointer place-items-center rounded text-muted-foreground outline-none hover:bg-hover hover:text-destructive-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => project.terminalWrite(t.id, "\x03")}
+                    >
+                      <Square className="size-3" />
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  aria-label={`Close terminal ${t.n}`}
+                  className="grid size-4 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 outline-none hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within:opacity-100 group-hover:opacity-100"
+                  onClick={() => close(t.id)}
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            );
+          })}
           <Button variant="ghost-muted" size="icon-xs" aria-label="New terminal" title="New terminal" onClick={() => void add()}>
             <Plus />
           </Button>
@@ -245,7 +380,7 @@ export function TerminalDrawer({
       </header>
       <div className="min-h-0 flex-1">
         {tabs.map((t) => (
-          <TerminalView key={t.id} project={project} id={t.id} visible={shown && active === t.id} />
+          <TerminalView key={t.id} t={t} visible={shown && active === t.id} />
         ))}
       </div>
     </section>

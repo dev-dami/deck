@@ -60,6 +60,8 @@ export interface FakeOptions {
   allowYolo?: boolean;
   // Milliseconds between streamed updates.
   tickMs?: number;
+  // Adds the thread "Big room" with this many messages.
+  bigRoom?: number;
 }
 
 export class FakeDeck {
@@ -68,6 +70,10 @@ export class FakeDeck {
   readonly sent: Array<{ session_id: string; text: string }> = [];
   readonly answered: Array<{ id: string; decision: string }> = [];
   readonly interrupted: string[] = [];
+  readonly edited: Array<{ message_id: string; text: string }> = [];
+  readonly continued: string[] = [];
+  // The queue items steered into a running turn.
+  readonly steered: string[] = [];
   private readonly http: http.Server;
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 13 << 20 });
   private readonly clients = new Set<Client>();
@@ -80,7 +86,8 @@ export class FakeDeck {
   private epoch = `ep_${randomBytes(4).toString("hex")}`;
   private seq = 0;
   private next = 100;
-  private clock = Date.parse("2026-10-19T09:00:00Z");
+  // Twelve hours ago, so the fixture threads are recent, not settled.
+  private clock = Date.now() - 12 * 3_600_000;
   port = 0;
 
   private constructor(private readonly opts: FakeOptions) {
@@ -126,6 +133,44 @@ export class FakeDeck {
   revokeAll(): void {
     this.tokens.clear();
     this.restart();
+  }
+
+  // A notice for one session, such as Deck's overlap notes.
+  notice(sessionId: string, text: string): void {
+    this.emit("notice", { session_id: sessionId, text }, sessionId);
+  }
+
+  // A finished reply from an agent, as if it had just written it.
+  reply(sessionId: string, agent: string, text: string): Message {
+    return this.message(this.get(sessionId), "assistant", agent, text, true);
+  }
+
+  // A finished command an agent ran, with what it printed.
+  toolRun(sessionId: string, agent: string, command: string, output: string): Message {
+    const t = this.get(sessionId);
+    const at = this.now();
+    const call = this.id("tc");
+    const m: Message = {
+      id: this.id("msg"),
+      session_id: sessionId,
+      role: "assistant",
+      agent,
+      created_at: at,
+      updated_at: at,
+      finished: true,
+      parts: [
+        { type: "tool_call", id: call, name: "bash", summary: command },
+        { type: "tool_result", tool_call_id: call, name: "bash", output },
+      ],
+    };
+    t.messages = [...t.messages, m];
+    this.emit("message.created", m, sessionId);
+    return m;
+  }
+
+  // The thread's changed files, as if someone edited the tree.
+  setChanges(sessionId: string, changes: ChangedFile[]): void {
+    this.get(sessionId).changes = changes;
   }
 
   requestApproval(sessionId: string, agent: string, command: string): Approval {
@@ -272,6 +317,24 @@ export class FakeDeck {
 
   // Every event, of every session, as the rpc transport sends them.
   readonly listeners = new Set<(e: string, p: unknown) => void>();
+  // The bytes of each message's image parts, in part order.
+  readonly images = new Map<string, { data: Buffer; mime: string }[]>();
+
+  // Every message of every thread, for the gRPC fake's search.
+  allMessages(): Message[] {
+    return [...this.threads.values()].flatMap((t) => t.messages);
+  }
+
+  // A message of the person with an image, as if they had just sent it.
+  sendImage(sessionId: string, text: string, name: string, mime: string, data: Buffer): Message {
+    const t = this.get(sessionId);
+    const m = this.message(t, "user", undefined, text, true);
+    const withImage: Message = { ...m, parts: [...m.parts, { type: "image", image: { name, mime } }] };
+    t.messages = t.messages.map((x) => (x.id === m.id ? withImage : x));
+    this.images.set(m.id, [{ data, mime }]);
+    this.emit("message.updated", withImage, t.session.id);
+    return withImage;
+  }
 
   // Runs a v2 method, for a socket's client or none; throws Fail like a
   // refused request.
@@ -332,9 +395,15 @@ export class FakeDeck {
       case "queue.steer":
       case "queue.cancel": {
         const t = this.get(p["session_id"]);
-        if (!t.queue.some((q) => q.id === p["item_id"])) throw new Fail("not_found", "no such item");
-        t.queue = t.queue.filter((q) => q.id !== p["item_id"]);
+        const item = t.queue.find((q) => q.id === p["item_id"]);
+        if (item === undefined) throw new Fail("not_found", "no such item");
+        t.queue = t.queue.filter((q) => q !== item);
         this.emit("queue.changed", { session_id: t.session.id, items: t.queue }, t.session.id);
+        if (m === "queue.steer") {
+          this.steered.push(item.id);
+          const agent = t.roster.find((l) => l.id === item.agent);
+          if (agent !== undefined) this.stream(t, agent, item.text, 0);
+        }
         return {};
       }
       case "changes.get":
@@ -389,10 +458,21 @@ export class FakeDeck {
         return {};
       }
       case "chat.cancel":
-      case "chat.continue":
-      case "message.edit":
         this.get(p["session_id"]);
         return {};
+      case "chat.continue":
+        this.continued.push(this.get(p["session_id"]).session.id);
+        return {};
+      case "message.edit": {
+        const t = this.get(p["session_id"]);
+        const m = t.messages.find((x) => x.id === p["message_id"] && x.role === "user");
+        if (m === undefined) throw new Fail("not_found", "no such message");
+        this.edited.push({ message_id: m.id, text: String(p["text"]) });
+        const next: Message = { ...m, edited: true, updated_at: this.now(), parts: [{ type: "text", text: String(p["text"]) }] };
+        t.messages = t.messages.map((x) => (x.id === m.id ? next : x));
+        this.emit("message.updated", next, t.session.id);
+        return {};
+      }
       case "devices.list":
         return [];
       case "devices.revoke":
@@ -444,7 +524,14 @@ export class FakeDeck {
       }
     }
     if (targets.length === 0) targets.push(t.roster[0] ?? this.addMember(t, "claude"));
-    for (const [i, agent] of [...new Set(targets)].entries()) this.stream(t, agent, rest, i);
+    // A busy agent gets the message when its turn ends, as Deck's queue does:
+    // one item per agent, its text without the mentions.
+    for (const [i, agent] of [...new Set(targets)].entries()) {
+      if (agent.busy) {
+        t.queue = [...t.queue, { id: `${user.id}:${agent.id}`, agent: agent.id, text: rest, at: this.now() }];
+        this.emit("queue.changed", { session_id: t.session.id, items: t.queue }, t.session.id);
+      } else this.stream(t, agent, rest, i);
+    }
     return { message_id: user.id };
   }
 
@@ -551,6 +638,14 @@ export class FakeDeck {
     long.roster = [{ id: "claude-1", name: "claude-1", kind: "claude", model: "default", busy: false }];
     for (let i = 1; i <= 130; i++) {
       this.message(long, i % 2 === 1 ? "user" : "assistant", i % 2 === 1 ? undefined : "claude-1", `Note ${i}`, true);
+    }
+
+    if (this.opts.bigRoom !== undefined) {
+      const big = this.addThread("ses_big", "Big room");
+      big.roster = [{ id: "claude-1", name: "claude-1", kind: "claude", model: "default", busy: false }];
+      for (let i = 1; i <= this.opts.bigRoom; i++) {
+        this.message(big, i % 2 === 1 ? "user" : "assistant", i % 2 === 1 ? undefined : "claude-1", `Big ${i}`, true);
+      }
     }
 
     const docs = this.addThread("ses_docs", "Docs pass");

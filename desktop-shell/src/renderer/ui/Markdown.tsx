@@ -1,5 +1,6 @@
 import { type Block, type Inline, parseBlocks } from "@web/markdown";
 import { type ReactNode, useMemo } from "react";
+import { CodeBlock } from "./Syntax";
 
 // The node tree from the shared markdown parser becomes elements with text
 // children only; no string from Deck ever becomes markup. Links are http(s)
@@ -35,11 +36,7 @@ function renderBlock(b: Block, i: number): ReactNode {
         </p>
       );
     case "code":
-      return (
-        <pre key={i} className="codeblock" data-lang={b.lang}>
-          <code>{b.text}</code>
-        </pre>
-      );
+      return <CodeBlock key={i} text={b.text} lang={b.lang} />;
     case "list": {
       const items = b.items.map((it, j) => (
         <li key={j} className={`depth${it.depth}`}>

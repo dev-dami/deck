@@ -165,11 +165,15 @@ func TestRevertPutsFilesBackTellsTheAgentsAndCanBeUndone(t *testing.T) {
 	ps := r.claude.prompts("claude")
 	has(t, ps[len(ps)-1], `the user reverted 1 file to how they were before the message "fix a": a.txt`, "carry on")
 
-	if err := r.m.UndoRevert(ctx, tid, rid); err != nil {
+	// No id: the latest revert not undone yet, which is rid, and then none.
+	if err := r.m.UndoRevert(ctx, tid, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := readFile(t, repo, "a.txt"); got != "ONE\ntwo\n" {
 		t.Fatalf("a.txt = %q after undo", got)
+	}
+	if err := r.m.UndoRevert(ctx, tid, ""); err == nil || !strings.Contains(err.Error(), "no such revert") {
+		t.Fatalf("a second undo: %v", err)
 	}
 
 	// both show up when the thread's history is replayed

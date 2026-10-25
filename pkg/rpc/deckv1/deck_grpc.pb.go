@@ -25,55 +25,67 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Deck_Info_FullMethodName            = "/deck.v1.Deck/Info"
-	Deck_ListSessions_FullMethodName    = "/deck.v1.Deck/ListSessions"
-	Deck_CreateSession_FullMethodName   = "/deck.v1.Deck/CreateSession"
-	Deck_RenameSession_FullMethodName   = "/deck.v1.Deck/RenameSession"
-	Deck_DeleteSession_FullMethodName   = "/deck.v1.Deck/DeleteSession"
-	Deck_ListMessages_FullMethodName    = "/deck.v1.Deck/ListMessages"
-	Deck_Send_FullMethodName            = "/deck.v1.Deck/Send"
-	Deck_EditMessage_FullMethodName     = "/deck.v1.Deck/EditMessage"
-	Deck_Cancel_FullMethodName          = "/deck.v1.Deck/Cancel"
-	Deck_Interrupt_FullMethodName       = "/deck.v1.Deck/Interrupt"
-	Deck_Continue_FullMethodName        = "/deck.v1.Deck/Continue"
-	Deck_Queue_FullMethodName           = "/deck.v1.Deck/Queue"
-	Deck_Steer_FullMethodName           = "/deck.v1.Deck/Steer"
-	Deck_CancelQueued_FullMethodName    = "/deck.v1.Deck/CancelQueued"
-	Deck_Roster_FullMethodName          = "/deck.v1.Deck/Roster"
-	Deck_Models_FullMethodName          = "/deck.v1.Deck/Models"
-	Deck_SetModel_FullMethodName        = "/deck.v1.Deck/SetModel"
-	Deck_GetMode_FullMethodName         = "/deck.v1.Deck/GetMode"
-	Deck_SetMode_FullMethodName         = "/deck.v1.Deck/SetMode"
-	Deck_Approvals_FullMethodName       = "/deck.v1.Deck/Approvals"
-	Deck_Answer_FullMethodName          = "/deck.v1.Deck/Answer"
-	Deck_Changes_FullMethodName         = "/deck.v1.Deck/Changes"
-	Deck_GitStatus_FullMethodName       = "/deck.v1.Deck/GitStatus"
-	Deck_GitCheckout_FullMethodName     = "/deck.v1.Deck/GitCheckout"
-	Deck_GitCommit_FullMethodName       = "/deck.v1.Deck/GitCommit"
-	Deck_GitPush_FullMethodName         = "/deck.v1.Deck/GitPush"
-	Deck_GitPull_FullMethodName         = "/deck.v1.Deck/GitPull"
-	Deck_GitCreatePR_FullMethodName     = "/deck.v1.Deck/GitCreatePR"
-	Deck_GitMergePR_FullMethodName      = "/deck.v1.Deck/GitMergePR"
-	Deck_Usage_FullMethodName           = "/deck.v1.Deck/Usage"
-	Deck_TerminalOpen_FullMethodName    = "/deck.v1.Deck/TerminalOpen"
-	Deck_TerminalWrite_FullMethodName   = "/deck.v1.Deck/TerminalWrite"
-	Deck_TerminalResize_FullMethodName  = "/deck.v1.Deck/TerminalResize"
-	Deck_TerminalClose_FullMethodName   = "/deck.v1.Deck/TerminalClose"
-	Deck_TerminalOutput_FullMethodName  = "/deck.v1.Deck/TerminalOutput"
-	Deck_Board_FullMethodName           = "/deck.v1.Deck/Board"
-	Deck_TaskAction_FullMethodName      = "/deck.v1.Deck/TaskAction"
-	Deck_SetOrchestrate_FullMethodName  = "/deck.v1.Deck/SetOrchestrate"
-	Deck_Agents_FullMethodName          = "/deck.v1.Deck/Agents"
-	Deck_Team_FullMethodName            = "/deck.v1.Deck/Team"
-	Deck_TeamPost_FullMethodName        = "/deck.v1.Deck/TeamPost"
-	Deck_ShareThread_FullMethodName     = "/deck.v1.Deck/ShareThread"
-	Deck_ThreadShares_FullMethodName    = "/deck.v1.Deck/ThreadShares"
-	Deck_ProposeContract_FullMethodName = "/deck.v1.Deck/ProposeContract"
-	Deck_AnswerContract_FullMethodName  = "/deck.v1.Deck/AnswerContract"
-	Deck_ReadShared_FullMethodName      = "/deck.v1.Deck/ReadShared"
-	Deck_PostShared_FullMethodName      = "/deck.v1.Deck/PostShared"
-	Deck_AnswerShared_FullMethodName    = "/deck.v1.Deck/AnswerShared"
-	Deck_Events_FullMethodName          = "/deck.v1.Deck/Events"
+	Deck_Info_FullMethodName             = "/deck.v1.Deck/Info"
+	Deck_ListSessions_FullMethodName     = "/deck.v1.Deck/ListSessions"
+	Deck_CreateSession_FullMethodName    = "/deck.v1.Deck/CreateSession"
+	Deck_RenameSession_FullMethodName    = "/deck.v1.Deck/RenameSession"
+	Deck_DeleteSession_FullMethodName    = "/deck.v1.Deck/DeleteSession"
+	Deck_ListMessages_FullMethodName     = "/deck.v1.Deck/ListMessages"
+	Deck_Send_FullMethodName             = "/deck.v1.Deck/Send"
+	Deck_EditMessage_FullMethodName      = "/deck.v1.Deck/EditMessage"
+	Deck_Cancel_FullMethodName           = "/deck.v1.Deck/Cancel"
+	Deck_Interrupt_FullMethodName        = "/deck.v1.Deck/Interrupt"
+	Deck_Continue_FullMethodName         = "/deck.v1.Deck/Continue"
+	Deck_Queue_FullMethodName            = "/deck.v1.Deck/Queue"
+	Deck_Steer_FullMethodName            = "/deck.v1.Deck/Steer"
+	Deck_CancelQueued_FullMethodName     = "/deck.v1.Deck/CancelQueued"
+	Deck_Roster_FullMethodName           = "/deck.v1.Deck/Roster"
+	Deck_Models_FullMethodName           = "/deck.v1.Deck/Models"
+	Deck_SetModel_FullMethodName         = "/deck.v1.Deck/SetModel"
+	Deck_GetMode_FullMethodName          = "/deck.v1.Deck/GetMode"
+	Deck_SetMode_FullMethodName          = "/deck.v1.Deck/SetMode"
+	Deck_Approvals_FullMethodName        = "/deck.v1.Deck/Approvals"
+	Deck_Answer_FullMethodName           = "/deck.v1.Deck/Answer"
+	Deck_Changes_FullMethodName          = "/deck.v1.Deck/Changes"
+	Deck_GitStatus_FullMethodName        = "/deck.v1.Deck/GitStatus"
+	Deck_GitCheckout_FullMethodName      = "/deck.v1.Deck/GitCheckout"
+	Deck_GitCommit_FullMethodName        = "/deck.v1.Deck/GitCommit"
+	Deck_GitPush_FullMethodName          = "/deck.v1.Deck/GitPush"
+	Deck_GitPull_FullMethodName          = "/deck.v1.Deck/GitPull"
+	Deck_GitCreatePR_FullMethodName      = "/deck.v1.Deck/GitCreatePR"
+	Deck_GitMergePR_FullMethodName       = "/deck.v1.Deck/GitMergePR"
+	Deck_Usage_FullMethodName            = "/deck.v1.Deck/Usage"
+	Deck_TerminalOpen_FullMethodName     = "/deck.v1.Deck/TerminalOpen"
+	Deck_TerminalWrite_FullMethodName    = "/deck.v1.Deck/TerminalWrite"
+	Deck_TerminalResize_FullMethodName   = "/deck.v1.Deck/TerminalResize"
+	Deck_TerminalClose_FullMethodName    = "/deck.v1.Deck/TerminalClose"
+	Deck_TerminalOutput_FullMethodName   = "/deck.v1.Deck/TerminalOutput"
+	Deck_Board_FullMethodName            = "/deck.v1.Deck/Board"
+	Deck_TaskAction_FullMethodName       = "/deck.v1.Deck/TaskAction"
+	Deck_SetOrchestrate_FullMethodName   = "/deck.v1.Deck/SetOrchestrate"
+	Deck_Agents_FullMethodName           = "/deck.v1.Deck/Agents"
+	Deck_Team_FullMethodName             = "/deck.v1.Deck/Team"
+	Deck_TeamPost_FullMethodName         = "/deck.v1.Deck/TeamPost"
+	Deck_ShareThread_FullMethodName      = "/deck.v1.Deck/ShareThread"
+	Deck_ThreadShares_FullMethodName     = "/deck.v1.Deck/ThreadShares"
+	Deck_ProposeContract_FullMethodName  = "/deck.v1.Deck/ProposeContract"
+	Deck_AnswerContract_FullMethodName   = "/deck.v1.Deck/AnswerContract"
+	Deck_ReadShared_FullMethodName       = "/deck.v1.Deck/ReadShared"
+	Deck_PostShared_FullMethodName       = "/deck.v1.Deck/PostShared"
+	Deck_AnswerShared_FullMethodName     = "/deck.v1.Deck/AnswerShared"
+	Deck_IsolateSession_FullMethodName   = "/deck.v1.Deck/IsolateSession"
+	Deck_ApplyIsolated_FullMethodName    = "/deck.v1.Deck/ApplyIsolated"
+	Deck_UnisolateSession_FullMethodName = "/deck.v1.Deck/UnisolateSession"
+	Deck_RevertFiles_FullMethodName      = "/deck.v1.Deck/RevertFiles"
+	Deck_UndoRevert_FullMethodName       = "/deck.v1.Deck/UndoRevert"
+	Deck_ArchiveSession_FullMethodName   = "/deck.v1.Deck/ArchiveSession"
+	Deck_UnarchiveSession_FullMethodName = "/deck.v1.Deck/UnarchiveSession"
+	Deck_UndoApply_FullMethodName        = "/deck.v1.Deck/UndoApply"
+	Deck_StartRace_FullMethodName        = "/deck.v1.Deck/StartRace"
+	Deck_ListFiles_FullMethodName        = "/deck.v1.Deck/ListFiles"
+	Deck_ReadImage_FullMethodName        = "/deck.v1.Deck/ReadImage"
+	Deck_SearchMessages_FullMethodName   = "/deck.v1.Deck/SearchMessages"
+	Deck_Events_FullMethodName           = "/deck.v1.Deck/Events"
 )
 
 // DeckClient is the client API for Deck service.
@@ -157,6 +169,42 @@ type DeckClient interface {
 	ReadShared(ctx context.Context, in *ReadSharedRequest, opts ...grpc.CallOption) (*SharedMirror, error)
 	PostShared(ctx context.Context, in *PostSharedRequest, opts ...grpc.CallOption) (*Empty, error)
 	AnswerShared(ctx context.Context, in *AnswerSharedRequest, opts ...grpc.CallOption) (*Empty, error)
+	// The room calls. Info.capabilities names the ones this Deck serves.
+	// IsolateSession moves the thread onto a git worktree and branch of its
+	// own; its agents restart there.
+	IsolateSession(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error)
+	// ApplyIsolated writes what an isolated thread changed since it started
+	// (or since the last apply) into the shared tree as uncommitted edits.
+	ApplyIsolated(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*FilesResponse, error)
+	// UnisolateSession moves the thread back to the shared tree and removes
+	// its worktree and branch, discarding what was never applied.
+	UnisolateSession(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error)
+	// RevertFiles puts files back the way they were before a message.
+	RevertFiles(ctx context.Context, in *RevertFilesRequest, opts ...grpc.CallOption) (*FilesResponse, error)
+	// UndoRevert takes the files of the thread's latest revert back to how
+	// they were just before it.
+	UndoRevert(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error)
+	// ArchiveSession stops the thread's agents and marks it archived. The
+	// next message brings it back.
+	ArchiveSession(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error)
+	// UnarchiveSession brings an archived thread back to the list.
+	UnarchiveSession(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error)
+	// UndoApply takes the shared tree back to how it was before the thread's
+	// last ApplyIsolated, if those files have not changed since. It returns
+	// the files it put back.
+	UndoApply(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*FilesResponse, error)
+	// StartRace has count agents of kind do one brief, each on a worktree of
+	// its own, as the agents' task.race does.
+	StartRace(ctx context.Context, in *StartRaceRequest, opts ...grpc.CallOption) (*StartRaceResponse, error)
+	// ListFiles lists the files of the thread's tree (its worktree when
+	// isolated) that match query, minus what the repository ignores.
+	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
+	// ReadImage returns the bytes of a message's image part: index counts
+	// the message's image parts from 0.
+	ReadImage(ctx context.Context, in *ReadImageRequest, opts ...grpc.CallOption) (*ReadImageResponse, error)
+	// SearchMessages finds text in the messages of every thread of the
+	// project that is not archived, newest first.
+	SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -660,6 +708,126 @@ func (c *deckClient) AnswerShared(ctx context.Context, in *AnswerSharedRequest, 
 	return out, nil
 }
 
+func (c *deckClient) IsolateSession(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_IsolateSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) ApplyIsolated(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*FilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FilesResponse)
+	err := c.cc.Invoke(ctx, Deck_ApplyIsolated_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) UnisolateSession(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_UnisolateSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) RevertFiles(ctx context.Context, in *RevertFilesRequest, opts ...grpc.CallOption) (*FilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FilesResponse)
+	err := c.cc.Invoke(ctx, Deck_RevertFiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) UndoRevert(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_UndoRevert_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) ArchiveSession(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_ArchiveSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) UnarchiveSession(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_UnarchiveSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) UndoApply(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*FilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FilesResponse)
+	err := c.cc.Invoke(ctx, Deck_UndoApply_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) StartRace(ctx context.Context, in *StartRaceRequest, opts ...grpc.CallOption) (*StartRaceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartRaceResponse)
+	err := c.cc.Invoke(ctx, Deck_StartRace_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFilesResponse)
+	err := c.cc.Invoke(ctx, Deck_ListFiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) ReadImage(ctx context.Context, in *ReadImageRequest, opts ...grpc.CallOption) (*ReadImageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadImageResponse)
+	err := c.cc.Invoke(ctx, Deck_ReadImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SearchMessagesResponse)
+	err := c.cc.Invoke(ctx, Deck_SearchMessages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *deckClient) Events(ctx context.Context, in *Subscribe, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Deck_ServiceDesc.Streams[1], Deck_Events_FullMethodName, cOpts...)
@@ -760,6 +928,42 @@ type DeckServer interface {
 	ReadShared(context.Context, *ReadSharedRequest) (*SharedMirror, error)
 	PostShared(context.Context, *PostSharedRequest) (*Empty, error)
 	AnswerShared(context.Context, *AnswerSharedRequest) (*Empty, error)
+	// The room calls. Info.capabilities names the ones this Deck serves.
+	// IsolateSession moves the thread onto a git worktree and branch of its
+	// own; its agents restart there.
+	IsolateSession(context.Context, *SessionRef) (*Empty, error)
+	// ApplyIsolated writes what an isolated thread changed since it started
+	// (or since the last apply) into the shared tree as uncommitted edits.
+	ApplyIsolated(context.Context, *SessionRef) (*FilesResponse, error)
+	// UnisolateSession moves the thread back to the shared tree and removes
+	// its worktree and branch, discarding what was never applied.
+	UnisolateSession(context.Context, *SessionRef) (*Empty, error)
+	// RevertFiles puts files back the way they were before a message.
+	RevertFiles(context.Context, *RevertFilesRequest) (*FilesResponse, error)
+	// UndoRevert takes the files of the thread's latest revert back to how
+	// they were just before it.
+	UndoRevert(context.Context, *SessionRef) (*Empty, error)
+	// ArchiveSession stops the thread's agents and marks it archived. The
+	// next message brings it back.
+	ArchiveSession(context.Context, *SessionRef) (*Empty, error)
+	// UnarchiveSession brings an archived thread back to the list.
+	UnarchiveSession(context.Context, *SessionRef) (*Empty, error)
+	// UndoApply takes the shared tree back to how it was before the thread's
+	// last ApplyIsolated, if those files have not changed since. It returns
+	// the files it put back.
+	UndoApply(context.Context, *SessionRef) (*FilesResponse, error)
+	// StartRace has count agents of kind do one brief, each on a worktree of
+	// its own, as the agents' task.race does.
+	StartRace(context.Context, *StartRaceRequest) (*StartRaceResponse, error)
+	// ListFiles lists the files of the thread's tree (its worktree when
+	// isolated) that match query, minus what the repository ignores.
+	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
+	// ReadImage returns the bytes of a message's image part: index counts
+	// the message's image parts from 0.
+	ReadImage(context.Context, *ReadImageRequest) (*ReadImageResponse, error)
+	// SearchMessages finds text in the messages of every thread of the
+	// project that is not archived, newest first.
+	SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -917,6 +1121,42 @@ func (UnimplementedDeckServer) PostShared(context.Context, *PostSharedRequest) (
 }
 func (UnimplementedDeckServer) AnswerShared(context.Context, *AnswerSharedRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method AnswerShared not implemented")
+}
+func (UnimplementedDeckServer) IsolateSession(context.Context, *SessionRef) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method IsolateSession not implemented")
+}
+func (UnimplementedDeckServer) ApplyIsolated(context.Context, *SessionRef) (*FilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApplyIsolated not implemented")
+}
+func (UnimplementedDeckServer) UnisolateSession(context.Context, *SessionRef) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnisolateSession not implemented")
+}
+func (UnimplementedDeckServer) RevertFiles(context.Context, *RevertFilesRequest) (*FilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevertFiles not implemented")
+}
+func (UnimplementedDeckServer) UndoRevert(context.Context, *SessionRef) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method UndoRevert not implemented")
+}
+func (UnimplementedDeckServer) ArchiveSession(context.Context, *SessionRef) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ArchiveSession not implemented")
+}
+func (UnimplementedDeckServer) UnarchiveSession(context.Context, *SessionRef) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnarchiveSession not implemented")
+}
+func (UnimplementedDeckServer) UndoApply(context.Context, *SessionRef) (*FilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UndoApply not implemented")
+}
+func (UnimplementedDeckServer) StartRace(context.Context, *StartRaceRequest) (*StartRaceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartRace not implemented")
+}
+func (UnimplementedDeckServer) ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListFiles not implemented")
+}
+func (UnimplementedDeckServer) ReadImage(context.Context, *ReadImageRequest) (*ReadImageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadImage not implemented")
+}
+func (UnimplementedDeckServer) SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SearchMessages not implemented")
 }
 func (UnimplementedDeckServer) Events(*Subscribe, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method Events not implemented")
@@ -1799,6 +2039,222 @@ func _Deck_AnswerShared_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Deck_IsolateSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).IsolateSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_IsolateSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).IsolateSession(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_ApplyIsolated_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).ApplyIsolated(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_ApplyIsolated_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).ApplyIsolated(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_UnisolateSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).UnisolateSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_UnisolateSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).UnisolateSession(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_RevertFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevertFilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).RevertFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_RevertFiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).RevertFiles(ctx, req.(*RevertFilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_UndoRevert_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).UndoRevert(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_UndoRevert_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).UndoRevert(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_ArchiveSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).ArchiveSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_ArchiveSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).ArchiveSession(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_UnarchiveSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).UnarchiveSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_UnarchiveSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).UnarchiveSession(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_UndoApply_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).UndoApply(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_UndoApply_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).UndoApply(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_StartRace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartRaceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).StartRace(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_StartRace_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).StartRace(ctx, req.(*StartRaceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_ListFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).ListFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_ListFiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).ListFiles(ctx, req.(*ListFilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_ReadImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).ReadImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_ReadImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).ReadImage(ctx, req.(*ReadImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_SearchMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).SearchMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_SearchMessages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).SearchMessages(ctx, req.(*SearchMessagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Deck_Events_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(Subscribe)
 	if err := stream.RecvMsg(m); err != nil {
@@ -2004,6 +2460,54 @@ var Deck_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AnswerShared",
 			Handler:    _Deck_AnswerShared_Handler,
+		},
+		{
+			MethodName: "IsolateSession",
+			Handler:    _Deck_IsolateSession_Handler,
+		},
+		{
+			MethodName: "ApplyIsolated",
+			Handler:    _Deck_ApplyIsolated_Handler,
+		},
+		{
+			MethodName: "UnisolateSession",
+			Handler:    _Deck_UnisolateSession_Handler,
+		},
+		{
+			MethodName: "RevertFiles",
+			Handler:    _Deck_RevertFiles_Handler,
+		},
+		{
+			MethodName: "UndoRevert",
+			Handler:    _Deck_UndoRevert_Handler,
+		},
+		{
+			MethodName: "ArchiveSession",
+			Handler:    _Deck_ArchiveSession_Handler,
+		},
+		{
+			MethodName: "UnarchiveSession",
+			Handler:    _Deck_UnarchiveSession_Handler,
+		},
+		{
+			MethodName: "UndoApply",
+			Handler:    _Deck_UndoApply_Handler,
+		},
+		{
+			MethodName: "StartRace",
+			Handler:    _Deck_StartRace_Handler,
+		},
+		{
+			MethodName: "ListFiles",
+			Handler:    _Deck_ListFiles_Handler,
+		},
+		{
+			MethodName: "ReadImage",
+			Handler:    _Deck_ReadImage_Handler,
+		},
+		{
+			MethodName: "SearchMessages",
+			Handler:    _Deck_SearchMessages_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

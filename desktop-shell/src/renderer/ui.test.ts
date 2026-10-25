@@ -74,7 +74,7 @@ describe("panel and palette", () => {
   test("a panel toggles and another one replaces it", () => {
     expect(run({ type: "panel", panel: "changes" }).panel).toBe("changes");
     expect(run({ type: "panel", panel: "changes" }, { type: "panel", panel: "changes" }).panel).toBeNull();
-    expect(run({ type: "panel", panel: "changes" }, { type: "panel", panel: "queue" }).panel).toBe("queue");
+    expect(run({ type: "panel", panel: "changes" }, { type: "panel", panel: "tasks" }).panel).toBe("tasks");
     expect(run({ type: "panel", panel: "changes" }, { type: "panel", panel: null }).panel).toBeNull();
   });
 
@@ -96,5 +96,28 @@ describe("settings", () => {
     expect(st.settings).toBeNull();
     expect(reduceUi(st, { type: "settings", section: "agents" }).usage).toBe(false);
     expect(reduceUi(st, { type: "open", id: "a" }).usage).toBe(false);
+  });
+
+  test("the inbox replaces the other pages; opening a room closes it", () => {
+    const st = run({ type: "team", open: true }, { type: "inbox", open: true });
+    expect(st).toMatchObject({ inbox: true, team: false, usage: false, settings: null });
+    expect(reduceUi(st, { type: "open", id: "a" }).inbox).toBe(false);
+    expect(reduceUi(st, { type: "usage", open: true }).inbox).toBe(false);
+  });
+});
+
+describe("a project off screen", () => {
+  test("its open room gathers news, read again when the project shows", () => {
+    let st = run({ type: "sessions", sessions: [s("a", "1")] }, { type: "open", id: "a" }, { type: "shown", on: false });
+    st = reduceUi(st, { type: "sessions", sessions: [s("a", "2")] });
+    expect(st.unread).toEqual({ a: true });
+    expect(reduceUi(st, { type: "shown", on: true }).unread).toEqual({});
+  });
+
+  test("so does the open room behind the inbox", () => {
+    let st = run({ type: "sessions", sessions: [s("a", "1")] }, { type: "open", id: "a" }, { type: "inbox", open: true });
+    st = reduceUi(st, { type: "sessions", sessions: [s("a", "2")] });
+    expect(st.unread).toEqual({ a: true });
+    expect(reduceUi(st, { type: "inbox", open: false }).unread).toEqual({});
   });
 });

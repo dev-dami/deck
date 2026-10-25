@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { ACCENTS, THEMES } from "./themes";
+import type { NotifyPref } from "./attention";
+import { ACCENTS, DIFF_THEMES, THEMES } from "./themes";
 
 // The window's own settings (the Settings page). They live in this
 // renderer's localStorage: nothing here is secret and Deck never sees them.
@@ -9,6 +10,9 @@ export type RowStyle = "cards" | "compact";
 export type Grouping = "projects" | "recent";
 export type ClockPref = "12h" | "24h";
 export type SendKey = "enter" | "mod-enter";
+// "system" follows the operating system's reduced-motion setting.
+export type MotionPref = "system" | "full" | "reduced";
+export type DiffLayout = "unified" | "split";
 
 export interface Prefs {
   theme: ThemePref;
@@ -21,18 +25,45 @@ export interface Prefs {
   sendKey: SendKey;
   confirmYolo: boolean;
   foldWork: boolean;
+  // A plan card approves itself once when it appears.
+  autoApprovePlans: boolean;
+  // The terminal drawer's height in pixels.
+  terminalHeight: number;
+  // Native notifications while the window is in the background.
+  notifications: NotifyPref;
+  sound: boolean;
+  // A new thread starts on a branch of its own (a Deck that can isolate).
+  isolate: boolean;
+  motion: MotionPref;
+  // The shockwave when the open room switches to Yolo.
+  yoloEffect: boolean;
+  // Diffs: the theme from themes.ts, unified or split, and whether long
+  // lines wrap or scroll.
+  diffTheme: string;
+  diffView: DiffLayout;
+  diffWrap: boolean;
 }
 
 export const defaultPrefs: Prefs = {
   theme: "deck",
-  palette: "default",
+  palette: "tabletop",
   accent: "theme",
-  rows: "cards",
+  rows: "compact",
   grouping: "projects",
   clock: "12h",
   sendKey: "enter",
   confirmYolo: true,
   foldWork: true,
+  autoApprovePlans: false,
+  terminalHeight: 280,
+  notifications: "all",
+  sound: true,
+  isolate: true,
+  motion: "system",
+  yoloEffect: true,
+  diffTheme: "match",
+  diffView: "unified",
+  diffWrap: false,
 };
 
 const KEY = "deck.desktop.prefs";
@@ -53,6 +84,10 @@ function merge(v: Record<string, unknown>): Prefs {
   const pick = <T extends string>(k: string, allowed: readonly T[], d: T): T =>
     allowed.includes(v[k] as T) ? (v[k] as T) : d;
   const bool = (k: string, d: boolean): boolean => (typeof v[k] === "boolean" ? (v[k] as boolean) : d);
+  const size = (k: string, d: number): number => {
+    const n = v[k];
+    return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : d;
+  };
   return {
     theme: pick("theme", ["deck", "system", "light", "dark"] as const, defaultPrefs.theme),
     palette: pick("palette", THEMES.map((t) => t.id), defaultPrefs.palette),
@@ -63,6 +98,16 @@ function merge(v: Record<string, unknown>): Prefs {
     sendKey: pick("sendKey", ["enter", "mod-enter"] as const, defaultPrefs.sendKey),
     confirmYolo: bool("confirmYolo", defaultPrefs.confirmYolo),
     foldWork: bool("foldWork", defaultPrefs.foldWork),
+    autoApprovePlans: bool("autoApprovePlans", defaultPrefs.autoApprovePlans),
+    terminalHeight: size("terminalHeight", defaultPrefs.terminalHeight),
+    notifications: pick("notifications", ["all", "needs-you", "none"] as const, defaultPrefs.notifications),
+    sound: bool("sound", defaultPrefs.sound),
+    isolate: bool("isolate", defaultPrefs.isolate),
+    motion: pick("motion", ["system", "full", "reduced"] as const, defaultPrefs.motion),
+    yoloEffect: bool("yoloEffect", defaultPrefs.yoloEffect),
+    diffTheme: pick("diffTheme", DIFF_THEMES.map((t) => t.id), defaultPrefs.diffTheme),
+    diffView: pick("diffView", ["unified", "split"] as const, defaultPrefs.diffView),
+    diffWrap: bool("diffWrap", defaultPrefs.diffWrap),
   };
 }
 

@@ -38,6 +38,7 @@ const (
 	ChangeMode   DeckChangeKind = "mode"
 	ChangeRoster DeckChangeKind = "roster"
 	ChangeNotice DeckChangeKind = "notice"
+	ChangeLease  DeckChangeKind = "lease"
 )
 
 // DeckChange is a state change a second UI cannot read from the message
@@ -49,7 +50,11 @@ type DeckChange struct {
 	Busy      bool
 	Mode      string
 	Text      string
-	Queue     []decks.QueuedItem
+	// Via is a notice's kind: "overlap" for an overlap note.
+	Via   string
+	Queue []decks.QueuedItem
+	// Lease is the lease taken or ended (ChangeLease).
+	Lease decks.LeasesChangedMsg
 }
 
 // Theme is the TUI's resolved palette and each agent kind's tone, for a

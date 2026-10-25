@@ -1477,6 +1477,7 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		m.checkAttribution(a)
 	}
 	if ev.Kind == agent.KindExited {
+		m.sweepLeases(t)
 		m.failOwned(t, a)
 		m.cascade(t, a)
 		m.kick(t) // a subagent's slot is free (MaxSubagents)

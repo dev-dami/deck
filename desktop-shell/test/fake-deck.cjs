@@ -10,6 +10,14 @@ if (args[0] !== "serve" || !args.includes("--rpc")) {
   process.stderr.write("fake deck: only 'serve --rpc' is known\n");
   process.exit(2);
 }
+// DECK_FAKE_NO_AGENTS: the engine finds no agent CLI and exits, as Deck does.
+if (process.env.DECK_FAKE_NO_AGENTS) {
+  process.stderr.write(
+    "Error: none of claude, codex, opencode or antigravity was found on PATH — run `deck doctor`\n",
+    () => process.exit(1),
+  );
+  return;
+}
 const handshake = process.env.DECK_FAKE_HANDSHAKE;
 if (handshake === undefined) {
   process.stderr.write("fake deck: DECK_FAKE_HANDSHAKE is not set\n");
@@ -19,7 +27,11 @@ if (handshake === undefined) {
 process.stdout.write("Deck is starting\n");
 process.stdout.write(`${handshake}\n`);
 // DECK_FAKE_EXIT_AFTER (ms) makes it stop by itself, as a crash would.
-if (process.env.DECK_FAKE_EXIT_AFTER) setTimeout(() => process.exit(3), Number(process.env.DECK_FAKE_EXIT_AFTER));
+if (process.env.DECK_FAKE_EXIT_AFTER) {
+  setTimeout(() => {
+    process.stderr.write("fake deck: the store is locked\npanic: fake crash\n", () => process.exit(3));
+  }, Number(process.env.DECK_FAKE_EXIT_AFTER));
+}
 process.stdin.resume();
 process.stdin.on("end", () => {
   if (process.env.DECK_FAKE_STOPPED) fs.writeFileSync(process.env.DECK_FAKE_STOPPED, "stopped");

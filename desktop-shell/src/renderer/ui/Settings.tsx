@@ -1,40 +1,19 @@
 import type { AppState } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
 import { Monitor, Moon, Palette, Sun } from "lucide-react";
-import type { ReactNode } from "react";
-import type { DeckBridge } from "../../shared/bridge";
+import { type ReactNode, useEffect, useState } from "react";
+import type { AppInfo, DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";
 import { type Prefs, setPrefs, usePrefs } from "../prefs";
-import { ACCENTS, THEMES } from "../themes";
+import { ACCENTS, DIFF_THEMES, THEMES } from "../themes";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
+import { DiffView, LineComments } from "./DiffView";
 import { Row, Section } from "./kit/settings";
+import { Switch } from "./kit/switch";
 import { PhonePage } from "./Phone";
 import { modKey } from "./keys";
-
-function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-        checked ? "bg-primary" : "bg-input",
-      )}
-    >
-      <span
-        className={cn(
-          "inline-block size-4 rounded-full bg-white shadow-sm transition-transform",
-          checked ? "translate-x-[18px]" : "translate-x-0.5",
-        )}
-      />
-    </button>
-  );
-}
 
 function Segmented<T extends string>({
   value,
@@ -48,7 +27,7 @@ function Segmented<T extends string>({
   label: string;
 }) {
   return (
-    <div className="inline-flex rounded-lg border bg-background p-0.5" role="radiogroup" aria-label={label}>
+    <div className="inline-flex rounded-lg border border-hairline bg-canvas p-0.5" role="radiogroup" aria-label={label}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -58,7 +37,7 @@ function Segmented<T extends string>({
           onClick={() => onChange(o.value)}
           className={cn(
             "flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs",
-            value === o.value ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+            value === o.value ? "bg-selected text-foreground inset-shadow-hl" : "text-muted-foreground hover:text-foreground",
           )}
         >
           {o.icon}
@@ -120,6 +99,29 @@ function General({ p }: { p: Prefs }) {
           }
         />
       </Section>
+      <Section title="Notifications">
+        <Row
+          title="Notify me"
+          description="While the window is in the background: when a room needs you, and when a room finishes."
+          control={
+            <Segmented
+              label="Notify me"
+              value={p.notifications}
+              onChange={set("notifications")}
+              options={[
+                { value: "all", label: "All" },
+                { value: "needs-you", label: "Needs you only" },
+                { value: "none", label: "None" },
+              ]}
+            />
+          }
+        />
+        <Row
+          title="Sound"
+          description="Play the system sound with each notification."
+          control={<Switch label="Sound" checked={p.sound} onChange={set("sound")} />}
+        />
+      </Section>
     </>
   );
 }
@@ -130,7 +132,7 @@ function Appearance({ p }: { p: Prefs }) {
       <Section title="Theme">
         <Row
           title="Color mode"
-          description="Light or dark for the T3 theme: Deck's own, the system's, or yours. The other themes have their own."
+          description="Light or dark for Tabletop and T3: Deck's own, the system's, or yours. The other themes have their own."
           control={
             <Segmented
               label="Color mode"
@@ -156,11 +158,11 @@ function Appearance({ p }: { p: Prefs }) {
               aria-checked={p.palette === t.id}
               onClick={() => setPrefs({ palette: t.id })}
               className={cn(
-                "flex cursor-pointer flex-col gap-2 rounded-lg border p-2 text-left text-xs transition-colors hover:bg-accent",
-                p.palette === t.id && "border-primary ring-1 ring-primary",
+                "flex cursor-pointer flex-col gap-2 rounded-lg border border-hairline p-2 text-left text-xs outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
+                p.palette === t.id && "border-foreground/40 bg-selected",
               )}
             >
-              <span className="flex h-10 overflow-hidden rounded-md border" style={{ background: t.swatch[0] }}>
+              <span className="flex h-10 overflow-hidden rounded-md border border-hairline" style={{ background: t.swatch[0] }}>
                 <span className="w-1/3" style={{ background: t.swatch[1] }} />
                 <span className="flex flex-1 flex-col justify-center gap-1 px-1.5">
                   <span className="h-1 w-3/4 rounded-full" style={{ background: t.swatch[2] }} />
@@ -198,6 +200,7 @@ function Appearance({ p }: { p: Prefs }) {
           }
         />
       </Section>
+      <Diffs p={p} />
       <Section title="Sidebar">
         <Row
           title="Threads"
@@ -230,11 +233,113 @@ function Appearance({ p }: { p: Prefs }) {
           }
         />
       </Section>
+      <MotionSettings p={p} />
     </>
   );
 }
 
-function Agents({ state }: { state: AppState }) {
+function MotionSettings({ p }: { p: Prefs }) {
+  return (
+    <Section title="Motion">
+      <Row
+        title="Motion"
+        description="Reduced holds the window still: no shockwave, no slide-ins, no pulses. System follows the operating system."
+        control={
+          <Segmented
+            label="Motion"
+            value={p.motion}
+            onChange={set("motion")}
+            options={[
+              { value: "system", label: "System" },
+              { value: "full", label: "Full" },
+              { value: "reduced", label: "Reduced" },
+            ]}
+          />
+        }
+      />
+      <Row
+        title="Play the Yolo effect"
+        description="A shockwave crosses the window when the open thread switches to Yolo. Off, the mode chip flashes instead."
+        control={<Switch label="Play the Yolo effect" checked={p.yoloEffect} onChange={set("yoloEffect")} />}
+      />
+    </Section>
+  );
+}
+
+// A small change for the diff theme's preview: a keyword, a string, a
+// number, a comment and a changed word.
+const PREVIEW = [
+  "@@ -1,6 +1,6 @@ export function retry(times: number) {",
+  " // Wait a little longer after each failure.",
+  "-const delay = 100;",
+  "+const delay = 250;",
+  ' const label = "retry";',
+  "-for (let i = 0; i < times; i++) wait(delay);",
+  "+for (let i = 0; i < times; i++) wait(delay * (i + 1));",
+  " return label;",
+].join("\n");
+
+function Diffs({ p }: { p: Prefs }) {
+  return (
+    <Section title="Diffs">
+      <Row
+        title="Diff theme"
+        description="Match app theme takes the window's colours. The others set their own colours for added and removed lines and for code."
+      />
+      <div className="space-y-3 p-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Diff theme">
+          {DIFF_THEMES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="radio"
+              aria-checked={p.diffTheme === t.id}
+              onClick={() => setPrefs({ diffTheme: t.id })}
+              className={cn(
+                "flex cursor-pointer items-center gap-2 rounded-lg border border-hairline p-2 text-left text-xs outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
+                p.diffTheme === t.id && "border-foreground/40 bg-selected",
+              )}
+            >
+              <span aria-hidden className="flex h-6 w-9 shrink-0 flex-col justify-center gap-0.5 overflow-hidden rounded border border-hairline px-1" style={{ background: t.swatch[0] }}>
+                <span className="h-1 w-full rounded-full opacity-70" style={{ background: t.swatch[1] }} />
+                <span className="h-1 w-2/3 rounded-full opacity-70" style={{ background: t.swatch[2] }} />
+                <span className="h-1 w-1/2 rounded-full" style={{ background: t.swatch[3] }} />
+              </span>
+              <span className="min-w-0 truncate font-medium">{t.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="diff-preview overflow-hidden rounded-lg border border-hairline" aria-label="Diff theme preview">
+          <LineComments.Provider value={null}>
+            <DiffView diff={PREVIEW} numbered path="retry.ts" />
+          </LineComments.Provider>
+        </div>
+      </div>
+      <Row
+        title="Split view"
+        description="Show the old file next to the new one when the side panel is expanded."
+        control={
+          <Segmented
+            label="Diff view"
+            value={p.diffView}
+            onChange={set("diffView")}
+            options={[
+              { value: "unified", label: "Unified" },
+              { value: "split", label: "Split" },
+            ]}
+          />
+        }
+      />
+      <Row
+        title="Wrap long lines"
+        description="Wrap lines that do not fit. Otherwise each file scrolls sideways."
+        control={<Switch label="Wrap long lines" checked={p.diffWrap} onChange={set("diffWrap")} />}
+      />
+    </Section>
+  );
+}
+
+function Agents({ state, p }: { state: AppState; p: Prefs }) {
   const kinds = state.server?.kinds ?? [];
   return (
     <>
@@ -271,12 +376,35 @@ function Agents({ state }: { state: AppState }) {
         />
         <Row title="Models" description="Each agent's model and effort are picked per thread, from the composer's agent picker." />
       </Section>
+      <Section title="Plans">
+        <Row
+          title="Approve plans automatically"
+          description="When an agent posts a plan in Plan mode, approve it at once and let the agent go ahead."
+          control={<Switch label="Approve plans automatically" checked={p.autoApprovePlans} onChange={set("autoApprovePlans")} />}
+        />
+      </Section>
     </>
   );
 }
 
-function Connection({ state, where, transport, onDisconnect }: { state: AppState; where: string; transport: string; onDisconnect: () => void }) {
+function Connection({
+  state,
+  where,
+  transport,
+  bridge,
+  onDisconnect,
+}: {
+  state: AppState;
+  where: string;
+  transport: string;
+  bridge: DeckBridge;
+  onDisconnect: () => void;
+}) {
   const s = state.server;
+  const [app, setApp] = useState<AppInfo | null>(null);
+  useEffect(() => {
+    void bridge.appInfo().then(setApp);
+  }, [bridge]);
   return (
     <>
       <Section title="This Deck">
@@ -295,9 +423,20 @@ function Connection({ state, where, transport, onDisconnect }: { state: AppState
         />
       </Section>
       <Section title="About">
+        <Row title="App version" description={app?.version ?? "—"} />
         <Row title="Deck version" description={s?.version ?? "—"} />
+        <Row title="Electron" description={app === null ? "—" : `${app.electron} (Chromium ${app.chromium}, ${app.platform})`} />
         <Row title="Protocol" description={s === null ? "—" : String(s.protocol)} />
         <Row title="Features" description={s === null || s.features.length === 0 ? "—" : s.features.join(", ")} />
+        <Row
+          title="Logs"
+          description="What the app and its engines wrote, for a bug report."
+          control={
+            <Button size="sm" variant="outline" onClick={() => void bridge.openLogs()}>
+              Open logs folder
+            </Button>
+          }
+        />
       </Section>
     </>
   );
@@ -308,9 +447,16 @@ function Keybindings({ mac }: { mac: boolean }) {
   const rows: ReadonlyArray<[string, string[]]> = [
     ["Search threads and commands", [m, "K"]],
     ["New thread", [m, "N"]],
+    ["Open a folder", [m, "O"]],
+    ["Settings", [m, ","]],
+    ["Toggle the sidebar", [m, "B"]],
+    ["Toggle the terminal", [m, "J"]],
+    ["Next room that needs you", [m, mac ? "⌥" : "Alt", "L"]],
+    ["Open room 1 to 9 of the sidebar (hold to see the numbers)", [m, "1…9"]],
+    ["Zoom in, out, actual size", [m, "=", "-", "0"]],
     ["Send the message", ["Enter"]],
     ["New line", ["Shift", "Enter"]],
-    ["Toggle Yolo mode", [m, "Y"]],
+    ["Toggle Yolo mode", [m, "Shift", "Y"]],
     ["Pick an agent", ["$"]],
     ["Rename a thread", ["Double-click"]],
   ];
@@ -366,9 +512,9 @@ export function SettingsPage({
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-8">
           {section === "general" && <General p={p} />}
           {section === "appearance" && <Appearance p={p} />}
-          {section === "agents" && <Agents state={state} />}
+          {section === "agents" && <Agents state={state} p={p} />}
           {section === "connection" && (
-            <Connection state={state} where={where} transport={transport} onDisconnect={onDisconnect} />
+            <Connection state={state} where={where} transport={transport} bridge={bridge} onDisconnect={onDisconnect} />
           )}
           {section === "phone" && <PhonePage bridge={bridge} folder={folder} />}
           {section === "keybindings" && <Keybindings mac={mac} />}

@@ -471,7 +471,7 @@ func (w *DeckWorkspace) pump() {
 			w.say(m.ThreadID, m.From, "→ "+strings.Join(to, " ")+"\n\n"+m.Text)
 		case decks.NoticeMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.Text)
-			w.publish(DeckChange{Kind: ChangeNotice, SessionID: w.sessionOf(m.ThreadID), Text: m.Text})
+			w.publish(DeckChange{Kind: ChangeNotice, SessionID: w.sessionOf(m.ThreadID), Text: m.Text, Via: m.Via})
 		case decks.PausedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorHopPause, "", m.Hops)
 			paused := "Paused after the agents passed messages back and forth; send a message to go on."
@@ -484,6 +484,7 @@ func (w *DeckWorkspace) pump() {
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorContinue, "", 1)
 		case decks.LeasesChangedMsg:
 			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
+			w.publish(DeckChange{Kind: ChangeLease, SessionID: w.sessionOf(m.ThreadID), Lease: m})
 		case decks.MemberAddedMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.AgentID+" joined")
 			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})

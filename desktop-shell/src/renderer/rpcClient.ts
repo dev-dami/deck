@@ -3,16 +3,27 @@ import type { ChangedFile, Decision, Image, Mode, ModelChoice, ServerEvent, Serv
 import type { AppState } from "@web/state";
 import { applyTheme, type ThemeTarget } from "@web/theme";
 import { ProjectApi } from "./project";
-import type { DeckBridge, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
+import type { DeckBridge, EngineStop, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
 import type { DeckClient } from "./client";
+import { RoomMetaStore } from "./roomMeta";
 import {
+  type FileList,
+  type ImageBytes,
+  type SearchHit,
   toApprovals,
+  toCapabilities,
   toChanges,
   toEvent,
+  toFileList,
+  toFiles,
+  toImage,
   toMessages,
   toModels,
   toQueue,
+  toRoom,
+  toRooms,
   toRoster,
+  toSearchHits,
   toSession,
   toSessions,
   toTheme,
@@ -37,17 +48,27 @@ export class RpcDeckClient implements DeckClient {
   private epoch = "";
   private seq = 0;
   private stopped = false;
+  // The engine stopped by itself; restart() starts it again.
+  private halted = false;
+  private restarting = false;
   private attempt = 0;
   private retry: ReturnType<typeof setTimeout> | null = null;
   private themeVars: string[] = [];
   private readonly off: () => void;
+  // The optional methods the Deck serves, from Info.
+  private caps: readonly string[] = [];
+  // Each image part asked for, by session, message and index; a failure is
+  // forgotten so the next look asks again.
+  private readonly images = new Map<string, Promise<ImageBytes | null>>();
 
   readonly project: ProjectApi;
+  readonly rooms = new RoomMetaStore();
 
   constructor(
     private readonly bridge: DeckBridge,
     readonly deck: LocalDeck,
     private readonly theme: ThemeTarget | null,
+    private readonly onEngine: (stop: EngineStop | null) => void = () => {},
   ) {
     this.project = new ProjectApi(bridge, deck.id, (id) => this.ensureLoaded(id));
     this.off = bridge.onRpc((id, ev) => {
@@ -68,23 +89,25 @@ export class RpcDeckClient implements DeckClient {
     this.store.dispatch({ type: "toast.add", kind: "error", text });
   }
 
-  // One unary call; a failure becomes a toast and null.
-  private async call(method: RpcMethod, request: Record<string, unknown>): Promise<unknown> {
+  // One unary call; a failure becomes a toast and null. A quiet call fails
+  // with null alone.
+  private async call(method: RpcMethod, request: Record<string, unknown>, quiet = false): Promise<unknown> {
     let r: Awaited<ReturnType<DeckBridge["rpcCall"]>>;
     try {
       r = await this.bridge.rpcCall(this.deck.id, method, request);
     } catch (e) {
-      this.toast(describeError(e));
+      if (!quiet) this.toast(describeError(e));
       return null;
     }
     if (r.ok) return r.value;
-    this.toast(r.code === UNAVAILABLE ? "Deck is not reachable." : r.message || `Deck refused ${method}.`);
+    if (!quiet) this.toast(r.code === UNAVAILABLE ? "Deck is not reachable." : r.message || `Deck refused ${method}.`);
     return null;
   }
 
   private async boot(): Promise<void> {
     const info = await this.call("Info", {});
     if (info === null || this.stopped) return;
+    this.caps = toCapabilities(info);
     const i = info as Record<string, unknown>;
     const server: ServerInfo = {
       version: typeof i["version"] === "string" ? i["version"] : this.deck.version,
@@ -129,7 +152,8 @@ export class RpcDeckClient implements DeckClient {
         }
         if (e.seq <= this.seq) return;
         this.seq = e.seq;
-        this.apply(e.event);
+        if (e.room !== undefined) this.rooms.apply(e.room);
+        if (e.k === "event") this.apply(e.event);
         return;
       }
       case "end": {
@@ -139,11 +163,44 @@ export class RpcDeckClient implements DeckClient {
         this.retry = setTimeout(() => this.subscribe(), wait);
         return;
       }
+      case "stopped":
+        // The project stays open with what it showed; the window offers a restart.
+        this.halted = true;
+        if (this.retry !== null) clearTimeout(this.retry);
+        this.retry = null;
+        this.store.dispatch({ type: "link", link: "offline" });
+        this.onEngine({ message: ev.message, stderr: ev.stderr });
+        return;
       case "exit":
         this.stop();
         this.store.dispatch({ type: "reset", auth: "unpaired", message: ev.message });
         return;
     }
+  }
+
+  // Starts the stopped engine in the same folder, then resyncs from scratch:
+  // the new process has a new epoch.
+  async restart(): Promise<void> {
+    if (!this.halted || this.stopped || this.restarting) return;
+    this.restarting = true;
+    let out: Awaited<ReturnType<DeckBridge["restartFolder"]>>;
+    try {
+      out = await this.bridge.restartFolder(this.deck.id);
+    } catch (e) {
+      out = { ok: false, message: describeError(e) };
+    }
+    this.restarting = false;
+    if (this.stopped) return;
+    if (!out.ok) {
+      this.onEngine({ message: out.message, stderr: [] });
+      return;
+    }
+    this.halted = false;
+    this.epoch = "";
+    this.seq = 0;
+    this.attempt = 0;
+    this.onEngine(null);
+    await this.boot();
   }
 
   private apply(ev: ServerEvent): void {
@@ -168,7 +225,9 @@ export class RpcDeckClient implements DeckClient {
 
   private async loadSessions(): Promise<void> {
     const r = await this.call("ListSessions", {});
-    if (r !== null) this.store.dispatch({ type: "sessions.loaded", sessions: toSessions(r) });
+    if (r === null) return;
+    this.rooms.load(toRooms(r));
+    this.store.dispatch({ type: "sessions.loaded", sessions: toSessions(r) });
   }
 
   private async loadApprovals(): Promise<void> {
@@ -225,9 +284,14 @@ export class RpcDeckClient implements DeckClient {
     return r === null ? false : this.loadedPage(sessionId, r, false);
   }
 
-  async createSession(title?: string): Promise<Session | null> {
-    const s = toSession(await this.call("CreateSession", { title: title ?? "" }));
-    if (s !== null) this.store.dispatch({ type: "event", event: { e: "session.created", p: s } });
+  async createSession(title?: string, isolate = false): Promise<Session | null> {
+    if (isolate && !this.serves("IsolateSession")) return null;
+    const r = await this.call("CreateSession", { title: title ?? "", isolate });
+    const s = toSession(r);
+    if (s === null) return null;
+    const room = toRoom(r);
+    if (room !== null) this.rooms.apply(room);
+    this.store.dispatch({ type: "event", event: { e: "session.created", p: s } });
     return s;
   }
 
@@ -252,6 +316,14 @@ export class RpcDeckClient implements DeckClient {
       images: images.map((im) => ({ name: im.name, mime: im.mime, data: im.data_b64 ?? "" })),
     });
     return r !== null;
+  }
+
+  async editMessage(sessionId: string, messageId: string, text: string): Promise<boolean> {
+    return (await this.call("EditMessage", { session_id: sessionId, message_id: messageId, text })) !== null;
+  }
+
+  async continueRun(sessionId: string): Promise<void> {
+    await this.call("Continue", { session_id: sessionId });
   }
 
   async cancel(sessionId: string): Promise<void> {
@@ -294,6 +366,97 @@ export class RpcDeckClient implements DeckClient {
   async changes(sessionId: string): Promise<ChangedFile[] | null> {
     const r = await this.call("Changes", { session_id: sessionId });
     return r === null ? null : toChanges(r);
+  }
+
+  // ---- the room calls: each a no-op when the Deck lacks its method -------
+
+  capabilities(): readonly string[] {
+    return this.caps;
+  }
+
+  private serves(method: RpcMethod): boolean {
+    return this.caps.includes(method);
+  }
+
+  // One optional call: null when the Deck does not serve it, as when it fails.
+  private optional(method: RpcMethod, request: Record<string, unknown>): Promise<unknown> {
+    return this.serves(method) ? this.call(method, request) : Promise.resolve(null);
+  }
+
+  async isolateSession(sessionId: string): Promise<boolean> {
+    return (await this.optional("IsolateSession", { session_id: sessionId })) !== null;
+  }
+
+  async applyIsolated(sessionId: string): Promise<string[] | null> {
+    const r = await this.optional("ApplyIsolated", { session_id: sessionId });
+    return r === null ? null : toFiles(r);
+  }
+
+  async undoApply(sessionId: string): Promise<string[] | null> {
+    const r = await this.optional("UndoApply", { session_id: sessionId });
+    return r === null ? null : toFiles(r);
+  }
+
+  async unisolate(sessionId: string): Promise<boolean> {
+    return (await this.optional("UnisolateSession", { session_id: sessionId })) !== null;
+  }
+
+  async revertFiles(sessionId: string, paths: string[], since = 0): Promise<string[] | null> {
+    const r = await this.optional("RevertFiles", { session_id: sessionId, since, paths });
+    return r === null ? null : toFiles(r);
+  }
+
+  async undoRevert(sessionId: string): Promise<boolean> {
+    return (await this.optional("UndoRevert", { session_id: sessionId })) !== null;
+  }
+
+  async archiveSession(sessionId: string): Promise<boolean> {
+    return this.markArchived(sessionId, true, await this.optional("ArchiveSession", { session_id: sessionId }));
+  }
+
+  async unarchiveSession(sessionId: string): Promise<boolean> {
+    return this.markArchived(sessionId, false, await this.optional("UnarchiveSession", { session_id: sessionId }));
+  }
+
+  // The room shows its new state at once; session_updated may come later.
+  private markArchived(id: string, archived: boolean, answer: unknown): boolean {
+    if (answer === null) return false;
+    const m = this.rooms.get(id);
+    this.rooms.apply({ k: "session", id, attention: m.attention, branch: m.branch, archived });
+    return true;
+  }
+
+  async startRace(sessionId: string, brief: string, kind: string, count: number, judge = false): Promise<string | null> {
+    const r = await this.optional("StartRace", { session_id: sessionId, brief, kind, count, judge });
+    if (r === null) return null;
+    const id = (r as Record<string, unknown>)["task_id"];
+    return typeof id === "string" ? id : null;
+  }
+
+  async listFiles(sessionId: string, query: string, limit = 0): Promise<FileList | null> {
+    const r = await this.optional("ListFiles", { session_id: sessionId, query, limit });
+    return r === null ? null : toFileList(r);
+  }
+
+  readImage(sessionId: string, messageId: string, index: number): Promise<ImageBytes | null> {
+    if (!this.serves("ReadImage")) return Promise.resolve(null);
+    const key = `${sessionId}/${messageId}/${index}`;
+    let p = this.images.get(key);
+    if (p === undefined) {
+      p = this.call("ReadImage", { session_id: sessionId, message_id: messageId, index }, true).then((r) => {
+        const img = r === null ? null : toImage(r);
+        if (img === null) this.images.delete(key);
+        return img;
+      });
+      this.images.set(key, p);
+    }
+    return p;
+  }
+
+  async searchMessages(query: string, limit = 0): Promise<SearchHit[] | null> {
+    if (!this.serves("SearchMessages")) return null;
+    const r = await this.call("SearchMessages", { query, limit }, true);
+    return r === null ? null : toSearchHits(r);
   }
 
   // Closes the folder: main closes the Deck's stdin and it stops.

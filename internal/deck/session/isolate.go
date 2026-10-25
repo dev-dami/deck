@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/changes"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
@@ -117,15 +119,81 @@ func (m *Manager) ApplyIsolated(threadID string) ([]string, error) {
 	if err != nil || len(files) == 0 {
 		return nil, err
 	}
+	before, err := main.Snapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if err := main.Apply(ctx, patch); err != nil {
 		return nil, fmt.Errorf("the changes do not apply cleanly to your tree (it changed the same lines): %w", err)
 	}
+	next := &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: now, SubBase: wt.SubBase, SubParent: wt.SubParent}
+	// The apply is done; without its after-snapshot it just cannot be undone.
+	if after, err := main.Snapshot(ctx); err == nil {
+		if diffs, err := main.Diff(ctx, before, after); err == nil {
+			next.Applied = &store.Applied{Before: before, After: after, Files: diffPaths(diffs), Base: wt.Base}
+		}
+	}
 	t.mu.Lock()
-	t.worktree = &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: now, SubBase: wt.SubBase, SubParent: wt.SubParent}
+	t.worktree = next
 	t.mu.Unlock()
 	m.persistMeta(t)
 	m.emit(NoticeMsg{ThreadID: threadID, Text: fmt.Sprintf("applied %d changed files to %s", len(files), wt.Main)})
 	return files, nil
+}
+
+// UndoApply takes the shared tree back to how it was before the thread's last
+// apply, and the worktree's base with it, and returns the files it put back.
+// It refuses when one of those files changed in the shared tree since.
+func (m *Manager) UndoApply(threadID string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(m.ctx, gitTimeout)
+	defer cancel()
+	t, wt, main, _, err := m.isolated(ctx, threadID)
+	if err != nil {
+		return nil, err
+	}
+	a := wt.Applied
+	if a == nil {
+		return nil, errors.New("session: there is no apply to undo")
+	}
+	now, err := main.Snapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	diffs, err := main.Diff(ctx, a.After, now)
+	if err != nil {
+		return nil, err
+	}
+	var changed []string
+	for _, p := range diffPaths(diffs) {
+		if slices.Contains(a.Files, p) {
+			changed = append(changed, p)
+		}
+	}
+	if len(changed) > 0 {
+		return nil, fmt.Errorf("session: cannot undo the apply: %s changed in your tree since", strings.Join(changed, ", "))
+	}
+	if err := main.Restore(ctx, a.Before, a.Files); err != nil {
+		return nil, err
+	}
+	t.mu.Lock()
+	t.worktree = &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: a.Base, SubBase: wt.SubBase, SubParent: wt.SubParent}
+	t.mu.Unlock()
+	m.persistMeta(t)
+	m.emit(NoticeMsg{ThreadID: threadID, Text: fmt.Sprintf("undid the apply of %d files to %s", len(a.Files), wt.Main)})
+	return a.Files, nil
+}
+
+// diffPaths are the paths a diff touches, both names of a rename.
+func diffPaths(diffs []agent.FileDiff) []string {
+	var out []string
+	for _, d := range diffs {
+		for _, p := range []string{d.Path, d.OldPath} {
+			if p != "" && !slices.Contains(out, p) {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
 }
 
 // Unisolate moves an isolated thread back to the shared tree and removes its

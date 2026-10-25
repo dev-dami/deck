@@ -1,6 +1,6 @@
 import { deflateSync } from "node:zlib";
 
-// The launcher icon, shared with the desktop app: a terminal prompt on a
+// The launcher icon of the phone apps: a terminal prompt on a
 // deck of three cards. These are the icon's own colours, not the app palette
 // (R6 is about the UI, which takes every colour from welcome.server.theme).
 type RGB = readonly [number, number, number];
