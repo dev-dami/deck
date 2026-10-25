@@ -18,6 +18,8 @@
   "dependencies": {
     "@grpc/grpc-js": "1.14.6",
     "@grpc/proto-loader": "0.8.1",
+    "electron-log": "5.4.4",
+    "electron-updater": "6.8.10",
     "ws": "8.22.0"
   },
   "devDependencies": {
@@ -49,6 +51,21 @@
     "directories": {
       "output": "release"
     },
+    "protocols": [
+      {
+        "name": "Deck",
+        "schemes": [
+          "deck"
+        ]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "dev-dami",
+        "repo": "deck-releases"
+      }
+    ],
     "files": [
       "dist/**",
       "package.json"

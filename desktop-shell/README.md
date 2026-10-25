@@ -66,21 +66,29 @@ Electron with `DECK_DESKTOP_DEV_URL=http://localhost:5173 npm start`.
 
 ## Use it
 
-The window is a remake of [T3 Code](https://github.com/pingdotgg/t3code)'s
-(MIT) pages on Deck: the same sidebar, chat, composer, diff panel and
-settings, with Deck's sessions as threads and Deck's agents in place of
-T3's providers.
+The window takes its structure from [T3 Code](https://github.com/pingdotgg/t3code)
+(MIT): the same sidebar, chat, composer, diff panel and settings, with
+Deck's sessions as threads and Deck's agents in place of T3's providers.
+The look is Deck's own, called Tabletop: a felt table at night, with warm
+ink, paper text and one amber lamp. Amber marks only what runs, what has
+the focus and the send button; each agent kind has a hue of its own, shown
+as a thin rail, a glyph or a dot. Agent replies have no bubble, your turns
+sit on a card with a faint rail, and every reply starts with a small mono
+index such as `✳ claude-1`. Tabletop is the default in light and dark, and
+T3's look stays in the theme catalog.
 
 - **Projects.** As in T3 Code, the sidebar lists the threads of every open
   project together, grouped by project (or in one list, in Settings). The
   project filter at the top shows all projects or one, adds a project,
   reopens a recent one or pairs with a Deck. Each group has its own new
   thread and close buttons.
-- **Threads.** Each card shows the project, the title, the last message and
-  the agents that wrote. A thread that works says Working, one that waits
-  for you says Approval, one that finished while you looked elsewhere says
-  Done. Quiet threads older than three days fold into Settled. Double-click
-  a title to rename it; hover a card to delete it.
+- **Threads.** Each row shows the title, the glyphs of the agents that
+  wrote and a status glyph: an amber dot while it works, a shield while it
+  waits for you, a check when it finished while you looked elsewhere. A
+  working row carries a rail in the hue of its agent. Card rows (in
+  Settings) add the project and the last message. Quiet threads older than
+  three days fold into Settled. Double-click a title to rename it; hover or
+  focus a row to delete it. Right-click a row for Rename and Delete.
 - **New thread** (Ctrl+N, Cmd+N) opens the empty screen. The first message
   makes the thread, named after its first line.
 - **Chat.** A finished reply folds its tool calls and thinking behind
@@ -121,13 +129,44 @@ T3's providers.
 - **Usage.** Tokens and cost per day, agent and model, the plan's limits,
   a heat map of the last 20 weeks and when you work.
 - **Settings** (the gear, or Ctrl+,): send key, Yolo confirmation, folding,
-  time format, light or dark or the system's, the theme (T3's default,
+  time format, light or dark or the system's, the theme (Tabletop, T3,
   Tokyo Night, Catppuccin Mocha, Nord, Rosé Pine, Dracula, Solarized Light, GitHub
   Light) and accent colour, card or compact thread rows, grouping by
   project, the agent kinds, the connection and the shortcuts.
-- **Keys.** Ctrl+K (Cmd+K) searches threads and commands. Ctrl+B hides the
-  sidebar. Enter sends. Shift+Enter adds a line.
+- **Keys.** On a Mac, Cmd takes the place of Ctrl. Ctrl+K searches threads
+  and commands. Ctrl+N starts a thread, Ctrl+O opens a folder, Ctrl+,
+  opens Settings. Ctrl+B hides the sidebar, Ctrl+J the terminal.
+  Ctrl+Shift+Y turns Yolo mode on and off, so Ctrl+Y stays Redo in a text
+  field. Ctrl+= and Ctrl+- zoom, Ctrl+0 goes back to 100%; the app keeps
+  the zoom. Enter sends. Shift+Enter adds a line.
+- **Menus.** The menu bar holds every command and its key. Reload and the
+  developer tools are there only in a development build. Right-click a
+  text field, a selection, a link or an image for the usual actions; a link
+  opens in the browser.
+- **Window.** The app remembers the window's size, place and whether it
+  was maximized, and opens it on a display that is still there.
 - **Images.** Paste, drop or attach an image to send it.
+- **Folders and links.** Drop a folder on the window to open it. So does
+  `deck-desktop <folder>` (or `Deck <folder>`) on the command line. A
+  `deck://open?path=<folder>` link asks first ("Open <folder> in Deck?"),
+  since any web page can open such a link. A `deck://pair?…` link opens
+  the pairing form with the invite filled in; click Pair to confirm. An
+  installed app registers `deck://`; a development build does not.
+- **Updates.** An installed app checks the GitHub releases of
+  `dev-dami/deck-releases` 10 seconds after it starts and every 6 hours,
+  and downloads a new version in the background. "Update ready · Restart"
+  then shows in the sidebar footer; the update also installs when you
+  quit. Help > Check for updates checks now. A development build does not
+  update.
+- **Logs.** The app writes `main.log`: what main does, each engine's
+  stderr, errors in the window, and crashes. Help > Open logs folder, or
+  Settings > Connection > About, opens its folder (`~/Library/Logs/Deck` on
+  a Mac, `logs` in the app's data folder elsewhere). Settings > Connection >
+  About also shows the app, engine, Electron and Chromium versions.
+- **Fonts.** The window uses Geist Sans and Geist Mono, under the SIL Open
+  Font License 1.1. The two variable woff2 files and the licence are copied
+  from the `geist` npm package (1.7.2) into `src/renderer/fonts/`, and the
+  build bundles them.
 
 ## Build, test and package
 
@@ -142,6 +181,10 @@ T3's providers.
 | `npm run lint` | `tsc --noEmit` for the renderer and for main |
 | `npm run build:deck` | The Deck engine from the repository root into `bin/deck` |
 | `npm run dist` | Build the app and the engine, then package with electron-builder into `release/` |
+
+CI runs the `desktop` job of `.github/workflows/ci.yml` on every push and
+pull request: lint, unit tests, build, then the e2e tests and the smoke
+test under xvfb on Ubuntu.
 
 On a Linux machine without a display, run `xvfb-run -a npm run e2e` and
 `xvfb-run -a npm run smoke`. As root in a container, Chromium needs
@@ -190,8 +233,14 @@ renderer (React, sandboxed)                  main process (Node)                
   window gets its last stderr lines and `restartFolder` starts it again
   under the same id. `pin.ts`, `pair.ts` and `link.ts` are
   the v2 side. `servers.ts` keeps pairings, `recent.ts` the recent folders.
-- `src/preload/preload.ts` exposes `window.deck`: the host methods over IPC
-  and the socket and rpc event streams. Nothing else.
+  `menu.ts` and `contextMenu.ts` build the menus from plain templates;
+  `windowState.ts` keeps `window.json`; `log.ts` writes the log and keeps
+  the app alive after an error; `update.ts` runs electron-updater;
+  `launch.ts` reads deck:// links and folder arguments. Menu commands,
+  links and updates reach the window as events, like the rpc stream.
+- `src/preload/preload.ts` exposes `window.deck`: the host methods over IPC,
+  the socket, rpc, menu, link and update event streams, and the path of a
+  folder dropped on the window. Nothing else.
 - `src/shared/` holds the bridge types and the CSP.
 - **The UI** is React with Tailwind CSS v4, rebuilt after T3 Code's
   components (`Sidebar`, `ChatHeader`, `MessagesTimeline`, `ChatComposer`,

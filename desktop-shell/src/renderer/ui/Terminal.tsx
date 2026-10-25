@@ -323,7 +323,7 @@ export function TerminalDrawer({
               key={t.id}
               className={cn(
                 "group flex h-7 items-center gap-1.5 rounded-md pr-1 pl-2.5 text-xs",
-                active === t.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60",
+                active === t.id ? "bg-selected text-foreground" : "text-muted-foreground hover:bg-hover",
               )}
             >
               <button type="button" role="tab" aria-selected={active === t.id} className="flex cursor-pointer items-center gap-1.5" onClick={() => setActive(t.id)}>
@@ -333,7 +333,7 @@ export function TerminalDrawer({
               <button
                 type="button"
                 aria-label={`Close terminal ${t.n}`}
-                className="grid size-4 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                className="grid size-4 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 outline-none hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within:opacity-100 group-hover:opacity-100"
                 onClick={() => close(t.id)}
               >
                 <X className="size-3" />

@@ -4,7 +4,7 @@ import { delimiter, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
-import type { LocalDeck, OpenOutcome, RpcMethod, RpcResult, RpcStreamEvent } from "../shared/bridge";
+import type { LocalDeck, LogLevel, OpenOutcome, RpcMethod, RpcResult, RpcStreamEvent } from "../shared/bridge";
 
 // The deck binary on PATH, or null.
 export function findOnPath(name: string, env: NodeJS.ProcessEnv = process.env): string | null {
@@ -168,8 +168,8 @@ function tailLines(t: Tail): string[] {
 }
 
 // Waits for the handshake on the child's stdout. It keeps reading after
-// that, so the pipe never fills.
-function readHandshake(child: ChildProcess, tail: Tail): Promise<Handshake | string> {
+// that, so the pipe never fills. Each stderr line goes to onLine.
+function readHandshake(child: ChildProcess, tail: Tail, onLine: (line: string) => void): Promise<Handshake | string> {
   return new Promise((resolve) => {
     let done = false;
     const finish = (v: Handshake | string) => {
@@ -179,9 +179,12 @@ function readHandshake(child: ChildProcess, tail: Tail): Promise<Handshake | str
       resolve(v);
     };
     const timer = setTimeout(() => finish("Deck did not start in time."), START_TIMEOUT_MS);
-    child.stderr?.on("data", (c: Buffer) => {
-      tail.text = (tail.text + c.toString("utf8")).slice(-2000);
-    });
+    if (child.stderr !== null) {
+      child.stderr.on("data", (c: Buffer) => {
+        tail.text = (tail.text + c.toString("utf8")).slice(-2000);
+      });
+      createInterface({ input: child.stderr }).on("line", onLine);
+    }
     if (child.stdout !== null) {
       createInterface({ input: child.stdout }).on("line", (line) => {
         const hs = parseHandshake(line);
@@ -215,6 +218,8 @@ export class RpcDecks {
     private readonly emit: Emit,
     // The PATH the engine runs with (shellPath.ts); the app's own when unset.
     private readonly path: Promise<string> | null = null,
+    // The app's log: each engine's stderr, and why one did not start.
+    private readonly log: (level: LogLevel, message: string) => void = () => {},
   ) {}
 
   async open(dir: string): Promise<OpenOutcome> {
@@ -267,18 +272,21 @@ export class RpcDecks {
       windowsHide: true,
     });
     const tail: Tail = { text: "" };
-    const hs = await readHandshake(child, tail);
+    const hs = await readHandshake(child, tail, (line) => this.log("info", `deck (${dir}): ${line}`));
     if (typeof hs === "string") {
+      this.log("error", `deck (${dir}) did not start: ${hs}`);
       child.kill("SIGTERM");
       return { ok: false, message: hs };
     }
     const client = dial(this.Service, hs.sock, hs.token);
     const info = await unary(client, "Info", {}, 15_000);
     if (!info.ok) {
+      this.log("error", `deck (${dir}) did not answer: ${info.message}`);
       client.close();
       child.stdin?.end();
       return { ok: false, message: `Deck did not answer: ${info.message}` };
     }
+    this.log("info", `deck ${hs.version} started in ${dir}`);
     const project = (info.value as { project?: unknown }).project;
     const deck: LocalDeck = {
       id,
@@ -296,6 +304,7 @@ export class RpcDecks {
     this.open_.set(id, { deck, child, client, stream: null, terms: new Map() });
     child.on("exit", (code) => {
       if (this.open_.get(id)?.child !== child) return;
+      this.log(code === 0 ? "info" : "warn", `deck (${deck.dir}) stopped (exit ${code})`);
       this.drop(id);
       this.stopped_.set(id, deck);
       this.emit(id, {

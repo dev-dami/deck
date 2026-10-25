@@ -10,7 +10,7 @@ function base(dir: string): string {
 }
 
 const input =
-  "h-9 w-full rounded-lg border border-input bg-background px-3 text-[13px] outline-none placeholder:text-muted-foreground/70 focus:border-primary";
+  "h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-[border-color,box-shadow] placeholder:text-faint focus:border-primary/50 focus:ring-[3px] focus:ring-ring";
 
 function Section({ title, children, label: aria }: { title: string; children: React.ReactNode; label: string }) {
   return (
@@ -58,7 +58,7 @@ function OpenFolder({
                   <span className="truncate text-sm">{base(dir)}</span>
                   <span className="truncate text-2xs text-muted-foreground">{dir}</span>
                 </span>
-                <ChevronRight className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100" />
+                <ChevronRight className="size-3.5 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100" />
               </button>
             </li>
           ))}
@@ -75,6 +75,7 @@ function OpenFolder({
 function Pair({
   bridge,
   servers,
+  invite,
   onPaired,
   onOpen,
   onForget,
@@ -82,12 +83,13 @@ function Pair({
 }: {
   bridge: DeckBridge;
   servers: SavedServer[];
+  invite: string;
   onPaired: (s: SavedServer) => void;
   onOpen: (s: SavedServer) => void;
   onForget: (s: SavedServer) => void;
   setError: (e: string | null) => void;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(invite);
   const [fp, setFp] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -142,7 +144,7 @@ function Pair({
               <Button
                 variant="ghost-muted"
                 size="xs"
-                className="mr-1 opacity-0 group-hover:opacity-100"
+                className="mr-1 opacity-0 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
                 onClick={() => onForget(s)}
               >
                 <X />
@@ -201,6 +203,7 @@ export function ConnectScreen({
   recent,
   opening,
   message,
+  invite,
   onFolder,
   onPaired,
   onOpen,
@@ -213,6 +216,9 @@ export function ConnectScreen({
   recent: string[];
   opening: string | null;
   message: string | null;
+  // The invite line of a deck://pair link, put in the pairing form for the
+  // person to confirm.
+  invite: string | null;
   onFolder: (dir: string) => Promise<string | null>;
   onPaired: (s: SavedServer) => void;
   onOpen: (s: SavedServer) => void;
@@ -223,7 +229,7 @@ export function ConnectScreen({
   const [error, setError] = useState<string | null>(null);
   // Pairing is the way in for a Deck on another computer; folders on this
   // one come first.
-  const [pairing, setPairing] = useState(deck === null || servers.length > 0);
+  const [pairing, setPairing] = useState(deck === null || servers.length > 0 || invite !== null);
   const addProject = async () => {
     const dir = await bridge.pickFolder();
     if (dir === null) return;
@@ -290,6 +296,7 @@ export function ConnectScreen({
           <Pair
             bridge={bridge}
             servers={servers}
+            invite={invite ?? ""}
             onPaired={onPaired}
             onOpen={onOpen}
             onForget={onForget}

@@ -27,9 +27,9 @@ export interface Prefs {
 
 export const defaultPrefs: Prefs = {
   theme: "deck",
-  palette: "default",
+  palette: "tabletop",
   accent: "theme",
-  rows: "cards",
+  rows: "compact",
   grouping: "projects",
   clock: "12h",
   sendKey: "enter",

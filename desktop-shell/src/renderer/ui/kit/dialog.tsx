@@ -1,9 +1,11 @@
 import { X } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { cn } from "../../lib/cn";
 import { Button } from "./button";
+import { useFocusTrap } from "./focus";
 
-// A modal over the window: Escape and a click outside close it.
+// A modal over the window: Escape and a click outside close it. Tab stays
+// inside, and the focus goes back where it was when it closes.
 export function Dialog({
   title,
   description,
@@ -19,6 +21,8 @@ export function Dialog({
   footer?: ReactNode;
   className?: string;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useFocusTrap(ref);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -29,9 +33,15 @@ export function Dialog({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/45 pt-[12vh] backdrop-blur-[2px]" onMouseDown={onClose} role="presentation">
       <div
+        ref={ref}
         role="dialog"
+        aria-modal="true"
         aria-label={title}
-        className={cn("flex w-[480px] max-w-[calc(100vw-2rem)] flex-col rounded-2xl border bg-popover shadow-2xl shadow-black/40", className)}
+        tabIndex={-1}
+        className={cn(
+          "flex w-[480px] max-w-[calc(100vw-2rem)] animate-enter flex-col rounded-2xl border border-hairline-strong bg-surface-2 shadow-popover inset-shadow-hl outline-none",
+          className,
+        )}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="flex items-start gap-3 px-5 pt-4 pb-2">
@@ -50,5 +60,6 @@ export function Dialog({
   );
 }
 
+// A text field: a hairline, and an amber ring at 40% while it has the focus.
 export const fieldClass =
-  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-primary";
+  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none transition-[border-color,box-shadow] placeholder:text-faint focus:border-primary/50 focus:ring-[3px] focus:ring-ring";

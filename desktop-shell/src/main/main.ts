@@ -1,25 +1,45 @@
+import { statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
+  Menu,
   protocol,
   safeStorage,
+  screen,
   session,
   shell,
 } from "electron";
-import { HOST_METHODS, hostChannel, RPC_EVENT_CHANNEL, SOCKET_EVENT_CHANNEL } from "../shared/bridge";
+import {
+  HOST_METHODS,
+  hostChannel,
+  LINK_EVENT_CHANNEL,
+  type LinkEvent,
+  MENU_EVENT_CHANNEL,
+  RPC_EVENT_CHANNEL,
+  SOCKET_EVENT_CHANNEL,
+  type ThreadChoice,
+  UPDATE_EVENT_CHANNEL,
+} from "../shared/bridge";
 import { RENDERER_CSP } from "../shared/csp";
+import { contextMenuTemplate } from "./contextMenu";
 import { findDeck, loadService, RpcDecks } from "./decks";
 import { enginePath } from "./shellPath";
 import { callHost, createHost } from "./host";
+import { type Arrival, linkFromUrl, linksFromArgs, mustConfirm } from "./launch";
 import { LinkHost } from "./link";
+import { guardProcess, openLogs, setupLog, writeLog } from "./log";
+import { menuTemplate } from "./menu";
 import { execRun, PhoneLink, readRelayHint, type Run } from "./phone";
 import { RecentFolders } from "./recent";
 import { type Sealer, ServerStore } from "./servers";
+import { Updater } from "./update";
+import { MIN_SIZE, nextZoom, placeWindow, trackWindow, WindowStateFile } from "./windowState";
 
 const SCHEME = "app";
 const ORIGIN = `${SCHEME}://deck`;
@@ -79,14 +99,81 @@ function devURL(): string | null {
 }
 
 let win: BrowserWindow | null = null;
+// Whether the window's page has loaded, so its preload listens for links.
+let loaded = false;
+const pendingLinks: LinkEvent[] = [];
+
+const isDir = (p: string): boolean => {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
+// The arguments after the executable, without the app path that
+// `electron .` passes in development.
+function launchArgs(argv: string[], cwd: string): string[] {
+  return argv.slice(1).filter((a) => !process.defaultApp || resolve(cwd, a) !== app.getAppPath());
+}
+
+// Hands a link to the window, or keeps it until the page has loaded.
+function deliver(link: LinkEvent): void {
+  if (win !== null && loaded) win.webContents.send(LINK_EVENT_CHANNEL, link);
+  else pendingLinks.push(link);
+  if (win?.isMinimized()) win.restore();
+  win?.focus();
+}
+
+// Delivers what reached the app; a folder from a deck:// link only after
+// the person says Open.
+async function arrive(a: Arrival): Promise<void> {
+  if (mustConfirm(a) && a.link.type === "open") {
+    const opts = {
+      type: "question" as const,
+      buttons: ["Open", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+      message: `Open ${a.link.path} in Deck?`,
+      detail: "A deck:// link asks to open this folder. Deck starts its engine there.",
+    };
+    const r = win === null ? await dialog.showMessageBox(opts) : await dialog.showMessageBox(win, opts);
+    if (r.response !== 0) return;
+  }
+  deliver(a.link);
+}
+
+// The window's menu for a thread row: Rename, or Delete after a dialog.
+async function threadMenu(t: { id: string; title: string }): Promise<ThreadChoice> {
+  const w = win;
+  if (w === null) return null;
+  const picked = await new Promise<ThreadChoice>((done) => {
+    const menu = Menu.buildFromTemplate([
+      { label: "Rename…", click: () => done("rename") },
+      { type: "separator" },
+      { label: "Delete…", click: () => done("delete") },
+    ]);
+    // On Linux and Windows the menu closes before its click runs.
+    menu.popup({ window: w, callback: () => setTimeout(() => done(null), 100) });
+  });
+  if (picked !== "delete") return picked;
+  const r = await dialog.showMessageBox(w, {
+    type: "warning",
+    buttons: ["Delete", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    message: `Delete "${t.title}"?`,
+    detail: "Deck removes the thread and its messages.",
+  });
+  return r.response === 0 ? "delete" : null;
+}
 
 // reset ends what a renderer had open: its sockets and event streams.
-function createWindow(reset: () => void): BrowserWindow {
+function createWindow(reset: () => void, state: WindowStateFile, updater: Updater): BrowserWindow {
   const w = new BrowserWindow({
-    width: 1320,
-    height: 840,
-    minWidth: 960,
-    minHeight: 560,
+    ...placeWindow(state.state, screen.getAllDisplays().map((d) => d.workArea)),
+    minWidth: MIN_SIZE.width,
+    minHeight: MIN_SIZE.height,
     title: "Deck",
     backgroundColor: "#0a0a0a",
     // The renderer draws its own title strips (the "drag" class): on a Mac the
@@ -107,9 +194,30 @@ function createWindow(reset: () => void): BrowserWindow {
     return { action: "deny" };
   });
   // A reload starts a new renderer state; the old streams have no reader.
-  w.webContents.on("did-start-loading", reset);
+  w.webContents.on("did-start-loading", () => {
+    loaded = false;
+    reset();
+  });
+  w.webContents.on("did-finish-load", () => {
+    w.webContents.setZoomLevel(state.state.zoom);
+    loaded = true;
+    for (const l of pendingLinks.splice(0)) w.webContents.send(LINK_EVENT_CHANNEL, l);
+    if (updater.ready !== null) w.webContents.send(UPDATE_EVENT_CHANNEL, { type: "ready", version: updater.ready });
+  });
+  w.webContents.on("context-menu", (_e, params) => {
+    const items = contextMenuTemplate(params, {
+      replaceMisspelling: (word) => w.webContents.replaceMisspelling(word),
+      copyText: (text) => clipboard.writeText(text),
+      openExternal: (url) => void shell.openExternal(url),
+      copyImage: (x, y) => w.webContents.copyImageAt(x, y),
+    });
+    if (items.length > 0) Menu.buildFromTemplate(items).popup({ window: w });
+  });
+  if (state.state.maximized) w.maximize();
+  trackWindow(w, state);
   w.on("closed", () => {
     reset();
+    loaded = false;
     if (win === w) win = null;
   });
   void w.loadURL(devURL() ?? `${ORIGIN}/index.html`);
@@ -144,7 +252,20 @@ async function main(): Promise<void> {
     app.quit();
     return;
   }
+  guardProcess(() => win);
+  // macOS hands a deck:// link to the running app, and to one it starts for
+  // the link before it is ready.
+  app.on("open-url", (e, url) => {
+    e.preventDefault();
+    const link = linkFromUrl(url, isDir);
+    // A dialog needs the app to be ready.
+    if (link !== null) void app.whenReady().then(() => arrive({ link, fromLink: true }));
+  });
   await app.whenReady();
+  setupLog();
+  // Only an installed app claims deck://; a checkout would point the system
+  // at its development build.
+  if (app.isPackaged) app.setAsDefaultProtocolClient("deck");
 
   const store = new ServerStore(join(app.getPath("userData"), "servers.json"), sealer);
   const links = new LinkHost(store, (id, ev) => win?.webContents.send(SOCKET_EVENT_CHANNEL, id, ev));
@@ -156,7 +277,7 @@ async function main(): Promise<void> {
   const Service = loadService(join(__dirname, "..", "proto", "deck.proto"));
   // Started now, ready by the first open: the login shell's PATH.
   const path = enginePath();
-  const decks = new RpcDecks(deckPath, Service, (id, ev) => win?.webContents.send(RPC_EVENT_CHANNEL, id, ev), path);
+  const decks = new RpcDecks(deckPath, Service, (id, ev) => win?.webContents.send(RPC_EVENT_CHANNEL, id, ev), path, writeLog);
   // The phone link runs the engine's `mobile connect`; the relay it starts
   // needs Node, which the same PATH finds.
   const phoneRun: Run | null =
@@ -166,6 +287,8 @@ async function main(): Promise<void> {
     links.closeAll();
     decks.cancelStreams();
   };
+  const windowState = new WindowStateFile(join(app.getPath("userData"), "window.json"));
+  const updater = new Updater((ev) => win?.webContents.send(UPDATE_EVENT_CHANNEL, ev));
   const host = createHost({
     store,
     links,
@@ -179,7 +302,35 @@ async function main(): Promise<void> {
       const r = win === null ? await dialog.showOpenDialog(opts) : await dialog.showOpenDialog(win, opts);
       return r.canceled ? null : (r.filePaths[0] ?? null);
     },
+    appInfo: {
+      version: app.getVersion(),
+      electron: process.versions.electron,
+      chromium: process.versions.chrome,
+      platform: `${process.platform} ${process.arch}`,
+    },
+    log: writeLog,
+    openLogs,
+    installUpdate: () => updater.install(),
+    threadMenu,
   });
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      menuTemplate(
+        { isMac: process.platform === "darwin", packaged: app.isPackaged, name: "Deck" },
+        {
+          send: (command) => win?.webContents.send(MENU_EVENT_CHANNEL, command),
+          zoom: (step) => {
+            if (win === null) return;
+            const zoom = nextZoom(win.webContents.getZoomLevel(), step);
+            win.webContents.setZoomLevel(zoom);
+            windowState.set({ zoom });
+          },
+          openLogs: () => void openLogs(),
+          checkForUpdates: () => void updater.check(true),
+        },
+      ),
+    ),
+  );
 
   const ses = session.defaultSession;
   protocol.handle(SCHEME, serveRenderer);
@@ -203,15 +354,20 @@ async function main(): Promise<void> {
     });
   }
 
-  win = createWindow(reset);
+  win = createWindow(reset, windowState, updater);
   if (smoke) runSmoke(win);
+  for (const a of linksFromArgs(launchArgs(process.argv, process.cwd()), process.cwd(), isDir)) void arrive(a);
+  updater.start();
 
-  app.on("second-instance", () => {
+  // Windows and Linux start a second instance for a deck:// link or a
+  // folder; it hands its arguments here and quits.
+  app.on("second-instance", (_e, argv, cwd) => {
     if (win?.isMinimized()) win.restore();
     win?.focus();
+    for (const a of linksFromArgs(launchArgs(argv, cwd), cwd, isDir)) void arrive(a);
   });
   app.on("activate", () => {
-    if (win === null) win = createWindow(reset);
+    if (win === null) win = createWindow(reset, windowState, updater);
   });
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();

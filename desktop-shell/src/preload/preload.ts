@@ -1,9 +1,9 @@
-import { contextBridge, ipcRenderer } from "electron";
-import type { DeckBridge, HostMethod, RpcStreamEvent, SocketEvent } from "../shared/bridge";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { DeckBridge, HostMethod, LinkEvent, MenuCommand, RpcStreamEvent, SocketEvent, UpdateEvent } from "../shared/bridge";
 
 // A sandboxed preload cannot require local files, so the bridge module is
 // imported for its types only and the channel names are spelled out here;
-// they must match hostChannel, SOCKET_EVENT_CHANNEL and RPC_EVENT_CHANNEL.
+// they must match hostChannel and the *_EVENT_CHANNEL names.
 const invoke = (m: HostMethod, ...args: unknown[]) => ipcRenderer.invoke(`deck:${m}`, ...args);
 
 function listen<T extends unknown[]>(channel: string, fn: (...args: T) => void): () => void {
@@ -11,6 +11,30 @@ function listen<T extends unknown[]>(channel: string, fn: (...args: T) => void):
   ipcRenderer.on(channel, listener);
   return () => {
     ipcRenderer.removeListener(channel, listener);
+  };
+}
+
+// A link can arrive before React subscribes (the app was opened by it), and
+// a downloaded update before the project view mounts. Links wait for the
+// first listener; the last update is handed to each new one.
+function held<T>(channel: string, replay: (ev: T) => boolean): (fn: (ev: T) => void) => () => void {
+  const fns = new Set<(ev: T) => void>();
+  let waiting: T[] = [];
+  let last: T | null = null;
+  ipcRenderer.on(channel, (_e, ev: T) => {
+    if (replay(ev)) last = ev;
+    else if (fns.size === 0) waiting.push(ev);
+    for (const fn of fns) fn(ev);
+  });
+  return (fn) => {
+    fns.add(fn);
+    const queued = waiting;
+    waiting = [];
+    for (const ev of queued) fn(ev);
+    if (last !== null) fn(last);
+    return () => {
+      fns.delete(fn);
+    };
   };
 }
 
@@ -36,8 +60,17 @@ const bridge: DeckBridge = {
   phoneNewCode: () => invoke("phoneNewCode"),
   phoneRevoke: (deviceId) => invoke("phoneRevoke", deviceId),
   phoneStop: () => invoke("phoneStop"),
+  appInfo: () => invoke("appInfo"),
+  openLogs: () => invoke("openLogs"),
+  logFromRenderer: (level, message) => invoke("logFromRenderer", level, message),
+  installUpdate: () => invoke("installUpdate"),
+  threadMenu: (thread) => invoke("threadMenu", thread),
   onSocket: (fn) => listen<[number, SocketEvent]>("deck:socket", fn),
   onRpc: (fn) => listen<[string, RpcStreamEvent]>("deck:rpc", fn),
+  onMenu: (fn) => listen<[MenuCommand]>("deck:menu", fn),
+  onLink: held<LinkEvent>("deck:link", () => false),
+  onUpdate: held<UpdateEvent>("deck:update", (ev) => ev.type === "ready"),
+  folderPath: (file) => webUtils.getPathForFile(file),
 };
 
 contextBridge.exposeInMainWorld("deck", bridge);

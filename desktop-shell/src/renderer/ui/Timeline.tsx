@@ -28,10 +28,12 @@ import { DiffView } from "./DiffView";
 import { Button } from "./kit/button";
 import { Markdown } from "./Markdown";
 
+const COMMAND = /bash|shell|exec|command|terminal|run/;
+
 // An icon for a tool by its name, as agents name them.
 function toolIcon(name: string): LucideIcon {
   const n = name.toLowerCase();
-  if (/bash|shell|exec|command|terminal|run/.test(n)) return SquareTerminal;
+  if (COMMAND.test(n)) return SquareTerminal;
   if (/edit|write|patch|apply|create|multiedit/.test(n)) return FilePen;
   if (/grep|glob|search|find|ls/.test(n)) return Search;
   if (/read|view|cat|open/.test(n)) return Eye;
@@ -44,12 +46,12 @@ function WorkRow({ c, running }: { c: Chunk; running: boolean }) {
   if (c.k === "reasoning") {
     return (
       <details className="fold reasoning group/fold">
-        <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 py-1 text-muted-foreground text-sm hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 rounded-md py-1 text-muted-foreground text-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
           <Brain className="size-3.5 shrink-0" />
           <span>Thought</span>
           <ChevronRight className="size-3 shrink-0 transition-transform group-open/fold:rotate-90" />
         </summary>
-        <p className="reasoning-text mt-1 mb-2 ml-1.5 whitespace-pre-wrap border-l pl-4 text-muted-foreground text-xs leading-relaxed">
+        <p className="reasoning-text mt-1 mb-2 ml-1.5 whitespace-pre-wrap border-hairline-strong border-l pl-4 text-muted-foreground text-xs leading-relaxed">
           {c.text}
         </p>
       </details>
@@ -62,26 +64,39 @@ function WorkRow({ c, running }: { c: Chunk; running: boolean }) {
   const Icon = failed ? CircleAlert : toolIcon(name);
   const output = c.result?.output ?? "";
   const diff = c.result?.diff ?? "";
+  const summary = c.call?.summary ?? "";
+  // A command reads as a shell line: a muted $, then the command.
+  const command = COMMAND.test(name.toLowerCase()) && summary !== "";
   return (
     <details className={cn("fold tool group/fold", failed && "failed")}>
-      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 py-1 text-sm [&::-webkit-details-marker]:hidden">
-        <Icon className={cn("size-3.5 shrink-0", failed ? "text-destructive-foreground" : "text-muted-foreground")} />
-        <span className={cn("tool-name shrink-0 text-foreground/80", pending && "shimmer")}>{name}</span>
-        <span className="tool-summary min-w-0 flex-1 truncate font-mono text-muted-foreground/65 text-xs">
-          {c.call?.summary ?? ""}
-        </span>
+      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 rounded-md py-0.5 font-mono text-code outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <Icon className={cn("size-3.5 shrink-0", failed ? "text-destructive-foreground" : "text-faint")} />
+        {command ? (
+          <>
+            <span className="tool-name sr-only">{name}</span>
+            <span aria-hidden className="shrink-0 text-faint">
+              $
+            </span>
+            <span className={cn("tool-summary min-w-0 flex-1 truncate text-foreground/80", pending && "shimmer")}>{summary}</span>
+          </>
+        ) : (
+          <>
+            <span className={cn("tool-name shrink-0 text-foreground/80", pending && "shimmer")}>{name}</span>
+            <span className="tool-summary min-w-0 flex-1 truncate text-muted-foreground">{summary}</span>
+          </>
+        )}
         <span className="tool-state sr-only">{pending ? "running" : failed ? "failed" : "done"}</span>
         {(output !== "" || diff !== "") && (
-          <ChevronDown className="size-3 shrink-0 text-muted-foreground/60 transition-transform group-open/fold:rotate-180" />
+          <ChevronDown className="size-3 shrink-0 text-faint transition-transform group-open/fold:rotate-180" />
         )}
       </summary>
       {output !== "" && (
-        <pre className="tool-output mt-1 mb-2 max-h-72 overflow-auto rounded-lg border bg-code px-3 py-2 font-mono text-foreground/85 text-xs leading-relaxed">
+        <pre className="tool-output mt-1 mb-2 max-h-72 overflow-auto rounded-lg border border-hairline bg-code px-3 py-2 font-mono text-code text-foreground/85">
           {output}
         </pre>
       )}
       {diff !== "" && (
-        <div className="mt-1 mb-2 overflow-hidden rounded-lg border">
+        <div className="mt-1 mb-2 overflow-hidden rounded-lg border border-hairline">
           <DiffView diff={diff} truncated={c.result?.diff_truncated} />
         </div>
       )}
@@ -112,16 +127,17 @@ function UserMessage({ m }: { m: Message }) {
   const prefs = usePrefs();
   const chunks = groupParts(m.parts);
   return (
-    <article className="msg msg-user group flex flex-col items-end gap-1" data-role="user">
-      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
+    <article className="msg msg-user group flex animate-enter flex-col gap-1" data-role="user">
+      {/* A played card: the person's turn on a surface, with a faint rail. */}
+      <div className="relative overflow-hidden rounded-lg border border-hairline bg-surface-1 py-3 pr-4 pl-5 text-message-foreground inset-shadow-hl before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-faint">
         <div className="flex flex-col gap-2">
           {chunks.map((c, i) =>
             c.k === "text" ? (
-              <p key={i} className="user-text whitespace-pre-wrap break-words text-sm leading-relaxed">
+              <p key={i} className="user-text whitespace-pre-wrap break-words text-prose">
                 {c.text}
               </p>
             ) : c.k === "image" ? (
-              <span key={i} className="chip inline-flex w-fit items-center gap-1.5 rounded-md bg-background/60 px-2 py-1 text-xs">
+              <span key={i} className="chip inline-flex w-fit items-center gap-1.5 rounded-md border border-hairline bg-background/60 px-2 py-1 text-xs">
                 <ImageIcon className="size-3.5" />
                 {c.name}
               </span>
@@ -129,7 +145,7 @@ function UserMessage({ m }: { m: Message }) {
           )}
         </div>
       </div>
-      <header className="msg-head flex items-center gap-2 pe-1 text-muted-foreground text-xs tabular-nums opacity-0 transition-opacity group-hover:opacity-100">
+      <header className="msg-head flex items-center gap-2 ps-1 font-mono text-2xs text-faint opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         <span className="msg-who sr-only">You</span>
         {m.edited === true && <span>edited</span>}
         <time>{formatClock(m.created_at, prefs.clock)}</time>
@@ -156,24 +172,24 @@ function AgentMessage({ m, roster, theme }: { m: Message; roster: AgentLine[]; t
     return () => clearInterval(t);
   }, [m.finished]);
   return (
-    <article className="msg msg-agent group flex min-w-0 flex-col gap-1 px-1" data-role="assistant" data-agent={agent}>
-      <header className="msg-head flex items-center gap-1.5 text-xs">
-        <span className="msg-mark grid size-4 place-items-center font-mono text-[11px]" style={{ color: colour }}>
-          {kindMark(theme, kind) || "●"}
+    <article className="msg msg-agent group flex min-w-0 animate-enter flex-col gap-1 px-1" data-role="assistant" data-agent={agent}>
+      {/* The corner index: the agent's glyph and id in its hue, like the
+          rank in the corner of a playing card. */}
+      <header className="msg-head flex items-center gap-2 font-mono text-2xs">
+        <span className="msg-index inline-flex items-center gap-1.5" style={{ color: colour }}>
+          <span className="msg-mark">{kindMark(theme, kind) || "●"}</span>
+          <span className="msg-who">{agent}</span>
         </span>
-        <span className="msg-who font-medium" style={{ color: colour }}>
-          {agent}
-        </span>
-        <time className="text-muted-foreground/70 tabular-nums opacity-0 transition-opacity group-hover:opacity-100">
+        <time className="text-faint opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           {formatClock(m.created_at, prefs.clock)}
         </time>
       </header>
       {folds ? (
         <>
-          <div className="flex items-center gap-1 border-border/60 border-b pt-1 pb-2">
+          <div className="flex items-center gap-1 border-hairline border-b pt-1 pb-2">
             <button
               type="button"
-              className="worked flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-muted-foreground text-sm tabular-nums transition-colors hover:text-foreground"
+              className="worked -ml-1 flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-muted-foreground text-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               aria-expanded={open}
               onClick={() => setOpen((o) => !o)}
             >
@@ -182,7 +198,7 @@ function AgentMessage({ m, roster, theme }: { m: Message; roster: AgentLine[]; t
             </button>
           </div>
           {open && (
-            <div className="flex flex-col gap-0.5 border-border/60 border-b pb-2">
+            <div className="flex flex-col gap-0.5 border-hairline border-b pb-2">
               {work.map((c, i) =>
                 c.k === "text" ? (
                   <div key={i} className="text-muted-foreground [&_.md]:text-sm">
@@ -194,12 +210,12 @@ function AgentMessage({ m, roster, theme }: { m: Message; roster: AgentLine[]; t
               )}
             </div>
           )}
-          <div className="mt-2 flex flex-col gap-3 text-[15px] text-foreground">
+          <div className="mt-2 flex flex-col gap-3 text-foreground text-prose">
             <Prose chunks={answer} />
           </div>
         </>
       ) : (
-        <div className="flex flex-col gap-2 text-[15px] text-foreground">
+        <div className="flex flex-col gap-2 text-foreground text-prose">
           {chunks.map((c, i) =>
             c.k === "text" ? (
               <Markdown key={i} text={c.text} />
@@ -213,6 +229,7 @@ function AgentMessage({ m, roster, theme }: { m: Message; roster: AgentLine[]; t
       )}
       {!m.finished && (
         <div className="streaming flex items-center gap-2 pt-1 text-sm" aria-label="writing">
+          <span aria-hidden className="size-1.5 shrink-0 animate-deck-pulse rounded-full bg-signal" />
           <span className="shimmer">Working for {formatDuration(tick - toMillis(m.created_at))}</span>
         </div>
       )}
@@ -241,11 +258,11 @@ export function ChangedFilesCard({ files, onOpen }: { files: ChangedFile[]; onOp
   const added = files.reduce((n, f) => n + f.added, 0);
   const removed = files.reduce((n, f) => n + f.removed, 0);
   return (
-    <div className="changed-files rounded-lg bg-secondary" data-changed-files="">
+    <div className="changed-files rounded-lg border border-hairline bg-surface-1 inset-shadow-hl" data-changed-files="">
       <div className="flex items-center justify-between gap-2 px-3 py-2">
         <button
           type="button"
-          className="flex min-w-0 cursor-pointer items-center gap-x-3 font-medium text-foreground text-xs"
+          className="flex min-w-0 cursor-pointer items-center gap-x-3 rounded-md font-medium text-foreground text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
         >
@@ -270,11 +287,11 @@ export function ChangedFilesCard({ files, onOpen }: { files: ChangedFile[]; onOp
             <li key={f.path}>
               <button
                 type="button"
-                className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-accent"
+                className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-xs outline-none hover:bg-hover focus-visible:bg-selected"
                 onClick={() => onOpen(f.path)}
               >
                 <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate font-mono">{f.path}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-code">{f.path}</span>
                 <span className="font-mono text-diff-addition-foreground">+{f.added}</span>
                 <span className="font-mono text-diff-deletion-foreground">−{f.removed}</span>
               </button>
@@ -353,7 +370,7 @@ export function Timeline({
           {more && (
             <button
               type="button"
-              className="older w-full py-1.5 text-muted-foreground/60 text-xs hover:text-foreground disabled:cursor-default"
+              className="older w-full rounded-md py-1.5 text-faint text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
               onClick={() => void older()}
               disabled={loading}
             >
@@ -361,7 +378,7 @@ export function Timeline({
             </button>
           )}
           {messages.length === 0 && (
-            <p className="empty py-24 text-center text-muted-foreground/40 text-sm">
+            <p className="empty py-24 text-center text-faint text-sm">
               Send a message to start the conversation.
             </p>
           )}
@@ -375,7 +392,7 @@ export function Timeline({
         <Button
           variant="outline"
           size="icon-sm"
-          className="-translate-x-1/2 absolute bottom-3 left-1/2 rounded-full shadow-lg"
+          className="-translate-x-1/2 absolute bottom-3 left-1/2 rounded-full shadow-popover"
           aria-label="Scroll to the latest message"
           onClick={toBottom}
         >

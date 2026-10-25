@@ -1,8 +1,8 @@
 import type { AppState } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
 import { Monitor, Moon, Palette, Sun } from "lucide-react";
-import type { ReactNode } from "react";
-import type { DeckBridge } from "../../shared/bridge";
+import { type ReactNode, useEffect, useState } from "react";
+import type { AppInfo, DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";
 import { type Prefs, setPrefs, usePrefs } from "../prefs";
 import { ACCENTS, THEMES } from "../themes";
@@ -48,7 +48,7 @@ function Segmented<T extends string>({
   label: string;
 }) {
   return (
-    <div className="inline-flex rounded-lg border bg-background p-0.5" role="radiogroup" aria-label={label}>
+    <div className="inline-flex rounded-lg border border-hairline bg-canvas p-0.5" role="radiogroup" aria-label={label}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -58,7 +58,7 @@ function Segmented<T extends string>({
           onClick={() => onChange(o.value)}
           className={cn(
             "flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs",
-            value === o.value ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+            value === o.value ? "bg-selected text-foreground inset-shadow-hl" : "text-muted-foreground hover:text-foreground",
           )}
         >
           {o.icon}
@@ -130,7 +130,7 @@ function Appearance({ p }: { p: Prefs }) {
       <Section title="Theme">
         <Row
           title="Color mode"
-          description="Light or dark for the T3 theme: Deck's own, the system's, or yours. The other themes have their own."
+          description="Light or dark for Tabletop and T3: Deck's own, the system's, or yours. The other themes have their own."
           control={
             <Segmented
               label="Color mode"
@@ -156,11 +156,11 @@ function Appearance({ p }: { p: Prefs }) {
               aria-checked={p.palette === t.id}
               onClick={() => setPrefs({ palette: t.id })}
               className={cn(
-                "flex cursor-pointer flex-col gap-2 rounded-lg border p-2 text-left text-xs transition-colors hover:bg-accent",
-                p.palette === t.id && "border-primary ring-1 ring-primary",
+                "flex cursor-pointer flex-col gap-2 rounded-lg border border-hairline p-2 text-left text-xs outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
+                p.palette === t.id && "border-foreground/40 bg-selected",
               )}
             >
-              <span className="flex h-10 overflow-hidden rounded-md border" style={{ background: t.swatch[0] }}>
+              <span className="flex h-10 overflow-hidden rounded-md border border-hairline" style={{ background: t.swatch[0] }}>
                 <span className="w-1/3" style={{ background: t.swatch[1] }} />
                 <span className="flex flex-1 flex-col justify-center gap-1 px-1.5">
                   <span className="h-1 w-3/4 rounded-full" style={{ background: t.swatch[2] }} />
@@ -275,8 +275,24 @@ function Agents({ state }: { state: AppState }) {
   );
 }
 
-function Connection({ state, where, transport, onDisconnect }: { state: AppState; where: string; transport: string; onDisconnect: () => void }) {
+function Connection({
+  state,
+  where,
+  transport,
+  bridge,
+  onDisconnect,
+}: {
+  state: AppState;
+  where: string;
+  transport: string;
+  bridge: DeckBridge;
+  onDisconnect: () => void;
+}) {
   const s = state.server;
+  const [app, setApp] = useState<AppInfo | null>(null);
+  useEffect(() => {
+    void bridge.appInfo().then(setApp);
+  }, [bridge]);
   return (
     <>
       <Section title="This Deck">
@@ -295,9 +311,20 @@ function Connection({ state, where, transport, onDisconnect }: { state: AppState
         />
       </Section>
       <Section title="About">
+        <Row title="App version" description={app?.version ?? "—"} />
         <Row title="Deck version" description={s?.version ?? "—"} />
+        <Row title="Electron" description={app === null ? "—" : `${app.electron} (Chromium ${app.chromium}, ${app.platform})`} />
         <Row title="Protocol" description={s === null ? "—" : String(s.protocol)} />
         <Row title="Features" description={s === null || s.features.length === 0 ? "—" : s.features.join(", ")} />
+        <Row
+          title="Logs"
+          description="What the app and its engines wrote, for a bug report."
+          control={
+            <Button size="sm" variant="outline" onClick={() => void bridge.openLogs()}>
+              Open logs folder
+            </Button>
+          }
+        />
       </Section>
     </>
   );
@@ -308,9 +335,14 @@ function Keybindings({ mac }: { mac: boolean }) {
   const rows: ReadonlyArray<[string, string[]]> = [
     ["Search threads and commands", [m, "K"]],
     ["New thread", [m, "N"]],
+    ["Open a folder", [m, "O"]],
+    ["Settings", [m, ","]],
+    ["Toggle the sidebar", [m, "B"]],
+    ["Toggle the terminal", [m, "J"]],
+    ["Zoom in, out, actual size", [m, "=", "-", "0"]],
     ["Send the message", ["Enter"]],
     ["New line", ["Shift", "Enter"]],
-    ["Toggle Yolo mode", [m, "Y"]],
+    ["Toggle Yolo mode", [m, "Shift", "Y"]],
     ["Pick an agent", ["$"]],
     ["Rename a thread", ["Double-click"]],
   ];
@@ -368,7 +400,7 @@ export function SettingsPage({
           {section === "appearance" && <Appearance p={p} />}
           {section === "agents" && <Agents state={state} />}
           {section === "connection" && (
-            <Connection state={state} where={where} transport={transport} onDisconnect={onDisconnect} />
+            <Connection state={state} where={where} transport={transport} bridge={bridge} onDisconnect={onDisconnect} />
           )}
           {section === "phone" && <PhonePage bridge={bridge} folder={folder} />}
           {section === "keybindings" && <Keybindings mac={mac} />}

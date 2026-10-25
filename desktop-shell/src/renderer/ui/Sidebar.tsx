@@ -10,7 +10,6 @@ import {
   ChevronDown,
   ChevronRight,
   CircleCheck,
-  CircleDashed,
   Command,
   Folder,
   FolderPlus,
@@ -21,12 +20,14 @@ import {
   Settings,
   ShieldQuestion,
   SquarePen,
+  TerminalIcon,
   Trash2,
   Unplug,
   Users,
   X,
 } from "lucide-react";
 import { memo, useRef, useState } from "react";
+import type { ThreadChoice } from "../../shared/bridge";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
 import type { RowStyle } from "../prefs";
@@ -60,8 +61,9 @@ export interface ForeignThread {
 
 const NO_KINDS: string[] = [];
 
-const STATUS: Record<Exclude<ThreadStatus, null>, { label: string; icon: LucideIcon; className: string }> = {
-  working: { label: "Working", icon: CircleDashed, className: "text-info-foreground" },
+// Each status is a glyph; the word stays for screen readers and the tooltip.
+const STATUS: Record<Exclude<ThreadStatus, null>, { label: string; icon: LucideIcon | null; className: string }> = {
+  working: { label: "Working", icon: null, className: "text-signal" },
   approval: { label: "Approval", icon: ShieldQuestion, className: "text-warning-foreground" },
   done: { label: "Done", icon: CircleCheck, className: "text-success-foreground" },
 };
@@ -70,14 +72,9 @@ const STATUS: Record<Exclude<ThreadStatus, null>, { label: string; icon: LucideI
 function KindStack({ kinds, theme }: { kinds: string[]; theme: Theme | null }) {
   if (kinds.length === 0) return null;
   return (
-    <span className="ml-auto inline-flex shrink-0 items-center -space-x-0.5">
+    <span className="kind-stack ml-auto inline-flex shrink-0 items-center gap-0.5">
       {kinds.slice(0, 3).map((k) => (
-        <span
-          key={k}
-          className="grid size-4 place-items-center rounded-full bg-sidebar font-mono text-[10px] ring-1 ring-sidebar"
-          style={{ color: kindColour(k) }}
-          title={k}
-        >
+        <span key={k} className="grid size-3.5 place-items-center font-mono text-3xs" style={{ color: kindColour(k) }} title={k}>
           {kindMark(theme, k) || k.slice(0, 1)}
         </span>
       ))}
@@ -100,6 +97,7 @@ const ThreadRow = memo(function ThreadRow({
   onOpen,
   onRename,
   onDelete,
+  onMenu,
 }: {
   s: Session;
   project: string;
@@ -114,19 +112,30 @@ const ThreadRow = memo(function ThreadRow({
   onOpen: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
+  // The native menu of the row: Rename, or Delete (main asks first).
+  onMenu: () => Promise<ThreadChoice>;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const status = threadStatus(s, unread);
   const st = status === null ? null : STATUS[status];
   const recede = !active && status === null;
+  // The open thread is lifted one surface; hover is a white alpha.
   const surface = cn(
-    "session-main group/sidebar-row relative block w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    "session-main group/sidebar-row relative block w-full cursor-pointer overflow-hidden rounded-md text-left outline-none transition-colors select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     active
-      ? "bg-sidebar-row-active text-foreground"
+      ? "bg-sidebar-row-active text-foreground inset-shadow-hl"
       : recede
-        ? "text-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-foreground"
+        ? "text-muted-foreground hover:bg-sidebar-row-hover hover:text-foreground"
         : "text-foreground hover:bg-sidebar-row-hover",
+  );
+  // A working thread carries a 2px rail in the hue of an agent in it.
+  const rail = status === "working" && (
+    <span
+      aria-hidden
+      className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-current"
+      style={{ color: kinds[0] === undefined ? "var(--signal)" : kindColour(kinds[0]) }}
+    />
   );
   const title = renaming ? (
     <input
@@ -144,14 +153,14 @@ const ThreadRow = memo(function ThreadRow({
         } else if (e.key === "Escape") setRenaming(false);
       }}
       onBlur={() => setRenaming(false)}
-      className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 font-medium text-sm outline-none focus:border-foreground"
+      className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 font-medium text-sm outline-none focus:border-primary/50 focus:ring-[3px] focus:ring-ring"
     />
   ) : (
     <span
       className={cn(
         "session-title min-w-0 flex-1 truncate text-sm",
-        recede ? "font-normal text-secondary-label" : "font-medium",
-        active || unread ? "text-foreground" : !recede && "text-foreground/90",
+        "font-normal",
+        active || unread ? "text-foreground" : recede ? "text-muted-foreground" : "text-foreground/90",
       )}
     >
       {sessionTitle(s)}
@@ -161,20 +170,26 @@ const ThreadRow = memo(function ThreadRow({
     <span className="relative ml-auto flex h-5 min-w-8 shrink-0 items-center justify-end text-xs">
       <span
         className={cn(
-          "flex items-center tabular-nums text-secondary-label transition-opacity group-hover/sidebar-row:pointer-events-none group-hover/sidebar-row:opacity-0",
+          "flex items-center font-mono text-2xs text-faint transition-opacity group-focus-within/sidebar-row:pointer-events-none group-focus-within/sidebar-row:opacity-0 group-hover/sidebar-row:pointer-events-none group-hover/sidebar-row:opacity-0",
         )}
       >
         {st !== null ? (
-          <span className={cn("inline-flex items-center gap-1 font-medium", st.className)} data-status={status}>
-            <st.icon className={cn("size-4 shrink-0", status === "working" && "animate-spin [animation-duration:3s]")} />
-            <span role="status">{st.label}</span>
+          <span className={cn("inline-flex items-center gap-1", st.className)} data-status={status} title={st.label}>
+            {st.icon === null ? (
+              <span aria-hidden className="size-1.5 shrink-0 animate-deck-pulse rounded-full bg-current" />
+            ) : (
+              <st.icon aria-hidden className="size-3.5 shrink-0" />
+            )}
+            <span role="status" className="sr-only">
+              {st.label}
+            </span>
             {status === "approval" && s.pending > 1 && <span>{s.pending}</span>}
           </span>
         ) : (
           relativeTime(s.updated_at, now)
         )}
       </span>
-      <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center opacity-0 transition-opacity group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100">
+      <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center opacity-0 transition-opacity group-focus-within/sidebar-row:pointer-events-auto group-focus-within/sidebar-row:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100">
         {confirm ? (
           <span className="flex items-center gap-1 text-xs">
             <button
@@ -203,7 +218,7 @@ const ThreadRow = memo(function ThreadRow({
             type="button"
             aria-label={`Delete ${sessionTitle(s)}`}
             title="Delete thread"
-            className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 text-muted-foreground text-xs hover:text-foreground"
+            className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 text-muted-foreground text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             onClick={(e) => {
               e.stopPropagation();
               setConfirm(true);
@@ -225,6 +240,14 @@ const ThreadRow = memo(function ThreadRow({
       if ((e.target as HTMLElement).closest("button, input")) return;
       setRenaming(true);
     },
+    onContextMenu: (e: React.MouseEvent) => {
+      if ((e.target as HTMLElement).closest("input")) return;
+      e.preventDefault();
+      void onMenu().then((choice) => {
+        if (choice === "rename") setRenaming(true);
+        else if (choice === "delete") onDelete();
+      });
+    },
     onKeyDown: (e: React.KeyboardEvent) => {
       if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
       e.preventDefault();
@@ -233,17 +256,20 @@ const ThreadRow = memo(function ThreadRow({
   };
   if (variant === "compact") {
     return (
-      <li className={cn("session list-none", active && "open")} data-session={s.id}>
-        <div {...common} className={cn(surface, "flex h-9 items-center gap-2.5 px-2.5")}>
+      <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id}>
+        <div {...common} className={cn(surface, "flex h-9 items-center gap-2 px-2.5")}>
+          {rail}
           {title}
+          <KindStack kinds={kinds} theme={theme} />
           {statusSlot}
         </div>
       </li>
     );
   }
   return (
-    <li className={cn("session list-none", active && "open")} data-session={s.id}>
+    <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id}>
       <div {...common} className={surface}>
+        {rail}
         <div className={cn("relative px-2.5 py-2", hideProject ? "h-[3.625rem]" : "h-[4.875rem]")}>
           {hideProject ? (
             <div className="flex h-5 min-w-0 items-center gap-1.5">
@@ -253,7 +279,7 @@ const ThreadRow = memo(function ThreadRow({
           ) : (
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               <Folder className="size-3.5 shrink-0 text-muted-foreground/70" />
-              <span className={cn("min-w-0 flex-1 truncate text-secondary-label text-xs", !recede && "font-medium")}>
+              <span className="min-w-0 flex-1 truncate text-2xs text-faint">
                 {project}
               </span>
               {statusSlot}
@@ -261,7 +287,7 @@ const ThreadRow = memo(function ThreadRow({
           )}
           {!hideProject && <div className="mt-1 flex min-w-0">{title}</div>}
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
-            <span className="min-w-0 flex-1 truncate text-muted-foreground/50">
+            <span className="min-w-0 flex-1 truncate text-faint">
               {s.last_text !== undefined && s.last_text !== "" ? s.last_text : `${s.mode} mode`}
             </span>
             <KindStack kinds={kinds} theme={theme} />
@@ -357,7 +383,7 @@ function ProjectFilter({
               type="button"
               aria-label={`Close ${p.name}`}
               title="Close project"
-              className="mr-1 grid size-6 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100"
+              className="mr-1 grid size-6 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 outline-none hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within:opacity-100 group-hover:opacity-100"
               onClick={() => {
                 setOpen(false);
                 if (filter === p.key) onFilter(null);
@@ -447,6 +473,8 @@ export function Sidebar({
   onNew,
   onRename,
   onDelete,
+  onThreadMenu,
+  update,
   onDisconnect,
   onPalette,
   onSettings,
@@ -486,6 +514,9 @@ export function Sidebar({
   onNew: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
+  onThreadMenu: (id: string, title: string) => Promise<ThreadChoice>;
+  // A downloaded update that waits for a restart.
+  update: { version: string; onRestart: () => void } | null;
   onDisconnect: () => void;
   onPalette: () => void;
   onSettings: (s: SettingsSection | null) => void;
@@ -500,8 +531,8 @@ export function Sidebar({
   const [showSettled, setShowSettled] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState<string | null>(null);
-  const latest = useRef({ onOpen, onForeign, onRename, onDelete });
-  latest.current = { onOpen, onForeign, onRename, onDelete };
+  const latest = useRef({ onOpen, onForeign, onRename, onDelete, onThreadMenu });
+  latest.current = { onOpen, onForeign, onRename, onDelete, onThreadMenu };
   // Every open project's threads, newest first, as T3 Code lists them.
   type Item = { s: Session; source: string; project: string; foreign: ForeignThread | null };
   const items: Item[] = [
@@ -539,6 +570,7 @@ export function Sidebar({
         onOpen={() => (f === null ? latest.current.onOpen(s.id) : latest.current.onForeign(f.source, s.id))}
         onRename={(t) => void (f === null ? latest.current.onRename(s.id, t) : f.c.renameSession(s.id, t))}
         onDelete={() => void (f === null ? latest.current.onDelete(s.id) : f.c.deleteSession(s.id))}
+        onMenu={() => latest.current.onThreadMenu(s.id, sessionTitle(s))}
       />
     );
   };
@@ -553,12 +585,12 @@ export function Sidebar({
           <li className="list-none">
             <button
               type="button"
-              className="mt-1 flex h-7 w-full cursor-pointer items-center gap-2 px-2.5 text-muted-foreground/70 text-xs hover:text-foreground"
+              className="mt-1 flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-2xs text-faint outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               aria-expanded={shown}
               onClick={() => setShowSettled((v) => ({ ...v, [key]: !shown }))}
             >
               <span>{shown ? "Settled" : `Settled (${settled.length})`}</span>
-              <span className="h-px flex-1 bg-border" />
+              <span className="h-px flex-1 bg-hairline" />
               {shown ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
             </button>
           </li>
@@ -575,13 +607,15 @@ export function Sidebar({
   ].filter((p) => filter === null || p.key === filter);
   const recentClosed = projects.filter((p) => !p.open && p.kind === "folder");
   return (
-    <nav className="sidebar flex w-64 shrink-0 flex-col border-r bg-sidebar" aria-label="Threads">
+    <nav className="sidebar flex w-64 shrink-0 flex-col bg-sidebar" aria-label="Threads">
       <header className={cn("brand-glow drag flex h-12 shrink-0 items-center gap-2 px-3", mac && "pl-20")}>
         <Button variant="ghost-muted" size="icon-sm" aria-label="Hide the sidebar" title="Hide the sidebar" onClick={onCollapse}>
           <PanelLeft />
         </Button>
-        <span className="inline-flex items-baseline gap-1 font-medium text-sm tracking-tight">
-          <span className="font-semibold">Deck</span>
+        {/* The terminal prompt is the app's own suit. */}
+        <span className="inline-flex items-center gap-1.5 font-medium text-sm tracking-tight">
+          <TerminalIcon aria-hidden className="size-3.5 text-foreground" />
+          <span>Deck</span>
           <span className="text-muted-foreground">Code</span>
         </span>
       </header>
@@ -595,7 +629,7 @@ export function Sidebar({
             <ArrowLeft className="size-4" />
             Back to threads
           </button>
-          <div className="px-2 pt-3 pb-1 font-medium text-muted-foreground text-xs">Settings</div>
+          <div className="px-2.5 pt-3 pb-1 font-medium text-2xs text-faint">Settings</div>
           <ul className="flex flex-col gap-px" aria-label="Settings sections">
             {SETTINGS_SECTIONS.map((x) => (
               <li key={x.section}>
@@ -605,7 +639,7 @@ export function Sidebar({
                   className={cn(
                     "flex h-8 w-full cursor-pointer items-center rounded-md px-2.5 text-left text-sm",
                     settings === x.section
-                      ? "bg-sidebar-row-active font-medium text-foreground"
+                      ? "bg-sidebar-row-active text-foreground inset-shadow-hl"
                       : "text-muted-foreground hover:bg-sidebar-row-hover hover:text-foreground",
                   )}
                   onClick={() => onSettings(x.section)}
@@ -650,30 +684,20 @@ export function Sidebar({
                   const shut = collapsed[g.key] === true;
                   return (
                     <li key={g.key} className="project-group list-none" data-project={g.name}>
-                      <div className="group/proj flex h-8 items-center gap-1 rounded-md pr-1 hover:bg-sidebar-row-hover">
+                      <div className="group/proj flex h-7 items-center gap-1 rounded-md pr-1">
                         <button
                           type="button"
-                          className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-1.5 pl-2 text-left text-sm"
+                          className="flex h-7 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md pl-2 text-left font-medium text-2xs text-faint outline-none transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
                           aria-expanded={!shut}
                           aria-label={`${g.name}: ${mine.length} ${mine.length === 1 ? "thread" : "threads"}`}
                           onClick={() => setCollapsed((c) => ({ ...c, [g.key]: !shut }))}
                         >
-                          {shut ? (
-                            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-                          ) : (
-                            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                          )}
-                          {g.kind === "paired" ? (
-                            <Laptop className="size-4 shrink-0 text-muted-foreground" />
-                          ) : (
-                            <Folder className="size-4 shrink-0 text-muted-foreground" />
-                          )}
-                          <span className={cn("min-w-0 truncate font-medium", g.key === source ? "text-foreground" : "text-foreground/80")}>
-                            {g.name}
-                          </span>
-                          <span className="shrink-0 text-2xs text-muted-foreground/70 tabular-nums">{mine.length}</span>
+                          {shut ? <ChevronRight className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
+                          {g.kind === "paired" && <Laptop className="size-3 shrink-0" />}
+                          <span className={cn("min-w-0 truncate", g.key === source && "text-muted-foreground")}>{g.name}</span>
+                          <span className="shrink-0 font-mono text-3xs">{mine.length}</span>
                         </button>
-                        <span className="flex items-center opacity-0 transition-opacity group-hover/proj:opacity-100">
+                        <span className="flex items-center opacity-0 transition-opacity group-focus-within/proj:opacity-100 group-hover/proj:opacity-100">
                           <Button
                             variant="ghost-muted"
                             size="icon-xs"
@@ -695,7 +719,7 @@ export function Sidebar({
                         </span>
                       </div>
                       {!shut && (
-                        <ul className="flex flex-col gap-1 pt-0.5 pb-2 pl-2">
+                        <ul className="flex flex-col gap-px pt-0.5 pb-3">
                           {threads(mine, g.key)}
                           {mine.length === 0 && (
                             <li className="list-none">
@@ -716,7 +740,7 @@ export function Sidebar({
               : threads(items, "all")}
             {grouped && filter === null && recentClosed.length > 0 && (
               <li className="list-none pt-3">
-                <div className="px-2.5 pb-1 text-muted-foreground/70 text-xs">Recent projects</div>
+                <div className="px-2 pb-1 font-medium text-2xs text-faint">Recent projects</div>
                 <ul className="flex flex-col">
                   {recentClosed.slice(0, 6).map((p) => (
                     <li key={p.key} className="list-none">
@@ -765,7 +789,17 @@ export function Sidebar({
         <HeaderButton label="Close project" onClick={onDisconnect}>
           <Unplug />
         </HeaderButton>
-        <span className="link ml-auto flex min-w-0 items-center gap-1.5 px-1 text-2xs text-muted-foreground">
+        {update !== null && (
+          <button
+            type="button"
+            className="update ml-auto min-w-0 cursor-pointer truncate rounded px-1 text-2xs text-muted-foreground hover:text-foreground"
+            title={`Deck ${update.version} is downloaded. Restart to install it.`}
+            onClick={update.onRestart}
+          >
+            Update ready · Restart
+          </button>
+        )}
+        <span className={cn("link flex min-w-0 items-center gap-1.5 px-1 text-2xs text-muted-foreground", update === null && "ml-auto")}>
           <span className={cn("dot size-1.5 shrink-0 rounded-full", linkDot[link])} />
           <span className="truncate">{LINK_LABEL[link]}</span>
         </span>

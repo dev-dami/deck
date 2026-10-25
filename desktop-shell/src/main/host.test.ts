@@ -102,3 +102,63 @@ async function until(cond: () => boolean, ms = 5000): Promise<void> {
     await new Promise((r) => setTimeout(r, 10));
   }
 }
+const noEmit = () => {};
+
+describe("platform methods", () => {
+  test("appInfo and openLogs take no arguments", async () => {
+    let opened = 0;
+    const { host } = testHost(noEmit, noEmit, undefined, {
+      openLogs: async () => {
+        opened++;
+      },
+    });
+    await expect(callHost(host, "appInfo", [])).resolves.toMatchObject({ version: "0.1.0" });
+    await expect(callHost(host, "appInfo", ["x"])).rejects.toThrow(/bad arguments/);
+    await expect(callHost(host, "openLogs", ["/etc"])).rejects.toThrow(/bad arguments/);
+    await callHost(host, "openLogs", []);
+    expect(opened).toBe(1);
+  });
+
+  test("logFromRenderer takes a known level and a string, and caps its length", async () => {
+    const { host, logged } = testHost(noEmit, noEmit);
+    await expect(callHost(host, "logFromRenderer", ["debug", "x"])).rejects.toThrow(/bad arguments/);
+    await expect(callHost(host, "logFromRenderer", ["error", { message: "x" }])).rejects.toThrow(/bad arguments/);
+    await expect(callHost(host, "logFromRenderer", ["error"])).rejects.toThrow(/bad arguments/);
+    await callHost(host, "logFromRenderer", ["error", "TypeError: boom"]);
+    await callHost(host, "logFromRenderer", ["warn", "x".repeat(10_000)]);
+    expect(logged[0]).toEqual(["error", "renderer: TypeError: boom"]);
+    expect(logged[1]?.[0]).toBe("warn");
+    expect(logged[1]?.[1].length).toBeLessThan(4100);
+  });
+
+  test("installUpdate takes no arguments", async () => {
+    let installs = 0;
+    const { host } = testHost(noEmit, noEmit, undefined, { installUpdate: () => installs++ });
+    await expect(callHost(host, "installUpdate", [true])).rejects.toThrow(/bad arguments/);
+    await callHost(host, "installUpdate", []);
+    expect(installs).toBe(1);
+  });
+
+  test("threadMenu takes an id and a title and nothing else", async () => {
+    const seen: unknown[] = [];
+    const { host } = testHost(noEmit, noEmit, undefined, {
+      threadMenu: async (t) => {
+        seen.push(t);
+        return "rename";
+      },
+    });
+    for (const bad of [
+      [],
+      ["ses_1"],
+      [{ id: "ses_1" }],
+      [{ id: "ses_1", title: 3 }],
+      [{ id: "ses_1", title: "T", extra: true }],
+      [["ses_1", "T"]],
+      [{ id: "ses_1", title: "T" }, "more"],
+    ]) {
+      await expect(callHost(host, "threadMenu", bad)).rejects.toThrow(/bad arguments/);
+    }
+    await expect(callHost(host, "threadMenu", [{ id: "ses_1", title: "Fix it" }])).resolves.toBe("rename");
+    expect(seen).toEqual([{ id: "ses_1", title: "Fix it" }]);
+  });
+});

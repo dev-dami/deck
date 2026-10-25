@@ -1,4 +1,14 @@
-import { type DeckHost, type HostMethod, type PairInput, RPC_METHODS, type RpcMethod } from "../shared/bridge";
+import {
+  type AppInfo,
+  type DeckHost,
+  type HostMethod,
+  LOG_LEVELS,
+  type LogLevel,
+  type PairInput,
+  RPC_METHODS,
+  type RpcMethod,
+  type ThreadChoice,
+} from "../shared/bridge";
 import type { RpcDecks } from "./decks";
 import type { LinkHost } from "./link";
 import { codeError, type Connect, pairWith } from "./pair";
@@ -18,7 +28,15 @@ export interface HostDeps {
   pickFolder: () => Promise<string | null>;
   deviceName: string;
   connect?: Connect;
+  appInfo: AppInfo;
+  log: (level: LogLevel, message: string) => void;
+  openLogs: () => Promise<void>;
+  installUpdate: () => void;
+  threadMenu: (thread: { id: string; title: string }) => Promise<ThreadChoice>;
 }
+
+// The longest renderer log line kept: a stack trace, not a flood.
+const MAX_LOG = 4000;
 
 // The main process's half of the bridge. Every argument comes from the
 // renderer, so callHost checks its type before a method sees it.
@@ -76,6 +94,11 @@ export function createHost(d: HostDeps): DeckHost {
     phoneNewCode: () => d.phone.newCode(),
     phoneRevoke: (deviceId: string) => d.phone.revoke(deviceId),
     phoneStop: () => d.phone.stop(),
+    appInfo: async () => d.appInfo,
+    openLogs: () => d.openLogs(),
+    logFromRenderer: async (level: LogLevel, message: string) => d.log(level, `renderer: ${message.slice(0, MAX_LOG)}`),
+    installUpdate: async () => d.installUpdate(),
+    threadMenu: (thread: { id: string; title: string }) => d.threadMenu({ id: thread.id, title: thread.title }),
   };
 }
 
@@ -97,6 +120,13 @@ const isPairInput: Check = (v) => {
     (p["fingerprint"] === null || isStr(p["fingerprint"])) &&
     isStr(p["code"])
   );
+};
+
+const isLogLevel: Check = (v) => (LOG_LEVELS as readonly unknown[]).includes(v);
+const isThread: Check = (v) => {
+  if (!isObject(v)) return false;
+  const t = v as Record<string, unknown>;
+  return Object.keys(t).length === 2 && isStr(t["id"]) && isStr(t["title"]);
 };
 
 const ARGS: Record<HostMethod, Check[]> = {
@@ -122,6 +152,11 @@ const ARGS: Record<HostMethod, Check[]> = {
   phoneNewCode: [],
   phoneRevoke: [isStr],
   phoneStop: [],
+  appInfo: [],
+  openLogs: [],
+  logFromRenderer: [isLogLevel, isStr],
+  installUpdate: [],
+  threadMenu: [isThread],
 };
 
 // Calls method m with args from the renderer, or rejects when they are not
