@@ -82,6 +82,39 @@ jobs:
       - name: go test pkg/remote
         run: go test ./pkg/remote/... ./internal/workspace/ ./internal/cmd/
 
+  # The desktop app (desktop-shell). It imports the phone client's sources
+  # and loads proto/deck/v1/deck.proto, so changes there can break it too.
+  # Playwright runs the renderer in Chromium and the whole app in Electron,
+  # under xvfb.
+  desktop:
+    name: desktop (ubuntu-latest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop-shell
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop-shell/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+
+      # Ubuntu 24.04 blocks the user namespaces that Electron's sandbox
+      # needs. The tests keep the sandbox on, so the runner allows them.
+      - name: allow the Chromium sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - run: xvfb-run -a npm run e2e
+      - run: xvfb-run -a npm run smoke
+
   # The phone client is built from pkg/remote/web and its dist is committed,
   # so `go install` needs no JavaScript toolchain. The job fails if the
   # committed build is stale (docs/remote-contract.md section 7).

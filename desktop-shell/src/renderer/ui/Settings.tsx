@@ -1,8 +1,8 @@
 import type { AppState } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
 import { Monitor, Moon, Palette, Sun } from "lucide-react";
-import type { ReactNode } from "react";
-import type { DeckBridge } from "../../shared/bridge";
+import { type ReactNode, useEffect, useState } from "react";
+import type { AppInfo, DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";
 import { type Prefs, setPrefs, usePrefs } from "../prefs";
 import { ACCENTS, THEMES } from "../themes";
@@ -275,8 +275,24 @@ function Agents({ state }: { state: AppState }) {
   );
 }
 
-function Connection({ state, where, transport, onDisconnect }: { state: AppState; where: string; transport: string; onDisconnect: () => void }) {
+function Connection({
+  state,
+  where,
+  transport,
+  bridge,
+  onDisconnect,
+}: {
+  state: AppState;
+  where: string;
+  transport: string;
+  bridge: DeckBridge;
+  onDisconnect: () => void;
+}) {
   const s = state.server;
+  const [app, setApp] = useState<AppInfo | null>(null);
+  useEffect(() => {
+    void bridge.appInfo().then(setApp);
+  }, [bridge]);
   return (
     <>
       <Section title="This Deck">
@@ -295,9 +311,20 @@ function Connection({ state, where, transport, onDisconnect }: { state: AppState
         />
       </Section>
       <Section title="About">
+        <Row title="App version" description={app?.version ?? "—"} />
         <Row title="Deck version" description={s?.version ?? "—"} />
+        <Row title="Electron" description={app === null ? "—" : `${app.electron} (Chromium ${app.chromium}, ${app.platform})`} />
         <Row title="Protocol" description={s === null ? "—" : String(s.protocol)} />
         <Row title="Features" description={s === null || s.features.length === 0 ? "—" : s.features.join(", ")} />
+        <Row
+          title="Logs"
+          description="What the app and its engines wrote, for a bug report."
+          control={
+            <Button size="sm" variant="outline" onClick={() => void bridge.openLogs()}>
+              Open logs folder
+            </Button>
+          }
+        />
       </Section>
     </>
   );
@@ -308,9 +335,14 @@ function Keybindings({ mac }: { mac: boolean }) {
   const rows: ReadonlyArray<[string, string[]]> = [
     ["Search threads and commands", [m, "K"]],
     ["New thread", [m, "N"]],
+    ["Open a folder", [m, "O"]],
+    ["Settings", [m, ","]],
+    ["Toggle the sidebar", [m, "B"]],
+    ["Toggle the terminal", [m, "J"]],
+    ["Zoom in, out, actual size", [m, "=", "-", "0"]],
     ["Send the message", ["Enter"]],
     ["New line", ["Shift", "Enter"]],
-    ["Toggle Yolo mode", [m, "Y"]],
+    ["Toggle Yolo mode", [m, "Shift", "Y"]],
     ["Pick an agent", ["$"]],
     ["Rename a thread", ["Double-click"]],
   ];
@@ -368,7 +400,7 @@ export function SettingsPage({
           {section === "appearance" && <Appearance p={p} />}
           {section === "agents" && <Agents state={state} />}
           {section === "connection" && (
-            <Connection state={state} where={where} transport={transport} onDisconnect={onDisconnect} />
+            <Connection state={state} where={where} transport={transport} bridge={bridge} onDisconnect={onDisconnect} />
           )}
           {section === "phone" && <PhonePage bridge={bridge} folder={folder} />}
           {section === "keybindings" && <Keybindings mac={mac} />}
