@@ -8,41 +8,43 @@ import {
   Ellipsis,
   FileDiff,
   Folder,
-  ListOrdered,
+  ListChecks,
   MessageCircleQuestion,
-  Network,
-  PanelLeft,
-  PanelRight,
   Settings as SettingsIcon,
-  ShieldQuestion,
   Square,
-  SquareTerminal,
 } from "lucide-react";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dispatchUi, setDraft as storeDraft, useDraft, useEngine, useProjectUi } from "../appState";
 import type { DeckClient } from "../client";
 import { addAgentMention } from "../completion";
+import type { TeamThread } from "../crew";
+import { buildLanes, filterLane } from "../lanes";
 import { cn } from "../lib/cn";
 import { isSide } from "../sideChat";
 import { setPrefs, usePrefs } from "../prefs";
 import { kindsBySession, panelSlice, sameKinds, shallowEqual, shellSlice, threadSlice, useAppSlice } from "../select";
 import { PANELS, type Panel, SETTINGS_SECTIONS, type UiAction } from "../ui";
 import { AgentCards, AgentsStrip } from "./AgentsStrip";
+import { useCrew } from "./AgentsTree";
 import { ApprovalCard } from "./ApprovalCard";
 import { Composer } from "./Composer";
-import { BranchPicker, GitActions, useGit } from "./Git";
+import { LineComments } from "./DiffView";
+import { BranchPicker, useGit } from "./Git";
 import { isMac, modKey } from "./keys";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
 import { MenuItem, MenuSeparator, Popover } from "./kit/menu";
 import type { DeckBridge, MenuCommand } from "../../shared/bridge";
+import { Lanes } from "./Lanes";
 import { ModePicker } from "./ModePicker";
 import { type Command, Palette } from "./Palette";
 import { RightPanel } from "./RightPanel";
+import { RoomHeader } from "./RoomHeader";
 import { SettingsPage } from "./Settings";
+import { SharedRoom } from "./SharedRoom";
 import { TerminalDrawer, useTerminalShown } from "./Terminal";
 import { UsagePage } from "./Usage";
-import { ShareControl, TeamPage } from "./Team";
+import { TeamPage, useShares, useTeam } from "./Team";
 import { type ForeignThread, type ProjectEntry, type RowRef, Sidebar } from "./Sidebar";
 import { Inbox } from "./Inbox";
 import { type InboxItem, needsYouRooms, nextNeedsYou } from "../attention";
@@ -52,6 +54,7 @@ import type { Landing } from "./App";
 import type { OpenProject } from "../openProjects";
 import type { EngineStop } from "../../shared/bridge";
 import { Timeline } from "./Timeline";
+import { useRoomVerbs } from "./RoomVerbs";
 import { yoloMove } from "../yolo";
 
 // The threads of the other open projects, kept current from their stores.
@@ -128,11 +131,18 @@ const NO_KINDS: string[] = [];
 const wholeState = (s: AppState): AppState => s;
 
 // The open thread's timeline. It reads that thread's messages alone, so
-// tokens in other threads do not render it, nor the shell around it.
-function LiveTimeline({ c, sid, ...rest }: { c: DeckClient; sid: string } & Omit<ComponentProps<typeof Timeline>, "messages" | "roster" | "more" | "onOlder">) {
+// tokens in other threads do not render it, nor the shell around it. lane
+// shows one lane's messages alone (the lane strip's filter).
+function LiveTimeline({
+  c,
+  sid,
+  lane,
+  ...rest
+}: { c: DeckClient; sid: string; lane: string | null } & Omit<ComponentProps<typeof Timeline>, "messages" | "roster" | "more" | "onOlder">) {
   const select = useMemo(() => threadSlice(sid), [sid]);
   const t = useAppSlice(c.store, select, shallowEqual);
-  return <Timeline messages={t.messages} roster={t.roster} more={t.more} onOlder={() => c.loadOlder(sid)} {...rest} />;
+  const messages = useMemo(() => filterLane(t.messages, lane), [t.messages, lane]);
+  return <Timeline messages={messages} roster={t.roster} more={t.more} onOlder={() => c.loadOlder(sid)} {...rest} />;
 }
 
 // The side panel and the Settings page take the whole state but read only
@@ -175,14 +185,12 @@ function EngineStopped({ stop, onRestart }: { stop: EngineStop; onRestart: () =>
 function MoreMenu({
   busy,
   queued,
-  pending,
   onStop,
   onPanel,
   onSettings,
 }: {
   busy: boolean;
   queued: number;
-  pending: number;
   onStop: () => void;
   onPanel: (p: Panel) => void;
   onSettings: () => void;
@@ -223,15 +231,11 @@ function MoreMenu({
       <MenuItem onClick={run(() => onPanel("changes"))}>
         <FileDiff /> Open diff
       </MenuItem>
-      <MenuItem onClick={run(() => onPanel("approvals"))}>
-        <ShieldQuestion /> <span className="flex-1">Approvals</span>
-        {pending > 0 && <Badge variant="warning">{pending}</Badge>}
-      </MenuItem>
       <MenuItem onClick={run(() => onPanel("side"))}>
         <MessageCircleQuestion /> <span className="flex-1">Side chat</span>
       </MenuItem>
-      <MenuItem onClick={run(() => onPanel("queue"))}>
-        <ListOrdered /> <span className="flex-1">Queue</span>
+      <MenuItem onClick={run(() => onPanel("tasks"))}>
+        <ListChecks /> <span className="flex-1">Tasks</span>
         {queued > 0 && <Badge variant="muted">{queued}</Badge>}
       </MenuItem>
       <MenuSeparator />
@@ -301,6 +305,11 @@ export function Shell({
   const key = sid ?? NEW;
   const draft = useDraft(projectKey, key);
   const setDraft = useCallback((text: string) => storeDraft(projectKey, key, text), [projectKey, key]);
+  // The lane the timeline shows alone, kept for the room it was picked in.
+  const [lanePick, setLanePick] = useState<{ sid: string | null; lane: string | null }>({ sid: null, lane: null });
+  const lane = lanePick.sid === sid ? lanePick.lane : null;
+  // A room a teammate shares with you, shown in place of this project's room.
+  const [shared, setShared] = useState<{ peer: string; thread: TeamThread } | null>(null);
 
   useEffect(() => {
     if (ui.openId === null) c.closeSession();
@@ -359,10 +368,17 @@ export function Shell({
     if (!busy) void refreshGit();
   }, [busy, refreshGit]);
 
+  // The room's agents tree (the lane strip and the Agents tab), who follows
+  // the room, and the team (the share control and the sidebar).
+  const { crew, at: crewAt } = useCrew(api, sid);
+  const { shares, set: setShare } = useShares(api, sid);
+  const { team } = useTeam(api, 15_000);
+
   const focusInput = useCallback(() => requestAnimationFrame(() => inputRef.current?.focus()), []);
 
   const openSession = useCallback(
     (id: string | null) => {
+      setShared(null);
       dispatch({ type: "open", id });
       focusInput();
     },
@@ -599,12 +615,24 @@ export function Shell({
       else openRoom(to.project, to.room);
     },
   };
-  const added = files?.reduce((n, f) => n + f.added, 0) ?? 0;
-  const removed = files?.reduce((n, f) => n + f.removed, 0) ?? 0;
+  // Rooms teammates share with you, and how many teammates are online.
+  const teamOn = typeof team === "object" && team !== null && team.available ? team : null;
+  const sharedRooms = teamOn?.teammates.flatMap((m) => m.threads.map((t) => ({ peer: m.name, thread: t }))) ?? [];
+  const mates = teamOn === null ? null : teamOn.teammates.filter((m) => m.link === "online").length;
+  const openShared = useCallback(
+    (peer: string, thread: TeamThread) => {
+      // Opening a room closes Settings, Usage and Team, as a thread does.
+      dispatch({ type: "open", id: ui.openId });
+      setShared({ peer, thread });
+    },
+    [dispatch, ui.openId],
+  );
 
   // The kinds that wrote in a thread, for the sidebar's stack of marks.
   const kindsMap = useAppSlice(c.store, kindsBySession, sameKinds);
   const kindsOf = useCallback((id: string): string[] => kindsMap[id] ?? NO_KINDS, [kindsMap]);
+
+  const room = useRoomVerbs({ c, projectKey, open, roster, draft, asking: pending.length > 0, inputRef });
 
   const cards = (
     <AgentCards
@@ -624,128 +652,48 @@ export function Shell({
   );
 
   const header = (
-    <header className="topbar drag @container/top flex h-12 shrink-0 items-center gap-2 px-4">
-      {!sidebar && (
-        <Button variant="ghost-muted" size="icon-sm" aria-label="Show the sidebar" title="Show the sidebar" onClick={() => setSidebar(true)}>
-          <PanelLeft />
-        </Button>
-      )}
-      <nav aria-label="Breadcrumb" className="min-w-28 flex-1">
-        <ol className="m-0 flex min-w-0 list-none items-center gap-3 p-0 text-sm">
-          <li className="flex min-w-0 shrink items-center gap-1.5 text-muted-foreground">
-            <Folder className="size-3.5 shrink-0" />
-            <span className="project max-w-24 truncate @3xl/top:max-w-40">{project || "Deck"}</span>
-          </li>
-          <li aria-hidden className="text-faint">
-            /
-          </li>
-          <li className="min-w-24 flex-1">
-            <h1 className="title min-w-0 truncate font-medium text-foreground">
-              {open === undefined ? (state.sessionsLoaded ? "New thread" : "Connecting…") : sessionTitle(open)}
-            </h1>
-          </li>
-        </ol>
-      </nav>
-      {api !== undefined && (
-        <GitActions
-          git={git}
-          project={api}
-          threadTitle={open === undefined ? "" : sessionTitle(open)}
-          onError={toast}
-          onInfo={info}
+    <>
+      <RoomHeader
+        sidebar={sidebar}
+        onShowSidebar={() => setSidebar(true)}
+        project={project}
+        open={open}
+        loaded={state.sessionsLoaded}
+        roster={roster}
+        theme={state.theme}
+        onRename={(title) => open !== undefined && void c.renameSession(open.id, title)}
+        api={api}
+        git={git}
+        team={team}
+        shares={shares}
+        onShare={setShare}
+        files={files}
+        terminal={terminal}
+        terminalKey={`${modKey(mac)}J`}
+        onTerminal={() => setTerminal((v) => !v)}
+        diff={ui.panel === "changes"}
+        panelOpen={ui.panel !== null}
+        onDiff={() => showPanel("changes")}
+        onPanel={() => dispatch({ type: "panel", panel: ui.panel ?? "changes" })}
+        onError={toast}
+        onInfo={info}
+      />
+      {open !== undefined && (
+        <Lanes
+          lanes={buildLanes({ roster, agents: crew?.agents ?? null, shares, waiting: pending.map((a) => a.agent) })}
+          theme={state.theme}
+          filter={lane}
+          onFilter={(l) => setLanePick({ sid: open.id, lane: l })}
+          listModels={(kind) => c.listModels(open.id, kind)}
+          setModel={(kind, model, effort) => void c.setModel(open.id, kind, model, effort)}
+          onStop={room.interrupt}
+          onSteer={(agent) => {
+            setDraft(applyAgentChip(draft, agent));
+            focusInput();
+          }}
         />
       )}
-      {api !== undefined && open !== undefined && <ShareControl api={api} thread={open} onError={toast} />}
-      <div className="panel-toggles flex shrink-0 items-center gap-1">
-        {api !== undefined && (
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="Agents"
-            title="Agents and tasks"
-            aria-pressed={ui.panel === "agents"}
-            onClick={() => showPanel("agents")}
-          >
-            <Network />
-          </Button>
-        )}
-        {api !== undefined && (
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="Terminal"
-            title={`Terminal (${modKey(mac)}J)`}
-            aria-pressed={terminal}
-            onClick={() => setTerminal((v) => !v)}
-          >
-            <SquareTerminal />
-          </Button>
-        )}
-        <Button
-          variant="outline"
-          size="icon-sm"
-          aria-label="Side chat"
-          title="Side chat: ask about what the agents are doing"
-          aria-pressed={ui.panel === "side"}
-          onClick={() => showPanel("side")}
-        >
-          <MessageCircleQuestion />
-        </Button>
-        {state.approvals.length > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="px-2 font-normal"
-            aria-label="Approvals"
-            title="Approvals"
-            aria-pressed={ui.panel === "approvals"}
-            onClick={() => showPanel("approvals")}
-          >
-            <ShieldQuestion />
-            <Badge variant="warning">{state.approvals.length}</Badge>
-          </Button>
-        )}
-        {queued > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="px-2 font-normal"
-            aria-label="Queue"
-            title="Queue"
-            aria-pressed={ui.panel === "queue"}
-            onClick={() => showPanel("queue")}
-          >
-            <ListOrdered />
-            <Badge variant="muted">{queued}</Badge>
-          </Button>
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          className="font-normal"
-          aria-pressed={ui.panel === "changes"}
-          onClick={() => showPanel("changes")}
-        >
-          <FileDiff />
-          <span className="sr-only @3xl/top:not-sr-only">Diff</span>
-          {files !== null && files.length > 0 && (
-            <span className="font-mono text-xs">
-              <span className="text-diff-addition-foreground">+{added}</span>{" "}
-              <span className="text-diff-deletion-foreground">−{removed}</span>
-            </span>
-          )}
-        </Button>
-        <Button
-          variant="ghost-muted"
-          size="icon-sm"
-          aria-label={ui.panel === null ? "Show the side panel" : "Hide the side panel"}
-          title={ui.panel === null ? "Show the side panel" : "Hide the side panel"}
-          onClick={() => dispatch({ type: "panel", panel: ui.panel ?? "changes" })}
-        >
-          <PanelRight />
-        </Button>
-      </div>
-    </header>
+    </>
   );
 
   const strip =
@@ -763,7 +711,7 @@ export function Shell({
           roster={roster}
           approvals={state.approvals}
           theme={state.theme}
-          onInterrupt={(agent) => void c.interrupt(open.id, agent)}
+          onInterrupt={room.interrupt}
           onMention={(agent) => {
             setDraft(applyAgentChip(draft, agent));
             inputRef.current?.focus();
@@ -828,6 +776,10 @@ export function Shell({
           onInbox={() => dispatch({ type: "inbox", open: !ui.inbox })}
           digits={digits}
           order={order}
+          shared={sharedRooms}
+          openShared={shared === null || ui.team || ui.usage || ui.inbox || ui.settings !== null ? null : `${shared.peer}/${shared.thread.id}`}
+          onShared={openShared}
+          online={mates}
         />
       )}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -847,7 +799,7 @@ export function Shell({
           </main>
         ) : ui.team ? (
           <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-            <TeamPage api={api} thread={open} onError={toast} onInfo={info} />
+            <TeamPage api={api} thread={open} onError={toast} onInfo={info} onOpenShared={openShared} />
           </main>
         ) : ui.settings !== null ? (
           <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
@@ -860,6 +812,19 @@ export function Shell({
               bridge={bridge}
               folder={folder}
               onDisconnect={onDisconnect}
+            />
+          </main>
+        ) : shared !== null && api !== undefined ? (
+          <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+            <SharedRoom
+              key={`${shared.peer}/${shared.thread.id}`}
+              api={api}
+              peer={shared.peer}
+              thread={shared.thread}
+              theme={state.theme}
+              sidebar={sidebar}
+              onShowSidebar={() => setSidebar(true)}
+              onError={toast}
             />
           </main>
         ) : (
@@ -903,9 +868,12 @@ export function Shell({
                 <LiveTimeline
                   c={c}
                   sid={open.id}
+                  lane={lane}
                   theme={state.theme}
                   changes={files}
                   onOpenDiff={(path) => openPanel("changes", path)}
+                  mode={room.mode}
+                  actions={room.actions}
                 />
                 <div className="shrink-0 px-5 pb-3">
                   <Composer
@@ -916,12 +884,13 @@ export function Shell({
                     kinds={kinds}
                     images={imagesOn}
                     online={online}
-                    onSend={(text: string, images: Image[]) => c.send(open.id, text, images)}
+                    onSend={room.send}
                     onError={toast}
                     inputRef={inputRef}
                     sendKey={prefs.sendKey}
                     busy={open.busy}
-                    onStop={() => void c.cancel(open.id)}
+                    onStop={room.stop}
+                    notice={room.notice}
                     banner={
                       pending.length > 0 && (
                         <div className="flex flex-col gap-1" aria-label="Approvals for this thread">
@@ -931,6 +900,7 @@ export function Shell({
                               index={0}
                               count={pending.length}
                               className="border-0 bg-transparent"
+                              answerers={room.answerers}
                               onAnswer={(d) => void c.answerApproval(pending[0]!.session_id, pending[0]!.id, d)}
                             />
                           )}
@@ -943,8 +913,7 @@ export function Shell({
                         <MoreMenu
                           busy={open.busy}
                           queued={queued}
-                          pending={state.approvals.length}
-                          onStop={() => void c.cancel(open.id)}
+                          onStop={room.stop}
                           onPanel={(p) => openPanel(p)}
                           onSettings={() => dispatch({ type: "settings", section: "general" })}
                         />
@@ -961,22 +930,26 @@ export function Shell({
           <TerminalDrawer project={api} shown={terminal && ui.settings === null && !ui.usage && !ui.team && !ui.inbox} onHide={() => setTerminal(false)} onError={toast} />
         )}
       </div>
-      {ui.panel !== null && ui.settings === null && !ui.usage && !ui.team && !ui.inbox && (
-        <LiveRightPanel
-          c={c}
-          panel={ui.panel}
-          open={open}
-          files={files}
-          focus={focus}
-          wide={wide}
-          onRefresh={refreshChanges}
-          onError={toast}
-          onInfo={info}
-          onPanel={(p) => openPanel(p)}
-          onWide={() => setWide((w) => !w)}
-          onClose={() => dispatch({ type: "panel", panel: null })}
-          onOpen={openSession}
-        />
+      {ui.panel !== null && ui.settings === null && !ui.usage && !ui.team && !ui.inbox && shared === null && (
+        <LineComments.Provider value={room.comments}>
+          <LiveRightPanel
+            c={c}
+            panel={ui.panel}
+            open={open}
+            files={files}
+            focus={focus}
+            wide={wide}
+            crew={crew}
+            crewAt={crewAt}
+            branch={git.status?.repo === true && !git.status.detached ? git.status.branch : null}
+            onRefresh={refreshChanges}
+            onError={toast}
+            onInfo={info}
+            onPanel={(p) => openPanel(p)}
+            onWide={() => setWide((w) => !w)}
+            onClose={() => dispatch({ type: "panel", panel: null })}
+          />
+        </LineComments.Provider>
       )}
       {ui.palette && <Palette commands={commands} onClose={() => dispatch({ type: "palette", open: false })} />}
       <div className="toasts pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2" aria-live="polite">

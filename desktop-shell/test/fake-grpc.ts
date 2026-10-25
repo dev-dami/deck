@@ -52,6 +52,11 @@ const UNARY: Record<string, { m: MethodName; req: (r: Obj) => Obj; res: (r: unkn
     res: (r) => r,
   },
   Send: { m: "chat.send", req: (r) => ({ session_id: r["session_id"], text: r["text"] }), res: (r) => r },
+  EditMessage: {
+    m: "message.edit",
+    req: (r) => ({ session_id: r["session_id"], message_id: r["message_id"], text: r["text"] }),
+    res: () => ({}),
+  },
   Cancel: { m: "chat.cancel", req: (r) => ({ session_id: r["session_id"] }), res: () => ({}) },
   Continue: { m: "chat.continue", req: (r) => ({ session_id: r["session_id"] }), res: () => ({}) },
   Interrupt: { m: "agent.interrupt", req: (r) => ({ session_id: r["session_id"], agent: r["agent"] }), res: () => ({}) },

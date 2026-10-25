@@ -113,9 +113,9 @@ export function subscribeCrew(l: () => void): () => void {
 }
 
 // One room's board and agents for a view, fetched at once when it mounts.
-export function useCrew(api: ProjectApi, sid: string): RoomCrew | undefined {
+export function useRoomCrew(api: ProjectApi | undefined, sid: string | null): RoomCrew | undefined {
   useEffect(() => {
-    void refreshCrew(api, sid);
+    if (api !== undefined && sid !== null) void refreshCrew(api, sid);
   }, [api, sid]);
-  return useSyncExternalStore(subscribeCrew, () => crewOf(api, sid));
+  return useSyncExternalStore(subscribeCrew, () => (sid === null ? undefined : crewOf(api, sid)));
 }

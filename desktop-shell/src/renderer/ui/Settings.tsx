@@ -257,7 +257,7 @@ function Appearance({ p }: { p: Prefs }) {
   );
 }
 
-function Agents({ state }: { state: AppState }) {
+function Agents({ state, p }: { state: AppState; p: Prefs }) {
   const kinds = state.server?.kinds ?? [];
   return (
     <>
@@ -293,6 +293,13 @@ function Agents({ state }: { state: AppState }) {
           }
         />
         <Row title="Models" description="Each agent's model and effort are picked per thread, from the composer's agent picker." />
+      </Section>
+      <Section title="Plans">
+        <Row
+          title="Approve plans automatically"
+          description="When an agent posts a plan in Plan mode, approve it at once and let the agent go ahead."
+          control={<Switch label="Approve plans automatically" checked={p.autoApprovePlans} onChange={set("autoApprovePlans")} />}
+        />
       </Section>
     </>
   );
@@ -423,7 +430,7 @@ export function SettingsPage({
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-8">
           {section === "general" && <General p={p} />}
           {section === "appearance" && <Appearance p={p} />}
-          {section === "agents" && <Agents state={state} />}
+          {section === "agents" && <Agents state={state} p={p} />}
           {section === "connection" && (
             <Connection state={state} where={where} transport={transport} bridge={bridge} onDisconnect={onDisconnect} />
           )}

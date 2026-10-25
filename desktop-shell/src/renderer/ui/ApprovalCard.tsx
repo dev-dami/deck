@@ -4,6 +4,13 @@ import { cn } from "../lib/cn";
 import { DiffView } from "./DiffView";
 import { Button } from "./kit/button";
 
+// "You may answer.", "You and vps may answer.", "You, vps and lab may answer."
+export function mayAnswer(who: readonly string[]): string {
+  if (who.length === 0) return "";
+  const names = who.length === 1 ? who[0] : `${who.slice(0, -1).join(", ")} and ${who[who.length - 1]}`;
+  return `${names} may answer.`;
+}
+
 function kindLabel(a: Approval): string {
   return a.kind === "command" ? "Command approval" : a.kind === "edit" ? "File change approval" : "Approval";
 }
@@ -17,12 +24,15 @@ export function ApprovalCard({
   onAnswer,
   index,
   count,
+  answerers,
   className,
 }: {
   a: Approval;
   onAnswer: (d: Decision) => void;
   index?: number;
   count?: number;
+  // Who may answer: you, and the teammates the thread is shared with as editors.
+  answerers?: readonly string[];
   className?: string;
 }) {
   return (
@@ -53,6 +63,9 @@ export function ApprovalCard({
         </div>
       )}
       <div className="approval-actions flex flex-wrap items-center justify-end gap-1.5">
+        {answerers !== undefined && answerers.length > 0 && (
+          <span className="approval-who mr-auto min-w-0 truncate text-2xs text-faint">{mayAnswer(answerers)}</span>
+        )}
         {[...DECISIONS].reverse().map((d) => (
           <Button
             key={d.decision}

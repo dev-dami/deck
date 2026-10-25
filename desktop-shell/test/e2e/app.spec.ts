@@ -114,15 +114,14 @@ test("adds an agent with $codex+", async ({ page }) => {
   await expect(composer(page)).toHaveValue("compare");
 });
 
-test("approves an approval from another session", async ({ page }) => {
+test("approves the approval of another thread over its composer", async ({ page }) => {
   await pair(page);
   await openMain(page);
-  await page.locator(".panel-toggles").getByRole("button", { name: /Approvals/ }).click();
-  const panel = page.getByRole("complementary", { name: "Side panel" });
-  await expect(panel.locator(".group-head")).toHaveText("Docs pass");
-  await expect(panel.locator(".approval-what")).toHaveText("go test ./...");
-  await panel.getByRole("button", { name: "Always allow this session" }).click();
-  await expect(panel.getByText("No approvals wait for you.")).toBeVisible();
+  await sidebar(page).getByRole("button", { name: "Docs pass", exact: true }).click();
+  const card = page.locator('[aria-label="Approvals for this thread"]');
+  await expect(page.locator(".approval-what")).toHaveText("go test ./...");
+  await page.getByRole("button", { name: "Always allow this session" }).click();
+  await expect(card).toHaveCount(0);
   await expect(sidebar(page).locator('[data-session="ses_docs"] [data-status="needs-you"]')).toHaveCount(0);
   expect(fake.answered).toEqual([{ id: "apr_docs", decision: "allow_session" }]);
 });
@@ -132,7 +131,8 @@ test("a live approval makes its agent wait", async ({ page }) => {
   await openMain(page);
   fake.requestApproval("ses_main", "codex-1", "rm -rf build");
   await expect(page.locator('.agent[data-agent="codex-1"] .agent-status')).toHaveText("waiting");
-  await expect(page.locator(".panel-toggles").getByRole("button", { name: "Approvals" })).toHaveText("2");
+  // Its lane says so too.
+  await expect(page.locator('.lane[data-lane="agent:codex-1"]')).toHaveAttribute("data-status", "waiting");
 });
 
 test("pages older messages, switches with the palette and makes a session", async ({ page }) => {
