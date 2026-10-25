@@ -188,8 +188,11 @@ test("ports: a terminal's dev server opens in the preview view, which keeps to i
     await expect(win.getByRole("region", { name: "Preview" }).locator(".preview-host")).toHaveText(`localhost:${port}`);
 
     // A link to another site goes to the browser, a new window too, and a
-    // file link nowhere; the view stays on the port.
+    // file link nowhere; the view stays on the port. Main opens at most one
+    // browser tab a second, so the second click waits out that gap.
     await inView("document.getElementById('out').click()");
+    await expect.poll(opened).toEqual(["http://deck-preview.invalid/"]);
+    await win.waitForTimeout(1100);
     await inView("document.getElementById('pop').click()");
     await inView("document.getElementById('file').click()");
     await expect.poll(opened).toEqual(["http://deck-preview.invalid/", "http://deck-preview.invalid/pop"]);
