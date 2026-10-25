@@ -187,6 +187,6 @@ func (b *Backend) onDeck(c workspace.DeckChange, emit func(remote.Event)) {
 	case workspace.ChangeRoster:
 		emit(remote.Event{Name: wire.EvRosterChanged, SessionID: c.SessionID, Payload: wire.RosterChanged{SessionID: c.SessionID}})
 	case workspace.ChangeNotice:
-		emit(remote.Event{Name: wire.EvNotice, SessionID: c.SessionID, Scoped: true, Payload: wire.Notice{SessionID: c.SessionID, Text: c.Text}})
+		emit(remote.Event{Name: wire.EvNotice, SessionID: c.SessionID, Scoped: true, Payload: wire.Notice{SessionID: c.SessionID, Text: c.Text, Via: c.Via}})
 	}
 }

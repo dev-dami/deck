@@ -13,6 +13,7 @@ import (
 	"errors"
 	"path"
 	"strings"
+	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/gh"
 	"github.com/dev-dami/deck/internal/usage"
+	"github.com/dev-dami/deck/internal/workspace"
 	"github.com/dev-dami/deck/pkg/remote"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 	"github.com/dev-dami/deck/pkg/rpc/deckv1"
@@ -50,18 +52,33 @@ type Server struct {
 	terms *terminals
 	// The workspace's task board, agent tree and team link (WithWorkspace).
 	crew *crew
+
+	// rooms is each session's room as the desktop was last told it.
+	roomMu sync.Mutex
+	rooms  map[string]room
 }
 
 // New returns a server for be that admits callers presenting token.
 func New(be remote.Backend, token string) *Server {
-	return &Server{be: be, feed: newFeed(), token: token}
+	return &Server{be: be, feed: newFeed(), token: token, rooms: map[string]room{}}
 }
 
-// Run pumps the backend's events into the feed until ctx ends.
+// Run pumps the backend's events, and the workspace's lease changes, into
+// the feed until ctx ends.
 func (s *Server) Run(ctx context.Context) {
+	if s.crew != nil && s.crew.changes != nil {
+		go s.pumpLeases(ctx)
+	}
 	for ev := range s.be.Events(ctx) {
-		if e, ok := toEvent(ev); ok {
-			s.feed.publish(e)
+		e, ok := toEvent(ev)
+		if !ok {
+			continue
+		}
+		s.mark(e)
+		s.feed.publish(e)
+		// An agent's status moves without a session event.
+		if e.GetRosterChanged() != nil {
+			s.recheck(ctx, ev.SessionID)
 		}
 	}
 }
@@ -166,7 +183,10 @@ func title(t string) (string, error) {
 }
 
 func (s *Server) Info(context.Context, *deckv1.Empty) (*deckv1.InfoResponse, error) {
-	return toInfo(s.be.Info()), nil
+	out := toInfo(s.be.Info())
+	out.Clis = s.clis()
+	out.Capabilities = s.capabilities()
+	return out, nil
 }
 
 func (s *Server) ListSessions(ctx context.Context, _ *deckv1.Empty) (*deckv1.ListSessionsResponse, error) {
@@ -174,7 +194,16 @@ func (s *Server) ListSessions(ctx context.Context, _ *deckv1.Empty) (*deckv1.Lis
 	if err != nil {
 		return nil, fail(err)
 	}
-	return &deckv1.ListSessionsResponse{Sessions: each(v, toSession)}, nil
+	all, _ := s.be.Approvals("")
+	bySession := map[string][]wire.Approval{}
+	for _, a := range all {
+		bySession[a.SessionID] = append(bySession[a.SessionID], a)
+	}
+	out := each(v, toSession)
+	for _, p := range out {
+		s.note(p, bySession[p.GetId()])
+	}
+	return &deckv1.ListSessionsResponse{Sessions: out}, nil
 }
 
 func (s *Server) CreateSession(ctx context.Context, r *deckv1.CreateSessionRequest) (*deckv1.Session, error) {
@@ -182,11 +211,23 @@ func (s *Server) CreateSession(ctx context.Context, r *deckv1.CreateSessionReque
 	if err != nil {
 		return nil, err
 	}
+	if r.GetIsolate() && (s.crew == nil || s.crew.rooms == nil) {
+		return nil, errNoCrew
+	}
 	v, err := s.be.CreateSession(ctx, t)
 	if err != nil {
 		return nil, fail(err)
 	}
-	return toSession(v), nil
+	if r.GetIsolate() {
+		if err := s.onRoom(ctx, v.ID, func(w workspace.Rooms) error { return w.Isolate(ctx, v.ID) }); err != nil {
+			// Not left half made: the person asked for an isolated thread.
+			_ = s.be.DeleteSession(ctx, v.ID)
+			return nil, err
+		}
+	}
+	p := toSession(v)
+	s.note(p, nil)
+	return p, nil
 }
 
 func (s *Server) RenameSession(ctx context.Context, r *deckv1.RenameSessionRequest) (*deckv1.Empty, error) {

@@ -56,17 +56,47 @@ type LeaseInfo struct {
 	Until     time.Time
 }
 
-// liveLeases drops the leases that ran out or whose member exited and returns
-// the rest. t.mu is held.
+// liveLeases returns the leases that have not run out and whose member has
+// not exited. t.mu is held. The others stay until sweepLeases reports them.
 func (t *thread) liveLeases(now time.Time) []lease {
+	var live []lease
+	for _, l := range t.leases {
+		if t.leaseLive(l, now) {
+			live = append(live, l)
+		}
+	}
+	return live
+}
+
+func (t *thread) leaseLive(l lease, now time.Time) bool {
+	a := t.member(l.member)
+	return a != nil && a.status() != StatusExited && now.Before(l.until)
+}
+
+// changed is the message for l taken, or ended when released. t.mu is held.
+func (l lease) changed(t *thread, released bool) LeasesChangedMsg {
+	return LeasesChangedMsg{ThreadID: t.id, Agent: t.name(l.member), Paths: l.paths, Exclusive: l.exclusive, Released: released}
+}
+
+// sweepLeases drops the leases that ran out or whose member exited, and says
+// so.
+func (m *Manager) sweepLeases(t *thread) {
+	now := time.Now()
+	var gone []LeasesChangedMsg
+	t.mu.Lock()
 	kept := t.leases[:0]
 	for _, l := range t.leases {
-		if a := t.member(l.member); a != nil && a.status() != StatusExited && now.Before(l.until) {
+		if t.leaseLive(l, now) {
 			kept = append(kept, l)
+		} else {
+			gone = append(gone, l.changed(t, true))
 		}
 	}
 	t.leases = kept
-	return kept
+	t.mu.Unlock()
+	for _, msg := range gone {
+		m.emit(msg)
+	}
 }
 
 // globsOverlap reports whether paths or globs a and b can name the same file.
@@ -142,8 +172,10 @@ func (m *Manager) acquireLease(a *agentState, raw string, minutes int, exclusive
 		}
 	}
 	t.leases = append(t.leases, l)
+	took := l.changed(t, false)
 	t.mu.Unlock()
-	m.emit(LeasesChangedMsg{ThreadID: t.id})
+	m.emit(took)
+	time.AfterFunc(ttl, func() { m.sweepLeases(t) })
 	out := "leased " + strings.Join(paths, ", ") + " until " + l.until.Format("15:04")
 	if exclusive {
 		out += " (exclusive: Deck refuses to apply capsules from others there)"
@@ -178,7 +210,7 @@ func (m *Manager) releaseLeases(a *agentState, raw string) string {
 	}
 	t := a.thread
 	t.mu.Lock()
-	n := 0
+	var gone []LeasesChangedMsg
 	kept := t.leases[:0]
 	for _, l := range t.leases {
 		drop := l.member == a.id && len(want) == 0
@@ -186,17 +218,17 @@ func (m *Manager) releaseLeases(a *agentState, raw string) string {
 			drop = drop || l.member == a.id && want[p]
 		}
 		if drop {
-			n++
+			gone = append(gone, l.changed(t, true))
 			continue
 		}
 		kept = append(kept, l)
 	}
 	t.leases = kept
 	t.mu.Unlock()
-	if n > 0 {
-		m.emit(LeasesChangedMsg{ThreadID: t.id})
+	for _, msg := range gone {
+		m.emit(msg)
 	}
-	return fmt.Sprintf("released %d leases", n)
+	return fmt.Sprintf("released %d leases", len(gone))
 }
 
 // listLeases renders the thread's live leases.
