@@ -2,7 +2,7 @@ import type { MenuItemConstructorOptions } from "electron";
 import { describe, expect, test } from "vitest";
 import { type MenuActions, menuTemplate } from "../main/menu";
 import { MENU_COMMANDS, type MenuCommand } from "../shared/bridge";
-import { type Command, type CommandDeps, MENU_PALETTE, markMatch, type PaletteRoom, paletteCommands, previewCommands, searchPalette } from "./palette";
+import { type Command, type CommandDeps, MENU_PALETTE, markMatch, plainSnippet, type PaletteRoom, paletteCommands, previewCommands, searchPalette } from "./palette";
 
 const noop = () => {};
 const deps = (mac: boolean, terminal = true): CommandDeps => ({
@@ -131,6 +131,8 @@ describe("searchPalette", () => {
   test("a snippet splits around its match", () => {
     expect(markMatch("…keys the count by addr…", "COUNT")).toEqual(["…keys the ", "count", " by addr…"]);
     expect(markMatch("nothing", "count")).toBeNull();
+    expect(plainSnippet("The limiter counts **every** address.\n- Twenty `bad` pairs")).toBe("The limiter counts every address. Twenty bad pairs");
+    expect(plainSnippet("a - b, 2 * 3")).toBe("a - b, 2 * 3");
   });
 
   test("a title match is listed once, without a line", () => {

@@ -350,7 +350,18 @@ func snippet(text string, q []rune) (string, bool) {
 		return "", false
 	}
 	from, to := max(0, at-snippetRunes), min(len(rs), at+len(q)+snippetRunes)
-	out := strings.Join(strings.Fields(string(rs[from:to])), " ")
+	// One line: a list's bullets would read as dashes in it.
+	lines := strings.Split(string(rs[from:to]), "\n")
+	for i, l := range lines {
+		t := strings.TrimLeft(l, " \t")
+		for _, b := range []string{"- ", "* ", "+ "} {
+			if strings.HasPrefix(t, b) {
+				lines[i] = t[len(b):]
+				break
+			}
+		}
+	}
+	out := strings.Join(strings.Fields(strings.Join(lines, "\n")), " ")
 	if from > 0 {
 		out = "…" + out
 	}

@@ -503,7 +503,10 @@ export class FakeRpcDeck {
           const text = m.parts.map((p) => (p.type === "text" ? (p.text ?? "") : "")).find((t) => t.toLowerCase().includes(q));
           if (text === undefined) return [];
           const at = text.toLowerCase().indexOf(q);
-          const snippet = text.slice(Math.max(0, at - 60), at + q.length + 60).replace(/\s+/g, " ");
+          const snippet = text
+            .slice(Math.max(0, at - 60), at + q.length + 60)
+            .replace(/^[ \t]*[-*+] /gm, "")
+            .replace(/\s+/g, " ");
           return [{ session_id: m.session_id, message_id: m.id, agent: m.agent ?? "", snippet, at: Date.parse(m.created_at) }];
         })
         .sort((a, b) => b.at - a.at);

@@ -2,7 +2,7 @@ import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
-import { type Command, focusMessage, markMatch, type MessageHit, type PaletteItem, type PaletteRoom, searchPalette, TEXT_MIN } from "../palette";
+import { type Command, focusMessage, markMatch, plainSnippet, type MessageHit, type PaletteItem, type PaletteRoom, searchPalette, TEXT_MIN } from "../palette";
 import { useFocusTrap } from "./kit/focus";
 
 export type { Command } from "../palette";
@@ -56,7 +56,7 @@ export function Palette({
         from.current.map(async (p) =>
           ((await p.c.searchMessages?.(text)) ?? []).flatMap((h): MessageHit[] => {
             const room = all.find((r) => r.project === p.key && r.id === h.session_id);
-            return room === undefined ? [] : [{ room, message: h.message_id, snippet: h.snippet, at: h.at }];
+            return room === undefined ? [] : [{ room, message: h.message_id, snippet: plainSnippet(h.snippet), at: h.at }];
           }),
         ),
       ).then((lists) => {

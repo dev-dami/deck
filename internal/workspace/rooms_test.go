@@ -100,7 +100,7 @@ func TestSearchMessages(t *testing.T) {
 	b, err := w.app.Sessions.Create(ctx, "b")
 	require.NoError(t, err)
 	say(a.ID, message.User, "", "where is the Lockout handled?")
-	reply := say(a.ID, message.Assistant, "claude", "The lockout lives in pair.go,\nnext to the timer.")
+	reply := say(a.ID, message.Assistant, "claude", "The lockout lives in pair.go,\n  - next to the timer - for now.")
 	say(b.ID, message.User, "", "nothing to see")
 	long := say(b.ID, message.User, "", strings.Repeat("x", 100)+"LOCKOUT"+strings.Repeat("y", 100))
 
@@ -113,7 +113,8 @@ func TestSearchMessages(t *testing.T) {
 	}
 	require.Equal(t, "claude", ids[reply.ID].Agent)
 	require.Equal(t, a.ID, ids[reply.ID].SessionID)
-	require.Equal(t, "The lockout lives in pair.go, next to the timer.", ids[reply.ID].Snippet)
+	// A list bullet goes; a dash inside a line stays.
+	require.Equal(t, "The lockout lives in pair.go, next to the timer - for now.", ids[reply.ID].Snippet)
 	require.Equal(t, "…"+strings.Repeat("x", 60)+"LOCKOUT"+strings.Repeat("y", 60)+"…", ids[long.ID].Snippet)
 
 	hits, err = w.SearchMessages(ctx, "lockout", 1)

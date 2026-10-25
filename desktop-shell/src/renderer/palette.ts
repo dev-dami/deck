@@ -187,6 +187,16 @@ export function searchPalette(
   return [...found, ...actions].slice(0, limit);
 }
 
+// A message snippet as the room shows it: without Markdown's emphasis,
+// code ticks and list bullets, on one line.
+export function plainSnippet(snippet: string): string {
+  return snippet
+    .replace(/(\*\*|__|~~|`)/g, "")
+    .replace(/^[ \t]*[-*+] /gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 // A snippet split around the first match of query, ignoring case; null
 // when it does not hold it.
 export function markMatch(snippet: string, query: string): [string, string, string] | null {

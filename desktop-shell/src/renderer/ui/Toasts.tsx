@@ -63,7 +63,8 @@ export function Toasts({ c, toasts }: { c: DeckClient; toasts: AppState["toasts"
     };
   }, []);
   return (
-    <div className="toasts pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2" aria-live="polite">
+    // Above the composer, so a toast never covers Send.
+    <div className="toasts pointer-events-none fixed right-4 bottom-40 z-50 flex w-80 flex-col gap-2" aria-live="polite">
       {toasts.map((t) => (
         <div
           key={t.id}

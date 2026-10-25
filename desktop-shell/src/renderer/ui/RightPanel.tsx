@@ -285,12 +285,12 @@ export function RightPanel({
       className={cn(
         // Below 1100px the panel floats over the room, which keeps its width.
         "panel flex shrink-0 flex-col border-l bg-background max-[1100px]:absolute max-[1100px]:inset-y-0 max-[1100px]:right-0 max-[1100px]:z-30 max-[1100px]:max-w-[calc(100%-3rem)] max-[1100px]:shadow-popover",
-        wide ? "w-[min(60vw,900px)]" : "w-[480px]",
+        wide ? "w-[min(60vw,900px)] min-w-[480px] shrink" : "w-[480px]",
       )}
       aria-label="Side panel"
       data-yolo-region=""
     >
-      <header className="panel-head drag flex h-12 shrink-0 items-center gap-1 border-b px-2">
+      <header className="panel-head drag @container/head flex h-12 shrink-0 items-center gap-1 border-b px-2">
         <h2 className="sr-only">{PANELS.find((p) => p.panel === panel)?.label}</h2>
         <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Room">
           {tabs.map((p) => {
@@ -301,6 +301,8 @@ export function RightPanel({
                 type="button"
                 role="tab"
                 aria-selected={panel === p.panel}
+                aria-label={p.label}
+                title={p.label}
                 className={cn(
                   "flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-[13px]",
                   panel === p.panel
@@ -310,7 +312,8 @@ export function RightPanel({
                 onClick={() => onPanel(p.panel)}
               >
                 <Icon className="size-3.5" />
-                {p.label}
+                {/* Five tabs in a narrow panel: only the open one keeps its name. */}
+                <span className={panel === p.panel || tabs.length < 5 ? undefined : "hidden @[34rem]/head:inline"}>{p.label}</span>
                 {p.panel === "tasks" && queued > 0 && <Badge variant="muted">{queued}</Badge>}
               </button>
             );
