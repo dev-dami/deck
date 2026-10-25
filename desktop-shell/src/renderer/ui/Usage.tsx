@@ -79,7 +79,7 @@ function DailyBars({ days }: { days: UsageDay[] }) {
         <span>{days.length > 1 ? dayLabel(days[days.length - 1]!.day) : ""}</span>
       </div>
       {h !== undefined && (
-        <div className="pointer-events-none absolute top-0 right-0 rounded-lg border bg-popover px-3 py-2 text-xs shadow-lg" role="status">
+        <div className="pointer-events-none absolute top-0 right-0 rounded-lg border border-hairline-strong bg-surface-2 px-3 py-2 text-xs shadow-popover" role="status">
           <div className="font-medium">{dayLabel(h.day)}</div>
           <div className="text-muted-foreground tabular-nums">
             {compact(h.tokens)} tokens · {h.turns} turns · {dollars(h.costUsd)}

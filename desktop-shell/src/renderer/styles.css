@@ -1,17 +1,49 @@
 @import "tailwindcss" source(none);
 @source "./";
 
-/* The look follows T3 Code (github.com/pingdotgg/t3code, MIT): a quiet
-   neutral canvas, one blue primary, hairline borders and a floating
-   composer. data-mode on <html> picks light or dark: Deck's server theme
-   (data-scheme), the system or the person's choice in Settings
-   (appearance.ts). Deck's theme still tints each agent kind (--kind-*). */
+/* Tabletop, Deck's own look (docs/plan.md, section 2): warm ink, paper
+   text and one amber lamp. The layout follows T3 Code (github.com/pingdotgg/
+   t3code, MIT), and "T3" stays in the theme catalog. data-mode on <html>
+   picks light or dark: Deck's server theme (data-scheme), the system or the
+   person's choice in Settings (appearance.ts). data-palette names the theme.
+   Deck's theme still tints each agent kind (--kind-*); Tabletop gives the
+   kinds it knows its own hues. */
 
 @custom-variant light (&:is([data-mode="light"], [data-mode="light"] *));
 
+/* Geist Sans and Geist Mono (SIL OFL 1.1) from the geist package. Vite
+   copies the files into the build, so they load under font-src 'self'. */
+@font-face {
+  font-family: "Geist";
+  src: url("../../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../../node_modules/geist/dist/fonts/geist-mono/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+  /* No weight above 500. */
+  --font-weight-semibold: 500;
+  --font-weight-bold: 500;
+  /* UI 13px, meta 11px and 10px, code 12.5px, prose 15px. */
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: calc(1.25 / 0.8125);
+  --text-code: 0.78125rem;
+  --text-code--line-height: 1.6;
+  --text-prose: 0.9375rem;
+  --text-prose--line-height: 1.6;
+  --default-transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  --default-transition-duration: 160ms;
+  --animate-enter: deck-enter 180ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
 @theme inline {
@@ -55,88 +87,146 @@
   --color-diff-add-fg: var(--diff-add-fg);
   --color-diff-del: var(--diff-del);
   --color-diff-del-fg: var(--diff-del-fg);
+  /* Tabletop's own names. */
+  --color-canvas: var(--canvas);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-hover: var(--hover);
+  --color-selected: var(--selected);
+  --color-faint: var(--text-faint);
+  --color-signal: var(--signal);
+  --color-signal-foreground: var(--signal-foreground);
+  --color-action: var(--action);
+  --color-action-foreground: var(--action-foreground);
+  /* The radius family: 6, 8, 12 and 16px (md, lg, xl, 2xl). */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
-  --shadow-composer: 0 14px 32px -18px rgb(0 0 0 / 75%);
+  /* Raised controls get a 1px top highlight; only popovers cast a shadow. */
+  --inset-shadow-hl: inset 0 1px 0 0 var(--highlight);
+  --shadow-popover: 0 16px 40px -16px rgb(0 0 0 / 0.55), 0 2px 6px -2px rgb(0 0 0 / 0.25);
 }
 
-/* Dark is the default; the server theme or the system can switch to light. */
+/* Tabletop, dark: the default. Neutrals sit on hue 70 with a little chroma. */
 :root {
   color-scheme: dark;
-  --radius: 0.625rem;
-  --control-radius: 0.5rem;
+  --radius: 8px;
+  --control-radius: 6px;
   --chat-max: 48rem;
-  --background: #0a0a0a;
-  --foreground: #ededed;
-  --card: color-mix(in srgb, var(--background) 96%, white);
-  --popover: color-mix(in srgb, var(--background) 94%, white);
-  --primary: oklch(0.571 0.21 264);
-  --primary-foreground: #fff;
-  --secondary: rgb(255 255 255 / 5%);
-  --muted: rgb(255 255 255 / 4%);
-  --muted-foreground: #9a9a9a;
-  --secondary-label: #8a8a8a;
-  --info-foreground: #60a5fa;
-  --accent: rgb(255 255 255 / 6%);
-  --border: rgb(255 255 255 / 8%);
-  --input: rgb(255 255 255 / 10%);
-  --ring: var(--primary);
-  --message: rgb(255 255 255 / 7%);
-  --sidebar: #050505;
-  --sidebar-row-hover: rgb(255 255 255 / 5%);
-  --sidebar-row-active: rgb(255 255 255 / 9%);
-  --destructive: #f05252;
-  --destructive-foreground: #f87171;
-  --success: #10b981;
-  --success-foreground: #34d399;
-  --warning: #f59e0b;
-  --warning-foreground: #fbbf24;
-  --info: #3b82f6;
-  --code: rgb(255 255 255 / 4%);
-  --diff-add: rgb(16 185 129 / 12%);
-  --diff-add-fg: #6ee7b7;
-  --diff-del: rgb(239 68 68 / 12%);
-  --diff-del-fg: #fca5a5;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --canvas: oklch(0.145 0.005 70);
+  --sidebar: oklch(0.12 0.005 70);
+  --surface-1: oklch(0.175 0.006 70);
+  --surface-2: oklch(0.215 0.007 70);
+  --hairline: oklch(1 0 0 / 0.07);
+  --hairline-strong: oklch(1 0 0 / 0.12);
+  --hover: oklch(1 0 0 / 0.04);
+  --selected: oklch(1 0 0 / 0.08);
+  --highlight: oklch(1 0 0 / 0.05);
+  --text: oklch(0.93 0.008 80);
+  --text-muted: oklch(0.68 0.012 75);
+  --text-faint: oklch(0.5 0.01 75);
+  --signal: oklch(0.8 0.14 75);
+  --signal-foreground: oklch(0.2 0.03 70);
+  --agent-claude: oklch(0.7 0.13 40);
+  --agent-codex: oklch(0.8 0.03 90);
+  --agent-opencode: oklch(0.74 0.09 235);
+  --agent-antigravity: oklch(0.72 0.1 300);
+  /* Solid buttons are paper; amber is spent on the send button and state. */
+  --action: var(--text);
+  --action-foreground: var(--canvas);
+
+  /* The names every component reads, mapped onto Tabletop's. */
+  --background: var(--canvas);
+  --foreground: var(--text);
+  --card: var(--surface-1);
+  --popover: var(--surface-2);
+  --primary: var(--signal);
+  --primary-foreground: var(--signal-foreground);
+  --secondary: oklch(1 0 0 / 0.05);
+  --muted: var(--hover);
+  --muted-foreground: var(--text-muted);
+  --secondary-label: var(--text-muted);
+  --info-foreground: var(--signal);
+  --accent: var(--hover);
+  --border: var(--hairline);
+  --input: var(--hairline-strong);
+  --ring: color-mix(in oklab, var(--primary) 40%, transparent);
+  --link: var(--text);
+  --message: var(--surface-1);
+  --sidebar-row-hover: var(--hover);
+  --sidebar-row-active: var(--surface-1);
+  --destructive: oklch(0.64 0.19 27);
+  --destructive-foreground: oklch(0.74 0.15 27);
+  --success: oklch(0.7 0.13 150);
+  --success-foreground: oklch(0.78 0.12 150);
+  --warning: oklch(0.76 0.15 60);
+  --warning-foreground: oklch(0.8 0.13 65);
+  --info: var(--signal);
+  --code: var(--sidebar);
+  --diff-add: oklch(0.7 0.13 150 / 0.12);
+  --diff-add-fg: oklch(0.83 0.1 150);
+  --diff-del: oklch(0.64 0.19 27 / 0.13);
+  --diff-del-fg: oklch(0.8 0.1 27);
   /* What kindColour() falls back to before a theme arrives. */
   --p-fg-base: var(--foreground);
-  --scrollbar: rgb(255 255 255 / 8%);
-  --scrollbar-hover: rgb(255 255 255 / 14%);
+  --kind-claude: var(--agent-claude);
+  --kind-codex: var(--agent-codex);
+  --kind-opencode: var(--agent-opencode);
+  --kind-antigravity: var(--agent-antigravity);
+  --scrollbar: oklch(1 0 0 / 0.08);
+  --scrollbar-hover: oklch(1 0 0 / 0.14);
 }
 
+/* Tabletop, light: the same hue and the same steps on warm paper. */
 :root[data-mode="light"] {
   color-scheme: light;
-  --background: #fcfcfc;
-  --foreground: #27272a;
-  --card: #fff;
-  --popover: #fff;
-  --primary: oklch(0.488 0.217 264);
-  --secondary: #f4f4f5;
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a;
-  --secondary-label: #71717a;
-  --info-foreground: #1d4ed8;
-  --accent: #f0f0f2;
-  --border: #e4e4e7;
-  --input: #d4d4d8;
-  --message: #f0f0f2;
-  --sidebar: #f7f7f8;
-  --sidebar-row-hover: #efeff1;
-  --sidebar-row-active: #fff;
-  --destructive: #ef4444;
-  --destructive-foreground: #b91c1c;
-  --success-foreground: #047857;
-  --warning-foreground: #b45309;
-  --code: #f4f4f5;
-  --diff-add: #e7f8ef;
-  --diff-add-fg: #047857;
-  --diff-del: #fdecec;
-  --diff-del-fg: #b91c1c;
-  --scrollbar: rgb(0 0 0 / 12%);
-  --scrollbar-hover: rgb(0 0 0 / 20%);
+  --canvas: oklch(0.975 0.006 80);
+  --sidebar: oklch(0.95 0.006 80);
+  --surface-1: oklch(0.99 0.004 80);
+  --surface-2: oklch(0.998 0.002 80);
+  --hairline: oklch(0.2 0.02 70 / 0.09);
+  --hairline-strong: oklch(0.2 0.02 70 / 0.15);
+  --hover: oklch(0.2 0.02 70 / 0.04);
+  --selected: oklch(0.2 0.02 70 / 0.07);
+  --highlight: oklch(1 0 0 / 0.7);
+  --text: oklch(0.22 0.01 70);
+  --text-muted: oklch(0.47 0.012 75);
+  --text-faint: oklch(0.62 0.01 75);
+  --signal: oklch(0.76 0.15 70);
+  --signal-foreground: oklch(0.2 0.03 70);
+  --agent-claude: oklch(0.58 0.14 40);
+  --agent-codex: oklch(0.5 0.03 90);
+  --agent-opencode: oklch(0.55 0.1 235);
+  --agent-antigravity: oklch(0.55 0.12 300);
+  --secondary: oklch(0.2 0.02 70 / 0.05);
+  --info-foreground: oklch(0.58 0.14 65);
+  --destructive: oklch(0.6 0.2 27);
+  --destructive-foreground: oklch(0.52 0.19 27);
+  --success-foreground: oklch(0.5 0.12 150);
+  --warning-foreground: oklch(0.55 0.14 60);
+  --diff-add: oklch(0.7 0.13 150 / 0.14);
+  --diff-add-fg: oklch(0.45 0.11 150);
+  --diff-del: oklch(0.64 0.19 27 / 0.12);
+  --diff-del-fg: oklch(0.5 0.17 27);
+  --scrollbar: oklch(0.2 0.02 70 / 0.12);
+  --scrollbar-hover: oklch(0.2 0.02 70 / 0.2);
+}
+
+/* The engine's theme sets --kind-* on <html> itself. Tabletop keeps the
+   hues it names, so the agents never compete with the amber. */
+:root:not([data-palette]),
+:root[data-palette="tabletop"] {
+  --kind-claude: var(--agent-claude) !important;
+  --kind-codex: var(--agent-codex) !important;
+  --kind-opencode: var(--agent-opencode) !important;
+  --kind-antigravity: var(--agent-antigravity) !important;
 }
 
 @layer base {
@@ -153,8 +243,9 @@
     background: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1.5;
+    font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
   }
@@ -162,7 +253,7 @@
     cursor: pointer;
   }
   ::selection {
-    background: color-mix(in srgb, var(--primary) 35%, transparent);
+    background: color-mix(in oklab, var(--primary) 30%, transparent);
   }
   ::-webkit-scrollbar {
     width: 10px;
@@ -215,8 +306,16 @@
   }
 }
 
+@keyframes deck-enter {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+/* Pulses step, so an idle window draws four frames a beat, not sixty. */
 .animate-deck-pulse {
-  animation: deck-pulse 1.4s ease-in-out infinite;
+  animation: deck-pulse 1.6s steps(4, jump-none) infinite;
 }
 
 /* "Working…": the text shimmers while an agent writes. */
@@ -236,10 +335,26 @@
   animation: deck-shimmer 2.2s linear infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .animate-deck-pulse,
+  .animate-spin,
+  .animate-pulse,
+  .animate-enter,
+  .shimmer {
+    animation: none;
+  }
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Agent prose: the shared markdown parser's node tree. */
 .md {
   overflow-wrap: anywhere;
-  line-height: 1.65;
+  line-height: 1.6;
 }
 .md > * + * {
   margin-top: 0.75em;
@@ -247,8 +362,12 @@
 .md p {
   margin: 0;
 }
+.md strong,
+.md b {
+  font-weight: 500;
+}
 .md .md-h {
-  font-weight: 600;
+  font-weight: 500;
   margin-top: 1.1em;
 }
 .md .md-h1 {
@@ -285,17 +404,21 @@
   color: var(--muted-foreground);
 }
 .md a {
-  color: var(--primary);
+  color: var(--link, var(--primary));
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  text-decoration-color: color-mix(in oklab, var(--primary) 55%, transparent);
+  transition: text-decoration-color 160ms var(--ease);
+}
+.md a:hover {
+  text-decoration-color: var(--primary);
 }
 .md code {
   font-family: var(--font-mono);
-  font-size: 0.86em;
+  font-size: 0.84em;
   background: var(--code);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 4px;
   padding: 0.1em 0.35em;
 }
 .md pre.codeblock {
@@ -307,7 +430,7 @@
   padding: 12px 14px;
   overflow-x: auto;
   font-size: 12.5px;
-  line-height: 1.55;
+  line-height: 1.6;
 }
 .md pre.codeblock code {
   background: none;
@@ -317,7 +440,7 @@
 }
 .md blockquote {
   margin: 0;
-  border-left: 2px solid var(--border);
+  border-left: 2px solid var(--hairline-strong);
   padding-left: 12px;
   color: var(--muted-foreground);
 }
@@ -329,7 +452,7 @@
 /* Unified diffs. */
 .diff {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.6;
   overflow-x: auto;
 }
@@ -357,13 +480,14 @@
   font-style: italic;
 }
 
-/* The sidebar's brand strip: T3 Code's blue glow behind the wordmark. */
-.brand-glow {
+/* The sidebar's brand strip. Tabletop has no glow; the other themes keep
+   T3 Code's blue one behind the wordmark. */
+:root[data-palette]:not([data-palette="tabletop"]) .brand-glow {
   background:
     radial-gradient(120% 140% at 10% 0%, rgb(59 130 246 / 38%) 0%, rgb(37 99 235 / 14%) 45%, transparent 75%),
     linear-gradient(180deg, rgb(59 130 246 / 10%), transparent);
 }
-[data-mode="light"] .brand-glow {
+:root[data-palette]:not([data-palette="tabletop"])[data-mode="light"] .brand-glow {
   background:
     radial-gradient(120% 140% at 10% 0%, rgb(59 130 246 / 22%) 0%, rgb(37 99 235 / 8%) 45%, transparent 75%);
 }
@@ -380,18 +504,18 @@
   left: 0;
   padding-right: 0.75rem;
   text-align: right;
-  color: color-mix(in srgb, var(--muted-foreground) 70%, transparent);
+  color: var(--text-faint);
   background: var(--background);
-  border-left: 3px solid transparent;
+  border-left: 2px solid transparent;
   user-select: none;
 }
 .diff-numbered .diff-row.diff-add .diff-gutter {
   border-left-color: var(--success);
-  background: color-mix(in srgb, var(--diff-add) 100%, var(--background));
+  background: color-mix(in oklab, var(--diff-add) 100%, var(--background));
 }
 .diff-numbered .diff-row.diff-del .diff-gutter {
   border-left-color: var(--destructive);
-  background: color-mix(in srgb, var(--diff-del) 100%, var(--background));
+  background: color-mix(in oklab, var(--diff-del) 100%, var(--background));
 }
 .diff-numbered .diff-code {
   white-space: pre;
@@ -424,6 +548,97 @@
   background: var(--border);
 }
 
+/* Every other theme defines the old names; Tabletop's names follow them. */
+:root[data-palette]:not([data-palette="tabletop"]) {
+  --canvas: var(--background);
+  --surface-1: var(--card);
+  --surface-2: var(--popover);
+  --hairline: var(--border);
+  --hairline-strong: var(--input);
+  --hover: var(--sidebar-row-hover);
+  --selected: var(--accent);
+  --text: var(--foreground);
+  --text-muted: var(--muted-foreground);
+  --text-faint: color-mix(in oklab, var(--muted-foreground) 70%, var(--background));
+  --signal: var(--primary);
+  --signal-foreground: var(--primary-foreground);
+  --action: var(--primary);
+  --action-foreground: var(--primary-foreground);
+  --link: var(--primary);
+  --info-foreground: var(--primary);
+}
+:root[data-palette]:not([data-palette="tabletop"])[data-mode="light"] {
+  --highlight: transparent;
+}
+
+/* T3: the look the window had before Tabletop, after T3 Code. */
+:root[data-palette="default"][data-mode] {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --card: color-mix(in srgb, var(--background) 96%, white);
+  --popover: color-mix(in srgb, var(--background) 94%, white);
+  --primary: oklch(0.571 0.21 264);
+  --primary-foreground: #fff;
+  --secondary: rgb(255 255 255 / 5%);
+  --muted: rgb(255 255 255 / 4%);
+  --muted-foreground: #9a9a9a;
+  --secondary-label: #8a8a8a;
+  --info-foreground: #60a5fa;
+  --accent: rgb(255 255 255 / 6%);
+  --border: rgb(255 255 255 / 8%);
+  --input: rgb(255 255 255 / 10%);
+  --ring: var(--primary);
+  --message: rgb(255 255 255 / 7%);
+  --sidebar: #050505;
+  --sidebar-row-hover: rgb(255 255 255 / 5%);
+  --sidebar-row-active: rgb(255 255 255 / 9%);
+  --destructive: #f05252;
+  --destructive-foreground: #f87171;
+  --success: #10b981;
+  --success-foreground: #34d399;
+  --warning: #f59e0b;
+  --warning-foreground: #fbbf24;
+  --info: #3b82f6;
+  --code: rgb(255 255 255 / 4%);
+  --diff-add: rgb(16 185 129 / 12%);
+  --diff-add-fg: #6ee7b7;
+  --diff-del: rgb(239 68 68 / 12%);
+  --diff-del-fg: #fca5a5;
+  --highlight: transparent;
+  --scrollbar: rgb(255 255 255 / 8%);
+  --scrollbar-hover: rgb(255 255 255 / 14%);
+}
+:root[data-palette="default"][data-mode="light"] {
+  --background: #fcfcfc;
+  --foreground: #27272a;
+  --card: #fff;
+  --popover: #fff;
+  --primary: oklch(0.488 0.217 264);
+  --secondary: #f4f4f5;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --secondary-label: #71717a;
+  --info-foreground: #1d4ed8;
+  --accent: #f0f0f2;
+  --border: #e4e4e7;
+  --input: #d4d4d8;
+  --message: #f0f0f2;
+  --sidebar: #f7f7f8;
+  --sidebar-row-hover: #efeff1;
+  --sidebar-row-active: #fff;
+  --destructive: #ef4444;
+  --destructive-foreground: #b91c1c;
+  --success-foreground: #047857;
+  --warning-foreground: #b45309;
+  --code: #f4f4f5;
+  --diff-add: #e7f8ef;
+  --diff-add-fg: #047857;
+  --diff-del: #fdecec;
+  --diff-del-fg: #b91c1c;
+  --scrollbar: rgb(0 0 0 / 12%);
+  --scrollbar-hover: rgb(0 0 0 / 20%);
+}
+
 /* Themes (themes.ts): each sets the tokens on top of its mode's defaults.
    The selectors carry data-mode too, so they outrank the light block. */
 :root[data-palette="tokyo-night"][data-mode] {
@@ -443,6 +658,7 @@
   --sidebar-row-hover: rgb(122 162 247 / 8%);
   --sidebar-row-active: rgb(122 162 247 / 14%);
   --code: #16161e;
+  --highlight: rgb(255 255 255 / 4%);
 }
 :root[data-palette="catppuccin"][data-mode] {
   --background: #1e1e2e;
@@ -461,6 +677,7 @@
   --sidebar-row-hover: rgb(203 166 247 / 8%);
   --sidebar-row-active: rgb(203 166 247 / 14%);
   --code: #181825;
+  --highlight: rgb(255 255 255 / 4%);
 }
 :root[data-palette="nord"][data-mode] {
   --background: #2e3440;
@@ -479,6 +696,7 @@
   --sidebar-row-hover: rgb(136 192 208 / 8%);
   --sidebar-row-active: rgb(136 192 208 / 14%);
   --code: #292e39;
+  --highlight: rgb(255 255 255 / 4%);
 }
 :root[data-palette="rose-pine"][data-mode] {
   --background: #191724;
@@ -497,6 +715,7 @@
   --sidebar-row-hover: rgb(235 188 186 / 7%);
   --sidebar-row-active: rgb(235 188 186 / 13%);
   --code: #16141f;
+  --highlight: rgb(255 255 255 / 4%);
 }
 :root[data-palette="dracula"][data-mode] {
   --background: #282a36;
@@ -515,6 +734,7 @@
   --sidebar-row-hover: rgb(189 147 249 / 8%);
   --sidebar-row-active: rgb(189 147 249 / 14%);
   --code: #21222c;
+  --highlight: rgb(255 255 255 / 4%);
 }
 :root[data-palette="solarized-light"][data-mode] {
   --background: #fdf6e3;
@@ -533,6 +753,8 @@
   --sidebar-row-hover: #eee8d5;
   --sidebar-row-active: #fffbf0;
   --code: #eee8d5;
+  --secondary: #eee8d5;
+  --muted: #eee8d5;
 }
 :root[data-palette="github-light"][data-mode] {
   --background: #ffffff;
@@ -551,9 +773,15 @@
   --sidebar-row-hover: #eff2f5;
   --sidebar-row-active: #ffffff;
   --code: #f6f8fa;
+  --secondary: #f3f4f6;
+  --muted: #f3f4f6;
 }
 
 /* An accent overrides the theme's primary. */
+:root[data-accent="amber"][data-mode] {
+  --primary: oklch(0.8 0.14 75);
+  --primary-foreground: oklch(0.2 0.03 70);
+}
 :root[data-accent="blue"][data-mode] {
   --primary: oklch(0.571 0.21 264);
   --primary-foreground: #fff;

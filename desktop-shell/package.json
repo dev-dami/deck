@@ -34,6 +34,7 @@
     "clsx": "2.1.1",
     "electron": "44.9.0",
     "electron-builder": "26.17.0",
+    "geist": "1.7.2",
     "lucide-react": "1.49.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
