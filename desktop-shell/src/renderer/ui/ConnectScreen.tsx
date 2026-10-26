@@ -243,8 +243,8 @@ export function ConnectScreen({
     setError(await onAdd());
   };
   return (
-    <main className="connect flex h-full flex-col overflow-y-auto" data-screen="connect">
-      <div className="drag flex h-12 shrink-0 items-center px-3">
+    <main className="connect flex h-full flex-col overflow-y-auto bg-canvas" data-screen="connect">
+      <div className="drag flex h-13 shrink-0 items-center px-3">
         {onBack !== undefined && (
           <Button variant="ghost-muted" size="sm" onClick={onBack}>
             <ArrowLeft />

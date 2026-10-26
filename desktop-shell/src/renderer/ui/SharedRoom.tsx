@@ -160,7 +160,7 @@ export function SharedRoom({
 
   return (
     <div className="shared-room flex min-h-0 flex-1 flex-col" data-shared={`${peer}/${thread.id}`}>
-      <header className="topbar drag flex h-12 shrink-0 items-center gap-2.5 px-4 text-sm">
+      <header className="topbar drag flex h-13 shrink-0 items-center gap-2.5 px-4 text-sm">
         {!sidebar && (
           <Button variant="ghost-muted" size="icon-sm" aria-label="Show the sidebar" title="Show the sidebar" onClick={onShowSidebar}>
             <PanelLeft />

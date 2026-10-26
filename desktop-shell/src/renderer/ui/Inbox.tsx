@@ -150,7 +150,7 @@ export function Inbox({ items, mac, ...actions }: { items: InboxItem[]; mac: boo
 
   return (
     <section aria-label="Inbox" className="inbox flex min-h-0 flex-1 flex-col">
-      <header className="drag flex h-12 shrink-0 items-center gap-2 px-5">
+      <header className="drag flex h-13 shrink-0 items-center gap-2 px-5">
         <InboxIcon className="size-4 text-muted-foreground" />
         <h1 className="font-medium text-sm">Inbox</h1>
         {items.length > 0 && <span className="font-mono text-2xs text-faint tabular-nums">{items.length}</span>}

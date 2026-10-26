@@ -401,7 +401,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
           onWelcome={() => setWelcome(true)}
         />
       ) : servers === null ? (
-        <div className="loading grid h-full place-items-center text-muted-foreground text-sm">Loading…</div>
+        <div className="loading grid h-full place-items-center bg-canvas text-muted-foreground text-sm">Loading…</div>
       ) : welcome ? (
         <Welcome
           bridge={bridge}
