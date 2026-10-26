@@ -40,7 +40,10 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
 
   useEffect(() => {
     const el = root.current;
-    if (el === null || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (el === null) return;
+    // Reduced motion keeps what the reader does by hand (the pull at the
+    // bottom, a grab), without the lean, the wobble or the overshoot.
+    const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const parts = Array.from(el.querySelectorAll<HTMLElement>(".mega-letter, .mega-cursor"));
     const n = parts.length;
     const bar = n - 1; // the cursor stretches sideways, the letters upward
@@ -74,7 +77,8 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
       });
       letterH = parts[0]?.offsetHeight ?? 0;
     };
-    const atBottom = () => window.scrollY + window.innerHeight >= doc.scrollHeight - 2;
+    // A few px of slack: on a scaled display the scroll position is fractional.
+    const atBottom = () => window.scrollY + window.innerHeight >= doc.scrollHeight - 4;
     // Soft limits: past them the rubber gets stiffer instead of stopping.
     const soft = (t: number) => (t >= 1 ? 1 + 1.5 * Math.tanh((t - 1) / 1.5) : 1 - 0.4 * Math.tanh((1 - t) / 0.4));
 
@@ -92,10 +96,10 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
         const near = Math.exp(-(d * d) / 0.05);
         let t = 1 + stretch * (0.88 + 0.12 * Math.sin(i * 1.7));
         if (dragging) t += pull * (0.3 + 0.7 * near);
-        else if (over) t += 0.14 * near;
+        else if (over && !calm) t += 0.14 * near;
         if (i === bar) t = 1 + (t - 1) * 0.25;
         t = soft(t);
-        v[i] += (240 * (t - x[i]) - 12 * v[i]) * dt;
+        v[i] += (240 * (t - x[i]) - (calm ? 31 : 12) * v[i]) * dt;
         x[i] += v[i] * dt;
         if (Math.abs(v[i]) > 0.0005 || Math.abs(t - x[i]) > 0.0005) busy = true;
         if (i !== bar) tallest = Math.max(tallest, x[i]);
@@ -183,7 +187,7 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
     const onScroll = () => {
       const dy = Math.max(-80, Math.min(80, window.scrollY - lastScroll));
       lastScroll = window.scrollY;
-      if (!visible || past > 0) return;
+      if (!visible || past > 0 || calm) return;
       for (let i = 0; i < n; i++) v[i] += dy * 0.02 * (0.6 + (0.4 * i) / n);
       kick();
     };
