@@ -2341,7 +2341,9 @@ func (m *UI) handleDialogAction(action dialog.Action) tea.Cmd {
 		// Saved off the event loop; themeSwitchedMsg applies it.
 		cmds = append(cmds, m.switchThemeCmd(themeName, newStyles))
 	case dialog.ActionPreviewTheme:
-		newStyles, err := styles.LoadTheme(msg.Theme)
+		// Every cursor move lands here: the kept theme is copied
+		// straight into the active styles.
+		newStyles, err := styles.LoadThemeShared(msg.Theme)
 		if err != nil {
 			break
 		}
@@ -2365,7 +2367,7 @@ func (m *UI) handleDialogAction(action dialog.Action) tea.Cmd {
 			saved := m.com.Styles.Clone()
 			m.preThemeStyles = &saved
 		}
-		m.previewTheme(newStyles)
+		m.previewTheme(&newStyles)
 	case dialog.ActionSaveThemePalette:
 		// The theme is stored under its own name; Base only identifies the
 		// built-in palette its colors are derived from.
@@ -4790,8 +4792,9 @@ func (m *UI) applyTheme(s styles.Styles) {
 // currently on screen re-render; the rest of the transcript keeps its
 // cached output so browsing themes stays fast in large sessions. Off-screen
 // messages follow along when the theme is actually applied.
-func (m *UI) previewTheme(s styles.Styles) {
-	*m.com.Styles = s
+// s is only read: it may be a theme LoadThemeShared keeps.
+func (m *UI) previewTheme(s *styles.Styles) {
+	*m.com.Styles = *s
 	common.InvalidateStyleCaches()
 	m.refreshStyles()
 	m.chat.InvalidateVisibleRenderCaches()
