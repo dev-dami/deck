@@ -349,8 +349,8 @@ export function Composer({
       {notice}
       <div
         className={cn(
-          // The hero surface: on focus its hairline turns amber, with a faint outer ring.
-          "composer-box relative z-10 rounded-xl border border-hairline-strong bg-surface-1 inset-shadow-hl transition-[border-color,box-shadow] focus-within:border-signal/40 focus-within:ring-2 focus-within:ring-signal/15",
+          // The hero surface: on focus its hairline takes the accent, with a faint outer ring.
+          "composer-box relative z-10 rounded-xl border border-hairline-strong bg-surface-1 shadow-card inset-shadow-hl transition-[border-color,box-shadow] focus-within:border-signal/50 focus-within:ring-[3px] focus-within:ring-signal/15",
           dragging && "border-primary/60",
         )}
         onDragOver={(e) => {
@@ -400,7 +400,7 @@ export function Composer({
           }
           value={draft}
           rows={2}
-          className="block max-h-[300px] min-h-[68px] w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-relaxed outline-none placeholder:text-faint"
+          className="block max-h-[300px] min-h-[60px] w-full resize-none bg-transparent px-4 pt-3 pb-1 text-[14px] leading-relaxed outline-none placeholder:text-faint"
           onChange={(e) => {
             walkAt.current = -1;
             setDraft(e.target.value);
@@ -423,8 +423,13 @@ export function Composer({
           }}
           onBlur={() => setPicker(null)}
         />
-        <div className="flex items-center gap-1 px-2.5 pb-2.5">
-          <div className="flex min-w-0 flex-1 items-center gap-0.5">{toolbar}</div>
+        {/* One bar under the text: the menu, then the mode, the agents and
+            the branch (the room's strip), then attach and send. */}
+        <div className="composer-bar @container/bar flex items-end gap-1 px-2 pb-2">
+          <div className="flex min-h-8 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
+            {toolbar}
+            {strip !== undefined && <div className="composer-strip contents">{strip}</div>}
+          </div>
           <div className="flex shrink-0 items-center gap-1">
             {imagesOn && (
               <>
@@ -477,11 +482,6 @@ export function Composer({
           </div>
         </div>
       </div>
-      {strip !== undefined && (
-        <div className="composer-strip relative mx-auto -mt-3 flex w-[calc(100%-2.75rem)] items-center gap-2 rounded-b-xl border border-hairline border-t-0 bg-canvas px-2 pt-4 pb-1">
-          {strip}
-        </div>
-      )}
     </div>
   );
 }
