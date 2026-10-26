@@ -11,10 +11,8 @@ import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import type { MethodName } from "../../pkg/remote/web/src/protocol";
 import { Fail, FakeDeck, type FakeOptions } from "./fake-server";
-import { testProto } from "./proto";
 
-// deck.proto, with the named agents' calls and fields (test/proto.ts).
-export const PROTO = testProto();
+export const PROTO = join(__dirname, "..", "..", "proto", "deck", "v1", "deck.proto");
 
 type Obj = Record<string, unknown>;
 
