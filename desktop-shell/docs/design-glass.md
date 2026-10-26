@@ -17,10 +17,11 @@ The new direction is **mission control for a crew**, calm and spatial:
 - **See the crew.** Every agent has a hue, a status and a place on screen.
   You can tell who is working, who waits on you and who is done without
   reading.
-- **Three ways to look at one thread.** *Conversation* (the timeline),
-  *Graph* (the work as an interactive map: agents, their sub-agents,
-  tasks, the files they hold and edit) and *Changes* (the diff). They are
-  peers, and one control switches between them.
+- **Two ways to look at one thread, and its diff beside them.**
+  *Conversation* (the timeline) and *Graph* (the work as an interactive
+  map: agents, their sub-agents, tasks, the files they hold and edit) are
+  peers that one control switches between (`ui/roomView.ts`). *Changes*
+  (the diff) stays in the side panel, one click away.
 - **Glass for chrome, sheets for reading.** Controls float on glass over
   the content. Text that is read at length sits on opaque sheets.
 - **Intentional and quiet.** One accent, and the agents' hues as the only
@@ -111,8 +112,8 @@ its parent's radius minus the padding between them.
   the subtitle at the leading edge. At the trailing edge, controls grouped
   in `liquid-clear` capsules (`rounded-full p-0.5`), at most three groups.
 - **View switcher**: a segmented control (`kit/segmented.tsx`) with
-  Conversation, Graph and Changes. It sits in the toolbar or the lane
-  strip, wherever reads best.
+  Conversation and Graph, centred in the toolbar. The room holds the view;
+  `RoomHeader` takes `view` and `onView`.
 - **Lane strip**: one line of agent chips. Each chip is a `liquid-clear`
   capsule with the agent's glyph in its hue, its name, and a status dot
   that pulses while it works.
@@ -224,8 +225,10 @@ raised, with the accent ring). The canvas has a faint dot grid.
   an agent is editing flows (an animated dash). Both stop under reduced
   motion.
 
-**Where it shows:** in the room, as the Graph view beside Conversation. It
-also shows in the side panel as a "Graph" tab (a new `Panel`, `"graph"`).
+**Where it shows:** in the room, as the Graph view beside Conversation,
+where the composer still floats over it. It also shows in the side panel
+as a "Graph" tab (a new `Panel`, `"graph"`), `compact`. The props are in
+`ui/graph/WorkGraph.tsx`.
 
 ## 8. Working rules
 
