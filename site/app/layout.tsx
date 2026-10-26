@@ -25,10 +25,20 @@ const mono = localFont({
   display: "swap",
 });
 
+const TITLE = "Deck — one deck for all your agents";
+const DESCRIPTION =
+  "Run Claude Code, Codex, OpenCode and Antigravity side by side in shared threads: in your terminal, in a desktop window, or from your phone.";
+
+// The share card is app/opengraph-image.png (and twitter-image.png); Next
+// adds those tags itself and resolves them against the production URL.
+const SITE = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+
 export const metadata: Metadata = {
-  title: "Deck — one deck for all your agents",
-  description:
-    "Run Claude Code, Codex, OpenCode and Antigravity side by side in shared threads: in your terminal, in a desktop window, or from your phone.",
+  metadataBase: new URL(SITE === undefined ? "http://localhost:3000" : `https://${SITE}`),
+  title: TITLE,
+  description: DESCRIPTION,
+  openGraph: { title: TITLE, description: DESCRIPTION, siteName: "Deck", type: "website" },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION },
 };
 
 export const viewport: Viewport = {
