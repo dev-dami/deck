@@ -1806,3 +1806,17 @@ body {
 .palette [role="option"] {
   border-radius: 10px;
 }
+
+/* ── Pages ──
+   The first screens and the pages (Welcome, Connect, Settings, Usage, Team,
+   Inbox): only what a utility cannot say. */
+
+/* A plate's two tones (ui/kit/plate.tsx): a dithered photograph printed in
+   dusk navy and peach, in every theme and mode, as a print on the wall.
+   The box shows the dark tone until the plate has drawn. A theme may set
+   its own pair. */
+.plate {
+  --plate-lo: #1d2240;
+  --plate-hi: #f3c9a8;
+  background-color: var(--plate-lo);
+}
