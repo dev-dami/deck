@@ -78,7 +78,8 @@ describe("drawAppIcon", () => {
         }
       }
     }
-  });
+    // Some 300 drawings: about 4.5s alone, more beside the other files.
+  }, 30_000);
 
   test("draws the same strokes every time", () => {
     for (const id of ["glass", "riso", "stitch", "classic"]) {
