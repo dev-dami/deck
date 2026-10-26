@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/agent/fake"
+	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/hub"
 )
 
@@ -119,5 +121,101 @@ func TestContextSourceKeptAndStored(t *testing.T) {
 	r.m.Flush()
 	if _, meta, _ := r.st.LoadEntries(tid); len(meta.Members) != 1 || meta.Members[0].ContextSource != agent.ContextEstimated {
 		t.Fatalf("stored member = %+v", meta.Members)
+	}
+}
+
+// TestContextPolicyReachesTheSpec covers the context section: each member's
+// Spec.Context is the section's knobs with its kind's overrides.
+func TestContextPolicyReachesTheSpec(t *testing.T) {
+	cfg := testCfg()
+	off := false
+	cfg.Context = config.Context{IsolateGlobalConfig: true, MCP: agent.MCPInherit, CompactAtPct: 70,
+		PerAgent: map[string]config.ContextOverride{"codex": {IsolateGlobalConfig: &off, InstructionFiles: agent.InstrFilesNone}}}
+	r := newRigWith(t, t.TempDir(), true, cfg, nil, nil)
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	r.add(t, tid, "codex")
+	r.claude.mu.Lock()
+	cs := r.claude.specs[len(r.claude.specs)-1].Context
+	r.claude.mu.Unlock()
+	r.codex.mu.Lock()
+	xs := r.codex.specs[len(r.codex.specs)-1].Context
+	r.codex.mu.Unlock()
+	if want := (agent.ContextPolicy{IsolateGlobalConfig: true, MCP: agent.MCPInherit, CompactAtPct: 70}); cs != want {
+		t.Errorf("claude policy = %+v, want %+v", cs, want)
+	}
+	if want := (agent.ContextPolicy{InstructionFiles: agent.InstrFilesNone, MCP: agent.MCPInherit, CompactAtPct: 70}); xs != want {
+		t.Errorf("codex policy = %+v, want %+v", xs, want)
+	}
+}
+
+// TestContextPolicyNotice covers the one notice per kind that says which
+// knobs its CLI cannot honour, and that the defaults say nothing.
+func TestContextPolicyNotice(t *testing.T) {
+	cfg := testCfg()
+	cfg.Context = config.Context{IsolateGlobalConfig: true, CompactAtPct: 70}
+	r := newRigWith(t, t.TempDir(), true, cfg, nil, nil)
+	r.claude.caps = agent.ContextCaps{IsolateConfig: agent.SupportPartial, Compaction: agent.CompactCaps{Threshold: true}}
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	r.add(t, tid, "codex")
+	tid2 := r.thread(t)
+	r.add(t, tid2, "codex")
+	tally := func() map[string]int {
+		notes := map[string]int{}
+		for _, m := range r.c.all() {
+			nm, ok := m.(NoticeMsg)
+			if !ok {
+				continue
+			}
+			n := nm.Text
+			for _, k := range []string{"claude:", "codex:"} {
+				if !strings.HasPrefix(n, k) {
+					continue
+				}
+				notes[k]++
+				if k == "codex:" && (!strings.Contains(n, "isolate_global_config is not supported") || !strings.Contains(n, "compact_at_pct is not supported")) {
+					t.Errorf("codex notice = %q", n)
+				}
+				if k == "claude:" && (!strings.Contains(n, "hooks and permissions") || strings.Contains(n, "not supported")) {
+					t.Errorf("claude notice = %q", n)
+				}
+			}
+		}
+		return notes
+	}
+	waitFor(t, "notices", func() bool { n := tally(); return n["claude:"] > 0 && n["codex:"] > 0 })
+	r.m.Flush()
+	notes := tally()
+	if notes["claude:"] != 1 || notes["codex:"] != 1 {
+		t.Fatalf("notices = %v, want one per kind", notes)
+	}
+
+	if got := policyNotes(agent.ContextPolicy{}, agent.ContextCaps{}); len(got) != 0 {
+		t.Fatalf("the defaults need no notice: %q", got)
+	}
+}
+
+// TestCompact covers the Summarize action: it asks the members whose CLI
+// compacts on request, and says so when none can.
+func TestCompact(t *testing.T) {
+	r := newRig(t, nil, nil)
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	if err := r.m.Compact(tid); !errors.Is(err, errNoCompactor) {
+		t.Fatalf("no compactor: %v", err)
+	}
+	r2 := newRigWith(t, t.TempDir(), true, testCfg(), nil, nil)
+	r2.claude.compact = true
+	tid2 := r2.thread(t)
+	r2.add(t, tid2, "claude")
+	if err := r2.m.Compact(tid2); err != nil {
+		t.Fatal(err)
+	}
+	run := r2.claude.runs["claude"]
+	run.mu.Lock()
+	defer run.mu.Unlock()
+	if run.compacts != 1 {
+		t.Fatalf("compacts = %d", run.compacts)
 	}
 }

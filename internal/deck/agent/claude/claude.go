@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -62,15 +63,58 @@ func (a *adapter) Name() string { return "claude" }
 // ContextCaps implements agent.ContextCapser. The fill is added up from each
 // assistant message's usage; the window is the result line's, or the model
 // family's until the first one. Only Deck's MCP server loads
-// (--strict-mcp-config, and no claude.ai connectors); compact_boundary lines
+// (--strict-mcp-config, and no claude.ai connectors) unless the policy says
+// inherit. --setting-sources leaves out the user's settings and their
+// CLAUDE.md and rules (partial: managed settings, plugins' own files and
+// auto-memory are not covered by it), or every instruction file.
+// --autocompact sets the fill compaction starts at; compact_boundary lines
 // say when the CLI compacted.
 func (a *adapter) ContextCaps() agent.ContextCaps {
 	return agent.ContextCaps{
 		InstructionSlot: agent.InstrSystem, InstrPersistsOnResume: true,
-		IsolateMCP:     agent.SupportNative,
+		IsolateConfig: agent.SupportPartial, IsolateMCP: agent.SupportNative, InstructionFiles: agent.SupportNative,
 		ReportsContext: agent.ContextDerived, ReportsWindow: agent.ContextCLI,
-		Compaction: agent.CompactCaps{Notifies: true},
+		Compaction: agent.CompactCaps{Threshold: true, Notifies: true},
 	}
+}
+
+// Claude's --autocompact takes a window size of 100k to 1M tokens
+// (checked against the 2.1.310 CLI: its parser refuses anything else).
+const (
+	minAutocompact = 100_000
+	maxAutocompact = 1_000_000
+)
+
+// contextArgs are the flags of the policy p for a run of model (its id or
+// alias; "" when not known): --setting-sources when it leaves a source
+// out, and --autocompact for a threshold, when the model's window is known.
+// The MCP part is in args, next to --mcp-config.
+func contextArgs(p agent.ContextPolicy, model string) []string {
+	var args []string
+	// The CLI's three setting sources (claude --help: "user, project,
+	// local"). Leaving "user" out drops ~/.claude/settings.json (hooks,
+	// permissions, env) and ~/.claude/CLAUDE.md and rules; leaving them all
+	// out drops every CLAUDE.md, and the project's settings with them.
+	user, project := true, true
+	if p.IsolateGlobalConfig || p.InstructionFiles == agent.InstrFilesProjectOnly {
+		user = false
+	}
+	if p.InstructionFiles == agent.InstrFilesNone {
+		user, project = false, false
+	}
+	switch {
+	case !project:
+		args = append(args, "--setting-sources", "")
+	case !user:
+		args = append(args, "--setting-sources", "project,local")
+	}
+	if p.CompactAtPct > 0 {
+		if w := fallbackWindow(model); w > 0 {
+			at := max(minAutocompact, min(maxAutocompact, w*min(p.CompactAtPct, 100)/100))
+			args = append(args, "--autocompact", strconv.Itoa(at))
+		}
+	}
+	return args
 }
 
 // ContractSafe implements agent.ContractSafe: in ask mode every tool use asks
@@ -244,6 +288,7 @@ type run struct {
 	busy      bool
 	closed    bool
 	model     string     // current --model ("" = CLI default)
+	running   string     // the model the CLI said it runs (system/init), for the CLI default
 	effort    string     // current --effort ("" = the model's default)
 	mode      agent.Mode // current permission mode (never empty)
 	// dirty: model or mode changed while busy (or while a restart was running);
@@ -264,6 +309,13 @@ type run struct {
 	sendMu     sync.Mutex
 	evMu       sync.RWMutex
 	evClosed   bool
+}
+
+// runningModel is the model the CLI said it runs, "" until it has.
+func (r *run) runningModel() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.running
 }
 
 // flagsChangedLocked reports whether the model, effort or mode differ from
@@ -288,12 +340,21 @@ func (r *run) args(resume string) []string {
 		args = append(args, "--settings", r.settingsPath)
 	}
 	if r.cfgPath != "" {
-		// --strict-mcp-config: only Deck's server, not every MCP server in the
-		// user's Claude config, whose tool lists would fill the context window.
-		args = append(args, "--mcp-config", r.cfgPath, "--strict-mcp-config",
-			"--permission-prompt-tool", "mcp__"+r.mcpName+"__"+approve.MCPToolName,
+		args = append(args, "--mcp-config", r.cfgPath)
+		if r.spec.Context.MCP != agent.MCPInherit {
+			// --strict-mcp-config: only Deck's server, not every MCP server in
+			// the user's Claude config, whose tool lists would fill the
+			// context window.
+			args = append(args, "--strict-mcp-config")
+		}
+		args = append(args, "--permission-prompt-tool", "mcp__"+r.mcpName+"__"+approve.MCPToolName,
 			"--allowedTools", "mcp__"+r.mcpName+"__"+approve.MCPToolSearch+",mcp__"+r.mcpName+"__"+approve.MCPToolExecute)
 	}
+	running := model
+	if running == "" {
+		running = r.runningModel()
+	}
+	args = append(args, contextArgs(r.spec.Context, running)...)
 	if r.spec.NoTools {
 		// --tools "" turns every built-in tool off; the deny list is a second
 		// lock for a claude that would still offer one of them.
@@ -340,7 +401,9 @@ func (r *run) spawn(resume string) error {
 	}
 	// Nor the claude.ai connectors (Notion, Granola, ...) a signed-in claude
 	// loads on top: dozens of tools in every prompt.
-	env = append(env, "ENABLE_CLAUDEAI_MCP_SERVERS=false")
+	if r.spec.Context.MCP != agent.MCPInherit {
+		env = append(env, "ENABLE_CLAUDEAI_MCP_SERVERS=false")
+	}
 	for k, v := range r.spec.Env {
 		if strings.EqualFold(k, approve.TokenEnv) {
 			continue
@@ -437,6 +500,9 @@ func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 				case agent.KindSessionStarted:
 					r.mu.Lock()
 					r.sessionID = ev.SessionID
+					if ev.Text != "" {
+						r.running = ev.Text
+					}
 					r.mu.Unlock()
 				case agent.KindTurnDone:
 					r.mu.Lock()

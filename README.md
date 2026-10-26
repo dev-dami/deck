@@ -142,11 +142,28 @@ GitHub goes through your own [`gh`](https://cli.github.com) CLI; Deck never read
   "antigravity_binary": "agy",
   "models": { "claude": "", "codex": "", "opencode": "", "antigravity": "" },
   "efforts": { "claude": "", "codex": "", "opencode": "", "antigravity": "" },
-  "context": { "briefing_pct": 0, "tool_output_pct": 0 }
+  "context": {
+    "isolate_global_config": false,
+    "instruction_files": "inherit",
+    "mcp": "deck-only",
+    "compact_at_pct": 0,
+    "briefing_pct": 0,
+    "tool_output_pct": 0,
+    "per_agent": { "claude": { "compact_at_pct": 80 } }
+  }
 }
 ```
 
 `context` sizes what Deck puts in front of an agent by its model's context window. `briefing_pct` is the share of the window the summary of what an agent missed may take (default 4%, kept between 16k and 160k characters), and `tool_output_pct` the share one search or execute result may take (default 1.5%, 8–64 KB). With the defaults, windows of 128k–200k tokens (and agents whose window is not known yet) get the fixed budgets Deck always had (40,000 characters, 20 KB); larger windows get more, smaller ones less. A briefing is halved for an agent whose context is over 80% full; `thread.read` still shows the rest.
+
+The other `context` keys choose what each agent's CLI loads besides Deck's own, and `per_agent` overrides them for one kind (`claude`, `codex`, `opencode`, `antigravity`). Only Claude Code honours them today:
+
+- `isolate_global_config` (off by default) starts Claude with `--setting-sources project,local`: your `~/.claude/settings.json` (with its hooks, permissions and env) and `~/.claude/CLAUDE.md` and rules are left out; the project's own still load.
+- `instruction_files`: `inherit` (default), `project-only` (the same as above) or `none` (no `CLAUDE.md` at all, which also leaves out the project's `.claude` settings).
+- `mcp`: `deck-only` (default: only Deck's MCP server, no claude.ai connectors) or `inherit` (your own servers too).
+- `compact_at_pct`: how full Claude's context may get before it compacts, as `--autocompact` of that share of the model's window (100k–1M tokens); 0 leaves Claude's default. It applies once the model's window is known (an explicit model, or after Claude has said which one it runs).
+
+Codex, OpenCode and Antigravity keep their own config, instruction files and MCP servers whatever these say; Deck shows one notice per agent kind when a setting has no effect.
 
 `review` is the reviewer for tasks that subagents run and that name none: an agent kind, `other` (any installed kind but the worker's) or `none`.
 

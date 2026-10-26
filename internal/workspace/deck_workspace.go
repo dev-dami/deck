@@ -401,8 +401,16 @@ func (w *DeckWorkspace) applyMode() error {
 	return first
 }
 
-func (w *DeckWorkspace) AgentSummarize(context.Context, string) error {
-	return errors.New("each agent manages its own context; ask it to /compact")
+// AgentSummarize asks the session's agents whose CLIs can compact on
+// request to do so; the others manage their own context.
+func (w *DeckWorkspace) AgentSummarize(_ context.Context, sessionID string) error {
+	w.mu.Lock()
+	id, ok := w.threads[sessionID]
+	w.mu.Unlock()
+	if !ok {
+		return errors.New("each agent manages its own context; ask it to /compact")
+	}
+	return w.mgr().Compact(id)
 }
 
 func (w *DeckWorkspace) UpdateAgentModel(context.Context) error             { return nil }

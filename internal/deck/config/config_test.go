@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -61,7 +62,7 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 		DeckAuthor:        true,
 		AutoTitle:         true,
 	}
-	if cfg != want {
+	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() = %+v\nwant %+v", cfg, want)
 	}
 }
@@ -179,7 +180,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("round trip:\n got %+v\nwant %+v", got, want)
 	}
 
@@ -282,7 +283,14 @@ func TestValidateContext(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("valid context rejected: %v", err)
 	}
-	for _, c := range []Context{{BriefingPct: MaxBriefingPct + 1}, {ToolOutputPct: -0.5}} {
+	bad := -1
+	for _, c := range []Context{
+		{BriefingPct: MaxBriefingPct + 1}, {ToolOutputPct: -0.5},
+		{InstructionFiles: "some"}, {MCP: "all"}, {CompactAtPct: 101},
+		{PerAgent: map[string]ContextOverride{"gemini": {}}},
+		{PerAgent: map[string]ContextOverride{"codex": {MCP: "everything"}}},
+		{PerAgent: map[string]ContextOverride{"codex": {CompactAtPct: &bad}}},
+	} {
 		if cfg.Context = c; cfg.Validate() == nil {
 			t.Errorf("context %+v validated", c)
 		}
@@ -292,5 +300,22 @@ func TestValidateContext(t *testing.T) {
 	b, _ := json.Marshal(cfg)
 	if strings.Contains(string(b), `"context"`) {
 		t.Errorf("an unset context section was written: %s", b)
+	}
+}
+
+func TestContextFor(t *testing.T) {
+	off, at := false, 60
+	c := Context{IsolateGlobalConfig: true, InstructionFiles: "project-only", CompactAtPct: 80,
+		PerAgent: map[string]ContextOverride{"codex": {IsolateGlobalConfig: &off, MCP: "inherit", CompactAtPct: &at}}}
+	if got, want := c.For("claude"), (ContextPolicy{IsolateGlobalConfig: true, InstructionFiles: "project-only", CompactAtPct: 80}); got != want {
+		t.Errorf("claude = %+v, want %+v", got, want)
+	}
+	if got, want := c.For("codex"), (ContextPolicy{InstructionFiles: "project-only", MCP: "inherit", CompactAtPct: 60}); got != want {
+		t.Errorf("codex = %+v, want %+v", got, want)
+	}
+	cfg := Defaults()
+	cfg.Context = c
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("valid policy rejected: %v", err)
 	}
 }

@@ -274,6 +274,9 @@ type Manager struct {
 	defModels  map[string]string // kind -> model for members started later (SetDefaultModel)
 	defEfforts map[string]string // kind -> effort for members started later (SetDefaultEffort)
 	modelCache map[string][]agent.ModelInfo
+	// policyNoted: the kinds whose context policy notice was shown
+	// (notePolicy); guarded by mu.
+	policyNoted map[string]bool
 
 	mu      sync.Mutex
 	cfg     config.Config
@@ -650,6 +653,7 @@ func (m *Manager) startRun(t *thread, a *agentState, prompt, resumeID string) er
 	if err != nil {
 		return fmt.Errorf("session: start %s: %w", a.kind, err)
 	}
+	m.notePolicy(t, a, spec.Context)
 	a.mu.Lock()
 	a.run = run
 	a.mu.Unlock()
@@ -686,7 +690,7 @@ func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Sp
 	s := agent.Spec{
 		ID: a.id, Dir: a.workDir(t.dir), Model: a.model, Effort: a.effort, ResumeID: resume, FirstPrompt: prompt,
 		UserName: cfg.UserName, TellName: cfg.TellAgentsName, Mode: t.getMode(),
-		Attribution: cfg.DeckAttribution,
+		Attribution: cfg.DeckAttribution, Context: contextPolicy(cfg, a.kind),
 	}
 	if cfg.DeckAttribution {
 		// The guard: the agent's git runs Deck's hooks, which put Deck's

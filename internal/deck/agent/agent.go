@@ -297,6 +297,45 @@ type Spec struct {
 	// edits, web): only the tools of MCP. Deck sets it only for adapters
 	// that implement OpsSafe.
 	NoTools bool
+	// Context is what the CLI should load into its context besides Deck's
+	// own: the zero value is the CLI's defaults plus Deck's MCP server only.
+	// An adapter applies what its ContextCaps say it can and ignores the
+	// rest; Deck tells the user which knobs had no effect.
+	Context ContextPolicy
+}
+
+// ContextPolicy is what a CLI loads into its context besides Deck's own.
+type ContextPolicy struct {
+	// IsolateGlobalConfig leaves out the user's global CLI config (Claude:
+	// ~/.claude settings, with their hooks and permissions, and
+	// ~/.claude/CLAUDE.md). Opt-in: those hooks and permissions are the
+	// user's.
+	IsolateGlobalConfig bool
+	// InstructionFiles is which instruction files load: InstrFilesInherit
+	// ("" too), InstrFilesProjectOnly or InstrFilesNone.
+	InstructionFiles string
+	// MCP is MCPDeckOnly ("" too: only Deck's server) or MCPInherit (the
+	// user's own servers as well).
+	MCP string
+	// CompactAtPct is how full the context may get before the CLI compacts
+	// it, in percent of the window; 0 is the CLI's default.
+	CompactAtPct int
+}
+
+// Values of ContextPolicy.InstructionFiles and ContextPolicy.MCP.
+const (
+	InstrFilesInherit     = "inherit"
+	InstrFilesProjectOnly = "project-only"
+	InstrFilesNone        = "none"
+	MCPDeckOnly           = "deck-only"
+	MCPInherit            = "inherit"
+)
+
+// Compactor is implemented by runs that can compact their conversation on
+// request (ContextCaps.Compaction.Manual). The CLI reports it with
+// KindCompacted when it is done.
+type Compactor interface {
+	Compact() error
 }
 
 // Mode is the permission mode of a thread.
