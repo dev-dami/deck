@@ -64,15 +64,15 @@ The desktop app carries the Deck engine inside it: open a project folder and wor
 - **Open a folder** runs the app's own engine (`deck serve --rpc`) in that folder, over gRPC on a Unix socket, with a token made for that launch. Deck stops when you close the folder or quit the app. Several projects can be open at once.
 - **Pair with a Deck** watches a Deck on another computer, or one you started yourself in a terminal: run `deck remote` (`--lan` for another computer), then `deck remote pair`, and paste the link or invite line. It uses a one-time pairing code, then a device token.
 - **Threads are rooms.** Each row says what its room is doing: working, needs you (an approval, a question, a blocked task), overlap (two agents changed the same file), changes to review, or done. The Inbox lists what waits for you across every open project, and the app notifies you when the window is in the background.
-- **The composer** picks who a message goes to, one chip per agent, with the mode (Plan, Ask or Yolo), slash commands (`/plan`, `/race`, `/share`, `/stop` …), `@` files, images, and queue or steer for a busy agent.
+- **The composer** picks who a message goes to, one chip per agent, with the mode (Plan, Ask or Yolo), slash commands (`/plan`, `/race`, `/share`, `/stop` …), `@` for agents, [named agents](#named-agents) and teammates, `#` for files, images, and queue or steer for a busy agent. Settings > Agents creates and edits the named agents.
 - **The side panel** holds Changes (syntax-coloured diffs, revert, line comments to an agent), Tasks (the board, queued messages, races, worktree results), Agents (the tree of agents and subagents) and Side chat. A thread can run on a git worktree and branch of its own.
 - **Ports and preview.** When a terminal or an agent starts a dev server, its port shows as a chip; click it to open the page in the Preview tab.
 - **Updates.** An installed app checks the releases of `dev-dami/deck-releases` 10 seconds after it starts and every 6 hours, and downloads a new version in the background; it installs on Restart or when you quit. A development build does not update.
 
-The window is moving to a Liquid Glass look, with a Graph view beside the conversation: the thread's work as an interactive map of agents, their subagents, tasks and the files they hold. See [desktop-shell/docs/design-glass.md](desktop-shell/docs/design-glass.md).
+The window has a Liquid Glass look, and Settings > Appearance offers two more art directions, Riso and Stitch, each with its own printed picture. A Graph view sits beside the conversation: the thread's work as an interactive map of agents, their subagents, tasks and the files they hold. See [desktop-shell/docs/design-glass.md](desktop-shell/docs/design-glass.md).
 
 <p align="center">
-  <img src="docs/screenshots/desktop-welcome-dark.png" alt="The Welcome screen: open a folder, pair with a Deck, and the agent CLIs the app found" width="60%">
+  <img src="docs/screenshots/desktop-welcome-dark.png" alt="The Welcome screen: a dithered print of the Alps, open a folder, pair with a Deck, and the agent CLIs the app found" width="60%">
 </p>
 
 On first run the Welcome lists each agent CLI with the path where the app found it, or with an install line. The full guide (every key, the settings, the architecture and the security model) is in [desktop-shell/README.md](desktop-shell/README.md). To run it from source, you need Node 22 and Go:
