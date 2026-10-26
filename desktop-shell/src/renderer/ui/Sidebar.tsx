@@ -2,7 +2,7 @@ import type { Session, Theme } from "@web/protocol";
 import type { Link } from "@web/state";
 import { sessionTitle } from "@web/state";
 import { toMillis } from "@web/time";
-import { ArrowLeft, Inbox as InboxIcon, PanelLeft, Search, SquarePen, TerminalIcon } from "./icons";
+import { ArrowLeft, Inbox as InboxIcon, PanelLeft, Search, SquarePen } from "./icons";
 import { type MutableRefObject, useEffect, useRef, useState } from "react";
 import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import { useRooms } from "../appState";
@@ -18,6 +18,7 @@ import { SETTLE_AFTER_MS } from "../threads";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
+import { DeckMark } from "./kit/mark";
 
 import { modKey } from "./keys";
 import { navRow, ProjectFilter, ProjectGroup, RecentProjects, SharedGroup, type SharedEntry, type SidebarItem, ThreadList } from "./ProjectGroup";
@@ -119,11 +120,11 @@ function HeaderButton({ label, onClick, children }: { label: string; onClick: ()
   );
 }
 
-// Deck's mark: the terminal prompt, then the name. No tile; type does it.
+// Deck's mark (the app icon's prompt), then the name. No tile; type does it.
 function Brand() {
   return (
     <span className="flex min-w-0 items-center gap-1.5 font-semibold text-sm tracking-tight">
-      <TerminalIcon aria-hidden weight="bold" className="size-3.5 shrink-0" />
+      <DeckMark className="h-3 text-foreground" />
       Deck
     </span>
   );
