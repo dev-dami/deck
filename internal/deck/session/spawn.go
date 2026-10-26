@@ -468,12 +468,12 @@ func (m *Manager) memberIdle(t *thread, id string) bool {
 // retireSpent stops subagent a when its turn ended and nothing it owns is
 // still running, in review or blocked (a task in review keeps it for the
 // changes, a blocked one for the user to steer).
-func (m *Manager) retireSpent(t *thread, a *agentState) {
+func (m *Manager) retireSpent(t *thread, a *agentState, answered int) {
 	if !a.isEphemeral() {
 		return
 	}
 	t.mu.Lock()
-	if t.waitsOnChildren(a) {
+	if t.waitsOnChildren(a, answered) {
 		t.mu.Unlock()
 		return
 	}

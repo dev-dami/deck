@@ -17,32 +17,10 @@ import (
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
-// hubLoop answers the thread.send calls of every agent. Each thread's calls
-// are handled in order on a worker of their own, so a delivery that blocks
-// holds up only its own thread, never every other thread's thread.send.
+// hubLoop answers the thread.send calls of every agent, each on its thread's
+// relay worker (onThread).
 func (m *Manager) hubLoop(msgs <-chan agent.Message) {
 	defer m.wg.Done()
-	var mu sync.Mutex
-	// queues holds each thread's calls not yet handled; a thread has a key
-	// exactly while its worker runs.
-	queues := map[*thread][]agent.Message{}
-	work := func(t *thread) {
-		defer m.wg.Done()
-		for {
-			mu.Lock()
-			q := queues[t]
-			if len(q) == 0 || m.isDone() {
-				delete(queues, t)
-				mu.Unlock()
-				return
-			}
-			msg := q[0]
-			q[0] = agent.Message{}
-			queues[t] = q[1:]
-			mu.Unlock()
-			m.handleMessage(msg)
-		}
-	}
 	for {
 		select {
 		case msg, ok := <-msgs:
@@ -54,18 +32,45 @@ func (m *Manager) hubLoop(msgs <-chan agent.Message) {
 				m.handleMessage(msg) // answered with an error at once
 				continue
 			}
-			t := from.thread
-			mu.Lock()
-			q, running := queues[t]
-			queues[t] = append(q, msg)
-			mu.Unlock()
-			if !running {
-				m.wg.Add(1)
-				go work(t)
-			}
+			m.onThread(from.thread, func() { m.handleMessage(msg) })
 		case <-m.done:
 			return
 		}
+	}
+}
+
+// onThread queues job on t's relay worker. A thread's thread.send calls and
+// the ends of its members' turns run there one at a time, in the order they
+// came, so a delivery that blocks holds up only its own thread: never every
+// other thread's thread.send, nor the pump of the member whose turn ended.
+func (m *Manager) onThread(t *thread, job func()) {
+	m.relayMu.Lock()
+	q, running := m.relayQ[t]
+	m.relayQ[t] = append(q, job)
+	m.relayMu.Unlock()
+	if !running {
+		m.wg.Add(1)
+		go m.relayWork(t)
+	}
+}
+
+// relayWork runs t's queued relay jobs until there are none; t has a key in
+// relayQ exactly while it runs.
+func (m *Manager) relayWork(t *thread) {
+	defer m.wg.Done()
+	for {
+		m.relayMu.Lock()
+		q := m.relayQ[t]
+		if len(q) == 0 || m.isDone() {
+			delete(m.relayQ, t)
+			m.relayMu.Unlock()
+			return
+		}
+		job := q[0]
+		q[0] = nil
+		m.relayQ[t] = q[1:]
+		m.relayMu.Unlock()
+		job()
 	}
 }
 
@@ -294,14 +299,25 @@ func (m *Manager) relayTask(t *thread, from *agentState, targets []*agentState, 
 	return strings.Join(res, "; ")
 }
 
-// afterTurn runs when a member's turn ends: it relays the $mention lines of the
-// final reply, then starts the member's next turn if messages queued up.
-func (m *Manager) afterTurn(a *agentState) {
-	text, interrupted := a.takeFinal()
+// turnEnd is how a member's turn ended, taken on its pump when the turn_done
+// arrives: by the time afterTurn runs, the member's next turn may have begun.
+type turnEnd struct {
+	text        string // the final reply
+	interrupted bool
+	// answered is the member's cursor when the turn ended: what the turn was
+	// briefed on (settleHanded, waitsOnChildren).
+	answered int
+}
+
+// afterTurn runs on the thread's relay worker when a member's turn ends: it
+// relays the $mention lines of the final reply, then starts the member's next
+// turn if messages queued up.
+func (m *Manager) afterTurn(a *agentState, end turnEnd) {
+	text, interrupted := end.text, end.interrupted
 	t := a.thread
 	if !interrupted {
-		m.settleHanded(t, a, text)
-		m.retireSpent(t, a)
+		m.settleHanded(t, a, text, end.answered)
+		m.retireSpent(t, a, end.answered)
 	}
 	if text != "" && !interrupted {
 		m.maybeAutoTitle(t, text)

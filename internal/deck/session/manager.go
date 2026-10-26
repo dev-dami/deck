@@ -257,6 +257,11 @@ type Manager struct {
 	w      *writer
 	wg     sync.WaitGroup
 
+	// relayQ holds each thread's relay jobs not yet run (onThread); a thread
+	// has a key exactly while its worker runs. Guarded by relayMu.
+	relayMu sync.Mutex
+	relayQ  map[*thread][]func()
+
 	modelMu    sync.Mutex        // guards defModels and modelCache
 	defModels  map[string]string // kind -> model for members started later (SetDefaultModel)
 	defEfforts map[string]string // kind -> effort for members started later (SetDefaultEffort)
@@ -304,6 +309,7 @@ func NewManager(adapters map[string]agent.Adapter, st *store.Store, cfg config.C
 		byID:     map[string]*agentState{},
 		counts:   map[string]int{},
 		threads:  map[string]*thread{},
+		relayQ:   map[*thread][]func(){},
 	}
 	if m.maxHops <= 0 {
 		m.maxHops = DefaultMaxHops
@@ -1461,12 +1467,15 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		return // the thread was archived, deleted or moved
 	}
 	t := a.thread
+	var end turnEnd
 	if ev.Kind == agent.KindTurnDone {
 		// Taken before apply makes a idle: from then on its next turn can
-		// start, and move cursor, before afterTurn settles this one.
+		// start, and move cursor and the final reply, before afterTurn
+		// settles this one.
 		t.mu.Lock()
-		a.answered = a.cursor
+		end.answered = a.cursor
 		t.mu.Unlock()
+		end.text, end.interrupted = a.takeFinal()
 	}
 	res := a.apply(ev)
 	// Plan limits are about the account, not the conversation, and a
@@ -1497,15 +1506,21 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		a.mu.Unlock()
 		m.checkBudgets(t, a, turn)
 	}
+	// What follows the end of a turn or of the run goes to the thread's relay
+	// worker, in order with its thread.send calls, so this pump goes on
+	// draining a's events while relays are delivered; an exit is handled
+	// after the end of the turn before it has been settled.
 	if ev.Kind == agent.KindTurnDone {
-		m.afterTurn(a)
+		m.onThread(t, func() { m.afterTurn(a, end) })
 		m.checkAttribution(a)
 	}
 	if ev.Kind == agent.KindExited {
 		m.sweepLeases(t)
-		m.failOwned(t, a)
-		m.cascade(t, a)
-		m.kick(t) // a subagent's slot is free (MaxSubagents)
+		m.onThread(t, func() {
+			m.failOwned(t, a)
+			m.cascade(t, a)
+			m.kick(t) // a subagent's slot is free (MaxSubagents)
+		})
 	}
 }
 
@@ -1564,9 +1579,6 @@ type agentState struct {
 	// the first log index of its still-running turn that was held back.
 	cursor   int
 	holdFrom map[string]int
-	// answered is cursor as it was when the member's last turn ended: what
-	// that turn was briefed on (settleHanded).
-	answered int
 	// knownMode is the permission mode the member was last told about (its
 	// Spec.Mode, or the line at the top of its last prompt); guarded by thread.mu.
 	knownMode agent.Mode
