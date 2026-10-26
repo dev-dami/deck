@@ -19,16 +19,20 @@ function blockCover(b: Block, x: number, y: number): number {
   return clamp01(Math.min(x - b.x, b.x + b.w - x, y - b.y, b.y + b.h - y) + 0.5);
 }
 
-// A figure (a plant on a plate) is set whole, right of centre and a little
-// small, so its ground frames it.
-const FIGURE = { ax: 0.88, ay: 0.3, zoom: 0.92 };
+// A figure (a plant on a plate) is set whole and a little small, so its
+// ground frames it: far right in a window, where the sidebar takes the
+// left; nearer the middle of a wide print, where nothing does.
+function figureAt(w: number, h: number): { ax: number; ay: number; zoom: number } {
+  return w / h > 2.2 ? { ax: 0.7, ay: 0.5, zoom: 0.94 } : { ax: 0.88, ay: 0.3, zoom: 0.92 };
+}
 
 // Where the subject sits in a w×h frame: a figure's box, or a square round
 // the framing's point of interest.
 function subjectOf(img: Source | null, f: Framing, w: number, h: number): Rect {
   if (img !== null && f.figure) {
     const [t, r, b, l] = f.crop;
-    return place(img.width * (1 - l - r), img.height * (1 - t - b), w, h, "contain", FIGURE.ax, FIGURE.ay, FIGURE.zoom);
+    const at = figureAt(w, h);
+    return place(img.width * (1 - l - r), img.height * (1 - t - b), w, h, "contain", at.ax, at.ay, at.zoom);
   }
   const s = Math.min(w, h) * 0.7;
   return { x: f.ax * w - s / 2, y: f.ay * h - s / 2, w: s, h: s };
@@ -50,7 +54,8 @@ export function renderHalftone(ctx: Ctx, W: number, H: number, dpr: number, art:
   if (img !== null) {
     const sw = Math.ceil((W / pitch) * 2);
     const sh = Math.ceil((H / pitch) * 2);
-    const v = luma(pixels(img, sw, sh, f.figure ? { ...f, ax: FIGURE.ax, ay: FIGURE.ay } : f, f.figure ? FIGURE.zoom : 1));
+    const at = figureAt(W, H);
+    const v = luma(pixels(img, sw, sh, f.figure ? { ...f, ax: at.ax, ay: at.ay } : f, f.figure ? at.zoom : 1));
     // A figure's ground is most of the frame: its white point sits low.
     const [black, white] = autoLevels(v, 0.01, f.figure ? 0.4 : 0.99);
     levels(v, black, white, f.figure ? 0.9 : 1);

@@ -5,7 +5,7 @@
 // below, each a twisted thread lit along its middle. Where the chart is
 // empty the cloth shows, holes and all.
 
-import { autoLevels, chartTable, chartTones, hash2, levels, luma, mix, type RGB, T } from "./core";
+import { autoLevels, chartTable, chartTones, hash2, levels, luma, mix, type RGB, T, tableLayout } from "./core";
 import { type AnyCanvas, type Ctx, context, type Framing, fill, grain, pixels, scratch, type Source } from "./canvas";
 import type { StitchArt } from "./inks";
 
@@ -155,7 +155,7 @@ export function renderStitch(ctx: Ctx, W: number, H: number, dpr: number, art: S
     for (let i = 0; i < tones.length; i++) chart[i] = tones[i] ?? -1;
   }
   if (art.table) {
-    const table = chartTable(cols, rows);
+    const table = chartTable(cols, rows, tableLayout(cols, rows, Math.ceil((art.clear * dpr) / cell)));
     for (let i = 0; i < table.length; i++) {
       const t = table[i] ?? T.Blank;
       if (t !== T.Blank) chart[i] = art.threads.length + t;

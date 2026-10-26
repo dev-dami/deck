@@ -290,9 +290,11 @@ export function dotRadius(coverage: number, pitch: number): number {
 export type Block = { kind: "disc"; x: number; y: number; r: number } | { kind: "bar"; x: number; y: number; w: number; h: number };
 
 export function risoBlocks(W: number, H: number, subject: Rect, margin = 0): Block[] {
-  const r = Math.min(subject.h * 0.36, subject.w * 0.5, W * 0.24);
   const x = subject.x + subject.w / 2;
   const y = subject.y + subject.h * 0.32;
+  // Whole inside the margin: a disc the press cuts reads as a misprint.
+  const inset = margin + Math.min(W, H) * 0.02;
+  const r = Math.max(0, Math.min(subject.h * 0.36, subject.w * 0.5, W * 0.24, y - inset, H - inset - y, W - inset - x));
   const h = Math.max(8, H * 0.028);
   const by = Math.min(H * 0.9, H - margin - h * 2);
   const bx = Math.max(margin, x - r * 1.15);
@@ -477,9 +479,10 @@ export type Piece = CardArt | DieArt;
 
 // Where the cards and dice lie on a cols×rows cloth: a hand of three
 // fanned from one pivot low on the right, as it is held, and a pair of
-// dice thrown to its left. Sizes follow the cloth, so a card always reads
+// dice thrown at its foot. Sizes follow the cloth, so a card always reads
 // as a card, never a stamp.
-export function tableLayout(cols: number, rows: number): Piece[] {
+// `clear` is a band of cells on the left kept bare, where the sidebar is.
+export function tableLayout(cols: number, rows: number, clear = 0): Piece[] {
   // As tall as the cloth allows, up to the 36 cells a face reads at, and
   // narrow enough that the hand and the dice fit across.
   const ch = Math.round(Math.min(cols * 0.3, rows * 0.8, Math.max(rows * 0.4, 36)));
@@ -495,8 +498,18 @@ export function tableLayout(cols: number, rows: number): Piece[] {
     { kind: "card", rank: "A", suit: "spade", back: true, ...fan(-26) },
     { kind: "card", rank: "A", suit: "spade", ...fan(-6) },
     { kind: "card", rank: "A", suit: "heart", ...fan(14) },
-    { kind: "die", face: 5, cx: px - cw * 2.35, cy: rows * 0.84, w: die, h: die, angle: 14 },
-    { kind: "die", face: 3, red: true, cx: px - cw * 1.55, cy: rows * 0.9, w: die, h: die, angle: -10 },
+    // Close by the hand, and never in the band kept bare.
+    { kind: "die", face: 5, cx: Math.max(px - cw * 1.85, clear + die), cy: Math.min(rows * 0.84, rows - die * 1.7), w: die, h: die, angle: 14 },
+    {
+      kind: "die",
+      face: 3,
+      red: true,
+      cx: Math.max(px - cw * 1.15, clear + die * 2.2),
+      cy: Math.min(rows * 0.9, rows - die * 0.85),
+      w: die,
+      h: die,
+      angle: -10,
+    },
   ];
 }
 

@@ -155,6 +155,22 @@ describe("cross-stitch", () => {
     expect(Math.max(...ten.map(([x]) => x))).toBeGreaterThanOrEqual(6);
     expect(Math.max(...ten.map(([, y]) => y))).toBe(6);
   });
+  test("the cards and dice keep clear of the sidebar and the gutters", () => {
+    // 10px cells: the window at 1360×860 and at its smallest; the sidebar and its
+    // gutter take the first 272px.
+    for (const [cols, rows] of [
+      [136, 86],
+      [96, 56],
+    ] as const) {
+      const chart = chartTable(cols, rows, tableLayout(cols, rows, 28));
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < 28; x++) expect(chart[y * cols + x], `${cols} ${x},${y}`).toBe(T.Blank);
+        expect(chart[y * cols + cols - 1]).toBe(T.Blank);
+      }
+      for (let x = 0; x < cols; x++) expect(chart[(rows - 1) * cols + x]).toBe(T.Blank);
+    }
+  });
+
   test("a hand of cards reads as cards on the window's cloth and on a print's", () => {
     for (const [cols, rows] of [
       [136, 86],

@@ -60,6 +60,9 @@ export interface StitchArt {
   roles: RGB[];
   // Deck's own cards and dice over the picture.
   table: boolean;
+  // A band on the left, in CSS px, that the cards and dice keep off: the
+  // sidebar and its gutter, behind the window; nothing, on a print.
+  clear: number;
   cell: number;
 }
 
@@ -117,6 +120,7 @@ const LINEN: StitchArt = {
   bare: 0.48,
   roles: ["#f6f2e8", "#25211e", "#b8262d", "#7d1a22", "#8d877d", "#a8946f", "#c6302c", "#efe2c2"].map(hex),
   table: true,
+  clear: 280,
   cell: 10,
 };
 
@@ -126,10 +130,11 @@ const DENIM: StitchArt = {
   cloth: hex("#26335c"),
   hole: hex("#111830"),
   twill: true,
-  threads: ["#56709f", "#9cb1d3", "#e4e6e4"].map(hex),
+  threads: ["#56709f", "#93a9d0", "#c9d5e8"].map(hex),
   bare: 0.38,
   roles: ["#efe9da", "#16151a", "#c22f33", "#7d1a22", "#9a958c", "#1a2546", "#d0392f", "#e8d8b4"].map(hex),
   table: true,
+  clear: 280,
   cell: 10,
 };
 
@@ -192,7 +197,7 @@ export function artFor(theme: string, mode: Mode, tokens?: Tokens, use: Use = "w
   }
   if (theme === "stitch") {
     const art = mode === "dark" ? DENIM : LINEN;
-    return use === "print" ? { ...art, cell: 7 } : art;
+    return use === "print" ? { ...art, cell: 7, clear: 0 } : art;
   }
   if (theme === "tokyo-night") return use === "print" ? { ...DEEP_FIELD, sky: 0 } : DEEP_FIELD;
   if (use === "print") return { ...DUSK, sky: 0 };
