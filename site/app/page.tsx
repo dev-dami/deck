@@ -349,6 +349,18 @@ export default function Home() {
           Kōrin, <i>Irises at Yatsuhashi</i>, after 1709. The Metropolitan Museum of Art, Open Access, public domain.
         </p>
         <p className="credits">© 2026 dev-dami.</p>
+        {/* The wordmark, as wide as the page. It stretches up as it scrolls
+            in, and each letter springs taller under the pointer. */}
+        <a href={REPO} className="mega" aria-label="Deck on GitHub">
+          <span className="mega-word" aria-hidden>
+            {["d", "e", "c", "k"].map((l, i) => (
+              <span key={i} className="mega-letter">
+                {l}
+              </span>
+            ))}
+          </span>
+          <span className="mega-cursor" aria-hidden />
+        </a>
       </footer>
     </>
   );
