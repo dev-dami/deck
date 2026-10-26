@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="48 48 928 928">
+  <defs>
+    <linearGradient id="t" x1="0" y1="48" x2="0" y2="976" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2b2822"/><stop offset="1" stop-color="#151411"/></linearGradient>
+    <linearGradient id="a" x1="0" y1="360" x2="0" y2="662" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f7bb5c"/><stop offset="1" stop-color="#ea972f"/></linearGradient>
+  </defs>
+  <rect x="48" y="48" width="928" height="928" rx="206" fill="url(#t)"/>
+  <polyline points="310,360 505,512 310,662" fill="none" stroke="url(#a)" stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="563" y="590" width="191" height="72" rx="36" fill="#f4eee4"/>
+</svg>
