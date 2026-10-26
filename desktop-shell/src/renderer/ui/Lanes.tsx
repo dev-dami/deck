@@ -21,17 +21,28 @@ const WORD: Record<Lane["status"], string> = {
   exited: "exited",
 };
 
+// Each lane is the agent as Deck draws it: its glyph in its hue and its
+// name, with no container. The glyph is lit while the agent works or asks
+// for something, and dimmed while it rests. The lane the timeline shows
+// alone is pressed: a fill of the selection behind it.
 const chipBase =
-  "relative flex h-6 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-selected aria-pressed:text-foreground";
+  "relative flex h-7 max-w-60 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-selected aria-pressed:text-foreground";
 const chip = `lane ${chipBase}`;
+
+// Only a state that moves or asks gets a dot; it pulses while the agent works.
+const DOT: Partial<Record<Lane["status"], string>> = {
+  working: "bg-signal animate-deck-pulse",
+  waiting: "bg-warning",
+  error: "bg-destructive",
+};
 
 // The strip keeps to one line and folds lanes into "+N"; it wraps only for
 // lanes that never fold (pinnedLane), and then it grows in the flow.
 const LINES = 1;
 const GAP = 2;
 // The width of a chip not measured yet, and of "+N".
-const GUESS = 96;
-const MORE = 34;
+const GUESS = 100;
+const MORE = 36;
 
 // One line in the "+N" popover: a lane that did not fit.
 function FoldedLane({ lane, on, onFilter }: { lane: Lane; on: boolean; onFilter: () => void }) {
@@ -87,19 +98,25 @@ function AgentChip({
             setLoad(load === null ? listModels() : null);
           }}
         >
-          {lane.depth > 0 && <CornerDownRight aria-hidden className="size-3 shrink-0 text-faint" />}
-          <span aria-hidden className="font-mono text-[11px]" style={{ color: colour }}>
+          {lane.depth > 0 && <CornerDownRight aria-hidden className="-ml-0.5 size-3 shrink-0 text-faint" />}
+          <span
+            aria-hidden
+            className={cn("grid size-3.5 shrink-0 place-items-center font-mono text-[11px] leading-none", !running && (lane.status === "exited" ? "opacity-30" : "opacity-55"))}
+            style={{ color: colour }}
+          >
             {kindMark(theme, lane.agentKind) || "●"}
           </span>
-          <span className="lane-name truncate font-mono text-2xs text-foreground/90">{lane.name}</span>
-          {lane.status === "working" && <span aria-hidden className="size-1.5 shrink-0 animate-deck-pulse rounded-full bg-signal" />}
-          {lane.status === "waiting" && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />}
-          {lane.status === "error" && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-destructive" />}
-          <span className={cn("lane-status shrink-0 text-2xs", lane.status === "waiting" ? "text-warning-foreground" : "text-faint")}>
+          <span className={cn("lane-name truncate font-mono text-2xs", running ? "text-foreground" : lane.status === "exited" ? "text-faint" : "text-foreground/80")}>
+            {lane.name}
+          </span>
+          {DOT[lane.status] !== undefined && <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", DOT[lane.status])} />}
+          {/* The word shows when the agent asks for something; else it is for
+              the tooltip and screen readers. */}
+          <span className={cn("lane-status shrink-0 text-2xs", lane.status === "waiting" || lane.status === "error" ? "text-warning-foreground" : "sr-only")}>
             {WORD[lane.status]}
           </span>
           {lane.contextPct !== null && (
-            <span className="flex items-center" title={`${lane.contextPct}% of its context`}>
+            <span className="flex items-center tabular-nums" title={`${lane.contextPct}% of its context`}>
               <Ring pct={lane.contextPct} className="lane-ring" />
             </span>
           )}
@@ -212,9 +229,10 @@ export function Lanes({
   const { shown, folded } = fitLanes(lanes, (l) => widths.current.get(l.id) ?? GUESS, width, { gap: GAP, lines: LINES, more: MORE });
   const toggle = (id: string) => onFilter(filter === id ? null : id);
   return (
+    // One line of chips under the toolbar, on the sheet with no rule of its own.
     <div
       ref={box}
-      className="lanes flex min-h-9 shrink-0 flex-wrap content-center items-center gap-0.5 border-hairline border-b px-2.5 py-1"
+      className="lanes flex min-h-9 shrink-0 flex-wrap content-center items-center gap-0.5 px-2 pb-1.5"
       role="toolbar"
       aria-label="Lanes"
       data-yolo-region=""
@@ -243,13 +261,15 @@ export function Lanes({
             onClick={() => toggle(l.id)}
           >
             {l.kind === "you" ? (
-              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+              <span aria-hidden className="grid size-3.5 shrink-0 place-items-center">
+                <span className="size-1.5 rounded-full bg-foreground/60" />
+              </span>
             ) : (
-              <span aria-hidden className="font-mono text-[11px] text-faint">
+              <span aria-hidden className="grid size-3.5 shrink-0 place-items-center font-mono text-[11px] text-faint">
                 ◇
               </span>
             )}
-            <span className="lane-name truncate font-mono text-2xs text-foreground/90">{l.name}</span>
+            <span className="lane-name truncate font-mono text-2xs text-foreground/80">{l.name}</span>
             {l.kind === "mate" && <span className="lane-role text-2xs text-faint">{l.role}</span>}
           </button>
         ),
@@ -263,7 +283,7 @@ export function Lanes({
           trigger={
             <button
               type="button"
-              className={cn(chipBase, "lane-more font-mono text-2xs text-faint aria-expanded:bg-selected")}
+              className={cn(chipBase, "lane-more px-2.5 text-2xs text-muted-foreground tabular-nums aria-expanded:bg-selected")}
               aria-expanded={more}
               aria-label={`${folded.length} more`}
               title={folded.map((l) => l.name).join(", ")}
