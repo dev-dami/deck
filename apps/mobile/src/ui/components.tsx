@@ -41,7 +41,7 @@ export function Button({
   const height = size === "lg" ? 52 : size === "sm" ? 36 : 46;
   const fill =
     tone === "primary"
-      ? t.primary
+      ? t.action
       : tone === "danger"
         ? t.tint(t.danger)
         : tone === "ghost"
@@ -49,7 +49,7 @@ export function Button({
           : t.chip;
   const ink =
     tone === "primary"
-      ? t.onPrimary
+      ? t.onAction
       : tone === "danger"
         ? t.danger
         : tone === "ghost"
@@ -65,14 +65,14 @@ export function Button({
       style={({ pressed }) => [
         {
           minHeight: height,
-          borderRadius: height / 2,
+          borderRadius: size === "lg" ? 10 : 8,
           paddingHorizontal: size === "sm" ? 14 : 18,
           alignItems: "center",
           justifyContent: "center",
           flexDirection: "row",
           gap: 8,
           backgroundColor: fill,
-          boxShadow: tone === "primary" && !blocked ? t.shadow.primary : undefined,
+          boxShadow: tone === "secondary" ? t.shadow.card : undefined,
           opacity: blocked ? 0.45 : pressed ? 0.75 : 1,
         },
         style,
@@ -117,7 +117,7 @@ export function IconButton({
       style={({ pressed }) => ({
         width: 44,
         height: 44,
-        borderRadius: 22,
+        borderRadius: 10,
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: pressed ? t.chip : "transparent",
@@ -229,7 +229,8 @@ export function Chip({
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
-        backgroundColor: t.chip,
+        backgroundColor: t.card,
+        boxShadow: t.shadow.card,
         opacity: pressed ? 0.75 : 1,
       })}
     >
@@ -260,8 +261,8 @@ export function Segmented<T extends string>({
       accessibilityLabel={label}
       style={{
         flexDirection: "row",
-        padding: 4,
-        borderRadius: 16,
+        padding: 3,
+        borderRadius: 11,
         backgroundColor: t.track,
         boxShadow: `inset 0 0 0 1px ${t.line}`,
       }}
@@ -278,7 +279,7 @@ export function Segmented<T extends string>({
             style={{
               flex: 1,
               minHeight: 40,
-              borderRadius: 12,
+              borderRadius: 8,
               alignItems: "center",
               justifyContent: "center",
               backgroundColor: on ? t.thumb : "transparent",
@@ -334,8 +335,8 @@ export function Sheet({
           style={{
             maxHeight: "88%",
             backgroundColor: t.sheet,
-            borderTopLeftRadius: 30,
-            borderTopRightRadius: 30,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
             paddingTop: 8,
             paddingHorizontal: 18,
             paddingBottom: Math.max(insets.bottom, 16) + 12,
@@ -494,8 +495,8 @@ export function Badge({ text, color }: { text: string; color: string }) {
     <View
       style={{
         paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 12,
+        paddingVertical: 3,
+        borderRadius: 6,
         backgroundColor: t.tint(color),
       }}
     >
@@ -512,7 +513,7 @@ export function Notice({ children, error = false }: { children: ReactNode; error
       style={[
         s.card,
         {
-          borderRadius: 18,
+          borderRadius: 10,
           paddingVertical: 12,
           paddingHorizontal: 16,
           flexDirection: "row",

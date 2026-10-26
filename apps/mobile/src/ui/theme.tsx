@@ -28,8 +28,8 @@ export function makeStyles(t: Theme) {
     secondary: { color: t.muted, fontSize: 14, lineHeight: 20 },
     small: { color: t.muted, fontSize: 13, lineHeight: 18 },
     label: { color: t.muted, fontSize: 13, fontWeight: "600", marginHorizontal: 4 },
-    card: { backgroundColor: t.card, borderRadius: 22, boxShadow: t.shadow.card },
-    float: { backgroundColor: t.card, borderRadius: 26, boxShadow: t.shadow.float },
+    card: { backgroundColor: t.card, borderRadius: 14, boxShadow: t.shadow.card },
+    float: { backgroundColor: t.card, borderRadius: 16, boxShadow: t.shadow.float },
     row: { flexDirection: "row", alignItems: "center", gap: 12 },
     between: {
       flexDirection: "row",
@@ -41,7 +41,7 @@ export function makeStyles(t: Theme) {
     input: {
       color: t.fg,
       backgroundColor: t.chip,
-      borderRadius: 14,
+      borderRadius: 10,
       paddingHorizontal: 14,
       paddingVertical: 12,
       fontSize: 16,
@@ -53,7 +53,7 @@ export function makeStyles(t: Theme) {
       lineHeight: 20,
       color: t.soft,
       backgroundColor: t.code,
-      borderRadius: 12,
+      borderRadius: 10,
       paddingHorizontal: 12,
       paddingVertical: 10,
       boxShadow: `inset 0 0 0 1px ${t.line}`,

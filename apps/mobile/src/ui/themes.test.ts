@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { buildTheme, contrast, isThemeId, mix, PALETTES, palette, rgba } from "./themes";
+import {
+  buildTheme,
+  contrast,
+  DEFAULT_DARK,
+  DEFAULT_LIGHT,
+  isThemeId,
+  mix,
+  PALETTES,
+  palette,
+  rgba,
+} from "./themes";
 
 const HEX = /^#[0-9A-Fa-f]{6}$/;
 
@@ -8,6 +18,8 @@ describe("themes", () => {
     const ids = PALETTES.map((p) => p.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual([
+      "tabletop",
+      "tabletop-light",
       "deck",
       "deck-light",
       "t3",
@@ -49,6 +61,7 @@ describe("themes", () => {
     expect(contrast(t.muted, t.bg)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(t.fg, t.chip)).toBeGreaterThanOrEqual(7);
     expect(contrast(t.onPrimary, t.primary)).toBeGreaterThanOrEqual(3.5);
+    expect(contrast(t.onAction, t.action)).toBeGreaterThanOrEqual(3.5);
   });
 
   test("dark surfaces step up from the page; light cards sit on a tinted page", () => {
@@ -58,6 +71,17 @@ describe("themes", () => {
     const light = buildTheme(palette("github-light"));
     expect(light.card).toBe("#FFFFFF");
     expect(light.bg).not.toBe(light.card);
+  });
+
+  test("Tabletop is the default and makes solid buttons paper while amber stays the signal", () => {
+    expect(DEFAULT_DARK).toBe("tabletop");
+    expect(DEFAULT_LIGHT).toBe("tabletop-light");
+    const t = buildTheme(palette("tabletop"));
+    expect(t.action).toBe(t.fg);
+    expect(contrast(t.onAction, t.action)).toBeGreaterThanOrEqual(7);
+    expect(t.primary).not.toBe(t.action);
+    const nord = buildTheme(palette("nord"));
+    expect(nord.action).toBe(nord.primary);
   });
 
   test("color helpers", () => {
