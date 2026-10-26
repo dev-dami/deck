@@ -242,6 +242,18 @@ func TestInvalidConfigIsReported(t *testing.T) {
 	}
 }
 
+func TestSkippedProfilesAreReported(t *testing.T) {
+	opts := baseOptions(t, &fakeRunner{paths: map[string]string{}})
+	if out := runReport(t, opts); strings.Contains(out, "profiles") {
+		t.Errorf("no warnings, no profiles line:\n%s", out)
+	}
+	opts.ProfileWarnings = []string{`deck.json: profile 2 is skipped: name "all" is reserved`}
+	out := runReport(t, opts)
+	if !strings.Contains(out, "profiles  ! 1 skipped in deck.json") || !strings.Contains(out, `name "all" is reserved`) {
+		t.Errorf("skipped profile not reported:\n%s", out)
+	}
+}
+
 func TestTerminalLines(t *testing.T) {
 	opts := baseOptions(t, &fakeRunner{paths: map[string]string{}})
 

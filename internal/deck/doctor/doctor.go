@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/term"
 
+	appconfig "github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/deck/brand"
 	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/store"
@@ -61,6 +62,9 @@ type Options struct {
 	// PeerChecker runs the peer checks; nil means the real one on
 	// ~/.deck/peers.
 	PeerChecker PeerChecker
+	// ProfileWarnings say which named agents in deck.json (global and this
+	// project's) are skipped, and why. Printed when there are any.
+	ProfileWarnings []string
 
 	configErr error
 }
@@ -93,6 +97,9 @@ func DefaultOptions() Options {
 		opts.ThreadsDir = d
 	}
 	cfg, err := config.Load()
+	if wd, werr := os.Getwd(); werr == nil {
+		_, opts.ProfileWarnings = appconfig.LoadProfiles(wd, cfg.Teammates())
+	}
 	if err != nil {
 		opts.configErr = err
 		return opts
@@ -177,6 +184,7 @@ func RunWith(ctx context.Context, w io.Writer, opts Options) error {
 	b.WriteString(configLine(opts))
 	b.WriteString(dirLine("threads", opts.ThreadsDir))
 	b.WriteString(terminalLine(opts))
+	b.WriteString(profilesReport(opts.ProfileWarnings))
 	if opts.Peers != nil {
 		b.WriteString(peersReport(ctx, opts))
 	}
@@ -287,6 +295,20 @@ func configLine(opts Options) string {
 		return fmt.Sprintf("  %-9s %s (not created; defaults in use)\n", "config", opts.ConfigPath)
 	}
 	return fmt.Sprintf("  %-9s %s\n", "config", opts.ConfigPath)
+}
+
+// profilesReport warns about the profiles in deck.json that are skipped;
+// nothing when every one is fine.
+func profilesReport(warnings []string) string {
+	if len(warnings) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "  %-9s ! %d skipped in deck.json:\n", "profiles", len(warnings))
+	for _, w := range warnings {
+		fmt.Fprintf(&b, "  %-9s   %s\n", "", w)
+	}
+	return b.String()
 }
 
 func dirLine(label, dir string) string {
