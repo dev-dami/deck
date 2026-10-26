@@ -268,6 +268,11 @@ function Appearance({ p }: { p: Prefs }) {
             <ThemeCard key={t.id} t={t} on={p.palette === t.id} />
           ))}
         </div>
+        {/* The spot for the app icon and the wallpaper: mount
+            <AppIconPicker /> and the wallpaper picker here, each a <Row>
+            (or a full-width grid like the themes above), under the theme
+            they go with and before Color mode. The section parts them with
+            hairlines. */}
         <Row
           title="Color mode"
           description="Light or dark for the themes that have both: Deck's own, the system's, or yours."

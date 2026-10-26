@@ -65,7 +65,7 @@ func TestReplaySession1(t *testing.T) {
 	evs := withoutMidTurnUsage(replay(t, filepath.Join("testdata", "session1.jsonl")))
 	want := []agent.Kind{
 		agent.KindSessionStarted,
-		agent.KindToolCall, agent.KindToolResult, agent.KindFileChange,
+		agent.KindToolCall, agent.KindFileChange, agent.KindToolResult,
 		agent.KindAssistantText, agent.KindAssistantText, // deltas "D" "ONE"
 		agent.KindAssistantText, // final DONE
 		agent.KindUsage, agent.KindTurnDone,
@@ -82,7 +82,7 @@ func TestReplaySession1(t *testing.T) {
 	if evs[0].SessionID == "" {
 		t.Error("no session id")
 	}
-	call, res, fc := evs[1], evs[2], evs[3]
+	call, fc, res := evs[1], evs[2], evs[3]
 	if call.Tool.Name != "Write" || call.Tool.Status != agent.ToolRunning || !strings.HasSuffix(call.Tool.Title, "hello.txt") {
 		t.Errorf("tool call %+v", call.Tool)
 	}
@@ -126,7 +126,7 @@ func TestTranslateSynthetic(t *testing.T) {
 	want := []agent.Kind{
 		agent.KindReasoning,
 		agent.KindToolCall, agent.KindToolCall, agent.KindToolCall, agent.KindToolCall,
-		agent.KindToolResult, agent.KindFileChange, agent.KindToolResult,
+		agent.KindFileChange, agent.KindToolResult, agent.KindToolResult,
 		agent.KindError, agent.KindUsage, agent.KindTurnDone,
 	}
 	if len(k) != len(want) {
@@ -146,14 +146,61 @@ func TestTranslateSynthetic(t *testing.T) {
 			t.Errorf("title %d = %q want %q", i, evs[1+i].Tool.Title, ti)
 		}
 	}
-	if evs[6].Diff.Added != 2 || evs[6].Diff.Removed != 1 || evs[6].Diff.New {
-		t.Errorf("edit diff %+v", evs[6].Diff)
+	if evs[5].Diff.Added != 2 || evs[5].Diff.Removed != 1 || evs[5].Diff.New {
+		t.Errorf("edit diff %+v", evs[5].Diff)
 	}
 	if evs[7].Tool.Status != agent.ToolError || evs[7].Tool.Output != "line1\nline2" || evs[7].Tool.Name != "Bash" {
 		t.Errorf("error result %+v", evs[7].Tool)
 	}
 	if evs[8].Text != "boom" || evs[9].Usage.CostUSD != 0.5 {
 		t.Errorf("result events %+v %+v", evs[8], evs[9].Usage)
+	}
+}
+
+// TestEditDiffBeforeResult checks that each edit's diff comes before its
+// result, so a consumer that attaches a path's latest diff to the next result
+// (as the workspace does) shows each edit its own diff, also for consecutive
+// edits to one file.
+func TestEditDiffBeforeResult(t *testing.T) {
+	tr := newTranslator("c1")
+	lines := []string{
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"e1","name":"Edit","input":{"file_path":"a.go","old_string":"one\n","new_string":"ONE\n"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"e1","content":"The file a.go has been updated."}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"e2","name":"Edit","input":{"file_path":"a.go","old_string":"two\n","new_string":"TWO\n"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"e2","content":"The file a.go has been updated."}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"e3","name":"MultiEdit","input":{"file_path":"a.go","edits":[{"old_string":"three\n","new_string":"THREE\n"}]}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"e3","content":"ok"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"w1","name":"Write","input":{"file_path":"a.go","content":"four\n"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"w1","content":"ok"}]},"tool_use_result":{"type":"update","originalFile":"ONE\nTWO\nTHREE\n"}}`,
+	}
+	diffs := map[string]*agent.FileDiff{} // by path, as the workspace keeps them
+	got := map[string]string{}            // tool id -> the added line its result gets
+	for _, l := range lines {
+		for _, ev := range tr.Line([]byte(l)) {
+			switch ev.Kind {
+			case agent.KindFileChange:
+				diffs[ev.Diff.Path] = ev.Diff
+			case agent.KindToolResult:
+				d := diffs["a.go"]
+				if d == nil {
+					got[ev.Tool.ID] = ""
+					continue
+				}
+				for _, h := range d.Hunks {
+					for _, dl := range h.Lines {
+						if dl.Op == agent.OpAdd {
+							got[ev.Tool.ID] = dl.Text
+						}
+					}
+				}
+			}
+		}
+	}
+	want := map[string]string{"e1": "ONE", "e2": "TWO", "e3": "THREE", "w1": "four"}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("result %s shows the diff adding %q, want %q", id, got[id], w)
+		}
 	}
 }
 

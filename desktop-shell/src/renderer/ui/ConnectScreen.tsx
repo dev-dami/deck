@@ -6,12 +6,14 @@ import { cn } from "../lib/cn";
 import { Button } from "./kit/button";
 import { fieldClass } from "./kit/dialog";
 import { isMac } from "./keys";
-import { base, Command, FirstStrip, firstGrid, leftCols, Notice, rightCols, StartFailed, type StartFailure, stagger } from "./Welcome";
+import { PLATES } from "../plates";
+import { Plate } from "./kit/plate";
+import { base, Command, Credit, FirstStrip, Headline, Notice, StartFailed, type StartFailure, stagger } from "./Welcome";
 
-// A list row on the backdrop: a name over its detail, parted from the next
-// by a hairline; the return key shows on the row under the pointer.
+// A list row on the backdrop: a name and its path; the return key shows on
+// the row under the pointer.
 const rowClass =
-  "group flex w-full cursor-pointer items-center gap-3 rounded-[10px] px-4 py-2.5 text-left outline-none transition-colors hover:bg-hover focus-visible:bg-selected disabled:cursor-default disabled:opacity-50";
+  "group flex w-full cursor-pointer items-center gap-3 rounded-[10px] px-3 py-2 text-left outline-none transition-colors hover:bg-hover focus-visible:bg-selected disabled:cursor-default disabled:opacity-50";
 
 // The recent folders: a click starts Deck in one.
 function Recent({
@@ -30,10 +32,10 @@ function Recent({
     setError(await onFolder(dir));
   };
   return (
-    <section aria-label="Open a folder" className="flex flex-col gap-1">
-      <h2 className="font-semibold text-faint text-xs">Recent projects</h2>
+    <section aria-label="Open a folder" className="flex flex-col gap-1.5">
+      <h2 className="font-medium text-faint text-xs">Recent projects</h2>
       {recent.length > 0 ? (
-        <ul className="servers recent -mx-4 flex flex-col [&>li+li]:border-hairline [&>li+li]:border-t" aria-label="Recent folders">
+        <ul className="servers recent -mx-3 flex flex-col" aria-label="Recent folders">
           {recent.map((dir) => (
             <li key={dir}>
               <button type="button" className={cn("server-open", rowClass)} disabled={opening !== null} onClick={() => void open(dir)}>
@@ -122,10 +124,10 @@ function Pair({
   const https = text.trim().toLowerCase().startsWith("https:");
 
   return (
-    <section aria-label="Pair" className="liquid flex animate-enter flex-col rounded-(--panel-radius)" style={stagger(1)}>
-      <h2 className="px-5 pt-4.5 pb-1 font-semibold text-[13px]">Pair with a Deck</h2>
+    <section aria-label="Pair" className="flex animate-enter flex-col gap-1.5" style={stagger(1)}>
+      <h2 className="font-medium text-faint text-xs">Pair with a Deck</h2>
       {servers.length > 0 && (
-        <ul className="servers mx-1 flex flex-col" aria-label="Paired servers">
+        <ul className="servers -mx-3 flex flex-col" aria-label="Paired servers">
           {servers.map((s) => (
             <li key={s.id} className="group relative flex items-center">
               <button type="button" className={cn("server-open pr-24", rowClass)} onClick={() => onOpen(s)}>
@@ -151,7 +153,7 @@ function Pair({
           ))}
         </ul>
       )}
-      <div className={cn("flex flex-col gap-4 px-5 pt-2 pb-5", servers.length > 0 && "mt-2 border-hairline border-t pt-4")}>
+      <div className={cn("flex flex-col gap-4 pt-1", servers.length > 0 && "mt-1.5 border-hairline border-t pt-3.5")}>
         <ol className="steps flex flex-col gap-1.5 text-muted-foreground text-xs leading-relaxed">
           <Step n={1}>
             In the project, run <code className={cmd}>deck remote</code>, with <code className={cmd}>--lan</code> for another computer.
@@ -196,10 +198,11 @@ function Pair({
   );
 }
 
-// Two ways in, after T3 Code's "no projects" hero: a folder on this
-// computer, which the app's own engine opens (the default), or a Deck on
-// another computer to pair with. Set as the Welcome is: words and commands
-// on the backdrop, the pairing form on the one pane of glass.
+// Two ways in: a folder on this computer, which the app's own engine opens
+// (the default), or a Deck on another computer to pair with. The Welcome's
+// family: a dithered picture, here a tall plate on the left, and the words,
+// the action list, the pairing form and the recent folders in one column
+// of type beside it. No glass: nothing here floats.
 export function ConnectScreen({
   bridge,
   deck,
@@ -255,32 +258,40 @@ export function ConnectScreen({
     setError(await onAdd());
   };
   return (
-    <main className="connect flex h-full flex-col overflow-y-auto" data-screen="connect">
+    <main className="connect flex h-full flex-col" data-screen="connect">
       <FirstStrip onBack={onBack} />
-      <div className={cn("connect-card flex-1 content-center gap-y-10 pt-4 pb-14 md:items-center", firstGrid)}>
-        <div className={cn("flex animate-enter flex-col", leftCols)}>
-          <h1 className="headline font-display text-balance font-semibold text-[clamp(2.25rem,3.8vw,3.5rem)] leading-[1] tracking-[-0.045em] [font-family:var(--font-display,inherit)]">
-            What should we work on?
-          </h1>
-          <p className="mt-4 max-w-[26rem] text-pretty text-[15px] text-muted-foreground leading-relaxed">
-            {deck === null
-              ? "This install of Deck is missing its engine. Reinstall Deck, or pair with a Deck on another computer."
-              : "Add a project folder, or pair with a Deck that runs in a terminal or on another computer."}
-          </p>
-          <div className="mt-8 flex flex-col gap-4">
-            {message !== null && <Notice tone="warning">{message}</Notice>}
-            {error !== null && <Notice tone="error">{error}</Notice>}
-            {failure !== null && !failure.noAgents && (
-              <StartFailed
-                failure={failure}
-                onLogs={() => void bridge.openLogs()}
-                onRetry={() => {
-                  setError(null);
-                  void onRetry().then(setError);
-                }}
-              />
+      <div className="flex min-h-0 flex-1">
+        <figure className="hidden shrink-0 flex-col gap-1.5 pb-2 pl-2 md:flex md:w-[38%] lg:w-[42%]">
+          <Plate art={PLATES.bridge} focus={[0.5, 0.7]} className="min-h-0 flex-1 rounded-(--sheet-radius)" />
+          <Credit art={PLATES.bridge} className="px-1" />
+        </figure>
+        <div className="connect-card flex min-w-0 flex-1 flex-col overflow-y-auto px-6 md:px-10 lg:px-14">
+          <div className="my-auto flex w-full max-w-[32rem] flex-col gap-8 py-8">
+            <div className="flex animate-enter flex-col gap-4">
+              <Headline loud="What should we" quiet="work on?" className="text-[clamp(2.25rem,4.2vw,3.75rem)] leading-[1]" />
+              <p className="text-pretty text-[14px] text-muted-foreground leading-relaxed">
+                {deck === null
+                  ? "This install of Deck is missing its engine. Reinstall Deck, or pair with a Deck on another computer."
+                  : "Add a project folder, or pair with a Deck that runs in a terminal or on another computer."}
+              </p>
+            </div>
+            {(message !== null || error !== null || (failure !== null && !failure.noAgents)) && (
+              <div className="flex flex-col gap-4">
+                {message !== null && <Notice tone="warning">{message}</Notice>}
+                {error !== null && <Notice tone="error">{error}</Notice>}
+                {failure !== null && !failure.noAgents && (
+                  <StartFailed
+                    failure={failure}
+                    onLogs={() => void bridge.openLogs()}
+                    onRetry={() => {
+                      setError(null);
+                      void onRetry().then(setError);
+                    }}
+                  />
+                )}
+              </div>
             )}
-            <div className="-mx-4 flex max-w-[28rem] flex-col gap-1">
+            <div className="flex animate-enter flex-col" style={stagger(1)}>
               <Command
                 primary={!pairFirst}
                 className="primary"
@@ -290,6 +301,7 @@ export function ConnectScreen({
                 onClick={() => void addProject()}
               />
               <Command
+                primary={pairFirst && !pairing}
                 label="Pair with a Deck…"
                 hint={pairing ? undefined : "in a terminal, or on another computer"}
                 aria-expanded={pairing}
@@ -299,27 +311,21 @@ export function ConnectScreen({
                 }}
               />
             </div>
+            {pairing && (
+              <Pair
+                bridge={bridge}
+                servers={servers}
+                invite={invite ?? ""}
+                primary={pairFirst}
+                onPaired={onPaired}
+                onOpen={onOpen}
+                onForget={onForget}
+                setError={setError}
+              />
+            )}
+            {deck !== null && <Recent recent={recent} opening={opening} onFolder={onFolder} setError={setError} />}
           </div>
-          {deck !== null && (
-            <div className="mt-10 max-w-[28rem]">
-              <Recent recent={recent} opening={opening} onFolder={onFolder} setError={setError} />
-            </div>
-          )}
         </div>
-        {pairing && (
-          <div className={rightCols}>
-            <Pair
-              bridge={bridge}
-              servers={servers}
-              invite={invite ?? ""}
-              primary={pairFirst}
-              onPaired={onPaired}
-              onOpen={onOpen}
-              onForget={onForget}
-              setError={setError}
-            />
-          </div>
-        )}
       </div>
     </main>
   );

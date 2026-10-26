@@ -1162,6 +1162,9 @@ func (t *turn) resultAs(tool *deckagent.Tool, name, input string) message.ToolRe
 		}
 		r.Metadata = enc(meta)
 	case tools.EditToolName, tools.WriteToolName:
+		if r.IsError {
+			break // no diff of its own: one in diffs is an earlier edit's
+		}
 		d, ok := t.diffs[in.FilePath]
 		if !ok {
 			for p, dd := range t.diffs {

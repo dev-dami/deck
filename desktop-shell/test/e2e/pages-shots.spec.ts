@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import type { TestHost } from "../bridge";
 import { FakeRpcDeck } from "../fake-grpc";
+import { FakeDeck } from "../fake-server";
 import { attachBridge } from "./harness";
 
 // Screenshots of the pages (Welcome, Connect, every Settings section,
@@ -94,6 +95,35 @@ for (const mode of ["dark", "light"] as const) {
     await page.locator("[data-settings] .overflow-y-auto").first().evaluate((e) => e.scrollTo(0, 520));
     await page.waitForTimeout(200);
     await shot(page, `${mode}-p17-settings-appearance-2`);
+  });
+
+  // A Deck paired from a terminal keeps no usage or team here: the empty
+  // pages, each with its plate.
+  test(`empty ${mode}`, async ({ page }) => {
+    const paired = await FakeDeck.start({ tickMs: 250 });
+    try {
+      await setup(page, mode);
+      await page.getByRole("button", { name: "Pair with a Deck" }).click();
+      await page.getByLabel("Pairing link or invite line").fill(paired.pairLink);
+      await page.getByRole("button", { name: "Pair", exact: true }).click();
+      await expect(page.locator(".project")).toHaveText("deck");
+      await sidebar(page).getByRole("button", { name: "Usage" }).click();
+      await expect(page.locator('[data-plate="fuji"]')).toBeVisible();
+      await page.waitForTimeout(400);
+      await shot(page, `${mode}-p07-usage-empty`);
+      await sidebar(page).getByRole("button", { name: /teammate|Team/ }).first().click();
+      await expect(page.locator('[data-plate="wave"]')).toBeVisible();
+      await page.waitForTimeout(400);
+      await shot(page, `${mode}-p08-team-empty`);
+      // Answer the one approval, and the inbox is empty.
+      await sidebar(page).getByRole("button", { name: /^Inbox/ }).click();
+      await page.getByRole("button", { name: "Approve", exact: true }).click();
+      await expect(page.locator('[data-plate="sea"]')).toBeVisible();
+      await page.waitForTimeout(400);
+      await shot(page, `${mode}-p09-inbox-empty`);
+    } finally {
+      await paired.close();
+    }
   });
 
   test(`small ${mode}`, async ({ page }) => {

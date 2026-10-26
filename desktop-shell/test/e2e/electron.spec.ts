@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join } from "node:path";
 import { _electron as electron, type ElectronApplication, expect, test } from "@playwright/test";
+import { isAppIcon } from "../../src/main/appIcon";
+import { APP_ICON_SIZES } from "../../src/shared/bridge";
 import { FAKE_DECK } from "../bridge";
 import { FakeRpcDeck } from "../fake-grpc";
 import { FakeDeck } from "../fake-server";
@@ -260,6 +262,23 @@ test("with the bundled engine: git status and a terminal", async () => {
     // The real workspace answers the team call: no link in a fresh home.
     await win.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Team", exact: true }).click();
     await expect(win.locator("[data-team]")).toContainText(/No team link yet|Teammates/);
+  } finally {
+    await app.close();
+  }
+});
+
+test("the app icon: the window draws it, main checks it, shows it and keeps it for the next start", async () => {
+  const userData = mkdtempSync(join(tmpdir(), "deck-desktop-"));
+  const saved = join(userData, "app-icon.json");
+  const app = await launch(userData);
+  try {
+    await app.firstWindow();
+    // The default theme's icon came over IPC as PNG bytes and passed main's checks.
+    await expect.poll(() => existsSync(saved), { timeout: 15_000 }).toBe(true);
+    const file = JSON.parse(readFileSync(saved, "utf8")) as { images: { size: number; png: string }[] };
+    const images = file.images.map((i) => ({ size: i.size, png: new Uint8Array(Buffer.from(i.png, "base64")) }));
+    expect(isAppIcon(images)).toBe(true);
+    expect(images.map((i) => i.size)).toEqual([...(process.platform === "darwin" ? APP_ICON_SIZES.mac : APP_ICON_SIZES.other)]);
   } finally {
     await app.close();
   }

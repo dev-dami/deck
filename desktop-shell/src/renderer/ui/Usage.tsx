@@ -6,7 +6,8 @@ import { cn } from "../lib/cn";
 import type { ProjectApi, Usage, UsageDay } from "../project";
 import { formatDuration } from "../work";
 import { Button } from "./kit/button";
-import { EmptyState } from "./kit/empty";
+import { EmptyPlate } from "./kit/plate";
+import { PLATES } from "../plates";
 import { segmentItem, segmentTrack } from "./kit/segmented";
 import { AgentGlyph } from "./Welcome";
 
@@ -311,7 +312,18 @@ function Stat({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-export function UsagePage({ project, theme, onOpenThread }: { project: ProjectApi | undefined; theme: Theme | null; onOpenThread: (id: string) => void }) {
+export function UsagePage({
+  project,
+  theme,
+  onOpenThread,
+  onAddProject,
+}: {
+  project: ProjectApi | undefined;
+  theme: Theme | null;
+  onOpenThread: (id: string) => void;
+  // The empty page's next step, when the shell gives it.
+  onAddProject?: () => void;
+}) {
   const [days, setDays] = useState<number>(30);
   const [data, setData] = useState<Usage | string | null>(null);
   const [table, setTable] = useState(false);
@@ -346,7 +358,21 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
 
   let body: ReactNode;
   if (project === undefined) {
-    body = <EmptyState icon={BarChart3} title="No usage here" hint="Usage is kept by a Deck on this computer. Open a project folder to see it." className="py-24" />;
+    body = (
+      <EmptyPlate
+        art={PLATES.fuji}
+        title="No usage here"
+        hint="Usage is kept by a Deck on this computer. Open a project folder to see it."
+        className="py-20"
+        action={
+          onAddProject !== undefined && (
+            <Button variant="outline" size="sm" onClick={onAddProject}>
+              Add project…
+            </Button>
+          )
+        }
+      />
+    );
   } else if (data === null) {
     body = (
       <p className="flex items-center justify-center gap-2 py-24 text-muted-foreground text-sm">
@@ -356,7 +382,7 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
   } else if (typeof data === "string") {
     body = <p className="py-24 text-center text-destructive-foreground text-sm">{data}</p>;
   } else if (!data.available) {
-    body = <EmptyState icon={BarChart3} title="No usage record" hint="This Deck keeps no usage record." className="py-24" />;
+    body = <EmptyPlate art={PLATES.fuji} title="No usage record" hint="This Deck keeps no usage record." className="py-20" />;
   } else {
     const o = data.overview;
     const tokens = o.inputTokens + o.outputTokens;

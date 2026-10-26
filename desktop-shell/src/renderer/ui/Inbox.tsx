@@ -7,7 +7,8 @@ import type { InboxItem, InboxState } from "../attention";
 import { cn } from "../lib/cn";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
-import { EmptyState } from "./kit/empty";
+import { EmptyPlate } from "./kit/plate";
+import { PLATES } from "../plates";
 
 // Each state's glyph, its colour and its group, most urgent first: what
 // waits for an answer wears the warning colour, changes to review the
@@ -121,8 +122,14 @@ function Row({
 
 // Everything that waits for the person, across the open projects, in
 // groups by how urgent it is. Keyboard first: j and k move, y and n answer,
-// Enter opens the room.
-export function Inbox({ items, mac, ...actions }: { items: InboxItem[]; mac: boolean } & InboxActions) {
+// Enter opens the room. With nothing waiting, a quiet print and the way
+// back to the threads (onBack, when the shell gives it).
+export function Inbox({
+  items,
+  mac,
+  onBack,
+  ...actions
+}: { items: InboxItem[]; mac: boolean; onBack?: () => void } & InboxActions) {
   const [pick, setPick] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const list = useRef<HTMLDivElement>(null);
@@ -197,12 +204,22 @@ export function Inbox({ items, mac, ...actions }: { items: InboxItem[]; mac: boo
         )}
       </header>
       {empty ? (
-        <EmptyState
-          icon={InboxIcon}
-          title="Nothing waits for you."
-          hint="Approvals, finished rooms and overlaps show up here."
-          className="inbox-empty flex-1 justify-center pb-[14vh]"
-        />
+        <div className="flex flex-1 flex-col justify-center pb-[12vh]">
+          <EmptyPlate
+            art={PLATES.sea}
+            focus={[0.5, 0.45]}
+            title="Nothing waits for you."
+            hint="Approvals, finished rooms and overlaps show up here, across every open project."
+            className="inbox-empty"
+            action={
+              onBack !== undefined && (
+                <Button variant="outline" size="sm" onClick={onBack}>
+                  Back to threads
+                </Button>
+              )
+            }
+          />
+        </div>
       ) : (
         <div
           ref={list}

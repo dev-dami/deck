@@ -1,9 +1,12 @@
 import { kindColour } from "@web/theme";
-import { ArrowLeft, Check, CircleAlert, Copy, ExternalLink, Loader2, RefreshCw, RotateCcw, ScrollText } from "./icons";
+import { ArrowLeft, ArrowRight, Check, CircleAlert, Copy, ExternalLink, Loader2, RefreshCw, RotateCcw, ScrollText } from "./icons";
 import { type ComponentProps, type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentClis, DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";
+import { PLATES, type PlateArt } from "../plates";
 import { Button } from "./kit/button";
+import { DeckMark } from "./kit/mark";
+import { Plate } from "./kit/plate";
 import { isMac } from "./keys";
 import { AGENT_HELP, type AgentHelp } from "./landing";
 
@@ -24,27 +27,6 @@ export interface StartFailure {
 // Things that enter one after another: each rises 4px and fades in, 60ms
 // after the one before it.
 export const stagger = (i: number): CSSProperties => ({ animationDelay: `${i * 60}ms` });
-
-// Deck's mark, the app icon's prompt: a chevron in the accent and the
-// cursor in the text colour. Sized by its height.
-export function DeckMark({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden viewBox="16 19 34 26" className={cn("h-3.5 w-auto shrink-0", className)} fill="none">
-      <path d="M19.5 22.5 31 32l-11.5 9.5" stroke="var(--primary)" strokeWidth="4.75" strokeLinecap="round" strokeLinejoin="round" />
-      <rect x="35" y="37" width="12" height="4.75" rx="2.375" fill="currentColor" />
-    </svg>
-  );
-}
-
-// The window's name in the drag strip, where a title bar would put it.
-export function Wordmark() {
-  return (
-    <span className="flex items-center gap-2 font-semibold text-[13px] tracking-tight">
-      <DeckMark />
-      Deck
-    </span>
-  );
-}
 
 // An agent kind's glyph in its hue, as the room's lanes draw it: the same
 // kind wears the same glyph and hue on every page.
@@ -110,9 +92,10 @@ export function StartFailed({
   );
 }
 
-// A row of the command list, after Raycast's and Linear's first runs: the
-// command, a word on where it leads, its keys. The one prominent row is the
-// accent as glass; the rest are plain until hovered.
+// A row of the first screens' action list: the command, a word on where
+// it leads, its keys, parted from the next by a hairline. The one primary
+// row leads with the accent's arrow and reads in the full text colour; the
+// others are quieter until hovered.
 export function Command({
   label,
   hint,
@@ -125,16 +108,24 @@ export function Command({
     <button
       type="button"
       className={cn(
-        "flex h-11 w-full cursor-pointer items-center gap-3 rounded-[12px] px-4 text-left text-sm outline-none transition-[background-color,scale] duration-150 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50",
-        primary ? "liquid-tint font-medium hover:brightness-110" : "hover:bg-hover",
+        "group/cmd flex h-11 w-full cursor-pointer items-center gap-3 border-hairline border-b text-left outline-none transition-colors first:border-t focus-visible:bg-hover disabled:cursor-default disabled:opacity-50",
+        primary ? "font-medium text-[15px] text-foreground" : "text-[14px] text-muted-foreground hover:text-foreground",
         className,
       )}
       {...props}
     >
+      <ArrowRight
+        aria-hidden
+        weight={primary ? "bold" : "regular"}
+        className={cn(
+          "size-4 shrink-0 transition-transform duration-150 group-hover/cmd:translate-x-0.5 group-disabled/cmd:translate-x-0",
+          primary ? "text-primary" : "text-faint",
+        )}
+      />
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {hint !== undefined && <span className={cn("truncate text-xs", primary ? "text-primary-foreground/75" : "text-faint")}>{hint}</span>}
+      {hint !== undefined && <span className="hidden truncate font-normal text-faint text-xs lg:inline">{hint}</span>}
       {keys !== undefined && (
-        <span className={cn("flex shrink-0 gap-1 font-sans text-xs", primary ? "text-primary-foreground/75" : "text-faint")}>
+        <span className={cn("flex shrink-0 gap-1 font-normal text-xs", primary ? "text-muted-foreground" : "text-faint")}>
           {keys.map((k) => (
             <kbd key={k} className="min-w-3 text-center font-sans">
               {k}
@@ -146,7 +137,7 @@ export function Command({
   );
 }
 
-// An install command, with a button that copies it.
+// An install command in mono, with a button that copies it.
 function Install({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -173,43 +164,41 @@ function Install({ command }: { command: string }) {
   );
 }
 
-// One agent CLI on the roster: its glyph, bright when Deck found it; its
-// name; then the path it found, or the command that installs it.
+// One agent CLI on the roster, on one line: its glyph in its hue, its
+// name, found or not in plain words, then the path Deck found or the
+// command that installs it, and its guide.
 function AgentRow({ a, path, looking }: { a: AgentHelp; path: string | null; looking: boolean }) {
   const found = path !== null;
   const missing = !found && !looking;
   return (
-    <li className="flex min-w-0 gap-3 py-2.5" data-kind={a.kind} data-found={found}>
-      <AgentGlyph kind={a.kind} mark={a.mark} className={cn("mt-0.5 text-base", missing && "opacity-35")} />
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <div className="flex items-baseline gap-2">
-          <span className={cn("font-medium text-[13px]", missing && "text-muted-foreground")}>{a.name}</span>
-          <span className="ml-auto shrink-0 text-2xs text-faint">{looking ? "looking…" : found ? "found" : "not found"}</span>
-        </div>
-        {found ? (
-          <code className="min-w-0 truncate font-mono text-2xs text-faint" title={path}>
-            {path}
-          </code>
-        ) : (
-          !looking &&
-          (a.install !== null || a.url !== null) && (
-            <div className="flex min-w-0 items-center gap-3">
-              {a.install !== null && <Install command={a.install} />}
-              {a.url !== null && (
-                <a
-                  href={a.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ml-auto flex shrink-0 items-center gap-1 rounded text-2xs text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  Install guide
-                  <ExternalLink aria-hidden className="size-3" />
-                </a>
-              )}
-            </div>
-          )
-        )}
-      </div>
+    <li
+      className="grid min-h-9 grid-cols-[1.25rem_minmax(0,8rem)_4.5rem_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 [@media(max-height:680px)]:min-h-8 [@media(max-height:680px)]:py-1"
+      data-kind={a.kind}
+      data-found={found}
+    >
+      <AgentGlyph kind={a.kind} mark={a.mark} className={cn("text-[15px]", missing && "opacity-40")} />
+      <span className={cn("truncate font-medium text-[13px]", missing && "text-muted-foreground")}>{a.name}</span>
+      <span className={cn("text-xs", found ? "text-foreground/80" : "text-faint")}>{looking ? "looking…" : found ? "found" : "not found"}</span>
+      {found ? (
+        <code className="min-w-0 truncate font-mono text-2xs text-faint" title={path}>
+          {path}
+        </code>
+      ) : (
+        <span className="min-w-0">{!looking && a.install !== null && <Install command={a.install} />}</span>
+      )}
+      {missing && a.url !== null ? (
+        <a
+          href={a.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex shrink-0 items-center gap-1 rounded text-2xs text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Install guide
+          <ExternalLink aria-hidden className="size-3" />
+        </a>
+      ) : (
+        <span />
+      )}
     </li>
   );
 }
@@ -220,13 +209,13 @@ function Example() {
   return (
     <p className="font-mono text-xs">
       <span style={{ color: kindColour("claude") }}>$claude</span> <span style={{ color: kindColour("codex") }}>$codex+</span>{" "}
-      <span className="text-foreground/85">split the lockout fix</span>
+      <span className="text-muted-foreground">split the lockout fix</span>
     </p>
   );
 }
 
 // The crew: the agent CLIs on the engine's PATH, found with their path or
-// with how to install them. Type on the backdrop, parted by hairlines.
+// with how to install them. A table in type, parted by hairlines.
 function Crew({
   clis,
   checking,
@@ -243,16 +232,16 @@ function Crew({
   const found = AGENT_HELP.filter((a) => clis?.clis.some((c) => c.kind === a.kind && c.path !== null) === true).length;
   return (
     <section aria-label="Your agents" className="flex animate-enter flex-col" style={stagger(2)}>
-      <div className="flex items-baseline gap-3 pb-2">
-        <h2 className="font-semibold text-[13px]">Your agents</h2>
+      <div className="flex h-8 items-center gap-3 border-hairline border-b">
+        <h2 className="font-medium text-[13px]">Your agents</h2>
         <span className="text-2xs text-faint tabular-nums">{clis === null ? "" : `${found} of ${AGENT_HELP.length} on your PATH`}</span>
-        <Button variant="ghost-muted" size="xs" className="-mr-2.5 ml-auto self-center" disabled={checking} onClick={onCheck}>
+        <Button variant="ghost-muted" size="xs" className="-mr-2.5 ml-auto" disabled={checking} onClick={onCheck}>
           {checking ? <Loader2 className="animate-spin" /> : <RefreshCw />}
           Check again
         </Button>
       </div>
       {failure?.noAgents === true && (
-        <div className="flex items-center gap-3 border-hairline border-t py-2.5">
+        <div className="flex items-center gap-3 border-hairline border-b py-2.5">
           <p className="flex-1 text-pretty text-warning-foreground text-xs leading-relaxed">
             Deck found no agent CLI, so it did not open <span className="font-mono">{base(failure.dir)}</span>. Install one, then try
             again.
@@ -263,7 +252,7 @@ function Crew({
           </Button>
         </div>
       )}
-      <ul className="agent-clis flex flex-col [&>li]:border-hairline [&>li]:border-t" aria-label="Agent CLIs">
+      <ul className="agent-clis flex flex-col [&>li+li]:border-hairline [&>li+li]:border-t" aria-label="Agent CLIs">
         {AGENT_HELP.map((a) => (
           <AgentRow key={a.kind} a={a} path={clis?.clis.find((c) => c.kind === a.kind)?.path ?? null} looking={clis === null} />
         ))}
@@ -272,55 +261,58 @@ function Crew({
   );
 }
 
-// The grid the first screens are set on: twelve columns across the window.
-// The headline holds the lower left from the second column; the actions
-// and the crew hold the right from the eighth.
-export const firstGrid = "grid grid-cols-1 gap-x-6 px-6 md:grid-cols-12 md:px-8";
-export const leftCols = "md:col-span-6 md:col-start-2";
-export const rightCols = "md:col-span-5 md:col-start-8 lg:col-span-4 lg:col-start-8";
+// The first screens' grid: twelve columns across the window. The headline
+// holds the left; the actions hold the right from the eighth column.
+export const firstGrid = "grid grid-cols-1 gap-x-8 px-6 md:grid-cols-12 md:px-10";
+export const leftCols = "md:col-span-6 lg:col-span-7";
+export const rightCols = "md:col-span-6 md:col-start-7 lg:col-span-5 lg:col-start-8";
 
-// A headline in the theme's display face, in two tones: what it is, then,
-// quieter, what it is for. `.headline` and `.headline-quiet` let a theme
+// A headline in two tones: what it is, in the full text colour, then,
+// muted, what it is for. `.headline` and `.headline-quiet` let a theme
 // restyle the pair.
 export function Headline({ loud, quiet, className }: { loud: string; quiet: string; className?: string }) {
   return (
     <h1
       className={cn(
-        "headline font-display text-balance font-semibold text-[clamp(2.75rem,5.6vw,5.25rem)] leading-[0.95] tracking-[-0.045em] [font-family:var(--font-display,inherit)]",
+        "headline text-balance font-medium text-[clamp(2.5rem,5vw,4.5rem)] leading-[0.98] tracking-[-0.045em] [font-family:var(--font-display,inherit)]",
         className,
       )}
     >
-      {loud}{" "}
-      <span className="headline-quiet block font-normal text-muted-foreground">{quiet}</span>
+      {loud} <span className="headline-quiet block text-muted-foreground">{quiet}</span>
     </h1>
   );
 }
 
-// The window's top strip on the first screens: the wordmark over the
-// headline's column, and the way back to the open projects.
-export function FirstStrip({ onBack }: { onBack?: (() => void) | undefined }) {
+// The window's top strip on the first screens: Deck's mark and name where
+// a title bar would put them (after the traffic lights on a Mac), and the
+// way back to the open projects.
+export function FirstStrip({ onBack, className }: { onBack?: (() => void) | undefined; className?: string }) {
+  const mac = useMemo(isMac, []);
   return (
-    <div className={cn("drag h-13 shrink-0 items-center", firstGrid)}>
-      <div className={cn("hidden md:block", leftCols)}>
-        <Wordmark />
-      </div>
-      <div className="flex justify-end md:col-span-5 md:col-start-8">
-        {onBack !== undefined && (
-          <Button variant="ghost-muted" size="sm" onClick={onBack}>
-            <ArrowLeft />
-            Back to threads
-          </Button>
-        )}
-      </div>
+    <div className={cn("drag flex shrink-0 items-center gap-2 pr-3", mac ? "h-9 pl-[4.75rem]" : "h-11 pl-5", className)}>
+      <span className="flex items-center gap-2 font-semibold text-[13px] tracking-tight">
+        <DeckMark className="h-3" />
+        Deck
+      </span>
+      {onBack !== undefined && (
+        <Button variant="ghost-muted" size="sm" className="ml-auto" onClick={onBack}>
+          <ArrowLeft />
+          Back to threads
+        </Button>
+      )}
     </div>
   );
 }
 
-// The first screen of a new install, and the palette's "Welcome": what Deck
-// is, the ways in, and the crew it can drive. No sheet and no cards: the
-// theme's backdrop is the scene, and the words sit on it, editorial and
-// asymmetric, the headline low on the left and the actions high on the
-// right.
+// A picture's credit in faint type, under it.
+export function Credit({ art, className }: { art: PlateArt; className?: string }) {
+  return <figcaption className={cn("text-pretty text-3xs text-faint/80 tracking-wide", className)}>{art.credit}</figcaption>;
+}
+
+// The first screen of a new install, and the palette's "Welcome". A wide
+// dithered picture fills the top of the window; under it, the headline
+// holds the lower left and the ways in the right; the crew Deck can drive
+// runs across the foot as a table. No sheet and no cards.
 export function Welcome({
   bridge,
   opening,
@@ -365,47 +357,46 @@ export function Welcome({
   return (
     <main className="welcome-screen flex h-full flex-col overflow-y-auto" data-screen="welcome">
       <FirstStrip onBack={onBack} />
-      <div className={cn("flex-1 gap-y-12 pt-[4vh] pb-[max(2.5rem,7vh)]", firstGrid)}>
-        <div className={cn("flex animate-enter flex-col gap-6 self-end md:row-start-1", leftCols)}>
+      <figure className="mx-2 flex min-h-[max(9rem,24vh)] flex-1 flex-col gap-1.5">
+        <Plate art={PLATES.alps} focus={[0.5, 0.4]} className="min-h-0 flex-1 rounded-(--sheet-radius)" />
+        <Credit art={PLATES.alps} className="self-end px-1" />
+      </figure>
+      <div className={cn("shrink-0 gap-y-8 pt-5 pb-6 md:pt-6 [@media(max-height:680px)]:gap-y-5 [@media(max-height:680px)]:py-3", firstGrid)}>
+        <div className={cn("flex animate-enter flex-col justify-end gap-4", leftCols)}>
           <Headline loud="One deck" quiet="for all your agents" />
-          <div className="flex max-w-[30rem] flex-col gap-3">
-            <p className="text-pretty text-[15px] text-muted-foreground leading-relaxed">
-              Claude Code, Codex, OpenCode and Antigravity in one thread. Hand a task to one, split it between two, race three on the
-              same bug, and answer what they ask from one window.
-            </p>
-            <Example />
+          <Example />
+        </div>
+        <div className={cn("flex flex-col gap-4 self-end", rightCols)}>
+          <p className="animate-enter text-pretty text-[14px] text-muted-foreground leading-relaxed" style={stagger(1)}>
+            Claude Code, Codex, OpenCode and Antigravity in one thread. Hand a task to one, split it between two, or race three on the
+            same bug.
+          </p>
+          {!engine && (
+            <Notice tone="warning">
+              Deck did not find its engine. Run <code className="font-mono text-foreground/80">npm run build:deck</code>, or set{" "}
+              <code className="font-mono text-foreground/80">DECK_BIN</code>.
+            </Notice>
+          )}
+          {error !== null && <Notice tone="error">{error}</Notice>}
+          {failure !== null && !failure.noAgents && (
+            <StartFailed failure={failure} onLogs={() => void bridge.openLogs()} onRetry={retry} />
+          )}
+          <div className="flex animate-enter flex-col" style={stagger(1)}>
+            <Command
+              primary
+              className="primary"
+              label={opening === null ? "Open a folder…" : `Starting Deck in ${base(opening)}…`}
+              keys={opening === null ? [mac ? "⌘" : "Ctrl", "O"] : undefined}
+              disabled={!engine || opening !== null}
+              onClick={() => {
+                setError(null);
+                void onAdd().then(setError);
+              }}
+            />
+            <Command label="Pair with a Deck…" hint="in a terminal, or on another computer" onClick={onPair} />
           </div>
         </div>
-        <div className={cn("flex flex-col gap-10 md:row-start-1 md:self-center", rightCols)}>
-          <div className="flex animate-enter flex-col gap-3" style={stagger(1)}>
-            {!engine && (
-              <Notice tone="warning">
-                Deck did not find its engine. Run <code className="font-mono text-foreground/80">npm run build:deck</code>, or set{" "}
-                <code className="font-mono text-foreground/80">DECK_BIN</code>.
-              </Notice>
-            )}
-            {error !== null && <Notice tone="error">{error}</Notice>}
-            {failure !== null && !failure.noAgents && (
-              <StartFailed failure={failure} onLogs={() => void bridge.openLogs()} onRetry={retry} />
-            )}
-            <div className="-mx-4 flex flex-col gap-0.5">
-              <Command
-                primary
-                className="primary"
-                label={opening === null ? "Open a folder…" : `Starting Deck in ${base(opening)}…`}
-                keys={opening === null ? [mac ? "⌘" : "Ctrl", "O"] : undefined}
-                disabled={!engine || opening !== null}
-                onClick={() => {
-                  setError(null);
-                  void onAdd().then(setError);
-                }}
-              />
-              <Command label="Pair with a Deck…" hint="in a terminal, or on another computer" onClick={onPair} />
-            </div>
-            <p className="text-pretty text-faint text-xs leading-relaxed">
-              Deck starts its engine in the folder you open. The agents work there until you close it.
-            </p>
-          </div>
+        <div className="md:col-span-12">
           <Crew clis={clis} checking={checking} failure={failure} onCheck={() => void check(true)} onRetry={retry} />
         </div>
       </div>

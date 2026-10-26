@@ -7,7 +7,8 @@ import type { Team, Teammate, TeamThread } from "../crew";
 import { cn } from "../lib/cn";
 import type { ProjectApi } from "../project";
 import { Button } from "./kit/button";
-import { EmptyState } from "./kit/empty";
+import { EmptyPlate } from "./kit/plate";
+import { PLATES } from "../plates";
 import { fieldClass } from "./kit/dialog";
 import { Popover } from "./kit/menu";
 import { Ring } from "./kit/ring";
@@ -309,6 +310,8 @@ export function TeamPage({
   onError,
   onInfo,
   onOpenShared,
+  onConnection,
+  onAddProject,
 }: {
   api: ProjectApi | undefined;
   thread: Session | undefined;
@@ -316,6 +319,10 @@ export function TeamPage({
   onInfo: (t: string) => void;
   // Opens a thread a teammate shares in the room view.
   onOpenShared: (peer: string, t: TeamThread) => void;
+  // The empty pages' next step, when the shell gives it: Settings at
+  // Connection, where a teammate's Deck is paired, and Add project.
+  onConnection?: () => void;
+  onAddProject?: () => void;
 }) {
   const { team, load } = useTeam(api);
   const now = Date.now();
@@ -328,9 +335,8 @@ export function TeamPage({
         <span className="flex items-center gap-1.5 text-faint text-xs">
           you are <span className="font-medium text-muted-foreground">{team.name || "unnamed"}</span>
           {!team.enabled && (
-            <span className="flex items-center gap-1 rounded-full bg-hover px-2 py-0.5 text-2xs">
-              <span aria-hidden className="size-1.5 rounded-full bg-faint" />
-              the link is off
+            <span>
+              <span aria-hidden>· </span>the link is off
             </span>
           )}
         </span>
@@ -343,7 +349,21 @@ export function TeamPage({
 
   let body: ReactNode;
   if (api === undefined) {
-    body = <EmptyState icon={Users} title="No team here" hint="Teammates link to a Deck on this computer. Open a project folder." className="py-24" />;
+    body = (
+      <EmptyPlate
+        art={PLATES.wave}
+        title="No team here"
+        hint="Teammates link to a Deck on this computer. Open a project folder."
+        className="py-20"
+        action={
+          onAddProject !== undefined && (
+            <Button variant="outline" size="sm" onClick={onAddProject}>
+              Add project…
+            </Button>
+          )
+        }
+      />
+    );
   } else if (team === null) {
     body = (
       <p className="flex items-center justify-center gap-2 py-24 text-muted-foreground text-sm">
@@ -354,11 +374,18 @@ export function TeamPage({
     body = <p className="py-24 text-center text-destructive-foreground text-sm">{team}</p>;
   } else if (!team.available) {
     body = (
-      <EmptyState
-        icon={Users}
+      <EmptyPlate
+        art={PLATES.wave}
         title="No team link yet"
         hint="Turn on peers in Deck's settings and pair with a teammate's Deck. Then you see what their agents do, chat, share threads and hand each other tasks."
-        className="mx-auto max-w-md py-24"
+        className="py-20"
+        action={
+          onConnection !== undefined && (
+            <Button variant="outline" size="sm" onClick={onConnection}>
+              Open Connection settings
+            </Button>
+          )
+        }
       />
     );
   } else {
@@ -377,7 +404,15 @@ export function TeamPage({
             }
           >
             {team.teammates.length === 0 ? (
-              <EmptyState icon={Users} title="No teammates yet." hint="Pair with a Deck from Settings → Connection." className="py-8" />
+              <p className="flex flex-wrap items-baseline gap-x-2 py-4 text-muted-foreground text-xs">
+                <span className="font-medium text-foreground text-sm">No teammates yet.</span>
+                Pair with a Deck from Settings → Connection.
+                {onConnection !== undefined && (
+                  <Button variant="link" size="xs" className="px-0" onClick={onConnection}>
+                    Open Connection
+                  </Button>
+                )}
+              </p>
             ) : (
               <ul className="[&>li+li]:border-hairline [&>li+li]:border-t">
                 {team.teammates.map((m) => (

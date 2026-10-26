@@ -79,6 +79,7 @@ export function testHost(
       send: () => {},
       session: () => ({}) as Session,
     }),
+    setAppIcon: () => true,
     ...deps,
   });
   return { host, store, links, decks, logged };

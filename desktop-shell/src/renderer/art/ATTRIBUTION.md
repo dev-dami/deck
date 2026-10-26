@@ -34,3 +34,17 @@ Google Cloud (`gcs-public-data--met`), scaled to 1280px on the long side.
 
 Prints and photographs keep their paper margins and mounts; crop them in
 the process that draws them.
+
+## Plates
+
+`plates/` holds 1-bit Atkinson dithers of five of these, made by
+`scripts/dither-art.py` (cropped, margins and mounts dropped) and drawn by
+`ui/kit/plate.tsx` in two tones. Each page credits its own in faint type:
+
+| Plate | Work | Where |
+|---|---|---|
+| `alps.png` | Braun, an alpine landscape | the Welcome |
+| `bridge.png` | Hiroshige, *Sudden Shower over Shin-Ōhashi Bridge and Atake*, 1857 | pairing (the connect screen) |
+| `sea.png` | Le Gray, *Mediterranean Sea, Sète*, 1857 | the Inbox, empty |
+| `wave.png` | Hokusai, *Under the Wave off Kanagawa*, about 1830–32 | Team, empty |
+| `fuji.png` | Hokusai, *South Wind, Clear Sky*, about 1830–32 | Usage, empty |
