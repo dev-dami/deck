@@ -1,6 +1,7 @@
 import { IconContext } from "@phosphor-icons/react";
 import { createRoot } from "react-dom/client";
 import type { DeckBridge } from "../shared/bridge";
+import { startAppIconSync } from "./appIcon/sync";
 import "./styles.css";
 import { App } from "./ui/App";
 
@@ -13,6 +14,8 @@ if (bridge !== undefined) {
     void bridge.logFromRenderer("error", what instanceof Error ? (what.stack ?? what.message) : String(what)).catch(() => {});
   window.addEventListener("error", (e) => report(e.error ?? `${e.message} (${e.filename}:${e.lineno})`));
   window.addEventListener("unhandledrejection", (e) => report(e.reason));
+  // The app's icon follows the theme, or the one picked in Settings.
+  startAppIconSync(bridge);
 }
 const root = document.getElementById("root");
 if (root !== null) {

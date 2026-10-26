@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { APP_ICON_IDS, type AppIconPref } from "./appIcon/catalog";
 import type { NotifyPref } from "./attention";
 import { ACCENTS, DIFF_THEMES, THEMES } from "./themes";
 
@@ -42,6 +43,9 @@ export interface Prefs {
   diffTheme: string;
   diffView: DiffLayout;
   diffWrap: boolean;
+  // The app icon: "theme" wears the theme's (appIcon/catalog.ts), an icon
+  // id wears that one.
+  appIcon: AppIconPref;
 }
 
 export const defaultPrefs: Prefs = {
@@ -64,6 +68,7 @@ export const defaultPrefs: Prefs = {
   diffTheme: "match",
   diffView: "unified",
   diffWrap: false,
+  appIcon: "theme",
 };
 
 const KEY = "deck.desktop.prefs";
@@ -108,6 +113,7 @@ function merge(v: Record<string, unknown>): Prefs {
     diffTheme: pick("diffTheme", DIFF_THEMES.map((t) => t.id), defaultPrefs.diffTheme),
     diffView: pick("diffView", ["unified", "split"] as const, defaultPrefs.diffView),
     diffWrap: bool("diffWrap", defaultPrefs.diffWrap),
+    appIcon: pick("appIcon", ["theme", ...APP_ICON_IDS], defaultPrefs.appIcon),
   };
 }
 
@@ -129,13 +135,13 @@ export function setPrefs(patch: Partial<Prefs>): void {
   for (const l of listeners) l();
 }
 
-function subscribe(l: () => void): () => void {
+export function subscribePrefs(l: () => void): () => void {
   listeners.add(l);
   return () => listeners.delete(l);
 }
 
 export function usePrefs(): Prefs {
-  return useSyncExternalStore(subscribe, getPrefs);
+  return useSyncExternalStore(subscribePrefs, getPrefs);
 }
 
 export function formatClock(t: string, clock: ClockPref): string {
