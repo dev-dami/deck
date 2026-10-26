@@ -2,7 +2,7 @@ import { activeAgents, toggleAgent } from "@web/composer";
 import type { AgentLine, Approval, ModelChoice, Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
 import { Check, ChevronRight, Loader2, Plus } from "./icons";
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import { agentColour } from "../agents";
 import { agentStatus } from "../approvals";
 import { addAgentMention } from "../completion";
@@ -158,16 +158,19 @@ function Chip({
       aria-label={`Send to ${line.id}`}
       data-agent={line.id}
       className={cn(
-        `agent agent-${status} flex h-6 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring`,
-        on && "on bg-selected text-foreground",
+        // In type: the glyph in its hue and the name. Addressed, both come
+        // up to full brightness; otherwise they rest dimmed.
+        `agent agent-${status} group/agent flex h-7 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2 text-faint text-xs outline-none transition-colors hover:bg-hover hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring`,
+        on && "on text-foreground hover:text-foreground",
       )}
+      style={{ "--hue": agentColour(line.id, line.kind) } as CSSProperties}
       title={`${line.id}: ${line.model ?? "default model"} (${status})`}
       onClick={onToggle}
     >
-      <span aria-hidden className="font-mono text-[11px]" style={{ color: agentColour(line.id, line.kind) }}>
+      <span aria-hidden className={cn("font-mono text-(--hue) text-[11px] transition-opacity", !on && "opacity-55 group-hover/agent:opacity-80")}>
         {kindMark(theme, line.kind) || "●"}
       </span>
-      <span className="agent-name truncate font-mono text-2xs">{line.name}</span>
+      <span className={cn("agent-name truncate", on && "font-medium")}>{line.name}</span>
       {context !== null && (
         <span className="agent-context flex items-center" title={`${context}% of its context`}>
           <Ring pct={context} />
@@ -177,7 +180,7 @@ function Chip({
       <span className="agent-status sr-only">{status}</span>
       {limit !== null && (
         <span
-          className="agent-limit shrink-0 rounded bg-warning/14 px-1 font-mono text-3xs text-warning-foreground tabular-nums"
+          className="agent-limit shrink-0 font-mono text-3xs text-warning-foreground tabular-nums"
           title={`${line.kind} ${limit.label || limit.kind} window: ${Math.round(limit.usedPct)}% used${limit.resetsAt > 0 ? `. Resets ${resetTime(limit.resetsAt)}` : ""}`}
         >
           limit {Math.round(limit.usedPct)}%
@@ -220,7 +223,7 @@ function AddAgent({
       trigger={
         <button
           type="button"
-          className="add-agent grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-selected aria-expanded:text-foreground"
+          className="add-agent grid size-7 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-selected aria-expanded:text-foreground"
           aria-label="Add agent"
           title="Add agent"
           aria-expanded={open}
