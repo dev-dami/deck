@@ -5,7 +5,7 @@ import { type Bounds, buildGraph, chooseDirection, type Direction, type Graph, i
 import { cn } from "../../lib/cn";
 import type { ProjectApi } from "../../project";
 import type { Lease } from "../../roomMeta";
-import { GraphIcon } from "../icons";
+import { Graph as GraphIcon } from "../icons";
 import { EmptyState } from "../kit/empty";
 import { Legend, Minimap, ZoomCapsule } from "./Controls";
 import { AgentDetail } from "./Detail";

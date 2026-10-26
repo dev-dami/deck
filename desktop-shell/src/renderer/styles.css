@@ -1812,3 +1812,32 @@ body {
 .work-graph[data-live="off"] .animate-spin {
   animation: none;
 }
+
+/* ── Shell ──
+   The window's chrome (docs/design-glass.md, section 4), for what the
+   utilities cannot say. */
+
+/* Below 1100px the side panel floats over the room as thick glass. The
+   glass is a layer under the panel's content, not the panel itself: a
+   backdrop filter holds fixed descendants (its dialogs) and nested glass
+   (its menus) to the element that carries it. The panel has a z-index
+   there, so the layer stays inside it. */
+@media (max-width: 1100px) {
+  aside.panel {
+    background-color: transparent;
+    --tw-shadow: 0 0 #0000;
+  }
+  aside.panel::before {
+    @apply liquid-thick;
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+  }
+}
+
+/* The palette's rows are larger than a menu's, so their capsule is too. */
+.palette [role="option"] {
+  border-radius: 10px;
+}
