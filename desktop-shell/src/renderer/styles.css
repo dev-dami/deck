@@ -1,13 +1,16 @@
 @import "tailwindcss" source(none);
 @source "./";
 
-/* Tabletop, Deck's own look (docs/plan.md, section 2): warm ink, paper
-   text and one amber lamp. The layout follows T3 Code (github.com/pingdotgg/
-   t3code, MIT), and "T3" stays in the theme catalog. data-mode on <html>
-   picks light or dark: Deck's server theme (data-scheme), the system or the
-   person's choice in Settings (appearance.ts). data-palette names the theme.
-   Deck's theme still tints each agent kind (--kind-*); Tabletop gives the
-   kinds it knows its own hues. */
+/* Two looks of Deck's own. "Apple", the default (docs/design-apple.md), is a
+   native Mac window: the system font, the system blue, hairline separators
+   and a translucent sidebar. Tabletop (docs/plan.md, section 2) is warm ink,
+   paper text and one amber lamp. The layout follows T3 Code
+   (github.com/pingdotgg/t3code, MIT), and "T3" stays in the theme catalog.
+   data-mode on <html> picks light or dark: Deck's server theme
+   (data-scheme), the system or the person's choice in Settings
+   (appearance.ts). data-palette names the theme. Deck's theme still tints
+   each agent kind (--kind-*); Apple and Tabletop give the kinds they know
+   their own hues. */
 
 @custom-variant light (&:is([data-mode="light"], [data-mode="light"] *));
 
@@ -100,6 +103,8 @@
   --color-signal-foreground: var(--signal-foreground);
   --color-action: var(--action);
   --color-action-foreground: var(--action-foreground);
+  --color-segment: var(--segment);
+  --color-bubble: var(--bubble);
   /* The radius family: 6, 8, 12 and 16px (md, lg, xl, 2xl). */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -109,7 +114,9 @@
   --radius-3xl: calc(var(--radius) + 12px);
   /* Raised controls get a 1px top highlight; only popovers cast a shadow. */
   --inset-shadow-hl: inset 0 1px 0 0 var(--highlight);
-  --shadow-popover: 0 16px 40px -16px rgb(0 0 0 / 0.55), 0 2px 6px -2px rgb(0 0 0 / 0.25);
+  --shadow-popover: var(--elevation-popover);
+  /* A raised card or the composer: Apple gives it a soft shadow, Tabletop none. */
+  --shadow-card: var(--elevation-card);
 }
 
 /* Tabletop, dark: the default. Neutrals sit on hue 70 with a little chroma. */
@@ -119,6 +126,11 @@
   --control-radius: 6px;
   --chat-max: 48rem;
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --elevation-popover: 0 16px 40px -16px rgb(0 0 0 / 0.55), 0 2px 6px -2px rgb(0 0 0 / 0.25);
+  --elevation-card: 0 0 #0000;
+  /* The chosen segment of a segmented control, and the person's bubble. */
+  --segment: var(--selected);
+  --bubble: var(--surface-1);
 
   --canvas: oklch(0.145 0.005 70);
   --sidebar: oklch(0.12 0.005 70);
@@ -227,6 +239,173 @@
   --kind-codex: var(--agent-codex) !important;
   --kind-opencode: var(--agent-opencode) !important;
   --kind-antigravity: var(--agent-antigravity) !important;
+}
+
+/* Apple, the default (docs/design-apple.md): the colours of a Mac window.
+   The values follow the system's dynamic colours (labelColor,
+   separatorColor, controlAccentColor and the system greens, oranges and
+   reds); the agents take system hues too. It sets Tabletop's names, so
+   every component reads it without a map. */
+:root[data-palette="apple"][data-mode] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "SFMono-Regular", "Geist Mono", Menlo, Consolas, monospace;
+  /* SF has a real semibold; headings and the selected row use it. */
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  /* Messages read at 14px, a little above the 13px of the controls. */
+  --text-prose: 0.875rem;
+  --text-prose--line-height: 1.55;
+  /* Rounded rectangles: 6px controls, 10px cards and menus, 14px sheets. */
+  --radius: 10px;
+  --control-radius: 6px;
+  --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  --canvas: #1e1e1e;
+  --sidebar: #29292b;
+  --surface-1: #262628;
+  --surface-2: #2c2c2e;
+  --bubble: #2f2f31;
+  --segment: rgb(255 255 255 / 0.17);
+  --hairline: rgb(255 255 255 / 0.1);
+  --hairline-strong: rgb(255 255 255 / 0.16);
+  --hover: rgb(255 255 255 / 0.06);
+  --selected: rgb(255 255 255 / 0.1);
+  --highlight: rgb(255 255 255 / 0.06);
+  --text: #e3e3e5;
+  --text-muted: #a1a1a6;
+  --text-faint: #8e8e93;
+  --signal: #0a84ff;
+  --signal-foreground: #fff;
+  --agent-claude: #ff9f5a;
+  --agent-codex: #a1a1a6;
+  --agent-opencode: #64d2ff;
+  --agent-antigravity: #bf5af2;
+  --action: var(--primary);
+  --action-foreground: var(--primary-foreground);
+  --link: #409cff;
+
+  --secondary: rgb(255 255 255 / 0.07);
+  --info-foreground: #409cff;
+  --ring: color-mix(in srgb, var(--primary) 55%, transparent);
+  --sidebar-row-active: var(--selected);
+  --destructive: #ff453a;
+  --destructive-foreground: #ff6961;
+  --success: #30d158;
+  --success-foreground: #30d158;
+  --warning: #ff9f0a;
+  --warning-foreground: #ffb340;
+  --code: #232325;
+  --diff-add: rgb(48 209 88 / 0.14);
+  --diff-add-fg: #5fe07f;
+  --diff-del: rgb(255 69 58 / 0.14);
+  --diff-del-fg: #ff7b72;
+  --scrollbar: rgb(255 255 255 / 0.24);
+  --scrollbar-hover: rgb(255 255 255 / 0.36);
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 12px 32px -6px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.3);
+  --elevation-card: 0 0 0 0.5px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.25);
+  --kind-claude: var(--agent-claude) !important;
+  --kind-codex: var(--agent-codex) !important;
+  --kind-opencode: var(--agent-opencode) !important;
+  --kind-antigravity: var(--agent-antigravity) !important;
+}
+:root[data-palette="apple"][data-mode="light"] {
+  --canvas: #ffffff;
+  --sidebar: #efeff1;
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --bubble: #ededf0;
+  --segment: #ffffff;
+  --hairline: rgb(0 0 0 / 0.1);
+  --hairline-strong: rgb(0 0 0 / 0.16);
+  --hover: rgb(0 0 0 / 0.045);
+  --selected: rgb(0 0 0 / 0.08);
+  --highlight: transparent;
+  --text: #1d1d1f;
+  --text-muted: #636366;
+  --text-faint: #78787d;
+  --signal: #007aff;
+  --signal-foreground: #fff;
+  --agent-claude: #c4581b;
+  --agent-codex: #6e6e73;
+  --agent-opencode: #0077a8;
+  --agent-antigravity: #8944ab;
+  --link: #0066cc;
+  --secondary: rgb(0 0 0 / 0.05);
+  --info-foreground: #0066cc;
+  --destructive: #ff3b30;
+  --destructive-foreground: #d70015;
+  --success: #28cd41;
+  --success-foreground: #248a3d;
+  --warning: #ff9500;
+  --warning-foreground: #c93400;
+  --code: #f5f5f7;
+  --diff-add: rgb(40 205 65 / 0.13);
+  --diff-add-fg: #1a7f37;
+  --diff-del: rgb(255 59 48 / 0.11);
+  --diff-del-fg: #c4161c;
+  --scrollbar: rgb(0 0 0 / 0.26);
+  --scrollbar-hover: rgb(0 0 0 / 0.42);
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.12), 0 12px 32px -6px rgb(0 0 0 / 0.2), 0 2px 8px rgb(0 0 0 / 0.08);
+  --elevation-card: 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.08);
+}
+
+/* A Mac window with Electron's sidebar vibrancy (main.ts): the window
+   shows the system's sidebar material through a clear sidebar, and every
+   other surface stays opaque. Reduce transparency makes the material solid
+   on its own. */
+:root[data-palette="apple"][data-vibrancy] {
+  --sidebar: transparent;
+}
+:root[data-palette="apple"][data-vibrancy] body {
+  background: transparent;
+}
+
+/* Materials: menus, popovers, the palette, sheets and toasts are frosted
+   glass over what is behind them, as a Mac draws them. */
+:root[data-palette="apple"] .material {
+  background-color: color-mix(in srgb, var(--surface-2) 78%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  backdrop-filter: blur(24px) saturate(1.8);
+}
+:root[data-palette="apple"] .scrim {
+  background-color: rgb(0 0 0 / 0.22);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-palette="apple"] .material {
+    background-color: var(--surface-2);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Overlay scrollbars: a thin thumb that shows while the pointer is over
+   the list, as on a Mac. */
+:root[data-palette="apple"] ::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+:root[data-palette="apple"] :hover::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar);
+}
+:root[data-palette="apple"] ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-hover);
+}
+
+/* The person's turn is a bubble on the right, as in Messages. */
+:root[data-palette="apple"] .msg-user {
+  align-items: flex-end;
+}
+:root[data-palette="apple"] .msg-user .user-card {
+  max-width: min(85%, 36rem);
+  border-color: transparent;
+  border-radius: 18px;
+  background: var(--bubble);
+  box-shadow: none;
+  padding: 0.5rem 0.875rem;
+}
+:root[data-palette="apple"] .msg-user .user-card::before {
+  display: none;
 }
 
 @layer base {
@@ -428,10 +607,10 @@
 }
 .md strong,
 .md b {
-  font-weight: 500;
+  font-weight: var(--font-weight-semibold);
 }
 .md .md-h {
-  font-weight: 500;
+  font-weight: var(--font-weight-semibold);
   margin-top: 1.1em;
 }
 .md .md-h1 {
@@ -549,12 +728,12 @@
 
 /* The sidebar's brand strip. Tabletop has no glow; the other themes keep
    T3 Code's blue one behind the wordmark. */
-:root[data-palette]:not([data-palette="tabletop"]) .brand-glow {
+:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]) .brand-glow {
   background:
     radial-gradient(120% 140% at 10% 0%, rgb(59 130 246 / 38%) 0%, rgb(37 99 235 / 14%) 45%, transparent 75%),
     linear-gradient(180deg, rgb(59 130 246 / 10%), transparent);
 }
-:root[data-palette]:not([data-palette="tabletop"])[data-mode="light"] .brand-glow {
+:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"])[data-mode="light"] .brand-glow {
   background:
     radial-gradient(120% 140% at 10% 0%, rgb(59 130 246 / 22%) 0%, rgb(37 99 235 / 8%) 45%, transparent 75%);
 }
@@ -713,7 +892,7 @@
 }
 
 /* Every other theme defines the old names; Tabletop's names follow them. */
-:root[data-palette]:not([data-palette="tabletop"]) {
+:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]) {
   --canvas: var(--background);
   --surface-1: var(--card);
   --surface-2: var(--popover);
@@ -731,7 +910,7 @@
   --link: var(--primary);
   --info-foreground: var(--primary);
 }
-:root[data-palette]:not([data-palette="tabletop"])[data-mode="light"] {
+:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"])[data-mode="light"] {
   --highlight: transparent;
 }
 
@@ -966,6 +1145,10 @@
   --primary: oklch(0.64 0.2 350);
   --primary-foreground: #fff;
 }
+:root[data-accent="graphite"][data-mode] {
+  --primary: #8c8c91;
+  --primary-foreground: #fff;
+}
 
 /* The split view: old on the left, new on the right, aligned row by row,
    with a blank across from a line the other side lacks. Lines wrap, so
@@ -1132,6 +1315,33 @@
   --syn-tag: #800000;
   --syn-attr: #e50000;
   --syn-operator: #000000;
+}
+:root[data-palette="apple"][data-mode] {
+  /* After Xcode's Default (Dark) and Default (Light). */
+  --syn-keyword: #ff7ab2;
+  --syn-string: #ff8170;
+  --syn-comment: #7f8c98;
+  --syn-number: #d9c97c;
+  --syn-function: #78c2b3;
+  --syn-type: #dabaff;
+  --syn-punct: #a1a1a6;
+  --syn-variable: #e3e3e5;
+  --syn-tag: #ff7ab2;
+  --syn-attr: #6bdfff;
+  --syn-operator: #c9c9cc;
+}
+:root[data-palette="apple"][data-mode="light"] {
+  --syn-keyword: #ad3da4;
+  --syn-string: #c41a16;
+  --syn-comment: #5d6c79;
+  --syn-number: #272ad8;
+  --syn-function: #3e8087;
+  --syn-type: #6c36a9;
+  --syn-punct: #636366;
+  --syn-variable: #1d1d1f;
+  --syn-tag: #ad3da4;
+  --syn-attr: #0f68a0;
+  --syn-operator: #3a3a3c;
 }
 :root[data-palette="tokyo-night"][data-mode] {
   --syn-keyword: #bb9af7;

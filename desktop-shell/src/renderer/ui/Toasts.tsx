@@ -69,7 +69,7 @@ export function Toasts({ c, toasts }: { c: DeckClient; toasts: AppState["toasts"
         <div
           key={t.id}
           className={cn(
-            `toast toast-${t.kind} pointer-events-auto flex animate-enter items-start gap-2 rounded-xl border border-hairline-strong bg-surface-2 py-3 pr-2 pl-4 text-sm shadow-popover inset-shadow-hl`,
+            `toast toast-${t.kind} material pointer-events-auto flex animate-enter items-start gap-2 rounded-xl border border-hairline-strong bg-surface-2 py-3 pr-2 pl-4 text-sm shadow-popover inset-shadow-hl`,
             t.kind === "error" && "border-destructive/40",
           )}
         >

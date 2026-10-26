@@ -332,7 +332,7 @@ function UserMessage({ m, actions }: { m: Message; actions: RoomActions | null }
   return (
     <article className="msg msg-user group flex animate-enter flex-col gap-1" data-role="user" data-mid={m.id}>
       {/* A played card: the person's turn on a surface, with a faint rail. */}
-      <div className="relative overflow-hidden rounded-lg border border-hairline bg-surface-1 py-3 pr-4 pl-5 text-message-foreground inset-shadow-hl before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-faint">
+      <div className="user-card relative overflow-hidden rounded-lg border border-hairline bg-surface-1 py-3 pr-4 pl-5 text-message-foreground inset-shadow-hl before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-faint">
         <div className="flex flex-col gap-2">
           {chunks.map((c, i) =>
             c.k === "text" ? (
@@ -735,7 +735,7 @@ export function Timeline({
         {away && (
           <button
             type="button"
-            className="jump -translate-x-1/2 absolute bottom-3 left-1/2 flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-2 px-3 text-muted-foreground text-xs shadow-popover outline-none inset-shadow-hl hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="jump material -translate-x-1/2 absolute bottom-3 left-1/2 flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-2 px-3 text-muted-foreground text-xs shadow-popover outline-none inset-shadow-hl hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             onClick={toBottom}
           >
             <ArrowDown className="size-3.5" />

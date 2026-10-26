@@ -27,7 +27,13 @@ function Segmented<T extends string>({
   label: string;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-hairline bg-canvas p-0.5" role="radiogroup" aria-label={label}>
+    // A segmented control: equal segments on a recessed track, the chosen
+    // one raised.
+    <div
+      className="segmented inline-grid auto-cols-fr grid-flow-col rounded-[calc(var(--control-radius)+2px)] bg-secondary p-0.5"
+      role="radiogroup"
+      aria-label={label}
+    >
       {options.map((o) => (
         <button
           key={o.value}
@@ -36,8 +42,8 @@ function Segmented<T extends string>({
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
           className={cn(
-            "flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs",
-            value === o.value ? "bg-selected text-foreground inset-shadow-hl" : "text-muted-foreground hover:text-foreground",
+            "flex h-6 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--control-radius)] px-3 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+            value === o.value ? "bg-segment font-medium text-foreground shadow-card" : "text-muted-foreground hover:text-foreground",
           )}
         >
           {o.icon}
@@ -126,13 +132,28 @@ function General({ p }: { p: Prefs }) {
   );
 }
 
+const MULTICOLOR = "conic-gradient(#ff3b30, #ff9500, #ffcc00, #28cd41, #007aff, #af52de, #ff2d55, #ff3b30)";
+
+// A theme's swatch: its sidebar, then its text and accent on its canvas.
+function Swatch({ s }: { s: readonly [string, string, string, string] }) {
+  return (
+    <span className="flex flex-1" style={{ background: s[0] }}>
+      <span className="w-1/3" style={{ background: s[1] }} />
+      <span className="flex flex-1 flex-col justify-center gap-1 px-1.5">
+        <span className="h-1 w-3/4 rounded-full" style={{ background: s[2] }} />
+        <span className="h-1 w-1/2 rounded-full" style={{ background: s[3] }} />
+      </span>
+    </span>
+  );
+}
+
 function Appearance({ p }: { p: Prefs }) {
   return (
     <>
       <Section title="Theme">
         <Row
           title="Color mode"
-          description="Light or dark for Tabletop and T3: Deck's own, the system's, or yours. The other themes have their own."
+          description="Light or dark for Apple, Tabletop and T3: Deck's own, the system's, or yours. The other themes have their own."
           control={
             <Segmented
               label="Color mode"
@@ -162,12 +183,10 @@ function Appearance({ p }: { p: Prefs }) {
                 p.palette === t.id && "border-foreground/40 bg-selected",
               )}
             >
-              <span className="flex h-10 overflow-hidden rounded-md border border-hairline" style={{ background: t.swatch[0] }}>
-                <span className="w-1/3" style={{ background: t.swatch[1] }} />
-                <span className="flex flex-1 flex-col justify-center gap-1 px-1.5">
-                  <span className="h-1 w-3/4 rounded-full" style={{ background: t.swatch[2] }} />
-                  <span className="h-1 w-1/2 rounded-full" style={{ background: t.swatch[3] }} />
-                </span>
+              {/* A theme that follows light or dark shows both halves. */}
+              <span className="flex h-10 overflow-hidden rounded-md border border-hairline">
+                <Swatch s={t.swatch} />
+                {t.light !== undefined && <Swatch s={t.light} />}
               </span>
               <span className="font-medium">{t.label}</span>
             </button>
@@ -188,12 +207,13 @@ function Appearance({ p }: { p: Prefs }) {
                   title={a.label}
                   onClick={() => setPrefs({ accent: a.id })}
                   className={cn(
-                    "grid size-6 cursor-pointer place-items-center rounded-full border text-2xs",
-                    p.accent === a.id && "ring-2 ring-foreground/60 ring-offset-1 ring-offset-background",
+                    "grid size-5 cursor-pointer place-items-center rounded-full border border-black/10 outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    p.accent === a.id && "ring-2 ring-foreground/50 ring-offset-2 ring-offset-surface-1",
                   )}
-                  style={a.color === "" ? undefined : { background: a.color }}
+                  // The theme's own accent is the many-coloured dot, as on a Mac.
+                  style={{ background: a.color === "" ? MULTICOLOR : a.color }}
                 >
-                  {a.color === "" ? "T" : ""}
+                  {p.accent === a.id && <span aria-hidden className="size-1.5 rounded-full bg-white" />}
                 </button>
               ))}
             </div>

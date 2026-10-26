@@ -1,25 +1,36 @@
-// The window's themes, after T3 Code's theme catalog. "tabletop" is Deck's
-// own look and the default; "default" is the T3 look. Both follow light or
-// dark; every other theme has a mode of its own. Each theme's tokens are in
-// styles.css under [data-palette="<id>"].
+// The window's themes, after T3 Code's theme catalog. "apple", a native Mac
+// window, is the default; "tabletop" is Deck's warm look and "default" the
+// T3 look. These three follow light or dark; every other theme has a mode of
+// its own. Each theme's tokens are in styles.css under
+// [data-palette="<id>"].
 
 export interface ThemeInfo {
   id: string;
   label: string;
   mode: "light" | "dark" | null;
   // The swatches the picker shows, as CSS colours: background, sidebar or
-  // surface, text, accent.
+  // surface, text, accent. A theme that follows light or dark can add the
+  // light ones; the picker then shows both halves.
   swatch: [string, string, string, string];
+  light?: [string, string, string, string];
 }
 
 export const THEMES: readonly ThemeInfo[] = [
+  {
+    id: "apple",
+    label: "Apple",
+    mode: null,
+    swatch: ["#1e1e1e", "#29292b", "#e3e3e5", "#0a84ff"],
+    light: ["#ffffff", "#efeff1", "#1d1d1f", "#007aff"],
+  },
   {
     id: "tabletop",
     label: "Tabletop",
     mode: null,
     swatch: ["oklch(0.145 0.005 70)", "oklch(0.12 0.005 70)", "oklch(0.93 0.008 80)", "oklch(0.8 0.14 75)"],
+    light: ["oklch(0.975 0.006 80)", "oklch(0.95 0.006 80)", "oklch(0.22 0.01 70)", "oklch(0.76 0.15 70)"],
   },
-  { id: "default", label: "T3", mode: null, swatch: ["#0a0a0a", "#1a1a1a", "#ededed", "#3b82f6"] },
+  { id: "default", label: "T3", mode: null, swatch: ["#0a0a0a", "#1a1a1a", "#ededed", "#3b82f6"], light: ["#fcfcfc", "#f7f7f8", "#27272a", "#2563eb"] },
   { id: "tokyo-night", label: "Tokyo Night", mode: "dark", swatch: ["#1a1b26", "#24283b", "#c0caf5", "#7aa2f7"] },
   { id: "catppuccin", label: "Catppuccin Mocha", mode: "dark", swatch: ["#1e1e2e", "#313244", "#cdd6f4", "#cba6f7"] },
   { id: "nord", label: "Nord", mode: "dark", swatch: ["#2e3440", "#3b4252", "#eceff4", "#88c0d0"] },
@@ -37,6 +48,7 @@ export const ACCENTS: readonly { id: string; label: string; color: string }[] = 
   { id: "green", label: "Green", color: "oklch(0.62 0.16 155)" },
   { id: "orange", label: "Orange", color: "oklch(0.68 0.17 50)" },
   { id: "pink", label: "Pink", color: "oklch(0.64 0.2 350)" },
+  { id: "graphite", label: "Graphite", color: "#8c8c91" },
 ];
 
 // Diff themes: the colours of added and removed lines and of the syntax in

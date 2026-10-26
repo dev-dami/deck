@@ -318,7 +318,7 @@ export function Composer({
     <div className={cn("composer relative mx-auto w-full max-w-(--chat-max)", className)} data-yolo-region="">
       {picker !== null && options.length > 0 && (
         <ul
-          className="suggest absolute right-0 bottom-full left-0 z-40 mb-2 max-h-80 animate-enter overflow-y-auto rounded-xl border border-hairline-strong bg-surface-2 p-1 shadow-popover inset-shadow-hl"
+          className="suggest material absolute right-0 bottom-full left-0 z-40 mb-2 max-h-80 animate-enter overflow-y-auto rounded-xl border border-hairline-strong bg-surface-2 p-1 shadow-popover inset-shadow-hl"
           role="listbox"
           aria-label={PICKER_LABEL[picker.type]}
         >
