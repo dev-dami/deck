@@ -10,7 +10,6 @@ import {
   CircleAlert,
   Copy,
   Eye,
-  FileDiff,
   FilePen,
   FileText,
   Globe,
@@ -20,7 +19,6 @@ import {
   Play,
   RotateCcw,
   Search,
-  Sparkle,
   SquareTerminal,
   Wrench,
 } from "./icons";
@@ -98,14 +96,6 @@ function toolIcon(name: string): IconType {
   if (/read|view|cat|open/.test(n)) return Eye;
   if (/fetch|web|http|browse/.test(n)) return Globe;
   return Wrench;
-}
-
-// The icon of a piece of work: thinking, or a tool by its name.
-function workIcon(c: Chunk): IconType | null {
-  if (c.k === "reasoning") return Brain;
-  if (c.k !== "tool") return null;
-  if (c.result?.is_error === true) return CircleAlert;
-  return toolIcon(c.call?.name ?? c.result?.name ?? "tool");
 }
 
 // An agent's hue as a custom property, for the classes that tint with it.
@@ -400,48 +390,31 @@ function UserMessage({ m, actions }: { m: Message; actions: RoomActions | null }
   );
 }
 
-// The agent's glyph in a disc of its hue.
+// The agent's glyph, set in type in its hue. While the agent works, the
+// glyph's brightness steps.
 function AgentMark({ mark, working }: { mark: string; working: boolean }) {
   return (
-    <span
-      aria-hidden
-      className={cn(
-        "msg-mark relative grid size-[22px] shrink-0 place-items-center rounded-full bg-(--hue)/14 font-mono text-[10.5px] text-(--hue) ring-1 ring-(--hue)/28 ring-inset",
-        working && "agent-working",
-      )}
-    >
+    <span aria-hidden className={cn("msg-mark min-w-4 shrink-0 font-mono text-(--hue) text-[12.5px]", working && "animate-deck-pulse")}>
       {mark}
     </span>
   );
 }
 
-// "Worked for 12s": a finished reply's work behind one capsule, its kinds
-// of work as a stack of icons, and the count of steps.
+// "Worked for 12s · 3 steps ›": a finished reply's work, folded to one line
+// of type.
 function WorkFold({ work, took, open, onToggle }: { work: Chunk[]; took: string; open: boolean; onToggle: () => void }) {
-  const icons = useMemo(() => {
-    const seen: IconType[] = [];
-    for (const c of work) {
-      const I = workIcon(c);
-      if (I !== null && !seen.includes(I)) seen.push(I);
-    }
-    return seen.slice(0, 3);
-  }, [work]);
   const steps = work.filter((c) => c.k !== "text").length;
   return (
     <button
       type="button"
-      className="worked group/worked -ml-1.5 flex h-7 w-fit cursor-pointer select-none items-center gap-2 rounded-full pr-2.5 pl-1.5 text-muted-foreground text-sm outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
+      className="worked group/worked flex h-6 w-fit cursor-pointer select-none items-center gap-1.5 rounded-md text-muted-foreground text-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
       aria-expanded={open}
       onClick={onToggle}
     >
-      <span aria-hidden className="flex -space-x-1">
-        {icons.map((I, i) => (
-          <span key={i} className="grid size-5 place-items-center rounded-full bg-surface-2 text-muted-foreground ring-2 ring-canvas inset-ring inset-ring-hairline">
-            <I className="size-3" />
-          </span>
-        ))}
-      </span>
       <span>{took}</span>
+      <span aria-hidden className="text-faint">
+        ·
+      </span>
       <span className="text-faint tabular-nums">
         {steps} step{steps === 1 ? "" : "s"}
       </span>
@@ -450,7 +423,7 @@ function WorkFold({ work, took, open, onToggle }: { work: Chunk[]; took: string;
   );
 }
 
-// "Working": three dots of the agent's hue, and the time so far.
+// "Working 12s": the word shimmers in the agent's hue.
 function Working({ since }: { since: string }) {
   const [tick, setTick] = useState(() => Date.now());
   useEffect(() => {
@@ -458,14 +431,9 @@ function Working({ since }: { since: string }) {
     return () => clearInterval(t);
   }, []);
   return (
-    <div className="streaming flex h-7 items-center gap-2.5 text-sm" aria-label="writing">
-      <span aria-hidden className="working-dots flex items-center gap-[3px] px-[5px]">
-        <span className="size-[5px] rounded-full bg-(--hue)" />
-        <span className="size-[5px] rounded-full bg-(--hue)" />
-        <span className="size-[5px] rounded-full bg-(--hue)" />
-      </span>
+    <div className="streaming flex h-6 items-baseline gap-2 text-sm" aria-label="writing">
       <span className="shimmer shimmer-hue">Working</span>
-      <span className="text-faint tabular-nums">{formatDuration(tick - toMillis(since))}</span>
+      <span className="text-faint text-xs tabular-nums">{formatDuration(tick - toMillis(since))}</span>
     </div>
   );
 }
@@ -524,7 +492,7 @@ function AgentMessage({
       {/* The agent's glyph and name in its hue: no card, the reply reads
           as prose on the sheet. */}
       <header className="msg-head flex h-6 items-center gap-2">
-        <span className="msg-index inline-flex min-w-0 items-center gap-2">
+        <span className="msg-index inline-flex min-w-0 items-baseline gap-1.5">
           <AgentMark mark={mark} working={!m.finished} />
           <span className="msg-who truncate font-semibold text-(--hue) text-[13px]">{agent}</span>
         </span>
@@ -543,7 +511,7 @@ function AgentMessage({
         <>
           <WorkFold work={work} took={took} open={open} onToggle={() => setOpen((o) => !o)} />
           {open && (
-            <div className="work-log -mt-1 ml-[9px] flex animate-enter flex-col gap-px border-hairline-strong border-l py-1 pl-[18px]">
+            <div className="work-log ml-[5px] flex animate-enter flex-col gap-px border-hairline-strong border-l py-1 pl-[18px]">
               {work.map((c, i) =>
                 c.k === "text" ? (
                   <div key={i} className="py-1 text-muted-foreground [&_.md]:text-sm">
@@ -625,35 +593,27 @@ export function ChangedFilesCard({ files, onOpen }: { files: ChangedFile[]; onOp
   const added = files.reduce((n, f) => n + f.added, 0);
   const removed = files.reduce((n, f) => n + f.removed, 0);
   return (
+    // One of the two boxed things in the timeline (with a tool's output): a
+    // fill and a hairline, nothing more.
     <div className="changed-files animate-enter overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline" data-changed-files="">
-      <div className="flex items-center justify-between gap-2 py-2 pr-2 pl-2.5">
+      <div className="flex h-10 items-center gap-3 pr-1.5 pl-3">
         <button
           type="button"
-          className="-my-1 flex min-w-0 cursor-pointer items-center gap-2.5 rounded-lg py-1 pr-2 pl-0.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 cursor-pointer items-baseline gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
         >
-          <span aria-hidden className="grid size-7 shrink-0 place-items-center rounded-lg bg-hover text-muted-foreground">
-            <FileDiff className="size-4" />
+          <ChevronRight className={cn("size-3 shrink-0 self-center text-faint transition-transform duration-200", open && "rotate-90")} />
+          <span className="font-medium text-foreground text-sm tabular-nums">
+            {files.length} changed file{files.length === 1 ? "" : "s"}
           </span>
-          <span className="flex min-w-0 flex-col">
-            <span className="flex items-baseline gap-2 font-medium text-foreground text-sm">
-              <span className="tabular-nums">
-                {files.length} changed file{files.length === 1 ? "" : "s"}
-              </span>
-              <span className="font-mono font-normal text-2xs tabular-nums">
-                <span className="text-diff-addition-foreground">+{added}</span>{" "}
-                <span className="text-diff-deletion-foreground">−{removed}</span>
-              </span>
-            </span>
-            <span className="flex items-center gap-1 text-2xs text-faint">
-              {open ? "Hide files" : "Show files"}
-              <ChevronRight className={cn("size-2.5 transition-transform duration-200", open && "rotate-90")} />
-            </span>
+          <span className="font-mono text-2xs tabular-nums">
+            <span className="text-diff-addition-foreground">+{added}</span>{" "}
+            <span className="text-diff-deletion-foreground">−{removed}</span>
           </span>
+          <span className="text-faint text-xs">{open ? "Hide files" : "Show files"}</span>
         </button>
-        <Button size="sm" variant="outline" aria-label="Open diff" onClick={() => onOpen(files[0]?.path)}>
-          <FileDiff className="size-3.5" />
+        <Button size="sm" variant="ghost-muted" className="ml-auto" aria-label="Open diff" onClick={() => onOpen(files[0]?.path)}>
           Open diff
         </Button>
       </div>
@@ -679,35 +639,26 @@ export function ChangedFilesCard({ files, onOpen }: { files: ChangedFile[]; onOp
   );
 }
 
-// A thread with no messages yet: the crew it has, and what to write.
+// A thread with no messages yet, in type: who is on it, and how to write
+// to them.
 function EmptyRoom({ roster, theme }: { roster: AgentLine[]; theme: Theme | null }) {
-  const crew = roster.slice(0, 5);
   return (
-    <div className="empty flex animate-enter flex-col items-center gap-3 py-[12vh] text-center">
-      {crew.length > 0 ? (
-        <span aria-hidden className="flex -space-x-2">
-          {crew.map((l) => (
-            <span
-              key={l.id}
-              className="grid size-9 place-items-center rounded-full bg-canvas font-mono text-[13px] ring-2 ring-canvas"
-              style={hue(agentColour(l.id, l.kind))}
-            >
-              <span className="grid size-full place-items-center rounded-full bg-(--hue)/14 text-(--hue) ring-1 ring-(--hue)/30 ring-inset">
+    <div className="empty flex animate-enter flex-col gap-2 pt-[8vh]">
+      <p className="font-medium text-foreground text-sm">Nothing said here yet.</p>
+      {roster.length > 0 && (
+        <p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+          {roster.map((l) => (
+            <span key={l.id} className="inline-flex items-baseline gap-1.5" style={hue(agentColour(l.id, l.kind))}>
+              <span aria-hidden className="font-mono text-(--hue) text-[12.5px]">
                 {kindMark(theme, l.kind) || "●"}
               </span>
+              <span className="text-(--hue)">{l.name}</span>
             </span>
           ))}
-        </span>
-      ) : (
-        <span aria-hidden className="liquid-clear grid size-10 place-items-center rounded-full text-muted-foreground">
-          <Sparkle className="size-5" weight="duotone" />
-        </span>
+        </p>
       )}
-      <p className="font-medium text-foreground text-sm">
-        {crew.length === 0 ? "A quiet thread" : `${crew.map((l) => l.name).join(", ")} ${crew.length === 1 ? "is" : "are"} ready`}
-      </p>
-      <p className="max-w-72 text-balance text-faint text-xs leading-relaxed">
-        Send a message to start the conversation. <span className="font-mono text-muted-foreground">$</span> picks an agent,{" "}
+      <p className="text-pretty text-faint text-xs leading-relaxed">
+        Send a message to start the conversation. <span className="font-mono text-muted-foreground">$name</span> addresses an agent,{" "}
         <span className="font-mono text-muted-foreground">@</span> a file, <span className="font-mono text-muted-foreground">/</span> a command.
       </p>
     </div>

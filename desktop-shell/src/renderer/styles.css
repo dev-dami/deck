@@ -851,15 +851,14 @@ body {
   border-radius: 5px;
   padding: 0.12em 0.4em;
 }
-/* A code block is a card inside the sheet: rounded-xl, surface-1, a rim. */
+/* A code block is a quiet fill inside the sheet: rounded-xl, no rim. */
 .md pre.codeblock {
   margin: 0;
   margin-top: 0.75em;
-  background: var(--diff-bg, var(--surface-1));
+  background: var(--diff-bg, var(--hover));
   color: var(--diff-fg, inherit);
   tab-size: 4;
   border: 0;
-  box-shadow: inset 0 0 0 1px var(--hairline);
   border-radius: calc(var(--radius) + 4px);
   padding: 14px 16px;
   overflow-x: auto;
@@ -1799,7 +1798,7 @@ body {
 }
 
 /* "Working": the word shimmers from muted text to the agent's hue (--hue,
-   set on the message), and three dots of it step in turn. */
+   set on the message). */
 .shimmer-hue {
   background-image: linear-gradient(
     90deg,
@@ -1810,28 +1809,6 @@ body {
     var(--muted-foreground) 100%
   );
 }
-.working-dots > span {
-  animation: deck-pulse 1.2s steps(4, jump-none) infinite;
-}
-.working-dots > span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-.working-dots > span:nth-child(3) {
-  animation-delay: 0.4s;
-}
-/* A working agent's disc wears a ring of its hue that breathes. */
-.agent-working::after {
-  content: "";
-  position: absolute;
-  inset: -3px;
-  border-radius: inherit;
-  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--hue) 45%, transparent);
-  animation: deck-pulse 1.6s steps(4, jump-none) infinite;
-}
-[data-motion="reduced"] .working-dots > span,
-[data-motion="reduced"] .agent-working::after {
-  animation: none;
-}
 
 /* What stacks on the floating composer (the take-over and edit notices,
    from RoomVerbs) is glass too, so nothing opaque floats over the
@@ -1840,17 +1817,6 @@ body {
   @apply liquid-thick;
   margin-bottom: 0;
   border-radius: 16px;
-}
-/* The new-thread screen's halo: the crew's light pooled behind the
-   question, the same three pools as the backdrop, softer. It holds still. */
-.new-thread-halo {
-  background:
-    radial-gradient(28rem 16rem at 50% 30%, color-mix(in srgb, var(--primary) 13%, transparent), transparent 70%),
-    radial-gradient(22rem 14rem at 34% 44%, color-mix(in srgb, var(--kind-claude, var(--agent-claude)) 10%, transparent), transparent 70%),
-    radial-gradient(22rem 14rem at 66% 44%, color-mix(in srgb, var(--kind-antigravity, var(--agent-antigravity)) 9%, transparent), transparent 70%);
-}
-:root[data-mode="light"] .new-thread-halo {
-  opacity: 0.8;
 }
 
 /* The branch in the composer's bar is a capsule like its neighbours. */

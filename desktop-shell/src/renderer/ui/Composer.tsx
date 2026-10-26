@@ -32,6 +32,14 @@ type Picker = { type: "$" | "@" | "/"; m: Mention };
 
 const PICKER_LABEL = { $: "Agents", "@": "Files", "/": "Commands" } as const;
 
+// A glass material drawn as a layer behind its parent's content, not on the
+// parent: an element with a backdrop-filter becomes the containing block of
+// fixed descendants and clips the blur of nested menus, so the composer's
+// pickers and dialogs would break on it. The parent is `relative isolate`.
+export function Glass({ className }: { className: string }) {
+  return <div aria-hidden className={cn("pointer-events-none absolute inset-0 -z-10 rounded-[inherit]", className)} />;
+}
+
 // An attached image and the blob URL of its thumbnail.
 interface Attached {
   image: Image;
@@ -353,17 +361,18 @@ export function Composer({
       {banner !== undefined && banner !== null && banner !== false && (
         // A pending approval rides on the composer, a card of thicker glass
         // stacked over the capsule.
-        <div className="composer-banner liquid-thick animate-enter rounded-[20px] p-1" data-composer-banner="">
+        <div className="composer-banner relative isolate animate-enter rounded-[20px] p-1" data-composer-banner="">
+          <Glass className="liquid-thick" />
           {banner}
         </div>
       )}
       <div
         className={cn(
           // The capsule: regular glass over the timeline. On focus its rim
-          // takes the accent, with a faint ring of it outside.
-          "composer-box liquid relative z-10 rounded-[22px] transition-[box-shadow] duration-200",
-          "focus-within:ring-[3px] focus-within:ring-primary/15 focus-within:[--glass-rim:color-mix(in_srgb,var(--primary)_55%,transparent)]",
-          dragging && "ring-[3px] ring-primary/30",
+          // takes the accent.
+          "composer-box relative isolate z-10 rounded-[22px]",
+          "focus-within:[--glass-rim:color-mix(in_srgb,var(--primary)_60%,transparent)]",
+          dragging && "[--glass-rim:var(--primary)]",
         )}
         onDragOver={(e) => {
           if (!imagesOn) return;
@@ -378,6 +387,7 @@ export function Composer({
           void addFiles([...e.dataTransfer.files]);
         }}
       >
+        <Glass className="liquid" />
         {images.length > 0 && (
           <div className="attachments flex flex-wrap gap-2 px-4 pt-3.5">
             {images.map((im, i) => (

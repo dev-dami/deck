@@ -1,13 +1,14 @@
 import type { Session, Theme } from "@web/protocol";
 import type { AppState } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
-import { ArrowUp, Loader2, MessageCircleQuestion } from "./icons";
+import { ArrowUp, Loader2 } from "./icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
 import type { ProjectApi } from "../project";
 import { findSide, sideDigest, sideMessage, sideQuestion, sideTitle } from "../sideChat";
 import { Button } from "./kit/button";
+import { Glass } from "./Composer";
 import { MessageView } from "./Timeline";
 
 // Ask about what the agents of the open thread are doing, without stopping
@@ -72,10 +73,7 @@ export function SideChat({
     <section aria-label="Side chat" className="flex min-h-0 flex-1 flex-col">
       <div ref={list} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
-            <span aria-hidden className="liquid-clear mb-2 grid size-10 place-items-center rounded-full text-muted-foreground">
-              <MessageCircleQuestion className="size-5" weight="duotone" />
-            </span>
+          <div className="flex flex-col gap-1 px-1 py-8">
             <p className="font-medium text-foreground text-sm">Ask about this thread</p>
             <p className="text-pretty text-faint text-xs leading-relaxed">
               "What is claude-1 doing?", "Why did that test fail?", "Is this approach sound?" Another agent answers from
@@ -100,7 +98,8 @@ export function SideChat({
       <div className="p-3 pt-1">
         {/* The room's composer, smaller: a capsule of glass whose rim takes
             the accent on focus. */}
-        <div className="liquid rounded-[20px] transition-[box-shadow] duration-200 focus-within:ring-[3px] focus-within:ring-primary/15 focus-within:[--glass-rim:color-mix(in_srgb,var(--primary)_55%,transparent)]">
+        <div className="relative isolate rounded-[20px] focus-within:[--glass-rim:color-mix(in_srgb,var(--primary)_60%,transparent)]">
+          <Glass className="liquid" />
           <textarea
             aria-label="Side question"
             placeholder="Ask about what the agents are doing…"

@@ -17,8 +17,8 @@ function kindLabel(a: Approval): string {
 }
 
 // A request from an agent: "needs you" in the warning colour with its
-// shield, the agent and what it wants to run or change in a well, then the
-// answers. Stacked over the composer for the open thread, as a card of
+// shield, the agent, what it wants to run or change in a recessed line,
+// then the answers. Stacked over the composer for the open thread, as a card of
 // thick glass.
 export function ApprovalCard({
   a,
@@ -44,24 +44,20 @@ export function ApprovalCard({
       className={cn("approval flex flex-col gap-2.5 rounded-2xl bg-surface-1 px-3.5 pt-3 pb-2.5 ring-1 ring-hairline", className)}
       data-approval={a.id}
     >
-      <span className="approval-head flex w-full min-w-0 items-center gap-2.5">
-        <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-full bg-warning/15 text-warning-foreground">
-          <ShieldQuestion className="size-3.5" weight="fill" />
-        </span>
-        <span className="flex min-w-0 flex-col">
-          <span className="font-medium text-foreground text-xs">{kindLabel(a)}</span>
-          <span className="approval-agent min-w-0 truncate text-2xs text-muted-foreground">
-            <span className="font-mono">{a.agent}</span>
-            {a.description !== "" && a.description !== approvalSummary(a) ? ` · ${a.description}` : ""}
-          </span>
+      <span className="approval-head flex w-full min-w-0 items-baseline gap-2 text-xs">
+        <ShieldQuestion aria-hidden className="size-3.5 shrink-0 self-center text-warning-foreground" weight="fill" />
+        <span className="shrink-0 font-medium text-warning-foreground">{kindLabel(a)}</span>
+        <span className="approval-agent min-w-0 truncate text-muted-foreground">
+          <span className="font-mono">{a.agent}</span>
+          {a.description !== "" && a.description !== approvalSummary(a) ? ` · ${a.description}` : ""}
         </span>
         {count !== undefined && count > 1 && (
-          <span className="ml-auto shrink-0 rounded-full bg-hover px-2 py-0.5 text-2xs text-muted-foreground tabular-nums">
+          <span className="ml-auto shrink-0 text-2xs text-faint tabular-nums">
             {(index ?? 0) + 1} of {count}
           </span>
         )}
       </span>
-      <div className="flex max-h-40 min-w-0 gap-2 overflow-auto rounded-xl bg-canvas/60 px-3 py-2 ring-1 ring-hairline">
+      <div className="flex max-h-40 min-w-0 gap-2 overflow-auto rounded-lg bg-hover px-3 py-2">
         {command && (
           <span aria-hidden className="shrink-0 font-mono text-code text-faint">
             $

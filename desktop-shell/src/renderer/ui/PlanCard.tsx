@@ -16,8 +16,9 @@ export interface PlanActions {
 // after the room leaves plan mode, and approves itself once at most.
 const approved = new Map<string, "manual" | "auto">();
 
-// A plan as an artefact, a card inside the sheet: the heading, the steps in
-// prose type on numbered discs of the agent's hue (ticked once approved),
+// A plan as an artefact, set off from the prose by two hairlines rather
+// than boxed: the heading, the steps in
+// prose type, numbered in the agent's hue (ticked once approved),
 // and Approve, Edit and Ask. Buttons show on the room's latest plan only,
 // never in a read-only room.
 export function PlanCard({
@@ -57,29 +58,25 @@ export function PlanCard({
 
   return (
     <section
-      className="plan-card overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline"
+      className="plan-card flex flex-col gap-3 border-hairline-strong border-y py-3.5"
       aria-label={plan.heading ?? "Plan"}
       data-plan={id}
       style={{ "--hue": colour } as CSSProperties}
     >
-      <header className="flex items-center gap-2.5 border-hairline border-b px-4 py-2.5">
+      <header className="flex items-baseline gap-2.5">
         <h3 className="plan-heading min-w-0 truncate font-semibold text-[13px] text-foreground">{plan.heading ?? "Plan"}</h3>
         <span className="text-2xs text-faint tabular-nums">
           {plan.steps.length} steps
         </span>
         <span className="plan-index ml-auto shrink-0 font-mono text-(--hue) text-2xs">{index}</span>
       </header>
-      {/* The steps, each numbered on a disc of the agent's hue, joined by a
-          thread of hairline. */}
-      <ol className="plan-steps flex flex-col px-4 pt-3 pb-1">
+      {/* The steps, numbered in type in the agent's hue; ticked once the
+          plan is approved. */}
+      <ol className="plan-steps flex flex-col gap-2.5">
         {plan.steps.map((s, i) => (
-          <li key={i} className="relative flex items-start gap-3 pb-3 text-prose">
-            {i < plan.steps.length - 1 && <span aria-hidden className="absolute top-6 bottom-0.5 left-[9.5px] w-px bg-hairline-strong" />}
-            <span
-              aria-hidden
-              className="mt-px grid size-5 shrink-0 place-items-center rounded-full bg-(--hue)/14 font-medium text-(--hue) text-2xs tabular-nums ring-(--hue)/28 ring-1 ring-inset"
-            >
-              {state === null ? i + 1 : <Check className="size-3" weight="bold" />}
+          <li key={i} className="flex items-baseline gap-3 text-prose">
+            <span aria-hidden className="w-4 shrink-0 text-right font-mono text-(--hue) text-xs tabular-nums">
+              {state === null ? `${i + 1}` : "✓"}
             </span>
             <span className="sr-only">{i + 1}.</span>
             <div className="min-w-0 flex-1 [&_.md_p]:m-0">
@@ -89,12 +86,12 @@ export function PlanCard({
         ))}
       </ol>
       {state !== null ? (
-        <p className="plan-state flex items-center gap-1.5 border-hairline border-t px-4 py-2.5 text-2xs text-muted-foreground">
+        <p className="plan-state pl-7 text-2xs text-muted-foreground">
           {state === "auto" ? "Approved automatically. The agent goes ahead." : "Approved. The agent goes ahead."}
         </p>
       ) : (
         actions !== null && (
-          <div className="plan-actions flex flex-wrap items-center gap-1.5 border-hairline border-t px-3 py-2.5">
+          <div className="plan-actions flex flex-wrap items-center gap-1.5 pl-7">
             <Button size="sm" disabled={busy} onClick={() => void approve("manual")}>
               <Check weight="bold" />
               Approve

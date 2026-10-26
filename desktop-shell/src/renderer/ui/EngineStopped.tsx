@@ -8,24 +8,27 @@ import { Button } from "./kit/button";
 export function EngineStopped({ stop, onRestart }: { stop: EngineStop; onRestart: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   return (
-    <div className="engine-stopped flex min-h-0 flex-1 flex-col items-center justify-center gap-5 overflow-y-auto px-6 pb-[12vh]" role="alert">
-      <span aria-hidden className="liquid-clear grid size-12 animate-enter place-items-center rounded-full text-destructive-foreground">
-        <CircleAlert className="size-6" weight="duotone" />
-      </span>
-      <div className="flex max-w-md flex-col items-center gap-1.5 text-center">
-        <h2 className="text-balance font-semibold text-foreground text-lg">{stop.message}</h2>
-        <p className="text-pretty text-faint text-sm">Restart the engine to carry on in this project.</p>
+    <div className="engine-stopped mx-auto flex min-h-0 w-full max-w-(--chat-max) flex-1 flex-col justify-center gap-4 overflow-y-auto px-6 pb-[12vh]" role="alert">
+      <div className="flex flex-col gap-1">
+        <p className="flex items-center gap-1.5 font-medium text-destructive-foreground text-xs">
+          <CircleAlert aria-hidden className="size-3.5" weight="fill" />
+          The engine stopped
+        </p>
+        <h2 className="text-balance font-semibold text-foreground text-xl">{stop.message}</h2>
+        <p className="text-pretty text-muted-foreground text-sm">
+          Restart it to carry on in this project.{stop.stderr.length > 0 && " Its last output is below."}
+        </p>
       </div>
       {stop.stderr.length > 0 && (
         <pre
-          className="engine-log max-h-64 w-full max-w-2xl overflow-auto rounded-xl bg-surface-1 px-4 py-3 font-mono text-code text-muted-foreground ring-1 ring-hairline"
+          className="engine-log max-h-64 w-full overflow-auto rounded-xl bg-surface-1 px-4 py-3 font-mono text-code text-muted-foreground"
           aria-label="The engine's last output"
         >
           {stop.stderr.join("\n")}
         </pre>
       )}
       <Button
-        size="lg"
+        className="self-start"
         disabled={busy}
         onClick={() => {
           setBusy(true);

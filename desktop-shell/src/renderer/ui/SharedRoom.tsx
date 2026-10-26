@@ -6,6 +6,7 @@ import { agentColour, agentKind } from "../agents";
 import { mirrorRow, type MirrorRow, type SharedMirror, type TeamThread } from "../crew";
 import type { ProjectApi } from "../project";
 import { Button } from "./kit/button";
+import { Glass } from "./Composer";
 import { Markdown } from "./Markdown";
 import { useDockHeight } from "./Room";
 
@@ -76,11 +77,8 @@ function Rows({ g, theme }: { g: Group; theme: Theme | null }) {
   return (
     <article className="msg msg-agent shared-row flex min-w-0 flex-col gap-2" data-who={g.who} style={{ "--hue": colour } as CSSProperties}>
       <header className="msg-head flex h-6 items-center gap-2">
-        <span className="msg-index inline-flex items-center gap-2">
-          <span
-            aria-hidden
-            className="grid size-[22px] place-items-center rounded-full bg-(--hue)/14 font-mono text-(--hue) text-[10.5px] ring-(--hue)/28 ring-1 ring-inset"
-          >
+        <span className="msg-index inline-flex items-baseline gap-1.5">
+          <span aria-hidden className="min-w-4 font-mono text-(--hue) text-[12.5px]">
             {mark}
           </span>
           <span className="font-semibold text-(--hue) text-[13px]">{g.who}</span>
@@ -204,9 +202,7 @@ export function SharedRoom({
           <div className="mx-auto flex w-full max-w-(--chat-max) flex-col gap-2">
             {pending.map((p) => (
               <div key={p.id} className="shared-approval liquid-thick flex animate-enter items-center gap-3 rounded-[18px] py-2.5 pr-2.5 pl-3" data-approval={p.id}>
-                <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-full bg-warning/15 text-warning-foreground">
-                  <ShieldQuestion className="size-3.5" weight="fill" />
-                </span>
+                <ShieldQuestion aria-hidden className="size-4 shrink-0 text-warning-foreground" weight="fill" />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-2xs text-muted-foreground">
                     <span className="font-mono">{p.agent}</span> asks to {p.kind || "act"}
@@ -228,7 +224,8 @@ export function SharedRoom({
               </div>
             ))}
             {role === "participant" || role === "editor" ? (
-              <div className="composer-box liquid flex items-end gap-2 rounded-[22px] p-2 pl-2.5 transition-[box-shadow] duration-200 focus-within:ring-[3px] focus-within:ring-primary/15 focus-within:[--glass-rim:color-mix(in_srgb,var(--primary)_55%,transparent)]">
+              <div className="composer-box relative isolate flex items-end gap-2 rounded-[22px] p-2 pl-2.5 focus-within:[--glass-rim:color-mix(in_srgb,var(--primary)_60%,transparent)]">
+                <Glass className="liquid" />
                 <textarea
                   aria-label="Post to the shared room"
                   placeholder={`Write in ${peer}'s room…`}

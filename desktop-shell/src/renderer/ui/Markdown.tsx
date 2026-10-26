@@ -22,7 +22,7 @@ function CodeCard({ text, lang }: { text: string; lang: string }) {
       )}
       <button
         type="button"
-        className="liquid-clear absolute top-1.5 right-1.5 grid size-7 cursor-pointer place-items-center rounded-full text-muted-foreground opacity-0 outline-none transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/code:opacity-100"
+        className="absolute top-1.5 right-1.5 grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/code:opacity-100"
         aria-label={copied ? "Copied" : "Copy code"}
         title="Copy"
         onClick={() => {

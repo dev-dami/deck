@@ -52,8 +52,11 @@ const shot = (page: Page, name: string) => page.screenshot({ path: join(OUT, `${
 for (const mode of ["dark", "light"] as const) {
   test(`room shots ${mode}`, async ({ page }) => {
     await setup(page, mode);
+    await page.mouse.move(2, 600);
+    await composer(page).fill("$claude $codex ");
     await page.waitForTimeout(300);
     await shot(page, `${mode}-r0-new`);
+    await composer(page).fill("");
 
     await nav(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
     await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
