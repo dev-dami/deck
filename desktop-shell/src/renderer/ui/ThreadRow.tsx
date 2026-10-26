@@ -2,7 +2,7 @@ import type { Session, Theme } from "@web/protocol";
 import { sessionTitle } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
 import { relativeTime } from "@web/time";
-import { Archive, ArchiveRestore, CircleCheck, FileDiff, Folder, GitCompareArrows, type LucideIcon, ShieldQuestion, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, CircleCheck, FileDiff, Folder, GitCompareArrows, type IconType, ShieldQuestion, Trash2 } from "./icons";
 import { memo, useState } from "react";
 import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import type { RoomState, RoomStatus } from "../attention";
@@ -11,7 +11,7 @@ import type { RowStyle } from "../prefs";
 import { sameData } from "../select";
 
 // Each state is a glyph; the word stays for screen readers and the tooltip.
-const STATUS: Record<Exclude<RoomState, "idle">, { label: string; icon: LucideIcon | null; className: string }> = {
+const STATUS: Record<Exclude<RoomState, "idle">, { label: string; icon: IconType | null; className: string }> = {
   working: { label: "Working", icon: null, className: "text-signal" },
   "needs-you": { label: "Needs you", icon: ShieldQuestion, className: "text-warning-foreground" },
   overlap: { label: "Overlap", icon: GitCompareArrows, className: "text-warning-foreground" },

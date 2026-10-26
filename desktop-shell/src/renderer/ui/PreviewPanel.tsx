@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, ChevronDown, Copy, ExternalLink, Globe, MonitorPlay, RefreshCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, Copy, ExternalLink, Globe, MonitorPlay, RefreshCw } from "./icons";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DeckBridge, PreviewState } from "../../shared/bridge";
 import { cn } from "../lib/cn";

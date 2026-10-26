@@ -1,7 +1,7 @@
 import { applyAgentChip } from "@web/composer";
 import type { Session } from "@web/protocol";
 import { sessionMode } from "@web/state";
-import { Ellipsis, FileDiff, Folder, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "lucide-react";
+import { Ellipsis, FileDiff, Folder, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "./icons";
 import { type ComponentProps, type RefObject, useMemo, useState } from "react";
 import type { EngineStop } from "../../shared/bridge";
 import { type DeckClient, serves } from "../client";

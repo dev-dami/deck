@@ -1,6 +1,6 @@
 import type { Decision } from "@web/protocol";
 import { relativeTime } from "@web/time";
-import { CircleCheck, FileDiff, GitCompareArrows, Inbox as InboxIcon, Info, ShieldQuestion, Users } from "lucide-react";
+import { CircleCheck, FileDiff, GitCompareArrows, Inbox as InboxIcon, Info, ShieldQuestion, Users } from "./icons";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { approvalSummary, DECISIONS } from "../approvals";
 import type { InboxItem, InboxState } from "../attention";

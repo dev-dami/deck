@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { Search } from "./icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";

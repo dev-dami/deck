@@ -1,5 +1,5 @@
 import type { Link } from "@web/state";
-import { BarChart3, Settings, Unplug, Users } from "lucide-react";
+import { BarChart3, Settings, Unplug, Users } from "./icons";
 import { cn } from "../lib/cn";
 import type { SettingsSection } from "../ui";
 import { Button } from "./kit/button";

@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { X } from "../icons";
 import { type ReactNode, useEffect, useRef } from "react";
 import { cn } from "../../lib/cn";
 import { Button } from "./button";
@@ -31,7 +31,7 @@ export function Dialog({
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
   return (
-    <div className="scrim fixed inset-0 z-50 flex items-start justify-center bg-black/45 pt-[12vh] backdrop-blur-[2px]" onMouseDown={onClose} role="presentation">
+    <div className="scrim fixed inset-0 z-50 flex items-start justify-center pt-[12vh]" onMouseDown={onClose} role="presentation">
       <div
         ref={ref}
         role="dialog"
@@ -39,14 +39,14 @@ export function Dialog({
         aria-label={title}
         tabIndex={-1}
         className={cn(
-          "material flex w-[480px] max-w-[calc(100vw-2rem)] animate-enter flex-col rounded-2xl border border-hairline-strong bg-surface-2 shadow-popover inset-shadow-hl outline-none",
+          "material flex w-[480px] max-w-[calc(100vw-2rem)] animate-enter flex-col rounded-[22px] outline-none",
           className,
         )}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <header className="flex items-start gap-3 px-5 pt-4 pb-2">
+        <header className="flex items-start gap-3 px-5 pt-5 pb-2">
           <div className="min-w-0 flex-1">
-            <h2 className="font-medium text-base">{title}</h2>
+            <h2 className="text-balance font-semibold text-base">{title}</h2>
             {description !== undefined && <p className="mt-1 text-muted-foreground text-xs leading-relaxed">{description}</p>}
           </div>
           <Button variant="ghost-muted" size="icon-xs" aria-label="Close" onClick={onClose}>
@@ -54,7 +54,7 @@ export function Dialog({
           </Button>
         </header>
         {children !== undefined && <div className="flex flex-col gap-3 px-5 py-2">{children}</div>}
-        {footer !== undefined && <footer className="flex items-center justify-end gap-2 px-5 pt-2 pb-4">{footer}</footer>}
+        {footer !== undefined && <footer className="flex items-center justify-end gap-2 px-5 pt-3 pb-5">{footer}</footer>}
       </div>
     </div>
   );
@@ -101,6 +101,7 @@ export function Confirm({
   );
 }
 
-// A text field: a hairline, and an amber ring at 40% while it has the focus.
+// A text field: a recessed well with a hairline, and the accent's ring
+// while it has the focus.
 export const fieldClass =
-  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none transition-[border-color,box-shadow] placeholder:text-faint focus:border-primary/50 focus:ring-[3px] focus:ring-ring";
+  "w-full rounded-[10px] border border-input bg-hover px-3 py-2 text-sm outline-none transition-[border-color,box-shadow] placeholder:text-faint focus:border-primary/50 focus:ring-[3px] focus:ring-ring";

@@ -1,7 +1,7 @@
 import { activeAgents, toggleAgent } from "@web/composer";
 import type { AgentLine, Approval, ModelChoice, Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
-import { Check, ChevronRight, Loader2, Plus } from "lucide-react";
+import { Check, ChevronRight, Loader2, Plus } from "./icons";
 import { useEffect, useState } from "react";
 import { agentColour } from "../agents";
 import { agentStatus } from "../approvals";

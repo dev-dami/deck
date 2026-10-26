@@ -46,7 +46,7 @@ export interface Prefs {
 
 export const defaultPrefs: Prefs = {
   theme: "deck",
-  palette: "apple",
+  palette: "glass",
   accent: "theme",
   rows: "compact",
   grouping: "projects",

@@ -1,5 +1,5 @@
 import { parseDiff } from "@web/diff";
-import { Columns2, MessageSquarePlus, Plus, Rows2, WrapText } from "lucide-react";
+import { Columns2, MessageSquarePlus, Plus, Rows2, WrapText } from "./icons";
 import { createContext, Fragment, type ReactNode, useContext, useMemo, useState } from "react";
 import {
   type DiffRow,

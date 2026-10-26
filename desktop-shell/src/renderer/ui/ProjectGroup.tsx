@@ -1,5 +1,5 @@
 import type { Session } from "@web/protocol";
-import { Check, ChevronDown, ChevronRight, Folder, FolderPlus, Laptop, SquarePen, Unplug, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Folder, FolderPlus, Laptop, SquarePen, Unplug, X } from "./icons";
 import { type ReactElement, type ReactNode, type RefObject, useState } from "react";
 import type { RoomStatus } from "../attention";
 import type { TeamThread } from "../crew";

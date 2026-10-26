@@ -16,14 +16,14 @@ import {
   FileText,
   Globe,
   ImageIcon,
-  type LucideIcon,
+  type IconType,
   Pencil,
   Play,
   RotateCcw,
   Search,
   SquareTerminal,
   Wrench,
-} from "lucide-react";
+} from "./icons";
 import { createContext, memo, type ReactElement, type ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { agentColour, agentKind } from "../agents";
@@ -73,7 +73,7 @@ type TextChunk = Extract<Chunk, { k: "text" }>;
 const COMMAND = /bash|shell|exec|command|terminal|run/;
 
 // An icon for a tool by its name, as agents name them.
-function toolIcon(name: string): LucideIcon {
+function toolIcon(name: string): IconType {
   const n = name.toLowerCase();
   if (COMMAND.test(n)) return SquareTerminal;
   if (/edit|write|patch|apply|create|multiedit/.test(n)) return FilePen;

@@ -1,5 +1,5 @@
 import { kindColour } from "@web/theme";
-import { ArrowLeft, Folder, Link2, Loader2, RefreshCw, RotateCcw, ScrollText, TerminalIcon } from "lucide-react";
+import { ArrowLeft, Folder, Link2, Loader2, RefreshCw, RotateCcw, ScrollText, TerminalIcon } from "./icons";
 import { useCallback, useEffect, useState } from "react";
 import type { AgentClis, DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";

@@ -1,4 +1,4 @@
-import { Check, MessageCircleQuestion, Pencil } from "lucide-react";
+import { Check, MessageCircleQuestion, Pencil } from "./icons";
 import { useEffect, useState } from "react";
 import type { Plan } from "../plans";
 import { usePrefs } from "../prefs";

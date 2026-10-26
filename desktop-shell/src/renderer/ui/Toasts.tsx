@@ -1,6 +1,6 @@
 import type { Store } from "@web/controller";
 import type { AppState } from "@web/state";
-import { X } from "lucide-react";
+import { X } from "./icons";
 import { useCallback, useEffect, useRef } from "react";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";

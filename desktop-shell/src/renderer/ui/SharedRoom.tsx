@@ -1,6 +1,6 @@
 import type { Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
-import { ArrowUp, Loader2, PanelLeft, ShieldQuestion } from "lucide-react";
+import { ArrowUp, Loader2, PanelLeft, ShieldQuestion } from "./icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { agentColour, agentKind } from "../agents";
 import { mirrorRow, type MirrorRow, type SharedMirror, type TeamThread } from "../crew";

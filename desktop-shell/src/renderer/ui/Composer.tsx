@@ -2,7 +2,7 @@ import { canSend } from "@web/composer";
 import { checkImage, displayName, readAsBase64 } from "@web/images";
 import type { AgentLine, Image } from "@web/protocol";
 import { kindColour } from "@web/theme";
-import { ArrowUp, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, Paperclip, Square, X } from "./icons";
 import { type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applySuggestion,

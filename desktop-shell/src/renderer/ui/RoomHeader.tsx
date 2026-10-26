@@ -1,7 +1,7 @@
 import type { AgentLine, ChangedFile, Session, Theme } from "@web/protocol";
 import { sessionTitle } from "@web/state";
 import { kindMark } from "@web/theme";
-import { ArrowDownToLine, FileDiff, GitBranch, PanelLeft, PanelRight, SquareTerminal, Trash2, Undo2 } from "lucide-react";
+import { ArrowDownToLine, FileDiff, GitBranch, PanelLeft, PanelRight, SquareTerminal, Trash2, Undo2 } from "./icons";
 import { useState } from "react";
 import { agentColour } from "../agents";
 import { type DeckClient, serves } from "../client";

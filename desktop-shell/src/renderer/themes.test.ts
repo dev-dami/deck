@@ -7,10 +7,14 @@ import { ACCENTS, DIFF_THEMES, THEMES, themeInfo } from "./themes";
 const css = readFileSync(join(__dirname, "styles.css"), "utf8");
 
 describe("themes", () => {
-  test("Apple comes first and is the default", () => {
-    expect(THEMES[0]).toMatchObject({ id: "apple", label: "Apple", mode: null });
-    expect(defaultPrefs.palette).toBe("apple");
-    expect(themeInfo("no-such-theme").id).toBe("apple");
+  test("Liquid Glass comes first and is the default", () => {
+    expect(THEMES[0]).toMatchObject({ id: "glass", label: "Liquid Glass", mode: null });
+    expect(defaultPrefs.palette).toBe("glass");
+    expect(themeInfo("no-such-theme").id).toBe("glass");
+  });
+
+  test("Apple stays a choice that follows light or dark", () => {
+    expect(themeInfo("apple")).toMatchObject({ label: "Apple", mode: null });
   });
 
   test("Tabletop stays a choice that follows light or dark", () => {
@@ -57,9 +61,14 @@ describe("themes", () => {
   });
 
   test("every window theme sets its own syntax colours for Match app theme", () => {
+    // A dark block names the theme in its selector, alone or in :is().
+    const dark = (id: string) =>
+      css.split("}").filter((b) => {
+        const sel = b.slice(0, b.indexOf("{"));
+        return sel.includes(`[data-palette="${id}"]`) && sel.includes("[data-mode]");
+      });
     for (const t of THEMES.filter((x) => x.id !== "tabletop")) {
-      const at = css.lastIndexOf(`:root[data-palette="${t.id}"][data-mode] {`);
-      expect(css.slice(at).split("}")[0], t.id).toContain("--syn-keyword:");
+      expect(dark(t.id).some((b) => b.includes("--syn-keyword:")), t.id).toBe(true);
     }
   });
 
@@ -71,6 +80,17 @@ describe("themes", () => {
       expect(css).toContain(`--text: ${text};`);
       expect(css).toContain(`--signal: ${signal};`);
     }
+  });
+
+  test("the Liquid Glass swatches match its tokens in dark and light", () => {
+    const info = themeInfo("glass");
+    for (const [canvas, , text, signal] of [info.swatch, info.light ?? info.swatch]) {
+      expect(css).toContain(`--canvas: ${canvas};`);
+      expect(css).toContain(`--text: ${text};`);
+      expect(css).toContain(`--signal: ${signal};`);
+    }
+    // The second swatch is the glass over the backdrop, not a token.
+    expect(css).toContain(`--backdrop: ${info.light?.[1]};`);
   });
 
   test("the Tabletop swatches match its tokens", () => {

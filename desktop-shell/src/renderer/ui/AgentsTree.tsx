@@ -1,6 +1,6 @@
 import type { Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
-import { CornerDownRight, GitBranch, Loader2, Lock, Network } from "lucide-react";
+import { CornerDownRight, GitBranch, Loader2, Lock, Network } from "./icons";
 import type { AgentNode, Crew, RunningTool } from "../crew";
 import { useRoomCrew } from "../crewState";
 import { cn } from "../lib/cn";

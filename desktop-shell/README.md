@@ -452,8 +452,10 @@ renderer (React, sandboxed)                  main process (Node)                
 - **The UI** is React with Tailwind CSS v4, rebuilt after T3 Code's
   components (`Sidebar`, `ChatHeader`, `MessagesTimeline`, `ChatComposer`,
   `DiffPanel`, the settings layout). `src/renderer/styles.css` holds the
-  theme tokens, `src/renderer/ui/kit/` the primitives (button, badge, menu)
-  after T3's `components/ui`, and lucide-react draws the icons. Tailwind
+  theme tokens and the Liquid Glass materials (`docs/design-glass.md`),
+  `src/renderer/ui/kit/` the primitives (button, badge, menu, segmented)
+  after T3's `components/ui`, and Phosphor draws the icons
+  (`ui/icons.tsx`). Tailwind
   builds one stylesheet, so the CSP's `style-src 'self'` holds. xterm.js
   writes its rules into `<style>` elements, which the CSP blocks;
   `ui/Terminal.tsx` copies them into a constructed stylesheet instead. The

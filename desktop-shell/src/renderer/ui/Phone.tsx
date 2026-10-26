@@ -1,4 +1,4 @@
-import { Smartphone } from "lucide-react";
+import { Smartphone } from "./icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DeckBridge, PhoneOutcome, PhoneState } from "../../shared/bridge";
 import { codeUsable, qrPath, type ShownCode, shownCode } from "../phone";

@@ -1,6 +1,6 @@
 import type { AppState } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
-import { Monitor, Moon, Palette, Sun } from "lucide-react";
+import { Monitor, Moon, Palette, Sun } from "./icons";
 import { type ReactNode, useEffect, useState } from "react";
 import type { AppInfo, DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";
@@ -10,6 +10,7 @@ import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
 import { DiffView, LineComments } from "./DiffView";
+import { segmentItem, segmentTrack } from "./kit/segmented";
 import { Row, Section } from "./kit/settings";
 import { Switch } from "./kit/switch";
 import { PhonePage } from "./Phone";
@@ -27,10 +28,8 @@ function Segmented<T extends string>({
   label: string;
 }) {
   return (
-    // A segmented control: equal segments on a recessed track, the chosen
-    // one raised.
     <div
-      className="segmented inline-grid auto-cols-fr grid-flow-col rounded-[calc(var(--control-radius)+2px)] bg-secondary p-0.5"
+      className={cn(segmentTrack(), "segmented inline-grid auto-cols-fr grid-flow-col")}
       role="radiogroup"
       aria-label={label}
     >
@@ -41,10 +40,7 @@ function Segmented<T extends string>({
           role="radio"
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
-          className={cn(
-            "flex h-6 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--control-radius)] px-3 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-            value === o.value ? "bg-segment font-medium text-foreground shadow-card" : "text-muted-foreground hover:text-foreground",
-          )}
+          className={segmentItem({ on: value === o.value })}
         >
           {o.icon}
           {o.label}

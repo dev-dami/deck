@@ -2,30 +2,31 @@ import { cva, type VariantProps } from "class-variance-authority";
 import type { ComponentProps } from "react";
 import { cn } from "../../lib/cn";
 
-// After T3 Code's components/ui/button.tsx, without Base UI: a plain button.
-// Raised buttons carry a 1px top highlight instead of a shadow. Hover and
-// pressed are a white alpha over the surface, never the accent.
+// After T3 Code's components/ui/button.tsx, without Base UI: a plain button,
+// drawn as a Liquid Glass capsule (docs/design-glass.md). The default is the
+// accent as tinted glass; outline is clear glass; ghost has no material
+// until it is hovered or pressed.
 export const buttonVariants = cva(
-  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-[var(--control-radius)] border font-medium text-sm outline-none transition-[background-color,border-color,color,box-shadow,scale] active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-full border font-medium text-sm outline-none transition-[background-color,border-color,color,box-shadow,scale] active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     defaultVariants: { size: "default", variant: "default" },
     variants: {
       size: {
         default: "h-8 px-3",
         sm: "h-7 gap-1.5 px-2.5",
-        xs: "h-6 gap-1 rounded-md px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+        xs: "h-6 gap-1 px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
         lg: "h-10 px-4",
         icon: "size-8",
         "icon-sm": "size-7",
-        "icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3.5",
+        "icon-xs": "size-6 [&_svg:not([class*='size-'])]:size-3.5",
       },
       variant: {
-        default: "border-action bg-action text-action-foreground inset-shadow-hl hover:bg-action/90",
-        destructive: "border-destructive bg-destructive text-white inset-shadow-hl hover:bg-destructive/90",
+        default: "liquid-tint hover:brightness-110",
+        destructive: "liquid-tint bg-destructive text-white hover:brightness-110",
         "destructive-outline":
-          "border-hairline-strong bg-surface-1 text-destructive-foreground inset-shadow-hl hover:border-destructive/40 hover:bg-destructive/8",
+          "liquid-clear text-destructive-foreground hover:bg-destructive/12",
         outline:
-          "border-hairline-strong bg-surface-1 text-foreground shadow-card inset-shadow-hl hover:bg-surface-2 aria-pressed:bg-surface-2 aria-pressed:border-hairline-strong",
+          "liquid-clear text-foreground hover:bg-selected aria-pressed:bg-selected",
         secondary: "border-transparent bg-secondary text-foreground hover:bg-selected",
         ghost: "border-transparent text-foreground hover:bg-hover aria-pressed:bg-selected",
         "ghost-muted":

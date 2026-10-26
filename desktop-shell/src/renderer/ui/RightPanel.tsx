@@ -8,7 +8,7 @@ import {
   FileDiff,
   FileText,
   ListChecks,
-  type LucideIcon,
+  type IconType,
   MessageCircleQuestion,
   MonitorPlay,
   Network,
@@ -17,7 +17,7 @@ import {
   RefreshCw,
   Undo2,
   X,
-} from "lucide-react";
+} from "./icons";
 import { type ComponentProps, useEffect, useRef, useState } from "react";
 import type { DeckBridge } from "../../shared/bridge";
 import { addLocalNotice } from "../appState";
@@ -42,7 +42,7 @@ import { useOpenPorts } from "./usePorts";
 // The room's tabs: Changes, Tasks (the queue, the board and races), Agents
 // (the tree), Side chat and, while a dev server answers, Preview.
 
-const TAB_ICONS: Record<Panel, LucideIcon> = {
+const TAB_ICONS: Record<Panel, IconType> = {
   changes: FileDiff,
   tasks: ListChecks,
   agents: Network,

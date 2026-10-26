@@ -20,7 +20,7 @@ import {
   Trash2,
   Trophy,
   X,
-} from "lucide-react";
+} from "./icons";
 import { type ReactNode, useCallback, useState } from "react";
 import type { DeckClient } from "../client";
 import {

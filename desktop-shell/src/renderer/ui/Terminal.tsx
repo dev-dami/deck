@@ -1,7 +1,7 @@
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { type ITheme, Terminal as XTerm } from "@xterm/xterm";
-import { Plus, Square, SquareTerminal, X } from "lucide-react";
+import { Plus, Square, SquareTerminal, X } from "./icons";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { cn } from "../lib/cn";
 import { getPrefs, setPrefs } from "../prefs";

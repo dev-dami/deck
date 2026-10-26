@@ -1,6 +1,6 @@
 import type { Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
-import { BarChart3, Loader2, RefreshCw, Table2 } from "lucide-react";
+import { BarChart3, Loader2, RefreshCw, Table2 } from "./icons";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { cn } from "../lib/cn";
 import type { ProjectApi, Usage, UsageDay } from "../project";

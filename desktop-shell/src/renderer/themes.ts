@@ -1,7 +1,7 @@
-// The window's themes, after T3 Code's theme catalog. "apple", a native Mac
-// window, is the default; "tabletop" is Deck's warm look and "default" the
-// T3 look. These three follow light or dark; every other theme has a mode of
-// its own. Each theme's tokens are in styles.css under
+// The window's themes, after T3 Code's theme catalog. "glass", Liquid
+// Glass, is the default; "apple" is a native Mac window without the glass,
+// "tabletop" is Deck's warm look and "default" the T3 look. These four follow
+// light or dark; every other theme has a mode of its own. Each theme's tokens are in styles.css under
 // [data-palette="<id>"].
 
 export interface ThemeInfo {
@@ -16,6 +16,13 @@ export interface ThemeInfo {
 }
 
 export const THEMES: readonly ThemeInfo[] = [
+  {
+    id: "glass",
+    label: "Liquid Glass",
+    mode: null,
+    swatch: ["#19191b", "#2a2a2e", "#e3e3e5", "#0a84ff"],
+    light: ["#fbfbfd", "#dcdee5", "#1d1d1f", "#007aff"],
+  },
   {
     id: "apple",
     label: "Apple",

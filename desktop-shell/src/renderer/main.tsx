@@ -1,3 +1,4 @@
+import { IconContext } from "@phosphor-icons/react";
 import { createRoot } from "react-dom/client";
 import type { DeckBridge } from "../shared/bridge";
 import "./styles.css";
@@ -16,6 +17,9 @@ if (bridge !== undefined) {
 const root = document.getElementById("root");
 if (root !== null) {
   createRoot(root).render(
-    bridge === undefined ? <p className="loading grid h-full place-items-center text-sm">Open this page in the Deck desktop app.</p> : <App bridge={bridge} />,
+    // Phosphor's icons (ui/icons.tsx): one weight for the chrome.
+    <IconContext.Provider value={{ weight: "regular", size: "1em" }}>
+      {bridge === undefined ? <p className="loading grid h-full place-items-center text-sm">Open this page in the Deck desktop app.</p> : <App bridge={bridge} />}
+    </IconContext.Provider>,
   );
 }

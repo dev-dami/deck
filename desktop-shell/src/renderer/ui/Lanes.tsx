@@ -1,6 +1,6 @@
 import type { ModelChoice, Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
-import { CornerDownRight, Lock, Square } from "lucide-react";
+import { CornerDownRight, Lock, Square } from "./icons";
 import { useLayoutEffect, useRef, useState } from "react";
 import { agentColour } from "../agents";
 import { fitLanes, type Lane } from "../lanes";

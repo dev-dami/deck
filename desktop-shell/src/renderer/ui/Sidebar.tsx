@@ -2,7 +2,7 @@ import type { Session, Theme } from "@web/protocol";
 import type { Link } from "@web/state";
 import { sessionTitle } from "@web/state";
 import { toMillis } from "@web/time";
-import { ArrowLeft, Inbox as InboxIcon, PanelLeft, Search, SquarePen, TerminalIcon } from "lucide-react";
+import { ArrowLeft, Inbox as InboxIcon, PanelLeft, Search, SquarePen, TerminalIcon } from "./icons";
 import { type MutableRefObject, useEffect, useRef, useState } from "react";
 import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import { useRooms } from "../appState";

@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronRight, Folder, Laptop, Link2, Loader2, Lock, Plus, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, Folder, Laptop, Link2, Loader2, Lock, Plus, X } from "./icons";
 import { useEffect, useState } from "react";
 import type { DeckBridge, PairOutcome, SavedServer } from "../../shared/bridge";
 import { parsePairText } from "../connect";

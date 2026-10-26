@@ -1,6 +1,6 @@
 import { availableModes, needsConfirm } from "@web/modes";
 import type { Mode } from "@web/protocol";
-import { Check, ChevronDown, Flame, ListChecks, MessageCircleQuestion } from "lucide-react";
+import { Check, ChevronDown, Flame, ListChecks, MessageCircleQuestion } from "./icons";
 import { useState } from "react";
 import { cn } from "../lib/cn";
 import { MenuLabel, Popover } from "./kit/menu";

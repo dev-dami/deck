@@ -8,7 +8,7 @@ export function Section({ title, children }: { title: string; children: ReactNod
       <div className="flex min-h-7 items-center px-4">
         <h2 className="font-semibold text-muted-foreground text-xs">{title}</h2>
       </div>
-      <div className="rounded-xl border border-hairline bg-surface-1 shadow-card inset-shadow-hl [&>*+*]:border-hairline [&>*+*]:border-t">
+      <div className="sheet rounded-(--sheet-radius) bg-surface-1 [&>*+*]:border-hairline [&>*+*]:border-t">
         {children}
       </div>
     </section>

@@ -14,7 +14,7 @@ import {
   Plus,
   RefreshCw,
   Upload,
-} from "lucide-react";
+} from "./icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../lib/cn";
 import type { GitStatus, ProjectApi, PullRequest } from "../project";

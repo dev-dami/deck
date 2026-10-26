@@ -1,6 +1,6 @@
 import type { Session } from "@web/protocol";
 import { relativeTime } from "@web/time";
-import { Check, Eye, Handshake, Loader2, RefreshCw, Send, Users, X } from "lucide-react";
+import { Check, Eye, Handshake, Loader2, RefreshCw, Send, Users, X } from "./icons";
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Team, Teammate, TeamThread } from "../crew";
 import { cn } from "../lib/cn";

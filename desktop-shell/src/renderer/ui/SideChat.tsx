@@ -1,7 +1,7 @@
 import type { Session, Theme } from "@web/protocol";
 import type { AppState } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
-import { ArrowUp, Loader2, MessageCircleQuestion } from "lucide-react";
+import { ArrowUp, Loader2, MessageCircleQuestion } from "./icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
