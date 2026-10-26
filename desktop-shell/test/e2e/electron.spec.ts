@@ -49,7 +49,10 @@ test("over rpc: the app reopens the last folder and runs two agents", async () =
   try {
     const win = await app.firstWindow();
     await win.setViewportSize({ width: 1360, height: 860 });
-    await expect(win.locator(".project")).toHaveText(basename(folder));
+    // The first Electron start of a run is a cold one (on CI it follows the
+    // binary's download), and the GitHub runner took over 5s to reopen the
+    // folder there; later starts take about one.
+    await expect(win.locator(".project")).toHaveText(basename(folder), { timeout: 20_000 });
     await expect(win.locator(".link")).toHaveText("Connected");
     const text = await win.evaluate(() => document.body.innerText);
     expect(text).not.toContain(fake.token);
