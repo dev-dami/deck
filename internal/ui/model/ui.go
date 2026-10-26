@@ -281,6 +281,9 @@ type UI struct {
 	// canvas is the screen buffer View draws each frame into, kept
 	// between frames while the terminal size holds.
 	canvas uv.ScreenBuffer
+	// frameBuf is the scratch buffer View trims the rendered canvas into,
+	// kept between frames so only the final string is allocated.
+	frameBuf []byte
 	// frameMemo shares reads between the parts of the frame View is
 	// drawing; nil outside of it. See frameMemo.
 	frameMemo *frameMemo
@@ -3443,14 +3446,8 @@ func (m *UI) View() tea.View {
 	v.Cursor = m.Draw(canvas, canvas.Bounds())
 	m.endFrameMemo()
 
-	content := strings.ReplaceAll(canvas.Render(), "\r\n", "\n") // normalize newlines
-	contentLines := strings.Split(content, "\n")
-	for i, line := range contentLines {
-		// Trim trailing spaces for concise rendering
-		contentLines[i] = strings.TrimRight(line, " ")
-	}
-
-	content = strings.Join(contentLines, "\n")
+	m.frameBuf = trimFrameLines(m.frameBuf[:0], canvas.Render())
+	content := string(m.frameBuf)
 	if fx {
 		v.Content = m.yoloFX.Apply(content, m.width, time.Now())
 		m.applyProgressBar(&v)
@@ -3466,6 +3463,26 @@ func (m *UI) View() tea.View {
 	v.ProgramStatus = m.programStatus()
 
 	return v
+}
+
+// trimFrameLines appends s to dst with CRLF normalized to LF and the
+// trailing spaces of every line trimmed. It is one pass into a buffer
+// View keeps between frames: View runs it on the whole screen each frame,
+// and splitting into a slice of lines to join again allocated twice.
+func trimFrameLines(dst []byte, s string) []byte {
+	for {
+		i := strings.IndexByte(s, '\n')
+		line := s
+		if i >= 0 {
+			line = strings.TrimSuffix(s[:i], "\r")
+		}
+		dst = append(dst, strings.TrimRight(line, " ")...)
+		if i < 0 {
+			return dst
+		}
+		dst = append(dst, '\n')
+		s = s[i+1:]
+	}
 }
 
 // applyProgressBar attaches the terminal progress bar while the agent is
