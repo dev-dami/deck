@@ -144,8 +144,8 @@ its parent's radius minus the padding between them.
 - **Dialogs** (`kit/dialog.tsx`): thick glass, 22px radius, over a light
   scrim.
 - **Fields**: `fieldClass`, a recessed well with a 10px radius.
-- **Empty states** (`kit/empty.tsx`): a duotone icon in a clear glass
-  circle, a title in the foreground colour, a hint in faint, and one
+- **Empty states** (`kit/empty.tsx`): a duotone icon (no circle or badge
+  around it), a title in the foreground colour, a hint in faint, and one
   action.
 - **Cards inside a sheet**: `rounded-xl bg-surface-1` with
   `ring-1 ring-hairline`, and no shadow.
@@ -168,6 +168,23 @@ icons use `weight="duotone"`. To add an icon, add it to `icons.tsx`.
 The same as `design-apple.md`: 13px UI, 11px metadata, 14px prose, 12.5px
 mono. Headings use `text-balance`, prose `text-pretty`, and data
 `tabular-nums`.
+
+### Not AI-template
+
+The first version of the welcome screen read as AI-generated. These are
+the tells, and none of them belongs in Deck:
+
+- the centred stack: a logo tile, a headline, a grey subtitle and two
+  equal cards, floating small in an empty window;
+- an icon in a circle heading every card or row;
+- a glow on a button, or an aurora in the corner;
+- a pill badge for every state;
+- a rim, a border and a shadow on every container, so nothing leads;
+- generic copy that could sit on any product.
+
+Instead: hierarchy through type, alignment and space. Glass only where
+something floats. Agents shown as Deck shows them (a glyph in its hue,
+live status). Copy in Deck's own plain voice.
 
 ## 6. Motion
 
