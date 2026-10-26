@@ -37,7 +37,7 @@ func (m *UI) busyAgents() []workspace.AgentLine {
 	var out []workspace.AgentLine
 	for _, a := range roster.Roster(m.session.ID) {
 		switch a.Status {
-		case "working", "tool", "approval":
+		case "working", "tool", "approval", "restarting":
 			out = append(out, a)
 		}
 	}
@@ -68,8 +68,11 @@ func (m *UI) workingLine(width int) string {
 		}
 		tint := lipgloss.NewStyle().Foreground(tone.Tint(a.Kind))
 		what := "working"
-		if a.Status == "approval" {
+		switch a.Status {
+		case "approval":
 			what = "needs you"
+		case "restarting":
+			what = "restarting"
 		}
 		part := tint.Render(frame+" "+tone.Mark(a.Kind)) + " " + tint.Bold(true).Render(a.ID) + " " + muted.Render(what)
 		if d := now.Sub(since).Truncate(time.Second); d >= time.Second {

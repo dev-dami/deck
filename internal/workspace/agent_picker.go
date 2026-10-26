@@ -150,7 +150,7 @@ func (w *DeckWorkspace) SetAgentModel(sessionID, kind, model, effort string) err
 type AgentLine struct {
 	ID, Kind      string
 	Model, Effort string
-	Status        string // "idle", "working", "tool", "approval", "error", "exited", "ready"
+	Status        string // "idle", "working", "tool", "approval", "restarting", "error", "exited", "ready"
 	ContextTokens int
 	ContextWindow int
 	CostUSD       float64

@@ -574,20 +574,10 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		return
 	}
 	switch ev.Kind {
-	case deckagent.KindRestarting:
-		// Not a turn: say why the agent is quiet for a few seconds.
-		name := ev.AgentID
-		if a, ok := w.mgr().Agent(ev.AgentID); ok && a.Name != "" {
-			name = a.Name
-		}
-		what := "settings"
-		if ev.Text != "" {
-			what = ev.Text
-		}
-		w.notice(sid, name+" is restarting to apply the new "+what+"; messages wait until it is back")
-		w.publish(DeckChange{Kind: ChangeRoster, SessionID: sid})
-		return
-	case deckagent.KindRestarted:
+	case deckagent.KindRestarting, deckagent.KindRestarted:
+		// Not a turn. The roster shows the member as restarting, which says
+		// why it is quiet for a few seconds without adding a chat line for
+		// every mode or model change.
 		w.publish(DeckChange{Kind: ChangeRoster, SessionID: sid})
 		return
 	case deckagent.KindCompacted:

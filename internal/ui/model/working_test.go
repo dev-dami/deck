@@ -74,6 +74,13 @@ func TestWorkingLine(t *testing.T) {
 		require.True(t, strings.HasSuffix(line, "esc esc stops"), line)
 	})
 
+	t.Run("says when an agent restarts", func(t *testing.T) {
+		t.Parallel()
+		u := newWorkingUI(workspace.AgentLine{ID: "claude", Kind: "claude", Status: "restarting"})
+		require.Len(t, u.busyAgents(), 1)
+		require.Contains(t, ansi.Strip(u.workingLine(200)), "claude restarting")
+	})
+
 	t.Run("fits the width", func(t *testing.T) {
 		t.Parallel()
 		u := newWorkingUI(workspace.AgentLine{ID: "claude", Kind: "claude", Status: "tool"})

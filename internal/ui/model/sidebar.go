@@ -50,8 +50,8 @@ func (m *UI) modelInfoFor(agents []workspace.AgentLine, width int) string {
 			facts = append(facts, t.ModelInfo.Reasoning.Render(fmt.Sprintf("needs you (%d)", max(1, a.Pending))))
 		case "error", "exited":
 			facts = append(facts, muted.Render(a.Status))
-		case "ready":
-			facts = append(facts, muted.Render("ready"))
+		case "ready", "restarting":
+			facts = append(facts, muted.Render(a.Status))
 		default:
 			facts = append(facts, muted.Render("idle"))
 		}
