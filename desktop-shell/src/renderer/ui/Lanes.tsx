@@ -25,8 +25,9 @@ const chipBase =
   "relative flex h-6 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-selected aria-pressed:text-foreground";
 const chip = `lane ${chipBase}`;
 
-// The strip wraps to this many lines, then folds lanes into "+N".
-const LINES = 2;
+// The strip keeps to one line and folds lanes into "+N"; it wraps only for
+// lanes that never fold (pinnedLane), and then it grows in the flow.
+const LINES = 1;
 const GAP = 2;
 // The width of a chip not measured yet, and of "+N".
 const GUESS = 96;
@@ -213,7 +214,7 @@ export function Lanes({
   return (
     <div
       ref={box}
-      className="lanes flex min-h-8 shrink-0 flex-wrap content-center items-center gap-0.5 border-hairline border-b px-3 pb-1"
+      className="lanes flex min-h-9 shrink-0 flex-wrap content-center items-center gap-0.5 border-hairline border-b px-2.5 py-1"
       role="toolbar"
       aria-label="Lanes"
       data-yolo-region=""
