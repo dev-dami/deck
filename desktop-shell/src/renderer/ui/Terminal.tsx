@@ -1,7 +1,7 @@
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { type ITheme, Terminal as XTerm } from "@xterm/xterm";
-import { Plus, Square, SquareTerminal, X } from "lucide-react";
+import { Plus, Square, SquareTerminal, X } from "./icons";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { cn } from "../lib/cn";
 import { getPrefs, setPrefs } from "../prefs";
@@ -316,27 +316,30 @@ export function TerminalDrawer({
 
   return (
     <section
-      className={cn("terminal-drawer relative flex shrink-0 flex-col border-t bg-background", !shown && "hidden")}
+      className={cn("terminal-drawer relative flex shrink-0 flex-col border-hairline border-t bg-canvas", !shown && "hidden")}
       style={{ height }}
       aria-label="Terminal"
     >
+      {/* The top edge drags the height; a grabber shows on hover. */}
       <div
-        className="absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize"
+        className="group/grab absolute inset-x-0 -top-1 z-10 flex h-2 cursor-row-resize justify-center"
         onPointerDown={drag}
         role="separator"
         aria-orientation="horizontal"
         aria-label="Resize the terminal"
-      />
-      <header className="flex h-9 shrink-0 items-center gap-1 border-b px-2">
-        <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Terminals">
+      >
+        <span aria-hidden className="mt-[3px] h-1 w-9 rounded-full bg-hairline-strong opacity-0 transition-opacity group-hover/grab:opacity-100" />
+      </div>
+      <header className="flex h-10 shrink-0 items-center gap-1 border-hairline border-b px-2">
+        <div className="flex min-w-0 items-center gap-1 overflow-x-auto" role="tablist" aria-label="Terminals">
           {tabs.map((t) => {
             const own = ports.filter((p) => p.source.kind === "terminal" && p.source.term === t.id);
             return (
               <div
                 key={t.id}
                 className={cn(
-                  "group flex h-7 items-center gap-1.5 rounded-md pr-1 pl-2.5 text-xs",
-                  active === t.id ? "bg-selected text-foreground" : "text-muted-foreground hover:bg-hover",
+                  "group flex h-7 items-center gap-1.5 rounded-full pr-1 pl-3 text-xs transition-colors",
+                  active === t.id ? "bg-selected font-medium text-foreground" : "text-muted-foreground hover:bg-hover hover:text-foreground",
                 )}
               >
                 <button type="button" role="tab" aria-selected={active === t.id} className="flex cursor-pointer items-center gap-1.5" onClick={() => setActive(t.id)}>
@@ -352,17 +355,17 @@ export function TerminalDrawer({
                       type="button"
                       aria-label={`Stop the dev server in terminal ${t.n}`}
                       title="Stop (sends Ctrl+C)"
-                      className="grid size-5 cursor-pointer place-items-center rounded text-muted-foreground outline-none hover:bg-hover hover:text-destructive-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                      className="grid size-5 cursor-pointer place-items-center rounded-full text-muted-foreground outline-none hover:bg-hover hover:text-destructive-foreground focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={() => project.terminalWrite(t.id, "\x03")}
                     >
-                      <Square className="size-3" />
+                      <Square className="size-3" weight="fill" />
                     </button>
                   </>
                 )}
                 <button
                   type="button"
                   aria-label={`Close terminal ${t.n}`}
-                  className="grid size-4 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 outline-none hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within:opacity-100 group-hover:opacity-100"
+                  className="grid size-5 cursor-pointer place-items-center rounded-full text-muted-foreground opacity-0 outline-none hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within:opacity-100 group-hover:opacity-100"
                   onClick={() => close(t.id)}
                 >
                   <X className="size-3" />
@@ -370,11 +373,11 @@ export function TerminalDrawer({
               </div>
             );
           })}
-          <Button variant="ghost-muted" size="icon-xs" aria-label="New terminal" title="New terminal" onClick={() => void add()}>
+          <Button variant="ghost-muted" size="icon-sm" aria-label="New terminal" title="New terminal" onClick={() => void add()}>
             <Plus />
           </Button>
         </div>
-        <Button variant="ghost-muted" size="icon-xs" className="ml-auto" aria-label="Hide the terminal" title="Hide the terminal" onClick={onHide}>
+        <Button variant="ghost-muted" size="icon-sm" className="ml-auto" aria-label="Hide the terminal" title="Hide the terminal" onClick={onHide}>
           <X />
         </Button>
       </header>

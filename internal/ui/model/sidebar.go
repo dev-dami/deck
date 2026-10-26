@@ -12,8 +12,9 @@ import (
 )
 
 // modelInfo renders the session's agents: each one's mark and name in its
-// own tint, the model and effort it runs, and what it is doing, how full its
-// context is and what it has cost. Before anyone joins it lists the agent
+// own tint (and the role of a named agent: "✳ charles · reviewer"), the
+// model and effort it runs, and what it is doing, how full its context is
+// and what it has cost. Before anyone joins it lists the agent
 // CLIs that are installed.
 func (m *UI) modelInfo(width int) string {
 	if _, ok := m.roster(); !ok {
@@ -32,7 +33,12 @@ func (m *UI) modelInfoFor(agents []workspace.AgentLine, width int) string {
 		// level.
 		indent := strings.Repeat("  ", min(a.Depth, 6))
 		tint := lipgloss.NewStyle().Foreground(tone.Tint(a.Kind))
+		// "✳ charles · reviewer": a named agent keeps its kind's glyph
+		// and tint, and its role follows the name.
 		head := indent + tint.Render(tone.Mark(a.Kind)) + " " + tint.Bold(true).Render(a.ID)
+		if role := strings.Join(strings.Fields(a.Role), " "); role != "" {
+			head += tint.Render(" · " + role)
+		}
 		model := a.Model
 		if model == "" {
 			model = "default model"

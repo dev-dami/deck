@@ -32,6 +32,7 @@ type crew struct {
 	desk      workspace.TeamDesk
 	rooms     workspace.Rooms
 	settings  workspace.SettingsEditor
+	profiles  workspace.Profiles
 	changes   deckChanges
 }
 
@@ -55,6 +56,7 @@ func (s *Server) WithWorkspace(ws any) *Server {
 	c.desk, _ = ws.(workspace.TeamDesk)
 	c.rooms, _ = ws.(workspace.Rooms)
 	c.settings, _ = ws.(workspace.SettingsEditor)
+	c.profiles, _ = ws.(workspace.Profiles)
 	c.changes, _ = ws.(deckChanges)
 	s.crew = c
 	return s
@@ -162,7 +164,7 @@ func (s *Server) Agents(_ context.Context, r *deckv1.SessionRef) (*deckv1.Agents
 				Name: a.ID, Kind: a.Kind, Model: a.Model, Effort: a.Effort, Status: a.Status,
 				ContextTokens: int32(a.ContextTokens), ContextWindow: int32(a.ContextWindow), CostUsd: a.CostUSD,
 				Pending: int32(a.Pending), Since: ms(a.Since), Depth: int32(a.Depth), Parent: a.Parent,
-				Branch: a.Branch, Leases: a.Leases,
+				Branch: a.Branch, Leases: a.Leases, Profile: a.Profile, Role: a.Role,
 			}
 		}),
 	}

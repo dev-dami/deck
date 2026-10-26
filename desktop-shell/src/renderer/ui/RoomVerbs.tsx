@@ -1,7 +1,7 @@
 import { applyAgentChip } from "@web/composer";
 import type { AgentLine, ChangedFile, Image, Message, Mode, Session } from "@web/protocol";
 import { sessionMode } from "@web/state";
-import { Pencil, X } from "lucide-react";
+import { Pencil, X } from "./icons";
 import { type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { draftOf, setDraft } from "../appState";
 import type { DeckClient } from "../client";

@@ -1,20 +1,24 @@
 import type { Decision } from "@web/protocol";
 import { relativeTime } from "@web/time";
-import { CircleCheck, FileDiff, GitCompareArrows, Inbox as InboxIcon, Info, ShieldQuestion, Users } from "lucide-react";
+import { CircleCheck, FileDiff, GitCompareArrows, Inbox as InboxIcon, Info, ShieldQuestion, Users } from "./icons";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { approvalSummary, DECISIONS } from "../approvals";
 import type { InboxItem, InboxState } from "../attention";
 import { cn } from "../lib/cn";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
-import { EmptyState } from "./kit/empty";
+import { EmptyPlate } from "./kit/plate";
+import { PLATES } from "../plates";
 
-const GLYPH: Record<InboxState, { icon: typeof Info; className: string }> = {
-  "needs-you": { icon: ShieldQuestion, className: "text-warning-foreground" },
-  overlap: { icon: GitCompareArrows, className: "text-warning-foreground" },
-  review: { icon: FileDiff, className: "text-info-foreground" },
-  done: { icon: CircleCheck, className: "text-success-foreground" },
-  notice: { icon: Info, className: "text-muted-foreground" },
+// Each state's glyph, its colour and its group, most urgent first: what
+// waits for an answer wears the warning colour, changes to review the
+// accent, a finished room the success colour, a notice nothing.
+const STATES: Record<InboxState, { icon: typeof Info; tone: string; group: string }> = {
+  "needs-you": { icon: ShieldQuestion, tone: "text-warning-foreground", group: "Needs you" },
+  overlap: { icon: GitCompareArrows, tone: "text-warning-foreground", group: "Overlapping work" },
+  review: { icon: FileDiff, tone: "text-info-foreground", group: "To review" },
+  done: { icon: CircleCheck, tone: "text-success-foreground", group: "Finished" },
+  notice: { icon: Info, tone: "text-faint", group: "Notices" },
 };
 
 export interface InboxActions {
@@ -36,84 +40,99 @@ function Row({
   onSelect: () => void;
   actions: InboxActions;
 }) {
-  const g = item.contract !== undefined ? { icon: Users, className: "text-warning-foreground" } : GLYPH[item.state];
-  const ref = useRef<HTMLLIElement>(null);
+  const s = STATES[item.state];
+  const Icon = item.contract !== undefined ? Users : s.icon;
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (selected) ref.current?.scrollIntoView({ block: "nearest" });
   }, [selected]);
   // The buttons keep the focus on the list, so j and k go on working.
   const keep = (e: React.MouseEvent) => e.preventDefault();
+  // Only the selected item's answer wears the accent: y gives it.
+  const strong = (on: boolean) => (on && selected ? "default" : "outline");
   return (
-    <li
+    <div
       ref={ref}
       role="option"
       aria-selected={selected}
       data-item={item.id}
       data-state={item.state}
-      className={cn("inbox-item flex cursor-pointer gap-3 rounded-lg px-3 py-2.5", selected ? "bg-selected inset-shadow-hl" : "hover:bg-hover")}
+      className={cn(
+        "inbox-item flex cursor-pointer gap-3 rounded-[12px] px-3 py-3 transition-colors",
+        selected ? "bg-selected" : "hover:bg-hover",
+      )}
       onClick={onSelect}
       onDoubleClick={() => item.action === "open" && actions.onOpen(item)}
     >
-      <g.icon aria-hidden className={cn("mt-0.5 size-4 shrink-0", g.className)} />
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="flex min-w-0 items-center gap-2 text-2xs text-faint">
-          <span className="min-w-0 truncate">
-            {item.projectName} · {item.title}
-          </span>
-          {item.at > 0 && <span className="ml-auto shrink-0 tabular-nums">{relativeTime(new Date(item.at).toISOString(), now)}</span>}
+      <Icon aria-hidden className={cn("mt-px size-4 shrink-0", s.tone)} weight={item.state === "needs-you" ? "fill" : "regular"} />
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="inbox-label min-w-0 truncate font-medium text-[13px]">{item.label}</span>
+          {item.at > 0 && <span className="ml-auto shrink-0 text-2xs text-faint tabular-nums">{relativeTime(new Date(item.at).toISOString(), now)}</span>}
         </div>
-        <span className="inbox-label min-w-0 truncate text-sm">{item.label}</span>
+        <div className="-mt-1 min-w-0 truncate text-2xs text-faint">
+          {item.projectName} <span aria-hidden>·</span> <span className="text-muted-foreground">{item.title}</span>
+        </div>
         {item.approval !== undefined && (
-          <code className="block max-h-24 min-w-0 overflow-auto whitespace-pre-wrap break-all font-mono text-muted-foreground text-xs">
+          <code className="block max-h-24 min-w-0 overflow-auto whitespace-pre-wrap break-all rounded-[8px] bg-code px-2.5 py-1.5 font-mono text-foreground/85 text-xs">
             {approvalSummary(item.approval)}
           </code>
         )}
         {item.contract !== undefined && item.contract.brief !== "" && (
-          <p className="line-clamp-3 whitespace-pre-wrap text-muted-foreground text-xs">{item.contract.brief}</p>
+          <p className="line-clamp-3 whitespace-pre-wrap text-pretty text-muted-foreground text-xs">{item.contract.brief}</p>
         )}
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
-          {item.approval !== undefined &&
-            [...DECISIONS].reverse().map((d) => (
-              <Button
-                key={d.decision}
-                size="xs"
-                variant={d.decision === "allow" ? "default" : d.decision === "deny" ? "ghost-muted" : "outline"}
-                onMouseDown={keep}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  actions.onAnswer(item, d.decision);
-                }}
-              >
-                {d.label}
+        {(item.approval !== undefined || item.contract !== undefined || item.room !== null) && (
+          <div className="flex flex-wrap items-center justify-end gap-1.5 pt-0.5">
+            {item.room !== null && (
+              <Button size="xs" variant="ghost-muted" className="mr-auto -ml-2" onMouseDown={keep} onClick={() => actions.onOpen(item)}>
+                Open
               </Button>
-            ))}
-          {item.contract !== undefined && (
-            <>
-              <Button size="xs" variant="ghost-muted" onMouseDown={keep} onClick={() => actions.onContract(item, false)}>
-                Decline
-              </Button>
-              <Button size="xs" onMouseDown={keep} onClick={() => actions.onContract(item, true)}>
-                Accept
-              </Button>
-            </>
-          )}
-          {item.room !== null && (
-            <Button size="xs" variant={item.action === "open" ? "outline" : "ghost-muted"} onMouseDown={keep} onClick={() => actions.onOpen(item)}>
-              Open
-            </Button>
-          )}
-        </div>
+            )}
+            {item.approval !== undefined &&
+              [...DECISIONS].reverse().map((d) => (
+                <Button
+                  key={d.decision}
+                  size="xs"
+                  variant={d.decision === "allow" ? strong(true) : d.decision === "deny" ? "ghost-muted" : "outline"}
+                  onMouseDown={keep}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    actions.onAnswer(item, d.decision);
+                  }}
+                >
+                  {d.label}
+                </Button>
+              ))}
+            {item.contract !== undefined && (
+              <>
+                <Button size="xs" variant="ghost-muted" onMouseDown={keep} onClick={() => actions.onContract(item, false)}>
+                  Decline
+                </Button>
+                <Button size="xs" variant={strong(true)} onMouseDown={keep} onClick={() => actions.onContract(item, true)}>
+                  Accept
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
-    </li>
+    </div>
   );
 }
 
-// Everything that waits for the person, across the open projects. Keyboard
-// first: j and k move, y and n answer, Enter opens the room.
-export function Inbox({ items, mac, ...actions }: { items: InboxItem[]; mac: boolean } & InboxActions) {
+// Everything that waits for the person, across the open projects, in
+// groups by how urgent it is. Keyboard first: j and k move, y and n answer,
+// Enter opens the room. With nothing waiting, a quiet print and the way
+// back to the threads (onBack, when the shell gives it).
+export function Inbox({
+  items,
+  mac,
+  onBack,
+  ...actions
+}: { items: InboxItem[]; mac: boolean; onBack?: () => void } & InboxActions) {
   const [pick, setPick] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const list = useRef<HTMLUListElement>(null);
+  const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(t);
@@ -129,6 +148,15 @@ export function Inbox({ items, mac, ...actions }: { items: InboxItem[]; mac: boo
   if (index < 0) index = Math.min(last.current, items.length - 1);
   last.current = Math.max(0, index);
   const current = items[index];
+  const urgent = items.filter((i) => i.state === "needs-you").length;
+
+  // The items come sorted by state, so each group is a run of them.
+  const groups: { state: InboxState; items: { item: InboxItem; i: number }[] }[] = [];
+  items.forEach((item, i) => {
+    const g = groups[groups.length - 1];
+    if (g !== undefined && g.state === item.state) g.items.push({ item, i });
+    else groups.push({ state: item.state, items: [{ item, i }] });
+  });
 
   const onKey = (e: KeyboardEvent) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -152,34 +180,69 @@ export function Inbox({ items, mac, ...actions }: { items: InboxItem[]; mac: boo
     <section aria-label="Inbox" className="inbox flex min-h-0 flex-1 flex-col">
       <header className="drag flex h-13 shrink-0 items-center gap-2 px-5">
         <InboxIcon className="size-4 text-muted-foreground" />
-        <h1 className="font-medium text-sm">Inbox</h1>
-        {items.length > 0 && <span className="font-mono text-2xs text-faint tabular-nums">{items.length}</span>}
-        <span className="ml-auto hidden items-center gap-1 text-2xs text-faint sm:flex">
-          <Kbd>j</Kbd>
-          <Kbd>k</Kbd> move · <Kbd>y</Kbd>
-          <Kbd>n</Kbd> answer · <Kbd>Enter</Kbd> opens · <Kbd>{mac ? "⌘⌥L" : "Ctrl Alt L"}</Kbd> next room
-        </span>
+        <h1 className="font-semibold text-sm">Inbox</h1>
+        {urgent > 0 ? (
+          <span className="font-medium text-warning-foreground text-xs tabular-nums">
+            {urgent} {urgent === 1 ? "needs" : "need"} you
+          </span>
+        ) : (
+          items.length > 0 && <span className="text-2xs text-faint tabular-nums">{items.length}</span>
+        )}
+        {!empty && (
+          <span className="ml-auto hidden items-center gap-1 text-2xs text-faint lg:flex">
+            <Kbd>j</Kbd>
+            <Kbd>k</Kbd>
+            <span className="mr-2 ml-0.5">move</span>
+            <Kbd>y</Kbd>
+            <Kbd>n</Kbd>
+            <span className="mr-2 ml-0.5">answer</span>
+            <Kbd>↵</Kbd>
+            <span className="mr-2 ml-0.5">open</span>
+            <Kbd>{mac ? "⌘⌥L" : "Ctrl Alt L"}</Kbd>
+            <span className="ml-0.5">next room</span>
+          </span>
+        )}
       </header>
       {empty ? (
-        <EmptyState
-          icon={InboxIcon}
-          title="Nothing waits for you."
-          hint="Approvals, finished rooms and overlaps show up here."
-          className="inbox-empty flex-1 justify-center pb-[14vh]"
-        />
+        <div className="flex flex-1 flex-col justify-center pb-[12vh]">
+          <EmptyPlate
+            art={PLATES.sea}
+            focus={[0.5, 0.45]}
+            title="Nothing waits for you."
+            hint="Approvals, finished rooms and overlaps show up here, across every open project."
+            className="inbox-empty"
+            action={
+              onBack !== undefined && (
+                <Button variant="outline" size="sm" onClick={onBack}>
+                  Back to threads
+                </Button>
+              )
+            }
+          />
+        </div>
       ) : (
-        <ul
+        <div
           ref={list}
           role="listbox"
           aria-label="Waiting for you"
           tabIndex={0}
-          className="mx-auto flex w-full max-w-3xl flex-col gap-1 overflow-y-auto px-4 pb-6 outline-none"
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto outline-none"
           onKeyDown={onKey}
         >
-          {items.map((it, i) => (
-            <Row key={it.id} item={it} selected={i === index} now={now} onSelect={() => setPick(it.id)} actions={actions} />
-          ))}
-        </ul>
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pt-1 pb-8">
+            {groups.map((g) => (
+              <div key={g.state} role="group" aria-label={STATES[g.state].group} className="flex animate-enter flex-col gap-1">
+                <div aria-hidden className="flex items-baseline gap-2 px-3 pb-1 font-semibold text-xs">
+                  <span className={g.state === "needs-you" ? "text-warning-foreground" : "text-muted-foreground"}>{STATES[g.state].group}</span>
+                  <span className="font-normal text-faint tabular-nums">{g.items.length}</span>
+                </div>
+                {g.items.map(({ item, i }) => (
+                  <Row key={item.id} item={item} selected={i === index} now={now} onSelect={() => setPick(item.id)} actions={actions} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </section>
   );

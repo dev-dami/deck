@@ -45,6 +45,7 @@ export function AgentsSheet({ sessionId, roster, onClose }: AgentsSheetProps) {
                   ${a.name}
                 </span>
                 <span class="row-sub">
+                  {a.role !== undefined && a.role !== "" ? `${a.role} · ` : ""}
                   {a.kind}
                   {a.model !== undefined ? ` / ${a.model}` : ""}
                   {a.effort !== undefined ? ` / ${a.effort}` : ""}

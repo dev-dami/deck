@@ -18,6 +18,7 @@
     "start": "electron .",
     "test": "vitest run",
     "e2e": "npm run build && playwright test",
+    "shots": "npm run build && playwright test shots",
     "smoke": "npm run build && electron . --smoke",
     "lint": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json"
   },
@@ -29,6 +30,11 @@
     "ws": "8.22.0"
   },
   "devDependencies": {
+    "@fontsource-variable/inter-tight": "5.3.0",
+    "@fontsource-variable/martian-mono": "5.3.0",
+    "@fontsource-variable/space-grotesk": "5.3.0",
+    "@fontsource/pixelify-sans": "5.3.0",
+    "@phosphor-icons/react": "^2.1.10",
     "@playwright/test": "1.56.1",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "22.18.12",
@@ -43,7 +49,6 @@
     "clsx": "2.1.1",
     "electron": "44.9.0",
     "electron-builder": "26.17.0",
-    "lucide-react": "1.49.0",
     "prismjs": "1.30.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",

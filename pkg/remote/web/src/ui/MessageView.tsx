@@ -134,6 +134,9 @@ function AgentName({ agentId, roster }: { agentId: string; roster: AgentLine[] }
         </span>
       ) : null}
       {line?.name ?? agentId}
+      {line?.role !== undefined && line.role !== "" ? (
+        <span class="agent-role"> {line.role}</span>
+      ) : null}
     </p>
   );
 }

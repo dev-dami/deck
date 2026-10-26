@@ -1,5 +1,5 @@
 import { parseDiff } from "@web/diff";
-import { Columns2, MessageSquarePlus, Plus, Rows2, WrapText } from "lucide-react";
+import { Columns2, MessageSquarePlus, Plus, Rows2, WrapText } from "./icons";
 import { createContext, Fragment, type ReactNode, useContext, useMemo, useState } from "react";
 import {
   type DiffRow,
@@ -40,13 +40,10 @@ export function CommentsBadge() {
   const api = useContext(LineComments);
   if (api === null || api.count === 0) return null;
   return (
-    <span className="line-comments inline-flex items-center gap-1.5 font-mono text-2xs text-muted-foreground tabular-nums">
+    <span className="line-comments inline-flex h-6 animate-enter items-center gap-1.5 rounded-full bg-hover pr-1 pl-2.5 text-2xs text-muted-foreground tabular-nums">
       <MessageSquarePlus className="size-3.5 text-faint" />
       {api.count} comment{api.count === 1 ? "" : "s"}
-      <span aria-hidden className="text-faint">
-        ·
-      </span>
-      <Button variant="link" size="xs" className="h-auto px-0 font-sans" onClick={api.send}>
+      <Button variant="ghost" size="xs" className="h-5 px-2 font-medium" onClick={api.send}>
         Send
       </Button>
     </span>
@@ -63,7 +60,7 @@ export function DiffToggles({ splitOk }: { splitOk: boolean }) {
       {splitOk && (
         <Button
           variant="ghost-muted"
-          size="icon-xs"
+          size="icon-sm"
           className="diff-layout"
           aria-label={split ? "Unified view" : "Split view"}
           title={split ? "Unified view" : "Split view"}
@@ -75,8 +72,8 @@ export function DiffToggles({ splitOk }: { splitOk: boolean }) {
       )}
       <Button
         variant="ghost-muted"
-        size="icon-xs"
-        className={cn("diff-wrap-toggle", p.diffWrap && "text-foreground")}
+        size="icon-sm"
+        className="diff-wrap-toggle"
         aria-label="Wrap long lines"
         title="Wrap long lines"
         aria-pressed={p.diffWrap}
@@ -92,7 +89,7 @@ function CommentInput({ where, onSubmit, onCancel }: { where: string; onSubmit: 
   const [text, setText] = useState("");
   return (
     <form
-      className="diff-comment flex items-center gap-2 border-hairline border-y bg-surface-1 px-3 py-1.5 font-sans"
+      className="diff-comment flex items-center gap-2 border-hairline border-y bg-surface-1 px-2.5 py-2 font-sans"
       onSubmit={(e) => {
         e.preventDefault();
         if (text.trim() !== "") onSubmit(text);
@@ -103,7 +100,7 @@ function CommentInput({ where, onSubmit, onCancel }: { where: string; onSubmit: 
         aria-label={`Comment on ${where}`}
         placeholder={`Comment on ${where}`}
         value={text}
-        className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-faint"
+        className="h-7 min-w-0 flex-1 rounded-full bg-hover px-3 text-[13px] outline-none ring-1 ring-hairline transition-shadow placeholder:text-faint focus:ring-2 focus:ring-ring"
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Escape") onCancel();

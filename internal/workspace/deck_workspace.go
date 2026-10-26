@@ -188,7 +188,7 @@ func (w *DeckWorkspace) threadOf(sessionID string) (decks.ThreadInfo, bool) {
 // -- Agent --
 
 // AgentRun posts the prompt to the session's thread: to the agents it names
-// ($claude, $codex, $all), or to whoever spoke last.
+// (@claude, @codex, @all, a named agent; $ works too), or to whoever spoke last.
 func (w *DeckWorkspace) AgentRun(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) error {
 	_, err := w.post(ctx, sessionID, prompt, attachments...)
 	return err
@@ -1162,6 +1162,9 @@ func (t *turn) resultAs(tool *deckagent.Tool, name, input string) message.ToolRe
 		}
 		r.Metadata = enc(meta)
 	case tools.EditToolName, tools.WriteToolName:
+		if r.IsError {
+			break // no diff of its own: one in diffs is an earlier edit's
+		}
 		d, ok := t.diffs[in.FilePath]
 		if !ok {
 			for p, dd := range t.diffs {

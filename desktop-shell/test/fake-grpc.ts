@@ -117,6 +117,14 @@ export class FakeRpcDeck {
       { id: "t5", title: "Add a regression test", status: "failed", owner: "codex-1", error: "go test failed", attempts: 2, tries: 2 },
     ] as Obj[],
   };
+  // The open thread's agents tree; a test may swap it (test/e2e/graph.spec.ts).
+  crew: { agents: Obj[]; running: Obj[] } = {
+    agents: [
+      { name: "claude-1", kind: "claude", model: "opus", status: "tool", depth: 0, context_tokens: 60000, context_window: 200000, since: Date.now() - 65_000 },
+      { name: "codex-sub", kind: "codex", model: "gpt-5", status: "working", depth: 1, parent: "claude-1", branch: "deck/t3", leases: "pkg/remote/** (exclusive)" },
+    ],
+    running: [{ agent: "claude-1", kind: "claude", name: "Bash", summary: "go test ./pkg/remote/...", started: Date.now() - 12_000, command: true }],
+  };
   // The team link.
   readonly team = {
     chat: [{ seq: 1, from: "vps", agent: "claude2", text: "I am on the flaky test.", at: Date.now() }] as Obj[],
@@ -146,6 +154,10 @@ export class FakeRpcDeck {
     asked: [] as string[],
     files: ["main.go", "pkg/remote/auth/limit.go", "pkg/remote/auth/limit_test.go", "README.md"],
   };
+  // Named agents: the profiles of the global and the project deck.json,
+  // and what was saved and deleted. Served once serveProfiles is called.
+  // refuse, when set, is the reason SaveProfile gives for the next save.
+  readonly named = { profiles: [] as Obj[], saved: [] as string[], deleted: [] as string[], refuse: null as string | null };
   // Each terminal: what it printed and who watches it.
   private readonly terms = new Map<string, { out: string; line: string; subs: Set<grpc.ServerWritableStream<Obj, Obj>> }>();
 
@@ -165,6 +177,27 @@ export class FakeRpcDeck {
     );
     f.deck.listeners.add((e, p) => f.publish(e, p));
     return f;
+  }
+
+  // Serves the profile calls (a Deck that keeps profiles reads "@" as an
+  // agent's sigil) with these profiles, which "@name" also reaches.
+  serveProfiles(profiles: Obj[]): void {
+    for (const m of ["ListProfiles", "SaveProfile", "DeleteProfile"]) if (!this.room.caps.includes(m)) this.room.caps.push(m);
+    this.named.profiles.splice(0, Infinity, ...profiles);
+    this.syncProfiles();
+  }
+
+  // The profiles as ListProfiles merges them: a project profile overrides
+  // a global one of the same name.
+  mergedProfiles(): Obj[] {
+    const merged = new Map<string, Obj>();
+    for (const scope of ["global", "project"])
+      for (const p of this.named.profiles.filter((x) => x["scope"] === scope)) merged.set(String(p["name"]).toLowerCase(), p);
+    return [...merged.values()];
+  }
+
+  private syncProfiles(): void {
+    this.deck.profiles = this.mergedProfiles().map((p) => ({ name: String(p["name"]), kind: String(p["kind"]), role: String(p["role"] ?? "") }));
   }
 
   // The line `deck serve --rpc` prints.
@@ -380,13 +413,7 @@ export class FakeRpcDeck {
       b.orchestrate = r["on"] === true;
       return {};
     });
-    unary("Agents", () => ({
-      agents: [
-        { name: "claude-1", kind: "claude", model: "opus", status: "tool", depth: 0, context_tokens: 60000, context_window: 200000, since: Date.now() - 65_000 },
-        { name: "codex-sub", kind: "codex", model: "gpt-5", status: "working", depth: 1, parent: "claude-1", branch: "deck/t3", leases: "pkg/remote/** (exclusive)" },
-      ],
-      running: [{ agent: "claude-1", kind: "claude", name: "Bash", summary: "go test ./pkg/remote/...", started: Date.now() - 12_000, command: true }],
-    }));
+    unary("Agents", () => this.crew);
     const tm = this.team;
     unary("Team", () => ({
       available: true,
@@ -440,6 +467,49 @@ export class FakeRpcDeck {
     });
     unary("AnswerShared", () => {
       throw new Error("only an editor answers approvals");
+    });
+    // The profile calls, as pkg/rpc serves them. SaveProfile refuses what
+    // profile.Validate does, in Deck's words, and "vps" as a teammate's name.
+    const nm = this.named;
+    const sameProfile = (p: Obj, name: unknown, scope: unknown) =>
+      String(p["name"]).toLowerCase() === String(name).toLowerCase() && p["scope"] === scope;
+    const call = (name: string, f: (r: Obj) => Obj) => {
+      h[name] = (c: grpc.ServerUnaryCall<Obj, Obj>, cb: grpc.sendUnaryData<Obj>) => {
+        if (!this.authorized(c.metadata)) return cb({ code: grpc.status.UNAUTHENTICATED, details: "missing or wrong token" });
+        this.calls.push(name);
+        try {
+          cb(null, f(c.request));
+        } catch (e) {
+          const code = e instanceof Fail ? (CODES[e.code] ?? grpc.status.INTERNAL) : grpc.status.INTERNAL;
+          cb({ code, details: e instanceof Error ? e.message : "fake failed" });
+        }
+      };
+    };
+    call("ListProfiles", () => ({ profiles: this.mergedProfiles() }));
+    call("SaveProfile", (r) => {
+      const p = { ...(r["profile"] as Obj) };
+      const name = String(p["name"] ?? "");
+      const refuse = nm.refuse;
+      nm.refuse = null;
+      if (refuse !== null) throw new Fail("invalid", refuse);
+      if (!/^[\w-]{1,32}$/.test(name)) throw new Fail("invalid", `name "${name}" can only hold letters, digits, - and _, so that @${name} reaches it`);
+      if (["all", "user", "deck"].includes(name.toLowerCase())) throw new Fail("invalid", `name "${name}" is reserved`);
+      if (name.toLowerCase() === "vps") throw new Fail("invalid", `name "${name}" is a teammate's`);
+      p["scope"] = p["scope"] === "global" ? "global" : "project";
+      const at = nm.profiles.findIndex((x) => sameProfile(x, name, p["scope"]));
+      if (at >= 0) nm.profiles[at] = p;
+      else nm.profiles.push(p);
+      nm.saved.push(`${String(p["scope"])}:${name}`);
+      this.syncProfiles();
+      return { profile: p };
+    });
+    call("DeleteProfile", (r) => {
+      const at = nm.profiles.findIndex((x) => sameProfile(x, r["name"], r["scope"]));
+      if (at < 0) throw new Fail("not_found", "no such profile");
+      nm.profiles.splice(at, 1);
+      nm.deleted.push(`${String(r["scope"])}:${String(r["name"])}`);
+      this.syncProfiles();
+      return {};
     });
     // The room calls, as pkg/rpc serves them.
     const rm = this.room;
@@ -540,4 +610,61 @@ export class FakeRpcDeck {
     }
     return h;
   }
+}
+
+export const GRAPH_FILES = { LIMIT: "pkg/remote/auth/limit.go", TEST: "pkg/remote/auth/limit_test.go", PRUNE: "pkg/remote/auth/prune.go" };
+
+// A crew at work in "Fix the pairing lockout", for the Work Graph's tests
+// and screenshots: two members and a subagent each, tasks with
+// dependencies, the files they touch, and one agent editing a file now.
+export function crewAtWork(f: FakeRpcDeck): void {
+  const { LIMIT, TEST, PRUNE } = GRAPH_FILES;
+  const now = Date.now();
+  f.crew = {
+    agents: [
+      {
+        name: "claude-1",
+        kind: "claude",
+        model: "opus",
+        effort: "high",
+        status: "tool",
+        context_tokens: 92_000,
+        context_window: 200_000,
+        cost_usd: 1.84,
+        since: now - 194_000,
+        leases: "pkg/remote/auth/** (exclusive)",
+      },
+      { name: "codex-1", kind: "codex", model: "gpt-5-codex", status: "idle", context_tokens: 41_000, context_window: 272_000, cost_usd: 0.62 },
+      {
+        name: "claude-sub",
+        kind: "claude",
+        model: "sonnet",
+        status: "working",
+        depth: 1,
+        parent: "claude-1",
+        branch: "deck/t2",
+        context_tokens: 18_000,
+        context_window: 200_000,
+        cost_usd: 0.21,
+        since: now - 71_000,
+      },
+      { name: "codex-sub", kind: "codex", model: "gpt-5-codex", status: "exited", depth: 1, parent: "codex-1", branch: "deck/t3", cost_usd: 0.33 },
+    ],
+    running: [
+      { agent: "claude-1", kind: "claude", name: "Edit", summary: LIMIT, started: now - 8_000 },
+      { agent: "claude-sub", kind: "claude", name: "Bash", summary: "go test ./pkg/remote/auth -run Limiter", started: now - 21_000, command: true },
+    ],
+  };
+  f.board.orchestrate = true;
+  f.board.tasks = [
+    { id: "t1", title: "Map the limiter", status: "done", owner: "claude-1", files: [LIMIT] },
+    { id: "t2", title: "Key failures by address", status: "running", owner: "claude-sub", deps: ["t1"], files: [LIMIT, TEST], branch: "deck/t2" },
+    { id: "t3", title: "Prune idle buckets", status: "done", owner: "codex-sub", deps: ["t1"], files: [PRUNE], branch: "deck/t3" },
+    { id: "t4", title: "Document the limit", status: "ready", owner: "codex-1", files: ["docs/pairing.md"] },
+  ];
+  f.deck.setChanges("ses_main", [
+    { path: LIMIT, added: 18, removed: 6, diff: "@@ -12,3 +12,4 @@\n-\tglobal.fail()\n+\tl.fail(addr)\n" },
+    { path: TEST, added: 42, removed: 0, diff: "@@ -0,0 +1,1 @@\n+func TestLimiterIsPerAddress(t *testing.T) {}\n" },
+    { path: PRUNE, added: 27, removed: 3, diff: "@@ -0,0 +1,1 @@\n+func (l *Limiter) prune() {}\n" },
+  ]);
 }

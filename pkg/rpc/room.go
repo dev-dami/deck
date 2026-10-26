@@ -196,6 +196,9 @@ func (s *Server) capabilities() []string {
 	if rooms || s.dir != "" {
 		out = append(out, "ListFiles")
 	}
+	if s.crew != nil && s.crew.profiles != nil {
+		out = append(out, profileMethods...)
+	}
 	return out
 }
 

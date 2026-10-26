@@ -466,13 +466,8 @@ func (t *translator) user(sl streamLine, mk func(agent.Kind) agent.Event) []agen
 		if b.IsError {
 			status = agent.ToolError
 		}
-		ev := mk(agent.KindToolResult)
-		ev.Tool = &agent.Tool{
-			ID: b.ToolUseID, Name: info.name, Title: info.title, Input: info.input,
-			Output: stringifyContent(b.Content), Status: status,
-		}
-		out = append(out, ev)
-
+		// The diff goes before its result, as other adapters emit it:
+		// consumers attach a path's latest diff to the result that follows.
 		if status == agent.ToolOK {
 			if d := fileDiffFor(info, sl.ToolUseResult); d != nil {
 				fe := mk(agent.KindFileChange)
@@ -480,6 +475,12 @@ func (t *translator) user(sl streamLine, mk func(agent.Kind) agent.Event) []agen
 				out = append(out, fe)
 			}
 		}
+		ev := mk(agent.KindToolResult)
+		ev.Tool = &agent.Tool{
+			ID: b.ToolUseID, Name: info.name, Title: info.title, Input: info.input,
+			Output: stringifyContent(b.Content), Status: status,
+		}
+		out = append(out, ev)
 		delete(t.tools, b.ToolUseID)
 	}
 	return out

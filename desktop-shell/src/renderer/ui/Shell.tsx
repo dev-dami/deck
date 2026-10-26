@@ -18,6 +18,7 @@ import { isMac } from "./keys";
 import { Palette } from "./Palette";
 import { LiveRightPanel } from "./RightPanel";
 import { Room } from "./Room";
+import { ProfilesDeck } from "./ProfilesEditor";
 import { SettingsPage } from "./Settings";
 import { SharedRoom } from "./SharedRoom";
 import { type ProjectEntry, Sidebar } from "./Sidebar";
@@ -40,9 +41,16 @@ export interface ShellAttention {
 }
 
 // Settings takes the whole state but reads only the panel slice.
-function LiveSettings({ c, ...props }: { c: DeckClient } & Omit<ComponentProps<typeof SettingsPage>, "state">) {
+// The profiles editor in Agents talks to this Deck, and keeps profile
+// names clear of the team's people.
+function LiveSettings({ c, teammates, ...props }: { c: DeckClient; teammates: readonly string[] } & Omit<ComponentProps<typeof SettingsPage>, "state">) {
   useAppSlice(c.store, panelSlice, shallowEqual);
-  return <SettingsPage {...props} state={c.store.state} />;
+  const deck = useMemo(() => ({ c, teammates }), [c, teammates]);
+  return (
+    <ProfilesDeck.Provider value={deck}>
+      <SettingsPage {...props} state={c.store.state} />
+    </ProfilesDeck.Provider>
+  );
 }
 
 export interface ShellProps {
@@ -113,6 +121,7 @@ export function Shell(props: ShellProps) {
   const { shared, openSession, newSession, openRoom, openShared, orToast } = nav;
   // Rooms teammates share with you, and how many teammates are online.
   const teamOn = typeof team === "object" && team !== null && team.available ? team : null;
+  const teammates = useMemo(() => teamOn?.teammates.map((m) => m.name) ?? [], [teamOn]);
   const r = useOpenRoom({
     c,
     projectKey,
@@ -167,7 +176,12 @@ export function Shell(props: ShellProps) {
   const away = ui.settings !== null || ui.usage || ui.team || ui.inbox;
 
   return (
-    <div className="shell relative flex h-full">
+    // The window is a backdrop with panels on it (docs/design-glass.md,
+    // section 4): an 8px gutter, the sidebar's glass, the room's sheet and
+    // the side panel's sheet beside it.
+    <div className="shell relative flex h-full gap-2 p-2">
+      {/* The gutter along the top drags the window, as a title bar would. */}
+      <div aria-hidden className="drag absolute inset-x-0 top-0 h-2" />
       {sidebar && (
         <Sidebar
           order={nav.order}
@@ -217,9 +231,10 @@ export function Shell(props: ShellProps) {
           }}
         />
       )}
-      {/* The room keeps 30rem; a widened panel gives way first. */}
-      <div className="flex min-w-[min(30rem,100%)] flex-1 flex-col bg-background">
-        <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      {/* The room's sheet, with the terminal drawer at its foot. It keeps
+          30rem; a widened panel gives way first. */}
+      <div className="room-sheet sheet relative flex min-w-[min(30rem,100%)] flex-1 flex-col overflow-hidden rounded-(--sheet-radius)">
+        <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
           {ui.inbox ? (
             <Inbox
               items={attention.items}
@@ -227,13 +242,22 @@ export function Shell(props: ShellProps) {
               onAnswer={attention.onAnswer}
               onContract={(item, accept) => orToast(attention.onContract(item, accept))}
               onOpen={(item) => item.room !== null && openRoom(item.project, item.room)}
+              onBack={() => dispatch({ type: "inbox", open: false })}
             />
           ) : ui.usage ? (
-            <UsagePage project={api} theme={state.theme} onOpenThread={openSession} />
+            <UsagePage project={api} theme={state.theme} onOpenThread={openSession} onAddProject={addProject} />
           ) : ui.team ? (
-            <TeamPage api={api} thread={open} onError={toast} onInfo={info} onOpenShared={openShared} />
+            <TeamPage
+              api={api}
+              thread={open}
+              onError={toast}
+              onInfo={info}
+              onOpenShared={openShared}
+              onConnection={() => dispatch({ type: "settings", section: "connection" })}
+              onAddProject={addProject}
+            />
           ) : ui.settings !== null ? (
-            <LiveSettings c={c} section={ui.settings} where={where} transport={transport} mac={mac} bridge={bridge} folder={folder} onDisconnect={onDisconnect} />
+            <LiveSettings c={c} teammates={teammates} section={ui.settings} where={where} transport={transport} mac={mac} bridge={bridge} folder={folder} onDisconnect={onDisconnect} />
           ) : shared !== null && api !== undefined ? (
             <SharedRoom
               key={`${shared.peer}/${shared.thread.id}`}

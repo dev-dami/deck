@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
+import { APP_ICON_IDS, type AppIconPref } from "./appIcon/catalog";
 import type { NotifyPref } from "./attention";
+import { CUSTOM, PICTURES } from "./backdrop/pictures";
 import { ACCENTS, DIFF_THEMES, THEMES } from "./themes";
 
 // The window's own settings (the Settings page). They live in this
@@ -42,11 +44,18 @@ export interface Prefs {
   diffTheme: string;
   diffView: DiffLayout;
   diffWrap: boolean;
+  // The backdrop's picture: "theme" for the theme's own, a picture from
+  // the library (backdrop/pictures.ts), or "custom" for the person's own,
+  // whose bytes are in IndexedDB (backdrop/wallpaper.ts).
+  wallpaper: string;
+  // The app icon: "theme" wears the theme's (appIcon/catalog.ts), an icon
+  // id wears that one.
+  appIcon: AppIconPref;
 }
 
 export const defaultPrefs: Prefs = {
   theme: "deck",
-  palette: "apple",
+  palette: "glass",
   accent: "theme",
   rows: "compact",
   grouping: "projects",
@@ -64,6 +73,8 @@ export const defaultPrefs: Prefs = {
   diffTheme: "match",
   diffView: "unified",
   diffWrap: false,
+  wallpaper: "theme",
+  appIcon: "theme",
 };
 
 const KEY = "deck.desktop.prefs";
@@ -108,6 +119,8 @@ function merge(v: Record<string, unknown>): Prefs {
     diffTheme: pick("diffTheme", DIFF_THEMES.map((t) => t.id), defaultPrefs.diffTheme),
     diffView: pick("diffView", ["unified", "split"] as const, defaultPrefs.diffView),
     diffWrap: bool("diffWrap", defaultPrefs.diffWrap),
+    wallpaper: pick("wallpaper", ["theme", CUSTOM, ...PICTURES.map((x) => x.id)], defaultPrefs.wallpaper),
+    appIcon: pick("appIcon", ["theme", ...APP_ICON_IDS], defaultPrefs.appIcon),
   };
 }
 
@@ -129,13 +142,13 @@ export function setPrefs(patch: Partial<Prefs>): void {
   for (const l of listeners) l();
 }
 
-function subscribe(l: () => void): () => void {
+export function subscribePrefs(l: () => void): () => void {
   listeners.add(l);
   return () => listeners.delete(l);
 }
 
 export function usePrefs(): Prefs {
-  return useSyncExternalStore(subscribe, getPrefs);
+  return useSyncExternalStore(subscribePrefs, getPrefs);
 }
 
 export function formatClock(t: string, clock: ClockPref): string {

@@ -1,0 +1,67 @@
+# Art
+
+Pictures that Deck's themes and pages draw through their processes:
+dithered, half-toned, stitched or frosted (`docs/design-glass.md`, "Art
+directions"). Every one is in the public domain or dedicated to it; none
+needs a credit, and we give one anyway.
+
+| File | Work | Source and licence |
+|---|---|---|
+| `alpine-braun-1870.jpg` | Adolphe Braun, a French alpine landscape, carbon print, about 1870 | The J. Paul Getty Museum, Open Content Program; CC0 1.0 |
+| `black-canyon-osullivan-1871.jpg` | Timothy H. O'Sullivan, *Black Cañon, Colorado River, From Camp 8, Looking Above*, albumen silver print, 1871 | The J. Paul Getty Museum, Open Content Program; CC0 1.0 |
+| `march-pastoral-emerson-1888.jpg` | Peter Henry Emerson, *A March Pastoral*, photogravure, 1888 | The J. Paul Getty Museum, Open Content Program; CC0 1.0 |
+| `nagasaki-boats-beato-1865.jpg` | Felice Beato, boats on a river in Nagasaki, albumen silver print, about 1865 | The J. Paul Getty Museum, Open Content Program; CC0 1.0 |
+| `allium-blossfeldt-1928.jpg` | Karl Blossfeldt, *Allium oreophilum*, gelatin silver print, 1928 | The J. Paul Getty Museum, Open Content Program; CC0 1.0 |
+| `dust-bowl-lange-1940.jpg` | Dorothea Lange, an abandoned Dust Bowl home, gelatin silver print, about 1940 | The J. Paul Getty Museum, Open Content Program; CC0 1.0 |
+| `hubble-xdf-nasa-2012.jpg` | Hubble eXtreme Deep Field, 2012 | NASA; public domain (NASA media guidelines) |
+| `falcon-launch-spacex-2015.jpg` | A Falcon 9 launch, 2015 | SpaceX; released to the public domain (CC0 1.0) |
+
+The Getty files came from the `@stdlib/datasets-img-*` packages (their
+contents CC0 1.0, data PDDL 1.0); the NASA and SpaceX files from
+scikit-image's sample data (`skimage/data`, v0.19.3).
+
+## The Met (`met/`)
+
+Seventy-eight works from The Metropolitan Museum of Art's Open Access
+program, every one public domain and released under CC0 1.0: woodblock
+prints by Hokusai, Hiroshige, Kuniyoshi; screens by Kōrin and a scroll by
+Jakuchū; paintings by Van Gogh, Corot, Courbet, Constable, Sisley,
+Seurat, Redon; photographs by Carleton E. Watkins and Gustave Le Gray;
+prints by Pissarro, Winslow Homer, Arthur Wesley Dow and Turner.
+`met/manifest.json` lists each file with its artist, title, date, medium,
+Met object id and page. The images came from the Met's public bucket on
+Google Cloud (`gcs-public-data--met`), scaled to 1280px on the long side.
+
+Prints and photographs keep their paper margins and mounts; crop them in
+the process that draws them.
+
+## Plates
+
+`plates/` holds 1-bit Atkinson dithers of five of these, made by
+`scripts/dither-art.py` (cropped, margins and mounts dropped) and drawn by
+`ui/kit/plate.tsx` in two tones. Each page credits its own in faint type:
+
+| Plate | Work | Where |
+|---|---|---|
+| `alps.png` | Braun, an alpine landscape | none since the art directions (below); the Welcome prints the picture through the theme's process |
+| `bridge.png` | Hiroshige, *Sudden Shower over Shin-Ōhashi Bridge and Atake*, 1857 | none since the art directions; the connect screen prints it through the theme's process |
+| `sea.png` | Le Gray, *Mediterranean Sea, Sète*, 1857 | the Inbox, empty |
+| `wave.png` | Hokusai, *Under the Wave off Kanagawa*, about 1830–32 | Team, empty |
+| `fuji.png` | Hokusai, *South Wind, Clear Sky*, about 1830–32 | Usage, empty |
+
+## Art directions
+
+The themes print these through their processes at run time
+(`backdrop/pictures.ts`; `docs/design-glass.md`, section 9). The first
+screens credit the picture they print under it; Settings > Appearance
+credits the picture behind the window.
+
+| Set | Pictures (the theme's own first) |
+|---|---|
+| Liquid Glass | Braun, the Alps (`alpine-braun-1870.jpg`); Watkins, *Looking Down Yosemite Valley*; Hiroshige, *Evening Snow on Hira*; Constable, a cloud study; Le Gray, *Mediterranean Sea, Sète*; Tokyo Night: the Hubble eXtreme Deep Field |
+| Riso | Blossfeldt, *Allium oreophilum* (`allium-blossfeldt-1928.jpg`); Hokusai, *Under the Wave off Kanagawa*; Kōrin, *Irises at Yatsuhashi*; Jakuchū, *White Plum Blossoms and Moon* |
+| Stitch | O'Sullivan, *Black Cañon* (`black-canyon-osullivan-1871.jpg`); Beato, boats at Nagasaki; Hokusai, *South Wind, Clear Sky*; Hiroshige, *Sudden Shower over Shin-Ōhashi Bridge and Atake*; Hokusai, *Kintai Bridge* |
+
+The connect screen prints Hiroshige's *Sudden Shower* in every theme. The
+playing cards and dice the stitch works over its picture are drawn by
+Deck (`backdrop/core.ts`), not taken from any work.

@@ -1,6 +1,6 @@
 import type { Store } from "@web/controller";
 import type { AppState } from "@web/state";
-import { X } from "lucide-react";
+import { CircleAlert, Info, X } from "./icons";
 import { useCallback, useEffect, useRef } from "react";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
@@ -63,40 +63,42 @@ export function Toasts({ c, toasts }: { c: DeckClient; toasts: AppState["toasts"
     };
   }, []);
   return (
-    // Above the composer, so a toast never covers Send.
-    <div className="toasts pointer-events-none fixed right-4 bottom-40 z-50 flex w-80 flex-col gap-2" aria-live="polite">
-      {toasts.map((t) => (
-        <div
-          key={t.id}
-          className={cn(
-            `toast toast-${t.kind} material pointer-events-auto flex animate-enter items-start gap-2 rounded-xl border border-hairline-strong bg-surface-2 py-3 pr-2 pl-4 text-sm shadow-popover inset-shadow-hl`,
-            t.kind === "error" && "border-destructive/40",
-          )}
-        >
-          <span className="toast-text min-w-0 flex-1 break-words">{t.text}</span>
-          {acts.has(t.id) && (
+    // Glass over the room's lower right, above the composer, so a toast
+    // never covers Send.
+    <div className="toasts pointer-events-none fixed right-6 bottom-40 z-50 flex w-80 max-w-[calc(100vw-3rem)] flex-col gap-2" aria-live="polite">
+      {toasts.map((t) => {
+        const Icon = t.kind === "error" ? CircleAlert : Info;
+        return (
+          <div
+            key={t.id}
+            className={`toast toast-${t.kind} material pointer-events-auto flex animate-enter items-start gap-2.5 rounded-2xl py-2.5 pr-2 pl-3 text-sm`}
+          >
+            <Icon aria-hidden weight="fill" className={cn("mt-px size-4 shrink-0", t.kind === "error" ? "text-destructive" : "text-primary")} />
+            <span className="toast-text min-w-0 flex-1 text-pretty break-words leading-snug">{t.text}</span>
+            {acts.has(t.id) && (
+              <button
+                type="button"
+                className="toast-action -my-0.5 h-6 shrink-0 cursor-pointer rounded-md px-1.5 font-medium text-info-foreground text-xs outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  acts.get(t.id)?.run();
+                  dismiss(t.id);
+                }}
+              >
+                {acts.get(t.id)?.label}
+              </button>
+            )}
             <button
               type="button"
-              className="toast-action -my-0.5 shrink-0 cursor-pointer rounded px-1.5 font-medium text-foreground text-xs outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => {
-                acts.get(t.id)?.run();
-                dismiss(t.id);
-              }}
+              aria-label="Dismiss"
+              title="Dismiss"
+              className="-my-0.5 grid size-6 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => dismiss(t.id)}
             >
-              {acts.get(t.id)?.label}
+              <X className="size-3.5" />
             </button>
-          )}
-          <button
-            type="button"
-            aria-label="Dismiss"
-            title="Dismiss"
-            className="-my-0.5 grid size-5 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => dismiss(t.id)}
-          >
-            <X className="size-3.5" />
-          </button>
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 }

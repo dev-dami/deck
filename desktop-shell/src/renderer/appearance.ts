@@ -9,8 +9,8 @@ import { isMac } from "./ui/keys";
 // of its own (themes.ts) sets it instead; data-palette and data-accent name
 // the theme and accent for styles.css, and data-diff-theme the colours of
 // diffs and code blocks. data-vibrancy says that main gave the window the
-// Mac's sidebar material (main.ts), which the Apple theme lets show.
-export function useAppearance(pref: ThemePref, palette = "apple", accent = "theme"): void {
+// Mac's sidebar material (main.ts), which Apple and Liquid Glass let show.
+export function useAppearance(pref: ThemePref, palette = "glass", accent = "theme"): void {
   const { diffTheme } = usePrefs();
   useEffect(() => {
     document.documentElement.setAttribute("data-diff-theme", diffTheme);

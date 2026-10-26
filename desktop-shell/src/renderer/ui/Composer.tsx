@@ -1,21 +1,24 @@
 import { canSend } from "@web/composer";
 import { checkImage, displayName, readAsBase64 } from "@web/images";
-import type { AgentLine, Image } from "@web/protocol";
-import { kindColour } from "@web/theme";
-import { ArrowUp, Paperclip, Square, X } from "lucide-react";
+import type { AgentLine, Image, Theme } from "@web/protocol";
+import { kindColour, kindMark } from "@web/theme";
+import { ArrowUp, Paperclip, Square, X } from "./icons";
 import { type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applySuggestion,
-  fileAt,
   fileLister,
   fileSuggestions,
   FILES_LIMIT,
   matchPaths,
   type Mention,
   mergeFiles,
-  mentionAt,
+  type Person,
+  type PickerType,
+  pickerAt,
+  type ProfileRef,
   slashAt,
   slashSuggestions,
+  suggestionHue,
   suggestions,
 } from "../completion";
 import { loadHistory, pushHistory, walk } from "../history";
@@ -26,11 +29,20 @@ import { parseSlash, type Slash, slashCommand } from "../slash";
 import { isMac } from "./keys";
 import { Button } from "./kit/button";
 
-// What the popup over the prompt completes: an agent ("$"), a changed file
-// ("@") or a slash command ("/", at the start of the message).
-type Picker = { type: "$" | "@" | "/"; m: Mention };
+// What the popup over the prompt completes: an agent or a person ("@"), an
+// agent ("$"), a file ("#", or "@" before a path) or a slash command ("/",
+// at the start of the message).
+type Picker = { type: PickerType | "/"; m: Mention };
 
-const PICKER_LABEL = { $: "Agents", "@": "Files", "/": "Commands" } as const;
+const PICKER_LABEL = { "@": "Agents and people", $: "Agents", "#": "Files", "/": "Commands" } as const;
+
+// A glass material drawn as a layer behind its parent's content, not on the
+// parent: an element with a backdrop-filter becomes the containing block of
+// fixed descendants and clips the blur of nested menus, so the composer's
+// pickers and dialogs would break on it. The parent is `relative isolate`.
+export function Glass({ className }: { className: string }) {
+  return <div aria-hidden className={cn("pointer-events-none absolute inset-0 -z-10 rounded-[inherit]", className)} />;
+}
 
 // An attached image and the blob URL of its thumbnail.
 interface Attached {
@@ -38,10 +50,11 @@ interface Attached {
   url: string;
 }
 
-// The composer, after T3 Code's ChatComposer: an attached banner on top (a
-// pending approval), the prompt, a footer with the agent picker and the
-// "more" menu on the left and attach and send (stop, while agents work and
-// nothing is typed) on the right, and a context strip underneath.
+// The composer: a capsule of glass that floats over the timeline
+// (docs/design-glass.md, section 4). A notice and a pending approval stack
+// above it; inside, the prompt, then one bar: the room's strip (the mode and
+// the agents) leading, and the toolbar, attach and send (stop, while agents
+// work and nothing is typed) trailing.
 export function Composer({
   draft,
   setDraft,
@@ -66,6 +79,10 @@ export function Composer({
   placeholder,
   sendKey,
   className,
+  theme = null,
+  profiles,
+  people,
+  mentions = true,
 }: {
   draft: string;
   setDraft: (s: string) => void;
@@ -80,16 +97,18 @@ export function Composer({
   onSlash?: (s: Slash) => Promise<boolean>;
   onError: (text: string) => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  // At the bar's trailing end, before attach and send.
   toolbar?: ReactNode;
+  // A card stacked over the capsule: the thread's pending approval.
   banner?: ReactNode;
   // A line above the prompt: an edit in progress, or the take-over after a stop.
   notice?: ReactNode;
   strip?: ReactNode;
   busy?: boolean;
   onStop?: () => void;
-  // The room's changed files, for "@".
+  // The room's changed files, for "#".
   paths?: readonly string[];
-  // The files of the room's tree that match a query (ListFiles), for "@"
+  // The files of the room's tree that match a query (ListFiles), for "#"
   // after the changed ones. A stable function: a new one asks again.
   listFiles?: ((query: string) => Promise<readonly string[] | null>) | undefined;
   // Where ↑ finds what the person sent: the project's source and the room.
@@ -97,6 +116,14 @@ export function Composer({
   placeholder?: string;
   sendKey: SendKey;
   className?: string;
+  // For the agents' glyphs in the pickers.
+  theme?: Theme | null;
+  // What "@" offers beyond the room: saved profiles and teammates.
+  profiles?: readonly ProfileRef[] | undefined;
+  people?: readonly Person[] | undefined;
+  // Whether the Deck reads "@" as an agent's sigil; an older one reads
+  // only "$", and there "@" keeps picking files.
+  mentions?: boolean;
 }) {
   const [images, setImages] = useState<Attached[]>([]);
   const [picker, setPicker] = useState<Picker | null>(null);
@@ -135,15 +162,16 @@ export function Composer({
   const options = useMemo(() => {
     if (picker === null) return [];
     if (picker.type === "/") return slashSuggestions(picker.m.query);
-    if (picker.type === "@") {
+    if (picker.type === "#") {
       const q = picker.m.query;
       if (lister === null) return fileSuggestions(q, paths ?? []);
       // While Deck looks, the last answer narrows to what is typed.
       const tree = found === null ? [] : found.query === q ? found.paths : matchPaths(q, found.paths, FILES_LIMIT);
       return mergeFiles(q, paths ?? [], tree);
     }
+    if (picker.type === "@") return suggestions(picker.m.query, roster, kinds, { sigil: "@", profiles, people }).slice(0, 16);
     return suggestions(picker.m.query, roster, kinds).slice(0, 8);
-  }, [picker, roster, kinds, paths, lister, found]);
+  }, [picker, roster, kinds, paths, lister, found, profiles, people]);
 
   // The prompt grows with its text up to a cap, then scrolls.
   useLayoutEffect(() => {
@@ -157,10 +185,9 @@ export function Composer({
     const text = el.value;
     const caret = el.selectionStart;
     const slash = onSlash === undefined ? null : slashAt(text, caret);
-    const file = slash !== null || ((paths ?? []).length === 0 && lister === null) ? null : fileAt(text, caret);
-    if (file !== null) lister?.ask(file.query);
-    const agent = slash !== null || file !== null ? null : mentionAt(text, caret);
-    setPicker(slash !== null ? { type: "/", m: slash } : file !== null ? { type: "@", m: file } : agent !== null ? { type: "$", m: agent } : null);
+    const next: Picker | null = slash !== null ? { type: "/", m: slash } : pickerAt(text, caret, (paths ?? []).length > 0 || lister !== null, mentions);
+    if (next?.type === "#") lister?.ask(next.m.query);
+    setPicker(next);
     setPick(0);
   };
 
@@ -315,10 +342,10 @@ export function Composer({
   };
 
   return (
-    <div className={cn("composer relative mx-auto w-full max-w-(--chat-max)", className)} data-yolo-region="">
+    <div className={cn("composer relative mx-auto flex w-full max-w-(--chat-max) flex-col gap-2", className)} data-yolo-region="">
       {picker !== null && options.length > 0 && (
         <ul
-          className="suggest material absolute right-0 bottom-full left-0 z-40 mb-2 max-h-80 animate-enter overflow-y-auto rounded-xl border border-hairline-strong bg-surface-2 p-1 shadow-popover inset-shadow-hl"
+          className="suggest material absolute right-0 bottom-full left-0 z-40 mb-2 max-h-80 animate-enter overflow-y-auto rounded-[18px] p-1.5"
           role="listbox"
           aria-label={PICKER_LABEL[picker.type]}
         >
@@ -328,30 +355,51 @@ export function Composer({
               role="option"
               aria-selected={i === pick}
               ref={i === pick ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
-              className={cn("flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-1.5 text-sm", i === pick && "on bg-selected")}
+              className={cn("flex h-8 cursor-pointer items-center gap-3 rounded-[10px] px-2.5 text-sm", i === pick && "on")}
               onMouseEnter={() => setPick(i)}
               onMouseDown={(e) => {
                 e.preventDefault();
                 accept(i);
               }}
             >
+              {picker.type !== "#" && picker.type !== "/" && (
+                // The kind's glyph in its hue; a person wears a teammate's mark.
+                <span
+                  aria-hidden
+                  className="suggest-mark grid w-4 shrink-0 place-items-center font-mono text-[12px] leading-none"
+                  style={{ color: suggestionHue(s, kindColour) }}
+                >
+                  {s.kind !== null ? kindMark(theme, s.kind) || "●" : s.label === "all" ? "∗" : "◇"}
+                </span>
+              )}
               <span
-                className="suggest-insert min-w-0 truncate font-medium font-mono text-xs"
-                style={{ color: s.kind === null ? undefined : kindColour(s.kind) }}
+                // text-code would also set the colour: --color-code is a fill.
+                className="suggest-insert min-w-0 truncate font-medium font-mono text-(length:--text-code) text-foreground"
+                style={{ color: suggestionHue(s, kindColour) }}
               >
                 {picker.type === "$" ? s.insert : s.label}
               </span>
-              <span className="suggest-detail shrink-0 text-muted-foreground text-xs">{s.detail}</span>
+              <span className="suggest-detail ml-auto min-w-0 shrink truncate text-muted-foreground text-xs">{s.detail}</span>
             </li>
           ))}
         </ul>
       )}
       {notice}
+      {banner !== undefined && banner !== null && banner !== false && (
+        // A pending approval rides on the composer, a card of thicker glass
+        // stacked over the capsule.
+        <div className="composer-banner relative isolate animate-enter rounded-[20px] p-1" data-composer-banner="">
+          <Glass className="liquid-thick" />
+          {banner}
+        </div>
+      )}
       <div
         className={cn(
-          // The hero surface: on focus its hairline takes the accent, with a faint outer ring.
-          "composer-box relative z-10 rounded-xl border border-hairline-strong bg-surface-1 shadow-card inset-shadow-hl transition-[border-color,box-shadow] focus-within:border-signal/50 focus-within:ring-[3px] focus-within:ring-signal/15",
-          dragging && "border-primary/60",
+          // The capsule: regular glass over the timeline. On focus its rim
+          // takes the accent.
+          "composer-box relative isolate z-10 rounded-[22px]",
+          "focus-within:[--glass-rim:color-mix(in_srgb,var(--primary)_60%,transparent)]",
+          dragging && "[--glass-rim:var(--primary)]",
         )}
         onDragOver={(e) => {
           if (!imagesOn) return;
@@ -366,27 +414,23 @@ export function Composer({
           void addFiles([...e.dataTransfer.files]);
         }}
       >
-        {banner !== undefined && banner !== null && banner !== false && (
-          <div className="border-hairline border-b px-1 pt-1 pb-1" data-composer-banner="">
-            {banner}
-          </div>
-        )}
+        <Glass className="liquid" />
         {images.length > 0 && (
-          <div className="attachments flex flex-wrap gap-2 px-4 pt-3">
+          <div className="attachments flex flex-wrap gap-2 px-4 pt-3.5">
             {images.map((im, i) => (
               <span
                 key={im.url}
-                className="thumb relative size-10 shrink-0 overflow-hidden rounded-md border border-hairline bg-secondary"
+                className="thumb relative size-12 shrink-0 animate-enter overflow-hidden rounded-[10px] bg-secondary ring-1 ring-hairline"
                 title={im.image.name}
               >
                 <img src={im.url} alt={im.image.name} className="size-full object-cover" />
                 <button
                   type="button"
-                  className="thumb-x absolute top-0.5 right-0.5 grid size-4 cursor-pointer place-items-center rounded-full border border-hairline-strong bg-surface-2 text-muted-foreground hover:text-foreground"
+                  className="thumb-x liquid-thick absolute top-1 right-1 grid size-4.5 cursor-pointer place-items-center rounded-full text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   aria-label={`Remove ${im.image.name}`}
                   onClick={() => dropImages((_, j) => j !== i)}
                 >
-                  <X className="size-2.5" />
+                  <X className="size-2.5" weight="bold" />
                 </button>
               </span>
             ))}
@@ -400,7 +444,7 @@ export function Composer({
           }
           value={draft}
           rows={2}
-          className="block max-h-[300px] min-h-[60px] w-full resize-none bg-transparent px-4 pt-3 pb-1 text-[14px] leading-relaxed outline-none placeholder:text-faint"
+          className="block max-h-[min(300px,38vh)] min-h-[3.25rem] w-full resize-none bg-transparent px-[18px] pt-3.5 pb-1 text-[14px] text-foreground leading-[1.55] outline-none placeholder:text-faint"
           onChange={(e) => {
             walkAt.current = -1;
             setDraft(e.target.value);
@@ -423,25 +467,19 @@ export function Composer({
           }}
           onBlur={() => setPicker(null)}
         />
-        {/* One bar under the text: the menu, then the mode, the agents and
-            the branch (the room's strip), then attach and send. */}
-        <div className="composer-bar @container/bar flex items-end gap-1 px-2 pb-2">
-          <div className="flex min-h-8 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
-            {toolbar}
+        {/* One bar under the text: the room's strip (the mode and the
+            agents) leading; the toolbar (the branch and the menu), attach
+            and send trailing. */}
+        <div className="composer-bar @container/bar flex items-end gap-2 pr-2 pb-2 pl-2.5">
+          <div className="flex min-h-8 min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-1">
             {strip !== undefined && <div className="composer-strip contents">{strip}</div>}
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex min-h-8 min-w-0 shrink-0 items-center gap-0.5">
+            {toolbar}
             {imagesOn && (
               <>
-                <Button
-                  variant="ghost-muted"
-                  size="icon"
-                  className="rounded-full"
-                  aria-label="Attach images"
-                  title="Attach images"
-                  onClick={() => fileRef.current?.click()}
-                >
-                  <Paperclip />
+                <Button variant="ghost-muted" size="icon" aria-label="Attach images" title="Attach images" onClick={() => fileRef.current?.click()}>
+                  <Paperclip className="size-[17px]" />
                 </Button>
                 <input
                   ref={fileRef}
@@ -458,25 +496,29 @@ export function Composer({
             )}
             {stopping ? (
               <Button
+                variant="ghost"
                 size="icon"
-                className="stop-all rounded-full"
+                // Stop is ink, not the accent: it halts work.
+                className="stop-all ml-0.5 bg-foreground text-background hover:bg-foreground/85"
                 aria-label="Stop all agents"
                 title="Stop all agents"
                 onClick={onStop}
               >
-                <Square className="size-3 fill-current" />
+                <Square className="size-3" weight="fill" />
               </Button>
             ) : (
               <Button
                 size="icon"
-                // The only amber fill in the app.
-                className={cn("send rounded-full border-primary bg-primary text-primary-foreground hover:bg-primary/90", !ready && "opacity-40")}
+                // The one accent on screen, once there is something to send;
+                // until then a quiet disc.
+                variant={ready ? "default" : "secondary"}
+                className={cn("send ml-0.5", !ready && "text-faint disabled:opacity-100")}
                 onClick={() => void submit(busy ? "queue" : "send")}
                 disabled={!ready}
                 aria-label="Send"
                 title={sendTitle(sendKey, mac, busy && onSteer !== undefined)}
               >
-                <ArrowUp className="size-4.5" />
+                <ArrowUp className="size-4" weight="bold" />
               </Button>
             )}
           </div>

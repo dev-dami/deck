@@ -1,0 +1,1113 @@
+/* Deck's page: kozo paper, sumi ink, a seal of vermilion and a line of
+   indigo, set like an art book. The pictures are museum prints and
+   photographs (The Met, public domain), shown in their own colour and
+   labelled as a catalogue labels them. */
+:root {
+  /* A print studio, not a café: cool kozo paper, sumi ink with a little
+     blue in it, the vermilion of a seal and the indigo of aizome. The
+     amber stays in the logo only. */
+  --paper: #e8e8e1;
+  --paper-2: #dcddd4;
+  --ink: #16171b;
+  --ink-2: #3c4049;
+  --faint: #6f737d;
+  --rule: rgb(22 23 27 / 0.13);
+  --accent: #c7361f;
+  --indigo: #24396b;
+  --claude: #c4581b;
+  --opencode: #0a6f9c;
+  --antigravity: #7d3fa0;
+  --night: #141519;
+  --night-ink: #e8e8e1;
+  --night-faint: #8d909a;
+  --wrap: 1240px;
+  --gutter: clamp(20px, 4vw, 40px);
+  /* Derived surfaces, so dark mode only has to restate the base colours. */
+  --rule-strong: rgb(22 23 27 / 0.24);
+  --well: rgb(255 255 255 / 0.42);
+  --ink-hover: #2b2d34;
+  --mention-bg: rgb(199 54 31 / 0.1);
+  --mention-ink: #a32a16;
+  --shadow: 20 22 30;
+  /* Agent colours that read on the dark glass of the picture scenes. */
+  --claude-on-glass: #f08a4b;
+  color-scheme: light;
+}
+
+/* Dark: the same paper and ink, turned over. The night section goes a
+   step deeper so it still reads as night. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111215;
+    --paper-2: #1a1b20;
+    --ink: #e6e6df;
+    --ink-2: #b1b4bb;
+    --faint: #80838c;
+    --rule: rgb(230 230 223 / 0.12);
+    --rule-strong: rgb(230 230 223 / 0.24);
+    --well: rgb(255 255 255 / 0.04);
+    --ink-hover: #ffffff;
+    --accent: #f0654a;
+    --indigo: #9fb2e6;
+    --claude: #e8814a;
+    --opencode: #4bb4e3;
+    --antigravity: #b88ad6;
+    --mention-bg: rgb(240 101 74 / 0.14);
+    --mention-ink: #f6927b;
+    --night: #0a0b0d;
+    --shadow: 0 0 0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111215;
+  --paper-2: #1a1b20;
+  --ink: #e6e6df;
+  --ink-2: #b1b4bb;
+  --faint: #80838c;
+  --rule: rgb(230 230 223 / 0.12);
+  --rule-strong: rgb(230 230 223 / 0.24);
+  --well: rgb(255 255 255 / 0.04);
+  --ink-hover: #ffffff;
+  --accent: #f0654a;
+  --indigo: #9fb2e6;
+  --claude: #e8814a;
+  --opencode: #4bb4e3;
+  --antigravity: #b88ad6;
+  --mention-bg: rgb(240 101 74 / 0.14);
+  --mention-ink: #f6927b;
+  --night: #0a0b0d;
+  --shadow: 0 0 0;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+body {
+  margin: 0;
+  background-color: var(--paper);
+  /* Fibre in the paper: a faint, fixed grain so the page reads as
+     printed rather than flat. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .1 0 0 0 0 .1 0 0 0 0 .12 0 0 0 .055 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  color: var(--ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+a {
+  color: inherit;
+}
+code {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.88em;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.wrap {
+  width: 100%;
+  max-width: calc(var(--wrap) + 2 * var(--gutter));
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+h1,
+h2 {
+  font-family: var(--font-serif), Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  margin: 0;
+}
+h1 em,
+h2 em {
+  font-style: italic;
+  color: var(--indigo);
+}
+.night h2 em {
+  color: inherit;
+}
+::selection {
+  background: var(--mention-bg);
+  color: var(--ink);
+}
+
+/* Iconoir, drawn at the weight of the type around it. */
+.icon {
+  flex: none;
+  width: 1.1em;
+  height: 1.1em;
+  stroke-width: 1.6;
+}
+.icon-sm {
+  width: 0.95em;
+  height: 0.95em;
+}
+h1 {
+  font-size: clamp(64px, 9.4vw, 136px);
+  line-height: 0.9;
+}
+h2 {
+  font-size: clamp(44px, 5.6vw, 80px);
+  line-height: 0.95;
+}
+p {
+  text-wrap: pretty;
+}
+/* Section labels carry a small vermilion seal, as a print carries its
+   publisher's mark. */
+.eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 10px;
+  vertical-align: 1px;
+  background: var(--accent);
+}
+.eyebrow {
+  margin: 0 0 22px;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* Navigation */
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 76px;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 600;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+.brand-mark {
+  height: 15px;
+  width: auto;
+  color: var(--ink);
+}
+.nav nav {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  font-size: 15px;
+}
+.nav nav a {
+  text-decoration: none;
+  color: var(--ink-2);
+}
+.nav nav a:hover {
+  color: var(--ink);
+}
+.nav .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--ink);
+}
+
+/* Buttons */
+.ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 22px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 160ms ease-out, border-color 160ms ease-out;
+}
+.btn-ink {
+  background: var(--ink);
+  color: var(--paper);
+}
+.btn-ink:hover {
+  background: var(--ink-hover);
+}
+.btn-line {
+  border: 1px solid var(--rule-strong);
+}
+.btn-line:hover {
+  border-color: var(--ink);
+}
+
+/* A command with a copy button */
+.command {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 12px 12px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--well);
+}
+.command-label {
+  flex: none;
+  min-width: 11.5rem;
+  font-size: 13px;
+  color: var(--faint);
+}
+.command code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  font-size: 13.5px;
+}
+.command .prompt {
+  color: var(--accent);
+  margin-right: 10px;
+  user-select: none;
+}
+.command button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.command button:hover {
+  color: var(--ink);
+  border-color: var(--ink-2);
+}
+
+/* Hero: the promise beside a print */
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: clamp(32px, 6vw, 96px);
+  align-items: end;
+  padding-top: clamp(40px, 7vw, 96px);
+  padding-bottom: clamp(48px, 7vw, 88px);
+}
+.hero-copy h1 {
+  margin-bottom: 36px;
+}
+.lede {
+  max-width: 34rem;
+  margin: 0 0 32px;
+  font-size: 19px;
+  color: var(--ink-2);
+}
+.hero-copy .ctas {
+  margin-bottom: 20px;
+}
+.hero-copy .command {
+  max-width: 34rem;
+}
+
+.plate {
+  position: relative;
+  margin: 0;
+}
+.plate img {
+  width: 100%;
+  box-shadow:
+    0 1px 2px rgb(var(--shadow) / 0.12),
+    0 18px 40px -18px rgb(var(--shadow) / 0.35);
+}
+
+/* Museum labels stay out of the way: a quiet chip in the picture's corner
+   that shows while you hover over the picture (or tab to it). */
+.credit {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 1;
+  max-width: min(30rem, calc(100% - 24px));
+  margin: 0;
+  padding: 6px 10px 7px;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgb(255 255 255 / 0.78);
+  background: rgb(22 20 15 / 0.58);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 220ms ease,
+    transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+}
+.credit i {
+  font-family: var(--font-serif), serif;
+  font-size: 14px;
+  color: #fff;
+}
+.plate:hover .credit,
+.plate:focus-visible .credit,
+.close-art:hover .credit,
+.close-art:focus-visible .credit,
+.room-stage:hover > .credit {
+  opacity: 1;
+  transform: none;
+}
+.plate:focus-visible,
+.close-art:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .credit {
+    transform: none;
+  }
+}
+.hero-plate {
+  justify-self: end;
+  width: 100%;
+  max-width: 440px;
+}
+
+/* Works with */
+.works {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 16px 40px;
+  padding-top: 26px;
+  padding-bottom: 26px;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.works-label {
+  font-size: 14px;
+  color: var(--faint);
+}
+.works ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 40px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 17px;
+}
+.works-glyph {
+  display: inline-block;
+  min-width: 1.4em;
+  font-family: var(--font-mono), monospace;
+}
+
+/* Section heads: a big title on the left, a paragraph on the right */
+.section-head {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  column-gap: clamp(32px, 6vw, 96px);
+  align-items: end;
+}
+.section-head .eyebrow {
+  grid-column: 1 / -1;
+}
+.section-head > p:last-child {
+  margin: 0;
+  color: var(--ink-2);
+  max-width: 30rem;
+}
+
+/* The desktop app over Yosemite */
+.room {
+  padding-top: clamp(80px, 10vw, 140px);
+}
+.room-stage {
+  position: relative;
+  margin-top: clamp(40px, 5vw, 64px);
+  padding: clamp(28px, 6vw, 96px) var(--gutter) clamp(40px, 6vw, 88px);
+  overflow: hidden;
+  isolation: isolate;
+}
+.room-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 40%;
+  z-index: -1;
+}
+.window {
+  margin: 0 auto;
+  max-width: 1120px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.5),
+    0 30px 80px -20px rgb(0 0 0 / 0.65),
+    0 10px 24px -10px rgb(0 0 0 / 0.4);
+}
+
+/* A thread, typeset */
+.thread {
+  padding-top: clamp(96px, 12vw, 160px);
+}
+.script {
+  margin: clamp(48px, 6vw, 72px) 0 0;
+  border-top: 1px solid var(--rule);
+}
+.line {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  gap: 24px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.who {
+  padding-top: 7px;
+  font-family: var(--font-mono), monospace;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.line p {
+  margin: 0;
+  max-width: 46rem;
+  font-family: var(--font-serif), serif;
+  font-size: clamp(22px, 2.3vw, 28px);
+  line-height: 1.3;
+}
+.mention {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.72em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--mention-bg);
+  color: var(--mention-ink);
+}
+.aside {
+  font-family: var(--font-mono), monospace;
+  font-size: 15px;
+  color: var(--faint);
+}
+
+.principles {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 40px 36px;
+  margin: clamp(72px, 9vw, 120px) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.principles li {
+  position: relative;
+}
+.numeral {
+  display: block;
+  font-family: var(--font-serif), serif;
+  font-style: italic;
+  font-size: 34px;
+  line-height: 1;
+  color: var(--accent);
+  margin-bottom: 14px;
+}
+.principles h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.principles p {
+  margin: 0;
+  font-size: 15.5px;
+  color: var(--ink-2);
+}
+
+/* The terminal, at night */
+.night {
+  margin-top: clamp(96px, 12vw, 160px);
+  padding: clamp(72px, 9vw, 128px) 0;
+  background: var(--night);
+  color: var(--night-ink);
+}
+.night-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+  gap: clamp(32px, 6vw, 88px);
+  align-items: start;
+}
+.night .eyebrow {
+  color: var(--night-faint);
+}
+.night .plate img {
+  box-shadow: none;
+}
+.night-copy > p {
+  max-width: 34rem;
+  margin: 28px 0 40px;
+  color: #c3c5cc;
+}
+.night-copy code {
+  color: var(--night-ink);
+}
+.tui {
+  border-radius: 12px;
+  box-shadow: 0 30px 80px -24px rgb(0 0 0 / 0.8);
+}
+
+/* Install */
+.install {
+  padding-top: clamp(96px, 12vw, 160px);
+}
+.install-steps {
+  display: grid;
+  gap: 12px;
+  margin-top: clamp(40px, 5vw, 56px);
+}
+.install-then {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.55fr);
+  gap: 12px;
+}
+.install-note {
+  margin: 14px 0 0;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+/* The close: Kōrin's irises */
+.close {
+  margin-top: clamp(96px, 12vw, 160px);
+}
+.close-art {
+  position: relative;
+  margin: 0;
+}
+.close-art img {
+  width: 100%;
+}
+.close-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 32px;
+  padding-top: clamp(48px, 6vw, 80px);
+  padding-bottom: clamp(48px, 6vw, 80px);
+}
+
+/* Footer */
+.foot {
+  padding-top: 28px;
+  border-top: 1px solid var(--rule);
+}
+.foot-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.foot nav {
+  display: flex;
+  gap: 24px;
+  font-size: 15px;
+}
+.foot nav a {
+  text-decoration: none;
+  color: var(--ink-2);
+}
+.copyright {
+  font-size: 13px;
+  color: var(--faint);
+}
+
+/* The stretchy wordmark: "deck" and the logo's amber cursor, edge to
+   edge. At 1px of font-size the word is 1.442px wide (Instrument Serif,
+   -0.04em tracking), so a size of 0.513 of the width gives the word 74%
+   of it and the cursor the rest. Only transform moves. */
+.foot {
+  padding-bottom: 0;
+  /* clip, not hidden: hidden would make the footer the scroller that
+     view() follows, and the wordmark would never stretch. */
+  overflow-x: clip;
+}
+.mega {
+  /* Headroom for the letters to stretch into. */
+  padding-top: calc(var(--mega-size) * 0.16);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  cursor: grab;
+  --mega-size: calc((min(100vw, var(--wrap) + 2 * var(--gutter)) - 2 * var(--gutter)) * 0.513);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: calc(var(--mega-size) * 0.04);
+  margin-bottom: clamp(20px, 3vw, 32px);
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: var(--mega-size);
+  line-height: 0.74;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  text-decoration: none;
+  transform-origin: 50% 100%;
+}
+/* The letters' line boxes hang below the baseline, and a stretched letter
+   would drag them down and lengthen the page. So the word clips at its own
+   bottom, while a tall, invisible top lets the letters stretch up freely. */
+.mega-word {
+  display: flex;
+  white-space: nowrap;
+  overflow-x: visible;
+  overflow-y: clip;
+  padding-top: 100vh;
+  margin-top: -100vh;
+  pointer-events: none;
+}
+.mega-letter,
+.mega-cursor {
+  pointer-events: auto;
+}
+.mega:active {
+  cursor: grabbing;
+}
+/* The springs live in Wordmark (components.tsx); CSS only sets the pivots. */
+.mega-letter {
+  display: inline-block;
+  transform-origin: 50% 100%;
+  will-change: transform;
+}
+.mega-cursor {
+  flex: 1;
+  max-width: 0.42em;
+  height: 0.056em;
+  margin-bottom: 0.014em;
+  border-radius: 0.028em;
+  background: linear-gradient(180deg, #f7bb5c, #ea972f);
+  transform-origin: 0 100%;
+  will-change: transform;
+}
+.mega:focus-visible {
+  outline-offset: 6px;
+}
+/* The stretch follows the whole footer coming into view, so it plays out
+   over the last screen of the page rather than in a few pixels. */
+@supports (view-timeline-name: --foot) {
+  .foot {
+    view-timeline: --foot block;
+  }
+  .mega {
+    animation: mega-stretch linear both;
+    animation-timeline: --foot;
+    animation-range: entry 45% entry 100%;
+  }
+}
+@keyframes mega-stretch {
+  from {
+    transform: translateY(var(--hand-h)) scaleY(0.25);
+  }
+  to {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mega {
+    animation: none;
+  }
+}
+
+/* The hand of cards. Five old cards fan out from a pivot far below the
+   page, so they lie along a shallow arc and their feet run off the bottom
+   of the footer. The wordmark sits behind them and rises out of the hand
+   as the footer scrolls in. */
+.hand-stage {
+  --card-w: clamp(112px, 17vw, 240px);
+  --hand-h: calc(var(--card-w) * 1.12);
+  position: relative;
+  padding-bottom: calc(var(--hand-h) - var(--card-w) * 0.06);
+}
+.hand-stage .mega {
+  position: relative;
+  z-index: 0;
+  margin-bottom: 0;
+}
+.hand {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: 0;
+  width: 100vw;
+  height: var(--hand-h);
+  margin: 0;
+  transform: translateX(-50%);
+  /* Clip the cards' feet at the footer's edge, but leave headroom above
+     for a card to lift. */
+  padding-top: 40vh;
+  box-sizing: content-box;
+  overflow: clip;
+  pointer-events: none;
+}
+.card {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--card-w) * -0.46);
+  width: var(--card-w);
+  margin-left: calc(var(--card-w) * -0.5);
+  transform-origin: 50% calc(100% + var(--card-w) * 3.6);
+  transform: rotate(calc(var(--i) * 10.5deg));
+  transition: transform 560ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: auto;
+}
+.card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 500 / 740;
+  object-fit: cover;
+  border-radius: calc(var(--card-w) * 0.035);
+  box-shadow:
+    0 0 0 1px rgb(var(--shadow) / 0.18),
+    -6px 10px 24px -8px rgb(var(--shadow) / 0.45);
+}
+/* Pick a card: it slides up out of the hand. */
+.card:hover {
+  transform: rotate(calc(var(--i) * 10.5deg)) translateY(calc(var(--card-w) * -0.32));
+}
+.hand .credit {
+  left: auto;
+  right: max(var(--gutter), calc(50vw - var(--wrap) / 2));
+  bottom: 16px;
+}
+.hand:hover .credit,
+.hand:focus-visible .credit {
+  opacity: 1;
+  transform: none;
+}
+.hand:focus-visible {
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+  .card:hover {
+    transform: rotate(calc(var(--i) * 10.5deg));
+  }
+}
+
+/* Light/dark switch in the nav. CSS picks the icon: the moon offers dark,
+   the sun offers light. */
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.theme-toggle:hover {
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+.theme-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.theme-toggle .icon-sun {
+  display: none;
+}
+:root[data-theme="dark"] .theme-toggle .icon-sun {
+  display: block;
+}
+:root[data-theme="dark"] .theme-toggle .icon-moon {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-toggle .icon-sun {
+    display: block;
+  }
+  :root:not([data-theme="light"]) .theme-toggle .icon-moon {
+    display: none;
+  }
+}
+
+/* Scenes: on a phone the pictures stand alone in the column, so each one
+   carries a piece of Deck on dark glass, the way the desktop shot sits
+   over Yosemite on wide screens. Hidden where the pictures sit beside
+   their copy. */
+.scene {
+  display: none;
+}
+@media (max-width: 900px) {
+  .scene {
+    display: block;
+    position: absolute;
+    z-index: 1;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    padding: 14px 14px 12px;
+    border: 1px solid rgb(255 255 255 / 0.14);
+    border-radius: 16px;
+    color: #ecece6;
+    font-size: 13px;
+    line-height: 1.4;
+    background: rgb(18 17 14 / 0.7);
+    backdrop-filter: blur(22px) saturate(1.3);
+    -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      0 24px 48px -20px rgb(0 0 0 / 0.6);
+  }
+  .scene.scene-roster {
+    display: flex;
+  }
+  .scene code {
+    font-size: 12px;
+    color: #fff;
+  }
+  /* With a scene at the foot of the picture, its label moves to the top. */
+  .plate:has(.scene) .credit,
+  .close-art .credit {
+    top: 12px;
+    bottom: auto;
+  }
+  .plate.hero-plate,
+  .plate.night-plate {
+    max-width: none;
+    justify-self: stretch;
+  }
+  .hero-plate img,
+  .night-plate img {
+    aspect-ratio: 4 / 5;
+    object-fit: cover;
+  }
+  .hero-plate img {
+    object-position: 50% 30%;
+  }
+  .night-plate img {
+    object-position: 50% 20%;
+  }
+  .close-art img {
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    object-position: 38% 50%;
+  }
+}
+
+/* A thread, with its two members' lanes */
+.scene-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.1);
+  font-weight: 600;
+}
+.scene-meta {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  font-weight: 400;
+  color: rgb(236 236 230 / 0.6);
+}
+.lane {
+  display: grid;
+  grid-template-columns: 1.6em auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 8px;
+  padding: 8px 0 4px;
+}
+.lane-glyph {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+}
+.lane-name {
+  font-family: var(--font-mono), monospace;
+  font-weight: 500;
+}
+.lane-state {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgb(236 236 230 / 0.7);
+}
+.lane-state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.lane-state.is-working {
+  color: #8fd18a;
+}
+.lane-state.is-needs {
+  color: #f4b660;
+}
+.lane-note {
+  grid-column: 2 / -1;
+  color: rgb(236 236 230 / 0.72);
+}
+
+/* A notification from the phone remote */
+.notice-app {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: rgb(236 236 230 / 0.7);
+}
+.notice-app span {
+  margin-left: auto;
+}
+.notice-mark {
+  height: 10px;
+  width: auto;
+  color: #ecece6;
+}
+.notice-title {
+  margin: 8px 0 2px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.notice-body {
+  margin: 0;
+  color: rgb(236 236 230 / 0.78);
+}
+.notice-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.notice-actions span {
+  display: grid;
+  place-items: center;
+  height: 34px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.1);
+  font-weight: 500;
+}
+.notice-actions .is-primary {
+  background: #ecece6;
+  color: #16140f;
+}
+
+/* The roster: every agent in one thread */
+.scene-roster {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.roster-label {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: rgb(236 236 230 / 0.6);
+}
+.roster-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+  font-family: var(--font-mono), monospace;
+  font-size: 12.5px;
+}
+
+/* Narrow screens */
+@media (max-width: 1100px) {
+  .principles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .hero,
+  .section-head,
+  .night-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .section-head > p:last-child {
+    margin-top: 24px;
+  }
+  .hero-plate {
+    justify-self: start;
+    max-width: 360px;
+  }
+  .night-plate {
+    max-width: 280px;
+  }
+  .nav nav a:not(.pill) {
+    display: none;
+  }
+}
+@media (max-width: 600px) {
+  .principles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .line {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .who {
+    padding-top: 0;
+  }
+  .command {
+    flex-wrap: wrap;
+  }
+  .command-label {
+    flex-basis: 100%;
+  }
+  .install-then {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

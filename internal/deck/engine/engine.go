@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	appconfig "github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/agent/antigravity"
 	"github.com/dev-dami/deck/internal/deck/agent/claude"
@@ -23,6 +24,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/approve"
 	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/peer"
+	"github.com/dev-dami/deck/internal/deck/profile"
 	"github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/deck/store"
 	"github.com/dev-dami/deck/internal/deck/sub"
@@ -109,6 +111,12 @@ func Start() (_ *Engine, err error) {
 	mgr := session.NewManager(adapters, st, cfg, session.Options{
 		Hub:    broker,
 		MCPFor: func(id string) *agent.MCPServer { return broker.ServerFor(self, id) },
+	})
+	// The named agents are read from deck.json for each thread's folder
+	// when a message names one; the session leaves out teammates' names.
+	mgr.SetProfiles(func(dir string) []profile.Profile {
+		ps, _ := appconfig.LoadProfiles(dir, nil)
+		return ps
 	})
 	work := &localWork{mgr: mgr}
 	deals := newContracts(mgr)

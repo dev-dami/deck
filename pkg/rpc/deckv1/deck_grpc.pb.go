@@ -85,6 +85,9 @@ const (
 	Deck_ListFiles_FullMethodName        = "/deck.v1.Deck/ListFiles"
 	Deck_ReadImage_FullMethodName        = "/deck.v1.Deck/ReadImage"
 	Deck_SearchMessages_FullMethodName   = "/deck.v1.Deck/SearchMessages"
+	Deck_ListProfiles_FullMethodName     = "/deck.v1.Deck/ListProfiles"
+	Deck_SaveProfile_FullMethodName      = "/deck.v1.Deck/SaveProfile"
+	Deck_DeleteProfile_FullMethodName    = "/deck.v1.Deck/DeleteProfile"
 	Deck_Events_FullMethodName           = "/deck.v1.Deck/Events"
 )
 
@@ -205,6 +208,18 @@ type DeckClient interface {
 	// SearchMessages finds text in the messages of every thread of the
 	// project that is not archived, newest first.
 	SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error)
+	// ListProfiles lists the named agents (deck.json "profiles") of the
+	// project: the global ones with the project's laid over them by name,
+	// each with its scope. Invalid entries are left out; deck doctor says
+	// why.
+	ListProfiles(ctx context.Context, in *ListProfilesRequest, opts ...grpc.CallOption) (*ListProfilesResponse, error)
+	// SaveProfile validates a profile and writes it to its scope's deck.json,
+	// replacing the one of the same name there. A broken rule comes back as
+	// InvalidArgument, in Deck's words.
+	SaveProfile(ctx context.Context, in *SaveProfileRequest, opts ...grpc.CallOption) (*SaveProfileResponse, error)
+	// DeleteProfile removes the profile called name from its scope's
+	// deck.json; NotFound when that scope has none.
+	DeleteProfile(ctx context.Context, in *DeleteProfileRequest, opts ...grpc.CallOption) (*DeleteProfileResponse, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -828,6 +843,36 @@ func (c *deckClient) SearchMessages(ctx context.Context, in *SearchMessagesReque
 	return out, nil
 }
 
+func (c *deckClient) ListProfiles(ctx context.Context, in *ListProfilesRequest, opts ...grpc.CallOption) (*ListProfilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListProfilesResponse)
+	err := c.cc.Invoke(ctx, Deck_ListProfiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) SaveProfile(ctx context.Context, in *SaveProfileRequest, opts ...grpc.CallOption) (*SaveProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveProfileResponse)
+	err := c.cc.Invoke(ctx, Deck_SaveProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) DeleteProfile(ctx context.Context, in *DeleteProfileRequest, opts ...grpc.CallOption) (*DeleteProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteProfileResponse)
+	err := c.cc.Invoke(ctx, Deck_DeleteProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *deckClient) Events(ctx context.Context, in *Subscribe, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Deck_ServiceDesc.Streams[1], Deck_Events_FullMethodName, cOpts...)
@@ -964,6 +1009,18 @@ type DeckServer interface {
 	// SearchMessages finds text in the messages of every thread of the
 	// project that is not archived, newest first.
 	SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error)
+	// ListProfiles lists the named agents (deck.json "profiles") of the
+	// project: the global ones with the project's laid over them by name,
+	// each with its scope. Invalid entries are left out; deck doctor says
+	// why.
+	ListProfiles(context.Context, *ListProfilesRequest) (*ListProfilesResponse, error)
+	// SaveProfile validates a profile and writes it to its scope's deck.json,
+	// replacing the one of the same name there. A broken rule comes back as
+	// InvalidArgument, in Deck's words.
+	SaveProfile(context.Context, *SaveProfileRequest) (*SaveProfileResponse, error)
+	// DeleteProfile removes the profile called name from its scope's
+	// deck.json; NotFound when that scope has none.
+	DeleteProfile(context.Context, *DeleteProfileRequest) (*DeleteProfileResponse, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -1157,6 +1214,15 @@ func (UnimplementedDeckServer) ReadImage(context.Context, *ReadImageRequest) (*R
 }
 func (UnimplementedDeckServer) SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SearchMessages not implemented")
+}
+func (UnimplementedDeckServer) ListProfiles(context.Context, *ListProfilesRequest) (*ListProfilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListProfiles not implemented")
+}
+func (UnimplementedDeckServer) SaveProfile(context.Context, *SaveProfileRequest) (*SaveProfileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveProfile not implemented")
+}
+func (UnimplementedDeckServer) DeleteProfile(context.Context, *DeleteProfileRequest) (*DeleteProfileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteProfile not implemented")
 }
 func (UnimplementedDeckServer) Events(*Subscribe, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method Events not implemented")
@@ -2255,6 +2321,60 @@ func _Deck_SearchMessages_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Deck_ListProfiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListProfilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).ListProfiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_ListProfiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).ListProfiles(ctx, req.(*ListProfilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_SaveProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).SaveProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_SaveProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).SaveProfile(ctx, req.(*SaveProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_DeleteProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).DeleteProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_DeleteProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).DeleteProfile(ctx, req.(*DeleteProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Deck_Events_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(Subscribe)
 	if err := stream.RecvMsg(m); err != nil {
@@ -2508,6 +2628,18 @@ var Deck_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SearchMessages",
 			Handler:    _Deck_SearchMessages_Handler,
+		},
+		{
+			MethodName: "ListProfiles",
+			Handler:    _Deck_ListProfiles_Handler,
+		},
+		{
+			MethodName: "SaveProfile",
+			Handler:    _Deck_SaveProfile_Handler,
+		},
+		{
+			MethodName: "DeleteProfile",
+			Handler:    _Deck_DeleteProfile_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

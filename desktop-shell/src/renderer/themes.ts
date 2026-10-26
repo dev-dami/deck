@@ -1,8 +1,11 @@
-// The window's themes, after T3 Code's theme catalog. "apple", a native Mac
-// window, is the default; "tabletop" is Deck's warm look and "default" the
-// T3 look. These three follow light or dark; every other theme has a mode of
-// its own. Each theme's tokens are in styles.css under
-// [data-palette="<id>"].
+// The window's themes, after T3 Code's theme catalog. Three are art
+// directions (design-glass.md, "Art directions"): Liquid Glass, the
+// default, Riso and Stitch. Each prints the backdrop's picture through its
+// own process (backdrop/) and has its own material, display face and
+// texture. Apple, Tabletop, T3 and the rest of the catalog are colourways
+// of Liquid Glass. glass, riso, stitch, apple, tabletop and default follow
+// light or dark; every other theme has a mode of its own. Each theme's
+// tokens are in styles.css under [data-palette="<id>"].
 
 export interface ThemeInfo {
   id: string;
@@ -15,7 +18,73 @@ export interface ThemeInfo {
   light?: [string, string, string, string];
 }
 
+// An art direction, as the theme card describes it.
+export interface Direction {
+  id: "glass" | "riso" | "stitch";
+  // How the picture is printed, what the panels are made of, and the
+  // display face (its name, and the CSS family that sets it).
+  process: string;
+  material: string;
+  face: string;
+  family: string;
+  // The colours it prints in.
+  inks: string;
+}
+
+export const DIRECTIONS: Record<Direction["id"], Direction> = {
+  glass: {
+    id: "glass",
+    process: "Atkinson dither",
+    material: "Liquid glass",
+    face: "Inter Tight",
+    family: '"Inter Tight Variable", sans-serif',
+    inks: "Dusk navy and peach",
+  },
+  riso: {
+    id: "riso",
+    process: "Halftone, 15°",
+    material: "Paper and vellum",
+    face: "Space Grotesk",
+    family: '"Space Grotesk Variable", sans-serif',
+    inks: "Fluorescent pink and black",
+  },
+  stitch: {
+    id: "stitch",
+    process: "Cross-stitch",
+    material: "Felt on linen or denim",
+    face: "Pixelify Sans",
+    family: '"Pixelify Sans", sans-serif',
+    inks: "Cotton floss",
+  },
+};
+
+// A colourway prints as Liquid Glass does, in its own colours.
+export function directionOf(id: string): Direction {
+  return id === "riso" || id === "stitch" ? DIRECTIONS[id] : DIRECTIONS.glass;
+}
+
 export const THEMES: readonly ThemeInfo[] = [
+  {
+    id: "glass",
+    label: "Liquid Glass",
+    mode: null,
+    swatch: ["#19191b", "#2a2a2e", "#e3e3e5", "#0a84ff"],
+    light: ["#fbfbfd", "#dcdee5", "#1d1d1f", "#007aff"],
+  },
+  {
+    id: "riso",
+    label: "Riso",
+    mode: null,
+    swatch: ["#121111", "#1c1a1a", "#f3eee3", "#ff48b0"],
+    light: ["#f3eee3", "#e9e2d3", "#1d1b1b", "#ff48b0"],
+  },
+  {
+    id: "stitch",
+    label: "Stitch",
+    mode: null,
+    swatch: ["#1b2036", "#232a45", "#efe6d2", "#e4b04a"],
+    light: ["#f4ecdc", "#eadfc9", "#2b2420", "#b8262d"],
+  },
   {
     id: "apple",
     label: "Apple",

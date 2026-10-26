@@ -2,7 +2,7 @@ import type { Session, Theme } from "@web/protocol";
 import type { Link } from "@web/state";
 import { sessionTitle } from "@web/state";
 import { toMillis } from "@web/time";
-import { ArrowLeft, Inbox as InboxIcon, PanelLeft, Search, SquarePen, TerminalIcon } from "lucide-react";
+import { ArrowLeft, Inbox as InboxIcon, PanelLeft, Search, SquarePen } from "./icons";
 import { type MutableRefObject, useEffect, useRef, useState } from "react";
 import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import { useRooms } from "../appState";
@@ -18,9 +18,10 @@ import { SETTLE_AFTER_MS } from "../threads";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
+import { DeckMark } from "./kit/mark";
 
 import { modKey } from "./keys";
-import { ProjectFilter, ProjectGroup, RecentProjects, SharedGroup, type SharedEntry, type SidebarItem, ThreadList } from "./ProjectGroup";
+import { navRow, ProjectFilter, ProjectGroup, RecentProjects, SharedGroup, type SharedEntry, type SidebarItem, ThreadList } from "./ProjectGroup";
 import { SidebarFooter } from "./SidebarFooter";
 import { ThreadRow } from "./ThreadRow";
 import { actionToast } from "./Toasts";
@@ -116,6 +117,16 @@ function HeaderButton({ label, onClick, children }: { label: string; onClick: ()
     <Button variant="ghost-muted" size="icon-sm" aria-label={label} title={label} onClick={onClick}>
       {children}
     </Button>
+  );
+}
+
+// Deck's mark (the app icon's prompt), then the name. No tile; type does it.
+function Brand() {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 font-semibold text-sm tracking-tight">
+      <DeckMark className="h-3 text-foreground" />
+      Deck
+    </span>
   );
 }
 
@@ -246,7 +257,7 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
       onToggleArchived={() => setShowArchived((v) => ({ ...v, [l.key]: v[l.key] !== true }))}
       row={row}
       scroller={scroller}
-      estimate={rows === "compact" ? 37 : grouped ? 59 : 79}
+      estimate={rows === "compact" ? 34 : grouped ? 60 : 80}
     />
   );
   const recentClosed = projects.filter((p) => !p.open && p.kind === "folder");
@@ -254,41 +265,39 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
     if (settings === null) order.current = shownRows;
   });
   return (
-    <nav className="sidebar flex w-64 shrink-0 flex-col bg-sidebar" aria-label="Threads" data-yolo-region="">
-      <header className={cn("brand-glow drag flex h-13 shrink-0 items-center gap-2 px-3", data.mac && "pl-20")}>
-        <Button variant="ghost-muted" size="icon-sm" aria-label="Hide the sidebar" title="Hide the sidebar" onClick={actions.onCollapse}>
-          <PanelLeft />
-        </Button>
-        {/* The terminal prompt is the app's own suit. */}
-        <span className="inline-flex items-center gap-1.5 font-medium text-sm tracking-tight">
-          <TerminalIcon aria-hidden className="size-3.5 text-foreground" />
-          <span>Deck</span>
-          <span className="text-muted-foreground">Code</span>
+    // Above the room's sheet, so the project menu can open over it.
+    <nav className="sidebar relative z-10 flex w-64 shrink-0 flex-col rounded-(--panel-radius)" aria-label="Threads" data-yolo-region="">
+      {/* The glass is a layer under the sidebar's parts, not the sidebar:
+          a backdrop filter would hold the menus' own glass to it. Each part
+          is positioned, so it paints over the layer. */}
+      <div aria-hidden className="liquid absolute inset-0 rounded-(--panel-radius)" />
+      {/* The first row is the title bar's: on a Mac the traffic lights sit
+          at (18, 19) in the window, so a 36px row centres them. */}
+      <header className={cn("drag relative flex shrink-0 items-center gap-2 pr-2", data.mac ? "h-9 pl-[4.5rem]" : "h-11 pl-3.5")}>
+        <Brand />
+        <span className="ml-auto flex items-center">
+          <HeaderButton label="Hide the sidebar" onClick={actions.onCollapse}>
+            <PanelLeft />
+          </HeaderButton>
+          <HeaderButton label="New thread" onClick={actions.onNew}>
+            <SquarePen />
+          </HeaderButton>
         </span>
       </header>
       {settings !== null ? (
-        <div className="flex min-h-0 flex-1 flex-col gap-1 px-2 pt-2">
-          <button
-            type="button"
-            className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 font-medium text-muted-foreground text-sm hover:bg-sidebar-row-hover hover:text-foreground"
-            onClick={() => actions.onSettings(null)}
-          >
-            <ArrowLeft className="size-4" />
+        <div className="relative flex min-h-0 flex-1 flex-col gap-0.5 px-2 pt-1">
+          <button type="button" className={navRow(false)} onClick={() => actions.onSettings(null)}>
+            <ArrowLeft />
             Back to threads
           </button>
-          <div className="px-2.5 pt-3 pb-1 font-semibold text-2xs text-faint">Settings</div>
-          <ul className="flex flex-col gap-px" aria-label="Settings sections">
+          <div className="px-2.5 pt-4 pb-1 font-semibold text-2xs text-faint">Settings</div>
+          <ul className="flex flex-col gap-0.5" aria-label="Settings sections">
             {SETTINGS_SECTIONS.map((x) => (
               <li key={x.section}>
                 <button
                   type="button"
                   aria-current={settings === x.section ? "page" : undefined}
-                  className={cn(
-                    "flex h-8 w-full cursor-pointer items-center rounded-md px-2.5 text-left text-sm",
-                    settings === x.section
-                      ? "bg-sidebar-row-active text-foreground inset-shadow-hl"
-                      : "text-muted-foreground hover:bg-sidebar-row-hover hover:text-foreground",
-                  )}
+                  className={navRow(settings === x.section)}
                   onClick={() => actions.onSettings(x.section)}
                 >
                   {x.label}
@@ -299,35 +308,17 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
         </div>
       ) : (
         <>
-          <div className="flex flex-col gap-1 px-2 pt-2 pb-1">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 text-left font-medium text-muted-foreground text-sm hover:bg-sidebar-row-hover hover:text-foreground"
-                onClick={actions.onPalette}
-              >
-                <Search className="size-4 shrink-0" />
-                Search
-                <Kbd className="ml-auto bg-transparent">{modKey(data.mac)}K</Kbd>
-              </button>
-              <HeaderButton label="New thread" onClick={actions.onNew}>
-                <SquarePen />
-              </HeaderButton>
-            </div>
-            <button
-              type="button"
-              aria-current={inbox ? "page" : undefined}
-              className={cn(
-                "inbox-entry flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left font-medium text-sm",
-                inbox ? "bg-sidebar-row-active text-foreground inset-shadow-hl" : "text-muted-foreground hover:bg-sidebar-row-hover hover:text-foreground",
-              )}
-              onClick={actions.onInbox}
-            >
-              <InboxIcon className="size-4 shrink-0" />
+          <div className="relative z-10 flex flex-col gap-0.5 px-2 pt-1 pb-2">
+            <button type="button" className={navRow(false)} onClick={actions.onPalette}>
+              <Search />
+              Search
+              <Kbd className="ml-auto border-0 bg-transparent px-0 font-sans text-2xs text-faint">{modKey(data.mac)}K</Kbd>
+            </button>
+            {/* What waits on you: the count in the warning's colour, no badge. */}
+            <button type="button" aria-current={inbox ? "page" : undefined} className={cn("inbox-entry", navRow(inbox))} onClick={actions.onInbox}>
+              <InboxIcon weight={inbox ? "fill" : "regular"} />
               Inbox
-              {data.inboxCount > 0 && (
-                <span className="inbox-count ml-auto rounded-full bg-selected px-1.5 font-mono text-2xs text-foreground tabular-nums">{data.inboxCount}</span>
-              )}
+              {data.inboxCount > 0 && <span className="inbox-count ml-auto font-medium text-2xs text-warning-foreground tabular-nums">{data.inboxCount}</span>}
             </button>
             <ProjectFilter
               filter={filter}
@@ -339,7 +330,7 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
               onPair={actions.onConnect}
             />
           </div>
-          <ul ref={scroller} className="sessions flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
+          <ul ref={scroller} className="sessions relative flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-0.5 pb-2">
             {grouped
               ? groups.map((g, i) => (
                   <ProjectGroup

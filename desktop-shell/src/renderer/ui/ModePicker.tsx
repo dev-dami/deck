@@ -1,6 +1,6 @@
 import { availableModes, needsConfirm } from "@web/modes";
 import type { Mode } from "@web/protocol";
-import { Check, ChevronDown, Flame, ListChecks, MessageCircleQuestion } from "lucide-react";
+import { Check, ChevronDown, Flame, ListChecks, MessageCircleQuestion } from "./icons";
 import { useState } from "react";
 import { cn } from "../lib/cn";
 import { MenuLabel, Popover } from "./kit/menu";
@@ -35,7 +35,7 @@ export function ModePicker({
         <button
           type="button"
           className={cn(
-            "mode-picker flex h-6 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground/80 text-xs hover:bg-accent hover:text-foreground aria-expanded:bg-accent",
+            "mode-picker flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-full pr-2 pl-2.5 font-medium text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-selected aria-expanded:text-foreground",
             mode === "yolo" && "text-destructive-foreground",
           )}
           aria-expanded={open}
@@ -45,7 +45,7 @@ export function ModePicker({
         >
           <Icon className="size-3.5" />
           {current?.label ?? "Mode"}
-          <ChevronDown className="size-3" />
+          <ChevronDown className="size-3 text-faint" />
         </button>
       }
     >
@@ -59,7 +59,10 @@ export function ModePicker({
               type="button"
               role="radio"
               aria-checked={mode === m.mode}
-              className={`mode mode-${m.mode} flex w-full cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-accent`}
+              className={cn(
+                `mode mode-${m.mode} flex w-full cursor-pointer items-start gap-2.5 rounded-[9px] px-2 py-2 text-left outline-none transition-colors hover:bg-hover focus-visible:bg-selected`,
+                mode === m.mode && "bg-selected hover:bg-selected",
+              )}
               onClick={() => {
                 setOpen(false);
                 if (mode === m.mode) return;
@@ -74,7 +77,7 @@ export function ModePicker({
                 <span className="font-medium text-[13px]">{m.label}</span>
                 <span className="text-muted-foreground text-xs leading-snug">{m.blurb}</span>
               </span>
-              {mode === m.mode && <Check className="mt-0.5 size-3.5 shrink-0" />}
+              {mode === m.mode && <Check className="mt-0.5 size-3.5 shrink-0 text-foreground" weight="bold" />}
             </button>
           );
         })}

@@ -1,6 +1,8 @@
 # Deck desktop: the Apple look
 
-Status: 2026-10-26. "Apple" is the default theme. It makes the window
+Status: 2026-10-26. Superseded for layout, materials and components by
+`design-glass.md`, which every theme now follows; the colours, type and
+HIG notes below still hold. "Apple" was the default theme. It makes the window
 look and behave like a native Mac app. Tabletop (`docs/plan.md`, section
 2), T3 and the rest of the catalog stay as choices. Apple uses Tabletop's
 token names, so each component reads both themes with no map.
