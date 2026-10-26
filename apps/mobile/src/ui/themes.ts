@@ -4,6 +4,8 @@
 // same in every theme.
 
 export type ThemeId =
+  | "tabletop"
+  | "tabletop-light"
   | "deck"
   | "deck-light"
   | "t3"
@@ -32,11 +34,51 @@ export interface Palette {
   danger: string;
   success: string;
   info: string;
+  // Solid buttons. Tabletop spends its amber on state and the send button and
+  // makes solid buttons paper; every other theme uses its primary.
+  action?: string;
+  onAction?: string;
 }
 
 // Some status and grey values are nudged from the source themes so text
 // stays readable on a phone's smaller type.
 export const PALETTES: readonly Palette[] = [
+  {
+    id: "tabletop",
+    name: "Tabletop",
+    source: "Desktop",
+    dark: true,
+    bg: "#0B0A08",
+    raise: "#12100E",
+    fg: "#EBE7E2",
+    muted: "#A9A49C",
+    primary: "#F2AF48",
+    onPrimary: "#1F1306",
+    warn: "#F59740",
+    danger: "#E95048",
+    success: "#5CB572",
+    info: "#70B4DC",
+    action: "#EBE7E2",
+    onAction: "#0B0A08",
+  },
+  {
+    id: "tabletop-light",
+    name: "Tabletop Light",
+    source: "Desktop",
+    dark: false,
+    bg: "#F9F6F2",
+    raise: "#FDFBF9",
+    fg: "#1E1A16",
+    muted: "#59544E",
+    primary: "#ED9E2F",
+    onPrimary: "#1F1306",
+    warn: "#AB5900",
+    danger: "#BE2323",
+    success: "#21763C",
+    info: "#287AA3",
+    action: "#1E1A16",
+    onAction: "#F9F6F2",
+  },
   {
     id: "deck",
     name: "Deck",
@@ -231,8 +273,8 @@ export const PALETTES: readonly Palette[] = [
   },
 ];
 
-export const DEFAULT_DARK: ThemeId = "deck";
-export const DEFAULT_LIGHT: ThemeId = "deck-light";
+export const DEFAULT_DARK: ThemeId = "tabletop";
+export const DEFAULT_LIGHT: ThemeId = "tabletop-light";
 
 export function isThemeId(value: unknown): value is ThemeId {
   return typeof value === "string" && PALETTES.some((p) => p.id === value);
@@ -298,6 +340,8 @@ export interface Theme {
   muted: string;
   primary: string;
   onPrimary: string;
+  action: string;
+  onAction: string;
   warn: string;
   danger: string;
   success: string;
@@ -327,25 +371,29 @@ export function buildTheme(p: Palette): Theme {
     muted: p.muted,
     primary: p.primary,
     onPrimary: p.onPrimary,
+    action: p.action ?? p.primary,
+    onAction: p.onAction ?? p.onPrimary,
     warn: p.warn,
     danger: p.danger,
     success: p.success,
     info: p.info,
     scrim: dk ? "rgba(0,0,0,0.6)" : "rgba(15,20,25,0.38)",
+    // Flat like the desktop app: a hairline ring and a 1px top highlight on
+    // raised surfaces; only floating bars and sheets cast a shadow.
     shadow: dk
       ? {
-          card: `inset 0 1px 0 ${rgba("#FFFFFF", 0.05)}, 0 1px 2px rgba(0,0,0,0.4), 0 10px 28px rgba(0,0,0,0.3)`,
-          float: `inset 0 1px 0 ${rgba("#FFFFFF", 0.08)}, 0 0 0 1px ${rgba(p.fg, 0.06)}, 0 20px 50px rgba(0,0,0,0.55)`,
-          sheet: `inset 0 1px 0 ${rgba("#FFFFFF", 0.09)}, 0 -24px 64px rgba(0,0,0,0.7)`,
-          thumb: `inset 0 1px 0 ${rgba("#FFFFFF", 0.08)}, 0 2px 8px rgba(0,0,0,0.45)`,
-          primary: `0 8px 24px ${rgba(p.primary, 0.28)}`,
+          card: `inset 0 1px 0 ${rgba("#FFFFFF", 0.05)}, 0 0 0 1px ${line}`,
+          float: `inset 0 1px 0 ${rgba("#FFFFFF", 0.06)}, 0 0 0 1px ${rgba(p.fg, 0.12)}, 0 16px 40px -16px rgba(0,0,0,0.55)`,
+          sheet: `inset 0 1px 0 ${rgba("#FFFFFF", 0.07)}, 0 -16px 40px -16px rgba(0,0,0,0.6)`,
+          thumb: `inset 0 1px 0 ${rgba("#FFFFFF", 0.06)}, 0 0 0 1px ${line}`,
+          primary: `0 0 0 1px ${rgba(p.primary, 0.4)}`,
         }
       : {
-          card: `0 0 0 1px ${line}, 0 1px 2px rgba(16,24,40,0.05), 0 8px 22px rgba(16,24,40,0.06)`,
-          float: `0 0 0 1px ${line}, 0 8px 20px rgba(16,24,40,0.08), 0 24px 56px rgba(16,24,40,0.12)`,
-          sheet: "0 -12px 48px rgba(16,24,40,0.2)",
-          thumb: `0 0 0 1px ${line}, 0 2px 6px rgba(16,24,40,0.1)`,
-          primary: `0 8px 24px ${rgba(p.primary, 0.3)}`,
+          card: `0 0 0 1px ${line}`,
+          float: `0 0 0 1px ${rgba(p.fg, 0.15)}, 0 16px 40px -16px rgba(16,24,40,0.25)`,
+          sheet: "0 -12px 36px -12px rgba(16,24,40,0.22)",
+          thumb: `0 0 0 1px ${line}`,
+          primary: `0 0 0 1px ${rgba(p.primary, 0.4)}`,
         },
     tint: (color: string) => rgba(color, dk ? 0.16 : 0.12),
   };

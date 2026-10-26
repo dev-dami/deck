@@ -1084,8 +1084,17 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 		prompt = modeLine(t.mode) + "\n\n" + prompt
 		a.knownMode = t.mode
 	}
+	// A contract's agents work for a teammate: the team chat is not theirs.
+	quiet := t.ops != nil || t.contract != ""
 	t.mu.Unlock()
 
+	var newsSeq uint64
+	if !quiet {
+		var news string
+		if news, newsSeq = m.teamNews(a); news != "" {
+			prompt = news + "\n\n" + prompt
+		}
+	}
 	a.notePrompt(prompt, user)
 	err := m.sendPrompt(t, a, prompt, images)
 	a.donePrompt(err == nil)
@@ -1095,6 +1104,11 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 		t.mu.Unlock()
 		a.restore(prev)
 		return dNone, err
+	}
+	if newsSeq > 0 {
+		a.mu.Lock()
+		a.teamSeq = newsSeq
+		a.mu.Unlock()
 	}
 	m.persistMeta(t)
 	m.queueDelivered(t, a, cursor)
@@ -1727,6 +1741,7 @@ type agentState struct {
 	tokTurn     int     // current turn's input and output tokens, as last reported
 	sessionID   string
 	briefed     bool   // sessionID has had Deck's instructions (store.Member.Briefed)
+	teamSeq     uint64 // the last team chat message it was told of (teamNews)
 	lastText    string // the last assistant text of the running turn
 	interrupted bool
 	ctxTokens   int // context window use, from the latest usage event that reported it

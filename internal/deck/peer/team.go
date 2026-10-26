@@ -52,7 +52,7 @@ const (
 )
 
 var consoleOps = []OpInfo{
-	{Name: OpConsolePost, Args: "{text*, id, agent}", Desc: "post a message to this Deck's team chat; id drops a repeat, agent names the agent that wrote it"},
+	{Name: OpConsolePost, Args: "{text*, id, agent, for}", Desc: "post a message to this Deck's team chat; id drops a repeat, agent names the agent that wrote it, for the agent here it is addressed to"},
 	{Name: OpConsoleRead, Args: "{since}", Desc: "read this Deck's team chat: the newest messages after seq since, and the seq to pass next time"},
 }
 
@@ -68,11 +68,14 @@ type ChatMessage struct {
 	Seq  uint64 `json:"seq"`
 	From string `json:"from"` // the Deck that wrote it
 	// Agent is the agent of that Deck that wrote it; "" for its person.
-	Agent string    `json:"agent,omitempty"`
-	To    string    `json:"to,omitempty"`
-	Text  string    `json:"text"`
-	At    time.Time `json:"at"`
-	Mine  bool      `json:"mine,omitempty"` // written on this Deck
+	Agent string `json:"agent,omitempty"`
+	To    string `json:"to,omitempty"`
+	// For is the agent of the receiving Deck the message is addressed to;
+	// "" for everyone there.
+	For  string    `json:"for,omitempty"`
+	Text string    `json:"text"`
+	At   time.Time `json:"at"`
+	Mine bool      `json:"mine,omitempty"` // written on this Deck
 	// ID is the sender's key for the message: a repeat of it is dropped.
 	ID string `json:"id,omitempty"`
 }
@@ -288,6 +291,7 @@ func (h *TeamHandler) Execute(ctx context.Context, from Caller, op string, args 
 		Text  string `json:"text"`
 		ID    string `json:"id"`
 		Agent string `json:"agent"`
+		For   string `json:"for"`
 	}
 	if json.Unmarshal(args, &a) != nil || strings.TrimSpace(a.Text) == "" {
 		return "", errors.New("console.post needs text")
@@ -295,7 +299,10 @@ func (h *TeamHandler) Execute(ctx context.Context, from Caller, op string, args 
 	if !config.ValidPeerName(a.Agent) {
 		a.Agent = "" // a label only; one that is not a plain name is dropped
 	}
-	h.Team.AddChat(ChatMessage{From: from.Name, Agent: a.Agent, Text: a.Text, ID: truncate(a.ID, 64)})
+	if !config.ValidPeerName(a.For) {
+		a.For = ""
+	}
+	h.Team.AddChat(ChatMessage{From: from.Name, Agent: a.Agent, For: a.For, Text: a.Text, ID: truncate(a.ID, 64)})
 	return "posted", nil
 }
 
@@ -343,6 +350,13 @@ func (s *Service) SendChat(ctx context.Context, text string) ([]string, error) {
 
 // PostChat is SendChat for agent, an agent of this Deck ("" for its person).
 func (s *Service) PostChat(ctx context.Context, agent, text string) ([]string, error) {
+	return s.PostChatTo(ctx, agent, "", text)
+}
+
+// PostChatTo is PostChat to one teammate only when to is set: "vps", or
+// "vps/codex" for the agent codex of that Deck, which then hears it at the
+// start of its next turn. An empty to posts to every teammate.
+func (s *Service) PostChatTo(ctx context.Context, agent, to, text string) ([]string, error) {
 	text = cleanChat(text)
 	if text == "" {
 		return nil, errors.New("nothing to send")
@@ -354,12 +368,33 @@ func (s *Service) PostChat(ctx context.Context, agent, text string) ([]string, e
 	if len(pins) == 0 {
 		return nil, errors.New("no teammate is paired yet: pair one in Settings › Team")
 	}
+	peerName, forAgent, _ := strings.Cut(strings.TrimSpace(to), "/")
+	if forAgent != "" && !config.ValidPeerName(forAgent) {
+		return nil, fmt.Errorf("%q is not an agent name", truncate(forAgent, 40))
+	}
+	if peerName != "" {
+		var names []string
+		one := pins[:0:0]
+		for _, pin := range pins {
+			names = append(names, pin.Name)
+			if pin.Name == peerName {
+				one = append(one, pin)
+			}
+		}
+		if len(one) == 0 {
+			return nil, fmt.Errorf("no teammate %q: they are %s", truncate(peerName, 40), strings.Join(names, ", "))
+		}
+		pins = one
+	}
 	p, _ := s.loadPeers()
 	self := SelfName(p)
 	id := newCallKey()
 	args := map[string]any{"text": text, "id": id}
 	if agent != "" {
 		args["agent"] = agent
+	}
+	if forAgent != "" {
+		args["for"] = forAgent
 	}
 	var reached, refused, queued []string
 	for _, pin := range pins {
@@ -388,7 +423,7 @@ func (s *Service) PostChat(ctx context.Context, agent, text string) ([]string, e
 		}
 	}
 	if len(reached)+len(queued) > 0 {
-		s.team.AddChat(ChatMessage{From: self, Agent: agent, To: strings.Join(append(reached, queued...), ", "), Text: text, Mine: true, ID: id})
+		s.team.AddChat(ChatMessage{From: self, Agent: agent, To: strings.Join(append(reached, queued...), ", "), For: forAgent, Text: text, Mine: true, ID: id})
 	}
 	switch {
 	case len(refused) > 0:

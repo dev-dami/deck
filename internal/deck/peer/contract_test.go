@@ -135,6 +135,8 @@ func TestContractRefusals(t *testing.T) {
 	a, b := linkedWith(t, ServiceOptions{}, opts, "") // b is only an observer on a
 	if _, err := b.ProposeContract(ctx, "a", Contract{Title: "x", Base: base}); err == nil {
 		t.Fatal("an observer proposed a contract")
+	} else if !strings.Contains(err.Error(), "only a contractor may ask it for work") {
+		t.Fatalf("the refusal does not say what to do: %v", err)
 	}
 	if len(b.Contracts())+len(a.Contracts()) != 0 {
 		t.Fatalf("a refused proposal left records: %+v %+v", b.Contracts(), a.Contracts())

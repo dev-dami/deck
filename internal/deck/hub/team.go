@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 )
 
 // The team ops: this Deck's teammates, the other Decks it is paired with
@@ -30,8 +31,14 @@ type Team interface {
 	// Read is the team chat after message since, oldest first.
 	Read(since int) string
 	// Post sends text from agent, an agent of this Deck, to every
-	// teammate's team chat.
-	Post(ctx context.Context, agent, text string) (string, error)
+	// teammate's team chat, or only to to: "vps", or "vps/codex" for one
+	// agent of that Deck.
+	Post(ctx context.Context, agent, to, text string) (string, error)
+	// News is what teammates said in the team chat after message since,
+	// for agent (an agent of this Deck): the messages to all its agents and
+	// to agent, none older than after. last is the newest message number
+	// seen; pass it as since next time. text is "" when there is none.
+	News(agent string, since uint64, after time.Time) (text string, last uint64)
 }
 
 var errNoTeam = errors.New("this Deck has no peer link; pair a teammate in Settings › Team or with `deck peer pair`")

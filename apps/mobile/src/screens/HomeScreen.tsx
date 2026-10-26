@@ -17,7 +17,7 @@ import {
 } from "../ui/components";
 import { Icon } from "../ui/icons";
 import { defaultTab, type TaskTab, tabCounts, taskRows } from "../ui/tasks";
-import { useTheme } from "../ui/theme";
+import { mono, useTheme } from "../ui/theme";
 import { ModelPicker } from "./ModelPicker";
 
 export interface AgentPick {
@@ -305,7 +305,16 @@ export function HomeScreen({
         {computer.error && <Notice error>{computer.error}</Notice>}
         {children}
 
-        <View accessibilityRole="tablist" style={{ flexDirection: "row", gap: 6, paddingTop: 10 }}>
+        <View
+          accessibilityRole="tablist"
+          style={{
+            flexDirection: "row",
+            gap: 4,
+            marginTop: 6,
+            borderBottomWidth: 1,
+            borderBottomColor: t.line,
+          }}
+        >
           {TABS.map((option) => {
             const on = option.value === active;
             return (
@@ -315,33 +324,22 @@ export function HomeScreen({
                 accessibilityState={{ selected: on }}
                 onPress={() => setTab(option.value)}
                 style={{
-                  minHeight: 36,
-                  borderRadius: 18,
-                  paddingHorizontal: 14,
+                  minHeight: 44,
+                  paddingHorizontal: 10,
                   flexDirection: "row",
                   alignItems: "center",
-                  gap: 7,
-                  backgroundColor: on ? t.fg : t.chip,
+                  gap: 6,
+                  marginBottom: -1,
+                  borderBottomWidth: 2,
+                  borderBottomColor: on ? t.primary : "transparent",
                 }}
               >
-                <Text style={{ fontSize: 14, fontWeight: "600", color: on ? t.bg : t.fg }}>
+                <Text style={{ fontSize: 14, fontWeight: "500", color: on ? t.fg : t.muted }}>
                   {option.label}
                 </Text>
-                <View
-                  style={{
-                    minWidth: 20,
-                    height: 20,
-                    borderRadius: 10,
-                    paddingHorizontal: 6,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: on ? t.tint(t.bg) : t.tint(t.fg),
-                  }}
-                >
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: on ? t.bg : t.muted }}>
-                    {counts[option.value]}
-                  </Text>
-                </View>
+                <Text style={{ fontSize: 12, fontFamily: mono, color: t.muted }}>
+                  {counts[option.value]}
+                </Text>
               </Pressable>
             );
           })}
@@ -360,18 +358,22 @@ export function HomeScreen({
                 label={`${row.title}${row.badge ? `, ${row.badge.text}` : ""}${row.unread ? ", unread" : ""}`}
                 onPress={() => onOpenTask(row.pj, row.sessionId)}
                 leading={
-                  <View style={{ width: 10, alignItems: "center" }}>
-                    <Dot
-                      color={
-                        row.badge?.tone === "warn"
-                          ? t.warn
-                          : row.badge?.tone === "info"
-                            ? t.info
-                            : row.unread
-                              ? t.primary
-                              : t.tint(t.muted)
-                      }
-                    />
+                  <View style={{ width: 20, alignItems: "center" }}>
+                    {active === "needs" ? (
+                      <Icon name="shield" color={t.warn} size={18} weight={1.8} />
+                    ) : active === "done" ? (
+                      <Icon name="check-circle" color={t.success} size={18} weight={1.8} />
+                    ) : (
+                      <View
+                        style={{
+                          width: 9,
+                          height: 9,
+                          borderRadius: 5,
+                          backgroundColor: t.primary,
+                          boxShadow: `0 0 0 4px ${t.tint(t.primary)}`,
+                        }}
+                      />
+                    )}
                   </View>
                 }
                 trailing={

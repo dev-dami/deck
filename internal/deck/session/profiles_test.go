@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dev-dami/deck/internal/deck/profile"
 )
@@ -100,9 +101,10 @@ func (namesTeam) Status(context.Context, string) (string, error) {
 	return "", nil
 }
 func (namesTeam) Read(int) string { return "" }
-func (namesTeam) Post(context.Context, string, string) (string, error) {
+func (namesTeam) Post(context.Context, string, string, string) (string, error) {
 	return "", nil
 }
+func (namesTeam) News(string, uint64, time.Time) (string, uint64) { return "", 0 }
 
 // A teammate's name is never a profile, even when deck.json says so.
 func TestProfileShadowedByTeammate(t *testing.T) {

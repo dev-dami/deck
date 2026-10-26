@@ -215,7 +215,7 @@ Every agent Deck runs (Claude, Codex, OpenCode, Antigravity) is connected to Dec
 - **`search {query?, limit?}`** finds things. It returns the Deck ops that match, the best matching skills (with the agent they come from) and hits from this project's past threads. An empty query lists every op with its arguments.
 - **`execute {op, args?}`** runs one op. An unknown op or bad arguments come back as an error that points at `search`.
 
-Capabilities are ops, not tools, so adding one never adds a tool. Agents hear about the team in their first instructions: who the teammates are, the team chat (`team.read`, `team.post`), and `task.contract` to ask a teammate's Deck for work. They also hear about subagents (`agent.spawn`), races (`task.race`) and leases.
+Capabilities are ops, not tools, so adding one never adds a tool. Agents hear about the team in their first instructions: who the teammates are, the team chat (`team.read`, `team.post`), and `task.contract` to ask a teammate's Deck for work. They also hear about subagents (`agent.spawn`), races (`task.race`) and leases. `team.post` with `to` writes to one teammate (`"vps"`) or one of its agents (`"vps/codex"`). What teammates write reaches this Deck's agents at the start of their next turn, marked as the teammates' words; it never starts a turn by itself.
 
 <details>
 <summary>The ops agents can run</summary>
@@ -266,6 +266,8 @@ Two Decks that cannot reach each other (both behind NAT, say) can link through a
 To change a route later, open a teammate's row in Settings › Team: *Reach it* switches between direct and each relay, and *May relay links to this Deck* lets that teammate bring links here. When a relayed link fails, the row says which Deck to fix. `deck peer relay` does the same from a shell (`via <name> <relay>`, `allow <relay>`), and `deck peer list` shows each route. With Deck running on the machine (a terminal Deck or `deck serve`), `deck peer pair`, `deck peer add`, `deck peer relay` and `deck peer remove` hand their work to it through a socket in `~/.deck/peers` that only you can open: it applies changes at once, waits for codes on its own listener, and pairs through its relays.
 
 A Deck that waits for a code also takes a pairing that one of its paired teammates relays: waiting for a code is the consent. The code, its three tries and the fingerprints you compare still protect the pairing, and the relay cannot read or change it. After the pin, that Deck lets the relay bring the new teammate's links; both pairing screens say so. In the config these are `peers.relay`, and `via` and `relay` on a `peers.remote` row.
+
+Roles point one way. The role on a teammate's row is what *it* may do on *your* Deck: a contractor may ask your Deck for coding work. To ask a teammate for work, that teammate must make your Deck a contractor on its side; a refusal says so.
 
 ### `deck serve`
 
