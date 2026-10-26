@@ -95,7 +95,8 @@ func TestPairThroughRelay(t *testing.T) {
 		t.Fatalf("b's outcome: %+v", out)
 	}
 
-	if err := a.Pin(PinRequest{Name: "b", Addr: unreachable(t), Dial: true, Result: res}); err != nil {
+	// Dial off in the wizard: through a relay the link is kept open anyway.
+	if err := a.Pin(PinRequest{Name: "b", Addr: unreachable(t), Dial: false, Result: res}); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.Pin(PinRequest{Name: "a", Result: out.Result}); err != nil {
@@ -259,5 +260,28 @@ func TestHostileRelayedPairing(t *testing.T) {
 	}
 	if err := login(PairUser, ida.Signer); err != nil {
 		t.Errorf("the named key as PairUser: %v", err)
+	}
+}
+
+// TestPairWithTheLinkOff: with the team link turned off after it ran, a
+// code still waits on a listener of its own.
+func TestPairWithTheLinkOff(t *testing.T) {
+	leakCheck(t)
+	s := newService(t, "s", ServiceOptions{})
+	addr := freeAddr(t)
+	setPeers(t, s, func(p *config.Peers) { p.Listen.Addr = addr })
+	if err := s.SetEnabled(false); err != nil {
+		t.Fatal(err)
+	}
+	if s.Manager() == nil || s.Manager().Running() {
+		t.Fatal("want a Manager that no longer runs")
+	}
+	w, err := s.StartPairListen(ctxT(t))
+	if err != nil {
+		t.Fatalf("pair with the link off: %v", err)
+	}
+	defer w.Cancel()
+	if w.Addr != addr {
+		t.Fatalf("waits on %s, want %s", w.Addr, addr)
 	}
 }

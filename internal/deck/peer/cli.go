@@ -128,8 +128,10 @@ func (c CLI) Pair(ctx context.Context, a PairArgs) error {
 		expiry = DefaultPairExpiry
 	}
 	addr := ln.Addr().String()
-	w := PairWait{Code: code, Addr: addr, Fingerprint: id.Fingerprint(), Name: self,
-		Hosts: InviteHosts(addr), Expires: time.Now().Add(expiry), Reachable: Reachable(addr)}
+	w := PairWait{
+		Code: code, Addr: addr, Fingerprint: id.Fingerprint(), Name: self,
+		Hosts: InviteHosts(addr), Expires: time.Now().Add(expiry), Reachable: Reachable(addr),
+	}
 	c.printWait(w, expiry, "Run again with --addr 0.0.0.0:"+portOf(ln.Addr())+" to listen on all interfaces.")
 	if a.Ready != nil {
 		a.Ready(ln.Addr().String(), code)
@@ -197,8 +199,10 @@ func (c CLI) pairRunning(ctx context.Context, cc *controlClient, a PairArgs) err
 	}
 	wt := m.Wait
 	c.printf("The Deck running here waits for the code, on its own listener.\n\n")
-	w := PairWait{Code: wt.Code, Addr: wt.Addr, Fingerprint: wt.Fingerprint, Name: wt.Name,
-		Hosts: wt.Hosts, Reachable: wt.Reachable, Expires: wt.Expires}
+	w := PairWait{
+		Code: wt.Code, Addr: wt.Addr, Fingerprint: wt.Fingerprint, Name: wt.Name,
+		Hosts: wt.Hosts, Reachable: wt.Reachable, Expires: wt.Expires,
+	}
 	c.printWait(w, time.Until(wt.Expires), "Turn on Accept connections on all interfaces there (Settings › Team › Listen on, or peers.listen.addr 0.0.0.0:"+portOfAddr(wt.Addr)+").")
 	if a.Ready != nil {
 		a.Ready(wt.Addr, wt.Code)

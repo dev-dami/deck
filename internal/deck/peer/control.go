@@ -86,16 +86,19 @@ func (s *Service) startControl() {
 		return
 	}
 	path := filepath.Join(s.dir, controlName)
-	ln, err := net.Listen("unix", path)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(s.base, "unix", path)
 	if err != nil {
-		if c, derr := net.DialTimeout("unix", path, time.Second); derr == nil {
+		if c := dialControl(s.dir); c != nil {
 			c.Close() // another Deck answers there: it keeps it
 			return
 		}
 		// Left behind by a Deck that did not stop cleanly.
 		_ = os.Remove(path)
-		if ln, err = net.Listen("unix", path); err != nil {
-			s.log.Debug("peer: no control socket", "error", err)
+		if ln, err = lc.Listen(s.base, "unix", path); err != nil {
+			// deck peer then works without this Deck (a path too long
+			// for a socket, say).
+			s.log.Warn("peer: no control socket for deck peer", "path", path, "error", err)
 			return
 		}
 	}
@@ -159,8 +162,11 @@ func (s *Service) handleControl(c net.Conn) {
 			return
 		}
 		defer w.Cancel()
-		if !reply(controlMsg{Wait: &controlWait{Code: w.Code, Addr: w.Addr, Fingerprint: w.Fingerprint, Name: w.Name,
-			Hosts: w.Hosts, Reachable: w.Reachable, Expires: w.Expires}}) {
+		wait := &controlWait{
+			Code: w.Code, Addr: w.Addr, Fingerprint: w.Fingerprint, Name: w.Name,
+			Hosts: w.Hosts, Reachable: w.Reachable, Expires: w.Expires,
+		}
+		if !reply(controlMsg{Wait: wait}) {
 			return
 		}
 		var out PairOutcome
@@ -253,7 +259,10 @@ type controlClient struct {
 // dialControl connects to the control socket of the Deck running with
 // peers directory dir; nil when none runs.
 func dialControl(dir string) *controlClient {
-	c, err := net.DialTimeout("unix", filepath.Join(dir, controlName), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var d net.Dialer
+	c, err := d.DialContext(ctx, "unix", filepath.Join(dir, controlName))
 	if err != nil {
 		return nil
 	}

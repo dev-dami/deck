@@ -612,6 +612,11 @@ func (s *Service) StartPairListen(ctx context.Context) (*PairWait, error) {
 			cancel()
 			return nil, err
 		}
+		if !mgr.Running() {
+			// The link was turned off: no relay can bring a pairing.
+			cancel()
+			return s.StartPairing(PairAddr(p))
+		}
 		ln, err := ListenPair(PairAddr(p))
 		if err != nil {
 			cancel()
@@ -885,7 +890,8 @@ func (s *Service) Pin(r PinRequest) error {
 	via, relayRow := "", ""
 	if r.Result.Via != "" {
 		if r.Result.Dialed {
-			via, r.Addr = r.Result.Via, ""
+			// With no address, the relay is the only way: keep the link open.
+			via, r.Addr, r.Dial = r.Result.Via, "", true
 		} else {
 			relayRow = r.Result.Via
 		}
