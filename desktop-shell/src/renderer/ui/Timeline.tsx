@@ -6,12 +6,10 @@ import {
   ArrowDown,
   Brain,
   Check,
-  ChevronDown,
   ChevronRight,
   CircleAlert,
   Copy,
   Eye,
-  FileDiff,
   FilePen,
   FileText,
   Globe,
@@ -24,7 +22,20 @@ import {
   SquareTerminal,
   Wrench,
 } from "./icons";
-import { createContext, memo, type ReactElement, type ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  type CSSProperties,
+  memo,
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { agentColour, agentKind } from "../agents";
 import type { RoomNotice } from "../attention";
@@ -72,6 +83,10 @@ type TextChunk = Extract<Chunk, { k: "text" }>;
 
 const COMMAND = /bash|shell|exec|command|terminal|run/;
 
+// Rows between the messages, so a reply reads as its own block. The list's
+// class says the same (gap-6).
+const ROW_GAP = 24;
+
 // An icon for a tool by its name, as agents name them.
 function toolIcon(name: string): IconType {
   const n = name.toLowerCase();
@@ -83,6 +98,9 @@ function toolIcon(name: string): IconType {
   return Wrench;
 }
 
+// An agent's hue as a custom property, for the classes that tint with it.
+const hue = (colour: string) => ({ "--hue": colour }) as CSSProperties;
+
 // A tool's output shows this many lines until the person asks for all.
 const OUTPUT_LINES = 40;
 
@@ -91,18 +109,34 @@ function ToolOutput({ output }: { output: string }) {
   const capped = useMemo(() => capLines(output, OUTPUT_LINES), [output]);
   const cut = !all && capped.cut;
   return (
-    <div className="mt-1 mb-2 overflow-hidden rounded-lg border border-hairline bg-code">
-      <pre className="tool-output max-h-72 overflow-auto px-3 py-2 font-mono text-code text-foreground/85">{cut ? capped.text : output}</pre>
+    <div className="mt-1 mb-2 ml-6 overflow-hidden rounded-lg bg-surface-1">
+      <pre className="tool-output max-h-72 overflow-auto px-3.5 py-2.5 font-mono text-code text-foreground/85">{cut ? capped.text : output}</pre>
       {cut && (
         <button
           type="button"
-          className="tool-more flex w-full cursor-pointer items-center gap-1.5 border-hairline border-t px-3 py-1 text-left font-mono text-2xs text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="tool-more flex w-full cursor-pointer items-center gap-1.5 border-hairline border-t px-3.5 py-1.5 text-left text-2xs text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           onClick={() => setAll(true)}
         >
-          Show all <span className="tabular-nums">({capped.count} lines)</span>
+          Show all <span className="tabular-nums">{capped.count} lines</span>
         </button>
       )}
     </div>
+  );
+}
+
+// The quiet row a piece of work folds to: an icon, then mono text, with a
+// caret that shows on hover and turns as it opens.
+const WORK_ROW =
+  "-mx-2 flex h-7 min-w-0 cursor-pointer list-none items-center gap-2.5 rounded-lg px-2 outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden";
+
+function Caret({ shown = true }: { shown?: boolean }) {
+  return (
+    <ChevronRight
+      className={cn(
+        "size-3 shrink-0 text-faint transition-[rotate,opacity] duration-200 group-open/fold:rotate-90",
+        shown ? "opacity-0 group-hover/fold:opacity-100 group-open/fold:opacity-100" : "invisible",
+      )}
+    />
   );
 }
 
@@ -111,12 +145,12 @@ function WorkRow({ c, running }: { c: Chunk; running: boolean }) {
   if (c.k === "reasoning") {
     return (
       <details className="fold reasoning group/fold">
-        <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 rounded-md py-1 text-muted-foreground text-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-          <Brain className="size-3.5 shrink-0" />
+        <summary className={cn(WORK_ROW, "text-muted-foreground text-sm")}>
+          <Brain className="size-3.5 shrink-0 text-faint" />
           <span>Thought</span>
-          <ChevronRight className="size-3 shrink-0 transition-transform group-open/fold:rotate-90" />
+          <Caret />
         </summary>
-        <p className="reasoning-text mt-1 mb-2 ml-1.5 whitespace-pre-wrap border-hairline-strong border-l pl-4 text-muted-foreground text-xs leading-relaxed">
+        <p className="reasoning-text mt-0.5 mb-2 ml-[7px] whitespace-pre-wrap text-pretty border-hairline-strong border-l pl-[22px] text-muted-foreground text-xs leading-relaxed">
           {c.text}
         </p>
       </details>
@@ -132,32 +166,33 @@ function WorkRow({ c, running }: { c: Chunk; running: boolean }) {
   const summary = c.call?.summary ?? "";
   // A command reads as a shell line: a muted $, then the command.
   const command = COMMAND.test(name.toLowerCase()) && summary !== "";
+  const opens = output !== "" || diff !== "";
   return (
     <details className={cn("fold tool group/fold", failed && "failed")}>
-      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 rounded-md py-0.5 font-mono text-code outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+      <summary className={cn(WORK_ROW, "font-mono text-code")}>
         <Icon className={cn("size-3.5 shrink-0", failed ? "text-destructive-foreground" : "text-faint")} />
         {command ? (
           <>
             <span className="tool-name sr-only">{name}</span>
-            <span aria-hidden className="shrink-0 text-faint">
+            <span aria-hidden className="-mr-1 shrink-0 text-faint">
               $
             </span>
-            <span className={cn("tool-summary min-w-0 flex-1 truncate text-foreground/80", pending && "shimmer")}>{summary}</span>
+            <span className={cn("tool-summary min-w-0 truncate text-foreground/80", pending && "shimmer")}>{summary}</span>
           </>
         ) : (
           <>
             <span className={cn("tool-name shrink-0 text-foreground/80", pending && "shimmer")}>{name}</span>
-            <span className="tool-summary min-w-0 flex-1 truncate text-muted-foreground">{summary}</span>
+            <span className="tool-summary min-w-0 truncate text-muted-foreground">{summary}</span>
           </>
         )}
         <span className="tool-state sr-only">{pending ? "running" : failed ? "failed" : "done"}</span>
-        {(output !== "" || diff !== "") && (
-          <ChevronDown className="size-3 shrink-0 text-faint transition-transform group-open/fold:rotate-180" />
-        )}
+        <span className="ml-auto" />
+        {failed && <span className="shrink-0 font-sans text-2xs text-destructive-foreground">failed</span>}
+        <Caret shown={opens} />
       </summary>
       {output !== "" && <ToolOutput output={output} />}
       {diff !== "" && (
-        <div className="mt-1 mb-2 overflow-hidden rounded-lg border border-hairline">
+        <div className="mt-1 mb-2 ml-6 overflow-hidden rounded-lg bg-surface-1">
           <DiffView diff={diff} truncated={c.result?.diff_truncated} />
         </div>
       )}
@@ -211,17 +246,17 @@ function ImagePart({ c, chip }: { c: ImageChunk; chip: ReactElement }) {
     <>
       <button
         type="button"
-        className="image-part w-fit cursor-zoom-in rounded-[12px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="image-part w-fit cursor-zoom-in rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={`Open ${c.name}`}
         title={c.name}
         onClick={() => setBig(true)}
       >
-        <img src={url} alt={c.name} className="block max-h-60 max-w-[240px] rounded-[12px] border border-hairline" />
+        <img src={url} alt={c.name} className="block max-h-60 max-w-[240px] rounded-[14px] ring-1 ring-hairline" />
       </button>
       {big &&
         createPortal(
           <Dialog title={c.name} onClose={() => setBig(false)} className="image-lightbox w-auto max-w-[min(90vw,1200px)]">
-            <img src={url} alt={c.name} className="mb-3 max-h-[70vh] max-w-full rounded-[12px] border border-hairline object-contain" />
+            <img src={url} alt={c.name} className="mb-3 max-h-[70vh] max-w-full rounded-[12px] ring-1 ring-hairline object-contain" />
           </Dialog>,
           document.body,
         )}
@@ -237,6 +272,15 @@ function reveal(el: HTMLElement): void {
   if (selected !== "") el.animate([{ backgroundColor: selected }, { backgroundColor: "transparent" }], { duration: 1200, easing: "ease-out" });
 }
 
+function ImageChip({ name }: { name: string }) {
+  return (
+    <span className="chip inline-flex w-fit items-center gap-1.5 text-muted-foreground text-xs">
+      <ImageIcon className="size-3.5 text-faint" />
+      {name}
+    </span>
+  );
+}
+
 function Prose({ chunks, text }: { chunks: Chunk[]; text?: (c: TextChunk, key: number) => ReactNode }) {
   return (
     <>
@@ -248,16 +292,7 @@ function Prose({ chunks, text }: { chunks: Chunk[]; text?: (c: TextChunk, key: n
             <Markdown key={i} text={c.text} />
           )
         ) : c.k === "image" ? (
-          <ImagePart
-            key={i}
-            c={c}
-            chip={
-              <span className="chip inline-flex w-fit items-center gap-1.5 rounded-md bg-secondary px-2 py-1 text-xs">
-                <ImageIcon className="size-3.5" />
-                {c.name}
-              </span>
-            }
-          />
+          <ImagePart key={i} c={c} chip={<ImageChip name={c.name} />} />
         ) : (
           <WorkRow key={i} c={c} running={false} />
         ),
@@ -331,36 +366,75 @@ function UserMessage({ m, actions }: { m: Message; actions: RoomActions | null }
   const chunks = chunksOf(m);
   return (
     <article className="msg msg-user group flex animate-enter flex-col gap-1" data-role="user" data-mid={m.id}>
-      {/* A played card: the person's turn on a surface, with a faint rail. */}
-      <div className="user-card relative overflow-hidden rounded-lg border border-hairline bg-surface-1 py-3 pr-4 pl-5 text-message-foreground inset-shadow-hl before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-faint">
+      {/* The person's turn: a bubble of the accent, on the right. */}
+      <div className="user-card text-message-foreground">
         <div className="flex flex-col gap-2">
           {chunks.map((c, i) =>
             c.k === "text" ? (
-              <p key={i} className="user-text whitespace-pre-wrap break-words text-prose">
+              <p key={i} className="user-text whitespace-pre-wrap text-pretty break-words text-prose">
                 {c.text}
               </p>
             ) : c.k === "image" ? (
-              <ImagePart
-                key={i}
-                c={c}
-                chip={
-                  <span className="chip inline-flex w-fit items-center gap-1.5 rounded-md border border-hairline bg-background/60 px-2 py-1 text-xs">
-                    <ImageIcon className="size-3.5" />
-                    {c.name}
-                  </span>
-                }
-              />
+              <ImagePart key={i} c={c} chip={<ImageChip name={c.name} />} />
             ) : null,
           )}
         </div>
       </div>
-      <header className="msg-head -mt-0.5 flex h-5 items-center gap-2 ps-1 font-mono text-2xs text-faint opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+      <header className="msg-head flex h-6 items-center gap-1.5 pe-1 text-2xs text-faint opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         <span className="msg-who sr-only">You</span>
-        {m.edited === true && <span>edited</span>}
-        <time>{formatClock(m.created_at, prefs.clock)}</time>
         {actions !== null && <MessageActions m={m} actions={actions} last={false} />}
+        {m.edited === true && <span>edited ·</span>}
+        <time className="tabular-nums">{formatClock(m.created_at, prefs.clock)}</time>
       </header>
     </article>
+  );
+}
+
+// The agent's glyph, set in type in its hue. While the agent works, the
+// glyph's brightness steps.
+function AgentMark({ mark, working }: { mark: string; working: boolean }) {
+  return (
+    <span aria-hidden className={cn("msg-mark min-w-4 shrink-0 font-mono text-(--hue) text-[12.5px]", working && "animate-deck-pulse")}>
+      {mark}
+    </span>
+  );
+}
+
+// "Worked for 12s · 3 steps ›": a finished reply's work, folded to one line
+// of type.
+function WorkFold({ work, took, open, onToggle }: { work: Chunk[]; took: string; open: boolean; onToggle: () => void }) {
+  const steps = work.filter((c) => c.k !== "text").length;
+  return (
+    <button
+      type="button"
+      className="worked group/worked flex h-6 w-fit cursor-pointer select-none items-center gap-1.5 rounded-md text-muted-foreground text-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
+      aria-expanded={open}
+      onClick={onToggle}
+    >
+      <span>{took}</span>
+      <span aria-hidden className="text-faint">
+        ·
+      </span>
+      <span className="text-faint tabular-nums">
+        {steps} step{steps === 1 ? "" : "s"}
+      </span>
+      <ChevronRight className={cn("size-3 text-faint transition-transform duration-200", open && "rotate-90")} />
+    </button>
+  );
+}
+
+// "Working 12s": the word shimmers in the agent's hue.
+function Working({ since }: { since: string }) {
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="streaming flex h-6 items-baseline gap-2 text-sm" aria-label="writing">
+      <span className="shimmer shimmer-hue">Working</span>
+      <span className="text-faint text-xs tabular-nums">{formatDuration(tick - toMillis(since))}</span>
+    </div>
   );
 }
 
@@ -383,6 +457,7 @@ function AgentMessage({
   const agent = m.agent ?? "agent";
   const kind = agentKind(agent, roster);
   const colour = agentColour(agent, kind);
+  const mark = kindMark(theme, kind) || "●";
   const chunks = chunksOf(m);
   const { work, answer } = splitWork(chunks);
   const [open, setOpen] = useState(false);
@@ -398,14 +473,7 @@ function AgentMessage({
     plan !== null && c === planChunk ? (
       <div key={key} className="flex flex-col gap-3">
         {plan.before !== "" && <Markdown text={plan.before} />}
-        <PlanCard
-          id={m.id}
-          plan={plan}
-          agent={agent}
-          colour={colour}
-          index={`${kindMark(theme, kind) || "●"} ${shortId(m.session_id)}`}
-          actions={last ? actions : null}
-        />
+        <PlanCard id={m.id} plan={plan} agent={agent} colour={colour} index={`${mark} ${shortId(m.session_id)}`} actions={last ? actions : null} />
         {plan.after !== "" && <Markdown text={plan.after} />}
       </div>
     ) : (
@@ -413,22 +481,22 @@ function AgentMessage({
     );
   const ms = toMillis(m.updated_at) - toMillis(m.created_at);
   const took = ms >= 1000 ? `Worked for ${formatDuration(ms)}` : "Worked";
-  const [tick, setTick] = useState(() => Date.now());
-  useEffect(() => {
-    if (m.finished) return;
-    const t = setInterval(() => setTick(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [m.finished]);
   return (
-    <article className="msg msg-agent group flex min-w-0 animate-enter flex-col gap-1 px-1" data-role="assistant" data-agent={agent} data-mid={m.id}>
-      {/* The corner index: the agent's glyph and id in its hue, like the
-          rank in the corner of a playing card. */}
-      <header className="msg-head flex items-center gap-2 font-mono text-2xs">
-        <span className="msg-index inline-flex items-center gap-1.5" style={{ color: colour }}>
-          <span className="msg-mark">{kindMark(theme, kind) || "●"}</span>
-          <span className="msg-who">{agent}</span>
+    <article
+      className="msg msg-agent group flex min-w-0 animate-enter flex-col gap-2"
+      data-role="assistant"
+      data-agent={agent}
+      data-mid={m.id}
+      style={hue(colour)}
+    >
+      {/* The agent's glyph and name in its hue: no card, the reply reads
+          as prose on the sheet. */}
+      <header className="msg-head flex h-6 items-center gap-2">
+        <span className="msg-index inline-flex min-w-0 items-baseline gap-1.5">
+          <AgentMark mark={mark} working={!m.finished} />
+          <span className="msg-who truncate font-semibold text-(--hue) text-[13px]">{agent}</span>
         </span>
-        <time className="text-faint opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+        <time className="text-2xs text-faint tabular-nums opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           {formatClock(m.created_at, prefs.clock)}
         </time>
         {/* Copy, retry and continue show on hover at the line's end, so a
@@ -441,22 +509,12 @@ function AgentMessage({
       </header>
       {folds ? (
         <>
-          <div className="flex items-center gap-1 border-hairline border-b pt-1 pb-2">
-            <button
-              type="button"
-              className="worked -ml-1 flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-muted-foreground text-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              aria-expanded={open}
-              onClick={() => setOpen((o) => !o)}
-            >
-              {took}
-              {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-            </button>
-          </div>
+          <WorkFold work={work} took={took} open={open} onToggle={() => setOpen((o) => !o)} />
           {open && (
-            <div className="flex flex-col gap-0.5 border-hairline border-b pb-2">
+            <div className="work-log ml-[5px] flex animate-enter flex-col gap-px border-hairline-strong border-l py-1 pl-[18px]">
               {work.map((c, i) =>
                 c.k === "text" ? (
-                  <div key={i} className="text-muted-foreground [&_.md]:text-sm">
+                  <div key={i} className="py-1 text-muted-foreground [&_.md]:text-sm">
                     <Markdown text={c.text} />
                   </div>
                 ) : (
@@ -465,9 +523,11 @@ function AgentMessage({
               )}
             </div>
           )}
-          <div className="mt-2 flex flex-col gap-3 text-foreground text-prose">
-            <Prose chunks={answer} text={text} />
-          </div>
+          {answer.length > 0 && (
+            <div className="flex flex-col gap-3 text-foreground text-prose">
+              <Prose chunks={answer} text={text} />
+            </div>
+          )}
         </>
       ) : (
         <div className="flex flex-col gap-2 text-foreground text-prose">
@@ -482,12 +542,7 @@ function AgentMessage({
           )}
         </div>
       )}
-      {!m.finished && (
-        <div className="streaming flex items-center gap-2 pt-1 text-sm" aria-label="writing">
-          <span aria-hidden className="size-1.5 shrink-0 animate-deck-pulse rounded-full bg-signal" />
-          <span className="shimmer">Working for {formatDuration(tick - toMillis(m.created_at))}</span>
-        </div>
-      )}
+      {!m.finished && <Working since={m.created_at} />}
     </article>
   );
 }
@@ -512,13 +567,24 @@ export const MessageView = memo(function MessageView({
   if (m.role === "user") return <UserMessage m={m} actions={actions} />;
   if (m.role === "system") {
     return (
-      <article className="msg msg-system mx-auto max-w-[90%] text-center text-muted-foreground text-xs" data-role="system" data-mid={m.id}>
+      <article className="msg msg-system mx-auto max-w-[90%] text-pretty text-center text-muted-foreground text-xs" data-role="system" data-mid={m.id}>
         <Prose chunks={chunksOf(m)} />
       </article>
     );
   }
   return <AgentMessage m={m} roster={roster} theme={theme} mode={mode} actions={actions} last={last} />;
 });
+
+// A path as its folder, faint, and its name.
+function PathName({ path }: { path: string }) {
+  const cut = path.lastIndexOf("/") + 1;
+  return (
+    <span className="min-w-0 flex-1 truncate font-mono text-code">
+      <span className="text-faint">{path.slice(0, cut)}</span>
+      <span className="text-foreground">{path.slice(cut)}</span>
+    </span>
+  );
+}
 
 // "N changed files +a −r … Open diff", under the last reply, as T3 Code
 // shows a run's changes.
@@ -527,47 +593,74 @@ export function ChangedFilesCard({ files, onOpen }: { files: ChangedFile[]; onOp
   const added = files.reduce((n, f) => n + f.added, 0);
   const removed = files.reduce((n, f) => n + f.removed, 0);
   return (
-    <div className="changed-files rounded-lg border border-hairline bg-surface-1 inset-shadow-hl" data-changed-files="">
-      <div className="flex items-center justify-between gap-2 px-3 py-2">
+    // One of the two boxed things in the timeline (with a tool's output): a
+    // fill and a hairline, nothing more.
+    <div className="changed-files animate-enter overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline" data-changed-files="">
+      <div className="flex h-10 items-center gap-3 pr-1.5 pl-3">
         <button
           type="button"
-          className="flex min-w-0 cursor-pointer items-center gap-x-3 rounded-md font-medium text-foreground text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 cursor-pointer items-baseline gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
         >
-          {open ? <ChevronDown className="size-3.5 text-muted-foreground" /> : <ChevronRight className="size-3.5 text-muted-foreground" />}
-          <span>
+          <ChevronRight className={cn("size-3 shrink-0 self-center text-faint transition-transform duration-200", open && "rotate-90")} />
+          <span className="font-medium text-foreground text-sm tabular-nums">
             {files.length} changed file{files.length === 1 ? "" : "s"}
           </span>
-          <span className="font-mono">
+          <span className="font-mono text-2xs tabular-nums">
             <span className="text-diff-addition-foreground">+{added}</span>{" "}
             <span className="text-diff-deletion-foreground">−{removed}</span>
           </span>
-          <span className="font-normal text-muted-foreground">{open ? "Hide files" : "Show files"}</span>
+          <span className="text-faint text-xs">{open ? "Hide files" : "Show files"}</span>
         </button>
-        <Button size="xs" variant="outline" aria-label="Open diff" onClick={() => onOpen(files[0]?.path)}>
-          <FileDiff className="size-3" />
+        <Button size="sm" variant="ghost-muted" className="ml-auto" aria-label="Open diff" onClick={() => onOpen(files[0]?.path)}>
           Open diff
         </Button>
       </div>
       {open && (
-        <ul className="flex flex-col gap-px px-1.5 pb-1.5">
+        <ul className="flex flex-col gap-px border-hairline border-t p-1.5">
           {files.map((f) => (
             <li key={f.path}>
               <button
                 type="button"
-                className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-xs outline-none hover:bg-hover focus-visible:bg-selected"
+                className="flex h-7 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 text-left text-xs outline-none transition-colors hover:bg-hover focus-visible:bg-selected"
                 onClick={() => onOpen(f.path)}
               >
-                <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate font-mono text-code">{f.path}</span>
-                <span className="font-mono text-diff-addition-foreground">+{f.added}</span>
-                <span className="font-mono text-diff-deletion-foreground">−{f.removed}</span>
+                <FileText className="size-3.5 shrink-0 text-faint" />
+                <PathName path={f.path} />
+                <span className="font-mono text-2xs text-diff-addition-foreground tabular-nums">+{f.added}</span>
+                <span className="font-mono text-2xs text-diff-deletion-foreground tabular-nums">−{f.removed}</span>
               </button>
             </li>
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// A thread with no messages yet, in type: who is on it, and how to write
+// to them.
+function EmptyRoom({ roster, theme }: { roster: AgentLine[]; theme: Theme | null }) {
+  return (
+    <div className="empty flex animate-enter flex-col gap-2 pt-[8vh]">
+      <p className="font-medium text-foreground text-sm">Nothing said here yet.</p>
+      {roster.length > 0 && (
+        <p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+          {roster.map((l) => (
+            <span key={l.id} className="inline-flex items-baseline gap-1.5" style={hue(agentColour(l.id, l.kind))}>
+              <span aria-hidden className="font-mono text-(--hue) text-[12.5px]">
+                {kindMark(theme, l.kind) || "●"}
+              </span>
+              <span className="text-(--hue)">{l.name}</span>
+            </span>
+          ))}
+        </p>
+      )}
+      <p className="text-pretty text-faint text-xs leading-relaxed">
+        Send a message to start the conversation. <span className="font-mono text-muted-foreground">$name</span> addresses an agent,{" "}
+        <span className="font-mono text-muted-foreground">@</span> a file, <span className="font-mono text-muted-foreground">/</span> a command.
+      </p>
     </div>
   );
 }
@@ -698,36 +791,36 @@ export function Timeline({
             setAway(!near);
           }}
         >
-          <div className="timeline-inner mx-auto flex w-full max-w-(--chat-max) flex-col gap-5 px-5 pt-5 pb-8">
+          {/* The end pads past the floating composer (--composer-h, set by
+              the room), so the last line rests above it. */}
+          <div className="timeline-inner mx-auto flex w-full max-w-(--chat-max) flex-col gap-6 px-6 pt-6 pb-[calc(var(--composer-h,0px)+1.5rem)]">
             {more && (
               <button
                 type="button"
-                className="older w-full rounded-md py-1.5 text-faint text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+                className="older mx-auto h-7 rounded-full px-3 text-faint text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
                 onClick={() => void older()}
                 disabled={loading}
               >
                 {loading ? "Loading…" : "Load older messages"}
               </button>
             )}
-            {messages.length === 0 && (
-              <p className="empty py-24 text-center text-faint text-sm">
-                Send a message to start the conversation.
-              </p>
-            )}
+            {messages.length === 0 && <EmptyRoom roster={roster} theme={theme} />}
             <VirtualList
               items={rows}
               keyOf={rowKey}
               scroller={ref}
               estimate={120}
-              gap={20}
-              className="flex flex-col gap-5"
+              gap={ROW_GAP}
+              className="flex flex-col gap-6"
               onResize={pin}
               reveal={shown}
               render={(m) =>
                 "role" in m ? (
                   <MessageView m={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />
                 ) : (
-                  <p className="room-note text-center text-faint text-xs">{m.text}</p>
+                  <p className="room-note flex items-center gap-3 text-faint text-xs before:h-px before:flex-1 before:bg-hairline after:h-px after:flex-1 after:bg-hairline">
+                    {m.text}
+                  </p>
                 )
               }
             />
@@ -737,10 +830,10 @@ export function Timeline({
         {away && (
           <button
             type="button"
-            className="jump material -translate-x-1/2 absolute bottom-3 left-1/2 flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-2 px-3 text-muted-foreground text-xs shadow-popover outline-none inset-shadow-hl hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="jump liquid-thick absolute inset-x-0 bottom-[calc(var(--composer-h,0px)+0.75rem)] z-10 mx-auto flex w-fit h-8 animate-enter cursor-pointer items-center gap-1.5 rounded-full pr-3.5 pl-3 text-foreground text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={toBottom}
           >
-            <ArrowDown className="size-3.5" />
+            <ArrowDown className="size-3.5" weight="bold" />
             Jump to latest
           </button>
         )}

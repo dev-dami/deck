@@ -7,6 +7,7 @@ import type { ProjectApi } from "../project";
 import { Button } from "./kit/button";
 import { EmptyState } from "./kit/empty";
 import { MenuItem, Popover } from "./kit/menu";
+import { segmentItem, segmentTrack } from "./kit/segmented";
 import { portFrom, setPreviewTarget, useOpenPorts, usePreviewTarget } from "./usePorts";
 
 // The Preview tab: a dev server's page in a view that main owns. The page
@@ -33,12 +34,12 @@ export function PortChip({ p, onPreview, className }: { p: DetectedPort; onPrevi
       className="w-48"
       trigger={
         <span
-          className={cn("port-chip inline-flex h-6 shrink-0 items-center rounded-md border border-hairline font-mono text-2xs text-muted-foreground", className)}
+          className={cn("port-chip liquid-clear inline-flex h-6 shrink-0 items-center rounded-full font-mono text-2xs text-muted-foreground", className)}
           data-port={p.port}
         >
           <button
             type="button"
-            className="flex h-full cursor-pointer items-center gap-1 rounded-l-md pr-1 pl-1.5 outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-full cursor-pointer items-center gap-1.5 rounded-l-full pr-1 pl-2 outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={http ? `Preview ${label}` : `Open ${label} in the browser`}
             title={`${p.url}, from ${portFrom(p)}`}
             onClick={() => (http ? onPreview(p.url) : openInBrowser(p.url))}
@@ -48,7 +49,7 @@ export function PortChip({ p, onPreview, className }: { p: DetectedPort; onPrevi
           </button>
           <button
             type="button"
-            className="grid h-full w-4 cursor-pointer place-items-center rounded-r-md outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="grid h-full w-5 cursor-pointer place-items-center rounded-r-full pr-0.5 outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={`More for ${label}`}
             aria-expanded={menu}
             onClick={() => setMenu((m) => !m)}
@@ -212,7 +213,7 @@ export function PreviewPanel({ api, bridge }: { api: ProjectApi; bridge: DeckBri
   };
   return (
     <section aria-label="Preview" className="preview flex min-h-0 flex-1 flex-col">
-      <div className="panel-tools flex h-11 shrink-0 items-center gap-1 border-b px-2 text-xs">
+      <div className="panel-tools flex h-11 shrink-0 items-center gap-1 border-hairline border-b px-2 text-xs">
         <Button variant="ghost-muted" size="icon-xs" aria-label="Back" title="Back" disabled={state?.canBack !== true} onClick={() => void bridge.previewNav({ action: "back" })}>
           <ArrowLeft />
         </Button>
@@ -229,11 +230,15 @@ export function PreviewPanel({ api, bridge }: { api: ProjectApi; bridge: DeckBri
         <Button variant="ghost-muted" size="icon-xs" aria-label="Reload" title="Reload" onClick={() => void bridge.previewNav({ action: "reload" })}>
           <RefreshCw className={cn(state?.loading === true && "animate-spin")} />
         </Button>
-        <div className="flex h-7 min-w-0 flex-1 items-center rounded-md border border-input bg-card font-mono text-2xs" title={state?.title || shown}>
+        {/* The address: a recessed capsule, as Safari draws it. */}
+        <div
+          className="mx-1 flex h-7 min-w-0 flex-1 items-center rounded-full bg-hover font-mono text-2xs ring-1 ring-hairline transition-shadow focus-within:ring-2 focus-within:ring-ring"
+          title={state?.title || shown}
+        >
           {ports.length > 1 ? (
             <select
               aria-label="Port"
-              className="h-full shrink-0 cursor-pointer rounded-l-md bg-transparent pl-2 text-muted-foreground outline-none"
+              className="h-full shrink-0 cursor-pointer rounded-l-full bg-transparent pl-3 text-muted-foreground outline-none"
               value={ports.find((p) => samePort(url, p.port))?.port}
               onChange={(e) => {
                 const p = ports.find((x) => x.port === Number(e.currentTarget.value));
@@ -247,11 +252,11 @@ export function PreviewPanel({ api, bridge }: { api: ProjectApi; bridge: DeckBri
               ))}
             </select>
           ) : (
-            <span className="preview-host shrink-0 pl-2 text-muted-foreground">{hostOf(shown)}</span>
+            <span className="preview-host shrink-0 pl-3 text-muted-foreground">{hostOf(shown)}</span>
           )}
           <input
             aria-label="Path"
-            className="h-full min-w-0 flex-1 bg-transparent pr-2 text-foreground outline-none"
+            className="h-full min-w-0 flex-1 bg-transparent pr-3 text-foreground outline-none"
             value={path}
             spellCheck={false}
             onChange={(e) => setPath(e.currentTarget.value)}
@@ -265,20 +270,21 @@ export function PreviewPanel({ api, bridge }: { api: ProjectApi; bridge: DeckBri
           <ExternalLink />
         </Button>
       </div>
-      <div className="flex h-9 shrink-0 items-center gap-0.5 border-b px-2" role="group" aria-label="Device width">
-        {DEVICES.map((d) => (
-          <Button
-            key={d.width}
-            variant="ghost-muted"
-            size="xs"
-            className="font-mono font-normal"
-            aria-pressed={device === d.width}
-            onClick={() => setDevice(d.width)}
-          >
-            {d.label}
-          </Button>
-        ))}
-        {zoom < 1 && <span className="ml-auto font-mono text-2xs text-faint">{Math.round(zoom * 100)}%</span>}
+      <div className="flex h-10 shrink-0 items-center gap-2 border-hairline border-b px-2.5">
+        <div className={segmentTrack()} role="group" aria-label="Device width">
+          {DEVICES.map((d) => (
+            <button
+              key={d.width}
+              type="button"
+              className={cn(segmentItem({ on: device === d.width }), "px-2.5 font-mono text-2xs")}
+              aria-pressed={device === d.width}
+              onClick={() => setDevice(d.width)}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+        {zoom < 1 && <span className="ml-auto font-mono text-2xs text-faint tabular-nums">{Math.round(zoom * 100)}%</span>}
       </div>
       <div ref={frame} className="flex min-h-0 flex-1 justify-center bg-surface-1">
         <div ref={box} className="preview-box h-full bg-background" style={{ width }} data-preview={url}>
