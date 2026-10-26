@@ -188,7 +188,7 @@ func (w *DeckWorkspace) threadOf(sessionID string) (decks.ThreadInfo, bool) {
 // -- Agent --
 
 // AgentRun posts the prompt to the session's thread: to the agents it names
-// ($claude, $codex, $all), or to whoever spoke last.
+// (@claude, @codex, @all, a named agent; $ works too), or to whoever spoke last.
 func (w *DeckWorkspace) AgentRun(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) error {
 	_, err := w.post(ctx, sessionID, prompt, attachments...)
 	return err

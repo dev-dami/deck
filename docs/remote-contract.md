@@ -185,8 +185,10 @@ after key sorting).
   with `data_b64` is the `chat.send` upload. v1 has no way to fetch an
   image's bytes back to the phone.
 - `Approval` has no `cwd`; `path` is relative. `AgentLine` has `id`, which is
-  what `Approval.agent` and `agent.interrupt.agent` name. `Device` has
-  `allow_yolo`.
+  what `Approval.agent` and `agent.interrupt.agent` name. A member started
+  from a named agent (deck.json `profiles`) also has `profile`, the
+  profile's name, and `role`, its one-line role; both are absent for other
+  members. `Device` has `allow_yolo`.
 - `theme` is `{palette: {token: "#rrggbb"}, kinds: {kind: {tint, mark}}}`.
 - `messages.list` cursors (`before`, `cursor`) are opaque strings.
 - Methods without params or result use `{}`. `sessions.delete`,
