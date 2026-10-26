@@ -56,12 +56,18 @@ export function renderScene(ctx: Ctx, W: number, H: number, dpr: number, art: Sc
   const octx = context(out);
   const im = octx.createImageData(cols, rows);
   const px = new Uint32Array(im.data.buffer);
-  // The sky's grade: full at the top, gone by 60% of the height.
-  const grade = new Float32Array(rows);
-  for (let y = 0; y < rows; y++) {
-    const t = Math.max(0, 1 - y / (rows * 0.6));
-    grade[y] = art.sky * t * t * (3 - 2 * t);
-  }
+  // The sky's grade: full at the top, gone by 60% of the height. And the
+  // side's: the band behind the sidebar held back as the sky is, full to
+  // 280px and gone by 440px, so the sidebar's glass and the gutter beside
+  // it sit on calm tone. Both toward the shadow ink when the sky's is
+  // positive, toward the light ink when it is negative.
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+  const sign = art.sky < 0 ? -1 : 1;
+  const gy = new Float32Array(rows);
+  for (let y = 0; y < rows; y++) gy[y] = Math.abs(art.sky) * smooth(Math.max(0, 1 - y / (rows * 0.6)));
+  const gx = new Float32Array(cols);
+  for (let x = 0; x < cols; x++) gx[x] = art.side * smooth(Math.min(1, Math.max(0, (440 - (x * cell) / dpr) / 160)));
+  const gradeAt = (x: number, y: number) => sign * Math.max(gy[y] as number, gx[x] as number);
   // Each ink, and the same ink under the mark, moved toward the middle
   // of the inks.
   const inks = art.inks.map(word);
@@ -71,9 +77,9 @@ export function renderScene(ctx: Ctx, W: number, H: number, dpr: number, art: Sc
   if (art.colour) {
     const rgb = new Float32Array(cols * rows * 3);
     for (let y = 0; y < rows; y++) {
-      const g = grade[y] as number;
       for (let x = 0; x < cols; x++) {
         const i = y * cols + x;
+        const g = gradeAt(x, y);
         for (let c = 0; c < 3; c++) {
           const v = data[i * 4 + c] as number;
           rgb[i * 3 + c] = g >= 0 ? v * (1 - g) : v + (255 - v) * -g;
@@ -87,9 +93,9 @@ export function renderScene(ctx: Ctx, W: number, H: number, dpr: number, art: Sc
     const [black, white] = autoLevels(v);
     levels(v, black, white, art.gamma);
     for (let y = 0; y < rows; y++) {
-      const g = grade[y] as number;
-      if (g === 0) continue;
       for (let x = 0; x < cols; x++) {
+        const g = gradeAt(x, y);
+        if (g === 0) continue;
         const i = y * cols + x;
         const t = v[i] as number;
         v[i] = g > 0 ? t * (1 - g) : t + (1 - t) * -g;
@@ -97,6 +103,18 @@ export function renderScene(ctx: Ctx, W: number, H: number, dpr: number, art: Sc
     }
     const bits = atkinson(v, cols, rows);
     for (let i = 0; i < bits.length; i++) px[i] = ((mark[i] as number) > 0.5 ? marked : inks)[bits[i] as number] as number;
+  }
+  // The edge band: the ground alone, so the gutters stay calm.
+  const m = Math.ceil((art.margin * dpr) / cell);
+  if (m > 0) {
+    const g = word(art.ground);
+    for (let y = 0; y < rows; y++) {
+      if (y < m || y >= rows - m) px.fill(g, y * cols, y * cols + cols);
+      else {
+        px.fill(g, y * cols, y * cols + Math.min(m, cols));
+        px.fill(g, y * cols + Math.max(0, cols - m), y * cols + cols);
+      }
+    }
   }
   octx.putImageData(im, 0, 0);
   ctx.imageSmoothingEnabled = false;

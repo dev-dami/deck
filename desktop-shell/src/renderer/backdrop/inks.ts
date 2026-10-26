@@ -28,6 +28,11 @@ export interface SceneArt {
   // The watermark: how far the inks under the mark move toward each other,
   // as paper is thinner under a watermark and every tone in it is softer.
   mark: number;
+  // A band at the window's edge, in CSS px, printed in the ground alone, so
+  // the gutters round the panels are calm; a print has none.
+  margin: number;
+  // How far the band behind the sidebar is held back, as the sky is, 0..1.
+  side: number;
 }
 
 // Riso: one fluorescent spot ink screened at 15° by tone, solid blocks of
@@ -80,6 +85,8 @@ const DUSK: SceneArt = {
   gamma: 1.15,
   sky: 0.82,
   mark: 0.14,
+  margin: 16,
+  side: 0.55,
 };
 
 const DAWN: SceneArt = {
@@ -148,7 +155,9 @@ const DEEP_FIELD: SceneArt = {
   cell: 2,
   gamma: 1,
   sky: 0.3,
-  mark: 0.25,
+  mark: 0.1,
+  margin: 16,
+  side: 0.55,
 };
 
 export const PROCESS: Record<string, Process> = { riso: "halftone", stitch: "stitch" };
@@ -199,8 +208,8 @@ export function artFor(theme: string, mode: Mode, tokens?: Tokens, use: Use = "w
     const art = mode === "dark" ? DENIM : LINEN;
     return use === "print" ? { ...art, cell: 7, clear: 0 } : art;
   }
-  if (theme === "tokyo-night") return use === "print" ? { ...DEEP_FIELD, sky: 0 } : DEEP_FIELD;
-  if (use === "print") return { ...DUSK, sky: 0 };
+  if (theme === "tokyo-night") return use === "print" ? { ...DEEP_FIELD, sky: 0, margin: 0, side: 0 } : DEEP_FIELD;
+  if (use === "print") return { ...DUSK, sky: 0, margin: 0, side: 0 };
   if (theme === "glass" || tokens === undefined) return mode === "dark" ? DUSK : DAWN;
   return colourway(mode, tokens);
 }

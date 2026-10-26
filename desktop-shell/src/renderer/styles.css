@@ -570,6 +570,16 @@ body {
 body:has(:is(.welcome-screen, main.connect)) .backdrop {
   visibility: hidden;
 }
+/* In the shell the picture shows behind the sidebar's glass and nowhere
+   else: the gutters between the panels are the plain ground, so no slice
+   of a disc, a card or a dither runs down them (the shell's p-2 and the
+   sidebar's w-64). With the sidebar hidden there is no glass to show it. */
+body:has(.shell) .backdrop {
+  clip-path: inset(8px calc(100% - 264px) 8px 8px round var(--panel-radius));
+}
+body:has(.shell):not(:has(nav.sidebar)) .backdrop {
+  visibility: hidden;
+}
 /* A print shows its ground until it has drawn. */
 .art-print {
   background-color: var(--print-ground, var(--plate-lo, #1d2240));
@@ -2284,6 +2294,21 @@ body:has(:is(.welcome-screen, main.connect)) .backdrop {
   --syn-tag: #b8262d;
   --syn-attr: #8e4f7a;
   --syn-operator: #4a3f37;
+}
+
+/* The stitch's ground, in the gutters round the panels: the cloth's own
+   weave without the picture, denim's twill or linen's plain weave. */
+:root[data-palette="stitch"][data-mode] body {
+  background:
+    repeating-linear-gradient(135deg, rgb(255 255 255 / 0.07) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(45deg, rgb(0 0 0 / 0.12) 0 1px, transparent 1px 4px),
+    var(--backdrop);
+}
+:root[data-palette="stitch"][data-mode="light"] body {
+  background:
+    repeating-linear-gradient(0deg, rgb(80 60 40 / 0.1) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.16) 0 1px, transparent 1px 3px),
+    var(--backdrop);
 }
 
 /* The pages' plates (ui/kit/plate.tsx) in each direction's inks: a riso

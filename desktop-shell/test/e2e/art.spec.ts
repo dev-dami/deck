@@ -87,6 +87,8 @@ test("the room's sheet stays opaque, and riso and stitch turn the glass's blur o
   await start(page, "glass", "dark");
   await pair(page);
   await expect(page.locator("canvas.backdrop")).toBeVisible();
+  // The picture shows behind the sidebar alone; the gutters are plain.
+  expect(await page.locator("canvas.backdrop").evaluate((c) => getComputedStyle(c).clipPath)).toMatch(/^inset\(8px/);
   for (const palette of ["glass", "riso", "stitch"]) {
     for (const mode of ["dark", "light"] as const) {
       await page.emulateMedia({ colorScheme: mode });
