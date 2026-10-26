@@ -564,9 +564,10 @@ func encodeEntries(entries []Entry) (buf []byte, ended bool, err error) {
 }
 
 // slim drops the raw protocol line of an event that does not keep it (see
-// agent.KeepsRaw).
+// agent.KeepsRaw), and the explicit "Raw":null of older logs, so an old line
+// loads the same as one that leaves Raw out.
 func slim(ev agent.Event) agent.Event {
-	if len(ev.Raw) > 0 && !agent.KeepsRaw(ev.Kind) {
+	if len(ev.Raw) > 0 && (!agent.KeepsRaw(ev.Kind) || string(ev.Raw) == "null") {
 		ev.Raw = nil
 	}
 	return ev

@@ -167,22 +167,24 @@ func UnsupportedLimits(agentID string) Event {
 	return Event{AgentID: agentID, Time: time.Now(), Kind: KindLimits, Limits: &Limits{Unavailable: LimitsUnsupported}}
 }
 
-// Event is the normalized event every adapter emits.
+// Event is the normalized event every adapter emits. Empty fields are left
+// out of its JSON (a thread log holds one event per line); a missing field
+// decodes the same as the explicit null that older logs wrote.
 type Event struct {
-	AgentID string
-	Time    time.Time
-	Kind    Kind
-	Text    string
-	Delta   bool
-	Tool    *Tool
-	Diff    *FileDiff
-	Usage   *Usage
-	Limits  *Limits
+	AgentID string    `json:",omitempty"`
+	Time    time.Time `json:",omitzero"`
+	Kind    Kind      `json:",omitempty"`
+	Text    string    `json:",omitempty"`
+	Delta   bool      `json:",omitempty"`
+	Tool    *Tool     `json:",omitempty"`
+	Diff    *FileDiff `json:",omitempty"`
+	Usage   *Usage    `json:",omitempty"`
+	Limits  *Limits   `json:",omitempty"`
 	// SessionID is the CLI's own session/thread id (KindSessionStarted).
-	SessionID string
+	SessionID string `json:",omitempty"`
 	// Raw is the original protocol line, kept so nothing is lost. Deck keeps
 	// it past the adapter only where KeepsRaw says so.
-	Raw json.RawMessage
+	Raw json.RawMessage `json:",omitempty"`
 }
 
 // KeepsRaw reports whether an event of kind k keeps its Raw line once Deck
