@@ -136,6 +136,18 @@ service Deck {
   // SearchMessages finds text in the messages of every thread of the
   // project that is not archived, newest first.
   rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
+  // ListProfiles lists the named agents (deck.json "profiles") of the
+  // project: the global ones with the project's laid over them by name,
+  // each with its scope. Invalid entries are left out; deck doctor says
+  // why.
+  rpc ListProfiles(ListProfilesRequest) returns (ListProfilesResponse);
+  // SaveProfile validates a profile and writes it to its scope's deck.json,
+  // replacing the one of the same name there. A broken rule comes back as
+  // InvalidArgument, in Deck's words.
+  rpc SaveProfile(SaveProfileRequest) returns (SaveProfileResponse);
+  // DeleteProfile removes the profile called name from its scope's
+  // deck.json; NotFound when that scope has none.
+  rpc DeleteProfile(DeleteProfileRequest) returns (DeleteProfileResponse);
 
   // Events streams everything that happens, starting with a Ready. Pass the
   // epoch and seq of the last event seen to replay what was missed; Ready
@@ -306,6 +318,11 @@ message AgentLine {
   string model = 4;
   string effort = 5;
   bool busy = 6;
+  // profile is the named agent the member was started from ("" for none)
+  // and role that profile's one-line role. name is the member's own name
+  // (charles, charles-2); kind still says which CLI runs it.
+  string profile = 7;
+  string role = 8;
 }
 
 message RosterResponse {
@@ -731,6 +748,9 @@ message AgentNode {
   string parent = 12;
   string branch = 13;
   string leases = 14;
+  // profile and role: as AgentLine's.
+  string profile = 15;
+  string role = 16;
 }
 
 message RunningTool {
@@ -954,3 +974,54 @@ message SearchHit {
 message SearchMessagesResponse {
   repeated SearchHit hits = 1;
 }
+
+// Profile is a named agent: a recipe for a member of a thread, addressed
+// as @name (docs/design/agents-and-mentions.md). name and kind are
+// required; the rest default to the kind's.
+message Profile {
+  // name is how it is addressed and shown: letters, digits, - and _, at
+  // most 32; not all, user, deck, an agent kind or a teammate's name.
+  // Names compare case-insensitively.
+  string name = 1;
+  // kind is the CLI it runs: claude, codex, opencode or antigravity.
+  string kind = 2;
+  string model = 3;
+  string effort = 4;
+  // role is one line, shown in the roster and briefed.
+  string role = 5;
+  // instructions are standing instructions, appended to the briefing.
+  string instructions = 6;
+  // voice is one line of personality, briefed after the instructions.
+  string voice = 7;
+  // color is a CSS colour for its hue; "" means the kind's.
+  string color = 8;
+  // paths are globs the agent should keep to.
+  repeated string paths = 9;
+  // scope is where it lives: "global" (the user's deck.json) or "project"
+  // (the project's deck.json).
+  string scope = 10;
+}
+
+message ListProfilesRequest {}
+
+message ListProfilesResponse {
+  repeated Profile profiles = 1;
+}
+
+message SaveProfileRequest {
+  // profile.scope says which deck.json it is written to.
+  Profile profile = 1;
+}
+
+message SaveProfileResponse {
+  // profile is what was saved, as ListProfiles shows it.
+  Profile profile = 1;
+}
+
+message DeleteProfileRequest {
+  string name = 1;
+  // scope is "global" or "project".
+  string scope = 2;
+}
+
+message DeleteProfileResponse {}

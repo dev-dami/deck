@@ -14,18 +14,21 @@
 //
 // # Talking
 //
-// The user: Post(threadID, text) or PostWith(threadID, text, images). "$name" at the start of a clause addresses
-// that member (ParseAddressing has the exact rules); "$claude" / "$codex" naming
+// The user: Post(threadID, text) or PostWith(threadID, text, images). "@name"
+// (or "$name", the same mention) at the start of a clause addresses
+// that member (ParseAddressing has the exact rules); "@claude" / "@codex" naming
 // a kind reaches whichever live member of that kind is free, or adds one when
-// there is none; "$claude*" addresses all of them and "$claude+" adds another;
-// "$all" addresses everyone; "$claude×3 brief" (or "$claude*3") starts a race
-// (race.go); with no mention the message goes to the member who
+// there is none; "@claude*" addresses all of them and "@claude+" adds another;
+// "@all" addresses everyone; "@claude×3 brief" (or "@claude*3") starts a race
+// (race.go); "@charles", a profile (a named agent, SetProfiles) no member is
+// called yet, adds a member from it named after it, and "@charles+" another;
+// with no mention the message goes to the member who
 // spoke last (or the only member; or, in an empty thread, a new member of the
 // default kind). Several addressees receive it concurrently.
 //
 // Agents: through the deck MCP tool execute with op thread.send (Options.Hub
 // receives the calls; Message.To is a member id/name, a kind, "claude*" or "all"), or by starting a line of their
-// final reply with "$name". Both are relayed, logged in the thread and reported
+// final reply with "@name" (or "$name"). Both are relayed, logged in the thread and reported
 // to the UI as RelayMsg. At most Options.MaxHops (default 6) relays happen after
 // each user message; the next one is held, the thread is paused (PausedMsg) and
 // stays so until Continue (or a new Post, which drops the held relays from
@@ -146,6 +149,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/brand"
 	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/hub"
+	"github.com/dev-dami/deck/internal/deck/profile"
 	"github.com/dev-dami/deck/internal/deck/store"
 	"github.com/dev-dami/deck/internal/deck/sub"
 )
@@ -218,6 +222,10 @@ type AgentInfo struct {
 	// RunningModel is the model slug the CLI reports it is running (e.g.
 	// "claude-opus-5-5" when Model is "" or an alias); "" until it says.
 	RunningModel string
+	// Profile is the named agent it was started from ("" for none), and
+	// Role that profile's one-line role.
+	Profile string
+	Role    string
 }
 
 // ThreadInfo is a snapshot of one live thread.
@@ -295,6 +303,9 @@ type Manager struct {
 	activity func(threadID string) string
 	// team is the peer link for the peers.* ops; see SetTeam.
 	team hub.Team
+	// profiles reads the named agents for a thread's folder; see
+	// SetProfiles.
+	profiles func(dir string) []profile.Profile
 	// contractor sends code contracts to teammates, and taskEnd hears of
 	// every task that ends (contract.go).
 	contractor Contractor
@@ -580,7 +591,17 @@ func (m *Manager) AddMember(threadID, kind, model string) (string, error) {
 
 // newMember registers a member (without starting its process) and announces it.
 func (m *Manager) newMember(t *thread, kind, model, preferredID string) (*agentState, error) {
+	return m.addMember(t, kind, model, preferredID, profile.Profile{})
+}
+
+// addMember is newMember for a member that may come from a profile (prof's
+// Name is set): it is named after the profile and runs the profile's model
+// and effort when it has them.
+func (m *Manager) addMember(t *thread, kind, model, preferredID string, prof profile.Profile) (*agentState, error) {
 	if _, ok := m.adapters[kind]; !ok {
+		if prof.Name != "" {
+			return nil, fmt.Errorf("session: %s runs %s, which is not installed", prof.Name, kind)
+		}
 		return nil, fmt.Errorf("session: unknown agent kind %q", kind)
 	}
 	id, cfg, err := m.allocate(kind, preferredID)
@@ -588,10 +609,10 @@ func (m *Manager) newMember(t *thread, kind, model, preferredID string) (*agentS
 		return nil, err
 	}
 	if model == "" {
-		model = m.defaultModel(cfg, kind)
+		model = cmp.Or(prof.Model, m.defaultModel(cfg, kind))
 	}
-	effort := m.defaultEffort(cfg, kind)
-	a := &agentState{id: id, kind: kind, model: model, effort: effort, thread: t, base: StatusIdle, started: time.Now()}
+	effort := cmp.Or(prof.Effort, m.defaultEffort(cfg, kind))
+	a := &agentState{id: id, kind: kind, model: model, effort: effort, thread: t, base: StatusIdle, started: time.Now(), prof: prof}
 	m.mu.Lock()
 	m.order = append(m.order, a)
 	m.byID[id] = a
@@ -601,7 +622,11 @@ func (m *Manager) newMember(t *thread, kind, model, preferredID string) (*agentS
 	t.mu.Lock()
 	// The id is unique across the deck (the hub routes by it); the name only
 	// has to be unique in this thread, so each session starts at "claude".
-	a.name = t.freeName(kind)
+	if prof.Name != "" {
+		a.name = t.freeProfileName(prof.Name)
+	} else {
+		a.name = t.freeName(kind)
+	}
 	a.knownMode = t.mode
 	t.members = append(t.members, a)
 	m.appendLocked(t, e)
@@ -801,13 +826,14 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 	t.mu.Lock()
 	refs := t.refs()
 	t.mu.Unlock()
-	ad := ParseAddressing(text, refs, m.Kinds())
+	profiles := m.profilesFor(t, text)
+	ad := ParseAddressing(text, refs, m.Kinds(), profile.Names(profiles)...)
 	if len(ad.Unknown) > 0 {
 		var names []string
 		for _, r := range refs {
 			names = append(names, r.Name)
 		}
-		return PostResult{}, fmt.Errorf("no agent $%s in this thread (members: %s; kinds: %s)",
+		return PostResult{}, fmt.Errorf("no agent @%s in this thread (members: %s; kinds: %s)",
 			ad.Unknown[0], strings.Join(names, ", "), strings.Join(m.Kinds(), ", "))
 	}
 
@@ -815,10 +841,10 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 
 	if len(ad.Race) > 0 {
 		switch {
-		case ad.All || len(ad.Members) > 0 || len(ad.NewKinds) > 0:
-			return PostResult{}, errors.New("a race ($claude×3) cannot also address other agents")
+		case ad.Mentioned():
+			return PostResult{}, errors.New("a race (@claude×3) cannot also address other agents")
 		case ad.Body == "":
-			return PostResult{}, errors.New("say what the race is for: $claude×3 fix the flaky test")
+			return PostResult{}, errors.New("say what the race is for: @claude×3 fix the flaky test")
 		}
 		res, err := m.postTo(t, text, nil, images)
 		if err != nil {
@@ -834,7 +860,7 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 	switch {
 	case ad.All:
 		targets = t.live()
-		if len(targets) == 0 && len(newKinds) == 0 {
+		if len(targets) == 0 && len(newKinds) == 0 && len(ad.NewProfiles) == 0 {
 			t.mu.Unlock()
 			return PostResult{}, errors.New("nobody is running in this thread")
 		}
@@ -855,7 +881,7 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 			newKinds = []string{m.defaultKind()}
 		} else {
 			t.mu.Unlock()
-			return PostResult{}, errors.New("every agent in this thread has exited; $claude or $codex adds a new one")
+			return PostResult{}, errors.New("every agent in this thread has exited; @claude or @codex adds a new one")
 		}
 	}
 	t.mu.Unlock()
@@ -867,10 +893,18 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 	if !ad.Mentioned() {
 		body = text
 	}
+	adds := make([]profile.Profile, 0, len(newKinds)+len(ad.NewProfiles))
+	for _, k := range newKinds {
+		adds = append(adds, profile.Profile{Kind: k})
+	}
+	for _, name := range ad.NewProfiles {
+		p, _ := profile.Find(profiles, name)
+		adds = append(adds, p)
+	}
 	var idle []*agentState // added with nothing to say: started together below
 	var addErr error
-	for _, k := range newKinds {
-		a, err := m.newMember(t, k, "", "")
+	for _, p := range adds {
+		a, err := m.addMember(t, p.Kind, "", "", p)
 		if err != nil {
 			addErr = err
 			break
@@ -1117,12 +1151,14 @@ func (m *Manager) Interrupt(id string) error {
 }
 
 // Rename changes an agent's display name. Names must be unique, non-empty and
-// free of whitespace, '$' and '@' (used for agents and files) and '*' and '+'
-// (kind suffixes), and cannot be "all", "user", "deck", another kind's name, or
-// its own kind's name while its thread has another member of that kind.
+// free of whitespace, '@' and '$' (agents), '#' (context), '/' (paths) and
+// '*' and '+' (kind suffixes), and cannot be "all", "user", "deck", another
+// kind's name, or its own kind's name while its thread has another member of
+// that kind (profile.CheckName and profile.Reserved; profiles meet the same
+// rules).
 func (m *Manager) Rename(id, name string) error {
 	name = strings.TrimSpace(name)
-	if name == "" || strings.ContainsAny(name, " \t\r\n@$/*+") {
+	if profile.CheckName(name) != nil {
 		return fmt.Errorf("session: invalid name %q", name)
 	}
 	m.mu.Lock()
@@ -1131,14 +1167,14 @@ func (m *Manager) Rename(id, name string) error {
 		m.mu.Unlock()
 		return fmt.Errorf("session: no agent %q", id)
 	}
-	reserved := strings.EqualFold(name, "all") || strings.EqualFold(name, "user") || strings.EqualFold(name, "deck")
+	reserved := profile.IsReserved(name)
 	for k := range m.adapters {
 		if strings.EqualFold(name, k) && k != a.kind {
 			reserved = true
 		}
 	}
 	// Its own kind's name is free only while it is the one member of that
-	// kind in its thread: with two, "$claude" means whichever is free.
+	// kind in its thread: with two, "@claude" means whichever is free.
 	if strings.EqualFold(name, a.kind) {
 		for _, o := range m.order {
 			if o != a && o.thread == a.thread && o.kind == a.kind {
@@ -1271,6 +1307,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow, ctxSource: mem.ContextSource, briefed: mem.Briefed,
 			ctxBaseline: mem.ContextBaseline, deckTokens: mem.DeckTokens,
 			parent: mem.Parent, ephemeral: mem.Ephemeral, dir: mem.Dir, worktree: mem.Worktree,
+			prof: m.storedProfile(t, mem),
 		}
 		if mem.Ephemeral {
 			a.base = StatusExited // a subagent's run does not outlive Deck; its worktree and task stay
@@ -1729,6 +1766,11 @@ type agentState struct {
 	// subParent the capsule that snapshot already includes (subops.go).
 	subBase   sub.ID
 	subParent sub.ID
+
+	// prof is the profile the member was started from (its Name is ""
+	// for none): its role, instructions, voice and paths go into the
+	// member's briefing. Set when the member is made.
+	prof profile.Profile
 }
 
 func (a *agentState) getRun() agent.Run {
@@ -1782,7 +1824,7 @@ func (a *agentState) info() AgentInfo {
 		Status: a.statusLocked(), CostUSD: a.costTotal + a.costTurn, Pending: len(a.pending),
 		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource,
 		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
-		RunningModel: a.running,
+		RunningModel: a.running, Profile: a.prof.Name, Role: a.prof.Role,
 	}
 }
 
@@ -1805,6 +1847,7 @@ func (a *agentState) memberMeta() store.Member {
 		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource, Briefed: a.briefed,
 		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
 		Parent: a.parent, Ephemeral: a.ephemeral, Dir: a.dir, Worktree: a.worktree,
+		Profile: a.prof.Name, Role: a.prof.Role,
 	}
 }
 

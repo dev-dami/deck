@@ -100,6 +100,10 @@ type Member struct {
 	Ephemeral bool      `json:"ephemeral,omitempty"`
 	Dir       string    `json:"dir,omitempty"`
 	Worktree  *Worktree `json:"worktree,omitempty"`
+	// Profile is the named agent (deck.json "profiles") the member was
+	// started from, and Role its one-line role then; "" for none.
+	Profile string `json:"profile,omitempty"`
+	Role    string `json:"role,omitempty"`
 }
 
 // Thread is the metadata of one conversation between the user and one or more

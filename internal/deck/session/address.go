@@ -5,12 +5,49 @@ import (
 	"strings"
 )
 
-// Sigil starts a mention of an agent: "$codex review this". "@" is left
-// for files.
-const Sigil = '$'
+// Sigil starts a mention of an agent or a person: "@codex review this".
+// AltSigil, "$", does the same, as it always has. Files and other context
+// take "#" in the clients, which insert them as "@path": a name followed by
+// "/" or by "." and more is never a mention (scanMention).
+const (
+	Sigil    = '@'
+	AltSigil = '$'
+)
 
-// TrimSigil drops a leading "$" (or "@", as agents sometimes write it) from
-// an agent name.
+// isSigil reports whether c starts a mention: "@" or "$".
+func isSigil(c byte) bool { return c == Sigil || c == AltSigil }
+
+// defuse turns the sigils in text that could start a mention into their
+// full-width look-alikes, so that text (a teammate's) cannot pick agents, add
+// one or start a race. Every "$" goes; an "@" goes only where a name follows
+// it as a mention (scanMention, scanRace), so emails and "@path" file
+// references stay as they are.
+func defuse(text string) string {
+	var b strings.Builder
+	b.Grow(len(text))
+	for i := 0; i < len(text); i++ {
+		switch c := text[i]; {
+		case c == AltSigil:
+			b.WriteString("＄")
+		case c == Sigil && mentionAt(text, i):
+			b.WriteString("＠")
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// mentionAt reports whether a mention or a race could start at s[i].
+func mentionAt(s string, i int) bool {
+	if _, _, ok := scanMention(s, i); ok {
+		return true
+	}
+	_, _, _, ok := scanRace(s, i)
+	return ok
+}
+
+// TrimSigil drops a leading "@" or "$" from an agent name.
 func TrimSigil(name string) string {
 	return strings.TrimLeft(strings.TrimSpace(name), "$@")
 }
@@ -26,8 +63,9 @@ type MemberRef struct {
 	Last    bool
 }
 
-// Suffixes on a kind name: "$claude*" addresses every live member of that
-// kind, "$claude+" adds another one.
+// Suffixes on a kind name: "@claude*" addresses every live member of that
+// kind, "@claude+" adds another one. "+" on a profile's name ("@charles+")
+// adds another member from the profile.
 const (
 	suffixAll = '*'
 	suffixNew = '+'
@@ -64,10 +102,14 @@ func choose(refs []MemberRef, kind string) (MemberRef, bool) {
 type Addressing struct {
 	// Members are the existing members addressed, by id, in order of first mention.
 	Members []string
-	// NewKinds are kinds named ($claude, $codex) that have no live member in the
-	// thread, or asked for with "+" ($claude+): Post adds one member for each
-	// entry, so "$claude+ $claude+" adds two.
+	// NewKinds are kinds named (@claude, @codex) that have no live member in the
+	// thread, or asked for with "+" (@claude+): Post adds one member for each
+	// entry, so "@claude+ @claude+" adds two.
 	NewKinds []string
+	// NewProfiles are profiles named (@charles) that no member of the thread
+	// is called, or asked for with "+" (@charles+): Post adds a member from
+	// each, named after it.
+	NewProfiles []string
 	// All is true when $all was used.
 	All bool
 	// Body is the message without its leading mentions ("$codex review this" ->
@@ -81,23 +123,29 @@ type Addressing struct {
 }
 
 // Mentioned reports whether the text addressed anyone explicitly.
-func (a Addressing) Mentioned() bool { return a.All || len(a.Members) > 0 || len(a.NewKinds) > 0 }
+func (a Addressing) Mentioned() bool {
+	return a.All || len(a.Members) > 0 || len(a.NewKinds) > 0 || len(a.NewProfiles) > 0
+}
 
-// ParseAddressing finds the @mentions in a message the user typed.
+// ParseAddressing finds the mentions in a message the user typed. "@name"
+// and "$name" are the same mention.
 //
 // A mention counts when it starts a clause: at the very start of the text, at
 // the start of a line, after . ! ? ; : or a comma, after "then" / "and" / "also"
-// / "plus", or directly after another mention. "ask $codex" (mid-clause) and
-// "foo@bar" or "$codex.go" are plain text. A kind ("claude", "codex") addresses
-// one live member of that kind (see choose), or - when the thread has none -
-// asks for a new one; "$claude*" addresses all of them and "$claude+" always
-// asks for a new one. Other names match a member's name or id
-// (case-insensitively). "$all" addresses every member.
-func ParseAddressing(text string, members []MemberRef, kinds []string) Addressing {
+// / "plus", or directly after another mention. "ask @codex" (mid-clause),
+// "user@example.com", "@codex.go" and "@src/main.go" are plain text. A name
+// resolves in this order: "all" addresses every member; a kind ("claude",
+// "codex") addresses one live member of that kind (see choose), or - when
+// the thread has none - asks for a new one, and "@claude*" addresses all of
+// them and "@claude+" always asks for a new one; then a member's name or id
+// (case-insensitively); then one of profiles, the named agents, which asks
+// for a member from it ("@charles+" asks for another). Anything else is plain
+// text.
+func ParseAddressing(text string, members []MemberRef, kinds []string, profiles ...string) Addressing {
 	text = strings.TrimSpace(text)
 	var out Addressing
-	// add records a mention; a name that is no member, kind or "all" is
-	// plain text ($HOME, $PATH), so it is not taken.
+	// add records a mention; a name that is no member, kind, profile or
+	// "all" is plain text ($HOME, $PATH, @Override), so it is not taken.
 	add := func(name string) bool {
 		if strings.EqualFold(name, "all") {
 			out.All = true
@@ -106,6 +154,10 @@ func ParseAddressing(text string, members []MemberRef, kinds []string) Addressin
 		if base, suf := splitSuffix(name); suf != 0 {
 			kind, ok := kindOf(base, kinds)
 			if !ok {
+				if p, isProfile := kindOf(base, profiles); isProfile && suf == suffixNew {
+					out.NewProfiles = append(out.NewProfiles, p)
+					return true
+				}
 				return false
 			}
 			if suf == suffixNew {
@@ -124,12 +176,14 @@ func ParseAddressing(text string, members []MemberRef, kinds []string) Addressin
 			}
 			return true
 		}
-		id, kind, ok := resolveName(name, members, kinds)
+		id, kind, prof, ok := resolveName(name, members, kinds, profiles)
 		switch {
 		case !ok:
 			return false
 		case id != "":
 			out.Members = appendUnique(out.Members, id)
+		case prof != "":
+			out.NewProfiles = appendUnique(out.NewProfiles, prof)
 		default:
 			out.NewKinds = appendUnique(out.NewKinds, kind)
 		}
@@ -142,7 +196,7 @@ func ParseAddressing(text string, members []MemberRef, kinds []string) Addressin
 		for p < len(text) && (text[p] == ' ' || text[p] == '\t' || text[p] == '\n' || text[p] == '\r' || text[p] == ',') {
 			p++
 		}
-		if p < len(text) && text[p] == Sigil {
+		if p < len(text) && isSigil(text[p]) {
 			if name, n, end, ok := scanRace(text, p); ok {
 				if kind, isKind := kindOf(name, kinds); isKind {
 					for range n {
@@ -169,7 +223,7 @@ func ParseAddressing(text string, members []MemberRef, kinds []string) Addressin
 
 	// mentions that start a later clause
 	for i := p; i < len(text); i++ {
-		if text[i] != Sigil || !clauseStart(text, i) {
+		if !isSigil(text[i]) || !clauseStart(text, i) {
 			continue
 		}
 		if name, end, ok := scanMention(text, i); ok {
@@ -180,32 +234,37 @@ func ParseAddressing(text string, members []MemberRef, kinds []string) Addressin
 	return out
 }
 
-// resolveName maps a $token to an existing member id, or to a kind to add.
-func resolveName(tok string, members []MemberRef, kinds []string) (id, newKind string, ok bool) {
+// resolveName maps a mention to an existing member id, a kind to add or a
+// profile to add a member from.
+func resolveName(tok string, members []MemberRef, kinds, profiles []string) (id, newKind, newProfile string, ok bool) {
 	// A kind first: it reaches the pool of that kind, whatever the members
 	// are called.
 	if k, isKind := kindOf(tok, kinds); isKind {
 		if m, ok := choose(members, k); ok {
-			return m.ID, "", true
+			return m.ID, "", "", true
 		}
-		return "", k, true
+		return "", k, "", true
 	}
 	// Then names: an id (unique across the deck) can look like another
 	// member's name in this thread.
 	for _, m := range members {
 		if strings.EqualFold(m.Name, tok) {
-			return m.ID, "", true
+			return m.ID, "", "", true
 		}
 	}
 	for _, m := range members {
 		if strings.EqualFold(m.ID, tok) {
-			return m.ID, "", true
+			return m.ID, "", "", true
 		}
 	}
-	return "", "", false
+	// Then a profile no member is called yet.
+	if p, isProfile := kindOf(tok, profiles); isProfile {
+		return "", "", p, true
+	}
+	return "", "", "", false
 }
 
-// kindOf returns the kind tok names, if any.
+// kindOf returns the kind tok names, if any (or the profile, given profiles).
 func kindOf(tok string, kinds []string) (string, bool) {
 	for _, k := range kinds {
 		if strings.EqualFold(k, tok) {
@@ -230,7 +289,8 @@ func isNameByte(c byte) bool {
 
 func isSpaceByte(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
 
-// scanMention reads "$name" at s[i] and returns the name and the index after it.
+// scanMention reads "@name" (or "$name") at s[i] and returns the name and the
+// index after it.
 // The name may end in one "*" or "+" (see suffixAll) and must be followed by
 // the end of the text, whitespace, one of , : ; ! ? or a sentence-ending ".".
 func scanMention(s string, i int) (name string, end int, ok bool) {
@@ -258,7 +318,7 @@ func scanMention(s string, i int) (name string, end int, ok bool) {
 	return s[i+1 : j], j, true
 }
 
-// scanRace reads "$claude×3" (or "$claude*3") at s[i]: a name and how many
+// scanRace reads "@claude×3" (or "$claude*3") at s[i]: a name and how many
 // race, followed by what may follow a mention.
 func scanRace(s string, i int) (name string, n, end int, ok bool) {
 	j := i + 1
@@ -285,7 +345,7 @@ func scanRace(s string, i int) (name string, n, end int, ok bool) {
 	return name, n, k, n > 0 && name != ""
 }
 
-// clauseStart reports whether the '$' at s[i] begins a clause.
+// clauseStart reports whether the sigil at s[i] begins a clause.
 func clauseStart(s string, i int) bool {
 	j := i
 	for j > 0 && (s[j-1] == ' ' || s[j-1] == '\t') {
@@ -320,12 +380,12 @@ func appendUnique(list []string, v string) []string {
 
 // mention is one relay requested by a line of an agent's reply.
 type mention struct {
-	Names []string // targets as written (without $); may contain "all"
+	Names []string // targets as written (without the sigil); may contain "all"
 	Text  string
 }
 
 // parseMentions finds the lines of an agent's final reply that start with
-// $name. Fenced code blocks are ignored. A mention's text is the rest of its
+// @name or $name. Fenced code blocks are ignored. A mention's text is the rest of its
 // line plus the lines that follow up to a blank line, the next mention or the
 // end. Mentions with the same targets are merged.
 func parseMentions(reply string) []mention {
@@ -347,10 +407,10 @@ func parseMentions(reply string) []mention {
 			cur = -1
 			continue
 		}
-		if strings.HasPrefix(trim, string(Sigil)) {
+		if isSigil(trim[0]) {
 			var names []string
 			p := 0
-			for p < len(trim) && trim[p] == Sigil {
+			for p < len(trim) && isSigil(trim[p]) {
 				name, end, ok := scanMention(trim, p)
 				if !ok {
 					break

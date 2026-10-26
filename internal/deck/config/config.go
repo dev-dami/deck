@@ -372,6 +372,19 @@ func (p *Peers) SandboxLimits() (ttl time.Duration, scratchMB, outputKB int) {
 // PeersEnabled reports whether the peer link is on.
 func (c Config) PeersEnabled() bool { return c.Peers != nil && c.Peers.Enabled }
 
+// Teammates are the names of the paired Decks (nil without peers): no
+// profile may take one.
+func (c Config) Teammates() []string {
+	if c.Peers == nil {
+		return nil
+	}
+	out := make([]string, 0, len(c.Peers.Remote))
+	for _, r := range c.Peers.Remote {
+		out = append(out, r.Name)
+	}
+	return out
+}
+
 // ListenAddr is the listener's address, with the default port filled in.
 func (l PeerListen) ListenAddr() string {
 	if l.Addr == "" {

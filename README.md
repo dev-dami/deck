@@ -21,7 +21,7 @@ Run Claude Code, Codex, OpenCode and Antigravity side by side in shared threads:
 Deck drives the CLIs you already have, under your own logins. A thread holds you and any number of agents. They hand work to each other where you can see it, and every reply, tool call, diff and approval shows up in one place.
 
 - **Your CLIs, your plans.** Deck never calls a model API and never reads a credential. Usage counts against your own Claude and Codex plans and whatever providers OpenCode uses.
-- **Many agents, one thread.** `$claude $codex` asks both. Agents hand work to each other with `$name`, start subagents, race each other on worktrees, and review each other's work.
+- **Many agents, one thread.** `@claude @codex` asks both, and named agents (`@charles`, a reviewer you describe once in `deck.json`) join the same way. Agents hand work to each other with `@name`, start subagents, race each other on worktrees, and review each other's work.
 - **A shared task board.** Agents plan on the thread's board, claim files before they change them, and stay inside budgets you set.
 - **Terminal, desktop and phone.** The same threads in a TUI, a desktop app and a phone remote. Two Decks can link, even behind NAT, through a third they both trust.
 - **Quiet.** Deck starts no language servers or MCP servers of its own, sends no telemetry and checks for no updates (the installed desktop app checks for its own updates; see [Desktop app](#desktop-app)).
@@ -89,12 +89,12 @@ npm start
 
 Run `deck`, type, press enter.
 
-- **Who answers.** Type `$` to pick an agent and the model it should run: `$claude`, `$codex`, `$opencode` bring that agent in, `$all` asks everyone; otherwise whoever spoke last answers. `$` names that are not agents (`$HOME`) stay plain text.
-- **More than one of an agent.** `$claude+` starts another Claude (`$claude+ $claude+` two). With two or more, the first is renamed `claude1` and each answers to its own name (`$claude2`); `$claude` goes to whichever is free (idle first, then the one with the fewest messages waiting), and `$claude*` to all of them. Agents address them the same way.
-- **Files.** Type `@` to search the folder's files and add one to the message. Each agent speaks under its own CLI's mark and colour: `✻ claude`, `>_ codex`, `▯ opencode`.
-- **Agents talk to each other.** An agent can hand work to another; every hand-off shows in the chat as `→ $codex …`. After six agent-to-agent hand-offs Deck pauses until you write.
+- **Who answers.** Type `@` to pick an agent and the model it should run: `@claude`, `@codex`, `@opencode` bring that agent in, `@charles` brings in a [named agent](#named-agents), `@all` asks everyone; otherwise whoever spoke last answers. The popup also lists your named agents and linked teammates. `$` works exactly like `@` (`$claude`), as it always has. `@` names that are no agent (`@Override`, `user@example.com`) and `$` ones (`$HOME`) stay plain text.
+- **More than one of an agent.** `@claude+` starts another Claude (`@claude+ @claude+` two). With two or more, the first is renamed `claude1` and each answers to its own name (`@claude2`); `@claude` goes to whichever is free (idle first, then the one with the fewest messages waiting), and `@claude*` to all of them. `@charles+` adds a second member from a named agent, `charles-2`. Agents address them the same way.
+- **Files.** Type `#` to search the folder's files and add one to the message. Typing `@` and something path-like (`@src/`, `@main.go`) still offers files. Each agent speaks under its own CLI's mark and colour: `✻ claude`, `>_ codex`, `▯ opencode`; a named agent keeps its kind's mark, with its role after its name (`✻ charles · reviewer`).
+- **Agents talk to each other.** An agent can hand work to another; every hand-off shows in the chat as `→ @codex …`. After six agent-to-agent hand-offs Deck pauses until you write.
 - **Working.** While agents work, the bottom line says who and for how long, with a spinner in each agent's colour.
-- **Models and effort.** `$` switches an agent's model as you address it; `ctrl+l` lists every model your CLIs offer (OpenCode: every model of every provider it is set up for), then the reasoning efforts that model takes.
+- **Models and effort.** `@` switches an agent's model as you address it; `ctrl+l` lists every model your CLIs offer (OpenCode: every model of every provider it is set up for), then the reasoning efforts that model takes.
 - **Approvals** open as a dialog with the command or the diff: allow, allow for the session, or deny.
 - **Plan and yolo.** `tab` switches plan mode, where agents read but change nothing. `ctrl+y` is yolo: everything is approved, and the screen tells you so.
 - **Pastes** of any size go in whole; big ones become an attachment the agent still reads in full.
@@ -129,7 +129,7 @@ In the sidebar: `h` `l` (`←` `→`) move between columns, `h` from the first o
 `ctrl+x` opens the git panel (also `Git` in `ctrl+p`). Its tabs (`tab` or `1` `2` `3`):
 
 - **Branch**: the branch, `↑ahead ↓behind`, changed files and its pull request; commit all, push (sets the upstream on the first push), fetch, open or view the branch's pull request.
-- **Pull requests**: the open ones, yours first, each with its checks (`✓` `✗` `●`). `enter` opens one: `l` shows the failed log, `a` puts it in the composer for `$claude` (or your default agent; change the name before you send), `r` re-runs the failed jobs, `m` merges after asking squash, merge or rebase, `c` checks it out, `o` opens it in the browser. Pending checks refresh every 20 seconds.
+- **Pull requests**: the open ones, yours first, each with its checks (`✓` `✗` `●`). `enter` opens one: `l` shows the failed log, `a` puts it in the composer for `@claude` (or your default agent; change the name before you send), `r` re-runs the failed jobs, `m` merges after asking squash, merge or rebase, `c` checks it out, `o` opens it in the browser. Pending checks refresh every 20 seconds.
 - **Recent**: branches by last commit, pushed or not, with their pull request. `enter` checks one out (asking first when you have uncommitted changes); `p` opens a pull request for it.
 
 `p` opens the pull request form: title (the last commit), base (the default branch), a body listing the commits, draft. `ctrl+s` sends it; Deck pushes first when the branch needs it.
@@ -166,7 +166,31 @@ The **Usage** pane in the sidebar shows the session's agents' plan meters, today
 
 ## Agents and threads
 
-A thread holds you and any number of agents. Each message goes to the agents you address, and an agent's reply that starts a line with `$name` hands that line to the named agent.
+A thread holds you and any number of agents. Each message goes to the agents you address, and an agent's reply that starts a line with `@name` (or `$name`) hands that line to the named agent.
+
+### Named agents
+
+A profile is a named recipe for an agent: the CLI it runs, a model and effort, a one-line role, standing instructions, an optional one-line voice and the paths it should keep to. Put them in the `profiles` list of `deck.json`, globally (`~/.config/deck/deck.json`) or for a project (its `deck.json` or `.deck/deck.json`); a project profile replaces the global one of the same name.
+
+```json
+{
+  "profiles": [
+    {
+      "name": "charles",
+      "kind": "claude",
+      "role": "reviewer",
+      "instructions": "Read the tests before the code. Say what you would block on.",
+      "voice": "dry, terse",
+      "paths": ["internal/auth/**"]
+    },
+    { "name": "ada", "kind": "codex", "effort": "high", "role": "implements the plan" }
+  ]
+}
+```
+
+`@charles` in a thread with no member called charles adds one from the profile, named `charles`, running its model and effort, with its role, instructions, voice and paths in its briefing; later `@charles` messages reach the same member, and `@charles+` adds `charles-2`. Every agent's briefing lists the thread's members with their names, roles and kinds, and teaches `@name` for hand-offs. `/profiles` lists them; the roster shows a named agent as `✳ charles · reviewer`, always with its kind's mark, and its cost and plan limits count against its kind.
+
+Names follow the rules of a rename: letters, digits, `-` and `_`, at most 32; not `all`, `user`, `deck`, an agent kind or a linked teammate's name; case-insensitive and unique. `model`, `effort`, `role`, `instructions`, `voice`, `paths` and `color` (a CSS colour for the desktop) are optional. `deck doctor` says which profiles are skipped and why.
 
 ### Tasks and subagents
 
@@ -180,7 +204,7 @@ The Tasks pane in the sidebar is the thread's shared task board. `o` there turns
 - **Plan limits.** A task that names no agent goes to your default agent, unless one of that CLI's plan windows is `route_above_pct` full (default 90): then to the installed agent with the most room, and the thread says so.
 - **Leases.** Agents that share your work tree claim files before they change them (`lease.acquire {paths, exclusive?, minutes?, reason?}`, globs relative to the repository root); the agents pane shows who holds what. A lease ends when the agent releases it or stops, or after 15 minutes. Deck refuses to apply a capsule into a file another agent holds exclusively. When two agents change the same file within ten minutes, or one changes a file another holds, the thread says so and both agents see it in their next prompt.
 - **Worktrees.** A task or spawn with `isolate` runs its subagent on a git worktree and branch of its own. On such a task in the Tasks pane, `a` applies the work to your tree as uncommitted edits, and `d` twice discards the worktree and branch. `x` cancels a task and `r` retries a failed one.
-- **Races.** `$claude×3 fix the flaky test` (or `$claude*3`; `$claude×2 $codex×1` mixes kinds) starts 2 to 6 subagents on the same brief, each on a worktree of its own; agents do the same with `task.race`. The Tasks pane shows the entries under the race, each with its files, `+/-` lines, tokens and minutes; `enter` shows its files and result. `a` on an entry keeps it: its changes go into your tree, and the other entries are stopped and discarded. With `judge` set, a judge agent ranks the entries when they end.
+- **Races.** `@claude×3 fix the flaky test` (or `@claude*3`; `@claude×2 @codex×1` mixes kinds) starts 2 to 6 subagents on the same brief, each on a worktree of its own; agents do the same with `task.race`. The Tasks pane shows the entries under the race, each with its files, `+/-` lines, tokens and minutes; `enter` shows its files and result. `a` on an entry keeps it: its changes go into your tree, and the other entries are stopped and discarded. With `judge` set, a judge agent ranks the entries when they end.
 - **Review.** A task can ask for a reviewer of another kind (`review: other`, or a kind, on `task.create`, `agent.spawn` or `task.race`; config `review` sets a default for tasks that subagents run). When the work is finished, the task goes to `review` and Deck starts the reviewer with the task, the result and the changes. It approves (`review.approve`) or sends the work back with notes (`review.changes`) for up to two rounds; after that the task is blocked for you. With one kind installed the task is done, with a note that nobody reviewed it.
 - **Memory pinned to code.** Agents pin short notes to files or line ranges (`memory.add`). When the code changes, Deck flags each note as fresh, moved (with the new lines), changed or gone. Notes are kept per repository in `~/.deck/memory`, and a task brief or a file lease names the notes pinned to its files.
 
@@ -198,7 +222,7 @@ Capabilities are ops, not tools, so adding one never adds a tool. Agents hear ab
 
 | Op | What it does |
 | --- | --- |
-| `thread.send {to, message}` | Message another agent in the thread, or `all`; a kind (`claude`) reaches whichever of that kind is free, `claude*` all of them. It shows in the thread like a `$name` mention. |
+| `thread.send {to, message}` | Message another agent in the thread, or `all`; a kind (`claude`) reaches whichever of that kind is free, `claude*` all of them. It shows in the thread like an `@name` mention. |
 | `thread.read` | The current shared thread. |
 | `thread.roster` | Who is in the thread: each agent's name, kind, model, status, task, parent and branch. |
 | `lease.acquire {paths, exclusive?, minutes?, reason?}`, `lease.release {paths?}`, `lease.list` | Claim files of the shared work tree, give them back, and see who holds what. |
@@ -252,7 +276,7 @@ A Deck that waits for a code also takes a pairing that one of its paired teammat
 ### Working with teammates
 
 - **Contracts.** Ask a teammate's Deck to do a coding task: `c` on a teammate in the Team pane, then type the brief, or have an agent call `task.contract {peer, brief}` (you allow each one, in every mode). A copy of the tree goes to that Deck alone. The task stays on your board, owned by the teammate (`vps`, then `vps/claude`), and the tasks that depend on it wait for it; `x` on it calls the contract off and stops their agent. A teammate that cannot be reached gets the request when its link is back, and a request no one answers ends after 24 hours. On the teammate's Deck the request shows as a card in the Team pane, if they gave you the role `contractor`: `y` runs it with the agent shown, `a` picks another agent, `n` declines. It runs in a new thread on a copy of your tree, under their login and plan, in ask mode at most, and they allow its edits as usual. Antigravity cannot run contracts: Deck cannot make it ask before each edit and command. When the task ends, only a capsule of the changes and the agent's last reply come back; apply the capsule with `sub.patch.apply`.
-- **Shared threads.** `s` on a teammate in the Team pane shares the open thread with their Deck, stepping through observer (reads it), participant (also posts) and editor (also answers its approvals), then not shared. They follow it live in their Shared pane: `enter` on a thread, `p` posts, `y`/`n` answers the approval under the cursor, `esc` goes back. Their messages reach your agents as `[vps] …`, like yours and through the same queue, but cannot address agents (`$` is not a mention), do not end a pause, and switch a yolo thread to ask mode. Approvals for contracts never travel.
+- **Shared threads.** `s` on a teammate in the Team pane shares the open thread with their Deck, stepping through observer (reads it), participant (also posts) and editor (also answers its approvals), then not shared. They follow it live in their Shared pane: `enter` on a thread, `p` posts, `y`/`n` answers the approval under the cursor, `esc` goes back. Their messages reach your agents as `[vps] …`, like yours and through the same queue, but cannot address agents (neither `@` nor `$` is a mention), do not end a pause, and switch a yolo thread to ask mode. Approvals for contracts never travel.
 - **Reports from a teammate's server (ops contracts).** `o` on a teammate in the Team pane, then type the request: `ask vps to report podman containers: name, state, uptime for web`. Check the card it makes and press `y`. Their Deck runs it at once, with no person needed, but only when what you ask for is inside the `max_scope` they gave you; otherwise it refuses and says why. An agent with no tools of its own runs it there: it can only run commands in a sandbox (`sh.run`) and hand back the result (`contract.result`). The result must fit the fields you asked for; both Decks check it, and it shows as a table in the Team pane. Only Claude can run ops contracts so far; the other CLIs cannot turn their own tools off, so they refuse. Every step goes to `~/.deck/peers/audit.jsonl`.
 
 ## Config
@@ -314,7 +338,7 @@ Codex, OpenCode and Antigravity keep their own config, instruction files and MCP
 
 For ops contracts, `peers.remote[].max_scope` lists the presets a teammate may ask for (`podman-read`, `systemd-read`; empty allows none), and `peers.sandbox` sets `ttl` (default `2h`), `scratch_mb` (64) and `output_kb` (64). Add `console.read` to a teammate's `allow_inbound` to let it read your team chat.
 
-The interface's own settings (theme, notifications, mouse) live in `~/.config/deck/deck.json` and the project's `.deck/deck.json`; the `Themes` command switches between Deck's dark and light themes.
+The interface's own settings (theme, notifications, mouse) and the [named agents](#named-agents) live in `~/.config/deck/deck.json` and the project's `.deck/deck.json`; the `Themes` command switches between Deck's dark and light themes.
 
 Environment:
 

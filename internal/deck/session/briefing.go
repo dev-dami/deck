@@ -19,6 +19,7 @@ const (
 	maxBriefingChars = 40000 // a whole briefing keeps its tail
 	readThreadLast   = 200   // entries thread.read covers
 	maxInstrChars    = 2200  // Spec.Instructions goes on a command line: keep it short
+	maxProfileChars  = 2000  // what a profile adds to them (its role, instructions, voice, paths)
 )
 
 // viewer says whose point of view a rendering takes.
@@ -340,8 +341,11 @@ func tailBytes(s string, n int) string {
 
 // instructions is the short briefing every member starts with. It carries no
 // thread history (that goes in prompts) and stays short because it travels
-// on a command line. It names the ops an agent would not think to search
-// for: subagents, races, leases, and the teammates on other machines.
+// on a command line. It names the members with their kinds and roles, how to
+// mention them, and the ops an agent would not think to search for:
+// subagents, races, leases, and the teammates on other machines. A member
+// started from a profile has the profile's briefing after it (role,
+// standing instructions, voice, paths), within maxProfileChars.
 func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	cfg := m.config()
 	user := "the user"
@@ -352,7 +356,7 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	var others []string
 	for _, o := range t.members {
 		if o != a {
-			others = append(others, o.getName())
+			others = append(others, who(o))
 		}
 	}
 	// An ops contract's agent has sh.run and contract.result only, and a
@@ -367,16 +371,20 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 		mates = team.Names()
 	}
 
-	who := user
+	with := user
 	if len(others) > 0 {
-		who = strings.Join(others, ", ") + " and " + user
+		with = strings.Join(others, ", ") + " and " + user
+	}
+	self := fmt.Sprintf("%q", clip(a.getName(), 30))
+	if d := who(a); d != a.getName() {
+		self += strings.TrimPrefix(d, a.getName())
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are %q in a shared Deck thread with %s. Everything said in the thread is visible to all of them.\n", clip(a.getName(), 30), clip(who, 200))
+	fmt.Fprintf(&b, "You are %s in a shared Deck thread with %s. Everything said in the thread is visible to all of them.\n", self, clip(with, 300))
 	b.WriteString("What others said since your last turn is summarised first; messages from other agents are prefixed with their name, like \"[codex] ...\".\n")
 	if tools {
 		b.WriteString("Deck's MCP server has two tools: search finds Deck ops, skills other agents have and this project's past threads; execute runs one op.\n")
-		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with $name. Op \"thread.read\" shows the whole thread, \"thread.roster\" who is in it.\n")
+		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with @name ($name also works). Op \"thread.read\" shows the whole thread, \"thread.roster\" who is in it.\n")
 		b.WriteString("Shared task board (execute ops): task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list. Report a task you own with task.done.\n")
 		b.WriteString("Pass code as a capsule: sub.patch.capture, then thread.send {capsule}.\n")
 		if !ops {
@@ -387,7 +395,7 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 				clip(strings.Join(mates, ", "), 200), clip(mates[0], 32))
 		}
 	} else {
-		b.WriteString("To message another agent, start a line of your final reply with $name (or $all).\n")
+		b.WriteString("To message another agent, start a line of your final reply with @name or @all ($name also works).\n")
 	}
 	b.WriteString("Keep messages to other agents short and actionable. Do not repeat what the user can already see.\n")
 	fmt.Fprintf(&b, "Write plan files in %s.", brand.PlansDir(t.dir))
@@ -396,7 +404,11 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 		fmt.Fprintf(&b, " Commits you make end with the trailer %q and no other AI attribution; pull requests end with %q.",
 			brand.CommitTrailer, brand.PRFooter)
 	}
-	return clip(b.String(), maxInstrChars)
+	out := clip(b.String(), maxInstrChars)
+	if pb := a.prof.Briefing(); pb != "" {
+		out += "\n" + clip(pb, maxProfileChars)
+	}
+	return out
 }
 
 // ---- small helpers ----

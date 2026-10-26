@@ -42,8 +42,10 @@ type (
 
 // Messages for commands
 type (
-	ActionNewSession              struct{}
-	ActionToggleHelp              struct{}
+	ActionNewSession struct{}
+	ActionToggleHelp struct{}
+	// ActionShowProfiles lists the named agents (/profiles).
+	ActionShowProfiles            struct{}
 	ActionToggleCompactMode       struct{}
 	ActionToggleThinking          struct{}
 	ActionTogglePills             struct{}

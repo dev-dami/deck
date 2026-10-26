@@ -10,7 +10,9 @@ import (
 
 // roster renders a's thread's members for the thread.roster op, one per line:
 //
-//	claude2 (you) · claude · opus/high · working · task t3 · subagent of claude1 · branch deck/ab12cd-claude2
+//	claude2 (you) · claude · reviewer · opus/high · working · task t3 · subagent of claude1 · branch deck/ab12cd-claude2
+//
+// (the role is there for a member started from a profile that has one)
 //
 // then, for each kind with several live members, how to reach them.
 func (m *Manager) roster(a *agentState) string {
@@ -26,6 +28,9 @@ func (m *Manager) roster(a *agentState) string {
 			parts[0] += " (you)"
 		}
 		parts = append(parts, ai.Kind)
+		if r := oneLine(ai.Role); r != "" {
+			parts = append(parts, clip(r, 60))
+		}
 		if model := ai.Model; model != "" || ai.Effort != "" {
 			if model == "" {
 				model = "default"
