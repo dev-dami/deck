@@ -9,7 +9,7 @@
 // its own few pixels; then one pass prints the planes. A canvas path of
 // tens of thousands of dots costs several times as much.
 
-import { autoLevels, type Block, clamp01, dotRadius, fbm, hash2, levels, luma, risoBlocks, sampleGrey, screen } from "./core";
+import { autoLevels, type Block, clamp01, dotRadius, fbm, hash2, levels, luma, place, type Rect, risoBlocks, sampleGrey, screen } from "./core";
 import { type Ctx, context, type Framing, fill, grain, pixels, scratch, type Source } from "./canvas";
 import type { HalftoneArt } from "./inks";
 
@@ -19,12 +19,26 @@ function blockCover(b: Block, x: number, y: number): number {
   return clamp01(Math.min(x - b.x, b.x + b.w - x, y - b.y, b.y + b.h - y) + 0.5);
 }
 
+// A figure (a plant on a plate) is set whole, right of centre and a little
+// small, so its ground frames it.
+const FIGURE = { ax: 0.88, ay: 0.3, zoom: 0.92 };
+
+// Where the subject sits in a w×h frame: a figure's box, or a square round
+// the framing's point of interest.
+function subjectOf(img: Source | null, f: Framing, w: number, h: number): Rect {
+  if (img !== null && f.figure) {
+    const [t, r, b, l] = f.crop;
+    return place(img.width * (1 - l - r), img.height * (1 - t - b), w, h, "contain", FIGURE.ax, FIGURE.ay, FIGURE.zoom);
+  }
+  const s = Math.min(w, h) * 0.7;
+  return { x: f.ax * w - s / 2, y: f.ay * h - s / 2, w: s, h: s };
+}
+
 export function renderHalftone(ctx: Ctx, W: number, H: number, dpr: number, art: HalftoneArt, img: Source | null, f: Framing): void {
-  const T0 = performance.now(); const M: string[] = []; const mk = (n: string) => M.push(n + ':' + (performance.now() - T0).toFixed(0));
   const pitch = art.pitch * dpr;
   // The pink drum sits a little down and right of the black one.
   const off = 1.6 * dpr;
-  const blocks = risoBlocks(W / dpr, H / dpr).map((b) =>
+  const blocks = risoBlocks(W / dpr, H / dpr, subjectOf(img, f, W / dpr, H / dpr), art.margin).map((b) =>
     b.kind === "disc" ? { ...b, x: b.x * dpr, y: b.y * dpr, r: b.r * dpr } : { ...b, x: b.x * dpr, y: b.y * dpr, w: b.w * dpr, h: b.h * dpr },
   );
 
@@ -36,7 +50,7 @@ export function renderHalftone(ctx: Ctx, W: number, H: number, dpr: number, art:
   if (img !== null) {
     const sw = Math.ceil((W / pitch) * 2);
     const sh = Math.ceil((H / pitch) * 2);
-    const v = luma(pixels(img, sw, sh, f.figure ? { ...f, ax: 0.88, ay: 0.3 } : f, f.figure ? 0.92 : 1));
+    const v = luma(pixels(img, sw, sh, f.figure ? { ...f, ax: FIGURE.ax, ay: FIGURE.ay } : f, f.figure ? FIGURE.zoom : 1));
     // A figure's ground is most of the frame: its white point sits low.
     const [black, white] = autoLevels(v, 0.01, f.figure ? 0.4 : 0.99);
     levels(v, black, white, f.figure ? 0.9 : 1);
@@ -48,7 +62,6 @@ export function renderHalftone(ctx: Ctx, W: number, H: number, dpr: number, art:
   const cut = (c: number) => (c < 0.07 ? 0 : c);
   const mottle = (x: number, y: number, seed: number) => 0.8 + 0.2 * fbm(x / (220 * dpr), y / (220 * dpr), seed, 2);
 
-  mk('src');
   // Two plates, each a layer of its ink whose alpha is the ink's cover:
   // the pink drum and the black. Every pixel starts in the ink's colour
   // with no cover, so the stamps only ever write alpha.
@@ -97,7 +110,6 @@ export function renderHalftone(ctx: Ctx, W: number, H: number, dpr: number, art:
         }
     }
   }
-  mk('blocks');
   const inside = (x: number, y: number) => blocks.some((b) => blockCover(b, x, y) >= 0.5);
 
   // One plate's dots, each stamped over its own box: on paper (or black)
@@ -134,7 +146,19 @@ export function renderHalftone(ctx: Ctx, W: number, H: number, dpr: number, art:
   stamp(pink.a, 15, off, (x, y) => cut(ink(x, y)) * mottle(x, y, 2), true);
   if (key !== null) stamp(key.a, 45, 0, (x, y) => clamp01((ink(x, y) - 0.6) / 0.4) * 0.85 * mottle(x, y, 9), false);
 
-  mk('dots');
+  // The press's margin: no ink within it on either plate.
+  const m = Math.round(art.margin * dpr);
+  if (m > 0)
+    for (const l of key === null ? [pink] : [pink, key]) {
+      const clear = word([0, 0, 0], 0);
+      l.w32.fill(clear, 0, Math.min(W * H, m * W));
+      l.w32.fill(clear, Math.max(0, (H - m) * W));
+      for (let y = m; y < H - m; y++) {
+        l.w32.fill(clear, y * W, y * W + m);
+        l.w32.fill(clear, y * W + W - m, y * W + W);
+      }
+    }
+
   // The press: the stock, the pink over it, and black multiplied on top.
   fill(ctx, art.ground);
   ctx.fillRect(0, 0, W, H);
@@ -148,9 +172,6 @@ export function renderHalftone(ctx: Ctx, W: number, H: number, dpr: number, art:
   };
   print(pink, "source-over");
   if (key !== null) print(key, "multiply");
-  mk('comp');
   // Fibre in the stock, over the ink too.
   grain(ctx, W, H, art.onBlack ? 0.05 : 0.07, 3);
-  mk('grain');
-  (globalThis as unknown as { __marks: string }).__marks = M.join(' ');
 }

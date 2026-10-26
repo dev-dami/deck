@@ -283,17 +283,22 @@ export function dotRadius(coverage: number, pitch: number): number {
 }
 
 // The riso's hard shapes of solid spot ink, in a W×H frame: a disc behind
-// the picture's subject on the right, and a bar along the bottom right,
-// as a zine pastes blocks of colour over a print. They keep clear of the
-// left, where the sidebar is.
+// the subject's head (the upper third of its box), and a bar along the
+// foot from under the disc to the margin, as a zine pastes blocks of
+// colour over a print. They follow the subject, which sits right of the
+// sidebar, so the left of the frame stays stock.
 export type Block = { kind: "disc"; x: number; y: number; r: number } | { kind: "bar"; x: number; y: number; w: number; h: number };
 
-export function risoBlocks(W: number, H: number): Block[] {
-  const r = Math.min(H * 0.33, W * 0.21);
-  return [
-    { kind: "disc", x: W * 0.7, y: H * 0.37, r },
-    { kind: "bar", x: W * 0.52, y: H * 0.9, w: W * 0.48, h: Math.max(10, H * 0.03) },
-  ];
+export function risoBlocks(W: number, H: number, subject: Rect, margin = 0): Block[] {
+  const r = Math.min(subject.h * 0.36, subject.w * 0.5, W * 0.24);
+  const x = subject.x + subject.w / 2;
+  const y = subject.y + subject.h * 0.32;
+  const h = Math.max(8, H * 0.028);
+  const by = Math.min(H * 0.9, H - margin - h * 2);
+  const bx = Math.max(margin, x - r * 1.15);
+  const blocks: Block[] = [{ kind: "disc", x, y, r }];
+  if (by > y + r * 0.6 && W - margin - bx > r) blocks.push({ kind: "bar", x: bx, y: by, w: W - margin - bx, h });
+  return blocks;
 }
 
 export function inBlock(b: Block, x: number, y: number): boolean {
@@ -403,22 +408,22 @@ export function pips(rank: number): [number, number][] {
   }
 }
 
-// A 3×5 pixel font for a card's corner index: the ranks and nothing else.
+// A 5×7 pixel font for a card's corner index: the ranks and nothing else.
 const GLYPHS: Record<string, string[]> = {
-  A: [".#.", "#.#", "###", "#.#", "#.#"],
-  K: ["#.#", "#.#", "##.", "#.#", "#.#"],
-  Q: [".#.", "#.#", "#.#", "##.", ".##"],
-  J: ["..#", "..#", "..#", "#.#", ".#."],
-  "0": ["###", "#.#", "#.#", "#.#", "###"],
-  "1": [".#.", "##.", ".#.", ".#.", "###"],
-  "2": ["##.", "..#", ".#.", "#..", "###"],
-  "3": ["##.", "..#", ".#.", "..#", "##."],
-  "4": ["#.#", "#.#", "###", "..#", "..#"],
-  "5": ["###", "#..", "##.", "..#", "##."],
-  "6": [".##", "#..", "###", "#.#", "###"],
-  "7": ["###", "..#", ".#.", ".#.", ".#."],
-  "8": ["###", "#.#", "###", "#.#", "###"],
-  "9": ["###", "#.#", "###", "..#", "##."],
+  A: [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+  K: ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
+  Q: [".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"],
+  J: ["..###", "...#.", "...#.", "...#.", "#..#.", "#..#.", ".##.."],
+  "0": [".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."],
+  "1": ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."],
+  "2": [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
+  "3": ["#####", "...#.", "..#..", "...#.", "....#", "#...#", ".###."],
+  "4": ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
+  "5": ["#####", "#....", "####.", "....#", "....#", "#...#", ".###."],
+  "6": ["..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###."],
+  "7": ["#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."],
+  "8": [".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."],
+  "9": [".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."],
 };
 
 // The cells of a rank's index, "10" as two glyphs side by side, one cell
@@ -427,7 +432,7 @@ export function rankCells(rank: string): [number, number][] {
   const out: [number, number][] = [];
   [...rank].forEach((ch, i) => {
     (GLYPHS[ch] ?? []).forEach((row, y) => {
-      for (let x = 0; x < row.length; x++) if (row[x] === "#") out.push([x + i * 4, y]);
+      for (let x = 0; x < row.length; x++) if (row[x] === "#") out.push([x + i * 6, y]);
     });
   });
   return out;
@@ -475,7 +480,9 @@ export type Piece = CardArt | DieArt;
 // dice thrown to its left. Sizes follow the cloth, so a card always reads
 // as a card, never a stamp.
 export function tableLayout(cols: number, rows: number): Piece[] {
-  const ch = Math.round(Math.min(rows * 0.4, cols * 0.27));
+  // As tall as the cloth allows, up to the 36 cells a face reads at, and
+  // narrow enough that the hand and the dice fit across.
+  const ch = Math.round(Math.min(cols * 0.3, rows * 0.8, Math.max(rows * 0.4, 36)));
   const cw = Math.round(ch * (2.5 / 3.5));
   const die = Math.max(8, Math.round(ch * 0.27));
   const px = cols - cw * 1.75;
@@ -551,8 +558,8 @@ function cardCell(c: CardArt, face: Face, u: number, v: number): number {
   if ((iu >= 0 && iv >= 0 && face.idx.has(iu * 16 + iv)) || (ju >= 0 && jv >= 0 && face.idx.has(ju * 16 + jv))) return ink;
   const small = 2.4;
   for (const [pu, pv, turned] of [
-    [3.5, 10, false],
-    [c.w - 3.5, c.h - 10, true],
+    [4.5, 12.5, false],
+    [c.w - 4.5, c.h - 12.5, true],
   ] as const) {
     if (inSuit(c.suit, (u - pu) / small, ((v - pv) / small) * (turned ? -1 : 1))) return ink;
   }

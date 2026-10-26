@@ -3,10 +3,9 @@ import { ArrowLeft, ArrowRight, Check, CircleAlert, Copy, ExternalLink, Loader2,
 import { type ComponentProps, type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentClis, DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";
-import { PLATES, type PlateArt } from "../plates";
 import { Button } from "./kit/button";
 import { DeckMark } from "./kit/mark";
-import { Plate } from "./kit/plate";
+import { ArtFigure } from "./ArtFigure";
 import { isMac } from "./keys";
 import { AGENT_HELP, type AgentHelp } from "./landing";
 
@@ -304,11 +303,6 @@ export function FirstStrip({ onBack, className }: { onBack?: (() => void) | unde
   );
 }
 
-// A picture's credit in faint type, under it.
-export function Credit({ art, className }: { art: PlateArt; className?: string }) {
-  return <figcaption className={cn("text-pretty text-3xs text-faint/80 tracking-wide", className)}>{art.credit}</figcaption>;
-}
-
 // The first screen of a new install, and the palette's "Welcome". A wide
 // dithered picture fills the top of the window; under it, the headline
 // holds the lower left and the ways in the right; the crew Deck can drive
@@ -357,10 +351,11 @@ export function Welcome({
   return (
     <main className="welcome-screen flex h-full flex-col overflow-y-auto" data-screen="welcome">
       <FirstStrip onBack={onBack} />
-      <figure className="mx-2 flex min-h-[max(9rem,24vh)] flex-1 flex-col gap-1.5">
-        <Plate art={PLATES.alps} focus={[0.5, 0.4]} className="min-h-0 flex-1 rounded-(--sheet-radius)" />
-        <Credit art={PLATES.alps} className="self-end px-1" />
-      </figure>
+      <ArtFigure
+        className="mx-2 min-h-[max(9rem,24vh)] flex-1"
+        plateClassName="rounded-(--sheet-radius)"
+        creditClassName="self-end px-1"
+      />
       <div className={cn("shrink-0 gap-y-8 pt-5 pb-6 md:pt-6 [@media(max-height:680px)]:gap-y-5 [@media(max-height:680px)]:py-3", firstGrid)}>
         <div className={cn("flex animate-enter flex-col justify-end gap-4", leftCols)}>
           <Headline loud="One deck" quiet="for all your agents" />

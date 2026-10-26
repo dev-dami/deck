@@ -40,6 +40,9 @@ export interface HalftoneArt {
   key: RGB; // black ink; on black stock it never prints
   onBlack: boolean;
   pitch: number;
+  // The press's margin in CSS px: a riso cannot print to the sheet's edge,
+  // and the window's gutters, which this edge shows through, stay stock.
+  margin: number;
 }
 
 // Stitch: cross-stitch on even-weave cloth.
@@ -93,6 +96,7 @@ const RISO_DARK: HalftoneArt = {
   key: hex("#121111"),
   onBlack: true,
   pitch: 5,
+  margin: 20,
 };
 
 const RISO_LIGHT: HalftoneArt = {
@@ -109,7 +113,7 @@ const LINEN: StitchArt = {
   cloth: hex("#d9c8a7"),
   hole: hex("#9c8661"),
   twill: false,
-  threads: ["#7a664e", "#9c8667", "#bba783"].map(hex),
+  threads: ["#3a2f27", "#6f5a44", "#a48c69"].map(hex),
   bare: 0.48,
   roles: ["#f6f2e8", "#25211e", "#b8262d", "#7d1a22", "#8d877d", "#a8946f", "#c6302c", "#efe2c2"].map(hex),
   table: true,
@@ -122,7 +126,7 @@ const DENIM: StitchArt = {
   cloth: hex("#26335c"),
   hole: hex("#111830"),
   twill: true,
-  threads: ["#3b5089", "#5770a8", "#8399c4"].map(hex),
+  threads: ["#56709f", "#9cb1d3", "#e4e6e4"].map(hex),
   bare: 0.38,
   roles: ["#efe9da", "#16151a", "#c22f33", "#7d1a22", "#9a958c", "#1a2546", "#d0392f", "#e8d8b4"].map(hex),
   table: true,
@@ -171,11 +175,27 @@ export function colourway(mode: Mode, t: Tokens): SceneArt {
   return { ...DAWN, ground: hi, inks: [lo, hi] };
 }
 
+// Where the art is printed: behind the window (the backdrop) or as a print
+// on a page (the Welcome's and the connect screen's picture, ArtFigure).
+export type Use = "window" | "print";
+
 // The art of a theme in a mode. A colourway needs the theme's tokens.
-export function artFor(theme: string, mode: Mode, tokens?: Tokens): Art {
-  if (theme === "riso") return mode === "dark" ? RISO_DARK : RISO_LIGHT;
-  if (theme === "stitch") return mode === "dark" ? DENIM : LINEN;
-  if (theme === "tokyo-night") return DEEP_FIELD;
+//
+// As a print, Liquid Glass and its colourways hang the true duotone, dusk
+// navy and peach, in either mode and with no sky held back (nothing sits
+// on it); the riso prints to the edge of its box; the stitch works in a
+// finer count, so a hand of cards fits a smaller cloth.
+export function artFor(theme: string, mode: Mode, tokens?: Tokens, use: Use = "window"): Art {
+  if (theme === "riso") {
+    const art = mode === "dark" ? RISO_DARK : RISO_LIGHT;
+    return use === "print" ? { ...art, margin: 0 } : art;
+  }
+  if (theme === "stitch") {
+    const art = mode === "dark" ? DENIM : LINEN;
+    return use === "print" ? { ...art, cell: 7 } : art;
+  }
+  if (theme === "tokyo-night") return use === "print" ? { ...DEEP_FIELD, sky: 0 } : DEEP_FIELD;
+  if (use === "print") return { ...DUSK, sky: 0 };
   if (theme === "glass" || tokens === undefined) return mode === "dark" ? DUSK : DAWN;
   return colourway(mode, tokens);
 }

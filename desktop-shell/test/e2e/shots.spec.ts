@@ -37,6 +37,9 @@ for (const mode of ["dark", "light"] as const) {
     const show = (v: string) =>
       page.evaluate((vis) => {
         for (const el of document.querySelectorAll<HTMLElement>(".app > :not(.backdrop)")) el.style.visibility = vis;
+        // The first screens hide the window's backdrop; this shot shows it.
+        const b = document.querySelector<HTMLElement>(".backdrop");
+        if (b !== null) b.style.visibility = vis === "hidden" ? "visible" : "";
       }, v);
     await show("hidden");
     await page.screenshot({ path: join(OUT, `${mode}-0-backdrop.png`) });

@@ -6,9 +6,8 @@ import { cn } from "../lib/cn";
 import { Button } from "./kit/button";
 import { fieldClass } from "./kit/dialog";
 import { isMac } from "./keys";
-import { PLATES } from "../plates";
-import { Plate } from "./kit/plate";
-import { base, Command, Credit, FirstStrip, Headline, Notice, StartFailed, type StartFailure, stagger } from "./Welcome";
+import { ArtFigure } from "./ArtFigure";
+import { base, Command, FirstStrip, Headline, Notice, StartFailed, type StartFailure, stagger } from "./Welcome";
 
 // A list row on the backdrop: a name and its path; the return key shows on
 // the row under the pointer.
@@ -261,10 +260,12 @@ export function ConnectScreen({
     <main className="connect flex h-full flex-col" data-screen="connect">
       <FirstStrip onBack={onBack} />
       <div className="flex min-h-0 flex-1">
-        <figure className="hidden shrink-0 flex-col gap-1.5 pb-2 pl-2 md:flex md:w-[38%] lg:w-[42%]">
-          <Plate art={PLATES.bridge} focus={[0.5, 0.7]} className="min-h-0 flex-1 rounded-(--sheet-radius)" />
-          <Credit art={PLATES.bridge} className="px-1" />
-        </figure>
+        <ArtFigure
+          picture="shower-bridge"
+          className="hidden shrink-0 pb-2 pl-2 md:flex md:w-[38%] lg:w-[42%]"
+          plateClassName="rounded-(--sheet-radius)"
+          creditClassName="px-1"
+        />
         <div className="connect-card flex min-w-0 flex-1 flex-col overflow-y-auto px-6 md:px-10 lg:px-14">
           <div className="my-auto flex w-full max-w-[32rem] flex-col gap-8 py-8">
             <div className="flex animate-enter flex-col gap-4">

@@ -29,7 +29,7 @@ for (const palette of (process.env["PALETTES"] ?? "glass,riso,stitch").split(","
         await expect(page.locator("html")).not.toHaveAttribute("data-backdrop-ms", before ?? "", { timeout: 10_000 });
         times.push((await page.locator("html").getAttribute("data-backdrop-ms")) ?? "");
       }
-      console.log(`${palette} ${mode}: ${times.join(" ")}`, await page.evaluate(() => (globalThis as unknown as { __marks?: string }).__marks));
+      console.log(`${palette} ${mode}: ${times.join(" ")}`);
       await page.screenshot({ path: `${OUT}/${palette}-${mode}.png` });
     });
   }

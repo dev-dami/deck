@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { loadPicture, render } from "../backdrop/client";
-import { artFor, withPicture } from "../backdrop/inks";
-import { readTokens, useLook } from "../backdrop/live";
-import { CUSTOM, framingOf, pictureInfo } from "../backdrop/pictures";
-import { useWallpaperVersion } from "../backdrop/wallpaper";
+import { usePrint } from "../backdrop/usePrint";
 import { usePrefs } from "../prefs";
 
 // The window's backdrop: the theme's picture (or the person's) printed
 // through the theme's process, once per theme, mode, size or picture, on
-// a canvas behind the app. Nothing animates. Until it has drawn, and with
-// reduced transparency, the body's plain colour stands in (styles.css).
+// a canvas behind the app. Nothing animates. It shows behind the glass
+// chrome, around the sheets; the first screens print their own picture
+// (ArtFigure) and hide it. Until it has drawn, and with reduced
+// transparency, the body's plain colour stands in (styles.css).
 
 // A size change waits for the window to settle.
 const SETTLE_MS = 160;
@@ -32,7 +30,7 @@ function useSettledSize(): { w: number; h: number; dpr: number } {
   return size;
 }
 
-function useReducedTransparency(): boolean {
+export function useReducedTransparency(): boolean {
   const q = "(prefers-reduced-transparency: reduce)";
   const [on, setOn] = useState(() => window.matchMedia(q).matches);
   useEffect(() => {
@@ -45,56 +43,25 @@ function useReducedTransparency(): boolean {
 }
 
 export function Backdrop() {
-  const look = useLook();
   const { wallpaper } = usePrefs();
-  const version = useWallpaperVersion();
   const size = useSettledSize();
   const reduced = useReducedTransparency();
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [credit, setCredit] = useState<string | null>(null);
+  const printed = usePrint(canvas, reduced ? null : size, wallpaper, "window");
 
+  // <html> says that the backdrop has drawn, with which process and in how
+  // long, for the CSS and for the tests.
   useEffect(() => {
     const root = document.documentElement;
-    if (reduced) {
+    if (reduced || printed === null) {
       root.removeAttribute("data-backdrop");
+      root.removeAttribute("data-backdrop-ms");
       return;
     }
-    let live = true;
-    void (async () => {
-      const theme = artFor(look.palette, look.mode, readTokens());
-      let id = wallpaper === "theme" ? theme.picture : wallpaper;
-      let img = await loadPicture(id, version);
-      // A wallpaper that is gone (cleared storage) falls back to the theme's.
-      if (img === null && id !== theme.picture) {
-        id = theme.picture;
-        img = await loadPicture(id);
-      }
-      const info = pictureInfo(id);
-      const W = Math.round(size.w * size.dpr);
-      const H = Math.round(size.h * size.dpr);
-      const { bitmap, ms } = await render({ W, H, dpr: size.dpr, art: withPicture(theme, id), framing: framingOf(info) }, img);
-      const c = canvas.current;
-      if (!live || c === null) {
-        bitmap.close();
-        return;
-      }
-      c.width = bitmap.width;
-      c.height = bitmap.height;
-      c.getContext("bitmaprenderer")?.transferFromImageBitmap(bitmap);
-      root.setAttribute("data-backdrop", theme.process);
-      root.setAttribute("data-backdrop-ms", ms.toFixed(1));
-      setCredit(img === null ? null : id === CUSTOM ? "Your picture" : (info?.credit ?? null));
-    })().catch(() => root.removeAttribute("data-backdrop"));
-    return () => {
-      live = false;
-    };
-  }, [look, wallpaper, version, size, reduced]);
+    root.setAttribute("data-backdrop", printed.process);
+    root.setAttribute("data-backdrop-ms", printed.ms.toFixed(1));
+  }, [printed, reduced]);
 
   if (reduced) return null;
-  return (
-    <>
-      <canvas ref={canvas} aria-hidden className="backdrop" />
-      {credit !== null && <p className="backdrop-credit">{credit}</p>}
-    </>
-  );
+  return <canvas ref={canvas} aria-hidden className="backdrop" />;
 }
