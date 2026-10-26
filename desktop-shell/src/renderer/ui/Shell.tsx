@@ -242,11 +242,20 @@ export function Shell(props: ShellProps) {
               onAnswer={attention.onAnswer}
               onContract={(item, accept) => orToast(attention.onContract(item, accept))}
               onOpen={(item) => item.room !== null && openRoom(item.project, item.room)}
+              onBack={() => dispatch({ type: "inbox", open: false })}
             />
           ) : ui.usage ? (
-            <UsagePage project={api} theme={state.theme} onOpenThread={openSession} />
+            <UsagePage project={api} theme={state.theme} onOpenThread={openSession} onAddProject={addProject} />
           ) : ui.team ? (
-            <TeamPage api={api} thread={open} onError={toast} onInfo={info} onOpenShared={openShared} />
+            <TeamPage
+              api={api}
+              thread={open}
+              onError={toast}
+              onInfo={info}
+              onOpenShared={openShared}
+              onConnection={() => dispatch({ type: "settings", section: "connection" })}
+              onAddProject={addProject}
+            />
           ) : ui.settings !== null ? (
             <LiveSettings c={c} teammates={teammates} section={ui.settings} where={where} transport={transport} mac={mac} bridge={bridge} folder={folder} onDisconnect={onDisconnect} />
           ) : shared !== null && api !== undefined ? (
