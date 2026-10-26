@@ -43,10 +43,6 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 	var out []line
 	hold := map[string]int{}
 	hinted := map[string]bool{} // kinds whose pool was explained in this walk
-	// The edits of the user messages in range, read from the first of them on
-	// (a briefing covers the end of a long log).
-	var edited map[string]string
-	editsRead := false
 
 	type acc struct {
 		files, cmds, edits []string
@@ -129,10 +125,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				continue // cancelled, or already delivered as a steer
 			}
 			raw := strings.TrimSpace(e.Text)
-			if !editsRead {
-				edited, editsRead = t.editedFrom(i), true
-			}
-			if txt, ok := edited[e.ID]; ok {
+			if txt, ok := t.index.edited[e.ID]; ok {
 				raw = strings.TrimSpace(txt)
 			}
 			l := line{user: true, raw: raw}
@@ -209,7 +202,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 		case store.EntryContinue:
 			out = append(out, line{text: "[deck] the user let agent-to-agent messages continue"})
 		case store.EntryRevert, store.EntryUnrevert:
-			out = append(out, line{text: revertText(e, revertSince(t.log, e))})
+			out = append(out, line{text: revertText(e, revertSince(t.log, t.index, e))})
 		case store.EntryTask:
 			if e.Task != nil {
 				out = append(out, line{text: taskText(t, e)})
@@ -388,25 +381,6 @@ func editBody(old, new string) string {
 	return "The user edited their earlier message.\nBefore: " + clip(strings.TrimSpace(old), maxEntryChars) +
 		"\nAfter: " + clip(strings.TrimSpace(new), maxEntryChars) +
 		"\nTreat the edited version as what they meant."
-}
-
-// editedTexts maps a user entry id to its latest edited text. t.mu is held.
-func (t *thread) editedTexts() map[string]string { return t.editedFrom(0) }
-
-// editedFrom is editedTexts for the user entries at log index from or later.
-// An edit is always logged after the message it edits, so only the log from
-// there on is read. t.mu is held.
-func (t *thread) editedFrom(from int) map[string]string {
-	var out map[string]string
-	for i := min(max(from, 0), len(t.log)); i < len(t.log); i++ {
-		if e := &t.log[i]; e.Type == store.EntryEdit {
-			if out == nil {
-				out = map[string]string{}
-			}
-			out[e.Ref] = e.Text
-		}
-	}
-	return out
 }
 
 // name is a member's current display name (its id when unknown).

@@ -96,8 +96,6 @@ func (t *thread) findItemLocked(id string) int {
 // changed. t.mu is held.
 func (t *thread) syncQueueLocked(a *agentState) bool {
 	changed := false
-	var edited map[string]string
-	editsRead := false
 	for i := a.cursor; i < len(t.log); i++ {
 		e := t.log[i]
 		if (e.Type != store.EntryUser && e.Type != store.EntryEdit) || e.Steer {
@@ -113,11 +111,8 @@ func (t *thread) syncQueueLocked(a *agentState) bool {
 		q := qitem{idx: i, src: e.ID}
 		q.QueuedItem = QueuedItem{ID: id, ThreadID: t.id, AgentID: a.id, At: e.Time}
 		if e.Type == store.EntryUser {
-			if !editsRead { // later messages' edits come later still
-				edited, editsRead = t.editedFrom(i), true
-			}
 			q.Text = strings.TrimSpace(e.Text)
-			if txt, ok := edited[e.ID]; ok {
+			if txt, ok := t.index.edited[e.ID]; ok {
 				q.Text = strings.TrimSpace(txt)
 			}
 			q.Images = t.imagesOf(e)
@@ -255,10 +250,7 @@ func (m *Manager) CancelQueued(itemID string) error {
 // rebuildSkips restores the skip set of a stored thread from its cancel and
 // steer entries. t.mu is held or t is not shared yet.
 func (t *thread) rebuildSkips() {
-	byID := make(map[string]int, len(t.log))
-	for i, e := range t.log {
-		byID[e.ID] = i
-	}
+	byID := t.index.at
 	for _, e := range t.log {
 		switch {
 		case e.Type == store.EntryCancel:
@@ -468,14 +460,8 @@ func (m *Manager) Edit(threadID, entryID, newText string) error {
 	}
 
 	t.mu.Lock()
-	idx := -1
-	for i, e := range t.log {
-		if e.ID == entryID && entryID != "" {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
+	idx, ok := t.index.at[entryID]
+	if !ok || entryID == "" {
 		t.mu.Unlock()
 		return fmt.Errorf("session: no message %q in this thread", entryID)
 	}
@@ -485,7 +471,7 @@ func (m *Manager) Edit(threadID, entryID, newText string) error {
 		return errors.New("session: only the user's own messages can be edited")
 	}
 	old := strings.TrimSpace(orig.Text)
-	if txt, ok := t.editedFrom(idx)[orig.ID]; ok {
+	if txt, ok := t.index.edited[orig.ID]; ok {
 		old = strings.TrimSpace(txt)
 	}
 	if old == newText {

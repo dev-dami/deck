@@ -363,35 +363,33 @@ func (m *Manager) UndoRevert(ctx context.Context, threadID, revertID string) err
 func (m *Manager) logRevert(t *thread, e store.Entry) {
 	t.mu.Lock()
 	m.appendLocked(t, e)
-	msg := revertMsg(t.id, t.log, e)
+	msg := revertMsg(t.id, t.log, t.index, e)
 	t.mu.Unlock()
 	m.emit(msg)
 }
 
-// revertMsg is the message for a revert entry of the given log.
-func revertMsg(threadID string, log []store.Entry, e store.Entry) RevertedMsg {
-	return RevertedMsg{ThreadID: threadID, EntryID: e.ID, Files: e.Files, Undo: e.Type == store.EntryUnrevert, Since: revertSince(log, e)}
+// revertMsg is the message for a revert entry of the given log, which x
+// indexes.
+func revertMsg(threadID string, log []store.Entry, x logIndex, e store.Entry) RevertedMsg {
+	return RevertedMsg{ThreadID: threadID, EntryID: e.ID, Files: e.Files, Undo: e.Type == store.EntryUnrevert, Since: revertSince(log, x, e)}
 }
 
 // revertSince is the text of the message a revert (or the revert an undo
-// undid) went back to, as last edited.
-func revertSince(log []store.Entry, e store.Entry) string {
+// undid) went back to, as last edited. x indexes log.
+func revertSince(log []store.Entry, x logIndex, e store.Entry) string {
 	ref := e.Ref
 	if e.Type == store.EntryUnrevert {
-		for _, o := range log {
-			if o.ID == e.Ref {
-				ref = o.Ref
-			}
+		if i, ok := x.at[e.Ref]; ok {
+			ref = log[i].Ref
 		}
 	}
-	text, found := "", false
-	for _, o := range log {
-		switch {
-		case o.Type == store.EntryUser && o.ID == ref:
-			text, found = o.Text, true
-		case o.Type == store.EntryEdit && o.Ref == ref && found:
-			text = o.Text
-		}
+	i, ok := x.at[ref]
+	if !ok || log[i].Type != store.EntryUser {
+		return ""
+	}
+	text := log[i].Text
+	if s, ok := x.edited[ref]; ok {
+		text = s
 	}
 	return oneLine(text)
 }

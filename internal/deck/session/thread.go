@@ -34,7 +34,11 @@ type thread struct {
 	dir        string
 	mode       agent.Mode // permission mode; never empty
 	members    []*agentState
-	log        []store.Entry
+	// log only grows: an entry, once appended, never changes (History).
+	log []store.Entry
+	// index finds log entries by id and the edits of user messages without
+	// scanning the log; appendLocked keeps it.
+	index logIndex
 
 	boundary    map[string]int    // speaker -> log index just after its last finished turn
 	inert       map[int]bool      // relay/user entries that must not start a turn
@@ -132,6 +136,33 @@ func newThread(m *Manager, id, dir string, mode agent.Mode) *thread {
 		lastRelay: map[string]string{},
 		skip:      map[skipKey]skipKind{},
 		images:    map[string][]agent.Image{},
+		index:     indexLog(nil),
+	}
+}
+
+// logIndex indexes a log: at maps each entry's id to its index, edited each
+// edited user message's id to its latest text (an edit always comes after
+// the message it edits, and after the edits before it).
+type logIndex struct {
+	at     map[string]int
+	edited map[string]string
+}
+
+func indexLog(entries []store.Entry) logIndex {
+	x := logIndex{at: make(map[string]int, len(entries)), edited: map[string]string{}}
+	for i, e := range entries {
+		x.add(i, e)
+	}
+	return x
+}
+
+// add indexes entry e at log index i.
+func (x logIndex) add(i int, e store.Entry) {
+	if e.ID != "" {
+		x.at[e.ID] = i
+	}
+	if e.Type == store.EntryEdit {
+		x.edited[e.Ref] = e.Text
 	}
 }
 
@@ -149,6 +180,7 @@ func (m *Manager) appendLocked(t *thread, e store.Entry) int {
 	}
 	idx := len(t.log)
 	t.log = append(t.log, e)
+	t.index.add(idx, e)
 	if t.grew != nil {
 		close(t.grew) // wakes the teammates that wait for it (WaitShared)
 		t.grew = nil

@@ -501,16 +501,20 @@ func (m *Manager) History(threadID string) []tea.Msg {
 	if t == nil {
 		return nil
 	}
+	// The log is append-only: the entries up to its length now never change,
+	// so they are rendered outside the lock, which event ingest needs.
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	return historyOf(t.id, t.log)
+	log := t.log[:len(t.log):len(t.log)]
+	t.mu.Unlock()
+	return historyOf(t.id, log)
 }
 
 func historyOf(threadID string, entries []store.Entry) []tea.Msg {
 	var out []tea.Msg
+	x := indexLog(entries)
 	for _, e := range entries {
 		if e.Type == store.EntryRevert || e.Type == store.EntryUnrevert {
-			out = append(out, revertMsg(threadID, entries, e))
+			out = append(out, revertMsg(threadID, entries, x, e))
 			continue
 		}
 		if msg := msgFor(threadID, e); msg != nil {
@@ -1281,6 +1285,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		}
 	}
 	t.log = entries
+	t.index = indexLog(entries)
 	t.rebuildSkips()
 	for _, a := range members {
 		t.boundary[a.id] = len(entries) // a turn cut short by a crash counts as finished

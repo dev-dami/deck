@@ -176,12 +176,16 @@ func TestRevertPutsFilesBackTellsTheAgentsAndCanBeUndone(t *testing.T) {
 		t.Fatalf("a second undo: %v", err)
 	}
 
-	// both show up when the thread's history is replayed
+	// both show up when the thread's history is replayed, naming the
+	// message as last edited
+	if err := r.m.Edit(tid, cs.Since, "fix a, please"); err != nil {
+		t.Fatal(err)
+	}
 	n := 0
 	for _, m := range r.m.History(tid) {
 		if rm, ok := m.(RevertedMsg); ok {
 			n++
-			if rm.Since != "fix a" {
+			if rm.Since != "fix a, please" {
 				t.Fatalf("replayed %+v", rm)
 			}
 		}
