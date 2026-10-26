@@ -67,7 +67,8 @@ func toQueued(q wire.QueuedItem) *deckv1.QueuedItem {
 }
 
 func toAgent(a wire.AgentLine) *deckv1.AgentLine {
-	return &deckv1.AgentLine{Id: a.ID, Name: a.Name, Kind: a.Kind, Model: a.Model, Effort: a.Effort, Busy: a.Busy}
+	return &deckv1.AgentLine{Id: a.ID, Name: a.Name, Kind: a.Kind, Model: a.Model, Effort: a.Effort, Busy: a.Busy,
+		Profile: a.Profile, Role: a.Role}
 }
 
 func toModel(m wire.ModelChoice) *deckv1.ModelChoice {

@@ -309,6 +309,12 @@ type AgentLine struct {
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
 	Busy   bool   `json:"busy"`
+	// Profile is the named agent the member was started from (absent for
+	// none) and Role that profile's one-line role. Name is then the
+	// member's own name ("charles", "charles-2"); Kind still says which
+	// CLI runs it.
+	Profile string `json:"profile,omitempty"`
+	Role    string `json:"role,omitempty"`
 }
 
 // AgentKind is an installed agent CLI that can join a session. Model is

@@ -253,9 +253,9 @@ func (m *Manager) PostShared(peer, threadID, text string) error {
 	if len(text) > maxSharedText {
 		text = strings.ToValidUTF8(text[:maxSharedText], "") + "…"
 	}
-	// "$" from a teammate is never a mention: it cannot pick agents, add
-	// one or start a race.
-	text = "[" + peer + "] " + strings.ReplaceAll(text, "$", "＄")
+	// "$" and "@" from a teammate are never mentions: they cannot pick
+	// agents, add one or start a race.
+	text = "[" + peer + "] " + defuse(text)
 	key, now := "share:"+peer, time.Now()
 	t.mu.Lock()
 	recent := t.sends[key][:0]

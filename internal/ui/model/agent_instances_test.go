@@ -15,7 +15,7 @@ func TestInstanceItems(t *testing.T) {
 
 	inserts := func(lines []workspace.AgentLine) []string {
 		var out []string
-		for _, it := range instanceItems(lines) {
+		for _, it := range instanceItems("$", lines) {
 			out = append(out, it.Value.Insert)
 		}
 		return out

@@ -166,10 +166,19 @@ func (f *fakeRooms) SubscribeDeck(ctx context.Context) <-chan pubsub.Event[works
 // the event pump.
 func roomRig(t *testing.T, f *fakeRooms, dir string) (*remotetest.Fake, deckv1.DeckClient) {
 	t.Helper()
+	if f == nil {
+		return workspaceRig(t, nil, dir)
+	}
+	return workspaceRig(t, f, dir)
+}
+
+// workspaceRig is roomRig for any workspace (nil for none).
+func workspaceRig(t *testing.T, ws any, dir string) (*remotetest.Fake, deckv1.DeckClient) {
+	t.Helper()
 	fake := remotetest.New()
 	srv := New(fake, "secret").WithProject(dir, nil)
-	if f != nil {
-		srv.WithWorkspace(f)
+	if ws != nil {
+		srv.WithWorkspace(ws)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
