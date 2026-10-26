@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { ArrowUpRight, Download, Github, Star } from "iconoir-react";
 import { Command, ThemeToggle, Wordmark } from "./components";
 
 const REPO = "https://github.com/dev-dami/deck";
@@ -98,7 +99,7 @@ const AGENTS = [
 // The same four, as members of a thread, coloured to read on glass.
 const ROSTER = [
   { glyph: "✻", name: "claude", hue: "var(--claude-on-glass)" },
-  { glyph: ">_", name: "codex", hue: "#f3efe6" },
+  { glyph: ">_", name: "codex", hue: "#ecece6" },
   { glyph: "▯", name: "opencode", hue: "#5cc0ea" },
   { glyph: "◎", name: "antigravity", hue: "#c49be0" },
 ];
@@ -126,7 +127,9 @@ export default function Home() {
           <a href={DOCS}>Docs</a>
           <ThemeToggle />
           <a href={REPO} className="pill">
-            GitHub <span aria-hidden>↗</span>
+            <Github aria-hidden className="icon" />
+            GitHub
+            <ArrowUpRight aria-hidden className="icon icon-sm" />
           </a>
         </nav>
       </header>
@@ -149,10 +152,11 @@ export default function Home() {
             </p>
             <div className="ctas">
               <a className="btn btn-ink" href={RELEASES}>
+                <Download aria-hidden className="icon" />
                 Download Deck
               </a>
               <a className="btn btn-line" href={REPO}>
-                <span aria-hidden>★</span> Star on GitHub
+                <Star aria-hidden className="icon" /> Star on GitHub
               </a>
             </div>
             <Command cmd={INSTALL_SH} />
@@ -396,10 +400,11 @@ export default function Home() {
             </h2>
             <div className="ctas">
               <a className="btn btn-ink" href={RELEASES}>
+                <Download aria-hidden className="icon" />
                 Download Deck
               </a>
               <a className="btn btn-line" href={REPO}>
-                <span aria-hidden>★</span> Star on GitHub
+                <Star aria-hidden className="icon" /> Star on GitHub
               </a>
             </div>
           </div>

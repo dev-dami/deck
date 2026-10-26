@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, Copy, HalfMoon, SunLight } from "iconoir-react";
 import { useEffect, useRef, useState } from "react";
 
 // A command line with a copy button. The command is selectable text too.
@@ -21,6 +22,7 @@ export function Command({ label, cmd }: { label?: string; cmd: string }) {
         {cmd}
       </code>
       <button type="button" onClick={copy} aria-label={`Copy: ${cmd}`}>
+        {done ? <Check aria-hidden className="icon icon-sm" /> : <Copy aria-hidden className="icon icon-sm" />}
         {done ? "Copied" : "Copy"}
       </button>
     </div>
@@ -235,13 +237,8 @@ export function ThemeToggle() {
   };
   return (
     <button type="button" className="theme-toggle" onClick={flip} aria-label="Switch between light and dark">
-      <svg aria-hidden viewBox="0 0 24 24" className="icon-moon">
-        <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />
-      </svg>
-      <svg aria-hidden viewBox="0 0 24 24" className="icon-sun">
-        <circle cx="12" cy="12" r="4" />
-        <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" />
-      </svg>
+      <HalfMoon aria-hidden className="icon icon-moon" />
+      <SunLight aria-hidden className="icon icon-sun" />
     </button>
   );
 }
