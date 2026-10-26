@@ -114,10 +114,13 @@ export function AgentDetail({
         )}
         {a.tools.map((t, i) => (
           <Row key={i} label={i === 0 ? "Running" : ""}>
-            <span className="font-mono text-2xs">
-              {t.subagent ? "subagent" : t.name} <span className="text-muted-foreground">{t.summary}</span>
+            {/* The path gives way to the time, which always shows. */}
+            <span className="flex min-w-0 items-baseline gap-1.5">
+              <span className="min-w-0 truncate font-mono text-2xs" title={t.summary}>
+                {t.subagent ? "subagent" : t.name} <span className="text-muted-foreground">{t.summary}</span>
+              </span>
+              {t.started > 0 && <span className="shrink-0 text-faint">{formatDuration(now - t.started)}</span>}
             </span>
-            {t.started > 0 && <span className="ml-1.5 text-faint">{formatDuration(now - t.started)}</span>}
           </Row>
         ))}
         {a.leases.length > 0 && (
