@@ -1,4 +1,4 @@
-import type { ChangedFile, Session } from "@web/protocol";
+import type { AgentLine, ChangedFile, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import {
   ChevronDown,
@@ -7,6 +7,7 @@ import {
   ChevronsUpDown,
   FileDiff,
   FileText,
+  GraphIcon,
   ListChecks,
   type IconType,
   MessageCircleQuestion,
@@ -37,13 +38,17 @@ import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
 import { Confirm } from "./kit/dialog";
 import { EmptyState } from "./kit/empty";
+import { segmentItem, segmentTrack } from "./kit/segmented";
+import { WorkGraph } from "./graph/WorkGraph";
 import { useOpenPorts } from "./usePorts";
 
-// The room's tabs: Changes, Tasks (the queue, the board and races), Agents
-// (the tree), Side chat and, while a dev server answers, Preview.
+// The room's tabs: Changes, Graph (the Work Graph, compact), Tasks (the
+// queue, the board and races), Agents (the tree), Side chat and, while a
+// dev server answers, Preview.
 
 const TAB_ICONS: Record<Panel, IconType> = {
   changes: FileDiff,
+  graph: GraphIcon,
   tasks: ListChecks,
   agents: Network,
   side: MessageCircleQuestion,
@@ -51,7 +56,7 @@ const TAB_ICONS: Record<Panel, IconType> = {
 };
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="empty px-4 py-16 text-center text-muted-foreground/60 text-sm">{children}</p>;
+  return <p className="empty text-balance px-8 py-16 text-center text-faint text-sm">{children}</p>;
 }
 
 // How long the Undo of a revert stays.
@@ -97,11 +102,11 @@ function FileSection({
     if (focus) ref.current?.scrollIntoView({ block: "start" });
   }, [focus]);
   return (
-    <div ref={ref} className="file border-border/60 border-b">
-      <div className="file-head sticky top-0 z-10 flex items-center bg-background pr-2 hover:bg-accent/40">
+    <div ref={ref} className="file border-hairline border-b last:border-b-0">
+      <div className="file-head group/head sticky top-0 z-10 flex h-9 items-center bg-background pr-2 transition-colors hover:bg-[color-mix(in_srgb,var(--hover),var(--background))]">
         <button
           type="button"
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-2 text-left"
+          className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 pl-3.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           aria-expanded={open}
           onClick={onToggle}
         >
@@ -111,13 +116,19 @@ function FileSection({
             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
           )}
           <FileText className="size-3.5 shrink-0 text-info-foreground" />
-          <span className="file-path min-w-0 flex-1 truncate font-mono text-xs">{f.path}</span>
+          <span className="file-path min-w-0 flex-1 truncate font-mono text-xs" title={f.path}>
+            {f.path}
+          </span>
           <FileLang path={f.path} />
           <span className="del font-mono text-diff-deletion-foreground text-xs tabular-nums">−{f.removed}</span>
           <span className="add font-mono text-diff-addition-foreground text-xs tabular-nums">+{f.added}</span>
         </button>
         {onRevert !== null && (
-          <Button variant="ghost-muted" size="xs" className="file-revert font-normal" aria-label={`Revert ${f.path}`} title="Put the file back" onClick={onRevert}>
+          <Button
+            variant="ghost-muted"
+            size="xs"
+            className="file-revert font-normal opacity-0 focus-visible:opacity-100 group-hover/head:opacity-100"
+            aria-label={`Revert ${f.path}`} title="Put the file back" onClick={onRevert}>
             <Undo2 /> Revert
           </Button>
         )}
@@ -156,7 +167,7 @@ function Changes({
   const allClosed = files !== null && files.length > 0 && files.every((f) => closed[f.path] === true);
   return (
     <section aria-label="Changes" className="flex min-h-0 flex-1 flex-col">
-      <div className="panel-tools flex h-11 shrink-0 items-center gap-2 border-b px-3 text-xs">
+      <div className="panel-tools flex h-10 shrink-0 items-center gap-2 border-hairline border-b px-3.5 text-xs">
         <span className="font-medium text-foreground">All changes</span>
         {files !== null && files.length > 0 && (
           <span className="font-mono tabular-nums">
@@ -164,9 +175,7 @@ function Changes({
             <span className="text-diff-deletion-foreground">−{removed}</span>
           </span>
         )}
-        <span className="text-muted-foreground">
-          {files === null ? "Loading…" : `${files.length} ${files.length === 1 ? "file" : "files"}`}
-        </span>
+        <span className="text-faint">{files === null ? "Loading…" : `${files.length} ${files.length === 1 ? "file" : "files"}`}</span>
         <CommentsBadge />
         <div className="ml-auto flex items-center gap-0.5">
           <DiffToggles splitOk={wide} />
@@ -253,6 +262,10 @@ export function RightPanel({
   onPanel,
   onWide,
   onClose,
+  lane = null,
+  onLane,
+  onSteer,
+  onStop,
 }: {
   c: DeckClient;
   bridge: DeckBridge;
@@ -273,13 +286,26 @@ export function RightPanel({
   onEditQueued: (text: string) => void;
   onError: (t: string) => void;
   onInfo: (t: string) => void;
-  onPanel: (p: Panel) => void;
+  // Opens a tab; a path to show with it, for Changes.
+  onPanel: (p: Panel, path?: string) => void;
   onWide: () => void;
   onClose: () => void;
+  // The room's lane filter and verbs, for the Graph tab's agent card.
+  // Without them it puts "$agent " in the composer to steer, interrupts the
+  // agent to stop it, and cannot filter the conversation.
+  lane?: string | null;
+  onLane?: (lane: string | null) => void;
+  onSteer?: (agent: string) => void;
+  onStop?: (agent: string) => void;
 }) {
   const queued = open === undefined ? 0 : (state.queue[open.id]?.length ?? 0);
   const ports = useOpenPorts(c.project);
   const tabs = PANELS.filter((p) => p.panel !== "preview" || panel === "preview" || ports.length > 0);
+  // A file the graph opened, until the Shell hands one itself.
+  const [asked, setAsked] = useState<string | null>(null);
+  useEffect(() => {
+    if (panel !== "changes") setAsked(null);
+  }, [panel]);
   return (
     <aside
       className={cn(
@@ -290,56 +316,48 @@ export function RightPanel({
       aria-label="Side panel"
       data-yolo-region=""
     >
-      <header className="panel-head drag @container/head flex h-13 shrink-0 items-center gap-1 border-b px-2">
+      <header className="panel-head drag @container/head flex h-12 shrink-0 items-center gap-2 px-2.5">
         <h2 className="sr-only">{PANELS.find((p) => p.panel === panel)?.label}</h2>
-        {/* The panel's views as a toolbar's segmented control. */}
-        <div
-          className="flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-[calc(var(--control-radius)+2px)] bg-secondary p-0.5 [scrollbar-width:none]"
-          role="tablist"
-          aria-label="Room"
-        >
+        {/* The panel's views as a segmented control. */}
+        <div className={cn(segmentTrack(), "min-w-0 overflow-x-auto [scrollbar-width:none]")} role="tablist" aria-label="Room">
           {tabs.map((p) => {
             const Icon = TAB_ICONS[p.panel];
+            const on = panel === p.panel;
             return (
               <button
                 key={p.panel}
                 type="button"
                 role="tab"
-                aria-selected={panel === p.panel}
+                aria-selected={on}
                 aria-label={p.label}
                 title={p.label}
-                className={cn(
-                  "flex h-6 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[var(--control-radius)] px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  panel === p.panel
-                    ? "bg-segment font-medium text-foreground shadow-card"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
+                className={cn(segmentItem({ on }), "px-2.5")}
                 onClick={() => onPanel(p.panel)}
               >
-                <Icon className="size-3.5" />
+                <Icon className="size-3.5" weight={on ? "fill" : "regular"} />
                 {/* Five tabs in a narrow panel: only the open one keeps its name. */}
-                <span className={panel === p.panel || tabs.length < 5 ? undefined : "hidden @[34rem]/head:inline"}>{p.label}</span>
+                <span className={on || tabs.length < 5 ? undefined : "hidden @[36rem]/head:inline"}>{p.label}</span>
                 {p.panel === "tasks" && queued > 0 && <Badge variant="muted">{queued}</Badge>}
               </button>
             );
           })}
         </div>
-        <div className="ml-auto flex items-center gap-0.5">
+        <div className="liquid-clear ml-auto flex shrink-0 items-center gap-0.5 rounded-full p-0.5">
           <Button
             variant="ghost-muted"
-            size="icon-sm"
+            size="icon-xs"
             aria-label={wide ? "Narrow the panel" : "Widen the panel"}
             title={wide ? "Narrow the panel" : "Widen the panel"}
             onClick={onWide}
           >
             {wide ? <Minimize2 /> : <Maximize2 />}
           </Button>
-          <Button variant="ghost-muted" size="icon-sm" aria-label="Close the panel" title="Close the panel" onClick={onClose}>
+          <Button variant="ghost-muted" size="icon-xs" aria-label="Close the panel" title="Close the panel" onClick={onClose}>
             <X />
           </Button>
         </div>
       </header>
-      <div className="panel-body flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className={cn("panel-body flex min-h-0 flex-1 flex-col", panel === "graph" ? "overflow-hidden" : "overflow-y-auto")}>
         {panel === "preview" ? (
           // A dev server belongs to the project, not to one thread.
           c.project === undefined ? (
@@ -350,7 +368,26 @@ export function RightPanel({
         ) : open === undefined ? (
           <Empty>Open a thread to see its changes, tasks and agents.</Empty>
         ) : panel === "changes" ? (
-          <Changes files={files} focus={focus} wide={wide} onRefresh={onRefresh} revert={revertWith(c, projectKey, open.id, onRefresh)} />
+          <Changes files={files} focus={focus ?? asked} wide={wide} onRefresh={onRefresh} revert={revertWith(c, projectKey, open.id, onRefresh)} />
+        ) : panel === "graph" ? (
+          <WorkGraph
+            key={open.id}
+            compact={!wide}
+            api={c.project}
+            sid={open.id}
+            roster={state.roster[open.id] ?? NO_ROSTER}
+            files={files}
+            theme={state.theme}
+            lane={lane}
+            onLane={onLane ?? (() => {})}
+            onOpenFile={(path) => {
+              setAsked(path);
+              onPanel("changes", path);
+            }}
+            onOpenTasks={() => onPanel("tasks")}
+            onSteer={onSteer ?? ((agent) => onEditQueued(`$${agent} `))}
+            onStop={onStop ?? ((agent) => void c.interrupt(open.id, agent))}
+          />
         ) : panel === "tasks" ? (
           <TasksPanel
             key={open.id}
@@ -384,11 +421,15 @@ export function RightPanel({
   );
 }
 
+const NO_ROSTER: AgentLine[] = [];
 const wholeState = (s: AppState): AppState => s;
+// The graph reads the rooms' rosters too.
+const graphSlice = (s: AppState) => ({ ...panelSlice(s), roster: s.roster });
 
 // The side panel takes the whole state but reads only the panel slice (the
-// side chat reads messages too), so it renders when that slice changes.
+// side chat reads messages too, the graph the rosters), so it renders when
+// that slice changes.
 export function LiveRightPanel(props: Omit<ComponentProps<typeof RightPanel>, "state">) {
-  useAppSlice(props.c.store, props.panel === "side" ? wholeState : panelSlice, shallowEqual);
+  useAppSlice(props.c.store, props.panel === "side" ? wholeState : props.panel === "graph" ? graphSlice : panelSlice, shallowEqual);
   return <RightPanel {...props} state={props.c.store.state} />;
 }

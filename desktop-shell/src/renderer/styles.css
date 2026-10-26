@@ -1776,3 +1776,38 @@ body {
   --syn-punct: #657b83;
   --syn-variable: #586e75;
 }
+
+/* ── Work Graph ── */
+/* The Work Graph's canvas (ui/graph/, docs/design-glass.md section 7).
+   Two things utilities cannot express: a dot grid that pans and zooms with
+   the graph, from the view the canvas writes into --gx, --gy and --gk on
+   each frame without a render; and the dash that flows along the edge to a
+   file an agent edits now. Both live states stop under reduced motion and
+   while the canvas is off screen (data-live="off"). */
+.work-graph {
+  --graph-dot: color-mix(in srgb, var(--text) 13%, transparent);
+  background-image: radial-gradient(circle, var(--graph-dot) 1px, transparent 1.3px);
+  background-size: calc(22px * var(--gk, 1)) calc(22px * var(--gk, 1));
+  background-position: var(--gx, 0) var(--gy, 0);
+}
+/* A layer that moves under the pointer is a composited layer while it
+   moves, and is drawn crisp again at its new scale when it stops. */
+.work-graph[data-moving] .graph-layer {
+  will-change: transform;
+}
+@keyframes graph-flow {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+/* Stepped, as the pulses are: ten frames a second, not sixty. */
+.graph-flow {
+  stroke-dasharray: 6 6;
+  animation: graph-flow 1.2s steps(12) infinite;
+}
+[data-motion="reduced"] .graph-flow,
+.work-graph[data-live="off"] .graph-flow,
+.work-graph[data-live="off"] .animate-deck-pulse,
+.work-graph[data-live="off"] .animate-spin {
+  animation: none;
+}

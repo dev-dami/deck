@@ -117,6 +117,14 @@ export class FakeRpcDeck {
       { id: "t5", title: "Add a regression test", status: "failed", owner: "codex-1", error: "go test failed", attempts: 2, tries: 2 },
     ] as Obj[],
   };
+  // The open thread's agents tree; a test may swap it (test/e2e/graph.spec.ts).
+  crew: { agents: Obj[]; running: Obj[] } = {
+    agents: [
+      { name: "claude-1", kind: "claude", model: "opus", status: "tool", depth: 0, context_tokens: 60000, context_window: 200000, since: Date.now() - 65_000 },
+      { name: "codex-sub", kind: "codex", model: "gpt-5", status: "working", depth: 1, parent: "claude-1", branch: "deck/t3", leases: "pkg/remote/** (exclusive)" },
+    ],
+    running: [{ agent: "claude-1", kind: "claude", name: "Bash", summary: "go test ./pkg/remote/...", started: Date.now() - 12_000, command: true }],
+  };
   // The team link.
   readonly team = {
     chat: [{ seq: 1, from: "vps", agent: "claude2", text: "I am on the flaky test.", at: Date.now() }] as Obj[],
@@ -380,13 +388,7 @@ export class FakeRpcDeck {
       b.orchestrate = r["on"] === true;
       return {};
     });
-    unary("Agents", () => ({
-      agents: [
-        { name: "claude-1", kind: "claude", model: "opus", status: "tool", depth: 0, context_tokens: 60000, context_window: 200000, since: Date.now() - 65_000 },
-        { name: "codex-sub", kind: "codex", model: "gpt-5", status: "working", depth: 1, parent: "claude-1", branch: "deck/t3", leases: "pkg/remote/** (exclusive)" },
-      ],
-      running: [{ agent: "claude-1", kind: "claude", name: "Bash", summary: "go test ./pkg/remote/...", started: Date.now() - 12_000, command: true }],
-    }));
+    unary("Agents", () => this.crew);
     const tm = this.team;
     unary("Team", () => ({
       available: true,
