@@ -32,7 +32,7 @@ export function Kbd({ className, ...props }: ComponentProps<"kbd">) {
   return (
     <kbd
       className={cn(
-        "pointer-events-none inline-flex h-5 min-w-5 select-none items-center justify-center gap-1 rounded border border-hairline px-1 font-mono text-3xs text-faint",
+        "pointer-events-none inline-flex h-5 min-w-5 select-none items-center justify-center gap-1 rounded-[5px] bg-hover px-1 font-sans text-2xs text-muted-foreground shadow-[inset_0_0_0_1px_var(--hairline),0_1px_0_var(--hairline-strong)]",
         className,
       )}
       {...props}

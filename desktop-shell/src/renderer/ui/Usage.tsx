@@ -6,9 +6,20 @@ import { cn } from "../lib/cn";
 import type { ProjectApi, Usage, UsageDay } from "../project";
 import { formatDuration } from "../work";
 import { Button } from "./kit/button";
+import { EmptyPlate } from "./kit/plate";
+import { PLATES } from "../plates";
+import { segmentItem, segmentTrack } from "./kit/segmented";
+import { AgentGlyph } from "./Welcome";
 
 // Deck's local record of what the agents used and how you work, after T3
 // Code's usage page. Nothing here leaves the machine.
+//
+// The charts keep to a few rules (the dataviz method): one series wears the
+// accent and one axis; an agent wears its own hue wherever it shows; counts
+// in a grid are one hue, light to dark, with a scale; text keeps the text
+// colours, and a coloured mark beside it carries identity. Marks are thin,
+// with 4px rounded ends on a hairline baseline, and every chart has its
+// numbers on hover or in a table.
 
 const RANGES = [
   { days: 1, label: "Today" },
@@ -28,86 +39,178 @@ export function dollars(n: number): string {
   return n >= 100 ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`;
 }
 
+// An axis's top: the next clean number at or above max (1, 2, 2.5 or 5 by
+// a power of ten), so the ticks between read round.
+export function niceCeil(max: number): number {
+  if (max <= 0) return 1;
+  const p = 10 ** Math.floor(Math.log10(max));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= max) return m * p;
+  return 10 * p;
+}
+
+// A tick's label: compact, without a needless ".0".
+const tick = (n: number) => compact(n).replace(/\.0(?=[kMB]?$)/, "");
+
 const dayLabel = (ms: number) => new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
 
-function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+// A part of the page: its title, a line under it, and an action at the
+// trailing edge, then what it shows. No box: the parts stand apart by
+// space, and the title leads.
+function Card({
+  title,
+  sub,
+  action,
+  className,
+  children,
+}: {
+  title: string;
+  sub?: ReactNode;
+  action?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <section className="space-y-2.5">
-      <div className="flex min-h-7 items-center justify-between px-1">
-        <h2 className="text-foreground/70 text-sm">{title}</h2>
+    <section aria-label={title} className={cn("flex min-w-0 flex-col gap-4", className)}>
+      <header className="flex items-end gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <h2 className="font-semibold text-[13px]">{title}</h2>
+          {sub !== undefined && <p className="text-2xs text-faint">{sub}</p>}
+        </div>
         {action}
-      </div>
-      <div className="rounded-xl border border-border/60 bg-card/40 p-4">{children}</div>
+      </header>
+      <div className="flex-1">{children}</div>
     </section>
   );
 }
 
-function Tile({ label, value, detail }: { label: string; value: string; detail?: string }) {
+// A trend in a tile: the days as a thin line in the quiet ink, the last
+// day as a dot of the accent. The line stretches to the tile; the dot is
+// drawn over it, so it stays round.
+function Spark({ values }: { values: number[] }) {
+  if (values.length < 2) return null;
+  const max = Math.max(1, ...values);
+  const h = 24;
+  const y = (v: number) => h - 3 - (v / max) * (h - 6);
+  const pts = values.map((v, i) => `${(i / (values.length - 1)) * 100},${y(v)}`).join(" ");
   return (
-    <div className="flex flex-col gap-1 rounded-xl border border-border/60 bg-card/40 px-4 py-3" data-tile={label}>
-      <span className="text-muted-foreground text-xs">{label}</span>
-      <span className="font-semibold text-2xl tabular-nums tracking-tight">{value}</span>
-      {detail !== undefined && <span className="text-muted-foreground text-xs tabular-nums">{detail}</span>}
+    <div aria-hidden className="relative h-6">
+      <svg viewBox={`0 0 100 ${h}`} preserveAspectRatio="none" className="size-full overflow-visible">
+        <polyline
+          points={pts}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+          className="text-faint/70"
+        />
+      </svg>
+      <span
+        className="absolute right-0 size-2 translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-background"
+        style={{ top: `${(y(values[values.length - 1]!) / h) * 100}%` }}
+      />
     </div>
   );
 }
 
-// Tokens per day: one series, one hue; hover a bar for its numbers.
-function DailyBars({ days }: { days: UsageDay[] }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const max = Math.max(1, ...days.map((d) => d.tokens));
-  const h = days[hover ?? -1];
+// A stat tile: the label, the figure in proportional digits, what makes it
+// up, and the days' trend.
+function Tile({ label, value, detail, trend }: { label: string; value: string; detail?: string; trend?: ReactNode }) {
   return (
-    <div className="relative">
-      <div className="flex h-40 items-end gap-[2px]" role="img" aria-label="Tokens per day">
-        {days.map((d, i) => (
-          <div
-            key={d.day}
-            className="flex h-full min-w-0 flex-1 cursor-default items-end"
-            onMouseEnter={() => setHover(i)}
-            onMouseLeave={() => setHover(null)}
-          >
-            <div
-              className={cn("w-full rounded-t-[4px] bg-primary transition-opacity", hover !== null && hover !== i && "opacity-50")}
-              style={{ height: d.tokens === 0 ? 0 : `${Math.max(2, (d.tokens / max) * 100)}%` }}
-            />
-          </div>
-        ))}
-      </div>
-      <div className="mt-2 flex justify-between text-2xs text-muted-foreground tabular-nums">
-        <span>{days[0] === undefined ? "" : dayLabel(days[0].day)}</span>
-        <span>{days.length > 1 ? dayLabel(days[days.length - 1]!.day) : ""}</span>
-      </div>
-      {h !== undefined && (
-        <div className="pointer-events-none absolute top-0 right-0 rounded-lg border border-hairline-strong bg-surface-2 px-3 py-2 text-xs shadow-popover" role="status">
-          <div className="font-medium">{dayLabel(h.day)}</div>
-          <div className="text-muted-foreground tabular-nums">
-            {compact(h.tokens)} tokens · {h.turns} turns · {dollars(h.costUsd)}
-          </div>
-        </div>
-      )}
+    <div className="flex min-w-0 flex-col gap-1" data-tile={label}>
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <span className="font-semibold text-[2rem] leading-tight tracking-[-0.03em] [font-variant-numeric:normal]">{value}</span>
+      {detail !== undefined && <span className="truncate text-2xs text-faint tabular-nums">{detail}</span>}
+      {trend !== undefined && <div className="mt-1.5">{trend}</div>}
     </div>
   );
 }
+
+// Tokens per day: one series in the accent, on one axis with three round
+// ticks. Hover a column for its day's numbers; the others step back.
+function DailyBars({ days }: { days: UsageDay[] }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const top = niceCeil(Math.max(0, ...days.map((d) => d.tokens)));
+  const h = hover === null ? undefined : days[hover];
+  const ticks = [top, top / 2, 0];
+  const mid = days[Math.floor((days.length - 1) / 2)];
+  return (
+    <div className="flex gap-3">
+      <div className="flex h-44 w-9 shrink-0 flex-col justify-between text-right text-3xs text-faint tabular-nums" aria-hidden>
+        {ticks.map((t) => (
+          <span key={t} className="-translate-y-1/2 leading-none last:translate-y-1/2">
+            {tick(t)}
+          </span>
+        ))}
+      </div>
+      <div className="relative min-w-0 flex-1">
+        {/* Hairline gridlines at the ticks, solid and recessive. */}
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 flex h-44 flex-col justify-between">
+          {ticks.map((t) => (
+            <span key={t} className={cn("h-px", t === 0 ? "bg-hairline-strong" : "bg-hairline")} />
+          ))}
+        </div>
+        <div className="relative flex h-44 items-end" role="img" aria-label="Tokens per day" onMouseLeave={() => setHover(null)}>
+          {days.map((d, i) => (
+            <div
+              key={d.day}
+              className="flex h-full min-w-0 flex-1 cursor-default items-end justify-center px-px"
+              onMouseEnter={() => setHover(i)}
+            >
+              <div
+                className={cn(
+                  "w-full max-w-[18px] rounded-t-[4px] bg-primary transition-opacity duration-150",
+                  hover !== null && hover !== i && "opacity-35",
+                )}
+                style={{ height: d.tokens === 0 ? 0 : `${Math.max(1.5, (d.tokens / top) * 100)}%` }}
+              />
+            </div>
+          ))}
+          {h !== undefined && hover !== null && (
+            <div
+              className="material pointer-events-none absolute bottom-full z-10 mb-2 w-max -translate-x-1/2 rounded-[10px] px-3 py-2 text-xs"
+              style={{ left: `clamp(4.5rem, ${((hover + 0.5) / days.length) * 100}%, calc(100% - 4.5rem))` }}
+              role="status"
+            >
+              <div className="font-medium">{dayLabel(h.day)}</div>
+              <div className="text-muted-foreground tabular-nums">
+                {compact(h.tokens)} tokens · {h.turns} turns · {dollars(h.costUsd)}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="mt-2 flex justify-between text-2xs text-faint tabular-nums" aria-hidden>
+          <span>{days[0] === undefined ? "" : dayLabel(days[0].day)}</span>
+          {days.length > 2 && mid !== undefined && <span>{dayLabel(mid.day)}</span>}
+          <span>{days.length > 1 ? dayLabel(days[days.length - 1]!.day) : ""}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const th = "pb-2 font-normal text-2xs text-faint";
+const td = "py-2";
 
 function DailyTable({ days }: { days: UsageDay[] }) {
   return (
     <table className="w-full text-xs tabular-nums">
-      <thead className="text-muted-foreground">
+      <thead>
         <tr className="text-left">
-          <th className="py-1 font-normal">Day</th>
-          <th className="py-1 text-right font-normal">Turns</th>
-          <th className="py-1 text-right font-normal">Tokens</th>
-          <th className="py-1 text-right font-normal">Cost</th>
+          <th className={th}>Day</th>
+          <th className={cn(th, "text-right")}>Turns</th>
+          <th className={cn(th, "text-right")}>Tokens</th>
+          <th className={cn(th, "text-right")}>Cost</th>
         </tr>
       </thead>
       <tbody>
         {[...days].reverse().map((d) => (
-          <tr key={d.day} className="border-border/50 border-t">
-            <td className="py-1">{dayLabel(d.day)}</td>
-            <td className="py-1 text-right">{d.turns}</td>
-            <td className="py-1 text-right">{compact(d.tokens)}</td>
-            <td className="py-1 text-right">{dollars(d.costUsd)}</td>
+          <tr key={d.day} className="border-hairline border-t">
+            <td className={td}>{dayLabel(d.day)}</td>
+            <td className={cn(td, "text-right text-muted-foreground")}>{d.turns}</td>
+            <td className={cn(td, "text-right text-muted-foreground")}>{compact(d.tokens)}</td>
+            <td className={cn(td, "text-right")}>{dollars(d.costUsd)}</td>
           </tr>
         ))}
       </tbody>
@@ -115,12 +218,25 @@ function DailyTable({ days }: { days: UsageDay[] }) {
   );
 }
 
-// One hue, light to dark, for counts in a grid; an empty cell is the muted
-// surface.
+// One hue, light to dark, for counts in a grid; an empty cell is a quiet
+// step of the surface.
+const HEAT = ["bg-selected", "bg-primary/25", "bg-primary/45", "bg-primary/70", "bg-primary"] as const;
 function heatClass(n: number, max: number): string {
-  if (n <= 0 || max <= 0) return "bg-muted";
-  const step = Math.min(4, Math.ceil((n / max) * 4));
-  return ["", "bg-primary/25", "bg-primary/45", "bg-primary/70", "bg-primary"][step] ?? "bg-primary";
+  if (n <= 0 || max <= 0) return HEAT[0];
+  return HEAT[Math.min(4, Math.ceil((n / max) * 4))] ?? HEAT[4];
+}
+
+// The heat's scale, from none to the most.
+function HeatScale() {
+  return (
+    <span className="flex items-center gap-1 text-2xs text-faint" aria-hidden>
+      Less
+      {HEAT.map((c) => (
+        <span key={c} className={cn("size-2.5 rounded-[3px]", c)} />
+      ))}
+      More
+    </span>
+  );
 }
 
 function Heat({ heat }: { heat: UsageDay[] }) {
@@ -134,7 +250,7 @@ function Heat({ heat }: { heat: UsageDay[] }) {
           {w.map((d) => (
             <div
               key={d.day}
-              className={cn("size-3 rounded-[3px]", heatClass(d.turns, max))}
+              className={cn("size-3.5 rounded-[3px]", heatClass(d.turns, max))}
               title={`${dayLabel(d.day)}: ${d.turns} turns, ${compact(d.tokens)} tokens`}
             />
           ))}
@@ -152,44 +268,62 @@ function Hours({ hours }: { hours: number[] }) {
     <div className="flex flex-col gap-[3px]" role="img" aria-label="Turns by weekday and hour">
       {WEEKDAYS.map((wd, d) => (
         <div key={wd} className="flex items-center gap-[3px]">
-          <span className="w-8 text-2xs text-muted-foreground">{wd}</span>
+          <span className="w-8 shrink-0 text-2xs text-faint">{wd}</span>
           {Array.from({ length: 24 }, (_, h) => {
             const n = hours[d * 24 + h] ?? 0;
-            return <div key={h} className={cn("h-3 min-w-0 flex-1 rounded-[3px]", heatClass(n, max))} title={`${wd} ${h}:00 · ${n} turns`} />;
+            return <div key={h} className={cn("h-3.5 min-w-0 flex-1 rounded-[3px]", heatClass(n, max))} title={`${wd} ${h}:00 · ${n} turns`} />;
           })}
         </div>
       ))}
-      <div className="flex justify-between pl-9 text-2xs text-muted-foreground">
+      <div className="flex justify-between pt-1 pl-[2.2rem] text-2xs text-faint tabular-nums">
         <span>0:00</span>
+        <span>6:00</span>
         <span>12:00</span>
+        <span>18:00</span>
         <span>23:00</span>
       </div>
     </div>
   );
 }
 
-function Meter({ pct }: { pct: number }) {
+// A share of a whole: the fill in its colour over a lighter step of the
+// same colour, with 4px rounded ends.
+function Bar({ pct, colour }: { pct: number; colour: string }) {
   const p = Math.max(0, Math.min(100, pct));
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-      <div
-        className={cn("h-full rounded-full", p >= 90 ? "bg-destructive" : p >= 70 ? "bg-warning" : "bg-primary")}
-        style={{ width: `${p}%` }}
-      />
+    <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ background: `color-mix(in srgb, ${colour} 16%, transparent)` }}>
+      <div className="h-full rounded-full" style={{ width: `${p}%`, background: colour, minWidth: p > 0 ? 6 : 0 }} />
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+// A plan limit: the accent, then the warning past 70% and the destructive
+// colour past 90%; the fill's severity carries over the whole bar.
+function Meter({ pct }: { pct: number }) {
+  return <Bar pct={pct} colour={pct >= 90 ? "var(--destructive)" : pct >= 70 ? "var(--warning)" : "var(--primary)"} />;
+}
+
+function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 py-1.5 text-sm">
+    <div className="flex items-baseline justify-between gap-4 py-2 text-[13px]">
       <span className="text-muted-foreground">{label}</span>
-      <span className="tabular-nums">{value}</span>
+      <span className="text-right tabular-nums">{value}</span>
     </div>
   );
 }
 
-export function UsagePage({ project, theme, onOpenThread }: { project: ProjectApi | undefined; theme: Theme | null; onOpenThread: (id: string) => void }) {
+export function UsagePage({
+  project,
+  theme,
+  onOpenThread,
+  onAddProject,
+}: {
+  project: ProjectApi | undefined;
+  theme: Theme | null;
+  onOpenThread: (id: string) => void;
+  // The empty page's next step, when the shell gives it.
+  onAddProject?: () => void;
+}) {
   const [days, setDays] = useState<number>(30);
   const [data, setData] = useState<Usage | string | null>(null);
   const [table, setTable] = useState(false);
@@ -203,23 +337,14 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
   }, [load]);
 
   const header = (
-    <header className="topbar drag flex h-13 shrink-0 items-center gap-2 border-b px-5 text-sm">
+    <header className="topbar drag flex h-13 shrink-0 items-center gap-2 px-5 text-sm">
       <BarChart3 className="size-4 text-muted-foreground" />
-      <h1 className="title font-medium">Usage</h1>
-      <div className="ml-auto flex items-center gap-1">
-        <div className="inline-flex rounded-lg border bg-background p-0.5" role="radiogroup" aria-label="Range">
+      <h1 className="title font-semibold">Usage</h1>
+      <span className="hidden text-faint text-xs sm:inline">Kept on this computer</span>
+      <div className="ml-auto flex items-center gap-1.5">
+        <div className={segmentTrack()} role="radiogroup" aria-label="Range">
           {RANGES.map((r) => (
-            <button
-              key={r.days}
-              type="button"
-              role="radio"
-              aria-checked={days === r.days}
-              onClick={() => setDays(r.days)}
-              className={cn(
-                "flex h-7 cursor-pointer items-center rounded-md px-2.5 text-xs",
-                days === r.days ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
+            <button key={r.days} type="button" role="radio" aria-checked={days === r.days} onClick={() => setDays(r.days)} className={segmentItem({ on: days === r.days })}>
               {r.label}
             </button>
           ))}
@@ -233,37 +358,81 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
 
   let body: ReactNode;
   if (project === undefined) {
-    body = <p className="py-20 text-center text-muted-foreground text-sm">Usage is kept by a Deck on this computer. Open a project folder to see it.</p>;
+    body = (
+      <EmptyPlate
+        art={PLATES.fuji}
+        title="No usage here"
+        hint="Usage is kept by a Deck on this computer. Open a project folder to see it."
+        className="py-20"
+        action={
+          onAddProject !== undefined && (
+            <Button variant="outline" size="sm" onClick={onAddProject}>
+              Add project…
+            </Button>
+          )
+        }
+      />
+    );
   } else if (data === null) {
     body = (
-      <p className="flex items-center justify-center gap-2 py-20 text-muted-foreground text-sm">
+      <p className="flex items-center justify-center gap-2 py-24 text-muted-foreground text-sm">
         <Loader2 className="size-4 animate-spin" /> Reading the usage record…
       </p>
     );
   } else if (typeof data === "string") {
-    body = <p className="py-20 text-center text-destructive-foreground text-sm">{data}</p>;
+    body = <p className="py-24 text-center text-destructive-foreground text-sm">{data}</p>;
   } else if (!data.available) {
-    body = <p className="py-20 text-center text-muted-foreground text-sm">This Deck keeps no usage record.</p>;
+    body = <EmptyPlate art={PLATES.fuji} title="No usage record" hint="This Deck keeps no usage record." className="py-20" />;
   } else {
     const o = data.overview;
     const tokens = o.inputTokens + o.outputTokens;
-    const maxKind = Math.max(1, ...data.kinds.map((k) => k.inputTokens + k.outputTokens));
+    const kindTokens = data.kinds.map((k) => k.inputTokens + k.outputTokens);
+    const allKinds = Math.max(1, kindTokens.reduce((a, b) => a + b, 0));
     const h = data.habits;
+    const series = data.days.length > 1;
+    const maxThread = Math.max(0.01, ...data.sessions.map((x) => x.costUsd));
     body = (
       <>
         {o.turns === 0 && (
-          <p className="rounded-xl border border-dashed px-4 py-3 text-muted-foreground text-sm">
+          <p className="text-pretty text-muted-foreground text-sm">
             {o.allTurns === 0 ? "Nothing yet: usage shows up once agents finish turns." : "No turns in this range."}
           </p>
         )}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Tile label="Tokens" value={compact(tokens)} detail={`${compact(o.inputTokens)} in · ${compact(o.outputTokens)} out`} />
-          <Tile label="Cost" value={dollars(o.costUsd)} detail="as the agents' CLIs reported it" />
-          <Tile label="Turns" value={String(o.turns)} detail={`${o.interrupted} stopped · ${o.failed} failed`} />
-          <Tile label="Cache hits" value={`${Math.round(o.cacheHitPct)}%`} detail={`first token in ${formatDuration(o.ttftAvgMs)} on average`} />
+        <div className="grid grid-cols-2 gap-x-8 gap-y-6 border-hairline border-b pb-8 lg:grid-cols-4">
+          <Tile
+            label="Tokens"
+            value={compact(tokens)}
+            detail={`${compact(o.inputTokens)} in · ${compact(o.outputTokens)} out`}
+            trend={series ? <Spark values={data.days.map((d) => d.tokens)} /> : undefined}
+          />
+          <Tile
+            label="Cost"
+            value={dollars(o.costUsd)}
+            detail="as the agents' CLIs reported it"
+            trend={series ? <Spark values={data.days.map((d) => d.costUsd)} /> : undefined}
+          />
+          <Tile
+            label="Turns"
+            value={String(o.turns)}
+            detail={`${o.interrupted} stopped · ${o.failed} failed`}
+            trend={series ? <Spark values={data.days.map((d) => d.turns)} /> : undefined}
+          />
+          <Tile
+            label="Cache hits"
+            value={`${Math.round(o.cacheHitPct)}%`}
+            detail={`first token in ${formatDuration(o.ttftAvgMs)} on average`}
+            trend={
+              series ? (
+                <div className="flex h-6 items-center">
+                  <Bar pct={o.cacheHitPct} colour="var(--primary)" />
+                </div>
+              ) : undefined
+            }
+          />
         </div>
-        <Section
+        <Card
           title="Tokens per day"
+          sub={`${compact(tokens)} in this range`}
           action={
             <Button variant="ghost-muted" size="xs" aria-pressed={table} onClick={() => setTable((t) => !t)}>
               {table ? <BarChart3 /> : <Table2 />}
@@ -272,48 +441,47 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
           }
         >
           {table ? <DailyTable days={data.days} /> : <DailyBars days={data.days} />}
-        </Section>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Section title="By agent">
-            <div className="flex flex-col gap-3">
+        </Card>
+        <div className="grid gap-10 lg:grid-cols-2 lg:gap-12">
+          <Card title="By agent" sub="Share of the tokens">
+            <div className="flex flex-col gap-4">
               {data.kinds.length === 0 && <p className="text-muted-foreground text-sm">No agents in this range.</p>}
-              {data.kinds.map((k) => {
-                const t = k.inputTokens + k.outputTokens;
+              {data.kinds.map((k, i) => {
+                const t = kindTokens[i] ?? 0;
                 return (
-                  <div key={k.kind} className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="font-mono text-xs" style={{ color: kindColour(k.kind) }}>
-                        {kindMark(theme, k.kind) || "●"}
-                      </span>
-                      <span className="flex-1">{k.kind}</span>
-                      <span className="text-muted-foreground text-xs tabular-nums">
-                        {compact(t)} · {k.turns} turns · {dollars(k.costUsd)}
-                      </span>
-                    </div>
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full" style={{ width: `${(t / maxKind) * 100}%`, background: kindColour(k.kind) }} />
+                  <div key={k.kind} className="flex items-center gap-3">
+                    <AgentGlyph kind={k.kind} mark={kindMark(theme, k.kind)} className="text-[15px]" />
+                    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                      <div className="flex items-baseline gap-2 text-[13px]">
+                        <span className="font-medium">{k.kind}</span>
+                        <span className="text-faint text-xs tabular-nums">{Math.round((t / allKinds) * 100)}%</span>
+                        <span className="ml-auto text-muted-foreground text-xs tabular-nums">
+                          {compact(t)} · {k.turns} turns · {dollars(k.costUsd)}
+                        </span>
+                      </div>
+                      <Bar pct={(t / allKinds) * 100} colour={kindColour(k.kind)} />
                     </div>
                   </div>
                 );
               })}
             </div>
-          </Section>
-          <Section title="Plan limits">
+          </Card>
+          <Card title="Plan limits" sub="As each agent last reported them">
             {data.limits.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No agent has reported its plan limits yet.</p>
+              <p className="text-pretty text-muted-foreground text-sm">No agent has reported its plan limits yet.</p>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-4">
                 {data.limits.map((l) => (
-                  <div key={`${l.agentKind}/${l.windowId}`} className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2 text-sm">
+                  <div key={`${l.agentKind}/${l.windowId}`} className="flex flex-col gap-1.5">
+                    <div className="flex items-baseline gap-2 text-[13px]">
                       <span className="flex-1">
-                        {l.agentKind} <span className="text-muted-foreground">· {l.label || l.kind}</span>
+                        <span className="font-medium">{l.agentKind}</span> <span className="text-muted-foreground">· {l.label || l.kind}</span>
                       </span>
                       <span className="text-xs tabular-nums">{Math.round(l.usedPct)}% used</span>
                     </div>
                     <Meter pct={l.usedPct} />
                     {l.resetsAt > 0 && (
-                      <span className="text-2xs text-muted-foreground">
+                      <span className="text-2xs text-faint">
                         Resets {new Date(l.resetsAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}
                       </span>
                     )}
@@ -321,71 +489,83 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
                 ))}
               </div>
             )}
-          </Section>
+          </Card>
         </div>
-        <Section title="Models">
-          <table className="w-full text-sm tabular-nums">
-            <thead className="text-muted-foreground text-xs">
+        <Card title="Models">
+          <table className="w-full text-[13px] tabular-nums">
+            <thead>
               <tr className="text-left">
-                <th className="pb-2 font-normal">Model</th>
-                <th className="pb-2 text-right font-normal">Turns</th>
-                <th className="pb-2 text-right font-normal">Input</th>
-                <th className="pb-2 text-right font-normal">Output</th>
-                <th className="pb-2 text-right font-normal">Cached</th>
-                <th className="pb-2 text-right font-normal">Cost</th>
+                <th className={th}>Model</th>
+                <th className={cn(th, "text-right")}>Turns</th>
+                <th className={cn(th, "text-right")}>Input</th>
+                <th className={cn(th, "text-right")}>Output</th>
+                <th className={cn(th, "text-right")}>Cached</th>
+                <th className={cn(th, "text-right")}>Cost</th>
               </tr>
             </thead>
             <tbody>
               {data.models.map((m) => (
-                <tr key={`${m.kind}/${m.model}`} className="border-border/50 border-t">
-                  <td className="py-1.5">
-                    <span className="mr-1.5 font-mono text-xs" style={{ color: kindColour(m.kind) }}>
-                      {kindMark(theme, m.kind) || "●"}
+                <tr key={`${m.kind}/${m.model}`} className="border-hairline border-t">
+                  <td className={td}>
+                    <span className="flex items-center gap-2">
+                      <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: kindColour(m.kind) }} />
+                      {m.model || `${m.kind} (default)`}
                     </span>
-                    {m.model || `${m.kind} (default)`}
                   </td>
-                  <td className="py-1.5 text-right">{m.turns}</td>
-                  <td className="py-1.5 text-right">{compact(m.inputTokens)}</td>
-                  <td className="py-1.5 text-right">{compact(m.outputTokens)}</td>
-                  <td className="py-1.5 text-right">{compact(m.cachedTokens)}</td>
-                  <td className="py-1.5 text-right">{dollars(m.costUsd)}</td>
+                  <td className={cn(td, "text-right text-muted-foreground")}>{m.turns}</td>
+                  <td className={cn(td, "text-right text-muted-foreground")}>{compact(m.inputTokens)}</td>
+                  <td className={cn(td, "text-right text-muted-foreground")}>{compact(m.outputTokens)}</td>
+                  <td className={cn(td, "text-right text-muted-foreground")}>{compact(m.cachedTokens)}</td>
+                  <td className={cn(td, "text-right font-medium")}>{dollars(m.costUsd)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </Section>
+        </Card>
         {data.sessions.length > 0 && (
-          <Section title="Costliest threads">
-            <ul className="flex flex-col">
-              {data.sessions.map((x) => (
+          <Card title="Costliest threads">
+            <ul className="-mx-2 flex flex-col [&>li+li]:border-hairline [&>li+li]:border-t">
+              {data.sessions.map((x, i) => (
                 <li key={x.sessionId}>
                   <button
                     type="button"
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent disabled:cursor-default"
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-[10px] px-2 py-2 text-left text-[13px] outline-none transition-colors hover:bg-hover focus-visible:bg-selected disabled:cursor-default"
                     disabled={x.title === ""}
                     onClick={() => onOpenThread(x.sessionId)}
                   >
-                    <span className="min-w-0 flex-1 truncate">{x.title || "Deleted thread"}</span>
-                    <span className="text-muted-foreground text-xs tabular-nums">
-                      {x.turns} turns · {compact(x.tokens)} · {dollars(x.costUsd)}
+                    <span className="w-4 shrink-0 text-right text-2xs text-faint tabular-nums">{i + 1}</span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className={cn("min-w-0 truncate", x.title === "" && "text-faint")}>{x.title || "Deleted thread"}</span>
+                      <span aria-hidden className="block h-1 rounded-full bg-primary/70" style={{ width: `${Math.max(2, (x.costUsd / maxThread) * 100)}%` }} />
                     </span>
+                    <span className="shrink-0 text-faint text-xs tabular-nums">
+                      {x.turns} turns · {compact(x.tokens)}
+                    </span>
+                    <span className="w-14 shrink-0 text-right font-medium tabular-nums">{dollars(x.costUsd)}</span>
                   </button>
                 </li>
               ))}
             </ul>
-          </Section>
+          </Card>
         )}
-        <Section title="Activity, last 20 weeks">
-          <Heat heat={data.heat} />
-        </Section>
+        <div className="grid gap-10 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-12">
+          <Card title="Activity" sub="Turns per day, the last 20 weeks">
+            <div className="flex flex-col gap-3">
+              <Heat heat={data.heat} />
+              <HeatScale />
+            </div>
+          </Card>
+          {h !== null && (
+            <Card title="When you work" sub="Turns by weekday and hour">
+              <Hours hours={h.hours} />
+            </Card>
+          )}
+        </div>
         {h !== null && (
           <>
-            <Section title="When you work">
-              <Hours hours={h.hours} />
-            </Section>
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Section title="How you work">
-                <div className="divide-y divide-border/50">
+            <div className="grid gap-10 lg:grid-cols-2 lg:gap-12">
+              <Card title="How you work">
+                <div className="-mt-2 divide-y divide-hairline">
                   <Stat label="Active days" value={`${h.activeDays} · longest streak ${h.streak}`} />
                   <Stat label="Time to review a reply" value={`${formatDuration(h.reviewMedianMs)} median · ${formatDuration(h.reviewP90Ms)} p90`} />
                   <Stat label="Time to answer an approval" value={`${formatDuration(h.approvalMedianMs)} median · ${Math.round(h.approvalFastPct)}% under 1s`} />
@@ -393,18 +573,26 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
                   <Stat label="Redirects after a stop" value={String(h.redirects)} />
                   <Stat label="Typical message" value={`${h.promptMedian} characters`} />
                 </div>
-              </Section>
-              <Section title="What the agents changed">
-                <div className="divide-y divide-border/50">
+              </Card>
+              <Card title="What the agents changed">
+                <div className="-mt-2 divide-y divide-hairline">
                   <Stat label="Turns that edited files" value={String(h.editTurns)} />
                   <Stat label="Files changed" value={String(h.editFiles)} />
-                  <Stat label="Lines" value={`+${compact(h.linesAdded)} −${compact(h.linesRemoved)}`} />
+                  <Stat
+                    label="Lines"
+                    value={
+                      <>
+                        <span className="text-diff-add-fg">+{compact(h.linesAdded)}</span>{" "}
+                        <span className="text-diff-del-fg">−{compact(h.linesRemoved)}</span>
+                      </>
+                    }
+                  />
                   <Stat label="Changes taken back" value={String(h.reverts)} />
                   {h.fit.slice(0, 4).map((f) => (
                     <Stat key={`${f.kind}/${f.class}`} label={`${f.kind}: ${f.class} tools`} value={`${f.calls} calls`} />
                   ))}
                 </div>
-              </Section>
+              </Card>
             </div>
           </>
         )}
@@ -416,7 +604,7 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
     <div className="usage flex min-h-0 flex-1 flex-col" data-usage="">
       {header}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8">{body}</div>
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-12 px-8 pt-4 pb-14">{body}</div>
       </div>
     </div>
   );
