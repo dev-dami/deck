@@ -95,7 +95,7 @@ func TestProfileMentionWithoutProfilesIsText(t *testing.T) {
 type namesTeam []string
 
 func (n namesTeam) Names() []string { return n }
-func (namesTeam) List() string     { return "" }
+func (namesTeam) List() string      { return "" }
 func (namesTeam) Status(context.Context, string) (string, error) {
 	return "", nil
 }
