@@ -1,7 +1,7 @@
 import type { Session } from "@web/protocol";
 import { relativeTime } from "@web/time";
 import { kindColour } from "@web/theme";
-import { Check, Eye, Handshake, Loader2, MessageSquarePlus as ChatCircleText, RefreshCw, Send, Users, X } from "./icons";
+import { Check, Eye, Handshake, Loader2, RefreshCw, Send, Users, X } from "./icons";
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Team, Teammate, TeamThread } from "../crew";
 import { cn } from "../lib/cn";
@@ -43,7 +43,8 @@ const CONTRACT_DOT: Record<string, string> = {
   failed: "bg-destructive",
 };
 
-// A card on the page: its title and glyph, an action at the trailing edge.
+// A part of the page: its title, an action at the trailing edge, then what
+// it holds. No box: the title leads and space parts one from the next.
 function Card({
   title,
   icon,
@@ -58,12 +59,9 @@ function Card({
   children: ReactNode;
 }) {
   return (
-    <section
-      aria-label={title}
-      className={cn("flex flex-col overflow-hidden rounded-(--sheet-radius) bg-surface-1 shadow-[0_1px_2px_rgb(0_0_0/0.04)] ring-1 ring-hairline", className)}
-    >
-      <div className="flex min-h-11 items-center justify-between gap-2 px-4 pt-1">
-        <h2 className="flex items-center gap-2 font-semibold text-[13px] [&_svg]:size-4 [&_svg]:text-muted-foreground">
+    <section aria-label={title} className={cn("flex min-w-0 flex-col", className)}>
+      <div className="flex items-baseline justify-between gap-2 border-hairline border-b pb-2">
+        <h2 className="flex items-center gap-2 font-semibold text-[13px] [&_svg]:size-4 [&_svg]:self-center [&_svg]:text-muted-foreground">
           {icon}
           {title}
         </h2>
@@ -74,12 +72,12 @@ function Card({
   );
 }
 
-// A teammate's face: their initials on glass, with a dot for their link.
+// A teammate's face: their initials, with a dot for their link.
 function Avatar({ name, link }: { name: string; link: string }) {
   return (
-    <span aria-hidden className="liquid-clear relative grid size-9 shrink-0 place-items-center rounded-full font-semibold text-2xs text-muted-foreground">
+    <span aria-hidden className="relative grid size-8 shrink-0 place-items-center rounded-full bg-selected font-semibold text-2xs text-muted-foreground">
       {initials(name)}
-      <span className={cn("absolute -right-px -bottom-px size-2.5 rounded-full ring-2 ring-surface-1", LINK_DOT[link] ?? LINK_DOT[""])} />
+      <span className={cn("absolute -right-px -bottom-px size-2.5 rounded-full ring-2 ring-background", LINK_DOT[link] ?? LINK_DOT[""])} />
     </span>
   );
 }
@@ -101,7 +99,7 @@ export function useTeam(api: ProjectApi | undefined, every = 5000) {
 
 function Mate({ m, now, onOpen }: { m: Teammate; now: number; onOpen: (peer: string, t: TeamThread) => void }) {
   return (
-    <li className="teammate flex gap-3 px-4 py-3.5" data-peer={m.name}>
+    <li className="teammate flex gap-3 py-3.5" data-peer={m.name}>
       <Avatar name={m.name} link={m.link} />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div className="flex min-w-0 items-baseline gap-2 pt-0.5">
@@ -114,7 +112,7 @@ function Mate({ m, now, onOpen }: { m: Teammate; now: number; onOpen: (peer: str
         {(m.agents.length > 0 || m.threads.length > 0) && (
           <ul className="flex flex-col gap-1">
             {m.agents.map((a) => (
-              <li key={a.name} className="flex min-w-0 items-center gap-2 rounded-[10px] bg-hover px-2.5 py-1.5 text-xs">
+              <li key={a.name} className="flex min-w-0 items-center gap-2 py-0.5 text-xs">
                 <span
                   aria-hidden
                   className={cn("size-1.5 shrink-0 rounded-full", a.status !== "idle" && "animate-deck-pulse")}
@@ -134,7 +132,7 @@ function Mate({ m, now, onOpen }: { m: Teammate; now: number; onOpen: (peer: str
               </li>
             ))}
             {m.threads.map((t) => (
-              <li key={t.id} className="flex min-w-0 items-center gap-2 rounded-[10px] px-2.5 py-1 text-xs">
+              <li key={t.id} className="flex min-w-0 items-center gap-2 py-0.5 text-xs">
                 <Eye aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 truncate font-medium">{t.title}</span>
                 <span className="shrink-0 text-faint">shared with you as {t.role}</span>
@@ -167,7 +165,7 @@ function Chat({ team, api, onError, onDone }: { team: Team; api: ProjectApi; onE
   };
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div ref={list} className="team-chat flex max-h-[28rem] min-h-48 flex-1 flex-col gap-2.5 overflow-y-auto px-4 pt-1 pb-4">
+      <div ref={list} className="team-chat flex max-h-[28rem] min-h-48 flex-1 flex-col gap-2.5 overflow-y-auto pt-4 pb-4">
         {team.chat.length === 0 && <p className="m-auto text-faint text-xs">No messages yet. Say hello to the team.</p>}
         {team.chat.map((m) => (
           <div key={m.seq} className={cn("flex flex-col gap-1", m.mine && "items-end")}>
@@ -177,8 +175,8 @@ function Chat({ team, api, onError, onDone }: { team: Team; api: ProjectApi; onE
             </span>
             <p
               className={cn(
-                "max-w-[85%] whitespace-pre-wrap text-pretty px-3 py-1.5 text-[13px] inset-shadow-hl",
-                m.mine ? "rounded-[18px_18px_6px_18px] bg-bubble" : "rounded-[18px_18px_18px_6px] bg-surface-2 ring-1 ring-hairline",
+                "max-w-[85%] whitespace-pre-wrap text-pretty px-3 py-1.5 text-[13px]",
+                m.mine ? "rounded-[18px_18px_6px_18px] bg-bubble" : "rounded-[18px_18px_18px_6px] bg-selected",
               )}
             >
               {m.text}
@@ -186,7 +184,7 @@ function Chat({ team, api, onError, onDone }: { team: Team; api: ProjectApi; onE
           </div>
         ))}
       </div>
-      <div className="flex items-center gap-2 border-hairline border-t p-2.5">
+      <div className="flex items-center gap-2 pt-1">
         <input
           aria-label="Message the team"
           placeholder="Message the team…"
@@ -216,16 +214,16 @@ const selectClass =
 
 function Contracts({ team, api, onError, onDone }: { team: Team; api: ProjectApi; onError: (t: string) => void; onDone: () => void }) {
   const [agent, setAgent] = useState(team.contractKinds[0] ?? "");
-  if (team.contracts.length === 0) return <p className="px-4 pb-4 text-faint text-xs">No contracts yet.</p>;
+  if (team.contracts.length === 0) return <p className="py-3 text-faint text-xs">No contracts yet.</p>;
   const answer = async (peer: string, id: string, accept: boolean) => {
     const err = await api.answerContract(peer, id, accept, agent);
     if (err !== null) onError(err);
     onDone();
   };
   return (
-    <ul className="flex flex-col px-1.5 pb-1.5 [&>li+li]:border-hairline [&>li+li]:border-t">
+    <ul className="flex flex-col [&>li+li]:border-hairline [&>li+li]:border-t">
       {[...team.contracts].reverse().map((c) => (
-        <li key={c.id} className="contract flex flex-col gap-1.5 px-2.5 py-3" data-contract={c.id}>
+        <li key={c.id} className="contract flex flex-col gap-1.5 py-3" data-contract={c.id}>
           <div className="flex items-center gap-2">
             <span aria-hidden className={cn("size-2 shrink-0 rounded-full", CONTRACT_DOT[c.state] ?? "bg-faint")} />
             <span className="min-w-0 truncate font-medium text-[13px]">{c.title || c.id}</span>
@@ -274,7 +272,7 @@ function Propose({ team, api, thread, onError, onInfo }: { team: Team; api: Proj
   };
   const ready = peer !== "" && brief.trim() !== "";
   return (
-    <div className="flex flex-col gap-2.5 bg-hover/50 px-4 py-3.5">
+    <div className="flex flex-col gap-2.5 pt-3.5">
       <p className="text-pretty text-muted-foreground text-xs leading-relaxed">
         Ask a teammate's Deck to do a task for <span className="text-foreground">"{thread.title || "this thread"}"</span>. It runs there on a
         copy of the tree, under their plan; what it changed comes back as a capsule on your task board.
@@ -366,11 +364,10 @@ export function TeamPage({
   } else {
     const online = team.teammates.filter((m) => m.link === "online").length;
     body = (
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
-        <div className="flex min-w-0 flex-col gap-3">
+      <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
+        <div className="flex min-w-0 flex-col gap-12">
           <Card
             title="Teammates"
-            icon={<Users weight="duotone" />}
             action={
               team.teammates.length > 0 && (
                 <span className="text-faint text-xs tabular-nums">
@@ -389,7 +386,7 @@ export function TeamPage({
               </ul>
             )}
           </Card>
-          <Card title="Contracts" icon={<Handshake weight="duotone" />}>
+          <Card title="Contracts">
             <Contracts team={team} api={api} onError={onError} onDone={() => void load()} />
             {thread !== undefined && team.teammates.length > 0 && (
               <div className="border-hairline border-t">
@@ -398,7 +395,7 @@ export function TeamPage({
             )}
           </Card>
         </div>
-        <Card title="Team chat" icon={<ChatCircleText weight="duotone" />} className="lg:sticky lg:top-0 lg:self-start">
+        <Card title="Team chat" className="lg:sticky lg:top-0 lg:self-start">
           <Chat team={team} api={api} onError={onError} onDone={() => void load()} />
         </Card>
       </div>
@@ -409,7 +406,7 @@ export function TeamPage({
     <div className="team flex min-h-0 flex-1 flex-col" data-team="">
       {header}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-6 pt-2 pb-10">{body}</div>
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-8 pt-4 pb-14">{body}</div>
       </div>
     </div>
   );

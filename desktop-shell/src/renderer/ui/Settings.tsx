@@ -1,19 +1,6 @@
 import type { AppState } from "@web/state";
 import { kindMark } from "@web/theme";
-import {
-  ChevronRight,
-  CircleCheck,
-  type IconType,
-  Keyboard,
-  Monitor,
-  Moon,
-  Palette,
-  PlugsConnected,
-  Robot,
-  Settings as Gear,
-  Smartphone,
-  Sun,
-} from "./icons";
+import { ChevronRight, CircleCheck, Monitor, Moon, Palette, Sun } from "./icons";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import type { AppInfo, DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";
@@ -28,7 +15,7 @@ import { Row, Section } from "./kit/settings";
 import { Switch } from "./kit/switch";
 import { PhonePage } from "./Phone";
 import { modKey } from "./keys";
-import { AgentOrb } from "./Welcome";
+import { AgentGlyph } from "./Welcome";
 
 function Segmented<T extends string>({
   value,
@@ -69,29 +56,22 @@ const set =
   (v: Prefs[K]) =>
     setPrefs({ [k]: v } as Partial<Prefs>);
 
-// Each section's glyph and what it holds, for the page's head.
-const HEADS: Record<SettingsSection, { icon: IconType; line: string }> = {
-  general: { icon: Gear, line: "How messages send, how threads read, and when Deck lets you know." },
-  appearance: { icon: Palette, line: "The theme and its accent, how diffs look, and how much moves." },
-  agents: { icon: Robot, line: "The agents this Deck runs, and what they may do on their own." },
-  connection: { icon: PlugsConnected, line: "The Deck this window drives, and the versions behind it." },
-  phone: { icon: Smartphone, line: "Drive this Deck from the phone app, over your Wi-Fi." },
-  keybindings: { icon: Keyboard, line: "Every shortcut in the window, by where you use it." },
+// What each section holds, for the page's head.
+const LINES: Record<SettingsSection, string> = {
+  general: "How messages send, how threads read, and when Deck lets you know.",
+  appearance: "The theme and its accent, how diffs look, and how much moves.",
+  agents: "The agents this Deck runs, and what they may do on their own.",
+  connection: "The Deck this window drives, and the versions behind it.",
+  phone: "Drive this Deck from the phone app, over your Wi-Fi.",
+  keybindings: "Every shortcut in the window, by where you use it.",
 };
 
-// The page's head, as a Mac's System Settings opens a pane: the section's
-// glyph on a tile of glass, its name and one line on what is in it.
+// The page's head: the section's name, large, and one line on what is in it.
 function Head({ section, label }: { section: SettingsSection; label: string }) {
-  const { icon: Icon, line } = HEADS[section];
   return (
-    <div className="flex animate-enter items-center gap-4 px-1">
-      <span aria-hidden className="liquid-clear grid size-12 shrink-0 place-items-center rounded-[14px] text-primary">
-        <Icon className="size-6" weight="duotone" />
-      </span>
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <h2 className="text-balance font-semibold text-lg tracking-tight">{label}</h2>
-        <p className="text-pretty text-muted-foreground text-xs">{line}</p>
-      </div>
+    <div className="flex animate-enter flex-col gap-1">
+      <h2 className="text-balance font-semibold text-2xl tracking-[-0.03em]">{label}</h2>
+      <p className="text-pretty text-muted-foreground text-sm">{LINES[section]}</p>
     </div>
   );
 }
@@ -218,18 +198,18 @@ function ThemeCard({ t, on }: { t: ThemeInfo; on: boolean }) {
       aria-checked={on}
       title={t.light !== undefined ? `${t.label}: light and dark` : undefined}
       onClick={() => setPrefs({ palette: t.id })}
-      className="group flex cursor-pointer flex-col gap-2 rounded-[14px] p-1 text-left outline-none"
+      className="group flex cursor-pointer flex-col gap-2 text-left outline-none"
     >
       <span
         className={cn(
           "relative block aspect-[16/10] w-full overflow-hidden rounded-[10px] ring-1 ring-hairline transition-[box-shadow,transform] duration-200 group-hover:-translate-y-px group-focus-visible:ring-2 group-focus-visible:ring-ring",
-          on && "ring-2 ring-primary ring-offset-2 ring-offset-surface-1 group-focus-visible:ring-primary",
+          on && "ring-2 ring-primary ring-offset-2 ring-offset-background group-focus-visible:ring-primary",
         )}
       >
         <Miniature s={t.swatch} light={t.light === undefined && t.mode === "light"} />
         {t.light !== undefined && <Miniature s={t.light} light style={{ clipPath: "polygon(64% 0, 100% 0, 100% 100%, 36% 100%)" }} />}
       </span>
-      <span className="flex items-center gap-1.5 px-1 text-xs">
+      <span className="flex items-center gap-1.5 text-xs">
         <span className={cn("min-w-0 truncate", on ? "font-medium text-foreground" : "text-muted-foreground")}>{t.label}</span>
         {on && <CircleCheck aria-hidden weight="fill" className="ml-auto size-3.5 shrink-0 text-primary" />}
       </span>
@@ -237,7 +217,7 @@ function ThemeCard({ t, on }: { t: ThemeInfo; on: boolean }) {
   );
 }
 
-// The accents as beads of glass: the colour under a highlight, with the
+// The accents as beads: the colour under a highlight, with the
 // theme's own as the many-coloured bead, as on a Mac. The chosen one holds
 // a white dot and a ring; its name shows under the row.
 function Accents({ p }: { p: Prefs }) {
@@ -258,12 +238,12 @@ function Accents({ p }: { p: Prefs }) {
               title={a.label}
               onClick={() => setPrefs({ accent: a.id })}
               className={cn(
-                "grid size-[22px] cursor-pointer place-items-center rounded-full outline-none transition-transform duration-200 hover:scale-110 active:scale-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1",
-                on && "ring-2 ring-foreground/30 ring-offset-2 ring-offset-surface-1",
+                "grid size-[22px] cursor-pointer place-items-center rounded-full outline-none transition-transform duration-200 hover:scale-110 active:scale-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                on && "ring-2 ring-foreground/30 ring-offset-2 ring-offset-background",
               )}
               style={{
                 background: `linear-gradient(180deg, rgb(255 255 255 / 0.38), rgb(255 255 255 / 0) 58%), ${fill}`,
-                boxShadow: `inset 0 0 0 0.5px rgb(0 0 0 / 0.18), inset 0 1px 0 rgb(255 255 255 / 0.4), 0 1px 3px ${a.color === "" ? "rgb(0 0 0 / 0.2)" : `color-mix(in srgb, ${a.color} 45%, transparent)`}`,
+                boxShadow: "inset 0 0 0 0.5px rgb(0 0 0 / 0.18), inset 0 1px 0 rgb(255 255 255 / 0.4)",
               }}
             >
               {on && <span aria-hidden className="size-2 rounded-full bg-white shadow-[0_0_2px_rgb(0_0_0/0.3)]" />}
@@ -282,7 +262,7 @@ function Appearance({ p }: { p: Prefs }) {
   return (
     <>
       <Section title="Theme">
-        <div className="grid grid-cols-2 gap-x-1.5 gap-y-2.5 p-3 @md:grid-cols-3 @xl:grid-cols-4" role="radiogroup" aria-label="Theme">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-3 py-4 @md:grid-cols-3 @xl:grid-cols-4" role="radiogroup" aria-label="Theme">
           {THEMES.map((t) => (
             <ThemeCard key={t.id} t={t} on={p.palette === t.id} />
           ))}
@@ -392,8 +372,8 @@ function Diffs({ p }: { p: Prefs }) {
         title="Diff theme"
         description="Match app theme takes the window's colours. The others set their own colours for added and removed lines and for code."
       />
-      <div className="space-y-3 px-3 pt-1 pb-3 before:hidden!">
-        <div className="grid grid-cols-2 gap-1.5 @lg:grid-cols-3" role="radiogroup" aria-label="Diff theme">
+      <div className="space-y-3 pt-1 pb-4">
+        <div className="-mx-1.5 grid grid-cols-2 gap-1 @lg:grid-cols-3" role="radiogroup" aria-label="Diff theme">
           {DIFF_THEMES.map((t) => {
             const on = p.diffTheme === t.id;
             return (
@@ -405,7 +385,7 @@ function Diffs({ p }: { p: Prefs }) {
                 onClick={() => setPrefs({ diffTheme: t.id })}
                 className={cn(
                   "flex cursor-pointer items-center gap-2.5 rounded-[10px] p-1.5 pr-2 text-left text-xs outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
-                  on && "bg-selected inset-shadow-hl",
+                  on && "bg-selected",
                 )}
               >
                 <span
@@ -461,8 +441,8 @@ function Agents({ state, p }: { state: AppState; p: Prefs }) {
       <Section title="Agent kinds">
         {kinds.length === 0 && <Row title="No agents" description="This Deck names no agent kinds." />}
         {kinds.map((k) => (
-          <div key={k} className="flex items-start gap-3 px-4 py-3">
-            <AgentOrb kind={k} mark={kindMark(state.theme, k)} className="mt-0.5" />
+          <div key={k} className="flex items-start gap-3 py-3">
+            <AgentGlyph kind={k} mark={kindMark(state.theme, k)} className="mt-px text-base" />
             <div className="min-w-0 space-y-0.5">
               <h3 className="font-medium text-[13px]">{k}</h3>
               <p className="text-pretty text-muted-foreground text-xs leading-relaxed">
@@ -666,7 +646,7 @@ export function SettingsPage({
         <h1 className="title font-semibold">{label}</h1>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div key={section} className="mx-auto flex w-full max-w-[42rem] flex-col gap-7 px-6 pt-4 pb-12">
+        <div key={section} className="mx-auto flex w-full max-w-[42rem] flex-col gap-10 px-6 pt-6 pb-16">
           <Head section={section} label={label} />
           {section === "general" && <General p={p} />}
           {section === "appearance" && <Appearance p={p} />}

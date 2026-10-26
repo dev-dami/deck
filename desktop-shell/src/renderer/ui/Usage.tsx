@@ -8,7 +8,7 @@ import { formatDuration } from "../work";
 import { Button } from "./kit/button";
 import { EmptyState } from "./kit/empty";
 import { segmentItem, segmentTrack } from "./kit/segmented";
-import { AgentOrb } from "./Welcome";
+import { AgentGlyph } from "./Welcome";
 
 // Deck's local record of what the agents used and how you work, after T3
 // Code's usage page. Nothing here leaves the machine.
@@ -52,8 +52,9 @@ const tick = (n: number) => compact(n).replace(/\.0(?=[kMB]?$)/, "");
 
 const dayLabel = (ms: number) => new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
 
-// A card of the page: its title, a line under it, and an action at the
-// trailing edge.
+// A part of the page: its title, a line under it, and an action at the
+// trailing edge, then what it shows. No box: the parts stand apart by
+// space, and the title leads.
 function Card({
   title,
   sub,
@@ -68,15 +69,15 @@ function Card({
   children: ReactNode;
 }) {
   return (
-    <section aria-label={title} className={cn("flex flex-col rounded-(--sheet-radius) bg-surface-1 shadow-[0_1px_2px_rgb(0_0_0/0.04)] ring-1 ring-hairline", className)}>
-      <header className="flex min-h-11 items-center gap-3 px-4 pt-3">
-        <div className="flex min-w-0 flex-1 flex-col">
+    <section aria-label={title} className={cn("flex min-w-0 flex-col gap-4", className)}>
+      <header className="flex items-end gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h2 className="font-semibold text-[13px]">{title}</h2>
           {sub !== undefined && <p className="text-2xs text-faint">{sub}</p>}
         </div>
         {action}
       </header>
-      <div className="flex-1 px-4 pt-3 pb-4">{children}</div>
+      <div className="flex-1">{children}</div>
     </section>
   );
 }
@@ -105,7 +106,7 @@ function Spark({ values }: { values: number[] }) {
         />
       </svg>
       <span
-        className="absolute right-0 size-2 translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-surface-1"
+        className="absolute right-0 size-2 translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-background"
         style={{ top: `${(y(values[values.length - 1]!) / h) * 100}%` }}
       />
     </div>
@@ -116,12 +117,9 @@ function Spark({ values }: { values: number[] }) {
 // up, and the days' trend.
 function Tile({ label, value, detail, trend }: { label: string; value: string; detail?: string; trend?: ReactNode }) {
   return (
-    <div
-      className="flex min-w-0 flex-col gap-1 rounded-(--sheet-radius) bg-surface-1 px-4 pt-3.5 pb-3 shadow-[0_1px_2px_rgb(0_0_0/0.04)] ring-1 ring-hairline"
-      data-tile={label}
-    >
+    <div className="flex min-w-0 flex-col gap-1" data-tile={label}>
       <span className="text-muted-foreground text-xs">{label}</span>
-      <span className="font-semibold text-[1.75rem] leading-tight tracking-tight [font-variant-numeric:normal]">{value}</span>
+      <span className="font-semibold text-[2rem] leading-tight tracking-[-0.03em] [font-variant-numeric:normal]">{value}</span>
       {detail !== undefined && <span className="truncate text-2xs text-faint tabular-nums">{detail}</span>}
       {trend !== undefined && <div className="mt-1.5">{trend}</div>}
     </div>
@@ -161,7 +159,7 @@ function DailyBars({ days }: { days: UsageDay[] }) {
             >
               <div
                 className={cn(
-                  "w-full max-w-6 rounded-t-[4px] bg-primary transition-opacity duration-150",
+                  "w-full max-w-[18px] rounded-t-[4px] bg-primary transition-opacity duration-150",
                   hover !== null && hover !== i && "opacity-35",
                 )}
                 style={{ height: d.tokens === 0 ? 0 : `${Math.max(1.5, (d.tokens / top) * 100)}%` }}
@@ -370,11 +368,11 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
     body = (
       <>
         {o.turns === 0 && (
-          <p className="rounded-(--sheet-radius) px-4 py-3 text-pretty text-muted-foreground text-sm ring-1 ring-hairline">
+          <p className="text-pretty text-muted-foreground text-sm">
             {o.allTurns === 0 ? "Nothing yet: usage shows up once agents finish turns." : "No turns in this range."}
           </p>
         )}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-6 border-hairline border-b pb-8 lg:grid-cols-4">
           <Tile
             label="Tokens"
             value={compact(tokens)}
@@ -418,7 +416,7 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
         >
           {table ? <DailyTable days={data.days} /> : <DailyBars days={data.days} />}
         </Card>
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid gap-10 lg:grid-cols-2 lg:gap-12">
           <Card title="By agent" sub="Share of the tokens">
             <div className="flex flex-col gap-4">
               {data.kinds.length === 0 && <p className="text-muted-foreground text-sm">No agents in this range.</p>}
@@ -426,7 +424,7 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
                 const t = kindTokens[i] ?? 0;
                 return (
                   <div key={k.kind} className="flex items-center gap-3">
-                    <AgentOrb kind={k.kind} mark={kindMark(theme, k.kind)} className="size-7 text-xs" />
+                    <AgentGlyph kind={k.kind} mark={kindMark(theme, k.kind)} className="text-[15px]" />
                     <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                       <div className="flex items-baseline gap-2 text-[13px]">
                         <span className="font-medium">{k.kind}</span>
@@ -500,7 +498,7 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
         </Card>
         {data.sessions.length > 0 && (
           <Card title="Costliest threads">
-            <ul className="-mx-2 flex flex-col">
+            <ul className="-mx-2 flex flex-col [&>li+li]:border-hairline [&>li+li]:border-t">
               {data.sessions.map((x, i) => (
                 <li key={x.sessionId}>
                   <button
@@ -524,7 +522,7 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
             </ul>
           </Card>
         )}
-        <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)]">
+        <div className="grid gap-10 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-12">
           <Card title="Activity" sub="Turns per day, the last 20 weeks">
             <div className="flex flex-col gap-3">
               <Heat heat={data.heat} />
@@ -539,7 +537,7 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
         </div>
         {h !== null && (
           <>
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid gap-10 lg:grid-cols-2 lg:gap-12">
               <Card title="How you work">
                 <div className="-mt-2 divide-y divide-hairline">
                   <Stat label="Active days" value={`${h.activeDays} · longest streak ${h.streak}`} />
@@ -580,7 +578,7 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
     <div className="usage flex min-h-0 flex-1 flex-col" data-usage="">
       {header}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-6 pt-2 pb-10">{body}</div>
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-12 px-8 pt-4 pb-14">{body}</div>
       </div>
     </div>
   );

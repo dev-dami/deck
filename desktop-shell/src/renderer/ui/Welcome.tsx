@@ -1,22 +1,10 @@
 import { kindColour } from "@web/theme";
-import {
-  ArrowLeft,
-  Check,
-  CircleAlert,
-  Copy,
-  ExternalLink,
-  FolderOpen,
-  Link2,
-  Loader2,
-  RefreshCw,
-  RotateCcw,
-  ScrollText,
-} from "./icons";
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useState } from "react";
+import { ArrowLeft, Check, CircleAlert, Copy, ExternalLink, Loader2, RefreshCw, RotateCcw, ScrollText } from "./icons";
+import { type ComponentProps, type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentClis, DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";
-import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
+import { isMac } from "./keys";
 import { AGENT_HELP, type AgentHelp } from "./landing";
 
 // The last part of a folder path.
@@ -33,39 +21,47 @@ export interface StartFailure {
   noAgents: boolean;
 }
 
-// Things that enter one after another: each rises 4px and fades in, 50ms
+// Things that enter one after another: each rises 4px and fades in, 60ms
 // after the one before it.
-export const stagger = (i: number): CSSProperties => ({ animationDelay: `${i * 50}ms` });
+export const stagger = (i: number): CSSProperties => ({ animationDelay: `${i * 60}ms` });
 
 // Deck's mark, the app icon's prompt: a chevron in the accent and the
-// cursor, on a tile of glass. The cursor blinks a few times as the window
-// opens, then holds still.
+// cursor in the text colour. Sized by its height.
 export function DeckMark({ className }: { className?: string }) {
   return (
-    <span aria-hidden className={cn("deck-mark liquid-thick grid size-16 shrink-0 place-items-center rounded-[18px]", className)}>
-      <svg viewBox="0 0 64 64" className="size-full" fill="none">
-        <defs>
-          <linearGradient id="deck-mark-chevron" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" style={{ stopColor: "color-mix(in oklab, var(--primary) 55%, #fff)" }} />
-            <stop offset="1" style={{ stopColor: "var(--primary)" }} />
-          </linearGradient>
-        </defs>
-        <path d="M19.5 22.5 31 32l-11.5 9.5" stroke="url(#deck-mark-chevron)" strokeWidth="4.75" strokeLinecap="round" strokeLinejoin="round" />
-        <rect className="deck-cursor" x="35" y="37" width="12" height="4.75" rx="2.375" fill="currentColor" />
-      </svg>
+    <svg aria-hidden viewBox="16 19 34 26" className={cn("h-3.5 w-auto shrink-0", className)} fill="none">
+      <path d="M19.5 22.5 31 32l-11.5 9.5" stroke="var(--primary)" strokeWidth="4.75" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="35" y="37" width="12" height="4.75" rx="2.375" fill="currentColor" />
+    </svg>
+  );
+}
+
+// The window's name in the drag strip, where a title bar would put it.
+export function Wordmark() {
+  return (
+    <span className="flex items-center gap-2 font-semibold text-[13px] tracking-tight">
+      <DeckMark />
+      Deck
     </span>
   );
 }
 
-// A message on the backdrop: a pane of glass with a tinted rim.
+// An agent kind's glyph in its hue, as the room's lanes draw it: the same
+// kind wears the same glyph and hue on every page.
+export function AgentGlyph({ kind, mark, className }: { kind: string; mark: string; className?: string }) {
+  return (
+    <span aria-hidden className={cn("inline-grid w-5 shrink-0 place-items-center font-mono text-sm leading-none", className)} style={{ color: kindColour(kind) }}>
+      {mark || kind.slice(0, 1)}
+    </span>
+  );
+}
+
+// A line the person should read before going on: an icon in the tone's
+// colour and the text, straight on the page.
 export function Notice({ tone, className, children }: { tone: "error" | "warning"; className?: string; children: ReactNode }) {
   return (
     <p
-      className={cn(
-        "liquid flex animate-enter items-start gap-2.5 rounded-2xl px-4 py-3 text-pretty text-sm",
-        tone === "error" ? "error ring-1 ring-destructive/35" : "notice ring-1 ring-warning/30",
-        className,
-      )}
+      className={cn("flex animate-enter items-start gap-2.5 text-pretty text-sm", tone === "error" ? "error" : "notice", className)}
       role={tone === "error" ? "alert" : undefined}
     >
       <CircleAlert
@@ -90,64 +86,63 @@ export function StartFailed({
   onRetry: () => void;
 }) {
   return (
-    <section
-      aria-label="Deck did not start"
-      className="start-failed liquid flex animate-enter flex-col gap-3 rounded-(--panel-radius) p-4 ring-1 ring-destructive/30"
-      role="alert"
-    >
+    <section aria-label="Deck did not start" className="start-failed flex animate-enter flex-col gap-3" role="alert">
       <p className="flex items-center gap-2.5 text-sm">
         <CircleAlert aria-hidden weight="fill" className="size-4 shrink-0 text-destructive-foreground" />
         <span>
           Deck did not start in <span className="font-mono">{base(failure.dir)}</span>.
         </span>
       </p>
-      <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-[10px] bg-code/80 px-3 py-2 font-mono text-2xs text-muted-foreground ring-1 ring-hairline">
+      <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-[10px] bg-code px-3 py-2 font-mono text-2xs text-muted-foreground">
         {failure.lines.length > 0 ? failure.lines.join("\n") : failure.message}
       </pre>
-      <div className="flex justify-end gap-2">
-        <Button variant="ghost-muted" size="sm" onClick={onLogs}>
-          <ScrollText />
-          Open logs
-        </Button>
+      <div className="flex gap-2">
         <Button variant="outline" size="sm" onClick={onRetry}>
           <RotateCcw />
           Try again
+        </Button>
+        <Button variant="ghost-muted" size="sm" onClick={onLogs}>
+          <ScrollText />
+          Open logs
         </Button>
       </div>
     </section>
   );
 }
 
-// One of the two ways in: a duotone glyph in clear glass, where it leads,
-// what happens there, and its button.
-function Path({
+// A row of the command list, after Raycast's and Linear's first runs: the
+// command, a word on where it leads, its keys. The one prominent row is the
+// accent as glass; the rest are plain until hovered.
+export function Command({
   label,
-  title,
-  icon,
-  index,
-  children,
-  action,
-}: {
-  label: string;
-  title: string;
-  icon: ReactNode;
-  index: number;
-  children: ReactNode;
-  action: ReactNode;
-}) {
+  hint,
+  keys,
+  primary = false,
+  className,
+  ...props
+}: { label: ReactNode; hint?: ReactNode | undefined; keys?: string[] | undefined; primary?: boolean } & ComponentProps<"button">) {
   return (
-    <section aria-label={label} className="liquid flex animate-enter gap-3.5 rounded-(--panel-radius) p-4 pr-5" style={stagger(index)}>
-      <span aria-hidden className="liquid-clear grid size-10 shrink-0 place-items-center rounded-full text-foreground/85 [&_svg]:size-5">
-        {icon}
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-3 pt-0.5">
-        <div className="flex flex-1 flex-col gap-1">
-          <h2 className="text-balance font-semibold text-sm tracking-tight">{title}</h2>
-          <p className="text-pretty text-muted-foreground text-xs leading-relaxed">{children}</p>
-        </div>
-        {action}
-      </div>
-    </section>
+    <button
+      type="button"
+      className={cn(
+        "flex h-11 w-full cursor-pointer items-center gap-3 rounded-[12px] px-4 text-left text-sm outline-none transition-[background-color,scale] duration-150 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50",
+        primary ? "liquid-tint font-medium hover:brightness-110" : "hover:bg-hover",
+        className,
+      )}
+      {...props}
+    >
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {hint !== undefined && <span className={cn("truncate text-xs", primary ? "text-primary-foreground/75" : "text-faint")}>{hint}</span>}
+      {keys !== undefined && (
+        <span className={cn("flex shrink-0 gap-1 font-sans text-xs", primary ? "text-primary-foreground/75" : "text-faint")}>
+          {keys.map((k) => (
+            <kbd key={k} className="min-w-3 text-center font-sans">
+              {k}
+            </kbd>
+          ))}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -160,7 +155,7 @@ function Install({ command }: { command: string }) {
     return () => clearTimeout(t);
   }, [copied]);
   return (
-    <span className="flex min-w-0 items-center gap-0.5 rounded-lg bg-hover py-0.5 pr-0.5 pl-2 ring-1 ring-hairline">
+    <span className="flex min-w-0 items-center gap-1">
       <code className="min-w-0 truncate font-mono text-2xs text-muted-foreground" title={command}>
         {command}
       </code>
@@ -178,73 +173,61 @@ function Install({ command }: { command: string }) {
   );
 }
 
-// An agent kind's glyph in its hue, in a bead of glass tinted with it: the
-// same kind wears the same bead on every page.
-export function AgentOrb({ kind, mark, className }: { kind: string; mark: string; className?: string }) {
-  const hue = kindColour(kind);
-  return (
-    <span
-      aria-hidden
-      className={cn("grid size-8 shrink-0 place-items-center rounded-full font-mono text-sm leading-none", className)}
-      style={{
-        color: hue,
-        background: `color-mix(in srgb, ${hue} 14%, transparent)`,
-        boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${hue} 26%, transparent), inset 0 1px 0 0 var(--glass-spec)`,
-      }}
-    >
-      {mark || kind.slice(0, 1)}
-    </span>
-  );
-}
-
-// One agent CLI on the roster: its glyph in its hue, its name, and where
-// Deck found it, or how to get it.
+// One agent CLI on the roster: its glyph, bright when Deck found it; its
+// name; then the path it found, or the command that installs it.
 function AgentRow({ a, path, looking }: { a: AgentHelp; path: string | null; looking: boolean }) {
   const found = path !== null;
+  const missing = !found && !looking;
   return (
-    <li className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3" data-kind={a.kind} data-found={found}>
-      <AgentOrb kind={a.kind} mark={a.mark} className={cn(!found && !looking && "opacity-55")} />
-      <span className={cn("w-28 shrink-0 font-medium text-sm", !found && !looking && "text-muted-foreground")}>{a.name}</span>
-      {looking ? (
-        <span className="text-faint text-xs">Looking…</span>
-      ) : found ? (
-        <>
-          <Badge variant="success" className="gap-1">
-            <span aria-hidden className="size-1.5 rounded-full bg-success" />
-            <span className="first-letter:uppercase">found</span>
-          </Badge>
-          <code className="min-w-0 flex-1 truncate font-mono text-2xs text-faint" title={path}>
+    <li className="flex min-w-0 gap-3 py-2.5" data-kind={a.kind} data-found={found}>
+      <AgentGlyph kind={a.kind} mark={a.mark} className={cn("mt-0.5 text-base", missing && "opacity-35")} />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex items-baseline gap-2">
+          <span className={cn("font-medium text-[13px]", missing && "text-muted-foreground")}>{a.name}</span>
+          <span className="ml-auto shrink-0 text-2xs text-faint">{looking ? "looking…" : found ? "found" : "not found"}</span>
+        </div>
+        {found ? (
+          <code className="min-w-0 truncate font-mono text-2xs text-faint" title={path}>
             {path}
           </code>
-        </>
-      ) : (
-        <>
-          <Badge variant="muted">
-            <span className="first-letter:uppercase">not found</span>
-          </Badge>
-          <span className="flex min-w-0 flex-1 items-center gap-3">
-            {a.install !== null && <Install command={a.install} />}
-            {a.url !== null && (
-              <a
-                href={a.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ml-auto flex shrink-0 items-center gap-1 rounded-full px-1.5 text-muted-foreground text-xs outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                Install guide
-                <ExternalLink aria-hidden className="size-3" />
-              </a>
-            )}
-          </span>
-        </>
-      )}
+        ) : (
+          !looking &&
+          (a.install !== null || a.url !== null) && (
+            <div className="flex min-w-0 items-center gap-3">
+              {a.install !== null && <Install command={a.install} />}
+              {a.url !== null && (
+                <a
+                  href={a.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-auto flex shrink-0 items-center gap-1 rounded text-2xs text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  Install guide
+                  <ExternalLink aria-hidden className="size-3" />
+                </a>
+              )}
+            </div>
+          )
+        )}
+      </div>
     </li>
   );
 }
 
-// The agent CLIs on the engine's PATH: found with its path, or how to
-// install it.
-function Agents({
+// How a crew is addressed in Deck: one message that names two agents, in
+// the composer's mono, each mention in its agent's hue.
+function Example() {
+  return (
+    <p className="font-mono text-xs">
+      <span style={{ color: kindColour("claude") }}>$claude</span> <span style={{ color: kindColour("codex") }}>$codex+</span>{" "}
+      <span className="text-foreground/85">split the lockout fix</span>
+    </p>
+  );
+}
+
+// The crew: the agent CLIs on the engine's PATH, found with their path or
+// with how to install them. Type on the backdrop, parted by hairlines.
+function Crew({
   clis,
   checking,
   failure,
@@ -259,37 +242,28 @@ function Agents({
 }) {
   const found = AGENT_HELP.filter((a) => clis?.clis.some((c) => c.kind === a.kind && c.path !== null) === true).length;
   return (
-    <section aria-label="Your agents" className="liquid flex animate-enter flex-col rounded-(--panel-radius) sm:col-span-2" style={stagger(2)}>
-      <header className="flex items-center gap-3 px-5 pt-4 pb-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h2 className="font-semibold text-[15px] tracking-tight">Your agents</h2>
-          <p className="text-pretty text-muted-foreground text-xs">
-            {clis === null
-              ? "Deck drives the agent CLIs it finds on your PATH."
-              : `${found} of ${AGENT_HELP.length} found on your PATH. Deck runs each one as it is.`}
-          </p>
-        </div>
-        <Button variant="ghost-muted" size="xs" disabled={checking} onClick={onCheck}>
+    <section aria-label="Your agents" className="flex animate-enter flex-col" style={stagger(2)}>
+      <div className="flex items-baseline gap-3 pb-2">
+        <h2 className="font-semibold text-[13px]">Your agents</h2>
+        <span className="text-2xs text-faint tabular-nums">{clis === null ? "" : `${found} of ${AGENT_HELP.length} on your PATH`}</span>
+        <Button variant="ghost-muted" size="xs" className="-mr-2.5 ml-auto self-center" disabled={checking} onClick={onCheck}>
           {checking ? <Loader2 className="animate-spin" /> : <RefreshCw />}
           Check again
         </Button>
-      </header>
+      </div>
       {failure?.noAgents === true && (
-        <div className="mx-3 mb-2 flex items-center gap-3 rounded-xl bg-warning/10 px-3 py-2.5 ring-1 ring-warning/25">
-          <p className="flex-1 text-pretty text-xs leading-relaxed">
-            Deck found no agent CLI, so it did not open <span className="font-mono">{base(failure.dir)}</span>. Install one,
-            then try again.
+        <div className="flex items-center gap-3 border-hairline border-t py-2.5">
+          <p className="flex-1 text-pretty text-warning-foreground text-xs leading-relaxed">
+            Deck found no agent CLI, so it did not open <span className="font-mono">{base(failure.dir)}</span>. Install one, then try
+            again.
           </p>
-          <Button variant="outline" size="sm" onClick={onRetry}>
+          <Button variant="outline" size="xs" onClick={onRetry}>
             <RotateCcw />
             Try again
           </Button>
         </div>
       )}
-      <ul
-        className="agent-clis mx-1.5 mb-1.5 flex flex-col rounded-[calc(var(--panel-radius)-6px)] bg-hover/60 [&>li+li]:border-hairline [&>li+li]:border-t"
-        aria-label="Agent CLIs"
-      >
+      <ul className="agent-clis flex flex-col [&>li]:border-hairline [&>li]:border-t" aria-label="Agent CLIs">
         {AGENT_HELP.map((a) => (
           <AgentRow key={a.kind} a={a} path={clis?.clis.find((c) => c.kind === a.kind)?.path ?? null} looking={clis === null} />
         ))}
@@ -298,9 +272,55 @@ function Agents({
   );
 }
 
+// The grid the first screens are set on: twelve columns across the window.
+// The headline holds the lower left from the second column; the actions
+// and the crew hold the right from the eighth.
+export const firstGrid = "grid grid-cols-1 gap-x-6 px-6 md:grid-cols-12 md:px-8";
+export const leftCols = "md:col-span-6 md:col-start-2";
+export const rightCols = "md:col-span-5 md:col-start-8 lg:col-span-4 lg:col-start-8";
+
+// A headline in the theme's display face, in two tones: what it is, then,
+// quieter, what it is for. `.headline` and `.headline-quiet` let a theme
+// restyle the pair.
+export function Headline({ loud, quiet, className }: { loud: string; quiet: string; className?: string }) {
+  return (
+    <h1
+      className={cn(
+        "headline font-display text-balance font-semibold text-[clamp(2.75rem,5.6vw,5.25rem)] leading-[0.95] tracking-[-0.045em] [font-family:var(--font-display,inherit)]",
+        className,
+      )}
+    >
+      {loud}{" "}
+      <span className="headline-quiet block font-normal text-muted-foreground">{quiet}</span>
+    </h1>
+  );
+}
+
+// The window's top strip on the first screens: the wordmark over the
+// headline's column, and the way back to the open projects.
+export function FirstStrip({ onBack }: { onBack?: (() => void) | undefined }) {
+  return (
+    <div className={cn("drag h-13 shrink-0 items-center", firstGrid)}>
+      <div className={cn("hidden md:block", leftCols)}>
+        <Wordmark />
+      </div>
+      <div className="flex justify-end md:col-span-5 md:col-start-8">
+        {onBack !== undefined && (
+          <Button variant="ghost-muted" size="sm" onClick={onBack}>
+            <ArrowLeft />
+            Back to threads
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // The first screen of a new install, and the palette's "Welcome": what Deck
-// is, the two ways in, and the agent CLIs it can drive. No sheet: the cards
-// are glass straight on the backdrop.
+// is, the ways in, and the crew it can drive. No sheet and no cards: the
+// theme's backdrop is the scene, and the words sit on it, editorial and
+// asymmetric, the headline low on the left and the actions high on the
+// right.
 export function Welcome({
   bridge,
   opening,
@@ -325,6 +345,7 @@ export function Welcome({
   const [clis, setClis] = useState<AgentClis | null>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mac = useMemo(isMac, []);
   const check = useCallback(
     async (refresh: boolean) => {
       setChecking(true);
@@ -343,73 +364,49 @@ export function Welcome({
   };
   return (
     <main className="welcome-screen flex h-full flex-col overflow-y-auto" data-screen="welcome">
-      <div className="drag flex h-13 shrink-0 items-center px-3">
-        {onBack !== undefined && (
-          <Button variant="outline" size="sm" onClick={onBack}>
-            <ArrowLeft />
-            Back to threads
-          </Button>
-        )}
-      </div>
-      <div className="flex flex-1 justify-center px-6">
-        <div className="flex w-full max-w-[40rem] flex-col gap-7 pt-[max(0.5rem,4vh)] pb-16">
-          <header className="welcome-halo relative flex animate-enter flex-col items-center gap-5 text-center">
-            <DeckMark />
-            <div className="flex flex-col items-center gap-2">
-              <h1 className="text-balance font-semibold text-[2rem] leading-tight tracking-[-0.025em]">One deck for all your agents</h1>
-              <p className="max-w-lg text-pretty text-[15px] text-muted-foreground leading-relaxed">
-                Open a project and run your agent CLIs side by side, in one window.
-              </p>
-            </div>
-          </header>
-          {!engine && (
-            <Notice tone="warning">
-              Deck did not find its engine. Run <code className="font-mono text-foreground/80">npm run build:deck</code>, or set{" "}
-              <code className="font-mono text-foreground/80">DECK_BIN</code>.
-            </Notice>
-          )}
-          {error !== null && <Notice tone="error">{error}</Notice>}
-          {failure !== null && !failure.noAgents && (
-            <StartFailed failure={failure} onLogs={() => void bridge.openLogs()} onRetry={retry} />
-          )}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Path
-              label="Open a folder"
-              title="A folder on this computer"
-              icon={<FolderOpen weight="duotone" />}
-              index={0}
-              action={
-                <Button
-                  className="primary self-start"
-                  disabled={!engine || opening !== null}
-                  onClick={() => {
-                    setError(null);
-                    void onAdd().then(setError);
-                  }}
-                >
-                  {opening === null ? <FolderOpen /> : <Loader2 className="animate-spin" />}
-                  {opening === null ? "Open a folder" : `Starting Deck in ${base(opening)}…`}
-                </Button>
-              }
-            >
-              Deck starts its engine in the folder. Agents work there until you close it.
-            </Path>
-            <Path
-              label="Pair with a Deck"
-              title="A Deck that already runs"
-              icon={<Link2 weight="duotone" />}
-              index={1}
-              action={
-                <Button variant="outline" className="self-start" onClick={onPair}>
-                  <Link2 />
-                  Pair with a Deck
-                </Button>
-              }
-            >
-              Watch a Deck that runs in a terminal or on another computer.
-            </Path>
-            <Agents clis={clis} checking={checking} failure={failure} onCheck={() => void check(true)} onRetry={retry} />
+      <FirstStrip onBack={onBack} />
+      <div className={cn("flex-1 gap-y-12 pt-[4vh] pb-[max(2.5rem,7vh)]", firstGrid)}>
+        <div className={cn("flex animate-enter flex-col gap-6 self-end md:row-start-1", leftCols)}>
+          <Headline loud="One deck" quiet="for all your agents" />
+          <div className="flex max-w-[30rem] flex-col gap-3">
+            <p className="text-pretty text-[15px] text-muted-foreground leading-relaxed">
+              Claude Code, Codex, OpenCode and Antigravity in one thread. Hand a task to one, split it between two, race three on the
+              same bug, and answer what they ask from one window.
+            </p>
+            <Example />
           </div>
+        </div>
+        <div className={cn("flex flex-col gap-10 md:row-start-1 md:self-center", rightCols)}>
+          <div className="flex animate-enter flex-col gap-3" style={stagger(1)}>
+            {!engine && (
+              <Notice tone="warning">
+                Deck did not find its engine. Run <code className="font-mono text-foreground/80">npm run build:deck</code>, or set{" "}
+                <code className="font-mono text-foreground/80">DECK_BIN</code>.
+              </Notice>
+            )}
+            {error !== null && <Notice tone="error">{error}</Notice>}
+            {failure !== null && !failure.noAgents && (
+              <StartFailed failure={failure} onLogs={() => void bridge.openLogs()} onRetry={retry} />
+            )}
+            <div className="-mx-4 flex flex-col gap-0.5">
+              <Command
+                primary
+                className="primary"
+                label={opening === null ? "Open a folder…" : `Starting Deck in ${base(opening)}…`}
+                keys={opening === null ? [mac ? "⌘" : "Ctrl", "O"] : undefined}
+                disabled={!engine || opening !== null}
+                onClick={() => {
+                  setError(null);
+                  void onAdd().then(setError);
+                }}
+              />
+              <Command label="Pair with a Deck…" hint="in a terminal, or on another computer" onClick={onPair} />
+            </div>
+            <p className="text-pretty text-faint text-xs leading-relaxed">
+              Deck starts its engine in the folder you open. The agents work there until you close it.
+            </p>
+          </div>
+          <Crew clis={clis} checking={checking} failure={failure} onCheck={() => void check(true)} onRetry={retry} />
         </div>
       </div>
     </main>

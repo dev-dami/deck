@@ -9,15 +9,15 @@ import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
 import { EmptyState } from "./kit/empty";
 
-// Each state's glyph, its tint and its group, most urgent first: what
+// Each state's glyph, its colour and its group, most urgent first: what
 // waits for an answer wears the warning colour, changes to review the
 // accent, a finished room the success colour, a notice nothing.
-const STATES: Record<InboxState, { icon: typeof Info; tile: string; dot: string; group: string }> = {
-  "needs-you": { icon: ShieldQuestion, tile: "bg-warning/14 text-warning-foreground ring-warning/25", dot: "bg-warning", group: "Needs you" },
-  overlap: { icon: GitCompareArrows, tile: "bg-warning/10 text-warning-foreground ring-warning/20", dot: "bg-warning", group: "Overlapping work" },
-  review: { icon: FileDiff, tile: "bg-primary/12 text-info-foreground ring-primary/20", dot: "bg-primary", group: "To review" },
-  done: { icon: CircleCheck, tile: "bg-success/12 text-success-foreground ring-success/20", dot: "bg-success", group: "Finished" },
-  notice: { icon: Info, tile: "bg-hover text-muted-foreground ring-hairline", dot: "bg-faint", group: "Notices" },
+const STATES: Record<InboxState, { icon: typeof Info; tone: string; group: string }> = {
+  "needs-you": { icon: ShieldQuestion, tone: "text-warning-foreground", group: "Needs you" },
+  overlap: { icon: GitCompareArrows, tone: "text-warning-foreground", group: "Overlapping work" },
+  review: { icon: FileDiff, tone: "text-info-foreground", group: "To review" },
+  done: { icon: CircleCheck, tone: "text-success-foreground", group: "Finished" },
+  notice: { icon: Info, tone: "text-faint", group: "Notices" },
 };
 
 export interface InboxActions {
@@ -57,15 +57,13 @@ function Row({
       data-item={item.id}
       data-state={item.state}
       className={cn(
-        "inbox-item flex cursor-pointer gap-3 rounded-[14px] px-3 py-3 transition-colors",
-        selected ? "bg-selected inset-shadow-hl ring-1 ring-hairline" : "hover:bg-hover",
+        "inbox-item flex cursor-pointer gap-3 rounded-[12px] px-3 py-3 transition-colors",
+        selected ? "bg-selected" : "hover:bg-hover",
       )}
       onClick={onSelect}
       onDoubleClick={() => item.action === "open" && actions.onOpen(item)}
     >
-      <span aria-hidden className={cn("grid size-8 shrink-0 place-items-center rounded-[10px] ring-1", s.tile)}>
-        <Icon className="size-4" weight={item.state === "needs-you" ? "fill" : "regular"} />
-      </span>
+      <Icon aria-hidden className={cn("mt-px size-4 shrink-0", s.tone)} weight={item.state === "needs-you" ? "fill" : "regular"} />
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex min-w-0 items-baseline gap-2">
           <span className="inbox-label min-w-0 truncate font-medium text-[13px]">{item.label}</span>
@@ -75,7 +73,7 @@ function Row({
           {item.projectName} <span aria-hidden>·</span> <span className="text-muted-foreground">{item.title}</span>
         </div>
         {item.approval !== undefined && (
-          <code className="block max-h-24 min-w-0 overflow-auto whitespace-pre-wrap break-all rounded-[10px] bg-code px-2.5 py-1.5 font-mono text-foreground/85 text-xs ring-1 ring-hairline">
+          <code className="block max-h-24 min-w-0 overflow-auto whitespace-pre-wrap break-all rounded-[8px] bg-code px-2.5 py-1.5 font-mono text-foreground/85 text-xs">
             {approvalSummary(item.approval)}
           </code>
         )}
@@ -177,8 +175,7 @@ export function Inbox({ items, mac, ...actions }: { items: InboxItem[]; mac: boo
         <InboxIcon className="size-4 text-muted-foreground" />
         <h1 className="font-semibold text-sm">Inbox</h1>
         {urgent > 0 ? (
-          <span className="flex items-center gap-1.5 rounded-full bg-warning/14 px-2 py-0.5 font-medium text-2xs text-warning-foreground tabular-nums">
-            <span aria-hidden className="size-1.5 rounded-full bg-warning" />
+          <span className="font-medium text-warning-foreground text-xs tabular-nums">
             {urgent} {urgent === 1 ? "needs" : "need"} you
           </span>
         ) : (
@@ -218,9 +215,8 @@ export function Inbox({ items, mac, ...actions }: { items: InboxItem[]; mac: boo
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 pt-1 pb-8">
             {groups.map((g) => (
               <div key={g.state} role="group" aria-label={STATES[g.state].group} className="flex animate-enter flex-col gap-1">
-                <div aria-hidden className="flex items-center gap-2 px-3 pb-1 font-semibold text-muted-foreground text-xs">
-                  <span className={cn("size-1.5 rounded-full", STATES[g.state].dot)} />
-                  {STATES[g.state].group}
+                <div aria-hidden className="flex items-baseline gap-2 px-3 pb-1 font-semibold text-xs">
+                  <span className={g.state === "needs-you" ? "text-warning-foreground" : "text-muted-foreground"}>{STATES[g.state].group}</span>
                   <span className="font-normal text-faint tabular-nums">{g.items.length}</span>
                 </div>
                 {g.items.map(({ item, i }) => (
