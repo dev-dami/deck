@@ -84,6 +84,7 @@ const bridge: DeckBridge = {
   previewBounds: (bounds) => invoke("previewBounds", bounds),
   previewHide: () => invoke("previewHide"),
   previewClose: () => invoke("previewClose"),
+  setAppIcon: (images) => invoke("setAppIcon", images),
   onSocket: (fn) => listen<[number, SocketEvent]>("deck:socket", fn),
   onRpc: (fn) => listen<[string, RpcStreamEvent]>("deck:rpc", fn),
   onMenu: (fn) => listen<[MenuCommand]>("deck:menu", fn),

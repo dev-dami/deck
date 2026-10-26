@@ -5,7 +5,16 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { testHost } from "../../test/bridge";
 import { FakeRpcDeck } from "../../test/fake-grpc";
-import type { HostMethod, LocalDeck, OpenOutcome, RpcStreamEvent } from "../shared/bridge";
+import { fakePng } from "../../test/png";
+import {
+  APP_ICON_LIMITS,
+  APP_ICON_SIZES,
+  type AppIconImage,
+  type HostMethod,
+  type LocalDeck,
+  type OpenOutcome,
+  type RpcStreamEvent,
+} from "../shared/bridge";
 import { callHost, fromApp } from "./host";
 
 describe("callHost", () => {
@@ -307,6 +316,36 @@ describe("ports and the preview", () => {
       ["hide"],
       ["close"],
     ]);
+  });
+
+  test("setAppIcon takes PNGs of the sizes they claim, and nothing else reaches main", async () => {
+    const seen: AppIconImage[][] = [];
+    let decodes = true;
+    const { host } = testHost(noEmit, noEmit, undefined, {
+      setAppIcon: (images) => {
+        seen.push(images);
+        return decodes;
+      },
+    });
+    const icon = APP_ICON_SIZES.other.map((size) => ({ size, png: fakePng(size) }));
+    const bad: unknown[][] = [
+      [],
+      [icon, icon],
+      ["data:image/png;base64,AAAA"],
+      [{ size: 32, png: fakePng(32) }],
+      [[{ size: 32, png: fakePng(64) }]],
+      [[{ size: 32, png: new Uint8Array(64) }]],
+      [[{ size: 2048, png: fakePng(2048) }]],
+      [[{ size: 512, png: fakePng(512, 512, APP_ICON_LIMITS.bytes + 1) }]],
+      [[{ size: 32, png: fakePng(32), path: "/etc/passwd" }]],
+    ];
+    for (const args of bad) await expect(callHost(host, "setAppIcon", args)).rejects.toThrow(/bad arguments/);
+    expect(seen).toEqual([]);
+    await expect(callHost(host, "setAppIcon", [icon])).resolves.toBe(true);
+    expect(seen[0]?.map((i) => i.size)).toEqual([...APP_ICON_SIZES.other]);
+    // Bytes the system cannot decode are not shown.
+    decodes = false;
+    await expect(callHost(host, "setAppIcon", [icon.slice(0, 1)])).resolves.toBe(false);
   });
 
   test("a message from the preview's page is refused: only the window's own page may call", () => {
