@@ -148,7 +148,7 @@ func TestAfterTurnRunsOffThePumpInTurnOrder(t *testing.T) {
 	th := m.thread(tid)
 	th.mu.Lock()
 	var order []string
-	for _, e := range th.log {
+	for _, e := range allLog(th) {
 		switch {
 		case e.Kind == agent.KindTurnDone && e.AgentID == "claude":
 			order = append(order, "turn_done")

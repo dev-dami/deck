@@ -857,7 +857,7 @@ func TestResumeTwoMemberThread(t *testing.T) {
 		t.Errorf("codex spec = %+v", sp)
 	}
 	var users, relays, events int
-	for _, h := range hist {
+	for _, h := range hist.Msgs() {
 		switch v := h.(type) {
 		case EventMsg:
 			events++
@@ -874,7 +874,7 @@ func TestResumeTwoMemberThread(t *testing.T) {
 	if users != 1 || relays != 2 || events < 6 {
 		t.Errorf("history: users=%d relays=%d events=%d", users, relays, events)
 	}
-	if again, h2, err := r2.m.Resume(tid); err != nil || again.ID != tid || h2 != nil {
+	if again, h2, err := r2.m.Resume(tid); err != nil || again.ID != tid || h2.Msgs() != nil {
 		t.Fatalf("resuming a running thread: %+v %v %v", again, h2, err)
 	}
 
@@ -915,7 +915,7 @@ func TestResumeRemapsIDsThatAreTaken(t *testing.T) {
 	if ti.Members[0].ID == "claude" {
 		t.Fatalf("id collision: %+v", ti.Members)
 	}
-	for _, h := range hist {
+	for _, h := range hist.Msgs() {
 		if e, ok := h.(EventMsg); ok && !e.FromUser() && e.AgentID != ti.Members[0].ID {
 			t.Fatalf("history event still carries %q", e.AgentID)
 		}
@@ -953,11 +953,11 @@ func TestOldSingleAgentThreadMigrates(t *testing.T) {
 	if sp.ResumeID != "sess-old" {
 		t.Fatalf("spec = %+v", sp)
 	}
-	if len(hist) != 3 {
-		t.Fatalf("history = %+v", hist)
+	if len(hist.Msgs()) != 3 {
+		t.Fatalf("history = %+v", hist.Msgs())
 	}
-	if first, ok := hist[0].(EventMsg); !ok || !first.FromUser() || first.Text != "fix it" || first.To[0] != "claude" {
-		t.Fatalf("first history message = %+v", hist[0])
+	if first, ok := hist.Msgs()[0].(EventMsg); !ok || !first.FromUser() || first.Text != "fix it" || first.To[0] != "claude" {
+		t.Fatalf("first history message = %+v", hist.Msgs()[0])
 	}
 	if err := r.m.Post("old1", "next please"); err != nil {
 		t.Fatal(err)

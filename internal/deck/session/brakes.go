@@ -246,8 +246,8 @@ func (t *thread) guardSend(from *agentState, targets []*agentState, now time.Tim
 // t.mu is held.
 func (t *thread) unread(a *agentState) int {
 	n := 0
-	for i := a.cursor; i < len(t.log); i++ {
-		if e := t.log[i]; e.Type == store.EntryRelay && !t.inert[i] && contains(e.To, a.id) {
+	for _, h := range t.index.since(a.cursor) {
+		if h.typ == store.EntryRelay && !t.inert[h.i] && contains(h.to, a.id) {
 			n++
 		}
 	}

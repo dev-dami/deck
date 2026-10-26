@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -34,10 +35,15 @@ type thread struct {
 	dir        string
 	mode       agent.Mode // permission mode; never empty
 	members    []*agentState
-	// log only grows: an entry, once appended, never changes (History).
-	log []store.Entry
-	// index finds log entries by id and the edits of user messages without
-	// scanning the log; appendLocked keeps it.
+	// log holds the newest entries of the thread's log, from index base on;
+	// the older ones are in the store only (window.go). The log only grows:
+	// an entry, once appended, never changes (History).
+	log  []store.Entry
+	base int
+	disk logDisk
+	// index finds log entries by id, the edits of user messages and the
+	// messages addressed to members without scanning the log; appendLocked
+	// keeps it.
 	index logIndex
 
 	boundary    map[string]int    // speaker -> log index just after its last finished turn
@@ -108,9 +114,11 @@ type thread struct {
 	repo     *changes.Repo
 
 	created bool // the store knows this thread (touched by the writer goroutine only)
-	// outbox holds the log entries appended since the writer last took them;
-	// one write for them is queued while it is not empty (appendLocked).
+	// outbox holds the log entries appended since the writer last took them,
+	// the first at log index outAt; one write for them is queued while it is
+	// not empty (appendLocked).
 	outbox []store.Entry
+	outAt  int
 	// metaQueued is set while a metadata write for the thread waits in the
 	// writer queue: that write snapshots the thread when it runs, so further
 	// changes until then need no write of their own.
@@ -132,41 +140,106 @@ const (
 )
 
 func newThread(m *Manager, id, dir string, mode agent.Mode) *thread {
-	return &thread{
+	t := &thread{
 		id: id, m: m, dir: dir, mode: mode,
 		boundary:  map[string]int{},
 		inert:     map[int]bool{},
 		lastRelay: map[string]string{},
 		skip:      map[skipKey]skipKind{},
 		images:    map[string][]agent.Image{},
-		index:     indexLog(nil),
+		index:     newIndex(),
 	}
+	if m.st != nil {
+		// A new thread's log in the store starts empty (Resume replaces this).
+		t.disk = logDisk{synced: true, marks: []mark{{}}}
+	}
+	return t
 }
 
 // logIndex indexes a log: at maps each entry's id to its index, edited each
 // edited user message's id to its latest text (an edit always comes after
-// the message it edits, and after the edits before it).
+// the message it edits, and after the edits before it), snaps each user
+// message's id to its checkpoint (EntrySnap). heads are the log's messages
+// (user messages, relays, edits), oldest first.
 type logIndex struct {
 	at     map[string]int
 	edited map[string]string
+	snaps  map[string]string
+	heads  []head
+	// firstText is the text of the first user message that has some, subSnap
+	// the newest SUB checkpoint (subops.go), revert the newest revert not
+	// undone ("" for none).
+	firstText string
+	subSnap   string
+	revert    string
 }
 
-func indexLog(entries []store.Entry) logIndex {
-	x := logIndex{at: make(map[string]int, len(entries)), edited: map[string]string{}}
-	for i, e := range entries {
-		x.add(i, e)
-	}
-	return x
+// head is what the scans for messages waiting for a member need of one
+// message (see triggers), and what a checkpoint needs of a user message.
+type head struct {
+	i      int
+	typ    string
+	id     string
+	to     []string
+	via    string
+	taskID string
+	steer  bool
+	// text and time of a user message that is not a steer: the checkpoint
+	// it is (changes.go).
+	text string
+	time time.Time
 }
 
-// add indexes entry e at log index i.
-func (x logIndex) add(i int, e store.Entry) {
+func newIndex() logIndex {
+	return logIndex{at: map[string]int{}, edited: map[string]string{}, snaps: map[string]string{}}
+}
+
+// add indexes entry e at log index i, which comes after every entry indexed
+// so far.
+func (x *logIndex) add(i int, e store.Entry) {
 	if e.ID != "" {
 		x.at[e.ID] = i
 	}
-	if e.Type == store.EntryEdit {
+	switch e.Type {
+	case store.EntryEdit:
 		x.edited[e.Ref] = e.Text
+	case store.EntrySnap:
+		x.snaps[e.Ref] = e.Snap
+		if isSubSnap(e.Snap) {
+			x.subSnap = e.Snap
+		}
+	case store.EntryRevert:
+		x.revert = e.ID
+	case store.EntryUnrevert:
+		if e.Ref == x.revert {
+			x.revert = ""
+		}
+	case store.EntryUser:
+		if x.firstText == "" && strings.TrimSpace(e.Text) != "" {
+			x.firstText = e.Text
+		}
 	}
+	if !triggers(e) {
+		return
+	}
+	h := head{i: i, typ: e.Type, id: e.ID, to: e.To, via: e.Via, taskID: e.TaskID, steer: e.Steer}
+	if e.Type == store.EntryUser && !e.Steer {
+		h.text, h.time = e.Text, e.Time
+	}
+	x.heads = append(x.heads, h)
+}
+
+// since is the heads of the messages from log index from on.
+func (x *logIndex) since(from int) []head {
+	return x.heads[sort.Search(len(x.heads), func(k int) bool { return x.heads[k].i >= from }):]
+}
+
+// head is the head of the message at log index i.
+func (x *logIndex) head(i int) (head, bool) {
+	if hs := x.since(i); len(hs) > 0 && hs[0].i == i {
+		return hs[0], true
+	}
+	return head{}, false
 }
 
 // appendLocked adds an entry to the log, hands it to the writer and returns its
@@ -181,7 +254,7 @@ func (m *Manager) appendLocked(t *thread, e store.Entry) int {
 	if len(e.Raw) > 0 && !agent.KeepsRaw(e.Kind) {
 		e.Raw = nil // the log neither needs nor keeps it
 	}
-	idx := len(t.log)
+	idx := t.size()
 	t.log = append(t.log, e)
 	t.index.add(idx, e)
 	if t.grew != nil {
@@ -195,10 +268,11 @@ func (m *Manager) appendLocked(t *thread, e store.Entry) int {
 		t.lastSpeaker = e.AgentID
 	}
 	if m.st != nil && !t.gone.Load() {
-		t.outbox = append(t.outbox, e)
-		if len(t.outbox) == 1 {
+		if len(t.outbox) == 0 {
+			t.outAt = idx
 			m.w.push(func() { m.writeEntries(t) })
 		}
+		t.outbox = append(t.outbox, e)
 	}
 	return idx
 }
@@ -231,14 +305,19 @@ func (m *Manager) ensureStored(t *thread) {
 
 // writeEntries is the writer's job for the log entries in t's outbox: one
 // append to the thread's log for all of them, however many arrived while the
-// job waited.
+// job waited. Once they are in the store, the oldest entries may leave
+// memory (window.go).
 func (m *Manager) writeEntries(t *thread) {
 	t.mu.Lock()
-	es := t.outbox
+	es, at := t.outbox, t.outAt
 	t.outbox = nil
 	t.mu.Unlock()
 	m.ensureStored(t)
-	_ = m.st.AppendEntries(t.id, es)
+	start, end, err := m.st.AppendEntriesAt(t.id, es)
+	t.mu.Lock()
+	t.disk.wroteLocked(at, es, start, end, err)
+	t.trimLocked(false)
+	t.mu.Unlock()
 }
 
 // persistMeta queues a write of the thread's metadata as it is when the write
@@ -477,9 +556,8 @@ func triggers(e store.Entry) bool {
 // hasTrigger reports whether a has messages addressed to it that it has not
 // been given yet and that are allowed to start a turn.
 func (t *thread) hasTrigger(a *agentState) bool {
-	for i := a.cursor; i < len(t.log); i++ {
-		e := t.log[i]
-		if triggers(e) && !t.inert[i] && t.skip[skipKey{i, a.id}] == 0 && contains(e.To, a.id) {
+	for _, h := range t.index.since(a.cursor) {
+		if !t.inert[h.i] && t.skip[skipKey{h.i, a.id}] == 0 && contains(h.to, a.id) {
 			return true
 		}
 	}
@@ -489,10 +567,9 @@ func (t *thread) hasTrigger(a *agentState) bool {
 // dropPending makes every undelivered message addressed to a inert: it stays in
 // the log (and in the next briefing) but no longer starts a turn. t.mu is held.
 func (t *thread) dropPending(a *agentState) {
-	for i := a.cursor; i < len(t.log); i++ {
-		e := t.log[i]
-		if triggers(e) && contains(e.To, a.id) {
-			t.inert[i] = true
+	for _, h := range t.index.since(a.cursor) {
+		if contains(h.to, a.id) {
+			t.inert[h.i] = true
 		}
 	}
 }

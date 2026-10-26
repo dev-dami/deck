@@ -263,7 +263,7 @@ func TestTrackingOffTakesNoSnapshots(t *testing.T) {
 	th := r.m.thread(tid)
 	th.mu.Lock()
 	defer th.mu.Unlock()
-	for _, e := range th.log {
+	for _, e := range allLog(th) {
 		if e.Snap != "" {
 			t.Fatalf("entry %s has a snapshot with tracking off", e.ID)
 		}

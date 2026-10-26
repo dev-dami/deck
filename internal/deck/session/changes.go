@@ -119,31 +119,20 @@ func (m *Manager) checkpoint(t *thread, entryID string) {
 }
 
 // checkpointsLocked lists the thread's user messages oldest first, with the
-// index of each in the log and its snapshot. t.mu is held.
+// index of each in the log and its snapshot, from the log's index. t.mu is
+// held.
 func (t *thread) checkpointsLocked() (cps []Checkpoint, idx []int, snaps []string) {
-	// One pass: an edit is always logged after the message it edits, so the
-	// last edit seen for a checkpoint is its latest text.
-	at := map[string]int{}
-	for i := range t.log {
-		e := &t.log[i]
-		switch {
-		case e.Type == store.EntryUser && !e.Steer:
-			at[e.ID] = len(cps)
-			cps = append(cps, Checkpoint{EntryID: e.ID, Text: e.Text, Time: e.Time})
-			idx = append(idx, i)
-			snaps = append(snaps, "")
-		case e.Type == store.EntryEdit:
-			if j, ok := at[e.Ref]; ok {
-				cps[j].Text = e.Text
-			}
-		case e.Type == store.EntrySnap:
-			if j, ok := at[e.Ref]; ok {
-				snaps[j] = e.Snap
-			}
+	for _, h := range t.index.heads {
+		if h.typ != store.EntryUser || h.steer {
+			continue
 		}
-	}
-	for i := range cps {
-		cps[i].Text = oneLine(cps[i].Text)
+		text := h.text
+		if s, ok := t.index.edited[h.id]; ok {
+			text = s
+		}
+		cps = append(cps, Checkpoint{EntryID: h.id, Text: oneLine(text), Time: h.time})
+		idx = append(idx, h.i)
+		snaps = append(snaps, t.index.snaps[h.id])
 	}
 	return cps, idx, snaps
 }
@@ -203,8 +192,9 @@ func (m *Manager) Changes(ctx context.Context, threadID, since string) (ChangeSe
 			break
 		}
 		t.mu.Lock()
-		touched := t.touchedLocked(idx[at], r.Root)
+		v := t.view()
 		t.mu.Unlock()
+		touched := t.touched(v, idx[at], r.Root)
 		cs.Git, cs.Root = true, r.Root
 		for _, d := range diffs {
 			f := ChangedFile{FileDiff: d}
@@ -218,21 +208,22 @@ func (m *Manager) Changes(ctx context.Context, threadID, since string) (ChangeSe
 	}
 
 	t.mu.Lock()
-	cs.Files = t.reportedLocked(idx[at])
+	v := t.view()
 	t.mu.Unlock()
+	cs.Files = t.reported(v, idx[at])
 	return cs, nil
 }
 
-// touchedLocked maps each file the agents reported changing from log index
-// from on (as a pathKey of its path under root) to those agents. t.mu is held.
-func (t *thread) touchedLocked(from int, root string) map[string][]string {
+// touched maps each file the agents reported changing from log index from
+// on in v (as a pathKey of its path under root) to those agents.
+func (t *thread) touched(v logView, from int, root string) map[string][]string {
 	out := map[string][]string{}
 	root = realPath(root)
 	relOf := relMemo(root, t.dir)
-	for i := from; i < len(t.log); i++ {
-		e := &t.log[i]
+	// A part of the log that cannot be read back is left out.
+	_ = v.each(from, v.size(), func(_ int, e store.Entry) bool {
 		if e.Type != store.EntryEvent || e.Kind != agent.KindFileChange || e.Diff == nil || e.AgentID == "" {
-			continue
+			return true
 		}
 		for _, p := range []string{e.Diff.Path, e.Diff.OldPath} {
 			if p == "" {
@@ -245,21 +236,20 @@ func (t *thread) touchedLocked(from int, root string) map[string][]string {
 			k := pathKey(rel)
 			out[k] = mergeIDs(out[k], []string{e.AgentID})
 		}
-	}
+		return true
+	})
 	return out
 }
 
-// reportedLocked gathers the file changes the agents reported from log index
-// from on, one entry per file with its hunks in the order they were made.
-// t.mu is held.
-func (t *thread) reportedLocked(from int) []ChangedFile {
+// reported gathers the file changes the agents reported from log index from
+// on in v, one entry per file with its hunks in the order they were made.
+func (t *thread) reported(v logView, from int) []ChangedFile {
 	var out []ChangedFile
 	at := map[string]int{}
 	relOf := relMemo(realPath(t.dir), t.dir)
-	for i := from; i < len(t.log); i++ {
-		e := &t.log[i]
+	_ = v.each(from, v.size(), func(_ int, e store.Entry) bool {
 		if e.Type != store.EntryEvent || e.Kind != agent.KindFileChange || e.Diff == nil {
-			continue
+			return true
 		}
 		d := *e.Diff
 		path := d.Path
@@ -273,7 +263,7 @@ func (t *thread) reportedLocked(from int) []ChangedFile {
 			d.Hunks = append([]agent.Hunk(nil), d.Hunks...)
 			out = append(out, ChangedFile{FileDiff: d, Agents: []string{e.AgentID}})
 			at[k] = len(out) - 1
-			continue
+			return true
 		}
 		f := &out[i]
 		f.Hunks = append(f.Hunks, d.Hunks...)
@@ -281,7 +271,8 @@ func (t *thread) reportedLocked(from int) []ChangedFile {
 		f.Removed += d.Removed
 		f.Deleted = d.Deleted
 		f.Agents = mergeIDs(f.Agents, []string{e.AgentID})
-	}
+		return true
+	})
 	return out
 }
 
@@ -337,12 +328,12 @@ func (m *Manager) UndoRevert(ctx context.Context, threadID, revertID string) err
 	}
 	var rev store.Entry
 	t.mu.Lock()
-	for _, e := range t.log {
-		switch {
-		case e.Type == store.EntryRevert && (e.ID == revertID || revertID == ""):
+	if revertID == "" {
+		revertID = t.index.revert // the newest revert not undone
+	}
+	if i, ok := t.index.at[revertID]; ok && revertID != "" {
+		if e, ok := t.entryLocked(i); ok && e.Type == store.EntryRevert {
 			rev = e
-		case e.Type == store.EntryUnrevert && revertID == "" && e.Ref == rev.ID:
-			rev = store.Entry{}
 		}
 	}
 	t.mu.Unlock()
@@ -363,32 +354,41 @@ func (m *Manager) UndoRevert(ctx context.Context, threadID, revertID string) err
 func (m *Manager) logRevert(t *thread, e store.Entry) {
 	t.mu.Lock()
 	m.appendLocked(t, e)
-	msg := revertMsg(t.id, t.log, t.index, e)
+	msg := t.revertMsgLocked(e)
 	t.mu.Unlock()
 	m.emit(msg)
 }
 
-// revertMsg is the message for a revert entry of the given log, which x
-// indexes.
-func revertMsg(threadID string, log []store.Entry, x logIndex, e store.Entry) RevertedMsg {
-	return RevertedMsg{ThreadID: threadID, EntryID: e.ID, Files: e.Files, Undo: e.Type == store.EntryUnrevert, Since: revertSince(log, x, e)}
+// revertMsgLocked is the message for a revert entry of the log. t.mu is held.
+func (t *thread) revertMsgLocked(e store.Entry) RevertedMsg {
+	return RevertedMsg{ThreadID: t.id, EntryID: e.ID, Files: e.Files, Undo: e.Type == store.EntryUnrevert, Since: t.revertSinceLocked(e)}
 }
 
-// revertSince is the text of the message a revert (or the revert an undo
-// undid) went back to, as last edited. x indexes log.
-func revertSince(log []store.Entry, x logIndex, e store.Entry) string {
+// revertSinceLocked is the text of the message a revert (or the revert an
+// undo undid) went back to, as last edited. t.mu is held.
+func (t *thread) revertSinceLocked(e store.Entry) string {
 	ref := e.Ref
 	if e.Type == store.EntryUnrevert {
-		if i, ok := x.at[e.Ref]; ok {
-			ref = log[i].Ref
+		if i, ok := t.index.at[e.Ref]; ok {
+			if rev, ok := t.entryLocked(i); ok {
+				ref = rev.Ref
+			}
 		}
 	}
-	i, ok := x.at[ref]
-	if !ok || log[i].Type != store.EntryUser {
+	i, ok := t.index.at[ref]
+	h, isMsg := t.index.head(i)
+	if !ok || !isMsg || h.typ != store.EntryUser {
 		return ""
 	}
-	text := log[i].Text
-	if s, ok := x.edited[ref]; ok {
+	text := h.text
+	if h.steer {
+		u, ok := t.entryLocked(i)
+		if !ok {
+			return ""
+		}
+		text = u.Text
+	}
+	if s, ok := t.index.edited[ref]; ok {
 		text = s
 	}
 	return oneLine(text)

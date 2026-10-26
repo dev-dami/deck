@@ -384,7 +384,8 @@ func (m *Manager) Continue(threadID string) error {
 	var targets []*agentState
 	for _, idx := range t.heldIdx {
 		delete(t.inert, idx)
-		for _, id := range t.log[idx].To {
+		h, _ := t.index.head(idx) // a held relay
+		for _, id := range h.to {
 			if a := t.member(id); a != nil {
 				targets = append(targets, a)
 			}

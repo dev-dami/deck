@@ -98,7 +98,7 @@ func (m *Manager) SetMode(threadID string, mode agent.Mode) error {
 	}
 	t.mode = mode
 	members := append([]*agentState(nil), t.members...)
-	stored := len(t.log) > 0
+	stored := t.size() > 0
 	t.mu.Unlock()
 	if stored {
 		m.persistMeta(t)

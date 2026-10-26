@@ -96,16 +96,20 @@ func (t *thread) findItemLocked(id string) int {
 // changed. t.mu is held.
 func (t *thread) syncQueueLocked(a *agentState) bool {
 	changed := false
-	for i := a.cursor; i < len(t.log); i++ {
-		e := t.log[i]
-		if (e.Type != store.EntryUser && e.Type != store.EntryEdit) || e.Steer {
+	for _, h := range t.index.since(a.cursor) {
+		i := h.i
+		if (h.typ != store.EntryUser && h.typ != store.EntryEdit) || h.steer {
 			continue
 		}
-		if t.inert[i] || t.skip[skipKey{i, a.id}] != 0 || !contains(e.To, a.id) {
+		if t.inert[i] || t.skip[skipKey{i, a.id}] != 0 || !contains(h.to, a.id) {
 			continue
 		}
-		id := itemID(e.ID, a.id)
+		id := itemID(h.id, a.id)
 		if t.findItemLocked(id) >= 0 {
+			continue
+		}
+		e, ok := t.entryLocked(i)
+		if !ok {
 			continue
 		}
 		q := qitem{idx: i, src: e.ID}
@@ -247,23 +251,21 @@ func (m *Manager) CancelQueued(itemID string) error {
 	return nil
 }
 
-// rebuildSkips restores the skip set of a stored thread from its cancel and
-// steer entries. t.mu is held or t is not shared yet.
-func (t *thread) rebuildSkips() {
-	byID := t.index.at
-	for _, e := range t.log {
-		switch {
-		case e.Type == store.EntryCancel:
-			if idx, ok := byID[e.Ref]; ok {
-				for _, to := range e.To {
-					t.skip[skipKey{idx, to}] = skipCancelled
-				}
+// restoreSkip restores what a stored cancel or steer entry did to the skip
+// set, as Resume reads the log. t is not shared yet.
+func (t *thread) restoreSkip(e store.Entry) {
+	switch {
+	case e.Type == store.EntryCancel:
+		if idx, ok := t.index.at[e.Ref]; ok {
+			for _, to := range e.To {
+				t.skip[skipKey{idx, to}] = skipCancelled
 			}
-		case e.Type == store.EntryUser && e.Steer && e.Old == "":
-			if idx, ok := byID[e.Ref]; ok && t.log[idx].Type == store.EntryUser {
-				for _, to := range e.To {
-					t.skip[skipKey{idx, to}] = skipSteered
-				}
+		}
+	case e.Type == store.EntryUser && e.Steer && e.Old == "":
+		idx, ok := t.index.at[e.Ref]
+		if h, isMsg := t.index.head(idx); ok && isMsg && h.typ == store.EntryUser {
+			for _, to := range e.To {
+				t.skip[skipKey{idx, to}] = skipSteered
 			}
 		}
 	}
@@ -461,11 +463,14 @@ func (m *Manager) Edit(threadID, entryID, newText string) error {
 
 	t.mu.Lock()
 	idx, ok := t.index.at[entryID]
+	var orig store.Entry
+	if ok && entryID != "" {
+		orig, ok = t.entryLocked(idx)
+	}
 	if !ok || entryID == "" {
 		t.mu.Unlock()
 		return fmt.Errorf("session: no message %q in this thread", entryID)
 	}
-	orig := t.log[idx]
 	if orig.Type != store.EntryUser || orig.Steer {
 		t.mu.Unlock()
 		return errors.New("session: only the user's own messages can be edited")

@@ -35,7 +35,7 @@ Run it in a project folder. It drives the `claude`, `codex` and `opencode` CLIs 
 
 ## Benchmarks and profiles
 
-The streaming path has benchmarks: `go test ./internal/deck/store/ -bench AppendEntry` (one store, several threads appending), `./internal/message/ -bench TokenToDB` (a delta through `Update` to SQLite), `./internal/ui/chat/ -bench StreamingOpenFence` (a long code block still open) and `./internal/ui/model/ -bench SessionLoad` (opening a 1000-message session). Add `-benchmem`, and `-cpuprofile cpu.out` to see where the time goes.
+The streaming path has benchmarks: `go test ./internal/deck/store/ -bench AppendEntry` (one store, several threads appending), `./internal/message/ -bench TokenToDB` (a delta through `Update` to SQLite), `./internal/ui/chat/ -bench StreamingOpenFence` (a long code block still open) and `./internal/ui/model/ -bench SessionLoad` (opening a 1000-message session) and `./internal/deck/session/ -bench 'ResumeLongLog|ForkLongLog'` (resuming and forking a thread with a 20 MB log). Add `-benchmem`, and `-cpuprofile cpu.out` to see where the time goes.
 
 To profile Deck itself, set `DECK_PPROF` to a folder:
 

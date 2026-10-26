@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/changes"
 	"github.com/dev-dami/deck/internal/deck/store"
@@ -34,25 +32,25 @@ const gitTimeout = 2 * time.Minute
 // Isolate moves a thread onto a new worktree and branch (deck/<id>) made from
 // the repository's last commit; edits not yet committed stay in the shared
 // tree. Its agents restart there like after Move.
-func (m *Manager) Isolate(threadID string) (ThreadInfo, []tea.Msg, error) {
+func (m *Manager) Isolate(threadID string) (ThreadInfo, History, error) {
 	t := m.thread(threadID)
 	if t == nil {
-		return ThreadInfo{}, nil, fmt.Errorf("session: no thread %q", threadID)
+		return ThreadInfo{}, History{}, fmt.Errorf("session: no thread %q", threadID)
 	}
 	if m.st == nil {
-		return ThreadInfo{}, nil, errors.New("session: no store")
+		return ThreadInfo{}, History{}, errors.New("session: no store")
 	}
 	t.mu.Lock()
 	wt, dir := t.worktree, t.dir
 	t.mu.Unlock()
 	if wt != nil {
-		return ThreadInfo{}, nil, fmt.Errorf("session: already isolated on %s", wt.Branch)
+		return ThreadInfo{}, History{}, fmt.Errorf("session: already isolated on %s", wt.Branch)
 	}
 	ctx, cancel := context.WithTimeout(m.ctx, gitTimeout)
 	defer cancel()
 	r, err := changes.Open(ctx, dir)
 	if err != nil {
-		return ThreadInfo{}, nil, errors.New("session: isolating needs a git repository")
+		return ThreadInfo{}, History{}, errors.New("session: isolating needs a git repository")
 	}
 	id := threadID
 	if len(id) > 6 {
@@ -62,7 +60,7 @@ func (m *Manager) Isolate(threadID string) (ThreadInfo, []tea.Msg, error) {
 	branch := "deck/" + id
 	base, err := r.AddWorktree(ctx, path, branch)
 	if err != nil {
-		return ThreadInfo{}, nil, err
+		return ThreadInfo{}, History{}, err
 	}
 	target := path // the thread's subfolder of the repository, in the worktree
 	if rel, err := filepath.Rel(r.Root, dir); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
@@ -77,7 +75,7 @@ func (m *Manager) Isolate(threadID string) (ThreadInfo, []tea.Msg, error) {
 		t.worktree = nil
 		t.mu.Unlock()
 		_ = r.RemoveWorktree(ctx, path, branch)
-		return ThreadInfo{}, nil, err
+		return ThreadInfo{}, History{}, err
 	}
 	return info, hist, nil
 }
@@ -199,16 +197,16 @@ func diffPaths(diffs []agent.FileDiff) []string {
 // Unisolate moves an isolated thread back to the shared tree and removes its
 // worktree and branch. With changes never applied it refuses (UnappliedError)
 // unless discard is true.
-func (m *Manager) Unisolate(threadID string, discard bool) (ThreadInfo, []tea.Msg, error) {
+func (m *Manager) Unisolate(threadID string, discard bool) (ThreadInfo, History, error) {
 	ctx, cancel := context.WithTimeout(m.ctx, gitTimeout)
 	defer cancel()
 	t, wt, main, tree, err := m.isolated(ctx, threadID)
 	if err != nil {
-		return ThreadInfo{}, nil, err
+		return ThreadInfo{}, History{}, err
 	}
 	if !discard {
 		if _, files, _, err := main.Pending(ctx, tree, wt.Base); err == nil && len(files) > 0 {
-			return ThreadInfo{}, nil, UnappliedError{Files: len(files)}
+			return ThreadInfo{}, History{}, UnappliedError{Files: len(files)}
 		}
 	}
 	t.mu.Lock()
@@ -216,7 +214,7 @@ func (m *Manager) Unisolate(threadID string, discard bool) (ThreadInfo, []tea.Ms
 	t.mu.Unlock()
 	info, hist, err := m.Move(threadID, wt.Main)
 	if err != nil {
-		return ThreadInfo{}, nil, err
+		return ThreadInfo{}, History{}, err
 	}
 	if err := main.RemoveWorktree(ctx, wt.Path, wt.Branch); err != nil {
 		m.emit(NoticeMsg{ThreadID: threadID, Text: "could not remove the worktree " + wt.Path + ": " + err.Error()})

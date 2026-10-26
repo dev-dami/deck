@@ -553,7 +553,7 @@ func TestEditRejectsOtherEntries(t *testing.T) {
 	th := r.m.thread(tid)
 	th.mu.Lock()
 	byType := map[string]string{}
-	for _, e := range th.log {
+	for _, e := range allLog(th) {
 		key := e.Type
 		if key == store.EntryEvent {
 			key = "event:" + string(e.Kind)
@@ -600,7 +600,7 @@ func TestEditsReplayOnResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	var userAt, editAt = -1, -1
-	for i, h := range hist {
+	for i, h := range hist.Msgs() {
 		switch v := h.(type) {
 		case EventMsg:
 			if v.FromUser() && v.EntryID == res.EntryID {

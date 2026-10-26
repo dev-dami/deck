@@ -34,7 +34,8 @@ type line struct {
 	images    []agent.Image // images attached to an addressed user message
 }
 
-// walk renders t.log[start:end] from v's point of view. in decides whether the
+// walk renders log entries [start, end) from v's point of view; those no
+// longer in memory are read back from the store. in decides whether the
 // entry at index i takes part (a briefing skips what the member already has).
 // The second result maps a speaker to the first index of its turn that is still
 // in flight, which the caller must hold back and offer again later. t.mu is held.
@@ -72,25 +73,25 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 		}
 	}
 
-	for i := start; i < end && i < len(t.log); i++ {
-		e := t.log[i]
+	// A part of the log that cannot be read back is left out.
+	_ = t.view().each(start, end, func(i int, e store.Entry) bool {
 		if !in(i, e) {
-			continue
+			return true
 		}
 		switch e.Type {
 		case store.EntryEvent:
 			if e.Delta || e.Kind == agent.KindUserText || e.Kind == agent.KindCompacted {
-				continue // a compaction can come between turns: it must not hold the briefing
+				return true // a compaction can come between turns: it must not hold the briefing
 			}
 			sp := e.AgentID
 			if sp == v.self && v.skipSelf {
-				continue
+				return true
 			}
 			if !v.includeOpen && sp != v.self && i >= t.boundary[sp] {
 				if _, ok := hold[sp]; !ok {
 					hold[sp] = i
 				}
-				continue
+				return true
 			}
 			ac := accs[sp]
 			if ac == nil {
@@ -109,7 +110,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				}
 			case agent.KindToolResult:
 				if e.Tool == nil {
-					continue
+					return true
 				}
 				switch {
 				case isCommandTool(e.Tool.Name):
@@ -122,7 +123,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			}
 		case store.EntryUser:
 			if v.self != "" && t.skip[skipKey{i, v.self}] != 0 {
-				continue // cancelled, or already delivered as a steer
+				return true // cancelled, or already delivered as a steer
 			}
 			raw := strings.TrimSpace(e.Text)
 			if txt, ok := t.index.edited[e.ID]; ok {
@@ -134,7 +135,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				// A steer reaches only the member it redirected; the others read the
 				// queued message it came from.
 				if !contains(e.To, v.self) {
-					continue
+					return true
 				}
 				l.user = false
 				l.addressed = v.skipSelf
@@ -155,12 +156,12 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			out = append(out, l)
 		case store.EntryEdit:
 			if v.self == "" || !contains(e.To, v.self) || t.skip[skipKey{i, v.self}] != 0 {
-				continue
+				return true
 			}
 			out = append(out, line{addressed: v.skipSelf, text: editText(e.Old, e.Text)})
 		case store.EntryRelay:
 			if e.Speaker == v.self && v.skipSelf {
-				continue
+				return true
 			}
 			l := line{text: "[" + t.label(e.Speaker, v.self) + t.arrow(e.To, e.Speaker, v.self) + "] " + clip(strings.TrimSpace(e.Text), maxEntryChars)}
 			if v.skipSelf && contains(e.To, v.self) {
@@ -174,7 +175,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			out = append(out, l)
 		case store.EntryMember:
 			if e.Speaker == v.self && v.skipSelf {
-				continue
+				return true
 			}
 			who := t.name(e.Speaker)
 			if who != e.Text {
@@ -202,13 +203,14 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 		case store.EntryContinue:
 			out = append(out, line{text: "[deck] the user let agent-to-agent messages continue"})
 		case store.EntryRevert, store.EntryUnrevert:
-			out = append(out, line{text: revertText(e, revertSince(t.log, t.index, e))})
+			out = append(out, line{text: revertText(e, t.revertSinceLocked(e))})
 		case store.EntryTask:
 			if e.Task != nil {
 				out = append(out, line{text: taskText(t, e)})
 			}
 		}
-	}
+		return true
+	})
 	for _, sp := range order {
 		flush(sp)
 	}
@@ -227,7 +229,7 @@ func (m *Manager) buildPrompt(t *thread, a *agentState) (prompt string, images [
 			start = h
 		}
 	}
-	end := len(t.log)
+	end := t.size()
 	in := func(i int, e store.Entry) bool {
 		if i >= a.cursor {
 			return true
@@ -277,18 +279,16 @@ func (m *Manager) readThread(agentID string) string {
 	if t.ops != nil {
 		return errOpsOnly.Error()
 	}
-	start := len(t.log) - readThreadLast
-	if start < 0 {
-		start = 0
-	}
-	lines, _ := m.walk(t, viewer{self: a.id, includeOpen: true}, start, len(t.log), func(int, store.Entry) bool { return true })
+	n := t.size()
+	start := max(n-readThreadLast, 0)
+	lines, _ := m.walk(t, viewer{self: a.id, includeOpen: true}, start, n, func(int, store.Entry) bool { return true })
 	var names []string
 	for _, o := range t.members {
 		names = append(names, o.getName())
 	}
 	head := fmt.Sprintf("Thread with %s (you are %s). ", strings.Join(names, ", "), a.getName())
 	if start > 0 {
-		head += fmt.Sprintf("Showing the last %d of %d entries.", len(t.log)-start, len(t.log))
+		head += fmt.Sprintf("Showing the last %d of %d entries.", n-start, n)
 	}
 	if len(lines) == 0 {
 		return head + "\n\n(nothing has been said yet)"

@@ -170,7 +170,7 @@ func TestForkKeepsTheHistoryBeforeAMessageAndBriefsFreshAgents(t *testing.T) {
 	var at string
 	th := r.m.thread(tid)
 	th.mu.Lock()
-	for _, e := range th.log {
+	for _, e := range allLog(th) {
 		if e.Type == store.EntryUser && e.Text == "second question" {
 			at = e.ID
 		}
@@ -185,7 +185,7 @@ func TestForkKeepsTheHistoryBeforeAMessageAndBriefsFreshAgents(t *testing.T) {
 		t.Fatalf("fork = %+v, text %q", info, text)
 	}
 	var said []string
-	for _, h := range hist {
+	for _, h := range hist.Msgs() {
 		if em, ok := h.(EventMsg); ok && em.Text != "" {
 			said = append(said, em.Text)
 		}
@@ -218,7 +218,7 @@ func TestMoveRestartsTheAgentsInTheNewFolderBriefedOnTheThread(t *testing.T) {
 	if info.ID != tid || info.Dir != filepath.Clean(to) || len(info.Members) != 1 {
 		t.Fatalf("moved = %+v", info)
 	}
-	for _, h := range hist {
+	for _, h := range hist.Msgs() {
 		if em, ok := h.(EventMsg); ok && em.Kind == agent.KindExited {
 			t.Fatal("closing the old agents must not land in the thread")
 		}

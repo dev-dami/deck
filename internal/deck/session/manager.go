@@ -131,6 +131,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"slices"
 	"sort"
@@ -250,6 +251,9 @@ type Manager struct {
 	subFetch SubFetcher // sub.capsule.fetch from peers; nil without them
 	opts     Options
 	maxHops  int
+	// window is how much of each thread's log stays in memory (window.go);
+	// 0 keeps all of it.
+	window int64
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -302,6 +306,7 @@ func NewManager(adapters map[string]agent.Adapter, st *store.Store, cfg config.C
 		st:       st,
 		opts:     o,
 		maxHops:  o.MaxHops,
+		window:   defaultLogWindow,
 		ctx:      ctx,
 		cancel:   cancel,
 		done:     make(chan struct{}),
@@ -448,7 +453,7 @@ func (m *Manager) threadInfo(t *thread) ThreadInfo {
 	if t.worktree != nil {
 		info.Branch = t.worktree.Branch
 	}
-	if n := len(t.log); n > 0 {
+	if n := len(t.log); n > 0 { // the newest entries are always in memory
 		info.Active = t.log[n-1].Time
 	}
 	t.mu.Unlock()
@@ -505,24 +510,9 @@ func (m *Manager) History(threadID string) []tea.Msg {
 	// The log is append-only: the entries up to its length now never change,
 	// so they are rendered outside the lock, which event ingest needs.
 	t.mu.Lock()
-	log := t.log[:len(t.log):len(t.log)]
+	h := t.history()
 	t.mu.Unlock()
-	return historyOf(t.id, log)
-}
-
-func historyOf(threadID string, entries []store.Entry) []tea.Msg {
-	var out []tea.Msg
-	x := indexLog(entries)
-	for _, e := range entries {
-		if e.Type == store.EntryRevert || e.Type == store.EntryUnrevert {
-			out = append(out, revertMsg(threadID, entries, x, e))
-			continue
-		}
-		if msg := msgFor(threadID, e); msg != nil {
-			out = append(out, msg)
-		}
-	}
-	return out
+	return h.Msgs()
 }
 
 // ---- creating threads and members ----
@@ -1163,27 +1153,29 @@ func (m *Manager) Rename(id, name string) error {
 // session id, in the thread's directory, under its old id when that is free.
 // It returns the thread and its stored history as the messages the live stream
 // would have carried (with member ids rewritten if they had to change). If the
-// thread is already running it returns its info and no history.
-func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
+// thread is already running it returns its info and no history. The log is
+// read a part at a time and only its newest part stays in memory
+// (window.go); the history is rendered as it is read.
+func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 	if m.st == nil {
-		return ThreadInfo{}, nil, errors.New("session: no store")
+		return ThreadInfo{}, History{}, errors.New("session: no store")
 	}
 	if old := m.thread(threadID); old != nil {
 		if len(old.live()) > 0 {
-			return m.threadInfo(old), nil, nil
+			return m.threadInfo(old), History{}, nil
 		}
 		m.forget(old)
 	}
-	entries, th, err := m.st.LoadEntries(threadID)
+	th, err := m.st.Meta(threadID)
 	if err != nil {
-		return ThreadInfo{}, nil, err
+		return ThreadInfo{}, History{}, err
 	}
 	if len(th.Members) == 0 {
-		return ThreadInfo{}, nil, errors.New("session: thread has no agents")
+		return ThreadInfo{}, History{}, errors.New("session: thread has no agents")
 	}
 	for _, mem := range th.Members {
 		if _, ok := m.adapters[mem.Kind]; !ok {
-			return ThreadInfo{}, nil, fmt.Errorf("session: unknown agent kind %q", mem.Kind)
+			return ThreadInfo{}, History{}, fmt.Errorf("session: unknown agent kind %q", mem.Kind)
 		}
 	}
 	dir := th.Dir
@@ -1191,9 +1183,6 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		dir, _ = os.Getwd()
 	}
 	cfg := m.config()
-	for i := range entries {
-		canonical(&entries[i], cfg.UserName)
-	}
 
 	mode := agent.Mode(th.Mode)
 	switch {
@@ -1230,14 +1219,14 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	}
 	remap := map[string]string{}
 	var members []*agentState
-	fail := func(err error) (ThreadInfo, []tea.Msg, error) {
+	fail := func(err error) (ThreadInfo, History, error) {
 		for _, a := range members {
 			if run := a.getRun(); run != nil {
 				_ = run.Close()
 			}
 		}
 		m.forget(t)
-		return ThreadInfo{}, nil, err
+		return ThreadInfo{}, History{}, err
 	}
 
 	for _, mem := range th.Members {
@@ -1259,16 +1248,9 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		if effort == "" {
 			effort = m.defaultEffort(cfg, mem.Kind)
 		}
-		cursor := mem.Cursor
-		if th.Version < store.CurrentVersion && len(th.Members) == 1 {
-			cursor = len(entries) // a single-agent thread: that agent has seen it all
-		}
-		if cursor > len(entries) {
-			cursor = len(entries)
-		}
 		a := &agentState{
 			id: id, kind: mem.Kind, name: name, model: model, effort: effort, thread: t, base: StatusIdle,
-			started: time.Now(), costTotal: mem.CostUSD, sessionID: mem.SessionID, cursor: cursor,
+			started: time.Now(), costTotal: mem.CostUSD, sessionID: mem.SessionID, cursor: mem.Cursor,
 			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow, briefed: mem.Briefed,
 			parent: mem.Parent, ephemeral: mem.Ephemeral, dir: mem.Dir, worktree: mem.Worktree,
 		}
@@ -1304,24 +1286,16 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		}
 	}
 
-	for i := range entries {
-		e := &entries[i]
-		e.AgentID = mapID(remap, e.AgentID)
-		if e.Type != store.EntryUser {
-			e.Speaker = mapID(remap, e.Speaker)
-		}
-		for j := range e.To {
-			e.To[j] = mapID(remap, e.To[j])
-		}
-		if e.Type == store.EntryEvent && e.Kind == agent.KindAssistantText && !e.Delta && e.AgentID != "" {
-			t.lastSpeaker = e.AgentID
-		}
+	if err := m.loadLog(t, remap, cfg.UserName); err != nil {
+		return fail(err)
 	}
-	t.log = entries
-	t.index = indexLog(entries)
-	t.rebuildSkips()
+	n := t.size()
 	for _, a := range members {
-		t.boundary[a.id] = len(entries) // a turn cut short by a crash counts as finished
+		if th.Version < store.CurrentVersion && len(th.Members) == 1 {
+			a.cursor = n // a single-agent thread: that agent has seen it all
+		}
+		a.cursor = min(a.cursor, n)
+		t.boundary[a.id] = n // a turn cut short by a crash counts as finished
 		if t.lastSpeaker == "" {
 			t.lastSpeaker = a.id
 		}
@@ -1357,7 +1331,65 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	if th.Archived {
 		m.persistMeta(t) // resuming brings it back to the sidebar
 	}
-	return m.threadInfo(t), historyOf(t.id, entries), nil
+	t.mu.Lock()
+	h := t.history()
+	t.mu.Unlock()
+	return m.threadInfo(t), h, nil
+}
+
+// loadLog reads a resumed thread's log from the store, fixing each entry as
+// Resume needs (logFix) and indexing it, and keeps the newest part of it in
+// memory. The part that is sure to leave memory again is read without its
+// events' payload, which the index does not need. t is not shared yet.
+func (m *Manager) loadLog(t *thread, remap map[string]string, user string) error {
+	fix := &logFix{user: user, remap: remap, upto: math.MaxInt} // every entry, until the end is known
+	t.disk = logDisk{marks: []mark{{}}, fix: fix}
+	// The entries that stay take at most the window, from the end.
+	var full int64
+	if size, err := m.st.LogSize(t.id); err == nil && m.window > 0 {
+		full = max(size-m.window, 0)
+	}
+	n, whole := 0, -1 // whole: the first entry read with its payload
+	end, _, err := m.st.ScanEntries(t.id, 0, 0, full, func(e store.Entry, next int64) bool {
+		if whole < 0 && t.disk.end >= full {
+			whole = n
+		}
+		fix.apply(n, &e)
+		if e.Type == store.EntryEvent && e.Kind == agent.KindAssistantText && !e.Delta && e.AgentID != "" {
+			t.lastSpeaker = e.AgentID
+		}
+		t.log = append(t.log, e)
+		t.index.add(n, e)
+		t.restoreSkip(e)
+		n++
+		t.disk.n, t.disk.end = n, next
+		t.disk.markLocked(n, next)
+		t.trimLocked(true)
+		return true
+	})
+	if err != nil {
+		return err
+	}
+	fix.upto = n
+	// Appends go after the last line read; a torn one would swallow the
+	// first of them, so the store's log no longer lines up with this one.
+	t.disk.synced = end >= 0
+	if whole < 0 {
+		whole = n
+	}
+	if t.base < whole {
+		// Kept entries read without their payload (logKeep): read them whole.
+		v := t.view()
+		v.base, v.mem = whole, nil
+		k := t.base
+		if err := v.each(t.base, whole, func(i int, e store.Entry) bool {
+			t.log[i-t.base], k = e, i+1
+			return true
+		}); err != nil || k != whole {
+			return cmp.Or(err, fmt.Errorf("session: log entry %d is not in the store", k))
+		}
+	}
+	return nil
 }
 
 func mapID(remap map[string]string, id string) string {

@@ -124,8 +124,8 @@ func (t *thread) waitsOnChildren(a *agentState, answered int) bool {
 			}
 		}
 	}
-	for i := answered; i < len(t.log); i++ {
-		if e := t.log[i]; e.Type == store.EntryRelay && e.Via == "task" && !t.inert[i] && contains(e.To, a.id) {
+	for _, h := range t.index.since(answered) {
+		if h.typ == store.EntryRelay && h.via == "task" && !t.inert[h.i] && contains(h.to, a.id) {
 			return true
 		}
 	}

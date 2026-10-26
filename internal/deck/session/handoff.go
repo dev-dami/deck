@@ -93,10 +93,10 @@ func (m *Manager) startHandedTask(t *thread, taskID string, owner *agentState, b
 // handoverIndex is the log index of the relay that handed task id to member
 // to, or -1. t.mu is held.
 func handoverIndex(t *thread, id, to string) int {
-	for i := len(t.log) - 1; i >= 0; i-- {
-		e := t.log[i]
-		if e.Type == store.EntryRelay && e.TaskID == id && e.Via != "task" && contains(e.To, to) {
-			return i
+	hs := t.index.heads
+	for k := len(hs) - 1; k >= 0; k-- {
+		if h := hs[k]; h.typ == store.EntryRelay && h.taskID == id && h.via != "task" && contains(h.to, to) {
+			return h.i
 		}
 	}
 	return -1

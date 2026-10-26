@@ -153,7 +153,7 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	// is not its business unless it asks (thread.read), which keeps a deep
 	// tree's prompts small.
 	t.mu.Lock()
-	a.cursor = len(t.log)
+	a.cursor = t.size()
 	t.mu.Unlock()
 	brief += m.placeNote(t, a, parent, depth, taskID)
 	var wt *store.Worktree

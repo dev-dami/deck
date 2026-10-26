@@ -1,6 +1,7 @@
 package session
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -8,8 +9,6 @@ import (
 	"slices"
 	"sync"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/store"
@@ -205,39 +204,43 @@ func (m *Manager) drop(threadID string) (*thread, error) {
 // user message entryID, or from all of it when entryID is "". The new thread
 // has the same members on fresh CLI sessions, each briefed on that history at
 // its first turn. It returns the new thread like Resume does, plus the text of
-// the message forked at (for the composer).
-func (m *Manager) Fork(threadID, entryID string) (ThreadInfo, []tea.Msg, string, error) {
+// the message forked at (for the composer). The history is copied to the new
+// thread's log as it is read, a part at a time.
+func (m *Manager) Fork(threadID, entryID string) (ThreadInfo, History, string, error) {
 	if m.st == nil {
-		return ThreadInfo{}, nil, "", errors.New("session: no store")
+		return ThreadInfo{}, History{}, "", errors.New("session: no store")
 	}
 	t := m.thread(threadID)
 	if t == nil {
-		return ThreadInfo{}, nil, "", fmt.Errorf("session: no thread %q", threadID)
+		return ThreadInfo{}, History{}, "", fmt.Errorf("session: no thread %q", threadID)
 	}
 	t.mu.Lock()
-	cut, text := len(t.log), ""
+	cut, text := t.size(), ""
 	if entryID != "" {
 		cut = -1
-		for i, e := range t.log {
-			if e.ID == entryID && e.Type == store.EntryUser {
-				cut, text = i, e.Text
-				if s, ok := t.index.edited[e.ID]; ok {
+		if i, ok := t.index.at[entryID]; ok {
+			if h, isMsg := t.index.head(i); isMsg && h.typ == store.EntryUser && h.id == entryID {
+				cut, text = i, h.text
+				if h.steer {
+					e, _ := t.entryLocked(i)
+					text = e.Text
+				}
+				if s, ok := t.index.edited[entryID]; ok {
 					text = s
 				}
-				break
 			}
 		}
 	}
 	if cut < 0 {
 		t.mu.Unlock()
-		return ThreadInfo{}, nil, "", errors.New("session: no such message in this thread")
+		return ThreadInfo{}, History{}, "", errors.New("session: no such message in this thread")
 	}
-	entries := append([]store.Entry(nil), t.log[:cut]...)
+	log := t.view()
 	members := append([]*agentState(nil), t.members...)
 	th := store.Thread{ID: store.NewID(), Title: "fork · " + t.title, TitleSrc: titleUser, Dir: t.dir, Mode: string(t.mode)}
 	t.mu.Unlock()
 	if len(members) == 0 {
-		return ThreadInfo{}, nil, "", errors.New("session: nothing to fork yet")
+		return ThreadInfo{}, History{}, "", errors.New("session: nothing to fork yet")
 	}
 	for _, a := range members {
 		if a.isEphemeral() {
@@ -248,8 +251,15 @@ func (m *Manager) Fork(threadID, entryID string) (ThreadInfo, []tea.Msg, string,
 		mm.ContextTokens, mm.ContextWindow = 0, 0
 		th.Members = append(th.Members, mm)
 	}
-	if _, err := m.st.CreateWith(th, entries); err != nil {
-		return ThreadInfo{}, nil, "", err
+	var rerr error
+	entries := func(yield func(store.Entry) bool) {
+		rerr = log.each(0, cut, func(_ int, e store.Entry) bool { return yield(e) })
+	}
+	if made, err := m.st.CreateFrom(th, entries); err != nil || rerr != nil {
+		if made.ID != "" {
+			_ = m.st.Delete(made.ID) // half a log
+		}
+		return ThreadInfo{}, History{}, "", cmp.Or(rerr, err)
 	}
 	info, hist, err := m.Resume(th.ID)
 	return info, hist, text, err
@@ -258,14 +268,14 @@ func (m *Manager) Fork(threadID, entryID string) (ThreadInfo, []tea.Msg, string,
 // Move re-homes a thread in dir. A CLI's session belongs to the folder it ran
 // in, so the members restart there on fresh sessions, each briefed on the
 // thread so far at its next turn. The thread keeps its id and history.
-func (m *Manager) Move(threadID, dir string) (ThreadInfo, []tea.Msg, error) {
+func (m *Manager) Move(threadID, dir string) (ThreadInfo, History, error) {
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		return ThreadInfo{}, nil, fmt.Errorf("session: %s is not a directory", dir)
+		return ThreadInfo{}, History{}, fmt.Errorf("session: %s is not a directory", dir)
 	}
 	dir = filepath.Clean(dir)
 	t := m.thread(threadID)
 	if t == nil {
-		return ThreadInfo{}, nil, fmt.Errorf("session: no thread %q", threadID)
+		return ThreadInfo{}, History{}, fmt.Errorf("session: no thread %q", threadID)
 	}
 	t.mu.Lock()
 	same, empty := t.dir == dir, len(t.members) == 0
@@ -276,12 +286,12 @@ func (m *Manager) Move(threadID, dir string) (ThreadInfo, []tea.Msg, error) {
 	t.mu.Unlock()
 	switch {
 	case same:
-		return ThreadInfo{}, nil, errors.New("session: the thread is already there")
+		return ThreadInfo{}, History{}, errors.New("session: the thread is already there")
 	case empty:
 		m.emit(ThreadChangedMsg{ThreadID: threadID})
-		return m.threadInfo(t), nil, nil
+		return m.threadInfo(t), History{}, nil
 	case m.st == nil:
-		return ThreadInfo{}, nil, errors.New("session: no store")
+		return ThreadInfo{}, History{}, errors.New("session: no store")
 	}
 	th := m.snapshot(t)
 	th.Dir = dir
@@ -290,7 +300,7 @@ func (m *Manager) Move(threadID, dir string) (ThreadInfo, []tea.Msg, error) {
 		th.Members[i].ContextTokens, th.Members[i].ContextWindow = 0, 0
 	}
 	if _, err := m.drop(threadID); err != nil {
-		return ThreadInfo{}, nil, err
+		return ThreadInfo{}, History{}, err
 	}
 	errc := make(chan error, 1)
 	m.w.push(func() { // after every write the thread had queued
@@ -302,7 +312,7 @@ func (m *Manager) Move(threadID, dir string) (ThreadInfo, []tea.Msg, error) {
 		errc <- err
 	})
 	if err := <-errc; err != nil {
-		return ThreadInfo{}, nil, err
+		return ThreadInfo{}, History{}, err
 	}
 	return m.Resume(threadID)
 }
