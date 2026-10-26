@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Command, Wordmark } from "./components";
+import { Command, ThemeToggle, Wordmark } from "./components";
 
 const REPO = "https://github.com/dev-dami/deck";
 const RELEASES = "https://github.com/dev-dami/deck-releases/releases";
@@ -51,6 +51,7 @@ function Plate({
   date,
   className,
   priority = false,
+  children,
 }: {
   src: string;
   alt: string;
@@ -61,10 +62,12 @@ function Plate({
   date: string;
   className?: string;
   priority?: boolean;
+  children?: React.ReactNode;
 }) {
   return (
     <figure className={`plate ${className ?? ""}`} tabIndex={0}>
       <Image src={src} alt={alt} width={w} height={h} priority={priority} />
+      {children}
       <figcaption className="credit">
         {artist}, <i>{title}</i>, {date}. The Met, public domain.
       </figcaption>
@@ -92,6 +95,14 @@ const AGENTS = [
   { glyph: "◎", name: "Antigravity", hue: "var(--antigravity)" },
 ];
 
+// The same four, as members of a thread, coloured to read on glass.
+const ROSTER = [
+  { glyph: "✻", name: "claude", hue: "var(--claude-on-glass)" },
+  { glyph: ">_", name: "codex", hue: "#f3efe6" },
+  { glyph: "▯", name: "opencode", hue: "#5cc0ea" },
+  { glyph: "◎", name: "antigravity", hue: "#c49be0" },
+];
+
 const PRINCIPLES = [
   ["Your CLIs, your plans.", "Deck drives the agent CLIs you already have, under your own logins. It never calls a model API and never reads a credential."],
   ["Many agents, one thread.", "Ask two at once. They hand work to each other in plain sight, start subagents, race on worktrees and review each other's changes."],
@@ -113,6 +124,7 @@ export default function Home() {
           <a href="#terminal">Terminal</a>
           <a href="#install">Install</a>
           <a href={DOCS}>Docs</a>
+          <ThemeToggle />
           <a href={REPO} className="pill">
             GitHub <span aria-hidden>↗</span>
           </a>
@@ -155,7 +167,31 @@ export default function Home() {
             artist="Utagawa Hiroshige"
             title="Sudden Shower over Shin-Ōhashi Bridge and Atake"
             date="1857"
-          />
+          >
+            {/* On a phone the print carries a thread, so it reads as Deck and not as a stray picture. */}
+            <div className="scene scene-thread" aria-hidden>
+              <div className="scene-head">
+                <span>Fix the pairing lockout</span>
+                <span className="scene-meta">deck</span>
+              </div>
+              <div className="lane">
+                <span className="lane-glyph" style={{ color: "var(--claude-on-glass)" }}>
+                  ✻
+                </span>
+                <span className="lane-name">claude</span>
+                <span className="lane-state is-working">working</span>
+                <span className="lane-note">Keying the limiter by address</span>
+              </div>
+              <div className="lane">
+                <span className="lane-glyph">&gt;_</span>
+                <span className="lane-name">codex</span>
+                <span className="lane-state is-needs">needs you</span>
+                <span className="lane-note">
+                  Run <code>go test ./pkg/remote</code>?
+                </span>
+              </div>
+            </div>
+          </Plate>
         </section>
 
         <section className="works wrap" aria-label="Works with">
@@ -263,7 +299,23 @@ export default function Home() {
               artist="Itō Jakuchū"
               title="White Plum Blossoms and Moon"
               date="1755"
-            />
+            >
+              <div className="scene scene-notice" aria-hidden>
+                <div className="notice-app">
+                  <Mark className="notice-mark" />
+                  Deck
+                  <span>now</span>
+                </div>
+                <p className="notice-title">codex needs you</p>
+                <p className="notice-body">
+                  Run <code>go test ./pkg/remote</code> in deck?
+                </p>
+                <div className="notice-actions">
+                  <span>Deny</span>
+                  <span className="is-primary">Approve</span>
+                </div>
+              </div>
+            </Plate>
             <div className="night-copy">
               <p className="eyebrow">The terminal app</p>
               <h2>
@@ -323,6 +375,15 @@ export default function Home() {
               width={1904}
               height={874}
             />
+            <div className="scene scene-roster" aria-hidden>
+              <span className="roster-label">In this thread</span>
+              {ROSTER.map((a) => (
+                <span key={a.name} className="roster-pill">
+                  <span style={{ color: a.hue }}>{a.glyph}</span>
+                  {a.name}
+                </span>
+              ))}
+            </div>
             <figcaption className="credit">
               Ogata Kōrin, <i>Irises at Yatsuhashi</i>, after 1709. The Met, public domain.
             </figcaption>

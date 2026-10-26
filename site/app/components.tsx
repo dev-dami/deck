@@ -217,3 +217,31 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
     </a>
   );
 }
+
+// Light or dark. The page follows the system until you pick one here; the
+// pick is kept in localStorage and applied before paint by the script in
+// layout.tsx. Which icon shows is left to CSS, so nothing re-renders.
+export function ThemeToggle() {
+  const flip = () => {
+    const root = document.documentElement;
+    const current = root.dataset.theme ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const next = current === "dark" ? "light" : "dark";
+    root.dataset.theme = next;
+    try {
+      localStorage.setItem("deck-theme", next);
+    } catch {
+      // Private windows can refuse storage; the pick still holds for this visit.
+    }
+  };
+  return (
+    <button type="button" className="theme-toggle" onClick={flip} aria-label="Switch between light and dark">
+      <svg aria-hidden viewBox="0 0 24 24" className="icon-moon">
+        <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />
+      </svg>
+      <svg aria-hidden viewBox="0 0 24 24" className="icon-sun">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" />
+      </svg>
+    </button>
+  );
+}

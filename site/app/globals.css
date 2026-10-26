@@ -17,6 +17,61 @@
   --night-faint: #9a9384;
   --wrap: 1240px;
   --gutter: clamp(20px, 4vw, 40px);
+  /* Derived surfaces, so dark mode only has to restate the base colours. */
+  --rule-strong: rgb(22 20 15 / 0.22);
+  --well: rgb(255 255 255 / 0.35);
+  --ink-hover: #2c2920;
+  --mention-bg: rgb(232 149 47 / 0.16);
+  --mention-ink: #9a5a12;
+  --shadow: 22 20 15;
+  /* Agent colours that read on the dark glass of the picture scenes. */
+  --claude-on-glass: #f08a4b;
+  color-scheme: light;
+}
+
+/* Dark: the same paper and ink, turned over. The night section goes a
+   step deeper so it still reads as night. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #12110e;
+    --paper-2: #1b1915;
+    --ink: #ece6d8;
+    --ink-2: #b8b1a2;
+    --faint: #8a8374;
+    --rule: rgb(236 230 216 / 0.12);
+    --rule-strong: rgb(236 230 216 / 0.24);
+    --well: rgb(255 255 255 / 0.04);
+    --ink-hover: #ffffff;
+    --amber: #f0a443;
+    --claude: #e8814a;
+    --opencode: #4bb4e3;
+    --antigravity: #b88ad6;
+    --mention-bg: rgb(240 164 67 / 0.16);
+    --mention-ink: #f4b660;
+    --night: #0a0908;
+    --shadow: 0 0 0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #12110e;
+  --paper-2: #1b1915;
+  --ink: #ece6d8;
+  --ink-2: #b8b1a2;
+  --faint: #8a8374;
+  --rule: rgb(236 230 216 / 0.12);
+  --rule-strong: rgb(236 230 216 / 0.24);
+  --well: rgb(255 255 255 / 0.04);
+  --ink-hover: #ffffff;
+  --amber: #f0a443;
+  --claude: #e8814a;
+  --opencode: #4bb4e3;
+  --antigravity: #b88ad6;
+  --mention-bg: rgb(240 164 67 / 0.16);
+  --mention-ink: #f4b660;
+  --night: #0a0908;
+  --shadow: 0 0 0;
+  color-scheme: dark;
 }
 
 * {
@@ -161,10 +216,10 @@ p {
   color: var(--paper);
 }
 .btn-ink:hover {
-  background: #2c2920;
+  background: var(--ink-hover);
 }
 .btn-line {
-  border: 1px solid rgb(22 20 15 / 0.22);
+  border: 1px solid var(--rule-strong);
 }
 .btn-line:hover {
   border-color: var(--ink);
@@ -179,7 +234,7 @@ p {
   padding: 12px 12px 12px 16px;
   border: 1px solid var(--rule);
   border-radius: 12px;
-  background: rgb(255 255 255 / 0.35);
+  background: var(--well);
 }
 .command-label {
   flex: none;
@@ -249,8 +304,8 @@ p {
 .plate img {
   width: 100%;
   box-shadow:
-    0 1px 2px rgb(22 20 15 / 0.12),
-    0 18px 40px -18px rgb(22 20 15 / 0.35);
+    0 1px 2px rgb(var(--shadow) / 0.12),
+    0 18px 40px -18px rgb(var(--shadow) / 0.35);
 }
 
 /* Museum labels stay out of the way: a quiet chip in the picture's corner
@@ -416,8 +471,8 @@ p {
   font-size: 0.72em;
   padding: 1px 5px;
   border-radius: 4px;
-  background: rgb(232 149 47 / 0.16);
-  color: #9a5a12;
+  background: var(--mention-bg);
+  color: var(--mention-ink);
 }
 .aside {
   font-family: var(--font-mono), monospace;
@@ -700,8 +755,8 @@ p {
   object-fit: cover;
   border-radius: calc(var(--card-w) * 0.035);
   box-shadow:
-    0 0 0 1px rgb(22 20 15 / 0.18),
-    -6px 10px 24px -8px rgb(22 20 15 / 0.45);
+    0 0 0 1px rgb(var(--shadow) / 0.18),
+    -6px 10px 24px -8px rgb(var(--shadow) / 0.45);
 }
 /* Pick a card: it slides up out of the hand. */
 .card:hover {
@@ -727,6 +782,239 @@ p {
   .card:hover {
     transform: rotate(calc(var(--i) * 10.5deg));
   }
+}
+
+/* Light/dark switch in the nav. CSS picks the icon: the moon offers dark,
+   the sun offers light. */
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.theme-toggle:hover {
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+.theme-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.theme-toggle .icon-sun {
+  display: none;
+}
+:root[data-theme="dark"] .theme-toggle .icon-sun {
+  display: block;
+}
+:root[data-theme="dark"] .theme-toggle .icon-moon {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-toggle .icon-sun {
+    display: block;
+  }
+  :root:not([data-theme="light"]) .theme-toggle .icon-moon {
+    display: none;
+  }
+}
+
+/* Scenes: on a phone the pictures stand alone in the column, so each one
+   carries a piece of Deck on dark glass, the way the desktop shot sits
+   over Yosemite on wide screens. Hidden where the pictures sit beside
+   their copy. */
+.scene {
+  display: none;
+}
+@media (max-width: 900px) {
+  .scene {
+    display: block;
+    position: absolute;
+    z-index: 1;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    padding: 14px 14px 12px;
+    border: 1px solid rgb(255 255 255 / 0.14);
+    border-radius: 16px;
+    color: #f3efe6;
+    font-size: 13px;
+    line-height: 1.4;
+    background: rgb(18 17 14 / 0.7);
+    backdrop-filter: blur(22px) saturate(1.3);
+    -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      0 24px 48px -20px rgb(0 0 0 / 0.6);
+  }
+  .scene.scene-roster {
+    display: flex;
+  }
+  .scene code {
+    font-size: 12px;
+    color: #fff;
+  }
+  /* With a scene at the foot of the picture, its label moves to the top. */
+  .plate:has(.scene) .credit,
+  .close-art .credit {
+    top: 12px;
+    bottom: auto;
+  }
+  .plate.hero-plate,
+  .plate.night-plate {
+    max-width: none;
+    justify-self: stretch;
+  }
+  .hero-plate img,
+  .night-plate img {
+    aspect-ratio: 4 / 5;
+    object-fit: cover;
+  }
+  .hero-plate img {
+    object-position: 50% 30%;
+  }
+  .night-plate img {
+    object-position: 50% 20%;
+  }
+  .close-art img {
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    object-position: 38% 50%;
+  }
+}
+
+/* A thread, with its two members' lanes */
+.scene-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.1);
+  font-weight: 600;
+}
+.scene-meta {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  font-weight: 400;
+  color: rgb(243 239 230 / 0.6);
+}
+.lane {
+  display: grid;
+  grid-template-columns: 1.6em auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 8px;
+  padding: 8px 0 4px;
+}
+.lane-glyph {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+}
+.lane-name {
+  font-family: var(--font-mono), monospace;
+  font-weight: 500;
+}
+.lane-state {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgb(243 239 230 / 0.7);
+}
+.lane-state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.lane-state.is-working {
+  color: #8fd18a;
+}
+.lane-state.is-needs {
+  color: #f4b660;
+}
+.lane-note {
+  grid-column: 2 / -1;
+  color: rgb(243 239 230 / 0.72);
+}
+
+/* A notification from the phone remote */
+.notice-app {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: rgb(243 239 230 / 0.7);
+}
+.notice-app span {
+  margin-left: auto;
+}
+.notice-mark {
+  height: 10px;
+  width: auto;
+  color: #f3efe6;
+}
+.notice-title {
+  margin: 8px 0 2px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.notice-body {
+  margin: 0;
+  color: rgb(243 239 230 / 0.78);
+}
+.notice-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.notice-actions span {
+  display: grid;
+  place-items: center;
+  height: 34px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.1);
+  font-weight: 500;
+}
+.notice-actions .is-primary {
+  background: #f3efe6;
+  color: #16140f;
+}
+
+/* The roster: every agent in one thread */
+.scene-roster {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.roster-label {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: rgb(243 239 230 / 0.6);
+}
+.roster-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+  font-family: var(--font-mono), monospace;
+  font-size: 12.5px;
 }
 
 /* Narrow screens */
