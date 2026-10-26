@@ -372,8 +372,28 @@
 
    The glass tokens derive from each theme's own surfaces, so Tokyo Night's
    glass is Tokyo Night's colour. A theme can set any of them itself; the
-   Liquid Glass theme does. */
+   Liquid Glass theme does.
+
+   A material is more than glass. The art directions (Riso, Stitch: the end
+   of this file) turn the blur off and print their own surfaces, so a
+   material also carries a texture (--material-texture, a background
+   layer), an edge (--material-edge, an outline drawn inside the panel by
+   --material-edge-offset, such as a stitched seam) and its shadow, which
+   may be a hard offset (--glass-shadow, --sheet-shadow). The default of
+   each is the plain glass above. */
+@theme {
+  /* The display face: hero headings and .headline. Each art direction
+     sets its own (design-glass.md, "Art directions"). */
+  --font-display: "Inter Tight Variable", "Inter Tight", var(--font-sans);
+}
 :root {
+  --display-weight: 600;
+  --display-tracking: -0.03em;
+  --material-texture: none;
+  --material-edge: none;
+  --material-edge-offset: 0px;
+  --sheet-edge: none;
+  --tint-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.2), rgb(255 255 255 / 0) 55%);
   --panel-radius: 18px;
   --sheet-radius: 14px;
   --backdrop: color-mix(in oklab, var(--canvas) 62%, #000);
@@ -457,10 +477,12 @@
    a focus ring or a shadow-* utility on the same element still adds up. */
 @utility liquid {
   background-color: var(--glass-fill);
-  background-image: var(--glass-sheen);
+  background-image: var(--glass-sheen), var(--material-texture);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-color: transparent;
+  outline: var(--material-edge);
+  outline-offset: var(--material-edge-offset);
   --tw-inset-shadow: inset 0 1px 0 0 var(--glass-spec);
   --tw-inset-ring-shadow: inset 0 0 0 1px var(--glass-rim);
   --tw-shadow: var(--glass-shadow);
@@ -479,13 +501,16 @@
 @utility liquid-clear {
   @apply liquid;
   background-color: var(--glass-fill-clear);
-  --tw-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+  background-image: var(--glass-sheen);
+  /* A chip is too small for a seam. */
+  outline: none;
+  --tw-shadow: var(--glass-shadow-clear, 0 1px 2px rgb(0 0 0 / 0.12));
 }
 /* The prominent control: the accent as tinted glass (send, the default
    button). No coloured shadow: it is a control, not a light. */
 @utility liquid-tint {
   background-color: var(--primary);
-  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.2), rgb(255 255 255 / 0) 55%);
+  background-image: var(--tint-sheen);
   color: var(--primary-foreground);
   border-color: transparent;
   --tw-inset-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.3);
@@ -498,6 +523,8 @@
 /* The opaque plane text is read on. */
 @utility sheet {
   background-color: var(--canvas);
+  outline: var(--sheet-edge);
+  outline-offset: var(--material-edge-offset);
   --tw-inset-ring-shadow: inset 0 0 0 1px var(--sheet-rim);
   --tw-shadow: var(--sheet-shadow);
   box-shadow:
@@ -519,6 +546,63 @@ body {
     radial-gradient(56rem 38rem at -8% -12%, var(--ambient-1), transparent 62%),
     radial-gradient(44rem 34rem at 108% 112%, var(--ambient-2), transparent 64%),
     color-mix(in srgb, var(--backdrop) 55%, transparent);
+}
+
+/* The theme's picture, printed through its process (ui/Backdrop.tsx), on
+   a canvas behind the app. Once it has drawn (data-backdrop), the gradient
+   gives way to a plain fill under it. The art shows behind the glass
+   chrome and on the screens with no sheet (Welcome, Connect); the room's
+   sheet stays opaque over it. */
+:root[data-backdrop] body,
+:root[data-backdrop][data-vibrancy] body {
+  background: var(--backdrop);
+}
+:root[data-backdrop] :is(.welcome-screen, main.connect) {
+  background-color: transparent;
+}
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  pointer-events: none;
+}
+/* The picture's credit, quiet, in the corner. In the shell the sheets
+   cover the picture, and the credit goes with it. */
+.backdrop-credit {
+  position: fixed;
+  right: 14px;
+  bottom: 10px;
+  max-width: 44ch;
+  font-size: 10.5px;
+  line-height: 1.3;
+  text-align: right;
+  color: var(--backdrop-credit, color-mix(in srgb, var(--text) 60%, transparent));
+  pointer-events: none;
+}
+body:has(.shell) .backdrop-credit {
+  display: none;
+}
+
+/* A headline in two tones: the claim in the display face, the rest of the
+   line quieter. <h1 class="headline">Deck <span class="headline-quiet">runs
+   your crew</span></h1>. */
+.headline {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--display-tracking);
+  line-height: 1.05;
+  text-wrap: balance;
+  color: var(--text);
+}
+.headline-quiet {
+  color: var(--text-faint);
+}
+/* Every top heading takes the display face; a font utility on it wins. */
+:where(h1) {
+  font-family: var(--font-display);
 }
 
 /* Menus, popovers, the palette, sheets and toasts. */
@@ -584,6 +668,10 @@ body {
   body,
   :root[data-vibrancy] body {
     background: var(--backdrop);
+  }
+  .backdrop,
+  .backdrop-credit {
+    display: none;
   }
 }
 
@@ -1805,4 +1893,299 @@ body {
 /* The palette's rows are larger than a menu's, so their capsule is too. */
 .palette [role="option"] {
   border-radius: 10px;
+}
+
+/* ── Art directions ──
+   Riso and Stitch (docs/design-glass.md, "Art directions"). Liquid Glass
+   and its colourways are the blocks above; these two print their own
+   materials and turn the glass's blur off. Each block sets T3's names, as
+   every catalog theme does, and the materials' tokens directly, so nothing
+   here derives from a mode's defaults. The backdrop's inks are in
+   backdrop/inks.ts and follow these by hand. */
+
+/* Riso, dark: black stock, one fluorescent pink, cream type. Panels are
+   vellum and card with hard corners, a cream rule and a pink shadow a
+   few pixels out of register. Nothing blurs and nothing glows. */
+:root[data-palette="riso"][data-mode] {
+  --spot: #ff48b0;
+  --font-sans: "Space Grotesk Variable", "Space Grotesk", "Geist", system-ui, sans-serif;
+  --font-mono: "Martian Mono Variable", "Martian Mono", "Geist Mono", ui-monospace, monospace;
+  --font-display: "Space Grotesk Variable", "Space Grotesk", system-ui, sans-serif;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --display-weight: 700;
+  --display-tracking: -0.045em;
+  --text-code: 0.75rem;
+  --radius: 4px;
+  --control-radius: 3px;
+  --panel-radius: 5px;
+  --sheet-radius: 4px;
+
+  --background: #161414;
+  --foreground: #f3eee3;
+  --card: #1d1a1a;
+  --popover: #221f1f;
+  --primary: var(--spot);
+  --primary-foreground: #121111;
+  --secondary: rgb(243 238 227 / 0.06);
+  --muted: rgb(243 238 227 / 0.05);
+  --muted-foreground: #b9b2a6;
+  --secondary-label: #a39c90;
+  --info-foreground: #ff7cc6;
+  --accent: rgb(255 72 176 / 0.16);
+  --border: rgb(243 238 227 / 0.14);
+  --input: rgb(243 238 227 / 0.24);
+  --ring: var(--spot);
+  --message: #1d1a1a;
+  --sidebar: #1a1818;
+  --sidebar-row-hover: rgb(243 238 227 / 0.06);
+  --sidebar-row-active: rgb(255 72 176 / 0.16);
+  --code: #0f0e0e;
+  --highlight: transparent;
+  --scrollbar: rgb(243 238 227 / 0.2);
+  --scrollbar-hover: rgb(243 238 227 / 0.34);
+  --bubble: #2a1b24;
+  --segment: rgb(243 238 227 / 0.12);
+
+  --backdrop: #121111;
+  --glass-fill: rgb(27 25 25 / 0.9);
+  --glass-fill-thick: #1d1a1a;
+  --glass-fill-clear: rgb(243 238 227 / 0.06);
+  --glass-blur: 0px;
+  --glass-saturate: 1;
+  --glass-rim: rgb(243 238 227 / 0.42);
+  --glass-spec: transparent;
+  --glass-sheen: none;
+  --glass-shadow: 4px 5px 0 0 var(--spot);
+  --glass-shadow-clear: none;
+  --sheet-rim: rgb(243 238 227 / 0.34);
+  --sheet-shadow: 5px 6px 0 0 var(--spot);
+  --elevation-popover: 4px 5px 0 0 var(--spot);
+  --elevation-card: 0 0 #0000;
+  --tint-sheen: none;
+  /* Fibre in the vellum: pale specks. */
+  --material-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.5 0 0 0 -0.24'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+  --backdrop-credit: rgb(243 238 227 / 0.6);
+
+  /* The agents in the inks: pink, cream, and the two mixed. */
+  --kind-claude: var(--spot) !important;
+  --kind-codex: #f3eee3 !important;
+  --kind-opencode: #ffa3d6 !important;
+  --kind-antigravity: #a59e93 !important;
+
+  --syn-keyword: #ff48b0;
+  --syn-string: #f3eee3;
+  --syn-comment: #8a837a;
+  --syn-number: #ff8fcf;
+  --syn-function: #f3eee3;
+  --syn-type: #ffb3dc;
+  --syn-punct: #a59e93;
+  --syn-variable: #e7e1d5;
+  --syn-tag: #ff48b0;
+  --syn-attr: #ffb3dc;
+  --syn-operator: #b9b2a6;
+}
+
+/* Riso, light: the same press on warm paper. Black ink rules the panels;
+   the pink is the shadow, the accent and the agents. */
+:root[data-palette="riso"][data-mode="light"] {
+  --background: #f7f3ea;
+  --foreground: #1d1b1b;
+  --card: #fbf8f1;
+  --popover: #fffdf8;
+  --primary-foreground: #1d1b1b;
+  --secondary: rgb(29 27 27 / 0.05);
+  --muted: rgb(29 27 27 / 0.04);
+  --muted-foreground: #5d5853;
+  --secondary-label: #6e6862;
+  --info-foreground: #c2006f;
+  --accent: rgb(255 72 176 / 0.18);
+  --border: rgb(29 27 27 / 0.16);
+  --input: rgb(29 27 27 / 0.28);
+  --message: #fbf8f1;
+  --sidebar: #efe9dc;
+  --sidebar-row-hover: rgb(29 27 27 / 0.05);
+  --sidebar-row-active: rgb(255 72 176 / 0.2);
+  --code: #efe9dc;
+  --scrollbar: rgb(29 27 27 / 0.22);
+  --scrollbar-hover: rgb(29 27 27 / 0.36);
+  --bubble: #ffd9ee;
+  --segment: #fffdf8;
+
+  --backdrop: #f3eee3;
+  --glass-fill: rgb(250 247 240 / 0.86);
+  --glass-fill-thick: #fbf8f1;
+  --glass-fill-clear: rgb(255 253 248 / 0.7);
+  --glass-rim: #1d1b1b;
+  --sheet-rim: #1d1b1b;
+  /* Fibre in the paper: grey specks. */
+  --material-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.2 0 0 0 0 0.18 0 0 0 0 0.16 0.5 0 0 0 -0.22'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+  --backdrop-credit: rgb(29 27 27 / 0.62);
+
+  --kind-claude: #e0128e !important;
+  --kind-codex: #1d1b1b !important;
+  --kind-opencode: #a3306f !important;
+  --kind-antigravity: #6e6862 !important;
+
+  --syn-keyword: #d4007a;
+  --syn-string: #1d1b1b;
+  --syn-comment: #8a847c;
+  --syn-number: #c2187a;
+  --syn-function: #1d1b1b;
+  --syn-type: #9a1360;
+  --syn-punct: #6e6862;
+  --syn-variable: #2d2a2a;
+  --syn-tag: #d4007a;
+  --syn-attr: #9a1360;
+  --syn-operator: #5d5853;
+}
+/* T3's names map onto Tabletop's in a rule above that outranks a theme
+   block (:root[data-palette]:not(...) ×3), and it makes links the accent.
+   Pink text is too faint on paper, so riso's links print in black; the
+   repeated attributes only match that rule's weight. */
+:root[data-palette="riso"][data-palette][data-mode="light"][data-mode] {
+  --link: #1d1b1b;
+  --info-foreground: #c2006f;
+}
+/* A riso prints square: no capsule outlives the press. */
+:root[data-palette="riso"] .material {
+  border-radius: var(--panel-radius);
+}
+
+/* Stitch, dark: indigo denim behind, felt panels in front, each with a
+   seam of running stitch just inside its edge. The type is the UI's own;
+   only headings take the pixel face, as a sampler letters its title. */
+:root[data-palette="stitch"][data-mode] {
+  --font-display: "Pixelify Sans", "Geist", system-ui, sans-serif;
+  --display-weight: 500;
+  --display-tracking: 0;
+  --radius: 10px;
+  --panel-radius: 16px;
+  --sheet-radius: 14px;
+
+  --background: #1b2036;
+  --foreground: #efe6d2;
+  --card: #222842;
+  --popover: #262d4a;
+  --primary: #e4b04a;
+  --primary-foreground: #1b2036;
+  --secondary: rgb(239 230 210 / 0.06);
+  --muted: rgb(239 230 210 / 0.05);
+  --muted-foreground: #b9b2a0;
+  --secondary-label: #a29c8c;
+  --info-foreground: #e9c172;
+  --accent: rgb(228 176 74 / 0.14);
+  --border: rgb(239 230 210 / 0.12);
+  --input: rgb(239 230 210 / 0.2);
+  --ring: #e4b04a;
+  --message: #222842;
+  --sidebar: #1e2440;
+  --sidebar-row-hover: rgb(239 230 210 / 0.06);
+  --sidebar-row-active: rgb(239 230 210 / 0.11);
+  --code: #161a2d;
+  --highlight: rgb(239 230 210 / 0.05);
+  --scrollbar: rgb(239 230 210 / 0.2);
+  --scrollbar-hover: rgb(239 230 210 / 0.32);
+  --bubble: #33354a;
+  --segment: rgb(239 230 210 / 0.13);
+
+  --backdrop: #26335c;
+  --glass-fill: #20263f;
+  --glass-fill-thick: #252b47;
+  --glass-fill-clear: rgb(239 230 210 / 0.07);
+  --glass-blur: 0px;
+  --glass-saturate: 1;
+  --glass-rim: rgb(0 0 0 / 0.25);
+  --glass-spec: rgb(239 230 210 / 0.06);
+  --glass-sheen: none;
+  --glass-shadow: 0 1px 0 rgb(0 0 0 / 0.35), 0 14px 28px -14px rgb(0 0 0 / 0.7);
+  --sheet-rim: rgb(0 0 0 / 0.25);
+  --sheet-shadow: 0 1px 0 rgb(0 0 0 / 0.35), 0 18px 36px -18px rgb(0 0 0 / 0.7);
+  --elevation-popover: 0 1px 0 rgb(0 0 0 / 0.35), 0 18px 36px -14px rgb(0 0 0 / 0.7);
+  --tint-sheen: none;
+  /* Felt: matted fibres, a few light and a few dark. */
+  --material-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='d'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.6 0 0 0 -0.3'/%3E%3C/filter%3E%3Cfilter id='l'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.45 0 0 0 -0.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23d)'/%3E%3Crect width='100%25' height='100%25' filter='url(%23l)'/%3E%3C/svg%3E");
+  --material-edge: 1.5px dashed rgb(239 230 210 / 0.42);
+  --material-edge-offset: -6px;
+  --sheet-edge: 1.5px dashed rgb(239 230 210 / 0.3);
+  --backdrop-credit: rgb(239 230 210 / 0.72);
+
+  /* The agents in floss: rust, ecru, sky and plum. */
+  --kind-claude: #e0824c !important;
+  --kind-codex: #e9dcc0 !important;
+  --kind-opencode: #9fbad9 !important;
+  --kind-antigravity: #c993c0 !important;
+
+  --syn-keyword: #e4b04a;
+  --syn-string: #a7c196;
+  --syn-comment: #8c8a85;
+  --syn-number: #f0a5b8;
+  --syn-function: #9fbad9;
+  --syn-type: #d7a35f;
+  --syn-punct: #a8a294;
+  --syn-variable: #efe6d2;
+  --syn-tag: #e07a5f;
+  --syn-attr: #c993c0;
+  --syn-operator: #b9b2a0;
+}
+
+/* Stitch, light: oatmeal felt on natural linen, red floss for the accent. */
+:root[data-palette="stitch"][data-mode="light"] {
+  --background: #f4ecdc;
+  --foreground: #2b2420;
+  --card: #f8f2e6;
+  --popover: #fbf7ee;
+  --primary: #b8262d;
+  --primary-foreground: #fff8ef;
+  --secondary: rgb(43 36 32 / 0.05);
+  --muted: rgb(43 36 32 / 0.04);
+  --muted-foreground: #6b5f53;
+  --secondary-label: #7c7064;
+  --info-foreground: #9c1f26;
+  --accent: rgb(184 38 45 / 0.1);
+  --border: rgb(43 36 32 / 0.13);
+  --input: rgb(43 36 32 / 0.22);
+  --ring: #b8262d;
+  --message: #f8f2e6;
+  --sidebar: #ece2cd;
+  --sidebar-row-hover: rgb(43 36 32 / 0.05);
+  --sidebar-row-active: rgb(43 36 32 / 0.09);
+  --code: #efe6d4;
+  --highlight: rgb(255 255 255 / 0.4);
+  --scrollbar: rgb(43 36 32 / 0.2);
+  --scrollbar-hover: rgb(43 36 32 / 0.34);
+  --bubble: #f0d9cf;
+  --segment: #fbf7ee;
+
+  --backdrop: #d9c8a7;
+  --glass-fill: #efe5d1;
+  --glass-fill-thick: #f3ead8;
+  --glass-fill-clear: rgb(255 251 242 / 0.6);
+  --glass-rim: rgb(80 60 40 / 0.16);
+  --glass-spec: rgb(255 255 255 / 0.4);
+  --glass-shadow: 0 1px 0 rgb(80 60 40 / 0.18), 0 14px 28px -16px rgb(80 60 40 / 0.45);
+  --sheet-rim: rgb(80 60 40 / 0.16);
+  --sheet-shadow: 0 1px 0 rgb(80 60 40 / 0.18), 0 18px 36px -20px rgb(80 60 40 / 0.45);
+  --elevation-popover: 0 1px 0 rgb(80 60 40 / 0.18), 0 18px 36px -16px rgb(80 60 40 / 0.45);
+  --material-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='d'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.3 0 0 0 0 0.22 0 0 0 0 0.14 0.5 0 0 0 -0.28'/%3E%3C/filter%3E%3Cfilter id='l'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.5 0 0 0 -0.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23d)'/%3E%3Crect width='100%25' height='100%25' filter='url(%23l)'/%3E%3C/svg%3E");
+  --material-edge: 1.5px dashed rgb(43 36 32 / 0.38);
+  --sheet-edge: 1.5px dashed rgb(43 36 32 / 0.26);
+  --backdrop-credit: rgb(43 36 32 / 0.7);
+
+  --kind-claude: #c4581b !important;
+  --kind-codex: #3a2a20 !important;
+  --kind-opencode: #283a6b !important;
+  --kind-antigravity: #8e4f7a !important;
+
+  --syn-keyword: #b8262d;
+  --syn-string: #2f5d45;
+  --syn-comment: #95897a;
+  --syn-number: #8e4f7a;
+  --syn-function: #283a6b;
+  --syn-type: #a0522d;
+  --syn-punct: #6b5f53;
+  --syn-variable: #2b2420;
+  --syn-tag: #b8262d;
+  --syn-attr: #8e4f7a;
+  --syn-operator: #4a3f37;
 }

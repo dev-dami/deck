@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { NotifyPref } from "./attention";
+import { CUSTOM, PICTURES } from "./backdrop/pictures";
 import { ACCENTS, DIFF_THEMES, THEMES } from "./themes";
 
 // The window's own settings (the Settings page). They live in this
@@ -42,6 +43,10 @@ export interface Prefs {
   diffTheme: string;
   diffView: DiffLayout;
   diffWrap: boolean;
+  // The backdrop's picture: "theme" for the theme's own, a picture from
+  // the library (backdrop/pictures.ts), or "custom" for the person's own,
+  // whose bytes are in IndexedDB (backdrop/wallpaper.ts).
+  wallpaper: string;
 }
 
 export const defaultPrefs: Prefs = {
@@ -64,6 +69,7 @@ export const defaultPrefs: Prefs = {
   diffTheme: "match",
   diffView: "unified",
   diffWrap: false,
+  wallpaper: "theme",
 };
 
 const KEY = "deck.desktop.prefs";
@@ -108,6 +114,7 @@ function merge(v: Record<string, unknown>): Prefs {
     diffTheme: pick("diffTheme", DIFF_THEMES.map((t) => t.id), defaultPrefs.diffTheme),
     diffView: pick("diffView", ["unified", "split"] as const, defaultPrefs.diffView),
     diffWrap: bool("diffWrap", defaultPrefs.diffWrap),
+    wallpaper: pick("wallpaper", ["theme", CUSTOM, ...PICTURES.map((x) => x.id)], defaultPrefs.wallpaper),
   };
 }
 

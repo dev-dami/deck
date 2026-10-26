@@ -1,7 +1,8 @@
-// The backdrop's maths, with no DOM: colour, noise, the halftone screen, the
-// two-ink separation, palette quantisation and the stitch grid. The canvas
-// renderers (scene.ts, halftone.ts, stitch.ts) only draw what these return,
-// so everything here is tested in core.test.ts.
+// The backdrop's maths, with no DOM: colour, noise, fitting a picture, the
+// dither, the halftone screen, the riso's blocks, thread quantisation and
+// the stitch chart. The canvas renderers (scene.ts, halftone.ts,
+// stitch.ts) only draw what these return, so everything here is tested in
+// core.test.ts.
 
 export type RGB = readonly [number, number, number];
 
@@ -23,17 +24,8 @@ export function mix(a: RGB, b: RGB, t: number): RGB {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 }
 
-// Relative luminance of an sRGB colour, 0..1 (WCAG's formula).
-export function luminance([r, g, b]: RGB): number {
-  const lin = (v: number) => {
-    const c = v / 255;
-    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
-
-// Perceived lightness, 0..1, cheap: the luma of the gamma-encoded values.
-// The screens use it, as a printer's densitometer would read a proof.
+// Perceived lightness, 0..1: the luma of the gamma-encoded values, as a
+// densitometer reads a proof.
 export function lightness([r, g, b]: RGB): number {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
 }
@@ -65,7 +57,7 @@ export function noise2(x: number, y: number, seed = 0): number {
 }
 
 // Fractal noise: a few octaves of value noise, still 0..1.
-export function fbm(x: number, y: number, seed = 0, octaves = 4): number {
+export function fbm(x: number, y: number, seed = 0, octaves = 3): number {
   let sum = 0;
   let amp = 0.5;
   let norm = 0;
@@ -81,18 +73,37 @@ export function fbm(x: number, y: number, seed = 0, octaves = 4): number {
 
 // ── Fitting a picture ────────────────────────────────────────────────────
 
-// object-fit: cover. The source rectangle of an sw×sh image that fills a
-// dw×dh frame, centred.
-export function coverRect(sw: number, sh: number, dw: number, dh: number): { x: number; y: number; w: number; h: number } {
-  const scale = Math.max(dw / sw, dh / sh);
-  const w = dw / scale;
-  const h = dh / scale;
-  return { x: (sw - w) / 2, y: (sh - h) / 2, w, h };
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
-// Samples an RGBA buffer at a fractional point, bilinearly, clamped to the
-// edges. Out: [r, g, b, a] in 0..255.
-export function sample(data: ArrayLike<number>, w: number, h: number, x: number, y: number): [number, number, number, number] {
+// Where an sw×sh picture lands in a dw×dh frame: "cover" fills the frame,
+// "contain" fits inside it. ax and ay (0..1) say which part of the slack
+// goes left or above, so 0.5 centres and 1 pushes to the right or bottom;
+// zoom scales past the fit.
+export function place(sw: number, sh: number, dw: number, dh: number, fit: "cover" | "contain", ax = 0.5, ay = 0.5, zoom = 1): Rect {
+  const s = (fit === "cover" ? Math.max(dw / sw, dh / sh) : Math.min(dw / sw, dh / sh)) * zoom;
+  const w = sw * s;
+  const h = sh * s;
+  return { x: (dw - w) * ax, y: (dh - h) * ay, w, h };
+}
+
+// The luma of RGBA pixels, 0..1, one value a pixel.
+export function luma(data: ArrayLike<number>): Float32Array {
+  const n = Math.floor(data.length / 4);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    out[i] = (0.299 * (data[i * 4] ?? 0) + 0.587 * (data[i * 4 + 1] ?? 0) + 0.114 * (data[i * 4 + 2] ?? 0)) / 255;
+  }
+  return out;
+}
+
+// Reads a one-channel w×h grid at a fractional point, bilinearly, clamped
+// to its edges; a pixel's value sits at its centre.
+export function sampleGrey(v: ArrayLike<number>, w: number, h: number, x: number, y: number): number {
   const fx = Math.max(0, Math.min(w - 1, x - 0.5));
   const fy = Math.max(0, Math.min(h - 1, y - 0.5));
   const x0 = Math.floor(fx);
@@ -101,13 +112,123 @@ export function sample(data: ArrayLike<number>, w: number, h: number, x: number,
   const y1 = Math.min(h - 1, y0 + 1);
   const tx = fx - x0;
   const ty = fy - y0;
-  const out: [number, number, number, number] = [0, 0, 0, 0];
-  for (let c = 0; c < 4; c++) {
-    const a = data[(y0 * w + x0) * 4 + c] ?? 0;
-    const b = data[(y0 * w + x1) * 4 + c] ?? 0;
-    const d = data[(y1 * w + x0) * 4 + c] ?? 0;
-    const e = data[(y1 * w + x1) * 4 + c] ?? 0;
-    out[c] = (a * (1 - tx) + b * tx) * (1 - ty) + (d * (1 - tx) + e * tx) * ty;
+  const at = (xx: number, yy: number) => v[yy * w + xx] ?? 0;
+  return (at(x0, y0) * (1 - tx) + at(x1, y0) * tx) * (1 - ty) + (at(x0, y1) * (1 - tx) + at(x1, y1) * tx) * ty;
+}
+
+// The tones at the lo and hi fractions of a picture's histogram: its black
+// and white points, so a faded albumen print fills the whole range.
+export function autoLevels(v: Float32Array, lo = 0.01, hi = 0.99): [number, number] {
+  const bins = new Uint32Array(256);
+  for (let i = 0; i < v.length; i++) {
+    const b = ((v[i] as number) * 255 + 0.5) | 0;
+    bins[b < 0 ? 0 : b > 255 ? 255 : b]! += 1;
+  }
+  const at = (q: number) => {
+    const target = q * v.length;
+    let sum = 0;
+    for (let i = 0; i < 256; i++) {
+      sum += bins[i] ?? 0;
+      if (sum >= target) return i / 255;
+    }
+    return 1;
+  };
+  const black = at(lo);
+  const white = at(hi);
+  return white - black < 0.05 ? [0, 1] : [black, white];
+}
+
+// Stretches the tones between black and white to 0..1, then bends the mid
+// tones by gamma (below 1 lightens, above 1 darkens). In place.
+export function levels(v: Float32Array, black: number, white: number, gamma = 1): Float32Array {
+  const span = Math.max(1e-6, white - black);
+  // A table of the curve, so the power is taken 1024 times, not once a pixel.
+  const curve = new Float32Array(1025);
+  for (let k = 0; k <= 1024; k++) curve[k] = clamp01((k / 1024 - black) / span) ** gamma;
+  for (let i = 0; i < v.length; i++) {
+    const k = ((v[i] as number) * 1024 + 0.5) | 0;
+    v[i] = curve[k < 0 ? 0 : k > 1024 ? 1024 : k] as number;
+  }
+  return v;
+}
+
+// ── Dither ───────────────────────────────────────────────────────────────
+
+// Bill Atkinson's error diffusion, as MacPaint printed: each pixel goes to
+// paper (1) or ink (0) and passes three quarters of its error to six
+// neighbours. Losing a quarter keeps the highlights and shadows clean,
+// which is what makes it read as a print and not as noise.
+export function atkinson(v: Float32Array, w: number, h: number, threshold = 0.5): Uint8Array {
+  // The error, in a buffer with a margin of two columns each side and two
+  // rows below, so the six pushes need no bounds checks.
+  const W = w + 4;
+  const e = new Float32Array(W * (h + 2));
+  for (let y = 0; y < h; y++) e.set(v.subarray(y * w, y * w + w), y * W + 2);
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    let i = y * W + 2;
+    let o = y * w;
+    for (let x = 0; x < w; x++, i++, o++) {
+      const old = e[i] as number;
+      const on = old >= threshold ? 1 : 0;
+      out[o] = on;
+      const d = (old - on) * 0.125;
+      e[i + 1]! += d;
+      e[i + 2]! += d;
+      e[i + W - 1]! += d;
+      e[i + W]! += d;
+      e[i + W + 1]! += d;
+      e[i + 2 * W]! += d;
+    }
+  }
+  return out;
+}
+
+// The same diffusion in colour: each pixel takes the nearest of a few inks
+// and the error of each channel spreads as above. Out: an ink index a
+// pixel. rgb holds three values a pixel, 0..255.
+export function atkinsonPalette(rgb: Float32Array, w: number, h: number, palette: readonly RGB[]): Uint8Array {
+  const W = w + 4;
+  const e = new Float32Array(W * (h + 2) * 3);
+  for (let y = 0; y < h; y++) e.set(rgb.subarray(y * w * 3, (y * w + w) * 3), (y * W + 2) * 3);
+  const pr = palette.map((p) => p[0]);
+  const pg = palette.map((p) => p[1]);
+  const pb = palette.map((p) => p[2]);
+  const n = palette.length;
+  const out = new Uint8Array(w * h);
+  const offs = [3, 6, (W - 1) * 3, W * 3, (W + 1) * 3, 2 * W * 3];
+  for (let y = 0; y < h; y++) {
+    let i = (y * W + 2) * 3;
+    let o = y * w;
+    for (let x = 0; x < w; x++, i += 3, o++) {
+      const r = e[i] as number;
+      const g = e[i + 1] as number;
+      const b = e[i + 2] as number;
+      // Redmean, inline: the nearest ink.
+      let best = 0;
+      let bd = Infinity;
+      for (let k = 0; k < n; k++) {
+        const rm = (r + (pr[k] as number)) * 0.5;
+        const dr = r - (pr[k] as number);
+        const dg = g - (pg[k] as number);
+        const db = b - (pb[k] as number);
+        const d = (2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db;
+        if (d < bd) {
+          bd = d;
+          best = k;
+        }
+      }
+      out[o] = best;
+      const er = (r - (pr[best] as number)) * 0.125;
+      const eg = (g - (pg[best] as number)) * 0.125;
+      const eb = (b - (pb[best] as number)) * 0.125;
+      for (let k = 0; k < 6; k++) {
+        const j = i + (offs[k] as number);
+        e[j]! += er;
+        e[j + 1]! += eg;
+        e[j + 2]! += eb;
+      }
+    }
   }
   return out;
 }
@@ -121,18 +242,16 @@ export function screen(w: number, h: number, pitch: number, angle: number): Floa
   const t = (angle * Math.PI) / 180;
   const cos = Math.cos(t);
   const sin = Math.sin(t);
-  // The frame's corners in the screen's own (unrotated) coordinates.
-  const corners: [number, number][] = [
-    [0, 0],
-    [w, 0],
-    [0, h],
-    [w, h],
-  ];
   let umin = Infinity;
   let umax = -Infinity;
   let vmin = Infinity;
   let vmax = -Infinity;
-  for (const [x, y] of corners) {
+  for (const [x, y] of [
+    [0, 0],
+    [w, 0],
+    [0, h],
+    [w, h],
+  ] as const) {
     const u = x * cos + y * sin;
     const v = -x * sin + y * cos;
     umin = Math.min(umin, u);
@@ -163,41 +282,25 @@ export function dotRadius(coverage: number, pitch: number): number {
   return pitch * Math.sqrt(clamp01(coverage) / Math.PI);
 }
 
-// A press's tone curve: a little dot gain in the mid-tones and a clean
-// paper white, so highlights drop out and shadows fill.
-export function toneCurve(c: number, gain = 0.12, floor = 0.06): number {
-  const v = clamp01((c - floor) / (1 - floor));
-  return clamp01(v + gain * v * (1 - v) * 4 * 0.5);
+// The riso's hard shapes of solid spot ink, in a W×H frame: a disc behind
+// the picture's subject on the right, and a bar along the bottom right,
+// as a zine pastes blocks of colour over a print. They keep clear of the
+// left, where the sidebar is.
+export type Block = { kind: "disc"; x: number; y: number; r: number } | { kind: "bar"; x: number; y: number; w: number; h: number };
+
+export function risoBlocks(W: number, H: number): Block[] {
+  const r = Math.min(H * 0.33, W * 0.21);
+  return [
+    { kind: "disc", x: W * 0.7, y: H * 0.37, r },
+    { kind: "bar", x: W * 0.52, y: H * 0.9, w: W * 0.48, h: Math.max(10, H * 0.03) },
+  ];
 }
 
-// Two inks on paper (light). Paper is white; black ink absorbs everything;
-// the fluorescent pink lets red through and holds back most green. So red
-// says how much black there is, and what green loses beyond that is pink.
-// Out: coverage of each plate, 0..1.
-export function separateOnPaper(rgb: RGB, pink: RGB): { key: number; spot: number } {
-  const r = rgb[0] / 255;
-  const g = rgb[1] / 255;
-  const key = clamp01(1 - r / Math.max(pink[0] / 255, 0.001));
-  const left = 1 - key;
-  const gp = left <= 0.001 ? 1 : clamp01(g / left);
-  const spot = clamp01((1 - gp) / Math.max(1 - pink[1] / 255, 0.001));
-  return { key, spot };
+export function inBlock(b: Block, x: number, y: number): boolean {
+  return b.kind === "disc" ? (x - b.x) ** 2 + (y - b.y) ** 2 <= b.r * b.r : x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 }
 
-// Two inks on black stock (dark): white ink and the pink, both opaque. Red
-// rises with either ink, green mostly with the white, so their difference
-// is the pink. Out: coverage of each plate, 0..1.
-export function separateOnBlack(rgb: RGB, pink: RGB): { key: number; spot: number } {
-  const r = rgb[0] / 255;
-  const g = rgb[1] / 255;
-  const pr = pink[0] / 255;
-  const pg = pink[1] / 255;
-  const spot = clamp01((r - g) / Math.max(pr - pg, 0.001));
-  const key = clamp01(Math.min(r - spot * pr, g - spot * pg) / Math.max(1 - spot * Math.max(pr, pg), 0.001));
-  return { key, spot };
-}
-
-// ── Palette quantisation (the stitch's threads) ──────────────────────────
+// ── Threads ──────────────────────────────────────────────────────────────
 
 // "Redmean": a cheap weighted distance that tracks perception far better
 // than plain RGB.
@@ -222,39 +325,23 @@ export function nearest(c: RGB, palette: readonly RGB[]): number {
   return best;
 }
 
-// Quantises a picture of RGBA pixels to the palette. A pixel under half
-// opaque is left bare (-1): the fabric shows. Then only the `keep` threads
-// the picture uses most stay, and each cell takes the nearest of those,
-// as a pattern is charted with a small box of floss.
-export function quantise(data: ArrayLike<number>, palette: readonly RGB[], keep = palette.length): Int16Array {
-  const n = Math.floor(data.length / 4);
-  const out = new Int16Array(n);
-  const counts = new Array<number>(palette.length).fill(0);
-  for (let i = 0; i < n; i++) {
-    if ((data[i * 4 + 3] ?? 0) < 128) {
+// Charts a picture for cross-stitch, one cell a pixel, by tone: the
+// lightest tones stay bare cloth (-1), the rest take one of `threads`
+// shades from dark (0) to light. `bare` is the tone above which the cloth
+// shows; on dark cloth (`dark`) it is the darkest tones that stay bare.
+export function chartTones(v: Float32Array, threads: number, bare: number, dark: boolean): Int8Array {
+  const out = new Int8Array(v.length);
+  for (let i = 0; i < v.length; i++) {
+    const t = v[i] ?? 0;
+    if (dark ? t < bare : t > bare) {
       out[i] = -1;
       continue;
     }
-    const k = nearest([data[i * 4] ?? 0, data[i * 4 + 1] ?? 0, data[i * 4 + 2] ?? 0], palette);
-    out[i] = k;
-    counts[k] = (counts[k] ?? 0) + 1;
-  }
-  if (keep >= palette.length) return out;
-  const kept = counts
-    .map((c, i) => [c, i] as const)
-    .filter(([c]) => c > 0)
-    .sort((a, b) => b[0] - a[0])
-    .slice(0, keep)
-    .map(([, i]) => i);
-  const sub = kept.map((i) => palette[i] as RGB);
-  for (let i = 0; i < n; i++) {
-    if (out[i] === -1) continue;
-    out[i] = kept[nearest([data[i * 4] ?? 0, data[i * 4 + 1] ?? 0, data[i * 4 + 2] ?? 0], sub)] ?? 0;
+    const k = dark ? (t - bare) / (1 - bare) : t / bare;
+    out[i] = Math.min(threads - 1, Math.max(0, Math.floor(clamp01(k) * threads)));
   }
   return out;
 }
-
-// ── The stitch grid ──────────────────────────────────────────────────────
 
 // How many cells of `cell` px cover a w×h frame, and the offset that
 // centres the grid, so the fabric's holes fall evenly at both edges.
@@ -264,6 +351,10 @@ export function grid(w: number, h: number, cell: number): { cols: number; rows: 
   return { cols, rows, ox: (w - cols * cell) / 2, oy: (h - rows * cell) / 2 };
 }
 
+// ── The stitch's own art: cards and dice ─────────────────────────────────
+
+export type Suit = "club" | "spade" | "heart" | "diamond";
+
 // Suit shapes in a unit box, u and v in -1..1 (v down). True inside.
 export function inSuit(suit: Suit, u: number, v: number): boolean {
   const circle = (cx: number, cy: number, r: number) => (u - cx) ** 2 + (v - cy) ** 2 <= r * r;
@@ -271,51 +362,42 @@ export function inSuit(suit: Suit, u: number, v: number): boolean {
   switch (suit) {
     case "club":
       return circle(0, -0.5, 0.42) || circle(-0.5, 0.12, 0.42) || circle(0.5, 0.12, 0.42) || circle(0, 0.05, 0.2) || stem();
-    case "spade": {
+    case "spade":
       // A heart upside down, with a stem.
-      const body = inSuit("heart", u, -v * 1.05 + 0.18);
-      return body || stem();
-    }
-    case "heart": {
+      return inSuit("heart", u, -v * 1.05 + 0.18) || stem();
+    case "heart":
       if (v < -0.2) return circle(-0.45, -0.38, 0.5) || circle(0.45, -0.38, 0.5);
       return Math.abs(u) <= (0.93 * (0.95 - v)) / 1.15 && v <= 0.95;
-    }
     case "diamond":
       return Math.abs(u) / 0.78 + Math.abs(v) <= 1;
   }
 }
 
-export type Suit = "club" | "spade" | "heart" | "diamond";
-
-// The pips of a card's face, as centres in 0..1 of the pip field (x, y).
-// The classic layouts: two columns of four with two in the middle for a
-// ten, and so on.
+// The pips of a card's face, as centres in 0..1 of the pip field (x, y),
+// in the classic layouts.
 export function pips(rank: number): [number, number][] {
-  const L = 0;
-  const C = 0.5;
-  const R = 1;
   const col = (x: number, ys: number[]) => ys.map((y) => [x, y] as [number, number]);
   switch (rank) {
     case 1:
-      return [[C, 0.5]];
+      return [[0.5, 0.5]];
     case 2:
-      return col(C, [0, 1]);
+      return col(0.5, [0, 1]);
     case 3:
-      return col(C, [0, 0.5, 1]);
+      return col(0.5, [0, 0.5, 1]);
     case 4:
-      return [...col(L, [0, 1]), ...col(R, [0, 1])];
+      return [...col(0, [0, 1]), ...col(1, [0, 1])];
     case 5:
-      return [...col(L, [0, 1]), ...col(R, [0, 1]), [C, 0.5]];
+      return [...col(0, [0, 1]), ...col(1, [0, 1]), [0.5, 0.5]];
     case 6:
-      return [...col(L, [0, 0.5, 1]), ...col(R, [0, 0.5, 1])];
+      return [...col(0, [0, 0.5, 1]), ...col(1, [0, 0.5, 1])];
     case 7:
-      return [...col(L, [0, 0.5, 1]), ...col(R, [0, 0.5, 1]), [C, 0.25]];
+      return [...col(0, [0, 0.5, 1]), ...col(1, [0, 0.5, 1]), [0.5, 0.25]];
     case 8:
-      return [...col(L, [0, 0.5, 1]), ...col(R, [0, 0.5, 1]), [C, 0.25], [C, 0.75]];
+      return [...col(0, [0, 0.5, 1]), ...col(1, [0, 0.5, 1]), [0.5, 0.25], [0.5, 0.75]];
     case 9:
-      return [...col(L, [0, 1 / 3, 2 / 3, 1]), ...col(R, [0, 1 / 3, 2 / 3, 1]), [C, 0.5]];
+      return [...col(0, [0, 1 / 3, 2 / 3, 1]), ...col(1, [0, 1 / 3, 2 / 3, 1]), [0.5, 0.5]];
     case 10:
-      return [...col(L, [0, 1 / 3, 2 / 3, 1]), ...col(R, [0, 1 / 3, 2 / 3, 1]), [C, 1 / 6], [C, 5 / 6]];
+      return [...col(0, [0, 1 / 3, 2 / 3, 1]), ...col(1, [0, 1 / 3, 2 / 3, 1]), [0.5, 1 / 6], [0.5, 5 / 6]];
     default:
       return [];
   }
@@ -339,28 +421,19 @@ const GLYPHS: Record<string, string[]> = {
   "9": ["###", "#.#", "###", "..#", "##."],
 };
 
-// The cells of a glyph, as x, y offsets in a 3×5 box.
-export function glyph(ch: string): [number, number][] {
-  const out: [number, number][] = [];
-  (GLYPHS[ch] ?? []).forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) if (row[x] === "#") out.push([x, y]);
-  });
-  return out;
-}
-
-// The cells of a rank's index, "10" as two glyphs side by side (1 then 0),
-// packed one cell apart.
+// The cells of a rank's index, "10" as two glyphs side by side, one cell
+// apart, as x, y offsets.
 export function rankCells(rank: string): [number, number][] {
   const out: [number, number][] = [];
   [...rank].forEach((ch, i) => {
-    for (const [x, y] of glyph(ch)) out.push([x + i * 4, y]);
+    (GLYPHS[ch] ?? []).forEach((row, y) => {
+      for (let x = 0; x < row.length; x++) if (row[x] === "#") out.push([x + i * 4, y]);
+    });
   });
   return out;
 }
 
-// ── The default stitch art: cards and dice on the cloth ──────────────────
-
-// Threads by role. The renderer maps each to a colour (inks.ts).
+// Threads by role. The renderer maps each to a floss (inks.ts).
 export const T = {
   Blank: -1,
   Card: 0, // the card stock: white floss
@@ -384,7 +457,7 @@ export interface Placed {
 
 export interface CardArt extends Placed {
   kind: "card";
-  rank: string; // "10", "A"…
+  rank: string;
   suit: Suit;
   back?: boolean;
 }
@@ -397,22 +470,26 @@ export interface DieArt extends Placed {
 
 export type Piece = CardArt | DieArt;
 
-// Where the cards and dice lie on a cols×rows cloth. They fall to the right
-// and low, like a hand laid down at the edge of a table; a die rolls off to
-// the left. Sizes follow the cloth's height so a card always reads as a
-// card, never a stamp: about half the height.
+// Where the cards and dice lie on a cols×rows cloth: a hand of three
+// fanned from one pivot low on the right, as it is held, and a pair of
+// dice thrown to its left. Sizes follow the cloth, so a card always reads
+// as a card, never a stamp.
 export function tableLayout(cols: number, rows: number): Piece[] {
-  const ch = Math.round(Math.min(rows * 0.5, cols * 0.42));
+  const ch = Math.round(Math.min(rows * 0.4, cols * 0.27));
   const cw = Math.round(ch * (2.5 / 3.5));
-  const die = Math.max(9, Math.round(ch * 0.27));
-  const right = cols * 0.74;
-  const low = rows * 0.6;
+  const die = Math.max(8, Math.round(ch * 0.27));
+  const px = cols - cw * 1.75;
+  const py = rows * 0.58 + ch * 0.95;
+  const fan = (angle: number): Placed => {
+    const t = (angle * Math.PI) / 180;
+    return { cx: px + Math.sin(t) * ch * 0.95, cy: py - Math.cos(t) * ch * 0.95, w: cw, h: ch, angle };
+  };
   return [
-    { kind: "card", rank: "A", suit: "spade", back: true, cx: right - cw * 0.95, cy: low - ch * 0.04, w: cw, h: ch, angle: -14 },
-    { kind: "card", rank: "A", suit: "spade", cx: right + cw * 0.95, cy: low + ch * 0.1, w: cw, h: ch, angle: 11 },
-    { kind: "card", rank: "10", suit: "club", cx: right, cy: low - ch * 0.08, w: cw, h: ch, angle: -2 },
-    { kind: "die", face: 5, cx: right - cw * 1.55, cy: low + ch * 0.55, w: die, h: die, angle: 18 },
-    { kind: "die", face: 3, red: true, cx: cols * 0.17, cy: rows * 0.72, w: die, h: die, angle: -9 },
+    { kind: "card", rank: "A", suit: "spade", back: true, ...fan(-26) },
+    { kind: "card", rank: "A", suit: "spade", ...fan(-6) },
+    { kind: "card", rank: "A", suit: "heart", ...fan(14) },
+    { kind: "die", face: 5, cx: px - cw * 2.35, cy: rows * 0.84, w: die, h: die, angle: 14 },
+    { kind: "die", face: 3, red: true, cx: px - cw * 1.55, cy: rows * 0.9, w: die, h: die, angle: -10 },
   ];
 }
 
@@ -432,12 +509,31 @@ function inRounded(u: number, v: number, w: number, h: number, r: number): boole
   return (u - cx) ** 2 + (v - cy) ** 2 <= r * r;
 }
 
-// The thread of one cell of a card, or Blank outside it.
-function cardCell(c: CardArt, u: number, v: number): number {
+// A card's face, worked out once: its corner index's cells (as x * 16 + y)
+// and its pips' centres, in cells.
+interface Face {
+  idx: Set<number>;
+  pips: { x: number; y: number; turned: boolean }[];
+  size: number;
+}
+
+function faceOf(c: CardArt): Face {
+  const ace = c.rank === "A";
+  const fx0 = c.w * 0.3;
+  const fx1 = c.w * 0.7;
+  const fy0 = c.h * 0.17;
+  const fy1 = c.h * 0.83;
+  return {
+    idx: new Set(rankCells(c.rank).map(([x, y]) => x * 16 + y)),
+    pips: pips(ace ? 1 : Number(c.rank)).map(([px, py]) => ({ x: fx0 + (fx1 - fx0) * px, y: fy0 + (fy1 - fy0) * py, turned: py > 0.5 })),
+    size: ace ? c.w * 0.3 : Math.max(2.6, c.w * 0.105),
+  };
+}
+
+function cardCell(c: CardArt, face: Face, u: number, v: number): number {
   const r = Math.max(1.5, c.w * 0.09);
   if (!inRounded(u, v, c.w, c.h, r)) return T.Blank;
   if (!inRounded(u - 1, v - 1, c.w - 2, c.h - 2, Math.max(0.5, r - 1))) return T.Edge;
-  const red = c.suit === "heart" || c.suit === "diamond";
   if (c.back === true) {
     // A border of cream, then a lattice of diamonds in two reds.
     if (!inRounded(u - 3, v - 3, c.w - 6, c.h - 6, Math.max(0.5, r - 2))) return T.Cream;
@@ -445,86 +541,77 @@ function cardCell(c: CardArt, u: number, v: number): number {
     const b = Math.floor(u) - Math.floor(v);
     return ((a % 4) + 4) % 4 === 0 || ((b % 4) + 4) % 4 === 0 ? T.RedDark : T.Red;
   }
-  const ink = red ? T.Red : T.Ink;
-  // The corner index, top left and (turned) bottom right, with a small pip.
+  const ink = c.suit === "heart" || c.suit === "diamond" ? T.Red : T.Ink;
+  // The corner index, top left and (turned) bottom right, each over a
+  // small pip.
   const iu = Math.floor(u) - 2;
   const iv = Math.floor(v) - 2;
   const ju = Math.floor(c.w - u) - 2;
   const jv = Math.floor(c.h - v) - 2;
-  const cells = rankCells(c.rank);
-  if (cells.some(([x, y]) => (x === iu && y === iv) || (x === ju && y === jv))) return ink;
-  const small = 2.6;
-  for (const [pu, pv] of [
-    [3.5, 10],
-    [c.w - 3.5, c.h - 10],
+  if ((iu >= 0 && iv >= 0 && face.idx.has(iu * 16 + iv)) || (ju >= 0 && jv >= 0 && face.idx.has(ju * 16 + jv))) return ink;
+  const small = 2.4;
+  for (const [pu, pv, turned] of [
+    [3.5, 10, false],
+    [c.w - 3.5, c.h - 10, true],
   ] as const) {
-    const turned = pu > c.w / 2;
     if (inSuit(c.suit, (u - pu) / small, ((v - pv) / small) * (turned ? -1 : 1))) return ink;
   }
   // The pips, in a field inset from the indexes.
-  const n = c.rank === "A" ? 1 : Number(c.rank);
-  const big = c.rank === "A";
-  const size = big ? c.w * 0.3 : Math.max(2.6, c.w * 0.105);
-  const fx0 = c.w * 0.3;
-  const fx1 = c.w * 0.7;
-  const fy0 = c.h * 0.17;
-  const fy1 = c.h * 0.83;
-  for (const [px, py] of pips(n)) {
-    const cx = fx0 + (fx1 - fx0) * px;
-    const cy = fy0 + (fy1 - fy0) * py;
-    const turned = py > 0.5;
-    if (inSuit(c.suit, (u - cx) / size, ((v - cy) / size) * (turned ? -1 : 1))) return ink;
+  const k = face.size;
+  for (const p of face.pips) {
+    if (Math.abs(u - p.x) > k || Math.abs(v - p.y) > k) continue;
+    if (inSuit(c.suit, (u - p.x) / k, ((v - p.y) / k) * (p.turned ? -1 : 1))) return ink;
   }
   return T.Card;
 }
 
+const SPOTS: Record<number, [number, number][]> = {
+  1: [[0.5, 0.5]],
+  2: [
+    [0.27, 0.27],
+    [0.73, 0.73],
+  ],
+  3: [
+    [0.27, 0.27],
+    [0.5, 0.5],
+    [0.73, 0.73],
+  ],
+  4: [
+    [0.27, 0.27],
+    [0.73, 0.27],
+    [0.27, 0.73],
+    [0.73, 0.73],
+  ],
+  5: [
+    [0.27, 0.27],
+    [0.73, 0.27],
+    [0.5, 0.5],
+    [0.27, 0.73],
+    [0.73, 0.73],
+  ],
+  6: [
+    [0.27, 0.25],
+    [0.73, 0.25],
+    [0.27, 0.5],
+    [0.73, 0.5],
+    [0.27, 0.75],
+    [0.73, 0.75],
+  ],
+};
+
 function dieCell(d: DieArt, u: number, v: number): number {
   const r = d.w * 0.22;
   if (!inRounded(u, v, d.w, d.h, r)) return T.Blank;
-  const body = d.red === true ? T.DieRed : T.Card;
-  const pip = d.red === true ? T.Card : T.Ink;
-  if (!inRounded(u - 0.8, v - 0.8, d.w - 1.6, d.h - 1.6, Math.max(0.5, r - 0.8))) return d.red === true ? T.RedDark : T.Edge;
-  const spots: Record<number, [number, number][]> = {
-    1: [[0.5, 0.5]],
-    2: [
-      [0.27, 0.27],
-      [0.73, 0.73],
-    ],
-    3: [
-      [0.27, 0.27],
-      [0.5, 0.5],
-      [0.73, 0.73],
-    ],
-    4: [
-      [0.27, 0.27],
-      [0.73, 0.27],
-      [0.27, 0.73],
-      [0.73, 0.73],
-    ],
-    5: [
-      [0.27, 0.27],
-      [0.73, 0.27],
-      [0.5, 0.5],
-      [0.27, 0.73],
-      [0.73, 0.73],
-    ],
-    6: [
-      [0.27, 0.25],
-      [0.73, 0.25],
-      [0.27, 0.5],
-      [0.73, 0.5],
-      [0.27, 0.75],
-      [0.73, 0.75],
-    ],
-  };
+  const red = d.red === true;
+  if (!inRounded(u - 0.8, v - 0.8, d.w - 1.6, d.h - 1.6, Math.max(0.5, r - 0.8))) return red ? T.RedDark : T.Edge;
   const pr = d.w * 0.11;
-  for (const [sx, sy] of spots[d.face] ?? []) if ((u - sx * d.w) ** 2 + (v - sy * d.h) ** 2 <= pr * pr) return pip;
-  return body;
+  for (const [sx, sy] of SPOTS[d.face] ?? []) if ((u - sx * d.w) ** 2 + (v - sy * d.h) ** 2 <= pr * pr) return red ? T.Card : T.Ink;
+  return red ? T.DieRed : T.Card;
 }
 
-// Charts the default art: one thread role per cell (T), Blank for bare
+// Charts the cards and dice: one thread role per cell (T), Blank for bare
 // cloth. Later pieces lie on earlier ones, and each casts a one-cell
-// shadow down and to the right in a darker cloth tone.
+// shadow down and to the right.
 export function chartTable(cols: number, rows: number, pieces = tableLayout(cols, rows)): Int8Array {
   const out = new Int8Array(cols * rows).fill(T.Blank);
   for (const p of pieces) {
@@ -533,20 +620,20 @@ export function chartTable(cols: number, rows: number, pieces = tableLayout(cols
     const x1 = Math.min(cols - 1, Math.ceil(p.cx + reach));
     const y0 = Math.max(0, Math.floor(p.cy - reach));
     const y1 = Math.min(rows - 1, Math.ceil(p.cy + reach));
-    const at = (x: number, y: number) => {
-      const [u, v] = local(p, x + 0.5, y + 0.5);
-      return p.kind === "card" ? cardCell(p, u, v) : dieCell(p, u, v);
-    };
-    // The shadow first, where the piece does not cover.
-    for (let y = y0; y <= y1; y++)
-      for (let x = x0; x <= x1; x++) {
-        if (at(x, y) !== T.Blank) continue;
-        if (at(x - 1, y - 1) !== T.Blank && out[y * cols + x] === T.Blank) out[y * cols + x] = T.Shadow;
+    const face = p.kind === "card" ? faceOf(p) : null;
+    // The piece over its box, one cell wider up and left for the shadow.
+    const bw = x1 - x0 + 2;
+    const box = new Int8Array(bw * (y1 - y0 + 2));
+    for (let y = y0 - 1; y <= y1; y++)
+      for (let x = x0 - 1; x <= x1; x++) {
+        const [u, v] = local(p, x + 0.5, y + 0.5);
+        box[(y - y0 + 1) * bw + (x - x0 + 1)] = p.kind === "card" && face !== null ? cardCell(p, face, u, v) : dieCell(p as DieArt, u, v);
       }
     for (let y = y0; y <= y1; y++)
       for (let x = x0; x <= x1; x++) {
-        const t = at(x, y);
+        const t = box[(y - y0 + 1) * bw + (x - x0 + 1)] as number;
         if (t !== T.Blank) out[y * cols + x] = t;
+        else if (box[(y - y0) * bw + (x - x0)] !== T.Blank && out[y * cols + x] === T.Blank) out[y * cols + x] = T.Shadow;
       }
   }
   return out;
@@ -560,7 +647,7 @@ export function chartTable(cols: number, rows: number, pieces = tableLayout(cols
 export function markGeometry(x: number, y: number, h: number): {
   chevron: [number, number][];
   stroke: number;
-  cursor: { x: number; y: number; w: number; h: number };
+  cursor: Rect;
 } {
   const k = h / 268; // the prompt spans 278..546 on the icon's grid
   const at = (px: number, py: number): [number, number] => [x + (px - 234) * k, y + (py - 278) * k];

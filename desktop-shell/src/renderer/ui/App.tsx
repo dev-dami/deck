@@ -10,6 +10,7 @@ import { refreshTeam, teamOf } from "../crewState";
 import { parseTag, useBadge, useInbox, useNotifications } from "../inbox";
 import { forgetOpen, type OpenProject, rememberOpen, restoredOpen } from "../openProjects";
 import { usePrefs } from "../prefs";
+import { Backdrop } from "./Backdrop";
 import { ConnectScreen } from "./ConnectScreen";
 import { Shell } from "./Shell";
 import type { ProjectEntry } from "./Sidebar";
@@ -377,6 +378,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
       }}
       onDrop={onDrop}
     >
+      <Backdrop />
       {current !== null && !connecting && !welcome ? (
         <Shell
           key={current.key}
