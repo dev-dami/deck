@@ -30,6 +30,13 @@ const (
 	// the CLI reports none. It is about the account, not the thread: it can
 	// arrive at any time, including between turns.
 	KindLimits Kind = "limits"
+	// KindRestarting says the CLI process is being replaced to apply a
+	// setting it only takes at start-up (Text names it: "model", "effort",
+	// "mode", or several joined by ", "). Prompts sent meanwhile are held
+	// and delivered once it is back. KindRestarted follows when the new
+	// process is up; a restart that fails ends with KindError and KindExited.
+	KindRestarting Kind = "restarting"
+	KindRestarted  Kind = "restarted"
 )
 
 // ToolStatus is the lifecycle state of a tool call.
@@ -183,7 +190,7 @@ func KeepsRaw(k Kind) bool {
 	switch k {
 	case KindSessionStarted, KindAssistantText, KindReasoning, KindUserText,
 		KindToolCall, KindToolResult, KindFileChange, KindUsage, KindTurnDone,
-		KindExited, KindLimits:
+		KindExited, KindLimits, KindRestarting, KindRestarted:
 		return false
 	}
 	return true

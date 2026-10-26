@@ -159,6 +159,10 @@ const (
 	StatusApproval Status = "approval"
 	StatusError    Status = "error"
 	StatusExited   Status = "exited"
+	// StatusRestarting: the CLI is restarting to apply a setting
+	// (agent.KindRestarting). Not busy: a prompt sent now waits in the
+	// adapter for the new process.
+	StatusRestarting Status = "restarting"
 )
 
 // DefaultMaxHops is the number of agent-to-agent relays allowed after each user
@@ -1444,9 +1448,9 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		t.mu.Unlock()
 	}
 	res := a.apply(ev)
-	// Plan limits are about the account, not the conversation: they are not
-	// part of the thread's log.
-	if !ev.Delta && ev.Kind != agent.KindLimits {
+	// Plan limits are about the account, not the conversation, and a
+	// restart about the process: they are not part of the thread's log.
+	if !ev.Delta && ev.Kind != agent.KindLimits && ev.Kind != agent.KindRestarting && ev.Kind != agent.KindRestarted {
 		t.mu.Lock()
 		m.appendLocked(t, store.Entry{Event: ev})
 		t.mu.Unlock()
@@ -1799,6 +1803,14 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 		}
 	case agent.KindError:
 		a.base = StatusError
+	case agent.KindRestarting:
+		if a.base == StatusIdle || a.base == StatusError {
+			a.base = StatusRestarting
+		}
+	case agent.KindRestarted:
+		if a.base == StatusRestarting {
+			a.base = StatusIdle
+		}
 	case agent.KindTurnDone:
 		res.spent = store.Spend{Tokens: a.tokTurn, CostUSD: a.costTurn}
 		a.costTotal += a.costTurn

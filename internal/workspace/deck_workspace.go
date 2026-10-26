@@ -573,6 +573,24 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 	if sid == "" || ev.AgentID == "" {
 		return
 	}
+	switch ev.Kind {
+	case deckagent.KindRestarting:
+		// Not a turn: say why the agent is quiet for a few seconds.
+		name := ev.AgentID
+		if a, ok := w.mgr().Agent(ev.AgentID); ok && a.Name != "" {
+			name = a.Name
+		}
+		what := "settings"
+		if ev.Text != "" {
+			what = ev.Text
+		}
+		w.notice(sid, name+" is restarting to apply the new "+what+"; messages wait until it is back")
+		w.publish(DeckChange{Kind: ChangeRoster, SessionID: sid})
+		return
+	case deckagent.KindRestarted:
+		w.publish(DeckChange{Kind: ChangeRoster, SessionID: sid})
+		return
+	}
 	var began time.Time // when a finishing turn began; zero when unknown
 	var start time.Time // when the turn this event belongs to began; zero when unknown
 	w.mu.Lock()

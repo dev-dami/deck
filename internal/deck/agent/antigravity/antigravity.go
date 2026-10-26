@@ -318,6 +318,7 @@ func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 			}
 			for _, ev := range r.tr.Line(line) {
 				restart := false
+				what := ""
 				switch ev.Kind {
 				case agent.KindSessionStarted:
 					r.mu.Lock()
@@ -331,6 +332,7 @@ func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 					if r.dirty && !r.closed && !p.intentional && !r.restarting {
 						r.restarting = true
 						restart = true
+						what = r.changedLocked()
 					}
 					r.mu.Unlock()
 				}
@@ -342,6 +344,7 @@ func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 				}
 				r.emit(ev)
 				if restart {
+					r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindRestarting, Text: what})
 					go r.restart()
 				}
 			}
@@ -581,9 +584,15 @@ func (r *run) SetEffort(effort string) error {
 	return nil
 }
 
+// restartSettle is how long an idle restart waits before it stops the
+// process, so changes made close together (a model and then its effort, or
+// a thread's mode next to a model) cost one restart and one cold start.
+// Prompts sent meanwhile are already held for the new process.
+var restartSettle = 150 * time.Millisecond
+
 // applyLocked is called with r.mu held after r.mode/r.model/r.effort changed,
 // and releases it. If a turn (or another restart) is in progress the restart
-// is deferred; otherwise it starts now.
+// is deferred; otherwise it starts after restartSettle.
 func (r *run) applyLocked() {
 	if r.busy || r.restarting {
 		r.dirty = true
@@ -591,8 +600,24 @@ func (r *run) applyLocked() {
 		return
 	}
 	r.restarting = true
+	what := r.changedLocked()
 	r.mu.Unlock()
-	go r.restart()
+	r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindRestarting, Text: what})
+	time.AfterFunc(restartSettle, r.restart)
+}
+
+// changedLocked names what differs from the flags the newest process was
+// started with, for KindRestarting. The effort is part of the --model slug.
+// Caller holds r.mu.
+func (r *run) changedLocked() string {
+	var c []string
+	if r.slug != r.spawnedSlug {
+		c = append(c, "model")
+	}
+	if r.mode != r.spawnedMode {
+		c = append(c, "mode")
+	}
+	return strings.Join(c, ", ")
 }
 
 // restart replaces the idle process with one started from the current
@@ -611,17 +636,23 @@ func (r *run) restart() {
 		old := r.cur
 		sid := r.sessionID
 		r.dirty = false // spawn reads the flags after this point; later changes set it again
-		if old != nil {
+		// Changed and changed back while the restart settled: the process
+		// already runs with these flags.
+		same := old != nil && !r.flagsChangedLocked()
+		if old != nil && !same {
 			old.intentional = true
 		}
 		r.mu.Unlock()
 
-		if old != nil {
-			killTree(old.cmd)
-			old.closeStdin()
-			waitProcExit(old)
+		var err error
+		if !same {
+			if old != nil {
+				killTree(old.cmd)
+				old.closeStdin()
+				waitProcExit(old)
+			}
+			err = r.spawn(sid)
 		}
-		err := r.spawn(sid)
 
 		r.mu.Lock()
 		if err != nil {
@@ -655,6 +686,8 @@ func (r *run) restart() {
 		}
 		r.mu.Unlock()
 
+		// Before the held prompts go in, so the new turn's events follow it.
+		r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindRestarted})
 		for _, data := range q {
 			r.sendMu.Lock()
 			_, werr := p.stdin.Write(data)

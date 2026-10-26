@@ -219,6 +219,21 @@ func TestTokenTravelsInAFile(t *testing.T) {
 	}
 }
 
+// TestChangedNamesRestart covers what KindRestarting says changed: the
+// effort is part of the --model slug, so it reads as the model.
+func TestChangedNamesRestart(t *testing.T) {
+	r := &run{a: &adapter{}, slug: "gemini-3.8-flash-medium", mode: agent.ModeAsk}
+	r.args("")
+	r.slug = "gemini-3.8-flash-high"
+	if got := r.changedLocked(); got != "model" {
+		t.Fatalf("changed %q", got)
+	}
+	r.mode = agent.ModePlan
+	if got := r.changedLocked(); got != "model, mode" {
+		t.Fatalf("changed %q", got)
+	}
+}
+
 // TestMcpRemoveRunsInBackground covers Close not waiting on `agy mcp
 // remove`, and a new run of the same agent registering only after that
 // removal is done (else the removal would undo the new entry).
