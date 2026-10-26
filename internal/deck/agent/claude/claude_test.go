@@ -605,6 +605,9 @@ func TestContextUsageFromFixture(t *testing.T) {
 		if u.ContextWindow != 1000000 {
 			t.Errorf("mid[%d].ContextWindow = %d want 1000000 (fallback)", i, u.ContextWindow)
 		}
+		if u.ContextSource != agent.ContextFallback {
+			t.Errorf("mid[%d].ContextSource = %q want fallback: the window is Deck's assumption until the result", i, u.ContextSource)
+		}
 	}
 	if len(final) != 1 {
 		t.Fatalf("final usage events = %d", len(final))
@@ -615,6 +618,9 @@ func TestContextUsageFromFixture(t *testing.T) {
 	}
 	if f.ContextWindow != 1000000 {
 		t.Errorf("final ContextWindow = %d want 1000000 (modelUsage.contextWindow)", f.ContextWindow)
+	}
+	if f.ContextSource != agent.ContextDerived {
+		t.Errorf("final ContextSource = %q want derived: the result reported the window", f.ContextSource)
 	}
 	if f.OutputTokens != 153 || f.CostUSD < 0.11 {
 		t.Errorf("existing fields lost: %+v", f)
@@ -642,6 +648,9 @@ func TestContextWindowKnownAfterFirstResult(t *testing.T) {
 	for _, e := range second {
 		if e.Kind == agent.KindUsage && e.Usage.ContextWindow != 1000000 {
 			t.Errorf("second turn window = %d want 1000000", e.Usage.ContextWindow)
+		}
+		if e.Kind == agent.KindUsage && e.Usage.ContextSource != agent.ContextDerived {
+			t.Errorf("second turn source = %q want derived", e.Usage.ContextSource)
 		}
 	}
 }

@@ -59,6 +59,20 @@ func New(binary string, selfExe string, broker *approve.Broker) agent.Adapter {
 
 func (a *adapter) Name() string { return "claude" }
 
+// ContextCaps implements agent.ContextCapser. The fill is added up from each
+// assistant message's usage; the window is the result line's, or the model
+// family's until the first one. Only Deck's MCP server loads
+// (--strict-mcp-config, and no claude.ai connectors); compact_boundary lines
+// say when the CLI compacted.
+func (a *adapter) ContextCaps() agent.ContextCaps {
+	return agent.ContextCaps{
+		InstructionSlot: agent.InstrSystem, InstrPersistsOnResume: true,
+		IsolateMCP:     agent.SupportNative,
+		ReportsContext: agent.ContextDerived, ReportsWindow: agent.ContextCLI,
+		Compaction: agent.CompactCaps{Notifies: true},
+	}
+}
+
 // ContractSafe implements agent.ContractSafe: in ask mode every tool use asks
 // through Deck's permission-prompt tool.
 func (a *adapter) ContractSafe() bool { return true }

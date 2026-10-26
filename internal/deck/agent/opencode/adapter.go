@@ -62,6 +62,19 @@ func NewWithOptions(binary string, opts Options) agent.Adapter {
 
 func (a *adapter) Name() string { return "opencode" }
 
+// ContextCaps implements agent.ContextCapser. The instructions travel in the
+// first prompt of a session (once: Spec.Briefed), the fill and window come
+// from ACP usage_update, and Deck's MCP server is added to the session next
+// to the user's own (partial). No config or instruction-file isolation has
+// been checked against the CLI.
+func (a *adapter) ContextCaps() agent.ContextCaps {
+	return agent.ContextCaps{
+		InstructionSlot: agent.InstrFirstPrompt, InstrPersistsOnResume: true,
+		IsolateMCP:     agent.SupportPartial,
+		ReportsContext: agent.ContextCLI, ReportsWindow: agent.ContextCLI,
+	}
+}
+
 // ContractSafe implements agent.ContractSafe: in ask mode its edits,
 // commands and fetches ask through Deck.
 func (a *adapter) ContractSafe() bool { return true }

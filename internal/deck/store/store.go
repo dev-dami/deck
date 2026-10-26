@@ -82,6 +82,8 @@ type Member struct {
 	// window use (0 = unknown), so a resumed thread can show the meter at once.
 	ContextTokens int `json:"context_tokens,omitempty"`
 	ContextWindow int `json:"context_window,omitempty"`
+	// ContextSource is where they came from (agent.Usage.ContextSource).
+	ContextSource string `json:"context_source,omitempty"`
 	// Briefed: the CLI session SessionID has had Deck's instructions in a
 	// prompt, so a resume does not send them again (agent.Spec.Briefed).
 	Briefed bool `json:"briefed,omitempty"`

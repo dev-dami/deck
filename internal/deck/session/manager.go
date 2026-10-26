@@ -207,6 +207,9 @@ type AgentInfo struct {
 	// ContextTokens of ContextWindow tokens are in use (0 = not reported yet).
 	ContextTokens int
 	ContextWindow int
+	// ContextSource is where they came from (agent.ContextCLI, ...; "" when
+	// the adapter does not say). agent.ApproxContext tells an estimate.
+	ContextSource string
 	// RunningModel is the model slug the CLI reports it is running (e.g.
 	// "claude-opus-5-5" when Model is "" or an alias); "" until it says.
 	RunningModel string
@@ -1251,7 +1254,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 		a := &agentState{
 			id: id, kind: mem.Kind, name: name, model: model, effort: effort, thread: t, base: StatusIdle,
 			started: time.Now(), costTotal: mem.CostUSD, sessionID: mem.SessionID, cursor: mem.Cursor,
-			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow, briefed: mem.Briefed,
+			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow, ctxSource: mem.ContextSource, briefed: mem.Briefed,
 			parent: mem.Parent, ephemeral: mem.Ephemeral, dir: mem.Dir, worktree: mem.Worktree,
 		}
 		if mem.Ephemeral {
@@ -1676,6 +1679,7 @@ type agentState struct {
 	interrupted bool
 	ctxTokens   int // context window use, from the latest usage event that reported it
 	ctxWindow   int
+	ctxSource   string // where ctxTokens and ctxWindow came from (agent.Usage.ContextSource)
 	running     string // model slug the CLI reported at session start
 	// stirred is closed, and dropped, when the member's status may have
 	// changed (stirLocked); nil while nobody waits for that (waitIdle).
@@ -1746,7 +1750,7 @@ func (a *agentState) info() AgentInfo {
 		ID: a.id, Kind: a.kind, Name: a.name, Dir: dir, Model: a.model, Effort: a.effort,
 		Parent: a.parent, Ephemeral: a.ephemeral, Branch: branch,
 		Status: a.statusLocked(), CostUSD: a.costTotal + a.costTurn, Pending: len(a.pending),
-		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow,
+		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource,
 		RunningModel: a.running,
 	}
 }
@@ -1767,7 +1771,7 @@ func (a *agentState) memberMeta() store.Member {
 	return store.Member{
 		ID: a.id, Kind: a.kind, Name: a.name, Model: a.model, Effort: a.effort, SessionID: a.sessionID,
 		CostUSD: a.costTotal + a.costTurn, Cursor: a.cursor,
-		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, Briefed: a.briefed,
+		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource, Briefed: a.briefed,
 		Parent: a.parent, Ephemeral: a.ephemeral, Dir: a.dir, Worktree: a.worktree,
 	}
 }
@@ -1922,6 +1926,7 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 			}
 			if u.ContextTokens > 0 {
 				a.ctxTokens = u.ContextTokens
+				a.ctxSource = u.ContextSource
 			}
 			if u.ContextWindow > 0 {
 				a.ctxWindow = u.ContextWindow

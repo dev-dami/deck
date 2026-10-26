@@ -123,6 +123,16 @@ func (t *translator) window() int {
 	return fallbackWindow(t.model)
 }
 
+// source is where the context figures of a usage event come from: the fill
+// is always derived from the assistant messages' usage, and the window is the
+// CLI's own once a result line reported it, else the family fallback.
+func (t *translator) source() string {
+	if t.windows[t.model] == 0 && fallbackWindow(t.model) > 0 {
+		return agent.ContextFallback
+	}
+	return agent.ContextDerived
+}
+
 type streamLine struct {
 	Type            string          `json:"type"`
 	Subtype         string          `json:"subtype"`
@@ -338,7 +348,7 @@ func (t *translator) Line(line []byte) []agent.Event {
 		ue := mk(agent.KindUsage)
 		ue.Usage = &agent.Usage{
 			InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CachedTokens: u.CacheRead, CostUSD: sl.TotalCostUSD,
-			ContextTokens: t.ctx.total(), ContextWindow: t.window(),
+			ContextTokens: t.ctx.total(), ContextWindow: t.window(), ContextSource: t.source(),
 			CacheWriteTokens: u.CacheCreate, ReasoningTokens: thinking,
 			TTFTms: ttft, APIms: sl.DurationAPIMs, DurationMs: sl.DurationMs,
 		}
@@ -433,7 +443,7 @@ func (t *translator) contextEvent(mk func(agent.Kind) agent.Event) []agent.Event
 	}
 	t.lastEmitted = n
 	ev := mk(agent.KindUsage)
-	ev.Usage = &agent.Usage{ContextTokens: n, ContextWindow: t.window()}
+	ev.Usage = &agent.Usage{ContextTokens: n, ContextWindow: t.window(), ContextSource: t.source()}
 	return []agent.Event{ev}
 }
 

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	deckagent "github.com/dev-dami/deck/internal/deck/agent"
 	decks "github.com/dev-dami/deck/internal/deck/session"
 )
 
@@ -153,6 +154,8 @@ type AgentLine struct {
 	Status        string // "idle", "working", "tool", "approval", "restarting", "error", "exited", "ready"
 	ContextTokens int
 	ContextWindow int
+	// ContextSource is where the two came from (agent.ContextCLI, ...).
+	ContextSource string
 	CostUSD       float64
 	Pending       int       // approvals waiting
 	Since         time.Time // when its current turn began; zero when idle
@@ -166,6 +169,16 @@ type AgentLine struct {
 	// "(exclusive)" after the paths of an exclusive one, "; " between leases.
 	// A string, not a slice: the agents pane compares lines with ==.
 	Leases string
+}
+
+// ContextPct is how full the agent's context is, in percent. approx is true
+// when the figure is Deck's estimate or assumption rather than the CLI's
+// (the UI marks it "~"), and ok false when it is not known.
+func (l AgentLine) ContextPct() (pct int, approx, ok bool) {
+	if l.ContextWindow <= 0 || l.ContextTokens <= 0 {
+		return 0, false, false
+	}
+	return l.ContextTokens * 100 / l.ContextWindow, deckagent.ApproxContext(l.ContextSource), true
 }
 
 // Roster lists the agents in a session, or, before anyone has joined, the
@@ -275,7 +288,8 @@ func (w *DeckWorkspace) Roster(sessionID string) []AgentLine {
 				w.mu.Unlock()
 				out = append(out, AgentLine{
 					ID: a.Name, Kind: a.Kind, Model: model, Effort: a.Effort, Status: string(a.Status),
-					ContextTokens: a.ContextTokens, ContextWindow: a.ContextWindow, CostUSD: a.CostUSD, Pending: a.Pending,
+					ContextTokens: a.ContextTokens, ContextWindow: a.ContextWindow, ContextSource: a.ContextSource,
+					CostUSD: a.CostUSD, Pending: a.Pending,
 					Since: since, Depth: depth, Parent: names[a.Parent], Branch: a.Branch, Leases: leases[a.ID],
 				})
 				if depth < 16 {

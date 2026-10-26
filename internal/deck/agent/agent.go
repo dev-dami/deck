@@ -119,6 +119,35 @@ type Usage struct {
 	TTFTms     int
 	APIms      int
 	DurationMs int
+	// ContextSource says where ContextTokens and ContextWindow came from
+	// (ContextCLI, ContextDerived, ContextEstimated, ContextFallback); ""
+	// when the event carries no context figure or the adapter does not say.
+	ContextSource string `json:",omitempty"`
+	// BaselineTokens is how much of the window the conversation fills
+	// before its first turn (system prompt, tools, instruction files), when
+	// the CLI reports it; 0 when it does not.
+	BaselineTokens int `json:",omitempty"`
+}
+
+// Where a Usage's context figures came from, from most to least exact.
+const (
+	// ContextCLI: the CLI reported the conversation's fill and window.
+	ContextCLI = "cli"
+	// ContextDerived: Deck added the fill up from the CLI's own per-request
+	// token counts, and the window is the one the CLI reported.
+	ContextDerived = "derived"
+	// ContextFallback: the fill is derived, but the window is Deck's
+	// assumption for the model until the CLI reports its own.
+	ContextFallback = "fallback"
+	// ContextEstimated: Deck estimated the fill from a turn's totals and the
+	// window from its own table of models.
+	ContextEstimated = "estimated"
+)
+
+// ApproxContext reports whether a context figure from source is Deck's
+// estimate or assumption rather than the CLI's: the UI marks it with "~".
+func ApproxContext(source string) bool {
+	return source == ContextEstimated || source == ContextFallback
 }
 
 // Why a CLI's Limits carry no windows.
@@ -296,6 +325,10 @@ type ModelInfo struct {
 	// when none is chosen ("" when the CLI doesn't say).
 	Efforts       []EffortInfo
 	DefaultEffort string
+	// ContextWindow is the model's context window in tokens as the adapter
+	// knows it before a run reports one (the CLI's list, or the adapter's
+	// own table); 0 when it does not know.
+	ContextWindow int `json:",omitempty"`
 }
 
 // EffortInfo is one reasoning effort a model offers.
@@ -412,6 +445,67 @@ type Run interface {
 type Adapter interface {
 	Name() string // "claude" | "codex" | "fake"
 	Start(ctx context.Context, spec Spec) (Run, error)
+}
+
+// Support is how far an adapter can honour a context policy knob.
+type Support int
+
+const (
+	SupportNone    Support = iota // the CLI offers no way to; the knob is ignored
+	SupportPartial                // some of it (ContextCaps says which part in its docs)
+	SupportNative                 // fully
+)
+
+// InstrSlot is where an adapter puts Spec.Instructions.
+type InstrSlot string
+
+const (
+	InstrSystem      InstrSlot = "system"       // the CLI's system prompt
+	InstrDeveloper   InstrSlot = "developer"    // the thread's developer instructions
+	InstrFirstPrompt InstrSlot = "first_prompt" // inside the first prompt of a session
+)
+
+// CompactCaps is what an adapter can do about compaction: start one
+// (Manual, see Compactor), set the fill it starts at (Threshold,
+// ContextPolicy.CompactAtPct), and say when the CLI compacted (Notifies,
+// KindCompacted).
+type CompactCaps struct {
+	Manual, Threshold, Notifies bool
+}
+
+// ContextCaps is what an adapter knows how to do with the context of its
+// CLI. The zero value claims nothing: an adapter without it is assumed to
+// isolate nothing and report nothing.
+type ContextCaps struct {
+	InstructionSlot InstrSlot
+	// InstrPersistsOnResume: a resumed session keeps the instructions
+	// without them being sent again (Claude and Codex pass them at every
+	// start; OpenCode and Antigravity are told by Spec.Briefed).
+	InstrPersistsOnResume bool
+	// IsolateConfig: leaving out the user's global CLI config (settings,
+	// hooks, permissions, memory). IsolateMCP: running only Deck's MCP
+	// server, not the user's. InstructionFiles: choosing which instruction
+	// files (CLAUDE.md, AGENTS.md, ...) load.
+	IsolateConfig, IsolateMCP, InstructionFiles Support
+	// ReportsContext and ReportsWindow are the best ContextSource the
+	// adapter's fill and window reach ("" = never reported).
+	ReportsContext, ReportsWindow string
+	// NativeSteer: the run implements Steerer without interrupting the turn.
+	NativeSteer bool
+	Compaction  CompactCaps
+}
+
+// ContextCapser is implemented by adapters that describe their ContextCaps.
+type ContextCapser interface {
+	ContextCaps() ContextCaps
+}
+
+// CapsOf is ad's ContextCaps, the zero value when it does not say.
+func CapsOf(ad Adapter) ContextCaps {
+	if c, ok := ad.(ContextCapser); ok {
+		return c.ContextCaps()
+	}
+	return ContextCaps{}
 }
 
 // ContractSafe is implemented by an adapter whose agent Deck can hold to a

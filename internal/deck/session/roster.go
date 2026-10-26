@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -50,7 +51,11 @@ func (m *Manager) roster(a *agentState) string {
 			parts = append(parts, "branch "+wt.Branch)
 		}
 		if ai.ContextWindow > 0 && ai.ContextTokens > 0 {
-			parts = append(parts, fmt.Sprintf("%d%% ctx", ai.ContextTokens*100/ai.ContextWindow))
+			mark := ""
+			if agent.ApproxContext(ai.ContextSource) {
+				mark = "~" // Deck's estimate, not the CLI's figure
+			}
+			parts = append(parts, fmt.Sprintf("%s%d%% ctx", mark, ai.ContextTokens*100/ai.ContextWindow))
 		}
 		lines = append(lines, strings.Join(parts, " · "))
 	}

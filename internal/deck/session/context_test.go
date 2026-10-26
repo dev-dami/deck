@@ -102,3 +102,22 @@ func TestThreadReadFitsTheHubCap(t *testing.T) {
 		t.Fatal("cut inside a rune")
 	}
 }
+
+// TestContextSourceKeptAndStored covers where a member's context figure came
+// from: it follows the usage event that set the fill, shows in AgentInfo and
+// is stored with the member, so a resumed thread still marks an estimate.
+func TestContextSourceKeptAndStored(t *testing.T) {
+	est := fake.Step{Event: agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{ContextTokens: 9000, ContextWindow: 1_000_000, ContextSource: agent.ContextEstimated}}}
+	r := newRig(t, []fake.Script{turn(est, say("a"), finish())}, nil)
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	_ = r.m.Post(tid, "$claude go")
+	waitFor(t, "turn", func() bool { return r.c.turnDones("claude") == 1 })
+	if info, _ := r.m.Agent("claude"); info.ContextSource != agent.ContextEstimated {
+		t.Fatalf("source = %q", info.ContextSource)
+	}
+	r.m.Flush()
+	if _, meta, _ := r.st.LoadEntries(tid); len(meta.Members) != 1 || meta.Members[0].ContextSource != agent.ContextEstimated {
+		t.Fatalf("stored member = %+v", meta.Members)
+	}
+}

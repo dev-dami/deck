@@ -64,6 +64,18 @@ var _ agent.Drainer = (*adapter)(nil)
 
 func (a *adapter) Name() string { return "antigravity" }
 
+// ContextCaps implements agent.ContextCapser. agy reports no context, so the
+// fill is Deck's estimate from a turn's usage and the window comes from
+// Deck's table of models; the instructions travel in the first prompt of a
+// session (once: Spec.Briefed). Deck's MCP server is registered in agy's
+// global config (mcp.go), next to the user's: nothing is isolated.
+func (a *adapter) ContextCaps() agent.ContextCaps {
+	return agent.ContextCaps{
+		InstructionSlot: agent.InstrFirstPrompt, InstrPersistsOnResume: true,
+		ReportsContext: agent.ContextEstimated, ReportsWindow: agent.ContextEstimated,
+	}
+}
+
 func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error) {
 	bin := spec.Binary
 	if bin == "" {
@@ -86,6 +98,13 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		tr:     newTranslator(spec.ID),
 	}
 	r.approvals = make(chan agent.ApprovalRequest)
+	// The context estimate needs the model the process runs: the slug it
+	// was started with when the init line does not name one.
+	r.tr.slug = func() string {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.spawnedSlug
+	}
 	r.sessionID = spec.ResumeID
 	// A resumed conversation that already had the instructions does not
 	// get them again: they would pile up in it on every resume.

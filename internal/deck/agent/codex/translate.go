@@ -199,6 +199,7 @@ func (t *translator) notification(method string, params json.RawMessage, raw raw
 			ctxTok = last.InputTokens + last.OutputTokens - last.ReasoningOutputTokens
 		}
 		e.Usage.ContextTokens = nonNeg(ctxTok)
+		e.Usage.ContextSource = agent.ContextCLI
 		if w := n.TokenUsage.ModelContextWindow; w != nil {
 			e.Usage.ContextWindow = nonNeg(*w)
 		}

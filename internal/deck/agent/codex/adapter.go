@@ -64,6 +64,20 @@ func NewWithOptions(binary string, opts Options) agent.Adapter {
 
 func (a *adapter) Name() string { return "codex" }
 
+// ContextCaps implements agent.ContextCapser. Codex reports the fill and the
+// window itself (thread/tokenUsage/updated), steers a turn natively, and says
+// when it compacted (thread/compacted). Deck adds its MCP server to the
+// user's codex config rather than replacing it: no way to leave the user's
+// own servers, config or AGENTS.md out has been checked against the CLI.
+func (a *adapter) ContextCaps() agent.ContextCaps {
+	return agent.ContextCaps{
+		InstructionSlot: agent.InstrDeveloper, InstrPersistsOnResume: true,
+		ReportsContext: agent.ContextCLI, ReportsWindow: agent.ContextCLI,
+		NativeSteer: true,
+		Compaction:  agent.CompactCaps{Notifies: true},
+	}
+}
+
 // ContractSafe implements agent.ContractSafe: in ask mode codex runs
 // on-request in its workspace-write sandbox, and asks through Deck.
 func (a *adapter) ContractSafe() bool { return true }

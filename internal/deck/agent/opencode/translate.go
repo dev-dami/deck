@@ -90,7 +90,11 @@ func (t *translator) update(u update) []agent.Event {
 }
 
 func (t *translator) usage() *agent.Usage {
-	return &agent.Usage{CostUSD: max(0, t.cost-t.costBase), ContextTokens: t.ctxUsed, ContextWindow: t.ctxSize}
+	u := &agent.Usage{CostUSD: max(0, t.cost-t.costBase), ContextTokens: t.ctxUsed, ContextWindow: t.ctxSize}
+	if u.ContextTokens > 0 {
+		u.ContextSource = agent.ContextCLI // ACP usage_update{used, size}
+	}
+	return u
 }
 
 // flush ends both streams.
