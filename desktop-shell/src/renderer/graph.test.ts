@@ -381,6 +381,36 @@ describe("layout", () => {
     expect(graph(rich)).toEqual(graph(rich));
   });
 
+  test("a long edge runs in a lane through each layer it crosses, clear of the cards", () => {
+    const g = graph(rich);
+    const edit = g.edges.find((e) => e.kind === "edits")!;
+    const [from, to] = [byId(g.nodes, edit.from), byId(g.nodes, edit.to)];
+    expect(edit.via).toHaveLength(to.layer - from.layer - 1);
+    edit.via!.forEach((v, i) => {
+      const c = g.layers[from.layer + i + 1]!;
+      // Through the whole of its column, at one height.
+      expect([v.x, v.w, v.h]).toEqual([c.at, c.size, 0]);
+      for (const n of g.nodes) if (n.layer === c.layer) expect(v.y > n.y && v.y < n.y + n.h, `${n.id} at ${v.y}`).toBe(false);
+    });
+    // A short edge has none.
+    expect(g.edges.find((e) => e.kind === "leads")!.via).toBeUndefined();
+    // Lanes widen the bounds when they pass outside the cards.
+    for (const e of g.edges) for (const v of e.via ?? []) expect(v.y >= g.bounds.y && v.y <= g.bounds.y + g.bounds.h).toBe(true);
+  });
+
+  test("edges of one kind from one node share their lanes until they part", () => {
+    const g = graph({
+      roster: [line("claude-1")],
+      crew: crew([node("claude-1", { leases: "src/**" })]),
+      board: board([task("t1")]),
+      files: [file("src/a.go"), file("src/b.go")],
+    });
+    const holds = g.edges.filter((e) => e.kind === "holds");
+    expect(holds).toHaveLength(2);
+    expect(holds[0]!.via).toEqual(holds[1]!.via);
+    expect(holds[0]!.via).toHaveLength(1);
+  });
+
   test("the rich room draws without a crossing", () => {
     const g = graph(rich);
     const layers: GraphNode[][] = g.layers.map((c) => g.nodes.filter((n) => n.layer === c.layer).sort((a, b) => a.y - b.y));
@@ -398,7 +428,8 @@ describe("orderLayers", () => {
       [n("x", 1), n("y", 1)],
     ];
     const edges = [e("a", "y"), e("b", "x")];
-    expect(crossings(layers, edges)).toBe(1);
+    // A crossing between two cards counts 4.
+    expect(crossings(layers, edges)).toBe(4);
     const out = orderLayers(layers, edges);
     expect(crossings(out, edges)).toBe(0);
     // The first layer keeps its order; the second follows it.
@@ -415,8 +446,17 @@ describe("orderLayers", () => {
       [n("u", 2), n("v", 2), n("w", 2)],
     ];
     const edges = [e("a", "r"), e("b", "q"), e("c", "p"), e("p", "w"), e("q", "v"), e("r", "u")];
-    expect(crossings(layers, edges)).toBe(6);
+    expect(crossings(layers, edges)).toBe(24);
     expect(crossings(orderLayers(layers, edges), edges)).toBe(0);
+  });
+
+  test("a crossing of lanes counts less than one of cards", () => {
+    const via = (id: string, layer: number): GraphNode => ({ ...n(id, layer), kind: "via" }) as unknown as GraphNode;
+    const layers = [
+      [n("a", 0), via("b", 0)],
+      [n("x", 1), via("y", 1)],
+    ];
+    expect(crossings(layers, [e("a", "y"), e("b", "x")])).toBe(1);
   });
 
   test("nodes without neighbours keep their place", () => {
@@ -432,6 +472,13 @@ describe("edgePath", () => {
 
   test("down, from the bottom of one to the top of the other", () => {
     expect(edgePath({ x: 0, y: 0, w: 100, h: 40 }, { x: 60, y: 140, w: 100, h: 20 }, "down")).toBe("M50 40 C50 90 110 90 110 140");
+  });
+
+  test("through a lane: an S to it, a straight run along it, an S out", () => {
+    const lane = { x: 150, y: 80, w: 100, h: 0 };
+    expect(edgePath({ x: 0, y: 0, w: 100, h: 40 }, { x: 300, y: 60, w: 100, h: 20 }, "across", [lane])).toBe(
+      "M100 20 C132 20 118 80 150 80 L250 80 C282 80 268 70 300 70",
+    );
   });
 
   test("short gaps keep a reach of 32", () => {

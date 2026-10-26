@@ -53,9 +53,11 @@ test("the graph maps the crew, its tasks and files, and acts on them", async ({ 
   await expect(g.locator('[data-kind="agent"]')).toHaveCount(4);
   await expect(g.locator('[data-kind="task"]')).toHaveCount(4);
   await expect(g.locator('[data-kind="file"]')).toHaveCount(4);
-  // The live edit flows; a lease is a dotted line.
+  // The live edit flows; a lease is a dotted line. Both run past the
+  // subagents and the tasks in lanes of their own, not behind the cards.
   await expect(g.locator(".graph-flow")).toHaveCount(1);
   await expect(g.locator('[data-edge="holds"]')).toHaveCount(2);
+  await expect(g.locator('[data-edge="edits"]')).toHaveAttribute("d", / L/);
   await expect(node(page, "agent:claude-1")).toContainText("Edit");
   await expect(node(page, "agent:claude-1")).toContainText(LIMIT);
 
@@ -108,7 +110,17 @@ test("a pan moves the canvas, not the cards; a widened panel shows the legend an
   const g = graph(page);
   await expect(g.locator(".graph-legend")).toHaveCount(0);
   const card = node(page, "agent:codex-1");
-  const a = (await card.boundingBox())!;
+  // The crew loads in steps, and each new shape fits again, gliding: wait
+  // for the card to hold still.
+  let a = (await card.boundingBox())!;
+  await expect
+    .poll(async () => {
+      const prev = a;
+      await page.waitForTimeout(300);
+      a = (await card.boundingBox())!;
+      return a.x === prev.x && a.y === prev.y;
+    })
+    .toBe(true);
   const box = (await g.boundingBox())!;
   await page.mouse.move(box.x + 20, box.y + box.height - 80);
   await page.mouse.down();
@@ -120,10 +132,29 @@ test("a pan moves the canvas, not the cards; a widened panel shows the legend an
   // The press that ended the pan picked nothing.
   await expect(page.getByRole("region", { name: /details$/ })).toHaveCount(0);
 
+  // A wheel zooms around the pointer: the spot under it stays put.
+  const at = { x: b.x + b.width * 0.25, y: b.y + b.height * 0.5 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.wheel(0, -120);
+  const c = (await card.boundingBox())!;
+  expect(c.width).toBeGreaterThan(b.width * 1.1);
+  expect(Math.abs((at.x - c.x) / c.width - 0.25)).toBeLessThan(0.02);
+  expect(Math.abs((at.y - c.y) / c.height - 0.5)).toBeLessThan(0.02);
+
   await page.getByRole("button", { name: "Widen the panel" }).click();
   await expect(g.locator(".graph-legend")).toContainText("2 working");
   await expect(g.locator(".graph-legend")).toContainText("2/4 tasks done");
   await expect(g.getByRole("img", { name: "Minimap" })).toBeVisible();
+});
+
+test("under reduced motion the pulse and the flow hold still", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await openGraph(page);
+  const g = graph(page);
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
+  const animation = (sel: string) => g.locator(sel).first().evaluate((el) => getComputedStyle(el).animationName);
+  expect(await animation(".graph-flow")).toBe("none");
+  expect(await animation(".animate-deck-pulse")).toBe("none");
 });
 
 test("without a tree or a board, the graph maps the roster", async ({ page }) => {

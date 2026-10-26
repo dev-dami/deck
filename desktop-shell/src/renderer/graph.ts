@@ -100,6 +100,9 @@ export interface GraphEdge {
   live: boolean;
   // The agent node whose hue the edge takes, or null for a neutral one.
   tint: string | null;
+  // The lanes an edge that spans more than one layer runs through, one box
+  // per layer it crosses, from its earlier end to its later one (layout).
+  via?: Bounds[];
 }
 
 export interface Bounds {
@@ -140,13 +143,14 @@ export const SIZE = {
   task: { w: 196, h: 48 },
   file: { w: 188, h: 30 },
 } as const;
-// Down, a layer is a row and its width is what limits the fit: narrower cards.
+// Down, a layer is a row and its width is what limits the fit: narrower
+// cards, and a file stacks its +/− under its name.
 export const SIZE_DOWN: { [K in keyof typeof SIZE]: { w: number; h: number } } = {
   you: { w: 60, h: 30 },
   agent: { w: 164, h: 50 },
   agentTool: { w: 164, h: 74 },
   task: { w: 164, h: 48 },
-  file: { w: 152, h: 30 },
+  file: { w: 120, h: 40 },
 };
 // Across, the gap between columns and between the cards of one; down,
 // between rows and between the cards of one.
@@ -413,8 +417,8 @@ function levelTasks(tasks: readonly BoardTask[], depsOf: (t: BoardTask) => strin
   }
 }
 
-const sortFiles = (a: GraphNode, b: GraphNode): number => {
-  const key = (n: GraphNode) => (n.kind === "fold" ? "\uffff" : n.kind === "file" ? n.path : "");
+const sortFiles = (a: LayoutNode, b: LayoutNode): number => {
+  const key = (n: LayoutNode) => (n.kind === "fold" ? "\uffff" : n.kind === "file" ? n.path : "");
   return key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0;
 };
 
@@ -433,7 +437,23 @@ const AXES: Record<Direction, Axes> = {
   down: { main: "y", cross: "x", mainSize: "h", crossSize: "w", layerGap: LAYER_GAP, siblingGap: SIBLING_GAP },
 };
 
-// Assigns the layers, orders each by barycentre and places the nodes.
+// A place a long edge passes through in a layer it crosses. It takes a
+// place in the layer's order as a card does, so the edge runs in a lane
+// between the cards, not behind them. Edges of one kind from one node share
+// their lanes until they part, as a bus does.
+interface Via extends Placed {
+  kind: "via";
+}
+
+type LayoutNode = GraphNode | Via;
+
+const isVia = (n: Placed): n is Via => (n as LayoutNode).kind === "via";
+
+// Two lanes side by side sit closer than two cards.
+export const LANE_GAP = 6;
+
+// Assigns the layers, routes the long edges, orders each layer by
+// barycentre and places the nodes.
 export function layout(nodes: GraphNode[], edges: GraphEdge[], dir: Direction = "across"): Graph {
   const ax = AXES[dir];
   const agents = nodes.filter((n): n is AgentGraphNode => n.kind === "agent");
@@ -450,56 +470,138 @@ export function layout(nodes: GraphNode[], edges: GraphEdge[], dir: Direction = 
   const used = [...new Set(nodes.map((n) => n.layer))].sort((a, b) => a - b);
   const remap = new Map(used.map((l, i) => [l, i]));
   for (const n of nodes) n.layer = remap.get(n.layer)!;
-  const layers: GraphNode[][] = used.map(() => []);
+  const layers: LayoutNode[][] = used.map(() => []);
   for (const n of nodes) layers[n.layer]!.push(n);
   for (const l of layers) if (l[0]?.kind === "file" || l[0]?.kind === "fold") l.sort(sortFiles);
 
-  const ordered = orderLayers(layers, edges);
-  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const byId = new Map<string, LayoutNode>(nodes.map((n) => [n.id, n]));
+  const { segments, routes } = route(edges, byId, layers);
+  const ordered = orderLayers(layers, segments);
   const spans = placeLayers(ordered, ax);
-  placeCross(ordered, edges, byId, ax);
+  placeCross(ordered, segments, byId, ax);
+  for (const [e, chain] of routes) e.via = chain.map((v) => ({ x: v.x, y: v.y, w: v.w, h: v.h }));
 
-  const out = ordered.flat();
-  return { dir, nodes: out, edges, bounds: boundsOf(out), layers: spans.map((sp, i) => ({ layer: i, ...sp, label: columnLabel(ordered[i]!) })) };
+  const all = ordered.flat();
+  const real = (l: LayoutNode[]) => l.filter((n): n is GraphNode => !isVia(n));
+  return {
+    dir,
+    nodes: real(all),
+    edges,
+    bounds: boundsOf(all),
+    layers: spans.map((sp, i) => ({ layer: i, ...sp, label: columnLabel(real(ordered[i]!)) })),
+  };
+}
+
+// Splits each edge that spans more than one layer into a chain of segments
+// through a lane in each layer between its ends. The segments are what the
+// ordering and the placing see; the routes, what each long edge runs through.
+function route(
+  edges: GraphEdge[],
+  byId: Map<string, LayoutNode>,
+  layers: LayoutNode[][],
+): { segments: GraphEdge[]; routes: Map<GraphEdge, Via[]> } {
+  const segments = new Map<string, GraphEdge>();
+  const routes = new Map<GraphEdge, Via[]>();
+  const seg = (e: GraphEdge, from: string, to: string) => {
+    const id = `${from}>${to}`;
+    if (!segments.has(id)) segments.set(id, { id, from, to, kind: e.kind, live: e.live, tint: e.tint });
+  };
+  for (const e of edges) {
+    delete e.via;
+    const a = byId.get(e.from);
+    const b = byId.get(e.to);
+    if (a === undefined || b === undefined) continue;
+    const [lo, hi] = a.layer <= b.layer ? [a, b] : [b, a];
+    if (hi.layer - lo.layer <= 1) {
+      seg(e, lo.id, hi.id);
+      continue;
+    }
+    const chain: Via[] = [];
+    for (let l = lo.layer + 1; l < hi.layer; l++) {
+      const id = `via:${lo.id}|${e.kind}@${l}`;
+      let v = byId.get(id) as Via | undefined;
+      if (v === undefined) {
+        v = { kind: "via", id, layer: l, x: 0, y: 0, w: 0, h: 0 };
+        byId.set(id, v);
+        layers[l]!.push(v);
+      }
+      chain.push(v);
+    }
+    [lo, ...chain, hi].forEach((n, i, path) => {
+      if (i > 0) seg(e, path[i - 1]!.id, n.id);
+    });
+    routes.set(e, chain);
+  }
+  return { segments: [...segments.values()], routes };
 }
 
 function columnLabel(layer: GraphNode[]): string {
-  const n = layer[0]!;
-  if (n.kind === "you") return "";
+  const n = layer[0];
+  if (n === undefined || n.kind === "you") return "";
   if (n.kind === "agent") return n.depth === 0 ? "Agents" : n.depth === 1 ? "Subagents" : `Subagents · ${n.depth}`;
   if (n.kind === "task") return n.level === 0 ? "Tasks" : "";
   return "Files";
 }
 
-// The number of pairs of edges that cross between two neighbouring layers.
-export function crossings(layers: GraphNode[][], edges: readonly GraphEdge[]): number {
-  const index = new Map<string, { layer: number; i: number }>();
-  layers.forEach((l, li) => l.forEach((n, i) => index.set(n.id, { layer: li, i })));
+// The pairs of edges that cross between two neighbouring layers, weighted:
+// a crossing of two edges between cards counts 4, of an edge and a lane 2,
+// of two lanes 1. A tangle among the cards reads worse than one among the
+// lanes that pass them.
+export function crossings(layers: Placed[][], edges: readonly GraphEdge[]): number {
+  const spans = spansOf(layers, edges);
   let total = 0;
-  for (let li = 0; li + 1 < layers.length; li++) {
-    const span = edges
-      .map((e) => [index.get(e.from), index.get(e.to)] as const)
-      .filter(([a, b]) => a !== undefined && b !== undefined && a.layer === li && b.layer === li + 1)
-      .map(([a, b]) => [a!.i, b!.i] as const);
-    for (let i = 0; i < span.length; i++) {
-      for (let j = i + 1; j < span.length; j++) {
-        const [a1, b1] = span[i]!;
-        const [a2, b2] = span[j]!;
-        if ((a1 - a2) * (b1 - b2) < 0) total++;
-      }
+  for (let li = 0; li + 1 < layers.length; li++) total += spanCrossings(spans[li]!, indexOf(layers));
+  return total;
+}
+
+// An edge between two neighbouring layers, by the ids of its ends.
+type Span = { lo: string; hi: string; w: number };
+
+function spansOf(layers: Placed[][], edges: readonly GraphEdge[]): Span[][] {
+  const at = new Map<string, { n: Placed; li: number }>();
+  layers.forEach((l, li) => l.forEach((n) => at.set(n.id, { n, li })));
+  const out: Span[][] = layers.map(() => []);
+  for (const e of edges) {
+    const a = at.get(e.from);
+    const b = at.get(e.to);
+    if (a === undefined || b === undefined || Math.abs(a.li - b.li) !== 1) continue;
+    const [lo, hi] = a.li < b.li ? [a, b] : [b, a];
+    out[lo.li]!.push({ lo: lo.n.id, hi: hi.n.id, w: isVia(lo.n) || isVia(hi.n) ? 1 : 2 });
+  }
+  return out;
+}
+
+const indexOf = (layers: Placed[][]): Map<string, number> => {
+  const index = new Map<string, number>();
+  for (const l of layers) l.forEach((n, i) => index.set(n.id, i));
+  return index;
+};
+
+function spanCrossings(span: readonly Span[], index: Map<string, number>): number {
+  let total = 0;
+  for (let i = 0; i < span.length; i++) {
+    const s = span[i]!;
+    const a1 = index.get(s.lo)!;
+    const b1 = index.get(s.hi)!;
+    for (let j = i + 1; j < span.length; j++) {
+      const t = span[j]!;
+      if ((a1 - index.get(t.lo)!) * (b1 - index.get(t.hi)!) < 0) total += s.w * t.w;
     }
   }
   return total;
 }
 
 const SWEEPS = 8;
+// Past this many in a layer, swapping neighbours costs more than it buys.
+const TRANSPOSE_MAX = 48;
 
 // Barycentre ordering: sweep right then left, sorting each layer by the
 // mean place of its neighbours on the side the sweep came from, and keep
 // the order with the fewest crossings. Places are fractions of a layer's
-// height, so a long edge counts as well as a short one. Ties keep the
-// input order, so the result is deterministic.
-export function orderLayers(layers: GraphNode[][], edges: readonly GraphEdge[]): GraphNode[][] {
+// height, so a long edge counts as well as a short one. Then swap
+// neighbours in a layer while that undoes a crossing. Ties keep the input
+// order, so the result is deterministic.
+export function orderLayers<N extends Placed>(layers: N[][], edges: readonly GraphEdge[]): N[][] {
   const layerOf = new Map<string, number>();
   layers.forEach((l, li) => l.forEach((n) => layerOf.set(n.id, li)));
   const near = new Map<string, { before: string[]; after: string[] }>();
@@ -516,7 +618,7 @@ export function orderLayers(layers: GraphNode[][], edges: readonly GraphEdge[]):
   let best = cur.map((l) => [...l]);
   let bestX = crossings(best, edges);
   const place = new Map<string, number>();
-  const mark = (ls: GraphNode[][]) => ls.forEach((l) => l.forEach((n, i) => place.set(n.id, (i + 0.5) / l.length)));
+  const mark = (ls: N[][]) => ls.forEach((l) => l.forEach((n, i) => place.set(n.id, (i + 0.5) / l.length)));
   for (let s = 0; s < SWEEPS && bestX > 0; s++) {
     const down = s % 2 === 0;
     mark(cur);
@@ -538,16 +640,48 @@ export function orderLayers(layers: GraphNode[][], edges: readonly GraphEdge[]):
       best = cur.map((l) => [...l]);
     }
   }
+  transpose(best, spansOf(best, edges));
   return best;
 }
 
+// Swaps two neighbours in a layer whenever that lowers the crossings on
+// either side of it, until no swap does.
+function transpose(layers: Placed[][], spans: Span[][]): void {
+  const index = indexOf(layers);
+  const around = (li: number) =>
+    (li > 0 ? spanCrossings(spans[li - 1]!, index) : 0) + (li + 1 < layers.length ? spanCrossings(spans[li]!, index) : 0);
+  for (let pass = 0, better = true; better && pass < 8; pass++) {
+    better = false;
+    layers.forEach((l, li) => {
+      if (l.length > TRANSPOSE_MAX) return;
+      for (let i = 0; i + 1 < l.length; i++) {
+        const before = around(li);
+        const [a, b] = [l[i]!, l[i + 1]!];
+        index.set(a.id, i + 1);
+        index.set(b.id, i);
+        if (around(li) < before) {
+          l[i] = b;
+          l[i + 1] = a;
+          better = true;
+        } else {
+          index.set(a.id, i);
+          index.set(b.id, i + 1);
+        }
+      }
+    });
+  }
+}
+
 // Places the layers one after the other along the direction, each card in
-// the middle of its layer's extent.
-function placeLayers(layers: GraphNode[][], ax: Axes): { at: number; size: number }[] {
+// the middle of its layer's extent, and each lane through all of it.
+function placeLayers(layers: LayoutNode[][], ax: Axes): { at: number; size: number }[] {
   let at = 0;
   return layers.map((l) => {
-    const size = Math.max(...l.map((n) => n[ax.mainSize]));
-    for (const n of l) n[ax.main] = at + Math.round((size - n[ax.mainSize]) / 2);
+    const size = Math.max(...l.map((n) => (isVia(n) ? 0 : n[ax.mainSize])));
+    for (const n of l) {
+      if (isVia(n)) n[ax.mainSize] = size;
+      n[ax.main] = at + Math.round((size - n[ax.mainSize]) / 2);
+    }
     const span = { at, size };
     at += size + ax.layerGap;
     return span;
@@ -556,37 +690,44 @@ function placeLayers(layers: GraphNode[][], ax: Axes): { at: number; size: numbe
 
 // Lines each layer up, then pulls each card towards the middle of its
 // neighbours, a sweep each way, without changing the order or letting two
-// cards come closer than the gap.
-function placeCross(layers: GraphNode[][], edges: readonly GraphEdge[], byId: Map<string, GraphNode>, ax: Axes): void {
-  const { cross, crossSize, siblingGap: gap } = ax;
+// cards come closer than the gap (two lanes, LANE_GAP).
+function placeCross(layers: LayoutNode[][], edges: readonly GraphEdge[], byId: Map<string, LayoutNode>, ax: Axes): void {
+  const { cross, crossSize } = ax;
+  const gap = (a: LayoutNode, b: LayoutNode) => (isVia(a) && isVia(b) ? LANE_GAP : ax.siblingGap);
   for (const l of layers) {
-    const total = l.reduce((s, n) => s + n[crossSize], 0) + gap * (l.length - 1);
+    const total = l.reduce((s, n, i) => s + n[crossSize] + (i > 0 ? gap(l[i - 1]!, n) : 0), 0);
     let c = -total / 2;
-    for (const n of l) {
+    l.forEach((n, i) => {
+      if (i > 0) c += gap(l[i - 1]!, n);
       n[cross] = c;
-      c += n[crossSize] + gap;
-    }
-  }
-  const mid = (n: GraphNode) => n[cross] + n[crossSize] / 2;
-  const near = (n: GraphNode, before: boolean) =>
-    edges.flatMap((e) => {
-      const other = e.from === n.id ? byId.get(e.to) : e.to === n.id ? byId.get(e.from) : undefined;
-      return other !== undefined && (before ? other.layer < n.layer : other.layer > n.layer) ? [other] : [];
+      c += n[crossSize];
     });
+  }
+  const mid = (n: LayoutNode) => n[cross] + n[crossSize] / 2;
+  const neighbours = new Map<string, { before: LayoutNode[]; after: LayoutNode[] }>();
+  for (const n of layers.flat()) neighbours.set(n.id, { before: [], after: [] });
+  for (const e of edges) {
+    const a = byId.get(e.from);
+    const b = byId.get(e.to);
+    if (a === undefined || b === undefined || a.layer === b.layer) continue;
+    const [lo, hi] = a.layer < b.layer ? [a, b] : [b, a];
+    neighbours.get(hi.id)!.before.push(lo);
+    neighbours.get(lo.id)!.after.push(hi);
+  }
   for (let s = 0; s < 4; s++) {
     const forward = s % 2 === 0;
     const order = forward ? layers.map((_, i) => i) : layers.map((_, i) => layers.length - 1 - i);
     for (const li of order) {
       const l = layers[li]!;
       const want = l.map((n) => {
-        const ns = near(n, forward);
+        const ns = forward ? neighbours.get(n.id)!.before : neighbours.get(n.id)!.after;
         return ns.length === 0 ? n[cross] : ns.reduce((sum, o) => sum + mid(o), 0) / ns.length - n[crossSize] / 2;
       });
       // Along the layer, no card over the one before it; then shift the
       // whole layer by the mean shortfall, so it does not drift.
       const got: number[] = [];
-      l.forEach((_, i) => {
-        const prev = i === 0 ? -Infinity : got[i - 1]! + l[i - 1]![crossSize] + gap;
+      l.forEach((n, i) => {
+        const prev = i === 0 ? -Infinity : got[i - 1]! + l[i - 1]![crossSize] + gap(l[i - 1]!, n);
         got.push(Math.max(want[i]!, prev));
       });
       const drift = got.reduce((s2, c, i) => s2 + (c - want[i]!), 0) / l.length;
@@ -611,24 +752,29 @@ export function boundsOf(nodes: readonly Placed[]): Bounds {
 }
 
 // An edge as a smooth curve from the right side of a to the left side of
-// b, or down from its bottom to b's top. Its handles reach half the gap, at
-// least 32 units, so an edge across one column is an S and a long one
-// leaves and lands level.
-export function edgePath(a: Bounds, b: Bounds, dir: Direction = "across"): string {
-  if (dir === "down") {
-    const x1 = a.x + a.w / 2;
-    const y1 = a.y + a.h;
-    const x2 = b.x + b.w / 2;
-    const y2 = b.y;
-    const reach = Math.max(24, Math.abs(y2 - y1) / 2);
-    return `M${x1} ${y1} C${x1} ${y1 + reach} ${x2} ${y2 - reach} ${x2} ${y2}`;
+// b, or down from its bottom to b's top, through the lanes of the layers it
+// crosses (via, from a's side to b's). Each hop's handles reach half the
+// gap, at least 32 units (24 down), so a hop across one gap is an S and a
+// lane is a straight run.
+export function edgePath(a: Bounds, b: Bounds, dir: Direction = "across", via: readonly Bounds[] = []): string {
+  const down = dir === "down";
+  const exit = (n: Bounds): [number, number] => (down ? [n.x + n.w / 2, n.y + n.h] : [n.x + n.w, n.y + n.h / 2]);
+  const entry = (n: Bounds): [number, number] => (down ? [n.x + n.w / 2, n.y] : [n.x, n.y + n.h / 2]);
+  const boxes = [a, ...via, b];
+  let d = "";
+  for (let i = 0; i + 1 < boxes.length; i++) {
+    const [x1, y1] = exit(boxes[i]!);
+    const [x2, y2] = entry(boxes[i + 1]!);
+    d += i === 0 ? `M${x1} ${y1}` : ` L${x1} ${y1}`;
+    if (down) {
+      const reach = Math.max(24, Math.abs(y2 - y1) / 2);
+      d += ` C${x1} ${y1 + reach} ${x2} ${y2 - reach} ${x2} ${y2}`;
+    } else {
+      const reach = Math.max(32, Math.abs(x2 - x1) / 2);
+      d += ` C${x1 + reach} ${y1} ${x2 - reach} ${y2} ${x2} ${y2}`;
+    }
   }
-  const x1 = a.x + a.w;
-  const y1 = a.y + a.h / 2;
-  const x2 = b.x;
-  const y2 = b.y + b.h / 2;
-  const reach = Math.max(32, Math.abs(x2 - x1) / 2);
-  return `M${x1} ${y1} C${x1 + reach} ${y1} ${x2 - reach} ${y2} ${x2} ${y2}`;
+  return d;
 }
 
 // The ids next to a node: itself, and every node one edge away.

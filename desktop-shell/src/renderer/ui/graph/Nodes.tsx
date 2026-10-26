@@ -96,8 +96,8 @@ function Shell({
         aria-label={label}
         aria-pressed={n.kind === "agent" ? picked : undefined}
         className={cn(
-          "size-full animate-enter cursor-pointer rounded-lg border bg-surface-1 text-left outline-none transition-colors",
-          picked ? "border-primary ring-1 ring-primary" : "border-hairline-strong hover:border-muted-foreground/45",
+          "size-full animate-enter cursor-pointer rounded-md border bg-surface-1 text-left outline-none transition-colors",
+          picked ? "border-primary ring-1 ring-primary" : "border-(--graph-rim) hover:border-muted-foreground/50",
           "focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-primary",
           className,
         )}
@@ -215,33 +215,52 @@ export const TaskCard = memo(function TaskCard({ n, picked, dim, live, theme, on
   );
 });
 
+// A file's +/−, in the diff's colours.
+function DiffStat({ added, removed }: { added: number; removed: number }) {
+  return (
+    <span className="shrink-0 font-mono text-3xs tabular-nums">
+      <span className="text-diff-addition-foreground">+{added}</span> <span className="text-diff-deletion-foreground">−{removed}</span>
+    </span>
+  );
+}
+
+// A file and the fold lie on one line, or stack in a narrow card (a graph
+// laid out down: graph.ts, SIZE_DOWN).
+const stacked = (n: GraphNode) => n.h >= 40;
+
 // A file: its name, its folder in faint, and its +/− when it changed. A
 // lease's pattern is drawn dashed.
 export const FileCard = memo(function FileCard({ n, picked, dim, onPick, onHover }: NodeProps<FileGraphNode>) {
   const slash = n.path.lastIndexOf("/");
   const name = n.glob ? n.path : n.path.slice(slash + 1);
   const dir = n.glob || slash < 0 ? "" : n.path.slice(0, slash);
+  const stack = stacked(n);
   return (
     <Shell
       n={n}
       picked={picked}
       dim={dim}
       label={n.glob ? `Files under ${n.path}` : `${n.path}${n.changed ? `, +${n.added} −${n.removed}` : ""}`}
-      className={cn("@container flex items-center gap-2 rounded-md px-2.5", n.glob && !picked && "border-dashed", !n.changed && !n.glob && "bg-transparent")}
+      className={cn(
+        "@container flex px-2.5",
+        stack ? "flex-col justify-center gap-0.5" : "items-center gap-2",
+        n.glob && !picked && "border-dashed",
+        !n.changed && !n.glob && "bg-transparent",
+      )}
       onPick={onPick}
       onHover={onHover}
     >
-      <span className="flex min-w-0 flex-1 items-baseline gap-1.5 font-mono">
-        <span className={cn("min-w-0 truncate text-xs", !n.changed && "text-muted-foreground")} title={n.path}>
+      <span className={cn("flex min-w-0 items-baseline gap-1.5 font-mono", !stack && "flex-1")}>
+        <span className={cn("min-w-0 truncate text-xs leading-tight", !n.changed && "text-muted-foreground")} title={n.path}>
           {name}
         </span>
         {/* The folder, when the card is wide enough to say it whole-ish. */}
         {dir !== "" && <span className="hidden min-w-0 truncate text-3xs text-faint @[11rem]:inline">{dir}</span>}
       </span>
-      {n.changed && (
-        <span className="shrink-0 font-mono text-3xs tabular-nums">
-          <span className="text-diff-addition-foreground">+{n.added}</span> <span className="text-diff-deletion-foreground">−{n.removed}</span>
-        </span>
+      {n.changed ? (
+        <DiffStat added={n.added} removed={n.removed} />
+      ) : (
+        stack && <span className="truncate text-3xs text-faint">{n.glob ? "leased" : "unchanged"}</span>
       )}
     </Shell>
   );
@@ -249,20 +268,19 @@ export const FileCard = memo(function FileCard({ n, picked, dim, onPick, onHover
 
 // The changed files no one is linked to, as one node.
 export const FoldCard = memo(function FoldCard({ n, picked, dim, onPick, onHover }: NodeProps<FoldGraphNode>) {
+  const stack = stacked(n);
   return (
     <Shell
       n={n}
       picked={picked}
       dim={dim}
       label={`${n.paths.length} more changed files`}
-      className="flex items-center gap-2 rounded-md px-2.5"
+      className={cn("flex px-2.5", stack ? "flex-col justify-center gap-0.5" : "items-center gap-2")}
       onPick={onPick}
       onHover={onHover}
     >
-      <span className="min-w-0 flex-1 truncate text-xs">{n.paths.length} more files</span>
-      <span className="shrink-0 font-mono text-3xs tabular-nums">
-        <span className="text-diff-addition-foreground">+{n.added}</span> <span className="text-diff-deletion-foreground">−{n.removed}</span>
-      </span>
+      <span className={cn("min-w-0 truncate text-xs leading-tight", !stack && "flex-1")}>{n.paths.length} more files</span>
+      <DiffStat added={n.added} removed={n.removed} />
     </Shell>
   );
 });

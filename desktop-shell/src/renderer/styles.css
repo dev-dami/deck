@@ -1786,9 +1786,13 @@ body {
    file an agent edits now. Both live states stop under reduced motion and
    while the canvas is off screen (data-live="off"). */
 .work-graph {
-  --graph-dot: color-mix(in srgb, var(--text) 7%, transparent);
-  background-image: radial-gradient(circle, var(--graph-dot) 1px, transparent 1.3px);
-  background-size: calc(22px * var(--gk, 1)) calc(22px * var(--gk, 1));
+  /* The grid is barely there; an edge at rest is a quiet hairline; a
+     card's rim is a step firmer than an edge's, so the cards lead. */
+  --graph-dot: color-mix(in srgb, var(--text) 5%, transparent);
+  --graph-edge: color-mix(in srgb, var(--text) 24%, transparent);
+  --graph-rim: color-mix(in srgb, var(--text) 15%, transparent);
+  background-image: radial-gradient(circle, var(--graph-dot) 0.75px, transparent 1px);
+  background-size: calc(24px * var(--gk, 1)) calc(24px * var(--gk, 1));
   background-position: var(--gx, 0) var(--gy, 0);
 }
 /* A layer that moves under the pointer is a composited layer while it
