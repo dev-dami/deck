@@ -2,9 +2,11 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -185,5 +187,55 @@ func BenchmarkAppendEntry(b *testing.B) {
 		if err := s.AppendEntry(th.ID, e); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// BenchmarkAppendEntryThreads is N threads streaming into one store at
+// once, one goroutine per thread, as a busy session with several agents
+// does; ns/op is per appended event across all of them.
+func BenchmarkAppendEntryThreads(b *testing.B) {
+	for _, n := range []int{1, 4, 16} {
+		b.Run(fmt.Sprintf("threads=%d", n), func(b *testing.B) {
+			s, err := New(b.TempDir())
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer s.Close()
+			ids := make([]string, n)
+			for i := range ids {
+				th, err := s.Create(Thread{Title: "thread"})
+				if err != nil {
+					b.Fatal(err)
+				}
+				ids[i] = th.ID
+			}
+			e := Entry{Event: agent.Event{AgentID: "claude", Kind: agent.KindAssistantText, Text: strings.Repeat("x", 200),
+				Raw: json.RawMessage(`{"type":"assistant","message":{"content":"` + strings.Repeat("x", 200) + `"}}`)}}
+			b.ReportAllocs()
+			b.ResetTimer()
+			var wg sync.WaitGroup
+			errs := make(chan error, n)
+			for i, id := range ids {
+				count := b.N / n
+				if i < b.N%n {
+					count++
+				}
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for range count {
+						if err := s.AppendEntry(id, e); err != nil {
+							errs <- err
+							return
+						}
+					}
+				}()
+			}
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				b.Fatal(err)
+			}
+		})
 	}
 }

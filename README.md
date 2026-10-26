@@ -149,7 +149,7 @@ GitHub goes through your own [`gh`](https://cli.github.com) CLI; Deck never read
 
 For ops contracts, `peers.remote[].max_scope` lists the presets a teammate may ask for (`podman-read`, `systemd-read`; empty allows none), and `peers.sandbox` sets `ttl` (default `2h`), `scratch_mb` (64) and `output_kb` (64). Add `console.read` to a teammate's `allow_inbound` to let it read your team chat.
 
-`DECK_REDUCED_MOTION=1` turns animations off.
+`DECK_REDUCED_MOTION=1` turns animations off. `DECK_PPROF=<dir>` writes a CPU and a heap profile of the run to that folder when Deck exits, for a slowness report.
 
 Agents are drawn with their own CLI's mark: Claude Code's `✻`, Codex CLI's `>_` and OpenCode's `▯`. `deck doctor` shows the real logos in terminals that can draw images (Kitty, Ghostty, Windows Terminal, iTerm2, WezTerm). `DECK_IMAGES=off` turns them off.
 

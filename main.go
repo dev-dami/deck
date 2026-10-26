@@ -31,5 +31,10 @@ func main() {
 		}
 		return
 	}
-	cmd.Execute()
+	stopProfiles := startProfiles(os.Getenv("DECK_PPROF"))
+	err := cmd.Execute()
+	stopProfiles()
+	if err != nil {
+		os.Exit(1)
+	}
 }

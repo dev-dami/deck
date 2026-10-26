@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -53,6 +54,48 @@ func benchDraw(b *testing.B, items []chat.MessageItem, mutate func(i int)) {
 		if mutate != nil {
 			mutate(i)
 		}
+		u.chat.Draw(scr, area)
+	}
+}
+
+// buildSessionMessages returns n user/assistant pairs as stored messages,
+// shaped like buildSession's items.
+func buildSessionMessages(n int) []message.Message {
+	msgs := make([]message.Message, 0, n*2)
+	for i := range n {
+		um := message.Message{ID: fmt.Sprintf("u%d", i), Role: message.User}
+		um.AppendContent(fmt.Sprintf("Question %d: can you walk me through how the cache invalidation works here?", i))
+		msgs = append(msgs, um)
+
+		am := message.Message{ID: fmt.Sprintf("a%d", i), Role: message.Assistant}
+		for j := range 20 {
+			am.AppendReasoningContent(fmt.Sprintf("Considering angle %d of question %d in some detail.\n", j, i))
+		}
+		am.FinishThinking()
+		am.AppendContent(strings.Repeat("Here is a paragraph of the answer body that wraps across lines. ", 12))
+		am.AddFinish(message.FinishReasonEndTurn, "", "")
+		msgs = append(msgs, am)
+	}
+	return msgs
+}
+
+// BenchmarkSessionLoad is opening a stored session of 1000 messages: the
+// chat items are built from the messages, the chat jumps to the bottom and
+// draws its first frame, then scrolls up once.
+func BenchmarkSessionLoad(b *testing.B) {
+	msgs := buildSessionMessages(500)
+	const w, h = 140, 40
+	scr := uv.NewScreenBuffer(w, h)
+	area := uv.Rect(0, 0, w, h)
+	b.ReportAllocs()
+	for b.Loop() {
+		u := newTestUI()
+		u.com.Workspace = &testWorkspace{}
+		u.updateLayoutAndSize()
+		u.setSessionMessages(slices.Clone(msgs))
+		u.chat.ScrollToBottom()
+		u.chat.Draw(scr, area)
+		u.chat.ScrollBy(-h)
 		u.chat.Draw(scr, area)
 	}
 }
