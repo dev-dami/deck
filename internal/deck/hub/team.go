@@ -22,6 +22,9 @@ type Team interface {
 	// List describes this Deck and every teammate: name, role and how the
 	// link to it is doing. It reads local state only.
 	List() string
+	// Names are the teammates paired with this Deck, while its peer link
+	// is on; it reads local state only.
+	Names() []string
 	// Status asks one teammate's Deck how it is, over the link.
 	Status(ctx context.Context, name string) (string, error)
 	// Read is the team chat after message since, oldest first.

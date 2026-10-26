@@ -24,7 +24,21 @@ const (
 	RelayChannelType = "relay@deck"
 	// RelayedChannelType brings a relayed link from another peer.
 	RelayedChannelType = "relayed@deck"
+	// RelayPairChannelType asks the Deck at the other end to relay a
+	// pairing to one of its peers, which waits for a code.
+	RelayPairChannelType = "relay-pair@deck"
+	// RelayedPairChannelType brings a relayed pairing from another peer.
+	RelayedPairChannelType = "relayed-pair@deck"
 )
+
+// isRelayType reports whether typ is one of the relay channel types.
+func isRelayType(typ string) bool {
+	switch typ {
+	case RelayChannelType, RelayedChannelType, RelayPairChannelType, RelayedPairChannelType:
+		return true
+	}
+	return false
+}
 
 // keepaliveRequest is the only global request a peer answers.
 const keepaliveRequest = "keepalive@openssh.com"
@@ -261,7 +275,7 @@ func (c *Conn) globalRequests(reqs <-chan *ssh.Request) {
 func (c *Conn) newChannels(chans <-chan ssh.NewChannel) {
 	for nc := range chans {
 		typ := nc.ChannelType()
-		if (typ == RelayChannelType || typ == RelayedChannelType) && c.relay != nil {
+		if isRelayType(typ) && c.relay != nil {
 			c.relay(c, nc)
 			continue
 		}

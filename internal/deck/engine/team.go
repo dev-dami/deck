@@ -62,6 +62,20 @@ func (t peerTeam) List() string {
 	return b.String()
 }
 
+func (t peerTeam) Names() []string {
+	snap := t.s.Snapshot()
+	if !snap.Enabled {
+		return nil
+	}
+	var names []string
+	for _, p := range snap.Peers {
+		if p.Pinned {
+			names = append(names, p.Name)
+		}
+	}
+	return names
+}
+
 func (t peerTeam) Status(ctx context.Context, name string) (string, error) {
 	status, err := t.s.PeerStatus(ctx, name)
 	if err != nil {

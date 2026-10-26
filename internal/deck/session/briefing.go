@@ -18,7 +18,7 @@ const (
 	maxEntryChars    = 6000  // one briefed message is cut here
 	maxBriefingChars = 40000 // a whole briefing keeps its tail
 	readThreadLast   = 200   // entries thread.read covers
-	maxInstrChars    = 1400  // Spec.Instructions stays well under 1.5 KB
+	maxInstrChars    = 2200  // Spec.Instructions goes on a command line: keep it short
 )
 
 // viewer says whose point of view a rendering takes.
@@ -339,8 +339,9 @@ func tailBytes(s string, n int) string {
 }
 
 // instructions is the short briefing every member starts with. It carries no
-// thread history (that goes in prompts) and stays under 1.5 KB because it
-// travels on a command line.
+// thread history (that goes in prompts) and stays short because it travels
+// on a command line. It names the ops an agent would not think to search
+// for: subagents, races, leases, and the teammates on other machines.
 func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	cfg := m.config()
 	user := "the user"
@@ -354,7 +355,17 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 			others = append(others, o.getName())
 		}
 	}
+	// An ops contract's agent has sh.run and contract.result only, and a
+	// contract's agent works for a teammate: neither hears of more.
+	ops, contract := t.ops != nil, t.contract != ""
 	t.mu.Unlock()
+	m.mu.Lock()
+	team := m.team
+	m.mu.Unlock()
+	var mates []string
+	if team != nil && tools && !ops && !contract {
+		mates = team.Names()
+	}
 
 	who := user
 	if len(others) > 0 {
@@ -368,6 +379,13 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with $name. Op \"thread.read\" shows the whole thread, \"thread.roster\" who is in it.\n")
 		b.WriteString("Shared task board (execute ops): task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list. Report a task you own with task.done.\n")
 		b.WriteString("Pass code as a capsule: sub.patch.capture, then thread.send {capsule}.\n")
+		if !ops {
+			b.WriteString("You can split work: agent.spawn {brief, kind} starts a subagent, task.race {brief, agents} has several try it on their own worktrees; lease.acquire {paths} before you edit files others may touch; memory.add pins a note to code. search shows any op's args.\n")
+		}
+		if len(mates) > 0 {
+			fmt.Fprintf(&b, "Teammates' Decks on other machines: %s. team.read and team.post are the team chat; task.contract {peer, brief} asks one to do a coding task (the user allows it; its changes come back as a capsule); peers.status {peer} asks how one is. Lines like \"[%s] ...\" come from them.\n",
+				clip(strings.Join(mates, ", "), 200), clip(mates[0], 32))
+		}
 	} else {
 		b.WriteString("To message another agent, start a line of your final reply with $name (or $all).\n")
 	}

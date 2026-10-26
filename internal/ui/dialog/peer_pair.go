@@ -532,9 +532,9 @@ func (p *PeerPair) submitForm() Action {
 	}
 	p.abort()
 	p.step, p.err, p.taken, p.dialAt = pairDialing, "", "", p.clock()
-	// DialPair has its own PairDialTimeout; this one only adds a margin so
-	// a stuck call can never hold the wizard.
-	ctx, cancel := context.WithTimeout(context.Background(), peer.PairDialTimeout+2*time.Second)
+	// The direct try and the relays after it have their own timeouts; this
+	// one only adds a margin so a stuck call can never hold the wizard.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*peer.PairDialTimeout+2*time.Second)
 	p.cancel = cancel
 	link, req, expect := p.link, p.req, p.expect
 	return ActionCmd{Cmd: tea.Batch(func() tea.Msg {
@@ -887,6 +887,7 @@ func (p *PeerPair) lines(width int, compact bool) []string {
 			add(wrap("Moving to all interfaces…"))
 		}
 		add(wrap("Open port "+portOf(w.Addr)+" in your firewall if the other Deck is on another network."),
+			wrap("Both behind NAT? No port needed: if a Deck you are both paired with relays, the invite reaches this one through it."),
 			wrap("5-minute, single use · c copies the invite · C just the code"))
 		if p.copied && inv.Host != "" {
 			add(gap(), wrap("Copied. If it did not arrive, select it here:"))
@@ -927,9 +928,11 @@ func (p *PeerPair) lines(width int, compact bool) []string {
 		}
 		if p.step == pairDialing {
 			addr := peer.WithDefaultPort(strings.TrimSpace(p.inputs[fieldAddr].Value()))
-			el := min(p.clock().Sub(p.dialAt), peer.PairDialTimeout).Round(time.Second)
-			add(gap(), wrap(fmt.Sprintf("Checking the code with %s… %s of %s · esc cancels",
-				addr, clockSpan(el), clockSpan(peer.PairDialTimeout))))
+			el := p.clock().Sub(p.dialAt).Round(time.Second)
+			add(gap(), wrap(fmt.Sprintf("Checking the code with %s… %s · esc cancels", addr, clockSpan(el))))
+			if p.expect != "" {
+				add(wrap("If it does not answer, Deck tries through the teammates you are connected to."))
+			}
 		}
 		add(errLines())
 		return out
@@ -944,7 +947,11 @@ func (p *PeerPair) lines(width int, compact bool) []string {
 		if p.mode == pairModeConnect && p.expect != "" && p.expect == r.PeerFingerprint {
 			note = "✓ matches the invite"
 		}
-		add(wrap("Code accepted by "+peer.Sanitize(r.RemoteAddr)+" (it calls itself “"+who+"”)."), gap(),
+		by := "Code accepted by " + peer.Sanitize(r.RemoteAddr)
+		if r.Via != "" {
+			by = "Code accepted through " + r.Via + ", which relayed it and saw only ciphertext"
+		}
+		add(wrap(by+" (it calls itself “"+who+"”)."), gap(),
 			fpRows("Theirs", r.PeerFingerprint, note), fpRows("This Deck", r.OwnFingerprint, ""), gap(),
 			strong("Do these match on the other screen?"))
 		if p.mode == pairModeWait {
@@ -961,9 +968,14 @@ func (p *PeerPair) lines(width int, compact bool) []string {
 
 	case pairDone:
 		add(strong("Paired with "+p.paired+"."), gap())
-		if p.mode == pairModeConnect && p.dial {
+		switch {
+		case p.res.Via != "" && p.mode == pairModeConnect:
+			add(wrap("This Deck connects to it through " + p.res.Via + " while Team link is on."))
+		case p.res.Via != "":
+			add(wrap("It connects to this Deck through " + p.res.Via + ", which may now relay links to this Deck."))
+		case p.mode == pairModeConnect && p.dial:
 			add(wrap("This Deck connects to it while Team link is on."))
-		} else {
+		default:
 			add(wrap("It can connect to this Deck while Team link and Accept connections are on."))
 		}
 		return out

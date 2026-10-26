@@ -70,6 +70,18 @@ func (f *fakePeerLink) SetDial(name string, dial bool) error {
 	f.record("SetDial %s %v", name, dial)
 	return nil
 }
+func (f *fakePeerLink) SetRelay(on bool) error {
+	f.record("SetRelay %v", on)
+	return nil
+}
+func (f *fakePeerLink) SetVia(name, via string) error {
+	f.record("SetVia %s %s", name, via)
+	return nil
+}
+func (f *fakePeerLink) SetMayRelay(name string, on bool) error {
+	f.record("SetMayRelay %s %v", name, on)
+	return nil
+}
 func (f *fakePeerLink) Remove(name string) error { f.record("Remove %s", name); return nil }
 func (f *fakePeerLink) Ping(context.Context, string) (peer.PingResult, error) {
 	return peer.PingResult{Latency: 12 * time.Millisecond, Tools: []string{"search", "execute"}}, nil
@@ -365,7 +377,7 @@ func TestTeamPermanentFailureHint(t *testing.T) {
 	snap.Peers = []peer.PeerState{{Name: "vps", Addr: "vps.example.com:7722", Role: "observer", Pinned: true, Dial: true,
 		Link: peer.Link{Supervised: true, Status: peer.Status{State: peer.StateBackoff, Permanent: true, Cause: peer.CauseHostKey}}}}
 	s, _ := newTeamSettingsForTest(t, snap)
-	selectRow(s, 6)
+	selectRow(s, 7)
 	text := teamText(s, 100)
 	require.Contains(t, text, "host key changed")
 	require.Contains(t, text, "Its key changed")
@@ -384,7 +396,7 @@ func TestTeamPeerMenu(t *testing.T) {
 	snap := baseSnapshot()
 	snap.Peers = []peer.PeerState{{Name: "vps", Addr: "vps.example.com:7722", Role: "observer", Pinned: true, Configured: true, Dial: true}}
 	s, link := newTeamSettingsForTest(t, snap)
-	selectRow(s, 6)
+	selectRow(s, 7)
 
 	require.Nil(t, press(s, tea.KeyEnter))
 	require.NotNil(t, s.team.menu)
@@ -824,7 +836,7 @@ func TestPairDialingShowsProgressAndEscCancels(t *testing.T) {
 	act := pairKey(p, tea.KeyEnter)
 	require.Equal(t, pairDialing, p.step)
 	now = now.Add(3 * time.Second)
-	require.Contains(t, pairText(p), "Checking the code with vps.example.com:7722… 0:03 of 0:12")
+	require.Contains(t, squash(pairText(p)), squash("Checking the code with vps.example.com:7722… 0:03 · esc cancels"))
 	req := p.req
 	require.NotNil(t, p.HandleMsg(pairTickMsg{req: req}), "the progress keeps ticking")
 
@@ -1045,4 +1057,73 @@ func TestPairErrText(t *testing.T) {
 	require.Contains(t, pairErrText(peer.ErrPairUnproven), "Wrong or expired code")
 	require.Contains(t, pairErrText(context.DeadlineExceeded), "No answer from the other Deck")
 	require.Equal(t, "something odd", pairErrText(errors.New("peer: something odd")))
+}
+
+func TestTeamRelayControls(t *testing.T) {
+	t.Parallel()
+	snap := baseSnapshot()
+	snap.Relaying = 2
+	snap.Peers = []peer.PeerState{
+		{Name: "vps", Addr: "vps.example.com:7722", Role: "observer", Pinned: true, Configured: true, Dial: true},
+		{Name: "pc2", Role: "observer", Pinned: true, Configured: true, Dial: true, Via: "vps",
+			Link: peer.Link{Supervised: true, Status: peer.Status{State: peer.StateBackoff,
+				LastError: "peer: relay through vps: ssh: rejected: administratively prohibited (relaying is off)"}}},
+	}
+	s, link := newTeamSettingsForTest(t, snap)
+
+	selectRow(s, 5)
+	text := teamText(s, 120)
+	require.Contains(t, text, "Relay for teammates     off · relaying 2")
+	require.Contains(t, text, "cannot reach each other")
+	run(t, press(s, tea.KeyEnter))
+	require.True(t, link.called("SetRelay true"))
+
+	selectRow(s, 8)
+	text = teamText(s, 160)
+	require.Contains(t, text, "through vps · observer")
+	require.Contains(t, text, "vps does not relay: turn on Relay for teammates there")
+
+	labels := func(p peer.PeerState) []string {
+		var out []string
+		for _, it := range s.peerMenuItems(p) {
+			out = append(out, it.label)
+		}
+		return out
+	}
+	require.Contains(t, labels(snap.Peers[0]), "Reach it: direct (make through pc2)")
+	require.Contains(t, labels(snap.Peers[0]), "May relay links to this Deck: off")
+	require.NotContains(t, strings.Join(labels(snap.Peers[1]), "\n"), "Reach it", "no other route for a peer with no address")
+
+	selectRow(s, 7)
+	press(s, tea.KeyEnter)
+	for _, l := range labels(snap.Peers[0]) {
+		if l == "May relay links to this Deck: off" {
+			break
+		}
+		press(s, tea.KeyDown)
+	}
+	run(t, press(s, tea.KeyEnter))
+	require.True(t, link.called("SetMayRelay vps true"))
+}
+
+func TestPairThroughRelayText(t *testing.T) {
+	t.Parallel()
+	res := testPairResult
+	res.Via, res.Dialed, res.RemoteAddr = "vps", true, "relay:vps"
+	link := &fakePeerLink{dialRes: res}
+	p := newPairForTest(link)
+	toConnectConfirm(t, p, link)
+	require.Contains(t, squash(pairText(p)), squash("Code accepted through vps, which relayed it and saw only ciphertext"))
+	p.HandleMsg(run(t, p.HandleMsg(tea.KeyPressMsg{Code: 'y', Text: "y"})))
+	require.Equal(t, pairDone, p.step)
+	require.Contains(t, squash(pairText(p)), squash("This Deck connects to it through vps"))
+
+	miss := &peer.RelayMissError{
+		Direct: fmt.Errorf("%w from x", peer.ErrPairNoAnswer),
+		Relays: []error{fmt.Errorf("%w: vps: relaying is off", peer.ErrPairRelay)},
+	}
+	link = &fakePeerLink{dialErr: miss}
+	p = newPairForTest(link)
+	toConnectConfirm(t, p, link)
+	require.Contains(t, squash(pairText(p)), squash("no teammate could relay the pairing: vps does not relay"))
 }

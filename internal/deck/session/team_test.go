@@ -16,6 +16,7 @@ type postTeam struct {
 }
 
 func (p *postTeam) List() string                                   { return "" }
+func (p *postTeam) Names() []string                                { return []string{"vps", "pc2"} }
 func (p *postTeam) Status(context.Context, string) (string, error) { return "", nil }
 func (p *postTeam) Read(int) string                                { return "" }
 func (p *postTeam) Post(_ context.Context, agent, text string) (string, error) {
@@ -48,4 +49,24 @@ func TestTeamPostIsNamedRedactedAndLimited(t *testing.T) {
 	if len(team.posts) != maxTeamPosts || !strings.HasPrefix(team.posts[0], "codex: deploying") || strings.Contains(team.posts[0], "ghp_") {
 		t.Fatalf("posts = %q", team.posts)
 	}
+}
+
+// TestInstructionsNameTheTeam: an agent hears of subagents and races, and,
+// while teammates are paired, of the team ops and who the teammates are.
+func TestInstructionsNameTheTeam(t *testing.T) {
+	r := newRig(t, nil, nil)
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	sp, _ := r.claude.spec("claude")
+	has(t, sp.Instructions, "agent.spawn", "task.race", "lease.acquire")
+	lacks(t, sp.Instructions, "task.contract", "Teammates")
+
+	r.m.SetTeam(&postTeam{})
+	r.add(t, tid, "codex")
+	sp, _ = r.codex.spec("codex")
+	has(t, sp.Instructions, "agent.spawn", "Teammates' Decks on other machines: vps, pc2", "task.contract {peer, brief}", "team.post", `"[vps] ..."`)
+	if len(sp.Instructions) > maxInstrChars {
+		t.Fatalf("Instructions are %d bytes", len(sp.Instructions))
+	}
+	has(t, sp.Instructions, "Write plan files in") // nothing was cut
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/dev-dami/deck/internal/deck/sub"
 	"log/slog"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -411,13 +412,64 @@ func (m *Manager) ArmPair(ctx context.Context, o PairOptions) (*PairWait, error)
 	if o.Logger == nil {
 		o.Logger = m.o.Logger
 	}
-	w, err := armPair(ctx, m.pairs, o)
+	w, err := armPair(ctx, m.pairs, o, nil)
 	if err != nil {
 		return nil, err
 	}
 	w.Addr = srv.Addr().String()
 	w.Reachable = Reachable(w.Addr)
 	return w, nil
+}
+
+// ArmPairOn arms a pairing code for a Manager with no listener of its own:
+// it is served on ln, a listener for this code alone that is closed when
+// the code ends, and to pairings that peers relay to this Deck
+// (relay-pair@deck), so a Deck behind NAT can pair through a relay.
+func (m *Manager) ArmPairOn(ctx context.Context, ln net.Listener, o PairOptions) (*PairWait, error) {
+	m.mu.Lock()
+	live, id := m.live, m.id
+	m.mu.Unlock()
+	if !live {
+		ln.Close()
+		return nil, errors.New("peer: the team link is not running")
+	}
+	o.Identity, o.Name = id, m.Name()
+	if o.Logger == nil {
+		o.Logger = m.o.Logger
+	}
+	w, err := armPair(ctx, m.pairs, o, ln)
+	if err != nil {
+		ln.Close()
+		return nil, err
+	}
+	w.Addr = ln.Addr().String()
+	w.Reachable = Reachable(w.Addr)
+	// Not this Deck's own listener: moving it reopens it (PairListenAll).
+	w.Shared = false
+	return w, nil
+}
+
+// relayCandidates are the peers with a direct link up now, by name: the
+// Decks that might relay a link or a pairing from this one.
+func (m *Manager) relayCandidates() []*Conn {
+	pins, err := m.store.List()
+	if err != nil {
+		return nil
+	}
+	var out []*Conn
+	for _, p := range pins {
+		if c := m.directLink(p.Name); c != nil && c.Peer().Fingerprint == p.Fingerprint {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// Relaying is the number of links this Deck relays for its peers now.
+func (m *Manager) Relaying() int {
+	m.relays.mu.Lock()
+	defer m.relays.mu.Unlock()
+	return len(m.relays.live)
 }
 
 // closeSups closes supervisors side by side and waits for them.

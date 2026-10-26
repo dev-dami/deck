@@ -75,9 +75,16 @@ The Tasks pane in the sidebar is the thread's shared task board. `o` there turns
 
 ### A Deck on a server
 
-Two Decks that cannot reach each other (both behind NAT) can link through a third Deck they are both paired with. On the relay Deck set `peers.relay: true`. On the Deck that dials, set `via: "<relay>"` on the remote's row; the address is then optional. On the Deck that is dialed, set `relay: true` on the relay's row. The two ends run SSH inside the relayed channel with their own pinned keys, so the relay sees only ciphertext.
+Two Decks that cannot reach each other (both behind NAT, say) can link through a third Deck they are both paired with, such as a server. The two ends run SSH inside the relayed channel with their own pinned keys, so the relay sees only ciphertext.
 
-`deck serve` runs Deck with no terminal UI, for a server that teammates link to: the agents and the peer link, and the phone remote with `--remote`. On SIGTERM it refuses new contracts and shared-thread posts, gives running agents `--drain` (default 2m) to end their turns, waits up to 15 seconds for queued messages to go out, and then stops; a second signal stops it at once. `docs/examples/deck-serve.service` (systemd) and `docs/examples/deck-serve.container` (podman) are starting points. `deck serve` has `~/.deck/threads` to itself: it will not start while a terminal Deck runs, and a terminal Deck will not start while it runs (the lock file is `~/.deck/threads/deck.lock`). Terminal Decks still share the store with each other.
+1. On the relay, turn on **Relay for teammates** (Settings › Team, or `deck peer relay on`).
+2. Pair the two Decks as usual: on one, Settings › Team › `a` › *This Deck waits for a code*; on the other, *Connect* and paste the invite. When the invite's address does not answer, the connecting Deck pairs through each teammate it is connected to until one relays it. Both Decks save the route: the connecting one reaches the other through the relay, and the waiting one lets the relay bring its links.
+
+To change a route later, open a teammate's row in Settings › Team: *Reach it* switches between direct and each relay, and *May relay links to this Deck* lets that teammate bring links here. When a relayed link fails, the row says which Deck to fix. `deck peer relay` does the same from a shell (`via <name> <relay>`, `allow <relay>`), and `deck peer list` shows each route. In the config these are `peers.relay`, and `via` and `relay` on a `peers.remote` row.
+
+Agents hear about the team in their first instructions: who the teammates are, the team chat (`team.read`, `team.post`), and `task.contract` to ask a teammate's Deck for work. They also hear about subagents (`agent.spawn`), races (`task.race`) and leases.
+
+`deck serve` runs Deck with no terminal UI, for a server that teammates link to: the agents and the peer link, and the phone remote with `--remote`. On SIGTERM it refuses new contracts and shared-thread posts, gives running agents `--drain` (default 2m) to end their turns, waits up to 15 seconds for queued messages to go out, and then stops; a second signal stops it at once. On SIGHUP (`systemctl --user reload deck-serve`) it applies the peers config again, for example after `deck peer relay on`. `docs/examples/deck-serve.service` (systemd) and `docs/examples/deck-serve.container` (podman) are starting points. `deck serve` has `~/.deck/threads` to itself: it will not start while a terminal Deck runs, and a terminal Deck will not start while it runs (the lock file is `~/.deck/threads/deck.lock`). Terminal Decks still share the store with each other.
 
 ### Phone remote control
 

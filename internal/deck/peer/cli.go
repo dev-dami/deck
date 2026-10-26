@@ -227,7 +227,11 @@ func (c CLI) Add(ctx context.Context, a AddArgs) error {
 	c.printf("Checking the code with %s… (up to %s)\n", a.Addr, PairDialTimeout)
 	res, err := DialPair(ctx, a.Addr, PairOptions{Identity: id, Name: c.selfName(), Code: a.Code, ExpectFingerprint: expect})
 	if err != nil {
-		return explained{msg: PairErrText(err, a.Addr), err: err}
+		msg := PairErrText(err, a.Addr)
+		if errors.Is(err, ErrPairNoAnswer) {
+			msg += "\nBoth behind NAT? Pair from a running Deck instead (Settings › Team › a › Connect, paste the invite): it tries through the teammates it is connected to, when one relays (deck peer relay on there)."
+		}
+		return explained{msg: msg, err: err}
 	}
 	if expect != "" {
 		c.printf("✓ The fingerprint matches the invite.\n")
@@ -309,10 +313,20 @@ func (c CLI) List(ctx context.Context, probe bool) error {
 			probe = false
 		}
 	}
+	cfg := c.peersConfig()
 	tw := tabwriter.NewWriter(c.Out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tADDR\tROLE\tSTATE\tFINGERPRINT")
+	fmt.Fprintln(tw, "NAME\tADDR\tROUTE\tROLE\tSTATE\tFINGERPRINT")
 	self := c.selfName()
 	for _, p := range peers {
+		route := "direct"
+		if r, ok := cfg.Find(p.Name); ok {
+			if r.Via != "" {
+				route = "via " + r.Via
+			}
+			if r.Relay {
+				route += ", relays here"
+			}
+		}
 		addr, state := p.Addr, "inbound only"
 		if addr == "" {
 			addr = "-"
@@ -325,9 +339,134 @@ func (c CLI) List(ctx context.Context, probe bool) error {
 		} else {
 			state = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", p.Name, Sanitize(addr), Sanitize(p.Role), state, p.Fingerprint)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", p.Name, Sanitize(addr), route, Sanitize(p.Role), state, p.Fingerprint)
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if cfg.Relay {
+		c.printf("This Deck relays for its teammates.\n")
+	}
+	return nil
+}
+
+// peersConfig is the peers section of the config, empty when it cannot be
+// read.
+func (c CLI) peersConfig() *config.Peers {
+	if c.ConfigPath != "" {
+		if p, err := config.LoadPeers(c.ConfigPath); err == nil && p != nil {
+			return p
+		}
+	}
+	return &config.Peers{}
+}
+
+// relayApplies says when a relay change made here is in effect.
+const relayApplies = "A running Deck applies it with r in Settings › Team (deck serve: on SIGHUP), or at its next start.\n"
+
+// Relay is `deck peer relay`: with no args it shows the relay settings;
+// on/off sets whether this Deck relays for its teammates; via <name>
+// <relay|direct> sets the teammate that relays the link to name; allow and
+// deny <relay> set whether a teammate may relay links to this Deck.
+func (c CLI) Relay(args []string) error {
+	if c.ConfigPath == "" {
+		return errors.New("no config file to change")
+	}
+	store := OpenStore(c.Dir)
+	pinned := func(name string) (Pinned, error) {
+		p, ok, err := store.Get(name)
+		if err == nil && !ok {
+			err = fmt.Errorf("no teammate %q is paired here (deck peer list)", name)
+		}
+		return p, err
+	}
+	update := func(fn func(p *config.Peers) bool, done string) error {
+		changed, err := config.UpdatePeers(c.ConfigPath, fn)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			c.printf("Already so: %s\n", done)
+			return nil
+		}
+		c.printf("%s\n%s", done, relayApplies)
+		return nil
+	}
+	switch {
+	case len(args) == 0:
+		return c.relayStatus()
+	case len(args) == 1 && (args[0] == "on" || args[0] == "off"):
+		on := args[0] == "on"
+		done := "This Deck relays for its teammates; it sees only ciphertext."
+		if !on {
+			done = "This Deck no longer relays."
+		}
+		return update(func(p *config.Peers) bool {
+			if p.Relay == on {
+				return false
+			}
+			p.Relay = on
+			return true
+		}, done)
+	case len(args) == 3 && args[0] == "via":
+		name, via := args[1], args[2]
+		pin, err := pinned(name)
+		if err != nil {
+			return err
+		}
+		var vpin Pinned
+		if via == "direct" || via == "-" {
+			via = ""
+		} else if via == name {
+			return fmt.Errorf("%q cannot relay its own link", name)
+		} else if vpin, err = pinned(via); err != nil {
+			return err
+		}
+		done := fmt.Sprintf("%s is reached through %s. On %s: deck peer relay on. On %s: deck peer relay allow %s (with the names they use).", name, via, via, name, via)
+		if via == "" {
+			done = name + " is reached directly."
+		}
+		return update(func(p *config.Peers) bool { return setVia(p, pin, vpin, via) }, done)
+	case len(args) == 2 && (args[0] == "allow" || args[0] == "deny"):
+		on := args[0] == "allow"
+		pin, err := pinned(args[1])
+		if err != nil {
+			return err
+		}
+		done := args[1] + " may relay links and pairings to this Deck."
+		if !on {
+			done = args[1] + " may no longer relay links to this Deck."
+		}
+		return update(func(p *config.Peers) bool { return setMayRelay(p, pin, on) }, done)
+	}
+	return errors.New("use: deck peer relay [on|off | via <name> <relay|direct> | allow <relay> | deny <relay>]")
+}
+
+// relayStatus prints the relay settings: whether this Deck relays, the
+// teammates reached through a relay, and the ones that may relay here.
+func (c CLI) relayStatus() error {
+	p := c.peersConfig()
+	if p.Relay {
+		c.printf("This Deck relays for its teammates (deck peer relay off stops it).\n")
+	} else {
+		c.printf("This Deck does not relay (deck peer relay on starts it).\n")
+	}
+	var via, allow []string
+	for _, r := range p.Remote {
+		if r.Via != "" {
+			via = append(via, r.Name+" through "+r.Via)
+		}
+		if r.Relay {
+			allow = append(allow, r.Name)
+		}
+	}
+	if len(via) > 0 {
+		c.printf("Reached through a relay: %s\n", strings.Join(via, ", "))
+	}
+	if len(allow) > 0 {
+		c.printf("May relay links to this Deck: %s\n", strings.Join(allow, ", "))
+	}
+	return nil
 }
 
 // Ping connects to a pinned peer and reports its latency, tools and status.

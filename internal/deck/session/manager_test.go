@@ -298,7 +298,7 @@ func TestPostAddsMemberForKindMentionAndBriefsItOnTheWholeThread(t *testing.T) {
 	}
 	has(t, sp.Instructions, `"codex"`, "claude", "tester", "search", "execute", "thread.send", "thread.read", "$name")
 	lacks(t, sp.Instructions, "fix the store", "Store now drops")
-	if len(sp.Instructions) > 1500 {
+	if len(sp.Instructions) > maxInstrChars {
 		t.Errorf("Instructions are %d bytes", len(sp.Instructions))
 	}
 }

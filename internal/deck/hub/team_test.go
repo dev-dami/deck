@@ -9,7 +9,8 @@ import (
 
 type fakeTeam struct{ asked string }
 
-func (f *fakeTeam) List() string { return "Teammates (1):\n  vps: connected" }
+func (f *fakeTeam) List() string    { return "Teammates (1):\n  vps: connected" }
+func (f *fakeTeam) Names() []string { return []string{"vps"} }
 
 func (f *fakeTeam) Status(_ context.Context, name string) (string, error) {
 	f.asked = name
