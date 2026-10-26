@@ -16,6 +16,8 @@ export interface Suggestion {
   // The agent kind whose glyph and hue the row wears; null for a person
   // or "all".
   kind: string | null;
+  // A profile's own colour, worn in place of the kind's hue.
+  color?: string;
 }
 
 export interface Mention {
@@ -29,6 +31,7 @@ export interface ProfileRef {
   name: string;
   kind: string;
   role?: string;
+  color?: string;
 }
 
 // A teammate "@" reaches where Deck routes a message to a person.
@@ -91,13 +94,16 @@ export function nameAt(text: string, caret: number): Mention | null {
 }
 
 // The picker the text before the caret opens, if any. files says whether
-// the composer can list files at all.
-export function pickerAt(text: string, caret: number, files: boolean): Picked | null {
+// the composer can list files at all; names whether the Deck reads "@" as
+// an agent's sigil. An older Deck reads only "$", so there "@" keeps
+// picking files, as it did, and never inserts a name the Deck would take
+// for text.
+export function pickerAt(text: string, caret: number, files: boolean, names = true): Picked | null {
   if (files) {
-    const ctx = contextAt(text, caret) ?? fileAt(text, caret);
+    const ctx = contextAt(text, caret) ?? (names ? fileAt(text, caret) : sigilAt("@", text, caret));
     if (ctx !== null) return { type: "#", m: ctx };
   }
-  const named = nameAt(text, caret);
+  const named = names ? nameAt(text, caret) : null;
   if (named !== null) return { type: "@", m: named };
   const agent = mentionAt(text, caret);
   return agent === null ? null : { type: "$", m: agent };
@@ -153,6 +159,7 @@ export function suggestions(
         label: p.name,
         detail: p.role || `start ${p.name}, a ${p.kind}`,
         kind: p.kind,
+        ...(p.color ? { color: p.color } : {}),
       });
     }
     for (const p of people)
@@ -168,6 +175,13 @@ export function suggestions(
     seen.add(key);
     return true;
   });
+}
+
+// The hue a picker row wears: the profile's colour, else its kind's; none
+// for a person or "all".
+export function suggestionHue(s: Suggestion, kindColour: (kind: string) => string): string | undefined {
+  if (s.color) return s.color;
+  return s.kind === null ? undefined : kindColour(s.kind);
 }
 
 // Replaces the mention under the caret with s and a space.

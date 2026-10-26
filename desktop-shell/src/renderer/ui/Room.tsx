@@ -311,7 +311,9 @@ export function Room({
             roster={[]}
             online={online && state.sessionsLoaded}
             onSend={send.start}
-            placeholder="Ask anything. @ picks an agent, @codex+ starts another, # a file."
+            placeholder={
+              named.mentions ? "Ask anything. @ picks an agent, @codex+ starts another, # a file." : "Ask anything. $ picks an agent, $codex+ starts another."
+            }
           />
         </NewThread>
       ) : (

@@ -172,11 +172,17 @@ const noSub = () => () => {};
 const none = (): null => null;
 
 // What the composer's "@" offers beyond the room: the Deck's profiles and
-// the team's people, when there are any.
-export function useMentionables(c: DeckClient, team: Team | string | null): { profiles: ProfileRef[] | undefined; people: Person[] | undefined } {
+// the team's people, when there are any. mentions says whether the Deck
+// reads "@" as an agent's sigil: one that keeps profiles does
+// (docs/design/agents-and-mentions.md); an older one reads only "$".
+export function useMentionables(
+  c: DeckClient,
+  team: Team | string | null,
+): { profiles: ProfileRef[] | undefined; people: Person[] | undefined; mentions: boolean } {
   const { profiles } = useProfiles(c);
-  const named = useMemo(() => profiles?.map((p) => ({ name: p.name, kind: p.kind, role: p.role })), [profiles]);
+  const mentions = serves(c, "ListProfiles");
+  const named = useMemo(() => profiles?.map((p) => ({ name: p.name, kind: p.kind, role: p.role, color: p.color })), [profiles]);
   const mates = typeof team === "object" && team !== null && team.available ? team.teammates : null;
   const people = useMemo(() => mates?.map((m) => ({ name: m.name, role: "teammate" })), [mates]);
-  return { profiles: named, people };
+  return { profiles: named, people, mentions };
 }

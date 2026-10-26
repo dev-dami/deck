@@ -16,6 +16,7 @@ import {
   pickerAt,
   slashAt,
   slashSuggestions,
+  suggestionHue,
   suggestions,
 } from "./completion";
 
@@ -159,6 +160,15 @@ describe("the @ picker: agents and people", () => {
     expect(member).toEqual({ insert: "@rev", label: "rev", detail: "reviewer · claude · busy", kind: "claude" });
   });
 
+  test("a profile's own colour is its row's hue; else the kind's, and none for a person", () => {
+    const hue = (k: string) => `hue-${k}`;
+    const s = suggestions("", [], kinds, { sigil: "@", profiles: [{ name: "zed", kind: "codex", color: "tomato" }, ...profiles], people });
+    const row = (label: string) => s.find((x) => x.label === label) ?? { insert: "", label, detail: "", kind: null };
+    expect(suggestionHue(row("zed"), hue)).toBe("tomato");
+    expect(suggestionHue(row("ada"), hue)).toBe("hue-codex");
+    expect(suggestionHue(row("alice"), hue)).toBeUndefined();
+  });
+
   test("filters by prefix, and $ offers no profiles or people", () => {
     expect(suggestions("CH", roster, kinds, { sigil: "@", profiles, people }).map((s) => s.insert)).toEqual(["@charles"]);
     expect(suggestions("a", roster, kinds, { sigil: "@", profiles, people }).map((s) => s.insert)).toEqual(["@ada", "@alice", "@all"]);
@@ -188,6 +198,13 @@ describe("which picker the text opens", () => {
     expect(pickerAt("#li", 3, false)).toBeNull();
     expect(pickerAt("@pkg/", 5, false)).toBeNull();
     expect(pickerAt("@co", 3, false)).toEqual({ type: "@", m: { start: 0, query: "co" } });
+  });
+
+  test("a Deck that reads only $: @ picks files as it did, # still files, $ agents", () => {
+    expect(pickerAt("@co", 3, true, false)).toEqual({ type: "#", m: { start: 0, query: "co" } });
+    expect(pickerAt("#co", 3, true, false)).toEqual({ type: "#", m: { start: 0, query: "co" } });
+    expect(pickerAt("$co", 3, true, false)).toEqual({ type: "$", m: { start: 0, query: "co" } });
+    expect(pickerAt("@co", 3, false, false)).toBeNull();
   });
 
   test("a # inside a word, a heading or ## opens nothing", () => {

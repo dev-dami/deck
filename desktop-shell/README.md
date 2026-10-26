@@ -143,11 +143,10 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   Yolo) and picks who the message goes to: one chip per agent of the
   thread, with its glyph, name, context use as a thin ring and a status
   dot (amber while it works, the warning colour while it waits for an
-  approval). Click a chip to address the agent (`$codex-1`), again to take
+  approval). A member shows its role after its name when it came from a
+  profile. Click a chip to address the agent (`$codex-1`), again to take
   it out; several chips address each. The ghost "+" starts another agent
-  of a kind, with a model and effort when you pick one. Typing `$` does
-  the same: `$codex` reaches a free codex or starts one, `$codex+` starts
-  another, `$codex*` reaches every codex, `$all` every agent. When the
+  of a kind, with a model and effort when you pick one. When the
   engine reports a plan window of the agent's kind over 80% full, the chip
   shows an amber "limit 85%" tag; its tooltip says when the window resets.
   The app asks for the limits at most once a minute, and only while the
@@ -161,6 +160,16 @@ text and one amber lamp), and T3's look stay in the theme catalog.
     default; Reduced turns the wave off with the rest of the motion, and
     "Play the Yolo effect" turns off the wave alone. Without the wave the
     chip flashes amber.
+  - **`@` agents and people.** Type `@` for "Agents and people": the
+    thread's members by name, each kind, the saved profiles (Settings >
+    Agents > Profiles) and, on a team, your teammates. Each row shows the
+    glyph in its hue, the name and the role. `@codex` reaches a free codex
+    or starts one, `@codex+` starts another, `@codex*` reaches every
+    codex, `@all` every agent, and `@charles` starts the agent of the
+    profile named charles (a later `@charles` reaches the same one). `$`
+    is the older sigil and still works everywhere: `$` opens the agents
+    alone and inserts `$codex`. A Deck from before named agents reads only
+    `$`; there `@` keeps picking files and the placeholder says `$`.
   - **Slash commands.** Type `/` at the start of the message for the
     commands: `/plan`, `/ask` and `/yolo` set the mode (Yolo still asks
     first), `/new [title]` starts a thread, `/race <n> [kind] [judge]
@@ -168,8 +177,11 @@ text and one amber lamp), and T3's look stay in the theme catalog.
     you name none), `/share` opens the share popover, `/stop` stops all
     agents and `/clear` clears the draft. Other text after a `/` is an
     ordinary message.
-  - **Files.** Type `@` for the room's changed files, matched loosely by
-    name and path; the pick goes in as a path in backticks. A local Deck
+  - **`#` files.** Type `#` for the room's changed files, matched loosely
+    by name and path; the pick goes in as a path in backticks, the same
+    text an `@` file pick inserted before, so the agents read what they
+    always did. `@` before something path-like (it holds a `/` or ends in
+    `.ext`, as in `@src/` or `@main.go`) still opens the files. A local Deck
     that serves `ListFiles` adds the other files of the room's tree after
     the changed ones (up to 20, through the repository's ignore rules). The
     app asks once the typing stops for 120 ms, and only the latest answer
@@ -320,7 +332,14 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   GitHub Light, One Dark, Dracula, Tokyo Night, Catppuccin Mocha,
   Solarized or Monochrome, with a live preview), unified or split diffs and
   wrap, card or compact thread rows, grouping by project, the agent kinds,
-  the connection and the shortcuts.
+  the connection and the shortcuts. Settings > Agents > Profiles lists the
+  named agents of the global (`~/.config/deck/deck.json`) and the
+  project's `deck.json`, and creates, edits and deletes them: a name, the
+  kind it runs, a model and effort, a one-line role, standing
+  instructions, a voice, the paths it keeps to and a colour. The fields
+  say what is wrong as you leave them (a name with a space or a sigil,
+  Deck's own words, a kind, a teammate's name, a taken name), and Deck
+  checks again when it saves. A Deck from before profiles says so there.
 - **Keys.** On a Mac, Cmd takes the place of Ctrl. Ctrl+K searches threads
   and commands. Ctrl+N starts a thread, Ctrl+O opens a folder, Ctrl+,
   opens Settings. Ctrl+B hides the sidebar, Ctrl+J the terminal.
@@ -516,7 +535,7 @@ renderer (React, sandboxed)                  main process (Node)                
 - **Races.** `startRace` has several agents of one kind do one brief, each
   on a worktree of its own, with an optional judge.
 - **Files.** `listFiles` lists the thread's tree through the repository's
-  ignore rules, fuzzy on a query, for the `@` picker.
+  ignore rules, fuzzy on a query, for the `#` picker.
 - **Images.** `readImage` returns the bytes of a message's image part, up
   to 10 MB, by session, message and index; Deck finds them, so no path
   leaves the window. Main hands them over as a `Uint8Array`, and the

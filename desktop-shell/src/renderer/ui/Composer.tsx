@@ -18,6 +18,7 @@ import {
   type ProfileRef,
   slashAt,
   slashSuggestions,
+  suggestionHue,
   suggestions,
 } from "../completion";
 import { loadHistory, pushHistory, walk } from "../history";
@@ -81,6 +82,7 @@ export function Composer({
   theme = null,
   profiles,
   people,
+  mentions = true,
 }: {
   draft: string;
   setDraft: (s: string) => void;
@@ -119,6 +121,9 @@ export function Composer({
   // What "@" offers beyond the room: saved profiles and teammates.
   profiles?: readonly ProfileRef[] | undefined;
   people?: readonly Person[] | undefined;
+  // Whether the Deck reads "@" as an agent's sigil; an older one reads
+  // only "$", and there "@" keeps picking files.
+  mentions?: boolean;
 }) {
   const [images, setImages] = useState<Attached[]>([]);
   const [picker, setPicker] = useState<Picker | null>(null);
@@ -180,7 +185,7 @@ export function Composer({
     const text = el.value;
     const caret = el.selectionStart;
     const slash = onSlash === undefined ? null : slashAt(text, caret);
-    const next: Picker | null = slash !== null ? { type: "/", m: slash } : pickerAt(text, caret, (paths ?? []).length > 0 || lister !== null);
+    const next: Picker | null = slash !== null ? { type: "/", m: slash } : pickerAt(text, caret, (paths ?? []).length > 0 || lister !== null, mentions);
     if (next?.type === "#") lister?.ask(next.m.query);
     setPicker(next);
     setPick(0);
@@ -362,14 +367,14 @@ export function Composer({
                 <span
                   aria-hidden
                   className="suggest-mark grid w-4 shrink-0 place-items-center font-mono text-[12px] leading-none"
-                  style={{ color: s.kind === null ? undefined : kindColour(s.kind) }}
+                  style={{ color: suggestionHue(s, kindColour) }}
                 >
                   {s.kind !== null ? kindMark(theme, s.kind) || "●" : s.label === "all" ? "∗" : "◇"}
                 </span>
               )}
               <span
                 className="suggest-insert min-w-0 truncate font-medium font-mono text-code"
-                style={{ color: s.kind === null ? undefined : kindColour(s.kind) }}
+                style={{ color: suggestionHue(s, kindColour) }}
               >
                 {picker.type === "$" ? s.insert : s.label}
               </span>

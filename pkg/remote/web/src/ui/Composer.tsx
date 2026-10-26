@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { activeAgent, applyAgentChip, canSend } from "../composer";
 import { base64Length, checkImage, displayName, readAsBase64 } from "../images";
-import { applySuggestion, fileSuggestions, type Picked, pickerAt, suggestions } from "../mentions";
+import {
+  applySuggestion,
+  fileSuggestions,
+  type Picked,
+  pickerAt,
+  suggestionHue,
+  suggestions,
+} from "../mentions";
 import type { AgentLine, Image, Theme } from "../protocol";
 import { kindColour, kindMark } from "../theme";
 import { useController } from "./hooks";
@@ -200,14 +207,14 @@ export function Composer({
                 <span
                   class="suggest-mark"
                   aria-hidden="true"
-                  style={s.kind === null ? {} : { color: kindColour(s.kind) }}
+                  style={{ color: suggestionHue(s, kindColour) }}
                 >
                   {s.kind !== null ? kindMark(theme, s.kind) || "●" : s.label === "all" ? "∗" : "◇"}
                 </span>
               ) : null}
               <span
                 class="suggest-name"
-                style={s.kind === null ? {} : { color: kindColour(s.kind) }}
+                style={{ color: suggestionHue(s, kindColour) }}
               >
                 {picker.type === "$" ? s.insert : s.label}
               </span>

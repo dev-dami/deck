@@ -21,6 +21,7 @@ export {
   pickerAt,
   type ProfileRef,
   type Suggestion,
+  suggestionHue,
   suggestions,
 } from "@web/mentions";
 
