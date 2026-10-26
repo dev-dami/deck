@@ -17,7 +17,9 @@ export type IconName =
   | "copy"
   | "refresh"
   | "offline"
-  | "terminal";
+  | "terminal"
+  | "shield"
+  | "check-circle";
 
 const strokes: Record<IconName, string[]> = {
   back: ["m15 6-6 6 6 6"],
@@ -42,6 +44,8 @@ const strokes: Record<IconName, string[]> = {
     "M19 13a10 10 0 0 0-2.3-1.7",
   ],
   terminal: ["m4 17 6-6-6-6", "M12 19h8"],
+  shield: ["M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6z", "M12 9v4", "M12 16h.01"],
+  "check-circle": ["M8 12l3 3 5-6"],
 };
 
 export function Icon({
@@ -67,7 +71,7 @@ export function Icon({
       strokeLinejoin="round"
       accessible={false}
     >
-      {name === "clock" && <Circle cx={12} cy={12} r={9} />}
+      {(name === "clock" || name === "check-circle") && <Circle cx={12} cy={12} r={9} />}
       {name === "sliders" && (
         <>
           <Circle cx={15} cy={7} r={2} />
