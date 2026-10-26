@@ -48,6 +48,8 @@ type DeckWorkspace struct {
 	// turns is the message each agent is writing, by Deck agent id. Only
 	// the pump goroutine touches it.
 	turns map[string]*turn
+	// dbw stores tool results off the pump goroutine; nil writes inline.
+	dbw *dbWriter
 	// approvals waiting in the UI, by Deck approval id, to cancel when the
 	// agent withdraws them.
 	approvals map[string]context.CancelFunc
@@ -102,6 +104,7 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 		threads:      map[string]string{},
 		back:         map[string]string{},
 		turns:        map[string]*turn{},
+		dbw:          newDBWriter(),
 		approvals:    map[string]context.CancelFunc{},
 		busy:         map[string]bool{},
 		models:       map[string][]deckagent.ModelInfo{},
@@ -126,6 +129,14 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 }
 
 func (w *DeckWorkspace) mgr() *decks.Manager { return w.eng.Manager }
+
+// Shutdown stores the tool results still queued, then shuts the app down.
+func (w *DeckWorkspace) Shutdown() {
+	if !w.dbw.flush(5 * time.Second) {
+		slog.Error("deck: tool results still queued at shutdown")
+	}
+	w.AppWorkspace.Shutdown()
+}
 
 // Engine is the Deck engine the workspace drives.
 func (w *DeckWorkspace) Engine() *engine.Engine { return w.eng }
@@ -219,6 +230,7 @@ func (w *DeckWorkspace) post(ctx context.Context, sessionID, prompt string, atta
 		images = append(images, deckagent.Image{Path: p, MediaType: a.MimeType})
 		parts = append(parts, message.BinaryContent{Path: a.FileName, MIMEType: a.MimeType, Data: a.Content})
 	}
+	w.dbw.wait(sessionID) // after the tool results already stored
 	row, err := w.app.Messages.Create(ctx, sessionID, message.CreateMessageParams{Role: message.User, Parts: parts})
 	if err != nil {
 		return "", err
@@ -638,6 +650,7 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		if a, ok := w.mgr().Agent(ev.AgentID); ok {
 			kind = a.Kind
 		}
+		w.dbw.wait(sid) // rows keep the order of the events
 		m, err := w.app.Messages.Create(ctx, sid, message.CreateMessageParams{Role: message.Assistant, Model: ev.AgentID, Provider: kind})
 		if err != nil {
 			slog.Error("deck: create message", "error", err)
@@ -704,13 +717,18 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 			t.tools[ev.Tool.ID] = true
 			_ = w.app.Messages.Update(ctx, t.msg)
 		}
-		_, err := w.app.Messages.Create(ctx, sid, message.CreateMessageParams{
-			Role:  message.Tool,
-			Parts: []message.ContentPart{t.resultAs(ev.Tool, name, input)},
+		// The insert can be slow (a big output, the UI reading): store it
+		// off the pump, which every agent's events wait on.
+		res := t.resultAs(ev.Tool, name, input)
+		w.dbw.do(sid, func() {
+			_, err := w.app.Messages.Create(context.Background(), sid, message.CreateMessageParams{
+				Role:  message.Tool,
+				Parts: []message.ContentPart{res},
+			})
+			if err != nil {
+				slog.Error("deck: tool result", "error", err)
+			}
 		})
-		if err != nil {
-			slog.Error("deck: tool result", "error", err)
-		}
 	case deckagent.KindUsage:
 		if u := ev.Usage; u != nil {
 			if u.InputTokens == 0 && u.OutputTokens == 0 && u.CachedTokens == 0 && u.CostUSD == 0 {
@@ -735,6 +753,8 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 		_ = w.app.Messages.Update(ctx, t.msg)
 		t.open = false
 	case deckagent.KindTurnDone, deckagent.KindExited:
+		// The turn's tool results are stored before the session shows idle.
+		w.dbw.wait(sid)
 		if t.open {
 			reason := message.FinishReasonEndTurn
 			if ev.Text == "interrupted" {
@@ -913,6 +933,7 @@ func (w *DeckWorkspace) say(threadID, agentID, text string) {
 	if a, ok := w.mgr().Agent(agentID); ok {
 		kind = a.Kind
 	}
+	w.dbw.wait(sid)
 	_, _ = w.app.Messages.Create(context.Background(), sid, message.CreateMessageParams{
 		Role:     message.Assistant,
 		Model:    agentID,
@@ -926,6 +947,7 @@ func (w *DeckWorkspace) notice(sid, text string) {
 	if sid == "" {
 		return
 	}
+	w.dbw.wait(sid)
 	_, _ = w.app.Messages.Create(context.Background(), sid, message.CreateMessageParams{
 		Role:     message.Assistant,
 		Model:    "deck",

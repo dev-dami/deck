@@ -310,7 +310,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	ws := workspace.NewDeckWorkspace(appInstance, store, eng)
 	cleanup := func() {
 		eng.Close()
-		appInstance.Shutdown()
+		ws.Shutdown() // stores queued tool results, then shuts the app down
 	}
 	return ws, cleanup, nil
 }
