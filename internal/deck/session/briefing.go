@@ -383,7 +383,7 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 			b.WriteString("You can split work: agent.spawn {brief, kind} starts a subagent, task.race {brief, agents} has several try it on their own worktrees; lease.acquire {paths} before you edit files others may touch; memory.add pins a note to code. search shows any op's args.\n")
 		}
 		if len(mates) > 0 {
-			fmt.Fprintf(&b, "Teammates' Decks on other machines: %s. team.read and team.post are the team chat; task.contract {peer, brief} asks one to do a coding task (the user allows it; its changes come back as a capsule); peers.status {peer} asks how one is. Lines like \"[%s] ...\" come from them.\n",
+			fmt.Fprintf(&b, "Teammates' Decks on other machines: %s. team.post {text, to: \"name\" or \"name/agent\"} writes to them (the team chat; team.read shows it), and what they write to you comes at the start of your next turn. task.contract {peer, brief} asks one for coding work, if it made this Deck a contractor there (the user allows it; its changes come back as a capsule); peers.status {peer} asks how one is. Lines like \"[%s] ...\" come from them.\n",
 				clip(strings.Join(mates, ", "), 200), clip(mates[0], 32))
 		}
 	} else {

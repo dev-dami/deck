@@ -402,7 +402,7 @@ func TestTeamPeerMenu(t *testing.T) {
 	require.NotNil(t, s.team.menu)
 	text := teamText(s, 100)
 	require.Contains(t, text, "Ping")
-	require.Contains(t, text, "Role: observer (make contractor)")
+	require.Contains(t, text, "Its role here: observer (make contractor)")
 	require.Contains(t, text, "Connect automatically: on")
 	require.Contains(t, text, "Remove…")
 

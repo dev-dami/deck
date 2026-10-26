@@ -14,9 +14,27 @@ import (
 // chat (team.post), which people on other machines read.
 const maxTeamPosts = 4
 
+// teamNews is the team chat a has not been told of yet, for the start of
+// its next turn, and the last message number it covers; "" when there is
+// none. Teammates' messages reach agents only this way: they never start a
+// turn of their own.
+func (m *Manager) teamNews(a *agentState) (string, uint64) {
+	m.mu.Lock()
+	team := m.team
+	m.mu.Unlock()
+	if team == nil {
+		return "", 0
+	}
+	a.mu.Lock()
+	since := a.teamSeq
+	a.mu.Unlock()
+	return team.News(a.getName(), since, a.started)
+}
+
 // teamPost sends text from member a to the team chat, redacted, within
-// maxTeamPosts a minute.
-func (m *Manager) teamPost(a *agentState, text string) (string, error) {
+// maxTeamPosts a minute: to every teammate, or only to to ("vps" or
+// "vps/codex").
+func (m *Manager) teamPost(a *agentState, to, text string) (string, error) {
 	m.mu.Lock()
 	team := m.team
 	m.mu.Unlock()
@@ -45,5 +63,5 @@ func (m *Manager) teamPost(a *agentState, text string) (string, error) {
 	t.mu.Unlock()
 	ctx, cancel := context.WithTimeout(m.ctx, hub.Timeout)
 	defer cancel()
-	return team.Post(ctx, a.getName(), text)
+	return team.Post(ctx, a.getName(), strings.TrimSpace(to), text)
 }

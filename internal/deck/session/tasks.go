@@ -615,7 +615,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 	case "memory.drop":
 		return m.dropNote(b.a, str("id"))
 	case "team.post":
-		return m.teamPost(b.a, str("text"))
+		return m.teamPost(b.a, str("to"), str("text"))
 	case "task.steer":
 		if err := m.SteerTask(t.id, str("id"), me, str("message")); err != nil {
 			return "", err

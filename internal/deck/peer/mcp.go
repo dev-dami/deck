@@ -15,6 +15,7 @@ import (
 	"github.com/sourcegraph/jsonrpc2"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
+	"github.com/dev-dami/deck/internal/deck/config"
 )
 
 // MCP over an mcp channel. The methods are MCP's: initialize,
@@ -407,6 +408,10 @@ func (s *mcpServer) call(ctx context.Context, tool string, args json.RawMessage,
 			return textResult("execute needs an \"op\". Call search to list the ops.", true)
 		}
 		if !caller.Allowed(in.Op) {
+			if contractorOps[in.Op] && caller.Role != config.PeerRoleContractor {
+				return textResult(fmt.Sprintf("this Deck has %q as an observer, and only a contractor may ask it for work: "+
+					"ask its person to make %s a contractor (Settings › Team › %s › Role)", caller.Name, caller.Name, caller.Name), true)
+			}
 			return textResult(fmt.Sprintf("op %q is not allowed for peer %q", truncate(in.Op, 64), caller.Name), true)
 		}
 		handed = true

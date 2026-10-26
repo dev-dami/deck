@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeTeam struct{ asked string }
@@ -22,7 +23,12 @@ func (f *fakeTeam) Read(since int) string {
 	return "#3 vps/claude2: build is green"
 }
 
-func (f *fakeTeam) Post(context.Context, string, string) (string, error) { return "posted", nil }
+func (f *fakeTeam) Post(_ context.Context, _, to, _ string) (string, error) {
+	f.asked = "to " + to
+	return "posted", nil
+}
+
+func (f *fakeTeam) News(string, uint64, time.Time) (string, uint64) { return "", 0 }
 
 func TestPeersOps(t *testing.T) {
 	env := testEnv(t)

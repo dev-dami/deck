@@ -371,7 +371,7 @@ func (s *Settings) peerMenuItems(p peer.PeerState) []peerMenuItem {
 	}
 	items := []peerMenuItem{
 		ping,
-		{label: "Role: " + p.Role + " (make " + other + ")", run: func() Action {
+		{label: "Its role here: " + p.Role + " (make " + other + ")", run: func() Action {
 			return s.teamDo(name+" is now "+other, func(l workspace.PeerLink) error { return l.SetRole(name, other) })
 		}},
 	}

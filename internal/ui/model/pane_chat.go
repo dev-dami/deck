@@ -168,6 +168,14 @@ func (p *chatPane) lines(m *UI, width int) []string {
 			}
 			style = lipgloss.NewStyle().Foreground(t.Header.Mark.GetForeground()).Bold(true)
 		}
+		switch {
+		case c.Mine && c.For != "":
+			name += " → " + c.To + "/" + c.For
+		case c.Mine && c.To != "":
+			name += " → " + c.To
+		case c.For != "":
+			name += " → " + c.For
+		}
 		out = append(out, ansi.Truncate(style.Render(name)+" "+muted.Render(c.At.Local().Format("15:04")), width, "…"))
 		for _, l := range strings.Split(ansi.Wordwrap(c.Text, max(1, width-2), " -"), "\n") {
 			out = append(out, "  "+ansi.Truncate(l, max(1, width-2), "…"))
