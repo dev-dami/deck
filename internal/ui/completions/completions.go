@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/exp/ordered"
 	"github.com/dev-dami/deck/internal/fsext"
 	"github.com/dev-dami/deck/internal/ui/list"
+	"github.com/sahilm/fuzzy"
 )
 
 const (
@@ -94,6 +95,9 @@ var namePriorityRules = []namePriorityRule{
 // New creates a new completions component.
 func New(normalStyle, focusedStyle, matchStyle lipgloss.Style) *Completions {
 	l := list.NewFilterableList()
+	// The popup ranks matches itself (name tiers, then fuzzy score); the
+	// list must keep that order rather than re-sort by score alone.
+	l.SetPreserveOrder(true)
 	l.SetGap(0)
 	l.SetReverse(true)
 
@@ -225,23 +229,20 @@ func (c *Completions) Filter(query string) {
 }
 
 func (c *Completions) applyNamePriorityFilter(query string) {
-	if query == "" {
-		c.filtered = append([]list.FilterableItem(nil), c.allItems...)
-		c.list.SetItems(c.filtered...)
-		return
-	}
-
-	c.list.SetItems(c.allItems...)
+	c.filtered = rankByNamePriority(c.allItems, query)
+	// The list keeps the caller's order, so filtering the ranked items
+	// again only sets their match highlights.
+	c.list.SetItems(c.filtered...)
 	c.list.SetFilter(query)
-	raw := c.list.FilteredItems()
-	filtered := make([]list.FilterableItem, 0, len(raw))
-	for _, item := range raw {
-		filterable, ok := item.(list.FilterableItem)
-		if !ok {
-			continue
-		}
-		filtered = append(filtered, filterable)
+}
+
+// rankByNamePriority returns the items that fuzzy-match query, ordered by
+// name priority tier and, within a tier, by fuzzy score.
+func rankByNamePriority(items []list.FilterableItem, query string) []list.FilterableItem {
+	if query == "" {
+		return slices.Clone(items)
 	}
+	matches := fuzzy.FindFrom(query, list.FilterableItemsSource(items))
 
 	// Rank each item once rather than twice per comparison: a tier takes
 	// lowercasing and splitting the path.
@@ -250,16 +251,17 @@ func (c *Completions) applyNamePriorityFilter(query string) {
 		item list.FilterableItem
 		tier int
 	}
-	ranks := make([]ranked, len(filtered))
-	for i, item := range filtered {
+	ranks := make([]ranked, len(matches))
+	for i, m := range matches {
+		item := items[m.Index]
 		ranks[i] = ranked{item: item, tier: namePriorityTier(item.Filter(), queryLower)}
 	}
 	slices.SortStableFunc(ranks, func(a, b ranked) int { return a.tier - b.tier })
+	filtered := make([]list.FilterableItem, len(ranks))
 	for i := range ranks {
 		filtered[i] = ranks[i].item
 	}
-	c.filtered = filtered
-	c.list.SetItems(c.filtered...)
+	return filtered
 }
 
 func namePriorityTier(path, queryLower string) int {
@@ -411,7 +413,7 @@ func (c *Completions) Render() string {
 		return ""
 	}
 
-	return c.list.List.Render()
+	return c.list.Render()
 }
 
 func loadFiles(depth, limit int) []FileCompletionValue {

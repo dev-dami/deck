@@ -1,9 +1,11 @@
 package completions
 
 import (
+	"strings"
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -87,6 +89,36 @@ func TestNamePriorityTier(t *testing.T) {
 			require.Equal(t, tt.wantTier, got)
 		})
 	}
+}
+
+// TestRenderKeepsNamePriorityOrder checks the popup draws the matches in
+// the tier order Filter ranked them in, not re-sorted by fuzzy score.
+func TestRenderKeepsNamePriorityOrder(t *testing.T) {
+	t.Parallel()
+
+	c := New(lipgloss.NewStyle(), lipgloss.NewStyle(), lipgloss.NewStyle())
+	c.SetItems([]FileCompletionValue{
+		{Path: "internal/ui/chat/mcp.go"},
+		{Path: "internal/ui/model/chat.go"},
+	})
+	c.Filter("chat.g")
+	require.Len(t, c.filtered, 2)
+	want := []string{c.filtered[0].(*CompletionItem).Text(), c.filtered[1].(*CompletionItem).Text()}
+	require.Equal(t, "internal/ui/model/chat.go", want[0])
+
+	// Several frames, as the UI draws them.
+	for range 3 {
+		out := ansi.Strip(c.Render())
+		a, b := strings.Index(out, want[0]), strings.Index(out, want[1])
+		require.NotEqual(t, -1, a)
+		require.NotEqual(t, -1, b)
+		// The popup is drawn reversed (first item at the bottom).
+		require.Greater(t, a, b, "Render must keep the tier order")
+	}
+	first, ok := c.list.FilteredItems()[0].(*CompletionItem)
+	require.True(t, ok)
+	require.Equal(t, want[0], first.Text())
+	require.NotEmpty(t, first.match.MatchedIndexes, "match highlights are still set")
 }
 
 func TestFilterPrefersPathSegmentExact(t *testing.T) {
