@@ -7,6 +7,7 @@ import "@fontsource-variable/inter-tight/wght.css";
 import "@fontsource-variable/space-grotesk/wght.css";
 import "@fontsource-variable/martian-mono/wght.css";
 import "@fontsource/pixelify-sans/500.css";
+import { startAppIconSync } from "./appIcon/sync";
 import "./styles.css";
 import { App } from "./ui/App";
 
@@ -19,6 +20,8 @@ if (bridge !== undefined) {
     void bridge.logFromRenderer("error", what instanceof Error ? (what.stack ?? what.message) : String(what)).catch(() => {});
   window.addEventListener("error", (e) => report(e.error ?? `${e.message} (${e.filename}:${e.lineno})`));
   window.addEventListener("unhandledrejection", (e) => report(e.reason));
+  // The app's icon follows the theme, or the one picked in Settings.
+  startAppIconSync(bridge);
 }
 const root = document.getElementById("root");
 if (root !== null) {

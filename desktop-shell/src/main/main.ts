@@ -9,6 +9,8 @@ import {
   dialog,
   ipcMain,
   Menu,
+  type NativeImage,
+  nativeImage,
   nativeTheme,
   protocol,
   safeStorage,
@@ -18,6 +20,7 @@ import {
   WebContentsView,
 } from "electron";
 import {
+  type AppIconImage,
   HOST_METHODS,
   hostChannel,
   LINK_EVENT_CHANNEL,
@@ -32,6 +35,7 @@ import {
   UPDATE_EVENT_CHANNEL,
 } from "../shared/bridge";
 import { RENDERER_CSP } from "../shared/csp";
+import { AppIconFile, representations } from "./appIcon";
 import { contextMenuTemplate, threadMenuTemplate } from "./contextMenu";
 import { findAgentClis, findDeck, loadService, RpcDecks } from "./decks";
 import { enginePath } from "./shellPath";
@@ -107,6 +111,9 @@ function devURL(): string | null {
 }
 
 let win: BrowserWindow | null = null;
+// The icon the window chose (renderer/appIcon), for windows made later; null
+// keeps the app's own.
+let appIcon: NativeImage | null = null;
 // Whether the window's page has loaded, so its preload listens for links.
 let loaded = false;
 const pendingLinks: LinkEvent[] = [];
@@ -172,6 +179,24 @@ async function threadMenu(t: ThreadMenuInput): Promise<ThreadChoice> {
   return r.response === 0 ? "delete" : null;
 }
 
+// One native image of the icon's sizes; null when the system cannot decode
+// it. The images were checked by isAppIcon.
+function iconImage(images: AppIconImage[]): NativeImage | null {
+  const img = nativeImage.createEmpty();
+  for (const r of representations(images)) img.addRepresentation({ scaleFactor: r.scaleFactor, buffer: Buffer.from(r.png) });
+  return img.isEmpty() ? null : img;
+}
+
+// Shows the icon while the app runs: on the Dock on a Mac, on the window
+// (its title bar, taskbar button and switcher) elsewhere. The installed
+// app's icon in Finder, Launchpad, a .desktop launcher or a pinned
+// shortcut is never touched.
+function showIcon(img: NativeImage): void {
+  appIcon = img;
+  if (process.platform === "darwin") app.dock?.setIcon(img);
+  else if (win !== null && !win.isDestroyed()) win.setIcon(img);
+}
+
 // reset ends what a renderer had open: its sockets and event streams.
 function createWindow(reset: () => void, state: WindowStateFile, updater: Updater): BrowserWindow {
   const w = new BrowserWindow({
@@ -193,7 +218,11 @@ function createWindow(reset: () => void, state: WindowStateFile, updater: Update
           visualEffectState: "followWindow" as const,
           backgroundColor: "#00000000",
         }
-      : { autoHideMenuBar: true, backgroundColor: nativeTheme.shouldUseDarkColors ? "#1e1e1e" : "#ffffff" }),
+      : {
+          autoHideMenuBar: true,
+          backgroundColor: nativeTheme.shouldUseDarkColors ? "#1e1e1e" : "#ffffff",
+          ...(appIcon === null ? {} : { icon: appIcon }),
+        }),
     webPreferences: {
       preload: join(__dirname, "..", "preload", "preload.js"),
       contextIsolation: true,
@@ -285,6 +314,13 @@ async function main(): Promise<void> {
   // installer sets the same one.
   if (process.platform === "win32") app.setAppUserModelId("dev.deck.desktop");
 
+  // The icon chosen last, before the window loads: the Dock and the first
+  // frame show it, not the default for a moment.
+  const iconFile = new AppIconFile(join(app.getPath("userData"), "app-icon.json"));
+  const saved = iconFile.load();
+  const savedImage = saved === null ? null : iconImage(saved);
+  if (savedImage !== null) showIcon(savedImage);
+
   const store = new ServerStore(join(app.getPath("userData"), "servers.json"), sealer);
   const links = new LinkHost(store, (id, ev) => win?.webContents.send(SOCKET_EVENT_CHANNEL, id, ev));
   // The bundled engine: resources/bin in the packaged app, bin/ beside
@@ -366,6 +402,17 @@ async function main(): Promise<void> {
     focused: () => notifier.focused(),
     agentClis: async () => findAgentClis(await path),
     preview,
+    setAppIcon: (images) => {
+      const img = iconImage(images);
+      if (img === null) return false;
+      showIcon(img);
+      try {
+        iconFile.save(images);
+      } catch (e) {
+        writeLog("warn", `app icon not saved: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return true;
+    },
   });
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(

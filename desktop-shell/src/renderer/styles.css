@@ -650,7 +650,7 @@ body:has(.shell) .backdrop-credit {
   border-radius: 20px 20px 6px 20px;
   background: var(--bubble);
   box-shadow: inset 0 1px 0 0 var(--highlight);
-  padding: 0.5rem 0.875rem;
+  padding: 0.5625rem 1rem;
 }
 .msg-user .user-card::before {
   display: none;
@@ -862,10 +862,11 @@ body:has(.shell) .backdrop-credit {
 }
 
 /* The composer's glass floats over the timeline, so a message scrolls on
-   under it; the timeline fades only at its top edge, under the toolbar. */
+   under it; the timeline fades at its top edge, under the toolbar, and in
+   the last few pixels under the capsule, where the sheet's edge is. */
 .timeline {
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14px);
-  mask-image: linear-gradient(to bottom, transparent, #000 14px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 10px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 10px), transparent);
 }
 
 /* Agent prose: the shared markdown parser's node tree. */
@@ -932,24 +933,25 @@ body:has(.shell) .backdrop-credit {
 }
 .md code {
   font-family: var(--font-mono);
-  font-size: 0.84em;
-  background: var(--code);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.1em 0.35em;
+  font-size: 0.86em;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  border: 0;
+  border-radius: 5px;
+  padding: 0.12em 0.4em;
 }
+/* A code block is a quiet fill inside the sheet: rounded-xl, no rim. */
 .md pre.codeblock {
   margin: 0;
   margin-top: 0.75em;
-  background: var(--diff-bg, var(--code));
+  background: var(--diff-bg, var(--hover));
   color: var(--diff-fg, inherit);
   tab-size: 4;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
+  border: 0;
+  border-radius: calc(var(--radius) + 4px);
+  padding: 14px 16px;
   overflow-x: auto;
   font-size: 12.5px;
-  line-height: 1.6;
+  line-height: 1.65;
 }
 .md pre.codeblock code {
   background: none;
@@ -1866,6 +1868,45 @@ body:has(.shell) .backdrop-credit {
   --syn-variable: #586e75;
 }
 
+/* ── Work Graph ── */
+/* The Work Graph's canvas (ui/graph/, docs/design-glass.md section 7).
+   Two things utilities cannot express: a dot grid that pans and zooms with
+   the graph, from the view the canvas writes into --gx, --gy and --gk on
+   each frame without a render; and the dash that flows along the edge to a
+   file an agent edits now. Both live states stop under reduced motion and
+   while the canvas is off screen (data-live="off"). */
+.work-graph {
+  /* The grid is barely there; an edge at rest is a quiet hairline; a
+     card's rim is a step firmer than an edge's, so the cards lead. */
+  --graph-dot: color-mix(in srgb, var(--text) 5%, transparent);
+  --graph-edge: color-mix(in srgb, var(--text) 24%, transparent);
+  --graph-rim: color-mix(in srgb, var(--text) 15%, transparent);
+  background-image: radial-gradient(circle, var(--graph-dot) 0.75px, transparent 1px);
+  background-size: calc(24px * var(--gk, 1)) calc(24px * var(--gk, 1));
+  background-position: var(--gx, 0) var(--gy, 0);
+}
+/* A layer that moves under the pointer is a composited layer while it
+   moves, and is drawn crisp again at its new scale when it stops. */
+.work-graph[data-moving] .graph-layer {
+  will-change: transform;
+}
+@keyframes graph-flow {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+/* Stepped, as the pulses are: ten frames a second, not sixty. */
+.graph-flow {
+  stroke-dasharray: 6 6;
+  animation: graph-flow 1.2s steps(12) infinite;
+}
+[data-motion="reduced"] .graph-flow,
+.work-graph[data-live="off"] .graph-flow,
+.work-graph[data-live="off"] .animate-deck-pulse,
+.work-graph[data-live="off"] .animate-spin {
+  animation: none;
+}
+
 /* ── Shell ──
    The window's chrome (docs/design-glass.md, section 4), for what the
    utilities cannot say. */
@@ -1893,6 +1934,72 @@ body:has(.shell) .backdrop-credit {
 /* The palette's rows are larger than a menu's, so their capsule is too. */
 .palette [role="option"] {
   border-radius: 10px;
+}
+
+/* ── Room ──
+   The room's own pieces that a utility cannot say: the composer's height
+   for the timeline under it, the agents' hue in motion, and the glass the
+   composer lends what stacks on it. */
+.room-body {
+  /* Until the dock measures itself (Room.tsx, useDockHeight). */
+  --composer-h: 8.5rem;
+}
+.md p,
+.md li {
+  text-wrap: pretty;
+}
+/* A fenced block sits in a card (Markdown.tsx), which takes the spacing. */
+.md .md-code pre.codeblock {
+  margin-top: 0;
+}
+
+/* "Working": the word shimmers from muted text to the agent's hue (--hue,
+   set on the message). */
+.shimmer-hue {
+  background-image: linear-gradient(
+    90deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 38%,
+    var(--hue, var(--foreground)) 50%,
+    var(--muted-foreground) 62%,
+    var(--muted-foreground) 100%
+  );
+}
+
+/* What stacks on the floating composer (the take-over and edit notices,
+   from RoomVerbs) is glass too, so nothing opaque floats over the
+   timeline. */
+.composer .room-notice {
+  @apply liquid-thick;
+  margin-bottom: 0;
+  border-radius: 16px;
+}
+
+/* The branch in the composer's bar is a capsule like its neighbours. */
+.composer-bar .branch-picker {
+  height: 2rem;
+  border-radius: 999px;
+  padding-inline: 0.625rem;
+  color: var(--text-faint);
+}
+.composer-bar .branch-picker:hover,
+.composer-bar .branch-picker[aria-expanded="true"] {
+  background-color: var(--hover);
+  color: var(--foreground);
+}
+
+/* ── Pages ──
+   The first screens and the pages (Welcome, Connect, Settings, Usage, Team,
+   Inbox): only what a utility cannot say. */
+
+/* A plate's two tones (ui/kit/plate.tsx): a dithered photograph printed in
+   dusk navy and peach, in every theme and mode, as a print on the wall.
+   The box shows the dark tone until the plate has drawn. A theme may set
+   its own pair. */
+.plate {
+  --plate-lo: #1d2240;
+  --plate-hi: #f3c9a8;
+  background-color: var(--plate-lo);
 }
 
 /* ── Art directions ──

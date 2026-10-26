@@ -294,6 +294,34 @@ export interface PreviewState {
   title: string;
 }
 
+// The app icon, drawn by the renderer (renderer/appIcon) as PNGs at a few
+// sizes of one square image. Main checks each one (the PNG signature, its
+// IHDR width and height against size, the byte caps), then shows it on the
+// Dock (macOS) or on the window and its taskbar button (Windows, Linux),
+// and keeps the last one for the next start. The installed app's own icon
+// (Finder, Launchpad, a .desktop launcher, pinned shortcuts) never changes.
+export interface AppIconImage {
+  // Width and height in pixels: one of APP_ICON_LIMITS.sizes.
+  size: number;
+  png: Uint8Array;
+}
+
+export const APP_ICON_LIMITS = {
+  sizes: [16, 24, 32, 48, 64, 128, 256, 512],
+  // Bytes of one PNG, and of all of them.
+  bytes: 1024 * 1024,
+  total: 3 * 1024 * 1024,
+} as const;
+
+// The sizes the renderer draws for each platform. The Dock shows up to
+// 256px (128pt at 2x) and the 512 keeps it sharp when magnified; Windows
+// and Linux pick from the small sizes for title bars, taskbars and
+// switchers.
+export const APP_ICON_SIZES = {
+  mac: [128, 256, 512],
+  other: [16, 24, 32, 48, 64, 128, 256],
+} as const;
+
 // What main does for the renderer. The Electron main process serves it over
 // IPC; the end-to-end tests serve the same object to a browser page.
 export interface DeckHost {
@@ -358,6 +386,9 @@ export interface DeckHost {
   previewHide(): Promise<void>;
   // Destroys the view and its page.
   previewClose(): Promise<void>;
+  // Shows this icon for the app and keeps it for the next start; false when
+  // the system could not decode it.
+  setAppIcon(images: AppIconImage[]): Promise<boolean>;
 }
 
 // The renderer's view: the host, the event streams, and the path of a
@@ -413,6 +444,7 @@ export const HOST_METHODS = [
   "previewBounds",
   "previewHide",
   "previewClose",
+  "setAppIcon",
 ] as const satisfies ReadonlyArray<keyof DeckHost>;
 
 export type HostMethod = (typeof HOST_METHODS)[number];

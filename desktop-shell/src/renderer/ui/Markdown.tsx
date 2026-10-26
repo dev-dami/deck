@@ -1,6 +1,42 @@
 import { type Block, type Inline, parseBlocks } from "@web/markdown";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { Check, Copy } from "./icons";
 import { CodeBlock } from "./Syntax";
+
+// A fenced block as a card: the code, and in its corner the language and a
+// copy button that shows on hover.
+function CodeCard({ text, lang }: { text: string; lang: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  return (
+    <div className="md-code group/code relative">
+      <CodeBlock text={text} lang={lang} />
+      {lang !== "" && (
+        <span className="pointer-events-none absolute top-2.5 right-3.5 font-mono text-3xs text-faint transition-opacity group-focus-within/code:opacity-0 group-hover/code:opacity-0">
+          {lang}
+        </span>
+      )}
+      <button
+        type="button"
+        className="absolute top-1.5 right-1.5 grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/code:opacity-100"
+        aria-label={copied ? "Copied" : "Copy code"}
+        title="Copy"
+        onClick={() => {
+          void navigator.clipboard
+            .writeText(text)
+            .then(() => setCopied(true))
+            .catch(() => {});
+        }}
+      >
+        {copied ? <Check className="size-3.5" weight="bold" /> : <Copy className="size-3.5" />}
+      </button>
+    </div>
+  );
+}
 
 // The node tree from the shared markdown parser becomes elements with text
 // children only; no string from Deck ever becomes markup. Links are http(s)
@@ -36,7 +72,7 @@ function renderBlock(b: Block, i: number): ReactNode {
         </p>
       );
     case "code":
-      return <CodeBlock key={i} text={b.text} lang={b.lang} />;
+      return <CodeCard key={i} text={b.text} lang={b.lang} />;
     case "list": {
       const items = b.items.map((it, j) => (
         <li key={j} className={`depth${it.depth}`}>

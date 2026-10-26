@@ -216,12 +216,29 @@ latter dashed).
 
 **Layout:** a deterministic layered DAG from left to right (you, agents by
 depth, tasks, files), ordered within each layer by barycentre to cut
-crossings. It is a pure function in `graph.ts`, with vitest tests. Do not
-add a graph library.
+crossings, then by swapping neighbours while that undoes one. A crossing
+among cards weighs more than one among lanes. An edge that spans more than
+one layer runs through a lane in each layer it crosses, placed like a card,
+so it passes between the cards and never behind one; edges of one kind from
+one node share their lanes until they part. A tall, narrow canvas (the side
+panel) lays the same layers out from top to bottom, with narrower cards. It
+is a pure function in `graph.ts`, with vitest tests. Do not add a graph
+library.
 
-**Rendering:** one SVG for the edges (smooth curves). The nodes are HTML
-glass cards placed over it (`liquid-clear` on the sheet; a focused node is
-raised, with the accent ring). The canvas has a faint dot grid.
+**Rendering:** one SVG for the edges (smooth curves, straight along a
+lane, one pixel at any zoom). The nodes are flat HTML cards placed over it,
+as a debugger's graph draws them: `bg-surface-1`, a 6px radius and a 1px
+rim (`--graph-rim`), no glass, glow or shadow. Type carries the hierarchy:
+an agent is its glyph in its hue, its name, its model and context, and the
+tool it runs under a hairline; a task is a small mark (check, cross, dot)
+and its title; a file is its name in mono and its +/−. Picked or focused,
+a card takes the accent outline. The canvas has a dot grid that is barely
+there (`--graph-dot`).
+
+**Colour:** carries meaning only. At rest every edge is a neutral hairline
+(`--graph-edge`). The edge to a file an agent edits now takes that agent's
+hue and flows. While a node is hovered or picked, its edges take the hue of
+the agent they belong to and everything else fades. A lease is dotted.
 
 **Interaction:**
 
@@ -235,9 +252,13 @@ raised, with the accent ring). The canvas has a faint dot grid.
   - **Show its messages**: filter the conversation to its lane.
   - **Steer**.
   - **Stop**.
-- Click a file: open its diff in Changes. Click a task: open Tasks.
-- Keyboard: Tab or the arrow keys move between nodes, Enter activates,
-  `+` and `-` zoom, `0` fits.
+- Click a file: open its diff in Changes. Click a task: open Tasks. A
+  lease's pattern (a path with `*`) has no diff, so it picks its holder.
+- Keyboard: Tab or the arrow keys move between nodes (along a layer, or
+  to the nearest node in the next), Enter activates, `+` and `-` zoom, `0`
+  fits, Escape closes the detail card.
+- A wide canvas shows the counts and a key to the lines (top left) and,
+  while part of the graph is out of sight, a minimap.
 - Live: a working agent's ring pulses (stepped), and the edge to the file
   an agent is editing flows (an animated dash). Both stop under reduced
   motion.
