@@ -7,11 +7,13 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/brand"
-	"github.com/dev-dami/deck/internal/deck/hub"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
 const (
+	// maxEntryChars and maxBriefingChars are the budgets of a member with a
+	// 128k-200k window, or whose window is not known; budgetFor scales them
+	// to the member's window.
 	maxEntryChars    = 6000  // one briefed message is cut here
 	maxBriefingChars = 40000 // a whole briefing keeps its tail
 	readThreadLast   = 200   // entries thread.read covers
@@ -23,6 +25,15 @@ type viewer struct {
 	self        string // member id; "" for none
 	skipSelf    bool   // leave out the viewer's own events (a briefing)
 	includeOpen bool   // include turns still in flight (thread.read)
+	entry       int    // characters one message keeps; 0 = maxEntryChars
+}
+
+// entryChars is how much of one message v's rendering keeps.
+func (v viewer) entryChars() int {
+	if v.entry > 0 {
+		return v.entry
+	}
+	return maxEntryChars
 }
 
 // line is one rendered block of a briefing.
@@ -41,6 +52,7 @@ type line struct {
 // in flight, which the caller must hold back and offer again later. t.mu is held.
 func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e store.Entry) bool) ([]line, map[string]int) {
 	cfg := m.config()
+	entry := v.entryChars()
 	var out []line
 	hold := map[string]int{}
 	hinted := map[string]bool{} // kinds whose pool was explained in this walk
@@ -69,7 +81,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			out = append(out, line{text: fmt.Sprintf("[%s ran: %s]", who, listMax(ac.cmds, 3))})
 		}
 		if ac.text != "" {
-			out = append(out, line{text: "[" + who + "] " + clip(ac.text, maxEntryChars)})
+			out = append(out, line{text: "[" + who + "] " + clip(ac.text, entry)})
 		}
 	}
 
@@ -148,10 +160,10 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				}
 			} else if v.skipSelf && contains(e.To, v.self) {
 				l.addressed = true
-				l.text = "[" + who + "] " + clip(raw, maxEntryChars)
+				l.text = "[" + who + "] " + clip(raw, entry)
 				l.images = t.imagesOf(e)
 			} else {
-				l.text = "[" + who + t.arrow(e.To, "", v.self) + "] " + clip(raw, maxEntryChars) + imageNote(e.Images)
+				l.text = "[" + who + t.arrow(e.To, "", v.self) + "] " + clip(raw, entry) + imageNote(e.Images)
 			}
 			out = append(out, l)
 		case store.EntryEdit:
@@ -163,10 +175,10 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			if e.Speaker == v.self && v.skipSelf {
 				return true
 			}
-			l := line{text: "[" + t.label(e.Speaker, v.self) + t.arrow(e.To, e.Speaker, v.self) + "] " + clip(strings.TrimSpace(e.Text), maxEntryChars)}
+			l := line{text: "[" + t.label(e.Speaker, v.self) + t.arrow(e.To, e.Speaker, v.self) + "] " + clip(strings.TrimSpace(e.Text), entry)}
 			if v.skipSelf && contains(e.To, v.self) {
 				l.addressed = true
-				l.text = "[" + t.label(e.Speaker, v.self) + " → " + t.name(v.self) + "] " + clip(strings.TrimSpace(e.Text), maxEntryChars)
+				l.text = "[" + t.label(e.Speaker, v.self) + " → " + t.name(v.self) + "] " + clip(strings.TrimSpace(e.Text), entry)
 				l.text += handoverNote(t, e)
 				if e.Steer {
 					l.text = taskSteerText(t, t.name(e.Speaker), e.TaskID, e.Text)
@@ -240,7 +252,8 @@ func (m *Manager) buildPrompt(t *thread, a *agentState) (prompt string, images [
 		h, ok := a.holdFrom[e.AgentID]
 		return ok && i >= h
 	}
-	lines, hold := m.walk(t, viewer{self: a.id, skipSelf: true}, start, end, in)
+	budget := m.budget(a)
+	lines, hold := m.walk(t, viewer{self: a.id, skipSelf: true, entry: budget.entry}, start, end, in)
 
 	var brief, addressed []line
 	for _, l := range lines {
@@ -257,7 +270,7 @@ func (m *Manager) buildPrompt(t *thread, a *agentState) (prompt string, images [
 	var b strings.Builder
 	if len(brief) > 0 {
 		b.WriteString("[deck] Thread activity since your last turn:\n\n")
-		b.WriteString(tail(joinLines(brief), maxBriefingChars))
+		b.WriteString(tail(joinLines(brief), budget.briefing))
 		if len(addressed) > 0 {
 			b.WriteString("\n\n[deck] Addressed to you:\n\n")
 		}
@@ -281,7 +294,8 @@ func (m *Manager) readThread(agentID string) string {
 	}
 	n := t.size()
 	start := max(n-readThreadLast, 0)
-	lines, _ := m.walk(t, viewer{self: a.id, includeOpen: true}, start, n, func(int, store.Entry) bool { return true })
+	budget := m.budget(a)
+	lines, _ := m.walk(t, viewer{self: a.id, includeOpen: true, entry: budget.entry}, start, n, func(int, store.Entry) bool { return true })
 	var names []string
 	for _, o := range t.members {
 		names = append(names, o.getName())
@@ -293,14 +307,14 @@ func (m *Manager) readThread(agentID string) string {
 	if len(lines) == 0 {
 		return head + "\n\n(nothing has been said yet)"
 	}
-	// The hub returns at most hub.MaxOutput bytes of a call and cuts the
-	// end off anything longer, which here is the newest activity: keep the
-	// tail within that cap instead.
-	body := tail(joinLines(lines), maxBriefingChars)
-	return head + "\n\n" + tailBytes(body, hub.MaxOutput-len(head)-readSlack)
+	// The hub returns at most the agent's output budget of a call and cuts
+	// the end off anything longer, which here is the newest activity: keep
+	// the tail within that cap instead.
+	body := tail(joinLines(lines), budget.read)
+	return head + "\n\n" + tailBytes(body, budget.output-len(head)-readSlack)
 }
 
-// readSlack is room left under hub.MaxOutput by thread.read for the line
+// readSlack is room left under the output cap by thread.read for the line
 // breaks and the broker's own redaction.
 const readSlack = 256
 

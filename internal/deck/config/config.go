@@ -124,6 +124,9 @@ type Config struct {
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
 	Efforts Models `json:"efforts"`
+	// Context shapes how much of a thread Deck puts in front of an agent
+	// (docs/context-design.md). The zero value is Deck's defaults.
+	Context Context `json:"context,omitzero"`
 	// Peers links this Deck to other Deck instances (docs/peers-design.md).
 	// Nil, the default, means peers are off: no listener, no dialing. Keys
 	// never live here; they are in ~/.deck/peers/.
@@ -146,6 +149,37 @@ type Budget struct {
 	Tokens  int     `json:"tokens,omitempty"`
 	CostUSD float64 `json:"cost_usd,omitempty"`
 	Minutes int     `json:"minutes,omitempty"`
+}
+
+// Context is the context section of the config. Budgets are shares of the
+// agent's context window (its model's, as the CLI reports it).
+type Context struct {
+	// BriefingPct is how much of the window the briefing of what an agent
+	// missed may take (0 means the default: 4%, and never less than Deck's
+	// fixed budget for windows of 128k tokens and more). Clamped to 16k-160k
+	// characters.
+	BriefingPct float64 `json:"briefing_pct,omitempty"`
+	// ToolOutputPct is how much of the window one search or execute result
+	// may take (0 means the default: 1.5%, and never less than 20 KB for
+	// windows of 128k tokens and more). Clamped to 8-64 KB.
+	ToolOutputPct float64 `json:"tool_output_pct,omitempty"`
+}
+
+// Limits of the context percentages.
+const (
+	MaxBriefingPct   = 25
+	MaxToolOutputPct = 10
+)
+
+// validate reports the first invalid value in the context section.
+func (c Context) validate() error {
+	if c.BriefingPct < 0 || c.BriefingPct > MaxBriefingPct {
+		return fmt.Errorf("context.briefing_pct must be 0 (the default) to %d, got %v", MaxBriefingPct, c.BriefingPct)
+	}
+	if c.ToolOutputPct < 0 || c.ToolOutputPct > MaxToolOutputPct {
+		return fmt.Errorf("context.tool_output_pct must be 0 (the default) to %d, got %v", MaxToolOutputPct, c.ToolOutputPct)
+	}
+	return nil
 }
 
 // DefaultPeerPort is the port a peer listener uses when its address names none.
@@ -648,6 +682,9 @@ func (c Config) Validate() error {
 	}
 	if c.Review != "" && c.Review != "none" && c.Review != "other" && !slices.Contains(Kinds, c.Review) {
 		return fmt.Errorf("review must be \"none\", \"other\" or an agent kind, got %q", c.Review)
+	}
+	if err := c.Context.validate(); err != nil {
+		return err
 	}
 	if c.Peers != nil {
 		if err := c.Peers.validate(); err != nil {

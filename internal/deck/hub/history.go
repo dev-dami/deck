@@ -455,7 +455,7 @@ func opHistoryRead(_ context.Context, env *Env, a args) (string, error) {
 	}
 	text := strings.Join(body, "\n")
 	// Keep the tail when it is too long: the latest entries matter most.
-	if room := MaxOutput - b.Len() - 200; len(text) > room {
+	if room := env.maxOut() - b.Len() - 200; len(text) > room {
 		cut := len(text) - room
 		for cut < len(text) && (text[cut]&0xC0) == 0x80 {
 			cut++

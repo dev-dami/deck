@@ -84,22 +84,36 @@ func TestHistoryCacheSeesAppends(t *testing.T) {
 
 func TestCapOutCountsDroppedOutput(t *testing.T) {
 	big := strings.Repeat("x", 300<<10)
-	got := capOut(big, 0)
+	got := capOut(big, 0, MaxOutput)
 	if !strings.Contains(got, "truncated at 20 KB of 300 KB") {
 		t.Fatalf("note: %q", got[len(got)-100:])
 	}
-	got = capOut(strings.Repeat("y", 84<<10), 216<<10)
+	got = capOut(strings.Repeat("y", 84<<10), 216<<10, MaxOutput)
 	if !strings.Contains(got, "truncated at 20 KB of 300 KB") {
 		t.Fatalf("note with dropped: %q", got[len(got)-100:])
 	}
 	// Short output is untouched but still redacted.
-	if got := capOut("token ghp_abcdefghijklmnopqrstuvwxyz0123", 0); strings.Contains(got, "ghp_") {
+	if got := capOut("token ghp_abcdefghijklmnopqrstuvwxyz0123", 0, MaxOutput); strings.Contains(got, "ghp_") {
 		t.Fatalf("not redacted: %q", got)
 	}
 	// A secret near the cut is redacted in what is shown.
 	s := strings.Repeat("a", MaxOutput-30) + " ghp_abcdefghijklmnopqrstuvwxyz0123 " + strings.Repeat("b", 200<<10)
-	if got := capOut(s, 0); strings.Contains(got, "ghp_") {
+	if got := capOut(s, 0, MaxOutput); strings.Contains(got, "ghp_") {
 		t.Fatalf("secret at the cut leaked")
+	}
+}
+
+// TestEnvMaxOutput covers an agent's own output budget: 0 is the default,
+// and no budget goes past MaxOutputCap.
+func TestEnvMaxOutput(t *testing.T) {
+	for in, want := range map[int]int{0: MaxOutput, -1: MaxOutput, 40 << 10: 40 << 10, 1 << 20: MaxOutputCap} {
+		if got := (&Env{MaxOutput: in}).maxOut(); got != want {
+			t.Errorf("maxOut(%d) = %d, want %d", in, got, want)
+		}
+	}
+	got := capOut(strings.Repeat("z", 100<<10), 0, (&Env{MaxOutput: 48 << 10}).maxOut())
+	if len(got) > 48<<10+200 || !strings.Contains(got, "truncated at 48 KB of 100 KB") {
+		t.Fatalf("48 KB budget: %d bytes, note %q", len(got), got[len(got)-80:])
 	}
 }
 

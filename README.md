@@ -141,9 +141,12 @@ GitHub goes through your own [`gh`](https://cli.github.com) CLI; Deck never read
   "opencode_binary": "opencode",
   "antigravity_binary": "agy",
   "models": { "claude": "", "codex": "", "opencode": "", "antigravity": "" },
-  "efforts": { "claude": "", "codex": "", "opencode": "", "antigravity": "" }
+  "efforts": { "claude": "", "codex": "", "opencode": "", "antigravity": "" },
+  "context": { "briefing_pct": 0, "tool_output_pct": 0 }
 }
 ```
+
+`context` sizes what Deck puts in front of an agent by its model's context window. `briefing_pct` is the share of the window the summary of what an agent missed may take (default 4%, kept between 16k and 160k characters), and `tool_output_pct` the share one search or execute result may take (default 1.5%, 8–64 KB). With the defaults, windows of 128k–200k tokens (and agents whose window is not known yet) get the fixed budgets Deck always had (40,000 characters, 20 KB); larger windows get more, smaller ones less. A briefing is halved for an agent whose context is over 80% full; `thread.read` still shows the rest.
 
 `review` is the reviewer for tasks that subagents run and that name none: an agent kind, `other` (any installed kind but the worker's) or `none`.
 

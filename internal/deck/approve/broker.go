@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -25,8 +26,11 @@ const (
 // opSearch is the op the search tool travels under.
 const opSearch = "search"
 
-// maxExecOutput caps the text one search or execute call returns.
-const maxExecOutput = 20 << 10
+// maxExecOutput caps the text one search or execute call returns. The hub
+// already caps each result to its agent's own budget (hub.Env.MaxOutput,
+// relative to its context window); this is the backstop at the hub's
+// largest, hub.MaxOutputCap.
+const maxExecOutput = 64 << 10
 
 // messageTimeout is how long thread.send waits for Deck to answer.
 var messageTimeout = 30 * time.Second
@@ -318,7 +322,7 @@ func (b *Broker) scrub(s string) string {
 	for cut > 0 && (s[cut]&0xC0) == 0x80 {
 		cut--
 	}
-	return s[:cut] + "\n[... output truncated at 20 KB; narrow the request ...]"
+	return s[:cut] + fmt.Sprintf("\n[... output truncated at %d KB; narrow the request ...]", maxExecOutput>>10)
 }
 
 func (b *Broker) handleMessage(req wireRequest, gone <-chan struct{}) wireReply {

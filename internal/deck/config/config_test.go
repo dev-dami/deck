@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,10 +141,12 @@ func TestInvalidValuesRejected(t *testing.T) {
 	path := filepath.Join(home, ".deck", "config.json")
 
 	cases := map[string]string{
-		"bad agent":  `{"default_agent":"gemini"}`,
-		"bad motion": `{"motion":"loud"}`,
-		"bad mode":   `{"default_mode":"reckless"}`,
-		"bad json":   `{"bell": `,
+		"bad agent":           `{"default_agent":"gemini"}`,
+		"bad motion":          `{"motion":"loud"}`,
+		"bad mode":            `{"default_mode":"reckless"}`,
+		"bad json":            `{"bell": `,
+		"bad briefing_pct":    `{"context":{"briefing_pct":40}}`,
+		"bad tool_output_pct": `{"context":{"tool_output_pct":-1}}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -270,5 +273,24 @@ func TestValidateReview(t *testing.T) {
 	}
 	if cfg.Review = "gpt"; cfg.Validate() == nil {
 		t.Error("review gpt validated")
+	}
+}
+
+func TestValidateContext(t *testing.T) {
+	cfg := Defaults()
+	cfg.Context = Context{BriefingPct: 6, ToolOutputPct: 2.5}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("valid context rejected: %v", err)
+	}
+	for _, c := range []Context{{BriefingPct: MaxBriefingPct + 1}, {ToolOutputPct: -0.5}} {
+		if cfg.Context = c; cfg.Validate() == nil {
+			t.Errorf("context %+v validated", c)
+		}
+	}
+	// The zero value is the defaults and is not written out.
+	cfg.Context = Context{}
+	b, _ := json.Marshal(cfg)
+	if strings.Contains(string(b), `"context"`) {
+		t.Errorf("an unset context section was written: %s", b)
 	}
 }
