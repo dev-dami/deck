@@ -1,5 +1,24 @@
-import { Search } from "./icons";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  BarChart3,
+  ChatCircle,
+  FolderPlus,
+  type IconProps,
+  Inbox,
+  Lightning,
+  Moon,
+  MonitorPlay,
+  PanelLeft,
+  PanelRight,
+  Quotes,
+  Search,
+  Settings,
+  SquarePen,
+  SquareTerminal,
+  Sun,
+  Unplug,
+  Users,
+} from "./icons";
+import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
 import { type Command, focusMessage, markMatch, plainSnippet, type MessageHit, type PaletteItem, type PaletteRoom, searchPalette, TEXT_MIN } from "../palette";
@@ -15,6 +34,24 @@ export interface SearchSource {
 
 // The pause after a keystroke before the Decks are asked.
 const SEARCH_MS = 150;
+
+// A command's glyph, by its id (palette.ts); a bolt for the rest.
+function commandIcon(id: string): ComponentType<IconProps> {
+  if (id === "new") return SquarePen;
+  if (id === "sidebar") return PanelLeft;
+  if (id === "panel" || id.startsWith("panel-")) return PanelRight;
+  if (id.startsWith("settings-")) return Settings;
+  if (id === "usage") return BarChart3;
+  if (id === "team") return Users;
+  if (id === "inbox" || id === "next-attention") return Inbox;
+  if (id === "terminal") return SquareTerminal;
+  if (id === "theme-light") return Sun;
+  if (id.startsWith("theme-")) return Moon;
+  if (id === "add-project") return FolderPlus;
+  if (id === "switch") return Unplug;
+  if (id.startsWith("preview-")) return MonitorPlay;
+  return Lightning;
+}
 
 // Ctrl/Cmd+K: type to filter, arrows to move, Enter to run, Escape to close.
 // It finds rooms of every open project by title, branch and the text of
@@ -79,27 +116,25 @@ export function Palette({
   const keyOf = (item: PaletteItem) =>
     item.type === "action" ? item.c.id : item.type === "room" ? `${item.room.project}/${item.room.id}` : `${item.hit.room.project}/${item.hit.message}`;
   return (
-    <div
-      className="overlay scrim fixed inset-0 z-50 flex justify-center bg-black/40 pt-[14vh] backdrop-blur-[2px]"
-      role="presentation"
-      onMouseDown={onClose}
-    >
+    <div className="overlay scrim fixed inset-0 z-50 flex justify-center px-4 pt-[16vh]" role="presentation" onMouseDown={onClose}>
+      {/* Spotlight: a sheet of thick glass, a big field, and rows whose
+          chosen one is a capsule of the accent. */}
       <div
         ref={box}
-        className="palette material flex h-fit max-h-[60vh] w-[560px] max-w-[calc(100vw-2rem)] animate-enter flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-surface-2 shadow-popover inset-shadow-hl"
+        className="palette material flex h-fit max-h-[min(60vh,32rem)] w-[640px] max-w-full animate-enter flex-col overflow-hidden rounded-[22px]"
         role="dialog"
         aria-modal="true"
         aria-label="Commands"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2.5 border-hairline border-b px-4">
-          <Search className="size-4 shrink-0 text-muted-foreground" />
+        <div className="flex items-center gap-3 px-5">
+          <Search weight="bold" className="size-5 shrink-0 text-muted-foreground" />
           <input
             aria-label="Search commands and sessions"
             placeholder="Search threads and messages, or > for commands…"
             value={q}
             autoFocus
-            className="h-12 w-full bg-transparent text-[14px] outline-none placeholder:text-faint"
+            className="h-14 w-full bg-transparent text-[17px] text-foreground tracking-tight outline-none placeholder:text-faint"
             onChange={(e) => {
               setQ(e.target.value);
               setPick(0);
@@ -114,39 +149,40 @@ export function Palette({
             }}
           />
         </div>
-        <ul role="listbox" className="overflow-y-auto p-1.5">
-          {shown.map((item, i) => (
-            <li
-              key={keyOf(item)}
-              role="option"
-              aria-selected={i === pick}
-              data-kind={item.type}
-              className={cn(
-                "flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm",
-                i === pick && "on bg-selected",
-              )}
-              onMouseEnter={() => setPick(i)}
-              onClick={() => run(item)}
-            >
-              {item.type === "action" ? (
-                <>
-                  <span className="truncate">{item.c.label}</span>
-                  {item.c.hint !== undefined && <span className="shrink-0 font-mono text-2xs text-faint">{item.c.hint}</span>}
-                </>
-              ) : (
-                <>
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate">{(item.type === "room" ? item.room : item.hit.room).title || "Untitled"}</span>
-                    {item.type === "room" && item.line !== null && <span className="palette-line truncate text-[11px] text-faint">{item.line}</span>}
-                    {item.type === "hit" && <Snippet text={item.hit.snippet} query={q} />}
-                  </span>
-                  <span className="shrink-0 text-2xs text-faint">{(item.type === "room" ? item.room : item.hit.room).name}</span>
-                </>
-              )}
-            </li>
-          ))}
-          {shown.length === 0 && <li className="px-3 py-6 text-center text-muted-foreground text-sm">Nothing matches.</li>}
+        <ul role="listbox" className="overflow-y-auto border-hairline border-t p-2 empty:hidden">
+          {shown.map((item, i) => {
+            const Icon = item.type === "action" ? commandIcon(item.c.id) : item.type === "room" ? ChatCircle : Quotes;
+            return (
+              <li
+                key={keyOf(item)}
+                role="option"
+                aria-selected={i === pick}
+                data-kind={item.type}
+                className={cn("flex min-h-10 cursor-pointer items-center gap-3 px-2.5 py-1.5 text-sm", i === pick && "on")}
+                onMouseEnter={() => setPick(i)}
+                onClick={() => run(item)}
+              >
+                <Icon aria-hidden weight={i === pick ? "fill" : "regular"} className="size-[18px] shrink-0 text-muted-foreground" />
+                {item.type === "action" ? (
+                  <>
+                    <span className="min-w-0 flex-1 truncate">{item.c.label}</span>
+                    {item.c.hint !== undefined && <span className="shrink-0 text-2xs text-faint tabular-nums">{item.c.hint}</span>}
+                  </>
+                ) : (
+                  <>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate">{(item.type === "room" ? item.room : item.hit.room).title || "Untitled"}</span>
+                      {item.type === "room" && item.line !== null && <span className="palette-line truncate text-2xs text-faint">{item.line}</span>}
+                      {item.type === "hit" && <Snippet text={item.hit.snippet} query={q} />}
+                    </span>
+                    <span className="shrink-0 text-2xs text-faint">{(item.type === "room" ? item.room : item.hit.room).name}</span>
+                  </>
+                )}
+              </li>
+            );
+          })}
         </ul>
+        {shown.length === 0 && <p className="border-hairline border-t px-5 py-6 text-center text-muted-foreground text-sm">Nothing matches.</p>}
       </div>
     </div>
   );
