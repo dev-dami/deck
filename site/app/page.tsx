@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Command } from "./components";
+import { Command, Wordmark } from "./components";
 
 const REPO = "https://github.com/dev-dami/deck";
 const RELEASES = "https://github.com/dev-dami/deck-releases/releases";
@@ -30,7 +30,7 @@ function Mark({ className }: { className?: string }) {
   );
 }
 
-// A picture with its museum label underneath.
+// A picture whose museum label shows when you hover over it (or focus it).
 function Plate({
   src,
   alt,
@@ -53,9 +53,9 @@ function Plate({
   priority?: boolean;
 }) {
   return (
-    <figure className={`plate ${className ?? ""}`}>
+    <figure className={`plate ${className ?? ""}`} tabIndex={0}>
       <Image src={src} alt={alt} width={w} height={h} priority={priority} />
-      <figcaption>
+      <figcaption className="credit">
         {artist}, <i>{title}</i>, {date}. The Met, public domain.
       </figcaption>
     </figure>
@@ -193,10 +193,10 @@ export default function Home() {
                 height={1720}
               />
             </figure>
+            <p className="credit">
+              Carleton E. Watkins, <i>Yosemite Valley from Union Point</i>, about 1872. The Met, public domain.
+            </p>
           </div>
-          <p className="wrap stage-credit">
-            Carleton E. Watkins, <i>Yosemite Valley from Union Point</i>, about 1872. The Met, public domain.
-          </p>
         </section>
 
         {/* A thread, typeset as it reads. */}
@@ -306,13 +306,17 @@ export default function Home() {
 
         {/* The close: Kōrin's irises along the zigzag bridge. */}
         <section className="close">
-          <Image
-            className="close-art"
-            src="/art/korin-irises.webp"
-            alt="A pair of gold-leaf folding screens: blue irises growing along a zigzag wooden bridge."
-            width={1904}
-            height={874}
-          />
+          <figure className="close-art" tabIndex={0}>
+            <Image
+              src="/art/korin-irises.webp"
+              alt="A pair of gold-leaf folding screens: blue irises growing along a zigzag wooden bridge."
+              width={1904}
+              height={874}
+            />
+            <figcaption className="credit">
+              Ogata Kōrin, <i>Irises at Yatsuhashi</i>, after 1709. The Met, public domain.
+            </figcaption>
+          </figure>
           <div className="wrap close-copy">
             <h2>
               Bring every agent.
@@ -332,6 +336,9 @@ export default function Home() {
       </main>
 
       <footer className="foot wrap">
+        {/* The wordmark, as wide as the page and made of rubber: grab it and
+            pull, or keep scrolling at the bottom. */}
+        <Wordmark href={REPO} word="deck" />
         <div className="foot-row">
           <span className="brand">
             <Mark className="brand-mark" />
@@ -342,25 +349,8 @@ export default function Home() {
             <a href={RELEASES}>Releases</a>
             <a href={DOCS}>Docs</a>
           </nav>
+          <span className="copyright">© 2026 dev-dami</span>
         </div>
-        <p className="credits">
-          Pictures: Utagawa Hiroshige, <i>Sudden Shower over Shin-Ōhashi Bridge and Atake</i>, 1857; Carleton E. Watkins,{" "}
-          <i>Yosemite Valley from Union Point</i>, about 1872; Itō Jakuchū, <i>White Plum Blossoms and Moon</i>, 1755; Ogata
-          Kōrin, <i>Irises at Yatsuhashi</i>, after 1709. The Metropolitan Museum of Art, Open Access, public domain.
-        </p>
-        <p className="credits">© 2026 dev-dami.</p>
-        {/* The wordmark, as wide as the page. It stretches up as it scrolls
-            in, and each letter springs taller under the pointer. */}
-        <a href={REPO} className="mega" aria-label="Deck on GitHub">
-          <span className="mega-word" aria-hidden>
-            {["d", "e", "c", "k"].map((l, i) => (
-              <span key={i} className="mega-letter">
-                {l}
-              </span>
-            ))}
-          </span>
-          <span className="mega-cursor" aria-hidden />
-        </a>
       </footer>
     </>
   );
