@@ -1,9 +1,10 @@
 // The deck.v1 schema the tests serve and call. The profile RPCs and the
-// roster's profile and role (docs/design/agents-and-mentions.md, section 4)
-// come from the engine's change to proto/deck/v1/deck.proto; until that
-// lands here, the tests add them to a copy with the shapes section 4 gives,
-// so the fakes and the client agree. Once deck.proto has them, this is the
-// repository's file unchanged.
+// profile and role of AgentLine and AgentNode
+// (docs/design/agents-and-mentions.md, section 4) come from the engine's
+// change to proto/deck/v1/deck.proto (claude/named-agents-engine); until
+// that lands here, the tests add them to a copy, with that change's field
+// numbers, so the fakes and the client agree. Once deck.proto has them,
+// this is the repository's file unchanged.
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -53,8 +54,15 @@ function withProfiles(src: string): string {
     if (events < 0) throw new Error("deck.proto: no rpc Events to add the profile RPCs before");
     out = `${out.slice(0, events)}${RPCS.trimStart()}\n${out.slice(events)}${MESSAGES}`;
   }
-  if (!/message AgentLine \{[^}]*\brole\b/.test(out)) {
-    out = out.replace(/(message AgentLine \{[^}]*?)(\n\})/, "$1\n  string profile = 90;\n  string role = 91;$2");
+  const fields: Array<[string, number]> = [
+    ["AgentLine", 7],
+    ["AgentNode", 15],
+  ];
+  for (const [msg, n] of fields) {
+    if (new RegExp(`message ${msg} \\{[^}]*\\brole\\b`).test(out)) continue;
+    const before = out;
+    out = out.replace(new RegExp(`(message ${msg} \\{[^}]*?)(\\n\\})`), `$1\n  string profile = ${n};\n  string role = ${n + 1};$2`);
+    if (out === before) throw new Error(`deck.proto: no message ${msg} to add profile and role to`);
   }
   return out;
 }

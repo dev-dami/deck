@@ -74,6 +74,10 @@ export class FakeDeck {
   readonly continued: string[] = [];
   // The queue items steered into a running turn.
   readonly steered: string[] = [];
+  // Named agents (docs/design/agents-and-mentions.md): "@charles" for one
+  // with no member of that name starts a member called charles, with its
+  // role. The rpc fake keeps the list (ListProfiles).
+  profiles: Array<{ name: string; kind: string; role?: string }> = [];
   private readonly http: http.Server;
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 13 << 20 });
   private readonly clients = new Set<Client>();
@@ -511,7 +515,8 @@ export class FakeDeck {
     const targets: AgentLine[] = [];
     let rest = text.trim();
     for (;;) {
-      const m = /^\$([\w-]+)([+*]?)\s*/.exec(rest);
+      // "$" or "@", as Deck reads both; "@src/a.ts" is a path, not a name.
+      const m = /^[$@]([\w-]+)([+*]?)(?![\w/-]|\.\S)\s*/.exec(rest);
       if (m === null) break;
       rest = rest.slice(m[0].length);
       const [, name = "", suffix] = m;
@@ -519,8 +524,10 @@ export class FakeDeck {
       else if (suffix === "+" && KINDS.includes(name)) targets.push(this.addMember(t, name));
       else if (KINDS.includes(name)) targets.push(t.roster.find((l) => l.kind === name) ?? this.addMember(t, name));
       else {
-        const l = t.roster.find((x) => x.id === name);
+        const l = t.roster.find((x) => x.id === name || x.name === name);
+        const p = this.profiles.find((x) => x.name.toLowerCase() === name.toLowerCase());
         if (l !== undefined) targets.push(l);
+        else if (p !== undefined) targets.push(this.addMember(t, p.kind, p));
       }
     }
     if (targets.length === 0) targets.push(t.roster[0] ?? this.addMember(t, "claude"));
@@ -535,9 +542,12 @@ export class FakeDeck {
     return { message_id: user.id };
   }
 
-  private addMember(t: Thread, kind: string): AgentLine {
+  private addMember(t: Thread, kind: string, profile?: { name: string; role?: string }): AgentLine {
     const n = t.roster.filter((l) => l.kind === kind).length + 1;
-    const line: AgentLine = { id: `${kind}-${n}`, name: `${kind}-${n}`, kind, model: "default", busy: false };
+    const line: AgentLine =
+      profile === undefined
+        ? { id: `${kind}-${n}`, name: `${kind}-${n}`, kind, model: "default", busy: false }
+        : { id: profile.name, name: profile.name, kind, model: "default", busy: false, profile: profile.name, ...(profile.role ? { role: profile.role } : {}) };
     t.roster = [...t.roster, line];
     this.broadcast("roster.changed", { session_id: t.session.id });
     return line;

@@ -1,8 +1,9 @@
 import type { AppState } from "@web/state";
 import { kindMark } from "@web/theme";
 import { ChevronRight, CircleCheck, Monitor, Moon, Palette, Sun } from "./icons";
-import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import { type CSSProperties, type ReactNode, useContext, useEffect, useState } from "react";
 import type { AppInfo, DeckBridge } from "../../shared/bridge";
+import { serves } from "../client";
 import { cn } from "../lib/cn";
 import { type Prefs, setPrefs, usePrefs } from "../prefs";
 import { ACCENTS, DIFF_THEMES, THEMES, type ThemeInfo } from "../themes";
@@ -14,7 +15,7 @@ import { segmentItem, segmentTrack } from "./kit/segmented";
 import { Row, Section } from "./kit/settings";
 import { Switch } from "./kit/switch";
 import { PhonePage } from "./Phone";
-import { ProfilesEditor } from "./ProfilesEditor";
+import { ProfilesDeck, ProfilesEditor } from "./ProfilesEditor";
 import { modKey } from "./keys";
 import { AgentGlyph } from "./Welcome";
 
@@ -442,6 +443,10 @@ function Diffs({ p }: { p: Prefs }) {
 function Agents({ state, p }: { state: AppState; p: Prefs }) {
   const kinds = state.server?.kinds ?? [];
   const yolo = state.server?.allow_yolo === true;
+  // A Deck that keeps profiles reads "@" as an agent's sigil, as it reads
+  // "$"; an older one reads only "$".
+  const deck = useContext(ProfilesDeck);
+  const at = deck !== null && serves(deck.c, "ListProfiles") ? "@" : "$";
   return (
     <>
       <Section title="Agent kinds">
@@ -452,9 +457,15 @@ function Agents({ state, p }: { state: AppState; p: Prefs }) {
             <div className="min-w-0 space-y-0.5">
               <h3 className="font-medium text-[13px]">{k}</h3>
               <p className="text-pretty text-muted-foreground text-xs leading-relaxed">
-                Type <code className="font-mono text-foreground/80">${k}</code> to reach a free {k},{" "}
-                <code className="font-mono text-foreground/80">${k}+</code> to start another,{" "}
-                <code className="font-mono text-foreground/80">${k}*</code> to reach all of them.
+                Type <code className="font-mono text-foreground/80">{at}{k}</code> to reach a free {k},{" "}
+                <code className="font-mono text-foreground/80">{at}{k}+</code> to start another,{" "}
+                <code className="font-mono text-foreground/80">{at}{k}*</code> to reach all of them.
+                {at === "@" && (
+                  <>
+                    {" "}
+                    <code className="font-mono text-foreground/80">${k}</code> works too.
+                  </>
+                )}
               </p>
             </div>
           </div>

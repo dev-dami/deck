@@ -169,7 +169,7 @@ export function Composer({
       const tree = found === null ? [] : found.query === q ? found.paths : matchPaths(q, found.paths, FILES_LIMIT);
       return mergeFiles(q, paths ?? [], tree);
     }
-    if (picker.type === "@") return suggestions(picker.m.query, roster, kinds, { sigil: "@", profiles, people }).slice(0, 10);
+    if (picker.type === "@") return suggestions(picker.m.query, roster, kinds, { sigil: "@", profiles, people }).slice(0, 16);
     return suggestions(picker.m.query, roster, kinds).slice(0, 8);
   }, [picker, roster, kinds, paths, lister, found, profiles, people]);
 
