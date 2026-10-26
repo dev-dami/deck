@@ -1,5 +1,6 @@
 import Image from "next/image";
-import { Command } from "./components";
+import { ArrowUpRight, Download, Github, Star } from "iconoir-react";
+import { Command, ThemeToggle, Wordmark } from "./components";
 
 const REPO = "https://github.com/dev-dami/deck";
 const RELEASES = "https://github.com/dev-dami/deck-releases/releases";
@@ -30,7 +31,17 @@ function Mark({ className }: { className?: string }) {
   );
 }
 
-// A picture with its museum label underneath.
+// The footer's hand, left to right. All from The Met's Open Access
+// collection: 720535, 415951, 384758, 719989, 415953.
+const HAND = [
+  { src: "/art/cards/maouna.webp", h: 705, alt: "A hand-coloured French card: a mother and child on a rock, a ship wrecked behind them." },
+  { src: "/art/cards/lamour.webp", h: 706, alt: "A hand-coloured French card: a blindfolded Cupid with rainbow wings." },
+  { src: "/art/cards/fayolle-king-of-hearts.webp", h: 759, alt: "A woodcut King of Hearts in red, black and gold, holding a bird." },
+  { src: "/art/cards/rock-queen-zulemer.webp", h: 767, alt: "An engraved queen of clubs, a woman in a veil feeding a parrot." },
+  { src: "/art/cards/nootka.webp", h: 708, alt: "A hand-coloured French card: two figures in striped dress, a bird between them." },
+];
+
+// A picture whose museum label shows when you hover over it (or focus it).
 function Plate({
   src,
   alt,
@@ -41,6 +52,7 @@ function Plate({
   date,
   className,
   priority = false,
+  children,
 }: {
   src: string;
   alt: string;
@@ -51,11 +63,13 @@ function Plate({
   date: string;
   className?: string;
   priority?: boolean;
+  children?: React.ReactNode;
 }) {
   return (
-    <figure className={`plate ${className ?? ""}`}>
+    <figure className={`plate ${className ?? ""}`} tabIndex={0}>
       <Image src={src} alt={alt} width={w} height={h} priority={priority} />
-      <figcaption>
+      {children}
+      <figcaption className="credit">
         {artist}, <i>{title}</i>, {date}. The Met, public domain.
       </figcaption>
     </figure>
@@ -82,6 +96,14 @@ const AGENTS = [
   { glyph: "◎", name: "Antigravity", hue: "var(--antigravity)" },
 ];
 
+// The same four, as members of a thread, coloured to read on glass.
+const ROSTER = [
+  { glyph: "✻", name: "claude", hue: "var(--claude-on-glass)" },
+  { glyph: ">_", name: "codex", hue: "#ecece6" },
+  { glyph: "▯", name: "opencode", hue: "#5cc0ea" },
+  { glyph: "◎", name: "antigravity", hue: "#c49be0" },
+];
+
 const PRINCIPLES = [
   ["Your CLIs, your plans.", "Deck drives the agent CLIs you already have, under your own logins. It never calls a model API and never reads a credential."],
   ["Many agents, one thread.", "Ask two at once. They hand work to each other in plain sight, start subagents, race on worktrees and review each other's changes."],
@@ -103,8 +125,11 @@ export default function Home() {
           <a href="#terminal">Terminal</a>
           <a href="#install">Install</a>
           <a href={DOCS}>Docs</a>
+          <ThemeToggle />
           <a href={REPO} className="pill">
-            GitHub <span aria-hidden>↗</span>
+            <Github aria-hidden className="icon" />
+            GitHub
+            <ArrowUpRight aria-hidden className="icon icon-sm" />
           </a>
         </nav>
       </header>
@@ -127,10 +152,11 @@ export default function Home() {
             </p>
             <div className="ctas">
               <a className="btn btn-ink" href={RELEASES}>
+                <Download aria-hidden className="icon" />
                 Download Deck
               </a>
               <a className="btn btn-line" href={REPO}>
-                <span aria-hidden>★</span> Star on GitHub
+                <Star aria-hidden className="icon" /> Star on GitHub
               </a>
             </div>
             <Command cmd={INSTALL_SH} />
@@ -145,7 +171,31 @@ export default function Home() {
             artist="Utagawa Hiroshige"
             title="Sudden Shower over Shin-Ōhashi Bridge and Atake"
             date="1857"
-          />
+          >
+            {/* On a phone the print carries a thread, so it reads as Deck and not as a stray picture. */}
+            <div className="scene scene-thread" aria-hidden>
+              <div className="scene-head">
+                <span>Fix the pairing lockout</span>
+                <span className="scene-meta">deck</span>
+              </div>
+              <div className="lane">
+                <span className="lane-glyph" style={{ color: "var(--claude-on-glass)" }}>
+                  ✻
+                </span>
+                <span className="lane-name">claude</span>
+                <span className="lane-state is-working">working</span>
+                <span className="lane-note">Keying the limiter by address</span>
+              </div>
+              <div className="lane">
+                <span className="lane-glyph">&gt;_</span>
+                <span className="lane-name">codex</span>
+                <span className="lane-state is-needs">needs you</span>
+                <span className="lane-note">
+                  Run <code>go test ./pkg/remote</code>?
+                </span>
+              </div>
+            </div>
+          </Plate>
         </section>
 
         <section className="works wrap" aria-label="Works with">
@@ -193,10 +243,10 @@ export default function Home() {
                 height={1720}
               />
             </figure>
+            <p className="credit">
+              Carleton E. Watkins, <i>Yosemite Valley from Union Point</i>, about 1872. The Met, public domain.
+            </p>
           </div>
-          <p className="wrap stage-credit">
-            Carleton E. Watkins, <i>Yosemite Valley from Union Point</i>, about 1872. The Met, public domain.
-          </p>
         </section>
 
         {/* A thread, typeset as it reads. */}
@@ -253,7 +303,23 @@ export default function Home() {
               artist="Itō Jakuchū"
               title="White Plum Blossoms and Moon"
               date="1755"
-            />
+            >
+              <div className="scene scene-notice" aria-hidden>
+                <div className="notice-app">
+                  <Mark className="notice-mark" />
+                  Deck
+                  <span>now</span>
+                </div>
+                <p className="notice-title">codex needs you</p>
+                <p className="notice-body">
+                  Run <code>go test ./pkg/remote</code> in deck?
+                </p>
+                <div className="notice-actions">
+                  <span>Deny</span>
+                  <span className="is-primary">Approve</span>
+                </div>
+              </div>
+            </Plate>
             <div className="night-copy">
               <p className="eyebrow">The terminal app</p>
               <h2>
@@ -306,13 +372,26 @@ export default function Home() {
 
         {/* The close: Kōrin's irises along the zigzag bridge. */}
         <section className="close">
-          <Image
-            className="close-art"
-            src="/art/korin-irises.webp"
-            alt="A pair of gold-leaf folding screens: blue irises growing along a zigzag wooden bridge."
-            width={1904}
-            height={874}
-          />
+          <figure className="close-art" tabIndex={0}>
+            <Image
+              src="/art/korin-irises.webp"
+              alt="A pair of gold-leaf folding screens: blue irises growing along a zigzag wooden bridge."
+              width={1904}
+              height={874}
+            />
+            <div className="scene scene-roster" aria-hidden>
+              <span className="roster-label">In this thread</span>
+              {ROSTER.map((a) => (
+                <span key={a.name} className="roster-pill">
+                  <span style={{ color: a.hue }}>{a.glyph}</span>
+                  {a.name}
+                </span>
+              ))}
+            </div>
+            <figcaption className="credit">
+              Ogata Kōrin, <i>Irises at Yatsuhashi</i>, after 1709. The Met, public domain.
+            </figcaption>
+          </figure>
           <div className="wrap close-copy">
             <h2>
               Bring every agent.
@@ -321,10 +400,11 @@ export default function Home() {
             </h2>
             <div className="ctas">
               <a className="btn btn-ink" href={RELEASES}>
+                <Download aria-hidden className="icon" />
                 Download Deck
               </a>
               <a className="btn btn-line" href={REPO}>
-                <span aria-hidden>★</span> Star on GitHub
+                <Star aria-hidden className="icon" /> Star on GitHub
               </a>
             </div>
           </div>
@@ -342,25 +422,25 @@ export default function Home() {
             <a href={RELEASES}>Releases</a>
             <a href={DOCS}>Docs</a>
           </nav>
+          <span className="copyright">© 2026 dev-dami</span>
         </div>
-        <p className="credits">
-          Pictures: Utagawa Hiroshige, <i>Sudden Shower over Shin-Ōhashi Bridge and Atake</i>, 1857; Carleton E. Watkins,{" "}
-          <i>Yosemite Valley from Union Point</i>, about 1872; Itō Jakuchū, <i>White Plum Blossoms and Moon</i>, 1755; Ogata
-          Kōrin, <i>Irises at Yatsuhashi</i>, after 1709. The Metropolitan Museum of Art, Open Access, public domain.
-        </p>
-        <p className="credits">© 2026 dev-dami.</p>
-        {/* The wordmark, as wide as the page. It stretches up as it scrolls
-            in, and each letter springs taller under the pointer. */}
-        <a href={REPO} className="mega" aria-label="Deck on GitHub">
-          <span className="mega-word" aria-hidden>
-            {["d", "e", "c", "k"].map((l, i) => (
-              <span key={i} className="mega-letter">
-                {l}
+        {/* A hand of old playing cards, and the wordmark rising out of it as
+            the footer scrolls in. The word is rubber: grab it and pull, or
+            keep scrolling at the bottom. */}
+        <div className="hand-stage">
+          <Wordmark href={REPO} word="deck" />
+          <figure className="hand" tabIndex={0}>
+            {HAND.map((c, i) => (
+              <span key={c.src} className="card" style={{ "--i": i - (HAND.length - 1) / 2 } as React.CSSProperties}>
+                <Image src={c.src} alt={c.alt} width={500} height={c.h} />
               </span>
             ))}
-          </span>
-          <span className="mega-cursor" aria-hidden />
-        </a>
+            <figcaption className="credit">
+              Playing cards: Claude Fayolle, <i>King of Hearts</i>, late 18th–19th century; William and Henry Rock,{" "}
+              <i>Queen (Zulemer from Algiers)</i>, 1838–55; and three French cards of the 1700s. The Met, public domain.
+            </figcaption>
+          </figure>
+        </div>
       </footer>
     </>
   );
