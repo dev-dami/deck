@@ -339,7 +339,7 @@ test("room tabs: the agents tree, the task board, keeping a race entry after its
   await expect(agents.locator('.crew-agent[data-agent="claude-1"]')).toContainText("go test ./pkg/remote/...");
   await expect(agents.locator('.crew-agent[data-agent="claude-1"]')).toContainText("30% context");
   // Approvals are no tab of the room; Tasks counts the queue.
-  await expect(page.getByRole("complementary", { name: "Side panel" }).getByRole("tab")).toHaveText(["Changes", "Tasks1", "Agents", "Side chat"]);
+  await expect(page.getByRole("complementary", { name: "Side panel" }).getByRole("tab")).toHaveText(["Changes", "Graph", "Tasks1", "Agents", "Side chat"]);
 
   await roomTab(page, "Tasks");
   const tasks = page.getByRole("region", { name: "Tasks" });

@@ -4,11 +4,12 @@ import type { Session } from "@web/protocol";
 // holds what Deck sent). Pure, so the tests drive it directly.
 
 // The room's tabs. The queue is the first section of Tasks; approvals sit
-// over the composer and in the inbox.
-export type Panel = "changes" | "tasks" | "agents" | "side" | "preview";
+// over the composer and in the inbox. Graph is the Work Graph, compact.
+export type Panel = "changes" | "graph" | "tasks" | "agents" | "side" | "preview";
 
 export const PANELS: ReadonlyArray<{ panel: Panel; label: string }> = [
   { panel: "changes", label: "Changes" },
+  { panel: "graph", label: "Graph" },
   { panel: "tasks", label: "Tasks" },
   { panel: "agents", label: "Agents" },
   { panel: "side", label: "Side chat" },

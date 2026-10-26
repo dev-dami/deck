@@ -117,6 +117,14 @@ export class FakeRpcDeck {
       { id: "t5", title: "Add a regression test", status: "failed", owner: "codex-1", error: "go test failed", attempts: 2, tries: 2 },
     ] as Obj[],
   };
+  // The open thread's agents tree; a test may swap it (test/e2e/graph.spec.ts).
+  crew: { agents: Obj[]; running: Obj[] } = {
+    agents: [
+      { name: "claude-1", kind: "claude", model: "opus", status: "tool", depth: 0, context_tokens: 60000, context_window: 200000, since: Date.now() - 65_000 },
+      { name: "codex-sub", kind: "codex", model: "gpt-5", status: "working", depth: 1, parent: "claude-1", branch: "deck/t3", leases: "pkg/remote/** (exclusive)" },
+    ],
+    running: [{ agent: "claude-1", kind: "claude", name: "Bash", summary: "go test ./pkg/remote/...", started: Date.now() - 12_000, command: true }],
+  };
   // The team link.
   readonly team = {
     chat: [{ seq: 1, from: "vps", agent: "claude2", text: "I am on the flaky test.", at: Date.now() }] as Obj[],
@@ -380,13 +388,7 @@ export class FakeRpcDeck {
       b.orchestrate = r["on"] === true;
       return {};
     });
-    unary("Agents", () => ({
-      agents: [
-        { name: "claude-1", kind: "claude", model: "opus", status: "tool", depth: 0, context_tokens: 60000, context_window: 200000, since: Date.now() - 65_000 },
-        { name: "codex-sub", kind: "codex", model: "gpt-5", status: "working", depth: 1, parent: "claude-1", branch: "deck/t3", leases: "pkg/remote/** (exclusive)" },
-      ],
-      running: [{ agent: "claude-1", kind: "claude", name: "Bash", summary: "go test ./pkg/remote/...", started: Date.now() - 12_000, command: true }],
-    }));
+    unary("Agents", () => this.crew);
     const tm = this.team;
     unary("Team", () => ({
       available: true,
@@ -540,4 +542,61 @@ export class FakeRpcDeck {
     }
     return h;
   }
+}
+
+export const GRAPH_FILES = { LIMIT: "pkg/remote/auth/limit.go", TEST: "pkg/remote/auth/limit_test.go", PRUNE: "pkg/remote/auth/prune.go" };
+
+// A crew at work in "Fix the pairing lockout", for the Work Graph's tests
+// and screenshots: two members and a subagent each, tasks with
+// dependencies, the files they touch, and one agent editing a file now.
+export function crewAtWork(f: FakeRpcDeck): void {
+  const { LIMIT, TEST, PRUNE } = GRAPH_FILES;
+  const now = Date.now();
+  f.crew = {
+    agents: [
+      {
+        name: "claude-1",
+        kind: "claude",
+        model: "opus",
+        effort: "high",
+        status: "tool",
+        context_tokens: 92_000,
+        context_window: 200_000,
+        cost_usd: 1.84,
+        since: now - 194_000,
+        leases: "pkg/remote/auth/** (exclusive)",
+      },
+      { name: "codex-1", kind: "codex", model: "gpt-5-codex", status: "idle", context_tokens: 41_000, context_window: 272_000, cost_usd: 0.62 },
+      {
+        name: "claude-sub",
+        kind: "claude",
+        model: "sonnet",
+        status: "working",
+        depth: 1,
+        parent: "claude-1",
+        branch: "deck/t2",
+        context_tokens: 18_000,
+        context_window: 200_000,
+        cost_usd: 0.21,
+        since: now - 71_000,
+      },
+      { name: "codex-sub", kind: "codex", model: "gpt-5-codex", status: "exited", depth: 1, parent: "codex-1", branch: "deck/t3", cost_usd: 0.33 },
+    ],
+    running: [
+      { agent: "claude-1", kind: "claude", name: "Edit", summary: LIMIT, started: now - 8_000 },
+      { agent: "claude-sub", kind: "claude", name: "Bash", summary: "go test ./pkg/remote/auth -run Limiter", started: now - 21_000, command: true },
+    ],
+  };
+  f.board.orchestrate = true;
+  f.board.tasks = [
+    { id: "t1", title: "Map the limiter", status: "done", owner: "claude-1", files: [LIMIT] },
+    { id: "t2", title: "Key failures by address", status: "running", owner: "claude-sub", deps: ["t1"], files: [LIMIT, TEST], branch: "deck/t2" },
+    { id: "t3", title: "Prune idle buckets", status: "done", owner: "codex-sub", deps: ["t1"], files: [PRUNE], branch: "deck/t3" },
+    { id: "t4", title: "Document the limit", status: "ready", owner: "codex-1", files: ["docs/pairing.md"] },
+  ];
+  f.deck.setChanges("ses_main", [
+    { path: LIMIT, added: 18, removed: 6, diff: "@@ -12,3 +12,4 @@\n-\tglobal.fail()\n+\tl.fail(addr)\n" },
+    { path: TEST, added: 42, removed: 0, diff: "@@ -0,0 +1,1 @@\n+func TestLimiterIsPerAddress(t *testing.T) {}\n" },
+    { path: PRUNE, added: 27, removed: 3, diff: "@@ -0,0 +1,1 @@\n+func (l *Limiter) prune() {}\n" },
+  ]);
 }
