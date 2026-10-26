@@ -610,6 +610,14 @@
   animation: yolo-flash 700ms var(--ease) 1;
 }
 
+/* The timeline fades out over its last 16px, so a message that scrolls
+   under the composer goes soft instead of being cut, as a Mac scroll view's
+   edge does. The 32px bottom padding keeps the last line clear of it. */
+.timeline {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+}
+
 /* Agent prose: the shared markdown parser's node tree. */
 .md {
   overflow-wrap: anywhere;
