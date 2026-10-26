@@ -1,21 +1,24 @@
 import { canSend } from "@web/composer";
 import { checkImage, displayName, readAsBase64 } from "@web/images";
-import type { AgentLine, Image } from "@web/protocol";
-import { kindColour } from "@web/theme";
+import type { AgentLine, Image, Theme } from "@web/protocol";
+import { kindColour, kindMark } from "@web/theme";
 import { ArrowUp, Paperclip, Square, X } from "./icons";
 import { type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applySuggestion,
-  fileAt,
   fileLister,
   fileSuggestions,
   FILES_LIMIT,
   matchPaths,
   type Mention,
   mergeFiles,
-  mentionAt,
+  type Person,
+  type PickerType,
+  pickerAt,
+  type ProfileRef,
   slashAt,
   slashSuggestions,
+  suggestionHue,
   suggestions,
 } from "../completion";
 import { loadHistory, pushHistory, walk } from "../history";
@@ -26,11 +29,12 @@ import { parseSlash, type Slash, slashCommand } from "../slash";
 import { isMac } from "./keys";
 import { Button } from "./kit/button";
 
-// What the popup over the prompt completes: an agent ("$"), a changed file
-// ("@") or a slash command ("/", at the start of the message).
-type Picker = { type: "$" | "@" | "/"; m: Mention };
+// What the popup over the prompt completes: an agent or a person ("@"), an
+// agent ("$"), a file ("#", or "@" before a path) or a slash command ("/",
+// at the start of the message).
+type Picker = { type: PickerType | "/"; m: Mention };
 
-const PICKER_LABEL = { $: "Agents", "@": "Files", "/": "Commands" } as const;
+const PICKER_LABEL = { "@": "Agents and people", $: "Agents", "#": "Files", "/": "Commands" } as const;
 
 // A glass material drawn as a layer behind its parent's content, not on the
 // parent: an element with a backdrop-filter becomes the containing block of
@@ -75,6 +79,10 @@ export function Composer({
   placeholder,
   sendKey,
   className,
+  theme = null,
+  profiles,
+  people,
+  mentions = true,
 }: {
   draft: string;
   setDraft: (s: string) => void;
@@ -98,9 +106,9 @@ export function Composer({
   strip?: ReactNode;
   busy?: boolean;
   onStop?: () => void;
-  // The room's changed files, for "@".
+  // The room's changed files, for "#".
   paths?: readonly string[];
-  // The files of the room's tree that match a query (ListFiles), for "@"
+  // The files of the room's tree that match a query (ListFiles), for "#"
   // after the changed ones. A stable function: a new one asks again.
   listFiles?: ((query: string) => Promise<readonly string[] | null>) | undefined;
   // Where ↑ finds what the person sent: the project's source and the room.
@@ -108,6 +116,14 @@ export function Composer({
   placeholder?: string;
   sendKey: SendKey;
   className?: string;
+  // For the agents' glyphs in the pickers.
+  theme?: Theme | null;
+  // What "@" offers beyond the room: saved profiles and teammates.
+  profiles?: readonly ProfileRef[] | undefined;
+  people?: readonly Person[] | undefined;
+  // Whether the Deck reads "@" as an agent's sigil; an older one reads
+  // only "$", and there "@" keeps picking files.
+  mentions?: boolean;
 }) {
   const [images, setImages] = useState<Attached[]>([]);
   const [picker, setPicker] = useState<Picker | null>(null);
@@ -146,15 +162,16 @@ export function Composer({
   const options = useMemo(() => {
     if (picker === null) return [];
     if (picker.type === "/") return slashSuggestions(picker.m.query);
-    if (picker.type === "@") {
+    if (picker.type === "#") {
       const q = picker.m.query;
       if (lister === null) return fileSuggestions(q, paths ?? []);
       // While Deck looks, the last answer narrows to what is typed.
       const tree = found === null ? [] : found.query === q ? found.paths : matchPaths(q, found.paths, FILES_LIMIT);
       return mergeFiles(q, paths ?? [], tree);
     }
+    if (picker.type === "@") return suggestions(picker.m.query, roster, kinds, { sigil: "@", profiles, people }).slice(0, 16);
     return suggestions(picker.m.query, roster, kinds).slice(0, 8);
-  }, [picker, roster, kinds, paths, lister, found]);
+  }, [picker, roster, kinds, paths, lister, found, profiles, people]);
 
   // The prompt grows with its text up to a cap, then scrolls.
   useLayoutEffect(() => {
@@ -168,10 +185,9 @@ export function Composer({
     const text = el.value;
     const caret = el.selectionStart;
     const slash = onSlash === undefined ? null : slashAt(text, caret);
-    const file = slash !== null || ((paths ?? []).length === 0 && lister === null) ? null : fileAt(text, caret);
-    if (file !== null) lister?.ask(file.query);
-    const agent = slash !== null || file !== null ? null : mentionAt(text, caret);
-    setPicker(slash !== null ? { type: "/", m: slash } : file !== null ? { type: "@", m: file } : agent !== null ? { type: "$", m: agent } : null);
+    const next: Picker | null = slash !== null ? { type: "/", m: slash } : pickerAt(text, caret, (paths ?? []).length > 0 || lister !== null, mentions);
+    if (next?.type === "#") lister?.ask(next.m.query);
+    setPicker(next);
     setPick(0);
   };
 
@@ -346,9 +362,20 @@ export function Composer({
                 accept(i);
               }}
             >
+              {picker.type !== "#" && picker.type !== "/" && (
+                // The kind's glyph in its hue; a person wears a teammate's mark.
+                <span
+                  aria-hidden
+                  className="suggest-mark grid w-4 shrink-0 place-items-center font-mono text-[12px] leading-none"
+                  style={{ color: suggestionHue(s, kindColour) }}
+                >
+                  {s.kind !== null ? kindMark(theme, s.kind) || "●" : s.label === "all" ? "∗" : "◇"}
+                </span>
+              )}
               <span
-                className="suggest-insert min-w-0 truncate font-medium font-mono text-code"
-                style={{ color: s.kind === null ? undefined : kindColour(s.kind) }}
+                // text-code would also set the colour: --color-code is a fill.
+                className="suggest-insert min-w-0 truncate font-medium font-mono text-(length:--text-code) text-foreground"
+                style={{ color: suggestionHue(s, kindColour) }}
               >
                 {picker.type === "$" ? s.insert : s.label}
               </span>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { EMPTY_ROOM, RoomMetaStore } from "./roomMeta";
-import { isoOf, toCapabilities, toEvent, toFileList, toFiles, toImage, toMessages, toRooms, toRoster, toSearchHits, toSessions } from "./rpcMap";
+import { isoOf, toCapabilities, toEvent, toFileList, toFiles, toImage, toMessages, toProfiles, toRooms, toRoster, toSearchHits, toSessions } from "./rpcMap";
 
 const at = Date.parse("2026-10-19T09:00:00Z");
 
@@ -54,6 +54,30 @@ describe("deck.v1 to the reducer's entities", () => {
     expect(toRoster({ agents: [{ id: "claude-1", name: "", kind: "claude", busy: false, model: "", effort: "" }] })).toEqual([
       { id: "claude-1", name: "claude-1", kind: "claude", busy: false },
     ]);
+  });
+
+  test("a named member keeps its profile and role", () => {
+    expect(toRoster({ agents: [{ id: "claude-2", name: "charles", kind: "claude", busy: true, profile: "charles", role: "reviewer" }] })).toEqual([
+      { id: "claude-2", name: "charles", kind: "claude", busy: true, profile: "charles", role: "reviewer" },
+    ]);
+  });
+
+  test("ListProfiles: every field, the scope, and nameless or kindless entries dropped", () => {
+    expect(
+      toProfiles({
+        profiles: [
+          { name: "charles", kind: "claude", model: "opus", effort: "high", role: "reviewer", instructions: "Be brief.", voice: "dry", color: "#c96", paths: ["src/**"], scope: "project" },
+          { name: "ada", kind: "codex", scope: "" },
+          { name: "", kind: "codex" },
+          { name: "x", kind: "" },
+          "junk",
+        ],
+      }),
+    ).toEqual([
+      { name: "charles", kind: "claude", model: "opus", effort: "high", role: "reviewer", instructions: "Be brief.", voice: "dry", color: "#c96", paths: ["src/**"], scope: "project" },
+      { name: "ada", kind: "codex", model: "", effort: "", role: "", instructions: "", voice: "", color: "", paths: [], scope: "global" },
+    ]);
+    expect(toProfiles({})).toEqual([]);
   });
 });
 

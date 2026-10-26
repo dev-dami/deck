@@ -18,6 +18,7 @@ import { isMac } from "./keys";
 import { Palette } from "./Palette";
 import { LiveRightPanel } from "./RightPanel";
 import { Room } from "./Room";
+import { ProfilesDeck } from "./ProfilesEditor";
 import { SettingsPage } from "./Settings";
 import { SharedRoom } from "./SharedRoom";
 import { type ProjectEntry, Sidebar } from "./Sidebar";
@@ -40,9 +41,16 @@ export interface ShellAttention {
 }
 
 // Settings takes the whole state but reads only the panel slice.
-function LiveSettings({ c, ...props }: { c: DeckClient } & Omit<ComponentProps<typeof SettingsPage>, "state">) {
+// The profiles editor in Agents talks to this Deck, and keeps profile
+// names clear of the team's people.
+function LiveSettings({ c, teammates, ...props }: { c: DeckClient; teammates: readonly string[] } & Omit<ComponentProps<typeof SettingsPage>, "state">) {
   useAppSlice(c.store, panelSlice, shallowEqual);
-  return <SettingsPage {...props} state={c.store.state} />;
+  const deck = useMemo(() => ({ c, teammates }), [c, teammates]);
+  return (
+    <ProfilesDeck.Provider value={deck}>
+      <SettingsPage {...props} state={c.store.state} />
+    </ProfilesDeck.Provider>
+  );
 }
 
 export interface ShellProps {
@@ -113,6 +121,7 @@ export function Shell(props: ShellProps) {
   const { shared, openSession, newSession, openRoom, openShared, orToast } = nav;
   // Rooms teammates share with you, and how many teammates are online.
   const teamOn = typeof team === "object" && team !== null && team.available ? team : null;
+  const teammates = useMemo(() => teamOn?.teammates.map((m) => m.name) ?? [], [teamOn]);
   const r = useOpenRoom({
     c,
     projectKey,
@@ -239,7 +248,7 @@ export function Shell(props: ShellProps) {
           ) : ui.team ? (
             <TeamPage api={api} thread={open} onError={toast} onInfo={info} onOpenShared={openShared} />
           ) : ui.settings !== null ? (
-            <LiveSettings c={c} section={ui.settings} where={where} transport={transport} mac={mac} bridge={bridge} folder={folder} onDisconnect={onDisconnect} />
+            <LiveSettings c={c} teammates={teammates} section={ui.settings} where={where} transport={transport} mac={mac} bridge={bridge} folder={folder} onDisconnect={onDisconnect} />
           ) : shared !== null && api !== undefined ? (
             <SharedRoom
               key={`${shared.peer}/${shared.thread.id}`}

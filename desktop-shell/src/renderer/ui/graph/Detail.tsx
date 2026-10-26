@@ -4,6 +4,7 @@ import type { AgentGraphNode } from "../../graph";
 import { agentLane } from "../../lanes";
 import { cn } from "../../lib/cn";
 import { formatDuration } from "../../work";
+import { AgentRole } from "../AgentRole";
 import { CornerDownRight, MessageSquarePlus, Square, X } from "../icons";
 import { Button } from "../kit/button";
 import { Glyph, hueOf, STATUS_LABEL, StatusDot } from "./Nodes";
@@ -80,7 +81,10 @@ export function AgentDetail({
       <header className="flex items-start gap-2 px-3.5 pt-3 pb-2.5">
         <Glyph kind={a.agentKind} theme={theme} className="mt-px text-sm" />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h3 className="truncate font-medium text-sm leading-tight">{a.name}</h3>
+          <h3 className="flex min-w-0 items-baseline gap-1.5 font-medium text-sm leading-tight">
+            <span className="truncate">{a.name}</span>
+            <AgentRole role={a.role} className="text-xs" />
+          </h3>
           <p className="flex min-w-0 items-center gap-1.5 text-2xs">
             <StatusDot status={a.status} />
             <span className={STATUS_TEXT[a.status]}>{STATUS_LABEL[a.status]}</span>

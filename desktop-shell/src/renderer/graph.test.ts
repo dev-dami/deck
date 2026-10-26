@@ -47,6 +47,8 @@ const node = (name: string, over: Partial<AgentNode> = {}): AgentNode => ({
   parent: "",
   branch: "",
   leases: "",
+  profile: "",
+  role: "",
   ...over,
 });
 
@@ -161,6 +163,15 @@ describe("editTarget", () => {
 });
 
 describe("buildGraph: nodes", () => {
+  test("a named member's card carries its role, from the roster or the tree", () => {
+    const g = graph({
+      roster: [{ ...line("charles"), kind: "claude", role: "reviewer", profile: "charles" }],
+      crew: crew([node("charles", { kind: "claude" }), node("ada", { kind: "codex", depth: 1, parent: "charles", role: "tests" })]),
+    });
+    expect(byId(g.nodes, "agent:charles")).toMatchObject({ agentKind: "claude", role: "reviewer" });
+    expect(byId(g.nodes, "agent:ada")).toMatchObject({ agentKind: "codex", role: "tests" });
+  });
+
   test("only you is empty", () => {
     const g = graph({});
     expect(g.nodes.map((n) => n.id)).toEqual(["you"]);

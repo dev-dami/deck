@@ -10,6 +10,7 @@ import type { Team } from "../crew";
 import { buildLanes, filterLane } from "../lanes";
 import { focusMessage, useFocusedMessage } from "../palette";
 import { usePrefs } from "../prefs";
+import { useMentionables } from "../profiles";
 import { sendHint } from "../queue";
 import { EMPTY_ROOM, useRoomMetas } from "../roomMeta";
 import { type ShellSlice, shallowEqual, threadSlice, useAppSlice } from "../select";
@@ -225,7 +226,7 @@ export function Room({
   // What the Deck says of the room beyond the session: its branch and leases.
   const metas = useRoomMetas(c.rooms);
   const meta = (sid === null ? undefined : metas.get(sid)) ?? EMPTY_ROOM;
-  // "@" lists the tree's files too when the Deck serves ListFiles.
+  // "#" lists the tree's files too when the Deck serves ListFiles.
   const listFiles = useMemo(
     () => (sid === null || !serves(c, "ListFiles") ? undefined : async (q: string) => (await c.listFiles?.(sid, q, FILES_LIMIT))?.paths ?? null),
     [c, sid],
@@ -242,7 +243,9 @@ export function Room({
   };
   const listModels = (kind: string) => c.listModels(sid ?? "", kind);
   const setModel = (kind: string, model: string, effort?: string) => sid !== null && void c.setModel(sid, kind, model, effort);
-  const common = { draft, setDraft, kinds, images: imagesOn, onSlash: send.runSlash, onError: toast, inputRef, sendKey: prefs.sendKey };
+  // "@" offers the Deck's profiles and the team's people too.
+  const named = useMentionables(c, team);
+  const common = { draft, setDraft, kinds, images: imagesOn, onSlash: send.runSlash, onError: toast, inputRef, sendKey: prefs.sendKey, theme: state.theme, ...named };
 
   return (
     <>
@@ -308,7 +311,9 @@ export function Room({
             roster={[]}
             online={online && state.sessionsLoaded}
             onSend={send.start}
-            placeholder="Ask anything. $ picks an agent, $codex+ starts another."
+            placeholder={
+              named.mentions ? "Ask anything. @ picks an agent, @codex+ starts another, # a file." : "Ask anything. $ picks an agent, $codex+ starts another."
+            }
           />
         </NewThread>
       ) : (

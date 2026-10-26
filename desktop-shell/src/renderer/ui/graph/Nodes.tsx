@@ -5,6 +5,7 @@ import { agentColour } from "../../agents";
 import type { AgentGraphNode, FileGraphNode, FoldGraphNode, GraphNode, TaskGraphNode } from "../../graph";
 import type { LaneStatus } from "../../lanes";
 import { cn } from "../../lib/cn";
+import { AgentRole } from "../AgentRole";
 import { Check, Minus, X } from "../icons";
 
 // The Work Graph's nodes: flat, precise cards over the edges, as a
@@ -141,8 +142,11 @@ export const AgentCard = memo(function AgentCard({ n, picked, dim, live, theme, 
       <span className="flex min-h-0 flex-1 flex-col justify-center gap-0.5 px-2.5">
         <span className="flex min-w-0 items-center gap-1.5">
           <Glyph kind={n.agentKind} theme={theme} />
-          <span className={cn("min-w-0 flex-1 truncate font-medium text-sm leading-tight", n.status === "exited" && "text-muted-foreground")}>
-            {n.name}
+          <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+            <span className={cn("min-w-0 truncate font-medium text-sm leading-tight", n.status === "exited" && "text-muted-foreground")}>
+              {n.name}
+            </span>
+            <AgentRole role={n.role} className="text-2xs" />
           </span>
           {n.status === "waiting" && <span className="shrink-0 font-medium text-3xs text-warning-foreground">needs you</span>}
           <StatusDot status={n.status} live={live} />

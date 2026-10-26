@@ -154,6 +154,10 @@ export class FakeRpcDeck {
     asked: [] as string[],
     files: ["main.go", "pkg/remote/auth/limit.go", "pkg/remote/auth/limit_test.go", "README.md"],
   };
+  // Named agents: the profiles of the global and the project deck.json,
+  // and what was saved and deleted. Served once serveProfiles is called.
+  // refuse, when set, is the reason SaveProfile gives for the next save.
+  readonly named = { profiles: [] as Obj[], saved: [] as string[], deleted: [] as string[], refuse: null as string | null };
   // Each terminal: what it printed and who watches it.
   private readonly terms = new Map<string, { out: string; line: string; subs: Set<grpc.ServerWritableStream<Obj, Obj>> }>();
 
@@ -173,6 +177,27 @@ export class FakeRpcDeck {
     );
     f.deck.listeners.add((e, p) => f.publish(e, p));
     return f;
+  }
+
+  // Serves the profile calls (a Deck that keeps profiles reads "@" as an
+  // agent's sigil) with these profiles, which "@name" also reaches.
+  serveProfiles(profiles: Obj[]): void {
+    for (const m of ["ListProfiles", "SaveProfile", "DeleteProfile"]) if (!this.room.caps.includes(m)) this.room.caps.push(m);
+    this.named.profiles.splice(0, Infinity, ...profiles);
+    this.syncProfiles();
+  }
+
+  // The profiles as ListProfiles merges them: a project profile overrides
+  // a global one of the same name.
+  mergedProfiles(): Obj[] {
+    const merged = new Map<string, Obj>();
+    for (const scope of ["global", "project"])
+      for (const p of this.named.profiles.filter((x) => x["scope"] === scope)) merged.set(String(p["name"]).toLowerCase(), p);
+    return [...merged.values()];
+  }
+
+  private syncProfiles(): void {
+    this.deck.profiles = this.mergedProfiles().map((p) => ({ name: String(p["name"]), kind: String(p["kind"]), role: String(p["role"] ?? "") }));
   }
 
   // The line `deck serve --rpc` prints.
@@ -442,6 +467,49 @@ export class FakeRpcDeck {
     });
     unary("AnswerShared", () => {
       throw new Error("only an editor answers approvals");
+    });
+    // The profile calls, as pkg/rpc serves them. SaveProfile refuses what
+    // profile.Validate does, in Deck's words, and "vps" as a teammate's name.
+    const nm = this.named;
+    const sameProfile = (p: Obj, name: unknown, scope: unknown) =>
+      String(p["name"]).toLowerCase() === String(name).toLowerCase() && p["scope"] === scope;
+    const call = (name: string, f: (r: Obj) => Obj) => {
+      h[name] = (c: grpc.ServerUnaryCall<Obj, Obj>, cb: grpc.sendUnaryData<Obj>) => {
+        if (!this.authorized(c.metadata)) return cb({ code: grpc.status.UNAUTHENTICATED, details: "missing or wrong token" });
+        this.calls.push(name);
+        try {
+          cb(null, f(c.request));
+        } catch (e) {
+          const code = e instanceof Fail ? (CODES[e.code] ?? grpc.status.INTERNAL) : grpc.status.INTERNAL;
+          cb({ code, details: e instanceof Error ? e.message : "fake failed" });
+        }
+      };
+    };
+    call("ListProfiles", () => ({ profiles: this.mergedProfiles() }));
+    call("SaveProfile", (r) => {
+      const p = { ...(r["profile"] as Obj) };
+      const name = String(p["name"] ?? "");
+      const refuse = nm.refuse;
+      nm.refuse = null;
+      if (refuse !== null) throw new Fail("invalid", refuse);
+      if (!/^[\w-]{1,32}$/.test(name)) throw new Fail("invalid", `name "${name}" can only hold letters, digits, - and _, so that @${name} reaches it`);
+      if (["all", "user", "deck"].includes(name.toLowerCase())) throw new Fail("invalid", `name "${name}" is reserved`);
+      if (name.toLowerCase() === "vps") throw new Fail("invalid", `name "${name}" is a teammate's`);
+      p["scope"] = p["scope"] === "global" ? "global" : "project";
+      const at = nm.profiles.findIndex((x) => sameProfile(x, name, p["scope"]));
+      if (at >= 0) nm.profiles[at] = p;
+      else nm.profiles.push(p);
+      nm.saved.push(`${String(p["scope"])}:${name}`);
+      this.syncProfiles();
+      return { profile: p };
+    });
+    call("DeleteProfile", (r) => {
+      const at = nm.profiles.findIndex((x) => sameProfile(x, r["name"], r["scope"]));
+      if (at < 0) throw new Fail("not_found", "no such profile");
+      nm.profiles.splice(at, 1);
+      nm.deleted.push(`${String(r["scope"])}:${String(r["name"])}`);
+      this.syncProfiles();
+      return {};
     });
     // The room calls, as pkg/rpc serves them.
     const rm = this.room;

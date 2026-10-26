@@ -37,7 +37,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { agentColour, agentKind } from "../agents";
+import { agentColour, agentKind, agentRole } from "../agents";
 import type { RoomNotice } from "../attention";
 import { shortId } from "../lanes";
 import { cn } from "../lib/cn";
@@ -46,6 +46,7 @@ import { detectPlan, findPlan } from "../plans";
 import { formatClock, usePrefs } from "../prefs";
 import type { ImageBytes } from "../rpcMap";
 import { capLines, formatDuration, splitWork } from "../work";
+import { AgentRole } from "./AgentRole";
 import { DiffView } from "./DiffView";
 import { Button } from "./kit/button";
 import { Dialog } from "./kit/dialog";
@@ -495,6 +496,7 @@ function AgentMessage({
         <span className="msg-index inline-flex min-w-0 items-baseline gap-1.5">
           <AgentMark mark={mark} working={!m.finished} />
           <span className="msg-who truncate font-semibold text-(--hue) text-[13px]">{agent}</span>
+          <AgentRole role={agentRole(agent, roster)} className="text-xs" />
         </span>
         <time className="text-2xs text-faint tabular-nums opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           {formatClock(m.created_at, prefs.clock)}
@@ -653,13 +655,15 @@ function EmptyRoom({ roster, theme }: { roster: AgentLine[]; theme: Theme | null
                 {kindMark(theme, l.kind) || "●"}
               </span>
               <span className="text-(--hue)">{l.name}</span>
+              <AgentRole role={l.role ?? ""} className="text-xs" />
             </span>
           ))}
         </p>
       )}
       <p className="text-pretty text-faint text-xs leading-relaxed">
-        Send a message to start the conversation. <span className="font-mono text-muted-foreground">$name</span> addresses an agent,{" "}
-        <span className="font-mono text-muted-foreground">@</span> a file, <span className="font-mono text-muted-foreground">/</span> a command.
+        Send a message to start the conversation. <span className="font-mono text-muted-foreground">@name</span> addresses an agent or a
+        person (<span className="font-mono text-muted-foreground">$name</span> works too), <span className="font-mono text-muted-foreground">#</span> a
+        file, <span className="font-mono text-muted-foreground">/</span> a command.
       </p>
     </div>
   );

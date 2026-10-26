@@ -137,7 +137,15 @@ export function SessionScreen({ state, id }: { state: AppState; id: string }) {
           {queue.length} queued {queue.length === 1 ? "message" : "messages"}
         </button>
       ) : null}
-      <Composer sessionId={id} roster={roster} busy={session?.busy ?? false} online={online} />
+      <Composer
+        sessionId={id}
+        roster={roster}
+        busy={session?.busy ?? false}
+        online={online}
+        kinds={state.server?.kinds ?? EMPTY}
+        theme={state.theme}
+        files={state.server?.features.includes("changes") ?? false}
+      />
       {sheet === "agents" ? (
         <AgentsSheet sessionId={id} roster={roster} onClose={() => setSheet(null)} />
       ) : null}

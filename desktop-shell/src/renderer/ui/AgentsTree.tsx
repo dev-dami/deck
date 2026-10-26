@@ -1,12 +1,13 @@
-import type { Theme } from "@web/protocol";
+import type { AgentLine, Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
 import { CornerDownRight, GitBranch, Loader2, Lock, Network } from "./icons";
-import { agentColour } from "../agents";
+import { agentColour, agentRole } from "../agents";
 import type { AgentNode, Crew, RunningTool } from "../crew";
 import { useRoomCrew } from "../crewState";
 import { cn } from "../lib/cn";
 import type { ProjectApi } from "../project";
 import { formatDuration } from "../work";
+import { AgentRole } from "./AgentRole";
 import { EmptyState } from "./kit/empty";
 
 // The Agents tab of a room, after the terminal UI's Agents pane: the agents
@@ -30,9 +31,10 @@ const DOT: Record<string, string> = {
 
 const STATUS_WORD: Record<string, string> = { tool: "running a tool", approval: "needs you" };
 
-// One agent: its glyph in its hue, its name and a status dot, its model,
-// and in smaller type what it runs now, its branch, leases, context and cost.
-function AgentRow({ a, running, theme, now }: { a: AgentNode; running: RunningTool[]; theme: Theme | null; now: number }) {
+// One agent: its glyph in its hue, its name, its role and a status dot, its
+// model, and in smaller type what it runs now, its branch, leases, context
+// and cost.
+function AgentRow({ a, running, theme, now, role }: { a: AgentNode; running: RunningTool[]; theme: Theme | null; now: number; role: string }) {
   const pct = a.contextWindow > 0 ? Math.round((a.contextTokens / a.contextWindow) * 100) : null;
   const busy = a.status === "working" || a.status === "tool";
   return (
@@ -43,6 +45,7 @@ function AgentRow({ a, running, theme, now }: { a: AgentNode; running: RunningTo
           {kindMark(theme, a.kind) || "●"}
         </span>
         <span className={cn("font-medium", a.status === "exited" && "text-muted-foreground")}>{a.name}</span>
+        <AgentRole role={role} className="max-w-40 text-xs" />
         <span className={cn("size-1.5 shrink-0 rounded-full", DOT[a.status] ?? "bg-muted-foreground/40")} />
         <span className="min-w-0 truncate text-2xs text-muted-foreground">
           {a.model || "default"}
@@ -94,7 +97,7 @@ function AgentRow({ a, running, theme, now }: { a: AgentNode; running: RunningTo
   );
 }
 
-export function AgentsTree({ crew, at, theme }: { crew: Crew | null; at: number; theme: Theme | null }) {
+export function AgentsTree({ crew, at, theme, roster = [] }: { crew: Crew | null; at: number; theme: Theme | null; roster?: AgentLine[] | undefined }) {
   const running = (name: string) => crew?.running.filter((t) => t.agent === name) ?? [];
   return (
     <section aria-label="Agents" className="flex flex-col gap-2 overflow-y-auto px-3 pt-1 pb-3">
@@ -107,7 +110,7 @@ export function AgentsTree({ crew, at, theme }: { crew: Crew | null; at: number;
       ) : (
         <ul className="crew divide-y divide-hairline overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline">
           {crew.agents.map((a) => (
-            <AgentRow key={a.name} a={a} running={running(a.name)} theme={theme} now={at} />
+            <AgentRow key={a.name} a={a} running={running(a.name)} theme={theme} now={at} role={agentRole(a.name, roster, [a])} />
           ))}
         </ul>
       )}

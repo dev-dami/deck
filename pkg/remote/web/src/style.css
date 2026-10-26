@@ -787,6 +787,12 @@ legend {
   font-weight: 600;
 }
 
+/* A named agent's role, after its name: quiet, the name leads. */
+.agent-role {
+  color: var(--p-fg-more-subtle);
+  font-weight: 400;
+}
+
 .user-text {
   white-space: pre-wrap;
 }
@@ -1004,6 +1010,66 @@ legend {
   flex: 1;
   min-width: 0;
   max-height: 160px;
+}
+
+/* The pickers over the prompt: "@" agents and people, "$" agents, "#" files.
+   Each row is the agent as Deck draws it: its glyph in its hue, its name,
+   then its role or what the pick does, quiet. */
+.suggest {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--p-separator);
+  border-radius: var(--radius);
+  background: var(--p-bg-less-visible);
+}
+
+.suggest-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.suggest-row.on {
+  background: var(--p-bg-most-visible);
+}
+
+.suggest-mark {
+  flex: none;
+  width: 1.25em;
+  font-family: var(--mono);
+  text-align: center;
+}
+
+.suggest-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggest-detail {
+  flex: 0 2 auto;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--p-fg-more-subtle);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .attachments {

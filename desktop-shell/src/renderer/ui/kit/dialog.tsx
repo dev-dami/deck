@@ -5,7 +5,8 @@ import { Button } from "./button";
 import { useFocusTrap } from "./focus";
 
 // A modal over the window: Escape and a click outside close it. Tab stays
-// inside, and the focus goes back where it was when it closes.
+// inside, and the focus goes back where it was when it closes. A body taller
+// than the window scrolls between the header and the footer.
 export function Dialog({
   title,
   description,
@@ -39,7 +40,7 @@ export function Dialog({
         aria-label={title}
         tabIndex={-1}
         className={cn(
-          "material flex w-[480px] max-w-[calc(100vw-2rem)] animate-enter flex-col rounded-[22px] outline-none",
+          "material flex max-h-[calc(88vh-1rem)] w-[480px] max-w-[calc(100vw-2rem)] animate-enter flex-col rounded-[22px] outline-none",
           className,
         )}
         onMouseDown={(e) => e.stopPropagation()}
@@ -53,7 +54,7 @@ export function Dialog({
             <X />
           </Button>
         </header>
-        {children !== undefined && <div className="flex flex-col gap-3 px-5 py-2">{children}</div>}
+        {children !== undefined && <div className="flex min-h-0 flex-col gap-3 overflow-y-auto px-5 py-2">{children}</div>}
         {footer !== undefined && <footer className="flex items-center justify-end gap-2 px-5 pt-3 pb-5">{footer}</footer>}
       </div>
     </div>
