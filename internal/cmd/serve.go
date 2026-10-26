@@ -40,7 +40,9 @@ runs. Either one stops at once and names the lock file.
 
 On SIGTERM or ctrl+c, Deck refuses new work from teammates, gives running
 agents the --drain time to end their turns and the outbox time to deliver,
-and then stops. A second signal stops it at once. Logs go to stderr.
+and then stops. A second signal stops it at once. On SIGHUP it applies the
+peers section of the config again (after 'deck peer relay', say). Logs go to
+stderr.
 
 With --rpc, Deck instead serves this project to the Deck desktop app over
 gRPC (proto/deck/v1) on a Unix socket only this user can open. It prints one
@@ -134,10 +136,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		}()
 	}
 
-	name, fp, listen := "", "", "off"
+	name, fp, listen, relay := "", "", "off", false
 	if p := eng.Peers(); p != nil {
 		snap := p.Snapshot()
-		name, fp = snap.Name, snap.Fingerprint
+		name, fp, relay = snap.Name, snap.Fingerprint, snap.Relay
 		if snap.Listening != "" {
 			listen = snap.Listening
 		}
@@ -145,16 +147,25 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			slog.Warn("deck serve: the peer listener is not up", "error", snap.ListenErr)
 		}
 	}
-	slog.Info("deck serve: started", "name", name, "fingerprint", fp, "listen", listen, "remote", remoteOn, "pid", os.Getpid())
+	slog.Info("deck serve: started", "name", name, "fingerprint", fp, "listen", listen, "relay", relay, "remote", remoteOn, "pid", os.Getpid())
 
 	sigs := make(chan os.Signal, 2)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigs)
-	select {
-	case sig := <-sigs:
-		slog.Info("deck serve: draining", "signal", sig.String(), "drain", limit.String())
-	case <-remoteDone:
-		return errors.New("the remote server stopped unexpectedly")
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+wait:
+	for {
+		select {
+		case sig := <-sigs:
+			slog.Info("deck serve: draining", "signal", sig.String(), "drain", limit.String())
+			break wait
+		case <-hup:
+			reloadPeers(eng)
+		case <-remoteDone:
+			return errors.New("the remote server stopped unexpectedly")
+		}
 	}
 	stopRemote()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -170,6 +181,21 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	drain(ctx, eng, limit)
 	slog.Info("deck serve: stopped")
 	return nil
+}
+
+// reloadPeers puts the peers section of the config file in effect again.
+func reloadPeers(eng *engine.Engine) {
+	p := eng.Peers()
+	if p == nil {
+		slog.Warn("deck serve: reload: the peer link is not running; restart to turn it on")
+		return
+	}
+	if err := p.Reload(); err != nil {
+		slog.Warn("deck serve: reload: not all of the peers config is in effect", "error", err)
+		return
+	}
+	snap := p.Snapshot()
+	slog.Info("deck serve: reloaded the peers config", "listen", snap.Listening, "relay", snap.Relay, "peers", len(snap.Peers))
 }
 
 // servePeersOn refuses a serve with nothing to serve: peers off and no

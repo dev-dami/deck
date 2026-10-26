@@ -337,7 +337,7 @@ func (s *Server) untrack(raw net.Conn) {
 
 // handle runs one connection: the handshake under PreAuthTimeout, then the
 // link until it ends. A relayed connection (rel set) may only log in with
-// the key its relay named, and never as PairUser.
+// the key its relay named: as PairUser for a relayed pairing, else never.
 func (s *Server) handle(raw net.Conn, key string, rel *relayFrom) {
 	lim := s.opts.Limits
 	// The callbacks run on this goroutine, inside NewServerConn.
@@ -353,7 +353,7 @@ func (s *Server) handle(raw net.Conn, key string, rel *relayFrom) {
 			keyLocked = true
 			return nil, errNotPinned
 		}
-		if rel != nil && (meta.User() == PairUser || Fingerprint(k) != rel.fp) {
+		if rel != nil && ((meta.User() == PairUser) != rel.pair || Fingerprint(k) != rel.fp) {
 			return nil, errNotPinned
 		}
 		if meta.User() == PairUser {
@@ -387,7 +387,11 @@ func (s *Server) handle(raw net.Conn, key string, rel *relayFrom) {
 		// A pairing login: out of the handshake count, into its session's
 		// own limits. It clears no lockout: a code is not a pinned key.
 		s.preAuthDone(key)
-		s.servePair(raw, key, sc, chans, reqs, pairWith, pk)
+		via := ""
+		if rel != nil {
+			via = rel.via
+		}
+		s.servePair(raw, key, via, sc, chans, reqs, pairWith, pk)
 		return
 	}
 	name := sc.Permissions.Extensions[extPeer]
@@ -456,7 +460,8 @@ func (s *Server) checkPairKey(key ssh.PublicKey, with **pairSession) (*ssh.Permi
 
 // servePair serves the pairing exchange of ps on a PairUser connection,
 // within the session's own connection limits, and hands the outcome to it.
-func (s *Server) servePair(raw net.Conn, ip string, sc *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, ps *pairSession, keyData string) {
+// via is the relay it came through, "" for a direct one.
+func (s *Server) servePair(raw net.Conn, ip, via string, sc *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, ps *pairSession, keyData string) {
 	clientKey, err := ssh.ParsePublicKey([]byte(keyData))
 	if err != nil || ps == nil || !ps.live(s.pairs.now()) || !ps.g.admit(raw, ip) {
 		closeUnserved(sc, chans, reqs)
@@ -466,6 +471,9 @@ func (s *Server) servePair(raw net.Conn, ip string, sc *ssh.ServerConn, chans <-
 	timer := time.AfterFunc(pairHelloTimeout, func() { raw.Close() })
 	defer timer.Stop()
 	res, burned, err := ps.serve(raw, timer, sc, chans, reqs, clientKey)
+	if err == nil {
+		res.Via = via
+	}
 	ps.report(pairDone{res: res, burned: burned, err: err, remote: raw.RemoteAddr().String()})
 }
 
@@ -490,7 +498,7 @@ func (s *Server) ArmPair(ctx context.Context, o PairOptions) (*PairWait, error) 
 		s.mu.Unlock()
 		return nil, net.ErrClosed
 	}
-	w, err := armPair(ctx, s.pairs, o)
+	w, err := armPair(ctx, s.pairs, o, nil)
 	if err == nil && s.ln != nil {
 		w.Addr = s.ln.Addr().String()
 	}
@@ -691,7 +699,7 @@ func Dial(ctx context.Context, o DialOptions) (*Conn, error) {
 	if o.Via != nil {
 		via = o.Via.Peer().Name
 		addr = "relay:" + via
-		raw, err = o.Via.openRelay(ctx, o.Peer.Fingerprint, o.DialTimeout)
+		raw, err = o.Via.openRelay(ctx, RelayChannelType, o.Peer.Fingerprint, o.DialTimeout)
 	} else {
 		d := net.Dialer{Timeout: o.DialTimeout}
 		raw, err = d.DialContext(ctx, "tcp", addr)

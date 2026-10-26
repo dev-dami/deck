@@ -8,9 +8,10 @@
 # Logs:
 #   journalctl --user -u deck-serve -f
 #
-# Before you start it: turn peers on and pair your teammates' Decks
-# ('deck peer pair'), and log in to the agent CLIs (claude, codex) once as
-# this user. Stop any other Deck of this user first: only one Deck process at
+# Before you start it: turn peers on, and log in to the agent CLIs
+# (claude, codex) once as this user. Pair teammates' Decks with
+# 'deck peer pair' at any time: while deck serve runs, it waits for the code
+# itself, so there is no need to stop it. Stop any other Deck of this user first: only one Deck process at
 # a time can use ~/.deck/threads.
 
 [Unit]
@@ -25,6 +26,9 @@ WorkingDirectory=%h
 # The agent CLIs must be on PATH.
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=%h/.local/bin/deck serve --drain 2m
+# systemctl --user reload deck-serve applies config edits such as
+# 'deck peer relay on' without a restart.
+ExecReload=/bin/kill -HUP $MAINPID
 # Deck drains on SIGTERM. KillMode=mixed sends it to deck only, so the
 # agents keep working while Deck drains. Give it more time than --drain
 # before SIGKILL.

@@ -29,6 +29,12 @@ type PeerLink interface {
 	SetListen(enabled bool, addr string) error
 	SetRole(name, role string) error
 	SetDial(name string, dial bool) error
+	// SetRelay sets whether this Deck relays for its peers; SetVia the
+	// peer that relays the link to name ("" for direct); SetMayRelay
+	// whether name may relay links to this Deck.
+	SetRelay(on bool) error
+	SetVia(name, via string) error
+	SetMayRelay(name string, on bool) error
 	Remove(name string) error
 	Ping(ctx context.Context, name string) (peer.PingResult, error)
 

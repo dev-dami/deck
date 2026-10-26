@@ -7,6 +7,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/sub"
 	"log/slog"
 	"net"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -65,6 +66,9 @@ type Service struct {
 	draining atomic.Bool
 	// audit logs every event of the ops contracts (audit.go).
 	audit *auditLog
+	// ctlWG counts the control socket's goroutines (control.go).
+	ctlWG   sync.WaitGroup
+	ctlOnce sync.Once
 }
 
 // ServiceOptions configures a Service.
@@ -114,6 +118,7 @@ func NewService(o ServiceOptions) (*Service, error) {
 // Start puts p, the peers section Deck started with, in effect. With peers
 // off it makes nothing: no key, no listener, no goroutines.
 func (s *Service) Start(p *config.Peers) error {
+	s.ctlOnce.Do(s.startControl)
 	err := s.apply(p)
 	if p != nil && p.Enabled {
 		s.flushSoon() // what waited when Deck last stopped
@@ -124,6 +129,7 @@ func (s *Service) Start(p *config.Peers) error {
 // Close ends any pairing and stops the link.
 func (s *Service) Close() {
 	s.cancel()
+	s.ctlWG.Wait()
 	s.stopWait()
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()
@@ -311,6 +317,103 @@ func (s *Service) SetListen(enabled bool, addr string) error {
 	})
 }
 
+// SetRelay sets whether this Deck relays links and pairings between two
+// peers pinned here that cannot reach each other (peers.relay). It sees
+// only ciphertext. Turning it off ends the links it relays.
+func (s *Service) SetRelay(on bool) error {
+	return s.update(func(p *config.Peers) bool {
+		if p.Relay == on {
+			return false
+		}
+		p.Relay = on
+		return true
+	})
+}
+
+// SetVia sets the peer that relays this Deck's link to name
+// (peers.remote[].via); "" dials it directly. A relay keeps the link open
+// (dial on); with no relay and no address there is nothing to dial, so dial
+// goes off.
+func (s *Service) SetVia(name, via string) error {
+	store := OpenStore(s.dir)
+	pin, pinned, err := store.Get(name)
+	if err != nil {
+		return err
+	}
+	if !pinned {
+		return fmt.Errorf("no teammate %q is paired here", truncate(name, 40))
+	}
+	var vpin Pinned
+	if via != "" {
+		if via == name {
+			return fmt.Errorf("%q cannot relay its own link", name)
+		}
+		var ok bool
+		if vpin, ok, err = store.Get(via); err != nil {
+			return err
+		} else if !ok {
+			return fmt.Errorf("no teammate %q is paired here to relay through", truncate(via, 40))
+		}
+	}
+	return s.update(func(p *config.Peers) bool { return setVia(p, pin, vpin, via) })
+}
+
+// setVia sets the relay of pin's row in p to via, whose pin is vpin ("" for
+// direct), making the rows it needs.
+func setVia(p *config.Peers, pin, vpin Pinned, via string) bool {
+	if via != "" {
+		ensureRemote(p, vpin)
+	}
+	r := ensureRemote(p, pin)
+	if r.Via == via {
+		return false
+	}
+	r.Via = via
+	switch {
+	case via != "":
+		r.Dial = true
+	case r.Addr == "":
+		r.Dial = false
+	}
+	return true
+}
+
+// SetMayRelay sets whether name may bring links and pairings from other
+// peers pinned here (peers.remote[].relay): on for the Deck that relays to
+// this one.
+func (s *Service) SetMayRelay(name string, on bool) error {
+	pin, pinned, err := OpenStore(s.dir).Get(name)
+	if err != nil {
+		return err
+	}
+	if !pinned {
+		return fmt.Errorf("no teammate %q is paired here", truncate(name, 40))
+	}
+	return s.update(func(p *config.Peers) bool { return setMayRelay(p, pin, on) })
+}
+
+// setMayRelay sets whether the pinned peer pin may relay links to this Deck.
+func setMayRelay(p *config.Peers, pin Pinned, on bool) bool {
+	r := ensureRemote(p, pin)
+	if r.Relay == on {
+		return false
+	}
+	r.Relay = on
+	return true
+}
+
+// ensureRemote is p's row for the pinned peer pin, made from the pin when
+// it has none.
+func ensureRemote(p *config.Peers, pin Pinned) *config.PeerRemote {
+	for i := range p.Remote {
+		if p.Remote[i].Name == pin.Name {
+			return &p.Remote[i]
+		}
+	}
+	p.Remote = append(p.Remote, config.PeerRemote{Name: pin.Name, Addr: pin.Addr, Role: pin.Role})
+	return &p.Remote[len(p.Remote)-1]
+}
+
 // SetRole sets a peer's role here, in its pin and its config row (made when
 // a pinned peer has none).
 func (s *Service) SetRole(name, role string) error {
@@ -484,8 +587,10 @@ var errNoListener = errors.New("peer: not listening")
 // StartPairListen arms a fresh one-time code (what Settings and `deck peer
 // pair` do). While this Deck's own listener runs the code is served there,
 // on the same port as the link; otherwise a listener of its own is opened on
-// PairAddr, and a port already taken is an error, never another port. The
-// code is single use and expires after DefaultPairExpiry. A pairing this
+// PairAddr, and a port already taken is an error, never another port. While
+// the link runs, the code is also served to pairings a peer relays here, so
+// a Deck behind NAT pairs through a Deck both are paired with. The code is
+// single use and expires after DefaultPairExpiry. A pairing this
 // Service started before is stopped first. Nothing is pinned: once the
 // other side proves the code, Pin does that after the person compared the
 // fingerprints.
@@ -503,10 +608,27 @@ func (s *Service) StartPairListen(ctx context.Context) (*PairWait, error) {
 			s.track(w, cancel)
 			return w, nil
 		}
-		cancel()
 		if !errors.Is(err, errNoListener) {
+			cancel()
 			return nil, err
 		}
+		if !mgr.Running() {
+			// The link was turned off: no relay can bring a pairing.
+			cancel()
+			return s.StartPairing(PairAddr(p))
+		}
+		ln, err := ListenPair(PairAddr(p))
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		if w, err = mgr.ArmPairOn(ctx, ln, PairOptions{Logger: s.log}); err != nil {
+			cancel()
+			return nil, err
+		}
+		w.Hosts = InviteHosts(w.Addr)
+		s.track(w, cancel)
+		return w, nil
 	}
 	return s.StartPairing(PairAddr(p))
 }
@@ -669,8 +791,58 @@ func (s *Service) PairDial(ctx context.Context, addr, code, expectFP string) (Pa
 	}
 	s.setPairing(1)
 	defer s.setPairing(-1)
-	return DialPair(ctx, addr, PairOptions{Identity: id, Name: SelfName(p), Code: code, ExpectFingerprint: expectFP})
+	o := PairOptions{Identity: id, Name: SelfName(p), Code: code, ExpectFingerprint: expectFP}
+	// With the invite's fingerprint, a Deck that does not answer may still
+	// be reached through a teammate both are paired with.
+	var relays []*Conn
+	if mgr := s.Manager(); mgr != nil && expectFP != "" {
+		for _, c := range mgr.relayCandidates() {
+			if c.Peer().Fingerprint != expectFP {
+				relays = append(relays, c)
+			}
+		}
+	}
+	if len(relays) > 0 {
+		o.connectTimeout = pairQuickConnect
+	}
+	res, err := DialPair(ctx, addr, o)
+	if err == nil || len(relays) == 0 || !errors.Is(err, ErrPairNoAnswer) {
+		return res, err
+	}
+	miss := &RelayMissError{Direct: err}
+	for _, c := range relays {
+		r, rerr := DialPairVia(ctx, c, o)
+		if rerr == nil {
+			return r, nil
+		}
+		if !errors.Is(rerr, ErrPairRelay) {
+			return PairResult{}, rerr // it reached the Deck: wrong code, say
+		}
+		miss.Relays = append(miss.Relays, rerr)
+	}
+	return PairResult{}, miss
 }
+
+// pairQuickConnect bounds the direct TCP connect of a pairing that can still
+// go through a relay after it.
+const pairQuickConnect = 4 * time.Second
+
+// RelayMissError is a pairing that got no direct answer, and that no relay
+// could bring to the other Deck.
+type RelayMissError struct {
+	Direct error   // the direct attempt (ErrPairNoAnswer)
+	Relays []error // one ErrPairRelay per relay tried
+}
+
+func (e *RelayMissError) Error() string {
+	msgs := []string{e.Direct.Error()}
+	for _, r := range e.Relays {
+		msgs = append(msgs, r.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
+func (e *RelayMissError) Unwrap() []error { return append([]error{e.Direct}, e.Relays...) }
 
 // PinRequest pins a Deck that proved the pairing code, once the person
 // confirmed both fingerprints match.
@@ -712,6 +884,18 @@ func (s *Service) Pin(r PinRequest) error {
 	if swap && !r.Replace {
 		return fmt.Errorf("%w: %q is paired with another key (%s)", ErrPinTaken, r.Name, old.Fingerprint)
 	}
+	// Paired through a relay: the dialing side reaches it through that relay
+	// (the invite's address did not answer), and the waiting side lets the
+	// relay bring its links.
+	via, relayRow := "", ""
+	if r.Result.Via != "" {
+		if r.Result.Dialed {
+			// With no address, the relay is the only way: keep the link open.
+			via, r.Addr, r.Dial = r.Result.Via, "", true
+		} else {
+			relayRow = r.Result.Via
+		}
+	}
 	if r.Addr == "" {
 		// Re-paired from this side: keep where it was dialed.
 		if cur, ok := p.Find(r.Name); ok && cur.Addr != "" {
@@ -725,14 +909,29 @@ func (s *Service) Pin(r PinRequest) error {
 			return fmt.Errorf("%q is not an address: %v (want host:port)", truncate(r.Addr, 60), err)
 		}
 	}
-	if r.Dial && r.Addr == "" {
+	if r.Dial && r.Addr == "" && via == "" {
 		return errors.New("dialing a peer needs its address")
 	}
 	if err := savePin(store, NewPinned(r.Name, r.Addr, r.Role, r.Result.PeerKey), swap); err != nil {
 		return err
 	}
 	if s.cfgPath != "" {
-		if _, err := SetRemote(s.cfgPath, config.PeerRemote{Name: r.Name, Addr: r.Addr, Dial: r.Dial, Role: r.Role}); err != nil {
+		if _, err := config.UpdatePeers(s.cfgPath, func(p *config.Peers) bool {
+			if via != "" {
+				if vp, ok, _ := store.Get(via); ok {
+					ensureRemote(p, vp)
+				}
+			}
+			changed := setRemote(p, config.PeerRemote{Name: r.Name, Addr: r.Addr, Dial: r.Dial, Role: r.Role, Via: via})
+			if relayRow != "" {
+				if rp, ok, _ := store.Get(relayRow); ok {
+					if rr := ensureRemote(p, rp); !rr.Relay {
+						rr.Relay, changed = true, true
+					}
+				}
+			}
+			return changed
+		}); err != nil {
 			return fmt.Errorf("pinned %q, but could not add it to %s: %w", r.Name, s.cfgPath, err)
 		}
 	}
@@ -757,8 +956,12 @@ type Snapshot struct {
 	// than what runs (on/off, listener or name edited outside Deck). Reload,
 	// or a restart, puts it in effect.
 	Pending bool
-	Err     string // the config or the pins could not be read, or the last change failed
-	Peers   []PeerState
+	// Relay is set when this Deck relays for its peers (peers.relay);
+	// Relaying is how many links it relays now.
+	Relay    bool
+	Relaying int
+	Err      string // the config or the pins could not be read, or the last change failed
+	Peers    []PeerState
 	// Chat is the team chat, oldest first; Requests the capsules teammates
 	// asked this Deck for.
 	Chat     []ChatMessage
@@ -803,7 +1006,7 @@ func (s *Service) Snapshot() Snapshot {
 	if p == nil {
 		p = &config.Peers{}
 	}
-	snap.Enabled, snap.Name, snap.HostName, snap.Listen = p.Enabled, SelfName(p), p.Name == "", p.Listen
+	snap.Enabled, snap.Name, snap.HostName, snap.Listen, snap.Relay = p.Enabled, SelfName(p), p.Name == "", p.Listen, p.Relay
 	snap.Pending = err == nil && !sameRuntime(p, applied)
 	if id, err := LoadIdentity(s.dir); err == nil {
 		snap.Fingerprint = id.Fingerprint()
@@ -813,6 +1016,7 @@ func (s *Service) Snapshot() Snapshot {
 	var links map[string]Link
 	if mgr != nil {
 		snap.Running, snap.Listening, links = mgr.Running(), mgr.Addr(), mgr.Links()
+		snap.Relaying = mgr.Relaying()
 		if e := mgr.ListenErr(); e != nil {
 			snap.ListenErr = Sanitize(e.Error())
 		}
@@ -861,8 +1065,9 @@ func (s *Service) Snapshot() Snapshot {
 	return snap
 }
 
-// sameRuntime reports whether a and b ask for the same link: on/off, name
-// and listener.
+// sameRuntime reports whether a and b ask for the same link: on/off, name,
+// listener, relaying and remotes (`deck peer relay` edits those outside
+// Deck).
 func sameRuntime(a, b *config.Peers) bool {
 	if a == nil {
 		a = &config.Peers{}
@@ -870,5 +1075,6 @@ func sameRuntime(a, b *config.Peers) bool {
 	if b == nil {
 		b = &config.Peers{}
 	}
-	return a.Enabled == b.Enabled && SelfName(a) == SelfName(b) && a.Listen == b.Listen
+	return a.Enabled == b.Enabled && SelfName(a) == SelfName(b) && a.Listen == b.Listen &&
+		a.Relay == b.Relay && (len(a.Remote) == 0 && len(b.Remote) == 0 || reflect.DeepEqual(a.Remote, b.Remote))
 }

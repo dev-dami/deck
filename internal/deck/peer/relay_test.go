@@ -289,7 +289,7 @@ func TestHostileRelayChannels(t *testing.T) {
 			}
 		}()
 		// The inner link takes mcp channels only, never a relay type.
-		for _, typ := range []string{RelayChannelType, RelayedChannelType} {
+		for _, typ := range []string{RelayChannelType, RelayedChannelType, RelayPairChannelType, RelayedPairChannelType} {
 			ch, _, err := sc.OpenChannel(typ, from(ida.Fingerprint()))
 			var oe *ssh.OpenChannelError
 			if err == nil || !errors.As(err, &oe) || oe.Reason != ssh.UnknownChannelType {

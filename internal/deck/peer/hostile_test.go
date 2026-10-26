@@ -112,7 +112,7 @@ func TestHostileChannelsAndRequests(t *testing.T) {
 
 	for _, typ := range []string{"session", "direct-tcpip", "forwarded-tcpip", "x11", "auth-agent@openssh.com",
 		"direct-streamlocal@openssh.com", "tun@openssh.com", "deck-pair", "MCP", "mcp ", "", "unknown-xyz", strings.Repeat("m", 5000),
-		RelayChannelType, RelayedChannelType} {
+		RelayChannelType, RelayedChannelType, RelayPairChannelType, RelayedPairChannelType} {
 		ch, _, err := sc.OpenChannel(typ, []byte("payload"))
 		var oe *ssh.OpenChannelError
 		if err == nil || !errors.As(err, &oe) || oe.Reason != ssh.UnknownChannelType {

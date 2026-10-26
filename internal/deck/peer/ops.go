@@ -80,32 +80,39 @@ func AddRemote(path, name, addr, role string) (added bool, err error) {
 }
 
 // SetRemote adds r to the config file's remotes, or updates the row of the
-// same name (its addr, dial and role; allow_inbound and max_scope are kept).
-// An empty role keeps the row's, or is observer for a new row. changed
-// reports whether the file changed.
+// same name (its addr, dial and role, and its via when r names one;
+// allow_inbound, max_scope and relay are kept). An empty role keeps the
+// row's, or is observer for a new row. changed reports whether the file
+// changed.
 func SetRemote(path string, r config.PeerRemote) (changed bool, err error) {
-	return config.UpdatePeers(path, func(p *config.Peers) bool {
-		for i := range p.Remote {
-			cur := &p.Remote[i]
-			if cur.Name != r.Name {
-				continue
-			}
-			role := r.Role
-			if role == "" {
-				role = cur.Role
-			}
-			if cur.Addr == r.Addr && cur.Dial == r.Dial && cur.Role == role {
-				return false
-			}
-			cur.Addr, cur.Dial, cur.Role = r.Addr, r.Dial, role
-			return true
+	return config.UpdatePeers(path, func(p *config.Peers) bool { return setRemote(p, r) })
+}
+
+// setRemote is SetRemote on the peers section p.
+func setRemote(p *config.Peers, r config.PeerRemote) bool {
+	for i := range p.Remote {
+		cur := &p.Remote[i]
+		if cur.Name != r.Name {
+			continue
 		}
-		if r.Role == "" {
-			r.Role = config.PeerRoleObserver
+		role, via := r.Role, r.Via
+		if role == "" {
+			role = cur.Role
 		}
-		p.Remote = append(p.Remote, config.PeerRemote{Name: r.Name, Addr: r.Addr, Dial: r.Dial, Role: r.Role})
+		if via == "" {
+			via = cur.Via
+		}
+		if cur.Addr == r.Addr && cur.Dial == r.Dial && cur.Role == role && cur.Via == via {
+			return false
+		}
+		cur.Addr, cur.Dial, cur.Role, cur.Via = r.Addr, r.Dial, role, via
 		return true
-	})
+	}
+	if r.Role == "" {
+		r.Role = config.PeerRoleObserver
+	}
+	p.Remote = append(p.Remote, config.PeerRemote{Name: r.Name, Addr: r.Addr, Dial: r.Dial, Role: r.Role, Via: r.Via})
+	return true
 }
 
 // validRole reports whether role is a peer role, or empty for the default.

@@ -371,7 +371,7 @@ func (s *Settings) peerMenuItems(p peer.PeerState) []peerMenuItem {
 	}
 	items := []peerMenuItem{
 		ping,
-		{label: "Role: " + p.Role + " (make " + other + ")", run: func() Action {
+		{label: "Its role here: " + p.Role + " (make " + other + ")", run: func() Action {
 			return s.teamDo(name+" is now "+other, func(l workspace.PeerLink) error { return l.SetRole(name, other) })
 		}},
 	}
@@ -379,6 +379,22 @@ func (s *Settings) peerMenuItems(p peer.PeerState) []peerMenuItem {
 		dial := !p.Dial
 		items = append(items, peerMenuItem{label: "Connect automatically: " + onOff(p.Dial), run: func() Action {
 			return s.teamDo("Connect to "+name+" automatically "+onOff(dial), func(l workspace.PeerLink) error { return l.SetDial(name, dial) })
+		}})
+	}
+	if route, ok := s.nextRoute(p); ok {
+		label := "Reach it: direct"
+		if p.Via != "" {
+			label = "Reach it: through " + p.Via
+		}
+		label += " (make " + routeName(route) + ")"
+		items = append(items, peerMenuItem{label: label, run: func() Action {
+			return s.teamDo("Reach "+name+" "+routeName(route), func(l workspace.PeerLink) error { return l.SetVia(name, route) })
+		}})
+	}
+	if p.Pinned && (p.Relay || s.pinnedCount() > 1) {
+		may := !p.Relay
+		items = append(items, peerMenuItem{label: "May relay links to this Deck: " + onOff(p.Relay), run: func() Action {
+			return s.teamDo(name+" may relay to this Deck: "+onOff(may), func(l workspace.PeerLink) error { return l.SetMayRelay(name, may) })
 		}})
 	}
 	if p.Link.Status.Permanent || !p.Pinned {
@@ -391,6 +407,57 @@ func (s *Settings) peerMenuItems(p peer.PeerState) []peerMenuItem {
 		s.team.menu.confirm = true
 		return nil
 	}})
+}
+
+// nextRoute is the route after p's current one: direct (when p has an
+// address), then each other paired peer as a relay. ok is false when there
+// is no other route.
+func (s *Settings) nextRoute(p peer.PeerState) (route string, ok bool) {
+	if !p.Pinned || s.team.snap == nil {
+		return "", false
+	}
+	var routes []string
+	if p.Addr != "" || p.Via == "" {
+		routes = append(routes, "")
+	}
+	for _, o := range s.team.snap.Peers {
+		if o.Pinned && o.Name != p.Name {
+			routes = append(routes, o.Name)
+		}
+	}
+	for i, r := range routes {
+		if r == p.Via {
+			if len(routes) == 1 {
+				return "", false
+			}
+			return routes[(i+1)%len(routes)], true
+		}
+	}
+	if len(routes) == 0 {
+		return "", false
+	}
+	return routes[0], true
+}
+
+// routeName words a route for a menu label: direct, or through a relay.
+func routeName(via string) string {
+	if via == "" {
+		return "direct"
+	}
+	return "through " + via
+}
+
+// pinnedCount is how many peers are paired here.
+func (s *Settings) pinnedCount() int {
+	n := 0
+	if s.team.snap != nil {
+		for _, p := range s.team.snap.Peers {
+			if p.Pinned {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // copyFingerprint copies this Deck's fingerprint (public, safe to share).
@@ -433,6 +500,7 @@ const (
 	teamLabelPrint     = "Fingerprint"
 	teamLabelAccept    = "Accept connections"
 	teamLabelListenOn  = "Listen on"
+	teamLabelRelay     = "Relay for teammates"
 	teamLabelStatus    = "Status"
 	teamLabelAdd       = "+ Add a teammate"
 	teamSectionThis    = "This Deck"
@@ -515,6 +583,19 @@ func (s *Settings) teamRows() []settingsRow {
 			},
 		},
 	}
+	relay := onOff(snap.Relay)
+	if snap.Relaying > 0 {
+		relay += fmt.Sprintf(" · relaying %d", snap.Relaying)
+	}
+	rows = append(rows, settingsRow{
+		section: teamSectionConns, label: teamLabelRelay, value: relay,
+		hint: "Link teammates paired here that cannot reach each other (both behind NAT, say). It sees only ciphertext.",
+		change: func(int) Action {
+			v := !snap.Relay
+			s.team.snap.Relay = v
+			return s.teamDo("Relay for teammates "+onOff(v), func(l workspace.PeerLink) error { return l.SetRelay(v) })
+		},
+	})
 	status, statusColor := s.teamStatus(snap)
 	statusHint := "What the link is doing now."
 	if snap.Pending {
@@ -674,7 +755,14 @@ func peerHint(p peer.PeerState) string {
 			return "No longer paired here: pair again or remove it."
 		}
 	}
-	return "Enter: ping, role, auto-connect, remove."
+	st := p.Link.Status
+	if p.Link.Supervised && st.State == peer.StateBackoff && st.LastError != "" {
+		if p.Via != "" {
+			return "Not through " + p.Via + ": " + peer.RelayErrText(p.Via, p.Name, st.LastError) + ". Enter: actions."
+		}
+		return "Last try: " + strings.TrimPrefix(st.LastError, "peer: ") + ". Enter: actions."
+	}
+	return "Enter: ping, role, auto-connect, route, remove."
 }
 
 // peerDetails is the value of a peer's row: state, latency, address, role
@@ -686,11 +774,16 @@ func peerDetails(p peer.PeerState, state string, now time.Time) string {
 	if connected && p.Link.Status.Latency > 0 {
 		parts = append(parts, formatLatency(p.Link.Status.Latency))
 	}
-	addr := p.Addr
-	if addr == "" {
+	addr := peer.Sanitize(p.Addr)
+	switch {
+	case p.Via != "" && addr == "":
+		addr = "through " + p.Via
+	case p.Via != "":
+		addr += " or through " + p.Via
+	case addr == "":
 		addr = "dials in"
 	}
-	parts = append(parts, peer.Sanitize(addr), p.Role)
+	parts = append(parts, addr, p.Role)
 	if !connected && !p.Link.LastSeen.IsZero() {
 		parts = append(parts, "seen "+formatSpan(now.Sub(p.Link.LastSeen))+" ago")
 	}

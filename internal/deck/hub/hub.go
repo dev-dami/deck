@@ -321,7 +321,7 @@ func init() {
 			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "note", Type: tString, Desc: "what you checked"}}, run: opTask(OpReviewApprove)},
 		{Name: OpReviewChanges, Desc: "As a task's reviewer: send the work back with what must change. Its owner gets your notes and works on it again; its next result comes back for review. After a few rounds the user decides.",
 			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "notes", Type: tString, Required: true, Desc: "what must change, and why"}}, run: opTask(OpReviewChanges)},
-		{Name: OpTaskContract, Desc: "Ask a teammate's Deck (peers.list) to do a coding task: the user allows it first, a copy of your tree goes to that Deck alone, and its person confirms and picks the agent. It becomes a task on the board that the teammate owns; when it ends, its reply and a capsule of its changes come back to you (apply it with sub.patch.apply).",
+		{Name: OpTaskContract, Desc: "Ask a teammate's Deck (peers.list) to do a coding task. That Deck must have made this Deck a contractor on its side (the role peers.list shows is the one this Deck gives it, not the other way). The user allows it first, a copy of your tree goes to that Deck alone, and its person confirms and picks the agent. It becomes a task on the board that the teammate owns; when it ends, its reply and a capsule of its changes come back to you (apply it with sub.patch.apply).",
 			Args: []Arg{{Name: "peer", Type: tString, Required: true, Desc: "the teammate's name"}, {Name: "brief", Type: tString, Required: true}, {Name: "title", Type: tString}},
 			run:  opTask(OpTaskContract)},
 		{Name: "sub.snapshot.create", Desc: "Record your work tree as a SUB snapshot (content-addressed; unchanged files cost nothing). It becomes your base for sub.patch.capture.",
@@ -378,8 +378,11 @@ func init() {
 			Args: []Arg{{Name: "peer", Type: tString, Required: true, Desc: "the teammate's name"}}, run: opPeersStatus},
 		{Name: OpTeamRead, Desc: "Read the team chat shared with your teammates' Decks: people and agents on other machines, and this Deck's. Each line has its number; since skips what you read already.",
 			Args: []Arg{{Name: "since", Type: tInt, Desc: "the last message number you read"}}, run: opTeamRead},
-		{Name: OpTeamPost, Desc: "Post a short message to the team chat, which your teammates (people and their agents on other machines) read. Only for things they need to know: a status, a question, a hand-off. A few per minute at most.",
-			Args: []Arg{{Name: "text", Type: tString, Required: true}}, run: opTask(OpTeamPost)},
+		{Name: OpTeamPost, Desc: "Post a short message to the team chat, which your teammates (people and their agents on other machines) read. Only for things they need to know: a status, a question, a hand-off. A few per minute at most. to sends it to one teammate only, or to one of its agents, which reads it at the start of its next turn.",
+			Args: []Arg{
+				{Name: "text", Type: tString, Required: true},
+				{Name: "to", Type: tString, Desc: "one teammate (\"vps\") or one of its agents (\"vps/codex\"); empty for every teammate"},
+			}, run: opTask(OpTeamPost)},
 	}
 }
 

@@ -103,6 +103,9 @@ var (
 	// ErrPairFingerprint: the other side's key is not the one the invite
 	// named. Nothing was sent that depends on the code.
 	ErrPairFingerprint = errors.New("peer: the fingerprint does not match the invite")
+	// ErrPairRelay: a relay did not bring the pairing to the other Deck;
+	// the error says which relay and why. Nothing depends on the code yet.
+	ErrPairRelay = errors.New("peer: the relay did not reach it")
 )
 
 // kdfParams is the argon2id cost; tests lower it.
@@ -188,6 +191,10 @@ type PairResult struct {
 	PeerFingerprint string
 	OwnFingerprint  string
 	RemoteAddr      string
+	// Via is the peer that relayed the pairing, "" for a direct one.
+	Via string
+	// Dialed is set on the side that proved the code to a waiting Deck.
+	Dialed bool
 }
 
 // PairOptions configures both sides of pairing.
@@ -202,6 +209,9 @@ type PairOptions struct {
 	// named: any other host key ends the pairing with ErrPairFingerprint
 	// before the code is used.
 	ExpectFingerprint string
+	// connectTimeout bounds the dialer's TCP connect (PairDialTimeout); a
+	// shorter one leaves time to try a relay after it.
+	connectTimeout time.Duration
 	// Expiry and MaxAttempts bound the listener (5m, 3).
 	Expiry      time.Duration
 	MaxAttempts int
@@ -433,9 +443,10 @@ func (s *pairSlot) stop() {
 
 // armPair arms a pairing session with o (a fresh code when o.Code is empty)
 // in slot, and runs it until one Deck proves the code, the code is burned or
-// expires, ctx ends or the PairWait is cancelled; then it is disarmed. Addr
-// and Reachable are the caller's to fill in.
-func armPair(ctx context.Context, slot *pairSlot, o PairOptions) (*PairWait, error) {
+// expires, ctx ends or the PairWait is cancelled; then it is disarmed. When
+// ln is set, the session is served on it too, and ln is closed at the end.
+// Addr and Reachable are the caller's to fill in.
+func armPair(ctx context.Context, slot *pairSlot, o PairOptions, ln net.Listener) (*PairWait, error) {
 	if o.Code == "" {
 		code, err := NewPairCode()
 		if err != nil {
@@ -450,14 +461,27 @@ func armPair(ctx context.Context, slot *pairSlot, o PairOptions) (*PairWait, err
 	ctx, cancel := context.WithTimeout(ctx, ps.o.Expiry)
 	ps.cancel, ps.ended = cancel, make(chan struct{})
 	slot.arm(ps)
+	var (
+		wg        sync.WaitGroup
+		acceptErr chan error
+	)
+	if ln != nil {
+		acceptErr = make(chan error, 1)
+		wg.Add(1)
+		go acceptPair(ln, ps, &wg, acceptErr)
+	}
 	out := make(chan PairOutcome, 1)
 	go func() {
 		defer close(ps.ended)
 		defer close(out)
 		defer cancel()
-		res, err := ps.wait(ctx, nil)
+		res, err := ps.wait(ctx, acceptErr)
 		slot.disarm(ps)
 		ps.end()
+		if ln != nil {
+			ln.Close()
+			wg.Wait()
+		}
 		out <- PairOutcome{Result: res, Err: err}
 	}()
 	return &PairWait{
@@ -488,29 +512,34 @@ func ServePair(ctx context.Context, ln net.Listener, o PairOptions) (PairResult,
 		wg.Wait()
 	}()
 	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			raw, err := ln.Accept()
-			if err != nil {
-				acceptErr <- err
-				return
-			}
-			ip := lockKey(raw.RemoteAddr())
-			if !ps.g.admit(raw, ip) {
-				raw.Close()
-				continue
-			}
-			wg.Add(1) // this goroutine still counts, so wg is not at zero
-			go func() {
-				defer wg.Done()
-				defer ps.g.release(raw, ip)
-				res, burned, err := pairServeConn(raw, ps)
-				ps.report(pairDone{res: res, burned: burned, err: err, remote: raw.RemoteAddr().String()})
-			}()
-		}
-	}()
+	go acceptPair(ln, ps, &wg, acceptErr)
 	return ps.wait(ctx, acceptErr)
+}
+
+// acceptPair serves ps to every connection ln accepts until ln is closed,
+// and then sends the accept error on acceptErr. wg counts it and every
+// connection it serves; it is Done once for acceptPair itself.
+func acceptPair(ln net.Listener, ps *pairSession, wg *sync.WaitGroup, acceptErr chan<- error) {
+	defer wg.Done()
+	for {
+		raw, err := ln.Accept()
+		if err != nil {
+			acceptErr <- err
+			return
+		}
+		ip := lockKey(raw.RemoteAddr())
+		if !ps.g.admit(raw, ip) {
+			raw.Close()
+			continue
+		}
+		wg.Add(1) // this goroutine still counts, so wg is not at zero
+		go func() {
+			defer wg.Done()
+			defer ps.g.release(raw, ip)
+			res, burned, err := pairServeConn(raw, ps)
+			ps.report(pairDone{res: res, burned: burned, err: err, remote: raw.RemoteAddr().String()})
+		}()
+	}
 }
 
 // pairServerConfig accepts any plain ed25519 client key, handing it on in
@@ -667,10 +696,56 @@ func DialPair(ctx context.Context, addr string, o PairOptions) (PairResult, erro
 
 func dialPair(ctx context.Context, addr, code string, o PairOptions) (PairResult, error) {
 	d := net.Dialer{Timeout: PairDialTimeout}
+	if o.connectTimeout > 0 {
+		d.Timeout = o.connectTimeout
+	}
 	raw, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return PairResult{}, fmt.Errorf("%w from %s: %v", ErrPairNoAnswer, addr, err)
 	}
+	return pairOver(ctx, raw, addr, code, o)
+}
+
+// DialPairVia runs the dialing side through relay, a live link to a Deck
+// that both Decks are paired with, to the Deck whose fingerprint
+// o.ExpectFingerprint names (from its invite; it is required, since the
+// relay finds the other Deck by it). The exchange inside is the one DialPair
+// runs, end to end, so the relay sees only ciphertext. A relay that did not
+// reach the other Deck gives ErrPairRelay with its reason.
+func DialPairVia(ctx context.Context, relay *Conn, o PairOptions) (PairResult, error) {
+	if o.Identity == nil {
+		return PairResult{}, errors.New("peer: pairing needs an identity")
+	}
+	if o.ExpectFingerprint == "" {
+		return PairResult{}, errors.New("peer: pairing through a relay needs the invite's fingerprint")
+	}
+	code := normalizeCode(o.Code)
+	if !validCode(code) {
+		return PairResult{}, errors.New("peer: that is not a pairing code (10 letters and digits, like ABCDE-23456)")
+	}
+	ctx, cancel := context.WithTimeout(ctx, PairDialTimeout)
+	defer cancel()
+	name := relay.Peer().Name
+	raw, err := relay.openRelay(ctx, RelayPairChannelType, o.ExpectFingerprint, PairDialTimeout)
+	if err != nil {
+		why := "no answer"
+		var oe *ssh.OpenChannelError
+		if errors.As(err, &oe) && oe.Message != "" {
+			why = oe.Message
+		}
+		return PairResult{}, fmt.Errorf("%w: %s: %s", ErrPairRelay, name, Sanitize(truncate(why, 160)))
+	}
+	res, err := pairOver(ctx, raw, "relay:"+name, code, o)
+	if err != nil {
+		return PairResult{}, err
+	}
+	res.Via = name
+	return res, nil
+}
+
+// pairOver runs the dialing side of the exchange on raw, a connection to
+// addr, and closes raw.
+func pairOver(ctx context.Context, raw net.Conn, addr, code string, o PairOptions) (PairResult, error) {
 	defer raw.Close()
 	stop := context.AfterFunc(ctx, func() { raw.Close() })
 	defer stop()
@@ -744,6 +819,7 @@ func dialPair(ctx context.Context, addr, code string, o PairOptions) (PairResult
 		PeerFingerprint: Fingerprint(hostKey),
 		OwnFingerprint:  o.Identity.Fingerprint(),
 		RemoteAddr:      addr,
+		Dialed:          true,
 	}, nil
 }
 
@@ -751,7 +827,17 @@ func dialPair(ctx context.Context, addr, code string, o PairOptions) (PairResult
 // on. It never contains the code.
 func PairErrText(err error, addr string) string {
 	port := portOfAddr(addr)
+	var miss *RelayMissError
+	if errors.As(err, &miss) {
+		why := make([]string, 0, len(miss.Relays))
+		for _, r := range miss.Relays {
+			why = append(why, relayErrOf(r))
+		}
+		return "No answer from " + addr + ", and no teammate could relay the pairing: " + strings.Join(why, "; ") + "."
+	}
 	switch {
+	case errors.Is(err, ErrPairRelay):
+		return relayErrOf(err) + "."
 	case errors.Is(err, ErrPairFingerprint):
 		return "The fingerprint does not match the invite: someone may be intercepting this connection. Nothing was paired."
 	case errors.Is(err, ErrPairWrong):

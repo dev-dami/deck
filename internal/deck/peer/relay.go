@@ -2,9 +2,11 @@ package peer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,6 +32,13 @@ import (
 //
 // The inner link is a normal peer link: mcp channels only, and B's usual
 // Caller and allow list for A. It takes no relay channel itself.
+//
+// Pairing goes the same way, for two Decks that are paired with R but not
+// with each other: A opens relay-pair@deck naming the fingerprint of B's
+// invite, R checks the same rules and opens relayed-pair@deck to B, and B
+// takes it only while it waits for a code. Inside, A and B run the usual
+// pairing exchange (pair.go), so R cannot pair in their place without the
+// code. B takes it without a relay row: waiting for a code is the consent.
 
 // Relay caps when ManagerOptions leaves them at zero.
 const (
@@ -51,9 +60,11 @@ type relayedReq struct {
 }
 
 // relayFrom marks a connection the Server got through a relay: via is the
-// relay's name, fp the only key that may log in on it.
+// relay's name, fp the only key that may log in on it. pair is set for a
+// relayed pairing: it may then log in as PairUser only, else never.
 type relayFrom struct {
 	via, fp string
+	pair    bool
 }
 
 // relayer counts relayed channels against the caps and keeps the splices
@@ -199,13 +210,14 @@ func (r *relayer) stopAll() {
 	}
 }
 
-// openRelay asks the Deck at the other end of c to relay a link to its peer
-// with key fingerprint fp, and returns the channel as a net.Conn for the SSH
+// openRelay asks the Deck at the other end of c to relay a link (typ
+// RelayChannelType) or a pairing (RelayPairChannelType) to its peer with key
+// fingerprint fp, and returns the channel as a net.Conn for the SSH
 // handshake inside it.
-func (c *Conn) openRelay(ctx context.Context, fp string, timeout time.Duration) (net.Conn, error) {
+func (c *Conn) openRelay(ctx context.Context, typ, fp string, timeout time.Duration) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	ch, err := c.openChannel(ctx, RelayChannelType, ssh.Marshal(relayReq{Target: fp}))
+	ch, err := c.openChannel(ctx, typ, ssh.Marshal(relayReq{Target: fp}))
 	if err != nil {
 		return nil, fmt.Errorf("peer: relay through %s: %w", c.caller.Name, err)
 	}
@@ -213,20 +225,28 @@ func (c *Conn) openRelay(ctx context.Context, fp string, timeout time.Duration) 
 }
 
 // relayChannel is the relay hook of the Manager's direct links: it takes
-// relay@deck (this Deck relays) and relayed@deck (this Deck is the target).
-// It runs on the link's channel loop, so it never waits on the network.
+// relay@deck and relay-pair@deck (this Deck relays), relayed@deck and
+// relayed-pair@deck (this Deck is the target). It runs on the link's
+// channel loop, so it never waits on the network.
 func (m *Manager) relayChannel(c *Conn, nc ssh.NewChannel) {
-	if nc.ChannelType() == RelayChannelType {
-		m.relayFor(c, nc)
-		return
+	switch nc.ChannelType() {
+	case RelayChannelType:
+		m.relayFor(c, nc, RelayedChannelType)
+	case RelayPairChannelType:
+		m.relayFor(c, nc, RelayedPairChannelType)
+	case RelayedChannelType:
+		m.acceptRelayed(c, nc)
+	default:
+		m.acceptRelayedPair(c, nc)
 	}
-	m.acceptRelayed(c, nc)
 }
 
-// relayFor relays a link from the peer on c to the peer the request names,
-// when relaying is on, both are pinned here, and the target has a direct
-// link to this Deck.
-func (m *Manager) relayFor(c *Conn, nc ssh.NewChannel) {
+// relayFor relays a link or a pairing from the peer on c to the peer the
+// request names, as a channel of type out, when relaying is on, both are
+// pinned here, and the target has a direct link to this Deck. A refusal
+// from the target goes back with its reason, so the origin can say which
+// Deck to fix.
+func (m *Manager) relayFor(c *Conn, nc ssh.NewChannel, out string) {
 	from := c.Peer()
 	if p := m.peers.Load(); p == nil || !p.Relay {
 		_ = nc.Reject(ssh.Prohibited, "relaying is off")
@@ -261,20 +281,25 @@ func (m *Manager) relayFor(c *Conn, nc ssh.NewChannel) {
 		defer m.relays.wg.Done()
 		defer release()
 		ctx, cancel := context.WithTimeout(c.ctx, link.lim.HandshakeTimeout)
-		out, err := link.openChannel(ctx, RelayedChannelType, ssh.Marshal(relayedReq{Name: from.Name, Fingerprint: from.Fingerprint}))
+		dst, err := link.openChannel(ctx, out, ssh.Marshal(relayedReq{Name: from.Name, Fingerprint: from.Fingerprint}))
 		cancel()
 		if err != nil {
-			_ = nc.Reject(ssh.ConnectionFailed, "the peer refused the relay")
+			why := "the peer refused the relay"
+			var oe *ssh.OpenChannelError
+			if errors.As(err, &oe) && oe.Message != "" {
+				why += ": " + truncate(oe.Message, 120)
+			}
+			_ = nc.Reject(ssh.ConnectionFailed, why)
 			return
 		}
 		in, reqs, err := nc.Accept()
 		if err != nil {
-			out.Close()
+			dst.Close()
 			return
 		}
 		go refuseRequests(reqs)
-		m.o.Logger.Info("peer: relaying", "from", from.Name, "to", to.Name)
-		n := m.relays.run(in, out)
+		m.o.Logger.Info("peer: relaying", "from", from.Name, "to", to.Name, "pairing", out == RelayedPairChannelType)
+		n := m.relays.run(in, dst)
 		m.o.Logger.Info("peer: relay ended", "from", from.Name, "to", to.Name, "bytes", n)
 	}()
 }
@@ -322,6 +347,45 @@ func (m *Manager) acceptRelayed(c *Conn, nc ssh.NewChannel) {
 	go refuseRequests(reqs)
 	raw := newChanConn(ch, relayAddr("relay:"+via.Name), release)
 	srv.accept(raw, "relay:"+via.Name+" "+origin.Fingerprint, &relayFrom{via: via.Name, fp: origin.Fingerprint})
+}
+
+// acceptRelayedPair serves a pairing that the peer on c relays from another
+// Deck, while this Deck waits for a code. The connection may only log in as
+// PairUser with the key the relay named, and goes through the code's usual
+// checks and attempts.
+func (m *Manager) acceptRelayedPair(c *Conn, nc ssh.NewChannel) {
+	via := c.Peer()
+	if _, err := m.recheck(via); err != nil {
+		_ = nc.Reject(ssh.Prohibited, "not pinned")
+		return
+	}
+	var req relayedReq
+	if ssh.Unmarshal(nc.ExtraData(), &req) != nil || req.Fingerprint == "" || req.Fingerprint == via.Fingerprint {
+		_ = nc.Reject(ssh.Prohibited, "bad relayed request")
+		return
+	}
+	if m.pairs.get() == nil {
+		_ = nc.Reject(ssh.Prohibited, "this Deck is not waiting for a code")
+		return
+	}
+	srv := m.relayServer()
+	if srv == nil {
+		_ = nc.Reject(ssh.ConnectionFailed, "not running")
+		return
+	}
+	release, ok := m.relays.acquire(via.Fingerprint)
+	if !ok {
+		_ = nc.Reject(ssh.ResourceShortage, "too many relays")
+		return
+	}
+	ch, reqs, err := nc.Accept()
+	if err != nil {
+		release()
+		return
+	}
+	go refuseRequests(reqs)
+	raw := newChanConn(ch, relayAddr("relay:"+via.Name), release)
+	srv.accept(raw, "relay:"+via.Name+" pair", &relayFrom{via: via.Name, fp: req.Fingerprint, pair: true})
 }
 
 // pinnedByFingerprint returns the pin with key fingerprint fp.
@@ -383,7 +447,7 @@ func (m *Manager) relayServer() *Server {
 			Identity: m.id, Store: m.store, Handler: m.o.Handler,
 			Name: m.Name(), Version: version.Version,
 			Caller: m.caller, Limits: m.o.Limits, Logger: m.o.Logger,
-			OnConn: m.inbound, OnDisconnect: m.inbound, perKey: m.perKey,
+			OnConn: m.inbound, OnDisconnect: m.inbound, perKey: m.perKey, pairs: m.pairs,
 		})
 		if err != nil {
 			return nil
@@ -391,6 +455,47 @@ func (m *Manager) relayServer() *Server {
 		m.rsrv = s
 	}
 	return m.rsrv
+}
+
+// relayErrOf words an ErrPairRelay ("peer: the relay did not reach it:
+// vps: why") for a person.
+func relayErrOf(err error) string {
+	rest := strings.TrimPrefix(err.Error(), ErrPairRelay.Error()+": ")
+	relay, why, _ := strings.Cut(rest, ": ")
+	return RelayErrText(relay, "the other Deck", why)
+}
+
+// RelayErrText says, in words a person can act on, why the relay did not
+// bring a link or a pairing to target: msg is the error the relay sent
+// (sanitized text from a peer), or this Deck's own when it has no link to
+// the relay. It names the Deck to fix.
+func RelayErrText(relay, target, msg string) string {
+	switch {
+	case strings.Contains(msg, "no link to the relay"):
+		return "not connected to " + relay + ", which relays it"
+	case strings.Contains(msg, "relaying is off"):
+		return relay + " does not relay: turn on Relay for teammates there (peers.relay)"
+	case strings.Contains(msg, "no such peer"):
+		return relay + " is not paired with " + target
+	case strings.Contains(msg, "has no link to this Deck"):
+		return target + " is not connected to " + relay + " now"
+	case strings.Contains(msg, "relayed links from this peer are off"):
+		return target + " does not take links through " + relay + ": on " + target + ", let " + relay + " relay to it"
+	case strings.Contains(msg, "not waiting for a code"):
+		return target + " is not waiting for a code (it expired or was used): start waiting there again"
+	case strings.Contains(msg, "too many relays"):
+		return relay + " relays too many links now: try again later"
+	case strings.Contains(msg, "refused the relay: not pinned"):
+		return target + " is not paired with this Deck: pair again"
+	case strings.Contains(msg, "not pinned"):
+		return relay + " no longer has this Deck paired"
+	case strings.Contains(msg, "refused the relay"):
+		return target + " refused the link " + relay + " brought"
+	}
+	if msg == "" {
+		msg = "no answer"
+	}
+	return relay + ": " + msg
 }
 
 // relayAddr is the address of a relayed connection: "relay:" and the relay.

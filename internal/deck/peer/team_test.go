@@ -171,3 +171,32 @@ func TestDrainRefusesNewWork(t *testing.T) {
 		t.Fatalf("chat must still work while draining: %v", err)
 	}
 }
+
+// TestPostChatTo: a post to one teammate goes to it alone, naming the agent
+// there it is for, and an unknown teammate is refused with the names.
+func TestPostChatTo(t *testing.T) {
+	leakCheck(t)
+	a, b := linkedServices(t, Local{}, Local{})
+	other, err := LoadOrCreateIdentity(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := OpenStore(b.dir).Pin(NewPinned("c", "", "", other.PublicKey())); err != nil {
+		t.Fatal(err)
+	}
+	ctx := ctxT(t)
+	reached, err := b.PostChatTo(ctx, "claude", "a/codex", "hey now")
+	if err != nil || len(reached) != 1 || reached[0] != "a" {
+		t.Fatalf("post to a/codex: %v, %v", reached, err)
+	}
+	got := a.Team().Chat()
+	if len(got) != 1 || got[0].For != "codex" || got[0].Author() != "b/claude" || got[0].Text != "hey now" {
+		t.Fatalf("a's chat = %+v", got)
+	}
+	if b.out.len() != 0 {
+		t.Fatal("a post to a alone was queued for c")
+	}
+	if _, err := b.PostChatTo(ctx, "claude", "nobody", "hi"); err == nil || !strings.Contains(err.Error(), "a, c") {
+		t.Fatalf("unknown teammate: %v", err)
+	}
+}
