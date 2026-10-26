@@ -1776,3 +1776,36 @@ body {
   --syn-punct: #657b83;
   --syn-variable: #586e75;
 }
+
+/* ── Pages ──
+   The first screens and the pages (Welcome, Connect, Settings, Usage, Team,
+   Inbox): only what a utility cannot say. */
+
+/* Deck's mark: the cursor blinks four times as the Welcome opens, then
+   holds, as a prompt that has just woken. */
+@keyframes deck-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.deck-mark .deck-cursor {
+  animation: deck-blink 1.1s steps(1, end) 420ms 4;
+}
+[data-motion="reduced"] .deck-mark .deck-cursor {
+  animation: none;
+}
+
+/* The light the Welcome's mark sits in: one more pool of the accent on the
+   backdrop, so the first glass on screen has something to bend. */
+.welcome-halo::before {
+  content: "";
+  position: absolute;
+  inset: -4rem -1.5rem auto;
+  height: 20rem;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--primary) 18%, transparent), transparent);
+}
+:root[data-mode="light"] .welcome-halo::before {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--primary) 13%, transparent), transparent);
+}
