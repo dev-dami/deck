@@ -565,7 +565,7 @@ body {
   border-radius: 20px 20px 6px 20px;
   background: var(--bubble);
   box-shadow: inset 0 1px 0 0 var(--highlight);
-  padding: 0.5rem 0.875rem;
+  padding: 0.5625rem 1rem;
 }
 .msg-user .user-card::before {
   display: none;
@@ -773,10 +773,11 @@ body {
 }
 
 /* The composer's glass floats over the timeline, so a message scrolls on
-   under it; the timeline fades only at its top edge, under the toolbar. */
+   under it; the timeline fades at its top edge, under the toolbar, and in
+   the last few pixels under the capsule, where the sheet's edge is. */
 .timeline {
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14px);
-  mask-image: linear-gradient(to bottom, transparent, #000 14px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 10px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 10px), transparent);
 }
 
 /* Agent prose: the shared markdown parser's node tree. */
@@ -843,24 +844,26 @@ body {
 }
 .md code {
   font-family: var(--font-mono);
-  font-size: 0.84em;
-  background: var(--code);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.1em 0.35em;
+  font-size: 0.86em;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  border: 0;
+  border-radius: 5px;
+  padding: 0.12em 0.4em;
 }
+/* A code block is a card inside the sheet: rounded-xl, surface-1, a rim. */
 .md pre.codeblock {
   margin: 0;
   margin-top: 0.75em;
-  background: var(--diff-bg, var(--code));
+  background: var(--diff-bg, var(--surface-1));
   color: var(--diff-fg, inherit);
   tab-size: 4;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  border-radius: calc(var(--radius) + 4px);
+  padding: 14px 16px;
   overflow-x: auto;
   font-size: 12.5px;
-  line-height: 1.6;
+  line-height: 1.65;
 }
 .md pre.codeblock code {
   background: none;
@@ -1775,4 +1778,89 @@ body {
   --syn-comment: #93a1a1;
   --syn-punct: #657b83;
   --syn-variable: #586e75;
+}
+
+/* ── Room ──
+   The room's own pieces that a utility cannot say: the composer's height
+   for the timeline under it, the agents' hue in motion, and the glass the
+   composer lends what stacks on it. */
+.room-body {
+  /* Until the dock measures itself (Room.tsx, useDockHeight). */
+  --composer-h: 8.5rem;
+}
+.md p,
+.md li {
+  text-wrap: pretty;
+}
+/* A fenced block sits in a card (Markdown.tsx), which takes the spacing. */
+.md .md-code pre.codeblock {
+  margin-top: 0;
+}
+
+/* "Working": the word shimmers from muted text to the agent's hue (--hue,
+   set on the message), and three dots of it step in turn. */
+.shimmer-hue {
+  background-image: linear-gradient(
+    90deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 38%,
+    var(--hue, var(--foreground)) 50%,
+    var(--muted-foreground) 62%,
+    var(--muted-foreground) 100%
+  );
+}
+.working-dots > span {
+  animation: deck-pulse 1.2s steps(4, jump-none) infinite;
+}
+.working-dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.working-dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+/* A working agent's disc wears a ring of its hue that breathes. */
+.agent-working::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--hue) 45%, transparent);
+  animation: deck-pulse 1.6s steps(4, jump-none) infinite;
+}
+[data-motion="reduced"] .working-dots > span,
+[data-motion="reduced"] .agent-working::after {
+  animation: none;
+}
+
+/* What stacks on the floating composer (the take-over and edit notices,
+   from RoomVerbs) is glass too, so nothing opaque floats over the
+   timeline. */
+.composer .room-notice {
+  @apply liquid-thick;
+  margin-bottom: 0;
+  border-radius: 16px;
+}
+/* The new-thread screen's halo: the crew's light pooled behind the
+   question, the same three pools as the backdrop, softer. It holds still. */
+.new-thread-halo {
+  background:
+    radial-gradient(28rem 16rem at 50% 30%, color-mix(in srgb, var(--primary) 13%, transparent), transparent 70%),
+    radial-gradient(22rem 14rem at 34% 44%, color-mix(in srgb, var(--kind-claude, var(--agent-claude)) 10%, transparent), transparent 70%),
+    radial-gradient(22rem 14rem at 66% 44%, color-mix(in srgb, var(--kind-antigravity, var(--agent-antigravity)) 9%, transparent), transparent 70%);
+}
+:root[data-mode="light"] .new-thread-halo {
+  opacity: 0.8;
+}
+
+/* The branch in the composer's bar is a capsule like its neighbours. */
+.composer-bar .branch-picker {
+  height: 2rem;
+  border-radius: 999px;
+  padding-inline: 0.625rem;
+  color: var(--text-faint);
+}
+.composer-bar .branch-picker:hover,
+.composer-bar .branch-picker[aria-expanded="true"] {
+  background-color: var(--hover);
+  color: var(--foreground);
 }

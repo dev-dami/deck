@@ -2,7 +2,7 @@ import { activeAgents, toggleAgent } from "@web/composer";
 import type { AgentLine, Approval, ModelChoice, Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
 import { Check, ChevronRight, Loader2, Plus } from "./icons";
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import { agentColour } from "../agents";
 import { agentStatus } from "../approvals";
 import { addAgentMention } from "../completion";
@@ -158,16 +158,18 @@ function Chip({
       aria-label={`Send to ${line.id}`}
       data-agent={line.id}
       className={cn(
-        `agent agent-${status} flex h-6 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring`,
-        on && "on bg-selected text-foreground",
+        // A capsule; addressed, it lights in the agent's own hue.
+        `agent agent-${status} flex h-7 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-full pr-2.5 pl-2 text-muted-foreground text-xs outline-none transition-[background-color,color,box-shadow] hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring`,
+        on && "on bg-(--hue)/14 text-foreground ring-(--hue)/35 ring-1 ring-inset hover:bg-(--hue)/20",
       )}
+      style={{ "--hue": agentColour(line.id, line.kind) } as CSSProperties}
       title={`${line.id}: ${line.model ?? "default model"} (${status})`}
       onClick={onToggle}
     >
-      <span aria-hidden className="font-mono text-[11px]" style={{ color: agentColour(line.id, line.kind) }}>
+      <span aria-hidden className="font-mono text-(--hue) text-[11px]">
         {kindMark(theme, line.kind) || "●"}
       </span>
-      <span className="agent-name truncate font-mono text-2xs">{line.name}</span>
+      <span className="agent-name truncate font-medium">{line.name}</span>
       {context !== null && (
         <span className="agent-context flex items-center" title={`${context}% of its context`}>
           <Ring pct={context} />
@@ -220,7 +222,7 @@ function AddAgent({
       trigger={
         <button
           type="button"
-          className="add-agent grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-selected aria-expanded:text-foreground"
+          className="add-agent grid size-7 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-selected aria-expanded:text-foreground"
           aria-label="Add agent"
           title="Add agent"
           aria-expanded={open}

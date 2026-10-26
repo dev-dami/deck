@@ -1,5 +1,5 @@
 import { Check, MessageCircleQuestion, Pencil } from "./icons";
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import type { Plan } from "../plans";
 import { usePrefs } from "../prefs";
 import { Button } from "./kit/button";
@@ -16,9 +16,10 @@ export interface PlanActions {
 // after the room leaves plan mode, and approves itself once at most.
 const approved = new Map<string, "manual" | "auto">();
 
-// A plan as an artefact: the heading, the steps as a checklist in prose
-// type, and Approve, Edit and Ask. The rail is the agent's hue. Buttons show
-// on the room's latest plan only, never in a read-only room.
+// A plan as an artefact, a card inside the sheet: the heading, the steps in
+// prose type on numbered discs of the agent's hue (ticked once approved),
+// and Approve, Edit and Ask. Buttons show on the room's latest plan only,
+// never in a read-only room.
 export function PlanCard({
   id,
   plan,
@@ -56,27 +57,30 @@ export function PlanCard({
 
   return (
     <section
-      className="plan-card relative overflow-hidden rounded-lg border border-hairline bg-surface-1 py-3 pr-4 pl-5 inset-shadow-hl"
+      className="plan-card overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline"
       aria-label={plan.heading ?? "Plan"}
       data-plan={id}
+      style={{ "--hue": colour } as CSSProperties}
     >
-      <span aria-hidden className="absolute inset-y-0 left-0 w-0.5" style={{ background: colour }} />
-      <header className="mb-2 flex items-baseline gap-2">
-        <span className="plan-index shrink-0 font-mono text-2xs" style={{ color: colour }}>
-          {index}
-        </span>
-        <h3 className="plan-heading min-w-0 truncate font-medium text-[13px] text-foreground">{plan.heading ?? "Plan"}</h3>
-        <span className="font-mono text-2xs text-faint tabular-nums">
+      <header className="flex items-center gap-2.5 border-hairline border-b px-4 py-2.5">
+        <h3 className="plan-heading min-w-0 truncate font-semibold text-[13px] text-foreground">{plan.heading ?? "Plan"}</h3>
+        <span className="text-2xs text-faint tabular-nums">
           {plan.steps.length} steps
         </span>
+        <span className="plan-index ml-auto shrink-0 font-mono text-(--hue) text-2xs">{index}</span>
       </header>
-      <ol className="plan-steps flex flex-col gap-2">
+      {/* The steps, each numbered on a disc of the agent's hue, joined by a
+          thread of hairline. */}
+      <ol className="plan-steps flex flex-col px-4 pt-3 pb-1">
         {plan.steps.map((s, i) => (
-          <li key={i} className="flex items-start gap-3 text-prose">
+          <li key={i} className="relative flex items-start gap-3 pb-3 text-prose">
+            {i < plan.steps.length - 1 && <span aria-hidden className="absolute top-6 bottom-0.5 left-[9.5px] w-px bg-hairline-strong" />}
             <span
               aria-hidden
-              className="mt-[0.4em] grid size-3.5 shrink-0 place-items-center rounded-[4px] border border-hairline-strong"
-            />
+              className="mt-px grid size-5 shrink-0 place-items-center rounded-full bg-(--hue)/14 font-medium text-(--hue) text-2xs tabular-nums ring-(--hue)/28 ring-1 ring-inset"
+            >
+              {state === null ? i + 1 : <Check className="size-3" weight="bold" />}
+            </span>
             <span className="sr-only">{i + 1}.</span>
             <div className="min-w-0 flex-1 [&_.md_p]:m-0">
               <Markdown text={s} />
@@ -85,21 +89,21 @@ export function PlanCard({
         ))}
       </ol>
       {state !== null ? (
-        <p className="plan-state mt-3 text-2xs text-faint">
+        <p className="plan-state flex items-center gap-1.5 border-hairline border-t px-4 py-2.5 text-2xs text-muted-foreground">
           {state === "auto" ? "Approved automatically. The agent goes ahead." : "Approved. The agent goes ahead."}
         </p>
       ) : (
         actions !== null && (
-          <div className="plan-actions mt-3 flex flex-wrap items-center gap-1.5">
-            <Button size="xs" disabled={busy} onClick={() => void approve("manual")}>
-              <Check />
+          <div className="plan-actions flex flex-wrap items-center gap-1.5 border-hairline border-t px-3 py-2.5">
+            <Button size="sm" disabled={busy} onClick={() => void approve("manual")}>
+              <Check weight="bold" />
               Approve
             </Button>
-            <Button size="xs" variant="outline" onClick={() => actions.edit(agent, plan.steps)}>
+            <Button size="sm" variant="outline" onClick={() => actions.edit(agent, plan.steps)}>
               <Pencil />
               Edit
             </Button>
-            <Button size="xs" variant="ghost-muted" onClick={() => actions.ask(agent)}>
+            <Button size="sm" variant="ghost-muted" onClick={() => actions.ask(agent)}>
               <MessageCircleQuestion />
               Ask
             </Button>

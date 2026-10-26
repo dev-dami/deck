@@ -2,7 +2,7 @@ import { applyAgentChip } from "@web/composer";
 import type { Session } from "@web/protocol";
 import { sessionMode } from "@web/state";
 import { Ellipsis, FileDiff, Folder, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "./icons";
-import { type ComponentProps, type RefObject, useMemo, useState } from "react";
+import { type ComponentProps, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
 import type { EngineStop } from "../../shared/bridge";
 import { type DeckClient, serves } from "../client";
 import { FILES_LIMIT } from "../completion";
@@ -19,6 +19,7 @@ import { ApprovalCard } from "./ApprovalCard";
 import { Composer } from "./Composer";
 import { EngineStopped } from "./EngineStopped";
 import { BranchPicker, type Git } from "./Git";
+import { WorkGraph } from "./graph/WorkGraph";
 import { modKey } from "./keys";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
@@ -27,6 +28,7 @@ import { Lanes } from "./Lanes";
 import { ModePicker } from "./ModePicker";
 import { NewThread } from "./NewThread";
 import { RoomHeader } from "./RoomHeader";
+import type { RoomView } from "./roomView";
 import { Timeline } from "./Timeline";
 import { NEW, type OpenRoom } from "./useRoom";
 
@@ -86,11 +88,12 @@ function MoreMenu({
       open={open}
       onClose={() => setOpen(false)}
       side="top"
+      align="end"
       label="More"
       className="w-56"
       trigger={
-        <Button variant="ghost-muted" size="icon-sm" aria-label="More" title="More" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-          <Ellipsis />
+        <Button variant="ghost-muted" size="icon" aria-label="More" title="More" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <Ellipsis className="size-[18px]" weight="bold" />
         </Button>
       }
     >
@@ -120,8 +123,41 @@ function MoreMenu({
   );
 }
 
-// The room: its header and lane strip, then the timeline and the composer,
-// or the new-thread screen, or the notice of a stopped engine.
+// The floating composer's dock: it measures itself into --composer-h on
+// the room's body (a ResizeObserver), so the timeline pads its end and the
+// jump pill sits above the capsule however tall a draft or an approval
+// makes it. The height counts the 12px the capsule floats over the edge.
+// The shared room's composer floats the same way.
+export function useDockHeight() {
+  return useCallback((el: HTMLDivElement | null) => {
+    const body = el?.parentElement;
+    if (el === null || body === null || body === undefined) return;
+    const set = () => body.style.setProperty("--composer-h", `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    set();
+    const watch = new ResizeObserver(set);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+}
+
+// ⌘/Ctrl+Shift+G turns the room between the conversation and the graph.
+// The shell's own keys take Shift with Y only, so the room listens itself.
+function useViewKey(on: boolean, toggle: () => void) {
+  useEffect(() => {
+    if (!on) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey || e.code !== "KeyG") return;
+      e.preventDefault();
+      toggle();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [on, toggle]);
+}
+
+// The room: its header and lane strip, then its body: the timeline or the
+// work graph with the composer floating over it, or the new-thread screen,
+// or the notice of a stopped engine.
 export function Room({
   c,
   state,
@@ -181,6 +217,11 @@ export function Room({
   const prefs = usePrefs();
   const api = c.project;
   const sid = open?.id ?? null;
+  // How the room shows its thread (ui/roomView.ts); the same for every room.
+  const [view, setView] = useState<RoomView>("conversation");
+  const toggleView = useCallback(() => setView((v) => (v === "graph" ? "conversation" : "graph")), []);
+  useViewKey(open !== undefined && engine === null, toggleView);
+  const dock = useDockHeight();
   // What the Deck says of the room beyond the session: its branch and leases.
   const metas = useRoomMetas(c.rooms);
   const meta = (sid === null ? undefined : metas.get(sid)) ?? EMPTY_ROOM;
@@ -254,6 +295,7 @@ export function Room({
           loaded={state.sessionsLoaded}
           project={project}
           kinds={kinds}
+          theme={state.theme}
           draft={draft}
           setDraft={setDraft}
           onFocus={focusInput}
@@ -269,19 +311,41 @@ export function Room({
           />
         </NewThread>
       ) : (
-        <>
-          <LiveTimeline
-            c={c}
-            sid={open.id}
-            lane={lane}
-            theme={state.theme}
-            changes={files}
-            onOpenDiff={(path) => onPanel("changes", path)}
-            mode={room.mode}
-            actions={room.actions}
-            notes={r.notes}
-          />
-          <div className="shrink-0 px-5 pb-3">
+        // The body: the timeline (or the graph) runs the full height, under
+        // the composer, which floats 12px over the sheet's bottom edge.
+        <div className="room-body relative flex min-h-0 flex-1 flex-col">
+          {view === "graph" ? (
+            <WorkGraph
+              api={api}
+              sid={open.id}
+              roster={roster}
+              files={files}
+              theme={state.theme}
+              lane={lane}
+              onLane={(l) => {
+                r.setLane(l);
+                // "Show its messages": the conversation, filtered to that lane.
+                if (l !== null) setView("conversation");
+              }}
+              onOpenFile={(path) => onPanel("changes", path)}
+              onOpenTasks={() => onPanel("tasks")}
+              onSteer={address}
+              onStop={room.interrupt}
+            />
+          ) : (
+            <LiveTimeline
+              c={c}
+              sid={open.id}
+              lane={lane}
+              theme={state.theme}
+              changes={files}
+              onOpenDiff={(path) => onPanel("changes", path)}
+              mode={room.mode}
+              actions={room.actions}
+              notes={r.notes}
+            />
+          )}
+          <div ref={dock} className="composer-dock pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-3 *:pointer-events-auto">
             <Composer
               key={open.id}
               {...common}
@@ -302,14 +366,28 @@ export function Room({
                       a={pending[0]}
                       index={0}
                       count={pending.length}
-                      className="border-0 bg-transparent"
+                      className="bg-transparent ring-0"
                       answerers={room.answerers}
                       onAnswer={(d) => void c.answerApproval(pending[0]!.session_id, pending[0]!.id, d)}
                     />
                   </div>
                 )
               }
-              toolbar={<MoreMenu busy={open.busy} queued={queued} onStop={room.stop} onPanel={(p) => onPanel(p)} onSettings={onSettings} />}
+              toolbar={
+                <>
+                  <span className="flex min-w-0 shrink items-center">
+                    {api !== undefined && git.status?.repo === true ? (
+                      <BranchPicker git={git} project={api} onError={toast} />
+                    ) : (
+                      <span className="room-folder flex h-7 min-w-0 items-center gap-1.5 px-2 text-faint text-xs">
+                        <Folder className="size-3.5 shrink-0" />
+                        <span className="truncate">{project || "Deck"}</span>
+                      </span>
+                    )}
+                  </span>
+                  <MoreMenu busy={open.busy} queued={queued} onStop={room.stop} onPanel={(p) => onPanel(p)} onSettings={onSettings} />
+                </>
+              }
               strip={
                 <>
                   <ModePicker
@@ -318,7 +396,7 @@ export function Room({
                     confirmYolo={prefs.confirmYolo}
                     onSet={(m) => void c.setMode(open.id, m)}
                   />
-                  <span className="h-3.5 w-px shrink-0 bg-border" />
+                  <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-hairline-strong" />
                   <AgentsStrip
                     sessionId={open.id}
                     roster={roster}
@@ -334,21 +412,11 @@ export function Room({
                     listModels={listModels}
                     setModel={setModel}
                   />
-                  <span className="ml-auto flex min-w-0 shrink items-center">
-                    {api !== undefined && git.status?.repo === true ? (
-                      <BranchPicker git={git} project={api} onError={toast} />
-                    ) : (
-                      <span className="flex min-w-0 items-center gap-1.5 px-1.5 text-muted-foreground/70 text-xs">
-                        <Folder className="size-3.5 shrink-0" />
-                        <span className="truncate">{project || "Deck"}</span>
-                      </span>
-                    )}
-                  </span>
                 </>
               }
             />
           </div>
-        </>
+        </div>
       )}
     </>
   );
