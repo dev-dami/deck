@@ -657,10 +657,10 @@ p {
   color: var(--faint);
 }
 
-/* The stretchy wordmark: "deck" and the logo's amber cursor, edge to
-   edge. At 1px of font-size the word is 1.442px wide (Instrument Serif,
-   -0.04em tracking), so a size of 0.513 of the width gives the word 74%
-   of it and the cursor the rest. Only transform moves. */
+/* The stretchy wordmark: "deck" and the logo's amber cursor. At 1px of
+   font-size the word is 1.442px wide (Instrument Serif, -0.04em
+   tracking), so a size of 0.513 of the width gives the word 74% of it and
+   the cursor most of the rest; a short window caps the size (below). */
 .foot {
   padding-bottom: 0;
   /* clip, not hidden: hidden would make the footer the scroller that
@@ -675,10 +675,13 @@ p {
   -webkit-user-select: none;
   -webkit-user-drag: none;
   cursor: grab;
-  --mega-size: calc((min(100vw, var(--wrap) + 2 * var(--gutter)) - 2 * var(--gutter)) * 0.513);
+  /* As wide as the page where the window is tall enough, and never taller
+     than about two fifths of it: on a wide, short PC window the word, the
+     cards and the row must all fit in one screen. */
+  --mega-size: min(calc((min(100vw, var(--wrap) + 2 * var(--gutter)) - 2 * var(--gutter)) * 0.513), 40vh);
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: calc(var(--mega-size) * 0.04);
   margin-bottom: clamp(20px, 3vw, 32px);
   font-family: var(--font-serif), Georgia, serif;
@@ -715,8 +718,8 @@ p {
   will-change: transform;
 }
 .mega-cursor {
-  flex: 1;
-  max-width: 0.42em;
+  flex: none;
+  width: 0.42em;
   height: 0.056em;
   margin-bottom: 0.014em;
   border-radius: 0.028em;
@@ -732,7 +735,7 @@ p {
    of the footer. The wordmark sits behind them and rises out of the hand
    as the footer scrolls in. */
 .hand-stage {
-  --card-w: clamp(112px, 17vw, 240px);
+  --card-w: clamp(104px, min(17vw, 21vh), 240px);
   --hand-h: calc(var(--card-w) * 1.12);
   position: relative;
   padding-bottom: calc(var(--hand-h) - var(--card-w) * 0.06);
