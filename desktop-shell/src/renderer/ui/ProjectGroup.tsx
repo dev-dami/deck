@@ -26,19 +26,31 @@ export interface SharedEntry {
 
 const itemKey = (x: SidebarItem) => `${x.source}/${x.s.id}`;
 
+// A row of the sidebar's navigation (Inbox, the project filter, Back, a
+// Settings section): a capsule of the selection while it is the page. Its
+// radius nests in the sidebar's: the panel's less the 8px between them.
+export const navRow = (on: boolean) =>
+  cn(
+    "flex h-8 w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-[10px] px-2.5 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-4 [&_svg]:shrink-0",
+    on ? "bg-selected font-medium text-foreground inset-shadow-hl" : "text-muted-foreground hover:bg-hover hover:text-foreground",
+  );
+
+// A section's heading in the sidebar: small, faint and set apart by space.
+const heading = "font-semibold text-2xs text-faint";
+
 // A fold of threads: its name and count, and a line to the chevron.
 function Fold({ name, count, shown, onToggle }: { name: string; count: number; shown: boolean; onToggle: () => void }) {
   return (
     <li className="list-none">
       <button
         type="button"
-        className="mt-1 flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-2xs text-faint outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="mt-1 flex h-7 w-full cursor-pointer items-center gap-2 rounded-[10px] px-2.5 text-2xs text-faint outline-none transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
         aria-expanded={shown}
         onClick={onToggle}
       >
-        <span>{shown ? name : `${name} (${count})`}</span>
+        <span className="tabular-nums">{shown ? name : `${name} (${count})`}</span>
         <span className="h-px flex-1 bg-hairline" />
-        {shown ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+        <ChevronRight className={cn("size-3 transition-transform duration-200", shown && "rotate-90")} />
       </button>
     </li>
   );
@@ -73,7 +85,7 @@ export function ThreadList({
   estimate: number;
 }) {
   const list = (items: SidebarItem[]) => (
-    <VirtualList items={items} keyOf={itemKey} render={row} scroller={scroller} estimate={estimate} gap={1} as="li" className="flex flex-col gap-px" />
+    <VirtualList items={items} keyOf={itemKey} render={row} scroller={scroller} estimate={estimate} gap={2} as="li" className="flex flex-col gap-0.5" />
   );
   return (
     <>
@@ -87,6 +99,8 @@ export function ThreadList({
 }
 
 // An open project's heading (collapse, new thread, close) over its threads.
+// As in a Mac sidebar, the disclosure chevron shows at the end on hover,
+// and stays while the section is shut.
 export function ProjectGroup({
   group,
   count,
@@ -110,18 +124,26 @@ export function ProjectGroup({
 }) {
   return (
     <li className="project-group list-none" data-project={group.name}>
-      <div className="group/proj flex h-7 items-center gap-1 rounded-md pr-1">
+      <div className="group/proj flex h-7 items-center gap-0.5 rounded-[10px] pr-1">
         <button
           type="button"
-          className="flex h-7 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md pl-2 text-left font-semibold text-2xs text-faint outline-none transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(
+            heading,
+            "flex h-7 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-[10px] pl-2.5 text-left outline-none transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring",
+          )}
           aria-expanded={!shut}
           aria-label={`${group.name}: ${count} ${count === 1 ? "thread" : "threads"}`}
           onClick={onToggle}
         >
-          {shut ? <ChevronRight className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
           {group.kind === "paired" && <Laptop className="size-3 shrink-0" />}
           <span className={cn("min-w-0 truncate", current && "text-muted-foreground")}>{group.name}</span>
-          <span className="shrink-0 font-mono text-3xs">{count}</span>
+          <span className="shrink-0 font-normal tabular-nums opacity-70">{count}</span>
+          <ChevronDown
+            className={cn(
+              "size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-200 group-focus-within/proj:opacity-100 group-hover/proj:opacity-100",
+              shut && "-rotate-90 opacity-100",
+            )}
+          />
         </button>
         <span className="flex items-center opacity-0 transition-opacity group-focus-within/proj:opacity-100 group-hover/proj:opacity-100">
           <Button variant="ghost-muted" size="icon-xs" aria-label={`New thread in ${group.name}`} title="New thread" onClick={onNew}>
@@ -133,13 +155,13 @@ export function ProjectGroup({
         </span>
       </div>
       {!shut && (
-        <ul className="flex flex-col gap-px pt-0.5 pb-3">
+        <ul className="flex flex-col gap-0.5 pt-0.5 pb-3">
           {children}
           {count === 0 && (
             <li className="list-none">
               <button
                 type="button"
-                className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-muted-foreground/70 text-xs hover:bg-sidebar-row-hover hover:text-foreground"
+                className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-[10px] px-2.5 text-left text-faint text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={onNew}
               >
                 <SquarePen className="size-3.5" /> Start a thread
@@ -157,8 +179,8 @@ export function ProjectGroup({
 export function SharedGroup({ shared, open, onOpen }: { shared: SharedEntry[]; open: string | null; onOpen: (peer: string, t: TeamThread) => void }) {
   return (
     <li className="shared-group list-none pt-1 pb-3">
-      <div className="flex h-7 items-center gap-1.5 pl-2 font-semibold text-2xs text-faint">Shared with you</div>
-      <ul className="flex flex-col gap-px">
+      <div className={cn(heading, "flex h-7 items-center gap-1.5 pl-2.5")}>Shared with you</div>
+      <ul className="flex flex-col gap-0.5">
         {shared.map(({ peer, thread }) => {
           const active = open === `${peer}/${thread.id}`;
           return (
@@ -167,13 +189,13 @@ export function SharedGroup({ shared, open, onOpen }: { shared: SharedEntry[]; o
                 type="button"
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  active ? "bg-sidebar-row-active text-foreground inset-shadow-hl" : "text-foreground/90 hover:bg-sidebar-row-hover",
+                  "flex h-8 w-full cursor-pointer items-center gap-2 rounded-[10px] px-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  active ? "bg-selected text-foreground inset-shadow-hl" : "text-foreground/90 hover:bg-hover",
                 )}
                 onClick={() => onOpen(peer, thread)}
               >
                 <span className="min-w-0 flex-1 truncate text-sm">{thread.title || thread.id}</span>
-                <span className="shrink-0 font-mono text-2xs text-faint">
+                <span className="shrink-0 text-2xs text-faint">
                   {peer} · {thread.role}
                 </span>
               </button>
@@ -188,18 +210,13 @@ export function SharedGroup({ shared, open, onOpen }: { shared: SharedEntry[]; o
 // The recent folders that are not open, to open again.
 export function RecentProjects({ projects, onProject }: { projects: ProjectEntry[]; onProject: (key: string) => void }) {
   return (
-    <li className="list-none pt-3">
-      <div className="px-2 pb-1 font-semibold text-2xs text-faint">Recent projects</div>
-      <ul className="flex flex-col">
+    <li className="list-none pt-2">
+      <div className={cn(heading, "flex h-7 items-center pl-2.5")}>Recent projects</div>
+      <ul className="flex flex-col gap-0.5">
         {projects.slice(0, 6).map((p) => (
           <li key={p.key} className="list-none">
-            <button
-              type="button"
-              className="recent-project flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-muted-foreground text-sm hover:bg-sidebar-row-hover hover:text-foreground"
-              title={p.detail}
-              onClick={() => onProject(p.key)}
-            >
-              <Folder className="size-4 shrink-0" />
+            <button type="button" className={cn("recent-project", navRow(false))} title={p.detail} onClick={() => onProject(p.key)}>
+              <Folder />
               <span className="truncate">{p.name}</span>
             </button>
           </li>
@@ -245,7 +262,7 @@ export function ProjectFilter({
     </span>
   );
   return (
-    <div className="flex items-center gap-1">
+    <div className="group/filter flex items-center gap-0.5">
       <Popover
         open={open}
         onClose={() => setOpen(false)}
@@ -254,14 +271,14 @@ export function ProjectFilter({
         trigger={
           <button
             type="button"
-            className="project-filter flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 text-left font-medium text-muted-foreground text-sm hover:bg-sidebar-row-hover hover:text-foreground"
+            className={cn("project-filter aria-expanded:bg-hover", navRow(false), filter !== null && "text-foreground")}
             aria-expanded={open}
             aria-label="Projects"
             onClick={() => setOpen((o) => !o)}
           >
-            <Folder className="size-4 shrink-0" />
-            <span className="min-w-0 flex-1 truncate text-foreground">{shown === undefined ? "All projects" : shown.name}</span>
-            <ChevronDown className="size-3.5 shrink-0" />
+            <Folder weight={filter !== null ? "fill" : "regular"} />
+            <span className="min-w-0 flex-1 truncate">{shown === undefined ? "All projects" : shown.name}</span>
+            <ChevronDown className="!size-3 text-faint" />
           </button>
         }
       >
@@ -282,7 +299,7 @@ export function ProjectFilter({
               type="button"
               aria-label={`Close ${p.name}`}
               title="Close project"
-              className="mr-1 grid size-6 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground opacity-0 outline-none hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within:opacity-100 group-hover:opacity-100"
+              className="mr-1 grid size-6 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground opacity-0 outline-none hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-focus-within:opacity-100 group-hover:opacity-100"
               onClick={run(() => {
                 if (filter === p.key) onFilter(null);
                 onCloseProject(p.key);
@@ -312,7 +329,14 @@ export function ProjectFilter({
           <Unplug /> Pair with a Deck…
         </MenuItem>
       </Popover>
-      <Button variant="ghost-muted" size="icon-sm" aria-label="Add project" title="Add project" onClick={onAddProject}>
+      <Button
+        variant="ghost-muted"
+        size="icon-sm"
+        className="opacity-0 transition-opacity group-focus-within/filter:opacity-100 group-hover/filter:opacity-100"
+        aria-label="Add project"
+        title="Add project"
+        onClick={onAddProject}
+      >
         <FolderPlus />
       </Button>
     </div>

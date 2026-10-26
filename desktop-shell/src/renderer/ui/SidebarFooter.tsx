@@ -6,19 +6,22 @@ import { Button } from "./kit/button";
 
 const LINK_LABEL: Record<Link, string> = { online: "Connected", connecting: "Connecting…", offline: "Offline" };
 
+// The connection's dot: green with a soft halo while it is live, amber and
+// pulsing while it connects, red when it is gone.
 const linkDot: Record<Link, string> = {
-  online: "bg-success",
+  online: "bg-success shadow-[0_0_0_3px_color-mix(in_srgb,var(--success)_22%,transparent)]",
   connecting: "bg-warning animate-deck-pulse",
   offline: "bg-destructive",
 };
 
-const quiet =
-  "flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1 text-2xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+// A quiet capsule of clear glass, for the connection and the teammates.
+const pill =
+  "liquid-clear flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2 text-2xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 // The sidebar's footer: Settings, Usage, Team and Close project (Search at
 // the top opens the commands), then an update that waits, the connection
-// and the teammates online. The connection is a dot and a word; the word
-// gives way when the footer is narrower than 15rem.
+// and the teammates online. The connection is a pill with a live dot and a
+// word; the word gives way when the footer is narrower than 15rem.
 export function SidebarFooter({
   link,
   settings,
@@ -44,15 +47,22 @@ export function SidebarFooter({
   onDisconnect: () => void;
 }) {
   return (
-    <footer className="side-foot @container flex items-center gap-0.5 px-2 py-2">
-      <Button variant="ghost-muted" size="icon-sm" aria-label="Settings" title="Settings" onClick={() => onSettings(settings === null ? "general" : null)}>
-        <Settings />
+    <footer className="side-foot @container relative flex h-12 shrink-0 items-center gap-0.5 px-2">
+      <Button
+        variant="ghost-muted"
+        size="icon-sm"
+        aria-label="Settings"
+        title="Settings"
+        aria-pressed={settings !== null}
+        onClick={() => onSettings(settings === null ? "general" : null)}
+      >
+        <Settings weight={settings !== null ? "fill" : "regular"} />
       </Button>
       <Button variant="ghost-muted" size="icon-sm" aria-label="Usage" title="Usage" aria-pressed={usage} onClick={onUsage}>
-        <BarChart3 />
+        <BarChart3 weight={usage ? "fill" : "regular"} />
       </Button>
       <Button variant="ghost-muted" size="icon-sm" aria-label="Team" title="Team" aria-pressed={team} onClick={onTeam}>
-        <Users />
+        <Users weight={team ? "fill" : "regular"} />
       </Button>
       <Button variant="ghost-muted" size="icon-sm" aria-label="Close project" title="Close project" onClick={onDisconnect}>
         <Unplug />
@@ -60,34 +70,31 @@ export function SidebarFooter({
       {update !== null && (
         <button
           type="button"
-          className="update ml-auto min-w-0 cursor-pointer truncate rounded px-1 text-2xs text-muted-foreground hover:text-foreground"
+          className="update ml-auto h-6 min-w-0 cursor-pointer truncate rounded-full bg-primary/12 px-2 font-medium text-2xs text-info-foreground hover:bg-primary/20"
           title={`Deck ${update.version} is downloaded. Restart to install it.`}
           onClick={update.onRestart}
         >
           Update ready · Restart
         </button>
       )}
-      <button
-        type="button"
-        className={cn("link h-6", quiet, update === null && "ml-auto")}
-        title={`${LINK_LABEL[link]}. Open the connection settings.`}
-        onClick={() => onSettings("connection")}
-      >
-        <span aria-hidden className={cn("dot size-1.5 shrink-0 rounded-full", linkDot[link])} />
-        <span className="sr-only @min-[15rem]:not-sr-only">{LINK_LABEL[link]}</span>
-      </button>
-      {online !== null && (
-        <button
-          type="button"
-          className={cn("presence h-6", quiet)}
-          aria-label={`${online} ${online === 1 ? "teammate" : "teammates"} online`}
-          title="Open the team"
-          onClick={onTeam}
-        >
-          <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", online > 0 ? "bg-success" : "bg-muted-foreground/40")} />
-          <span className="tabular-nums">{online}</span>
+      <span className={cn("flex shrink-0 items-center gap-1", update === null ? "ml-auto" : "ml-1")}>
+        {online !== null && (
+          <button
+            type="button"
+            className={cn("presence", pill)}
+            aria-label={`${online} ${online === 1 ? "teammate" : "teammates"} online`}
+            title="Open the team"
+            onClick={onTeam}
+          >
+            <Users aria-hidden className="size-3" />
+            <span className="tabular-nums">{online}</span>
+          </button>
+        )}
+        <button type="button" className={cn("link", pill)} title={`${LINK_LABEL[link]}. Open the connection settings.`} onClick={() => onSettings("connection")}>
+          <span aria-hidden className={cn("dot size-1.5 shrink-0 rounded-full", linkDot[link])} />
+          <span className={cn("sr-only @min-[15rem]:not-sr-only", update !== null && "@min-[15rem]:sr-only")}>{LINK_LABEL[link]}</span>
         </button>
-      )}
+      </span>
     </footer>
   );
 }
