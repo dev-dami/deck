@@ -170,13 +170,18 @@ func readable(entries []store.Entry, t store.Thread) []line {
 	return out
 }
 
-// threadLines are a thread's readable lines, kept while its log is unchanged.
+// threadLines are a thread's readable lines, kept while its log is unchanged
+// and extended when it grows.
 type threadLines struct {
 	key   logKey
 	meta  store.Thread
 	lines []line
 	low   []string // each line's text in lower case, for search
 	bytes int
+
+	file    os.FileInfo // the log read, to tell an append from a new file
+	end     int64       // where the log read ended; -1: it cannot be extended
+	entries int         // the log entries read
 }
 
 // logKey identifies one state of a thread's log: its file's size and time,
@@ -207,33 +212,24 @@ const historyCacheBytes = 32 << 20
 // every time.
 type logDir interface{ Dir() string }
 
+// logTail is implemented by a store that reads a log from an offset
+// (store.Store), so a cached thread whose log grew decodes only the new
+// entries.
+type logTail interface {
+	LoadEntriesFrom(id string, off int64, n int) ([]store.Entry, int64, store.Thread, error)
+}
+
 // threadReadable is readable(env.Store.LoadEntries(t.ID)) through the cache.
 // The result is shared: callers must not modify it.
 func threadReadable(env *Env, t store.Thread) (*threadLines, error) {
-	load := func() (*threadLines, error) {
-		entries, meta, err := env.Store.LoadEntries(t.ID)
-		if err != nil {
-			return nil, err
-		}
-		tl := &threadLines{meta: meta, lines: readable(entries, meta)}
-		tl.low = make([]string, len(tl.lines))
-		for i, l := range tl.lines {
-			tl.low[i] = strings.ToLower(l.text)
-			tl.bytes += len(l.text) + len(l.speaker) + 64
-			if tl.low[i] != l.text {
-				tl.bytes += len(tl.low[i])
-			}
-		}
-		return tl, nil
-	}
 	d, ok := env.Store.(logDir)
 	if !ok || d.Dir() == "" {
-		return load()
+		return loadReadable(env, t.ID, nil)
 	}
 	path := filepath.Join(d.Dir(), t.ID+".jsonl")
 	st, err := os.Stat(path)
 	if err != nil {
-		return load()
+		return loadReadable(env, t.ID, nil)
 	}
 	key := logKey{size: st.Size(), mod: st.ModTime(), updated: t.Updated}
 	historyCache.Lock()
@@ -242,11 +238,17 @@ func threadReadable(env *Env, t store.Thread) (*threadLines, error) {
 	if c != nil && c.key.same(key) {
 		return c, nil
 	}
-	tl, err := load()
+	// Logs are only appended to: when this is the file read before and it
+	// has not shrunk, read just what was added.
+	var prev *threadLines
+	if c != nil && c.end >= 0 && c.end <= st.Size() && c.file != nil && os.SameFile(c.file, st) {
+		prev = c
+	}
+	tl, err := loadReadable(env, t.ID, prev)
 	if err != nil {
 		return nil, err
 	}
-	tl.key = key
+	tl.key, tl.file = key, st
 	historyCache.Lock()
 	if old := historyCache.m[path]; old != nil {
 		historyCache.bytes -= old.bytes
@@ -262,6 +264,72 @@ func threadReadable(env *Env, t store.Thread) (*threadLines, error) {
 	}
 	historyCache.Unlock()
 	return tl, nil
+}
+
+// loadReadable reads thread id's readable lines: prev's followed by those of
+// the entries logged after it, or the whole log when prev is nil or the
+// members' names changed since prev (they name the speakers).
+func loadReadable(env *Env, id string, prev *threadLines) (*threadLines, error) {
+	tail, ok := env.Store.(logTail)
+	if !ok {
+		entries, meta, err := env.Store.LoadEntries(id)
+		if err != nil {
+			return nil, err
+		}
+		return grow(nil, entries, meta, -1), nil
+	}
+	var off int64
+	var n int
+	if prev != nil {
+		off, n = prev.end, prev.entries
+	}
+	entries, end, meta, err := tail.LoadEntriesFrom(id, off, n)
+	if err != nil {
+		return nil, err
+	}
+	if prev != nil && !sameNames(prev.meta, meta) {
+		return loadReadable(env, id, nil)
+	}
+	return grow(prev, entries, meta, end), nil
+}
+
+// grow returns prev (nil for none) with the readable lines of entries added.
+// prev is shared and left as it is.
+func grow(prev *threadLines, entries []store.Entry, meta store.Thread, end int64) *threadLines {
+	add := readable(entries, meta)
+	tl := &threadLines{meta: meta, end: end, entries: len(entries)}
+	if prev != nil {
+		// Capped, so the appends copy rather than write into prev's arrays.
+		tl.lines = append(prev.lines[:len(prev.lines):len(prev.lines)], add...)
+		tl.low = append(prev.low[:len(prev.low):len(prev.low)], make([]string, len(add))...)
+		tl.bytes = prev.bytes
+		tl.entries += prev.entries
+	} else {
+		tl.lines = add
+		tl.low = make([]string, len(add))
+	}
+	for i, l := range add {
+		k := len(tl.lines) - len(add) + i
+		tl.low[k] = strings.ToLower(l.text)
+		tl.bytes += len(l.text) + len(l.speaker) + 64
+		if tl.low[k] != l.text {
+			tl.bytes += len(tl.low[k])
+		}
+	}
+	return tl
+}
+
+// sameNames reports whether a and b name their members alike.
+func sameNames(a, b store.Thread) bool {
+	if len(a.Members) != len(b.Members) {
+		return false
+	}
+	for i := range a.Members {
+		if a.Members[i].ID != b.Members[i].ID || a.Members[i].Name != b.Members[i].Name {
+			return false
+		}
+	}
+	return true
 }
 
 // hit is one chat-history match.

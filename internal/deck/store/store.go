@@ -685,13 +685,24 @@ func (s *Store) Load(id string) ([]agent.Event, Thread, error) {
 // metadata. Old logs (bare agent.Event lines) come back as EntryEvent entries.
 // Every returned entry has an ID (see Entry.ID).
 func (s *Store) LoadEntries(id string) ([]Entry, Thread, error) {
+	entries, _, meta, err := s.LoadEntriesFrom(id, 0, 0)
+	return entries, meta, err
+}
+
+// LoadEntriesFrom is LoadEntries for the part of the log from byte offset off
+// on, for a reader that already holds the n entries before it (so positional
+// IDs carry on from n). Logs are only ever appended to, so such a reader can
+// keep up with a thread without decoding its whole log again. end is where
+// the next read should start: the size of the log read, or -1 when the log
+// does not end with a whole line (a torn write), which must be read afresh.
+func (s *Store) LoadEntriesFrom(id string, off int64, n int) (entries []Entry, end int64, meta Thread, err error) {
 	s.mu.Lock()
 	cur, ok := s.threads[id]
 	if !ok {
 		s.mu.Unlock()
-		return nil, Thread{}, ErrNotFound
+		return nil, -1, Thread{}, ErrNotFound
 	}
-	meta := *cur
+	meta = *cur
 	meta.Members = append([]Member(nil), cur.Members...)
 	tl := s.threadLockLocked(id)
 	s.mu.Unlock()
@@ -701,21 +712,28 @@ func (s *Store) LoadEntries(id string) ([]Entry, Thread, error) {
 	f, err := os.Open(s.logPath(id))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, meta, nil
+			return nil, -1, meta, nil
 		}
-		return nil, meta, err
+		return nil, -1, meta, err
 	}
 	defer f.Close()
+	if off > 0 {
+		if _, err := f.Seek(off, io.SeekStart); err != nil {
+			return nil, -1, meta, err
+		}
+	}
 
-	var entries []Entry
+	end = off
 	r := bufio.NewReaderSize(f, 64<<10)
 	for {
 		line, err := r.ReadBytes('\n')
-		if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
+		end += int64(len(line))
+		trimmed := bytes.TrimSpace(line)
+		if len(trimmed) > 0 {
 			var e Entry
 			if json.Unmarshal(trimmed, &e) == nil {
 				if e.ID == "" {
-					e.ID = "e" + strconv.Itoa(len(entries))
+					e.ID = "e" + strconv.Itoa(n+len(entries))
 				}
 				// Older logs kept every event's raw line; it is not
 				// worth holding in memory.
@@ -724,13 +742,16 @@ func (s *Store) LoadEntries(id string) ([]Entry, Thread, error) {
 			}
 		}
 		if err == io.EOF {
+			if len(trimmed) > 0 {
+				end = -1 // the last line is unfinished
+			}
 			break
 		}
 		if err != nil {
-			return nil, meta, err
+			return nil, -1, meta, err
 		}
 	}
-	return entries, meta, nil
+	return entries, end, meta, nil
 }
 
 func (s *Store) threadLockLocked(id string) *sync.Mutex {
