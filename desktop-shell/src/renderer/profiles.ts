@@ -41,8 +41,12 @@ export const RESERVED_NAMES = ["all", "user", "deck"];
 
 // What a name may not hold, as Manager.Rename refuses it.
 const BAD_NAME = /[\s@$/*+#]/;
+// What "@" reads as a name (address.go, isNameByte), so what a profile's
+// name is made of; and its longest (profile.MaxNameRunes).
+const NAME = /^[\w-]+$/;
+export const MAX_NAME = 32;
 
-export type ProfileErrors = Partial<Record<"name" | "kind" | "role" | "voice" | "color", string>>;
+export type ProfileErrors = Partial<Record<"name" | "kind" | "role" | "voice" | "paths" | "color", string>>;
 
 export interface ProfileRules {
   // The agent kinds this Deck runs.
@@ -57,6 +61,10 @@ export interface ProfileRules {
   isColour?: (v: string) => boolean;
 }
 
+// The characters Deck takes a colour in (profile.plainColor): nothing that
+// could end a CSS declaration.
+const PLAIN_COLOUR = /^[\w\-#()%., /]{1,64}$/;
+
 const cssColour = (v: string): boolean => typeof CSS === "undefined" || CSS.supports("color", v);
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
@@ -67,6 +75,8 @@ export function validateProfile(p: Profile, rules: ProfileRules): ProfileErrors 
   const name = p.name.trim();
   if (name === "") errors.name = "A profile needs a name.";
   else if (BAD_NAME.test(name)) errors.name = "No spaces, and none of @ $ / * + #.";
+  else if (!NAME.test(name)) errors.name = `Only letters, digits, - and _, so that @${name} reaches it.`;
+  else if (name.length > MAX_NAME) errors.name = `At most ${MAX_NAME} characters.`;
   else if (RESERVED_NAMES.some((r) => same(r, name))) errors.name = `“${name}” is reserved by Deck.`;
   else if (rules.kinds.some((k) => same(k, name))) errors.name = `“${name}” is an agent kind. Pick a name of its own.`;
   else if ((rules.teammates ?? []).some((t) => same(t, name))) errors.name = `${name} is a teammate. Pick another name.`;
@@ -80,14 +90,27 @@ export function validateProfile(p: Profile, rules: ProfileRules): ProfileErrors 
   if (!rules.kinds.includes(p.kind)) errors.kind = "Pick the agent it runs.";
   if (/[\r\n]/.test(p.role)) errors.role = "Keep the role to one line.";
   if (/[\r\n]/.test(p.voice)) errors.voice = "Keep the voice to one line.";
-  if (p.color.trim() !== "" && !(rules.isColour ?? cssColour)(p.color.trim())) errors.color = "Not a CSS colour.";
+  const bad = p.paths.find((g) => !globOk(g.trim()));
+  if (bad !== undefined) errors.paths = `${bad.trim()} is not a glob Deck can read.`;
+  const colour = p.color.trim();
+  if (colour !== "" && !(PLAIN_COLOUR.test(colour) && (rules.isColour ?? cssColour)(colour))) errors.color = "Not a CSS colour.";
   return errors;
 }
 
-// A name "@" can reach: the engine reads only letters, digits, - and _ after
-// the sigil (address.go, isNameByte). Other names save, but only "$" or the
-// picker can address them; the editor says so without refusing.
-export const reachable = (name: string): boolean => /^[\w-]+$/.test(name.trim());
+// Whether Go's path.Match reads the glob: every "[" closes, and no "\"
+// ends it.
+function globOk(g: string): boolean {
+  let open = false;
+  for (let i = 0; i < g.length; i++) {
+    const ch = g[i];
+    if (ch === "\\") {
+      if (i === g.length - 1) return false;
+      i++;
+    } else if (ch === "[") open = true;
+    else if (ch === "]") open = false;
+  }
+  return !open;
+}
 
 // The globs of a paths field: one per line or comma, trimmed.
 export const parsePaths = (text: string): string[] =>

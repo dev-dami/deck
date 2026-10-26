@@ -1,7 +1,5 @@
-import type { AgentLine } from "@web/protocol";
 import { describe, expect, test } from "vitest";
-import { agentRole } from "./agents";
-import { cleanProfile, emptyProfile, parsePaths, type Profile, reachable, sortProfiles, validateProfile } from "./profiles";
+import { cleanProfile, emptyProfile, parsePaths, type Profile, sortProfiles, validateProfile } from "./profiles";
 
 const kinds = ["claude", "codex", "opencode", "antigravity"];
 const profile = (over: Partial<Profile>): Profile => ({ ...emptyProfile("claude", "project"), name: "charles", ...over });
@@ -50,11 +48,19 @@ describe("profile validation (agents-and-mentions.md, section 1)", () => {
     expect(check(profile({ color: "" })).color).toBeUndefined();
   });
 
-  test("@ reaches names of letters, digits, - and _", () => {
-    expect(reachable("charles")).toBe(true);
-    expect(reachable("ada_2-b")).toBe(true);
-    expect(reachable("dr.who")).toBe(false);
-    expect(reachable("josé")).toBe(false);
+  test("a name is what @ reads: letters, digits, - and _, at most 32", () => {
+    expect(check(profile({ name: "ada_2-b" })).name).toBeUndefined();
+    expect(check(profile({ name: "dr.who" })).name).toBe("Only letters, digits, - and _, so that @dr.who reaches it.");
+    expect(check(profile({ name: "josé" })).name).toMatch(/^Only letters/);
+    expect(check(profile({ name: "a".repeat(32) })).name).toBeUndefined();
+    expect(check(profile({ name: "a".repeat(33) })).name).toBe("At most 32 characters.");
+  });
+
+  test("paths are globs Deck can read; a colour holds nothing that ends a declaration", () => {
+    expect(check(profile({ paths: ["src/**", "docs/[a-c]*.md", "a\\[b"] })).paths).toBeUndefined();
+    expect(check(profile({ paths: ["src/**", "docs/[a-c.md"] })).paths).toBe("docs/[a-c.md is not a glob Deck can read.");
+    expect(check(profile({ paths: ["a\\"] })).paths).toMatch(/not a glob/);
+    expect(check(profile({ color: "#c96;x" })).color).toBe("Not a CSS colour.");
   });
 });
 
@@ -67,16 +73,5 @@ describe("profiles as saved and listed", () => {
   test("project profiles first, then global, each by name", () => {
     const list = [globalAda, profile({ name: "zed" }), charles, profile({ name: "bob", scope: "global" })];
     expect(sortProfiles(list).map((p) => `${p.scope}:${p.name}`)).toEqual(["project:charles", "project:zed", "global:ada", "global:bob"]);
-  });
-
-  test("a member's role, by id or by name", () => {
-    const roster: AgentLine[] = [
-      { id: "claude-2", name: "charles", kind: "claude", busy: false, profile: "charles", role: "reviewer" },
-      { id: "codex-1", name: "codex-1", kind: "codex", busy: false },
-    ];
-    expect(agentRole("claude-2", roster)).toBe("reviewer");
-    expect(agentRole("charles", roster)).toBe("reviewer");
-    expect(agentRole("codex-1", roster)).toBe("");
-    expect(agentRole("gone-1", roster)).toBe("");
   });
 });

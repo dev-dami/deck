@@ -110,7 +110,7 @@ export function AgentsTree({ crew, at, theme, roster = [] }: { crew: Crew | null
       ) : (
         <ul className="crew divide-y divide-hairline overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline">
           {crew.agents.map((a) => (
-            <AgentRow key={a.name} a={a} running={running(a.name)} theme={theme} now={at} role={agentRole(a.name, roster)} />
+            <AgentRow key={a.name} a={a} running={running(a.name)} theme={theme} now={at} role={agentRole(a.name, roster, [a])} />
           ))}
         </ul>
       )}

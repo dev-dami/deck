@@ -1,4 +1,5 @@
 import type { AgentLine, Message } from "@web/protocol";
+import { agentRole } from "./agents";
 import type { AgentNode } from "./crew";
 import type { Lease } from "./roomMeta";
 
@@ -105,7 +106,7 @@ export function buildLanes({
     effort: n?.effort || line?.effort || "",
     contextPct: contextPct(n),
     leases: leased(name, n),
-    role: line?.role ?? "",
+    role: agentRole(name, line === undefined ? [] : [line], n === undefined ? [] : [n]),
     depth: n?.depth ?? 0,
   });
   for (const line of roster) {

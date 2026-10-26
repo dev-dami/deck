@@ -179,7 +179,10 @@ export function suggestions(
 
 // The hue a picker row wears: the profile's colour, else its kind's; none
 // for a person or "all".
-export function suggestionHue(s: Suggestion, kindColour: (kind: string) => string): string | undefined {
+export function suggestionHue(
+  s: Suggestion,
+  kindColour: (kind: string) => string,
+): string | undefined {
   if (s.color) return s.color;
   return s.kind === null ? undefined : kindColour(s.kind);
 }

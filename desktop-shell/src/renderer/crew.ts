@@ -73,6 +73,10 @@ export interface AgentNode {
   parent: string;
   branch: string;
   leases: string;
+  // The profile it was started from and that profile's one-line role
+  // (docs/design/agents-and-mentions.md); "" for none.
+  profile: string;
+  role: string;
 }
 
 export interface RunningTool {
@@ -109,6 +113,8 @@ export function toCrew(v: unknown): Crew {
       parent: str(a, "parent"),
       branch: str(a, "branch"),
       leases: str(a, "leases"),
+      profile: str(a, "profile"),
+      role: str(a, "role"),
     })),
     running: list(o, "running", (t) => ({
       agent: str(t, "agent"),

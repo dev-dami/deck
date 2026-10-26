@@ -20,6 +20,8 @@ const node = (name: string, over: Partial<AgentNode> = {}): AgentNode => ({
   parent: "",
   branch: "",
   leases: "",
+  profile: "",
+  role: "",
   ...over,
 });
 

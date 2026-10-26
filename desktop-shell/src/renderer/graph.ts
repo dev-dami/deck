@@ -1,4 +1,5 @@
 import type { AgentLine, ChangedFile } from "@web/protocol";
+import { agentRole } from "./agents";
 import { type Board, boardRows, type BoardTask, type Crew, type RunningTool } from "./crew";
 import { agentLane, contextPct, type LaneStatus, leasePaths, YOU } from "./lanes";
 import type { Lease } from "./roomMeta";
@@ -44,6 +45,8 @@ export interface AgentGraphNode extends Placed {
   // The node id of the agent that started it, or null.
   parent: string | null;
   branch: string;
+  // Its one-line role, from its profile; "" for none.
+  role: string;
   // When it started its current work (ms), or 0.
   since: number;
   // What it runs right now, the first one shown on its card.
@@ -254,6 +257,7 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
       depth: 0,
       parent: null,
       branch: n?.branch ?? "",
+      role: agentRole(name, line === undefined ? [] : [line], n === undefined ? [] : [n]),
       since: n?.since ?? 0,
       tools,
       leases: live.length > 0 ? live : leasePaths(n?.leases ?? ""),

@@ -212,10 +212,7 @@ export function Composer({
                   {s.kind !== null ? kindMark(theme, s.kind) || "●" : s.label === "all" ? "∗" : "◇"}
                 </span>
               ) : null}
-              <span
-                class="suggest-name"
-                style={{ color: suggestionHue(s, kindColour) }}
-              >
+              <span class="suggest-name" style={{ color: suggestionHue(s, kindColour) }}>
                 {picker.type === "$" ? s.insert : s.label}
               </span>
               <span class="suggest-detail">{s.detail}</span>

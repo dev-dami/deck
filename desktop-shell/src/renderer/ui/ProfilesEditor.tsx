@@ -10,7 +10,6 @@ import {
   type Profile,
   type ProfileErrors,
   type ProfileScope,
-  reachable,
   useProfiles,
   validateProfile,
 } from "../profiles";
@@ -230,7 +229,7 @@ function ProfileDialog({
   };
 
   const name = p.name.trim();
-  const nameHint = name !== "" && !reachable(name) ? "Only letters, digits, - and _ can follow @; other names need the picker." : undefined;
+  const nameHint = name === "" ? "Letters, digits, - and _." : <>Address it as <code className="font-mono">@{name}</code>.</>;
 
   // The question replaces the dialog, so one modal is open at a time; the
   // draft stays for a Cancel.
@@ -292,7 +291,7 @@ function ProfileDialog({
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
           <Field id={`${id}-name`} label="Name" error={shown("name")} hint={nameHint}>
             <input
-              {...aria("name", nameHint !== undefined)}
+              {...aria("name", true)}
               autoFocus
               className={cn(fieldClass, "h-9 font-mono text-[12.5px]")}
               value={p.name}
@@ -386,10 +385,9 @@ function ProfileDialog({
             </span>
           </Field>
         </div>
-        <Field id={`${id}-paths`} label="Paths" hint="Globs it keeps to, one per line.">
+        <Field id={`${id}-paths`} label="Paths" error={shown("paths")} hint="Globs it keeps to, one per line.">
           <textarea
-            id={`${id}-paths`}
-            aria-describedby={`${id}-paths-note`}
+            {...aria("paths", true)}
             className={cn(fieldClass, "min-h-14 resize-y font-mono text-[12.5px] placeholder:font-sans")}
             rows={2}
             value={paths}
@@ -399,6 +397,7 @@ function ProfileDialog({
               setPaths(e.target.value);
               setRefused(null);
             }}
+            onBlur={leave("paths")}
           />
         </Field>
         {isNew && (

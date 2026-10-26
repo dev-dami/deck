@@ -23,9 +23,23 @@ export function agentColour(agentId: string, kind: string): string {
   return step === 0 ? base : `color-mix(in oklab, ${base}, white ${step * 18}%)`;
 }
 
+// Something that names a member and may carry its role: a roster line
+// (AgentLine) or a node of the agents tree (crew.ts).
+export interface Roled {
+  id?: string;
+  name: string;
+  role?: string;
+}
+
 // The one-line role a member carries from its profile
-// (docs/design/agents-and-mentions.md), by id or name; "" when it has none.
-// Every place that shows a member shows it after the glyph and the name.
-export function agentRole(agent: string, roster: readonly AgentLine[]): string {
-  return roster.find((l) => l.id === agent)?.role ?? roster.find((l) => l.name === agent)?.role ?? "";
+// (docs/design/agents-and-mentions.md), by id or name, from the first list
+// that has it: the roster, then the agents tree. "" when it has none. The
+// lanes, the timeline, the agents tree and the graph all show it after the
+// glyph and the name (ui/AgentRole.tsx).
+export function agentRole(agent: string, ...lists: readonly (readonly Roled[] | undefined)[]): string {
+  for (const list of lists) {
+    const r = (list ?? []).find((l) => l.id === agent || l.name === agent)?.role ?? "";
+    if (r !== "") return r;
+  }
+  return "";
 }

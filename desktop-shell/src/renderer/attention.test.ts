@@ -74,6 +74,8 @@ const agent = (name: string, status: string, since = 0): AgentNode => ({
   parent: "",
   branch: "",
   leases: "",
+  profile: "",
+  role: "",
 });
 
 const room = (extra: Partial<RoomInput> = {}): RoomInput => ({
