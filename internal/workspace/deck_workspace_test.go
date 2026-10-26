@@ -198,6 +198,13 @@ func TestTurnResult(t *testing.T) {
 		require.Equal(t, lines("new"), meta.NewContent)
 	})
 
+	t.Run("failed edit has no earlier edit's diff", func(t *testing.T) {
+		t.Parallel()
+		r := tr.result(&deckagent.Tool{ID: "3b", Name: "Edit", Input: raw(`{"file_path":"internal/a.go"}`), Output: "not found", Status: deckagent.ToolError})
+		require.True(t, r.IsError)
+		require.Empty(t, r.Metadata)
+	})
+
 	t.Run("write without a diff has no metadata", func(t *testing.T) {
 		t.Parallel()
 		r := tr.result(&deckagent.Tool{ID: "4", Name: "Write", Input: raw(`{"file_path":"other.go"}`), Status: deckagent.ToolOK})
