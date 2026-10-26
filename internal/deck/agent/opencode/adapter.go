@@ -150,7 +150,7 @@ func (a *adapter) startProc(ctx context.Context, bin, dir string, env map[string
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("opencode: start: %w", err)
 	}
-	p := &proc{cmd: cmd, stdin: stdin, stderr: stderr, client: codex.NewClient2(stdout, stdin, a.opts.Tap)}
+	p := &proc{cmd: cmd, stdin: stdin, stderr: stderr, client: codex.NewClient2Decode(stdout, stdin, a.opts.Tap, decodeUpdate)}
 	ictx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 	init := initializeParams{

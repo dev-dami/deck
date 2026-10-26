@@ -21,9 +21,40 @@ type Message struct {
 	Params json.RawMessage `json:"params,omitempty"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  *RPCError       `json:"error,omitempty"`
-	// Raw is the exact line as received (without the trailing newline).
-	Raw json.RawMessage `json:"-"`
+	// Value is Params already decoded by the client's decode hook (see
+	// NewClient2Decode); Params is then left empty.
+	Value any `json:"-"`
 }
+
+// Line is the message as JSON, for an event that keeps its protocol line
+// (agent.KeepsRaw). The client keeps no copy of the lines it reads, since
+// nearly every one is a delta whose line nobody keeps, so this encodes the
+// message again: the same members, without "jsonrpc" or whitespace.
+func (m Message) Line() json.RawMessage {
+	if m.Value != nil && len(m.Params) == 0 {
+		if b, err := json.Marshal(m.Value); err == nil {
+			m.Params = b
+		}
+	}
+	b, _ := json.Marshal(m)
+	return b
+}
+
+// wireMessage is Message as read: params stay in the line, uncopied, until
+// the client knows the method.
+type wireMessage struct {
+	ID     json.RawMessage `json:"id,omitempty"`
+	Method string          `json:"method,omitempty"`
+	Params lineRef         `json:"params,omitempty"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  *RPCError       `json:"error,omitempty"`
+}
+
+// lineRef is a JSON value left in the line it was read from: valid only
+// while that line is.
+type lineRef []byte
+
+func (r *lineRef) UnmarshalJSON(b []byte) error { *r = b; return nil }
 
 // IsRequest reports whether the message is a server-initiated request that
 // needs a response.
@@ -72,12 +103,23 @@ type Client struct {
 	done chan struct{}
 
 	version string // "jsonrpc" member of every message sent; codex omits it
+
+	// decode, when set, decodes the params of a method it knows into
+	// Message.Value on the read loop, so they are decoded once, straight
+	// from the line, and not copied first. It returns nil for any other.
+	decode func(method string, params []byte) any
 }
 
 // NewClient starts reading r and writing to w. Notifications and server
 // requests are delivered, in wire order, on Incoming(). tap may be nil.
 func NewClient(r io.Reader, w io.Writer, tap Tap) *Client {
+	return newClient(r, w, tap, "", nil)
+}
+
+func newClient(r io.Reader, w io.Writer, tap Tap, version string, decode func(string, []byte) any) *Client {
 	c := &Client{
+		version: version,
+		decode:  decode,
 		w:       w,
 		tap:     tap,
 		pending: map[int64]chan Message{},
@@ -93,9 +135,13 @@ func NewClient(r io.Reader, w io.Writer, tap Tap) *Client {
 // NewClient2 is NewClient for a peer that wants strict JSON-RPC 2.0: every
 // message it is sent carries "jsonrpc":"2.0".
 func NewClient2(r io.Reader, w io.Writer, tap Tap) *Client {
-	c := NewClient(r, w, tap)
-	c.version = "2.0"
-	return c
+	return newClient(r, w, tap, "2.0", nil)
+}
+
+// NewClient2Decode is NewClient2 whose read loop decodes the params of the
+// methods decode knows into Message.Value.
+func NewClient2Decode(r io.Reader, w io.Writer, tap Tap, decode func(method string, params []byte) any) *Client {
+	return newClient(r, w, tap, "2.0", decode)
 }
 
 // Incoming yields notifications and server requests in the order they arrived.
@@ -137,7 +183,7 @@ func (c *Client) readLoop(r io.Reader) {
 	var rerr error
 	var scratch []byte
 	for {
-		// handleLine copies what it keeps (Message.Raw, and the RawMessage
+		// handleLine copies what it keeps (Params, and the RawMessage
 		// fields json.Unmarshal fills), so the line can be the reader's
 		// buffer rather than a fresh copy of every line.
 		var line []byte
@@ -167,11 +213,17 @@ func (c *Client) handleLine(line []byte) {
 	if c.tap != nil {
 		c.tap('<', line)
 	}
-	var m Message
-	if err := json.Unmarshal(line, &m); err != nil {
+	var w wireMessage
+	if err := json.Unmarshal(line, &w); err != nil {
 		return // not JSON (stray log line); ignore
 	}
-	m.Raw = append(json.RawMessage(nil), line...)
+	m := Message{ID: w.ID, Method: w.Method, Result: w.Result, Error: w.Error}
+	if c.decode != nil && m.Method != "" && len(w.Params) > 0 {
+		m.Value = c.decode(m.Method, w.Params)
+	}
+	if m.Value == nil && len(w.Params) > 0 {
+		m.Params = append(json.RawMessage(nil), w.Params...)
+	}
 	if m.IsResponse() {
 		id, err := strconv.ParseInt(string(bytes.TrimSpace(m.ID)), 10, 64)
 		if err != nil {
