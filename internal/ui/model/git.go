@@ -91,9 +91,20 @@ type gitState struct {
 	// detailTick is set while a pull request view refresh is scheduled.
 	detailTick bool
 
+	// version counts the writes to the fields above: every one goes
+	// through touch, so what is built from them (rows) can be kept
+	// across frames while it holds. The pane's state below is not
+	// counted.
+	version uint64
+	// rows is the git pane's root rows as last built; see gitRootRows.
+	rows gitRowsMemo
+
 	// pane is the git pane's views and inputs.
 	pane gitPaneState
 }
+
+// touch records a write to the git state; see version.
+func (g *gitState) touch() { g.version++ }
 
 // gitMsg is a message from one of the git commands; Update hands them all
 // to handleGitMsg.
@@ -184,7 +195,9 @@ func (gitPaneTickMsg) gitMsg()     {}
 func (m *UI) gitClient() *gh.Client {
 	dir := m.com.Workspace.WorkingDir()
 	if m.git.client == nil || m.git.client.Dir() != dir {
-		m.git = gitState{client: gh.New(dir)}
+		// The version carries on, so nothing built from the old
+		// state can pass for the new one.
+		m.git = gitState{client: gh.New(dir), version: m.git.version + 1}
 	}
 	return m.git.client
 }
@@ -199,6 +212,7 @@ func (m *UI) gitPoll() tea.Cmd {
 	if !g.statusBusy && now.Sub(g.statusAt) >= gitStatusInterval {
 		g.statusBusy = true
 		g.polls++
+		g.touch()
 		cmds = append(cmds, gitFetchStatus(cli, g.status.Head, g.statusOK && g.polls%gitListEvery != 0))
 	}
 	if cmd := m.gitMaybePollPR(now); cmd != nil {
@@ -225,6 +239,7 @@ func (m *UI) gitMaybePollPR(now time.Time) tea.Cmd {
 		return nil
 	}
 	g.prBusy = true
+	g.touch()
 	return gitFetchPR(g.client, g.status.Branch, list)
 }
 
@@ -304,6 +319,7 @@ func (m *UI) applyGitMsg(msg gitMsg) tea.Cmd {
 	now := time.Now()
 	switch msg := msg.(type) {
 	case gitStatusMsg:
+		g.touch()
 		g.statusBusy = false
 		g.statusAt = now
 		if msg.err != nil {
@@ -333,6 +349,7 @@ func (m *UI) applyGitMsg(msg gitMsg) tea.Cmd {
 		return cmd
 
 	case gitPRMsg:
+		g.touch()
 		g.prBusy = false
 		g.prAt = now
 		p.refreshing = false
@@ -394,12 +411,14 @@ func (m *UI) applyGitMsg(msg gitMsg) tea.Cmd {
 		}
 		if v.pending() && !g.detailTick {
 			g.detailTick = true
+			g.touch()
 			cmds = append(cmds, tea.Tick(gitPRDetailInterval, func(time.Time) tea.Msg { return gitPRDetailTickMsg{} }))
 		}
 		return tea.Batch(cmds...)
 
 	case gitPRDetailTickMsg:
 		g.detailTick = false
+		g.touch()
 		if v := p.top(); v.kind == gitViewPR && v.pending() && !v.loading {
 			v.loading = true
 			return m.gitLoadDetail(v.number)
@@ -424,6 +443,7 @@ func (m *UI) applyGitMsg(msg gitMsg) tea.Cmd {
 		}
 		if msg.base != "" {
 			g.defaultBranch = msg.base
+			g.touch()
 		}
 		return v.form.fill(msg.branch, msg.title, msg.base, msg.body, msg.notes)
 
@@ -475,6 +495,7 @@ func (m *UI) applyGitMsg(msg gitMsg) tea.Cmd {
 
 // setHeads records the open pull requests and their head branches.
 func (g *gitState) setHeads(prs []gh.PR, now time.Time) {
+	g.touch()
 	g.prs = prs
 	g.heads = make(map[string]int, len(prs))
 	for _, p := range prs {
@@ -488,6 +509,7 @@ func (g *gitState) setHeads(prs []gh.PR, now time.Time) {
 // finished.
 func (m *UI) gitSetPR(branch string, pr *gh.PR, checks []gh.Check) tea.Cmd {
 	g := &m.git
+	g.touch()
 	g.pr, g.prBranch = pr, branch
 	if pr == nil {
 		g.checks = gh.CheckSummary{}
@@ -601,6 +623,7 @@ func (m *UI) openGitPane() tea.Cmd {
 			m.git.dismissed = map[string]bool{}
 		}
 		m.git.dismissed[nudge] = true
+		m.git.touch()
 		if nudge != m.git.status.Branch {
 			p := &m.git.pane
 			p.toRoot()
@@ -643,6 +666,7 @@ func (m *UI) handleGitPaneAction(a dialog.ActionGitPane) tea.Cmd {
 func (m *UI) gitRefreshAll() tea.Cmd {
 	g := &m.git
 	cli := m.gitClient()
+	g.touch()
 	g.prAt = time.Time{}
 	g.headsAt = time.Time{}
 	var cmds []tea.Cmd
