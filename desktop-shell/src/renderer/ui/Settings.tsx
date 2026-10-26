@@ -1,11 +1,12 @@
 import type { AppState } from "@web/state";
 import { kindMark } from "@web/theme";
 import { ChevronRight, CircleCheck, Monitor, Moon, Palette, Sun } from "./icons";
-import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { AppInfo, DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";
 import { type Prefs, setPrefs, usePrefs } from "../prefs";
-import { ACCENTS, DIFF_THEMES, THEMES, type ThemeInfo } from "../themes";
+import { ACCENTS, DIFF_THEMES } from "../themes";
+import { AppIconPicker } from "./AppIconPicker";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
@@ -15,6 +16,8 @@ import { Row, Section } from "./kit/settings";
 import { Switch } from "./kit/switch";
 import { PhonePage } from "./Phone";
 import { modKey } from "./keys";
+import { ThemeGrid } from "./ThemeCard";
+import { WallpaperPicker } from "./WallpaperPicker";
 import { AgentGlyph } from "./Welcome";
 
 function Segmented<T extends string>({
@@ -151,72 +154,6 @@ function General({ p }: { p: Prefs }) {
 
 const MULTICOLOR = "conic-gradient(#ff3b30, #ff9500, #ffcc00, #28cd41, #007aff, #af52de, #ff2d55, #ff3b30)";
 
-// A theme in miniature, as a window of it: its backdrop lit by its accent,
-// a glass sidebar with the chosen row, and a sheet with text, the person's
-// bubble and the composer. The glass is drawn, not blurred: a tint, a rim
-// and a highlight.
-function Miniature({ s, light, style }: { s: readonly [string, string, string, string]; light: boolean; style?: CSSProperties }) {
-  const [bg, side, text, accent] = s;
-  const mix = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`;
-  const glass = light
-    ? "inset 0 0 0 0.5px rgb(255 255 255 / 0.9), inset 0 1px 0 rgb(255 255 255 / 1), 0 1px 3px rgb(0 0 0 / 0.08)"
-    : "inset 0 0 0 0.5px rgb(255 255 255 / 0.14), inset 0 1px 0 rgb(255 255 255 / 0.16), 0 1px 3px rgb(0 0 0 / 0.3)";
-  return (
-    <span
-      aria-hidden
-      className="absolute inset-0"
-      style={{
-        background: `radial-gradient(90% 80% at 0% 0%, ${mix(accent, light ? 30 : 42)}, transparent 70%), radial-gradient(70% 70% at 100% 100%, ${mix(text, light ? 8 : 10)}, transparent 70%), color-mix(in oklab, ${bg} ${light ? 82 : 62}%, ${light ? "#8a90a0" : "#000"})`,
-        ...style,
-      }}
-    >
-      <span className="absolute top-[10%] bottom-[10%] left-[6%] flex w-[25%] flex-col gap-[7%] rounded-[6px] p-[5%] pt-[14%]" style={{ background: mix(side, light ? 62 : 58), boxShadow: glass }}>
-        <span className="h-[7%] min-h-[4px] rounded-full" style={{ background: accent }} />
-        <span className="h-[5%] min-h-[3px] w-4/5 rounded-full" style={{ background: mix(text, 32) }} />
-        <span className="h-[5%] min-h-[3px] w-3/5 rounded-full" style={{ background: mix(text, 32) }} />
-      </span>
-      <span
-        className="absolute top-[10%] right-[6%] bottom-[10%] left-[35%] flex flex-col gap-[7%] rounded-[6px] p-[6%]"
-        style={{ background: bg, boxShadow: `inset 0 0 0 0.5px ${mix(text, 10)}, 0 2px 8px rgb(0 0 0 / ${light ? 0.1 : 0.35})` }}
-      >
-        <span className="h-[6%] min-h-[3px] w-3/5 rounded-full" style={{ background: mix(text, 70) }} />
-        <span className="h-[6%] min-h-[3px] w-4/5 rounded-full" style={{ background: mix(text, 30) }} />
-        <span className="h-[12%] min-h-[6px] w-2/5 self-end rounded-full" style={{ background: mix(accent, light ? 22 : 34) }} />
-        <span className="mt-auto h-[16%] min-h-[8px] rounded-full" style={{ background: mix(side, light ? 70 : 80), boxShadow: glass }} />
-      </span>
-    </span>
-  );
-}
-
-// A theme of the catalog: its miniature, the dark half and the light half
-// split on a slant for a theme that follows the mode, and its name.
-function ThemeCard({ t, on }: { t: ThemeInfo; on: boolean }) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={on}
-      title={t.light !== undefined ? `${t.label}: light and dark` : undefined}
-      onClick={() => setPrefs({ palette: t.id })}
-      className="group flex cursor-pointer flex-col gap-2 text-left outline-none"
-    >
-      <span
-        className={cn(
-          "relative block aspect-[16/10] w-full overflow-hidden rounded-[10px] ring-1 ring-hairline transition-[box-shadow,transform] duration-200 group-hover:-translate-y-px group-focus-visible:ring-2 group-focus-visible:ring-ring",
-          on && "ring-2 ring-primary ring-offset-2 ring-offset-background group-focus-visible:ring-primary",
-        )}
-      >
-        <Miniature s={t.swatch} light={t.light === undefined && t.mode === "light"} />
-        {t.light !== undefined && <Miniature s={t.light} light style={{ clipPath: "polygon(64% 0, 100% 0, 100% 100%, 36% 100%)" }} />}
-      </span>
-      <span className="flex items-center gap-1.5 text-xs">
-        <span className={cn("min-w-0 truncate", on ? "font-medium text-foreground" : "text-muted-foreground")}>{t.label}</span>
-        {on && <CircleCheck aria-hidden weight="fill" className="ml-auto size-3.5 shrink-0 text-primary" />}
-      </span>
-    </button>
-  );
-}
-
 // The accents as beads: the colour under a highlight, with the
 // theme's own as the many-coloured bead, as on a Mac. The chosen one holds
 // a white dot and a ring; its name shows under the row.
@@ -262,16 +199,13 @@ function Appearance({ p }: { p: Prefs }) {
   return (
     <>
       <Section title="Theme">
-        <div className="grid grid-cols-2 gap-x-3 gap-y-3 py-4 @md:grid-cols-3 @xl:grid-cols-4" role="radiogroup" aria-label="Theme">
-          {THEMES.map((t) => (
-            <ThemeCard key={t.id} t={t} on={p.palette === t.id} />
-          ))}
+        <ThemeGrid palette={p.palette} />
+        <WallpaperPicker />
+        <div className="flex flex-col gap-0.5 pt-3">
+          <h3 className="text-[13px]">App icon</h3>
+          <p className="text-pretty text-muted-foreground text-xs leading-relaxed">The theme's own, or one you pick.</p>
+          <AppIconPicker className="-mx-3" />
         </div>
-        {/* The spot for the app icon and the wallpaper: mount
-            <AppIconPicker /> and the wallpaper picker here, each a <Row>
-            (or a full-width grid like the themes above), under the theme
-            they go with and before Color mode. The section parts them with
-            hairlines. */}
         <Row
           title="Color mode"
           description="Light or dark for the themes that have both: Deck's own, the system's, or yours."

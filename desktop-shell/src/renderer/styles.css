@@ -2285,3 +2285,24 @@ body:has(:is(.welcome-screen, main.connect)) .backdrop {
   --syn-attr: #8e4f7a;
   --syn-operator: #4a3f37;
 }
+
+/* The pages' plates (ui/kit/plate.tsx) in each direction's inks: a riso
+   prints its 1-bit plates in the spot colour, on black or on paper; the
+   stitch charts them in ecru on denim or in brown floss on linen. */
+:root[data-palette="riso"] .plate {
+  --plate-lo: #121111;
+  --plate-hi: #ff48b0;
+  border-radius: 3px;
+}
+:root[data-palette="riso"][data-mode="light"] .plate {
+  --plate-lo: #ff48b0;
+  --plate-hi: #f3eee3;
+}
+:root[data-palette="stitch"] .plate {
+  --plate-lo: #26335c;
+  --plate-hi: #dfe3e6;
+}
+:root[data-palette="stitch"][data-mode="light"] .plate {
+  --plate-lo: #3a2f27;
+  --plate-hi: #e6d7b8;
+}
