@@ -139,8 +139,17 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 		return nil, fmt.Errorf("failed to configure providers: %w", err)
 	}
 
+	// Track every discovered config path, not just the ones that loaded,
+	// so a config file created after startup (e.g. a deckrc added
+	// mid-session) is detected as a change.
+	trackedPaths := append(slices.Clone(configPaths), loadedPaths...)
+
 	if !cfg.IsConfigured() {
 		slog.Warn("No providers configured")
+		// Record file state before returning: without it the staleness
+		// check reports nothing until the first reload, and the first
+		// plain-setting write cannot use the no-reload path.
+		store.captureStalenessSnapshot(trackedPaths)
 		return store, nil
 	}
 
@@ -168,11 +177,8 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	}
 	store.SetupAgents()
 
-	// Capture initial staleness snapshot
-	// Capture initial staleness snapshot. Track every discovered config path,
-	// not just the ones that loaded, so a config file created after startup
-	// (e.g. a deckrc added mid-session) is detected as a change.
-	store.captureStalenessSnapshot(append(slices.Clone(configPaths), loadedPaths...))
+	// Capture the initial staleness snapshot.
+	store.captureStalenessSnapshot(trackedPaths)
 
 	return store, nil
 }
