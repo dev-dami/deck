@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -312,6 +313,9 @@ func (m *UI) applyGitMsg(msg gitMsg) tea.Cmd {
 			p.refreshing = false
 			return nil
 		}
+		unchanged := g.statusOK && !p.refreshing && msg.status == g.status &&
+			slices.Equal(msg.files, g.files) &&
+			(msg.same || reflect.DeepEqual(msg.recent, g.recent) && reflect.DeepEqual(msg.commits, g.commits))
 		g.status, g.statusOK, g.statusErr = msg.status, true, ""
 		g.files = msg.files
 		if !msg.same {
@@ -320,6 +324,11 @@ func (m *UI) applyGitMsg(msg gitMsg) tea.Cmd {
 		cmd := m.gitMaybePollPR(now)
 		if !g.prBusy {
 			p.refreshing = false
+		}
+		if unchanged {
+			// A quiet poll confirmed what is on screen; it must not
+			// cost a full redraw.
+			m.markScrollOnly()
 		}
 		return cmd
 

@@ -1548,8 +1548,17 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, m.loadPromptHistory())
 	case gitBranchUpdatedMsg:
+		if msg.branch == m.gitBranch {
+			// The 5s poll confirmed the branch; nothing to redraw.
+			m.markScrollOnly()
+		}
 		m.gitBranch = msg.branch
 	case gitBranchPollMsg:
+		// The tick itself only starts reads; their results redraw if
+		// they change anything.
+		if cli := m.git.client; cli != nil && cli == m.gitClient() {
+			m.markScrollOnly()
+		}
 		cmds = append(cmds, m.gitBranchTicker())
 		if m.windowBlurred() {
 			// Nobody is looking: skip the local branch and status reads
