@@ -282,11 +282,42 @@ func (t *thread) rebuildSkips() {
 // busy reports whether the member is in a turn (working, in a tool, or waiting
 // for an approval).
 func (a *agentState) busy() bool {
-	switch a.status() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.busyLocked()
+}
+
+func (a *agentState) busyLocked() bool {
+	switch a.statusLocked() {
 	case StatusWorking, StatusTool, StatusApproval:
 		return true
 	}
 	return false
+}
+
+// waitIdle waits up to d for the member to leave its turn and reports whether
+// it did. It wakes on each change of the member's status (stirLocked), not on
+// a clock.
+func (a *agentState) waitIdle(d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	for {
+		a.mu.Lock()
+		if !a.busyLocked() {
+			a.mu.Unlock()
+			return true
+		}
+		if a.stirred == nil {
+			a.stirred = make(chan struct{})
+		}
+		stirred := a.stirred
+		a.mu.Unlock()
+		select {
+		case <-stirred:
+		case <-timer.C:
+			return !a.busy()
+		}
+	}
 }
 
 // steerWait is how long a steer that has to interrupt the agent waits for the
@@ -368,16 +399,8 @@ func (m *Manager) steerDeliver(t *thread, a *agentState) error {
 	if err := m.Interrupt(a.id); err != nil {
 		return err
 	}
-	// Poll with a backoff: quick for an agent that stops at once, without
-	// spinning every 2ms for the seconds a slow one can take.
-	deadline := time.Now().Add(steerWait)
-	pause := time.Millisecond
-	for a.busy() {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("session: %s did not stop in time to be redirected", a.getName())
-		}
-		time.Sleep(pause)
-		pause = min(pause*2, 25*time.Millisecond)
+	if !a.waitIdle(steerWait) {
+		return fmt.Errorf("session: %s did not stop in time to be redirected", a.getName())
 	}
 	return m.startAfterSteer(t, a)
 }

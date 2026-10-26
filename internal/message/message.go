@@ -89,6 +89,10 @@ type pendingState struct {
 	// but other flushers must back off.
 	flushing bool
 
+	// flushed is closed when the write in flight ends; set while
+	// flushing, so a sync flusher can wait for it instead of polling.
+	flushed chan struct{}
+
 	// timer is the active debounce timer, or nil if no flush is
 	// scheduled. Stopped and reset when a terminal update preempts
 	// the debounce window.
@@ -354,9 +358,13 @@ func (s *service) flushOne(ctx context.Context, id string, syncCaller bool) erro
 				s.mu.Unlock()
 				return nil
 			}
+			flushed := p.flushed
 			s.mu.Unlock()
-			// Brief yield; in-flight write should land in <1ms typical.
-			time.Sleep(time.Millisecond)
+			select {
+			case <-flushed:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 			continue
 		}
 		if !p.dirty {
@@ -379,6 +387,7 @@ func (s *service) flushOne(ctx context.Context, id string, syncCaller bool) erro
 		}
 		isTerminal := shouldFlushNow(prev, &snap)
 		p.flushing = true
+		p.flushed = make(chan struct{})
 		p.dirty = false
 		s.mu.Unlock()
 
@@ -386,6 +395,8 @@ func (s *service) flushOne(ctx context.Context, id string, syncCaller bool) erro
 
 		s.mu.Lock()
 		p.flushing = false
+		close(p.flushed)
+		p.flushed = nil
 		if err == nil {
 			p.baseline = newFlushBaseline(&snap)
 			p.hasFlushed = true

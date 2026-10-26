@@ -1603,6 +1603,9 @@ type agentState struct {
 	ctxTokens   int // context window use, from the latest usage event that reported it
 	ctxWindow   int
 	running     string // model slug the CLI reported at session start
+	// stirred is closed, and dropped, when the member's status may have
+	// changed (stirLocked); nil while nobody waits for that (waitIdle).
+	stirred chan struct{}
 
 	// A Deck-managed subagent (spawn.go): the member that asked for it, whether
 	// Deck stops it when its task ends, and its own worktree. dir is the folder
@@ -1722,7 +1725,17 @@ func (a *agentState) restore(prev Status) {
 	if a.base == StatusWorking {
 		a.base = prev
 	}
+	a.stirLocked()
 	a.mu.Unlock()
+}
+
+// stirLocked wakes the callers of waitIdle: the member's status may have
+// changed. a.mu is held.
+func (a *agentState) stirLocked() {
+	if a.stirred != nil {
+		close(a.stirred)
+		a.stirred = nil
+	}
 }
 
 func (a *agentState) markInterrupted() {
@@ -1755,6 +1768,7 @@ func (a *agentState) removePending(id string) {
 			break
 		}
 	}
+	a.stirLocked()
 	a.mu.Unlock()
 }
 
@@ -1772,6 +1786,7 @@ func (a *agentState) takePending(keep ...agent.ApprovalKind) []pendingApproval {
 		}
 	}
 	a.pending = kept
+	a.stirLocked()
 	return out
 }
 
@@ -1783,6 +1798,7 @@ func (a *agentState) markExited() bool {
 	}
 	a.base = StatusExited
 	a.pending = nil
+	a.stirLocked()
 	return true
 }
 
@@ -1797,6 +1813,7 @@ type applyResult struct {
 func (a *agentState) apply(ev agent.Event) (res applyResult) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	defer a.stirLocked()
 	if a.base == StatusExited && ev.Kind != agent.KindExited {
 		return res
 	}

@@ -190,6 +190,7 @@ func (a *agentState) claimPending(id string) bool {
 	for i, p := range a.pending {
 		if p.id == id {
 			a.pending = append(a.pending[:i], a.pending[i+1:]...)
+			a.stirLocked()
 			return true
 		}
 	}
