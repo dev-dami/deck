@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/agent/antigravity"
@@ -38,6 +39,8 @@ type Engine struct {
 	peers *peer.Service
 	// unlock drops the lock on the thread store; nil when none was taken.
 	unlock func()
+	// adapters are drained on Close (agent.Drainer).
+	adapters map[string]agent.Adapter
 }
 
 // Peers is the peer link, or nil.
@@ -127,7 +130,7 @@ func Start() (_ *Engine, err error) {
 		}
 	}
 	go mgr.CollectSub()
-	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: peers, unlock: unlock}, nil
+	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: peers, unlock: unlock, adapters: adapters}, nil
 }
 
 // startPeers makes the peer link and starts it when peers.enabled is set;
@@ -184,6 +187,11 @@ func (e *Engine) Close() {
 		e.peers.Close()
 	}
 	e.Manager.Close()
+	for _, ad := range e.adapters {
+		if d, ok := ad.(agent.Drainer); ok {
+			d.Drain(5 * time.Second)
+		}
+	}
 	e.broker.Close()
 	if e.unlock != nil {
 		e.unlock()

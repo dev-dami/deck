@@ -329,6 +329,13 @@ type ModelLister interface {
 	Models(ctx context.Context) ([]ModelInfo, error)
 }
 
+// Drainer is implemented by adapters that finish a run's cleanup in the
+// background after its Close returns. Drain waits for that cleanup, at
+// most d; Deck calls it once on the way out.
+type Drainer interface {
+	Drain(d time.Duration)
+}
+
 // MCPServer describes a stdio MCP server an adapter registers with its CLI.
 // Env carries secrets (the hub token); it must never appear in Args or logs.
 type MCPServer struct {

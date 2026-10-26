@@ -37,6 +37,12 @@ type adapter struct {
 
 	models modelcache.Cache // Models() result
 
+	// removing holds a done channel per `agy mcp` name a closed run is
+	// still removing in the background (see mcpRemove); removes counts them.
+	rmMu     sync.Mutex
+	removing map[string]chan struct{}
+	removes  sync.WaitGroup
+
 	// test hooks
 	extraArgs []string
 	tap       func(line []byte) // called with every raw stdout line
@@ -45,10 +51,16 @@ type adapter struct {
 }
 
 // New returns the Antigravity adapter. binary may be empty (looks up "agy"
-// on PATH).
+// on PATH). It starts loading the model list in the background, so the
+// first Start with a model does not wait on `agy models` to resolve its
+// slug (resolveSlug still waits for that load if it is not done yet).
 func New(binary string) agent.Adapter {
-	return &adapter{binary: binary}
+	a := &adapter{binary: binary}
+	go a.Models(context.Background())
+	return a
 }
+
+var _ agent.Drainer = (*adapter)(nil)
 
 func (a *adapter) Name() string { return "antigravity" }
 
@@ -77,20 +89,35 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 	r.sessionID = spec.ResumeID
 	r.model = spec.Model
 	r.effort = spec.Effort
-	r.slug = a.resolveSlug(ctx, spec.Model, spec.Effort)
 	r.mode = spec.Mode
 	if r.mode == "" {
 		r.mode = agent.ModeAsk
 	}
 
+	// `agy mcp add` and the slug's `agy models` (when its cache is cold)
+	// are both CLI round trips: run them side by side. agy reads its MCP
+	// config when it starts, so the launch itself waits for both.
+	type added struct {
+		name, file string
+		err        error
+	}
+	var mcpDone chan added
 	if spec.MCP != nil {
-		if name, file, err := a.mcpAdd(ctx, path, spec.MCP, spec.ID); err != nil {
+		mcpDone = make(chan added, 1)
+		go func() {
+			name, file, err := a.mcpAdd(ctx, path, spec.MCP, spec.ID)
+			mcpDone <- added{name, file, err}
+		}()
+	}
+	r.slug = a.resolveSlug(ctx, spec.Model, spec.Effort)
+	if mcpDone != nil {
+		if res := <-mcpDone; res.err != nil {
 			r.emit(agent.Event{
 				AgentID: spec.ID, Time: time.Now(), Kind: agent.KindError,
-				Text: "deck messaging unavailable: " + err.Error(),
+				Text: "deck messaging unavailable: " + res.err.Error(),
 			})
 		} else {
-			r.mcpName, r.mcpFile = name, file
+			r.mcpName, r.mcpFile = res.name, res.file
 		}
 	}
 
