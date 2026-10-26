@@ -155,7 +155,7 @@ func modelsFromInit(line []byte) []agent.ModelInfo {
 		if m.Value == "" {
 			continue
 		}
-		mi := agent.ModelInfo{ID: m.Value, Name: m.DisplayName, Description: m.Description}
+		mi := agent.ModelInfo{ID: m.Value, Name: m.DisplayName, Description: m.Description, ContextWindow: fallbackWindow(m.Value)}
 		if m.Value == "default" {
 			mi.ID, mi.Default = "", true
 		}
@@ -247,7 +247,7 @@ func modelInfoFor(alias string) agent.ModelInfo {
 	if desc == "" {
 		desc = "Latest " + alias + " model"
 	}
-	return agent.ModelInfo{ID: alias, Name: strings.ToUpper(alias[:1]) + alias[1:], Description: desc}
+	return agent.ModelInfo{ID: alias, Name: strings.ToUpper(alias[:1]) + alias[1:], Description: desc, ContextWindow: fallbackWindow(alias)}
 }
 
 func defaultModel() agent.ModelInfo {

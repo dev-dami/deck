@@ -26,6 +26,11 @@ type FilterableList struct {
 	items []FilterableItem
 	query string
 
+	// preserveOrder keeps matches in the order the items were given in,
+	// rather than by fuzzy score, for callers that rank the items
+	// themselves.
+	preserveOrder bool
+
 	// filtered memoizes the filter result: dialogs ask for it on every
 	// frame (Render does too), and a fuzzy match over every item per
 	// frame is the bulk of a large list's frame. It holds while the
@@ -83,6 +88,16 @@ func (f *FilterableList) PrependItems(items ...FilterableItem) {
 		itms[i] = item
 	}
 	f.List.SetItems(itms...)
+}
+
+// SetPreserveOrder makes filtering keep the matching items in the order
+// they were given in instead of sorting them by fuzzy score. Use it when
+// the caller ranks the items itself and passes them already in order.
+func (f *FilterableList) SetPreserveOrder(preserve bool) {
+	if f.preserveOrder != preserve {
+		f.preserveOrder = preserve
+		f.filtered.ok = false
+	}
 }
 
 // SetFilter sets the filter query and updates the list items.
@@ -153,6 +168,9 @@ func (f *FilterableList) filter() []Item {
 
 	items := FilterableItemsSource(f.items)
 	matches := fuzzy.FindFrom(f.query, items)
+	if f.preserveOrder {
+		slices.SortFunc(matches, func(a, b fuzzy.Match) int { return a.Index - b.Index })
+	}
 	matchedItems := []Item{}
 	resultSize := len(matches)
 	for i := range resultSize {

@@ -26,6 +26,8 @@ type spyAdapter struct {
 	setters bool // runs also implement agent.ModeSetter, ModelSetter and EffortSetter
 	images  bool // runs implement agent.ImageSender
 	steer   bool // runs implement agent.Steerer
+	compact bool // runs implement agent.Compactor
+	caps    agent.ContextCaps
 	mu      sync.Mutex
 	specs   []agent.Spec
 	runs    map[string]*spyRun
@@ -33,10 +35,11 @@ type spyAdapter struct {
 
 type spyRun struct {
 	agent.Run
-	mu      sync.Mutex
-	prompts []string
-	imgs    []sentImages // SendWithImages calls
-	steers  []sentImages // Steer calls
+	mu       sync.Mutex
+	prompts  []string
+	imgs     []sentImages // SendWithImages calls
+	steers   []sentImages // Steer calls
+	compacts int          // Compact calls
 }
 
 // sentImages is a prompt handed to SendWithImages or Steer.
@@ -49,6 +52,19 @@ type sentImages struct {
 func (s *spyAdapter) ContractSafe() bool {
 	cs, ok := s.Adapter.(agent.ContractSafe)
 	return ok && cs.ContractSafe()
+}
+
+// ContextCaps are the caps the test gave the spy.
+func (s *spyAdapter) ContextCaps() agent.ContextCaps { return s.caps }
+
+// spyRunCompact is a spyRun that also implements agent.Compactor.
+type spyRunCompact struct{ *spyRun }
+
+func (r *spyRunCompact) Compact() error {
+	r.mu.Lock()
+	r.compacts++
+	r.mu.Unlock()
+	return nil
 }
 
 // OpsSafe forwards to the adapter it wraps.
@@ -73,6 +89,8 @@ func (s *spyAdapter) Start(ctx context.Context, sp agent.Spec) (agent.Run, error
 	s.runs[sp.ID] = sr
 	s.mu.Unlock()
 	switch {
+	case s.compact:
+		return &spyRunCompact{sr}, nil
 	case s.setters:
 		return &spyRunSetters{sr}, nil
 	case s.images && s.steer:

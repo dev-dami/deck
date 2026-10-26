@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dev-dami/deck/internal/deck/gh"
+	"github.com/dev-dami/deck/internal/ui/styles"
 )
 
 // Root list limits.
@@ -57,6 +58,8 @@ type gitRow struct {
 	// is selected (the commit graph); cont is what stands under it on the
 	// lines a wrapped row goes on to. Both are the same width.
 	lead, cont string
+	// line is the row drawn unselected at the width it was built for.
+	line string
 }
 
 func (r gitRow) selectable() bool { return r.kind >= gitRowBranch }
@@ -146,18 +149,36 @@ func gitNextSection(rows []gitRow, cur, dir int) int {
 	return firsts[order[(at+dir+len(order))%len(order)]]
 }
 
-// gitRootRows is the root view's lines. While a frame is drawn they are
-// built once per width: the strip asks for the pane's height and then
-// renders it.
+// gitRowsMemo keeps the root rows across frames. They are a function of
+// the git state (its version), the width, the theme and, through the
+// relative times, the clock; the pane is drawn several times a second
+// with none of those changed, and building them is most of its cost.
+type gitRowsMemo struct {
+	ok      bool
+	version uint64
+	width   int
+	sty     *styles.Styles
+	styles  uint64
+	// The rows read the same from from until until, when a relative time
+	// on them next changes; until is zero when none can.
+	from, until time.Time
+	rows        []gitRow
+}
+
+// gitRootRows is the root view's lines; callers must not modify them.
+// They are kept until the git state, width or theme changes or a relative
+// time on them would read differently, and while a frame is drawn they
+// stay the same for the whole of it: the strip asks for the pane's height
+// and then renders it.
 func (m *UI) gitRootRows(width int) []gitRow {
 	f := m.frameMemo
 	if f == nil {
-		return m.buildGitRootRows(width)
+		return m.gitRootRowsAt(width, time.Now())
 	}
 	if rows, ok := f.gitRows[width]; ok {
 		return rows
 	}
-	rows := m.buildGitRootRows(width)
+	rows := m.gitRootRowsAt(width, time.Now())
 	if f.gitRows == nil {
 		f.gitRows = map[int][]gitRow{}
 	}
@@ -165,14 +186,44 @@ func (m *UI) gitRootRows(width int) []gitRow {
 	return rows
 }
 
-// buildGitRootRows builds gitRootRows.
-func (m *UI) buildGitRootRows(width int) []gitRow {
+// gitRootRowsAt is gitRootRows as of now.
+func (m *UI) gitRootRowsAt(width int, now time.Time) []gitRow {
+	g := &m.git
+	c := &g.rows
+	if c.ok && c.version == g.version && c.width == width && c.sty == m.com.Styles && c.styles == m.stylesGen &&
+		(c.until.IsZero() || !now.Before(c.from) && now.Before(c.until)) {
+		return c.rows
+	}
+	rows, until := m.buildGitRootRows(width, now)
+	*c = gitRowsMemo{ok: true, version: g.version, width: width, sty: m.com.Styles, styles: m.stylesGen,
+		from: now, until: until, rows: rows}
+	return rows
+}
+
+// buildGitRootRows builds the root rows at width as of now, and says
+// until when their relative times read the same (zero: for good).
+func (m *UI) buildGitRootRows(width int, now time.Time) ([]gitRow, time.Time) {
+	rows, until := m.gitRowsAsOf(now)
+	for i := range rows {
+		rows[i].line = gitRowLine(rows[i], width)
+	}
+	return rows, until
+}
+
+// gitRowsAsOf is the root rows as of now, not yet drawn at a width, and
+// until when their relative times read the same.
+func (m *UI) gitRowsAsOf(now time.Time) (rows []gitRow, until time.Time) {
 	g := &m.git
 	t := m.com.Styles
 	muted := gitMuted(t)
 	primary := gitPrimary(t)
-	now := time.Now()
-	var rows []gitRow
+	// ago is gitAgo without the " ago", noting when it next changes.
+	ago := func(at time.Time) string {
+		if u := gitAgoUntil(at, now); !u.IsZero() && (until.IsZero() || u.Before(until)) {
+			until = u
+		}
+		return strings.TrimSuffix(gitAgo(at, now), " ago")
+	}
 	header := func(sec int, text string) {
 		rows = append(rows, gitRow{kind: gitRowHeader, section: sec, text: t.Resource.Heading.Render(text)})
 	}
@@ -188,7 +239,7 @@ func (m *UI) buildGitRootRows(width int) []gitRow {
 		} else {
 			note(gitSectionStatus, muted.Render("loading…"))
 		}
-		return rows
+		return rows, until
 	}
 	st := g.status
 	branch := st.Branch
@@ -291,7 +342,7 @@ func (m *UI) buildGitRootRows(width int) []gitRow {
 			} else {
 				text = "  " + name
 			}
-			right := strings.TrimSuffix(gitAgo(b.Committed, now), " ago")
+			right := ago(b.Committed)
 			if g.ghAvail {
 				switch n := g.heads[name]; {
 				case n > 0:
@@ -321,12 +372,12 @@ func (m *UI) buildGitRootRows(width int) []gitRow {
 			}
 			rows = append(rows, gitRow{kind: gitRowCommit, section: gitSectionCommits, key: gitRowKey(gitRowCommit, c.Hash),
 				name: c.Hash, text: text + c.Subject,
-				right: muted.Render(strings.TrimSuffix(gitAgo(c.When, now), " ago")),
+				right: muted.Render(ago(c.When)),
 				lead:  graphRender(graph[i].line) + " ",
 				cont:  graphRender(graph[i].cont) + " "})
 		}
 	}
-	return rows
+	return rows, until
 }
 
 func gitBoolRank(b bool) int {
@@ -426,15 +477,20 @@ func gitWrapFit(text, right string, width int) []string {
 // gitWrapMin is the narrowest text column worth wrapping into.
 const gitWrapMin = 8
 
-// gitRowLines is root row r at width: one line, cut to fit, or, for the
-// selected row while the pane has focus, highlighted and wrapped onto as
-// many lines as its full text needs.
+// gitRowLine is root row r at width, unselected: one line, cut to fit.
+func gitRowLine(r gitRow, width int) string {
+	if r.lead == "" {
+		return gitFit(r.text, r.right, width)
+	}
+	return " " + r.lead + strings.TrimPrefix(gitFit(r.text, r.right, max(0, width-lipgloss.Width(r.lead))), " ")
+}
+
+// gitRowLines is root row r at width: its line, or, for the selected row
+// while the pane has focus, highlighted and wrapped onto as many lines as
+// its full text needs.
 func (m *UI) gitRowLines(r gitRow, width int, selected bool) []string {
 	if !selected {
-		if r.lead == "" {
-			return []string{gitFit(r.text, r.right, width)}
-		}
-		return []string{" " + r.lead + strings.TrimPrefix(gitFit(r.text, r.right, max(0, width-lipgloss.Width(r.lead))), " ")}
+		return []string{r.line}
 	}
 	st := m.com.Styles.Dialog.SelectedItem
 	// hw is the highlight's width: the whole line, or what the lead

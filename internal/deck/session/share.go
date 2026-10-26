@@ -132,7 +132,7 @@ func (m *Manager) SharedWith(peer string) []SharedThread {
 
 // sharedLocked is t as a teammate in role sees it listed. t.mu is held.
 func (t *thread) sharedLocked(role string) SharedThread {
-	st := SharedThread{ID: t.id, Title: t.title, Role: role, Mode: string(t.mode), Entries: len(t.log)}
+	st := SharedThread{ID: t.id, Title: t.title, Role: role, Mode: string(t.mode), Entries: t.size()}
 	for _, a := range t.members {
 		st.Members = append(st.Members, a.getName())
 	}
@@ -189,7 +189,7 @@ func (m *Manager) ReadShared(ctx context.Context, peer, threadID string, after i
 	if wait > 0 {
 		t.mu.Lock()
 		grew := t.grew
-		if len(t.log) <= after {
+		if t.size() <= after {
 			if grew == nil {
 				grew = make(chan struct{})
 				t.grew = grew
@@ -208,8 +208,8 @@ func (m *Manager) ReadShared(ctx context.Context, peer, threadID string, after i
 		}
 	}
 	t.mu.Lock()
-	after = min(max(after, 0), len(t.log))
-	end := min(len(t.log), after+mirrorEntries)
+	after = min(max(after, 0), t.size())
+	end := min(t.size(), after+mirrorEntries)
 	lines, _ := m.walk(t, viewer{includeOpen: true}, after, end, func(int, store.Entry) bool { return true })
 	mr := Mirror{Thread: t.sharedLocked(role), Next: end}
 	var members []*agentState

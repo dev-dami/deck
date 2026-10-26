@@ -35,6 +35,14 @@ type translator struct {
 	// limitsSent: the one KindLimits event (agy reports no plan windows, and
 	// reading its token is off-limits) went out with the first init.
 	limitsSent bool
+
+	// agy reports no context fill or window, so Deck estimates both (see
+	// estimateContext): model is the one the init line named, slug the one
+	// the process was started with (nil in tests), and lastStep the usage
+	// of the latest DONE step of the turn under way.
+	model    string
+	slug     func() string
+	lastStep wireUsage
 }
 
 type pendingTool struct {
@@ -148,6 +156,7 @@ func (t *translator) Line(line []byte) []agent.Event {
 		if wl.Init != nil {
 			// The model/agent the CLI runs, when overridden on the command line.
 			ev.Text = strings.TrimSpace(wl.Init.Model + " " + wl.Init.Agent)
+			t.model = strings.TrimSpace(wl.Init.Model)
 		}
 		if t.limitsSent {
 			return []agent.Event{ev}
@@ -175,6 +184,9 @@ func (t *translator) Line(line []byte) []agent.Event {
 
 func (t *translator) step(s *wireStep, mk func(agent.Kind) agent.Event) []agent.Event {
 	active := s.State == "ACTIVE"
+	if s.Usage != nil && s.State == "DONE" {
+		t.lastStep = *s.Usage
+	}
 	switch s.StepType {
 	case "user_input":
 		// Deck already echoes every prompt it sends (KindUserText at Send);
@@ -316,8 +328,13 @@ func (t *translator) result(r *wireResult, mk func(agent.Kind) agent.Event) []ag
 		if r.DurationSecs > 0 {
 			u.DurationMs = int(r.DurationSecs * 1000)
 		}
+		u.ContextTokens, u.ContextWindow = t.estimateContext(r.Usage)
+		if u.ContextTokens > 0 {
+			u.ContextSource = agent.ContextEstimated
+		}
 		return u
 	}
+	defer func() { t.lastStep = wireUsage{} }()
 	turnDone := func(text string) {
 		ue := mk(agent.KindUsage)
 		ue.Usage = usageOf()
@@ -455,4 +472,25 @@ func displayName(name string) string {
 		return "approve"
 	}
 	return name
+}
+
+// estimateContext is Deck's estimate of how full the conversation is after
+// a turn, and of the model's window. agy reports neither. The fill is the
+// tokens of the turn's latest model request and its answer (the last DONE
+// step's usage, else the turn's), which is what the next request carries
+// again; the window comes from windowFor. Either is 0 when unknown.
+func (t *translator) estimateContext(turn *wireUsage) (tokens, window int) {
+	u := t.lastStep
+	if u == (wireUsage{}) && turn != nil {
+		u = *turn
+	}
+	tokens = u.TotalTokens
+	if tokens == 0 {
+		tokens = u.InputTokens + u.OutputTokens
+	}
+	model := t.model
+	if model == "" && t.slug != nil {
+		model = t.slug()
+	}
+	return max(0, tokens), windowFor(model)
 }

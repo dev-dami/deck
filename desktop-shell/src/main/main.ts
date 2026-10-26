@@ -9,6 +9,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeTheme,
   protocol,
   safeStorage,
   screen,
@@ -177,10 +178,21 @@ function createWindow(reset: () => void, state: WindowStateFile, updater: Update
     minWidth: MIN_SIZE.width,
     minHeight: MIN_SIZE.height,
     title: "Deck",
-    backgroundColor: "#0a0a0a",
-    // The renderer draws its own title strips (the "drag" class): on a Mac the
-    // traffic lights sit over the sidebar; elsewhere the menu bar hides until Alt.
-    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const } : { autoHideMenuBar: true }),
+    // The renderer draws its own title strips (the "drag" class). On a Mac the
+    // traffic lights sit over the sidebar, centred in its 52px toolbar, and the
+    // window carries the system's sidebar material for the Apple theme to show
+    // through; it follows the window's focus and Reduce transparency.
+    // Elsewhere the menu bar hides until Alt, and the first frame takes the
+    // canvas of the system's mode.
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 18, y: 19 },
+          vibrancy: "sidebar" as const,
+          visualEffectState: "followWindow" as const,
+          backgroundColor: "#00000000",
+        }
+      : { autoHideMenuBar: true, backgroundColor: nativeTheme.shouldUseDarkColors ? "#1e1e1e" : "#ffffff" }),
     webPreferences: {
       preload: join(__dirname, "..", "preload", "preload.js"),
       contextIsolation: true,

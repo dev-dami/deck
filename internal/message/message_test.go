@@ -544,6 +544,44 @@ func TestFlush_WaitsForInFlightWrite(t *testing.T) {
 	require.Equal(t, "payload", got.Content().Text)
 }
 
+// TestFlush_GivesUpOnContext asserts a Flush that waits for an in-flight
+// write returns when its context ends instead of waiting on.
+func TestFlush_GivesUpOnContext(t *testing.T) {
+	t.Parallel()
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	q := db.New(conn)
+	sessions := session.NewService(q, conn)
+	sess, err := sessions.Create(t.Context(), "test")
+	require.NoError(t, err)
+
+	slow := &slowUpdateQuerier{
+		Querier: q,
+		release: make(chan struct{}),
+		started: make(chan struct{}),
+	}
+	t.Cleanup(func() { close(slow.release) })
+	svc := NewService(slow, WithDebounce(10*time.Millisecond))
+
+	msg, err := svc.Create(t.Context(), sess.ID, CreateMessageParams{Role: Assistant})
+	require.NoError(t, err)
+	msg.AppendContent("payload")
+	require.NoError(t, svc.Update(t.Context(), msg))
+
+	select {
+	case <-slow.started:
+	case <-time.After(time.Second):
+		t.Fatal("timer-fired flush never reached UpdateMessage")
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, svc.Flush(ctx, msg.ID), context.DeadlineExceeded)
+}
+
 // TestFlushAll_WaitsForInFlightWrite asserts FlushAll picks up IDs
 // whose buffer is currently flushing (dirty=false) so shutdown and
 // session-switch callers don't return while an SQL write is mid-flight.

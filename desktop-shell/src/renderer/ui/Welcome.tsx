@@ -195,7 +195,7 @@ export function Welcome({
   };
   return (
     <main className="welcome-screen flex h-full flex-col overflow-y-auto bg-canvas" data-screen="welcome">
-      <div className="drag flex h-12 shrink-0 items-center px-3">
+      <div className="drag flex h-13 shrink-0 items-center px-3">
         {onBack !== undefined && (
           <Button variant="ghost-muted" size="sm" onClick={onBack}>
             <ArrowLeft />

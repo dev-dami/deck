@@ -59,10 +59,8 @@ func (m *Manager) subBaseOf(a *agentState) (base, parent sub.ID, where string) {
 	t := a.thread
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	for i := len(t.log) - 1; i >= 0; i-- {
-		if e := t.log[i]; e.Type == store.EntrySnap && isSubSnap(e.Snap) {
-			return sub.ID(e.Snap), "", "the checkpoint before the user's last message"
-		}
+	if s := t.index.subSnap; s != "" {
+		return sub.ID(s), "", "the checkpoint before the user's last message"
 	}
 	return "", "", ""
 }

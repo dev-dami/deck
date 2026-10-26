@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/dev-dami/deck/internal/ui/tone"
@@ -787,12 +788,44 @@ func BuiltinThemeNames() []string {
 // name is not recognized as either a user file or a built-in.
 // LoadTheme loads a theme by name. Global user theme files take precedence
 // over built-in themes of the same name. Empty names use Deck.
+//
+// Built themes are kept until a theme file changes; see theme_cache.go.
 func LoadTheme(name string) (Styles, error) {
+	s, err := LoadThemeShared(name)
+	if err != nil {
+		return Styles{}, err
+	}
+	return *s, nil
+}
+
+// LoadThemeShared is LoadTheme without the copy, for a caller that copies
+// the theme where it is going anyway (the theme picker's preview): the
+// Styles is the one kept for every load of the theme until a theme file
+// changes, and must not be modified.
+func LoadThemeShared(name string) (*Styles, error) {
 	if name == "" {
-		return DeckDark(), nil
+		s := DeckDark()
+		return &s, nil
 	}
 	key := normalizeThemeName(name)
+	stamp, keep, ok := themeDirStamp(time.Now())
+	if ok {
+		if s, hit := cachedTheme(key, stamp); hit {
+			return s, nil
+		}
+	}
+	s, err := buildTheme(name, key)
+	if err != nil {
+		return nil, err
+	}
+	if ok && keep {
+		keepTheme(key, stamp, &s)
+	}
+	return &s, nil
+}
 
+// buildTheme builds theme key (name as asked for, for the error).
+func buildTheme(name, key string) (Styles, error) {
 	if path, err := FindThemeFile(key); err == nil {
 		tf, err := LoadThemeFile(path)
 		if err != nil {

@@ -90,14 +90,7 @@ const (
 )
 
 // firstUserText is the text of the thread's first user message. t.mu is held.
-func firstUserText(t *thread) string {
-	for _, e := range t.log {
-		if e.Type == store.EntryUser && strings.TrimSpace(e.Text) != "" {
-			return e.Text
-		}
-	}
-	return ""
-}
+func firstUserText(t *thread) string { return t.index.firstText }
 
 // generateTitle asks the default agent's model for a title. It returns "" on
 // any failure, so the caller keeps the placeholder.

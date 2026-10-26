@@ -281,6 +281,9 @@ type UI struct {
 	// canvas is the screen buffer View draws each frame into, kept
 	// between frames while the terminal size holds.
 	canvas uv.ScreenBuffer
+	// frameBuf is the scratch buffer View trims the rendered canvas into,
+	// kept between frames so only the final string is allocated.
+	frameBuf []byte
 	// frameMemo shares reads between the parts of the frame View is
 	// drawing; nil outside of it. See frameMemo.
 	frameMemo *frameMemo
@@ -1548,8 +1551,17 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, m.loadPromptHistory())
 	case gitBranchUpdatedMsg:
+		if msg.branch == m.gitBranch {
+			// The 5s poll confirmed the branch; nothing to redraw.
+			m.markScrollOnly()
+		}
 		m.gitBranch = msg.branch
 	case gitBranchPollMsg:
+		// The tick itself only starts reads; their results redraw if
+		// they change anything.
+		if cli := m.git.client; cli != nil && cli == m.gitClient() {
+			m.markScrollOnly()
+		}
 		cmds = append(cmds, m.gitBranchTicker())
 		if m.windowBlurred() {
 			// Nobody is looking: skip the local branch and status reads
@@ -2329,7 +2341,9 @@ func (m *UI) handleDialogAction(action dialog.Action) tea.Cmd {
 		// Saved off the event loop; themeSwitchedMsg applies it.
 		cmds = append(cmds, m.switchThemeCmd(themeName, newStyles))
 	case dialog.ActionPreviewTheme:
-		newStyles, err := styles.LoadTheme(msg.Theme)
+		// Every cursor move lands here: the kept theme is copied
+		// straight into the active styles.
+		newStyles, err := styles.LoadThemeShared(msg.Theme)
 		if err != nil {
 			break
 		}
@@ -2353,7 +2367,7 @@ func (m *UI) handleDialogAction(action dialog.Action) tea.Cmd {
 			saved := m.com.Styles.Clone()
 			m.preThemeStyles = &saved
 		}
-		m.previewTheme(newStyles)
+		m.previewTheme(&newStyles)
 	case dialog.ActionSaveThemePalette:
 		// The theme is stored under its own name; Base only identifies the
 		// built-in palette its colors are derived from.
@@ -3434,14 +3448,8 @@ func (m *UI) View() tea.View {
 	v.Cursor = m.Draw(canvas, canvas.Bounds())
 	m.endFrameMemo()
 
-	content := strings.ReplaceAll(canvas.Render(), "\r\n", "\n") // normalize newlines
-	contentLines := strings.Split(content, "\n")
-	for i, line := range contentLines {
-		// Trim trailing spaces for concise rendering
-		contentLines[i] = strings.TrimRight(line, " ")
-	}
-
-	content = strings.Join(contentLines, "\n")
+	m.frameBuf = trimFrameLines(m.frameBuf[:0], canvas.Render())
+	content := string(m.frameBuf)
 	if fx {
 		v.Content = m.yoloFX.Apply(content, m.width, time.Now())
 		m.applyProgressBar(&v)
@@ -3457,6 +3465,26 @@ func (m *UI) View() tea.View {
 	v.ProgramStatus = m.programStatus()
 
 	return v
+}
+
+// trimFrameLines appends s to dst with CRLF normalized to LF and the
+// trailing spaces of every line trimmed. It is one pass into a buffer
+// View keeps between frames: View runs it on the whole screen each frame,
+// and splitting into a slice of lines to join again allocated twice.
+func trimFrameLines(dst []byte, s string) []byte {
+	for {
+		i := strings.IndexByte(s, '\n')
+		line := s
+		if i >= 0 {
+			line = strings.TrimSuffix(s[:i], "\r")
+		}
+		dst = append(dst, strings.TrimRight(line, " ")...)
+		if i < 0 {
+			return dst
+		}
+		dst = append(dst, '\n')
+		s = s[i+1:]
+	}
 }
 
 // applyProgressBar attaches the terminal progress bar while the agent is
@@ -4764,8 +4792,9 @@ func (m *UI) applyTheme(s styles.Styles) {
 // currently on screen re-render; the rest of the transcript keeps its
 // cached output so browsing themes stays fast in large sessions. Off-screen
 // messages follow along when the theme is actually applied.
-func (m *UI) previewTheme(s styles.Styles) {
-	*m.com.Styles = s
+// s is only read: it may be a theme LoadThemeShared keeps.
+func (m *UI) previewTheme(s *styles.Styles) {
+	*m.com.Styles = *s
 	common.InvalidateStyleCaches()
 	m.refreshStyles()
 	m.chat.InvalidateVisibleRenderCaches()

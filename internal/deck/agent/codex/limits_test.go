@@ -14,7 +14,7 @@ import (
 
 func rateLimitsNote(t *testing.T, tr *translator, params string) []agent.Event {
 	t.Helper()
-	return tr.notification(noteRateLimits, json.RawMessage(params), json.RawMessage(`{"method":"`+noteRateLimits+`"}`))
+	return tr.notification(noteRateLimits, json.RawMessage(params), rawOf(`{"method":"`+noteRateLimits+`"}`))
 }
 
 func TestRateLimitsPartialMerge(t *testing.T) {

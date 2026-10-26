@@ -113,8 +113,9 @@ func (m *Manager) cascade(t *thread, a *agentState) {
 // waitsOnChildren reports, when a's turn has ended, whether a has live
 // subagents of its own, or a task result the turn did not answer (a subagent
 // can finish during a's turn): the end of the turn is then not the end of its
-// task, which waits for those results. t.mu is held.
-func (t *thread) waitsOnChildren(a *agentState) bool {
+// task, which waits for those results. answered is a's cursor when the turn
+// ended (turnEnd). t.mu is held.
+func (t *thread) waitsOnChildren(a *agentState, answered int) bool {
 	// A child whose task is over no longer counts, even before it is retired.
 	for _, k := range t.children(a.id) {
 		for _, tk := range t.tasks {
@@ -123,8 +124,8 @@ func (t *thread) waitsOnChildren(a *agentState) bool {
 			}
 		}
 	}
-	for i := a.answered; i < len(t.log); i++ {
-		if e := t.log[i]; e.Type == store.EntryRelay && e.Via == "task" && !t.inert[i] && contains(e.To, a.id) {
+	for _, h := range t.index.since(answered) {
+		if h.typ == store.EntryRelay && h.via == "task" && !t.inert[h.i] && contains(h.to, a.id) {
 			return true
 		}
 	}

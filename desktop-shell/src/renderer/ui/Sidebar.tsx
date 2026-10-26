@@ -255,7 +255,7 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
   });
   return (
     <nav className="sidebar flex w-64 shrink-0 flex-col bg-sidebar" aria-label="Threads" data-yolo-region="">
-      <header className={cn("brand-glow drag flex h-12 shrink-0 items-center gap-2 px-3", data.mac && "pl-20")}>
+      <header className={cn("brand-glow drag flex h-13 shrink-0 items-center gap-2 px-3", data.mac && "pl-20")}>
         <Button variant="ghost-muted" size="icon-sm" aria-label="Hide the sidebar" title="Hide the sidebar" onClick={actions.onCollapse}>
           <PanelLeft />
         </Button>
@@ -276,7 +276,7 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
             <ArrowLeft className="size-4" />
             Back to threads
           </button>
-          <div className="px-2.5 pt-3 pb-1 font-medium text-2xs text-faint">Settings</div>
+          <div className="px-2.5 pt-3 pb-1 font-semibold text-2xs text-faint">Settings</div>
           <ul className="flex flex-col gap-px" aria-label="Settings sections">
             {SETTINGS_SECTIONS.map((x) => (
               <li key={x.section}>
@@ -374,7 +374,6 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
         onSettings={actions.onSettings}
         onUsage={actions.onUsage}
         onTeam={actions.onTeam}
-        onPalette={actions.onPalette}
         onDisconnect={actions.onDisconnect}
       />
     </nav>

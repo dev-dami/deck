@@ -95,6 +95,38 @@ func BenchmarkStreamingThinkingSteadyState(b *testing.B) {
 	}
 }
 
+// BenchmarkStreamingOpenFence is a streaming tick while a reply is inside
+// a 1000-line code block whose closing fence has not arrived: no safe
+// boundary exists past the fence's opening, so each tick re-renders the
+// whole block. Two deltas alternate so no tick repeats the last content.
+func BenchmarkStreamingOpenFence(b *testing.B) {
+	sty := styles.DeckDark()
+	width := 80
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithStyles(sty.Markdown),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	var base strings.Builder
+	base.WriteString("Here is the whole file, rewritten:\n\n```go\n")
+	for i := range 1000 {
+		fmt.Fprintf(&base, "\tx%d := compute(%d) // line %d of the listing\n", i, i, i)
+	}
+	content := base.String()
+	var sm streamingMarkdown
+	_ = sm.Render(content, width, renderer)
+	deltas := []string{"\treturn x999\n", "\treturn x998\n"}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		_ = sm.Render(content+deltas[i%2], width, renderer)
+	}
+}
+
 // BenchmarkFindBoundaryAfter benchmarks the incremental boundary
 // search vs the old full-scan approach on a large document.
 func BenchmarkFindBoundaryAfter(b *testing.B) {

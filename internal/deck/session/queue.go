@@ -96,28 +96,27 @@ func (t *thread) findItemLocked(id string) int {
 // changed. t.mu is held.
 func (t *thread) syncQueueLocked(a *agentState) bool {
 	changed := false
-	var edited map[string]string
-	editsRead := false
-	for i := a.cursor; i < len(t.log); i++ {
-		e := t.log[i]
-		if (e.Type != store.EntryUser && e.Type != store.EntryEdit) || e.Steer {
+	for _, h := range t.index.since(a.cursor) {
+		i := h.i
+		if (h.typ != store.EntryUser && h.typ != store.EntryEdit) || h.steer {
 			continue
 		}
-		if t.inert[i] || t.skip[skipKey{i, a.id}] != 0 || !contains(e.To, a.id) {
+		if t.inert[i] || t.skip[skipKey{i, a.id}] != 0 || !contains(h.to, a.id) {
 			continue
 		}
-		id := itemID(e.ID, a.id)
+		id := itemID(h.id, a.id)
 		if t.findItemLocked(id) >= 0 {
+			continue
+		}
+		e, ok := t.entryLocked(i)
+		if !ok {
 			continue
 		}
 		q := qitem{idx: i, src: e.ID}
 		q.QueuedItem = QueuedItem{ID: id, ThreadID: t.id, AgentID: a.id, At: e.Time}
 		if e.Type == store.EntryUser {
-			if !editsRead { // later messages' edits come later still
-				edited, editsRead = t.editedFrom(i), true
-			}
 			q.Text = strings.TrimSpace(e.Text)
-			if txt, ok := edited[e.ID]; ok {
+			if txt, ok := t.index.edited[e.ID]; ok {
 				q.Text = strings.TrimSpace(txt)
 			}
 			q.Images = t.imagesOf(e)
@@ -252,26 +251,21 @@ func (m *Manager) CancelQueued(itemID string) error {
 	return nil
 }
 
-// rebuildSkips restores the skip set of a stored thread from its cancel and
-// steer entries. t.mu is held or t is not shared yet.
-func (t *thread) rebuildSkips() {
-	byID := make(map[string]int, len(t.log))
-	for i, e := range t.log {
-		byID[e.ID] = i
-	}
-	for _, e := range t.log {
-		switch {
-		case e.Type == store.EntryCancel:
-			if idx, ok := byID[e.Ref]; ok {
-				for _, to := range e.To {
-					t.skip[skipKey{idx, to}] = skipCancelled
-				}
+// restoreSkip restores what a stored cancel or steer entry did to the skip
+// set, as Resume reads the log. t is not shared yet.
+func (t *thread) restoreSkip(e store.Entry) {
+	switch {
+	case e.Type == store.EntryCancel:
+		if idx, ok := t.index.at[e.Ref]; ok {
+			for _, to := range e.To {
+				t.skip[skipKey{idx, to}] = skipCancelled
 			}
-		case e.Type == store.EntryUser && e.Steer && e.Old == "":
-			if idx, ok := byID[e.Ref]; ok && t.log[idx].Type == store.EntryUser {
-				for _, to := range e.To {
-					t.skip[skipKey{idx, to}] = skipSteered
-				}
+		}
+	case e.Type == store.EntryUser && e.Steer && e.Old == "":
+		idx, ok := t.index.at[e.Ref]
+		if h, isMsg := t.index.head(idx); ok && isMsg && h.typ == store.EntryUser {
+			for _, to := range e.To {
+				t.skip[skipKey{idx, to}] = skipSteered
 			}
 		}
 	}
@@ -282,11 +276,42 @@ func (t *thread) rebuildSkips() {
 // busy reports whether the member is in a turn (working, in a tool, or waiting
 // for an approval).
 func (a *agentState) busy() bool {
-	switch a.status() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.busyLocked()
+}
+
+func (a *agentState) busyLocked() bool {
+	switch a.statusLocked() {
 	case StatusWorking, StatusTool, StatusApproval:
 		return true
 	}
 	return false
+}
+
+// waitIdle waits up to d for the member to leave its turn and reports whether
+// it did. It wakes on each change of the member's status (stirLocked), not on
+// a clock.
+func (a *agentState) waitIdle(d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	for {
+		a.mu.Lock()
+		if !a.busyLocked() {
+			a.mu.Unlock()
+			return true
+		}
+		if a.stirred == nil {
+			a.stirred = make(chan struct{})
+		}
+		stirred := a.stirred
+		a.mu.Unlock()
+		select {
+		case <-stirred:
+		case <-timer.C:
+			return !a.busy()
+		}
+	}
 }
 
 // steerWait is how long a steer that has to interrupt the agent waits for the
@@ -368,16 +393,8 @@ func (m *Manager) steerDeliver(t *thread, a *agentState) error {
 	if err := m.Interrupt(a.id); err != nil {
 		return err
 	}
-	// Poll with a backoff: quick for an agent that stops at once, without
-	// spinning every 2ms for the seconds a slow one can take.
-	deadline := time.Now().Add(steerWait)
-	pause := time.Millisecond
-	for a.busy() {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("session: %s did not stop in time to be redirected", a.getName())
-		}
-		time.Sleep(pause)
-		pause = min(pause*2, 25*time.Millisecond)
+	if !a.waitIdle(steerWait) {
+		return fmt.Errorf("session: %s did not stop in time to be redirected", a.getName())
 	}
 	return m.startAfterSteer(t, a)
 }
@@ -404,6 +421,7 @@ func (m *Manager) steerNow(t *thread, a *agentState, st agent.Steerer) error {
 	}
 	t.mu.Lock()
 	prompt, images, cursor, hold := m.buildPrompt(t, a)
+	user := a.promptUser
 	oldCursor, oldHold, oldKnown := a.cursor, a.holdFrom, a.knownMode
 	a.cursor, a.holdFrom = cursor, hold
 	if a.knownMode != t.mode {
@@ -411,7 +429,10 @@ func (m *Manager) steerNow(t *thread, a *agentState, st agent.Steerer) error {
 		a.knownMode = t.mode
 	}
 	t.mu.Unlock()
-	if err := st.Steer(prompt, images); err != nil {
+	a.notePrompt(prompt, user)
+	err := st.Steer(prompt, images)
+	a.donePrompt(err == nil)
+	if err != nil {
 		t.mu.Lock()
 		a.cursor, a.holdFrom, a.knownMode = oldCursor, oldHold, oldKnown
 		t.mu.Unlock()
@@ -445,24 +466,21 @@ func (m *Manager) Edit(threadID, entryID, newText string) error {
 	}
 
 	t.mu.Lock()
-	idx := -1
-	for i, e := range t.log {
-		if e.ID == entryID && entryID != "" {
-			idx = i
-			break
-		}
+	idx, ok := t.index.at[entryID]
+	var orig store.Entry
+	if ok && entryID != "" {
+		orig, ok = t.entryLocked(idx)
 	}
-	if idx < 0 {
+	if !ok || entryID == "" {
 		t.mu.Unlock()
 		return fmt.Errorf("session: no message %q in this thread", entryID)
 	}
-	orig := t.log[idx]
 	if orig.Type != store.EntryUser || orig.Steer {
 		t.mu.Unlock()
 		return errors.New("session: only the user's own messages can be edited")
 	}
 	old := strings.TrimSpace(orig.Text)
-	if txt, ok := t.editedFrom(idx)[orig.ID]; ok {
+	if txt, ok := t.index.edited[orig.ID]; ok {
 		old = strings.TrimSpace(txt)
 	}
 	if old == newText {

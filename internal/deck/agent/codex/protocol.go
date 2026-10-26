@@ -32,6 +32,7 @@ const (
 	noteCommandOutput    = "item/commandExecution/outputDelta"
 	noteFilePatchUpdated = "item/fileChange/patchUpdated"
 	noteTokenUsage       = "thread/tokenUsage/updated"
+	noteCompacted        = "thread/compacted"
 	noteRateLimits       = "account/rateLimits/updated"
 	noteError            = "error"
 )

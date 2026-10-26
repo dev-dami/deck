@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/brand"
@@ -11,6 +12,9 @@ import (
 )
 
 const (
+	// maxEntryChars and maxBriefingChars are the budgets of a member with a
+	// 128k-200k window, or whose window is not known; budgetFor scales them
+	// to the member's window.
 	maxEntryChars    = 6000  // one briefed message is cut here
 	maxBriefingChars = 40000 // a whole briefing keeps its tail
 	readThreadLast   = 200   // entries thread.read covers
@@ -22,6 +26,15 @@ type viewer struct {
 	self        string // member id; "" for none
 	skipSelf    bool   // leave out the viewer's own events (a briefing)
 	includeOpen bool   // include turns still in flight (thread.read)
+	entry       int    // characters one message keeps; 0 = maxEntryChars
+}
+
+// entryChars is how much of one message v's rendering keeps.
+func (v viewer) entryChars() int {
+	if v.entry > 0 {
+		return v.entry
+	}
+	return maxEntryChars
 }
 
 // line is one rendered block of a briefing.
@@ -33,19 +46,17 @@ type line struct {
 	images    []agent.Image // images attached to an addressed user message
 }
 
-// walk renders t.log[start:end] from v's point of view. in decides whether the
+// walk renders log entries [start, end) from v's point of view; those no
+// longer in memory are read back from the store. in decides whether the
 // entry at index i takes part (a briefing skips what the member already has).
 // The second result maps a speaker to the first index of its turn that is still
 // in flight, which the caller must hold back and offer again later. t.mu is held.
 func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e store.Entry) bool) ([]line, map[string]int) {
 	cfg := m.config()
+	entry := v.entryChars()
 	var out []line
 	hold := map[string]int{}
 	hinted := map[string]bool{} // kinds whose pool was explained in this walk
-	// The edits of the user messages in range, read from the first of them on
-	// (a briefing covers the end of a long log).
-	var edited map[string]string
-	editsRead := false
 
 	type acc struct {
 		files, cmds, edits []string
@@ -71,29 +82,29 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			out = append(out, line{text: fmt.Sprintf("[%s ran: %s]", who, listMax(ac.cmds, 3))})
 		}
 		if ac.text != "" {
-			out = append(out, line{text: "[" + who + "] " + clip(ac.text, maxEntryChars)})
+			out = append(out, line{text: "[" + who + "] " + clip(ac.text, entry)})
 		}
 	}
 
-	for i := start; i < end && i < len(t.log); i++ {
-		e := t.log[i]
+	// A part of the log that cannot be read back is left out.
+	_ = t.view().each(start, end, func(i int, e store.Entry) bool {
 		if !in(i, e) {
-			continue
+			return true
 		}
 		switch e.Type {
 		case store.EntryEvent:
-			if e.Delta || e.Kind == agent.KindUserText {
-				continue
+			if e.Delta || e.Kind == agent.KindUserText || e.Kind == agent.KindCompacted {
+				return true // a compaction can come between turns: it must not hold the briefing
 			}
 			sp := e.AgentID
 			if sp == v.self && v.skipSelf {
-				continue
+				return true
 			}
 			if !v.includeOpen && sp != v.self && i >= t.boundary[sp] {
 				if _, ok := hold[sp]; !ok {
 					hold[sp] = i
 				}
-				continue
+				return true
 			}
 			ac := accs[sp]
 			if ac == nil {
@@ -112,7 +123,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				}
 			case agent.KindToolResult:
 				if e.Tool == nil {
-					continue
+					return true
 				}
 				switch {
 				case isCommandTool(e.Tool.Name):
@@ -125,13 +136,10 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			}
 		case store.EntryUser:
 			if v.self != "" && t.skip[skipKey{i, v.self}] != 0 {
-				continue // cancelled, or already delivered as a steer
+				return true // cancelled, or already delivered as a steer
 			}
 			raw := strings.TrimSpace(e.Text)
-			if !editsRead {
-				edited, editsRead = t.editedFrom(i), true
-			}
-			if txt, ok := edited[e.ID]; ok {
+			if txt, ok := t.index.edited[e.ID]; ok {
 				raw = strings.TrimSpace(txt)
 			}
 			l := line{user: true, raw: raw}
@@ -140,7 +148,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				// A steer reaches only the member it redirected; the others read the
 				// queued message it came from.
 				if !contains(e.To, v.self) {
-					continue
+					return true
 				}
 				l.user = false
 				l.addressed = v.skipSelf
@@ -153,25 +161,25 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				}
 			} else if v.skipSelf && contains(e.To, v.self) {
 				l.addressed = true
-				l.text = "[" + who + "] " + clip(raw, maxEntryChars)
+				l.text = "[" + who + "] " + clip(raw, entry)
 				l.images = t.imagesOf(e)
 			} else {
-				l.text = "[" + who + t.arrow(e.To, "", v.self) + "] " + clip(raw, maxEntryChars) + imageNote(e.Images)
+				l.text = "[" + who + t.arrow(e.To, "", v.self) + "] " + clip(raw, entry) + imageNote(e.Images)
 			}
 			out = append(out, l)
 		case store.EntryEdit:
 			if v.self == "" || !contains(e.To, v.self) || t.skip[skipKey{i, v.self}] != 0 {
-				continue
+				return true
 			}
 			out = append(out, line{addressed: v.skipSelf, text: editText(e.Old, e.Text)})
 		case store.EntryRelay:
 			if e.Speaker == v.self && v.skipSelf {
-				continue
+				return true
 			}
-			l := line{text: "[" + t.label(e.Speaker, v.self) + t.arrow(e.To, e.Speaker, v.self) + "] " + clip(strings.TrimSpace(e.Text), maxEntryChars)}
+			l := line{text: "[" + t.label(e.Speaker, v.self) + t.arrow(e.To, e.Speaker, v.self) + "] " + clip(strings.TrimSpace(e.Text), entry)}
 			if v.skipSelf && contains(e.To, v.self) {
 				l.addressed = true
-				l.text = "[" + t.label(e.Speaker, v.self) + " → " + t.name(v.self) + "] " + clip(strings.TrimSpace(e.Text), maxEntryChars)
+				l.text = "[" + t.label(e.Speaker, v.self) + " → " + t.name(v.self) + "] " + clip(strings.TrimSpace(e.Text), entry)
 				l.text += handoverNote(t, e)
 				if e.Steer {
 					l.text = taskSteerText(t, t.name(e.Speaker), e.TaskID, e.Text)
@@ -180,7 +188,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			out = append(out, l)
 		case store.EntryMember:
 			if e.Speaker == v.self && v.skipSelf {
-				continue
+				return true
 			}
 			who := t.name(e.Speaker)
 			if who != e.Text {
@@ -208,13 +216,14 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 		case store.EntryContinue:
 			out = append(out, line{text: "[deck] the user let agent-to-agent messages continue"})
 		case store.EntryRevert, store.EntryUnrevert:
-			out = append(out, line{text: revertText(e, revertSince(t.log, e))})
+			out = append(out, line{text: revertText(e, t.revertSinceLocked(e))})
 		case store.EntryTask:
 			if e.Task != nil {
 				out = append(out, line{text: taskText(t, e)})
 			}
 		}
-	}
+		return true
+	})
 	for _, sp := range order {
 		flush(sp)
 	}
@@ -233,7 +242,7 @@ func (m *Manager) buildPrompt(t *thread, a *agentState) (prompt string, images [
 			start = h
 		}
 	}
-	end := len(t.log)
+	end := t.size()
 	in := func(i int, e store.Entry) bool {
 		if i >= a.cursor {
 			return true
@@ -244,24 +253,30 @@ func (m *Manager) buildPrompt(t *thread, a *agentState) (prompt string, images [
 		h, ok := a.holdFrom[e.AgentID]
 		return ok && i >= h
 	}
-	lines, hold := m.walk(t, viewer{self: a.id, skipSelf: true}, start, end, in)
+	budget := m.budget(a)
+	lines, hold := m.walk(t, viewer{self: a.id, skipSelf: true, entry: budget.entry}, start, end, in)
 
 	var brief, addressed []line
+	a.promptUser = 0 // the user's own words in the prompt, for the context breakdown
 	for _, l := range lines {
 		if l.addressed {
 			addressed = append(addressed, l)
 			images = append(images, l.images...)
+			if l.raw != "" { // a user message, or a steer: their words, not Deck's
+				a.promptUser += min(utf8.RuneCountInString(l.raw), budget.entry)
+			}
 		} else {
 			brief = append(brief, l)
 		}
 	}
 	if len(brief) == 0 && len(addressed) == 1 && addressed[0].user {
+		a.promptUser = utf8.RuneCountInString(addressed[0].raw)
 		return addressed[0].raw, images, end, hold
 	}
 	var b strings.Builder
 	if len(brief) > 0 {
 		b.WriteString("[deck] Thread activity since your last turn:\n\n")
-		b.WriteString(tail(joinLines(brief), maxBriefingChars))
+		b.WriteString(tail(joinLines(brief), budget.briefing))
 		if len(addressed) > 0 {
 			b.WriteString("\n\n[deck] Addressed to you:\n\n")
 		}
@@ -283,23 +298,44 @@ func (m *Manager) readThread(agentID string) string {
 	if t.ops != nil {
 		return errOpsOnly.Error()
 	}
-	start := len(t.log) - readThreadLast
-	if start < 0 {
-		start = 0
-	}
-	lines, _ := m.walk(t, viewer{self: a.id, includeOpen: true}, start, len(t.log), func(int, store.Entry) bool { return true })
+	n := t.size()
+	start := max(n-readThreadLast, 0)
+	budget := m.budget(a)
+	lines, _ := m.walk(t, viewer{self: a.id, includeOpen: true, entry: budget.entry}, start, n, func(int, store.Entry) bool { return true })
 	var names []string
 	for _, o := range t.members {
 		names = append(names, o.getName())
 	}
 	head := fmt.Sprintf("Thread with %s (you are %s). ", strings.Join(names, ", "), a.getName())
 	if start > 0 {
-		head += fmt.Sprintf("Showing the last %d of %d entries.", len(t.log)-start, len(t.log))
+		head += fmt.Sprintf("Showing the last %d of %d entries.", n-start, n)
 	}
 	if len(lines) == 0 {
 		return head + "\n\n(nothing has been said yet)"
 	}
-	return head + "\n\n" + tail(joinLines(lines), maxBriefingChars)
+	// The hub returns at most the agent's output budget of a call and cuts
+	// the end off anything longer, which here is the newest activity: keep
+	// the tail within that cap instead.
+	body := tail(joinLines(lines), budget.read)
+	return head + "\n\n" + tailBytes(body, budget.output-len(head)-readSlack)
+}
+
+// readSlack is room left under the output cap by thread.read for the line
+// breaks and the broker's own redaction.
+const readSlack = 256
+
+// tailBytes is the end of s in at most n bytes, cut at a rune boundary, with
+// a note that earlier activity was left out.
+func tailBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	const note = "[... earlier activity omitted; the thread is longer than one read returns ...]\n\n"
+	start := len(s) - max(0, n-len(note))
+	for start < len(s) && (s[start]&0xC0) == 0x80 {
+		start++
+	}
+	return note + s[start:]
 }
 
 // instructions is the short briefing every member starts with. It carries no
@@ -365,25 +401,6 @@ func editBody(old, new string) string {
 	return "The user edited their earlier message.\nBefore: " + clip(strings.TrimSpace(old), maxEntryChars) +
 		"\nAfter: " + clip(strings.TrimSpace(new), maxEntryChars) +
 		"\nTreat the edited version as what they meant."
-}
-
-// editedTexts maps a user entry id to its latest edited text. t.mu is held.
-func (t *thread) editedTexts() map[string]string { return t.editedFrom(0) }
-
-// editedFrom is editedTexts for the user entries at log index from or later.
-// An edit is always logged after the message it edits, so only the log from
-// there on is read. t.mu is held.
-func (t *thread) editedFrom(from int) map[string]string {
-	var out map[string]string
-	for i := min(max(from, 0), len(t.log)); i < len(t.log); i++ {
-		if e := &t.log[i]; e.Type == store.EntryEdit {
-			if out == nil {
-				out = map[string]string{}
-			}
-			out[e.Ref] = e.Text
-		}
-	}
-	return out
 }
 
 // name is a member's current display name (its id when unknown).

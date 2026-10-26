@@ -81,18 +81,17 @@ func replay(t testing.TB, name string) replayResult {
 		if err := json.Unmarshal(l.Msg, &m); err != nil {
 			t.Fatal(err)
 		}
-		m.Raw = l.Msg
 		switch {
 		case m.IsResponse():
 			if sent[string(m.ID)] == methodThreadStart {
 				var tr threadResponse
 				_ = json.Unmarshal(m.Result, &tr)
-				res.events = append(res.events, res.tr.sessionStarted(tr.Thread.ID, tr.Model, m.Raw))
+				res.events = append(res.events, res.tr.sessionStarted(tr.Thread.ID, tr.Model))
 			}
 		case m.IsRequest():
 			res.requests = append(res.requests, m)
 		case m.IsNotification():
-			res.events = append(res.events, res.tr.notification(m.Method, m.Params, m.Raw)...)
+			res.events = append(res.events, res.tr.notification(m.Method, m.Params, m.Line)...)
 		}
 	}
 	return res
@@ -142,12 +141,13 @@ func TestReplaySession1(t *testing.T) {
 	}
 
 	ev := res.events
-	if ev[0].SessionID == "" || ev[0].AgentID != "codex1" || len(ev[0].Raw) == 0 {
+	if ev[0].SessionID == "" || ev[0].AgentID != "codex1" {
 		t.Fatalf("bad session event: %+v", ev[0])
 	}
 	for i, e := range ev {
-		if len(e.Raw) == 0 {
-			t.Errorf("event %d (%s) has no Raw", i, e.Kind)
+		// Only errors and unknown kinds keep their line (agent.KeepsRaw).
+		if (len(e.Raw) > 0) != agent.KeepsRaw(e.Kind) {
+			t.Errorf("event %d (%s) Raw = %q", i, e.Kind, e.Raw)
 		}
 		if e.AgentID != "codex1" || e.Time.IsZero() {
 			t.Errorf("event %d missing AgentID/Time", i)
@@ -284,9 +284,35 @@ func TestReplaySession2FileChangeAndDeclinedCommand(t *testing.T) {
 	}
 }
 
+func rawOf(line string) rawLine { return func() json.RawMessage { return json.RawMessage(line) } }
+
+// TestThreadCompacted covers thread/compacted becoming KindCompacted.
+func TestThreadCompacted(t *testing.T) {
+	evs := notif(t, newTranslator("codex1", "/w"), noteCompacted, `{"threadId":"thr","turnId":"t1"}`)
+	if len(evs) != 1 || evs[0].Kind != agent.KindCompacted || evs[0].AgentID != "codex1" {
+		t.Fatalf("events = %+v", evs)
+	}
+}
+
+// TestRawOnlyForErrors covers the line being produced only for an event that
+// keeps it: a delta never asks for it, an error does.
+func TestRawOnlyForErrors(t *testing.T) {
+	tr := newTranslator("codex1", "/w")
+	calls := 0
+	raw := func() json.RawMessage { calls++; return json.RawMessage(`{"method":"x"}`) }
+	evs := tr.notification(noteAgentDelta, json.RawMessage(`{"itemId":"i1","delta":"hi"}`), raw)
+	if len(evs) != 1 || evs[0].Raw != nil || calls != 0 {
+		t.Fatalf("delta: %+v, line built %d times", evs, calls)
+	}
+	evs = tr.notification(noteError, json.RawMessage(`{"error":{"message":"boom"},"willRetry":false}`), raw)
+	if len(evs) != 1 || evs[0].Kind != agent.KindError || string(evs[0].Raw) != `{"method":"x"}` || calls != 1 {
+		t.Fatalf("error: %+v, line built %d times", evs, calls)
+	}
+}
+
 func notif(t *testing.T, tr *translator, method, params string) []agent.Event {
 	t.Helper()
-	return tr.notification(method, json.RawMessage(params), json.RawMessage(`{"method":"`+method+`"}`))
+	return tr.notification(method, json.RawMessage(params), rawOf(`{"method":"`+method+`"}`))
 }
 
 func TestTranslateUpdateFileChangeFromUnifiedDiff(t *testing.T) {

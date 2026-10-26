@@ -127,6 +127,28 @@ func gitAgo(t, now time.Time) string {
 	}
 }
 
+// gitAgoUntil is when gitAgo(t, ·) next reads differently after now, so
+// text built with it at now holds until then; zero when t is zero, whose
+// "" never changes.
+func gitAgoUntil(t, now time.Time) time.Time {
+	if t.IsZero() {
+		return time.Time{}
+	}
+	d := now.Sub(t)
+	var step time.Duration
+	switch {
+	case d < time.Minute:
+		return t.Add(time.Minute)
+	case d < time.Hour:
+		step = time.Minute
+	case d < 48*time.Hour:
+		step = time.Hour
+	default:
+		step = 24 * time.Hour
+	}
+	return t.Add((d/step + 1) * step)
+}
+
 // gitAheadBehind is "↑2 ↓1", leaving out zeros; "" when level.
 func gitAheadBehind(st gh.Status) string {
 	var parts []string

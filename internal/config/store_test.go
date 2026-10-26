@@ -627,10 +627,9 @@ func TestCanSkipReload(t *testing.T) {
 		defer store.writeMu.Unlock()
 		return store.canSkipReloadLocked(scope, map[string]any{key: value})
 	}
-	// Deck configures no providers, so Load returns before it snapshots
-	// the config files; until a reload takes one there is nothing to
-	// compare against and every write reloads.
-	require.False(t, skip(ScopeGlobal, "options.tui.active_theme", "x"))
+	// Deck configures no providers; Load still records the config files,
+	// so the first write after startup can already skip the reload.
+	require.True(t, skip(ScopeGlobal, "options.tui.active_theme", "x"))
 	require.NoError(t, store.ReloadFromDisk(t.Context()))
 
 	require.True(t, skip(ScopeGlobal, "options.tui.active_theme", "x"))

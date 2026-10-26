@@ -67,10 +67,20 @@ const (
 	longContextWindow    = 1_000_000
 )
 
-var longContextRe = regexp.MustCompile(`(?i)\[1m\]|(^|[^a-z0-9])1m($|[^a-z0-9])`)
+var (
+	longContextRe = regexp.MustCompile(`(?i)\[1m\]|(^|[^a-z0-9])1m($|[^a-z0-9])`)
+	// familyRe finds the family and version of an id: claude-opus-4-6,
+	// claude-sonnet-4-5-20250929 (a date is not a minor), or a bare alias.
+	familyRe = regexp.MustCompile(`(opus|sonnet|haiku|fable|mythos)(?:[-.]?(\d+)(?:[-.](\d{1,2})\b)?)?`)
+	// oldNamingRe is the claude-3-x-<family> naming of models before 4.
+	oldNamingRe = regexp.MustCompile(`claude-[0-9]`)
+)
 
 // fallbackWindow returns the assumed context window of a model id/alias, or 0
-// for a model it does not recognise.
+// for a model it does not recognise. Every model from Opus and Sonnet 4.6,
+// Haiku 5.5 and Fable on has a 1M window by default; older ones (Haiku 4.5,
+// Sonnet 4.5, Opus 4.5 and before) have 200k. A bare alias (opus, sonnet,
+// haiku, fable) is the current generation, so 1M.
 func fallbackWindow(model string) int {
 	m := strings.ToLower(model)
 	if m == "" {
@@ -79,12 +89,29 @@ func fallbackWindow(model string) int {
 	if longContextRe.MatchString(m) {
 		return longContextWindow
 	}
-	for _, fam := range []string{"opus", "sonnet", "haiku", "fable"} {
-		if strings.Contains(m, fam) {
-			return defaultContextWindow
-		}
+	sub := familyRe.FindStringSubmatch(m)
+	if sub == nil {
+		return 0
 	}
-	return 0
+	if oldNamingRe.MatchString(m) {
+		return defaultContextWindow
+	}
+	fam, major, minor := sub[1], atoi(sub[2]), atoi(sub[3])
+	switch {
+	case sub[2] == "", fam == "fable", fam == "mythos":
+		return longContextWindow
+	case major > 4, major == 4 && minor >= 6:
+		return longContextWindow
+	}
+	return defaultContextWindow
+}
+
+func atoi(s string) int {
+	n := 0
+	for _, c := range s {
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 // window is the context window for the current model: the CLI-reported value
@@ -94,6 +121,16 @@ func (t *translator) window() int {
 		return w
 	}
 	return fallbackWindow(t.model)
+}
+
+// source is where the context figures of a usage event come from: the fill
+// is always derived from the assistant messages' usage, and the window is the
+// CLI's own once a result line reported it, else the family fallback.
+func (t *translator) source() string {
+	if t.windows[t.model] == 0 && fallbackWindow(t.model) > 0 {
+		return agent.ContextFallback
+	}
+	return agent.ContextDerived
 }
 
 type streamLine struct {
@@ -120,6 +157,11 @@ type streamLine struct {
 
 	// result, and a stream_event's message_start: time to first token
 	TTFTMs int `json:"ttft_ms"`
+
+	// system/compact_boundary: how the compaction was started
+	CompactMetadata *struct {
+		Trigger string `json:"trigger"` // "auto" | "manual"
+	} `json:"compact_metadata"`
 }
 
 // wireUsage is the usage object of an assistant message / message_delta.
@@ -213,6 +255,16 @@ func (t *translator) Line(line []byte) []agent.Event {
 			ev.Text = sl.Model // the model this session actually runs
 			return []agent.Event{ev}
 		}
+		if sl.Subtype == "compact_boundary" && (sl.ParentToolUseID == nil || *sl.ParentToolUseID == "") {
+			// The conversation was summarised: what the last message
+			// filled no longer stands; the next one reports the new use.
+			t.ctx, t.lastEmitted = ctxUsage{}, 0
+			ev := mk(agent.KindCompacted)
+			if sl.CompactMetadata != nil {
+				ev.Text = sl.CompactMetadata.Trigger
+			}
+			return []agent.Event{ev}
+		}
 
 	case "stream_event":
 		if sl.ParentToolUseID != nil && *sl.ParentToolUseID != "" {
@@ -296,7 +348,7 @@ func (t *translator) Line(line []byte) []agent.Event {
 		ue := mk(agent.KindUsage)
 		ue.Usage = &agent.Usage{
 			InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CachedTokens: u.CacheRead, CostUSD: sl.TotalCostUSD,
-			ContextTokens: t.ctx.total(), ContextWindow: t.window(),
+			ContextTokens: t.ctx.total(), ContextWindow: t.window(), ContextSource: t.source(),
 			CacheWriteTokens: u.CacheCreate, ReasoningTokens: thinking,
 			TTFTms: ttft, APIms: sl.DurationAPIMs, DurationMs: sl.DurationMs,
 		}
@@ -391,7 +443,7 @@ func (t *translator) contextEvent(mk func(agent.Kind) agent.Event) []agent.Event
 	}
 	t.lastEmitted = n
 	ev := mk(agent.KindUsage)
-	ev.Usage = &agent.Usage{ContextTokens: n, ContextWindow: t.window()}
+	ev.Usage = &agent.Usage{ContextTokens: n, ContextWindow: t.window(), ContextSource: t.source()}
 	return []agent.Event{ev}
 }
 

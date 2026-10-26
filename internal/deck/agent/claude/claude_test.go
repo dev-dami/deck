@@ -600,9 +600,13 @@ func TestContextUsageFromFixture(t *testing.T) {
 		if u.ContextTokens != wantCtx[i] {
 			t.Errorf("mid[%d].ContextTokens = %d want %d", i, u.ContextTokens, wantCtx[i])
 		}
-		// no modelUsage seen yet: family fallback for claude-opus-*
-		if u.ContextWindow != 200000 {
-			t.Errorf("mid[%d].ContextWindow = %d want 200000 (fallback)", i, u.ContextWindow)
+		// No modelUsage seen yet: the fallback for claude-opus-5-5, which
+		// must already match the 1M the result line reports (#43).
+		if u.ContextWindow != 1000000 {
+			t.Errorf("mid[%d].ContextWindow = %d want 1000000 (fallback)", i, u.ContextWindow)
+		}
+		if u.ContextSource != agent.ContextFallback {
+			t.Errorf("mid[%d].ContextSource = %q want fallback: the window is Deck's assumption until the result", i, u.ContextSource)
 		}
 	}
 	if len(final) != 1 {
@@ -614,6 +618,9 @@ func TestContextUsageFromFixture(t *testing.T) {
 	}
 	if f.ContextWindow != 1000000 {
 		t.Errorf("final ContextWindow = %d want 1000000 (modelUsage.contextWindow)", f.ContextWindow)
+	}
+	if f.ContextSource != agent.ContextDerived {
+		t.Errorf("final ContextSource = %q want derived: the result reported the window", f.ContextSource)
 	}
 	if f.OutputTokens != 153 || f.CostUSD < 0.11 {
 		t.Errorf("existing fields lost: %+v", f)
@@ -642,15 +649,28 @@ func TestContextWindowKnownAfterFirstResult(t *testing.T) {
 		if e.Kind == agent.KindUsage && e.Usage.ContextWindow != 1000000 {
 			t.Errorf("second turn window = %d want 1000000", e.Usage.ContextWindow)
 		}
+		if e.Kind == agent.KindUsage && e.Usage.ContextSource != agent.ContextDerived {
+			t.Errorf("second turn source = %q want derived", e.Usage.ContextSource)
+		}
 	}
 }
 
 func TestFallbackWindow(t *testing.T) {
 	cases := map[string]int{
 		"claude-opus-4-1":            200000,
-		"sonnet":                     200000,
-		"haiku":                      200000,
-		"claude-fable-1":             200000,
+		"claude-opus-4-20250514":     200000,
+		"claude-haiku-4-5":           200000,
+		"claude-3-5-sonnet-20241022": 200000,
+		"sonnet":                     1000000, // aliases are the current generation
+		"haiku":                      1000000,
+		"opus":                       1000000,
+		"claude-fable-1":             1000000,
+		"claude-fable-5-1":           1000000,
+		"claude-opus-4-6":            1000000,
+		"claude-sonnet-4-6":          1000000,
+		"claude-opus-5-5":            1000000, // testdata/limits.jsonl reports 1,000,000
+		"claude-sonnet-5":            1000000,
+		"claude-haiku-5-5":           1000000,
 		"claude-sonnet-4-5[1m]":      1000000,
 		"sonnet[1m]":                 1000000,
 		"opus-1m":                    1000000,
@@ -662,6 +682,29 @@ func TestFallbackWindow(t *testing.T) {
 		if got := fallbackWindow(m); got != want {
 			t.Errorf("fallbackWindow(%q) = %d want %d", m, got, want)
 		}
+	}
+}
+
+// TestCompactBoundary covers system/compact_boundary: a KindCompacted event
+// saying how it was started, and the context of the summarised history no
+// longer counted (the next message reports the new use).
+func TestCompactBoundary(t *testing.T) {
+	tr := newTranslator("c1")
+	before := tr.Line([]byte(`{"type":"assistant","message":{"model":"claude-opus-5-5","usage":{"input_tokens":10,"cache_read_input_tokens":800000,"output_tokens":5},"content":[{"type":"text","text":"hi"}]}}`))
+	if u := before[len(before)-1].Usage; u == nil || u.ContextTokens != 800015 {
+		t.Fatalf("before: %+v", before)
+	}
+	evs := tr.Line([]byte(`{"type":"system","subtype":"compact_boundary","session_id":"s1","compact_metadata":{"trigger":"auto","pre_tokens":800015}}`))
+	if len(evs) != 1 || evs[0].Kind != agent.KindCompacted || evs[0].Text != "auto" {
+		t.Fatalf("compact: %+v", evs)
+	}
+	after := tr.Line([]byte(`{"type":"assistant","message":{"model":"claude-opus-5-5","usage":{"input_tokens":10,"cache_read_input_tokens":20000,"output_tokens":5},"content":[{"type":"text","text":"on"}]}}`))
+	if u := after[len(after)-1].Usage; u == nil || u.ContextTokens != 20015 {
+		t.Fatalf("after: %+v", after)
+	}
+	// A sub-agent's compaction is not this conversation's.
+	if evs := tr.Line([]byte(`{"type":"system","subtype":"compact_boundary","parent_tool_use_id":"toolu_x"}`)); len(evs) != 0 {
+		t.Fatalf("sub-agent compact: %+v", evs)
 	}
 }
 

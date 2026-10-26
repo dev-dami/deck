@@ -33,6 +33,19 @@ go run .
 
 Run it in a project folder. It drives the `claude`, `codex` and `opencode` CLIs you have installed; `go run . doctor` shows which ones it finds. `DECK_REDUCED_MOTION=1` turns the animations off.
 
+## Benchmarks and profiles
+
+The streaming path has benchmarks: `go test ./internal/deck/store/ -bench AppendEntry` (one store, several threads appending), `./internal/message/ -bench TokenToDB` (a delta through `Update` to SQLite), `./internal/ui/chat/ -bench StreamingOpenFence` (a long code block still open) and `./internal/ui/model/ -bench SessionLoad` (opening a 1000-message session) and `./internal/deck/session/ -bench 'ResumeLongLog|ForkLongLog'` (resuming and forking a thread with a 20 MB log). Add `-benchmem`, and `-cpuprofile cpu.out` to see where the time goes.
+
+To profile Deck itself, set `DECK_PPROF` to a folder:
+
+```sh
+DECK_PPROF=/tmp/deckprof go run .
+go tool pprof /tmp/deckprof/deck-cpu-<pid>.pprof
+```
+
+The CPU profile covers the whole run and the heap profile is taken as Deck exits; both are named after the process id. `DECK_PROFILE=1` serves live profiles at `localhost:6060/debug/pprof` instead.
+
 ## Live tests
 
 Some tests drive the real `claude` and `codex` CLIs. They are skipped unless you opt in, because they spend your own usage:

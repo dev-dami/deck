@@ -38,7 +38,7 @@ func TestFrameMemo_OneRosterReadPerFrame(t *testing.T) {
 	_ = u.markLevels()
 	_ = u.sessionRoster()
 	_ = u.modelInfo(40)
-	_, _ = contextPercent(u.com, u.rosterOrNil(), u.session)
+	_, _, _ = contextPercent(u.com, u.rosterOrNil(), u.session)
 	u.endFrameMemo()
 	require.Equal(t, 1, ws.reads, "one roster read per frame")
 

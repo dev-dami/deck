@@ -115,6 +115,9 @@ Light mode keeps the same hue and the same deltas on a warm paper canvas
 The theme catalog stays. "Tabletop" becomes the default; "T3" stays as a
 choice.
 
+Status: the "Apple" theme, a native Mac window, is now the default
+(`docs/design-apple.md`). Tabletop stays in the catalog.
+
 ## 3. Information architecture: the room
 
 A thread is a room. The engine already has the parts: the roster is who

@@ -86,7 +86,7 @@ func TestMCPSearchExecuteRoundTrip(t *testing.T) {
 		mu.Unlock()
 		switch op {
 		case "big":
-			return strings.Repeat("x", 30<<10), false
+			return strings.Repeat("x", 80<<10), false
 		case "leak":
 			return "token is " + b.Token(), false
 		case "bad":
@@ -120,7 +120,7 @@ func TestMCPSearchExecuteRoundTrip(t *testing.T) {
 		t.Fatalf("error op %q %v", txt, isErr)
 	}
 	txt, _ = resultText(t, call(`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"execute","arguments":{"op":"big"}}}`))
-	if len(txt) > maxExecOutput+200 || !strings.Contains(txt, "truncated at 20 KB") {
+	if len(txt) > maxExecOutput+200 || !strings.Contains(txt, "truncated at 64 KB") {
 		t.Fatalf("big output not capped: %d bytes", len(txt))
 	}
 	txt, _ = resultText(t, call(`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"execute","arguments":{"op":"leak"}}}`))

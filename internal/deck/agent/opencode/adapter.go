@@ -62,6 +62,19 @@ func NewWithOptions(binary string, opts Options) agent.Adapter {
 
 func (a *adapter) Name() string { return "opencode" }
 
+// ContextCaps implements agent.ContextCapser. The instructions travel in the
+// first prompt of a session (once: Spec.Briefed), the fill and window come
+// from ACP usage_update, and Deck's MCP server is added to the session next
+// to the user's own (partial). No config or instruction-file isolation has
+// been checked against the CLI.
+func (a *adapter) ContextCaps() agent.ContextCaps {
+	return agent.ContextCaps{
+		InstructionSlot: agent.InstrFirstPrompt, InstrPersistsOnResume: true,
+		IsolateMCP:     agent.SupportPartial,
+		ReportsContext: agent.ContextCLI, ReportsWindow: agent.ContextCLI,
+	}
+}
+
 // ContractSafe implements agent.ContractSafe: in ask mode its edits,
 // commands and fetches ask through Deck.
 func (a *adapter) ContractSafe() bool { return true }
@@ -150,7 +163,7 @@ func (a *adapter) startProc(ctx context.Context, bin, dir string, env map[string
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("opencode: start: %w", err)
 	}
-	p := &proc{cmd: cmd, stdin: stdin, stderr: stderr, client: codex.NewClient2(stdout, stdin, a.opts.Tap)}
+	p := &proc{cmd: cmd, stdin: stdin, stderr: stderr, client: codex.NewClient2Decode(stdout, stdin, a.opts.Tap, decodeUpdate)}
 	ictx, cancel := context.WithTimeout(ctx, rpcTimeout)
 	defer cancel()
 	init := initializeParams{
@@ -199,7 +212,7 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		closing:   make(chan struct{}),
 		loopDone:  make(chan struct{}),
 		tr:        newTranslator(spec.ID, spec.Dir),
-		briefed:   strings.TrimSpace(spec.Instructions) == "",
+		briefed:   strings.TrimSpace(spec.Instructions) == "" || spec.Briefed && spec.ResumeID != "",
 	}
 	if err := r.handshake(ctx); err != nil {
 		p.stop()

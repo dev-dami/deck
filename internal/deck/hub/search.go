@@ -56,7 +56,7 @@ func Search(env Env, raw json.RawMessage) string {
 		fmt.Fprintf(&b, "  %s %s - %s\n", h.op.Name, h.op.Signature(), h.op.Desc)
 	}
 	if env.Ops != nil {
-		return capOut(b.String(), 0) // an ops contract's agent sees no skills and no history
+		return capOut(b.String(), 0, env.maxOut()) // an ops contract's agent sees no skills and no history
 	}
 
 	// (b) skills
@@ -100,7 +100,7 @@ func Search(env Env, raw json.RawMessage) string {
 	} else if env.Store != nil {
 		b.WriteString("History: execute history.threads, or search with words to find past threads.\n")
 	}
-	return capOut(b.String(), 0)
+	return capOut(b.String(), 0, env.maxOut())
 }
 
 func argText(o Op) string {

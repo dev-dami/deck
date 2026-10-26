@@ -23,7 +23,7 @@ func git(ctx context.Context, env *Env, args ...string) (string, error) {
 	if env.Run != nil {
 		return env.Run(ctx, env.Dir, "", "git", args...)
 	}
-	out, total, err := gh.ExecLimit(ctx, env.Dir, "", "git", MaxOutput+capSlack, args...)
+	out, total, err := gh.ExecLimit(ctx, env.Dir, "", "git", env.maxOut()+capSlack, args...)
 	env.dropped += total - int64(len(out))
 	return out, err
 }

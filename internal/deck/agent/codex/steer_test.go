@@ -119,10 +119,10 @@ func TestContextFromTokenUsage(t *testing.T) {
 				"modelContextWindow": window,
 			},
 		})
-		return tr.notification(noteTokenUsage, params, params)
+		return tr.notification(noteTokenUsage, params, nil)
 	}
 	started, _ := json.Marshal(map[string]any{"threadId": "thr", "turn": map[string]any{"id": "t1", "status": "inProgress"}})
-	tr.notification(noteTurnStarted, started, started)
+	tr.notification(noteTurnStarted, started, nil)
 
 	// Two model calls in one turn: the context is the latest request, the
 	// token counters stay per-turn cumulative.
@@ -141,8 +141,8 @@ func TestContextFromTokenUsage(t *testing.T) {
 	}
 	// A new turn restarts the per-turn counters but not the context.
 	done, _ := json.Marshal(map[string]any{"threadId": "thr", "turn": map[string]any{"id": "t1", "status": "completed"}})
-	tr.notification(noteTurnCompleted, done, done)
-	tr.notification(noteTurnStarted, started, started)
+	tr.notification(noteTurnCompleted, done, nil)
+	tr.notification(noteTurnStarted, started, nil)
 	u = note("t2", 11000, 80, 0, 31500, 380, 272000)[0].Usage
 	if u.InputTokens != 11000 || u.OutputTokens != 80 || u.ContextTokens != 11080 {
 		t.Errorf("next-turn usage = %+v", u)

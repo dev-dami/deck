@@ -97,7 +97,7 @@ func TestClientWireFormat(t *testing.T) {
 	}
 	r := <-got
 	if !r.IsResponse() || string(r.ID) != `"srv-7"` || string(r.Result) != `{"decision":"accept"}` {
-		t.Fatalf("response = %+v (%s)", r, r.Raw)
+		t.Fatalf("response = %+v (%s)", r, r.Line())
 	}
 }
 
@@ -119,8 +119,41 @@ func TestClientIncomingOrderAndServerRequests(t *testing.T) {
 	if m3.Method != "turn/completed" {
 		t.Fatalf("m3 = %+v", m3)
 	}
-	if len(m2.Raw) == 0 {
-		t.Fatal("Raw not kept")
+	if got := string(m2.Line()); got != `{"id":0,"method":"item/commandExecution/requestApproval","params":{"n":2}}` {
+		t.Fatalf("Line = %s", got)
+	}
+}
+
+// TestClientDecodeHook covers the read loop decoding the params of a method
+// the hook knows into Value (Params left empty, nothing copied), and leaving
+// every other method's params raw.
+func TestClientDecodeHook(t *testing.T) {
+	cr, sw := io.Pipe()
+	_, cw := io.Pipe()
+	type note struct{ N int }
+	c := NewClient2Decode(cr, cw, nil, func(method string, params []byte) any {
+		if method != "hot" {
+			return nil
+		}
+		v := new(note)
+		if json.Unmarshal(params, v) != nil {
+			return nil
+		}
+		return v
+	})
+	go func() {
+		_, _ = io.WriteString(sw, `{"jsonrpc":"2.0","method":"hot","params":{"N":7}}`+"\n")
+		_, _ = io.WriteString(sw, `{"jsonrpc":"2.0","method":"cold","params":{"N":8}}`+"\n")
+	}()
+	hot, cold := <-c.Incoming(), <-c.Incoming()
+	if v, ok := hot.Value.(*note); !ok || v.N != 7 || len(hot.Params) != 0 {
+		t.Fatalf("hot = %+v", hot)
+	}
+	if got := string(hot.Line()); got != `{"method":"hot","params":{"N":7}}` {
+		t.Errorf("hot line = %s", got)
+	}
+	if cold.Value != nil || string(cold.Params) != `{"N":8}` {
+		t.Fatalf("cold = %+v", cold)
 	}
 }
 

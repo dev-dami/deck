@@ -290,9 +290,14 @@ export function RightPanel({
       aria-label="Side panel"
       data-yolo-region=""
     >
-      <header className="panel-head drag @container/head flex h-12 shrink-0 items-center gap-1 border-b px-2">
+      <header className="panel-head drag @container/head flex h-13 shrink-0 items-center gap-1 border-b px-2">
         <h2 className="sr-only">{PANELS.find((p) => p.panel === panel)?.label}</h2>
-        <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto" role="tablist" aria-label="Room">
+        {/* The panel's views as a toolbar's segmented control. */}
+        <div
+          className="flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-[calc(var(--control-radius)+2px)] bg-secondary p-0.5 [scrollbar-width:none]"
+          role="tablist"
+          aria-label="Room"
+        >
           {tabs.map((p) => {
             const Icon = TAB_ICONS[p.panel];
             return (
@@ -304,10 +309,10 @@ export function RightPanel({
                 aria-label={p.label}
                 title={p.label}
                 className={cn(
-                  "flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-[13px]",
+                  "flex h-6 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[var(--control-radius)] px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   panel === p.panel
-                    ? "bg-accent font-medium text-foreground"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                    ? "bg-segment font-medium text-foreground shadow-card"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
                 onClick={() => onPanel(p.panel)}
               >

@@ -218,7 +218,7 @@ export function Shell(props: ShellProps) {
         />
       )}
       {/* The room keeps 30rem; a widened panel gives way first. */}
-      <div className="flex min-w-[min(30rem,100%)] flex-1 flex-col">
+      <div className="flex min-w-[min(30rem,100%)] flex-1 flex-col bg-background">
         <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
           {ui.inbox ? (
             <Inbox

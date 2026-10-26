@@ -314,7 +314,7 @@ export function AgentsStrip({
   const limits = useLimits(api);
   const addressed = activeAgents(draft);
   return (
-    <div className="agents flex min-w-0 flex-wrap items-center gap-0.5" role="group" aria-label="Send to">
+    <div className="agents flex min-w-24 flex-1 basis-0 flex-wrap items-center gap-0.5" role="group" aria-label="Send to">
       {roster.map((l) => (
         <Chip
           key={l.id}
@@ -342,7 +342,7 @@ export function AgentsStrip({
         listModels={listModels}
         setModel={setModel}
       />
-      {hint !== null && <span className="send-hint shrink-0 px-1.5 text-[11px] text-faint">{hint}</span>}
+      {hint !== null && <span className="send-hint hidden shrink-0 px-1.5 text-[11px] text-faint @[46rem]/bar:inline">{hint}</span>}
     </div>
   );
 }

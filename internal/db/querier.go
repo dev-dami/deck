@@ -22,22 +22,13 @@ type Querier interface {
 	DeleteSession(ctx context.Context, id string) error
 	DeleteSessionFiles(ctx context.Context, sessionID string) error
 	DeleteSessionMessages(ctx context.Context, sessionID string) error
-	GetAverageResponseTime(ctx context.Context) (int64, error)
 	GetFile(ctx context.Context, id string) (File, error)
 	GetFileByPathAndSession(ctx context.Context, arg GetFileByPathAndSessionParams) (File, error)
 	GetFileRead(ctx context.Context, arg GetFileReadParams) (ReadFile, error)
-	GetHourDayHeatmap(ctx context.Context) ([]GetHourDayHeatmapRow, error)
 	GetLastAssistantMessageBySession(ctx context.Context, sessionID string) (Message, error)
 	GetLastSession(ctx context.Context) (Session, error)
 	GetMessage(ctx context.Context, id string) (Message, error)
-	GetRecentActivity(ctx context.Context) ([]GetRecentActivityRow, error)
 	GetSessionByID(ctx context.Context, id string) (Session, error)
-	GetToolUsage(ctx context.Context) ([]GetToolUsageRow, error)
-	GetTotalStats(ctx context.Context) (GetTotalStatsRow, error)
-	GetUsageByDay(ctx context.Context) ([]GetUsageByDayRow, error)
-	GetUsageByDayOfWeek(ctx context.Context) ([]GetUsageByDayOfWeekRow, error)
-	GetUsageByHour(ctx context.Context) ([]GetUsageByHourRow, error)
-	GetUsageByModel(ctx context.Context) ([]GetUsageByModelRow, error)
 	InsertBehavior(ctx context.Context, arg InsertBehaviorParams) error
 	InsertLimitSnapshot(ctx context.Context, arg InsertLimitSnapshotParams) error
 	InsertMCPDisabledServer(ctx context.Context, name string) error
@@ -53,7 +44,6 @@ type Querier interface {
 	ListAllUserMessages(ctx context.Context) ([]Message, error)
 	ListFilesByPath(ctx context.Context, path string) ([]File, error)
 	ListFilesBySession(ctx context.Context, sessionID string) ([]File, error)
-	ListLatestSessionFiles(ctx context.Context, sessionID string) ([]File, error)
 	ListMCPDisabledServers(ctx context.Context) ([]string, error)
 	ListMCPEnabledServers(ctx context.Context) ([]string, error)
 	ListMessagesBySession(ctx context.Context, sessionID string) ([]Message, error)
@@ -61,7 +51,6 @@ type Querier interface {
 	// created_at has one-second resolution, so a few messages preceding the
 	// summary can come back too; the caller slices from the summary by ID.
 	ListMessagesBySessionFromSummary(ctx context.Context, arg ListMessagesBySessionFromSummaryParams) ([]Message, error)
-	ListNewFiles(ctx context.Context) ([]File, error)
 	ListSessionReadFiles(ctx context.Context, sessionID string) ([]ReadFile, error)
 	ListSessions(ctx context.Context) ([]Session, error)
 	// Backs prompt history, which steps back one entry at a time.

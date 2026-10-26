@@ -1,6 +1,7 @@
 package list
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/sahilm/fuzzy"
@@ -65,4 +66,33 @@ func TestList_SetItemsSameKeepsCache(t *testing.T) {
 
 	l.SetItems(a)
 	require.Equal(t, 1, l.TotalHeight(), "a new item set recomputes the total height")
+}
+
+// TestFilterableList_PreserveOrder asserts a list told to preserve order
+// keeps matches in the caller's order on Render, while the default sorts
+// them by fuzzy score.
+func TestFilterableList_PreserveOrder(t *testing.T) {
+	t.Parallel()
+
+	// "ab" scores higher on "ab" than on "xxxxaxxxxb" (leading and gap
+	// penalties); give the weaker match first so the two orders differ.
+	weak := &matchedItem{trackedItem: newTrackedItem("w", "weak", true), filter: "xxxxaxxxxb"}
+	strong := &matchedItem{trackedItem: newTrackedItem("s", "strong", true), filter: "ab"}
+	ids := func(items []Item) []string {
+		out := make([]string, len(items))
+		for i, it := range items {
+			out[i] = it.(*matchedItem).id
+		}
+		return out
+	}
+
+	f := NewFilterableList(weak, strong)
+	f.SetSize(20, 5)
+	f.SetFilter("ab")
+	require.Equal(t, []string{"s", "w"}, ids(f.FilteredItems()), "default sorts by score")
+
+	f.SetPreserveOrder(true)
+	require.Equal(t, []string{"w", "s"}, ids(f.FilteredItems()), "preserve order keeps the caller's order")
+	out := f.Render()
+	require.Less(t, strings.Index(out, "weak"), strings.Index(out, "strong"), "Render keeps the caller's order")
 }

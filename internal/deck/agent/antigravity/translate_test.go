@@ -104,6 +104,11 @@ func TestRecordedSession(t *testing.T) {
 	if u == nil || u.InputTokens != 13092 || u.OutputTokens != 69 || u.CachedTokens != 0 || u.ReasoningTokens != 67 || u.DurationMs != 3440 {
 		t.Fatalf("usage = %+v", u)
 	}
+	// agy reports no context: Deck estimates the fill from the last step's
+	// usage. The init line names no model, so the window is unknown.
+	if u.ContextTokens != 13161 || u.ContextWindow != 0 || u.ContextSource != agent.ContextEstimated {
+		t.Fatalf("context estimate = %d/%d %q", u.ContextTokens, u.ContextWindow, u.ContextSource)
+	}
 	// A second init (the next turn's process) does not repeat the limits.
 	if evs := tr.Line([]byte(`{"event":"init","conversation_id":"67ae5621-c175-433e-b1ed-4153b533310c"}`)); len(evs) != 1 || evs[0].Kind != agent.KindSessionStarted {
 		t.Fatalf("second init = %v", kinds(evs))
@@ -282,5 +287,44 @@ func TestDisplayTool(t *testing.T) {
 		if n != c.wantName || title != c.wantTitle {
 			t.Errorf("displayTool(%q, %s) = %q, %q; want %q, %q", c.name, c.input, n, title, c.wantName, c.wantTitle)
 		}
+	}
+}
+
+// TestContextEstimate covers the estimate of the fill (the turn's last model
+// request, not its cumulative total) and the window from the model table.
+func TestContextEstimate(t *testing.T) {
+	tr := newTranslator("antigravity")
+	tr.slug = func() string { return "gemini-3.8-flash-high" }
+	lines := []string{
+		`{"event":"init","conversation_id":"c1","init":{"cwd":"/w"}}`,
+		`{"event":"step_update","step_update":{"conversation_id":"c1","step_index":1,"state":"DONE","step_type":"tool","tool_name":"run_command","usage":{"input_tokens":20000,"output_tokens":100,"total_tokens":20100}}}`,
+		`{"event":"step_update","step_update":{"conversation_id":"c1","step_index":2,"state":"DONE","step_type":"agent_response","text_delta":"ok","usage":{"input_tokens":21000,"output_tokens":50,"total_tokens":21050}}}`,
+		`{"event":"result","result":{"conversation_id":"c1","status":"SUCCESS","usage":{"input_tokens":41000,"output_tokens":150,"total_tokens":41150}}}`,
+	}
+	var u *agent.Usage
+	for _, l := range lines {
+		for _, e := range tr.Line([]byte(l)) {
+			if e.Kind == agent.KindUsage {
+				u = e.Usage
+			}
+		}
+	}
+	if u == nil || u.ContextTokens != 21050 || u.ContextWindow != geminiWindow || u.ContextSource != agent.ContextEstimated {
+		t.Fatalf("usage = %+v", u)
+	}
+	if u.InputTokens != 41000 {
+		t.Fatalf("the turn's totals must stay the result's: %+v", u)
+	}
+	// The next turn without step usage falls back to the result's own.
+	for _, e := range tr.Line([]byte(`{"event":"result","result":{"conversation_id":"c1","status":"SUCCESS","usage":{"input_tokens":30000,"output_tokens":10}}}`)) {
+		if e.Kind == agent.KindUsage {
+			u = e.Usage
+		}
+	}
+	if u.ContextTokens != 30010 {
+		t.Fatalf("estimate without steps = %d", u.ContextTokens)
+	}
+	if windowFor("gpt-oss-120b-medium") != 0 || windowFor("") != 0 {
+		t.Fatal("a model Deck does not know has no assumed window")
 	}
 }

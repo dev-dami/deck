@@ -332,7 +332,7 @@ function UserMessage({ m, actions }: { m: Message; actions: RoomActions | null }
   return (
     <article className="msg msg-user group flex animate-enter flex-col gap-1" data-role="user" data-mid={m.id}>
       {/* A played card: the person's turn on a surface, with a faint rail. */}
-      <div className="relative overflow-hidden rounded-lg border border-hairline bg-surface-1 py-3 pr-4 pl-5 text-message-foreground inset-shadow-hl before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-faint">
+      <div className="user-card relative overflow-hidden rounded-lg border border-hairline bg-surface-1 py-3 pr-4 pl-5 text-message-foreground inset-shadow-hl before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-faint">
         <div className="flex flex-col gap-2">
           {chunks.map((c, i) =>
             c.k === "text" ? (
@@ -354,7 +354,7 @@ function UserMessage({ m, actions }: { m: Message; actions: RoomActions | null }
           )}
         </div>
       </div>
-      <header className="msg-head flex items-center gap-2 ps-1 font-mono text-2xs text-faint opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+      <header className="msg-head -mt-0.5 flex h-5 items-center gap-2 ps-1 font-mono text-2xs text-faint opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         <span className="msg-who sr-only">You</span>
         {m.edited === true && <span>edited</span>}
         <time>{formatClock(m.created_at, prefs.clock)}</time>
@@ -431,6 +431,13 @@ function AgentMessage({
         <time className="text-faint opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           {formatClock(m.created_at, prefs.clock)}
         </time>
+        {/* Copy, retry and continue show on hover at the line's end, so a
+            reply leaves no empty row under it. */}
+        {m.finished && actions !== null && (
+          <span className="-my-1 ml-auto flex items-center">
+            <MessageActions m={m} actions={actions} last={last} />
+          </span>
+        )}
       </header>
       {folds ? (
         <>
@@ -480,11 +487,6 @@ function AgentMessage({
           <span aria-hidden className="size-1.5 shrink-0 animate-deck-pulse rounded-full bg-signal" />
           <span className="shimmer">Working for {formatDuration(tick - toMillis(m.created_at))}</span>
         </div>
-      )}
-      {m.finished && actions !== null && (
-        <footer className="-ml-1 flex items-center">
-          <MessageActions m={m} actions={actions} last={last} />
-        </footer>
       )}
     </article>
   );
@@ -696,7 +698,7 @@ export function Timeline({
             setAway(!near);
           }}
         >
-          <div className="timeline-inner mx-auto flex w-full max-w-(--chat-max) flex-col gap-6 px-5 pt-4 pb-8">
+          <div className="timeline-inner mx-auto flex w-full max-w-(--chat-max) flex-col gap-5 px-5 pt-5 pb-8">
             {more && (
               <button
                 type="button"
@@ -717,8 +719,8 @@ export function Timeline({
               keyOf={rowKey}
               scroller={ref}
               estimate={120}
-              gap={24}
-              className="flex flex-col gap-6"
+              gap={20}
+              className="flex flex-col gap-5"
               onResize={pin}
               reveal={shown}
               render={(m) =>
@@ -735,7 +737,7 @@ export function Timeline({
         {away && (
           <button
             type="button"
-            className="jump -translate-x-1/2 absolute bottom-3 left-1/2 flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-2 px-3 text-muted-foreground text-xs shadow-popover outline-none inset-shadow-hl hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="jump material -translate-x-1/2 absolute bottom-3 left-1/2 flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-2 px-3 text-muted-foreground text-xs shadow-popover outline-none inset-shadow-hl hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             onClick={toBottom}
           >
             <ArrowDown className="size-3.5" />

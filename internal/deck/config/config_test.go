@@ -1,8 +1,10 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -60,7 +62,7 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 		DeckAuthor:        true,
 		AutoTitle:         true,
 	}
-	if cfg != want {
+	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() = %+v\nwant %+v", cfg, want)
 	}
 }
@@ -140,10 +142,12 @@ func TestInvalidValuesRejected(t *testing.T) {
 	path := filepath.Join(home, ".deck", "config.json")
 
 	cases := map[string]string{
-		"bad agent":  `{"default_agent":"gemini"}`,
-		"bad motion": `{"motion":"loud"}`,
-		"bad mode":   `{"default_mode":"reckless"}`,
-		"bad json":   `{"bell": `,
+		"bad agent":           `{"default_agent":"gemini"}`,
+		"bad motion":          `{"motion":"loud"}`,
+		"bad mode":            `{"default_mode":"reckless"}`,
+		"bad json":            `{"bell": `,
+		"bad briefing_pct":    `{"context":{"briefing_pct":40}}`,
+		"bad tool_output_pct": `{"context":{"tool_output_pct":-1}}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -176,7 +180,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("round trip:\n got %+v\nwant %+v", got, want)
 	}
 
@@ -270,5 +274,48 @@ func TestValidateReview(t *testing.T) {
 	}
 	if cfg.Review = "gpt"; cfg.Validate() == nil {
 		t.Error("review gpt validated")
+	}
+}
+
+func TestValidateContext(t *testing.T) {
+	cfg := Defaults()
+	cfg.Context = Context{BriefingPct: 6, ToolOutputPct: 2.5}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("valid context rejected: %v", err)
+	}
+	bad := -1
+	for _, c := range []Context{
+		{BriefingPct: MaxBriefingPct + 1}, {ToolOutputPct: -0.5},
+		{InstructionFiles: "some"}, {MCP: "all"}, {CompactAtPct: 101},
+		{PerAgent: map[string]ContextOverride{"gemini": {}}},
+		{PerAgent: map[string]ContextOverride{"codex": {MCP: "everything"}}},
+		{PerAgent: map[string]ContextOverride{"codex": {CompactAtPct: &bad}}},
+	} {
+		if cfg.Context = c; cfg.Validate() == nil {
+			t.Errorf("context %+v validated", c)
+		}
+	}
+	// The zero value is the defaults and is not written out.
+	cfg.Context = Context{}
+	b, _ := json.Marshal(cfg)
+	if strings.Contains(string(b), `"context"`) {
+		t.Errorf("an unset context section was written: %s", b)
+	}
+}
+
+func TestContextFor(t *testing.T) {
+	off, at := false, 60
+	c := Context{IsolateGlobalConfig: true, InstructionFiles: "project-only", CompactAtPct: 80,
+		PerAgent: map[string]ContextOverride{"codex": {IsolateGlobalConfig: &off, MCP: "inherit", CompactAtPct: &at}}}
+	if got, want := c.For("claude"), (ContextPolicy{IsolateGlobalConfig: true, InstructionFiles: "project-only", CompactAtPct: 80}); got != want {
+		t.Errorf("claude = %+v, want %+v", got, want)
+	}
+	if got, want := c.For("codex"), (ContextPolicy{InstructionFiles: "project-only", MCP: "inherit", CompactAtPct: 60}); got != want {
+		t.Errorf("codex = %+v, want %+v", got, want)
+	}
+	cfg := Defaults()
+	cfg.Context = c
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("valid policy rejected: %v", err)
 	}
 }

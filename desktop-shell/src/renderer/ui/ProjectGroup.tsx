@@ -113,7 +113,7 @@ export function ProjectGroup({
       <div className="group/proj flex h-7 items-center gap-1 rounded-md pr-1">
         <button
           type="button"
-          className="flex h-7 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md pl-2 text-left font-medium text-2xs text-faint outline-none transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex h-7 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md pl-2 text-left font-semibold text-2xs text-faint outline-none transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           aria-expanded={!shut}
           aria-label={`${group.name}: ${count} ${count === 1 ? "thread" : "threads"}`}
           onClick={onToggle}
@@ -157,7 +157,7 @@ export function ProjectGroup({
 export function SharedGroup({ shared, open, onOpen }: { shared: SharedEntry[]; open: string | null; onOpen: (peer: string, t: TeamThread) => void }) {
   return (
     <li className="shared-group list-none pt-1 pb-3">
-      <div className="flex h-7 items-center gap-1.5 pl-2 font-medium text-2xs text-faint">Shared with you</div>
+      <div className="flex h-7 items-center gap-1.5 pl-2 font-semibold text-2xs text-faint">Shared with you</div>
       <ul className="flex flex-col gap-px">
         {shared.map(({ peer, thread }) => {
           const active = open === `${peer}/${thread.id}`;
@@ -189,7 +189,7 @@ export function SharedGroup({ shared, open, onOpen }: { shared: SharedEntry[]; o
 export function RecentProjects({ projects, onProject }: { projects: ProjectEntry[]; onProject: (key: string) => void }) {
   return (
     <li className="list-none pt-3">
-      <div className="px-2 pb-1 font-medium text-2xs text-faint">Recent projects</div>
+      <div className="px-2 pb-1 font-semibold text-2xs text-faint">Recent projects</div>
       <ul className="flex flex-col">
         {projects.slice(0, 6).map((p) => (
           <li key={p.key} className="list-none">

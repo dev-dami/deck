@@ -37,6 +37,12 @@ type adapter struct {
 
 	models modelcache.Cache // Models() result
 
+	// removing holds a done channel per `agy mcp` name a closed run is
+	// still removing in the background (see mcpRemove); removes counts them.
+	rmMu     sync.Mutex
+	removing map[string]chan struct{}
+	removes  sync.WaitGroup
+
 	// test hooks
 	extraArgs []string
 	tap       func(line []byte) // called with every raw stdout line
@@ -45,12 +51,30 @@ type adapter struct {
 }
 
 // New returns the Antigravity adapter. binary may be empty (looks up "agy"
-// on PATH).
+// on PATH). It starts loading the model list in the background, so the
+// first Start with a model does not wait on `agy models` to resolve its
+// slug (resolveSlug still waits for that load if it is not done yet).
 func New(binary string) agent.Adapter {
-	return &adapter{binary: binary}
+	a := &adapter{binary: binary}
+	go a.Models(context.Background())
+	return a
 }
 
+var _ agent.Drainer = (*adapter)(nil)
+
 func (a *adapter) Name() string { return "antigravity" }
+
+// ContextCaps implements agent.ContextCapser. agy reports no context, so the
+// fill is Deck's estimate from a turn's usage and the window comes from
+// Deck's table of models; the instructions travel in the first prompt of a
+// session (once: Spec.Briefed). Deck's MCP server is registered in agy's
+// global config (mcp.go), next to the user's: nothing is isolated.
+func (a *adapter) ContextCaps() agent.ContextCaps {
+	return agent.ContextCaps{
+		InstructionSlot: agent.InstrFirstPrompt, InstrPersistsOnResume: true,
+		ReportsContext: agent.ContextEstimated, ReportsWindow: agent.ContextEstimated,
+	}
+}
 
 func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error) {
 	bin := spec.Binary
@@ -74,23 +98,48 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		tr:     newTranslator(spec.ID),
 	}
 	r.approvals = make(chan agent.ApprovalRequest)
+	// The context estimate needs the model the process runs: the slug it
+	// was started with when the init line does not name one.
+	r.tr.slug = func() string {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.spawnedSlug
+	}
 	r.sessionID = spec.ResumeID
+	// A resumed conversation that already had the instructions does not
+	// get them again: they would pile up in it on every resume.
+	r.firstSend = spec.Briefed && spec.ResumeID != ""
 	r.model = spec.Model
 	r.effort = spec.Effort
-	r.slug = a.resolveSlug(ctx, spec.Model, spec.Effort)
 	r.mode = spec.Mode
 	if r.mode == "" {
 		r.mode = agent.ModeAsk
 	}
 
+	// `agy mcp add` and the slug's `agy models` (when its cache is cold)
+	// are both CLI round trips: run them side by side. agy reads its MCP
+	// config when it starts, so the launch itself waits for both.
+	type added struct {
+		name, file string
+		err        error
+	}
+	var mcpDone chan added
 	if spec.MCP != nil {
-		if name, file, err := a.mcpAdd(ctx, path, spec.MCP, spec.ID); err != nil {
+		mcpDone = make(chan added, 1)
+		go func() {
+			name, file, err := a.mcpAdd(ctx, path, spec.MCP, spec.ID)
+			mcpDone <- added{name, file, err}
+		}()
+	}
+	r.slug = a.resolveSlug(ctx, spec.Model, spec.Effort)
+	if mcpDone != nil {
+		if res := <-mcpDone; res.err != nil {
 			r.emit(agent.Event{
 				AgentID: spec.ID, Time: time.Now(), Kind: agent.KindError,
-				Text: "deck messaging unavailable: " + err.Error(),
+				Text: "deck messaging unavailable: " + res.err.Error(),
 			})
 		} else {
-			r.mcpName, r.mcpFile = name, file
+			r.mcpName, r.mcpFile = res.name, res.file
 		}
 	}
 
@@ -291,6 +340,7 @@ func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 			}
 			for _, ev := range r.tr.Line(line) {
 				restart := false
+				what := ""
 				switch ev.Kind {
 				case agent.KindSessionStarted:
 					r.mu.Lock()
@@ -304,6 +354,7 @@ func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 					if r.dirty && !r.closed && !p.intentional && !r.restarting {
 						r.restarting = true
 						restart = true
+						what = r.changedLocked()
 					}
 					r.mu.Unlock()
 				}
@@ -315,6 +366,7 @@ func (r *run) read(p *proc, stdout interface{ Read([]byte) (int, error) }) {
 				}
 				r.emit(ev)
 				if restart {
+					r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindRestarting, Text: what})
 					go r.restart()
 				}
 			}
@@ -554,9 +606,15 @@ func (r *run) SetEffort(effort string) error {
 	return nil
 }
 
+// restartSettle is how long an idle restart waits before it stops the
+// process, so changes made close together (a model and then its effort, or
+// a thread's mode next to a model) cost one restart and one cold start.
+// Prompts sent meanwhile are already held for the new process.
+var restartSettle = 150 * time.Millisecond
+
 // applyLocked is called with r.mu held after r.mode/r.model/r.effort changed,
 // and releases it. If a turn (or another restart) is in progress the restart
-// is deferred; otherwise it starts now.
+// is deferred; otherwise it starts after restartSettle.
 func (r *run) applyLocked() {
 	if r.busy || r.restarting {
 		r.dirty = true
@@ -564,8 +622,24 @@ func (r *run) applyLocked() {
 		return
 	}
 	r.restarting = true
+	what := r.changedLocked()
 	r.mu.Unlock()
-	go r.restart()
+	r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindRestarting, Text: what})
+	time.AfterFunc(restartSettle, r.restart)
+}
+
+// changedLocked names what differs from the flags the newest process was
+// started with, for KindRestarting. The effort is part of the --model slug.
+// Caller holds r.mu.
+func (r *run) changedLocked() string {
+	var c []string
+	if r.slug != r.spawnedSlug {
+		c = append(c, "model")
+	}
+	if r.mode != r.spawnedMode {
+		c = append(c, "mode")
+	}
+	return strings.Join(c, ", ")
 }
 
 // restart replaces the idle process with one started from the current
@@ -584,17 +658,23 @@ func (r *run) restart() {
 		old := r.cur
 		sid := r.sessionID
 		r.dirty = false // spawn reads the flags after this point; later changes set it again
-		if old != nil {
+		// Changed and changed back while the restart settled: the process
+		// already runs with these flags.
+		same := old != nil && !r.flagsChangedLocked()
+		if old != nil && !same {
 			old.intentional = true
 		}
 		r.mu.Unlock()
 
-		if old != nil {
-			killTree(old.cmd)
-			old.closeStdin()
-			waitProcExit(old)
+		var err error
+		if !same {
+			if old != nil {
+				killTree(old.cmd)
+				old.closeStdin()
+				waitProcExit(old)
+			}
+			err = r.spawn(sid)
 		}
-		err := r.spawn(sid)
 
 		r.mu.Lock()
 		if err != nil {
@@ -628,6 +708,8 @@ func (r *run) restart() {
 		}
 		r.mu.Unlock()
 
+		// Before the held prompts go in, so the new turn's events follow it.
+		r.emit(agent.Event{AgentID: r.spec.ID, Time: time.Now(), Kind: agent.KindRestarted})
 		for _, data := range q {
 			r.sendMu.Lock()
 			_, werr := p.stdin.Write(data)

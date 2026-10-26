@@ -173,9 +173,9 @@ func renderHeaderDetails(
 
 	var parts []string
 
-	if percentage, ok := contextPercent(com, roster, session); ok {
+	if percentage, approx, ok := contextPercent(com, roster, session); ok {
 		percentageText := fmt.Sprintf("%d%%", percentage)
-		if session.EstimatedUsage {
+		if approx {
 			percentageText = "~" + percentageText
 		}
 		formattedPercentage := t.Header.Percentage.Render(percentageText)

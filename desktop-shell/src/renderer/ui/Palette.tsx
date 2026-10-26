@@ -80,13 +80,13 @@ export function Palette({
     item.type === "action" ? item.c.id : item.type === "room" ? `${item.room.project}/${item.room.id}` : `${item.hit.room.project}/${item.hit.message}`;
   return (
     <div
-      className="overlay fixed inset-0 z-50 flex justify-center bg-black/40 pt-[14vh] backdrop-blur-[2px]"
+      className="overlay scrim fixed inset-0 z-50 flex justify-center bg-black/40 pt-[14vh] backdrop-blur-[2px]"
       role="presentation"
       onMouseDown={onClose}
     >
       <div
         ref={box}
-        className="palette flex h-fit max-h-[60vh] w-[560px] max-w-[calc(100vw-2rem)] animate-enter flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-surface-2 shadow-popover inset-shadow-hl"
+        className="palette material flex h-fit max-h-[60vh] w-[560px] max-w-[calc(100vw-2rem)] animate-enter flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-surface-2 shadow-popover inset-shadow-hl"
         role="dialog"
         aria-modal="true"
         aria-label="Commands"

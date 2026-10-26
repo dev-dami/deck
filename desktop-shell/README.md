@@ -78,13 +78,15 @@ Electron with `DECK_DESKTOP_DEV_URL=http://localhost:5173 npm start`.
 The window takes its structure from [T3 Code](https://github.com/pingdotgg/t3code)
 (MIT): the same sidebar, chat, composer, diff panel and settings, with
 Deck's sessions as threads and Deck's agents in place of T3's providers.
-The look is Deck's own, called Tabletop: a felt table at night, with warm
-ink, paper text and one amber lamp. Amber marks only what runs, what has
-the focus and the send button; each agent kind has a hue of its own, shown
-as a thin rail, a glyph or a dot. Agent replies have no bubble, your turns
-sit on a card with a faint rail, and every reply starts with a small mono
-index such as `✳ claude-1`. Tabletop is the default in light and dark, and
-T3's look stays in the theme catalog.
+The default look, Apple, is a native Mac window
+([docs/design-apple.md](docs/design-apple.md)): the system font, the
+system blue, hairline separators, a 52px toolbar with a title over a
+subtitle, segmented controls, frosted menus and sheets, and on a Mac the
+system's translucent sidebar material. Your turns are bubbles on the
+right; agent replies have no bubble and start with a small mono index
+such as `✳ claude-1` in the agent's hue. Apple follows light and dark.
+Deck's other look, Tabletop (a felt table at night, with warm ink, paper
+text and one amber lamp), and T3's look stay in the theme catalog.
 
 - **Projects.** As in T3 Code, the sidebar lists the threads of every open
   project together, grouped by project (or in one list, in Settings). The
@@ -312,9 +314,9 @@ T3's look stays in the theme catalog.
 - **Usage.** Tokens and cost per day, agent and model, the plan's limits,
   a heat map of the last 20 weeks and when you work.
 - **Settings** (the gear, or Ctrl+,): send key, Yolo confirmation, folding,
-  time format, motion and the Yolo effect, light or dark or the system's, the theme (Tabletop, T3,
+  time format, motion and the Yolo effect, light or dark or the system's, the theme (Apple, Tabletop, T3,
   Tokyo Night, Catppuccin Mocha, Nord, Rosé Pine, Dracula, Solarized Light, GitHub
-  Light) and accent colour, the diff theme (Match app theme, GitHub Dark,
+  Light) and accent colour (or Graphite), the diff theme (Match app theme, GitHub Dark,
   GitHub Light, One Dark, Dracula, Tokyo Night, Catppuccin Mocha,
   Solarized or Monochrome, with a live preview), unified or split diffs and
   wrap, card or compact thread rows, grouping by project, the agent kinds,

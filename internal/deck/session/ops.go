@@ -7,6 +7,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/hub"
+	"github.com/dev-dami/deck/internal/deck/store"
 )
 
 // SetActivity installs the provider of the deck.jobs op: given a thread id,
@@ -35,7 +36,7 @@ func (m *Manager) execOp(agentID, op string, args json.RawMessage) (string, bool
 		return "Deck does not know agent " + agentID, true
 	}
 	t := a.thread
-	env := hub.Env{AgentID: agentID, Tasks: taskBoard{m: m, a: a}, Sub: subBoard{m: m, a: a}}
+	env := hub.Env{AgentID: agentID, Tasks: taskBoard{m: m, a: a}, Sub: subBoard{m: m, a: a}, MaxOutput: m.budget(a).output}
 	if m.st != nil { // a nil *store.Store must stay a nil interface
 		env.Store = m.st
 	}
@@ -51,19 +52,26 @@ func (m *Manager) execOp(agentID, op string, args json.RawMessage) (string, bool
 		env.Roots = append(env.Roots, t.worktree.Main)
 	}
 	// Only skills.used reads the thread's tool calls; gathering them for every
-	// op would walk the whole log under the thread's lock.
-	if strings.TrimSpace(op) == hub.OpSkillsUsed {
-		for i := range t.log {
-			e := &t.log[i]
-			if e.Tool == nil || e.Kind != agent.KindToolCall {
-				continue
-			}
-			env.Tools = append(env.Tools, hub.ToolUse{
-				Agent: t.name(e.AgentID), Name: e.Tool.Name, Title: e.Tool.Title, Input: e.Tool.Input,
-			})
-		}
+	// op would walk the whole log. It walks a view of it, after the lock.
+	var log logView
+	skills := strings.TrimSpace(op) == hub.OpSkillsUsed
+	if skills {
+		log = t.view()
 	}
 	t.mu.Unlock()
+	if skills {
+		_ = log.each(0, log.size(), func(_ int, e store.Entry) bool {
+			if e.Tool != nil && e.Kind == agent.KindToolCall {
+				env.Tools = append(env.Tools, hub.ToolUse{Agent: e.AgentID, Name: e.Tool.Name, Title: e.Tool.Title, Input: e.Tool.Input})
+			}
+			return true
+		})
+		t.mu.Lock()
+		for i := range env.Tools {
+			env.Tools[i].Agent = t.name(env.Tools[i].Agent)
+		}
+		t.mu.Unlock()
+	}
 
 	m.mu.Lock()
 	activity := m.activity

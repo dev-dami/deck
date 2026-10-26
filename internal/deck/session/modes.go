@@ -98,7 +98,7 @@ func (m *Manager) SetMode(threadID string, mode agent.Mode) error {
 	}
 	t.mode = mode
 	members := append([]*agentState(nil), t.members...)
-	stored := len(t.log) > 0
+	stored := t.size() > 0
 	t.mu.Unlock()
 	if stored {
 		m.persistMeta(t)
@@ -190,6 +190,7 @@ func (a *agentState) claimPending(id string) bool {
 	for i, p := range a.pending {
 		if p.id == id {
 			a.pending = append(a.pending[:i], a.pending[i+1:]...)
+			a.stirLocked()
 			return true
 		}
 	}
@@ -276,6 +277,12 @@ func (m *Manager) SetModel(agentID, model string) error {
 		}
 	}
 	a.mu.Lock()
+	if a.model != model {
+		// The old model's window no longer applies (1M to 200k would read
+		// 5x too empty), and apply keeps a window until a non-zero one
+		// arrives: unknown until the new model reports its own.
+		a.ctxWindow = 0
+	}
 	a.model = model
 	a.mu.Unlock()
 	m.persistMeta(a.thread)

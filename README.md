@@ -141,15 +141,35 @@ GitHub goes through your own [`gh`](https://cli.github.com) CLI; Deck never read
   "opencode_binary": "opencode",
   "antigravity_binary": "agy",
   "models": { "claude": "", "codex": "", "opencode": "", "antigravity": "" },
-  "efforts": { "claude": "", "codex": "", "opencode": "", "antigravity": "" }
+  "efforts": { "claude": "", "codex": "", "opencode": "", "antigravity": "" },
+  "context": {
+    "isolate_global_config": false,
+    "instruction_files": "inherit",
+    "mcp": "deck-only",
+    "compact_at_pct": 0,
+    "briefing_pct": 0,
+    "tool_output_pct": 0,
+    "per_agent": { "claude": { "compact_at_pct": 80 } }
+  }
 }
 ```
+
+`context` sizes what Deck puts in front of an agent by its model's context window. `briefing_pct` is the share of the window the summary of what an agent missed may take (default 4%, kept between 16k and 160k characters), and `tool_output_pct` the share one search or execute result may take (default 1.5%, 8–64 KB). With the defaults, windows of 128k–200k tokens (and agents whose window is not known yet) get the fixed budgets Deck always had (40,000 characters, 20 KB); larger windows get more, smaller ones less. A briefing is halved for an agent whose context is over 80% full; `thread.read` still shows the rest.
+
+The other `context` keys choose what each agent's CLI loads besides Deck's own, and `per_agent` overrides them for one kind (`claude`, `codex`, `opencode`, `antigravity`). Only Claude Code honours them today:
+
+- `isolate_global_config` (off by default) starts Claude with `--setting-sources project,local`: your `~/.claude/settings.json` (with its hooks, permissions and env) and `~/.claude/CLAUDE.md` and rules are left out; the project's own still load.
+- `instruction_files`: `inherit` (default), `project-only` (the same as above) or `none` (no `CLAUDE.md` at all, which also leaves out the project's `.claude` settings).
+- `mcp`: `deck-only` (default: only Deck's MCP server, no claude.ai connectors) or `inherit` (your own servers too).
+- `compact_at_pct`: how full Claude's context may get before it compacts, as `--autocompact` of that share of the model's window (100k–1M tokens); 0 leaves Claude's default. It applies once the model's window is known (an explicit model, or after Claude has said which one it runs).
+
+Codex, OpenCode and Antigravity keep their own config, instruction files and MCP servers whatever these say; Deck shows one notice per agent kind when a setting has no effect.
 
 `review` is the reviewer for tasks that subagents run and that name none: an agent kind, `other` (any installed kind but the worker's) or `none`.
 
 For ops contracts, `peers.remote[].max_scope` lists the presets a teammate may ask for (`podman-read`, `systemd-read`; empty allows none), and `peers.sandbox` sets `ttl` (default `2h`), `scratch_mb` (64) and `output_kb` (64). Add `console.read` to a teammate's `allow_inbound` to let it read your team chat.
 
-`DECK_REDUCED_MOTION=1` turns animations off.
+`DECK_REDUCED_MOTION=1` turns animations off. `DECK_PPROF=<dir>` writes a CPU and a heap profile of the run to that folder when Deck exits, for a slowness report.
 
 Agents are drawn with their own CLI's mark: Claude Code's `✻`, Codex CLI's `>_` and OpenCode's `▯`. `deck doctor` shows the real logos in terminals that can draw images (Kitty, Ghostty, Windows Terminal, iTerm2, WezTerm). `DECK_IMAGES=off` turns them off.
 
@@ -172,7 +192,7 @@ The **Usage** page is a short token summary — totals, a bar per agent and a da
 - **Models**: tokens, cache hit rate, time to first token and turns per model; the selected one shows its tokens per turn.
 - **Cost**: the only place with dollars, as each CLI reported them. Deck has no pricing of its own: a CLI that reports no cost (Codex, Antigravity) shows `—`, not $0.
 
-The **Usage** pane in the sidebar shows the session's agents' plan meters, today's tokens per agent, what each is doing now and its last turn; `enter` opens the full view. Every finished turn, the plan windows as they move, and what you did to steer the agents are recorded in Deck's local database; nothing is sent anywhere, no prompt text is kept, and turns from before this version are not counted.
+The **Usage** pane in the sidebar shows the session's agents' plan meters, today's tokens per agent, what each is doing now and its last turn, and how full each one's context is, split into what its session started with (system prompt, tools, instruction files), the conversation, Deck's own text (briefings, steers, instructions) and what is free; the first and third are estimates. A context figure marked `~` (here, in the sidebar and in the header) is Deck's estimate rather than the CLI's own: Antigravity reports none, and Claude's window is assumed from its model until its first turn ends; `enter` opens the full view. Every finished turn, the plan windows as they move, and what you did to steer the agents are recorded in Deck's local database; nothing is sent anywhere, no prompt text is kept, and turns from before this version are not counted.
 
 ## Agents and Deck
 

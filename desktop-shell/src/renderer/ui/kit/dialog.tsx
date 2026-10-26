@@ -31,7 +31,7 @@ export function Dialog({
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/45 pt-[12vh] backdrop-blur-[2px]" onMouseDown={onClose} role="presentation">
+    <div className="scrim fixed inset-0 z-50 flex items-start justify-center bg-black/45 pt-[12vh] backdrop-blur-[2px]" onMouseDown={onClose} role="presentation">
       <div
         ref={ref}
         role="dialog"
@@ -39,7 +39,7 @@ export function Dialog({
         aria-label={title}
         tabIndex={-1}
         className={cn(
-          "flex w-[480px] max-w-[calc(100vw-2rem)] animate-enter flex-col rounded-2xl border border-hairline-strong bg-surface-2 shadow-popover inset-shadow-hl outline-none",
+          "material flex w-[480px] max-w-[calc(100vw-2rem)] animate-enter flex-col rounded-2xl border border-hairline-strong bg-surface-2 shadow-popover inset-shadow-hl outline-none",
           className,
         )}
         onMouseDown={(e) => e.stopPropagation()}

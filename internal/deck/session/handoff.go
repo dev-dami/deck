@@ -93,10 +93,10 @@ func (m *Manager) startHandedTask(t *thread, taskID string, owner *agentState, b
 // handoverIndex is the log index of the relay that handed task id to member
 // to, or -1. t.mu is held.
 func handoverIndex(t *thread, id, to string) int {
-	for i := len(t.log) - 1; i >= 0; i-- {
-		e := t.log[i]
-		if e.Type == store.EntryRelay && e.TaskID == id && e.Via != "task" && contains(e.To, to) {
-			return i
+	hs := t.index.heads
+	for k := len(hs) - 1; k >= 0; k-- {
+		if h := hs[k]; h.typ == store.EntryRelay && h.taskID == id && h.via != "task" && contains(h.to, to) {
+			return h.i
 		}
 	}
 	return -1
@@ -111,14 +111,14 @@ func handoverIndex(t *thread, id, to string) int {
 // contract.result ends it, and no person waits to unblock it. While a has
 // live subagents of its own nothing is settled: the task waits for their
 // results, which start a's next turn.
-func (m *Manager) settleHanded(t *thread, a *agentState, reply string) {
+func (m *Manager) settleHanded(t *thread, a *agentState, reply string, answered int) {
 	type job struct {
 		id       string
 		explicit bool
 	}
 	var jobs []job
 	t.mu.Lock()
-	if t.waitsOnChildren(a) {
+	if t.waitsOnChildren(a, answered) {
 		t.mu.Unlock()
 		return
 	}
@@ -129,7 +129,7 @@ func (m *Manager) settleHanded(t *thread, a *agentState, reply string) {
 		}
 		// a has not been told about it yet (still ahead of its cursor, or held
 		// by a pause): this turn was about something else.
-		if idx := handoverIndex(t, tk.ID, a.id); idx < 0 || idx >= a.answered || t.inert[idx] {
+		if idx := handoverIndex(t, tk.ID, a.id); idx < 0 || idx >= answered || t.inert[idx] {
 			continue
 		}
 		jobs = append(jobs, job{tk.ID, tk.Contract.ExplicitDone})

@@ -7,10 +7,14 @@ import { ACCENTS, DIFF_THEMES, THEMES, themeInfo } from "./themes";
 const css = readFileSync(join(__dirname, "styles.css"), "utf8");
 
 describe("themes", () => {
-  test("Tabletop comes first and is the default", () => {
-    expect(THEMES[0]).toMatchObject({ id: "tabletop", label: "Tabletop", mode: null });
-    expect(defaultPrefs.palette).toBe("tabletop");
-    expect(themeInfo("no-such-theme").id).toBe("tabletop");
+  test("Apple comes first and is the default", () => {
+    expect(THEMES[0]).toMatchObject({ id: "apple", label: "Apple", mode: null });
+    expect(defaultPrefs.palette).toBe("apple");
+    expect(themeInfo("no-such-theme").id).toBe("apple");
+  });
+
+  test("Tabletop stays a choice that follows light or dark", () => {
+    expect(themeInfo("tabletop")).toMatchObject({ label: "Tabletop", mode: null });
   });
 
   test("T3 stays a choice that follows light or dark", () => {
@@ -56,6 +60,16 @@ describe("themes", () => {
     for (const t of THEMES.filter((x) => x.id !== "tabletop")) {
       const at = css.lastIndexOf(`:root[data-palette="${t.id}"][data-mode] {`);
       expect(css.slice(at).split("}")[0], t.id).toContain("--syn-keyword:");
+    }
+  });
+
+  test("the Apple swatches match its tokens in dark and light", () => {
+    const info = themeInfo("apple");
+    for (const [canvas, sidebar, text, signal] of [info.swatch, info.light ?? info.swatch]) {
+      expect(css).toContain(`--canvas: ${canvas};`);
+      expect(css).toContain(`--sidebar: ${sidebar};`);
+      expect(css).toContain(`--text: ${text};`);
+      expect(css).toContain(`--signal: ${signal};`);
     }
   });
 

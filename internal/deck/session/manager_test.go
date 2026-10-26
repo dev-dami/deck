@@ -857,7 +857,7 @@ func TestResumeTwoMemberThread(t *testing.T) {
 		t.Errorf("codex spec = %+v", sp)
 	}
 	var users, relays, events int
-	for _, h := range hist {
+	for _, h := range hist.Msgs() {
 		switch v := h.(type) {
 		case EventMsg:
 			events++
@@ -874,7 +874,7 @@ func TestResumeTwoMemberThread(t *testing.T) {
 	if users != 1 || relays != 2 || events < 6 {
 		t.Errorf("history: users=%d relays=%d events=%d", users, relays, events)
 	}
-	if again, h2, err := r2.m.Resume(tid); err != nil || again.ID != tid || h2 != nil {
+	if again, h2, err := r2.m.Resume(tid); err != nil || again.ID != tid || h2.Msgs() != nil {
 		t.Fatalf("resuming a running thread: %+v %v %v", again, h2, err)
 	}
 
@@ -915,7 +915,7 @@ func TestResumeRemapsIDsThatAreTaken(t *testing.T) {
 	if ti.Members[0].ID == "claude" {
 		t.Fatalf("id collision: %+v", ti.Members)
 	}
-	for _, h := range hist {
+	for _, h := range hist.Msgs() {
 		if e, ok := h.(EventMsg); ok && !e.FromUser() && e.AgentID != ti.Members[0].ID {
 			t.Fatalf("history event still carries %q", e.AgentID)
 		}
@@ -953,11 +953,11 @@ func TestOldSingleAgentThreadMigrates(t *testing.T) {
 	if sp.ResumeID != "sess-old" {
 		t.Fatalf("spec = %+v", sp)
 	}
-	if len(hist) != 3 {
-		t.Fatalf("history = %+v", hist)
+	if len(hist.Msgs()) != 3 {
+		t.Fatalf("history = %+v", hist.Msgs())
 	}
-	if first, ok := hist[0].(EventMsg); !ok || !first.FromUser() || first.Text != "fix it" || first.To[0] != "claude" {
-		t.Fatalf("first history message = %+v", hist[0])
+	if first, ok := hist.Msgs()[0].(EventMsg); !ok || !first.FromUser() || first.Text != "fix it" || first.To[0] != "claude" {
+		t.Fatalf("first history message = %+v", hist.Msgs()[0])
 	}
 	if err := r.m.Post("old1", "next please"); err != nil {
 		t.Fatal(err)
@@ -995,10 +995,16 @@ func TestDemoDuoCollaborates(t *testing.T) {
 	if ap.AgentID != "claude" || ap.ThreadID != tid {
 		t.Fatalf("approval = %+v", ap.ApprovalRequest)
 	}
+	if !m.Busy(tid) {
+		t.Fatal("Busy is false while claude waits for an approval")
+	}
 	ap.Respond(agent.Decision{Allow: true})
 	waitFor(t, "everyone idle", func() bool {
 		return c.turnDones("claude") == 2 && c.turnDones("codex") == 1
 	})
+	if m.Busy(tid) || m.Busy("no-such-thread") {
+		t.Fatal("Busy is true with everyone idle")
+	}
 	rel := c.relays()
 	if len(rel) != 2 || rel[0].Via != "tool" || rel[1].Via != "mention" || rel[1].From != "codex" {
 		t.Fatalf("relays = %+v", rel)
@@ -1054,5 +1060,56 @@ func TestAMessageToAMemberThatIsStartingStartsOneCLI(t *testing.T) {
 	waitFor(t, "codex's turn", func() bool { return c.turnDones("codex") == 1 })
 	if n := codex.starts.Load(); n != 1 {
 		t.Fatalf("codex's CLI started %d times", n)
+	}
+}
+
+// meeting holds each Start until want of them have begun, like a handshake
+// that is slow: members started one after another never meet.
+type meeting struct {
+	want int32
+	n    atomic.Int32
+	all  chan struct{}
+}
+
+type meetStart struct {
+	agent.Adapter
+	m *meeting
+}
+
+func (s meetStart) Start(ctx context.Context, sp agent.Spec) (agent.Run, error) {
+	if s.m.n.Add(1) == s.m.want {
+		close(s.m.all)
+	}
+	select {
+	case <-s.m.all:
+	case <-time.After(2 * time.Second):
+		return nil, fmt.Errorf("%s started alone", sp.ID)
+	}
+	return s.Adapter.Start(ctx, sp)
+}
+
+func TestResumeStartsMembersTogetherInRosterOrder(t *testing.T) {
+	r := newRig(t, nil, nil)
+	tid := r.thread(t)
+	r.add(t, tid, "codex")
+	r.add(t, tid, "claude")
+	r.m.Close()
+
+	st, err := store.New(r.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meet := &meeting{want: 2, all: make(chan struct{})}
+	m := NewManager(map[string]agent.Adapter{
+		"claude": meetStart{fake.NewTurns(0, nil), meet},
+		"codex":  meetStart{fake.NewTurns(0, nil), meet},
+	}, st, testCfg())
+	t.Cleanup(m.Close)
+	ti, _, err := m.Resume(tid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ti.Members) != 2 || ti.Members[0].ID != "codex" || ti.Members[1].ID != "claude" {
+		t.Fatalf("members = %+v", ti.Members)
 	}
 }

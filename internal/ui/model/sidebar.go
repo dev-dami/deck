@@ -6,6 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/dev-dami/deck/internal/ui/graph"
 	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/dev-dami/deck/internal/workspace"
 )
@@ -50,13 +51,23 @@ func (m *UI) modelInfoFor(agents []workspace.AgentLine, width int) string {
 			facts = append(facts, t.ModelInfo.Reasoning.Render(fmt.Sprintf("needs you (%d)", max(1, a.Pending))))
 		case "error", "exited":
 			facts = append(facts, muted.Render(a.Status))
-		case "ready":
-			facts = append(facts, muted.Render("ready"))
+		case "ready", "restarting":
+			facts = append(facts, muted.Render(a.Status))
 		default:
 			facts = append(facts, muted.Render("idle"))
 		}
-		if a.ContextWindow > 0 && a.ContextTokens > 0 {
-			facts = append(facts, muted.Render(fmt.Sprintf("%d%% context", a.ContextTokens*100/a.ContextWindow)))
+		if pct, approx, ok := a.ContextPct(); ok {
+			// "~" marks Deck's estimate (or its assumed window) rather than
+			// the CLI's own figure.
+			mark := ""
+			if approx {
+				mark = "~"
+			}
+			facts = append(facts, muted.Render(fmt.Sprintf("%s%d%% context", mark, pct)))
+		} else if a.ContextTokens > 0 {
+			// The fill without a window to measure it against: dim, as the
+			// least certain figure on the line.
+			facts = append(facts, muted.Faint(true).Render(graph.Compact(float64(a.ContextTokens))+" context"))
 		}
 		if a.CostUSD > 0 {
 			facts = append(facts, muted.Render(fmt.Sprintf("$%.2f", a.CostUSD)))

@@ -35,27 +35,27 @@ func newTranslator(agentID, dir string) *translator {
 	return &translator{agentID: agentID, dir: dir, tools: map[string]*toolState{}}
 }
 
-func (t *translator) ev(k agent.Kind, raw json.RawMessage) agent.Event {
-	return agent.Event{AgentID: t.agentID, Time: time.Now(), Kind: k, Raw: raw}
+func (t *translator) ev(k agent.Kind) agent.Event {
+	return agent.Event{AgentID: t.agentID, Time: time.Now(), Kind: k}
 }
 
 // beginTurn marks where the turn's cost starts.
 func (t *translator) beginTurn() { t.costBase = t.cost }
 
 // update translates one session/update.
-func (t *translator) update(u update, raw json.RawMessage) []agent.Event {
+func (t *translator) update(u update) []agent.Event {
 	switch u.SessionUpdate {
 	case updAgentMessage:
 		if u.Content == nil || u.Content.Text == "" {
 			return nil
 		}
-		out := t.flushThought(raw)
+		out := t.flushThought()
 		if t.textID != u.MessageID {
-			out = append(out, t.flushText(raw)...)
+			out = append(out, t.flushText()...)
 			t.textID = u.MessageID
 		}
 		t.text.WriteString(u.Content.Text)
-		e := t.ev(agent.KindAssistantText, raw)
+		e := t.ev(agent.KindAssistantText)
 		e.Text, e.Delta = u.Content.Text, true
 		return append(out, e)
 
@@ -63,26 +63,26 @@ func (t *translator) update(u update, raw json.RawMessage) []agent.Event {
 		if u.Content == nil || u.Content.Text == "" {
 			return nil
 		}
-		out := t.flushText(raw)
+		out := t.flushText()
 		if t.thoughtID != u.MessageID {
-			out = append(out, t.flushThought(raw)...)
+			out = append(out, t.flushThought()...)
 			t.thoughtID = u.MessageID
 		}
 		t.thought.WriteString(u.Content.Text)
-		e := t.ev(agent.KindReasoning, raw)
+		e := t.ev(agent.KindReasoning)
 		e.Text, e.Delta = u.Content.Text, true
 		return append(out, e)
 
 	case updToolCall, updToolCallUpdate:
-		out := t.flush(raw)
-		return append(out, t.tool(u.toolCall, raw)...)
+		out := t.flush()
+		return append(out, t.tool(u.toolCall)...)
 
 	case updUsage:
 		t.ctxUsed, t.ctxSize = u.Used, u.Size
 		if u.Cost != nil && (u.Cost.Currency == "" || u.Cost.Currency == "USD") {
 			t.cost = u.Cost.Amount
 		}
-		e := t.ev(agent.KindUsage, raw)
+		e := t.ev(agent.KindUsage)
 		e.Usage = t.usage()
 		return []agent.Event{e}
 	}
@@ -90,34 +90,38 @@ func (t *translator) update(u update, raw json.RawMessage) []agent.Event {
 }
 
 func (t *translator) usage() *agent.Usage {
-	return &agent.Usage{CostUSD: max(0, t.cost-t.costBase), ContextTokens: t.ctxUsed, ContextWindow: t.ctxSize}
+	u := &agent.Usage{CostUSD: max(0, t.cost-t.costBase), ContextTokens: t.ctxUsed, ContextWindow: t.ctxSize}
+	if u.ContextTokens > 0 {
+		u.ContextSource = agent.ContextCLI // ACP usage_update{used, size}
+	}
+	return u
 }
 
 // flush ends both streams.
-func (t *translator) flush(raw json.RawMessage) []agent.Event {
-	return append(t.flushThought(raw), t.flushText(raw)...)
+func (t *translator) flush() []agent.Event {
+	return append(t.flushThought(), t.flushText()...)
 }
 
-func (t *translator) flushText(raw json.RawMessage) []agent.Event {
+func (t *translator) flushText() []agent.Event {
 	s := t.text.String()
 	t.text.Reset()
 	t.textID = ""
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
-	e := t.ev(agent.KindAssistantText, raw)
+	e := t.ev(agent.KindAssistantText)
 	e.Text = s
 	return []agent.Event{e}
 }
 
-func (t *translator) flushThought(raw json.RawMessage) []agent.Event {
+func (t *translator) flushThought() []agent.Event {
 	s := t.thought.String()
 	t.thought.Reset()
 	t.thoughtID = ""
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
-	e := t.ev(agent.KindReasoning, raw)
+	e := t.ev(agent.KindReasoning)
 	e.Text = s
 	return []agent.Event{e}
 }
@@ -167,7 +171,7 @@ func replaceDiff(ds []agent.FileDiff, d agent.FileDiff) []agent.FileDiff {
 	return append(ds, d)
 }
 
-func (t *translator) tool(c toolCall, raw json.RawMessage) []agent.Event {
+func (t *translator) tool(c toolCall) []agent.Event {
 	if c.ToolCallID == "" {
 		return nil
 	}
@@ -186,7 +190,7 @@ func (t *translator) tool(c toolCall, raw json.RawMessage) []agent.Event {
 				diffs = t.inputDiffs(st.call)
 			}
 			for i := range diffs {
-				e := t.ev(agent.KindFileChange, raw)
+				e := t.ev(agent.KindFileChange)
 				e.Diff = &diffs[i]
 				out = append(out, e)
 			}
@@ -195,7 +199,7 @@ func (t *translator) tool(c toolCall, raw json.RawMessage) []agent.Event {
 			tool.Status = agent.ToolError
 		}
 		tool.Output = outputOf(st.call)
-		e := t.ev(agent.KindToolResult, raw)
+		e := t.ev(agent.KindToolResult)
 		e.Tool = &tool
 		// Keep only a marker, so a late update is still ignored, and let the
 		// call's input, output and diffs go: a long session runs many tools.
@@ -203,7 +207,7 @@ func (t *translator) tool(c toolCall, raw json.RawMessage) []agent.Event {
 		return append(out, e)
 	}
 	tool.Status = agent.ToolRunning
-	e := t.ev(agent.KindToolCall, raw)
+	e := t.ev(agent.KindToolCall)
 	e.Tool = &tool
 	return []agent.Event{e}
 }

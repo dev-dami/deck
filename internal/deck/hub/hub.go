@@ -66,8 +66,12 @@ const (
 const (
 	// Timeout bounds one op.
 	Timeout = 55 * time.Second
-	// MaxOutput is the most text one call returns.
+	// MaxOutput is the most text one call returns, unless the caller's
+	// Env.MaxOutput says otherwise (a budget relative to its agent's context
+	// window, see session/budget.go).
 	MaxOutput = 20 << 10
+	// MaxOutputCap is the most Env.MaxOutput may raise it to.
+	MaxOutputCap = 64 << 10
 	// capSlack is how much text past MaxOutput is kept (and redacted) before
 	// the cut: enough that a secret straddling the end of what is kept can
 	// never reach the part that is shown.
@@ -139,10 +143,21 @@ type Env struct {
 	// sh.run and contract.result and no other op, and search shows only
 	// those two.
 	Ops OpsRunner
+	// MaxOutput is the most text a result may hold for this agent; 0 means
+	// MaxOutput, and it is never more than MaxOutputCap.
+	MaxOutput int
 
 	// dropped counts output bytes a command wrote past what was kept in
 	// memory, so the truncation note still gives the full size.
 	dropped int64
+}
+
+// maxOut is the output cap of a call in e.
+func (e *Env) maxOut() int {
+	if e.MaxOutput <= 0 {
+		return MaxOutput
+	}
+	return min(e.MaxOutput, MaxOutputCap)
 }
 
 func (e *Env) runner() gh.Runner {
@@ -507,19 +522,19 @@ func Execute(ctx context.Context, env Env, op string, raw json.RawMessage) (text
 		if ctx.Err() != nil {
 			msg = o.Name + " timed out"
 		}
-		return capOut(strings.TrimSpace(out+"\n"+msg), env.dropped), true
+		return capOut(strings.TrimSpace(out+"\n"+msg), env.dropped, env.maxOut()), true
 	}
 	if strings.TrimSpace(out) == "" {
 		out = "(nothing)"
 	}
-	return capOut(out, env.dropped), false
+	return capOut(out, env.dropped, env.maxOut()), false
 }
 
-// capOut is Cap(Redact(s), MaxOutput) without redacting text that can never
-// be shown: only the first MaxOutput+capSlack bytes are redacted. dropped is
-// output that never reached s, counted in the note's total.
-func capOut(s string, dropped int64) string {
-	if lim := MaxOutput + capSlack; len(s) > lim {
+// capOut is Cap(Redact(s), n) without redacting text that can never be
+// shown: only the first n+capSlack bytes are redacted. dropped is output
+// that never reached s, counted in the note's total.
+func capOut(s string, dropped int64, n int) string {
+	if lim := n + capSlack; len(s) > lim {
 		cut := lim
 		for cut > 0 && (s[cut]&0xC0) == 0x80 {
 			cut--
@@ -528,7 +543,7 @@ func capOut(s string, dropped int64) string {
 		s = s[:cut]
 	}
 	s = Redact(s)
-	return capTotal(s, MaxOutput, int64(len(s))+dropped)
+	return capTotal(s, n, int64(len(s))+dropped)
 }
 
 // Cap trims s to at most n bytes (on a rune boundary) with a note.

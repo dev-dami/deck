@@ -44,6 +44,10 @@ func mcpServerName(agentID string) string {
 // go in --env; the broker token goes in the file.
 func (a *adapter) mcpAdd(ctx context.Context, agyPath string, srv *agent.MCPServer, agentID string) (name, tokenFile string, err error) {
 	name = mcpServerName(agentID)
+	// A run of the same agent closed just before may still be removing
+	// this name in the background: let it finish, or it would remove the
+	// entry added here.
+	a.waitRemoved(ctx, name)
 	args := []string{"mcp", "add"}
 	keys := make([]string, 0, len(srv.Env))
 	for k := range srv.Env {
@@ -93,9 +97,12 @@ func writeTokenFile(token string) (string, error) {
 	return f.Name(), nil
 }
 
-// mcpRemove unregisters the server added by mcpAdd and deletes its token
-// file. Errors are ignored: a stale entry is harmless (it points at a dead
-// broker) and Close must not fail.
+// mcpRemove deletes the token file of the server added by mcpAdd and
+// unregisters the server in the background: `agy mcp remove` can take
+// seconds, and Close should not wait for it. Errors are ignored: a stale
+// entry is harmless (it points at a dead broker) and Close must not fail.
+// A later mcpAdd of the same name waits for the removal (waitRemoved), and
+// Deck waits for it on the way out (Drain).
 func (r *run) mcpRemove() {
 	name, file := r.mcpName, r.mcpFile
 	r.mcpName, r.mcpFile = "", ""
@@ -105,9 +112,60 @@ func (r *run) mcpRemove() {
 	if name == "" {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	_ = r.a.mcpRun(ctx, r.path, "mcp", "remove", name)
+	a := r.a
+	done := make(chan struct{})
+	a.rmMu.Lock()
+	prev := a.removing[name]
+	if a.removing == nil {
+		a.removing = map[string]chan struct{}{}
+	}
+	a.removing[name] = done
+	a.rmMu.Unlock()
+	a.removes.Add(1)
+	go func() {
+		defer a.removes.Done()
+		if prev != nil {
+			<-prev
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		_ = a.mcpRun(ctx, r.path, "mcp", "remove", name)
+		cancel()
+		a.rmMu.Lock()
+		if a.removing[name] == done {
+			delete(a.removing, name)
+		}
+		a.rmMu.Unlock()
+		close(done)
+	}()
+}
+
+// waitRemoved waits for a background removal of name, if one is running.
+func (a *adapter) waitRemoved(ctx context.Context, name string) {
+	a.rmMu.Lock()
+	ch := a.removing[name]
+	a.rmMu.Unlock()
+	if ch == nil {
+		return
+	}
+	select {
+	case <-ch:
+	case <-ctx.Done():
+	}
+}
+
+// Drain implements agent.Drainer: it waits, at most d, for the background
+// `agy mcp remove` calls of closed runs, so quitting Deck does not leave
+// their entries in agy's config.
+func (a *adapter) Drain(d time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		a.removes.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(d):
+	}
 }
 
 func (a *adapter) mcpRun(ctx context.Context, agyPath string, args ...string) error {

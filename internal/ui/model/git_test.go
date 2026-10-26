@@ -1,6 +1,7 @@
 package model
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -94,6 +95,41 @@ func TestGitMaybePollPR(t *testing.T) {
 	g.headsAt = time.Time{}
 	if u.gitMaybePollPR(now) != nil {
 		t.Fatal("GitHub is not asked when gh is missing")
+	}
+}
+
+// TestGitStatusUnchangedSkipsRedraw checks a status poll that only confirms
+// what is known marks the update scroll-only, and a changed one does not.
+func TestGitStatusUnchangedSkipsRedraw(t *testing.T) {
+	u := newGitPaneUI(t)
+	g := &u.git
+	g.prBusy = true // keep the pull request poll out of it
+
+	u.scrollOnlyUpdate = false
+	u.applyGitMsg(gitStatusMsg{status: g.status, files: slices.Clone(g.files), same: true})
+	if !u.scrollOnlyUpdate {
+		t.Fatal("an unchanged quiet poll must not cost a redraw")
+	}
+
+	u.scrollOnlyUpdate = false
+	u.applyGitMsg(gitStatusMsg{status: g.status, files: slices.Clone(g.files),
+		recent: slices.Clone(g.recent), commits: slices.Clone(g.commits)})
+	if !u.scrollOnlyUpdate {
+		t.Fatal("an unchanged full poll must not cost a redraw")
+	}
+
+	u.scrollOnlyUpdate = false
+	st := g.status
+	st.Dirty++
+	u.applyGitMsg(gitStatusMsg{status: st, files: append(slices.Clone(g.files), gh.ChangedFile{Code: "?", Path: "new"}), same: true})
+	if u.scrollOnlyUpdate {
+		t.Fatal("a changed status must redraw")
+	}
+
+	u.scrollOnlyUpdate = false
+	u.applyGitMsg(gitStatusMsg{status: g.status, files: g.files, recent: g.recent[:1], commits: g.commits})
+	if u.scrollOnlyUpdate {
+		t.Fatal("changed recent branches must redraw")
 	}
 }
 

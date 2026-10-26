@@ -203,7 +203,7 @@ export function UsagePage({ project, theme, onOpenThread }: { project: ProjectAp
   }, [load]);
 
   const header = (
-    <header className="topbar drag flex h-12 shrink-0 items-center gap-2 border-b px-5 text-sm">
+    <header className="topbar drag flex h-13 shrink-0 items-center gap-2 border-b px-5 text-sm">
       <BarChart3 className="size-4 text-muted-foreground" />
       <h1 className="title font-medium">Usage</h1>
       <div className="ml-auto flex items-center gap-1">

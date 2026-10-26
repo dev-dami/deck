@@ -2,7 +2,6 @@ package codex
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -122,8 +121,7 @@ func (r *run) handshake(ctx context.Context, opts Options) error {
 	r.threadID = resp.Thread.ID
 	r.mu.Unlock()
 
-	raw, _ := json.Marshal(map[string]any{"threadId": resp.Thread.ID, "resumed": r.spec.ResumeID != ""})
-	r.events <- r.tr.sessionStarted(resp.Thread.ID, resp.Model, raw)
+	r.events <- r.tr.sessionStarted(resp.Thread.ID, resp.Model)
 	r.pushers.Add(1) // before the loop, which waits for pushers when it ends
 	go r.loop()
 	go r.probeLimits()
@@ -145,7 +143,7 @@ func (r *run) loop() {
 		case m.IsRequest():
 			r.handleServerRequest(m)
 		case m.IsNotification():
-			for _, e := range r.tr.notification(m.Method, m.Params, m.Raw) {
+			for _, e := range r.tr.notification(m.Method, m.Params, m.Line) {
 				r.emit(e)
 			}
 		}

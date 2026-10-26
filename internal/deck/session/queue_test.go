@@ -4,6 +4,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -552,7 +553,7 @@ func TestEditRejectsOtherEntries(t *testing.T) {
 	th := r.m.thread(tid)
 	th.mu.Lock()
 	byType := map[string]string{}
-	for _, e := range th.log {
+	for _, e := range allLog(th) {
 		key := e.Type
 		if key == store.EntryEvent {
 			key = "event:" + string(e.Kind)
@@ -599,7 +600,7 @@ func TestEditsReplayOnResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	var userAt, editAt = -1, -1
-	for i, h := range hist {
+	for i, h := range hist.Msgs() {
 		switch v := h.(type) {
 		case EventMsg:
 			if v.FromUser() && v.EntryID == res.EntryID {
@@ -680,4 +681,24 @@ func TestMidTurnUsageKeepsTheTurnCost(t *testing.T) {
 	}
 	r.c.approvals()[0].Respond(agent.Decision{Allow: true})
 	waitFor(t, "turn", func() bool { return r.c.turnDones("claude") == 1 })
+}
+
+// waitIdle wakes on the event that ends the turn, and gives up after its
+// timeout while the member stays busy.
+func TestWaitIdleWakesWhenTheTurnEnds(t *testing.T) {
+	a := &agentState{base: StatusWorking}
+	if a.waitIdle(10 * time.Millisecond) {
+		t.Fatal("a working member counted as idle")
+	}
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		a.apply(agent.Event{Kind: agent.KindTurnDone})
+	}()
+	start := time.Now()
+	if !a.waitIdle(5 * time.Second) {
+		t.Fatal("waitIdle missed the end of the turn")
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("waitIdle took %v to see the end of the turn", d)
+	}
 }

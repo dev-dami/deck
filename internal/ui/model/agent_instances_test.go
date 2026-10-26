@@ -52,3 +52,18 @@ func TestRosterIndentsSubagents(t *testing.T) {
 	require.Contains(t, lines[3], "deck/ab12cd-codex")
 	require.Contains(t, lines[3], "holds a.go (exclusive)")
 }
+
+func TestRosterMarksEstimatedContext(t *testing.T) {
+	t.Parallel()
+	m := newBoardUI(&boardWorkspace{})
+	out := ansi.Strip(m.modelInfoFor([]workspace.AgentLine{
+		{ID: "codex", Kind: "codex", Status: "idle", ContextTokens: 100_000, ContextWindow: 400_000, ContextSource: "cli"},
+		{ID: "antigravity", Kind: "antigravity", Status: "idle", ContextTokens: 300_000, ContextWindow: 1_000_000, ContextSource: "estimated"},
+		{ID: "claude", Kind: "claude", Status: "idle", ContextTokens: 42_000, ContextSource: "derived"},
+	}, 90))
+	lines := strings.Split(out, "\n")
+	require.Len(t, lines, 6)
+	require.Contains(t, lines[1], "· 25% context", "a CLI's own figure is shown as it is")
+	require.Contains(t, lines[3], "~30% context", "an estimate is marked")
+	require.Contains(t, lines[5], "42k context", "the fill without a window has no percentage")
+}

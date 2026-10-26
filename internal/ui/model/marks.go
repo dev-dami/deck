@@ -48,7 +48,7 @@ func markLevels(lines []workspace.AgentLine, limits map[string]workspace.LiveLim
 			at[kind] = i
 			out = append(out, decklogo.Edge{Kind: kind})
 		}
-		if a.ContextWindow <= 0 || a.ContextTokens <= 0 {
+		if _, _, ok := a.ContextPct(); !ok {
 			continue
 		}
 		pct := float64(a.ContextTokens) * 100 / float64(a.ContextWindow)

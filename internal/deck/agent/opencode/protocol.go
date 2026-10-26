@@ -209,6 +209,20 @@ type updateParams struct {
 	Update    update `json:"update"`
 }
 
+// decodeUpdate is the client's decode hook: a session/update's params (most
+// of the stream) are decoded once, straight from the line, into Value, and
+// never copied as raw params first.
+func decodeUpdate(method string, params []byte) any {
+	if method != notifySessionUpdate {
+		return nil
+	}
+	p := new(updateParams)
+	if json.Unmarshal(params, p) != nil {
+		return nil
+	}
+	return p
+}
+
 type permissionOption struct {
 	OptionID string `json:"optionId"`
 	Kind     string `json:"kind"` // allow_once, allow_always, reject_once, reject_always

@@ -2,10 +2,14 @@ package antigravity
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/approve"
@@ -206,10 +210,150 @@ func TestTokenTravelsInAFile(t *testing.T) {
 	}
 	r := &run{a: a, path: "agy", mcpName: name, mcpFile: file}
 	r.mcpRemove()
+	a.Drain(5 * time.Second)
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		t.Fatalf("token file left behind: %v", err)
 	}
 	if !slices.Equal(gotArgs, []string{"mcp", "remove", name}) {
 		t.Fatalf("remove = %v", gotArgs)
+	}
+}
+
+// TestBriefedResumeSkipsInstructions covers a resumed conversation that
+// already had Deck's instructions: the first prompt goes without them.
+func TestBriefedResumeSkipsInstructions(t *testing.T) {
+	bin, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("no true binary")
+	}
+	for _, c := range []struct {
+		spec agent.Spec
+		skip bool
+	}{
+		{agent.Spec{ResumeID: "c1", Briefed: true}, true},
+		{agent.Spec{ResumeID: "c1"}, false},
+		{agent.Spec{Briefed: true}, false}, // a new conversation needs them
+	} {
+		c.spec.ID, c.spec.Binary, c.spec.Instructions = "x", bin, "BRIEF"
+		r, err := (&adapter{}).Start(context.Background(), c.spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rr := r.(*run)
+		rr.mu.Lock()
+		skip := rr.firstSend
+		rr.mu.Unlock()
+		r.Close()
+		if skip != c.skip {
+			t.Errorf("%+v: instructions skipped = %v", c.spec, skip)
+		}
+	}
+}
+
+// TestChangedNamesRestart covers what KindRestarting says changed: the
+// effort is part of the --model slug, so it reads as the model.
+func TestChangedNamesRestart(t *testing.T) {
+	r := &run{a: &adapter{}, slug: "gemini-3.8-flash-medium", mode: agent.ModeAsk}
+	r.args("")
+	r.slug = "gemini-3.8-flash-high"
+	if got := r.changedLocked(); got != "model" {
+		t.Fatalf("changed %q", got)
+	}
+	r.mode = agent.ModePlan
+	if got := r.changedLocked(); got != "model, mode" {
+		t.Fatalf("changed %q", got)
+	}
+}
+
+// TestMcpRemoveRunsInBackground covers Close not waiting on `agy mcp
+// remove`, and a new run of the same agent registering only after that
+// removal is done (else the removal would undo the new entry).
+func TestMcpRemoveRunsInBackground(t *testing.T) {
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var calls []string
+	a := &adapter{mcpRunFn: func(_ context.Context, _ string, args ...string) error {
+		if args[1] == "remove" {
+			<-release
+		}
+		mu.Lock()
+		calls = append(calls, args[1])
+		mu.Unlock()
+		return nil
+	}}
+	r := &run{a: a, path: "agy", mcpName: mcpServerName("x")}
+	returned := make(chan struct{})
+	go func() {
+		r.mcpRemove()
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("mcpRemove waited for agy mcp remove")
+	}
+	added := make(chan struct{})
+	go func() {
+		if _, _, err := a.mcpAdd(context.Background(), "agy", &agent.MCPServer{Command: "/opt/deck"}, "x"); err != nil {
+			t.Error(err)
+		}
+		close(added)
+	}()
+	select {
+	case <-added:
+		t.Fatal("mcp add ran before the pending remove of the same name")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	<-added
+	a.Drain(5 * time.Second)
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(calls, []string{"remove", "add"}) {
+		t.Fatalf("calls = %v", calls)
+	}
+}
+
+// TestStartOverlapsMcpAddAndModels covers a cold Start: `agy mcp add` and
+// the `agy models` the slug needs run side by side, not one after the other
+// (each here waits for the other to begin), and the slug still comes from
+// the loaded list.
+func TestStartOverlapsMcpAddAndModels(t *testing.T) {
+	bin, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("no true binary")
+	}
+	inModels, inAdd := make(chan struct{}), make(chan struct{})
+	a := &adapter{
+		modelsFn: func(context.Context) (string, error) {
+			close(inModels)
+			select {
+			case <-inAdd:
+			case <-time.After(5 * time.Second):
+				return "", errors.New("mcp add did not overlap")
+			}
+			return modelsFixture, nil
+		},
+		mcpRunFn: func(_ context.Context, _ string, args ...string) error {
+			if args[1] == "add" {
+				close(inAdd)
+				<-inModels
+			}
+			return nil
+		},
+	}
+	spec := agent.Spec{ID: "x", Binary: bin, Model: "gemini-3.1-pro", MCP: &agent.MCPServer{Command: "/opt/deck"}}
+	r, err := a.Start(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := r.(*run)
+	rr.mu.Lock()
+	slug, name := rr.slug, rr.mcpName
+	rr.mu.Unlock()
+	r.Close()
+	a.Drain(5 * time.Second)
+	if slug != "gemini-3.1-pro-high" || name != "deck-x" {
+		t.Fatalf("slug %q, mcp %q", slug, name)
 	}
 }

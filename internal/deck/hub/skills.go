@@ -381,7 +381,7 @@ func readSkillFile(s skillInfo, file string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	buf := make([]byte, MaxOutput+1)
+	buf := make([]byte, MaxOutputCap+1) // the caller's cap applies after (capOut)
 	n, _ := io.ReadFull(f, buf)
 	return string(buf[:n]), nil
 }

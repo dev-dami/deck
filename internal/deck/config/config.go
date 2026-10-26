@@ -124,6 +124,9 @@ type Config struct {
 	// Efforts names the reasoning effort each CLI should use; empty means the
 	// model's default.
 	Efforts Models `json:"efforts"`
+	// Context shapes how much of a thread Deck puts in front of an agent
+	// (docs/context-design.md). The zero value is Deck's defaults.
+	Context Context `json:"context,omitzero"`
 	// Peers links this Deck to other Deck instances (docs/peers-design.md).
 	// Nil, the default, means peers are off: no listener, no dialing. Keys
 	// never live here; they are in ~/.deck/peers/.
@@ -146,6 +149,128 @@ type Budget struct {
 	Tokens  int     `json:"tokens,omitempty"`
 	CostUSD float64 `json:"cost_usd,omitempty"`
 	Minutes int     `json:"minutes,omitempty"`
+}
+
+// Context is the context section of the config: what each agent's CLI
+// loads into its context besides Deck's own, and how much of the thread
+// Deck puts there. Budgets are shares of the agent's context window (its
+// model's, as the CLI reports it). A CLI that cannot do what a knob asks
+// ignores it, and Deck says so once when it starts.
+type Context struct {
+	// IsolateGlobalConfig leaves out the user's global CLI config (Claude:
+	// ~/.claude settings with their hooks and permissions, and
+	// ~/.claude/CLAUDE.md). Off by default.
+	IsolateGlobalConfig bool `json:"isolate_global_config,omitempty"`
+	// InstructionFiles is which instruction files (CLAUDE.md, AGENTS.md)
+	// load: "inherit" (the default, also ""), "project-only" or "none".
+	InstructionFiles string `json:"instruction_files,omitempty"`
+	// MCP is "deck-only" (the default, also "": only Deck's MCP server) or
+	// "inherit" (the user's own servers as well).
+	MCP string `json:"mcp,omitempty"`
+	// CompactAtPct is how full the context may get before the CLI compacts
+	// it, in percent of the window; 0 is the CLI's default.
+	CompactAtPct int `json:"compact_at_pct,omitempty"`
+	// PerAgent overrides the four knobs above for one kind of agent.
+	PerAgent map[string]ContextOverride `json:"per_agent,omitempty"`
+	// BriefingPct is how much of the window the briefing of what an agent
+	// missed may take (0 means the default: 4%, and never less than Deck's
+	// fixed budget for windows of 128k tokens and more). Clamped to 16k-160k
+	// characters.
+	BriefingPct float64 `json:"briefing_pct,omitempty"`
+	// ToolOutputPct is how much of the window one search or execute result
+	// may take (0 means the default: 1.5%, and never less than 20 KB for
+	// windows of 128k tokens and more). Clamped to 8-64 KB.
+	ToolOutputPct float64 `json:"tool_output_pct,omitempty"`
+}
+
+// ContextOverride is one kind of agent's context knobs; an unset one keeps
+// the section's own.
+type ContextOverride struct {
+	IsolateGlobalConfig *bool  `json:"isolate_global_config,omitempty"`
+	InstructionFiles    string `json:"instruction_files,omitempty"`
+	MCP                 string `json:"mcp,omitempty"`
+	CompactAtPct        *int   `json:"compact_at_pct,omitempty"`
+}
+
+// ContextPolicy is the context knobs for one kind of agent, overrides
+// applied. Strings keep "" for a knob nobody set.
+type ContextPolicy struct {
+	IsolateGlobalConfig bool
+	InstructionFiles    string
+	MCP                 string
+	CompactAtPct        int
+}
+
+// For is the policy of kind: the section's knobs with kind's overrides.
+func (c Context) For(kind string) ContextPolicy {
+	p := ContextPolicy{IsolateGlobalConfig: c.IsolateGlobalConfig, InstructionFiles: c.InstructionFiles, MCP: c.MCP, CompactAtPct: c.CompactAtPct}
+	o, ok := c.PerAgent[kind]
+	if !ok {
+		return p
+	}
+	if o.IsolateGlobalConfig != nil {
+		p.IsolateGlobalConfig = *o.IsolateGlobalConfig
+	}
+	if o.InstructionFiles != "" {
+		p.InstructionFiles = o.InstructionFiles
+	}
+	if o.MCP != "" {
+		p.MCP = o.MCP
+	}
+	if o.CompactAtPct != nil {
+		p.CompactAtPct = *o.CompactAtPct
+	}
+	return p
+}
+
+// Limits of the context percentages.
+const (
+	MaxBriefingPct   = 25
+	MaxToolOutputPct = 10
+)
+
+// validateKnobs reports the first invalid policy knob; at prefixes its keys.
+func validateKnobs(at, files, mcp string, compact int) error {
+	switch files {
+	case "", "inherit", "project-only", "none":
+	default:
+		return fmt.Errorf("%sinstruction_files must be \"inherit\", \"project-only\" or \"none\", got %q", at, files)
+	}
+	switch mcp {
+	case "", "deck-only", "inherit":
+	default:
+		return fmt.Errorf("%smcp must be \"deck-only\" or \"inherit\", got %q", at, mcp)
+	}
+	if compact < 0 || compact > 100 {
+		return fmt.Errorf("%scompact_at_pct must be 0 (the CLI's default) to 100, got %d", at, compact)
+	}
+	return nil
+}
+
+// validate reports the first invalid value in the context section.
+func (c Context) validate() error {
+	if err := validateKnobs("context.", c.InstructionFiles, c.MCP, c.CompactAtPct); err != nil {
+		return err
+	}
+	for kind, o := range c.PerAgent {
+		if !slices.Contains(Kinds, kind) {
+			return fmt.Errorf("context.per_agent: %q is not an agent kind (use %s)", kind, strings.Join(Kinds, ", "))
+		}
+		compact := 0
+		if o.CompactAtPct != nil {
+			compact = *o.CompactAtPct
+		}
+		if err := validateKnobs("context.per_agent."+kind+".", o.InstructionFiles, o.MCP, compact); err != nil {
+			return err
+		}
+	}
+	if c.BriefingPct < 0 || c.BriefingPct > MaxBriefingPct {
+		return fmt.Errorf("context.briefing_pct must be 0 (the default) to %d, got %v", MaxBriefingPct, c.BriefingPct)
+	}
+	if c.ToolOutputPct < 0 || c.ToolOutputPct > MaxToolOutputPct {
+		return fmt.Errorf("context.tool_output_pct must be 0 (the default) to %d, got %v", MaxToolOutputPct, c.ToolOutputPct)
+	}
+	return nil
 }
 
 // DefaultPeerPort is the port a peer listener uses when its address names none.
@@ -648,6 +773,9 @@ func (c Config) Validate() error {
 	}
 	if c.Review != "" && c.Review != "none" && c.Review != "other" && !slices.Contains(Kinds, c.Review) {
 		return fmt.Errorf("review must be \"none\", \"other\" or an agent kind, got %q", c.Review)
+	}
+	if err := c.Context.validate(); err != nil {
+		return err
 	}
 	if c.Peers != nil {
 		if err := c.Peers.validate(); err != nil {

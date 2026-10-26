@@ -150,8 +150,9 @@ var doctorCmd = &cobra.Command{
 	},
 }
 
-// Execute runs the deck command.
-func Execute() {
+// Execute runs the deck command. The caller exits non-zero on an error
+// (cobra has already printed it), after stopping any profiles.
+func Execute() error {
 	// config.Load logs while it resolves; the log file only exists once the
 	// data directory is known, so early logs are dropped.
 	slog.SetDefault(slog.New(slog.DiscardHandler))
@@ -164,9 +165,7 @@ func Execute() {
 {{printf "deck %s" .Version}}
 `)
 	}
-	if err := rootCmd.ExecuteContext(context.Background()); err != nil {
-		os.Exit(1)
-	}
+	return rootCmd.ExecuteContext(context.Background())
 }
 
 // supportsProgressBar tries to determine whether the current terminal supports
@@ -311,7 +310,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	ws := workspace.NewDeckWorkspace(appInstance, store, eng)
 	cleanup := func() {
 		eng.Close()
-		appInstance.Shutdown()
+		ws.Shutdown() // stores queued tool results, then shuts the app down
 	}
 	return ws, cleanup, nil
 }

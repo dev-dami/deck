@@ -331,6 +331,21 @@ func TestResumeAndSwitches(t *testing.T) {
 	}
 }
 
+// TestBriefedResumeSkipsInstructions covers a resumed session that already
+// had Deck's instructions: they are not sent into it again.
+func TestBriefedResumeSkipsInstructions(t *testing.T) {
+	f := newFake(t)
+	r := f.start(t, agent.Spec{ResumeID: "ses_1", Instructions: "BRIEF", Briefed: true})
+	<-r.Events()
+	if err := r.Send("hi"); err != nil {
+		t.Fatal(err)
+	}
+	turn(t, r, agent.Decision{Allow: true})
+	if !f.has(t, `session/prompt {"sessionId":"ses_1","prompt":[{"type":"text","text":"hi"}]}`) {
+		t.Errorf("the prompt went out with the instructions again:\n%s", strings.Join(f.lines(t), "\n"))
+	}
+}
+
 func TestModelsListEveryProviderWithEfforts(t *testing.T) {
 	f := newFake(t)
 	ms, err := New(os.Args[0]).(agent.ModelLister).Models(context.Background())

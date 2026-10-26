@@ -127,12 +127,12 @@ func modelsFromList(out string) []agent.ModelInfo {
 		}
 		if len(have) < 2 {
 			for _, v := range vs {
-				list = append(list, agent.ModelInfo{ID: v.slug, Name: v.name})
+				list = append(list, agent.ModelInfo{ID: v.slug, Name: v.name, ContextWindow: windowFor(v.slug)})
 			}
 			continue
 		}
 		name := familyName(vs)
-		mi := agent.ModelInfo{ID: base, Name: name, Description: "Antigravity " + name}
+		mi := agent.ModelInfo{ID: base, Name: name, Description: "Antigravity " + name, ContextWindow: windowFor(base)}
 		for _, e := range effortSuffixes {
 			if have[e] {
 				mi.Efforts = append(mi.Efforts, agent.EffortInfo{Level: e, Description: effortDescriptions[e]})
@@ -186,12 +186,24 @@ func familyName(vs []modelVariant) string {
 	return vs[0].name
 }
 
+// geminiWindow is the context window of the Gemini models agy runs (1M).
+const geminiWindow = 1_048_576
+
+// windowFor is Deck's assumption of a model's context window, by family;
+// 0 for a model it does not know, agy's default ("") included.
+func windowFor(model string) int {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gemini") {
+		return geminiWindow
+	}
+	return 0
+}
+
 func defaultModel() agent.ModelInfo {
 	return agent.ModelInfo{ID: "", Name: "Default", Description: "agy's default model", Default: true}
 }
 
 func fallbackModels() []agent.ModelInfo {
-	flash := agent.ModelInfo{ID: "gemini-3.8-flash", Name: "Gemini 3.8 Flash", Description: "Antigravity Gemini 3.8 Flash", DefaultEffort: "medium"}
+	flash := agent.ModelInfo{ID: "gemini-3.8-flash", Name: "Gemini 3.8 Flash", Description: "Antigravity Gemini 3.8 Flash", DefaultEffort: "medium", ContextWindow: geminiWindow}
 	for _, e := range effortSuffixes {
 		flash.Efforts = append(flash.Efforts, agent.EffortInfo{Level: e, Description: effortDescriptions[e]})
 	}

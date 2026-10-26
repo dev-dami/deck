@@ -146,12 +146,12 @@ func TestSendGuards(t *testing.T) {
 
 	// claude has maxWaiting messages from agents it has not read.
 	for i := range maxWaiting {
-		th.log = append(th.log, store.Entry{Type: store.EntryRelay, Speaker: "codex", To: []string{"claude"}, Event: eventText(fmt.Sprint(i))})
+		r.m.appendLocked(th, store.Entry{Type: store.EntryRelay, Speaker: "codex", To: []string{"claude"}, Event: eventText(fmt.Sprint(i))})
 	}
 	if _, err := th.guardSend(codex, []*agentState{claude}, now); err == nil || !strings.Contains(err.Error(), "has not read") {
 		t.Fatalf("to a full inbox: %v", err)
 	}
-	claude.cursor = len(th.log) // it read them
+	claude.cursor = th.size() // it read them
 
 	for i := range maxSendsPerMinute {
 		if _, err := th.guardSend(codex, []*agentState{claude}, now.Add(time.Duration(i)*time.Second)); err != nil {

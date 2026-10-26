@@ -54,14 +54,24 @@ func newTranslator(agentID, cwd string) *translator {
 	}
 }
 
-func (t *translator) ev(kind agent.Kind, raw json.RawMessage) agent.Event {
-	return agent.Event{AgentID: t.agentID, Time: t.now(), Kind: kind, Raw: raw}
+// rawLine yields the protocol line of the message being translated. It is
+// called only for an event that keeps its line (agent.KeepsRaw: errors and
+// kinds Deck does not know), so the deltas that are most of the stream are
+// never encoded or copied for it.
+type rawLine func() json.RawMessage
+
+func (t *translator) ev(kind agent.Kind, raw rawLine) agent.Event {
+	e := agent.Event{AgentID: t.agentID, Time: t.now(), Kind: kind}
+	if raw != nil && agent.KeepsRaw(kind) {
+		e.Raw = raw()
+	}
+	return e
 }
 
 // sessionStarted builds the KindSessionStarted event for a thread/start or
 // thread/resume response.
-func (t *translator) sessionStarted(threadID, model string, raw json.RawMessage) agent.Event {
-	e := t.ev(agent.KindSessionStarted, raw)
+func (t *translator) sessionStarted(threadID, model string) agent.Event {
+	e := t.ev(agent.KindSessionStarted, nil)
 	e.SessionID = threadID
 	e.Text = model
 	return e
@@ -78,7 +88,7 @@ func (t *translator) item(id, typ string) *itemState {
 
 // notification translates one server notification. Unknown or uninteresting
 // methods yield no events.
-func (t *translator) notification(method string, params, raw json.RawMessage) []agent.Event {
+func (t *translator) notification(method string, params json.RawMessage, raw rawLine) []agent.Event {
 	switch method {
 	case noteTurnStarted:
 		var n turnNotification
@@ -189,10 +199,16 @@ func (t *translator) notification(method string, params, raw json.RawMessage) []
 			ctxTok = last.InputTokens + last.OutputTokens - last.ReasoningOutputTokens
 		}
 		e.Usage.ContextTokens = nonNeg(ctxTok)
+		e.Usage.ContextSource = agent.ContextCLI
 		if w := n.TokenUsage.ModelContextWindow; w != nil {
 			e.Usage.ContextWindow = nonNeg(*w)
 		}
 		return []agent.Event{e}
+
+	case noteCompacted:
+		// The thread's history was summarised. Its params are not decoded:
+		// the context use after it comes with the next token usage update.
+		return []agent.Event{t.ev(agent.KindCompacted, raw)}
 
 	case noteRateLimits:
 		var n rateLimitsNotification
@@ -223,7 +239,7 @@ func nonNeg(n int) int {
 	return n
 }
 
-func (t *translator) itemStarted(it threadItem, raw json.RawMessage) []agent.Event {
+func (t *translator) itemStarted(it threadItem, raw rawLine) []agent.Event {
 	switch it.Type {
 	case "commandExecution":
 		st := t.item(it.ID, it.Type)
@@ -274,7 +290,7 @@ func (t *translator) itemStarted(it threadItem, raw json.RawMessage) []agent.Eve
 	return nil
 }
 
-func (t *translator) itemCompleted(it threadItem, raw json.RawMessage) []agent.Event {
+func (t *translator) itemCompleted(it threadItem, raw rawLine) []agent.Event {
 	st := t.items[it.ID]
 	delete(t.items, it.ID)
 	if st == nil {

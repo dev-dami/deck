@@ -182,6 +182,7 @@ func (p *usagePane) text(m *UI, width int, now time.Time) string {
 			}
 			lines = append(lines, label("now")+ansi.Truncate(doing, barW, "…"))
 		}
+		lines = append(lines, p.contextLines(roster, a.Kind, th, label, barW)...)
 		if t, ok := p.last(a.Kind); ok {
 			last := graph.Compact(float64(t.Tokens())) + " tok"
 			if t.TTFT > 0 {
@@ -196,6 +197,55 @@ func (p *usagePane) text(m *UI, width int, now time.Time) string {
 	}
 	lines = append(lines, "", st.muted.Render(ansi.Truncate("enter or "+dialog.UsageKey+" for the full view", width, "…")))
 	return strings.Join(lines, "\n")
+}
+
+// contextLines are a meter of each of kind's agents' context, split into
+// what its session started with (baseline, neutral), the conversation (the
+// agent's tint), Deck's own text (the accent) and what is free, with a
+// legend under it. The baseline and Deck's share are Deck's estimates; an
+// agent whose fill or window is not known gets no meter.
+func (p *usagePane) contextLines(roster []workspace.AgentLine, kind string, th graph.Theme, label func(string) string, barW int) []string {
+	var agents []workspace.AgentLine
+	for _, r := range roster {
+		if r.Kind == kind {
+			agents = append(agents, r)
+		}
+	}
+	muted := lipgloss.NewStyle().Foreground(th.Subtle)
+	var lines []string
+	for _, r := range agents {
+		base, conv, deck, _, ok := r.ContextParts()
+		if !ok {
+			continue
+		}
+		pct, approx, _ := r.ContextPct()
+		status := fmt.Sprintf("%d%%", pct)
+		if approx {
+			status = "~" + status
+		}
+		tint := tone.Tint(kind)
+		parts := []graph.Part{
+			{Label: "base", Value: float64(base), Color: th.Subtle},
+			{Label: "chat", Value: float64(conv), Color: tint},
+			{Label: "deck", Value: float64(deck), Color: th.Accent},
+		}
+		w := max(1, barW-len(status)-1)
+		lines = append(lines, label("ctx")+graph.Stack(th, w, parts, float64(r.ContextWindow))+" "+status)
+
+		var legend []string
+		if len(agents) > 1 {
+			legend = append(legend, muted.Render(r.ID))
+		}
+		for _, part := range parts {
+			if part.Value <= 0 && part.Label != "chat" {
+				continue // not known (or none): no key for it
+			}
+			key := lipgloss.NewStyle().Foreground(part.Color).Render("■")
+			legend = append(legend, key+" "+muted.Render(part.Label+" "+graph.Compact(part.Value)))
+		}
+		lines = append(lines, label("")+ansi.Truncate(strings.Join(legend, "  "), barW, "…"))
+	}
+	return lines
 }
 
 // today is kind's tokens per hour today, or nil when it has none.

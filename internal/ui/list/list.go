@@ -41,6 +41,11 @@ type List struct {
 	totalHeightCache int
 	totalHeightValid bool
 
+	// heightGen changes whenever a cached item height, the item set, the
+	// width or the gap changes; offsetMemo is only good while it holds.
+	heightGen  uint64
+	offsetMemo offsetMemo
+
 	// cache is the F6 list-level render memo, keyed by item pointer.
 	// Each entry stores the rendered content, a pre-split slice of
 	// lines (so AtBottom / Render / VisibleItemIndices /
@@ -112,7 +117,17 @@ func (l *List) SetSize(width, height int) {
 
 // SetGap sets the gap between items.
 func (l *List) SetGap(gap int) {
+	if l.gap != gap {
+		l.heightsChanged()
+	}
 	l.gap = gap
+}
+
+// heightsChanged drops what was derived from the item heights: the cached
+// total height and the Offset memo.
+func (l *List) heightsChanged() {
+	l.totalHeightValid = false
+	l.heightGen++
 }
 
 // Gap returns the gap between items.
@@ -249,18 +264,71 @@ func (l *List) ScrollPosition() (offsetIdx, offsetLine int) {
 	return l.offsetIdx, l.offsetLine
 }
 
+// offsetMemo is the height of the items above idx (gaps included) and the
+// sum of their versions, as of heightGen gen.
+type offsetMemo struct {
+	ok       bool
+	gen      uint64
+	idx, sum int
+	versions uint64
+}
+
 // Offset returns the current scroll offset in lines from the top.
+//
+// The height above the first visible item is memoized and moved along
+// with the scroll, so a frame with a visible scrollbar renders (or looks
+// up) only the items scrolled past since the last call rather than every
+// item above the viewport. The memo holds while no cached height changed
+// and no item above it was bumped: versions only grow, so their sum
+// changes with any bump, and checking it reads one counter per item.
 func (l *List) Offset() int {
-	offset := 0
-	for idx := 0; idx < l.offsetIdx; idx++ {
-		item := l.getItem(idx)
-		offset += item.height
-		if l.gap > 0 && idx < len(l.items)-1 {
-			offset += l.gap
-		}
+	m := &l.offsetMemo
+	if m.ok && (m.gen != l.heightGen || m.idx > len(l.items) || l.versionsBelow(m.idx) != m.versions) {
+		m.ok = false
 	}
-	offset += l.offsetLine
-	return offset
+	if m.ok && m.idx > l.offsetIdx {
+		// Scrolled up: take the items scrolled past back out. Taking
+		// one out may render it; if that changed a height, what was
+		// added for it no longer matches, so start over.
+		gen := l.heightGen
+		for m.idx > l.offsetIdx {
+			m.idx--
+			m.sum -= l.heightWithGap(m.idx)
+			m.versions -= l.items[m.idx].Version()
+		}
+		m.ok = l.heightGen == gen
+	}
+	if !m.ok {
+		*m = offsetMemo{ok: true}
+	}
+	// Add the items scrolled past. Each height is read after its item
+	// rendered, so a height change here does not spoil the sum.
+	for m.idx < l.offsetIdx {
+		m.sum += l.heightWithGap(m.idx)
+		m.versions += l.items[m.idx].Version()
+		m.idx++
+	}
+	m.gen = l.heightGen
+	return m.sum + l.offsetLine
+}
+
+// versionsBelow sums the versions of the items above index n.
+func (l *List) versionsBelow(n int) uint64 {
+	var v uint64
+	for _, item := range l.items[:n] {
+		v += item.Version()
+	}
+	return v
+}
+
+// heightWithGap is the height of the item at idx plus the gap after it, for
+// an item above the viewport (which always has one after it).
+func (l *List) heightWithGap(idx int) int {
+	h := l.getItem(idx).height
+	if l.gap > 0 {
+		h += l.gap
+	}
+	return h
 }
 
 // lastOffsetItem returns the index and line offsets of the last item that can
@@ -371,7 +439,7 @@ func (l *List) renderItemEntry(idx int) *listCacheEntry {
 	// If the item's rendered height changed, the cached total height is
 	// no longer valid and must be recomputed on the next TotalHeight call.
 	if entry.height != height {
-		l.totalHeightValid = false
+		l.heightsChanged()
 	}
 	entry.width = l.width
 	entry.version = finalVersion
@@ -387,7 +455,7 @@ func (l *List) invalidateAll() {
 	for k := range l.cache {
 		delete(l.cache, k)
 	}
-	l.totalHeightValid = false
+	l.heightsChanged()
 }
 
 // Invalidate drops the cache entry for the given item, forcing a
@@ -660,7 +728,7 @@ func (l *List) PrependItems(items ...Item) {
 	if l.selectedIdx != -1 {
 		l.selectedIdx += len(items)
 	}
-	l.totalHeightValid = false
+	l.heightsChanged()
 }
 
 // SetItems sets the items in the list. Cache entries for items that
@@ -681,13 +749,13 @@ func (l *List) SetItems(items ...Item) {
 		return
 	}
 	l.retainCacheFor(items)
-	l.totalHeightValid = false
+	l.heightsChanged()
 }
 
 // AppendItems appends items to the list.
 func (l *List) AppendItems(items ...Item) {
 	l.items = append(l.items, items...)
-	l.totalHeightValid = false
+	l.heightsChanged()
 }
 
 // RemoveItem removes the item at the given index from the list.
@@ -720,7 +788,7 @@ func (l *List) RemoveItem(idx int) {
 		l.offsetIdx = max(0, len(l.items)-1)
 		l.offsetLine = 0
 	}
-	l.totalHeightValid = false
+	l.heightsChanged()
 }
 
 // Focused returns whether the list is focused.

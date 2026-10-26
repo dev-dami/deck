@@ -457,9 +457,6 @@ func applyScalarOption(c *Config, key string, value any) {
 // and no config that outranks the global data file sets any of the keys
 // (a project deckrc outranks it and cannot be inspected without running
 // it, so its presence alone sends the write down the reload path).
-// Load returns before snapshotting when no provider is configured (always,
-// for Deck), so the first write after startup still reloads; that reload
-// takes the snapshot later writes compare against.
 // Caller must hold writeMu.
 func (s *ConfigStore) canSkipReloadLocked(scope Scope, kv map[string]any) bool {
 	if scope != ScopeGlobal || len(kv) == 0 || len(s.trackedConfigPaths) == 0 || s.Config() == nil {

@@ -1,5 +1,5 @@
 import type { Link } from "@web/state";
-import { BarChart3, Command, Settings, Unplug, Users } from "lucide-react";
+import { BarChart3, Settings, Unplug, Users } from "lucide-react";
 import { cn } from "../lib/cn";
 import type { SettingsSection } from "../ui";
 import { Button } from "./kit/button";
@@ -15,9 +15,10 @@ const linkDot: Record<Link, string> = {
 const quiet =
   "flex shrink-0 cursor-pointer items-center gap-1.5 rounded px-1 text-2xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-// The sidebar's footer: Settings, Usage, Team, Commands and Close project,
-// then an update that waits, the connection and the teammates online. The
-// connection is a dot; its word shows when the sidebar is wider than 260px.
+// The sidebar's footer: Settings, Usage, Team and Close project (Search at
+// the top opens the commands), then an update that waits, the connection
+// and the teammates online. The connection is a dot and a word; the word
+// gives way when the footer is narrower than 15rem.
 export function SidebarFooter({
   link,
   settings,
@@ -28,7 +29,6 @@ export function SidebarFooter({
   onSettings,
   onUsage,
   onTeam,
-  onPalette,
   onDisconnect,
 }: {
   link: Link;
@@ -41,7 +41,6 @@ export function SidebarFooter({
   onSettings: (s: SettingsSection | null) => void;
   onUsage: () => void;
   onTeam: () => void;
-  onPalette: () => void;
   onDisconnect: () => void;
 }) {
   return (
@@ -54,9 +53,6 @@ export function SidebarFooter({
       </Button>
       <Button variant="ghost-muted" size="icon-sm" aria-label="Team" title="Team" aria-pressed={team} onClick={onTeam}>
         <Users />
-      </Button>
-      <Button variant="ghost-muted" size="icon-sm" aria-label="Commands" title="Commands" onClick={onPalette}>
-        <Command />
       </Button>
       <Button variant="ghost-muted" size="icon-sm" aria-label="Close project" title="Close project" onClick={onDisconnect}>
         <Unplug />
@@ -78,7 +74,7 @@ export function SidebarFooter({
         onClick={() => onSettings("connection")}
       >
         <span aria-hidden className={cn("dot size-1.5 shrink-0 rounded-full", linkDot[link])} />
-        <span className="sr-only @min-[260px]:not-sr-only">{LINK_LABEL[link]}</span>
+        <span className="sr-only @min-[15rem]:not-sr-only">{LINK_LABEL[link]}</span>
       </button>
       {online !== null && (
         <button

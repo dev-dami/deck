@@ -186,8 +186,9 @@ func (r *run) loop() {
 		case m.Method == turnEnded:
 			r.endTurn(m.Params)
 		case m.Method == notifySessionUpdate:
-			var p updateParams
-			if json.Unmarshal(m.Params, &p) != nil {
+			// Decoded once, on the client's read loop (decodeUpdate).
+			p, ok := m.Value.(*updateParams)
+			if !ok {
 				continue
 			}
 			r.mu.Lock()
@@ -200,7 +201,7 @@ func (r *run) loop() {
 				continue
 			}
 			r.trMu.Lock()
-			evs := r.tr.update(p.Update, m.Raw)
+			evs := r.tr.update(p.Update)
 			r.trMu.Unlock()
 			for _, e := range evs {
 				r.emit(e)
@@ -238,7 +239,7 @@ func (r *run) endTurn(params json.RawMessage) {
 	var te turnEnd
 	_ = json.Unmarshal(params, &te)
 	r.trMu.Lock()
-	evs := r.tr.flush(params)
+	evs := r.tr.flush()
 	u := r.tr.usage()
 	r.trMu.Unlock()
 	if te.Err != "" {
