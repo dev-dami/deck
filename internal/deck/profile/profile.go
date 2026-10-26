@@ -82,8 +82,25 @@ func IsReserved(name string) bool {
 // CheckName, that a mention can reach (letters, digits, "-" and "_"), that
 // is not reserved, an agent kind or a teammate's name; a kind among kinds;
 // a one-line role and voice; paths that are valid globs; and a plain
-// colour. Names compare case-insensitively.
+// colour. Names compare case-insensitively. Its errors match ErrInvalid
+// (errors.Is).
 func Validate(p Profile, kinds, teammates []string) error {
+	if err := validate(p, kinds, teammates); err != nil {
+		return invalid{err}
+	}
+	return nil
+}
+
+// ErrInvalid matches the errors of Validate: a profile that breaks a rule.
+var ErrInvalid = errors.New("invalid profile")
+
+// invalid is an error of Validate: its own message, matching ErrInvalid.
+type invalid struct{ error }
+
+func (e invalid) Unwrap() error      { return e.error }
+func (invalid) Is(target error) bool { return target == ErrInvalid }
+
+func validate(p Profile, kinds, teammates []string) error {
 	if err := CheckName(p.Name); err != nil {
 		return err
 	}

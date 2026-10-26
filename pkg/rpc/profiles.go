@@ -53,7 +53,7 @@ func (s *Server) SaveProfile(_ context.Context, r *deckv1.SaveProfileRequest) (*
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if err := ps.SaveProfile(p); err != nil {
-		if strings.Contains(err.Error(), "teammate") {
+		if errors.Is(err, profile.ErrInvalid) {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		return nil, refused(err)

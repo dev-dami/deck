@@ -131,7 +131,7 @@ func readProfiles(path, scope string, teammates []string) (out []profile.Profile
 func SaveProfile(cwd string, p profile.Profile, teammates []string) error {
 	p.Name, p.Kind = strings.TrimSpace(p.Name), strings.TrimSpace(p.Kind)
 	if p.Scope == "" {
-		return fmt.Errorf("profile %q needs a scope (global or project)", p.Name)
+		return fmt.Errorf("%w: %q needs a scope (global or project)", profile.ErrInvalid, p.Name)
 	}
 	if err := profile.Validate(p, deckconfig.Kinds, teammates); err != nil {
 		return err

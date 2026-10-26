@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,9 @@ func TestValidate(t *testing.T) {
 			err := Validate(p, kinds, []string{"alice"})
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("Validate(%+v) = %v, want %q", p, err, c.want)
+			}
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatalf("Validate(%+v) = %v, not ErrInvalid", p, err)
 			}
 		})
 	}
