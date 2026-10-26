@@ -668,8 +668,9 @@ p {
   overflow-x: clip;
 }
 .mega {
-  /* Headroom for the letters to stretch into. */
-  padding-top: calc(var(--mega-size) * 0.16);
+  /* Headroom for the letters to stretch into; --grow (set by Wordmark)
+     makes room for a stretch, so the page moves up rather than under it. */
+  padding-top: calc(var(--mega-size) * 0.16 + var(--grow, 0px));
   user-select: none;
   -webkit-user-select: none;
   -webkit-user-drag: none;
@@ -726,35 +727,6 @@ p {
 .mega:focus-visible {
   outline-offset: 6px;
 }
-/* The reveal: the footer waits fixed at the bottom of the window and the
-   page, opaque, slides up off it. Wordmark switches it on only where the
-   footer fits the window; without script the footer scrolls as usual. */
-html.reveal-foot body {
-  padding-bottom: var(--foot-h);
-}
-html.reveal-foot main {
-  position: relative;
-  z-index: 1;
-  background-color: var(--paper);
-  background-image: inherit;
-  box-shadow: 0 30px 50px -30px rgb(var(--shadow) / 0.35);
-}
-html.reveal-foot .foot {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 0;
-}
-
-/* The stretch follows the scroll: Wordmark (components.tsx) sets --stretch
-   from flat, as the word comes up over the cards, to full height at the
-   very bottom of the page, and back again on the way up. Without script,
-   or with reduced motion, the word stands at full height. */
-.mega {
-  transform: scaleY(var(--stretch, 1));
-}
-
 /* The hand of cards. Five old cards fan out from a pivot far below the
    page, so they lie along a shallow arc and their feet run off the bottom
    of the footer. The wordmark sits behind them and rises out of the hand

@@ -29,10 +29,11 @@ export function Command({ label, cmd }: { label?: string; cmd: string }) {
   );
 }
 
-// The footer wordmark, made of rubber. Each letter is a spring: it leans
-// taller under the pointer, stretches when you grab it and pull up (or
-// squashes when you push down), wobbles as the page scrolls past, and pulls
-// up when you keep scrolling at the very bottom. Let go and it snaps back.
+// The footer wordmark, made of rubber. The page scrolls to its end as any
+// page does; keep scrolling there (wheel, trackpad or a swipe) and the word
+// stretches up, pushing the page up with it, then springs back when you
+// stop. Each letter is a spring: it also leans taller under the pointer,
+// stretches when you grab it and pull up, and wobbles as the page goes by.
 export function Wordmark({ href, word }: { href: string; word: string }) {
   const root = useRef<HTMLAnchorElement>(null);
   const moved = useRef(false);
@@ -43,18 +44,23 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
     const parts = Array.from(el.querySelectorAll<HTMLElement>(".mega-letter, .mega-cursor"));
     const n = parts.length;
     const bar = n - 1; // the cursor stretches sideways, the letters upward
+    const doc = document.documentElement;
     const x = new Float64Array(n).fill(1);
     const v = new Float64Array(n);
     let centres: number[] = [];
+    let letterH = 0;
     let over = false;
     let px = 0.5;
     let dragging = false;
     let grab = 0.5;
     let startY = 0;
     let pull = 0;
-    let shove = 0;
-    let lastShove = 0;
+    // How far past the bottom of the page the reader has scrolled, in px.
+    let past = 0;
+    let lastPast = 0;
+    let touching = false;
     let touchY = 0;
+    let grown = 0;
     let lastScroll = window.scrollY;
     let visible = false;
     let raf = 0;
@@ -66,28 +72,43 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
         const b = p.getBoundingClientRect();
         return (b.left + b.width / 2 - r.left) / r.width;
       });
+      letterH = parts[0]?.offsetHeight ?? 0;
     };
-    const atBottom = () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
+    const atBottom = () => window.scrollY + window.innerHeight >= doc.scrollHeight - 2;
     // Soft limits: past them the rubber gets stiffer instead of stopping.
-    const soft = (t: number) => (t >= 1 ? 1 + 0.6 * Math.tanh((t - 1) / 0.6) : 1 - 0.4 * Math.tanh((1 - t) / 0.4));
+    const soft = (t: number) => (t >= 1 ? 1 + 1.5 * Math.tanh((t - 1) / 1.5) : 1 - 0.4 * Math.tanh((1 - t) / 0.4));
 
     const frame = (now: number) => {
       const dt = Math.min((now - last) / 1000, 1 / 30);
       last = now;
-      if (now - lastShove > 90) shove *= Math.exp(-dt * 9);
-      let busy = dragging || shove > 0.001;
+      // Stop pulling and the rubber goes back.
+      if (!touching && now - lastPast > 120) past *= Math.exp(-dt * 8);
+      if (past < 0.5) past = 0;
+      const stretch = 1.5 * Math.tanh(past / 650);
+      let busy = dragging || past > 0;
+      let tallest = 1;
       for (let i = 0; i < n; i++) {
         const d = centres[i] - (dragging ? grab : px);
         const near = Math.exp(-(d * d) / 0.05);
-        let t = 1 + shove * (0.75 + 0.25 * Math.sin(i * 1.7));
+        let t = 1 + stretch * (0.88 + 0.12 * Math.sin(i * 1.7));
         if (dragging) t += pull * (0.3 + 0.7 * near);
         else if (over) t += 0.14 * near;
-        if (i === bar) t = 1 + (t - 1) * 0.3;
+        if (i === bar) t = 1 + (t - 1) * 0.25;
         t = soft(t);
         v[i] += (240 * (t - x[i]) - 12 * v[i]) * dt;
         x[i] += v[i] * dt;
         if (Math.abs(v[i]) > 0.0005 || Math.abs(t - x[i]) > 0.0005) busy = true;
+        if (i !== bar) tallest = Math.max(tallest, x[i]);
         parts[i].style.transform = i === bar ? `scaleX(${x[i]})` : `scaleY(${x[i]})`;
+      }
+      // The footer grows with the tallest letter, so the stretch pushes the
+      // page up instead of drawing over it, and the page stays at its end.
+      const grow = Math.round((tallest - 1) * letterH);
+      if (grow !== grown) {
+        const pinned = atBottom();
+        grown = grow;
+        el.style.setProperty("--grow", `${grow}px`);
+        if (pinned) window.scrollTo({ top: doc.scrollHeight, behavior: "instant" });
       }
       raf = busy || over ? requestAnimationFrame(frame) : 0;
     };
@@ -112,7 +133,7 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
       if (dragging) {
         const dy = startY - e.clientY;
         if (Math.abs(dy) > 5) moved.current = true;
-        pull = (dy / r.height) * 1.6;
+        pull = (dy / Math.max(1, letterH)) * 1.6;
       }
       kick();
     };
@@ -132,78 +153,44 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
       pull = 0;
       kick();
     };
+    // Scrolling on at the bottom of the page pulls the word; scrolling back
+    // up lets it go at once.
     const onWheel = (e: WheelEvent) => {
-      if (!visible || e.deltaY <= 0 || !atBottom()) return;
-      shove = Math.min(0.3, shove + e.deltaY * 0.0008);
-      lastShove = performance.now();
+      if (!visible) return;
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      if (dy > 0 && atBottom()) past += dy;
+      else if (dy < 0 && past > 0) past = Math.max(0, past + dy * 3);
+      else return;
+      lastPast = performance.now();
       kick();
     };
     const onTouchStart = (e: TouchEvent) => {
       touchY = e.touches[0].clientY;
+      touching = true;
     };
     const onTouchMove = (e: TouchEvent) => {
       const dy = touchY - e.touches[0].clientY;
-      if (!visible || dy <= 0 || !atBottom()) return;
-      shove = Math.min(0.3, dy * 0.0015);
-      lastShove = performance.now();
+      if (!visible || !atBottom()) return;
+      past = Math.max(0, dy * 1.5);
+      lastPast = performance.now();
       kick();
     };
-    // The scroll stretch. Where the footer fits the window, the page slides
-    // up off it (html.reveal-foot): the footer stays put at the bottom, the
-    // hand shows first, and the word grows from flat to full height as the
-    // rest of the footer comes out from under the page. Where it does not
-    // fit, the footer scrolls in as usual and the word grows over the last
-    // stretch of the page. The stage is never transformed, so its box gives
-    // the baseline whatever the word's scale is.
-    const stage = el.parentElement;
-    const foot = el.closest<HTMLElement>(".foot");
-    const main = document.querySelector("main");
-    const doc = document.documentElement;
-    const layout = () => {
-      if (foot === null) return;
-      doc.style.setProperty("--foot-h", `${foot.offsetHeight}px`);
-      doc.classList.toggle("reveal-foot", foot.offsetHeight <= window.innerHeight);
-    };
-    const stretch = () => {
-      if (stage === null || foot === null || main === null) return;
-      const vh = window.innerHeight;
-      const hand = parseFloat(getComputedStyle(stage).paddingBottom);
-      let t: number;
-      if (doc.classList.contains("reveal-foot")) {
-        const shown = vh - main.getBoundingClientRect().bottom;
-        visible = shown > 0;
-        t = (shown - hand) / (foot.offsetHeight - hand);
-      } else {
-        const base = stage.getBoundingClientRect().bottom - hand;
-        const rest = doc.scrollHeight - (window.scrollY + vh);
-        // At the bottom of the page the baseline sits at base - rest.
-        const span = 0.95 * vh - (base - rest);
-        t = span <= 0 ? 1 : (0.95 * vh - base) / span;
-      }
-      t = Math.min(1, Math.max(0, t));
-      el.style.setProperty("--stretch", (0.05 + 0.95 * t).toFixed(4));
+    const onTouchEnd = () => {
+      touching = false;
+      lastPast = performance.now();
+      kick();
     };
     const onScroll = () => {
-      stretch();
       const dy = Math.max(-80, Math.min(80, window.scrollY - lastScroll));
       lastScroll = window.scrollY;
-      if (!visible) return;
+      if (!visible || past > 0) return;
       for (let i = 0; i < n; i++) v[i] += dy * 0.02 * (0.6 + (0.4 * i) / n);
       kick();
     };
 
-    const onResize = () => {
-      layout();
-      measure();
-      stretch();
-    };
-    layout();
     measure();
-    stretch();
     const io = new IntersectionObserver(([entry]) => {
-      // A revealed footer is always in the window, under the page; stretch()
-      // says when it shows.
-      visible = entry.isIntersecting && (!doc.classList.contains("reveal-foot") || visible);
+      visible = entry.isIntersecting;
       if (visible) {
         measure();
         kick();
@@ -219,8 +206,10 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
     window.addEventListener("wheel", onWheel, { passive: true });
     window.addEventListener("touchstart", onTouchStart, { passive: true });
     window.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("touchend", onTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", onTouchEnd, { passive: true });
     window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onResize);
+    window.addEventListener("resize", measure);
     return () => {
       cancelAnimationFrame(raf);
       io.disconnect();
@@ -233,9 +222,10 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("touchstart", onTouchStart);
       window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+      window.removeEventListener("touchcancel", onTouchEnd);
       window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onResize);
-      doc.classList.remove("reveal-foot");
+      window.removeEventListener("resize", measure);
     };
   }, []);
 
