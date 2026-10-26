@@ -21,28 +21,28 @@ const WORD: Record<Lane["status"], string> = {
   exited: "exited",
 };
 
-// Each lane is a capsule of clear glass on the sheet. The lane the timeline
-// shows alone is pressed: a brighter fill and the accent's ring.
+// Each lane is the agent as Deck draws it: its glyph in its hue and its
+// name, with no container. The glyph is lit while the agent works or asks
+// for something, and dimmed while it rests. The lane the timeline shows
+// alone is pressed: a fill of the selection behind it.
 const chipBase =
-  "liquid-clear relative flex h-7 max-w-60 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-muted-foreground text-xs outline-none transition-[background-color,color,box-shadow] hover:bg-selected hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-selected aria-pressed:text-foreground aria-pressed:ring-1 aria-pressed:ring-primary/60";
+  "relative flex h-7 max-w-60 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-selected aria-pressed:text-foreground";
 const chip = `lane ${chipBase}`;
 
-// The agent's state as a dot: it pulses while the agent works.
-const DOT: Record<Lane["status"], string> = {
+// Only a state that moves or asks gets a dot; it pulses while the agent works.
+const DOT: Partial<Record<Lane["status"], string>> = {
   working: "bg-signal animate-deck-pulse",
   waiting: "bg-warning",
   error: "bg-destructive",
-  idle: "bg-success/80",
-  exited: "border border-faint",
 };
 
 // The strip keeps to one line and folds lanes into "+N"; it wraps only for
 // lanes that never fold (pinnedLane), and then it grows in the flow.
 const LINES = 1;
-const GAP = 6;
+const GAP = 2;
 // The width of a chip not measured yet, and of "+N".
-const GUESS = 110;
-const MORE = 40;
+const GUESS = 100;
+const MORE = 36;
 
 // One line in the "+N" popover: a lane that did not fit.
 function FoldedLane({ lane, on, onFilter }: { lane: Lane; on: boolean; onFilter: () => void }) {
@@ -99,11 +99,17 @@ function AgentChip({
           }}
         >
           {lane.depth > 0 && <CornerDownRight aria-hidden className="-ml-0.5 size-3 shrink-0 text-faint" />}
-          <span aria-hidden className="grid size-3.5 shrink-0 place-items-center font-mono text-[11px] leading-none" style={{ color: colour }}>
+          <span
+            aria-hidden
+            className={cn("grid size-3.5 shrink-0 place-items-center font-mono text-[11px] leading-none", !running && (lane.status === "exited" ? "opacity-30" : "opacity-55"))}
+            style={{ color: colour }}
+          >
             {kindMark(theme, lane.agentKind) || "●"}
           </span>
-          <span className="lane-name truncate font-medium text-2xs text-foreground">{lane.name}</span>
-          <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", DOT[lane.status])} />
+          <span className={cn("lane-name truncate font-mono text-2xs", running ? "text-foreground" : lane.status === "exited" ? "text-faint" : "text-foreground/80")}>
+            {lane.name}
+          </span>
+          {DOT[lane.status] !== undefined && <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", DOT[lane.status])} />}
           {/* The word shows when the agent asks for something; else it is for
               the tooltip and screen readers. */}
           <span className={cn("lane-status shrink-0 text-2xs", lane.status === "waiting" || lane.status === "error" ? "text-warning-foreground" : "sr-only")}>
@@ -226,7 +232,7 @@ export function Lanes({
     // One line of chips under the toolbar, on the sheet with no rule of its own.
     <div
       ref={box}
-      className="lanes flex min-h-10 shrink-0 flex-wrap content-center items-center gap-1.5 px-4 pt-0.5 pb-2"
+      className="lanes flex min-h-9 shrink-0 flex-wrap content-center items-center gap-0.5 px-2 pb-1.5"
       role="toolbar"
       aria-label="Lanes"
       data-yolo-region=""
@@ -256,14 +262,14 @@ export function Lanes({
           >
             {l.kind === "you" ? (
               <span aria-hidden className="grid size-3.5 shrink-0 place-items-center">
-                <span className="size-2 rounded-full bg-foreground/70" />
+                <span className="size-1.5 rounded-full bg-foreground/60" />
               </span>
             ) : (
               <span aria-hidden className="grid size-3.5 shrink-0 place-items-center font-mono text-[11px] text-faint">
                 ◇
               </span>
             )}
-            <span className="lane-name truncate font-medium text-2xs text-foreground">{l.name}</span>
+            <span className="lane-name truncate font-mono text-2xs text-foreground/80">{l.name}</span>
             {l.kind === "mate" && <span className="lane-role text-2xs text-faint">{l.role}</span>}
           </button>
         ),

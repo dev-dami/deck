@@ -78,7 +78,7 @@ export function Toasts({ c, toasts }: { c: DeckClient; toasts: AppState["toasts"
             {acts.has(t.id) && (
               <button
                 type="button"
-                className="toast-action -my-0.5 h-6 shrink-0 cursor-pointer rounded-full bg-hover px-2.5 font-medium text-foreground text-xs outline-none transition-colors hover:bg-selected focus-visible:ring-2 focus-visible:ring-ring"
+                className="toast-action -my-0.5 h-6 shrink-0 cursor-pointer rounded-md px-1.5 font-medium text-info-foreground text-xs outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => {
                   acts.get(t.id)?.run();
                   dismiss(t.id);

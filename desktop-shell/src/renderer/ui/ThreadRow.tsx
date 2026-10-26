@@ -2,7 +2,7 @@ import type { Session, Theme } from "@web/protocol";
 import { sessionTitle } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
 import { relativeTime } from "@web/time";
-import { Archive, ArchiveRestore, CircleCheck, FileDiff, Folder, GitCompareArrows, type IconType, ShieldQuestion, Trash2 } from "./icons";
+import { Archive, ArchiveRestore, Folder, Trash2 } from "./icons";
 import { memo, useState } from "react";
 import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import type { RoomState, RoomStatus } from "../attention";
@@ -10,23 +10,30 @@ import { cn } from "../lib/cn";
 import type { RowStyle } from "../prefs";
 import { sameData } from "../select";
 
-// Each state is a dot or a small glyph at the row's leading edge; the word
-// stays for screen readers and the tooltip.
-const STATUS: Record<Exclude<RoomState, "idle">, { label: string; icon: IconType | null; className: string }> = {
-  working: { label: "Working", icon: null, className: "text-signal" },
-  "needs-you": { label: "Needs you", icon: ShieldQuestion, className: "text-warning" },
-  overlap: { label: "Overlap", icon: GitCompareArrows, className: "text-warning" },
-  review: { label: "To review", icon: FileDiff, className: "text-info-foreground" },
-  done: { label: "Done", icon: CircleCheck, className: "text-success" },
+// Each state is a dot at the row's leading edge, in the colour of what it
+// asks of you; the word is the row's second line, the tooltip and what a
+// screen reader says.
+const STATUS: Record<Exclude<RoomState, "idle">, { label: string; dot: string }> = {
+  working: { label: "Working", dot: "bg-signal animate-deck-pulse" },
+  "needs-you": { label: "Needs you", dot: "bg-warning" },
+  overlap: { label: "Overlap", dot: "bg-warning" },
+  review: { label: "To review", dot: "bg-info-foreground" },
+  done: { label: "Done", dot: "bg-success" },
 };
 
-// The agents that wrote in the thread, each glyph in its hue, as T3 Code
-// stacks provider icons. The room's short id stays in the room header.
-function RowIndex({ kinds, theme }: { kinds: string[]; theme: Theme | null }) {
+// The agents that wrote in the thread, each glyph in its hue: lit while
+// the room works, dimmed while it rests. The room's short id stays in the
+// room header.
+function RowIndex({ kinds, theme, live }: { kinds: string[]; theme: Theme | null; live: boolean }) {
   if (kinds.length === 0) return null;
   return (
     // It gives way to the row's hover actions, which sit over its end.
-    <span className="kind-stack inline-flex shrink-0 items-center font-mono text-2xs transition-opacity group-focus-within/sidebar-row:opacity-0 group-hover/sidebar-row:opacity-0">
+    <span
+      className={cn(
+        "kind-stack inline-flex shrink-0 items-center font-mono text-2xs transition-opacity group-focus-within/sidebar-row:opacity-0 group-hover/sidebar-row:opacity-0",
+        !live && "opacity-50",
+      )}
+    >
       {kinds.slice(0, 3).map((k) => (
         <span key={k} className="grid size-3.5 place-items-center" style={{ color: kindColour(k) }} title={k}>
           {kindMark(theme, k) || k.slice(0, 1)}
@@ -36,33 +43,23 @@ function RowIndex({ kinds, theme }: { kinds: string[]; theme: Theme | null }) {
   );
 }
 
-// A row's action on hover: a round glyph button.
+// A row's action on hover: a bare glyph that brightens.
 const rowAction =
-  "grid size-6 cursor-pointer place-items-center rounded-full text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+  "grid size-6 cursor-pointer place-items-center rounded-md text-faint outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-// The row's leading mark: its state, or the accent's dot while it is
-// unread. A row with neither keeps the space, so every title lines up.
-function Mark({ state, unread, label }: { state: Exclude<RoomState, "idle"> | null; unread: boolean; label: string }) {
+// The row's leading mark: its state's dot. A row at rest keeps the space,
+// so every title lines up.
+function Mark({ state, label }: { state: Exclude<RoomState, "idle"> | null; label: string }) {
   const st = state === null ? null : STATUS[state];
   return (
-    <span className="grid size-4 shrink-0 place-items-center">
-      {st !== null ? (
-        <span className={cn("grid place-items-center", st.className)} data-status={state} title={label || st.label}>
-          {st.icon === null ? (
-            <span aria-hidden className="size-2 animate-deck-pulse rounded-full bg-current shadow-[0_0_0_3px_color-mix(in_srgb,currentColor_22%,transparent)]" />
-          ) : (
-            <st.icon aria-hidden weight="fill" className="size-3.5" />
-          )}
+    <span className="grid size-3 shrink-0 place-items-center">
+      {st !== null && (
+        <span className="grid place-items-center" data-status={state} title={label || st.label}>
+          <span aria-hidden className={cn("size-1.5 rounded-full", st.dot)} />
           <span role="status" className="sr-only">
             {st.label}
           </span>
         </span>
-      ) : (
-        unread && (
-          <span className="size-1.5 rounded-full bg-primary" title="Unread">
-            <span className="sr-only">Unread</span>
-          </span>
-        )
       )}
     </span>
   );
@@ -129,9 +126,9 @@ export const ThreadRow = memo(function ThreadRow({
   // hover is a lighter wash. The radius nests in the sidebar's.
   const surface = cn(
     "session-main group/sidebar-row relative block w-full cursor-pointer overflow-hidden rounded-[10px] text-left outline-none transition-colors select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-    active ? "bg-selected text-foreground inset-shadow-hl" : "hover:bg-hover",
+    active ? "bg-selected text-foreground" : "hover:bg-hover",
   );
-  const mark = <Mark state={state} unread={unread && !active} label={label} />;
+  const mark = <Mark state={state} label={label} />;
   const title = renaming ? (
     <input
       autoFocus
@@ -167,7 +164,7 @@ export const ThreadRow = memo(function ThreadRow({
     <span className="relative flex h-5 min-w-6 shrink-0 items-center justify-end group-focus-within/sidebar-row:min-w-12 group-hover/sidebar-row:min-w-12">
       <span className="flex items-center text-2xs text-faint tabular-nums transition-opacity group-focus-within/sidebar-row:pointer-events-none group-focus-within/sidebar-row:opacity-0 group-hover/sidebar-row:pointer-events-none group-hover/sidebar-row:opacity-0">
         {digit !== null ? (
-          <span className="row-digit grid h-4.5 min-w-4.5 place-items-center rounded-[5px] bg-selected px-1 font-medium text-2xs text-foreground">{digit}</span>
+          <span className="row-digit font-medium text-2xs text-foreground">{digit}</span>
         ) : state === "needs-you" && s.pending > 1 ? (
           <span className="font-medium text-warning-foreground">{s.pending}</span>
         ) : (
@@ -179,7 +176,7 @@ export const ThreadRow = memo(function ThreadRow({
           <span className="flex items-center gap-0.5 text-xs">
             <button
               type="button"
-              className="h-5 cursor-pointer rounded-full bg-destructive/12 px-2 font-medium text-destructive-foreground hover:bg-destructive/20"
+              className="h-5 cursor-pointer px-1 font-medium text-destructive-foreground hover:underline"
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete();
@@ -189,7 +186,7 @@ export const ThreadRow = memo(function ThreadRow({
             </button>
             <button
               type="button"
-              className="h-5 cursor-pointer rounded-full px-1.5 text-muted-foreground hover:bg-hover hover:text-foreground"
+              className="h-5 cursor-pointer px-1 text-muted-foreground hover:text-foreground"
               onClick={(e) => {
                 e.stopPropagation();
                 setConfirm(false);
@@ -285,13 +282,13 @@ export const ThreadRow = memo(function ThreadRow({
             {mark}
             {title}
             {branchTag}
-            <RowIndex kinds={kinds} theme={theme} />
+            <RowIndex kinds={kinds} theme={theme} live={state === "working"} />
             {statusSlot}
           </div>
           {label !== "" && (
             <span
               className={cn(
-                "status-label -mt-0.5 truncate pb-0.5 pl-6 text-2xs text-faint",
+                "status-label -mt-0.5 truncate pb-0.5 pl-5 text-2xs text-faint",
                 showLabel ? "block" : "hidden group-focus-within/sidebar-row:block group-hover/sidebar-row:block",
               )}
             >
@@ -323,7 +320,7 @@ export const ThreadRow = memo(function ThreadRow({
                 {label !== "" ? label : s.last_text !== undefined && s.last_text !== "" ? s.last_text : `${s.mode} mode`}
               </span>
               {branchTag}
-              <RowIndex kinds={kinds} theme={theme} />
+              <RowIndex kinds={kinds} theme={theme} live={state === "working"} />
             </div>
           </div>
         </div>

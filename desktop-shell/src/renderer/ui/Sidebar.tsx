@@ -119,13 +119,11 @@ function HeaderButton({ label, onClick, children }: { label: string; onClick: ()
   );
 }
 
-// Deck's mark: the terminal prompt on a tile of the text colour.
+// Deck's mark: the terminal prompt, then the name. No tile; type does it.
 function Brand() {
   return (
-    <span className="flex min-w-0 items-center gap-2 font-semibold text-sm tracking-tight">
-      <span aria-hidden className="grid size-5 shrink-0 place-items-center rounded-md bg-foreground text-background shadow-card">
-        <TerminalIcon weight="bold" className="size-3" />
-      </span>
+    <span className="flex min-w-0 items-center gap-1.5 font-semibold text-sm tracking-tight">
+      <TerminalIcon aria-hidden weight="bold" className="size-3.5 shrink-0" />
       Deck
     </span>
   );
@@ -310,24 +308,16 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
       ) : (
         <>
           <div className="relative z-10 flex flex-col gap-0.5 px-2 pt-1 pb-2">
-            {/* Search is a field in the glass, as a Mac sidebar has it. */}
-            <button
-              type="button"
-              className="mb-1.5 flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-full bg-hover px-3 text-left text-muted-foreground text-sm outline-none transition-colors hover:bg-selected hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={actions.onPalette}
-            >
-              <Search className="size-4 shrink-0" />
+            <button type="button" className={navRow(false)} onClick={actions.onPalette}>
+              <Search />
               Search
-              <Kbd className="ml-auto h-4.5 rounded-full border-0 bg-transparent px-0 text-faint">{modKey(data.mac)}K</Kbd>
+              <Kbd className="ml-auto border-0 bg-transparent px-0 font-sans text-2xs text-faint">{modKey(data.mac)}K</Kbd>
             </button>
+            {/* What waits on you: the count in the warning's colour, no badge. */}
             <button type="button" aria-current={inbox ? "page" : undefined} className={cn("inbox-entry", navRow(inbox))} onClick={actions.onInbox}>
               <InboxIcon weight={inbox ? "fill" : "regular"} />
               Inbox
-              {data.inboxCount > 0 && (
-                <span className="inbox-count ml-auto grid h-4.5 min-w-4.5 place-items-center rounded-full bg-warning/15 px-1.5 font-medium text-2xs text-warning-foreground tabular-nums">
-                  {data.inboxCount}
-                </span>
-              )}
+              {data.inboxCount > 0 && <span className="inbox-count ml-auto font-medium text-2xs text-warning-foreground tabular-nums">{data.inboxCount}</span>}
             </button>
             <ProjectFilter
               filter={filter}

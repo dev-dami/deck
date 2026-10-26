@@ -32,7 +32,7 @@ const itemKey = (x: SidebarItem) => `${x.source}/${x.s.id}`;
 export const navRow = (on: boolean) =>
   cn(
     "flex h-8 w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-[10px] px-2.5 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-4 [&_svg]:shrink-0",
-    on ? "bg-selected font-medium text-foreground inset-shadow-hl" : "text-muted-foreground hover:bg-hover hover:text-foreground",
+    on ? "bg-selected font-medium text-foreground" : "text-muted-foreground hover:bg-hover hover:text-foreground",
   );
 
 // A section's heading in the sidebar: small, faint and set apart by space.
@@ -190,7 +190,7 @@ export function SharedGroup({ shared, open, onOpen }: { shared: SharedEntry[]; o
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "flex h-8 w-full cursor-pointer items-center gap-2 rounded-[10px] px-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  active ? "bg-selected text-foreground inset-shadow-hl" : "text-foreground/90 hover:bg-hover",
+                  active ? "bg-selected text-foreground" : "text-foreground/90 hover:bg-hover",
                 )}
                 onClick={() => onOpen(peer, thread)}
               >

@@ -1,24 +1,5 @@
-import {
-  BarChart3,
-  ChatCircle,
-  FolderPlus,
-  type IconProps,
-  Inbox,
-  Lightning,
-  Moon,
-  MonitorPlay,
-  PanelLeft,
-  PanelRight,
-  Quotes,
-  Search,
-  Settings,
-  SquarePen,
-  SquareTerminal,
-  Sun,
-  Unplug,
-  Users,
-} from "./icons";
-import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
+import { Search } from "./icons";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
 import { type Command, focusMessage, markMatch, plainSnippet, type MessageHit, type PaletteItem, type PaletteRoom, searchPalette, TEXT_MIN } from "../palette";
@@ -35,23 +16,6 @@ export interface SearchSource {
 // The pause after a keystroke before the Decks are asked.
 const SEARCH_MS = 150;
 
-// A command's glyph, by its id (palette.ts); a bolt for the rest.
-function commandIcon(id: string): ComponentType<IconProps> {
-  if (id === "new") return SquarePen;
-  if (id === "sidebar") return PanelLeft;
-  if (id === "panel" || id.startsWith("panel-")) return PanelRight;
-  if (id.startsWith("settings-")) return Settings;
-  if (id === "usage") return BarChart3;
-  if (id === "team") return Users;
-  if (id === "inbox" || id === "next-attention") return Inbox;
-  if (id === "terminal") return SquareTerminal;
-  if (id === "theme-light") return Sun;
-  if (id.startsWith("theme-")) return Moon;
-  if (id === "add-project") return FolderPlus;
-  if (id === "switch") return Unplug;
-  if (id.startsWith("preview-")) return MonitorPlay;
-  return Lightning;
-}
 
 // Ctrl/Cmd+K: type to filter, arrows to move, Enter to run, Escape to close.
 // It finds rooms of every open project by title, branch and the text of
@@ -151,18 +115,16 @@ export function Palette({
         </div>
         <ul role="listbox" className="overflow-y-auto border-hairline border-t p-2 empty:hidden">
           {shown.map((item, i) => {
-            const Icon = item.type === "action" ? commandIcon(item.c.id) : item.type === "room" ? ChatCircle : Quotes;
             return (
               <li
                 key={keyOf(item)}
                 role="option"
                 aria-selected={i === pick}
                 data-kind={item.type}
-                className={cn("flex min-h-10 cursor-pointer items-center gap-3 px-2.5 py-1.5 text-sm", i === pick && "on")}
+                className={cn("flex min-h-9 cursor-pointer items-center gap-3 px-3 py-1.5 text-sm", i === pick && "on")}
                 onMouseEnter={() => setPick(i)}
                 onClick={() => run(item)}
               >
-                <Icon aria-hidden weight={i === pick ? "fill" : "regular"} className="size-[18px] shrink-0 text-muted-foreground" />
                 {item.type === "action" ? (
                   <>
                     <span className="min-w-0 flex-1 truncate">{item.c.label}</span>
