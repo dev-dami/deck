@@ -167,7 +167,12 @@ export function Shell(props: ShellProps) {
   const away = ui.settings !== null || ui.usage || ui.team || ui.inbox;
 
   return (
-    <div className="shell relative flex h-full">
+    // The window is a backdrop with panels on it (docs/design-glass.md,
+    // section 4): an 8px gutter, the sidebar's glass, the room's sheet and
+    // the side panel's sheet beside it.
+    <div className="shell relative flex h-full gap-2 p-2">
+      {/* The gutter along the top drags the window, as a title bar would. */}
+      <div aria-hidden className="drag absolute inset-x-0 top-0 h-2" />
       {sidebar && (
         <Sidebar
           order={nav.order}
@@ -217,9 +222,10 @@ export function Shell(props: ShellProps) {
           }}
         />
       )}
-      {/* The room keeps 30rem; a widened panel gives way first. */}
-      <div className="flex min-w-[min(30rem,100%)] flex-1 flex-col bg-background">
-        <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      {/* The room's sheet, with the terminal drawer at its foot. It keeps
+          30rem; a widened panel gives way first. */}
+      <div className="room-sheet sheet relative flex min-w-[min(30rem,100%)] flex-1 flex-col overflow-hidden rounded-(--sheet-radius)">
+        <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
           {ui.inbox ? (
             <Inbox
               items={attention.items}

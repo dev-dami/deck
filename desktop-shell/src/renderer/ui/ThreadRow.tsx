@@ -2,7 +2,7 @@ import type { Session, Theme } from "@web/protocol";
 import { sessionTitle } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
 import { relativeTime } from "@web/time";
-import { Archive, ArchiveRestore, CircleCheck, FileDiff, Folder, GitCompareArrows, type IconType, ShieldQuestion, Trash2 } from "./icons";
+import { Archive, ArchiveRestore, Folder, Trash2 } from "./icons";
 import { memo, useState } from "react";
 import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import type { RoomState, RoomStatus } from "../attention";
@@ -10,26 +10,57 @@ import { cn } from "../lib/cn";
 import type { RowStyle } from "../prefs";
 import { sameData } from "../select";
 
-// Each state is a glyph; the word stays for screen readers and the tooltip.
-const STATUS: Record<Exclude<RoomState, "idle">, { label: string; icon: IconType | null; className: string }> = {
-  working: { label: "Working", icon: null, className: "text-signal" },
-  "needs-you": { label: "Needs you", icon: ShieldQuestion, className: "text-warning-foreground" },
-  overlap: { label: "Overlap", icon: GitCompareArrows, className: "text-warning-foreground" },
-  review: { label: "To review", icon: FileDiff, className: "text-info-foreground" },
-  done: { label: "Done", icon: CircleCheck, className: "text-success-foreground" },
+// Each state is a dot at the row's leading edge, in the colour of what it
+// asks of you; the word is the row's second line, the tooltip and what a
+// screen reader says.
+const STATUS: Record<Exclude<RoomState, "idle">, { label: string; dot: string }> = {
+  working: { label: "Working", dot: "bg-signal animate-deck-pulse" },
+  "needs-you": { label: "Needs you", dot: "bg-warning" },
+  overlap: { label: "Overlap", dot: "bg-warning" },
+  review: { label: "To review", dot: "bg-info-foreground" },
+  done: { label: "Done", dot: "bg-success" },
 };
 
-// The agents that wrote in the thread, as T3 Code stacks provider icons.
-// The room's short id stays in the room header.
-function RowIndex({ kinds, theme }: { kinds: string[]; theme: Theme | null }) {
+// The agents that wrote in the thread, each glyph in its hue: lit while
+// the room works, dimmed while it rests. The room's short id stays in the
+// room header.
+function RowIndex({ kinds, theme, live }: { kinds: string[]; theme: Theme | null; live: boolean }) {
+  if (kinds.length === 0) return null;
   return (
     // It gives way to the row's hover actions, which sit over its end.
-    <span className="kind-stack ml-auto inline-flex shrink-0 items-center gap-0.5 font-mono text-3xs transition-opacity group-focus-within/sidebar-row:opacity-0 group-hover/sidebar-row:opacity-0">
+    <span
+      className={cn(
+        "kind-stack inline-flex shrink-0 items-center font-mono text-2xs transition-opacity group-focus-within/sidebar-row:opacity-0 group-hover/sidebar-row:opacity-0",
+        !live && "opacity-50",
+      )}
+    >
       {kinds.slice(0, 3).map((k) => (
         <span key={k} className="grid size-3.5 place-items-center" style={{ color: kindColour(k) }} title={k}>
           {kindMark(theme, k) || k.slice(0, 1)}
         </span>
       ))}
+    </span>
+  );
+}
+
+// A row's action on hover: a bare glyph that brightens.
+const rowAction =
+  "grid size-6 cursor-pointer place-items-center rounded-md text-faint outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+
+// The row's leading mark: its state's dot. A row at rest keeps the space,
+// so every title lines up.
+function Mark({ state, label }: { state: Exclude<RoomState, "idle"> | null; label: string }) {
+  const st = state === null ? null : STATUS[state];
+  return (
+    <span className="grid size-3 shrink-0 place-items-center">
+      {st !== null && (
+        <span className="grid place-items-center" data-status={state} title={label || st.label}>
+          <span aria-hidden className={cn("size-1.5 rounded-full", st.dot)} />
+          <span role="status" className="sr-only">
+            {st.label}
+          </span>
+        </span>
+      )}
     </span>
   );
 }
@@ -89,26 +120,15 @@ export const ThreadRow = memo(function ThreadRow({
   const [renaming, setRenaming] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const state = status === undefined || status.state === "idle" ? null : status.state;
-  const st = state === null ? null : STATUS[state];
   const label = status?.label ?? "";
-  const recede = !active && state === null;
-  // The open thread is lifted one surface; hover is a white alpha.
+  const recede = !active && state === null && !unread;
+  // The open thread is a capsule of the selection, lit along its top edge;
+  // hover is a lighter wash. The radius nests in the sidebar's.
   const surface = cn(
-    "session-main group/sidebar-row relative block w-full cursor-pointer overflow-hidden rounded-md text-left outline-none transition-colors select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-    active
-      ? "bg-sidebar-row-active text-foreground inset-shadow-hl"
-      : recede
-        ? "text-muted-foreground hover:bg-sidebar-row-hover hover:text-foreground"
-        : "text-foreground hover:bg-sidebar-row-hover",
+    "session-main group/sidebar-row relative block w-full cursor-pointer overflow-hidden rounded-[10px] text-left outline-none transition-colors select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    active ? "bg-selected text-foreground" : "hover:bg-hover",
   );
-  // A working thread carries a 2px rail in the hue of an agent in it.
-  const rail = state === "working" && (
-    <span
-      aria-hidden
-      className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-current"
-      style={{ color: kinds[0] === undefined ? "var(--signal)" : kindColour(kinds[0]) }}
-    />
-  );
+  const mark = <Mark state={state} label={label} />;
   const title = renaming ? (
     <input
       autoFocus
@@ -131,44 +151,32 @@ export const ThreadRow = memo(function ThreadRow({
     <span
       className={cn(
         "session-title min-w-0 flex-1 truncate text-sm",
-        "font-normal",
-        active || unread ? "text-foreground" : recede ? "text-muted-foreground" : "text-foreground/90",
+        unread && !active ? "font-medium" : "font-normal",
+        active || unread ? "text-foreground" : recede ? "text-foreground/75 group-hover/sidebar-row:text-foreground" : "text-foreground/90",
       )}
     >
       {sessionTitle(s)}
     </span>
   );
+  // The row's end: its key while Ctrl/Cmd is held, how many asks wait, or
+  // how long ago it moved. Its actions take the place on hover.
   const statusSlot = (
-    <span className="relative ml-auto flex h-5 min-w-8 shrink-0 items-center justify-end text-xs">
-      <span
-        className={cn(
-          "flex items-center font-mono text-2xs text-faint transition-opacity group-focus-within/sidebar-row:pointer-events-none group-focus-within/sidebar-row:opacity-0 group-hover/sidebar-row:pointer-events-none group-hover/sidebar-row:opacity-0",
-        )}
-      >
+    <span className="relative flex h-5 min-w-6 shrink-0 items-center justify-end group-focus-within/sidebar-row:min-w-12 group-hover/sidebar-row:min-w-12">
+      <span className="flex items-center text-2xs text-faint tabular-nums transition-opacity group-focus-within/sidebar-row:pointer-events-none group-focus-within/sidebar-row:opacity-0 group-hover/sidebar-row:pointer-events-none group-hover/sidebar-row:opacity-0">
         {digit !== null ? (
-          <span className="row-digit font-mono text-2xs text-faint">{digit}</span>
-        ) : st !== null ? (
-          <span className={cn("inline-flex items-center gap-1", st.className)} data-status={state} title={label || st.label}>
-            {st.icon === null ? (
-              <span aria-hidden className="size-1.5 shrink-0 animate-deck-pulse rounded-full bg-current" />
-            ) : (
-              <st.icon aria-hidden className="size-3.5 shrink-0" />
-            )}
-            <span role="status" className="sr-only">
-              {st.label}
-            </span>
-            {state === "needs-you" && s.pending > 1 && <span>{s.pending}</span>}
-          </span>
+          <span className="row-digit font-medium text-2xs text-foreground">{digit}</span>
+        ) : state === "needs-you" && s.pending > 1 ? (
+          <span className="font-medium text-warning-foreground">{s.pending}</span>
         ) : (
           relativeTime(s.updated_at, now)
         )}
       </span>
       <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center opacity-0 transition-opacity group-focus-within/sidebar-row:pointer-events-auto group-focus-within/sidebar-row:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100">
         {confirm ? (
-          <span className="flex items-center gap-1 text-xs">
+          <span className="flex items-center gap-0.5 text-xs">
             <button
               type="button"
-              className="rounded px-1 text-destructive-foreground hover:underline"
+              className="h-5 cursor-pointer px-1 font-medium text-destructive-foreground hover:underline"
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete();
@@ -178,7 +186,7 @@ export const ThreadRow = memo(function ThreadRow({
             </button>
             <button
               type="button"
-              className="rounded px-1 text-muted-foreground hover:text-foreground"
+              className="h-5 cursor-pointer px-1 text-muted-foreground hover:text-foreground"
               onClick={(e) => {
                 e.stopPropagation();
                 setConfirm(false);
@@ -194,7 +202,7 @@ export const ThreadRow = memo(function ThreadRow({
                 type="button"
                 aria-label={`Unarchive ${sessionTitle(s)}`}
                 title="Unarchive thread"
-                className="inline-flex cursor-pointer items-center rounded-md px-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className={rowAction}
                 onClick={(e) => {
                   e.stopPropagation();
                   onUnarchive();
@@ -209,7 +217,7 @@ export const ThreadRow = memo(function ThreadRow({
                 aria-label={`Archive ${sessionTitle(s)}`}
                 title={archive === "on" ? "Archive thread" : "Stop its agents to archive it"}
                 aria-disabled={archive !== "on"}
-                className="inline-flex cursor-pointer items-center rounded-md px-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-disabled:cursor-default aria-disabled:opacity-40"
+                className={cn(rowAction, "aria-disabled:cursor-default aria-disabled:opacity-40")}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (archive === "on") onArchive();
@@ -222,7 +230,7 @@ export const ThreadRow = memo(function ThreadRow({
               type="button"
               aria-label={`Delete ${sessionTitle(s)}`}
               title="Delete thread"
-              className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 text-muted-foreground text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className={cn(rowAction, "-mr-1")}
               onClick={(e) => {
                 e.stopPropagation();
                 setConfirm(true);
@@ -269,18 +277,18 @@ export const ThreadRow = memo(function ThreadRow({
   if (variant === "compact") {
     return (
       <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id}>
-        <div {...common} className={cn(surface, "flex min-h-9 flex-col justify-center px-2.5 py-1")}>
-          {rail}
-          <div className="flex h-7 min-w-0 items-center gap-2">
+        <div {...common} className={cn(surface, "flex min-h-8 flex-col justify-center py-1 pr-2 pl-1.5")}>
+          <div className="flex h-6 min-w-0 items-center gap-2">
+            {mark}
             {title}
             {branchTag}
-            <RowIndex kinds={kinds} theme={theme} />
+            <RowIndex kinds={kinds} theme={theme} live={state === "working"} />
             {statusSlot}
           </div>
           {label !== "" && (
             <span
               className={cn(
-                "status-label -mt-1 truncate pb-0.5 text-2xs text-faint",
+                "status-label -mt-0.5 truncate pb-0.5 pl-5 text-2xs text-faint",
                 showLabel ? "block" : "hidden group-focus-within/sidebar-row:block group-hover/sidebar-row:block",
               )}
             >
@@ -294,29 +302,26 @@ export const ThreadRow = memo(function ThreadRow({
   return (
     <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id}>
       <div {...common} className={surface}>
-        {rail}
-        <div className={cn("relative px-2.5 py-2", hideProject ? "h-[3.625rem]" : "h-[4.875rem]")}>
-          {hideProject ? (
-            <div className="flex h-5 min-w-0 items-center gap-1.5">
+        <div className={cn("relative flex gap-2 py-2 pr-2 pl-1.5", hideProject ? "h-[3.625rem]" : "h-[4.875rem]")}>
+          <span className="flex h-5 shrink-0 items-center">{mark}</span>
+          <div className="flex min-w-0 flex-1 flex-col">
+            {!hideProject && (
+              <div className="flex h-4 min-w-0 items-center gap-1 text-2xs text-faint">
+                <Folder className="size-3 shrink-0" />
+                <span className="min-w-0 truncate">{project}</span>
+              </div>
+            )}
+            <div className={cn("flex h-5 min-w-0 items-center gap-1.5", !hideProject && "mt-0.5")}>
               {title}
               {statusSlot}
             </div>
-          ) : (
-            <div className="flex h-5 min-w-0 items-center gap-1.5">
-              <Folder className="size-3.5 shrink-0 text-muted-foreground/70" />
-              <span className="min-w-0 flex-1 truncate text-2xs text-faint">
-                {project}
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
+              <span className={cn("min-w-0 flex-1 truncate text-faint", label !== "" && "status-label text-2xs")}>
+                {label !== "" ? label : s.last_text !== undefined && s.last_text !== "" ? s.last_text : `${s.mode} mode`}
               </span>
-              {statusSlot}
+              {branchTag}
+              <RowIndex kinds={kinds} theme={theme} live={state === "working"} />
             </div>
-          )}
-          {!hideProject && <div className="mt-1 flex min-w-0">{title}</div>}
-          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
-            <span className={cn("min-w-0 flex-1 truncate text-faint", label !== "" && "status-label text-2xs")}>
-              {label !== "" ? label : s.last_text !== undefined && s.last_text !== "" ? s.last_text : `${s.mode} mode`}
-            </span>
-            {branchTag}
-            <RowIndex kinds={kinds} theme={theme} />
           </div>
         </div>
       </div>
