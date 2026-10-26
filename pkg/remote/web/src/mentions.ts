@@ -112,9 +112,9 @@ export function pickerAt(text: string, caret: number, files: boolean, names = tr
 const busyDetail = (l: AgentLine): string =>
   [l.role ?? "", l.kind, l.busy ? "busy" : ""].filter((x) => x !== "").join(" · ");
 
-// What sigil + query can name: the thread's members, each kind (and kind+,
-// and kind* when it has more than one member), then for "@" the profiles
-// with no member yet and the teammates, then "all". Filtered by prefix,
+// What sigil + query can name: the thread's members; for "@" the profiles
+// with no member yet and the teammates; each kind (and kind+, and kind*
+// when it has more than one member); then "all". Filtered by prefix,
 // case-insensitively, each once.
 export function suggestions(
   query: string,
@@ -138,18 +138,7 @@ export function suggestions(
     const name = at ? l.name || l.id : l.id;
     out.push({ insert: `${sigil}${name}`, label: name, detail: busyDetail(l), kind: l.kind });
   }
-  for (const k of allKinds) {
-    const members = roster.filter((l) => l.kind === k).length;
-    out.push({
-      insert: `${sigil}${k}`,
-      label: k,
-      detail: members === 0 ? `start ${k}` : `a free ${k}`,
-      kind: k,
-    });
-    out.push({ insert: `${sigil}${k}+`, label: `${k}+`, detail: `start another ${k}`, kind: k });
-    if (members > 1)
-      out.push({ insert: `${sigil}${k}*`, label: `${k}*`, detail: `every ${k}`, kind: k });
-  }
+  // "@" talks to someone: the named come before the kinds.
   if (at) {
     const taken = new Set(roster.flatMap((l) => [l.name.toLowerCase(), l.id.toLowerCase()]));
     for (const p of profiles) {
@@ -164,6 +153,18 @@ export function suggestions(
     }
     for (const p of people)
       out.push({ insert: `@${p.name}`, label: p.name, detail: p.role || "teammate", kind: null });
+  }
+  for (const k of allKinds) {
+    const members = roster.filter((l) => l.kind === k).length;
+    out.push({
+      insert: `${sigil}${k}`,
+      label: k,
+      detail: members === 0 ? `start ${k}` : `a free ${k}`,
+      kind: k,
+    });
+    out.push({ insert: `${sigil}${k}+`, label: `${k}+`, detail: `start another ${k}`, kind: k });
+    if (members > 1)
+      out.push({ insert: `${sigil}${k}*`, label: `${k}*`, detail: `every ${k}`, kind: k });
   }
   if (roster.length > 1)
     out.push({ insert: `${sigil}all`, label: "all", detail: "every agent", kind: null });

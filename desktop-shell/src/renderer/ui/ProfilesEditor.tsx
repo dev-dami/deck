@@ -280,14 +280,33 @@ function ProfileDialog({
           void save();
         }}
       >
-        {/* How the roster will show it: glyph, name and role. */}
-        <p className="profile-preview flex h-6 min-w-0 items-baseline gap-2 text-[13px]" aria-label="Preview">
-          <Glyph p={p} theme={theme} className="self-center" />
-          <span className="shrink-0 font-semibold" style={{ color: hueOf(p) }}>
-            {name || "name"}
-          </span>
-          <span className="min-w-0 truncate text-faint text-xs">{p.role.trim() || "no role"}</span>
-        </p>
+        <div className="flex min-h-7 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          {/* How the roster will show it: glyph, name and role. */}
+          <p className="profile-preview flex min-w-0 flex-1 items-baseline gap-2 text-[13px]" aria-label="Preview">
+            <Glyph p={p} theme={theme} className="self-center" />
+            <span className="shrink-0 font-semibold" style={{ color: hueOf(p) }}>
+              {name || "name"}
+            </span>
+            <span className="min-w-0 truncate text-faint text-xs">{p.role.trim() || "no role"}</span>
+          </p>
+          {/* A new profile picks its deck.json; a saved one stays in its own. */}
+          {isNew && (
+            <div className={segmentTrack()} role="radiogroup" aria-label="Keep it for">
+              {(["project", "global"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  role="radio"
+                  aria-checked={p.scope === s}
+                  className={segmentItem({ on: p.scope === s })}
+                  onClick={() => set("scope", s)}
+                >
+                  {s === "project" ? "This project" : "Every project"}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
           <Field id={`${id}-name`} label="Name" error={shown("name")} hint={nameHint}>
             <input
@@ -400,27 +419,6 @@ function ProfileDialog({
             onBlur={leave("paths")}
           />
         </Field>
-        {isNew && (
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-medium text-xs" id={`${id}-scope`}>
-              Keep it for
-            </span>
-            <div className={segmentTrack()} role="radiogroup" aria-labelledby={`${id}-scope`}>
-              {(["project", "global"] as const).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  role="radio"
-                  aria-checked={p.scope === s}
-                  className={segmentItem({ on: p.scope === s })}
-                  onClick={() => set("scope", s)}
-                >
-                  {s === "project" ? "This project" : "Every project"}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
         {refused !== null && (
           <p className="profile-refused text-pretty text-destructive-foreground text-xs" role="alert">
             {refused}

@@ -131,12 +131,15 @@ describe("the @ picker: agents and people", () => {
     expect(nameAt("@ch now", 7)).toBeNull();
   });
 
-  test("lists members by name, kinds, profiles, then people, with @", () => {
+  test("lists members by name, profiles, people, then the kinds, with @", () => {
     const named = [line("claude-1", "claude", true), line("claude-2", "claude"), line("codex-1", "codex", false, { name: "rev", role: "reviewer", profile: "rev" })];
     expect(suggestions("", named, kinds, { sigil: "@", profiles, people }).map((s) => s.insert)).toEqual([
       "@claude-1",
       "@claude-2",
       "@rev",
+      "@charles",
+      "@ada",
+      "@alice",
       "@claude",
       "@claude+",
       "@claude*",
@@ -144,9 +147,6 @@ describe("the @ picker: agents and people", () => {
       "@codex+",
       "@opencode",
       "@opencode+",
-      "@charles",
-      "@ada",
-      "@alice",
       "@all",
     ]);
   });

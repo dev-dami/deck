@@ -373,7 +373,8 @@ export function Composer({
                 </span>
               )}
               <span
-                className="suggest-insert min-w-0 truncate font-medium font-mono text-code"
+                // text-code would also set the colour: --color-code is a fill.
+                className="suggest-insert min-w-0 truncate font-medium font-mono text-(length:--text-code) text-foreground"
                 style={{ color: suggestionHue(s, kindColour) }}
               >
                 {picker.type === "$" ? s.insert : s.label}

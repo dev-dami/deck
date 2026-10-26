@@ -72,17 +72,17 @@ describe("the lists", () => {
     expect(suggestions("", roster, kinds).map((s) => s.insert)).toContain("$codex-1");
   });
 
-  test("profiles with no member and people come after the kinds", () => {
+  test("profiles with no member and people come before the kinds", () => {
     const s = suggestions("", [], ["claude"], {
       sigil: "@",
       profiles: [{ name: "charles", kind: "claude", role: "reviewer" }],
       people: [{ name: "alice" }],
     });
     expect(s.map((x) => [x.insert, x.detail, x.kind])).toEqual([
-      ["@claude", "start claude", "claude"],
-      ["@claude+", "start another claude", "claude"],
       ["@charles", "reviewer", "claude"],
       ["@alice", "teammate", null],
+      ["@claude", "start claude", "claude"],
+      ["@claude+", "start another claude", "claude"],
     ]);
   });
 
