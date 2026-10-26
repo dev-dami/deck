@@ -95,7 +95,7 @@ export function BranchPicker({ git, project, onError }: { git: Git; project: Pro
       trigger={
         <button
           type="button"
-          className="branch-picker flex h-6 min-w-0 max-w-64 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground/80 text-xs hover:bg-accent hover:text-foreground aria-expanded:bg-accent"
+          className="branch-picker flex h-6 min-w-0 max-w-64 cursor-pointer items-center gap-1.5 rounded-full px-2 text-muted-foreground text-xs tabular-nums outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-selected aria-expanded:text-foreground"
           aria-expanded={open}
           aria-label={`Branch ${st.branch || "detached"}`}
           title={st.upstream === "" ? "Not pushed yet" : `Tracks ${st.upstream}`}
@@ -120,13 +120,13 @@ export function BranchPicker({ git, project, onError }: { git: Git; project: Pro
         </button>
       }
     >
-      <div className="border-b p-1.5">
+      <div className="border-hairline border-b p-1.5">
         <input
           autoFocus
           aria-label="Find or create a branch"
           placeholder="Find or create a branch…"
           value={q}
-          className="h-8 w-full rounded-md bg-transparent px-2 text-sm outline-none transition-shadow placeholder:text-faint focus-visible:ring-2 focus-visible:ring-ring"
+          className="h-8 w-full rounded-[9px] bg-transparent px-2 text-sm outline-none transition-shadow placeholder:text-faint focus-visible:ring-2 focus-visible:ring-ring"
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
             if (e.key !== "Enter") return;
@@ -319,19 +319,22 @@ export function GitActions({
 
   return (
     <>
-      <div className="git-actions flex items-center">
+      {/* It sits in a capsule of the toolbar: the pull request, then the next
+          step and the menu as one split button of borderless halves. */}
+      <div className="git-actions relative flex items-center gap-0.5">
         {pr !== null && (
           <a
             href={pr.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="mr-1 flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs hover:bg-accent"
+            className="flex h-7 items-center gap-1 rounded-full px-2 text-xs tabular-nums outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
             title={`${pr.title}${checks === null ? "" : ` · ${checks.label}`}`}
           >
             {pr.state === "MERGED" ? <GitMerge className="size-3.5 text-[#a371f7]" /> : <GitPullRequest className={cn("size-3.5", checks?.className ?? "text-success-foreground")} />}
             #{pr.number}
           </a>
         )}
+        {pr !== null && <span aria-hidden className="h-4 w-px bg-hairline-strong" />}
         <Popover
           open={menu}
           onClose={() => setMenu(false)}
@@ -341,22 +344,24 @@ export function GitActions({
           trigger={
             <div className="flex items-center">
               {next !== null && (
-                <Button variant="outline" size="sm" className="rounded-r-none border-r-0 font-normal" disabled={busy} onClick={next.run}>
+                <Button variant="ghost" size="sm" className="gap-1.5 rounded-r-[6px] px-2.5 font-normal" disabled={busy} onClick={next.run}>
                   {busy ? <Loader2 className="animate-spin" /> : next.icon}
                   <span className="sr-only @3xl/top:not-sr-only">{busy ? git.working : next.label}</span>
                 </Button>
               )}
+              {next !== null && <span aria-hidden className="mx-px h-4 w-px bg-hairline-strong" />}
               <Button
-                variant="outline"
+                variant="ghost-muted"
                 size="sm"
-                className={cn("font-normal", next !== null ? "rounded-l-none px-1.5" : "")}
+                className={cn("gap-1.5 font-normal", next !== null ? "rounded-l-[6px] px-1.5" : "px-2.5")}
                 aria-label="Git actions"
                 aria-expanded={menu}
+                aria-pressed={menu}
                 onClick={() => setMenu((m) => !m)}
               >
                 {next === null && (busy ? <Loader2 className="animate-spin" /> : <GitBranch />)}
                 {next === null && <span className="sr-only @3xl/top:not-sr-only">{busy ? git.working : "Git"}</span>}
-                <ChevronDown className="size-3.5" />
+                <ChevronDown className="size-3" />
               </Button>
             </div>
           }

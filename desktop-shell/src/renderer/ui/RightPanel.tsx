@@ -283,8 +283,9 @@ export function RightPanel({
   return (
     <aside
       className={cn(
-        // Below 1100px the panel floats over the room, which keeps its width.
-        "panel flex shrink-0 flex-col border-l bg-background max-[1100px]:absolute max-[1100px]:inset-y-0 max-[1100px]:right-0 max-[1100px]:z-30 max-[1100px]:max-w-[calc(100%-3rem)] max-[1100px]:shadow-popover",
+        // A sheet beside the room. Below 1100px it floats over the room as
+        // thick glass (styles.css, Shell), and the room keeps its width.
+        "panel sheet flex shrink-0 flex-col overflow-hidden rounded-(--sheet-radius) max-[1100px]:absolute max-[1100px]:inset-y-3 max-[1100px]:right-3 max-[1100px]:z-30 max-[1100px]:max-w-[calc(100%-4rem)]",
         wide ? "w-[min(60vw,900px)] min-w-[480px] shrink" : "w-[480px]",
       )}
       aria-label="Side panel"
