@@ -96,26 +96,27 @@ export function glyphFor(tile: Tile, size: number): Glyph {
 // sharp.
 function microGlyph(tile: Tile): Glyph {
   const w = tile.w;
-  const stroke = Math.max(2, Math.round(w * 0.13));
+  const stroke = Math.max(2, Math.round(w * 0.15));
   const r = stroke / 2;
   const snap = (v: number) => (stroke % 2 === 0 ? Math.round(v) : Math.floor(v) + 0.5);
   // The chevron's arms run at 45°: half its height is its depth.
-  const half = Math.max(3, Math.round(w * 0.25));
-  const cx = tile.x + Math.max(2, Math.round(w * 0.19)) + r;
+  const half = Math.max(3, Math.round(w * 0.22));
+  const cx = snap(tile.x + w * 0.27 + r);
+  const cy = tile.y + w / 2;
   const tipX = cx + half;
-  const top = snap(tile.y + w / 2 - half);
+  const top = snap(cy - half);
   const bottom = top + half * 2;
   const mid = top + half;
-  // The cursor sits on the chevron's baseline, a pixel or more past its tip.
-  const barY = snap(bottom - r);
-  const barX1 = tipX + r + Math.max(1, Math.round(w * 0.06)) + r;
-  const barX2 = Math.max(barX1 + 1, tile.x + w - Math.max(1, Math.round(w * 0.12)) - r);
+  // The cursor: a short bar low on the right, a pixel or more past the tip.
+  const barY = snap(tile.y + w * 0.66);
+  const barX1 = tipX + Math.max(1, Math.round(w * 0.1)) + r;
+  const barX2 = Math.min(tile.x + w - Math.max(2, Math.round(w * 0.16)) - r, barX1 + Math.max(2, Math.round(w * 0.16)));
   return {
     chevron: [
       { ax: cx, ay: top, bx: tipX, by: mid, r },
       { ax: tipX, ay: mid, bx: cx, by: bottom, r },
     ],
-    cursor: { ax: barX1, ay: barY, bx: barX2, by: barY, r },
+    cursor: { ax: barX1, ay: barY, bx: barX2, by: barY, r: r * 0.9 },
   };
 }
 
@@ -185,12 +186,9 @@ export function dotRadius(tone: number, cell: number): number {
   return cell * Math.sqrt(t / Math.PI) * (t > 0.78 ? 1 + (t - 0.78) * 0.9 : 1);
 }
 
-// The cross-stitch chart of the mark, as a pattern book would print it, on
-// a grid of STITCH_GRID cells across the tile. Sampling the curved mark
-// onto the grid gives ragged steps, so the chart is drawn by hand: the
-// chevron's arms are three stitches wide and step one column a row (45°),
-// over eleven rows; the cursor is two rows of five on its baseline.
-export const STITCH_GRID = 23;
+// The cross-stitch grid: 25 cells across the tile at 256px and up, 19 at
+// 128px, where finer stitches would blur.
+export const stitchGrid = (size: number): number => (size >= 256 ? 25 : 19);
 
 export interface StitchCell {
   col: number;
@@ -198,16 +196,17 @@ export interface StitchCell {
   part: "chevron" | "cursor";
 }
 
-export function stitchChart(): StitchCell[] {
+// The cross-stitch chart of the mark: every cell of an n × n grid over the
+// tile whose centre the mark covers, or nearly covers, gets a stitch, so
+// the mark comes out in the steps a stitcher would count.
+export function stitchCells(tile: Tile, g: Glyph, n: number): StitchCell[] {
+  const cell = tile.w / n;
   const out: StitchCell[] = [];
-  const left = 5;
-  const top = 6;
-  for (let k = 0; k <= 10; k++) {
-    const start = left + 5 - Math.abs(k - 5);
-    for (let c = 0; c < 3; c++) out.push({ col: start + c, row: top + k, part: "chevron" });
-  }
-  for (const row of [top + 8, top + 9]) {
-    for (let c = 0; c < 5; c++) out.push({ col: left + 8 + c, row, part: "cursor" });
+  for (let row = 0; row < n; row++) {
+    for (let col = 0; col < n; col++) {
+      const part = partAt(g, tile.x + (col + 0.5) * cell, tile.y + (row + 0.5) * cell, cell * 0.12);
+      if (part !== null) out.push({ col, row, part });
+    }
   }
   return out;
 }

@@ -13,8 +13,8 @@ import {
   dotRadius,
   screenPoints,
   seeded,
-  STITCH_GRID,
-  stitchChart,
+  stitchCells,
+  stitchGrid,
   type Tier,
   type Tile,
   tierFor,
@@ -337,11 +337,12 @@ function drawRiso(s: Scene, ground: "black" | "paper"): void {
   const ink = paper ? "#fa3d9f" : RISO_PINK;
   if (tier === "full") {
     grain(s, 11, 0.06, paper ? "rgba(255, 255, 255, 0.5)" : "rgba(255, 255, 255, 0.045)", paper ? "rgba(120, 100, 80, 0.12)" : "rgba(0, 0, 0, 0.3)");
-    // The second impression slipped down and to the right; the first is
-    // solid at the top of the mark and opens into dots toward its foot.
-    const slip = { x: tile.w * 0.02, y: tile.w * 0.013 };
-    halftone(s, ink, slip, 75, () => 0.26, 23);
-    halftone(s, ink, { x: 0, y: 0 }, 45, (t) => 1.12 - t * 0.78, 5);
+    // The second impression slipped down and to the right, light; the first
+    // is dense at the top of the chevron and opens toward its foot, the
+    // cursor an even mid tone.
+    const slip = { x: tile.w * 0.018, y: tile.w * 0.012 };
+    halftone(s, ink, slip, 75, () => 0.3, 23);
+    halftone(s, ink, { x: 0, y: 0 }, 15, (part, t) => (part === "chevron" ? 0.98 - t * 0.42 : 0.82), 5);
     return;
   }
   ctx.save();
@@ -360,29 +361,32 @@ function drawRiso(s: Scene, ground: "black" | "paper"): void {
 }
 
 // One impression of the mark as a halftone screen: dots on a grid turned
-// by angle, sized by tone(t) where t runs from the top of the mark (0) to
-// its bottom (1), and kept to the mark's shape moved by slip. The drum
-// leaves specks where the ink did not take.
-function halftone(s: Scene, ink: string, slip: { x: number; y: number }, angle: number, tone: (t: number) => number, seed: number): void {
+// by angle, sized by tone(part, t) where t runs from the top of the mark
+// (0) to its bottom (1), a little uneven as a drum prints them, and kept
+// to the mark's shape moved by slip.
+function halftone(
+  s: Scene,
+  ink: string,
+  slip: { x: number; y: number },
+  angle: number,
+  tone: (part: "chevron" | "cursor", t: number) => number,
+  seed: number,
+): void {
   const { ctx, glyph, tile, size } = s;
-  const cell = Math.max(3.2, tile.w / 70);
+  const cell = Math.max(3.4, tile.w / 64);
   const b = glyphBounds(glyph);
   const box = { x1: b.x1 + slip.x, y1: b.y1 + slip.y, x2: b.x2 + slip.x, y2: b.y2 + slip.y };
   const rand = seeded(seed);
   const l = s.layer(size, size);
   l.fillStyle = ink;
   for (const p of screenPoints(box, cell, angle)) {
-    const r = dotRadius(tone((p.y - box.y1) / (box.y2 - box.y1)), cell) * (0.96 + rand() * 0.08);
-    if (r < 0.35) continue;
+    const t = (p.y - box.y1) / (box.y2 - box.y1);
+    // Right of the chevron's tip and down at the bar: the cursor.
+    const inCursor = p.x - slip.x > (glyph.cursor.ax + glyph.chevron[0].bx) / 2 && p.y - slip.y > glyph.cursor.ay - glyph.cursor.r * 2;
+    const r = dotRadius(tone(inCursor ? "cursor" : "chevron", t), cell) * (0.88 + rand() * 0.24);
+    if (r < 0.3) continue;
     l.beginPath();
     l.arc(p.x, p.y, r, 0, Math.PI * 2);
-    l.fill();
-  }
-  l.globalCompositeOperation = "destination-out";
-  const specks = Math.round(((box.x2 - box.x1) * (box.y2 - box.y1)) / (cell * cell * 6));
-  for (let i = 0; i < specks; i++) {
-    l.beginPath();
-    l.arc(box.x1 + rand() * (box.x2 - box.x1), box.y1 + rand() * (box.y2 - box.y1), cell * (0.08 + rand() * 0.14), 0, Math.PI * 2);
     l.fill();
   }
   l.globalCompositeOperation = "destination-in";
@@ -429,7 +433,7 @@ function drawStitch(s: Scene, cloth: "linen" | "denim"): void {
     if (size >= 48) runningStitch(s, c.edge);
     return;
   }
-  const n = STITCH_GRID;
+  const n = stitchGrid(size);
   const cell = tile.w / n;
   // Aida cloth: blocks of thread with a hole at each corner, where the
   // needle goes through.
@@ -439,11 +443,11 @@ function drawStitch(s: Scene, cloth: "linen" | "denim"): void {
   for (let i = 1; i < n; i++) {
     for (let j = 1; j < n; j++) {
       ctx.beginPath();
-      ctx.arc(tile.x + i * cell, tile.y + j * cell, cell * 0.1, 0, Math.PI * 2);
+      ctx.arc(tile.x + i * cell, tile.y + j * cell, cell * 0.09, 0, Math.PI * 2);
       ctx.fill();
     }
   }
-  const cells = stitchChart();
+  const cells = stitchCells(tile, glyph, n);
   const rand = seeded(17);
   // Each cross: the under-stitch from bottom left to top right, then the
   // top stitch across it, each a strand with a shadow and a sheen.
@@ -496,7 +500,7 @@ function weave(s: Scene, colour: string, cloth: "linen" | "denim", pitch: number
   ctx.lineWidth = Math.max(0.5, pitch * 0.18);
   ctx.beginPath();
   if (cloth === "linen") {
-    for (let v = tile.x + pitch; v < tile.x + tile.w; v += pitch) {
+    for (let v = tile.x + pitch / 2; v < tile.x + tile.w; v += pitch) {
       ctx.moveTo(v, tile.y);
       ctx.lineTo(v, tile.y + tile.w);
       ctx.moveTo(tile.x, v - tile.x + tile.y);
