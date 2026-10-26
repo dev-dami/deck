@@ -6,12 +6,14 @@ import (
 	"github.com/dev-dami/deck/internal/workspace"
 )
 
-// instanceItems are the $ popup rows about who, not which model: for a kind
-// with several live members in the session, one row per member ($claude2) and
-// one for all of them ($claude*); for every kind with a live member, one that
-// starts another ($claude+). Lines are the session's roster; an empty
-// session (whose roster lists the installed CLIs as "ready") has none.
-func instanceItems(lines []workspace.AgentLine) []completions.AgentItem {
+// instanceItems are the @ popup rows about who, not which model: for a kind
+// with several live members in the session, one row per member (@claude2,
+// with its role when it came from a profile) and one for all of them
+// (@claude*); for every kind with a live member, one that starts another
+// (@claude+). sigil is "@" or "$", whichever opened the popup. Lines are
+// the session's roster; an empty session (whose roster lists the installed
+// CLIs as "ready") has none.
+func instanceItems(sigil string, lines []workspace.AgentLine) []completions.AgentItem {
 	var kinds []string
 	byKind := map[string][]workspace.AgentLine{}
 	for _, l := range lines {
@@ -29,18 +31,18 @@ func instanceItems(lines []workspace.AgentLine) []completions.AgentItem {
 		if ms := byKind[k]; len(ms) > 1 {
 			for _, l := range ms {
 				out = append(out, completions.AgentItem{
-					Label: mark + l.ID + " · " + l.Status,
-					Value: completions.AgentCompletionValue{Kind: k, Insert: "$" + l.ID},
+					Label: withRole(mark+l.ID, l.Role) + " · " + l.Status,
+					Value: completions.AgentCompletionValue{Kind: k, Insert: sigil + l.ID},
 				})
 			}
 			out = append(out, completions.AgentItem{
 				Label: mark + k + "* · every " + k,
-				Value: completions.AgentCompletionValue{Kind: k, Insert: "$" + k + "*"},
+				Value: completions.AgentCompletionValue{Kind: k, Insert: sigil + k + "*"},
 			})
 		}
 		out = append(out, completions.AgentItem{
 			Label: mark + k + "+ · start another " + k,
-			Value: completions.AgentCompletionValue{Kind: k, Insert: "$" + k + "+"},
+			Value: completions.AgentCompletionValue{Kind: k, Insert: sigil + k + "+"},
 		})
 	}
 	return out

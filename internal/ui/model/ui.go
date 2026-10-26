@@ -334,10 +334,16 @@ type UI struct {
 	completionsOpen          bool
 	completionsStartIndex    int
 	completionsQuery         string
-	completionsPositionStart image.Point // x,y where user typed '@'
-	// completionsSigil is what opened the popup: "@" for files, "$" for
-	// agents and their models.
+	completionsPositionStart image.Point // x,y where user typed the sigil
+	// completionsSigil is what opened the popup: "@" (or "$") for agents,
+	// their models, profiles and teammates, "#" for files.
 	completionsSigil string
+	// completionsFiles is set while the popup lists files: after "#", or
+	// after "@" and something path-like ("@src/").
+	completionsFiles bool
+	// profiles are the named agents (deck.json), as last read for the @
+	// popup or /profiles.
+	profiles []workspace.Profile
 
 	// Chat components
 	chat *Chat
@@ -1609,12 +1615,15 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case util.ClearStatusMsg:
 		m.status.ClearInfoMsg()
 	case agentCompletionsMsg:
-		if m.completionsOpen && m.completionsSigil == "$" && m.completionsQuery == "" {
-			m.completions.SetAgentItems(m.agentCompletionItems())
-		}
+		m.refreshAgentCompletions()
+	case profilesLoadedMsg:
+		m.applyProfiles(msg)
 	case completions.CompletionItemsLoadedMsg:
-		if m.completionsOpen && m.completionsSigil != "$" {
+		if m.completionsOpen && m.completionsFiles {
 			m.completions.SetItems(msg.Files)
+			if m.completionsQuery != "" {
+				m.completions.Filter(m.completionsQuery)
+			}
 		}
 	case uv.KittyGraphicsEvent:
 		if !bytes.HasPrefix(msg.Payload, []byte("OK")) {
@@ -2259,6 +2268,9 @@ func (m *UI) handleDialogAction(action dialog.Action) tea.Cmd {
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionToggleHelp:
 		m.status.ToggleHelp()
+		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionShowProfiles:
+		cmds = append(cmds, m.loadProfiles(true))
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionExternalEditor:
 		if m.isAgentBusy() {
@@ -3016,25 +3028,16 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					break
 				}
 
-				// Check for @ trigger before passing to textarea.
+				// Check for a sigil before passing to textarea.
 				curValue := m.textarea.Value()
 				curIdx := len(curValue)
 
-				// Trigger completions on @ (files) and $ (agents and models).
-				if (msg.String() == "@" || msg.String() == "$") && !m.completionsOpen {
+				// Trigger completions on @ (agents, profiles and
+				// teammates; $ is the same) and # (files).
+				if completionSigil(msg.String()) && !m.completionsOpen {
 					// Only show if beginning of prompt or after whitespace.
 					if curIdx == 0 || (curIdx > 0 && isWhitespace(curValue[curIdx-1])) {
-						m.completionsOpen = true
-						m.completionsQuery = ""
-						m.completionsStartIndex = curIdx
-						m.completionsPositionStart = m.completionsPosition()
-						m.completionsSigil = msg.String()
-						if m.completionsSigil == "$" {
-							cmds = append(cmds, m.openAgentCompletions())
-						} else {
-							depth, limit := m.com.Config().Options.TUI.Completions.Limits()
-							cmds = append(cmds, m.completions.Open(depth, limit))
-						}
+						cmds = append(cmds, m.openCompletions(msg.String()))
 					}
 				}
 
@@ -3093,8 +3096,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 						// Extract current word and filter.
 						word := m.textareaWord()
 						if strings.HasPrefix(word, m.completionsSigil) {
-							m.completionsQuery = word[1:]
-							m.completions.Filter(m.completionsQuery)
+							cmds = append(cmds, m.filterCompletions(word[1:]))
 						} else if m.completionsOpen {
 							m.closeCompletions()
 						}
@@ -4510,6 +4512,7 @@ type modeSwitchedMsg struct {
 // closeCompletions closes the completions popup and resets state.
 func (m *UI) closeCompletions() {
 	m.completionsOpen = false
+	m.completionsFiles = false
 	m.completionsQuery = ""
 	m.completionsStartIndex = 0
 	m.completions.Close()
@@ -4559,16 +4562,16 @@ func (m *UI) openAgentCompletions() tea.Cmd {
 // agentCompletionItems is every agent with every model it offers, its
 // current model first.
 func (m *UI) agentCompletionItems() []completions.AgentItem {
-	picker, ok := m.com.Workspace.(workspace.AgentPicker)
-	if !ok {
-		return nil
-	}
 	sessionID := ""
 	if m.session != nil {
 		sessionID = m.session.ID
 	}
+	var choices []workspace.ModelChoice
+	if picker, ok := m.com.Workspace.(workspace.AgentPicker); ok {
+		choices = picker.CachedAgentModelChoices(sessionID)
+	}
 	var cur, rest []completions.AgentItem
-	for _, c := range picker.CachedAgentModelChoices(sessionID) {
+	for _, c := range choices {
 		label := tone.Mark(c.Kind) + " " + c.Kind + " · " + c.Name
 		effort := c.CurrentEffort
 		if c.Current {
@@ -4589,14 +4592,16 @@ func (m *UI) agentCompletionItems() []completions.AgentItem {
 	if roster, ok := m.com.Workspace.(workspace.Roster); ok && m.session != nil {
 		lines = roster.Roster(m.session.ID)
 	}
-	return append(append(cur, instanceItems(lines)...), rest...)
+	sigil := m.agentSigil()
+	who := append(instanceItems(sigil, lines), peopleItems(sigil, lines, m.profiles, m.teammateNames())...)
+	return append(append(cur, who...), rest...)
 }
 
-// insertAgentCompletion puts $agent in the message and, when another model
-// was picked, switches the agent to it.
+// insertAgentCompletion puts @agent (or $agent) in the message and, when
+// another model was picked, switches the agent to it.
 func (m *UI) insertAgentCompletion(v completions.AgentCompletionValue) tea.Cmd {
 	prevHeight := m.textarea.Height()
-	text := "$" + v.Kind
+	text := m.agentSigil() + v.Kind
 	if v.Insert != "" {
 		text = v.Insert
 	}
@@ -4715,8 +4720,8 @@ func mimeOf(content []byte) string {
 }
 
 var readyPlaceholders = [...]string{
-	"Message your agents — $ picks who and which model, @ adds a file",
-	"Ask anything; $codex brings codex in, $all asks everyone",
+	"Message your agents — @ picks who and which model, # adds a file",
+	"Ask anything; @codex brings codex in, @all asks everyone",
 	"What should the agents do?",
 }
 
@@ -4905,6 +4910,9 @@ func (m *UI) ensureSession() (tea.Cmd, error) {
 
 // sendMessage sends a message with the given content and attachments.
 func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.Cmd {
+	if len(attachments) == 0 && isProfilesSlash(content) {
+		return m.loadProfiles(true)
+	}
 	if len(attachments) == 0 && isMobileSlash(content) {
 		action, lan, _ := mobileSlashAction(content)
 		return m.openMobileDialogRequest(action, lan)

@@ -221,12 +221,12 @@ func DefaultKeyMap() KeyMap {
 		key.WithHelp("ctrl+shift+v", "paste text"),
 	)
 	km.Editor.MentionFile = key.NewBinding(
-		key.WithKeys("@"),
-		key.WithHelp("@", "mention file"),
+		key.WithKeys("#"),
+		key.WithHelp("#", "mention file"),
 	)
 	km.Editor.MentionAgent = key.NewBinding(
-		key.WithKeys("$"),
-		key.WithHelp("$", "agent & model"),
+		key.WithKeys("@", "$"),
+		key.WithHelp("@", "agents & people ($ too)"),
 	)
 	km.Editor.Commands = key.NewBinding(
 		key.WithKeys("/"),
