@@ -148,7 +148,43 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
       lastShove = performance.now();
       kick();
     };
+    // The scroll stretch. Where the footer fits the window, the page slides
+    // up off it (html.reveal-foot): the footer stays put at the bottom, the
+    // hand shows first, and the word grows from flat to full height as the
+    // rest of the footer comes out from under the page. Where it does not
+    // fit, the footer scrolls in as usual and the word grows over the last
+    // stretch of the page. The stage is never transformed, so its box gives
+    // the baseline whatever the word's scale is.
+    const stage = el.parentElement;
+    const foot = el.closest<HTMLElement>(".foot");
+    const main = document.querySelector("main");
+    const doc = document.documentElement;
+    const layout = () => {
+      if (foot === null) return;
+      doc.style.setProperty("--foot-h", `${foot.offsetHeight}px`);
+      doc.classList.toggle("reveal-foot", foot.offsetHeight <= window.innerHeight);
+    };
+    const stretch = () => {
+      if (stage === null || foot === null || main === null) return;
+      const vh = window.innerHeight;
+      const hand = parseFloat(getComputedStyle(stage).paddingBottom);
+      let t: number;
+      if (doc.classList.contains("reveal-foot")) {
+        const shown = vh - main.getBoundingClientRect().bottom;
+        visible = shown > 0;
+        t = (shown - hand) / (foot.offsetHeight - hand);
+      } else {
+        const base = stage.getBoundingClientRect().bottom - hand;
+        const rest = doc.scrollHeight - (window.scrollY + vh);
+        // At the bottom of the page the baseline sits at base - rest.
+        const span = 0.95 * vh - (base - rest);
+        t = span <= 0 ? 1 : (0.95 * vh - base) / span;
+      }
+      t = Math.min(1, Math.max(0, t));
+      el.style.setProperty("--stretch", (0.05 + 0.95 * t).toFixed(4));
+    };
     const onScroll = () => {
+      stretch();
       const dy = Math.max(-80, Math.min(80, window.scrollY - lastScroll));
       lastScroll = window.scrollY;
       if (!visible) return;
@@ -156,9 +192,18 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
       kick();
     };
 
+    const onResize = () => {
+      layout();
+      measure();
+      stretch();
+    };
+    layout();
     measure();
+    stretch();
     const io = new IntersectionObserver(([entry]) => {
-      visible = entry.isIntersecting;
+      // A revealed footer is always in the window, under the page; stretch()
+      // says when it shows.
+      visible = entry.isIntersecting && (!doc.classList.contains("reveal-foot") || visible);
       if (visible) {
         measure();
         kick();
@@ -175,7 +220,7 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
     window.addEventListener("touchstart", onTouchStart, { passive: true });
     window.addEventListener("touchmove", onTouchMove, { passive: true });
     window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", measure);
+    window.addEventListener("resize", onResize);
     return () => {
       cancelAnimationFrame(raf);
       io.disconnect();
@@ -189,7 +234,8 @@ export function Wordmark({ href, word }: { href: string; word: string }) {
       window.removeEventListener("touchstart", onTouchStart);
       window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", measure);
+      window.removeEventListener("resize", onResize);
+      doc.classList.remove("reveal-foot");
     };
   }, []);
 

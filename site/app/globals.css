@@ -726,30 +726,33 @@ p {
 .mega:focus-visible {
   outline-offset: 6px;
 }
-/* The stretch follows the whole footer coming into view, so it plays out
-   over the last screen of the page rather than in a few pixels. */
-@supports (view-timeline-name: --foot) {
-  .foot {
-    view-timeline: --foot block;
-  }
-  .mega {
-    animation: mega-stretch linear both;
-    animation-timeline: --foot;
-    animation-range: entry 45% entry 100%;
-  }
+/* The reveal: the footer waits fixed at the bottom of the window and the
+   page, opaque, slides up off it. Wordmark switches it on only where the
+   footer fits the window; without script the footer scrolls as usual. */
+html.reveal-foot body {
+  padding-bottom: var(--foot-h);
 }
-@keyframes mega-stretch {
-  from {
-    transform: translateY(var(--hand-h)) scaleY(0.25);
-  }
-  to {
-    transform: none;
-  }
+html.reveal-foot main {
+  position: relative;
+  z-index: 1;
+  background-color: var(--paper);
+  background-image: inherit;
+  box-shadow: 0 30px 50px -30px rgb(var(--shadow) / 0.35);
 }
-@media (prefers-reduced-motion: reduce) {
-  .mega {
-    animation: none;
-  }
+html.reveal-foot .foot {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+}
+
+/* The stretch follows the scroll: Wordmark (components.tsx) sets --stretch
+   from flat, as the word comes up over the cards, to full height at the
+   very bottom of the page, and back again on the way up. Without script,
+   or with reduced motion, the word stands at full height. */
+.mega {
+  transform: scaleY(var(--stretch, 1));
 }
 
 /* The hand of cards. Five old cards fan out from a pivot far below the
