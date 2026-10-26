@@ -605,7 +605,10 @@ function Keybindings({ mac }: { mac: boolean }) {
         ["Send the message", ["Enter"]],
         ["New line", ["Shift", "Enter"]],
         ["Toggle Yolo mode", [m, "Shift", "Y"]],
-        ["Pick an agent", ["$"]],
+        ["Mention an agent or a person", ["@"]],
+        ["Pick an agent (the older sigil)", ["$"]],
+        ["Add a file", ["#"]],
+        ["Run a command, at the start", ["/"]],
       ],
     ],
   ];

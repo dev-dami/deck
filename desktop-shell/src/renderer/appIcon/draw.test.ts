@@ -57,6 +57,7 @@ const sets = (r: Recorder, prop: string) => r.ops.filter((o) => o[0] === `=${pro
 const stops = (v: unknown) => (v as { stops: [number, string][] }).stops.map((s) => s[1]);
 
 describe("drawAppIcon", () => {
+  // Every icon at every size: seconds of work, longer while the other files run.
   test("draws every icon at every size on both platforms, balanced and clipped to the tile", () => {
     for (const i of APP_ICONS) {
       for (const platform of ["mac", "other"] as const) {
@@ -78,7 +79,7 @@ describe("drawAppIcon", () => {
         }
       }
     }
-  });
+  }, 30_000);
 
   test("draws the same strokes every time", () => {
     for (const id of ["glass", "riso", "stitch", "classic"]) {

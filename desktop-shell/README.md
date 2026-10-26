@@ -161,9 +161,10 @@ text and one amber lamp), and T3's look stay in the theme catalog.
     "Play the Yolo effect" turns off the wave alone. Without the wave the
     chip flashes amber.
   - **`@` agents and people.** Type `@` for "Agents and people": the
-    thread's members by name, each kind, the saved profiles (Settings >
-    Agents > Profiles) and, on a team, your teammates. Each row shows the
-    glyph in its hue, the name and the role. `@codex` reaches a free codex
+    thread's members by name, the saved profiles (Settings > Agents >
+    Profiles) and, on a team, your teammates, then each kind. Each row
+    shows the glyph in its hue (a profile's own colour, if it has one), the
+    name and the role. `@codex` reaches a free codex
     or starts one, `@codex+` starts another, `@codex*` reaches every
     codex, `@all` every agent, and `@charles` starts the agent of the
     profile named charles (a later `@charles` reaches the same one). `$`
@@ -209,7 +210,9 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   strip has a chip for each one in the room: you, each agent with its
   state (working, waiting, idle or error), its context use as a ring and
   the number of paths it holds, and after the agents each teammate who
-  follows the room with their role. Click a chip to show that lane's
+  follows the room with their role. An agent started from a profile shows
+  its role after its name here, in its replies' headers, in the Agents tab
+  and on its card in the Graph. Click a chip to show that lane's
   messages alone; click it again to show all. An agent's chip also opens
   its model and effort, the paths it holds, Stop, and Steer, which
   addresses the composer to it. A local Deck reports each lease as the
