@@ -15,9 +15,7 @@ export function EmptyState({
 }) {
   return (
     <div className={cn("empty flex flex-col items-center gap-1 px-4 py-10 text-center text-faint", className)}>
-      <span aria-hidden className="liquid-clear mb-2 grid size-10 place-items-center rounded-full text-muted-foreground">
-        <Icon className="size-5" weight="duotone" />
-      </span>
+      <Icon aria-hidden className="mb-1.5 size-6 text-muted-foreground" weight="duotone" />
       <p className="text-foreground text-sm">{title}</p>
       <p className="text-balance text-xs leading-relaxed">{hint}</p>
     </div>
