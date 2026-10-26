@@ -66,6 +66,9 @@ type Service struct {
 	draining atomic.Bool
 	// audit logs every event of the ops contracts (audit.go).
 	audit *auditLog
+	// ctlWG counts the control socket's goroutines (control.go).
+	ctlWG   sync.WaitGroup
+	ctlOnce sync.Once
 }
 
 // ServiceOptions configures a Service.
@@ -115,6 +118,7 @@ func NewService(o ServiceOptions) (*Service, error) {
 // Start puts p, the peers section Deck started with, in effect. With peers
 // off it makes nothing: no key, no listener, no goroutines.
 func (s *Service) Start(p *config.Peers) error {
+	s.ctlOnce.Do(s.startControl)
 	err := s.apply(p)
 	if p != nil && p.Enabled {
 		s.flushSoon() // what waited when Deck last stopped
@@ -125,6 +129,7 @@ func (s *Service) Start(p *config.Peers) error {
 // Close ends any pairing and stops the link.
 func (s *Service) Close() {
 	s.cancel()
+	s.ctlWG.Wait()
 	s.stopWait()
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()

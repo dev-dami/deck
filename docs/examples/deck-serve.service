@@ -8,9 +8,10 @@
 # Logs:
 #   journalctl --user -u deck-serve -f
 #
-# Before you start it: turn peers on and pair your teammates' Decks
-# ('deck peer pair'), and log in to the agent CLIs (claude, codex) once as
-# this user. Stop any other Deck of this user first: only one Deck process at
+# Before you start it: turn peers on, and log in to the agent CLIs
+# (claude, codex) once as this user. Pair teammates' Decks with
+# 'deck peer pair' at any time: while deck serve runs, it waits for the code
+# itself, so there is no need to stop it. Stop any other Deck of this user first: only one Deck process at
 # a time can use ~/.deck/threads.
 
 [Unit]

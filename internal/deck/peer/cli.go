@@ -105,6 +105,9 @@ func (c CLI) Pair(ctx context.Context, a PairArgs) error {
 	if a.Name != "" && !config.ValidPeerName(a.Name) {
 		return fmt.Errorf("bad name %q: use 1-32 of a-z, 0-9, '-', '_', '.'", a.Name)
 	}
+	if cc := dialControl(c.Dir); cc != nil {
+		return c.pairRunning(ctx, cc, a)
+	}
 	id, err := LoadOrCreateIdentity(c.Dir)
 	if err != nil {
 		return err
@@ -117,7 +120,7 @@ func (c CLI) Pair(ctx context.Context, a PairArgs) error {
 	if err != nil {
 		// A Deck running here serves pairing on its own listener: pairing
 		// from it needs no second port.
-		return fmt.Errorf("%w\nIf it is this machine's running Deck, pair from it instead: Settings › Team › a › This Deck waits for a code (it uses the same port)", err)
+		return fmt.Errorf("%w\nIf another program holds the port, free it or pick another one with --addr", err)
 	}
 	self := c.selfName()
 	expiry := a.Expiry
@@ -125,27 +128,9 @@ func (c CLI) Pair(ctx context.Context, a PairArgs) error {
 		expiry = DefaultPairExpiry
 	}
 	addr := ln.Addr().String()
-	port := portOf(ln.Addr())
 	w := PairWait{Code: code, Addr: addr, Fingerprint: id.Fingerprint(), Name: self,
-		Hosts: InviteHosts(addr), Expires: time.Now().Add(expiry)}
-	inv := w.Invite()
-	c.printf("Pairing code:  %s   (single use, valid %s)\n", code, expiry)
-	c.printf("This Deck:     %s\n", self)
-	c.printf("Fingerprint:   %s\n", id.Fingerprint())
-	c.printf("Listening on:  %s\n", addr)
-	if inv.Host != "" {
-		c.printf("Address:       %s\n", inv.Addr())
-	}
-	c.printf("\n")
-	if !Reachable(addr) {
-		c.printf("Warning: the other Deck cannot reach %s: it only listens on this machine.\nRun again with --addr 0.0.0.0:%s to listen on all interfaces.\n\n", addr, port)
-	}
-	if inv.Host != "" {
-		c.printf("Invite (holds the code: single use, valid %s; paste it on the other Deck):\n  %s\n\n", expiry, inv.Encode())
-		c.printf("On the other Deck: Settings › Team › a › Connect, and paste the invite.\nOr run:  deck peer add --invite -   and paste it at the prompt\n")
-	}
-	c.printf("Or run:  deck peer add %s <this-host>:%s   and type the code when it asks (or set %s)\n", self, port, EnvPairCode)
-	c.printf("Open port %s in your firewall if the other Deck is on another network.\n\n", port)
+		Hosts: InviteHosts(addr), Expires: time.Now().Add(expiry), Reachable: Reachable(addr)}
+	c.printWait(w, expiry, "Run again with --addr 0.0.0.0:"+portOf(ln.Addr())+" to listen on all interfaces.")
 	if a.Ready != nil {
 		a.Ready(ln.Addr().String(), code)
 	}
@@ -167,6 +152,116 @@ func (c CLI) Pair(ctx context.Context, a PairArgs) error {
 	// role chosen here, and the default allow_inbound.
 	c.addRemote(name, "", a.Role)
 	return nil
+}
+
+// printWait shows a code armed for the other Deck: the code, the invite and
+// how to use them. fix says how to listen on all interfaces.
+func (c CLI) printWait(w PairWait, expiry time.Duration, fix string) {
+	inv := w.Invite()
+	port := portOfAddr(w.Addr)
+	c.printf("Pairing code:  %s   (single use, valid %s)\n", w.Code, expiry.Round(time.Second))
+	c.printf("This Deck:     %s\n", w.Name)
+	c.printf("Fingerprint:   %s\n", w.Fingerprint)
+	c.printf("Listening on:  %s\n", w.Addr)
+	if inv.Host != "" {
+		c.printf("Address:       %s\n", inv.Addr())
+	}
+	c.printf("\n")
+	if !w.Reachable {
+		c.printf("Warning: the other Deck cannot reach %s: it only listens on this machine.\n%s\n\n", w.Addr, fix)
+	}
+	if inv.Host != "" {
+		c.printf("Invite (holds the code: single use, valid %s; paste it on the other Deck):\n  %s\n\n", expiry.Round(time.Second), inv.Encode())
+		c.printf("On the other Deck: Settings › Team › a › Connect, and paste the invite.\nOr run:  deck peer add --invite -   and paste it at the prompt\n")
+	}
+	c.printf("Or run:  deck peer add %s <this-host>:%s   and type the code when it asks (or set %s)\n", w.Name, port, EnvPairCode)
+	c.printf("Open port %s in your firewall if the other Deck is on another network,\nor pair through a Deck you are both paired with that relays (deck peer relay on there).\n\n", port)
+}
+
+// pairRunning is Pair done by the Deck that runs on this machine (deck
+// serve or a terminal Deck): the code is armed on its listener and served
+// to pairings its teammates relay, and it pins the other Deck.
+func (c CLI) pairRunning(ctx context.Context, cc *controlClient, a PairArgs) error {
+	defer cc.Close()
+	stop := context.AfterFunc(ctx, func() { cc.Close() })
+	defer stop()
+	if err := cc.send(controlMsg{Op: "pair"}); err != nil {
+		return err
+	}
+	m, err := cc.recv()
+	if err != nil {
+		return err
+	}
+	if m.Wait == nil {
+		return errors.New("the running Deck did not arm a code")
+	}
+	wt := m.Wait
+	c.printf("The Deck running here waits for the code, on its own listener.\n\n")
+	w := PairWait{Code: wt.Code, Addr: wt.Addr, Fingerprint: wt.Fingerprint, Name: wt.Name,
+		Hosts: wt.Hosts, Reachable: wt.Reachable, Expires: wt.Expires}
+	c.printWait(w, time.Until(wt.Expires), "Turn on Accept connections on all interfaces there (Settings › Team › Listen on, or peers.listen.addr 0.0.0.0:"+portOfAddr(wt.Addr)+").")
+	if a.Ready != nil {
+		a.Ready(wt.Addr, wt.Code)
+	}
+	if m, err = cc.recv(); err != nil {
+		return err
+	}
+	if m.Result == nil {
+		return errors.New("the running Deck sent no result")
+	}
+	name := a.Name
+	if name == "" {
+		name = m.Result.PeerName
+	}
+	if !config.ValidPeerName(name) || name == wt.Name {
+		return fmt.Errorf("the other Deck calls itself %q, which cannot be used here; run pair again with --name", truncate(name, 40))
+	}
+	return c.pinRunning(cc, *m.Result, controlMsg{Op: "pin", Name: name, Role: a.Role, Replace: a.Replace}, a.Yes, true)
+}
+
+// pinRunning shows what the other Deck proved and has the running Deck pin
+// it once confirmed. Closing without pin pins nothing.
+func (c CLI) pinRunning(cc *controlClient, r controlResult, pin controlMsg, yes, waiting bool) error {
+	c.printAccepted(r.RemoteAddr, r.PeerName, r.PeerFingerprint, r.OwnFingerprint, r.Via, waiting)
+	if err := c.checkReplace(pin.Name, r.PeerFingerprint, pin.Replace); err != nil {
+		return err
+	}
+	if !yes && !c.confirm(fmt.Sprintf("Pin %q?", pin.Name)) {
+		return errors.New("not pinned")
+	}
+	if err := cc.send(pin); err != nil {
+		return err
+	}
+	if _, err := cc.recv(); err != nil {
+		if errors.Is(err, ErrPinTaken) {
+			return fmt.Errorf("%w; if that Deck really has a new key, run again with --replace", err)
+		}
+		return err
+	}
+	c.printf("Pinned %q; the running Deck has it in effect.\n", pin.Name)
+	if r.Via != "" {
+		c.printf("It goes through %s, which relays it and sees only ciphertext.\n", r.Via)
+	}
+	return nil
+}
+
+// printAccepted shows who proved the code and both fingerprints.
+// waiting is set on the side that armed the code.
+func (c CLI) printAccepted(remote, peerName, theirs, own, via string, waiting bool) {
+	if via != "" {
+		c.printf("Code accepted through %s, which relayed it (it calls itself %q).\n", via, Sanitize(truncate(peerName, 40)))
+	} else {
+		c.printf("Code accepted by %s (calls itself %q).\n", Sanitize(remote), Sanitize(truncate(peerName, 40)))
+	}
+	c.printf("  their fingerprint:  %s\n", theirs)
+	c.printf("  this Deck:          %s\n", own)
+	c.printf("Check that the other Deck shows the same two fingerprints.\n")
+	switch {
+	case via != "" && waiting:
+		c.printf("Pinning it also lets %s relay links to this Deck.\n", via)
+	case via != "":
+		c.printf("This Deck will reach it through %s.\n", via)
+	}
 }
 
 // AddArgs are the options of `deck peer add`.
@@ -220,6 +315,9 @@ func (c CLI) Add(ctx context.Context, a AddArgs) error {
 	if a.Code == "" {
 		return fmt.Errorf("no pairing code: type it at the prompt or set %s", EnvPairCode)
 	}
+	if cc := dialControl(c.Dir); cc != nil {
+		return c.addRunning(ctx, cc, a, expect)
+	}
 	id, err := LoadOrCreateIdentity(c.Dir)
 	if err != nil {
 		return err
@@ -228,8 +326,8 @@ func (c CLI) Add(ctx context.Context, a AddArgs) error {
 	res, err := DialPair(ctx, a.Addr, PairOptions{Identity: id, Name: c.selfName(), Code: a.Code, ExpectFingerprint: expect})
 	if err != nil {
 		msg := PairErrText(err, a.Addr)
-		if errors.Is(err, ErrPairNoAnswer) {
-			msg += "\nBoth behind NAT? Pair from a running Deck instead (Settings › Team › a › Connect, paste the invite): it tries through the teammates it is connected to, when one relays (deck peer relay on there)."
+		if errors.Is(err, ErrPairNoAnswer) && expect != "" {
+			msg += "\nBoth behind NAT? Start Deck (or deck serve) with a teammate that relays (deck peer relay on there), then run this again: the running Deck pairs through it."
 		}
 		return explained{msg: msg, err: err}
 	}
@@ -241,6 +339,47 @@ func (c CLI) Add(ctx context.Context, a AddArgs) error {
 	}
 	c.addRemote(a.Name, a.Addr, a.Role)
 	return nil
+}
+
+// addRunning is Add done by the Deck that runs on this machine: when the
+// address does not answer, it pairs through the teammates it is connected
+// to, and it pins the other Deck.
+func (c CLI) addRunning(ctx context.Context, cc *controlClient, a AddArgs, expect string) error {
+	defer cc.Close()
+	stop := context.AfterFunc(ctx, func() { cc.Close() })
+	defer stop()
+	c.printf("Checking the code with %s through the Deck running here…\n", a.Addr)
+	if expect != "" {
+		c.printf("If it does not answer, the Deck tries through the teammates it is connected to.\n")
+	}
+	if err := cc.send(controlMsg{Op: "add", Addr: a.Addr, Code: a.Code, Expect: expect, Dial: true}); err != nil {
+		return err
+	}
+	m, err := cc.recv()
+	if err != nil {
+		return explained{msg: err.Error(), err: err}
+	}
+	if m.Result == nil {
+		return errors.New("the running Deck sent no result")
+	}
+	if expect != "" {
+		c.printf("✓ The fingerprint matches the invite.\n")
+	}
+	return c.pinRunning(cc, *m.Result, controlMsg{Op: "pin", Name: a.Name, Role: a.Role, Replace: a.Replace}, a.Yes, false)
+}
+
+// applied says whether the Deck running here applied a config change made
+// from the shell, or when it will be.
+func (c CLI) applied() {
+	ran, err := ReloadRunning(c.Dir)
+	switch {
+	case !ran:
+		c.printf("In effect when Deck next starts.\n")
+	case err != nil:
+		c.printf("The Deck running here could not apply it: %v\n", err)
+	default:
+		c.printf("The Deck running here applied it.\n")
+	}
 }
 
 // addRemote records a newly pinned peer in the config, saying what it did.
@@ -273,10 +412,7 @@ func (c CLI) checkReplace(name, fp string, replace bool) error {
 // pin shows both fingerprints and pins the peer once confirmed.
 func (c CLI) pin(name, addr, role string, res PairResult, yes, replace bool) error {
 	store := OpenStore(c.Dir)
-	c.printf("Code accepted by %s (calls itself %q).\n", Sanitize(res.RemoteAddr), Sanitize(truncate(res.PeerName, 40)))
-	c.printf("  their fingerprint:  %s\n", res.PeerFingerprint)
-	c.printf("  this Deck:          %s\n", res.OwnFingerprint)
-	c.printf("Check that the other Deck shows the same two fingerprints.\n")
+	c.printAccepted(res.RemoteAddr, res.PeerName, res.PeerFingerprint, res.OwnFingerprint, "", false)
 	if err := c.checkReplace(name, res.PeerFingerprint, replace); err != nil {
 		return err
 	}
@@ -361,9 +497,6 @@ func (c CLI) peersConfig() *config.Peers {
 	return &config.Peers{}
 }
 
-// relayApplies says when a relay change made here is in effect.
-const relayApplies = "A running Deck applies it with r in Settings › Team (deck serve: on SIGHUP), or at its next start.\n"
-
 // Relay is `deck peer relay`: with no args it shows the relay settings;
 // on/off sets whether this Deck relays for its teammates; via <name>
 // <relay|direct> sets the teammate that relays the link to name; allow and
@@ -389,7 +522,8 @@ func (c CLI) Relay(args []string) error {
 			c.printf("Already so: %s\n", done)
 			return nil
 		}
-		c.printf("%s\n%s", done, relayApplies)
+		c.printf("%s\n", done)
+		c.applied()
 		return nil
 	}
 	switch {
@@ -500,6 +634,9 @@ func (c CLI) Remove(name string) error {
 		return fmt.Errorf("no peer %q", name)
 	}
 	c.printf("Removed %q; it can no longer connect.\n", name)
+	if ran, err := ReloadRunning(c.Dir); ran && err == nil {
+		c.printf("The Deck running here closed its links to it.\n")
+	}
 	return nil
 }
 

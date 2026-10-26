@@ -21,7 +21,8 @@ var peerCmd = &cobra.Command{
 Only paired (pinned) Decks can connect, and they can only call Deck's two
 tools, search and execute.`,
 	Example: `
-# On the Deck that listens (e.g. a VPS)
+# On the Deck that listens (e.g. a VPS). With deck serve or Deck running
+# there, the running Deck waits for the code: no need to stop it.
 deck peer pair
 
 # On the other Deck; type the code it printed when asked
@@ -132,7 +133,12 @@ var peerAddCmd = &cobra.Command{
 	Long: `Pair with a Deck that waits for a code (Settings › Team › a there, or
 deck peer pair). Give its name and address and type the code when asked, or
 paste the invite it shows: --invite - (or no address) asks for it without
-echoing it. The prompt also takes an invite in place of the code.`,
+echoing it. The prompt also takes an invite in place of the code.
+
+With Deck running on this machine (deck serve or a terminal Deck), the
+running Deck does the pairing and pins the other Deck: when the invite's
+address does not answer, it pairs through the teammates it is connected to,
+if one of them relays.`,
 	Args: cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := peerCLI(cmd)
@@ -223,8 +229,8 @@ Decks save the route. Use the rest to set routes by hand:
   via <name> <relay>     reach <name> through <relay>; "direct" undoes it
   allow | deny <relay>   let <relay> bring links to this Deck, or stop it
 
-With no arguments it shows the relay settings. A running Deck applies a
-change with r in Settings › Team, deck serve on SIGHUP.`,
+With no arguments it shows the relay settings. The Deck running on this
+machine (deck serve or a terminal Deck) applies a change at once.`,
 	Example: `
 # On the server both laptops are paired with
 deck peer relay on
