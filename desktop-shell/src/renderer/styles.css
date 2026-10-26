@@ -104,6 +104,7 @@
   --color-action: var(--action);
   --color-action-foreground: var(--action-foreground);
   --color-segment: var(--segment);
+  --color-grouped: var(--grouped);
   --color-bubble: var(--bubble);
   /* The radius family: 6, 8, 12 and 16px (md, lg, xl, 2xl). */
   --radius-sm: calc(var(--radius) - 4px);
@@ -131,6 +132,8 @@
   /* The chosen segment of a segmented control, and the person's bubble. */
   --segment: var(--selected);
   --bubble: var(--surface-1);
+  /* Behind grouped rows (Settings), as System Settings draws them. */
+  --grouped: var(--canvas);
 
   --canvas: oklch(0.145 0.005 70);
   --sidebar: oklch(0.12 0.005 70);
@@ -315,6 +318,7 @@
   --surface-2: #ffffff;
   --bubble: #ededf0;
   --segment: #ffffff;
+  --grouped: #f5f5f7;
   --hairline: rgb(0 0 0 / 0.1);
   --hairline-strong: rgb(0 0 0 / 0.16);
   --hover: rgb(0 0 0 / 0.045);
@@ -378,6 +382,18 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
+}
+
+/* In a menu, the palette and the composer's pickers, the row under the
+   pointer or the keys takes the accent with white text, as a Mac menu
+   does. */
+:root[data-palette="apple"] .material :is([role="menuitem"]:not(:disabled):hover, [role="menuitem"]:focus-visible, [role="option"].on) {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+:root[data-palette="apple"] .material :is([role="menuitem"]:not(:disabled):hover, [role="menuitem"]:focus-visible, [role="option"].on) * {
+  /* Over the accent, an agent's hue gives way to the white text too. */
+  color: inherit !important;
 }
 
 /* Overlay scrollbars: a thin thumb that shows while the pointer is over

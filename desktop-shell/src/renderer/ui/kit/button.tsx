@@ -25,7 +25,7 @@ export const buttonVariants = cva(
         "destructive-outline":
           "border-hairline-strong bg-surface-1 text-destructive-foreground inset-shadow-hl hover:border-destructive/40 hover:bg-destructive/8",
         outline:
-          "border-hairline-strong bg-surface-1 text-foreground inset-shadow-hl hover:bg-surface-2 aria-pressed:bg-surface-2 aria-pressed:border-hairline-strong",
+          "border-hairline-strong bg-surface-1 text-foreground shadow-card inset-shadow-hl hover:bg-surface-2 aria-pressed:bg-surface-2 aria-pressed:border-hairline-strong",
         secondary: "border-transparent bg-secondary text-foreground hover:bg-selected",
         ghost: "border-transparent text-foreground hover:bg-hover aria-pressed:bg-selected",
         "ghost-muted":

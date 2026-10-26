@@ -523,12 +523,12 @@ export function SettingsPage({
   const label = SETTINGS_SECTIONS.find((x) => x.section === section)?.label ?? "Settings";
   return (
     <div className="settings flex min-h-0 flex-1 flex-col" data-settings={section}>
-      <header className="topbar drag flex h-12 shrink-0 items-center gap-2 border-b px-5 text-sm">
+      <header className="topbar drag flex h-13 shrink-0 items-center gap-2 border-b px-5 text-sm">
         <span className="text-muted-foreground">Settings</span>
         <span className="text-muted-foreground/50">/</span>
-        <h1 className="title font-medium">{label}</h1>
+        <h1 className="title font-semibold">{label}</h1>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-grouped">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-8">
           {section === "general" && <General p={p} />}
           {section === "appearance" && <Appearance p={p} />}

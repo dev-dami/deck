@@ -23,7 +23,8 @@ const STATUS: Record<Exclude<RoomState, "idle">, { label: string; icon: LucideIc
 // The room's short id stays in the room header.
 function RowIndex({ kinds, theme }: { kinds: string[]; theme: Theme | null }) {
   return (
-    <span className="kind-stack ml-auto inline-flex shrink-0 items-center gap-0.5 font-mono text-3xs">
+    // It gives way to the row's hover actions, which sit over its end.
+    <span className="kind-stack ml-auto inline-flex shrink-0 items-center gap-0.5 font-mono text-3xs transition-opacity group-focus-within/sidebar-row:opacity-0 group-hover/sidebar-row:opacity-0">
       {kinds.slice(0, 3).map((k) => (
         <span key={k} className="grid size-3.5 place-items-center" style={{ color: kindColour(k) }} title={k}>
           {kindMark(theme, k) || k.slice(0, 1)}

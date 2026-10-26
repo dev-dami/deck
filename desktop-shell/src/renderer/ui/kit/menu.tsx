@@ -62,7 +62,7 @@ export function Popover({
           role={role}
           aria-label={label}
           className={cn(
-            "material absolute z-50 min-w-48 animate-enter overflow-hidden rounded-xl border border-hairline-strong bg-surface-2 p-1 text-foreground shadow-popover inset-shadow-hl",
+            "material absolute z-50 min-w-48 animate-enter overflow-hidden rounded-lg border border-hairline-strong bg-surface-2 p-1 text-foreground shadow-popover inset-shadow-hl",
             side === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5",
             align === "start" ? "left-0" : "right-0",
             className,
@@ -93,7 +93,7 @@ export function MenuItem({ className, type, ...props }: ComponentProps<"button">
       type={type ?? "button"}
       role="menuitem"
       className={cn(
-        "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-hover focus-visible:bg-selected disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0",
+        "flex w-full cursor-pointer items-center gap-2 rounded-[5px] px-2 py-1 text-left text-sm outline-none transition-colors hover:bg-hover focus-visible:bg-selected disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0",
         className,
       )}
       {...props}
