@@ -30,6 +30,20 @@ for (const mode of ["dark", "light"] as const) {
   test(`shots ${mode}`, async ({ page }) => {
     await setup(page, mode);
     await page.waitForTimeout(300);
+    // The backdrop alone, at full size, and how long it took to print.
+    await expect(page.locator("html[data-backdrop]")).toBeAttached({ timeout: 10_000 });
+    const ms = await page.locator("html").getAttribute("data-backdrop-ms");
+    console.log(`backdrop ${PALETTE || "glass"} ${mode}: ${ms} ms`);
+    const show = (v: string) =>
+      page.evaluate((vis) => {
+        for (const el of document.querySelectorAll<HTMLElement>(".app > :not(.backdrop)")) el.style.visibility = vis;
+        // The first screens hide the window's backdrop; this shot shows it.
+        const b = document.querySelector<HTMLElement>(".backdrop");
+        if (b !== null) b.style.visibility = vis === "hidden" ? "visible" : "";
+      }, v);
+    await show("hidden");
+    await page.screenshot({ path: join(OUT, `${mode}-0-backdrop.png`) });
+    await show("");
     await page.screenshot({ path: join(OUT, `${mode}-1-welcome.png`) });
     await page.getByRole("button", { name: "Pair with a Deck" }).click();
     await page.waitForTimeout(200);

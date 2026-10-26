@@ -30,6 +30,10 @@
     "ws": "8.22.0"
   },
   "devDependencies": {
+    "@fontsource-variable/inter-tight": "5.3.0",
+    "@fontsource-variable/martian-mono": "5.3.0",
+    "@fontsource-variable/space-grotesk": "5.3.0",
+    "@fontsource/pixelify-sans": "5.3.0",
     "@phosphor-icons/react": "^2.1.10",
     "@playwright/test": "1.56.1",
     "@tailwindcss/vite": "4.3.3",

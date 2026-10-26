@@ -9,6 +9,7 @@ import { attachBridge } from "./harness";
 // smallest window. SHOTS=<dir> npx playwright test room-shots; without
 // SHOTS the e2e run skips them.
 const OUT = process.env["SHOTS"] ?? "";
+const PALETTE = process.env["PALETTE"] ?? "";
 test.skip(OUT === "", "SHOTS names the folder for the screenshots");
 let fake: FakeDeck;
 test.beforeEach(async ({ page }) => {
@@ -19,7 +20,10 @@ test.afterEach(async () => fake.close());
 
 async function setup(page: Page, mode: "dark" | "light") {
   await page.emulateMedia({ colorScheme: mode });
-  await page.addInitScript((m) => localStorage.setItem("deck.desktop.prefs", JSON.stringify({ theme: m })), mode);
+  await page.addInitScript(
+    ([p, m]) => localStorage.setItem("deck.desktop.prefs", JSON.stringify(p ? { theme: m, palette: p } : { theme: m })),
+    [PALETTE, mode] as const,
+  );
   await page.goto("/");
   await page.getByRole("button", { name: "Pair with a Deck" }).click();
   await page.getByLabel("Pairing link or invite line").fill(fake.pairLink);

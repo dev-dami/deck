@@ -1,6 +1,12 @@
 import { IconContext } from "@phosphor-icons/react";
 import { createRoot } from "react-dom/client";
 import type { DeckBridge } from "../shared/bridge";
+// The art directions' faces (SIL OFL 1.1). Vite bundles them, so they load
+// under font-src 'self', and only when a theme sets them.
+import "@fontsource-variable/inter-tight/wght.css";
+import "@fontsource-variable/space-grotesk/wght.css";
+import "@fontsource-variable/martian-mono/wght.css";
+import "@fontsource/pixelify-sans/500.css";
 import { startAppIconSync } from "./appIcon/sync";
 import "./styles.css";
 import { App } from "./ui/App";

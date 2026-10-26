@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { hostname } from "node:os";
-import { extname, join, resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import {
   app,
   BrowserWindow,
@@ -44,6 +44,7 @@ import { type Arrival, linkFromUrl, linksFromArgs, mustConfirm } from "./launch"
 import { LinkHost } from "./link";
 import { guardProcess, openLogs, setupLog, writeLog } from "./log";
 import { menuTemplate } from "./menu";
+import { mimeOf } from "./mime";
 import { Notifier } from "./notify";
 import { execRun, PhoneLink, readRelayHint, type Run } from "./phone";
 import { lockSession, Preview, PREVIEW_PARTITION } from "./preview";
@@ -56,16 +57,6 @@ const SCHEME = "app";
 const ORIGIN = `${SCHEME}://deck`;
 const RENDERER_DIR = resolve(__dirname, "..", "..", "renderer");
 const smoke = process.argv.includes("--smoke");
-
-const MIME: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".woff2": "font/woff2",
-  ".json": "application/json",
-};
 
 // The renderer is served from app://deck, not file://, so it gets an origin
 // of its own and a CSP header.
@@ -83,7 +74,7 @@ async function serveRenderer(req: Request): Promise<Response> {
   try {
     return new Response(await readFile(file), {
       headers: {
-        "content-type": MIME[extname(file)] ?? "application/octet-stream",
+        "content-type": mimeOf(file),
         "content-security-policy": `${RENDERER_CSP}; frame-ancestors 'none'`,
         "x-content-type-options": "nosniff",
       },

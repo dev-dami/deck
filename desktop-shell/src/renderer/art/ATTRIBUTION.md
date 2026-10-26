@@ -43,8 +43,25 @@ the process that draws them.
 
 | Plate | Work | Where |
 |---|---|---|
-| `alps.png` | Braun, an alpine landscape | the Welcome |
-| `bridge.png` | Hiroshige, *Sudden Shower over Shin-Ōhashi Bridge and Atake*, 1857 | pairing (the connect screen) |
+| `alps.png` | Braun, an alpine landscape | none since the art directions (below); the Welcome prints the picture through the theme's process |
+| `bridge.png` | Hiroshige, *Sudden Shower over Shin-Ōhashi Bridge and Atake*, 1857 | none since the art directions; the connect screen prints it through the theme's process |
 | `sea.png` | Le Gray, *Mediterranean Sea, Sète*, 1857 | the Inbox, empty |
 | `wave.png` | Hokusai, *Under the Wave off Kanagawa*, about 1830–32 | Team, empty |
 | `fuji.png` | Hokusai, *South Wind, Clear Sky*, about 1830–32 | Usage, empty |
+
+## Art directions
+
+The themes print these through their processes at run time
+(`backdrop/pictures.ts`; `docs/design-glass.md`, section 9). The first
+screens credit the picture they print under it; Settings > Appearance
+credits the picture behind the window.
+
+| Set | Pictures (the theme's own first) |
+|---|---|
+| Liquid Glass | Braun, the Alps (`alpine-braun-1870.jpg`); Watkins, *Looking Down Yosemite Valley*; Hiroshige, *Evening Snow on Hira*; Constable, a cloud study; Le Gray, *Mediterranean Sea, Sète*; Tokyo Night: the Hubble eXtreme Deep Field |
+| Riso | Blossfeldt, *Allium oreophilum* (`allium-blossfeldt-1928.jpg`); Hokusai, *Under the Wave off Kanagawa*; Kōrin, *Irises at Yatsuhashi*; Jakuchū, *White Plum Blossoms and Moon* |
+| Stitch | O'Sullivan, *Black Cañon* (`black-canyon-osullivan-1871.jpg`); Beato, boats at Nagasaki; Hokusai, *South Wind, Clear Sky*; Hiroshige, *Sudden Shower over Shin-Ōhashi Bridge and Atake*; Hokusai, *Kintai Bridge* |
+
+The connect screen prints Hiroshige's *Sudden Shower* in every theme. The
+playing cards and dice the stitch works over its picture are drawn by
+Deck (`backdrop/core.ts`), not taken from any work.
