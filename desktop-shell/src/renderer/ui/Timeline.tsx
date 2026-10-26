@@ -109,7 +109,7 @@ function ToolOutput({ output }: { output: string }) {
   const capped = useMemo(() => capLines(output, OUTPUT_LINES), [output]);
   const cut = !all && capped.cut;
   return (
-    <div className="mt-1 mb-2 ml-6 overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline">
+    <div className="mt-1 mb-2 ml-6 overflow-hidden rounded-lg bg-surface-1">
       <pre className="tool-output max-h-72 overflow-auto px-3.5 py-2.5 font-mono text-code text-foreground/85">{cut ? capped.text : output}</pre>
       {cut && (
         <button
@@ -192,7 +192,7 @@ function WorkRow({ c, running }: { c: Chunk; running: boolean }) {
       </summary>
       {output !== "" && <ToolOutput output={output} />}
       {diff !== "" && (
-        <div className="mt-1 mb-2 ml-6 overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline">
+        <div className="mt-1 mb-2 ml-6 overflow-hidden rounded-lg bg-surface-1">
           <DiffView diff={diff} truncated={c.result?.diff_truncated} />
         </div>
       )}
@@ -274,8 +274,8 @@ function reveal(el: HTMLElement): void {
 
 function ImageChip({ name }: { name: string }) {
   return (
-    <span className="chip inline-flex w-fit items-center gap-1.5 rounded-full bg-hover px-2.5 py-1 text-xs">
-      <ImageIcon className="size-3.5 text-muted-foreground" />
+    <span className="chip inline-flex w-fit items-center gap-1.5 text-muted-foreground text-xs">
+      <ImageIcon className="size-3.5 text-faint" />
       {name}
     </span>
   );

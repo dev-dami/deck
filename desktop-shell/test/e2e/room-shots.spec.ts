@@ -25,24 +25,6 @@ async function setup(page: Page, mode: "dark" | "light") {
   await page.getByLabel("Pairing link or invite line").fill(fake.pairLink);
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await expect(page.locator(".project")).toHaveText("deck");
-  // SHEET=1 previews the room as the sheet the shell will make it
-  // (docs/design-glass.md, section 4), until the shell does. The CSP
-  // allows styles set through the CSSOM.
-  if (process.env["SHEET"] === "1") {
-    await page.evaluate(() => {
-      const shell = document.querySelector<HTMLElement>(".shell");
-      const room = document.querySelector("main.center")?.parentElement;
-      if (shell === null || room === null || room === undefined) return;
-      Object.assign(shell.style, { padding: "8px", gap: "8px" });
-      Object.assign(room.style, {
-        borderRadius: "14px",
-        overflow: "hidden",
-        background: "var(--canvas)",
-        boxShadow: "inset 0 0 0 1px var(--sheet-rim), var(--sheet-shadow)",
-      });
-      document.querySelector<HTMLElement>("main.center")!.style.background = "transparent";
-    });
-  }
 }
 
 const nav = (page: Page) => page.getByRole("navigation", { name: "Threads" });
@@ -103,5 +85,9 @@ for (const mode of ["dark", "light"] as const) {
     await nav(page).getByRole("button", { name: "Docs pass", exact: true }).click();
     await page.waitForTimeout(400);
     await shot(page, `${mode}-r7-narrow-approval`);
+    await page.getByRole("button", { name: "New thread", exact: true }).first().click();
+    await expect(page.locator(".title")).toHaveText("New thread");
+    await page.waitForTimeout(300);
+    await shot(page, `${mode}-r9-narrow-new`);
   });
 }

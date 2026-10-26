@@ -11,13 +11,34 @@ import { AGENT_HELP, startCards, withStart } from "./landing";
 // A kind's glyph: the theme's, else the CLI's own mark.
 const markOf = (theme: Theme | null, kind: string) => kindMark(theme, kind) || AGENT_HELP.find((h) => h.kind === kind)?.mark || "●";
 
-// Deck's new-thread screen, set in type. Deck is a crew you address by
-// name, so the screen is the crew: the question, the composer, then the
-// roster of agents this Deck runs, each as its glyph in its hue and the
-// $name that reaches it. A name lights up while the draft addresses it, and
-// a click adds it or takes it out. Beside the roster, the ways to start a
-// crew on one task (a start puts its prefix in the draft), and whether the
-// thread gets a branch of its own.
+// A start's prefix, its agents in their hues: "$claude $codex+".
+function Prefix({ text }: { text: string }) {
+  return (
+    <span className="font-mono text-[12.5px]">
+      {text
+        .trim()
+        .split(/(\$[a-z]+)/)
+        .map((part, i) =>
+          part.startsWith("$") ? (
+            <span key={i} style={{ color: kindColour(part.slice(1)) }}>
+              {part}
+            </span>
+          ) : (
+            <span key={i} className="text-muted-foreground">
+              {part}
+            </span>
+          ),
+        )}
+    </span>
+  );
+}
+
+// Deck's new-thread screen, a work surface set in type: the question, the
+// composer, and the ways to set the crew on a task, set as a ruled table
+// rather than cards. Under it, the crew this Deck runs, each
+// agent as its glyph in its hue and the $name that reaches it: a name
+// lights while the draft addresses it, and a click adds it or takes it out.
+// Last, whether the thread gets a branch of its own.
 export function NewThread({
   loaded,
   project,
@@ -43,86 +64,87 @@ export function NewThread({
 }) {
   const { isolate } = usePrefs();
   const addressed = activeAgents(draft);
-  const row =
-    "flex min-h-8 w-full cursor-pointer items-baseline gap-3 rounded-lg px-2 py-1.5 text-left outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring";
   return (
-    <div className="welcome flex min-h-0 flex-1 flex-col overflow-y-auto px-6">
-      <div className="mx-auto my-auto flex w-full max-w-(--chat-max) flex-col gap-6 py-10">
-        <h2 className="welcome-title text-balance px-1 font-semibold text-[28px] text-foreground leading-tight tracking-tight">
+    <div className="welcome flex min-h-0 flex-1 flex-col overflow-y-auto">
+      {/* The block sits a little above the middle, where the eye lands, and
+          scrolls when the window is too short for it. */}
+      <div className="@container/new mx-auto my-auto flex w-full max-w-(--chat-max) flex-col gap-5 px-6 pt-8 pb-[max(2rem,10vh)]">
+        <h2 className="welcome-title text-balance font-semibold text-[30px] text-foreground leading-[1.15] tracking-[-0.02em]">
           {loaded ? (
             <>
               What should we build{project === "" ? "" : " in "}
-              {project !== "" && <span className="font-mono font-medium text-[0.82em] text-muted-foreground">{project}</span>}?
+              {project !== "" && <span className="font-mono font-medium text-[0.8em] text-muted-foreground tracking-normal">{project}</span>}?
             </>
           ) : (
             "Connecting to Deck…"
           )}
         </h2>
         {children}
-        <div className="grid grid-cols-1 gap-x-8 gap-y-5 min-[720px]:grid-cols-[1fr_1fr]">
-          <section className="flex flex-col gap-1">
-            <h3 className="px-2 pb-1 font-medium text-faint text-xs">The crew · write a name to reach an agent</h3>
-            <ul className="crew flex flex-col" aria-label="Agents on this Deck">
-              {kinds.map((k, i) => {
-                const on = addressed.includes(k);
-                return (
-                  <li key={k} className="animate-enter" style={{ animationDelay: `${i * 40}ms` }}>
-                    <button
-                      type="button"
-                      className={row}
-                      aria-pressed={on}
-                      style={{ "--hue": kindColour(k) } as CSSProperties}
-                      onClick={() => {
-                        setDraft(toggleAgent(draft, k));
-                        onFocus();
-                      }}
-                    >
-                      <span aria-hidden className={cn("w-5 shrink-0 font-mono text-(--hue) text-[13px] transition-opacity", !on && "opacity-60")}>
-                        {markOf(theme, k)}
-                      </span>
-                      <span className={cn("font-mono text-[13px] transition-colors", on ? "text-(--hue)" : "text-foreground")}>${k}</span>
-                      <span className="ml-auto truncate text-faint text-xs">{AGENT_HELP.find((h) => h.kind === k)?.name ?? k}</span>
-                    </button>
-                  </li>
-                );
-              })}
-              {kinds.length === 0 && <li className="px-2 py-1.5 text-faint text-sm">This Deck found no agent CLIs yet.</li>}
-            </ul>
-          </section>
-          <section className="flex flex-col gap-1">
-            <h3 className="px-2 pb-1 font-medium text-faint text-xs">Ways to start</h3>
-            <ul className="start-cards flex flex-col" aria-label="Ways to start">
-              {startCards(kinds).map((s, i) => (
-                <li key={s.id} className="animate-enter" style={{ animationDelay: `${80 + i * 40}ms` }}>
+        <section className="flex flex-col pt-1" aria-labelledby="ways-to-start">
+          <h3 id="ways-to-start" className="pb-1.5 text-faint text-xs">
+            Ways to start
+          </h3>
+          <ul className="start-cards flex flex-col border-hairline border-t" aria-label="Ways to start">
+            {startCards(kinds).map((s, i) => (
+              <li key={s.id} className="animate-enter border-hairline border-b" style={{ animationDelay: `${i * 40}ms` }}>
+                <button
+                  type="button"
+                  className="grid min-h-9 w-full cursor-pointer grid-cols-[7.5rem_minmax(0,1fr)] items-baseline gap-x-4 py-2 text-left outline-none transition-colors hover:bg-hover focus-visible:bg-hover @min-[34rem]/new:grid-cols-[7.5rem_10rem_minmax(0,1fr)]"
+                  onClick={() => {
+                    setDraft(withStart(s.prefix, draft));
+                    onFocus();
+                  }}
+                >
+                  <span className="pl-1 text-foreground text-sm">{s.title}</span>
+                  <Prefix text={s.prefix} />
+                  <span className="col-span-2 truncate pl-1 text-faint text-xs @min-[34rem]/new:col-span-1 @min-[34rem]/new:pl-0">{s.line}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <span className="-mr-2 text-faint text-xs">Write to</span>
+          <ul className="crew flex flex-wrap items-baseline gap-x-4 gap-y-1" aria-label="Agents on this Deck">
+            {kinds.map((k) => {
+              const on = addressed.includes(k);
+              return (
+                <li key={k}>
                   <button
                     type="button"
-                    className={cn(row, "flex-col items-stretch gap-0.5")}
+                    className={cn(
+                      "inline-flex cursor-pointer items-baseline gap-1.5 border-b py-0.5 font-mono text-[12.5px] outline-none transition-colors focus-visible:text-foreground",
+                      on ? "border-(--hue) text-(--hue)" : "border-transparent text-muted-foreground hover:text-foreground",
+                    )}
+                    aria-pressed={on}
+                    title={`${AGENT_HELP.find((h) => h.kind === k)?.name ?? k}: ${on ? "take out of" : "add to"} the message`}
+                    style={{ "--hue": kindColour(k) } as CSSProperties}
                     onClick={() => {
-                      setDraft(withStart(s.prefix, draft));
+                      setDraft(toggleAgent(draft, k));
                       onFocus();
                     }}
                   >
-                    <span className="flex items-baseline gap-3">
-                      <span className="text-foreground text-sm">{s.title}</span>
-                      <span className="ml-auto shrink-0 font-mono text-muted-foreground text-xs">{s.prefix.trim()}</span>
+                    <span aria-hidden className="text-(--hue)">
+                      {markOf(theme, k)}
                     </span>
-                    <span className="text-pretty text-faint text-xs">{s.line}</span>
+                    ${k}
                   </button>
                 </li>
-              ))}
-            </ul>
-          </section>
+              );
+            })}
+            {kinds.length === 0 && <li className="text-faint text-sm">This Deck found no agent CLIs yet.</li>}
+          </ul>
+          {canIsolate && (
+            <div className="own-branch ml-auto flex items-center gap-2 text-muted-foreground text-xs">
+              <Switch label="On its own branch" checked={isolate} onChange={(v) => setPrefs({ isolate: v })} />
+              <span>On its own branch</span>
+              <span className="inline-flex items-center gap-1 font-mono text-2xs text-faint">
+                <GitBranch className="size-3" />
+                deck/&lt;id&gt;
+              </span>
+            </div>
+          )}
         </div>
-        {canIsolate && (
-          <div className="own-branch flex items-center gap-2.5 px-2 text-muted-foreground text-xs">
-            <Switch label="On its own branch" checked={isolate} onChange={(v) => setPrefs({ isolate: v })} />
-            <span>On its own branch</span>
-            <span className="inline-flex items-center gap-1 font-mono text-2xs text-faint">
-              <GitBranch className="size-3" />
-              deck/&lt;id&gt;
-            </span>
-          </div>
-        )}
       </div>
     </div>
   );

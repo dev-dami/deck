@@ -275,6 +275,7 @@ export function Room({
         onError={toast}
         onInfo={info}
         onPreview={onPreview}
+        {...(open !== undefined && engine === null ? { view, onView: setView } : {})}
       />
       {open !== undefined && (
         <Lanes
