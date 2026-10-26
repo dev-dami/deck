@@ -30,6 +30,16 @@ function Mark({ className }: { className?: string }) {
   );
 }
 
+// The footer's hand, left to right. All from The Met's Open Access
+// collection: 720535, 415951, 384758, 719989, 415953.
+const HAND = [
+  { src: "/art/cards/maouna.webp", h: 705, alt: "A hand-coloured French card: a mother and child on a rock, a ship wrecked behind them." },
+  { src: "/art/cards/lamour.webp", h: 706, alt: "A hand-coloured French card: a blindfolded Cupid with rainbow wings." },
+  { src: "/art/cards/fayolle-king-of-hearts.webp", h: 759, alt: "A woodcut King of Hearts in red, black and gold, holding a bird." },
+  { src: "/art/cards/rock-queen-zulemer.webp", h: 767, alt: "An engraved queen of clubs, a woman in a veil feeding a parrot." },
+  { src: "/art/cards/nootka.webp", h: 708, alt: "A hand-coloured French card: two figures in striped dress, a bird between them." },
+];
+
 // A picture whose museum label shows when you hover over it (or focus it).
 function Plate({
   src,
@@ -336,9 +346,6 @@ export default function Home() {
       </main>
 
       <footer className="foot wrap">
-        {/* The wordmark, as wide as the page and made of rubber: grab it and
-            pull, or keep scrolling at the bottom. */}
-        <Wordmark href={REPO} word="deck" />
         <div className="foot-row">
           <span className="brand">
             <Mark className="brand-mark" />
@@ -350,6 +357,23 @@ export default function Home() {
             <a href={DOCS}>Docs</a>
           </nav>
           <span className="copyright">© 2026 dev-dami</span>
+        </div>
+        {/* A hand of old playing cards, and the wordmark rising out of it as
+            the footer scrolls in. The word is rubber: grab it and pull, or
+            keep scrolling at the bottom. */}
+        <div className="hand-stage">
+          <Wordmark href={REPO} word="deck" />
+          <figure className="hand" tabIndex={0}>
+            {HAND.map((c, i) => (
+              <span key={c.src} className="card" style={{ "--i": i - (HAND.length - 1) / 2 } as React.CSSProperties}>
+                <Image src={c.src} alt={c.alt} width={500} height={c.h} />
+              </span>
+            ))}
+            <figcaption className="credit">
+              Playing cards: Claude Fayolle, <i>King of Hearts</i>, late 18th–19th century; William and Henry Rock,{" "}
+              <i>Queen (Zulemer from Algiers)</i>, 1838–55; and three French cards of the 1700s. The Met, public domain.
+            </figcaption>
+          </figure>
         </div>
       </footer>
     </>
