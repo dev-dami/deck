@@ -124,3 +124,24 @@ func TestUsagePaneJoinsSavedLayoutsAndReopens(t *testing.T) {
 	require.True(t, s.open(paneUsage))
 	require.True(t, s.isOpen(paneUsage))
 }
+
+func TestUsagePaneContextMeter(t *testing.T) {
+	t.Parallel()
+	m := newUsagePaneUI(t)
+	ws := m.com.Workspace.(*usagePaneWorkspace)
+	ws.roster = []workspace.AgentLine{
+		{ID: "claude", Kind: "claude", Status: "idle", ContextTokens: 120_000, ContextWindow: 200_000, ContextSource: "derived", ContextBaseline: 18_000, DeckTokens: 12_000},
+		{ID: "opencode", Kind: "opencode", Status: "idle", ContextTokens: 30_000, ContextWindow: 400_000, ContextSource: "estimated"},
+	}
+	p := m.usagePane()
+	const width = usagePaneWidth
+	out := ansi.Strip(p.text(m, width, time.Now()))
+	for _, l := range strings.Split(out, "\n") {
+		require.LessOrEqual(t, ansi.StringWidth(l), width, "line %q overflows", l)
+	}
+	require.Contains(t, out, "60%", "claude's fill")
+	require.Contains(t, out, "■ base 18k  ■ chat 90k  ■ deck 12k", "the split, conversation being the rest")
+	require.Contains(t, out, "~7%", "an estimate is marked")
+	require.Contains(t, out, "■ chat 30k", "parts that are not known have no key")
+	require.NotContains(t, out, "■ deck 0")
+}

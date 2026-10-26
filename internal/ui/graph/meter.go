@@ -178,6 +178,38 @@ func Share(t Theme, width int, parts []Part) string {
 	return bar.render() + "\n" + strings.Join(lines, "\n")
 }
 
+// Stack draws parts as one stacked bar width cells long, the parts in their
+// colours from the left and what is left of total in the grid colour, with
+// no legend: a one-line breakdown of a whole (a context window).
+func Stack(t Theme, width int, parts []Part, total float64) string {
+	if width <= 0 {
+		return ""
+	}
+	sum := 0.0
+	for _, p := range parts {
+		sum += max(p.Value, 0)
+	}
+	all := append(append([]Part(nil), parts...), Part{Value: max(0, total-sum), Color: t.Grid})
+	if total = max(total, sum); total <= 0 {
+		g := newGrid(width, 1)
+		meterBar(g, width, 0, nil, t.Grid)
+		return g.render()
+	}
+	g := newGrid(width, 1)
+	x := 0
+	for i, n := range shareCells(all, total, width) {
+		c := all[i].Color
+		if c == nil {
+			c = t.SeriesColor(all[i].Label)
+		}
+		for range n {
+			g.set(x, 0, '━', c)
+			x++
+		}
+	}
+	return g.render()
+}
+
 // shareCells splits width cells between parts by value, largest remainder
 // first, giving each part above zero at least one cell when there is room.
 func shareCells(parts []Part, total float64, width int) []int {

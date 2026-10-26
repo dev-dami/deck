@@ -219,3 +219,65 @@ func TestCompact(t *testing.T) {
 		t.Fatalf("compacts = %d", run.compacts)
 	}
 }
+
+// TestContextBreakdown covers the estimates behind the usage pane's meter:
+// Deck's own text in a member's session (instructions, then briefings, not
+// the user's words) and the baseline the session started with (its first
+// context figure less what Deck had sent it), and a compaction resetting
+// Deck's share.
+func TestContextBreakdown(t *testing.T) {
+	ctx := fake.Step{Event: agent.Event{Kind: agent.KindUsage, Usage: &agent.Usage{ContextTokens: 20_000, ContextWindow: 200_000}}}
+	compacted := fake.Step{Event: agent.Event{Kind: agent.KindCompacted, Text: "auto"}}
+	long := strings.Repeat("codex found it. ", 250)
+	r := newRig(t,
+		[]fake.Script{turn(ctx, say("a"), finish()), turn(say("b"), finish()), turn(compacted, finish())},
+		[]fake.Script{turn(say(long), finish())})
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	r.add(t, tid, "codex")
+	r.claude.mu.Lock()
+	instr := estTokens(utf8.RuneCountInString(r.claude.specs[0].Instructions))
+	r.claude.mu.Unlock()
+	if info, _ := r.m.Agent("claude"); info.DeckTokens != instr || info.ContextBaseline != 0 {
+		t.Fatalf("at start: deck %d baseline %d, want %d and unknown", info.DeckTokens, info.ContextBaseline, instr)
+	}
+
+	_ = r.m.Post(tid, "$claude go")
+	waitFor(t, "turn 1", func() bool { return r.c.turnDones("claude") == 1 })
+	run := r.claude.runs["claude"]
+	run.mu.Lock()
+	first := run.prompts[0]
+	run.mu.Unlock()
+	info, _ := r.m.Agent("claude")
+	// The prompt briefs claude on codex joining, then hands it the user's
+	// "go": only the briefing is Deck's.
+	if !strings.Contains(first, "codex") || !strings.HasSuffix(first, "go") {
+		t.Fatalf("first prompt %q", first)
+	}
+	if want := instr + estTokens(utf8.RuneCountInString(first)-len("go")); info.DeckTokens != want {
+		t.Fatalf("deck %d, want %d: the user's words are not Deck's", info.DeckTokens, want)
+	}
+	deck1 := info.DeckTokens
+	if want := 20_000 - instr - estTokens(utf8.RuneCountInString(first)); info.ContextBaseline != want {
+		t.Fatalf("baseline %d, want %d", info.ContextBaseline, want)
+	}
+
+	_ = r.m.Post(tid, "$codex look")
+	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
+	_ = r.m.Post(tid, "$claude again")
+	waitFor(t, "turn 2", func() bool { return r.c.turnDones("claude") == 2 })
+	info, _ = r.m.Agent("claude")
+	if grew := info.DeckTokens - deck1; grew < estTokens(len(long))*9/10 {
+		t.Fatalf("the briefing of codex's reply added %d tokens, want about %d", grew, estTokens(len(long)))
+	}
+	r.m.Flush()
+	if _, meta, _ := r.st.LoadEntries(tid); meta.Members[0].DeckTokens != info.DeckTokens || meta.Members[0].ContextBaseline != info.ContextBaseline {
+		t.Fatalf("stored %+v, want deck %d baseline %d", meta.Members[0], info.DeckTokens, info.ContextBaseline)
+	}
+
+	_ = r.m.Post(tid, "$claude compact")
+	waitFor(t, "turn 3", func() bool { return r.c.turnDones("claude") == 3 })
+	if info, _ = r.m.Agent("claude"); info.DeckTokens != 0 || info.ContextBaseline == 0 {
+		t.Fatalf("after a compaction: deck %d baseline %d, want 0 and kept", info.DeckTokens, info.ContextBaseline)
+	}
+}

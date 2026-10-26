@@ -156,9 +156,14 @@ type AgentLine struct {
 	ContextWindow int
 	// ContextSource is where the two came from (agent.ContextCLI, ...).
 	ContextSource string
-	CostUSD       float64
-	Pending       int       // approvals waiting
-	Since         time.Time // when its current turn began; zero when idle
+	// ContextBaseline of ContextTokens is what the agent's session started
+	// with and DeckTokens what Deck's own text takes (estimates; 0 = not
+	// known).
+	ContextBaseline int
+	DeckTokens      int
+	CostUSD         float64
+	Pending         int       // approvals waiting
+	Since           time.Time // when its current turn began; zero when idle
 	// Depth is how many subagent levels it is below the user's agents (0 for
 	// those); Parent the name of the member that started it; Branch its own
 	// worktree's branch, when it has one.
@@ -179,6 +184,20 @@ func (l AgentLine) ContextPct() (pct int, approx, ok bool) {
 		return 0, false, false
 	}
 	return l.ContextTokens * 100 / l.ContextWindow, deckagent.ApproxContext(l.ContextSource), true
+}
+
+// ContextParts splits the agent's context into what its session started
+// with, the conversation, Deck's own text and what is free, in tokens. The
+// parts add up to the window; baseline and deck are 0 when not known, and
+// ok is false when the fill or the window is not known.
+func (l AgentLine) ContextParts() (baseline, conversation, deck, free int, ok bool) {
+	if l.ContextWindow <= 0 || l.ContextTokens <= 0 {
+		return 0, 0, 0, 0, false
+	}
+	used := min(l.ContextTokens, l.ContextWindow)
+	baseline = min(max(0, l.ContextBaseline), used)
+	deck = min(max(0, l.DeckTokens), used-baseline)
+	return baseline, used - baseline - deck, deck, l.ContextWindow - used, true
 }
 
 // Roster lists the agents in a session, or, before anyone has joined, the
@@ -289,6 +308,7 @@ func (w *DeckWorkspace) Roster(sessionID string) []AgentLine {
 				out = append(out, AgentLine{
 					ID: a.Name, Kind: a.Kind, Model: model, Effort: a.Effort, Status: string(a.Status),
 					ContextTokens: a.ContextTokens, ContextWindow: a.ContextWindow, ContextSource: a.ContextSource,
+					ContextBaseline: a.ContextBaseline, DeckTokens: a.DeckTokens,
 					CostUSD: a.CostUSD, Pending: a.Pending,
 					Since: since, Depth: depth, Parent: names[a.Parent], Branch: a.Branch, Leases: leases[a.ID],
 				})

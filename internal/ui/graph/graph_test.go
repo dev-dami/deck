@@ -404,3 +404,23 @@ func TestHeatScale(t *testing.T) {
 		t.Error("an empty day is the colour of the ground")
 	}
 }
+
+func TestStack(t *testing.T) {
+	th := themes()[0].theme
+	parts := []graph.Part{{Label: "base", Value: 20, Color: th.Subtle}, {Label: "chat", Value: 30, Color: tone.Sky}, {Label: "deck", Value: 1, Color: th.Accent}}
+	for _, w := range []int{1, 10, 40} {
+		out := graph.Stack(th, w, parts, 100)
+		if got := ansi.StringWidth(out); got != w {
+			t.Fatalf("width %d: drew %d cells", w, got)
+		}
+		if strings.Count(ansi.Strip(out), "━") != w {
+			t.Fatalf("width %d: %q", w, ansi.Strip(out))
+		}
+	}
+	if graph.Stack(th, 0, parts, 100) != "" {
+		t.Fatal("no width, no bar")
+	}
+	if got := ansi.StringWidth(graph.Stack(th, 8, nil, 0)); got != 8 {
+		t.Fatalf("an empty whole still draws its track: %d", got)
+	}
+}

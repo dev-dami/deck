@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/brand"
@@ -256,15 +257,20 @@ func (m *Manager) buildPrompt(t *thread, a *agentState) (prompt string, images [
 	lines, hold := m.walk(t, viewer{self: a.id, skipSelf: true, entry: budget.entry}, start, end, in)
 
 	var brief, addressed []line
+	a.promptUser = 0 // the user's own words in the prompt, for the context breakdown
 	for _, l := range lines {
 		if l.addressed {
 			addressed = append(addressed, l)
 			images = append(images, l.images...)
+			if l.raw != "" { // a user message, or a steer: their words, not Deck's
+				a.promptUser += min(utf8.RuneCountInString(l.raw), budget.entry)
+			}
 		} else {
 			brief = append(brief, l)
 		}
 	}
 	if len(brief) == 0 && len(addressed) == 1 && addressed[0].user {
+		a.promptUser = utf8.RuneCountInString(addressed[0].raw)
 		return addressed[0].raw, images, end, hold
 	}
 	var b strings.Builder

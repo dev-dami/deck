@@ -1,6 +1,6 @@
 # Context handling: current state and a model-agnostic design
 
-Status: proposal, not implemented. Facts marked **[code]** were verified in the repo, **[help]** come from the installed CLIs' `--help`, **[assume]** are unverified assumptions about external CLIs (`agy` was not installed, so Antigravity facts are code-only).
+Status: phases 1-5 implemented where the CLI behaviour could be checked; section 6 lists what is in, and what is left because it rests on **[assume]** facts. Sections 1-3 describe the state before this work. Facts marked **[code]** were verified in the repo, **[help]** come from the installed CLIs' `--help` (Claude's also from its argument parser), **[assume]** are unverified assumptions about external CLIs (`agy`, `codex` and `opencode` were not installed, so their facts are code- and recording-only).
 
 ## 1. Shared pieces
 
@@ -24,7 +24,7 @@ Status: proposal, not implemented. Facts marked **[code]** were verified in the 
 | Steer | interrupt (kill + `--resume`) then send | native `turn/steer` (cheapest) | interrupt + new prompt | interrupt + resend |
 | Setting changes | respawn with `--resume` | per-turn override, no restart | `set_config_option`, no restart | respawn |
 
-Installed Claude CLI offers `--setting-sources`, `--bare`, `--disable-slash-commands`, `--exclude-dynamic-system-prompt-sections`, `--autocompact <auto|100k-1M>`. [help] Codex `thread/start` returns `instructionSources` (loaded instruction files), which Deck ignores. [code]
+Installed Claude CLI offers `--setting-sources`, `--bare`, `--disable-slash-commands`, `--exclude-dynamic-system-prompt-sections`, `--autocompact <auto|100k-1M>`. [help] Checked in Claude Code 2.1.310's parser: `--setting-sources` takes a comma list of `user`, `project`, `local` (an empty string is no source at all); leaving `user` out also skips `~/.claude/CLAUDE.md` and user rules, and leaving `project` and `local` out skips the project's CLAUDE.md files. `--autocompact` accepts `auto` or 100k-1M (`500k`, `200000`). `--bare` forces API-key auth (OAuth is not used), so it cannot isolate a signed-in user. Codex `thread/start` returns `instructionSources` (loaded instruction files), which Deck ignores. [code]
 
 Known inaccuracy: Claude's fallback assumes 200k for opus/sonnet/haiku/fable unless the id contains `1m`; `testdata/limits.jsonl:7` shows `claude-opus-5-5` reporting a 1,000,000 window, so on a fresh run the first turn's meter can read up to 5x too full. [code]
 
@@ -115,3 +115,13 @@ Isolation flags depend on CLI versions; `--setting-sources` also drops user hook
 3. **Budgets:** window-relative constants and `context` config block.
 4. **Policy knobs:** `Spec.Context` wired into Claude `args()` (`claude.go:232`), Codex `mcpThreadConfig` (`codex/mcp.go:47`), OpenCode `childEnv` (`opencode/adapter.go:72`); `Compactor` -> `AgentSummarize`; settings UI.
 5. **Breakdown meter:** track Deck-injected tokens in `buildPrompt` and `steerNow`; stacked meter in `pane_usage.go`.
+
+## 6. Implementation status
+
+| Phase | In | Left, and why |
+|---|---|---|
+| 1 Correctness | all (#43) | - |
+| 2 Reporting | `Usage.ContextSource` (`cli`, `derived`, `fallback`, `estimated`) on every adapter; Claude `fallback` until a result reports the window; Antigravity estimate (last DONE step's tokens, Gemini window from a table, else unknown); `ModelInfo.ContextWindow` (Claude family table, Antigravity Gemini); `ContextCaps`/`ContextCapser` for the four adapters; `AgentInfo`/`AgentLine.ContextSource`, stored in the member meta; `~` in the sidebar, header, roster and marks, a dim fill-only figure when the window is unknown; the header no longer lets an estimate set the session figure silently | `Usage.BaselineTokens` is defined but no CLI reports one (the manager estimates it, phase 5). Codex `instructionSources` is not decoded: nothing would show it yet. The desktop (`pkg/rpc` `AgentNode`, proto) does not carry the source: regenerating the proto needs `buf`/`protoc`, not in this environment |
+| 3 Budgets | `session/budget.go`: briefing, entry, `thread.read` and hub output as shares of the member's window (`ctxWindow`, else the loaded model list's `ContextWindow`, else 128k); defaults 4% / 1.5% with today's fixed budgets as the floor for windows of 128k and up, so 128k-200k windows and unknown windows are unchanged; clamps 16k-160k characters and 8-64 KB; briefing halved over 80% full; `hub.Env.MaxOutput` per agent (`hub.MaxOutputCap` 64 KB, the broker's backstop raised to it); `context.briefing_pct` / `tool_output_pct` with `Validate` | - |
+| 4 Policy | `Spec.Context` (`ContextPolicy`) from `context.isolate_global_config`, `instruction_files`, `mcp`, `compact_at_pct` and `per_agent`; Claude: `--setting-sources project,local` (isolate, project-only) or `""` (none), no `--strict-mcp-config`/connector switch-off for `mcp: inherit`, `--autocompact` at the share of the model's window (once the window is known); one notice per kind for knobs a CLI cannot honour, and for what isolation leaves out; `agent.Compactor` and `Manager.Compact` behind the Summarize action | Codex and OpenCode isolation, instruction files and MCP suppression: the keys in 4.2 are **[assume]** and stay unwired (caps None, notice). Antigravity: none possible (global `agy mcp add`). No adapter implements `Compactor`: no compaction request is verified for any CLI (Claude's `/compact` over stream-json, Codex's app-server), so Summarize keeps today's message. No settings UI for the knobs: config file only |
+| 5 Breakdown | `agentState` `ctxBaseline`, `deckTokens` (stored in the member meta): instructions, briefings, steers and mode lines at ~4 characters a token, the user's own words excluded; the baseline is a fresh session's first context figure less what Deck had sent it; a compaction resets Deck's share; `AgentLine.ContextParts`; a stacked meter (baseline neutral / conversation in the agent's tint / Deck in the accent / free) with a legend in the Usage pane | The baseline is high when a CLI first reports after tool calls (OpenCode, Antigravity report per turn). Desktop: as phase 2 |

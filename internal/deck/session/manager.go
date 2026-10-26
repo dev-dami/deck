@@ -210,6 +210,11 @@ type AgentInfo struct {
 	// ContextSource is where they came from (agent.ContextCLI, ...; "" when
 	// the adapter does not say). agent.ApproxContext tells an estimate.
 	ContextSource string
+	// ContextBaseline of ContextTokens is what the conversation started
+	// with (system prompt, tools, instruction files) and DeckTokens what
+	// Deck's own text takes; both are estimates, 0 when not known.
+	ContextBaseline int
+	DeckTokens      int
 	// RunningModel is the model slug the CLI reports it is running (e.g.
 	// "claude-opus-5-5" when Model is "" or an alias); "" until it says.
 	RunningModel string
@@ -654,6 +659,7 @@ func (m *Manager) startRun(t *thread, a *agentState, prompt, resumeID string) er
 		return fmt.Errorf("session: start %s: %w", a.kind, err)
 	}
 	m.notePolicy(t, a, spec.Context)
+	a.beginContext(spec, agent.CapsOf(ad))
 	a.mu.Lock()
 	a.run = run
 	a.mu.Unlock()
@@ -1037,6 +1043,7 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 		return dQueued, nil
 	}
 	prompt, images, cursor, hold := m.buildPrompt(t, a)
+	user := a.promptUser
 	oldCursor, oldHold, oldKnown := a.cursor, a.holdFrom, a.knownMode
 	a.cursor, a.holdFrom = cursor, hold
 	if a.knownMode != t.mode {
@@ -1045,7 +1052,10 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 	}
 	t.mu.Unlock()
 
-	if err := m.sendPrompt(t, a, prompt, images); err != nil {
+	a.notePrompt(prompt, user)
+	err := m.sendPrompt(t, a, prompt, images)
+	a.donePrompt(err == nil)
+	if err != nil {
 		t.mu.Lock()
 		a.cursor, a.holdFrom, a.knownMode = oldCursor, oldHold, oldKnown
 		t.mu.Unlock()
@@ -1259,6 +1269,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 			id: id, kind: mem.Kind, name: name, model: model, effort: effort, thread: t, base: StatusIdle,
 			started: time.Now(), costTotal: mem.CostUSD, sessionID: mem.SessionID, cursor: mem.Cursor,
 			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow, ctxSource: mem.ContextSource, briefed: mem.Briefed,
+			ctxBaseline: mem.ContextBaseline, deckTokens: mem.DeckTokens,
 			parent: mem.Parent, ephemeral: mem.Ephemeral, dir: mem.Dir, worktree: mem.Worktree,
 		}
 		if mem.Ephemeral {
@@ -1684,7 +1695,22 @@ type agentState struct {
 	ctxTokens   int // context window use, from the latest usage event that reported it
 	ctxWindow   int
 	ctxSource   string // where ctxTokens and ctxWindow came from (agent.Usage.ContextSource)
-	running     string // model slug the CLI reported at session start
+	// The context breakdown (context.go): ctxBaseline is what the CLI
+	// session filled before its first turn, deckTokens what Deck's own text
+	// in it takes, sentTokens what Deck sent it until the baseline was
+	// measured, and ctxFresh that the session started with Deck (not
+	// resumed) and has no baseline yet. Estimates, in tokens.
+	ctxBaseline int
+	deckTokens  int
+	sentTokens  int
+	ctxFresh    bool
+	// inflight is the prompt being delivered, as notePrompt counted it
+	// (Deck's tokens, all tokens).
+	inflight [2]int
+	// promptUser is how many characters of the prompt buildPrompt last
+	// built are the user's own words; guarded by thread.mu.
+	promptUser int
+	running    string // model slug the CLI reported at session start
 	// stirred is closed, and dropped, when the member's status may have
 	// changed (stirLocked); nil while nobody waits for that (waitIdle).
 	stirred chan struct{}
@@ -1755,6 +1781,7 @@ func (a *agentState) info() AgentInfo {
 		Parent: a.parent, Ephemeral: a.ephemeral, Branch: branch,
 		Status: a.statusLocked(), CostUSD: a.costTotal + a.costTurn, Pending: len(a.pending),
 		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource,
+		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
 		RunningModel: a.running,
 	}
 }
@@ -1776,6 +1803,7 @@ func (a *agentState) memberMeta() store.Member {
 		ID: a.id, Kind: a.kind, Name: a.name, Model: a.model, Effort: a.effort, SessionID: a.sessionID,
 		CostUSD: a.costTotal + a.costTurn, Cursor: a.cursor,
 		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource, Briefed: a.briefed,
+		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
 		Parent: a.parent, Ephemeral: a.ephemeral, Dir: a.dir, Worktree: a.worktree,
 	}
 }
@@ -1931,11 +1959,16 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 			if u.ContextTokens > 0 {
 				a.ctxTokens = u.ContextTokens
 				a.ctxSource = u.ContextSource
+				a.measureBaselineLocked(u)
 			}
 			if u.ContextWindow > 0 {
 				a.ctxWindow = u.ContextWindow
 			}
 		}
+	case agent.KindCompacted:
+		// The summary replaced what Deck had sent: count from here.
+		a.deckTokens = 0
+		res.metaDirty = true
 	case agent.KindError:
 		a.base = StatusError
 	case agent.KindRestarting:

@@ -421,6 +421,7 @@ func (m *Manager) steerNow(t *thread, a *agentState, st agent.Steerer) error {
 	}
 	t.mu.Lock()
 	prompt, images, cursor, hold := m.buildPrompt(t, a)
+	user := a.promptUser
 	oldCursor, oldHold, oldKnown := a.cursor, a.holdFrom, a.knownMode
 	a.cursor, a.holdFrom = cursor, hold
 	if a.knownMode != t.mode {
@@ -428,7 +429,10 @@ func (m *Manager) steerNow(t *thread, a *agentState, st agent.Steerer) error {
 		a.knownMode = t.mode
 	}
 	t.mu.Unlock()
-	if err := st.Steer(prompt, images); err != nil {
+	a.notePrompt(prompt, user)
+	err := st.Steer(prompt, images)
+	a.donePrompt(err == nil)
+	if err != nil {
 		t.mu.Lock()
 		a.cursor, a.holdFrom, a.knownMode = oldCursor, oldHold, oldKnown
 		t.mu.Unlock()

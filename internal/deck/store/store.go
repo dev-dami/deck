@@ -84,6 +84,11 @@ type Member struct {
 	ContextWindow int `json:"context_window,omitempty"`
 	// ContextSource is where they came from (agent.Usage.ContextSource).
 	ContextSource string `json:"context_source,omitempty"`
+	// ContextBaseline is how much of the window SessionID filled before its
+	// first turn, and DeckTokens how much of it Deck's own text (briefings,
+	// steers, instructions) takes, both estimates (session/context.go).
+	ContextBaseline int `json:"context_baseline,omitempty"`
+	DeckTokens      int `json:"deck_tokens,omitempty"`
 	// Briefed: the CLI session SessionID has had Deck's instructions in a
 	// prompt, so a resume does not send them again (agent.Spec.Briefed).
 	Briefed bool `json:"briefed,omitempty"`
