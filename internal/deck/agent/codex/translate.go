@@ -204,6 +204,11 @@ func (t *translator) notification(method string, params json.RawMessage, raw raw
 		}
 		return []agent.Event{e}
 
+	case noteCompacted:
+		// The thread's history was summarised. Its params are not decoded:
+		// the context use after it comes with the next token usage update.
+		return []agent.Event{t.ev(agent.KindCompacted, raw)}
+
 	case noteRateLimits:
 		var n rateLimitsNotification
 		if json.Unmarshal(params, &n) != nil || !t.limits.merge(n.RateLimits) {

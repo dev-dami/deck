@@ -199,7 +199,7 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 		closing:   make(chan struct{}),
 		loopDone:  make(chan struct{}),
 		tr:        newTranslator(spec.ID, spec.Dir),
-		briefed:   strings.TrimSpace(spec.Instructions) == "",
+		briefed:   strings.TrimSpace(spec.Instructions) == "" || spec.Briefed && spec.ResumeID != "",
 	}
 	if err := r.handshake(ctx); err != nil {
 		p.stop()

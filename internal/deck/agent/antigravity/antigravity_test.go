@@ -219,6 +219,37 @@ func TestTokenTravelsInAFile(t *testing.T) {
 	}
 }
 
+// TestBriefedResumeSkipsInstructions covers a resumed conversation that
+// already had Deck's instructions: the first prompt goes without them.
+func TestBriefedResumeSkipsInstructions(t *testing.T) {
+	bin, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("no true binary")
+	}
+	for _, c := range []struct {
+		spec agent.Spec
+		skip bool
+	}{
+		{agent.Spec{ResumeID: "c1", Briefed: true}, true},
+		{agent.Spec{ResumeID: "c1"}, false},
+		{agent.Spec{Briefed: true}, false}, // a new conversation needs them
+	} {
+		c.spec.ID, c.spec.Binary, c.spec.Instructions = "x", bin, "BRIEF"
+		r, err := (&adapter{}).Start(context.Background(), c.spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rr := r.(*run)
+		rr.mu.Lock()
+		skip := rr.firstSend
+		rr.mu.Unlock()
+		r.Close()
+		if skip != c.skip {
+			t.Errorf("%+v: instructions skipped = %v", c.spec, skip)
+		}
+	}
+}
+
 // TestChangedNamesRestart covers what KindRestarting says changed: the
 // effort is part of the --model slug, so it reads as the model.
 func TestChangedNamesRestart(t *testing.T) {

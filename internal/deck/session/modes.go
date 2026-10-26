@@ -276,6 +276,12 @@ func (m *Manager) SetModel(agentID, model string) error {
 		}
 	}
 	a.mu.Lock()
+	if a.model != model {
+		// The old model's window no longer applies (1M to 200k would read
+		// 5x too empty), and apply keeps a window until a non-zero one
+		// arrives: unknown until the new model reports its own.
+		a.ctxWindow = 0
+	}
 	a.model = model
 	a.mu.Unlock()
 	m.persistMeta(a.thread)

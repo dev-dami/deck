@@ -87,6 +87,9 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 	}
 	r.approvals = make(chan agent.ApprovalRequest)
 	r.sessionID = spec.ResumeID
+	// A resumed conversation that already had the instructions does not
+	// get them again: they would pile up in it on every resume.
+	r.firstSend = spec.Briefed && spec.ResumeID != ""
 	r.model = spec.Model
 	r.effort = spec.Effort
 	r.mode = spec.Mode

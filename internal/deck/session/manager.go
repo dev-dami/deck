@@ -662,6 +662,9 @@ func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Sp
 	// .gitignore that keeps its plans out of git.
 	_ = brand.EnsurePlansDir(t.dir)
 	s.Instructions = m.instructions(t, a, s.MCP != nil && m.opts.Hub != nil)
+	a.mu.Lock()
+	s.Briefed = resume != "" && resume == a.sessionID && a.briefed
+	a.mu.Unlock()
 	if t.opsOf() != nil {
 		s.NoTools, s.Instructions = true, opsInstructions
 	}
@@ -1205,7 +1208,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		a := &agentState{
 			id: id, kind: mem.Kind, name: name, model: model, effort: effort, thread: t, base: StatusIdle,
 			started: time.Now(), costTotal: mem.CostUSD, sessionID: mem.SessionID, cursor: cursor,
-			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow,
+			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow, briefed: mem.Briefed,
 			parent: mem.Parent, ephemeral: mem.Ephemeral, dir: mem.Dir, worktree: mem.Worktree,
 		}
 		if mem.Ephemeral {
@@ -1564,6 +1567,7 @@ type agentState struct {
 	costTurn    float64 // current turn, cumulative as reported
 	tokTurn     int     // current turn's input and output tokens, as last reported
 	sessionID   string
+	briefed     bool   // sessionID has had Deck's instructions (store.Member.Briefed)
 	lastText    string // the last assistant text of the running turn
 	interrupted bool
 	ctxTokens   int // context window use, from the latest usage event that reported it
@@ -1656,7 +1660,7 @@ func (a *agentState) memberMeta() store.Member {
 	return store.Member{
 		ID: a.id, Kind: a.kind, Name: a.name, Model: a.model, Effort: a.effort, SessionID: a.sessionID,
 		CostUSD: a.costTotal + a.costTurn, Cursor: a.cursor,
-		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow,
+		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, Briefed: a.briefed,
 		Parent: a.parent, Ephemeral: a.ephemeral, Dir: a.dir, Worktree: a.worktree,
 	}
 }
@@ -1770,6 +1774,7 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 	case agent.KindSessionStarted:
 		if ev.SessionID != "" && ev.SessionID != a.sessionID {
 			a.sessionID = ev.SessionID
+			a.briefed = false // a new CLI session has not seen the instructions
 			res.metaDirty = true
 		}
 		if ev.Text != "" {
@@ -1816,6 +1821,8 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 		a.costTotal += a.costTurn
 		a.costTurn, a.tokTurn = 0, 0
 		a.base = StatusIdle
+		// The run's first prompt carried the instructions (Spec.Briefed).
+		a.briefed = a.sessionID != ""
 		res.gone = a.clearPendingLocked()
 		res.metaDirty = true
 	case agent.KindExited:

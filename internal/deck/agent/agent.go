@@ -37,6 +37,10 @@ const (
 	// process is up; a restart that fails ends with KindError and KindExited.
 	KindRestarting Kind = "restarting"
 	KindRestarted  Kind = "restarted"
+	// KindCompacted says the CLI compacted the conversation: earlier turns
+	// were replaced by a summary, so the context use drops. Text is how it
+	// was started when the CLI says ("auto", "manual"). It is not a turn.
+	KindCompacted Kind = "compacted"
 )
 
 // ToolStatus is the lifecycle state of a tool call.
@@ -190,7 +194,7 @@ func KeepsRaw(k Kind) bool {
 	switch k {
 	case KindSessionStarted, KindAssistantText, KindReasoning, KindUserText,
 		KindToolCall, KindToolResult, KindFileChange, KindUsage, KindTurnDone,
-		KindExited, KindLimits, KindRestarting, KindRestarted:
+		KindExited, KindLimits, KindRestarting, KindRestarted, KindCompacted:
 		return false
 	}
 	return true
@@ -247,6 +251,11 @@ type Spec struct {
 	// shared-thread briefing. Claude: --append-system-prompt; Codex: the
 	// thread's developer instructions.
 	Instructions string
+	// Briefed says the session ResumeID names already had Instructions in
+	// one of its prompts. Adapters that deliver them inside the
+	// conversation (OpenCode, Antigravity) then do not send them again;
+	// those that pass them as system or developer instructions ignore it.
+	Briefed bool
 	// MCP is Deck's own stdio MCP server for this agent: the search and
 	// execute tools (see DeckToolSearch), plus the approve tool for Claude.
 	// Adapters register it with their CLI under MCP.Name. Nil = none.

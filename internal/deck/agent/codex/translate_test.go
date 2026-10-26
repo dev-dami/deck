@@ -286,6 +286,14 @@ func TestReplaySession2FileChangeAndDeclinedCommand(t *testing.T) {
 
 func rawOf(line string) rawLine { return func() json.RawMessage { return json.RawMessage(line) } }
 
+// TestThreadCompacted covers thread/compacted becoming KindCompacted.
+func TestThreadCompacted(t *testing.T) {
+	evs := notif(t, newTranslator("codex1", "/w"), noteCompacted, `{"threadId":"thr","turnId":"t1"}`)
+	if len(evs) != 1 || evs[0].Kind != agent.KindCompacted || evs[0].AgentID != "codex1" {
+		t.Fatalf("events = %+v", evs)
+	}
+}
+
 // TestRawOnlyForErrors covers the line being produced only for an event that
 // keeps it: a delta never asks for it, an error does.
 func TestRawOnlyForErrors(t *testing.T) {

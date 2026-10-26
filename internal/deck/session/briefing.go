@@ -7,6 +7,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/brand"
+	"github.com/dev-dami/deck/internal/deck/hub"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -82,8 +83,8 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 		}
 		switch e.Type {
 		case store.EntryEvent:
-			if e.Delta || e.Kind == agent.KindUserText {
-				continue
+			if e.Delta || e.Kind == agent.KindUserText || e.Kind == agent.KindCompacted {
+				continue // a compaction can come between turns: it must not hold the briefing
 			}
 			sp := e.AgentID
 			if sp == v.self && v.skipSelf {
@@ -299,7 +300,29 @@ func (m *Manager) readThread(agentID string) string {
 	if len(lines) == 0 {
 		return head + "\n\n(nothing has been said yet)"
 	}
-	return head + "\n\n" + tail(joinLines(lines), maxBriefingChars)
+	// The hub returns at most hub.MaxOutput bytes of a call and cuts the
+	// end off anything longer, which here is the newest activity: keep the
+	// tail within that cap instead.
+	body := tail(joinLines(lines), maxBriefingChars)
+	return head + "\n\n" + tailBytes(body, hub.MaxOutput-len(head)-readSlack)
+}
+
+// readSlack is room left under hub.MaxOutput by thread.read for the line
+// breaks and the broker's own redaction.
+const readSlack = 256
+
+// tailBytes is the end of s in at most n bytes, cut at a rune boundary, with
+// a note that earlier activity was left out.
+func tailBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	const note = "[... earlier activity omitted; the thread is longer than one read returns ...]\n\n"
+	start := len(s) - max(0, n-len(note))
+	for start < len(s) && (s[start]&0xC0) == 0x80 {
+		start++
+	}
+	return note + s[start:]
 }
 
 // instructions is the short briefing every member starts with. It carries no

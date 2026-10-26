@@ -590,6 +590,14 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 	case deckagent.KindRestarted:
 		w.publish(DeckChange{Kind: ChangeRoster, SessionID: sid})
 		return
+	case deckagent.KindCompacted:
+		// Not a turn, and it can come between turns.
+		name := ev.AgentID
+		if a, ok := w.mgr().Agent(ev.AgentID); ok && a.Name != "" {
+			name = a.Name
+		}
+		w.notice(sid, name+" summarised its earlier conversation to free context")
+		return
 	}
 	var began time.Time // when a finishing turn began; zero when unknown
 	var start time.Time // when the turn this event belongs to began; zero when unknown
