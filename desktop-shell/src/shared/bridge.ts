@@ -172,6 +172,10 @@ export const RPC_METHODS = [
   // Bytes arrive as a Uint8Array.
   "ReadImage",
   "SearchMessages",
+  // Named agents (docs/design/agents-and-mentions.md, section 4).
+  "ListProfiles",
+  "SaveProfile",
+  "DeleteProfile",
 ] as const;
 
 export type RpcMethod = (typeof RPC_METHODS)[number];

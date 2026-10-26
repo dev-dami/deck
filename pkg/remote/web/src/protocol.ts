@@ -275,11 +275,15 @@ export interface AgentLine {
   model?: string;
   effort?: string;
   busy: boolean;
+  // The profile the member came from, and its one-line role
+  // (docs/design/agents-and-mentions.md); absent from an older Deck.
+  profile?: string;
+  role?: string;
 }
 
 export const decodeAgentLine: Decoder<AgentLine> = object(
   { id: str, name: str, kind: str, busy: bool },
-  { model: str, effort: str },
+  { model: str, effort: str, profile: str, role: str },
 );
 
 // An installed agent CLI that can join a session; joined when the session

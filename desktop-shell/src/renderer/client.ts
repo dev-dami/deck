@@ -1,6 +1,7 @@
 import type { Store } from "@web/controller";
 import type { ChangedFile, Decision, Image, Mode, ModelChoice, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
+import type { Profile, ProfileScope } from "./profiles";
 import type { ProjectApi } from "./project";
 import type { RoomMetaStore } from "./roomMeta";
 import type { FileList, ImageBytes, SearchHit } from "./rpcMap";
@@ -68,6 +69,12 @@ export interface DeckClient {
   // Messages of every room that is not archived that hold query, newest
   // first. Quiet: no toast.
   searchMessages?(query: string, limit?: number): Promise<SearchHit[] | null>;
+  // Named agents: the profiles of the global and the project deck.json,
+  // project over global. Quiet: no toast.
+  listProfiles?(): Promise<Profile[] | null>;
+  // Writes p to its scope's deck.json; the Deck's reason when it refuses.
+  saveProfile?(p: Profile): Promise<{ ok: true } | { ok: false; message: string }>;
+  deleteProfile?(name: string, scope: ProfileScope): Promise<boolean>;
 }
 
 // Whether the Deck serves the optional method (Info.capabilities).

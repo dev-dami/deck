@@ -69,6 +69,20 @@ describe("buildLanes", () => {
     expect(lanes.map((l) => l.leases)).toEqual([[], ["pkg/rpc/**", "docs/a.md"], ["b.go"]]);
   });
 
+  test("a named member's lane carries its profile's role", () => {
+    const lanes = buildLanes({
+      roster: [{ ...line("charles"), kind: "claude", role: "reviewer", profile: "charles" }, line("codex-1")],
+      agents: null,
+      shares: {},
+      waiting: [],
+    });
+    expect(lanes.map((l) => [l.name, l.agentKind, l.role])).toEqual([
+      ["you", "", ""],
+      ["charles", "claude", "reviewer"],
+      ["codex-1", "codex", ""],
+    ]);
+  });
+
   test("without the tree, the roster's busy flag says working or idle", () => {
     const lanes = buildLanes({ roster: [line("claude-1", true), line("codex-1")], agents: null, shares: {}, waiting: [] });
     expect(lanes.map((l) => l.status)).toEqual(["idle", "working", "idle"]);

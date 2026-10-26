@@ -1,4 +1,6 @@
-const LEADING_MENTION = /^\$[\w-]+[ \t]*/;
+// A mention opens with "$" or "@" (docs/design/agents-and-mentions.md). One
+// followed by "/" or by "." and more is a path ("@src/a.ts"), not a name.
+const LEADING_MENTION = /^[$@][\w-]+(?![\w/-]|\.\S)[ \t]*/;
 
 // Tapping an agent chip addresses the message to that agent by prefixing
 // "$name ". Tapping another chip retargets instead of stacking mentions.
@@ -7,17 +9,17 @@ export function applyAgentChip(text: string, agent: string): string {
 }
 
 export function activeAgent(text: string): string | null {
-  const m = /^\$([\w-]+)/.exec(text);
+  const m = /^[$@]([\w-]+)(?![\w/-]|\.\S)/.exec(text);
   return m?.[1] ?? null;
 }
 
-const LEADING_MENTIONS = /^(?:\$[\w-]+[+*]?[ \t]*)+/;
+const LEADING_MENTIONS = /^(?:[$@][\w-]+[+*]?(?![\w/-]|\.\S)[ \t]*)+/;
 
-// Every agent the message opens by addressing ("$claude $codex fix it" names
+// Every agent the message opens by addressing ("$claude @codex fix it" names
 // both). A "+" or "*" suffix asks for a new member, not an existing one.
 export function activeAgents(text: string): string[] {
   const lead = LEADING_MENTIONS.exec(text)?.[0] ?? "";
-  return [...lead.matchAll(/\$([\w-]+)[+*]?/g)].map((m) => m[1] as string);
+  return [...lead.matchAll(/[$@]([\w-]+)[+*]?/g)].map((m) => m[1] as string);
 }
 
 export function setAgents(text: string, agents: readonly string[]): string {

@@ -14,6 +14,7 @@ import { segmentItem, segmentTrack } from "./kit/segmented";
 import { Row, Section } from "./kit/settings";
 import { Switch } from "./kit/switch";
 import { PhonePage } from "./Phone";
+import { ProfilesEditor } from "./ProfilesEditor";
 import { modKey } from "./keys";
 import { AgentGlyph } from "./Welcome";
 
@@ -454,6 +455,7 @@ function Agents({ state, p }: { state: AppState; p: Prefs }) {
           </div>
         ))}
       </Section>
+      <ProfilesEditor kinds={kinds} theme={state.theme} />
       <Section title="Permissions">
         <Row
           title="Yolo mode"

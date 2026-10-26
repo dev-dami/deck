@@ -22,3 +22,10 @@ export function agentColour(agentId: string, kind: string): string {
   const step = (instanceOf(agentId) - 1) % 4;
   return step === 0 ? base : `color-mix(in oklab, ${base}, white ${step * 18}%)`;
 }
+
+// The one-line role a member carries from its profile
+// (docs/design/agents-and-mentions.md), by id or name; "" when it has none.
+// Every place that shows a member shows it after the glyph and the name.
+export function agentRole(agent: string, roster: readonly AgentLine[]): string {
+  return roster.find((l) => l.id === agent)?.role ?? roster.find((l) => l.name === agent)?.role ?? "";
+}

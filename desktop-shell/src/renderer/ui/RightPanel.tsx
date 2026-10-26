@@ -375,7 +375,7 @@ export function RightPanel({
           c.project === undefined ? (
             <Empty>The agents tree shows for a project on this computer.</Empty>
           ) : (
-            <AgentsTree crew={crew} at={crewAt} theme={state.theme} />
+            <AgentsTree crew={crew} at={crewAt} theme={state.theme} roster={state.roster[open.id]} />
           )
         ) : (
           <SideChat key={open.id} c={c} state={state} main={open} api={c.project} theme={state.theme} />

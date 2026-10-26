@@ -22,7 +22,8 @@ export interface Lane {
   contextPct: number | null;
   // The paths the agent holds a lease on.
   leases: string[];
-  // A teammate's role: observer, participant or editor.
+  // A teammate's role (observer, participant or editor), or an agent's
+  // one-line role from its profile.
   role: string;
   depth: number;
 }
@@ -104,7 +105,7 @@ export function buildLanes({
     effort: n?.effort || line?.effort || "",
     contextPct: contextPct(n),
     leases: leased(name, n),
-    role: "",
+    role: line?.role ?? "",
     depth: n?.depth ?? 0,
   });
   for (const line of roster) {

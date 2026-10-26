@@ -20,6 +20,7 @@ import {
   type Session,
   type Theme,
 } from "@web/protocol";
+import type { Profile } from "./profiles";
 import { ATTENTION, type Attention, type Lease, type RoomEvent, type RoomUpdate } from "./roomMeta";
 
 // deck.v1 messages (proto/deck/v1/deck.proto, as plain objects from main:
@@ -101,7 +102,13 @@ function mapQueued(p: Obj): unknown {
 }
 
 function mapAgent(p: Obj): unknown {
-  return { id: s(p["id"]), name: s(p["name"]) || s(p["id"]), kind: s(p["kind"]), busy: p["busy"] === true, ...strings(p, ["model", "effort"]) };
+  return {
+    id: s(p["id"]),
+    name: s(p["name"]) || s(p["id"]),
+    kind: s(p["kind"]),
+    busy: p["busy"] === true,
+    ...strings(p, ["model", "effort", "profile", "role"]),
+  };
 }
 
 function mapModel(p: Obj): unknown {
@@ -278,6 +285,30 @@ export interface SearchHit {
   agent: string;
   snippet: string;
   at: number;
+}
+
+// ListProfiles' answer; a profile with no name or kind is dropped.
+export function toProfiles(r: unknown): Profile[] {
+  const v = field(r, "profiles");
+  if (!Array.isArray(v)) return [];
+  return v.filter(isRecord).flatMap((p) =>
+    s(p["name"]) === "" || s(p["kind"]) === ""
+      ? []
+      : [
+          {
+            name: s(p["name"]),
+            kind: s(p["kind"]),
+            model: s(p["model"]),
+            effort: s(p["effort"]),
+            role: s(p["role"]),
+            instructions: s(p["instructions"]),
+            voice: s(p["voice"]),
+            paths: stringList(p["paths"]) ?? [],
+            color: s(p["color"]),
+            scope: s(p["scope"]) === "project" ? "project" : "global",
+          } satisfies Profile,
+        ],
+  );
 }
 
 export function toSearchHits(r: unknown): SearchHit[] {

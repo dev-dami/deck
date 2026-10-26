@@ -5,6 +5,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { agentColour } from "../agents";
 import { fitLanes, type Lane } from "../lanes";
 import { cn } from "../lib/cn";
+import { AgentRole } from "./AgentRole";
 import { Models } from "./AgentsStrip";
 import { MenuItem, MenuLabel, MenuSeparator, Popover } from "./kit/menu";
 import { Ring } from "./kit/ring";
@@ -109,6 +110,7 @@ function AgentChip({
           <span className={cn("lane-name truncate font-mono text-2xs", running ? "text-foreground" : lane.status === "exited" ? "text-faint" : "text-foreground/80")}>
             {lane.name}
           </span>
+          <AgentRole role={lane.role} className="max-w-32 text-2xs" />
           {DOT[lane.status] !== undefined && <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", DOT[lane.status])} />}
           {/* The word shows when the agent asks for something; else it is for
               the tooltip and screen readers. */}

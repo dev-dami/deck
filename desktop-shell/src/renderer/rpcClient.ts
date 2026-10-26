@@ -5,6 +5,7 @@ import { applyTheme, type ThemeTarget } from "@web/theme";
 import { ProjectApi } from "./project";
 import type { DeckBridge, EngineStop, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
 import type { DeckClient } from "./client";
+import type { Profile, ProfileScope } from "./profiles";
 import { RoomMetaStore } from "./roomMeta";
 import {
   type FileList,
@@ -19,6 +20,7 @@ import {
   toImage,
   toMessages,
   toModels,
+  toProfiles,
   toQueue,
   toRoom,
   toRooms,
@@ -457,6 +459,29 @@ export class RpcDeckClient implements DeckClient {
     if (!this.serves("SearchMessages")) return null;
     const r = await this.call("SearchMessages", { query, limit }, true);
     return r === null ? null : toSearchHits(r);
+  }
+
+  async listProfiles(): Promise<Profile[] | null> {
+    if (!this.serves("ListProfiles")) return null;
+    const r = await this.call("ListProfiles", {}, true);
+    return r === null ? null : toProfiles(r);
+  }
+
+  // The Deck checks the profile (SaveProfile); its reason comes back for
+  // the editor to show by the fields, not as a toast.
+  async saveProfile(p: Profile): Promise<{ ok: true } | { ok: false; message: string }> {
+    if (!this.serves("SaveProfile")) return { ok: false, message: "This Deck does not keep profiles." };
+    try {
+      const r = await this.bridge.rpcCall(this.deck.id, "SaveProfile", { profile: { ...p } });
+      if (r.ok) return { ok: true };
+      return { ok: false, message: r.code === UNAVAILABLE ? "Deck is not reachable." : r.message || "Deck refused the profile." };
+    } catch (e) {
+      return { ok: false, message: describeError(e) };
+    }
+  }
+
+  async deleteProfile(name: string, scope: ProfileScope): Promise<boolean> {
+    return (await this.optional("DeleteProfile", { name, scope })) !== null;
   }
 
   // Closes the folder: main closes the Deck's stdin and it stops.

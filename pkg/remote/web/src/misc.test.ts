@@ -78,6 +78,20 @@ describe("images and composer", () => {
   });
 });
 
+describe("@ mentions in the composer", () => {
+  test("@ addresses as $ does, and a path after @ is not a mention", () => {
+    expect(activeAgent("@charles hi")).toBe("charles");
+    expect(activeAgent("@src/a.ts hi")).toBeNull();
+    expect(activeAgent("@main.go hi")).toBeNull();
+    expect(activeAgents("@charles $codex+ fix it")).toEqual(["charles", "codex"]);
+    expect(activeAgents("@README.md fix it")).toEqual([]);
+    expect(applyAgentChip("@codex hello", "claude")).toBe("$claude hello");
+    expect(canSend("@charles ", 0)).toBe(false);
+    expect(canSend("@src/a.ts", 0)).toBe(true);
+    expect(toggleAgent("@charles fix", "charles")).toBe("fix");
+  });
+});
+
 describe("transcript", () => {
   test("pairs tool results with their calls and reads image parts", () => {
     const chunks = groupParts([

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   addAgentMention,
   applySuggestion,
+  contextAt,
   FILES_DEBOUNCE_MS,
   fileAt,
   fileLister,
@@ -10,12 +11,15 @@ import {
   mergeFiles,
   matchPaths,
   mentionAt,
+  nameAt,
+  pathLike,
+  pickerAt,
   slashAt,
   slashSuggestions,
   suggestions,
 } from "./completion";
 
-const line = (id: string, kind: string, busy = false): AgentLine => ({ id, name: id, kind, busy });
+const line = (id: string, kind: string, busy = false, extra: Partial<AgentLine> = {}): AgentLine => ({ id, name: id, kind, busy, ...extra });
 const roster = [line("claude-1", "claude", true), line("claude-2", "claude"), line("codex-1", "codex")];
 const kinds = ["claude", "codex", "opencode"];
 
@@ -107,14 +111,110 @@ describe("slash commands", () => {
   });
 });
 
-describe("the @ file picker", () => {
+describe("the @ picker: agents and people", () => {
+  const profiles = [
+    { name: "charles", kind: "claude", role: "reviewer" },
+    { name: "ada", kind: "codex" },
+    // A profile with a live member is offered as the member.
+    { name: "claude-2", kind: "claude", role: "taken" },
+  ];
+  const people = [{ name: "alice", role: "teammate" }];
+
+  test("finds the @name that ends at the caret", () => {
+    expect(nameAt("@ch", 3)).toEqual({ start: 0, query: "ch" });
+    expect(nameAt("ask @", 5)).toEqual({ start: 4, query: "" });
+    expect(nameAt("ask @claude+", 12)).toEqual({ start: 4, query: "claude+" });
+    expect(nameAt("me@example", 10)).toBeNull();
+    expect(nameAt("@src/a", 6)).toBeNull();
+    expect(nameAt("@main.go", 8)).toBeNull();
+    expect(nameAt("@ch now", 7)).toBeNull();
+  });
+
+  test("lists members by name, kinds, profiles, then people, with @", () => {
+    const named = [line("claude-1", "claude", true), line("claude-2", "claude"), line("codex-1", "codex", false, { name: "rev", role: "reviewer", profile: "rev" })];
+    expect(suggestions("", named, kinds, { sigil: "@", profiles, people }).map((s) => s.insert)).toEqual([
+      "@claude-1",
+      "@claude-2",
+      "@rev",
+      "@claude",
+      "@claude+",
+      "@claude*",
+      "@codex",
+      "@codex+",
+      "@opencode",
+      "@opencode+",
+      "@charles",
+      "@ada",
+      "@alice",
+      "@all",
+    ]);
+  });
+
+  test("each row carries the kind for its glyph, the name and the role", () => {
+    const s = suggestions("", roster, kinds, { sigil: "@", profiles, people });
+    expect(s.find((x) => x.label === "charles")).toEqual({ insert: "@charles", label: "charles", detail: "reviewer", kind: "claude" });
+    expect(s.find((x) => x.label === "ada")).toEqual({ insert: "@ada", label: "ada", detail: "start ada, a codex", kind: "codex" });
+    expect(s.find((x) => x.label === "alice")).toEqual({ insert: "@alice", label: "alice", detail: "teammate", kind: null });
+    const member = suggestions("rev", [line("rev", "claude", true, { role: "reviewer" })], [], { sigil: "@" })[0];
+    expect(member).toEqual({ insert: "@rev", label: "rev", detail: "reviewer · claude · busy", kind: "claude" });
+  });
+
+  test("filters by prefix, and $ offers no profiles or people", () => {
+    expect(suggestions("CH", roster, kinds, { sigil: "@", profiles, people }).map((s) => s.insert)).toEqual(["@charles"]);
+    expect(suggestions("a", roster, kinds, { sigil: "@", profiles, people }).map((s) => s.insert)).toEqual(["@ada", "@alice", "@all"]);
+    expect(suggestions("", roster, kinds, { profiles, people }).map((s) => s.insert)).not.toContain("$charles");
+  });
+
+  test("a pick inserts @name and a space", () => {
+    const text = "@cha look again";
+    const m = nameAt(text, 4);
+    const s = suggestions("cha", roster, kinds, { sigil: "@", profiles })[0];
+    if (m === null || s === undefined) throw new Error("no name");
+    expect(applySuggestion(text, m, s)).toEqual({ text: "@charles look again", caret: 9 });
+  });
+});
+
+describe("which picker the text opens", () => {
+  test("@ names, # files, $ agents, and @ before a path still files", () => {
+    expect(pickerAt("@co", 3, true)).toEqual({ type: "@", m: { start: 0, query: "co" } });
+    expect(pickerAt("#li", 3, true)).toEqual({ type: "#", m: { start: 0, query: "li" } });
+    expect(pickerAt("see #", 5, true)).toEqual({ type: "#", m: { start: 4, query: "" } });
+    expect(pickerAt("$co", 3, true)).toEqual({ type: "$", m: { start: 0, query: "co" } });
+    expect(pickerAt("look at @pkg/re", 15, true)).toEqual({ type: "#", m: { start: 8, query: "pkg/re" } });
+    expect(pickerAt("@README.md", 10, true)).toEqual({ type: "#", m: { start: 0, query: "README.md" } });
+  });
+
+  test("without files, # and a path after @ open nothing", () => {
+    expect(pickerAt("#li", 3, false)).toBeNull();
+    expect(pickerAt("@pkg/", 5, false)).toBeNull();
+    expect(pickerAt("@co", 3, false)).toEqual({ type: "@", m: { start: 0, query: "co" } });
+  });
+
+  test("a # inside a word, a heading or ## opens nothing", () => {
+    expect(pickerAt("issue#12", 8, true)).toBeNull();
+    expect(pickerAt("# Title", 7, true)).toBeNull();
+    expect(pickerAt("##", 2, true)).toBeNull();
+    expect(contextAt("a #b", 4)).toEqual({ start: 2, query: "b" });
+  });
+
+  test("path-like means a slash or a file extension", () => {
+    expect(pathLike("src/")).toBe(true);
+    expect(pathLike("main.go")).toBe(true);
+    expect(pathLike("charles")).toBe(false);
+    expect(pathLike("claude-2")).toBe(false);
+    expect(pathLike("v.")).toBe(false);
+  });
+});
+
+describe("the # file picker", () => {
   const paths = ["pkg/remote/auth/limit.go", "pkg/remote/auth/limit_test.go", "README.md", "docs/limits.md", "internal/deck/hub/team.go"];
 
-  test("finds the @word that ends at the caret", () => {
-    expect(fileAt("@li", 3)).toEqual({ start: 0, query: "li" });
+  test("@ before a path is a file reference, as before", () => {
+    expect(fileAt("@li", 3)).toBeNull();
     expect(fileAt("look at @pkg/re", 15)).toEqual({ start: 8, query: "pkg/re" });
     expect(fileAt("me@example", 10)).toBeNull();
     expect(fileAt("@limit.go now", 13)).toBeNull();
+    expect(fileAt("@limit.go", 9)).toEqual({ start: 0, query: "limit.go" });
   });
 
   test("ranks file names, then paths, then scattered letters", () => {
@@ -130,16 +230,19 @@ describe("the @ file picker", () => {
     expect(matchPaths("", paths, 2)).toEqual(paths.slice(0, 2));
   });
 
-  test("inserts the path in backticks", () => {
-    const text = "check @lim please";
-    const m = fileAt(text, 10);
+  test("inserts the path in backticks, the same from # as from @", () => {
     const s = fileSuggestions("lim", paths)[0];
-    if (m === null || s === undefined) throw new Error("no file");
-    expect(applySuggestion(text, m, s)).toEqual({ text: "check `docs/limits.md` please", caret: 23 });
+    if (s === undefined) throw new Error("no file");
+    const hash = contextAt("check #lim please", 10);
+    if (hash === null) throw new Error("no #");
+    expect(applySuggestion("check #lim please", hash, s)).toEqual({ text: "check `docs/limits.md` please", caret: 23 });
+    const at = fileAt("check @docs/lim please", 15);
+    if (at === null) throw new Error("no @path");
+    expect(applySuggestion("check @docs/lim please", at, s).text).toBe("check `docs/limits.md` please");
   });
 });
 
-describe("the @ file picker over ListFiles", () => {
+describe("the # file picker over ListFiles", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
