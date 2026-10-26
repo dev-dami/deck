@@ -317,7 +317,7 @@ func NewManager(adapters map[string]agent.Adapter, st *store.Store, cfg config.C
 	if _, ignored := startMode(cfg); ignored {
 		m.out <- yoloIgnoredNotice() // the channel is buffered; nobody is listening yet
 	}
-	m.w = newWriter(m.writeEntries)
+	m.w = newWriter()
 	if o.Hub != nil {
 		o.Hub.SetThreadReader(m.readThread)
 		o.Hub.SetExecutor(m.execOp)
@@ -1906,31 +1906,21 @@ func eventText(s string) agent.Event { return agent.Event{Text: s} }
 // writer runs queued store operations one at a time on its own goroutine, so
 // store.Append (which costs milliseconds) never runs on the UI goroutine.
 //
-// Log entries for one thread queued back to back are coalesced into one
-// operation, so a writer that falls behind catches up with one append per
-// thread instead of one per event. The queue is not bounded: push is called
-// with thread locks held, which the queued operations take, so blocking it
-// could deadlock.
+// push never blocks: it is called with thread locks held, which the queued
+// operations take. The queue is bounded instead by what is pushed: a thread
+// has at most one log write queued (its new entries wait in its outbox, and
+// the write takes them all) and one metadata write (persistMeta); the rest
+// are the rare archive, delete, move and flush operations.
 type writer struct {
 	mu     sync.Mutex
-	q      []wop
+	q      []func()
 	wake   chan struct{}
 	closed bool
 	done   chan struct{}
-	// entries writes a run of log entries to a thread's log.
-	entries func(*thread, []store.Entry)
 }
 
-// wop is one queued store operation: f, or when t is set the log entries es
-// for thread t.
-type wop struct {
-	f  func()
-	t  *thread
-	es []store.Entry
-}
-
-func newWriter(entries func(*thread, []store.Entry)) *writer {
-	w := &writer{wake: make(chan struct{}, 1), done: make(chan struct{}), entries: entries}
+func newWriter() *writer {
+	w := &writer{wake: make(chan struct{}, 1), done: make(chan struct{})}
 	go w.loop()
 	return w
 }
@@ -1941,27 +1931,16 @@ func (w *writer) push(f func()) {
 		w.mu.Unlock()
 		return
 	}
-	w.q = append(w.q, wop{f: f})
+	w.q = append(w.q, f)
 	w.mu.Unlock()
 	w.signal()
 }
 
-// pushAppend queues e for t's log, joining the operation at the end of the
-// queue when that is for t's log too.
-func (w *writer) pushAppend(t *thread, e store.Entry) {
+// queued is the number of operations waiting.
+func (w *writer) queued() int {
 	w.mu.Lock()
-	if w.closed {
-		w.mu.Unlock()
-		return
-	}
-	if n := len(w.q); n > 0 && w.q[n-1].t == t {
-		w.q[n-1].es = append(w.q[n-1].es, e)
-		w.mu.Unlock()
-		return // already signalled for that operation
-	}
-	w.q = append(w.q, wop{t: t, es: []store.Entry{e}})
-	w.mu.Unlock()
-	w.signal()
+	defer w.mu.Unlock()
+	return len(w.q)
 }
 
 func (w *writer) signal() {
@@ -1979,12 +1958,8 @@ func (w *writer) loop() {
 		w.q = nil
 		closed := w.closed
 		w.mu.Unlock()
-		for _, op := range q {
-			if op.t != nil {
-				w.entries(op.t, op.es)
-			} else {
-				op.f()
-			}
+		for _, f := range q {
+			f()
 		}
 		if len(q) > 0 {
 			continue

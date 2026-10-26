@@ -108,6 +108,9 @@ type thread struct {
 	repo     *changes.Repo
 
 	created bool // the store knows this thread (touched by the writer goroutine only)
+	// outbox holds the log entries appended since the writer last took them;
+	// one write for them is queued while it is not empty (appendLocked).
+	outbox []store.Entry
 	// metaQueued is set while a metadata write for the thread waits in the
 	// writer queue: that write snapshots the thread when it runs, so further
 	// changes until then need no write of their own.
@@ -192,7 +195,10 @@ func (m *Manager) appendLocked(t *thread, e store.Entry) int {
 		t.lastSpeaker = e.AgentID
 	}
 	if m.st != nil && !t.gone.Load() {
-		m.w.pushAppend(t, e)
+		t.outbox = append(t.outbox, e)
+		if len(t.outbox) == 1 {
+			m.w.push(func() { m.writeEntries(t) })
+		}
 	}
 	return idx
 }
@@ -223,9 +229,14 @@ func (m *Manager) ensureStored(t *thread) {
 	}
 }
 
-// writeEntries is the writer's job for a run of log entries queued by
-// appendLocked: one append to the thread's log for all of them.
-func (m *Manager) writeEntries(t *thread, es []store.Entry) {
+// writeEntries is the writer's job for the log entries in t's outbox: one
+// append to the thread's log for all of them, however many arrived while the
+// job waited.
+func (m *Manager) writeEntries(t *thread) {
+	t.mu.Lock()
+	es := t.outbox
+	t.outbox = nil
+	t.mu.Unlock()
 	m.ensureStored(t)
 	_ = m.st.AppendEntries(t.id, es)
 }
