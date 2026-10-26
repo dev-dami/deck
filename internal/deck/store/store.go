@@ -35,10 +35,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -468,11 +470,18 @@ func (s *Store) Create(t Thread) (Thread, error) {
 // CreateWith stores a new thread whose log starts with entries (a fork).
 // Streaming deltas are dropped as AppendEntry would.
 func (s *Store) CreateWith(t Thread, entries []Entry) (Thread, error) {
+	return s.CreateFrom(t, slices.Values(entries))
+}
+
+// createChunk is how much of a new log CreateFrom encodes before writing it.
+const createChunk = 256 << 10
+
+// CreateFrom is CreateWith for entries handed over one at a time: they are
+// encoded and written a part at a time, so a long log is never held as one
+// buffer. On an error writing the log the thread stays, with the part of
+// the log written, and is returned with the error.
+func (s *Store) CreateFrom(t Thread, entries iter.Seq[Entry]) (Thread, error) {
 	t, err := s.Create(t)
-	if err != nil {
-		return Thread{}, err
-	}
-	buf, _, err := encodeEntries(entries)
 	if err != nil {
 		return Thread{}, err
 	}
@@ -481,8 +490,30 @@ func (s *Store) CreateWith(t Thread, entries []Entry) (Thread, error) {
 	s.mu.Unlock()
 	tl.Lock()
 	defer tl.Unlock()
-	if err := appendFile(s.logPath(t.ID), buf); err != nil {
-		return Thread{}, err
+	f, err := os.OpenFile(s.logPath(t.ID), os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return t, fmt.Errorf("store: open log: %w", err)
+	}
+	var buf []byte
+	for e := range entries {
+		if buf, _, err = encodeEntry(buf, e); err != nil {
+			break
+		}
+		if len(buf) >= createChunk {
+			if _, err = f.Write(buf); err != nil {
+				break
+			}
+			buf = buf[:0]
+		}
+	}
+	if err == nil && len(buf) > 0 {
+		_, err = f.Write(buf)
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return t, fmt.Errorf("store: write log: %w", err)
 	}
 	return t, nil
 }
@@ -505,41 +536,51 @@ func (s *Store) AppendEntry(threadID string, e Entry) error {
 // AppendEntries is AppendEntry for several entries, written to the log in one
 // go and in order.
 func (s *Store) AppendEntries(threadID string, entries []Entry) error {
+	_, _, err := s.AppendEntriesAt(threadID, entries)
+	return err
+}
+
+// AppendEntriesAt is AppendEntries that also says where in the log the new
+// lines went: from byte offset start to end, the log's size after them. A
+// reader that knows where each entry is can read part of the log back
+// (ScanEntries) instead of keeping it.
+func (s *Store) AppendEntriesAt(threadID string, entries []Entry) (start, end int64, err error) {
 	buf, ended, err := encodeEntries(entries)
 	if err != nil || len(buf) == 0 {
-		return err
+		return -1, -1, err
 	}
 
 	s.mu.Lock()
 	if _, ok := s.threads[threadID]; !ok {
 		s.mu.Unlock()
-		return ErrNotFound
+		return -1, -1, ErrNotFound
 	}
 	tl := s.threadLockLocked(threadID)
 	s.mu.Unlock()
 
 	tl.Lock()
-	err = appendFile(s.logPath(threadID), buf)
+	end, err = appendFileAt(s.logPath(threadID), buf)
 	tl.Unlock()
 	if err != nil {
-		return err
+		return -1, -1, err
 	}
+	start = end - int64(len(buf))
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t, ok := s.threads[threadID]
 	if !ok {
-		return ErrNotFound
+		return start, end, ErrNotFound
 	}
 	t.Updated = time.Now()
 	s.dirty[threadID] = true
 	s.indexDirty = true
 	if ended {
 		// A turn ended: a good moment to bring the files up to date.
-		return s.flushLocked()
+		return start, end, s.flushLocked()
 	}
 	s.scheduleLocked()
-	return nil
+	return start, end, nil
 }
 
 // encodeEntries renders the log lines for entries, dropping streaming deltas
@@ -547,20 +588,27 @@ func (s *Store) AppendEntries(threadID string, entries []Entry) error {
 // turn.
 func encodeEntries(entries []Entry) (buf []byte, ended bool, err error) {
 	for _, e := range entries {
-		if e.Delta {
-			continue
+		var end bool
+		if buf, end, err = encodeEntry(buf, e); err != nil {
+			return nil, false, err
 		}
-		e.Event = slim(sanitize(e.Event))
-		line, err := json.Marshal(e)
-		if err != nil {
-			return nil, false, fmt.Errorf("store: encode entry: %w", err)
-		}
-		buf = append(append(buf, line...), '\n')
-		if e.Type == EntryEvent && (e.Kind == agent.KindTurnDone || e.Kind == agent.KindExited) {
-			ended = true
-		}
+		ended = ended || end
 	}
 	return buf, ended, nil
+}
+
+// encodeEntry is encodeEntries for one entry, appended to buf.
+func encodeEntry(buf []byte, e Entry) (_ []byte, ended bool, err error) {
+	if e.Delta {
+		return buf, false, nil
+	}
+	e.Event = slim(sanitize(e.Event))
+	line, err := json.Marshal(e)
+	if err != nil {
+		return buf, false, fmt.Errorf("store: encode entry: %w", err)
+	}
+	buf = append(append(buf, line...), '\n')
+	return buf, e.Type == EntryEvent && (e.Kind == agent.KindTurnDone || e.Kind == agent.KindExited), nil
 }
 
 // slim drops the raw protocol line of an event that does not keep it (see
@@ -696,11 +744,63 @@ func (s *Store) LoadEntries(id string) ([]Entry, Thread, error) {
 // the next read should start: the size of the log read, or -1 when the log
 // does not end with a whole line (a torn write), which must be read afresh.
 func (s *Store) LoadEntriesFrom(id string, off int64, n int) (entries []Entry, end int64, meta Thread, err error) {
+	end, meta, err = s.ScanEntries(id, off, n, 0, func(e Entry, _ int64) bool {
+		entries = append(entries, e)
+		return true
+	})
+	if err != nil {
+		return nil, -1, meta, err
+	}
+	return entries, end, meta, nil
+}
+
+// Meta returns a thread's metadata, as LoadEntries does, without its log.
+func (s *Store) Meta(id string) (Thread, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur, ok := s.threads[id]
+	if !ok {
+		return Thread{}, ErrNotFound
+	}
+	meta := *cur
+	meta.Members = append([]Member(nil), cur.Members...)
+	return meta, nil
+}
+
+// LogSize is the size of a thread's log in bytes.
+func (s *Store) LogSize(id string) (int64, error) {
+	s.mu.Lock()
+	_, ok := s.threads[id]
+	tl := s.threadLockLocked(id)
+	s.mu.Unlock()
+	if !ok {
+		return -1, ErrNotFound
+	}
+	tl.Lock()
+	defer tl.Unlock()
+	fi, err := os.Stat(s.logPath(id))
+	if err != nil {
+		return -1, err
+	}
+	return fi.Size(), nil
+}
+
+// ScanEntries is LoadEntriesFrom handing the entries to fn one at a time
+// instead of returning them, each with next, the byte offset just past its
+// line, where a later read can start. It stops early, with end at the last
+// next, when fn returns false. fn runs while appends to the log wait: it
+// must not call the store.
+//
+// The entries of the lines that start before byte full come without their
+// event's payload (Tool, Diff, Usage, Limits, Raw): enough to index the log
+// at a fraction of the cost of decoding it. A full of 0 has every entry
+// whole.
+func (s *Store) ScanEntries(id string, off int64, n int, full int64, fn func(e Entry, next int64) bool) (end int64, meta Thread, err error) {
 	s.mu.Lock()
 	cur, ok := s.threads[id]
 	if !ok {
 		s.mu.Unlock()
-		return nil, -1, Thread{}, ErrNotFound
+		return -1, Thread{}, ErrNotFound
 	}
 	meta = *cur
 	meta.Members = append([]Member(nil), cur.Members...)
@@ -712,33 +812,42 @@ func (s *Store) LoadEntriesFrom(id string, off int64, n int) (entries []Entry, e
 	f, err := os.Open(s.logPath(id))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, -1, meta, nil
+			return -1, meta, nil
 		}
-		return nil, -1, meta, err
+		return -1, meta, err
 	}
 	defer f.Close()
 	if off > 0 {
 		if _, err := f.Seek(off, io.SeekStart); err != nil {
-			return nil, -1, meta, err
+			return -1, meta, err
 		}
 	}
 
 	end = off
 	r := bufio.NewReaderSize(f, 64<<10)
+	var long []byte // a line longer than r's buffer
 	for {
-		line, err := r.ReadBytes('\n')
+		line, err := r.ReadSlice('\n')
+		if err == bufio.ErrBufferFull {
+			long = append(long[:0], line...)
+			for err == bufio.ErrBufferFull {
+				line, err = r.ReadSlice('\n')
+				long = append(long, line...)
+			}
+			line = long
+		}
+		start := end
 		end += int64(len(line))
 		trimmed := bytes.TrimSpace(line)
 		if len(trimmed) > 0 {
-			var e Entry
-			if json.Unmarshal(trimmed, &e) == nil {
+			if e, ok := decodeEntry(trimmed, start >= full); ok {
 				if e.ID == "" {
-					e.ID = "e" + strconv.Itoa(n+len(entries))
+					e.ID = "e" + strconv.Itoa(n)
 				}
-				// Older logs kept every event's raw line; it is not
-				// worth holding in memory.
-				e.Event = slim(e.Event)
-				entries = append(entries, e)
+				n++
+				if !fn(e, end) {
+					return end, meta, nil
+				}
 			}
 		}
 		if err == io.EOF {
@@ -748,10 +857,66 @@ func (s *Store) LoadEntriesFrom(id string, off int64, n int) (entries []Entry, e
 			break
 		}
 		if err != nil {
-			return nil, -1, meta, err
+			return -1, meta, err
 		}
 	}
-	return entries, end, meta, nil
+	return end, meta, nil
+}
+
+// decodeEntry decodes one log line, whole or (whole false) as an entryHead.
+// A line is an entry exactly when its head decodes: one whose payload alone
+// is broken loads without it, so a read of part of the log counts the same
+// entries as a read of all of it.
+func decodeEntry(line []byte, whole bool) (Entry, bool) {
+	if whole {
+		var e Entry
+		if json.Unmarshal(line, &e) == nil {
+			// Older logs kept every event's raw line; it is not worth
+			// holding in memory.
+			e.Event = slim(e.Event)
+			return e, true
+		}
+	}
+	var h entryHead
+	if json.Unmarshal(line, &h) != nil {
+		return Entry{}, false
+	}
+	return h.entry(), true
+}
+
+// entryHead is an Entry without the payload of its event (Tool, Diff, Usage,
+// Limits, Raw), which is most of the bytes of a log and none of what an
+// index of it needs. The fields and their JSON names are Entry's.
+type entryHead struct {
+	AgentID   string     `json:",omitempty"`
+	Time      time.Time  `json:",omitzero"`
+	Kind      agent.Kind `json:",omitempty"`
+	Text      string     `json:",omitempty"`
+	Delta     bool       `json:",omitempty"`
+	SessionID string     `json:",omitempty"`
+
+	Type    string     `json:"type,omitempty"`
+	Speaker string     `json:"speaker,omitempty"`
+	To      []string   `json:"to,omitempty"`
+	Via     string     `json:"via,omitempty"`
+	Held    bool       `json:"held,omitempty"`
+	ID      string     `json:"id,omitempty"`
+	Images  []string   `json:"images,omitempty"`
+	Steer   bool       `json:"steer,omitempty"`
+	Ref     string     `json:"ref,omitempty"`
+	Old     string     `json:"old,omitempty"`
+	Snap    string     `json:"snap,omitempty"`
+	Files   []string   `json:"files,omitempty"`
+	Task    *TaskEvent `json:"task,omitempty"`
+	TaskID  string     `json:"task_id,omitempty"`
+}
+
+func (h entryHead) entry() Entry {
+	return Entry{
+		Event: agent.Event{AgentID: h.AgentID, Time: h.Time, Kind: h.Kind, Text: h.Text, Delta: h.Delta, SessionID: h.SessionID},
+		Type:  h.Type, Speaker: h.Speaker, To: h.To, Via: h.Via, Held: h.Held, ID: h.ID, Images: h.Images,
+		Steer: h.Steer, Ref: h.Ref, Old: h.Old, Snap: h.Snap, Files: h.Files, Task: h.Task, TaskID: h.TaskID,
+	}
 }
 
 func (s *Store) threadLockLocked(id string) *sync.Mutex {
@@ -938,16 +1103,26 @@ func newerMeta(dir, index string) []Thread {
 	return threads
 }
 
-func appendFile(path string, data []byte) error {
+// appendFileAt appends data to the file at path and returns the file's size
+// after it.
+func appendFileAt(path string, data []byte) (int64, error) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("store: open log: %w", err)
+		return -1, fmt.Errorf("store: open log: %w", err)
 	}
 	if _, err := f.Write(data); err != nil {
 		f.Close()
-		return fmt.Errorf("store: write log: %w", err)
+		return -1, fmt.Errorf("store: write log: %w", err)
 	}
-	return f.Close()
+	// An append-mode write leaves the offset at the end of the file.
+	end, err := f.Seek(0, io.SeekCurrent)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return -1, fmt.Errorf("store: write log: %w", err)
+	}
+	return end, nil
 }
 
 // writeFileAtomic writes data to a temp file beside path and renames it over
