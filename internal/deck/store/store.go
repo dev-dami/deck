@@ -566,12 +566,11 @@ func (s *Store) AppendEntriesAt(threadID string, entries []Entry) (start, end in
 	s.mu.Unlock()
 
 	tl.Lock()
-	end, err = appendFileAt(s.logPath(threadID), buf)
+	start, end, err = appendFileAt(s.logPath(threadID), buf)
 	tl.Unlock()
 	if err != nil {
 		return -1, -1, err
 	}
-	start = end - int64(len(buf))
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -819,6 +818,9 @@ func (s *Store) ScanEntries(id string, off int64, n int, full int64, fn func(e E
 	f, err := os.Open(s.logPath(id))
 	if err != nil {
 		if os.IsNotExist(err) {
+			if off == 0 {
+				return 0, meta, nil // no log yet: an empty one
+			}
 			return -1, meta, nil
 		}
 		return -1, meta, err
@@ -846,8 +848,10 @@ func (s *Store) ScanEntries(id string, off int64, n int, full int64, fn func(e E
 		start := end
 		end += int64(len(line))
 		trimmed := bytes.TrimSpace(line)
+		decoded := false
 		if len(trimmed) > 0 {
-			if e, ok := decodeEntry(trimmed, start >= full); ok {
+			var e Entry
+			if e, decoded = decodeEntry(trimmed, start >= full); decoded {
 				if e.ID == "" {
 					e.ID = "e" + strconv.Itoa(n)
 				}
@@ -858,8 +862,11 @@ func (s *Store) ScanEntries(id string, off int64, n int, full int64, fn func(e E
 			}
 		}
 		if err == io.EOF {
-			if len(trimmed) > 0 {
-				end = -1 // the last line is unfinished
+			// A last line with no newline is unfinished unless it is a
+			// whole entry (cut just before its newline): the next append
+			// starts a line of its own after it (appendFileAt).
+			if len(trimmed) > 0 && !decoded {
+				end = -1
 			}
 			break
 		}
@@ -1110,26 +1117,44 @@ func newerMeta(dir, index string) []Thread {
 	return threads
 }
 
-// appendFileAt appends data to the file at path and returns the file's size
-// after it.
-func appendFileAt(path string, data []byte) (int64, error) {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+// appendFileAt appends the log lines in data to the file at path and returns
+// the file's size before and after them. When the file does not end in a
+// newline (a write was cut short), data goes on a line of its own: glued to
+// the cut line it would make both unreadable. The newline sits between start
+// and the first line, where a reader skips it as a blank line.
+func appendFileAt(path string, data []byte) (start, end int64, err error) {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return -1, fmt.Errorf("store: open log: %w", err)
+		return -1, -1, fmt.Errorf("store: open log: %w", err)
+	}
+	fail := func(err error) (int64, int64, error) {
+		f.Close()
+		return -1, -1, fmt.Errorf("store: write log: %w", err)
+	}
+	if start, err = f.Seek(0, io.SeekEnd); err != nil {
+		return fail(err)
+	}
+	if start > 0 {
+		last := make([]byte, 1)
+		if _, err := f.ReadAt(last, start-1); err != nil {
+			return fail(err)
+		}
+		if last[0] != '\n' {
+			data = append([]byte{'\n'}, data...)
+		}
 	}
 	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return -1, fmt.Errorf("store: write log: %w", err)
+		return fail(err)
 	}
 	// An append-mode write leaves the offset at the end of the file.
-	end, err := f.Seek(0, io.SeekCurrent)
+	end, err = f.Seek(0, io.SeekCurrent)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
-		return -1, fmt.Errorf("store: write log: %w", err)
+		return -1, -1, fmt.Errorf("store: write log: %w", err)
 	}
-	return end, nil
+	return start, end, nil
 }
 
 // writeFileAtomic writes data to a temp file beside path and renames it over

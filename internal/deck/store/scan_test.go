@@ -163,3 +163,88 @@ func TestCreateFromWritesALongLogInParts(t *testing.T) {
 		t.Fatalf("%d entries, %v", len(got), err)
 	}
 }
+
+// A log cut just before a line's newline: that line is still an entry, the
+// scan says the log ends after it, and the next append goes on a line of its
+// own, starting where the scan ended. A cut inside a line leaves it unread,
+// the scan says the log is unfinished, and the next append still reads.
+func TestAppendAfterACutLine(t *testing.T) {
+	for _, tc := range []struct {
+		name, tail string
+		whole      bool
+	}{
+		{"whole entry", `{"type":"user","id":"cut","Text":"whole"}`, true},
+		{"half entry", `{"type":"user","id":"cut","Text":"ha`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, dir := newStore(t)
+			th := mustCreate(t, s, Thread{})
+			if err := s.AppendEntries(th.ID, []Entry{{Type: EntryUser, Event: agent.Event{Kind: agent.KindUserText, Text: "first"}}}); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, th.ID+".jsonl")
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.WriteString(tc.tail); err != nil {
+				t.Fatal(err)
+			}
+			f.Close()
+			fi, _ := os.Stat(path)
+
+			end, _, err := s.ScanEntries(th.ID, 0, 0, 0, func(Entry, int64) bool { return true })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := map[bool]int64{true: fi.Size(), false: -1}[tc.whole]; end != want {
+				t.Fatalf("scan ends at %d, want %d", end, want)
+			}
+
+			start, _, err := s.AppendEntriesAt(th.ID, []Entry{{Type: EntryUser, Event: agent.Event{Kind: agent.KindUserText, Text: "after"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if start != fi.Size() {
+				t.Fatalf("the append starts at %d, want the old end %d", start, fi.Size())
+			}
+			var texts []string
+			if _, _, err := s.ScanEntries(th.ID, 0, 0, 0, func(e Entry, _ int64) bool {
+				texts = append(texts, e.Text)
+				return true
+			}); err != nil {
+				t.Fatal(err)
+			}
+			want := []string{"first", "after"}
+			if tc.whole {
+				want = []string{"first", "whole", "after"}
+			}
+			if !reflect.DeepEqual(texts, want) {
+				t.Fatalf("log = %q, want %q", texts, want)
+			}
+			// A scan from the old end reads only the new entry.
+			texts = nil
+			if _, _, err := s.ScanEntries(th.ID, fi.Size(), 0, 0, func(e Entry, _ int64) bool {
+				texts = append(texts, e.Text)
+				return true
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(texts, []string{"after"}) {
+				t.Fatalf("from the old end: %q", texts)
+			}
+		})
+	}
+}
+
+func TestScanOfAMissingLogIsEmpty(t *testing.T) {
+	s, dir := newStore(t)
+	th := mustCreate(t, s, Thread{})
+	_ = os.Remove(filepath.Join(dir, th.ID+".jsonl"))
+	if end, _, err := s.ScanEntries(th.ID, 0, 0, 0, func(Entry, int64) bool { return true }); err != nil || end != 0 {
+		t.Fatalf("end %d, err %v, want an empty log", end, err)
+	}
+	if end, _, _ := s.ScanEntries(th.ID, 10, 0, 0, func(Entry, int64) bool { return true }); end != -1 {
+		t.Fatalf("a scan from past the end of a missing log ends at %d", end)
+	}
+}

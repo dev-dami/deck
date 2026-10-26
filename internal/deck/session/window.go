@@ -109,12 +109,14 @@ func (d *logDisk) markLocked(n int, end int64) {
 }
 
 // wroteLocked takes note of the writer's append of es, logged from index
-// at, to bytes [start, end) of the store's log. t.mu is held.
+// at, to bytes [start, end) of the store's log. An error with a start of 0 or
+// more came after the lines were written (the metadata flush that follows a
+// turn): the lines are where start and end say. t.mu is held.
 func (d *logDisk) wroteLocked(at int, es []store.Entry, start, end int64, err error) {
 	if !d.synced {
 		return
 	}
-	lined := err == nil && at == d.n && start == d.end && end >= start
+	lined := (err == nil || start >= 0) && at == d.n && start == d.end && end >= start
 	for _, e := range es {
 		lined = lined && !e.Delta // the store drops deltas; the log never has them
 	}

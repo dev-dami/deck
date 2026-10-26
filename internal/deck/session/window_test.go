@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -277,5 +278,63 @@ func TestATornLogStopsTheWindowAtWhatWasRead(t *testing.T) {
 	}
 	if got := allLog(th); len(got) != th.size() || got[len(got)-1].Kind != agent.KindTurnDone {
 		t.Fatalf("log = %d entries, size %d", len(got), th.size())
+	}
+}
+
+// A last line that is whole but lacks its newline (a write cut just before
+// it) is an entry like any other: the next append starts a line of its own
+// instead of gluing onto it, so once the window has moved past it, it still
+// reads back as itself and the entries after it keep their places.
+func TestAnUnterminatedLastEntryStaysAnEntry(t *testing.T) {
+	dir := t.TempDir()
+	var turns []fake.Script
+	for range 40 {
+		turns = append(turns, turn(say("ok"), finish()))
+	}
+	m, st, _, c := windowed(t, dir, 64<<10, turns...)
+	tid := longLog(t, st, t.TempDir(), 100)
+	big := strings.Repeat("y", 70<<10) // a mark lands right after it
+	if err := appendRaw(dir, tid, `{"type":"user","id":"torn","speaker":"tester","Text":"`+big+`"}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.Resume(tid); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 40 {
+		if err := m.Post(tid, fmt.Sprintf("$claude more %d", i)); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, "the turn", func() bool { return c.turnDones("claude") == i+1 })
+	}
+	m.Flush()
+	th := m.thread(tid)
+	th.mu.Lock()
+	base, synced := th.base, th.disk.synced
+	torn, ok := th.entryLocked(500)
+	next, ok2 := th.entryLocked(501)
+	th.mu.Unlock()
+	if !synced || base <= 501 {
+		t.Fatalf("synced %v, base %d: the window should have moved past the line", synced, base)
+	}
+	if !ok || torn.ID != "torn" {
+		t.Fatalf("entry 500 read back as %q, want torn", torn.ID)
+	}
+	if !ok2 || next.Type != store.EntryUser || next.Text != "more 0" {
+		t.Fatalf("entry 501 = %s %q, want the first post", next.Type, next.Text)
+	}
+}
+
+// A metadata flush that fails after the log lines were written leaves them
+// where the store said: the window keeps following the log.
+func TestAFailedFlushAfterAWriteKeepsTheWindow(t *testing.T) {
+	d := logDisk{n: 2, end: 100, synced: true}
+	es := []store.Entry{{Type: store.EntryUser}}
+	d.wroteLocked(2, es, 100, 150, errors.New("index: disk full"))
+	if !d.synced || d.n != 3 || d.end != 150 {
+		t.Fatalf("after a flush error: synced %v, n %d, end %d", d.synced, d.n, d.end)
+	}
+	d.wroteLocked(3, es, -1, -1, errors.New("write log: disk full"))
+	if d.synced {
+		t.Fatal("a failed write left the window following the log")
 	}
 }
