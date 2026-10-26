@@ -27,7 +27,9 @@ function launch(userData: string, env: Record<string, string> = {}): Promise<Ele
 
 test("over rpc: the app reopens the last folder and runs two agents", async () => {
   const fake = await FakeRpcDeck.start({ tickMs: 300 });
-  const folder = mkdtempSync(join(tmpdir(), "deck-folder-"));
+  // A folder named "deck", so the screenshot shows a project's name.
+  const folder = join(mkdtempSync(join(tmpdir(), "deck-folder-")), "deck");
+  mkdirSync(folder);
   const userData = mkdtempSync(join(tmpdir(), "deck-desktop-"));
   writeFileSync(join(userData, "recent.json"), JSON.stringify([folder]));
   // A `deck` on PATH that hands over the fake server's handshake.
@@ -220,7 +222,9 @@ test("ports: a terminal's dev server opens in the preview view, which keeps to i
 const engine = join(root, "bin", process.platform === "win32" ? "deck.exe" : "deck");
 test("with the bundled engine: git status and a terminal", async () => {
   test.skip(!existsSync(engine) || process.platform === "win32", "needs `npm run build:deck`");
-  const folder = mkdtempSync(join(tmpdir(), "deck-real-"));
+  // A folder named "deck", so the screenshot shows a project's name.
+  const folder = join(mkdtempSync(join(tmpdir(), "deck-real-")), "deck");
+  mkdirSync(folder);
   const git = (...args: string[]) =>
     execFileSync("git", args, {
       cwd: folder,
