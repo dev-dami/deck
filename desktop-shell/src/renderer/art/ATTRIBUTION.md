@@ -19,3 +19,18 @@ needs a credit, and we give one anyway.
 The Getty files came from the `@stdlib/datasets-img-*` packages (their
 contents CC0 1.0, data PDDL 1.0); the NASA and SpaceX files from
 scikit-image's sample data (`skimage/data`, v0.19.3).
+
+## The Met (`met/`)
+
+Seventy-eight works from The Metropolitan Museum of Art's Open Access
+program, every one public domain and released under CC0 1.0: woodblock
+prints by Hokusai, Hiroshige, Kuniyoshi; screens by Kōrin and a scroll by
+Jakuchū; paintings by Van Gogh, Corot, Courbet, Constable, Sisley,
+Seurat, Redon; photographs by Carleton E. Watkins and Gustave Le Gray;
+prints by Pissarro, Winslow Homer, Arthur Wesley Dow and Turner.
+`met/manifest.json` lists each file with its artist, title, date, medium,
+Met object id and page. The images came from the Met's public bucket on
+Google Cloud (`gcs-public-data--met`), scaled to 1280px on the long side.
+
+Prints and photographs keep their paper margins and mounts; crop them in
+the process that draws them.
