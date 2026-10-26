@@ -127,6 +127,7 @@
 package session
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -664,6 +665,29 @@ func (m *Manager) startRun(t *thread, a *agentState, prompt, resumeID string) er
 	return nil
 }
 
+// startAll starts the CLIs of several members at once, so they wait for the
+// slowest handshake rather than for the sum of them (Codex and OpenCode block
+// in Start until theirs is done). resume, when set, holds the CLI session each
+// member resumes. The members keep their places in the thread; errs[i] is
+// as[i]'s.
+func (m *Manager) startAll(t *thread, as []*agentState, resume []string) (errs []error) {
+	errs = make([]error, len(as))
+	var wg sync.WaitGroup
+	for i, a := range as {
+		session := ""
+		if resume != nil {
+			session = resume[i]
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = m.startRun(t, a, "", session)
+		}()
+	}
+	wg.Wait()
+	return errs
+}
+
 func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Spec {
 	cfg := m.config()
 	s := agent.Spec{
@@ -840,19 +864,29 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 	if !ad.Mentioned() {
 		body = text
 	}
+	var idle []*agentState // added with nothing to say: started together below
+	var addErr error
 	for _, k := range newKinds {
 		a, err := m.newMember(t, k, "", "")
 		if err != nil {
-			return PostResult{}, err
+			addErr = err
+			break
 		}
 		if body == "" {
-			if err := m.startRun(t, a, "", ""); err != nil {
-				m.dropMember(t, a)
-				return PostResult{}, err
-			}
+			idle = append(idle, a)
 			continue
 		}
 		targets = append(targets, a)
+	}
+	var startErr error
+	for i, err := range m.startAll(t, idle, nil) {
+		if err != nil {
+			m.dropMember(t, idle[i])
+			startErr = cmp.Or(startErr, err)
+		}
+	}
+	if err := cmp.Or(startErr, addErr); err != nil {
+		return PostResult{}, err
 	}
 	if body == "" {
 		return PostResult{}, nil
@@ -1195,9 +1229,9 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		}
 	}
 	remap := map[string]string{}
-	var started []*agentState
+	var members []*agentState
 	fail := func(err error) (ThreadInfo, []tea.Msg, error) {
-		for _, a := range started {
+		for _, a := range members {
 			if run := a.getRun(); run != nil {
 				_ = run.Close()
 			}
@@ -1206,7 +1240,6 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 		return ThreadInfo{}, nil, err
 	}
 
-	var members []*agentState
 	for _, mem := range th.Members {
 		id, _, err := m.allocate(mem.Kind, mem.ID)
 		if err != nil {
@@ -1306,14 +1339,18 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, []tea.Msg, error) {
 	m.torder = append(m.torder, t)
 	m.mu.Unlock()
 
+	var starting []*agentState
+	var sessions []string
 	for i, a := range members {
-		if a.ephemeral {
-			continue
+		if !a.ephemeral {
+			starting = append(starting, a)
+			sessions = append(sessions, th.Members[i].SessionID)
 		}
-		if err := m.startRun(t, a, "", th.Members[i].SessionID); err != nil {
-			return fail(fmt.Errorf("session: resume %s: %w", a.kind, err))
+	}
+	for i, err := range m.startAll(t, starting, sessions) {
+		if err != nil {
+			return fail(fmt.Errorf("session: resume %s: %w", starting[i].kind, err))
 		}
-		started = append(started, a)
 	}
 	m.failOrphans(t)
 	m.kick(t)

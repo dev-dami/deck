@@ -1062,3 +1062,54 @@ func TestAMessageToAMemberThatIsStartingStartsOneCLI(t *testing.T) {
 		t.Fatalf("codex's CLI started %d times", n)
 	}
 }
+
+// meeting holds each Start until want of them have begun, like a handshake
+// that is slow: members started one after another never meet.
+type meeting struct {
+	want int32
+	n    atomic.Int32
+	all  chan struct{}
+}
+
+type meetStart struct {
+	agent.Adapter
+	m *meeting
+}
+
+func (s meetStart) Start(ctx context.Context, sp agent.Spec) (agent.Run, error) {
+	if s.m.n.Add(1) == s.m.want {
+		close(s.m.all)
+	}
+	select {
+	case <-s.m.all:
+	case <-time.After(2 * time.Second):
+		return nil, fmt.Errorf("%s started alone", sp.ID)
+	}
+	return s.Adapter.Start(ctx, sp)
+}
+
+func TestResumeStartsMembersTogetherInRosterOrder(t *testing.T) {
+	r := newRig(t, nil, nil)
+	tid := r.thread(t)
+	r.add(t, tid, "codex")
+	r.add(t, tid, "claude")
+	r.m.Close()
+
+	st, err := store.New(r.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meet := &meeting{want: 2, all: make(chan struct{})}
+	m := NewManager(map[string]agent.Adapter{
+		"claude": meetStart{fake.NewTurns(0, nil), meet},
+		"codex":  meetStart{fake.NewTurns(0, nil), meet},
+	}, st, testCfg())
+	t.Cleanup(m.Close)
+	ti, _, err := m.Resume(tid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ti.Members) != 2 || ti.Members[0].ID != "codex" || ti.Members[1].ID != "claude" {
+		t.Fatalf("members = %+v", ti.Members)
+	}
+}
