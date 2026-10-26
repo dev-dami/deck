@@ -269,16 +269,10 @@ func (w *DeckWorkspace) AgentIsBusy() bool {
 }
 
 func (w *DeckWorkspace) AgentIsSessionBusy(sessionID string) bool {
-	th, ok := w.threadOf(sessionID)
-	if !ok {
-		return false
-	}
-	for _, a := range th.Members {
-		if busy(a) {
-			return true
-		}
-	}
-	return false
+	w.mu.Lock()
+	id, ok := w.threads[sessionID]
+	w.mu.Unlock()
+	return ok && w.mgr().Busy(id)
 }
 
 // AgentModel describes the agent that spoke last.

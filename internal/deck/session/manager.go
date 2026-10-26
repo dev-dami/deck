@@ -412,6 +412,24 @@ func (m *Manager) Thread(id string) (ThreadInfo, bool) {
 	return m.threadInfo(t), true
 }
 
+// Busy reports whether any member of a live thread is in a turn (working, in a
+// tool, or waiting for an approval). It is Thread without the snapshot, for
+// callers that poll it.
+func (m *Manager) Busy(threadID string) bool {
+	t := m.thread(threadID)
+	if t == nil {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, a := range t.members {
+		if a.busy() {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) threadInfo(t *thread) ThreadInfo {
 	t.mu.Lock()
 	members := append([]*agentState(nil), t.members...)

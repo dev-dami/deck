@@ -995,10 +995,16 @@ func TestDemoDuoCollaborates(t *testing.T) {
 	if ap.AgentID != "claude" || ap.ThreadID != tid {
 		t.Fatalf("approval = %+v", ap.ApprovalRequest)
 	}
+	if !m.Busy(tid) {
+		t.Fatal("Busy is false while claude waits for an approval")
+	}
 	ap.Respond(agent.Decision{Allow: true})
 	waitFor(t, "everyone idle", func() bool {
 		return c.turnDones("claude") == 2 && c.turnDones("codex") == 1
 	})
+	if m.Busy(tid) || m.Busy("no-such-thread") {
+		t.Fatal("Busy is true with everyone idle")
+	}
 	rel := c.relays()
 	if len(rel) != 2 || rel[0].Via != "tool" || rel[1].Via != "mention" || rel[1].From != "codex" {
 		t.Fatalf("relays = %+v", rel)
