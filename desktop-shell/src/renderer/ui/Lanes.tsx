@@ -21,17 +21,28 @@ const WORD: Record<Lane["status"], string> = {
   exited: "exited",
 };
 
+// Each lane is a capsule of clear glass on the sheet. The lane the timeline
+// shows alone is pressed: a brighter fill and the accent's ring.
 const chipBase =
-  "relative flex h-6 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-selected aria-pressed:text-foreground";
+  "liquid-clear relative flex h-7 max-w-60 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-muted-foreground text-xs outline-none transition-[background-color,color,box-shadow] hover:bg-selected hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-selected aria-pressed:text-foreground aria-pressed:ring-1 aria-pressed:ring-primary/60";
 const chip = `lane ${chipBase}`;
+
+// The agent's state as a dot: it pulses while the agent works.
+const DOT: Record<Lane["status"], string> = {
+  working: "bg-signal animate-deck-pulse",
+  waiting: "bg-warning",
+  error: "bg-destructive",
+  idle: "bg-success/80",
+  exited: "border border-faint",
+};
 
 // The strip keeps to one line and folds lanes into "+N"; it wraps only for
 // lanes that never fold (pinnedLane), and then it grows in the flow.
 const LINES = 1;
-const GAP = 2;
+const GAP = 6;
 // The width of a chip not measured yet, and of "+N".
-const GUESS = 96;
-const MORE = 34;
+const GUESS = 110;
+const MORE = 40;
 
 // One line in the "+N" popover: a lane that did not fit.
 function FoldedLane({ lane, on, onFilter }: { lane: Lane; on: boolean; onFilter: () => void }) {
@@ -87,19 +98,19 @@ function AgentChip({
             setLoad(load === null ? listModels() : null);
           }}
         >
-          {lane.depth > 0 && <CornerDownRight aria-hidden className="size-3 shrink-0 text-faint" />}
-          <span aria-hidden className="font-mono text-[11px]" style={{ color: colour }}>
+          {lane.depth > 0 && <CornerDownRight aria-hidden className="-ml-0.5 size-3 shrink-0 text-faint" />}
+          <span aria-hidden className="grid size-3.5 shrink-0 place-items-center font-mono text-[11px] leading-none" style={{ color: colour }}>
             {kindMark(theme, lane.agentKind) || "●"}
           </span>
-          <span className="lane-name truncate font-mono text-2xs text-foreground/90">{lane.name}</span>
-          {lane.status === "working" && <span aria-hidden className="size-1.5 shrink-0 animate-deck-pulse rounded-full bg-signal" />}
-          {lane.status === "waiting" && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />}
-          {lane.status === "error" && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-destructive" />}
-          <span className={cn("lane-status shrink-0 text-2xs", lane.status === "waiting" ? "text-warning-foreground" : "text-faint")}>
+          <span className="lane-name truncate font-medium text-2xs text-foreground">{lane.name}</span>
+          <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", DOT[lane.status])} />
+          {/* The word shows when the agent asks for something; else it is for
+              the tooltip and screen readers. */}
+          <span className={cn("lane-status shrink-0 text-2xs", lane.status === "waiting" || lane.status === "error" ? "text-warning-foreground" : "sr-only")}>
             {WORD[lane.status]}
           </span>
           {lane.contextPct !== null && (
-            <span className="flex items-center" title={`${lane.contextPct}% of its context`}>
+            <span className="flex items-center tabular-nums" title={`${lane.contextPct}% of its context`}>
               <Ring pct={lane.contextPct} className="lane-ring" />
             </span>
           )}
@@ -212,9 +223,10 @@ export function Lanes({
   const { shown, folded } = fitLanes(lanes, (l) => widths.current.get(l.id) ?? GUESS, width, { gap: GAP, lines: LINES, more: MORE });
   const toggle = (id: string) => onFilter(filter === id ? null : id);
   return (
+    // One line of chips under the toolbar, on the sheet with no rule of its own.
     <div
       ref={box}
-      className="lanes flex min-h-9 shrink-0 flex-wrap content-center items-center gap-0.5 border-hairline border-b px-2.5 py-1"
+      className="lanes flex min-h-10 shrink-0 flex-wrap content-center items-center gap-1.5 px-4 pt-0.5 pb-2"
       role="toolbar"
       aria-label="Lanes"
       data-yolo-region=""
@@ -243,13 +255,15 @@ export function Lanes({
             onClick={() => toggle(l.id)}
           >
             {l.kind === "you" ? (
-              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+              <span aria-hidden className="grid size-3.5 shrink-0 place-items-center">
+                <span className="size-2 rounded-full bg-foreground/70" />
+              </span>
             ) : (
-              <span aria-hidden className="font-mono text-[11px] text-faint">
+              <span aria-hidden className="grid size-3.5 shrink-0 place-items-center font-mono text-[11px] text-faint">
                 ◇
               </span>
             )}
-            <span className="lane-name truncate font-mono text-2xs text-foreground/90">{l.name}</span>
+            <span className="lane-name truncate font-medium text-2xs text-foreground">{l.name}</span>
             {l.kind === "mate" && <span className="lane-role text-2xs text-faint">{l.role}</span>}
           </button>
         ),
@@ -263,7 +277,7 @@ export function Lanes({
           trigger={
             <button
               type="button"
-              className={cn(chipBase, "lane-more font-mono text-2xs text-faint aria-expanded:bg-selected")}
+              className={cn(chipBase, "lane-more px-2.5 text-2xs text-muted-foreground tabular-nums aria-expanded:bg-selected")}
               aria-expanded={more}
               aria-label={`${folded.length} more`}
               title={folded.map((l) => l.name).join(", ")}
