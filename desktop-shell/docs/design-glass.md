@@ -1,10 +1,12 @@
 # Deck desktop: Liquid Glass
 
 Status: 2026-10-26. This replaces the look in `design-apple.md` for every
-theme. A theme now gives colours only. The materials, the layout, the
-components and the motion below are the same in all of them. "Liquid
-Glass" is the default theme, and Apple, Tabletop, T3 and the rest of the
-catalog stay as colourways of it.
+theme. The layout, the components and the motion below are the same in
+every theme. Three themes are art directions (section 9): Liquid Glass,
+the default, Riso and Stitch each print a picture through their own
+process and bring their own material, display face and texture. Apple,
+Tabletop, T3 and the rest of the catalog stay as colourways of Liquid
+Glass, which give colours only.
 
 ## 1. Direction
 
@@ -36,10 +38,12 @@ panels on a backdrop, and Figma or tldraw for a canvas you can pan and zoom.
 
 Back to front:
 
-1. **Backdrop.** `body`: a deep tone of the theme's canvas, with three
-   soft pools of light: the accent (top left), then Claude's and
-   Antigravity's hues (bottom right and bottom left). It follows the
-   accent. On a Mac with vibrancy, the desktop shows through a veil of it.
+1. **Backdrop.** The theme's picture printed through its process on a
+   canvas behind the app (`ui/Backdrop.tsx`, section 9), over `body` in
+   a deep tone of the theme's canvas. Until the picture has drawn, and
+   with reduced transparency, `body` shows three soft pools of light
+   instead: the accent (top left), then Claude's and Antigravity's hues.
+   On a Mac with vibrancy, the desktop shows through a veil of it.
 2. **Sheets** (`sheet`): opaque rounded planes for reading, such as the
    room, the side panel, Settings, Usage, Team and the inbox. They have a
    1px rim and a long soft shadow.
@@ -280,4 +284,61 @@ as a "Graph" tab (a new `Panel`, `"graph"`), `compact`. The props are in
 - Checks: `npm run lint`, `npx vitest run`, then
   `PW_CHROMIUM=/opt/pw-browsers/chromium PORT=<free> npx playwright test --grep-invert "electron|packaged"`,
   and `SHOTS=<dir> PORT=<free> PW_CHROMIUM=… npm run shots` to look at the
-  result in dark and light.
+  result in dark and light. `PALETTE=<theme id>` shoots another theme.
+
+## 9. Art directions
+
+One picture, three processes. A theme that is an art direction prints a
+public-domain picture (`src/renderer/art/`, credited in its
+`ATTRIBUTION.md`) through its own printing process, and brings its own
+material, display face and texture. The layout and the components stay
+the ones above.
+
+| | Liquid Glass (`glass`) | Riso (`riso`) | Stitch (`stitch`) |
+|---|---|---|---|
+| Process | Atkinson dither in 2px cells, a duotone of dusk navy `#1d2240` and peach `#f3c9a8` | a round-dot halftone at 15° in one fluorescent ink, `#ff48b0`, with black at 45° on paper only | cross-stitch, one stitch a 10px cell, on even-weave cloth |
+| Picture | Adolphe Braun's Alps, about 1870 | Karl Blossfeldt's *Allium oreophilum*, 1928, with solid blocks of the spot colour: a disc behind its head and a bar at its foot | O'Sullivan's *Black Cañon*, 1871, in three tonal flosses, with a hand of cards and a pair of dice over it |
+| Texture | the Deck mark as a faint watermark in the tone | black stock in dark, paper in light; fibre in the stock, specks where the drum ran dry | linen in light, denim (with its twill) in dark |
+| Material | glass (section 2) | paper and vellum: no blur, square corners, a rule and a 3px misregistered shadow in the spot colour | felt: opaque, with a running stitch just inside each panel's edge |
+| Display face | Inter Tight | Space Grotesk; Martian Mono for code | Pixelify Sans, headings only |
+
+Apple, Tabletop, T3 and the catalog themes are colourways of Liquid
+Glass: the same dither in two of their own colours. Tokyo Night prints the
+Hubble Deep Field in its palette.
+
+**Where the picture shows.**
+
+- **Behind the glass chrome.** In the shell, the backdrop shows behind the
+  sidebar and nowhere else: the gutters between the panels are the plain
+  ground (the stitch's cloth weave, in CSS), so no slice of a block, a
+  card or a dither runs down them. The tone behind the sidebar is held
+  back, as a photographer holds back a sky, so the sidebar stays calm. The
+  riso keeps a 20px press margin and its blocks follow the subject, right
+  of the sidebar; the stitch's cards and dice keep off the sidebar's band.
+- **On the first screens.** The Welcome and the connect screen print the
+  picture at the size of their plate (`ui/ArtFigure.tsx`), as a print on
+  the page, with its credit under it. Liquid Glass hangs its true duotone
+  in either mode. The window's backdrop hides there, so type never sits on
+  the picture.
+- **Never in the room.** The room's sheet, the chat, the composer and the
+  diff stay opaque and plain. The pages' small plates (empty Inbox, Team,
+  Usage) take each direction's inks (`--plate-lo`, `--plate-hi`).
+
+**How it is drawn.** `backdrop/` holds the processes: `core.ts` is the
+maths with no DOM (dither, screen, blocks, chart, layout; `core.test.ts`),
+`scene.ts`, `halftone.ts` and `stitch.ts` draw, `inks.ts` gives each
+theme's art and `usePrint.ts` prints it in a worker (`worker.ts`), once
+per theme, mode, picture or size, never per frame. A print takes 40 to
+240ms at 1440×900 at 2x, off the page's thread.
+
+**Choosing.** Settings > Appearance shows the three directions as prints
+of their own process (`ui/ThemeCard.tsx`), then the colourways. Under
+them, the picture (`ui/WallpaperPicker.tsx`): the theme's own, the rest
+of its direction's set (`backdrop/pictures.ts`, `SETS`), or the person's
+own, kept in this window's IndexedDB and never sent anywhere. Any picture
+prints through any process.
+
+**Adding a picture.** Put a public-domain file in `art/`, credit it in
+`ATTRIBUTION.md`, add it to `PICTURES` with its crop and subject, and to a
+set. Ship JPG or PNG: app:// names them (`src/main/mime.ts`), and it sends
+`nosniff`.
