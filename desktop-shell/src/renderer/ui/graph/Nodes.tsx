@@ -5,33 +5,14 @@ import { agentColour } from "../../agents";
 import type { AgentGraphNode, FileGraphNode, FoldGraphNode, GraphNode, TaskGraphNode } from "../../graph";
 import type { LaneStatus } from "../../lanes";
 import { cn } from "../../lib/cn";
-import {
-  Check,
-  Circle,
-  CircleDashed,
-  Eye,
-  Files,
-  FileText,
-  Flag,
-  Loader2,
-  Lock,
-  Minus,
-  ShieldQuestion,
-  Trophy,
-  User,
-  Wrench,
-  XCircle,
-  type IconType,
-  CircleAlert,
-} from "../icons";
-import { Ring } from "../kit/ring";
+import { Check, Minus, X } from "../icons";
 
-// The Work Graph's nodes: HTML cards of clear glass placed over the edges,
-// one per kind. Each sits at its layout position through a transform; the
-// card inside it lifts when it is picked, so the two never fight.
+// The Work Graph's nodes: flat, precise cards over the edges, as a
+// debugger's graph draws them. One plane each (the surface and a hairline),
+// type for hierarchy, an agent as its glyph in its hue, and a small mark for
+// its state. Each sits at its layout position through a transform.
 
-
-// An agent's hue as a custom property, for its glyph, ring and edges.
+// An agent's hue as a custom property, for its glyph and its edges.
 export const hueOf = (name: string, kind: string): CSSProperties => ({ "--hue": agentColour(name, kind) }) as CSSProperties;
 
 export const STATUS_LABEL: Record<LaneStatus, string> = {
@@ -42,52 +23,36 @@ export const STATUS_LABEL: Record<LaneStatus, string> = {
   exited: "Done",
 };
 
-const STATUS_RING: Record<LaneStatus, string> = {
-  working: "ring-signal",
-  waiting: "ring-warning",
-  error: "ring-destructive",
-  idle: "ring-transparent",
-  exited: "ring-transparent",
+const STATUS_DOT: Record<LaneStatus, string> = {
+  working: "bg-signal",
+  waiting: "bg-warning",
+  error: "bg-destructive",
+  idle: "bg-muted-foreground/40",
+  exited: "border border-muted-foreground/50",
 };
 
-// The agent's glyph on a disc of its hue, inside its status ring.
-export function AgentMark({
-  kind,
-  theme,
-  status,
-  live,
-  className,
-}: {
-  kind: string;
-  theme: Theme | null;
-  status: LaneStatus;
-  live: boolean;
-  className?: string;
-}) {
+// A 6px status dot; a working one pulses, stepped, while it is in sight.
+export function StatusDot({ status, live = true, className }: { status: LaneStatus; live?: boolean; className?: string }) {
   return (
     <span
       aria-hidden
-      className={cn(
-        "relative grid size-8 shrink-0 place-items-center rounded-full font-mono text-[13px] text-(--hue)",
-        "bg-[color-mix(in_srgb,var(--hue)_15%,transparent)] ring-1 ring-[color-mix(in_srgb,var(--hue)_30%,transparent)] ring-inset",
-        className,
-      )}
-    >
+      className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status], status === "working" && live && "animate-deck-pulse", className)}
+    />
+  );
+}
+
+// The agent's glyph in its hue.
+export function Glyph({ kind, theme, className }: { kind: string; theme: Theme | null; className?: string }) {
+  return (
+    <span aria-hidden className={cn("w-3.5 shrink-0 text-center font-mono text-xs text-(--hue)", className)}>
       {kindMark(theme, kind) || "●"}
-      <span
-        className={cn(
-          "pointer-events-none absolute -inset-[3px] rounded-full ring-[1.5px]",
-          STATUS_RING[status],
-          status === "working" && live && "animate-deck-pulse",
-        )}
-      />
     </span>
   );
 }
 
-// How a node shows: picked (the accent ring), dimmed by a hover elsewhere,
-// and whether its live motion may run (it is in sight). Plain values, so a
-// hover renders only the nodes whose look it changes.
+// How a node shows: picked (the accent outline), dimmed by a hover
+// elsewhere, and whether its live motion may run (it is in sight). Plain
+// values, so a hover renders only the nodes whose look it changes.
 interface NodeProps<N extends GraphNode> {
   n: N;
   picked: boolean;
@@ -131,10 +96,9 @@ function Shell({
         aria-label={label}
         aria-pressed={n.kind === "agent" ? picked : undefined}
         className={cn(
-          "liquid-clear size-full animate-enter cursor-pointer text-left outline-none transition-[translate,box-shadow,background-color] duration-200",
-          "bg-[color-mix(in_srgb,var(--canvas)_72%,transparent)] hover:bg-[color-mix(in_srgb,var(--surface-1)_90%,transparent)]",
-          "focus-visible:ring-2 focus-visible:ring-primary",
-          picked && "-translate-y-0.5 shadow-popover ring-2 ring-primary",
+          "size-full animate-enter cursor-pointer rounded-lg border bg-surface-1 text-left outline-none transition-colors",
+          picked ? "border-primary ring-1 ring-primary" : "border-hairline-strong hover:border-muted-foreground/45",
+          "focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-primary",
           className,
         )}
         onClick={() => onPick(n.id)}
@@ -152,24 +116,16 @@ function Shell({
 // The person: where the work starts.
 export const YouCard = memo(function YouCard({ n, picked, dim, onPick, onHover }: NodeProps<GraphNode>) {
   return (
-    <Shell n={n} picked={picked} dim={dim} label="You" className="flex items-center justify-center gap-1.5 rounded-full px-3" onPick={onPick} onHover={onHover}>
-      <User className="size-3.5 text-primary" weight="bold" />
-      <span className="font-medium text-sm">You</span>
+    <Shell n={n} picked={picked} dim={dim} label="You" className="grid place-items-center font-medium text-xs" onPick={onPick} onHover={onHover}>
+      You
     </Shell>
   );
 });
 
-
-const toolText = (n: AgentGraphNode) => {
-  const t = n.tools[0];
-  if (t === undefined) return null;
-  return { name: t.subagent ? "subagent" : t.name, summary: t.summary };
-};
-
-// An agent: its glyph in its hue inside the status ring, its name and
-// model, its context, and the tool it runs now.
+// An agent: its glyph and name, a status dot, its model and context, and
+// under a hairline the tool it runs now.
 export const AgentCard = memo(function AgentCard({ n, picked, dim, live, theme, onPick, onHover }: NodeProps<AgentGraphNode>) {
-  const tool = toolText(n);
+  const tool = n.tools[0];
   const meta = [n.model, n.effort].filter((x) => x !== "").join(" · ") || n.agentKind;
   return (
     <Shell
@@ -177,108 +133,113 @@ export const AgentCard = memo(function AgentCard({ n, picked, dim, live, theme, 
       picked={picked}
       dim={dim}
       label={`${n.name}, ${STATUS_LABEL[n.status].toLowerCase()}`}
-      className={cn("flex flex-col justify-center gap-2 rounded-xl px-2.5", n.status === "exited" && "opacity-70")}
+      className="flex flex-col"
       style={hueOf(n.name, n.agentKind)}
       onPick={onPick}
       onHover={onHover}
     >
-      <span className="flex min-w-0 items-center gap-2.5">
-        <AgentMark kind={n.agentKind} theme={theme} status={n.status} live={live} />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate font-medium text-sm leading-tight">{n.name}</span>
-          <span className="truncate text-2xs text-muted-foreground">{meta}</span>
+      <span className="flex min-h-0 flex-1 flex-col justify-center gap-0.5 px-2.5">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Glyph kind={n.agentKind} theme={theme} />
+          <span className={cn("min-w-0 flex-1 truncate font-medium text-sm leading-tight", n.status === "exited" && "text-muted-foreground")}>
+            {n.name}
+          </span>
+          {n.status === "waiting" && <span className="shrink-0 font-medium text-3xs text-warning-foreground">needs you</span>}
+          <StatusDot status={n.status} live={live} />
         </span>
-        {n.status === "waiting" ? (
-          <ShieldQuestion className="size-4 shrink-0 text-warning" weight="fill" />
-        ) : n.status === "error" ? (
-          <CircleAlert className="size-4 shrink-0 text-destructive" weight="fill" />
-        ) : (
-          n.contextPct !== null && <Ring pct={n.contextPct} className="size-3.5" />
-        )}
+        <span className="flex min-w-0 items-center gap-1.5 pl-5 text-2xs text-muted-foreground">
+          <span className="min-w-0 flex-1 truncate">{meta}</span>
+          {n.contextPct !== null && (
+            <span className={cn("shrink-0 tabular-nums", n.contextPct >= 85 ? "text-warning-foreground" : "text-faint")}>{n.contextPct}%</span>
+          )}
+        </span>
       </span>
-      {tool !== null && (
-        <span className="flex h-5 min-w-0 items-center gap-1.5 rounded-md bg-hover px-1.5 text-2xs">
-          <Wrench className="size-3 shrink-0 text-(--hue)" />
-          <span className="shrink-0 font-medium">{tool.name}</span>
-          <span className="min-w-0 truncate font-mono text-muted-foreground">{tool.summary}</span>
+      {tool !== undefined && (
+        <span className="flex h-6 min-w-0 shrink-0 items-center gap-1.5 border-hairline border-t px-2.5 font-mono text-3xs">
+          <span className="shrink-0 text-foreground">{tool.subagent ? "subagent" : tool.name}</span>
+          <span className="min-w-0 truncate text-muted-foreground">{tool.summary}</span>
         </span>
       )}
     </Shell>
   );
 });
 
-const TASK_ICON: Record<string, { icon: IconType; className: string; weight?: "fill" | "bold" }> = {
-  done: { icon: Check, className: "text-success", weight: "bold" },
-  running: { icon: Loader2, className: "text-signal animate-spin" },
-  review: { icon: Eye, className: "text-signal" },
-  blocked: { icon: CircleAlert, className: "text-warning", weight: "fill" },
-  failed: { icon: XCircle, className: "text-destructive", weight: "fill" },
-  cancelled: { icon: Minus, className: "text-faint" },
-  ready: { icon: Circle, className: "text-muted-foreground" },
-  pending: { icon: CircleDashed, className: "text-faint" },
-};
-
-export function TaskIcon({ status, live = true, className }: { status: string; live?: boolean; className?: string }) {
-  const s = TASK_ICON[status] ?? TASK_ICON["pending"]!;
-  const Icon = s.icon;
-  return <Icon aria-hidden className={cn("size-3.5 shrink-0", s.className, !live && "animate-none", className)} weight={s.weight ?? "regular"} />;
+// A task's state as a small mark: a check, a cross, a dot.
+export function TaskMark({ status, live = true }: { status: string; live?: boolean }) {
+  if (status === "done") return <Check aria-hidden className="size-3 shrink-0 text-success" weight="bold" />;
+  if (status === "failed") return <X aria-hidden className="size-3 shrink-0 text-destructive" weight="bold" />;
+  if (status === "cancelled") return <Minus aria-hidden className="size-3 shrink-0 text-faint" weight="bold" />;
+  const dot: Record<string, string> = {
+    running: cn("bg-signal", live && "animate-deck-pulse"),
+    review: "bg-signal",
+    blocked: "bg-warning",
+    ready: "border border-muted-foreground",
+  };
+  return (
+    <span aria-hidden className="grid size-3 shrink-0 place-items-center">
+      <span className={cn("size-1.5 rounded-full", dot[status] ?? "border border-faint")} />
+    </span>
+  );
 }
 
 export const taskTitle = (t: TaskGraphNode["task"]): string => (t.entry ? `${t.owner || t.id}'s entry` : t.title || t.id);
 
-// A task of the board: its status, its title, its id and owner.
+// A task of the board: its mark and title, then its id, state and owner.
 export const TaskCard = memo(function TaskCard({ n, picked, dim, live, theme, onPick, onHover }: NodeProps<TaskGraphNode>) {
   const t = n.task;
-  const KindIcon = t.race ? Flag : t.entry ? Trophy : null;
   return (
-    <Shell n={n} picked={picked} dim={dim} label={`Task ${t.id}: ${taskTitle(t)}, ${t.status}`} className="flex items-center gap-2.5 rounded-xl px-3" onPick={onPick} onHover={onHover}>
-      <TaskIcon status={t.status} live={live} />
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex min-w-0 items-center gap-1.5">
-          {KindIcon !== null && <KindIcon className="size-3 shrink-0 text-muted-foreground" />}
-          <span className="truncate font-medium text-sm leading-tight">{taskTitle(t)}</span>
-        </span>
-        <span className="flex min-w-0 items-center gap-1 text-2xs text-muted-foreground">
-          <span className="font-mono">{t.id}</span>
-          <span aria-hidden>·</span>
-          <span className="truncate">{t.status}</span>
-          {t.owner !== "" && !t.entry && (
-            <>
-              <span aria-hidden>·</span>
-              <span className="truncate" style={hueOf(t.owner, n.ownerKind)}>
-                <span className="font-mono text-(--hue)">{kindMark(theme, n.ownerKind) || "●"}</span> {t.owner}
-              </span>
-            </>
-          )}
-        </span>
+    <Shell
+      n={n}
+      picked={picked}
+      dim={dim}
+      label={`Task ${t.id}: ${taskTitle(t)}, ${t.status}`}
+      className="flex flex-col justify-center gap-0.5 px-2.5"
+      onPick={onPick}
+      onHover={onHover}
+    >
+      <span className="flex min-w-0 items-center gap-1.5" title={t.status}>
+        <TaskMark status={t.status} live={live} />
+        <span className="min-w-0 flex-1 truncate font-medium text-sm leading-tight">{taskTitle(t)}</span>
+        {t.race && <span className="shrink-0 text-3xs text-faint">race</span>}
+      </span>
+      <span className="flex min-w-0 items-center gap-1.5 pl-[18px] text-2xs text-muted-foreground">
+        <span className="shrink-0 font-mono text-faint">{t.id}</span>
+        {t.owner !== "" && (
+          <span className="flex min-w-0 items-center gap-1" style={hueOf(t.owner, n.ownerKind)}>
+            <Glyph kind={n.ownerKind} theme={theme} className="w-auto text-3xs" />
+            <span className="truncate">{t.owner}</span>
+          </span>
+        )}
       </span>
     </Shell>
   );
 });
 
-// A file: its name, then its folder in faint, and its +/− when it changed.
+// A file: its name, its folder in faint, and its +/− when it changed. A
+// lease's pattern is drawn dashed.
 export const FileCard = memo(function FileCard({ n, picked, dim, onPick, onHover }: NodeProps<FileGraphNode>) {
-  const slash = n.path.replace(/\/\*\*$/, "").lastIndexOf("/");
+  const slash = n.path.lastIndexOf("/");
   const name = n.glob ? n.path : n.path.slice(slash + 1);
   const dir = n.glob || slash < 0 ? "" : n.path.slice(0, slash);
-  const Icon = n.glob ? Lock : FileText;
   return (
     <Shell
       n={n}
       picked={picked}
       dim={dim}
       label={n.glob ? `Files under ${n.path}` : `${n.path}${n.changed ? `, +${n.added} −${n.removed}` : ""}`}
-      className="flex items-center gap-2 rounded-full px-3"
+      className={cn("@container flex items-center gap-2 rounded-md px-2.5", n.glob && !picked && "border-dashed", !n.changed && !n.glob && "bg-transparent")}
       onPick={onPick}
       onHover={onHover}
     >
-      <Icon className={cn("size-3.5 shrink-0", n.changed ? "text-info-foreground" : "text-muted-foreground")} />
-      <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-        <span className="shrink-0 font-mono text-xs">{name}</span>
-        {dir !== "" && <span className="min-w-0 truncate font-mono text-3xs text-faint">{dir}</span>}
+      <span className="flex min-w-0 flex-1 items-baseline gap-1.5 font-mono">
+        <span className={cn("min-w-0 truncate text-xs", !n.changed && "text-muted-foreground")} title={n.path}>
+          {name}
+        </span>
+        {/* The folder, when the card is wide enough to say it whole-ish. */}
+        {dir !== "" && <span className="hidden min-w-0 truncate text-3xs text-faint @[11rem]:inline">{dir}</span>}
       </span>
       {n.changed && (
-        <span className="shrink-0 font-mono text-2xs tabular-nums">
+        <span className="shrink-0 font-mono text-3xs tabular-nums">
           <span className="text-diff-addition-foreground">+{n.added}</span> <span className="text-diff-deletion-foreground">−{n.removed}</span>
         </span>
       )}
@@ -289,10 +250,17 @@ export const FileCard = memo(function FileCard({ n, picked, dim, onPick, onHover
 // The changed files no one is linked to, as one node.
 export const FoldCard = memo(function FoldCard({ n, picked, dim, onPick, onHover }: NodeProps<FoldGraphNode>) {
   return (
-    <Shell n={n} picked={picked} dim={dim} label={`${n.paths.length} more changed files`} className="flex items-center gap-2 rounded-full px-3" onPick={onPick} onHover={onHover}>
-      <Files className="size-3.5 shrink-0 text-info-foreground" />
+    <Shell
+      n={n}
+      picked={picked}
+      dim={dim}
+      label={`${n.paths.length} more changed files`}
+      className="flex items-center gap-2 rounded-md px-2.5"
+      onPick={onPick}
+      onHover={onHover}
+    >
       <span className="min-w-0 flex-1 truncate text-xs">{n.paths.length} more files</span>
-      <span className="shrink-0 font-mono text-2xs tabular-nums">
+      <span className="shrink-0 font-mono text-3xs tabular-nums">
         <span className="text-diff-addition-foreground">+{n.added}</span> <span className="text-diff-deletion-foreground">−{n.removed}</span>
       </span>
     </Shell>

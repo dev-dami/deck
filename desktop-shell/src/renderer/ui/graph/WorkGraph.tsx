@@ -1,7 +1,7 @@
 import type { AgentLine, ChangedFile, Theme } from "@web/protocol";
-import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRoomCrew } from "../../crewState";
-import { type Bounds, buildGraph, type Graph, isEmpty, neighbourhood, stepFocus } from "../../graph";
+import { type Bounds, buildGraph, chooseDirection, type Direction, type Graph, isEmpty, neighbourhood, stepFocus } from "../../graph";
 import { cn } from "../../lib/cn";
 import type { ProjectApi } from "../../project";
 import type { Lease } from "../../roomMeta";
@@ -42,11 +42,28 @@ export function WorkGraph({ api, sid, roster, files, leases, ...rest }: WorkGrap
   const room = useRoomCrew(api, sid);
   const crew = room?.crew ?? null;
   const board = room?.board ?? null;
-  const g = useMemo(
-    () => buildGraph({ roster, crew, board, files, ...(leases === undefined ? {} : { leases }) }),
-    [roster, crew, board, files, leases],
-  );
-  if (isEmpty(g)) {
+  const [across, down] = useMemo(() => {
+    const input = { roster, crew, board, files, ...(leases === undefined ? {} : { leases }) };
+    return [buildGraph(input, "across"), buildGraph(input, "down")] as const;
+  }, [roster, crew, board, files, leases]);
+
+  // Across, unless the canvas is tall and narrow enough that down shows the
+  // graph larger. A change of direction mounts a new canvas, which fits.
+  const box = useRef<HTMLDivElement>(null);
+  const [dir, setDir] = useState<Direction | null>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (el === null) return;
+    const look = () => {
+      if (el.clientWidth > 0) setDir(chooseDirection(across.bounds, down.bounds, el.clientWidth, el.clientHeight));
+    };
+    look();
+    const ro = new ResizeObserver(look);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [across, down]);
+
+  if (isEmpty(across)) {
     return (
       <div className="work-graph flex min-h-0 flex-1 items-center justify-center" data-empty="">
         <EmptyState
@@ -58,7 +75,11 @@ export function WorkGraph({ api, sid, roster, files, leases, ...rest }: WorkGrap
       </div>
     );
   }
-  return <Canvas key={sid} g={g} now={room?.at ?? 0} {...rest} />;
+  return (
+    <div ref={box} className="relative flex min-h-0 flex-1">
+      {dir !== null && <Canvas key={`${sid}/${dir}`} g={dir === "down" ? down : across} now={room?.at ?? 0} {...rest} />}
+    </div>
+  );
 }
 
 // Room for the column labels over the graph.
@@ -85,12 +106,15 @@ function Canvas({
   // The canvas is on screen; off it, the live motion stops.
   const [onScreen, setOnScreen] = useState(true);
   const byId = useMemo(() => new Map(g.nodes.map((n) => [n.id, n])), [g]);
-  const near = useMemo(() => (hover === null || !byId.has(hover) ? null : neighbourhood(g.edges, hover)), [g, byId, hover]);
+  // The neighbourhood that stays bright: the hovered node's, else the picked one's.
+  const lit = hover ?? picked;
+  const near = useMemo(() => (lit === null || !byId.has(lit) ? null : neighbourhood(g.edges, lit)), [g, byId, lit]);
 
   // What a fit shows: the graph and its column labels, clear of the
   // controls and of the composer that floats over the room.
   const target = useRef<FitTarget>(null);
-  const labels = compact ? 0 : LABELS;
+  const labelled = !compact && g.dir === "across";
+  const labels = labelled ? LABELS : 0;
   target.current = {
     bounds: { x: g.bounds.x, y: g.bounds.y - labels, w: g.bounds.w, h: g.bounds.h + labels },
     pad: (el: HTMLElement): Pad => {
@@ -149,7 +173,7 @@ function Canvas({
     if (e.key.startsWith("Arrow")) {
       if (id === null) return;
       e.preventDefault();
-      const next = stepFocus(g.nodes, id, e.key);
+      const next = stepFocus(g.nodes, id, e.key, g.dir);
       if (next !== null && next !== id) focusNode(next);
     } else if (e.key === "+" || e.key === "=") view.zoomBy(1.25, undefined, true);
     else if (e.key === "-" || e.key === "_") view.zoomBy(1 / 1.25, undefined, true);
@@ -184,6 +208,7 @@ function Canvas({
       aria-label="Work graph"
       aria-roledescription="graph"
       data-live={onScreen ? "on" : "off"}
+      data-dir={g.dir}
       className={cn(
         "work-graph relative isolate flex min-h-0 flex-1 cursor-grab touch-none select-none overflow-hidden outline-none data-moving:cursor-grabbing",
         compact && "work-graph-compact",
@@ -192,16 +217,16 @@ function Canvas({
       onScroll={onScroll}
     >
       <div ref={view.layer} className="graph-layer absolute top-0 left-0 origin-top-left">
-        <Edges edges={g.edges} nodes={byId} near={near} seen={seen} />
-        {!compact &&
-          g.columns.map(
+        <Edges dir={g.dir} edges={g.edges} nodes={byId} near={near} seen={seen} />
+        {labelled &&
+          g.layers.map(
             (c) =>
               c.label !== "" && (
                 <span
                   key={c.layer}
                   aria-hidden
                   className="absolute top-0 left-0 whitespace-nowrap font-medium text-2xs text-faint"
-                  style={{ transform: `translate(${c.x + 2}px, ${g.bounds.y - LABELS + 4}px)` }}
+                  style={{ transform: `translate(${c.at + 1}px, ${g.bounds.y - LABELS + 6}px)` }}
                 >
                   {c.label}
                 </span>

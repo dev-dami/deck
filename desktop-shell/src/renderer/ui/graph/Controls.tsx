@@ -45,7 +45,7 @@ export function ZoomCapsule({ view, className, style }: { view: ViewApi; classNa
   );
 }
 
-// The counts, and a key to the three kinds of line.
+// The counts, and a key to the three kinds of line, in plain type.
 export function Legend({ g }: { g: Graph }) {
   const s = graphSummary(g);
   const parts = [
@@ -54,44 +54,44 @@ export function Legend({ g }: { g: Graph }) {
     `${s.files} ${s.files === 1 ? "file" : "files"}`,
   ];
   return (
-    <div data-graph-control="" className="graph-legend pointer-events-none absolute top-3 left-3 z-10 flex flex-col items-start gap-1.5">
-      <p className="liquid-clear flex h-7 items-center gap-2 rounded-full px-3 text-2xs text-muted-foreground">
+    <div data-graph-control="" className="graph-legend pointer-events-none absolute top-3.5 left-4 z-10 flex flex-col gap-1.5 text-2xs">
+      <p className="flex items-center gap-2 text-muted-foreground tabular-nums">
         {s.working > 0 && (
-          <span className="flex items-center gap-1.5 font-medium text-foreground">
+          <span className="flex items-center gap-1.5 text-foreground">
             <span className="size-1.5 animate-deck-pulse rounded-full bg-signal" />
             {s.working} working
           </span>
         )}
-        {s.working > 0 && <span aria-hidden className="h-3 w-px bg-hairline" />}
-        <span className="tabular-nums">{parts.join(" · ")}</span>
+        <span>{parts.join(" · ")}</span>
       </p>
-      <ul aria-label="Key" className="flex items-center gap-3 px-3 text-3xs text-faint">
+      <ul aria-label="Key" className="flex items-center gap-3 text-3xs text-faint">
         <Key label="works on" />
-        <Key label="holds" dash="1.5 3" />
-        <Key label="editing now" dash="4 3" strong />
+        <Key label="holds" dash="1 3" />
+        <Key label="editing now" dash="4 3" live />
       </ul>
     </div>
   );
 }
 
-function Key({ label, dash, strong = false }: { label: string; dash?: string; strong?: boolean }) {
+function Key({ label, dash, live = false }: { label: string; dash?: string; live?: boolean }) {
   return (
     <li className="flex items-center gap-1.5">
-      <svg aria-hidden width="18" height="6" className={strong ? "text-signal" : "text-muted-foreground"}>
-        <path d="M1 3 H17" stroke="currentColor" strokeWidth={strong ? 1.75 : 1.25} strokeLinecap="round" strokeDasharray={dash} />
+      <svg aria-hidden width="16" height="4" className={live ? "text-muted-foreground" : "text-faint"}>
+        <path d="M1 2 H15" stroke="currentColor" strokeWidth={live ? 1.5 : 1} strokeLinecap="round" strokeDasharray={dash} />
       </svg>
       {label}
     </li>
   );
 }
 
-const MAP_W = 168;
-const MAP_H = 104;
+const MAP_W = 140;
+const MAP_H = 84;
 
 // The whole graph small, the part in sight as a frame; a press there moves
 // the view to it.
 export function Minimap({ g, view, style }: { g: Graph; view: ViewApi; style?: CSSProperties }) {
   const frame = useRef<SVGRectElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const b = g.bounds;
   const pad = 8;
   const s = Math.min((MAP_W - pad * 2) / Math.max(1, b.w), (MAP_H - pad * 2) / Math.max(1, b.h));
@@ -103,12 +103,16 @@ export function Minimap({ g, view, style }: { g: Graph; view: ViewApi; style?: C
         const el = view.root.current;
         const f = frame.current;
         if (el === null || f === null) return;
+        // Only while part of the graph is out of sight.
+        const all =
+          b.x * v.k + v.x >= 0 && b.y * v.k + v.y >= 0 && (b.x + b.w) * v.k + v.x <= el.clientWidth && (b.y + b.h) * v.k + v.y <= el.clientHeight;
+        box.current?.toggleAttribute("data-hidden", all);
         f.setAttribute("x", String(ox + (-v.x / v.k) * s));
         f.setAttribute("y", String(oy + (-v.y / v.k) * s));
         f.setAttribute("width", String((el.clientWidth / v.k) * s));
         f.setAttribute("height", String((el.clientHeight / v.k) * s));
       }),
-    [view, ox, oy, s],
+    [view, ox, oy, s, b],
   );
   const go = (e: React.PointerEvent<SVGSVGElement>) => {
     const el = view.root.current;
@@ -120,7 +124,12 @@ export function Minimap({ g, view, style }: { g: Graph; view: ViewApi; style?: C
     view.set({ k: v.k, x: el.clientWidth / 2 - gx * v.k, y: el.clientHeight / 2 - gy * v.k }, { user: true, glide: e.type === "pointerdown" });
   };
   return (
-    <div data-graph-control="" className="graph-minimap liquid-clear absolute right-3 z-10 overflow-hidden rounded-[14px]" style={style}>
+    <div
+      ref={box}
+      data-graph-control=""
+      className="graph-minimap absolute right-3 z-10 overflow-hidden rounded-lg border border-hairline bg-surface-1 transition-opacity duration-200 data-hidden:pointer-events-none data-hidden:opacity-0"
+      style={style}
+    >
       <svg
         role="img"
         aria-label="Minimap"
@@ -142,12 +151,12 @@ export function Minimap({ g, view, style }: { g: Graph; view: ViewApi; style?: C
             y={oy + n.y * s}
             width={Math.max(2, n.w * s)}
             height={Math.max(2, n.h * s)}
-            rx={n.kind === "file" || n.kind === "fold" || n.kind === "you" ? (n.h * s) / 2 : 2}
+            rx={1}
             fill={n.kind === "agent" ? agentColour(n.name, n.agentKind) : "var(--muted-foreground)"}
-            fillOpacity={n.kind === "agent" ? 0.75 : 0.3}
+            fillOpacity={n.kind === "agent" ? 0.7 : 0.22}
           />
         ))}
-        <rect ref={frame} rx={4} fill="var(--primary)" fillOpacity={0.08} stroke="var(--primary)" strokeOpacity={0.7} strokeWidth={1} />
+        <rect ref={frame} rx={2} fill="none" stroke="var(--muted-foreground)" strokeOpacity={0.7} strokeWidth={1} />
       </svg>
     </div>
   );

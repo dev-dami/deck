@@ -45,27 +45,31 @@ import { Button } from "./kit/button";
 import { EmptyState } from "./kit/empty";
 import { Dialog, fieldClass } from "./kit/dialog";
 import { Switch } from "./kit/switch";
+import { TaskMark } from "./graph/Nodes";
 
 // The Tasks tab of a room: what waits for a busy agent, the task board the
 // agents split the work into (races and their entries, reviews), the
 // orchestration switch, and a form to race agents on one brief.
 
-const STATUS_STYLE: Record<string, string> = {
-  pending: "bg-muted text-muted-foreground",
-  ready: "bg-muted text-foreground",
-  running: "bg-signal/12 text-signal",
-  review: "bg-muted text-foreground",
-  blocked: "bg-warning/14 text-warning-foreground",
-  done: "bg-success/12 text-success-foreground",
-  failed: "bg-destructive/12 text-destructive-foreground",
-  cancelled: "bg-muted text-muted-foreground",
+const STATUS_TEXT: Record<string, string> = {
+  running: "text-foreground",
+  blocked: "text-warning-foreground",
+  done: "text-success-foreground",
+  failed: "text-destructive-foreground",
 };
 
-function StatusPill({ status }: { status: string }) {
+// A task's state: the Work Graph's small mark, and the word.
+function Status({ status }: { status: string }) {
   return (
-    <span className={cn("task-status shrink-0 rounded-full px-1.5 py-0.5 font-medium text-2xs", STATUS_STYLE[status] ?? "bg-muted")}>{status}</span>
+    <span className="flex shrink-0 items-center gap-1">
+      <TaskMark status={status} />
+      <span className={cn("task-status text-2xs", STATUS_TEXT[status] ?? "text-muted-foreground")}>{status}</span>
+    </span>
   );
 }
+
+// The cards of the tab: one plane, a hairline ring, no shadow.
+const CARD = "rounded-xl bg-surface-1 ring-1 ring-hairline";
 
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
@@ -104,7 +108,7 @@ function Queue({
   return (
     <ul aria-label="Queue" className="flex flex-col gap-2">
       {items.map((q, i) => (
-        <li key={q.id} className="queued flex flex-col gap-2 rounded-xl border bg-card p-3">
+        <li key={q.id} className={cn("queued flex flex-col gap-2 p-3", CARD)}>
           <div className="flex items-center gap-1 text-muted-foreground text-xs">
             <span className="flex-1">
               Waiting for <span className="approval-agent font-medium text-foreground">{q.agent}</span>
@@ -198,16 +202,21 @@ function TaskCard({
     );
   }
   return (
-    <li className="board-task rounded-xl border bg-card/40" data-task={t.id}>
-      <button type="button" className="flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        {open ? <ChevronDown className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />}
-        {t.race && <Flag className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-label="Race" />}
+    <li className={cn("board-task", CARD)} data-task={t.id}>
+      <button
+        type="button"
+        className="flex w-full cursor-pointer items-start gap-2 rounded-xl px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? <ChevronDown className="mt-0.5 size-3.5 shrink-0 text-faint" /> : <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-faint" />}
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 truncate font-medium text-sm">{t.title || t.id}</span>
-            <StatusPill status={t.status} />
+            {t.race && <Flag className="size-3.5 shrink-0 text-muted-foreground" aria-label="Race" />}
+            <span className="min-w-0 flex-1 truncate font-medium text-sm">{t.title || t.id}</span>
+            <Status status={t.status} />
           </span>
-          <span className="truncate text-2xs text-muted-foreground">
+          <span className="truncate text-2xs text-faint">
             <span className="font-mono">{t.id}</span>
             {t.owner !== "" ? ` · ${t.owner}` : ""}
             {t.tries > 1 ? ` · attempt ${Math.max(1, t.attempts)}/${t.tries}` : ""}
@@ -217,7 +226,7 @@ function TaskCard({
         </span>
       </button>
       {open && (
-        <div className="flex flex-col gap-2 border-t px-3 py-2 text-xs">
+        <div className="flex flex-col gap-2 border-hairline border-t px-3 py-2.5 text-xs">
           {t.brief !== "" && <p className="whitespace-pre-wrap text-muted-foreground">{t.brief}</p>}
           {t.result !== "" && <p className="whitespace-pre-wrap">{t.result}</p>}
           {t.error !== "" && <p className="whitespace-pre-wrap text-destructive-foreground">{t.error}</p>}
@@ -229,12 +238,12 @@ function TaskCard({
         </div>
       )}
       {entries.length > 0 && (
-        <ul className="flex flex-col gap-1 border-t px-3 py-2">
+        <ul className="flex flex-col gap-1.5 border-hairline border-t px-3 py-2.5">
           {entries.map((e) => (
             <li key={e.id} className="race-entry flex items-center gap-2 text-xs" data-task={e.id}>
-              <Trophy className="size-3.5 shrink-0 text-muted-foreground/60" />
+              <Trophy className="size-3.5 shrink-0 text-faint" />
               <span className="shrink-0 font-medium">{e.owner || e.id}</span>
-              <StatusPill status={e.status} />
+              <Status status={e.status} />
               <span className="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground" title={e.files.join("\n")}>
                 {e.stats}
               </span>
@@ -248,7 +257,7 @@ function TaskCard({
         </ul>
       )}
       {steering && (
-        <div className="flex items-center gap-2 border-t px-3 py-2">
+        <div className="flex items-center gap-2 border-hairline border-t px-3 py-2">
           <input
             autoFocus
             aria-label={`Steer ${t.id}`}
@@ -267,7 +276,7 @@ function TaskCard({
           />
         </div>
       )}
-      {actions.length > 0 && <div className="flex flex-wrap justify-end gap-1 border-t px-2 py-1.5">{actions}</div>}
+      {actions.length > 0 && <div className="flex flex-wrap justify-end gap-1 border-hairline border-t px-2 py-1.5">{actions}</div>}
     </li>
   );
 }
@@ -327,19 +336,24 @@ function RaceForm({
         <span className="font-mono" style={{ color: kindColour(kind) }} aria-hidden>
           {kindMark(theme, kind) || "●"}
         </span>
-        <select aria-label="Race kind" value={kind} onChange={(e) => setKind(e.target.value)} className="h-7 rounded-md border bg-background px-2 text-xs">
+        <select
+          aria-label="Race kind"
+          value={kind}
+          onChange={(e) => setKind(e.target.value)}
+          className="h-7 rounded-full border border-input bg-hover px-2.5 text-xs outline-none focus:ring-2 focus:ring-ring"
+        >
           {kinds.map((k) => (
             <option key={k} value={k}>
               {k}
             </option>
           ))}
         </select>
-        <span className="flex items-center gap-1 rounded-md border px-1 py-0.5">
+        <span className="flex h-7 items-center gap-1 rounded-full border border-input bg-hover px-1">
           <button
             type="button"
             aria-label="Fewer entries"
             disabled={count <= RACE_MIN}
-            className="grid size-5 cursor-pointer place-items-center rounded hover:bg-accent disabled:opacity-40"
+            className="grid size-5 cursor-pointer place-items-center rounded-full hover:bg-selected disabled:opacity-40"
             onClick={() => setCount((n) => Math.max(RACE_MIN, n - 1))}
           >
             <Minus className="size-3" />
@@ -351,7 +365,7 @@ function RaceForm({
             type="button"
             aria-label="More entries"
             disabled={count >= RACE_MAX}
-            className="grid size-5 cursor-pointer place-items-center rounded hover:bg-accent disabled:opacity-40"
+            className="grid size-5 cursor-pointer place-items-center rounded-full hover:bg-selected disabled:opacity-40"
             onClick={() => setCount((n) => Math.min(RACE_MAX, n + 1))}
           >
             <Plus className="size-3" />
@@ -500,7 +514,7 @@ export function TasksPanel({
   const rows = board === null ? [] : boardRows(board);
 
   return (
-    <section aria-label="Tasks" className="flex flex-col gap-6 overflow-y-auto p-3">
+    <section aria-label="Tasks" className="flex flex-col gap-6 overflow-y-auto px-3 pt-1 pb-3">
       {(queue.length > 0 || api === undefined) && (
         <Section title="Queue">
           <Queue c={c} sessionId={sessionId} items={queue} {...(onEditQueued === undefined ? {} : { onEdit: onEditQueued })} />
@@ -514,19 +528,10 @@ export function TasksPanel({
             title="Tasks"
             action={
               board !== null && (
-                <label className="flex cursor-pointer items-center gap-2 text-muted-foreground text-xs" title="Let the scheduler run ready tasks and agents start subagents">
+                <span className="flex items-center gap-2 text-muted-foreground text-xs" title="Let the scheduler run ready tasks and agents start subagents">
                   Orchestrate
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={board.orchestrate}
-                    aria-label="Orchestrate"
-                    onClick={() => void toggle()}
-                    className={cn("relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors", board.orchestrate ? "bg-primary" : "bg-input")}
-                  >
-                    <span className={cn("inline-block size-3 rounded-full bg-white transition-transform", board.orchestrate ? "translate-x-3.5" : "translate-x-0.5")} />
-                  </button>
-                </label>
+                  <Switch label="Orchestrate" checked={board.orchestrate} onChange={() => void toggle()} />
+                </span>
               )
             }
           >

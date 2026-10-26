@@ -134,12 +134,20 @@ export interface GraphInput {
 
 // Node sizes, in graph units. An agent's card grows a line for the tool it runs.
 export const SIZE = {
-  you: { w: 72, h: 36 },
-  agent: { w: 192, h: 56 },
-  agentTool: { w: 192, h: 76 },
-  task: { w: 184, h: 52 },
-  file: { w: 176, h: 34 },
+  you: { w: 60, h: 30 },
+  agent: { w: 196, h: 50 },
+  agentTool: { w: 196, h: 74 },
+  task: { w: 196, h: 48 },
+  file: { w: 188, h: 30 },
 } as const;
+// Down, a layer is a row and its width is what limits the fit: narrower cards.
+export const SIZE_DOWN: { [K in keyof typeof SIZE]: { w: number; h: number } } = {
+  you: { w: 60, h: 30 },
+  agent: { w: 164, h: 50 },
+  agentTool: { w: 164, h: 74 },
+  task: { w: 164, h: 48 },
+  file: { w: 152, h: 30 },
+};
 // Across, the gap between columns and between the cards of one; down,
 // between rows and between the cards of one.
 export const COLUMN_GAP = 56;
@@ -206,13 +214,14 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
   const nodes = new Map<string, GraphNode>();
   const edges = new Map<string, GraphEdge>();
   const at = { layer: 0, x: 0, y: 0 };
+  const size = dir === "down" ? SIZE_DOWN : SIZE;
   const edge = (kind: EdgeKind, from: string, to: string, tint: string | null, live = false) => {
     if (from === to || !nodes.has(from) || !nodes.has(to)) return;
     const id = `${kind}:${from}>${to}`;
     if (!edges.has(id)) edges.set(id, { id, from, to, kind, live, tint });
   };
 
-  nodes.set(YOU, { kind: "you", id: YOU, ...at, ...SIZE.you });
+  nodes.set(YOU, { kind: "you", id: YOU, ...at, ...size.you });
 
   // The agents: the roster merged with the tree, as the lane strip does.
   const crewNodes = input.crew?.agents ?? [];
@@ -229,7 +238,7 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
       kind: "agent",
       id,
       ...at,
-      ...(tools.length > 0 ? SIZE.agentTool : SIZE.agent),
+      ...(tools.length > 0 ? size.agentTool : size.agent),
       name,
       agentKind: line?.kind || n?.kind || name.replace(/[-_]?\d+$/, ""),
       status,
@@ -293,7 +302,7 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
   for (const t of tasks) {
     if (nodes.has(taskId(t.id))) continue;
     const ownerKind = byName.get(t.owner)?.agentKind ?? "";
-    nodes.set(taskId(t.id), { kind: "task", id: taskId(t.id), ...at, ...SIZE.task, task: t, level: 0, ownerKind });
+    nodes.set(taskId(t.id), { kind: "task", id: taskId(t.id), ...at, ...size.task, task: t, level: 0, ownerKind });
   }
   const depsOf = (t: BoardTask): string[] => {
     const race = raceOf.get(t.id);
@@ -311,7 +320,7 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
       kind: "file",
       id,
       ...at,
-      ...SIZE.file,
+      ...size.file,
       path,
       added: f?.added ?? 0,
       removed: f?.removed ?? 0,
@@ -368,7 +377,7 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
       kind: "fold",
       id: FOLD,
       ...at,
-      ...SIZE.file,
+      ...size.file,
       paths: loose.map((f) => f.path).sort(),
       added: loose.reduce((s, f) => s + f.added, 0),
       removed: loose.reduce((s, f) => s + f.removed, 0),

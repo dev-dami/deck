@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import type { TestHost } from "../bridge";
-import { FakeRpcDeck } from "../fake-grpc";
+import { crewAtWork, FakeRpcDeck, GRAPH_FILES } from "../fake-grpc";
 import { attachBridge } from "./harness";
 
 // The Work Graph in the side panel, over a local project whose thread has
@@ -13,62 +13,7 @@ import { attachBridge } from "./harness";
 const OUT = process.env["SHOTS"] ?? "";
 let fake: FakeRpcDeck;
 let host: TestHost;
-
-const LIMIT = "pkg/remote/auth/limit.go";
-const TEST = "pkg/remote/auth/limit_test.go";
-const PRUNE = "pkg/remote/auth/prune.go";
-
-// The crew and the board, as deck.v1's Agents and Board answer.
-function crewAtWork(f: FakeRpcDeck): void {
-  const now = Date.now();
-  f.crew = {
-    agents: [
-      {
-        name: "claude-1",
-        kind: "claude",
-        model: "opus",
-        effort: "high",
-        status: "tool",
-        context_tokens: 92_000,
-        context_window: 200_000,
-        cost_usd: 1.84,
-        since: now - 194_000,
-        leases: "pkg/remote/auth/** (exclusive)",
-      },
-      { name: "codex-1", kind: "codex", model: "gpt-5-codex", status: "idle", context_tokens: 41_000, context_window: 272_000, cost_usd: 0.62 },
-      {
-        name: "claude-sub",
-        kind: "claude",
-        model: "sonnet",
-        status: "working",
-        depth: 1,
-        parent: "claude-1",
-        branch: "deck/t2",
-        context_tokens: 18_000,
-        context_window: 200_000,
-        cost_usd: 0.21,
-        since: now - 71_000,
-      },
-      { name: "codex-sub", kind: "codex", model: "gpt-5-codex", status: "exited", depth: 1, parent: "codex-1", branch: "deck/t3", cost_usd: 0.33 },
-    ],
-    running: [
-      { agent: "claude-1", kind: "claude", name: "Edit", summary: LIMIT, started: now - 8_000 },
-      { agent: "claude-sub", kind: "claude", name: "Bash", summary: "go test ./pkg/remote/auth -run Limiter", started: now - 21_000, command: true },
-    ],
-  };
-  f.board.orchestrate = true;
-  f.board.tasks = [
-    { id: "t1", title: "Map the limiter", status: "done", owner: "claude-1", files: [LIMIT] },
-    { id: "t2", title: "Key failures by address", status: "running", owner: "claude-sub", deps: ["t1"], files: [LIMIT, TEST], branch: "deck/t2" },
-    { id: "t3", title: "Prune idle buckets", status: "done", owner: "codex-sub", deps: ["t1"], files: [PRUNE], branch: "deck/t3" },
-    { id: "t4", title: "Document the limit", status: "ready", owner: "codex-1", files: ["docs/pairing.md"] },
-  ];
-  f.deck.setChanges("ses_main", [
-    { path: LIMIT, added: 18, removed: 6, diff: "@@ -12,3 +12,4 @@\n-\tglobal.fail()\n+\tl.fail(addr)\n" },
-    { path: TEST, added: 42, removed: 0, diff: "@@ -0,0 +1,1 @@\n+func TestLimiterIsPerAddress(t *testing.T) {}\n" },
-    { path: PRUNE, added: 27, removed: 3, diff: "@@ -0,0 +1,1 @@\n+func (l *Limiter) prune() {}\n" },
-  ]);
-}
+const { PRUNE, LIMIT } = GRAPH_FILES;
 
 test.beforeEach(async ({ page }) => {
   fake = await FakeRpcDeck.start({ tickMs: 250 });
@@ -137,9 +82,10 @@ test("the graph maps the crew, its tasks and files, and acts on them", async ({ 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("region", { name: "codex-1 details" })).toHaveCount(0);
 
-  // The keys: arrows move along the graph, + zooms, 0 fits.
+  // The keys: arrows move along the graph (down it, in a narrow panel), +
+  // zooms, 0 fits.
   await node(page, "you").focus();
-  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press((await g.getAttribute("data-dir")) === "down" ? "ArrowDown" : "ArrowRight");
   await expect(g.locator('[data-kind="agent"]:focus')).toHaveCount(1);
   const zoom = page.getByRole("toolbar", { name: "Zoom" });
   const before = await zoom.locator("span").first().textContent();
@@ -209,5 +155,15 @@ for (const mode of ["dark", "light"] as const) {
     await node(page, "agent:claude-sub").hover();
     await page.waitForTimeout(300);
     await page.screenshot({ path: join(OUT, `${mode}-9-graph-wide.png`) });
+    // The panel's other tabs over the same crew.
+    await page.getByRole("button", { name: "Narrow the panel" }).click();
+    const panel = page.getByRole("complementary", { name: "Side panel" });
+    await panel.getByRole("tab", { name: "Agents" }).click();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: join(OUT, `${mode}-10-agents.png`) });
+    await panel.getByRole("tab", { name: "Tasks" }).click();
+    await page.locator('.board-task[data-task="t2"] button').first().click();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: join(OUT, `${mode}-11-tasks.png`) });
   });
 }
