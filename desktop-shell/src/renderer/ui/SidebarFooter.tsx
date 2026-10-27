@@ -99,7 +99,7 @@ export function SidebarFooter({
         )}
         <button type="button" className={cn("link", quiet)} title={`${LINK_LABEL[link]}. Open the connection settings.`} onClick={() => onSettings("connection")}>
           <span aria-hidden className={cn("dot size-1.5 shrink-0 rounded-full", linkDot[link])} />
-          <span className={cn("sr-only @min-[15rem]:not-sr-only", update !== null && "@min-[15rem]:sr-only")}>{LINK_LABEL[link]}</span>
+          <span className={cn("sr-only @min-[18rem]:not-sr-only", update !== null && "@min-[18rem]:sr-only")}>{LINK_LABEL[link]}</span>
         </button>
       </span>
     </footer>
