@@ -44,6 +44,9 @@ type translator struct {
 	limits       map[string]agent.LimitWindow
 	plan         string
 	limitsFailed bool
+	// rejected is the window a rate_limit_event of this turn said is used
+	// up (status "rejected"), until the turn's result line.
+	rejected *agent.LimitHit
 }
 
 // ctxUsage is the token usage of one assistant message.
@@ -309,12 +312,15 @@ func (t *translator) Line(line []byte) []agent.Event {
 
 	case "result":
 		var out []agent.Event
-		if sl.IsError || strings.HasPrefix(sl.Subtype, "error") {
+		failed := sl.IsError || strings.HasPrefix(sl.Subtype, "error")
+		hit := t.limitHit(sl.Result, failed)
+		if failed || hit != nil {
 			ev := mk(agent.KindError)
 			ev.Text = sl.Result
 			if ev.Text == "" {
 				ev.Text = sl.Subtype
 			}
+			ev.LimitHit = hit
 			out = append(out, ev)
 		}
 		var u wireUsage

@@ -146,3 +146,36 @@ func limitsOf(evs *[]agent.Event, mu *sync.Mutex) *agent.Limits {
 	}
 	return nil
 }
+
+func TestTurnFailedOnUsageLimitIsALimitHit(t *testing.T) {
+	tr := newTranslator("cx", "")
+	now := time.Unix(1760000000, 0)
+	tr.now = func() time.Time { return now }
+	rateLimitsNote(t, tr, `{"rateLimits":{"limitId":"codex","primary":{"usedPercent":100,"windowDurationMins":300,"resetsAt":1760007200},
+		"secondary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":1760500000}}}`)
+	done := func(params string) []agent.Event {
+		return tr.notification(noteTurnCompleted, json.RawMessage(params), rawOf(`{"method":"`+noteTurnCompleted+`"}`))
+	}
+	evs := done(`{"threadId":"th","turn":{"id":"t1","status":"failed","error":{"message":"You've hit your usage limit.","codexErrorInfo":"usageLimitExceeded"}}}`)
+	if len(evs) != 2 || evs[0].Kind != agent.KindError || evs[1].Kind != agent.KindTurnDone {
+		t.Fatalf("events %+v", evs)
+	}
+	h := evs[0].LimitHit
+	if h == nil || h.Window != "primary" || !h.ResetsAt.Equal(time.Unix(1760007200, 0)) {
+		t.Errorf("hit %+v", h)
+	}
+
+	// No snapshot says which window: the message's time stands.
+	tr2 := newTranslator("cx", "")
+	tr2.now = func() time.Time { return now }
+	evs = tr2.notification(noteError, json.RawMessage(`{"error":{"message":"You've hit your usage limit. Try again in 3 hours."},"willRetry":false}`), rawOf(`{"method":"error"}`))
+	if h := evs[0].LimitHit; h == nil || !h.ResetsAt.Equal(now.Add(3*time.Hour).Truncate(time.Minute)) {
+		t.Errorf("hit from text %+v", h)
+	}
+
+	// Any other failure is not.
+	evs = done(`{"threadId":"th","turn":{"id":"t2","status":"failed","error":{"message":"stream disconnected","codexErrorInfo":{"responseStreamDisconnected":{}}}}}`)
+	if evs[0].LimitHit != nil {
+		t.Errorf("not a limit: %+v", evs[0].LimitHit)
+	}
+}

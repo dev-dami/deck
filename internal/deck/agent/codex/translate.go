@@ -119,6 +119,9 @@ func (t *translator) notification(method string, params json.RawMessage, raw raw
 			if n.Turn.Error != nil && n.Turn.Error.Message != "" {
 				e.Text = n.Turn.Error.Message
 			}
+			if n.Turn.Error != nil {
+				e.LimitHit = t.limitHit(*n.Turn.Error)
+			}
 			out = append(out, e)
 		}
 		done := t.ev(agent.KindTurnDone, raw)
@@ -226,6 +229,8 @@ func (t *translator) notification(method string, params json.RawMessage, raw raw
 		e.Text = n.Error.Message
 		if n.WillRetry {
 			e.Text += " (retrying)"
+		} else {
+			e.LimitHit = t.limitHit(n.Error)
 		}
 		return []agent.Event{e}
 	}

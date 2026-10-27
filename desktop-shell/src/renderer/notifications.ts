@@ -7,18 +7,19 @@ import type { BoardTask } from "./crew";
 // and the badge. Pure, so the decisions are tested; notifyCentre.ts feeds it
 // and keeps the list.
 
-export type NotifyKind = "approval" | "error" | "mention" | "task" | "finished";
+export type NotifyKind = "approval" | "error" | "limit" | "mention" | "task" | "finished";
 
 // Most urgent first: a burst names the most urgent of its events.
 export const NOTIFY_KINDS: readonly { id: NotifyKind; label: string; description: string }[] = [
   { id: "approval", label: "Approvals and questions", description: "An agent waits for your answer." },
   { id: "error", label: "Errors and blocked work", description: "An agent stopped with an error, or a task is blocked or failed." },
+  { id: "limit", label: "Plan limits", description: "An agent's plan nears or hits its limit, or will run out before it resets." },
   { id: "mention", label: "Mentions", description: "An agent writes to you by name (@user)." },
   { id: "task", label: "Tasks done", description: "A task on a room's board is done." },
   { id: "finished", label: "Finished turns", description: "A room's agents finished and wait for what comes next." },
 ];
 
-const RANK: Record<NotifyKind, number> = { approval: 0, error: 1, mention: 2, task: 3, finished: 4 };
+const RANK: Record<NotifyKind, number> = { approval: 0, error: 1, limit: 2, mention: 3, task: 4, finished: 5 };
 
 // Something to tell the person about, in a room of a project. source is the
 // project's source ("folder:<dir>", "paired:<id>"), which outlives the
@@ -155,6 +156,7 @@ export interface NativeNote {
 const PHRASE: Record<NotifyKind, [string, string, string]> = {
   approval: ["room needs", "rooms need", "your answer"],
   error: ["room stopped", "rooms stopped", "or blocked"],
+  limit: ["plan limit", "plan limits", "near or hit"],
   mention: ["mention", "mentions", "of you"],
   task: ["task", "tasks", "done"],
   finished: ["room", "rooms", "finished"],

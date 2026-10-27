@@ -149,6 +149,25 @@ service Deck {
   // deck.json; NotFound when that scope has none.
   rpc DeleteProfile(DeleteProfileRequest) returns (DeleteProfileResponse);
 
+  // Plan limits (optional; Info lists them in capabilities). Limits is
+  // what is known now: each window's latest report, the recent record for
+  // burn rates, the checks of this run, the agents waiting for a limit to
+  // reset and the messages scheduled for later.
+  rpc Limits(LimitsRequest) returns (LimitsResponse);
+  // CheckLimits asks the agent CLIs (one kind, or all) for their limits now,
+  // apart from any session; a CLI that cannot tell says so in its check.
+  rpc CheckLimits(CheckLimitsRequest) returns (CheckLimitsResponse);
+  // StartWindow starts a kind's rolling window now with one minimal prompt
+  // on its cheapest model, in a throwaway session. It uses a little quota.
+  rpc StartWindow(StartWindowRequest) returns (StartWindowResponse);
+  // ResolveWait resumes an agent that waits for its limit now, or with
+  // cancel ends the wait and drops what is queued for it.
+  rpc ResolveWait(ResolveWaitRequest) returns (Empty);
+  // ScheduleSend posts a message in the session at a time (the next reset);
+  // CancelScheduled drops it, or with send_now sends it at once.
+  rpc ScheduleSend(ScheduleSendRequest) returns (ScheduleSendResponse);
+  rpc CancelScheduled(CancelScheduledRequest) returns (Empty);
+
   // Events streams everything that happens, starting with a Ready. Pass the
   // epoch and seq of the last event seen to replay what was missed; Ready
   // says resync when that cannot be done and the client must refetch.
@@ -1054,3 +1073,90 @@ message DeleteProfileRequest {
 }
 
 message DeleteProfileResponse {}
+
+message LimitsRequest {
+  // history_hours asks for the windows' record of the last so many hours
+  // (for burn rates); 0 leaves it out.
+  int32 history_hours = 1;
+}
+
+message LimitCheck {
+  string kind = 1;
+  int64 checked_at = 2;
+  // error is why the check failed, in Deck's words; "" when it did not.
+  string error = 3;
+  // unsupported: the CLI has no way to report its limits.
+  bool unsupported = 4;
+}
+
+message AgentWait {
+  string session_id = 1;
+  // agent is the member's name in the session, as the roster has it.
+  string agent = 2;
+  string kind = 3;
+  int64 since = 4;
+  // until is when its limit resets; 0 while not known.
+  int64 until = 5;
+  string window = 6;
+}
+
+message ScheduledSend {
+  string id = 1;
+  string session_id = 2;
+  string text = 3;
+  int64 at = 4;
+  int64 created = 5;
+}
+
+message LimitsResponse {
+  // limits is each window's latest report.
+  repeated UsageLimit limits = 1;
+  repeated UsageLimit history = 2;
+  repeated LimitCheck checks = 3;
+  repeated AgentWait waits = 4;
+  repeated ScheduledSend scheduled = 5;
+  // kinds are the installed agent kinds.
+  repeated string kinds = 6;
+}
+
+message CheckLimitsRequest {
+  // kind is "" for every installed agent.
+  string kind = 1;
+}
+
+message CheckLimitsResponse {
+  repeated LimitCheck checks = 1;
+  repeated UsageLimit limits = 2;
+}
+
+message StartWindowRequest {
+  string kind = 1;
+}
+
+message StartWindowResponse {
+  // model is the model the prompt went to ("" for the CLI's default).
+  string model = 1;
+  repeated UsageLimit limits = 2;
+}
+
+message ResolveWaitRequest {
+  string session_id = 1;
+  string agent = 2;
+  bool cancel = 3;
+}
+
+message ScheduleSendRequest {
+  string session_id = 1;
+  string text = 2;
+  int64 at = 3;
+}
+
+message ScheduleSendResponse {
+  string id = 1;
+}
+
+message CancelScheduledRequest {
+  string session_id = 1;
+  string id = 2;
+  bool send_now = 3;
+}

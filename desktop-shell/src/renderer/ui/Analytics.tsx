@@ -24,9 +24,11 @@ import {
   totals,
 } from "../analytics";
 import { cn } from "../lib/cn";
-import type { Usage } from "../project";
+import { useLimits } from "../limitsState";
+import type { ProjectApi, Usage } from "../project";
 import { ChevronRight } from "./icons";
 import { Button } from "./kit/button";
+import { KindLimitControls } from "./Limits";
 import { segmentItem, segmentTrack } from "./kit/segmented";
 import { compact, dollars, niceCeil } from "./Usage";
 import { AgentGlyph } from "./Welcome";
@@ -375,7 +377,24 @@ const BUCKET_MS = { hour: HOUR, "6h": 6 * HOUR, day: DAY } as const;
 const BUCKET_LABEL = { hour: "Tokens per hour", "6h": "Tokens per 6 hours", day: "Tokens per day" } as const;
 
 // One agent kind: its headline, its stats and its chart.
-function KindSection({ kind, theme, data, windows, view, detail }: { kind: string; theme: Theme | null; data: Usage; windows: WindowSeries[]; view: View; detail: boolean }) {
+function KindSection({
+  kind,
+  theme,
+  data,
+  windows,
+  view,
+  detail,
+  limits,
+}: {
+  kind: string;
+  theme: Theme | null;
+  data: Usage;
+  windows: WindowSeries[];
+  view: View;
+  detail: boolean;
+  // The kind's check and start-window controls (ui/Limits.tsx).
+  limits?: ReactNode;
+}) {
   const { now, from, to, burn } = view;
   // The window shown: the person's pick, else the one with least left.
   const states = windows.map((w) => ({ w, s: nowState(w, now) }));
@@ -421,8 +440,9 @@ function KindSection({ kind, theme, data, windows, view, detail }: { kind: strin
         <AgentGlyph kind={kind} mark={kindMark(theme, kind)} className="text-[15px]" />
         <h2 className="font-semibold text-[13px]">{kindName(kind)}</h2>
         {win?.plan !== undefined && win.plan !== "" && <span className="text-faint text-xs capitalize">{win.plan} plan</span>}
+        {limits !== undefined && <div className="ml-auto">{limits}</div>}
         {windows.length > 1 && (
-          <div className={cn(segmentTrack(), "ml-auto")} role="radiogroup" aria-label={`${kindName(kind)} window`}>
+          <div className={cn(segmentTrack(), limits === undefined && "ml-auto")} role="radiogroup" aria-label={`${kindName(kind)} window`}>
             {states.map(({ w, s }) => (
               <button key={w.windowId} type="button" role="radio" aria-checked={w === win} onClick={() => setPick(w.windowId)} className={segmentItem({ on: w === win })}>
                 {w.label}
@@ -512,7 +532,20 @@ function KindSection({ kind, theme, data, windows, view, detail }: { kind: strin
   );
 }
 
-export function Analytics({ data, theme }: { data: Usage; theme: Theme | null }) {
+export function Analytics({
+  data,
+  theme,
+  api,
+  onLimitsDone,
+}: {
+  data: Usage;
+  theme: Theme | null;
+  // The project's Deck, for checking limits and starting windows; what a
+  // check or start said goes to onLimitsDone.
+  api?: ProjectApi | undefined;
+  onLimitsDone?: (text: string, error: boolean) => void;
+}) {
+  const installed = useLimits(api).data?.kinds;
   const [settings, setSettings] = useState(loadSettings);
   const [offset, setOffset] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -538,8 +571,10 @@ export function Analytics({ data, theme }: { data: Usage; theme: Theme | null })
     const t = new Map<string, number>();
     for (const h of data.hours) t.set(h.kind, (t.get(h.kind) ?? 0) + (h.at >= now - 7 * DAY ? h.tokens : 0));
     for (const w of windows) if (!t.has(w.kind)) t.set(w.kind, -1);
+    // Installed agents with no record yet: their limits can be checked.
+    for (const k of installed ?? []) if (!t.has(k)) t.set(k, -2);
     return [...t.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => k);
-  }, [data, windows, now]);
+  }, [data, windows, now, installed]);
 
   const span = SPANS.find((s) => s.id === settings.span) ?? SPANS[1];
   const { from, to } = range(span.ms, offset, now);
@@ -611,7 +646,16 @@ export function Analytics({ data, theme }: { data: Usage; theme: Theme | null })
       </div>
 
       {shown.map((k) => (
-        <KindSection key={k} kind={k} theme={theme} data={data} windows={windows.filter((w) => w.kind === k)} view={view} detail={tab !== "all"} />
+        <KindSection
+          key={k}
+          kind={k}
+          theme={theme}
+          data={data}
+          windows={windows.filter((w) => w.kind === k)}
+          view={view}
+          detail={tab !== "all"}
+          {...(api === undefined ? {} : { limits: <KindLimitControls api={api} kind={k} onDone={onLimitsDone ?? (() => {})} /> })}
+        />
       ))}
       <p className="text-pretty text-2xs text-faint">
         Remaining quota is what each agent's CLI reported; Deck stores a point when it moves. Projections assume the burn rate of the last {settings.burn}h holds and are

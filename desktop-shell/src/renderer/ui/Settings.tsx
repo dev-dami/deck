@@ -159,9 +159,44 @@ function General({ p }: { p: Prefs }) {
           </>
         )}
       </Section>
+      <Section title="Plan limits">
+        <Row
+          title="Warn at"
+          description="How much of an agent's plan window is used when its quota chip turns amber and Deck warns you."
+          control={
+            <Segmented
+              label="Warn at"
+              value={String(p.limitWarnPct)}
+              onChange={(v) => setPrefs({ limitWarnPct: Number(v), limitCritPct: Math.max(Number(v) + 5, p.limitCritPct) })}
+              options={WARN_AT.map((n) => ({ value: String(n), label: `${n}%` }))}
+            />
+          }
+        />
+        <Row
+          title="Warn again at"
+          description="When the chip turns red and Deck warns you again. Hitting the limit is always told."
+          control={
+            <Segmented
+              label="Warn again at"
+              value={String(p.limitCritPct)}
+              onChange={(v) => setPrefs({ limitCritPct: Number(v), limitWarnPct: Math.min(Number(v) - 5, p.limitWarnPct) })}
+              options={CRIT_AT.map((n) => ({ value: String(n), label: `${n}%` }))}
+            />
+          }
+        />
+        <Row
+          title="Projected run-out"
+          description="Warn when, at the last hours' burn rate, an agent will run out within two hours and before its window resets."
+          control={<Switch label="Projected run-out" checked={p.limitProjection} onChange={set("limitProjection")} />}
+        />
+      </Section>
     </>
   );
 }
+
+// The thresholds Settings offers, in percent of a window used.
+const WARN_AT = [50, 60, 75, 80] as const;
+const CRIT_AT = [85, 90, 95] as const;
 
 const MULTICOLOR = "conic-gradient(#ff3b30, #ff9500, #ffcc00, #28cd41, #007aff, #af52de, #ff2d55, #ff3b30)";
 

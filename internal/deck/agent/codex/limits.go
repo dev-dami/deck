@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -187,4 +188,24 @@ func (r *run) probeLimits() {
 		}
 	}
 	r.emit(r.tr.limitsEvent())
+}
+
+// limitHit says whether a turn error is the plan running out: Codex marks it
+// usageLimitExceeded, or says so in its message ("You've hit your usage
+// limit ... try again at 3:15 PM"). The reset time is the used-up window's,
+// as the last snapshot told it, else the one the message names.
+func (t *translator) limitHit(e turnError) *agent.LimitHit {
+	hit := agent.ParseLimitHit(e.Message+" "+e.AdditionalDetails, t.now())
+	if hit == nil && !strings.Contains(string(e.CodexErrorInfo), "usageLimitExceeded") {
+		return nil
+	}
+	if hit == nil {
+		hit = &agent.LimitHit{}
+	}
+	for _, w := range t.limits.limits().Windows {
+		if w.UsedPct >= 100 && w.ResetsAt.After(t.now()) && (hit.Window == "" || w.ResetsAt.After(hit.ResetsAt)) {
+			hit.Window, hit.ResetsAt = w.ID, w.ResetsAt
+		}
+	}
+	return hit
 }

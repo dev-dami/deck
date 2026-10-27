@@ -88,6 +88,12 @@ const (
 	Deck_ListProfiles_FullMethodName     = "/deck.v1.Deck/ListProfiles"
 	Deck_SaveProfile_FullMethodName      = "/deck.v1.Deck/SaveProfile"
 	Deck_DeleteProfile_FullMethodName    = "/deck.v1.Deck/DeleteProfile"
+	Deck_Limits_FullMethodName           = "/deck.v1.Deck/Limits"
+	Deck_CheckLimits_FullMethodName      = "/deck.v1.Deck/CheckLimits"
+	Deck_StartWindow_FullMethodName      = "/deck.v1.Deck/StartWindow"
+	Deck_ResolveWait_FullMethodName      = "/deck.v1.Deck/ResolveWait"
+	Deck_ScheduleSend_FullMethodName     = "/deck.v1.Deck/ScheduleSend"
+	Deck_CancelScheduled_FullMethodName  = "/deck.v1.Deck/CancelScheduled"
 	Deck_Events_FullMethodName           = "/deck.v1.Deck/Events"
 )
 
@@ -220,6 +226,24 @@ type DeckClient interface {
 	// DeleteProfile removes the profile called name from its scope's
 	// deck.json; NotFound when that scope has none.
 	DeleteProfile(ctx context.Context, in *DeleteProfileRequest, opts ...grpc.CallOption) (*DeleteProfileResponse, error)
+	// Plan limits (optional; Info lists them in capabilities). Limits is
+	// what is known now: each window's latest report, the recent record for
+	// burn rates, the checks of this run, the agents waiting for a limit to
+	// reset and the messages scheduled for later.
+	Limits(ctx context.Context, in *LimitsRequest, opts ...grpc.CallOption) (*LimitsResponse, error)
+	// CheckLimits asks the agent CLIs (one kind, or all) for their limits now,
+	// apart from any session; a CLI that cannot tell says so in its check.
+	CheckLimits(ctx context.Context, in *CheckLimitsRequest, opts ...grpc.CallOption) (*CheckLimitsResponse, error)
+	// StartWindow starts a kind's rolling window now with one minimal prompt
+	// on its cheapest model, in a throwaway session. It uses a little quota.
+	StartWindow(ctx context.Context, in *StartWindowRequest, opts ...grpc.CallOption) (*StartWindowResponse, error)
+	// ResolveWait resumes an agent that waits for its limit now, or with
+	// cancel ends the wait and drops what is queued for it.
+	ResolveWait(ctx context.Context, in *ResolveWaitRequest, opts ...grpc.CallOption) (*Empty, error)
+	// ScheduleSend posts a message in the session at a time (the next reset);
+	// CancelScheduled drops it, or with send_now sends it at once.
+	ScheduleSend(ctx context.Context, in *ScheduleSendRequest, opts ...grpc.CallOption) (*ScheduleSendResponse, error)
+	CancelScheduled(ctx context.Context, in *CancelScheduledRequest, opts ...grpc.CallOption) (*Empty, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -873,6 +897,66 @@ func (c *deckClient) DeleteProfile(ctx context.Context, in *DeleteProfileRequest
 	return out, nil
 }
 
+func (c *deckClient) Limits(ctx context.Context, in *LimitsRequest, opts ...grpc.CallOption) (*LimitsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LimitsResponse)
+	err := c.cc.Invoke(ctx, Deck_Limits_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) CheckLimits(ctx context.Context, in *CheckLimitsRequest, opts ...grpc.CallOption) (*CheckLimitsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckLimitsResponse)
+	err := c.cc.Invoke(ctx, Deck_CheckLimits_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) StartWindow(ctx context.Context, in *StartWindowRequest, opts ...grpc.CallOption) (*StartWindowResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartWindowResponse)
+	err := c.cc.Invoke(ctx, Deck_StartWindow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) ResolveWait(ctx context.Context, in *ResolveWaitRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_ResolveWait_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) ScheduleSend(ctx context.Context, in *ScheduleSendRequest, opts ...grpc.CallOption) (*ScheduleSendResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ScheduleSendResponse)
+	err := c.cc.Invoke(ctx, Deck_ScheduleSend_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) CancelScheduled(ctx context.Context, in *CancelScheduledRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_CancelScheduled_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *deckClient) Events(ctx context.Context, in *Subscribe, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Deck_ServiceDesc.Streams[1], Deck_Events_FullMethodName, cOpts...)
@@ -1021,6 +1105,24 @@ type DeckServer interface {
 	// DeleteProfile removes the profile called name from its scope's
 	// deck.json; NotFound when that scope has none.
 	DeleteProfile(context.Context, *DeleteProfileRequest) (*DeleteProfileResponse, error)
+	// Plan limits (optional; Info lists them in capabilities). Limits is
+	// what is known now: each window's latest report, the recent record for
+	// burn rates, the checks of this run, the agents waiting for a limit to
+	// reset and the messages scheduled for later.
+	Limits(context.Context, *LimitsRequest) (*LimitsResponse, error)
+	// CheckLimits asks the agent CLIs (one kind, or all) for their limits now,
+	// apart from any session; a CLI that cannot tell says so in its check.
+	CheckLimits(context.Context, *CheckLimitsRequest) (*CheckLimitsResponse, error)
+	// StartWindow starts a kind's rolling window now with one minimal prompt
+	// on its cheapest model, in a throwaway session. It uses a little quota.
+	StartWindow(context.Context, *StartWindowRequest) (*StartWindowResponse, error)
+	// ResolveWait resumes an agent that waits for its limit now, or with
+	// cancel ends the wait and drops what is queued for it.
+	ResolveWait(context.Context, *ResolveWaitRequest) (*Empty, error)
+	// ScheduleSend posts a message in the session at a time (the next reset);
+	// CancelScheduled drops it, or with send_now sends it at once.
+	ScheduleSend(context.Context, *ScheduleSendRequest) (*ScheduleSendResponse, error)
+	CancelScheduled(context.Context, *CancelScheduledRequest) (*Empty, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -1223,6 +1325,24 @@ func (UnimplementedDeckServer) SaveProfile(context.Context, *SaveProfileRequest)
 }
 func (UnimplementedDeckServer) DeleteProfile(context.Context, *DeleteProfileRequest) (*DeleteProfileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteProfile not implemented")
+}
+func (UnimplementedDeckServer) Limits(context.Context, *LimitsRequest) (*LimitsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Limits not implemented")
+}
+func (UnimplementedDeckServer) CheckLimits(context.Context, *CheckLimitsRequest) (*CheckLimitsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckLimits not implemented")
+}
+func (UnimplementedDeckServer) StartWindow(context.Context, *StartWindowRequest) (*StartWindowResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartWindow not implemented")
+}
+func (UnimplementedDeckServer) ResolveWait(context.Context, *ResolveWaitRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveWait not implemented")
+}
+func (UnimplementedDeckServer) ScheduleSend(context.Context, *ScheduleSendRequest) (*ScheduleSendResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ScheduleSend not implemented")
+}
+func (UnimplementedDeckServer) CancelScheduled(context.Context, *CancelScheduledRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelScheduled not implemented")
 }
 func (UnimplementedDeckServer) Events(*Subscribe, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method Events not implemented")
@@ -2375,6 +2495,114 @@ func _Deck_DeleteProfile_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Deck_Limits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LimitsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).Limits(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_Limits_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).Limits(ctx, req.(*LimitsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_CheckLimits_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckLimitsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).CheckLimits(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_CheckLimits_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).CheckLimits(ctx, req.(*CheckLimitsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_StartWindow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartWindowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).StartWindow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_StartWindow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).StartWindow(ctx, req.(*StartWindowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_ResolveWait_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveWaitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).ResolveWait(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_ResolveWait_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).ResolveWait(ctx, req.(*ResolveWaitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_ScheduleSend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ScheduleSendRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).ScheduleSend(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_ScheduleSend_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).ScheduleSend(ctx, req.(*ScheduleSendRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_CancelScheduled_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelScheduledRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).CancelScheduled(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_CancelScheduled_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).CancelScheduled(ctx, req.(*CancelScheduledRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Deck_Events_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(Subscribe)
 	if err := stream.RecvMsg(m); err != nil {
@@ -2640,6 +2868,30 @@ var Deck_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteProfile",
 			Handler:    _Deck_DeleteProfile_Handler,
+		},
+		{
+			MethodName: "Limits",
+			Handler:    _Deck_Limits_Handler,
+		},
+		{
+			MethodName: "CheckLimits",
+			Handler:    _Deck_CheckLimits_Handler,
+		},
+		{
+			MethodName: "StartWindow",
+			Handler:    _Deck_StartWindow_Handler,
+		},
+		{
+			MethodName: "ResolveWait",
+			Handler:    _Deck_ResolveWait_Handler,
+		},
+		{
+			MethodName: "ScheduleSend",
+			Handler:    _Deck_ScheduleSend_Handler,
+		},
+		{
+			MethodName: "CancelScheduled",
+			Handler:    _Deck_CancelScheduled_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -59,6 +59,12 @@ export interface Prefs extends Aspects {
   notifyKinds: Record<NotifyKind, boolean>;
   sound: boolean;
   notifyUnfocusedOnly: boolean;
+  // Plan limits (limits.ts): the percent used at which an agent's plan is
+  // warned about, then warned harder (the quota chip turns amber, then
+  // red), and whether a run-out projected before the reset is told.
+  limitWarnPct: number;
+  limitCritPct: number;
+  limitProjection: boolean;
   // A new thread starts on a branch of its own (a Deck that can isolate).
   isolate: boolean;
   motion: MotionPref;
@@ -100,9 +106,12 @@ export const defaultPrefs: Prefs = {
   autoApprovePlans: false,
   terminalHeight: 280,
   notifications: true,
-  notifyKinds: { approval: true, error: true, mention: true, task: true, finished: true },
+  notifyKinds: { approval: true, error: true, limit: true, mention: true, task: true, finished: true },
   sound: true,
   notifyUnfocusedOnly: true,
+  limitWarnPct: 75,
+  limitCritPct: 90,
+  limitProjection: true,
   isolate: true,
   motion: "system",
   yoloEffect: true,
@@ -168,6 +177,9 @@ export function merge(v: Record<string, unknown>): Prefs {
     notifyKinds: kinds(v["notifyKinds"], v["notifications"] === "needs-you"),
     sound: bool("sound", defaultPrefs.sound),
     notifyUnfocusedOnly: bool("notifyUnfocusedOnly", defaultPrefs.notifyUnfocusedOnly),
+    limitWarnPct: pctOf(v["limitWarnPct"], defaultPrefs.limitWarnPct),
+    limitCritPct: pctOf(v["limitCritPct"], defaultPrefs.limitCritPct),
+    limitProjection: bool("limitProjection", defaultPrefs.limitProjection),
     isolate: bool("isolate", defaultPrefs.isolate),
     motion: pick("motion", ["system", "full", "reduced"] as const, defaultPrefs.motion),
     yoloEffect: bool("yoloEffect", defaultPrefs.yoloEffect),
@@ -194,6 +206,16 @@ function kinds(v: unknown, needsYouOnly: boolean): Record<NotifyKind, boolean> {
   return out;
 }
 
+
+// A threshold in percent: a whole number from 1 to 99.
+function pctOf(v: unknown, d: number): number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= 99 ? Math.round(v) : d;
+}
+
+// The limit thresholds the prefs set: crit is never below warn.
+export function limitThresholds(p: Prefs): { warn: number; crit: number; projection: boolean } {
+  return { warn: p.limitWarnPct, crit: Math.max(p.limitWarnPct, p.limitCritPct), projection: p.limitProjection };
+}
 
 export function clampSidebar(w: number): number {
   return Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, w)));

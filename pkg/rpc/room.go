@@ -199,6 +199,9 @@ func (s *Server) capabilities() []string {
 	if s.crew != nil && s.crew.profiles != nil {
 		out = append(out, profileMethods...)
 	}
+	if s.crew != nil && s.crew.limits != nil {
+		out = append(out, limitMethods...)
+	}
 	return out
 }
 

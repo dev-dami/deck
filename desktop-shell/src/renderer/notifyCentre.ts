@@ -23,8 +23,10 @@ import {
   roomEvent,
   summarize,
 } from "./notifications";
+import { type AlertMemo, limitAlerts } from "./limits";
+import { limitsOf, subscribeLimits } from "./limitsState";
 import type { OpenProject } from "./openProjects";
-import { getPrefs, type Prefs } from "./prefs";
+import { getPrefs, limitThresholds, type Prefs } from "./prefs";
 import { isSide } from "./sideChat";
 import { onScreen } from "./ui";
 
@@ -111,7 +113,34 @@ interface Seen {
   tasks: Map<string, readonly BoardTask[]>;
   messages: Record<string, Message[]> | null;
   read: Map<string, Set<string>>;
+  limits: unknown;
 }
+
+// What the limit alerts told, by project source, kept so a restart does not
+// tell it again (limits.ts limitAlerts).
+const MEMO_KEY = "deck.desktop.limitAlerts";
+
+function loadMemo(source: string): AlertMemo | null {
+  try {
+    const all = JSON.parse(window.localStorage.getItem(MEMO_KEY) ?? "{}") as Record<string, AlertMemo>;
+    return typeof all[source] === "object" && all[source] !== null ? all[source] : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveMemo(source: string, memo: AlertMemo): void {
+  try {
+    const all = JSON.parse(window.localStorage.getItem(MEMO_KEY) ?? "{}") as Record<string, AlertMemo>;
+    all[source] = memo;
+    window.localStorage.setItem(MEMO_KEY, JSON.stringify(all));
+  } catch {
+    // A locked storage tells again after a restart.
+  }
+}
+
+// A limit entry with no room opens the Usage page.
+export const LIMITS_ROOM = "";
 
 // Watches the open projects for what to tell the person: a room that needs
 // them or finished, a task done, a mention. shownKey is the project on
@@ -160,7 +189,7 @@ export function useNotifyCentre(bridge: DeckBridge, open: OpenProject[], shownKe
         source: p.source,
         projectName: p.name,
         room: sid,
-        roomTitle: sessionTitle(p.c.store.state.sessions.find((x) => x.id === sid)),
+        roomTitle: sid === LIMITS_ROOM ? "Plan limits" : sessionTitle(p.c.store.state.sessions.find((x) => x.id === sid)),
         text,
         at: at > 0 ? at : Date.now(),
       };
@@ -178,7 +207,7 @@ export function useNotifyCentre(bridge: DeckBridge, open: OpenProject[], shownKe
       for (const p of open) {
         let w = seen.current.get(p.key);
         if (w === undefined) {
-          w = { rooms: null, tasks: new Map(), messages: null, read: new Map() };
+          w = { rooms: null, tasks: new Map(), messages: null, read: new Map(), limits: null };
           seen.current.set(p.key, w);
         }
         const s = p.c.store.state;
@@ -212,10 +241,22 @@ export function useNotifyCentre(bridge: DeckBridge, open: OpenProject[], shownKe
           }
           w.messages = s.messages;
         }
+        const lim = limitsOf(p.c.project).data;
+        if (lim !== null && lim !== w.limits) {
+          w.limits = lim;
+          const prefs = getPrefs();
+          const got = limitAlerts(loadMemo(p.source), lim.history, lim.limits, Date.now(), limitThresholds(prefs), 3, prefs.clock === "12h");
+          saveMemo(p.source, got.memo);
+          for (const a of got.alerts) {
+            // An agent that waits for this reset is in a room: that room.
+            const room = lim.waits.find((x) => x.kind === a.kind)?.sessionId ?? LIMITS_ROOM;
+            tell(p, room, "limit", a.text, Date.now());
+          }
+        }
       }
     };
     check();
-    const offs = [subscribe(check), subscribe(look), subscribeCrew(check), ...open.map((p) => p.c.store.subscribe(check))];
+    const offs = [subscribe(check), subscribe(look), subscribeCrew(check), subscribeLimits(check), ...open.map((p) => p.c.store.subscribe(check))];
     window.addEventListener("focus", look);
     return () => {
       for (const off of offs) off();

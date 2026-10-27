@@ -59,6 +59,8 @@ func (m *UI) modelInfoFor(agents []workspace.AgentLine, width int) string {
 			facts = append(facts, muted.Render(a.Status))
 		case "ready", "restarting":
 			facts = append(facts, muted.Render(a.Status))
+		case "waiting":
+			facts = append(facts, t.ModelInfo.Reasoning.Render("waiting for its limit"))
 		default:
 			facts = append(facts, muted.Render("idle"))
 		}

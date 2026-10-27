@@ -176,6 +176,13 @@ export const RPC_METHODS = [
   "ListProfiles",
   "SaveProfile",
   "DeleteProfile",
+  // Plan limits: checks, waits for a reset, a window started early.
+  "Limits",
+  "CheckLimits",
+  "StartWindow",
+  "ResolveWait",
+  "ScheduleSend",
+  "CancelScheduled",
 ] as const;
 
 export type RpcMethod = (typeof RPC_METHODS)[number];
