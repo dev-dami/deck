@@ -172,6 +172,61 @@ export class FakeDeck {
     return m;
   }
 
+  // Adds the thread "Busy crew", stored as Deck stores a turn: a step's
+  // text and calls in one message, each result in a message of its own
+  // with no agent, two agents interleaved, a failed call, and one agent
+  // still at work. With handoffs by mention, for the Work Graph's history.
+  addBusyThread(): string {
+    const t = this.addThread("ses_busy", "Busy crew");
+    t.roster = [
+      { id: "ada", name: "ada", kind: "claude", model: "opus", busy: true },
+      { id: "bob", name: "bob", kind: "codex", model: "default", busy: false },
+    ];
+    const step = (agent: string, text: string, calls: Array<[string, string]>, finished = true): string[] => {
+      const ids = calls.map(() => this.id("tc"));
+      const m = this.message(t, "assistant", agent, text, finished);
+      m.parts = [...m.parts, ...calls.map(([name, summary], i) => ({ type: "tool_call", id: ids[i]!, name, summary }))];
+      return ids;
+    };
+    const results = (ids: string[], outs: Array<[string, boolean?]>) => {
+      ids.forEach((id, i) => {
+        const r = this.message(t, "assistant", undefined, "", true);
+        const [output, failed] = outs[i] ?? ["", false];
+        r.parts = [{ type: "tool_result", tool_call_id: id, name: "tool", output, ...(failed === true ? { is_error: true } : {}) }];
+      });
+    };
+    this.message(t, "user", undefined, "@ada find why pairing locks everyone out, then @bob review the fix.", true);
+    const a1 = step("ada", "I'll start with the limiter and its tests.", [
+      ["Read", "pkg/remote/auth/limit.go"],
+      ["Read", "pkg/remote/auth/limit_test.go"],
+      ["Grep", "fail("],
+      ["Read", "pkg/remote/auth/pair.go"],
+      ["Bash", "go test ./pkg/remote/auth"],
+    ]);
+    const b1 = step("bob", "Reading the pairing flow while ada digs.", [["Read", "pkg/remote/auth/pair.go"]]);
+    results(a1, [["package auth…"], ["package auth…"], ["limit.go:31: global.fail()"], ["package auth…"], ["--- FAIL: TestLockout (0.02s)\nFAIL", true]]);
+    results(b1, [["package auth…"]]);
+    const a2 = step("ada", "Now the fix.", [
+      ["Edit", "pkg/remote/auth/limit.go"],
+      ["Edit", "pkg/remote/auth/limit_test.go"],
+      ["Bash", "go test ./pkg/remote/auth"],
+      ["Bash", "go vet ./..."],
+    ]);
+    results(a2, [["ok"], ["ok"], ["ok  \tgithub.com/dev-dami/deck/pkg/remote/auth\t0.41s"], [""]]);
+    this.message(t, "assistant", "ada", "The limiter counted every address in one bucket. It keys by `addr` now, with a test. @bob can you review?", true);
+    const b2 = step("bob", "Reviewing ada's change.", [
+      ["Read", "pkg/remote/auth/limit.go"],
+      ["Bash", "git diff pkg/remote/auth"],
+      ["Bash", "go test -race ./pkg/remote/auth"],
+    ]);
+    results(b2, [["…"], ["@@ -31 +31 @@"], ["ok"]]);
+    this.message(t, "assistant", "bob", "Looks right. One nit: prune idle buckets. @ada", true);
+    const a3 = step("ada", "Adding the prune.", [["Edit", "pkg/remote/auth/prune.go"], ["Bash", "go test ./pkg/remote/auth"]], false);
+    results(a3.slice(0, 1), [["ok"]]);
+    t.session = { ...t.session, busy: true };
+    return t.session.id;
+  }
+
   // The thread's changed files, as if someone edited the tree.
   setChanges(sessionId: string, changes: ChangedFile[]): void {
     this.get(sessionId).changes = changes;

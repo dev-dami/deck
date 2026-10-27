@@ -47,6 +47,7 @@ for (const mode of ["dark", "light"] as const) {
     await nav(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
     await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
     await page.locator(".worked").first().click();
+    await page.locator(".actions-head").first().click();
     await page.locator("details.tool summary").first().click();
     await page.locator(".changed-files button").first().click();
     await page.mouse.move(700, 300);

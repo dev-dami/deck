@@ -178,8 +178,17 @@ export function laneOf(m: Message): string | null {
   return mate?.[1] === undefined ? YOU : mateLane(mate[1]);
 }
 
+// A tool's result is a message of its own with no agent (actions.ts): it
+// stays with any agent's lane, where it pairs with its call or, when the
+// call is not there, drops out of the timeline.
 export function filterLane(messages: Message[], lane: string | null): Message[] {
-  return lane === null ? messages : messages.filter((m) => laneOf(m) === lane);
+  if (lane === null) return messages;
+  const calls = new Set(messages.filter((m) => laneOf(m) === lane).flatMap((m) => m.parts.flatMap((p) => (p.type === "tool_call" && p.id !== undefined ? [p.id] : []))));
+  return messages.filter(
+    (m) =>
+      laneOf(m) === lane ||
+      (m.role === "assistant" && m.agent === undefined && m.parts.length > 0 && m.parts.every((p) => p.type === "tool_result" && calls.has(p.tool_call_id ?? ""))),
+  );
 }
 
 // The short id of a room's corner index: the last three base36 characters
