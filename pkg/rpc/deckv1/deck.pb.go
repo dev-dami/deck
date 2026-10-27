@@ -1638,10 +1638,15 @@ func (x *RosterResponse) GetAgents() []*AgentLine {
 	return nil
 }
 
+// ModelsRequest asks for the models of kind. session_id may be empty: the
+// kind's models apart from any thread, none of them selected. refresh makes
+// the Deck forget the lists it keeps and ask the agent CLIs again (after an
+// install, an upgrade or a login).
 type ModelsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Refresh       bool                   `protobuf:"varint,3,opt,name=refresh,proto3" json:"refresh,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1688,6 +1693,13 @@ func (x *ModelsRequest) GetKind() string {
 		return x.Kind
 	}
 	return ""
+}
+
+func (x *ModelsRequest) GetRefresh() bool {
+	if x != nil {
+		return x.Refresh
+	}
+	return false
 }
 
 type ModelChoice struct {
@@ -1802,6 +1814,7 @@ func (x *ModelsResponse) GetModels() []*ModelChoice {
 	return nil
 }
 
+// An empty model is the CLI's own default.
 type SetModelRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -8211,11 +8224,12 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x04role\x18\b \x01(\tR\x04role\x12\x14\n" +
 	"\x05color\x18\t \x01(\tR\x05color\"<\n" +
 	"\x0eRosterResponse\x12*\n" +
-	"\x06agents\x18\x01 \x03(\v2\x12.deck.v1.AgentLineR\x06agents\"B\n" +
+	"\x06agents\x18\x01 \x03(\v2\x12.deck.v1.AgentLineR\x06agents\"\\\n" +
 	"\rModelsRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\"i\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x18\n" +
+	"\arefresh\x18\x03 \x01(\bR\arefresh\"i\n" +
 	"\vModelChoice\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x18\n" +

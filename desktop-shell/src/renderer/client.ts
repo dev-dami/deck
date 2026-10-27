@@ -34,7 +34,9 @@ export interface DeckClient {
   cancelQueued(sessionId: string, itemId: string): Promise<void>;
   answerApproval(sessionId: string, id: string, decision: Decision): Promise<void>;
   setMode(sessionId: string, mode: Mode): Promise<boolean>;
-  listModels(sessionId: string, kind: string): Promise<ModelChoice[] | null>;
+  // The models of kind; sessionId "" asks apart from any thread. refresh
+  // asks the Deck to list them afresh (a Deck that cannot ignores it).
+  listModels(sessionId: string, kind: string, refresh?: boolean): Promise<ModelChoice[] | null>;
   setModel(sessionId: string, kind: string, model: string, effort?: string): Promise<void>;
   changes(sessionId: string): Promise<ChangedFile[] | null>;
   // Stops the client and resets its state to "unpaired".

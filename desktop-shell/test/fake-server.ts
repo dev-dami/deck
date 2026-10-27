@@ -74,6 +74,8 @@ export class FakeDeck {
   readonly continued: string[] = [];
   // The queue items steered into a running turn.
   readonly steered: string[] = [];
+  // Each models.list asked: the pickers list every kind once, then keep it.
+  readonly modelLists: string[] = [];
   // Named agents (docs/design/agents-and-mentions.md): "@charles" for one
   // with no member of that name starts a member called charles, with its
   // role. The rpc fake keeps the list (ListProfiles).
@@ -424,7 +426,9 @@ export class FakeDeck {
         return { mode: p["mode"] };
       }
       case "models.list":
-        this.get(p["session_id"]);
+        // No session: the kind's models apart from any thread.
+        if (p["session_id"] !== "" && p["session_id"] !== undefined) this.get(p["session_id"]);
+        this.modelLists.push(String(p["kind"]));
         return [
           { id: "default", label: "Default", selected: true },
           { id: "fast", label: "Fast" },

@@ -1,7 +1,7 @@
 import { activeAgents, toggleAgent } from "@web/composer";
-import type { AgentLine, Approval, ModelChoice, Theme } from "@web/protocol";
-import { kindColour, kindMark } from "@web/theme";
-import { Check, ChevronRight, Loader2, Plus } from "./icons";
+import type { AgentLine, Approval, Theme } from "@web/protocol";
+import { kindMark } from "@web/theme";
+import { Plus } from "./icons";
 import { type CSSProperties, useEffect, useState } from "react";
 import { agentColour } from "../agents";
 import { tintOf } from "../teamGate";
@@ -11,71 +11,9 @@ import type { AgentNode } from "../crew";
 import { contextPct, nodeOf } from "../lanes";
 import { cn } from "../lib/cn";
 import type { ProjectApi, UsageLimit } from "../project";
-import { MenuItem, MenuLabel, Popover } from "./kit/menu";
+import { AgentPicker, type PickerSource } from "./AgentPicker";
+import { Popover } from "./kit/menu";
 import { Ring } from "./kit/ring";
-
-export function Models({
-  line,
-  load,
-  choose,
-}: {
-  line: AgentLine;
-  load: Promise<ModelChoice[] | null>;
-  choose: (model: string, effort?: string) => void;
-}) {
-  const [models, setModels] = useState<ModelChoice[] | null | "loading">("loading");
-  useEffect(() => {
-    let live = true;
-    setModels("loading");
-    void load.then((m) => {
-      if (live) setModels(m);
-    });
-    return () => {
-      live = false;
-    };
-  }, [load]);
-  if (models === "loading") {
-    return (
-      <p className="flex items-center gap-2 px-2 py-1.5 text-muted-foreground text-xs">
-        <Loader2 className="size-3 animate-spin" /> Loading models…
-      </p>
-    );
-  }
-  if (models === null || models.length === 0) return <p className="px-2 py-1.5 text-muted-foreground text-xs">No models.</p>;
-  return (
-    <div className="max-h-56 overflow-y-auto">
-      {models.map((m) => (
-        <div key={m.id} className="menu-row flex items-center gap-1">
-          <MenuItem className={cn("flex-1", m.id === line.model && "on font-medium")} onClick={() => choose(m.id)}>
-            <span className="flex size-3.5 items-center justify-center">{m.id === line.model && <Check />}</span>
-            <span className="truncate">{m.label}</span>
-          </MenuItem>
-          {(m.efforts ?? []).map((e) => (
-            <button
-              key={e}
-              type="button"
-              className={cn(
-                "effort shrink-0 rounded px-1.5 py-0.5 text-2xs text-muted-foreground hover:bg-accent hover:text-foreground",
-                m.id === line.model && e === line.effort && "bg-accent text-foreground",
-              )}
-              onClick={() => choose(m.id, e)}
-            >
-              {e}
-            </button>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Mark({ kind, theme, className }: { kind: string; theme: Theme | null; className?: string }) {
-  return (
-    <span className={cn("grid size-4 shrink-0 place-items-center font-mono text-[11px]", className)} style={{ color: kindColour(kind) }}>
-      {kindMark(theme, kind) || "●"}
-    </span>
-  );
-}
 
 // A plan window past this share shows on the chip, before it stops a turn.
 const LIMIT_PCT = 80;
@@ -191,36 +129,31 @@ function Chip({
   );
 }
 
-// The ghost "+": starts another agent of a kind, with a model and effort
-// when the person picks one.
+// The ghost "+": the agent picker, to add an agent of a kind to the
+// message, with a model and effort when the person picks one.
 function AddAgent({
   roster,
   kinds,
   theme,
   onAdd,
-  listModels,
+  picker,
   setModel,
 }: {
   roster: AgentLine[];
   kinds: string[];
   theme: Theme | null;
   onAdd: (kind: string) => void;
-  listModels: (kind: string) => Promise<ModelChoice[] | null>;
+  picker: PickerSource;
   setModel: (kind: string, model: string, effort?: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [models, setModels] = useState<{ kind: string; load: Promise<ModelChoice[] | null> } | null>(null);
-  const close = () => {
-    setOpen(false);
-    setModels(null);
-  };
   return (
     <Popover
       open={open}
-      onClose={close}
+      onClose={() => setOpen(false)}
       side="top"
       label="Add an agent"
-      className="w-64"
+      className="w-72"
       trigger={
         <button
           type="button"
@@ -228,55 +161,25 @@ function AddAgent({
           aria-label="Add agent"
           title="Add agent"
           aria-expanded={open}
-          onClick={() => (open ? close() : setOpen(true))}
+          onClick={() => setOpen((o) => !o)}
         >
           <Plus className="size-3.5" />
         </button>
       }
     >
-      <MenuLabel>Start another agent</MenuLabel>
-      {kinds.map((k) => (
-        <div key={k}>
-          <div className="flex items-center">
-            <MenuItem
-              className="flex-1"
-              aria-label={`Start another ${k}`}
-              onClick={() => {
-                close();
-                onAdd(k);
-              }}
-            >
-              <Mark kind={k} theme={theme} />
-              <span className="flex-1">{k}</span>
-              {roster.some((l) => l.kind === k) && <span className="text-2xs text-muted-foreground">another</span>}
-            </MenuItem>
-            <button
-              type="button"
-              className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label={`Model for another ${k}`}
-              title="Model and effort"
-              aria-expanded={models?.kind === k}
-              onClick={() => setModels(models?.kind === k ? null : { kind: k, load: listModels(k) })}
-            >
-              <ChevronRight className={cn("size-3.5 transition-transform", models?.kind === k && "rotate-90")} />
-            </button>
-          </div>
-          {models?.kind === k && (
-            <div className="ml-6">
-              <Models
-                line={{ id: k, name: k, kind: k, busy: false }}
-                load={models.load}
-                choose={(model, effort) => {
-                  setModel(k, model, effort);
-                  close();
-                  onAdd(k);
-                }}
-              />
-            </div>
-          )}
-        </div>
-      ))}
-      {kinds.length === 0 && <p className="px-2 py-1.5 text-muted-foreground text-xs">This Deck names no agents.</p>}
+      <AgentPicker
+        source={picker}
+        kinds={kinds}
+        kind={null}
+        running={(k) => roster.find((l) => l.kind === k) ?? {}}
+        theme={theme}
+        action={(k) => (roster.some((l) => l.kind === k) ? `Add another ${k}` : `Add ${k}`)}
+        onPick={(p) => {
+          setOpen(false);
+          if (p.changed) setModel(p.kind, p.model, p.effort);
+          onAdd(p.kind);
+        }}
+      />
     </Popover>
   );
 }
@@ -296,7 +199,7 @@ export function AgentsStrip({
   setDraft,
   hint,
   onFocus,
-  listModels,
+  picker,
   setModel,
 }: {
   sessionId: string;
@@ -312,7 +215,7 @@ export function AgentsStrip({
   setDraft: (s: string) => void;
   hint: string | null;
   onFocus: () => void;
-  listModels: (kind: string) => Promise<ModelChoice[] | null>;
+  picker: PickerSource;
   setModel: (kind: string, model: string, effort?: string) => void;
 }) {
   const limits = useLimits(api);
@@ -343,7 +246,7 @@ export function AgentsStrip({
           setDraft(addAgentMention(draft, k));
           onFocus();
         }}
-        listModels={listModels}
+        picker={picker}
         setModel={setModel}
       />
       {hint !== null && <span className="send-hint hidden shrink-0 px-1.5 text-[11px] text-faint @[46rem]/bar:inline">{hint}</span>}

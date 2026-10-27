@@ -85,7 +85,43 @@ test("opens a folder and runs two agents in one thread", async ({ page }) => {
   await expect(page.locator(".streaming")).toHaveCount(0);
   // Yolo is offered: the rpc server allows it for the person at this machine.
   await page.locator(".mode-picker").click();
-  await expect(page.getByRole("radio", { name: /Yolo/ })).toBeVisible();
+  await expect(page.getByRole("menuitemradio", { name: /Yolo/ })).toBeVisible();
+});
+
+test("the agent pickers list every agent once, keep it, and refresh by hand", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
+  // One pass over the kinds, apart from any thread.
+  await expect.poll(() => [...fake.deck.modelLists].sort()).toEqual(["claude", "codex", "opencode"]);
+
+  // A lane's picker: the same sections as any other, open at once.
+  await page.locator('.lane[data-lane="agent:claude-1"]').click();
+  const lane = page.getByRole("menu", { name: "claude-1" });
+  await expect(lane.getByRole("menuitemradio", { name: /Default/ })).toBeVisible();
+  await expect(lane.getByRole("menuitem", { name: "Apply" })).toBeDisabled();
+  await lane.getByRole("menuitemradio", { name: /Deep/ }).click();
+  await lane.getByRole("group", { name: "Reasoning effort" }).getByRole("menuitemradio", { name: "high" }).click();
+  await lane.getByRole("menuitem", { name: "Apply" }).click();
+  const roster = () => fake.deck.invoke("roster.get", { session_id: "ses_main" }) as Array<{ id: string; model?: string }>;
+  await expect.poll(() => roster().find((l) => l.id === "claude-1")?.model).toBe("deep");
+
+  // Opening pickers again and switching threads asks nothing more.
+  await page.getByRole("button", { name: "Add agent" }).click();
+  const add = page.getByRole("menu", { name: "Add an agent" });
+  await add.getByRole("menuitemradio", { name: "codex" }).click();
+  await expect(add.getByRole("menuitemradio", { name: /Fast/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+  const others = sidebar(page).locator(".session");
+  await others.nth(1).click();
+  await others.nth(0).click();
+  expect(fake.deck.modelLists).toHaveLength(3);
+
+  // Refresh lists them all again, asking the Deck to forget its lists once.
+  await page.getByRole("button", { name: "Add agent" }).click();
+  await add.getByRole("menuitem", { name: "Refresh agents" }).click();
+  await expect.poll(() => fake.deck.modelLists.length).toBe(6);
+  expect(fake.modelRefreshes).toBe(1);
 });
 
 test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill the composer", async ({ page }) => {

@@ -355,8 +355,9 @@ export class RpcDeckClient implements DeckClient {
     return true;
   }
 
-  async listModels(sessionId: string, kind: string): Promise<ModelChoice[] | null> {
-    const r = await this.call("Models", { session_id: sessionId, kind });
+  // Quiet: the pickers say themselves when a kind could not be listed.
+  async listModels(sessionId: string, kind: string, refresh = false): Promise<ModelChoice[] | null> {
+    const r = await this.call("Models", { session_id: sessionId, kind, refresh }, true);
     return r === null ? null : toModels(r);
   }
 

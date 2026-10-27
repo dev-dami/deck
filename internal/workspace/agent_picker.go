@@ -44,6 +44,24 @@ type AgentPicker interface {
 
 var _ AgentPicker = (*DeckWorkspace)(nil)
 
+// ModelRefresher is an AgentPicker whose model lists can be asked for again.
+type ModelRefresher interface {
+	// RefreshAgentModels forgets every CLI's model list, so the next
+	// AgentModelChoices asks them all afresh: after an install, an upgrade or
+	// a login changed what a CLI offers.
+	RefreshAgentModels()
+}
+
+var _ ModelRefresher = (*DeckWorkspace)(nil)
+
+// RefreshAgentModels implements [ModelRefresher].
+func (w *DeckWorkspace) RefreshAgentModels() {
+	w.mu.Lock()
+	clear(w.models)
+	w.mu.Unlock()
+	w.mgr().ForgetModels()
+}
+
 // AgentModelChoices implements [AgentPicker]. Each CLI is asked once; its
 // list is kept for the rest of the run.
 func (w *DeckWorkspace) AgentModelChoices(ctx context.Context, sessionID string) ([]ModelChoice, error) {

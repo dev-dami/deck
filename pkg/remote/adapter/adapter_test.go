@@ -502,3 +502,38 @@ func TestApprovalsLeaveTheWaitingSet(t *testing.T) {
 	require.Equal(t, 0, r.next(t).Payload.(wire.Session).Pending)
 	require.Zero(t, waiting())
 }
+
+type fakePicker struct {
+	sessions  []string
+	refreshed int
+}
+
+func (p *fakePicker) AgentModelChoices(_ context.Context, sid string) ([]workspace.ModelChoice, error) {
+	p.sessions = append(p.sessions, sid)
+	return []workspace.ModelChoice{
+		{Kind: "claude", ID: "", Name: "Default", Default: true, Current: sid != ""},
+		{Kind: "codex", ID: "gpt-5", Name: "GPT-5"},
+	}, nil
+}
+
+func (p *fakePicker) CachedAgentModelChoices(string) []workspace.ModelChoice { return nil }
+func (p *fakePicker) SetAgentModel(string, string, string, string) error     { return nil }
+func (p *fakePicker) RefreshAgentModels()                                    { p.refreshed++ }
+
+// The pickers list models before any thread is open, and can make the
+// workspace forget its lists.
+func TestModelsApartFromAThreadAndRefresh(t *testing.T) {
+	r := newRig(t)
+	p := &fakePicker{}
+	r.b.picker = p
+	got, err := r.b.Models(context.Background(), "", "claude")
+	require.NoError(t, err)
+	require.Equal(t, []wire.ModelChoice{{ID: "", Label: "Default"}}, got)
+	_, err = r.b.Models(context.Background(), "ghost", "claude")
+	require.ErrorIs(t, err, remote.ErrNotFound)
+	require.Equal(t, []string{""}, p.sessions)
+
+	r.b.RefreshModels()
+	require.Equal(t, 1, p.refreshed)
+	var _ remote.ModelRefresher = r.b
+}

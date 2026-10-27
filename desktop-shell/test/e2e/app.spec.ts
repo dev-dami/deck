@@ -108,9 +108,12 @@ test("adds an agent with $codex+", async ({ page }) => {
   await expect(page.locator('[data-agent="codex-2"].msg')).toContainText("review the limiter");
   expect(fake.sent.map((s) => s.text)).toEqual(["$codex+ review the limiter"]);
 
-  // "Add agent" writes the same mention.
+  // "Add agent" writes the same mention: the picker chooses the agent,
+  // then adds it.
   await page.getByRole("button", { name: "Add agent" }).click();
-  await page.getByRole("menu", { name: "Add an agent" }).getByRole("menuitem", { name: "Start another opencode" }).click();
+  const add = page.getByRole("menu", { name: "Add an agent" });
+  await add.getByRole("menuitemradio", { name: "opencode" }).click();
+  await add.getByRole("menuitem", { name: "Add opencode" }).click();
   await expect(composer(page)).toHaveValue("$opencode+ ");
 
   // Each agent's card addresses it; a second card addresses both.

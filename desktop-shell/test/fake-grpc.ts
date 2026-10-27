@@ -92,6 +92,8 @@ export class FakeRpcDeck {
   readonly epoch = `e${randomBytes(4).toString("hex")}`;
   // Every call the fake got, by method, with its token check passed.
   readonly calls: string[] = [];
+  // The Models calls that asked the Deck to forget its lists (refresh).
+  modelRefreshes = 0;
   private readonly server = new grpc.Server();
   private readonly streams = new Set<grpc.ServerWritableStream<Obj, Obj>>();
   private seq = 0;
@@ -596,6 +598,8 @@ export class FakeRpcDeck {
       h[name] = (call: grpc.ServerUnaryCall<Obj, Obj>, cb: grpc.sendUnaryData<Obj>) => {
         if (!this.authorized(call.metadata)) return cb({ code: grpc.status.UNAUTHENTICATED, details: "missing or wrong token" });
         this.calls.push(name);
+        // models.list has no refresh: the rpc server's own flag, counted here.
+        if (name === "Models" && call.request["refresh"] === true) this.modelRefreshes++;
         try {
           const out = protoOf(spec.res(this.deck.invoke(spec.m, clean(spec.req(call.request))))) as Obj;
           if (name === "CreateSession" && call.request["isolate"] === true) {

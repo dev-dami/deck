@@ -172,8 +172,9 @@ func (c *conn) call(ctx context.Context, method string, p json.RawMessage) (res 
 		if werr != nil {
 			return nil, werr, nil
 		}
-		if req.SessionID == "" || req.Kind == "" {
-			return nil, invalid("session_id and kind are required"), nil
+		// No session_id: the kind's models apart from any thread.
+		if req.Kind == "" {
+			return nil, invalid("kind is required"), nil
 		}
 		v, err := be.Models(ctx, req.SessionID, req.Kind)
 		if err != nil {

@@ -331,9 +331,14 @@ message RosterResponse {
   repeated AgentLine agents = 1;
 }
 
+// ModelsRequest asks for the models of kind. session_id may be empty: the
+// kind's models apart from any thread, none of them selected. refresh makes
+// the Deck forget the lists it keeps and ask the agent CLIs again (after an
+// install, an upgrade or a login).
 message ModelsRequest {
   string session_id = 1;
   string kind = 2;
+  bool refresh = 3;
 }
 
 message ModelChoice {
@@ -347,6 +352,7 @@ message ModelsResponse {
   repeated ModelChoice models = 1;
 }
 
+// An empty model is the CLI's own default.
 message SetModelRequest {
   string session_id = 1;
   string kind = 2;

@@ -419,6 +419,13 @@ type ModelLister interface {
 	Models(ctx context.Context) ([]ModelInfo, error)
 }
 
+// ModelForgetter is implemented by a ModelLister that keeps its list:
+// ForgetModels drops it, so the next Models asks the CLI again (after an
+// upgrade or a login changed what it offers).
+type ModelForgetter interface {
+	ForgetModels()
+}
+
 // Drainer is implemented by adapters that finish a run's cleanup in the
 // background after its Close returns. Drain waits for that cleanup, at
 // most d; Deck calls it once on the way out.
