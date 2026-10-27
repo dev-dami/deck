@@ -19,7 +19,8 @@ import { Switch } from "./kit/switch";
 import { PhonePage } from "./Phone";
 import { ProfilesDeck, ProfilesEditor } from "./ProfilesEditor";
 import { modKey } from "./keys";
-import { ThemeGrid } from "./ThemeCard";
+import { LayoutPicker } from "./LayoutPicker";
+import { LookEditor } from "./LookEditor";
 import { WallpaperPicker } from "./WallpaperPicker";
 import { AgentGlyph } from "./Welcome";
 
@@ -65,7 +66,7 @@ const set =
 // What each section holds, for the page's head.
 const LINES: Record<SettingsSection, string> = {
   general: "How messages send, how threads read, and when Deck lets you know.",
-  appearance: "The theme and its accent, how diffs look, and how much moves.",
+  appearance: "The look and its accent, where the panels sit, how diffs look, and how much moves.",
   agents: "The agents this Deck runs, and what they may do on their own.",
   connection: "The Deck this window drives, and the versions behind it.",
   phone: "Drive this Deck from the phone app, over your Wi-Fi.",
@@ -208,8 +209,8 @@ function Appearance({ p }: { p: Prefs }) {
   return (
     <>
       <Section title="Theme">
-        <ThemeGrid palette={p.palette} />
-        <WallpaperPicker />
+        <LookEditor p={p} />
+        {p.process !== "none" && <WallpaperPicker />}
         <div className="flex flex-col gap-0.5 pt-3">
           <h3 className="text-[13px]">App icon</h3>
           <p className="text-pretty text-muted-foreground text-xs leading-relaxed">The theme's own, or one you pick.</p>
@@ -233,6 +234,9 @@ function Appearance({ p }: { p: Prefs }) {
           }
         />
         <Row title="Accent" description="The color of buttons, links and highlights." control={<Accents p={p} />} />
+      </Section>
+      <Section title="Layout">
+        <LayoutPicker p={p} />
       </Section>
       <Diffs p={p} />
       <Section title="Sidebar">

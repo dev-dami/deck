@@ -259,11 +259,11 @@ test("themes: a theme from the catalog and an accent recolor the window", async 
   await pair(page);
   await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Appearance" }).click();
-  await page.getByRole("radiogroup", { name: "Theme", exact: true }).getByRole("radio", { name: /Tokyo Night/ }).click();
+  await page.getByRole("radiogroup", { name: "Colours" }).getByRole("radio", { name: /Tokyo Night/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-palette", "tokyo-night");
   // The page's sheet takes the theme's canvas; the window behind it is glass.
   await expect(page.locator("main.center")).toHaveCSS("background-color", "rgb(26, 27, 38)");
-  await page.getByRole("radiogroup", { name: "Theme", exact: true }).getByRole("radio", { name: /GitHub Light/ }).click();
+  await page.getByRole("radiogroup", { name: "Colours" }).getByRole("radio", { name: /GitHub Light/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-mode", "light");
   await page.getByRole("radiogroup", { name: "Accent" }).getByRole("radio", { name: "Green" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-accent", "green");

@@ -374,19 +374,21 @@
    glass is Tokyo Night's colour. A theme can set any of them itself; the
    Liquid Glass theme does.
 
-   A material is more than glass. The art directions (Riso, Stitch: the end
-   of this file) turn the blur off and print their own surfaces, so a
-   material also carries a texture (--material-texture, a background
-   layer), an edge (--material-edge, an outline drawn inside the panel by
-   --material-edge-offset, such as a stitched seam) and its shadow, which
-   may be a hard offset (--glass-shadow, --sheet-shadow). The default of
-   each is the plain glass above. */
+   A material is more than glass. Paper, felt and plain (data-material,
+   the end of this file) turn the blur off and print their own surfaces, so
+   a material also carries an edge (--material-edge, an outline drawn
+   inside the panel by --material-edge-offset, such as a stitched seam) and
+   its shadow, which may be a hard offset (--glass-shadow, --sheet-shadow).
+   A texture (--material-texture, a background layer) is an aspect of its
+   own (data-texture). The default of each is the plain glass below. */
 @theme {
   /* The display face: hero headings and .headline. Each art direction
      sets its own (design-glass.md, "Art directions"). */
   --font-display: "Inter Tight Variable", "Inter Tight", var(--font-sans);
 }
-:root {
+/* A .look (the editor's swatch of a material) goes back to glass here. */
+:root,
+.look[data-material="glass"] {
   --display-weight: 600;
   --display-tracking: -0.03em;
   --material-texture: none;
@@ -415,7 +417,8 @@
   --ambient-2: color-mix(in srgb, var(--kind-claude, var(--agent-claude)) 6%, transparent);
   --ambient-3: color-mix(in srgb, var(--kind-antigravity, var(--agent-antigravity)) 5%, transparent);
 }
-:root[data-mode="light"] {
+:root[data-mode="light"],
+.look[data-material="glass"][data-mode="light"] {
   --backdrop: color-mix(in oklab, var(--canvas) 84%, #8a90a0);
   --glass-fill: color-mix(in srgb, var(--surface-2) 52%, transparent);
   --glass-fill-thick: color-mix(in srgb, var(--surface-2) 78%, transparent);
@@ -573,9 +576,18 @@ body:has(:is(.welcome-screen, main.connect)) .backdrop {
 /* In the shell the picture shows behind the sidebar's glass and nowhere
    else: the gutters between the panels are the plain ground, so no slice
    of a disc, a card or a dither runs down them (the shell's p-2 and the
-   sidebar's w-64). With the sidebar hidden there is no glass to show it. */
+   sidebar's --sidebar-w). With the sidebar hidden there is no glass to
+   show it. A sidebar on the right sees the print mirrored, so the band
+   held back for it, and the riso's and the stitch's clear band, follow it. */
+:root {
+  --sidebar-w: 256px;
+  --gutter: calc(var(--spacing) * 2);
+}
 body:has(.shell) .backdrop {
-  clip-path: inset(8px calc(100% - 264px) 8px 8px round var(--panel-radius));
+  clip-path: inset(var(--gutter) calc(100% - var(--gutter) - var(--sidebar-w)) var(--gutter) var(--gutter) round var(--panel-radius));
+}
+:root[data-sidebar="right"] body:has(.shell) .backdrop {
+  transform: scaleX(-1);
 }
 body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   visibility: hidden;
@@ -584,8 +596,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 .art-print {
   background-color: var(--print-ground, var(--plate-lo, #1d2240));
 }
-:root[data-palette="riso"] .art-print,
-:root[data-palette="stitch"] .art-print {
+:root:is([data-process="halftone"], [data-process="stitch"]) .art-print {
   --print-ground: var(--backdrop);
 }
 
@@ -1931,6 +1942,57 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
     z-index: -1;
     border-radius: inherit;
   }
+  /* Floating on the left, its tabs clear a Mac's traffic lights. */
+  .shell[data-mac] aside.panel[data-side="left"] .panel-head {
+    padding-left: 4.75rem;
+  }
+}
+/* The same at any width, when the person floats the panel (Settings >
+   Appearance > Layout). */
+aside.panel[data-float] {
+  background-color: transparent;
+  --tw-shadow: 0 0 #0000;
+}
+aside.panel[data-float]::before {
+  @apply liquid-thick;
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+}
+.shell[data-mac] aside.panel[data-float][data-side="left"] .panel-head {
+  padding-left: 4.75rem;
+}
+
+/* The layout (Settings > Appearance > Layout, Shell's data-sidebar and
+   data-dock): the sidebar on the left or the right, and the side panel on
+   the side opposite it or beside it. The order in the DOM, and so the Tab
+   order, stays sidebar, room, panel. */
+.shell > nav.sidebar {
+  order: 0;
+}
+.shell > .room-sheet {
+  order: 2;
+}
+.shell > aside.panel {
+  order: 3;
+}
+.shell[data-dock="beside"] > aside.panel {
+  order: 1;
+}
+.shell[data-sidebar="right"] {
+  flex-direction: row-reverse;
+}
+
+/* On a Mac the traffic lights sit at the window's top left (main.ts), so
+   whichever panel the layout puts there clears them, and centres its bar
+   on them as a unified title bar does (Shell's data-lights). The sidebar
+   does it itself; the room's toolbar does too while the sidebar hides. */
+.shell[data-lights="room"] .room-sheet .topbar,
+.shell[data-lights="panel"] aside.panel .panel-head {
+  padding-left: 4.75rem;
+  padding-bottom: 0.875rem;
 }
 
 /* The palette's rows are larger than a menu's, so their capsule is too. */
@@ -2005,30 +2067,17 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 }
 
 /* ── Art directions ──
-   Riso and Stitch (docs/design-glass.md, "Art directions"). Liquid Glass
-   and its colourways are the blocks above; these two print their own
-   materials and turn the glass's blur off. Each block sets T3's names, as
-   every catalog theme does, and the materials' tokens directly, so nothing
-   here derives from a mode's defaults. The backdrop's inks are in
-   backdrop/inks.ts and follow these by hand. */
+   Riso and Stitch (docs/design-glass.md, "Art directions"), as colours:
+   their inks, stock and floss. Liquid Glass and its colourways are the
+   blocks above. Each block sets T3's names, as every catalog theme does.
+   What the panels are made of, the face and the texture are aspects of
+   their own (the blocks after these, on data-material, data-face and
+   data-texture), so Riso's inks go on glass and felt takes T3's colours.
+   The backdrop's inks are in backdrop/inks.ts and follow these by hand. */
 
-/* Riso, dark: black stock, one fluorescent pink, cream type. Panels are
-   vellum and card with hard corners, a cream rule and a pink shadow a
-   few pixels out of register. Nothing blurs and nothing glows. */
+/* Riso, dark: black stock, one fluorescent pink, cream type. */
 :root[data-palette="riso"][data-mode] {
   --spot: #ff48b0;
-  --font-sans: "Space Grotesk Variable", "Space Grotesk", "Geist", system-ui, sans-serif;
-  --font-mono: "Martian Mono Variable", "Martian Mono", "Geist Mono", ui-monospace, monospace;
-  --font-display: "Space Grotesk Variable", "Space Grotesk", system-ui, sans-serif;
-  --font-weight-semibold: 600;
-  --font-weight-bold: 700;
-  --display-weight: 700;
-  --display-tracking: -0.045em;
-  --text-code: 0.75rem;
-  --radius: 4px;
-  --control-radius: 3px;
-  --panel-radius: 5px;
-  --sheet-radius: 4px;
 
   --background: #161414;
   --foreground: #f3eee3;
@@ -2057,23 +2106,6 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --segment: rgb(243 238 227 / 0.12);
 
   --backdrop: #121111;
-  --glass-fill: rgb(27 25 25 / 0.9);
-  --glass-fill-thick: #1d1a1a;
-  --glass-fill-clear: rgb(243 238 227 / 0.06);
-  --glass-blur: 0px;
-  --glass-saturate: 1;
-  --glass-rim: rgb(243 238 227 / 0.42);
-  --glass-spec: transparent;
-  --glass-sheen: none;
-  --glass-shadow: 3px 3px 0 0 var(--spot);
-  --glass-shadow-clear: none;
-  --sheet-rim: rgb(243 238 227 / 0.34);
-  --sheet-shadow: 3px 3px 0 0 var(--spot);
-  --elevation-popover: 3px 3px 0 0 var(--spot);
-  --elevation-card: 0 0 #0000;
-  --tint-sheen: none;
-  /* Fibre in the vellum: pale specks. */
-  --material-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.5 0 0 0 -0.24'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
 
   /* The agents in the inks: pink, cream, and the two mixed. */
   --kind-claude: var(--spot) !important;
@@ -2094,8 +2126,8 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --syn-operator: #b9b2a6;
 }
 
-/* Riso, light: the same press on warm paper. Black ink rules the panels;
-   the pink is the shadow, the accent and the agents. */
+/* Riso, light: the same press on warm paper. The pink is the accent and
+   the agents. */
 :root[data-palette="riso"][data-mode="light"] {
   --background: #f7f3ea;
   --foreground: #1d1b1b;
@@ -2121,13 +2153,6 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --segment: #fffdf8;
 
   --backdrop: #f3eee3;
-  --glass-fill: rgb(250 247 240 / 0.86);
-  --glass-fill-thick: #fbf8f1;
-  --glass-fill-clear: rgb(255 253 248 / 0.7);
-  --glass-rim: #1d1b1b;
-  --sheet-rim: #1d1b1b;
-  /* Fibre in the paper: grey specks. */
-  --material-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.2 0 0 0 0 0.18 0 0 0 0 0.16 0.5 0 0 0 -0.22'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
 
   --kind-claude: #e0128e !important;
   --kind-codex: #1d1b1b !important;
@@ -2154,23 +2179,8 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --link: #1d1b1b;
   --info-foreground: #c2006f;
 }
-/* A riso prints square: no capsule outlives the press, and the composer
-   is a slip of vellum like the panels. */
-:root[data-palette="riso"] :is(.material, .composer-box, .composer-banner) {
-  border-radius: var(--panel-radius);
-}
-
-/* Stitch, dark: indigo denim behind, felt panels in front, each with a
-   seam of running stitch just inside its edge. The type is the UI's own;
-   only headings take the pixel face, as a sampler letters its title. */
+/* Stitch, dark: indigo denim behind, felt in front, gold floss. */
 :root[data-palette="stitch"][data-mode] {
-  --font-display: "Pixelify Sans", "Geist", system-ui, sans-serif;
-  --display-weight: 500;
-  --display-tracking: 0;
-  --radius: 10px;
-  --panel-radius: 16px;
-  --sheet-radius: 14px;
-
   --background: #1b2036;
   --foreground: #efe6d2;
   --card: #222842;
@@ -2198,24 +2208,6 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --segment: rgb(239 230 210 / 0.13);
 
   --backdrop: #26335c;
-  --glass-fill: #20263f;
-  --glass-fill-thick: #252b47;
-  --glass-fill-clear: rgb(239 230 210 / 0.07);
-  --glass-blur: 0px;
-  --glass-saturate: 1;
-  --glass-rim: rgb(0 0 0 / 0.25);
-  --glass-spec: rgb(239 230 210 / 0.06);
-  --glass-sheen: none;
-  --glass-shadow: 0 1px 0 rgb(0 0 0 / 0.35), 0 14px 28px -14px rgb(0 0 0 / 0.7);
-  --sheet-rim: rgb(0 0 0 / 0.25);
-  --sheet-shadow: 0 1px 0 rgb(0 0 0 / 0.35), 0 18px 36px -18px rgb(0 0 0 / 0.7);
-  --elevation-popover: 0 1px 0 rgb(0 0 0 / 0.35), 0 18px 36px -14px rgb(0 0 0 / 0.7);
-  --tint-sheen: none;
-  /* Felt: matted fibres, a few light and a few dark. */
-  --material-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='d'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.6 0 0 0 -0.3'/%3E%3C/filter%3E%3Cfilter id='l'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.45 0 0 0 -0.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23d)'/%3E%3Crect width='100%25' height='100%25' filter='url(%23l)'/%3E%3C/svg%3E");
-  --material-edge: 1.5px dashed rgb(239 230 210 / 0.42);
-  --material-edge-offset: -6px;
-  --sheet-edge: 1.5px dashed rgb(239 230 210 / 0.3);
 
   /* The agents in floss: rust, ecru, sky and plum. */
   --kind-claude: #e0824c !important;
@@ -2265,18 +2257,6 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --segment: #fbf7ee;
 
   --backdrop: #d9c8a7;
-  --glass-fill: #efe5d1;
-  --glass-fill-thick: #f3ead8;
-  --glass-fill-clear: rgb(255 251 242 / 0.6);
-  --glass-rim: rgb(80 60 40 / 0.16);
-  --glass-spec: rgb(255 255 255 / 0.4);
-  --glass-shadow: 0 1px 0 rgb(80 60 40 / 0.18), 0 14px 28px -16px rgb(80 60 40 / 0.45);
-  --sheet-rim: rgb(80 60 40 / 0.16);
-  --sheet-shadow: 0 1px 0 rgb(80 60 40 / 0.18), 0 18px 36px -20px rgb(80 60 40 / 0.45);
-  --elevation-popover: 0 1px 0 rgb(80 60 40 / 0.18), 0 18px 36px -16px rgb(80 60 40 / 0.45);
-  --material-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='d'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.3 0 0 0 0 0.22 0 0 0 0 0.14 0.5 0 0 0 -0.28'/%3E%3C/filter%3E%3Cfilter id='l'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.5 0 0 0 -0.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23d)'/%3E%3Crect width='100%25' height='100%25' filter='url(%23l)'/%3E%3C/svg%3E");
-  --material-edge: 1.5px dashed rgb(43 36 32 / 0.38);
-  --sheet-edge: 1.5px dashed rgb(43 36 32 / 0.26);
 
   --kind-claude: #c4581b !important;
   --kind-codex: #3a2a20 !important;
@@ -2297,14 +2277,15 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 }
 
 /* The stitch's ground, in the gutters round the panels: the cloth's own
-   weave without the picture, denim's twill or linen's plain weave. */
-:root[data-palette="stitch"][data-mode] body {
+   weave without the picture, denim's twill or linen's plain weave. It goes
+   with the process, in any theme's colours. */
+:root[data-process="stitch"][data-mode] body {
   background:
     repeating-linear-gradient(135deg, rgb(255 255 255 / 0.07) 0 1px, transparent 1px 4px),
     repeating-linear-gradient(45deg, rgb(0 0 0 / 0.12) 0 1px, transparent 1px 4px),
     var(--backdrop);
 }
-:root[data-palette="stitch"][data-mode="light"] body {
+:root[data-process="stitch"][data-mode="light"] body {
   background:
     repeating-linear-gradient(0deg, rgb(80 60 40 / 0.1) 0 1px, transparent 1px 3px),
     repeating-linear-gradient(90deg, rgb(255 255 255 / 0.16) 0 1px, transparent 1px 3px),
@@ -2317,7 +2298,6 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 :root[data-palette="riso"] .plate {
   --plate-lo: #121111;
   --plate-hi: #ff48b0;
-  border-radius: 3px;
 }
 :root[data-palette="riso"][data-mode="light"] .plate {
   --plate-lo: #ff48b0;
@@ -2330,6 +2310,211 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 :root[data-palette="stitch"][data-mode="light"] .plate {
   --plate-lo: #3a2f27;
   --plate-hi: #e6d7b8;
+}
+
+/* ── Materials ──
+   What the panels are made of (themes.ts MATERIALS), on <html
+   data-material>, in any theme's colours: each derives its tokens from the
+   theme's surfaces, text and accent. Liquid glass is the default, the
+   blocks under "Liquid Glass" above. These come after every theme, so a
+   material outranks a theme's own glass. The editor's swatches
+   (ui/LookEditor.tsx) wear a material on a .look of their own, so each
+   block names .look too. */
+
+/* Paper and vellum: square corners, a rule and a shadow a few pixels out
+   of register in the spot colour (Riso's pink, or the accent). Nothing
+   blurs and nothing glows. */
+:is(:root, .look)[data-material="paper"][data-mode] {
+  --radius: 4px;
+  --control-radius: 3px;
+  --panel-radius: 5px;
+  --sheet-radius: 4px;
+  --glass-fill: color-mix(in srgb, var(--surface-1) 90%, transparent);
+  --glass-fill-thick: var(--surface-1);
+  --glass-fill-clear: color-mix(in srgb, var(--text) 6%, transparent);
+  --glass-blur: 0px;
+  --glass-saturate: 1;
+  --glass-rim: color-mix(in srgb, var(--text) 42%, transparent);
+  --glass-spec: transparent;
+  --glass-sheen: none;
+  --glass-shadow: 3px 3px 0 0 var(--spot, var(--primary));
+  --glass-shadow-clear: none;
+  --sheet-rim: color-mix(in srgb, var(--text) 34%, transparent);
+  --sheet-shadow: 3px 3px 0 0 var(--spot, var(--primary));
+  --elevation-popover: 3px 3px 0 0 var(--spot, var(--primary));
+  --elevation-card: 0 0 #0000;
+  --tint-sheen: none;
+  --material-edge: none;
+  --sheet-edge: none;
+}
+/* On paper, black ink rules the panels. */
+:is(:root, .look)[data-material="paper"][data-mode="light"] {
+  --glass-fill: color-mix(in srgb, var(--surface-1) 86%, transparent);
+  --glass-fill-clear: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  --glass-rim: var(--text);
+  --sheet-rim: var(--text);
+}
+
+/* Felt: opaque and soft, each panel with a seam of running stitch just
+   inside its edge. */
+:is(:root, .look)[data-material="felt"][data-mode] {
+  --radius: 10px;
+  --control-radius: 6px;
+  --panel-radius: 16px;
+  --sheet-radius: 14px;
+  --glass-fill: color-mix(in oklab, var(--surface-1) 70%, var(--canvas));
+  --glass-fill-thick: var(--surface-2);
+  --glass-fill-clear: color-mix(in srgb, var(--text) 7%, transparent);
+  --glass-blur: 0px;
+  --glass-saturate: 1;
+  --glass-rim: rgb(0 0 0 / 0.25);
+  --glass-spec: color-mix(in srgb, var(--text) 6%, transparent);
+  --glass-sheen: none;
+  --glass-shadow: 0 1px 0 rgb(0 0 0 / 0.35), 0 14px 28px -14px rgb(0 0 0 / 0.7);
+  --glass-shadow-clear: 0 1px 2px rgb(0 0 0 / 0.12);
+  --sheet-rim: rgb(0 0 0 / 0.25);
+  --sheet-shadow: 0 1px 0 rgb(0 0 0 / 0.35), 0 18px 36px -18px rgb(0 0 0 / 0.7);
+  --elevation-popover: 0 1px 0 rgb(0 0 0 / 0.35), 0 18px 36px -14px rgb(0 0 0 / 0.7);
+  --tint-sheen: none;
+  --material-edge: 1.5px dashed color-mix(in srgb, var(--text) 42%, transparent);
+  --material-edge-offset: -6px;
+  --sheet-edge: 1.5px dashed color-mix(in srgb, var(--text) 30%, transparent);
+}
+:is(:root, .look)[data-material="felt"][data-mode="light"] {
+  --glass-fill: color-mix(in oklab, var(--surface-1) 30%, var(--sidebar));
+  --glass-fill-thick: color-mix(in oklab, var(--surface-1) 60%, var(--sidebar));
+  --glass-fill-clear: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  --glass-rim: color-mix(in srgb, var(--text) 16%, transparent);
+  --glass-spec: rgb(255 255 255 / 0.4);
+  --glass-shadow: 0 1px 0 color-mix(in srgb, var(--text) 18%, transparent), 0 14px 28px -16px color-mix(in srgb, var(--text) 38%, transparent);
+  --sheet-rim: color-mix(in srgb, var(--text) 16%, transparent);
+  --sheet-shadow: 0 1px 0 color-mix(in srgb, var(--text) 18%, transparent), 0 18px 36px -20px color-mix(in srgb, var(--text) 38%, transparent);
+  --elevation-popover: 0 1px 0 color-mix(in srgb, var(--text) 18%, transparent), 0 18px 36px -16px color-mix(in srgb, var(--text) 38%, transparent);
+  --material-edge: 1.5px dashed color-mix(in srgb, var(--text) 38%, transparent);
+  --sheet-edge: 1.5px dashed color-mix(in srgb, var(--text) 26%, transparent);
+}
+
+/* Plain: the panels are opaque surfaces with a hairline and their lift,
+   and nothing shows through them. */
+:is(:root, .look)[data-material="plain"][data-mode] {
+  --glass-fill: var(--surface-1);
+  --glass-fill-thick: var(--surface-2);
+  --glass-fill-clear: color-mix(in srgb, var(--text) 6%, transparent);
+  --glass-blur: 0px;
+  --glass-saturate: 1;
+  --glass-rim: color-mix(in srgb, var(--text) 10%, transparent);
+  --glass-spec: transparent;
+  --glass-sheen: none;
+  --tint-sheen: none;
+  --material-edge: none;
+  --sheet-edge: none;
+}
+:is(:root, .look)[data-material="plain"][data-mode="light"] {
+  --glass-rim: rgb(0 0 0 / 0.09);
+  --glass-fill-clear: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+/* ── Textures ──
+   The grain in the panels (themes.ts TEXTURES), on <html data-texture>:
+   a background layer of every glass. */
+:is(:root, .look)[data-texture="none"] {
+  --material-texture: none;
+}
+/* Fibre in the stock: pale specks on a dark one, grey on paper. */
+:is(:root, .look)[data-texture="fibre"] {
+  --material-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.5 0 0 0 -0.24'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+}
+:is(:root, .look)[data-texture="fibre"][data-mode="light"] {
+  --material-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.2 0 0 0 0 0.18 0 0 0 0 0.16 0.5 0 0 0 -0.22'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+}
+/* Felt: matted fibres, a few light and a few dark. */
+:is(:root, .look)[data-texture="felt"] {
+  --material-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='d'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.6 0 0 0 -0.3'/%3E%3C/filter%3E%3Cfilter id='l'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.45 0 0 0 -0.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23d)'/%3E%3Crect width='100%25' height='100%25' filter='url(%23l)'/%3E%3C/svg%3E");
+}
+:is(:root, .look)[data-texture="felt"][data-mode="light"] {
+  --material-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='d'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.3 0 0 0 0 0.22 0 0 0 0 0.14 0.5 0 0 0 -0.28'/%3E%3C/filter%3E%3Cfilter id='l'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.5 0 0 0 -0.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23d)'/%3E%3Crect width='100%25' height='100%25' filter='url(%23l)'/%3E%3C/svg%3E");
+}
+
+/* ── Display faces ──
+   On <html data-face> (themes.ts FACES). Inter Tight is the default, in
+   @theme above. Space Grotesk sets the UI and Martian Mono the code too;
+   Pixelify Sans letters the headings only, as a sampler its title. */
+:root[data-face="space-grotesk"][data-mode] {
+  --font-sans: "Space Grotesk Variable", "Space Grotesk", "Geist", system-ui, sans-serif;
+  --font-mono: "Martian Mono Variable", "Martian Mono", "Geist Mono", ui-monospace, monospace;
+  --font-display: "Space Grotesk Variable", "Space Grotesk", system-ui, sans-serif;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --display-weight: 700;
+  --display-tracking: -0.045em;
+  --text-code: 0.75rem;
+}
+:root[data-face="pixelify"][data-mode] {
+  --font-display: "Pixelify Sans", "Geist", system-ui, sans-serif;
+  --display-weight: 500;
+  --display-tracking: 0;
+}
+:root[data-face="system"][data-mode] {
+  --font-display: var(--font-sans);
+  --display-weight: 600;
+  --display-tracking: -0.02em;
+}
+
+/* ── Knobs ──
+   Corners (data-corners) and the glass's translucency (data-translucency)
+   over whatever the material says; "auto" leaves it be. Last, so they
+   outrank the materials. */
+:root[data-corners="square"][data-mode] {
+  --radius: 3px;
+  --control-radius: 2px;
+  --panel-radius: 4px;
+  --sheet-radius: 3px;
+}
+:root[data-corners="soft"][data-mode] {
+  --radius: 12px;
+  --control-radius: 8px;
+  --panel-radius: 18px;
+  --sheet-radius: 14px;
+}
+:root[data-corners="round"][data-mode] {
+  --radius: 16px;
+  --control-radius: 10px;
+  --panel-radius: 26px;
+  --sheet-radius: 20px;
+}
+/* Paper prints square, and so do square corners: no capsule outlives the
+   press, and the composer is a slip like the panels. */
+:root:is([data-material="paper"], [data-corners="square"]) :is(.material, .composer-box, .composer-banner) {
+  border-radius: var(--panel-radius);
+}
+:root:is([data-material="paper"], [data-corners="square"]) .plate {
+  border-radius: 3px;
+}
+/* Reduce transparency still wins over a clearer glass. */
+@media (prefers-reduced-transparency: no-preference) {
+  :root[data-material="glass"][data-translucency="clear"][data-mode] {
+    --glass-fill: color-mix(in srgb, var(--surface-2) 30%, transparent);
+    --glass-fill-thick: color-mix(in srgb, var(--surface-2) 58%, transparent);
+    --glass-blur: 14px;
+  }
+  :root[data-material="glass"][data-translucency="frosted"][data-mode] {
+    --glass-fill: color-mix(in srgb, var(--surface-2) 76%, transparent);
+    --glass-fill-thick: color-mix(in srgb, var(--surface-2) 90%, transparent);
+    --glass-blur: 44px;
+    --glass-saturate: 2;
+  }
+}
+:root[data-material="glass"][data-translucency="solid"][data-mode] {
+  --glass-fill: var(--surface-1);
+  --glass-fill-thick: var(--surface-2);
+  --glass-blur: 0px;
+  --glass-sheen: none;
+}
+
+/* Compact: every Tailwind space (padding, gaps, heights) a tenth tighter;
+   the type keeps its size. */
+:root[data-density="compact"] {
+  --spacing: 0.225rem;
 }
 
 /* ---- Project tiles (ui/ProjectIcon.tsx, projectIcon.ts) ----------------
@@ -2375,6 +2560,6 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   height: 100%;
   object-fit: contain;
 }
-:root[data-palette="riso"] .project-tile {
+:root[data-material="paper"] .project-tile {
   border-radius: 1px;
 }

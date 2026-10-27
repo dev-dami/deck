@@ -2,7 +2,7 @@ import type { Session, Theme } from "@web/protocol";
 import type { Link } from "@web/state";
 import { sessionTitle } from "@web/state";
 import { toMillis } from "@web/time";
-import { ArrowLeft, Inbox as InboxIcon, PanelLeft, Search, SquarePen } from "./icons";
+import { ArrowLeft, Inbox as InboxIcon, PanelLeft, PanelRight, Search, SquarePen } from "./icons";
 import { type MutableRefObject, useEffect, useRef, useState } from "react";
 import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import { useRooms } from "../appState";
@@ -11,7 +11,7 @@ import { byAttention } from "../attention";
 import { type DeckClient, serves } from "../client";
 import type { TeamThread } from "../crew";
 import { cn } from "../lib/cn";
-import { usePrefs } from "../prefs";
+import { clampSidebar, SIDEBAR_WIDTH, type SidebarSide, setPrefs, usePrefs } from "../prefs";
 import { EMPTY_ROOM, useRoomMetas } from "../roomMeta";
 import { kindsBySession, sameKinds, useAppSlice } from "../select";
 import { SETTLE_AFTER_MS } from "../threads";
@@ -134,8 +134,11 @@ function Brand() {
 export function Sidebar({ data, actions, order }: { data: SidebarData; actions: SidebarActions; order: MutableRefObject<RowRef[]> }) {
   const { project, source, sessions, openId, unread, settings, inbox, projects, theme } = data;
   // Threads under their project folders (T3 Code's projects), or one list
-  // across projects, newest first; card or compact rows.
-  const { grouping, rows } = usePrefs();
+  // across projects, newest first; card or compact rows. On the left or the
+  // right of the window, as wide as the person dragged it.
+  const { grouping, rows, sidebarSide, sidebarWidth } = usePrefs();
+  // On a Mac the traffic lights sit in the window's top left corner.
+  const lights = data.mac && sidebarSide === "left";
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000);
@@ -267,18 +270,19 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
   });
   return (
     // Above the room's sheet, so the project menu can open over it.
-    <nav className="sidebar relative z-10 flex w-64 shrink-0 flex-col rounded-(--panel-radius)" aria-label="Threads" data-yolo-region="">
+    <nav className="sidebar relative z-10 flex w-(--sidebar-w) shrink-0 flex-col rounded-(--panel-radius)" aria-label="Threads" data-yolo-region="">
       {/* The glass is a layer under the sidebar's parts, not the sidebar:
           a backdrop filter would hold the menus' own glass to it. Each part
           is positioned, so it paints over the layer. */}
       <div aria-hidden className="liquid absolute inset-0 rounded-(--panel-radius)" />
       {/* The first row is the title bar's: on a Mac the traffic lights sit
-          at (18, 19) in the window, so a 36px row centres them. */}
-      <header className={cn("drag relative flex shrink-0 items-center gap-2 pr-2", data.mac ? "h-9 pl-[4.5rem]" : "h-11 pl-3.5")}>
+          at (18, 19) in the window, so a 36px row centres them. It stays
+          36px in a compact window. */}
+      <header className={cn("drag relative flex shrink-0 items-center gap-2 pr-2", data.mac ? "h-[36px]" : "h-11", lights ? "pl-[72px]" : "pl-3.5")}>
         <Brand />
         <span className="ml-auto flex items-center">
           <HeaderButton label="Hide the sidebar" onClick={actions.onCollapse}>
-            <PanelLeft />
+            {sidebarSide === "left" ? <PanelLeft /> : <PanelRight />}
           </HeaderButton>
           <HeaderButton label="New thread" onClick={actions.onNew}>
             <SquarePen />
@@ -368,6 +372,95 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
         onTeam={actions.onTeam}
         onDisconnect={actions.onDisconnect}
       />
+      <Grip side={sidebarSide} width={sidebarWidth} />
     </nav>
+  );
+}
+
+// How far across the window the grip goes before the sidebar moves to the
+// other side, as a share of the window's width.
+const ACROSS = 0.6;
+const STEP = 16;
+
+// The sidebar's inner edge, in the gutter beside the room: drag it to
+// resize the sidebar, or across most of the window to move the sidebar to
+// the other side (a dashed outline shows where it lands). The arrow keys
+// resize it too, and a double click gives back the default width.
+function Grip({ side, width }: { side: SidebarSide; width: number }) {
+  const [across, setAcross] = useState(false);
+  const grow = side === "left" ? "ArrowRight" : "ArrowLeft";
+  const shrink = side === "left" ? "ArrowLeft" : "ArrowRight";
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const nav = e.currentTarget.closest("nav");
+    if (e.button !== 0 || nav === null) return;
+    e.preventDefault();
+    const grip = e.currentTarget;
+    grip.setPointerCapture(e.pointerId);
+    // The sidebar's outer edge stays put; the width follows the pointer.
+    const box = nav.getBoundingClientRect();
+    const root = document.documentElement;
+    let w = width;
+    let over = false;
+    const move = (ev: PointerEvent) => {
+      const x = side === "left" ? ev.clientX : window.innerWidth - ev.clientX;
+      over = x > window.innerWidth * ACROSS;
+      setAcross(over);
+      // Past the widest it goes, the drag is a move: the width it had stays.
+      const to = side === "left" ? ev.clientX - box.left : box.right - ev.clientX;
+      w = to > SIDEBAR_WIDTH.max + STEP * 3 ? width : clampSidebar(to);
+      root.style.setProperty("--sidebar-w", `${w}px`);
+    };
+    const up = () => {
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", up);
+      grip.removeEventListener("pointercancel", up);
+      setAcross(false);
+      setPrefs(over ? { sidebarSide: side === "left" ? "right" : "left", sidebarWidth: width } : { sidebarWidth: w });
+      root.style.setProperty("--sidebar-w", `${over ? width : w}px`);
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up);
+    grip.addEventListener("pointercancel", up);
+  };
+  return (
+    <>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize the sidebar"
+        aria-valuemin={SIDEBAR_WIDTH.min}
+        aria-valuemax={SIDEBAR_WIDTH.max}
+        aria-valuenow={width}
+        tabIndex={0}
+        title="Drag to resize, or across the window to move the sidebar"
+        className={cn(
+          "no-drag group/grip absolute inset-y-4 z-20 flex w-2.5 cursor-col-resize justify-center outline-none",
+          side === "left" ? "-right-[7px]" : "-left-[7px]",
+        )}
+        onPointerDown={onPointerDown}
+        onDoubleClick={() => setPrefs({ sidebarWidth: SIDEBAR_WIDTH.default })}
+        onKeyDown={(e) => {
+          if (e.key !== grow && e.key !== shrink) return;
+          e.preventDefault();
+          setPrefs({ sidebarWidth: clampSidebar(width + (e.key === grow ? STEP : -STEP)) });
+        }}
+      >
+        <span
+          aria-hidden
+          className="h-full w-0.5 rounded-full bg-primary opacity-0 transition-opacity duration-150 group-hover/grip:opacity-60 group-focus-visible/grip:opacity-100 group-active/grip:opacity-100"
+        />
+      </div>
+      {across && (
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none fixed inset-y-2 z-50 grid w-(--sidebar-w) place-items-center rounded-(--panel-radius) border-2 border-primary/70 border-dashed bg-primary/10 text-primary text-xs",
+            side === "left" ? "right-2" : "left-2",
+          )}
+        >
+          Move the sidebar here
+        </div>
+      )}
+    </>
   );
 }

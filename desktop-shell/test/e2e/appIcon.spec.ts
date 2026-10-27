@@ -40,7 +40,7 @@ async function appearance(page: Page): Promise<void> {
 }
 
 const theme = (page: Page, name: RegExp) =>
-  page.getByRole("radiogroup", { name: "Theme", exact: true }).getByRole("radio", { name }).click();
+  page.getByRole("radiogroup", { name: "Colours" }).getByRole("radio", { name }).click();
 
 // Waits for icon number n (from 1) and checks it is a whole, valid set.
 async function nth(n: number): Promise<AppIconImage[]> {
