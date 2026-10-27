@@ -239,6 +239,12 @@ type threadItem struct {
 	Query     string          `json:"query,omitempty"`
 	Result    json.RawMessage `json:"result,omitempty"`
 	Error     json.RawMessage `json:"error,omitempty"`
+
+	// collabAgentToolCall (collab.go); Tool is the collab tool's name.
+	Prompt            *string                `json:"prompt,omitempty"`
+	Model             *string                `json:"model,omitempty"`
+	ReceiverThreadIDs []string               `json:"receiverThreadIds,omitempty"`
+	AgentsStates      map[string]collabState `json:"agentsStates,omitempty"`
 }
 
 // commandAction is the parsed form of a command (CommandAction); Command is the
@@ -255,8 +261,9 @@ type itemNotification struct {
 }
 
 type deltaNotification struct {
-	Delta  string `json:"delta"`
-	ItemID string `json:"itemId"`
+	Delta    string `json:"delta"`
+	ItemID   string `json:"itemId"`
+	ThreadID string `json:"threadId"`
 }
 
 type patchUpdatedNotification struct {

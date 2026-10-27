@@ -29,6 +29,11 @@ type translator struct {
 
 	items map[string]*itemState
 
+	// subs are the agents codex spawned with its collab tools, by the id of
+	// the spawn call, and child their threads (collab.go).
+	subs  map[string]*agent.Subagent
+	child map[string]string
+
 	// usage accounting: the protocol reports thread totals; Deck wants
 	// per-turn cumulative numbers.
 	lastTotal tokenBreakdown
@@ -50,6 +55,8 @@ func newTranslator(agentID, cwd string) *translator {
 		cwd:     cwd,
 		now:     time.Now,
 		items:   map[string]*itemState{},
+		subs:    map[string]*agent.Subagent{},
+		child:   map[string]string{},
 		limits:  &limitState{},
 	}
 }
@@ -92,7 +99,7 @@ func (t *translator) notification(method string, params json.RawMessage, raw raw
 	switch method {
 	case noteTurnStarted:
 		var n turnNotification
-		if json.Unmarshal(params, &n) != nil {
+		if json.Unmarshal(params, &n) != nil || t.childOf(n.ThreadID) != "" {
 			return nil
 		}
 		t.baseTotal = t.lastTotal
@@ -103,8 +110,8 @@ func (t *translator) notification(method string, params json.RawMessage, raw raw
 
 	case noteTurnCompleted:
 		var n turnNotification
-		if json.Unmarshal(params, &n) != nil {
-			return nil
+		if json.Unmarshal(params, &n) != nil || t.childOf(n.ThreadID) != "" {
+			return nil // a spawned agent's turn is not codex's
 		}
 		if t.onTurnDone != nil {
 			t.onTurnDone(n.Turn.ID)
@@ -135,10 +142,29 @@ func (t *translator) notification(method string, params json.RawMessage, raw raw
 		if json.Unmarshal(params, &n) != nil {
 			return nil
 		}
+		var evs []agent.Event
 		if method == noteItemStarted {
-			return t.itemStarted(n.Item, raw)
+			evs = t.itemStarted(n.Item, raw)
+		} else {
+			evs = t.itemCompleted(n.Item, raw)
 		}
-		return t.itemCompleted(n.Item, raw)
+		if sub := t.childOf(n.ThreadID); sub != "" {
+			// An item of a spawned agent's thread: its work, not codex's
+			// (its prompt is the spawn's).
+			kept := evs[:0]
+			for _, e := range evs {
+				switch e.Kind {
+				case agent.KindUserText:
+					continue
+				case agent.KindSubagent:
+				default:
+					e.Sub = sub
+				}
+				kept = append(kept, e)
+			}
+			evs = kept
+		}
+		return evs
 
 	case noteAgentDelta:
 		var d deltaNotification
@@ -147,6 +173,9 @@ func (t *translator) notification(method string, params json.RawMessage, raw raw
 		}
 		d.Delta = fixMojibake(d.Delta)
 		t.item(d.ItemID, "agentMessage").text.WriteString(d.Delta)
+		if t.childOf(d.ThreadID) != "" {
+			return nil // a spawned agent's: its item's end carries the text
+		}
 		e := t.ev(agent.KindAssistantText, raw)
 		e.Text, e.Delta = d.Delta, true
 		return []agent.Event{e}
@@ -158,6 +187,9 @@ func (t *translator) notification(method string, params json.RawMessage, raw raw
 		}
 		d.Delta = fixMojibake(d.Delta)
 		t.item(d.ItemID, "reasoning").out.WriteString(d.Delta)
+		if t.childOf(d.ThreadID) != "" {
+			return nil
+		}
 		e := t.ev(agent.KindReasoning, raw)
 		e.Text, e.Delta = d.Delta, true
 		return []agent.Event{e}
@@ -291,6 +323,9 @@ func (t *translator) itemStarted(it threadItem, raw rawLine) []agent.Event {
 
 	case "agentMessage", "reasoning":
 		t.item(it.ID, it.Type)
+
+	case "collabAgentToolCall":
+		return t.collabStarted(it, raw)
 	}
 	return nil
 }
@@ -302,6 +337,9 @@ func (t *translator) itemCompleted(it threadItem, raw rawLine) []agent.Event {
 		st = &itemState{typ: it.Type}
 	}
 	switch it.Type {
+	case "collabAgentToolCall":
+		return t.collabCompleted(it, raw)
+
 	case "userMessage":
 		var parts []struct {
 			Type string `json:"type"`

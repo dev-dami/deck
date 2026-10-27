@@ -5,6 +5,7 @@ import { agentColour } from "../../agents";
 import type { DeckClient } from "../../client";
 import type { BoardTask } from "../../crew";
 import { neighbourhood } from "../../graph";
+import { subParent } from "../../lanes";
 import { cn } from "../../lib/cn";
 import type { ProjectApi } from "../../project";
 import { shallowEqual, useAppSlice } from "../../select";
@@ -307,7 +308,7 @@ function Canvas({
             key={l.id}
             aria-hidden
             className="hist-text absolute top-0 left-0 flex items-center gap-1.5 truncate text-2xs text-muted-foreground"
-            style={{ transform: `translate(${g.bounds.x + 8}px, ${l.y}px)`, width: LABEL_W - 16, height: 28, ...(l.agent === null ? {} : hueOf(l.agent, l.agentKind)) }}
+            style={{ transform: `translate(${g.bounds.x + 8}px, ${l.y}px)`, width: LABEL_W - 16, height: 28, ...(l.agent === null ? {} : hueOf(subParent(l.agent) ?? l.agent, l.agentKind)) }}
           >
             {l.agent !== null && <span className="font-mono text-(--hue)">{kindMark(theme, l.agentKind) || "●"}</span>}
             <span className={cn("truncate", l.agent !== null && "text-(--hue)")}>{l.label}</span>

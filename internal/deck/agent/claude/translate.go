@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -47,6 +48,11 @@ type translator struct {
 	// rejected is the window a rate_limit_event of this turn said is used
 	// up (status "rejected"), until the turn's result line.
 	rejected *agent.LimitHit
+
+	// subs are the subagents started with the Task (Agent) tool that have
+	// not reported back, by the id of the call that started them. Their
+	// own lines carry that id as parent_tool_use_id.
+	subs map[string]*agent.Subagent
 }
 
 // ctxUsage is the token usage of one assistant message.
@@ -59,7 +65,7 @@ func (c ctxUsage) total() int { return c.input + c.cacheCreate + c.cacheRead + c
 func newTranslator(agentID string) *translator {
 	return &translator{
 		agentID: agentID, tools: map[string]toolInfo{}, now: time.Now, windows: map[string]int{},
-		limits: map[string]agent.LimitWindow{},
+		limits: map[string]agent.LimitWindow{}, subs: map[string]*agent.Subagent{},
 	}
 }
 
@@ -359,6 +365,7 @@ func (t *translator) Line(line []byte) []agent.Event {
 			TTFTms: ttft, APIms: sl.DurationAPIMs, DurationMs: sl.DurationMs,
 		}
 		t.lastEmitted = t.ctx.total()
+		out = append(out, t.stopSubs(mk)...)
 		out = append(out, ue, mk(agent.KindTurnDone))
 		return out
 
@@ -375,9 +382,18 @@ func (t *translator) Line(line []byte) []agent.Event {
 	return nil
 }
 
+// parentOf is the subagent a line belongs to: its parent_tool_use_id, ""
+// for the agent's own lines.
+func parentOf(sl streamLine) string {
+	if sl.ParentToolUseID == nil {
+		return ""
+	}
+	return *sl.ParentToolUseID
+}
+
 func (t *translator) assistant(sl streamLine, mk func(agent.Kind) agent.Event) []agent.Event {
-	if sl.ParentToolUseID != nil && *sl.ParentToolUseID != "" {
-		return nil
+	if p := parentOf(sl); p != "" {
+		return t.subWork(p, t.subAssistant(sl, mk), mk)
 	}
 	var mb messageBody
 	if json.Unmarshal(sl.Message, &mb) != nil {
@@ -416,9 +432,101 @@ func (t *translator) assistant(sl streamLine, mk func(agent.Kind) agent.Event) [
 			ev := mk(agent.KindToolCall)
 			ev.Tool = &agent.Tool{ID: b.ID, Name: name, Title: title, Input: b.Input, Status: agent.ToolRunning}
 			out = append(out, ev)
+			if s := agent.SubagentOf(ev.Tool); s != nil {
+				// The Task call starts a subagent: its lines follow,
+				// tagged with this call's id, until the call's result.
+				t.subs[b.ID] = s
+				out = append(out, t.subEvent(mk, *s))
+			}
 		}
 	}
 	return append(out, t.contextEvent(mk)...)
+}
+
+// subAssistant translates an assistant line of a subagent: its text,
+// thinking and tool calls. Its usage is its own context, not the agent's,
+// and its model is not the one the agent runs.
+func (t *translator) subAssistant(sl streamLine, mk func(agent.Kind) agent.Event) []agent.Event {
+	var mb messageBody
+	if json.Unmarshal(sl.Message, &mb) != nil {
+		return nil
+	}
+	var blocks []contentBlock
+	if json.Unmarshal(mb.Content, &blocks) != nil {
+		return nil
+	}
+	var out []agent.Event
+	for _, b := range blocks {
+		switch b.Type {
+		case "text":
+			if strings.TrimSpace(b.Text) != "" {
+				ev := mk(agent.KindAssistantText)
+				ev.Text = b.Text
+				out = append(out, ev)
+			}
+		case "thinking":
+			if b.Thinking != "" {
+				ev := mk(agent.KindReasoning)
+				ev.Text = b.Thinking
+				out = append(out, ev)
+			}
+		case "tool_use":
+			name, title := displayTool(b.Name, b.Input)
+			t.tools[b.ID] = toolInfo{name: name, title: title, input: b.Input}
+			ev := mk(agent.KindToolCall)
+			ev.Tool = &agent.Tool{ID: b.ID, Name: name, Title: title, Input: b.Input, Status: agent.ToolRunning}
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+// subWork tags evs as the work of the subagent the Task call parent
+// started. A subagent whose start was not seen (its agent's turn began
+// before Deck read the stream) starts here.
+func (t *translator) subWork(parent string, evs []agent.Event, mk func(agent.Kind) agent.Event) []agent.Event {
+	if len(evs) == 0 {
+		return nil
+	}
+	var out []agent.Event
+	if t.subs[parent] == nil {
+		s := &agent.Subagent{ID: parent, Status: agent.SubRunning}
+		t.subs[parent] = s
+		out = append(out, t.subEvent(mk, *s))
+	}
+	for i := range evs {
+		evs[i].Sub = parent
+	}
+	return append(out, evs...)
+}
+
+// subEvent is the KindSubagent event of s as it stands.
+func (t *translator) subEvent(mk func(agent.Kind) agent.Event, s agent.Subagent) agent.Event {
+	ev := mk(agent.KindSubagent)
+	ev.Raw = nil // the line is the Task call's or its result's, kept there
+	ev.Subagent = &s
+	return ev
+}
+
+// stopSubs ends the subagents still running when the agent's turn ends: the
+// turn was interrupted, or failed, before they reported back.
+func (t *translator) stopSubs(mk func(agent.Kind) agent.Event) []agent.Event {
+	if len(t.subs) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(t.subs))
+	for id := range t.subs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	var out []agent.Event
+	for _, id := range ids {
+		s := *t.subs[id]
+		s.Status = agent.SubStopped
+		out = append(out, t.subEvent(mk, s))
+		delete(t.subs, id)
+	}
+	return out
 }
 
 // noteUsage records the usage of the latest top-level assistant message. A
@@ -463,6 +571,7 @@ func (t *translator) user(sl streamLine, mk func(agent.Kind) agent.Event) []agen
 		return nil // plain-string user content (echo of a prompt)
 	}
 	var out []agent.Event
+	parent := parentOf(sl)
 	for _, b := range blocks {
 		if b.Type != "tool_result" {
 			continue
@@ -486,8 +595,16 @@ func (t *translator) user(sl streamLine, mk func(agent.Kind) agent.Event) []agen
 			ID: b.ToolUseID, Name: info.name, Title: info.title, Input: info.input,
 			Output: stringifyContent(b.Content), Status: status,
 		}
+		if s := t.subs[b.ToolUseID]; s != nil && parent == "" {
+			// The Task call's result: the subagent reported back, or failed.
+			out = append(out, t.subEvent(mk, agent.SubagentEnd(*s, ev.Tool)))
+			delete(t.subs, b.ToolUseID)
+		}
 		out = append(out, ev)
 		delete(t.tools, b.ToolUseID)
+	}
+	if parent != "" {
+		return t.subWork(parent, out, mk)
 	}
 	return out
 }

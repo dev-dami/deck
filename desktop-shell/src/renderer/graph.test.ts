@@ -1,7 +1,8 @@
 import type { AgentLine, ChangedFile } from "@web/protocol";
 import { describe, expect, test } from "vitest";
-import type { AgentNode, Board, BoardTask, Crew, RunningTool } from "./crew";
+import { type AgentNode, type Board, type BoardTask, type Crew, notNative, type RunningTool } from "./crew";
 import {
+  type AgentGraphNode,
   buildGraph,
   chooseDirection,
   COLUMN_GAP,
@@ -50,6 +51,7 @@ const node = (name: string, over: Partial<AgentNode> = {}): AgentNode => ({
   profile: "",
   role: "",
   color: "",
+  ...notNative,
   ...over,
 });
 
@@ -582,6 +584,52 @@ describe("chooseDirection", () => {
 
 describe("graphSummary", () => {
   test("counts the agents at work, the tasks done and the files", () => {
-    expect(graphSummary(graph(rich))).toEqual({ agents: 4, working: 2, tasks: 5, done: 2, files: 4 });
+    expect(graphSummary(graph(rich))).toEqual({ agents: 4, subagents: 0, working: 2, tasks: 5, done: 2, files: 4 });
+  });
+});
+
+// A claude whose CLI started four reviewers with its own Task tool.
+const reviews: GraphInput = {
+  roster: [line("claude", true)],
+  board: null,
+  files: null,
+  crew: crew(
+    [
+      node("claude", { status: "tool", model: "opus" }),
+      ...[295, 296, 297].map((n, i) =>
+        node(`claude/review-pr-${n}`, {
+          kind: "claude",
+          status: i === 0 ? "idle" : "working",
+          depth: 1,
+          parent: "claude",
+          native: true,
+          subStatus: i === 0 ? "done" : "running",
+          description: `Review PR #${n}`,
+          actions: 3,
+        }),
+      ),
+      node("claude/review-pr-298", { kind: "claude", status: "error", depth: 1, parent: "claude", native: true, subStatus: "failed", description: "Review PR #298" }),
+    ],
+    [tool("claude", "Task", "Review PR #296", { subagent: true }), tool("claude/review-pr-296", "Read", "pkg/a.go")],
+  ),
+};
+
+describe("buildGraph: CLI-native subagents", () => {
+  test("each is a node under its member, with its task, state and call at work", () => {
+    const g = graph(reviews);
+    expect(graphSummary(g)).toEqual({ agents: 1, subagents: 4, working: 3, tasks: 0, done: 0, files: 0 });
+    const sub = byId(g.nodes, "agent:claude/review-pr-296") as AgentGraphNode;
+    expect(sub.parent).toBe("agent:claude");
+    expect(sub.depth).toBe(1);
+    expect(sub.sub).toEqual({ status: "running", description: "Review PR #296", type: "", actions: 3 });
+    expect(sub.tools.map((t) => t.summary)).toEqual(["pkg/a.go"]);
+    expect((byId(g.nodes, "agent:claude/review-pr-298") as AgentGraphNode).status).toBe("error");
+    expect((byId(g.nodes, "agent:claude") as AgentGraphNode).sub).toBeNull();
+    expect(edgeIds(g.edges).filter((e) => e.startsWith("spawned"))).toEqual([
+      "spawned agent:claude agent:claude/review-pr-295",
+      "spawned agent:claude agent:claude/review-pr-296",
+      "spawned agent:claude agent:claude/review-pr-297",
+      "spawned agent:claude agent:claude/review-pr-298",
+    ]);
   });
 });

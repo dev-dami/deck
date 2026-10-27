@@ -32,6 +32,10 @@ type toolState struct {
 	// term is the command output streamed in _meta, and exit its code.
 	term strings.Builder
 	exit *int
+	// sub is the subagent a task call started (agent.KindSubagent). ACP
+	// streams only the parent session, so Deck sees it start and end, not
+	// its work.
+	sub *agent.Subagent
 }
 
 func newTranslator(agentID, dir string) *translator {
@@ -222,6 +226,15 @@ func (t *translator) tool(c toolCall) []agent.Event {
 		}
 		e := t.ev(agent.KindToolResult)
 		e.Tool = &tool
+		if st.sub == nil {
+			st.sub = agent.SubagentOf(&tool) // seen only once it ended
+		}
+		if st.sub != nil {
+			end := agent.SubagentEnd(*st.sub, &tool)
+			se := t.ev(agent.KindSubagent)
+			se.Subagent = &end
+			out = append(out, se)
+		}
 		// Keep only a marker, so a late update is still ignored, and let the
 		// call's input, output and diffs go: a long session runs many tools.
 		t.tools[c.ToolCallID] = &toolState{call: toolCall{ToolCallID: c.ToolCallID}, done: true}
@@ -230,7 +243,17 @@ func (t *translator) tool(c toolCall) []agent.Event {
 	tool.Status = agent.ToolRunning
 	e := t.ev(agent.KindToolCall)
 	e.Tool = &tool
-	return []agent.Event{e}
+	out := []agent.Event{e}
+	// A task call starts a subagent; an update that first names its task
+	// says so again.
+	if s := agent.SubagentOf(&tool); s != nil && (st.sub == nil || st.sub.Description == "" && s.Description != "") {
+		st.sub = s
+		se := t.ev(agent.KindSubagent)
+		cp := *s
+		se.Subagent = &cp
+		out = append(out, se)
+	}
+	return out
 }
 
 // toolNames maps the agents' tool names (OpenCode's, Pi's) to the names Deck

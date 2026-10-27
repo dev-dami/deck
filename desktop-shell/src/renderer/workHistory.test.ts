@@ -261,3 +261,32 @@ describe("history", () => {
 function toTime(m: Message): number {
   return Date.parse(m.created_at);
 }
+
+describe("CLI-native subagents", () => {
+  test("each has a lane under its member's, of its member's kind, with its runs of calls", () => {
+    const m = (role: Message["role"], parts: Part[], agent?: string) => msg("sr", role, parts, agent);
+    const t: HistoryThread = {
+      id: "sr",
+      title: "Reviews",
+      messages: [
+        m("user", [say("spin up sub agents to review each of them")]),
+        m("assistant", [say("Starting reviewers."), call("ta", "Task", "Review PR #295"), call("tb", "Task", "Review PR #296")], "claude"),
+        m("assistant", [call("a1", "Bash", "gh pr diff 295")], "claude/review-pr-295"),
+        m("assistant", [call("b1", "Read", "b.go")], "claude/review-pr-296"),
+        m("assistant", [result("a1")]),
+        m("assistant", [result("b1")]),
+        m("assistant", [say("Both are done.")], "claude"),
+        m("assistant", [call("x1", "Bash", "ls")], "codex"),
+      ],
+      roster: [
+        { id: "claude", name: "claude", kind: "claude", busy: false },
+        { id: "codex", name: "codex", kind: "codex", busy: false },
+      ],
+    };
+    const g = buildHistory([t]);
+    expect(g.lanes.map((l) => l.label)).toEqual(["you", "claude", "↳ review-pr-295", "↳ review-pr-296", "codex", "files"]);
+    const sub = g.lanes[2]!;
+    expect(sub).toMatchObject({ agent: "claude/review-pr-295", agentKind: "claude" });
+    expect(g.nodes.filter((x) => x.lane === sub.id && x.kind === "actions").map((x) => x.actions?.count)).toEqual([1]);
+  });
+});

@@ -1,7 +1,7 @@
 import type { AgentLine, Message } from "@web/protocol";
 import { describe, expect, test } from "vitest";
-import type { AgentNode } from "./crew";
-import { buildLanes, filterLane, fitLanes, type Lane, laneOf, leasePaths, lineCount, pinnedLane, shortId } from "./lanes";
+import { type AgentNode, notNative } from "./crew";
+import { buildLanes, filterLane, fitLanes, type Lane, laneOf, leasePaths, lineCount, pinnedLane, shortId, subName, subParent } from "./lanes";
 
 const line = (id: string, busy = false): AgentLine => ({ id, name: id, kind: id.replace(/-\d+$/, ""), busy });
 
@@ -23,6 +23,7 @@ const node = (name: string, over: Partial<AgentNode> = {}): AgentNode => ({
   profile: "",
   role: "",
   color: "",
+  ...notNative,
   ...over,
 });
 
@@ -206,4 +207,55 @@ test("a short id is the last three base36 characters of the id", () => {
   expect(shortId("a_b-c")).toBe("abc");
   expect(shortId("x9")).toBe("x9");
   expect(shortId("___")).toBe("___");
+});
+
+describe("CLI-native subagents", () => {
+  const sub = (name: string, subStatus: AgentNode["subStatus"], status: string): AgentNode =>
+    node(`claude/${name}`, { kind: "claude", status, depth: 1, parent: "claude", native: true, subStatus, description: `Review ${name}`, actions: 2 });
+  const lanes = buildLanes({
+    roster: [line("claude", true), line("codex")],
+    agents: [
+      node("claude", { status: "tool" }),
+      node("codex", { status: "idle" }),
+      sub("pr-295", "done", "idle"),
+      sub("pr-296", "failed", "error"),
+      sub("pr-296-2", "running", "working"),
+      sub("pr-297", "stopped", "exited"),
+    ],
+    shares: {},
+    waiting: [],
+  });
+
+  test("each is a lane right under its member's, stopped ones too", () => {
+    expect(lanes.map((l) => l.id)).toEqual([
+      "you",
+      "agent:claude",
+      "agent:claude/pr-295",
+      "agent:claude/pr-296",
+      "agent:claude/pr-296-2",
+      "agent:claude/pr-297",
+      "agent:codex",
+    ]);
+    expect(lanes[4]).toMatchObject({ status: "working", parent: "claude", depth: 1, agentKind: "claude", sub: { status: "running", description: "Review pr-296-2", actions: 2 } });
+    expect(lanes[3]!.sub).toMatchObject({ status: "failed" });
+    expect(lanes[1]!.sub).toBeNull();
+    expect(subName(lanes[4]!.name)).toBe("pr-296-2");
+    expect(subParent(lanes[4]!.name)).toBe("claude");
+    expect(subParent("claude")).toBeNull();
+  });
+
+  test("a running one never folds; those that ended fold first", () => {
+    expect(pinnedLane(lanes[4]!)).toBe(true);
+    expect(pinnedLane(lanes[2]!)).toBe(false);
+    expect(pinnedLane(lanes[3]!)).toBe(false); // failed: its member's lane says so
+    // Room for all but two: the ended subagents go before codex does.
+    const { folded } = fitLanes(lanes, () => 100, 100 * 5 + 2 * 5 + 1, { gap: 2, lines: 1, more: 36 });
+    expect(folded.map((l) => l.name)).toEqual(["claude/pr-295", "claude/pr-296", "claude/pr-297"]);
+  });
+
+  test("a subagent's lane shows its own work alone", () => {
+    const work = [msg("assistant", "starting reviewers", "claude"), msg("assistant", "diff looks fine", "claude/pr-295"), msg("assistant", "reading", "claude/pr-296")];
+    expect(filterLane(work, "agent:claude/pr-295").map((m) => m.parts[0]!.text)).toEqual(["diff looks fine"]);
+    expect(laneOf(work[2]!)).toBe("agent:claude/pr-296");
+  });
 });
