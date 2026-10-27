@@ -72,6 +72,11 @@ describe("the lists", () => {
     expect(suggestions("", roster, kinds).map((s) => s.insert)).toContain("$codex-1");
   });
 
+  test("a member from a profile wears the profile's colour", () => {
+    const named = [line("charles", "claude", { profile: "charles", color: "teal" })];
+    expect(suggestions("ch", named, kinds, { sigil: "@" })[0]).toMatchObject({ insert: "@charles", color: "teal" });
+  });
+
   test("profiles with no member and people come before the kinds", () => {
     const s = suggestions("", [], ["claude"], {
       sigil: "@",

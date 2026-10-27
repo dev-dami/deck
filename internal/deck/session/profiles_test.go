@@ -14,6 +14,7 @@ func TestProfileMentionAddsANamedMember(t *testing.T) {
 	charles := profile.Profile{
 		Name: "charles", Kind: "claude", Model: "opus-x", Effort: "high", Role: "reviewer",
 		Instructions: "Check the tests before the code.", Voice: "dry, terse", Paths: []string{"internal/auth/**"},
+		Color: "#c6a0f6",
 	}
 	var dirs []string
 	r.m.SetProfiles(func(dir string) []profile.Profile {
@@ -31,7 +32,7 @@ func TestProfileMentionAddsANamedMember(t *testing.T) {
 		t.Fatalf("members = %+v", ti.Members)
 	}
 	c := ti.Members[1]
-	if c.Name != "charles" || c.Kind != "claude" || c.Model != "opus-x" || c.Effort != "high" || c.Profile != "charles" || c.Role != "reviewer" {
+	if c.Name != "charles" || c.Kind != "claude" || c.Model != "opus-x" || c.Effort != "high" || c.Profile != "charles" || c.Role != "reviewer" || c.Color != "#c6a0f6" {
 		t.Fatalf("the member from the profile: %+v", c)
 	}
 	if ti.Dir == "" || len(dirs) == 0 || dirs[0] != ti.Dir {
@@ -74,7 +75,7 @@ func TestProfileMentionAddsANamedMember(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m := th.Members[1]; m.Profile != "charles" || m.Role != "reviewer" {
+	if m := th.Members[1]; m.Profile != "charles" || m.Role != "reviewer" || m.Color != "#c6a0f6" {
 		t.Fatalf("stored member = %+v", m)
 	}
 }

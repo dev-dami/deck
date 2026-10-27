@@ -1493,8 +1493,10 @@ type AgentLine struct {
 	// profile is the named agent the member was started from ("" for none)
 	// and role that profile's one-line role. name is the member's own name
 	// (charles, charles-2); kind still says which CLI runs it.
-	Profile       string `protobuf:"bytes,7,opt,name=profile,proto3" json:"profile,omitempty"`
-	Role          string `protobuf:"bytes,8,opt,name=role,proto3" json:"role,omitempty"`
+	Profile string `protobuf:"bytes,7,opt,name=profile,proto3" json:"profile,omitempty"`
+	Role    string `protobuf:"bytes,8,opt,name=role,proto3" json:"role,omitempty"`
+	// color is the profile's CSS colour; "" means the kind's hue.
+	Color         string `protobuf:"bytes,9,opt,name=color,proto3" json:"color,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1581,6 +1583,13 @@ func (x *AgentLine) GetProfile() string {
 func (x *AgentLine) GetRole() string {
 	if x != nil {
 		return x.Role
+	}
+	return ""
+}
+
+func (x *AgentLine) GetColor() string {
+	if x != nil {
+		return x.Color
 	}
 	return ""
 }
@@ -5353,9 +5362,10 @@ type AgentNode struct {
 	Parent        string  `protobuf:"bytes,12,opt,name=parent,proto3" json:"parent,omitempty"`
 	Branch        string  `protobuf:"bytes,13,opt,name=branch,proto3" json:"branch,omitempty"`
 	Leases        string  `protobuf:"bytes,14,opt,name=leases,proto3" json:"leases,omitempty"`
-	// profile and role: as AgentLine's.
+	// profile, role and color: as AgentLine's.
 	Profile       string `protobuf:"bytes,15,opt,name=profile,proto3" json:"profile,omitempty"`
 	Role          string `protobuf:"bytes,16,opt,name=role,proto3" json:"role,omitempty"`
+	Color         string `protobuf:"bytes,17,opt,name=color,proto3" json:"color,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5498,6 +5508,13 @@ func (x *AgentNode) GetProfile() string {
 func (x *AgentNode) GetRole() string {
 	if x != nil {
 		return x.Role
+	}
+	return ""
+}
+
+func (x *AgentNode) GetColor() string {
+	if x != nil {
+		return x.Color
 	}
 	return ""
 }
@@ -8066,7 +8083,7 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x12\x0e\n" +
 	"\x02at\x18\x04 \x01(\x03R\x02at\":\n" +
 	"\rQueueResponse\x12)\n" +
-	"\x05items\x18\x01 \x03(\v2\x13.deck.v1.QueuedItemR\x05items\"\xb3\x01\n" +
+	"\x05items\x18\x01 \x03(\v2\x13.deck.v1.QueuedItemR\x05items\"\xc9\x01\n" +
 	"\tAgentLine\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -8075,7 +8092,8 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x06effort\x18\x05 \x01(\tR\x06effort\x12\x12\n" +
 	"\x04busy\x18\x06 \x01(\bR\x04busy\x12\x18\n" +
 	"\aprofile\x18\a \x01(\tR\aprofile\x12\x12\n" +
-	"\x04role\x18\b \x01(\tR\x04role\"<\n" +
+	"\x04role\x18\b \x01(\tR\x04role\x12\x14\n" +
+	"\x05color\x18\t \x01(\tR\x05color\"<\n" +
 	"\x0eRosterResponse\x12*\n" +
 	"\x06agents\x18\x01 \x03(\v2\x12.deck.v1.AgentLineR\x06agents\"B\n" +
 	"\rModelsRequest\x12\x1d\n" +
@@ -8386,7 +8404,7 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x15SetOrchestrateRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x0e\n" +
-	"\x02on\x18\x02 \x01(\bR\x02on\"\x9e\x03\n" +
+	"\x02on\x18\x02 \x01(\bR\x02on\"\xb4\x03\n" +
 	"\tAgentNode\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
@@ -8404,7 +8422,8 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x06branch\x18\r \x01(\tR\x06branch\x12\x16\n" +
 	"\x06leases\x18\x0e \x01(\tR\x06leases\x12\x18\n" +
 	"\aprofile\x18\x0f \x01(\tR\aprofile\x12\x12\n" +
-	"\x04role\x18\x10 \x01(\tR\x04role\"\xcd\x01\n" +
+	"\x04role\x18\x10 \x01(\tR\x04role\x12\x14\n" +
+	"\x05color\x18\x11 \x01(\tR\x05color\"\xcd\x01\n" +
 	"\vRunningTool\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +

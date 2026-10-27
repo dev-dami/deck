@@ -323,6 +323,8 @@ message AgentLine {
   // (charles, charles-2); kind still says which CLI runs it.
   string profile = 7;
   string role = 8;
+  // color is the profile's CSS colour; "" means the kind's hue.
+  string color = 9;
 }
 
 message RosterResponse {
@@ -748,9 +750,10 @@ message AgentNode {
   string parent = 12;
   string branch = 13;
   string leases = 14;
-  // profile and role: as AgentLine's.
+  // profile, role and color: as AgentLine's.
   string profile = 15;
   string role = 16;
+  string color = 17;
 }
 
 message RunningTool {

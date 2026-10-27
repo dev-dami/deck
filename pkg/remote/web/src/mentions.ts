@@ -136,7 +136,7 @@ export function suggestions(
   for (const l of roster) {
     // "$" keeps naming members by id; "@" by the name they are shown by.
     const name = at ? l.name || l.id : l.id;
-    out.push({ insert: `${sigil}${name}`, label: name, detail: busyDetail(l), kind: l.kind });
+    out.push({ insert: `${sigil}${name}`, label: name, detail: busyDetail(l), kind: l.kind, ...(l.color ? { color: l.color } : {}) });
   }
   // "@" talks to someone: the named come before the kinds.
   if (at) {

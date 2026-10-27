@@ -222,10 +222,12 @@ type AgentInfo struct {
 	// RunningModel is the model slug the CLI reports it is running (e.g.
 	// "claude-opus-5-5" when Model is "" or an alias); "" until it says.
 	RunningModel string
-	// Profile is the named agent it was started from ("" for none), and
-	// Role that profile's one-line role.
+	// Profile is the named agent it was started from ("" for none), Role
+	// that profile's one-line role and Color its CSS colour ("" for the
+	// kind's hue).
 	Profile string
 	Role    string
+	Color   string
 }
 
 // ThreadInfo is a snapshot of one live thread.
@@ -1839,7 +1841,7 @@ func (a *agentState) info() AgentInfo {
 		Status: a.statusLocked(), CostUSD: a.costTotal + a.costTurn, Pending: len(a.pending),
 		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource,
 		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
-		RunningModel: a.running, Profile: a.prof.Name, Role: a.prof.Role,
+		RunningModel: a.running, Profile: a.prof.Name, Role: a.prof.Role, Color: a.prof.Color,
 	}
 }
 
@@ -1862,7 +1864,7 @@ func (a *agentState) memberMeta() store.Member {
 		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource, Briefed: a.briefed,
 		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
 		Parent: a.parent, Ephemeral: a.ephemeral, Dir: a.dir, Worktree: a.worktree,
-		Profile: a.prof.Name, Role: a.prof.Role,
+		Profile: a.prof.Name, Role: a.prof.Role, Color: a.prof.Color,
 	}
 }
 

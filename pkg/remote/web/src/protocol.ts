@@ -279,11 +279,14 @@ export interface AgentLine {
   // (docs/design/agents-and-mentions.md); absent from an older Deck.
   profile?: string;
   role?: string;
+  // The profile's CSS colour, worn in place of the kind's hue; absent for
+  // the kind's own.
+  color?: string;
 }
 
 export const decodeAgentLine: Decoder<AgentLine> = object(
   { id: str, name: str, kind: str, busy: bool },
-  { model: str, effort: str, profile: str, role: str },
+  { model: str, effort: str, profile: str, role: str, color: str },
 );
 
 // An installed agent CLI that can join a session; joined when the session

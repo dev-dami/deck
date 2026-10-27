@@ -187,7 +187,7 @@ func toRoster(lines []workspace.AgentLine) []wire.AgentLine {
 	out := make([]wire.AgentLine, 0, len(lines))
 	for _, l := range lines {
 		out = append(out, wire.AgentLine{ID: l.ID, Name: l.ID, Kind: l.Kind, Model: l.Model, Effort: l.Effort, Busy: busyStatus(l.Status),
-			Profile: l.Profile, Role: l.Role})
+			Profile: l.Profile, Role: l.Role, Color: l.Color})
 	}
 	return out
 }

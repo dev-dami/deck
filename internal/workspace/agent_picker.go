@@ -176,8 +176,9 @@ type AgentLine struct {
 	Leases string
 	// Profile is the named agent it was started from ("" for none) and Role
 	// that profile's one-line role; ID is then the profile's name
-	// ("charles", "charles-2").
-	Profile, Role string
+	// ("charles", "charles-2"). Color is the profile's CSS colour, "" for
+	// the kind's hue.
+	Profile, Role, Color string
 }
 
 // ContextPct is how full the agent's context is, in percent. approx is true
@@ -315,7 +316,7 @@ func (w *DeckWorkspace) Roster(sessionID string) []AgentLine {
 					ContextBaseline: a.ContextBaseline, DeckTokens: a.DeckTokens,
 					CostUSD: a.CostUSD, Pending: a.Pending,
 					Since: since, Depth: depth, Parent: names[a.Parent], Branch: a.Branch, Leases: leases[a.ID],
-					Profile: a.Profile, Role: a.Role,
+					Profile: a.Profile, Role: a.Role, Color: a.Color,
 				})
 				if depth < 16 {
 					walk(a.ID, depth+1)

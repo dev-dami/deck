@@ -111,7 +111,16 @@ following the patterns already there:
   `deck.json`.
 - `rpc DeleteProfile(DeleteProfileRequest{string name; string scope}) returns (DeleteProfileResponse)`.
 - The roster line or member message gains `string profile` (the profile
-  a member came from) and `string role`, so clients can show them.
+  a member came from), `string role` and `string color`, so clients can
+  show them: a named member wears its profile's colour in the lanes, the
+  timeline, the agents tree and the "@" picker. The thread stores the
+  colour with the member, as it stores the role.
+
+The desktop app has a Team switch (Settings > Agents). Off, it hides the
+named agents and the teammates: the profiles editor, profiles and people
+in the "@" picker, members' roles and colours, the Team page, shared
+rooms and contracts. It deletes nothing, and the engine still answers
+`@charles`.
 
 The phone's `pkg/remote` wire and adapter carry the same `profile`/`role`
 fields, if they mirror the roster.

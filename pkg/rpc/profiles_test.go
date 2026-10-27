@@ -158,18 +158,18 @@ func TestRosterCarriesProfileAndRole(t *testing.T) {
 	f := newFakeRooms()
 	f.agents = []workspace.AgentLine{
 		{ID: "claude", Kind: "claude"},
-		{ID: "charles-2", Kind: "claude", Profile: "charles", Role: "reviewer"},
+		{ID: "charles-2", Kind: "claude", Profile: "charles", Role: "reviewer", Color: "teal"},
 	}
 	fake, c := roomRig(t, f, "")
 	s := fake.AddSession("s1", "t")
-	s.Roster = []wire.AgentLine{{ID: "charles", Name: "charles", Kind: "claude", Profile: "charles", Role: "reviewer"}}
+	s.Roster = []wire.AgentLine{{ID: "charles", Name: "charles", Kind: "claude", Profile: "charles", Role: "reviewer", Color: "teal"}}
 	ctx := ctxT(t)
 
 	r, err := c.Roster(ctx, &deckv1.SessionRef{SessionId: "s1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a := r.GetAgents(); len(a) != 1 || a[0].GetName() != "charles" || a[0].GetProfile() != "charles" || a[0].GetRole() != "reviewer" {
+	if a := r.GetAgents(); len(a) != 1 || a[0].GetName() != "charles" || a[0].GetProfile() != "charles" || a[0].GetRole() != "reviewer" || a[0].GetColor() != "teal" {
 		t.Fatalf("roster %+v", a)
 	}
 	tree, err := c.Agents(ctx, &deckv1.SessionRef{SessionId: "s1"})
@@ -177,7 +177,7 @@ func TestRosterCarriesProfileAndRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	if a := tree.GetAgents(); len(a) != 2 || a[0].GetProfile() != "" || a[1].GetName() != "charles-2" ||
-		a[1].GetProfile() != "charles" || a[1].GetRole() != "reviewer" {
+		a[1].GetProfile() != "charles" || a[1].GetRole() != "reviewer" || a[1].GetColor() != "teal" {
 		t.Fatalf("agents %+v", a)
 	}
 }

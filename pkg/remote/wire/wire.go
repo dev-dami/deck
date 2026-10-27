@@ -312,9 +312,11 @@ type AgentLine struct {
 	// Profile is the named agent the member was started from (absent for
 	// none) and Role that profile's one-line role. Name is then the
 	// member's own name ("charles", "charles-2"); Kind still says which
-	// CLI runs it.
+	// CLI runs it. Color is the profile's CSS colour (absent for the
+	// kind's hue).
 	Profile string `json:"profile,omitempty"`
 	Role    string `json:"role,omitempty"`
+	Color   string `json:"color,omitempty"`
 }
 
 // AgentKind is an installed agent CLI that can join a session. Model is
