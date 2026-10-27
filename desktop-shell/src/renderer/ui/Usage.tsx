@@ -10,6 +10,7 @@ import { EmptyPlate } from "./kit/plate";
 import { PLATES } from "../plates";
 import { segmentItem, segmentTrack } from "./kit/segmented";
 import { AgentGlyph } from "./Welcome";
+import { Analytics, HISTORY_DAYS } from "./Analytics";
 
 // Deck's local record of what the agents used and how you work, after T3
 // Code's usage page. Nothing here leaves the machine.
@@ -27,6 +28,21 @@ const RANGES = [
   { days: 30, label: "30 days" },
   { days: 0, label: "All time" },
 ] as const;
+
+// The page's two views: the record summed over a range, and the analytics
+// (plan windows over time, burn and projection). The pick is kept per viewer.
+const VIEWS = [
+  { id: "overview", label: "Overview" },
+  { id: "analytics", label: "Analytics" },
+] as const;
+const VIEW_KEY = "deck.usage.view";
+function loadView(): "overview" | "analytics" {
+  try {
+    return window.localStorage.getItem(VIEW_KEY) === "analytics" ? "analytics" : "overview";
+  } catch {
+    return "overview";
+  }
+}
 
 export function compact(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
@@ -325,13 +341,24 @@ export function UsagePage({
   onAddProject?: () => void;
 }) {
   const [days, setDays] = useState<number>(30);
+  const [view, setView] = useState<"overview" | "analytics">(loadView);
   const [data, setData] = useState<Usage | string | null>(null);
   const [table, setTable] = useState(false);
   const load = useCallback(async () => {
     if (project === undefined) return;
     setData(null);
-    setData(await project.usage(days));
-  }, [project, days]);
+    // The analytics read their own record of hours and plan windows; the
+    // day's overview that comes with it is small.
+    setData(await (view === "analytics" ? project.usage(1, HISTORY_DAYS) : project.usage(days)));
+  }, [project, days, view]);
+  const pickView = (v: "overview" | "analytics") => {
+    setView(v);
+    try {
+      window.localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      // A viewer convenience only.
+    }
+  };
   useEffect(() => {
     void load();
   }, [load]);
@@ -341,14 +368,23 @@ export function UsagePage({
       <BarChart3 className="size-4 text-muted-foreground" />
       <h1 className="title font-semibold">Usage</h1>
       <span className="hidden text-faint text-xs sm:inline">Kept on this computer</span>
+      <div className={cn(segmentTrack(), "ml-3")} role="radiogroup" aria-label="View">
+        {VIEWS.map((v) => (
+          <button key={v.id} type="button" role="radio" aria-checked={view === v.id} onClick={() => pickView(v.id)} className={segmentItem({ on: view === v.id })}>
+            {v.label}
+          </button>
+        ))}
+      </div>
       <div className="ml-auto flex items-center gap-1.5">
-        <div className={segmentTrack()} role="radiogroup" aria-label="Range">
-          {RANGES.map((r) => (
-            <button key={r.days} type="button" role="radio" aria-checked={days === r.days} onClick={() => setDays(r.days)} className={segmentItem({ on: days === r.days })}>
-              {r.label}
-            </button>
-          ))}
-        </div>
+        {view === "overview" && (
+          <div className={segmentTrack()} role="radiogroup" aria-label="Range">
+            {RANGES.map((r) => (
+              <button key={r.days} type="button" role="radio" aria-checked={days === r.days} onClick={() => setDays(r.days)} className={segmentItem({ on: days === r.days })}>
+                {r.label}
+              </button>
+            ))}
+          </div>
+        )}
         <Button variant="ghost-muted" size="icon-sm" aria-label="Refresh" title="Refresh" onClick={() => void load()}>
           <RefreshCw />
         </Button>
@@ -383,6 +419,8 @@ export function UsagePage({
     body = <p className="py-24 text-center text-destructive-foreground text-sm">{data}</p>;
   } else if (!data.available) {
     body = <EmptyPlate art={PLATES.fuji} title="No usage record" hint="This Deck keeps no usage record." className="py-20" />;
+  } else if (view === "analytics") {
+    body = <Analytics data={data} theme={theme} />;
   } else {
     const o = data.overview;
     const tokens = o.inputTokens + o.outputTokens;

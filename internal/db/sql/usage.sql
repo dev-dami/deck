@@ -308,3 +308,42 @@ SELECT
 FROM limit_snapshot
 WHERE agent_kind = sqlc.arg(agent_kind) AND window_id = sqlc.arg(window_id) AND created_at >= sqlc.arg(since)
 ORDER BY created_at ASC, id ASC;
+
+-- name: LimitTimeline :many
+-- Every window's rows since since, plus each window's last row before it
+-- (the value the window held when the range opens), oldest first.
+SELECT
+    agent_kind,
+    window_id,
+    kind,
+    label,
+    used_pct,
+    resets_at,
+    duration_mins,
+    plan,
+    created_at
+FROM limit_snapshot
+WHERE created_at >= sqlc.arg(since)
+   OR id IN (SELECT MAX(id) FROM limit_snapshot WHERE created_at < sqlc.arg(since) GROUP BY agent_kind, window_id)
+ORDER BY agent_kind ASC, window_id ASC, created_at ASC, id ASC;
+
+-- name: PruneLimitSnapshots :execrows
+-- Drops rows older than before, but never a window's newest row.
+DELETE FROM limit_snapshot
+WHERE created_at < sqlc.arg(before)
+  AND id NOT IN (SELECT MAX(id) FROM limit_snapshot GROUP BY agent_kind, window_id);
+
+-- name: UsageHourly :many
+-- Turns, tokens and cost per hour (Unix seconds at the hour's start), agent
+-- kind and agent, since since.
+SELECT
+    CAST((created_at / 3600) * 3600 AS INTEGER) AS hour,
+    kind,
+    agent_id,
+    COUNT(*) AS turns,
+    CAST(COALESCE(SUM(input_tokens + output_tokens), 0) AS INTEGER) AS tokens,
+    CAST(COALESCE(SUM(cost_usd), 0) AS REAL) AS cost_usd
+FROM usage
+WHERE created_at >= sqlc.arg(since)
+GROUP BY hour, kind, agent_id
+ORDER BY hour ASC, kind ASC, agent_id ASC;
