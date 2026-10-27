@@ -6,6 +6,7 @@ package usage
 import (
 	"context"
 	"database/sql"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -163,6 +164,12 @@ type Service interface {
 	Limits(ctx context.Context) ([]LimitSnapshot, error)
 	// LimitHistory is one window's stored rows since since, oldest first.
 	LimitHistory(ctx context.Context, agentKind, windowID string, since time.Time) ([]LimitSnapshot, error)
+	// LimitTimeline is every window's stored rows since since, each window
+	// led by its last row before since, by kind and window, oldest first.
+	LimitTimeline(ctx context.Context, since time.Time) ([]LimitSnapshot, error)
+	// Hourly is the turns, tokens and cost of each hour since since, by
+	// agent kind and agent, oldest first. Hours with no turns are left out.
+	Hourly(ctx context.Context, since time.Time) ([]Hour, error)
 	// Traces are the latest turns, newest first.
 	Traces(ctx context.Context, limit int) ([]Turn, error)
 	// Trace is one turn's spans, in order.
@@ -179,6 +186,8 @@ type service struct {
 	// transaction: one commit (one WAL sync) instead of one per row.
 	conn *sql.DB
 	txq  *db.Queries
+	// pruned is when RecordLimits last dropped old snapshots (Unix seconds).
+	pruned atomic.Int64
 }
 
 // NewService returns a [Service] over Deck's database.

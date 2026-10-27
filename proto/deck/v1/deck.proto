@@ -556,6 +556,9 @@ message GitMergePRRequest {
 message UsageRequest {
   // days is the range: the last so many days, or 0 for all time.
   int32 days = 1;
+  // history_days asks for the analytics record (hours, limit_history) of
+  // the last so many days; 0 leaves it out.
+  int32 history_days = 2;
 }
 
 message UsageOverview {
@@ -657,6 +660,23 @@ message UsageResponse {
   // heat is every day of the last weeks, from a Monday.
   repeated UsageDay heat = 8;
   UsageHabits habits = 9;
+  // hours is each hour's usage by agent kind and agent over history_days,
+  // oldest first; hours with no turns are left out.
+  repeated UsageHour hours = 10;
+  // limit_history is every plan window's stored rows over history_days, by
+  // kind and window, oldest first, each window led by its last row before
+  // the range. A row is stored only when the window moved.
+  repeated UsageLimit limit_history = 11;
+}
+
+message UsageHour {
+  // at is the start of the hour.
+  int64 at = 1;
+  string kind = 2;
+  string agent_id = 3;
+  int32 turns = 4;
+  int64 tokens = 5;
+  double cost_usd = 6;
 }
 
 message TerminalOpenRequest {

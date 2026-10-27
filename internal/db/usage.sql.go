@@ -1162,3 +1162,137 @@ func (q *Queries) UsageTotals(ctx context.Context, since int64) (UsageTotalsRow,
 	)
 	return i, err
 }
+
+const limitTimeline = `-- name: LimitTimeline :many
+SELECT
+    agent_kind,
+    window_id,
+    kind,
+    label,
+    used_pct,
+    resets_at,
+    duration_mins,
+    plan,
+    created_at
+FROM limit_snapshot
+WHERE created_at >= ?1
+   OR id IN (SELECT MAX(id) FROM limit_snapshot WHERE created_at < ?1 GROUP BY agent_kind, window_id)
+ORDER BY agent_kind ASC, window_id ASC, created_at ASC, id ASC
+`
+
+type LimitTimelineRow struct {
+	AgentKind    string  `json:"agent_kind"`
+	WindowID     string  `json:"window_id"`
+	Kind         string  `json:"kind"`
+	Label        string  `json:"label"`
+	UsedPct      float64 `json:"used_pct"`
+	ResetsAt     int64   `json:"resets_at"`
+	DurationMins int64   `json:"duration_mins"`
+	Plan         string  `json:"plan"`
+	CreatedAt    int64   `json:"created_at"`
+}
+
+// Every window's rows since since, plus each window's last row before it
+// (the value the window held when the range opens), oldest first.
+func (q *Queries) LimitTimeline(ctx context.Context, since int64) ([]LimitTimelineRow, error) {
+	rows, err := q.query(ctx, q.limitTimelineStmt, limitTimeline, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LimitTimelineRow{}
+	for rows.Next() {
+		var i LimitTimelineRow
+		if err := rows.Scan(
+			&i.AgentKind,
+			&i.WindowID,
+			&i.Kind,
+			&i.Label,
+			&i.UsedPct,
+			&i.ResetsAt,
+			&i.DurationMins,
+			&i.Plan,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pruneLimitSnapshots = `-- name: PruneLimitSnapshots :execrows
+DELETE FROM limit_snapshot
+WHERE created_at < ?
+  AND id NOT IN (SELECT MAX(id) FROM limit_snapshot GROUP BY agent_kind, window_id)
+`
+
+// Drops rows older than before, but never a window's newest row.
+func (q *Queries) PruneLimitSnapshots(ctx context.Context, before int64) (int64, error) {
+	result, err := q.exec(ctx, q.pruneLimitSnapshotsStmt, pruneLimitSnapshots, before)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const usageHourly = `-- name: UsageHourly :many
+SELECT
+    CAST((created_at / 3600) * 3600 AS INTEGER) AS hour,
+    kind,
+    agent_id,
+    COUNT(*) AS turns,
+    CAST(COALESCE(SUM(input_tokens + output_tokens), 0) AS INTEGER) AS tokens,
+    CAST(COALESCE(SUM(cost_usd), 0) AS REAL) AS cost_usd
+FROM usage
+WHERE created_at >= ?
+GROUP BY hour, kind, agent_id
+ORDER BY hour ASC, kind ASC, agent_id ASC
+`
+
+type UsageHourlyRow struct {
+	Hour    int64   `json:"hour"`
+	Kind    string  `json:"kind"`
+	AgentID string  `json:"agent_id"`
+	Turns   int64   `json:"turns"`
+	Tokens  int64   `json:"tokens"`
+	CostUsd float64 `json:"cost_usd"`
+}
+
+// Turns, tokens and cost per hour (Unix seconds at the hour's start), agent
+// kind and agent, since since.
+func (q *Queries) UsageHourly(ctx context.Context, since int64) ([]UsageHourlyRow, error) {
+	rows, err := q.query(ctx, q.usageHourlyStmt, usageHourly, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UsageHourlyRow{}
+	for rows.Next() {
+		var i UsageHourlyRow
+		if err := rows.Scan(
+			&i.Hour,
+			&i.Kind,
+			&i.AgentID,
+			&i.Turns,
+			&i.Tokens,
+			&i.CostUsd,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

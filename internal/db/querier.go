@@ -39,6 +39,14 @@ type Querier interface {
 	// The newest row of every window of every agent kind.
 	LatestLimitSnapshots(ctx context.Context) ([]LatestLimitSnapshotsRow, error)
 	LimitHistory(ctx context.Context, arg LimitHistoryParams) ([]LimitHistoryRow, error)
+	// Every window's rows since since, plus each window's last row before it
+	// (the value the window held when the range opens), oldest first.
+	LimitTimeline(ctx context.Context, since int64) ([]LimitTimelineRow, error)
+	// Drops rows older than before, but never a window's newest row.
+	PruneLimitSnapshots(ctx context.Context, before int64) (int64, error)
+	// Turns, tokens and cost per hour (Unix seconds at the hour's start), agent
+	// kind and agent, since since.
+	UsageHourly(ctx context.Context, since int64) ([]UsageHourlyRow, error)
 	// Backs prompt history when no session is open. Needs
 	// idx_messages_role_created_at to seek rather than scan the table.
 	ListAllUserMessages(ctx context.Context) ([]Message, error)

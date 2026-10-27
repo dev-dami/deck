@@ -48,6 +48,10 @@ func (fakeUsage) Limits(context.Context) ([]usage.LimitSnapshot, error)   { retu
 func (fakeUsage) LimitHistory(context.Context, string, string, time.Time) ([]usage.LimitSnapshot, error) {
 	return nil, nil
 }
+func (fakeUsage) LimitTimeline(context.Context, time.Time) ([]usage.LimitSnapshot, error) {
+	return nil, nil
+}
+func (fakeUsage) Hourly(context.Context, time.Time) ([]usage.Hour, error) { return nil, nil }
 func (fakeUsage) Traces(context.Context, int) ([]usage.Turn, error)            { return nil, nil }
 func (fakeUsage) Trace(context.Context, string) ([]usage.Span, error)          { return nil, nil }
 func (fakeUsage) Models(context.Context, time.Time) ([]usage.ModelStat, error) { return nil, nil }

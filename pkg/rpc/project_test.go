@@ -146,6 +146,22 @@ func TestUsage(t *testing.T) {
 	if h := r.GetHabits(); h == nil || len(h.GetHours()) != 7*24 {
 		t.Fatalf("habits %+v", r.GetHabits())
 	}
+	if len(r.GetHours()) != 0 || len(r.GetLimitHistory()) != 0 {
+		t.Fatalf("history without asking: %+v", r.GetHours())
+	}
+	if _, err := svc.RecordLimits(t.Context(), []usage.LimitSnapshot{{AgentKind: "codex", WindowID: "primary", UsedPct: 12, At: at}}); err != nil {
+		t.Fatal(err)
+	}
+	r, err = c.Usage(ctxT(t), &deckv1.UsageRequest{Days: 7, HistoryDays: 14})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hs := r.GetHours(); len(hs) != 2 || hs[0].GetAgentId() != "claude-1" || hs[0].GetTokens() != 1200 || hs[0].GetAt()%3_600_000 != 0 {
+		t.Fatalf("hours %+v", hs)
+	}
+	if lh := r.GetLimitHistory(); len(lh) != 1 || lh[0].GetUsedPct() != 12 {
+		t.Fatalf("limit history %+v", lh)
+	}
 	if _, err := c.Usage(ctxT(t), &deckv1.UsageRequest{Days: -1}); err == nil {
 		t.Fatal("a negative range must be refused")
 	}
