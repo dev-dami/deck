@@ -194,7 +194,9 @@ Names follow the rules of a rename: letters, digits, `-` and `_`, at most 32; no
 
 ### Tasks and subagents
 
-The Tasks pane in the sidebar is the thread's shared task board. `o` there turns orchestration on: ready tasks then run by themselves (at most `max_parallel` at once), each with a new subagent of the kind, model and effort the task names, and agents may start subagents of their own with `agent.spawn`.
+The Tasks pane in the sidebar is the thread's shared task board. `o` there turns orchestration on: ready tasks then run by themselves (at most `max_parallel` at once), each with a new subagent of the kind, model and effort the task names, and subagents may start subagents of their own.
+
+Ask an agent to split the work ("spin up two codex agents for the tests") and it does so itself with `agent.spawn {brief, kind}`, orchestration or not: `kind` is an agent kind or a named agent. Each helper joins the thread as a lane marked with who spawned it, runs in the thread's permission mode, and reports its result back to its spawner. With orchestration off only the agents you brought in spawn, one level deep.
 
 - **Trees.** Subagents can start subagents, `max_depth` levels below the agents you brought in (default 3), with at most `max_children` live per agent (4) and `max_subagents` per thread (12). The agents pane shows each subagent indented under the one that started it.
 - **Waiting.** An agent with subagents running does not finish its task when its turn ends; it waits for their results, which come back to it as messages. A subagent sees only its brief, not the thread so far; `thread.read` shows the rest.

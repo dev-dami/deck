@@ -67,7 +67,14 @@ func (m *Manager) Race(threadID, parentID string, sp RaceSpec) (RaceResult, erro
 	if err := m.checkReview(sp.Review); err != nil {
 		return RaceResult{}, err
 	}
-	// Check all that can refuse before the first entry starts.
+	// Check all that can refuse before the first entry starts. A member's
+	// race, unlike its single spawn, waits for orchestration.
+	t.mu.Lock()
+	off := !t.orchestrate
+	t.mu.Unlock()
+	if parentID != "" && off {
+		return RaceResult{}, errors.New("session: orchestration is off for this thread; the user turns it on")
+	}
 	if _, _, err := m.spawnRoom(t, parentID, len(sp.Kinds)); err != nil {
 		return RaceResult{}, err
 	}

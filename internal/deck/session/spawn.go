@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dev-dami/deck/internal/deck/changes"
+	"github.com/dev-dami/deck/internal/deck/profile"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -24,7 +25,7 @@ const deckSpeaker = "deck"
 
 // SpawnSpec describes a subagent to start.
 type SpawnSpec struct {
-	Kind   string // agent kind; "" is the task's, else the default agent
+	Kind   string // agent kind or a profile's name; "" is the task's, else the default agent
 	Model  string // "" is the task's, else the configured model for the kind
 	Effort string // "" is the task's, else the configured effort for the kind
 	Title  string // the task's title; "" takes it from the brief
@@ -50,10 +51,12 @@ type SpawnResult struct {
 }
 
 // Spawn starts a subagent for a task of thread threadID. parentID is the
-// member asking, or "" when the user or Deck's scheduler asks. Members may
-// spawn only in threads with orchestration on, within the limits of tree.go:
-// MaxDepth levels, MaxChildren live subagents per member and MaxSubagents per
-// thread.
+// member asking, or "" when the user or Deck's scheduler asks. A member the
+// user brought in may always spawn (the user asks it to split the work); a
+// subagent may start subagents of its own only in threads with orchestration
+// on. All within the limits of tree.go: MaxDepth levels, MaxChildren live
+// subagents per member and MaxSubagents per thread. The subagent runs in the
+// thread's permission mode, like every member.
 func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, error) {
 	if m.isClosed() {
 		return SpawnResult{}, errClosed
@@ -70,6 +73,13 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		// The task says which agent it wants when the spawn does not.
 		if tk, ok := m.Task(threadID, sp.TaskID); ok {
 			sp.Kind, sp.Model, sp.Effort = or(sp.Kind, tk.Kind), or(sp.Model, tk.Model), or(sp.Effort, tk.Effort)
+		}
+	}
+	// A profile's name ("charles") starts a member from that profile.
+	var prof profile.Profile
+	if _, ok := m.adapters[sp.Kind]; !ok && sp.Kind != "" {
+		if p, found := m.profileNamed(t, sp.Kind); found {
+			prof, sp.Kind = p, p.Kind
 		}
 	}
 	kind, routed := sp.Kind, ""
@@ -139,7 +149,7 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		return SpawnResult{}, err
 	}
 
-	a, err := m.newMember(t, kind, sp.Model, "")
+	a, err := m.addMember(t, kind, sp.Model, "", prof)
 	if err != nil {
 		return fail(err)
 	}
@@ -228,14 +238,16 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 func (m *Manager) spawnRoom(t *thread, parentID string, n int) (*agentState, int, error) {
 	t.mu.Lock()
 	var parent *agentState
-	switch {
-	case parentID != "" && !t.orchestrate:
-		t.mu.Unlock()
-		return nil, 0, errors.New("session: orchestration is off for this thread; the user turns it on")
-	case parentID != "":
+	if parentID != "" {
 		if parent = t.member(parentID); parent == nil {
 			t.mu.Unlock()
 			return nil, 0, fmt.Errorf("session: no member %q", parentID)
+		}
+		// Without orchestration only the user's own agents spawn: a subagent
+		// starts none, so one request cannot fan out into a storm.
+		if !t.orchestrate && parent.isEphemeral() {
+			t.mu.Unlock()
+			return nil, 0, fmt.Errorf("session: %w: while orchestration is off only the agents the user brought in start subagents; do the work yourself", errChildLimit)
 		}
 	}
 	depth := t.depth(parent) + 1
@@ -273,13 +285,23 @@ func (m *Manager) placeNote(t *thread, a, parent *agentState, depth int, taskID 
 	}
 	b.WriteString(". You see only what is sent to you; op thread.read shows the whole thread.")
 	switch {
-	case !orchestrate:
-	case depth < m.maxDepth():
+	case orchestrate && depth < m.maxDepth():
 		b.WriteString(" You may start subagents of your own (agent.spawn); your task then waits for their results.")
 	default:
 		b.WriteString(" You cannot start subagents: do the work yourself.")
 	}
 	return b.String()
+}
+
+// profileNamed is the profile called name for t's folder, if any.
+func (m *Manager) profileNamed(t *thread, name string) (profile.Profile, bool) {
+	m.mu.Lock()
+	read := m.profiles
+	m.mu.Unlock()
+	if read == nil {
+		return profile.Profile{}, false
+	}
+	return profile.Find(read(t.dir), name)
 }
 
 func or(s, alt string) string {

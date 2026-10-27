@@ -388,7 +388,8 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 		b.WriteString("Shared task board (execute ops): task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list. Report a task you own with task.done.\n")
 		b.WriteString("Pass code as a capsule: sub.patch.capture, then thread.send {capsule}.\n")
 		if !ops {
-			b.WriteString("You can split work: agent.spawn {brief, kind} starts a subagent, task.race {brief, agents} has several try it on their own worktrees; lease.acquire {paths} before you edit files others may touch; memory.add pins a note to code. search shows any op's args.\n")
+			fmt.Fprintf(&b, "You can split work yourself: when the user asks you to spin up agents or split a job, call agent.spawn {brief, kind} once per agent (kind: %s, or a named agent). Each joins this thread as a lane, and its result comes back to you. task.race {brief, agents} has several try it on their own worktrees; lease.acquire {paths} before you edit files others may touch; memory.add pins a note to code. search shows any op's args.\n",
+				clip(strings.Join(m.Kinds(), ", "), 80))
 		}
 		if len(mates) > 0 {
 			fmt.Fprintf(&b, "Teammates' Decks on other machines: %s. team.post {text, to: \"name\" or \"name/agent\"} writes to them (the team chat; team.read shows it), and what they write to you comes at the start of your next turn. task.contract {peer, brief} asks one for coding work, if it made this Deck a contractor there (the user allows it; its changes come back as a capsule); peers.status {peer} asks how one is. Lines like \"[%s] ...\" come from them.\n",

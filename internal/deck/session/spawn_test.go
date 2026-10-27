@@ -16,9 +16,6 @@ func TestSpawnRunsASubagentAndReturnsItsResult(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 
-	if _, err := r.m.Spawn(tid, "claude", SpawnSpec{Kind: "codex", Brief: "audit the logs"}); err == nil || !strings.Contains(err.Error(), "orchestration is off") {
-		t.Fatalf("spawn with orchestration off: %v", err)
-	}
 	if err := r.m.SetOrchestrate(tid, true); err != nil {
 		t.Fatal(err)
 	}
