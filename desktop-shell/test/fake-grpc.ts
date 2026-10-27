@@ -77,7 +77,15 @@ const UNARY: Record<string, { m: MethodName; req: (r: Obj) => Obj; res: (r: unkn
   Approvals: { m: "approvals.list", req: (r) => ({ session_id: opt(r["session_id"]) }), res: (r) => ({ approvals: r }) },
   Answer: {
     m: "approvals.answer",
-    req: (r) => ({ session_id: r["session_id"], id: r["id"], decision: r["decision"] }),
+    req: (r) => ({
+      session_id: r["session_id"],
+      id: r["id"],
+      decision: r["decision"],
+      // pkg/rpc drops the defaults proto fills in.
+      answers: Array.isArray(r["answers"]) && r["answers"].length > 0
+        ? (r["answers"] as Obj[]).map((a) => clean({ id: a["id"], selected: (a["selected"] as unknown[] | undefined)?.length ? a["selected"] : undefined, other: opt(a["other"]) }))
+        : undefined,
+    }),
     res: (r) => r,
   },
   Changes: { m: "changes.get", req: (r) => ({ session_id: r["session_id"] }), res: (r) => ({ files: r }) },
@@ -453,8 +461,18 @@ export class FakeRpcDeck {
       b.level = typeof r["level"] === "string" && r["level"] !== "" ? r["level"] : r["on"] === true ? "auto" : "off";
       return {};
     });
-    // The crew, and the agents agents spawned in the room (test/fake-server.ts).
-    unary("Agents", (r) => ({ ...this.crew, agents: [...this.crew.agents, ...this.deck.spawnedNodes(String(r["session_id"] ?? ""))] }));
+    // The crew, the agents agents spawned in the room, and the subagents
+    // their CLIs started on their own after their member (test/fake-server.ts).
+    unary("Agents", (r) => {
+      const sid = String(r["session_id"] ?? "");
+      const native = this.deck.nativeNodes(sid);
+      const agents: Obj[] = [];
+      for (const a of [...this.crew.agents, ...this.deck.spawnedNodes(sid)]) {
+        agents.push(a);
+        agents.push(...native.agents.filter((n) => n["parent"] === a["name"]));
+      }
+      return { ...this.crew, agents, running: [...this.crew.running, ...native.running] };
+    });
     const tm = this.team;
     unary("Team", () => ({
       available: true,

@@ -1,0 +1,21 @@
+{
+  "answers": [
+    {
+      "id": "How should I deliver the reviews?",
+      "selected": [
+        "Post as comments"
+      ]
+    },
+    {
+      "id": "Which checks should I re-run?",
+      "other": "go vet too",
+      "selected": [
+        "Lint",
+        "Unit"
+      ]
+    }
+  ],
+  "decision": "answer",
+  "id": "toolu_01AskQ",
+  "session_id": "ses_8f2a"
+}

@@ -437,13 +437,16 @@ func (s *Server) Approvals(_ context.Context, r *deckv1.SessionRef) (*deckv1.App
 
 func (s *Server) Answer(_ context.Context, r *deckv1.AnswerRequest) (*deckv1.AnswerResponse, error) {
 	p := wire.ApprovalsAnswerParams{SessionID: r.GetSessionId(), ID: r.GetId(), Decision: r.GetDecision()}
+	for _, a := range r.GetAnswers() {
+		p.Answers = append(p.Answers, wire.QuestionAnswer{ID: a.GetId(), Selected: a.GetSelected(), Other: a.GetOther()})
+	}
 	if p.SessionID == "" || p.ID == "" {
 		return nil, invalid("session_id and id are required")
 	}
 	if err := p.Validate(); err != nil {
 		return nil, fail(err)
 	}
-	resolved, err := s.be.Answer(p.SessionID, p.ID, p.Decision)
+	resolved, err := s.be.Answer(p.SessionID, p.ID, p.Decision, p.Answers)
 	if err != nil {
 		return nil, fail(err)
 	}

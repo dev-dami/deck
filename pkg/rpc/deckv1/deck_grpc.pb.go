@@ -125,7 +125,9 @@ type DeckClient interface {
 	GetMode(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*ModeResponse, error)
 	SetMode(ctx context.Context, in *SetModeRequest, opts ...grpc.CallOption) (*Empty, error)
 	// Approvals lists one session's pending approvals, or every session's
-	// when session_id is empty.
+	// when session_id is empty. An agent's question to the person is one of
+	// kind "question": Answer answers it ("answer" with answers) or declines
+	// it ("deny").
 	Approvals(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*ApprovalsResponse, error)
 	Answer(ctx context.Context, in *AnswerRequest, opts ...grpc.CallOption) (*AnswerResponse, error)
 	Changes(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*ChangesResponse, error)
@@ -1059,7 +1061,9 @@ type DeckServer interface {
 	GetMode(context.Context, *SessionRef) (*ModeResponse, error)
 	SetMode(context.Context, *SetModeRequest) (*Empty, error)
 	// Approvals lists one session's pending approvals, or every session's
-	// when session_id is empty.
+	// when session_id is empty. An agent's question to the person is one of
+	// kind "question": Answer answers it ("answer" with answers) or declines
+	// it ("deny").
 	Approvals(context.Context, *SessionRef) (*ApprovalsResponse, error)
 	Answer(context.Context, *AnswerRequest) (*AnswerResponse, error)
 	Changes(context.Context, *SessionRef) (*ChangesResponse, error)

@@ -17,7 +17,10 @@ import {
   isRecord,
   type Message,
   METHODS,
+  type Part,
   type MethodName,
+  type Question,
+  type QuestionAnswer,
   type QueuedItem,
   type Session,
   type Theme,
@@ -58,6 +61,26 @@ const STREAM_STEPS = 6;
 // "spin up two codex agents ...": the agent asked spawns them (agent.spawn).
 const SPAWN = /\bspin up (a|an|one|two|three|[1-4]) (claude|codex|opencode|antigravity)\b/i;
 const COUNT: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3 };
+// "spin up sub agents to review ...": the agent asked starts four reviewers
+// with its CLI's own Task tool, not agent.spawn (Deck shows them as its
+// subagents): three report back, #296 fails.
+const SUBAGENTS = /\bspin up sub[- ]?agents\b/i;
+const REVIEWS = [293, 294, 295, 296];
+
+// A subagent an agent's CLI started with its own tool, as Deck's agents tree
+// lists it (AgentNode.native).
+export interface NativeSub {
+  session_id: string;
+  parent: string;
+  name: string;
+  description: string;
+  status: "running" | "done" | "failed" | "stopped";
+  actions: number;
+  error: string;
+  tool: string;
+  // Its call at work, while it runs.
+  now: { name: string; summary: string } | null;
+}
 
 export interface FakeOptions {
   allowYolo?: boolean;
@@ -71,7 +94,10 @@ export class FakeDeck {
   readonly serverId = "srv_fake";
   code = "FAKE1-CODE2";
   readonly sent: Array<{ session_id: string; text: string }> = [];
-  readonly answered: Array<{ id: string; decision: string }> = [];
+  // answers: what a question was answered with.
+  readonly answered: Array<{ id: string; decision: string; answers?: QuestionAnswer[] }> = [];
+  // Each question's conversation line, by approval id (requestQuestion).
+  private readonly questionLines = new Map<string, string>();
   readonly interrupted: string[] = [];
   readonly edited: Array<{ message_id: string; text: string }> = [];
   readonly continued: string[] = [];
@@ -86,6 +112,10 @@ export class FakeDeck {
   // The agents an agent spawned, as Deck's agents tree lists them (the rpc
   // fake's Agents adds them under their spawner).
   readonly spawned: Array<{ session_id: string; parent: string; name: string; kind: string }> = [];
+  // The subagents agents' CLIs started on their own (SUBAGENTS), and those
+  // stopped with their agent.
+  readonly native: NativeSub[] = [];
+  private readonly stopped = new Set<string>();
   // The races started, with their entrants as given.
   readonly races: Array<{ session_id: string; entrants: Array<{ agent: string; model?: string; effort?: string }>; brief: string }> = [];
   private readonly http: http.Server;
@@ -285,6 +315,48 @@ export class FakeDeck {
     this.broadcast("approval.requested", a);
     this.touch(sessionId, {});
     return a;
+  }
+
+  // An agent's question (AskUserQuestion): an approval of kind question,
+  // and the line the engine writes for it in the conversation. The answer
+  // rewrites the line, and the agent says what it heard.
+  requestQuestion(sessionId: string, agent: string, questions: Question[]): Approval {
+    const t = this.get(sessionId);
+    const first = questions[0]?.text ?? "";
+    const a: Approval = {
+      id: this.id("toolu"),
+      session_id: sessionId,
+      tool_call_id: "",
+      agent,
+      kind: "question",
+      description: `${agent} asks: ${first}`,
+      questions,
+      created_at: this.now(),
+    };
+    a.tool_call_id = a.id;
+    const more = questions.length > 1 ? ` (+${questions.length - 1} more)` : "";
+    const line = this.message(t, "system", undefined, `**${agent} asks:** ${first}${more}`, true);
+    this.questionLines.set(a.id, line.id);
+    this.approvals.push(a);
+    this.broadcast("approval.requested", a);
+    this.touch(sessionId, {});
+    return a;
+  }
+
+  // The engine's side of an answered or skipped question.
+  private settleQuestion(t: Thread, a: Approval, answers: QuestionAnswer[] | null): void {
+    const said = (answers ?? []).map((x) => [...(x.selected ?? []), ...(x.other !== undefined && x.other !== "" ? [x.other] : [])].join(", "));
+    const record = answers === null ? "You skipped it" : `You answered: ${said.join("; ")}`;
+    const lineId = this.questionLines.get(a.id);
+    const qs = a.questions ?? [];
+    const more = qs.length > 1 ? ` (+${qs.length - 1} more)` : "";
+    t.messages = t.messages.map((m) => {
+      if (m.id !== lineId) return m;
+      const next = { ...m, updated_at: this.now(), parts: [{ type: "text" as const, text: `**${a.agent} asked:** ${qs[0]?.text ?? ""}${more} → ${record}` }] };
+      this.emit("message.updated", next, t.session.id);
+      return next;
+    });
+    this.message(t, "assistant", a.agent, answers === null ? "No answer, so I will post a summary." : `Got it: ${said.join("; ")}.`, true);
   }
 
   // ---- HTTP ---------------------------------------------------------------
@@ -548,8 +620,14 @@ export class FakeDeck {
         const t = this.get(p["session_id"]);
         const a = this.approvals.find((x) => x.id === p["id"] && x.session_id === t.session.id);
         if (a === undefined) throw new Fail("not_found", "no such approval");
+        const answers = Array.isArray(p["answers"]) ? (p["answers"] as QuestionAnswer[]) : undefined;
+        if (a.kind === "question") {
+          if (p["decision"] === "answer" && (answers ?? []).length === 0) throw new Fail("invalid", "answer needs answers");
+          if (p["decision"] !== "answer" && p["decision"] !== "deny") throw new Fail("invalid", "a question takes answer or deny");
+        }
         this.approvals = this.approvals.filter((x) => x !== a);
-        this.answered.push({ id: a.id, decision: String(p["decision"]) });
+        this.answered.push({ id: a.id, decision: String(p["decision"]), ...(answers !== undefined ? { answers } : {}) });
+        if (a.kind === "question") this.settleQuestion(t, a, p["decision"] === "answer" ? (answers ?? []) : null);
         this.broadcast("approval.resolved", { id: a.id, session_id: a.session_id, granted: p["decision"] !== "deny" });
         this.touch(t.session.id, {});
         return { resolved: true };
@@ -558,8 +636,15 @@ export class FakeDeck {
         const t = this.get(p["session_id"]);
         if (!t.roster.some((l) => l.id === p["agent"])) throw new Fail("not_found", "no such agent");
         this.interrupted.push(String(p["agent"]));
+        // Its CLI's own subagents stop with it.
+        for (const s of this.native) {
+          if (s.session_id !== t.session.id || s.parent !== p["agent"] || s.status !== "running") continue;
+          s.status = "stopped";
+          s.now = null;
+          this.stopped.add(s.name);
+        }
         for (const m of t.messages) {
-          if (m.agent !== p["agent"] || m.finished) continue;
+          if ((m.agent !== p["agent"] && !m.agent?.startsWith(`${String(p["agent"])}/`)) || m.finished) continue;
           const stopped: Message = { ...m, finished: true, updated_at: this.now() };
           t.messages = t.messages.map((x) => (x.id === m.id ? stopped : x));
           this.emit("message.updated", stopped, t.session.id);
@@ -637,6 +722,10 @@ export class FakeDeck {
       }
     }
     if (targets.length === 0) targets.push(t.roster[0] ?? this.addMember(t, "claude"));
+    if (SUBAGENTS.test(rest) && targets[0] !== undefined && !targets[0].busy) {
+      this.reviewers(t, targets[0]);
+      return { message_id: user.id };
+    }
     const spawn = SPAWN.exec(rest);
     if (spawn !== null && targets[0] !== undefined && !targets[0].busy) {
       const parent = targets[0];
@@ -689,6 +778,133 @@ export class FakeDeck {
       this.message(t, "assistant", parent.id, `→ $${child.id}\n\n${brief}`, true);
       this.stream(t, child, `@${parent.id} ${brief}`, i);
     }
+  }
+
+  // An agent starts a reviewer per PR with its CLI's own Task tool: its
+  // reply holds the Task calls; each reviewer's work comes as messages of
+  // its own ("<agent>/review-pr-<n>"), its calls' results between them.
+  // #293 and #294 report back, #296 fails, #295 is still at work when its
+  // agent writes, and reports back last.
+  private reviewers(t: Thread, parent: AgentLine): void {
+    const tick = this.opts.tickMs ?? 150;
+    this.setBusy(t, parent.id, true);
+    const lead = this.put(t, parent.id, [
+      { type: "text", text: "Starting a reviewer for each of the four PRs." },
+      ...REVIEWS.map((n) => ({ type: "tool_call", id: `task_${n}`, name: "Task", summary: `Review PR #${n}` })),
+    ]);
+    const subs = REVIEWS.map((n) => {
+      const s: NativeSub = {
+        session_id: t.session.id,
+        parent: parent.id,
+        name: `${parent.id}/review-pr-${n}`,
+        description: `Review PR #${n}`,
+        status: "running",
+        actions: 0,
+        error: "",
+        tool: `task_${n}`,
+        now: null,
+      };
+      this.native.push(s);
+      return s;
+    });
+    this.broadcast("roster.changed", { session_id: t.session.id });
+    const at = (step: number, f: () => void) => {
+      const timer = setTimeout(() => {
+        this.timers.delete(timer);
+        if (this.threads.has(t.session.id)) f();
+      }, tick * step);
+      this.timers.add(timer);
+    };
+    // Each reviewer: the diff, a file, then its verdict (or its failure).
+    subs.forEach((s, i) => {
+      const n = REVIEWS[i]!;
+      const calls: Array<[string, string]> = [
+        ["Bash", `gh pr diff ${n}`],
+        ["Read", `pkg/remote/auth/limit_${n}.go`],
+        ["Grep", "TODO"],
+      ];
+      let msg: Message | null = null;
+      calls.forEach(([name, summary], k) => {
+        at(1 + k * 2 + i * 0.3, () => {
+          const id = `sub_${n}_${k}`;
+          const parts: Part[] = [...(k === 0 ? [{ type: "text", text: "Reading the diff first." }] : []), { type: "tool_call", id, name, summary }];
+          if (msg === null) msg = this.put(t, s.name, parts, false);
+          else msg = this.patch(t, msg.id, [...msg.parts, ...parts]);
+          s.actions++;
+          s.now = { name, summary };
+        });
+        // #295's last call runs until it reports back.
+        if (n === 295 && k === 2) return;
+        at(2 + k * 2 + i * 0.3, () => {
+          const failed = n === 296 && k === 2;
+          this.put(t, undefined, [{ type: "tool_result", tool_call_id: `sub_${n}_${k}`, name, output: failed ? "API Error: 529 overloaded" : "ok", is_error: failed }]);
+          s.now = null;
+        });
+      });
+      const end = n === 295 ? 100 : 7 + i * 0.3;
+      at(end, () => {
+        if (this.stopped.has(s.name)) return;
+        if (n === 296) {
+          s.status = "failed";
+          s.error = "Agent stopped: API Error: 529 overloaded";
+          if (msg !== null) this.patch(t, msg.id, msg.parts, true);
+        } else {
+          s.status = "done";
+          if (msg !== null) msg = this.patch(t, msg.id, [...msg.parts, { type: "text", text: `PR #${n} looks good: small, and its tests cover the change.` }], true);
+        }
+        s.now = null;
+        const failed = n === 296;
+        this.put(t, undefined, [
+          { type: "tool_result", tool_call_id: `task_${n}`, name: "Task", output: failed ? s.error : `PR #${n} looks good.`, is_error: failed },
+        ]);
+        this.broadcast("roster.changed", { session_id: t.session.id });
+      });
+    });
+    at(9, () => {
+      this.patch(t, lead.id, lead.parts, true);
+      this.put(t, parent.id, [{ type: "text", text: "The #296 reviewer stopped. #293 and #294 look good; the #295 review is still running." }]);
+      this.setBusy(t, parent.id, false);
+    });
+  }
+
+  // A message of the given parts.
+  private put(t: Thread, agent: string | undefined, parts: Part[], finished = true): Message {
+    const m = this.message(t, "assistant", agent, "", finished);
+    return this.patch(t, m.id, parts, finished);
+  }
+
+  // A message's parts, and whether it is finished, changed.
+  private patch(t: Thread, id: string, parts: Part[], finished?: boolean): Message {
+    const cur = t.messages.find((m) => m.id === id)!;
+    const next: Message = { ...cur, parts, updated_at: this.now(), finished: finished ?? cur.finished };
+    t.messages = t.messages.map((m) => (m.id === id ? next : m));
+    this.emit("message.updated", next, t.session.id);
+    return next;
+  }
+
+  // The subagents agents' CLIs started in a room, as agents tree nodes, and
+  // their calls at work.
+  nativeNodes(sessionId: string): { agents: Array<Record<string, unknown>>; running: Array<Record<string, unknown>> } {
+    const subs = this.native.filter((s) => s.session_id === sessionId);
+    const status = { running: "working", done: "idle", failed: "error", stopped: "exited" } as const;
+    return {
+      agents: subs.map((s) => ({
+        name: s.name,
+        kind: "claude",
+        model: "opus",
+        status: s.status === "running" && s.now !== null ? "tool" : status[s.status],
+        depth: 1,
+        parent: s.parent,
+        native: true,
+        sub_status: s.status,
+        description: s.description,
+        subagent_type: "code-reviewer",
+        actions: s.actions,
+        error: s.error,
+        tool_call_id: s.tool,
+      })),
+      running: subs.flatMap((s) => (s.now === null ? [] : [{ agent: s.name, kind: "claude", name: s.now.name, summary: s.now.summary, started: Date.now() }])),
+    };
   }
 
   // The spawned agents of a room as agents tree nodes.

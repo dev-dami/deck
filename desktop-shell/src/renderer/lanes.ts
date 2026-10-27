@@ -1,6 +1,6 @@
 import type { AgentLine, Message } from "@web/protocol";
 import { agentRole, agentTint } from "./agents";
-import type { AgentNode } from "./crew";
+import type { AgentNode, SubStatus } from "./crew";
 import type { Lease } from "./roomMeta";
 
 // The lane strip of a room (docs/plan.md §3): one lane per participant.
@@ -34,6 +34,30 @@ export interface Lane {
   parent: string;
   // The branch of the worktree it works on, "" in the shared tree.
   branch: string;
+  // A subagent its member's CLI started with its own tool (Claude Code's
+  // Task): name is "<member>/<name>", parent its member, and only the
+  // member can be stopped or steered. sub says how it stands; null for
+  // every other lane.
+  sub: SubLane | null;
+}
+
+export interface SubLane {
+  status: SubStatus | "";
+  description: string;
+  type: string;
+  actions: number;
+  error: string;
+}
+
+// A CLI-native subagent's short name: "claude/review-pr-296" is
+// "review-pr-296".
+export const subName = (name: string): string => name.slice(name.indexOf("/") + 1);
+
+// The member a CLI-native subagent's lane id or name belongs to, or null
+// for any other: "claude/review-pr-296" belongs to claude.
+export function subParent(name: string): string | null {
+  const i = name.indexOf("/");
+  return i > 0 ? name.slice(0, i) : null;
 }
 
 export const YOU = "you";
@@ -94,7 +118,7 @@ export function buildLanes({
   leases?: readonly Lease[];
 }): Lane[] {
   const lanes: Lane[] = [
-    { id: YOU, kind: "you", name: "you", agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role: "", color: "", depth: 0, parent: "", branch: "" },
+    { id: YOU, kind: "you", name: "you", agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role: "", color: "", depth: 0, parent: "", branch: "", sub: null },
   ];
   // An agent's live leases, else what the agents tree last said.
   const leased = (name: string, n: AgentNode | undefined): string[] => {
@@ -118,20 +142,36 @@ export function buildLanes({
     depth: n?.depth ?? 0,
     parent: n?.parent ?? "",
     branch: n?.branch ?? "",
+    sub:
+      n?.native === true
+        ? { status: n.subStatus, description: n.description, type: n.subagentType, actions: n.actions, error: n.error }
+        : null,
   });
+  // The CLI-native subagents follow their member's lane, in the tree's order.
+  const native = nodes.filter((n) => n.native);
+  const withSubs = (l: Lane) => {
+    lanes.push(l);
+    for (const n of native) {
+      if (used.has(n) || n.parent !== l.name) continue;
+      used.add(n);
+      lanes.push(agent(n.name, undefined, n));
+    }
+  };
   for (const line of roster) {
     const n = nodeOf(line, nodes);
     if (n !== undefined) used.add(n);
-    lanes.push(agent(line.id, line, n));
+    withSubs(agent(line.id, line, n));
   }
-  // Subagents are in the tree only. One that exited is gone from the room.
+  // Subagents are in the tree only. One that exited is gone from the room;
+  // a CLI-native one stays while the tree lists it, with how it ended.
   for (const n of nodes) {
-    if (used.has(n) || n.status === "exited") continue;
-    lanes.push(agent(n.name, undefined, n));
+    if (used.has(n) || (n.status === "exited" && !n.native)) continue;
+    used.add(n);
+    withSubs(agent(n.name, undefined, n));
   }
   for (const [peer, role] of Object.entries(shares).sort(([a], [b]) => a.localeCompare(b))) {
     if (role === "") continue;
-    lanes.push({ id: mateLane(peer), kind: "mate", name: peer, agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role, color: "", depth: 0, parent: "", branch: "" });
+    lanes.push({ id: mateLane(peer), kind: "mate", name: peer, agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role, color: "", depth: 0, parent: "", branch: "", sub: null });
   }
   return lanes;
 }
@@ -150,13 +190,17 @@ export function lineCount(widths: readonly number[], width: number, gap: number)
   return lines;
 }
 
-// A lane that never folds: the person, and an agent that works, waits or failed.
+// A lane that never folds: the person, and an agent that works, waits or
+// failed. A CLI-native subagent stays while it runs; once it ended, its
+// member's lane stands for it.
 export const pinnedLane = (l: Lane): boolean =>
-  l.kind === "you" || (l.kind === "agent" && (l.status === "working" || l.status === "waiting" || l.status === "error"));
+  l.kind === "you" ||
+  (l.kind === "agent" && (l.sub !== null ? l.sub.status === "running" : l.status === "working" || l.status === "waiting" || l.status === "error"));
 
 // The lanes that fit in lines rows of width, and the ones that fold into
-// "+N" (a chip of width more). Lanes fold from the end, so teammates fold
-// before agents; a pinned lane never folds.
+// "+N" (a chip of width more). The CLI-native subagents that ended fold
+// first; then lanes fold from the end, so teammates fold before agents; a
+// pinned lane never folds.
 export function fitLanes(
   lanes: readonly Lane[],
   widthOf: (l: Lane) => number,
@@ -166,7 +210,9 @@ export function fitLanes(
   const all = lanes.map(widthOf);
   if (width <= 0 || lineCount(all, width, gap) <= lines) return { shown: [...lanes], folded: [] };
   const keep = lanes.map(() => true);
-  for (let i = lanes.length - 1; i >= 0; i--) {
+  const back = lanes.map((_, i) => lanes.length - 1 - i);
+  const ended = (i: number) => lanes[i]!.sub !== null;
+  for (const i of [...back.filter(ended), ...back.filter((i) => !ended(i))]) {
     if (pinnedLane(lanes[i]!)) continue;
     keep[i] = false;
     const widths = [...all.filter((_, j) => keep[j]), more];

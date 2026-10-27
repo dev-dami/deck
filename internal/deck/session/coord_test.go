@@ -216,9 +216,9 @@ func TestGateWakesAnIdleLeaseHolder(t *testing.T) {
 	// the answer.
 	res := got(t, gateCall(r, "codex", "a.go", time.Minute))
 	has(t, res.deny, `claude answered: "take it, I'm done with a.go"`)
-	if n := r.c.turnDones("claude"); n != 2 {
-		t.Fatalf("claude's turns = %d", n)
-	}
+	// The answer is claude's reply, which can land just before its turn is
+	// counted as done.
+	waitFor(t, "claude's second turn", func() bool { return r.c.turnDones("claude") == 2 })
 	has(t, r.claude.prompts("claude")[1], "[codex → claude] I'm about to edit a.go, which you hold a lease on")
 }
 

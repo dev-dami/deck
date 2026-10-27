@@ -3,7 +3,7 @@ import { kindMark } from "@web/theme";
 import { type CSSProperties, memo, type ReactNode } from "react";
 import { agentColour } from "../../agents";
 import type { AgentGraphNode, BranchGraphNode, CapsuleGraphNode, FileGraphNode, FoldGraphNode, GraphNode, TaskGraphNode } from "../../graph";
-import type { LaneStatus } from "../../lanes";
+import { type LaneStatus, subName, subParent } from "../../lanes";
 import { cn } from "../../lib/cn";
 import { AgentRole } from "../AgentRole";
 import { shortRef, TREE_STATE_LABEL } from "../../worktrees";
@@ -128,15 +128,22 @@ export const YouCard = memo(function YouCard({ n, picked, dim, onPick, onHover }
 // under a hairline the tool it runs now.
 export const AgentCard = memo(function AgentCard({ n, picked, dim, live, theme, onPick, onHover }: NodeProps<AgentGraphNode>) {
   const tool = n.tools[0];
-  const meta = [n.model, n.effort].filter((x) => x !== "").join(" · ") || n.agentKind;
+  // A CLI-native subagent: its short name in its member's hue, and its task
+  // and how it ended in place of a model.
+  const sub = n.sub;
+  const name = sub !== null ? subName(n.name) : n.name;
+  const meta =
+    sub !== null
+      ? [sub.description || sub.type, sub.status === "running" ? "" : sub.status].filter((x) => x !== "").join(" · ")
+      : [n.model, n.effort].filter((x) => x !== "").join(" · ") || n.agentKind;
   return (
     <Shell
       n={n}
       picked={picked}
       dim={dim}
-      label={`${n.name}, ${STATUS_LABEL[n.status].toLowerCase()}`}
-      className="flex flex-col"
-      style={hueOf(n.name, n.agentKind)}
+      label={sub !== null ? `${name}, ${subParent(n.name) ?? ""}'s subagent, ${sub.status}` : `${n.name}, ${STATUS_LABEL[n.status].toLowerCase()}`}
+      className={cn("flex flex-col", sub !== null && "agent-sub")}
+      style={hueOf(sub !== null ? (subParent(n.name) ?? n.name) : n.name, n.agentKind)}
       onPick={onPick}
       onHover={onHover}
     >
@@ -144,8 +151,14 @@ export const AgentCard = memo(function AgentCard({ n, picked, dim, live, theme, 
         <span className="flex min-w-0 items-center gap-1.5">
           <Glyph kind={n.agentKind} theme={theme} />
           <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-            <span className={cn("min-w-0 truncate font-medium text-sm leading-tight", n.status === "exited" && "text-muted-foreground")}>
-              {n.name}
+            <span
+              className={cn(
+                "min-w-0 truncate font-medium text-sm leading-tight",
+                (n.status === "exited" || (sub !== null && sub.status !== "running")) && "text-muted-foreground",
+                sub !== null && "font-mono text-xs",
+              )}
+            >
+              {name}
             </span>
             <AgentRole role={n.role} className="text-2xs" />
           </span>
@@ -153,7 +166,7 @@ export const AgentCard = memo(function AgentCard({ n, picked, dim, live, theme, 
           <StatusDot status={n.status} live={live} />
         </span>
         <span className="flex min-w-0 items-center gap-1.5 pl-5 text-2xs text-muted-foreground">
-          <span className="min-w-0 flex-1 truncate">{meta}</span>
+          <span className={cn("min-w-0 flex-1 truncate", sub?.status === "failed" && "text-destructive-foreground")}>{meta}</span>
           {n.contextPct !== null && (
             <span className={cn("shrink-0 tabular-nums", n.contextPct >= 85 ? "text-warning-foreground" : "text-faint")}>{n.contextPct}%</span>
           )}

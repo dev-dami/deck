@@ -177,6 +177,19 @@ func serve(logPath string, pi bool) {
 					update(map[string]any{"sessionUpdate": "agent_message_chunk", "messageId": "m1", "content": map[string]any{"type": "text", "text": "about to"}})
 					fmt.Fprintln(os.Stderr, "fake agent crashed")
 					os.Exit(3)
+				case strings.Contains(params, "SELECT"):
+					// pi-acp asks an extension's select prompt as one
+					// allow_once option per choice.
+					send(map[string]any{"jsonrpc": "2.0", "id": 101, "method": "session/request_permission", "params": map[string]any{
+						"sessionId": "ses_1",
+						"toolCall": map[string]any{"toolCallId": "pi-ui-7", "title": "Pick a theme", "kind": "other", "status": "pending",
+							"rawInput": map[string]any{"method": "select", "title": "Pick a theme", "options": []string{"dark", "light", "auto"}}},
+						"options": []map[string]string{{"optionId": "choice-0", "name": "dark", "kind": "allow_once"}, {"optionId": "choice-1", "name": "light", "kind": "allow_once"}, {"optionId": "choice-2", "name": "auto", "kind": "allow_once"}}}})
+					r := <-responses
+					b, _ := json.Marshal(r)
+					note("select " + string(b))
+					send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"stopReason": "end_turn"}})
+					return
 				case strings.Contains(params, "BASH"):
 					update(map[string]any{"sessionUpdate": "tool_call", "toolCallId": "b1", "title": "go test ./...", "kind": "execute", "status": "in_progress",
 						"content": []map[string]any{{"type": "terminal", "terminalId": "b1"}}})

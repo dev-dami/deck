@@ -85,8 +85,17 @@ function mapMessage(p: Obj): unknown {
   return out;
 }
 
+function mapQuestion(q: Obj): unknown {
+  const out: Obj = { id: s(q["id"]), text: s(q["text"]), ...strings(q, ["header"]) };
+  const opts = Array.isArray(q["options"]) ? q["options"].filter(isRecord) : [];
+  if (opts.length > 0) out["options"] = opts.map((o) => ({ label: s(o["label"]), ...strings(o, ["description"]) }));
+  if (q["multi_select"] === true) out["multi_select"] = true;
+  if (q["other"] === true) out["other"] = true;
+  return out;
+}
+
 function mapApproval(p: Obj): unknown {
-  return {
+  const out: Obj = {
     id: s(p["id"]),
     session_id: s(p["session_id"]),
     agent: s(p["agent"]),
@@ -95,6 +104,9 @@ function mapApproval(p: Obj): unknown {
     created_at: isoOf(p["created_at"]),
     ...strings(p, ["tool_call_id", "command", "path", "diff", "raw"]),
   };
+  const qs = Array.isArray(p["questions"]) ? p["questions"].filter(isRecord) : [];
+  if (qs.length > 0) out["questions"] = qs.map(mapQuestion);
+  return out;
 }
 
 function mapQueued(p: Obj): unknown {

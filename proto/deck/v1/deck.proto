@@ -36,7 +36,9 @@ service Deck {
   rpc SetMode(SetModeRequest) returns (Empty);
 
   // Approvals lists one session's pending approvals, or every session's
-  // when session_id is empty.
+  // when session_id is empty. An agent's question to the person is one of
+  // kind "question": Answer answers it ("answer" with answers) or declines
+  // it ("deny").
   rpc Approvals(SessionRef) returns (ApprovalsResponse);
   rpc Answer(AnswerRequest) returns (AnswerResponse);
 
@@ -418,6 +420,33 @@ message Approval {
   string diff = 9;
   string raw = 10;
   int64 created_at = 11;
+  // questions are what a "question" approval asks, in order.
+  repeated Question questions = 12;
+}
+
+// Question is one thing an agent asks the person; its answer is keyed by
+// id. multi_select lets them pick several options, other lets them type an
+// answer of their own.
+message Question {
+  string id = 1;
+  string header = 2;
+  string text = 3;
+  repeated QuestionOption options = 4;
+  bool multi_select = 5;
+  bool other = 6;
+}
+
+message QuestionOption {
+  string label = 1;
+  string description = 2;
+}
+
+// QuestionAnswer answers the question with id: the option labels picked
+// and the text typed in "Other".
+message QuestionAnswer {
+  string id = 1;
+  repeated string selected = 2;
+  string other = 3;
 }
 
 message ApprovalsResponse {
@@ -427,8 +456,10 @@ message ApprovalsResponse {
 message AnswerRequest {
   string session_id = 1;
   string id = 2;
-  // decision is allow, allow_session or deny.
+  // decision is allow, allow_session or deny; for a question, answer
+  // (with answers) or deny (the person declines to answer).
   string decision = 3;
+  repeated QuestionAnswer answers = 4;
 }
 
 message AnswerResponse {
@@ -824,6 +855,23 @@ message AgentNode {
   string profile = 15;
   string role = 16;
   string color = 17;
+  // native marks a subagent its member's CLI started with its own tool
+  // (Claude Code's Task) rather than Deck's agent.spawn: it is not a member,
+  // and only its member can be messaged or stopped. name is its lane id,
+  // "<member>/<name>", and the agent of its messages; parent its member.
+  // sub_status is running, done, failed or stopped (status says the same
+  // as idle, working, error or exited); description its task, subagent_type
+  // the CLI's type for it, actions its tool calls so far, error why it
+  // failed, tool_call_id the member's call that started it, and ended when
+  // it ended (0 while it runs).
+  bool native = 18;
+  string sub_status = 19;
+  string description = 20;
+  string subagent_type = 21;
+  int32 actions = 22;
+  string error = 23;
+  string tool_call_id = 24;
+  int64 ended = 25;
 }
 
 message RunningTool {

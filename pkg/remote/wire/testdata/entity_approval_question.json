@@ -1,0 +1,39 @@
+{
+  "agent": "claude-1",
+  "created_at": "2026-10-12T09:31:05Z",
+  "description": "claude-1 asks: How should I deliver the reviews?",
+  "id": "toolu_01AskQ",
+  "kind": "question",
+  "questions": [
+    {
+      "header": "Delivery",
+      "id": "How should I deliver the reviews?",
+      "options": [
+        {
+          "description": "One review comment per finding",
+          "label": "Post as comments"
+        },
+        {
+          "label": "Summary only"
+        }
+      ],
+      "other": true,
+      "text": "How should I deliver the reviews?"
+    },
+    {
+      "id": "Which checks should I re-run?",
+      "multi_select": true,
+      "options": [
+        {
+          "label": "Lint"
+        },
+        {
+          "label": "Unit"
+        }
+      ],
+      "text": "Which checks should I re-run?"
+    }
+  ],
+  "session_id": "ses_8f2a",
+  "tool_call_id": "toolu_01AskQ"
+}

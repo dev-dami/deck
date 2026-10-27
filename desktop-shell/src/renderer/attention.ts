@@ -99,6 +99,9 @@ function needsYou(r: RoomInput, updated: number): RoomStatus | null {
     return { state: "needs-you", label: approvalLabel(first), at, need: "approval" };
   }
   for (const a of r.agents) {
+    // A CLI-native subagent that failed is its member's to handle (it
+    // reported back to it), not the person's.
+    if (a.native) continue;
     const at = a.since > 0 ? a.since : updated;
     if (a.status === "approval") return { state: "needs-you", label: `Answer ${a.name}`, at, need: "approval" };
     // An error stands until the person writes again or the agent moves on.

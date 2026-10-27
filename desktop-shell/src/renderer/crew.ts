@@ -80,6 +80,51 @@ export interface AgentNode {
   profile: string;
   role: string;
   color: string;
+  // A subagent its member's CLI started with its own tool (Claude Code's
+  // Task), not with agent.spawn: name is "<member>/<name>", the agent of its
+  // messages, and only its member can be steered or stopped. subStatus is
+  // running, done, failed or stopped; description its task, subagentType
+  // the CLI's kind of it, actions its calls so far, error why it failed,
+  // toolCallId its member's call that started it, ended when it ended (ms).
+  native: boolean;
+  subStatus: SubStatus | "";
+  description: string;
+  subagentType: string;
+  actions: number;
+  error: string;
+  toolCallId: string;
+  ended: number;
+}
+
+export type SubStatus = "running" | "done" | "failed" | "stopped";
+
+// The native fields of a node that is not a CLI-native subagent.
+export const notNative = {
+  native: false,
+  subStatus: "",
+  description: "",
+  subagentType: "",
+  actions: 0,
+  error: "",
+  toolCallId: "",
+  ended: 0,
+} as const satisfies Partial<AgentNode>;
+
+const SUB_STATUS: readonly string[] = ["running", "done", "failed", "stopped"];
+const subStatusOf = (v: string): SubStatus | "" => (SUB_STATUS.includes(v) ? (v as SubStatus) : "");
+
+const subsMemo = new WeakMap<readonly AgentNode[], ReadonlyMap<string, AgentNode>>();
+const NO_SUBS: ReadonlyMap<string, AgentNode> = new Map();
+
+// The CLI-native subagents of a tree by name, the same map for the same tree.
+export function subsOf(agents: readonly AgentNode[] | null | undefined): ReadonlyMap<string, AgentNode> {
+  if (agents === null || agents === undefined) return NO_SUBS;
+  let m = subsMemo.get(agents);
+  if (m === undefined) {
+    m = new Map(agents.filter((a) => a.native).map((a) => [a.name, a]));
+    subsMemo.set(agents, m);
+  }
+  return m;
 }
 
 export interface RunningTool {
@@ -119,6 +164,14 @@ export function toCrew(v: unknown): Crew {
       profile: str(a, "profile"),
       role: str(a, "role"),
       color: str(a, "color"),
+      native: bool(a, "native"),
+      subStatus: subStatusOf(str(a, "sub_status")),
+      description: str(a, "description"),
+      subagentType: str(a, "subagent_type"),
+      actions: num(a, "actions"),
+      error: str(a, "error"),
+      toolCallId: str(a, "tool_call_id"),
+      ended: num(a, "ended"),
     })),
     running: list(o, "running", (t) => ({
       agent: str(t, "agent"),

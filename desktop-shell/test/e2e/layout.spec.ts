@@ -154,3 +154,18 @@ test("the sidebar's edge resizes it, keeps the width, and drags it across to the
   expect(room).toBeLessThan(nav as number);
   expect(await width()).toBe(before - 16);
 });
+
+test("with the sidebar on the right, the notifications open inside the window", async ({ page }) => {
+  await pair(page);
+  await sidebar(page).getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Appearance" }).click();
+  await page.getByRole("radiogroup", { name: "Sidebar", exact: true }).getByRole("radio", { name: "Sidebar on the right" }).click();
+  await sidebar(page).getByRole("button", { name: "Back to threads" }).click();
+  await page.getByRole("button", { name: /^Notifications/ }).click();
+  const panel = page.getByRole("dialog", { name: "Notifications" });
+  await expect(panel).toBeVisible();
+  const box = (await panel.boundingBox())!;
+  const width = page.viewportSize()!.width;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(width);
+});

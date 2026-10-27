@@ -39,6 +39,10 @@ const (
 	ChangeRoster DeckChangeKind = "roster"
 	ChangeNotice DeckChangeKind = "notice"
 	ChangeLease  DeckChangeKind = "lease"
+	// ChangeQuestion: an agent asks the person (Question); ChangeQuestionGone:
+	// it was answered (Answered), declined or withdrawn.
+	ChangeQuestion     DeckChangeKind = "question"
+	ChangeQuestionGone DeckChangeKind = "question_gone"
 )
 
 // DeckChange is a state change a second UI cannot read from the message
@@ -55,6 +59,10 @@ type DeckChange struct {
 	Queue []decks.QueuedItem
 	// Lease is the lease taken or ended (ChangeLease).
 	Lease decks.LeasesChangedMsg
+	// Question is the question asked or settled (ChangeQuestion,
+	// ChangeQuestionGone), and Answered says it was answered.
+	Question *PendingQuestion
+	Answered bool
 }
 
 // Theme is the TUI's resolved palette and each agent kind's tone, for a

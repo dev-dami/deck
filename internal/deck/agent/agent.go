@@ -8,6 +8,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -41,7 +42,80 @@ const (
 	// were replaced by a summary, so the context use drops. Text is how it
 	// was started when the CLI says ("auto", "manual"). It is not a turn.
 	KindCompacted Kind = "compacted"
+	// KindSubagent says how a subagent the agent started with its CLI's
+	// own tool (Claude Code's Task, OpenCode's task, Codex's spawn_agent)
+	// stands: Subagent says which, and its status. It comes when the
+	// subagent starts and again when it ends. Such a subagent is not a
+	// member: Deck shows its work (events with Sub set) but cannot reach it.
+	KindSubagent Kind = "subagent"
 )
+
+// SubStatus is where a CLI-native subagent stands.
+type SubStatus string
+
+const (
+	SubRunning SubStatus = "running"
+	SubDone    SubStatus = "done"
+	SubFailed  SubStatus = "failed"
+	// SubStopped: its agent's turn ended (interrupted, or the CLI exited)
+	// before it reported back.
+	SubStopped SubStatus = "stopped"
+)
+
+// Subagent is a subagent the agent started with its CLI's own tool.
+type Subagent struct {
+	// ID is the id of the tool call that started it; the events of its
+	// work carry it as Sub.
+	ID          string
+	Type        string `json:",omitempty"` // the CLI's subagent type ("general-purpose", "Explore")
+	Description string `json:",omitempty"` // the short task the agent gave it
+	Status      SubStatus
+	// Result is the start of what it reported back, Error why it failed.
+	Result string `json:",omitempty"`
+	Error  string `json:",omitempty"`
+	// Name is its lane under its agent ("review-pr-296"); Deck sets it.
+	Name string `json:",omitempty"`
+}
+
+// SubagentTools are the tool names CLIs start a subagent with.
+var SubagentTools = map[string]bool{"Task": true, "Agent": true}
+
+// SubagentOf is the subagent a call of a subagent tool starts, from its
+// input; nil for any other tool.
+func SubagentOf(t *Tool) *Subagent {
+	if t == nil || !SubagentTools[t.Name] {
+		return nil
+	}
+	var in struct {
+		Description  string `json:"description"`
+		SubagentType string `json:"subagent_type"`
+		SubagentAlt  string `json:"subagentType"`
+	}
+	_ = json.Unmarshal(t.Input, &in)
+	s := &Subagent{ID: t.ID, Type: in.SubagentType, Description: in.Description, Status: SubRunning}
+	if s.Type == "" {
+		s.Type = in.SubagentAlt
+	}
+	if s.Description == "" {
+		s.Description = t.Title
+	}
+	return s
+}
+
+// SubagentEnd is s as the result of the call that started it leaves it:
+// done with the start of its output as Result, or failed with it as Error.
+func SubagentEnd(s Subagent, t *Tool) Subagent {
+	out := strings.TrimSpace(t.Output)
+	if r := []rune(out); len(r) > 600 {
+		out = string(r[:600]) + "…"
+	}
+	if t.Status == ToolError {
+		s.Status, s.Error = SubFailed, out
+	} else {
+		s.Status, s.Result = SubDone, out
+	}
+	return s
+}
 
 // ToolStatus is the lifecycle state of a tool call.
 type ToolStatus string
@@ -214,6 +288,12 @@ type Event struct {
 	LimitHit *LimitHit `json:",omitempty"`
 	// SessionID is the CLI's own session/thread id (KindSessionStarted).
 	SessionID string `json:",omitempty"`
+	// Sub is set on an event of a CLI-native subagent's work (its text,
+	// thinking, tool calls and results): the ID of that Subagent. Such an
+	// event is not the agent's own: it starts no turn and is no reply.
+	Sub string `json:",omitempty"`
+	// Subagent is set on KindSubagent, and by Deck on the events with Sub.
+	Subagent *Subagent `json:",omitempty"`
 	// Raw is the original protocol line, kept so nothing is lost. Deck keeps
 	// it past the adapter only where KeepsRaw says so.
 	Raw json.RawMessage `json:",omitempty"`
@@ -228,7 +308,7 @@ func KeepsRaw(k Kind) bool {
 	switch k {
 	case KindSessionStarted, KindAssistantText, KindReasoning, KindUserText,
 		KindToolCall, KindToolResult, KindFileChange, KindUsage, KindTurnDone,
-		KindExited, KindLimits, KindRestarting, KindRestarted, KindCompacted:
+		KindExited, KindLimits, KindRestarting, KindRestarted, KindCompacted, KindSubagent:
 		return false
 	}
 	return true
@@ -244,6 +324,10 @@ const (
 	// ApproveShare is sending work out of this Deck (a code contract to a
 	// teammate). The person answers it in every mode: yolo does not.
 	ApproveShare ApprovalKind = "share"
+	// ApproveQuestion is the agent asking the person something (Questions):
+	// not a permission, so no mode answers it. Allow with Answers is the
+	// person's reply; a deny says they declined to answer.
+	ApproveQuestion ApprovalKind = "question"
 )
 
 // Decision is the user's answer to an approval request.
@@ -251,7 +335,58 @@ type Decision struct {
 	Allow  bool
 	Always bool   // allow this tool for the rest of the session
 	Reason string // optional, sent back to the agent on deny
+	// Answers are the person's replies to a question request, by Question.ID.
+	// A question they left blank has no entry.
+	Answers map[string]Answer
 }
+
+// Question is one thing an agent asks the person (ApproveQuestion).
+type Question struct {
+	ID      string // the agent's key for the answer (Claude: the question text)
+	Header  string // a short label ("Approach"); may be ""
+	Text    string
+	Options []QuestionOption
+	// Multi lets the person pick several options; Other lets them type an
+	// answer of their own instead of, or with, the options.
+	Multi bool
+	Other bool
+}
+
+// QuestionOption is one choice of a Question.
+type QuestionOption struct {
+	Label       string
+	Description string
+}
+
+// Answer is the person's reply to one Question: the labels they picked and
+// what they typed in "Other".
+type Answer struct {
+	Selected []string
+	Other    string
+}
+
+// Text is the answer as one line: the labels, then the typed text, joined
+// with ", " (how Claude reads a multi-select answer).
+func (a Answer) Text() string {
+	parts := append([]string(nil), a.Selected...)
+	if s := strings.TrimSpace(a.Other); s != "" {
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// Values is the answer as a list: the labels, then the typed text.
+func (a Answer) Values() []string {
+	out := append([]string(nil), a.Selected...)
+	if s := strings.TrimSpace(a.Other); s != "" {
+		out = append(out, s)
+	}
+	return out
+}
+
+// QuestionDeclined is what an agent is told when the person dismisses its
+// question, or the question can no longer be answered.
+const QuestionDeclined = "The user declined to answer these questions. Do not ask them again right away: carry on with your best judgment, or ask in plain text if you are blocked."
 
 // ApprovalRequest is a permission prompt raised by an agent.
 type ApprovalRequest struct {
@@ -262,6 +397,8 @@ type ApprovalRequest struct {
 	Summary  string // the command line, or the file path
 	Cwd      string
 	Diff     *FileDiff
+	// Questions are what an ApproveQuestion request asks, in order.
+	Questions []Question
 	// Respond must be called exactly once.
 	Respond func(Decision)
 }

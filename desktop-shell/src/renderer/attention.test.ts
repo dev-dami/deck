@@ -11,7 +11,7 @@ import {
   type RoomInput,
   roomStatus,
 } from "./attention";
-import type { AgentNode, BoardTask, TeamContract } from "./crew";
+import { type AgentNode, type BoardTask, notNative, type TeamContract } from "./crew";
 
 const T0 = Date.parse("2026-10-25T10:00:00Z");
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -76,6 +76,7 @@ const agent = (name: string, status: string, since = 0): AgentNode => ({
   profile: "",
   role: "",
   color: "",
+  ...notNative,
 });
 
 const room = (extra: Partial<RoomInput> = {}): RoomInput => ({
@@ -119,6 +120,9 @@ describe("roomStatus", () => {
     expect(blocked).toEqual({ state: "needs-you", label: "Task blocked: Task t1", at: T0 + 9, need: "error" });
     expect(roomStatus(room({ tasks: [task("t2", "failed", T0 + 9)] })).label).toBe("Task failed: Task t2");
     expect(roomStatus(room({ agents: [agent("codex-2", "error", T0 + 9)] })).label).toBe("codex-2 stopped with an error");
+    // A claude's own subagent that failed reported back to claude: not the person's.
+    const sub = { ...agent("claude-1/review-pr-296", "error", T0 + 9), native: true, subStatus: "failed" as const };
+    expect(roomStatus(room({ agents: [sub] })).need).not.toBe("error");
   });
 
   test("needs-you clears when the person acts, never because the room was opened", () => {

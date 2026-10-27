@@ -1,10 +1,10 @@
 import type { Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
-import { CornerDownRight, GitBranch, Lock, Square } from "./icons";
+import { CircleAlert, CornerDownRight, GitBranch, Lock, Square } from "./icons";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { agentColour } from "../agents";
 import { tintOf } from "../teamGate";
-import { agentLane, fitLanes, type Lane } from "../lanes";
+import { agentLane, fitLanes, type Lane, subName } from "../lanes";
 import { cn } from "../lib/cn";
 import { AgentRole } from "./AgentRole";
 import { AgentPicker, type PickerSource } from "./AgentPicker";
@@ -51,9 +51,123 @@ const MORE = 36;
 function FoldedLane({ lane, on, onFilter }: { lane: Lane; on: boolean; onFilter: () => void }) {
   return (
     <MenuItem className={cn(on && "on bg-selected")} onClick={onFilter}>
-      <span className="min-w-0 flex-1 truncate font-mono text-2xs">{lane.name}</span>
-      <span className="shrink-0 text-2xs text-faint">{lane.kind === "mate" ? lane.role : lane.kind === "agent" ? WORD[lane.status] : ""}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-2xs">{lane.sub !== null ? `↳ ${subName(lane.name)}` : lane.name}</span>
+      <span className="shrink-0 text-2xs text-faint">
+        {lane.kind === "mate" ? lane.role : lane.sub !== null ? (SUB_WORD[lane.sub.status] ?? "") : lane.kind === "agent" ? WORD[lane.status] : ""}
+      </span>
     </MenuItem>
+  );
+}
+
+// How a CLI-native subagent stands, in a word.
+const SUB_WORD: Record<string, string> = { running: "running", done: "done", failed: "failed", stopped: "stopped" };
+
+// A subagent its member's CLI started with its own tool (Claude Code's
+// Task): a chip under its member's, its short name and how it stands. A
+// click shows its work alone; its popover says what it was asked and that
+// only its member can be stopped.
+function SubChip({
+  lane,
+  theme,
+  on,
+  onFilter,
+  onParent,
+  onStopParent,
+}: {
+  lane: Lane;
+  theme: Theme | null;
+  on: boolean;
+  onFilter: () => void;
+  onParent: () => void;
+  onStopParent: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [align, setAlign] = useState<"start" | "end">("start");
+  const close = () => setOpen(false);
+  const sub = lane.sub!;
+  const colour = agentColour(lane.parent || lane.name, lane.agentKind);
+  const running = sub.status === "running";
+  const word = SUB_WORD[sub.status] ?? "";
+  const short = subName(lane.name);
+  return (
+    <Popover
+      open={open}
+      onClose={close}
+      label={short}
+      align={align}
+      className={POPOVER}
+      trigger={
+        <button
+          type="button"
+          className={cn(chip, "lane-sub")}
+          data-lane={lane.id}
+          data-status={lane.status}
+          data-sub={sub.status}
+          aria-pressed={on}
+          aria-expanded={open}
+          aria-label={`${short} ${word}, @${lane.parent}'s own subagent`}
+          title={`${sub.description || short}: @${lane.parent}'s own subagent, ${word}`}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setAlign(r.left > window.innerWidth / 2 ? "end" : "start");
+            onFilter();
+            setOpen((o) => !o);
+          }}
+        >
+          <CornerDownRight aria-hidden className="-ml-0.5 size-3 shrink-0 text-faint" />
+          <span
+            aria-hidden
+            className={cn("grid size-3.5 shrink-0 place-items-center font-mono text-[11px] leading-none", !running && "opacity-40")}
+            style={{ color: colour }}
+          >
+            {kindMark(theme, lane.agentKind) || "●"}
+          </span>
+          <span className={cn("lane-name truncate font-mono text-2xs", running ? "text-foreground" : "text-muted-foreground")}>{short}</span>
+          {running ? (
+            <span aria-hidden className="size-1.5 shrink-0 animate-deck-pulse rounded-full bg-signal" />
+          ) : sub.status === "failed" ? (
+            <CircleAlert aria-hidden className="size-3 shrink-0 text-destructive-foreground" />
+          ) : null}
+          <span className={cn("lane-status shrink-0 text-3xs", sub.status === "failed" ? "text-destructive-foreground" : "text-faint")}>{word}</span>
+        </button>
+      }
+    >
+      <div className="flex items-center gap-1">
+        <MenuLabel className="min-w-0 flex-1 truncate">
+          {short}
+          {sub.type !== "" ? ` · ${sub.type}` : ""} · {word}
+        </MenuLabel>
+        <MenuItem
+          className="lane-spawner h-6 w-auto max-w-48 shrink-0 text-2xs text-muted-foreground"
+          title={`Show @${lane.parent}'s lane`}
+          onClick={() => {
+            close();
+            onParent();
+          }}
+        >
+          <CornerDownRight className="rotate-180" />
+          <span className="truncate">Started by @{lane.parent}</span>
+        </MenuItem>
+      </div>
+      <div className="flex flex-col gap-1 px-2 pb-1.5 text-xs">
+        {sub.description !== "" && <p className="sub-task text-foreground">{sub.description}</p>}
+        <p className="text-2xs text-muted-foreground tabular-nums">
+          {sub.actions} action{sub.actions === 1 ? "" : "s"} · @{lane.parent}'s own subagent: it answers to @{lane.parent} alone, so steer or stop @{lane.parent}.
+        </p>
+        {sub.error !== "" && <p className="sub-error text-2xs text-destructive-foreground">{sub.error}</p>}
+      </div>
+      <MenuSeparator />
+      <MenuItem
+        className="min-w-0 text-destructive-foreground"
+        disabled={!running}
+        onClick={() => {
+          close();
+          onStopParent();
+        }}
+      >
+        <Square /> <span className="truncate">Stop @{lane.parent} and its subagents</span>
+      </MenuItem>
+    </Popover>
   );
 }
 
@@ -294,7 +408,17 @@ export function Lanes({
       data-yolo-region=""
     >
       {shown.map((l) =>
-        l.kind === "agent" ? (
+        l.kind === "agent" && l.sub !== null ? (
+          <SubChip
+            key={l.id}
+            lane={l}
+            theme={theme}
+            on={filter === l.id}
+            onFilter={() => toggle(l.id)}
+            onParent={() => onFilter(agentLane(l.parent))}
+            onStopParent={() => onStop(l.parent)}
+          />
+        ) : l.kind === "agent" ? (
           <AgentChip
             key={l.id}
             lane={l}

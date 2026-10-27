@@ -109,6 +109,26 @@ type Member struct {
 	// Wait is set while the member's plan ran out and Deck holds its work
 	// until the limit resets (session/waits.go).
 	Wait *Wait `json:"wait,omitempty"`
+	// Subs are the subagents the member's CLI started with its own tool
+	// (Claude Code's Task), newest last (session/subagents.go).
+	Subs []SubAgent `json:"subs,omitempty"`
+}
+
+// SubAgent is a subagent a member's CLI started with its own tool, not with
+// Deck's agent.spawn: Deck shows its work, but cannot message or stop it
+// apart from its member.
+type SubAgent struct {
+	ID          string `json:"id"`   // the id of the tool call that started it
+	Name        string `json:"name"` // its lane under the member: "review-pr-296"
+	Type        string `json:"type,omitempty"`
+	Description string `json:"description,omitempty"`
+	// Status is running, done, failed or stopped (agent.SubStatus).
+	Status  string    `json:"status"`
+	Started time.Time `json:"started,omitzero"`
+	Ended   time.Time `json:"ended,omitzero"`
+	// Actions counts its tool calls; Error is why it failed.
+	Actions int    `json:"actions,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // Wait is a member's plan running out: since when, until when (zero while

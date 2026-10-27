@@ -239,6 +239,12 @@ type threadItem struct {
 	Query     string          `json:"query,omitempty"`
 	Result    json.RawMessage `json:"result,omitempty"`
 	Error     json.RawMessage `json:"error,omitempty"`
+
+	// collabAgentToolCall (collab.go); Tool is the collab tool's name.
+	Prompt            *string                `json:"prompt,omitempty"`
+	Model             *string                `json:"model,omitempty"`
+	ReceiverThreadIDs []string               `json:"receiverThreadIds,omitempty"`
+	AgentsStates      map[string]collabState `json:"agentsStates,omitempty"`
 }
 
 // commandAction is the parsed form of a command (CommandAction); Command is the
@@ -255,8 +261,9 @@ type itemNotification struct {
 }
 
 type deltaNotification struct {
-	Delta  string `json:"delta"`
-	ItemID string `json:"itemId"`
+	Delta    string `json:"delta"`
+	ItemID   string `json:"itemId"`
+	ThreadID string `json:"threadId"`
 }
 
 type patchUpdatedNotification struct {
@@ -357,6 +364,33 @@ type permissionsApprovalParams struct {
 	Cwd         string          `json:"cwd,omitempty"`
 	Reason      string          `json:"reason,omitempty"`
 	Permissions json.RawMessage `json:"permissions"`
+}
+
+// userInputParams is ToolRequestUserInputParams: the request_user_input
+// tool asking the user 1-3 short questions, each with options, "Other"
+// (isOther) or free text alone (no options).
+type userInputParams struct {
+	ItemID    string `json:"itemId"`
+	Questions []struct {
+		ID       string `json:"id"`
+		Header   string `json:"header"`
+		Question string `json:"question"`
+		IsOther  bool   `json:"isOther"`
+		Options  []struct {
+			Label       string `json:"label"`
+			Description string `json:"description"`
+		} `json:"options"`
+	} `json:"questions"`
+}
+
+// userInputResponse is ToolRequestUserInputResponse: the answers by
+// question id. A question left out was not answered.
+type userInputResponse struct {
+	Answers map[string]userInputAnswer `json:"answers"`
+}
+
+type userInputAnswer struct {
+	Answers []string `json:"answers"`
 }
 
 type decisionResponse struct {

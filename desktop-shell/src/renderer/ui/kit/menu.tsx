@@ -1,6 +1,9 @@
-import { type ComponentProps, type ReactNode, useEffect, useRef } from "react";
+import { type ComponentProps, type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 import { cn } from "../../lib/cn";
 import { moveIndex, restoreFocus } from "./focus";
+
+// How near a window edge a popover may come, in pixels.
+const EDGE = 8;
 
 const ITEMS = '[role="menuitem"]:not(:disabled), [role="menuitemradio"]:not(:disabled)';
 
@@ -8,7 +11,9 @@ const ITEMS = '[role="menuitem"]:not(:disabled), [role="menuitemradio"]:not(:dis
 // Escape. side says whether it opens above (the composer's menus) or below.
 // A menu takes the focus on its first item (its first checked one, when it
 // has radio items), moves it with the arrows, Home and End, and gives it
-// back to the trigger when it closes.
+// back to the trigger when it closes. It stays inside the window: one
+// that would run past an edge (a bell in a sidebar on the right) slides
+// back in.
 export function Popover({
   open,
   onClose,
@@ -54,6 +59,20 @@ export function Popover({
     if (role === "menu") (popup?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') ?? popup?.querySelector<HTMLElement>(ITEMS))?.focus();
     return () => restoreFocus(back, popup);
   }, [open, role]);
+  useLayoutEffect(() => {
+    const popup = pop.current;
+    if (!open || popup === null) return;
+    const fit = () => {
+      popup.style.transform = "";
+      const r = popup.getBoundingClientRect();
+      const room = document.documentElement.clientWidth - EDGE;
+      const dx = r.right > room ? room - r.right : r.left < EDGE ? EDGE - r.left : 0;
+      if (dx !== 0) popup.style.transform = `translateX(${Math.max(dx, EDGE - r.left)}px)`;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [open]);
   return (
     <div ref={ref} className="relative inline-flex">
       {trigger}

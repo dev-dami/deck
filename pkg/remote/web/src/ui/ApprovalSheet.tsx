@@ -1,8 +1,9 @@
 import { useEffect, useState } from "preact/hooks";
-import type { Approval, Decision } from "../protocol";
+import type { Approval, Decision, QuestionAnswer } from "../protocol";
 import { type AppState, sessionTitle } from "../state";
 import { DiffView } from "./DiffView";
 import { useController } from "./hooks";
+import { QuestionForm } from "./QuestionForm";
 import { Sheet } from "./Sheet";
 
 function Detail({ a }: { a: Approval }) {
@@ -58,11 +59,35 @@ export function ApprovalSheet({ state }: { state: AppState }) {
   const session = state.sessions.find((s) => s.id === current.session_id);
   const agent = state.roster[current.session_id]?.find((a) => a.id === current.agent);
 
-  const answer = async (decision: Decision) => {
+  const answer = async (decision: Decision, answers?: QuestionAnswer[]) => {
     setBusy(true);
-    await controller.answerApproval(current.session_id, current.id, decision);
+    await controller.answerApproval(current.session_id, current.id, decision, answers);
     setBusy(false);
   };
+
+  if (current.kind === "question") {
+    return (
+      <Sheet
+        title={
+          total > 1
+            ? `${agent?.name ?? current.agent} asks (1 of ${total})`
+            : `${agent?.name ?? current.agent} asks`
+        }
+        persistent
+      >
+        <p class="muted small-text">in {sessionTitle(session)}</p>
+        <QuestionForm
+          a={current}
+          disabled={busy || state.link !== "online"}
+          onAnswer={(answers) => void answer("answer", answers)}
+          onSkip={() => void answer("deny")}
+        />
+        <button type="button" class="btn ghost block" onClick={() => setSnoozed(current.id)}>
+          Decide later
+        </button>
+      </Sheet>
+    );
+  }
 
   return (
     <Sheet title={total > 1 ? `Approval needed (1 of ${total})` : "Approval needed"} persistent>

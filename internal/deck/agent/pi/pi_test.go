@@ -166,3 +166,40 @@ func TestNotContractSafe(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// TestSelectIsAQuestion covers an extension's select prompt, which pi-acp
+// asks as a permission with one option per choice: it is a question whose
+// answer picks that option, and a dismissed one is cancelled.
+func TestSelectIsAQuestion(t *testing.T) {
+	for _, c := range []struct {
+		d    func(agent.ApprovalRequest) agent.Decision
+		want string
+	}{
+		{func(q agent.ApprovalRequest) agent.Decision {
+			return agent.Decision{Allow: true, Answers: map[string]agent.Answer{q.Questions[0].ID: {Selected: []string{"light"}}}}
+		}, `select {"outcome":{"optionId":"choice-1","outcome":"selected"}}`},
+		{func(agent.ApprovalRequest) agent.Decision { return agent.Decision{Allow: false} }, `select {"outcome":{"outcome":"cancelled"}}`},
+	} {
+		f := newFake(t)
+		r := f.start(t, agent.Spec{})
+		<-r.Events()
+		if err := r.Send("SELECT"); err != nil {
+			t.Fatal(err)
+		}
+		var q agent.ApprovalRequest
+		select {
+		case q = <-r.Approvals():
+		case <-time.After(30 * time.Second):
+			t.Fatal("no question")
+		}
+		if q.Kind != agent.ApproveQuestion || len(q.Questions) != 1 || q.Questions[0].Text != "Pick a theme" || len(q.Questions[0].Options) != 3 ||
+			q.Questions[0].Options[2].Label != "auto" || q.Questions[0].Multi || q.Questions[0].Other {
+			t.Fatalf("question = %+v", q)
+		}
+		q.Respond(c.d(q))
+		turn(t, r, agent.Decision{})
+		if !f.has(t, c.want) {
+			t.Errorf("want %s in\n%s", c.want, readLog(f))
+		}
+	}
+}

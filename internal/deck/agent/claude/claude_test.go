@@ -44,6 +44,17 @@ func kinds(evs []agent.Event) []agent.Kind {
 	return k
 }
 
+// agentsOwn drops the events of subagents (KindSubagent, and their work).
+func agentsOwn(evs []agent.Event) []agent.Event {
+	var out []agent.Event
+	for _, e := range evs {
+		if e.Kind != agent.KindSubagent && e.Sub == "" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // isMidTurnUsage reports whether ev is a context-only usage event.
 func isMidTurnUsage(ev agent.Event) bool {
 	u := ev.Usage
@@ -122,6 +133,7 @@ func TestTranslateSynthetic(t *testing.T) {
 	for _, l := range lines {
 		evs = append(evs, tr.Line([]byte(l))...)
 	}
+	evs = agentsOwn(evs) // the Task's subagent: TestSubagents
 	k := kinds(evs)
 	want := []agent.Kind{
 		agent.KindReasoning,
@@ -208,6 +220,10 @@ func TestEditDiffBeforeResult(t *testing.T) {
 
 func init() {
 	if os.Getenv("DECK_FAKE_CLAUDE") == "1" {
+		if os.Getenv("DECK_FAKE_ASK") == "1" {
+			fakeAskClaude()
+			os.Exit(0)
+		}
 		fakeClaude()
 		os.Exit(0)
 	}
@@ -767,6 +783,7 @@ func TestContextWindowFromModelUsageAndSubagentIgnored(t *testing.T) {
 	for _, l := range lines {
 		evs = append(evs, tr.Line([]byte(l))...)
 	}
+	evs = agentsOwn(evs)
 	// text, mid-turn usage, final usage, turn_done
 	if got := kinds(evs); len(got) != 4 || got[1] != agent.KindUsage || got[2] != agent.KindUsage {
 		t.Fatalf("kinds %v", got)

@@ -399,7 +399,7 @@ func (b *Broker) handle(req wireRequest, gone <-chan struct{}) wireResponse {
 	st := b.state(req.AgentID)
 
 	b.mu.Lock()
-	auto := st.always[req.ToolName]
+	auto := st.always[req.ToolName] && req.ToolName != AskToolName
 	b.mu.Unlock()
 	if auto {
 		return allow
@@ -435,6 +435,9 @@ func (b *Broker) handle(req wireRequest, gone <-chan struct{}) wireResponse {
 	case <-timer.C:
 		return wireResponse{Behavior: "deny", Message: "nobody answered in Deck"}
 	case d := <-reply:
+		if ar.Kind == agent.ApproveQuestion {
+			return answerQuestion(req.Input, ar.Questions, d)
+		}
 		if !d.Allow {
 			msg := d.Reason
 			if msg == "" {
@@ -473,6 +476,12 @@ func fillRequest(ar *agent.ApprovalRequest, input json.RawMessage) {
 		path = in.NotebookPath
 	}
 	switch ar.ToolName {
+	case AskToolName:
+		ar.Kind = agent.ApproveQuestion
+		ar.Questions = askQuestions(input)
+		if len(ar.Questions) > 0 {
+			ar.Summary = ar.Questions[0].Text
+		}
 	case "Bash":
 		ar.Kind = agent.ApproveCommand
 		ar.Summary = in.Command

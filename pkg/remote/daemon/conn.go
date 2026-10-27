@@ -423,7 +423,7 @@ func (c *connCtx) answer(ctx context.Context, p *provider, f wire.Frame3) (any, 
 	if werr := c.d.cfg.Gate.AllowAnswer(ctx, dev, *target, req); werr != nil {
 		return nil, werr
 	}
-	resolved, err := p.be.Answer(req.SessionID, req.ID, req.Decision)
+	resolved, err := p.be.Answer(req.SessionID, req.ID, req.Decision, nil)
 	if err != nil {
 		return nil, mapErr(f.M, err)
 	}

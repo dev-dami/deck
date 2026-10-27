@@ -188,5 +188,15 @@ func (b *Backend) onDeck(c workspace.DeckChange, emit func(remote.Event)) {
 		emit(remote.Event{Name: wire.EvRosterChanged, SessionID: c.SessionID, Payload: wire.RosterChanged{SessionID: c.SessionID}})
 	case workspace.ChangeNotice:
 		emit(remote.Event{Name: wire.EvNotice, SessionID: c.SessionID, Scoped: true, Payload: wire.Notice{SessionID: c.SessionID, Text: c.Text, Via: c.Via}})
+	case workspace.ChangeQuestion:
+		if c.Question != nil {
+			emit(remote.Event{Name: wire.EvApprovalRequested, SessionID: c.SessionID, Payload: toQuestion(*c.Question)})
+			b.emitSessionState(c.SessionID, emit)
+		}
+	case workspace.ChangeQuestionGone:
+		if c.Question != nil {
+			emit(remote.Event{Name: wire.EvApprovalResolved, SessionID: c.SessionID, Payload: wire.ApprovalResolved{ID: c.Question.ID, SessionID: c.SessionID, Granted: c.Answered}})
+			b.emitSessionState(c.SessionID, emit)
+		}
 	}
 }

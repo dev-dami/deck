@@ -6,8 +6,8 @@ import { type ComponentProps, type RefObject, useCallback, useEffect, useMemo, u
 import type { EngineStop } from "../../shared/bridge";
 import { type DeckClient, serves } from "../client";
 import { FILES_LIMIT } from "../completion";
-import type { Team } from "../crew";
-import { buildLanes, filterLane } from "../lanes";
+import { subsOf, type Team } from "../crew";
+import { buildLanes, filterLane, subParent } from "../lanes";
 import { whenOf } from "../limits";
 import { pokeLimits, useLimits, useNow } from "../limitsState";
 import { focusMessage, useFocusedMessage } from "../palette";
@@ -21,7 +21,6 @@ import type { Panel } from "../ui";
 import { usePickerSource } from "./AgentPicker";
 import { RaceBuilder } from "./RaceBuilder";
 import { AgentsStrip } from "./AgentsStrip";
-import { ApprovalCard } from "./ApprovalCard";
 import { Composer } from "./Composer";
 import { EngineStopped } from "./EngineStopped";
 import { BranchPicker, type Git } from "./Git";
@@ -33,6 +32,7 @@ import { MenuItem, MenuSeparator, Popover } from "./kit/menu";
 import { Lanes } from "./Lanes";
 import { QuotaMark, RoomQuota, sendAtReset, WaitBanner } from "./Limits";
 import { RoomLevel } from "./LevelPicker";
+import { type AnsweredRecord, RoomAsk } from "./RoomAsk";
 import { ModePicker } from "./ModePicker";
 import { NewThread } from "./NewThread";
 import { RoomHeader } from "./RoomHeader";
@@ -68,6 +68,7 @@ function LiveTimeline({
       {...(readImage === undefined ? {} : { readImage })}
       focusMessage={focus}
       onFocused={() => focusMessage(sid, null)}
+      subAlone={lane !== null && subParent(lane.replace(/^agent:/, "")) !== null}
       {...rest}
     />
   );
@@ -257,6 +258,8 @@ export function Room({
   const roster = sid === null ? [] : (state.roster[sid] ?? []);
   const kinds = state.server?.kinds ?? [];
   const pending = sid === null ? [] : state.approvals.filter((a) => a.session_id === sid);
+  // What the person answered the room's last question, shown on the composer.
+  const [answered, setAnswered] = useState<AnsweredRecord | null>(null);
   const queued = sid === null ? 0 : (state.queue[sid]?.length ?? 0);
   const imagesOn = state.server?.features.includes("images") ?? false;
   const online = state.link === "online";
@@ -425,6 +428,7 @@ export function Room({
               mode={room.mode}
               actions={room.actions}
               notes={r.notes}
+              subs={subsOf(crew?.agents)}
             />
           )}
           <div ref={dock} className="composer-dock pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-3 *:pointer-events-auto">
@@ -443,17 +447,16 @@ export function Room({
               notice={room.notice}
               above={raceBuilder}
               banner={
-                pending[0] !== undefined ? (
-                  <div className="flex flex-col gap-1" aria-label="Approvals for this thread">
-                    <ApprovalCard
-                      a={pending[0]}
-                      index={0}
-                      count={pending.length}
-                      className="bg-transparent ring-0"
-                      answerers={room.answerers}
-                      onAnswer={(d) => void c.answerApproval(pending[0]!.session_id, pending[0]!.id, d)}
-                    />
-                  </div>
+                pending[0] !== undefined || answered?.session === open.id ? (
+                  <RoomAsk
+                    c={c}
+                    sessionId={open.id}
+                    pending={pending}
+                    answerers={room.answerers}
+                    focusQuestion={draft.trim() === ""}
+                    answered={answered}
+                    setAnswered={setAnswered}
+                  />
                 ) : (
                   limits?.waits.some((w) => w.sessionId === open.id) === true && <WaitBanner api={api} sessionId={open.id} onError={toast} />
                 )

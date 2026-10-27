@@ -254,7 +254,7 @@ func (c *conn) call(ctx context.Context, method string, p json.RawMessage) (res 
 		if err := req.Validate(); err != nil {
 			return nil, fail(method, err), nil
 		}
-		resolved, err := be.Answer(req.SessionID, req.ID, req.Decision)
+		resolved, err := be.Answer(req.SessionID, req.ID, req.Decision, req.Answers)
 		if err != nil {
 			return nil, fail(method, err), nil
 		}
