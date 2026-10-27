@@ -217,6 +217,9 @@ func (s *Server) capabilities() []string {
 	if s.crew != nil && s.crew.limits != nil {
 		out = append(out, limitMethods...)
 	}
+	if s.crew != nil && s.crew.work != nil {
+		out = append(out, workMethods...)
+	}
 	return out
 }
 

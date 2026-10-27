@@ -183,6 +183,11 @@ export const RPC_METHODS = [
   "ResolveWait",
   "ScheduleSend",
   "CancelScheduled",
+  // Worktrees and named capsules: the Work tab.
+  "Work",
+  "WorktreeAction",
+  "CapsuleAction",
+  "CapsuleFiles",
 ] as const;
 
 export type RpcMethod = (typeof RPC_METHODS)[number];

@@ -5,10 +5,11 @@ import { fileWork } from "../../fileWork";
 import { type Bounds, buildGraph, chooseDirection, type Direction, type Graph, isEmpty, neighbourhood, stepFocus } from "../../graph";
 import { agentLane } from "../../lanes";
 import { cn } from "../../lib/cn";
-import type { DeckClient } from "../../client";
+import { type DeckClient, serves } from "../../client";
 import type { ProjectApi } from "../../project";
 import type { Lease } from "../../roomMeta";
 import { useSelect } from "../../select";
+import { useRoomWork } from "../../workState";
 import { Graph as GraphIcon } from "../icons";
 import { EmptyState } from "../kit/empty";
 import { segmentItem, segmentTrack } from "../kit/segmented";
@@ -41,6 +42,9 @@ export interface WorkGraphProps {
   onLane: (lane: string | null) => void;
   onOpenFile: (path: string) => void;
   onOpenTasks: () => void;
+  // Opens the Work tab (a worktree's or capsule's click); without it they
+  // only light their edges.
+  onOpenWork?: () => void;
   onSteer: (agent: string) => void;
   onStop: (agent: string) => void;
   // A narrow host (the side panel) drops the minimap and the legend.
@@ -119,10 +123,12 @@ function NowGraph({ api, sid, roster, files, leases, c, onOpenMessage, ...rest }
   const board = room?.board ?? null;
   const messages = useThreadMessages(c, sid);
   const work = useMemo(() => fileWork(messages, leases ?? []), [messages, leases]);
+  // The worktrees and capsules, from a Deck that serves them.
+  const lines = useRoomWork(api, sid, c === undefined || serves(c, "Work"));
   const [across, down] = useMemo(() => {
-    const input = { roster, crew, board, files, work, ...(leases === undefined ? {} : { leases }) };
+    const input = { roster, crew, board, files, work, lines, ...(leases === undefined ? {} : { leases }) };
     return [buildGraph(input, "across"), buildGraph(input, "down")] as const;
-  }, [roster, crew, board, files, leases, work]);
+  }, [roster, crew, board, files, leases, work, lines]);
   const openMessage = useMemo(() => (onOpenMessage === undefined ? undefined : (mid: string) => onOpenMessage(sid, mid)), [onOpenMessage, sid]);
 
   // Across, unless the canvas is tall and narrow enough that down shows the
@@ -177,6 +183,7 @@ function Canvas({
   onLane,
   onOpenFile,
   onOpenTasks,
+  onOpenWork,
   onSteer,
   onStop,
 }: { g: Graph; now: number; openMessage: ((mid: string) => void) | undefined } & Omit<
@@ -223,8 +230,8 @@ function Canvas({
   }, [view.root]);
 
   // The host's handlers change each render; the cards keep one.
-  const host = useRef({ onOpenFile, onOpenTasks });
-  host.current = { onOpenFile, onOpenTasks };
+  const host = useRef({ onOpenFile, onOpenTasks, onOpenWork });
+  host.current = { onOpenFile, onOpenTasks, onOpenWork };
   const pick = useCallback(
     (id: string) => {
       const n = byId.get(id);
@@ -232,6 +239,7 @@ function Canvas({
       if (n.kind === "agent") setPicked((p) => (p === id ? null : id));
       else if (n.kind === "task") host.current.onOpenTasks();
       else if (n.kind === "fold") host.current.onOpenFile(n.paths[0] ?? "");
+      else if ((n.kind === "branch" || n.kind === "capsule") && host.current.onOpenWork !== undefined) host.current.onOpenWork();
       else if (n.kind === "file") {
         // A file the agents edited or asked about shows its timeline; a
         // lease's pattern has no diff: it shows the agent that holds it.

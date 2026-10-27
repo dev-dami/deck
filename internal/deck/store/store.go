@@ -173,6 +173,10 @@ type Thread struct {
 	Shares []Share `json:"shares,omitempty"`
 	// Scheduled are messages waiting for their time (session/waits.go).
 	Scheduled []Scheduled `json:"scheduled,omitempty"`
+	// Trees are the thread's own worktrees, apart from its agents'
+	// (session/work.go); Capsules its named capsules.
+	Trees    []*Worktree  `json:"trees,omitempty"`
+	Capsules []CapsuleRec `json:"capsules,omitempty"`
 
 	// Legacy mirror of Members[0] (Name: every member's name joined by "+").
 	AgentKind string `json:"agent_kind"`
@@ -1034,6 +1038,8 @@ type Worktree struct {
 	// Applied is the last apply to Main, kept until it is undone or the
 	// next apply replaces it.
 	Applied *Applied `json:"applied,omitempty"`
+	// Line is what Deck tracks of it as a line of work (work.go).
+	Line
 }
 
 // Applied is what undoing an apply needs: Main as snapshots before and

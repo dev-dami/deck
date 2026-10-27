@@ -1,6 +1,6 @@
 import type { Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
-import { CornerDownRight, Lock, Square } from "./icons";
+import { CornerDownRight, GitBranch, Lock, Square } from "./icons";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { agentColour } from "../agents";
 import { tintOf } from "../teamGate";
@@ -130,6 +130,13 @@ function AgentChip({
           </span>
           <AgentRole role={lane.role} className="max-w-32 text-2xs" />
           {lane.parent !== "" && <span className="lane-parent max-w-24 shrink-0 truncate text-3xs text-faint">by @{lane.parent}</span>}
+          {/* The branch of its own worktree: it works apart from the shared tree. */}
+          {lane.branch !== "" && (
+            <span className="lane-branch flex max-w-28 shrink-0 items-center gap-0.5 rounded-full bg-hover px-1.5 font-mono text-3xs text-muted-foreground" title={`Works on its own worktree, branch ${lane.branch}`}>
+              <GitBranch aria-hidden className="size-2.5 shrink-0" />
+              <span className="truncate">{lane.branch.replace(/^deck\//, "")}</span>
+            </span>
+          )}
           {DOT[lane.status] !== undefined && <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", DOT[lane.status])} />}
           {/* The word shows when the agent asks for something; else it is for
               the tooltip and screen readers. */}

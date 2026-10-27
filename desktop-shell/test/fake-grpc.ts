@@ -175,6 +175,11 @@ export class FakeRpcDeck {
     scheduled: [] as Obj[],
     asked: [] as string[],
   };
+  // Worktrees and named capsules, as pkg/rpc serves them once serveWork is
+  // called. A worktree's "land" is how each file lands (LandFile rows) and
+  // "conflict" the files a sync stops on; a capsule's "land" likewise, and
+  // "total" how many files CapsuleFiles pages through.
+  readonly lines = { worktrees: [] as Obj[], capsules: [] as Obj[], asked: [] as string[] };
   // Each terminal: what it printed and who watches it.
   private readonly terms = new Map<string, { out: string; line: string; subs: Set<grpc.ServerWritableStream<Obj, Obj>> }>();
 
@@ -210,6 +215,13 @@ export class FakeRpcDeck {
     for (const m of ["Limits", "CheckLimits", "StartWindow", "ResolveWait", "ScheduleSend", "CancelScheduled"]) if (!this.room.caps.includes(m)) this.room.caps.push(m);
     this.lim.limits.splice(0, Infinity, ...limits);
     this.lim.waits.splice(0, Infinity, ...waits);
+  }
+
+  // Serves the worktree and capsule calls with these.
+  serveWork(worktrees: Obj[], capsules: Obj[]): void {
+    for (const m of ["Work", "WorktreeAction", "CapsuleAction", "CapsuleFiles"]) if (!this.room.caps.includes(m)) this.room.caps.push(m);
+    this.lines.worktrees.splice(0, Infinity, ...worktrees);
+    this.lines.capsules.splice(0, Infinity, ...capsules);
   }
 
   // The profiles as ListProfiles merges them: a project profile overrides
@@ -561,6 +573,101 @@ export class FakeRpcDeck {
       lim.scheduled.splice(i, 1);
       return {};
     });
+    // The worktree and capsule calls. A land with conflicts and no strategy
+    // writes nothing; with one it lands, and its capsule is landed.
+    const ln = this.lines;
+    const strip = (o: Obj): Obj => Object.fromEntries(Object.entries(o).filter(([k]) => k !== "land" && k !== "conflict" && k !== "total"));
+    const treeOf = (name: unknown) => {
+      const w = ln.worktrees.find((x) => x["name"] === name);
+      if (w === undefined) throw new Fail("not_found", `no worktree ${String(name)}`);
+      return w;
+    };
+    const capOf = (name: unknown) => {
+      const c = ln.capsules.find((x) => x["name"] === String(name).split("@")[0]);
+      if (c === undefined) throw new Fail("not_found", `no capsule ${String(name)}`);
+      return c;
+    };
+    const land = (what: Obj, cap: Obj | undefined, check: boolean, strategy: string): Obj => {
+      const files = (what["land"] as Obj[] | undefined) ?? [];
+      const conflicts = files.filter((f) => f["state"] === "conflict").map((f) => String(f["path"]));
+      const versions = (cap?.["versions"] as Obj[] | undefined) ?? [];
+      const out = { files, conflicts, capsule: cap?.["name"] ?? "", version: versions.length, checked: check };
+      if (check || (conflicts.length > 0 && strategy === "")) return out;
+      if (cap !== undefined) {
+        cap["state"] = "landed";
+        cap["landings"] = [...((cap["landings"] as Obj[] | undefined) ?? []), { version: versions.length, into: "main", at: Date.now(), by: "" }];
+      }
+      return { ...out, conflicts: [] };
+    };
+    call("Work", () => ({ worktrees: ln.worktrees.map(strip), capsules: ln.capsules.map(strip) }));
+    call("WorktreeAction", (r) => {
+      const action = String(r["action"]);
+      ln.asked.push(`${action} ${String(r["name"])}${r["strategy"] ? ` ${String(r["strategy"])}` : ""}`);
+      if (action === "create") {
+        const w = { name: String(r["name"]) || `w${ln.worktrees.length + 1}`, branch: `deck/${String(r["name"])}`, kind: "tree", base_ref: String(r["base"]) || "main", files: [] };
+        ln.worktrees.push(w);
+        return { worktree: w };
+      }
+      const w = treeOf(r["name"]);
+      const cap = ln.capsules.find((c) => c["worktree"] === w["branch"]);
+      switch (action) {
+        case "sync":
+        case "rebase": {
+          const conflicts = (w["conflict"] as string[] | undefined) ?? [];
+          if (conflicts.length === 0) w["behind"] = 0;
+          return { worktree: strip(w), conflicts };
+        }
+        case "check":
+        case "merge":
+          return land(w, cap, action === "check", String(r["strategy"] ?? ""));
+        case "discard":
+          ln.worktrees.splice(ln.worktrees.indexOf(w), 1);
+          return {};
+        case "spawn":
+          return { agent_id: `${String(r["kind"])}-3` };
+      }
+      throw new Fail("invalid", `unknown worktree action ${action}`);
+    });
+    call("CapsuleAction", (r) => {
+      const action = String(r["action"]);
+      ln.asked.push(`${action} ${String(r["capsule"])}${r["agent"] ? ` ${String(r["agent"])}` : ""}${r["strategy"] ? ` ${String(r["strategy"])}` : ""}${r["tests"] ? ` ${String(r["tests"])}` : ""}`);
+      if (action === "create") {
+        const c = { name: `diff-${ln.capsules.length + 1}`, source: String(r["source"]), state: "open", versions: [{ id: "blake3:new", files: 2, add: 1, mod: 1 }] };
+        ln.capsules.unshift(c);
+        return { capsule: c.name, version: 1 };
+      }
+      const c = capOf(r["capsule"]);
+      switch (action) {
+        case "check":
+        case "land":
+          return land(c, c, action === "check", String(r["strategy"] ?? ""));
+        case "rebase": {
+          const vs = c["versions"] as Obj[];
+          vs.push({ ...vs.at(-1), onto: "main" });
+          return { capsule: c["name"], version: vs.length };
+        }
+        case "review": {
+          if (r["tests"]) c["tests"] = r["tests"];
+          if (r["text"]) c["comments"] = [...((c["comments"] as Obj[] | undefined) ?? []), { by: "you", text: r["text"], at: Date.now() }];
+          return { capsule: c["name"] };
+        }
+        case "hand":
+        case "revert":
+          return { capsule: c["name"] };
+      }
+      throw new Fail("invalid", `unknown capsule action ${action}`);
+    });
+    call("CapsuleFiles", (r) => {
+      const c = capOf(r["capsule"]);
+      if (r["path"]) return { diff: `diff --git a/${String(r["path"])} b/${String(r["path"])}\n--- a/${String(r["path"])}\n+++ b/${String(r["path"])}\n@@ -1,3 +1,3 @@\n package store\n-func Open() {}\n+func Open(ctx context.Context) {}\n \n` };
+      const total = Number(c["total"] ?? (c["versions"] as Obj[]).at(-1)?.["files"] ?? 0);
+      const offset = Number(r["offset"] ?? 0);
+      const limit = Math.min(Number(r["limit"] ?? 100) || 100, 500);
+      const files = [];
+      for (let i = offset; i < Math.min(total, offset + limit); i++)
+        files.push({ path: `internal/store/part${String(Math.floor(i / 40)).padStart(2, "0")}/file${String(i).padStart(4, "0")}.go`, kind: i % 9 === 0 ? "add" : "modify", added: (i % 7) + 1, removed: i % 4 });
+      return { files, total };
+    });
     call("ListProfiles", () => ({ profiles: this.mergedProfiles() }));
     call("SaveProfile", (r) => {
       const p = { ...(r["profile"] as Obj) };
@@ -694,6 +801,114 @@ export class FakeRpcDeck {
     }
     return h;
   }
+}
+
+// Worktrees and capsules of "Fix the pairing lockout" beside crewAtWork:
+// claude-sub on its own worktree, codex-sub's landed and bundled, a long
+// refactor nobody owns yet that is behind main and conflicts with it, and
+// that refactor as a capsule of 640 files.
+export function workAtWork(f: FakeRpcDeck): void {
+  const now = Date.now();
+  const commits = [
+    { sha: "8f2c1d4e9a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d", subject: "store: open with a context", author: "claude" },
+    { sha: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b", subject: "store: split the index writer", author: "claude" },
+    { sha: "0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e", subject: "store: move tasks to their own file", author: "codex" },
+  ];
+  f.serveWork(
+    [
+      {
+        name: "t2",
+        branch: "deck/t2",
+        path: "/home/you/.deck/worktrees/deck-t2",
+        kind: "agent",
+        owner: "claude-sub",
+        owner_name: "claude-sub",
+        task: "t2",
+        working: true,
+        created: now - 600_000,
+        fork: "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        base_ref: "main",
+        ahead: 2,
+        behind: 0,
+        dirty: 2,
+        files: [GRAPH_FILES.LIMIT, GRAPH_FILES.TEST],
+        land: [
+          { path: GRAPH_FILES.LIMIT, kind: "modify", state: "merge" },
+          { path: GRAPH_FILES.TEST, kind: "add", state: "fits" },
+        ],
+      },
+      {
+        name: "t3",
+        branch: "deck/t3",
+        path: "/home/you/.deck/worktrees/deck-t3",
+        kind: "agent",
+        owner: "codex-sub",
+        owner_name: "codex-sub",
+        task: "t3",
+        created: now - 900_000,
+        fork: "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        base_ref: "main",
+        ahead: 1,
+        files: [GRAPH_FILES.PRUNE],
+        landed: true,
+        landed_at: now - 120_000,
+      },
+      {
+        name: "store-refactor",
+        branch: "deck/store-refactor",
+        path: "/home/you/.deck/worktrees/deck-store-refactor",
+        kind: "tree",
+        created: now - 7_200_000,
+        fork: "9c1f0e2d3b4a5968778695a4b3c2d1e0f9a8b7c6",
+        base_ref: "main",
+        ahead: 3,
+        behind: 4,
+        dirty: 5,
+        files: ["internal/store/store.go", "internal/store/task.go", "internal/store/index.go", "internal/store/work.go"],
+        conflict: ["internal/store/store.go"],
+        land: [
+          { path: "internal/store/store.go", kind: "modify", state: "conflict", reason: "both sides changed the same lines" },
+          { path: "internal/store/index.go", kind: "modify", state: "merge" },
+          { path: "internal/store/task.go", kind: "add", state: "fits" },
+          { path: "internal/store/work.go", kind: "add", state: "fits" },
+          { path: "go.mod", kind: "modify", state: "applied" },
+        ],
+      },
+    ],
+    [
+      {
+        name: "store-refactor",
+        source: "worktree",
+        worktree: "deck/store-refactor",
+        authors: ["claude", "codex"],
+        note: "The store split into an index writer and a task file.",
+        state: "open",
+        tests: "fail",
+        test_note: "go test ./internal/store: 1 failing",
+        total: 640,
+        versions: [
+          { id: "blake3:a1", files: 612, add: 40, mod: 560, del: 12, commits: commits.slice(1), commits_total: 2, by: "claude", created: now - 3_600_000 },
+          { id: "blake3:a2", files: 640, add: 48, mod: 579, del: 13, commits, commits_total: 3, by: "codex", fork: "9c1f0e2d3b4a5968778695a4b3c2d1e0f9a8b7c6", created: now - 600_000 },
+        ],
+        comments: [{ by: "codex", path: "internal/store/index.go", text: "The writer holds the lock across the fsync; fine for now.", at: now - 300_000 }],
+        land: [
+          { path: "internal/store/store.go", kind: "modify", state: "conflict", reason: "both sides changed the same lines" },
+          { path: "internal/store/index.go", kind: "modify", state: "merge" },
+        ],
+      },
+      {
+        name: "t3",
+        source: "worktree",
+        worktree: "deck/t3",
+        authors: ["codex-sub"],
+        state: "landed",
+        tests: "pass",
+        versions: [{ id: "blake3:b1", files: 1, add: 1, commits_total: 1, commits: [{ sha: "77aa", subject: "auth: prune idle buckets", author: "codex" }] }],
+        landings: [{ version: 1, into: "main", at: now - 120_000 }],
+      },
+      { name: "wip", source: "diff", authors: ["you"], state: "open", versions: [{ id: "blake3:c1", files: 3, add: 1, mod: 2 }] },
+    ],
+  );
 }
 
 export const GRAPH_FILES = { LIMIT: "pkg/remote/auth/limit.go", TEST: "pkg/remote/auth/limit_test.go", PRUNE: "pkg/remote/auth/prune.go" };

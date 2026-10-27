@@ -35,6 +35,7 @@ type crew struct {
 	settings  workspace.SettingsEditor
 	profiles  workspace.Profiles
 	limits    workspace.LimitsDesk
+	work      workspace.WorkDesk
 	usage     workspace.UsageReader
 	changes   deckChanges
 }
@@ -61,6 +62,7 @@ func (s *Server) WithWorkspace(ws any) *Server {
 	c.settings, _ = ws.(workspace.SettingsEditor)
 	c.profiles, _ = ws.(workspace.Profiles)
 	c.limits, _ = ws.(workspace.LimitsDesk)
+	c.work, _ = ws.(workspace.WorkDesk)
 	c.usage, _ = ws.(workspace.UsageReader)
 	c.changes, _ = ws.(deckChanges)
 	s.crew = c

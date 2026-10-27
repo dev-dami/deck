@@ -74,6 +74,36 @@ Agents use the ops through `execute`:
 - A subagent spawned with its own worktree for a task that has capsules gets
   them applied there before it starts, and its captures chain onto them.
 
+## Worktrees and named capsules
+
+Big, long-running work runs on worktrees Deck tracks as lines of work
+(`internal/deck/session/work.go`): an isolated thread's, a subagent's or a
+race entry's, a long task's under orchestration (a budget of 30 minutes or
+more, or parts of its own), or one made with `worktree.create` or from the
+desktop's Work tab. Each keeps its owner, task, the commit it forked from
+and the branch it keeps up with, and is stored with the thread, so it
+survives a restart.
+
+- `worktree.sync` commits the worktree's work and merges its base in (or
+  rebases); on conflicts it aborts, names the files and changes nothing.
+- `worktree.merge` lands it in the shared tree (or another worktree) as
+  uncommitted edits: its changes since the fork, commits and edits alike,
+  become a version of the capsule named after it, merged three-way;
+  `check` reports each file first. Landed and unchanged since, with nobody
+  working in it, a worktree is pruned; work never landed is never removed
+  but by `worktree.discard`.
+- `agent.spawn {worktree: true}` gives a helper its own; `{worktree: name}`
+  starts one in a worktree of the thread's.
+
+A named capsule (`capsulework.go`) is a unit of change kept in versions:
+`capsule.create` makes one from a worktree, a range of commits or the
+uncommitted diff, reading files straight from git's objects. Its base is a
+snapshot of just the files it touches. `capsule.land` and `capsule.revert`
+apply and undo it, `capsule.rebase` redoes it on the shared tree, a
+worktree or another capsule (stacked: it then chains onto it), and
+`capsule.review` keeps comments and test status. The desktop lists its
+files a page at a time and fetches each file's diff when it opens.
+
 ## Between Decks
 
 `sub.capsule.publish` is the consent: a paired peer can then run
@@ -87,5 +117,5 @@ so a peer cannot place bytes under an id they do not hash to.
 ## Garbage collection
 
 Once a day, in the background, objects that no thread's checkpoints or
-reverts, task capsules, worktree bases or published capsules reach, and that
+reverts, task capsules, named capsules, worktree bases or published capsules reach, and that
 are older than two weeks, are deleted.

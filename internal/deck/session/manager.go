@@ -1268,6 +1268,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 	t.title, t.titleSrc = th.Title, th.TitleSrc
 	t.pinned, t.resolved = th.Pinned, th.Resolved // resuming un-archives
 	t.worktree = th.Worktree
+	t.trees, t.capsules = th.Trees, cloneCapsules(th.Capsules)
 	t.tasks = cloneTasks(th.Tasks)
 	t.level = storedLevel(th, cfg)
 	t.contract = th.Contract
@@ -1411,6 +1412,13 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 	m.kick(t)
 	if th.Archived {
 		m.persistMeta(t) // resuming brings it back to the sidebar
+	}
+	if len(th.Trees) > 0 {
+		m.wg.Add(1)
+		go func() {
+			defer m.wg.Done()
+			m.pruneTrees(t) // worktrees landed, or removed, while Deck was away
+		}()
 	}
 	t.mu.Lock()
 	h := t.history()

@@ -32,8 +32,11 @@ type SpawnSpec struct {
 	Brief  string // what the subagent is asked to do
 	// TaskID binds the subagent to a task already on the board; "" creates one.
 	TaskID string
-	// Isolate gives the subagent its own git worktree and branch.
+	// Isolate gives the subagent its own git worktree and branch; Tree puts
+	// it in one of the thread's worktrees instead (work.go), which becomes
+	// its own.
 	Isolate  bool
+	Tree     string
 	Contract store.Contract
 	// Review is who reviews the task before it is done (review.go).
 	Review string
@@ -181,9 +184,14 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 			a.worktree, a.dir = wt, dir
 			a.mu.Unlock()
 		}
-	} else if sp.Isolate {
+	} else if sp.Isolate || sp.Tree != "" {
 		var dir string
-		if wt, dir, err = m.memberWorktree(t, a); err != nil {
+		if sp.Tree != "" {
+			wt, dir, err = m.takeTree(t, sp.Tree, a.id, taskID)
+		} else if wt, dir, err = m.memberWorktree(t, a); err == nil {
+			wt.Task = taskID
+		}
+		if err != nil {
 			m.dropMember(t, a)
 			return fail(err)
 		}
@@ -196,7 +204,10 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	}
 	m.persistMeta(t)
 	if err := m.startRun(t, a, "", ""); err != nil {
-		if old == nil {
+		switch {
+		case sp.Tree != "":
+			m.returnTree(t, wt)
+		case old == nil:
 			m.dropWorktree(wt)
 		}
 		m.dropMember(t, a)
@@ -448,7 +459,7 @@ func (m *Manager) memberWorktree(t *thread, a *agentState) (*store.Worktree, str
 	if rel, err := filepath.Rel(r.Root, dir); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
 		target = filepath.Join(path, rel)
 	}
-	return &store.Worktree{Path: path, Branch: branch, Main: dir, Base: base}, target, nil
+	return &store.Worktree{Path: path, Branch: branch, Main: dir, Base: base, Line: m.newLine(r, base, a.id)}, target, nil
 }
 
 // retireMember stops a finished subagent: its process is interrupted and
@@ -589,7 +600,7 @@ func (m *Manager) ApplyMember(threadID, memberID string) ([]string, error) {
 		return nil, fmt.Errorf("the changes do not apply cleanly to your tree (it changed the same lines): %w", err)
 	}
 	a.mu.Lock()
-	a.worktree = &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: now, SubBase: wt.SubBase, SubParent: wt.SubParent}
+	a.worktree = &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: now, SubBase: wt.SubBase, SubParent: wt.SubParent, Line: wt.Line}
 	a.mu.Unlock()
 	m.persistMeta(t)
 	m.emit(NoticeMsg{ThreadID: threadID, Text: fmt.Sprintf("applied %d files from %s to %s", len(files), a.getName(), wt.Main)})

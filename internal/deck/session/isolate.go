@@ -67,7 +67,7 @@ func (m *Manager) Isolate(threadID string) (ThreadInfo, History, error) {
 		target = filepath.Join(path, rel)
 	}
 	t.mu.Lock()
-	t.worktree = &store.Worktree{Path: path, Branch: branch, Main: dir, Base: base}
+	t.worktree = &store.Worktree{Path: path, Branch: branch, Main: dir, Base: base, Line: m.newLine(r, base, "")}
 	t.mu.Unlock()
 	info, hist, err := m.Move(threadID, target)
 	if err != nil {
@@ -124,7 +124,7 @@ func (m *Manager) ApplyIsolated(threadID string) ([]string, error) {
 	if err := main.Apply(ctx, patch); err != nil {
 		return nil, fmt.Errorf("the changes do not apply cleanly to your tree (it changed the same lines): %w", err)
 	}
-	next := &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: now, SubBase: wt.SubBase, SubParent: wt.SubParent}
+	next := &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: now, SubBase: wt.SubBase, SubParent: wt.SubParent, Line: wt.Line}
 	// The apply is done; without its after-snapshot it just cannot be undone.
 	if after, err := main.Snapshot(ctx); err == nil {
 		if diffs, err := main.Diff(ctx, before, after); err == nil {
@@ -174,7 +174,7 @@ func (m *Manager) UndoApply(threadID string) ([]string, error) {
 		return nil, err
 	}
 	t.mu.Lock()
-	t.worktree = &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: a.Base, SubBase: wt.SubBase, SubParent: wt.SubParent}
+	t.worktree = &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: a.Base, SubBase: wt.SubBase, SubParent: wt.SubParent, Line: wt.Line}
 	t.mu.Unlock()
 	m.persistMeta(t)
 	m.emit(NoticeMsg{ThreadID: threadID, Text: fmt.Sprintf("undid the apply of %d files to %s", len(a.Files), wt.Main)})

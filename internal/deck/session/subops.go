@@ -470,6 +470,14 @@ func (b subBoard) SubOp(ctx context.Context, op string, a map[string]any) (strin
 		}
 		return fmt.Sprintf("fetched %s from %s (%d new objects).", capsuleSummary(s, id), str("peer"), n), nil
 	}
+	// Worktrees and named capsules (work.go, capsulework.go) travel the
+	// same bridge.
+	switch {
+	case strings.HasPrefix(op, "worktree."):
+		return m.treeOp(ctx, me, op, a)
+	case strings.HasPrefix(op, "capsule."):
+		return m.capsuleOp(ctx, me, op, a)
+	}
 	return "", fmt.Errorf("unknown sub op %q", op)
 }
 
@@ -584,7 +592,12 @@ func (m *Manager) CollectSub() {
 				add(c)
 			}
 		}
-		for _, wt := range append([]*store.Worktree{meta.Worktree}, memberWorktrees(meta.Members)...) {
+		for _, c := range meta.Capsules {
+			for _, v := range c.Versions {
+				add(v.ID)
+			}
+		}
+		for _, wt := range append(append([]*store.Worktree{meta.Worktree}, memberWorktrees(meta.Members)...), meta.Trees...) {
 			if wt != nil {
 				add(wt.SubBase)
 				add(wt.SubParent)

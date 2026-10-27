@@ -7,6 +7,7 @@ import {
   ChevronsUpDown,
   FileDiff,
   FileText,
+  GitBranch,
   Graph,
   ListChecks,
   type IconType,
@@ -39,6 +40,7 @@ import { PreviewPanel } from "./PreviewPanel";
 import { CommentsBadge, DiffToggles, DiffView, SplitAllowed } from "./DiffView";
 import { SideChat } from "./SideChat";
 import { TasksPanel } from "./TasksPanel";
+import { WorkPanel } from "./WorkPanel";
 import { actionToast } from "./Toasts";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
@@ -49,13 +51,15 @@ import { WorkGraph } from "./graph/WorkGraph";
 import { useOpenPorts } from "./usePorts";
 
 // The room's tabs: Changes, Graph (the Work Graph, compact), Tasks (the
-// queue, the board and races), Agents (the tree), Side chat and, while a
-// dev server answers, Preview.
+// queue, the board and races), Work (worktrees and capsules, when the Deck
+// serves them), Agents (the tree), Side chat and, while a dev server
+// answers, Preview.
 
 const TAB_ICONS: Record<Panel, IconType> = {
   changes: FileDiff,
   graph: Graph,
   tasks: ListChecks,
+  work: GitBranch,
   agents: Network,
   side: MessageCircleQuestion,
   preview: MonitorPlay,
@@ -318,7 +322,9 @@ export function RightPanel({
   const picker = usePickerSource(c, state.server, open?.id ?? null);
   const named = gateMentionables(usePrefs().team, useMentionables(c, null));
   const ports = useOpenPorts(c.project);
-  const tabs = PANELS.filter((p) => p.panel !== "preview" || panel === "preview" || ports.length > 0);
+  const tabs = PANELS.filter(
+    (p) => (p.panel !== "preview" || panel === "preview" || ports.length > 0) && (p.panel !== "work" || panel === "work" || serves(c, "Work")),
+  );
   // A file the graph opened, until the Shell hands one itself.
   const [asked, setAsked] = useState<string | null>(null);
   useEffect(() => {
@@ -415,6 +421,7 @@ export function RightPanel({
               onPanel("changes", path);
             }}
             onOpenTasks={() => onPanel("tasks")}
+            onOpenWork={() => onPanel("work")}
             onSteer={onSteer ?? ((agent) => onEditQueued(`$${agent} `))}
             onStop={onStop ?? ((agent) => void c.interrupt(open.id, agent))}
           />
@@ -443,6 +450,20 @@ export function RightPanel({
             onError={onError}
             onInfo={onInfo}
           />
+        ) : panel === "work" ? (
+          c.project === undefined || !serves(c, "Work") ? (
+            <Empty>Worktrees and capsules show for a project on this computer.</Empty>
+          ) : (
+            <WorkPanel
+              key={open.id}
+              api={c.project}
+              sid={open.id}
+              roster={state.roster[open.id] ?? NO_ROSTER}
+              kinds={state.server?.kinds ?? []}
+              onInfo={onInfo}
+              onError={onError}
+            />
+          )
         ) : panel === "agents" ? (
           c.project === undefined ? (
             <Empty>The agents tree shows for a project on this computer.</Empty>

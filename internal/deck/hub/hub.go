@@ -10,7 +10,8 @@
 // thread's shared task board through [Env.Tasks] (as do the lease.* ops and
 // the memory.* ops, which pin notes to code), and the sub.* ops, which
 // snapshot, capture and apply code changes in the calling agent's own work
-// tree through [Env.Sub]. Git and GitHub go through the user's
+// tree through [Env.Sub], as do the worktree.* and capsule.* ops, which
+// manage the thread's worktrees and named capsules. Git and GitHub go through the user's
 // own git and gh, in a clean environment (internal/deck/gh); Deck never reads
 // credentials, and every result is passed through [Redact].
 package hub
@@ -314,6 +315,7 @@ func init() {
 		{Name: OpAgentSpawn, Desc: "Start another Deck agent in this thread to do part of the work, e.g. when the user asks you to split a job or spin up agents: call it once per agent. It joins as a lane the user sees (spawned by you) in the thread's permission mode, gets your brief, works on its own, and its result comes back to you; while it runs, your own task waits for it. How many may run, and whether helpers start their own, follows the thread's orchestration level (off: only when the user asks). isolate gives it its own git worktree and branch.",
 			Args: []Arg{{Name: "brief", Type: tString, Required: true, Desc: "what the helper should do"}, {Name: "title", Type: tString}, {Name: "kind", Type: tString, Desc: "agent kind (claude, codex, ...) or a named agent's name; default the task's, else the user's default agent"},
 				{Name: "model", Type: tString}, {Name: "effort", Type: tString}, {Name: "task", Type: tString, Desc: "bind it to an existing task id instead of making one"}, {Name: "isolate", Type: tBool},
+				{Name: "worktree", Type: tJSON, Desc: "true for a worktree of its own (as isolate), or a worktree name to work in"},
 				{Name: "expect", Type: tString}, {Name: "done_when", Type: tString}, {Name: "explicit_done", Type: tBool},
 				{Name: "review", Type: tString, Desc: "agent kind that reviews the work before it is done, or \"other\" for any kind but the worker's; \"none\" for no review"}},
 			run: opTask(OpAgentSpawn)},
@@ -354,6 +356,33 @@ func init() {
 			Args: []Arg{{Name: "id", Type: tString, Required: true}}, run: opSub("sub.capsule.publish")},
 		{Name: "sub.capsule.fetch", Desc: "Fetch a capsule a paired peer Deck published, sending only the chunks this Deck lacks.",
 			Args: []Arg{{Name: "peer", Type: tString, Required: true}, {Name: "id", Type: tString, Required: true}}, run: opSub("sub.capsule.fetch")},
+		{Name: "worktree.create", Desc: "Make a git worktree on a branch of its own for long or big work, apart from the shared tree. Work in its path (cd there); Deck tracks it with the thread until it is merged or discarded. agent.spawn {worktree: name} starts a helper in it.",
+			Args: []Arg{{Name: "name", Type: tString}, {Name: "base", Type: tString, Desc: "branch or commit to start from; default the shared tree's HEAD"}, {Name: "task", Type: tString}},
+			run:  opSub("worktree.create")},
+		{Name: "worktree.list", Desc: "The thread's worktrees: owner, task, branch, commits ahead/behind its base, files changed, uncommitted files.", run: opSub("worktree.list")},
+		{Name: "worktree.status", Desc: "One worktree: where it stands and the files it changed.",
+			Args: []Arg{{Name: "name", Type: tString, Required: true}}, run: opSub("worktree.status")},
+		{Name: "worktree.sync", Desc: "Bring a worktree's base branch in: its uncommitted work is committed, then the base merged in (rebase: rebased onto it). On conflicts nothing changes and the files are named.",
+			Args: []Arg{{Name: "name", Type: tString, Required: true}, {Name: "rebase", Type: tBool}}, run: opSub("worktree.sync")},
+		{Name: "worktree.merge", Desc: "Land a worktree's changes (commits and uncommitted) in the shared tree, or another worktree (into), as uncommitted edits with a three-way merge; it becomes a version of the capsule named after it. check only reports each file: fits, merges, conflicts.",
+			Args: []Arg{{Name: "name", Type: tString, Required: true}, {Name: "into", Type: tString, Desc: "\"main\" (default) or a worktree name"}, {Name: "check", Type: tBool},
+				{Name: "strategy", Type: tString, Desc: "conflicts: none (refuse, default), theirs or ours"}}, run: opSub("worktree.merge")},
+		{Name: "worktree.discard", Desc: "Remove your worktree (or one nobody owns) and its branch, whatever it changed.",
+			Args: []Arg{{Name: "name", Type: tString, Required: true}}, run: opSub("worktree.discard")},
+		{Name: "capsule.create", Desc: "Bundle big work as a named, versioned capsule: from a worktree (its whole branch and edits), commits (range \"a..b\" or one commit) or diff (your uncommitted changes). The same name again adds a version. Returns its id for thread.send {capsule}.",
+			Args: []Arg{{Name: "from", Type: tString, Required: true, Desc: "worktree, commits or diff"}, {Name: "name", Type: tString}, {Name: "worktree", Type: tString, Desc: "default your own"},
+				{Name: "range", Type: tString}, {Name: "note", Type: tString}}, run: opSub("capsule.create")},
+		{Name: "capsule.list", Desc: "The thread's named capsules: versions, source, authors, files, tests, landed or not.", run: opSub("capsule.list")},
+		{Name: "capsule.land", Desc: "Apply a named capsule (\"name\", \"name@2\" or an id) to the shared tree or a worktree with a three-way merge; check only reports each file.",
+			Args: []Arg{{Name: "name", Type: tString, Required: true}, {Name: "into", Type: tString}, {Name: "check", Type: tBool}, {Name: "strategy", Type: tString, Desc: "none, theirs or ours"}},
+			run:  opSub("capsule.land")},
+		{Name: "capsule.rebase", Desc: "Redo a named capsule on a new base as its next version: onto \"main\" (default), a worktree, or \"capsule:<name>\" to stack it on another capsule.",
+			Args: []Arg{{Name: "name", Type: tString, Required: true}, {Name: "onto", Type: tString}}, run: opSub("capsule.rebase")},
+		{Name: "capsule.revert", Desc: "Undo a landed named capsule in the shared tree (or a worktree, from), all or nothing.",
+			Args: []Arg{{Name: "name", Type: tString, Required: true}, {Name: "from", Type: tString}}, run: opSub("capsule.revert")},
+		{Name: "capsule.review", Desc: "Comment on a named capsule (path for one file) and/or record its tests: pass, fail or none.",
+			Args: []Arg{{Name: "name", Type: tString, Required: true}, {Name: "comment", Type: tString}, {Name: "path", Type: tString},
+				{Name: "tests", Type: tString}, {Name: "test_note", Type: tString, Desc: "what ran"}}, run: opSub("capsule.review")},
 		{Name: "history.threads", Desc: "List this project's Deck threads, past and current: id, title, updated, agents.",
 			Args: []Arg{{Name: "limit", Type: tInt}}, run: opHistoryThreads},
 		{Name: "history.search", Desc: "Search this project's Deck threads (chat history) for words; returns thread, speaker and snippet.",

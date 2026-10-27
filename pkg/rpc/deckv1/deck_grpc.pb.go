@@ -94,6 +94,10 @@ const (
 	Deck_ResolveWait_FullMethodName      = "/deck.v1.Deck/ResolveWait"
 	Deck_ScheduleSend_FullMethodName     = "/deck.v1.Deck/ScheduleSend"
 	Deck_CancelScheduled_FullMethodName  = "/deck.v1.Deck/CancelScheduled"
+	Deck_Work_FullMethodName             = "/deck.v1.Deck/Work"
+	Deck_WorktreeAction_FullMethodName   = "/deck.v1.Deck/WorktreeAction"
+	Deck_CapsuleAction_FullMethodName    = "/deck.v1.Deck/CapsuleAction"
+	Deck_CapsuleFiles_FullMethodName     = "/deck.v1.Deck/CapsuleFiles"
 	Deck_Events_FullMethodName           = "/deck.v1.Deck/Events"
 )
 
@@ -246,6 +250,19 @@ type DeckClient interface {
 	// CancelScheduled drops it, or with send_now sends it at once.
 	ScheduleSend(ctx context.Context, in *ScheduleSendRequest, opts ...grpc.CallOption) (*ScheduleSendResponse, error)
 	CancelScheduled(ctx context.Context, in *CancelScheduledRequest, opts ...grpc.CallOption) (*Empty, error)
+	// Worktrees and named capsules (optional; Info lists them). Work lists
+	// the session's worktrees with where each stands and its capsules.
+	Work(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*WorkResponse, error)
+	// WorktreeAction creates, syncs (or rebases), checks, merges, discards a
+	// worktree, or spawns an agent in it. A conflict is an answer, not an
+	// error: its files come back in conflicts and nothing changed.
+	WorktreeAction(ctx context.Context, in *WorktreeActionRequest, opts ...grpc.CallOption) (*WorkActionResponse, error)
+	// CapsuleAction creates a capsule (or a version), checks, lands,
+	// rebases, reverts, hands it to an agent, or reviews it.
+	CapsuleAction(ctx context.Context, in *CapsuleActionRequest, opts ...grpc.CallOption) (*WorkActionResponse, error)
+	// CapsuleFiles pages a capsule's files with line counts, and with path
+	// set returns that file's diff.
+	CapsuleFiles(ctx context.Context, in *CapsuleFilesRequest, opts ...grpc.CallOption) (*CapsuleFilesResponse, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -959,6 +976,46 @@ func (c *deckClient) CancelScheduled(ctx context.Context, in *CancelScheduledReq
 	return out, nil
 }
 
+func (c *deckClient) Work(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*WorkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WorkResponse)
+	err := c.cc.Invoke(ctx, Deck_Work_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) WorktreeAction(ctx context.Context, in *WorktreeActionRequest, opts ...grpc.CallOption) (*WorkActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WorkActionResponse)
+	err := c.cc.Invoke(ctx, Deck_WorktreeAction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) CapsuleAction(ctx context.Context, in *CapsuleActionRequest, opts ...grpc.CallOption) (*WorkActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WorkActionResponse)
+	err := c.cc.Invoke(ctx, Deck_CapsuleAction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) CapsuleFiles(ctx context.Context, in *CapsuleFilesRequest, opts ...grpc.CallOption) (*CapsuleFilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CapsuleFilesResponse)
+	err := c.cc.Invoke(ctx, Deck_CapsuleFiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *deckClient) Events(ctx context.Context, in *Subscribe, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Deck_ServiceDesc.Streams[1], Deck_Events_FullMethodName, cOpts...)
@@ -1127,6 +1184,19 @@ type DeckServer interface {
 	// CancelScheduled drops it, or with send_now sends it at once.
 	ScheduleSend(context.Context, *ScheduleSendRequest) (*ScheduleSendResponse, error)
 	CancelScheduled(context.Context, *CancelScheduledRequest) (*Empty, error)
+	// Worktrees and named capsules (optional; Info lists them). Work lists
+	// the session's worktrees with where each stands and its capsules.
+	Work(context.Context, *SessionRef) (*WorkResponse, error)
+	// WorktreeAction creates, syncs (or rebases), checks, merges, discards a
+	// worktree, or spawns an agent in it. A conflict is an answer, not an
+	// error: its files come back in conflicts and nothing changed.
+	WorktreeAction(context.Context, *WorktreeActionRequest) (*WorkActionResponse, error)
+	// CapsuleAction creates a capsule (or a version), checks, lands,
+	// rebases, reverts, hands it to an agent, or reviews it.
+	CapsuleAction(context.Context, *CapsuleActionRequest) (*WorkActionResponse, error)
+	// CapsuleFiles pages a capsule's files with line counts, and with path
+	// set returns that file's diff.
+	CapsuleFiles(context.Context, *CapsuleFilesRequest) (*CapsuleFilesResponse, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -1347,6 +1417,18 @@ func (UnimplementedDeckServer) ScheduleSend(context.Context, *ScheduleSendReques
 }
 func (UnimplementedDeckServer) CancelScheduled(context.Context, *CancelScheduledRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelScheduled not implemented")
+}
+func (UnimplementedDeckServer) Work(context.Context, *SessionRef) (*WorkResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Work not implemented")
+}
+func (UnimplementedDeckServer) WorktreeAction(context.Context, *WorktreeActionRequest) (*WorkActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WorktreeAction not implemented")
+}
+func (UnimplementedDeckServer) CapsuleAction(context.Context, *CapsuleActionRequest) (*WorkActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CapsuleAction not implemented")
+}
+func (UnimplementedDeckServer) CapsuleFiles(context.Context, *CapsuleFilesRequest) (*CapsuleFilesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CapsuleFiles not implemented")
 }
 func (UnimplementedDeckServer) Events(*Subscribe, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method Events not implemented")
@@ -2607,6 +2689,78 @@ func _Deck_CancelScheduled_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Deck_Work_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).Work(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_Work_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).Work(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_WorktreeAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WorktreeActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).WorktreeAction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_WorktreeAction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).WorktreeAction(ctx, req.(*WorktreeActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_CapsuleAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CapsuleActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).CapsuleAction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_CapsuleAction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).CapsuleAction(ctx, req.(*CapsuleActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_CapsuleFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CapsuleFilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).CapsuleFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_CapsuleFiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).CapsuleFiles(ctx, req.(*CapsuleFilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Deck_Events_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(Subscribe)
 	if err := stream.RecvMsg(m); err != nil {
@@ -2896,6 +3050,22 @@ var Deck_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelScheduled",
 			Handler:    _Deck_CancelScheduled_Handler,
+		},
+		{
+			MethodName: "Work",
+			Handler:    _Deck_Work_Handler,
+		},
+		{
+			MethodName: "WorktreeAction",
+			Handler:    _Deck_WorktreeAction_Handler,
+		},
+		{
+			MethodName: "CapsuleAction",
+			Handler:    _Deck_CapsuleAction_Handler,
+		},
+		{
+			MethodName: "CapsuleFiles",
+			Handler:    _Deck_CapsuleFiles_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
