@@ -1,7 +1,8 @@
 import type { AgentLine, Message } from "@web/protocol";
 import { toMillis } from "@web/time";
-import { type ActionGroup, actionStats, buildTurns, chunkOrigin, groupId, isNote, isTurn, pieces, type Turn, toolName } from "./actions";
+import { type ActionGroup, actionKind, actionStats, buildTurns, chunkOrigin, groupId, isNote, isTurn, pieces, type Turn, toolName } from "./actions";
 import type { BoardTask } from "./crew";
+import { askOf, diffStat, type FileAsk, samePath } from "./fileWork";
 import { type Bounds, boundsOf } from "./graph";
 import { messageText } from "./messages";
 
@@ -27,7 +28,10 @@ export interface HistoryThread {
   tasks?: readonly BoardTask[];
 }
 
-export type HistoryKind = "prompt" | "reply" | "actions" | "task" | "file" | "cluster";
+// edit and ask: a file's timeline (fileWork.ts), in a row of its own under
+// the threads: each later edit of a file two agents edited or one asked
+// about, and each ask between agents over it.
+export type HistoryKind = "prompt" | "reply" | "actions" | "task" | "file" | "cluster" | "edit" | "ask";
 
 // What the kind filter switches: prompts and replies, runs of calls, tasks
 // and files.
@@ -41,6 +45,8 @@ const FILTER_OF: Record<HistoryKind, HistoryFilterKind | null> = {
   task: "tasks",
   file: "files",
   cluster: null,
+  edit: "files",
+  ask: "files",
 };
 
 export interface HistoryFilter {
@@ -86,9 +92,14 @@ export interface HistoryNode extends Bounds {
   members?: number;
   path?: string;
   status?: string;
+  // An edit: its diff ("" when the call reported none). An ask: its line.
+  diff?: string;
+  ask?: FileAsk;
 }
 
-export type HistoryEdgeKind = "asks" | "handoff" | "reviews" | "owns" | "touches" | "reads";
+// requests: an agent's work → its ask about a file; answers: the ask → the
+// asker's next edit of the file, once it was let through.
+export type HistoryEdgeKind = "asks" | "handoff" | "reviews" | "owns" | "touches" | "reads" | "requests" | "answers";
 
 export interface HistoryEdge {
   id: string;
@@ -146,6 +157,9 @@ export const BAND_GAP = 30;
 // Room on the left of the lanes for their names.
 export const LABEL_W = 120;
 export const CLUSTER_AT = 400;
+// An edit in a file's timeline, and the least gap between two steps of one.
+export const EDIT_W = 120;
+const STEP_GAP = 8;
 
 const colX = (col: number) => col * (NODE_W + COL_GAP);
 
@@ -184,10 +198,21 @@ interface Event {
   round: number;
   names: string[];
   review: boolean;
-  files: { edited: string[]; read: string[] };
+  files: Files;
 }
 
-function threadEvents(t: HistoryThread, expanded: ReadonlySet<string>, seq: { n: number }): { events: Event[]; agents: Map<string, string> } {
+// The files a node read and edited, and the diff of each edit call, by path.
+interface Files {
+  edited: string[];
+  read: string[];
+  diffs?: Map<string, string>;
+}
+
+function threadEvents(
+  t: HistoryThread,
+  expanded: ReadonlySet<string>,
+  seq: { n: number },
+): { events: Event[]; agents: Map<string, string>; asks: FileAsk[] } {
   const kindOf = new Map<string, string>();
   for (const l of t.roster) {
     kindOf.set(l.id, l.kind);
@@ -217,11 +242,14 @@ function threadEvents(t: HistoryThread, expanded: ReadonlySet<string>, seq: { n:
     h: NODE_H,
     ...over,
   });
-  const push = (n: HistoryNode, names: string[] = [], files = { edited: [] as string[], read: [] as string[] }, review = false) =>
+  const push = (n: HistoryNode, names: string[] = [], files: Files = { edited: [], read: [] }, review = false) =>
     events.push({ n, seq: seq.n++, round, names, review, files });
+  const asks: FileAsk[] = [];
 
   for (const r of rows) {
     if (!isTurn(r)) {
+      const ask = askOf(r);
+      if (ask !== null) asks.push(ask);
       if (r.role !== "user") continue;
       round++;
       const text = messageText(r);
@@ -250,7 +278,7 @@ function threadEvents(t: HistoryThread, expanded: ReadonlySet<string>, seq: { n:
       { edited: task.files, read: [] },
     );
   }
-  return { events, agents };
+  return { events, agents, asks };
 }
 
 // A turn's nodes: a run of calls each, and the text that matters, the
@@ -264,7 +292,7 @@ function turnEvents(
   known: ReadonlySet<string>,
   expanded: ReadonlySet<string>,
   base: (over: Partial<HistoryNode> & Pick<HistoryNode, "id" | "kind" | "at" | "title">) => HistoryNode,
-  push: (n: HistoryNode, names?: string[], files?: { edited: string[]; read: string[] }, review?: boolean) => void,
+  push: (n: HistoryNode, names?: string[], files?: Files, review?: boolean) => void,
 ) {
   const ps = pieces(t.chunks, t.agent, (i) => groupId(t, i));
   const atOf = (mid: string | undefined) => toMillis((t.msgs.find((m) => m.id === mid) ?? t.msgs[0]!).created_at);
@@ -290,9 +318,16 @@ function turnEvents(
   });
 }
 
-function actionFiles(g: ActionGroup, finished: boolean) {
+function actionFiles(g: ActionGroup, finished: boolean): Files {
   const s = actionStats(g.items, !finished);
-  return { edited: s.edited, read: s.read };
+  const diffs = new Map<string, string>();
+  for (const c of g.items) {
+    if (c.k !== "tool" || actionKind(toolName(c)) !== "edit") continue;
+    const path = (c.call?.summary ?? "").trim();
+    const diff = c.result?.diff ?? "";
+    if (path !== "" && diff !== "") diffs.set(path, [diffs.get(path), diff].filter((d) => d !== undefined).join("\n"));
+  }
+  return { edited: s.edited, read: s.read, diffs };
 }
 
 function actionsNode(
@@ -475,26 +510,7 @@ export function buildHistory(
       if (e.n.kind === "prompt" || e.n.kind === "reply") continue;
       const touch = (path: string, kind: HistoryEdgeKind) => {
         const id = `f:${path}`;
-        if (!files.has(id)) {
-          files.set(id, {
-            id,
-            kind: "file",
-            thread: "",
-            lane: "files",
-            col: 0,
-            agent: null,
-            agentKind: "",
-            at: e.n.at,
-            mid: null,
-            title: path.slice(path.lastIndexOf("/") + 1),
-            meta: path.slice(0, path.lastIndexOf("/") + 1),
-            path,
-            x: 0,
-            y: 0,
-            w: NODE_W,
-            h: FILE_H,
-          });
-        }
+        if (!files.has(id)) files.set(id, fileNode(path, e.n.at));
         edge(kind, e.n.id, id, e.n.agent, e.n.agentKind);
       };
       for (const f of e.files.edited) touch(f, e.n.kind === "task" ? "owns" : "touches");
@@ -533,6 +549,15 @@ export function buildHistory(
     n.x = colX(c);
   }
 
+  // Each file at the column of its first touch.
+  const firstCol = new Map<string, number>();
+  for (const e of edges.values()) {
+    if (!files.has(e.to)) continue;
+    const c = col.get(e.from) ?? 0;
+    firstCol.set(e.to, Math.min(firstCol.get(e.to) ?? c, c));
+  }
+  const timelines = kinds.has("files") ? fileTimelines(kept, events, files, firstCol, filter, edge) : new Map<string, HistoryNode[]>();
+
   // The bands: a thread's lanes, you first, then its agents as they came,
   // then its tasks.
   const lanes: HistoryLane[] = [];
@@ -569,18 +594,29 @@ export function buildHistory(
     y += BAND_GAP;
   }
 
-  // The files' band: each at the column of its first touch, in as few rows
-  // as fit without two overlapping.
+  // The files' band: first a row for each file with a timeline, its edits
+  // and asks along it; then the rest, each at the column of its first
+  // touch, in as few rows as fit without two overlapping.
   if (files.size > 0) {
     const top = y;
     y += BAND_HEAD;
-    const firstCol = new Map<string, number>();
-    for (const e of edges.values()) {
-      if (!files.has(e.to)) continue;
-      const c = col.get(e.from) ?? 0;
-      firstCol.set(e.to, Math.min(firstCol.get(e.to) ?? c, c));
+    const byCol = (a: HistoryNode, b: HistoryNode) => (firstCol.get(a.id) ?? 0) - (firstCol.get(b.id) ?? 0) || (a.path! < b.path! ? -1 : 1);
+    for (const f of [...files.values()].filter((f) => timelines.has(f.id)).sort(byCol)) {
+      f.col = firstCol.get(f.id) ?? 0;
+      f.x = colX(f.col);
+      const row = [f, ...timelines.get(f.id)!];
+      // Along the row in time; one that would overlap the one before moves on.
+      let end = f.x + f.w;
+      for (const n of row.slice(1)) {
+        n.x = Math.max(colX(n.col), end + STEP_GAP);
+        end = n.x + n.w;
+      }
+      const h = Math.max(...row.map((n) => n.h));
+      for (const n of row) n.y = y;
+      lanes.push({ id: `files/${f.path}`, thread: "", label: f.title, agent: null, agentKind: "", y, h });
+      y += h + LANE_GAP;
     }
-    const list = [...files.values()].sort((a, b) => (firstCol.get(a.id) ?? 0) - (firstCol.get(b.id) ?? 0) || (a.path! < b.path! ? -1 : 1));
+    const list = [...files.values()].filter((f) => !timelines.has(f.id)).sort(byCol);
     const rows: number[] = [];
     for (const f of list) {
       f.col = firstCol.get(f.id) ?? 0;
@@ -594,12 +630,13 @@ export function buildHistory(
       f.y = y + r * (FILE_H + LANE_GAP);
     }
     const h = rows.length * (FILE_H + LANE_GAP) - LANE_GAP;
-    lanes.push({ id: "files", thread: "", label: "files", agent: null, agentKind: "", y, h });
-    bands.push({ thread: "", title: "Files", at: 0, y: top, h: h + BAND_HEAD });
-    y += h;
+    if (rows.length > 0) lanes.push({ id: "files", thread: "", label: "files", agent: null, agentKind: "", y, h });
+    else y -= LANE_GAP;
+    bands.push({ thread: "", title: "Files", at: 0, y: top, h: y + Math.max(h, 0) - top });
+    y += Math.max(h, 0);
   }
 
-  const placed = [...events.map((e) => e.n), ...files.values()];
+  const placed = [...events.map((e) => e.n), ...files.values(), ...[...timelines.values()].flat()];
   const b = boundsOf(placed);
   return {
     nodes: placed,
@@ -611,6 +648,129 @@ export function buildHistory(
     threads: threads.map((t) => ({ id: t.id, title: t.title })),
     span,
     clustered,
+  };
+}
+
+// A file's timeline in the files' band: for a file two agents edited, or one
+// an agent asked another about, each edit after its first touch (an edit
+// node at its run's column, from the run) and each ask over it (at the
+// column its thread was at then, from the asker's work before it, and on
+// to the asker's next edit once the owner let it through). By file node id,
+// each row in time order; a file only asked about joins the files.
+function fileTimelines(
+  kept: readonly { t: HistoryThread; events: Event[]; agents: Map<string, string>; asks: FileAsk[] }[],
+  events: readonly Event[],
+  files: Map<string, HistoryNode>,
+  firstCol: Map<string, number>,
+  filter: HistoryFilter,
+  edge: (kind: HistoryEdgeKind, from: string, to: string, agent: string | null, agentKind: string) => void,
+): Map<string, HistoryNode[]> {
+  const out = new Map<string, HistoryNode[]>();
+  const fileOf = (path: string) => [...files.values()].find((f) => samePath(f.path!, path));
+  const keepAsk = (a: FileAsk, thread: string) =>
+    (filter.threads === null || filter.threads.includes(thread)) &&
+    (filter.since === null || a.at >= filter.since) &&
+    (filter.until === null || a.at <= filter.until) &&
+    (filter.agents === null || filter.agents.includes(a.from) || filter.agents.includes(a.to));
+  const asks = kept.flatMap((p) => p.asks.filter((a) => keepAsk(a, p.t.id)).map((a) => ({ a, p })));
+  // Where a thread was at a moment: the column of its last node by then.
+  const colAt = (p: (typeof kept)[number], at: number) => p.events.reduce((c, e) => (e.n.at <= at ? Math.max(c, e.n.col) : c), 0);
+  for (const { a, p } of asks) {
+    if (fileOf(a.path) !== undefined) continue;
+    const c = colAt(p, a.at);
+    const id = `f:${a.path}`;
+    files.set(id, { ...fileNode(a.path, a.at), id, col: c });
+    firstCol.set(id, c);
+  }
+
+  for (const f of files.values()) {
+    const edits = events.filter((e) => e.n.kind === "actions" && e.files.edited.some((p) => samePath(p, f.path!)));
+    const qs = asks.filter((x) => samePath(x.a.path, f.path!));
+    if (new Set(edits.map((e) => e.n.agent)).size < 2 && qs.length === 0) continue;
+    const row: HistoryNode[] = [];
+    edits.forEach((e, i) => {
+      // The first touch is the file's own node.
+      if (i === 0 && e.n.col === firstCol.get(f.id)) return;
+      const path = e.files.edited.find((p) => samePath(p, f.path!))!;
+      const diff = e.files.diffs?.get(path) ?? "";
+      const stat = diffStat(diff);
+      const n: HistoryNode = {
+        id: `e:${e.n.id}:${f.path}`,
+        kind: "edit",
+        thread: e.n.thread,
+        lane: `files/${f.path}`,
+        col: e.n.col,
+        agent: e.n.agent,
+        agentKind: e.n.agentKind,
+        at: e.n.at,
+        mid: e.n.mid,
+        title: "edited",
+        meta: diff === "" ? "" : `+${stat.added} −${stat.removed}`,
+        diff,
+        path: f.path!,
+        x: 0,
+        y: 0,
+        w: EDIT_W,
+        h: FILE_H,
+      };
+      row.push(n);
+      edge("touches", e.n.id, n.id, e.n.agent, e.n.agentKind);
+    });
+    for (const { a, p } of qs) {
+      const kind = p.agents.get(a.from) ?? "";
+      const n: HistoryNode = {
+        id: `q:${a.mid}`,
+        kind: "ask",
+        thread: p.t.id,
+        lane: `files/${f.path}`,
+        col: colAt(p, a.at),
+        agent: a.from,
+        agentKind: kind,
+        at: a.at,
+        mid: a.mid,
+        title: `asked ${a.to}`,
+        meta: a.state === "pending" ? "waiting for an answer" : `${a.by ?? "deck"}${a.state === "held" ? " (wait)" : ""}: ${a.answer}`,
+        ask: a,
+        path: f.path!,
+        x: 0,
+        y: 0,
+        w: NODE_W,
+        h: NODE_H,
+      };
+      row.push(n);
+      const before = [...p.events].reverse().find((e) => e.n.agent === a.from && e.n.at <= a.at && e.n.kind !== "prompt");
+      if (before !== undefined) edge("requests", before.n.id, n.id, a.from, kind);
+    }
+    row.sort((x, y) => x.col - y.col || x.at - y.at);
+    // An ask let through leads to the asker's next edit of the file.
+    for (const q of row) {
+      if (q.kind !== "ask" || q.ask === undefined || q.ask.state === "pending" || q.ask.state === "held") continue;
+      const next = row.find((n) => n.kind === "edit" && n.agent === q.agent && n.at >= q.at);
+      if (next !== undefined) edge("answers", q.id, next.id, q.agent, q.agentKind);
+    }
+    out.set(f.id, row);
+  }
+  return out;
+}
+
+function fileNode(path: string, at: number): HistoryNode {
+  return {
+    id: `f:${path}`,
+    kind: "file",
+    thread: "",
+    lane: "files",
+    col: 0,
+    agent: null,
+    agentKind: "",
+    at,
+    mid: null,
+    title: path.slice(path.lastIndexOf("/") + 1),
+    meta: path.slice(0, path.lastIndexOf("/") + 1),
+    path,
+    x: 0,
+    y: 0,
+    w: NODE_W,
+    h: FILE_H,
   };
 }
 

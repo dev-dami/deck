@@ -1,16 +1,20 @@
-import type { AgentLine, ChangedFile, Theme } from "@web/protocol";
+import type { AgentLine, ChangedFile, Message, Theme } from "@web/protocol";
 import { type KeyboardEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRoomCrew } from "../../crewState";
+import { fileWork } from "../../fileWork";
 import { type Bounds, buildGraph, chooseDirection, type Direction, type Graph, isEmpty, neighbourhood, stepFocus } from "../../graph";
+import { agentLane } from "../../lanes";
 import { cn } from "../../lib/cn";
 import type { DeckClient } from "../../client";
 import type { ProjectApi } from "../../project";
 import type { Lease } from "../../roomMeta";
+import { useSelect } from "../../select";
 import { Graph as GraphIcon } from "../icons";
 import { EmptyState } from "../kit/empty";
 import { segmentItem, segmentTrack } from "../kit/segmented";
 import { Legend, Minimap, mapNodes, ZoomCapsule } from "./Controls";
 import { AgentDetail } from "./Detail";
+import { FileDetail } from "./FileDetail";
 import { History } from "./History";
 import { Edges } from "./Edges";
 import { NodeCard } from "./Nodes";
@@ -96,15 +100,30 @@ const SCOPES: ReadonlyArray<{ scope: Scope; label: string }> = [
   { scope: "history", label: "History" },
 ];
 
-function NowGraph({ api, sid, roster, files, leases, c: _c, onOpenMessage: _open, ...rest }: WorkGraphProps) {
+const NO_MESSAGES: readonly Message[] = [];
+const noSubscribe = () => () => {};
+
+// The open thread's messages, for who edited which file; none without a client.
+function useThreadMessages(c: DeckClient | undefined, sid: string): readonly Message[] {
+  return useSelect(
+    c?.store.subscribe ?? noSubscribe,
+    () => c?.store.state ?? null,
+    (s) => s?.messages[sid] ?? NO_MESSAGES,
+  );
+}
+
+function NowGraph({ api, sid, roster, files, leases, c, onOpenMessage, ...rest }: WorkGraphProps) {
   // The project polls the crew and the board once for the window (crewState.ts).
   const room = useRoomCrew(api, sid);
   const crew = room?.crew ?? null;
   const board = room?.board ?? null;
+  const messages = useThreadMessages(c, sid);
+  const work = useMemo(() => fileWork(messages, leases ?? []), [messages, leases]);
   const [across, down] = useMemo(() => {
-    const input = { roster, crew, board, files, ...(leases === undefined ? {} : { leases }) };
+    const input = { roster, crew, board, files, work, ...(leases === undefined ? {} : { leases }) };
     return [buildGraph(input, "across"), buildGraph(input, "down")] as const;
-  }, [roster, crew, board, files, leases]);
+  }, [roster, crew, board, files, leases, work]);
+  const openMessage = useMemo(() => (onOpenMessage === undefined ? undefined : (mid: string) => onOpenMessage(sid, mid)), [onOpenMessage, sid]);
 
   // Across, unless the canvas is tall and narrow enough that down shows the
   // graph larger. A change of direction mounts a new canvas, which fits.
@@ -136,7 +155,7 @@ function NowGraph({ api, sid, roster, files, leases, c: _c, onOpenMessage: _open
   }
   return (
     <div ref={box} className="relative flex min-h-0 flex-1">
-      {dir !== null && <Canvas key={`${sid}/${dir}`} g={dir === "down" ? down : across} now={room?.at ?? 0} {...rest} />}
+      {dir !== null && <Canvas key={`${sid}/${dir}`} g={dir === "down" ? down : across} now={room?.at ?? 0} openMessage={openMessage} {...rest} />}
     </div>
   );
 }
@@ -151,6 +170,7 @@ const touches = (b: Bounds, s: Bounds) => b.x + b.w >= s.x && b.x <= s.x + s.w &
 function Canvas({
   g,
   now,
+  openMessage,
   theme,
   lane,
   compact = false,
@@ -159,7 +179,10 @@ function Canvas({
   onOpenTasks,
   onSteer,
   onStop,
-}: { g: Graph; now: number } & Omit<WorkGraphProps, "api" | "sid" | "roster" | "files" | "leases" | "c" | "onOpenMessage">) {
+}: { g: Graph; now: number; openMessage: ((mid: string) => void) | undefined } & Omit<
+  WorkGraphProps,
+  "api" | "sid" | "roster" | "files" | "leases" | "c" | "onOpenMessage"
+>) {
   const [hover, setHover] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   // The canvas is on screen; off it, the live motion stops.
@@ -210,9 +233,11 @@ function Canvas({
       else if (n.kind === "task") host.current.onOpenTasks();
       else if (n.kind === "fold") host.current.onOpenFile(n.paths[0] ?? "");
       else if (n.kind === "file") {
-        // A lease's pattern has no diff: it shows the agent that holds it.
+        // A file the agents edited or asked about shows its timeline; a
+        // lease's pattern has no diff: it shows the agent that holds it.
         const holder = n.holders[0];
-        if (!n.glob) host.current.onOpenFile(n.path);
+        if (n.work !== null) setPicked((p) => (p === id ? null : id));
+        else if (!n.glob) host.current.onOpenFile(n.path);
         else if (holder !== undefined) setPicked(`agent:${holder}`);
       } else setPicked(null);
     },
@@ -227,7 +252,8 @@ function Canvas({
   };
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // A dialog over the graph (an edit's diff) has its own keys.
+    if (e.metaKey || e.ctrlKey || e.altKey || (e.target as HTMLElement).closest('[role="dialog"]') !== null) return;
     const id = (e.target as HTMLElement).closest("[data-node]")?.getAttribute("data-node") ?? null;
     if (e.key.startsWith("Arrow")) {
       if (id === null) return;
@@ -324,6 +350,23 @@ function Canvas({
           onLane={onLane}
           onSteer={onSteer}
           onStop={onStop}
+          onClose={() => setPicked(null)}
+        />
+      )}
+      {sel?.kind === "file" && sel.work !== null && (
+        <FileDetail
+          key={sel.id}
+          path={sel.path}
+          work={sel.work}
+          changed={sel.changed}
+          theme={theme}
+          kindOf={(name) => {
+            const a = byId.get(agentLane(name));
+            return a?.kind === "agent" ? a.agentKind : name.replace(/[-_]?\d+$/, "");
+          }}
+          compact={compact}
+          onOpenMessage={openMessage}
+          onOpenFile={onOpenFile}
           onClose={() => setPicked(null)}
         />
       )}

@@ -233,12 +233,14 @@ function DiffStat({ added, removed }: { added: number; removed: number }) {
 const stacked = (n: GraphNode) => n.h >= 40;
 
 // A file: its name, its folder in faint, and its +/− when it changed. A
-// lease's pattern is drawn dashed.
-export const FileCard = memo(function FileCard({ n, picked, dim, onPick, onHover }: NodeProps<FileGraphNode>) {
+// lease's pattern is drawn dashed. A file the agents edited or asked about
+// says who owns it and who asks for it.
+export const FileCard = memo(function FileCard({ n, picked, dim, theme, onPick, onHover }: NodeProps<FileGraphNode>) {
   const slash = n.path.lastIndexOf("/");
   const name = n.glob ? n.path : n.path.slice(slash + 1);
   const dir = n.glob || slash < 0 ? "" : n.path.slice(0, slash);
   const stack = stacked(n);
+  if (n.work !== null) return <WorkedFile n={n} name={name} dir={dir} picked={picked} dim={dim} theme={theme} onPick={onPick} onHover={onHover} />;
   return (
     <Shell
       n={n}
@@ -269,6 +271,71 @@ export const FileCard = memo(function FileCard({ n, picked, dim, onPick, onHover
     </Shell>
   );
 });
+
+// A file with a timeline (fileWork.ts): its name and +/−, then its owner in
+// its hue, or the agent waiting on that owner.
+function WorkedFile({
+  n,
+  name,
+  dir,
+  picked,
+  dim,
+  theme,
+  onPick,
+  onHover,
+}: Omit<NodeProps<FileGraphNode>, "live"> & { name: string; dir: string }) {
+  const ask = n.asking[0];
+  const others = n.editors.filter((e) => e !== n.owner);
+  const label = [
+    n.path,
+    n.owner === null ? "" : `owned by ${n.owner}`,
+    ask === undefined ? "" : `${ask.from} asks ${ask.to}`,
+    n.changed ? `+${n.added} −${n.removed}` : "",
+  ]
+    .filter((x) => x !== "")
+    .join(", ");
+  return (
+    <Shell
+      n={n}
+      picked={picked}
+      dim={dim}
+      label={label}
+      className={cn("@container flex flex-col justify-center gap-0.5 px-2.5", ask !== undefined && "border-warning/60")}
+      onPick={onPick}
+      onHover={onHover}
+    >
+      <span className="flex min-w-0 items-baseline gap-1.5 font-mono">
+        <span className="min-w-0 truncate text-xs leading-tight" title={n.path}>
+          {name}
+        </span>
+        {dir !== "" && <span className="hidden min-w-0 flex-1 truncate text-3xs text-faint @[11rem]:inline">{dir}</span>}
+        {n.changed && n.h < 50 && (
+          <span className="ml-auto">
+            <DiffStat added={n.added} removed={n.removed} />
+          </span>
+        )}
+      </span>
+      {n.changed && n.h >= 50 && <DiffStat added={n.added} removed={n.removed} />}
+      <span className="flex min-w-0 items-center gap-1 text-3xs text-muted-foreground" data-file-owner={n.owner ?? ""}>
+        {ask !== undefined ? (
+          <span className="flex min-w-0 items-center gap-1 text-warning-foreground" data-asking={ask.from}>
+            <span style={hueOf(ask.from, ask.fromKind)} className="flex items-center gap-0.5">
+              <Glyph kind={ask.fromKind} theme={theme} className="w-auto text-3xs" />
+              <span className="text-(--hue)">{ask.from}</span>
+            </span>
+            <span className="truncate">asks {ask.to}</span>
+          </span>
+        ) : n.owner !== null ? (
+          <span className="flex min-w-0 items-center gap-1" style={hueOf(n.owner, n.ownerKind)}>
+            <Glyph kind={n.ownerKind} theme={theme} className="w-auto text-3xs" />
+            <span className="shrink-0 text-(--hue)">{n.owner}</span>
+            <span className="truncate text-faint">has it{others.length > 0 ? ` · after ${others.join(", ")}` : ""}</span>
+          </span>
+        ) : null}
+      </span>
+    </Shell>
+  );
+}
 
 // The changed files no one is linked to, as one node.
 export const FoldCard = memo(function FoldCard({ n, picked, dim, onPick, onHover }: NodeProps<FoldGraphNode>) {

@@ -24,6 +24,7 @@ import {
 import { ChevronRight, CircleAlert, Graph as GraphIcon, Loader2 } from "../icons";
 import { EmptyState } from "../kit/empty";
 import { HistoryFilters, HistoryLegend, Minimap, type MapNode, ZoomCapsule } from "./Controls";
+import { EditDiff } from "./FileDetail";
 import { hueOf } from "./Nodes";
 import { type FitTarget, type Pad, useView } from "./useView";
 
@@ -243,11 +244,14 @@ function Canvas({
 
   const host = useRef({ onOpenMessage, onOpenFile, onOpenTasks, onToggle });
   host.current = { onOpenMessage, onOpenFile, onOpenTasks, onToggle };
+  // The edit whose diff is open.
+  const [diff, setDiff] = useState<HistoryNode | null>(null);
   const pick = useCallback(
     (id: string) => {
       const n = byId.get(id);
       if (n === undefined) return;
-      if (n.kind === "cluster") host.current.onToggle(id);
+      if (n.kind === "edit" && (n.diff ?? "") !== "") setDiff(n);
+      else if (n.kind === "cluster") host.current.onToggle(id);
       else if (n.kind === "file") host.current.onOpenFile(n.path ?? "");
       else if (n.kind === "task") host.current.onOpenTasks();
       else if (n.mid !== null) host.current.onOpenMessage(n.thread, n.mid);
@@ -321,6 +325,9 @@ function Canvas({
         className="absolute right-3 z-10"
         style={{ bottom: compact ? "0.75rem" : "calc(var(--composer-h, 0px) + 0.75rem)" }}
       />
+      {diff !== null && (
+        <EditDiff edit={{ agent: diff.agent ?? "", diff: diff.diff ?? "", at: diff.at }} path={diff.path ?? ""} onClose={() => setDiff(null)} />
+      )}
     </div>
   );
 }
@@ -328,7 +335,7 @@ function Canvas({
 // "27 Oct, 09:14": when a thread's shown work began.
 const when = (ms: number) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
-const DASH: Partial<Record<HistoryEdge["kind"], string>> = { handoff: "4 3", reviews: "2 3", reads: "1 3" };
+const DASH: Partial<Record<HistoryEdge["kind"], string>> = { handoff: "4 3", reviews: "2 3", reads: "1 3", requests: "6 2" };
 
 // The edges: a hairline each, the lit ones in their agent's hue.
 const HistoryEdges = memo(function HistoryEdges({
@@ -350,7 +357,7 @@ const HistoryEdges = memo(function HistoryEdges({
         const hue = lit && e.agent !== null ? agentColour(e.agent, e.agentKind) : null;
         // A handoff or a review is the story of the work: it reads stronger
         // than the files.
-        const strong = e.kind === "handoff" || e.kind === "reviews" || e.kind === "asks";
+        const strong = e.kind === "handoff" || e.kind === "reviews" || e.kind === "asks" || e.kind === "requests" || e.kind === "answers";
         return (
           <path
             key={e.id}
@@ -398,7 +405,11 @@ const HistoryCard = memo(function HistoryCard({
   const label =
     n.kind === "prompt"
       ? `You: ${n.title}`
-      : n.kind === "file"
+      : n.kind === "edit"
+        ? `${agent ?? ""} edited ${n.path ?? ""}${n.meta === "" ? "" : `, ${n.meta}`}`
+        : n.kind === "ask"
+          ? `${agent ?? ""} asked ${n.ask?.to ?? ""} about ${n.path ?? ""}: ${n.meta}`
+          : n.kind === "file"
         ? `File ${n.path ?? n.title}`
         : n.kind === "task"
           ? `Task ${n.title}, ${n.status ?? ""}`
@@ -409,7 +420,7 @@ const HistoryCard = memo(function HistoryCard({
     <div
       data-node={n.id}
       data-kind={n.kind}
-      data-state={run?.running === true ? "running" : (run?.failed ?? 0) > 0 ? "failed" : undefined}
+      data-state={run?.running === true ? "running" : (run?.failed ?? 0) > 0 ? "failed" : n.ask?.state}
       className={cn("graph-node history-node absolute top-0 left-0 transition-opacity duration-200", dim && "opacity-35")}
       style={{ transform: `translate(${n.x}px, ${n.y}px)`, width: n.w, height: n.h, ...style }}
       onPointerEnter={() => onHover(n.id)}
@@ -420,12 +431,13 @@ const HistoryCard = memo(function HistoryCard({
           "hist-card flex size-full animate-enter flex-col overflow-hidden rounded-md border border-(--graph-rim) bg-surface-1 transition-colors hover:border-muted-foreground/50",
           agent !== null && n.kind !== "task" && "border-l-2 border-l-(--hue)",
           n.kind === "prompt" && "bg-surface-2",
+          n.ask?.state === "pending" && "border-warning/60",
         )}
       >
         <button
           type="button"
           aria-label={label}
-          title={n.kind === "file" ? n.path : n.title}
+          title={n.kind === "file" || n.kind === "edit" ? n.path : n.kind === "ask" ? `${n.path ?? ""}: ${n.meta}` : n.title}
           className={cn(
             "flex min-h-0 w-full flex-1 cursor-pointer flex-col justify-center gap-0.5 px-2.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-primary focus-visible:ring-inset",
             n.kind === "actions" && "pr-7",
@@ -440,6 +452,28 @@ const HistoryCard = memo(function HistoryCard({
               <span className="truncate text-faint">{n.meta}</span>
               <span className="shrink-0 text-foreground">{n.title}</span>
             </span>
+          ) : n.kind === "edit" ? (
+            <span className="hist-text flex min-w-0 items-center gap-1.5 text-2xs">
+              <span aria-hidden className="font-mono text-(--hue)">
+                {mark}
+              </span>
+              <span className="shrink-0 font-medium text-(--hue)">{agent}</span>
+              <span className="text-muted-foreground">{n.title}</span>
+              {n.meta !== "" && <span className="ml-auto shrink-0 font-mono text-faint tabular-nums">{n.meta}</span>}
+            </span>
+          ) : n.kind === "ask" ? (
+            <>
+              <span className="hist-text flex min-w-0 items-center gap-1.5 text-2xs">
+                <span aria-hidden className="font-mono text-(--hue)">
+                  {mark}
+                </span>
+                <span className="shrink-0 font-medium text-(--hue)">{agent}</span>
+                <span className="truncate text-muted-foreground">{n.title}</span>
+              </span>
+              <span className={cn("hist-text truncate text-xs", n.ask?.state === "pending" ? "text-warning-foreground" : "text-foreground")}>
+                → {n.meta}
+              </span>
+            </>
           ) : (
             <>
               <span className="hist-text flex min-w-0 items-center gap-1.5 text-2xs">

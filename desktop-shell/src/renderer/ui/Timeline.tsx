@@ -55,6 +55,7 @@ import {
 } from "../actions";
 import { agentColour, agentKind, agentRole, agentTint } from "../agents";
 import type { RoomNotice } from "../attention";
+import { askOf, type FileAsk } from "../fileWork";
 import { shortId } from "../lanes";
 import { cn } from "../lib/cn";
 import { messageText } from "../messages";
@@ -718,6 +719,8 @@ export const MessageView = memo(function MessageView({
 }) {
   if (m.role === "user") return <UserMessage m={m} actions={actions} />;
   if (m.role === "system") {
+    const ask = askOf(m);
+    if (ask !== null) return <AskRow m={m} ask={ask} roster={roster} theme={theme} />;
     return (
       <article className="msg msg-system mx-auto max-w-[90%] text-pretty text-center text-muted-foreground text-xs" data-role="system" data-mid={m.id}>
         <Prose chunks={chunksOf(m)} />
@@ -726,6 +729,51 @@ export const MessageView = memo(function MessageView({
   }
   return <TurnView t={turnOf(m)} roster={roster} theme={theme} mode={mode} actions={actions} last={last} />;
 });
+
+// An ask between agents over a file (fileWork.ts) as one quiet line: who
+// asked whom about which file, and what came of it; it waits in the
+// warning hue until the answer rewrites it.
+function AskRow({ m, ask, roster, theme }: { m: Message; ask: FileAsk; roster: AgentLine[]; theme: Theme | null }) {
+  const prefs = usePrefs();
+  const Who = ({ name }: { name: string }) => {
+    const kind = agentKind(name, roster);
+    return (
+      <span className="inline-flex items-baseline gap-0.5 font-medium text-(--hue)" style={hue(agentColour(name, kind, tintOf(agentTint(name, roster), prefs.team)))}>
+        <span aria-hidden className="font-mono text-2xs">
+          {kindMark(theme, kind) || "●"}
+        </span>
+        @{name}
+      </span>
+    );
+  };
+  const file = ask.path.slice(ask.path.lastIndexOf("/") + 1);
+  return (
+    <p
+      className="msg msg-ask mx-auto flex max-w-[90%] flex-wrap items-baseline justify-center gap-x-1 text-muted-foreground text-xs"
+      data-role="system"
+      data-mid={m.id}
+      data-ask={ask.state}
+    >
+      <Who name={ask.from} />
+      <span>asked</span>
+      <Who name={ask.to} />
+      <span>
+        about{" "}
+        <span className="font-mono text-foreground" title={ask.path}>
+          {file}
+        </span>
+      </span>
+      {ask.state === "pending" ? (
+        <span className="text-warning-foreground">· waiting for an answer</span>
+      ) : (
+        <span className="min-w-0">
+          → <span className={ask.by === null ? "text-faint" : "text-foreground"}>{ask.by ?? "deck"}</span>
+          {ask.state === "held" ? " (wait)" : ""}: {ask.answer}
+        </span>
+      )}
+    </p>
+  );
+}
 
 // A path as its folder, faint, and its name.
 function PathName({ path }: { path: string }) {
