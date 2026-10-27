@@ -423,6 +423,37 @@ test("side chat: asks another agent about the thread without touching it", async
   expect(fake.deck.sent.filter((s) => s.session_id === "ses_main")).toHaveLength(0);
 });
 
+test("orchestration: the composer's level picker, and the level Settings gives new threads", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  const dock = page.locator(".composer-dock");
+  // The thread's level, from its board, with what each level does.
+  await dock.getByRole("button", { name: "Orchestration: Auto" }).click();
+  const menu = page.getByRole("menu", { name: "Orchestration" });
+  await expect(menu.getByRole("menuitemradio")).toHaveCount(4);
+  await expect(menu.getByRole("menuitemradio", { name: /^Auto/ })).toHaveAttribute("aria-checked", "true");
+  await expect(menu.getByRole("menuitemradio", { name: /^Full/ })).toContainText("races between agents");
+  await menu.getByRole("menuitemradio", { name: /^Full/ }).click();
+  await expect.poll(() => fake.board.level).toBe("full");
+  await expect(dock.getByRole("button", { name: "Orchestration: Full" })).toBeVisible();
+  await expect(menu).toHaveCount(0);
+
+  // Settings › Agents: the level new threads start at, Auto until changed.
+  await sidebar(page).getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Agents" }).click();
+  const levels = page.getByRole("radiogroup", { name: "Orchestration for new threads" });
+  await expect(levels.getByRole("radio", { name: "Auto" })).toHaveAttribute("aria-checked", "true");
+  await levels.getByRole("radio", { name: "Assist" }).click();
+  await expect(levels.getByRole("radio", { name: "Assist" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator(".settings")).toContainText("a couple of helpers");
+  expect(await page.evaluate(() => localStorage.getItem("deck.desktop.prefs"))).toContain('"orchestration":"assist"');
+  // A new thread asks the Deck for it.
+  await page.getByRole("button", { name: "New thread" }).first().click();
+  await composer(page).fill("split the limiter work");
+  await composer(page).press("Enter");
+  await expect.poll(() => fake.createdLevels.at(-1)).toBe("assist");
+});
+
 test("room tabs: the agents tree, the task board, keeping a race entry after its files, and the race form", async ({ page }) => {
   await openFolder(page);
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
@@ -452,8 +483,12 @@ test("room tabs: the agents tree, the task board, keeping a race entry after its
   await expect(race.locator(".task-status").first()).toHaveText("done");
   // A failed task retries without a question.
   await tasks.locator('.board-task[data-task="t5"]').getByRole("button", { name: "Retry" }).click();
-  await tasks.getByRole("switch", { name: "Orchestrate" }).click();
-  await expect(tasks.getByRole("switch", { name: "Orchestrate" })).toHaveAttribute("aria-checked", "true");
+  // The board's orchestration level is the composer's picker too.
+  await tasks.getByRole("button", { name: "Orchestration: Auto" }).click();
+  await page.getByRole("menuitemradio", { name: /^Off/ }).click();
+  await expect.poll(() => fake.board.level).toBe("off");
+  await expect(tasks.getByRole("button", { name: "Orchestration: Off" })).toBeVisible();
+  await expect(page.locator(".composer-dock").getByRole("button", { name: "Orchestration: Off" })).toBeVisible();
   expect(fake.board.actions).toEqual(["apply t3", "retry t5"]);
   // The race form starts the race through StartRace, with a judge by default.
   await tasks.getByRole("button", { name: "New race" }).click();

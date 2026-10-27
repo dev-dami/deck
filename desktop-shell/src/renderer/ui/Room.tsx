@@ -32,6 +32,7 @@ import { Button } from "./kit/button";
 import { MenuItem, MenuSeparator, Popover } from "./kit/menu";
 import { Lanes } from "./Lanes";
 import { QuotaMark, RoomQuota, sendAtReset, WaitBanner } from "./Limits";
+import { RoomLevel } from "./LevelPicker";
 import { ModePicker } from "./ModePicker";
 import { NewThread } from "./NewThread";
 import { RoomHeader } from "./RoomHeader";
@@ -471,6 +472,7 @@ export function Room({
                     confirmYolo={prefs.confirmYolo}
                     onSet={(m) => void c.setMode(open.id, m)}
                   />
+                  {api !== undefined && <RoomLevel api={api} sessionId={open.id} onError={toast} />}
                   <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-hairline-strong" />
                   <AgentsStrip
                     sessionId={open.id}

@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { APP_ICON_IDS, type AppIconPref } from "./appIcon/catalog";
 import { CUSTOM, PICTURES } from "./backdrop/pictures";
 import { NOTIFY_KINDS, type NotifyKind } from "./notifications";
+import { DEFAULT_LEVEL, LEVELS, type Level } from "./orchestration";
 import {
   ACCENTS,
   type Aspects,
@@ -67,6 +68,8 @@ export interface Prefs extends Aspects {
   limitProjection: boolean;
   // A new thread starts on a branch of its own (a Deck that can isolate).
   isolate: boolean;
+  // The orchestration level a new thread starts at (orchestration.ts).
+  orchestration: Level;
   motion: MotionPref;
   // The shockwave when the open room switches to Yolo.
   yoloEffect: boolean;
@@ -113,6 +116,7 @@ export const defaultPrefs: Prefs = {
   limitCritPct: 90,
   limitProjection: true,
   isolate: true,
+  orchestration: DEFAULT_LEVEL,
   motion: "system",
   yoloEffect: true,
   diffTheme: "match",
@@ -181,6 +185,7 @@ export function merge(v: Record<string, unknown>): Prefs {
     limitCritPct: pctOf(v["limitCritPct"], defaultPrefs.limitCritPct),
     limitProjection: bool("limitProjection", defaultPrefs.limitProjection),
     isolate: bool("isolate", defaultPrefs.isolate),
+    orchestration: pick("orchestration", LEVELS.map((l) => l.level), defaultPrefs.orchestration),
     motion: pick("motion", ["system", "full", "reduced"] as const, defaultPrefs.motion),
     yoloEffect: bool("yoloEffect", defaultPrefs.yoloEffect),
     diffTheme: pick("diffTheme", DIFF_THEMES.map((t) => t.id), defaultPrefs.diffTheme),

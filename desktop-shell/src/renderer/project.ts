@@ -2,6 +2,7 @@ import type { DeckBridge, RpcMethod, TermEvent } from "../shared/bridge";
 import { type Board, type Crew, type SharedMirror, type Team, toBoard, toCrew, toMirror, toTeam } from "./crew";
 import { bool, list, num, type Obj, obj, str } from "./guards";
 import { type LimitCheck, type Limits, toCheck, toLimits } from "./limits";
+import { type Level, schedules } from "./orchestration";
 
 // What a local Deck adds to the shared DeckClient: the project's git work
 // tree, the usage record and terminals (proto/deck/v1, Git*, Usage,
@@ -408,8 +409,9 @@ export class ProjectApi {
     return Array.isArray(files) ? files.filter((f): f is string => typeof f === "string") : [];
   }
 
-  async setOrchestrate(sessionId: string, on: boolean): Promise<string | null> {
-    const r = await this.call("SetOrchestrate", { session_id: sessionId, on });
+  // on stands in for the level with a Deck from before levels.
+  async setLevel(sessionId: string, level: Level): Promise<string | null> {
+    const r = await this.call("SetOrchestrate", { session_id: sessionId, level, on: schedules(level) });
     return r.ok ? null : r.message;
   }
 

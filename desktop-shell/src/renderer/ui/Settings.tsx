@@ -6,6 +6,7 @@ import type { AppInfo, DeckBridge } from "../../shared/bridge";
 import { serves } from "../client";
 import { cn } from "../lib/cn";
 import { NOTIFY_KINDS } from "../notifications";
+import { LEVELS, levelInfo } from "../orchestration";
 import { type Prefs, setPrefs, usePrefs } from "../prefs";
 import { ACCENTS, DIFF_THEMES } from "../themes";
 import { AppIconPicker } from "./AppIconPicker";
@@ -488,6 +489,20 @@ function Agents({ state, p }: { state: AppState; p: Prefs }) {
         />
       </Section>
       {p.team && <ProfilesEditor kinds={kinds} theme={state.theme} />}
+      <Section title="Orchestration">
+        <Row
+          title="New threads start at"
+          description={`${levelInfo(p.orchestration).blurb} Change a thread's own level from its composer.`}
+          control={
+            <Segmented
+              label="Orchestration for new threads"
+              value={p.orchestration}
+              options={LEVELS.map((l) => ({ value: l.level, label: l.label }))}
+              onChange={set("orchestration")}
+            />
+          }
+        />
+      </Section>
       <Section title="Permissions">
         <Row
           title="Yolo mode"
