@@ -64,8 +64,10 @@ describe("the agent CLIs", () => {
     mkdirSync(b);
     writeFileSync(join(a, "claude"), "#!/bin/sh\n", { mode: 0o755 });
     writeFileSync(join(b, "claude"), "#!/bin/sh\n", { mode: 0o755 });
-    // Antigravity's CLI is agy; a file that does not run is no CLI.
+    // Antigravity's CLI is agy, Pi's ACP server pi-acp; a file that does not
+    // run is no CLI.
     writeFileSync(join(b, "agy"), "#!/bin/sh\n", { mode: 0o755 });
+    writeFileSync(join(a, "pi-acp"), "#!/bin/sh\n", { mode: 0o755 });
     writeFileSync(join(b, "codex"), "not a program", { mode: 0o644 });
     mkdirSync(join(b, "opencode"));
     expect(findAgentClis(["/no/such/dir", a, b].join(delimiter))).toEqual([
@@ -73,12 +75,14 @@ describe("the agent CLIs", () => {
       { kind: "codex", path: null },
       { kind: "opencode", path: null },
       { kind: "antigravity", path: join(b, "agy") },
+      { kind: "pi", path: join(a, "pi-acp") },
     ]);
     expect(findAgentClis("").every((c) => c.path === null)).toBe(true);
   });
 
   test("the engine's own message says that it found none", () => {
     expect(noAgentCli("Error: none of claude, codex, opencode or antigravity was found on PATH — run `deck doctor`\n")).toBe(true);
+    expect(noAgentCli("Error: none of claude, codex, opencode, antigravity or pi was found on PATH — run `deck doctor`\n")).toBe(true);
     expect(noAgentCli("Error: open store: the store is locked")).toBe(false);
     expect(noAgentCli("")).toBe(false);
   });

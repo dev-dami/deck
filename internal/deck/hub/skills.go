@@ -24,7 +24,7 @@ import (
 type skillInfo struct {
 	Name        string
 	Description string
-	Agent       string // "claude", "codex", "opencode", "antigravity", "gemini", "agents" (shared), "deck"
+	Agent       string // "claude", "codex", "opencode", "antigravity", "pi", "gemini", "agents" (shared), "deck"
 	Scope       string // "project", "user" or "builtin"
 	Dir         string // the skill's folder (deck://skills/<name> for builtins)
 	File        string // its SKILL.md
@@ -46,6 +46,7 @@ var (
 		{".opencode/skill", "opencode"},
 		{".opencode/skills", "opencode"},
 		{".agent/skills", "antigravity"},
+		{".pi/skills", "pi"},
 		{".gemini/skills", "gemini"},
 	}
 	userSkillDirs = []skillDir{
@@ -55,6 +56,7 @@ var (
 		{".config/opencode/skill", "opencode"},
 		{".config/opencode/skills", "opencode"},
 		{".gemini/antigravity/skills", "antigravity"},
+		{".pi/agent/skills", "pi"},
 		{".gemini/skills", "gemini"},
 	}
 )

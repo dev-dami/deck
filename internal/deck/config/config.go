@@ -24,7 +24,7 @@ import (
 const EnvReducedMotion = "DECK_REDUCED_MOTION"
 
 // Kinds are the CLIs Deck can drive, in the order they are offered.
-var Kinds = []string{"claude", "codex", "opencode", "antigravity"}
+var Kinds = []string{"claude", "codex", "opencode", "antigravity", "pi"}
 
 // Models names the model each CLI should run. An empty value means the CLI's default.
 type Models struct {
@@ -32,6 +32,7 @@ type Models struct {
 	Codex       string `json:"codex"`
 	Opencode    string `json:"opencode,omitempty"`
 	Antigravity string `json:"antigravity,omitempty"`
+	Pi          string `json:"pi,omitempty"`
 }
 
 // For is the value for a kind ("" for an unknown one).
@@ -45,6 +46,8 @@ func (m Models) For(kind string) string {
 		return m.Opencode
 	case "antigravity":
 		return m.Antigravity
+	case "pi":
+		return m.Pi
 	}
 	return ""
 }
@@ -60,6 +63,8 @@ func (m *Models) Set(kind, v string) {
 		m.Opencode = v
 	case "antigravity":
 		m.Antigravity = v
+	case "pi":
+		m.Pi = v
 	}
 }
 
@@ -74,6 +79,7 @@ type Config struct {
 	CodexBinary       string `json:"codex_binary"`       // path or command name; empty means "codex"
 	OpencodeBinary    string `json:"opencode_binary"`    // path or command name; empty means "opencode"
 	AntigravityBinary string `json:"antigravity_binary"` // path or command name; empty means "agy"
+	PiBinary          string `json:"pi_binary"`          // path or command name of Pi's ACP server; empty means "pi-acp"
 	DefaultMode       string `json:"default_mode"`       // "plan", "ask" or "yolo"; empty means "ask". "yolo" is ignored at startup (see StartMode)
 	// TrackChanges snapshots a thread's git work tree with every message you
 	// send, for the changes panel and its undo.
@@ -578,6 +584,7 @@ func Defaults() Config {
 		CodexBinary:       "codex",
 		OpencodeBinary:    "opencode",
 		AntigravityBinary: "agy",
+		PiBinary:          "pi-acp",
 		DefaultMode:       "ask",
 		TrackChanges:      true,
 		DeckAttribution:   true,
@@ -758,9 +765,9 @@ func writeFileAtomic(path string, data []byte) error {
 // Validate reports the first invalid value.
 func (c Config) Validate() error {
 	switch c.DefaultAgent {
-	case "claude", "codex", "opencode", "antigravity":
+	case "claude", "codex", "opencode", "antigravity", "pi":
 	default:
-		return fmt.Errorf("default_agent must be \"claude\", \"codex\", \"opencode\" or \"antigravity\", got %q", c.DefaultAgent)
+		return fmt.Errorf("default_agent must be \"claude\", \"codex\", \"opencode\", \"antigravity\" or \"pi\", got %q", c.DefaultAgent)
 	}
 	switch c.Motion {
 	case "on", "off":
@@ -814,7 +821,8 @@ func (c Config) StartMode() (mode string, ignored bool) {
 }
 
 // Binary is the configured command for a kind's CLI (its own name when unset;
-// "agy" for antigravity, whose kind and binary names differ).
+// "agy" for antigravity and "pi-acp" for pi, whose kind and binary names
+// differ).
 func (c Config) Binary(kind string) string {
 	b := ""
 	def := kind
@@ -828,6 +836,9 @@ func (c Config) Binary(kind string) string {
 	case "antigravity":
 		b = c.AntigravityBinary
 		def = "agy"
+	case "pi":
+		b = c.PiBinary
+		def = "pi-acp"
 	}
 	if b == "" {
 		return def

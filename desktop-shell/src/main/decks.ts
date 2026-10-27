@@ -46,12 +46,13 @@ export function findDeck(bundledDir: string, env: NodeJS.ProcessEnv = process.en
 }
 
 // The binary the engine looks for, per agent kind (internal/deck/engine:
-// Antigravity's CLI is agy).
+// Antigravity's CLI is agy, Pi's ACP server pi-acp).
 const AGENT_BINARIES: [kind: string, binary: string][] = [
   ["claude", "claude"],
   ["codex", "codex"],
   ["opencode", "opencode"],
   ["antigravity", "agy"],
+  ["pi", "pi-acp"],
 ];
 
 // The agent CLIs on path, as the engine finds them.

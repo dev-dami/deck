@@ -8,6 +8,7 @@ const KINDS: Record<string, { mark: string; color: string }> = {
   codex: { mark: ">_", color: "#C9CAD0" },
   opencode: { mark: "▯", color: "#9FB7C9" },
   antigravity: { mark: "◎", color: "#A78BFA" },
+  pi: { mark: "π", color: "#7FD18B" },
 };
 
 export function kindStyle(kind: string): { mark: string; color: string } {

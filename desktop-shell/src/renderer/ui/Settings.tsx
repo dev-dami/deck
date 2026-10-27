@@ -23,6 +23,7 @@ import { LayoutPicker } from "./LayoutPicker";
 import { LookEditor } from "./LookEditor";
 import { WallpaperPicker } from "./WallpaperPicker";
 import { AgentGlyph } from "./Welcome";
+import { AGENT_HELP } from "./landing";
 
 function Segmented<T extends string>({
   value,
@@ -392,6 +393,9 @@ function Agents({ state, p }: { state: AppState; p: Prefs }) {
   // "$"; an older one reads only "$".
   const deck = useContext(ProfilesDeck);
   const at = deck !== null && serves(deck.c, "ListProfiles") ? "@" : "$";
+  // The kinds Deck can drive that this one did not find, with how to get
+  // them; only once a Deck has said which it runs.
+  const missing = state.server === null ? [] : AGENT_HELP.filter((a) => !kinds.includes(a.kind));
   return (
     <>
       <Section title="Agent kinds">
@@ -409,6 +413,25 @@ function Agents({ state, p }: { state: AppState; p: Prefs }) {
                   <>
                     {" "}
                     <code className="font-mono text-foreground/80">${k}</code> works too.
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+        ))}
+        {missing.map((a) => (
+          <div key={a.kind} className="flex items-start gap-3 py-3 opacity-60" data-kind={a.kind} data-available="false">
+            <AgentGlyph kind={a.kind} mark={kindMark(state.theme, a.kind) || a.mark} className="mt-px text-base" />
+            <div className="min-w-0 space-y-0.5">
+              <h3 className="font-medium text-[13px]">
+                {a.kind} <span className="font-normal text-muted-foreground">· not installed</span>
+              </h3>
+              <p className="text-pretty text-muted-foreground text-xs leading-relaxed">
+                {a.install === null ? (
+                  <>This Deck did not find {a.name} on its PATH.</>
+                ) : (
+                  <>
+                    Install it with <code className="select-all font-mono text-foreground/80">{a.install}</code>, then restart the Deck.
                   </>
                 )}
               </p>

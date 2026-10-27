@@ -7700,7 +7700,7 @@ type Profile struct {
 	// most 32; not all, user, deck, an agent kind or a teammate's name.
 	// Names compare case-insensitively.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// kind is the CLI it runs: claude, codex, opencode or antigravity.
+	// kind is the CLI it runs: claude, codex, opencode, antigravity or pi.
 	Kind   string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
 	Model  string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
 	Effort string `protobuf:"bytes,4,opt,name=effort,proto3" json:"effort,omitempty"`

@@ -108,7 +108,7 @@ func (m *UI) landingText(width int, withAgents bool) string {
 			parts = append(parts, "", info)
 		}
 	}
-	hint := t.ModelInfo.Provider.Render("Type @ to pick an agent and its model (@claude, @codex, @opencode, @antigravity, or a named agent from deck.json; @all asks everyone; $ works too). # adds a file.")
+	hint := t.ModelInfo.Provider.Render("Type @ to pick an agent and its model (@claude, @codex, @opencode, @antigravity, @pi, or a named agent from deck.json; @all asks everyone; $ works too). # adds a file.")
 	parts = append(parts, "", lipgloss.NewStyle().Width(min(width, landingHintMax)).Render(hint))
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }

@@ -93,7 +93,7 @@ test("the agent pickers list every agent once, keep it, and refresh by hand", as
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
   // One pass over the kinds, apart from any thread.
-  await expect.poll(() => [...fake.deck.modelLists].sort()).toEqual(["claude", "codex", "opencode"]);
+  await expect.poll(() => [...fake.deck.modelLists].sort()).toEqual(["claude", "codex", "opencode", "pi"]);
 
   // A lane's picker: the same sections as any other, open at once.
   await page.locator('.lane[data-lane="agent:claude-1"]').click();
@@ -115,13 +115,42 @@ test("the agent pickers list every agent once, keep it, and refresh by hand", as
   const others = sidebar(page).locator(".session");
   await others.nth(1).click();
   await others.nth(0).click();
-  expect(fake.deck.modelLists).toHaveLength(3);
+  expect(fake.deck.modelLists).toHaveLength(4);
 
   // Refresh lists them all again, asking the Deck to forget its lists once.
   await page.getByRole("button", { name: "Add agent" }).click();
   await add.getByRole("menuitem", { name: "Refresh agents" }).click();
-  await expect.poll(() => fake.deck.modelLists.length).toBe(6);
+  await expect.poll(() => fake.deck.modelLists.length).toBe(8);
   expect(fake.modelRefreshes).toBe(1);
+});
+
+test("$pi starts a pi lane, and its picker offers the models pi has a key for", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await composer(page).fill("$pi look at the limiter");
+  await composer(page).press("Enter");
+  const lane = page.locator('.lane[data-lane="agent:pi-1"]');
+  await expect(lane).toBeVisible();
+  await expect(lane).toContainText("π");
+  await expect(page.locator('[data-agent="pi-1"].msg').last()).toContainText("look at the limiter");
+
+  await lane.click();
+  const menu = page.getByRole("menu", { name: "pi-1" });
+  await expect(menu.getByRole("menuitemradio", { name: /Coder/ })).toBeVisible();
+  await menu.getByRole("menuitemradio", { name: /Reasoner/ }).click();
+  const efforts = menu.getByRole("group", { name: "Reasoning effort" });
+  await expect(efforts.getByRole("menuitemradio")).toHaveText(["Default", "none", "low", "medium", "high"]);
+  await efforts.getByRole("menuitemradio", { name: "medium" }).click();
+  await menu.getByRole("menuitem", { name: "Apply" }).click();
+  const roster = () => fake.deck.invoke("roster.get", { session_id: "ses_main" }) as Array<{ id: string; model?: string }>;
+  await expect.poll(() => roster().find((l) => l.id === "pi-1")?.model).toBe("openrouter/reasoner");
+
+  // Settings lists pi with the kinds this Deck runs, and a kind it did not
+  // find as not installed.
+  await sidebar(page).getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Agents" }).click();
+  await expect(page.locator("h3", { hasText: /^pi$/ })).toBeVisible();
+  await expect(page.locator('[data-kind="antigravity"][data-available="false"]')).toContainText("not installed");
 });
 
 test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill the composer", async ({ page }) => {
@@ -132,7 +161,9 @@ test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill
   await expect(clis.locator('[data-kind="claude"]')).toContainText("/usr/local/bin/claude");
   await expect(clis.locator('[data-kind="codex"]')).toContainText("/opt/homebrew/bin/codex");
   await expect(clis.locator('[data-kind="opencode"]')).toContainText("not found");
-  await expect(clis.getByRole("link", { name: "Install guide" })).toHaveAttribute("href", "https://opencode.ai");
+  await expect(clis.locator('[data-kind="opencode"]').getByRole("link", { name: "Install guide" })).toHaveAttribute("href", "https://opencode.ai");
+  // Pi: not found, with how to get pi and its ACP server.
+  await expect(clis.locator('[data-kind="pi"]')).toContainText("pi-acp");
   // Antigravity: its name only.
   await expect(clis.locator('[data-kind="antigravity"]').getByRole("link")).toHaveCount(0);
   await page.getByRole("button", { name: "Check again" }).click();

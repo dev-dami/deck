@@ -53,7 +53,7 @@ export class Fail extends Error {
   }
 }
 
-const KINDS = ["claude", "codex", "opencode", "antigravity"];
+const KINDS = ["claude", "codex", "opencode", "antigravity", "pi"];
 const STREAM_STEPS = 6;
 
 export interface FakeOptions {
@@ -484,6 +484,14 @@ export class FakeDeck {
         // No session: the kind's models apart from any thread.
         if (p["session_id"] !== "" && p["session_id"] !== undefined) this.get(p["session_id"]);
         this.modelLists.push(String(p["kind"]));
+        // Pi lists the models it has a key for as "provider/model", its
+        // current one first, with the thinking levels each one takes.
+        if (p["kind"] === "pi") {
+          return [
+            { id: "ollama/coder", label: "Coder", selected: true },
+            { id: "openrouter/reasoner", label: "Reasoner", efforts: ["none", "low", "medium", "high"] },
+          ];
+        }
         return [
           { id: "default", label: "Default", selected: true },
           { id: "fast", label: "Fast" },

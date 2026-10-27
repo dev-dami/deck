@@ -69,6 +69,7 @@ export function testHost(
       { kind: "codex", path: "/opt/homebrew/bin/codex" },
       { kind: "opencode", path: null },
       { kind: "antigravity", path: null },
+      { kind: "pi", path: null },
     ],
     // A real probe; no window, so no view.
     preview: new Preview({

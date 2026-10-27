@@ -56,6 +56,7 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 		CodexBinary:       "codex",
 		OpencodeBinary:    "opencode",
 		AntigravityBinary: "agy",
+		PiBinary:          "pi-acp",
 		DefaultMode:       "ask",
 		TrackChanges:      true,
 		DeckAttribution:   true,
