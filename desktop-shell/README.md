@@ -44,7 +44,8 @@ with (`bin/` here, `resources/bin` in an installed app), then `deck` on
 your PATH. It starts the engine with your login shell's PATH, so agent CLIs
 installed in `~/.local/bin`, Homebrew or similar are found even when the
 app is opened from a dock or launcher. The engine needs at least one agent
-CLI (claude, codex, opencode or antigravity, which runs as `agy`).
+CLI (claude, codex, opencode, antigravity, which runs as `agy`, or pi, which
+runs as `pi-acp`).
 
 **First run.** With no recent folder and no pairing, the app opens on the
 Welcome: Open a folder, Pair with a Deck, and Your agents. Your agents lists

@@ -965,14 +965,27 @@ func (w *DeckWorkspace) notice(sid, text string) {
 }
 
 // noAsk are the agent kinds whose CLI cannot hand Deck an approval prompt:
-// in ask mode they are refused whatever needs approval.
-var noAsk = map[string]bool{"antigravity": true}
+// in ask mode they are refused whatever needs approval. neverAsks are those
+// that run their tools without asking at all (Pi), whatever the mode.
+var (
+	noAsk     = map[string]bool{"antigravity": true}
+	neverAsks = map[string]bool{"pi": true}
+)
 
 // warnNoAsk tells the user, once per agent, when an agent that cannot ask
-// starts in ask mode.
+// starts in ask mode, or one that never asks starts outside yolo mode.
 func (w *DeckWorkspace) warnNoAsk(sid, agentID string) {
 	a, ok := w.mgr().Agent(agentID)
-	if !ok || !noAsk[a.Kind] || w.mode() != deckagent.ModeAsk {
+	if !ok {
+		return
+	}
+	var msg string
+	switch mode := w.mode(); {
+	case noAsk[a.Kind] && mode == deckagent.ModeAsk:
+		msg = a.Name + " cannot ask you for approval: in ask mode it is refused commands and edits that need one. Use yolo mode to let it run them, or plan mode to keep it read-only."
+	case neverAsks[a.Kind] && mode != deckagent.ModeYolo:
+		msg = a.Name + " runs commands and edits without asking for approval: " + string(mode) + " mode does not hold it back."
+	default:
 		return
 	}
 	w.mu.Lock()
@@ -980,7 +993,7 @@ func (w *DeckWorkspace) warnNoAsk(sid, agentID string) {
 	w.warned[agentID] = true
 	w.mu.Unlock()
 	if !seen {
-		w.notice(sid, a.Name+" cannot ask you for approval: in ask mode it is refused commands and edits that need one. Use yolo mode to let it run them, or plan mode to keep it read-only.")
+		w.notice(sid, msg)
 	}
 }
 

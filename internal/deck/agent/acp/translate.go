@@ -1,4 +1,4 @@
-package opencode
+package acp
 
 import (
 	"encoding/json"
@@ -29,6 +29,9 @@ type toolState struct {
 	call  toolCall
 	diffs []agent.FileDiff
 	done  bool
+	// term is the command output streamed in _meta, and exit its code.
+	term strings.Builder
+	exit *int
 }
 
 func newTranslator(agentID, dir string) *translator {
@@ -139,6 +142,18 @@ func (t *translator) merge(c toolCall) *toolState {
 	}
 	if c.Title != "" {
 		m.Title = c.Title
+		// pi-acp names a tool only by its title ("read", "edit").
+		if _, known := toolNames[strings.ToLower(c.Title)]; known && m.Name == "" {
+			m.Name = c.Title
+		}
+	}
+	if c.Meta != nil {
+		if o := c.Meta.TerminalOutput; o != nil {
+			st.term.WriteString(o.Data)
+		}
+		if x := c.Meta.TerminalExit; x != nil {
+			st.exit = x.ExitCode
+		}
 	}
 	if c.Kind != "" {
 		m.Kind = c.Kind
@@ -199,6 +214,12 @@ func (t *translator) tool(c toolCall) []agent.Event {
 			tool.Status = agent.ToolError
 		}
 		tool.Output = outputOf(st.call)
+		if tool.Output == "" {
+			tool.Output = strings.TrimRight(st.term.String(), "\n")
+		}
+		if st.exit != nil && *st.exit != 0 {
+			tool.Status = agent.ToolError
+		}
 		e := t.ev(agent.KindToolResult)
 		e.Tool = &tool
 		// Keep only a marker, so a late update is still ignored, and let the
@@ -212,19 +233,20 @@ func (t *translator) tool(c toolCall) []agent.Event {
 	return []agent.Event{e}
 }
 
-// toolNames maps OpenCode's tool names to the names Deck shows; Deck's own MCP
-// tools (registered as server "deck") are mapped by deckTool.
+// toolNames maps the agents' tool names (OpenCode's, Pi's) to the names Deck
+// shows; Deck's own MCP tools (registered as server "deck") are mapped by
+// deckTool.
 var toolNames = map[string]string{
 	"bash": "Bash", "shell": "Bash", "edit": "Edit", "write": "Write", "patch": "Edit", "apply_patch": "Edit",
 	"read": "Read", "grep": "Grep", "glob": "Glob", "list": "LS", "webfetch": "WebFetch", "websearch": "WebSearch",
-	"todowrite": "TodoWrite", "todoread": "TodoRead", "task": "Task",
+	"todowrite": "TodoWrite", "todoread": "TodoRead", "task": "Task", "find": "Glob", "ls": "LS",
 }
 
 var kindNames = map[string]string{
 	"execute": "Bash", "edit": "Edit", "delete": "Edit", "move": "Edit", "read": "Read", "search": "Grep", "fetch": "WebFetch",
 }
 
-// deckToolPrefixes are how OpenCode may name the tools of Deck's MCP server
+// deckToolPrefixes are how an agent may name the tools of Deck's MCP server
 // (registered as "deck"), longest first.
 var deckToolPrefixes = []string{"mcp__deck__", "deck__", "deck_"}
 
@@ -299,6 +321,8 @@ type rawInput struct {
 	Content   string `json:"content"`
 	OldString string `json:"oldString"`
 	NewString string `json:"newString"`
+	OldText   string `json:"oldText"` // Pi's edit
+	NewText   string `json:"newText"`
 	Pattern   string `json:"pattern"`
 	URL       string `json:"url"`
 }
@@ -310,7 +334,7 @@ func inputOf(c toolCall) rawInput {
 }
 
 // title is the tool's one-line summary: the command, the file, or what
-// OpenCode calls it.
+// the agent calls it.
 func (t *translator) title(c toolCall) string {
 	in := inputOf(c)
 	switch {
@@ -379,6 +403,9 @@ func (t *translator) inputDiffs(c toolCall) []agent.FileDiff {
 	path := in.FilePath
 	if path == "" {
 		path = in.Path
+	}
+	if in.OldString == "" && in.NewString == "" {
+		in.OldString, in.NewString = in.OldText, in.NewText
 	}
 	if path == "" || (in.OldString == "" && in.NewString == "") {
 		return nil

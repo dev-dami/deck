@@ -1,6 +1,6 @@
 // Package engine starts Deck's agent engine: the installed claude, codex,
-// opencode and agy CLIs, driven over their own protocols under the user's own
-// login, and the thread manager that puts them in shared threads.
+// opencode, agy and pi-acp CLIs, driven over their own protocols under the
+// user's own login, and the thread manager that puts them in shared threads.
 //
 // Deck never reads the CLIs' credentials and never calls a model API itself.
 package engine
@@ -21,6 +21,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/agent/claude"
 	"github.com/dev-dami/deck/internal/deck/agent/codex"
 	"github.com/dev-dami/deck/internal/deck/agent/opencode"
+	"github.com/dev-dami/deck/internal/deck/agent/pi"
 	"github.com/dev-dami/deck/internal/deck/approve"
 	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/peer"
@@ -96,9 +97,12 @@ func Start() (_ *Engine, err error) {
 	if found(cfg.AntigravityBinary, "agy") {
 		adapters["antigravity"] = antigravity.New(cfg.AntigravityBinary)
 	}
+	if found(cfg.PiBinary, pi.Command) {
+		adapters["pi"] = pi.New(cfg.PiBinary)
+	}
 	if len(adapters) == 0 {
 		broker.Close()
-		return nil, fmt.Errorf("none of claude, codex, opencode or antigravity was found on PATH — run `deck doctor`")
+		return nil, fmt.Errorf("none of claude, codex, opencode, antigravity or pi was found on PATH — run `deck doctor`")
 	}
 	if adapters[cfg.DefaultAgent] == nil {
 		for _, k := range config.Kinds {

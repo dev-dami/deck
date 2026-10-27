@@ -28,7 +28,7 @@ A profile is a named recipe for an agent. It holds:
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | string, required | How it is addressed and shown (`charles`). The same rules as `Manager.Rename`: non-empty; no whitespace and none of `@ $ / * + #`; not `all`, `user`, `deck`, an agent kind, or a teammate's name. Case-insensitive and unique. |
-| `kind` | string, required | The CLI it runs: `claude`, `codex`, `opencode` or `antigravity`. |
+| `kind` | string, required | The CLI it runs: `claude`, `codex`, `opencode`, `antigravity` or `pi`. |
 | `model`, `effort` | string, optional | Defaults to the kind's defaults. |
 | `role` | string, optional | One line ("reviewer", "implements the plan"). Shown in the roster, and goes into the agent's briefing. |
 | `instructions` | string, optional | Standing instructions, appended to the agent's briefing. Counted against the context policy like any briefing text. |

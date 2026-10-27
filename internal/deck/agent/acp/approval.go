@@ -1,4 +1,4 @@
-package opencode
+package acp
 
 import (
 	"encoding/json"
@@ -8,8 +8,8 @@ import (
 	"github.com/dev-dami/deck/internal/deck/agent/codex"
 )
 
-// handleServerRequest answers a request OpenCode sends. Permission requests
-// become Deck approvals; anything else is declined (Deck offers OpenCode no
+// handleServerRequest answers a request the agent sends. Permission requests
+// become Deck approvals; anything else is declined (Deck offers the agent no
 // file system or terminal of its own). It must not block the event loop.
 func (r *run) handleServerRequest(m codex.Message) {
 	if m.Method != reqRequestPermission {

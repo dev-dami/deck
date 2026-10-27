@@ -1012,7 +1012,7 @@ message Profile {
   // most 32; not all, user, deck, an agent kind or a teammate's name.
   // Names compare case-insensitively.
   string name = 1;
-  // kind is the CLI it runs: claude, codex, opencode or antigravity.
+  // kind is the CLI it runs: claude, codex, opencode, antigravity or pi.
   string kind = 2;
   string model = 3;
   string effort = 4;

@@ -15,6 +15,10 @@
     "opencode": {
       "mark": "▯",
       "tint": "#e0b05a"
+    },
+    "pi": {
+      "mark": "π",
+      "tint": "#7fd18b"
     }
   },
   "palette": {

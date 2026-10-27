@@ -21,6 +21,14 @@ export const AGENT_HELP: AgentHelp[] = [
   { kind: "codex", name: "Codex", mark: ">_", install: "npm install -g @openai/codex", url: "https://github.com/openai/codex" },
   { kind: "opencode", name: "OpenCode", mark: "▯", install: "npm install -g opencode-ai", url: "https://opencode.ai" },
   { kind: "antigravity", name: "Antigravity", mark: "◎", install: null, url: null },
+  {
+    kind: "pi",
+    name: "Pi",
+    mark: "π",
+    // Pi speaks ACP through the pi-acp adapter, which runs pi.
+    install: "npm install -g @earendil-works/pi-coding-agent pi-acp",
+    url: "https://github.com/svkozak/pi-acp",
+  },
 ];
 
 export interface StartCard {

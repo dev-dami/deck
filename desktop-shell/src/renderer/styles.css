@@ -153,6 +153,7 @@
   --agent-codex: oklch(0.8 0.03 90);
   --agent-opencode: oklch(0.74 0.09 235);
   --agent-antigravity: oklch(0.72 0.1 300);
+  --agent-pi: oklch(0.78 0.12 150);
   /* Solid buttons are paper; amber is spent on the send button and state. */
   --action: var(--text);
   --action-foreground: var(--canvas);
@@ -195,6 +196,7 @@
   --kind-codex: var(--agent-codex);
   --kind-opencode: var(--agent-opencode);
   --kind-antigravity: var(--agent-antigravity);
+  --kind-pi: var(--agent-pi);
   --scrollbar: oklch(1 0 0 / 0.08);
   --scrollbar-hover: oklch(1 0 0 / 0.14);
 }
@@ -220,6 +222,7 @@
   --agent-codex: oklch(0.5 0.03 90);
   --agent-opencode: oklch(0.55 0.1 235);
   --agent-antigravity: oklch(0.55 0.12 300);
+  --agent-pi: oklch(0.52 0.12 150);
   --secondary: oklch(0.2 0.02 70 / 0.05);
   --info-foreground: oklch(0.58 0.14 65);
   --destructive: oklch(0.6 0.2 27);
@@ -242,6 +245,7 @@
   --kind-codex: var(--agent-codex) !important;
   --kind-opencode: var(--agent-opencode) !important;
   --kind-antigravity: var(--agent-antigravity) !important;
+  --kind-pi: var(--agent-pi) !important;
 }
 
 /* Apple, the default (docs/design-apple.md): the colours of a Mac window.
@@ -283,6 +287,7 @@
   --agent-codex: #a1a1a6;
   --agent-opencode: #64d2ff;
   --agent-antigravity: #bf5af2;
+  --agent-pi: #30d158;
   --action: var(--primary);
   --action-foreground: var(--primary-foreground);
   --link: #409cff;
@@ -310,6 +315,7 @@
   --kind-codex: var(--agent-codex) !important;
   --kind-opencode: var(--agent-opencode) !important;
   --kind-antigravity: var(--agent-antigravity) !important;
+  --kind-pi: var(--agent-pi) !important;
 }
 :root:is([data-palette="apple"], [data-palette="glass"])[data-mode="light"] {
   --canvas: #ffffff;
@@ -333,6 +339,7 @@
   --agent-codex: #6e6e73;
   --agent-opencode: #0077a8;
   --agent-antigravity: #8944ab;
+  --agent-pi: #248a3d;
   --link: #0066cc;
   --secondary: rgb(0 0 0 / 0.05);
   --info-foreground: #0066cc;
@@ -2112,6 +2119,7 @@ aside.panel[data-float]::before {
   --kind-codex: #f3eee3 !important;
   --kind-opencode: #ffa3d6 !important;
   --kind-antigravity: #a59e93 !important;
+  --kind-pi: #c9e6b4 !important;
 
   --syn-keyword: #ff48b0;
   --syn-string: #f3eee3;
@@ -2158,6 +2166,7 @@ aside.panel[data-float]::before {
   --kind-codex: #1d1b1b !important;
   --kind-opencode: #a3306f !important;
   --kind-antigravity: #6e6862 !important;
+  --kind-pi: #4a6b35 !important;
 
   --syn-keyword: #d4007a;
   --syn-string: #1d1b1b;
@@ -2214,6 +2223,7 @@ aside.panel[data-float]::before {
   --kind-codex: #e9dcc0 !important;
   --kind-opencode: #9fbad9 !important;
   --kind-antigravity: #c993c0 !important;
+  --kind-pi: #a6d4a0 !important;
 
   --syn-keyword: #e4b04a;
   --syn-string: #a7c196;
@@ -2262,6 +2272,7 @@ aside.panel[data-float]::before {
   --kind-codex: #3a2a20 !important;
   --kind-opencode: #283a6b !important;
   --kind-antigravity: #8e4f7a !important;
+  --kind-pi: #3f6b45 !important;
 
   --syn-keyword: #b8262d;
   --syn-string: #2f5d45;

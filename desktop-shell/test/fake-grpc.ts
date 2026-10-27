@@ -254,7 +254,7 @@ export class FakeRpcDeck {
         cb(null, {
           version: "fake",
           project: "deck",
-          kinds: ["claude", "codex", "opencode"],
+          kinds: ["claude", "codex", "opencode", "pi"],
           theme: protoOf(this.deck.theme),
           clis: [{ kind: "claude", path: "/usr/bin/claude", found: true }],
           capabilities: this.room.caps,

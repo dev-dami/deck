@@ -8,7 +8,7 @@
 
 **one deck for all your agents**
 
-Run Claude Code, Codex, OpenCode and Antigravity side by side in shared threads: in your terminal, in a desktop window, or from your phone.
+Run Claude Code, Codex, OpenCode, Antigravity and Pi side by side in shared threads: in your terminal, in a desktop window, or from your phone.
 
 <p align="center">
   <picture>
@@ -40,7 +40,7 @@ Windows (PowerShell):
 powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/dev-dami/deck-releases/main/install.ps1 | iex"
 ```
 
-Sign in to `claude`, `codex` and/or `opencode` yourself, then check what Deck sees, and start it in a project folder:
+Sign in to `claude`, `codex`, `opencode` and/or `pi` yourself (Pi runs through [pi-acp](#how-it-works)), then check what Deck sees, and start it in a project folder:
 
 ```sh
 deck doctor
@@ -103,11 +103,11 @@ Run `deck`, type, press enter.
 
 What each mode means for each CLI:
 
-| mode | Claude Code | Codex | OpenCode | Antigravity |
-| --- | --- | --- | --- | --- |
-| plan | `--permission-mode plan` | read-only sandbox | its plan agent | `--mode plan` |
-| ask | asks you through Deck | `on-request`, `workspace-write` | edits, commands and fetches ask you | default mode; tools needing approval are denied with a visible notice (no Deck prompts) |
-| yolo | `bypassPermissions` | `never`, `danger-full-access` | everything approved | `--mode accept-edits` + `--dangerously-skip-permissions` |
+| mode | Claude Code | Codex | OpenCode | Antigravity | Pi |
+| --- | --- | --- | --- | --- | --- |
+| plan | `--permission-mode plan` | read-only sandbox | its plan agent | `--mode plan` | no plan mode: it runs its tools without asking (Deck tells you) |
+| ask | asks you through Deck | `on-request`, `workspace-write` | edits, commands and fetches ask you | default mode; tools needing approval are denied with a visible notice (no Deck prompts) | runs its tools without asking (Deck tells you); only its extensions' confirm and select prompts reach you |
+| yolo | `bypassPermissions` | `never`, `danger-full-access` | everything approved | `--mode accept-edits` + `--dangerously-skip-permissions` | everything approved |
 
 ### Sidebar
 
@@ -212,7 +212,7 @@ Ask an agent to split the work ("spin up two codex agents for the tests") and it
 
 ### How agents reach Deck
 
-Every agent Deck runs (Claude, Codex, OpenCode, Antigravity) is connected to Deck through one MCP server, `deck`, that offers just two tools:
+Every agent Deck runs (Claude, Codex, OpenCode, Antigravity; not Pi, see below) is connected to Deck through one MCP server, `deck`, that offers just two tools:
 
 - **`search {query?, limit?}`** finds things. It returns the Deck ops that match, the best matching skills (with the agent they come from) and hits from this project's past threads. An empty query lists every op with its arguments.
 - **`execute {op, args?}`** runs one op. An unknown op or bad arguments come back as an error that points at `search`.
@@ -235,7 +235,7 @@ Capabilities are ops, not tools, so adding one never adds a tool. Agents hear ab
 | `history.threads {limit?}` | This project's Deck threads: id, title, updated time, agents. |
 | `history.search {query, limit?}` | Search what was said in this project's threads. |
 | `history.read {thread, last?}` | The last entries of one of them. |
-| `skills.list` | Every skill any agent can see: Deck's builtins, and the project's and your `.claude`, `.agents`, `.codex`, `.opencode`, `.agent`/`.gemini` skill folders. |
+| `skills.list` | Every skill any agent can see: Deck's builtins, and the project's and your `.claude`, `.agents`, `.codex`, `.opencode`, `.agent`/`.gemini` and `.pi` skill folders. |
 | `skills.read {name, source?, file?}` | A skill's `SKILL.md`, or one file inside its folder, so one agent can follow another's skill. |
 | `skills.used` | Skills the agents in this thread have used (Claude's Skill tool, `SKILL.md` reads). |
 | `git.status`, `git.log {n?}`, `git.diff {path?, staged?}`, `git.show {ref}`, `git.branches` | Read-only git, in the thread's folder. |
@@ -279,7 +279,7 @@ Roles point one way. The role on a teammate's row is what *it* may do on *your* 
 
 ### Working with teammates
 
-- **Contracts.** Ask a teammate's Deck to do a coding task: `c` on a teammate in the Team pane, then type the brief, or have an agent call `task.contract {peer, brief}` (you allow each one, in every mode). A copy of the tree goes to that Deck alone. The task stays on your board, owned by the teammate (`vps`, then `vps/claude`), and the tasks that depend on it wait for it; `x` on it calls the contract off and stops their agent. A teammate that cannot be reached gets the request when its link is back, and a request no one answers ends after 24 hours. On the teammate's Deck the request shows as a card in the Team pane, if they gave you the role `contractor`: `y` runs it with the agent shown, `a` picks another agent, `n` declines. It runs in a new thread on a copy of your tree, under their login and plan, in ask mode at most, and they allow its edits as usual. Antigravity cannot run contracts: Deck cannot make it ask before each edit and command. When the task ends, only a capsule of the changes and the agent's last reply come back; apply the capsule with `sub.patch.apply`.
+- **Contracts.** Ask a teammate's Deck to do a coding task: `c` on a teammate in the Team pane, then type the brief, or have an agent call `task.contract {peer, brief}` (you allow each one, in every mode). A copy of the tree goes to that Deck alone. The task stays on your board, owned by the teammate (`vps`, then `vps/claude`), and the tasks that depend on it wait for it; `x` on it calls the contract off and stops their agent. A teammate that cannot be reached gets the request when its link is back, and a request no one answers ends after 24 hours. On the teammate's Deck the request shows as a card in the Team pane, if they gave you the role `contractor`: `y` runs it with the agent shown, `a` picks another agent, `n` declines. It runs in a new thread on a copy of your tree, under their login and plan, in ask mode at most, and they allow its edits as usual. Antigravity and Pi cannot run contracts: Deck cannot make them ask before each edit and command. When the task ends, only a capsule of the changes and the agent's last reply come back; apply the capsule with `sub.patch.apply`.
 - **Shared threads.** `s` on a teammate in the Team pane shares the open thread with their Deck, stepping through observer (reads it), participant (also posts) and editor (also answers its approvals), then not shared. They follow it live in their Shared pane: `enter` on a thread, `p` posts, `y`/`n` answers the approval under the cursor, `esc` goes back. Their messages reach your agents as `[vps] …`, like yours and through the same queue, but cannot address agents (neither `@` nor `$` is a mention), do not end a pause, and switch a yolo thread to ask mode. Approvals for contracts never travel.
 - **Reports from a teammate's server (ops contracts).** `o` on a teammate in the Team pane, then type the request: `ask vps to report podman containers: name, state, uptime for web`. Check the card it makes and press `y`. Their Deck runs it at once, with no person needed, but only when what you ask for is inside the `max_scope` they gave you; otherwise it refuses and says why. An agent with no tools of its own runs it there: it can only run commands in a sandbox (`sh.run`) and hand back the result (`contract.result`). The result must fit the fields you asked for; both Decks check it, and it shows as a table in the Team pane. Only Claude can run ops contracts so far; the other CLIs cannot turn their own tools off, so they refuse. Every step goes to `~/.deck/peers/audit.jsonl`.
 
@@ -311,8 +311,9 @@ Roles point one way. The role on a teammate's row is what *it* may do on *your* 
   "codex_binary": "codex",
   "opencode_binary": "opencode",
   "antigravity_binary": "agy",
-  "models": { "claude": "", "codex": "", "opencode": "", "antigravity": "" },
-  "efforts": { "claude": "", "codex": "", "opencode": "", "antigravity": "" },
+  "pi_binary": "pi-acp",
+  "models": { "claude": "", "codex": "", "opencode": "", "antigravity": "", "pi": "" },
+  "efforts": { "claude": "", "codex": "", "opencode": "", "antigravity": "", "pi": "" },
   "context": {
     "isolate_global_config": false,
     "instruction_files": "inherit",
@@ -329,14 +330,14 @@ Roles point one way. The role on a teammate's row is what *it* may do on *your* 
 
 `context` sizes what Deck puts in front of an agent by its model's context window. `briefing_pct` is the share of the window the summary of what an agent missed may take (default 4%, kept between 16k and 160k characters), and `tool_output_pct` the share one search or execute result may take (default 1.5%, 8–64 KB). With the defaults, windows of 128k–200k tokens (and agents whose window is not known yet) get the fixed budgets Deck always had (40,000 characters, 20 KB); larger windows get more, smaller ones less. A briefing is halved for an agent whose context is over 80% full; `thread.read` still shows the rest.
 
-The other `context` keys choose what each agent's CLI loads besides Deck's own, and `per_agent` overrides them for one kind (`claude`, `codex`, `opencode`, `antigravity`). Only Claude Code honours them today:
+The other `context` keys choose what each agent's CLI loads besides Deck's own, and `per_agent` overrides them for one kind (`claude`, `codex`, `opencode`, `antigravity`, `pi`). Only Claude Code honours them today:
 
 - `isolate_global_config` (off by default) starts Claude with `--setting-sources project,local`: your `~/.claude/settings.json` (with its hooks, permissions and env) and `~/.claude/CLAUDE.md` and rules are left out; the project's own still load.
 - `instruction_files`: `inherit` (default), `project-only` (the same as above) or `none` (no `CLAUDE.md` at all, which also leaves out the project's `.claude` settings).
 - `mcp`: `deck-only` (default: only Deck's MCP server, no claude.ai connectors) or `inherit` (your own servers too).
 - `compact_at_pct`: how full Claude's context may get before it compacts, as `--autocompact` of that share of the model's window (100k–1M tokens); 0 leaves Claude's default. It applies once the model's window is known (an explicit model, or after Claude has said which one it runs).
 
-Codex, OpenCode and Antigravity keep their own config, instruction files and MCP servers whatever these say; Deck shows one notice per agent kind when a setting has no effect.
+Codex, OpenCode, Antigravity and Pi keep their own config, instruction files and MCP servers whatever these say; Deck shows one notice per agent kind when a setting has no effect.
 
 `review` is the reviewer for tasks that subagents run and that name none: an agent kind, `other` (any installed kind but the worker's) or `none`.
 
@@ -352,7 +353,9 @@ Environment:
 
 ## How it works
 
-Deck never calls a model API and never touches your credentials. It starts your CLIs as child processes and reads their structured output: `claude -p` with stream-json, `codex app-server` over JSON-RPC, and `opencode acp` over the Agent Client Protocol. For OpenCode, Deck sets one thing, in the child's environment only (`OPENCODE_CONFIG_CONTENT`, laid over any you already set): edits, commands and fetches ask first, so Deck's approvals and modes decide them. Your OpenCode config files are never written. Approvals and the agents' `search` and `execute` calls travel through a small MCP helper (`deck mcp-approve`) to Deck over loopback, authenticated with a per-run token. Usage counts against your own Claude and Codex plans and whatever providers OpenCode uses.
+Deck never calls a model API and never touches your credentials. It starts your CLIs as child processes and reads their structured output: `claude -p` with stream-json, `codex app-server` over JSON-RPC, and `opencode acp` and `pi-acp` over the Agent Client Protocol (ACP). For OpenCode, Deck sets one thing, in the child's environment only (`OPENCODE_CONFIG_CONTENT`, laid over any you already set): edits, commands and fetches ask first, so Deck's approvals and modes decide them. Your OpenCode config files are never written. Approvals and the agents' `search` and `execute` calls travel through a small MCP helper (`deck mcp-approve`) to Deck over loopback, authenticated with a per-run token. Usage counts against your own Claude and Codex plans and whatever providers OpenCode uses.
+
+Pi (the `pi` coding agent) speaks ACP through the [pi-acp](https://github.com/svkozak/pi-acp) adapter, which runs `pi --mode rpc`: install both with `npm install -g @earendil-works/pi-coding-agent pi-acp` and set pi up with your providers (`pi`, then `/login`, or an API key). Deck lists the models pi has a key or login for, with each one's thinking levels (pi's `off` is Deck's `none`). Pi runs its tools without asking, so Deck's plan and ask modes cannot hold it back (Deck tells you when it starts in one), it never runs a teammate's contract, and since pi-acp does not pass MCP servers on, Pi has none of Deck's `search` and `execute` tools. `PI_ACP_PI_COMMAND` still picks the `pi` that pi-acp runs.
 
 In a git work tree, each message you send records the tree as a git snapshot (tracked edits and untracked files that are not ignored). The snapshot is written through a throwaway index, so your branch, index, stash and refs are never touched. Its objects sit unreferenced in `.git` until `git gc` prunes them. Undo writes files the way `git checkout` would. Set `track_changes` to `false` to turn this off. Outside git the changes panel shows what the agents reported, without undo.
 

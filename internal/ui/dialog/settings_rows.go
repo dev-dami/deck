@@ -263,11 +263,23 @@ func (s *Settings) agentRows() []settingsRow {
 				row.value = b.Path
 			} else {
 				row.value = b.Command + " not found"
+				if h := installHints[kind]; h != "" {
+					row.hint = "Install it with " + h + ". " + row.hint
+				}
 			}
 		}
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// installHints say how to install an agent kind's CLI (deck doctor, and the
+// desktop's Welcome, say the same).
+var installHints = map[string]string{
+	"claude":   "npm install -g @anthropic-ai/claude-code",
+	"codex":    "npm install -g @openai/codex",
+	"opencode": "npm install -g opencode-ai",
+	"pi":       "npm install -g @earendil-works/pi-coding-agent pi-acp",
 }
 
 // rowLines renders the page's rows and the selected row's hint.

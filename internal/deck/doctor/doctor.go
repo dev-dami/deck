@@ -48,9 +48,11 @@ type Options struct {
 	OpencodeBinary string
 	// AntigravityBinary is the agy command or path; "agy" by default.
 	AntigravityBinary string
-	ConfigPath        string // shown in the report
-	ThreadsDir        string // shown in the report
-	Timeout           time.Duration
+	// PiBinary is Pi's ACP server (pi-acp) command or path; "pi-acp" by default.
+	PiBinary   string
+	ConfigPath string // shown in the report
+	ThreadsDir string // shown in the report
+	Timeout    time.Duration
 	// Terminal reports the output terminal's size and whether it is a TTY.
 	Terminal func() (cols, rows int, tty bool)
 	// Logo returns the escape sequence that draws a CLI's logo (logoCols x
@@ -86,9 +88,11 @@ func DefaultOptions() Options {
 		OpencodeBinary: "opencode",
 		// Antigravity is optional: it is only reported when it is installed.
 		AntigravityBinary: "agy",
-		Timeout:           10 * time.Second,
-		Terminal:          stdoutTerminal,
-		Logo:              terminalLogo,
+		// Pi is optional: it is only reported when its ACP server is installed.
+		PiBinary: "pi-acp",
+		Timeout:  10 * time.Second,
+		Terminal: stdoutTerminal,
+		Logo:     terminalLogo,
 	}
 	if p, err := config.Path(); err == nil {
 		opts.ConfigPath = p
@@ -112,6 +116,9 @@ func DefaultOptions() Options {
 	}
 	if cfg.OpencodeBinary != "" {
 		opts.OpencodeBinary = cfg.OpencodeBinary
+	}
+	if cfg.PiBinary != "" {
+		opts.PiBinary = cfg.PiBinary
 	}
 	if cfg.AntigravityBinary != "" {
 		opts.AntigravityBinary = cfg.AntigravityBinary
@@ -145,7 +152,7 @@ func RunWith(ctx context.Context, w io.Writer, opts Options) error {
 		statusArgs: []string{"login", "status"},
 		install:    "npm install -g @openai/codex",
 	}}
-	// OpenCode and Antigravity are optional: listed only when installed.
+	// OpenCode, Antigravity and Pi are optional: listed only when installed.
 	if opts.OpencodeBinary != "" {
 		if _, err := opts.Runner.LookPath(opts.OpencodeBinary); err == nil {
 			specs = append(specs, agentSpec{
@@ -161,6 +168,15 @@ func RunWith(ctx context.Context, w io.Writer, opts Options) error {
 				name:   "antigravity",
 				binary: opts.AntigravityBinary,
 				note:   "uses its own login (run agy once to sign in)",
+			})
+		}
+	}
+	if opts.PiBinary != "" {
+		if _, err := opts.Runner.LookPath(opts.PiBinary); err == nil {
+			specs = append(specs, agentSpec{
+				name:   "pi",
+				binary: opts.PiBinary,
+				note:   "uses pi's own providers (run pi, then /login)",
 			})
 		}
 	}

@@ -355,7 +355,7 @@ func init() {
 			Args: []Arg{{Name: "query", Type: tString, Required: true}, {Name: "limit", Type: tInt}}, run: opHistorySearch},
 		{Name: "history.read", Desc: "Read one of this project's Deck threads (by id from history.threads), its last entries.",
 			Args: []Arg{{Name: "thread", Type: tString, Required: true}, {Name: "last", Type: tInt}}, run: opHistoryRead},
-		{Name: "skills.list", Desc: "List every skill any agent can see (Deck, Claude, Codex, OpenCode, Antigravity; project and user), with its source.",
+		{Name: "skills.list", Desc: "List every skill any agent can see (Deck, Claude, Codex, OpenCode, Antigravity, Pi; project and user), with its source.",
 			run: opSkillsList},
 		{Name: "skills.read", Desc: "Read a skill's SKILL.md, or one file inside that skill's folder, so you can follow it whichever agent owns it.",
 			Args: []Arg{{Name: "name", Type: tString, Required: true}, {Name: "source", Type: tString, Desc: "e.g. claude-user, when names clash"}, {Name: "file", Type: tString, Desc: "path inside the skill folder"}}, run: opSkillsRead},

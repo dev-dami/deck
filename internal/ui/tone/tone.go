@@ -66,6 +66,7 @@ var (
 	Codex       = lipgloss.Color("#8C9EFF") // the Codex logo's blue
 	Opencode    = lipgloss.Color("#E4E0DF") // OpenCode's monochrome mark
 	Antigravity = lipgloss.Color("#A78BFA") // Antigravity's violet
+	Pi          = lipgloss.Color("#7FD18B") // a green for pi's π
 	Iris        = Codex
 	Clay        = Claude
 )
@@ -94,6 +95,7 @@ var (
 var (
 	LightOpencode    = lipgloss.Color("#3B3634")
 	LightAntigravity = lipgloss.Color("#6D4FD8")
+	LightPi          = lipgloss.Color("#2E7D3A")
 )
 
 // light is true while a light theme is active; set by SetLight.
@@ -103,7 +105,8 @@ var light atomic.Bool
 // stay readable on it. The UI calls it whenever the theme changes.
 func SetLight(on bool) { light.Store(on) }
 
-// Tint is an agent kind's colour ("claude", "codex", "opencode", "antigravity").
+// Tint is an agent kind's colour ("claude", "codex", "opencode", "antigravity",
+// "pi").
 func Tint(kind string) color.Color {
 	if light.Load() {
 		switch kind {
@@ -115,6 +118,8 @@ func Tint(kind string) color.Color {
 			return LightOpencode
 		case "antigravity":
 			return LightAntigravity
+		case "pi":
+			return LightPi
 		}
 		return LightMuted
 	}
@@ -127,13 +132,16 @@ func Tint(kind string) color.Color {
 		return Opencode
 	case "antigravity":
 		return Antigravity
+	case "pi":
+		return Pi
 	}
 	return Muted
 }
 
 // Mark is how an agent kind is drawn: the mark its own CLI uses in the
 // terminal (Claude Code's ✻, Codex CLI's >_, OpenCode's hollow block ▯,
-// Antigravity's ◎), ▌ (a card edge, as in Deck's mark) for anything else.
+// Antigravity's ◎, Pi's π), ▌ (a card edge, as in Deck's mark) for anything
+// else.
 func Mark(kind string) string {
 	switch kind {
 	case "claude":
@@ -144,6 +152,8 @@ func Mark(kind string) string {
 		return "▯"
 	case "antigravity":
 		return "◎"
+	case "pi":
+		return "π"
 	}
 	return "▌"
 }
@@ -155,7 +165,7 @@ var named = map[string]color.Color{
 	"mint": Mint, "teal": Teal, "deepteal": DeepTeal, "seafoam": Seafoam,
 	"amber": Amber, "honey": Honey, "coral": Coral, "ember": Ember, "moss": Moss, "fern": Fern,
 	"sky": Sky, "dusk": Dusk, "plum": Plum, "addbg": AddBg, "delbg": DelBg,
-	"claude": Claude, "codex": Codex, "opencode": Opencode, "antigravity": Antigravity,
+	"claude": Claude, "codex": Codex, "opencode": Opencode, "antigravity": Antigravity, "pi": Pi,
 }
 
 // Hex is a colour as "#rrggbb".
