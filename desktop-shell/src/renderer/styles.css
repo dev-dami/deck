@@ -2333,8 +2333,9 @@ aside.panel[data-float]::before {
    block names .look too. */
 
 /* Paper and vellum: square corners, a rule and a shadow a few pixels out
-   of register in the spot colour (Riso's pink, or the accent). Nothing
-   blurs and nothing glows. */
+   of register in the spot colour: Riso's pink, or for colours with no spot
+   ink a faint impression of the text's, since an accent there reads as a
+   glitch, not a print. Nothing blurs and nothing glows. */
 :is(:root, .look)[data-material="paper"][data-mode] {
   --radius: 4px;
   --control-radius: 3px;
@@ -2348,11 +2349,11 @@ aside.panel[data-float]::before {
   --glass-rim: color-mix(in srgb, var(--text) 42%, transparent);
   --glass-spec: transparent;
   --glass-sheen: none;
-  --glass-shadow: 3px 3px 0 0 var(--spot, var(--primary));
+  --glass-shadow: 3px 3px 0 0 var(--spot, color-mix(in srgb, var(--text) 16%, transparent));
   --glass-shadow-clear: none;
   --sheet-rim: color-mix(in srgb, var(--text) 34%, transparent);
-  --sheet-shadow: 3px 3px 0 0 var(--spot, var(--primary));
-  --elevation-popover: 3px 3px 0 0 var(--spot, var(--primary));
+  --sheet-shadow: 3px 3px 0 0 var(--spot, color-mix(in srgb, var(--text) 16%, transparent));
+  --elevation-popover: 3px 3px 0 0 var(--spot, color-mix(in srgb, var(--text) 16%, transparent));
   --elevation-card: 0 0 #0000;
   --tint-sheen: none;
   --material-edge: none;
