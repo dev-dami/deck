@@ -393,6 +393,9 @@ export interface DeckHost {
   // Shows this icon for the app and keeps it for the next start; false when
   // the system could not decode it.
   setAppIcon(images: AppIconImage[]): Promise<boolean>;
+  // The icon a project folder already has (its logo or favicon) as a data:
+  // URL, or null. Only for a folder the app has open or opened lately.
+  projectIcon(dir: string): Promise<string | null>;
 }
 
 // The renderer's view: the host, the event streams, and the path of a
@@ -449,6 +452,7 @@ export const HOST_METHODS = [
   "previewHide",
   "previewClose",
   "setAppIcon",
+  "projectIcon",
 ] as const satisfies ReadonlyArray<keyof DeckHost>;
 
 export type HostMethod = (typeof HOST_METHODS)[number];

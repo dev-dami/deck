@@ -3,6 +3,7 @@ import { BarChart3, Settings, Unplug, Users } from "./icons";
 import { cn } from "../lib/cn";
 import type { SettingsSection } from "../ui";
 import { Button } from "./kit/button";
+import { NotificationBell } from "./NotificationBell";
 
 const LINK_LABEL: Record<Link, string> = { online: "Connected", connecting: "Connecting…", offline: "Offline" };
 
@@ -19,10 +20,11 @@ const linkDot: Record<Link, string> = {
 const quiet =
   "flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1 text-2xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-// The sidebar's footer: Settings, Usage, Team and Close project (Search at
-// the top opens the commands), then an update that waits, the connection
-// and the teammates online. The connection is a live dot and a word; the
-// word gives way when the footer is narrower than 15rem.
+// The sidebar's footer: Settings, Usage, Team, the notifications' bell and
+// Close project (Search at the top opens the commands), then an update
+// that waits, the connection and the teammates online. The connection is a
+// live dot and a word; the word gives way when the footer is narrower than
+// 15rem.
 export function SidebarFooter({
   link,
   settings,
@@ -68,6 +70,7 @@ export function SidebarFooter({
           <Users weight={team ? "fill" : "regular"} />
         </Button>
       )}
+      <NotificationBell onSettings={() => onSettings("general")} />
       <Button variant="ghost-muted" size="icon-sm" aria-label="Close project" title="Close project" onClick={onDisconnect}>
         <Unplug />
       </Button>

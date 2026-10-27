@@ -9,6 +9,7 @@ import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
 import { EmptyPlate } from "./kit/plate";
 import { PLATES } from "../plates";
+import { ProjectIcon } from "./ProjectIcon";
 
 // Each state's glyph, its colour and its group, most urgent first: what
 // waits for an answer wears the warning colour, changes to review the
@@ -70,8 +71,11 @@ function Row({
           <span className="inbox-label min-w-0 truncate font-medium text-[13px]">{item.label}</span>
           {item.at > 0 && <span className="ml-auto shrink-0 text-2xs text-faint tabular-nums">{relativeTime(new Date(item.at).toISOString(), now)}</span>}
         </div>
-        <div className="-mt-1 min-w-0 truncate text-2xs text-faint">
-          {item.projectName} <span aria-hidden>·</span> <span className="text-muted-foreground">{item.title}</span>
+        <div className="-mt-1 flex min-w-0 items-center gap-1.5 text-2xs text-faint">
+          <ProjectIcon source={item.source} name={item.projectName} size={12} />
+          <span className="min-w-0 truncate">
+            {item.projectName} <span aria-hidden>·</span> <span className="text-muted-foreground">{item.title}</span>
+          </span>
         </div>
         {item.approval !== undefined && (
           <code className="block max-h-24 min-w-0 overflow-auto whitespace-pre-wrap break-all rounded-[8px] bg-code px-2.5 py-1.5 font-mono text-foreground/85 text-xs">

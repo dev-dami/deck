@@ -10,7 +10,6 @@ import {
   parseOverlap,
   type RoomInput,
   roomStatus,
-  shouldNotify,
 } from "./attention";
 import type { AgentNode, BoardTask, TeamContract } from "./crew";
 
@@ -108,7 +107,7 @@ describe("roomStatus", () => {
 
   test("an approval needs you and names the thing", () => {
     const st = roomStatus(room({ session: session("a", { busy: true }), approvals: [approval("p1", "a", T0 + 5)] }));
-    expect(st).toEqual({ state: "needs-you", label: "Approve command", at: T0 + 5 });
+    expect(st).toEqual({ state: "needs-you", label: "Approve command", at: T0 + 5, need: "approval" });
     const edit = approval("p2", "a", T0, { kind: "edit", path: "internal/auth/auth.go" });
     expect(roomStatus(room({ approvals: [edit] })).label).toBe("Approve edit to auth.go");
     expect(roomStatus(room({ approvals: [approval("p3", "a", T0, { kind: "other" })] })).label).toBe("Answer claude-1");
@@ -117,7 +116,7 @@ describe("roomStatus", () => {
   test("an agent that waits, a blocked task and a failed one need you", () => {
     expect(roomStatus(room({ agents: [agent("claude-1", "approval")] })).label).toBe("Answer claude-1");
     const blocked = roomStatus(room({ tasks: [task("t1", "blocked", T0 + 9)] }));
-    expect(blocked).toEqual({ state: "needs-you", label: "Task blocked: Task t1", at: T0 + 9 });
+    expect(blocked).toEqual({ state: "needs-you", label: "Task blocked: Task t1", at: T0 + 9, need: "error" });
     expect(roomStatus(room({ tasks: [task("t2", "failed", T0 + 9)] })).label).toBe("Task failed: Task t2");
     expect(roomStatus(room({ agents: [agent("codex-2", "error", T0 + 9)] })).label).toBe("codex-2 stopped with an error");
   });
@@ -177,7 +176,7 @@ describe("roomStatus", () => {
   });
 
   test("the engine's attention needs you, and the shell keeps its clearing rules", () => {
-    expect(roomStatus(room({ attention: "approval" }))).toEqual({ state: "needs-you", label: "Approve a request", at: T0 });
+    expect(roomStatus(room({ attention: "approval" }))).toEqual({ state: "needs-you", label: "Approve a request", at: T0, need: "approval" });
     expect(roomStatus(room({ attention: "question" })).label).toBe("Answer a question");
     // The shell's own list names the thing better.
     expect(roomStatus(room({ attention: "approval", approvals: [approval("p1", "a", T0 + 5)] })).label).toBe("Approve command");
@@ -190,7 +189,7 @@ describe("roomStatus", () => {
 
   test("the engine's blocked holds until the task changes, whatever the person writes", () => {
     const tasks = [task("t1", "blocked", T0 + 9)];
-    expect(roomStatus(room({ attention: "blocked", tasks, actedAt: T0 + 100 }))).toEqual({ state: "needs-you", label: "Task blocked: Task t1", at: T0 + 9 });
+    expect(roomStatus(room({ attention: "blocked", tasks, actedAt: T0 + 100 }))).toEqual({ state: "needs-you", label: "Task blocked: Task t1", at: T0 + 9, need: "error" });
     expect(roomStatus(room({ attention: "blocked" })).label).toBe("Task blocked");
     // A retry or a cancel: the engine says nothing more, and the board no longer counts.
     expect(roomStatus(room({ attention: "", tasks })).state).toBe("idle");
@@ -227,18 +226,6 @@ describe("helpers", () => {
       { s: session("ask", { updated_at: iso(T0 - 200) }), status: { state: "needs-you" as const, label: "", at: T0 - 200 } },
     ];
     expect([...rows].sort(byAttention).map((r) => r.s.id)).toEqual(["ask", "done", "new", "old"]);
-  });
-
-  test("notifications: entering needs-you, or finishing once, unless queued or off", () => {
-    expect(shouldNotify("working", "needs-you", "all", false)).toBe(true);
-    expect(shouldNotify("working", "done", "all", false)).toBe(true);
-    expect(shouldNotify("done", "review", "all", false)).toBe(false);
-    expect(shouldNotify("working", "done", "needs-you", false)).toBe(false);
-    expect(shouldNotify("working", "needs-you", "needs-you", false)).toBe(true);
-    expect(shouldNotify("working", "needs-you", "none", false)).toBe(false);
-    expect(shouldNotify("working", "needs-you", "all", true)).toBe(false);
-    expect(shouldNotify(undefined, "needs-you", "all", false)).toBe(false);
-    expect(shouldNotify("needs-you", "needs-you", "all", false)).toBe(false);
   });
 });
 

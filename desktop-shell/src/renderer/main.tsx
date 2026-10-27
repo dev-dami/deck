@@ -8,6 +8,7 @@ import "@fontsource-variable/space-grotesk/wght.css";
 import "@fontsource-variable/martian-mono/wght.css";
 import "@fontsource/pixelify-sans/500.css";
 import { startAppIconSync } from "./appIcon/sync";
+import { startProjectLogos } from "./projectIcon";
 import "./styles.css";
 import { App } from "./ui/App";
 
@@ -22,6 +23,8 @@ if (bridge !== undefined) {
   window.addEventListener("unhandledrejection", (e) => report(e.reason));
   // The app's icon follows the theme, or the one picked in Settings.
   startAppIconSync(bridge);
+  // The project tiles show a folder's own logo when it has one.
+  startProjectLogos(bridge);
 }
 const root = document.getElementById("root");
 if (root !== null) {
