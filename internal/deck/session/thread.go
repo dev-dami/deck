@@ -64,6 +64,9 @@ type thread struct {
 	leases []lease
 	edits  map[string]edit
 	warned map[string]time.Time
+	// coord is who changed which file when, and the asks to edit a file
+	// another member owns (coord.go).
+	coord coordState
 
 	// Lifecycle (lifecycle.go): pinned to the top, resolved (settled until a
 	// new message wakes it), archived (off the sidebar, still resumable).

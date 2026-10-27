@@ -127,11 +127,28 @@ type Config struct {
 	// Context shapes how much of a thread Deck puts in front of an agent
 	// (docs/context-design.md). The zero value is Deck's defaults.
 	Context Context `json:"context,omitzero"`
+	// EditGate coordinates agents that edit the same files of a shared work
+	// tree (session/coord.go). On by default.
+	EditGate EditGate `json:"edit_gate,omitzero"`
 	// Peers links this Deck to other Deck instances (docs/peers-design.md).
 	// Nil, the default, means peers are off: no listener, no dialing. Keys
 	// never live here; they are in ~/.deck/peers/.
 	Peers *Peers `json:"peers,omitempty"`
 }
+
+// EditGate: before an agent edits a file another agent of the thread is
+// changing or holds, Deck shows it that agent's changes and asks that agent
+// first; the edit waits for the answer, at most TimeoutSec.
+type EditGate struct {
+	// Off turns the gate off: agents edit shared files without asking.
+	Off bool `json:"off,omitempty"`
+	// TimeoutSec is how long an edit waits for the owner's answer; 0 means
+	// DefaultEditGateSec.
+	TimeoutSec int `json:"timeout_sec,omitempty"`
+}
+
+// DefaultEditGateSec is how long an edit waits for its file's owner.
+const DefaultEditGateSec = 120
 
 // Defaults for the orchestration limits left at 0.
 const (

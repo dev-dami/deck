@@ -798,7 +798,7 @@ func TestWriteSettingsRedirectsPrivateFolders(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	project := t.TempDir()
 	for _, attribution := range []bool{false, true} {
-		path, err := writeSettings(project, attribution)
+		path, err := writeSettings(project, attribution, "")
 		if err != nil {
 			t.Fatal(err)
 		}

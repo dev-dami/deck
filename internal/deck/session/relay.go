@@ -155,6 +155,8 @@ func (m *Manager) handleMessage(msg agent.Message) {
 		respond("", err)
 		return
 	}
+	// A message to a member waiting on from for a file is the answer.
+	m.answerBySend(t, from, targets, text)
 	capsule := strings.TrimSpace(msg.Capsule)
 	if capsule != "" {
 		if err := m.knownCapsule(capsule); err != nil {

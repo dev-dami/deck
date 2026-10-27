@@ -227,6 +227,7 @@ func MCPApprove(args []string) error {
 	id := fs.String("agent", "", "agent id")
 	tokenFile := fs.String("token-file", "", "file holding the broker token")
 	approveTool := fs.Bool(strings.TrimPrefix(approve.ApproveToolFlag, "--"), false, "also expose the approve tool (Claude's permission prompts)")
+	editGate := fs.Bool(strings.TrimPrefix(approve.EditGateFlag, "--"), false, "run as Claude's pre-edit hook (the edit gate) instead")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -240,6 +241,9 @@ func MCPApprove(args []string) error {
 			return fmt.Errorf("mcp-approve: %w", err)
 		}
 		token = strings.TrimSpace(string(b))
+	}
+	if *editGate {
+		return approve.EditGateHook(os.Stdin, os.Stdout, *addr, token, *id)
 	}
 	return approve.MCPServe(os.Stdin, os.Stdout, *addr, token, *id, *approveTool)
 }

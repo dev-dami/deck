@@ -351,6 +351,12 @@ func NewManager(adapters map[string]agent.Adapter, st *store.Store, cfg config.C
 	if o.Hub != nil {
 		o.Hub.SetThreadReader(m.readThread)
 		o.Hub.SetExecutor(m.execOp)
+		// A hub that also serves the CLIs' pre-edit hooks (Claude's).
+		if g, ok := o.Hub.(interface {
+			SetEditGate(func(agentID string, paths []string) string)
+		}); ok {
+			g.SetEditGate(m.gateHook)
+		}
 		m.wg.Add(1)
 		go m.hubLoop(o.Hub.Messages())
 	}
@@ -1641,7 +1647,7 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	case ev.Kind == agent.KindLimits && ev.Limits != nil:
 		m.setLimits(a.kind, *ev.Limits)
 	case ev.Kind == agent.KindFileChange && ev.Diff != nil:
-		m.noteEdit(t, a, ev.Diff.Path)
+		m.noteEdit(t, a, ev.Diff)
 	case ev.Kind == agent.KindTurnDone || ev.Kind == agent.KindExited:
 		m.charge(t, a, res.spent)
 	case ev.Kind == agent.KindUsage || ev.Kind == agent.KindToolCall && !ev.Delta:
@@ -1656,11 +1662,19 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	// draining a's events while relays are delivered; an exit is handled
 	// after the end of the turn before it has been settled.
 	if ev.Kind == agent.KindTurnDone {
+		// Before afterTurn delivers what queued: an ask settled here no
+		// longer starts a turn.
+		reply := end.text
+		if end.interrupted {
+			reply = ""
+		}
+		m.ownerDone(t, a, reply)
 		m.onThread(t, func() { m.afterTurn(a, end) })
 		m.checkAttribution(a)
 	}
 	if ev.Kind == agent.KindExited {
 		m.sweepLeases(t)
+		m.ownerDone(t, a, "")
 		m.onThread(t, func() {
 			m.failOwned(t, a)
 			m.cascade(t, a)
@@ -1682,6 +1696,24 @@ func (m *Manager) onApproval(a *agentState, req agent.ApprovalRequest) {
 		}
 		return
 	}
+	if req.Kind == agent.ApproveEdit && a.thread.getMode() != agent.ModePlan && m.gated(a, req) {
+		// An edit first passes the gate (coord.go), which may wait for the
+		// file's owner: off the pump, which goes on with a's events.
+		m.wg.Add(1)
+		go func() {
+			defer m.wg.Done()
+			if m.gateApproval(a, req) {
+				m.askApproval(a, req)
+			}
+		}()
+		return
+	}
+	m.askApproval(a, req)
+}
+
+// askApproval is the rest of onApproval: the mode answers the request, or
+// the person does.
+func (m *Manager) askApproval(a *agentState, req agent.ApprovalRequest) {
 	req.AgentID = a.id
 	orig := req.Respond
 	var once sync.Once
