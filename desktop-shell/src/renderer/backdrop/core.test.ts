@@ -21,7 +21,7 @@ import {
   T,
   tableLayout,
 } from "./core";
-import { artFor, colourway, processOf, SPOT } from "./inks";
+import { artFor, artProcess, colourway, processOf, SPOT } from "./inks";
 
 describe("colour", () => {
   test("hex reads three and six digits", () => {
@@ -239,5 +239,27 @@ describe("art directions", () => {
     expect(c).toMatchObject({ process: "scene", picture: "alps" });
     expect(c).toEqual(colourway("dark", tokens));
     expect(artFor("tokyo-night", "dark", tokens)).toMatchObject({ picture: "xdf", colour: true });
+  });
+
+  test("any theme prints through any process, in its own colours", () => {
+    // Liquid Glass's colours through the riso: its accent is the spot ink.
+    const riso = artFor("glass", "dark", tokens, "window", "halftone");
+    expect(riso).toMatchObject({ process: "halftone", picture: "allium", spot: tokens.primary, ground: tokens.backdrop, onBlack: true });
+    expect(artFor("apple", "light", tokens, "window", "halftone")).toMatchObject({ key: tokens.text, onBlack: false });
+    // T3's colours in floss: its backdrop is the cloth.
+    const felt = artFor("default", "dark", tokens, "window", "stitch");
+    expect(felt).toMatchObject({ process: "stitch", picture: "canyon", cloth: tokens.backdrop, twill: true });
+    if (felt.process !== "stitch") throw new Error();
+    // Lighter threads on a dark cloth, darker on a light one.
+    expect(lightness(felt.threads[0] ?? [0, 0, 0])).toBeGreaterThan(lightness(tokens.backdrop));
+    const linen = artFor("default", "light", { ...tokens, backdrop: hex("#f0f0f0"), text: hex("#202020") }, "window", "stitch");
+    if (linen.process !== "stitch") throw new Error();
+    expect(lightness(linen.threads[0] ?? [255, 255, 255])).toBeLessThan(lightness(hex("#f0f0f0")));
+    // Riso's own inks stay its own through its process, and dither in it.
+    expect(artFor("riso", "dark", tokens, "window", "halftone")).toMatchObject({ spot: SPOT });
+    expect(artFor("riso", "dark", tokens, "window", "scene")).toEqual(colourway("dark", tokens));
+    expect(artProcess("dither")).toBe("scene");
+    expect(artProcess("none")).toBe("scene");
+    expect(artProcess("stitch")).toBe("stitch");
   });
 });

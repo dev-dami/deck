@@ -266,6 +266,8 @@ export function RightPanel({
   onLane,
   onSteer,
   onStop,
+  side = "right",
+  float = false,
 }: {
   c: DeckClient;
   bridge: DeckBridge;
@@ -297,6 +299,10 @@ export function RightPanel({
   onLane?: (lane: string | null) => void;
   onSteer?: (agent: string) => void;
   onStop?: (agent: string) => void;
+  // The edge of the window it floats at (the one away from the sidebar),
+  // and whether it floats at any width (Settings > Appearance > Layout).
+  side?: "left" | "right";
+  float?: boolean;
 }) {
   const queued = open === undefined ? 0 : (state.queue[open.id]?.length ?? 0);
   const ports = useOpenPorts(c.project);
@@ -309,13 +315,18 @@ export function RightPanel({
   return (
     <aside
       className={cn(
-        // A sheet beside the room. Below 1100px it floats over the room as
-        // thick glass (styles.css, Shell), and the room keeps its width.
-        "panel sheet flex shrink-0 flex-col overflow-hidden rounded-(--sheet-radius) max-[1100px]:absolute max-[1100px]:inset-y-3 max-[1100px]:right-3 max-[1100px]:z-30 max-[1100px]:max-w-[calc(100%-4rem)]",
+        // A sheet beside the room. Below 1100px, or by choice, it floats
+        // over the room as thick glass (styles.css, Shell), and the room
+        // keeps its width.
+        "panel sheet flex shrink-0 flex-col overflow-hidden rounded-(--sheet-radius) max-[1100px]:absolute max-[1100px]:inset-y-3 max-[1100px]:z-30 max-[1100px]:max-w-[calc(100%-4rem)]",
+        side === "left" ? "max-[1100px]:left-3" : "max-[1100px]:right-3",
+        float && cn("absolute inset-y-3 z-30 max-w-[calc(100%-4rem)]", side === "left" ? "left-3" : "right-3"),
         wide ? "w-[min(60vw,900px)] min-w-[480px] shrink" : "w-[480px]",
       )}
       aria-label="Side panel"
       data-yolo-region=""
+      data-side={side}
+      data-float={float ? "" : undefined}
     >
       <header className="panel-head drag @container/head flex h-12 shrink-0 items-center gap-2 px-2.5">
         <h2 className="sr-only">{PANELS.find((p) => p.panel === panel)?.label}</h2>

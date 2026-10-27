@@ -91,3 +91,66 @@ test("at 960×600 the header, the lane strip and the composer show whole", async
   await expect(panel).toBeVisible();
   expect(await panel.evaluate((el) => getComputedStyle(el).position)).toBe("absolute");
   expect((await page.locator("main.center").boundingBox())?.width).toBe(before?.width);});
+
+// The x of each part of the shell, left to right.
+const xs = (page: Page, sel: string[]) =>
+  page.evaluate((ss) => ss.map((s) => document.querySelector(s)?.getBoundingClientRect().x ?? -1), sel);
+const kept = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem("deck.desktop.prefs") ?? "{}"));
+
+test("the layout mirrors: the sidebar on the right, the side panel opposite it or beside it", async ({ page }) => {
+  await pair(page);
+  await sidebar(page).getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Appearance" }).click();
+  await page.getByRole("radiogroup", { name: "Sidebar", exact: true }).getByRole("radio", { name: "Sidebar on the right" }).click();
+  await page.getByRole("radiogroup", { name: "Side panel" }).getByRole("radio", { name: "Panel beside the sidebar" }).click();
+  expect(await kept(page)).toMatchObject({ sidebarSide: "right", panelDock: "beside" });
+  const [room, nav] = await xs(page, [".room-sheet", "nav.sidebar"]);
+  expect(room).toBeLessThan(nav as number);
+
+  await sidebar(page).getByRole("button", { name: "Back to threads" }).click();
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await page.locator(".panel-toggles").getByRole("button", { name: /Diff/ }).click();
+  await expect(page.getByRole("complementary", { name: "Side panel" })).toBeVisible();
+  // Room, then the panel beside the sidebar, then the sidebar.
+  const [r, p, n] = await xs(page, [".room-sheet", "aside.panel", "nav.sidebar"]);
+  expect(r).toBeLessThan(p as number);
+  expect(p).toBeLessThan(n as number);
+  // Ctrl+B still hides and shows the sidebar.
+  await page.keyboard.press("Control+b");
+  await expect(sidebar(page)).toHaveCount(0);
+  await page.keyboard.press("Control+b");
+  await expect(sidebar(page)).toBeVisible();
+});
+
+test("the sidebar's edge resizes it, keeps the width, and drags it across to the other side", async ({ page }) => {
+  await pair(page);
+  const grip = page.getByRole("separator", { name: "Resize the sidebar" });
+  const width = async () => (await sidebar(page).boundingBox())?.width ?? 0;
+  expect(await width()).toBe(256);
+  const g = await grip.boundingBox();
+  if (g === null) throw new Error("no grip");
+  const y = g.y + g.height / 2;
+  await page.mouse.move(g.x + g.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(g.x + 60, y, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(width).toBeGreaterThan(300);
+  expect((await kept(page)).sidebarWidth).toBeGreaterThan(300);
+  // The keys resize it too.
+  const before = await width();
+  await grip.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(width).toBe(before - 16);
+  // Dragged most of the way across, it moves to the right.
+  const h = await grip.boundingBox();
+  if (h === null) throw new Error("no grip");
+  await page.mouse.move(h.x + h.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(1200, y, { steps: 6 });
+  await expect(page.getByText("Move the sidebar here")).toBeVisible();
+  await page.mouse.up();
+  await expect.poll(async () => (await kept(page)).sidebarSide).toBe("right");
+  const [room, nav] = await xs(page, [".room-sheet", "nav.sidebar"]);
+  expect(room).toBeLessThan(nav as number);
+  expect(await width()).toBe(before - 16);
+});

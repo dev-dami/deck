@@ -1,10 +1,10 @@
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
-import { artFor } from "../backdrop/inks";
+import { artFor, artProcess } from "../backdrop/inks";
 import { CUSTOM, type Picture, pictureInfo, SETS } from "../backdrop/pictures";
 import { clearWallpaper, loadWallpaper, saveWallpaper, useWallpaperVersion } from "../backdrop/wallpaper";
 import { cn } from "../lib/cn";
 import { setPrefs, usePrefs } from "../prefs";
-import { directionOf } from "../themes";
+import { setOf } from "../themes";
 import { Button } from "./kit/button";
 
 // The picture behind the window, for Settings > Appearance: the theme's
@@ -14,12 +14,12 @@ import { Button } from "./kit/button";
 // the window shows the print. The person's own stays in this window's
 // storage (backdrop/wallpaper.ts) and never leaves it.
 export function WallpaperPicker({ className }: { className?: string }) {
-  const { palette, wallpaper } = usePrefs();
+  const { palette, process, wallpaper } = usePrefs();
   // The theme's own picture first (Tokyo Night has its own), then the rest
-  // of its direction's set, then a picture from another set that was chosen
+  // of its process's set, then a picture from another set that was chosen
   // by hand.
-  const own = artFor(palette, "dark").picture;
-  const set = [own, ...SETS[directionOf(palette).id].filter((id) => id !== own)];
+  const own = artFor(palette, "dark", undefined, "window", artProcess(process)).picture;
+  const set = [own, ...SETS[setOf(process)].filter((id) => id !== own)];
   const ids = wallpaper !== "theme" && wallpaper !== CUSTOM && !set.includes(wallpaper) ? [...set, wallpaper] : set;
   const picked = wallpaper === "theme" ? own : wallpaper;
   const theirs = useCustomUrl();

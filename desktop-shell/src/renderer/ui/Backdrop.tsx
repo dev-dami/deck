@@ -43,25 +43,27 @@ export function useReducedTransparency(): boolean {
 }
 
 export function Backdrop() {
-  const { wallpaper } = usePrefs();
+  const { wallpaper, process } = usePrefs();
   const size = useSettledSize();
   const reduced = useReducedTransparency();
+  // A look with no picture (process "none") keeps the plain ground.
+  const off = reduced || process === "none";
   const canvas = useRef<HTMLCanvasElement>(null);
-  const printed = usePrint(canvas, reduced ? null : size, wallpaper, "window");
+  const printed = usePrint(canvas, off ? null : size, wallpaper, "window");
 
   // <html> says that the backdrop has drawn, with which process and in how
   // long, for the CSS and for the tests.
   useEffect(() => {
     const root = document.documentElement;
-    if (reduced || printed === null) {
+    if (off || printed === null) {
       root.removeAttribute("data-backdrop");
       root.removeAttribute("data-backdrop-ms");
       return;
     }
     root.setAttribute("data-backdrop", printed.process);
     root.setAttribute("data-backdrop-ms", printed.ms.toFixed(1));
-  }, [printed, reduced]);
+  }, [printed, off]);
 
-  if (reduced) return null;
+  if (off) return null;
   return <canvas ref={canvas} aria-hidden className="backdrop" />;
 }

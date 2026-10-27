@@ -83,20 +83,28 @@ test("riso keeps its ink off the gutters and away from the sidebar", async ({ pa
   }
 });
 
-test("the room's sheet stays opaque, and riso and stitch turn the glass's blur off", async ({ page }) => {
+test("the room's sheet stays opaque, and paper, felt and plain turn the glass's blur off in any colours", async ({ page }) => {
   await start(page, "glass", "dark");
   await pair(page);
   await expect(page.locator("canvas.backdrop")).toBeVisible();
   // The picture shows behind the sidebar alone; the gutters are plain.
   expect(await page.locator("canvas.backdrop").evaluate((c) => getComputedStyle(c).clipPath)).toMatch(/^inset\(8px/);
-  for (const palette of ["glass", "riso", "stitch"]) {
+  for (const [palette, material] of [
+    ["glass", "glass"],
+    ["riso", "paper"],
+    ["stitch", "felt"],
+    ["riso", "glass"],
+    ["default", "felt"],
+    ["nord", "plain"],
+  ] as const) {
     for (const mode of ["dark", "light"] as const) {
       await page.emulateMedia({ colorScheme: mode });
-      await page.evaluate(([p, m]) => {
-        // The theme and mode as appearance.ts writes them on <html>.
+      await page.evaluate(([p, mat, m]) => {
+        // The theme, material and mode as appearance.ts writes them on <html>.
         document.documentElement.setAttribute("data-palette", p);
+        document.documentElement.setAttribute("data-material", mat);
         document.documentElement.setAttribute("data-mode", m);
-      }, [palette, mode] as const);
+      }, [palette, material, mode] as const);
       const look = await page.evaluate(() => {
         const sheet = document.querySelector(".room-sheet");
         const glass = document.querySelector("aside .liquid, .liquid");
@@ -106,9 +114,9 @@ test("the room's sheet stays opaque, and riso and stitch turn the glass's blur o
         };
       });
       // An opaque colour: rgb(), or an alpha of 1.
-      expect(look.bg, `${palette} ${mode}`).toMatch(/^rgb\(\d+, \d+, \d+\)$|^(color|oklch|lab)\([^/]*\)$/);
-      if (palette === "glass") expect(look.blur, `${palette} ${mode}`).toMatch(/blur\([1-9]/);
-      else expect(look.blur, `${palette} ${mode}`).not.toMatch(/blur\([1-9]/);
+      expect(look.bg, `${palette} ${material} ${mode}`).toMatch(/^rgb\(\d+, \d+, \d+\)$|^(color|oklch|lab)\([^/]*\)$/);
+      if (material === "glass") expect(look.blur, `${palette} ${material} ${mode}`).toMatch(/blur\([1-9]/);
+      else expect(look.blur, `${palette} ${material} ${mode}`).not.toMatch(/blur\([1-9]/);
     }
   }
 });
