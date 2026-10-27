@@ -113,7 +113,8 @@ func TestALineWithABrokenPayloadStillCounts(t *testing.T) {
 
 // entryHead must stay Entry without the event's payload.
 func TestEntryHeadMirrorsEntry(t *testing.T) {
-	payload := map[string]bool{"Tool": true, "Diff": true, "Usage": true, "Limits": true, "LimitHit": true, "Raw": true}
+	// Sub and Subagent: a subagent's events are never logged (session/subagents.go).
+	payload := map[string]bool{"Tool": true, "Diff": true, "Usage": true, "Limits": true, "LimitHit": true, "Raw": true, "Sub": true, "Subagent": true}
 	want := map[string]reflect.StructField{}
 	var walk func(reflect.Type)
 	walk = func(rt reflect.Type) {

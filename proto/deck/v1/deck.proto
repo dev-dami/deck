@@ -824,6 +824,23 @@ message AgentNode {
   string profile = 15;
   string role = 16;
   string color = 17;
+  // native marks a subagent its member's CLI started with its own tool
+  // (Claude Code's Task) rather than Deck's agent.spawn: it is not a member,
+  // and only its member can be messaged or stopped. name is its lane id,
+  // "<member>/<name>", and the agent of its messages; parent its member.
+  // sub_status is running, done, failed or stopped (status says the same
+  // as idle, working, error or exited); description its task, subagent_type
+  // the CLI's type for it, actions its tool calls so far, error why it
+  // failed, tool_call_id the member's call that started it, and ended when
+  // it ended (0 while it runs).
+  bool native = 18;
+  string sub_status = 19;
+  string description = 20;
+  string subagent_type = 21;
+  int32 actions = 22;
+  string error = 23;
+  string tool_call_id = 24;
+  int64 ended = 25;
 }
 
 message RunningTool {

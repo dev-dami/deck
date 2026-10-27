@@ -374,3 +374,31 @@ func TestToolNames(t *testing.T) {
 		t.Errorf("pi read = %+v", got)
 	}
 }
+
+// TestTaskSubagent: OpenCode's task tool starts a subagent; ACP streams only
+// the parent session, so Deck sees it start and end as KindSubagent.
+func TestTaskSubagent(t *testing.T) {
+	tr := newTranslator("oc", "/w")
+	var failed toolCall
+	if err := json.Unmarshal([]byte(`{"toolCallId":"k1","status":"failed","content":[{"type":"content","content":{"type":"text","text":"it crashed"}}]}`), &failed); err != nil {
+		t.Fatal(err)
+	}
+	var evs []agent.Event
+	for _, c := range []toolCall{
+		{ToolCallID: "k1", Name: "task", Status: "pending"},
+		{ToolCallID: "k1", Status: "in_progress", RawInput: json.RawMessage(`{"description":"Review PR #296","prompt":"look","subagent_type":"general"}`)},
+		failed,
+	} {
+		evs = append(evs, tr.update(update{SessionUpdate: updToolCallUpdate, toolCall: c})...)
+	}
+	var got []string
+	for _, e := range evs {
+		if e.Kind == agent.KindSubagent {
+			got = append(got, e.Subagent.ID+" "+string(e.Subagent.Status)+" "+e.Subagent.Description+" "+e.Subagent.Type+" "+e.Subagent.Error)
+		}
+	}
+	want := []string{"k1 running   ", "k1 running Review PR #296 general ", "k1 failed Review PR #296 general it crashed"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("subagents %q\nwant %q", got, want)
+	}
+}

@@ -232,6 +232,9 @@ type AgentInfo struct {
 	Profile string
 	Role    string
 	Color   string
+	// Subs are the subagents its CLI started with its own tool, oldest
+	// first (subagents.go).
+	Subs []store.SubAgent
 }
 
 // ThreadInfo is a snapshot of one live thread.
@@ -1325,8 +1328,10 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow, ctxSource: mem.ContextSource, briefed: mem.Briefed,
 			ctxBaseline: mem.ContextBaseline, deckTokens: mem.DeckTokens,
 			parent: mem.Parent, ephemeral: mem.Ephemeral, dir: mem.Dir, worktree: mem.Worktree,
-			prof: m.storedProfile(t, mem),
+			prof: m.storedProfile(t, mem), subs: slices.Clone(mem.Subs),
 		}
+		// Its subagents did not outlive the CLI that ran them.
+		a.stopSubsLocked(time.Now())
 		if mem.Ephemeral {
 			a.base = StatusExited // a subagent's run does not outlive Deck; its worktree and task stay
 		}
@@ -1630,6 +1635,10 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	if a.thread.gone.Load() {
 		return // the thread was archived, deleted or moved
 	}
+	if ev.Kind == agent.KindSubagent || ev.Sub != "" {
+		m.onSubagent(a, ev) // a CLI-native subagent's (subagents.go)
+		return
+	}
 	t := a.thread
 	if ev.Kind == agent.KindError {
 		// Every adapter's error text is read too: OpenCode and Antigravity
@@ -1664,6 +1673,10 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	}
 	if res.waits {
 		m.startedWait(t, a)
+	}
+	for _, s := range res.stopped {
+		sa := subagentOf(s)
+		m.emit(EventMsg{Event: agent.Event{AgentID: a.id, Time: ev.Time, Kind: agent.KindSubagent, Subagent: &sa}, ThreadID: t.id})
 	}
 	for _, id := range res.gone {
 		m.emit(ApprovalGoneMsg{ThreadID: t.id, AgentID: a.id, ID: id})
@@ -1853,6 +1866,10 @@ type agentState struct {
 	// for none): its role, instructions, voice and paths go into the
 	// member's briefing. Set when the member is made.
 	prof profile.Profile
+
+	// subs are the subagents its CLI started with its own tool, oldest
+	// first (subagents.go); guarded by mu.
+	subs []store.SubAgent
 }
 
 func (a *agentState) getRun() agent.Run {
@@ -1907,6 +1924,7 @@ func (a *agentState) info() AgentInfo {
 		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource,
 		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
 		RunningModel: a.running, Profile: a.prof.Name, Role: a.prof.Role, Color: a.prof.Color,
+		Subs: slices.Clone(a.subs),
 	}
 }
 
@@ -1930,7 +1948,7 @@ func (a *agentState) memberMeta() store.Member {
 		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
 		Parent: a.parent, Ephemeral: a.ephemeral, Dir: a.dir, Worktree: a.worktree,
 		Profile: a.prof.Name, Role: a.prof.Role, Color: a.prof.Color,
-		Wait: a.storedWaitLocked(),
+		Wait: a.storedWaitLocked(), Subs: slices.Clone(a.subs),
 	}
 }
 
@@ -2054,6 +2072,8 @@ type applyResult struct {
 	spent store.Spend
 	// waits: the turn that ended ran out of plan, and the member now waits.
 	waits bool
+	// stopped are the subagents that ended with the CLI (KindExited).
+	stopped []store.SubAgent
 }
 
 // apply folds one event into the agent's status and cost.
@@ -2136,6 +2156,7 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 		res.metaDirty = true
 	case agent.KindExited:
 		a.hit = nil
+		res.stopped = a.stopSubsLocked(ev.Time) // they went with the CLI
 		res.spent = store.Spend{Tokens: a.tokTurn, CostUSD: a.costTurn}
 		a.costTotal += a.costTurn
 		a.costTurn, a.tokTurn = 0, 0

@@ -280,6 +280,18 @@ func (a *activity) dropAgent(sid, agentID string, shells bool) {
 	}
 }
 
+// dropTools forgets the calls in flight of one name in the roster (a
+// subagent that ended).
+func (a *activity) dropTools(sid, name string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for id, rt := range a.running[sid] {
+		if rt.AgentName == name {
+			delete(a.running[sid], id)
+		}
+	}
+}
+
 func (a *activity) dropShell(sid, id string) {
 	delete(a.shells[sid], id)
 }

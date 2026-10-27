@@ -600,6 +600,10 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 	if sid == "" || ev.AgentID == "" {
 		return
 	}
+	if ev.Kind == deckagent.KindSubagent || ev.Sub != "" {
+		w.onSubEvent(sid, ev) // a CLI-native subagent's: not the member's turn (subagents.go)
+		return
+	}
 	switch ev.Kind {
 	case deckagent.KindRestarting, deckagent.KindRestarted:
 		// Not a turn. The roster shows the member as restarting, which says

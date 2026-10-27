@@ -27,6 +27,7 @@ type crew struct {
 	trees     workspace.Worktrees
 	roster    workspace.Roster
 	activity  workspace.Activity
+	subs      workspace.SubAgents
 	peers     workspace.Peers
 	sharing   workspace.Sharing
 	contracts workspace.Contracts
@@ -54,6 +55,7 @@ func (s *Server) WithWorkspace(ws any) *Server {
 	c.trees, _ = ws.(workspace.Worktrees)
 	c.roster, _ = ws.(workspace.Roster)
 	c.activity, _ = ws.(workspace.Activity)
+	c.subs, _ = ws.(workspace.SubAgents)
 	c.peers, _ = ws.(workspace.Peers)
 	c.sharing, _ = ws.(workspace.Sharing)
 	c.contracts, _ = ws.(workspace.Contracts)
@@ -185,8 +187,14 @@ func (s *Server) Agents(_ context.Context, r *deckv1.SessionRef) (*deckv1.Agents
 			}
 		}),
 	}
+	var act workspace.ActivityReport
 	if s.crew.activity != nil {
-		act := s.crew.activity.Activity(r.GetSessionId())
+		act = s.crew.activity.Activity(r.GetSessionId())
+	}
+	if s.crew.subs != nil {
+		out.Agents = withSubAgents(out.Agents, s.crew.subs.SubAgents(r.GetSessionId()), act)
+	}
+	if s.crew.activity != nil {
 		sub, cmd := map[string]bool{}, map[string]bool{}
 		for _, t := range act.Subagents {
 			sub[t.ToolID] = true
@@ -210,6 +218,59 @@ func (s *Server) Agents(_ context.Context, r *deckv1.SessionRef) (*deckv1.Agents
 		})
 	}
 	return out, nil
+}
+
+// subStatus is a CLI-native subagent's status in the words of the tree:
+// running (in a tool while one of its calls is in flight), done, failed or
+// stopped as idle, error and exited.
+var subStatus = map[string]string{"running": "working", "done": "idle", "failed": "error", "stopped": "exited"}
+
+// withSubAgents puts each CLI-native subagent right after its member's
+// subtree, one level below the member.
+func withSubAgents(nodes []*deckv1.AgentNode, subs []workspace.SubAgentLine, act workspace.ActivityReport) []*deckv1.AgentNode {
+	if len(subs) == 0 {
+		return nodes
+	}
+	busy := map[string]bool{}
+	for _, t := range act.Tools {
+		busy[t.AgentName] = true
+	}
+	byParent := map[string][]*deckv1.AgentNode{}
+	for _, sa := range subs {
+		st := subStatus[sa.Status]
+		if st == "working" && busy[sa.Name] {
+			st = "tool"
+		}
+		byParent[sa.Parent] = append(byParent[sa.Parent], &deckv1.AgentNode{
+			Name: sa.Name, Kind: sa.Kind, Status: st, Parent: sa.Parent, Since: ms(sa.Started),
+			Native: true, SubStatus: sa.Status, Description: sa.Description, SubagentType: sa.Type,
+			Actions: int32(sa.Actions), Error: sa.Error, ToolCallId: sa.ToolID, Ended: ms(sa.Ended),
+		})
+	}
+	// Each member's subagents follow the last node of its subtree; a member
+	// whose subtree ends with another's comes after that one's.
+	after := map[int][]*deckv1.AgentNode{}
+	for i := len(nodes) - 1; i >= 0; i-- {
+		n := nodes[i]
+		kids := byParent[n.GetName()]
+		if len(kids) == 0 {
+			continue
+		}
+		last := i
+		for last+1 < len(nodes) && nodes[last+1].GetDepth() > n.GetDepth() {
+			last++
+		}
+		for _, k := range kids {
+			k.Depth, k.Model = n.GetDepth()+1, n.GetModel()
+		}
+		after[last] = append(after[last], kids...)
+	}
+	out := make([]*deckv1.AgentNode, 0, len(nodes)+len(subs))
+	for i, n := range nodes {
+		out = append(out, n)
+		out = append(out, after[i]...)
+	}
+	return out
 }
 
 func (s *Server) link() workspace.PeerLink {

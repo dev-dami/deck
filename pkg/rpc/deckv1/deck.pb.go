@@ -5522,9 +5522,26 @@ type AgentNode struct {
 	Branch        string  `protobuf:"bytes,13,opt,name=branch,proto3" json:"branch,omitempty"`
 	Leases        string  `protobuf:"bytes,14,opt,name=leases,proto3" json:"leases,omitempty"`
 	// profile, role and color: as AgentLine's.
-	Profile       string `protobuf:"bytes,15,opt,name=profile,proto3" json:"profile,omitempty"`
-	Role          string `protobuf:"bytes,16,opt,name=role,proto3" json:"role,omitempty"`
-	Color         string `protobuf:"bytes,17,opt,name=color,proto3" json:"color,omitempty"`
+	Profile string `protobuf:"bytes,15,opt,name=profile,proto3" json:"profile,omitempty"`
+	Role    string `protobuf:"bytes,16,opt,name=role,proto3" json:"role,omitempty"`
+	Color   string `protobuf:"bytes,17,opt,name=color,proto3" json:"color,omitempty"`
+	// native marks a subagent its member's CLI started with its own tool
+	// (Claude Code's Task) rather than Deck's agent.spawn: it is not a member,
+	// and only its member can be messaged or stopped. name is its lane id,
+	// "<member>/<name>", and the agent of its messages; parent its member.
+	// sub_status is running, done, failed or stopped (status says the same
+	// as idle, working, error or exited); description its task, subagent_type
+	// the CLI's type for it, actions its tool calls so far, error why it
+	// failed, tool_call_id the member's call that started it, and ended when
+	// it ended (0 while it runs).
+	Native        bool   `protobuf:"varint,18,opt,name=native,proto3" json:"native,omitempty"`
+	SubStatus     string `protobuf:"bytes,19,opt,name=sub_status,json=subStatus,proto3" json:"sub_status,omitempty"`
+	Description   string `protobuf:"bytes,20,opt,name=description,proto3" json:"description,omitempty"`
+	SubagentType  string `protobuf:"bytes,21,opt,name=subagent_type,json=subagentType,proto3" json:"subagent_type,omitempty"`
+	Actions       int32  `protobuf:"varint,22,opt,name=actions,proto3" json:"actions,omitempty"`
+	Error         string `protobuf:"bytes,23,opt,name=error,proto3" json:"error,omitempty"`
+	ToolCallId    string `protobuf:"bytes,24,opt,name=tool_call_id,json=toolCallId,proto3" json:"tool_call_id,omitempty"`
+	Ended         int64  `protobuf:"varint,25,opt,name=ended,proto3" json:"ended,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5676,6 +5693,62 @@ func (x *AgentNode) GetColor() string {
 		return x.Color
 	}
 	return ""
+}
+
+func (x *AgentNode) GetNative() bool {
+	if x != nil {
+		return x.Native
+	}
+	return false
+}
+
+func (x *AgentNode) GetSubStatus() string {
+	if x != nil {
+		return x.SubStatus
+	}
+	return ""
+}
+
+func (x *AgentNode) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *AgentNode) GetSubagentType() string {
+	if x != nil {
+		return x.SubagentType
+	}
+	return ""
+}
+
+func (x *AgentNode) GetActions() int32 {
+	if x != nil {
+		return x.Actions
+	}
+	return 0
+}
+
+func (x *AgentNode) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *AgentNode) GetToolCallId() string {
+	if x != nil {
+		return x.ToolCallId
+	}
+	return ""
+}
+
+func (x *AgentNode) GetEnded() int64 {
+	if x != nil {
+		return x.Ended
+	}
+	return 0
 }
 
 type RunningTool struct {
@@ -10802,7 +10875,7 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x0e\n" +
 	"\x02on\x18\x02 \x01(\bR\x02on\x12\x14\n" +
-	"\x05level\x18\x03 \x01(\tR\x05level\"\xb4\x03\n" +
+	"\x05level\x18\x03 \x01(\tR\x05level\"\x9a\x05\n" +
 	"\tAgentNode\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
@@ -10821,7 +10894,17 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x06leases\x18\x0e \x01(\tR\x06leases\x12\x18\n" +
 	"\aprofile\x18\x0f \x01(\tR\aprofile\x12\x12\n" +
 	"\x04role\x18\x10 \x01(\tR\x04role\x12\x14\n" +
-	"\x05color\x18\x11 \x01(\tR\x05color\"\xcd\x01\n" +
+	"\x05color\x18\x11 \x01(\tR\x05color\x12\x16\n" +
+	"\x06native\x18\x12 \x01(\bR\x06native\x12\x1d\n" +
+	"\n" +
+	"sub_status\x18\x13 \x01(\tR\tsubStatus\x12 \n" +
+	"\vdescription\x18\x14 \x01(\tR\vdescription\x12#\n" +
+	"\rsubagent_type\x18\x15 \x01(\tR\fsubagentType\x12\x18\n" +
+	"\aactions\x18\x16 \x01(\x05R\aactions\x12\x14\n" +
+	"\x05error\x18\x17 \x01(\tR\x05error\x12 \n" +
+	"\ftool_call_id\x18\x18 \x01(\tR\n" +
+	"toolCallId\x12\x14\n" +
+	"\x05ended\x18\x19 \x01(\x03R\x05ended\"\xcd\x01\n" +
 	"\vRunningTool\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +

@@ -24,6 +24,7 @@ type fakeCrew struct {
 	link    *fakeLink
 	posted  []string
 	applied []string
+	subs    []workspace.SubAgentLine
 }
 
 func (f *fakeCrew) Board(string) workspace.BoardReport { return f.board }
@@ -48,6 +49,15 @@ func (f *fakeCrew) Roster(string) []workspace.AgentLine {
 	return []workspace.AgentLine{
 		{ID: "claude", Kind: "claude", Model: "opus", Status: "tool", Depth: 0},
 		{ID: "codex-sub", Kind: "codex", Status: "working", Depth: 1, Parent: "claude", Branch: "deck/t2", Leases: "internal/** (exclusive)"},
+	}
+}
+func (f *fakeCrew) SubAgents(string) []workspace.SubAgentLine { return f.subs }
+
+// twoReviews are Claude's own two subagents, one done, one failed.
+func twoReviews() []workspace.SubAgentLine {
+	return []workspace.SubAgentLine{
+		{Name: "claude/review-pr-295", Parent: "claude", ParentID: "claude", Kind: "claude", Description: "Review PR #295", Status: "done", Actions: 4, ToolID: "toolu_a"},
+		{Name: "claude/review-pr-296", Parent: "claude", ParentID: "claude", Kind: "claude", Description: "Review PR #296", Type: "code-reviewer", Status: "failed", Error: "API error", ToolID: "toolu_b"},
 	}
 }
 func (f *fakeCrew) Activity(string) workspace.ActivityReport {
@@ -197,13 +207,23 @@ func TestBoardAndTaskActions(t *testing.T) {
 }
 
 func TestAgentsTree(t *testing.T) {
-	c := crewRig(t, &fakeCrew{})
+	c := crewRig(t, &fakeCrew{subs: twoReviews()})
 	r, err := c.Agents(ctxT(t), &deckv1.SessionRef{SessionId: "s"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.GetAgents()) != 2 || r.GetAgents()[1].GetParent() != "claude" || r.GetAgents()[1].GetDepth() != 1 {
+	if len(r.GetAgents()) != 4 || r.GetAgents()[1].GetParent() != "claude" || r.GetAgents()[1].GetDepth() != 1 {
 		t.Fatalf("agents %+v", r.GetAgents())
+	}
+	// Claude's own subagents follow its subtree, one level below it.
+	for i, want := range []string{"claude/review-pr-295 idle done", "claude/review-pr-296 error failed"} {
+		n := r.GetAgents()[2+i]
+		if got := n.GetName() + " " + n.GetStatus() + " " + n.GetSubStatus(); got != want || !n.GetNative() || n.GetDepth() != 1 || n.GetParent() != "claude" || n.GetModel() != "opus" {
+			t.Errorf("sub %d = %+v", i, n)
+		}
+	}
+	if n := r.GetAgents()[3]; n.GetSubagentType() != "code-reviewer" || n.GetError() != "API error" || n.GetToolCallId() != "toolu_b" || n.GetDescription() != "Review PR #296" {
+		t.Errorf("failed sub %+v", n)
 	}
 	if len(r.GetRunning()) != 1 || !r.GetRunning()[0].GetCommand() || r.GetRunning()[0].GetSummary() != "go test ./..." {
 		t.Fatalf("running %+v", r.GetRunning())

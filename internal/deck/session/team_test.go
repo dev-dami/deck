@@ -90,7 +90,7 @@ func TestInstructionsNameTheTeam(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	sp, _ := r.claude.spec("claude")
-	has(t, sp.Instructions, "agent.spawn", "lease.acquire")
+	has(t, sp.Instructions, "agent.spawn", "lease.acquire", "when the user asks for agents, use it, not your own Task/subagent tool")
 	lacks(t, sp.Instructions, "task.contract", "Teammates")
 
 	r.m.SetTeam(&postTeam{})

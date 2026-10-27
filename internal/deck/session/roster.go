@@ -63,6 +63,7 @@ func (m *Manager) roster(a *agentState) string {
 			parts = append(parts, fmt.Sprintf("%s%d%% ctx", mark, ai.ContextTokens*100/ai.ContextWindow))
 		}
 		lines = append(lines, strings.Join(parts, " · "))
+		lines = append(lines, subRoster(ai.Name, ai.Subs)...)
 	}
 	if len(lines) == 0 {
 		return "nobody is in this thread"
