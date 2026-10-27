@@ -1,4 +1,4 @@
-import type { ModelChoice, Theme } from "@web/protocol";
+import type { Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
 import { CornerDownRight, Lock, Square } from "./icons";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -6,7 +6,7 @@ import { agentColour } from "../agents";
 import { fitLanes, type Lane } from "../lanes";
 import { cn } from "../lib/cn";
 import { AgentRole } from "./AgentRole";
-import { Models } from "./AgentsStrip";
+import { AgentPicker, type PickerSource } from "./AgentPicker";
 import { MenuItem, MenuLabel, MenuSeparator, Popover } from "./kit/menu";
 import { Ring } from "./kit/ring";
 
@@ -60,7 +60,7 @@ function AgentChip({
   theme,
   on,
   onFilter,
-  listModels,
+  picker,
   setModel,
   onStop,
   onSteer,
@@ -69,21 +69,21 @@ function AgentChip({
   theme: Theme | null;
   on: boolean;
   onFilter: () => void;
-  listModels: () => Promise<ModelChoice[] | null>;
+  picker: PickerSource;
   setModel: (model: string, effort?: string) => void;
   onStop: () => void;
   onSteer: () => void;
 }) {
-  const [load, setLoad] = useState<Promise<ModelChoice[] | null> | null>(null);
-  const close = () => setLoad(null);
+  const [open, setOpen] = useState(false);
+  const close = () => setOpen(false);
   const colour = agentColour(lane.name, lane.agentKind);
   const running = lane.status === "working" || lane.status === "waiting";
   return (
     <Popover
-      open={load !== null}
+      open={open}
       onClose={close}
       label={`${lane.name}`}
-      className="w-64"
+      className="w-72"
       trigger={
         <button
           type="button"
@@ -91,12 +91,12 @@ function AgentChip({
           data-lane={lane.id}
           data-status={lane.status}
           aria-pressed={on}
-          aria-expanded={load !== null}
+          aria-expanded={open}
           aria-label={`${lane.name} ${WORD[lane.status]}`}
           title={`${lane.name}: ${lane.model || "default model"}${lane.effort !== "" ? ` · ${lane.effort}` : ""}`}
           onClick={() => {
             onFilter();
-            setLoad(load === null ? listModels() : null);
+            setOpen((o) => !o);
           }}
         >
           {lane.depth > 0 && <CornerDownRight aria-hidden className="-ml-0.5 size-3 shrink-0 text-faint" />}
@@ -138,12 +138,17 @@ function AgentChip({
         {lane.name} · {lane.model || "default model"}
         {lane.effort !== "" ? ` · ${lane.effort}` : ""}
       </MenuLabel>
-      <Models
-        line={{ id: lane.name, name: lane.name, kind: lane.agentKind, model: lane.model, effort: lane.effort, busy: running }}
-        load={load ?? Promise.resolve(null)}
-        choose={(model, effort) => {
-          setModel(model, effort);
+      <AgentPicker
+        source={picker}
+        kinds={[lane.agentKind]}
+        kind={lane.agentKind}
+        running={() => ({ model: lane.model, effort: lane.effort })}
+        theme={theme}
+        action={() => "Apply"}
+        needsChange
+        onPick={(p) => {
           close();
+          setModel(p.model, p.effort);
         }}
       />
       {lane.leases.length > 0 && (
@@ -188,7 +193,7 @@ export function Lanes({
   theme,
   filter,
   onFilter,
-  listModels,
+  picker,
   setModel,
   onStop,
   onSteer,
@@ -198,7 +203,8 @@ export function Lanes({
   // The lane the timeline shows alone, or null for all.
   filter: string | null;
   onFilter: (lane: string | null) => void;
-  listModels: (kind: string) => Promise<ModelChoice[] | null>;
+  // The agents' models, for each agent's picker.
+  picker: PickerSource;
   setModel: (kind: string, model: string, effort?: string) => void;
   onStop: (agent: string) => void;
   onSteer: (agent: string) => void;
@@ -247,7 +253,7 @@ export function Lanes({
             theme={theme}
             on={filter === l.id}
             onFilter={() => toggle(l.id)}
-            listModels={() => listModels(l.agentKind)}
+            picker={picker}
             setModel={(model, effort) => setModel(l.agentKind, model, effort)}
             onStop={() => onStop(l.name)}
             onSteer={() => onSteer(l.name)}

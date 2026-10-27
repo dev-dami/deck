@@ -2,12 +2,13 @@ import { type ComponentProps, type ReactNode, useEffect, useRef } from "react";
 import { cn } from "../../lib/cn";
 import { moveIndex, restoreFocus } from "./focus";
 
-const ITEMS = '[role="menuitem"]:not(:disabled)';
+const ITEMS = '[role="menuitem"]:not(:disabled), [role="menuitemradio"]:not(:disabled)';
 
 // A popup anchored to its trigger: it closes on a click outside and on
 // Escape. side says whether it opens above (the composer's menus) or below.
-// A menu takes the focus on its first item, moves it with the arrows, Home
-// and End, and gives it back to the trigger when it closes.
+// A menu takes the focus on its first item (its first checked one, when it
+// has radio items), moves it with the arrows, Home and End, and gives it
+// back to the trigger when it closes.
 export function Popover({
   open,
   onClose,
@@ -50,7 +51,7 @@ export function Popover({
     if (!open) return;
     const back = document.activeElement;
     const popup = pop.current;
-    if (role === "menu") popup?.querySelector<HTMLElement>(ITEMS)?.focus();
+    if (role === "menu") (popup?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') ?? popup?.querySelector<HTMLElement>(ITEMS))?.focus();
     return () => restoreFocus(back, popup);
   }, [open, role]);
   return (

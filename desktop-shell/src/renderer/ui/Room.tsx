@@ -4,6 +4,7 @@ import { sessionMode } from "@web/state";
 import { Ellipsis, FileDiff, Folder, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "./icons";
 import { type ComponentProps, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
 import type { EngineStop } from "../../shared/bridge";
+import { useAgentCatalog } from "../agentCatalog";
 import { type DeckClient, serves } from "../client";
 import { FILES_LIMIT } from "../completion";
 import type { Team } from "../crew";
@@ -15,6 +16,7 @@ import { sendHint } from "../queue";
 import { EMPTY_ROOM, useRoomMetas } from "../roomMeta";
 import { type ShellSlice, shallowEqual, threadSlice, useAppSlice } from "../select";
 import type { Panel } from "../ui";
+import type { PickerSource } from "./AgentPicker";
 import { AgentsStrip } from "./AgentsStrip";
 import { ApprovalCard } from "./ApprovalCard";
 import { Composer } from "./Composer";
@@ -241,7 +243,18 @@ export function Room({
     setDraft(applyAgentChip(draft, agent));
     focusInput();
   };
-  const listModels = (kind: string) => c.listModels(sid ?? "", kind);
+  // Every agent's models, listed once per Deck and kept (agentCatalog.ts):
+  // the pickers open on them at once.
+  const catalog = useAgentCatalog(
+    state.server === null ? null : { deck: state.server.server_id, version: state.server.version, kinds },
+    (kind, refresh) => c.listModels(sid ?? "", kind, refresh),
+  );
+  const picker: PickerSource = {
+    agents: catalog.catalog?.agents ?? null,
+    loading: catalog.loading,
+    listedAt: catalog.catalog?.at ?? null,
+    onRefresh: catalog.refresh,
+  };
   const setModel = (kind: string, model: string, effort?: string) => sid !== null && void c.setModel(sid, kind, model, effort);
   // "@" offers the Deck's profiles and the team's people too.
   const named = useMentionables(c, team);
@@ -286,7 +299,7 @@ export function Room({
           theme={state.theme}
           filter={lane}
           onFilter={r.setLane}
-          listModels={listModels}
+          picker={picker}
           setModel={setModel}
           onStop={room.interrupt}
           onSteer={address}
@@ -415,7 +428,7 @@ export function Room({
                     setDraft={setDraft}
                     hint={open.busy ? sendHint(prefs.sendKey, mac) : null}
                     onFocus={focusInput}
-                    listModels={listModels}
+                    picker={picker}
                     setModel={setModel}
                   />
                 </>
