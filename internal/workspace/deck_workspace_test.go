@@ -378,7 +378,7 @@ func TestRosterListsSubagentsUnderTheirParent(t *testing.T) {
 	require.NoError(t, err)
 	_, err = m.AddMember(tid, "claude", "")
 	require.NoError(t, err)
-	require.NoError(t, m.SetOrchestrate(tid, true))
+	require.NoError(t, m.SetLevel(tid, "auto"))
 	a, err := m.Spawn(tid, lead, decks.SpawnSpec{Kind: "claude", Brief: "one"})
 	require.NoError(t, err)
 	_, err = m.Spawn(tid, a.AgentID, decks.SpawnSpec{Kind: "codex", Brief: "two"})

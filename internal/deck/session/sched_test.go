@@ -45,7 +45,7 @@ func countStatus(r *rig, tid string, st store.TaskStatus) int {
 
 func TestSchedulerRunsReadyTasksInDependencyOrder(t *testing.T) {
 	r, tid := schedRig(t, 0, nil, []fake.Script{turn(say("built"), finish())})
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	mkTask(t, r, tid, TaskSpec{Title: "first"})
@@ -80,7 +80,7 @@ func TestSchedulerRunsReadyTasksInDependencyOrder(t *testing.T) {
 
 func TestSchedulerKeepsToTheConcurrencyLimit(t *testing.T) {
 	r, tid := schedRig(t, 1, nil, []fake.Script{turn(blockStep("ap-slow"), say("ok"), finish())})
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	for _, title := range []string{"a", "b", "c"} {
@@ -112,7 +112,7 @@ func TestSchedulerRetriesAFailedTaskWithTheFailureInItsBrief(t *testing.T) {
 		turn(fake.Step{Exec: &fake.Exec{Op: "task.fail", Args: fail}}, say("it failed"), finish()),
 		turn(say("fixed it"), finish()),
 	}, nil)
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	mkTask(t, r, tid, TaskSpec{Title: "fetch the data", Owner: "claude"})
@@ -139,7 +139,7 @@ func TestSchedulerGivesUpAfterTheLastAttempt(t *testing.T) {
 		turn(fake.Step{Exec: &fake.Exec{Op: "task.fail", Args: fail}}, say("failed"), finish()),
 		turn(fake.Step{Exec: &fake.Exec{Op: "task.fail", Args: fail}}, say("failed again"), finish()),
 	}, nil)
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	mkTask(t, r, tid, TaskSpec{Title: "doomed", Owner: "claude"})

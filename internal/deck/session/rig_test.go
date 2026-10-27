@@ -15,8 +15,10 @@ import (
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
+// testCfg starts threads with orchestration off, the default the tests were
+// written against; level_test.go covers the others and the real default.
 func testCfg() config.Config {
-	return config.Config{UserName: "tester", TellAgentsName: true, DefaultAgent: "claude", Motion: "off"}
+	return config.Config{UserName: "tester", TellAgentsName: true, DefaultAgent: "claude", Motion: "off", Orchestration: config.LevelOff}
 }
 
 // ---- spy adapter: records every prompt and spec an agent receives ----

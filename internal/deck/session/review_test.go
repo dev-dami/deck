@@ -64,7 +64,7 @@ func reviewRigWith(t *testing.T, cfg config.Config, claude, codex [][]fake.Scrip
 		t.Fatal(err)
 	}
 	r.add(t, tid, "claude")
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	return r, tid
@@ -303,7 +303,7 @@ func slotRig(t *testing.T) (*rig, string, string) {
 	holds := []fake.Script{turn(blockStep("ap-hold"), say("held"), finish())}
 	approvesT2 := []fake.Script{turn(callOp("review.approve", `{"id": "t2"}`), say("approved"), finish())}
 	r, tid := reviewRig(t, cfg, [][]fake.Script{lead, holds, approvesT2}, [][]fake.Script{{turn(say("fixed the parser"), finish())}})
-	if err := r.m.SetOrchestrate(tid, false); err != nil {
+	if err := r.m.SetLevel(tid, "off"); err != nil {
 		t.Fatal(err)
 	}
 	hold, err := r.m.Spawn(tid, "", SpawnSpec{Kind: "claude", Brief: "hold a slot"})
@@ -366,7 +366,7 @@ func TestReviewWaitsForTheUserAfterMaxWork(t *testing.T) {
 	cfg.MaxWork = 1
 	r, tid := reviewRig(t, cfg, [][]fake.Script{lead, approves}, [][]fake.Script{{turn(say("fixed the parser"), finish())}})
 	spawnReviewed(t, r, tid) // the lead's spawn takes the one unit of work
-	if err := r.m.SetOrchestrate(tid, false); err != nil {
+	if err := r.m.SetLevel(tid, "off"); err != nil {
 		t.Fatal(err)
 	}
 	const waits = "t1 waits for its review until the user continues the thread"

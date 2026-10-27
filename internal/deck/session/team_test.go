@@ -82,14 +82,15 @@ func TestTeamPostIsNamedRedactedAndLimited(t *testing.T) {
 	}
 }
 
-// TestInstructionsNameTheTeam: an agent hears of subagents and races, and,
+// TestInstructionsNameTheTeam: an agent hears of subagents (level_test.go has
+// what each orchestration level adds) and leases, and,
 // while teammates are paired, of the team ops and who the teammates are.
 func TestInstructionsNameTheTeam(t *testing.T) {
 	r := newRig(t, nil, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	sp, _ := r.claude.spec("claude")
-	has(t, sp.Instructions, "agent.spawn", "task.race", "lease.acquire")
+	has(t, sp.Instructions, "agent.spawn", "lease.acquire")
 	lacks(t, sp.Instructions, "task.contract", "Teammates")
 
 	r.m.SetTeam(&postTeam{})

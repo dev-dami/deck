@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
+	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -147,7 +148,7 @@ func (m *Manager) RunOps(r OpsRun) (threadID, taskID string, err error) {
 	t := m.thread(tid)
 	o := &opsState{run: r, box: box}
 	t.mu.Lock()
-	t.contract, t.ops, t.mode = r.Peer, o, agent.ModeAsk
+	t.contract, t.ops, t.mode, t.level = r.Peer, o, agent.ModeAsk, config.LevelOff
 	t.mu.Unlock()
 	_ = m.RenameThread(tid, r.Peer+": "+r.Title)
 	aid, err := m.AddMember(tid, kind, "")

@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/gh"
 	"github.com/dev-dami/deck/internal/usage"
 	"github.com/dev-dami/deck/internal/workspace"
@@ -214,6 +215,9 @@ func (s *Server) CreateSession(ctx context.Context, r *deckv1.CreateSessionReque
 	if r.GetIsolate() && (s.crew == nil || s.crew.rooms == nil) {
 		return nil, errNoCrew
 	}
+	if l := r.GetLevel(); l != "" && !config.ValidLevel(l) {
+		return nil, invalid("level is off, assist, auto or full")
+	}
 	v, err := s.be.CreateSession(ctx, t)
 	if err != nil {
 		return nil, fail(err)
@@ -223,6 +227,12 @@ func (s *Server) CreateSession(ctx context.Context, r *deckv1.CreateSessionReque
 			// Not left half made: the person asked for an isolated thread.
 			_ = s.be.DeleteSession(ctx, v.ID)
 			return nil, err
+		}
+	}
+	if l := r.GetLevel(); l != "" && s.crew != nil && s.crew.orch != nil {
+		if err := s.crew.orch.SetLevel(v.ID, l); err != nil {
+			_ = s.be.DeleteSession(ctx, v.ID)
+			return nil, refused(err)
 		}
 	}
 	p := toSession(v)

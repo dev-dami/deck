@@ -272,6 +272,7 @@ func (m *Manager) RunContract(r ContractRun) (threadID, taskID string, err error
 	t := m.thread(tid)
 	t.mu.Lock()
 	t.contract = r.Peer
+	t.level = config.LevelOff // a teammate's work does not fan out here
 	if t.mode == agent.ModeYolo {
 		t.mode = agent.ModeAsk
 	}

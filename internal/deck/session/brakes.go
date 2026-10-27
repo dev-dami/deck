@@ -34,13 +34,6 @@ const (
 	maxWaiting        = 8
 )
 
-func (m *Manager) maxWork() int {
-	if n := m.config().MaxWork; n > 0 {
-		return n
-	}
-	return config.DefaultMaxWork
-}
-
 // errPaused is what a spawn is told while the thread is paused.
 var errPaused = fmt.Errorf("held: Deck paused this thread; the user will continue it")
 
@@ -53,7 +46,7 @@ func (m *Manager) takeWork(t *thread) bool {
 		t.mu.Unlock()
 		return false
 	}
-	if t.work >= m.maxWork() {
+	if t.work >= m.levelLocked(t).MaxWork {
 		t.paused = true
 		pe := store.Entry{Type: store.EntryPause, Event: eventText(fmt.Sprintf("%d subagents and handed-out tasks", t.work))}
 		m.appendLocked(t, pe)

@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/internal/pubsub"
 	"github.com/dev-dami/deck/internal/workspace"
@@ -92,7 +93,8 @@ func (s *Server) Board(_ context.Context, r *deckv1.SessionRef) (*deckv1.BoardRe
 	}
 	rep := s.crew.orch.Board(r.GetSessionId())
 	return &deckv1.BoardResponse{
-		Orchestrate: rep.Orchestrate,
+		Level:       rep.Level,
+		Orchestrate: config.Levels[rep.Level].Schedule,
 		Tasks: each(rep.Tasks, func(t workspace.BoardTask) *deckv1.BoardTask {
 			return &deckv1.BoardTask{
 				Id: t.ID, Title: t.Title, Status: t.Status, Owner: t.Owner, Deps: t.Deps, Brief: t.Brief,
@@ -152,7 +154,16 @@ func (s *Server) SetOrchestrate(_ context.Context, r *deckv1.SetOrchestrateReque
 	if err := needSession(r.GetSessionId()); err != nil {
 		return nil, err
 	}
-	return &deckv1.Empty{}, refused(s.crew.orch.SetOrchestrate(r.GetSessionId(), r.GetOn()))
+	level := r.GetLevel()
+	switch {
+	case level != "" && !config.ValidLevel(level):
+		return nil, invalid("level is off, assist, auto or full")
+	case level == "" && r.GetOn():
+		level = config.LevelAuto
+	case level == "":
+		level = config.LevelOff
+	}
+	return &deckv1.Empty{}, refused(s.crew.orch.SetLevel(r.GetSessionId(), level))
 }
 
 func (s *Server) Agents(_ context.Context, r *deckv1.SessionRef) (*deckv1.AgentsResponse, error) {

@@ -391,7 +391,7 @@ func (m *Manager) moveTaskIf(t *thread, id string, to store.TaskStatus, by, note
 	// Work that ends goes to review first when the task asks for one.
 	unreviewed := ""
 	if to == store.TaskDone && from == store.TaskRunning {
-		switch want, worker := m.reviewOf(*tk), t.workerKind(*tk); {
+		switch want, worker := m.reviewOf(*tk, m.levelLocked(t)), t.workerKind(*tk); {
 		case want == "":
 		case m.reviewKind(want, worker) != "":
 			to = store.TaskReview

@@ -90,9 +90,10 @@ type thread struct {
 	// reviewWaits holds the tasks in review whose wait for a reviewer the
 	// thread has a notice about (review.go).
 	reviewWaits map[string]bool
-	// orchestrate is set while members may spawn subagents and the scheduler
+	// level is the thread's orchestration level (config.Levels): how deep
+	// and wide members spawn, whether they race, and whether the scheduler
 	// runs the board (spawn.go, sched.go).
-	orchestrate bool
+	level string
 	// contract is the teammate whose code contract this thread runs: its
 	// mode is never yolo (contract.go).
 	contract string
@@ -350,7 +351,7 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	defer t.mu.Unlock()
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
 		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree,
-		Tasks: cloneTasks(t.tasks), Orchestrate: t.orchestrate, Contract: t.contract, Ops: t.ops != nil,
+		Tasks: cloneTasks(t.tasks), Orchestration: t.level, Orchestrate: m.levelLocked(t).Schedule, Contract: t.contract, Ops: t.ops != nil,
 		Scheduled: slices.Clone(t.scheduled)}
 	for _, peer := range slices.Sorted(maps.Keys(t.shares)) {
 		th.Shares = append(th.Shares, store.Share{Peer: peer, Role: t.shares[peer]})

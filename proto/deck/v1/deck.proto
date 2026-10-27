@@ -75,7 +75,8 @@ service Deck {
   // TaskAction acts on a task: cancel, retry, steer (with text), apply (a
   // worktree's work into the tree; keeps a race entry) or discard.
   rpc TaskAction(TaskActionRequest) returns (TaskActionResponse);
-  // SetOrchestrate turns the scheduler and agents' subagents on or off.
+  // SetOrchestrate sets the thread's orchestration level: how far its
+  // agents spawn and race, and whether the scheduler runs its board.
   rpc SetOrchestrate(SetOrchestrateRequest) returns (Empty);
   // Agents is the thread's agents as a tree (subagents under the member
   // that started them) with what each runs right now.
@@ -241,6 +242,8 @@ message CreateSessionRequest {
   string title = 1;
   // isolate starts the thread on a worktree and branch of its own.
   bool isolate = 2;
+  // level is the orchestration level it starts at; "" is the Deck's default.
+  string level = 3;
 }
 
 message RenameSessionRequest {
@@ -757,8 +760,12 @@ message BoardTask {
 }
 
 message BoardResponse {
+  // orchestrate is set at the levels whose scheduler runs the board (auto,
+  // full), for clients that predate level.
   bool orchestrate = 1;
   repeated BoardTask tasks = 2;
+  // level is the orchestration level: off, assist, auto or full.
+  string level = 3;
 }
 
 message TaskActionRequest {
@@ -776,7 +783,10 @@ message TaskActionResponse {
 
 message SetOrchestrateRequest {
   string session_id = 1;
+  // on, from a client that predates level: auto when set, off when not.
   bool on = 2;
+  // level is off, assist, auto or full; it wins over on.
+  string level = 3;
 }
 
 message AgentNode {

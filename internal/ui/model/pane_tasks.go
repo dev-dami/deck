@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/dev-dami/deck/internal/ui/util"
 	"github.com/dev-dami/deck/internal/workspace"
@@ -18,8 +20,9 @@ import (
 // owns it, what it waits for), then one row per subagent the session's agents
 // have running (Claude Code's Task/Agent, OpenCode's task, …) with how long it
 // has run. enter shows a row's detail. On a task, x cancels it, r retries a
-// failed or blocked one, and o turns orchestration on or off: the scheduler
-// then runs ready tasks, and members may start subagents. On a task whose
+// failed or blocked one, and o steps the orchestration level (off, assist,
+// auto, full): how far members start subagents, and whether the scheduler
+// runs ready tasks. On a task whose
 // subagent worked on a worktree of its own, a applies that work to your tree
 // and d (twice) discards it. A race's entries sit under it, each with what it
 // changed, spent and took; a on an entry keeps it and discards the others.
@@ -82,18 +85,29 @@ func (p *tasksPane) key(m *UI, msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		if !ok || m.session == nil || len(board.Tasks) == 0 {
 			return false, nil
 		}
-		on, sid := !board.Orchestrate, m.session.ID
+		next, sid := nextLevel(board.Level), m.session.ID
 		return true, func() tea.Msg {
-			if err := o.SetOrchestrate(sid, on); err != nil {
+			if err := o.SetLevel(sid, next); err != nil {
 				return util.NewErrorMsg(err)
 			}
-			if on {
-				return util.NewInfoMsg("Orchestration on: ready tasks run by themselves")
-			}
-			return util.NewInfoMsg("Orchestration off: the board is a plain list")
+			return util.NewInfoMsg("Orchestration " + next + ": " + levelBlurb[next])
 		}
 	}
 	return false, nil
+}
+
+// levelBlurb says in a line what each orchestration level does.
+var levelBlurb = map[string]string{
+	config.LevelOff:    "agents start helpers only when you ask",
+	config.LevelAssist: "agents may start a couple of helpers",
+	config.LevelAuto:   "agents plan, split and hand off; ready tasks run by themselves",
+	config.LevelFull:   "deeper trees, races and automatic reviews",
+}
+
+// nextLevel is the level after level, round from full to off.
+func nextLevel(level string) string {
+	i := slices.Index(config.LevelNames, level)
+	return config.LevelNames[(i+1)%len(config.LevelNames)]
 }
 
 // act runs f on the selected task. It does nothing (and is not handled) when
@@ -197,8 +211,8 @@ func (p *tasksPane) rows(m *UI, width int, now time.Time) []paneRow {
 	}
 	if len(board.Tasks) > 0 {
 		head := "Tasks"
-		if board.Orchestrate {
-			head += " · orchestrating"
+		if board.Level != "" {
+			head += " · orchestration " + board.Level + " (o)"
 		}
 		header(head)
 		for _, t := range board.Tasks {

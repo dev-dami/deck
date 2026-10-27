@@ -205,7 +205,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			}
 			out = append(out, line{text: text})
 		case store.EntryNotice:
-			if e.Via == viaOverlap {
+			if e.Via == viaOverlap || e.Via == viaLevel {
 				out = append(out, line{text: "[deck] " + e.Text})
 			}
 		case store.EntryPause:
@@ -388,8 +388,8 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 		b.WriteString("Shared task board (execute ops): task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list. Report a task you own with task.done.\n")
 		b.WriteString("Pass code as a capsule: sub.patch.capture, then thread.send {capsule}.\n")
 		if !ops {
-			fmt.Fprintf(&b, "When the user asks you to split work or spin up agents, call agent.spawn {brief, kind} per agent (kind: %s, or a named agent); each joins as a lane and reports back. task.race {brief, agents} races worktrees; memory.add pins a note; search shows op args.\n",
-				clip(strings.Join(m.Kinds(), ", "), 80))
+			fmt.Fprintf(&b, "agent.spawn {brief, kind} starts a helper agent (kind: %s, or a named agent); it joins as a lane and reports back. Orchestration is %s memory.add pins a note; search shows op args.\n",
+				clip(strings.Join(m.Kinds(), ", "), 80), m.levelText(t))
 			b.WriteString("Before editing files others may touch: lease.acquire {paths}, or file.claim {paths} for files another agent is changing (Deck asks it and hands you its changes). Asked about your file? file.answer {path, text}.\n")
 		}
 		if len(mates) > 0 {

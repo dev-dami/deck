@@ -157,9 +157,12 @@ type Thread struct {
 	Worktree *Worktree `json:"worktree,omitempty"`
 	// Tasks is the thread's shared task board (task.go).
 	Tasks []Task `json:"tasks,omitempty"`
-	// Orchestrate lets members spawn subagents and has the scheduler run the
-	// board's ready tasks.
-	Orchestrate bool `json:"orchestrate,omitempty"`
+	// Orchestration is the thread's orchestration level ("off", "assist",
+	// "auto" or "full"); "" for a thread stored before levels, which
+	// Orchestrate then speaks for: set, it was on (auto); unset, it never
+	// chose, and takes the configured default.
+	Orchestration string `json:"orchestration,omitempty"`
+	Orchestrate   bool   `json:"orchestrate,omitempty"`
 	// Contract is the teammate whose code contract runs in this thread: its
 	// mode is at most ask.
 	Contract string `json:"contract,omitempty"`
