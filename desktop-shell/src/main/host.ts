@@ -2,6 +2,7 @@ import {
   type AgentCli,
   type AgentClis,
   type AppIconImage,
+  type AppIconResult,
   type AppInfo,
   type DeckHost,
   type HostMethod,
@@ -52,9 +53,9 @@ export interface HostDeps {
   // Looks for the agent CLIs on the engine's PATH.
   agentClis: () => Promise<AgentCli[]>;
   preview: Pick<Preview, "probe" | "load" | "nav" | "bounds" | "hide" | "close">;
-  // Shows the icon (checked by isAppIcon) and keeps it; false when the
-  // system could not decode it.
-  setAppIcon: (images: AppIconImage[]) => boolean;
+  // Shows the icon (checked by isAppIcon), keeps it and gives it to the
+  // installed app's launchers (standard: their own icon).
+  setAppIcon: (images: AppIconImage[], standard: boolean) => AppIconResult;
   // Finds a folder's own icon (projectIcon.ts); the tests stub it.
   findIcon?: (dir: string) => Promise<string | null>;
 }
@@ -144,7 +145,11 @@ export function createHost(d: HostDeps): DeckHost {
     previewBounds: async (b: PreviewBounds) => d.preview.bounds({ x: b.x, y: b.y, w: b.w, h: b.h, zoom: b.zoom }),
     previewHide: async () => d.preview.hide(),
     previewClose: async () => d.preview.close(),
-    setAppIcon: async (images: AppIconImage[]) => d.setAppIcon(images.map((i) => ({ size: i.size, png: i.png }))),
+    setAppIcon: async (images: AppIconImage[], standard: boolean) =>
+      d.setAppIcon(
+        images.map((i) => ({ size: i.size, png: i.png })),
+        standard,
+      ),
     // Only a folder the app knows is read, whatever the renderer asks.
     projectIcon: async (dir: string) => {
       if (!d.decks.isOpenDir(dir) && !d.recent.list().includes(dir)) return null;
@@ -268,7 +273,7 @@ const ARGS: Record<HostMethod, Check[]> = {
   previewBounds: [isPreviewBounds],
   previewHide: [],
   previewClose: [],
-  setAppIcon: [isAppIcon],
+  setAppIcon: [isAppIcon, (v) => typeof v === "boolean"],
   projectIcon: [isStr],
 };
 

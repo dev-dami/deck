@@ -4,8 +4,8 @@ import { APP_ICON_LIMITS, type AppIconImage } from "../shared/bridge";
 
 // The app icon the renderer drew (renderer/appIcon), checked before the
 // system decodes it, and kept in app-icon.json under userData so the next
-// start shows it before the window loads. Nothing here touches the
-// installed app: its bundle, launcher and shortcuts keep their own icon.
+// start shows it before the window loads. The installed app's shortcuts
+// and launcher are launcherIcon.ts's.
 
 const SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 // "IHDR": the first chunk of every PNG, 13 bytes long.

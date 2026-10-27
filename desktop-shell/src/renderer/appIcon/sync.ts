@@ -4,9 +4,9 @@
 // so it follows the mode the window resolved (Deck's, the system's or the
 // person's), and it needs no React.
 
-import type { DeckBridge } from "../../shared/bridge";
+import type { DeckBridge, LauncherState } from "../../shared/bridge";
 import { getPrefs, subscribePrefs } from "../prefs";
-import { appIconInfo, resolveAppIcon } from "./catalog";
+import { appIconInfo, resolveAppIcon, STANDARD_ICON } from "./catalog";
 import { currentOs, type HostOs } from "./platform";
 import { renderAppIcon } from "./render";
 
@@ -39,6 +39,24 @@ export function iconSync(d: IconSyncDeps): () => void {
   return update;
 }
 
+// What main said of the installed app's launchers for the icon shown last,
+// for the picker; null before an icon was shown.
+let launchers: LauncherState | null = null;
+const launcherListeners = new Set<() => void>();
+
+function setLauncherState(s: LauncherState): void {
+  if (s === launchers) return;
+  launchers = s;
+  for (const l of launcherListeners) l();
+}
+
+export const launcherState = (): LauncherState | null => launchers;
+
+export function subscribeLauncherState(fn: () => void): () => void {
+  launcherListeners.add(fn);
+  return () => launcherListeners.delete(fn);
+}
+
 // The icon the theme on <html> wears, or null before appearance.ts set it.
 export function themeOnPage(root: Element = document.documentElement): { palette: string; mode: "light" | "dark" } | null {
   const palette = root.getAttribute("data-palette");
@@ -59,7 +77,8 @@ export function startAppIconSync(bridge: Pick<DeckBridge, "setAppIcon" | "logFro
       return t === null ? null : resolveAppIcon(getPrefs().appIcon, t.palette, t.mode);
     },
     show: async (id) => {
-      await bridge.setAppIcon(await renderAppIcon(appIconInfo(id), os));
+      const r = await bridge.setAppIcon(await renderAppIcon(appIconInfo(id), os), id === STANDARD_ICON);
+      setLauncherState(r.launchers);
     },
     onError: (e) => void bridge.logFromRenderer("warn", `app icon: ${e instanceof Error ? e.message : String(e)}`).catch(() => {}),
   });

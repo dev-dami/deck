@@ -58,6 +58,10 @@ export const APP_ICONS: readonly AppIconInfo[] = [
 
 export const APP_ICON_IDS: readonly string[] = APP_ICONS.map((i) => i.id);
 
+// The icon the installed app carries: picking it gives the launchers their
+// own icon back instead of a copy.
+export const STANDARD_ICON = "classic";
+
 // The pref: "theme" follows the window's theme; anything else names an icon.
 export type AppIconPref = "theme" | (string & {});
 
