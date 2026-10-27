@@ -23,6 +23,7 @@ import {
   SquareTerminal,
   Wrench,
 } from "./icons";
+import { QuestionRow, questionLineOf } from "./QuestionRow";
 import {
   createContext,
   type CSSProperties,
@@ -721,6 +722,8 @@ export const MessageView = memo(function MessageView({
   if (m.role === "system") {
     const ask = askOf(m);
     if (ask !== null) return <AskRow m={m} ask={ask} roster={roster} theme={theme} />;
+    const question = questionLineOf(m);
+    if (question !== null) return <QuestionRow m={m} q={question} />;
     return (
       <article className="msg msg-system mx-auto max-w-[90%] text-pretty text-center text-muted-foreground text-xs" data-role="system" data-mid={m.id}>
         <Prose chunks={chunksOf(m)} />

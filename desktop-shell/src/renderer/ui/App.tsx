@@ -1,4 +1,4 @@
-import type { Decision } from "@web/protocol";
+import type { Decision, QuestionAnswer } from "@web/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DeckBridge, LocalDeck, SavedServer, StartError } from "../../shared/bridge";
 import { useAppearance, useMotion } from "../appearance";
@@ -287,9 +287,9 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   const attention = {
     items: inbox,
     onOpenRoom: openRoom,
-    onAnswer: (item: InboxItem, d: Decision) => {
+    onAnswer: (item: InboxItem, d: Decision, answers?: QuestionAnswer[]) => {
       const p = live.current.find((x) => x.key === item.project);
-      if (p !== undefined && item.approval !== undefined) void p.c.answerApproval(item.approval.session_id, item.approval.id, d);
+      if (p !== undefined && item.approval !== undefined) void p.c.answerApproval(item.approval.session_id, item.approval.id, d, answers);
     },
     onContract: async (item: InboxItem, accept: boolean): Promise<string | null> => {
       const api = live.current.find((x) => x.key === item.project)?.c.project;

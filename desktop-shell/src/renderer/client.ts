@@ -1,5 +1,5 @@
 import type { Store } from "@web/controller";
-import type { ChangedFile, Decision, Image, Mode, ModelChoice, RaceEntrant, Session } from "@web/protocol";
+import type { ChangedFile, Decision, Image, Mode, ModelChoice, QuestionAnswer, RaceEntrant, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import type { Profile, ProfileScope } from "./profiles";
 import type { ProjectApi } from "./project";
@@ -32,7 +32,9 @@ export interface DeckClient {
   interrupt(sessionId: string, agentId: string): Promise<void>;
   steer(sessionId: string, itemId: string): Promise<void>;
   cancelQueued(sessionId: string, itemId: string): Promise<void>;
-  answerApproval(sessionId: string, id: string, decision: Decision): Promise<void>;
+  // A question (kind "question") takes "answer" with answers, or "deny" to
+  // decline it.
+  answerApproval(sessionId: string, id: string, decision: Decision, answers?: QuestionAnswer[]): Promise<void>;
   setMode(sessionId: string, mode: Mode): Promise<boolean>;
   // The models of kind; sessionId "" asks apart from any thread. refresh
   // asks the Deck to list them afresh (a Deck that cannot ignores it).
