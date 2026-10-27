@@ -7,6 +7,7 @@ import { Button } from "./kit/button";
 import { fieldClass } from "./kit/dialog";
 import { isMac } from "./keys";
 import { ArtFigure } from "./ArtFigure";
+import { ProjectIcon } from "./ProjectIcon";
 import { base, Command, FirstStrip, Headline, Notice, StartFailed, type StartFailure, stagger } from "./Welcome";
 
 // A list row on the backdrop: a name and its path; the return key shows on
@@ -38,6 +39,7 @@ function Recent({
           {recent.map((dir) => (
             <li key={dir}>
               <button type="button" className={cn("server-open", rowClass)} disabled={opening !== null} onClick={() => void open(dir)}>
+                <ProjectIcon source={`folder:${dir}`} name={base(dir)} size={20} />
                 <span className="flex min-w-0 flex-1 items-baseline gap-3">
                   <span className="shrink-0 font-medium text-sm">{base(dir)}</span>
                   <span className="min-w-0 truncate font-mono text-2xs text-faint">{dir}</span>

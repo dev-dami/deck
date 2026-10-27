@@ -16,6 +16,7 @@ import {
   type RpcStreamEvent,
 } from "../shared/bridge";
 import { callHost, fromApp } from "./host";
+import { RecentFolders } from "./recent";
 
 describe("callHost", () => {
   const { host } = testHost(
@@ -346,6 +347,24 @@ describe("ports and the preview", () => {
     // Bytes the system cannot decode are not shown.
     decodes = false;
     await expect(callHost(host, "setAppIcon", [icon.slice(0, 1)])).resolves.toBe(false);
+  });
+
+  test("projectIcon reads only a folder the app knows, once a run", async () => {
+    const asked: string[] = [];
+    const recent = new RecentFolders(null);
+    recent.add("/work/deck");
+    const { host } = testHost(noEmit, noEmit, undefined, {
+      recent,
+      findIcon: async (dir) => {
+        asked.push(dir);
+        return "data:image/png;base64,AAAA";
+      },
+    });
+    await expect(callHost(host, "projectIcon", [42])).rejects.toThrow(/bad arguments/);
+    await expect(callHost(host, "projectIcon", ["/etc"])).resolves.toBeNull();
+    await expect(callHost(host, "projectIcon", ["/work/deck"])).resolves.toBe("data:image/png;base64,AAAA");
+    await expect(callHost(host, "projectIcon", ["/work/deck"])).resolves.toBe("data:image/png;base64,AAAA");
+    expect(asked).toEqual(["/work/deck"]);
   });
 
   test("a message from the preview's page is refused: only the window's own page may call", () => {

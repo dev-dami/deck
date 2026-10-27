@@ -2331,3 +2331,50 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --plate-lo: #3a2f27;
   --plate-hi: #e6d7b8;
 }
+
+/* ---- Project tiles (ui/ProjectIcon.tsx, projectIcon.ts) ----------------
+   A project's monogram in its own hue, as a quiet tint with a hairline of
+   the same hue, so it tells projects apart without becoming a second
+   accent. --tile-h and --tile-size come from the component. A repo's own
+   logo sits bare, as a favicon in a tab. Unlayered, so a row's
+   [&_svg]:size-* does not shrink the paired Deck's glyph. */
+.project-tile {
+  --tile-ink: oklch(0.8 0.11 var(--tile-h));
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: var(--tile-size);
+  height: var(--tile-size);
+  overflow: hidden;
+  border-radius: calc(var(--tile-size) * 0.3);
+  background: color-mix(in oklab, var(--tile-ink) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tile-ink) 30%, transparent);
+  color: var(--tile-ink);
+  font-weight: 650;
+  font-size: calc(var(--tile-size) * 0.56);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  user-select: none;
+}
+:root[data-mode="light"] .project-tile {
+  --tile-ink: oklch(0.5 0.13 var(--tile-h));
+}
+.project-tile[data-letters="2"] {
+  font-size: calc(var(--tile-size) * 0.42);
+}
+.project-tile > svg {
+  width: 62%;
+  height: 62%;
+}
+.project-tile[data-logo] {
+  background: none;
+  box-shadow: none;
+}
+.project-tile > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+:root[data-palette="riso"] .project-tile {
+  border-radius: 1px;
+}

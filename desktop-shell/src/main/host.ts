@@ -20,6 +20,7 @@ import {
   type ThreadMenuInput,
 } from "../shared/bridge";
 import { isAppIcon } from "./appIcon";
+import { findProjectIcon } from "./projectIcon";
 import type { RpcDecks } from "./decks";
 import type { LinkHost } from "./link";
 import { codeError, type Connect, pairWith } from "./pair";
@@ -54,6 +55,8 @@ export interface HostDeps {
   // Shows the icon (checked by isAppIcon) and keeps it; false when the
   // system could not decode it.
   setAppIcon: (images: AppIconImage[]) => boolean;
+  // Finds a folder's own icon (projectIcon.ts); the tests stub it.
+  findIcon?: (dir: string) => Promise<string | null>;
 }
 
 // The longest renderer log line kept: a stack trace, not a flood.
@@ -63,7 +66,10 @@ const MAX_LOG = 4000;
 // renderer, so callHost checks its type before a method sees it.
 export function createHost(d: HostDeps): DeckHost {
   const connect = d.connect ?? connectPinned;
+  const findIcon = d.findIcon ?? findProjectIcon;
   let clis: Promise<AgentClis> | null = null;
+  // Each folder's icon, looked for once a run.
+  const icons = new Map<string, Promise<string | null>>();
   return {
     listServers: async () => d.store.list(),
     pair: async (input: PairInput) => {
@@ -139,6 +145,16 @@ export function createHost(d: HostDeps): DeckHost {
     previewHide: async () => d.preview.hide(),
     previewClose: async () => d.preview.close(),
     setAppIcon: async (images: AppIconImage[]) => d.setAppIcon(images.map((i) => ({ size: i.size, png: i.png }))),
+    // Only a folder the app knows is read, whatever the renderer asks.
+    projectIcon: async (dir: string) => {
+      if (!d.decks.isOpenDir(dir) && !d.recent.list().includes(dir)) return null;
+      let icon = icons.get(dir);
+      if (icon === undefined) {
+        icon = findIcon(dir).catch(() => null);
+        icons.set(dir, icon);
+      }
+      return icon;
+    },
   };
 }
 
@@ -253,6 +269,7 @@ const ARGS: Record<HostMethod, Check[]> = {
   previewHide: [],
   previewClose: [],
   setAppIcon: [isAppIcon],
+  projectIcon: [isStr],
 };
 
 // Calls method m with args from the renderer, or rejects when they are not
