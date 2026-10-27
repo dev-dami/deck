@@ -2,8 +2,8 @@ import { useEffect, useId, useRef, useSyncExternalStore } from "react";
 import { cn } from "../lib/cn";
 import { APP_ICONS, appIconInfo, iconForTheme } from "../appIcon/catalog";
 import { drawAppIcon } from "../appIcon/draw";
-import { currentOs, ICON_NOTE, type HostOs, iconPlatform } from "../appIcon/platform";
-import { themeOnPage } from "../appIcon/sync";
+import { currentOs, ICON_NOTE, type HostOs, iconPlatform, LAUNCHER_NOTE } from "../appIcon/platform";
+import { launcherState, subscribeLauncherState, themeOnPage } from "../appIcon/sync";
 import { setPrefs, usePrefs } from "../prefs";
 
 // The app icon picker for Settings > Appearance: "Match theme" (the icon of
@@ -22,6 +22,8 @@ export function AppIconPicker({ className, os = currentOs() }: AppIconPickerProp
   const platform = iconPlatform(os);
   const noteId = useId();
   const matchId = useId();
+  const launchers = useSyncExternalStore(subscribeLauncherState, launcherState);
+  const problem = launchers === null ? undefined : LAUNCHER_NOTE[launchers];
   const picked = appIcon === "theme" || !APP_ICONS.some((i) => i.id === appIcon) ? "theme" : appIcon;
   const card = (on: boolean) =>
     cn(
@@ -65,6 +67,11 @@ export function AppIconPicker({ className, os = currentOs() }: AppIconPickerProp
       <p id={noteId} className="px-1 text-muted-foreground text-xs leading-relaxed">
         {ICON_NOTE[os]}
       </p>
+      {problem !== undefined && (
+        <p role="status" className="px-1 text-muted-foreground text-xs leading-relaxed">
+          {problem}
+        </p>
+      )}
     </div>
   );
 }

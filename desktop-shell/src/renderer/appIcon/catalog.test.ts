@@ -3,7 +3,7 @@ import { APP_ICON_LIMITS, APP_ICON_SIZES } from "../../shared/bridge";
 import { THEMES } from "../themes";
 import { APP_ICON_IDS, APP_ICONS, appIconInfo, iconForTheme, resolveAppIcon } from "./catalog";
 import { contrast, mix, parseHex, toHex } from "./color";
-import { hostOs, ICON_NOTE, iconPlatform, iconSizes } from "./platform";
+import { hostOs, ICON_NOTE, iconPlatform, iconSizes, LAUNCHER_NOTE } from "./platform";
 
 describe("the catalog", () => {
   test("has every icon once, the classic one first", () => {
@@ -87,8 +87,10 @@ describe("the platform", () => {
     expect(iconSizes("mac")).toEqual(APP_ICON_SIZES.mac);
     expect(iconSizes("windows")).toContain(16);
     expect(ICON_NOTE.mac).toMatch(/Finder/);
-    expect(ICON_NOTE.windows).toMatch(/Pinned shortcuts/);
+    expect(ICON_NOTE.windows).toMatch(/Start menu/);
     expect(ICON_NOTE.linux).toMatch(/launcher/);
+    expect(LAUNCHER_NOTE.denied).toMatch(/administrator/);
+    expect(LAUNCHER_NOTE.done).toBeUndefined();
   });
 });
 

@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { hostname } from "node:os";
@@ -21,6 +22,7 @@ import {
 } from "electron";
 import {
   type AppIconImage,
+  type AppIconResult,
   HOST_METHODS,
   hostChannel,
   LINK_EVENT_CHANNEL,
@@ -36,6 +38,7 @@ import {
 } from "../shared/bridge";
 import { RENDERER_CSP } from "../shared/csp";
 import { AppIconFile, representations } from "./appIcon";
+import { applyLauncherIcon, type LauncherDeps, linuxLaunchers, windowsShortcuts } from "./launcherIcon";
 import { contextMenuTemplate, threadMenuTemplate } from "./contextMenu";
 import { findAgentClis, findDeck, loadService, RpcDecks } from "./decks";
 import { enginePath } from "./shellPath";
@@ -57,6 +60,8 @@ const SCHEME = "app";
 const ORIGIN = `${SCHEME}://deck`;
 const RENDERER_DIR = resolve(__dirname, "..", "..", "renderer");
 const smoke = process.argv.includes("--smoke");
+// package.json's build.appId, which the installer gives its shortcuts.
+const APP_USER_MODEL_ID = "dev.deck.desktop";
 
 // The renderer is served from app://deck, not file://, so it gets an origin
 // of its own and a CSP header.
@@ -179,8 +184,7 @@ function iconImage(images: AppIconImage[]): NativeImage | null {
 
 // Shows the icon while the app runs: on the Dock on a Mac, on the window
 // (its title bar, taskbar button and switcher) elsewhere. The installed
-// app's icon in Finder, Launchpad, a .desktop launcher or a pinned
-// shortcut is never touched.
+// app's shortcuts and launcher are launcherIcon.ts's.
 function showIcon(img: NativeImage): void {
   appIcon = img;
   if (process.platform === "darwin") app.dock?.setIcon(img);
@@ -302,7 +306,7 @@ async function main(): Promise<void> {
   if (app.isPackaged) app.setAsDefaultProtocolClient("deck");
   // Windows shows notifications only for an app with a user model id; the
   // installer sets the same one.
-  if (process.platform === "win32") app.setAppUserModelId("dev.deck.desktop");
+  if (process.platform === "win32") app.setAppUserModelId(APP_USER_MODEL_ID);
 
   // The icon chosen last, before the window loads: the Dock and the first
   // frame show it, not the default for a moment.
@@ -310,6 +314,27 @@ async function main(): Promise<void> {
   const saved = iconFile.load();
   const savedImage = saved === null ? null : iconImage(saved);
   if (savedImage !== null) showIcon(savedImage);
+  // The installer's shortcuts are named for the product, and start
+  // process.execPath; a per-machine install's are everyone's.
+  const launcherDeps: LauncherDeps = {
+    platform: process.platform,
+    packaged: app.isPackaged,
+    dir: join(app.getPath("userData"), "icons"),
+    exe: process.execPath,
+    windows: {
+      links: process.platform === "win32" ? windowsShortcuts(process.env, app.getPath("desktop")) : [],
+      shell: {
+        read: (p) => shell.readShortcutLink(p),
+        // Only shortcuts that start this exe are written, so the target stays.
+        write: (p, icon) =>
+          shell.writeShortcutLink(p, "update", { target: process.execPath, icon, iconIndex: 0, appUserModelId: APP_USER_MODEL_ID }),
+      },
+      // Explorer keeps shortcut icons in a cache; this asks it to look
+      // again. Best effort: the icon shows at the next sign-in otherwise.
+      refresh: () => execFile("ie4uinit.exe", ["-show"], { windowsHide: true }, () => {}),
+    },
+    linux: linuxLaunchers(process.env, app.getPath("home")),
+  };
 
   const store = new ServerStore(join(app.getPath("userData"), "servers.json"), sealer);
   const links = new LinkHost(store, (id, ev) => win?.webContents.send(SOCKET_EVENT_CHANNEL, id, ev));
@@ -392,16 +417,26 @@ async function main(): Promise<void> {
     focused: () => notifier.focused(),
     agentClis: async () => findAgentClis(await path),
     preview,
-    setAppIcon: (images) => {
+    setAppIcon: (images, standard) => {
       const img = iconImage(images);
-      if (img === null) return false;
-      showIcon(img);
+      if (img === null) return { shown: false, launchers: "none" };
       try {
         iconFile.save(images);
       } catch (e) {
         writeLog("warn", `app icon not saved: ${e instanceof Error ? e.message : String(e)}`);
       }
-      return true;
+      let launchers: AppIconResult["launchers"] = "failed";
+      let file: string | null = null;
+      try {
+        ({ state: launchers, file } = applyLauncherIcon(images, standard, launcherDeps));
+      } catch (e) {
+        writeLog("warn", `app icon not given to the launchers: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      if (launchers === "denied" || launchers === "failed") writeLog("warn", `app icon: launchers ${launchers}`);
+      // Windows reads every size of an .ico for the title bar and taskbar.
+      const ico = process.platform === "win32" && file !== null ? nativeImage.createFromPath(file) : null;
+      showIcon(ico !== null && !ico.isEmpty() ? ico : img);
+      return { shown: true, launchers };
     },
   });
   Menu.setApplicationMenu(
