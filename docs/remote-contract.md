@@ -120,6 +120,7 @@ Unchanged from #47 unless noted. Every method that names a session takes
 | `roster.add` | `{session_id, kind, model?}` | `AgentLine`: starts a member without sending it anything; unknown kind is `invalid` |
 | `models.list` | `{session_id, kind}` (`session_id` may be `""`: the kind's models apart from any thread, none selected) | `ModelChoice[]` |
 | `models.set` | `{session_id, kind, model, effort?}` | `{}` |
+| `race.start` | `{session_id, brief, entrants: [{agent, model?, effort?}], judge?}` | `{task_id}`: 2 to 6 entrants do the brief, each on a worktree of its own; `agent` is a kind or a named agent, and kinds may mix and repeat; `judge` has one more agent, of the first entrant's kind, rank them. A refusal (no git repository, an unknown agent) is `invalid` with its reason |
 | `mode.get` | `{session_id}` | `{mode}` |
 | `mode.set` | `{session_id, mode}` | `{mode}` |
 | `approvals.list` | `{session_id?}` | `Approval[]` |

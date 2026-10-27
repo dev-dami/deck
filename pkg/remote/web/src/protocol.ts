@@ -722,6 +722,27 @@ export interface RosterAddParams {
   model?: string;
 }
 
+// One agent of a race: a kind or a named agent, and the model and effort it
+// runs (none: its own).
+export interface RaceEntrant {
+  agent: string;
+  model?: string;
+  effort?: string;
+}
+
+// race.start: 2 to 6 entrants do one brief, each on a worktree of its own;
+// kinds may mix and repeat. judge has one more agent rank them.
+export interface RaceStartParams {
+  session_id: string;
+  brief: string;
+  entrants: RaceEntrant[];
+  judge?: boolean;
+}
+
+export interface RaceStartResult {
+  task_id: string;
+}
+
 export interface ModelsSetParams {
   session_id: string;
   kind: string;
@@ -814,6 +835,15 @@ export const decodeRosterAddParams: Decoder<RosterAddParams> = object(
   { session_id: str, kind: str },
   { model: str },
 );
+export const decodeRaceEntrant: Decoder<RaceEntrant> = object(
+  { agent: str },
+  { model: str, effort: str },
+);
+export const decodeRaceStartParams: Decoder<RaceStartParams> = object(
+  { session_id: str, brief: str, entrants: list(decodeRaceEntrant) },
+  { judge: bool },
+);
+export const decodeRaceStartResult: Decoder<RaceStartResult> = object({ task_id: str }, {});
 export const decodeModelsSetParams: Decoder<ModelsSetParams> = object(
   { session_id: str, kind: str, model: str },
   { effort: str },
@@ -868,6 +898,7 @@ export interface MethodTable {
   "roster.add": { req: RosterAddParams; res: AgentLine };
   "models.list": { req: ModelsListParams; res: ModelChoice[] };
   "models.set": { req: ModelsSetParams; res: Empty };
+  "race.start": { req: RaceStartParams; res: RaceStartResult };
   "mode.get": { req: SessionParams; res: ModeResult };
   "mode.set": { req: ModeSetParams; res: ModeResult };
   "approvals.list": { req: ApprovalsListParams; res: Approval[] };
@@ -908,6 +939,7 @@ export const METHODS: { [M in MethodName]: MethodCodec<M> } = {
   "roster.add": { req: decodeRosterAddParams, res: decodeAgentLine },
   "models.list": { req: decodeModelsListParams, res: list(decodeModelChoice) },
   "models.set": { req: decodeModelsSetParams, res: empty },
+  "race.start": { req: decodeRaceStartParams, res: decodeRaceStartResult },
   "mode.get": { req: decodeSessionParams, res: decodeModeResult },
   "mode.set": { req: decodeModeSetParams, res: decodeModeResult },
   "approvals.list": { req: decodeApprovalsListParams, res: list(decodeApproval) },

@@ -274,14 +274,6 @@ export function boardRows(b: Board): { task: BoardTask; entries: BoardTask[] }[]
   return rows;
 }
 
-// A race in the composer's own syntax: "$claude×2 $codex×1 brief".
-export function raceMessage(counts: Record<string, number>, brief: string): string {
-  const picks = Object.entries(counts)
-    .filter(([, n]) => n > 0)
-    .map(([k, n]) => `$${k}×${n}`);
-  return `${picks.join(" ")} ${brief.trim()}`;
-}
-
 // One line of a teammate's shared thread, as the engine writes it for
 // agents: "[claude2] text", "[ana → claude-1] text", or a note such as
 // "[claude2 ran: go test]".
@@ -301,17 +293,6 @@ export function mirrorRow(line: string): MirrorRow {
   const did = /^\[(\S+) ((?:changed|ran)\b[\s\S]*)\]$/.exec(line);
   if (did !== null) return { who: did[1] ?? "", to: "", text: did[2] ?? "", note: true };
   return { who: "", to: "", text: line, note: true };
-}
-
-export const RACE_MIN = 2;
-export const RACE_MAX = 6;
-
-// The race form's message: one kind, two to six entries. null while the
-// form cannot start a race.
-export function raceText(kind: string, count: number, brief: string): string | null {
-  if (kind === "" || brief.trim() === "") return null;
-  const n = Math.min(RACE_MAX, Math.max(RACE_MIN, Math.round(count)));
-  return raceMessage({ [kind]: n }, brief);
 }
 
 // Apply and discard change the tree or drop work, so the board asks first.

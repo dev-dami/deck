@@ -19,6 +19,7 @@ export {
   type Picked,
   type PickerType,
   pickerAt,
+  retiredForm,
   type ProfileRef,
   type Suggestion,
   suggestionHue,

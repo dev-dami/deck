@@ -87,7 +87,7 @@ func TestMentionSigils(t *testing.T) {
 	out := popup(m)
 	require.Contains(t, out, "charles · reviewer · claude profile")
 	require.Contains(t, out, "ada · codex profile")
-	require.Contains(t, out, "claude+ · start another claude")
+	require.NotContains(t, out, "start another")
 
 	// Picking a profile puts "@charles" in the message.
 	m.textarea.InsertString("cha")
@@ -183,7 +183,7 @@ func TestPeopleItems(t *testing.T) {
 			require.Contains(t, ansi.Strip(it.Label), "charles · reviewer · idle")
 		}
 	}
-	require.Equal(t, []string{"@charles", "@claude", "@claude*", "@claude+", "@codex+"}, ins)
+	require.Equal(t, []string{"@charles", "@claude"}, ins)
 }
 
 func TestProfilesCommand(t *testing.T) {

@@ -50,6 +50,8 @@ test.afterEach(async () => {
 
 const sidebar = (page: Page) => page.getByRole("navigation", { name: "Threads" });
 const composer = (page: Page) => page.getByRole("textbox", { name: "Message" });
+// Where the race builder's screenshots go: DECK_SHOTS, else the temp folder.
+const shot = (name: string) => join(process.env["DECK_SHOTS"] ?? join(tmpdir(), "deck-shots"), name);
 
 // Opens a tab of the room's side panel.
 async function roomTab(page: Page, name: string): Promise<void> {
@@ -73,13 +75,12 @@ test("opens a folder and runs two agents in one thread", async ({ page }) => {
   await expect(sidebar(page).locator(".session")).toHaveCount(3);
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
-  await composer(page).fill("$claude $codex+ split the work");
+  await composer(page).fill("$claude $codex split the work");
   await composer(page).press("Enter");
   const claude = page.locator('[data-agent="claude-1"].msg').last();
-  const codex = page.locator('[data-agent="codex-2"].msg').last();
+  const codex = page.locator('[data-agent="codex-1"].msg').last();
   await expect(claude.locator(".streaming")).toBeVisible();
   await expect(codex.locator(".streaming")).toBeVisible();
-  await expect(page.locator('.agent[data-agent="codex-2"]')).toBeVisible();
   await expect(claude).toContainText("split the work");
   await expect(codex).toContainText("split the work");
   await expect(page.locator(".streaming")).toHaveCount(0);
@@ -181,11 +182,11 @@ test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill
   await expect(page.getByRole("heading", { name: `What should we build in ${basename(dir)}?` })).toBeVisible();
   const starts = page.getByRole("list", { name: "Ways to start" });
   await starts.getByRole("button", { name: /Split the work/ }).click();
-  await expect(composer(page)).toHaveValue("$claude $codex+ ");
+  await expect(composer(page)).toHaveValue("$claude $codex ");
   await expect(composer(page)).toBeFocused();
   await composer(page).pressSequentially("fix the limiter");
-  await starts.getByRole("button", { name: /Race three/ }).click();
-  await expect(composer(page)).toHaveValue("$claude×3 fix the limiter");
+  await starts.getByRole("button", { name: /Race agents/ }).click();
+  await expect(composer(page)).toHaveValue("/race fix the limiter");
   await starts.getByRole("button", { name: /One agent/ }).click();
   await expect(composer(page)).toHaveValue("$claude fix the limiter");
 
@@ -455,25 +456,101 @@ test("room tabs: the agents tree, the task board, keeping a race entry after its
   await tasks.getByRole("switch", { name: "Orchestrate" }).click();
   await expect(tasks.getByRole("switch", { name: "Orchestrate" })).toHaveAttribute("aria-checked", "true");
   expect(fake.board.actions).toEqual(["apply t3", "retry t5"]);
-  // The race form starts the race through StartRace, with a judge by default.
+  // The Tasks tab races with the same builder as /race, through StartRace,
+  // with a judge by default.
   await tasks.getByRole("button", { name: "New race" }).click();
-  await tasks.getByLabel("Race brief").fill("make the limiter per address");
-  await tasks.getByLabel("Race kind").selectOption("codex");
-  await tasks.getByRole("button", { name: "More entries" }).click();
-  await expect(tasks.getByRole("switch", { name: "Judge" })).toHaveAttribute("aria-checked", "true");
-  await tasks.getByRole("button", { name: /Start race \(4\)/ }).click();
-  await expect.poll(() => fake.room.asked).toContain("race codex×4 judged: make the limiter per address");
-  await expect(tasks.getByLabel("Race brief")).toHaveValue("");
+  const builder = tasks.getByRole("region", { name: "Race builder" });
+  await builder.getByLabel("Race task").fill("make the limiter per address");
+  await expect(builder.getByRole("button", { name: /Start race/ })).toBeDisabled();
+  await builder.getByRole("button", { name: "Add agent" }).click();
+  const add = page.getByRole("menu", { name: "Add an entrant" });
+  await add.getByRole("group", { name: "Agent" }).getByRole("menuitemradio", { name: "codex" }).click();
+  await add.getByRole("menuitem", { name: "Add codex" }).click();
+  await page.getByRole("menu", { name: "Add an entrant" }).getByRole("menuitem", { name: "Add codex" }).click();
+  await page.keyboard.press("Escape");
+  await expect(builder.getByRole("list", { name: "Entrants" }).locator(".race-entrant")).toHaveCount(2);
+  await expect(builder.getByRole("switch", { name: "Judge" })).toHaveAttribute("aria-checked", "true");
+  await builder.getByRole("button", { name: /Start race \(2\)/ }).click();
+  await expect.poll(() => fake.room.asked).toContain("race codex,codex judged: make the limiter per address");
+  await expect(builder.getByLabel("Race task")).toHaveValue("");
   // Without the judge.
-  await tasks.getByLabel("Race brief").fill("try again");
-  await tasks.getByRole("switch", { name: "Judge" }).click();
-  await tasks.getByRole("button", { name: /Start race \(4\)/ }).click();
-  await expect.poll(() => fake.room.asked).toContain("race codex×4: try again");
-  // /race takes judge after the kind.
-  await composer(page).fill("/race 2 codex judge fix the flaky test");
-  await composer(page).press("Enter");
-  await expect.poll(() => fake.room.asked).toContain("race codex×2 judged: fix the flaky test");
+  await builder.getByLabel("Race task").fill("try again");
+  await builder.getByRole("switch", { name: "Judge" }).click();
+  await builder.getByRole("button", { name: /Start race \(2\)/ }).click();
+  await expect.poll(() => fake.room.asked).toContain("race codex,codex: try again");
+});
+
+test("/race: a builder of mixed entrants, codex, claude and claude again on its model, three race lanes", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  const lanes = page.getByRole("toolbar", { name: "Lanes" });
+  await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
+  const before = await page.locator(".lane[data-lane]").count();
+
+  // The menu offers /race; picking it opens the builder at once.
+  await composer(page).fill("");
+  await composer(page).pressSequentially("/ra");
+  await page.getByRole("listbox", { name: "Commands" }).getByRole("option", { name: /\/race/ }).click();
+  const builder = page.getByRole("region", { name: "Race builder" });
+  await expect(builder).toBeVisible();
   await expect(composer(page)).toHaveValue("");
+  await builder.getByRole("button", { name: "Close the race builder" }).click();
+  await expect(builder).toHaveCount(0);
+
+  // The rest of the message is the task.
+  await composer(page).fill("/race fix the flaky limiter test");
+  await composer(page).press("Enter");
+  await expect(builder.getByLabel("Race task")).toHaveValue("fix the flaky limiter test");
+  await expect(composer(page)).toHaveValue("");
+  await expect(builder.getByRole("button", { name: /Start race/ })).toBeDisabled();
+
+  // codex, then claude on a model, then the same claude again: the add
+  // picker starts on the last entrant.
+  await builder.getByRole("button", { name: "Add agent" }).click();
+  const add = () => page.getByRole("menu", { name: "Add an entrant" });
+  await add().getByRole("group", { name: "Agent" }).getByRole("menuitemradio", { name: "codex" }).click();
+  await add().getByRole("menuitem", { name: "Add codex" }).click();
+  await add().getByRole("group", { name: "Agent" }).getByRole("menuitemradio", { name: "claude" }).click();
+  await add().getByRole("group", { name: "Model" }).getByRole("menuitemradio").nth(1).click();
+  await add().getByRole("menuitem", { name: "Add claude" }).click();
+  await expect(add().getByRole("group", { name: "Model" }).getByRole("menuitemradio").nth(1)).toHaveAttribute("aria-checked", "true");
+  await add().getByRole("menuitem", { name: "Add claude" }).click();
+  await page.screenshot({ path: shot("race-add-picker.png") });
+  await page.keyboard.press("Escape");
+  const chips = builder.getByRole("list", { name: "Entrants" }).locator(".race-entrant");
+  await expect(chips).toHaveCount(3);
+  await expect(chips.nth(0)).toHaveAttribute("data-agent", "codex");
+  await expect(chips.nth(1)).toHaveAttribute("data-agent", "claude");
+  await expect(chips.nth(2)).toHaveAttribute("data-agent", "claude");
+  const model = (await chips.nth(1).locator(".race-entrant-detail").textContent()) ?? "";
+  expect(model).not.toBe("Default");
+  await expect(chips.nth(2).locator(".race-entrant-detail")).toHaveText(model);
+  await expect(builder.locator(".race-summary")).toHaveText("3 agents: codex, claude ×2");
+  await page.screenshot({ path: shot("race-builder.png") });
+
+  // A chip edits its entrant; × takes one out.
+  await chips.nth(0).getByRole("button", { name: /Change it/ }).click();
+  await expect(page.getByRole("menu", { name: "Entrant 1" }).getByRole("menuitemradio", { name: "codex" })).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+  await builder.getByRole("button", { name: "Add agent" }).click();
+  await add().getByRole("menuitem", { name: "Add claude" }).click();
+  await page.keyboard.press("Escape");
+  await expect(chips).toHaveCount(4);
+  await builder.getByRole("button", { name: "Remove entrant 4 (claude)" }).click();
+  await expect(chips).toHaveCount(3);
+
+  await builder.getByRole("button", { name: /Start race \(3\)/ }).click();
+  await expect(builder).toHaveCount(0);
+  const asked = fake.room.asked.find((a) => a.startsWith("race ")) ?? "";
+  expect(asked).toMatch(/^race codex,claude\/[^,]+,claude\/[^,]+ judged: fix the flaky limiter test$/);
+  const [, first, second] = asked.split(" ")[1]?.split(",") ?? [];
+  expect(first).toBe(second);
+  // Three lanes join the room, one per entrant.
+  await expect(page.locator(".lane[data-lane]")).toHaveCount(before + 3);
+  await expect(lanes.locator('[data-lane="agent:codex-2"]')).toBeVisible();
+  await expect(lanes.locator('[data-lane="agent:claude-2"]')).toBeVisible();
+  await expect(lanes.locator('[data-lane="agent:claude-3"]')).toBeVisible();
+  await page.screenshot({ path: shot("race-lanes.png") });
 });
 
 test("branches: a thread starts on its own branch, applies it, discards it and moves again", async ({ page }) => {
@@ -721,7 +798,7 @@ test("attention from the engine: a room that waits for an answer needs you", asy
   await expect(row.locator(".status-label")).toHaveText("Answer a question");
 });
 
-test("an older Deck: no branch, no Revert, no Archive, races as text and @ lists the changed files", async ({ page }) => {
+test("an older Deck: no branch, no Revert, no Archive, no races and @ lists the changed files", async ({ page }) => {
   fake.room.caps = [];
   await openFolder(page);
   await expect(page.getByRole("heading", { name: `What should we build in ${basename(dir)}?` })).toBeVisible();
@@ -747,14 +824,19 @@ test("an older Deck: no branch, no Revert, no Archive, races as text and @ lists
 
   await roomTab(page, "Tasks");
   const tasks = page.getByRole("region", { name: "Tasks" });
+  // An older Deck cannot race: the builder says so and sends nothing.
   await tasks.getByRole("button", { name: "New race" }).click();
-  await expect(tasks.getByRole("switch", { name: "Judge" })).toHaveCount(0);
-  await tasks.getByLabel("Race brief").fill("make the limiter per address");
-  await tasks.getByRole("button", { name: /Start race \(3\)/ }).click();
-  await expect.poll(() => fake.deck.sent.at(-1)?.text).toBe("$claude×3 make the limiter per address");
-  await composer(page).fill("/race 2 codex judge fix it");
-  await composer(page).press("Enter");
-  await expect.poll(() => fake.deck.sent.at(-1)?.text).toBe("$codex×2 fix it");
+  const builder = tasks.getByRole("region", { name: "Race builder" });
+  await expect(builder.getByRole("switch", { name: "Judge" })).toHaveCount(0);
+  await builder.getByLabel("Race task").fill("make the limiter per address");
+  await builder.getByRole("button", { name: "Add agent" }).click();
+  await page.getByRole("menu", { name: "Add an entrant" }).getByRole("menuitem", { name: /^Add / }).click();
+  await page.getByRole("menu", { name: "Add an entrant" }).getByRole("menuitem", { name: /^Add / }).click();
+  await page.keyboard.press("Escape");
+  const sent = fake.deck.sent.length;
+  await builder.getByRole("button", { name: /Start race \(2\)/ }).click();
+  await expect(page.locator(".toast").last()).toContainText("cannot start races");
+  expect(fake.deck.sent.length).toBe(sent);
   expect(fake.room.asked).toEqual([]);
   expect(fake.calls).not.toContain("ListFiles");
   expect(fake.calls).not.toContain("StartRace");

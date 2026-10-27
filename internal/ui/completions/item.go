@@ -22,8 +22,8 @@ type AgentCompletionValue struct {
 	Model   string // passed to the CLI; "" = its default
 	Effort  string // kept when the model takes it
 	Current bool   // the agent runs this model already
-	// Insert, when set, is put in the message as is ("$claude2", "$claude*",
-	// "$claude+") and no model is switched.
+	// Insert, when set, is put in the message as is ("$claude2") and no
+	// model is switched.
 	Insert string
 }
 

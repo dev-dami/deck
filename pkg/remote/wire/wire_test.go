@@ -110,7 +110,7 @@ func TestFixturesCoverProtocol(t *testing.T) {
 	for _, m := range []string{
 		MSessionsList, MSessionsCreate, MSessionsRename, MSessionsDelete, MSessionsFocus,
 		MMessagesList, MChatSend, MMessageEdit, MChatCancel, MChatContinue, MAgentInterrupt,
-		MQueueList, MQueueSteer, MQueueCancel, MRosterGet, MRosterKinds, MRosterAdd, MModelsList, MModelsSet,
+		MQueueList, MQueueSteer, MQueueCancel, MRosterGet, MRosterKinds, MRosterAdd, MModelsList, MModelsSet, MRaceStart,
 		MModeGet, MModeSet, MApprovalsList, MApprovalsAnswer, MChangesGet,
 		MDevicesList, MDevicesRevoke, MPushStatus, MPushSubscribe, MPushUnsubscribe, MPushTest,
 	} {

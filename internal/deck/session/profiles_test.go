@@ -55,13 +55,13 @@ func TestProfileMentionAddsANamedMember(t *testing.T) {
 		t.Fatalf("a repeat mention added a member: %+v", ti.Members)
 	}
 
-	// "+" adds another from the profile, named after it.
-	if err := r.m.Post(tid, "@charles+ a second opinion"); err != nil {
+	// A second member from the profile is named after it.
+	if _, err := r.m.Spawn(tid, "", SpawnSpec{Kind: "charles", Brief: "a second opinion"}); err != nil {
 		t.Fatal(err)
 	}
 	ti, _ = r.m.Thread(tid)
 	if len(ti.Members) != 3 || ti.Members[2].Name != "charles-2" || ti.Members[2].Profile != "charles" {
-		t.Fatalf("members after @charles+ = %+v", ti.Members)
+		t.Fatalf("members after a second charles = %+v", ti.Members)
 	}
 
 	// The others are told who charles is, and the roster says it.

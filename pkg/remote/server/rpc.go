@@ -33,6 +33,9 @@ func decode[T any](p json.RawMessage) (T, *wire.Error) {
 	return v, nil
 }
 
+// maxRaceEntrants is the engine's cap on one race (session.maxRaceEntries).
+const maxRaceEntrants = 6
+
 func invalid(msg string) *wire.Error { return &wire.Error{Code: wire.CodeInvalid, Msg: msg} }
 
 // fail maps a backend error to a wire error. Go error text never reaches
@@ -203,6 +206,31 @@ func (c *conn) call(ctx context.Context, method string, p json.RawMessage) (res 
 			return nil, fail(method, err), nil
 		}
 		return v, nil, nil
+	case wire.MRaceStart:
+		req, werr := decode[wire.RaceStartParams](p)
+		if werr != nil {
+			return nil, werr, nil
+		}
+		if req.SessionID == "" || strings.TrimSpace(req.Brief) == "" || len(req.Entrants) == 0 {
+			return nil, invalid("session_id, brief and entrants are required"), nil
+		}
+		if len(req.Entrants) > maxRaceEntrants {
+			return nil, invalid("a race has at most 6 entrants"), nil
+		}
+		for _, e := range req.Entrants {
+			if strings.TrimSpace(e.Agent) == "" {
+				return nil, invalid("each entrant names an agent"), nil
+			}
+		}
+		r, can := be.(remote.Racer)
+		if !can {
+			return nil, invalid("this Deck cannot start races"), nil
+		}
+		id, err := r.StartRace(ctx, req.SessionID, req.Brief, req.Entrants, req.Judge)
+		if err != nil {
+			return nil, fail(method, err), nil
+		}
+		return wire.RaceStartResult{TaskID: id}, nil, nil
 	case wire.MModeSet:
 		return c.modeSet(p)
 	case wire.MApprovalsList:

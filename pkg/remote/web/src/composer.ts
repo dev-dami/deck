@@ -13,13 +13,13 @@ export function activeAgent(text: string): string | null {
   return m?.[1] ?? null;
 }
 
-const LEADING_MENTIONS = /^(?:[$@][\w-]+[+*]?(?![\w/-]|\.\S)[ \t]*)+/;
+const LEADING_MENTIONS = /^(?:[$@][\w-]+(?![\w/+*×-]|\.\S)[ \t]*)+/;
 
 // Every agent the message opens by addressing ("$claude @codex fix it" names
-// both). A "+" or "*" suffix asks for a new member, not an existing one.
+// both). "$codex+" or "$codex×3" is text, not a mention (retiredForm).
 export function activeAgents(text: string): string[] {
   const lead = LEADING_MENTIONS.exec(text)?.[0] ?? "";
-  return [...lead.matchAll(/[$@]([\w-]+)[+*]?/g)].map((m) => m[1] as string);
+  return [...lead.matchAll(/[$@]([\w-]+)/g)].map((m) => m[1] as string);
 }
 
 export function setAgents(text: string, agents: readonly string[]): string {

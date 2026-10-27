@@ -626,9 +626,12 @@ export class FakeRpcDeck {
       if (!meta(id).branch) throw new Error("session: this thread is not isolated");
       return { files: ["pkg/remote/auth/limit.go"] };
     });
-    room("StartRace", (r) => {
-      rm.asked.push(`race ${String(r["kind"])}×${String(r["count"])}${r["judge"] === true ? " judged" : ""}: ${String(r["brief"])}`);
-      return { task_id: "t6" };
+    // Each entrant joins the thread as a lane, as a race's subagents do.
+    room("StartRace", (r, id) => {
+      const entrants = (r["entrants"] as { agent: string; model?: string; effort?: string }[] | undefined) ?? [];
+      const who = entrants.map((e) => [e.agent, e.model, e.effort].filter((x) => x !== undefined && x !== "").join("/"));
+      rm.asked.push(`race ${who.join(",")}${r["judge"] === true ? " judged" : ""}: ${String(r["brief"])}`);
+      return { task_id: this.deck.race(id, entrants, String(r["brief"])) };
     });
     // Only a message of the session it names, as pkg/rpc checks.
     unary("ReadImage", (r) => {

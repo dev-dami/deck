@@ -1,8 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { parseSlash, SLASH_COMMANDS, slashCommand } from "./slash";
 
-const kinds = ["claude", "codex", "opencode"];
-const parse = (t: string, fallback: string | null = "claude") => parseSlash(t, kinds, fallback);
+const parse = (t: string) => parseSlash(t);
 
 describe("parseSlash", () => {
   test("the modes", () => {
@@ -27,45 +26,12 @@ describe("parseSlash", () => {
     expect(parse("/new  Fix   the docs ")).toEqual({ cmd: "new", title: "Fix the docs" });
   });
 
-  test("a race composes the race text", () => {
-    expect(parse("/race 3 codex fix the flaky test")).toEqual({
-      cmd: "race",
-      text: "$codex×3 fix the flaky test",
-      kind: "codex",
-      count: 3,
-      brief: "fix the flaky test",
-      judge: false,
-    });
-    expect(parse("/race 2 Codex fix it")).toMatchObject({ text: "$codex×2 fix it", kind: "codex" });
-    // No kind: the fallback's.
-    expect(parse("/race 4 fix the flaky test")).toMatchObject({ text: "$claude×4 fix the flaky test", kind: "claude", count: 4 });
-    // A brief whose first word is not a kind keeps it.
-    expect(parse("/race 2 refactor auth", "opencode")).toMatchObject({ text: "$opencode×2 refactor auth", brief: "refactor auth" });
-  });
-
-  test("judge after the kind asks one more agent to rank the entries", () => {
-    expect(parse("/race 3 codex judge fix the flaky test")).toEqual({
-      cmd: "race",
-      text: "$codex×3 fix the flaky test",
-      kind: "codex",
-      count: 3,
-      brief: "fix the flaky test",
-      judge: true,
-    });
-    expect(parse("/race 2 Judge fix it")).toMatchObject({ kind: "claude", brief: "fix it", judge: true });
-    // judge later in the brief is a word of the brief.
-    expect(parse("/race 2 codex fix the judge")).toMatchObject({ brief: "fix the judge", judge: false });
-    expect(parse("/race 3 codex judge")).toHaveProperty("error");
-  });
-
-  test("a race that cannot start says why", () => {
-    expect(parse("/race")).toHaveProperty("error");
-    expect(parse("/race three fix it")).toHaveProperty("error");
-    expect(parse("/race 3")).toHaveProperty("error");
-    expect(parse("/race 3 codex")).toHaveProperty("error");
-    expect(parse("/race 9 fix it")).toEqual({ error: "A race takes 2 to 6 agents." });
-    expect(parse("/race 1 fix it")).toEqual({ error: "A race takes 2 to 6 agents." });
-    expect(parse("/race 3 fix it", null)).toEqual({ error: "Name the kind of agent to race: /race 3 codex <brief>." });
+  test("race opens the builder, with the rest of the message as its task", () => {
+    expect(parse("/race")).toEqual({ cmd: "race", brief: "" });
+    expect(parse("/race  fix the flaky limiter test ")).toEqual({ cmd: "race", brief: "fix the flaky limiter test" });
+    // The typed counts and kinds of before are part of the task now.
+    expect(parse("/race 3 codex fix it")).toEqual({ cmd: "race", brief: "3 codex fix it" });
+    expect(slashCommand("race")?.instant).toBe(true);
   });
 
   test("other text is not a command", () => {
@@ -78,8 +44,7 @@ describe("parseSlash", () => {
 
   test("every listed command parses", () => {
     for (const c of SLASH_COMMANDS) {
-      const sample = c.name === "race" ? "/race 2 codex go" : `/${c.name}`;
-      expect(parse(sample)).not.toBeNull();
+      expect(parse(`/${c.name}`)).not.toBeNull();
       expect(slashCommand(c.name)).toBe(c);
     }
   });

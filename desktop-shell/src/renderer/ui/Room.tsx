@@ -4,7 +4,6 @@ import { sessionMode } from "@web/state";
 import { Ellipsis, FileDiff, Folder, Hourglass, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "./icons";
 import { type ComponentProps, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
 import type { EngineStop } from "../../shared/bridge";
-import { useAgentCatalog } from "../agentCatalog";
 import { type DeckClient, serves } from "../client";
 import { FILES_LIMIT } from "../completion";
 import type { Team } from "../crew";
@@ -19,7 +18,8 @@ import { gateMentionables } from "../teamGate";
 import { EMPTY_ROOM, useRoomMetas } from "../roomMeta";
 import { type ShellSlice, shallowEqual, threadSlice, useAppSlice } from "../select";
 import type { Panel } from "../ui";
-import type { PickerSource } from "./AgentPicker";
+import { usePickerSource } from "./AgentPicker";
+import { RaceBuilder } from "./RaceBuilder";
 import { AgentsStrip } from "./AgentsStrip";
 import { ApprovalCard } from "./ApprovalCard";
 import { Composer } from "./Composer";
@@ -265,16 +265,7 @@ export function Room({
   };
   // Every agent's models, listed once per Deck and kept (agentCatalog.ts):
   // the pickers open on them at once.
-  const catalog = useAgentCatalog(
-    state.server === null ? null : { deck: state.server.server_id, version: state.server.version, kinds },
-    (kind, refresh) => c.listModels(sid ?? "", kind, refresh),
-  );
-  const picker: PickerSource = {
-    agents: catalog.catalog?.agents ?? null,
-    loading: catalog.loading,
-    listedAt: catalog.catalog?.at ?? null,
-    onRefresh: catalog.refresh,
-  };
+  const picker = usePickerSource(c, state.server, sid);
   const setModel = (kind: string, model: string, effort?: string) => sid !== null && void c.setModel(sid, kind, model, effort);
   // "@" offers the Deck's profiles and the team's people too, while the
   // team is on (teamGate.ts).
@@ -304,6 +295,24 @@ export function Room({
           },
         };
   const common = { draft, setDraft, kinds, images: imagesOn, onSlash: send.runSlash, onError: toast, inputRef, sendKey: prefs.sendKey, theme: state.theme, ...named };
+  // /race: the builder over the composer, until it starts the race or closes.
+  const raceBuilder = r.race !== null && (
+    <RaceBuilder
+      key={r.race.n}
+      brief={r.race.brief}
+      kinds={kinds}
+      named={named.profiles}
+      picker={picker}
+      theme={state.theme}
+      // A local Deck judges through StartRace; a paired one through race.start.
+      canJudge={c.capabilities === undefined || serves(c, "StartRace")}
+      onStart={send.startRace}
+      onClose={() => {
+        r.closeRace();
+        focusInput();
+      }}
+    />
+  );
 
   return (
     <>
@@ -370,9 +379,8 @@ export function Room({
             roster={[]}
             online={online && state.sessionsLoaded}
             onSend={send.start}
-            placeholder={
-              named.mentions ? "Ask anything. @ picks an agent, @codex+ starts another, # a file." : "Ask anything. $ picks an agent, $codex+ starts another."
-            }
+            above={raceBuilder}
+            placeholder={named.mentions ? "Ask anything. @ picks an agent, # a file, /race races several." : "Ask anything. $ picks an agent, /race races several."}
           />
         </NewThread>
       ) : (
@@ -432,6 +440,7 @@ export function Room({
               busy={open.busy}
               onStop={room.stop}
               notice={room.notice}
+              above={raceBuilder}
               banner={
                 pending[0] !== undefined ? (
                   <div className="flex flex-col gap-1" aria-label="Approvals for this thread">

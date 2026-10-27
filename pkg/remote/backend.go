@@ -104,6 +104,14 @@ type Backend interface {
 	Events(ctx context.Context) <-chan Event
 }
 
+// Racer is a Backend that starts races: entrants do one brief, each on a
+// worktree of its own, and the user keeps one. It returns the race's task.
+// A refusal the person should read (no git repository, too many entrants)
+// is a *wire.Error.
+type Racer interface {
+	StartRace(ctx context.Context, sessionID, brief string, entrants []wire.RaceEntrant, judge bool) (string, error)
+}
+
 // ModelRefresher is a Backend whose model lists can be asked for again:
 // RefreshModels forgets them, so the next Models asks the agent CLIs afresh.
 type ModelRefresher interface {

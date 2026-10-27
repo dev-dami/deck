@@ -207,7 +207,7 @@ function AgentRow({ a, path, looking }: { a: AgentHelp; path: string | null; loo
 function Example() {
   return (
     <p className="font-mono text-xs">
-      <span style={{ color: kindColour("claude") }}>$claude</span> <span style={{ color: kindColour("codex") }}>$codex+</span>{" "}
+      <span style={{ color: kindColour("claude") }}>$claude</span> <span style={{ color: kindColour("codex") }}>$codex</span>{" "}
       <span className="text-muted-foreground">split the lockout fix</span>
     </p>
   );

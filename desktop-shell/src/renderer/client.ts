@@ -1,5 +1,5 @@
 import type { Store } from "@web/controller";
-import type { ChangedFile, Decision, Image, Mode, ModelChoice, Session } from "@web/protocol";
+import type { ChangedFile, Decision, Image, Mode, ModelChoice, RaceEntrant, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import type { Profile, ProfileScope } from "./profiles";
 import type { ProjectApi } from "./project";
@@ -63,8 +63,11 @@ export interface DeckClient {
   undoRevert?(sessionId: string): Promise<boolean>;
   archiveSession?(sessionId: string): Promise<boolean>;
   unarchiveSession?(sessionId: string): Promise<boolean>;
-  // count agents of kind do brief; with judge, one more ranks them. The race's task id.
-  startRace?(sessionId: string, brief: string, kind: string, count: number, judge?: boolean): Promise<string | null>;
+  // The entrants (kinds mixed and repeated as the race builder made them)
+  // do brief, each on a worktree of its own; with judge, one more ranks
+  // them. The race's task id. A local Deck that serves StartRace, or a
+  // paired one through race.start.
+  startRace?(sessionId: string, brief: string, entrants: RaceEntrant[], judge?: boolean): Promise<string | null>;
   listFiles?(sessionId: string, query: string, limit?: number): Promise<FileList | null>;
   // The bytes of a message's index'th image part. Quiet: no toast.
   readImage?(sessionId: string, messageId: string, index: number): Promise<ImageBytes | null>;

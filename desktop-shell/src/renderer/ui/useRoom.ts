@@ -7,6 +7,7 @@ import { setDraft as storeDraft, useDraft, useLocalNotices } from "../appState";
 import { type DeckClient, serves } from "../client";
 import { getPrefs } from "../prefs";
 import { newQueued } from "../queue";
+import { NO_RACE, type RaceDraft, toWire } from "../race";
 import type { ShellSlice } from "../select";
 import type { Slash } from "../slash";
 import { titleFrom } from "../title";
@@ -79,12 +80,15 @@ function useRoomSend({
   confirmYolo,
   canShare,
   onShare,
+  onRace,
   info,
   toast,
 }: {
   c: DeckClient;
   projectKey: string;
   open: Session | undefined;
+  // Opens the race builder with brief as its task (/race).
+  onRace: (brief: string) => void;
   // The room's own send and stop (useRoomVerbs).
   send: (text: string, images: Image[]) => Promise<boolean>;
   stop: () => void;
@@ -159,15 +163,8 @@ function useRoomSend({
         return made !== null;
       }
       if (s.cmd === "race") {
-        if (!serves(c, "StartRace")) return open === undefined ? start(s.text, []) : send(s.text, []);
-        let id = open?.id;
-        if (id === undefined) {
-          const made = await c.createSession(titleFrom(s.brief) || undefined, serves(c, "IsolateSession") && getPrefs().isolate);
-          if (made === null) return false;
-          openSession(made.id);
-          id = made.id;
-        }
-        return ((await c.startRace?.(id, s.brief, s.kind, s.count, s.judge)) ?? null) !== null;
+        onRace(s.brief);
+        return true;
       }
       if (open === undefined) {
         info("Open a thread first.");
@@ -199,10 +196,31 @@ function useRoomSend({
       }
       return c.setMode(open.id, s.mode);
     },
-    [c, open, start, send, stop, newSession, openSession, canShare, onShare, info, toast, allowYolo, confirmYolo],
+    [c, open, stop, newSession, openSession, canShare, onShare, onRace, info, toast, allowYolo, confirmYolo],
   );
 
-  return { start, steer, runSlash, toggleYolo };
+  // Starts the race the builder made, with exactly its entrants: in the
+  // open thread, or in a new one named after its task.
+  const startRace = useCallback(
+    async (d: RaceDraft): Promise<boolean> => {
+      // A local Deck lists StartRace when it serves it; a paired one answers race.start.
+      if (c.startRace === undefined || (c.capabilities !== undefined && !serves(c, "StartRace"))) {
+        info(NO_RACE);
+        return false;
+      }
+      let id = open?.id;
+      if (id === undefined) {
+        const made = await c.createSession(titleFrom(d.brief) || undefined, serves(c, "IsolateSession") && getPrefs().isolate);
+        if (made === null) return false;
+        openSession(made.id);
+        id = made.id;
+      }
+      return (await c.startRace(id, d.brief, toWire(d), d.judge)) !== null;
+    },
+    [c, open, openSession, info],
+  );
+
+  return { start, steer, runSlash, startRace, toggleYolo };
 }
 
 // Everything about the open room (or the new-thread screen) that the room
@@ -247,6 +265,10 @@ export function useOpenRoom({
   const [lanePick, setLanePick] = useState<{ sid: string | null; lane: string | null }>({ sid: null, lane: null });
   // /share opens the room header's share popover.
   const [shareAsk, setShareAsk] = useState(0);
+  // /race opens the race builder over the room's composer, with the task
+  // typed after it; n remounts it for each /race.
+  const [racePick, setRacePick] = useState<{ key: string; brief: string; n: number } | null>(null);
+  const openRace = useCallback((brief: string) => setRacePick((r) => ({ key, brief, n: (r?.n ?? 0) + 1 })), [key]);
   const changes = useChanges(c, sid, busy);
   // The shell's own notes in the room, for its timeline.
   const notes = useLocalNotices(projectKey, key);
@@ -273,6 +295,7 @@ export function useOpenRoom({
     confirmYolo,
     canShare,
     onShare: () => setShareAsk((n) => n + 1),
+    onRace: openRace,
     info,
     toast,
   });
@@ -292,6 +315,8 @@ export function useOpenRoom({
     setLane: (lane: string | null) => setLanePick({ sid, lane }),
     room,
     send,
+    race: racePick !== null && racePick.key === key ? racePick : null,
+    closeRace: () => setRacePick(null),
   };
 }
 

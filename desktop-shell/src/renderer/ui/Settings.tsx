@@ -441,9 +441,9 @@ function Agents({ state, p }: { state: AppState; p: Prefs }) {
             <div className="min-w-0 space-y-0.5">
               <h3 className="font-medium text-[13px]">{k}</h3>
               <p className="text-pretty text-muted-foreground text-xs leading-relaxed">
-                Type <code className="font-mono text-foreground/80">{at}{k}</code> to reach a free {k},{" "}
-                <code className="font-mono text-foreground/80">{at}{k}*</code> to reach all of them. Ask an agent to spin up more {k} agents and it
-                starts them itself.
+                Type <code className="font-mono text-foreground/80">{at}{k}</code> to reach a free {k}, or{" "}
+                <code className="font-mono text-foreground/80">/race</code> to race it against any other agents. Ask an agent to spin up more {k}{" "}
+                agents and it starts them itself.
                 {at === "@" && (
                   <>
                     {" "}
@@ -624,7 +624,7 @@ function Keybindings({ mac }: { mac: boolean }) {
         ["Mention an agent or a person", ["@"]],
         ["Pick an agent (the older sigil)", ["$"]],
         ["Add a file", ["#"]],
-        ["Run a command, at the start", ["/"]],
+        ["Run a command, at the start (/race races agents)", ["/"]],
       ],
     ],
   ];
