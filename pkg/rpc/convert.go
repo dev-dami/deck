@@ -76,11 +76,19 @@ func toModel(m wire.ModelChoice) *deckv1.ModelChoice {
 }
 
 func toApproval(a wire.Approval) *deckv1.Approval {
-	return &deckv1.Approval{
+	out := &deckv1.Approval{
 		Id: a.ID, SessionId: a.SessionID, ToolCallId: a.ToolCallID, Agent: a.Agent, Kind: a.Kind,
 		Description: a.Description, Command: a.Command, Path: a.Path, Diff: a.Diff, Raw: a.Raw,
 		CreatedAt: ms(a.CreatedAt),
 	}
+	for _, q := range a.Questions {
+		pq := &deckv1.Question{Id: q.ID, Header: q.Header, Text: q.Text, MultiSelect: q.MultiSelect, Other: q.Other}
+		for _, o := range q.Options {
+			pq.Options = append(pq.Options, &deckv1.QuestionOption{Label: o.Label, Description: o.Description})
+		}
+		out.Questions = append(out.Questions, pq)
+	}
+	return out
 }
 
 func toChanged(c wire.ChangedFile) *deckv1.ChangedFile {

@@ -124,7 +124,7 @@ Unchanged from #47 unless noted. Every method that names a session takes
 | `mode.get` | `{session_id}` | `{mode}` |
 | `mode.set` | `{session_id, mode}` | `{mode}` |
 | `approvals.list` | `{session_id?}` | `Approval[]` |
-| `approvals.answer` | `{session_id, id, decision: allow|allow_session|deny}` | `{resolved}` |
+| `approvals.answer` | `{session_id, id, decision: allow|allow_session|deny|answer, answers?}` | `{resolved}`. An approval of kind `question` (an agent asks the person: `questions[]` of `{id, header?, text, options?: [{label, description?}], multi_select?, other?}`) takes `answer` with `answers: [{id, selected?, other?}]`, or `deny` to decline it; `allow` is `invalid` for it |
 | `changes.get` | `{session_id}` | `ChangedFile[]` |
 | `devices.list` | — | `Device[]` (the caller's device is marked `self`) |
 | `devices.revoke` | `{id}` | `{}` (only `self` from a phone) |

@@ -359,6 +359,33 @@ type permissionsApprovalParams struct {
 	Permissions json.RawMessage `json:"permissions"`
 }
 
+// userInputParams is ToolRequestUserInputParams: the request_user_input
+// tool asking the user 1-3 short questions, each with options, "Other"
+// (isOther) or free text alone (no options).
+type userInputParams struct {
+	ItemID    string `json:"itemId"`
+	Questions []struct {
+		ID       string `json:"id"`
+		Header   string `json:"header"`
+		Question string `json:"question"`
+		IsOther  bool   `json:"isOther"`
+		Options  []struct {
+			Label       string `json:"label"`
+			Description string `json:"description"`
+		} `json:"options"`
+	} `json:"questions"`
+}
+
+// userInputResponse is ToolRequestUserInputResponse: the answers by
+// question id. A question left out was not answered.
+type userInputResponse struct {
+	Answers map[string]userInputAnswer `json:"answers"`
+}
+
+type userInputAnswer struct {
+	Answers []string `json:"answers"`
+}
+
 type decisionResponse struct {
 	Decision string `json:"decision"`
 }

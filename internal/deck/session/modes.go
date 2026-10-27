@@ -128,9 +128,9 @@ func (m *Manager) SetMode(threadID string, mode agent.Mode) error {
 }
 
 // drainPending answers every approval a member has waiting with Allow, but
-// a share, which stays for the person.
+// a share and a question, which stay for the person.
 func (m *Manager) drainPending(t *thread, a *agentState) {
-	for _, p := range a.takePending(agent.ApproveShare) {
+	for _, p := range a.takePending(agent.ApproveShare, agent.ApproveQuestion) {
 		p.respond(agent.Decision{Allow: true})
 		m.emit(ApprovalGoneMsg{ThreadID: t.id, AgentID: a.id, ID: p.id})
 		m.emit(AutoApprovedMsg{ThreadID: t.id, AgentID: a.id, Summary: p.summary})
@@ -144,6 +144,8 @@ func (m *Manager) enforce(t *thread, a *agentState, req agent.ApprovalRequest) b
 	mode := t.getMode()
 	var d agent.Decision
 	switch {
+	case req.Kind == agent.ApproveQuestion:
+		return false // a question is for the person, in every mode
 	case req.Kind == agent.ApproveShare && mode != agent.ModePlan:
 		return false // only the person sends work out
 	case mode == agent.ModeYolo:

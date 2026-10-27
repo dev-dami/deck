@@ -94,7 +94,9 @@ type Backend interface {
 	Approvals(sessionID string) ([]wire.Approval, error)
 	// Answer resolves a pending approval. resolved is false when another UI
 	// got there first; ErrNotFound when the id is not pending in the session.
-	Answer(sessionID, id, decision string) (resolved bool, err error)
+	// A question approval takes wire.DecisionAnswer with answers, or
+	// wire.DecisionDeny to decline it; allow is ErrInvalid for it.
+	Answer(sessionID, id, decision string, answers []wire.QuestionAnswer) (resolved bool, err error)
 
 	Changes(ctx context.Context, sessionID string) ([]wire.ChangedFile, error)
 

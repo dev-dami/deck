@@ -109,11 +109,13 @@ export const MODES: readonly Mode[] = ["plan", "ask", "yolo"];
 export const decodeMode: Decoder<Mode> = oneOf(MODES);
 export const isMode = (v: unknown): v is Mode => decodeMode(v) !== null;
 
-export type Decision = "allow" | "allow_session" | "deny";
-const decodeDecision = oneOf(["allow", "allow_session", "deny"] as const);
+// "answer" answers a question approval (with answers); "deny" declines it.
+export type Decision = "allow" | "allow_session" | "deny" | "answer";
+const decodeDecision = oneOf(["allow", "allow_session", "deny", "answer"] as const);
 
-export type ApprovalKind = "command" | "edit" | "other";
-const decodeApprovalKind = oneOf(["command", "edit", "other"] as const);
+// "question": an agent asks the person something (Approval.questions).
+export type ApprovalKind = "command" | "edit" | "other" | "question";
+const decodeApprovalKind = oneOf(["command", "edit", "other", "question"] as const);
 
 export type Role = "user" | "assistant" | "system";
 const decodeRole = oneOf(["user", "assistant", "system"] as const);
@@ -231,8 +233,43 @@ export interface Approval {
   diff_truncated?: boolean;
   raw?: string;
   raw_truncated?: boolean;
+  questions?: Question[];
   created_at: string;
 }
+
+// One thing an agent asks; its answer is keyed by id. multi_select lets the
+// person pick several options, other lets them type their own answer.
+export interface Question {
+  id: string;
+  header?: string;
+  text: string;
+  options?: QuestionOption[];
+  multi_select?: boolean;
+  other?: boolean;
+}
+
+export interface QuestionOption {
+  label: string;
+  description?: string;
+}
+
+// The person's answer to the question with id: the labels picked and the
+// text typed in "Other".
+export interface QuestionAnswer {
+  id: string;
+  selected?: string[];
+  other?: string;
+}
+
+const decodeQuestionOption: Decoder<QuestionOption> = object({ label: str }, { description: str });
+export const decodeQuestion: Decoder<Question> = object(
+  { id: str, text: str },
+  { header: str, options: list(decodeQuestionOption), multi_select: bool, other: bool },
+);
+const decodeQuestionAnswer: Decoder<QuestionAnswer> = object(
+  { id: str },
+  { selected: list(str), other: str },
+);
 
 export const decodeApproval: Decoder<Approval> = object(
   {
@@ -252,6 +289,7 @@ export const decodeApproval: Decoder<Approval> = object(
     diff_truncated: bool,
     raw: str,
     raw_truncated: bool,
+    questions: list(decodeQuestion),
   },
 );
 
@@ -767,6 +805,7 @@ export interface ApprovalsAnswerParams {
   session_id: string;
   id: string;
   decision: Decision;
+  answers?: QuestionAnswer[];
 }
 
 export interface ApprovalsAnswerResult {
@@ -859,7 +898,7 @@ export const decodeApprovalsListParams: Decoder<ApprovalsListParams> = object(
 );
 export const decodeApprovalsAnswerParams: Decoder<ApprovalsAnswerParams> = object(
   { session_id: str, id: str, decision: decodeDecision },
-  {},
+  { answers: list(decodeQuestionAnswer) },
 );
 export const decodeApprovalsAnswerResult: Decoder<ApprovalsAnswerResult> = object(
   { resolved: bool },
@@ -1009,6 +1048,7 @@ export const FIXTURES: ReadonlyArray<[name: string, decode: Decoder<unknown>]> =
   ["entity_message", decodeMessage],
   ["entity_approval", decodeApproval],
   ["entity_approval_edit", decodeApproval],
+  ["entity_approval_question", decodeApproval],
   ["entity_queued_item", decodeQueuedItem],
   ["entity_agent_line", decodeAgentLine],
   ["entity_model_choice", decodeModelChoice],
@@ -1027,6 +1067,7 @@ export const FIXTURES: ReadonlyArray<[name: string, decode: Decoder<unknown>]> =
       [`res_${m}`, METHODS[m].res as Decoder<unknown>],
     ],
   ),
+  ["req_approvals.answer_question", decodeApprovalsAnswerParams],
 
   ["http_health", decodeHealth],
   ["http_pair_request", decodePairRequest],

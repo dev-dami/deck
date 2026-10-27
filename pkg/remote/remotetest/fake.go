@@ -44,6 +44,7 @@ type Fake struct {
 	events   chan remote.Event
 	sent     []Sent
 	answered map[string]string
+	replies  map[string][]wire.QuestionAnswer
 	modes    []string
 	edits    []string
 	calls    []string
@@ -61,6 +62,7 @@ func New() *Fake {
 		sessions: map[string]*Session{},
 		events:   make(chan remote.Event, 256),
 		answered: map[string]string{},
+		replies:  map[string][]wire.QuestionAnswer{},
 	}
 	f.AddSession("s1", "One")
 	return f
@@ -102,6 +104,13 @@ func (f *Fake) Answered() map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// Replies are the answers a question approval was answered with.
+func (f *Fake) Replies(id string) []wire.QuestionAnswer {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.replies[id]
 }
 
 // Calls lists the mutating calls made, as "method:arg".
@@ -485,7 +494,7 @@ func (f *Fake) Approvals(sessionID string) ([]wire.Approval, error) {
 	return out, nil
 }
 
-func (f *Fake) Answer(sessionID, id, decision string) (bool, error) {
+func (f *Fake) Answer(sessionID, id, decision string, answers []wire.QuestionAnswer) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, err := f.session(sessionID)
@@ -496,6 +505,7 @@ func (f *Fake) Answer(sessionID, id, decision string) (bool, error) {
 		if a.ID == id {
 			s.Approvals = append(s.Approvals[:i], s.Approvals[i+1:]...)
 			f.answered[id] = decision
+			f.replies[id] = answers
 			return true, nil
 		}
 	}

@@ -311,7 +311,7 @@ func (d *Daemon) runApproval(ctx context.Context, p *provider, a wire.QueuedActi
 			return wire.ReceiptDropped, wire.ReasonAssertion
 		}
 	}
-	resolved, err := p.be.Answer(a.SessionID, a.Precond.ApprovalID, pl.Decision)
+	resolved, err := p.be.Answer(a.SessionID, a.Precond.ApprovalID, pl.Decision, nil)
 	if err != nil || !resolved {
 		return wire.ReceiptDropped, wire.ReasonApprovalGone
 	}
