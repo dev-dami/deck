@@ -90,6 +90,37 @@ func TestUnaryRoundTrip(t *testing.T) {
 	}
 }
 
+// The pickers list each kind's models once, before any thread is open; a
+// refresh asks the Deck to forget its lists first; "" picks the CLI's default.
+func TestModelsWithoutSessionRefreshAndDefault(t *testing.T) {
+	fake, _, c, _ := rig(t)
+	ctx := ctxT(t)
+
+	got, err := c.Models(ctx, &deckv1.ModelsRequest{Kind: "codex"})
+	if err != nil || len(got.GetModels()) != 1 || got.GetModels()[0].GetId() != "codex-big" || got.GetModels()[0].GetSelected() {
+		t.Fatalf("models = %v, %v", got, err)
+	}
+	if calls := fake.Calls(); len(calls) != 0 {
+		t.Fatalf("calls = %v before any refresh", calls)
+	}
+	if _, err := c.Models(ctx, &deckv1.ModelsRequest{Kind: "codex", Refresh: true}); err != nil {
+		t.Fatal(err)
+	}
+	if calls := fake.Calls(); len(calls) != 1 || calls[0] != "models:refresh" {
+		t.Fatalf("calls = %v, want a refresh", calls)
+	}
+	if _, err := c.Models(ctx, &deckv1.ModelsRequest{}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("no kind: %v", err)
+	}
+
+	if _, err := c.SetModel(ctx, &deckv1.SetModelRequest{SessionId: "s1", Kind: "claude"}); err != nil {
+		t.Fatalf("the default model: %v", err)
+	}
+	if calls := fake.Calls(); calls[len(calls)-1] != "model:claude=/" {
+		t.Fatalf("calls = %v", calls)
+	}
+}
+
 func TestErrorsMapToCodes(t *testing.T) {
 	_, _, c, _ := rig(t)
 	ctx := ctxT(t)

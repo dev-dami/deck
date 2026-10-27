@@ -88,3 +88,42 @@ func TestFailureRememberedBriefly(t *testing.T) {
 		t.Fatal("a failure was kept as the list")
 	}
 }
+
+func TestResetLoadsAgainAndDropsALoadUnderWay(t *testing.T) {
+	var c Cache
+	var calls atomic.Int32
+	fn := func(context.Context) ([]agent.ModelInfo, error) {
+		n := calls.Add(1)
+		return []agent.ModelInfo{{ID: string(rune('a' + n - 1))}}, nil
+	}
+	if l, _ := c.Get(context.Background(), fn); l[0].ID != "a" {
+		t.Fatalf("first = %v", l)
+	}
+	c.Reset()
+	if c.Cached() != nil {
+		t.Fatal("Reset kept the list")
+	}
+	if l, _ := c.Get(context.Background(), fn); l[0].ID != "b" {
+		t.Fatalf("after Reset = %v, want a new load", l)
+	}
+
+	// A load that finishes after a Reset is not kept.
+	var d Cache
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	slow := func(context.Context) ([]agent.ModelInfo, error) {
+		defer close(finished)
+		<-release
+		return []agent.ModelInfo{{ID: "stale"}}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _ = d.Get(ctx, slow)
+	d.Reset()
+	close(release)
+	<-finished
+	time.Sleep(10 * time.Millisecond)
+	if d.Cached() != nil {
+		t.Fatalf("kept %v from a load the Reset disowned", d.Cached())
+	}
+}

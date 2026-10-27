@@ -253,6 +253,20 @@ func (m *Manager) Models(ctx context.Context, kind string) ([]agent.ModelInfo, e
 	return list, nil
 }
 
+// ForgetModels drops every kind's cached model list, here and in each adapter
+// that keeps one (agent.ModelForgetter), so the next Models asks the CLIs
+// again.
+func (m *Manager) ForgetModels() {
+	m.modelMu.Lock()
+	m.modelCache = nil
+	m.modelMu.Unlock()
+	for _, ad := range m.adapters {
+		if f, ok := ad.(agent.ModelForgetter); ok {
+			f.ForgetModels()
+		}
+	}
+}
+
 // SetModel switches a member to another model ("" = the CLI's default). The run
 // must implement agent.ModelSetter; otherwise the error says to start a new
 // agent. A member whose process has not started yet simply starts with the

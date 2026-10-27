@@ -71,13 +71,16 @@ func (c *Cache) Get(ctx context.Context, fn func(context.Context) ([]agent.Model
 func (c *Cache) run(ctx context.Context, l *load, fn func(context.Context) ([]agent.ModelInfo, error)) {
 	l.list, l.err = fn(ctx)
 	c.mu.Lock()
-	switch {
-	case l.err != nil:
-		c.err, c.errAt = l.err, c.clock()
-	case l.list != nil:
-		c.list, c.err = l.list, nil
+	// A Reset during the load disowned it: its result is not kept.
+	if c.loading == l {
+		switch {
+		case l.err != nil:
+			c.err, c.errAt = l.err, c.clock()
+		case l.list != nil:
+			c.list, c.err = l.list, nil
+		}
+		c.loading = nil
 	}
-	c.loading = nil
 	c.mu.Unlock()
 	close(l.done)
 }
@@ -90,6 +93,16 @@ func (c *Cache) Cached() []agent.ModelInfo {
 		return nil
 	}
 	return clone(c.list)
+}
+
+// Reset forgets the loaded list and any remembered failure, so the next Get
+// loads again. A load under way still finishes for its own callers, but its
+// result is not kept.
+func (c *Cache) Reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.list, c.err, c.errAt = nil, nil, time.Time{}
+	c.loading = nil
 }
 
 func (c *Cache) clock() time.Time {

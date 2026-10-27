@@ -359,8 +359,10 @@ func (b *Backend) AddAgent(sessionID, kind, model string) (wire.AgentLine, error
 }
 
 func (b *Backend) Models(ctx context.Context, sessionID, kind string) ([]wire.ModelChoice, error) {
-	if _, err := b.check(ctx, sessionID); err != nil {
-		return nil, err
+	if sessionID != "" {
+		if _, err := b.check(ctx, sessionID); err != nil {
+			return nil, err
+		}
 	}
 	if b.picker == nil {
 		return nil, nil
@@ -370,6 +372,14 @@ func (b *Backend) Models(ctx context.Context, sessionID, kind string) ([]wire.Mo
 		return nil, err
 	}
 	return toModels(choices, kind), nil
+}
+
+// RefreshModels implements remote.ModelRefresher when the workspace can
+// forget its model lists; otherwise it does nothing.
+func (b *Backend) RefreshModels() {
+	if r, ok := b.picker.(workspace.ModelRefresher); ok {
+		r.RefreshAgentModels()
+	}
 }
 
 func (b *Backend) SetModel(sessionID, kind, model, effort string) error {

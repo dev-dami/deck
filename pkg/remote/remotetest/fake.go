@@ -383,10 +383,20 @@ func (f *Fake) hasAgent(s *Session, name string) bool {
 func (f *Fake) Models(_ context.Context, sessionID, kind string) ([]wire.ModelChoice, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if sessionID == "" {
+		return []wire.ModelChoice{{ID: kind + "-big", Label: "Big", Efforts: []string{"low", "high"}}}, nil
+	}
 	if _, err := f.session(sessionID); err != nil {
 		return nil, err
 	}
 	return []wire.ModelChoice{{ID: kind + "-big", Label: "Big", Efforts: []string{"low", "high"}, Selected: true}}, nil
+}
+
+// RefreshModels implements remote.ModelRefresher.
+func (f *Fake) RefreshModels() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.note("models:refresh")
 }
 
 func (f *Fake) SetModel(sessionID, kind, model, effort string) error {

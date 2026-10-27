@@ -31,6 +31,9 @@ func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
 	})
 }
 
+// ForgetModels implements agent.ModelForgetter.
+func (a *adapter) ForgetModels() { a.models.Reset() }
+
 // modelsRetryAfter is how long a failed listing is answered from memory
 // rather than by starting OpenCode again.
 var modelsRetryAfter = 10 * time.Second

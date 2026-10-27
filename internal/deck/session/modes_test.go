@@ -689,8 +689,9 @@ func TestSetModelWithoutModelSetter(t *testing.T) {
 
 type listerAdapter struct {
 	agent.Adapter
-	calls atomic.Int32
-	fail  atomic.Bool
+	calls  atomic.Int32
+	forgot atomic.Int32
+	fail   atomic.Bool
 }
 
 func (l *listerAdapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
@@ -734,7 +735,22 @@ func TestModelsCachedPerKind(t *testing.T) {
 	if _, err := m.Models(ctx, "gemini"); err == nil {
 		t.Error("unknown kind accepted")
 	}
+
+	// ForgetModels makes the next call ask the CLI again, and tells the
+	// adapter to forget its own list.
+	m.ForgetModels()
+	if _, err := m.Models(ctx, "claude"); err != nil {
+		t.Fatal(err)
+	}
+	if got := lister.calls.Load(); got != 3 {
+		t.Errorf("adapter asked %d times after ForgetModels, want 3", got)
+	}
+	if got := lister.forgot.Load(); got != 1 {
+		t.Errorf("adapter told to forget %d times, want 1", got)
+	}
 }
+
+func (l *listerAdapter) ForgetModels() { l.forgot.Add(1) }
 
 func TestSetDefaultModelAppliesToLaterMembers(t *testing.T) {
 	cfg := testCfg()

@@ -369,8 +369,14 @@ func (s *Server) Roster(_ context.Context, r *deckv1.SessionRef) (*deckv1.Roster
 }
 
 func (s *Server) Models(ctx context.Context, r *deckv1.ModelsRequest) (*deckv1.ModelsResponse, error) {
-	if r.GetSessionId() == "" || r.GetKind() == "" {
-		return nil, invalid("session_id and kind are required")
+	// No session_id: the kind's models apart from any thread.
+	if r.GetKind() == "" {
+		return nil, invalid("kind is required")
+	}
+	if r.GetRefresh() {
+		if mr, ok := s.be.(remote.ModelRefresher); ok {
+			mr.RefreshModels()
+		}
 	}
 	v, err := s.be.Models(ctx, r.GetSessionId(), r.GetKind())
 	if err != nil {
@@ -380,8 +386,9 @@ func (s *Server) Models(ctx context.Context, r *deckv1.ModelsRequest) (*deckv1.M
 }
 
 func (s *Server) SetModel(_ context.Context, r *deckv1.SetModelRequest) (*deckv1.Empty, error) {
-	if r.GetSessionId() == "" || r.GetKind() == "" || r.GetModel() == "" {
-		return nil, invalid("session_id, kind and model are required")
+	// An empty model is the CLI's own default (the pickers' "Default").
+	if r.GetSessionId() == "" || r.GetKind() == "" {
+		return nil, invalid("session_id and kind are required")
 	}
 	return done(s.be.SetModel(r.GetSessionId(), r.GetKind(), r.GetModel(), r.GetEffort()))
 }
