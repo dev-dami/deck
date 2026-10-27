@@ -51,12 +51,12 @@ type SpawnResult struct {
 }
 
 // Spawn starts a subagent for a task of thread threadID. parentID is the
-// member asking, or "" when the user or Deck's scheduler asks. A member the
-// user brought in may always spawn (the user asks it to split the work); a
-// subagent may start subagents of its own only in threads with orchestration
-// on. All within the limits of tree.go: MaxDepth levels, MaxChildren live
-// subagents per member and MaxSubagents per thread. The subagent runs in the
-// thread's permission mode, like every member.
+// member asking, or "" when the user or Deck's scheduler asks. How far
+// members may spawn is the thread's orchestration level's (level.go): with
+// orchestration off, only in a turn where the user spoke to them; and within
+// the limits of tree.go: MaxDepth levels, MaxChildren live subagents per
+// member and MaxSubagents per thread. The subagent runs in the thread's
+// permission mode, like every member.
 func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, error) {
 	if m.isClosed() {
 		return SpawnResult{}, errClosed
@@ -243,25 +243,28 @@ func (m *Manager) spawnRoom(t *thread, parentID string, n int) (*agentState, int
 			t.mu.Unlock()
 			return nil, 0, fmt.Errorf("session: no member %q", parentID)
 		}
-		// Without orchestration only the user's own agents spawn: a subagent
-		// starts none, so one request cannot fan out into a storm.
-		if !t.orchestrate && parent.isEphemeral() {
+		// With orchestration off a member starts helpers only when the user
+		// asked it to: in a turn whose prompt has the user's words.
+		if lv := m.levelLocked(t); lv.AskFirst && !parent.isEphemeral() && parent.promptUser == 0 {
 			t.mu.Unlock()
-			return nil, 0, fmt.Errorf("session: %w: while orchestration is off only the agents the user brought in start subagents; do the work yourself", errChildLimit)
+			return nil, 0, fmt.Errorf("session: %w: orchestration is off, so agents start helpers only when the user asks; do the work yourself", errChildLimit)
 		}
 	}
+	lv := m.levelLocked(t)
 	depth := t.depth(parent) + 1
 	live, all := len(t.children(parentID)), t.liveSubagents()
 	t.mu.Unlock()
 	// The per-member cap is for members; the scheduler (parentID "") is
 	// bounded by MaxParallel, and the user by their own judgement. The
 	// thread's cap holds for everyone.
-	switch maxD := m.maxDepth(); {
-	case depth > maxD:
-		return nil, 0, fmt.Errorf("session: %w: subagents go %d levels deep and you are at the last; do the work yourself", errChildLimit, maxD)
-	case parentID != "" && live+n > m.maxChildren():
+	switch {
+	case depth > lv.MaxDepth && lv.MaxDepth <= 1 && parentID != "":
+		return nil, 0, fmt.Errorf("session: %w: at this thread's orchestration level helpers start no helpers; do the work yourself", errChildLimit)
+	case depth > lv.MaxDepth:
+		return nil, 0, fmt.Errorf("session: %w: subagents go %d levels deep and you are at the last; do the work yourself", errChildLimit, lv.MaxDepth)
+	case parentID != "" && live+n > lv.MaxChildren:
 		return nil, 0, fmt.Errorf("session: %w: %d of yours are already running; wait for one to finish", errChildLimit, live)
-	case all+n > m.maxSubagents():
+	case all+n > lv.MaxSubagents:
 		return nil, 0, fmt.Errorf("session: %w: %d are running in this thread; wait for one to finish", errChildLimit, all)
 	}
 	return parent, depth, nil
@@ -276,7 +279,7 @@ func (m *Manager) placeNote(t *thread, a, parent *agentState, depth int, taskID 
 		who = parent.getName()
 	}
 	t.mu.Lock()
-	title, orchestrate := t.title, t.orchestrate
+	title, lv := t.title, m.levelLocked(t)
 	t.mu.Unlock()
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n\n[deck] You are %s, a subagent %s started for task %s", a.getName(), who, taskID)
@@ -285,8 +288,8 @@ func (m *Manager) placeNote(t *thread, a, parent *agentState, depth int, taskID 
 	}
 	b.WriteString(". You see only what is sent to you; op thread.read shows the whole thread.")
 	switch {
-	case orchestrate && depth < m.maxDepth():
-		b.WriteString(" You may start subagents of your own (agent.spawn); your task then waits for their results.")
+	case depth < lv.MaxDepth:
+		fmt.Fprintf(&b, " You may start subagents of your own (agent.spawn, %d at a time) when the task splits well; your task then waits for their results.", lv.MaxChildren)
 	default:
 		b.WriteString(" You cannot start subagents: do the work yourself.")
 	}
@@ -616,18 +619,6 @@ func (m *Manager) DiscardMember(threadID, memberID string) error {
 	a.mu.Unlock()
 	m.persistMeta(t)
 	return nil
-}
-
-// SetOrchestrate turns orchestration on or off for a thread: members may spawn
-// subagents in it, and the scheduler runs its ready tasks.
-func (m *Manager) SetOrchestrate(threadID string, on bool) error {
-	err := m.change(threadID, func(t *thread) { t.orchestrate = on })
-	if err == nil && on {
-		if t := m.thread(threadID); t != nil {
-			m.kick(t)
-		}
-	}
-	return err
 }
 
 // ---- member accessors ----

@@ -226,7 +226,9 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   Tasks, Agents and Side chat. Changes shows every changed file with line
   numbers. Tasks shows the messages that wait for a busy agent (send now,
   edit, move up or down, or cancel), the task board (cancel, retry, steer, apply or discard a
-  worktree result), orchestration on or off, and races. Apply and Discard
+  worktree result), the orchestration level (also in the composer: Off,
+  Assist, Auto or Full; Settings › Agents sets the one new threads start
+  at), and races. Apply and Discard
   first show the task's files, with their diff when the work tree is on the
   task's branch, and ask. A race starts two to six agents, of any kinds,
   on one brief, each on a worktree of its own; you keep the best entry. Agents

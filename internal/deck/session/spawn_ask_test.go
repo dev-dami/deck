@@ -51,11 +51,11 @@ func TestAUsersAgentSpawnsWhenAskedAndHearsBack(t *testing.T) {
 	has(t, r.claude.prompts("claude")[1], `task t1 "limiter tests" done: tests written`)
 }
 
-// Without orchestration a helper starts no helpers, and a member keeps to
-// MaxChildren live helpers.
-func TestSpawnWithoutOrchestrationIsOneLevel(t *testing.T) {
+// At assist a helper starts no helpers, and a member keeps to MaxChildren
+// live helpers (max_children caps the level's).
+func TestSpawnAtAssistIsOneLevel(t *testing.T) {
 	cfg := testCfg()
-	cfg.MaxChildren = 2
+	cfg.MaxChildren, cfg.Orchestration = 1, "assist" // assist's own cap is 2
 	r := newRigWith(t, t.TempDir(), false, cfg, nil, []fake.Script{turn(blockStep("ap"), say("done"), finish())})
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
@@ -63,17 +63,14 @@ func TestSpawnWithoutOrchestrationIsOneLevel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.m.Spawn(tid, a.AgentID, SpawnSpec{Kind: "codex", Brief: "nested"}); err == nil || !strings.Contains(err.Error(), "orchestration is off") {
-		t.Fatalf("a helper spawning with orchestration off: %v", err)
+	if _, err := r.m.Spawn(tid, a.AgentID, SpawnSpec{Kind: "codex", Brief: "nested"}); err == nil || !strings.Contains(err.Error(), "helpers start no helpers") {
+		t.Fatalf("a helper spawning at assist: %v", err)
 	}
-	if _, err := r.m.Spawn(tid, "claude", SpawnSpec{Kind: "codex", Brief: "two"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.m.Spawn(tid, "claude", SpawnSpec{Kind: "codex", Brief: "three"}); err == nil || !strings.Contains(err.Error(), "2 of yours are already running") {
+	if _, err := r.m.Spawn(tid, "claude", SpawnSpec{Kind: "codex", Brief: "two"}); err == nil || !strings.Contains(err.Error(), "1 of yours are already running") {
 		t.Fatalf("past max_children: %v", err)
 	}
 	// Orchestration on lets the helper go a level deeper.
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.m.Spawn(tid, a.AgentID, SpawnSpec{Kind: "codex", Brief: "nested"}); err != nil {
@@ -90,6 +87,9 @@ func TestSpawnInheritsTheModeAndTakesNamedAgents(t *testing.T) {
 	})
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
+	if err := r.m.SetLevel(tid, "assist"); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.m.SetMode(tid, agent.ModeYolo); err != nil {
 		t.Fatal(err)
 	}

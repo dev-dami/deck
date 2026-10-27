@@ -212,9 +212,18 @@ func (s *Settings) agentRows() []settingsRow {
 			},
 		},
 		{
+			label: "Orchestration",
+			value: s.deck.StartLevel(),
+			hint:  "Where new threads start: off (helpers only when you ask), assist (a couple of helpers), auto (plan, split, hand off) or full (deeper, races, reviews). o in the Tasks pane changes a thread's.",
+			change: func(dir int) Action {
+				v := cycle(deckconfig.LevelNames, s.deck.StartLevel(), dir)
+				return s.deckEdit("Orchestration "+v, func(c *deckconfig.Config) { c.Orchestration = v })
+			},
+		},
+		{
 			label: "Parallel tasks",
 			value: strconv.Itoa(max(1, s.deck.MaxParallel)),
-			hint:  "How many tasks a thread with orchestration on runs at once (press o in the Tasks pane).",
+			hint:  "How many tasks a thread at orchestration auto or full runs at once.",
 			change: func(dir int) Action {
 				v := max(1, min(8, max(1, s.deck.MaxParallel)+dir))
 				return s.deckEdit("Parallel tasks "+strconv.Itoa(v), func(c *deckconfig.Config) { c.MaxParallel = v })

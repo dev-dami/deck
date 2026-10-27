@@ -2,6 +2,7 @@
 // Board, Agents, Team and friends), as plain typed objects.
 
 import { bool, list, num, type Obj, obj, str, strs } from "./guards";
+import { type Level, levelOf } from "./orchestration";
 
 export type TaskStatus = "pending" | "ready" | "running" | "review" | "blocked" | "done" | "failed" | "cancelled";
 
@@ -27,14 +28,15 @@ export interface BoardTask {
 }
 
 export interface Board {
-  orchestrate: boolean;
+  // The thread's orchestration level (orchestration.ts).
+  level: Level;
   tasks: BoardTask[];
 }
 
 export function toBoard(v: unknown): Board {
   const o = obj(v);
   return {
-    orchestrate: bool(o, "orchestrate"),
+    level: levelOf(o["level"], bool(o, "orchestrate")),
     tasks: list(o, "tasks", (t) => ({
       id: str(t, "id"),
       title: str(t, "title"),

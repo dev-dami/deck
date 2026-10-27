@@ -194,19 +194,28 @@ Names follow the rules of a rename: letters, digits, `-` and `_`, at most 32; no
 
 ### Tasks and subagents
 
-The Tasks pane in the sidebar is the thread's shared task board. `o` there turns orchestration on: ready tasks then run by themselves (at most `max_parallel` at once), each with a new subagent of the kind, model and effort the task names, and subagents may start subagents of their own.
+The Tasks pane in the sidebar is the thread's shared task board. Each thread has an orchestration level, which says how much its agents organise the work themselves; new threads start at `orchestration` (default `auto`), and `o` in the Tasks pane (or the level control in the desktop's room header) changes a thread's:
 
-Ask an agent to split the work ("spin up two codex agents for the tests") and it does so itself with `agent.spawn {brief, kind}`, orchestration or not: `kind` is an agent kind or a named agent. Each helper joins the thread as a lane marked with who spawned it, runs in the thread's permission mode, and reports its result back to its spawner. With orchestration off only the agents you brought in spawn, one level deep.
+| Level | Agents may | Helpers per agent / per thread / depth | Board |
+| --- | --- | --- | --- |
+| `off` | start helpers only in a turn where you asked them to | 4 / 4 / 1 | a plain list |
+| `assist` | start a couple of helpers when that clearly helps | 2 / 6 / 1 | a plain list |
+| `auto` | plan on the board, split work, hand off and review each other | 4 / 12 / 2 | ready tasks run by themselves |
+| `full` | all of auto, deeper and wider, race (`task.race`); helpers' work is reviewed by another kind | 6 / 20 / 3 | ready tasks run by themselves |
 
-- **Trees.** Subagents can start subagents, `max_depth` levels below the agents you brought in (default 3), with at most `max_children` live per agent (4) and `max_subagents` per thread (12). The agents pane shows each subagent indented under the one that started it.
+Ready tasks run at most `max_parallel` at once, each with a new subagent of the kind, model and effort the task names. Agents' instructions say what their level lets them do, and a change of level reaches them with their next prompt. `orchestration_levels` in the config changes any of these per level (`{"full": {"max_depth": 4, "race": false}}`; the keys are `max_depth`, `max_children`, `max_subagents`, `max_work`, `ask_first`, `schedule`, `race` and `review`).
+
+Ask an agent to split the work ("spin up two codex agents for the tests") and it does so itself with `agent.spawn {brief, kind}`: `kind` is an agent kind or a named agent. Each helper joins the thread as a lane marked with who spawned it, runs in the thread's permission mode, and reports its result back to its spawner.
+
+- **Trees.** Subagents can start subagents as deep as the level allows, below the agents you brought in; `max_depth`, `max_children` and `max_subagents` cap every level. The agents pane shows each subagent indented under the one that started it.
 - **Waiting.** An agent with subagents running does not finish its task when its turn ends; it waits for their results, which come back to it as messages. A subagent sees only its brief, not the thread so far; `thread.read` shows the rest.
 - **Stopping.** When an agent stops, its subagents stop with it and their tasks are cancelled. `keep_orphans` leaves them running; their results then go to the nearest agent above that still runs.
-- **Brakes.** After each of your messages, agents may start `max_work` subagents and tasks between them (default 24) before the thread pauses, as it does after six agent-to-agent hand-offs; your next message or Continue goes on. An agent may send at most 12 messages a minute, and an agent with 8 unread messages from others takes no more until it catches up.
+- **Brakes.** After each of your messages, agents may start the level's `max_work` subagents and tasks between them (8, 8, 24, 48) before the thread pauses, as it does after six agent-to-agent hand-offs; your next message or Continue goes on. An agent may send at most 12 messages a minute, and an agent with 8 unread messages from others takes no more until it catches up.
 - **Budgets.** `budget` limits each task run by subagents: `tokens`, `cost_usd` (as the CLIs report it) and `minutes`. A task's own budget (`budget_tokens`, `budget_usd`, `budget_minutes` on `task.create`; only whoever created it can change it) wins field by field. What a subagent spends counts toward its task and every task above it; a task over budget is blocked, its agents are stopped mid-turn, and whoever created it is told. `r` retries it with a fresh budget.
 - **Plan limits.** A task that names no agent goes to your default agent, unless one of that CLI's plan windows is `route_above_pct` full (default 90): then to the installed agent with the most room, and the thread says so.
 - **Leases.** Agents that share your work tree claim files before they change them (`lease.acquire {paths, exclusive?, minutes?, reason?}`, globs relative to the repository root); the agents pane shows who holds what. A lease ends when the agent releases it or stops, or after 15 minutes. Deck refuses to apply a capsule into a file another agent holds exclusively. When two agents change the same file within ten minutes, or one changes a file another holds, the thread says so and both agents see it in their next prompt.
 - **Worktrees.** A task or spawn with `isolate` runs its subagent on a git worktree and branch of its own. On such a task in the Tasks pane, `a` applies the work to your tree as uncommitted edits, and `d` twice discards the worktree and branch. `x` cancels a task and `r` retries a failed one.
-- **Races.** `/race fix the flaky test` in the desktop composer opens the race builder: add 2 to 6 entrants, each an agent kind or a named agent with its model and effort, so one race can hold codex, claude and claude again on the same model. Start runs exactly those entrants on the same brief, each on a worktree of its own (`StartRace` over gRPC, `race.start` over the remote protocol); agents do the same with `task.race`. The Tasks pane shows the entries under the race, each with its files, `+/-` lines, tokens and minutes; `enter` shows its files and result. `a` on an entry keeps it: its changes go into your tree, and the other entries are stopped and discarded. With `judge` set, a judge agent ranks the entries when they end.
+- **Races.** `/race fix the flaky test` in the desktop composer opens the race builder: add 2 to 6 entrants, each an agent kind or a named agent with its model and effort, so one race can hold codex, claude and claude again on the same model. Start runs exactly those entrants on the same brief, each on a worktree of its own (`StartRace` over gRPC, `race.start` over the remote protocol); agents do the same with `task.race` at orchestration `full`. The Tasks pane shows the entries under the race, each with its files, `+/-` lines, tokens and minutes; `enter` shows its files and result. `a` on an entry keeps it: its changes go into your tree, and the other entries are stopped and discarded. With `judge` set, a judge agent ranks the entries when they end.
 - **Review.** A task can ask for a reviewer of another kind (`review: other`, or a kind, on `task.create`, `agent.spawn` or `task.race`; config `review` sets a default for tasks that subagents run). When the work is finished, the task goes to `review` and Deck starts the reviewer with the task, the result and the changes. It approves (`review.approve`) or sends the work back with notes (`review.changes`) for up to two rounds; after that the task is blocked for you. With one kind installed the task is done, with a note that nobody reviewed it.
 - **Memory pinned to code.** Agents pin short notes to files or line ranges (`memory.add`). When the code changes, Deck flags each note as fresh, moved (with the new lines), changed or gone. Notes are kept per repository in `~/.deck/memory`, and a task brief or a file lease names the notes pinned to its files.
 
@@ -298,12 +307,14 @@ Roles point one way. The role on a teammate's row is what *it* may do on *your* 
   "bell": true,
   "tell_agents_name": false,
   "track_changes": true,
+  "orchestration": "auto",
+  "orchestration_levels": {},
   "max_parallel": 3,
-  "max_depth": 3,
-  "max_children": 4,
-  "max_subagents": 12,
+  "max_depth": 0,
+  "max_children": 0,
+  "max_subagents": 0,
   "keep_orphans": false,
-  "max_work": 24,
+  "max_work": 0,
   "budget": { "tokens": 0, "cost_usd": 0, "minutes": 0 },
   "route_above_pct": 90,
   "review": "",

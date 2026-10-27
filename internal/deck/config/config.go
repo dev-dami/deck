@@ -97,22 +97,25 @@ type Config struct {
 	// MaxParallel is how many tasks the scheduler runs at once in a thread with
 	// orchestration on; 0 means DefaultMaxParallel.
 	MaxParallel int `json:"max_parallel"`
-	// MaxDepth is how deep subagent trees go: 1 lets only the user's agents
-	// start subagents, 2 lets those start their own, and so on; 0 means
-	// DefaultMaxDepth.
-	MaxDepth int `json:"max_depth"`
-	// MaxChildren is how many live subagents one member may have; 0 means
-	// DefaultMaxChildren.
-	MaxChildren int `json:"max_children"`
-	// MaxSubagents is how many subagents may be live in one thread at once,
-	// whoever started them; 0 means DefaultMaxSubagents.
+	// Orchestration is the level new threads start at (orchestration.go):
+	// "off", "assist", "auto" or "full"; "" means DefaultLevel.
+	Orchestration string `json:"orchestration,omitempty"`
+	// OrchestrationLevels changes rows of the level table, field by field:
+	// {"full": {"max_depth": 4, "race": false}}.
+	OrchestrationLevels map[string]json.RawMessage `json:"orchestration_levels,omitempty"`
+	// MaxDepth, MaxChildren and MaxSubagents cap every level's limits of the
+	// same name when set: how deep subagent trees go (1 lets only the user's
+	// agents start subagents), how many live subagents one member may have,
+	// and how many may be live in one thread, whoever started them.
+	MaxDepth     int `json:"max_depth"`
+	MaxChildren  int `json:"max_children"`
 	MaxSubagents int `json:"max_subagents"`
 	// KeepOrphans leaves a member's subagents running when it stops; by
 	// default they are stopped with it and their tasks cancelled.
 	KeepOrphans bool `json:"keep_orphans"`
-	// MaxWork is how many subagents agents may start, and tasks the scheduler
-	// may hand out, after each message of the user before the thread pauses
-	// for them; 0 means DefaultMaxWork.
+	// MaxWork caps every level's max_work when set: how many subagents agents
+	// may start, and tasks the scheduler may hand out, after each message of
+	// the user before the thread pauses for them.
 	MaxWork int `json:"max_work"`
 	// Budget limits what a task run by subagents may spend (the task's own
 	// budget, when it has one, wins field by field); zero fields are no limit.
@@ -156,13 +159,9 @@ type EditGate struct {
 // DefaultEditGateSec is how long an edit waits for its file's owner.
 const DefaultEditGateSec = 120
 
-// Defaults for the orchestration limits left at 0.
+// Defaults for the limits left at 0 (the levels' are in orchestration.go).
 const (
-	DefaultMaxParallel   = 3  // tasks the scheduler runs at once per thread
-	DefaultMaxDepth      = 3  // levels of subagents below the user's agents
-	DefaultMaxChildren   = 4  // live subagents per member
-	DefaultMaxSubagents  = 12 // live subagents per thread
-	DefaultMaxWork       = 24 // subagent starts and dispatches per user message
+	DefaultMaxParallel   = 3 // tasks the scheduler runs at once per thread
 	DefaultRouteAbovePct = 90
 )
 
@@ -812,6 +811,9 @@ func (c Config) Validate() error {
 		return fmt.Errorf("review must be \"none\", \"other\" or an agent kind, got %q", c.Review)
 	}
 	if err := c.Context.validate(); err != nil {
+		return err
+	}
+	if err := c.validateLevels(); err != nil {
 		return err
 	}
 	if c.Peers != nil {

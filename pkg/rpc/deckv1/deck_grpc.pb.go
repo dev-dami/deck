@@ -155,7 +155,8 @@ type DeckClient interface {
 	// TaskAction acts on a task: cancel, retry, steer (with text), apply (a
 	// worktree's work into the tree; keeps a race entry) or discard.
 	TaskAction(ctx context.Context, in *TaskActionRequest, opts ...grpc.CallOption) (*TaskActionResponse, error)
-	// SetOrchestrate turns the scheduler and agents' subagents on or off.
+	// SetOrchestrate sets the thread's orchestration level: how far its
+	// agents spawn and race, and whether the scheduler runs its board.
 	SetOrchestrate(ctx context.Context, in *SetOrchestrateRequest, opts ...grpc.CallOption) (*Empty, error)
 	// Agents is the thread's agents as a tree (subagents under the member
 	// that started them) with what each runs right now.
@@ -1035,7 +1036,8 @@ type DeckServer interface {
 	// TaskAction acts on a task: cancel, retry, steer (with text), apply (a
 	// worktree's work into the tree; keeps a race entry) or discard.
 	TaskAction(context.Context, *TaskActionRequest) (*TaskActionResponse, error)
-	// SetOrchestrate turns the scheduler and agents' subagents on or off.
+	// SetOrchestrate sets the thread's orchestration level: how far its
+	// agents spawn and race, and whether the scheduler runs its board.
 	SetOrchestrate(context.Context, *SetOrchestrateRequest) (*Empty, error)
 	// Agents is the thread's agents as a tree (subagents under the member
 	// that started them) with what each runs right now.

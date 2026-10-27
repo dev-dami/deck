@@ -10,8 +10,8 @@ import (
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
-// The scheduler runs a thread's task board when orchestration is on
-// (SetOrchestrate). Whenever the board changes, or a member's turn ends, it
+// The scheduler runs a thread's task board at the levels that schedule
+// (auto, full: SetLevel). Whenever the board changes, or a member's turn ends, it
 // does three things in order:
 //
 //  1. Failure propagation: tasks waiting on one that failed for good (out of
@@ -24,7 +24,7 @@ import (
 //     new subagent, while fewer than MaxParallel tasks are running.
 //
 // Dispatches are Deck's, not an agent's thread.send, so they are not hops.
-// With orchestration off, a pass only starts the reviews that wait for room.
+// At the other levels a pass only starts the reviews that wait for room.
 
 // retryBackoff is the wait before a failed task's attempt number attempt+1:
 // 2s, 4s, 8s, ... up to a minute. A variable so tests can shorten it.
@@ -45,7 +45,7 @@ type schedState struct {
 }
 
 // kick has the scheduler look at the thread's board again, soon and off the
-// caller's goroutine. When orchestration is off, it only starts the reviews
+// caller's goroutine. At a level that does not schedule, it only starts the reviews
 // that wait for room.
 func (m *Manager) kick(t *thread) {
 	if m.isClosed() || t.gone.Load() {
@@ -88,11 +88,8 @@ func (m *Manager) schedule(t *thread) {
 	if m.isClosed() || t.gone.Load() {
 		return
 	}
-	t.mu.Lock()
-	on := t.orchestrate
-	t.mu.Unlock()
-	if !on {
-		m.startReviews(t) // the review stage runs without orchestration too
+	if !m.level(t).Schedule {
+		m.startReviews(t) // the review stage runs at every level
 		return
 	}
 	m.checkBudgets(t, nil, store.Spend{}) // minutes pass without events
@@ -241,7 +238,7 @@ func (m *Manager) dispatchReady(t *thread) {
 				owner = o
 			}
 		}
-		full := t.liveSubagents() >= m.maxSubagents()
+		full := t.liveSubagents() >= m.levelLocked(t).MaxSubagents
 		t.mu.Unlock()
 		if next == nil || running >= limit || owner == nil && full {
 			return // a subagent stopping kicks the scheduler again

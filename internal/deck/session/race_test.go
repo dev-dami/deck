@@ -29,7 +29,7 @@ func raceRig(t *testing.T, claude, codex []fake.Script) (*rig, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "full"); err != nil {
 		t.Fatal(err)
 	}
 	return r, tid, repo
@@ -141,7 +141,7 @@ func TestRaceRefusals(t *testing.T) {
 		t.Fatalf("a refused race left tasks: %+v", r.m.Tasks(tid))
 	}
 	r.add(t, tid, "claude")
-	if _, err := r.m.Race(tid, "claude", RaceSpec{Brief: "x", Entrants: two}); err == nil || !strings.Contains(err.Error(), "orchestration is off") {
+	if _, err := r.m.Race(tid, "claude", RaceSpec{Brief: "x", Entrants: two}); err == nil || !strings.Contains(err.Error(), "full orchestration") {
 		t.Fatalf("an agent without orchestration: %v", err)
 	}
 }

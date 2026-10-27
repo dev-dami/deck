@@ -588,7 +588,9 @@ type CreateSessionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Title string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
 	// isolate starts the thread on a worktree and branch of its own.
-	Isolate       bool `protobuf:"varint,2,opt,name=isolate,proto3" json:"isolate,omitempty"`
+	Isolate bool `protobuf:"varint,2,opt,name=isolate,proto3" json:"isolate,omitempty"`
+	// level is the orchestration level it starts at; "" is the Deck's default.
+	Level         string `protobuf:"bytes,3,opt,name=level,proto3" json:"level,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -635,6 +637,13 @@ func (x *CreateSessionRequest) GetIsolate() bool {
 		return x.Isolate
 	}
 	return false
+}
+
+func (x *CreateSessionRequest) GetLevel() string {
+	if x != nil {
+		return x.Level
+	}
+	return ""
 }
 
 type RenameSessionRequest struct {
@@ -5257,9 +5266,13 @@ func (x *BoardTask) GetReviews() int32 {
 }
 
 type BoardResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Orchestrate   bool                   `protobuf:"varint,1,opt,name=orchestrate,proto3" json:"orchestrate,omitempty"`
-	Tasks         []*BoardTask           `protobuf:"bytes,2,rep,name=tasks,proto3" json:"tasks,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// orchestrate is set at the levels whose scheduler runs the board (auto,
+	// full), for clients that predate level.
+	Orchestrate bool         `protobuf:"varint,1,opt,name=orchestrate,proto3" json:"orchestrate,omitempty"`
+	Tasks       []*BoardTask `protobuf:"bytes,2,rep,name=tasks,proto3" json:"tasks,omitempty"`
+	// level is the orchestration level: off, assist, auto or full.
+	Level         string `protobuf:"bytes,3,opt,name=level,proto3" json:"level,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5306,6 +5319,13 @@ func (x *BoardResponse) GetTasks() []*BoardTask {
 		return x.Tasks
 	}
 	return nil
+}
+
+func (x *BoardResponse) GetLevel() string {
+	if x != nil {
+		return x.Level
+	}
+	return ""
 }
 
 type TaskActionRequest struct {
@@ -5423,9 +5443,12 @@ func (x *TaskActionResponse) GetFiles() []string {
 }
 
 type SetOrchestrateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	On            bool                   `protobuf:"varint,2,opt,name=on,proto3" json:"on,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// on, from a client that predates level: auto when set, off when not.
+	On bool `protobuf:"varint,2,opt,name=on,proto3" json:"on,omitempty"`
+	// level is off, assist, auto or full; it wins over on.
+	Level         string `protobuf:"bytes,3,opt,name=level,proto3" json:"level,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5472,6 +5495,13 @@ func (x *SetOrchestrateRequest) GetOn() bool {
 		return x.On
 	}
 	return false
+}
+
+func (x *SetOrchestrateRequest) GetLevel() string {
+	if x != nil {
+		return x.Level
+	}
+	return ""
 }
 
 type AgentNode struct {
@@ -8990,10 +9020,11 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\barchived\x18\n" +
 	" \x01(\bR\barchived\"D\n" +
 	"\x14ListSessionsResponse\x12,\n" +
-	"\bsessions\x18\x01 \x03(\v2\x10.deck.v1.SessionR\bsessions\"F\n" +
+	"\bsessions\x18\x01 \x03(\v2\x10.deck.v1.SessionR\bsessions\"\\\n" +
 	"\x14CreateSessionRequest\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x18\n" +
-	"\aisolate\x18\x02 \x01(\bR\aisolate\"K\n" +
+	"\aisolate\x18\x02 \x01(\bR\aisolate\x12\x14\n" +
+	"\x05level\x18\x03 \x01(\tR\x05level\"K\n" +
 	"\x14RenameSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
@@ -9385,10 +9416,11 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x05stats\x18\x0f \x01(\tR\x05stats\x12\x14\n" +
 	"\x05files\x18\x10 \x03(\tR\x05files\x12\x1a\n" +
 	"\breviewer\x18\x11 \x01(\tR\breviewer\x12\x18\n" +
-	"\areviews\x18\x12 \x01(\x05R\areviews\"[\n" +
+	"\areviews\x18\x12 \x01(\x05R\areviews\"q\n" +
 	"\rBoardResponse\x12 \n" +
 	"\vorchestrate\x18\x01 \x01(\bR\vorchestrate\x12(\n" +
-	"\x05tasks\x18\x02 \x03(\v2\x12.deck.v1.BoardTaskR\x05tasks\"w\n" +
+	"\x05tasks\x18\x02 \x03(\v2\x12.deck.v1.BoardTaskR\x05tasks\x12\x14\n" +
+	"\x05level\x18\x03 \x01(\tR\x05level\"w\n" +
 	"\x11TaskActionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x17\n" +
@@ -9396,11 +9428,12 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x06action\x18\x03 \x01(\tR\x06action\x12\x12\n" +
 	"\x04text\x18\x04 \x01(\tR\x04text\"*\n" +
 	"\x12TaskActionResponse\x12\x14\n" +
-	"\x05files\x18\x01 \x03(\tR\x05files\"F\n" +
+	"\x05files\x18\x01 \x03(\tR\x05files\"\\\n" +
 	"\x15SetOrchestrateRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x0e\n" +
-	"\x02on\x18\x02 \x01(\bR\x02on\"\xb4\x03\n" +
+	"\x02on\x18\x02 \x01(\bR\x02on\x12\x14\n" +
+	"\x05level\x18\x03 \x01(\tR\x05level\"\xb4\x03\n" +
 	"\tAgentNode\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +

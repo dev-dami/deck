@@ -95,6 +95,8 @@ export class FakeRpcDeck {
   readonly calls: string[] = [];
   // The Models calls that asked the Deck to forget its lists (refresh).
   modelRefreshes = 0;
+  // The orchestration level each CreateSession asked for.
+  readonly createdLevels: string[] = [];
   private readonly server = new grpc.Server();
   private readonly streams = new Set<grpc.ServerWritableStream<Obj, Obj>>();
   private seq = 0;
@@ -111,7 +113,7 @@ export class FakeRpcDeck {
   };
   // The task board of the open thread, and what was done to it.
   readonly board = {
-    orchestrate: false,
+    level: "auto",
     actions: [] as string[],
     tasks: [
       { id: "t1", title: "Map the limiter", status: "done", owner: "claude-1", result: "It keys on nothing.", attempts: 1, tries: 1 },
@@ -421,7 +423,7 @@ export class FakeRpcDeck {
     };
     // The task board, agent tree and team link.
     const b = this.board;
-    unary("Board", () => ({ orchestrate: b.orchestrate, tasks: b.tasks }));
+    unary("Board", () => ({ orchestrate: b.level === "auto" || b.level === "full", level: b.level, tasks: b.tasks }));
     unary("TaskAction", (r) => {
       const t = b.tasks.find((x) => x["id"] === r["task_id"]);
       if (t === undefined) throw new Error(`no task ${String(r["task_id"])}`);
@@ -436,7 +438,7 @@ export class FakeRpcDeck {
       return {};
     });
     unary("SetOrchestrate", (r) => {
-      b.orchestrate = r["on"] === true;
+      b.level = typeof r["level"] === "string" && r["level"] !== "" ? r["level"] : r["on"] === true ? "auto" : "off";
       return {};
     });
     // The crew, and the agents agents spawned in the room (test/fake-server.ts).
@@ -678,7 +680,10 @@ export class FakeRpcDeck {
             // As pkg/rpc: session_created goes out bare, then session_updated with the branch.
             this.roomChanged(String(out["id"]));
           }
-          if (name === "CreateSession") return cb(null, this.withRoom(out));
+          if (name === "CreateSession") {
+            this.createdLevels.push(String(call.request["level"] ?? ""));
+            return cb(null, this.withRoom(out));
+          }
           if (name === "ListSessions") return cb(null, { sessions: (out["sessions"] as Obj[]).map((x) => this.withRoom(x)) });
           cb(null, out);
         } catch (e) {
@@ -734,7 +739,7 @@ export function crewAtWork(f: FakeRpcDeck): void {
       { agent: "claude-sub", kind: "claude", name: "Bash", summary: "go test ./pkg/remote/auth -run Limiter", started: now - 21_000, command: true },
     ],
   };
-  f.board.orchestrate = true;
+  f.board.level = "auto";
   f.board.tasks = [
     { id: "t1", title: "Map the limiter", status: "done", owner: "claude-1", files: [LIMIT] },
     { id: "t2", title: "Key failures by address", status: "running", owner: "claude-sub", deps: ["t1"], files: [LIMIT, TEST], branch: "deck/t2" },

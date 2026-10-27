@@ -23,7 +23,7 @@ type boardWorkspace struct {
 	board     workspace.BoardReport
 	cancelled []string
 	retried   []string
-	orch      []bool
+	orch      []string
 }
 
 func (w *boardWorkspace) Board(string) workspace.BoardReport { return w.board }
@@ -35,8 +35,8 @@ func (w *boardWorkspace) RetryTask(_, id string) error { w.retried = append(w.re
 func (w *boardWorkspace) SteerTask(_, _, _ string) error {
 	return nil
 }
-func (w *boardWorkspace) SetOrchestrate(_ string, on bool) error {
-	w.orch = append(w.orch, on)
+func (w *boardWorkspace) SetLevel(_, level string) error {
+	w.orch = append(w.orch, level)
 	return nil
 }
 func (w *boardWorkspace) Config() *config.Config { return nil }
@@ -58,7 +58,7 @@ func newBoardUI(w *boardWorkspace) *UI {
 
 func TestTasksPaneShowsTheBoardAndActsOnIt(t *testing.T) {
 	t.Parallel()
-	w := &boardWorkspace{board: workspace.BoardReport{Orchestrate: true, Tasks: []workspace.BoardTask{
+	w := &boardWorkspace{board: workspace.BoardReport{Level: "auto", Tasks: []workspace.BoardTask{
 		{ID: "t1", Title: "write the parser", Status: "done", Owner: "claude", Result: "parse.go"},
 		{ID: "t2", Title: "test it", Status: "failed", Owner: "codex", Deps: []string{"t1"}, Error: "flaky", Attempts: 2, Tries: 2},
 		{ID: "t3", Title: "ship it", Status: "blocked", Deps: []string{"t2"}},
@@ -69,7 +69,7 @@ func TestTasksPaneShowsTheBoardAndActsOnIt(t *testing.T) {
 	require.Equal(t, "Tasks", p.title(m))
 	require.Equal(t, "2", p.badge(m), "done tasks are not open")
 	out := ansi.Strip(p.render(m, 40, 6, true))
-	for _, want := range []string{"orchestrating", "✓ t1 write the parser", "✗ t2 test it", "! t3 ship it", "codex"} {
+	for _, want := range []string{"orchestration auto", "✓ t1 write the parser", "✗ t2 test it", "! t3 ship it", "codex"} {
 		require.Contains(t, out, want)
 	}
 	for _, l := range strings.Split(out, "\n") {
@@ -100,7 +100,7 @@ func TestTasksPaneShowsTheBoardAndActsOnIt(t *testing.T) {
 	handled, cmd = p.key(m, tea.KeyPressMsg{Code: 'o', Text: "o"})
 	require.True(t, handled)
 	cmd()
-	require.Equal(t, []bool{false}, w.orch, "o flips the current setting")
+	require.Equal(t, []string{"full"}, w.orch, "o steps to the next level")
 }
 
 func TestTasksPaneWithoutABoardIsAsBefore(t *testing.T) {

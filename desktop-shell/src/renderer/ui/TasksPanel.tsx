@@ -34,6 +34,7 @@ import {
 import { refreshCrew, useRoomCrew } from "../crewState";
 import { cn } from "../lib/cn";
 import { useLimits } from "../limitsState";
+import { schedules } from "../orchestration";
 import type { ProjectApi } from "../project";
 import { moveQueued, queuedText } from "../queue";
 import type { RaceDraft } from "../race";
@@ -44,12 +45,12 @@ import { RaceBuilder } from "./RaceBuilder";
 import { Button } from "./kit/button";
 import { EmptyState } from "./kit/empty";
 import { Dialog, fieldClass } from "./kit/dialog";
-import { Switch } from "./kit/switch";
 import { TaskMark } from "./graph/Nodes";
+import { RoomLevel } from "./LevelPicker";
 
 // The Tasks tab of a room: what waits for a busy agent, the task board the
 // agents split the work into (races and their entries, reviews), the
-// orchestration switch, and the race builder /race opens too (RaceBuilder).
+// orchestration level (the composer's picker too), and the race builder /race opens too (RaceBuilder).
 
 const STATUS_TEXT: Record<string, string> = {
   running: "text-foreground",
@@ -405,13 +406,6 @@ export function TasksPanel({
     setDeciding((d) => (d !== null && d.task.id === task.id ? { ...d, files: taskPreview(task, branch, changes) } : d));
   };
 
-  const toggle = async () => {
-    if (api === undefined || board === null) return;
-    const err = await api.setOrchestrate(sessionId, !board.orchestrate);
-    if (err !== null) onError(err);
-    await load();
-  };
-
   const rows = board === null ? [] : boardRows(board);
   // Messages the person scheduled for a plan limit's reset (limits.ts).
   const scheduled = useLimits(api).data?.scheduled.some((s) => s.sessionId === sessionId) === true;
@@ -434,14 +428,7 @@ export function TasksPanel({
         <>
           <Section
             title="Tasks"
-            action={
-              board !== null && (
-                <span className="flex items-center gap-2 text-muted-foreground text-xs" title="Let the scheduler run ready tasks and agents start subagents">
-                  Orchestrate
-                  <Switch label="Orchestrate" checked={board.orchestrate} onChange={() => void toggle()} />
-                </span>
-              )
-            }
+            action={board !== null && <RoomLevel api={api} sessionId={sessionId} onError={onError} side="bottom" align="end" />}
           >
             {board === null ? (
               <p className="flex items-center gap-2 px-1 text-muted-foreground text-xs">
@@ -451,7 +438,11 @@ export function TasksPanel({
               <EmptyState
                 icon={ListChecks}
                 title="No tasks."
-                hint="Agents post tasks here, or turn on Orchestrate and ask for a plan."
+                hint={
+                  schedules(board.level)
+                    ? "Ask for a plan: agents post their tasks here, and ready ones run by themselves."
+                    : "Agents post tasks here. At orchestration Auto or Full, ready ones run by themselves."
+                }
                 className="py-6"
               />
             ) : (

@@ -5,6 +5,7 @@ import { applyTheme, type ThemeTarget } from "@web/theme";
 import { ProjectApi } from "./project";
 import type { DeckBridge, EngineStop, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
 import type { DeckClient } from "./client";
+import { getPrefs } from "./prefs";
 import type { Profile, ProfileScope } from "./profiles";
 import { RoomMetaStore } from "./roomMeta";
 import {
@@ -288,7 +289,9 @@ export class RpcDeckClient implements DeckClient {
 
   async createSession(title?: string, isolate = false): Promise<Session | null> {
     if (isolate && !this.serves("IsolateSession")) return null;
-    const r = await this.call("CreateSession", { title: title ?? "", isolate });
+    // The orchestration level of Settings › Agents; a Deck from before
+    // levels ignores it.
+    const r = await this.call("CreateSession", { title: title ?? "", isolate, level: getPrefs().orchestration });
     const s = toSession(r);
     if (s === null) return null;
     const room = toRoom(r);

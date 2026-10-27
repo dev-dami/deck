@@ -129,12 +129,14 @@ func TestSettingsBinaryRowsAreReadOnly(t *testing.T) {
 		{Kind: "codex", Command: "codex"},
 	}})
 	rows := s.agentRows()
-	// Default agent, track changes, automatic titles, parallel tasks, your
-	// name, attribution, authorship, then one row per CLI.
-	const fixed = 7
+	// Default agent, track changes, automatic titles, orchestration, parallel
+	// tasks, your name, attribution, authorship, then one row per CLI.
+	const fixed = 8
 	require.Len(t, rows, fixed+len(deckconfig.Kinds))
-	require.Equal(t, "Deck attribution", rows[5].label)
-	require.Equal(t, "Author commits as Deck", rows[6].label)
+	require.Equal(t, "Orchestration", rows[3].label)
+	require.Equal(t, "auto", rows[3].value)
+	require.Equal(t, "Deck attribution", rows[6].label)
+	require.Equal(t, "Author commits as Deck", rows[7].label)
 	require.Equal(t, "/usr/bin/claude", rows[fixed].value)
 	require.Equal(t, "codex not found", rows[fixed+1].value)
 	require.Nil(t, rows[fixed].change)

@@ -252,9 +252,8 @@ type ThreadInfo struct {
 	Mode        agent.Mode // the thread's permission mode
 	// Pinned threads sort first; Resolved ones are settled until a new message.
 	Pinned, Resolved bool
-	// Orchestrate is on while members may spawn subagents and the scheduler
-	// runs the thread's ready tasks.
-	Orchestrate bool
+	// Orchestration is the thread's orchestration level (config.Levels).
+	Orchestration string
 	// Branch is the worktree branch of an isolated thread, "" otherwise.
 	Branch string
 	// Active is when anything last happened in the thread.
@@ -482,7 +481,7 @@ func (m *Manager) threadInfo(t *thread) ThreadInfo {
 	info := ThreadInfo{
 		ID: t.id, Title: t.title, Dir: t.dir, Paused: t.paused, Hops: t.hops,
 		MaxHops: m.maxHops, Held: len(t.heldIdx), LastSpeaker: t.lastSpeaker, Mode: t.mode,
-		Pinned: t.pinned, Resolved: t.resolved, Orchestrate: t.orchestrate,
+		Pinned: t.pinned, Resolved: t.resolved, Orchestration: t.level,
 	}
 	if t.worktree != nil {
 		info.Branch = t.worktree.Branch
@@ -576,6 +575,7 @@ func (m *Manager) NewThread(dir string) (string, error) {
 	}
 	mode, _ := startMode(m.cfg)
 	t := newThread(m, store.NewID(), dir, mode)
+	t.level = m.cfg.StartLevel()
 	m.threads[t.id] = t
 	m.torder = append(m.torder, t)
 	return t.id, nil
@@ -1269,7 +1269,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 	t.pinned, t.resolved = th.Pinned, th.Resolved // resuming un-archives
 	t.worktree = th.Worktree
 	t.tasks = cloneTasks(th.Tasks)
-	t.orchestrate = th.Orchestrate
+	t.level = storedLevel(th, cfg)
 	t.contract = th.Contract
 	if th.Ops {
 		// Its contract ended when Deck stopped, but the thread stays locked
