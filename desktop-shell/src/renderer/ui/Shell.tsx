@@ -7,6 +7,7 @@ import type { InboxItem } from "../attention";
 import type { DeckClient } from "../client";
 import type { OpenProject } from "../openProjects";
 import { usePrefs } from "../prefs";
+import { gateTeam } from "../teamGate";
 import { panelSlice, shallowEqual, shellSlice, useAppSlice } from "../select";
 import { isSide } from "../sideChat";
 import type { Panel, UiAction } from "../ui";
@@ -25,6 +26,7 @@ import { type ProjectEntry, Sidebar } from "./Sidebar";
 import { TeamPage, useTeam } from "./Team";
 import { TerminalDrawer, useTerminalShown } from "./Terminal";
 import { Toasts } from "./Toasts";
+import { useLimitCommands } from "./Limits";
 import { UsagePage } from "./Usage";
 import { setPreviewTarget, useOpenPorts, useWatchPorts } from "./usePorts";
 import { useOpenRoom } from "./useRoom";
@@ -51,6 +53,19 @@ function LiveSettings({ c, teammates, ...props }: { c: DeckClient; teammates: re
       <SettingsPage {...props} state={c.store.state} />
     </ProfilesDeck.Provider>
   );
+}
+
+// Below 1100px the side panel floats over the room (styles.css, Shell).
+const NARROW = "(max-width: 1100px)";
+function useNarrow(): boolean {
+  const [on, setOn] = useState(() => window.matchMedia(NARROW).matches);
+  useEffect(() => {
+    const m = window.matchMedia(NARROW);
+    const f = () => setOn(m.matches);
+    m.addEventListener("change", f);
+    return () => m.removeEventListener("change", f);
+  }, []);
+  return on;
 }
 
 export interface ShellProps {
@@ -93,7 +108,9 @@ export function Shell(props: ShellProps) {
   const api = c.project;
   const [terminal, setTerminal] = useTerminalShown(api);
   const git = useGit(api);
-  const { team } = useTeam(api, 15_000);
+  // With the team off (teamGate.ts) nothing of it is polled or shown.
+  const polled = useTeam(prefs.team ? api : undefined, 15_000);
+  const team = gateTeam(prefs.team, polled.team);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mac = useMemo(isMac, []);
   const foreign = useForeignThreads(others);
@@ -154,6 +171,7 @@ export function Shell(props: ShellProps) {
     {
       mac,
       terminal: api !== undefined,
+      team: prefs.team,
       dispatch,
       panel: ui.panel,
       palette: ui.palette,
@@ -171,15 +189,46 @@ export function Shell(props: ShellProps) {
     },
     bridge,
   );
+  const limitCommands = useLimitCommands(api, toast, info);
   const paletteRooms = usePaletteRooms(c, projectKey, project, others);
+  // The Team page shows only while the team is on; turning it off closes it.
+  const teamPage = ui.team && prefs.team;
+  useEffect(() => {
+    if (ui.team && !prefs.team) dispatch({ type: "team", open: false });
+  }, [ui.team, prefs.team, dispatch]);
   // Settings, Usage, Team and the inbox take the place of the room.
-  const away = ui.settings !== null || ui.usage || ui.team || ui.inbox;
+  const away = ui.settings !== null || ui.usage || teamPage || ui.inbox;
+  // The layout (Settings > Appearance > Layout): the sidebar's side, and
+  // the side panel docked opposite it, beside it or floating over the room
+  // away from it, as it floats in a narrow window anyway.
+  const { sidebarSide, panelDock } = prefs;
+  const panelSide = sidebarSide === "left" ? "right" : "left";
+  const narrow = useNarrow();
+  const panelShown = ui.panel !== null && !away && shared === null;
+  const docked = panelShown && panelDock !== "float" && !narrow;
+  // What sits at the window's left edge, under a Mac's traffic lights.
+  const leftmost =
+    sidebarSide === "left"
+      ? sidebar
+        ? "sidebar"
+        : docked && panelDock === "beside"
+          ? "panel"
+          : "room"
+      : docked && panelDock === "opposite"
+        ? "panel"
+        : "room";
 
   return (
     // The window is a backdrop with panels on it (docs/design-glass.md,
     // section 4): an 8px gutter, the sidebar's glass, the room's sheet and
-    // the side panel's sheet beside it.
-    <div className="shell relative flex h-full gap-2 p-2">
+    // the side panel's sheet beside it, in the order the layout says.
+    <div
+      className="shell relative flex h-full gap-2 p-2"
+      data-sidebar={sidebarSide}
+      data-dock={panelDock}
+      data-mac={mac ? "" : undefined}
+      data-lights={mac && leftmost !== "sidebar" ? leftmost : undefined}
+    >
       {/* The gutter along the top drags the window, as a title bar would. */}
       <div aria-hidden className="drag absolute inset-x-0 top-0 h-2" />
       {sidebar && (
@@ -200,12 +249,12 @@ export function Shell(props: ShellProps) {
             settings: ui.settings,
             update: update === null ? null : { version: update, onRestart: () => void bridge.installUpdate() },
             usage: ui.usage,
-            team: ui.team,
+            team: teamPage,
             inbox: ui.inbox,
             inboxCount: attention.items.length,
             digits,
             shared: teamOn?.teammates.flatMap((m) => m.threads.map((t) => ({ peer: m.name, thread: t }))) ?? [],
-            openShared: shared === null || away ? null : `${shared.peer}/${shared.thread.id}`,
+            openShared: shared === null || away || !prefs.team ? null : `${shared.peer}/${shared.thread.id}`,
             online: teamOn === null ? null : teamOn.teammates.filter((m) => m.link === "online").length,
           }}
           actions={{
@@ -224,7 +273,7 @@ export function Shell(props: ShellProps) {
             onPalette: () => dispatch({ type: "palette", open: true }),
             onSettings: (section) => dispatch({ type: "settings", section }),
             onUsage: () => dispatch({ type: "usage", open: !ui.usage }),
-            onTeam: () => dispatch({ type: "team", open: !ui.team }),
+            onTeam: prefs.team ? () => dispatch({ type: "team", open: !ui.team }) : null,
             onInbox: () => dispatch({ type: "inbox", open: !ui.inbox }),
             onShared: openShared,
             onCollapse: () => setSidebar(false),
@@ -246,7 +295,7 @@ export function Shell(props: ShellProps) {
             />
           ) : ui.usage ? (
             <UsagePage project={api} theme={state.theme} onOpenThread={openSession} onAddProject={addProject} />
-          ) : ui.team ? (
+          ) : teamPage ? (
             <TeamPage
               api={api}
               thread={open}
@@ -258,7 +307,7 @@ export function Shell(props: ShellProps) {
             />
           ) : ui.settings !== null ? (
             <LiveSettings c={c} teammates={teammates} section={ui.settings} where={where} transport={transport} mac={mac} bridge={bridge} folder={folder} onDisconnect={onDisconnect} />
-          ) : shared !== null && api !== undefined ? (
+          ) : shared !== null && api !== undefined && prefs.team ? (
             <SharedRoom
               key={`${shared.peer}/${shared.thread.id}`}
               api={api}
@@ -295,6 +344,7 @@ export function Shell(props: ShellProps) {
               onPreview={preview}
               toast={toast}
               info={info}
+              onOpenThread={openSession}
             />
           )}
         </main>
@@ -302,7 +352,7 @@ export function Shell(props: ShellProps) {
           <TerminalDrawer project={api} shown={terminal && !away} onHide={() => setTerminal(false)} onError={toast} onPreview={preview} />
         )}
       </div>
-      {ui.panel !== null && !away && shared === null && (
+      {panelShown && ui.panel !== null && (
         <LineComments.Provider value={r.room.comments}>
           <LiveRightPanel
             projectKey={projectKey}
@@ -326,12 +376,15 @@ export function Shell(props: ShellProps) {
             onPanel={(p) => openPanel(p)}
             onWide={() => setWide((w) => !w)}
             onClose={() => dispatch({ type: "panel", panel: null })}
+            side={panelSide}
+            float={panelDock === "float"}
+            onOpenThread={openSession}
           />
         </LineComments.Provider>
       )}
       {ui.palette && (
         <Palette
-          commands={commands}
+          commands={limitCommands.length === 0 ? commands : [...commands, ...limitCommands]}
           rooms={paletteRooms}
           sources={[{ key: projectKey, c }, ...others.map((o) => ({ key: o.key, c: o.c }))]}
           onOpenRoom={openRoom}

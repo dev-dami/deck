@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dev-dami/deck/internal/deck/changes"
+	"github.com/dev-dami/deck/internal/deck/profile"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -24,15 +25,18 @@ const deckSpeaker = "deck"
 
 // SpawnSpec describes a subagent to start.
 type SpawnSpec struct {
-	Kind   string // agent kind; "" is the task's, else the default agent
+	Kind   string // agent kind or a profile's name; "" is the task's, else the default agent
 	Model  string // "" is the task's, else the configured model for the kind
 	Effort string // "" is the task's, else the configured effort for the kind
 	Title  string // the task's title; "" takes it from the brief
 	Brief  string // what the subagent is asked to do
 	// TaskID binds the subagent to a task already on the board; "" creates one.
 	TaskID string
-	// Isolate gives the subagent its own git worktree and branch.
+	// Isolate gives the subagent its own git worktree and branch; Tree puts
+	// it in one of the thread's worktrees instead (work.go), which becomes
+	// its own.
 	Isolate  bool
+	Tree     string
 	Contract store.Contract
 	// Review is who reviews the task before it is done (review.go).
 	Review string
@@ -50,10 +54,12 @@ type SpawnResult struct {
 }
 
 // Spawn starts a subagent for a task of thread threadID. parentID is the
-// member asking, or "" when the user or Deck's scheduler asks. Members may
-// spawn only in threads with orchestration on, within the limits of tree.go:
-// MaxDepth levels, MaxChildren live subagents per member and MaxSubagents per
-// thread.
+// member asking, or "" when the user or Deck's scheduler asks. How far
+// members may spawn is the thread's orchestration level's (level.go): with
+// orchestration off, only in a turn where the user spoke to them; and within
+// the limits of tree.go: MaxDepth levels, MaxChildren live subagents per
+// member and MaxSubagents per thread. The subagent runs in the thread's
+// permission mode, like every member.
 func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, error) {
 	if m.isClosed() {
 		return SpawnResult{}, errClosed
@@ -70,6 +76,13 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		// The task says which agent it wants when the spawn does not.
 		if tk, ok := m.Task(threadID, sp.TaskID); ok {
 			sp.Kind, sp.Model, sp.Effort = or(sp.Kind, tk.Kind), or(sp.Model, tk.Model), or(sp.Effort, tk.Effort)
+		}
+	}
+	// A profile's name ("charles") starts a member from that profile.
+	var prof profile.Profile
+	if _, ok := m.adapters[sp.Kind]; !ok && sp.Kind != "" {
+		if p, found := m.profileNamed(t, sp.Kind); found {
+			prof, sp.Kind = p, p.Kind
 		}
 	}
 	kind, routed := sp.Kind, ""
@@ -139,7 +152,7 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 		return SpawnResult{}, err
 	}
 
-	a, err := m.newMember(t, kind, sp.Model, "")
+	a, err := m.addMember(t, kind, sp.Model, "", prof)
 	if err != nil {
 		return fail(err)
 	}
@@ -171,9 +184,14 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 			a.worktree, a.dir = wt, dir
 			a.mu.Unlock()
 		}
-	} else if sp.Isolate {
+	} else if sp.Isolate || sp.Tree != "" {
 		var dir string
-		if wt, dir, err = m.memberWorktree(t, a); err != nil {
+		if sp.Tree != "" {
+			wt, dir, err = m.takeTree(t, sp.Tree, a.id, taskID)
+		} else if wt, dir, err = m.memberWorktree(t, a); err == nil {
+			wt.Task = taskID
+		}
+		if err != nil {
 			m.dropMember(t, a)
 			return fail(err)
 		}
@@ -186,7 +204,10 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	}
 	m.persistMeta(t)
 	if err := m.startRun(t, a, "", ""); err != nil {
-		if old == nil {
+		switch {
+		case sp.Tree != "":
+			m.returnTree(t, wt)
+		case old == nil:
 			m.dropWorktree(wt)
 		}
 		m.dropMember(t, a)
@@ -228,28 +249,33 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 func (m *Manager) spawnRoom(t *thread, parentID string, n int) (*agentState, int, error) {
 	t.mu.Lock()
 	var parent *agentState
-	switch {
-	case parentID != "" && !t.orchestrate:
-		t.mu.Unlock()
-		return nil, 0, errors.New("session: orchestration is off for this thread; the user turns it on")
-	case parentID != "":
+	if parentID != "" {
 		if parent = t.member(parentID); parent == nil {
 			t.mu.Unlock()
 			return nil, 0, fmt.Errorf("session: no member %q", parentID)
 		}
+		// With orchestration off a member starts helpers only when the user
+		// asked it to: in a turn whose prompt has the user's words.
+		if lv := m.levelLocked(t); lv.AskFirst && !parent.isEphemeral() && parent.promptUser == 0 {
+			t.mu.Unlock()
+			return nil, 0, fmt.Errorf("session: %w: orchestration is off, so agents start helpers only when the user asks; do the work yourself", errChildLimit)
+		}
 	}
+	lv := m.levelLocked(t)
 	depth := t.depth(parent) + 1
 	live, all := len(t.children(parentID)), t.liveSubagents()
 	t.mu.Unlock()
 	// The per-member cap is for members; the scheduler (parentID "") is
 	// bounded by MaxParallel, and the user by their own judgement. The
 	// thread's cap holds for everyone.
-	switch maxD := m.maxDepth(); {
-	case depth > maxD:
-		return nil, 0, fmt.Errorf("session: %w: subagents go %d levels deep and you are at the last; do the work yourself", errChildLimit, maxD)
-	case parentID != "" && live+n > m.maxChildren():
+	switch {
+	case depth > lv.MaxDepth && lv.MaxDepth <= 1 && parentID != "":
+		return nil, 0, fmt.Errorf("session: %w: at this thread's orchestration level helpers start no helpers; do the work yourself", errChildLimit)
+	case depth > lv.MaxDepth:
+		return nil, 0, fmt.Errorf("session: %w: subagents go %d levels deep and you are at the last; do the work yourself", errChildLimit, lv.MaxDepth)
+	case parentID != "" && live+n > lv.MaxChildren:
 		return nil, 0, fmt.Errorf("session: %w: %d of yours are already running; wait for one to finish", errChildLimit, live)
-	case all+n > m.maxSubagents():
+	case all+n > lv.MaxSubagents:
 		return nil, 0, fmt.Errorf("session: %w: %d are running in this thread; wait for one to finish", errChildLimit, all)
 	}
 	return parent, depth, nil
@@ -264,7 +290,7 @@ func (m *Manager) placeNote(t *thread, a, parent *agentState, depth int, taskID 
 		who = parent.getName()
 	}
 	t.mu.Lock()
-	title, orchestrate := t.title, t.orchestrate
+	title, lv := t.title, m.levelLocked(t)
 	t.mu.Unlock()
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n\n[deck] You are %s, a subagent %s started for task %s", a.getName(), who, taskID)
@@ -273,13 +299,23 @@ func (m *Manager) placeNote(t *thread, a, parent *agentState, depth int, taskID 
 	}
 	b.WriteString(". You see only what is sent to you; op thread.read shows the whole thread.")
 	switch {
-	case !orchestrate:
-	case depth < m.maxDepth():
-		b.WriteString(" You may start subagents of your own (agent.spawn); your task then waits for their results.")
+	case depth < lv.MaxDepth:
+		fmt.Fprintf(&b, " You may start subagents of your own (agent.spawn, %d at a time) when the task splits well; your task then waits for their results.", lv.MaxChildren)
 	default:
 		b.WriteString(" You cannot start subagents: do the work yourself.")
 	}
 	return b.String()
+}
+
+// profileNamed is the profile called name for t's folder, if any.
+func (m *Manager) profileNamed(t *thread, name string) (profile.Profile, bool) {
+	m.mu.Lock()
+	read := m.profiles
+	m.mu.Unlock()
+	if read == nil {
+		return profile.Profile{}, false
+	}
+	return profile.Find(read(t.dir), name)
 }
 
 func or(s, alt string) string {
@@ -423,7 +459,7 @@ func (m *Manager) memberWorktree(t *thread, a *agentState) (*store.Worktree, str
 	if rel, err := filepath.Rel(r.Root, dir); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
 		target = filepath.Join(path, rel)
 	}
-	return &store.Worktree{Path: path, Branch: branch, Main: dir, Base: base}, target, nil
+	return &store.Worktree{Path: path, Branch: branch, Main: dir, Base: base, Line: m.newLine(r, base, a.id)}, target, nil
 }
 
 // retireMember stops a finished subagent: its process is interrupted and
@@ -564,7 +600,7 @@ func (m *Manager) ApplyMember(threadID, memberID string) ([]string, error) {
 		return nil, fmt.Errorf("the changes do not apply cleanly to your tree (it changed the same lines): %w", err)
 	}
 	a.mu.Lock()
-	a.worktree = &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: now, SubBase: wt.SubBase, SubParent: wt.SubParent}
+	a.worktree = &store.Worktree{Path: wt.Path, Branch: wt.Branch, Main: wt.Main, Base: now, SubBase: wt.SubBase, SubParent: wt.SubParent, Line: wt.Line}
 	a.mu.Unlock()
 	m.persistMeta(t)
 	m.emit(NoticeMsg{ThreadID: threadID, Text: fmt.Sprintf("applied %d files from %s to %s", len(files), a.getName(), wt.Main)})
@@ -594,18 +630,6 @@ func (m *Manager) DiscardMember(threadID, memberID string) error {
 	a.mu.Unlock()
 	m.persistMeta(t)
 	return nil
-}
-
-// SetOrchestrate turns orchestration on or off for a thread: members may spawn
-// subagents in it, and the scheduler runs its ready tasks.
-func (m *Manager) SetOrchestrate(threadID string, on bool) error {
-	err := m.change(threadID, func(t *thread) { t.orchestrate = on })
-	if err == nil && on {
-		if t := m.thread(threadID); t != nil {
-			m.kick(t)
-		}
-	}
-	return err
 }
 
 // ---- member accessors ----

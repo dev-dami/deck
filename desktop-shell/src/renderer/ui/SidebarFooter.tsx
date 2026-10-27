@@ -3,6 +3,7 @@ import { BarChart3, Settings, Unplug, Users } from "./icons";
 import { cn } from "../lib/cn";
 import type { SettingsSection } from "../ui";
 import { Button } from "./kit/button";
+import { NotificationBell } from "./NotificationBell";
 
 const LINK_LABEL: Record<Link, string> = { online: "Connected", connecting: "Connecting…", offline: "Offline" };
 
@@ -19,10 +20,11 @@ const linkDot: Record<Link, string> = {
 const quiet =
   "flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1 text-2xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-// The sidebar's footer: Settings, Usage, Team and Close project (Search at
-// the top opens the commands), then an update that waits, the connection
-// and the teammates online. The connection is a live dot and a word; the
-// word gives way when the footer is narrower than 15rem.
+// The sidebar's footer: Settings, Usage, Team, the notifications' bell and
+// Close project (Search at the top opens the commands), then an update
+// that waits, the connection and the teammates online. The connection is a
+// live dot and a word; the word gives way when the footer is narrower than
+// 15rem.
 export function SidebarFooter({
   link,
   settings,
@@ -44,7 +46,8 @@ export function SidebarFooter({
   update: { version: string; onRestart: () => void } | null;
   onSettings: (s: SettingsSection | null) => void;
   onUsage: () => void;
-  onTeam: () => void;
+  // null with the team off (teamGate.ts): no Team button and no presence.
+  onTeam: (() => void) | null;
   onDisconnect: () => void;
 }) {
   return (
@@ -62,9 +65,12 @@ export function SidebarFooter({
       <Button variant="ghost-muted" size="icon-sm" aria-label="Usage" title="Usage" aria-pressed={usage} onClick={onUsage}>
         <BarChart3 weight={usage ? "fill" : "regular"} />
       </Button>
-      <Button variant="ghost-muted" size="icon-sm" aria-label="Team" title="Team" aria-pressed={team} onClick={onTeam}>
-        <Users weight={team ? "fill" : "regular"} />
-      </Button>
+      {onTeam !== null && (
+        <Button variant="ghost-muted" size="icon-sm" aria-label="Team" title="Team" aria-pressed={team} onClick={onTeam}>
+          <Users weight={team ? "fill" : "regular"} />
+        </Button>
+      )}
+      <NotificationBell onSettings={() => onSettings("general")} />
       <Button variant="ghost-muted" size="icon-sm" aria-label="Close project" title="Close project" onClick={onDisconnect}>
         <Unplug />
       </Button>
@@ -79,7 +85,7 @@ export function SidebarFooter({
         </button>
       )}
       <span className={cn("flex shrink-0 items-center gap-1", update === null ? "ml-auto" : "ml-1")}>
-        {online !== null && (
+        {online !== null && onTeam !== null && (
           <button
             type="button"
             className={cn("presence", quiet)}
@@ -93,7 +99,7 @@ export function SidebarFooter({
         )}
         <button type="button" className={cn("link", quiet)} title={`${LINK_LABEL[link]}. Open the connection settings.`} onClick={() => onSettings("connection")}>
           <span aria-hidden className={cn("dot size-1.5 shrink-0 rounded-full", linkDot[link])} />
-          <span className={cn("sr-only @min-[15rem]:not-sr-only", update !== null && "@min-[15rem]:sr-only")}>{LINK_LABEL[link]}</span>
+          <span className={cn("sr-only @min-[18rem]:not-sr-only", update !== null && "@min-[18rem]:sr-only")}>{LINK_LABEL[link]}</span>
         </button>
       </span>
     </footer>

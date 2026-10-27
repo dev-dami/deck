@@ -4,6 +4,7 @@
 // picture behind them, kept in step by hand (design-glass.md, "Art
 // directions").
 
+import type { PictureProcess } from "../themes";
 import { hex, mix, type RGB } from "./core";
 
 export type Process = "scene" | "halftone" | "stitch";
@@ -162,8 +163,15 @@ const DEEP_FIELD: SceneArt = {
 
 export const PROCESS: Record<string, Process> = { riso: "halftone", stitch: "stitch" };
 
+// A theme's own process: the one its preset prints through.
 export function processOf(theme: string): Process {
   return PROCESS[theme] ?? "scene";
+}
+
+// The process the person picked (themes.ts), as the backdrop names it.
+// "none" prints nothing behind the window; a print on a page dithers.
+export function artProcess(p: PictureProcess): Process {
+  return p === "halftone" || p === "stitch" ? p : "scene";
 }
 
 // The colours a colourway is drawn from: the theme's tokens as RGB.
@@ -189,23 +197,45 @@ export function colourway(mode: Mode, t: Tokens): SceneArt {
   return { ...DAWN, ground: hi, inks: [lo, hi] };
 }
 
+// Another theme's colours through the riso: its accent is the spot ink,
+// on its backdrop as the stock; on paper its text is the black.
+export function risoIn(mode: Mode, t: Tokens): HalftoneArt {
+  return mode === "dark"
+    ? { ...RISO_DARK, ground: t.backdrop, spot: t.primary, key: t.backdrop }
+    : { ...RISO_LIGHT, ground: t.backdrop, spot: t.primary, key: t.text };
+}
+
+// Another theme's colours in floss: its backdrop is the cloth, and the
+// picture's three threads step from it toward its text, lighter on a dark
+// cloth and darker on a light one. The cards and dice keep their own.
+export function stitchIn(mode: Mode, t: Tokens): StitchArt {
+  const cloth = t.backdrop;
+  if (mode === "dark") {
+    return { ...DENIM, cloth, hole: mix(cloth, [0, 0, 0], 0.5), threads: [0.3, 0.55, 0.8].map((k) => mix(cloth, t.text, k)) };
+  }
+  return { ...LINEN, cloth, hole: mix(cloth, t.text, 0.35), threads: [0.85, 0.6, 0.35].map((k) => mix(cloth, t.text, k)) };
+}
+
 // Where the art is printed: behind the window (the backdrop) or as a print
 // on a page (the Welcome's and the connect screen's picture, ArtFigure).
 export type Use = "window" | "print";
 
-// The art of a theme in a mode. A colourway needs the theme's tokens.
+// The art of a theme in a mode, through a process: the theme's own unless
+// the person mixed another. A colourway, and a theme through a process not
+// its own, needs the theme's tokens; without them the process prints in
+// its own inks.
 //
 // As a print, Liquid Glass and its colourways hang the true duotone, dusk
 // navy and peach, in either mode and with no sky held back (nothing sits
 // on it); the riso prints to the edge of its box; the stitch works in a
 // finer count, so a hand of cards fits a smaller cloth.
-export function artFor(theme: string, mode: Mode, tokens?: Tokens, use: Use = "window"): Art {
-  if (theme === "riso") {
-    const art = mode === "dark" ? RISO_DARK : RISO_LIGHT;
+export function artFor(theme: string, mode: Mode, tokens?: Tokens, use: Use = "window", process: Process = processOf(theme)): Art {
+  if (process === "halftone") {
+    const art = theme === "riso" || tokens === undefined ? (mode === "dark" ? RISO_DARK : RISO_LIGHT) : risoIn(mode, tokens);
     return use === "print" ? { ...art, margin: 0 } : art;
   }
-  if (theme === "stitch") {
-    const art = mode === "dark" ? DENIM : LINEN;
+  if (process === "stitch") {
+    const art = theme === "stitch" || tokens === undefined ? (mode === "dark" ? DENIM : LINEN) : stitchIn(mode, tokens);
     return use === "print" ? { ...art, cell: 7, clear: 0 } : art;
   }
   if (theme === "tokyo-night") return use === "print" ? { ...DEEP_FIELD, sky: 0, margin: 0, side: 0 } : DEEP_FIELD;

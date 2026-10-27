@@ -9,6 +9,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
+	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -38,7 +39,7 @@ type lease struct {
 	paths     []string // repository-relative paths or globs
 	exclusive bool
 	reason    string
-	until     time.Time
+	at, until time.Time // taken, and runs out
 }
 
 // edit is the last change one member made to a file of the shared tree.
@@ -83,6 +84,7 @@ func (l lease) changed(t *thread, released bool) LeasesChangedMsg {
 func (m *Manager) sweepLeases(t *thread) {
 	now := time.Now()
 	var gone []LeasesChangedMsg
+	var holders []*agentState
 	t.mu.Lock()
 	kept := t.leases[:0]
 	for _, l := range t.leases {
@@ -90,12 +92,18 @@ func (m *Manager) sweepLeases(t *thread) {
 			kept = append(kept, l)
 		} else {
 			gone = append(gone, l.changed(t, true))
+			if a := t.member(l.member); a != nil {
+				holders = append(holders, a)
+			}
 		}
 	}
 	t.leases = kept
 	t.mu.Unlock()
 	for _, msg := range gone {
 		m.emit(msg)
+	}
+	for _, a := range holders {
+		m.ownerDone(t, a, "") // an idle holder no longer stands in the way
 	}
 }
 
@@ -162,7 +170,7 @@ func (m *Manager) acquireLease(a *agentState, raw string, minutes int, exclusive
 		ttl = min(time.Duration(minutes)*time.Minute, maxLeaseTTL)
 	}
 	now := time.Now()
-	l := lease{member: a.id, paths: paths, exclusive: exclusive, reason: clipText(oneLine(reason), 120), until: now.Add(ttl)}
+	l := lease{member: a.id, paths: paths, exclusive: exclusive, reason: clipText(oneLine(reason), 120), at: now, until: now.Add(ttl)}
 	t := a.thread
 	t.mu.Lock()
 	var also []string
@@ -284,19 +292,20 @@ func (t *thread) leaseBlock(a *agentState, paths []string) error {
 // that overlaps another member's recent change or lease in the shared tree,
 // says so in the thread. Changes in a member's own worktree are not compared:
 // capsules settle those.
-func (m *Manager) noteEdit(t *thread, a *agentState, p string) {
+func (m *Manager) noteEdit(t *thread, a *agentState, d *agent.FileDiff) {
 	if a.getWorktree() != nil {
 		return
 	}
 	root := m.subRoot(a)
 	t.mu.Lock()
-	rel, ok := relTo(root, t.dir, p)
+	rel, ok := relTo(root, t.dir, d.Path)
 	if !ok {
 		t.mu.Unlock()
 		return
 	}
 	now := time.Now()
 	key := pathKey(rel)
+	t.coord.add(key, fileEvent{member: a.id, at: now, diff: d})
 	var note string
 	for _, l := range t.liveLeases(now) {
 		if l.member == a.id {

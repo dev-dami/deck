@@ -35,8 +35,8 @@ func (f *fakeCrew) SteerTask(_, id, text string) error {
 	f.did = append(f.did, "steer "+id+" "+text)
 	return nil
 }
-func (f *fakeCrew) SetOrchestrate(_ string, on bool) error {
-	f.board.Orchestrate = on
+func (f *fakeCrew) SetLevel(_, level string) error {
+	f.board.Level = level
 	return nil
 }
 func (f *fakeCrew) ApplyTask(_, id string) ([]string, error) {
@@ -173,8 +173,26 @@ func TestBoardAndTaskActions(t *testing.T) {
 	if got := f.did; len(got) != 3 || got[2] != "steer t1 use the cache" {
 		t.Fatalf("did %v", got)
 	}
-	if _, err := c.SetOrchestrate(ctx, &deckv1.SetOrchestrateRequest{SessionId: "s", On: true}); err != nil || !f.board.Orchestrate {
-		t.Fatalf("orchestrate %v", err)
+	// An old client's bool is auto or off; a level wins over it.
+	for _, tc := range []struct {
+		req  *deckv1.SetOrchestrateRequest
+		want string
+	}{
+		{&deckv1.SetOrchestrateRequest{SessionId: "s", On: true}, "auto"},
+		{&deckv1.SetOrchestrateRequest{SessionId: "s"}, "off"},
+		{&deckv1.SetOrchestrateRequest{SessionId: "s", On: true, Level: "assist"}, "assist"},
+		{&deckv1.SetOrchestrateRequest{SessionId: "s", Level: "full"}, "full"},
+	} {
+		if _, err := c.SetOrchestrate(ctx, tc.req); err != nil || f.board.Level != tc.want {
+			t.Fatalf("orchestrate %v: %v, level %q", tc.req, err, f.board.Level)
+		}
+	}
+	if _, err := c.SetOrchestrate(ctx, &deckv1.SetOrchestrateRequest{SessionId: "s", Level: "max"}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("unknown level: %v", err)
+	}
+	b, err = c.Board(ctx, &deckv1.SessionRef{SessionId: "s"})
+	if err != nil || b.GetLevel() != "full" || !b.GetOrchestrate() {
+		t.Fatalf("board level %q orchestrate %v: %v", b.GetLevel(), b.GetOrchestrate(), err)
 	}
 }
 

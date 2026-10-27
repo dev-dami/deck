@@ -19,6 +19,7 @@ import {
   type Mode,
   type ModelChoice,
   parseEvent,
+  type RaceEntrant,
   type ServerEvent,
   type Session,
 } from "./protocol";
@@ -515,6 +516,21 @@ export class Controller {
       ),
     );
     await this.loadRoster(sessionId);
+  }
+
+  // ---- races --------------------------------------------------------------
+
+  // Entrants do brief, each on a worktree of its own; judge has one more
+  // agent rank them. The race's task id, or null (toasted) when refused.
+  async startRace(
+    sessionId: string,
+    brief: string,
+    entrants: RaceEntrant[],
+    judge = false,
+  ): Promise<string | null> {
+    const params = { session_id: sessionId, brief, entrants };
+    const r = await this.guard(this.call("race.start", judge ? { ...params, judge } : params));
+    return r?.task_id ?? null;
   }
 
   // ---- changes and devices ------------------------------------------------

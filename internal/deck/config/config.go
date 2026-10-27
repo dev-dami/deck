@@ -24,7 +24,7 @@ import (
 const EnvReducedMotion = "DECK_REDUCED_MOTION"
 
 // Kinds are the CLIs Deck can drive, in the order they are offered.
-var Kinds = []string{"claude", "codex", "opencode", "antigravity"}
+var Kinds = []string{"claude", "codex", "opencode", "antigravity", "pi"}
 
 // Models names the model each CLI should run. An empty value means the CLI's default.
 type Models struct {
@@ -32,6 +32,7 @@ type Models struct {
 	Codex       string `json:"codex"`
 	Opencode    string `json:"opencode,omitempty"`
 	Antigravity string `json:"antigravity,omitempty"`
+	Pi          string `json:"pi,omitempty"`
 }
 
 // For is the value for a kind ("" for an unknown one).
@@ -45,6 +46,8 @@ func (m Models) For(kind string) string {
 		return m.Opencode
 	case "antigravity":
 		return m.Antigravity
+	case "pi":
+		return m.Pi
 	}
 	return ""
 }
@@ -60,6 +63,8 @@ func (m *Models) Set(kind, v string) {
 		m.Opencode = v
 	case "antigravity":
 		m.Antigravity = v
+	case "pi":
+		m.Pi = v
 	}
 }
 
@@ -74,6 +79,7 @@ type Config struct {
 	CodexBinary       string `json:"codex_binary"`       // path or command name; empty means "codex"
 	OpencodeBinary    string `json:"opencode_binary"`    // path or command name; empty means "opencode"
 	AntigravityBinary string `json:"antigravity_binary"` // path or command name; empty means "agy"
+	PiBinary          string `json:"pi_binary"`          // path or command name of Pi's ACP server; empty means "pi-acp"
 	DefaultMode       string `json:"default_mode"`       // "plan", "ask" or "yolo"; empty means "ask". "yolo" is ignored at startup (see StartMode)
 	// TrackChanges snapshots a thread's git work tree with every message you
 	// send, for the changes panel and its undo.
@@ -91,22 +97,25 @@ type Config struct {
 	// MaxParallel is how many tasks the scheduler runs at once in a thread with
 	// orchestration on; 0 means DefaultMaxParallel.
 	MaxParallel int `json:"max_parallel"`
-	// MaxDepth is how deep subagent trees go: 1 lets only the user's agents
-	// start subagents, 2 lets those start their own, and so on; 0 means
-	// DefaultMaxDepth.
-	MaxDepth int `json:"max_depth"`
-	// MaxChildren is how many live subagents one member may have; 0 means
-	// DefaultMaxChildren.
-	MaxChildren int `json:"max_children"`
-	// MaxSubagents is how many subagents may be live in one thread at once,
-	// whoever started them; 0 means DefaultMaxSubagents.
+	// Orchestration is the level new threads start at (orchestration.go):
+	// "off", "assist", "auto" or "full"; "" means DefaultLevel.
+	Orchestration string `json:"orchestration,omitempty"`
+	// OrchestrationLevels changes rows of the level table, field by field:
+	// {"full": {"max_depth": 4, "race": false}}.
+	OrchestrationLevels map[string]json.RawMessage `json:"orchestration_levels,omitempty"`
+	// MaxDepth, MaxChildren and MaxSubagents cap every level's limits of the
+	// same name when set: how deep subagent trees go (1 lets only the user's
+	// agents start subagents), how many live subagents one member may have,
+	// and how many may be live in one thread, whoever started them.
+	MaxDepth     int `json:"max_depth"`
+	MaxChildren  int `json:"max_children"`
 	MaxSubagents int `json:"max_subagents"`
 	// KeepOrphans leaves a member's subagents running when it stops; by
 	// default they are stopped with it and their tasks cancelled.
 	KeepOrphans bool `json:"keep_orphans"`
-	// MaxWork is how many subagents agents may start, and tasks the scheduler
-	// may hand out, after each message of the user before the thread pauses
-	// for them; 0 means DefaultMaxWork.
+	// MaxWork caps every level's max_work when set: how many subagents agents
+	// may start, and tasks the scheduler may hand out, after each message of
+	// the user before the thread pauses for them.
 	MaxWork int `json:"max_work"`
 	// Budget limits what a task run by subagents may spend (the task's own
 	// budget, when it has one, wins field by field); zero fields are no limit.
@@ -127,19 +136,32 @@ type Config struct {
 	// Context shapes how much of a thread Deck puts in front of an agent
 	// (docs/context-design.md). The zero value is Deck's defaults.
 	Context Context `json:"context,omitzero"`
+	// EditGate coordinates agents that edit the same files of a shared work
+	// tree (session/coord.go). On by default.
+	EditGate EditGate `json:"edit_gate,omitzero"`
 	// Peers links this Deck to other Deck instances (docs/peers-design.md).
 	// Nil, the default, means peers are off: no listener, no dialing. Keys
 	// never live here; they are in ~/.deck/peers/.
 	Peers *Peers `json:"peers,omitempty"`
 }
 
-// Defaults for the orchestration limits left at 0.
+// EditGate: before an agent edits a file another agent of the thread is
+// changing or holds, Deck shows it that agent's changes and asks that agent
+// first; the edit waits for the answer, at most TimeoutSec.
+type EditGate struct {
+	// Off turns the gate off: agents edit shared files without asking.
+	Off bool `json:"off,omitempty"`
+	// TimeoutSec is how long an edit waits for the owner's answer; 0 means
+	// DefaultEditGateSec.
+	TimeoutSec int `json:"timeout_sec,omitempty"`
+}
+
+// DefaultEditGateSec is how long an edit waits for its file's owner.
+const DefaultEditGateSec = 120
+
+// Defaults for the limits left at 0 (the levels' are in orchestration.go).
 const (
-	DefaultMaxParallel   = 3  // tasks the scheduler runs at once per thread
-	DefaultMaxDepth      = 3  // levels of subagents below the user's agents
-	DefaultMaxChildren   = 4  // live subagents per member
-	DefaultMaxSubagents  = 12 // live subagents per thread
-	DefaultMaxWork       = 24 // subagent starts and dispatches per user message
+	DefaultMaxParallel   = 3 // tasks the scheduler runs at once per thread
 	DefaultRouteAbovePct = 90
 )
 
@@ -578,6 +600,7 @@ func Defaults() Config {
 		CodexBinary:       "codex",
 		OpencodeBinary:    "opencode",
 		AntigravityBinary: "agy",
+		PiBinary:          "pi-acp",
 		DefaultMode:       "ask",
 		TrackChanges:      true,
 		DeckAttribution:   true,
@@ -758,9 +781,9 @@ func writeFileAtomic(path string, data []byte) error {
 // Validate reports the first invalid value.
 func (c Config) Validate() error {
 	switch c.DefaultAgent {
-	case "claude", "codex", "opencode", "antigravity":
+	case "claude", "codex", "opencode", "antigravity", "pi":
 	default:
-		return fmt.Errorf("default_agent must be \"claude\", \"codex\", \"opencode\" or \"antigravity\", got %q", c.DefaultAgent)
+		return fmt.Errorf("default_agent must be \"claude\", \"codex\", \"opencode\", \"antigravity\" or \"pi\", got %q", c.DefaultAgent)
 	}
 	switch c.Motion {
 	case "on", "off":
@@ -790,6 +813,9 @@ func (c Config) Validate() error {
 	if err := c.Context.validate(); err != nil {
 		return err
 	}
+	if err := c.validateLevels(); err != nil {
+		return err
+	}
 	if c.Peers != nil {
 		if err := c.Peers.validate(); err != nil {
 			return err
@@ -814,7 +840,8 @@ func (c Config) StartMode() (mode string, ignored bool) {
 }
 
 // Binary is the configured command for a kind's CLI (its own name when unset;
-// "agy" for antigravity, whose kind and binary names differ).
+// "agy" for antigravity and "pi-acp" for pi, whose kind and binary names
+// differ).
 func (c Config) Binary(kind string) string {
 	b := ""
 	def := kind
@@ -828,6 +855,9 @@ func (c Config) Binary(kind string) string {
 	case "antigravity":
 		b = c.AntigravityBinary
 		def = "agy"
+	case "pi":
+		b = c.PiBinary
+		def = "pi-acp"
 	}
 	if b == "" {
 		return def

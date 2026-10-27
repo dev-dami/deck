@@ -184,7 +184,7 @@ func TestMemoryHintsInLeasesAndBriefs(t *testing.T) {
 	// A task's brief that names the file carries the hint to its owner.
 	tid := r.m.get(claude).thread.id
 	codex := r.add(t, tid, "codex")
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	execOK(t, r, claude, "task.create", `{"title":"fix x","brief":"Make src/x.go build.","owner":"codex"}`)

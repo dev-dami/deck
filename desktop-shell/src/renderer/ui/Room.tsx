@@ -1,20 +1,25 @@
 import { applyAgentChip } from "@web/composer";
 import type { Session } from "@web/protocol";
 import { sessionMode } from "@web/state";
-import { Ellipsis, FileDiff, Folder, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "./icons";
+import { Ellipsis, FileDiff, Folder, Hourglass, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "./icons";
 import { type ComponentProps, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
 import type { EngineStop } from "../../shared/bridge";
 import { type DeckClient, serves } from "../client";
 import { FILES_LIMIT } from "../completion";
 import type { Team } from "../crew";
 import { buildLanes, filterLane } from "../lanes";
+import { whenOf } from "../limits";
+import { pokeLimits, useLimits, useNow } from "../limitsState";
 import { focusMessage, useFocusedMessage } from "../palette";
 import { usePrefs } from "../prefs";
 import { useMentionables } from "../profiles";
 import { sendHint } from "../queue";
+import { gateMentionables } from "../teamGate";
 import { EMPTY_ROOM, useRoomMetas } from "../roomMeta";
 import { type ShellSlice, shallowEqual, threadSlice, useAppSlice } from "../select";
 import type { Panel } from "../ui";
+import { usePickerSource } from "./AgentPicker";
+import { RaceBuilder } from "./RaceBuilder";
 import { AgentsStrip } from "./AgentsStrip";
 import { ApprovalCard } from "./ApprovalCard";
 import { Composer } from "./Composer";
@@ -26,6 +31,8 @@ import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
 import { MenuItem, MenuSeparator, Popover } from "./kit/menu";
 import { Lanes } from "./Lanes";
+import { QuotaMark, RoomQuota, sendAtReset, WaitBanner } from "./Limits";
+import { RoomLevel } from "./LevelPicker";
 import { ModePicker } from "./ModePicker";
 import { NewThread } from "./NewThread";
 import { RoomHeader } from "./RoomHeader";
@@ -72,12 +79,16 @@ function MoreMenu({
   onStop,
   onPanel,
   onSettings,
+  sendAt,
 }: {
   busy: boolean;
   queued: number;
   onStop: () => void;
   onPanel: (p: Panel) => void;
   onSettings: () => void;
+  // "Send at next reset": when it would send the draft, and the send; null
+  // while there is no draft or no reset is known.
+  sendAt: { label: string; go: () => void } | null;
 }) {
   const [open, setOpen] = useState(false);
   const run = (f: () => void) => () => {
@@ -102,6 +113,15 @@ function MoreMenu({
         <>
           <MenuItem className="text-destructive-foreground" onClick={run(onStop)}>
             <Square /> Stop all agents
+          </MenuItem>
+          <MenuSeparator />
+        </>
+      )}
+      {sendAt !== null && (
+        <>
+          <MenuItem onClick={run(sendAt.go)} data-send-at-reset="">
+            <Hourglass /> <span className="flex-1">Send at next reset</span>
+            <span className="text-2xs text-faint tabular-nums">{sendAt.label}</span>
           </MenuItem>
           <MenuSeparator />
         </>
@@ -184,6 +204,7 @@ export function Room({
   onPreview,
   toast,
   info,
+  onOpenThread,
 }: {
   c: DeckClient;
   state: ShellSlice;
@@ -213,6 +234,8 @@ export function Room({
   onPreview: (url: string) => void;
   toast: (text: string) => void;
   info: (text: string) => void;
+  // Opens another thread of the project (the graph's History).
+  onOpenThread?: (id: string) => void;
 }) {
   const { draft, setDraft, files, paths, crew, lane, room, send } = r;
   const prefs = usePrefs();
@@ -241,11 +264,56 @@ export function Room({
     setDraft(applyAgentChip(draft, agent));
     focusInput();
   };
-  const listModels = (kind: string) => c.listModels(sid ?? "", kind);
+  // Every agent's models, listed once per Deck and kept (agentCatalog.ts):
+  // the pickers open on them at once.
+  const picker = usePickerSource(c, state.server, sid);
   const setModel = (kind: string, model: string, effort?: string) => sid !== null && void c.setModel(sid, kind, model, effort);
-  // "@" offers the Deck's profiles and the team's people too.
-  const named = useMentionables(c, team);
+  // "@" offers the Deck's profiles and the team's people too, while the
+  // team is on (teamGate.ts).
+  const named = gateMentionables(prefs.team, useMentionables(c, team));
+  // Plan limits: the agents' quotas, a wait for a reset, and when the draft
+  // would go at the next one.
+  const limits = useLimits(api).data;
+  const now = useNow();
+  const resetAt = sid === null || draft.trim() === "" ? null : sendAtReset(limits, draft, roster, sid, now);
+  const sendAt =
+    resetAt === null || sid === null || api === undefined
+      ? null
+      : {
+          label: whenOf(resetAt.at, now, prefs.clock === "12h"),
+          go: () => {
+            const text = draft;
+            setDraft("");
+            void api.scheduleSend(sid, text, resetAt.at).then((err) => {
+              if (err !== null) {
+                setDraft(text);
+                toast(err);
+                return;
+              }
+              info(`Scheduled for ${whenOf(resetAt.at, Date.now(), prefs.clock === "12h")}, when ${resetAt.kind}'s limit resets.`);
+              pokeLimits(api);
+            });
+          },
+        };
   const common = { draft, setDraft, kinds, images: imagesOn, onSlash: send.runSlash, onError: toast, inputRef, sendKey: prefs.sendKey, theme: state.theme, ...named };
+  // /race: the builder over the composer, until it starts the race or closes.
+  const raceBuilder = r.race !== null && (
+    <RaceBuilder
+      key={r.race.n}
+      brief={r.race.brief}
+      kinds={kinds}
+      named={named.profiles}
+      picker={picker}
+      theme={state.theme}
+      // A local Deck judges through StartRace; a paired one through race.start.
+      canJudge={c.capabilities === undefined || serves(c, "StartRace")}
+      onStart={send.startRace}
+      onClose={() => {
+        r.closeRace();
+        focusInput();
+      }}
+    />
+  );
 
   return (
     <>
@@ -286,10 +354,11 @@ export function Room({
           theme={state.theme}
           filter={lane}
           onFilter={r.setLane}
-          listModels={listModels}
+          picker={picker}
           setModel={setModel}
           onStop={room.interrupt}
           onSteer={address}
+          mark={(l) => <QuotaMark api={api} kind={l.agentKind} agent={l.name} sessionId={open.id} />}
         />
       )}
       {engine !== null ? (
@@ -311,9 +380,8 @@ export function Room({
             roster={[]}
             online={online && state.sessionsLoaded}
             onSend={send.start}
-            placeholder={
-              named.mentions ? "Ask anything. @ picks an agent, @codex+ starts another, # a file." : "Ask anything. $ picks an agent, $codex+ starts another."
-            }
+            above={raceBuilder}
+            placeholder={named.mentions ? "Ask anything. @ picks an agent, # a file, /race races several." : "Ask anything. $ picks an agent, /race races several."}
           />
         </NewThread>
       ) : (
@@ -322,8 +390,16 @@ export function Room({
         <div className="room-body relative flex min-h-0 flex-1 flex-col">
           {view === "graph" ? (
             <WorkGraph
+              c={c}
               api={api}
               sid={open.id}
+              onOpenMessage={(thread, mid) => {
+                // A History node: the conversation, at that message.
+                r.setLane(null);
+                focusMessage(thread, mid);
+                if (thread !== open.id) onOpenThread?.(thread);
+                setView("conversation");
+              }}
               roster={roster}
               files={files}
               theme={state.theme}
@@ -365,8 +441,9 @@ export function Room({
               busy={open.busy}
               onStop={room.stop}
               notice={room.notice}
+              above={raceBuilder}
               banner={
-                pending[0] !== undefined && (
+                pending[0] !== undefined ? (
                   <div className="flex flex-col gap-1" aria-label="Approvals for this thread">
                     <ApprovalCard
                       a={pending[0]}
@@ -377,6 +454,8 @@ export function Room({
                       onAnswer={(d) => void c.answerApproval(pending[0]!.session_id, pending[0]!.id, d)}
                     />
                   </div>
+                ) : (
+                  limits?.waits.some((w) => w.sessionId === open.id) === true && <WaitBanner api={api} sessionId={open.id} onError={toast} />
                 )
               }
               toolbar={
@@ -391,7 +470,7 @@ export function Room({
                       </span>
                     )}
                   </span>
-                  <MoreMenu busy={open.busy} queued={queued} onStop={room.stop} onPanel={(p) => onPanel(p)} onSettings={onSettings} />
+                  <MoreMenu busy={open.busy} queued={queued} onStop={room.stop} onPanel={(p) => onPanel(p)} onSettings={onSettings} sendAt={sendAt} />
                 </>
               }
               strip={
@@ -402,11 +481,11 @@ export function Room({
                     confirmYolo={prefs.confirmYolo}
                     onSet={(m) => void c.setMode(open.id, m)}
                   />
+                  {api !== undefined && <RoomLevel api={api} sessionId={open.id} onError={toast} />}
                   <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-hairline-strong" />
                   <AgentsStrip
                     sessionId={open.id}
                     roster={roster}
-                    kinds={kinds}
                     approvals={state.approvals}
                     theme={state.theme}
                     api={api}
@@ -415,9 +494,8 @@ export function Room({
                     setDraft={setDraft}
                     hint={open.busy ? sendHint(prefs.sendKey, mac) : null}
                     onFocus={focusInput}
-                    listModels={listModels}
-                    setModel={setModel}
                   />
+                  <RoomQuota api={api} roster={roster} />
                 </>
               }
             />

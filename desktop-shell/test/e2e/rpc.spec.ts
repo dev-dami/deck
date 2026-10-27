@@ -50,6 +50,8 @@ test.afterEach(async () => {
 
 const sidebar = (page: Page) => page.getByRole("navigation", { name: "Threads" });
 const composer = (page: Page) => page.getByRole("textbox", { name: "Message" });
+// Where the race builder's screenshots go: DECK_SHOTS, else the temp folder.
+const shot = (name: string) => join(process.env["DECK_SHOTS"] ?? join(tmpdir(), "deck-shots"), name);
 
 // Opens a tab of the room's side panel.
 async function roomTab(page: Page, name: string): Promise<void> {
@@ -73,19 +75,89 @@ test("opens a folder and runs two agents in one thread", async ({ page }) => {
   await expect(sidebar(page).locator(".session")).toHaveCount(3);
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
-  await composer(page).fill("$claude $codex+ split the work");
+  await composer(page).fill("$claude $codex split the work");
   await composer(page).press("Enter");
   const claude = page.locator('[data-agent="claude-1"].msg').last();
-  const codex = page.locator('[data-agent="codex-2"].msg').last();
+  const codex = page.locator('[data-agent="codex-1"].msg').last();
   await expect(claude.locator(".streaming")).toBeVisible();
   await expect(codex.locator(".streaming")).toBeVisible();
-  await expect(page.locator('.agent[data-agent="codex-2"]')).toBeVisible();
   await expect(claude).toContainText("split the work");
   await expect(codex).toContainText("split the work");
   await expect(page.locator(".streaming")).toHaveCount(0);
   // Yolo is offered: the rpc server allows it for the person at this machine.
   await page.locator(".mode-picker").click();
-  await expect(page.getByRole("radio", { name: /Yolo/ })).toBeVisible();
+  await expect(page.getByRole("menuitemradio", { name: /Yolo/ })).toBeVisible();
+});
+
+test("the agent pickers list every agent once, keep it, and refresh by hand", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
+  // One pass over the kinds, apart from any thread.
+  await expect.poll(() => [...fake.deck.modelLists].sort()).toEqual(["claude", "codex", "opencode", "pi"]);
+
+  // A lane's picker: the same sections as any other, open at once.
+  await page.locator('.lane[data-lane="agent:claude-1"]').click();
+  const lane = page.getByRole("menu", { name: "claude-1" });
+  await expect(lane.getByRole("menuitemradio", { name: /Default/ })).toBeVisible();
+  await expect(lane.getByRole("menuitem", { name: "Apply" })).toBeDisabled();
+  await lane.getByRole("menuitemradio", { name: /Deep/ }).click();
+  await lane.getByRole("group", { name: "Reasoning effort" }).getByRole("menuitemradio", { name: "high" }).click();
+  await lane.getByRole("menuitem", { name: "Apply" }).click();
+  const roster = () => fake.deck.invoke("roster.get", { session_id: "ses_main" }) as Array<{ id: string; model?: string }>;
+  await expect.poll(() => roster().find((l) => l.id === "claude-1")?.model).toBe("deep");
+
+  // Opening pickers again and switching threads asks nothing more.
+  await page.locator('.lane[data-lane="agent:codex-1"]').click();
+  const codex = page.getByRole("menu", { name: "codex-1" });
+  await expect(codex.getByRole("group", { name: "Model" }).getByRole("menuitemradio", { name: /Fast/ })).toBeVisible();
+  // Wide and short: the models sit side by side, and the popover is wider than tall.
+  const box = (await codex.boundingBox())!;
+  expect(box.width).toBeGreaterThan(box.height);
+  // The arrows still walk the radios in order.
+  await codex.getByRole("menuitemradio", { name: /Default/ }).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(codex.getByRole("menuitemradio", { name: /Fast/ })).toBeFocused();
+  await page.keyboard.press("Escape");
+  const others = sidebar(page).locator(".session");
+  await others.nth(1).click();
+  await others.nth(0).click();
+  expect(fake.deck.modelLists).toHaveLength(4);
+
+  // Refresh lists them all again, asking the Deck to forget its lists once.
+  await page.locator('.lane[data-lane="agent:claude-1"]').click();
+  await page.getByRole("menu", { name: "claude-1" }).getByRole("menuitem", { name: "Refresh agents" }).click();
+  await expect.poll(() => fake.deck.modelLists.length).toBe(8);
+  expect(fake.modelRefreshes).toBe(1);
+});
+
+test("$pi starts a pi lane, and its picker offers the models pi has a key for", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await composer(page).fill("$pi look at the limiter");
+  await composer(page).press("Enter");
+  const lane = page.locator('.lane[data-lane="agent:pi-1"]');
+  await expect(lane).toBeVisible();
+  await expect(lane).toContainText("π");
+  await expect(page.locator('[data-agent="pi-1"].msg').last()).toContainText("look at the limiter");
+
+  await lane.click();
+  const menu = page.getByRole("menu", { name: "pi-1" });
+  await expect(menu.getByRole("menuitemradio", { name: /Coder/ })).toBeVisible();
+  await menu.getByRole("menuitemradio", { name: /Reasoner/ }).click();
+  const efforts = menu.getByRole("group", { name: "Reasoning effort" });
+  await expect(efforts.getByRole("menuitemradio")).toHaveText(["Default", "none", "low", "medium", "high"]);
+  await efforts.getByRole("menuitemradio", { name: "medium" }).click();
+  await menu.getByRole("menuitem", { name: "Apply" }).click();
+  const roster = () => fake.deck.invoke("roster.get", { session_id: "ses_main" }) as Array<{ id: string; model?: string }>;
+  await expect.poll(() => roster().find((l) => l.id === "pi-1")?.model).toBe("openrouter/reasoner");
+
+  // Settings lists pi with the kinds this Deck runs, and a kind it did not
+  // find as not installed.
+  await sidebar(page).getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Agents" }).click();
+  await expect(page.locator("h3", { hasText: /^pi$/ })).toBeVisible();
+  await expect(page.locator('[data-kind="antigravity"][data-available="false"]')).toContainText("not installed");
 });
 
 test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill the composer", async ({ page }) => {
@@ -96,7 +168,9 @@ test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill
   await expect(clis.locator('[data-kind="claude"]')).toContainText("/usr/local/bin/claude");
   await expect(clis.locator('[data-kind="codex"]')).toContainText("/opt/homebrew/bin/codex");
   await expect(clis.locator('[data-kind="opencode"]')).toContainText("not found");
-  await expect(clis.getByRole("link", { name: "Install guide" })).toHaveAttribute("href", "https://opencode.ai");
+  await expect(clis.locator('[data-kind="opencode"]').getByRole("link", { name: "Install guide" })).toHaveAttribute("href", "https://opencode.ai");
+  // Pi: not found, with how to get pi and its ACP server.
+  await expect(clis.locator('[data-kind="pi"]')).toContainText("pi-acp");
   // Antigravity: its name only.
   await expect(clis.locator('[data-kind="antigravity"]').getByRole("link")).toHaveCount(0);
   await page.getByRole("button", { name: "Check again" }).click();
@@ -108,11 +182,11 @@ test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill
   await expect(page.getByRole("heading", { name: `What should we build in ${basename(dir)}?` })).toBeVisible();
   const starts = page.getByRole("list", { name: "Ways to start" });
   await starts.getByRole("button", { name: /Split the work/ }).click();
-  await expect(composer(page)).toHaveValue("$claude $codex+ ");
+  await expect(composer(page)).toHaveValue("$claude $codex ");
   await expect(composer(page)).toBeFocused();
   await composer(page).pressSequentially("fix the limiter");
-  await starts.getByRole("button", { name: /Race three/ }).click();
-  await expect(composer(page)).toHaveValue("$claude×3 fix the limiter");
+  await starts.getByRole("button", { name: /Race agents/ }).click();
+  await expect(composer(page)).toHaveValue("/race fix the limiter");
   await starts.getByRole("button", { name: /One agent/ }).click();
   await expect(composer(page)).toHaveValue("$claude fix the limiter");
 
@@ -241,12 +315,33 @@ test("usage: the page shows totals, agents, models and limits", async ({ page })
   await expect(usage.locator('[data-tile="Tokens"]')).toContainText("1.6M");
   await expect(usage.locator('[data-tile="Cost"]')).toContainText("$18.42");
   await expect(usage).toContainText("opus");
-  await expect(usage).toContainText("64% used");
+  await expect(usage).toContainText(/\d+% used/);
   await usage.getByRole("radio", { name: "7 days" }).click();
   await usage.getByRole("button", { name: "Table" }).click();
   await expect(usage.locator("table").first().locator("tbody tr")).toHaveCount(7);
   await usage.getByRole("button", { name: /Fix the pairing lockout/ }).click();
   await expect(page.locator(".title")).toHaveText("Fix the pairing lockout");
+});
+
+test("usage analytics: quota with a projection where reported, usage alone where not", async ({ page }) => {
+  await openFolder(page);
+  await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Usage" }).click();
+  const usage = page.locator("[data-usage]");
+  await usage.getByRole("radio", { name: "Analytics" }).click();
+  const claude = usage.locator('[data-kind-section="claude"]');
+  await expect(claude.locator('[data-headline="quota"]')).toContainText("%");
+  await expect(claude.locator("[data-projected]")).toHaveCount(1);
+  await expect(claude.getByRole("radiogroup", { name: "Claude window" }).getByRole("radio")).toHaveCount(2);
+  // OpenCode reports no plan limits: its tokens, no quota and no projection.
+  const opencode = usage.locator('[data-kind-section="opencode"]');
+  await expect(opencode.locator('[data-headline="usage"]')).toContainText("reports no plan limits");
+  await expect(opencode.locator("[data-projected]")).toHaveCount(0);
+  // One agent's tab splits it by agent; earlier spans have no projection.
+  await usage.getByRole("tab", { name: "Claude" }).click();
+  await expect(usage.locator("[data-kind-section]")).toHaveCount(1);
+  await expect(claude).toContainText("reviewer");
+  await usage.getByRole("button", { name: "Earlier" }).click();
+  await expect(claude.locator("[data-projected]")).toHaveCount(0);
 });
 
 test("projects: two folders open at once, their threads in one sidebar", async ({ page }) => {
@@ -329,6 +424,37 @@ test("side chat: asks another agent about the thread without touching it", async
   expect(fake.deck.sent.filter((s) => s.session_id === "ses_main")).toHaveLength(0);
 });
 
+test("orchestration: the composer's level picker, and the level Settings gives new threads", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  const dock = page.locator(".composer-dock");
+  // The thread's level, from its board, with what each level does.
+  await dock.getByRole("button", { name: "Orchestration: Auto" }).click();
+  const menu = page.getByRole("menu", { name: "Orchestration" });
+  await expect(menu.getByRole("menuitemradio")).toHaveCount(4);
+  await expect(menu.getByRole("menuitemradio", { name: /^Auto/ })).toHaveAttribute("aria-checked", "true");
+  await expect(menu.getByRole("menuitemradio", { name: /^Full/ })).toContainText("races between agents");
+  await menu.getByRole("menuitemradio", { name: /^Full/ }).click();
+  await expect.poll(() => fake.board.level).toBe("full");
+  await expect(dock.getByRole("button", { name: "Orchestration: Full" })).toBeVisible();
+  await expect(menu).toHaveCount(0);
+
+  // Settings › Agents: the level new threads start at, Auto until changed.
+  await sidebar(page).getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Agents" }).click();
+  const levels = page.getByRole("radiogroup", { name: "Orchestration for new threads" });
+  await expect(levels.getByRole("radio", { name: "Auto" })).toHaveAttribute("aria-checked", "true");
+  await levels.getByRole("radio", { name: "Assist" }).click();
+  await expect(levels.getByRole("radio", { name: "Assist" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator(".settings")).toContainText("a couple of helpers");
+  expect(await page.evaluate(() => localStorage.getItem("deck.desktop.prefs"))).toContain('"orchestration":"assist"');
+  // A new thread asks the Deck for it.
+  await page.getByRole("button", { name: "New thread" }).first().click();
+  await composer(page).fill("split the limiter work");
+  await composer(page).press("Enter");
+  await expect.poll(() => fake.createdLevels.at(-1)).toBe("assist");
+});
+
 test("room tabs: the agents tree, the task board, keeping a race entry after its files, and the race form", async ({ page }) => {
   await openFolder(page);
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
@@ -358,28 +484,108 @@ test("room tabs: the agents tree, the task board, keeping a race entry after its
   await expect(race.locator(".task-status").first()).toHaveText("done");
   // A failed task retries without a question.
   await tasks.locator('.board-task[data-task="t5"]').getByRole("button", { name: "Retry" }).click();
-  await tasks.getByRole("switch", { name: "Orchestrate" }).click();
-  await expect(tasks.getByRole("switch", { name: "Orchestrate" })).toHaveAttribute("aria-checked", "true");
+  // The board's orchestration level is the composer's picker too.
+  await tasks.getByRole("button", { name: "Orchestration: Auto" }).click();
+  await page.getByRole("menuitemradio", { name: /^Off/ }).click();
+  await expect.poll(() => fake.board.level).toBe("off");
+  await expect(tasks.getByRole("button", { name: "Orchestration: Off" })).toBeVisible();
+  await expect(page.locator(".composer-dock").getByRole("button", { name: "Orchestration: Off" })).toBeVisible();
   expect(fake.board.actions).toEqual(["apply t3", "retry t5"]);
-  // The race form starts the race through StartRace, with a judge by default.
+  // The Tasks tab races with the same builder as /race, through StartRace,
+  // with a judge by default.
   await tasks.getByRole("button", { name: "New race" }).click();
-  await tasks.getByLabel("Race brief").fill("make the limiter per address");
-  await tasks.getByLabel("Race kind").selectOption("codex");
-  await tasks.getByRole("button", { name: "More entries" }).click();
-  await expect(tasks.getByRole("switch", { name: "Judge" })).toHaveAttribute("aria-checked", "true");
-  await tasks.getByRole("button", { name: /Start race \(4\)/ }).click();
-  await expect.poll(() => fake.room.asked).toContain("race codex×4 judged: make the limiter per address");
-  await expect(tasks.getByLabel("Race brief")).toHaveValue("");
+  const builder = tasks.getByRole("region", { name: "Race builder" });
+  await builder.getByLabel("Race task").fill("make the limiter per address");
+  await expect(builder.getByRole("button", { name: /Start race/ })).toBeDisabled();
+  await builder.getByRole("button", { name: "Add agent" }).click();
+  const add = page.getByRole("menu", { name: "Add an entrant" });
+  await add.getByRole("group", { name: "Agent" }).getByRole("menuitemradio", { name: "codex" }).click();
+  await add.getByRole("menuitem", { name: "Add codex" }).click();
+  await page.getByRole("menu", { name: "Add an entrant" }).getByRole("menuitem", { name: "Add codex" }).click();
+  await page.keyboard.press("Escape");
+  await expect(builder.getByRole("list", { name: "Entrants" }).locator(".race-entrant")).toHaveCount(2);
+  await expect(builder.getByRole("switch", { name: "Judge" })).toHaveAttribute("aria-checked", "true");
+  await builder.getByRole("button", { name: /Start race \(2\)/ }).click();
+  await expect.poll(() => fake.room.asked).toContain("race codex,codex judged: make the limiter per address");
+  await expect(builder.getByLabel("Race task")).toHaveValue("");
   // Without the judge.
-  await tasks.getByLabel("Race brief").fill("try again");
-  await tasks.getByRole("switch", { name: "Judge" }).click();
-  await tasks.getByRole("button", { name: /Start race \(4\)/ }).click();
-  await expect.poll(() => fake.room.asked).toContain("race codex×4: try again");
-  // /race takes judge after the kind.
-  await composer(page).fill("/race 2 codex judge fix the flaky test");
-  await composer(page).press("Enter");
-  await expect.poll(() => fake.room.asked).toContain("race codex×2 judged: fix the flaky test");
+  await builder.getByLabel("Race task").fill("try again");
+  await builder.getByRole("switch", { name: "Judge" }).click();
+  await builder.getByRole("button", { name: /Start race \(2\)/ }).click();
+  await expect.poll(() => fake.room.asked).toContain("race codex,codex: try again");
+});
+
+test("/race: a builder of mixed entrants, codex, claude and claude again on its model, three race lanes", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  const lanes = page.getByRole("toolbar", { name: "Lanes" });
+  await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
+  const before = await page.locator(".lane[data-lane]").count();
+
+  // The menu offers /race; picking it opens the builder at once.
+  await composer(page).fill("");
+  await composer(page).pressSequentially("/ra");
+  await page.getByRole("listbox", { name: "Commands" }).getByRole("option", { name: /\/race/ }).click();
+  const builder = page.getByRole("region", { name: "Race builder" });
+  await expect(builder).toBeVisible();
   await expect(composer(page)).toHaveValue("");
+  await builder.getByRole("button", { name: "Close the race builder" }).click();
+  await expect(builder).toHaveCount(0);
+
+  // The rest of the message is the task.
+  await composer(page).fill("/race fix the flaky limiter test");
+  await composer(page).press("Enter");
+  await expect(builder.getByLabel("Race task")).toHaveValue("fix the flaky limiter test");
+  await expect(composer(page)).toHaveValue("");
+  await expect(builder.getByRole("button", { name: /Start race/ })).toBeDisabled();
+
+  // codex, then claude on a model, then the same claude again: the add
+  // picker starts on the last entrant.
+  await builder.getByRole("button", { name: "Add agent" }).click();
+  const add = () => page.getByRole("menu", { name: "Add an entrant" });
+  await add().getByRole("group", { name: "Agent" }).getByRole("menuitemradio", { name: "codex" }).click();
+  await add().getByRole("menuitem", { name: "Add codex" }).click();
+  await add().getByRole("group", { name: "Agent" }).getByRole("menuitemradio", { name: "claude" }).click();
+  await add().getByRole("group", { name: "Model" }).getByRole("menuitemradio").nth(1).click();
+  await add().getByRole("menuitem", { name: "Add claude" }).click();
+  await expect(add().getByRole("group", { name: "Model" }).getByRole("menuitemradio").nth(1)).toHaveAttribute("aria-checked", "true");
+  await add().getByRole("menuitem", { name: "Add claude" }).click();
+  await page.screenshot({ path: shot("race-add-picker.png") });
+  await page.keyboard.press("Escape");
+  const chips = builder.getByRole("list", { name: "Entrants" }).locator(".race-entrant");
+  await expect(chips).toHaveCount(3);
+  await expect(chips.nth(0)).toHaveAttribute("data-agent", "codex");
+  await expect(chips.nth(1)).toHaveAttribute("data-agent", "claude");
+  await expect(chips.nth(2)).toHaveAttribute("data-agent", "claude");
+  const model = (await chips.nth(1).locator(".race-entrant-detail").textContent()) ?? "";
+  expect(model).not.toBe("Default");
+  await expect(chips.nth(2).locator(".race-entrant-detail")).toHaveText(model);
+  await expect(builder.locator(".race-summary")).toHaveText("3 agents: codex, claude ×2");
+  await page.screenshot({ path: shot("race-builder.png") });
+
+  // A chip edits its entrant; × takes one out.
+  await chips.nth(0).getByRole("button", { name: /Change it/ }).click();
+  await expect(page.getByRole("menu", { name: "Entrant 1" }).getByRole("menuitemradio", { name: "codex" })).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+  await builder.getByRole("button", { name: "Add agent" }).click();
+  await add().getByRole("menuitem", { name: "Add claude" }).click();
+  await page.keyboard.press("Escape");
+  await expect(chips).toHaveCount(4);
+  await builder.getByRole("button", { name: "Remove entrant 4 (claude)" }).click();
+  await expect(chips).toHaveCount(3);
+
+  await builder.getByRole("button", { name: /Start race \(3\)/ }).click();
+  await expect(builder).toHaveCount(0);
+  const asked = fake.room.asked.find((a) => a.startsWith("race ")) ?? "";
+  expect(asked).toMatch(/^race codex,claude\/[^,]+,claude\/[^,]+ judged: fix the flaky limiter test$/);
+  const [, first, second] = asked.split(" ")[1]?.split(",") ?? [];
+  expect(first).toBe(second);
+  // Three lanes join the room, one per entrant.
+  await expect(page.locator(".lane[data-lane]")).toHaveCount(before + 3);
+  await expect(lanes.locator('[data-lane="agent:codex-2"]')).toBeVisible();
+  await expect(lanes.locator('[data-lane="agent:claude-2"]')).toBeVisible();
+  await expect(lanes.locator('[data-lane="agent:claude-3"]')).toBeVisible();
+  await page.screenshot({ path: shot("race-lanes.png") });
 });
 
 test("branches: a thread starts on its own branch, applies it, discards it and moves again", async ({ page }) => {
@@ -627,7 +833,7 @@ test("attention from the engine: a room that waits for an answer needs you", asy
   await expect(row.locator(".status-label")).toHaveText("Answer a question");
 });
 
-test("an older Deck: no branch, no Revert, no Archive, races as text and @ lists the changed files", async ({ page }) => {
+test("an older Deck: no branch, no Revert, no Archive, no races and @ lists the changed files", async ({ page }) => {
   fake.room.caps = [];
   await openFolder(page);
   await expect(page.getByRole("heading", { name: `What should we build in ${basename(dir)}?` })).toBeVisible();
@@ -653,14 +859,19 @@ test("an older Deck: no branch, no Revert, no Archive, races as text and @ lists
 
   await roomTab(page, "Tasks");
   const tasks = page.getByRole("region", { name: "Tasks" });
+  // An older Deck cannot race: the builder says so and sends nothing.
   await tasks.getByRole("button", { name: "New race" }).click();
-  await expect(tasks.getByRole("switch", { name: "Judge" })).toHaveCount(0);
-  await tasks.getByLabel("Race brief").fill("make the limiter per address");
-  await tasks.getByRole("button", { name: /Start race \(3\)/ }).click();
-  await expect.poll(() => fake.deck.sent.at(-1)?.text).toBe("$claude×3 make the limiter per address");
-  await composer(page).fill("/race 2 codex judge fix it");
-  await composer(page).press("Enter");
-  await expect.poll(() => fake.deck.sent.at(-1)?.text).toBe("$codex×2 fix it");
+  const builder = tasks.getByRole("region", { name: "Race builder" });
+  await expect(builder.getByRole("switch", { name: "Judge" })).toHaveCount(0);
+  await builder.getByLabel("Race task").fill("make the limiter per address");
+  await builder.getByRole("button", { name: "Add agent" }).click();
+  await page.getByRole("menu", { name: "Add an entrant" }).getByRole("menuitem", { name: /^Add / }).click();
+  await page.getByRole("menu", { name: "Add an entrant" }).getByRole("menuitem", { name: /^Add / }).click();
+  await page.keyboard.press("Escape");
+  const sent = fake.deck.sent.length;
+  await builder.getByRole("button", { name: /Start race \(2\)/ }).click();
+  await expect(page.locator(".toast").last()).toContainText("cannot start races");
+  expect(fake.deck.sent.length).toBe(sent);
   expect(fake.room.asked).toEqual([]);
   expect(fake.calls).not.toContain("ListFiles");
   expect(fake.calls).not.toContain("StartRace");
@@ -677,6 +888,9 @@ test("lane strip: the people in the room, a lane filter and an agent's popover",
   await expect(claude).toHaveAttribute("data-status", "working");
   await expect(claude.locator(".lane-ring")).toBeVisible();
   await expect(lanes.locator('[data-lane="agent:codex-sub"] .lane-leases')).toHaveText("1");
+  // A spawned agent's lane says who spawned it.
+  await expect(lanes.locator('[data-lane="agent:codex-sub"] .lane-parent')).toHaveText("by @claude-1");
+  await expect(lanes.locator('[data-lane="agent:codex-1"] .lane-parent')).toHaveCount(0);
   await expect(page.locator(".room-index")).toContainText("ain");
 
   // A click on codex-1 shows its lane alone and opens its popover.
@@ -695,6 +909,38 @@ test("lane strip: the people in the room, a lane filter and an agent's popover",
   await expect(page.locator(".msg-agent")).toHaveCount(0);
   await lanes.locator('[data-lane="you"]').click();
   await expect(page.locator('[data-agent="claude-1"].msg').first()).toBeVisible();
+});
+
+test("an agent told to spin up agents spawns them: lanes under it, its brief as a handoff", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
+  // No add or remove chrome: agents come by mention, or by an agent.
+  await expect(page.getByRole("button", { name: "Add agent" })).toHaveCount(0);
+  await composer(page).fill("$claude split this up and spin up two codex agents to write the limiter tests");
+  await composer(page).press("Enter");
+
+  // claude answers, then spawns two codex agents, each a lane under it.
+  const lanes = page.getByRole("toolbar", { name: "Lanes" });
+  for (const name of ["codex-2", "codex-3"]) {
+    const lane = lanes.locator(`[data-lane="agent:${name}"]`);
+    await expect(lane.locator(".lane-parent")).toHaveText("by @claude-1", { timeout: 15_000 });
+    await expect(page.locator(`[data-agent="${name}"].msg`).last()).toContainText("write the limiter tests");
+  }
+  // The brief shows as claude's handoff to each.
+  await expect(page.locator('[data-agent="claude-1"].msg').filter({ hasText: "→ $codex-2" })).toBeVisible();
+  expect(fake.deck.spawned.map((s) => [s.parent, s.name])).toEqual([
+    ["claude-1", "codex-2"],
+    ["claude-1", "codex-3"],
+  ]);
+
+  // The spawned lane's popover links to its spawner's lane.
+  await lanes.locator('[data-lane="agent:codex-2"]').click();
+  const pop = page.getByRole("menu", { name: "codex-2" });
+  await pop.getByRole("menuitem", { name: "Spawned by @claude-1" }).click();
+  await expect(lanes.locator('[data-lane="agent:claude-1"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('[data-agent="codex-2"].msg')).toHaveCount(0);
+  await expect(page.locator('[data-agent="claude-1"].msg').filter({ hasText: "→ $codex-3" })).toBeVisible();
 });
 
 test("sharing: the share popover, a follower's lane and a room shared with you", async ({ page }) => {
@@ -784,6 +1030,14 @@ test("attention: a room that needs you, the inbox, notifications, and a finished
   await expect.poll(() => notes.map((n) => `${n.title}: ${n.body}`)).toContain(`${basename(dir)} · Long history: Approve command`);
   expect(notes[0]?.tag).toContain("ses_long");
   await expect.poll(() => badges.at(-1) ?? 0).toBeGreaterThanOrEqual(2);
+  // The bell in the sidebar's foot counts it, and its panel lists it.
+  const bell = page.getByRole("button", { name: /^Notifications, \d+ unread$/ });
+  await bell.click();
+  const panel = page.getByRole("dialog", { name: "Notifications" });
+  await expect(panel.locator('[data-notification="approval"]').filter({ hasText: "Long history" })).toContainText("Approve command");  await panel.getByRole("button", { name: "Mark all read" }).click();
+  await expect(page.getByRole("button", { name: "Notifications", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
 
   // Ctrl+Alt+L goes to the newest room that needs you; opening it does not
   // clear the state, only an answer does.

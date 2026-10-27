@@ -321,6 +321,13 @@ func TestAgentModelChoicesListsModelsAndEfforts(t *testing.T) {
 
 	// the lists are kept: the cached answer is the same.
 	require.Equal(t, got, w.CachedAgentModelChoices("s1"))
+
+	// A refresh forgets them until the CLIs are asked again.
+	w.RefreshAgentModels()
+	require.Len(t, w.CachedAgentModelChoices("s1"), 2)
+	again, err := w.AgentModelChoices(context.Background(), "s1")
+	require.NoError(t, err)
+	require.Equal(t, got, again)
 }
 
 func TestRosterBeforeAnyoneJoins(t *testing.T) {
@@ -371,7 +378,7 @@ func TestRosterListsSubagentsUnderTheirParent(t *testing.T) {
 	require.NoError(t, err)
 	_, err = m.AddMember(tid, "claude", "")
 	require.NoError(t, err)
-	require.NoError(t, m.SetOrchestrate(tid, true))
+	require.NoError(t, m.SetLevel(tid, "auto"))
 	a, err := m.Spawn(tid, lead, decks.SpawnSpec{Kind: "claude", Brief: "one"})
 	require.NoError(t, err)
 	_, err = m.Spawn(tid, a.AgentID, decks.SpawnSpec{Kind: "codex", Brief: "two"})

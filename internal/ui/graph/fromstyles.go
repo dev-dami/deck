@@ -8,7 +8,7 @@ import (
 )
 
 // agentKinds are the agents a Theme carries a series colour for.
-var agentKinds = []string{"claude", "codex", "opencode", "antigravity"}
+var agentKinds = []string{"claude", "codex", "opencode", "antigravity", "pi"}
 
 // FromStyles is the chart theme for Deck's active styles. Series colours
 // come from tone.Tint, so the UI must have called tone.SetLight for the

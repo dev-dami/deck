@@ -52,7 +52,7 @@ func (m *Manager) storedProfile(t *thread, mem store.Member) profile.Profile {
 			return p
 		}
 	}
-	return profile.Profile{Name: mem.Profile, Kind: mem.Kind, Role: mem.Role}
+	return profile.Profile{Name: mem.Profile, Kind: mem.Kind, Role: mem.Role, Color: mem.Color}
 }
 
 // freeProfileName names a new member from the profile called name: the

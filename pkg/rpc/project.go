@@ -20,6 +20,9 @@ const recentBranches = 30
 // heatWeeks is how many weeks of days Usage lays out for the activity map.
 const heatWeeks = 20
 
+// maxHistoryDays caps the analytics record Usage sends (history_days).
+const maxHistoryDays = 92
+
 // WithProject gives the server the project folder, where git runs and
 // terminals start, and Deck's usage record (nil when there is none).
 func (s *Server) WithProject(dir string, u usage.Service) *Server {
@@ -235,12 +238,18 @@ func (s *Server) Usage(ctx context.Context, r *deckv1.UsageRequest) (*deckv1.Usa
 		}),
 	}
 	if ls, err := s.usage.Limits(ctx); err == nil {
-		out.Limits = each(ls, func(l usage.LimitSnapshot) *deckv1.UsageLimit {
-			return &deckv1.UsageLimit{
-				AgentKind: l.AgentKind, WindowId: l.WindowID, Kind: l.Kind, Label: l.Label, UsedPct: l.UsedPct,
-				ResetsAt: ms(l.ResetsAt), DurationMins: int32(l.DurationMins), Plan: l.Plan, At: ms(l.At),
-			}
-		})
+		out.Limits = each(ls, toUsageLimit)
+	}
+	if hd := r.GetHistoryDays(); hd > 0 {
+		from := time.Now().Add(-time.Duration(min(hd, maxHistoryDays)) * 24 * time.Hour)
+		if hs, err := s.usage.Hourly(ctx, from); err == nil {
+			out.Hours = each(hs, func(h usage.Hour) *deckv1.UsageHour {
+				return &deckv1.UsageHour{At: ms(h.At), Kind: h.Kind, AgentId: h.AgentID, Turns: int32(h.Turns), Tokens: h.Tokens, CostUsd: h.CostUSD}
+			})
+		}
+		if ls, err := s.usage.LimitTimeline(ctx, from); err == nil {
+			out.LimitHistory = each(ls, toUsageLimit)
+		}
 	}
 	if heat, err := s.usage.Heat(ctx, heatWeeks); err == nil {
 		out.Heat = each(heat, toUsageDay)
@@ -249,6 +258,13 @@ func (s *Server) Usage(ctx context.Context, r *deckv1.UsageRequest) (*deckv1.Usa
 		out.Habits = toHabits(h)
 	}
 	return out, nil
+}
+
+func toUsageLimit(l usage.LimitSnapshot) *deckv1.UsageLimit {
+	return &deckv1.UsageLimit{
+		AgentKind: l.AgentKind, WindowId: l.WindowID, Kind: l.Kind, Label: l.Label, UsedPct: l.UsedPct,
+		ResetsAt: ms(l.ResetsAt), DurationMins: int32(l.DurationMins), Plan: l.Plan, At: ms(l.At),
+	}
 }
 
 func toUsageDay(d usage.Day) *deckv1.UsageDay {

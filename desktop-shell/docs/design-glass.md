@@ -1,12 +1,12 @@
 # Deck desktop: Liquid Glass
 
-Status: 2026-10-26. This replaces the look in `design-apple.md` for every
-theme. The layout, the components and the motion below are the same in
-every theme. Three themes are art directions (section 9): Liquid Glass,
-the default, Riso and Stitch each print a picture through their own
-process and bring their own material, display face and texture. Apple,
-Tabletop, T3 and the rest of the catalog stay as colourways of Liquid
-Glass, which give colours only.
+Status: 2026-10-27. This replaces the look in `design-apple.md` for every
+theme. The components and the motion below are the same in every look.
+A look is made of aspects that mix (section 9): the colours (any theme of
+the catalog, Riso's and Stitch's inks among them), the material, the
+picture's process, the display face, the texture, and two knobs, corners
+and translucency. Liquid Glass, the default, Riso and Stitch are presets
+that set every aspect at once. The layout can mirror (section 4).
 
 ## 1. Direction
 
@@ -133,6 +133,24 @@ its parent's radius minus the padding between them.
 - **Welcome and Connect**: no sheet. Glass cards float straight on the
   backdrop, which is the first impression and should feel like it.
 
+**Moving things.** Settings > Appearance > Layout (`ui/LayoutPicker.tsx`)
+draws each choice as the window it makes. The sidebar sits on the left or
+the right (`sidebarSide`); the side panel docks on the side opposite it,
+beside it (between it and the room), or floats over the room away from it
+at any width (`panelDock`). The Shell writes `data-sidebar` and
+`data-dock` on `.shell`, and styles.css orders the parts (`order`, then
+`row-reverse` for a right sidebar), so the DOM and the Tab order stay
+sidebar, room, panel. The sidebar's inner edge is a grip
+(`role="separator"`): drag it to resize (208 to 420px, `--sidebar-w` on
+`<html>`), the arrow keys step it by 16px, a double click resets it, and
+dragged across most of the window it moves the sidebar to the other side.
+Compact density (`data-density`) tightens Tailwind's `--spacing` by a
+tenth; the type keeps its size and the Mac's title row stays 36px. On a
+Mac whichever part sits at the top left clears the traffic lights:
+the sidebar itself, or the room's toolbar or the panel's tabs through the
+Shell's `data-lights`. A right sidebar sees the backdrop mirrored, so the
+band held back for it follows it.
+
 ## 5. Components
 
 - **Buttons** (`kit/button.tsx`): capsules. `default` is `liquid-tint`,
@@ -158,6 +176,12 @@ its parent's radius minus the padding between them.
   "Needs you" uses the warning colour and a `ShieldWarning` icon.
 - **Agents**: the glyph from `kindMark()`, in `agentColour()`, always the
   same hue for the same agent, everywhere.
+- **Actions** (`actions.ts`, the timeline): an agent's run of tool calls
+  folds to one row, "◆ @ada · 14 actions — read 6 files, ran 3
+  commands", in its hue. While a call runs, the glyph is a spinner and the
+  row names the call; a failed call marks it. It opens to the calls, each
+  of which opens to its output. Deck's result messages fold into their
+  calls, and one agent's run of messages reads as one turn.
 
 ### Icons
 
@@ -267,6 +291,24 @@ the agent they belong to and everything else fades. A lease is dotted.
   an agent is editing flows (an animated dash). Both stop under reduced
   motion.
 
+**History:** a "Now | History" switch (top right) turns the graph from
+one thread now to every thread's work over time (`workHistory.ts`,
+`ui/graph/History.tsx`). Each thread is a band of lanes (you, each agent,
+its tasks), stacked in the order the threads began; along a lane, in time
+order, the person's prompts, the agents' replies and their runs of tool
+calls (one node per run, as the timeline groups them, opening in place to
+the calls). Edges: a prompt asks the agents it names (a line down to the
+reply); an agent hands off to one it names (dashed) or asks it for a
+review (finer dashes); a task joins its owner and reviewer; a run reads
+(dotted) or edits files, which sit in one band under all the threads.
+Columns pack: work side by side in two lanes shares one. Filters over the
+top left: threads, agents, a time range, and the kinds of node; "Load full
+history" reads every thread's older pages. A click jumps to that message
+in the conversation, opening its thread. It stays smooth when large: past
+240 nodes only those near the view draw, below 35% zoom the cards drop
+their text and read as blocks of their hue, and past 400 nodes an agent's
+work between two prompts folds into one node that opens.
+
 **Where it shows:** in the room, as the Graph view beside Conversation,
 where the composer still floats over it. It also shows in the side panel
 as a "Graph" tab (a new `Panel`, `"graph"`), `compact`. The props are in
@@ -302,9 +344,30 @@ the ones above.
 | Material | glass (section 2) | paper and vellum: no blur, square corners, a rule and a 3px misregistered shadow in the spot colour | felt: opaque, with a running stitch just inside each panel's edge |
 | Display face | Inter Tight | Space Grotesk; Martian Mono for code | Pixelify Sans, headings only |
 
-Apple, Tabletop, T3 and the catalog themes are colourways of Liquid
-Glass: the same dither in two of their own colours. Tokyo Night prints the
-Hubble Deep Field in its palette.
+Apple, Tabletop, T3 and the catalog themes are colours: through the
+dither, the same picture in two of their own colours. Tokyo Night prints
+the Hubble Deep Field in its palette.
+
+**Aspects that mix.** The columns above are presets. Each row is an
+aspect of its own (`themes.ts`), an attribute on `<html>` that
+`appearance.ts` writes and `styles.css` reads, and any one goes with any
+other:
+
+| Aspect | Attribute | Choices |
+|---|---|---|
+| Colours | `data-palette` | every theme of `THEMES`; its block in styles.css sets colours only |
+| Material | `data-material` | glass (the default), paper, felt, plain; each derives its tokens from the theme's surfaces, text and accent (paper's shadow is `--spot`, or the accent) |
+| Picture | `data-process` | dither, halftone, stitch, none; a theme through a process not its own prints in its colours (`inks.ts`, `risoIn`, `stitchIn`); none keeps the plain ground |
+| Display face | `data-face` | Inter Tight, Space Grotesk (with Martian Mono), Pixelify Sans, the UI's own |
+| Texture | `data-texture` | none, paper fibre, felt |
+| Corners | `data-corners` | auto (the material's), square, soft, round |
+| Translucency | `data-translucency` | auto, clear, frosted, solid; glass only, and Reduce transparency still wins |
+
+A look that matches no preset is Custom, and says which preset it was
+mixed from (`presetOf`, `nearestPreset`). Prefs saved before the aspects
+named one theme; it loads as the aspects it stood for (`lookFromPalette`):
+Riso and Stitch as their presets, any other theme as Liquid Glass in its
+colours.
 
 **Where the picture shows.**
 
@@ -331,12 +394,17 @@ theme's art and `usePrint.ts` prints it in a worker (`worker.ts`), once
 per theme, mode, picture or size, never per frame. A print takes 40 to
 240ms at 1440×900 at 2x, off the page's thread.
 
-**Choosing.** Settings > Appearance shows the three directions as prints
-of their own process (`ui/ThemeCard.tsx`), then the colourways. Under
-them, the picture (`ui/WallpaperPicker.tsx`): the theme's own, the rest
-of its direction's set (`backdrop/pictures.ts`, `SETS`), or the person's
-own, kept in this window's IndexedDB and never sent anywhere. Any picture
-prints through any process.
+**Choosing.** Settings > Appearance (`ui/LookEditor.tsx`) opens on the
+window in miniature, live, then the three presets as prints of their own
+process (`ui/ThemeCard.tsx`), then a row for each aspect, drawn as what
+it is: colours as chips of their swatches, each material and texture as
+a swatch made of it (a `.look` element carries the attributes, so the
+CSS blocks apply to it as to `<html>`), each process as a print of the
+picture through it, each face in itself. Under them, the picture
+(`ui/WallpaperPicker.tsx`): the look's own, the rest of its process's set
+(`backdrop/pictures.ts`, `SETS`), or the person's own, kept in this
+window's IndexedDB and never sent anywhere. Any picture prints through
+any process.
 
 **Adding a picture.** Put a public-domain file in `art/`, credit it in
 `ATTRIBUTION.md`, add it to `PICTURES` with its crop and subject, and to a

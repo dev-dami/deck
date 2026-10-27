@@ -16,6 +16,7 @@ import {
   type RpcStreamEvent,
 } from "../shared/bridge";
 import { callHost, fromApp } from "./host";
+import { RecentFolders } from "./recent";
 
 describe("callHost", () => {
   const { host } = testHost(
@@ -319,33 +320,57 @@ describe("ports and the preview", () => {
   });
 
   test("setAppIcon takes PNGs of the sizes they claim, and nothing else reaches main", async () => {
-    const seen: AppIconImage[][] = [];
+    const seen: [AppIconImage[], boolean][] = [];
     let decodes = true;
     const { host } = testHost(noEmit, noEmit, undefined, {
-      setAppIcon: (images) => {
-        seen.push(images);
-        return decodes;
+      setAppIcon: (images, standard) => {
+        seen.push([images, standard]);
+        return { shown: decodes, launchers: decodes ? "done" : "none" };
       },
     });
     const icon = APP_ICON_SIZES.other.map((size) => ({ size, png: fakePng(size) }));
     const bad: unknown[][] = [
       [],
+      [icon],
       [icon, icon],
-      ["data:image/png;base64,AAAA"],
-      [{ size: 32, png: fakePng(32) }],
-      [[{ size: 32, png: fakePng(64) }]],
-      [[{ size: 32, png: new Uint8Array(64) }]],
-      [[{ size: 2048, png: fakePng(2048) }]],
-      [[{ size: 512, png: fakePng(512, 512, APP_ICON_LIMITS.bytes + 1) }]],
-      [[{ size: 32, png: fakePng(32), path: "/etc/passwd" }]],
+      [icon, "true"],
+      [icon, false, false],
+      ["data:image/png;base64,AAAA", false],
+      [{ size: 32, png: fakePng(32) }, false],
+      [[{ size: 32, png: fakePng(64) }], false],
+      [[{ size: 32, png: new Uint8Array(64) }], false],
+      [[{ size: 2048, png: fakePng(2048) }], false],
+      [[{ size: 512, png: fakePng(512, 512, APP_ICON_LIMITS.bytes + 1) }], false],
+      [[{ size: 32, png: fakePng(32), path: "/etc/passwd" }], false],
     ];
     for (const args of bad) await expect(callHost(host, "setAppIcon", args)).rejects.toThrow(/bad arguments/);
     expect(seen).toEqual([]);
-    await expect(callHost(host, "setAppIcon", [icon])).resolves.toBe(true);
-    expect(seen[0]?.map((i) => i.size)).toEqual([...APP_ICON_SIZES.other]);
+    await expect(callHost(host, "setAppIcon", [icon, false])).resolves.toEqual({ shown: true, launchers: "done" });
+    expect(seen[0]?.[0].map((i) => i.size)).toEqual([...APP_ICON_SIZES.other]);
+    expect(seen[0]?.[1]).toBe(false);
+    await callHost(host, "setAppIcon", [icon, true]);
+    expect(seen[1]?.[1]).toBe(true);
     // Bytes the system cannot decode are not shown.
     decodes = false;
-    await expect(callHost(host, "setAppIcon", [icon.slice(0, 1)])).resolves.toBe(false);
+    await expect(callHost(host, "setAppIcon", [icon.slice(0, 1), false])).resolves.toEqual({ shown: false, launchers: "none" });
+  });
+
+  test("projectIcon reads only a folder the app knows, once a run", async () => {
+    const asked: string[] = [];
+    const recent = new RecentFolders(null);
+    recent.add("/work/deck");
+    const { host } = testHost(noEmit, noEmit, undefined, {
+      recent,
+      findIcon: async (dir) => {
+        asked.push(dir);
+        return "data:image/png;base64,AAAA";
+      },
+    });
+    await expect(callHost(host, "projectIcon", [42])).rejects.toThrow(/bad arguments/);
+    await expect(callHost(host, "projectIcon", ["/etc"])).resolves.toBeNull();
+    await expect(callHost(host, "projectIcon", ["/work/deck"])).resolves.toBe("data:image/png;base64,AAAA");
+    await expect(callHost(host, "projectIcon", ["/work/deck"])).resolves.toBe("data:image/png;base64,AAAA");
+    expect(asked).toEqual(["/work/deck"]);
   });
 
   test("a message from the preview's page is refused: only the window's own page may call", () => {

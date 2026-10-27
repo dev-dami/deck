@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/internal/pubsub"
 	"github.com/dev-dami/deck/internal/workspace"
@@ -33,6 +34,9 @@ type crew struct {
 	rooms     workspace.Rooms
 	settings  workspace.SettingsEditor
 	profiles  workspace.Profiles
+	limits    workspace.LimitsDesk
+	work      workspace.WorkDesk
+	usage     workspace.UsageReader
 	changes   deckChanges
 }
 
@@ -57,6 +61,9 @@ func (s *Server) WithWorkspace(ws any) *Server {
 	c.rooms, _ = ws.(workspace.Rooms)
 	c.settings, _ = ws.(workspace.SettingsEditor)
 	c.profiles, _ = ws.(workspace.Profiles)
+	c.limits, _ = ws.(workspace.LimitsDesk)
+	c.work, _ = ws.(workspace.WorkDesk)
+	c.usage, _ = ws.(workspace.UsageReader)
 	c.changes, _ = ws.(deckChanges)
 	s.crew = c
 	return s
@@ -88,7 +95,8 @@ func (s *Server) Board(_ context.Context, r *deckv1.SessionRef) (*deckv1.BoardRe
 	}
 	rep := s.crew.orch.Board(r.GetSessionId())
 	return &deckv1.BoardResponse{
-		Orchestrate: rep.Orchestrate,
+		Level:       rep.Level,
+		Orchestrate: config.Levels[rep.Level].Schedule,
 		Tasks: each(rep.Tasks, func(t workspace.BoardTask) *deckv1.BoardTask {
 			return &deckv1.BoardTask{
 				Id: t.ID, Title: t.Title, Status: t.Status, Owner: t.Owner, Deps: t.Deps, Brief: t.Brief,
@@ -148,7 +156,16 @@ func (s *Server) SetOrchestrate(_ context.Context, r *deckv1.SetOrchestrateReque
 	if err := needSession(r.GetSessionId()); err != nil {
 		return nil, err
 	}
-	return &deckv1.Empty{}, refused(s.crew.orch.SetOrchestrate(r.GetSessionId(), r.GetOn()))
+	level := r.GetLevel()
+	switch {
+	case level != "" && !config.ValidLevel(level):
+		return nil, invalid("level is off, assist, auto or full")
+	case level == "" && r.GetOn():
+		level = config.LevelAuto
+	case level == "":
+		level = config.LevelOff
+	}
+	return &deckv1.Empty{}, refused(s.crew.orch.SetLevel(r.GetSessionId(), level))
 }
 
 func (s *Server) Agents(_ context.Context, r *deckv1.SessionRef) (*deckv1.AgentsResponse, error) {
@@ -164,7 +181,7 @@ func (s *Server) Agents(_ context.Context, r *deckv1.SessionRef) (*deckv1.Agents
 				Name: a.ID, Kind: a.Kind, Model: a.Model, Effort: a.Effort, Status: a.Status,
 				ContextTokens: int32(a.ContextTokens), ContextWindow: int32(a.ContextWindow), CostUsd: a.CostUSD,
 				Pending: int32(a.Pending), Since: ms(a.Since), Depth: int32(a.Depth), Parent: a.Parent,
-				Branch: a.Branch, Leases: a.Leases, Profile: a.Profile, Role: a.Role,
+				Branch: a.Branch, Leases: a.Leases, Profile: a.Profile, Role: a.Role, Color: a.Color,
 			}
 		}),
 	}

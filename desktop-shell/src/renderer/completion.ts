@@ -19,17 +19,12 @@ export {
   type Picked,
   type PickerType,
   pickerAt,
+  retiredForm,
   type ProfileRef,
   type Suggestion,
   suggestionHue,
   suggestions,
 } from "@web/mentions";
-
-// The add-agent menu: "$kind+ " first, so the message starts another agent
-// of that kind. A mention right after another one still counts.
-export function addAgentMention(draft: string, kind: string): string {
-  return `$${kind}+ ${draft.replace(/^\s+/, "")}`;
-}
 
 // The "/command" being typed at the start of the message: the slash
 // commands run only as a whole message (slash.ts).

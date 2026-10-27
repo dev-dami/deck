@@ -15,6 +15,7 @@ import {
   Globe,
   ImageIcon,
   type IconType,
+  Loader2,
   Pencil,
   Play,
   RotateCcw,
@@ -37,13 +38,30 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { agentColour, agentKind, agentRole } from "../agents";
+import {
+  type ActionGroup,
+  actionKind,
+  actionStats,
+  actionSummary,
+  buildTurns,
+  chunkOrigin,
+  groupId,
+  isTurn,
+  type Piece,
+  pieces,
+  type Turn,
+  type ToolChunk,
+  toolName,
+} from "../actions";
+import { agentColour, agentKind, agentRole, agentTint } from "../agents";
 import type { RoomNotice } from "../attention";
+import { askOf, type FileAsk } from "../fileWork";
 import { shortId } from "../lanes";
 import { cn } from "../lib/cn";
-import { lastReplyId, messageText } from "../messages";
+import { messageText } from "../messages";
 import { detectPlan, findPlan } from "../plans";
 import { formatClock, usePrefs } from "../prefs";
+import { tintOf } from "../teamGate";
 import type { ImageBytes } from "../rpcMap";
 import { capLines, formatDuration, splitWork } from "../work";
 import { AgentRole } from "./AgentRole";
@@ -54,15 +72,18 @@ import { VIRTUAL_AFTER, VirtualList } from "./kit/virtual";
 import { Markdown } from "./Markdown";
 import { type PlanActions, PlanCard, wasApproved } from "./PlanCard";
 
-// A row of the timeline: a message, or the shell's own note in the room
+// A row of the timeline: a person's or a system message, an agent's turn
+// (its run of messages, actions.ts), or the shell's own note in the room
 // (a revert), in time order.
-type Row = Message | RoomNotice;
+type Row = Message | RoomNotice | Turn;
 
-const rowKey = (r: Row) => ("role" in r ? r.id : `note:${r.at}:${r.text}`);
+const rowKey = (r: Row) => (isTurn(r) ? r.id : "role" in r ? r.id : `note:${r.at}:${r.text}`);
 
-function withNotes(messages: Message[], notes: readonly RoomNotice[]): Row[] {
+const isMessage = (r: Message | RoomNotice): r is Message => "role" in r;
+
+function withNotes(messages: Message[], notes: readonly RoomNotice[]): (Message | RoomNotice)[] {
   if (notes.length === 0) return messages;
-  const out: Row[] = [];
+  const out: (Message | RoomNotice)[] = [];
   let i = 0;
   for (const m of messages) {
     const at = toMillis(m.created_at);
@@ -70,6 +91,17 @@ function withNotes(messages: Message[], notes: readonly RoomNotice[]): Row[] {
     out.push(m);
   }
   return [...out, ...notes.slice(i)];
+}
+
+// The last agent turn, the one that gets Retry and Continue: none once the
+// person has written after it.
+function lastTurnId(rows: readonly Row[]): string | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i]!;
+    if (isTurn(r)) return r.id;
+    if ("role" in r && r.role === "user") return null;
+  }
+  return null;
 }
 
 // What the open room lets a person do from its timeline. A read-only room
@@ -84,19 +116,15 @@ type TextChunk = Extract<Chunk, { k: "text" }>;
 
 const COMMAND = /bash|shell|exec|command|terminal|run/;
 
+const KIND_ICON = { command: SquareTerminal, edit: FilePen, search: Search, read: Eye, web: Globe, other: Wrench } as const;
+
 // Rows between the messages, so a reply reads as its own block. The list's
 // class says the same (gap-6).
 const ROW_GAP = 24;
 
 // An icon for a tool by its name, as agents name them.
 function toolIcon(name: string): IconType {
-  const n = name.toLowerCase();
-  if (COMMAND.test(n)) return SquareTerminal;
-  if (/edit|write|patch|apply|create|multiedit/.test(n)) return FilePen;
-  if (/grep|glob|search|find|ls/.test(n)) return Search;
-  if (/read|view|cat|open/.test(n)) return Eye;
-  if (/fetch|web|http|browse/.test(n)) return Globe;
-  return Wrench;
+  return KIND_ICON[actionKind(name)];
 }
 
 // An agent's hue as a custom property, for the classes that tint with it.
@@ -439,15 +467,122 @@ function Working({ since }: { since: string }) {
   );
 }
 
-function AgentMessage({
-  m,
+// Whether each group of actions is open, by its id, for as long as the
+// window lives: a row that scrolls out of a long list and back, or a room
+// left and opened again, keeps it.
+const openGroups = new Map<string, boolean>();
+// And each turn's "Worked for …" fold, by the turn's id.
+const openFolds = new Set<string>();
+
+// One step of a group's list: a call or thinking as its work row, a note
+// as a muted line.
+function GroupItem({ c, running }: { c: Chunk; running: boolean }) {
+  if (c.k === "text") {
+    return <p className="action-note py-1 pl-6 text-pretty text-muted-foreground text-xs leading-relaxed">{c.text}</p>;
+  }
+  return <WorkRow c={c} running={running} />;
+}
+
+// "◆ @ada · 14 actions — read 6 files, ran 3 commands ›": a run of tool
+// calls folded to one row in the agent's hue. While it runs, the glyph
+// turns to a spinner and the row names the call at work; a failed call
+// marks it. It opens to the calls, each of which opens to its output.
+const ActionsRow = memo(function ActionsRow({ g, running, mark }: { g: ActionGroup; running: boolean; mark: string }) {
+  const [open, setOpen] = useState(() => openGroups.get(g.id) ?? false);
+  const s = useMemo(() => actionStats(g.items, running), [g.items, running]);
+  const toggle = () => {
+    openGroups.set(g.id, !open);
+    setOpen(!open);
+  };
+  const live = running && s.pending > 0;
+  const cur: ToolChunk | null = live ? s.current : null;
+  const CurIcon = cur === null ? null : toolIcon(toolName(cur));
+  return (
+    <div className="actions-group flex flex-col" data-actions={g.id} data-state={live ? "running" : s.failed > 0 ? "failed" : "done"}>
+      <button
+        type="button"
+        className="actions-head -mx-2 flex h-7 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-sm outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
+        aria-expanded={open}
+        onClick={toggle}
+      >
+        {live ? (
+          <Loader2 aria-hidden className="size-3.5 shrink-0 animate-spin text-(--hue)" weight="bold" />
+        ) : (
+          <span aria-hidden className="w-3.5 shrink-0 text-center font-mono text-(--hue) text-[12px]">
+            {mark}
+          </span>
+        )}
+        <span className="actions-who shrink-0 font-medium text-(--hue)">@{g.agent}</span>
+        <span aria-hidden className="shrink-0 text-faint">
+          ·
+        </span>
+        <span className="actions-count shrink-0 text-muted-foreground tabular-nums">
+          {s.actions} action{s.actions === 1 ? "" : "s"}
+        </span>
+        {cur !== null && CurIcon !== null ? (
+          <span className="actions-now flex min-w-0 items-center gap-1.5 font-mono text-code">
+            <CurIcon aria-hidden className="size-3.5 shrink-0 text-faint" />
+            <span className="shimmer min-w-0 truncate text-foreground/80">{cur.call?.summary || toolName(cur)}</span>
+          </span>
+        ) : (
+          <span className="actions-summary min-w-0 truncate text-faint">— {actionSummary(s)}</span>
+        )}
+        <span className="ml-auto" />
+        {s.failed > 0 && (
+          <span className="actions-failed flex shrink-0 items-center gap-1 text-2xs text-destructive-foreground">
+            <CircleAlert aria-hidden className="size-3.5" />
+            {s.failed} failed
+          </span>
+        )}
+        <ChevronRight className={cn("size-3 shrink-0 text-faint transition-transform duration-200", open && "rotate-90")} />
+      </button>
+      {open && (
+        <div className="actions-list ml-[5px] flex animate-enter flex-col gap-px border-hairline-strong border-l py-1 pl-[18px]">
+          {g.items.map((c, i) => (
+            <GroupItem key={i} c={c} running={running} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
+// A turn's pieces (actions.ts): text through text(), images as images,
+// lone thinking as a work row, and each run of calls as one ActionsRow.
+function Pieces({ ps, running, mark, text }: { ps: Piece[]; running: boolean; mark: string; text: (c: TextChunk, key: number) => ReactNode }) {
+  return (
+    <>
+      {ps.map((p, i) =>
+        p.k === "actions" ? (
+          <ActionsRow key={p.g.id} g={p.g} running={running} mark={mark} />
+        ) : p.c.k === "text" ? (
+          text(p.c, i)
+        ) : p.c.k === "image" ? (
+          <Prose key={i} chunks={[p.c]} />
+        ) : (
+          <WorkRow key={i} c={p.c} running={running} />
+        ),
+      )}
+    </>
+  );
+}
+
+// A turn as one message, for its copy and its verbs: the first message's
+// id, every message's parts.
+const asMessage = (t: Turn): Message =>
+  t.msgs.length === 1
+    ? t.msgs[0]!
+    : { ...t.msgs[0]!, parts: t.msgs.flatMap((m) => m.parts), finished: t.finished, updated_at: t.msgs.at(-1)!.updated_at };
+
+function AgentTurn({
+  t,
   roster,
   theme,
   mode,
   actions,
   last,
 }: {
-  m: Message;
+  t: Turn;
   roster: AgentLine[];
   theme: Theme | null;
   mode: Mode | null;
@@ -455,31 +590,46 @@ function AgentMessage({
   last: boolean;
 }) {
   const prefs = usePrefs();
-  const agent = m.agent ?? "agent";
+  const agent = t.agent;
   const kind = agentKind(agent, roster);
-  const colour = agentColour(agent, kind);
+  const colour = agentColour(agent, kind, tintOf(agentTint(agent, roster), prefs.team));
   const mark = kindMark(theme, kind) || "●";
-  const chunks = chunksOf(m);
-  const { work, answer } = splitWork(chunks);
-  const [open, setOpen] = useState(false);
-  const folds = m.finished && prefs.foldWork && work.length > 0;
+  const m = useMemo(() => asMessage(t), [t]);
+  const chunks = t.chunks;
+  const { work, answer } = useMemo(() => splitWork(chunks), [chunks]);
+  const [open, setOpen] = useState(() => openFolds.has(t.id));
+  const fold = () => {
+    if (!openFolds.delete(t.id)) openFolds.add(t.id);
+    setOpen((o) => !o);
+  };
+  const folds = t.finished && prefs.foldWork && work.length > 0;
+  const running = !t.finished;
+  const all = useMemo(() => pieces(chunks, agent, (i) => groupId(t, i)), [chunks, agent, t]);
+  const worked = useMemo(() => pieces(work, agent, (i) => groupId(t, i)), [work, agent, t]);
   // A finished reply in plan mode whose last text holds a step list is a
   // plan: that text renders as a card.
-  const planChunk = m.finished ? [...answer].reverse().find((c): c is TextChunk => c.k === "text") : undefined;
+  const planChunk = t.finished ? [...answer].reverse().find((c): c is TextChunk => c.k === "text") : undefined;
+  const planMid = (planChunk === undefined ? undefined : chunkOrigin(planChunk)?.mid) ?? t.id;
   const plan = useMemo(() => {
     if (planChunk === undefined) return null;
-    return detectPlan(planChunk.text, { mode }) ?? (wasApproved(m.id) ? findPlan(planChunk.text) : null);
-  }, [planChunk, mode, m.id]);
+    return detectPlan(planChunk.text, { mode }) ?? (wasApproved(planMid) ? findPlan(planChunk.text) : null);
+  }, [planChunk, mode, planMid]);
   const text = (c: TextChunk, key: number): ReactNode =>
     plan !== null && c === planChunk ? (
       <div key={key} className="flex flex-col gap-3">
         {plan.before !== "" && <Markdown text={plan.before} />}
-        <PlanCard id={m.id} plan={plan} agent={agent} colour={colour} index={`${mark} ${shortId(m.session_id)}`} actions={last ? actions : null} />
+        <PlanCard id={planMid} plan={plan} agent={agent} colour={colour} index={`${mark} ${shortId(m.session_id)}`} actions={last ? actions : null} />
         {plan.after !== "" && <Markdown text={plan.after} />}
       </div>
     ) : (
       <Markdown key={key} text={c.text} />
     );
+  // Narration inside the fold reads quieter than the answer.
+  const muted = (c: TextChunk, key: number): ReactNode => (
+    <div key={key} className="py-1 text-muted-foreground [&_.md]:text-sm">
+      <Markdown text={c.text} />
+    </div>
+  );
   const ms = toMillis(m.updated_at) - toMillis(m.created_at);
   const took = ms >= 1000 ? `Worked for ${formatDuration(ms)}` : "Worked";
   return (
@@ -487,14 +637,15 @@ function AgentMessage({
       className="msg msg-agent group flex min-w-0 animate-enter flex-col gap-2"
       data-role="assistant"
       data-agent={agent}
-      data-mid={m.id}
+      data-mid={t.id}
+      data-mids={t.msgs.length > 1 ? t.msgs.map((x) => x.id).join(" ") : undefined}
       style={hue(colour)}
     >
       {/* The agent's glyph and name in its hue: no card, the reply reads
           as prose on the sheet. */}
       <header className="msg-head flex h-6 items-center gap-2">
         <span className="msg-index inline-flex min-w-0 items-baseline gap-1.5">
-          <AgentMark mark={mark} working={!m.finished} />
+          <AgentMark mark={mark} working={running} />
           <span className="msg-who truncate font-semibold text-(--hue) text-[13px]">{agent}</span>
           <AgentRole role={agentRole(agent, roster)} className="text-xs" />
         </span>
@@ -503,7 +654,7 @@ function AgentMessage({
         </time>
         {/* Copy, retry and continue show on hover at the line's end, so a
             reply leaves no empty row under it. */}
-        {m.finished && actions !== null && (
+        {t.finished && actions !== null && (
           <span className="-my-1 ml-auto flex items-center">
             <MessageActions m={m} actions={actions} last={last} />
           </span>
@@ -511,18 +662,10 @@ function AgentMessage({
       </header>
       {folds ? (
         <>
-          <WorkFold work={work} took={took} open={open} onToggle={() => setOpen((o) => !o)} />
+          <WorkFold work={work} took={took} open={open} onToggle={fold} />
           {open && (
-            <div className="work-log ml-[5px] flex animate-enter flex-col gap-px border-hairline-strong border-l py-1 pl-[18px]">
-              {work.map((c, i) =>
-                c.k === "text" ? (
-                  <div key={i} className="py-1 text-muted-foreground [&_.md]:text-sm">
-                    <Markdown text={c.text} />
-                  </div>
-                ) : (
-                  <WorkRow key={i} c={c} running={false} />
-                ),
-              )}
+            <div className="work-log ml-[5px] flex animate-enter flex-col gap-1 border-hairline-strong border-l py-1 pl-[18px]">
+              <Pieces ps={worked} running={false} mark={mark} text={muted} />
             </div>
           )}
           {answer.length > 0 && (
@@ -533,20 +676,28 @@ function AgentMessage({
         </>
       ) : (
         <div className="flex flex-col gap-2 text-foreground text-prose">
-          {chunks.map((c, i) =>
-            c.k === "text" ? (
-              text(c, i)
-            ) : c.k === "image" ? (
-              <Prose key={i} chunks={[c]} />
-            ) : (
-              <WorkRow key={i} c={c} running={!m.finished} />
-            ),
-          )}
+          <Pieces ps={all} running={running} mark={mark} text={text} />
         </div>
       )}
-      {!m.finished && <Working since={m.created_at} />}
+      {running && <Working since={m.created_at} />}
     </article>
   );
+}
+
+// A turn renders again only when it changes (buildTurns keeps one that did
+// not): a token re-renders the row it lands in, not the whole timeline.
+const TurnView = memo(AgentTurn);
+
+// One message alone as a turn of its own (the side chat).
+const lone = new WeakMap<Message, Turn>();
+const onlyMessages = (_r: Message): _r is Message => true;
+function turnOf(m: Message): Turn {
+  let t = lone.get(m);
+  if (t === undefined) {
+    t = buildTurns<never>([m], onlyMessages).find(isTurn) ?? { k: "turn", id: m.id, agent: m.agent ?? "agent", msgs: [m], paired: [], chunks: [], finished: m.finished };
+    lone.set(m, t);
+  }
+  return t;
 }
 
 // A message renders again only when it changes: a token re-renders the row
@@ -568,14 +719,61 @@ export const MessageView = memo(function MessageView({
 }) {
   if (m.role === "user") return <UserMessage m={m} actions={actions} />;
   if (m.role === "system") {
+    const ask = askOf(m);
+    if (ask !== null) return <AskRow m={m} ask={ask} roster={roster} theme={theme} />;
     return (
       <article className="msg msg-system mx-auto max-w-[90%] text-pretty text-center text-muted-foreground text-xs" data-role="system" data-mid={m.id}>
         <Prose chunks={chunksOf(m)} />
       </article>
     );
   }
-  return <AgentMessage m={m} roster={roster} theme={theme} mode={mode} actions={actions} last={last} />;
+  return <TurnView t={turnOf(m)} roster={roster} theme={theme} mode={mode} actions={actions} last={last} />;
 });
+
+// An ask between agents over a file (fileWork.ts) as one quiet line: who
+// asked whom about which file, and what came of it; it waits in the
+// warning hue until the answer rewrites it.
+function AskRow({ m, ask, roster, theme }: { m: Message; ask: FileAsk; roster: AgentLine[]; theme: Theme | null }) {
+  const prefs = usePrefs();
+  const Who = ({ name }: { name: string }) => {
+    const kind = agentKind(name, roster);
+    return (
+      <span className="inline-flex items-baseline gap-0.5 font-medium text-(--hue)" style={hue(agentColour(name, kind, tintOf(agentTint(name, roster), prefs.team)))}>
+        <span aria-hidden className="font-mono text-2xs">
+          {kindMark(theme, kind) || "●"}
+        </span>
+        @{name}
+      </span>
+    );
+  };
+  const file = ask.path.slice(ask.path.lastIndexOf("/") + 1);
+  return (
+    <p
+      className="msg msg-ask mx-auto flex max-w-[90%] flex-wrap items-baseline justify-center gap-x-1 text-muted-foreground text-xs"
+      data-role="system"
+      data-mid={m.id}
+      data-ask={ask.state}
+    >
+      <Who name={ask.from} />
+      <span>asked</span>
+      <Who name={ask.to} />
+      <span>
+        about{" "}
+        <span className="font-mono text-foreground" title={ask.path}>
+          {file}
+        </span>
+      </span>
+      {ask.state === "pending" ? (
+        <span className="text-warning-foreground">· waiting for an answer</span>
+      ) : (
+        <span className="min-w-0">
+          → <span className={ask.by === null ? "text-faint" : "text-foreground"}>{ask.by ?? "deck"}</span>
+          {ask.state === "held" ? " (wait)" : ""}: {ask.answer}
+        </span>
+      )}
+    </p>
+  );
+}
 
 // A path as its folder, faint, and its name.
 function PathName({ path }: { path: string }) {
@@ -650,7 +848,7 @@ function EmptyRoom({ roster, theme }: { roster: AgentLine[]; theme: Theme | null
       {roster.length > 0 && (
         <p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
           {roster.map((l) => (
-            <span key={l.id} className="inline-flex items-baseline gap-1.5" style={hue(agentColour(l.id, l.kind))}>
+            <span key={l.id} className="inline-flex items-baseline gap-1.5" style={hue(agentColour(l.id, l.kind, tintOf(l.color)))}>
               <span aria-hidden className="font-mono text-(--hue) text-[12.5px]">
                 {kindMark(theme, l.kind) || "●"}
               </span>
@@ -706,8 +904,15 @@ export function Timeline({
   onFocused?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const rows = useMemo(() => withNotes(messages, notes), [messages, notes]);
-  const lastId = useMemo(() => lastReplyId(messages), [messages]);
+  // Each agent's run of messages as one turn, its tool calls grouped; a
+  // turn that did not change stays the same object, so its row keeps.
+  const turns = useRef(new Map<string, Turn>());
+  const rows = useMemo(() => {
+    const out: Row[] = buildTurns(withNotes(messages, notes), isMessage, turns.current);
+    turns.current = new Map(out.filter(isTurn).map((t) => [t.id, t]));
+    return out;
+  }, [messages, notes]);
+  const lastId = useMemo(() => lastTurnId(rows), [rows]);
   const verbs = readOnly || actions === undefined ? null : actions;
   const stick = useRef(true);
   // Distance from the bottom before an older page loads, so the view stays put.
@@ -739,7 +944,7 @@ export function Timeline({
   const [shown, setShown] = useState<number | null>(null);
   useEffect(() => {
     if (focusMessage === null) return;
-    const i = rows.findIndex((r) => "role" in r && r.id === focusMessage);
+    const i = rows.findIndex((r) => (isTurn(r) ? r.msgs.some((m) => m.id === focusMessage) : "role" in r && r.id === focusMessage));
     if (i >= 0) {
       stick.current = false;
       setShown(i);
@@ -756,7 +961,8 @@ export function Timeline({
     let frames = 0;
     let raf = 0;
     const find = () => {
-      const el = ref.current?.querySelector<HTMLElement>(`[data-mid="${CSS.escape(focusMessage)}"]`);
+      const id = CSS.escape(focusMessage);
+      const el = ref.current?.querySelector<HTMLElement>(`[data-mid="${id}"], [data-mids~="${id}"]`);
       if (el === null || el === undefined) {
         if (frames++ < 30) raf = requestAnimationFrame(find);
         return;
@@ -819,7 +1025,9 @@ export function Timeline({
               onResize={pin}
               reveal={shown}
               render={(m) =>
-                "role" in m ? (
+                isTurn(m) ? (
+                  <TurnView t={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />
+                ) : "role" in m ? (
                   <MessageView m={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />
                 ) : (
                   <p className="room-note flex items-center gap-3 text-faint text-xs before:h-px before:flex-1 before:bg-hairline after:h-px after:flex-1 after:bg-hairline">

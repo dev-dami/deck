@@ -16,10 +16,7 @@ func TestSpawnRunsASubagentAndReturnsItsResult(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 
-	if _, err := r.m.Spawn(tid, "claude", SpawnSpec{Kind: "codex", Brief: "audit the logs"}); err == nil || !strings.Contains(err.Error(), "orchestration is off") {
-		t.Fatalf("spawn with orchestration off: %v", err)
-	}
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	res, err := r.m.Spawn(tid, "claude", SpawnSpec{Kind: "codex", Brief: "audit the logs", Title: "audit logs"})
@@ -48,7 +45,7 @@ func TestSpawnLimits(t *testing.T) {
 	r := newRig(t, nil, []fake.Script{turn(blockStep("ap-child"), say("done"), finish())})
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.m.Spawn(tid, "claude", SpawnSpec{Kind: "nope", Brief: "x"}); err == nil || !strings.Contains(err.Error(), "unknown agent kind") {
@@ -77,7 +74,7 @@ func TestCancelTaskStopsItsSubagentAndSubtasks(t *testing.T) {
 	r := newRig(t, nil, []fake.Script{turn(blockStep("ap-child"), say("done"), finish())})
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	res, err := r.m.Spawn(tid, "claude", SpawnSpec{Kind: "codex", Brief: "build it"})
@@ -108,7 +105,7 @@ func TestSubagentsDoNotSurviveAResumeButTheirTasksAreFailed(t *testing.T) {
 	r := newRig(t, nil, []fake.Script{turn(blockStep("ap-child"), say("done"), finish())})
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "full"); err != nil {
 		t.Fatal(err)
 	}
 	res, err := r.m.Spawn(tid, "claude", SpawnSpec{Kind: "codex", Brief: "build it"})
@@ -117,7 +114,7 @@ func TestSubagentsDoNotSurviveAResumeButTheirTasksAreFailed(t *testing.T) {
 	}
 	waitFor(t, "the child's approval", func() bool { return len(r.c.approvals()) == 1 })
 	r.m.Flush()
-	if th := stored(t, r, tid); !th.Orchestrate || len(th.Members) != 2 || !th.Members[1].Ephemeral || th.Members[1].Parent != "claude" {
+	if th := stored(t, r, tid); th.Orchestration != "full" || len(th.Members) != 2 || !th.Members[1].Ephemeral || th.Members[1].Parent != "claude" {
 		t.Fatalf("stored = %+v", th)
 	}
 	if err := r.m.Archive(tid); err != nil {
@@ -127,7 +124,7 @@ func TestSubagentsDoNotSurviveAResumeButTheirTasksAreFailed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !info.Orchestrate {
+	if info.Orchestration != "full" {
 		t.Fatal("orchestration is stored with the thread")
 	}
 	child, ok := memberStatus(r, res.AgentID)
@@ -204,7 +201,7 @@ func TestCancelWhileASubagentStartsRetiresIt(t *testing.T) {
 
 func TestOneSubagentPerTask(t *testing.T) {
 	r, tid, g := gateRig(t, []fake.Script{turn(say("built it"), finish())})
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	tk := mkTask(t, r, tid, TaskSpec{Title: "build it"})

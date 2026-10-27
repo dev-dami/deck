@@ -108,6 +108,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.limitHistoryStmt, err = db.PrepareContext(ctx, limitHistory); err != nil {
 		return nil, fmt.Errorf("error preparing query LimitHistory: %w", err)
 	}
+	if q.limitTimelineStmt, err = db.PrepareContext(ctx, limitTimeline); err != nil {
+		return nil, fmt.Errorf("error preparing query LimitTimeline: %w", err)
+	}
+	if q.pruneLimitSnapshotsStmt, err = db.PrepareContext(ctx, pruneLimitSnapshots); err != nil {
+		return nil, fmt.Errorf("error preparing query PruneLimitSnapshots: %w", err)
+	}
+	if q.usageHourlyStmt, err = db.PrepareContext(ctx, usageHourly); err != nil {
+		return nil, fmt.Errorf("error preparing query UsageHourly: %w", err)
+	}
 	if q.listAllUserMessagesStmt, err = db.PrepareContext(ctx, listAllUserMessages); err != nil {
 		return nil, fmt.Errorf("error preparing query ListAllUserMessages: %w", err)
 	}
@@ -340,6 +349,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing limitHistoryStmt: %w", cerr)
 		}
 	}
+	if q.limitTimelineStmt != nil {
+		if cerr := q.limitTimelineStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing limitTimelineStmt: %w", cerr)
+		}
+	}
+	if q.pruneLimitSnapshotsStmt != nil {
+		if cerr := q.pruneLimitSnapshotsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing pruneLimitSnapshotsStmt: %w", cerr)
+		}
+	}
+	if q.usageHourlyStmt != nil {
+		if cerr := q.usageHourlyStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing usageHourlyStmt: %w", cerr)
+		}
+	}
 	if q.listAllUserMessagesStmt != nil {
 		if cerr := q.listAllUserMessagesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listAllUserMessagesStmt: %w", cerr)
@@ -552,6 +576,9 @@ type Queries struct {
 	latestLimitSnapshotStmt              *sql.Stmt
 	latestLimitSnapshotsStmt             *sql.Stmt
 	limitHistoryStmt                     *sql.Stmt
+	limitTimelineStmt                    *sql.Stmt
+	pruneLimitSnapshotsStmt              *sql.Stmt
+	usageHourlyStmt                      *sql.Stmt
 	listAllUserMessagesStmt              *sql.Stmt
 	listFilesByPathStmt                  *sql.Stmt
 	listFilesBySessionStmt               *sql.Stmt
@@ -615,6 +642,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		latestLimitSnapshotStmt:              q.latestLimitSnapshotStmt,
 		latestLimitSnapshotsStmt:             q.latestLimitSnapshotsStmt,
 		limitHistoryStmt:                     q.limitHistoryStmt,
+		limitTimelineStmt:                    q.limitTimelineStmt,
+		pruneLimitSnapshotsStmt:              q.pruneLimitSnapshotsStmt,
+		usageHourlyStmt:                      q.usageHourlyStmt,
 		listAllUserMessagesStmt:              q.listAllUserMessagesStmt,
 		listFilesByPathStmt:                  q.listFilesByPathStmt,
 		listFilesBySessionStmt:               q.listFilesBySessionStmt,

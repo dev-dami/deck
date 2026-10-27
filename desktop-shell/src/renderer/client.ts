@@ -1,5 +1,5 @@
 import type { Store } from "@web/controller";
-import type { ChangedFile, Decision, Image, Mode, ModelChoice, Session } from "@web/protocol";
+import type { ChangedFile, Decision, Image, Mode, ModelChoice, RaceEntrant, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import type { Profile, ProfileScope } from "./profiles";
 import type { ProjectApi } from "./project";
@@ -34,7 +34,9 @@ export interface DeckClient {
   cancelQueued(sessionId: string, itemId: string): Promise<void>;
   answerApproval(sessionId: string, id: string, decision: Decision): Promise<void>;
   setMode(sessionId: string, mode: Mode): Promise<boolean>;
-  listModels(sessionId: string, kind: string): Promise<ModelChoice[] | null>;
+  // The models of kind; sessionId "" asks apart from any thread. refresh
+  // asks the Deck to list them afresh (a Deck that cannot ignores it).
+  listModels(sessionId: string, kind: string, refresh?: boolean): Promise<ModelChoice[] | null>;
   setModel(sessionId: string, kind: string, model: string, effort?: string): Promise<void>;
   changes(sessionId: string): Promise<ChangedFile[] | null>;
   // Stops the client and resets its state to "unpaired".
@@ -61,8 +63,11 @@ export interface DeckClient {
   undoRevert?(sessionId: string): Promise<boolean>;
   archiveSession?(sessionId: string): Promise<boolean>;
   unarchiveSession?(sessionId: string): Promise<boolean>;
-  // count agents of kind do brief; with judge, one more ranks them. The race's task id.
-  startRace?(sessionId: string, brief: string, kind: string, count: number, judge?: boolean): Promise<string | null>;
+  // The entrants (kinds mixed and repeated as the race builder made them)
+  // do brief, each on a worktree of its own; with judge, one more ranks
+  // them. The race's task id. A local Deck that serves StartRace, or a
+  // paired one through race.start.
+  startRace?(sessionId: string, brief: string, entrants: RaceEntrant[], judge?: boolean): Promise<string | null>;
   listFiles?(sessionId: string, query: string, limit?: number): Promise<FileList | null>;
   // The bytes of a message's index'th image part. Quiet: no toast.
   readImage?(sessionId: string, messageId: string, index: number): Promise<ImageBytes | null>;

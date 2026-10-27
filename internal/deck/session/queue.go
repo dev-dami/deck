@@ -328,6 +328,12 @@ func (m *Manager) Steer(itemID string) error {
 	if !ok {
 		return fmt.Errorf("session: no queued message %q", itemID)
 	}
+	// Steering a member that waits for its plan limit sends now: the person
+	// chose not to wait.
+	if m.clearWait(a, nil) {
+		m.persistMeta(t)
+		m.emit(WaitChangedMsg{ThreadID: t.id, AgentID: a.id})
+	}
 	cfg := m.config()
 	speaker := cfg.UserName
 	if speaker == "" {

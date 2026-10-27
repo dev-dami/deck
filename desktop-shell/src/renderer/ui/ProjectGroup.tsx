@@ -1,5 +1,5 @@
 import type { Session } from "@web/protocol";
-import { Check, ChevronDown, ChevronRight, Folder, FolderPlus, Laptop, SquarePen, Unplug, X } from "./icons";
+import { Check, ChevronDown, ChevronRight, Folder, FolderPlus, SquarePen, Unplug, X } from "./icons";
 import { type ReactElement, type ReactNode, type RefObject, useState } from "react";
 import type { RoomStatus } from "../attention";
 import type { TeamThread } from "../crew";
@@ -7,6 +7,7 @@ import { cn } from "../lib/cn";
 import { Button } from "./kit/button";
 import { MenuItem, MenuLabel, MenuSeparator, Popover } from "./kit/menu";
 import { VirtualList } from "./kit/virtual";
+import { ProjectIcon } from "./ProjectIcon";
 import type { ForeignThread, ProjectEntry } from "./Sidebar";
 
 // One thread in the sidebar, with its project and its room state.
@@ -135,7 +136,7 @@ export function ProjectGroup({
           aria-label={`${group.name}: ${count} ${count === 1 ? "thread" : "threads"}`}
           onClick={onToggle}
         >
-          {group.kind === "paired" && <Laptop className="size-3 shrink-0" />}
+          <ProjectIcon source={group.key} name={group.name} size={14} className="-ml-0.5" />
           <span className={cn("min-w-0 truncate", current && "text-muted-foreground")}>{group.name}</span>
           <span className="shrink-0 font-normal tabular-nums opacity-70">{count}</span>
           <ChevronDown
@@ -216,7 +217,7 @@ export function RecentProjects({ projects, onProject }: { projects: ProjectEntry
         {projects.slice(0, 6).map((p) => (
           <li key={p.key} className="list-none">
             <button type="button" className={cn("recent-project", navRow(false))} title={p.detail} onClick={() => onProject(p.key)}>
-              <Folder />
+              <ProjectIcon source={p.key} name={p.name} />
               <span className="truncate">{p.name}</span>
             </button>
           </li>
@@ -250,7 +251,7 @@ export function ProjectFilter({
   const openOnes = projects.filter((p) => p.open);
   const rest = projects.filter((p) => !p.open);
   const shown = projects.find((p) => p.key === filter);
-  const icon = (p: ProjectEntry) => (p.kind === "folder" ? <Folder className="mt-0.5" /> : <Laptop className="mt-0.5" />);
+  const icon = (p: ProjectEntry) => <ProjectIcon source={p.key} name={p.name} size={20} className="mt-0.5" />;
   const run = (f: () => void) => () => {
     setOpen(false);
     f();
@@ -276,7 +277,7 @@ export function ProjectFilter({
             aria-label="Projects"
             onClick={() => setOpen((o) => !o)}
           >
-            <Folder weight={filter !== null ? "fill" : "regular"} />
+            {shown === undefined ? <Folder /> : <ProjectIcon source={shown.key} name={shown.name} />}
             <span className="min-w-0 flex-1 truncate">{shown === undefined ? "All projects" : shown.name}</span>
             <ChevronDown className="!size-3 text-faint" />
           </button>

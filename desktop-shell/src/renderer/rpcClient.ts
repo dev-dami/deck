@@ -1,10 +1,11 @@
 import { describeError, Store } from "@web/controller";
-import type { ChangedFile, Decision, Image, Mode, ModelChoice, ServerEvent, ServerInfo, Session } from "@web/protocol";
+import type { ChangedFile, Decision, Image, Mode, ModelChoice, RaceEntrant, ServerEvent, ServerInfo, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import { applyTheme, type ThemeTarget } from "@web/theme";
 import { ProjectApi } from "./project";
 import type { DeckBridge, EngineStop, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
 import type { DeckClient } from "./client";
+import { getPrefs } from "./prefs";
 import type { Profile, ProfileScope } from "./profiles";
 import { RoomMetaStore } from "./roomMeta";
 import {
@@ -288,7 +289,9 @@ export class RpcDeckClient implements DeckClient {
 
   async createSession(title?: string, isolate = false): Promise<Session | null> {
     if (isolate && !this.serves("IsolateSession")) return null;
-    const r = await this.call("CreateSession", { title: title ?? "", isolate });
+    // The orchestration level of Settings › Agents; a Deck from before
+    // levels ignores it.
+    const r = await this.call("CreateSession", { title: title ?? "", isolate, level: getPrefs().orchestration });
     const s = toSession(r);
     if (s === null) return null;
     const room = toRoom(r);
@@ -355,8 +358,9 @@ export class RpcDeckClient implements DeckClient {
     return true;
   }
 
-  async listModels(sessionId: string, kind: string): Promise<ModelChoice[] | null> {
-    const r = await this.call("Models", { session_id: sessionId, kind });
+  // Quiet: the pickers say themselves when a kind could not be listed.
+  async listModels(sessionId: string, kind: string, refresh = false): Promise<ModelChoice[] | null> {
+    const r = await this.call("Models", { session_id: sessionId, kind, refresh }, true);
     return r === null ? null : toModels(r);
   }
 
@@ -428,8 +432,13 @@ export class RpcDeckClient implements DeckClient {
     return true;
   }
 
-  async startRace(sessionId: string, brief: string, kind: string, count: number, judge = false): Promise<string | null> {
-    const r = await this.optional("StartRace", { session_id: sessionId, brief, kind, count, judge });
+  async startRace(sessionId: string, brief: string, entrants: RaceEntrant[], judge = false): Promise<string | null> {
+    // An engine from before entrants reads kind and count: they say the
+    // same race when every entrant is one plain kind.
+    const first = entrants[0]?.agent ?? "";
+    const plain = entrants.every((e) => e.agent === first && e.model === undefined && e.effort === undefined);
+    const old = plain ? { kind: first, count: entrants.length } : {};
+    const r = await this.optional("StartRace", { session_id: sessionId, brief, entrants, judge, ...old });
     if (r === null) return null;
     const id = (r as Record<string, unknown>)["task_id"];
     return typeof id === "string" ? id : null;

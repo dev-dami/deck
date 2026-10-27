@@ -59,6 +59,21 @@ type LimitSnapshot struct {
 	At           time.Time // zero means now
 }
 
+// limitRetention is how long plan window rows are kept; each window's newest
+// row stays whatever its age. Rows are written only when a window moves, so
+// this is a few thousand rows per window at most.
+const limitRetention = 120 * 24 * time.Hour
+
+// Hour is one hour's turns of one agent of one kind.
+type Hour struct {
+	At      time.Time // the start of the hour
+	Kind    string
+	AgentID string
+	Turns   int
+	Tokens  int64 // input plus output
+	CostUSD float64
+}
+
 // resetSlack is how far two reset times of a window may differ and still be
 // the same reset: the CLIs round them differently from one report to the next.
 const resetSlack = time.Minute
@@ -293,7 +308,19 @@ func (s *service) RecordLimits(ctx context.Context, snaps []LimitSnapshot) (int,
 		}
 		n++
 	}
+	if n > 0 {
+		s.prune(ctx, time.Now())
+	}
 	return n, nil
+}
+
+// prune drops plan window rows past limitRetention, at most once a day.
+func (s *service) prune(ctx context.Context, now time.Time) {
+	last := s.pruned.Load()
+	if now.Unix()-last < int64((24*time.Hour)/time.Second) || !s.pruned.CompareAndSwap(last, now.Unix()) {
+		return
+	}
+	_, _ = s.q.PruneLimitSnapshots(ctx, now.Add(-limitRetention).Unix())
 }
 
 func (s *service) Overview(ctx context.Context, since time.Time) (Overview, error) {
@@ -558,6 +585,33 @@ func (s *service) LimitHistory(ctx context.Context, agentKind, windowID string, 
 	out := make([]LimitSnapshot, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, limitRow(r.AgentKind, r.WindowID, r.Kind, r.Label, r.UsedPct, r.ResetsAt, r.DurationMins, r.Plan, r.CreatedAt))
+	}
+	return out, nil
+}
+
+func (s *service) LimitTimeline(ctx context.Context, since time.Time) ([]LimitSnapshot, error) {
+	rows, err := s.q.LimitTimeline(ctx, unix(since))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]LimitSnapshot, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, limitRow(r.AgentKind, r.WindowID, r.Kind, r.Label, r.UsedPct, r.ResetsAt, r.DurationMins, r.Plan, r.CreatedAt))
+	}
+	return out, nil
+}
+
+func (s *service) Hourly(ctx context.Context, since time.Time) ([]Hour, error) {
+	rows, err := s.q.UsageHourly(ctx, unix(since))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Hour, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Hour{
+			At: time.Unix(r.Hour, 0), Kind: r.Kind, AgentID: r.AgentID,
+			Turns: int(r.Turns), Tokens: r.Tokens, CostUSD: r.CostUsd,
+		})
 	}
 	return out, nil
 }

@@ -1,5 +1,5 @@
 import type { AgentLine, Message } from "@web/protocol";
-import { agentRole } from "./agents";
+import { agentRole, agentTint } from "./agents";
 import type { AgentNode } from "./crew";
 import type { Lease } from "./roomMeta";
 
@@ -26,7 +26,14 @@ export interface Lane {
   // A teammate's role (observer, participant or editor), or an agent's
   // one-line role from its profile.
   role: string;
+  // The colour of the agent's profile; "" for the kind's hue.
+  color: string;
   depth: number;
+  // The agent that spawned it (agent.spawn), by name; "" for a member the
+  // person brought in.
+  parent: string;
+  // The branch of the worktree it works on, "" in the shared tree.
+  branch: string;
 }
 
 export const YOU = "you";
@@ -87,7 +94,7 @@ export function buildLanes({
   leases?: readonly Lease[];
 }): Lane[] {
   const lanes: Lane[] = [
-    { id: YOU, kind: "you", name: "you", agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role: "", depth: 0 },
+    { id: YOU, kind: "you", name: "you", agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role: "", color: "", depth: 0, parent: "", branch: "" },
   ];
   // An agent's live leases, else what the agents tree last said.
   const leased = (name: string, n: AgentNode | undefined): string[] => {
@@ -107,7 +114,10 @@ export function buildLanes({
     contextPct: contextPct(n),
     leases: leased(name, n),
     role: agentRole(name, line === undefined ? [] : [line], n === undefined ? [] : [n]),
+    color: agentTint(name, line === undefined ? [] : [line], n === undefined ? [] : [n]),
     depth: n?.depth ?? 0,
+    parent: n?.parent ?? "",
+    branch: n?.branch ?? "",
   });
   for (const line of roster) {
     const n = nodeOf(line, nodes);
@@ -121,7 +131,7 @@ export function buildLanes({
   }
   for (const [peer, role] of Object.entries(shares).sort(([a], [b]) => a.localeCompare(b))) {
     if (role === "") continue;
-    lanes.push({ id: mateLane(peer), kind: "mate", name: peer, agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role, depth: 0 });
+    lanes.push({ id: mateLane(peer), kind: "mate", name: peer, agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role, color: "", depth: 0, parent: "", branch: "" });
   }
   return lanes;
 }
@@ -178,8 +188,17 @@ export function laneOf(m: Message): string | null {
   return mate?.[1] === undefined ? YOU : mateLane(mate[1]);
 }
 
+// A tool's result is a message of its own with no agent (actions.ts): it
+// stays with any agent's lane, where it pairs with its call or, when the
+// call is not there, drops out of the timeline.
 export function filterLane(messages: Message[], lane: string | null): Message[] {
-  return lane === null ? messages : messages.filter((m) => laneOf(m) === lane);
+  if (lane === null) return messages;
+  const calls = new Set(messages.filter((m) => laneOf(m) === lane).flatMap((m) => m.parts.flatMap((p) => (p.type === "tool_call" && p.id !== undefined ? [p.id] : []))));
+  return messages.filter(
+    (m) =>
+      laneOf(m) === lane ||
+      (m.role === "assistant" && m.agent === undefined && m.parts.length > 0 && m.parts.every((p) => p.type === "tool_result" && calls.has(p.tool_call_id ?? ""))),
+  );
 }
 
 // The short id of a room's corner index: the last three base36 characters

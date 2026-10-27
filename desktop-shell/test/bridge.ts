@@ -69,6 +69,7 @@ export function testHost(
       { kind: "codex", path: "/opt/homebrew/bin/codex" },
       { kind: "opencode", path: null },
       { kind: "antigravity", path: null },
+      { kind: "pi", path: null },
     ],
     // A real probe; no window, so no view.
     preview: new Preview({
@@ -79,7 +80,7 @@ export function testHost(
       send: () => {},
       session: () => ({}) as Session,
     }),
-    setAppIcon: () => true,
+    setAppIcon: () => ({ shown: true, launchers: "none" }),
     ...deps,
   });
   return { host, store, links, decks, logged };

@@ -588,7 +588,9 @@ type CreateSessionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Title string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
 	// isolate starts the thread on a worktree and branch of its own.
-	Isolate       bool `protobuf:"varint,2,opt,name=isolate,proto3" json:"isolate,omitempty"`
+	Isolate bool `protobuf:"varint,2,opt,name=isolate,proto3" json:"isolate,omitempty"`
+	// level is the orchestration level it starts at; "" is the Deck's default.
+	Level         string `protobuf:"bytes,3,opt,name=level,proto3" json:"level,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -635,6 +637,13 @@ func (x *CreateSessionRequest) GetIsolate() bool {
 		return x.Isolate
 	}
 	return false
+}
+
+func (x *CreateSessionRequest) GetLevel() string {
+	if x != nil {
+		return x.Level
+	}
+	return ""
 }
 
 type RenameSessionRequest struct {
@@ -1493,8 +1502,10 @@ type AgentLine struct {
 	// profile is the named agent the member was started from ("" for none)
 	// and role that profile's one-line role. name is the member's own name
 	// (charles, charles-2); kind still says which CLI runs it.
-	Profile       string `protobuf:"bytes,7,opt,name=profile,proto3" json:"profile,omitempty"`
-	Role          string `protobuf:"bytes,8,opt,name=role,proto3" json:"role,omitempty"`
+	Profile string `protobuf:"bytes,7,opt,name=profile,proto3" json:"profile,omitempty"`
+	Role    string `protobuf:"bytes,8,opt,name=role,proto3" json:"role,omitempty"`
+	// color is the profile's CSS colour; "" means the kind's hue.
+	Color         string `protobuf:"bytes,9,opt,name=color,proto3" json:"color,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1585,6 +1596,13 @@ func (x *AgentLine) GetRole() string {
 	return ""
 }
 
+func (x *AgentLine) GetColor() string {
+	if x != nil {
+		return x.Color
+	}
+	return ""
+}
+
 type RosterResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Agents        []*AgentLine           `protobuf:"bytes,1,rep,name=agents,proto3" json:"agents,omitempty"`
@@ -1629,10 +1647,15 @@ func (x *RosterResponse) GetAgents() []*AgentLine {
 	return nil
 }
 
+// ModelsRequest asks for the models of kind. session_id may be empty: the
+// kind's models apart from any thread, none of them selected. refresh makes
+// the Deck forget the lists it keeps and ask the agent CLIs again (after an
+// install, an upgrade or a login).
 type ModelsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Refresh       bool                   `protobuf:"varint,3,opt,name=refresh,proto3" json:"refresh,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1679,6 +1702,13 @@ func (x *ModelsRequest) GetKind() string {
 		return x.Kind
 	}
 	return ""
+}
+
+func (x *ModelsRequest) GetRefresh() bool {
+	if x != nil {
+		return x.Refresh
+	}
+	return false
 }
 
 type ModelChoice struct {
@@ -1793,6 +1823,7 @@ func (x *ModelsResponse) GetModels() []*ModelChoice {
 	return nil
 }
 
+// An empty model is the CLI's own default.
 type SetModelRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -3777,7 +3808,10 @@ func (x *GitMergePRRequest) GetMethod() string {
 type UsageRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// days is the range: the last so many days, or 0 for all time.
-	Days          int32 `protobuf:"varint,1,opt,name=days,proto3" json:"days,omitempty"`
+	Days int32 `protobuf:"varint,1,opt,name=days,proto3" json:"days,omitempty"`
+	// history_days asks for the analytics record (hours, limit_history) of
+	// the last so many days; 0 leaves it out.
+	HistoryDays   int32 `protobuf:"varint,2,opt,name=history_days,json=historyDays,proto3" json:"history_days,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3815,6 +3849,13 @@ func (*UsageRequest) Descriptor() ([]byte, []int) {
 func (x *UsageRequest) GetDays() int32 {
 	if x != nil {
 		return x.Days
+	}
+	return 0
+}
+
+func (x *UsageRequest) GetHistoryDays() int32 {
+	if x != nil {
+		return x.HistoryDays
 	}
 	return 0
 }
@@ -4568,8 +4609,15 @@ type UsageResponse struct {
 	Sessions []*UsageSession `protobuf:"bytes,6,rep,name=sessions,proto3" json:"sessions,omitempty"`
 	Limits   []*UsageLimit   `protobuf:"bytes,7,rep,name=limits,proto3" json:"limits,omitempty"`
 	// heat is every day of the last weeks, from a Monday.
-	Heat          []*UsageDay  `protobuf:"bytes,8,rep,name=heat,proto3" json:"heat,omitempty"`
-	Habits        *UsageHabits `protobuf:"bytes,9,opt,name=habits,proto3" json:"habits,omitempty"`
+	Heat   []*UsageDay  `protobuf:"bytes,8,rep,name=heat,proto3" json:"heat,omitempty"`
+	Habits *UsageHabits `protobuf:"bytes,9,opt,name=habits,proto3" json:"habits,omitempty"`
+	// hours is each hour's usage by agent kind and agent over history_days,
+	// oldest first; hours with no turns are left out.
+	Hours []*UsageHour `protobuf:"bytes,10,rep,name=hours,proto3" json:"hours,omitempty"`
+	// limit_history is every plan window's stored rows over history_days, by
+	// kind and window, oldest first, each window led by its last row before
+	// the range. A row is stored only when the window moved.
+	LimitHistory  []*UsageLimit `protobuf:"bytes,11,rep,name=limit_history,json=limitHistory,proto3" json:"limit_history,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4667,6 +4715,105 @@ func (x *UsageResponse) GetHabits() *UsageHabits {
 	return nil
 }
 
+func (x *UsageResponse) GetHours() []*UsageHour {
+	if x != nil {
+		return x.Hours
+	}
+	return nil
+}
+
+func (x *UsageResponse) GetLimitHistory() []*UsageLimit {
+	if x != nil {
+		return x.LimitHistory
+	}
+	return nil
+}
+
+type UsageHour struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// at is the start of the hour.
+	At            int64   `protobuf:"varint,1,opt,name=at,proto3" json:"at,omitempty"`
+	Kind          string  `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	AgentId       string  `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Turns         int32   `protobuf:"varint,4,opt,name=turns,proto3" json:"turns,omitempty"`
+	Tokens        int64   `protobuf:"varint,5,opt,name=tokens,proto3" json:"tokens,omitempty"`
+	CostUsd       float64 `protobuf:"fixed64,6,opt,name=cost_usd,json=costUsd,proto3" json:"cost_usd,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageHour) Reset() {
+	*x = UsageHour{}
+	mi := &file_deck_v1_deck_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageHour) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageHour) ProtoMessage() {}
+
+func (x *UsageHour) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageHour.ProtoReflect.Descriptor instead.
+func (*UsageHour) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *UsageHour) GetAt() int64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+func (x *UsageHour) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *UsageHour) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *UsageHour) GetTurns() int32 {
+	if x != nil {
+		return x.Turns
+	}
+	return 0
+}
+
+func (x *UsageHour) GetTokens() int64 {
+	if x != nil {
+		return x.Tokens
+	}
+	return 0
+}
+
+func (x *UsageHour) GetCostUsd() float64 {
+	if x != nil {
+		return x.CostUsd
+	}
+	return 0
+}
+
 type TerminalOpenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Cols          int32                  `protobuf:"varint,1,opt,name=cols,proto3" json:"cols,omitempty"`
@@ -4677,7 +4824,7 @@ type TerminalOpenRequest struct {
 
 func (x *TerminalOpenRequest) Reset() {
 	*x = TerminalOpenRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[64]
+	mi := &file_deck_v1_deck_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4689,7 +4836,7 @@ func (x *TerminalOpenRequest) String() string {
 func (*TerminalOpenRequest) ProtoMessage() {}
 
 func (x *TerminalOpenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[64]
+	mi := &file_deck_v1_deck_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4702,7 +4849,7 @@ func (x *TerminalOpenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalOpenRequest.ProtoReflect.Descriptor instead.
 func (*TerminalOpenRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{64}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *TerminalOpenRequest) GetCols() int32 {
@@ -4728,7 +4875,7 @@ type TerminalRef struct {
 
 func (x *TerminalRef) Reset() {
 	*x = TerminalRef{}
-	mi := &file_deck_v1_deck_proto_msgTypes[65]
+	mi := &file_deck_v1_deck_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4740,7 +4887,7 @@ func (x *TerminalRef) String() string {
 func (*TerminalRef) ProtoMessage() {}
 
 func (x *TerminalRef) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[65]
+	mi := &file_deck_v1_deck_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4753,7 +4900,7 @@ func (x *TerminalRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalRef.ProtoReflect.Descriptor instead.
 func (*TerminalRef) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{65}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *TerminalRef) GetTerminalId() string {
@@ -4773,7 +4920,7 @@ type TerminalInput struct {
 
 func (x *TerminalInput) Reset() {
 	*x = TerminalInput{}
-	mi := &file_deck_v1_deck_proto_msgTypes[66]
+	mi := &file_deck_v1_deck_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4785,7 +4932,7 @@ func (x *TerminalInput) String() string {
 func (*TerminalInput) ProtoMessage() {}
 
 func (x *TerminalInput) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[66]
+	mi := &file_deck_v1_deck_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4798,7 +4945,7 @@ func (x *TerminalInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalInput.ProtoReflect.Descriptor instead.
 func (*TerminalInput) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{66}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *TerminalInput) GetTerminalId() string {
@@ -4826,7 +4973,7 @@ type TerminalSize struct {
 
 func (x *TerminalSize) Reset() {
 	*x = TerminalSize{}
-	mi := &file_deck_v1_deck_proto_msgTypes[67]
+	mi := &file_deck_v1_deck_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4838,7 +4985,7 @@ func (x *TerminalSize) String() string {
 func (*TerminalSize) ProtoMessage() {}
 
 func (x *TerminalSize) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[67]
+	mi := &file_deck_v1_deck_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4851,7 +4998,7 @@ func (x *TerminalSize) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalSize.ProtoReflect.Descriptor instead.
 func (*TerminalSize) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{67}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *TerminalSize) GetTerminalId() string {
@@ -4887,7 +5034,7 @@ type TerminalChunk struct {
 
 func (x *TerminalChunk) Reset() {
 	*x = TerminalChunk{}
-	mi := &file_deck_v1_deck_proto_msgTypes[68]
+	mi := &file_deck_v1_deck_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4899,7 +5046,7 @@ func (x *TerminalChunk) String() string {
 func (*TerminalChunk) ProtoMessage() {}
 
 func (x *TerminalChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[68]
+	mi := &file_deck_v1_deck_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4912,7 +5059,7 @@ func (x *TerminalChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalChunk.ProtoReflect.Descriptor instead.
 func (*TerminalChunk) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{68}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *TerminalChunk) GetData() []byte {
@@ -4964,7 +5111,7 @@ type BoardTask struct {
 
 func (x *BoardTask) Reset() {
 	*x = BoardTask{}
-	mi := &file_deck_v1_deck_proto_msgTypes[69]
+	mi := &file_deck_v1_deck_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4976,7 +5123,7 @@ func (x *BoardTask) String() string {
 func (*BoardTask) ProtoMessage() {}
 
 func (x *BoardTask) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[69]
+	mi := &file_deck_v1_deck_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4989,7 +5136,7 @@ func (x *BoardTask) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardTask.ProtoReflect.Descriptor instead.
 func (*BoardTask) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{69}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *BoardTask) GetId() string {
@@ -5119,16 +5266,20 @@ func (x *BoardTask) GetReviews() int32 {
 }
 
 type BoardResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Orchestrate   bool                   `protobuf:"varint,1,opt,name=orchestrate,proto3" json:"orchestrate,omitempty"`
-	Tasks         []*BoardTask           `protobuf:"bytes,2,rep,name=tasks,proto3" json:"tasks,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// orchestrate is set at the levels whose scheduler runs the board (auto,
+	// full), for clients that predate level.
+	Orchestrate bool         `protobuf:"varint,1,opt,name=orchestrate,proto3" json:"orchestrate,omitempty"`
+	Tasks       []*BoardTask `protobuf:"bytes,2,rep,name=tasks,proto3" json:"tasks,omitempty"`
+	// level is the orchestration level: off, assist, auto or full.
+	Level         string `protobuf:"bytes,3,opt,name=level,proto3" json:"level,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BoardResponse) Reset() {
 	*x = BoardResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[70]
+	mi := &file_deck_v1_deck_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5140,7 +5291,7 @@ func (x *BoardResponse) String() string {
 func (*BoardResponse) ProtoMessage() {}
 
 func (x *BoardResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[70]
+	mi := &file_deck_v1_deck_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5153,7 +5304,7 @@ func (x *BoardResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardResponse.ProtoReflect.Descriptor instead.
 func (*BoardResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{70}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *BoardResponse) GetOrchestrate() bool {
@@ -5170,6 +5321,13 @@ func (x *BoardResponse) GetTasks() []*BoardTask {
 	return nil
 }
 
+func (x *BoardResponse) GetLevel() string {
+	if x != nil {
+		return x.Level
+	}
+	return ""
+}
+
 type TaskActionRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -5183,7 +5341,7 @@ type TaskActionRequest struct {
 
 func (x *TaskActionRequest) Reset() {
 	*x = TaskActionRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[71]
+	mi := &file_deck_v1_deck_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5195,7 +5353,7 @@ func (x *TaskActionRequest) String() string {
 func (*TaskActionRequest) ProtoMessage() {}
 
 func (x *TaskActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[71]
+	mi := &file_deck_v1_deck_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5208,7 +5366,7 @@ func (x *TaskActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskActionRequest.ProtoReflect.Descriptor instead.
 func (*TaskActionRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{71}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *TaskActionRequest) GetSessionId() string {
@@ -5249,7 +5407,7 @@ type TaskActionResponse struct {
 
 func (x *TaskActionResponse) Reset() {
 	*x = TaskActionResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[72]
+	mi := &file_deck_v1_deck_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5261,7 +5419,7 @@ func (x *TaskActionResponse) String() string {
 func (*TaskActionResponse) ProtoMessage() {}
 
 func (x *TaskActionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[72]
+	mi := &file_deck_v1_deck_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5274,7 +5432,7 @@ func (x *TaskActionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskActionResponse.ProtoReflect.Descriptor instead.
 func (*TaskActionResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{72}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *TaskActionResponse) GetFiles() []string {
@@ -5285,16 +5443,19 @@ func (x *TaskActionResponse) GetFiles() []string {
 }
 
 type SetOrchestrateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	On            bool                   `protobuf:"varint,2,opt,name=on,proto3" json:"on,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// on, from a client that predates level: auto when set, off when not.
+	On bool `protobuf:"varint,2,opt,name=on,proto3" json:"on,omitempty"`
+	// level is off, assist, auto or full; it wins over on.
+	Level         string `protobuf:"bytes,3,opt,name=level,proto3" json:"level,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetOrchestrateRequest) Reset() {
 	*x = SetOrchestrateRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[73]
+	mi := &file_deck_v1_deck_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5306,7 +5467,7 @@ func (x *SetOrchestrateRequest) String() string {
 func (*SetOrchestrateRequest) ProtoMessage() {}
 
 func (x *SetOrchestrateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[73]
+	mi := &file_deck_v1_deck_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5319,7 +5480,7 @@ func (x *SetOrchestrateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetOrchestrateRequest.ProtoReflect.Descriptor instead.
 func (*SetOrchestrateRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{73}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *SetOrchestrateRequest) GetSessionId() string {
@@ -5334,6 +5495,13 @@ func (x *SetOrchestrateRequest) GetOn() bool {
 		return x.On
 	}
 	return false
+}
+
+func (x *SetOrchestrateRequest) GetLevel() string {
+	if x != nil {
+		return x.Level
+	}
+	return ""
 }
 
 type AgentNode struct {
@@ -5353,16 +5521,17 @@ type AgentNode struct {
 	Parent        string  `protobuf:"bytes,12,opt,name=parent,proto3" json:"parent,omitempty"`
 	Branch        string  `protobuf:"bytes,13,opt,name=branch,proto3" json:"branch,omitempty"`
 	Leases        string  `protobuf:"bytes,14,opt,name=leases,proto3" json:"leases,omitempty"`
-	// profile and role: as AgentLine's.
+	// profile, role and color: as AgentLine's.
 	Profile       string `protobuf:"bytes,15,opt,name=profile,proto3" json:"profile,omitempty"`
 	Role          string `protobuf:"bytes,16,opt,name=role,proto3" json:"role,omitempty"`
+	Color         string `protobuf:"bytes,17,opt,name=color,proto3" json:"color,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AgentNode) Reset() {
 	*x = AgentNode{}
-	mi := &file_deck_v1_deck_proto_msgTypes[74]
+	mi := &file_deck_v1_deck_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5374,7 +5543,7 @@ func (x *AgentNode) String() string {
 func (*AgentNode) ProtoMessage() {}
 
 func (x *AgentNode) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[74]
+	mi := &file_deck_v1_deck_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5387,7 +5556,7 @@ func (x *AgentNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentNode.ProtoReflect.Descriptor instead.
 func (*AgentNode) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{74}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *AgentNode) GetName() string {
@@ -5502,6 +5671,13 @@ func (x *AgentNode) GetRole() string {
 	return ""
 }
 
+func (x *AgentNode) GetColor() string {
+	if x != nil {
+		return x.Color
+	}
+	return ""
+}
+
 type RunningTool struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Agent   string                 `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
@@ -5520,7 +5696,7 @@ type RunningTool struct {
 
 func (x *RunningTool) Reset() {
 	*x = RunningTool{}
-	mi := &file_deck_v1_deck_proto_msgTypes[75]
+	mi := &file_deck_v1_deck_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5532,7 +5708,7 @@ func (x *RunningTool) String() string {
 func (*RunningTool) ProtoMessage() {}
 
 func (x *RunningTool) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[75]
+	mi := &file_deck_v1_deck_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5545,7 +5721,7 @@ func (x *RunningTool) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunningTool.ProtoReflect.Descriptor instead.
 func (*RunningTool) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{75}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *RunningTool) GetAgent() string {
@@ -5614,7 +5790,7 @@ type AgentsResponse struct {
 
 func (x *AgentsResponse) Reset() {
 	*x = AgentsResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[76]
+	mi := &file_deck_v1_deck_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5626,7 +5802,7 @@ func (x *AgentsResponse) String() string {
 func (*AgentsResponse) ProtoMessage() {}
 
 func (x *AgentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[76]
+	mi := &file_deck_v1_deck_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5639,7 +5815,7 @@ func (x *AgentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentsResponse.ProtoReflect.Descriptor instead.
 func (*AgentsResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{76}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *AgentsResponse) GetAgents() []*AgentNode {
@@ -5669,7 +5845,7 @@ type TeamAgent struct {
 
 func (x *TeamAgent) Reset() {
 	*x = TeamAgent{}
-	mi := &file_deck_v1_deck_proto_msgTypes[77]
+	mi := &file_deck_v1_deck_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5681,7 +5857,7 @@ func (x *TeamAgent) String() string {
 func (*TeamAgent) ProtoMessage() {}
 
 func (x *TeamAgent) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[77]
+	mi := &file_deck_v1_deck_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5694,7 +5870,7 @@ func (x *TeamAgent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TeamAgent.ProtoReflect.Descriptor instead.
 func (*TeamAgent) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{77}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *TeamAgent) GetName() string {
@@ -5746,7 +5922,7 @@ type TeamThread struct {
 
 func (x *TeamThread) Reset() {
 	*x = TeamThread{}
-	mi := &file_deck_v1_deck_proto_msgTypes[78]
+	mi := &file_deck_v1_deck_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5758,7 +5934,7 @@ func (x *TeamThread) String() string {
 func (*TeamThread) ProtoMessage() {}
 
 func (x *TeamThread) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[78]
+	mi := &file_deck_v1_deck_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5771,7 +5947,7 @@ func (x *TeamThread) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TeamThread.ProtoReflect.Descriptor instead.
 func (*TeamThread) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{78}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *TeamThread) GetId() string {
@@ -5833,7 +6009,7 @@ type Teammate struct {
 
 func (x *Teammate) Reset() {
 	*x = Teammate{}
-	mi := &file_deck_v1_deck_proto_msgTypes[79]
+	mi := &file_deck_v1_deck_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5845,7 +6021,7 @@ func (x *Teammate) String() string {
 func (*Teammate) ProtoMessage() {}
 
 func (x *Teammate) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[79]
+	mi := &file_deck_v1_deck_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5858,7 +6034,7 @@ func (x *Teammate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Teammate.ProtoReflect.Descriptor instead.
 func (*Teammate) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{79}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *Teammate) GetName() string {
@@ -5931,7 +6107,7 @@ type TeamChat struct {
 
 func (x *TeamChat) Reset() {
 	*x = TeamChat{}
-	mi := &file_deck_v1_deck_proto_msgTypes[80]
+	mi := &file_deck_v1_deck_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5943,7 +6119,7 @@ func (x *TeamChat) String() string {
 func (*TeamChat) ProtoMessage() {}
 
 func (x *TeamChat) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[80]
+	mi := &file_deck_v1_deck_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5956,7 +6132,7 @@ func (x *TeamChat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TeamChat.ProtoReflect.Descriptor instead.
 func (*TeamChat) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{80}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *TeamChat) GetSeq() uint64 {
@@ -6020,7 +6196,7 @@ type TeamContract struct {
 
 func (x *TeamContract) Reset() {
 	*x = TeamContract{}
-	mi := &file_deck_v1_deck_proto_msgTypes[81]
+	mi := &file_deck_v1_deck_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6032,7 +6208,7 @@ func (x *TeamContract) String() string {
 func (*TeamContract) ProtoMessage() {}
 
 func (x *TeamContract) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[81]
+	mi := &file_deck_v1_deck_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6045,7 +6221,7 @@ func (x *TeamContract) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TeamContract.ProtoReflect.Descriptor instead.
 func (*TeamContract) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{81}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *TeamContract) GetId() string {
@@ -6136,7 +6312,7 @@ type TeamResponse struct {
 
 func (x *TeamResponse) Reset() {
 	*x = TeamResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[82]
+	mi := &file_deck_v1_deck_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6148,7 +6324,7 @@ func (x *TeamResponse) String() string {
 func (*TeamResponse) ProtoMessage() {}
 
 func (x *TeamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[82]
+	mi := &file_deck_v1_deck_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6161,7 +6337,7 @@ func (x *TeamResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TeamResponse.ProtoReflect.Descriptor instead.
 func (*TeamResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{82}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *TeamResponse) GetAvailable() bool {
@@ -6229,7 +6405,7 @@ type TeamPostRequest struct {
 
 func (x *TeamPostRequest) Reset() {
 	*x = TeamPostRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[83]
+	mi := &file_deck_v1_deck_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6241,7 +6417,7 @@ func (x *TeamPostRequest) String() string {
 func (*TeamPostRequest) ProtoMessage() {}
 
 func (x *TeamPostRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[83]
+	mi := &file_deck_v1_deck_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6254,7 +6430,7 @@ func (x *TeamPostRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TeamPostRequest.ProtoReflect.Descriptor instead.
 func (*TeamPostRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{83}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *TeamPostRequest) GetText() string {
@@ -6273,7 +6449,7 @@ type TeamPostResponse struct {
 
 func (x *TeamPostResponse) Reset() {
 	*x = TeamPostResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[84]
+	mi := &file_deck_v1_deck_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6285,7 +6461,7 @@ func (x *TeamPostResponse) String() string {
 func (*TeamPostResponse) ProtoMessage() {}
 
 func (x *TeamPostResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[84]
+	mi := &file_deck_v1_deck_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6298,7 +6474,7 @@ func (x *TeamPostResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TeamPostResponse.ProtoReflect.Descriptor instead.
 func (*TeamPostResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{84}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *TeamPostResponse) GetReached() []string {
@@ -6319,7 +6495,7 @@ type ShareThreadRequest struct {
 
 func (x *ShareThreadRequest) Reset() {
 	*x = ShareThreadRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[85]
+	mi := &file_deck_v1_deck_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6331,7 +6507,7 @@ func (x *ShareThreadRequest) String() string {
 func (*ShareThreadRequest) ProtoMessage() {}
 
 func (x *ShareThreadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[85]
+	mi := &file_deck_v1_deck_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6344,7 +6520,7 @@ func (x *ShareThreadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShareThreadRequest.ProtoReflect.Descriptor instead.
 func (*ShareThreadRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{85}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *ShareThreadRequest) GetSessionId() string {
@@ -6377,7 +6553,7 @@ type ThreadSharesResponse struct {
 
 func (x *ThreadSharesResponse) Reset() {
 	*x = ThreadSharesResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[86]
+	mi := &file_deck_v1_deck_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6389,7 +6565,7 @@ func (x *ThreadSharesResponse) String() string {
 func (*ThreadSharesResponse) ProtoMessage() {}
 
 func (x *ThreadSharesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[86]
+	mi := &file_deck_v1_deck_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6402,7 +6578,7 @@ func (x *ThreadSharesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ThreadSharesResponse.ProtoReflect.Descriptor instead.
 func (*ThreadSharesResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{86}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *ThreadSharesResponse) GetShares() map[string]string {
@@ -6423,7 +6599,7 @@ type ProposeContractRequest struct {
 
 func (x *ProposeContractRequest) Reset() {
 	*x = ProposeContractRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[87]
+	mi := &file_deck_v1_deck_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6435,7 +6611,7 @@ func (x *ProposeContractRequest) String() string {
 func (*ProposeContractRequest) ProtoMessage() {}
 
 func (x *ProposeContractRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[87]
+	mi := &file_deck_v1_deck_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6448,7 +6624,7 @@ func (x *ProposeContractRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProposeContractRequest.ProtoReflect.Descriptor instead.
 func (*ProposeContractRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{87}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *ProposeContractRequest) GetSessionId() string {
@@ -6482,7 +6658,7 @@ type ProposeContractResponse struct {
 
 func (x *ProposeContractResponse) Reset() {
 	*x = ProposeContractResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[88]
+	mi := &file_deck_v1_deck_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6494,7 +6670,7 @@ func (x *ProposeContractResponse) String() string {
 func (*ProposeContractResponse) ProtoMessage() {}
 
 func (x *ProposeContractResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[88]
+	mi := &file_deck_v1_deck_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6507,7 +6683,7 @@ func (x *ProposeContractResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProposeContractResponse.ProtoReflect.Descriptor instead.
 func (*ProposeContractResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{88}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *ProposeContractResponse) GetTaskId() string {
@@ -6536,7 +6712,7 @@ type AnswerContractRequest struct {
 
 func (x *AnswerContractRequest) Reset() {
 	*x = AnswerContractRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[89]
+	mi := &file_deck_v1_deck_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6548,7 +6724,7 @@ func (x *AnswerContractRequest) String() string {
 func (*AnswerContractRequest) ProtoMessage() {}
 
 func (x *AnswerContractRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[89]
+	mi := &file_deck_v1_deck_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6561,7 +6737,7 @@ func (x *AnswerContractRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnswerContractRequest.ProtoReflect.Descriptor instead.
 func (*AnswerContractRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{89}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *AnswerContractRequest) GetPeer() string {
@@ -6603,7 +6779,7 @@ type ReadSharedRequest struct {
 
 func (x *ReadSharedRequest) Reset() {
 	*x = ReadSharedRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[90]
+	mi := &file_deck_v1_deck_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6615,7 +6791,7 @@ func (x *ReadSharedRequest) String() string {
 func (*ReadSharedRequest) ProtoMessage() {}
 
 func (x *ReadSharedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[90]
+	mi := &file_deck_v1_deck_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6628,7 +6804,7 @@ func (x *ReadSharedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadSharedRequest.ProtoReflect.Descriptor instead.
 func (*ReadSharedRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{90}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *ReadSharedRequest) GetPeer() string {
@@ -6664,7 +6840,7 @@ type SharedApproval struct {
 
 func (x *SharedApproval) Reset() {
 	*x = SharedApproval{}
-	mi := &file_deck_v1_deck_proto_msgTypes[91]
+	mi := &file_deck_v1_deck_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6676,7 +6852,7 @@ func (x *SharedApproval) String() string {
 func (*SharedApproval) ProtoMessage() {}
 
 func (x *SharedApproval) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[91]
+	mi := &file_deck_v1_deck_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6689,7 +6865,7 @@ func (x *SharedApproval) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SharedApproval.ProtoReflect.Descriptor instead.
 func (*SharedApproval) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{91}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *SharedApproval) GetId() string {
@@ -6732,7 +6908,7 @@ type SharedMirror struct {
 
 func (x *SharedMirror) Reset() {
 	*x = SharedMirror{}
-	mi := &file_deck_v1_deck_proto_msgTypes[92]
+	mi := &file_deck_v1_deck_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6744,7 +6920,7 @@ func (x *SharedMirror) String() string {
 func (*SharedMirror) ProtoMessage() {}
 
 func (x *SharedMirror) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[92]
+	mi := &file_deck_v1_deck_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6757,7 +6933,7 @@ func (x *SharedMirror) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SharedMirror.ProtoReflect.Descriptor instead.
 func (*SharedMirror) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{92}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *SharedMirror) GetThread() *TeamThread {
@@ -6799,7 +6975,7 @@ type PostSharedRequest struct {
 
 func (x *PostSharedRequest) Reset() {
 	*x = PostSharedRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[93]
+	mi := &file_deck_v1_deck_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6811,7 +6987,7 @@ func (x *PostSharedRequest) String() string {
 func (*PostSharedRequest) ProtoMessage() {}
 
 func (x *PostSharedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[93]
+	mi := &file_deck_v1_deck_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6824,7 +7000,7 @@ func (x *PostSharedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PostSharedRequest.ProtoReflect.Descriptor instead.
 func (*PostSharedRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{93}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *PostSharedRequest) GetPeer() string {
@@ -6860,7 +7036,7 @@ type AnswerSharedRequest struct {
 
 func (x *AnswerSharedRequest) Reset() {
 	*x = AnswerSharedRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[94]
+	mi := &file_deck_v1_deck_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6872,7 +7048,7 @@ func (x *AnswerSharedRequest) String() string {
 func (*AnswerSharedRequest) ProtoMessage() {}
 
 func (x *AnswerSharedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[94]
+	mi := &file_deck_v1_deck_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6885,7 +7061,7 @@ func (x *AnswerSharedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnswerSharedRequest.ProtoReflect.Descriptor instead.
 func (*AnswerSharedRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{94}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *AnswerSharedRequest) GetPeer() string {
@@ -6925,7 +7101,7 @@ type FilesResponse struct {
 
 func (x *FilesResponse) Reset() {
 	*x = FilesResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[95]
+	mi := &file_deck_v1_deck_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6937,7 +7113,7 @@ func (x *FilesResponse) String() string {
 func (*FilesResponse) ProtoMessage() {}
 
 func (x *FilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[95]
+	mi := &file_deck_v1_deck_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6950,7 +7126,7 @@ func (x *FilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilesResponse.ProtoReflect.Descriptor instead.
 func (*FilesResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{95}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *FilesResponse) GetFiles() []string {
@@ -6974,7 +7150,7 @@ type RevertFilesRequest struct {
 
 func (x *RevertFilesRequest) Reset() {
 	*x = RevertFilesRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[96]
+	mi := &file_deck_v1_deck_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6986,7 +7162,7 @@ func (x *RevertFilesRequest) String() string {
 func (*RevertFilesRequest) ProtoMessage() {}
 
 func (x *RevertFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[96]
+	mi := &file_deck_v1_deck_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6999,7 +7175,7 @@ func (x *RevertFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevertFilesRequest.ProtoReflect.Descriptor instead.
 func (*RevertFilesRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{96}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *RevertFilesRequest) GetSessionId() string {
@@ -7027,17 +7203,20 @@ type StartRaceRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Brief     string                 `protobuf:"bytes,2,opt,name=brief,proto3" json:"brief,omitempty"`
-	Kind      string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
-	Count     int32                  `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
-	// judge has an agent of the same kind rank the entries.
-	Judge         bool `protobuf:"varint,5,opt,name=judge,proto3" json:"judge,omitempty"`
+	// kind and count are the race of an older client: count agents of kind.
+	// entrants, when set, replace them.
+	Kind  string `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	Count int32  `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
+	// judge has an agent of the first entrant's kind rank the entries.
+	Judge         bool           `protobuf:"varint,5,opt,name=judge,proto3" json:"judge,omitempty"`
+	Entrants      []*RaceEntrant `protobuf:"bytes,6,rep,name=entrants,proto3" json:"entrants,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StartRaceRequest) Reset() {
 	*x = StartRaceRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[97]
+	mi := &file_deck_v1_deck_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7049,7 +7228,7 @@ func (x *StartRaceRequest) String() string {
 func (*StartRaceRequest) ProtoMessage() {}
 
 func (x *StartRaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[97]
+	mi := &file_deck_v1_deck_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7062,7 +7241,7 @@ func (x *StartRaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartRaceRequest.ProtoReflect.Descriptor instead.
 func (*StartRaceRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{97}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *StartRaceRequest) GetSessionId() string {
@@ -7100,6 +7279,76 @@ func (x *StartRaceRequest) GetJudge() bool {
 	return false
 }
 
+func (x *StartRaceRequest) GetEntrants() []*RaceEntrant {
+	if x != nil {
+		return x.Entrants
+	}
+	return nil
+}
+
+// RaceEntrant is one agent of a race.
+type RaceEntrant struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// agent is an agent kind or a named agent's name.
+	Agent string `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
+	// model and effort are what it runs; "" is the agent's own.
+	Model         string `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
+	Effort        string `protobuf:"bytes,3,opt,name=effort,proto3" json:"effort,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RaceEntrant) Reset() {
+	*x = RaceEntrant{}
+	mi := &file_deck_v1_deck_proto_msgTypes[99]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RaceEntrant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RaceEntrant) ProtoMessage() {}
+
+func (x *RaceEntrant) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[99]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RaceEntrant.ProtoReflect.Descriptor instead.
+func (*RaceEntrant) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{99}
+}
+
+func (x *RaceEntrant) GetAgent() string {
+	if x != nil {
+		return x.Agent
+	}
+	return ""
+}
+
+func (x *RaceEntrant) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *RaceEntrant) GetEffort() string {
+	if x != nil {
+		return x.Effort
+	}
+	return ""
+}
+
 type StartRaceResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
@@ -7109,7 +7358,7 @@ type StartRaceResponse struct {
 
 func (x *StartRaceResponse) Reset() {
 	*x = StartRaceResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[98]
+	mi := &file_deck_v1_deck_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7121,7 +7370,7 @@ func (x *StartRaceResponse) String() string {
 func (*StartRaceResponse) ProtoMessage() {}
 
 func (x *StartRaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[98]
+	mi := &file_deck_v1_deck_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7134,7 +7383,7 @@ func (x *StartRaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartRaceResponse.ProtoReflect.Descriptor instead.
 func (*StartRaceResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{98}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *StartRaceResponse) GetTaskId() string {
@@ -7156,7 +7405,7 @@ type ListFilesRequest struct {
 
 func (x *ListFilesRequest) Reset() {
 	*x = ListFilesRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[99]
+	mi := &file_deck_v1_deck_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7168,7 +7417,7 @@ func (x *ListFilesRequest) String() string {
 func (*ListFilesRequest) ProtoMessage() {}
 
 func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[99]
+	mi := &file_deck_v1_deck_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7181,7 +7430,7 @@ func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesRequest.ProtoReflect.Descriptor instead.
 func (*ListFilesRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{99}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *ListFilesRequest) GetSessionId() string {
@@ -7216,7 +7465,7 @@ type ListFilesResponse struct {
 
 func (x *ListFilesResponse) Reset() {
 	*x = ListFilesResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[100]
+	mi := &file_deck_v1_deck_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7228,7 +7477,7 @@ func (x *ListFilesResponse) String() string {
 func (*ListFilesResponse) ProtoMessage() {}
 
 func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[100]
+	mi := &file_deck_v1_deck_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7241,7 +7490,7 @@ func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesResponse.ProtoReflect.Descriptor instead.
 func (*ListFilesResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{100}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *ListFilesResponse) GetPaths() []string {
@@ -7269,7 +7518,7 @@ type ReadImageRequest struct {
 
 func (x *ReadImageRequest) Reset() {
 	*x = ReadImageRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[101]
+	mi := &file_deck_v1_deck_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7281,7 +7530,7 @@ func (x *ReadImageRequest) String() string {
 func (*ReadImageRequest) ProtoMessage() {}
 
 func (x *ReadImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[101]
+	mi := &file_deck_v1_deck_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7294,7 +7543,7 @@ func (x *ReadImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadImageRequest.ProtoReflect.Descriptor instead.
 func (*ReadImageRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{101}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *ReadImageRequest) GetSessionId() string {
@@ -7328,7 +7577,7 @@ type ReadImageResponse struct {
 
 func (x *ReadImageResponse) Reset() {
 	*x = ReadImageResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[102]
+	mi := &file_deck_v1_deck_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7340,7 +7589,7 @@ func (x *ReadImageResponse) String() string {
 func (*ReadImageResponse) ProtoMessage() {}
 
 func (x *ReadImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[102]
+	mi := &file_deck_v1_deck_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7353,7 +7602,7 @@ func (x *ReadImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadImageResponse.ProtoReflect.Descriptor instead.
 func (*ReadImageResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{102}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *ReadImageResponse) GetData() []byte {
@@ -7381,7 +7630,7 @@ type SearchMessagesRequest struct {
 
 func (x *SearchMessagesRequest) Reset() {
 	*x = SearchMessagesRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[103]
+	mi := &file_deck_v1_deck_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7393,7 +7642,7 @@ func (x *SearchMessagesRequest) String() string {
 func (*SearchMessagesRequest) ProtoMessage() {}
 
 func (x *SearchMessagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[103]
+	mi := &file_deck_v1_deck_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7406,7 +7655,7 @@ func (x *SearchMessagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchMessagesRequest.ProtoReflect.Descriptor instead.
 func (*SearchMessagesRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{103}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *SearchMessagesRequest) GetQuery() string {
@@ -7438,7 +7687,7 @@ type SearchHit struct {
 
 func (x *SearchHit) Reset() {
 	*x = SearchHit{}
-	mi := &file_deck_v1_deck_proto_msgTypes[104]
+	mi := &file_deck_v1_deck_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7450,7 +7699,7 @@ func (x *SearchHit) String() string {
 func (*SearchHit) ProtoMessage() {}
 
 func (x *SearchHit) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[104]
+	mi := &file_deck_v1_deck_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7463,7 +7712,7 @@ func (x *SearchHit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchHit.ProtoReflect.Descriptor instead.
 func (*SearchHit) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{104}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *SearchHit) GetSessionId() string {
@@ -7510,7 +7759,7 @@ type SearchMessagesResponse struct {
 
 func (x *SearchMessagesResponse) Reset() {
 	*x = SearchMessagesResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[105]
+	mi := &file_deck_v1_deck_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7522,7 +7771,7 @@ func (x *SearchMessagesResponse) String() string {
 func (*SearchMessagesResponse) ProtoMessage() {}
 
 func (x *SearchMessagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[105]
+	mi := &file_deck_v1_deck_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7535,7 +7784,7 @@ func (x *SearchMessagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchMessagesResponse.ProtoReflect.Descriptor instead.
 func (*SearchMessagesResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{105}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *SearchMessagesResponse) GetHits() []*SearchHit {
@@ -7554,7 +7803,7 @@ type Profile struct {
 	// most 32; not all, user, deck, an agent kind or a teammate's name.
 	// Names compare case-insensitively.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// kind is the CLI it runs: claude, codex, opencode or antigravity.
+	// kind is the CLI it runs: claude, codex, opencode, antigravity or pi.
 	Kind   string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
 	Model  string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
 	Effort string `protobuf:"bytes,4,opt,name=effort,proto3" json:"effort,omitempty"`
@@ -7577,7 +7826,7 @@ type Profile struct {
 
 func (x *Profile) Reset() {
 	*x = Profile{}
-	mi := &file_deck_v1_deck_proto_msgTypes[106]
+	mi := &file_deck_v1_deck_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7589,7 +7838,7 @@ func (x *Profile) String() string {
 func (*Profile) ProtoMessage() {}
 
 func (x *Profile) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[106]
+	mi := &file_deck_v1_deck_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7602,7 +7851,7 @@ func (x *Profile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Profile.ProtoReflect.Descriptor instead.
 func (*Profile) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{106}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *Profile) GetName() string {
@@ -7683,7 +7932,7 @@ type ListProfilesRequest struct {
 
 func (x *ListProfilesRequest) Reset() {
 	*x = ListProfilesRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[107]
+	mi := &file_deck_v1_deck_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7695,7 +7944,7 @@ func (x *ListProfilesRequest) String() string {
 func (*ListProfilesRequest) ProtoMessage() {}
 
 func (x *ListProfilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[107]
+	mi := &file_deck_v1_deck_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7708,7 +7957,7 @@ func (x *ListProfilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfilesRequest.ProtoReflect.Descriptor instead.
 func (*ListProfilesRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{107}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{109}
 }
 
 type ListProfilesResponse struct {
@@ -7720,7 +7969,7 @@ type ListProfilesResponse struct {
 
 func (x *ListProfilesResponse) Reset() {
 	*x = ListProfilesResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[108]
+	mi := &file_deck_v1_deck_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7732,7 +7981,7 @@ func (x *ListProfilesResponse) String() string {
 func (*ListProfilesResponse) ProtoMessage() {}
 
 func (x *ListProfilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[108]
+	mi := &file_deck_v1_deck_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7745,7 +7994,7 @@ func (x *ListProfilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfilesResponse.ProtoReflect.Descriptor instead.
 func (*ListProfilesResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{108}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *ListProfilesResponse) GetProfiles() []*Profile {
@@ -7765,7 +8014,7 @@ type SaveProfileRequest struct {
 
 func (x *SaveProfileRequest) Reset() {
 	*x = SaveProfileRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[109]
+	mi := &file_deck_v1_deck_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7777,7 +8026,7 @@ func (x *SaveProfileRequest) String() string {
 func (*SaveProfileRequest) ProtoMessage() {}
 
 func (x *SaveProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[109]
+	mi := &file_deck_v1_deck_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7790,7 +8039,7 @@ func (x *SaveProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveProfileRequest.ProtoReflect.Descriptor instead.
 func (*SaveProfileRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{109}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *SaveProfileRequest) GetProfile() *Profile {
@@ -7810,7 +8059,7 @@ type SaveProfileResponse struct {
 
 func (x *SaveProfileResponse) Reset() {
 	*x = SaveProfileResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[110]
+	mi := &file_deck_v1_deck_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7822,7 +8071,7 @@ func (x *SaveProfileResponse) String() string {
 func (*SaveProfileResponse) ProtoMessage() {}
 
 func (x *SaveProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[110]
+	mi := &file_deck_v1_deck_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7835,7 +8084,7 @@ func (x *SaveProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveProfileResponse.ProtoReflect.Descriptor instead.
 func (*SaveProfileResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{110}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *SaveProfileResponse) GetProfile() *Profile {
@@ -7856,7 +8105,7 @@ type DeleteProfileRequest struct {
 
 func (x *DeleteProfileRequest) Reset() {
 	*x = DeleteProfileRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[111]
+	mi := &file_deck_v1_deck_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7868,7 +8117,7 @@ func (x *DeleteProfileRequest) String() string {
 func (*DeleteProfileRequest) ProtoMessage() {}
 
 func (x *DeleteProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[111]
+	mi := &file_deck_v1_deck_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7881,7 +8130,7 @@ func (x *DeleteProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProfileRequest.ProtoReflect.Descriptor instead.
 func (*DeleteProfileRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{111}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *DeleteProfileRequest) GetName() string {
@@ -7906,7 +8155,7 @@ type DeleteProfileResponse struct {
 
 func (x *DeleteProfileResponse) Reset() {
 	*x = DeleteProfileResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[112]
+	mi := &file_deck_v1_deck_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7918,7 +8167,7 @@ func (x *DeleteProfileResponse) String() string {
 func (*DeleteProfileResponse) ProtoMessage() {}
 
 func (x *DeleteProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[112]
+	mi := &file_deck_v1_deck_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7931,7 +8180,2158 @@ func (x *DeleteProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProfileResponse.ProtoReflect.Descriptor instead.
 func (*DeleteProfileResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{112}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{114}
+}
+
+type LimitsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// history_hours asks for the windows' record of the last so many hours
+	// (for burn rates); 0 leaves it out.
+	HistoryHours  int32 `protobuf:"varint,1,opt,name=history_hours,json=historyHours,proto3" json:"history_hours,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LimitsRequest) Reset() {
+	*x = LimitsRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[115]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LimitsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LimitsRequest) ProtoMessage() {}
+
+func (x *LimitsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[115]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LimitsRequest.ProtoReflect.Descriptor instead.
+func (*LimitsRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{115}
+}
+
+func (x *LimitsRequest) GetHistoryHours() int32 {
+	if x != nil {
+		return x.HistoryHours
+	}
+	return 0
+}
+
+type LimitCheck struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Kind      string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	CheckedAt int64                  `protobuf:"varint,2,opt,name=checked_at,json=checkedAt,proto3" json:"checked_at,omitempty"`
+	// error is why the check failed, in Deck's words; "" when it did not.
+	Error string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	// unsupported: the CLI has no way to report its limits.
+	Unsupported   bool `protobuf:"varint,4,opt,name=unsupported,proto3" json:"unsupported,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LimitCheck) Reset() {
+	*x = LimitCheck{}
+	mi := &file_deck_v1_deck_proto_msgTypes[116]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LimitCheck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LimitCheck) ProtoMessage() {}
+
+func (x *LimitCheck) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[116]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LimitCheck.ProtoReflect.Descriptor instead.
+func (*LimitCheck) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{116}
+}
+
+func (x *LimitCheck) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *LimitCheck) GetCheckedAt() int64 {
+	if x != nil {
+		return x.CheckedAt
+	}
+	return 0
+}
+
+func (x *LimitCheck) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *LimitCheck) GetUnsupported() bool {
+	if x != nil {
+		return x.Unsupported
+	}
+	return false
+}
+
+type AgentWait struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// agent is the member's name in the session, as the roster has it.
+	Agent string `protobuf:"bytes,2,opt,name=agent,proto3" json:"agent,omitempty"`
+	Kind  string `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	Since int64  `protobuf:"varint,4,opt,name=since,proto3" json:"since,omitempty"`
+	// until is when its limit resets; 0 while not known.
+	Until         int64  `protobuf:"varint,5,opt,name=until,proto3" json:"until,omitempty"`
+	Window        string `protobuf:"bytes,6,opt,name=window,proto3" json:"window,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentWait) Reset() {
+	*x = AgentWait{}
+	mi := &file_deck_v1_deck_proto_msgTypes[117]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentWait) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentWait) ProtoMessage() {}
+
+func (x *AgentWait) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[117]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentWait.ProtoReflect.Descriptor instead.
+func (*AgentWait) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{117}
+}
+
+func (x *AgentWait) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *AgentWait) GetAgent() string {
+	if x != nil {
+		return x.Agent
+	}
+	return ""
+}
+
+func (x *AgentWait) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *AgentWait) GetSince() int64 {
+	if x != nil {
+		return x.Since
+	}
+	return 0
+}
+
+func (x *AgentWait) GetUntil() int64 {
+	if x != nil {
+		return x.Until
+	}
+	return 0
+}
+
+func (x *AgentWait) GetWindow() string {
+	if x != nil {
+		return x.Window
+	}
+	return ""
+}
+
+type ScheduledSend struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	At            int64                  `protobuf:"varint,4,opt,name=at,proto3" json:"at,omitempty"`
+	Created       int64                  `protobuf:"varint,5,opt,name=created,proto3" json:"created,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScheduledSend) Reset() {
+	*x = ScheduledSend{}
+	mi := &file_deck_v1_deck_proto_msgTypes[118]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScheduledSend) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScheduledSend) ProtoMessage() {}
+
+func (x *ScheduledSend) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[118]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScheduledSend.ProtoReflect.Descriptor instead.
+func (*ScheduledSend) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{118}
+}
+
+func (x *ScheduledSend) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ScheduledSend) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ScheduledSend) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *ScheduledSend) GetAt() int64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+func (x *ScheduledSend) GetCreated() int64 {
+	if x != nil {
+		return x.Created
+	}
+	return 0
+}
+
+type LimitsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// limits is each window's latest report.
+	Limits    []*UsageLimit    `protobuf:"bytes,1,rep,name=limits,proto3" json:"limits,omitempty"`
+	History   []*UsageLimit    `protobuf:"bytes,2,rep,name=history,proto3" json:"history,omitempty"`
+	Checks    []*LimitCheck    `protobuf:"bytes,3,rep,name=checks,proto3" json:"checks,omitempty"`
+	Waits     []*AgentWait     `protobuf:"bytes,4,rep,name=waits,proto3" json:"waits,omitempty"`
+	Scheduled []*ScheduledSend `protobuf:"bytes,5,rep,name=scheduled,proto3" json:"scheduled,omitempty"`
+	// kinds are the installed agent kinds.
+	Kinds         []string `protobuf:"bytes,6,rep,name=kinds,proto3" json:"kinds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LimitsResponse) Reset() {
+	*x = LimitsResponse{}
+	mi := &file_deck_v1_deck_proto_msgTypes[119]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LimitsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LimitsResponse) ProtoMessage() {}
+
+func (x *LimitsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[119]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LimitsResponse.ProtoReflect.Descriptor instead.
+func (*LimitsResponse) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{119}
+}
+
+func (x *LimitsResponse) GetLimits() []*UsageLimit {
+	if x != nil {
+		return x.Limits
+	}
+	return nil
+}
+
+func (x *LimitsResponse) GetHistory() []*UsageLimit {
+	if x != nil {
+		return x.History
+	}
+	return nil
+}
+
+func (x *LimitsResponse) GetChecks() []*LimitCheck {
+	if x != nil {
+		return x.Checks
+	}
+	return nil
+}
+
+func (x *LimitsResponse) GetWaits() []*AgentWait {
+	if x != nil {
+		return x.Waits
+	}
+	return nil
+}
+
+func (x *LimitsResponse) GetScheduled() []*ScheduledSend {
+	if x != nil {
+		return x.Scheduled
+	}
+	return nil
+}
+
+func (x *LimitsResponse) GetKinds() []string {
+	if x != nil {
+		return x.Kinds
+	}
+	return nil
+}
+
+type CheckLimitsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// kind is "" for every installed agent.
+	Kind          string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckLimitsRequest) Reset() {
+	*x = CheckLimitsRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[120]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckLimitsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckLimitsRequest) ProtoMessage() {}
+
+func (x *CheckLimitsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[120]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckLimitsRequest.ProtoReflect.Descriptor instead.
+func (*CheckLimitsRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{120}
+}
+
+func (x *CheckLimitsRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+type CheckLimitsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Checks        []*LimitCheck          `protobuf:"bytes,1,rep,name=checks,proto3" json:"checks,omitempty"`
+	Limits        []*UsageLimit          `protobuf:"bytes,2,rep,name=limits,proto3" json:"limits,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckLimitsResponse) Reset() {
+	*x = CheckLimitsResponse{}
+	mi := &file_deck_v1_deck_proto_msgTypes[121]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckLimitsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckLimitsResponse) ProtoMessage() {}
+
+func (x *CheckLimitsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[121]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckLimitsResponse.ProtoReflect.Descriptor instead.
+func (*CheckLimitsResponse) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{121}
+}
+
+func (x *CheckLimitsResponse) GetChecks() []*LimitCheck {
+	if x != nil {
+		return x.Checks
+	}
+	return nil
+}
+
+func (x *CheckLimitsResponse) GetLimits() []*UsageLimit {
+	if x != nil {
+		return x.Limits
+	}
+	return nil
+}
+
+type StartWindowRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartWindowRequest) Reset() {
+	*x = StartWindowRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[122]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartWindowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartWindowRequest) ProtoMessage() {}
+
+func (x *StartWindowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[122]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartWindowRequest.ProtoReflect.Descriptor instead.
+func (*StartWindowRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{122}
+}
+
+func (x *StartWindowRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+type StartWindowResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// model is the model the prompt went to ("" for the CLI's default).
+	Model         string        `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
+	Limits        []*UsageLimit `protobuf:"bytes,2,rep,name=limits,proto3" json:"limits,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartWindowResponse) Reset() {
+	*x = StartWindowResponse{}
+	mi := &file_deck_v1_deck_proto_msgTypes[123]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartWindowResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartWindowResponse) ProtoMessage() {}
+
+func (x *StartWindowResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[123]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartWindowResponse.ProtoReflect.Descriptor instead.
+func (*StartWindowResponse) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{123}
+}
+
+func (x *StartWindowResponse) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *StartWindowResponse) GetLimits() []*UsageLimit {
+	if x != nil {
+		return x.Limits
+	}
+	return nil
+}
+
+type ResolveWaitRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Agent         string                 `protobuf:"bytes,2,opt,name=agent,proto3" json:"agent,omitempty"`
+	Cancel        bool                   `protobuf:"varint,3,opt,name=cancel,proto3" json:"cancel,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveWaitRequest) Reset() {
+	*x = ResolveWaitRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[124]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveWaitRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveWaitRequest) ProtoMessage() {}
+
+func (x *ResolveWaitRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[124]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveWaitRequest.ProtoReflect.Descriptor instead.
+func (*ResolveWaitRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{124}
+}
+
+func (x *ResolveWaitRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ResolveWaitRequest) GetAgent() string {
+	if x != nil {
+		return x.Agent
+	}
+	return ""
+}
+
+func (x *ResolveWaitRequest) GetCancel() bool {
+	if x != nil {
+		return x.Cancel
+	}
+	return false
+}
+
+type ScheduleSendRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	At            int64                  `protobuf:"varint,3,opt,name=at,proto3" json:"at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScheduleSendRequest) Reset() {
+	*x = ScheduleSendRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[125]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScheduleSendRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScheduleSendRequest) ProtoMessage() {}
+
+func (x *ScheduleSendRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[125]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScheduleSendRequest.ProtoReflect.Descriptor instead.
+func (*ScheduleSendRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{125}
+}
+
+func (x *ScheduleSendRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ScheduleSendRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *ScheduleSendRequest) GetAt() int64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+type ScheduleSendResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScheduleSendResponse) Reset() {
+	*x = ScheduleSendResponse{}
+	mi := &file_deck_v1_deck_proto_msgTypes[126]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScheduleSendResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScheduleSendResponse) ProtoMessage() {}
+
+func (x *ScheduleSendResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[126]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScheduleSendResponse.ProtoReflect.Descriptor instead.
+func (*ScheduleSendResponse) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{126}
+}
+
+func (x *ScheduleSendResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type CancelScheduledRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	SendNow       bool                   `protobuf:"varint,3,opt,name=send_now,json=sendNow,proto3" json:"send_now,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelScheduledRequest) Reset() {
+	*x = CancelScheduledRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[127]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelScheduledRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelScheduledRequest) ProtoMessage() {}
+
+func (x *CancelScheduledRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[127]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelScheduledRequest.ProtoReflect.Descriptor instead.
+func (*CancelScheduledRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{127}
+}
+
+func (x *CancelScheduledRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *CancelScheduledRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CancelScheduledRequest) GetSendNow() bool {
+	if x != nil {
+		return x.SendNow
+	}
+	return false
+}
+
+type WorkResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Worktrees []*WorktreeView        `protobuf:"bytes,1,rep,name=worktrees,proto3" json:"worktrees,omitempty"`
+	// Newest first.
+	Capsules      []*CapsuleView `protobuf:"bytes,2,rep,name=capsules,proto3" json:"capsules,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkResponse) Reset() {
+	*x = WorkResponse{}
+	mi := &file_deck_v1_deck_proto_msgTypes[128]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkResponse) ProtoMessage() {}
+
+func (x *WorkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[128]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkResponse.ProtoReflect.Descriptor instead.
+func (*WorkResponse) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{128}
+}
+
+func (x *WorkResponse) GetWorktrees() []*WorktreeView {
+	if x != nil {
+		return x.Worktrees
+	}
+	return nil
+}
+
+func (x *WorkResponse) GetCapsules() []*CapsuleView {
+	if x != nil {
+		return x.Capsules
+	}
+	return nil
+}
+
+// A worktree the session tracks. kind is "thread" (the session works on
+// it), "agent" (one agent's own) or "tree" (the session's, nobody's yet).
+// ahead and behind count commits against base_ref; dirty the uncommitted
+// files; files what it changed since fork. landed is set while nothing
+// changed since it was last landed.
+type WorktreeView struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Branch        string                 `protobuf:"bytes,2,opt,name=branch,proto3" json:"branch,omitempty"`
+	Path          string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Kind          string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
+	Owner         string                 `protobuf:"bytes,5,opt,name=owner,proto3" json:"owner,omitempty"`
+	OwnerName     string                 `protobuf:"bytes,6,opt,name=owner_name,json=ownerName,proto3" json:"owner_name,omitempty"`
+	Task          string                 `protobuf:"bytes,7,opt,name=task,proto3" json:"task,omitempty"`
+	Working       bool                   `protobuf:"varint,8,opt,name=working,proto3" json:"working,omitempty"`
+	Created       int64                  `protobuf:"varint,9,opt,name=created,proto3" json:"created,omitempty"`
+	Fork          string                 `protobuf:"bytes,10,opt,name=fork,proto3" json:"fork,omitempty"`
+	BaseRef       string                 `protobuf:"bytes,11,opt,name=base_ref,json=baseRef,proto3" json:"base_ref,omitempty"`
+	Ahead         int32                  `protobuf:"varint,12,opt,name=ahead,proto3" json:"ahead,omitempty"`
+	Behind        int32                  `protobuf:"varint,13,opt,name=behind,proto3" json:"behind,omitempty"`
+	Dirty         int32                  `protobuf:"varint,14,opt,name=dirty,proto3" json:"dirty,omitempty"`
+	Files         []string               `protobuf:"bytes,15,rep,name=files,proto3" json:"files,omitempty"`
+	LandedAt      int64                  `protobuf:"varint,16,opt,name=landed_at,json=landedAt,proto3" json:"landed_at,omitempty"`
+	Landed        bool                   `protobuf:"varint,17,opt,name=landed,proto3" json:"landed,omitempty"`
+	Error         string                 `protobuf:"bytes,18,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorktreeView) Reset() {
+	*x = WorktreeView{}
+	mi := &file_deck_v1_deck_proto_msgTypes[129]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorktreeView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorktreeView) ProtoMessage() {}
+
+func (x *WorktreeView) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[129]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorktreeView.ProtoReflect.Descriptor instead.
+func (*WorktreeView) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{129}
+}
+
+func (x *WorktreeView) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *WorktreeView) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *WorktreeView) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *WorktreeView) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *WorktreeView) GetOwner() string {
+	if x != nil {
+		return x.Owner
+	}
+	return ""
+}
+
+func (x *WorktreeView) GetOwnerName() string {
+	if x != nil {
+		return x.OwnerName
+	}
+	return ""
+}
+
+func (x *WorktreeView) GetTask() string {
+	if x != nil {
+		return x.Task
+	}
+	return ""
+}
+
+func (x *WorktreeView) GetWorking() bool {
+	if x != nil {
+		return x.Working
+	}
+	return false
+}
+
+func (x *WorktreeView) GetCreated() int64 {
+	if x != nil {
+		return x.Created
+	}
+	return 0
+}
+
+func (x *WorktreeView) GetFork() string {
+	if x != nil {
+		return x.Fork
+	}
+	return ""
+}
+
+func (x *WorktreeView) GetBaseRef() string {
+	if x != nil {
+		return x.BaseRef
+	}
+	return ""
+}
+
+func (x *WorktreeView) GetAhead() int32 {
+	if x != nil {
+		return x.Ahead
+	}
+	return 0
+}
+
+func (x *WorktreeView) GetBehind() int32 {
+	if x != nil {
+		return x.Behind
+	}
+	return 0
+}
+
+func (x *WorktreeView) GetDirty() int32 {
+	if x != nil {
+		return x.Dirty
+	}
+	return 0
+}
+
+func (x *WorktreeView) GetFiles() []string {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *WorktreeView) GetLandedAt() int64 {
+	if x != nil {
+		return x.LandedAt
+	}
+	return 0
+}
+
+func (x *WorktreeView) GetLanded() bool {
+	if x != nil {
+		return x.Landed
+	}
+	return false
+}
+
+func (x *WorktreeView) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+// A named capsule: state is "open", "landed" or "reverted"; tests "pass",
+// "fail" or "" (not run).
+type CapsuleView struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Source        string                 `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	Worktree      string                 `protobuf:"bytes,3,opt,name=worktree,proto3" json:"worktree,omitempty"`
+	Authors       []string               `protobuf:"bytes,4,rep,name=authors,proto3" json:"authors,omitempty"`
+	Note          string                 `protobuf:"bytes,5,opt,name=note,proto3" json:"note,omitempty"`
+	State         string                 `protobuf:"bytes,6,opt,name=state,proto3" json:"state,omitempty"`
+	Versions      []*CapsuleVersionView  `protobuf:"bytes,7,rep,name=versions,proto3" json:"versions,omitempty"`
+	Tests         string                 `protobuf:"bytes,8,opt,name=tests,proto3" json:"tests,omitempty"`
+	TestNote      string                 `protobuf:"bytes,9,opt,name=test_note,json=testNote,proto3" json:"test_note,omitempty"`
+	Comments      []*CapsuleComment      `protobuf:"bytes,10,rep,name=comments,proto3" json:"comments,omitempty"`
+	Landings      []*CapsuleLanding      `protobuf:"bytes,11,rep,name=landings,proto3" json:"landings,omitempty"`
+	Created       int64                  `protobuf:"varint,12,opt,name=created,proto3" json:"created,omitempty"`
+	Updated       int64                  `protobuf:"varint,13,opt,name=updated,proto3" json:"updated,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapsuleView) Reset() {
+	*x = CapsuleView{}
+	mi := &file_deck_v1_deck_proto_msgTypes[130]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapsuleView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapsuleView) ProtoMessage() {}
+
+func (x *CapsuleView) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[130]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapsuleView.ProtoReflect.Descriptor instead.
+func (*CapsuleView) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{130}
+}
+
+func (x *CapsuleView) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CapsuleView) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *CapsuleView) GetWorktree() string {
+	if x != nil {
+		return x.Worktree
+	}
+	return ""
+}
+
+func (x *CapsuleView) GetAuthors() []string {
+	if x != nil {
+		return x.Authors
+	}
+	return nil
+}
+
+func (x *CapsuleView) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *CapsuleView) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *CapsuleView) GetVersions() []*CapsuleVersionView {
+	if x != nil {
+		return x.Versions
+	}
+	return nil
+}
+
+func (x *CapsuleView) GetTests() string {
+	if x != nil {
+		return x.Tests
+	}
+	return ""
+}
+
+func (x *CapsuleView) GetTestNote() string {
+	if x != nil {
+		return x.TestNote
+	}
+	return ""
+}
+
+func (x *CapsuleView) GetComments() []*CapsuleComment {
+	if x != nil {
+		return x.Comments
+	}
+	return nil
+}
+
+func (x *CapsuleView) GetLandings() []*CapsuleLanding {
+	if x != nil {
+		return x.Landings
+	}
+	return nil
+}
+
+func (x *CapsuleView) GetCreated() int64 {
+	if x != nil {
+		return x.Created
+	}
+	return 0
+}
+
+func (x *CapsuleView) GetUpdated() int64 {
+	if x != nil {
+		return x.Updated
+	}
+	return 0
+}
+
+type CapsuleVersionView struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Fork          string                 `protobuf:"bytes,2,opt,name=fork,proto3" json:"fork,omitempty"`
+	Head          string                 `protobuf:"bytes,3,opt,name=head,proto3" json:"head,omitempty"`
+	Commits       []*CapsuleCommit       `protobuf:"bytes,4,rep,name=commits,proto3" json:"commits,omitempty"`
+	CommitsTotal  int32                  `protobuf:"varint,5,opt,name=commits_total,json=commitsTotal,proto3" json:"commits_total,omitempty"`
+	Onto          string                 `protobuf:"bytes,6,opt,name=onto,proto3" json:"onto,omitempty"`
+	Files         int32                  `protobuf:"varint,7,opt,name=files,proto3" json:"files,omitempty"`
+	Add           int32                  `protobuf:"varint,8,opt,name=add,proto3" json:"add,omitempty"`
+	Mod           int32                  `protobuf:"varint,9,opt,name=mod,proto3" json:"mod,omitempty"`
+	Del           int32                  `protobuf:"varint,10,opt,name=del,proto3" json:"del,omitempty"`
+	By            string                 `protobuf:"bytes,11,opt,name=by,proto3" json:"by,omitempty"`
+	Note          string                 `protobuf:"bytes,12,opt,name=note,proto3" json:"note,omitempty"`
+	Created       int64                  `protobuf:"varint,13,opt,name=created,proto3" json:"created,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapsuleVersionView) Reset() {
+	*x = CapsuleVersionView{}
+	mi := &file_deck_v1_deck_proto_msgTypes[131]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapsuleVersionView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapsuleVersionView) ProtoMessage() {}
+
+func (x *CapsuleVersionView) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[131]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapsuleVersionView.ProtoReflect.Descriptor instead.
+func (*CapsuleVersionView) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{131}
+}
+
+func (x *CapsuleVersionView) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CapsuleVersionView) GetFork() string {
+	if x != nil {
+		return x.Fork
+	}
+	return ""
+}
+
+func (x *CapsuleVersionView) GetHead() string {
+	if x != nil {
+		return x.Head
+	}
+	return ""
+}
+
+func (x *CapsuleVersionView) GetCommits() []*CapsuleCommit {
+	if x != nil {
+		return x.Commits
+	}
+	return nil
+}
+
+func (x *CapsuleVersionView) GetCommitsTotal() int32 {
+	if x != nil {
+		return x.CommitsTotal
+	}
+	return 0
+}
+
+func (x *CapsuleVersionView) GetOnto() string {
+	if x != nil {
+		return x.Onto
+	}
+	return ""
+}
+
+func (x *CapsuleVersionView) GetFiles() int32 {
+	if x != nil {
+		return x.Files
+	}
+	return 0
+}
+
+func (x *CapsuleVersionView) GetAdd() int32 {
+	if x != nil {
+		return x.Add
+	}
+	return 0
+}
+
+func (x *CapsuleVersionView) GetMod() int32 {
+	if x != nil {
+		return x.Mod
+	}
+	return 0
+}
+
+func (x *CapsuleVersionView) GetDel() int32 {
+	if x != nil {
+		return x.Del
+	}
+	return 0
+}
+
+func (x *CapsuleVersionView) GetBy() string {
+	if x != nil {
+		return x.By
+	}
+	return ""
+}
+
+func (x *CapsuleVersionView) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *CapsuleVersionView) GetCreated() int64 {
+	if x != nil {
+		return x.Created
+	}
+	return 0
+}
+
+type CapsuleCommit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sha           string                 `protobuf:"bytes,1,opt,name=sha,proto3" json:"sha,omitempty"`
+	Subject       string                 `protobuf:"bytes,2,opt,name=subject,proto3" json:"subject,omitempty"`
+	Author        string                 `protobuf:"bytes,3,opt,name=author,proto3" json:"author,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapsuleCommit) Reset() {
+	*x = CapsuleCommit{}
+	mi := &file_deck_v1_deck_proto_msgTypes[132]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapsuleCommit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapsuleCommit) ProtoMessage() {}
+
+func (x *CapsuleCommit) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[132]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapsuleCommit.ProtoReflect.Descriptor instead.
+func (*CapsuleCommit) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{132}
+}
+
+func (x *CapsuleCommit) GetSha() string {
+	if x != nil {
+		return x.Sha
+	}
+	return ""
+}
+
+func (x *CapsuleCommit) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+func (x *CapsuleCommit) GetAuthor() string {
+	if x != nil {
+		return x.Author
+	}
+	return ""
+}
+
+type CapsuleComment struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	By            string                 `protobuf:"bytes,1,opt,name=by,proto3" json:"by,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	At            int64                  `protobuf:"varint,4,opt,name=at,proto3" json:"at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapsuleComment) Reset() {
+	*x = CapsuleComment{}
+	mi := &file_deck_v1_deck_proto_msgTypes[133]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapsuleComment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapsuleComment) ProtoMessage() {}
+
+func (x *CapsuleComment) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[133]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapsuleComment.ProtoReflect.Descriptor instead.
+func (*CapsuleComment) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{133}
+}
+
+func (x *CapsuleComment) GetBy() string {
+	if x != nil {
+		return x.By
+	}
+	return ""
+}
+
+func (x *CapsuleComment) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *CapsuleComment) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *CapsuleComment) GetAt() int64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+type CapsuleLanding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       int32                  `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	Into          string                 `protobuf:"bytes,2,opt,name=into,proto3" json:"into,omitempty"`
+	At            int64                  `protobuf:"varint,3,opt,name=at,proto3" json:"at,omitempty"`
+	By            string                 `protobuf:"bytes,4,opt,name=by,proto3" json:"by,omitempty"`
+	Reverted      bool                   `protobuf:"varint,5,opt,name=reverted,proto3" json:"reverted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapsuleLanding) Reset() {
+	*x = CapsuleLanding{}
+	mi := &file_deck_v1_deck_proto_msgTypes[134]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapsuleLanding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapsuleLanding) ProtoMessage() {}
+
+func (x *CapsuleLanding) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[134]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapsuleLanding.ProtoReflect.Descriptor instead.
+func (*CapsuleLanding) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{134}
+}
+
+func (x *CapsuleLanding) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *CapsuleLanding) GetInto() string {
+	if x != nil {
+		return x.Into
+	}
+	return ""
+}
+
+func (x *CapsuleLanding) GetAt() int64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+func (x *CapsuleLanding) GetBy() string {
+	if x != nil {
+		return x.By
+	}
+	return ""
+}
+
+func (x *CapsuleLanding) GetReverted() bool {
+	if x != nil {
+		return x.Reverted
+	}
+	return false
+}
+
+// action: create (name, base, task), sync, rebase, check (into), merge
+// (into, strategy: "", "theirs" or "ours"), discard, spawn (kind, brief).
+type WorktreeActionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Action        string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
+	Base          string                 `protobuf:"bytes,4,opt,name=base,proto3" json:"base,omitempty"`
+	Into          string                 `protobuf:"bytes,5,opt,name=into,proto3" json:"into,omitempty"`
+	Strategy      string                 `protobuf:"bytes,6,opt,name=strategy,proto3" json:"strategy,omitempty"`
+	Kind          string                 `protobuf:"bytes,7,opt,name=kind,proto3" json:"kind,omitempty"`
+	Brief         string                 `protobuf:"bytes,8,opt,name=brief,proto3" json:"brief,omitempty"`
+	Task          string                 `protobuf:"bytes,9,opt,name=task,proto3" json:"task,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorktreeActionRequest) Reset() {
+	*x = WorktreeActionRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[135]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorktreeActionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorktreeActionRequest) ProtoMessage() {}
+
+func (x *WorktreeActionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[135]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorktreeActionRequest.ProtoReflect.Descriptor instead.
+func (*WorktreeActionRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{135}
+}
+
+func (x *WorktreeActionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *WorktreeActionRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *WorktreeActionRequest) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *WorktreeActionRequest) GetBase() string {
+	if x != nil {
+		return x.Base
+	}
+	return ""
+}
+
+func (x *WorktreeActionRequest) GetInto() string {
+	if x != nil {
+		return x.Into
+	}
+	return ""
+}
+
+func (x *WorktreeActionRequest) GetStrategy() string {
+	if x != nil {
+		return x.Strategy
+	}
+	return ""
+}
+
+func (x *WorktreeActionRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *WorktreeActionRequest) GetBrief() string {
+	if x != nil {
+		return x.Brief
+	}
+	return ""
+}
+
+func (x *WorktreeActionRequest) GetTask() string {
+	if x != nil {
+		return x.Task
+	}
+	return ""
+}
+
+// action: create (source: worktree, commits or diff; worktree, range,
+// name, text as its note), check and land (into, strategy), rebase (onto:
+// "main", a worktree, or "capsule:<name>"), revert (into), hand (agent,
+// text), review (text as a comment, path, tests). capsule is "name",
+// "name@2" or a version's id.
+type CapsuleActionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Capsule       string                 `protobuf:"bytes,2,opt,name=capsule,proto3" json:"capsule,omitempty"`
+	Action        string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
+	Source        string                 `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
+	Worktree      string                 `protobuf:"bytes,5,opt,name=worktree,proto3" json:"worktree,omitempty"`
+	Range         string                 `protobuf:"bytes,6,opt,name=range,proto3" json:"range,omitempty"`
+	Into          string                 `protobuf:"bytes,7,opt,name=into,proto3" json:"into,omitempty"`
+	Strategy      string                 `protobuf:"bytes,8,opt,name=strategy,proto3" json:"strategy,omitempty"`
+	Onto          string                 `protobuf:"bytes,9,opt,name=onto,proto3" json:"onto,omitempty"`
+	Agent         string                 `protobuf:"bytes,10,opt,name=agent,proto3" json:"agent,omitempty"`
+	Text          string                 `protobuf:"bytes,11,opt,name=text,proto3" json:"text,omitempty"`
+	Path          string                 `protobuf:"bytes,12,opt,name=path,proto3" json:"path,omitempty"`
+	Tests         string                 `protobuf:"bytes,13,opt,name=tests,proto3" json:"tests,omitempty"`
+	Name          string                 `protobuf:"bytes,14,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapsuleActionRequest) Reset() {
+	*x = CapsuleActionRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[136]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapsuleActionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapsuleActionRequest) ProtoMessage() {}
+
+func (x *CapsuleActionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[136]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapsuleActionRequest.ProtoReflect.Descriptor instead.
+func (*CapsuleActionRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{136}
+}
+
+func (x *CapsuleActionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetCapsule() string {
+	if x != nil {
+		return x.Capsule
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetWorktree() string {
+	if x != nil {
+		return x.Worktree
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetRange() string {
+	if x != nil {
+		return x.Range
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetInto() string {
+	if x != nil {
+		return x.Into
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetStrategy() string {
+	if x != nil {
+		return x.Strategy
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetOnto() string {
+	if x != nil {
+		return x.Onto
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetAgent() string {
+	if x != nil {
+		return x.Agent
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetTests() string {
+	if x != nil {
+		return x.Tests
+	}
+	return ""
+}
+
+func (x *CapsuleActionRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// How each file lands: state "fits", "applied", "merge" or "conflict".
+type LandFile struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	State         string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LandFile) Reset() {
+	*x = LandFile{}
+	mi := &file_deck_v1_deck_proto_msgTypes[137]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LandFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LandFile) ProtoMessage() {}
+
+func (x *LandFile) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[137]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LandFile.ProtoReflect.Descriptor instead.
+func (*LandFile) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{137}
+}
+
+func (x *LandFile) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *LandFile) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *LandFile) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *LandFile) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type WorkActionResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Text  string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	Files []*LandFile            `protobuf:"bytes,2,rep,name=files,proto3" json:"files,omitempty"`
+	// The files that conflict; nothing was written when there are any.
+	Conflicts     []string      `protobuf:"bytes,3,rep,name=conflicts,proto3" json:"conflicts,omitempty"`
+	Capsule       string        `protobuf:"bytes,4,opt,name=capsule,proto3" json:"capsule,omitempty"`
+	Version       int32         `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`
+	Worktree      *WorktreeView `protobuf:"bytes,6,opt,name=worktree,proto3" json:"worktree,omitempty"`
+	Checked       bool          `protobuf:"varint,7,opt,name=checked,proto3" json:"checked,omitempty"`
+	AgentId       string        `protobuf:"bytes,8,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkActionResponse) Reset() {
+	*x = WorkActionResponse{}
+	mi := &file_deck_v1_deck_proto_msgTypes[138]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkActionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkActionResponse) ProtoMessage() {}
+
+func (x *WorkActionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[138]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkActionResponse.ProtoReflect.Descriptor instead.
+func (*WorkActionResponse) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{138}
+}
+
+func (x *WorkActionResponse) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *WorkActionResponse) GetFiles() []*LandFile {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *WorkActionResponse) GetConflicts() []string {
+	if x != nil {
+		return x.Conflicts
+	}
+	return nil
+}
+
+func (x *WorkActionResponse) GetCapsule() string {
+	if x != nil {
+		return x.Capsule
+	}
+	return ""
+}
+
+func (x *WorkActionResponse) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *WorkActionResponse) GetWorktree() *WorktreeView {
+	if x != nil {
+		return x.Worktree
+	}
+	return nil
+}
+
+func (x *WorkActionResponse) GetChecked() bool {
+	if x != nil {
+		return x.Checked
+	}
+	return false
+}
+
+func (x *WorkActionResponse) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+type CapsuleFilesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Capsule       string                 `protobuf:"bytes,2,opt,name=capsule,proto3" json:"capsule,omitempty"`
+	Offset        int32                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	Limit         int32                  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	Path          string                 `protobuf:"bytes,5,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapsuleFilesRequest) Reset() {
+	*x = CapsuleFilesRequest{}
+	mi := &file_deck_v1_deck_proto_msgTypes[139]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapsuleFilesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapsuleFilesRequest) ProtoMessage() {}
+
+func (x *CapsuleFilesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[139]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapsuleFilesRequest.ProtoReflect.Descriptor instead.
+func (*CapsuleFilesRequest) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{139}
+}
+
+func (x *CapsuleFilesRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *CapsuleFilesRequest) GetCapsule() string {
+	if x != nil {
+		return x.Capsule
+	}
+	return ""
+}
+
+func (x *CapsuleFilesRequest) GetOffset() int32 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *CapsuleFilesRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *CapsuleFilesRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type CapsuleFile struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Added         int32                  `protobuf:"varint,3,opt,name=added,proto3" json:"added,omitempty"`
+	Removed       int32                  `protobuf:"varint,4,opt,name=removed,proto3" json:"removed,omitempty"`
+	Binary        bool                   `protobuf:"varint,5,opt,name=binary,proto3" json:"binary,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapsuleFile) Reset() {
+	*x = CapsuleFile{}
+	mi := &file_deck_v1_deck_proto_msgTypes[140]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapsuleFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapsuleFile) ProtoMessage() {}
+
+func (x *CapsuleFile) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[140]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapsuleFile.ProtoReflect.Descriptor instead.
+func (*CapsuleFile) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{140}
+}
+
+func (x *CapsuleFile) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *CapsuleFile) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *CapsuleFile) GetAdded() int32 {
+	if x != nil {
+		return x.Added
+	}
+	return 0
+}
+
+func (x *CapsuleFile) GetRemoved() int32 {
+	if x != nil {
+		return x.Removed
+	}
+	return 0
+}
+
+func (x *CapsuleFile) GetBinary() bool {
+	if x != nil {
+		return x.Binary
+	}
+	return false
+}
+
+type CapsuleFilesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Files         []*CapsuleFile         `protobuf:"bytes,1,rep,name=files,proto3" json:"files,omitempty"`
+	Total         int32                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	Diff          string                 `protobuf:"bytes,3,opt,name=diff,proto3" json:"diff,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapsuleFilesResponse) Reset() {
+	*x = CapsuleFilesResponse{}
+	mi := &file_deck_v1_deck_proto_msgTypes[141]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapsuleFilesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapsuleFilesResponse) ProtoMessage() {}
+
+func (x *CapsuleFilesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[141]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapsuleFilesResponse.ProtoReflect.Descriptor instead.
+func (*CapsuleFilesResponse) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{141}
+}
+
+func (x *CapsuleFilesResponse) GetFiles() []*CapsuleFile {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *CapsuleFilesResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *CapsuleFilesResponse) GetDiff() string {
+	if x != nil {
+		return x.Diff
+	}
+	return ""
 }
 
 var File_deck_v1_deck_proto protoreflect.FileDescriptor
@@ -7989,10 +10389,11 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\barchived\x18\n" +
 	" \x01(\bR\barchived\"D\n" +
 	"\x14ListSessionsResponse\x12,\n" +
-	"\bsessions\x18\x01 \x03(\v2\x10.deck.v1.SessionR\bsessions\"F\n" +
+	"\bsessions\x18\x01 \x03(\v2\x10.deck.v1.SessionR\bsessions\"\\\n" +
 	"\x14CreateSessionRequest\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x18\n" +
-	"\aisolate\x18\x02 \x01(\bR\aisolate\"K\n" +
+	"\aisolate\x18\x02 \x01(\bR\aisolate\x12\x14\n" +
+	"\x05level\x18\x03 \x01(\tR\x05level\"K\n" +
 	"\x14RenameSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
@@ -8066,7 +10467,7 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x12\x0e\n" +
 	"\x02at\x18\x04 \x01(\x03R\x02at\":\n" +
 	"\rQueueResponse\x12)\n" +
-	"\x05items\x18\x01 \x03(\v2\x13.deck.v1.QueuedItemR\x05items\"\xb3\x01\n" +
+	"\x05items\x18\x01 \x03(\v2\x13.deck.v1.QueuedItemR\x05items\"\xc9\x01\n" +
 	"\tAgentLine\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -8075,13 +10476,15 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x06effort\x18\x05 \x01(\tR\x06effort\x12\x12\n" +
 	"\x04busy\x18\x06 \x01(\bR\x04busy\x12\x18\n" +
 	"\aprofile\x18\a \x01(\tR\aprofile\x12\x12\n" +
-	"\x04role\x18\b \x01(\tR\x04role\"<\n" +
+	"\x04role\x18\b \x01(\tR\x04role\x12\x14\n" +
+	"\x05color\x18\t \x01(\tR\x05color\"<\n" +
 	"\x0eRosterResponse\x12*\n" +
-	"\x06agents\x18\x01 \x03(\v2\x12.deck.v1.AgentLineR\x06agents\"B\n" +
+	"\x06agents\x18\x01 \x03(\v2\x12.deck.v1.AgentLineR\x06agents\"\\\n" +
 	"\rModelsRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\"i\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x18\n" +
+	"\arefresh\x18\x03 \x01(\bR\arefresh\"i\n" +
 	"\vModelChoice\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x18\n" +
@@ -8239,9 +10642,10 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x04base\x18\x03 \x01(\tR\x04base\x12\x14\n" +
 	"\x05draft\x18\x04 \x01(\bR\x05draft\"+\n" +
 	"\x11GitMergePRRequest\x12\x16\n" +
-	"\x06method\x18\x01 \x01(\tR\x06method\"\"\n" +
+	"\x06method\x18\x01 \x01(\tR\x06method\"E\n" +
 	"\fUsageRequest\x12\x12\n" +
-	"\x04days\x18\x01 \x01(\x05R\x04days\"\xf6\x03\n" +
+	"\x04days\x18\x01 \x01(\x05R\x04days\x12!\n" +
+	"\fhistory_days\x18\x02 \x01(\x05R\vhistoryDays\"\xf6\x03\n" +
 	"\rUsageOverview\x12\x14\n" +
 	"\x05turns\x18\x01 \x01(\x05R\x05turns\x12\x1b\n" +
 	"\tall_turns\x18\x02 \x01(\x05R\ballTurns\x12!\n" +
@@ -8321,7 +10725,7 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"linesAdded\x12#\n" +
 	"\rlines_removed\x18\x0f \x01(\x05R\flinesRemoved\x12\x18\n" +
 	"\areverts\x18\x10 \x01(\x05R\areverts\x12#\n" +
-	"\x03fit\x18\x11 \x03(\v2\x11.deck.v1.UsageFitR\x03fit\"\x95\x03\n" +
+	"\x03fit\x18\x11 \x03(\v2\x11.deck.v1.UsageFitR\x03fit\"\xf9\x03\n" +
 	"\rUsageResponse\x12\x1c\n" +
 	"\tavailable\x18\x01 \x01(\bR\tavailable\x122\n" +
 	"\boverview\x18\x02 \x01(\v2\x16.deck.v1.UsageOverviewR\boverview\x12%\n" +
@@ -8331,7 +10735,17 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\bsessions\x18\x06 \x03(\v2\x15.deck.v1.UsageSessionR\bsessions\x12+\n" +
 	"\x06limits\x18\a \x03(\v2\x13.deck.v1.UsageLimitR\x06limits\x12%\n" +
 	"\x04heat\x18\b \x03(\v2\x11.deck.v1.UsageDayR\x04heat\x12,\n" +
-	"\x06habits\x18\t \x01(\v2\x14.deck.v1.UsageHabitsR\x06habits\"=\n" +
+	"\x06habits\x18\t \x01(\v2\x14.deck.v1.UsageHabitsR\x06habits\x12(\n" +
+	"\x05hours\x18\n" +
+	" \x03(\v2\x12.deck.v1.UsageHourR\x05hours\x128\n" +
+	"\rlimit_history\x18\v \x03(\v2\x13.deck.v1.UsageLimitR\flimitHistory\"\x93\x01\n" +
+	"\tUsageHour\x12\x0e\n" +
+	"\x02at\x18\x01 \x01(\x03R\x02at\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x19\n" +
+	"\bagent_id\x18\x03 \x01(\tR\aagentId\x12\x14\n" +
+	"\x05turns\x18\x04 \x01(\x05R\x05turns\x12\x16\n" +
+	"\x06tokens\x18\x05 \x01(\x03R\x06tokens\x12\x19\n" +
+	"\bcost_usd\x18\x06 \x01(\x01R\acostUsd\"=\n" +
 	"\x13TerminalOpenRequest\x12\x12\n" +
 	"\x04cols\x18\x01 \x01(\x05R\x04cols\x12\x12\n" +
 	"\x04rows\x18\x02 \x01(\x05R\x04rows\".\n" +
@@ -8371,10 +10785,11 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x05stats\x18\x0f \x01(\tR\x05stats\x12\x14\n" +
 	"\x05files\x18\x10 \x03(\tR\x05files\x12\x1a\n" +
 	"\breviewer\x18\x11 \x01(\tR\breviewer\x12\x18\n" +
-	"\areviews\x18\x12 \x01(\x05R\areviews\"[\n" +
+	"\areviews\x18\x12 \x01(\x05R\areviews\"q\n" +
 	"\rBoardResponse\x12 \n" +
 	"\vorchestrate\x18\x01 \x01(\bR\vorchestrate\x12(\n" +
-	"\x05tasks\x18\x02 \x03(\v2\x12.deck.v1.BoardTaskR\x05tasks\"w\n" +
+	"\x05tasks\x18\x02 \x03(\v2\x12.deck.v1.BoardTaskR\x05tasks\x12\x14\n" +
+	"\x05level\x18\x03 \x01(\tR\x05level\"w\n" +
 	"\x11TaskActionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x17\n" +
@@ -8382,11 +10797,12 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x06action\x18\x03 \x01(\tR\x06action\x12\x12\n" +
 	"\x04text\x18\x04 \x01(\tR\x04text\"*\n" +
 	"\x12TaskActionResponse\x12\x14\n" +
-	"\x05files\x18\x01 \x03(\tR\x05files\"F\n" +
+	"\x05files\x18\x01 \x03(\tR\x05files\"\\\n" +
 	"\x15SetOrchestrateRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x0e\n" +
-	"\x02on\x18\x02 \x01(\bR\x02on\"\x9e\x03\n" +
+	"\x02on\x18\x02 \x01(\bR\x02on\x12\x14\n" +
+	"\x05level\x18\x03 \x01(\tR\x05level\"\xb4\x03\n" +
 	"\tAgentNode\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
@@ -8404,7 +10820,8 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x06branch\x18\r \x01(\tR\x06branch\x12\x16\n" +
 	"\x06leases\x18\x0e \x01(\tR\x06leases\x12\x18\n" +
 	"\aprofile\x18\x0f \x01(\tR\aprofile\x12\x12\n" +
-	"\x04role\x18\x10 \x01(\tR\x04role\"\xcd\x01\n" +
+	"\x04role\x18\x10 \x01(\tR\x04role\x12\x14\n" +
+	"\x05color\x18\x11 \x01(\tR\x05color\"\xcd\x01\n" +
 	"\vRunningTool\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
@@ -8525,14 +10942,19 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
 	"\x05since\x18\x02 \x01(\x03R\x05since\x12\x14\n" +
-	"\x05paths\x18\x03 \x03(\tR\x05paths\"\x87\x01\n" +
+	"\x05paths\x18\x03 \x03(\tR\x05paths\"\xb9\x01\n" +
 	"\x10StartRaceRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
 	"\x05brief\x18\x02 \x01(\tR\x05brief\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05count\x18\x04 \x01(\x05R\x05count\x12\x14\n" +
-	"\x05judge\x18\x05 \x01(\bR\x05judge\",\n" +
+	"\x05judge\x18\x05 \x01(\bR\x05judge\x120\n" +
+	"\bentrants\x18\x06 \x03(\v2\x14.deck.v1.RaceEntrantR\bentrants\"Q\n" +
+	"\vRaceEntrant\x12\x14\n" +
+	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x14\n" +
+	"\x05model\x18\x02 \x01(\tR\x05model\x12\x16\n" +
+	"\x06effort\x18\x03 \x01(\tR\x06effort\",\n" +
 	"\x11StartRaceResponse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\"]\n" +
 	"\x10ListFilesRequest\x12\x1d\n" +
@@ -8587,7 +11009,193 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x14DeleteProfileRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05scope\x18\x02 \x01(\tR\x05scope\"\x17\n" +
-	"\x15DeleteProfileResponse2\x8c\x1e\n" +
+	"\x15DeleteProfileResponse\"4\n" +
+	"\rLimitsRequest\x12#\n" +
+	"\rhistory_hours\x18\x01 \x01(\x05R\fhistoryHours\"w\n" +
+	"\n" +
+	"LimitCheck\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x1d\n" +
+	"\n" +
+	"checked_at\x18\x02 \x01(\x03R\tcheckedAt\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\x12 \n" +
+	"\vunsupported\x18\x04 \x01(\bR\vunsupported\"\x98\x01\n" +
+	"\tAgentWait\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05agent\x18\x02 \x01(\tR\x05agent\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05since\x18\x04 \x01(\x03R\x05since\x12\x14\n" +
+	"\x05until\x18\x05 \x01(\x03R\x05until\x12\x16\n" +
+	"\x06window\x18\x06 \x01(\tR\x06window\"|\n" +
+	"\rScheduledSend\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\x12\x0e\n" +
+	"\x02at\x18\x04 \x01(\x03R\x02at\x12\x18\n" +
+	"\acreated\x18\x05 \x01(\x03R\acreated\"\x8f\x02\n" +
+	"\x0eLimitsResponse\x12+\n" +
+	"\x06limits\x18\x01 \x03(\v2\x13.deck.v1.UsageLimitR\x06limits\x12-\n" +
+	"\ahistory\x18\x02 \x03(\v2\x13.deck.v1.UsageLimitR\ahistory\x12+\n" +
+	"\x06checks\x18\x03 \x03(\v2\x13.deck.v1.LimitCheckR\x06checks\x12(\n" +
+	"\x05waits\x18\x04 \x03(\v2\x12.deck.v1.AgentWaitR\x05waits\x124\n" +
+	"\tscheduled\x18\x05 \x03(\v2\x16.deck.v1.ScheduledSendR\tscheduled\x12\x14\n" +
+	"\x05kinds\x18\x06 \x03(\tR\x05kinds\"(\n" +
+	"\x12CheckLimitsRequest\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\"o\n" +
+	"\x13CheckLimitsResponse\x12+\n" +
+	"\x06checks\x18\x01 \x03(\v2\x13.deck.v1.LimitCheckR\x06checks\x12+\n" +
+	"\x06limits\x18\x02 \x03(\v2\x13.deck.v1.UsageLimitR\x06limits\"(\n" +
+	"\x12StartWindowRequest\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\"X\n" +
+	"\x13StartWindowResponse\x12\x14\n" +
+	"\x05model\x18\x01 \x01(\tR\x05model\x12+\n" +
+	"\x06limits\x18\x02 \x03(\v2\x13.deck.v1.UsageLimitR\x06limits\"a\n" +
+	"\x12ResolveWaitRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05agent\x18\x02 \x01(\tR\x05agent\x12\x16\n" +
+	"\x06cancel\x18\x03 \x01(\bR\x06cancel\"X\n" +
+	"\x13ScheduleSendRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\x12\x0e\n" +
+	"\x02at\x18\x03 \x01(\x03R\x02at\"&\n" +
+	"\x14ScheduleSendResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"b\n" +
+	"\x16CancelScheduledRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12\x19\n" +
+	"\bsend_now\x18\x03 \x01(\bR\asendNow\"u\n" +
+	"\fWorkResponse\x123\n" +
+	"\tworktrees\x18\x01 \x03(\v2\x15.deck.v1.WorktreeViewR\tworktrees\x120\n" +
+	"\bcapsules\x18\x02 \x03(\v2\x14.deck.v1.CapsuleViewR\bcapsules\"\xb3\x03\n" +
+	"\fWorktreeView\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06branch\x18\x02 \x01(\tR\x06branch\x12\x12\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\x12\x12\n" +
+	"\x04kind\x18\x04 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05owner\x18\x05 \x01(\tR\x05owner\x12\x1d\n" +
+	"\n" +
+	"owner_name\x18\x06 \x01(\tR\townerName\x12\x12\n" +
+	"\x04task\x18\a \x01(\tR\x04task\x12\x18\n" +
+	"\aworking\x18\b \x01(\bR\aworking\x12\x18\n" +
+	"\acreated\x18\t \x01(\x03R\acreated\x12\x12\n" +
+	"\x04fork\x18\n" +
+	" \x01(\tR\x04fork\x12\x19\n" +
+	"\bbase_ref\x18\v \x01(\tR\abaseRef\x12\x14\n" +
+	"\x05ahead\x18\f \x01(\x05R\x05ahead\x12\x16\n" +
+	"\x06behind\x18\r \x01(\x05R\x06behind\x12\x14\n" +
+	"\x05dirty\x18\x0e \x01(\x05R\x05dirty\x12\x14\n" +
+	"\x05files\x18\x0f \x03(\tR\x05files\x12\x1b\n" +
+	"\tlanded_at\x18\x10 \x01(\x03R\blandedAt\x12\x16\n" +
+	"\x06landed\x18\x11 \x01(\bR\x06landed\x12\x14\n" +
+	"\x05error\x18\x12 \x01(\tR\x05error\"\xa3\x03\n" +
+	"\vCapsuleView\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06source\x18\x02 \x01(\tR\x06source\x12\x1a\n" +
+	"\bworktree\x18\x03 \x01(\tR\bworktree\x12\x18\n" +
+	"\aauthors\x18\x04 \x03(\tR\aauthors\x12\x12\n" +
+	"\x04note\x18\x05 \x01(\tR\x04note\x12\x14\n" +
+	"\x05state\x18\x06 \x01(\tR\x05state\x127\n" +
+	"\bversions\x18\a \x03(\v2\x1b.deck.v1.CapsuleVersionViewR\bversions\x12\x14\n" +
+	"\x05tests\x18\b \x01(\tR\x05tests\x12\x1b\n" +
+	"\ttest_note\x18\t \x01(\tR\btestNote\x123\n" +
+	"\bcomments\x18\n" +
+	" \x03(\v2\x17.deck.v1.CapsuleCommentR\bcomments\x123\n" +
+	"\blandings\x18\v \x03(\v2\x17.deck.v1.CapsuleLandingR\blandings\x12\x18\n" +
+	"\acreated\x18\f \x01(\x03R\acreated\x12\x18\n" +
+	"\aupdated\x18\r \x01(\x03R\aupdated\"\xc1\x02\n" +
+	"\x12CapsuleVersionView\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04fork\x18\x02 \x01(\tR\x04fork\x12\x12\n" +
+	"\x04head\x18\x03 \x01(\tR\x04head\x120\n" +
+	"\acommits\x18\x04 \x03(\v2\x16.deck.v1.CapsuleCommitR\acommits\x12#\n" +
+	"\rcommits_total\x18\x05 \x01(\x05R\fcommitsTotal\x12\x12\n" +
+	"\x04onto\x18\x06 \x01(\tR\x04onto\x12\x14\n" +
+	"\x05files\x18\a \x01(\x05R\x05files\x12\x10\n" +
+	"\x03add\x18\b \x01(\x05R\x03add\x12\x10\n" +
+	"\x03mod\x18\t \x01(\x05R\x03mod\x12\x10\n" +
+	"\x03del\x18\n" +
+	" \x01(\x05R\x03del\x12\x0e\n" +
+	"\x02by\x18\v \x01(\tR\x02by\x12\x12\n" +
+	"\x04note\x18\f \x01(\tR\x04note\x12\x18\n" +
+	"\acreated\x18\r \x01(\x03R\acreated\"S\n" +
+	"\rCapsuleCommit\x12\x10\n" +
+	"\x03sha\x18\x01 \x01(\tR\x03sha\x12\x18\n" +
+	"\asubject\x18\x02 \x01(\tR\asubject\x12\x16\n" +
+	"\x06author\x18\x03 \x01(\tR\x06author\"X\n" +
+	"\x0eCapsuleComment\x12\x0e\n" +
+	"\x02by\x18\x01 \x01(\tR\x02by\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\x12\x0e\n" +
+	"\x02at\x18\x04 \x01(\x03R\x02at\"z\n" +
+	"\x0eCapsuleLanding\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\x05R\aversion\x12\x12\n" +
+	"\x04into\x18\x02 \x01(\tR\x04into\x12\x0e\n" +
+	"\x02at\x18\x03 \x01(\x03R\x02at\x12\x0e\n" +
+	"\x02by\x18\x04 \x01(\tR\x02by\x12\x1a\n" +
+	"\breverted\x18\x05 \x01(\bR\breverted\"\xe4\x01\n" +
+	"\x15WorktreeActionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
+	"\x06action\x18\x03 \x01(\tR\x06action\x12\x12\n" +
+	"\x04base\x18\x04 \x01(\tR\x04base\x12\x12\n" +
+	"\x04into\x18\x05 \x01(\tR\x04into\x12\x1a\n" +
+	"\bstrategy\x18\x06 \x01(\tR\bstrategy\x12\x12\n" +
+	"\x04kind\x18\a \x01(\tR\x04kind\x12\x14\n" +
+	"\x05brief\x18\b \x01(\tR\x05brief\x12\x12\n" +
+	"\x04task\x18\t \x01(\tR\x04task\"\xdd\x02\n" +
+	"\x14CapsuleActionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x18\n" +
+	"\acapsule\x18\x02 \x01(\tR\acapsule\x12\x16\n" +
+	"\x06action\x18\x03 \x01(\tR\x06action\x12\x16\n" +
+	"\x06source\x18\x04 \x01(\tR\x06source\x12\x1a\n" +
+	"\bworktree\x18\x05 \x01(\tR\bworktree\x12\x14\n" +
+	"\x05range\x18\x06 \x01(\tR\x05range\x12\x12\n" +
+	"\x04into\x18\a \x01(\tR\x04into\x12\x1a\n" +
+	"\bstrategy\x18\b \x01(\tR\bstrategy\x12\x12\n" +
+	"\x04onto\x18\t \x01(\tR\x04onto\x12\x14\n" +
+	"\x05agent\x18\n" +
+	" \x01(\tR\x05agent\x12\x12\n" +
+	"\x04text\x18\v \x01(\tR\x04text\x12\x12\n" +
+	"\x04path\x18\f \x01(\tR\x04path\x12\x14\n" +
+	"\x05tests\x18\r \x01(\tR\x05tests\x12\x12\n" +
+	"\x04name\x18\x0e \x01(\tR\x04name\"`\n" +
+	"\bLandFile\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\x8b\x02\n" +
+	"\x12WorkActionResponse\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x12'\n" +
+	"\x05files\x18\x02 \x03(\v2\x11.deck.v1.LandFileR\x05files\x12\x1c\n" +
+	"\tconflicts\x18\x03 \x03(\tR\tconflicts\x12\x18\n" +
+	"\acapsule\x18\x04 \x01(\tR\acapsule\x12\x18\n" +
+	"\aversion\x18\x05 \x01(\x05R\aversion\x121\n" +
+	"\bworktree\x18\x06 \x01(\v2\x15.deck.v1.WorktreeViewR\bworktree\x12\x18\n" +
+	"\achecked\x18\a \x01(\bR\achecked\x12\x19\n" +
+	"\bagent_id\x18\b \x01(\tR\aagentId\"\x90\x01\n" +
+	"\x13CapsuleFilesRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x18\n" +
+	"\acapsule\x18\x02 \x01(\tR\acapsule\x12\x16\n" +
+	"\x06offset\x18\x03 \x01(\x05R\x06offset\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x12\n" +
+	"\x04path\x18\x05 \x01(\tR\x04path\"}\n" +
+	"\vCapsuleFile\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05added\x18\x03 \x01(\x05R\x05added\x12\x18\n" +
+	"\aremoved\x18\x04 \x01(\x05R\aremoved\x12\x16\n" +
+	"\x06binary\x18\x05 \x01(\bR\x06binary\"l\n" +
+	"\x14CapsuleFilesResponse\x12*\n" +
+	"\x05files\x18\x01 \x03(\v2\x14.deck.v1.CapsuleFileR\x05files\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\x12\x12\n" +
+	"\x04diff\x18\x03 \x01(\tR\x04diff2\xc5#\n" +
 	"\x04Deck\x12-\n" +
 	"\x04Info\x12\x0e.deck.v1.Empty\x1a\x15.deck.v1.InfoResponse\x12=\n" +
 	"\fListSessions\x12\x0e.deck.v1.Empty\x1a\x1d.deck.v1.ListSessionsResponse\x12@\n" +
@@ -8656,7 +11264,17 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x0eSearchMessages\x12\x1e.deck.v1.SearchMessagesRequest\x1a\x1f.deck.v1.SearchMessagesResponse\x12K\n" +
 	"\fListProfiles\x12\x1c.deck.v1.ListProfilesRequest\x1a\x1d.deck.v1.ListProfilesResponse\x12H\n" +
 	"\vSaveProfile\x12\x1b.deck.v1.SaveProfileRequest\x1a\x1c.deck.v1.SaveProfileResponse\x12N\n" +
-	"\rDeleteProfile\x12\x1d.deck.v1.DeleteProfileRequest\x1a\x1e.deck.v1.DeleteProfileResponse\x12.\n" +
+	"\rDeleteProfile\x12\x1d.deck.v1.DeleteProfileRequest\x1a\x1e.deck.v1.DeleteProfileResponse\x129\n" +
+	"\x06Limits\x12\x16.deck.v1.LimitsRequest\x1a\x17.deck.v1.LimitsResponse\x12H\n" +
+	"\vCheckLimits\x12\x1b.deck.v1.CheckLimitsRequest\x1a\x1c.deck.v1.CheckLimitsResponse\x12H\n" +
+	"\vStartWindow\x12\x1b.deck.v1.StartWindowRequest\x1a\x1c.deck.v1.StartWindowResponse\x12:\n" +
+	"\vResolveWait\x12\x1b.deck.v1.ResolveWaitRequest\x1a\x0e.deck.v1.Empty\x12K\n" +
+	"\fScheduleSend\x12\x1c.deck.v1.ScheduleSendRequest\x1a\x1d.deck.v1.ScheduleSendResponse\x12B\n" +
+	"\x0fCancelScheduled\x12\x1f.deck.v1.CancelScheduledRequest\x1a\x0e.deck.v1.Empty\x122\n" +
+	"\x04Work\x12\x13.deck.v1.SessionRef\x1a\x15.deck.v1.WorkResponse\x12M\n" +
+	"\x0eWorktreeAction\x12\x1e.deck.v1.WorktreeActionRequest\x1a\x1b.deck.v1.WorkActionResponse\x12K\n" +
+	"\rCapsuleAction\x12\x1d.deck.v1.CapsuleActionRequest\x1a\x1b.deck.v1.WorkActionResponse\x12K\n" +
+	"\fCapsuleFiles\x12\x1c.deck.v1.CapsuleFilesRequest\x1a\x1d.deck.v1.CapsuleFilesResponse\x12.\n" +
 	"\x06Events\x12\x12.deck.v1.Subscribe\x1a\x0e.deck.v1.Event0\x01B0Z.github.com/dev-dami/deck/pkg/rpc/deckv1;deckv1b\x06proto3"
 
 var (
@@ -8671,7 +11289,7 @@ func file_deck_v1_deck_proto_rawDescGZIP() []byte {
 	return file_deck_v1_deck_proto_rawDescData
 }
 
-var file_deck_v1_deck_proto_msgTypes = make([]protoimpl.MessageInfo, 116)
+var file_deck_v1_deck_proto_msgTypes = make([]protoimpl.MessageInfo, 145)
 var file_deck_v1_deck_proto_goTypes = []any{
 	(*Empty)(nil),                   // 0: deck.v1.Empty
 	(*SessionRef)(nil),              // 1: deck.v1.SessionRef
@@ -8737,64 +11355,93 @@ var file_deck_v1_deck_proto_goTypes = []any{
 	(*UsageFit)(nil),                // 61: deck.v1.UsageFit
 	(*UsageHabits)(nil),             // 62: deck.v1.UsageHabits
 	(*UsageResponse)(nil),           // 63: deck.v1.UsageResponse
-	(*TerminalOpenRequest)(nil),     // 64: deck.v1.TerminalOpenRequest
-	(*TerminalRef)(nil),             // 65: deck.v1.TerminalRef
-	(*TerminalInput)(nil),           // 66: deck.v1.TerminalInput
-	(*TerminalSize)(nil),            // 67: deck.v1.TerminalSize
-	(*TerminalChunk)(nil),           // 68: deck.v1.TerminalChunk
-	(*BoardTask)(nil),               // 69: deck.v1.BoardTask
-	(*BoardResponse)(nil),           // 70: deck.v1.BoardResponse
-	(*TaskActionRequest)(nil),       // 71: deck.v1.TaskActionRequest
-	(*TaskActionResponse)(nil),      // 72: deck.v1.TaskActionResponse
-	(*SetOrchestrateRequest)(nil),   // 73: deck.v1.SetOrchestrateRequest
-	(*AgentNode)(nil),               // 74: deck.v1.AgentNode
-	(*RunningTool)(nil),             // 75: deck.v1.RunningTool
-	(*AgentsResponse)(nil),          // 76: deck.v1.AgentsResponse
-	(*TeamAgent)(nil),               // 77: deck.v1.TeamAgent
-	(*TeamThread)(nil),              // 78: deck.v1.TeamThread
-	(*Teammate)(nil),                // 79: deck.v1.Teammate
-	(*TeamChat)(nil),                // 80: deck.v1.TeamChat
-	(*TeamContract)(nil),            // 81: deck.v1.TeamContract
-	(*TeamResponse)(nil),            // 82: deck.v1.TeamResponse
-	(*TeamPostRequest)(nil),         // 83: deck.v1.TeamPostRequest
-	(*TeamPostResponse)(nil),        // 84: deck.v1.TeamPostResponse
-	(*ShareThreadRequest)(nil),      // 85: deck.v1.ShareThreadRequest
-	(*ThreadSharesResponse)(nil),    // 86: deck.v1.ThreadSharesResponse
-	(*ProposeContractRequest)(nil),  // 87: deck.v1.ProposeContractRequest
-	(*ProposeContractResponse)(nil), // 88: deck.v1.ProposeContractResponse
-	(*AnswerContractRequest)(nil),   // 89: deck.v1.AnswerContractRequest
-	(*ReadSharedRequest)(nil),       // 90: deck.v1.ReadSharedRequest
-	(*SharedApproval)(nil),          // 91: deck.v1.SharedApproval
-	(*SharedMirror)(nil),            // 92: deck.v1.SharedMirror
-	(*PostSharedRequest)(nil),       // 93: deck.v1.PostSharedRequest
-	(*AnswerSharedRequest)(nil),     // 94: deck.v1.AnswerSharedRequest
-	(*FilesResponse)(nil),           // 95: deck.v1.FilesResponse
-	(*RevertFilesRequest)(nil),      // 96: deck.v1.RevertFilesRequest
-	(*StartRaceRequest)(nil),        // 97: deck.v1.StartRaceRequest
-	(*StartRaceResponse)(nil),       // 98: deck.v1.StartRaceResponse
-	(*ListFilesRequest)(nil),        // 99: deck.v1.ListFilesRequest
-	(*ListFilesResponse)(nil),       // 100: deck.v1.ListFilesResponse
-	(*ReadImageRequest)(nil),        // 101: deck.v1.ReadImageRequest
-	(*ReadImageResponse)(nil),       // 102: deck.v1.ReadImageResponse
-	(*SearchMessagesRequest)(nil),   // 103: deck.v1.SearchMessagesRequest
-	(*SearchHit)(nil),               // 104: deck.v1.SearchHit
-	(*SearchMessagesResponse)(nil),  // 105: deck.v1.SearchMessagesResponse
-	(*Profile)(nil),                 // 106: deck.v1.Profile
-	(*ListProfilesRequest)(nil),     // 107: deck.v1.ListProfilesRequest
-	(*ListProfilesResponse)(nil),    // 108: deck.v1.ListProfilesResponse
-	(*SaveProfileRequest)(nil),      // 109: deck.v1.SaveProfileRequest
-	(*SaveProfileResponse)(nil),     // 110: deck.v1.SaveProfileResponse
-	(*DeleteProfileRequest)(nil),    // 111: deck.v1.DeleteProfileRequest
-	(*DeleteProfileResponse)(nil),   // 112: deck.v1.DeleteProfileResponse
-	nil,                             // 113: deck.v1.Theme.PaletteEntry
-	nil,                             // 114: deck.v1.Theme.KindsEntry
-	nil,                             // 115: deck.v1.ThreadSharesResponse.SharesEntry
+	(*UsageHour)(nil),               // 64: deck.v1.UsageHour
+	(*TerminalOpenRequest)(nil),     // 65: deck.v1.TerminalOpenRequest
+	(*TerminalRef)(nil),             // 66: deck.v1.TerminalRef
+	(*TerminalInput)(nil),           // 67: deck.v1.TerminalInput
+	(*TerminalSize)(nil),            // 68: deck.v1.TerminalSize
+	(*TerminalChunk)(nil),           // 69: deck.v1.TerminalChunk
+	(*BoardTask)(nil),               // 70: deck.v1.BoardTask
+	(*BoardResponse)(nil),           // 71: deck.v1.BoardResponse
+	(*TaskActionRequest)(nil),       // 72: deck.v1.TaskActionRequest
+	(*TaskActionResponse)(nil),      // 73: deck.v1.TaskActionResponse
+	(*SetOrchestrateRequest)(nil),   // 74: deck.v1.SetOrchestrateRequest
+	(*AgentNode)(nil),               // 75: deck.v1.AgentNode
+	(*RunningTool)(nil),             // 76: deck.v1.RunningTool
+	(*AgentsResponse)(nil),          // 77: deck.v1.AgentsResponse
+	(*TeamAgent)(nil),               // 78: deck.v1.TeamAgent
+	(*TeamThread)(nil),              // 79: deck.v1.TeamThread
+	(*Teammate)(nil),                // 80: deck.v1.Teammate
+	(*TeamChat)(nil),                // 81: deck.v1.TeamChat
+	(*TeamContract)(nil),            // 82: deck.v1.TeamContract
+	(*TeamResponse)(nil),            // 83: deck.v1.TeamResponse
+	(*TeamPostRequest)(nil),         // 84: deck.v1.TeamPostRequest
+	(*TeamPostResponse)(nil),        // 85: deck.v1.TeamPostResponse
+	(*ShareThreadRequest)(nil),      // 86: deck.v1.ShareThreadRequest
+	(*ThreadSharesResponse)(nil),    // 87: deck.v1.ThreadSharesResponse
+	(*ProposeContractRequest)(nil),  // 88: deck.v1.ProposeContractRequest
+	(*ProposeContractResponse)(nil), // 89: deck.v1.ProposeContractResponse
+	(*AnswerContractRequest)(nil),   // 90: deck.v1.AnswerContractRequest
+	(*ReadSharedRequest)(nil),       // 91: deck.v1.ReadSharedRequest
+	(*SharedApproval)(nil),          // 92: deck.v1.SharedApproval
+	(*SharedMirror)(nil),            // 93: deck.v1.SharedMirror
+	(*PostSharedRequest)(nil),       // 94: deck.v1.PostSharedRequest
+	(*AnswerSharedRequest)(nil),     // 95: deck.v1.AnswerSharedRequest
+	(*FilesResponse)(nil),           // 96: deck.v1.FilesResponse
+	(*RevertFilesRequest)(nil),      // 97: deck.v1.RevertFilesRequest
+	(*StartRaceRequest)(nil),        // 98: deck.v1.StartRaceRequest
+	(*RaceEntrant)(nil),             // 99: deck.v1.RaceEntrant
+	(*StartRaceResponse)(nil),       // 100: deck.v1.StartRaceResponse
+	(*ListFilesRequest)(nil),        // 101: deck.v1.ListFilesRequest
+	(*ListFilesResponse)(nil),       // 102: deck.v1.ListFilesResponse
+	(*ReadImageRequest)(nil),        // 103: deck.v1.ReadImageRequest
+	(*ReadImageResponse)(nil),       // 104: deck.v1.ReadImageResponse
+	(*SearchMessagesRequest)(nil),   // 105: deck.v1.SearchMessagesRequest
+	(*SearchHit)(nil),               // 106: deck.v1.SearchHit
+	(*SearchMessagesResponse)(nil),  // 107: deck.v1.SearchMessagesResponse
+	(*Profile)(nil),                 // 108: deck.v1.Profile
+	(*ListProfilesRequest)(nil),     // 109: deck.v1.ListProfilesRequest
+	(*ListProfilesResponse)(nil),    // 110: deck.v1.ListProfilesResponse
+	(*SaveProfileRequest)(nil),      // 111: deck.v1.SaveProfileRequest
+	(*SaveProfileResponse)(nil),     // 112: deck.v1.SaveProfileResponse
+	(*DeleteProfileRequest)(nil),    // 113: deck.v1.DeleteProfileRequest
+	(*DeleteProfileResponse)(nil),   // 114: deck.v1.DeleteProfileResponse
+	(*LimitsRequest)(nil),           // 115: deck.v1.LimitsRequest
+	(*LimitCheck)(nil),              // 116: deck.v1.LimitCheck
+	(*AgentWait)(nil),               // 117: deck.v1.AgentWait
+	(*ScheduledSend)(nil),           // 118: deck.v1.ScheduledSend
+	(*LimitsResponse)(nil),          // 119: deck.v1.LimitsResponse
+	(*CheckLimitsRequest)(nil),      // 120: deck.v1.CheckLimitsRequest
+	(*CheckLimitsResponse)(nil),     // 121: deck.v1.CheckLimitsResponse
+	(*StartWindowRequest)(nil),      // 122: deck.v1.StartWindowRequest
+	(*StartWindowResponse)(nil),     // 123: deck.v1.StartWindowResponse
+	(*ResolveWaitRequest)(nil),      // 124: deck.v1.ResolveWaitRequest
+	(*ScheduleSendRequest)(nil),     // 125: deck.v1.ScheduleSendRequest
+	(*ScheduleSendResponse)(nil),    // 126: deck.v1.ScheduleSendResponse
+	(*CancelScheduledRequest)(nil),  // 127: deck.v1.CancelScheduledRequest
+	(*WorkResponse)(nil),            // 128: deck.v1.WorkResponse
+	(*WorktreeView)(nil),            // 129: deck.v1.WorktreeView
+	(*CapsuleView)(nil),             // 130: deck.v1.CapsuleView
+	(*CapsuleVersionView)(nil),      // 131: deck.v1.CapsuleVersionView
+	(*CapsuleCommit)(nil),           // 132: deck.v1.CapsuleCommit
+	(*CapsuleComment)(nil),          // 133: deck.v1.CapsuleComment
+	(*CapsuleLanding)(nil),          // 134: deck.v1.CapsuleLanding
+	(*WorktreeActionRequest)(nil),   // 135: deck.v1.WorktreeActionRequest
+	(*CapsuleActionRequest)(nil),    // 136: deck.v1.CapsuleActionRequest
+	(*LandFile)(nil),                // 137: deck.v1.LandFile
+	(*WorkActionResponse)(nil),      // 138: deck.v1.WorkActionResponse
+	(*CapsuleFilesRequest)(nil),     // 139: deck.v1.CapsuleFilesRequest
+	(*CapsuleFile)(nil),             // 140: deck.v1.CapsuleFile
+	(*CapsuleFilesResponse)(nil),    // 141: deck.v1.CapsuleFilesResponse
+	nil,                             // 142: deck.v1.Theme.PaletteEntry
+	nil,                             // 143: deck.v1.Theme.KindsEntry
+	nil,                             // 144: deck.v1.ThreadSharesResponse.SharesEntry
 }
 var file_deck_v1_deck_proto_depIdxs = []int32{
 	5,   // 0: deck.v1.InfoResponse.theme:type_name -> deck.v1.Theme
 	4,   // 1: deck.v1.InfoResponse.clis:type_name -> deck.v1.AgentCli
-	113, // 2: deck.v1.Theme.palette:type_name -> deck.v1.Theme.PaletteEntry
-	114, // 3: deck.v1.Theme.kinds:type_name -> deck.v1.Theme.KindsEntry
+	142, // 2: deck.v1.Theme.palette:type_name -> deck.v1.Theme.PaletteEntry
+	143, // 3: deck.v1.Theme.kinds:type_name -> deck.v1.Theme.KindsEntry
 	7,   // 4: deck.v1.ListSessionsResponse.sessions:type_name -> deck.v1.Session
 	12,  // 5: deck.v1.Message.parts:type_name -> deck.v1.Part
 	13,  // 6: deck.v1.Part.image:type_name -> deck.v1.ImageRef
@@ -8834,155 +11481,195 @@ var file_deck_v1_deck_proto_depIdxs = []int32{
 	60,  // 40: deck.v1.UsageResponse.limits:type_name -> deck.v1.UsageLimit
 	57,  // 41: deck.v1.UsageResponse.heat:type_name -> deck.v1.UsageDay
 	62,  // 42: deck.v1.UsageResponse.habits:type_name -> deck.v1.UsageHabits
-	69,  // 43: deck.v1.BoardResponse.tasks:type_name -> deck.v1.BoardTask
-	74,  // 44: deck.v1.AgentsResponse.agents:type_name -> deck.v1.AgentNode
-	75,  // 45: deck.v1.AgentsResponse.running:type_name -> deck.v1.RunningTool
-	77,  // 46: deck.v1.Teammate.agents:type_name -> deck.v1.TeamAgent
-	78,  // 47: deck.v1.Teammate.threads:type_name -> deck.v1.TeamThread
-	79,  // 48: deck.v1.TeamResponse.teammates:type_name -> deck.v1.Teammate
-	80,  // 49: deck.v1.TeamResponse.chat:type_name -> deck.v1.TeamChat
-	81,  // 50: deck.v1.TeamResponse.contracts:type_name -> deck.v1.TeamContract
-	115, // 51: deck.v1.ThreadSharesResponse.shares:type_name -> deck.v1.ThreadSharesResponse.SharesEntry
-	78,  // 52: deck.v1.SharedMirror.thread:type_name -> deck.v1.TeamThread
-	91,  // 53: deck.v1.SharedMirror.pending:type_name -> deck.v1.SharedApproval
-	104, // 54: deck.v1.SearchMessagesResponse.hits:type_name -> deck.v1.SearchHit
-	106, // 55: deck.v1.ListProfilesResponse.profiles:type_name -> deck.v1.Profile
-	106, // 56: deck.v1.SaveProfileRequest.profile:type_name -> deck.v1.Profile
-	106, // 57: deck.v1.SaveProfileResponse.profile:type_name -> deck.v1.Profile
-	6,   // 58: deck.v1.Theme.KindsEntry.value:type_name -> deck.v1.KindTone
-	0,   // 59: deck.v1.Deck.Info:input_type -> deck.v1.Empty
-	0,   // 60: deck.v1.Deck.ListSessions:input_type -> deck.v1.Empty
-	9,   // 61: deck.v1.Deck.CreateSession:input_type -> deck.v1.CreateSessionRequest
-	10,  // 62: deck.v1.Deck.RenameSession:input_type -> deck.v1.RenameSessionRequest
-	1,   // 63: deck.v1.Deck.DeleteSession:input_type -> deck.v1.SessionRef
-	14,  // 64: deck.v1.Deck.ListMessages:input_type -> deck.v1.ListMessagesRequest
-	17,  // 65: deck.v1.Deck.Send:input_type -> deck.v1.SendRequest
-	19,  // 66: deck.v1.Deck.EditMessage:input_type -> deck.v1.EditMessageRequest
-	1,   // 67: deck.v1.Deck.Cancel:input_type -> deck.v1.SessionRef
-	20,  // 68: deck.v1.Deck.Interrupt:input_type -> deck.v1.InterruptRequest
-	1,   // 69: deck.v1.Deck.Continue:input_type -> deck.v1.SessionRef
-	1,   // 70: deck.v1.Deck.Queue:input_type -> deck.v1.SessionRef
-	2,   // 71: deck.v1.Deck.Steer:input_type -> deck.v1.QueueItemRef
-	2,   // 72: deck.v1.Deck.CancelQueued:input_type -> deck.v1.QueueItemRef
-	1,   // 73: deck.v1.Deck.Roster:input_type -> deck.v1.SessionRef
-	25,  // 74: deck.v1.Deck.Models:input_type -> deck.v1.ModelsRequest
-	28,  // 75: deck.v1.Deck.SetModel:input_type -> deck.v1.SetModelRequest
-	1,   // 76: deck.v1.Deck.GetMode:input_type -> deck.v1.SessionRef
-	30,  // 77: deck.v1.Deck.SetMode:input_type -> deck.v1.SetModeRequest
-	1,   // 78: deck.v1.Deck.Approvals:input_type -> deck.v1.SessionRef
-	33,  // 79: deck.v1.Deck.Answer:input_type -> deck.v1.AnswerRequest
-	1,   // 80: deck.v1.Deck.Changes:input_type -> deck.v1.SessionRef
-	0,   // 81: deck.v1.Deck.GitStatus:input_type -> deck.v1.Empty
-	51,  // 82: deck.v1.Deck.GitCheckout:input_type -> deck.v1.GitCheckoutRequest
-	52,  // 83: deck.v1.Deck.GitCommit:input_type -> deck.v1.GitCommitRequest
-	0,   // 84: deck.v1.Deck.GitPush:input_type -> deck.v1.Empty
-	0,   // 85: deck.v1.Deck.GitPull:input_type -> deck.v1.Empty
-	53,  // 86: deck.v1.Deck.GitCreatePR:input_type -> deck.v1.GitCreatePRRequest
-	54,  // 87: deck.v1.Deck.GitMergePR:input_type -> deck.v1.GitMergePRRequest
-	55,  // 88: deck.v1.Deck.Usage:input_type -> deck.v1.UsageRequest
-	64,  // 89: deck.v1.Deck.TerminalOpen:input_type -> deck.v1.TerminalOpenRequest
-	66,  // 90: deck.v1.Deck.TerminalWrite:input_type -> deck.v1.TerminalInput
-	67,  // 91: deck.v1.Deck.TerminalResize:input_type -> deck.v1.TerminalSize
-	65,  // 92: deck.v1.Deck.TerminalClose:input_type -> deck.v1.TerminalRef
-	65,  // 93: deck.v1.Deck.TerminalOutput:input_type -> deck.v1.TerminalRef
-	1,   // 94: deck.v1.Deck.Board:input_type -> deck.v1.SessionRef
-	71,  // 95: deck.v1.Deck.TaskAction:input_type -> deck.v1.TaskActionRequest
-	73,  // 96: deck.v1.Deck.SetOrchestrate:input_type -> deck.v1.SetOrchestrateRequest
-	1,   // 97: deck.v1.Deck.Agents:input_type -> deck.v1.SessionRef
-	0,   // 98: deck.v1.Deck.Team:input_type -> deck.v1.Empty
-	83,  // 99: deck.v1.Deck.TeamPost:input_type -> deck.v1.TeamPostRequest
-	85,  // 100: deck.v1.Deck.ShareThread:input_type -> deck.v1.ShareThreadRequest
-	1,   // 101: deck.v1.Deck.ThreadShares:input_type -> deck.v1.SessionRef
-	87,  // 102: deck.v1.Deck.ProposeContract:input_type -> deck.v1.ProposeContractRequest
-	89,  // 103: deck.v1.Deck.AnswerContract:input_type -> deck.v1.AnswerContractRequest
-	90,  // 104: deck.v1.Deck.ReadShared:input_type -> deck.v1.ReadSharedRequest
-	93,  // 105: deck.v1.Deck.PostShared:input_type -> deck.v1.PostSharedRequest
-	94,  // 106: deck.v1.Deck.AnswerShared:input_type -> deck.v1.AnswerSharedRequest
-	1,   // 107: deck.v1.Deck.IsolateSession:input_type -> deck.v1.SessionRef
-	1,   // 108: deck.v1.Deck.ApplyIsolated:input_type -> deck.v1.SessionRef
-	1,   // 109: deck.v1.Deck.UnisolateSession:input_type -> deck.v1.SessionRef
-	96,  // 110: deck.v1.Deck.RevertFiles:input_type -> deck.v1.RevertFilesRequest
-	1,   // 111: deck.v1.Deck.UndoRevert:input_type -> deck.v1.SessionRef
-	1,   // 112: deck.v1.Deck.ArchiveSession:input_type -> deck.v1.SessionRef
-	1,   // 113: deck.v1.Deck.UnarchiveSession:input_type -> deck.v1.SessionRef
-	1,   // 114: deck.v1.Deck.UndoApply:input_type -> deck.v1.SessionRef
-	97,  // 115: deck.v1.Deck.StartRace:input_type -> deck.v1.StartRaceRequest
-	99,  // 116: deck.v1.Deck.ListFiles:input_type -> deck.v1.ListFilesRequest
-	101, // 117: deck.v1.Deck.ReadImage:input_type -> deck.v1.ReadImageRequest
-	103, // 118: deck.v1.Deck.SearchMessages:input_type -> deck.v1.SearchMessagesRequest
-	107, // 119: deck.v1.Deck.ListProfiles:input_type -> deck.v1.ListProfilesRequest
-	109, // 120: deck.v1.Deck.SaveProfile:input_type -> deck.v1.SaveProfileRequest
-	111, // 121: deck.v1.Deck.DeleteProfile:input_type -> deck.v1.DeleteProfileRequest
-	37,  // 122: deck.v1.Deck.Events:input_type -> deck.v1.Subscribe
-	3,   // 123: deck.v1.Deck.Info:output_type -> deck.v1.InfoResponse
-	8,   // 124: deck.v1.Deck.ListSessions:output_type -> deck.v1.ListSessionsResponse
-	7,   // 125: deck.v1.Deck.CreateSession:output_type -> deck.v1.Session
-	0,   // 126: deck.v1.Deck.RenameSession:output_type -> deck.v1.Empty
-	0,   // 127: deck.v1.Deck.DeleteSession:output_type -> deck.v1.Empty
-	15,  // 128: deck.v1.Deck.ListMessages:output_type -> deck.v1.ListMessagesResponse
-	18,  // 129: deck.v1.Deck.Send:output_type -> deck.v1.SendResponse
-	0,   // 130: deck.v1.Deck.EditMessage:output_type -> deck.v1.Empty
-	0,   // 131: deck.v1.Deck.Cancel:output_type -> deck.v1.Empty
-	0,   // 132: deck.v1.Deck.Interrupt:output_type -> deck.v1.Empty
-	0,   // 133: deck.v1.Deck.Continue:output_type -> deck.v1.Empty
-	22,  // 134: deck.v1.Deck.Queue:output_type -> deck.v1.QueueResponse
-	0,   // 135: deck.v1.Deck.Steer:output_type -> deck.v1.Empty
-	0,   // 136: deck.v1.Deck.CancelQueued:output_type -> deck.v1.Empty
-	24,  // 137: deck.v1.Deck.Roster:output_type -> deck.v1.RosterResponse
-	27,  // 138: deck.v1.Deck.Models:output_type -> deck.v1.ModelsResponse
-	0,   // 139: deck.v1.Deck.SetModel:output_type -> deck.v1.Empty
-	29,  // 140: deck.v1.Deck.GetMode:output_type -> deck.v1.ModeResponse
-	0,   // 141: deck.v1.Deck.SetMode:output_type -> deck.v1.Empty
-	32,  // 142: deck.v1.Deck.Approvals:output_type -> deck.v1.ApprovalsResponse
-	34,  // 143: deck.v1.Deck.Answer:output_type -> deck.v1.AnswerResponse
-	36,  // 144: deck.v1.Deck.Changes:output_type -> deck.v1.ChangesResponse
-	50,  // 145: deck.v1.Deck.GitStatus:output_type -> deck.v1.GitStatusResponse
-	0,   // 146: deck.v1.Deck.GitCheckout:output_type -> deck.v1.Empty
-	0,   // 147: deck.v1.Deck.GitCommit:output_type -> deck.v1.Empty
-	0,   // 148: deck.v1.Deck.GitPush:output_type -> deck.v1.Empty
-	0,   // 149: deck.v1.Deck.GitPull:output_type -> deck.v1.Empty
-	49,  // 150: deck.v1.Deck.GitCreatePR:output_type -> deck.v1.GitPullRequest
-	0,   // 151: deck.v1.Deck.GitMergePR:output_type -> deck.v1.Empty
-	63,  // 152: deck.v1.Deck.Usage:output_type -> deck.v1.UsageResponse
-	65,  // 153: deck.v1.Deck.TerminalOpen:output_type -> deck.v1.TerminalRef
-	0,   // 154: deck.v1.Deck.TerminalWrite:output_type -> deck.v1.Empty
-	0,   // 155: deck.v1.Deck.TerminalResize:output_type -> deck.v1.Empty
-	0,   // 156: deck.v1.Deck.TerminalClose:output_type -> deck.v1.Empty
-	68,  // 157: deck.v1.Deck.TerminalOutput:output_type -> deck.v1.TerminalChunk
-	70,  // 158: deck.v1.Deck.Board:output_type -> deck.v1.BoardResponse
-	72,  // 159: deck.v1.Deck.TaskAction:output_type -> deck.v1.TaskActionResponse
-	0,   // 160: deck.v1.Deck.SetOrchestrate:output_type -> deck.v1.Empty
-	76,  // 161: deck.v1.Deck.Agents:output_type -> deck.v1.AgentsResponse
-	82,  // 162: deck.v1.Deck.Team:output_type -> deck.v1.TeamResponse
-	84,  // 163: deck.v1.Deck.TeamPost:output_type -> deck.v1.TeamPostResponse
-	0,   // 164: deck.v1.Deck.ShareThread:output_type -> deck.v1.Empty
-	86,  // 165: deck.v1.Deck.ThreadShares:output_type -> deck.v1.ThreadSharesResponse
-	88,  // 166: deck.v1.Deck.ProposeContract:output_type -> deck.v1.ProposeContractResponse
-	0,   // 167: deck.v1.Deck.AnswerContract:output_type -> deck.v1.Empty
-	92,  // 168: deck.v1.Deck.ReadShared:output_type -> deck.v1.SharedMirror
-	0,   // 169: deck.v1.Deck.PostShared:output_type -> deck.v1.Empty
-	0,   // 170: deck.v1.Deck.AnswerShared:output_type -> deck.v1.Empty
-	0,   // 171: deck.v1.Deck.IsolateSession:output_type -> deck.v1.Empty
-	95,  // 172: deck.v1.Deck.ApplyIsolated:output_type -> deck.v1.FilesResponse
-	0,   // 173: deck.v1.Deck.UnisolateSession:output_type -> deck.v1.Empty
-	95,  // 174: deck.v1.Deck.RevertFiles:output_type -> deck.v1.FilesResponse
-	0,   // 175: deck.v1.Deck.UndoRevert:output_type -> deck.v1.Empty
-	0,   // 176: deck.v1.Deck.ArchiveSession:output_type -> deck.v1.Empty
-	0,   // 177: deck.v1.Deck.UnarchiveSession:output_type -> deck.v1.Empty
-	95,  // 178: deck.v1.Deck.UndoApply:output_type -> deck.v1.FilesResponse
-	98,  // 179: deck.v1.Deck.StartRace:output_type -> deck.v1.StartRaceResponse
-	100, // 180: deck.v1.Deck.ListFiles:output_type -> deck.v1.ListFilesResponse
-	102, // 181: deck.v1.Deck.ReadImage:output_type -> deck.v1.ReadImageResponse
-	105, // 182: deck.v1.Deck.SearchMessages:output_type -> deck.v1.SearchMessagesResponse
-	108, // 183: deck.v1.Deck.ListProfiles:output_type -> deck.v1.ListProfilesResponse
-	110, // 184: deck.v1.Deck.SaveProfile:output_type -> deck.v1.SaveProfileResponse
-	112, // 185: deck.v1.Deck.DeleteProfile:output_type -> deck.v1.DeleteProfileResponse
-	46,  // 186: deck.v1.Deck.Events:output_type -> deck.v1.Event
-	123, // [123:187] is the sub-list for method output_type
-	59,  // [59:123] is the sub-list for method input_type
-	59,  // [59:59] is the sub-list for extension type_name
-	59,  // [59:59] is the sub-list for extension extendee
-	0,   // [0:59] is the sub-list for field type_name
+	64,  // 43: deck.v1.UsageResponse.hours:type_name -> deck.v1.UsageHour
+	60,  // 44: deck.v1.UsageResponse.limit_history:type_name -> deck.v1.UsageLimit
+	70,  // 45: deck.v1.BoardResponse.tasks:type_name -> deck.v1.BoardTask
+	75,  // 46: deck.v1.AgentsResponse.agents:type_name -> deck.v1.AgentNode
+	76,  // 47: deck.v1.AgentsResponse.running:type_name -> deck.v1.RunningTool
+	78,  // 48: deck.v1.Teammate.agents:type_name -> deck.v1.TeamAgent
+	79,  // 49: deck.v1.Teammate.threads:type_name -> deck.v1.TeamThread
+	80,  // 50: deck.v1.TeamResponse.teammates:type_name -> deck.v1.Teammate
+	81,  // 51: deck.v1.TeamResponse.chat:type_name -> deck.v1.TeamChat
+	82,  // 52: deck.v1.TeamResponse.contracts:type_name -> deck.v1.TeamContract
+	144, // 53: deck.v1.ThreadSharesResponse.shares:type_name -> deck.v1.ThreadSharesResponse.SharesEntry
+	79,  // 54: deck.v1.SharedMirror.thread:type_name -> deck.v1.TeamThread
+	92,  // 55: deck.v1.SharedMirror.pending:type_name -> deck.v1.SharedApproval
+	99,  // 56: deck.v1.StartRaceRequest.entrants:type_name -> deck.v1.RaceEntrant
+	106, // 57: deck.v1.SearchMessagesResponse.hits:type_name -> deck.v1.SearchHit
+	108, // 58: deck.v1.ListProfilesResponse.profiles:type_name -> deck.v1.Profile
+	108, // 59: deck.v1.SaveProfileRequest.profile:type_name -> deck.v1.Profile
+	108, // 60: deck.v1.SaveProfileResponse.profile:type_name -> deck.v1.Profile
+	60,  // 61: deck.v1.LimitsResponse.limits:type_name -> deck.v1.UsageLimit
+	60,  // 62: deck.v1.LimitsResponse.history:type_name -> deck.v1.UsageLimit
+	116, // 63: deck.v1.LimitsResponse.checks:type_name -> deck.v1.LimitCheck
+	117, // 64: deck.v1.LimitsResponse.waits:type_name -> deck.v1.AgentWait
+	118, // 65: deck.v1.LimitsResponse.scheduled:type_name -> deck.v1.ScheduledSend
+	116, // 66: deck.v1.CheckLimitsResponse.checks:type_name -> deck.v1.LimitCheck
+	60,  // 67: deck.v1.CheckLimitsResponse.limits:type_name -> deck.v1.UsageLimit
+	60,  // 68: deck.v1.StartWindowResponse.limits:type_name -> deck.v1.UsageLimit
+	129, // 69: deck.v1.WorkResponse.worktrees:type_name -> deck.v1.WorktreeView
+	130, // 70: deck.v1.WorkResponse.capsules:type_name -> deck.v1.CapsuleView
+	131, // 71: deck.v1.CapsuleView.versions:type_name -> deck.v1.CapsuleVersionView
+	133, // 72: deck.v1.CapsuleView.comments:type_name -> deck.v1.CapsuleComment
+	134, // 73: deck.v1.CapsuleView.landings:type_name -> deck.v1.CapsuleLanding
+	132, // 74: deck.v1.CapsuleVersionView.commits:type_name -> deck.v1.CapsuleCommit
+	137, // 75: deck.v1.WorkActionResponse.files:type_name -> deck.v1.LandFile
+	129, // 76: deck.v1.WorkActionResponse.worktree:type_name -> deck.v1.WorktreeView
+	140, // 77: deck.v1.CapsuleFilesResponse.files:type_name -> deck.v1.CapsuleFile
+	6,   // 78: deck.v1.Theme.KindsEntry.value:type_name -> deck.v1.KindTone
+	0,   // 79: deck.v1.Deck.Info:input_type -> deck.v1.Empty
+	0,   // 80: deck.v1.Deck.ListSessions:input_type -> deck.v1.Empty
+	9,   // 81: deck.v1.Deck.CreateSession:input_type -> deck.v1.CreateSessionRequest
+	10,  // 82: deck.v1.Deck.RenameSession:input_type -> deck.v1.RenameSessionRequest
+	1,   // 83: deck.v1.Deck.DeleteSession:input_type -> deck.v1.SessionRef
+	14,  // 84: deck.v1.Deck.ListMessages:input_type -> deck.v1.ListMessagesRequest
+	17,  // 85: deck.v1.Deck.Send:input_type -> deck.v1.SendRequest
+	19,  // 86: deck.v1.Deck.EditMessage:input_type -> deck.v1.EditMessageRequest
+	1,   // 87: deck.v1.Deck.Cancel:input_type -> deck.v1.SessionRef
+	20,  // 88: deck.v1.Deck.Interrupt:input_type -> deck.v1.InterruptRequest
+	1,   // 89: deck.v1.Deck.Continue:input_type -> deck.v1.SessionRef
+	1,   // 90: deck.v1.Deck.Queue:input_type -> deck.v1.SessionRef
+	2,   // 91: deck.v1.Deck.Steer:input_type -> deck.v1.QueueItemRef
+	2,   // 92: deck.v1.Deck.CancelQueued:input_type -> deck.v1.QueueItemRef
+	1,   // 93: deck.v1.Deck.Roster:input_type -> deck.v1.SessionRef
+	25,  // 94: deck.v1.Deck.Models:input_type -> deck.v1.ModelsRequest
+	28,  // 95: deck.v1.Deck.SetModel:input_type -> deck.v1.SetModelRequest
+	1,   // 96: deck.v1.Deck.GetMode:input_type -> deck.v1.SessionRef
+	30,  // 97: deck.v1.Deck.SetMode:input_type -> deck.v1.SetModeRequest
+	1,   // 98: deck.v1.Deck.Approvals:input_type -> deck.v1.SessionRef
+	33,  // 99: deck.v1.Deck.Answer:input_type -> deck.v1.AnswerRequest
+	1,   // 100: deck.v1.Deck.Changes:input_type -> deck.v1.SessionRef
+	0,   // 101: deck.v1.Deck.GitStatus:input_type -> deck.v1.Empty
+	51,  // 102: deck.v1.Deck.GitCheckout:input_type -> deck.v1.GitCheckoutRequest
+	52,  // 103: deck.v1.Deck.GitCommit:input_type -> deck.v1.GitCommitRequest
+	0,   // 104: deck.v1.Deck.GitPush:input_type -> deck.v1.Empty
+	0,   // 105: deck.v1.Deck.GitPull:input_type -> deck.v1.Empty
+	53,  // 106: deck.v1.Deck.GitCreatePR:input_type -> deck.v1.GitCreatePRRequest
+	54,  // 107: deck.v1.Deck.GitMergePR:input_type -> deck.v1.GitMergePRRequest
+	55,  // 108: deck.v1.Deck.Usage:input_type -> deck.v1.UsageRequest
+	65,  // 109: deck.v1.Deck.TerminalOpen:input_type -> deck.v1.TerminalOpenRequest
+	67,  // 110: deck.v1.Deck.TerminalWrite:input_type -> deck.v1.TerminalInput
+	68,  // 111: deck.v1.Deck.TerminalResize:input_type -> deck.v1.TerminalSize
+	66,  // 112: deck.v1.Deck.TerminalClose:input_type -> deck.v1.TerminalRef
+	66,  // 113: deck.v1.Deck.TerminalOutput:input_type -> deck.v1.TerminalRef
+	1,   // 114: deck.v1.Deck.Board:input_type -> deck.v1.SessionRef
+	72,  // 115: deck.v1.Deck.TaskAction:input_type -> deck.v1.TaskActionRequest
+	74,  // 116: deck.v1.Deck.SetOrchestrate:input_type -> deck.v1.SetOrchestrateRequest
+	1,   // 117: deck.v1.Deck.Agents:input_type -> deck.v1.SessionRef
+	0,   // 118: deck.v1.Deck.Team:input_type -> deck.v1.Empty
+	84,  // 119: deck.v1.Deck.TeamPost:input_type -> deck.v1.TeamPostRequest
+	86,  // 120: deck.v1.Deck.ShareThread:input_type -> deck.v1.ShareThreadRequest
+	1,   // 121: deck.v1.Deck.ThreadShares:input_type -> deck.v1.SessionRef
+	88,  // 122: deck.v1.Deck.ProposeContract:input_type -> deck.v1.ProposeContractRequest
+	90,  // 123: deck.v1.Deck.AnswerContract:input_type -> deck.v1.AnswerContractRequest
+	91,  // 124: deck.v1.Deck.ReadShared:input_type -> deck.v1.ReadSharedRequest
+	94,  // 125: deck.v1.Deck.PostShared:input_type -> deck.v1.PostSharedRequest
+	95,  // 126: deck.v1.Deck.AnswerShared:input_type -> deck.v1.AnswerSharedRequest
+	1,   // 127: deck.v1.Deck.IsolateSession:input_type -> deck.v1.SessionRef
+	1,   // 128: deck.v1.Deck.ApplyIsolated:input_type -> deck.v1.SessionRef
+	1,   // 129: deck.v1.Deck.UnisolateSession:input_type -> deck.v1.SessionRef
+	97,  // 130: deck.v1.Deck.RevertFiles:input_type -> deck.v1.RevertFilesRequest
+	1,   // 131: deck.v1.Deck.UndoRevert:input_type -> deck.v1.SessionRef
+	1,   // 132: deck.v1.Deck.ArchiveSession:input_type -> deck.v1.SessionRef
+	1,   // 133: deck.v1.Deck.UnarchiveSession:input_type -> deck.v1.SessionRef
+	1,   // 134: deck.v1.Deck.UndoApply:input_type -> deck.v1.SessionRef
+	98,  // 135: deck.v1.Deck.StartRace:input_type -> deck.v1.StartRaceRequest
+	101, // 136: deck.v1.Deck.ListFiles:input_type -> deck.v1.ListFilesRequest
+	103, // 137: deck.v1.Deck.ReadImage:input_type -> deck.v1.ReadImageRequest
+	105, // 138: deck.v1.Deck.SearchMessages:input_type -> deck.v1.SearchMessagesRequest
+	109, // 139: deck.v1.Deck.ListProfiles:input_type -> deck.v1.ListProfilesRequest
+	111, // 140: deck.v1.Deck.SaveProfile:input_type -> deck.v1.SaveProfileRequest
+	113, // 141: deck.v1.Deck.DeleteProfile:input_type -> deck.v1.DeleteProfileRequest
+	115, // 142: deck.v1.Deck.Limits:input_type -> deck.v1.LimitsRequest
+	120, // 143: deck.v1.Deck.CheckLimits:input_type -> deck.v1.CheckLimitsRequest
+	122, // 144: deck.v1.Deck.StartWindow:input_type -> deck.v1.StartWindowRequest
+	124, // 145: deck.v1.Deck.ResolveWait:input_type -> deck.v1.ResolveWaitRequest
+	125, // 146: deck.v1.Deck.ScheduleSend:input_type -> deck.v1.ScheduleSendRequest
+	127, // 147: deck.v1.Deck.CancelScheduled:input_type -> deck.v1.CancelScheduledRequest
+	1,   // 148: deck.v1.Deck.Work:input_type -> deck.v1.SessionRef
+	135, // 149: deck.v1.Deck.WorktreeAction:input_type -> deck.v1.WorktreeActionRequest
+	136, // 150: deck.v1.Deck.CapsuleAction:input_type -> deck.v1.CapsuleActionRequest
+	139, // 151: deck.v1.Deck.CapsuleFiles:input_type -> deck.v1.CapsuleFilesRequest
+	37,  // 152: deck.v1.Deck.Events:input_type -> deck.v1.Subscribe
+	3,   // 153: deck.v1.Deck.Info:output_type -> deck.v1.InfoResponse
+	8,   // 154: deck.v1.Deck.ListSessions:output_type -> deck.v1.ListSessionsResponse
+	7,   // 155: deck.v1.Deck.CreateSession:output_type -> deck.v1.Session
+	0,   // 156: deck.v1.Deck.RenameSession:output_type -> deck.v1.Empty
+	0,   // 157: deck.v1.Deck.DeleteSession:output_type -> deck.v1.Empty
+	15,  // 158: deck.v1.Deck.ListMessages:output_type -> deck.v1.ListMessagesResponse
+	18,  // 159: deck.v1.Deck.Send:output_type -> deck.v1.SendResponse
+	0,   // 160: deck.v1.Deck.EditMessage:output_type -> deck.v1.Empty
+	0,   // 161: deck.v1.Deck.Cancel:output_type -> deck.v1.Empty
+	0,   // 162: deck.v1.Deck.Interrupt:output_type -> deck.v1.Empty
+	0,   // 163: deck.v1.Deck.Continue:output_type -> deck.v1.Empty
+	22,  // 164: deck.v1.Deck.Queue:output_type -> deck.v1.QueueResponse
+	0,   // 165: deck.v1.Deck.Steer:output_type -> deck.v1.Empty
+	0,   // 166: deck.v1.Deck.CancelQueued:output_type -> deck.v1.Empty
+	24,  // 167: deck.v1.Deck.Roster:output_type -> deck.v1.RosterResponse
+	27,  // 168: deck.v1.Deck.Models:output_type -> deck.v1.ModelsResponse
+	0,   // 169: deck.v1.Deck.SetModel:output_type -> deck.v1.Empty
+	29,  // 170: deck.v1.Deck.GetMode:output_type -> deck.v1.ModeResponse
+	0,   // 171: deck.v1.Deck.SetMode:output_type -> deck.v1.Empty
+	32,  // 172: deck.v1.Deck.Approvals:output_type -> deck.v1.ApprovalsResponse
+	34,  // 173: deck.v1.Deck.Answer:output_type -> deck.v1.AnswerResponse
+	36,  // 174: deck.v1.Deck.Changes:output_type -> deck.v1.ChangesResponse
+	50,  // 175: deck.v1.Deck.GitStatus:output_type -> deck.v1.GitStatusResponse
+	0,   // 176: deck.v1.Deck.GitCheckout:output_type -> deck.v1.Empty
+	0,   // 177: deck.v1.Deck.GitCommit:output_type -> deck.v1.Empty
+	0,   // 178: deck.v1.Deck.GitPush:output_type -> deck.v1.Empty
+	0,   // 179: deck.v1.Deck.GitPull:output_type -> deck.v1.Empty
+	49,  // 180: deck.v1.Deck.GitCreatePR:output_type -> deck.v1.GitPullRequest
+	0,   // 181: deck.v1.Deck.GitMergePR:output_type -> deck.v1.Empty
+	63,  // 182: deck.v1.Deck.Usage:output_type -> deck.v1.UsageResponse
+	66,  // 183: deck.v1.Deck.TerminalOpen:output_type -> deck.v1.TerminalRef
+	0,   // 184: deck.v1.Deck.TerminalWrite:output_type -> deck.v1.Empty
+	0,   // 185: deck.v1.Deck.TerminalResize:output_type -> deck.v1.Empty
+	0,   // 186: deck.v1.Deck.TerminalClose:output_type -> deck.v1.Empty
+	69,  // 187: deck.v1.Deck.TerminalOutput:output_type -> deck.v1.TerminalChunk
+	71,  // 188: deck.v1.Deck.Board:output_type -> deck.v1.BoardResponse
+	73,  // 189: deck.v1.Deck.TaskAction:output_type -> deck.v1.TaskActionResponse
+	0,   // 190: deck.v1.Deck.SetOrchestrate:output_type -> deck.v1.Empty
+	77,  // 191: deck.v1.Deck.Agents:output_type -> deck.v1.AgentsResponse
+	83,  // 192: deck.v1.Deck.Team:output_type -> deck.v1.TeamResponse
+	85,  // 193: deck.v1.Deck.TeamPost:output_type -> deck.v1.TeamPostResponse
+	0,   // 194: deck.v1.Deck.ShareThread:output_type -> deck.v1.Empty
+	87,  // 195: deck.v1.Deck.ThreadShares:output_type -> deck.v1.ThreadSharesResponse
+	89,  // 196: deck.v1.Deck.ProposeContract:output_type -> deck.v1.ProposeContractResponse
+	0,   // 197: deck.v1.Deck.AnswerContract:output_type -> deck.v1.Empty
+	93,  // 198: deck.v1.Deck.ReadShared:output_type -> deck.v1.SharedMirror
+	0,   // 199: deck.v1.Deck.PostShared:output_type -> deck.v1.Empty
+	0,   // 200: deck.v1.Deck.AnswerShared:output_type -> deck.v1.Empty
+	0,   // 201: deck.v1.Deck.IsolateSession:output_type -> deck.v1.Empty
+	96,  // 202: deck.v1.Deck.ApplyIsolated:output_type -> deck.v1.FilesResponse
+	0,   // 203: deck.v1.Deck.UnisolateSession:output_type -> deck.v1.Empty
+	96,  // 204: deck.v1.Deck.RevertFiles:output_type -> deck.v1.FilesResponse
+	0,   // 205: deck.v1.Deck.UndoRevert:output_type -> deck.v1.Empty
+	0,   // 206: deck.v1.Deck.ArchiveSession:output_type -> deck.v1.Empty
+	0,   // 207: deck.v1.Deck.UnarchiveSession:output_type -> deck.v1.Empty
+	96,  // 208: deck.v1.Deck.UndoApply:output_type -> deck.v1.FilesResponse
+	100, // 209: deck.v1.Deck.StartRace:output_type -> deck.v1.StartRaceResponse
+	102, // 210: deck.v1.Deck.ListFiles:output_type -> deck.v1.ListFilesResponse
+	104, // 211: deck.v1.Deck.ReadImage:output_type -> deck.v1.ReadImageResponse
+	107, // 212: deck.v1.Deck.SearchMessages:output_type -> deck.v1.SearchMessagesResponse
+	110, // 213: deck.v1.Deck.ListProfiles:output_type -> deck.v1.ListProfilesResponse
+	112, // 214: deck.v1.Deck.SaveProfile:output_type -> deck.v1.SaveProfileResponse
+	114, // 215: deck.v1.Deck.DeleteProfile:output_type -> deck.v1.DeleteProfileResponse
+	119, // 216: deck.v1.Deck.Limits:output_type -> deck.v1.LimitsResponse
+	121, // 217: deck.v1.Deck.CheckLimits:output_type -> deck.v1.CheckLimitsResponse
+	123, // 218: deck.v1.Deck.StartWindow:output_type -> deck.v1.StartWindowResponse
+	0,   // 219: deck.v1.Deck.ResolveWait:output_type -> deck.v1.Empty
+	126, // 220: deck.v1.Deck.ScheduleSend:output_type -> deck.v1.ScheduleSendResponse
+	0,   // 221: deck.v1.Deck.CancelScheduled:output_type -> deck.v1.Empty
+	128, // 222: deck.v1.Deck.Work:output_type -> deck.v1.WorkResponse
+	138, // 223: deck.v1.Deck.WorktreeAction:output_type -> deck.v1.WorkActionResponse
+	138, // 224: deck.v1.Deck.CapsuleAction:output_type -> deck.v1.WorkActionResponse
+	141, // 225: deck.v1.Deck.CapsuleFiles:output_type -> deck.v1.CapsuleFilesResponse
+	46,  // 226: deck.v1.Deck.Events:output_type -> deck.v1.Event
+	153, // [153:227] is the sub-list for method output_type
+	79,  // [79:153] is the sub-list for method input_type
+	79,  // [79:79] is the sub-list for extension type_name
+	79,  // [79:79] is the sub-list for extension extendee
+	0,   // [0:79] is the sub-list for field type_name
 }
 
 func init() { file_deck_v1_deck_proto_init() }
@@ -9015,7 +11702,7 @@ func file_deck_v1_deck_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_deck_v1_deck_proto_rawDesc), len(file_deck_v1_deck_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   116,
+			NumMessages:   145,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

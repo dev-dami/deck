@@ -101,9 +101,31 @@ type Member struct {
 	Dir       string    `json:"dir,omitempty"`
 	Worktree  *Worktree `json:"worktree,omitempty"`
 	// Profile is the named agent (deck.json "profiles") the member was
-	// started from, and Role its one-line role then; "" for none.
+	// started from, and Role its one-line role and Color its colour then;
+	// "" for none.
 	Profile string `json:"profile,omitempty"`
 	Role    string `json:"role,omitempty"`
+	Color   string `json:"color,omitempty"`
+	// Wait is set while the member's plan ran out and Deck holds its work
+	// until the limit resets (session/waits.go).
+	Wait *Wait `json:"wait,omitempty"`
+}
+
+// Wait is a member's plan running out: since when, until when (zero while
+// not known) and which window, when the CLI said.
+type Wait struct {
+	Since  time.Time `json:"since"`
+	Until  time.Time `json:"until,omitzero"`
+	Window string    `json:"window,omitempty"`
+}
+
+// Scheduled is a message the user wrote to be sent later (when a plan
+// limit resets): At is when.
+type Scheduled struct {
+	ID      string    `json:"id"`
+	Text    string    `json:"text"`
+	At      time.Time `json:"at"`
+	Created time.Time `json:"created"`
 }
 
 // Thread is the metadata of one conversation between the user and one or more
@@ -135,9 +157,12 @@ type Thread struct {
 	Worktree *Worktree `json:"worktree,omitempty"`
 	// Tasks is the thread's shared task board (task.go).
 	Tasks []Task `json:"tasks,omitempty"`
-	// Orchestrate lets members spawn subagents and has the scheduler run the
-	// board's ready tasks.
-	Orchestrate bool `json:"orchestrate,omitempty"`
+	// Orchestration is the thread's orchestration level ("off", "assist",
+	// "auto" or "full"); "" for a thread stored before levels, which
+	// Orchestrate then speaks for: set, it was on (auto); unset, it never
+	// chose, and takes the configured default.
+	Orchestration string `json:"orchestration,omitempty"`
+	Orchestrate   bool   `json:"orchestrate,omitempty"`
 	// Contract is the teammate whose code contract runs in this thread: its
 	// mode is at most ask.
 	Contract string `json:"contract,omitempty"`
@@ -146,6 +171,12 @@ type Thread struct {
 	Ops bool `json:"ops,omitempty"`
 	// Shares are the teammates the thread is shared with, and their roles.
 	Shares []Share `json:"shares,omitempty"`
+	// Scheduled are messages waiting for their time (session/waits.go).
+	Scheduled []Scheduled `json:"scheduled,omitempty"`
+	// Trees are the thread's own worktrees, apart from its agents'
+	// (session/work.go); Capsules its named capsules.
+	Trees    []*Worktree  `json:"trees,omitempty"`
+	Capsules []CapsuleRec `json:"capsules,omitempty"`
 
 	// Legacy mirror of Members[0] (Name: every member's name joined by "+").
 	AgentKind string `json:"agent_kind"`
@@ -903,7 +934,7 @@ func decodeEntry(line []byte, whole bool) (Entry, bool) {
 }
 
 // entryHead is an Entry without the payload of its event (Tool, Diff, Usage,
-// Limits, Raw), which is most of the bytes of a log and none of what an
+// Limits, LimitHit, Raw), which is most of the bytes of a log and none of what an
 // index of it needs. The fields and their JSON names are Entry's.
 type entryHead struct {
 	AgentID   string     `json:",omitempty"`
@@ -1007,6 +1038,8 @@ type Worktree struct {
 	// Applied is the last apply to Main, kept until it is undone or the
 	// next apply replaces it.
 	Applied *Applied `json:"applied,omitempty"`
+	// Line is what Deck tracks of it as a line of work (work.go).
+	Line
 }
 
 // Applied is what undoing an apply needs: Main as snapshots before and

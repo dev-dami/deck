@@ -1,6 +1,6 @@
 import { type RefObject, useEffect, useState } from "react";
 import { loadPicture, render } from "./client";
-import { type Art, artFor, type Process, type Use, withPicture } from "./inks";
+import { type Art, artFor, artProcess, type Process, type Use, withPicture } from "./inks";
 import { readTokens, useLook } from "./live";
 import { CUSTOM, framingOf, pictureInfo } from "./pictures";
 import { useWallpaperVersion } from "./wallpaper";
@@ -75,7 +75,7 @@ export function usePrint(canvas: RefObject<HTMLCanvasElement | null>, size: Prin
   useEffect(() => {
     if (w < 2 || h < 2) return;
     let live = true;
-    const art = artFor(look.palette, look.mode, readTokens(), use);
+    const art = artFor(look.palette, look.mode, readTokens(), use, artProcess(look.process));
     printTo(canvas, art, picture, { w, h, dpr }, version, () => live)
       .then((p) => live && p !== null && setPrinted(p))
       .catch(() => live && setPrinted(null));

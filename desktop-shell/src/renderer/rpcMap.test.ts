@@ -56,9 +56,9 @@ describe("deck.v1 to the reducer's entities", () => {
     ]);
   });
 
-  test("a named member keeps its profile and role", () => {
-    expect(toRoster({ agents: [{ id: "claude-2", name: "charles", kind: "claude", busy: true, profile: "charles", role: "reviewer" }] })).toEqual([
-      { id: "claude-2", name: "charles", kind: "claude", busy: true, profile: "charles", role: "reviewer" },
+  test("a named member keeps its profile, role and colour", () => {
+    expect(toRoster({ agents: [{ id: "claude-2", name: "charles", kind: "claude", busy: true, profile: "charles", role: "reviewer", color: "teal" }] })).toEqual([
+      { id: "claude-2", name: "charles", kind: "claude", busy: true, profile: "charles", role: "reviewer", color: "teal" },
     ]);
   });
 

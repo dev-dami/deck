@@ -53,8 +53,11 @@ export class Fail extends Error {
   }
 }
 
-const KINDS = ["claude", "codex", "opencode", "antigravity"];
+const KINDS = ["claude", "codex", "opencode", "antigravity", "pi"];
 const STREAM_STEPS = 6;
+// "spin up two codex agents ...": the agent asked spawns them (agent.spawn).
+const SPAWN = /\bspin up (a|an|one|two|three|[1-4]) (claude|codex|opencode|antigravity)\b/i;
+const COUNT: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3 };
 
 export interface FakeOptions {
   allowYolo?: boolean;
@@ -74,10 +77,17 @@ export class FakeDeck {
   readonly continued: string[] = [];
   // The queue items steered into a running turn.
   readonly steered: string[] = [];
+  // Each models.list asked: the pickers list every kind once, then keep it.
+  readonly modelLists: string[] = [];
   // Named agents (docs/design/agents-and-mentions.md): "@charles" for one
   // with no member of that name starts a member called charles, with its
   // role. The rpc fake keeps the list (ListProfiles).
   profiles: Array<{ name: string; kind: string; role?: string }> = [];
+  // The agents an agent spawned, as Deck's agents tree lists them (the rpc
+  // fake's Agents adds them under their spawner).
+  readonly spawned: Array<{ session_id: string; parent: string; name: string; kind: string }> = [];
+  // The races started, with their entrants as given.
+  readonly races: Array<{ session_id: string; entrants: Array<{ agent: string; model?: string; effort?: string }>; brief: string }> = [];
   private readonly http: http.Server;
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 13 << 20 });
   private readonly clients = new Set<Client>();
@@ -170,6 +180,90 @@ export class FakeDeck {
     t.messages = [...t.messages, m];
     this.emit("message.created", m, sessionId);
     return m;
+  }
+
+  // Adds the thread "Busy crew", stored as Deck stores a turn: a step's
+  // text and calls in one message, each result in a message of its own
+  // with no agent, two agents interleaved, a failed call, and one agent
+  // still at work. With handoffs by mention, for the Work Graph's history.
+  addBusyThread(): string {
+    const t = this.addThread("ses_busy", "Busy crew");
+    t.roster = [
+      { id: "ada", name: "ada", kind: "claude", model: "opus", busy: true },
+      { id: "bob", name: "bob", kind: "codex", model: "default", busy: false },
+    ];
+    const step = (agent: string, text: string, calls: Array<[string, string]>, finished = true): string[] => {
+      const ids = calls.map(() => this.id("tc"));
+      const m = this.message(t, "assistant", agent, text, finished);
+      m.parts = [...m.parts, ...calls.map(([name, summary], i) => ({ type: "tool_call", id: ids[i]!, name, summary }))];
+      return ids;
+    };
+    const results = (ids: string[], outs: Array<[string, boolean?]>) => {
+      ids.forEach((id, i) => {
+        const r = this.message(t, "assistant", undefined, "", true);
+        const [output, failed] = outs[i] ?? ["", false];
+        r.parts = [{ type: "tool_result", tool_call_id: id, name: "tool", output, ...(failed === true ? { is_error: true } : {}) }];
+      });
+    };
+    this.message(t, "user", undefined, "@ada find why pairing locks everyone out, then @bob review the fix.", true);
+    const a1 = step("ada", "I'll start with the limiter and its tests.", [
+      ["Read", "pkg/remote/auth/limit.go"],
+      ["Read", "pkg/remote/auth/limit_test.go"],
+      ["Grep", "fail("],
+      ["Read", "pkg/remote/auth/pair.go"],
+      ["Bash", "go test ./pkg/remote/auth"],
+    ]);
+    const b1 = step("bob", "Reading the pairing flow while ada digs.", [["Read", "pkg/remote/auth/pair.go"]]);
+    results(a1, [["package auth…"], ["package auth…"], ["limit.go:31: global.fail()"], ["package auth…"], ["--- FAIL: TestLockout (0.02s)\nFAIL", true]]);
+    results(b1, [["package auth…"]]);
+    const a2 = step("ada", "Now the fix.", [
+      ["Edit", "pkg/remote/auth/limit.go"],
+      ["Edit", "pkg/remote/auth/limit_test.go"],
+      ["Bash", "go test ./pkg/remote/auth"],
+      ["Bash", "go vet ./..."],
+    ]);
+    results(a2, [["ok"], ["ok"], ["ok  \tgithub.com/dev-dami/deck/pkg/remote/auth\t0.41s"], [""]]);
+    this.message(t, "assistant", "ada", "The limiter counted every address in one bucket. It keys by `addr` now, with a test. @bob can you review?", true);
+    const b2 = step("bob", "Reviewing ada's change.", [
+      ["Read", "pkg/remote/auth/limit.go"],
+      ["Bash", "git diff pkg/remote/auth"],
+      ["Bash", "go test -race ./pkg/remote/auth"],
+    ]);
+    results(b2, [["…"], ["@@ -31 +31 @@"], ["ok"]]);
+    this.message(t, "assistant", "bob", "Looks right. One nit: prune idle buckets. @ada", true);
+    const a3 = step("ada", "Adding the prune.", [["Edit", "pkg/remote/auth/prune.go"], ["Bash", "go test ./pkg/remote/auth"]], false);
+    results(a3.slice(0, 1), [["ok"]]);
+    t.session = { ...t.session, busy: true };
+    return t.session.id;
+  }
+
+  // Adds the thread "Shared files": two agents on one checkout, with the
+  // engine's asks between them (session/coord.go, AskLine): ada edits
+  // limit.go, bob asks her before he does and she lets him, and ada now
+  // waits on bob for prune.go. For the Work Graph's file view.
+  addSharedThread(): string {
+    const t = this.addThread("ses_shared", "Shared files");
+    t.roster = [
+      { id: "ada", name: "ada", kind: "claude", model: "opus", busy: true },
+      { id: "bob", name: "bob", kind: "codex", model: "default", busy: true },
+    ];
+    const LIMIT = "pkg/remote/auth/limit.go";
+    const PRUNE = "pkg/remote/auth/prune.go";
+    const edit = (agent: string, path: string, diff: string, text = "") => {
+      const id = this.id("tc");
+      const m = this.message(t, "assistant", agent, text, true);
+      m.parts = [...m.parts, { type: "tool_call", id, name: "Edit", summary: path }];
+      const r = this.message(t, "assistant", undefined, "", true);
+      r.parts = [{ type: "tool_result", tool_call_id: id, name: "Edit", output: "ok", diff }];
+    };
+    this.message(t, "user", undefined, "@ada key the limiter by address, @bob prune idle buckets.", true);
+    edit("ada", LIMIT, "@@ -29,4 +29,4 @@\n func (l *Limiter) Fail(addr string) {\n-\tl.global.fail()\n+\tl.byAddr(addr).fail()\n }\n", "Keying failures by address.");
+    edit("bob", PRUNE, "@@ -0,0 +1,6 @@\n+// prune drops buckets idle for an hour.\n+func (l *Limiter) prune(now time.Time) {\n+\tfor k, b := range l.buckets {\n+\t\tif now.Sub(b.last) > time.Hour { delete(l.buckets, k) }\n+\t}\n+}\n", "Adding the prune.");
+    this.message(t, "system", undefined, `@bob asked @ada about \`${LIMIT}\` → ada: go ahead, I'm done with Fail`, true);
+    edit("bob", LIMIT, "@@ -40,3 +40,4 @@\n func (l *Limiter) Allow(addr string) bool {\n+\tl.prune(time.Now())\n \treturn !l.byAddr(addr).locked()\n }\n", "Calling the prune from Allow.");
+    this.message(t, "system", undefined, `@ada asked @bob about \`${PRUNE}\``, true);
+    t.session = { ...t.session, busy: true };
+    return t.session.id;
   }
 
   // The thread's changed files, as if someone edited the tree.
@@ -394,6 +488,8 @@ export class FakeDeck {
         return this.send(this.get(p["session_id"]), String(p["text"]), p["idempotency_key"]);
       case "roster.get":
         return this.get(p["session_id"]).roster;
+      case "race.start":
+        return { task_id: this.race(String(p["session_id"]), (p["entrants"] as { agent: string }[] | undefined) ?? [], String(p["brief"] ?? "")) };
       case "queue.list":
         return this.get(p["session_id"]).queue;
       case "queue.steer":
@@ -424,7 +520,17 @@ export class FakeDeck {
         return { mode: p["mode"] };
       }
       case "models.list":
-        this.get(p["session_id"]);
+        // No session: the kind's models apart from any thread.
+        if (p["session_id"] !== "" && p["session_id"] !== undefined) this.get(p["session_id"]);
+        this.modelLists.push(String(p["kind"]));
+        // Pi lists the models it has a key for as "provider/model", its
+        // current one first, with the thinking levels each one takes.
+        if (p["kind"] === "pi") {
+          return [
+            { id: "ollama/coder", label: "Coder", selected: true },
+            { id: "openrouter/reasoner", label: "Reasoner", efforts: ["none", "low", "medium", "high"] },
+          ];
+        }
         return [
           { id: "default", label: "Default", selected: true },
           { id: "fast", label: "Fast" },
@@ -501,9 +607,10 @@ export class FakeDeck {
     return out;
   }
 
-  // Leading mentions pick the agents, as Deck's addressing does: "$kind+"
-  // adds a member, "$kind" reaches the first one (or adds it), "$id" one
-  // member, "$all" every member. No mention reaches the first member.
+  // Leading mentions pick the agents, as Deck's addressing does: "$kind"
+  // reaches the first one (or adds it), "$id" one member, "$all" every
+  // member. "$kind+" and "$kind×3" are text. No mention reaches the first
+  // member.
   private send(t: Thread, text: string, key: unknown): unknown {
     if (typeof key === "string") {
       const known = this.idem.get(key);
@@ -516,12 +623,11 @@ export class FakeDeck {
     let rest = text.trim();
     for (;;) {
       // "$" or "@", as Deck reads both; "@src/a.ts" is a path, not a name.
-      const m = /^[$@]([\w-]+)([+*]?)(?![\w/-]|\.\S)\s*/.exec(rest);
+      const m = /^[$@]([\w-]+)(?![\w/+*×-]|\.\S)\s*/.exec(rest);
       if (m === null) break;
       rest = rest.slice(m[0].length);
-      const [, name = "", suffix] = m;
+      const [, name = ""] = m;
       if (name === "all") targets.push(...t.roster);
-      else if (suffix === "+" && KINDS.includes(name)) targets.push(this.addMember(t, name));
       else if (KINDS.includes(name)) targets.push(t.roster.find((l) => l.kind === name) ?? this.addMember(t, name));
       else {
         const l = t.roster.find((x) => x.id === name || x.name === name);
@@ -531,6 +637,17 @@ export class FakeDeck {
       }
     }
     if (targets.length === 0) targets.push(t.roster[0] ?? this.addMember(t, "claude"));
+    const spawn = SPAWN.exec(rest);
+    if (spawn !== null && targets[0] !== undefined && !targets[0].busy) {
+      const parent = targets[0];
+      const n = COUNT[spawn[1]!.toLowerCase()] ?? Number(spawn[1]);
+      const at = (this.opts.tickMs ?? 150) * (STREAM_STEPS + 1);
+      const timer = setTimeout(() => {
+        this.timers.delete(timer);
+        if (this.threads.has(t.session.id)) this.spawn(t, parent, spawn[2]!.toLowerCase(), n, rest);
+      }, at);
+      this.timers.add(timer);
+    }
     // A busy agent gets the message when its turn ends, as Deck's queue does:
     // one item per agent, its text without the mentions.
     for (const [i, agent] of [...new Set(targets)].entries()) {
@@ -540,6 +657,49 @@ export class FakeDeck {
       } else this.stream(t, agent, rest, i);
     }
     return { message_id: user.id };
+  }
+
+  // A race, as race.start and StartRace run it: each entrant, a kind or a
+  // named agent, joins the room as a lane of its own on its model, and works
+  // on the brief. The race's task id.
+  race(sessionId: string, entrants: readonly { agent: string; model?: string; effort?: string }[], brief: string): string {
+    const t = this.get(sessionId);
+    if (entrants.length < 2 || entrants.length > 6) throw new Fail("invalid", `a race has 2 to 6 entries, not ${entrants.length}`);
+    if (brief.trim() === "") throw new Fail("invalid", "a race needs a brief");
+    this.races.push({ session_id: sessionId, entrants: entrants.map((e) => ({ ...e })), brief });
+    for (const [i, e] of entrants.entries()) {
+      const p = this.profiles.find((x) => x.name.toLowerCase() === e.agent.toLowerCase());
+      if (p === undefined && !KINDS.includes(e.agent)) throw new Fail("invalid", `no agent kind or named agent "${e.agent}"`);
+      const named = p !== undefined && !t.roster.some((l) => l.id === p.name);
+      const line = this.addMember(t, p?.kind ?? e.agent, named ? p : undefined);
+      const raced = { ...line, model: e.model || "default", ...(e.effort ? { effort: e.effort } : {}) };
+      t.roster = t.roster.map((l) => (l.id === line.id ? raced : l));
+      this.stream(t, raced, brief, i);
+    }
+    return "t6";
+  }
+
+  // An agent starts n agents of kind with a brief, as agent.spawn does: each
+  // joins the room, the brief shows as the spawner's relay ("→ $name"), and
+  // each works on it and answers its spawner.
+  private spawn(t: Thread, parent: AgentLine, kind: string, n: number, brief: string): void {
+    for (let i = 0; i < n; i++) {
+      const child = this.addMember(t, kind);
+      this.spawned.push({ session_id: t.session.id, parent: parent.id, name: child.id, kind });
+      this.message(t, "assistant", parent.id, `→ $${child.id}\n\n${brief}`, true);
+      this.stream(t, child, `@${parent.id} ${brief}`, i);
+    }
+  }
+
+  // The spawned agents of a room as agents tree nodes.
+  spawnedNodes(sessionId: string): Array<Record<string, unknown>> {
+    const t = this.threads.get(sessionId);
+    return this.spawned
+      .filter((s) => s.session_id === sessionId)
+      .map((s) => {
+        const busy = t?.roster.find((l) => l.id === s.name)?.busy === true;
+        return { name: s.name, kind: s.kind, model: "default", status: busy ? "working" : "idle", depth: 1, parent: s.parent };
+      });
   }
 
   private addMember(t: Thread, kind: string, profile?: { name: string; role?: string }): AgentLine {

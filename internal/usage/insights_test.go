@@ -266,3 +266,77 @@ func TestRecordLimitsDeduplicates(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, hist, 2)
 }
+
+func TestLimitTimelineLeadsWithTheValueAtTheStart(t *testing.T) {
+	t.Parallel()
+	svc, _ := newTestService(t)
+	ctx := t.Context()
+	t0 := time.Now().Add(-10 * time.Hour).Truncate(time.Second)
+	snap := func(kind, window string, used float64, at time.Time) LimitSnapshot {
+		return LimitSnapshot{AgentKind: kind, WindowID: window, Kind: "session", UsedPct: used, ResetsAt: t0.Add(12 * time.Hour), At: at}
+	}
+	_, err := svc.RecordLimits(ctx, []LimitSnapshot{snap("claude", "five_hour", 10, t0), snap("codex", "primary", 4, t0)})
+	require.NoError(t, err)
+	_, err = svc.RecordLimits(ctx, []LimitSnapshot{snap("claude", "five_hour", 20, t0.Add(time.Hour))})
+	require.NoError(t, err)
+	_, err = svc.RecordLimits(ctx, []LimitSnapshot{snap("claude", "five_hour", 30, t0.Add(3*time.Hour))})
+	require.NoError(t, err)
+
+	rows, err := svc.LimitTimeline(ctx, t0.Add(2*time.Hour))
+	require.NoError(t, err)
+	require.Len(t, rows, 3, "claude's row before the start and the one after, and codex's only row")
+	require.Equal(t, "claude", rows[0].AgentKind)
+	require.InDelta(t, 20, rows[0].UsedPct, 1e-9)
+	require.InDelta(t, 30, rows[1].UsedPct, 1e-9)
+	require.Equal(t, "codex", rows[2].AgentKind)
+}
+
+func TestPruneKeepsEachWindowsNewestRow(t *testing.T) {
+	t.Parallel()
+	svc, _ := newTestService(t)
+	ctx := t.Context()
+	old := time.Now().Add(-limitRetention - 48*time.Hour)
+	for i, used := range []float64{10, 20, 30} {
+		_, err := svc.RecordLimits(ctx, []LimitSnapshot{{AgentKind: "codex", WindowID: "primary", UsedPct: used, At: old.Add(time.Duration(i) * time.Hour)}})
+		require.NoError(t, err)
+	}
+	all, err := svc.LimitTimeline(ctx, time.Time{})
+	require.NoError(t, err)
+	require.Len(t, all, 3, "a prune runs at most once a day")
+
+	// A day on, the next write prunes again.
+	svc.(*service).pruned.Store(0)
+	_, err = svc.RecordLimits(ctx, []LimitSnapshot{{AgentKind: "claude", WindowID: "five_hour", UsedPct: 5}})
+	require.NoError(t, err)
+	rows, err := svc.LimitTimeline(ctx, time.Time{})
+	require.NoError(t, err)
+	require.Len(t, rows, 2, "codex keeps its newest row only")
+	require.Equal(t, "codex", rows[1].AgentKind)
+	require.InDelta(t, 30, rows[1].UsedPct, 1e-9)
+}
+
+func TestHourlyByKindAndAgent(t *testing.T) {
+	t.Parallel()
+	svc, _ := newTestService(t)
+	ctx := t.Context()
+	h := time.Now().Add(-3 * time.Hour).Truncate(time.Hour)
+	for _, r := range []Record{
+		{AgentID: "claude", Kind: "claude", InputTokens: 100, OutputTokens: 10, CostUSD: 0.5, At: h.Add(5 * time.Minute)},
+		{AgentID: "claude", Kind: "claude", InputTokens: 50, OutputTokens: 5, CostUSD: 0.25, At: h.Add(40 * time.Minute)},
+		{AgentID: "reviewer", Kind: "claude", InputTokens: 7, At: h.Add(41 * time.Minute)},
+		{AgentID: "claude", Kind: "claude", InputTokens: 1, At: h.Add(time.Hour + time.Minute)},
+		{AgentID: "codex", Kind: "codex", InputTokens: 1, At: h.Add(-48 * time.Hour)},
+	} {
+		require.NoError(t, svc.Record(ctx, r))
+	}
+	hours, err := svc.Hourly(ctx, h.Add(-time.Hour))
+	require.NoError(t, err)
+	require.Len(t, hours, 3)
+	require.Equal(t, h.Unix(), hours[0].At.Unix())
+	require.Equal(t, "claude", hours[0].AgentID)
+	require.Equal(t, 2, hours[0].Turns)
+	require.Equal(t, int64(165), hours[0].Tokens)
+	require.InDelta(t, 0.75, hours[0].CostUSD, 1e-9)
+	require.Equal(t, "reviewer", hours[1].AgentID)
+	require.Equal(t, h.Add(time.Hour).Unix(), hours[2].At.Unix())
+}

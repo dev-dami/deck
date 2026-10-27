@@ -1,18 +1,20 @@
-import type { ModelChoice, Theme } from "@web/protocol";
+import type { Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
-import { CornerDownRight, Lock, Square } from "./icons";
-import { useLayoutEffect, useRef, useState } from "react";
+import { CornerDownRight, GitBranch, Lock, Square } from "./icons";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { agentColour } from "../agents";
-import { fitLanes, type Lane } from "../lanes";
+import { tintOf } from "../teamGate";
+import { agentLane, fitLanes, type Lane } from "../lanes";
 import { cn } from "../lib/cn";
 import { AgentRole } from "./AgentRole";
-import { Models } from "./AgentsStrip";
+import { AgentPicker, type PickerSource } from "./AgentPicker";
 import { MenuItem, MenuLabel, MenuSeparator, Popover } from "./kit/menu";
 import { Ring } from "./kit/ring";
 
 // The lane strip under the room header: one chip per participant. A click
 // filters the timeline to that lane; on an agent it also opens its model,
-// effort, Stop and Steer.
+// effort, Stop and Steer. An agent another agent spawned (agent.spawn) says
+// so on its chip, and its popover links to the spawner's lane.
 
 const WORD: Record<Lane["status"], string> = {
   working: "working",
@@ -55,35 +57,48 @@ function FoldedLane({ lane, on, onFilter }: { lane: Lane; on: boolean; onFilter:
   );
 }
 
+// The popover is wide and short; one opened from a chip in the right half
+// of the window opens leftwards, so it stays on screen.
+const POPOVER = "w-[26rem] max-w-[calc(100vw-2rem)]";
+
 function AgentChip({
   lane,
   theme,
   on,
   onFilter,
-  listModels,
+  onParent,
+  picker,
   setModel,
   onStop,
   onSteer,
+  mark,
 }: {
   lane: Lane;
   theme: Theme | null;
+  // What else the chip shows of the agent (its plan's quota).
+  mark?: ReactNode;
   on: boolean;
   onFilter: () => void;
-  listModels: () => Promise<ModelChoice[] | null>;
+  // Shows the lane of the agent that spawned this one.
+  onParent: () => void;
+  picker: PickerSource;
   setModel: (model: string, effort?: string) => void;
   onStop: () => void;
   onSteer: () => void;
 }) {
-  const [load, setLoad] = useState<Promise<ModelChoice[] | null> | null>(null);
-  const close = () => setLoad(null);
-  const colour = agentColour(lane.name, lane.agentKind);
+  const [open, setOpen] = useState(false);
+  const [align, setAlign] = useState<"start" | "end">("start");
+  const close = () => setOpen(false);
+  const colour = agentColour(lane.name, lane.agentKind, tintOf(lane.color));
   const running = lane.status === "working" || lane.status === "waiting";
+  const spawned = lane.parent !== "" ? `spawned by @${lane.parent}` : "";
   return (
     <Popover
-      open={load !== null}
+      open={open}
       onClose={close}
       label={`${lane.name}`}
-      className="w-64"
+      align={align}
+      className={POPOVER}
       trigger={
         <button
           type="button"
@@ -91,12 +106,15 @@ function AgentChip({
           data-lane={lane.id}
           data-status={lane.status}
           aria-pressed={on}
-          aria-expanded={load !== null}
+          aria-expanded={open}
           aria-label={`${lane.name} ${WORD[lane.status]}`}
-          title={`${lane.name}: ${lane.model || "default model"}${lane.effort !== "" ? ` · ${lane.effort}` : ""}`}
-          onClick={() => {
+          aria-description={spawned || undefined}
+          title={`${lane.name}: ${lane.model || "default model"}${lane.effort !== "" ? ` · ${lane.effort}` : ""}${spawned !== "" ? `, ${spawned}` : ""}`}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setAlign(r.left > window.innerWidth / 2 ? "end" : "start");
             onFilter();
-            setLoad(load === null ? listModels() : null);
+            setOpen((o) => !o);
           }}
         >
           {lane.depth > 0 && <CornerDownRight aria-hidden className="-ml-0.5 size-3 shrink-0 text-faint" />}
@@ -111,6 +129,14 @@ function AgentChip({
             {lane.name}
           </span>
           <AgentRole role={lane.role} className="max-w-32 text-2xs" />
+          {lane.parent !== "" && <span className="lane-parent max-w-24 shrink-0 truncate text-3xs text-faint">by @{lane.parent}</span>}
+          {/* The branch of its own worktree: it works apart from the shared tree. */}
+          {lane.branch !== "" && (
+            <span className="lane-branch flex max-w-28 shrink-0 items-center gap-0.5 rounded-full bg-hover px-1.5 font-mono text-3xs text-muted-foreground" title={`Works on its own worktree, branch ${lane.branch}`}>
+              <GitBranch aria-hidden className="size-2.5 shrink-0" />
+              <span className="truncate">{lane.branch.replace(/^deck\//, "")}</span>
+            </span>
+          )}
           {DOT[lane.status] !== undefined && <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", DOT[lane.status])} />}
           {/* The word shows when the agent asks for something; else it is for
               the tooltip and screen readers. */}
@@ -122,6 +148,7 @@ function AgentChip({
               <Ring pct={lane.contextPct} className="lane-ring" />
             </span>
           )}
+          {mark}
           {lane.leases.length > 0 && (
             <span
               className="lane-leases flex items-center gap-0.5 font-mono text-3xs text-faint tabular-nums"
@@ -134,23 +161,43 @@ function AgentChip({
         </button>
       }
     >
-      <MenuLabel>
-        {lane.name} · {lane.model || "default model"}
-        {lane.effort !== "" ? ` · ${lane.effort}` : ""}
-      </MenuLabel>
-      <Models
-        line={{ id: lane.name, name: lane.name, kind: lane.agentKind, model: lane.model, effort: lane.effort, busy: running }}
-        load={load ?? Promise.resolve(null)}
-        choose={(model, effort) => {
-          setModel(model, effort);
+      <div className="flex items-center gap-1">
+        <MenuLabel className="min-w-0 flex-1 truncate">
+          {lane.name} · {lane.model || "default model"}
+          {lane.effort !== "" ? ` · ${lane.effort}` : ""}
+        </MenuLabel>
+        {lane.parent !== "" && (
+          <MenuItem
+            className="lane-spawner h-6 w-auto max-w-48 shrink-0 text-2xs text-muted-foreground"
+            title={`Show @${lane.parent}'s lane`}
+            onClick={() => {
+              close();
+              onParent();
+            }}
+          >
+            <CornerDownRight className="rotate-180" />
+            <span className="truncate">Spawned by @{lane.parent}</span>
+          </MenuItem>
+        )}
+      </div>
+      <AgentPicker
+        source={picker}
+        kinds={[lane.agentKind]}
+        kind={lane.agentKind}
+        running={() => ({ model: lane.model, effort: lane.effort })}
+        theme={theme}
+        action={() => "Apply"}
+        needsChange
+        onPick={(p) => {
           close();
+          setModel(p.model, p.effort);
         }}
       />
       {lane.leases.length > 0 && (
         <>
           <MenuSeparator />
           <MenuLabel>Holds</MenuLabel>
-          <ul className="lane-leased flex max-h-32 flex-col overflow-y-auto px-2 pb-1" aria-label={`Paths ${lane.name} holds`}>
+          <ul className="lane-leased grid max-h-24 grid-cols-2 gap-x-2 overflow-y-auto px-2 pb-1" aria-label={`Paths ${lane.name} holds`}>
             {lane.leases.map((p) => (
               <li key={p} className="flex items-center gap-1.5 truncate py-0.5 font-mono text-2xs text-muted-foreground" title={p}>
                 <Lock aria-hidden className="size-2.5 shrink-0 text-faint" />
@@ -161,24 +208,27 @@ function AgentChip({
         </>
       )}
       <MenuSeparator />
-      <MenuItem
-        onClick={() => {
-          close();
-          onSteer();
-        }}
-      >
-        <CornerDownRight /> Steer {lane.name}
-      </MenuItem>
-      <MenuItem
-        className="text-destructive-foreground"
-        disabled={!running}
-        onClick={() => {
-          close();
-          onStop();
-        }}
-      >
-        <Square /> Stop {lane.name}
-      </MenuItem>
+      <div className="grid grid-cols-2 gap-0.5">
+        <MenuItem
+          className="min-w-0"
+          onClick={() => {
+            close();
+            onSteer();
+          }}
+        >
+          <CornerDownRight /> <span className="truncate">Steer {lane.name}</span>
+        </MenuItem>
+        <MenuItem
+          className="min-w-0 text-destructive-foreground"
+          disabled={!running}
+          onClick={() => {
+            close();
+            onStop();
+          }}
+        >
+          <Square /> <span className="truncate">Stop {lane.name}</span>
+        </MenuItem>
+      </div>
     </Popover>
   );
 }
@@ -188,17 +238,21 @@ export function Lanes({
   theme,
   filter,
   onFilter,
-  listModels,
+  picker,
   setModel,
   onStop,
   onSteer,
+  mark,
 }: {
   lanes: Lane[];
+  // What else an agent's chip shows (its plan's quota).
+  mark?: (lane: Lane) => ReactNode;
   theme: Theme | null;
   // The lane the timeline shows alone, or null for all.
   filter: string | null;
   onFilter: (lane: string | null) => void;
-  listModels: (kind: string) => Promise<ModelChoice[] | null>;
+  // The agents' models, for each agent's picker.
+  picker: PickerSource;
   setModel: (kind: string, model: string, effort?: string) => void;
   onStop: (agent: string) => void;
   onSteer: (agent: string) => void;
@@ -247,10 +301,12 @@ export function Lanes({
             theme={theme}
             on={filter === l.id}
             onFilter={() => toggle(l.id)}
-            listModels={() => listModels(l.agentKind)}
+            onParent={() => onFilter(agentLane(l.parent))}
+            picker={picker}
             setModel={(model, effort) => setModel(l.agentKind, model, effort)}
             onStop={() => onStop(l.name)}
             onSteer={() => onSteer(l.name)}
+            mark={mark?.(l)}
           />
         ) : (
           <button

@@ -11,6 +11,7 @@ import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import type { MethodName } from "../../pkg/remote/web/src/protocol";
 import { Fail, FakeDeck, type FakeOptions } from "./fake-server";
+import { analyticsRecord } from "./fake-usage";
 
 export const PROTO = join(__dirname, "..", "..", "proto", "deck", "v1", "deck.proto");
 
@@ -35,6 +36,7 @@ const CODES: Record<string, grpc.status> = {
   not_found: grpc.status.NOT_FOUND,
   invalid: grpc.status.INVALID_ARGUMENT,
   yolo_disabled: grpc.status.PERMISSION_DENIED,
+  failed_precondition: grpc.status.FAILED_PRECONDITION,
 };
 
 const opt = (v: unknown): unknown => (v === "" || v === 0 ? undefined : v);
@@ -91,6 +93,10 @@ export class FakeRpcDeck {
   readonly epoch = `e${randomBytes(4).toString("hex")}`;
   // Every call the fake got, by method, with its token check passed.
   readonly calls: string[] = [];
+  // The Models calls that asked the Deck to forget its lists (refresh).
+  modelRefreshes = 0;
+  // The orchestration level each CreateSession asked for.
+  readonly createdLevels: string[] = [];
   private readonly server = new grpc.Server();
   private readonly streams = new Set<grpc.ServerWritableStream<Obj, Obj>>();
   private seq = 0;
@@ -107,7 +113,7 @@ export class FakeRpcDeck {
   };
   // The task board of the open thread, and what was done to it.
   readonly board = {
-    orchestrate: false,
+    level: "auto",
     actions: [] as string[],
     tasks: [
       { id: "t1", title: "Map the limiter", status: "done", owner: "claude-1", result: "It keys on nothing.", attempts: 1, tries: 1 },
@@ -158,6 +164,22 @@ export class FakeRpcDeck {
   // and what was saved and deleted. Served once serveProfiles is called.
   // refuse, when set, is the reason SaveProfile gives for the next save.
   readonly named = { profiles: [] as Obj[], saved: [] as string[], deleted: [] as string[], refuse: null as string | null };
+  // Plan limits, as pkg/rpc serves them once serveLimits is called: each
+  // window's latest report, the record, this run's checks, the agents that
+  // wait for a reset, the scheduled messages, and what was asked.
+  readonly lim = {
+    limits: [] as Obj[],
+    history: [] as Obj[],
+    checks: [] as Obj[],
+    waits: [] as Obj[],
+    scheduled: [] as Obj[],
+    asked: [] as string[],
+  };
+  // Worktrees and named capsules, as pkg/rpc serves them once serveWork is
+  // called. A worktree's "land" is how each file lands (LandFile rows) and
+  // "conflict" the files a sync stops on; a capsule's "land" likewise, and
+  // "total" how many files CapsuleFiles pages through.
+  readonly lines = { worktrees: [] as Obj[], capsules: [] as Obj[], asked: [] as string[] };
   // Each terminal: what it printed and who watches it.
   private readonly terms = new Map<string, { out: string; line: string; subs: Set<grpc.ServerWritableStream<Obj, Obj>> }>();
 
@@ -185,6 +207,21 @@ export class FakeRpcDeck {
     for (const m of ["ListProfiles", "SaveProfile", "DeleteProfile"]) if (!this.room.caps.includes(m)) this.room.caps.push(m);
     this.named.profiles.splice(0, Infinity, ...profiles);
     this.syncProfiles();
+  }
+
+  // Serves the plan-limit calls, starting from these windows (deck.v1
+  // UsageLimit rows) and waits.
+  serveLimits(limits: Obj[], waits: Obj[] = []): void {
+    for (const m of ["Limits", "CheckLimits", "StartWindow", "ResolveWait", "ScheduleSend", "CancelScheduled"]) if (!this.room.caps.includes(m)) this.room.caps.push(m);
+    this.lim.limits.splice(0, Infinity, ...limits);
+    this.lim.waits.splice(0, Infinity, ...waits);
+  }
+
+  // Serves the worktree and capsule calls with these.
+  serveWork(worktrees: Obj[], capsules: Obj[]): void {
+    for (const m of ["Work", "WorktreeAction", "CapsuleAction", "CapsuleFiles"]) if (!this.room.caps.includes(m)) this.room.caps.push(m);
+    this.lines.worktrees.splice(0, Infinity, ...worktrees);
+    this.lines.capsules.splice(0, Infinity, ...capsules);
   }
 
   // The profiles as ListProfiles merges them: a project profile overrides
@@ -251,7 +288,7 @@ export class FakeRpcDeck {
         cb(null, {
           version: "fake",
           project: "deck",
-          kinds: ["claude", "codex", "opencode"],
+          kinds: ["claude", "codex", "opencode", "pi"],
           theme: protoOf(this.deck.theme),
           clis: [{ kind: "claude", path: "/usr/bin/claude", found: true }],
           capabilities: this.room.caps,
@@ -327,7 +364,10 @@ export class FakeRpcDeck {
       const days = Number(r["days"] ?? 0) || 30;
       const day = 86_400_000;
       const midnight = new Date(new Date().toDateString()).getTime();
+      const historyDays = Number(r["history_days"] ?? 0);
+      const record = analyticsRecord(Date.now(), Math.max(historyDays, 1));
       return {
+        ...(historyDays > 0 ? { hours: record.hours, limit_history: record.limit_history } : {}),
         available: true,
         overview: { turns: 42, all_turns: 120, input_tokens: 1_250_000, output_tokens: 310_000, cached_tokens: 900_000, cost_usd: 18.42, duration_ms: 5_400_000, ttft_avg_ms: 1800, ttft_p95_ms: 4200, cache_hit_pct: 62.5, done: 38, interrupted: 3, failed: 1 },
         days: Array.from({ length: days }, (_, i) => ({ day: midnight - (days - 1 - i) * day, turns: (i * 7) % 9, tokens: ((i * 37) % 11) * 40_000, cost_usd: ((i * 37) % 11) * 0.4 })),
@@ -341,7 +381,7 @@ export class FakeRpcDeck {
           { kind: "codex", model: "gpt-5", turns: 17, input_tokens: 450_000, output_tokens: 110_000, cost_usd: 6.32 },
         ],
         sessions: [{ session_id: "ses_main", title: "Fix the pairing lockout", turns: 20, tokens: 700_000, cost_usd: 9.5 }],
-        limits: [{ agent_kind: "claude", window_id: "five_hour", kind: "session", label: "5-hour", used_pct: 64, resets_at: Date.now() + 2 * 3_600_000, plan: "max" }],
+        limits: record.limits,
         heat: Array.from({ length: 140 }, (_, i) => ({ day: midnight - (139 - i) * day, turns: (i * 13) % 7, tokens: ((i * 13) % 7) * 50_000 })),
         habits: { active_days: 18, streak: 6, hours: Array.from({ length: 168 }, (_, i) => ((i % 24) >= 9 && (i % 24) <= 18 ? (i * 5) % 6 : 0)), review_median_ms: 95_000, review_p90_ms: 600_000, approval_median_ms: 2_400, approval_fast_pct: 35, user_turns: 40, redirects: 4, follow_ups: 12, prompt_median: 140, edit_turns: 20, edit_files: 64, lines_added: 2300, lines_removed: 800, reverts: 2, fit: [{ kind: "claude", class: "edit", calls: 120 }, { kind: "codex", class: "run", calls: 90 }] },
       };
@@ -395,7 +435,7 @@ export class FakeRpcDeck {
     };
     // The task board, agent tree and team link.
     const b = this.board;
-    unary("Board", () => ({ orchestrate: b.orchestrate, tasks: b.tasks }));
+    unary("Board", () => ({ orchestrate: b.level === "auto" || b.level === "full", level: b.level, tasks: b.tasks }));
     unary("TaskAction", (r) => {
       const t = b.tasks.find((x) => x["id"] === r["task_id"]);
       if (t === undefined) throw new Error(`no task ${String(r["task_id"])}`);
@@ -410,10 +450,11 @@ export class FakeRpcDeck {
       return {};
     });
     unary("SetOrchestrate", (r) => {
-      b.orchestrate = r["on"] === true;
+      b.level = typeof r["level"] === "string" && r["level"] !== "" ? r["level"] : r["on"] === true ? "auto" : "off";
       return {};
     });
-    unary("Agents", () => this.crew);
+    // The crew, and the agents agents spawned in the room (test/fake-server.ts).
+    unary("Agents", (r) => ({ ...this.crew, agents: [...this.crew.agents, ...this.deck.spawnedNodes(String(r["session_id"] ?? ""))] }));
     const tm = this.team;
     unary("Team", () => ({
       available: true,
@@ -485,6 +526,148 @@ export class FakeRpcDeck {
         }
       };
     };
+    // The plan-limit calls. A check of claude or codex reports (and marks
+    // the windows reported now); opencode can't be checked.
+    const lim = this.lim;
+    call("Limits", () => ({ limits: lim.limits, history: lim.history, checks: lim.checks, waits: lim.waits, scheduled: lim.scheduled, kinds: ["claude", "codex", "opencode"] }));
+    call("CheckLimits", (r) => {
+      const kind = String(r["kind"] ?? "");
+      lim.asked.push(`check ${kind}`);
+      const now = Date.now();
+      const checks = (kind === "" ? ["claude", "codex", "opencode"] : [kind]).map((k) =>
+        k === "opencode" ? { kind: k, checked_at: now, error: "it does not report plan limits", unsupported: true } : { kind: k, checked_at: now, error: "", unsupported: false },
+      );
+      for (const c of checks) {
+        const i = lim.checks.findIndex((x) => x["kind"] === c.kind);
+        if (i >= 0) lim.checks[i] = c;
+        else lim.checks.push(c);
+        for (const l of lim.limits) if (l["agent_kind"] === c.kind) l["at"] = now;
+      }
+      return { checks, limits: lim.limits };
+    });
+    call("StartWindow", (r) => {
+      const kind = String(r["kind"] ?? "");
+      lim.asked.push(`start ${kind}`);
+      if (kind !== "claude") throw new Fail("failed_precondition", `${kind} has no rolling window to start`);
+      const now = Date.now();
+      for (const l of lim.limits) if (l["agent_kind"] === "claude" && l["kind"] === "session") Object.assign(l, { used_pct: 1, resets_at: now + 5 * 3_600_000, at: now });
+      return { model: "haiku", limits: lim.limits };
+    });
+    call("ResolveWait", (r) => {
+      lim.asked.push(`${r["cancel"] === true ? "cancel" : "resume"} ${String(r["session_id"])} ${String(r["agent"])}`);
+      const i = lim.waits.findIndex((w) => w["session_id"] === r["session_id"] && w["agent"] === r["agent"]);
+      if (i < 0) throw new Fail("not_found", "not found");
+      lim.waits.splice(i, 1);
+      return {};
+    });
+    call("ScheduleSend", (r) => {
+      const id = `at-${lim.scheduled.length + 1}`;
+      lim.asked.push(`schedule ${String(r["session_id"])} ${String(r["text"])}`);
+      lim.scheduled.push({ id, session_id: r["session_id"], text: r["text"], at: r["at"], created: Date.now() });
+      return { id };
+    });
+    call("CancelScheduled", (r) => {
+      lim.asked.push(`${r["send_now"] === true ? "send" : "drop"} ${String(r["id"])}`);
+      const i = lim.scheduled.findIndex((s) => s["id"] === r["id"]);
+      if (i < 0) throw new Fail("not_found", "not found");
+      lim.scheduled.splice(i, 1);
+      return {};
+    });
+    // The worktree and capsule calls. A land with conflicts and no strategy
+    // writes nothing; with one it lands, and its capsule is landed.
+    const ln = this.lines;
+    const strip = (o: Obj): Obj => Object.fromEntries(Object.entries(o).filter(([k]) => k !== "land" && k !== "conflict" && k !== "total"));
+    const treeOf = (name: unknown) => {
+      const w = ln.worktrees.find((x) => x["name"] === name);
+      if (w === undefined) throw new Fail("not_found", `no worktree ${String(name)}`);
+      return w;
+    };
+    const capOf = (name: unknown) => {
+      const c = ln.capsules.find((x) => x["name"] === String(name).split("@")[0]);
+      if (c === undefined) throw new Fail("not_found", `no capsule ${String(name)}`);
+      return c;
+    };
+    const land = (what: Obj, cap: Obj | undefined, check: boolean, strategy: string): Obj => {
+      const files = (what["land"] as Obj[] | undefined) ?? [];
+      const conflicts = files.filter((f) => f["state"] === "conflict").map((f) => String(f["path"]));
+      const versions = (cap?.["versions"] as Obj[] | undefined) ?? [];
+      const out = { files, conflicts, capsule: cap?.["name"] ?? "", version: versions.length, checked: check };
+      if (check || (conflicts.length > 0 && strategy === "")) return out;
+      if (cap !== undefined) {
+        cap["state"] = "landed";
+        cap["landings"] = [...((cap["landings"] as Obj[] | undefined) ?? []), { version: versions.length, into: "main", at: Date.now(), by: "" }];
+      }
+      return { ...out, conflicts: [] };
+    };
+    call("Work", () => ({ worktrees: ln.worktrees.map(strip), capsules: ln.capsules.map(strip) }));
+    call("WorktreeAction", (r) => {
+      const action = String(r["action"]);
+      ln.asked.push(`${action} ${String(r["name"])}${r["strategy"] ? ` ${String(r["strategy"])}` : ""}`);
+      if (action === "create") {
+        const w = { name: String(r["name"]) || `w${ln.worktrees.length + 1}`, branch: `deck/${String(r["name"])}`, kind: "tree", base_ref: String(r["base"]) || "main", files: [] };
+        ln.worktrees.push(w);
+        return { worktree: w };
+      }
+      const w = treeOf(r["name"]);
+      const cap = ln.capsules.find((c) => c["worktree"] === w["branch"]);
+      switch (action) {
+        case "sync":
+        case "rebase": {
+          const conflicts = (w["conflict"] as string[] | undefined) ?? [];
+          if (conflicts.length === 0) w["behind"] = 0;
+          return { worktree: strip(w), conflicts };
+        }
+        case "check":
+        case "merge":
+          return land(w, cap, action === "check", String(r["strategy"] ?? ""));
+        case "discard":
+          ln.worktrees.splice(ln.worktrees.indexOf(w), 1);
+          return {};
+        case "spawn":
+          return { agent_id: `${String(r["kind"])}-3` };
+      }
+      throw new Fail("invalid", `unknown worktree action ${action}`);
+    });
+    call("CapsuleAction", (r) => {
+      const action = String(r["action"]);
+      ln.asked.push(`${action} ${String(r["capsule"])}${r["agent"] ? ` ${String(r["agent"])}` : ""}${r["strategy"] ? ` ${String(r["strategy"])}` : ""}${r["tests"] ? ` ${String(r["tests"])}` : ""}`);
+      if (action === "create") {
+        const c = { name: `diff-${ln.capsules.length + 1}`, source: String(r["source"]), state: "open", versions: [{ id: "blake3:new", files: 2, add: 1, mod: 1 }] };
+        ln.capsules.unshift(c);
+        return { capsule: c.name, version: 1 };
+      }
+      const c = capOf(r["capsule"]);
+      switch (action) {
+        case "check":
+        case "land":
+          return land(c, c, action === "check", String(r["strategy"] ?? ""));
+        case "rebase": {
+          const vs = c["versions"] as Obj[];
+          vs.push({ ...vs.at(-1), onto: "main" });
+          return { capsule: c["name"], version: vs.length };
+        }
+        case "review": {
+          if (r["tests"]) c["tests"] = r["tests"];
+          if (r["text"]) c["comments"] = [...((c["comments"] as Obj[] | undefined) ?? []), { by: "you", text: r["text"], at: Date.now() }];
+          return { capsule: c["name"] };
+        }
+        case "hand":
+        case "revert":
+          return { capsule: c["name"] };
+      }
+      throw new Fail("invalid", `unknown capsule action ${action}`);
+    });
+    call("CapsuleFiles", (r) => {
+      const c = capOf(r["capsule"]);
+      if (r["path"]) return { diff: `diff --git a/${String(r["path"])} b/${String(r["path"])}\n--- a/${String(r["path"])}\n+++ b/${String(r["path"])}\n@@ -1,3 +1,3 @@\n package store\n-func Open() {}\n+func Open(ctx context.Context) {}\n \n` };
+      const total = Number(c["total"] ?? (c["versions"] as Obj[]).at(-1)?.["files"] ?? 0);
+      const offset = Number(r["offset"] ?? 0);
+      const limit = Math.min(Number(r["limit"] ?? 100) || 100, 500);
+      const files = [];
+      for (let i = offset; i < Math.min(total, offset + limit); i++)
+        files.push({ path: `internal/store/part${String(Math.floor(i / 40)).padStart(2, "0")}/file${String(i).padStart(4, "0")}.go`, kind: i % 9 === 0 ? "add" : "modify", added: (i % 7) + 1, removed: i % 4 });
+      return { files, total };
+    });
     call("ListProfiles", () => ({ profiles: this.mergedProfiles() }));
     call("SaveProfile", (r) => {
       const p = { ...(r["profile"] as Obj) };
@@ -552,9 +735,12 @@ export class FakeRpcDeck {
       if (!meta(id).branch) throw new Error("session: this thread is not isolated");
       return { files: ["pkg/remote/auth/limit.go"] };
     });
-    room("StartRace", (r) => {
-      rm.asked.push(`race ${String(r["kind"])}×${String(r["count"])}${r["judge"] === true ? " judged" : ""}: ${String(r["brief"])}`);
-      return { task_id: "t6" };
+    // Each entrant joins the thread as a lane, as a race's subagents do.
+    room("StartRace", (r, id) => {
+      const entrants = (r["entrants"] as { agent: string; model?: string; effort?: string }[] | undefined) ?? [];
+      const who = entrants.map((e) => [e.agent, e.model, e.effort].filter((x) => x !== undefined && x !== "").join("/"));
+      rm.asked.push(`race ${who.join(",")}${r["judge"] === true ? " judged" : ""}: ${String(r["brief"])}`);
+      return { task_id: this.deck.race(id, entrants, String(r["brief"])) };
     });
     // Only a message of the session it names, as pkg/rpc checks.
     unary("ReadImage", (r) => {
@@ -592,6 +778,8 @@ export class FakeRpcDeck {
       h[name] = (call: grpc.ServerUnaryCall<Obj, Obj>, cb: grpc.sendUnaryData<Obj>) => {
         if (!this.authorized(call.metadata)) return cb({ code: grpc.status.UNAUTHENTICATED, details: "missing or wrong token" });
         this.calls.push(name);
+        // models.list has no refresh: the rpc server's own flag, counted here.
+        if (name === "Models" && call.request["refresh"] === true) this.modelRefreshes++;
         try {
           const out = protoOf(spec.res(this.deck.invoke(spec.m, clean(spec.req(call.request))))) as Obj;
           if (name === "CreateSession" && call.request["isolate"] === true) {
@@ -599,7 +787,10 @@ export class FakeRpcDeck {
             // As pkg/rpc: session_created goes out bare, then session_updated with the branch.
             this.roomChanged(String(out["id"]));
           }
-          if (name === "CreateSession") return cb(null, this.withRoom(out));
+          if (name === "CreateSession") {
+            this.createdLevels.push(String(call.request["level"] ?? ""));
+            return cb(null, this.withRoom(out));
+          }
           if (name === "ListSessions") return cb(null, { sessions: (out["sessions"] as Obj[]).map((x) => this.withRoom(x)) });
           cb(null, out);
         } catch (e) {
@@ -610,6 +801,114 @@ export class FakeRpcDeck {
     }
     return h;
   }
+}
+
+// Worktrees and capsules of "Fix the pairing lockout" beside crewAtWork:
+// claude-sub on its own worktree, codex-sub's landed and bundled, a long
+// refactor nobody owns yet that is behind main and conflicts with it, and
+// that refactor as a capsule of 640 files.
+export function workAtWork(f: FakeRpcDeck): void {
+  const now = Date.now();
+  const commits = [
+    { sha: "8f2c1d4e9a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d", subject: "store: open with a context", author: "claude" },
+    { sha: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b", subject: "store: split the index writer", author: "claude" },
+    { sha: "0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e", subject: "store: move tasks to their own file", author: "codex" },
+  ];
+  f.serveWork(
+    [
+      {
+        name: "t2",
+        branch: "deck/t2",
+        path: "/home/you/.deck/worktrees/deck-t2",
+        kind: "agent",
+        owner: "claude-sub",
+        owner_name: "claude-sub",
+        task: "t2",
+        working: true,
+        created: now - 600_000,
+        fork: "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        base_ref: "main",
+        ahead: 2,
+        behind: 0,
+        dirty: 2,
+        files: [GRAPH_FILES.LIMIT, GRAPH_FILES.TEST],
+        land: [
+          { path: GRAPH_FILES.LIMIT, kind: "modify", state: "merge" },
+          { path: GRAPH_FILES.TEST, kind: "add", state: "fits" },
+        ],
+      },
+      {
+        name: "t3",
+        branch: "deck/t3",
+        path: "/home/you/.deck/worktrees/deck-t3",
+        kind: "agent",
+        owner: "codex-sub",
+        owner_name: "codex-sub",
+        task: "t3",
+        created: now - 900_000,
+        fork: "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        base_ref: "main",
+        ahead: 1,
+        files: [GRAPH_FILES.PRUNE],
+        landed: true,
+        landed_at: now - 120_000,
+      },
+      {
+        name: "store-refactor",
+        branch: "deck/store-refactor",
+        path: "/home/you/.deck/worktrees/deck-store-refactor",
+        kind: "tree",
+        created: now - 7_200_000,
+        fork: "9c1f0e2d3b4a5968778695a4b3c2d1e0f9a8b7c6",
+        base_ref: "main",
+        ahead: 3,
+        behind: 4,
+        dirty: 5,
+        files: ["internal/store/store.go", "internal/store/task.go", "internal/store/index.go", "internal/store/work.go"],
+        conflict: ["internal/store/store.go"],
+        land: [
+          { path: "internal/store/store.go", kind: "modify", state: "conflict", reason: "both sides changed the same lines" },
+          { path: "internal/store/index.go", kind: "modify", state: "merge" },
+          { path: "internal/store/task.go", kind: "add", state: "fits" },
+          { path: "internal/store/work.go", kind: "add", state: "fits" },
+          { path: "go.mod", kind: "modify", state: "applied" },
+        ],
+      },
+    ],
+    [
+      {
+        name: "store-refactor",
+        source: "worktree",
+        worktree: "deck/store-refactor",
+        authors: ["claude", "codex"],
+        note: "The store split into an index writer and a task file.",
+        state: "open",
+        tests: "fail",
+        test_note: "go test ./internal/store: 1 failing",
+        total: 640,
+        versions: [
+          { id: "blake3:a1", files: 612, add: 40, mod: 560, del: 12, commits: commits.slice(1), commits_total: 2, by: "claude", created: now - 3_600_000 },
+          { id: "blake3:a2", files: 640, add: 48, mod: 579, del: 13, commits, commits_total: 3, by: "codex", fork: "9c1f0e2d3b4a5968778695a4b3c2d1e0f9a8b7c6", created: now - 600_000 },
+        ],
+        comments: [{ by: "codex", path: "internal/store/index.go", text: "The writer holds the lock across the fsync; fine for now.", at: now - 300_000 }],
+        land: [
+          { path: "internal/store/store.go", kind: "modify", state: "conflict", reason: "both sides changed the same lines" },
+          { path: "internal/store/index.go", kind: "modify", state: "merge" },
+        ],
+      },
+      {
+        name: "t3",
+        source: "worktree",
+        worktree: "deck/t3",
+        authors: ["codex-sub"],
+        state: "landed",
+        tests: "pass",
+        versions: [{ id: "blake3:b1", files: 1, add: 1, commits_total: 1, commits: [{ sha: "77aa", subject: "auth: prune idle buckets", author: "codex" }] }],
+        landings: [{ version: 1, into: "main", at: now - 120_000 }],
+      },
+      { name: "wip", source: "diff", authors: ["you"], state: "open", versions: [{ id: "blake3:c1", files: 3, add: 1, mod: 2 }] },
+    ],
+  );
 }
 
 export const GRAPH_FILES = { LIMIT: "pkg/remote/auth/limit.go", TEST: "pkg/remote/auth/limit_test.go", PRUNE: "pkg/remote/auth/prune.go" };
@@ -655,7 +954,7 @@ export function crewAtWork(f: FakeRpcDeck): void {
       { agent: "claude-sub", kind: "claude", name: "Bash", summary: "go test ./pkg/remote/auth -run Limiter", started: now - 21_000, command: true },
     ],
   };
-  f.board.orchestrate = true;
+  f.board.level = "auto";
   f.board.tasks = [
     { id: "t1", title: "Map the limiter", status: "done", owner: "claude-1", files: [LIMIT] },
     { id: "t2", title: "Key failures by address", status: "running", owner: "claude-sub", deps: ["t1"], files: [LIMIT, TEST], branch: "deck/t2" },

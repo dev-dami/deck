@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/gh"
 	"github.com/dev-dami/deck/internal/usage"
 	"github.com/dev-dami/deck/internal/workspace"
@@ -214,6 +215,9 @@ func (s *Server) CreateSession(ctx context.Context, r *deckv1.CreateSessionReque
 	if r.GetIsolate() && (s.crew == nil || s.crew.rooms == nil) {
 		return nil, errNoCrew
 	}
+	if l := r.GetLevel(); l != "" && !config.ValidLevel(l) {
+		return nil, invalid("level is off, assist, auto or full")
+	}
 	v, err := s.be.CreateSession(ctx, t)
 	if err != nil {
 		return nil, fail(err)
@@ -223,6 +227,12 @@ func (s *Server) CreateSession(ctx context.Context, r *deckv1.CreateSessionReque
 			// Not left half made: the person asked for an isolated thread.
 			_ = s.be.DeleteSession(ctx, v.ID)
 			return nil, err
+		}
+	}
+	if l := r.GetLevel(); l != "" && s.crew != nil && s.crew.orch != nil {
+		if err := s.crew.orch.SetLevel(v.ID, l); err != nil {
+			_ = s.be.DeleteSession(ctx, v.ID)
+			return nil, refused(err)
 		}
 	}
 	p := toSession(v)
@@ -369,8 +379,14 @@ func (s *Server) Roster(_ context.Context, r *deckv1.SessionRef) (*deckv1.Roster
 }
 
 func (s *Server) Models(ctx context.Context, r *deckv1.ModelsRequest) (*deckv1.ModelsResponse, error) {
-	if r.GetSessionId() == "" || r.GetKind() == "" {
-		return nil, invalid("session_id and kind are required")
+	// No session_id: the kind's models apart from any thread.
+	if r.GetKind() == "" {
+		return nil, invalid("kind is required")
+	}
+	if r.GetRefresh() {
+		if mr, ok := s.be.(remote.ModelRefresher); ok {
+			mr.RefreshModels()
+		}
 	}
 	v, err := s.be.Models(ctx, r.GetSessionId(), r.GetKind())
 	if err != nil {
@@ -380,8 +396,9 @@ func (s *Server) Models(ctx context.Context, r *deckv1.ModelsRequest) (*deckv1.M
 }
 
 func (s *Server) SetModel(_ context.Context, r *deckv1.SetModelRequest) (*deckv1.Empty, error) {
-	if r.GetSessionId() == "" || r.GetKind() == "" || r.GetModel() == "" {
-		return nil, invalid("session_id, kind and model are required")
+	// An empty model is the CLI's own default (the pickers' "Default").
+	if r.GetSessionId() == "" || r.GetKind() == "" {
+		return nil, invalid("session_id and kind are required")
 	}
 	return done(s.be.SetModel(r.GetSessionId(), r.GetKind(), r.GetModel(), r.GetEffort()))
 }

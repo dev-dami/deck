@@ -102,7 +102,7 @@ test("the mode picker plays it, and a click ends it at once", async ({ page }) =
   const box = await page.locator(".timeline").boundingBox();
   await watchFx(page);
   await page.locator(".mode-picker").click();
-  await page.getByRole("radio", { name: /Yolo/ }).click();
+  await page.getByRole("menuitemradio", { name: /Yolo/ }).click();
   await expect(fx(page)).toHaveCount(1);
   // A raw click: a locator's click waits for the moving regions to settle.
   await page.mouse.click(box!.x + 20, box!.y + 20);

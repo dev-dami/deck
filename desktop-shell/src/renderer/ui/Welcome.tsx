@@ -207,7 +207,7 @@ function AgentRow({ a, path, looking }: { a: AgentHelp; path: string | null; loo
 function Example() {
   return (
     <p className="font-mono text-xs">
-      <span style={{ color: kindColour("claude") }}>$claude</span> <span style={{ color: kindColour("codex") }}>$codex+</span>{" "}
+      <span style={{ color: kindColour("claude") }}>$claude</span> <span style={{ color: kindColour("codex") }}>$codex</span>{" "}
       <span className="text-muted-foreground">split the lockout fix</span>
     </p>
   );
@@ -363,7 +363,7 @@ export function Welcome({
         </div>
         <div className={cn("flex flex-col gap-4 self-end", rightCols)}>
           <p className="animate-enter text-pretty text-[14px] text-muted-foreground leading-relaxed" style={stagger(1)}>
-            Claude Code, Codex, OpenCode and Antigravity in one thread. Hand a task to one, split it between two, or race three on the
+            Claude Code, Codex, OpenCode, Antigravity and Pi in one thread. Hand a task to one, split it between two, or race three on the
             same bug.
           </p>
           {!engine && (

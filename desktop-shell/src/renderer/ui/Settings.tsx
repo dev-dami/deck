@@ -5,6 +5,8 @@ import { type ReactNode, useContext, useEffect, useState } from "react";
 import type { AppInfo, DeckBridge } from "../../shared/bridge";
 import { serves } from "../client";
 import { cn } from "../lib/cn";
+import { NOTIFY_KINDS } from "../notifications";
+import { LEVELS, levelInfo } from "../orchestration";
 import { type Prefs, setPrefs, usePrefs } from "../prefs";
 import { ACCENTS, DIFF_THEMES } from "../themes";
 import { AppIconPicker } from "./AppIconPicker";
@@ -18,9 +20,11 @@ import { Switch } from "./kit/switch";
 import { PhonePage } from "./Phone";
 import { ProfilesDeck, ProfilesEditor } from "./ProfilesEditor";
 import { modKey } from "./keys";
-import { ThemeGrid } from "./ThemeCard";
+import { LayoutPicker } from "./LayoutPicker";
+import { LookEditor } from "./LookEditor";
 import { WallpaperPicker } from "./WallpaperPicker";
 import { AgentGlyph } from "./Welcome";
+import { AGENT_HELP } from "./landing";
 
 function Segmented<T extends string>({
   value,
@@ -64,7 +68,7 @@ const set =
 // What each section holds, for the page's head.
 const LINES: Record<SettingsSection, string> = {
   general: "How messages send, how threads read, and when Deck lets you know.",
-  appearance: "The theme and its accent, how diffs look, and how much moves.",
+  appearance: "The look and its accent, where the panels sit, how diffs look, and how much moves.",
   agents: "The agents this Deck runs, and what they may do on their own.",
   connection: "The Deck this window drives, and the versions behind it.",
   phone: "Drive this Deck from the phone app, over your Wi-Fi.",
@@ -129,30 +133,71 @@ function General({ p }: { p: Prefs }) {
       </Section>
       <Section title="Notifications">
         <Row
-          title="Notify me"
-          description="While the window is in the background: when a room needs you, and when a room finishes."
+          title="Notifications"
+          description="Tell me what happens in my rooms: in the bell at the foot of the sidebar, on the app's icon, and as system notifications."
+          control={<Switch label="Notifications" checked={p.notifications} onChange={set("notifications")} />}
+        />
+        {p.notifications && (
+          <>
+            <Row
+              title="Only while Deck is in the background"
+              description="Off, a room you are not looking at notifies you too while Deck is in front."
+              control={<Switch label="Only while Deck is in the background" checked={p.notifyUnfocusedOnly} onChange={set("notifyUnfocusedOnly")} />}
+            />
+            <Row
+              title="Sound"
+              description="Play the system sound with each notification."
+              control={<Switch label="Sound" checked={p.sound} onChange={set("sound")} />}
+            />
+            {NOTIFY_KINDS.map((k) => (
+              <Row
+                key={k.id}
+                title={k.label}
+                description={k.description}
+                control={<Switch label={k.label} checked={p.notifyKinds[k.id]} onChange={(on) => setPrefs({ notifyKinds: { ...p.notifyKinds, [k.id]: on } })} />}
+              />
+            ))}
+          </>
+        )}
+      </Section>
+      <Section title="Plan limits">
+        <Row
+          title="Warn at"
+          description="How much of an agent's plan window is used when its quota chip turns amber and Deck warns you."
           control={
             <Segmented
-              label="Notify me"
-              value={p.notifications}
-              onChange={set("notifications")}
-              options={[
-                { value: "all", label: "All" },
-                { value: "needs-you", label: "Needs you only" },
-                { value: "none", label: "None" },
-              ]}
+              label="Warn at"
+              value={String(p.limitWarnPct)}
+              onChange={(v) => setPrefs({ limitWarnPct: Number(v), limitCritPct: Math.max(Number(v) + 5, p.limitCritPct) })}
+              options={WARN_AT.map((n) => ({ value: String(n), label: `${n}%` }))}
             />
           }
         />
         <Row
-          title="Sound"
-          description="Play the system sound with each notification."
-          control={<Switch label="Sound" checked={p.sound} onChange={set("sound")} />}
+          title="Warn again at"
+          description="When the chip turns red and Deck warns you again. Hitting the limit is always told."
+          control={
+            <Segmented
+              label="Warn again at"
+              value={String(p.limitCritPct)}
+              onChange={(v) => setPrefs({ limitCritPct: Number(v), limitWarnPct: Math.min(Number(v) - 5, p.limitWarnPct) })}
+              options={CRIT_AT.map((n) => ({ value: String(n), label: `${n}%` }))}
+            />
+          }
+        />
+        <Row
+          title="Projected run-out"
+          description="Warn when, at the last hours' burn rate, an agent will run out within two hours and before its window resets."
+          control={<Switch label="Projected run-out" checked={p.limitProjection} onChange={set("limitProjection")} />}
         />
       </Section>
     </>
   );
 }
+
+// The thresholds Settings offers, in percent of a window used.
+const WARN_AT = [50, 60, 75, 80] as const;
+const CRIT_AT = [85, 90, 95] as const;
 
 const MULTICOLOR = "conic-gradient(#ff3b30, #ff9500, #ffcc00, #28cd41, #007aff, #af52de, #ff2d55, #ff3b30)";
 
@@ -201,8 +246,8 @@ function Appearance({ p }: { p: Prefs }) {
   return (
     <>
       <Section title="Theme">
-        <ThemeGrid palette={p.palette} />
-        <WallpaperPicker />
+        <LookEditor p={p} />
+        {p.process !== "none" && <WallpaperPicker />}
         <div className="flex flex-col gap-0.5 pt-3">
           <h3 className="text-[13px]">App icon</h3>
           <p className="text-pretty text-muted-foreground text-xs leading-relaxed">The theme's own, or one you pick.</p>
@@ -226,6 +271,9 @@ function Appearance({ p }: { p: Prefs }) {
           }
         />
         <Row title="Accent" description="The color of buttons, links and highlights." control={<Accents p={p} />} />
+      </Section>
+      <Section title="Layout">
+        <LayoutPicker p={p} />
       </Section>
       <Diffs p={p} />
       <Section title="Sidebar">
@@ -381,6 +429,9 @@ function Agents({ state, p }: { state: AppState; p: Prefs }) {
   // "$"; an older one reads only "$".
   const deck = useContext(ProfilesDeck);
   const at = deck !== null && serves(deck.c, "ListProfiles") ? "@" : "$";
+  // The kinds Deck can drive that this one did not find, with how to get
+  // them; only once a Deck has said which it runs.
+  const missing = state.server === null ? [] : AGENT_HELP.filter((a) => !kinds.includes(a.kind));
   return (
     <>
       <Section title="Agent kinds">
@@ -391,9 +442,9 @@ function Agents({ state, p }: { state: AppState; p: Prefs }) {
             <div className="min-w-0 space-y-0.5">
               <h3 className="font-medium text-[13px]">{k}</h3>
               <p className="text-pretty text-muted-foreground text-xs leading-relaxed">
-                Type <code className="font-mono text-foreground/80">{at}{k}</code> to reach a free {k},{" "}
-                <code className="font-mono text-foreground/80">{at}{k}+</code> to start another,{" "}
-                <code className="font-mono text-foreground/80">{at}{k}*</code> to reach all of them.
+                Type <code className="font-mono text-foreground/80">{at}{k}</code> to reach a free {k}, or{" "}
+                <code className="font-mono text-foreground/80">/race</code> to race it against any other agents. Ask an agent to spin up more {k}{" "}
+                agents and it starts them itself.
                 {at === "@" && (
                   <>
                     {" "}
@@ -404,8 +455,54 @@ function Agents({ state, p }: { state: AppState; p: Prefs }) {
             </div>
           </div>
         ))}
+        {missing.map((a) => (
+          <div key={a.kind} className="flex items-start gap-3 py-3 opacity-60" data-kind={a.kind} data-available="false">
+            <AgentGlyph kind={a.kind} mark={kindMark(state.theme, a.kind) || a.mark} className="mt-px text-base" />
+            <div className="min-w-0 space-y-0.5">
+              <h3 className="font-medium text-[13px]">
+                {a.kind} <span className="font-normal text-muted-foreground">· not installed</span>
+              </h3>
+              <p className="text-pretty text-muted-foreground text-xs leading-relaxed">
+                {a.install === null ? (
+                  <>This Deck did not find {a.name} on its PATH.</>
+                ) : (
+                  <>
+                    Install it with <code className="select-all font-mono text-foreground/80">{a.install}</code>, then restart the Deck.
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+        ))}
       </Section>
-      <ProfilesEditor kinds={kinds} theme={state.theme} />
+      {/* The Team switch (teamGate.ts): off, the named agents and the
+          teammates leave the window, and their settings with them. */}
+      <Section title="Team">
+        <Row
+          title="Team"
+          description={
+            p.team
+              ? "Named agents, teammates, shared rooms and the Team page."
+              : "Off: only plain agents show. Your profiles and team link are kept, and come back when you turn it on."
+          }
+          control={<Switch label="Team" checked={p.team} onChange={set("team")} />}
+        />
+      </Section>
+      {p.team && <ProfilesEditor kinds={kinds} theme={state.theme} />}
+      <Section title="Orchestration">
+        <Row
+          title="New threads start at"
+          description={`${levelInfo(p.orchestration).blurb} Change a thread's own level from its composer.`}
+          control={
+            <Segmented
+              label="Orchestration for new threads"
+              value={p.orchestration}
+              options={LEVELS.map((l) => ({ value: l.level, label: l.label }))}
+              onChange={set("orchestration")}
+            />
+          }
+        />
+      </Section>
       <Section title="Permissions">
         <Row
           title="Yolo mode"
@@ -542,7 +639,7 @@ function Keybindings({ mac }: { mac: boolean }) {
         ["Mention an agent or a person", ["@"]],
         ["Pick an agent (the older sigil)", ["$"]],
         ["Add a file", ["#"]],
-        ["Run a command, at the start", ["/"]],
+        ["Run a command, at the start (/race races agents)", ["/"]],
       ],
     ],
   ];

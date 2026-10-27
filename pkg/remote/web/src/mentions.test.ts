@@ -8,6 +8,7 @@ import {
   nameAt,
   pathLike,
   pickerAt,
+  retiredForm,
   suggestions,
 } from "./mentions";
 import type { AgentLine } from "./protocol";
@@ -51,18 +52,31 @@ describe("the composer's triggers", () => {
   });
 });
 
+describe("the retired typed forms", () => {
+  test("$kind+, $kind* and $kind×N open no picker and offer nothing", () => {
+    expect(mentionAt("$codex+", 7)).toBeNull();
+    expect(nameAt("@claude*", 8)).toBeNull();
+    const two = [line("claude-1", "claude"), line("claude-2", "claude")];
+    const all = suggestions("", two, kinds, { sigil: "@" }).map((s) => s.insert);
+    expect(all.some((s) => /[+*]$/.test(s))).toBe(false);
+  });
+
+  test("retiredForm points to /race, and is quiet for plain mentions", () => {
+    expect(retiredForm("$codex×3 fix the flaky test")).toContain("/race");
+    expect(retiredForm("@claude*2 fix it")).toContain("/race");
+    expect(retiredForm("$claude $codex+ split it")).toContain("$codex+ is plain text");
+    expect(retiredForm("@claude* look")).toContain("Name each agent");
+    expect(retiredForm("$claude fix it")).toBeNull();
+    expect(retiredForm("@ada review")).toBeNull();
+    expect(retiredForm("compute 3*4 and $x+1")).toBeNull();
+    expect(retiredForm("@src/a.ts+ x")).toBeNull();
+  });
+});
+
 describe("the lists", () => {
   test("@ names members by name and shows the role; $ keeps ids", () => {
     const at = suggestions("", roster, kinds, { sigil: "@" });
-    expect(at.map((s) => s.insert)).toEqual([
-      "@claude-1",
-      "@rev",
-      "@claude",
-      "@claude+",
-      "@codex",
-      "@codex+",
-      "@all",
-    ]);
+    expect(at.map((s) => s.insert)).toEqual(["@claude-1", "@rev", "@claude", "@codex", "@all"]);
     expect(at[1]).toEqual({
       insert: "@rev",
       label: "rev",
@@ -70,6 +84,14 @@ describe("the lists", () => {
       kind: "codex",
     });
     expect(suggestions("", roster, kinds).map((s) => s.insert)).toContain("$codex-1");
+  });
+
+  test("a member from a profile wears the profile's colour", () => {
+    const named = [line("charles", "claude", { profile: "charles", color: "teal" })];
+    expect(suggestions("ch", named, kinds, { sigil: "@" })[0]).toMatchObject({
+      insert: "@charles",
+      color: "teal",
+    });
   });
 
   test("profiles with no member and people come before the kinds", () => {
@@ -82,7 +104,6 @@ describe("the lists", () => {
       ["@charles", "reviewer", "claude"],
       ["@alice", "teammate", null],
       ["@claude", "start claude", "claude"],
-      ["@claude+", "start another claude", "claude"],
     ]);
   });
 

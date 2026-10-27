@@ -176,6 +176,18 @@ export const RPC_METHODS = [
   "ListProfiles",
   "SaveProfile",
   "DeleteProfile",
+  // Plan limits: checks, waits for a reset, a window started early.
+  "Limits",
+  "CheckLimits",
+  "StartWindow",
+  "ResolveWait",
+  "ScheduleSend",
+  "CancelScheduled",
+  // Worktrees and named capsules: the Work tab.
+  "Work",
+  "WorktreeAction",
+  "CapsuleAction",
+  "CapsuleFiles",
 ] as const;
 
 export type RpcMethod = (typeof RPC_METHODS)[number];
@@ -302,12 +314,28 @@ export interface PreviewState {
 // sizes of one square image. Main checks each one (the PNG signature, its
 // IHDR width and height against size, the byte caps), then shows it on the
 // Dock (macOS) or on the window and its taskbar button (Windows, Linux),
-// and keeps the last one for the next start. The installed app's own icon
-// (Finder, Launchpad, a .desktop launcher, pinned shortcuts) never changes.
+// and keeps the last one for the next start. On Windows it also points the
+// installer's shortcuts (desktop, Start menu, a taskbar pin) at it, and on
+// Linux the package's .desktop launcher, through a copy under the user's
+// applications; the standard icon puts theirs back (main/launcherIcon.ts).
+// A Mac's bundle (Finder, Launchpad) keeps its own.
 export interface AppIconImage {
   // Width and height in pixels: one of APP_ICON_LIMITS.sizes.
   size: number;
   png: Uint8Array;
+}
+
+// What became of the installed app's launchers: "done" when they wear the
+// icon, "none" when there are none Deck can change (a Mac, a development
+// build, an AppImage no menu knows), "denied" when some are everyone's and
+// need an administrator (a per-machine install), "failed" otherwise.
+export type LauncherState = "done" | "none" | "denied" | "failed";
+
+export interface AppIconResult {
+  // Whether the running app shows it: false when the system could not
+  // decode it, and then nothing else changed.
+  shown: boolean;
+  launchers: LauncherState;
 }
 
 export const APP_ICON_LIMITS = {
@@ -390,9 +418,13 @@ export interface DeckHost {
   previewHide(): Promise<void>;
   // Destroys the view and its page.
   previewClose(): Promise<void>;
-  // Shows this icon for the app and keeps it for the next start; false when
-  // the system could not decode it.
-  setAppIcon(images: AppIconImage[]): Promise<boolean>;
+  // Shows this icon for the app, keeps it for the next start and gives it
+  // to the installed app's launchers. standard: it is the icon Deck ships
+  // with, so the launchers go back to their own.
+  setAppIcon(images: AppIconImage[], standard: boolean): Promise<AppIconResult>;
+  // The icon a project folder already has (its logo or favicon) as a data:
+  // URL, or null. Only for a folder the app has open or opened lately.
+  projectIcon(dir: string): Promise<string | null>;
 }
 
 // The renderer's view: the host, the event streams, and the path of a
@@ -449,6 +481,7 @@ export const HOST_METHODS = [
   "previewHide",
   "previewClose",
   "setAppIcon",
+  "projectIcon",
 ] as const satisfies ReadonlyArray<keyof DeckHost>;
 
 export type HostMethod = (typeof HOST_METHODS)[number];

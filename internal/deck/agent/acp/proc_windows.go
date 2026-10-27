@@ -1,6 +1,6 @@
 //go:build windows
 
-package opencode
+package acp
 
 import (
 	"os/exec"

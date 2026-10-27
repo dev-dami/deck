@@ -18,7 +18,7 @@ func treeRig(t *testing.T, cfg config.Config, claude, codex []fake.Script) (*rig
 	r := newRigWith(t, t.TempDir(), false, cfg, claude, codex)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	if err := r.m.SetOrchestrate(tid, true); err != nil {
+	if err := r.m.SetLevel(tid, "auto"); err != nil {
 		t.Fatal(err)
 	}
 	return r, tid

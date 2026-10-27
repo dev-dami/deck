@@ -9,30 +9,23 @@ import (
 // one deeper than the member that started it (the scheduler's and the user's
 // subagents are at depth 1). A member may spawn while its children would stay
 // within MaxDepth, it has fewer than MaxChildren live subagents, and the
-// thread has fewer than MaxSubagents. When a member stops (it exits, or a
+// thread has fewer than MaxSubagents: the limits of the thread's
+// orchestration level (config.Levels). When a member stops (it exits, or a
 // subagent is retired) its live subagents are stopped too and their tasks
 // cancelled, unless KeepOrphans is set; results of a task whose creator has
 // gone go to the creator's nearest live ancestor.
 
-func (m *Manager) maxDepth() int {
-	if n := m.config().MaxDepth; n > 0 {
-		return n
-	}
-	return config.DefaultMaxDepth
+// levelLocked is what t's orchestration level lets its agents do. t.mu is
+// held.
+func (m *Manager) levelLocked(t *thread) config.Level {
+	return m.config().Level(t.level)
 }
 
-func (m *Manager) maxChildren() int {
-	if n := m.config().MaxChildren; n > 0 {
-		return n
-	}
-	return config.DefaultMaxChildren
-}
-
-func (m *Manager) maxSubagents() int {
-	if n := m.config().MaxSubagents; n > 0 {
-		return n
-	}
-	return config.DefaultMaxSubagents
+// level is levelLocked for a caller that does not hold t.mu.
+func (m *Manager) level(t *thread) config.Level {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return m.levelLocked(t)
 }
 
 // depth is how many subagent levels a is below the user's agents: 0 for a

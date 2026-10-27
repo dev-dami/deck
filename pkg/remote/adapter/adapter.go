@@ -45,6 +45,11 @@ type Core interface {
 // Events is the app's event stream, as app.App.Events.
 type Events func(ctx context.Context) <-chan pubsub.Event[tea.Msg]
 
+// raceStarter is the workspace's StartRace (workspace.Rooms).
+type raceStarter interface {
+	StartRace(ctx context.Context, sessionID, brief string, entrants []workspace.RaceEntrant, judge bool) (string, error)
+}
+
 // appSource is how the adapter reaches the app's event stream;
 // *DeckWorkspace has it through its embedded AppWorkspace.
 type appSource interface{ App() *app.App }
@@ -61,6 +66,7 @@ type Backend struct {
 	picker workspace.AgentPicker
 	adder  workspace.AgentAdder
 	roster workspace.Roster
+	racer  raceStarter
 	events Events
 
 	version, project string
@@ -90,8 +96,9 @@ func New(ws workspace.Workspace, version, project string) (*Backend, error) {
 func NewWith(core Core, rc workspace.RemoteControl, picker workspace.AgentPicker, roster workspace.Roster, events Events, version, project string) *Backend {
 	// The workspace that picks models also adds agents; fakes may not.
 	adder, _ := picker.(workspace.AgentAdder)
+	racer, _ := core.(raceStarter)
 	return &Backend{
-		core: core, rc: rc, picker: picker, adder: adder, roster: roster, events: events,
+		core: core, rc: rc, picker: picker, adder: adder, roster: roster, racer: racer, events: events,
 		version: version, project: project, themePoll: 5 * time.Second,
 		waiting: map[string]pending{},
 	}
@@ -359,8 +366,10 @@ func (b *Backend) AddAgent(sessionID, kind, model string) (wire.AgentLine, error
 }
 
 func (b *Backend) Models(ctx context.Context, sessionID, kind string) ([]wire.ModelChoice, error) {
-	if _, err := b.check(ctx, sessionID); err != nil {
-		return nil, err
+	if sessionID != "" {
+		if _, err := b.check(ctx, sessionID); err != nil {
+			return nil, err
+		}
 	}
 	if b.picker == nil {
 		return nil, nil
@@ -370,6 +379,38 @@ func (b *Backend) Models(ctx context.Context, sessionID, kind string) ([]wire.Mo
 		return nil, err
 	}
 	return toModels(choices, kind), nil
+}
+
+// StartRace implements remote.Racer. The engine's refusals (no git
+// repository, an unknown agent) are written for the person, so they pass
+// as invalid with their text.
+func (b *Backend) StartRace(ctx context.Context, sessionID, brief string, entrants []wire.RaceEntrant, judge bool) (string, error) {
+	if _, err := b.check(ctx, sessionID); err != nil {
+		return "", err
+	}
+	if b.racer == nil {
+		return "", &wire.Error{Code: wire.CodeInvalid, Msg: "this Deck cannot start races"}
+	}
+	es := make([]workspace.RaceEntrant, len(entrants))
+	for i, e := range entrants {
+		es[i] = workspace.RaceEntrant{Agent: e.Agent, Model: e.Model, Effort: e.Effort}
+	}
+	id, err := b.racer.StartRace(ctx, sessionID, brief, es, judge)
+	if err != nil {
+		if errors.Is(err, workspace.ErrNotFound) {
+			return "", remote.ErrNotFound
+		}
+		return "", &wire.Error{Code: wire.CodeInvalid, Msg: strings.TrimPrefix(err.Error(), "session: ")}
+	}
+	return id, nil
+}
+
+// RefreshModels implements remote.ModelRefresher when the workspace can
+// forget its model lists; otherwise it does nothing.
+func (b *Backend) RefreshModels() {
+	if r, ok := b.picker.(workspace.ModelRefresher); ok {
+		r.RefreshAgentModels()
+	}
 }
 
 func (b *Backend) SetModel(sessionID, kind, model, effort string) error {

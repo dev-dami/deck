@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { isAppIcon, pngSize } from "../../src/main/appIcon";
-import { APP_ICON_SIZES, type AppIconImage } from "../../src/shared/bridge";
+import { APP_ICON_SIZES, type AppIconImage, type LauncherState } from "../../src/shared/bridge";
 import { FakeDeck } from "../fake-server";
 import { attachBridge } from "./harness";
 
@@ -10,14 +10,21 @@ import { attachBridge } from "./harness";
 
 let fake: FakeDeck;
 let sent: AppIconImage[][];
+// Whether each icon sent was the standard one, and what main says of the
+// launchers.
+let standard: boolean[];
+let launchers: LauncherState;
 
 test.beforeEach(async ({ page }) => {
   fake = await FakeDeck.start({ tickMs: 250 });
   sent = [];
+  standard = [];
+  launchers = "done";
   await attachBridge(page, undefined, {
-    setAppIcon: (images) => {
+    setAppIcon: (images, std) => {
       sent.push(images);
-      return true;
+      standard.push(std);
+      return { shown: true, launchers };
     },
   });
 });
@@ -40,7 +47,7 @@ async function appearance(page: Page): Promise<void> {
 }
 
 const theme = (page: Page, name: RegExp) =>
-  page.getByRole("radiogroup", { name: "Theme", exact: true }).getByRole("radio", { name }).click();
+  page.getByRole("radiogroup", { name: "Colours" }).getByRole("radio", { name }).click();
 
 // Waits for icon number n (from 1) and checks it is a whole, valid set.
 async function nth(n: number): Promise<AppIconImage[]> {
@@ -121,4 +128,25 @@ test("an icon picked by hand stays through theme changes; Match theme follows ag
   near(await ground(page, await nth(2)), "#353b49");
   const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("deck.desktop.prefs") ?? "{}"));
   expect(kept).toMatchObject({ appIcon: "theme", palette: "nord" });
+});
+
+test("Classic is sent as the standard icon, and launchers main cannot change are explained", async ({ page }) => {
+  await pair(page);
+  await nth(1);
+  expect(standard).toEqual([false]);
+  await appearance(page);
+  const picker = page.getByRole("radiogroup", { name: "App icon" });
+  const denied = page.getByRole("status").filter({ hasText: "administrator" });
+  await expect(denied).toHaveCount(0);
+  // A per-machine install: its shortcuts are everyone's.
+  launchers = "denied";
+  await picker.getByRole("radio", { name: "Classic" }).click();
+  await nth(2);
+  expect(standard).toEqual([false, true]);
+  await expect(denied).toBeVisible();
+  launchers = "done";
+  await picker.getByRole("radio", { name: "Nord" }).click();
+  await nth(3);
+  expect(standard).toEqual([false, true, false]);
+  await expect(denied).toHaveCount(0);
 });

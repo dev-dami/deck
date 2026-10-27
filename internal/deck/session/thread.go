@@ -64,6 +64,9 @@ type thread struct {
 	leases []lease
 	edits  map[string]edit
 	warned map[string]time.Time
+	// coord is who changed which file when, and the asks to edit a file
+	// another member owns (coord.go).
+	coord coordState
 
 	// Lifecycle (lifecycle.go): pinned to the top, resolved (settled until a
 	// new message wakes it), archived (off the sidebar, still resumable).
@@ -73,6 +76,10 @@ type thread struct {
 	gone atomic.Bool
 	// worktree is set while the thread is isolated (lifecycle.go).
 	worktree *store.Worktree
+	// trees are the thread's own worktrees and capsules its named capsules
+	// (work.go, capsulework.go), guarded by mu.
+	trees    []*store.Worktree
+	capsules []store.CapsuleRec
 	// tasks is the shared task board (tasks.go), guarded by mu.
 	tasks []store.Task
 	sched schedState // one scheduler pass at a time (sched.go)
@@ -87,9 +94,10 @@ type thread struct {
 	// reviewWaits holds the tasks in review whose wait for a reviewer the
 	// thread has a notice about (review.go).
 	reviewWaits map[string]bool
-	// orchestrate is set while members may spawn subagents and the scheduler
+	// level is the thread's orchestration level (config.Levels): how deep
+	// and wide members spawn, whether they race, and whether the scheduler
 	// runs the board (spawn.go, sched.go).
-	orchestrate bool
+	level string
 	// contract is the teammate whose code contract this thread runs: its
 	// mode is never yolo (contract.go).
 	contract string
@@ -100,6 +108,11 @@ type thread struct {
 	// their roles; grew is closed when the log grows (share.go).
 	shares map[string]string
 	grew   chan struct{}
+
+	// scheduled are the user's messages waiting for their time, and
+	// atTimers their timers by id (waits.go).
+	scheduled []store.Scheduled
+	atTimers  map[string]*time.Timer
 
 	// Queue of user messages waiting for busy members (queue.go), guarded by mu.
 	queue  []qitem
@@ -342,7 +355,8 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	defer t.mu.Unlock()
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
 		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree,
-		Tasks: cloneTasks(t.tasks), Orchestrate: t.orchestrate, Contract: t.contract, Ops: t.ops != nil}
+		Tasks: cloneTasks(t.tasks), Orchestration: t.level, Orchestrate: m.levelLocked(t).Schedule, Contract: t.contract, Ops: t.ops != nil,
+		Scheduled: slices.Clone(t.scheduled), Trees: slices.Clone(t.trees), Capsules: cloneCapsules(t.capsules)}
 	for _, peer := range slices.Sorted(maps.Keys(t.shares)) {
 		th.Shares = append(th.Shares, store.Share{Peer: peer, Role: t.shares[peer]})
 	}

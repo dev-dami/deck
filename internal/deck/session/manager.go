@@ -18,11 +18,11 @@
 // (or "$name", the same mention) at the start of a clause addresses
 // that member (ParseAddressing has the exact rules); "@claude" / "@codex" naming
 // a kind reaches whichever live member of that kind is free, or adds one when
-// there is none; "@claude*" addresses all of them and "@claude+" adds another;
-// "@all" addresses everyone; "@claude×3 brief" (or "@claude*3") starts a race
-// (race.go); "@charles", a profile (a named agent, SetProfiles) no member is
-// called yet, adds a member from it named after it, and "@charles+" another;
-// with no mention the message goes to the member who
+// there is none; "@all" addresses everyone; "@charles", a profile (a named
+// agent, SetProfiles) no member is called yet, adds a member from it named
+// after it. Nothing typed adds a second member of a kind or starts a race:
+// agents spawn helpers (Spawn), and the clients start races (Race). With no
+// mention the message goes to the member who
 // spoke last (or the only member; or, in an empty thread, a new member of the
 // default kind). Several addressees receive it concurrently.
 //
@@ -169,6 +169,10 @@ const (
 	// (agent.KindRestarting). Not busy: a prompt sent now waits in the
 	// adapter for the new process.
 	StatusRestarting Status = "restarting"
+	// StatusWaiting: the member's plan ran out and Deck holds its work until
+	// the limit resets (waits.go). Not busy, but it starts no turn: messages
+	// for it queue.
+	StatusWaiting Status = "waiting"
 )
 
 // DefaultMaxHops is the number of agent-to-agent relays allowed after each user
@@ -222,10 +226,12 @@ type AgentInfo struct {
 	// RunningModel is the model slug the CLI reports it is running (e.g.
 	// "claude-opus-5-5" when Model is "" or an alias); "" until it says.
 	RunningModel string
-	// Profile is the named agent it was started from ("" for none), and
-	// Role that profile's one-line role.
+	// Profile is the named agent it was started from ("" for none), Role
+	// that profile's one-line role and Color its CSS colour ("" for the
+	// kind's hue).
 	Profile string
 	Role    string
+	Color   string
 }
 
 // ThreadInfo is a snapshot of one live thread.
@@ -246,9 +252,8 @@ type ThreadInfo struct {
 	Mode        agent.Mode // the thread's permission mode
 	// Pinned threads sort first; Resolved ones are settled until a new message.
 	Pinned, Resolved bool
-	// Orchestrate is on while members may spawn subagents and the scheduler
-	// runs the thread's ready tasks.
-	Orchestrate bool
+	// Orchestration is the thread's orchestration level (config.Levels).
+	Orchestration string
 	// Branch is the worktree branch of an isolated thread, "" otherwise.
 	Branch string
 	// Active is when anything last happened in the thread.
@@ -349,6 +354,12 @@ func NewManager(adapters map[string]agent.Adapter, st *store.Store, cfg config.C
 	if o.Hub != nil {
 		o.Hub.SetThreadReader(m.readThread)
 		o.Hub.SetExecutor(m.execOp)
+		// A hub that also serves the CLIs' pre-edit hooks (Claude's).
+		if g, ok := o.Hub.(interface {
+			SetEditGate(func(agentID string, paths []string) string)
+		}); ok {
+			g.SetEditGate(m.gateHook)
+		}
 		m.wg.Add(1)
 		go m.hubLoop(o.Hub.Messages())
 	}
@@ -470,7 +481,7 @@ func (m *Manager) threadInfo(t *thread) ThreadInfo {
 	info := ThreadInfo{
 		ID: t.id, Title: t.title, Dir: t.dir, Paused: t.paused, Hops: t.hops,
 		MaxHops: m.maxHops, Held: len(t.heldIdx), LastSpeaker: t.lastSpeaker, Mode: t.mode,
-		Pinned: t.pinned, Resolved: t.resolved, Orchestrate: t.orchestrate,
+		Pinned: t.pinned, Resolved: t.resolved, Orchestration: t.level,
 	}
 	if t.worktree != nil {
 		info.Branch = t.worktree.Branch
@@ -564,6 +575,7 @@ func (m *Manager) NewThread(dir string) (string, error) {
 	}
 	mode, _ := startMode(m.cfg)
 	t := newThread(m, store.NewID(), dir, mode)
+	t.level = m.cfg.StartLevel()
 	m.threads[t.id] = t
 	m.torder = append(m.torder, t)
 	return t.id, nil
@@ -839,21 +851,6 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 
 	m.wake(t)
 
-	if len(ad.Race) > 0 {
-		switch {
-		case ad.Mentioned():
-			return PostResult{}, errors.New("a race (@claude×3) cannot also address other agents")
-		case ad.Body == "":
-			return PostResult{}, errors.New("say what the race is for: @claude×3 fix the flaky test")
-		}
-		res, err := m.postTo(t, text, nil, images)
-		if err != nil {
-			return res, err
-		}
-		_, err = m.Race(threadID, "", RaceSpec{Brief: ad.Body, Kinds: ad.Race})
-		return res, err
-	}
-
 	var targets []*agentState
 	newKinds := ad.NewKinds
 	t.mu.Lock()
@@ -1084,6 +1081,12 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 		prompt = modeLine(t.mode) + "\n\n" + prompt
 		a.knownMode = t.mode
 	}
+	a.mu.Lock()
+	if a.nudge != "" {
+		prompt = strings.TrimSpace(a.nudge + "\n\n" + prompt)
+		a.nudge = ""
+	}
+	a.mu.Unlock()
 	// A contract's agents work for a teammate: the team chat is not theirs.
 	quiet := t.ops != nil || t.contract != ""
 	t.mu.Unlock()
@@ -1265,8 +1268,9 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 	t.title, t.titleSrc = th.Title, th.TitleSrc
 	t.pinned, t.resolved = th.Pinned, th.Resolved // resuming un-archives
 	t.worktree = th.Worktree
+	t.trees, t.capsules = th.Trees, cloneCapsules(th.Capsules)
 	t.tasks = cloneTasks(th.Tasks)
-	t.orchestrate = th.Orchestrate
+	t.level = storedLevel(th, cfg)
 	t.contract = th.Contract
 	if th.Ops {
 		// Its contract ended when Deck stopped, but the thread stays locked
@@ -1396,9 +1400,25 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 		}
 	}
 	m.failOrphans(t)
+	for i, a := range members {
+		if w := th.Members[i].Wait; w != nil && !a.ephemeral {
+			m.restoreWait(t, a, *w)
+		}
+	}
+	t.scheduled = append([]store.Scheduled(nil), th.Scheduled...)
+	for _, sc := range th.Scheduled {
+		m.armScheduled(t, sc)
+	}
 	m.kick(t)
 	if th.Archived {
 		m.persistMeta(t) // resuming brings it back to the sidebar
+	}
+	if len(th.Trees) > 0 {
+		m.wg.Add(1)
+		go func() {
+			defer m.wg.Done()
+			m.pruneTrees(t) // worktrees landed, or removed, while Deck was away
+		}()
 	}
 	t.mu.Lock()
 	h := t.history()
@@ -1483,6 +1503,7 @@ func canonical(e *store.Entry, user string) {
 
 // forget removes a thread whose members have all exited so it can be resumed again.
 func (m *Manager) forget(t *thread) {
+	t.stopTimers()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.threads, t.id)
@@ -1610,6 +1631,16 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		return // the thread was archived, deleted or moved
 	}
 	t := a.thread
+	if ev.Kind == agent.KindError {
+		// Every adapter's error text is read too: OpenCode and Antigravity
+		// say it only in words.
+		if ev.LimitHit == nil {
+			ev.LimitHit = agent.ParseLimitHit(ev.Text, ev.Time)
+		}
+		if ev.LimitHit != nil {
+			m.noteHit(a, *ev.LimitHit)
+		}
+	}
 	var end turnEnd
 	if ev.Kind == agent.KindTurnDone {
 		// Taken before apply makes a idle: from then on its next turn can
@@ -1631,6 +1662,9 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	if res.metaDirty {
 		m.persistMeta(t)
 	}
+	if res.waits {
+		m.startedWait(t, a)
+	}
 	for _, id := range res.gone {
 		m.emit(ApprovalGoneMsg{ThreadID: t.id, AgentID: a.id, ID: id})
 	}
@@ -1638,8 +1672,9 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	switch {
 	case ev.Kind == agent.KindLimits && ev.Limits != nil:
 		m.setLimits(a.kind, *ev.Limits)
+		m.rearmWaits(a.kind)
 	case ev.Kind == agent.KindFileChange && ev.Diff != nil:
-		m.noteEdit(t, a, ev.Diff.Path)
+		m.noteEdit(t, a, ev.Diff)
 	case ev.Kind == agent.KindTurnDone || ev.Kind == agent.KindExited:
 		m.charge(t, a, res.spent)
 	case ev.Kind == agent.KindUsage || ev.Kind == agent.KindToolCall && !ev.Delta:
@@ -1654,11 +1689,19 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	// draining a's events while relays are delivered; an exit is handled
 	// after the end of the turn before it has been settled.
 	if ev.Kind == agent.KindTurnDone {
+		// Before afterTurn delivers what queued: an ask settled here no
+		// longer starts a turn.
+		reply := end.text
+		if end.interrupted {
+			reply = ""
+		}
+		m.ownerDone(t, a, reply)
 		m.onThread(t, func() { m.afterTurn(a, end) })
 		m.checkAttribution(a)
 	}
 	if ev.Kind == agent.KindExited {
 		m.sweepLeases(t)
+		m.ownerDone(t, a, "")
 		m.onThread(t, func() {
 			m.failOwned(t, a)
 			m.cascade(t, a)
@@ -1680,6 +1723,24 @@ func (m *Manager) onApproval(a *agentState, req agent.ApprovalRequest) {
 		}
 		return
 	}
+	if req.Kind == agent.ApproveEdit && a.thread.getMode() != agent.ModePlan && m.gated(a, req) {
+		// An edit first passes the gate (coord.go), which may wait for the
+		// file's owner: off the pump, which goes on with a's events.
+		m.wg.Add(1)
+		go func() {
+			defer m.wg.Done()
+			if m.gateApproval(a, req) {
+				m.askApproval(a, req)
+			}
+		}()
+		return
+	}
+	m.askApproval(a, req)
+}
+
+// askApproval is the rest of onApproval: the mode answers the request, or
+// the person does.
+func (m *Manager) askApproval(a *agentState, req agent.ApprovalRequest) {
 	req.AgentID = a.id
 	orig := req.Respond
 	var once sync.Once
@@ -1763,6 +1824,12 @@ type agentState struct {
 	// built are the user's own words; guarded by thread.mu.
 	promptUser int
 	running    string // model slug the CLI reported at session start
+	// hit is the plan limit the running turn ran into, wait the member's
+	// wait for it to reset, and nudge what its next prompt starts with
+	// (waits.go).
+	hit   *agent.LimitHit
+	wait  *waitState
+	nudge string
 	// stirred is closed, and dropped, when the member's status may have
 	// changed (stirLocked); nil while nobody waits for that (waitIdle).
 	stirred chan struct{}
@@ -1839,7 +1906,7 @@ func (a *agentState) info() AgentInfo {
 		Status: a.statusLocked(), CostUSD: a.costTotal + a.costTurn, Pending: len(a.pending),
 		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource,
 		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
-		RunningModel: a.running, Profile: a.prof.Name, Role: a.prof.Role,
+		RunningModel: a.running, Profile: a.prof.Name, Role: a.prof.Role, Color: a.prof.Color,
 	}
 }
 
@@ -1862,8 +1929,18 @@ func (a *agentState) memberMeta() store.Member {
 		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource, Briefed: a.briefed,
 		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
 		Parent: a.parent, Ephemeral: a.ephemeral, Dir: a.dir, Worktree: a.worktree,
-		Profile: a.prof.Name, Role: a.prof.Role,
+		Profile: a.prof.Name, Role: a.prof.Role, Color: a.prof.Color,
+		Wait: a.storedWaitLocked(),
 	}
+}
+
+// storedWaitLocked is the member's wait as stored; a.mu is held.
+func (a *agentState) storedWaitLocked() *store.Wait {
+	if a.wait == nil {
+		return nil
+	}
+	w := a.wait.Wait
+	return &w
 }
 
 // tryBegin marks the agent working before a prompt is sent, so a fast turn_done
@@ -1875,7 +1952,7 @@ func (a *agentState) tryBegin() (prev Status, ok, exited bool) {
 	switch a.statusLocked() {
 	case StatusExited:
 		return a.base, false, true
-	case StatusWorking, StatusTool, StatusApproval:
+	case StatusWorking, StatusTool, StatusApproval, StatusWaiting:
 		return a.base, false, false
 	}
 	prev = a.base
@@ -1975,6 +2052,8 @@ type applyResult struct {
 	metaDirty bool
 	// spent is what a turn that just ended spent (KindTurnDone, KindExited).
 	spent store.Spend
+	// waits: the turn that ended ran out of plan, and the member now waits.
+	waits bool
 }
 
 // apply folds one event into the agent's status and cost.
@@ -2042,11 +2121,21 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 		a.costTotal += a.costTurn
 		a.costTurn, a.tokTurn = 0, 0
 		a.base = StatusIdle
+		if a.hit != nil {
+			// The plan ran out: the member waits for the reset (waits.go).
+			if a.wait == nil {
+				a.wait = &waitState{Wait: store.Wait{Since: ev.Time, Until: a.hit.ResetsAt, Window: a.hit.Window}}
+				res.waits = true
+			}
+			a.base = StatusWaiting
+			a.hit = nil
+		}
 		// The run's first prompt carried the instructions (Spec.Briefed).
 		a.briefed = a.sessionID != ""
 		res.gone = a.clearPendingLocked()
 		res.metaDirty = true
 	case agent.KindExited:
+		a.hit = nil
 		res.spent = store.Spend{Tokens: a.tokTurn, CostUSD: a.costTurn}
 		a.costTotal += a.costTurn
 		a.costTurn, a.tokTurn = 0, 0

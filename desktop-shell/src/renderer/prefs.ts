@@ -1,8 +1,22 @@
 import { useSyncExternalStore } from "react";
 import { APP_ICON_IDS, type AppIconPref } from "./appIcon/catalog";
-import type { NotifyPref } from "./attention";
 import { CUSTOM, PICTURES } from "./backdrop/pictures";
-import { ACCENTS, DIFF_THEMES, THEMES } from "./themes";
+import { NOTIFY_KINDS, type NotifyKind } from "./notifications";
+import { DEFAULT_LEVEL, LEVELS, type Level } from "./orchestration";
+import {
+  ACCENTS,
+  type Aspects,
+  CORNERS,
+  DIFF_THEMES,
+  DIRECTIONS,
+  FACES,
+  lookFromPalette,
+  MATERIALS,
+  PROCESSES,
+  TEXTURES,
+  THEMES,
+  TRANSLUCENCIES,
+} from "./themes";
 
 // The window's own settings (the Settings page). They live in this
 // renderer's localStorage: nothing here is secret and Deck never sees them.
@@ -15,11 +29,19 @@ export type SendKey = "enter" | "mod-enter";
 // "system" follows the operating system's reduced-motion setting.
 export type MotionPref = "system" | "full" | "reduced";
 export type DiffLayout = "unified" | "split";
+// Where the sidebar sits, and where the side panel docks: on the side
+// opposite it, beside it (between it and the room), or floating over the
+// room on the side opposite it.
+export type SidebarSide = "left" | "right";
+export type PanelDock = "opposite" | "beside" | "float";
+export type Density = "comfortable" | "compact";
 
-export interface Prefs {
+export const SIDEBAR_WIDTH = { min: 208, max: 420, default: 256 } as const;
+
+// The look's aspects (themes.ts): palette is the theme whose colours the
+// window takes, and the accent goes over it.
+export interface Prefs extends Aspects {
   theme: ThemePref;
-  // The theme from themes.ts and the accent over it.
-  palette: string;
   accent: string;
   rows: RowStyle;
   grouping: Grouping;
@@ -31,11 +53,23 @@ export interface Prefs {
   autoApprovePlans: boolean;
   // The terminal drawer's height in pixels.
   terminalHeight: number;
-  // Native notifications while the window is in the background.
-  notifications: NotifyPref;
+  // Notifications (notifications.ts): the master switch, each kind, the
+  // sound, and whether they pop up only while the window is in the
+  // background.
+  notifications: boolean;
+  notifyKinds: Record<NotifyKind, boolean>;
   sound: boolean;
+  notifyUnfocusedOnly: boolean;
+  // Plan limits (limits.ts): the percent used at which an agent's plan is
+  // warned about, then warned harder (the quota chip turns amber, then
+  // red), and whether a run-out projected before the reset is told.
+  limitWarnPct: number;
+  limitCritPct: number;
+  limitProjection: boolean;
   // A new thread starts on a branch of its own (a Deck that can isolate).
   isolate: boolean;
+  // The orchestration level a new thread starts at (orchestration.ts).
+  orchestration: Level;
   motion: MotionPref;
   // The shockwave when the open room switches to Yolo.
   yoloEffect: boolean;
@@ -51,11 +85,20 @@ export interface Prefs {
   // The app icon: "theme" wears the theme's (appIcon/catalog.ts), an icon
   // id wears that one.
   appIcon: AppIconPref;
+  // The team and the named agents (teamGate.ts); off hides them.
+  team: boolean;
+  // The layout (Settings > Appearance > Layout): the sidebar's side and
+  // width in pixels, where the side panel docks, and how tight the window
+  // is spaced.
+  sidebarSide: SidebarSide;
+  sidebarWidth: number;
+  panelDock: PanelDock;
+  density: Density;
 }
 
 export const defaultPrefs: Prefs = {
   theme: "deck",
-  palette: "glass",
+  ...DIRECTIONS.glass.look,
   accent: "theme",
   rows: "compact",
   grouping: "projects",
@@ -65,9 +108,15 @@ export const defaultPrefs: Prefs = {
   foldWork: true,
   autoApprovePlans: false,
   terminalHeight: 280,
-  notifications: "all",
+  notifications: true,
+  notifyKinds: { approval: true, error: true, limit: true, mention: true, task: true, finished: true },
   sound: true,
+  notifyUnfocusedOnly: true,
+  limitWarnPct: 75,
+  limitCritPct: 90,
+  limitProjection: true,
   isolate: true,
+  orchestration: DEFAULT_LEVEL,
   motion: "system",
   yoloEffect: true,
   diffTheme: "match",
@@ -75,6 +124,11 @@ export const defaultPrefs: Prefs = {
   diffWrap: false,
   wallpaper: "theme",
   appIcon: "theme",
+  team: true,
+  sidebarSide: "left",
+  sidebarWidth: SIDEBAR_WIDTH.default,
+  panelDock: "opposite",
+  density: "comfortable",
 };
 
 const KEY = "deck.desktop.prefs";
@@ -90,18 +144,29 @@ function load(): Prefs {
   }
 }
 
-// Only known keys with values of the right kind survive a load.
-function merge(v: Record<string, unknown>): Prefs {
+// Only known keys with values of the right kind survive a load. Prefs saved
+// before the look had aspects name one theme; it becomes the aspects it
+// stood for (themes.ts lookFromPalette).
+export function merge(v: Record<string, unknown>): Prefs {
   const pick = <T extends string>(k: string, allowed: readonly T[], d: T): T =>
     allowed.includes(v[k] as T) ? (v[k] as T) : d;
+  const ids = <T extends string>(xs: readonly { id: T }[]) => xs.map((x) => x.id);
   const bool = (k: string, d: boolean): boolean => (typeof v[k] === "boolean" ? (v[k] as boolean) : d);
   const size = (k: string, d: number): number => {
     const n = v[k];
     return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : d;
   };
+  const palette = pick("palette", ids(THEMES), defaultPrefs.palette);
+  const look = "material" in v ? { ...defaultPrefs, palette } : lookFromPalette(palette);
   return {
     theme: pick("theme", ["deck", "system", "light", "dark"] as const, defaultPrefs.theme),
-    palette: pick("palette", THEMES.map((t) => t.id), defaultPrefs.palette),
+    palette,
+    material: pick("material", ids(MATERIALS), look.material),
+    process: pick("process", ids(PROCESSES), look.process),
+    face: pick("face", ids(FACES), look.face),
+    texture: pick("texture", ids(TEXTURES), look.texture),
+    corners: pick("corners", ids(CORNERS), look.corners),
+    translucency: pick("translucency", ids(TRANSLUCENCIES), look.translucency),
     accent: pick("accent", ACCENTS.map((a) => a.id), defaultPrefs.accent),
     rows: pick("rows", ["cards", "compact"] as const, defaultPrefs.rows),
     grouping: pick("grouping", ["projects", "recent"] as const, defaultPrefs.grouping),
@@ -111,9 +176,16 @@ function merge(v: Record<string, unknown>): Prefs {
     foldWork: bool("foldWork", defaultPrefs.foldWork),
     autoApprovePlans: bool("autoApprovePlans", defaultPrefs.autoApprovePlans),
     terminalHeight: size("terminalHeight", defaultPrefs.terminalHeight),
-    notifications: pick("notifications", ["all", "needs-you", "none"] as const, defaultPrefs.notifications),
+    // Before the kinds, notifications was "all", "needs-you" or "none".
+    notifications: v["notifications"] === "none" ? false : bool("notifications", defaultPrefs.notifications),
+    notifyKinds: kinds(v["notifyKinds"], v["notifications"] === "needs-you"),
     sound: bool("sound", defaultPrefs.sound),
+    notifyUnfocusedOnly: bool("notifyUnfocusedOnly", defaultPrefs.notifyUnfocusedOnly),
+    limitWarnPct: pctOf(v["limitWarnPct"], defaultPrefs.limitWarnPct),
+    limitCritPct: pctOf(v["limitCritPct"], defaultPrefs.limitCritPct),
+    limitProjection: bool("limitProjection", defaultPrefs.limitProjection),
     isolate: bool("isolate", defaultPrefs.isolate),
+    orchestration: pick("orchestration", LEVELS.map((l) => l.level), defaultPrefs.orchestration),
     motion: pick("motion", ["system", "full", "reduced"] as const, defaultPrefs.motion),
     yoloEffect: bool("yoloEffect", defaultPrefs.yoloEffect),
     diffTheme: pick("diffTheme", DIFF_THEMES.map((t) => t.id), defaultPrefs.diffTheme),
@@ -121,7 +193,37 @@ function merge(v: Record<string, unknown>): Prefs {
     diffWrap: bool("diffWrap", defaultPrefs.diffWrap),
     wallpaper: pick("wallpaper", ["theme", CUSTOM, ...PICTURES.map((x) => x.id)], defaultPrefs.wallpaper),
     appIcon: pick("appIcon", ["theme", ...APP_ICON_IDS], defaultPrefs.appIcon),
+    team: bool("team", defaultPrefs.team),
+    sidebarSide: pick("sidebarSide", ["left", "right"] as const, defaultPrefs.sidebarSide),
+    sidebarWidth: clampSidebar(size("sidebarWidth", defaultPrefs.sidebarWidth)),
+    panelDock: pick("panelDock", ["opposite", "beside", "float"] as const, defaultPrefs.panelDock),
+    density: pick("density", ["comfortable", "compact"] as const, defaultPrefs.density),
   };
+}
+
+// Each kind's switch; one that is missing keeps its default, and "needs-you
+// only" from before turns the finishes off.
+function kinds(v: unknown, needsYouOnly: boolean): Record<NotifyKind, boolean> {
+  const o = typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
+  const out = { ...defaultPrefs.notifyKinds };
+  if (needsYouOnly) out.finished = out.task = false;
+  for (const k of NOTIFY_KINDS) if (typeof o[k.id] === "boolean") out[k.id] = o[k.id] as boolean;
+  return out;
+}
+
+
+// A threshold in percent: a whole number from 1 to 99.
+function pctOf(v: unknown, d: number): number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 1 && v <= 99 ? Math.round(v) : d;
+}
+
+// The limit thresholds the prefs set: crit is never below warn.
+export function limitThresholds(p: Prefs): { warn: number; crit: number; projection: boolean } {
+  return { warn: p.limitWarnPct, crit: Math.max(p.limitWarnPct, p.limitCritPct), projection: p.limitProjection };
+}
+
+export function clampSidebar(w: number): number {
+  return Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, w)));
 }
 
 let current: Prefs | null = null;

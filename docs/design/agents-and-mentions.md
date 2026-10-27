@@ -28,7 +28,7 @@ A profile is a named recipe for an agent. It holds:
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | string, required | How it is addressed and shown (`charles`). The same rules as `Manager.Rename`: non-empty; no whitespace and none of `@ $ / * + #`; not `all`, `user`, `deck`, an agent kind, or a teammate's name. Case-insensitive and unique. |
-| `kind` | string, required | The CLI it runs: `claude`, `codex`, `opencode` or `antigravity`. |
+| `kind` | string, required | The CLI it runs: `claude`, `codex`, `opencode`, `antigravity` or `pi`. |
 | `model`, `effort` | string, optional | Defaults to the kind's defaults. |
 | `role` | string, optional | One line ("reviewer", "implements the plan"). Shown in the roster, and goes into the agent's briefing. |
 | `instructions` | string, optional | Standing instructions, appended to the agent's briefing. Counted against the context policy like any briefing text. |
@@ -67,9 +67,13 @@ strips both. A name resolves in this order:
      `@charles` reaches the same member).
 5. Otherwise the token is plain text, as `$HOME` is today.
 
-The kind suffixes and races carry over unchanged: `@claude+` adds a
-Claude, `@claude*` reaches every Claude, `@claude×3` races three.
-`@charles+` adds a second member from the profile, named `charles-2`.
+The typed kind suffixes and races are gone: `@claude+`, `@claude*` and
+`@claude×3` are plain text. More than one agent of a kind comes from a
+race, which the clients build from a list of entrants (`/race`; each a
+kind or a named agent with its model and effort, kinds mixed and
+repeated), or from an agent's helpers (`agent.spawn`). A second member
+from a profile is named `charles-2`. Agents still reach every member of a
+kind with `claude*` (`thread.send`, or a line of their reply).
 
 `@` matches only names, so `@src/foo.ts` and `user@example.com` stay text:
 `scanMention` already refuses a name followed by `/` or by `.` and a
@@ -111,7 +115,16 @@ following the patterns already there:
   `deck.json`.
 - `rpc DeleteProfile(DeleteProfileRequest{string name; string scope}) returns (DeleteProfileResponse)`.
 - The roster line or member message gains `string profile` (the profile
-  a member came from) and `string role`, so clients can show them.
+  a member came from), `string role` and `string color`, so clients can
+  show them: a named member wears its profile's colour in the lanes, the
+  timeline, the agents tree and the "@" picker. The thread stores the
+  colour with the member, as it stores the role.
+
+The desktop app has a Team switch (Settings > Agents). Off, it hides the
+named agents and the teammates: the profiles editor, profiles and people
+in the "@" picker, members' roles and colours, the Team page, shared
+rooms and contracts. It deletes nothing, and the engine still answers
+`@charles`.
 
 The phone's `pkg/remote` wire and adapter carry the same `profile`/`role`
 fields, if they mirror the roster.

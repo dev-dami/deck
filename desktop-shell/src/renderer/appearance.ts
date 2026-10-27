@@ -7,14 +7,23 @@ import { isMac } from "./ui/keys";
 // "deck" follows Deck's server theme, which the shared theme.ts writes as
 // data-scheme; "system" follows the operating system. A theme with a mode
 // of its own (themes.ts) sets it instead; data-palette and data-accent name
-// the theme and accent for styles.css, and data-diff-theme the colours of
-// diffs and code blocks. data-vibrancy says that main gave the window the
-// Mac's sidebar material (main.ts), which Apple and Liquid Glass let show.
+// the theme and accent for styles.css, data-material, data-process,
+// data-face, data-texture, data-corners and data-translucency the look's
+// other aspects, and data-diff-theme the colours of diffs and code blocks.
+// data-vibrancy says that main gave the window the Mac's sidebar material
+// (main.ts), which Apple and Liquid Glass let show. The layout's prefs go
+// on <html> too: data-sidebar (its side), data-density and --sidebar-w.
 export function useAppearance(pref: ThemePref, palette = "glass", accent = "theme"): void {
-  const { diffTheme } = usePrefs();
+  const { diffTheme, material, process, face, texture, corners, translucency, sidebarSide, sidebarWidth, density } = usePrefs();
   useEffect(() => {
     document.documentElement.setAttribute("data-diff-theme", diffTheme);
   }, [diffTheme]);
+  useEffect(() => {
+    const root = document.documentElement;
+    const aspects: Record<string, string> = { material, process, face, texture, corners, translucency, sidebar: sidebarSide, density };
+    for (const [k, v] of Object.entries(aspects)) root.setAttribute(`data-${k}`, v);
+    root.style.setProperty("--sidebar-w", `${sidebarWidth}px`);
+  }, [material, process, face, texture, corners, translucency, sidebarSide, sidebarWidth, density]);
   useEffect(() => {
     const root = document.documentElement;
     const media = window.matchMedia("(prefers-color-scheme: light)");

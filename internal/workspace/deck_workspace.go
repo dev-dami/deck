@@ -67,6 +67,9 @@ type DeckWorkspace struct {
 	// lastMode is the permission mode the last recorded mode change set.
 	// Only the pump goroutine touches it.
 	lastMode deckagent.Mode
+	// asks maps each ask to edit a file (decks.FileAsk) to the line that
+	// shows it, by thread and ask id. Only the pump goroutine touches it.
+	asks map[string]string
 
 	act activity // tool calls in flight and background shells, by session
 
@@ -125,6 +128,9 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 	// The agents' deck.jobs op reads what this workspace's activity tracker sees.
 	eng.Manager.SetActivity(w.activityText)
 	go w.pump()
+	// Agents that waited for a plan limit when Deck stopped wait again, or
+	// resume if their reset has passed; scheduled messages are kept.
+	go eng.Manager.RestoreWaits()
 	return w
 }
 
@@ -477,6 +483,9 @@ func (w *DeckWorkspace) pump() {
 				cancel()
 			}
 		case decks.RelayMsg:
+			if m.Via == "ask" {
+				continue // the FileAskMsg line stands for it
+			}
 			w.onRelay(m)
 			to := make([]string, len(m.To))
 			for i, t := range m.To {
@@ -486,6 +495,8 @@ func (w *DeckWorkspace) pump() {
 		case decks.NoticeMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.Text)
 			w.publish(DeckChange{Kind: ChangeNotice, SessionID: w.sessionOf(m.ThreadID), Text: m.Text, Via: m.Via})
+		case decks.FileAskMsg:
+			w.onAsk(m)
 		case decks.PausedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorHopPause, "", m.Hops)
 			paused := "Paused after the agents passed messages back and forth; send a message to go on."
@@ -499,6 +510,8 @@ func (w *DeckWorkspace) pump() {
 		case decks.LeasesChangedMsg:
 			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
 			w.publish(DeckChange{Kind: ChangeLease, SessionID: w.sessionOf(m.ThreadID), Lease: m})
+		case decks.WaitChangedMsg:
+			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
 		case decks.MemberAddedMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.AgentID+" joined")
 			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
@@ -964,15 +977,61 @@ func (w *DeckWorkspace) notice(sid, text string) {
 	})
 }
 
+// onAsk shows an ask to edit a file as one system line, which its answer
+// rewrites in place: "@codex asked @ada about `a.go` → ada: go ahead".
+func (w *DeckWorkspace) onAsk(m decks.FileAskMsg) {
+	sid := w.sessionOf(m.ThreadID)
+	if sid == "" {
+		return
+	}
+	if w.asks == nil {
+		w.asks = map[string]string{}
+	}
+	key := m.ThreadID + "/" + m.Ask.ID
+	text := decks.AskLine(m.Ask)
+	ctx := context.Background()
+	w.dbw.wait(sid)
+	if id, ok := w.asks[key]; ok {
+		delete(w.asks, key) // settled: it changes no more
+		if msg, err := w.app.Messages.Get(ctx, id); err == nil {
+			msg.Parts = []message.ContentPart{message.TextContent{Text: text}, message.Finish{Reason: message.FinishReasonEndTurn, Time: time.Now().Unix()}}
+			_ = w.app.Messages.Update(ctx, msg)
+			return
+		}
+	}
+	msg, err := w.app.Messages.Create(ctx, sid, message.CreateMessageParams{
+		Role:     message.System,
+		Model:    "deck",
+		Provider: "deck",
+		Parts:    []message.ContentPart{message.TextContent{Text: text}, message.Finish{Reason: message.FinishReasonEndTurn, Time: time.Now().Unix()}},
+	})
+	if err == nil && m.Ask.State == decks.AskPending {
+		w.asks[key] = msg.ID
+	}
+}
+
 // noAsk are the agent kinds whose CLI cannot hand Deck an approval prompt:
-// in ask mode they are refused whatever needs approval.
-var noAsk = map[string]bool{"antigravity": true}
+// in ask mode they are refused whatever needs approval. neverAsks are those
+// that run their tools without asking at all (Pi), whatever the mode.
+var (
+	noAsk     = map[string]bool{"antigravity": true}
+	neverAsks = map[string]bool{"pi": true}
+)
 
 // warnNoAsk tells the user, once per agent, when an agent that cannot ask
-// starts in ask mode.
+// starts in ask mode, or one that never asks starts outside yolo mode.
 func (w *DeckWorkspace) warnNoAsk(sid, agentID string) {
 	a, ok := w.mgr().Agent(agentID)
-	if !ok || !noAsk[a.Kind] || w.mode() != deckagent.ModeAsk {
+	if !ok {
+		return
+	}
+	var msg string
+	switch mode := w.mode(); {
+	case noAsk[a.Kind] && mode == deckagent.ModeAsk:
+		msg = a.Name + " cannot ask you for approval: in ask mode it is refused commands and edits that need one. Use yolo mode to let it run them, or plan mode to keep it read-only."
+	case neverAsks[a.Kind] && mode != deckagent.ModeYolo:
+		msg = a.Name + " runs commands and edits without asking for approval: " + string(mode) + " mode does not hold it back."
+	default:
 		return
 	}
 	w.mu.Lock()
@@ -980,7 +1039,7 @@ func (w *DeckWorkspace) warnNoAsk(sid, agentID string) {
 	w.warned[agentID] = true
 	w.mu.Unlock()
 	if !seen {
-		w.notice(sid, a.Name+" cannot ask you for approval: in ask mode it is refused commands and edits that need one. Use yolo mode to let it run them, or plan mode to keep it read-only.")
+		w.notice(sid, msg)
 	}
 }
 

@@ -205,7 +205,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			}
 			out = append(out, line{text: text})
 		case store.EntryNotice:
-			if e.Via == viaOverlap {
+			if e.Via == viaOverlap || e.Via == viaLevel {
 				out = append(out, line{text: "[deck] " + e.Text})
 			}
 		case store.EntryPause:
@@ -385,10 +385,13 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	if tools {
 		b.WriteString("Deck's MCP server has two tools: search finds Deck ops, skills other agents have and this project's past threads; execute runs one op.\n")
 		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with @name ($name also works). Op \"thread.read\" shows the whole thread, \"thread.roster\" who is in it.\n")
-		b.WriteString("Shared task board (execute ops): task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list. Report a task you own with task.done.\n")
-		b.WriteString("Pass code as a capsule: sub.patch.capture, then thread.send {capsule}.\n")
+		b.WriteString("Shared task board (execute ops): task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list; report yours with task.done.\n")
+		b.WriteString("Pass code: sub.patch.capture, then thread.send {capsule}.\n")
 		if !ops {
-			b.WriteString("You can split work: agent.spawn {brief, kind} starts a subagent, task.race {brief, agents} has several try it on their own worktrees; lease.acquire {paths} before you edit files others may touch; memory.add pins a note to code. search shows any op's args.\n")
+			fmt.Fprintf(&b, "agent.spawn {brief, kind} starts a helper agent (kind: %s, or a named agent); it joins as a lane and reports back. Orchestration is %s memory.add pins a note; search shows op args.\n",
+				clip(strings.Join(m.Kinds(), ", "), 80), m.levelText(t))
+			b.WriteString("Big work: worktree.*, capsule.*, agent.spawn {worktree: true}.\n")
+			b.WriteString("Before editing files others may touch: lease.acquire {paths}, or file.claim {paths} for files another agent is changing (Deck asks it and hands you its changes). Asked about your file? file.answer {path, text}.\n")
 		}
 		if len(mates) > 0 {
 			fmt.Fprintf(&b, "Teammates' Decks on other machines: %s. team.post {text, to: \"name\" or \"name/agent\"} writes to them (the team chat; team.read shows it), and what they write to you comes at the start of your next turn. task.contract {peer, brief} asks one for coding work, if it made this Deck a contractor there (the user allows it; its changes come back as a capsule); peers.status {peer} asks how one is. Lines like \"[%s] ...\" come from them.\n",
@@ -397,7 +400,7 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	} else {
 		b.WriteString("To message another agent, start a line of your final reply with @name or @all ($name also works).\n")
 	}
-	b.WriteString("Keep messages to other agents short and actionable. Do not repeat what the user can already see.\n")
+	b.WriteString("Keep messages to other agents short; do not repeat what the user can see.\n")
 	fmt.Fprintf(&b, "Write plan files in %s.", brand.PlansDir(t.dir))
 	// Deck's own attribution, whichever CLI does the work (Settings → General).
 	if cfg.DeckAttribution {

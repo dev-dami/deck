@@ -1,5 +1,4 @@
 import type { ChangedFile, QueuedItem, Theme } from "@web/protocol";
-import { kindColour, kindMark } from "@web/theme";
 import {
   ArrowDown,
   ArrowUp,
@@ -13,9 +12,7 @@ import {
   GitBranch,
   ListChecks,
   Loader2,
-  Minus,
   Pencil,
-  Plus,
   RotateCcw,
   Trash2,
   Trophy,
@@ -23,6 +20,7 @@ import {
 } from "./icons";
 import { type ReactNode, useCallback, useState } from "react";
 import type { DeckClient } from "../client";
+import type { ProfileRef } from "../completion";
 import {
   asks,
   type Board,
@@ -31,25 +29,28 @@ import {
   type Decision,
   decisionText,
   type PreviewFile,
-  RACE_MAX,
-  RACE_MIN,
-  raceText,
   taskPreview,
 } from "../crew";
 import { refreshCrew, useRoomCrew } from "../crewState";
 import { cn } from "../lib/cn";
+import { useLimits } from "../limitsState";
+import { schedules } from "../orchestration";
 import type { ProjectApi } from "../project";
 import { moveQueued, queuedText } from "../queue";
+import type { RaceDraft } from "../race";
+import type { PickerSource } from "./AgentPicker";
 import { DiffView } from "./DiffView";
+import { ScheduledList } from "./Limits";
+import { RaceBuilder } from "./RaceBuilder";
 import { Button } from "./kit/button";
 import { EmptyState } from "./kit/empty";
 import { Dialog, fieldClass } from "./kit/dialog";
-import { Switch } from "./kit/switch";
 import { TaskMark } from "./graph/Nodes";
+import { RoomLevel } from "./LevelPicker";
 
 // The Tasks tab of a room: what waits for a busy agent, the task board the
 // agents split the work into (races and their entries, reviews), the
-// orchestration switch, and a form to race agents on one brief.
+// orchestration level (the composer's picker too), and the race builder /race opens too (RaceBuilder).
 
 const STATUS_TEXT: Record<string, string> = {
   running: "text-foreground",
@@ -281,110 +282,6 @@ function TaskCard({
   );
 }
 
-// A race the form starts: text is the message the composer would send
-// ("$codex×3 brief") for a Deck without StartRace.
-export interface RaceStart {
-  text: string;
-  kind: string;
-  count: number;
-  brief: string;
-  judge: boolean;
-}
-
-// A race as a form: the brief, one kind, two to six entries, and a judge
-// to rank them when the Deck starts races itself (canJudge).
-function RaceForm({
-  kinds,
-  theme,
-  canJudge,
-  onRace,
-}: {
-  kinds: string[];
-  theme: Theme | null;
-  canJudge: boolean;
-  onRace: (r: RaceStart) => Promise<boolean>;
-}) {
-  const [brief, setBrief] = useState("");
-  const [kind, setKind] = useState(kinds[0] ?? "");
-  const [count, setCount] = useState(3);
-  const [judge, setJudge] = useState(true);
-  const text = raceText(kind, count, brief);
-  return (
-    <form
-      className="race-launcher flex flex-col gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (text === null) return;
-        void onRace({ text, kind, count, brief: brief.trim(), judge: canJudge && judge }).then((sent) => {
-          if (sent) setBrief("");
-        });
-      }}
-    >
-      <p className="text-muted-foreground text-xs leading-relaxed">
-        Several agents do the same task, each on a worktree of its own. You compare what each changed and keep one. It needs a git
-        repository.
-      </p>
-      <textarea
-        aria-label="Race brief"
-        placeholder="What should they all do?"
-        rows={3}
-        value={brief}
-        className={cn(fieldClass, "resize-none text-xs")}
-        onChange={(e) => setBrief(e.target.value)}
-      />
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="font-mono" style={{ color: kindColour(kind) }} aria-hidden>
-          {kindMark(theme, kind) || "●"}
-        </span>
-        <select
-          aria-label="Race kind"
-          value={kind}
-          onChange={(e) => setKind(e.target.value)}
-          className="h-7 rounded-full border border-input bg-hover px-2.5 text-xs outline-none focus:ring-2 focus:ring-ring"
-        >
-          {kinds.map((k) => (
-            <option key={k} value={k}>
-              {k}
-            </option>
-          ))}
-        </select>
-        <span className="flex h-7 items-center gap-1 rounded-full border border-input bg-hover px-1">
-          <button
-            type="button"
-            aria-label="Fewer entries"
-            disabled={count <= RACE_MIN}
-            className="grid size-5 cursor-pointer place-items-center rounded-full hover:bg-selected disabled:opacity-40"
-            onClick={() => setCount((n) => Math.max(RACE_MIN, n - 1))}
-          >
-            <Minus className="size-3" />
-          </button>
-          <span className="w-3 text-center tabular-nums" aria-label="Entries">
-            {count}
-          </span>
-          <button
-            type="button"
-            aria-label="More entries"
-            disabled={count >= RACE_MAX}
-            className="grid size-5 cursor-pointer place-items-center rounded-full hover:bg-selected disabled:opacity-40"
-            onClick={() => setCount((n) => Math.min(RACE_MAX, n + 1))}
-          >
-            <Plus className="size-3" />
-          </button>
-        </span>
-        {canJudge && (
-          <span className="race-judge flex items-center gap-1.5 text-muted-foreground" title="One more agent ranks the entries">
-            <Switch label="Judge" checked={judge} onChange={setJudge} />
-            Judge
-          </span>
-        )}
-        <Button type="submit" size="xs" className="ml-auto" disabled={text === null}>
-          <Flag /> Start race ({count})
-        </Button>
-      </div>
-    </form>
-  );
-}
-
 // Before an apply or a discard: the files it touches, with their diff when
 // the work tree holds it, and the question.
 function Decide({
@@ -453,6 +350,8 @@ export function TasksPanel({
   sessionId,
   queue,
   kinds,
+  named,
+  picker,
   theme,
   branch,
   canJudge,
@@ -468,12 +367,15 @@ export function TasksPanel({
   busy?: boolean;
   queue: QueuedItem[];
   kinds: string[];
+  // The named agents a race may enter, and the pickers' catalog.
+  named: readonly ProfileRef[] | undefined;
+  picker: PickerSource;
   theme: Theme | null;
   // The work tree's branch, to tell whether Changes holds a task's diff.
   branch: string | null;
-  // Races start through StartRace and may have a judge.
+  // The Deck can have one more agent rank a race's entries.
   canJudge: boolean;
-  onRace: (r: RaceStart) => Promise<boolean>;
+  onRace: (d: RaceDraft) => Promise<boolean>;
   // Puts a queued message back in the composer.
   onEditQueued?: (text: string) => void;
   onError: (t: string) => void;
@@ -504,14 +406,9 @@ export function TasksPanel({
     setDeciding((d) => (d !== null && d.task.id === task.id ? { ...d, files: taskPreview(task, branch, changes) } : d));
   };
 
-  const toggle = async () => {
-    if (api === undefined || board === null) return;
-    const err = await api.setOrchestrate(sessionId, !board.orchestrate);
-    if (err !== null) onError(err);
-    await load();
-  };
-
   const rows = board === null ? [] : boardRows(board);
+  // Messages the person scheduled for a plan limit's reset (limits.ts).
+  const scheduled = useLimits(api).data?.scheduled.some((s) => s.sessionId === sessionId) === true;
 
   return (
     <section aria-label="Tasks" className="flex flex-col gap-6 overflow-y-auto px-3 pt-1 pb-3">
@@ -520,20 +417,18 @@ export function TasksPanel({
           <Queue c={c} sessionId={sessionId} items={queue} {...(onEditQueued === undefined ? {} : { onEdit: onEditQueued })} />
         </Section>
       )}
+      {scheduled && (
+        <Section title="Scheduled">
+          <ScheduledList api={api} sessionId={sessionId} onError={onError} />
+        </Section>
+      )}
       {api === undefined ? (
         <p className="px-1 text-muted-foreground text-xs">The task board shows for a project on this computer.</p>
       ) : (
         <>
           <Section
             title="Tasks"
-            action={
-              board !== null && (
-                <span className="flex items-center gap-2 text-muted-foreground text-xs" title="Let the scheduler run ready tasks and agents start subagents">
-                  Orchestrate
-                  <Switch label="Orchestrate" checked={board.orchestrate} onChange={() => void toggle()} />
-                </span>
-              )
-            }
+            action={board !== null && <RoomLevel api={api} sessionId={sessionId} onError={onError} side="bottom" align="end" />}
           >
             {board === null ? (
               <p className="flex items-center gap-2 px-1 text-muted-foreground text-xs">
@@ -543,7 +438,11 @@ export function TasksPanel({
               <EmptyState
                 icon={ListChecks}
                 title="No tasks."
-                hint="Agents post tasks here, or turn on Orchestrate and ask for a plan."
+                hint={
+                  schedules(board.level)
+                    ? "Ask for a plan: agents post their tasks here, and ready ones run by themselves."
+                    : "Agents post tasks here. At orchestration Auto or Full, ready ones run by themselves."
+                }
                 className="py-6"
               />
             ) : (
@@ -563,7 +462,18 @@ export function TasksPanel({
               </Button>
             }
           >
-            {racing && <RaceForm kinds={kinds} theme={theme} canJudge={canJudge} onRace={onRace} />}
+            {racing && (
+              <RaceBuilder
+                kinds={kinds}
+                named={named}
+                picker={picker}
+                theme={theme}
+                canJudge={canJudge}
+                side="bottom"
+                className="rounded-[14px] border border-hairline p-2.5"
+                onStart={onRace}
+              />
+            )}
           </Section>
         </>
       )}

@@ -33,6 +33,9 @@ func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
 	return list, nil
 }
 
+// ForgetModels implements agent.ModelForgetter.
+func (a *adapter) ForgetModels() { a.models.Reset() }
+
 // loadModels asks claude for its models; it never fails (see Models).
 func (a *adapter) loadModels(ctx context.Context) []agent.ModelInfo {
 	var list []agent.ModelInfo

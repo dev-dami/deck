@@ -1,11 +1,14 @@
-import type { Theme } from "@web/protocol";
+import type { ModelChoice, Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
-import { createContext, type ReactNode, useContext, useId, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useId, useState } from "react";
 import { type DeckClient, serves } from "../client";
 import { cn } from "../lib/cn";
 import {
   cleanProfile,
+  copyProfile,
+  effortsFor,
   emptyProfile,
+  PROFILE_SWATCHES,
   parsePaths,
   type Profile,
   type ProfileErrors,
@@ -118,6 +121,7 @@ export function ProfilesEditor({ kinds, theme }: { kinds: readonly string[]; the
           others={profiles ?? []}
           teammates={deck?.teammates ?? []}
           onClose={() => setEditing(null)}
+          onCopy={(p) => setEditing({ p: copyProfile(p, profiles ?? []), isNew: true })}
           onSaved={() => {
             setEditing(null);
             void reload();
@@ -165,6 +169,27 @@ function Field({
 
 type Key = keyof ProfileErrors;
 
+// The models a kind offers (Models), asked through a room of this Deck,
+// since the Deck lists them per thread; null with no room yet, or from a
+// Deck that does not say. The fields then take free text alone.
+function useKindModels(c: DeckClient, kind: string): ModelChoice[] | null {
+  const sid = c.store.state.sessions[0]?.id ?? null;
+  const [models, setModels] = useState<ModelChoice[] | null>(null);
+  useEffect(() => {
+    setModels(null);
+    if (sid === null || kind === "") return;
+    let live = true;
+    void c
+      .listModels(sid, kind)
+      .then((m) => live && setModels(m))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [c, sid, kind]);
+  return models;
+}
+
 function ProfileDialog({
   c,
   initial,
@@ -174,6 +199,7 @@ function ProfileDialog({
   others,
   teammates,
   onClose,
+  onCopy,
   onSaved,
 }: {
   c: DeckClient;
@@ -184,11 +210,16 @@ function ProfileDialog({
   others: readonly Profile[];
   teammates: readonly string[];
   onClose: () => void;
+  // Opens a new profile from the draft, under a free name.
+  onCopy: (p: Profile) => void;
   onSaved: () => void;
 }) {
   const id = useId();
   const [p, setP] = useState(initial);
   const [paths, setPaths] = useState(initial.paths.join("\n"));
+  // The kind's models and their efforts, offered beside free text.
+  const models = useKindModels(c, p.kind);
+  const efforts = effortsFor(models, p.model);
   // Errors show for a field once it was left, and for all of them once Save was pressed.
   const [touched, setTouched] = useState<ReadonlySet<Key>>(new Set());
   const [tried, setTried] = useState(false);
@@ -262,6 +293,11 @@ function ProfileDialog({
               Delete
             </Button>
           )}
+          {!isNew && (
+            <Button variant="ghost-muted" size="sm" disabled={Object.keys(errors).length > 0} onClick={() => onCopy(cleanProfile(draft))}>
+              Duplicate
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={onClose}>
             Cancel
           </Button>
@@ -289,8 +325,9 @@ function ProfileDialog({
             </span>
             <span className="min-w-0 truncate text-faint text-xs">{p.role.trim() || "no role"}</span>
           </p>
-          {/* A new profile picks its deck.json; a saved one stays in its own. */}
-          {isNew && (
+          {/* Which deck.json keeps it: this project's, or the global one for
+              every project. A saved profile moves on Save. */}
+          {(isNew || c.deleteProfile !== undefined) && (
             <div className={segmentTrack()} role="radiogroup" aria-label="Keep it for">
               {(["project", "global"] as const).map((s) => (
                 <button
@@ -344,8 +381,16 @@ function ProfileDialog({
               value={p.model}
               placeholder={`${p.kind || "the kind"}'s default`}
               spellCheck={false}
+              list={`${id}-models`}
               onChange={(e) => set("model", e.target.value)}
             />
+            <datalist id={`${id}-models`}>
+              {(models ?? []).map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </datalist>
           </Field>
           <Field id={`${id}-effort`} label="Effort">
             <input
@@ -354,8 +399,14 @@ function ProfileDialog({
               value={p.effort}
               placeholder="default"
               spellCheck={false}
+              list={`${id}-efforts`}
               onChange={(e) => set("effort", e.target.value)}
             />
+            <datalist id={`${id}-efforts`}>
+              {efforts.map((e) => (
+                <option key={e} value={e} />
+              ))}
+            </datalist>
           </Field>
         </div>
         <Field id={`${id}-role`} label="Role" error={shown("role")} hint="One line. The roster shows it, and the agent's briefing opens with it.">
@@ -389,7 +440,31 @@ function ProfileDialog({
               onBlur={leave("voice")}
             />
           </Field>
-          <Field id={`${id}-color`} label="Colour" error={shown("color")}>
+          <Field
+            id={`${id}-color`}
+            label="Colour"
+            error={shown("color")}
+            hint={
+              <span className="profile-swatches flex flex-wrap items-center gap-1.5" role="group" aria-label="Colours">
+                {PROFILE_SWATCHES.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className="profile-swatch size-4 cursor-pointer rounded-full ring-1 ring-hairline-strong outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:ring-2 aria-pressed:ring-foreground/70"
+                    style={{ background: s }}
+                    aria-label={`Colour ${s}`}
+                    aria-pressed={p.color.trim() === s}
+                    onClick={() => set("color", s)}
+                  />
+                ))}
+                {p.color.trim() !== "" && (
+                  <button type="button" className="cursor-pointer text-faint text-xs hover:text-muted-foreground" onClick={() => set("color", "")}>
+                    Kind's hue
+                  </button>
+                )}
+              </span>
+            }
+          >
             <span className="relative flex">
               <input
                 {...aria("color", false)}

@@ -1,4 +1,4 @@
-package opencode
+package acp
 
 import "encoding/json"
 
@@ -15,11 +15,11 @@ const (
 	notifySessionCancel   = "session/cancel"
 	notifySessionUpdate   = "session/update"
 	reqRequestPermission  = "session/request_permission"
-	optModel              = "model"
-	optEffort             = "effort"
-	optMode               = "mode"
-	effortDefault         = "default"
-	modeBuild, modePlan   = "build", "plan"
+	catModel              = "model" // config option categories, and ids
+	catEffort             = "thought_level"
+	catMode               = "mode"
+	effortDefault         = "default" // OpenCode's "the model's own effort"
+	modePlan              = "plan"
 	stopCancelled         = "cancelled"
 	updAgentMessage       = "agent_message_chunk"
 	updAgentThought       = "agent_thought_chunk"
@@ -70,7 +70,7 @@ type envVar struct {
 	Value string `json:"value"`
 }
 
-// mcpServer is a stdio MCP server for OpenCode to start in the session.
+// mcpServer is a stdio MCP server for the agent to start in the session.
 type mcpServer struct {
 	Name    string   `json:"name"`
 	Command string   `json:"command"`
@@ -85,20 +85,29 @@ type sessionParams struct {
 }
 
 type configOption struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Category     string `json:"category"`
-	CurrentValue string `json:"currentValue"`
-	Options      []struct {
-		Value       string `json:"value"`
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	} `json:"options"`
+	ID           string        `json:"id"`
+	Name         string        `json:"name"`
+	Category     string        `json:"category"`
+	CurrentValue string        `json:"currentValue"`
+	Options      []optionValue `json:"options"`
+}
+
+type optionValue struct {
+	Value       string `json:"value"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 type sessionResult struct {
 	SessionID     string         `json:"sessionId"`
 	ConfigOptions []configOption `json:"configOptions"`
+	Meta          struct {
+		// PiAcp.StartupInfo is the banner pi-acp sends as a message right
+		// after session/new.
+		PiAcp struct {
+			StartupInfo string `json:"startupInfo"`
+		} `json:"piAcp"`
+	} `json:"_meta"`
 }
 
 type setOptionParams struct {
@@ -163,6 +172,19 @@ type toolCall struct {
 	Locations  []location      `json:"locations"`
 	RawInput   json.RawMessage `json:"rawInput"`
 	Content    []toolContent   `json:"content"`
+	Meta       *toolMeta       `json:"_meta"`
+}
+
+// toolMeta is a command's terminal output, which an agent may stream in an
+// update's _meta instead of its content (Zed's terminal_output and
+// terminal_exit, as pi-acp sends them).
+type toolMeta struct {
+	TerminalOutput *struct {
+		Data string `json:"data"`
+	} `json:"terminal_output"`
+	TerminalExit *struct {
+		ExitCode *int `json:"exit_code"`
+	} `json:"terminal_exit"`
 }
 
 // update is the "update" of a session/update notification.

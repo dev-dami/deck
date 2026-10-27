@@ -34,7 +34,8 @@ var Reserved = []string{"all", "user", "deck"}
 type Profile struct {
 	// Name is how it is addressed and shown ("charles").
 	Name string `json:"name"`
-	// Kind is the CLI it runs: "claude", "codex", "opencode" or "antigravity".
+	// Kind is the CLI it runs: "claude", "codex", "opencode", "antigravity" or
+	// "pi".
 	Kind string `json:"kind"`
 	// Model and Effort default to the kind's when empty.
 	Model  string `json:"model,omitempty"`

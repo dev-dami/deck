@@ -49,6 +49,7 @@ const node = (name: string, over: Partial<AgentNode> = {}): AgentNode => ({
   leases: "",
   profile: "",
   role: "",
+  color: "",
   ...over,
 });
 
@@ -88,7 +89,7 @@ const tool = (agent: string, name: string, summary: string, over: Partial<Runnin
 
 const file = (path: string, added = 1, removed = 0): ChangedFile => ({ path, added, removed });
 const crew = (agents: AgentNode[], running: RunningTool[] = []): Crew => ({ agents, running });
-const board = (tasks: BoardTask[]): Board => ({ orchestrate: true, tasks });
+const board = (tasks: BoardTask[]): Board => ({ level: "auto", tasks });
 
 const graph = (over: Partial<GraphInput>, dir: Direction = "across") =>
   buildGraph({ roster: [], crew: null, board: null, files: null, ...over }, dir);

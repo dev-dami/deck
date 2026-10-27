@@ -1,4 +1,5 @@
 import type { Person, ProfileRef } from "@web/mentions";
+import type { ModelChoice } from "@web/protocol";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { type DeckClient, serves } from "./client";
 import type { Team } from "./crew";
@@ -133,6 +134,38 @@ export function cleanProfile(p: Profile): Profile {
     paths: p.paths.map((x) => x.trim()).filter((x) => x !== ""),
   };
 }
+
+// A copy of p to start a new profile from: everything but the name, which
+// gets the first free "-2", "-3"… within its scope, kept to MAX_NAME.
+export function copyProfile(p: Profile, others: readonly Profile[]): Profile {
+  const taken = (n: string) => others.some((o) => o.scope === p.scope && same(o.name, n));
+  for (let i = 2; ; i++) {
+    const tail = `-${i}`;
+    const name = p.name.slice(0, MAX_NAME - tail.length) + tail;
+    if (!taken(name)) return { ...p, name, paths: [...p.paths] };
+  }
+}
+
+// The efforts the editor offers for a model: that model's, when the kind
+// lists it; else every effort the kind's models take, in their order.
+export function effortsFor(models: readonly ModelChoice[] | null, model: string): string[] {
+  const list = models ?? [];
+  const own = list.find((m) => m.id === model.trim());
+  if (own !== undefined) return [...(own.efforts ?? [])];
+  return [...new Set(list.flatMap((m) => m.efforts ?? []))];
+}
+
+// Colours the editor offers in one click, light enough to read on the
+// glass in both themes (docs/design-glass.md). Any CSS colour still goes.
+export const PROFILE_SWATCHES: readonly string[] = [
+  "oklch(0.72 0.15 25)",
+  "oklch(0.78 0.14 70)",
+  "oklch(0.76 0.15 140)",
+  "oklch(0.74 0.12 195)",
+  "oklch(0.7 0.15 255)",
+  "oklch(0.7 0.17 300)",
+  "oklch(0.74 0.16 350)",
+];
 
 // Project profiles first, then global ones, each by name.
 export function sortProfiles(list: readonly Profile[]): Profile[] {

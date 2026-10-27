@@ -75,6 +75,7 @@ type Broker struct {
 	messages chan agent.Message
 	reader   func(agentID string) string
 	exec     agent.Executor
+	gate     func(agentID string, paths []string) string // gate.go
 }
 
 var _ agent.Hub = (*Broker)(nil)
@@ -226,6 +227,8 @@ func (b *Broker) serve(c net.Conn) {
 			resp = b.handle(req, gone)
 		case kindExec:
 			resp = b.handleExec(req, gone)
+		case kindGate:
+			resp = b.handleGate(req, gone)
 		default:
 			resp = wireResponse{Behavior: "deny", Message: "unknown request kind"}
 		}

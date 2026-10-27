@@ -7,7 +7,8 @@ import type { InboxItem } from "../attention";
 import type { DeckClient } from "../client";
 import { connect, openLocal } from "../connection";
 import { refreshTeam, teamOf } from "../crewState";
-import { parseTag, useBadge, useInbox, useNotifications } from "../inbox";
+import { useInbox } from "../inbox";
+import { parseTag, setNotifyOpener, useBadge, useNotifyCentre } from "../notifyCentre";
 import { forgetOpen, type OpenProject, rememberOpen, restoredOpen } from "../openProjects";
 import { usePrefs } from "../prefs";
 import { Backdrop } from "./Backdrop";
@@ -27,7 +28,9 @@ function pairedName(s: SavedServer): string {
 export type Landing = string | "new" | null;
 
 function land(key: string, to: Landing): void {
-  if (to !== null) dispatchUi(key, { type: "open", id: to === "new" ? null : to });
+  // A notification with no room (a plan limit) opens the Usage page.
+  if (to === "") dispatchUi(key, { type: "usage", open: true });
+  else if (to !== null) dispatchUi(key, { type: "open", id: to === "new" ? null : to });
 }
 
 // Like Claude Desktop, several projects stay open at once: each runs its
@@ -240,7 +243,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   // The inbox, the badge and the notifications, across the open projects.
   const inbox = useInbox(open);
   useBadge(bridge, inbox);
-  useNotifications(bridge, open);
+  useNotifyCentre(bridge, open, shownKey);
 
   // The inbox is a page of the project it opened in; a switch leaves it.
   const left = useRef(currentKey);
@@ -256,14 +259,31 @@ export function App({ bridge }: { bridge: DeckBridge }) {
     land(key, room);
     setConnecting(false);
   }, []);
-  useEffect(
-    () =>
-      bridge.onNotificationClick(({ tag }) => {
-        const t = parseTag(tag);
-        if (t !== null) openRoom(t.project, t.room);
-      }),
-    [bridge, openRoom],
+  // A notification names its project by source: a room of an open project
+  // opens at once, one of a closed project once it opens again.
+  const reopen = useRef<(source: string, room: string) => void>(() => {});
+  const openFromNotice = useCallback(
+    (source: string, room: string) => {
+      const p = live.current.find((x) => x.source === source);
+      if (p === undefined) reopen.current(source, room);
+      else {
+        setWelcome(false);
+        openRoom(p.key, room);
+      }
+    },
+    [openRoom],
   );
+  useEffect(() => {
+    setNotifyOpener(openFromNotice);
+    const off = bridge.onNotificationClick(({ tag }) => {
+      const t = parseTag(tag);
+      if (t !== null) openFromNotice(t.source, t.room);
+    });
+    return () => {
+      off();
+      setNotifyOpener(null);
+    };
+  }, [bridge, openFromNotice]);
   const attention = {
     items: inbox,
     onOpenRoom: openRoom,
@@ -307,6 +327,10 @@ export function App({ bridge }: { bridge: DeckBridge }) {
     const s = servers?.find((x) => `paired:${x.id}` === source);
     if (s !== undefined) pairedOpen(s, to);
     return null;
+  };
+  reopen.current = (source, room) => {
+    setWelcome(false);
+    void toProject(source, room).then((e) => e !== null && setMessage(e));
   };
 
   const addProject = async (): Promise<string | null> => {

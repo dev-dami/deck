@@ -15,6 +15,10 @@ export interface RoomStatus {
   label: string;
   // When the room entered this state (ms), for ordering.
   at: number;
+  // What a needs-you waits for: an answer (an approval or a question), or
+  // the person to look at an error or a blocked task. The notifications
+  // sort by it.
+  need?: "approval" | "error";
 }
 
 // A notice Deck sent for a room, and whether the person has seen it: it
@@ -92,20 +96,20 @@ function needsYou(r: RoomInput, updated: number): RoomStatus | null {
   const first = r.approvals[0];
   if (first !== undefined) {
     const at = Math.max(...r.approvals.map((a) => toMillis(a.created_at)));
-    return { state: "needs-you", label: approvalLabel(first), at };
+    return { state: "needs-you", label: approvalLabel(first), at, need: "approval" };
   }
   for (const a of r.agents) {
     const at = a.since > 0 ? a.since : updated;
-    if (a.status === "approval") return { state: "needs-you", label: `Answer ${a.name}`, at };
+    if (a.status === "approval") return { state: "needs-you", label: `Answer ${a.name}`, at, need: "approval" };
     // An error stands until the person writes again or the agent moves on.
-    if (a.status === "error" && at > r.actedAt) return { state: "needs-you", label: `${a.name} stopped with an error`, at };
+    if (a.status === "error" && at > r.actedAt) return { state: "needs-you", label: `${a.name} stopped with an error`, at, need: "error" };
   }
   const stuck = (t: BoardTask) => t.status === "blocked" || t.status === "failed";
   const taskLabel = (t: BoardTask) => `${t.status === "blocked" ? "Task blocked" : "Task failed"}: ${t.title || t.id}`;
   if (r.attention === null) {
     for (const t of r.tasks) {
       // A task without a time never outranks what the person did.
-      if (stuck(t) && t.updatedAt > r.actedAt) return { state: "needs-you", label: taskLabel(t), at: t.updatedAt };
+      if (stuck(t) && t.updatedAt > r.actedAt) return { state: "needs-you", label: taskLabel(t), at: t.updatedAt, need: "error" };
     }
     return null;
   }
@@ -114,15 +118,15 @@ function needsYou(r: RoomInput, updated: number): RoomStatus | null {
   switch (r.attention) {
     case "blocked": {
       const t = r.tasks.find((x) => stuck(x) && !x.entry);
-      return { state: "needs-you", label: t === undefined ? "Task blocked" : taskLabel(t), at: t?.updatedAt || updated };
+      return { state: "needs-you", label: t === undefined ? "Task blocked" : taskLabel(t), at: t?.updatedAt || updated, need: "error" };
     }
     case "approval":
     case "question":
-      return { state: "needs-you", label: ENGINE_LABEL[r.attention], at: updated };
+      return { state: "needs-you", label: ENGINE_LABEL[r.attention], at: updated, need: "approval" };
     case "error":
       // The agents tree names the agent, and the loop above weighed it.
       if (r.agents.some((a) => a.status === "error") || updated <= r.actedAt) return null;
-      return { state: "needs-you", label: ENGINE_LABEL.error, at: updated };
+      return { state: "needs-you", label: ENGINE_LABEL.error, at: updated, need: "error" };
   }
   return null;
 }
@@ -157,7 +161,7 @@ export function roomStatus(r: RoomInput): RoomStatus {
 }
 
 export const sameStatus = (a: RoomStatus | undefined, b: RoomStatus | undefined): boolean =>
-  a === b || (a !== undefined && b !== undefined && a.state === b.state && a.label === b.label && a.at === b.at);
+  a === b || (a !== undefined && b !== undefined && a.state === b.state && a.label === b.label && a.at === b.at && a.need === b.need);
 
 // The person's last word in a room: their newest message, or a queued one.
 const actedMemo = new WeakMap<Message[], number>();
@@ -312,16 +316,4 @@ export function nextNeedsYou(
 ): { project: string; room: string } | null {
   const i = rooms.findIndex((r) => r.project === current.project && r.room === current.room);
   return rooms[(i + 1) % rooms.length] ?? null;
-}
-
-export type NotifyPref = "all" | "needs-you" | "none";
-
-// A notification goes out when a room enters needs-you, or finishes (done
-// or review), and not while the person has a message queued there.
-export function shouldNotify(prev: RoomState | undefined, next: RoomState, pref: NotifyPref, queued: boolean): boolean {
-  if (pref === "none" || prev === undefined || prev === next || queued) return false;
-  if (next === "needs-you") return true;
-  const finished = (s: RoomState) => s === "done" || s === "review";
-  // done turns into review once the changed files are in: one finish.
-  return pref === "all" && finished(next) && !finished(prev);
 }

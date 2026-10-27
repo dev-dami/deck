@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -342,6 +343,32 @@ func (f *Fake) AgentKinds(sessionID string) ([]wire.AgentKind, error) {
 	return out, nil
 }
 
+// StartRace implements remote.Racer: it notes "race:<agent>/<model>,…"
+// and answers task "t1". An entrant of an unknown kind is refused.
+func (f *Fake) StartRace(_ context.Context, sessionID, brief string, entrants []wire.RaceEntrant, judge bool) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, err := f.session(sessionID); err != nil {
+		return "", err
+	}
+	if len(entrants) < 2 {
+		return "", &wire.Error{Code: wire.CodeInvalid, Msg: "a race has 2 to 6 entries, not 1"}
+	}
+	var who []string
+	for _, e := range entrants {
+		known := false
+		for _, k := range fakeKinds {
+			known = known || k.Kind == e.Agent
+		}
+		if !known {
+			return "", remote.ErrInvalid
+		}
+		who = append(who, e.Agent+"/"+e.Model)
+	}
+	f.note("race:" + strings.Join(who, ",") + map[bool]string{true: " judged"}[judge] + ": " + brief)
+	return "t1", nil
+}
+
 func (f *Fake) AddAgent(sessionID, kind, model string) (wire.AgentLine, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -383,10 +410,20 @@ func (f *Fake) hasAgent(s *Session, name string) bool {
 func (f *Fake) Models(_ context.Context, sessionID, kind string) ([]wire.ModelChoice, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if sessionID == "" {
+		return []wire.ModelChoice{{ID: kind + "-big", Label: "Big", Efforts: []string{"low", "high"}}}, nil
+	}
 	if _, err := f.session(sessionID); err != nil {
 		return nil, err
 	}
 	return []wire.ModelChoice{{ID: kind + "-big", Label: "Big", Efforts: []string{"low", "high"}, Selected: true}}, nil
+}
+
+// RefreshModels implements remote.ModelRefresher.
+func (f *Fake) RefreshModels() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.note("models:refresh")
 }
 
 func (f *Fake) SetModel(sessionID, kind, model, effort string) error {

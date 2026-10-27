@@ -182,3 +182,28 @@ func TestProbeAnswerRealShape(t *testing.T) {
 		t.Errorf("seven_day %+v", w)
 	}
 }
+
+func TestLimitHitFromRejectedEventAndText(t *testing.T) {
+	evs := replay(t, filepath.Join("testdata", "limit_hit.jsonl"))
+	var errs []agent.Event
+	for _, e := range evs {
+		if e.Kind == agent.KindError {
+			errs = append(errs, e)
+		}
+	}
+	// The third turn went on after a rejected opus window: no error.
+	if len(errs) != 2 {
+		t.Fatalf("errors = %d, want 2: %v", len(errs), kinds(evs))
+	}
+	h := errs[0].LimitHit
+	if h == nil || h.Window != "five_hour" || !h.ResetsAt.Equal(time.Unix(1761555600, 0)) {
+		t.Errorf("rejected five_hour: %+v", h)
+	}
+	if !strings.Contains(errs[0].Text, "limit reached") {
+		t.Errorf("text %q", errs[0].Text)
+	}
+	h = errs[1].LimitHit
+	if h == nil || h.Window != "" || !h.ResetsAt.Equal(time.Unix(1761562800, 0)) {
+		t.Errorf("old epoch form: %+v", h)
+	}
+}

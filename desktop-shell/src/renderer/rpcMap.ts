@@ -107,7 +107,7 @@ function mapAgent(p: Obj): unknown {
     name: s(p["name"]) || s(p["id"]),
     kind: s(p["kind"]),
     busy: p["busy"] === true,
-    ...strings(p, ["model", "effort", "profile", "role"]),
+    ...strings(p, ["model", "effort", "profile", "role", "color"]),
   };
 }
 

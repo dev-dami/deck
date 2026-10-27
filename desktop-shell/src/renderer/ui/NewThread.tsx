@@ -11,7 +11,7 @@ import { AGENT_HELP, startCards, withStart } from "./landing";
 // A kind's glyph: the theme's, else the CLI's own mark.
 const markOf = (theme: Theme | null, kind: string) => kindMark(theme, kind) || AGENT_HELP.find((h) => h.kind === kind)?.mark || "●";
 
-// A start's prefix, its agents in their hues: "$claude $codex+".
+// A start's prefix, its agents in their hues: "$claude $codex", "/race".
 function Prefix({ text }: { text: string }) {
   return (
     <span className="font-mono text-[12.5px]">

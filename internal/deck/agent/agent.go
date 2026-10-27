@@ -209,6 +209,9 @@ type Event struct {
 	Diff    *FileDiff `json:",omitempty"`
 	Usage   *Usage    `json:",omitempty"`
 	Limits  *Limits   `json:",omitempty"`
+	// LimitHit is set on a KindError that says the turn stopped because the
+	// plan's usage limit ran out (limithit.go).
+	LimitHit *LimitHit `json:",omitempty"`
 	// SessionID is the CLI's own session/thread id (KindSessionStarted).
 	SessionID string `json:",omitempty"`
 	// Raw is the original protocol line, kept so nothing is lost. Deck keeps
@@ -417,6 +420,13 @@ type Steerer interface {
 // ModelLister is implemented by adapters that can list their CLI's models.
 type ModelLister interface {
 	Models(ctx context.Context) ([]ModelInfo, error)
+}
+
+// ModelForgetter is implemented by a ModelLister that keeps its list:
+// ForgetModels drops it, so the next Models asks the CLI again (after an
+// upgrade or a login changed what it offers).
+type ModelForgetter interface {
+	ForgetModels()
 }
 
 // Drainer is implemented by adapters that finish a run's cleanup in the

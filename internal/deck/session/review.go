@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -31,12 +32,16 @@ func (m *Manager) checkReview(want string) error {
 	return nil
 }
 
-// reviewOf is the review tk asks for: its own, else the config's for a task
-// run by a Deck subagent; "" is none.
-func (m *Manager) reviewOf(tk store.Task) string {
+// reviewOf is the review tk asks for: its own, else for a task run by a Deck
+// subagent the config's, else that of its thread's level lv while another
+// kind is installed to do it; "" is none.
+func (m *Manager) reviewOf(tk store.Task, lv config.Level) string {
 	want := tk.Review
 	if want == "" && tk.Run != nil {
 		want = m.config().Review
+		if want == "" && len(m.adapters) > 1 {
+			want = lv.Review
+		}
 	}
 	if want == store.ReviewNone {
 		return ""
@@ -115,7 +120,7 @@ func (m *Manager) startReview(t *thread, id string) {
 		close(start)
 	}()
 
-	kind := m.reviewKind(m.reviewOf(tk), wkind)
+	kind := m.reviewKind(m.reviewOf(tk, m.level(t)), wkind)
 	if kind == "" { // moveTask checked this; its owner changed since
 		_, _ = m.moveTask(t, tk.ID, store.TaskBlocked, "", "no agent kind other than "+wkind+" can review it", nil)
 		return

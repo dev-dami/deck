@@ -12,7 +12,7 @@ import (
 
 // limitsNeverReported are the agent CLIs that report no plan limits Deck
 // may read (see their adapters), so the view says so before they first run.
-var limitsNeverReported = map[string]bool{"opencode": true, "antigravity": true}
+var limitsNeverReported = map[string]bool{"opencode": true, "antigravity": true, "pi": true}
 
 // PlanWindow is one plan window as the Usage view and the Usage pane show
 // it.

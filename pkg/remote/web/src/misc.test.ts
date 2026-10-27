@@ -83,7 +83,8 @@ describe("@ mentions in the composer", () => {
     expect(activeAgent("@charles hi")).toBe("charles");
     expect(activeAgent("@src/a.ts hi")).toBeNull();
     expect(activeAgent("@main.go hi")).toBeNull();
-    expect(activeAgents("@charles $codex+ fix it")).toEqual(["charles", "codex"]);
+    expect(activeAgents("@charles $codex fix it")).toEqual(["charles", "codex"]);
+    expect(activeAgents("@charles $codex+ fix it")).toEqual(["charles"]);
     expect(activeAgents("@README.md fix it")).toEqual([]);
     expect(applyAgentChip("@codex hello", "claude")).toBe("$claude hello");
     expect(canSend("@charles ", 0)).toBe(false);
@@ -177,7 +178,9 @@ describe("service worker strategy", () => {
 describe("addressing several agents", () => {
   test("reads every leading mention", () => {
     expect(activeAgents("$claude $codex compare")).toEqual(["claude", "codex"]);
-    expect(activeAgents("$codex+ start")).toEqual(["codex"]);
+    // The retired forms are text.
+    expect(activeAgents("$codex+ start")).toEqual([]);
+    expect(activeAgents("$codex×3 start")).toEqual([]);
     expect(activeAgents("ask $claude later")).toEqual([]);
   });
 

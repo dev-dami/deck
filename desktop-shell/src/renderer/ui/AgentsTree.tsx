@@ -2,6 +2,7 @@ import type { AgentLine, Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
 import { CornerDownRight, GitBranch, Loader2, Lock, Network } from "./icons";
 import { agentColour, agentRole } from "../agents";
+import { tintOf } from "../teamGate";
 import type { AgentNode, Crew, RunningTool } from "../crew";
 import { useRoomCrew } from "../crewState";
 import { cn } from "../lib/cn";
@@ -41,7 +42,7 @@ function AgentRow({ a, running, theme, now, role }: { a: AgentNode; running: Run
     <li className="crew-agent flex flex-col gap-1.5 px-3.5 py-2.5" data-agent={a.name}>
       <div className="flex min-w-0 items-center gap-2 text-sm" style={{ paddingLeft: `${a.depth * 18}px` }}>
         {a.depth > 0 && <CornerDownRight className="-ml-[18px] size-3 shrink-0 text-faint" />}
-        <span className="w-3.5 shrink-0 text-center font-mono text-xs" style={{ color: agentColour(a.name, a.kind) }}>
+        <span className="w-3.5 shrink-0 text-center font-mono text-xs" style={{ color: agentColour(a.name, a.kind, tintOf(a.color)) }}>
           {kindMark(theme, a.kind) || "●"}
         </span>
         <span className={cn("font-medium", a.status === "exited" && "text-muted-foreground")}>{a.name}</span>

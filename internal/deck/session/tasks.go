@@ -391,7 +391,7 @@ func (m *Manager) moveTaskIf(t *thread, id string, to store.TaskStatus, by, note
 	// Work that ends goes to review first when the task asks for one.
 	unreviewed := ""
 	if to == store.TaskDone && from == store.TaskRunning {
-		switch want, worker := m.reviewOf(*tk), t.workerKind(*tk); {
+		switch want, worker := m.reviewOf(*tk, m.levelLocked(t)), t.workerKind(*tk); {
 		case want == "":
 		case m.reviewKind(want, worker) != "":
 			to = store.TaskReview
@@ -606,6 +606,10 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		return m.releaseLeases(b.a, str("paths")), nil
 	case "lease.list":
 		return m.listLeases(b.a), nil
+	case "file.claim":
+		return m.claimFile(b.a, str("paths"))
+	case "file.answer":
+		return m.answerAsks(b.a, str("path"), str("text"), a["wait"] == true)
 	case "memory.add":
 		return m.addNote(b.a, str("text"), str("paths"), str("lines"))
 	case "memory.read":
@@ -622,9 +626,10 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		}
 		return "steered " + str("id"), nil
 	case "agent.spawn":
+		isolate, tree := spawnTree(a["isolate"] == true, a["worktree"])
 		res, err := m.Spawn(t.id, me, SpawnSpec{
 			Kind: strings.ToLower(str("kind")), Model: str("model"), Effort: str("effort"), Title: str("title"), Brief: str("brief"), TaskID: str("task"),
-			Isolate: a["isolate"] == true, Review: strings.ToLower(str("review")),
+			Isolate: isolate, Tree: tree, Review: strings.ToLower(str("review")),
 			Contract: store.Contract{Expect: str("expect"), DoneWhen: str("done_when"), ExplicitDone: a["explicit_done"] == true},
 		})
 		if err != nil {
@@ -636,11 +641,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		}
 		return out, nil
 	case "task.race":
-		kinds, err := parseEntries(str("agents"), m.Kinds())
-		if err != nil {
-			return "", err
-		}
-		res, err := m.Race(t.id, me, RaceSpec{Title: str("title"), Brief: str("brief"), Kinds: kinds, Judge: strings.ToLower(str("judge")), Review: strings.ToLower(str("review"))})
+		res, err := m.Race(t.id, me, RaceSpec{Title: str("title"), Brief: str("brief"), Entrants: parseEntries(str("agents")), Judge: strings.ToLower(str("judge")), Review: strings.ToLower(str("review"))})
 		if err != nil {
 			return "", err
 		}

@@ -40,10 +40,10 @@ type BoardTask struct {
 
 // BoardReport is a thread's task board.
 type BoardReport struct {
-	// Orchestrate is on while the scheduler runs ready tasks and members may
-	// start subagents.
-	Orchestrate bool
-	Tasks       []BoardTask
+	// Level is the thread's orchestration level: off, assist, auto or full
+	// (config.Levels); the level it will start at while it has no thread.
+	Level string
+	Tasks []BoardTask
 }
 
 // Open counts the tasks that are not done or cancelled.
@@ -67,8 +67,9 @@ type Orchestration interface {
 	RetryTask(sessionID, taskID string) error
 	// SteerTask redirects whoever owns a task, mid-turn.
 	SteerTask(sessionID, taskID, text string) error
-	// SetOrchestrate turns the scheduler and member-started subagents on or off.
-	SetOrchestrate(sessionID string, on bool) error
+	// SetLevel sets the orchestration level: how far agents spawn and race,
+	// and whether the scheduler runs ready tasks.
+	SetLevel(sessionID, level string) error
 }
 
 var _ Orchestration = (*DeckWorkspace)(nil)
@@ -77,13 +78,13 @@ var _ Orchestration = (*DeckWorkspace)(nil)
 func (w *DeckWorkspace) Board(sessionID string) BoardReport {
 	th, ok := w.threadOf(sessionID)
 	if !ok {
-		return BoardReport{}
+		return BoardReport{Level: w.mgr().StartLevel()}
 	}
 	names, branches := map[string]string{}, map[string]string{}
 	for _, a := range th.Members {
 		names[a.ID], branches[a.ID] = a.Name, a.Branch
 	}
-	rep := BoardReport{Orchestrate: th.Orchestrate}
+	rep := BoardReport{Level: th.Orchestration}
 	tasks := w.mgr().Tasks(th.ID)
 	races := map[string]bool{}
 	for _, tk := range tasks {
@@ -224,11 +225,12 @@ func (w *DeckWorkspace) DiscardTask(sessionID, taskID string) error {
 	return w.mgr().DiscardMember(tid, member)
 }
 
-// SetOrchestrate implements [Orchestration].
-func (w *DeckWorkspace) SetOrchestrate(sessionID string, on bool) error {
-	tid, err := w.boardThread(sessionID)
+// SetLevel implements [Orchestration]. A session with no thread yet gets one,
+// so the level holds from its first message.
+func (w *DeckWorkspace) SetLevel(sessionID, level string) error {
+	tid, err := w.thread(sessionID)
 	if err != nil {
 		return err
 	}
-	return w.mgr().SetOrchestrate(tid, on)
+	return w.mgr().SetLevel(tid, level)
 }

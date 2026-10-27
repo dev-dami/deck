@@ -36,10 +36,10 @@ type Rooms interface {
 	UndoRevert(ctx context.Context, sessionID string) error
 	Archive(ctx context.Context, sessionID string) error
 	Unarchive(ctx context.Context, sessionID string) error
-	// StartRace has count agents of kind do brief, each on a worktree of
-	// its own, with one more of kind to rank them when judge is set. It
-	// returns the race's task.
-	StartRace(ctx context.Context, sessionID, brief, kind string, count int, judge bool) (string, error)
+	// StartRace has entrants do brief, each on a worktree of its own, with
+	// one more agent of the first entrant's kind to rank them when judge is
+	// set. It returns the race's task.
+	StartRace(ctx context.Context, sessionID, brief string, entrants []RaceEntrant, judge bool) (string, error)
 	// ReadImage returns the bytes and type of the index'th image part of a
 	// message of the session.
 	ReadImage(ctx context.Context, sessionID, messageID string, index int) ([]byte, string, error)
@@ -230,15 +230,19 @@ func (w *DeckWorkspace) Unarchive(ctx context.Context, sessionID string) error {
 	return w.mgr().Unarchive(tid)
 }
 
+// RaceEntrant is one agent of a race: a kind or a named agent, and the
+// model and effort it runs.
+type RaceEntrant = decks.Entrant
+
 // StartRace implements [Rooms].
-func (w *DeckWorkspace) StartRace(ctx context.Context, sessionID, brief, kind string, count int, judge bool) (string, error) {
+func (w *DeckWorkspace) StartRace(ctx context.Context, sessionID, brief string, entrants []RaceEntrant, judge bool) (string, error) {
 	tid, err := w.roomThread(ctx, sessionID, true)
 	if err != nil {
 		return "", err
 	}
-	sp := decks.RaceSpec{Brief: brief, Kinds: slices.Repeat([]string{kind}, max(count, 0))}
-	if judge {
-		sp.Judge = kind
+	sp := decks.RaceSpec{Brief: brief, Entrants: entrants}
+	if judge && len(entrants) > 0 {
+		sp.Judge = entrants[0].Agent
 	}
 	res, err := w.mgr().Race(tid, "", sp)
 	return res.TaskID, err

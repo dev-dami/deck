@@ -1,17 +1,21 @@
 import type { AgentLine, ChangedFile } from "@web/protocol";
 import { agentRole } from "./agents";
 import { type Board, boardRows, type BoardTask, type Crew, type RunningTool } from "./crew";
+import { type AskState, editors, type FileTrack, pendingAsks, samePath } from "./fileWork";
 import { agentLane, contextPct, type LaneStatus, leasePaths, YOU } from "./lanes";
 import type { Lease } from "./roomMeta";
+import { type Capsule, capsuleOfTree, type TreeState, treeState, type Work, type Worktree } from "./worktrees";
 
 // The Work Graph's model (docs/design-glass.md, section 7): one thread's
 // work as nodes and edges, laid out as a layered DAG from left to right.
 // You, then the agents by depth, then the tasks by their dependencies, then
 // the files. A tall, narrow host (the side panel) may lay the same layers
-// out from top to bottom instead. Pure and deterministic, so the tests drive
+// out from top to bottom instead. The worktrees and capsules come after the
+// tasks: an agent's worktree, the capsule it became, and the shared tree it
+// landed in. Pure and deterministic, so the tests drive
 // it directly, and the same input always draws the same picture.
 
-export type NodeKind = "you" | "agent" | "task" | "file" | "fold";
+export type NodeKind = "you" | "agent" | "task" | "branch" | "capsule" | "main" | "file" | "fold";
 
 interface Placed {
   // "you", "agent:<name>" (the agent's lane, lanes.ts), "task:<id>",
@@ -75,6 +79,34 @@ export interface FileGraphNode extends Placed {
   glob: boolean;
   // The agents that hold a lease on it.
   holders: string[];
+  // From the thread's edits and asks (fileWork.ts): who edited it, in the
+  // order of their last edit, who owns it now, and the asks waiting on
+  // that owner. work is the whole timeline, for the file's detail.
+  editors: string[];
+  owner: string | null;
+  ownerKind: string;
+  asking: { from: string; fromKind: string; to: string; state: AskState }[];
+  work: FileTrack | null;
+}
+
+// A worktree: its branch, owner and where it stands.
+export interface BranchGraphNode extends Placed {
+  kind: "branch";
+  tree: Worktree;
+  state: TreeState;
+  // The owner's agent kind, for its hue; "" for none.
+  ownerKind: string;
+}
+
+// A named capsule: its latest version and whether it landed.
+export interface CapsuleGraphNode extends Placed {
+  kind: "capsule";
+  capsule: Capsule;
+}
+
+// The shared tree, once a capsule landed in it.
+export interface MainGraphNode extends Placed {
+  kind: "main";
 }
 
 // Changed files no agent or task is linked to, folded into one node once
@@ -86,13 +118,17 @@ export interface FoldGraphNode extends Placed {
   removed: number;
 }
 
-export type GraphNode = YouNode | AgentGraphNode | TaskGraphNode | FileGraphNode | FoldGraphNode;
+export type GraphNode = YouNode | AgentGraphNode | TaskGraphNode | BranchGraphNode | CapsuleGraphNode | MainGraphNode | FileGraphNode | FoldGraphNode;
 
 // you → a member (leads); an agent → its subagent (spawned); an agent → its
 // task (owns); a task → the task that waits on it (after); a task → its
 // files (touches); an agent → a file it leases (holds, drawn dashed) or
-// edits (live while it does so now).
-export type EdgeKind = "leads" | "spawned" | "owns" | "after" | "touches" | "holds" | "edits";
+// edits (live while it does so now); an agent → a file it edited before
+// (edited, in its owner's hue), and → a file it asks the owner of (asks,
+// dashed, flowing while it waits); an agent → its worktree (works, in its
+// hue), a worktree → the capsule it became (bundles), a capsule → where it
+// landed (lands).
+export type EdgeKind = "leads" | "spawned" | "owns" | "after" | "touches" | "holds" | "edits" | "edited" | "asks" | "works" | "bundles" | "lands";
 
 export interface GraphEdge {
   id: string;
@@ -136,6 +172,11 @@ export interface GraphInput {
   files: readonly ChangedFile[] | null;
   // The room's live leases (lease_changed), when the Deck reports them.
   leases?: readonly Lease[];
+  // Who edited which file and the asks over them (fileWork.ts), from the
+  // thread's messages.
+  work?: ReadonlyMap<string, FileTrack>;
+  // The room's worktrees and capsules (worktrees.ts), when the Deck serves them.
+  lines?: Work | null;
 }
 
 // Node sizes, in graph units. An agent's card grows a line for the tool it runs.
@@ -144,7 +185,12 @@ export const SIZE = {
   agent: { w: 196, h: 50 },
   agentTool: { w: 196, h: 74 },
   task: { w: 196, h: 48 },
+  branch: { w: 196, h: 48 },
+  capsule: { w: 196, h: 48 },
+  main: { w: 120, h: 30 },
   file: { w: 188, h: 30 },
+  // A file with edits or asks: a line for its owner and who asks.
+  fileWork: { w: 188, h: 46 },
 } as const;
 // Down, a layer is a row and its width is what limits the fit: narrower
 // cards, and a file stacks its +/− under its name.
@@ -153,7 +199,11 @@ export const SIZE_DOWN: { [K in keyof typeof SIZE]: { w: number; h: number } } =
   agent: { w: 164, h: 50 },
   agentTool: { w: 164, h: 74 },
   task: { w: 164, h: 48 },
+  branch: { w: 164, h: 48 },
+  capsule: { w: 164, h: 48 },
+  main: { w: 120, h: 30 },
   file: { w: 120, h: 40 },
+  fileWork: { w: 120, h: 54 },
 };
 // Across, the gap between columns and between the cards of one; down,
 // between rows and between the cards of one.
@@ -165,6 +215,9 @@ export const FOLD_AT = 4;
 
 export const taskId = (id: string): string => `task:${id}`;
 export const fileId = (path: string): string => `file:${path}`;
+export const branchId = (name: string): string => `branch:${name}`;
+export const capsuleId = (name: string): string => `capsule:${name}`;
+export const MAIN = "main";
 export const FOLD = "fold";
 
 const NODE_STATUS: Record<string, LaneStatus> = {
@@ -335,6 +388,11 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
       changed: f !== undefined,
       glob,
       holders: [],
+      editors: [],
+      owner: null,
+      ownerKind: "",
+      asking: [],
+      work: null,
     };
     nodes.set(id, node);
     return node;
@@ -342,6 +400,20 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
   for (const f of changed) addFile(f.path, f);
   for (const t of tasks) for (const p of t.files) addFile(p);
   const known = () => [...nodes.values()].flatMap((n) => (n.kind === "file" && !n.glob ? [n.path] : []));
+  // The files the agents edited or asked about: a changed file under the
+  // name the agents gave it, else a file of its own.
+  const kindOf = (name: string) => byName.get(name)?.agentKind ?? name.replace(/[-_]?\d+$/, "");
+  for (const w of input.work?.values() ?? []) {
+    if (w.edits.length === 0 && w.asks.length === 0) continue;
+    const f = addFile(known().find((p) => samePath(p, w.path)) ?? w.path);
+    f.work = w;
+    f.editors = editors(w);
+    f.owner = w.owner;
+    f.ownerKind = w.owner === null ? "" : kindOf(w.owner);
+    f.asking = pendingAsks(w).map((a) => ({ from: a.from, fromKind: kindOf(a.from), to: a.to, state: a.state }));
+    f.w = size.fileWork.w;
+    f.h = size.fileWork.h;
+  }
   for (const a of agents) {
     for (const lease of a.leases) {
       const hits = isGlob(lease) || !known().includes(lease) ? known().filter((p) => globMatch(lease, p)) : [lease];
@@ -371,6 +443,39 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
       const a = byName.get(h)!;
       if (!edges.has(`edits:${a.id}>${n.id}`)) edge("holds", a.id, n.id, a.id);
     }
+    // Who asks for it, then who edited it: its owner's edge in its hue.
+    for (const q of n.asking) {
+      const a = byName.get(q.from);
+      if (a !== undefined) edge("asks", a.id, n.id, a.id, true);
+    }
+    for (const name of n.editors) {
+      const a = byName.get(name);
+      if (a === undefined || ["edits", "holds", "asks"].some((k) => edges.has(`${k}:${a.id}>${n.id}`))) continue;
+      edge("edited", a.id, n.id, name === n.owner ? a.id : null);
+    }
+  }
+
+  // The worktrees, linked to who works in them, the capsules they became,
+  // and where those landed.
+  const lines = input.lines ?? null;
+  for (const w of lines?.worktrees ?? []) {
+    const owner = byName.get(w.ownerName) ?? byName.get(w.owner);
+    nodes.set(branchId(w.name), { kind: "branch", id: branchId(w.name), ...at, ...size.branch, tree: w, state: treeState(w), ownerKind: owner?.agentKind ?? "" });
+    if (owner !== undefined) edge("works", owner.id, branchId(w.name), owner.id, w.working);
+    else if (w.kind === "thread") edge("works", YOU, branchId(w.name), null);
+  }
+  for (const c of lines?.capsules ?? []) nodes.set(capsuleId(c.name), { kind: "capsule", id: capsuleId(c.name), ...at, ...size.capsule, capsule: c });
+  for (const w of lines?.worktrees ?? []) {
+    const c = capsuleOfTree(lines!, w);
+    if (c !== undefined) edge("bundles", branchId(w.name), capsuleId(c.name), null);
+  }
+  for (const c of lines?.capsules ?? []) {
+    const last = c.landings.at(-1);
+    if (last === undefined || last.reverted) continue;
+    if (last.into === "main") {
+      if (!nodes.has(MAIN)) nodes.set(MAIN, { kind: "main", id: MAIN, ...at, ...size.main });
+      edge("lands", capsuleId(c.name), MAIN, null);
+    } else edge("lands", capsuleId(c.name), branchId(last.into), null);
   }
 
   // A changed file nothing reaches: the work of the one agent there is,
@@ -465,10 +570,23 @@ export function layout(nodes: GraphNode[], edges: GraphEdge[], dir: Direction = 
   const maxDepth = agents.reduce((m, a) => Math.max(m, a.depth), -1);
   const taskBase = maxDepth + 2;
   const maxLevel = tasks.reduce((m, t) => Math.max(m, t.level), -1);
-  const fileLayer = tasks.length > 0 ? taskBase + maxLevel + 1 : taskBase;
+  // After the tasks: the worktrees, their capsules, the shared tree they
+  // landed in, then the files. Layers nothing uses are packed away below.
+  const treeLayer = tasks.length > 0 ? taskBase + maxLevel + 1 : taskBase;
+  const after: Partial<Record<NodeKind, number>> = { branch: 0, capsule: 1, main: 2 };
+  const fileLayer = treeLayer + 3;
   for (const n of nodes) {
+    const rank = after[n.kind];
     n.layer =
-      n.kind === "you" ? 0 : n.kind === "agent" ? 1 + n.depth : n.kind === "task" ? taskBase + n.level : fileLayer;
+      n.kind === "you"
+        ? 0
+        : n.kind === "agent"
+          ? 1 + n.depth
+          : n.kind === "task"
+            ? taskBase + n.level
+            : rank !== undefined
+              ? treeLayer + rank
+              : fileLayer;
   }
   // The layers in use, packed so none is empty.
   const used = [...new Set(nodes.map((n) => n.layer))].sort((a, b) => a - b);
@@ -544,6 +662,9 @@ function columnLabel(layer: GraphNode[]): string {
   if (n === undefined || n.kind === "you") return "";
   if (n.kind === "agent") return n.depth === 0 ? "Agents" : n.depth === 1 ? "Subagents" : `Subagents · ${n.depth}`;
   if (n.kind === "task") return n.level === 0 ? "Tasks" : "";
+  if (n.kind === "branch") return "Worktrees";
+  if (n.kind === "capsule") return "Capsules";
+  if (n.kind === "main") return "";
   return "Files";
 }
 
@@ -748,7 +869,7 @@ function placeCross(layers: LayoutNode[][], edges: readonly GraphEdge[], byId: M
   for (const n of all) n[cross] = Math.round(n[cross] - shift);
 }
 
-export function boundsOf(nodes: readonly Placed[]): Bounds {
+export function boundsOf(nodes: readonly Bounds[]): Bounds {
   if (nodes.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
   const x = Math.min(...nodes.map((n) => n.x));
   const y = Math.min(...nodes.map((n) => n.y));
@@ -782,7 +903,7 @@ export function edgePath(a: Bounds, b: Bounds, dir: Direction = "across", via: r
 }
 
 // The ids next to a node: itself, and every node one edge away.
-export function neighbourhood(edges: readonly GraphEdge[], id: string): Set<string> {
+export function neighbourhood(edges: readonly { from: string; to: string }[], id: string): Set<string> {
   const out = new Set([id]);
   for (const e of edges) {
     if (e.from === id) out.add(e.to);
@@ -801,7 +922,8 @@ export interface View {
 export const ZOOM_MIN = 0.4;
 export const ZOOM_MAX = 2;
 
-export const clampZoom = (k: number): number => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, k));
+// min: the least zoom; the History lets a large graph go further out.
+export const clampZoom = (k: number, min = ZOOM_MIN): number => Math.min(ZOOM_MAX, Math.max(min, k));
 
 // The view that shows all of b in a w × h viewport, inside the padding,
 // centred, never above 100% (a small graph stays its size) nor below the
@@ -811,9 +933,10 @@ export function fitView(
   w: number,
   h: number,
   pad: { top: number; right: number; bottom: number; left: number },
+  min = ZOOM_MIN,
 ): View {
   const room = { w: Math.max(1, w - pad.left - pad.right), h: Math.max(1, h - pad.top - pad.bottom) };
-  const k = clampZoom(Math.min(1, room.w / Math.max(1, b.w), room.h / Math.max(1, b.h)));
+  const k = clampZoom(Math.min(1, room.w / Math.max(1, b.w), room.h / Math.max(1, b.h)), min);
   return {
     k,
     x: Math.round(pad.left + (room.w - b.w * k) / 2 - b.x * k),
@@ -823,8 +946,8 @@ export function fitView(
 
 // Zooms to k around a point on screen, which stays over the same spot of
 // the graph.
-export function zoomAt(v: View, k: number, px: number, py: number): View {
-  const next = clampZoom(k);
+export function zoomAt(v: View, k: number, px: number, py: number, min = ZOOM_MIN): View {
+  const next = clampZoom(k, min);
   const f = next / v.k;
   return { k: next, x: px - (px - v.x) * f, y: py - (py - v.y) * f };
 }

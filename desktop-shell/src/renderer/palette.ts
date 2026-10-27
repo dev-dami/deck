@@ -47,7 +47,8 @@ export interface CommandDeps {
   toggleSidebar: () => void;
   settings: (s: SettingsSection) => void;
   usage: () => void;
-  team: () => void;
+  // null with the team off (teamGate.ts): no Open team.
+  team: (() => void) | null;
   inbox: () => void;
   nextAttention: () => void;
   room: (n: number) => void;
@@ -77,7 +78,7 @@ export function paletteCommands(d: CommandDeps): Command[] {
       run: () => d.settings(x.section),
     })),
     { id: "usage", label: "Open usage", run: d.usage },
-    { id: "team", label: "Open team", run: d.team },
+    ...(d.team !== null ? [{ id: "team", label: "Open team", run: d.team }] : []),
     { id: "inbox", label: "Open inbox", run: d.inbox },
     { id: "next-attention", label: "Next room that needs you", hint: `${mod}${d.mac ? "⌥" : "Alt "}L`, run: d.nextAttention },
     ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({

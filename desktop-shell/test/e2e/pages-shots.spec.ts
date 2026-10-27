@@ -97,6 +97,37 @@ for (const mode of ["dark", "light"] as const) {
     await shot(page, `${mode}-p17-settings-appearance-2`);
   });
 
+  // The analytics: every agent, then one agent's tab over a month.
+  test(`analytics ${mode}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await setup(page, mode);
+    await page.getByRole("button", { name: "Open a folder" }).click();
+    await expect(page.locator(".link")).toHaveText("Connected");
+    await sidebar(page).getByRole("button", { name: "Usage" }).click();
+    await page.locator("[data-usage]").getByRole("radio", { name: "Analytics" }).click();
+    await expect(page.locator('[data-kind-section="claude"] svg[role="img"]')).toBeVisible();
+    await page.waitForTimeout(400);
+    await shot(page, `${mode}-a1-analytics`);
+    await page.locator("[data-usage] .overflow-y-auto").first().evaluate((e) => e.scrollTo(0, 99999));
+    await page.waitForTimeout(200);
+    await shot(page, `${mode}-a2-analytics-end`);
+    await page.locator("[data-usage]").getByRole("tab", { name: "Codex" }).click();
+    await page.locator("[data-usage]").getByRole("radio", { name: "Day" }).click();
+    await page.waitForTimeout(300);
+    await shot(page, `${mode}-a3-analytics-codex-day`);
+    await page.locator("[data-usage]").getByRole("tab", { name: "Claude" }).click();
+    await page.locator("[data-usage]").getByRole("radio", { name: "Month" }).click();
+    const chart = page.locator('[data-kind-section="claude"] svg[role="img"]');
+    const box = (await chart.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.62, box.y + box.height * 0.4);
+    await page.waitForTimeout(300);
+    await shot(page, `${mode}-a4-analytics-claude-month`);
+    await page.setViewportSize({ width: 960, height: 700 });
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(300);
+    await shot(page, `${mode}-a5-analytics-small`);
+  });
+
   // A Deck paired from a terminal keeps no usage or team here: the empty
   // pages, each with its plate.
   test(`empty ${mode}`, async ({ page }) => {

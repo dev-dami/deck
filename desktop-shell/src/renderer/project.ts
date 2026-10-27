@@ -1,6 +1,9 @@
 import type { DeckBridge, RpcMethod, TermEvent } from "../shared/bridge";
 import { type Board, type Crew, type SharedMirror, type Team, toBoard, toCrew, toMirror, toTeam } from "./crew";
 import { bool, list, num, type Obj, obj, str } from "./guards";
+import { type LimitCheck, type Limits, toCheck, toLimits } from "./limits";
+import { type Level, schedules } from "./orchestration";
+import { type CapsuleFile, toCapsuleFile, toWork, toWorkAction, type Work, type WorkAction } from "./worktrees";
 
 // What a local Deck adds to the shared DeckClient: the project's git work
 // tree, the usage record and terminals (proto/deck/v1, Git*, Usage,
@@ -101,6 +104,16 @@ export interface UsageLimit {
   at: number;
 }
 
+// One hour's use by one agent of one kind, for the analytics.
+export interface UsageHour {
+  at: number;
+  kind: string;
+  agentId: string;
+  turns: number;
+  tokens: number;
+  costUsd: number;
+}
+
 export interface UsageHabits {
   activeDays: number;
   streak: number;
@@ -131,6 +144,10 @@ export interface Usage {
   limits: UsageLimit[];
   heat: UsageDay[];
   habits: UsageHabits | null;
+  // The analytics record, when asked for (historyDays): the hours with use,
+  // and every plan window's stored rows, oldest first.
+  hours: UsageHour[];
+  limitHistory: UsageLimit[];
 }
 
 function toPR(o: Obj): PullRequest {
@@ -178,6 +195,18 @@ const toDay = (d: Obj): UsageDay => ({
   costUsd: num(d, "cost_usd"),
 });
 
+export const toLimit = (l: Obj): UsageLimit => ({
+  agentKind: str(l, "agent_kind"),
+  windowId: str(l, "window_id"),
+  kind: str(l, "kind"),
+  label: str(l, "label"),
+  usedPct: num(l, "used_pct"),
+  resetsAt: num(l, "resets_at"),
+  durationMins: num(l, "duration_mins"),
+  plan: str(l, "plan"),
+  at: num(l, "at"),
+});
+
 const toGroup = (g: Obj): UsageGroup => ({
   kind: str(g, "kind"),
   model: str(g, "model"),
@@ -222,17 +251,7 @@ export function toUsage(v: unknown): Usage {
       tokens: num(x, "tokens"),
       costUsd: num(x, "cost_usd"),
     })),
-    limits: list(o, "limits", (l) => ({
-      agentKind: str(l, "agent_kind"),
-      windowId: str(l, "window_id"),
-      kind: str(l, "kind"),
-      label: str(l, "label"),
-      usedPct: num(l, "used_pct"),
-      resetsAt: num(l, "resets_at"),
-      durationMins: num(l, "duration_mins"),
-      plan: str(l, "plan"),
-      at: num(l, "at"),
-    })),
+    limits: list(o, "limits", toLimit),
     heat: list(o, "heat", toDay),
     habits:
       h === null || h === undefined
@@ -256,6 +275,15 @@ export function toUsage(v: unknown): Usage {
             reverts: num(hb, "reverts"),
             fit: list(hb, "fit", (f) => ({ kind: str(f, "kind"), class: str(f, "class"), calls: num(f, "calls") })),
           },
+    hours: list(o, "hours", (x) => ({
+      at: num(x, "at"),
+      kind: str(x, "kind"),
+      agentId: str(x, "agent_id"),
+      turns: num(x, "turns"),
+      tokens: num(x, "tokens"),
+      costUsd: num(x, "cost_usd"),
+    })),
+    limitHistory: list(o, "limit_history", toLimit),
   };
 }
 
@@ -327,9 +355,78 @@ export class ProjectApi {
     return r.ok ? toPR(obj(r.value)) : r.message;
   }
 
-  async usage(days: number): Promise<Usage | string> {
-    const r = await this.call("Usage", { days });
+  // usage reads the record of the last days days (0: all time), with the
+  // analytics record of the last historyDays days when that is above 0.
+  async usage(days: number, historyDays = 0): Promise<Usage | string> {
+    const r = await this.call("Usage", historyDays > 0 ? { days, history_days: historyDays } : { days });
     return r.ok ? toUsage(r.value) : r.message;
+  }
+
+  // The plan limits, with the windows' record of the last hours.
+  async limits(historyHours = 0): Promise<Limits | string> {
+    const r = await this.call("Limits", { history_hours: historyHours });
+    return r.ok ? toLimits(r.value) : r.message;
+  }
+
+  // Asks the agents (kind, or every one for "") for their limits now.
+  async checkLimits(kind = ""): Promise<LimitCheck[] | string> {
+    const r = await this.call("CheckLimits", { kind });
+    return r.ok ? list(obj(r.value), "checks", toCheck) : r.message;
+  }
+
+  // Starts kind's rolling window; the model it used, or the error.
+  async startWindow(kind: string): Promise<{ model: string } | string> {
+    const r = await this.call("StartWindow", { kind });
+    return r.ok ? { model: str(obj(r.value), "model") } : r.message;
+  }
+
+  // Resumes a waiting agent now, or cancels its wait; null when done.
+  async resolveWait(sessionId: string, agent: string, cancel: boolean): Promise<string | null> {
+    const r = await this.call("ResolveWait", { session_id: sessionId, agent, cancel });
+    return r.ok ? null : r.message;
+  }
+
+  async scheduleSend(sessionId: string, text: string, at: number): Promise<string | null> {
+    const r = await this.call("ScheduleSend", { session_id: sessionId, text, at });
+    return r.ok ? null : r.message;
+  }
+
+  async cancelScheduled(sessionId: string, id: string, sendNow: boolean): Promise<string | null> {
+    const r = await this.call("CancelScheduled", { session_id: sessionId, id, send_now: sendNow });
+    return r.ok ? null : r.message;
+  }
+
+  // The room's worktrees and named capsules.
+  async work(sessionId: string): Promise<Work | string> {
+    const r = await this.call("Work", { session_id: sessionId });
+    return r.ok ? toWork(r.value) : r.message;
+  }
+
+  // create, sync, rebase, check, merge, discard or spawn; a conflict is an
+  // answer (conflicts), not an error.
+  async worktreeAction(sessionId: string, name: string, action: string, more: Record<string, string> = {}): Promise<WorkAction | string> {
+    const r = await this.call("WorktreeAction", { ...more, session_id: sessionId, name, action });
+    return r.ok ? toWorkAction(r.value) : r.message;
+  }
+
+  // create, check, land, rebase, revert, hand or review.
+  async capsuleAction(sessionId: string, capsule: string, action: string, more: Record<string, string> = {}): Promise<WorkAction | string> {
+    const r = await this.call("CapsuleAction", { ...more, session_id: sessionId, capsule, action });
+    return r.ok ? toWorkAction(r.value) : r.message;
+  }
+
+  // A page of a capsule's files, and how many it has in all.
+  async capsuleFiles(sessionId: string, capsule: string, offset: number, limit: number): Promise<{ files: CapsuleFile[]; total: number } | string> {
+    const r = await this.call("CapsuleFiles", { session_id: sessionId, capsule, offset, limit });
+    if (!r.ok) return r.message;
+    const o = obj(r.value);
+    return { files: list(o, "files", toCapsuleFile), total: num(o, "total") };
+  }
+
+  // One file of a capsule as a unified diff.
+  async capsuleDiff(sessionId: string, capsule: string, path: string): Promise<string | { error: string }> {
+    const r = await this.call("CapsuleFiles", { session_id: sessionId, capsule, path });
+    return r.ok ? str(obj(r.value), "diff") : { error: r.message };
   }
 
   async board(sessionId: string): Promise<Board | string> {
@@ -346,8 +443,9 @@ export class ProjectApi {
     return Array.isArray(files) ? files.filter((f): f is string => typeof f === "string") : [];
   }
 
-  async setOrchestrate(sessionId: string, on: boolean): Promise<string | null> {
-    const r = await this.call("SetOrchestrate", { session_id: sessionId, on });
+  // on stands in for the level with a Deck from before levels.
+  async setLevel(sessionId: string, level: Level): Promise<string | null> {
+    const r = await this.call("SetOrchestrate", { session_id: sessionId, level, on: schedules(level) });
     return r.ok ? null : r.message;
   }
 

@@ -7,6 +7,7 @@ import {
   ChevronsUpDown,
   FileDiff,
   FileText,
+  GitBranch,
   Graph,
   ListChecks,
   type IconType,
@@ -26,13 +27,20 @@ import { type DeckClient, serves } from "../client";
 import type { Crew } from "../crew";
 import { langName, langOf } from "../highlight";
 import { cn } from "../lib/cn";
+import { focusMessage } from "../palette";
+import { usePrefs } from "../prefs";
+import { useMentionables } from "../profiles";
+import { NO_RACE, toWire } from "../race";
 import { panelSlice, shallowEqual, useAppSlice } from "../select";
+import { gateMentionables } from "../teamGate";
 import { PANELS, type Panel } from "../ui";
+import { usePickerSource } from "./AgentPicker";
 import { AgentsTree } from "./AgentsTree";
 import { PreviewPanel } from "./PreviewPanel";
 import { CommentsBadge, DiffToggles, DiffView, SplitAllowed } from "./DiffView";
 import { SideChat } from "./SideChat";
-import { type RaceStart, TasksPanel } from "./TasksPanel";
+import { TasksPanel } from "./TasksPanel";
+import { WorkPanel } from "./WorkPanel";
 import { actionToast } from "./Toasts";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
@@ -43,13 +51,15 @@ import { WorkGraph } from "./graph/WorkGraph";
 import { useOpenPorts } from "./usePorts";
 
 // The room's tabs: Changes, Graph (the Work Graph, compact), Tasks (the
-// queue, the board and races), Agents (the tree), Side chat and, while a
-// dev server answers, Preview.
+// queue, the board and races), Work (worktrees and capsules, when the Deck
+// serves them), Agents (the tree), Side chat and, while a dev server
+// answers, Preview.
 
 const TAB_ICONS: Record<Panel, IconType> = {
   changes: FileDiff,
   graph: Graph,
   tasks: ListChecks,
+  work: GitBranch,
   agents: Network,
   side: MessageCircleQuestion,
   preview: MonitorPlay,
@@ -266,6 +276,9 @@ export function RightPanel({
   onLane,
   onSteer,
   onStop,
+  side = "right",
+  float = false,
+  onOpenThread,
 }: {
   c: DeckClient;
   bridge: DeckBridge;
@@ -297,10 +310,21 @@ export function RightPanel({
   onLane?: (lane: string | null) => void;
   onSteer?: (agent: string) => void;
   onStop?: (agent: string) => void;
+  // The edge of the window it floats at (the one away from the sidebar),
+  // and whether it floats at any width (Settings > Appearance > Layout).
+  side?: "left" | "right";
+  float?: boolean;
+  // Opens another thread, for the Graph tab's History.
+  onOpenThread?: (id: string) => void;
 }) {
   const queued = open === undefined ? 0 : (state.queue[open.id]?.length ?? 0);
+  // The race builder of the Tasks tab picks as the composer's /race does.
+  const picker = usePickerSource(c, state.server, open?.id ?? null);
+  const named = gateMentionables(usePrefs().team, useMentionables(c, null));
   const ports = useOpenPorts(c.project);
-  const tabs = PANELS.filter((p) => p.panel !== "preview" || panel === "preview" || ports.length > 0);
+  const tabs = PANELS.filter(
+    (p) => (p.panel !== "preview" || panel === "preview" || ports.length > 0) && (p.panel !== "work" || panel === "work" || serves(c, "Work")),
+  );
   // A file the graph opened, until the Shell hands one itself.
   const [asked, setAsked] = useState<string | null>(null);
   useEffect(() => {
@@ -309,13 +333,18 @@ export function RightPanel({
   return (
     <aside
       className={cn(
-        // A sheet beside the room. Below 1100px it floats over the room as
-        // thick glass (styles.css, Shell), and the room keeps its width.
-        "panel sheet flex shrink-0 flex-col overflow-hidden rounded-(--sheet-radius) max-[1100px]:absolute max-[1100px]:inset-y-3 max-[1100px]:right-3 max-[1100px]:z-30 max-[1100px]:max-w-[calc(100%-4rem)]",
+        // A sheet beside the room. Below 1100px, or by choice, it floats
+        // over the room as thick glass (styles.css, Shell), and the room
+        // keeps its width.
+        "panel sheet flex shrink-0 flex-col overflow-hidden rounded-(--sheet-radius) max-[1100px]:absolute max-[1100px]:inset-y-3 max-[1100px]:z-30 max-[1100px]:max-w-[calc(100%-4rem)]",
+        side === "left" ? "max-[1100px]:left-3" : "max-[1100px]:right-3",
+        float && cn("absolute inset-y-3 z-30 max-w-[calc(100%-4rem)]", side === "left" ? "left-3" : "right-3"),
         wide ? "w-[min(60vw,900px)] min-w-[480px] shrink" : "w-[480px]",
       )}
       aria-label="Side panel"
       data-yolo-region=""
+      data-side={side}
+      data-float={float ? "" : undefined}
     >
       <header className="panel-head drag @container/head flex h-12 shrink-0 items-center gap-2 px-2.5">
         <h2 className="sr-only">{PANELS.find((p) => p.panel === panel)?.label}</h2>
@@ -374,6 +403,12 @@ export function RightPanel({
           <WorkGraph
             key={open.id}
             compact={!wide}
+            c={c}
+            onOpenMessage={(thread, mid) => {
+              // The conversation beside the panel scrolls to it.
+              focusMessage(thread, mid);
+              if (thread !== open.id) onOpenThread?.(thread);
+            }}
             api={c.project}
             sid={open.id}
             roster={state.roster[open.id] ?? NO_ROSTER}
@@ -386,6 +421,7 @@ export function RightPanel({
               onPanel("changes", path);
             }}
             onOpenTasks={() => onPanel("tasks")}
+            onOpenWork={() => onPanel("work")}
             onSteer={onSteer ?? ((agent) => onEditQueued(`$${agent} `))}
             onStop={onStop ?? ((agent) => void c.interrupt(open.id, agent))}
           />
@@ -398,16 +434,36 @@ export function RightPanel({
             busy={open.busy}
             queue={state.queue[open.id] ?? []}
             kinds={state.server?.kinds ?? []}
+            named={named.profiles}
+            picker={picker}
             theme={state.theme}
             branch={branch}
             canJudge={serves(c, "StartRace")}
-            onRace={async (r: RaceStart) =>
-              serves(c, "StartRace") ? ((await c.startRace?.(open.id, r.brief, r.kind, r.count, r.judge)) ?? null) !== null : c.send(open.id, r.text, [])
-            }
+            onRace={async (d) => {
+              if (!serves(c, "StartRace")) {
+                onInfo(NO_RACE);
+                return false;
+              }
+              return ((await c.startRace?.(open.id, d.brief, toWire(d), d.judge)) ?? null) !== null;
+            }}
             onEditQueued={onEditQueued}
             onError={onError}
             onInfo={onInfo}
           />
+        ) : panel === "work" ? (
+          c.project === undefined || !serves(c, "Work") ? (
+            <Empty>Worktrees and capsules show for a project on this computer.</Empty>
+          ) : (
+            <WorkPanel
+              key={open.id}
+              api={c.project}
+              sid={open.id}
+              roster={state.roster[open.id] ?? NO_ROSTER}
+              kinds={state.server?.kinds ?? []}
+              onInfo={onInfo}
+              onError={onError}
+            />
+          )
         ) : panel === "agents" ? (
           c.project === undefined ? (
             <Empty>The agents tree shows for a project on this computer.</Empty>

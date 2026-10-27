@@ -60,9 +60,9 @@ func TestParseAddressing(t *testing.T) {
 		{"kind resolves to renamed member", "$claude hi", renamed, Addressing{Members: []string{"claude2"}, Body: "hi"}},
 		{"exited member of the kind: add a new one", "$codex hi", gone, Addressing{NewKinds: []string{"codex"}, Body: "hi"}},
 		{"duplicates collapse", "$claude $claude hi", duo, Addressing{Members: []string{"claude"}, Body: "hi"}},
-		{"every member of a kind", "$claude* hi", duo, Addressing{Members: []string{"claude"}, Body: "hi"}},
-		{"another of a kind", "$claude+ hi", duo, Addressing{NewKinds: []string{"claude"}, Body: "hi"}},
-		{"a race", "$claude×2 fix it", duo, Addressing{Race: []string{"claude", "claude"}, Body: "fix it"}},
+		{"a kind suffix is text", "$claude* hi", duo, Addressing{Body: "$claude* hi"}},
+		{"another of a kind is text", "$claude+ hi", duo, Addressing{Body: "$claude+ hi"}},
+		{"a typed race is text", "$claude×2 fix it", duo, Addressing{Body: "$claude×2 fix it"}},
 		{"a path is plain text", "$src/main.go is broken", duo, Addressing{Body: "$src/main.go is broken"}},
 	}
 	for _, c := range cases {
@@ -125,11 +125,11 @@ func TestParseAddressingProfiles(t *testing.T) {
 		{"the configured name, whatever the case", "@Charles review this", none, Addressing{NewProfiles: []string{"charles"}, Body: "review this"}},
 		{"$ works as well", "$ada build it", none, Addressing{NewProfiles: []string{"ada"}, Body: "build it"}},
 		{"a member of that name wins", "@charles again", charles, Addressing{Members: []string{"claude2"}, Body: "again"}},
-		{"+ adds another from the profile", "@charles+ a second look", charles, Addressing{NewProfiles: []string{"charles"}, Body: "a second look"}},
-		{"twice with + adds two", "@charles+ @charles+ go", none, Addressing{NewProfiles: []string{"charles", "charles"}, Body: "go"}},
+		{"+ is text", "@charles+ a second look", charles, Addressing{Body: "@charles+ a second look"}},
+		{"twice is one", "@charles @charles go", none, Addressing{NewProfiles: []string{"charles"}, Body: "go"}},
 		{"a kind comes before a profile's member", "@claude hi", charles, Addressing{Members: []string{"claude"}, Body: "hi"}},
 		{"a member's name comes before a profile", "@auth hi", auth, Addressing{Members: []string{"codex"}, Body: "hi"}},
-		{"* is for kinds only", "@charles* hi", none, Addressing{Body: "@charles* hi"}},
+		{"* is text", "@charles* hi", none, Addressing{Body: "@charles* hi"}},
 		{"a later clause", "@claude plan it, then @ada build it", none,
 			Addressing{Members: []string{"claude"}, NewProfiles: []string{"ada"}, Body: "plan it, then @ada build it"}},
 		{"mid-clause is plain text", "ask @charles later", none, Addressing{Body: "ask @charles later"}},
@@ -166,7 +166,8 @@ func TestDefuse(t *testing.T) {
 	cases := map[string]string{
 		"$claude fix it":               "＄claude fix it",
 		"@claude fix it":               "＠claude fix it",
-		"then @codex×3 make":           "then ＠codex×3 make",
+		"then @codex now":              "then ＠codex now",
+		"then @codex×3 make":           "then @codex×3 make", // text, not a mention
 		"mail user@example.com":        "mail user@example.com",
 		"look at @src/a.go and @b.txt": "look at @src/a.go and @b.txt",
 		"echo $HOME":                   "echo ＄HOME",
@@ -175,7 +176,7 @@ func TestDefuse(t *testing.T) {
 		if got := defuse(in); got != want {
 			t.Errorf("defuse(%q) = %q, want %q", in, got, want)
 		}
-		if ad := ParseAddressing("[vps] "+defuse(in), []MemberRef{{ID: "claude", Name: "claude", Kind: "claude"}}, []string{"claude", "codex"}); ad.Mentioned() || len(ad.Race) > 0 {
+		if ad := ParseAddressing("[vps] "+defuse(in), []MemberRef{{ID: "claude", Name: "claude", Kind: "claude"}}, []string{"claude", "codex"}); ad.Mentioned() {
 			t.Errorf("defused %q still addresses: %+v", in, ad)
 		}
 	}

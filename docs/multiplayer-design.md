@@ -59,8 +59,9 @@ knows each subscription's remaining plan window.
 
 ## 3. Same-kind agents (pools) — implemented
 
-- **Add an instance.** `$claude+` in the composer (and a `claude+` row in
-  the `$` popup) adds one; `$claude+ $claude+` adds two. The first member of
+- **Add an instance.** A race (`/race`, §6) or an agent's helper
+  (`agent.spawn`) adds one; nothing the user types does (`$claude+` is
+  plain text since races take a list of entrants). The first member of
   a kind is called `claude`; when a second joins, a first still called
   `claude` is renamed `claude1` and the new one is `claude2`, so every
   instance keeps a name of its own (`thread.freeName`). Ids stay global and
@@ -70,9 +71,8 @@ knows each subscription's remaining plan window.
   - `$claude`: an idle member of that kind, else the one with the fewest
     queued messages; among equals the last speaker, then the first to join.
     With none running it starts a fresh one. The message line shows who got it.
-  - `$claude*`: every live member of that kind.
   - `$claude2`: exactly that member.
-  - `$claude×3 …`: a race (§6, not yet).
+  The user's `$claude*` and `$claude×3` are plain text.
   Agents use the same rule: `thread.send {to:"claude"}` routes to the pool
   (excluding the sender), `to:"claude*"` fans out, and `$claude*` lines in a
   final reply relay to all of them. The error listing valid recipients
@@ -173,10 +173,14 @@ All in `session/leases.go`.
 
 All in `session/race.go`.
 
-- **Starting one.** The user writes `$claude×3 fix the flaky test` (`*`
-  does for `×`; `$claude×2 $codex×1 …` mixes kinds). Agents call
-  `task.race {brief, agents: "claude*2, codex", judge?, title?}`, which
-  needs orchestration on. A race has 2 to 6 entries and needs a git
+- **Starting one.** A race is a list of entrants, each an agent kind or a
+  named agent with the model and effort it runs; kinds mix and repeat
+  (codex, claude, and claude again on the same model). The user builds it
+  with `/race` in the desktop composer (or the Tasks tab), which calls
+  `StartRace` (gRPC) or `race.start` (the remote protocol) with exactly
+  those entrants. Agents call `task.race {brief, agents: "claude, claude,
+  codex", judge?, title?}`, one name per entry, which needs orchestration
+  on. A race has 2 to 6 entries and needs a git
   repository. All of Spawn's limits are checked for every entry before the
   first starts.
 - **The board.** A race is a task (`Race`) that Deck owns. Its entries are
@@ -364,8 +368,8 @@ MCP tools; new inbound ops are opt-in per peer (`allow_inbound`).
 
 Each phase is one or two PRs and useful alone.
 
-1. **Instances** (done). `$claude+`, pool addressing for users and agents,
-   `$kind*`, `thread.roster`, pool hint in join lines, `$` popup rows.
+1. **Instances** (done). Pool addressing for users and agents, `kind*`
+   for agents, `thread.roster`, pool hint in join lines, `$` popup rows.
    `peers-design.md`'s status line fixed.
 2. **Trees** (done). Depth and limits, cascade, ancestor fallback for
    results, waiting for children, task kind/model/effort, scoped briefing,
@@ -376,8 +380,8 @@ Each phase is one or two PRs and useful alone.
 4. **Leases and overlap** (done). `lease.*`, apply-time enforcement,
    overlap notices that reach the agents' next prompts, leases in the agents
    pane; capsule-bound approvals already held.
-5. **Races** (done). `task.race`, `$kind×N`, entries compared in the Tasks
-   pane, keep one, optional judge.
+5. **Races** (done). `task.race`, `/race` with mixed entrants, entries
+   compared in the Tasks pane, keep one, optional judge.
 6. **Peer plumbing and presence** (done). Chat over live links, outbox,
    rich `peer.status`, `team.read`/`team.post`. `Manager.Subscribe` moves
    to phase 8.

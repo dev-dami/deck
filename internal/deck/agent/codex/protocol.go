@@ -189,6 +189,9 @@ type turnInterruptParams struct {
 type turnError struct {
 	Message           string `json:"message"`
 	AdditionalDetails string `json:"additionalDetails,omitempty"`
+	// CodexErrorInfo classifies the error: a string for a plain kind
+	// ("usageLimitExceeded"), an object for one with details.
+	CodexErrorInfo json.RawMessage `json:"codexErrorInfo,omitempty"`
 }
 
 type turn struct {

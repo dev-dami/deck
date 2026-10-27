@@ -22,6 +22,7 @@ const node = (name: string, over: Partial<AgentNode> = {}): AgentNode => ({
   leases: "",
   profile: "",
   role: "",
+  color: "",
   ...over,
 });
 
@@ -57,6 +58,20 @@ describe("buildLanes", () => {
     expect(lanes[5]).toMatchObject({ kind: "mate", name: "vps", role: "editor" });
   });
 
+  test("a spawned agent's lane names its spawner; the person's agents name none", () => {
+    const lanes = buildLanes({
+      roster: [line("claude-1", true)],
+      agents: [node("claude-1"), node("codex-2", { kind: "codex", status: "working", depth: 1, parent: "claude-1" })],
+      shares: {},
+      waiting: [],
+    });
+    expect(lanes.map((l) => [l.id, l.parent, l.depth])).toEqual([
+      ["you", "", 0],
+      ["agent:claude-1", "", 0],
+      ["agent:codex-2", "claude-1", 1],
+    ]);
+  });
+
   test("live leases win over the tree's summary; an agent without any falls back to it", () => {
     const lanes = buildLanes({
       roster: [line("claude-1", true), line("codex-2")],
@@ -73,15 +88,15 @@ describe("buildLanes", () => {
 
   test("a named member's lane carries its profile's role", () => {
     const lanes = buildLanes({
-      roster: [{ ...line("charles"), kind: "claude", role: "reviewer", profile: "charles" }, line("codex-1")],
+      roster: [{ ...line("charles"), kind: "claude", role: "reviewer", profile: "charles", color: "teal" }, line("codex-1")],
       agents: null,
       shares: {},
       waiting: [],
     });
-    expect(lanes.map((l) => [l.name, l.agentKind, l.role])).toEqual([
-      ["you", "", ""],
-      ["charles", "claude", "reviewer"],
-      ["codex-1", "codex", ""],
+    expect(lanes.map((l) => [l.name, l.agentKind, l.role, l.color])).toEqual([
+      ["you", "", "", ""],
+      ["charles", "claude", "reviewer", "teal"],
+      ["codex-1", "codex", "", ""],
     ]);
   });
 
@@ -153,6 +168,27 @@ describe("lane filter", () => {
     expect(filterLane(messages, null)).toBe(messages);
     expect(filterLane(messages, "agent:claude-1").map((m) => m.id)).toEqual(["assistant-on it"]);
     expect(filterLane(messages, "mate:vps")).toHaveLength(1);
+  });
+
+  test("a tool's result stays with the lane of its call", () => {
+    const at = "2026-10-27T09:00:00Z";
+    const m = (id: string, agent: string | undefined, parts: Message["parts"]): Message => ({
+      id,
+      session_id: "s",
+      role: "assistant",
+      ...(agent === undefined ? {} : { agent }),
+      created_at: at,
+      updated_at: at,
+      finished: true,
+      parts,
+    });
+    const all = [
+      m("a", "ada", [{ type: "tool_call", id: "c1", name: "bash" }]),
+      m("b", "bob", [{ type: "tool_call", id: "c2", name: "bash" }]),
+      m("r1", undefined, [{ type: "tool_result", tool_call_id: "c1" }]),
+      m("r2", undefined, [{ type: "tool_result", tool_call_id: "c2" }]),
+    ];
+    expect(filterLane(all, "agent:ada").map((x) => x.id)).toEqual(["a", "r1"]);
   });
 });
 

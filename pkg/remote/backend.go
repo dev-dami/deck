@@ -80,7 +80,10 @@ type Backend interface {
 	// anything. An empty model means the one configured for the kind; an
 	// unknown kind is ErrInvalid.
 	AddAgent(sessionID, kind, model string) (wire.AgentLine, error)
+	// Models lists the models of kind. An empty sessionID asks apart from
+	// any thread: the same list, none of it selected.
 	Models(ctx context.Context, sessionID, kind string) ([]wire.ModelChoice, error)
+	// SetModel makes model what agents of kind run; "" is the CLI's default.
 	SetModel(sessionID, kind, model, effort string) error
 
 	Mode(sessionID string) (string, error)
@@ -99,4 +102,18 @@ type Backend interface {
 	// message updates itself and yields theme.changed when the palette
 	// changes.
 	Events(ctx context.Context) <-chan Event
+}
+
+// Racer is a Backend that starts races: entrants do one brief, each on a
+// worktree of its own, and the user keeps one. It returns the race's task.
+// A refusal the person should read (no git repository, too many entrants)
+// is a *wire.Error.
+type Racer interface {
+	StartRace(ctx context.Context, sessionID, brief string, entrants []wire.RaceEntrant, judge bool) (string, error)
+}
+
+// ModelRefresher is a Backend whose model lists can be asked for again:
+// RefreshModels forgets them, so the next Models asks the agent CLIs afresh.
+type ModelRefresher interface {
+	RefreshModels()
 }

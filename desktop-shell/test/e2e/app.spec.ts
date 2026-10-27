@@ -45,11 +45,15 @@ test("connects, lists sessions and opens one", async ({ page }) => {
   await expect(nav.locator('[data-session="ses_docs"] .status-label')).toHaveText("Approve command");
   await openMain(page);
   // Markdown renders as elements; a finished reply folds its work behind
-  // "Worked for …", and its tool calls start folded too.
+  // "Worked for …", its tool calls fold into one actions row, and each
+  // call starts folded too.
   await expect(page.locator(".md strong").first()).toHaveText("every");
   await expect(page.locator("pre.codeblock")).toContainText("l.fail(addr)");
   await expect(page.locator("details.tool")).toHaveCount(0);
   await page.locator(".worked").first().click();
+  await expect(page.locator(".actions-head").first()).toContainText("1 action");
+  await expect(page.locator("details.tool")).toHaveCount(0);
+  await page.locator(".actions-head").first().click();
   const tool = page.locator("details.tool").first();
   await expect(tool).not.toHaveAttribute("open", "");
   await tool.locator("summary").click();
@@ -88,30 +92,27 @@ test("two agents stream in one thread at once", async ({ page }) => {
   await expect(page.locator(".agent-busy")).toHaveCount(0);
 });
 
-test("adds an agent with $codex+", async ({ page }) => {
+test("$codex+ is text now, with a hint that points to /race", async ({ page }) => {
   await pair(page);
   await openMain(page);
   await composer(page).fill("");
-  await composer(page).pressSequentially("$codex+");
+  await composer(page).pressSequentially("$codex");
+  // Nothing typed starts another agent: the picker offers no "+" or "*".
   const pop = page.getByRole("listbox", { name: "Agents" });
-  await expect(pop.getByRole("option")).toHaveText([/\$codex\+.*start another codex/]);
-  // A slow frame, as on a busy machine: keys typed right after the pick
-  // still land after the mention.
-  await page.evaluate(() => {
-    window.requestAnimationFrame = (fn) => window.setTimeout(() => fn(performance.now()), 400);
-  });
-  await composer(page).press("Enter");
-  await composer(page).pressSequentially("review the limiter", { delay: 50 });
+  await expect(pop.getByRole("option")).toHaveText([/\$codex-1/, /\$codex.*a free codex/]);
+  await composer(page).pressSequentially("+");
+  await expect(pop).toHaveCount(0);
+  await composer(page).pressSequentially(" review the limiter", { delay: 50 });
   await expect(composer(page)).toHaveValue("$codex+ review the limiter");
+  await expect(page.locator(".composer-retired")).toContainText("/race");
+  // It goes as text, and starts nobody.
   await composer(page).press("Enter");
-  await expect(page.locator('.agent[data-agent="codex-2"]')).toBeVisible();
-  await expect(page.locator('[data-agent="codex-2"].msg')).toContainText("review the limiter");
+  await expect(page.locator(".composer-retired")).toHaveCount(0);
   expect(fake.sent.map((s) => s.text)).toEqual(["$codex+ review the limiter"]);
+  await expect(page.locator('.agent[data-agent="codex-2"]')).toHaveCount(0);
 
-  // "Add agent" writes the same mention.
-  await page.getByRole("button", { name: "Add agent" }).click();
-  await page.getByRole("menu", { name: "Add an agent" }).getByRole("menuitem", { name: "Start another opencode" }).click();
-  await expect(composer(page)).toHaveValue("$opencode+ ");
+  // No "Add agent" control beside the chips.
+  await expect(page.getByRole("button", { name: "Add agent" })).toHaveCount(0);
 
   // Each agent's card addresses it; a second card addresses both.
   await composer(page).fill("compare");
@@ -119,6 +120,28 @@ test("adds an agent with $codex+", async ({ page }) => {
   await expect(composer(page)).toHaveValue("$codex-1 compare");
   await page.getByRole("checkbox", { name: "Send to codex-1" }).click();
   await expect(composer(page)).toHaveValue("compare");
+});
+
+test("/race on a paired Deck starts mixed entrants through race.start", async ({ page }) => {
+  await pair(page);
+  await openMain(page);
+  await composer(page).fill("/race make the limiter per address");
+  await composer(page).press("Enter");
+  const builder = page.getByRole("region", { name: "Race builder" });
+  await builder.getByRole("button", { name: "Add agent" }).click();
+  const add = () => page.getByRole("menu", { name: "Add an entrant" });
+  await add().getByRole("group", { name: "Agent" }).getByRole("menuitemradio", { name: "codex" }).click();
+  await add().getByRole("menuitem", { name: "Add codex" }).click();
+  await add().getByRole("group", { name: "Agent" }).getByRole("menuitemradio", { name: "claude" }).click();
+  await add().getByRole("menuitem", { name: "Add claude" }).click();
+  await page.keyboard.press("Escape");
+  await builder.getByRole("button", { name: /Start race \(2\)/ }).click();
+  await expect(builder).toHaveCount(0);
+  expect(fake.races).toEqual([{ session_id: "ses_main", entrants: [{ agent: "codex" }, { agent: "claude" }], brief: "make the limiter per address" }]);
+  await expect(page.locator('.lane[data-lane="agent:codex-2"]')).toBeVisible();
+  await expect(page.locator('.lane[data-lane="agent:claude-2"]')).toBeVisible();
+  // Nothing went as a message.
+  expect(fake.sent).toEqual([]);
 });
 
 test("approves the approval of another thread over its composer", async ({ page }) => {
@@ -176,9 +199,9 @@ test("changes panel and screenshot", async ({ page }) => {
   // Every file shows its diff, with line numbers.
   await expect(panel.locator(".diff-row.diff-add").first()).toContainText("l.fail(addr)");
   await expect(panel.locator(".diff-row.diff-add .diff-gutter").first()).toHaveText(/\d+/);
-  await composer(page).fill("$claude $codex+ split the work");
+  await composer(page).fill("$claude $codex split the work");
   await composer(page).press("Enter");
-  await expect(page.locator('.agent[data-agent="codex-2"]')).toBeVisible();
+  await expect(page.locator('[data-agent="codex-1"].msg').last()).toContainText("split the work");
   await page.locator(".msg").last().waitFor();
   await page.waitForTimeout(500);
   await page.screenshot({ path: join(__dirname, "..", "..", "docs", "renderer.png") });
@@ -256,11 +279,11 @@ test("themes: a theme from the catalog and an accent recolor the window", async 
   await pair(page);
   await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Appearance" }).click();
-  await page.getByRole("radiogroup", { name: "Theme", exact: true }).getByRole("radio", { name: /Tokyo Night/ }).click();
+  await page.getByRole("radiogroup", { name: "Colours" }).getByRole("radio", { name: /Tokyo Night/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-palette", "tokyo-night");
   // The page's sheet takes the theme's canvas; the window behind it is glass.
   await expect(page.locator("main.center")).toHaveCSS("background-color", "rgb(26, 27, 38)");
-  await page.getByRole("radiogroup", { name: "Theme", exact: true }).getByRole("radio", { name: /GitHub Light/ }).click();
+  await page.getByRole("radiogroup", { name: "Colours" }).getByRole("radio", { name: /GitHub Light/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-mode", "light");
   await page.getByRole("radiogroup", { name: "Accent" }).getByRole("radio", { name: "Green" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-accent", "green");

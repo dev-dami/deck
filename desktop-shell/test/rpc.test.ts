@@ -64,8 +64,10 @@ describe("the agent CLIs", () => {
     mkdirSync(b);
     writeFileSync(join(a, "claude"), "#!/bin/sh\n", { mode: 0o755 });
     writeFileSync(join(b, "claude"), "#!/bin/sh\n", { mode: 0o755 });
-    // Antigravity's CLI is agy; a file that does not run is no CLI.
+    // Antigravity's CLI is agy, Pi's ACP server pi-acp; a file that does not
+    // run is no CLI.
     writeFileSync(join(b, "agy"), "#!/bin/sh\n", { mode: 0o755 });
+    writeFileSync(join(a, "pi-acp"), "#!/bin/sh\n", { mode: 0o755 });
     writeFileSync(join(b, "codex"), "not a program", { mode: 0o644 });
     mkdirSync(join(b, "opencode"));
     expect(findAgentClis(["/no/such/dir", a, b].join(delimiter))).toEqual([
@@ -73,12 +75,14 @@ describe("the agent CLIs", () => {
       { kind: "codex", path: null },
       { kind: "opencode", path: null },
       { kind: "antigravity", path: join(b, "agy") },
+      { kind: "pi", path: join(a, "pi-acp") },
     ]);
     expect(findAgentClis("").every((c) => c.path === null)).toBe(true);
   });
 
   test("the engine's own message says that it found none", () => {
     expect(noAgentCli("Error: none of claude, codex, opencode or antigravity was found on PATH — run `deck doctor`\n")).toBe(true);
+    expect(noAgentCli("Error: none of claude, codex, opencode, antigravity or pi was found on PATH — run `deck doctor`\n")).toBe(true);
     expect(noAgentCli("Error: open store: the store is locked")).toBe(false);
     expect(noAgentCli("")).toBe(false);
   });
@@ -159,12 +163,11 @@ describe("a local Deck over rpc", () => {
     const { ctl } = await open();
     await ctl.openSession("ses_main");
     await until(() => (ctl.state.roster["ses_main"] ?? []).length === 2);
-    expect(await ctl.send("ses_main", "$claude $codex+ compare notes", [])).toBe(true);
-    await until(() => (ctl.state.roster["ses_main"] ?? []).some((l) => l.id === "codex-2"));
+    expect(await ctl.send("ses_main", "$claude $codex compare notes", [])).toBe(true);
     await until(
       () =>
         (ctl.state.messages["ses_main"] ?? []).filter(
-          (m) => m.finished && (m.agent === "claude-1" || m.agent === "codex-2") && m.parts.some((p) => (p.text ?? "").includes("compare notes")),
+          (m) => m.finished && (m.agent === "claude-1" || m.agent === "codex-1") && m.parts.some((p) => (p.text ?? "").includes("compare notes")),
         ).length === 2,
     );
   });
@@ -233,7 +236,9 @@ describe("a local Deck over rpc", () => {
 
     expect(await ctl.revertFiles?.("ses_main", ["a.go"], 1760000000000)).toEqual(["a.go"]);
     expect(await ctl.undoRevert?.("ses_main")).toBe(true);
-    expect(await ctl.startRace?.("ses_main", "fix the limiter", "claude", 3, true)).toBe("t6");
+    // Entrants mix kinds and repeat one on the same model.
+    const mixed = [{ agent: "codex" }, { agent: "claude", model: "opus" }, { agent: "claude", model: "opus", effort: "high" }];
+    expect(await ctl.startRace?.("ses_main", "fix the limiter", mixed, true)).toBe("t6");
     expect(await ctl.listFiles?.("ses_main", "limit", 1)).toEqual({ paths: ["pkg/remote/auth/limit.go"], truncated: true });
     expect(await ctl.archiveSession?.("ses_docs")).toBe(true);
     await until(() => rooms.get("ses_docs").archived);
@@ -250,7 +255,7 @@ describe("a local Deck over rpc", () => {
       "since 1760000000000",
       "UndoRevert ses_main",
       "StartRace ses_main",
-      "race claude×3 judged: fix the limiter",
+      "race codex,claude/opus,claude/opus/high judged: fix the limiter",
       "ArchiveSession ses_docs",
     ]);
   });
@@ -310,7 +315,7 @@ describe("a local Deck over rpc", () => {
     const calls = fake.calls.length;
     expect(ctl.capabilities?.()).toEqual([]);
     expect(await ctl.isolateSession?.("ses_main")).toBe(false);
-    expect(await ctl.startRace?.("ses_main", "fix it", "claude", 2)).toBeNull();
+    expect(await ctl.startRace?.("ses_main", "fix it", [{ agent: "claude" }, { agent: "claude" }])).toBeNull();
     expect(await ctl.listFiles?.("ses_main", "")).toBeNull();
     expect(await ctl.createSession("Isolated", true)).toBeNull();
     expect(await ctl.unarchiveSession?.("ses_main")).toBe(false);

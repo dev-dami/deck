@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { asks, boardRows, decisionText, mirrorRow, raceMessage, raceText, taskPreview, toBoard } from "./crew";
+import { asks, boardRows, decisionText, mirrorRow, taskPreview, toBoard } from "./crew";
 
 test("race entries sit under their race", () => {
   const b = toBoard({
@@ -16,17 +16,6 @@ test("race entries sit under their race", () => {
   expect(rows[1]?.entries.map((e) => e.id)).toEqual(["t3", "t4"]);
 });
 
-test("a race is written in the composer's syntax", () => {
-  expect(raceMessage({ claude: 2, codex: 1, opencode: 0 }, " fix the flaky test ")).toBe("$claude×2 $codex×1 fix the flaky test");
-});
-
-test("the race form writes one kind, two to six entries", () => {
-  expect(raceText("codex", 3, " make the limiter per address ")).toBe("$codex×3 make the limiter per address");
-  expect(raceText("claude", 1, "x")).toBe("$claude×2 x");
-  expect(raceText("claude", 9, "x")).toBe("$claude×6 x");
-  expect(raceText("claude", 3, "  ")).toBeNull();
-  expect(raceText("", 3, "x")).toBeNull();
-});
 
 const task = (over: Record<string, unknown>) => toBoard({ tasks: [{ id: "t3", title: "entry", status: "done", ...over }] }).tasks[0]!;
 
