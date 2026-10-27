@@ -36,6 +36,7 @@ const CODES: Record<string, grpc.status> = {
   not_found: grpc.status.NOT_FOUND,
   invalid: grpc.status.INVALID_ARGUMENT,
   yolo_disabled: grpc.status.PERMISSION_DENIED,
+  failed_precondition: grpc.status.FAILED_PRECONDITION,
 };
 
 const opt = (v: unknown): unknown => (v === "" || v === 0 ? undefined : v);
@@ -161,6 +162,17 @@ export class FakeRpcDeck {
   // and what was saved and deleted. Served once serveProfiles is called.
   // refuse, when set, is the reason SaveProfile gives for the next save.
   readonly named = { profiles: [] as Obj[], saved: [] as string[], deleted: [] as string[], refuse: null as string | null };
+  // Plan limits, as pkg/rpc serves them once serveLimits is called: each
+  // window's latest report, the record, this run's checks, the agents that
+  // wait for a reset, the scheduled messages, and what was asked.
+  readonly lim = {
+    limits: [] as Obj[],
+    history: [] as Obj[],
+    checks: [] as Obj[],
+    waits: [] as Obj[],
+    scheduled: [] as Obj[],
+    asked: [] as string[],
+  };
   // Each terminal: what it printed and who watches it.
   private readonly terms = new Map<string, { out: string; line: string; subs: Set<grpc.ServerWritableStream<Obj, Obj>> }>();
 
@@ -188,6 +200,14 @@ export class FakeRpcDeck {
     for (const m of ["ListProfiles", "SaveProfile", "DeleteProfile"]) if (!this.room.caps.includes(m)) this.room.caps.push(m);
     this.named.profiles.splice(0, Infinity, ...profiles);
     this.syncProfiles();
+  }
+
+  // Serves the plan-limit calls, starting from these windows (deck.v1
+  // UsageLimit rows) and waits.
+  serveLimits(limits: Obj[], waits: Obj[] = []): void {
+    for (const m of ["Limits", "CheckLimits", "StartWindow", "ResolveWait", "ScheduleSend", "CancelScheduled"]) if (!this.room.caps.includes(m)) this.room.caps.push(m);
+    this.lim.limits.splice(0, Infinity, ...limits);
+    this.lim.waits.splice(0, Infinity, ...waits);
   }
 
   // The profiles as ListProfiles merges them: a project profile overrides
@@ -491,6 +511,53 @@ export class FakeRpcDeck {
         }
       };
     };
+    // The plan-limit calls. A check of claude or codex reports (and marks
+    // the windows reported now); opencode can't be checked.
+    const lim = this.lim;
+    call("Limits", () => ({ limits: lim.limits, history: lim.history, checks: lim.checks, waits: lim.waits, scheduled: lim.scheduled, kinds: ["claude", "codex", "opencode"] }));
+    call("CheckLimits", (r) => {
+      const kind = String(r["kind"] ?? "");
+      lim.asked.push(`check ${kind}`);
+      const now = Date.now();
+      const checks = (kind === "" ? ["claude", "codex", "opencode"] : [kind]).map((k) =>
+        k === "opencode" ? { kind: k, checked_at: now, error: "it does not report plan limits", unsupported: true } : { kind: k, checked_at: now, error: "", unsupported: false },
+      );
+      for (const c of checks) {
+        const i = lim.checks.findIndex((x) => x["kind"] === c.kind);
+        if (i >= 0) lim.checks[i] = c;
+        else lim.checks.push(c);
+        for (const l of lim.limits) if (l["agent_kind"] === c.kind) l["at"] = now;
+      }
+      return { checks, limits: lim.limits };
+    });
+    call("StartWindow", (r) => {
+      const kind = String(r["kind"] ?? "");
+      lim.asked.push(`start ${kind}`);
+      if (kind !== "claude") throw new Fail("failed_precondition", `${kind} has no rolling window to start`);
+      const now = Date.now();
+      for (const l of lim.limits) if (l["agent_kind"] === "claude" && l["kind"] === "session") Object.assign(l, { used_pct: 1, resets_at: now + 5 * 3_600_000, at: now });
+      return { model: "haiku", limits: lim.limits };
+    });
+    call("ResolveWait", (r) => {
+      lim.asked.push(`${r["cancel"] === true ? "cancel" : "resume"} ${String(r["session_id"])} ${String(r["agent"])}`);
+      const i = lim.waits.findIndex((w) => w["session_id"] === r["session_id"] && w["agent"] === r["agent"]);
+      if (i < 0) throw new Fail("not_found", "not found");
+      lim.waits.splice(i, 1);
+      return {};
+    });
+    call("ScheduleSend", (r) => {
+      const id = `at-${lim.scheduled.length + 1}`;
+      lim.asked.push(`schedule ${String(r["session_id"])} ${String(r["text"])}`);
+      lim.scheduled.push({ id, session_id: r["session_id"], text: r["text"], at: r["at"], created: Date.now() });
+      return { id };
+    });
+    call("CancelScheduled", (r) => {
+      lim.asked.push(`${r["send_now"] === true ? "send" : "drop"} ${String(r["id"])}`);
+      const i = lim.scheduled.findIndex((s) => s["id"] === r["id"]);
+      if (i < 0) throw new Fail("not_found", "not found");
+      lim.scheduled.splice(i, 1);
+      return {};
+    });
     call("ListProfiles", () => ({ profiles: this.mergedProfiles() }));
     call("SaveProfile", (r) => {
       const p = { ...(r["profile"] as Obj) };

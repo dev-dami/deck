@@ -28,7 +28,9 @@ function pairedName(s: SavedServer): string {
 export type Landing = string | "new" | null;
 
 function land(key: string, to: Landing): void {
-  if (to !== null) dispatchUi(key, { type: "open", id: to === "new" ? null : to });
+  // A notification with no room (a plan limit) opens the Usage page.
+  if (to === "") dispatchUi(key, { type: "usage", open: true });
+  else if (to !== null) dispatchUi(key, { type: "open", id: to === "new" ? null : to });
 }
 
 // Like Claude Desktop, several projects stay open at once: each runs its

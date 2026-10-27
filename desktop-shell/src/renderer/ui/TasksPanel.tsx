@@ -38,9 +38,11 @@ import {
 } from "../crew";
 import { refreshCrew, useRoomCrew } from "../crewState";
 import { cn } from "../lib/cn";
+import { useLimits } from "../limitsState";
 import type { ProjectApi } from "../project";
 import { moveQueued, queuedText } from "../queue";
 import { DiffView } from "./DiffView";
+import { ScheduledList } from "./Limits";
 import { Button } from "./kit/button";
 import { EmptyState } from "./kit/empty";
 import { Dialog, fieldClass } from "./kit/dialog";
@@ -512,12 +514,19 @@ export function TasksPanel({
   };
 
   const rows = board === null ? [] : boardRows(board);
+  // Messages the person scheduled for a plan limit's reset (limits.ts).
+  const scheduled = useLimits(api).data?.scheduled.some((s) => s.sessionId === sessionId) === true;
 
   return (
     <section aria-label="Tasks" className="flex flex-col gap-6 overflow-y-auto px-3 pt-1 pb-3">
       {(queue.length > 0 || api === undefined) && (
         <Section title="Queue">
           <Queue c={c} sessionId={sessionId} items={queue} {...(onEditQueued === undefined ? {} : { onEdit: onEditQueued })} />
+        </Section>
+      )}
+      {scheduled && (
+        <Section title="Scheduled">
+          <ScheduledList api={api} sessionId={sessionId} onError={onError} />
         </Section>
       )}
       {api === undefined ? (

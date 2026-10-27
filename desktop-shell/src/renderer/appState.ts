@@ -4,9 +4,10 @@ import type { Action, AppState } from "@web/state";
 import { useMemo, useSyncExternalStore } from "react";
 import type { EngineStop } from "../shared/bridge";
 import { actedAt, type RoomNotice, type RoomStatus, roomStatus, sameStatus } from "./attention";
-import type { DeckClient } from "./client";
+import { type DeckClient, serves } from "./client";
 import { crewOf, watchCrew } from "./crewState";
 import { loadDraft, saveDraft } from "./drafts";
+import { watchLimits } from "./limitsState";
 import { useSelect } from "./select";
 import { isSide } from "./sideChat";
 import { initialUi, onScreen, reduceUi, type UiAction, type UiState } from "./ui";
@@ -252,6 +253,7 @@ export function attachProject(key: string, source: string, store: Store, client:
   };
   const api = client?.project;
   const stopCrew = api === undefined ? () => {} : watchCrew(api, store, () => projectState(key).ui.openId, () => update(key, same));
+  const stopLimits = api === undefined || client === null ? () => {} : watchLimits(api, store, () => serves(client, "Limits"));
   const off = store.subscribe(feed);
   // The engine's attention changes without a shared event.
   const offRooms = client?.rooms?.subscribe(() => update(key, same)) ?? (() => {});
@@ -264,6 +266,7 @@ export function attachProject(key: string, source: string, store: Store, client:
       off();
       offRooms();
       stopCrew();
+      stopLimits();
       store.dispatch = raw;
     },
   });

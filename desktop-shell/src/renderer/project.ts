@@ -1,6 +1,7 @@
 import type { DeckBridge, RpcMethod, TermEvent } from "../shared/bridge";
 import { type Board, type Crew, type SharedMirror, type Team, toBoard, toCrew, toMirror, toTeam } from "./crew";
 import { bool, list, num, type Obj, obj, str } from "./guards";
+import { type LimitCheck, type Limits, toCheck, toLimits } from "./limits";
 
 // What a local Deck adds to the shared DeckClient: the project's git work
 // tree, the usage record and terminals (proto/deck/v1, Git*, Usage,
@@ -192,7 +193,7 @@ const toDay = (d: Obj): UsageDay => ({
   costUsd: num(d, "cost_usd"),
 });
 
-const toLimit = (l: Obj): UsageLimit => ({
+export const toLimit = (l: Obj): UsageLimit => ({
   agentKind: str(l, "agent_kind"),
   windowId: str(l, "window_id"),
   kind: str(l, "kind"),
@@ -357,6 +358,40 @@ export class ProjectApi {
   async usage(days: number, historyDays = 0): Promise<Usage | string> {
     const r = await this.call("Usage", historyDays > 0 ? { days, history_days: historyDays } : { days });
     return r.ok ? toUsage(r.value) : r.message;
+  }
+
+  // The plan limits, with the windows' record of the last hours.
+  async limits(historyHours = 0): Promise<Limits | string> {
+    const r = await this.call("Limits", { history_hours: historyHours });
+    return r.ok ? toLimits(r.value) : r.message;
+  }
+
+  // Asks the agents (kind, or every one for "") for their limits now.
+  async checkLimits(kind = ""): Promise<LimitCheck[] | string> {
+    const r = await this.call("CheckLimits", { kind });
+    return r.ok ? list(obj(r.value), "checks", toCheck) : r.message;
+  }
+
+  // Starts kind's rolling window; the model it used, or the error.
+  async startWindow(kind: string): Promise<{ model: string } | string> {
+    const r = await this.call("StartWindow", { kind });
+    return r.ok ? { model: str(obj(r.value), "model") } : r.message;
+  }
+
+  // Resumes a waiting agent now, or cancels its wait; null when done.
+  async resolveWait(sessionId: string, agent: string, cancel: boolean): Promise<string | null> {
+    const r = await this.call("ResolveWait", { session_id: sessionId, agent, cancel });
+    return r.ok ? null : r.message;
+  }
+
+  async scheduleSend(sessionId: string, text: string, at: number): Promise<string | null> {
+    const r = await this.call("ScheduleSend", { session_id: sessionId, text, at });
+    return r.ok ? null : r.message;
+  }
+
+  async cancelScheduled(sessionId: string, id: string, sendNow: boolean): Promise<string | null> {
+    const r = await this.call("CancelScheduled", { session_id: sessionId, id, send_now: sendNow });
+    return r.ok ? null : r.message;
   }
 
   async board(sessionId: string): Promise<Board | string> {

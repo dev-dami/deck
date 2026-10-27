@@ -1,7 +1,7 @@
 import type { Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
 import { CornerDownRight, Lock, Square } from "./icons";
-import { useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { agentColour } from "../agents";
 import { tintOf } from "../teamGate";
 import { fitLanes, type Lane } from "../lanes";
@@ -65,9 +65,12 @@ function AgentChip({
   setModel,
   onStop,
   onSteer,
+  mark,
 }: {
   lane: Lane;
   theme: Theme | null;
+  // What else the chip shows of the agent (its plan's quota).
+  mark?: ReactNode;
   on: boolean;
   onFilter: () => void;
   picker: PickerSource;
@@ -123,6 +126,7 @@ function AgentChip({
               <Ring pct={lane.contextPct} className="lane-ring" />
             </span>
           )}
+          {mark}
           {lane.leases.length > 0 && (
             <span
               className="lane-leases flex items-center gap-0.5 font-mono text-3xs text-faint tabular-nums"
@@ -198,8 +202,11 @@ export function Lanes({
   setModel,
   onStop,
   onSteer,
+  mark,
 }: {
   lanes: Lane[];
+  // What else an agent's chip shows (its plan's quota).
+  mark?: (lane: Lane) => ReactNode;
   theme: Theme | null;
   // The lane the timeline shows alone, or null for all.
   filter: string | null;
@@ -258,6 +265,7 @@ export function Lanes({
             setModel={(model, effort) => setModel(l.agentKind, model, effort)}
             onStop={() => onStop(l.name)}
             onSteer={() => onSteer(l.name)}
+            mark={mark?.(l)}
           />
         ) : (
           <button

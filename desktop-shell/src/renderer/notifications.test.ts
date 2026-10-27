@@ -69,7 +69,7 @@ const ev = (room: string, kind: NotifyEvent["kind"] = "finished", at = 1, extra:
 
 const on: NotifySettings = {
   enabled: true,
-  kinds: { approval: true, error: true, mention: true, task: true, finished: true },
+  kinds: { approval: true, error: true, limit: true, mention: true, task: true, finished: true },
   sound: true,
   unfocusedOnly: true,
 };

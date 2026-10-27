@@ -11,6 +11,7 @@ import { PLATES } from "../plates";
 import { segmentItem, segmentTrack } from "./kit/segmented";
 import { AgentGlyph } from "./Welcome";
 import { Analytics, HISTORY_DAYS } from "./Analytics";
+import { CheckLimitsButton } from "./Limits";
 
 // Deck's local record of what the agents used and how you work, after T3
 // Code's usage page. Nothing here leaves the machine.
@@ -362,6 +363,16 @@ export function UsagePage({
   useEffect(() => {
     void load();
   }, [load]);
+  // What the last limits check or window start said, under the header; the
+  // record is read again (quietly) to draw what it found.
+  const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
+  const limitsDone = useCallback(
+    (text: string, error: boolean) => {
+      setNote({ text, error });
+      if (project !== undefined && view === "analytics") void project.usage(1, HISTORY_DAYS).then((d) => typeof d !== "string" && setData(d));
+    },
+    [project, view],
+  );
 
   const header = (
     <header className="topbar drag flex h-13 shrink-0 items-center gap-2 px-5 text-sm">
@@ -385,6 +396,7 @@ export function UsagePage({
             ))}
           </div>
         )}
+        {view === "analytics" && project !== undefined && <CheckLimitsButton api={project} onDone={limitsDone} />}
         <Button variant="ghost-muted" size="icon-sm" aria-label="Refresh" title="Refresh" onClick={() => void load()}>
           <RefreshCw />
         </Button>
@@ -420,7 +432,16 @@ export function UsagePage({
   } else if (!data.available) {
     body = <EmptyPlate art={PLATES.fuji} title="No usage record" hint="This Deck keeps no usage record." className="py-20" />;
   } else if (view === "analytics") {
-    body = <Analytics data={data} theme={theme} />;
+    body = (
+      <div className="flex flex-col gap-3">
+        {note !== null && (
+          <p className={cn("text-pretty text-xs", note.error ? "text-warning-foreground" : "text-muted-foreground")} role="status" data-limits-note="">
+            {note.text}
+          </p>
+        )}
+        <Analytics data={data} theme={theme} api={project} onLimitsDone={limitsDone} />
+      </div>
+    );
   } else {
     const o = data.overview;
     const tokens = o.inputTokens + o.outputTokens;

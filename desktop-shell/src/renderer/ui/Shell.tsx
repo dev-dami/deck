@@ -26,6 +26,7 @@ import { type ProjectEntry, Sidebar } from "./Sidebar";
 import { TeamPage, useTeam } from "./Team";
 import { TerminalDrawer, useTerminalShown } from "./Terminal";
 import { Toasts } from "./Toasts";
+import { useLimitCommands } from "./Limits";
 import { UsagePage } from "./Usage";
 import { setPreviewTarget, useOpenPorts, useWatchPorts } from "./usePorts";
 import { useOpenRoom } from "./useRoom";
@@ -188,6 +189,7 @@ export function Shell(props: ShellProps) {
     },
     bridge,
   );
+  const limitCommands = useLimitCommands(api, toast, info);
   const paletteRooms = usePaletteRooms(c, projectKey, project, others);
   // The Team page shows only while the team is on; turning it off closes it.
   const teamPage = ui.team && prefs.team;
@@ -382,7 +384,7 @@ export function Shell(props: ShellProps) {
       )}
       {ui.palette && (
         <Palette
-          commands={commands}
+          commands={limitCommands.length === 0 ? commands : [...commands, ...limitCommands]}
           rooms={paletteRooms}
           sources={[{ key: projectKey, c }, ...others.map((o) => ({ key: o.key, c: o.c }))]}
           onOpenRoom={openRoom}

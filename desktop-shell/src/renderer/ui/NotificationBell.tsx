@@ -4,7 +4,7 @@ import { cn } from "../lib/cn";
 import { type NotifyEntry, type NotifyKind, unreadCount } from "../notifications";
 import { clearAll, openEntry, readAll, useNotifyEntries } from "../notifyCentre";
 import { usePrefs } from "../prefs";
-import { At, Bell, BellSlash, Check, Checks, CircleAlert, CircleCheck, type IconType, ListChecks, ShieldQuestion, Trash2 } from "./icons";
+import { At, Bell, BellSlash, Check, Checks, CircleAlert, CircleCheck, Gauge, type IconType, ListChecks, ShieldQuestion, Trash2 } from "./icons";
 import { Button } from "./kit/button";
 import { Popover } from "./kit/menu";
 import { ProjectIcon } from "./ProjectIcon";
@@ -15,6 +15,7 @@ import { ProjectIcon } from "./ProjectIcon";
 const KINDS: Record<NotifyKind, { icon: IconType; tone: string }> = {
   approval: { icon: ShieldQuestion, tone: "text-warning-foreground" },
   error: { icon: CircleAlert, tone: "text-destructive-foreground" },
+  limit: { icon: Gauge, tone: "text-warning-foreground" },
   mention: { icon: At, tone: "text-info-foreground" },
   task: { icon: ListChecks, tone: "text-success-foreground" },
   finished: { icon: CircleCheck, tone: "text-success-foreground" },
