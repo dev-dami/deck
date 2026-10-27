@@ -49,6 +49,7 @@ const node = (name: string, over: Partial<AgentNode> = {}): AgentNode => ({
   leases: "",
   profile: "",
   role: "",
+  color: "",
   ...over,
 });
 

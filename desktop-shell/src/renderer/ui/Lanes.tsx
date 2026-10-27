@@ -3,6 +3,7 @@ import { kindMark } from "@web/theme";
 import { CornerDownRight, Lock, Square } from "./icons";
 import { useLayoutEffect, useRef, useState } from "react";
 import { agentColour } from "../agents";
+import { tintOf } from "../teamGate";
 import { fitLanes, type Lane } from "../lanes";
 import { cn } from "../lib/cn";
 import { AgentRole } from "./AgentRole";
@@ -76,7 +77,7 @@ function AgentChip({
 }) {
   const [load, setLoad] = useState<Promise<ModelChoice[] | null> | null>(null);
   const close = () => setLoad(null);
-  const colour = agentColour(lane.name, lane.agentKind);
+  const colour = agentColour(lane.name, lane.agentKind, tintOf(lane.color));
   const running = lane.status === "working" || lane.status === "waiting";
   return (
     <Popover

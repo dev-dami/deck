@@ -12,6 +12,7 @@ import { focusMessage, useFocusedMessage } from "../palette";
 import { usePrefs } from "../prefs";
 import { useMentionables } from "../profiles";
 import { sendHint } from "../queue";
+import { gateMentionables } from "../teamGate";
 import { EMPTY_ROOM, useRoomMetas } from "../roomMeta";
 import { type ShellSlice, shallowEqual, threadSlice, useAppSlice } from "../select";
 import type { Panel } from "../ui";
@@ -243,8 +244,9 @@ export function Room({
   };
   const listModels = (kind: string) => c.listModels(sid ?? "", kind);
   const setModel = (kind: string, model: string, effort?: string) => sid !== null && void c.setModel(sid, kind, model, effort);
-  // "@" offers the Deck's profiles and the team's people too.
-  const named = useMentionables(c, team);
+  // "@" offers the Deck's profiles and the team's people too, while the
+  // team is on (teamGate.ts).
+  const named = gateMentionables(prefs.team, useMentionables(c, team));
   const common = { draft, setDraft, kinds, images: imagesOn, onSlash: send.runSlash, onError: toast, inputRef, sendKey: prefs.sendKey, theme: state.theme, ...named };
 
   return (

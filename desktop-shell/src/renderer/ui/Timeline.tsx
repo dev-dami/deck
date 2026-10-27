@@ -37,13 +37,14 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { agentColour, agentKind, agentRole } from "../agents";
+import { agentColour, agentKind, agentRole, agentTint } from "../agents";
 import type { RoomNotice } from "../attention";
 import { shortId } from "../lanes";
 import { cn } from "../lib/cn";
 import { lastReplyId, messageText } from "../messages";
 import { detectPlan, findPlan } from "../plans";
 import { formatClock, usePrefs } from "../prefs";
+import { tintOf } from "../teamGate";
 import type { ImageBytes } from "../rpcMap";
 import { capLines, formatDuration, splitWork } from "../work";
 import { AgentRole } from "./AgentRole";
@@ -457,7 +458,7 @@ function AgentMessage({
   const prefs = usePrefs();
   const agent = m.agent ?? "agent";
   const kind = agentKind(agent, roster);
-  const colour = agentColour(agent, kind);
+  const colour = agentColour(agent, kind, tintOf(agentTint(agent, roster), prefs.team));
   const mark = kindMark(theme, kind) || "●";
   const chunks = chunksOf(m);
   const { work, answer } = splitWork(chunks);
@@ -650,7 +651,7 @@ function EmptyRoom({ roster, theme }: { roster: AgentLine[]; theme: Theme | null
       {roster.length > 0 && (
         <p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
           {roster.map((l) => (
-            <span key={l.id} className="inline-flex items-baseline gap-1.5" style={hue(agentColour(l.id, l.kind))}>
+            <span key={l.id} className="inline-flex items-baseline gap-1.5" style={hue(agentColour(l.id, l.kind, tintOf(l.color)))}>
               <span aria-hidden className="font-mono text-(--hue) text-[12.5px]">
                 {kindMark(theme, l.kind) || "●"}
               </span>

@@ -22,6 +22,7 @@ const node = (name: string, over: Partial<AgentNode> = {}): AgentNode => ({
   leases: "",
   profile: "",
   role: "",
+  color: "",
   ...over,
 });
 
@@ -73,15 +74,15 @@ describe("buildLanes", () => {
 
   test("a named member's lane carries its profile's role", () => {
     const lanes = buildLanes({
-      roster: [{ ...line("charles"), kind: "claude", role: "reviewer", profile: "charles" }, line("codex-1")],
+      roster: [{ ...line("charles"), kind: "claude", role: "reviewer", profile: "charles", color: "teal" }, line("codex-1")],
       agents: null,
       shares: {},
       waiting: [],
     });
-    expect(lanes.map((l) => [l.name, l.agentKind, l.role])).toEqual([
-      ["you", "", ""],
-      ["charles", "claude", "reviewer"],
-      ["codex-1", "codex", ""],
+    expect(lanes.map((l) => [l.name, l.agentKind, l.role, l.color])).toEqual([
+      ["you", "", "", ""],
+      ["charles", "claude", "reviewer", "teal"],
+      ["codex-1", "codex", "", ""],
     ]);
   });
 

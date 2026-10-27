@@ -44,7 +44,8 @@ export function SidebarFooter({
   update: { version: string; onRestart: () => void } | null;
   onSettings: (s: SettingsSection | null) => void;
   onUsage: () => void;
-  onTeam: () => void;
+  // null with the team off (teamGate.ts): no Team button and no presence.
+  onTeam: (() => void) | null;
   onDisconnect: () => void;
 }) {
   return (
@@ -62,9 +63,11 @@ export function SidebarFooter({
       <Button variant="ghost-muted" size="icon-sm" aria-label="Usage" title="Usage" aria-pressed={usage} onClick={onUsage}>
         <BarChart3 weight={usage ? "fill" : "regular"} />
       </Button>
-      <Button variant="ghost-muted" size="icon-sm" aria-label="Team" title="Team" aria-pressed={team} onClick={onTeam}>
-        <Users weight={team ? "fill" : "regular"} />
-      </Button>
+      {onTeam !== null && (
+        <Button variant="ghost-muted" size="icon-sm" aria-label="Team" title="Team" aria-pressed={team} onClick={onTeam}>
+          <Users weight={team ? "fill" : "regular"} />
+        </Button>
+      )}
       <Button variant="ghost-muted" size="icon-sm" aria-label="Close project" title="Close project" onClick={onDisconnect}>
         <Unplug />
       </Button>
@@ -79,7 +82,7 @@ export function SidebarFooter({
         </button>
       )}
       <span className={cn("flex shrink-0 items-center gap-1", update === null ? "ml-auto" : "ml-1")}>
-        {online !== null && (
+        {online !== null && onTeam !== null && (
           <button
             type="button"
             className={cn("presence", quiet)}

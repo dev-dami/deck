@@ -16,6 +16,7 @@ import {
 } from "./icons";
 import { type ReactNode, useMemo, useState } from "react";
 import { agentColour } from "../agents";
+import { tintOf } from "../teamGate";
 import { type DeckClient, serves } from "../client";
 import type { Team } from "../crew";
 import { shortId } from "../lanes";
@@ -370,7 +371,7 @@ export function RoomHeader({
               // The corner index: the first agent's glyph and the room's short id, in that agent's hue.
               <span
                 className="room-index inline-flex shrink-0 items-center gap-1 font-mono"
-                style={{ color: first === undefined ? "var(--text-faint)" : agentColour(first.id, first.kind) }}
+                style={{ color: first === undefined ? "var(--text-faint)" : agentColour(first.id, first.kind, tintOf(first.color)) }}
                 title={open.id}
               >
                 <span aria-hidden>{first === undefined ? "●" : kindMark(theme, first.kind) || "●"}</span>

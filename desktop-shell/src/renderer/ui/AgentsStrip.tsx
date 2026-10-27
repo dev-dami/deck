@@ -4,6 +4,7 @@ import { kindColour, kindMark } from "@web/theme";
 import { Check, ChevronRight, Loader2, Plus } from "./icons";
 import { type CSSProperties, useEffect, useState } from "react";
 import { agentColour } from "../agents";
+import { tintOf } from "../teamGate";
 import { agentStatus } from "../approvals";
 import { addAgentMention } from "../completion";
 import type { AgentNode } from "../crew";
@@ -163,7 +164,7 @@ function Chip({
         `agent agent-${status} group/agent flex h-7 max-w-56 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2 text-faint text-xs outline-none transition-colors hover:bg-hover hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring`,
         on && "on text-foreground hover:text-foreground",
       )}
-      style={{ "--hue": agentColour(line.id, line.kind) } as CSSProperties}
+      style={{ "--hue": agentColour(line.id, line.kind, tintOf(line.color)) } as CSSProperties}
       title={`${line.id}: ${line.model ?? "default model"} (${status})`}
       onClick={onToggle}
     >

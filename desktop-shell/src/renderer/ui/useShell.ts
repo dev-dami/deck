@@ -197,7 +197,7 @@ function useShellKeys(keys: ShellKeys): void {
   }, []);
 }
 
-type CommandFns = Omit<CommandDeps, "mac" | "terminal" | "theme">;
+type CommandFns = Omit<CommandDeps, "mac" | "terminal" | "theme" | "team"> & { team: () => void };
 // The commands that open a page or a panel go through the project's UI state.
 type UiCommands = "togglePanel" | "toggleSidePanel" | "settings" | "usage" | "team" | "inbox";
 
@@ -208,6 +208,7 @@ export function useShellCommands(
   {
     mac,
     terminal,
+    team,
     dispatch,
     panel,
     palette,
@@ -218,6 +219,8 @@ export function useShellCommands(
   }: Omit<CommandFns, UiCommands> & {
     mac: boolean;
     terminal: boolean;
+    // Whether the team shows (teamGate.ts); off, the palette has no Open team.
+    team: boolean;
     dispatch: (a: UiAction) => void;
     // The open tab of the side panel, and whether the palette shows.
     panel: Panel | null;
@@ -266,7 +269,7 @@ export function useShellCommands(
       toggleSidebar: live("toggleSidebar"),
       settings: live("settings"),
       usage: live("usage"),
-      team: live("team"),
+      team: team ? live("team") : null,
       inbox: live("inbox"),
       nextAttention: live("nextAttention"),
       room: live("room"),
@@ -278,7 +281,7 @@ export function useShellCommands(
     });
     return [...list, ...previewCommands(ports, (url) => latest.current.preview(url))];
     // A new probe makes a new ports array; the commands change with its URLs.
-  }, [mac, terminal, ports.map((p) => p.url).join(" ")]);
+  }, [mac, terminal, team, ports.map((p) => p.url).join(" ")]);
   useEffect(
     () =>
       bridge.onMenu((m) => {

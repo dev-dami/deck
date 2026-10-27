@@ -7,6 +7,7 @@ import type { InboxItem } from "../attention";
 import type { DeckClient } from "../client";
 import type { OpenProject } from "../openProjects";
 import { usePrefs } from "../prefs";
+import { gateTeam } from "../teamGate";
 import { panelSlice, shallowEqual, shellSlice, useAppSlice } from "../select";
 import { isSide } from "../sideChat";
 import type { Panel, UiAction } from "../ui";
@@ -93,7 +94,9 @@ export function Shell(props: ShellProps) {
   const api = c.project;
   const [terminal, setTerminal] = useTerminalShown(api);
   const git = useGit(api);
-  const { team } = useTeam(api, 15_000);
+  // With the team off (teamGate.ts) nothing of it is polled or shown.
+  const polled = useTeam(prefs.team ? api : undefined, 15_000);
+  const team = gateTeam(prefs.team, polled.team);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mac = useMemo(isMac, []);
   const foreign = useForeignThreads(others);
@@ -154,6 +157,7 @@ export function Shell(props: ShellProps) {
     {
       mac,
       terminal: api !== undefined,
+      team: prefs.team,
       dispatch,
       panel: ui.panel,
       palette: ui.palette,
@@ -172,8 +176,13 @@ export function Shell(props: ShellProps) {
     bridge,
   );
   const paletteRooms = usePaletteRooms(c, projectKey, project, others);
+  // The Team page shows only while the team is on; turning it off closes it.
+  const teamPage = ui.team && prefs.team;
+  useEffect(() => {
+    if (ui.team && !prefs.team) dispatch({ type: "team", open: false });
+  }, [ui.team, prefs.team, dispatch]);
   // Settings, Usage, Team and the inbox take the place of the room.
-  const away = ui.settings !== null || ui.usage || ui.team || ui.inbox;
+  const away = ui.settings !== null || ui.usage || teamPage || ui.inbox;
 
   return (
     // The window is a backdrop with panels on it (docs/design-glass.md,
@@ -200,12 +209,12 @@ export function Shell(props: ShellProps) {
             settings: ui.settings,
             update: update === null ? null : { version: update, onRestart: () => void bridge.installUpdate() },
             usage: ui.usage,
-            team: ui.team,
+            team: teamPage,
             inbox: ui.inbox,
             inboxCount: attention.items.length,
             digits,
             shared: teamOn?.teammates.flatMap((m) => m.threads.map((t) => ({ peer: m.name, thread: t }))) ?? [],
-            openShared: shared === null || away ? null : `${shared.peer}/${shared.thread.id}`,
+            openShared: shared === null || away || !prefs.team ? null : `${shared.peer}/${shared.thread.id}`,
             online: teamOn === null ? null : teamOn.teammates.filter((m) => m.link === "online").length,
           }}
           actions={{
@@ -224,7 +233,7 @@ export function Shell(props: ShellProps) {
             onPalette: () => dispatch({ type: "palette", open: true }),
             onSettings: (section) => dispatch({ type: "settings", section }),
             onUsage: () => dispatch({ type: "usage", open: !ui.usage }),
-            onTeam: () => dispatch({ type: "team", open: !ui.team }),
+            onTeam: prefs.team ? () => dispatch({ type: "team", open: !ui.team }) : null,
             onInbox: () => dispatch({ type: "inbox", open: !ui.inbox }),
             onShared: openShared,
             onCollapse: () => setSidebar(false),
@@ -246,7 +255,7 @@ export function Shell(props: ShellProps) {
             />
           ) : ui.usage ? (
             <UsagePage project={api} theme={state.theme} onOpenThread={openSession} onAddProject={addProject} />
-          ) : ui.team ? (
+          ) : teamPage ? (
             <TeamPage
               api={api}
               thread={open}
@@ -258,7 +267,7 @@ export function Shell(props: ShellProps) {
             />
           ) : ui.settings !== null ? (
             <LiveSettings c={c} teammates={teammates} section={ui.settings} where={where} transport={transport} mac={mac} bridge={bridge} folder={folder} onDisconnect={onDisconnect} />
-          ) : shared !== null && api !== undefined ? (
+          ) : shared !== null && api !== undefined && prefs.team ? (
             <SharedRoom
               key={`${shared.peer}/${shared.thread.id}`}
               api={api}

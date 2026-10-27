@@ -76,6 +76,7 @@ const agent = (name: string, status: string, since = 0): AgentNode => ({
   leases: "",
   profile: "",
   role: "",
+  color: "",
 });
 
 const room = (extra: Partial<RoomInput> = {}): RoomInput => ({

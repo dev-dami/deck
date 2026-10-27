@@ -2,6 +2,7 @@ import type { Store } from "@web/controller";
 import { useEffect, useSyncExternalStore } from "react";
 import type { Board, Crew, Team } from "./crew";
 import type { ProjectApi } from "./project";
+import { teamOn } from "./teamGate";
 
 // The task board, agents and team of each local project, polled once for
 // the whole window: the sidebar, the inbox and the Agents panel read the
@@ -70,8 +71,9 @@ export function crewOf(api: ProjectApi | undefined, sid: string): RoomCrew | und
   return api === undefined ? undefined : watches.get(api)?.rooms.get(sid);
 }
 
+// null with the team off (teamGate.ts), whose contracts then leave the inbox.
 export function teamOf(api: ProjectApi | undefined): Team | null {
-  return api === undefined ? null : (watches.get(api)?.team ?? null);
+  return api === undefined || !teamOn() ? null : (watches.get(api)?.team ?? null);
 }
 
 // Polls a project's rooms: those that work, the open one, and each room
@@ -90,7 +92,7 @@ export function watchCrew(api: ProjectApi, store: Store, openId: () => string | 
     if (open !== null) ids.add(open);
     busyBefore = busy;
     const jobs: Promise<void>[] = [...ids].map((id) => refreshCrew(api, id));
-    if (Date.now() - teamAt >= TEAM_MS) {
+    if (teamOn() && Date.now() - teamAt >= TEAM_MS) {
       teamAt = Date.now();
       jobs.push(refreshTeam(api));
     }

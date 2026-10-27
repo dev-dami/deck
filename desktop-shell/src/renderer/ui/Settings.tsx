@@ -405,7 +405,20 @@ function Agents({ state, p }: { state: AppState; p: Prefs }) {
           </div>
         ))}
       </Section>
-      <ProfilesEditor kinds={kinds} theme={state.theme} />
+      {/* The Team switch (teamGate.ts): off, the named agents and the
+          teammates leave the window, and their settings with them. */}
+      <Section title="Team">
+        <Row
+          title="Team"
+          description={
+            p.team
+              ? "Named agents, teammates, shared rooms and the Team page."
+              : "Off: only plain agents show. Your profiles and team link are kept, and come back when you turn it on."
+          }
+          control={<Switch label="Team" checked={p.team} onChange={set("team")} />}
+        />
+      </Section>
+      {p.team && <ProfilesEditor kinds={kinds} theme={state.theme} />}
       <Section title="Permissions">
         <Row
           title="Yolo mode"

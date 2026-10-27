@@ -51,6 +51,8 @@ export interface Prefs {
   // The app icon: "theme" wears the theme's (appIcon/catalog.ts), an icon
   // id wears that one.
   appIcon: AppIconPref;
+  // The team and the named agents (teamGate.ts); off hides them.
+  team: boolean;
 }
 
 export const defaultPrefs: Prefs = {
@@ -75,6 +77,7 @@ export const defaultPrefs: Prefs = {
   diffWrap: false,
   wallpaper: "theme",
   appIcon: "theme",
+  team: true,
 };
 
 const KEY = "deck.desktop.prefs";
@@ -91,7 +94,7 @@ function load(): Prefs {
 }
 
 // Only known keys with values of the right kind survive a load.
-function merge(v: Record<string, unknown>): Prefs {
+export function merge(v: Record<string, unknown>): Prefs {
   const pick = <T extends string>(k: string, allowed: readonly T[], d: T): T =>
     allowed.includes(v[k] as T) ? (v[k] as T) : d;
   const bool = (k: string, d: boolean): boolean => (typeof v[k] === "boolean" ? (v[k] as boolean) : d);
@@ -121,6 +124,7 @@ function merge(v: Record<string, unknown>): Prefs {
     diffWrap: bool("diffWrap", defaultPrefs.diffWrap),
     wallpaper: pick("wallpaper", ["theme", CUSTOM, ...PICTURES.map((x) => x.id)], defaultPrefs.wallpaper),
     appIcon: pick("appIcon", ["theme", ...APP_ICON_IDS], defaultPrefs.appIcon),
+    team: bool("team", defaultPrefs.team),
   };
 }
 

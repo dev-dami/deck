@@ -5,7 +5,7 @@ import { projectState, subscribe } from "./appState";
 import { type InboxItem, inboxItems, type RoomState, type RoomStatus, shouldNotify } from "./attention";
 import { subscribeCrew, teamOf } from "./crewState";
 import type { OpenProject } from "./openProjects";
-import { getPrefs } from "./prefs";
+import { getPrefs, subscribePrefs } from "./prefs";
 import { isSide } from "./sideChat";
 
 // The window's attention across its open projects: the inbox, the badge and
@@ -55,6 +55,8 @@ export function useInbox(open: OpenProject[]): InboxItem[] {
     const offs = [
       subscribe(read),
       subscribeCrew(read),
+      // The Team switch takes contracts out of the inbox and puts them back.
+      subscribePrefs(read),
       ...open.map((p) => p.c.store.subscribe(read)),
       ...open.flatMap((p) => (p.c.rooms === undefined ? [] : [p.c.rooms.subscribe(read)])),
     ];

@@ -104,7 +104,8 @@ export interface SidebarActions {
   onPalette: () => void;
   onSettings: (s: SettingsSection | null) => void;
   onUsage: () => void;
-  onTeam: () => void;
+  // null with the team off: no Team button and no teammates online.
+  onTeam: (() => void) | null;
   onInbox: () => void;
   onShared: (peer: string, thread: TeamThread) => void;
   onCollapse: () => void;
