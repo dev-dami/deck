@@ -132,7 +132,7 @@ func dispatch(ctx context.Context, b remote.Backend, m string, a args) (any, err
 	case "approvals":
 		return b.Approvals(a.SessionID)
 	case "answer":
-		return b.Answer(a.SessionID, a.ID, a.Decision)
+		return b.Answer(a.SessionID, a.ID, a.Decision, a.Answers)
 	case "changes":
 		return b.Changes(ctx, a.SessionID)
 	}

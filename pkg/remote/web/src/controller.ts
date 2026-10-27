@@ -19,6 +19,7 @@ import {
   type Mode,
   type ModelChoice,
   parseEvent,
+  type QuestionAnswer,
   type RaceEntrant,
   type ServerEvent,
   type Session,
@@ -485,10 +486,21 @@ export class Controller {
 
   // ---- approvals, mode, models -------------------------------------------
 
-  async answerApproval(sessionId: string, id: string, decision: Decision): Promise<void> {
+  // A question approval takes "answer" with answers, or "deny" to decline it.
+  async answerApproval(
+    sessionId: string,
+    id: string,
+    decision: Decision,
+    answers?: QuestionAnswer[],
+  ): Promise<void> {
     this.d.vibrate(25);
     const r = await this.guard(
-      this.call("approvals.answer", { session_id: sessionId, id, decision }),
+      this.call("approvals.answer", {
+        session_id: sessionId,
+        id,
+        decision,
+        ...(answers !== undefined ? { answers } : {}),
+      }),
     );
     // resolved:false means someone else (the desktop) answered first; either
     // way the approval is no longer waiting on this phone.

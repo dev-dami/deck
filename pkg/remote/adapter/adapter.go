@@ -65,6 +65,7 @@ type Backend struct {
 	rc     workspace.RemoteControl
 	picker workspace.AgentPicker
 	adder  workspace.AgentAdder
+	asks   workspace.QuestionDesk // nil: no agent questions
 	roster workspace.Roster
 	racer  raceStarter
 	events Events
@@ -97,8 +98,9 @@ func NewWith(core Core, rc workspace.RemoteControl, picker workspace.AgentPicker
 	// The workspace that picks models also adds agents; fakes may not.
 	adder, _ := picker.(workspace.AgentAdder)
 	racer, _ := core.(raceStarter)
+	asks, _ := rc.(workspace.QuestionDesk)
 	return &Backend{
-		core: core, rc: rc, picker: picker, adder: adder, roster: roster, racer: racer, events: events,
+		core: core, rc: rc, picker: picker, adder: adder, roster: roster, racer: racer, asks: asks, events: events,
 		version: version, project: project, themePoll: 5 * time.Second,
 		waiting: map[string]pending{},
 	}
@@ -147,6 +149,9 @@ func (b *Backend) pendingFor(sessionID string) int {
 		if p.req.SessionID == sessionID {
 			n++
 		}
+	}
+	if b.asks != nil {
+		n += len(b.asks.PendingQuestions(sessionID))
 	}
 	return n
 }
@@ -452,14 +457,22 @@ func (b *Backend) Approvals(sessionID string) ([]wire.Approval, error) {
 			out = append(out, toApproval(p.req, p.at, root))
 		}
 	}
+	if b.asks != nil {
+		for _, q := range b.asks.PendingQuestions(sessionID) {
+			out = append(out, toQuestion(q))
+		}
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
 	return out, nil
 }
 
-func (b *Backend) Answer(sessionID, id, decision string) (bool, error) {
+func (b *Backend) Answer(sessionID, id, decision string, answers []wire.QuestionAnswer) (bool, error) {
 	b.mu.Lock()
 	p, ok := b.waiting[id]
 	b.mu.Unlock()
+	if !ok && b.asks != nil {
+		return b.answerQuestion(sessionID, id, decision, answers)
+	}
 	if !ok || p.req.SessionID != sessionID {
 		return false, remote.ErrNotFound
 	}

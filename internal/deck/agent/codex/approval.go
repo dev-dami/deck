@@ -104,6 +104,45 @@ func (r *run) handleServerRequest(m Message) {
 		})
 		r.push(req)
 
+	case reqUserInput:
+		var p userInputParams
+		if json.Unmarshal(m.Params, &p) != nil || len(p.Questions) == 0 {
+			_ = r.client.RespondError(m.ID, -32601, "not supported by Deck: "+m.Method)
+			return
+		}
+		req := agent.ApprovalRequest{
+			ID:       approvalID("", p.ItemID),
+			AgentID:  r.spec.ID,
+			Kind:     agent.ApproveQuestion,
+			ToolName: "request_user_input",
+			Summary:  p.Questions[0].Question,
+			Cwd:      r.spec.Dir,
+		}
+		if req.ID == "" {
+			req.ID = string(m.ID)
+		}
+		for _, q := range p.Questions {
+			aq := agent.Question{ID: q.ID, Header: q.Header, Text: q.Question, Other: q.IsOther || len(q.Options) == 0}
+			for _, o := range q.Options {
+				aq.Options = append(aq.Options, agent.QuestionOption{Label: o.Label, Description: o.Description})
+			}
+			req.Questions = append(req.Questions, aq)
+		}
+		// Declined, the answers are empty: codex tells the model the user
+		// gave none, and the turn goes on.
+		req.Respond = r.responder(m.ID, func(d agent.Decision) any {
+			res := userInputResponse{Answers: map[string]userInputAnswer{}}
+			if d.Allow {
+				for id, a := range d.Answers {
+					if vs := a.Values(); len(vs) > 0 {
+						res.Answers[id] = userInputAnswer{Answers: vs}
+					}
+				}
+			}
+			return res
+		})
+		r.push(req)
+
 	case reqElicitation:
 		// Only Deck's own tools (server "deck": search and execute, whose
 		// ops are read-only except thread.send, which the user sees) are
@@ -117,7 +156,7 @@ func (r *run) handleServerRequest(m Message) {
 		_ = r.client.Respond(m.ID, map[string]any{"action": "decline"})
 
 	default:
-		// requestUserInput, dynamic tool calls, token refresh, attestation, ...
+		// dynamic tool calls, token refresh, attestation, ...
 		// Deck does not support these; refuse rather than hang the turn. In
 		// particular Deck never answers credential refresh requests.
 		_ = r.client.RespondError(m.ID, -32601, "not supported by Deck: "+m.Method)

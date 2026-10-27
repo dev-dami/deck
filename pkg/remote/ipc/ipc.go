@@ -91,20 +91,22 @@ type evBody struct {
 
 // args is the union of every Backend method's parameters.
 type args struct {
-	SessionID string  `json:"session_id,omitempty"`
-	ID        string  `json:"id,omitempty"`
-	Title     string  `json:"title,omitempty"`
-	Before    string  `json:"before,omitempty"`
-	Limit     int     `json:"limit,omitempty"`
-	Text      string  `json:"text,omitempty"`
-	MessageID string  `json:"message_id,omitempty"`
-	Agent     string  `json:"agent,omitempty"`
-	Kind      string  `json:"kind,omitempty"`
-	Model     string  `json:"model,omitempty"`
-	Effort    string  `json:"effort,omitempty"`
-	Mode      string  `json:"mode,omitempty"`
-	Decision  string  `json:"decision,omitempty"`
-	Images    []image `json:"images,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	ID        string `json:"id,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Before    string `json:"before,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+	Text      string `json:"text,omitempty"`
+	MessageID string `json:"message_id,omitempty"`
+	Agent     string `json:"agent,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	Model     string `json:"model,omitempty"`
+	Effort    string `json:"effort,omitempty"`
+	Mode      string `json:"mode,omitempty"`
+	Decision  string `json:"decision,omitempty"`
+	// Answers go with an "answer" decision.
+	Answers []wire.QuestionAnswer `json:"answers,omitempty"`
+	Images  []image               `json:"images,omitempty"`
 }
 
 type image struct {

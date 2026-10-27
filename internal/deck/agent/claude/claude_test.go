@@ -220,6 +220,10 @@ func TestEditDiffBeforeResult(t *testing.T) {
 
 func init() {
 	if os.Getenv("DECK_FAKE_CLAUDE") == "1" {
+		if os.Getenv("DECK_FAKE_ASK") == "1" {
+			fakeAskClaude()
+			os.Exit(0)
+		}
 		fakeClaude()
 		os.Exit(0)
 	}

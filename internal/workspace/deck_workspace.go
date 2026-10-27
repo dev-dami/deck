@@ -70,6 +70,11 @@ type DeckWorkspace struct {
 	// asks maps each ask to edit a file (decks.FileAsk) to the line that
 	// shows it, by thread and ask id. Only the pump goroutine touches it.
 	asks map[string]string
+	// questions are the agents' questions waiting for the person, by
+	// approval id (questions.go); tuiForm holds the terminal UI's one
+	// question form. Under mu.
+	questions map[string]*openQuestion
+	tuiForm   chan struct{}
 
 	act activity // tool calls in flight and background shells, by session
 
@@ -475,6 +480,7 @@ func (w *DeckWorkspace) pump() {
 		case decks.ApprovalMsg:
 			w.onApproval(m)
 		case decks.ApprovalGoneMsg:
+			w.settleQuestion(m.ID, deckagent.Decision{}, true)
 			w.mu.Lock()
 			cancel := w.approvals[m.ID]
 			delete(w.approvals, m.ID)
@@ -1050,6 +1056,10 @@ func (w *DeckWorkspace) warnNoAsk(sid, agentID string) {
 // onApproval asks the user through Deck's permission dialog and answers the
 // agent with what they chose.
 func (w *DeckWorkspace) onApproval(m decks.ApprovalMsg) {
+	if m.Kind == deckagent.ApproveQuestion {
+		w.onQuestion(m)
+		return
+	}
 	sid := w.sessionOf(m.ThreadID)
 	req := m.ApprovalRequest
 	if sid == "" {

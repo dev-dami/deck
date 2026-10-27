@@ -264,6 +264,10 @@ const (
 	ApprovalCommand = "command"
 	ApprovalEdit    = "edit"
 	ApprovalOther   = "other"
+	// ApprovalQuestion is an agent asking the person something (Questions).
+	// It is answered with DecisionAnswer and Answers, or declined with
+	// DecisionDeny; allow does not answer it.
+	ApprovalQuestion = "question"
 )
 
 // Decisions of approvals.answer.
@@ -271,24 +275,54 @@ const (
 	DecisionAllow        = "allow"
 	DecisionAllowSession = "allow_session"
 	DecisionDeny         = "deny"
+	// DecisionAnswer answers a question approval with Answers.
+	DecisionAnswer = "answer"
 )
 
 // Approval is a pending permission request. Agent is the agent's id.
 type Approval struct {
-	ID               string    `json:"id"`
-	SessionID        string    `json:"session_id"`
-	ToolCallID       string    `json:"tool_call_id,omitempty"`
-	Agent            string    `json:"agent"`
-	Kind             string    `json:"kind"`
-	Description      string    `json:"description"`
-	Command          string    `json:"command,omitempty"`
-	CommandTruncated bool      `json:"command_truncated,omitempty"`
-	Path             string    `json:"path,omitempty"`
-	Diff             string    `json:"diff,omitempty"`
-	DiffTruncated    bool      `json:"diff_truncated,omitempty"`
-	Raw              string    `json:"raw,omitempty"`
-	RawTruncated     bool      `json:"raw_truncated,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
+	ID               string `json:"id"`
+	SessionID        string `json:"session_id"`
+	ToolCallID       string `json:"tool_call_id,omitempty"`
+	Agent            string `json:"agent"`
+	Kind             string `json:"kind"`
+	Description      string `json:"description"`
+	Command          string `json:"command,omitempty"`
+	CommandTruncated bool   `json:"command_truncated,omitempty"`
+	Path             string `json:"path,omitempty"`
+	Diff             string `json:"diff,omitempty"`
+	DiffTruncated    bool   `json:"diff_truncated,omitempty"`
+	Raw              string `json:"raw,omitempty"`
+	RawTruncated     bool   `json:"raw_truncated,omitempty"`
+	// Questions are what a question approval asks, in order.
+	Questions []Question `json:"questions,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+// Question is one thing an agent asks. Its answer is keyed by ID. Multi
+// lets the person pick several options; Other lets them type their own
+// answer.
+type Question struct {
+	ID          string           `json:"id"`
+	Header      string           `json:"header,omitempty"`
+	Text        string           `json:"text"`
+	Options     []QuestionOption `json:"options,omitempty"`
+	MultiSelect bool             `json:"multi_select,omitempty"`
+	Other       bool             `json:"other,omitempty"`
+}
+
+// QuestionOption is one choice of a Question.
+type QuestionOption struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// QuestionAnswer is the person's answer to the Question with ID: the
+// labels picked and the text typed in "Other".
+type QuestionAnswer struct {
+	ID       string   `json:"id"`
+	Selected []string `json:"selected,omitempty"`
+	Other    string   `json:"other,omitempty"`
 }
 
 // QueuedItem is a user message waiting for a busy agent.
@@ -537,6 +571,8 @@ type (
 		SessionID string `json:"session_id"`
 		ID        string `json:"id"`
 		Decision  string `json:"decision"`
+		// Answers go with DecisionAnswer, one per question answered.
+		Answers []QuestionAnswer `json:"answers,omitempty"`
 	}
 
 	// ApprovalsAnswerResult says whether the approval was still pending.
@@ -702,6 +738,11 @@ func (p ApprovalsAnswerParams) Validate() error {
 	switch p.Decision {
 	case DecisionAllow, DecisionAllowSession, DecisionDeny:
 		return nil
+	case DecisionAnswer:
+		if len(p.Answers) == 0 {
+			return invalid("answer needs answers")
+		}
+		return nil
 	}
 	return invalid("unknown decision")
 }
@@ -758,6 +799,7 @@ func Fixtures() []Fixture {
 		{"entity_message", Message{}},
 		{"entity_approval", Approval{}},
 		{"entity_approval_edit", Approval{}},
+		{"entity_approval_question", Approval{}},
 		{"entity_queued_item", QueuedItem{}},
 		{"entity_agent_line", AgentLine{}},
 		{"entity_model_choice", ModelChoice{}},
@@ -831,6 +873,7 @@ func Fixtures() []Fixture {
 		{"req_approvals.list", ApprovalsListParams{}},
 		{"res_approvals.list", []Approval{}},
 		{"req_approvals.answer", ApprovalsAnswerParams{}},
+		{"req_approvals.answer_question", ApprovalsAnswerParams{}},
 		{"res_approvals.answer", ApprovalsAnswerResult{}},
 		{"req_changes.get", SessionParams{}},
 		{"res_changes.get", []ChangedFile{}},

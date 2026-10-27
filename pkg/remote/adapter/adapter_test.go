@@ -275,7 +275,7 @@ func TestApprovalsAreSessionScoped(t *testing.T) {
 	require.Equal(t, wire.EvSessionUpdated, ev.Name)
 	require.Equal(t, 1, ev.Payload.(wire.Session).Pending)
 
-	_, err := r.b.Answer("s2", "p1", wire.DecisionAllow)
+	_, err := r.b.Answer("s2", "p1", wire.DecisionAllow, nil)
 	require.ErrorIs(t, err, remote.ErrNotFound)
 	list, err := r.b.Approvals("s2")
 	require.NoError(t, err)
@@ -284,7 +284,7 @@ func TestApprovalsAreSessionScoped(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 
-	resolved, err := r.b.Answer("s1", "p1", wire.DecisionAllowSession)
+	resolved, err := r.b.Answer("s1", "p1", wire.DecisionAllowSession, nil)
 	require.NoError(t, err)
 	require.True(t, resolved)
 	require.Equal(t, []string{"persist:p1"}, r.core.granted)
@@ -296,7 +296,7 @@ func TestApprovalsAreSessionScoped(t *testing.T) {
 	require.Equal(t, wire.ApprovalResolved{ID: "p1", SessionID: "s1", Granted: true}, ev.Payload)
 	ev = r.next(t)
 	require.Equal(t, 0, ev.Payload.(wire.Session).Pending)
-	_, err = r.b.Answer("s1", "p1", wire.DecisionAllow)
+	_, err = r.b.Answer("s1", "p1", wire.DecisionAllow, nil)
 	require.ErrorIs(t, err, remote.ErrNotFound)
 }
 
@@ -487,7 +487,7 @@ func TestApprovalsLeaveTheWaitingSet(t *testing.T) {
 	// An answer the service no longer knows leaves the set too.
 	ask("p2", "c2")
 	r.core.resolved = false
-	won, err := r.b.Answer("s1", "p2", wire.DecisionAllow)
+	won, err := r.b.Answer("s1", "p2", wire.DecisionAllow, nil)
 	require.NoError(t, err)
 	require.False(t, won)
 	require.Zero(t, waiting())

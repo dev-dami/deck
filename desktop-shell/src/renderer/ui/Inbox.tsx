@@ -1,4 +1,4 @@
-import type { Decision } from "@web/protocol";
+import type { Decision, QuestionAnswer } from "@web/protocol";
 import { relativeTime } from "@web/time";
 import { CircleCheck, FileDiff, GitCompareArrows, Inbox as InboxIcon, Info, ShieldQuestion, Users } from "./icons";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
@@ -10,6 +10,8 @@ import { Button } from "./kit/button";
 import { EmptyPlate } from "./kit/plate";
 import { PLATES } from "../plates";
 import { ProjectIcon } from "./ProjectIcon";
+import { isQuestion } from "../questions";
+import { QuestionCard } from "./QuestionCard";
 
 // Each state's glyph, its colour and its group, most urgent first: what
 // waits for an answer wears the warning colour, changes to review the
@@ -23,7 +25,8 @@ const STATES: Record<InboxState, { icon: typeof Info; tone: string; group: strin
 };
 
 export interface InboxActions {
-  onAnswer: (item: InboxItem, d: Decision) => void;
+  // A question takes "answer" with answers, or "deny" to skip it.
+  onAnswer: (item: InboxItem, d: Decision, answers?: QuestionAnswer[]) => void;
   onContract: (item: InboxItem, accept: boolean) => void;
   onOpen: (item: InboxItem) => void;
 }
@@ -77,7 +80,15 @@ function Row({
             {item.projectName} <span aria-hidden>·</span> <span className="text-muted-foreground">{item.title}</span>
           </span>
         </div>
-        {item.approval !== undefined && (
+        {item.approval !== undefined && isQuestion(item.approval) && (
+          <QuestionCard
+            a={item.approval}
+            className="mt-0.5 bg-transparent px-0 pt-0 pb-0 ring-0 [&>span:first-child]:hidden"
+            onAnswer={(answers) => actions.onAnswer(item, "answer", answers)}
+            onSkip={() => actions.onAnswer(item, "deny")}
+          />
+        )}
+        {item.approval !== undefined && !isQuestion(item.approval) && (
           <code className="block max-h-24 min-w-0 overflow-auto whitespace-pre-wrap break-all rounded-[8px] bg-code px-2.5 py-1.5 font-mono text-foreground/85 text-xs">
             {approvalSummary(item.approval)}
           </code>
@@ -93,6 +104,7 @@ function Row({
               </Button>
             )}
             {item.approval !== undefined &&
+              !isQuestion(item.approval) &&
               [...DECISIONS].reverse().map((d) => (
                 <Button
                   key={d.decision}
@@ -172,7 +184,11 @@ export function Inbox({
     else if (e.key === "k" || e.key === "ArrowUp") move(index - 1);
     else if (current === undefined) return;
     else if (e.key === "y" || e.key === "n") {
-      if (current.approval !== undefined) actions.onAnswer(current, e.key === "y" ? "allow" : "deny");
+      // A question is answered in its card; n skips it.
+      if (current.approval !== undefined && isQuestion(current.approval)) {
+        if (e.key === "y") return;
+        actions.onAnswer(current, "deny");
+      } else if (current.approval !== undefined) actions.onAnswer(current, e.key === "y" ? "allow" : "deny");
       else if (current.contract !== undefined) actions.onContract(current, e.key === "y");
       else return;
     } else if (e.key === "Enter" && current.room !== null) actions.onOpen(current);

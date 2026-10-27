@@ -19,6 +19,8 @@ import {
   METHODS,
   type Part,
   type MethodName,
+  type Question,
+  type QuestionAnswer,
   type QueuedItem,
   type Session,
   type Theme,
@@ -92,7 +94,10 @@ export class FakeDeck {
   readonly serverId = "srv_fake";
   code = "FAKE1-CODE2";
   readonly sent: Array<{ session_id: string; text: string }> = [];
-  readonly answered: Array<{ id: string; decision: string }> = [];
+  // answers: what a question was answered with.
+  readonly answered: Array<{ id: string; decision: string; answers?: QuestionAnswer[] }> = [];
+  // Each question's conversation line, by approval id (requestQuestion).
+  private readonly questionLines = new Map<string, string>();
   readonly interrupted: string[] = [];
   readonly edited: Array<{ message_id: string; text: string }> = [];
   readonly continued: string[] = [];
@@ -310,6 +315,48 @@ export class FakeDeck {
     this.broadcast("approval.requested", a);
     this.touch(sessionId, {});
     return a;
+  }
+
+  // An agent's question (AskUserQuestion): an approval of kind question,
+  // and the line the engine writes for it in the conversation. The answer
+  // rewrites the line, and the agent says what it heard.
+  requestQuestion(sessionId: string, agent: string, questions: Question[]): Approval {
+    const t = this.get(sessionId);
+    const first = questions[0]?.text ?? "";
+    const a: Approval = {
+      id: this.id("toolu"),
+      session_id: sessionId,
+      tool_call_id: "",
+      agent,
+      kind: "question",
+      description: `${agent} asks: ${first}`,
+      questions,
+      created_at: this.now(),
+    };
+    a.tool_call_id = a.id;
+    const more = questions.length > 1 ? ` (+${questions.length - 1} more)` : "";
+    const line = this.message(t, "system", undefined, `**${agent} asks:** ${first}${more}`, true);
+    this.questionLines.set(a.id, line.id);
+    this.approvals.push(a);
+    this.broadcast("approval.requested", a);
+    this.touch(sessionId, {});
+    return a;
+  }
+
+  // The engine's side of an answered or skipped question.
+  private settleQuestion(t: Thread, a: Approval, answers: QuestionAnswer[] | null): void {
+    const said = (answers ?? []).map((x) => [...(x.selected ?? []), ...(x.other !== undefined && x.other !== "" ? [x.other] : [])].join(", "));
+    const record = answers === null ? "You skipped it" : `You answered: ${said.join("; ")}`;
+    const lineId = this.questionLines.get(a.id);
+    const qs = a.questions ?? [];
+    const more = qs.length > 1 ? ` (+${qs.length - 1} more)` : "";
+    t.messages = t.messages.map((m) => {
+      if (m.id !== lineId) return m;
+      const next = { ...m, updated_at: this.now(), parts: [{ type: "text" as const, text: `**${a.agent} asked:** ${qs[0]?.text ?? ""}${more} → ${record}` }] };
+      this.emit("message.updated", next, t.session.id);
+      return next;
+    });
+    this.message(t, "assistant", a.agent, answers === null ? "No answer, so I will post a summary." : `Got it: ${said.join("; ")}.`, true);
   }
 
   // ---- HTTP ---------------------------------------------------------------
@@ -573,8 +620,14 @@ export class FakeDeck {
         const t = this.get(p["session_id"]);
         const a = this.approvals.find((x) => x.id === p["id"] && x.session_id === t.session.id);
         if (a === undefined) throw new Fail("not_found", "no such approval");
+        const answers = Array.isArray(p["answers"]) ? (p["answers"] as QuestionAnswer[]) : undefined;
+        if (a.kind === "question") {
+          if (p["decision"] === "answer" && (answers ?? []).length === 0) throw new Fail("invalid", "answer needs answers");
+          if (p["decision"] !== "answer" && p["decision"] !== "deny") throw new Fail("invalid", "a question takes answer or deny");
+        }
         this.approvals = this.approvals.filter((x) => x !== a);
-        this.answered.push({ id: a.id, decision: String(p["decision"]) });
+        this.answered.push({ id: a.id, decision: String(p["decision"]), ...(answers !== undefined ? { answers } : {}) });
+        if (a.kind === "question") this.settleQuestion(t, a, p["decision"] === "answer" ? (answers ?? []) : null);
         this.broadcast("approval.resolved", { id: a.id, session_id: a.session_id, granted: p["decision"] !== "deny" });
         this.touch(t.session.id, {});
         return { resolved: true };

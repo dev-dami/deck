@@ -324,6 +324,10 @@ const (
 	// ApproveShare is sending work out of this Deck (a code contract to a
 	// teammate). The person answers it in every mode: yolo does not.
 	ApproveShare ApprovalKind = "share"
+	// ApproveQuestion is the agent asking the person something (Questions):
+	// not a permission, so no mode answers it. Allow with Answers is the
+	// person's reply; a deny says they declined to answer.
+	ApproveQuestion ApprovalKind = "question"
 )
 
 // Decision is the user's answer to an approval request.
@@ -331,7 +335,58 @@ type Decision struct {
 	Allow  bool
 	Always bool   // allow this tool for the rest of the session
 	Reason string // optional, sent back to the agent on deny
+	// Answers are the person's replies to a question request, by Question.ID.
+	// A question they left blank has no entry.
+	Answers map[string]Answer
 }
+
+// Question is one thing an agent asks the person (ApproveQuestion).
+type Question struct {
+	ID      string // the agent's key for the answer (Claude: the question text)
+	Header  string // a short label ("Approach"); may be ""
+	Text    string
+	Options []QuestionOption
+	// Multi lets the person pick several options; Other lets them type an
+	// answer of their own instead of, or with, the options.
+	Multi bool
+	Other bool
+}
+
+// QuestionOption is one choice of a Question.
+type QuestionOption struct {
+	Label       string
+	Description string
+}
+
+// Answer is the person's reply to one Question: the labels they picked and
+// what they typed in "Other".
+type Answer struct {
+	Selected []string
+	Other    string
+}
+
+// Text is the answer as one line: the labels, then the typed text, joined
+// with ", " (how Claude reads a multi-select answer).
+func (a Answer) Text() string {
+	parts := append([]string(nil), a.Selected...)
+	if s := strings.TrimSpace(a.Other); s != "" {
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// Values is the answer as a list: the labels, then the typed text.
+func (a Answer) Values() []string {
+	out := append([]string(nil), a.Selected...)
+	if s := strings.TrimSpace(a.Other); s != "" {
+		out = append(out, s)
+	}
+	return out
+}
+
+// QuestionDeclined is what an agent is told when the person dismisses its
+// question, or the question can no longer be answered.
+const QuestionDeclined = "The user declined to answer these questions. Do not ask them again right away: carry on with your best judgment, or ask in plain text if you are blocked."
 
 // ApprovalRequest is a permission prompt raised by an agent.
 type ApprovalRequest struct {
@@ -342,6 +397,8 @@ type ApprovalRequest struct {
 	Summary  string // the command line, or the file path
 	Cwd      string
 	Diff     *FileDiff
+	// Questions are what an ApproveQuestion request asks, in order.
+	Questions []Question
 	// Respond must be called exactly once.
 	Respond func(Decision)
 }

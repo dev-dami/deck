@@ -1250,3 +1250,70 @@ legend {
     animation: none;
   }
 }
+
+/* ---- an agent's question (QuestionForm) ------------------------------- */
+
+.question-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.question {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.question legend {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+  padding: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.question-header {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--p-fg-subtle);
+}
+
+.question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: var(--tap);
+  padding: 10px 12px;
+  border: 1px solid var(--p-separator);
+  border-radius: 10px;
+  background: var(--p-bg-less-visible);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.question-option.picked {
+  border-color: var(--p-primary);
+}
+
+.question-option input {
+  margin-top: 3px;
+  accent-color: var(--p-primary);
+}
+
+.question-label {
+  font-weight: 600;
+}
+
+.question-other {
+  width: 100%;
+  box-sizing: border-box;
+}

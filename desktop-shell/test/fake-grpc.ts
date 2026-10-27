@@ -77,7 +77,15 @@ const UNARY: Record<string, { m: MethodName; req: (r: Obj) => Obj; res: (r: unkn
   Approvals: { m: "approvals.list", req: (r) => ({ session_id: opt(r["session_id"]) }), res: (r) => ({ approvals: r }) },
   Answer: {
     m: "approvals.answer",
-    req: (r) => ({ session_id: r["session_id"], id: r["id"], decision: r["decision"] }),
+    req: (r) => ({
+      session_id: r["session_id"],
+      id: r["id"],
+      decision: r["decision"],
+      // pkg/rpc drops the defaults proto fills in.
+      answers: Array.isArray(r["answers"]) && r["answers"].length > 0
+        ? (r["answers"] as Obj[]).map((a) => clean({ id: a["id"], selected: (a["selected"] as unknown[] | undefined)?.length ? a["selected"] : undefined, other: opt(a["other"]) }))
+        : undefined,
+    }),
     res: (r) => r,
   },
   Changes: { m: "changes.get", req: (r) => ({ session_id: r["session_id"] }), res: (r) => ({ files: r }) },

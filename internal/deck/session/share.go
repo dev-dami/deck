@@ -229,7 +229,7 @@ func (m *Manager) ReadShared(ctx context.Context, peer, threadID string, after i
 	for _, a := range members {
 		a.mu.Lock()
 		for _, p := range a.pending {
-			if p.kind != agent.ApproveShare {
+			if p.kind != agent.ApproveShare && p.kind != agent.ApproveQuestion {
 				mr.Pending = append(mr.Pending, PendingApproval{ID: p.id, Agent: a.name, Kind: string(p.kind), Summary: hub.Redact(p.summary)})
 			}
 		}
@@ -312,7 +312,7 @@ func (m *Manager) AnswerShared(peer, threadID, approvalID string, allow bool) er
 		if found == nil {
 			continue
 		}
-		if found.kind == agent.ApproveShare {
+		if found.kind == agent.ApproveShare || found.kind == agent.ApproveQuestion {
 			return errors.New("only this Deck's person answers that")
 		}
 		if !a.claimPending(approvalID) {

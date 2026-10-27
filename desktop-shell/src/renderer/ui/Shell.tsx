@@ -1,4 +1,4 @@
-import type { Decision, Session } from "@web/protocol";
+import type { Decision, QuestionAnswer, Session } from "@web/protocol";
 import { sessionMode } from "@web/state";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DeckBridge } from "../../shared/bridge";
@@ -38,7 +38,7 @@ import { useYoloTrigger, YoloFx } from "./YoloFx";
 export interface ShellAttention {
   items: InboxItem[];
   onOpenRoom: (project: string, room: string) => void;
-  onAnswer: (item: InboxItem, d: Decision) => void;
+  onAnswer: (item: InboxItem, d: Decision, answers?: QuestionAnswer[]) => void;
   onContract: (item: InboxItem, accept: boolean) => Promise<string | null>;
 }
 

@@ -1,5 +1,5 @@
 import { describeError, Store } from "@web/controller";
-import type { ChangedFile, Decision, Image, Mode, ModelChoice, RaceEntrant, ServerEvent, ServerInfo, Session } from "@web/protocol";
+import type { ChangedFile, Decision, Image, Mode, ModelChoice, QuestionAnswer, RaceEntrant, ServerEvent, ServerInfo, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import { applyTheme, type ThemeTarget } from "@web/theme";
 import { ProjectApi } from "./project";
@@ -347,8 +347,8 @@ export class RpcDeckClient implements DeckClient {
     await this.call("CancelQueued", { session_id: sessionId, item_id: itemId });
   }
 
-  async answerApproval(sessionId: string, id: string, decision: Decision): Promise<void> {
-    const r = await this.call("Answer", { session_id: sessionId, id, decision });
+  async answerApproval(sessionId: string, id: string, decision: Decision, answers?: QuestionAnswer[]): Promise<void> {
+    const r = await this.call("Answer", { session_id: sessionId, id, decision, answers: answers ?? [] });
     if (r !== null) this.store.dispatch({ type: "approval.dropped", id });
   }
 

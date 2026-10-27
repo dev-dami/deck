@@ -274,9 +274,9 @@ func (p *Proxy) Approvals(sessionID string) ([]wire.Approval, error) {
 	return out, p.call(context.Background(), "approvals", args{SessionID: sessionID}, &out)
 }
 
-func (p *Proxy) Answer(sessionID, id, decision string) (bool, error) {
+func (p *Proxy) Answer(sessionID, id, decision string, answers []wire.QuestionAnswer) (bool, error) {
 	var out bool
-	return out, p.call(context.Background(), "answer", args{SessionID: sessionID, ID: id, Decision: decision}, &out)
+	return out, p.call(context.Background(), "answer", args{SessionID: sessionID, ID: id, Decision: decision, Answers: answers}, &out)
 }
 
 func (p *Proxy) Changes(ctx context.Context, sessionID string) ([]wire.ChangedFile, error) {

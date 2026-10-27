@@ -74,8 +74,9 @@
 // is passed to members as Spec.Mode and, when it changes, to live members whose run
 // implements agent.ModeSetter; the next prompt to each member also starts with
 // "[deck] Permission mode is now <mode>." once. Deck enforces the mode on its own
-// as well, whatever the adapter does: in yolo every ApprovalRequest is answered
-// Allow and surfaces only as AutoApprovedMsg (switching into yolo does the same
+// as well, whatever the adapter does: in yolo every ApprovalRequest but a share
+// or a question (agent.ApproveQuestion, which always waits for the person) is
+// answered Allow and surfaces only as AutoApprovedMsg (switching into yolo does the same
 // for the requests already pending, after ApprovalGoneMsg); in plan, edit and
 // command requests are denied ("Deck is in plan mode: propose the change instead
 // of making it.") and surface as AutoDeniedMsg; in ask nothing changes. The UI

@@ -727,6 +727,15 @@ func toolTitle(name string, input json.RawMessage) string {
 		title = str("query")
 	case "Task", "Agent":
 		title = str("description")
+	case "AskUserQuestion":
+		var in struct {
+			Questions []struct {
+				Question string `json:"question"`
+			} `json:"questions"`
+		}
+		if json.Unmarshal(input, &in) == nil && len(in.Questions) > 0 {
+			title = in.Questions[0].Question
+		}
 	}
 	if title == "" {
 		title = compactJSON(input)
