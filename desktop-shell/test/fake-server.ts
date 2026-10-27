@@ -86,6 +86,8 @@ export class FakeDeck {
   // The agents an agent spawned, as Deck's agents tree lists them (the rpc
   // fake's Agents adds them under their spawner).
   readonly spawned: Array<{ session_id: string; parent: string; name: string; kind: string }> = [];
+  // The races started, with their entrants as given.
+  readonly races: Array<{ session_id: string; entrants: Array<{ agent: string; model?: string; effort?: string }>; brief: string }> = [];
   private readonly http: http.Server;
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 13 << 20 });
   private readonly clients = new Set<Client>();
@@ -457,6 +459,8 @@ export class FakeDeck {
         return this.send(this.get(p["session_id"]), String(p["text"]), p["idempotency_key"]);
       case "roster.get":
         return this.get(p["session_id"]).roster;
+      case "race.start":
+        return { task_id: this.race(String(p["session_id"]), (p["entrants"] as { agent: string }[] | undefined) ?? [], String(p["brief"] ?? "")) };
       case "queue.list":
         return this.get(p["session_id"]).queue;
       case "queue.steer":
@@ -574,9 +578,10 @@ export class FakeDeck {
     return out;
   }
 
-  // Leading mentions pick the agents, as Deck's addressing does: "$kind+"
-  // adds a member, "$kind" reaches the first one (or adds it), "$id" one
-  // member, "$all" every member. No mention reaches the first member.
+  // Leading mentions pick the agents, as Deck's addressing does: "$kind"
+  // reaches the first one (or adds it), "$id" one member, "$all" every
+  // member. "$kind+" and "$kind×3" are text. No mention reaches the first
+  // member.
   private send(t: Thread, text: string, key: unknown): unknown {
     if (typeof key === "string") {
       const known = this.idem.get(key);
@@ -589,12 +594,11 @@ export class FakeDeck {
     let rest = text.trim();
     for (;;) {
       // "$" or "@", as Deck reads both; "@src/a.ts" is a path, not a name.
-      const m = /^[$@]([\w-]+)([+*]?)(?![\w/-]|\.\S)\s*/.exec(rest);
+      const m = /^[$@]([\w-]+)(?![\w/+*×-]|\.\S)\s*/.exec(rest);
       if (m === null) break;
       rest = rest.slice(m[0].length);
-      const [, name = "", suffix] = m;
+      const [, name = ""] = m;
       if (name === "all") targets.push(...t.roster);
-      else if (suffix === "+" && KINDS.includes(name)) targets.push(this.addMember(t, name));
       else if (KINDS.includes(name)) targets.push(t.roster.find((l) => l.kind === name) ?? this.addMember(t, name));
       else {
         const l = t.roster.find((x) => x.id === name || x.name === name);
@@ -624,6 +628,26 @@ export class FakeDeck {
       } else this.stream(t, agent, rest, i);
     }
     return { message_id: user.id };
+  }
+
+  // A race, as race.start and StartRace run it: each entrant, a kind or a
+  // named agent, joins the room as a lane of its own on its model, and works
+  // on the brief. The race's task id.
+  race(sessionId: string, entrants: readonly { agent: string; model?: string; effort?: string }[], brief: string): string {
+    const t = this.get(sessionId);
+    if (entrants.length < 2 || entrants.length > 6) throw new Fail("invalid", `a race has 2 to 6 entries, not ${entrants.length}`);
+    if (brief.trim() === "") throw new Fail("invalid", "a race needs a brief");
+    this.races.push({ session_id: sessionId, entrants: entrants.map((e) => ({ ...e })), brief });
+    for (const [i, e] of entrants.entries()) {
+      const p = this.profiles.find((x) => x.name.toLowerCase() === e.agent.toLowerCase());
+      if (p === undefined && !KINDS.includes(e.agent)) throw new Fail("invalid", `no agent kind or named agent "${e.agent}"`);
+      const named = p !== undefined && !t.roster.some((l) => l.id === p.name);
+      const line = this.addMember(t, p?.kind ?? e.agent, named ? p : undefined);
+      const raced = { ...line, model: e.model || "default", ...(e.effort ? { effort: e.effort } : {}) };
+      t.roster = t.roster.map((l) => (l.id === line.id ? raced : l));
+      this.stream(t, raced, brief, i);
+    }
+    return "t6";
   }
 
   // An agent starts n agents of kind with a brief, as agent.spawn does: each

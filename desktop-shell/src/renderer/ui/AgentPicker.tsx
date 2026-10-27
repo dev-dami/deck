@@ -1,7 +1,8 @@
-import type { Theme } from "@web/protocol";
+import type { ServerInfo, Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
 import { type ComponentProps, type ReactNode, useState } from "react";
-import { type AgentModels, currentModel, DEFAULT_LABEL, modelRows } from "../agentCatalog";
+import { type AgentModels, currentModel, DEFAULT_LABEL, modelRows, useAgentCatalog } from "../agentCatalog";
+import type { DeckClient } from "../client";
 import { cn } from "../lib/cn";
 import { Check, Loader2, RefreshCw } from "./icons";
 import { MenuItem } from "./kit/menu";
@@ -81,6 +82,8 @@ function Segment({ checked, className, ...props }: Omit<ComponentProps<"button">
 const segments = "flex min-w-0 flex-wrap items-center gap-0.5 rounded-full border border-hairline p-0.5";
 
 export interface Pick {
+  // The agent picked: its kind, or a named agent's name (named).
+  agent: string;
   kind: string;
   model: string;
   effort: string;
@@ -88,8 +91,17 @@ export interface Pick {
   changed: boolean;
 }
 
-// What an agent of kind runs now; undefined for the CLI's default.
-export type Running = (kind: string) => { model?: string | undefined; effort?: string | undefined };
+// What an agent of kind (or the named agent) runs now; undefined for the
+// CLI's default.
+export type Running = (agent: string) => { model?: string | undefined; effort?: string | undefined };
+
+// A named agent the agent section offers after the kinds: it runs its kind's
+// models, and wears its own colour.
+export interface NamedAgent {
+  name: string;
+  kind: string;
+  color?: string | undefined;
+}
 
 // What the pickers of a room share: the catalog, and Refresh.
 export interface PickerSource {
@@ -97,6 +109,16 @@ export interface PickerSource {
   loading: boolean;
   listedAt: number | null;
   onRefresh: () => void;
+}
+
+// The pickers' source for a room (sid; null on the new-thread screen) of
+// the Deck server describes: its catalog, listed once per Deck and kept
+// (agentCatalog.ts), so a second picker asks nothing.
+export function usePickerSource(c: DeckClient, server: ServerInfo | null, sid: string | null): PickerSource {
+  const catalog = useAgentCatalog(server === null ? null : { deck: server.server_id, version: server.version, kinds: server.kinds }, (kind, refresh) =>
+    c.listModels(sid ?? "", kind, refresh),
+  );
+  return { agents: catalog.catalog?.agents ?? null, loading: catalog.loading, listedAt: catalog.catalog?.at ?? null, onRefresh: catalog.refresh };
 }
 
 const ago = (at: number, now: number) => {
@@ -115,7 +137,9 @@ const ago = (at: number, now: number) => {
 export function AgentPicker({
   source,
   kinds,
+  named = [],
   kind,
+  start,
   running,
   theme,
   action,
@@ -123,10 +147,13 @@ export function AgentPicker({
   onPick,
 }: {
   source: PickerSource;
-  // The kinds the agent section offers.
+  // The kinds the agent section offers, and the named agents after them.
   kinds: readonly string[];
+  named?: readonly NamedAgent[];
   // The agent the picker is for; null shows the agent section.
   kind: string | null;
+  // With the agent section, the agent it starts on (a kind or a name).
+  start?: string | undefined;
   running: Running;
   theme: Theme | null;
   // The action item's label for the chosen kind.
@@ -136,11 +163,14 @@ export function AgentPicker({
   onPick: (p: Pick) => void;
 }) {
   const { agents, loading, listedAt, onRefresh } = source;
-  const startKind = kind ?? kinds[0] ?? "";
-  const initial = (k: string) => ({ model: currentModel(running(k).model), effort: (running(k).effort ?? "").toLowerCase() });
-  const [k, setK] = useState(startKind);
-  const [choice, setChoice] = useState(() => initial(startKind));
-  const entry = agents?.find((a) => a.kind === k);
+  const startAgent = kind ?? start ?? kinds[0] ?? "";
+  const initial = (a: string) => ({ model: currentModel(running(a).model), effort: (running(a).effort ?? "").toLowerCase() });
+  // k is the agent picked: a kind, or a named agent's name; kk its kind.
+  const [k, setK] = useState(startAgent);
+  const [choice, setChoice] = useState(() => initial(startAgent));
+  const namedK = named.find((n) => n.name === k);
+  const kk = namedK?.kind ?? k;
+  const entry = agents?.find((a) => a.kind === kk);
   const rows = modelRows(entry?.models ?? [], running(k).model);
   const model = rows.find((m) => m.id === choice.model) ?? rows[0];
   const efforts = model?.efforts ?? [];
@@ -154,23 +184,28 @@ export function AgentPicker({
     const keeps = rows.find((m) => m.id === id)?.efforts.includes(choice.effort) === true;
     setChoice({ model: id, effort: keeps ? choice.effort : "" });
   };
-  const mark = (kk: string) => (
-    <span aria-hidden className="font-mono text-[11px] leading-none" style={{ color: kindColour(kk) }}>
-      {kindMark(theme, kk) || "●"}
+  const mark = (of: string, color?: string) => (
+    <span aria-hidden className="font-mono text-[11px] leading-none" style={{ color: color || kindColour(of) }}>
+      {kindMark(theme, of) || "●"}
     </span>
   );
 
   return (
-    <div className="agent-picker flex flex-col gap-1" data-kind={k}>
+    <div className="agent-picker flex flex-col gap-1" data-kind={kk}>
       {kind === null &&
-        (kinds.length === 0 ? (
+        (kinds.length === 0 && named.length === 0 ? (
           <p className="px-2 py-1 text-muted-foreground text-xs">This Deck names no agents.</p>
         ) : (
           <div className={cn(segments, "self-start")} role="group" aria-label="Agent">
-            {kinds.map((kk) => (
-              <Segment key={kk} checked={kk === k} className="text-xs" onClick={() => pickKind(kk)}>
-                {mark(kk)}
-                {kk}
+            {kinds.map((a) => (
+              <Segment key={a} checked={a === k} className="text-xs" onClick={() => pickKind(a)}>
+                {mark(a)}
+                {a}
+              </Segment>
+            ))}
+            {named.map((n) => (
+              <Segment key={`@${n.name}`} checked={n.name === k} className="named text-xs" title={`${n.name}, a named ${n.kind}`} onClick={() => pickKind(n.name)}>
+                {mark(n.kind, n.color)}@{n.name}
               </Segment>
             ))}
           </div>
@@ -184,7 +219,7 @@ export function AgentPicker({
                 checked={m.id === model?.id}
                 label={m.label}
                 detail={m.id !== "" && m.label.toLowerCase() !== m.id.toLowerCase() ? m.id : ""}
-                title={m.id === "" ? `The model ${k} picks itself` : m.id}
+                title={m.id === "" ? (namedK === undefined ? `The model ${kk} picks itself` : `${k}'s own model`) : m.id}
                 onClick={() => pickModel(m.id)}
               />
             ))}
@@ -194,7 +229,7 @@ export function AgentPicker({
               <Loader2 className="size-3 animate-spin" /> Listing models…
             </p>
           )}
-          {entry?.failed === true && <p className="px-2 text-muted-foreground text-xs">Deck could not list {k}'s models.</p>}
+          {entry?.failed === true && <p className="px-2 text-muted-foreground text-xs">Deck could not list {kk}'s models.</p>}
         </>
       )}
       <div className="pick-bar flex items-center gap-1 border-hairline border-t pt-1">
@@ -224,7 +259,7 @@ export function AgentPicker({
           <MenuItem
             className="pick-apply w-auto shrink-0 bg-selected px-3 font-medium text-xs hover:bg-hover"
             disabled={needsChange && !changed}
-            onClick={() => onPick({ kind: k, model: model?.id ?? "", effort: efforts.includes(choice.effort) ? choice.effort : "", changed })}
+            onClick={() => onPick({ agent: k, kind: kk, model: model?.id ?? "", effort: efforts.includes(choice.effort) ? choice.effort : "", changed })}
           >
             {action(k)}
           </MenuItem>

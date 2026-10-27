@@ -1,0 +1,20 @@
+{
+  "brief": "fix the flaky limiter test",
+  "entrants": [
+    {
+      "agent": "codex",
+      "effort": "high",
+      "model": "gpt-5-codex"
+    },
+    {
+      "agent": "claude",
+      "model": "opus"
+    },
+    {
+      "agent": "claude",
+      "model": "opus"
+    }
+  ],
+  "judge": true,
+  "session_id": "ses_8f2a"
+}

@@ -24,12 +24,12 @@ func TestInstanceItems(t *testing.T) {
 	// Nobody has joined yet: the roster lists installed CLIs as ready.
 	require.Empty(t, inserts([]workspace.AgentLine{{ID: "claude", Kind: "claude", Status: "ready"}}))
 
-	// One of a kind: only "start another".
-	require.Equal(t, []string{"$claude+"}, inserts([]workspace.AgentLine{{ID: "claude", Kind: "claude", Status: "idle"}}))
+	// One of a kind: the kind's own row says it; nothing typed starts another.
+	require.Empty(t, inserts([]workspace.AgentLine{{ID: "claude", Kind: "claude", Status: "idle"}}))
 
-	// Two claudes (one more exited) and a codex.
+	// Two claudes (one more exited) and a codex: each claude by name.
 	require.Equal(t,
-		[]string{"$claude1", "$claude2", "$claude*", "$claude+", "$codex+"},
+		[]string{"$claude1", "$claude2"},
 		inserts([]workspace.AgentLine{
 			{ID: "claude1", Kind: "claude", Status: "working"},
 			{ID: "codex", Kind: "codex", Status: "idle"},

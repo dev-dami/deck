@@ -129,9 +129,9 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   on or off.
 - **New thread** (Ctrl+N, Cmd+N) opens the empty screen. Three cards there
   start the message: One agent (`$claude `), Split the work (`$claude
-  $codex+ `, with the kinds that are installed) and Race three
-  (`$claude×3 `). The first message makes the thread, named after its first
-  line. Empty tabs and pages say what shows there and how it gets there.
+  $codex `, with the kinds that are installed) and Race agents (`/race `,
+  which opens the race builder). The first message makes the thread, named
+  after its first line. Empty tabs and pages say what shows there and how it gets there.
 - **Chat.** A finished reply folds its tool calls and thinking behind
   "Worked for …"; the answer stays in view. A tool's output shows its first
   40 lines; "Show all" shows the rest. The thread's changed files show
@@ -146,8 +146,7 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   dot (amber while it works, the warning colour while it waits for an
   approval). A member shows its role after its name when it came from a
   profile. Click a chip to address the agent (`$codex-1`), again to take
-  it out; several chips address each. The ghost "+" starts another agent
-  of a kind, with a model and effort when you pick one. When the
+  it out; several chips address each. When the
   engine reports a plan window of the agent's kind over 80% full, the chip
   shows an amber "limit 85%" tag; its tooltip says when the window resets.
   The app asks for the limits at most once a minute, and only while the
@@ -166,17 +165,18 @@ text and one amber lamp), and T3's look stay in the theme catalog.
     Profiles) and, on a team, your teammates, then each kind. Each row
     shows the glyph in its hue (a profile's own colour, if it has one), the
     name and the role. `@codex` reaches a free codex
-    or starts one, `@codex+` starts another, `@codex*` reaches every
-    codex, `@all` every agent, and `@charles` starts the agent of the
-    profile named charles (a later `@charles` reaches the same one). `$`
+    or starts one, `@all` every agent, and `@charles` starts the agent of
+    the profile named charles (a later `@charles` reaches the same one).
+    Nothing typed starts a second agent or a race: `@codex+`, `@codex*`
+    and `@codex×3` are plain text, and a line over the composer says so
+    and points to `/race`. `$`
     is the older sigil and still works everywhere: `$` opens the agents
     alone and inserts `$codex`. A Deck from before named agents reads only
     `$`; there `@` keeps picking files and the placeholder says `$`.
   - **Slash commands.** Type `/` at the start of the message for the
     commands: `/plan`, `/ask` and `/yolo` set the mode (Yolo still asks
-    first), `/new [title]` starts a thread, `/race <n> [kind] [judge]
-    <brief>` races two to six agents of a kind (the room's first kind when
-    you name none), `/share` opens the share popover, `/stop` stops all
+    first), `/new [title]` starts a thread, `/race [task]` opens the race
+    builder, `/share` opens the share popover, `/stop` stops all
     agents and `/clear` clears the draft. Other text after a `/` is an
     ordinary message.
   - **`#` files.** Type `#` for the room's changed files, matched loosely
@@ -228,8 +228,8 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   edit, move up or down, or cancel), the task board (cancel, retry, steer, apply or discard a
   worktree result), orchestration on or off, and races. Apply and Discard
   first show the task's files, with their diff when the work tree is on the
-  task's branch, and ask. A race starts two to six agents of one kind on
-  one brief, each on a worktree of its own; you keep the best entry. Agents
+  task's branch, and ask. A race starts two to six agents, of any kinds,
+  on one brief, each on a worktree of its own; you keep the best entry. Agents
   shows the tree of agents and subagents, each with its model, effort,
   context, cost, leases and the tool it runs. In a window narrower than
   1100px, the side panel floats over the room; its toggle in the header
@@ -269,11 +269,18 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   new message in an archived room brings it back too.
 - **Images.** An image in a message shows as a thumbnail; click it to see
   it larger. With an older Deck, the image shows as its name.
-- **Races.** The race form in Tasks has a Judge switch, on by default: one
-  more agent of the kind ranks the entries. With a Deck that serves
-  `StartRace`, the form and `/race` start the race through it
-  (`/race 3 codex judge <brief>`). An older Deck gets the race as a message
-  (`$codex×3 <brief>`), and the form has no Judge switch.
+- **Races.** `/race` (picked from the `/` menu, or `/race <task>` sent)
+  opens the race builder over the composer: the task, then the entrants as
+  chips, each an agent kind or a named agent with its model and effort,
+  picked with the same agent picker as a lane's. Add agent starts on the
+  last entrant, so the same agent on the same model again is one click;
+  a chip edits its entrant and × takes it out. A race takes two to six,
+  and mixes kinds freely: codex, claude and claude again on its model.
+  Judge, on by default, has one more agent of the first entrant's kind
+  rank the entries. Start runs exactly those entrants (`StartRace`, or
+  `race.start` on a paired Deck); each joins the room as a lane. The Tasks
+  tab's New race is the same builder (`RaceBuilder.tsx`, state in
+  `race.ts`). A Deck from before `StartRace` says it cannot race.
 - **Plans.** In Plan mode, an agent's numbered steps show as a card with
   Approve, Edit and Ask. Approve switches the thread to Ask (or back to
   Yolo when it was Yolo before Plan) and tells the agent to go ahead. Edit
@@ -536,8 +543,9 @@ renderer (React, sandboxed)                  main process (Node)                
   new message brings it back too. An empty thread can be archived. Against
   a Deck without `UnarchiveSession`, the app's Undo holds the archive back
   for 5 seconds (`archive.ts`).
-- **Races.** `startRace` has several agents of one kind do one brief, each
-  on a worktree of its own, with an optional judge.
+- **Races.** `startRace` has its entrants (kinds mixed and repeated, each
+  with a model and effort) do one brief, each on a worktree of its own,
+  with an optional judge.
 - **Files.** `listFiles` lists the thread's tree through the repository's
   ignore rules, fuzzy on a query, for the `#` picker.
 - **Images.** `readImage` returns the bytes of a message's image part, up

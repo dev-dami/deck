@@ -27,7 +27,9 @@ describe("mentionAt", () => {
   test("finds the $word that ends at the caret", () => {
     expect(mentionAt("$co", 3)).toEqual({ start: 0, query: "co" });
     expect(mentionAt("fix it $", 8)).toEqual({ start: 7, query: "" });
-    expect(mentionAt("$claude $codex+", 15)).toEqual({ start: 8, query: "codex+" });
+    expect(mentionAt("$claude $cod", 12)).toEqual({ start: 8, query: "cod" });
+    // "$codex+" is text: Deck no longer reads it.
+    expect(mentionAt("$claude $codex+", 15)).toBeNull();
   });
 
   test("ignores a $ inside a word and a caret past the word", () => {
@@ -38,14 +40,13 @@ describe("mentionAt", () => {
 });
 
 describe("suggestions", () => {
-  test("lists members, kinds, kind+ and kind* the way Deck reads them", () => {
+  test("lists members and kinds the way Deck reads them, never kind+ or kind*", () => {
     const all = suggestions("", roster, kinds).map((s) => s.insert);
     expect(all).toEqual([
       "$claude-1",
       "$claude-2",
       "$codex-1",
       "$claude",
-      "$claude*",
       "$codex",
       "$opencode",
       "$all",
@@ -54,7 +55,7 @@ describe("suggestions", () => {
 
   test("filters by prefix, case-insensitively", () => {
     expect(suggestions("CO", roster, kinds).map((s) => s.insert)).toEqual(["$codex-1", "$codex"]);
-    // "+" (start another) is typed, not offered: agents spawn helpers themselves.
+    // More agents come from /race and agents' helpers, not from a suffix.
     expect(suggestions("codex+", roster, kinds).map((s) => s.insert)).toEqual([]);
   });
 
@@ -90,7 +91,7 @@ describe("slash commands", () => {
   test("list the commands by prefix", () => {
     expect(slashSuggestions("").map((s) => s.insert)).toEqual(["/plan", "/ask", "/yolo", "/new", "/race", "/share", "/stop", "/clear"]);
     expect(slashSuggestions("S").map((s) => s.insert)).toEqual(["/share", "/stop"]);
-    expect(slashSuggestions("race")[0]?.label).toBe("/race <n> [kind] [judge] <brief>");
+    expect(slashSuggestions("race")[0]?.label).toBe("/race [task]");
   });
 
   test("accepting one replaces the typed name", () => {
@@ -113,7 +114,7 @@ describe("the @ picker: agents and people", () => {
   test("finds the @name that ends at the caret", () => {
     expect(nameAt("@ch", 3)).toEqual({ start: 0, query: "ch" });
     expect(nameAt("ask @", 5)).toEqual({ start: 4, query: "" });
-    expect(nameAt("ask @claude+", 12)).toEqual({ start: 4, query: "claude+" });
+    expect(nameAt("ask @claude+", 12)).toBeNull();
     expect(nameAt("me@example", 10)).toBeNull();
     expect(nameAt("@src/a", 6)).toBeNull();
     expect(nameAt("@main.go", 8)).toBeNull();
@@ -130,7 +131,6 @@ describe("the @ picker: agents and people", () => {
       "@ada",
       "@alice",
       "@claude",
-      "@claude*",
       "@codex",
       "@opencode",
       "@all",

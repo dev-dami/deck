@@ -83,7 +83,7 @@ describe("fixtures cover the protocol", () => {
       expect(names.has(`req_${m}`)).toBe(true);
       expect(names.has(`res_${m}`)).toBe(true);
     }
-    expect(METHOD_NAMES).toHaveLength(30);
+    expect(METHOD_NAMES).toHaveLength(31);
   });
 
   test("every event", () => {

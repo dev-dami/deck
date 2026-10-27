@@ -16,6 +16,7 @@ import {
   type PickerType,
   pickerAt,
   type ProfileRef,
+  retiredForm,
   slashAt,
   slashSuggestions,
   suggestionHue,
@@ -69,6 +70,7 @@ export function Composer({
   inputRef,
   toolbar,
   banner,
+  above,
   notice,
   strip,
   busy = false,
@@ -101,6 +103,8 @@ export function Composer({
   toolbar?: ReactNode;
   // A card stacked over the capsule: the thread's pending approval.
   banner?: ReactNode;
+  // A card of its own over the composer: the race builder (/race).
+  above?: ReactNode;
   // A line above the prompt: an edit in progress, or the take-over after a stop.
   notice?: ReactNode;
   strip?: ReactNode;
@@ -214,6 +218,7 @@ export function Composer({
   };
 
   const sendable = canSend(draft, images.length);
+  const retired = useMemo(() => retiredForm(draft), [draft]);
   const ready = online && !sending && sendable;
   const stopping = busy && onStop !== undefined && !sendable;
 
@@ -226,7 +231,7 @@ export function Composer({
 
   const submit = async (action: "send" | "queue" | "steer", text: string = draft) => {
     if (sending) return;
-    const slash = onSlash === undefined ? null : parseSlash(text, kinds, roster[0]?.kind ?? kinds[0] ?? null);
+    const slash = onSlash === undefined ? null : parseSlash(text);
     if (slash !== null && onSlash !== undefined) {
       if ("error" in slash) {
         onError(slash.error);
@@ -262,8 +267,10 @@ export function Composer({
   const accept = (i: number) => {
     const s = options[i];
     if (s === undefined || picker === null) return;
-    // A command that takes nothing runs as it is picked.
-    if (picker.type === "/" && slashCommand(s.insert.slice(1))?.args === "") {
+    // A command that takes nothing runs as it is picked, and so does one
+    // that opens a form of its own (/race).
+    const cmd = picker.type === "/" ? slashCommand(s.insert.slice(1)) : undefined;
+    if (cmd !== undefined && (cmd.args === "" || cmd.instant === true)) {
       setPicker(null);
       void submit("send", s.insert);
       return;
@@ -384,7 +391,19 @@ export function Composer({
           ))}
         </ul>
       )}
+      {above !== undefined && above !== null && above !== false && (
+        <div className="composer-above relative isolate animate-enter rounded-[20px]">
+          <Glass className="liquid-thick" />
+          {above}
+        </div>
+      )}
       {notice}
+      {retired !== null && (
+        // The typed forms Deck no longer reads go as text; say so, gently.
+        <p className="composer-retired px-4 text-faint text-xs" role="status">
+          {retired}
+        </p>
+      )}
       {banner !== undefined && banner !== null && banner !== false && (
         // A pending approval rides on the composer, a card of thicker glass
         // stacked over the capsule.

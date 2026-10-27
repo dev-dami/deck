@@ -42,6 +42,21 @@ const (
 // engine has its own, lower, limit and says so.
 const maxRaceCount = 100
 
+// raceEntrants are the agents a StartRace asks for: its entrants, or count
+// agents of kind from an older client.
+func raceEntrants(r *deckv1.StartRaceRequest) []workspace.RaceEntrant {
+	var out []workspace.RaceEntrant
+	for _, e := range r.GetEntrants() {
+		out = append(out, workspace.RaceEntrant{Agent: e.GetAgent(), Model: e.GetModel(), Effort: e.GetEffort()})
+	}
+	if len(out) == 0 {
+		for range r.GetCount() {
+			out = append(out, workspace.RaceEntrant{Agent: r.GetKind()})
+		}
+	}
+	return out
+}
+
 // room is what the desktop shows of a session beyond wire.Session.
 type room struct {
 	attention, branch string
@@ -317,15 +332,23 @@ func (s *Server) UnarchiveSession(ctx context.Context, r *deckv1.SessionRef) (*d
 
 func (s *Server) StartRace(ctx context.Context, r *deckv1.StartRaceRequest) (*deckv1.StartRaceResponse, error) {
 	sid := r.GetSessionId()
-	if strings.TrimSpace(r.GetBrief()) == "" || r.GetKind() == "" {
-		return nil, invalid("brief and kind are required")
+	if strings.TrimSpace(r.GetBrief()) == "" {
+		return nil, invalid("brief is required")
 	}
-	if n := r.GetCount(); n < 0 || n > maxRaceCount {
+	if len(r.GetEntrants()) == 0 && r.GetKind() == "" {
+		return nil, invalid("entrants (or kind and count) are required")
+	}
+	if n := r.GetCount(); n < 0 || n > maxRaceCount || len(r.GetEntrants()) > maxRaceCount {
 		return nil, invalid("count is out of range")
+	}
+	for _, e := range r.GetEntrants() {
+		if strings.TrimSpace(e.GetAgent()) == "" {
+			return nil, invalid("each entrant names an agent")
+		}
 	}
 	out := &deckv1.StartRaceResponse{}
 	err := s.onRoom(ctx, sid, func(w workspace.Rooms) (err error) {
-		out.TaskId, err = w.StartRace(ctx, sid, r.GetBrief(), r.GetKind(), int(r.GetCount()), r.GetJudge())
+		out.TaskId, err = w.StartRace(ctx, sid, r.GetBrief(), raceEntrants(r), r.GetJudge())
 		return err
 	})
 	if err != nil {

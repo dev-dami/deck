@@ -38,37 +38,53 @@ func TestKindAddressesFreeMember(t *testing.T) {
 	}
 }
 
-func TestKindSuffixes(t *testing.T) {
+// The user's messages have no kind suffixes or counts: "$claude+",
+// "$claude*" and "$claude×3" are plain text, and a race starts from /race.
+func TestKindSuffixesAreText(t *testing.T) {
 	kinds := []string{"claude", "codex"}
 	refs := []MemberRef{
 		{ID: "claude", Name: "claude1", Kind: "claude"},
 		{ID: "claude2", Name: "claude2", Kind: "claude"},
-		{ID: "claude3", Name: "claude3", Kind: "claude", Exited: true},
 	}
-	ad := ParseAddressing("$claude* review this", refs, kinds)
-	if !slices.Equal(ad.Members, []string{"claude", "claude2"}) || ad.Body != "review this" || len(ad.NewKinds) != 0 {
-		t.Fatalf("$claude* = %+v", ad)
-	}
-	ad = ParseAddressing("$claude+ $claude+ $codex* go", refs, kinds)
-	if !slices.Equal(ad.NewKinds, []string{"claude", "claude", "codex"}) || len(ad.Members) != 0 || ad.Body != "go" {
-		t.Fatalf("$claude+ $claude+ $codex* = %+v", ad)
-	}
-	// Not a kind, or a suffix in the middle: plain text.
-	for _, s := range []string{"echo $HOME* now", "$PATH+ x", "$claude*x y"} {
-		if ad := ParseAddressing(s, refs, kinds); ad.Mentioned() {
-			t.Fatalf("%q addressed %+v", s, ad)
+	for _, s := range []string{
+		"$claude* review this", "$claude+ review this", "@claude+ @claude+ go", "$codex* go",
+		"$claude×2 $codex×1 fix the flaky test", "@claude*3 fix it", "$codex×3 fix it",
+		"echo $HOME* now", "$PATH+ x", "$claude*x y",
+	} {
+		ad := ParseAddressing(s, refs, kinds)
+		if ad.Mentioned() || ad.Body != s {
+			t.Errorf("%q addressed %+v", s, ad)
 		}
+	}
+	// A plain mention before one still counts; the rest is the body.
+	if ad := ParseAddressing("$codex $claude+ go", refs, kinds); len(ad.NewKinds) != 1 || ad.Body != "$claude+ go" {
+		t.Fatalf("$codex $claude+ = %+v", ad)
 	}
 }
 
-func TestPlusAddsInstancesAndRenamesFirst(t *testing.T) {
+func TestTypedRaceIsText(t *testing.T) {
+	r, tid, _ := raceRig(t, nil, []fake.Script{turn(say("ok"), finish())})
+	r.add(t, tid, "codex")
+	if err := r.m.Post(tid, "$codex×3 fix the flaky test"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "codex's turn", func() bool { return r.c.turnDones("codex") == 1 })
+	if tasks := r.m.Tasks(tid); len(tasks) != 0 {
+		t.Fatalf("a typed race made tasks: %+v", tasks)
+	}
+	if ti, _ := r.m.Thread(tid); len(ti.Members) != 1 {
+		t.Fatalf("a typed race added members: %+v", ti.Members)
+	}
+	has(t, r.codex.prompts("codex")[0], "$codex×3 fix the flaky test")
+}
+
+func TestSecondInstanceRenamesFirst(t *testing.T) {
 	r := newRig(t, nil, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	if err := r.m.Post(tid, "$claude+"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.m.Post(tid, "$claude+ $codex"); err != nil {
+	r.add(t, tid, "claude")
+	r.add(t, tid, "claude")
+	if err := r.m.Post(tid, "$codex"); err != nil {
 		t.Fatal(err)
 	}
 	th, _ := r.m.Thread(tid)

@@ -3,11 +3,10 @@ import type { AgentLine } from "./protocol";
 // The composer's pickers, after Deck's addressing rules
 // (internal/deck/session/address.go and docs/design/agents-and-mentions.md):
 // "@" names an agent or a person, "$" is the older sigil for agents, and "#"
-// picks a file. "@codex" reaches a free codex or starts one, "@codex+"
-// (typed; not offered, as agents start helpers themselves) always starts
-// another, "@codex*" reaches every codex, "@claude-2" one
-// member, "@charles" a profile's agent, "@all" every member. The desktop
-// and the phone share these.
+// picks a file. "@codex" reaches a free codex or starts one, "@claude-2" one
+// member, "@charles" a profile's agent, "@all" every member. Nothing typed
+// starts a second agent or a race: "/race" does, and agents start helpers
+// themselves. The desktop and the phone share these.
 
 export interface Suggestion {
   insert: string;
@@ -56,14 +55,13 @@ export function pathLike(query: string): boolean {
   return query.includes("/") || /\.[A-Za-z0-9]+$/.test(query);
 }
 
-// The bytes a name may hold, as the engine reads them (isNameByte), and an
-// optional "+" or "*" at its end.
-const NAME = /^[\w-]*[+*]?$/;
+// The bytes a name may hold, as the engine reads them (isNameByte).
+const NAME = /^[\w-]*$/;
 
 // The "$word" that ends at the caret, when it starts the text or follows
 // whitespace; null otherwise.
 export function mentionAt(text: string, caret: number): Mention | null {
-  const m = /(^|\s)\$([\w-]*[+*]?)$/.exec(text.slice(0, caret));
+  const m = /(^|\s)\$([\w-]*)$/.exec(text.slice(0, caret));
   if (m === null) return null;
   const query = m[2] ?? "";
   return { start: caret - query.length - 1, query };
@@ -114,9 +112,8 @@ const busyDetail = (l: AgentLine): string =>
   [l.role ?? "", l.kind, l.busy ? "busy" : ""].filter((x) => x !== "").join(" · ");
 
 // What sigil + query can name: the thread's members; for "@" the profiles
-// with no member yet and the teammates; each kind (and kind+, and kind*
-// when it has more than one member); then "all". Filtered by prefix,
-// case-insensitively, each once.
+// with no member yet and the teammates; each kind; then "all". Filtered by
+// prefix, case-insensitively, each once.
 export function suggestions(
   query: string,
   roster: AgentLine[],
@@ -137,7 +134,13 @@ export function suggestions(
   for (const l of roster) {
     // "$" keeps naming members by id; "@" by the name they are shown by.
     const name = at ? l.name || l.id : l.id;
-    out.push({ insert: `${sigil}${name}`, label: name, detail: busyDetail(l), kind: l.kind, ...(l.color ? { color: l.color } : {}) });
+    out.push({
+      insert: `${sigil}${name}`,
+      label: name,
+      detail: busyDetail(l),
+      kind: l.kind,
+      ...(l.color ? { color: l.color } : {}),
+    });
   }
   // "@" talks to someone: the named come before the kinds.
   if (at) {
@@ -163,8 +166,6 @@ export function suggestions(
       detail: members === 0 ? `start ${k}` : `a free ${k}`,
       kind: k,
     });
-    if (members > 1)
-      out.push({ insert: `${sigil}${k}*`, label: `${k}*`, detail: `every ${k}`, kind: k });
   }
   if (roster.length > 1)
     out.push({ insert: `${sigil}all`, label: "all", detail: "every agent", kind: null });
@@ -176,6 +177,20 @@ export function suggestions(
     seen.add(key);
     return true;
   });
+}
+
+// The typed forms Deck no longer reads, at the start of a message:
+// "$codex×3" and "@claude*2" (a race), "$claude+" (another agent),
+// "@claude*" (every one). They go as plain text; retiredForm says so, and
+// where to go instead, or null for a message without one.
+export function retiredForm(text: string): string | null {
+  const m = /^\s*(?:[$@][\w-]+\s+)*([$@][\w-]+(?:[×*]\d*|\+))(?=[\s,:]|$)/.exec(text);
+  if (m === null) return null;
+  const form = m[1] ?? "";
+  if (/[×*]\d/.test(form)) return `${form} is plain text now. Type /race to race agents.`;
+  if (form.endsWith("+"))
+    return `${form} is plain text now. Type /race to run more than one, or ask an agent to start a helper.`;
+  return `${form} is plain text now. Name each agent to reach it.`;
 }
 
 // The hue a picker row wears: the profile's colour, else its kind's; none

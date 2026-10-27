@@ -144,14 +144,18 @@ func (f *fakeRooms) SearchMessages(_ context.Context, query string, limit int) (
 	return []workspace.MessageHit{{SessionID: "s1", MessageID: "m1", Agent: "claude", Snippet: "…the lockout…", At: time.UnixMilli(1760000000123)}}, nil
 }
 
-func (f *fakeRooms) StartRace(_ context.Context, sid, brief, kind string, count int, judge bool) (string, error) {
+func (f *fakeRooms) StartRace(_ context.Context, sid, brief string, entrants []workspace.RaceEntrant, judge bool) (string, error) {
 	if err := f.known(sid); err != nil {
 		return "", err
 	}
-	if count < 2 {
+	if len(entrants) < 2 {
 		return "", errors.New("session: a race has 2 to 6 entries, not 1")
 	}
-	f.did = append(f.did, strings.Join([]string{"race", brief, kind, strings.Repeat("x", count), map[bool]string{true: "judged"}[judge]}, " "))
+	var who []string
+	for _, e := range entrants {
+		who = append(who, strings.TrimRight(e.Agent+"/"+e.Model+"/"+e.Effort, "/"))
+	}
+	f.did = append(f.did, strings.Join([]string{"race", brief, strings.Join(who, ","), map[bool]string{true: "judged"}[judge]}, " "))
 	return "t7", nil
 }
 
@@ -265,6 +269,11 @@ func TestRoomCalls(t *testing.T) {
 	if err != nil || tr.GetTaskId() != "t7" {
 		t.Fatalf("race %v %v", tr, err)
 	}
+	// Entrants mix kinds and repeat one, on the same model.
+	mixed := []*deckv1.RaceEntrant{{Agent: "codex"}, {Agent: "claude", Model: "opus", Effort: "high"}, {Agent: "claude", Model: "opus"}}
+	if _, err := c.StartRace(ctx, &deckv1.StartRaceRequest{SessionId: "s1", Brief: "fix it", Entrants: mixed, Kind: "pi", Count: 5}); err != nil {
+		t.Fatalf("mixed race: %v", err)
+	}
 	if _, err := c.StartRace(ctx, &deckv1.StartRaceRequest{SessionId: "s1", Brief: "fix it", Kind: "claude", Count: 1}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("a race of one: %v", err)
 	}
@@ -272,6 +281,7 @@ func TestRoomCalls(t *testing.T) {
 		{SessionId: "s1", Kind: "claude", Count: 2},
 		{SessionId: "s1", Brief: "fix it", Count: 2},
 		{SessionId: "s1", Brief: "fix it", Kind: "claude", Count: 1 << 30},
+		{SessionId: "s1", Brief: "fix it", Entrants: []*deckv1.RaceEntrant{{Agent: "claude"}, {Model: "opus"}}},
 	} {
 		if _, err := c.StartRace(ctx, bad); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("race %v: %v", bad, err)
@@ -284,7 +294,7 @@ func TestRoomCalls(t *testing.T) {
 	if ev := until(t, st, func(e *deckv1.Event) bool { return e.GetSessionUpdated() != nil }); !ev.GetSessionUpdated().GetArchived() {
 		t.Fatalf("after archiving: %v", ev)
 	}
-	want := []string{"isolate s1", "unisolate s1", "undo s1", "race fix it claude xxx judged"}
+	want := []string{"isolate s1", "unisolate s1", "undo s1", "race fix it claude,claude,claude judged", "race fix it codex,claude/opus/high,claude/opus "}
 	if !slices.Equal(f.did, want) {
 		t.Fatalf("did %q, want %q", f.did, want)
 	}

@@ -636,11 +636,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		}
 		return out, nil
 	case "task.race":
-		kinds, err := parseEntries(str("agents"), m.Kinds())
-		if err != nil {
-			return "", err
-		}
-		res, err := m.Race(t.id, me, RaceSpec{Title: str("title"), Brief: str("brief"), Kinds: kinds, Judge: strings.ToLower(str("judge")), Review: strings.ToLower(str("review"))})
+		res, err := m.Race(t.id, me, RaceSpec{Title: str("title"), Brief: str("brief"), Entrants: parseEntries(str("agents")), Judge: strings.ToLower(str("judge")), Review: strings.ToLower(str("review"))})
 		if err != nil {
 			return "", err
 		}

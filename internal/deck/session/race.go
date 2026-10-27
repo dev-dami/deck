@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -24,13 +23,24 @@ import (
 // maxRaceEntries caps one race; MaxSubagents caps the thread as always.
 const maxRaceEntries = 6
 
+// Entrant is one agent of a race. Kinds mix and repeat: a race may be
+// codex, claude and claude again on the same model.
+type Entrant struct {
+	// Agent is an agent kind ("claude") or a named agent's name ("ada").
+	Agent string
+	// Model and Effort are what it runs; "" is the kind's (or the named
+	// agent's) own.
+	Model, Effort string
+}
+
 // RaceSpec describes a race.
 type RaceSpec struct {
 	Title string
 	Brief string
-	// Kinds has one agent kind for each entry: {"claude", "claude", "codex"}.
-	Kinds []string
-	// Judge is the kind of agent that ranks the entries; "" is none.
+	// Entrants has one agent for each entry, in order.
+	Entrants []Entrant
+	// Judge is the agent kind, or a named agent, that ranks the entries; ""
+	// is none.
 	Judge string
 	// Review is who reviews each entry before it ends (review.go).
 	Review string
@@ -53,16 +63,31 @@ func (m *Manager) Race(threadID, parentID string, sp RaceSpec) (RaceResult, erro
 		return RaceResult{}, fmt.Errorf("session: no thread %q", threadID)
 	}
 	brief := strings.TrimSpace(sp.Brief)
-	switch n := len(sp.Kinds); {
+	switch n := len(sp.Entrants); {
 	case brief == "":
 		return RaceResult{}, errors.New("session: a race needs a brief")
 	case n < 2 || n > maxRaceEntries:
 		return RaceResult{}, fmt.Errorf("session: a race has 2 to %d entries, not %d", maxRaceEntries, n)
 	}
-	for _, k := range append([]string{sp.Judge}, sp.Kinds...) {
-		if _, ok := m.adapters[k]; k != "" && !ok {
-			return RaceResult{}, fmt.Errorf("session: unknown agent kind %q", k)
+	// Each entry's task holds its kind; its spawn names the agent, so a
+	// named agent's entry starts a member from that profile.
+	entrants := make([]Entrant, len(sp.Entrants))
+	kinds := make([]string, len(sp.Entrants))
+	for i, e := range sp.Entrants {
+		agent, kind, ok := m.raceAgent(t, e.Agent)
+		if !ok {
+			return RaceResult{}, fmt.Errorf("session: no agent kind or named agent %q", e.Agent)
 		}
+		entrants[i] = Entrant{Agent: agent, Model: strings.TrimSpace(e.Model), Effort: strings.ToLower(strings.TrimSpace(e.Effort))}
+		kinds[i] = kind
+	}
+	if sp.Judge != "" {
+		// A named agent judges as its kind.
+		_, kind, ok := m.raceAgent(t, sp.Judge)
+		if !ok {
+			return RaceResult{}, fmt.Errorf("session: no agent kind or named agent %q", sp.Judge)
+		}
+		sp.Judge = kind
 	}
 	if err := m.checkReview(sp.Review); err != nil {
 		return RaceResult{}, err
@@ -75,7 +100,7 @@ func (m *Manager) Race(threadID, parentID string, sp RaceSpec) (RaceResult, erro
 	if parentID != "" && off {
 		return RaceResult{}, errors.New("session: orchestration is off for this thread; the user turns it on")
 	}
-	if _, _, err := m.spawnRoom(t, parentID, len(sp.Kinds)); err != nil {
+	if _, _, err := m.spawnRoom(t, parentID, len(entrants)); err != nil {
 		return RaceResult{}, err
 	}
 	t.mu.Lock()
@@ -96,21 +121,38 @@ func (m *Manager) Race(threadID, parentID string, sp RaceSpec) (RaceResult, erro
 	res := RaceResult{TaskID: race.ID}
 	// Every entry is on the board before the first starts: an entry that
 	// cannot start ends at once, and must not end the race alone.
-	for _, k := range sp.Kinds {
-		tk, err := m.addTask(t, TaskSpec{Title: title, Brief: brief, Creator: parentID, Parent: race.ID, MaxAttempts: 1, Isolate: true, Kind: k, Claimed: true, Review: sp.Review})
+	for i, e := range entrants {
+		tk, err := m.addTask(t, TaskSpec{Title: title, Brief: brief, Creator: parentID, Parent: race.ID, MaxAttempts: 1, Isolate: true,
+			Kind: kinds[i], Model: e.Model, Effort: e.Effort, Claimed: true, Review: sp.Review})
 		if err != nil {
 			_, _ = m.moveTask(t, race.ID, store.TaskCancelled, parentID, "could not start: "+err.Error(), nil)
 			return RaceResult{}, err
 		}
 		res.Entries = append(res.Entries, tk.ID)
 	}
-	note := fmt.Sprintf("\n\n[deck] This is a race: %d agents do this same task, each on a worktree of its own, and the user keeps the best result. Work alone; do not message the others. End with a short summary: what you changed, and which tests you ran with their results.", len(sp.Kinds))
-	for _, id := range res.Entries {
+	note := fmt.Sprintf("\n\n[deck] This is a race: %d agents do this same task, each on a worktree of its own, and the user keeps the best result. Work alone; do not message the others. End with a short summary: what you changed, and which tests you ran with their results.", len(entrants))
+	for i, id := range res.Entries {
 		// An entry that cannot start fails with the reason, and the race goes
 		// on with the others.
-		_, _ = m.Spawn(threadID, parentID, SpawnSpec{TaskID: id, Brief: brief + note, Isolate: true})
+		_, _ = m.Spawn(threadID, parentID, SpawnSpec{Kind: entrants[i].Agent, TaskID: id, Brief: brief + note, Isolate: true})
 	}
 	return res, nil
+}
+
+// raceAgent resolves an entrant's agent, a kind or a named agent, to its
+// name as the Deck spells it and the kind it runs. ok is false for anything
+// else.
+func (m *Manager) raceAgent(t *thread, name string) (agent, kind string, ok bool) {
+	name = TrimSigil(name)
+	if k, isKind := kindOf(name, m.Kinds()); isKind {
+		return k, k, true
+	}
+	if p, named := m.profileNamed(t, name); named {
+		if _, known := m.adapters[p.Kind]; known {
+			return p.Name, p.Kind, true
+		}
+	}
+	return "", "", false
 }
 
 // raceOf is the index of the race task tk is an entry of, or -1. t.mu is held.
@@ -349,34 +391,13 @@ func (m *Manager) KeepEntry(threadID, taskID string) ([]string, error) {
 	return files, nil
 }
 
-// parseEntries reads the entries of a race: kinds separated by commas or
-// spaces, each with an optional count, "claude×2, codex" (or "claude*2").
-func parseEntries(s string, kinds []string) ([]string, error) {
-	var out []string
+// parseEntries reads the agents of a race as task.race gives them: kinds or
+// named agents separated by commas or spaces, one for each entry, so a name
+// given twice races two of it ("claude, claude, codex").
+func parseEntries(s string) []Entrant {
+	var out []Entrant
 	for _, f := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' }) {
-		name, n := f, 1
-		if k, c, ok := cutCount(f); ok {
-			name, n = k, c
-		}
-		kind, ok := kindOf(TrimSigil(name), kinds)
-		if !ok {
-			return nil, fmt.Errorf("no agent kind %q (kinds: %s)", name, strings.Join(kinds, ", "))
-		}
-		for range min(n, maxRaceEntries+1) {
-			out = append(out, kind)
-		}
+		out = append(out, Entrant{Agent: f})
 	}
-	return out, nil
-}
-
-// cutCount splits "claude×3" or "claude*3" into "claude" and 3.
-func cutCount(s string) (name string, n int, ok bool) {
-	for _, sep := range []string{"×", "*"} {
-		if k, c, found := strings.Cut(s, sep); found {
-			if n, err := strconv.Atoi(c); err == nil && n > 0 {
-				return k, n, true
-			}
-		}
-	}
-	return s, 0, false
+	return out
 }

@@ -18,11 +18,11 @@
 // (or "$name", the same mention) at the start of a clause addresses
 // that member (ParseAddressing has the exact rules); "@claude" / "@codex" naming
 // a kind reaches whichever live member of that kind is free, or adds one when
-// there is none; "@claude*" addresses all of them and "@claude+" adds another;
-// "@all" addresses everyone; "@claude×3 brief" (or "@claude*3") starts a race
-// (race.go); "@charles", a profile (a named agent, SetProfiles) no member is
-// called yet, adds a member from it named after it, and "@charles+" another;
-// with no mention the message goes to the member who
+// there is none; "@all" addresses everyone; "@charles", a profile (a named
+// agent, SetProfiles) no member is called yet, adds a member from it named
+// after it. Nothing typed adds a second member of a kind or starts a race:
+// agents spawn helpers (Spawn), and the clients start races (Race). With no
+// mention the message goes to the member who
 // spoke last (or the only member; or, in an empty thread, a new member of the
 // default kind). Several addressees receive it concurrently.
 //
@@ -840,21 +840,6 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 	}
 
 	m.wake(t)
-
-	if len(ad.Race) > 0 {
-		switch {
-		case ad.Mentioned():
-			return PostResult{}, errors.New("a race (@claude×3) cannot also address other agents")
-		case ad.Body == "":
-			return PostResult{}, errors.New("say what the race is for: @claude×3 fix the flaky test")
-		}
-		res, err := m.postTo(t, text, nil, images)
-		if err != nil {
-			return res, err
-		}
-		_, err = m.Race(threadID, "", RaceSpec{Brief: ad.Body, Kinds: ad.Race})
-		return res, err
-	}
 
 	var targets []*agentState
 	newKinds := ad.NewKinds

@@ -196,8 +196,9 @@ type DeckClient interface {
 	// last ApplyIsolated, if those files have not changed since. It returns
 	// the files it put back.
 	UndoApply(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*FilesResponse, error)
-	// StartRace has count agents of kind do one brief, each on a worktree of
-	// its own, as the agents' task.race does.
+	// StartRace has its entrants do one brief, each on a worktree of its
+	// own, as the agents' task.race does. Entrants may mix kinds and repeat
+	// one, on the same model or another.
 	StartRace(ctx context.Context, in *StartRaceRequest, opts ...grpc.CallOption) (*StartRaceResponse, error)
 	// ListFiles lists the files of the thread's tree (its worktree when
 	// isolated) that match query, minus what the repository ignores.
@@ -997,8 +998,9 @@ type DeckServer interface {
 	// last ApplyIsolated, if those files have not changed since. It returns
 	// the files it put back.
 	UndoApply(context.Context, *SessionRef) (*FilesResponse, error)
-	// StartRace has count agents of kind do one brief, each on a worktree of
-	// its own, as the agents' task.race does.
+	// StartRace has its entrants do one brief, each on a worktree of its
+	// own, as the agents' task.race does. Entrants may mix kinds and repeat
+	// one, on the same model or another.
 	StartRace(context.Context, *StartRaceRequest) (*StartRaceResponse, error)
 	// ListFiles lists the files of the thread's tree (its worktree when
 	// isolated) that match query, minus what the repository ignores.

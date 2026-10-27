@@ -83,12 +83,11 @@ describe("the protocol client against a fake Deck", () => {
     const { ctl } = await pairAndConnect();
     await ctl.openSession("ses_main");
     await until(() => (ctl.state.roster["ses_main"] ?? []).length === 2);
-    expect(await ctl.send("ses_main", "$claude $codex+ compare notes", [])).toBe(true);
-    expect(fake.sent.map((s) => s.text)).toEqual(["$claude $codex+ compare notes"]);
-    await until(() => (ctl.state.roster["ses_main"] ?? []).some((l) => l.id === "codex-2"));
+    expect(await ctl.send("ses_main", "$claude $codex compare notes", [])).toBe(true);
+    expect(fake.sent.map((s) => s.text)).toEqual(["$claude $codex compare notes"]);
     await until(() => {
       const replies = (ctl.state.messages["ses_main"] ?? []).filter(
-        (m) => m.role === "assistant" && m.finished && (m.agent === "claude-1" || m.agent === "codex-2"),
+        (m) => m.role === "assistant" && m.finished && (m.agent === "claude-1" || m.agent === "codex-1"),
       );
       return replies.filter((m) => m.parts.some((p) => (p.text ?? "").includes("compare notes"))).length === 2;
     });

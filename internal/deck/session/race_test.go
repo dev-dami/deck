@@ -2,32 +2,21 @@ package session
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/agent/fake"
+	"github.com/dev-dami/deck/internal/deck/profile"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
-func TestRaceAddressing(t *testing.T) {
-	kinds := []string{"claude", "codex"}
-	ad := ParseAddressing("$claude×2 $codex*1 fix the flaky test", nil, kinds)
-	if strings.Join(ad.Race, ",") != "claude,claude,codex" || ad.Body != "fix the flaky test" {
-		t.Fatalf("race = %q, body %q", ad.Race, ad.Body)
-	}
-	for _, text := range []string{"$claude* hi", "$claude*3x hi", "$nobody×2 hi", "tell $claude×2 hi", "$claude×0 hi"} {
-		if ad := ParseAddressing(text, nil, kinds); len(ad.Race) > 0 {
-			t.Errorf("%q started a race: %q", text, ad.Race)
-		}
-	}
-
-	got, err := parseEntries("claude*2, codex $codex×1", kinds)
-	if err != nil || strings.Join(got, ",") != "claude,claude,codex,codex" {
-		t.Fatalf("parseEntries = %q, %v", got, err)
-	}
-	if _, err := parseEntries("claude, gemini", kinds); err == nil {
-		t.Fatal("an unknown kind")
+func TestParseEntries(t *testing.T) {
+	got := parseEntries("claude, claude codex,,@ada")
+	want := []Entrant{{Agent: "claude"}, {Agent: "claude"}, {Agent: "codex"}, {Agent: "@ada"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("parseEntries = %+v", got)
 	}
 }
 
@@ -60,7 +49,7 @@ func entries(r *rig, tid, id string) []store.Task {
 func TestUserRaceKeepsOneEntry(t *testing.T) {
 	work := []fake.Script{turn(blockStep("ap"), say("changed a.txt; go test passes"), finish())}
 	r, tid, repo := raceRig(t, work, work)
-	if err := r.m.Post(tid, "$claude×2 $codex×1 improve a.txt"); err != nil {
+	if _, err := r.m.Race(tid, "", RaceSpec{Brief: "improve a.txt", Entrants: []Entrant{{Agent: "claude"}, {Agent: "claude"}, {Agent: "codex"}}}); err != nil {
 		t.Fatal(err)
 	}
 	var race store.Task
@@ -112,7 +101,7 @@ func TestAgentRaceReportsOnceAndIsJudged(t *testing.T) {
 	r, tid, _ := raceRig(t,
 		[]fake.Script{turn(say("entry done"), finish())},
 		[]fake.Script{
-			turn(fake.Step{Exec: &fake.Exec{Op: "task.race", Args: []byte(`{"brief": "speed up the parser", "agents": "claude*2", "judge": "claude"}`)}}, say("racing"), finish()),
+			turn(fake.Step{Exec: &fake.Exec{Op: "task.race", Args: []byte(`{"brief": "speed up the parser", "agents": "claude, claude", "judge": "claude"}`)}}, say("racing"), finish()),
 			turn(say("noted"), finish()),
 		})
 	lead := r.add(t, tid, "codex")
@@ -138,17 +127,90 @@ func TestAgentRaceReportsOnceAndIsJudged(t *testing.T) {
 func TestRaceRefusals(t *testing.T) {
 	r := newRig(t, nil, nil)
 	tid := r.thread(t) // not a git repository
-	if _, err := r.m.Race(tid, "", RaceSpec{Brief: "x", Kinds: []string{"claude", "codex"}}); err == nil || !strings.Contains(err.Error(), "git repository") {
+	two := []Entrant{{Agent: "claude"}, {Agent: "codex"}}
+	if _, err := r.m.Race(tid, "", RaceSpec{Brief: "x", Entrants: two}); err == nil || !strings.Contains(err.Error(), "git repository") {
 		t.Fatalf("outside git: %v", err)
 	}
-	if _, err := r.m.Race(tid, "", RaceSpec{Brief: "x", Kinds: []string{"claude"}}); err == nil {
+	if _, err := r.m.Race(tid, "", RaceSpec{Brief: "x", Entrants: two[:1]}); err == nil {
 		t.Fatal("a race of one")
+	}
+	if _, err := r.m.Race(tid, "", RaceSpec{Brief: "x", Entrants: []Entrant{{Agent: "claude"}, {Agent: "gemini"}}}); err == nil || !strings.Contains(err.Error(), `"gemini"`) {
+		t.Fatalf("an unknown agent: %v", err)
 	}
 	if len(r.m.Tasks(tid)) != 0 {
 		t.Fatalf("a refused race left tasks: %+v", r.m.Tasks(tid))
 	}
 	r.add(t, tid, "claude")
-	if _, err := r.m.Race(tid, "claude", RaceSpec{Brief: "x", Kinds: []string{"claude", "codex"}}); err == nil || !strings.Contains(err.Error(), "orchestration is off") {
+	if _, err := r.m.Race(tid, "claude", RaceSpec{Brief: "x", Entrants: two}); err == nil || !strings.Contains(err.Error(), "orchestration is off") {
 		t.Fatalf("an agent without orchestration: %v", err)
+	}
+}
+
+// A race mixes kinds and repeats one on the same model: each entry runs the
+// agent, model and effort it was given.
+func TestMixedRaceRunsEachEntrant(t *testing.T) {
+	work := []fake.Script{turn(say("done"), finish())}
+	r, tid, _ := raceRig(t, work, work)
+	res, err := r.m.Race(tid, "", RaceSpec{Brief: "fix the flaky limiter test", Entrants: []Entrant{
+		{Agent: "codex", Model: "gpt-x", Effort: "High"},
+		{Agent: "Claude", Model: "opus"},
+		{Agent: "$claude", Model: "opus"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	es := entries(r, tid, res.TaskID)
+	if len(es) != 3 {
+		t.Fatalf("entries = %+v", es)
+	}
+	type ran struct{ kind, model, effort string }
+	want := []ran{{"codex", "gpt-x", "high"}, {"claude", "opus", ""}, {"claude", "opus", ""}}
+	owners := map[string]bool{}
+	for i, e := range es {
+		if got := (ran{e.Kind, e.Model, e.Effort}); got != want[i] {
+			t.Errorf("entry %d = %+v, want %+v", i, got, want[i])
+		}
+		waitFor(t, "entry "+e.ID+" has an owner", func() bool { return taskOf(t, r, tid, e.ID).Owner != "" })
+		owner := taskOf(t, r, tid, e.ID).Owner
+		owners[owner] = true
+		sp, ok := r.claude.spec(owner)
+		if want[i].kind == "codex" {
+			sp, ok = r.codex.spec(owner)
+		}
+		if !ok || sp.Model != want[i].model {
+			t.Errorf("entry %d runs %+v (ok %v), want model %q", i, sp, ok, want[i].model)
+		}
+	}
+	if len(owners) != 3 {
+		t.Fatalf("the entries share members: %v", owners)
+	}
+}
+
+// A named agent races as itself, and may judge as its kind.
+func TestRaceWithNamedAgent(t *testing.T) {
+	work := []fake.Script{turn(say("done"), finish())}
+	r, tid, _ := raceRig(t, work, work)
+	r.m.SetProfiles(func(string) []profile.Profile {
+		return []profile.Profile{{Name: "ada", Kind: "claude", Model: "sonnet"}}
+	})
+	res, err := r.m.Race(tid, "", RaceSpec{Brief: "x", Entrants: []Entrant{{Agent: "@Ada"}, {Agent: "codex"}}, Judge: "ada"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	es := entries(r, tid, res.TaskID)
+	if len(es) != 2 || es[0].Kind != "claude" || es[1].Kind != "codex" {
+		t.Fatalf("entries = %+v", es)
+	}
+	if race := taskOf(t, r, tid, res.TaskID); race.Judge != "claude" {
+		t.Fatalf("judge = %q", race.Judge)
+	}
+	waitFor(t, "ada's entry starts", func() bool { return taskOf(t, r, tid, es[0].ID).Owner != "" })
+	ti, _ := r.m.Thread(tid)
+	found := false
+	for _, mb := range ti.Members {
+		found = found || mb.Profile == "ada"
+	}
+	if !found {
+		t.Fatalf("no member from ada: %+v", ti.Members)
 	}
 }

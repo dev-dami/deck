@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/base64"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,30 @@ func TestRosterKindsAndAdd(t *testing.T) {
 	require.Equal(t, wire.CodeInvalid, errCode(t, c.call(wire.MRosterAdd, wire.RosterAddParams{SessionID: "s1"})), "kind is required")
 	require.Equal(t, wire.CodeInvalid, errCode(t, c.call(wire.MRosterAdd, wire.RosterAddParams{SessionID: "s1", Kind: "nope"})), "unknown kinds are refused")
 	require.Equal(t, wire.CodeInvalid, errCode(t, c.call(wire.MRosterKinds, wire.SessionParams{})), "roster.kinds needs a session")
+}
+
+func TestRaceStart(t *testing.T) {
+	r := newRig(t)
+	tok, _ := r.token("Pixel")
+	c, _ := r.welcome(tok, nil)
+
+	// Kinds mix, and one repeats on the same model.
+	mixed := []wire.RaceEntrant{{Agent: "codex", Effort: "high"}, {Agent: "claude", Model: "opus"}, {Agent: "claude", Model: "opus"}}
+	res := unmarshal[wire.RaceStartResult](t, okRes(t, c.call(wire.MRaceStart, wire.RaceStartParams{SessionID: "s1", Brief: "fix the flaky test", Entrants: mixed, Judge: true})))
+	require.Equal(t, "t1", res.TaskID)
+	require.Equal(t, []string{"race:codex/,claude/opus,claude/opus judged: fix the flaky test"}, r.be.Calls())
+
+	for _, bad := range []wire.RaceStartParams{
+		{SessionID: "s1", Entrants: mixed},
+		{SessionID: "s1", Brief: "x"},
+		{Brief: "x", Entrants: mixed},
+		{SessionID: "s1", Brief: "x", Entrants: []wire.RaceEntrant{{Agent: "claude"}, {Model: "opus"}}},
+		{SessionID: "s1", Brief: "x", Entrants: slices.Repeat(mixed, 3)},
+	} {
+		require.Equal(t, wire.CodeInvalid, errCode(t, c.call(wire.MRaceStart, bad)), "%+v", bad)
+	}
+	require.Equal(t, wire.CodeInvalid, errCode(t, c.call(wire.MRaceStart, wire.RaceStartParams{SessionID: "s1", Brief: "x", Entrants: mixed[:1]})), "a race of one")
+	require.Equal(t, wire.CodeNotFound, errCode(t, c.call(wire.MRaceStart, wire.RaceStartParams{SessionID: "ghost", Brief: "x", Entrants: mixed})))
 }
 
 func TestTitlesAreBounded(t *testing.T) {

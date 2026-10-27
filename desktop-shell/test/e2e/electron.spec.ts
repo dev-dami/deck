@@ -59,9 +59,8 @@ test("over rpc: the app reopens the last folder and runs two agents", async () =
 
     await win.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
     const box = win.getByRole("textbox", { name: "Message" });
-    await box.fill("$claude $codex+ split the work and compare");
+    await box.fill("$claude $codex split the work and compare");
     await box.press("Enter");
-    await expect(win.locator('.agent[data-agent="codex-2"]')).toBeVisible();
     await expect(win.locator('[data-agent="claude-1"].msg').last().locator(".streaming")).toBeVisible();
     await win.locator(".panel-toggles").getByRole("button", { name: /Diff/ }).click();
     await win.waitForTimeout(700);
@@ -113,10 +112,9 @@ test("over v2: the app pairs, connects and runs two agents", async () => {
 
     await win.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
     const box = win.getByRole("textbox", { name: "Message" });
-    await box.fill("$claude $codex+ split the work and compare");
+    await box.fill("$claude $codex split the work and compare");
     await box.press("Enter");
-    await expect(win.locator('.agent[data-agent="codex-2"]')).toBeVisible();
-    await expect(win.locator('[data-agent="codex-2"].msg').last()).toContainText("split the work");
+    await expect(win.locator('[data-agent="codex-1"].msg').last()).toContainText("split the work");
   } finally {
     await app.close();
     await fake.close();

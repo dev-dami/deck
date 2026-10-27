@@ -378,6 +378,7 @@ const (
 	MRosterAdd       = "roster.add"
 	MModelsList      = "models.list"
 	MModelsSet       = "models.set"
+	MRaceStart       = "race.start"
 	MModeGet         = "mode.get"
 	MModeSet         = "mode.set"
 	MApprovalsList   = "approvals.list"
@@ -480,6 +481,30 @@ type (
 		SessionID string `json:"session_id"`
 		Kind      string `json:"kind"`
 		Model     string `json:"model,omitempty"`
+	}
+
+	// RaceStartParams is the params of race.start: its entrants do one
+	// brief, each on a worktree of its own. Entrants may mix kinds and
+	// repeat one. Judge has one more agent, of the first entrant's kind,
+	// rank the entries.
+	RaceStartParams struct {
+		SessionID string        `json:"session_id"`
+		Brief     string        `json:"brief"`
+		Entrants  []RaceEntrant `json:"entrants"`
+		Judge     bool          `json:"judge,omitempty"`
+	}
+
+	// RaceEntrant is one agent of a race: a kind or a named agent's name,
+	// and the model and effort it runs ("" for its own).
+	RaceEntrant struct {
+		Agent  string `json:"agent"`
+		Model  string `json:"model,omitempty"`
+		Effort string `json:"effort,omitempty"`
+	}
+
+	// RaceStartResult is the result of race.start: the race's task.
+	RaceStartResult struct {
+		TaskID string `json:"task_id"`
 	}
 
 	// ModelsSetParams is the params of models.set.
@@ -797,6 +822,8 @@ func Fixtures() []Fixture {
 		{"res_models.list", []ModelChoice{}},
 		{"req_models.set", ModelsSetParams{}},
 		{"res_models.set", Empty{}},
+		{"req_race.start", RaceStartParams{}},
+		{"res_race.start", RaceStartResult{}},
 		{"req_mode.get", SessionParams{}},
 		{"res_mode.get", ModeResult{}},
 		{"req_mode.set", ModeSetParams{}},

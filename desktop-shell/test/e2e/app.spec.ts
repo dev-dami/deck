@@ -92,22 +92,24 @@ test("two agents stream in one thread at once", async ({ page }) => {
   await expect(page.locator(".agent-busy")).toHaveCount(0);
 });
 
-test("adds an agent with $codex+, typed", async ({ page }) => {
+test("$codex+ is text now, with a hint that points to /race", async ({ page }) => {
   await pair(page);
   await openMain(page);
   await composer(page).fill("");
   await composer(page).pressSequentially("$codex");
-  // "+" is typed, not offered: agents start helpers themselves.
+  // Nothing typed starts another agent: the picker offers no "+" or "*".
   const pop = page.getByRole("listbox", { name: "Agents" });
   await expect(pop.getByRole("option")).toHaveText([/\$codex-1/, /\$codex.*a free codex/]);
   await composer(page).pressSequentially("+");
   await expect(pop).toHaveCount(0);
   await composer(page).pressSequentially(" review the limiter", { delay: 50 });
   await expect(composer(page)).toHaveValue("$codex+ review the limiter");
+  await expect(page.locator(".composer-retired")).toContainText("/race");
+  // It goes as text, and starts nobody.
   await composer(page).press("Enter");
-  await expect(page.locator('.agent[data-agent="codex-2"]')).toBeVisible();
-  await expect(page.locator('[data-agent="codex-2"].msg')).toContainText("review the limiter");
+  await expect(page.locator(".composer-retired")).toHaveCount(0);
   expect(fake.sent.map((s) => s.text)).toEqual(["$codex+ review the limiter"]);
+  await expect(page.locator('.agent[data-agent="codex-2"]')).toHaveCount(0);
 
   // No "Add agent" control beside the chips.
   await expect(page.getByRole("button", { name: "Add agent" })).toHaveCount(0);
@@ -118,6 +120,28 @@ test("adds an agent with $codex+, typed", async ({ page }) => {
   await expect(composer(page)).toHaveValue("$codex-1 compare");
   await page.getByRole("checkbox", { name: "Send to codex-1" }).click();
   await expect(composer(page)).toHaveValue("compare");
+});
+
+test("/race on a paired Deck starts mixed entrants through race.start", async ({ page }) => {
+  await pair(page);
+  await openMain(page);
+  await composer(page).fill("/race make the limiter per address");
+  await composer(page).press("Enter");
+  const builder = page.getByRole("region", { name: "Race builder" });
+  await builder.getByRole("button", { name: "Add agent" }).click();
+  const add = () => page.getByRole("menu", { name: "Add an entrant" });
+  await add().getByRole("group", { name: "Agent" }).getByRole("menuitemradio", { name: "codex" }).click();
+  await add().getByRole("menuitem", { name: "Add codex" }).click();
+  await add().getByRole("group", { name: "Agent" }).getByRole("menuitemradio", { name: "claude" }).click();
+  await add().getByRole("menuitem", { name: "Add claude" }).click();
+  await page.keyboard.press("Escape");
+  await builder.getByRole("button", { name: /Start race \(2\)/ }).click();
+  await expect(builder).toHaveCount(0);
+  expect(fake.races).toEqual([{ session_id: "ses_main", entrants: [{ agent: "codex" }, { agent: "claude" }], brief: "make the limiter per address" }]);
+  await expect(page.locator('.lane[data-lane="agent:codex-2"]')).toBeVisible();
+  await expect(page.locator('.lane[data-lane="agent:claude-2"]')).toBeVisible();
+  // Nothing went as a message.
+  expect(fake.sent).toEqual([]);
 });
 
 test("approves the approval of another thread over its composer", async ({ page }) => {
@@ -175,9 +199,9 @@ test("changes panel and screenshot", async ({ page }) => {
   // Every file shows its diff, with line numbers.
   await expect(panel.locator(".diff-row.diff-add").first()).toContainText("l.fail(addr)");
   await expect(panel.locator(".diff-row.diff-add .diff-gutter").first()).toHaveText(/\d+/);
-  await composer(page).fill("$claude $codex+ split the work");
+  await composer(page).fill("$claude $codex split the work");
   await composer(page).press("Enter");
-  await expect(page.locator('.agent[data-agent="codex-2"]')).toBeVisible();
+  await expect(page.locator('[data-agent="codex-1"].msg').last()).toContainText("split the work");
   await page.locator(".msg").last().waitFor();
   await page.waitForTimeout(500);
   await page.screenshot({ path: join(__dirname, "..", "..", "docs", "renderer.png") });

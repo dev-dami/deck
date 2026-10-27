@@ -27,13 +27,18 @@ import type { Crew } from "../crew";
 import { langName, langOf } from "../highlight";
 import { cn } from "../lib/cn";
 import { focusMessage } from "../palette";
+import { usePrefs } from "../prefs";
+import { useMentionables } from "../profiles";
+import { NO_RACE, toWire } from "../race";
 import { panelSlice, shallowEqual, useAppSlice } from "../select";
+import { gateMentionables } from "../teamGate";
 import { PANELS, type Panel } from "../ui";
+import { usePickerSource } from "./AgentPicker";
 import { AgentsTree } from "./AgentsTree";
 import { PreviewPanel } from "./PreviewPanel";
 import { CommentsBadge, DiffToggles, DiffView, SplitAllowed } from "./DiffView";
 import { SideChat } from "./SideChat";
-import { type RaceStart, TasksPanel } from "./TasksPanel";
+import { TasksPanel } from "./TasksPanel";
 import { actionToast } from "./Toasts";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
@@ -309,6 +314,9 @@ export function RightPanel({
   onOpenThread?: (id: string) => void;
 }) {
   const queued = open === undefined ? 0 : (state.queue[open.id]?.length ?? 0);
+  // The race builder of the Tasks tab picks as the composer's /race does.
+  const picker = usePickerSource(c, state.server, open?.id ?? null);
+  const named = gateMentionables(usePrefs().team, useMentionables(c, null));
   const ports = useOpenPorts(c.project);
   const tabs = PANELS.filter((p) => p.panel !== "preview" || panel === "preview" || ports.length > 0);
   // A file the graph opened, until the Shell hands one itself.
@@ -419,12 +427,18 @@ export function RightPanel({
             busy={open.busy}
             queue={state.queue[open.id] ?? []}
             kinds={state.server?.kinds ?? []}
+            named={named.profiles}
+            picker={picker}
             theme={state.theme}
             branch={branch}
             canJudge={serves(c, "StartRace")}
-            onRace={async (r: RaceStart) =>
-              serves(c, "StartRace") ? ((await c.startRace?.(open.id, r.brief, r.kind, r.count, r.judge)) ?? null) !== null : c.send(open.id, r.text, [])
-            }
+            onRace={async (d) => {
+              if (!serves(c, "StartRace")) {
+                onInfo(NO_RACE);
+                return false;
+              }
+              return ((await c.startRace?.(open.id, d.brief, toWire(d), d.judge)) ?? null) !== null;
+            }}
             onEditQueued={onEditQueued}
             onError={onError}
             onInfo={onInfo}

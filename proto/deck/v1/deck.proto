@@ -124,8 +124,9 @@ service Deck {
   // last ApplyIsolated, if those files have not changed since. It returns
   // the files it put back.
   rpc UndoApply(SessionRef) returns (FilesResponse);
-  // StartRace has count agents of kind do one brief, each on a worktree of
-  // its own, as the agents' task.race does.
+  // StartRace has its entrants do one brief, each on a worktree of its
+  // own, as the agents' task.race does. Entrants may mix kinds and repeat
+  // one, on the same model or another.
   rpc StartRace(StartRaceRequest) returns (StartRaceResponse);
   // ListFiles lists the files of the thread's tree (its worktree when
   // isolated) that match query, minus what the repository ignores.
@@ -950,10 +951,22 @@ message RevertFilesRequest {
 message StartRaceRequest {
   string session_id = 1;
   string brief = 2;
+  // kind and count are the race of an older client: count agents of kind.
+  // entrants, when set, replace them.
   string kind = 3;
   int32 count = 4;
-  // judge has an agent of the same kind rank the entries.
+  // judge has an agent of the first entrant's kind rank the entries.
   bool judge = 5;
+  repeated RaceEntrant entrants = 6;
+}
+
+// RaceEntrant is one agent of a race.
+message RaceEntrant {
+  // agent is an agent kind or a named agent's name.
+  string agent = 1;
+  // model and effort are what it runs; "" is the agent's own.
+  string model = 2;
+  string effort = 3;
 }
 
 message StartRaceResponse {

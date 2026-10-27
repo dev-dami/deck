@@ -67,9 +67,13 @@ strips both. A name resolves in this order:
      `@charles` reaches the same member).
 5. Otherwise the token is plain text, as `$HOME` is today.
 
-The kind suffixes and races carry over unchanged: `@claude+` adds a
-Claude, `@claude*` reaches every Claude, `@claude×3` races three.
-`@charles+` adds a second member from the profile, named `charles-2`.
+The typed kind suffixes and races are gone: `@claude+`, `@claude*` and
+`@claude×3` are plain text. More than one agent of a kind comes from a
+race, which the clients build from a list of entrants (`/race`; each a
+kind or a named agent with its model and effort, kinds mixed and
+repeated), or from an agent's helpers (`agent.spawn`). A second member
+from a profile is named `charles-2`. Agents still reach every member of a
+kind with `claude*` (`thread.send`, or a line of their reply).
 
 `@` matches only names, so `@src/foo.ts` and `user@example.com` stay text:
 `scanMention` already refuses a name followed by `/` or by `.` and a
