@@ -241,12 +241,33 @@ test("usage: the page shows totals, agents, models and limits", async ({ page })
   await expect(usage.locator('[data-tile="Tokens"]')).toContainText("1.6M");
   await expect(usage.locator('[data-tile="Cost"]')).toContainText("$18.42");
   await expect(usage).toContainText("opus");
-  await expect(usage).toContainText("64% used");
+  await expect(usage).toContainText(/\d+% used/);
   await usage.getByRole("radio", { name: "7 days" }).click();
   await usage.getByRole("button", { name: "Table" }).click();
   await expect(usage.locator("table").first().locator("tbody tr")).toHaveCount(7);
   await usage.getByRole("button", { name: /Fix the pairing lockout/ }).click();
   await expect(page.locator(".title")).toHaveText("Fix the pairing lockout");
+});
+
+test("usage analytics: quota with a projection where reported, usage alone where not", async ({ page }) => {
+  await openFolder(page);
+  await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Usage" }).click();
+  const usage = page.locator("[data-usage]");
+  await usage.getByRole("radio", { name: "Analytics" }).click();
+  const claude = usage.locator('[data-kind-section="claude"]');
+  await expect(claude.locator('[data-headline="quota"]')).toContainText("%");
+  await expect(claude.locator("[data-projected]")).toHaveCount(1);
+  await expect(claude.getByRole("radiogroup", { name: "Claude window" }).getByRole("radio")).toHaveCount(2);
+  // OpenCode reports no plan limits: its tokens, no quota and no projection.
+  const opencode = usage.locator('[data-kind-section="opencode"]');
+  await expect(opencode.locator('[data-headline="usage"]')).toContainText("reports no plan limits");
+  await expect(opencode.locator("[data-projected]")).toHaveCount(0);
+  // One agent's tab splits it by agent; earlier spans have no projection.
+  await usage.getByRole("tab", { name: "Claude" }).click();
+  await expect(usage.locator("[data-kind-section]")).toHaveCount(1);
+  await expect(claude).toContainText("reviewer");
+  await usage.getByRole("button", { name: "Earlier" }).click();
+  await expect(claude.locator("[data-projected]")).toHaveCount(0);
 });
 
 test("projects: two folders open at once, their threads in one sidebar", async ({ page }) => {

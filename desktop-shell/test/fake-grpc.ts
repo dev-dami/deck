@@ -11,6 +11,7 @@ import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import type { MethodName } from "../../pkg/remote/web/src/protocol";
 import { Fail, FakeDeck, type FakeOptions } from "./fake-server";
+import { analyticsRecord } from "./fake-usage";
 
 export const PROTO = join(__dirname, "..", "..", "proto", "deck", "v1", "deck.proto");
 
@@ -327,7 +328,10 @@ export class FakeRpcDeck {
       const days = Number(r["days"] ?? 0) || 30;
       const day = 86_400_000;
       const midnight = new Date(new Date().toDateString()).getTime();
+      const historyDays = Number(r["history_days"] ?? 0);
+      const record = analyticsRecord(Date.now(), Math.max(historyDays, 1));
       return {
+        ...(historyDays > 0 ? { hours: record.hours, limit_history: record.limit_history } : {}),
         available: true,
         overview: { turns: 42, all_turns: 120, input_tokens: 1_250_000, output_tokens: 310_000, cached_tokens: 900_000, cost_usd: 18.42, duration_ms: 5_400_000, ttft_avg_ms: 1800, ttft_p95_ms: 4200, cache_hit_pct: 62.5, done: 38, interrupted: 3, failed: 1 },
         days: Array.from({ length: days }, (_, i) => ({ day: midnight - (days - 1 - i) * day, turns: (i * 7) % 9, tokens: ((i * 37) % 11) * 40_000, cost_usd: ((i * 37) % 11) * 0.4 })),
@@ -341,7 +345,7 @@ export class FakeRpcDeck {
           { kind: "codex", model: "gpt-5", turns: 17, input_tokens: 450_000, output_tokens: 110_000, cost_usd: 6.32 },
         ],
         sessions: [{ session_id: "ses_main", title: "Fix the pairing lockout", turns: 20, tokens: 700_000, cost_usd: 9.5 }],
-        limits: [{ agent_kind: "claude", window_id: "five_hour", kind: "session", label: "5-hour", used_pct: 64, resets_at: Date.now() + 2 * 3_600_000, plan: "max" }],
+        limits: record.limits,
         heat: Array.from({ length: 140 }, (_, i) => ({ day: midnight - (139 - i) * day, turns: (i * 13) % 7, tokens: ((i * 13) % 7) * 50_000 })),
         habits: { active_days: 18, streak: 6, hours: Array.from({ length: 168 }, (_, i) => ((i % 24) >= 9 && (i % 24) <= 18 ? (i * 5) % 6 : 0)), review_median_ms: 95_000, review_p90_ms: 600_000, approval_median_ms: 2_400, approval_fast_pct: 35, user_turns: 40, redirects: 4, follow_ups: 12, prompt_median: 140, edit_turns: 20, edit_files: 64, lines_added: 2300, lines_removed: 800, reverts: 2, fit: [{ kind: "claude", class: "edit", calls: 120 }, { kind: "codex", class: "run", calls: 90 }] },
       };

@@ -101,6 +101,16 @@ export interface UsageLimit {
   at: number;
 }
 
+// One hour's use by one agent of one kind, for the analytics.
+export interface UsageHour {
+  at: number;
+  kind: string;
+  agentId: string;
+  turns: number;
+  tokens: number;
+  costUsd: number;
+}
+
 export interface UsageHabits {
   activeDays: number;
   streak: number;
@@ -131,6 +141,10 @@ export interface Usage {
   limits: UsageLimit[];
   heat: UsageDay[];
   habits: UsageHabits | null;
+  // The analytics record, when asked for (historyDays): the hours with use,
+  // and every plan window's stored rows, oldest first.
+  hours: UsageHour[];
+  limitHistory: UsageLimit[];
 }
 
 function toPR(o: Obj): PullRequest {
@@ -178,6 +192,18 @@ const toDay = (d: Obj): UsageDay => ({
   costUsd: num(d, "cost_usd"),
 });
 
+const toLimit = (l: Obj): UsageLimit => ({
+  agentKind: str(l, "agent_kind"),
+  windowId: str(l, "window_id"),
+  kind: str(l, "kind"),
+  label: str(l, "label"),
+  usedPct: num(l, "used_pct"),
+  resetsAt: num(l, "resets_at"),
+  durationMins: num(l, "duration_mins"),
+  plan: str(l, "plan"),
+  at: num(l, "at"),
+});
+
 const toGroup = (g: Obj): UsageGroup => ({
   kind: str(g, "kind"),
   model: str(g, "model"),
@@ -222,17 +248,7 @@ export function toUsage(v: unknown): Usage {
       tokens: num(x, "tokens"),
       costUsd: num(x, "cost_usd"),
     })),
-    limits: list(o, "limits", (l) => ({
-      agentKind: str(l, "agent_kind"),
-      windowId: str(l, "window_id"),
-      kind: str(l, "kind"),
-      label: str(l, "label"),
-      usedPct: num(l, "used_pct"),
-      resetsAt: num(l, "resets_at"),
-      durationMins: num(l, "duration_mins"),
-      plan: str(l, "plan"),
-      at: num(l, "at"),
-    })),
+    limits: list(o, "limits", toLimit),
     heat: list(o, "heat", toDay),
     habits:
       h === null || h === undefined
@@ -256,6 +272,15 @@ export function toUsage(v: unknown): Usage {
             reverts: num(hb, "reverts"),
             fit: list(hb, "fit", (f) => ({ kind: str(f, "kind"), class: str(f, "class"), calls: num(f, "calls") })),
           },
+    hours: list(o, "hours", (x) => ({
+      at: num(x, "at"),
+      kind: str(x, "kind"),
+      agentId: str(x, "agent_id"),
+      turns: num(x, "turns"),
+      tokens: num(x, "tokens"),
+      costUsd: num(x, "cost_usd"),
+    })),
+    limitHistory: list(o, "limit_history", toLimit),
   };
 }
 
@@ -327,8 +352,10 @@ export class ProjectApi {
     return r.ok ? toPR(obj(r.value)) : r.message;
   }
 
-  async usage(days: number): Promise<Usage | string> {
-    const r = await this.call("Usage", { days });
+  // usage reads the record of the last days days (0: all time), with the
+  // analytics record of the last historyDays days when that is above 0.
+  async usage(days: number, historyDays = 0): Promise<Usage | string> {
+    const r = await this.call("Usage", historyDays > 0 ? { days, history_days: historyDays } : { days });
     return r.ok ? toUsage(r.value) : r.message;
   }
 
