@@ -3,12 +3,15 @@ import { type KeyboardEvent, useCallback, useEffect, useLayoutEffect, useMemo, u
 import { useRoomCrew } from "../../crewState";
 import { type Bounds, buildGraph, chooseDirection, type Direction, type Graph, isEmpty, neighbourhood, stepFocus } from "../../graph";
 import { cn } from "../../lib/cn";
+import type { DeckClient } from "../../client";
 import type { ProjectApi } from "../../project";
 import type { Lease } from "../../roomMeta";
 import { Graph as GraphIcon } from "../icons";
 import { EmptyState } from "../kit/empty";
-import { Legend, Minimap, ZoomCapsule } from "./Controls";
+import { segmentItem, segmentTrack } from "../kit/segmented";
+import { Legend, Minimap, mapNodes, ZoomCapsule } from "./Controls";
 import { AgentDetail } from "./Detail";
+import { History } from "./History";
 import { Edges } from "./Edges";
 import { NodeCard } from "./Nodes";
 import { type FitTarget, type Pad, useView } from "./useView";
@@ -16,6 +19,11 @@ import { type FitTarget, type Pad, useView } from "./useView";
 // The Work Graph (docs/design-glass.md, section 7): one thread's agents,
 // sub-agents, tasks and files as an interactive map.
 export interface WorkGraphProps {
+  // The client, for the History's threads; without it the graph shows the
+  // thread now only.
+  c?: DeckClient;
+  // Opens a thread's conversation at a message (a History node's click).
+  onOpenMessage?: (thread: string, mid: string) => void;
   // The local project, for the crew and the board (useCrew, crewOf); a
   // paired Deck has neither, and the graph draws the roster and files.
   api: ProjectApi | undefined;
@@ -37,7 +45,58 @@ export interface WorkGraphProps {
   leases?: readonly Lease[];
 }
 
-export function WorkGraph({ api, sid, roster, files, leases, ...rest }: WorkGraphProps) {
+// Now (this thread's crew at work) or History (every thread's work over
+// time); the same for every room while the window lives.
+type Scope = "now" | "history";
+let lastScope: Scope = "now";
+
+export function WorkGraph(props: WorkGraphProps) {
+  const { c, api, sid, onOpenMessage } = props;
+  const [scope, setScope] = useState<Scope>(lastScope);
+  lastScope = scope;
+  const room = useRoomCrew(api, sid);
+  const history = c !== undefined && onOpenMessage !== undefined;
+  return (
+    <div className="relative flex min-h-0 flex-1">
+      {scope === "history" && history ? (
+        <History
+          c={c}
+          api={api}
+          sid={sid}
+          tasks={room?.board?.tasks ?? null}
+          theme={props.theme}
+          compact={props.compact ?? false}
+          onOpenMessage={onOpenMessage}
+          onOpenFile={props.onOpenFile}
+          onOpenTasks={props.onOpenTasks}
+        />
+      ) : (
+        <NowGraph {...props} />
+      )}
+      {history && (
+        <div
+          data-graph-control=""
+          className={cn(segmentTrack(), "graph-scope absolute top-3 right-3 z-20")}
+          role="tablist"
+          aria-label="Graph scope"
+        >
+          {SCOPES.map((s) => (
+            <button key={s.scope} type="button" role="tab" aria-selected={scope === s.scope} className={segmentItem({ on: scope === s.scope })} onClick={() => setScope(s.scope)}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const SCOPES: ReadonlyArray<{ scope: Scope; label: string }> = [
+  { scope: "now", label: "Now" },
+  { scope: "history", label: "History" },
+];
+
+function NowGraph({ api, sid, roster, files, leases, c: _c, onOpenMessage: _open, ...rest }: WorkGraphProps) {
   // The project polls the crew and the board once for the window (crewState.ts).
   const room = useRoomCrew(api, sid);
   const crew = room?.crew ?? null;
@@ -100,7 +159,7 @@ function Canvas({
   onOpenTasks,
   onSteer,
   onStop,
-}: { g: Graph; now: number } & Omit<WorkGraphProps, "api" | "sid" | "roster" | "files" | "leases">) {
+}: { g: Graph; now: number } & Omit<WorkGraphProps, "api" | "sid" | "roster" | "files" | "leases" | "c" | "onOpenMessage">) {
   const [hover, setHover] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   // The canvas is on screen; off it, the live motion stops.
@@ -197,6 +256,7 @@ function Canvas({
     view.set({ ...v, x: v.x - dx, y: v.y - dy }, { user: true });
   };
 
+  const map = useMemo(() => mapNodes(g), [g]);
   const sel = picked === null ? undefined : byId.get(picked);
   const parent = sel?.kind === "agent" && sel.parent !== null ? byId.get(sel.parent) : undefined;
   const seen = view.seen;
@@ -246,7 +306,7 @@ function Canvas({
         ))}
       </div>
       {!compact && <Legend g={g} />}
-      {!compact && <Minimap g={g} view={view} style={{ bottom: "calc(var(--composer-h, 0px) + 3.5rem)" }} />}
+      {!compact && <Minimap bounds={g.bounds} nodes={map} view={view} style={{ bottom: "calc(var(--composer-h, 0px) + 3.5rem)" }} />}
       <ZoomCapsule
         view={view}
         className="absolute right-3 z-10"

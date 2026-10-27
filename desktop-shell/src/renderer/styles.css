@@ -2563,3 +2563,14 @@ aside.panel[data-float]::before {
 :root[data-material="paper"] .project-tile {
   border-radius: 1px;
 }
+
+/* The Work Graph's History (ui/graph/History.tsx). Zoomed far out, a card
+   drops its text and reads as a block of its agent's hue, so a long history
+   stays legible and cheap to paint. The canvas sets data-lod as the view
+   moves, without a render, so this has to be a selector, not a utility. */
+.history-graph[data-lod="far"] .hist-text {
+  visibility: hidden;
+}
+.history-graph[data-lod="far"] .hist-card {
+  background-color: color-mix(in srgb, var(--hue, var(--text)) 30%, var(--surface-1));
+}

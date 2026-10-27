@@ -748,7 +748,7 @@ function placeCross(layers: LayoutNode[][], edges: readonly GraphEdge[], byId: M
   for (const n of all) n[cross] = Math.round(n[cross] - shift);
 }
 
-export function boundsOf(nodes: readonly Placed[]): Bounds {
+export function boundsOf(nodes: readonly Bounds[]): Bounds {
   if (nodes.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
   const x = Math.min(...nodes.map((n) => n.x));
   const y = Math.min(...nodes.map((n) => n.y));
@@ -782,7 +782,7 @@ export function edgePath(a: Bounds, b: Bounds, dir: Direction = "across", via: r
 }
 
 // The ids next to a node: itself, and every node one edge away.
-export function neighbourhood(edges: readonly GraphEdge[], id: string): Set<string> {
+export function neighbourhood(edges: readonly { from: string; to: string }[], id: string): Set<string> {
   const out = new Set([id]);
   for (const e of edges) {
     if (e.from === id) out.add(e.to);
@@ -801,7 +801,8 @@ export interface View {
 export const ZOOM_MIN = 0.4;
 export const ZOOM_MAX = 2;
 
-export const clampZoom = (k: number): number => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, k));
+// min: the least zoom; the History lets a large graph go further out.
+export const clampZoom = (k: number, min = ZOOM_MIN): number => Math.min(ZOOM_MAX, Math.max(min, k));
 
 // The view that shows all of b in a w × h viewport, inside the padding,
 // centred, never above 100% (a small graph stays its size) nor below the
@@ -811,9 +812,10 @@ export function fitView(
   w: number,
   h: number,
   pad: { top: number; right: number; bottom: number; left: number },
+  min = ZOOM_MIN,
 ): View {
   const room = { w: Math.max(1, w - pad.left - pad.right), h: Math.max(1, h - pad.top - pad.bottom) };
-  const k = clampZoom(Math.min(1, room.w / Math.max(1, b.w), room.h / Math.max(1, b.h)));
+  const k = clampZoom(Math.min(1, room.w / Math.max(1, b.w), room.h / Math.max(1, b.h)), min);
   return {
     k,
     x: Math.round(pad.left + (room.w - b.w * k) / 2 - b.x * k),
@@ -823,8 +825,8 @@ export function fitView(
 
 // Zooms to k around a point on screen, which stays over the same spot of
 // the graph.
-export function zoomAt(v: View, k: number, px: number, py: number): View {
-  const next = clampZoom(k);
+export function zoomAt(v: View, k: number, px: number, py: number, min = ZOOM_MIN): View {
+  const next = clampZoom(k, min);
   const f = next / v.k;
   return { k: next, x: px - (px - v.x) * f, y: py - (py - v.y) * f };
 }

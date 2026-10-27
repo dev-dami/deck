@@ -176,6 +176,12 @@ band held back for it follows it.
   "Needs you" uses the warning colour and a `ShieldWarning` icon.
 - **Agents**: the glyph from `kindMark()`, in `agentColour()`, always the
   same hue for the same agent, everywhere.
+- **Actions** (`actions.ts`, the timeline): an agent's run of tool calls
+  folds to one row, "◆ @ada · 14 actions — read 6 files, ran 3
+  commands", in its hue. While a call runs, the glyph is a spinner and the
+  row names the call; a failed call marks it. It opens to the calls, each
+  of which opens to its output. Deck's result messages fold into their
+  calls, and one agent's run of messages reads as one turn.
 
 ### Icons
 
@@ -284,6 +290,24 @@ the agent they belong to and everything else fades. A lease is dotted.
 - Live: a working agent's ring pulses (stepped), and the edge to the file
   an agent is editing flows (an animated dash). Both stop under reduced
   motion.
+
+**History:** a "Now | History" switch (top right) turns the graph from
+one thread now to every thread's work over time (`workHistory.ts`,
+`ui/graph/History.tsx`). Each thread is a band of lanes (you, each agent,
+its tasks), stacked in the order the threads began; along a lane, in time
+order, the person's prompts, the agents' replies and their runs of tool
+calls (one node per run, as the timeline groups them, opening in place to
+the calls). Edges: a prompt asks the agents it names (a line down to the
+reply); an agent hands off to one it names (dashed) or asks it for a
+review (finer dashes); a task joins its owner and reviewer; a run reads
+(dotted) or edits files, which sit in one band under all the threads.
+Columns pack: work side by side in two lanes shares one. Filters over the
+top left: threads, agents, a time range, and the kinds of node; "Load full
+history" reads every thread's older pages. A click jumps to that message
+in the conversation, opening its thread. It stays smooth when large: past
+240 nodes only those near the view draw, below 35% zoom the cards drop
+their text and read as blocks of their hue, and past 400 nodes an agent's
+work between two prompts folds into one node that opens.
 
 **Where it shows:** in the room, as the Graph view beside Conversation,
 where the composer still floats over it. It also shows in the side panel

@@ -45,11 +45,15 @@ test("connects, lists sessions and opens one", async ({ page }) => {
   await expect(nav.locator('[data-session="ses_docs"] .status-label')).toHaveText("Approve command");
   await openMain(page);
   // Markdown renders as elements; a finished reply folds its work behind
-  // "Worked for …", and its tool calls start folded too.
+  // "Worked for …", its tool calls fold into one actions row, and each
+  // call starts folded too.
   await expect(page.locator(".md strong").first()).toHaveText("every");
   await expect(page.locator("pre.codeblock")).toContainText("l.fail(addr)");
   await expect(page.locator("details.tool")).toHaveCount(0);
   await page.locator(".worked").first().click();
+  await expect(page.locator(".actions-head").first()).toContainText("1 action");
+  await expect(page.locator("details.tool")).toHaveCount(0);
+  await page.locator(".actions-head").first().click();
   const tool = page.locator("details.tool").first();
   await expect(tool).not.toHaveAttribute("open", "");
   await tool.locator("summary").click();

@@ -26,6 +26,7 @@ import { type DeckClient, serves } from "../client";
 import type { Crew } from "../crew";
 import { langName, langOf } from "../highlight";
 import { cn } from "../lib/cn";
+import { focusMessage } from "../palette";
 import { panelSlice, shallowEqual, useAppSlice } from "../select";
 import { PANELS, type Panel } from "../ui";
 import { AgentsTree } from "./AgentsTree";
@@ -268,6 +269,7 @@ export function RightPanel({
   onStop,
   side = "right",
   float = false,
+  onOpenThread,
 }: {
   c: DeckClient;
   bridge: DeckBridge;
@@ -303,6 +305,8 @@ export function RightPanel({
   // and whether it floats at any width (Settings > Appearance > Layout).
   side?: "left" | "right";
   float?: boolean;
+  // Opens another thread, for the Graph tab's History.
+  onOpenThread?: (id: string) => void;
 }) {
   const queued = open === undefined ? 0 : (state.queue[open.id]?.length ?? 0);
   const ports = useOpenPorts(c.project);
@@ -385,6 +389,12 @@ export function RightPanel({
           <WorkGraph
             key={open.id}
             compact={!wide}
+            c={c}
+            onOpenMessage={(thread, mid) => {
+              // The conversation beside the panel scrolls to it.
+              focusMessage(thread, mid);
+              if (thread !== open.id) onOpenThread?.(thread);
+            }}
             api={c.project}
             sid={open.id}
             roster={state.roster[open.id] ?? NO_ROSTER}

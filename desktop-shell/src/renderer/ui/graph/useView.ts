@@ -1,5 +1,5 @@
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { type Bounds, fitView, type View, zoomAt } from "../../graph";
+import { type Bounds, fitView, type View, ZOOM_MIN, zoomAt } from "../../graph";
 
 // The Work Graph's view: pan by dragging, zoom with the wheel or a pinch
 // around the pointer, fit, and glide. The view lives in a ref and goes to
@@ -32,7 +32,8 @@ export const CONTROL = "[data-graph-control]";
 const ease = (t: number) => 1 - (1 - t) ** 4;
 const reduced = () => document.documentElement.dataset["motion"] === "reduced";
 
-export function useView(target: RefObject<FitTarget | null>, onBackground: () => void) {
+// minZoom: the least zoom (graph.ts ZOOM_MIN by default).
+export function useView(target: RefObject<FitTarget | null>, onBackground: () => void, minZoom = ZOOM_MIN) {
   const root = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement>(null);
   const view = useRef<View>({ x: 0, y: 0, k: 1 });
@@ -90,9 +91,9 @@ export function useView(target: RefObject<FitTarget | null>, onBackground: () =>
       const t = target.current;
       if (el === null || t === null || el.clientWidth === 0) return;
       moved.current = false;
-      set(fitView(t.bounds, el.clientWidth, el.clientHeight, t.pad(el)), { glide: smooth });
+      set(fitView(t.bounds, el.clientWidth, el.clientHeight, t.pad(el), minZoom), { glide: smooth });
     },
-    [set, target],
+    [set, target, minZoom],
   );
 
   // Zooms by a factor around a point of the canvas, its middle by default.
@@ -102,9 +103,9 @@ export function useView(target: RefObject<FitTarget | null>, onBackground: () =>
       if (el === null) return;
       const v = view.current;
       const p = at ?? { x: el.clientWidth / 2, y: el.clientHeight / 2 };
-      set(zoomAt(v, v.k * f, p.x, p.y), { user: true, glide: smooth });
+      set(zoomAt(v, v.k * f, p.x, p.y, minZoom), { user: true, glide: smooth });
     },
-    [set],
+    [set, minZoom],
   );
 
   // Brings a box of the graph into sight, when it is not, with a margin.
@@ -190,7 +191,7 @@ export function useView(target: RefObject<FitTarget | null>, onBackground: () =>
       const notch = e.deltaMode !== 0 || (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
       if (e.ctrlKey || e.metaKey || notch) {
         const f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015) * (e.deltaMode === 1 ? 16 : 1));
-        set(zoomAt(v, v.k * f, e.clientX - r.left, e.clientY - r.top), { user: true });
+        set(zoomAt(v, v.k * f, e.clientX - r.left, e.clientY - r.top, minZoom), { user: true });
       } else set({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }, { user: true });
       moving(true);
       if (wheelEnd !== null) clearTimeout(wheelEnd);
@@ -211,7 +212,7 @@ export function useView(target: RefObject<FitTarget | null>, onBackground: () =>
       el.removeEventListener("wheel", wheel);
       if (wheelEnd !== null) clearTimeout(wheelEnd);
     };
-  }, [set]);
+  }, [set, minZoom]);
 
   // Fit first, before the first paint; again on a resize until the person
   // moves the view.

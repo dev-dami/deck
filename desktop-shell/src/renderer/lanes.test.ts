@@ -155,6 +155,27 @@ describe("lane filter", () => {
     expect(filterLane(messages, "agent:claude-1").map((m) => m.id)).toEqual(["assistant-on it"]);
     expect(filterLane(messages, "mate:vps")).toHaveLength(1);
   });
+
+  test("a tool's result stays with the lane of its call", () => {
+    const at = "2026-10-27T09:00:00Z";
+    const m = (id: string, agent: string | undefined, parts: Message["parts"]): Message => ({
+      id,
+      session_id: "s",
+      role: "assistant",
+      ...(agent === undefined ? {} : { agent }),
+      created_at: at,
+      updated_at: at,
+      finished: true,
+      parts,
+    });
+    const all = [
+      m("a", "ada", [{ type: "tool_call", id: "c1", name: "bash" }]),
+      m("b", "bob", [{ type: "tool_call", id: "c2", name: "bash" }]),
+      m("r1", undefined, [{ type: "tool_result", tool_call_id: "c1" }]),
+      m("r2", undefined, [{ type: "tool_result", tool_call_id: "c2" }]),
+    ];
+    expect(filterLane(all, "agent:ada").map((x) => x.id)).toEqual(["a", "r1"]);
+  });
 });
 
 test("the paths of a lease summary", () => {
