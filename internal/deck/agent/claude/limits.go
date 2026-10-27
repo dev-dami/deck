@@ -102,6 +102,9 @@ func (t *translator) rateLimit(line []byte) bool {
 	if rl.Info.ResetsAt != nil && *rl.Info.ResetsAt > 0 {
 		w.ResetsAt = time.Unix(int64(*rl.Info.ResetsAt), 0)
 	}
+	if rl.Info.Status == "rejected" && rl.Info.RateLimitType != "overage" {
+		t.rejected = &agent.LimitHit{Window: w.ID, ResetsAt: w.ResetsAt}
+	}
 	t.limits[w.ID] = w
 	t.limitsFailed = false
 	return true
@@ -210,4 +213,23 @@ func parseReset(raw json.RawMessage) time.Time {
 
 func clampPct(p float64) float64 {
 	return min(100, max(0, p))
+}
+
+// limitHit says whether the turn that ends with a result line of text ran
+// out of plan: the text says so, or the turn failed after a rate_limit_event
+// of it said "rejected" (one that went on regardless, on another model, did
+// not run out). Claude Code writes "5-hour limit reached ∙ resets 3pm", or,
+// in older versions, "Claude AI usage limit reached|<epoch>". The event's
+// reset time is exact and wins over one read from the text.
+func (t *translator) limitHit(text string, failed bool) *agent.LimitHit {
+	rej := t.rejected
+	t.rejected = nil
+	hit := agent.ParseLimitHit(text, t.now())
+	if rej == nil || !failed && hit == nil {
+		return hit
+	}
+	if rej.ResetsAt.IsZero() && hit != nil {
+		rej.ResetsAt = hit.ResetsAt
+	}
+	return rej
 }

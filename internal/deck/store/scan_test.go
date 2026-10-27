@@ -113,7 +113,7 @@ func TestALineWithABrokenPayloadStillCounts(t *testing.T) {
 
 // entryHead must stay Entry without the event's payload.
 func TestEntryHeadMirrorsEntry(t *testing.T) {
-	payload := map[string]bool{"Tool": true, "Diff": true, "Usage": true, "Limits": true, "Raw": true}
+	payload := map[string]bool{"Tool": true, "Diff": true, "Usage": true, "Limits": true, "LimitHit": true, "Raw": true}
 	want := map[string]reflect.StructField{}
 	var walk func(reflect.Type)
 	walk = func(rt reflect.Type) {

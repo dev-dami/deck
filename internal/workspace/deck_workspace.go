@@ -125,6 +125,9 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 	// The agents' deck.jobs op reads what this workspace's activity tracker sees.
 	eng.Manager.SetActivity(w.activityText)
 	go w.pump()
+	// Agents that waited for a plan limit when Deck stopped wait again, or
+	// resume if their reset has passed; scheduled messages are kept.
+	go eng.Manager.RestoreWaits()
 	return w
 }
 
@@ -499,6 +502,8 @@ func (w *DeckWorkspace) pump() {
 		case decks.LeasesChangedMsg:
 			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
 			w.publish(DeckChange{Kind: ChangeLease, SessionID: w.sessionOf(m.ThreadID), Lease: m})
+		case decks.WaitChangedMsg:
+			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
 		case decks.MemberAddedMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.AgentID+" joined")
 			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})

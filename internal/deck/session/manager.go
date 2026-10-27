@@ -169,6 +169,10 @@ const (
 	// (agent.KindRestarting). Not busy: a prompt sent now waits in the
 	// adapter for the new process.
 	StatusRestarting Status = "restarting"
+	// StatusWaiting: the member's plan ran out and Deck holds its work until
+	// the limit resets (waits.go). Not busy, but it starts no turn: messages
+	// for it queue.
+	StatusWaiting Status = "waiting"
 )
 
 // DefaultMaxHops is the number of agent-to-agent relays allowed after each user
@@ -1086,6 +1090,12 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 		prompt = modeLine(t.mode) + "\n\n" + prompt
 		a.knownMode = t.mode
 	}
+	a.mu.Lock()
+	if a.nudge != "" {
+		prompt = strings.TrimSpace(a.nudge + "\n\n" + prompt)
+		a.nudge = ""
+	}
+	a.mu.Unlock()
 	// A contract's agents work for a teammate: the team chat is not theirs.
 	quiet := t.ops != nil || t.contract != ""
 	t.mu.Unlock()
@@ -1398,6 +1408,15 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 		}
 	}
 	m.failOrphans(t)
+	for i, a := range members {
+		if w := th.Members[i].Wait; w != nil && !a.ephemeral {
+			m.restoreWait(t, a, *w)
+		}
+	}
+	t.scheduled = append([]store.Scheduled(nil), th.Scheduled...)
+	for _, sc := range th.Scheduled {
+		m.armScheduled(t, sc)
+	}
 	m.kick(t)
 	if th.Archived {
 		m.persistMeta(t) // resuming brings it back to the sidebar
@@ -1485,6 +1504,7 @@ func canonical(e *store.Entry, user string) {
 
 // forget removes a thread whose members have all exited so it can be resumed again.
 func (m *Manager) forget(t *thread) {
+	t.stopTimers()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.threads, t.id)
@@ -1612,6 +1632,16 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		return // the thread was archived, deleted or moved
 	}
 	t := a.thread
+	if ev.Kind == agent.KindError {
+		// Every adapter's error text is read too: OpenCode and Antigravity
+		// say it only in words.
+		if ev.LimitHit == nil {
+			ev.LimitHit = agent.ParseLimitHit(ev.Text, ev.Time)
+		}
+		if ev.LimitHit != nil {
+			m.noteHit(a, *ev.LimitHit)
+		}
+	}
 	var end turnEnd
 	if ev.Kind == agent.KindTurnDone {
 		// Taken before apply makes a idle: from then on its next turn can
@@ -1633,6 +1663,9 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	if res.metaDirty {
 		m.persistMeta(t)
 	}
+	if res.waits {
+		m.startedWait(t, a)
+	}
 	for _, id := range res.gone {
 		m.emit(ApprovalGoneMsg{ThreadID: t.id, AgentID: a.id, ID: id})
 	}
@@ -1640,6 +1673,7 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	switch {
 	case ev.Kind == agent.KindLimits && ev.Limits != nil:
 		m.setLimits(a.kind, *ev.Limits)
+		m.rearmWaits(a.kind)
 	case ev.Kind == agent.KindFileChange && ev.Diff != nil:
 		m.noteEdit(t, a, ev.Diff.Path)
 	case ev.Kind == agent.KindTurnDone || ev.Kind == agent.KindExited:
@@ -1765,6 +1799,12 @@ type agentState struct {
 	// built are the user's own words; guarded by thread.mu.
 	promptUser int
 	running    string // model slug the CLI reported at session start
+	// hit is the plan limit the running turn ran into, wait the member's
+	// wait for it to reset, and nudge what its next prompt starts with
+	// (waits.go).
+	hit   *agent.LimitHit
+	wait  *waitState
+	nudge string
 	// stirred is closed, and dropped, when the member's status may have
 	// changed (stirLocked); nil while nobody waits for that (waitIdle).
 	stirred chan struct{}
@@ -1865,7 +1905,17 @@ func (a *agentState) memberMeta() store.Member {
 		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
 		Parent: a.parent, Ephemeral: a.ephemeral, Dir: a.dir, Worktree: a.worktree,
 		Profile: a.prof.Name, Role: a.prof.Role, Color: a.prof.Color,
+		Wait: a.storedWaitLocked(),
 	}
+}
+
+// storedWaitLocked is the member's wait as stored; a.mu is held.
+func (a *agentState) storedWaitLocked() *store.Wait {
+	if a.wait == nil {
+		return nil
+	}
+	w := a.wait.Wait
+	return &w
 }
 
 // tryBegin marks the agent working before a prompt is sent, so a fast turn_done
@@ -1877,7 +1927,7 @@ func (a *agentState) tryBegin() (prev Status, ok, exited bool) {
 	switch a.statusLocked() {
 	case StatusExited:
 		return a.base, false, true
-	case StatusWorking, StatusTool, StatusApproval:
+	case StatusWorking, StatusTool, StatusApproval, StatusWaiting:
 		return a.base, false, false
 	}
 	prev = a.base
@@ -1977,6 +2027,8 @@ type applyResult struct {
 	metaDirty bool
 	// spent is what a turn that just ended spent (KindTurnDone, KindExited).
 	spent store.Spend
+	// waits: the turn that ended ran out of plan, and the member now waits.
+	waits bool
 }
 
 // apply folds one event into the agent's status and cost.
@@ -2044,11 +2096,21 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 		a.costTotal += a.costTurn
 		a.costTurn, a.tokTurn = 0, 0
 		a.base = StatusIdle
+		if a.hit != nil {
+			// The plan ran out: the member waits for the reset (waits.go).
+			if a.wait == nil {
+				a.wait = &waitState{Wait: store.Wait{Since: ev.Time, Until: a.hit.ResetsAt, Window: a.hit.Window}}
+				res.waits = true
+			}
+			a.base = StatusWaiting
+			a.hit = nil
+		}
 		// The run's first prompt carried the instructions (Spec.Briefed).
 		a.briefed = a.sessionID != ""
 		res.gone = a.clearPendingLocked()
 		res.metaDirty = true
 	case agent.KindExited:
+		a.hit = nil
 		res.spent = store.Spend{Tokens: a.tokTurn, CostUSD: a.costTurn}
 		a.costTotal += a.costTurn
 		a.costTurn, a.tokTurn = 0, 0

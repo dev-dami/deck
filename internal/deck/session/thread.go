@@ -101,6 +101,11 @@ type thread struct {
 	shares map[string]string
 	grew   chan struct{}
 
+	// scheduled are the user's messages waiting for their time, and
+	// atTimers their timers by id (waits.go).
+	scheduled []store.Scheduled
+	atTimers  map[string]*time.Timer
+
 	// Queue of user messages waiting for busy members (queue.go), guarded by mu.
 	queue  []qitem
 	skip   map[skipKey]skipKind     // (entry index, member) pairs that must not be delivered again
@@ -342,7 +347,8 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	defer t.mu.Unlock()
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
 		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree,
-		Tasks: cloneTasks(t.tasks), Orchestrate: t.orchestrate, Contract: t.contract, Ops: t.ops != nil}
+		Tasks: cloneTasks(t.tasks), Orchestrate: t.orchestrate, Contract: t.contract, Ops: t.ops != nil,
+		Scheduled: slices.Clone(t.scheduled)}
 	for _, peer := range slices.Sorted(maps.Keys(t.shares)) {
 		th.Shares = append(th.Shares, store.Share{Peer: peer, Role: t.shares[peer]})
 	}
