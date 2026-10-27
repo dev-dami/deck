@@ -2,11 +2,12 @@ import type { Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
 import { type CSSProperties, memo, type ReactNode } from "react";
 import { agentColour } from "../../agents";
-import type { AgentGraphNode, FileGraphNode, FoldGraphNode, GraphNode, TaskGraphNode } from "../../graph";
+import type { AgentGraphNode, BranchGraphNode, CapsuleGraphNode, FileGraphNode, FoldGraphNode, GraphNode, TaskGraphNode } from "../../graph";
 import type { LaneStatus } from "../../lanes";
 import { cn } from "../../lib/cn";
 import { AgentRole } from "../AgentRole";
-import { Check, Minus, X } from "../icons";
+import { shortRef, TREE_STATE_LABEL } from "../../worktrees";
+import { Check, GitBranch, Minus, Package, X } from "../icons";
 
 // The Work Graph's nodes: flat, precise cards over the edges, as a
 // debugger's graph draws them. One plane each (the surface and a hairline),
@@ -356,6 +357,77 @@ export const FoldCard = memo(function FoldCard({ n, picked, dim, onPick, onHover
   );
 });
 
+// A worktree: its branch, the agent in it, ahead and behind its base, and
+// where it stands.
+export const BranchCard = memo(function BranchCard({ n, picked, dim, theme, onPick, onHover }: NodeProps<BranchGraphNode>) {
+  const w = n.tree;
+  const who = w.ownerName || (w.kind === "thread" ? "this room" : "nobody");
+  return (
+    <Shell
+      n={n}
+      picked={picked}
+      dim={dim}
+      label={`Worktree ${w.name} of ${who}, ${TREE_STATE_LABEL[n.state].toLowerCase()}, ${w.ahead} ahead and ${w.behind} behind ${w.baseRef}`}
+      className={cn("flex flex-col justify-center gap-0.5 px-2.5", n.state === "behind" && "border-warning/60")}
+      style={w.ownerName === "" ? ({ "--hue": "var(--muted-foreground)" } as CSSProperties) : hueOf(w.ownerName, n.ownerKind)}
+      onPick={onPick}
+      onHover={onHover}
+    >
+      <span className="flex min-w-0 items-center gap-1.5">
+        <GitBranch aria-hidden className="size-3 shrink-0 text-(--hue)" />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs leading-tight">{w.name}</span>
+        <span className="shrink-0 font-mono text-3xs text-muted-foreground tabular-nums">
+          ↑{w.ahead} <span className={w.behind > 0 ? "text-warning-foreground" : undefined}>↓{w.behind}</span>
+        </span>
+      </span>
+      <span className="flex min-w-0 items-center gap-1 pl-4.5 text-3xs text-muted-foreground">
+        {w.ownerName !== "" && <Glyph kind={n.ownerKind} theme={theme} className="w-auto text-3xs" />}
+        <span className="min-w-0 truncate">
+          {who} · {w.files.length} files · {shortRef(w.baseRef)}
+        </span>
+        <span className="ml-auto shrink-0 text-faint">{TREE_STATE_LABEL[n.state]}</span>
+      </span>
+    </Shell>
+  );
+});
+
+// A named capsule: its name and version, its size, its tests and state.
+export const CapsuleCard = memo(function CapsuleCard({ n, picked, dim, onPick, onHover }: NodeProps<CapsuleGraphNode>) {
+  const c = n.capsule;
+  const v = c.versions.at(-1);
+  return (
+    <Shell
+      n={n}
+      picked={picked}
+      dim={dim}
+      label={`Capsule ${c.name} v${c.versions.length}, ${c.state}`}
+      className="flex flex-col justify-center gap-0.5 px-2.5"
+      onPick={onPick}
+      onHover={onHover}
+    >
+      <span className="flex min-w-0 items-center gap-1.5">
+        <Package aria-hidden className="size-3 shrink-0 text-info-foreground" />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs leading-tight">{c.name}</span>
+        <span className="shrink-0 font-mono text-3xs text-faint">v{c.versions.length}</span>
+      </span>
+      <span className="flex min-w-0 items-center gap-1.5 pl-4.5 text-3xs text-muted-foreground">
+        <span className="min-w-0 truncate">{v === undefined ? "" : `${v.files} files${v.commitsTotal > 0 ? ` · ${v.commitsTotal} commits` : ""}`}</span>
+        {c.tests !== "" && <span className={cn("shrink-0", c.tests === "pass" ? "text-success-foreground" : "text-destructive-foreground")}>tests {c.tests}</span>}
+        <span className={cn("ml-auto shrink-0", c.state === "landed" ? "text-success-foreground" : "text-faint")}>{c.state}</span>
+      </span>
+    </Shell>
+  );
+});
+
+// The shared tree a capsule landed in.
+const MainCard = memo(function MainCard({ n, picked, dim, onPick, onHover }: NodeProps<GraphNode>) {
+  return (
+    <Shell n={n} picked={picked} dim={dim} label="The shared tree" className="flex items-center justify-center gap-1.5 text-xs" onPick={onPick} onHover={onHover}>
+      <GitBranch aria-hidden className="size-3 text-muted-foreground" /> main
+    </Shell>
+  );
+});
+
 export function NodeCard(props: NodeProps<GraphNode>) {
   const { n } = props;
   switch (n.kind) {
@@ -369,5 +441,11 @@ export function NodeCard(props: NodeProps<GraphNode>) {
       return <FileCard {...props} n={n} />;
     case "fold":
       return <FoldCard {...props} n={n} />;
+    case "branch":
+      return <BranchCard {...props} n={n} />;
+    case "capsule":
+      return <CapsuleCard {...props} n={n} />;
+    case "main":
+      return <MainCard {...props} n={n} />;
   }
 }

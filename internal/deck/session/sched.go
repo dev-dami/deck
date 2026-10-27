@@ -281,7 +281,8 @@ func (m *Manager) dispatch(t *thread, tk store.Task, owner *agentState) error {
 		m.deliverBrief(t, deckSpeaker, owner, brief, tk.ID)
 		return nil
 	}
-	_, err := m.Spawn(t.id, "", SpawnSpec{TaskID: tk.ID, Brief: brief, Isolate: tk.Isolate})
+	// Long work gets a worktree of its own under orchestration (work.go).
+	_, err := m.Spawn(t.id, "", SpawnSpec{TaskID: tk.ID, Brief: brief, Isolate: tk.Isolate || m.longTask(t, tk)})
 	return err
 }
 

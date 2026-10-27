@@ -75,6 +75,7 @@ export function Legend({ g }: { g: Graph }) {
         <Key label="holds" dash="1 3" />
         <Key label="editing now" dash="4 3" live />
         {g.edges.some((e) => e.kind === "asks") && <Key label="asks for a file" dash="6 2" live />}
+        {g.edges.some((e) => e.kind === "lands") && <Key label="landed in" dash="3 2" />}
       </ul>
     </div>
   );

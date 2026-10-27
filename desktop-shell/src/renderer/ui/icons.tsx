@@ -78,6 +78,7 @@ export {
   MonitorPlay,
   Moon,
   NotePencil as SquarePen,
+  Package,
   Palette,
   Paperclip,
   PaperPlaneTilt as Send,

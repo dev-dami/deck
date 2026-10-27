@@ -2,6 +2,7 @@ import type { DeckBridge, RpcMethod, TermEvent } from "../shared/bridge";
 import { type Board, type Crew, type SharedMirror, type Team, toBoard, toCrew, toMirror, toTeam } from "./crew";
 import { bool, list, num, type Obj, obj, str } from "./guards";
 import { type LimitCheck, type Limits, toCheck, toLimits } from "./limits";
+import { type CapsuleFile, toCapsuleFile, toWork, toWorkAction, type Work, type WorkAction } from "./worktrees";
 
 // What a local Deck adds to the shared DeckClient: the project's git work
 // tree, the usage record and terminals (proto/deck/v1, Git*, Usage,
@@ -392,6 +393,39 @@ export class ProjectApi {
   async cancelScheduled(sessionId: string, id: string, sendNow: boolean): Promise<string | null> {
     const r = await this.call("CancelScheduled", { session_id: sessionId, id, send_now: sendNow });
     return r.ok ? null : r.message;
+  }
+
+  // The room's worktrees and named capsules.
+  async work(sessionId: string): Promise<Work | string> {
+    const r = await this.call("Work", { session_id: sessionId });
+    return r.ok ? toWork(r.value) : r.message;
+  }
+
+  // create, sync, rebase, check, merge, discard or spawn; a conflict is an
+  // answer (conflicts), not an error.
+  async worktreeAction(sessionId: string, name: string, action: string, more: Record<string, string> = {}): Promise<WorkAction | string> {
+    const r = await this.call("WorktreeAction", { ...more, session_id: sessionId, name, action });
+    return r.ok ? toWorkAction(r.value) : r.message;
+  }
+
+  // create, check, land, rebase, revert, hand or review.
+  async capsuleAction(sessionId: string, capsule: string, action: string, more: Record<string, string> = {}): Promise<WorkAction | string> {
+    const r = await this.call("CapsuleAction", { ...more, session_id: sessionId, capsule, action });
+    return r.ok ? toWorkAction(r.value) : r.message;
+  }
+
+  // A page of a capsule's files, and how many it has in all.
+  async capsuleFiles(sessionId: string, capsule: string, offset: number, limit: number): Promise<{ files: CapsuleFile[]; total: number } | string> {
+    const r = await this.call("CapsuleFiles", { session_id: sessionId, capsule, offset, limit });
+    if (!r.ok) return r.message;
+    const o = obj(r.value);
+    return { files: list(o, "files", toCapsuleFile), total: num(o, "total") };
+  }
+
+  // One file of a capsule as a unified diff.
+  async capsuleDiff(sessionId: string, capsule: string, path: string): Promise<string | { error: string }> {
+    const r = await this.call("CapsuleFiles", { session_id: sessionId, capsule, path });
+    return r.ok ? str(obj(r.value), "diff") : { error: r.message };
   }
 
   async board(sessionId: string): Promise<Board | string> {

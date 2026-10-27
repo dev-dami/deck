@@ -48,7 +48,8 @@ export const Edges = memo(function Edges({
       {drawn.map(({ e, a, b, lit }) => {
         const faded = near !== null && !lit;
         // An ask waits in the warning hue; a file's owner keeps its own.
-        const hue = e.kind === "asks" ? "var(--warning)" : e.live || lit || e.kind === "edited" ? hueOf(e, nodes) : null;
+        // An agent's worktree keeps its hue too.
+        const hue = e.kind === "asks" ? "var(--warning)" : e.live || lit || e.kind === "edited" || e.kind === "works" ? hueOf(e, nodes) : null;
         const moving = e.live && (seen === null || inside(a, seen) || inside(b, seen));
         // The lanes run from the earlier layer to the later one.
         const [p, q] = a.layer <= b.layer ? [a, b] : [b, a];
@@ -60,7 +61,7 @@ export const Edges = memo(function Edges({
             fill="none"
             stroke={hue ?? (lit ? "var(--muted-foreground)" : "var(--graph-edge)")}
             strokeWidth={e.live ? 1.5 : 1}
-            strokeDasharray={e.kind === "holds" ? "1 3" : e.kind === "asks" ? "6 2" : undefined}
+            strokeDasharray={e.kind === "holds" ? "1 3" : e.kind === "asks" ? "6 2" : e.kind === "lands" ? "3 2" : undefined}
             strokeOpacity={e.kind === "edited" && !lit ? 0.6 : undefined}
             strokeLinecap="round"
             vectorEffect="non-scaling-stroke"

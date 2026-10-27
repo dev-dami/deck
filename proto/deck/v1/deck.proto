@@ -168,6 +168,20 @@ service Deck {
   rpc ScheduleSend(ScheduleSendRequest) returns (ScheduleSendResponse);
   rpc CancelScheduled(CancelScheduledRequest) returns (Empty);
 
+  // Worktrees and named capsules (optional; Info lists them). Work lists
+  // the session's worktrees with where each stands and its capsules.
+  rpc Work(SessionRef) returns (WorkResponse);
+  // WorktreeAction creates, syncs (or rebases), checks, merges, discards a
+  // worktree, or spawns an agent in it. A conflict is an answer, not an
+  // error: its files come back in conflicts and nothing changed.
+  rpc WorktreeAction(WorktreeActionRequest) returns (WorkActionResponse);
+  // CapsuleAction creates a capsule (or a version), checks, lands,
+  // rebases, reverts, hands it to an agent, or reviews it.
+  rpc CapsuleAction(CapsuleActionRequest) returns (WorkActionResponse);
+  // CapsuleFiles pages a capsule's files with line counts, and with path
+  // set returns that file's diff.
+  rpc CapsuleFiles(CapsuleFilesRequest) returns (CapsuleFilesResponse);
+
   // Events streams everything that happens, starting with a Ready. Pass the
   // epoch and seq of the last event seen to replay what was missed; Ready
   // says resync when that cannot be done and the client must refetch.
@@ -1159,4 +1173,171 @@ message CancelScheduledRequest {
   string session_id = 1;
   string id = 2;
   bool send_now = 3;
+}
+
+// ---- worktrees and capsules (Work) ----
+
+message WorkResponse {
+  repeated WorktreeView worktrees = 1;
+  // Newest first.
+  repeated CapsuleView capsules = 2;
+}
+
+// A worktree the session tracks. kind is "thread" (the session works on
+// it), "agent" (one agent's own) or "tree" (the session's, nobody's yet).
+// ahead and behind count commits against base_ref; dirty the uncommitted
+// files; files what it changed since fork. landed is set while nothing
+// changed since it was last landed.
+message WorktreeView {
+  string name = 1;
+  string branch = 2;
+  string path = 3;
+  string kind = 4;
+  string owner = 5;
+  string owner_name = 6;
+  string task = 7;
+  bool working = 8;
+  int64 created = 9;
+  string fork = 10;
+  string base_ref = 11;
+  int32 ahead = 12;
+  int32 behind = 13;
+  int32 dirty = 14;
+  repeated string files = 15;
+  int64 landed_at = 16;
+  bool landed = 17;
+  string error = 18;
+}
+
+// A named capsule: state is "open", "landed" or "reverted"; tests "pass",
+// "fail" or "" (not run).
+message CapsuleView {
+  string name = 1;
+  string source = 2;
+  string worktree = 3;
+  repeated string authors = 4;
+  string note = 5;
+  string state = 6;
+  repeated CapsuleVersionView versions = 7;
+  string tests = 8;
+  string test_note = 9;
+  repeated CapsuleComment comments = 10;
+  repeated CapsuleLanding landings = 11;
+  int64 created = 12;
+  int64 updated = 13;
+}
+
+message CapsuleVersionView {
+  string id = 1;
+  string fork = 2;
+  string head = 3;
+  repeated CapsuleCommit commits = 4;
+  int32 commits_total = 5;
+  string onto = 6;
+  int32 files = 7;
+  int32 add = 8;
+  int32 mod = 9;
+  int32 del = 10;
+  string by = 11;
+  string note = 12;
+  int64 created = 13;
+}
+
+message CapsuleCommit {
+  string sha = 1;
+  string subject = 2;
+  string author = 3;
+}
+
+message CapsuleComment {
+  string by = 1;
+  string path = 2;
+  string text = 3;
+  int64 at = 4;
+}
+
+message CapsuleLanding {
+  int32 version = 1;
+  string into = 2;
+  int64 at = 3;
+  string by = 4;
+  bool reverted = 5;
+}
+
+// action: create (name, base, task), sync, rebase, check (into), merge
+// (into, strategy: "", "theirs" or "ours"), discard, spawn (kind, brief).
+message WorktreeActionRequest {
+  string session_id = 1;
+  string name = 2;
+  string action = 3;
+  string base = 4;
+  string into = 5;
+  string strategy = 6;
+  string kind = 7;
+  string brief = 8;
+  string task = 9;
+}
+
+// action: create (source: worktree, commits or diff; worktree, range,
+// name, text as its note), check and land (into, strategy), rebase (onto:
+// "main", a worktree, or "capsule:<name>"), revert (into), hand (agent,
+// text), review (text as a comment, path, tests). capsule is "name",
+// "name@2" or a version's id.
+message CapsuleActionRequest {
+  string session_id = 1;
+  string capsule = 2;
+  string action = 3;
+  string source = 4;
+  string worktree = 5;
+  string range = 6;
+  string into = 7;
+  string strategy = 8;
+  string onto = 9;
+  string agent = 10;
+  string text = 11;
+  string path = 12;
+  string tests = 13;
+  string name = 14;
+}
+
+// How each file lands: state "fits", "applied", "merge" or "conflict".
+message LandFile {
+  string path = 1;
+  string kind = 2;
+  string state = 3;
+  string reason = 4;
+}
+
+message WorkActionResponse {
+  string text = 1;
+  repeated LandFile files = 2;
+  // The files that conflict; nothing was written when there are any.
+  repeated string conflicts = 3;
+  string capsule = 4;
+  int32 version = 5;
+  WorktreeView worktree = 6;
+  bool checked = 7;
+  string agent_id = 8;
+}
+
+message CapsuleFilesRequest {
+  string session_id = 1;
+  string capsule = 2;
+  int32 offset = 3;
+  int32 limit = 4;
+  string path = 5;
+}
+
+message CapsuleFile {
+  string path = 1;
+  string kind = 2;
+  int32 added = 3;
+  int32 removed = 4;
+  bool binary = 5;
+}
+
+message CapsuleFilesResponse {
+  repeated CapsuleFile files = 1;
+  int32 total = 2;
+  string diff = 3;
 }

@@ -76,6 +76,10 @@ type thread struct {
 	gone atomic.Bool
 	// worktree is set while the thread is isolated (lifecycle.go).
 	worktree *store.Worktree
+	// trees are the thread's own worktrees and capsules its named capsules
+	// (work.go, capsulework.go), guarded by mu.
+	trees    []*store.Worktree
+	capsules []store.CapsuleRec
 	// tasks is the shared task board (tasks.go), guarded by mu.
 	tasks []store.Task
 	sched schedState // one scheduler pass at a time (sched.go)
@@ -351,7 +355,7 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
 		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree,
 		Tasks: cloneTasks(t.tasks), Orchestrate: t.orchestrate, Contract: t.contract, Ops: t.ops != nil,
-		Scheduled: slices.Clone(t.scheduled)}
+		Scheduled: slices.Clone(t.scheduled), Trees: slices.Clone(t.trees), Capsules: cloneCapsules(t.capsules)}
 	for _, peer := range slices.Sorted(maps.Keys(t.shares)) {
 		th.Shares = append(th.Shares, store.Share{Peer: peer, Role: t.shares[peer]})
 	}
