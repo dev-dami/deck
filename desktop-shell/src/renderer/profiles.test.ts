@@ -1,5 +1,15 @@
 import { describe, expect, test } from "vitest";
-import { cleanProfile, emptyProfile, parsePaths, type Profile, sortProfiles, validateProfile } from "./profiles";
+import {
+  cleanProfile,
+  copyProfile,
+  effortsFor,
+  emptyProfile,
+  PROFILE_SWATCHES,
+  parsePaths,
+  type Profile,
+  sortProfiles,
+  validateProfile,
+} from "./profiles";
 
 const kinds = ["claude", "codex", "opencode", "antigravity"];
 const profile = (over: Partial<Profile>): Profile => ({ ...emptyProfile("claude", "project"), name: "charles", ...over });
@@ -73,5 +83,36 @@ describe("profiles as saved and listed", () => {
   test("project profiles first, then global, each by name", () => {
     const list = [globalAda, profile({ name: "zed" }), charles, profile({ name: "bob", scope: "global" })];
     expect(sortProfiles(list).map((p) => `${p.scope}:${p.name}`)).toEqual(["project:charles", "project:zed", "global:ada", "global:bob"]);
+  });
+});
+
+describe("the editor's helpers", () => {
+  test("a copy takes the first free name in its scope, within the limit", () => {
+    const others = [charles, profile({ name: "charles-2" }), globalAda];
+    expect(copyProfile(charles, others)).toMatchObject({ name: "charles-3", kind: "claude", scope: "project" });
+    // Another scope's names do not count.
+    expect(copyProfile(globalAda, [globalAda, profile({ name: "ada-2" })]).name).toBe("ada-2");
+    const long = profile({ name: "x".repeat(32) });
+    const copy = copyProfile(long, [long]);
+    expect(copy.name).toBe(`${"x".repeat(30)}-2`);
+    expect(check(copy)).toEqual({});
+  });
+
+  test("efforts: the model's own, else every effort of the kind", () => {
+    const models = [
+      { id: "opus", label: "Opus", efforts: ["low", "high", "xhigh"] },
+      { id: "fast", label: "Fast", efforts: ["low", "medium"] },
+      { id: "plain", label: "Plain" },
+    ];
+    expect(effortsFor(models, "fast")).toEqual(["low", "medium"]);
+    expect(effortsFor(models, "plain")).toEqual([]);
+    expect(effortsFor(models, "")).toEqual(["low", "high", "xhigh", "medium"]);
+    expect(effortsFor(null, "opus")).toEqual([]);
+  });
+
+  test("every swatch is a colour Deck takes", () => {
+    for (const color of PROFILE_SWATCHES) {
+      expect(validateProfile(profile({ color }), { kinds, profiles: [], isColour: () => true }).color).toBeUndefined();
+    }
   });
 });
