@@ -29,6 +29,9 @@ export interface Lane {
   // The colour of the agent's profile; "" for the kind's hue.
   color: string;
   depth: number;
+  // The agent that spawned it (agent.spawn), by name; "" for a member the
+  // person brought in.
+  parent: string;
 }
 
 export const YOU = "you";
@@ -89,7 +92,7 @@ export function buildLanes({
   leases?: readonly Lease[];
 }): Lane[] {
   const lanes: Lane[] = [
-    { id: YOU, kind: "you", name: "you", agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role: "", color: "", depth: 0 },
+    { id: YOU, kind: "you", name: "you", agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role: "", color: "", depth: 0, parent: "" },
   ];
   // An agent's live leases, else what the agents tree last said.
   const leased = (name: string, n: AgentNode | undefined): string[] => {
@@ -111,6 +114,7 @@ export function buildLanes({
     role: agentRole(name, line === undefined ? [] : [line], n === undefined ? [] : [n]),
     color: agentTint(name, line === undefined ? [] : [line], n === undefined ? [] : [n]),
     depth: n?.depth ?? 0,
+    parent: n?.parent ?? "",
   });
   for (const line of roster) {
     const n = nodeOf(line, nodes);
@@ -124,7 +128,7 @@ export function buildLanes({
   }
   for (const [peer, role] of Object.entries(shares).sort(([a], [b]) => a.localeCompare(b))) {
     if (role === "") continue;
-    lanes.push({ id: mateLane(peer), kind: "mate", name: peer, agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role, color: "", depth: 0 });
+    lanes.push({ id: mateLane(peer), kind: "mate", name: peer, agentKind: "", status: "idle", model: "", effort: "", contextPct: null, leases: [], role, color: "", depth: 0, parent: "" });
   }
   return lanes;
 }

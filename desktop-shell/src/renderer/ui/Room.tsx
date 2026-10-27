@@ -432,7 +432,6 @@ export function Room({
                   <AgentsStrip
                     sessionId={open.id}
                     roster={roster}
-                    kinds={kinds}
                     approvals={state.approvals}
                     theme={state.theme}
                     api={api}
@@ -441,8 +440,6 @@ export function Room({
                     setDraft={setDraft}
                     hint={open.busy ? sendHint(prefs.sendKey, mac) : null}
                     onFocus={focusInput}
-                    picker={picker}
-                    setModel={setModel}
                   />
                 </>
               }

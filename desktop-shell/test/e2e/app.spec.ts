@@ -92,33 +92,25 @@ test("two agents stream in one thread at once", async ({ page }) => {
   await expect(page.locator(".agent-busy")).toHaveCount(0);
 });
 
-test("adds an agent with $codex+", async ({ page }) => {
+test("adds an agent with $codex+, typed", async ({ page }) => {
   await pair(page);
   await openMain(page);
   await composer(page).fill("");
-  await composer(page).pressSequentially("$codex+");
+  await composer(page).pressSequentially("$codex");
+  // "+" is typed, not offered: agents start helpers themselves.
   const pop = page.getByRole("listbox", { name: "Agents" });
-  await expect(pop.getByRole("option")).toHaveText([/\$codex\+.*start another codex/]);
-  // A slow frame, as on a busy machine: keys typed right after the pick
-  // still land after the mention.
-  await page.evaluate(() => {
-    window.requestAnimationFrame = (fn) => window.setTimeout(() => fn(performance.now()), 400);
-  });
-  await composer(page).press("Enter");
-  await composer(page).pressSequentially("review the limiter", { delay: 50 });
+  await expect(pop.getByRole("option")).toHaveText([/\$codex-1/, /\$codex.*a free codex/]);
+  await composer(page).pressSequentially("+");
+  await expect(pop).toHaveCount(0);
+  await composer(page).pressSequentially(" review the limiter", { delay: 50 });
   await expect(composer(page)).toHaveValue("$codex+ review the limiter");
   await composer(page).press("Enter");
   await expect(page.locator('.agent[data-agent="codex-2"]')).toBeVisible();
   await expect(page.locator('[data-agent="codex-2"].msg')).toContainText("review the limiter");
   expect(fake.sent.map((s) => s.text)).toEqual(["$codex+ review the limiter"]);
 
-  // "Add agent" writes the same mention: the picker chooses the agent,
-  // then adds it.
-  await page.getByRole("button", { name: "Add agent" }).click();
-  const add = page.getByRole("menu", { name: "Add an agent" });
-  await add.getByRole("menuitemradio", { name: "opencode" }).click();
-  await add.getByRole("menuitem", { name: "Add opencode" }).click();
-  await expect(composer(page)).toHaveValue("$opencode+ ");
+  // No "Add agent" control beside the chips.
+  await expect(page.getByRole("button", { name: "Add agent" })).toHaveCount(0);
 
   // Each agent's card addresses it; a second card addresses both.
   await composer(page).fill("compare");

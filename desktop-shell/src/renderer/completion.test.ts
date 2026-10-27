@@ -1,7 +1,6 @@
 import type { AgentLine } from "@web/protocol";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
-  addAgentMention,
   applySuggestion,
   contextAt,
   FILES_DEBOUNCE_MS,
@@ -46,27 +45,22 @@ describe("suggestions", () => {
       "$claude-2",
       "$codex-1",
       "$claude",
-      "$claude+",
       "$claude*",
       "$codex",
-      "$codex+",
       "$opencode",
-      "$opencode+",
       "$all",
     ]);
   });
 
   test("filters by prefix, case-insensitively", () => {
-    expect(suggestions("CO", roster, kinds).map((s) => s.insert)).toEqual(["$codex-1", "$codex", "$codex+"]);
-    expect(suggestions("codex+", roster, kinds).map((s) => s.insert)).toEqual(["$codex+"]);
+    expect(suggestions("CO", roster, kinds).map((s) => s.insert)).toEqual(["$codex-1", "$codex"]);
+    // "+" (start another) is typed, not offered: agents spawn helpers themselves.
+    expect(suggestions("codex+", roster, kinds).map((s) => s.insert)).toEqual([]);
   });
 
   test("an empty thread offers to start each kind", () => {
     const s = suggestions("", [], ["codex"]);
-    expect(s.map((x) => [x.insert, x.detail])).toEqual([
-      ["$codex", "start codex"],
-      ["$codex+", "start another codex"],
-    ]);
+    expect(s.map((x) => [x.insert, x.detail])).toEqual([["$codex", "start codex"]]);
   });
 
   test("shows a member's state", () => {
@@ -79,14 +73,9 @@ describe("applying", () => {
     const text = "$co please review";
     const m = mentionAt(text, 3);
     if (m === null) throw new Error("no mention");
-    const s = suggestions(m.query, roster, kinds).find((x) => x.insert === "$codex+");
+    const s = suggestions(m.query, roster, kinds).find((x) => x.insert === "$codex");
     if (s === undefined) throw new Error("no suggestion");
-    expect(applySuggestion(text, m, s)).toEqual({ text: "$codex+ please review", caret: 8 });
-  });
-
-  test("the add-agent menu starts the message with $kind+", () => {
-    expect(addAgentMention("  look at the tests", "codex")).toBe("$codex+ look at the tests");
-    expect(addAgentMention("$claude review", "codex")).toBe("$codex+ $claude review");
+    expect(applySuggestion(text, m, s)).toEqual({ text: "$codex please review", caret: 7 });
   });
 });
 
@@ -141,12 +130,9 @@ describe("the @ picker: agents and people", () => {
       "@ada",
       "@alice",
       "@claude",
-      "@claude+",
       "@claude*",
       "@codex",
-      "@codex+",
       "@opencode",
-      "@opencode+",
       "@all",
     ]);
   });

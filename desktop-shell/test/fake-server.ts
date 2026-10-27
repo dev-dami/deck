@@ -55,6 +55,9 @@ export class Fail extends Error {
 
 const KINDS = ["claude", "codex", "opencode", "antigravity"];
 const STREAM_STEPS = 6;
+// "spin up two codex agents ...": the agent asked spawns them (agent.spawn).
+const SPAWN = /\bspin up (a|an|one|two|three|[1-4]) (claude|codex|opencode|antigravity)\b/i;
+const COUNT: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3 };
 
 export interface FakeOptions {
   allowYolo?: boolean;
@@ -80,6 +83,9 @@ export class FakeDeck {
   // with no member of that name starts a member called charles, with its
   // role. The rpc fake keeps the list (ListProfiles).
   profiles: Array<{ name: string; kind: string; role?: string }> = [];
+  // The agents an agent spawned, as Deck's agents tree lists them (the rpc
+  // fake's Agents adds them under their spawner).
+  readonly spawned: Array<{ session_id: string; parent: string; name: string; kind: string }> = [];
   private readonly http: http.Server;
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 13 << 20 });
   private readonly clients = new Set<Client>();
@@ -590,6 +596,17 @@ export class FakeDeck {
       }
     }
     if (targets.length === 0) targets.push(t.roster[0] ?? this.addMember(t, "claude"));
+    const spawn = SPAWN.exec(rest);
+    if (spawn !== null && targets[0] !== undefined && !targets[0].busy) {
+      const parent = targets[0];
+      const n = COUNT[spawn[1]!.toLowerCase()] ?? Number(spawn[1]);
+      const at = (this.opts.tickMs ?? 150) * (STREAM_STEPS + 1);
+      const timer = setTimeout(() => {
+        this.timers.delete(timer);
+        if (this.threads.has(t.session.id)) this.spawn(t, parent, spawn[2]!.toLowerCase(), n, rest);
+      }, at);
+      this.timers.add(timer);
+    }
     // A busy agent gets the message when its turn ends, as Deck's queue does:
     // one item per agent, its text without the mentions.
     for (const [i, agent] of [...new Set(targets)].entries()) {
@@ -599,6 +616,29 @@ export class FakeDeck {
       } else this.stream(t, agent, rest, i);
     }
     return { message_id: user.id };
+  }
+
+  // An agent starts n agents of kind with a brief, as agent.spawn does: each
+  // joins the room, the brief shows as the spawner's relay ("→ $name"), and
+  // each works on it and answers its spawner.
+  private spawn(t: Thread, parent: AgentLine, kind: string, n: number, brief: string): void {
+    for (let i = 0; i < n; i++) {
+      const child = this.addMember(t, kind);
+      this.spawned.push({ session_id: t.session.id, parent: parent.id, name: child.id, kind });
+      this.message(t, "assistant", parent.id, `→ $${child.id}\n\n${brief}`, true);
+      this.stream(t, child, `@${parent.id} ${brief}`, i);
+    }
+  }
+
+  // The spawned agents of a room as agents tree nodes.
+  spawnedNodes(sessionId: string): Array<Record<string, unknown>> {
+    const t = this.threads.get(sessionId);
+    return this.spawned
+      .filter((s) => s.session_id === sessionId)
+      .map((s) => {
+        const busy = t?.roster.find((l) => l.id === s.name)?.busy === true;
+        return { name: s.name, kind: s.kind, model: "default", status: busy ? "working" : "idle", depth: 1, parent: s.parent };
+      });
   }
 
   private addMember(t: Thread, kind: string, profile?: { name: string; role?: string }): AgentLine {

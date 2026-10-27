@@ -1,18 +1,14 @@
 import { activeAgents, toggleAgent } from "@web/composer";
 import type { AgentLine, Approval, Theme } from "@web/protocol";
 import { kindMark } from "@web/theme";
-import { Plus } from "./icons";
 import { type CSSProperties, useEffect, useState } from "react";
 import { agentColour } from "../agents";
 import { tintOf } from "../teamGate";
 import { agentStatus } from "../approvals";
-import { addAgentMention } from "../completion";
 import type { AgentNode } from "../crew";
 import { contextPct, nodeOf } from "../lanes";
 import { cn } from "../lib/cn";
 import type { ProjectApi, UsageLimit } from "../project";
-import { AgentPicker, type PickerSource } from "./AgentPicker";
-import { Popover } from "./kit/menu";
 import { Ring } from "./kit/ring";
 
 // A plan window past this share shows on the chip, before it stops a turn.
@@ -129,68 +125,13 @@ function Chip({
   );
 }
 
-// The ghost "+": the agent picker, to add an agent of a kind to the
-// message, with a model and effort when the person picks one.
-function AddAgent({
-  roster,
-  kinds,
-  theme,
-  onAdd,
-  picker,
-  setModel,
-}: {
-  roster: AgentLine[];
-  kinds: string[];
-  theme: Theme | null;
-  onAdd: (kind: string) => void;
-  picker: PickerSource;
-  setModel: (kind: string, model: string, effort?: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover
-      open={open}
-      onClose={() => setOpen(false)}
-      side="top"
-      label="Add an agent"
-      className="w-72"
-      trigger={
-        <button
-          type="button"
-          className="add-agent grid size-7 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-selected aria-expanded:text-foreground"
-          aria-label="Add agent"
-          title="Add agent"
-          aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
-        >
-          <Plus className="size-3.5" />
-        </button>
-      }
-    >
-      <AgentPicker
-        source={picker}
-        kinds={kinds}
-        kind={null}
-        running={(k) => roster.find((l) => l.kind === k) ?? {}}
-        theme={theme}
-        action={(k) => (roster.some((l) => l.kind === k) ? `Add another ${k}` : `Add ${k}`)}
-        onPick={(p) => {
-          setOpen(false);
-          if (p.changed) setModel(p.kind, p.model, p.effort);
-          onAdd(p.kind);
-        }}
-      />
-    </Popover>
-  );
-}
-
 // The send-target picker under the composer: one chip per agent in the
-// thread, then the ghost "+" to start another. hint says what Enter does
-// while an agent works.
+// thread. Agents join by an @ or $ mention, or when an agent spawns them;
+// there is no add or remove control. hint says what Enter does while an
+// agent works.
 export function AgentsStrip({
   sessionId,
   roster,
-  kinds,
   approvals,
   theme,
   api,
@@ -199,12 +140,9 @@ export function AgentsStrip({
   setDraft,
   hint,
   onFocus,
-  picker,
-  setModel,
 }: {
   sessionId: string;
   roster: AgentLine[];
-  kinds: string[];
   approvals: Approval[];
   theme: Theme | null;
   // Usage (plan limits): a local Deck only.
@@ -215,8 +153,6 @@ export function AgentsStrip({
   setDraft: (s: string) => void;
   hint: string | null;
   onFocus: () => void;
-  picker: PickerSource;
-  setModel: (kind: string, model: string, effort?: string) => void;
 }) {
   const limits = useLimits(api);
   const addressed = activeAgents(draft);
@@ -238,17 +174,6 @@ export function AgentsStrip({
         />
       ))}
       {roster.length === 0 && <span className="px-1.5 text-muted-foreground/60 text-xs">No agents yet</span>}
-      <AddAgent
-        roster={roster}
-        kinds={kinds}
-        theme={theme}
-        onAdd={(k) => {
-          setDraft(addAgentMention(draft, k));
-          onFocus();
-        }}
-        picker={picker}
-        setModel={setModel}
-      />
       {hint !== null && <span className="send-hint hidden shrink-0 px-1.5 text-[11px] text-faint @[46rem]/bar:inline">{hint}</span>}
     </div>
   );

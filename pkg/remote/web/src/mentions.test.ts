@@ -58,9 +58,7 @@ describe("the lists", () => {
       "@claude-1",
       "@rev",
       "@claude",
-      "@claude+",
       "@codex",
-      "@codex+",
       "@all",
     ]);
     expect(at[1]).toEqual({
@@ -87,7 +85,6 @@ describe("the lists", () => {
       ["@charles", "reviewer", "claude"],
       ["@alice", "teammate", null],
       ["@claude", "start claude", "claude"],
-      ["@claude+", "start another claude", "claude"],
     ]);
   });
 

@@ -4,7 +4,8 @@ import type { AgentLine } from "./protocol";
 // (internal/deck/session/address.go and docs/design/agents-and-mentions.md):
 // "@" names an agent or a person, "$" is the older sigil for agents, and "#"
 // picks a file. "@codex" reaches a free codex or starts one, "@codex+"
-// always starts another, "@codex*" reaches every codex, "@claude-2" one
+// (typed; not offered, as agents start helpers themselves) always starts
+// another, "@codex*" reaches every codex, "@claude-2" one
 // member, "@charles" a profile's agent, "@all" every member. The desktop
 // and the phone share these.
 
@@ -162,7 +163,6 @@ export function suggestions(
       detail: members === 0 ? `start ${k}` : `a free ${k}`,
       kind: k,
     });
-    out.push({ insert: `${sigil}${k}+`, label: `${k}+`, detail: `start another ${k}`, kind: k });
     if (members > 1)
       out.push({ insert: `${sigil}${k}*`, label: `${k}*`, detail: `every ${k}`, kind: k });
   }

@@ -4,7 +4,7 @@ import { CornerDownRight, Lock, Square } from "./icons";
 import { useLayoutEffect, useRef, useState } from "react";
 import { agentColour } from "../agents";
 import { tintOf } from "../teamGate";
-import { fitLanes, type Lane } from "../lanes";
+import { agentLane, fitLanes, type Lane } from "../lanes";
 import { cn } from "../lib/cn";
 import { AgentRole } from "./AgentRole";
 import { AgentPicker, type PickerSource } from "./AgentPicker";
@@ -13,7 +13,8 @@ import { Ring } from "./kit/ring";
 
 // The lane strip under the room header: one chip per participant. A click
 // filters the timeline to that lane; on an agent it also opens its model,
-// effort, Stop and Steer.
+// effort, Stop and Steer. An agent another agent spawned (agent.spawn) says
+// so on its chip, and its popover links to the spawner's lane.
 
 const WORD: Record<Lane["status"], string> = {
   working: "working",
@@ -56,11 +57,16 @@ function FoldedLane({ lane, on, onFilter }: { lane: Lane; on: boolean; onFilter:
   );
 }
 
+// The popover is wide and short; one opened from a chip in the right half
+// of the window opens leftwards, so it stays on screen.
+const POPOVER = "w-[26rem] max-w-[calc(100vw-2rem)]";
+
 function AgentChip({
   lane,
   theme,
   on,
   onFilter,
+  onParent,
   picker,
   setModel,
   onStop,
@@ -70,21 +76,26 @@ function AgentChip({
   theme: Theme | null;
   on: boolean;
   onFilter: () => void;
+  // Shows the lane of the agent that spawned this one.
+  onParent: () => void;
   picker: PickerSource;
   setModel: (model: string, effort?: string) => void;
   onStop: () => void;
   onSteer: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [align, setAlign] = useState<"start" | "end">("start");
   const close = () => setOpen(false);
   const colour = agentColour(lane.name, lane.agentKind, tintOf(lane.color));
   const running = lane.status === "working" || lane.status === "waiting";
+  const spawned = lane.parent !== "" ? `spawned by @${lane.parent}` : "";
   return (
     <Popover
       open={open}
       onClose={close}
       label={`${lane.name}`}
-      className="w-72"
+      align={align}
+      className={POPOVER}
       trigger={
         <button
           type="button"
@@ -94,8 +105,11 @@ function AgentChip({
           aria-pressed={on}
           aria-expanded={open}
           aria-label={`${lane.name} ${WORD[lane.status]}`}
-          title={`${lane.name}: ${lane.model || "default model"}${lane.effort !== "" ? ` · ${lane.effort}` : ""}`}
-          onClick={() => {
+          aria-description={spawned || undefined}
+          title={`${lane.name}: ${lane.model || "default model"}${lane.effort !== "" ? ` · ${lane.effort}` : ""}${spawned !== "" ? `, ${spawned}` : ""}`}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setAlign(r.left > window.innerWidth / 2 ? "end" : "start");
             onFilter();
             setOpen((o) => !o);
           }}
@@ -112,6 +126,7 @@ function AgentChip({
             {lane.name}
           </span>
           <AgentRole role={lane.role} className="max-w-32 text-2xs" />
+          {lane.parent !== "" && <span className="lane-parent max-w-24 shrink-0 truncate text-3xs text-faint">by @{lane.parent}</span>}
           {DOT[lane.status] !== undefined && <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", DOT[lane.status])} />}
           {/* The word shows when the agent asks for something; else it is for
               the tooltip and screen readers. */}
@@ -135,10 +150,25 @@ function AgentChip({
         </button>
       }
     >
-      <MenuLabel>
-        {lane.name} · {lane.model || "default model"}
-        {lane.effort !== "" ? ` · ${lane.effort}` : ""}
-      </MenuLabel>
+      <div className="flex items-center gap-1">
+        <MenuLabel className="min-w-0 flex-1 truncate">
+          {lane.name} · {lane.model || "default model"}
+          {lane.effort !== "" ? ` · ${lane.effort}` : ""}
+        </MenuLabel>
+        {lane.parent !== "" && (
+          <MenuItem
+            className="lane-spawner h-6 w-auto max-w-48 shrink-0 text-2xs text-muted-foreground"
+            title={`Show @${lane.parent}'s lane`}
+            onClick={() => {
+              close();
+              onParent();
+            }}
+          >
+            <CornerDownRight className="rotate-180" />
+            <span className="truncate">Spawned by @{lane.parent}</span>
+          </MenuItem>
+        )}
+      </div>
       <AgentPicker
         source={picker}
         kinds={[lane.agentKind]}
@@ -156,7 +186,7 @@ function AgentChip({
         <>
           <MenuSeparator />
           <MenuLabel>Holds</MenuLabel>
-          <ul className="lane-leased flex max-h-32 flex-col overflow-y-auto px-2 pb-1" aria-label={`Paths ${lane.name} holds`}>
+          <ul className="lane-leased grid max-h-24 grid-cols-2 gap-x-2 overflow-y-auto px-2 pb-1" aria-label={`Paths ${lane.name} holds`}>
             {lane.leases.map((p) => (
               <li key={p} className="flex items-center gap-1.5 truncate py-0.5 font-mono text-2xs text-muted-foreground" title={p}>
                 <Lock aria-hidden className="size-2.5 shrink-0 text-faint" />
@@ -167,24 +197,27 @@ function AgentChip({
         </>
       )}
       <MenuSeparator />
-      <MenuItem
-        onClick={() => {
-          close();
-          onSteer();
-        }}
-      >
-        <CornerDownRight /> Steer {lane.name}
-      </MenuItem>
-      <MenuItem
-        className="text-destructive-foreground"
-        disabled={!running}
-        onClick={() => {
-          close();
-          onStop();
-        }}
-      >
-        <Square /> Stop {lane.name}
-      </MenuItem>
+      <div className="grid grid-cols-2 gap-0.5">
+        <MenuItem
+          className="min-w-0"
+          onClick={() => {
+            close();
+            onSteer();
+          }}
+        >
+          <CornerDownRight /> <span className="truncate">Steer {lane.name}</span>
+        </MenuItem>
+        <MenuItem
+          className="min-w-0 text-destructive-foreground"
+          disabled={!running}
+          onClick={() => {
+            close();
+            onStop();
+          }}
+        >
+          <Square /> <span className="truncate">Stop {lane.name}</span>
+        </MenuItem>
+      </div>
     </Popover>
   );
 }
@@ -254,6 +287,7 @@ export function Lanes({
             theme={theme}
             on={filter === l.id}
             onFilter={() => toggle(l.id)}
+            onParent={() => onFilter(agentLane(l.parent))}
             picker={picker}
             setModel={(model, effort) => setModel(l.agentKind, model, effort)}
             onStop={() => onStop(l.name)}

@@ -87,6 +87,35 @@ describe("history", () => {
     expect(g.edges.filter((e) => e.to === "f:limit.go").map((e) => e.kind)).toEqual(["touches"]);
   });
 
+  test("an agent that spawns a helper hands off to it, and the helper's result comes back", () => {
+    const m = (role: Message["role"], parts: Part[], agent?: string) => msg("sp", role, parts, agent);
+    // The spawn's brief and the helper's result travel as relays (Deck shows
+    // them as "→ $name" lines of the sender); the helper is in no roster.
+    const t: HistoryThread = {
+      id: "sp",
+      title: "Spawn",
+      messages: [
+        m("user", [say("@ada split this up: spin up a codex agent for the tests")]),
+        m("assistant", [call("sp1", "deck", "agent.spawn")], "ada"),
+        m("assistant", [result("sp1")]),
+        m("assistant", [say("→ $codex-2\n\nWrite the limiter tests.")], "ada"),
+        m("assistant", [say("Tests written.")], "codex-2"),
+        m("assistant", [say("→ $ada\n\nt1 done: tests written")], "codex-2"),
+        m("assistant", [say("Merged the tests.")], "ada"),
+      ],
+      roster: [{ id: "ada", name: "ada", kind: "claude", busy: false }],
+    };
+    const g = buildHistory([t]);
+    const lanes = new Set(g.nodes.map((x) => x.lane));
+    expect(lanes.has("sp/codex-2")).toBe(true);
+    const handoffs = g.edges.filter((e) => e.kind === "handoff").map((e) => [nodeOf(g, e.from).agent, nodeOf(g, e.to).agent]);
+    expect(handoffs).toEqual([
+      ["ada", "codex-2"],
+      ["codex-2", "ada"],
+    ]);
+    expect(nodeOf(g, g.nodes.find((x) => x.agent === "codex-2")!.id).agentKind).toBe("codex");
+  });
+
   test("columns follow time in each thread, and every edge but a file's runs forward", () => {
     const g = buildHistory([busy("s1"), busy("s2")]);
     for (const t of ["s1", "s2"]) {

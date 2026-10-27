@@ -58,6 +58,20 @@ describe("buildLanes", () => {
     expect(lanes[5]).toMatchObject({ kind: "mate", name: "vps", role: "editor" });
   });
 
+  test("a spawned agent's lane names its spawner; the person's agents name none", () => {
+    const lanes = buildLanes({
+      roster: [line("claude-1", true)],
+      agents: [node("claude-1"), node("codex-2", { kind: "codex", status: "working", depth: 1, parent: "claude-1" })],
+      shares: {},
+      waiting: [],
+    });
+    expect(lanes.map((l) => [l.id, l.parent, l.depth])).toEqual([
+      ["you", "", 0],
+      ["agent:claude-1", "", 0],
+      ["agent:codex-2", "claude-1", 1],
+    ]);
+  });
+
   test("live leases win over the tree's summary; an agent without any falls back to it", () => {
     const lanes = buildLanes({
       roster: [line("claude-1", true), line("codex-2")],

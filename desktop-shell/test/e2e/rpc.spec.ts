@@ -107,10 +107,16 @@ test("the agent pickers list every agent once, keep it, and refresh by hand", as
   await expect.poll(() => roster().find((l) => l.id === "claude-1")?.model).toBe("deep");
 
   // Opening pickers again and switching threads asks nothing more.
-  await page.getByRole("button", { name: "Add agent" }).click();
-  const add = page.getByRole("menu", { name: "Add an agent" });
-  await add.getByRole("menuitemradio", { name: "codex" }).click();
-  await expect(add.getByRole("menuitemradio", { name: /Fast/ })).toBeVisible();
+  await page.locator('.lane[data-lane="agent:codex-1"]').click();
+  const codex = page.getByRole("menu", { name: "codex-1" });
+  await expect(codex.getByRole("group", { name: "Model" }).getByRole("menuitemradio", { name: /Fast/ })).toBeVisible();
+  // Wide and short: the models sit side by side, and the popover is wider than tall.
+  const box = (await codex.boundingBox())!;
+  expect(box.width).toBeGreaterThan(box.height);
+  // The arrows still walk the radios in order.
+  await codex.getByRole("menuitemradio", { name: /Default/ }).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(codex.getByRole("menuitemradio", { name: /Fast/ })).toBeFocused();
   await page.keyboard.press("Escape");
   const others = sidebar(page).locator(".session");
   await others.nth(1).click();
@@ -118,8 +124,8 @@ test("the agent pickers list every agent once, keep it, and refresh by hand", as
   expect(fake.deck.modelLists).toHaveLength(3);
 
   // Refresh lists them all again, asking the Deck to forget its lists once.
-  await page.getByRole("button", { name: "Add agent" }).click();
-  await add.getByRole("menuitem", { name: "Refresh agents" }).click();
+  await page.locator('.lane[data-lane="agent:claude-1"]').click();
+  await page.getByRole("menu", { name: "claude-1" }).getByRole("menuitem", { name: "Refresh agents" }).click();
   await expect.poll(() => fake.deck.modelLists.length).toBe(6);
   expect(fake.modelRefreshes).toBe(1);
 });
@@ -734,6 +740,9 @@ test("lane strip: the people in the room, a lane filter and an agent's popover",
   await expect(claude).toHaveAttribute("data-status", "working");
   await expect(claude.locator(".lane-ring")).toBeVisible();
   await expect(lanes.locator('[data-lane="agent:codex-sub"] .lane-leases')).toHaveText("1");
+  // A spawned agent's lane says who spawned it.
+  await expect(lanes.locator('[data-lane="agent:codex-sub"] .lane-parent')).toHaveText("by @claude-1");
+  await expect(lanes.locator('[data-lane="agent:codex-1"] .lane-parent')).toHaveCount(0);
   await expect(page.locator(".room-index")).toContainText("ain");
 
   // A click on codex-1 shows its lane alone and opens its popover.
@@ -752,6 +761,38 @@ test("lane strip: the people in the room, a lane filter and an agent's popover",
   await expect(page.locator(".msg-agent")).toHaveCount(0);
   await lanes.locator('[data-lane="you"]').click();
   await expect(page.locator('[data-agent="claude-1"].msg').first()).toBeVisible();
+});
+
+test("an agent told to spin up agents spawns them: lanes under it, its brief as a handoff", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
+  // No add or remove chrome: agents come by mention, or by an agent.
+  await expect(page.getByRole("button", { name: "Add agent" })).toHaveCount(0);
+  await composer(page).fill("$claude split this up and spin up two codex agents to write the limiter tests");
+  await composer(page).press("Enter");
+
+  // claude answers, then spawns two codex agents, each a lane under it.
+  const lanes = page.getByRole("toolbar", { name: "Lanes" });
+  for (const name of ["codex-2", "codex-3"]) {
+    const lane = lanes.locator(`[data-lane="agent:${name}"]`);
+    await expect(lane.locator(".lane-parent")).toHaveText("by @claude-1", { timeout: 15_000 });
+    await expect(page.locator(`[data-agent="${name}"].msg`).last()).toContainText("write the limiter tests");
+  }
+  // The brief shows as claude's handoff to each.
+  await expect(page.locator('[data-agent="claude-1"].msg').filter({ hasText: "→ $codex-2" })).toBeVisible();
+  expect(fake.deck.spawned.map((s) => [s.parent, s.name])).toEqual([
+    ["claude-1", "codex-2"],
+    ["claude-1", "codex-3"],
+  ]);
+
+  // The spawned lane's popover links to its spawner's lane.
+  await lanes.locator('[data-lane="agent:codex-2"]').click();
+  const pop = page.getByRole("menu", { name: "codex-2" });
+  await pop.getByRole("menuitem", { name: "Spawned by @claude-1" }).click();
+  await expect(lanes.locator('[data-lane="agent:claude-1"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('[data-agent="codex-2"].msg')).toHaveCount(0);
+  await expect(page.locator('[data-agent="claude-1"].msg').filter({ hasText: "→ $codex-3" })).toBeVisible();
 });
 
 test("sharing: the share popover, a follower's lane and a room shared with you", async ({ page }) => {

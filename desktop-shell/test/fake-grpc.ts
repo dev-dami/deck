@@ -419,7 +419,8 @@ export class FakeRpcDeck {
       b.orchestrate = r["on"] === true;
       return {};
     });
-    unary("Agents", () => this.crew);
+    // The crew, and the agents agents spawned in the room (test/fake-server.ts).
+    unary("Agents", (r) => ({ ...this.crew, agents: [...this.crew.agents, ...this.deck.spawnedNodes(String(r["session_id"] ?? ""))] }));
     const tm = this.team;
     unary("Team", () => ({
       available: true,
