@@ -784,6 +784,14 @@ test("attention: a room that needs you, the inbox, notifications, and a finished
   await expect.poll(() => notes.map((n) => `${n.title}: ${n.body}`)).toContain(`${basename(dir)} · Long history: Approve command`);
   expect(notes[0]?.tag).toContain("ses_long");
   await expect.poll(() => badges.at(-1) ?? 0).toBeGreaterThanOrEqual(2);
+  // The bell in the sidebar's foot counts it, and its panel lists it.
+  const bell = page.getByRole("button", { name: /^Notifications, \d+ unread$/ });
+  await bell.click();
+  const panel = page.getByRole("dialog", { name: "Notifications" });
+  await expect(panel.locator('[data-notification="approval"]').filter({ hasText: "Long history" })).toContainText("Approve command");  await panel.getByRole("button", { name: "Mark all read" }).click();
+  await expect(page.getByRole("button", { name: "Notifications", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
 
   // Ctrl+Alt+L goes to the newest room that needs you; opening it does not
   // clear the state, only an answer does.

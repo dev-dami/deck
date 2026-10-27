@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { APP_ICON_IDS, type AppIconPref } from "./appIcon/catalog";
-import type { NotifyPref } from "./attention";
 import { CUSTOM, PICTURES } from "./backdrop/pictures";
+import { NOTIFY_KINDS, type NotifyKind } from "./notifications";
 import { ACCENTS, DIFF_THEMES, THEMES } from "./themes";
 
 // The window's own settings (the Settings page). They live in this
@@ -31,9 +31,13 @@ export interface Prefs {
   autoApprovePlans: boolean;
   // The terminal drawer's height in pixels.
   terminalHeight: number;
-  // Native notifications while the window is in the background.
-  notifications: NotifyPref;
+  // Notifications (notifications.ts): the master switch, each kind, the
+  // sound, and whether they pop up only while the window is in the
+  // background.
+  notifications: boolean;
+  notifyKinds: Record<NotifyKind, boolean>;
   sound: boolean;
+  notifyUnfocusedOnly: boolean;
   // A new thread starts on a branch of its own (a Deck that can isolate).
   isolate: boolean;
   motion: MotionPref;
@@ -65,8 +69,10 @@ export const defaultPrefs: Prefs = {
   foldWork: true,
   autoApprovePlans: false,
   terminalHeight: 280,
-  notifications: "all",
+  notifications: true,
+  notifyKinds: { approval: true, error: true, mention: true, task: true, finished: true },
   sound: true,
+  notifyUnfocusedOnly: true,
   isolate: true,
   motion: "system",
   yoloEffect: true,
@@ -111,8 +117,11 @@ function merge(v: Record<string, unknown>): Prefs {
     foldWork: bool("foldWork", defaultPrefs.foldWork),
     autoApprovePlans: bool("autoApprovePlans", defaultPrefs.autoApprovePlans),
     terminalHeight: size("terminalHeight", defaultPrefs.terminalHeight),
-    notifications: pick("notifications", ["all", "needs-you", "none"] as const, defaultPrefs.notifications),
+    // Before the kinds, notifications was "all", "needs-you" or "none".
+    notifications: v["notifications"] === "none" ? false : bool("notifications", defaultPrefs.notifications),
+    notifyKinds: kinds(v["notifyKinds"], v["notifications"] === "needs-you"),
     sound: bool("sound", defaultPrefs.sound),
+    notifyUnfocusedOnly: bool("notifyUnfocusedOnly", defaultPrefs.notifyUnfocusedOnly),
     isolate: bool("isolate", defaultPrefs.isolate),
     motion: pick("motion", ["system", "full", "reduced"] as const, defaultPrefs.motion),
     yoloEffect: bool("yoloEffect", defaultPrefs.yoloEffect),
@@ -122,6 +131,16 @@ function merge(v: Record<string, unknown>): Prefs {
     wallpaper: pick("wallpaper", ["theme", CUSTOM, ...PICTURES.map((x) => x.id)], defaultPrefs.wallpaper),
     appIcon: pick("appIcon", ["theme", ...APP_ICON_IDS], defaultPrefs.appIcon),
   };
+}
+
+// Each kind's switch; one that is missing keeps its default, and "needs-you
+// only" from before turns the finishes off.
+function kinds(v: unknown, needsYouOnly: boolean): Record<NotifyKind, boolean> {
+  const o = typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
+  const out = { ...defaultPrefs.notifyKinds };
+  if (needsYouOnly) out.finished = out.task = false;
+  for (const k of NOTIFY_KINDS) if (typeof o[k.id] === "boolean") out[k.id] = o[k.id] as boolean;
+  return out;
 }
 
 let current: Prefs | null = null;

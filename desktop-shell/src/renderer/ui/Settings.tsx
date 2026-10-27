@@ -5,6 +5,7 @@ import { type ReactNode, useContext, useEffect, useState } from "react";
 import type { AppInfo, DeckBridge } from "../../shared/bridge";
 import { serves } from "../client";
 import { cn } from "../lib/cn";
+import { NOTIFY_KINDS } from "../notifications";
 import { type Prefs, setPrefs, usePrefs } from "../prefs";
 import { ACCENTS, DIFF_THEMES } from "../themes";
 import { AppIconPicker } from "./AppIconPicker";
@@ -129,26 +130,32 @@ function General({ p }: { p: Prefs }) {
       </Section>
       <Section title="Notifications">
         <Row
-          title="Notify me"
-          description="While the window is in the background: when a room needs you, and when a room finishes."
-          control={
-            <Segmented
-              label="Notify me"
-              value={p.notifications}
-              onChange={set("notifications")}
-              options={[
-                { value: "all", label: "All" },
-                { value: "needs-you", label: "Needs you only" },
-                { value: "none", label: "None" },
-              ]}
+          title="Notifications"
+          description="Tell me what happens in my rooms: in the bell at the foot of the sidebar, on the app's icon, and as system notifications."
+          control={<Switch label="Notifications" checked={p.notifications} onChange={set("notifications")} />}
+        />
+        {p.notifications && (
+          <>
+            <Row
+              title="Only while Deck is in the background"
+              description="Off, a room you are not looking at notifies you too while Deck is in front."
+              control={<Switch label="Only while Deck is in the background" checked={p.notifyUnfocusedOnly} onChange={set("notifyUnfocusedOnly")} />}
             />
-          }
-        />
-        <Row
-          title="Sound"
-          description="Play the system sound with each notification."
-          control={<Switch label="Sound" checked={p.sound} onChange={set("sound")} />}
-        />
+            <Row
+              title="Sound"
+              description="Play the system sound with each notification."
+              control={<Switch label="Sound" checked={p.sound} onChange={set("sound")} />}
+            />
+            {NOTIFY_KINDS.map((k) => (
+              <Row
+                key={k.id}
+                title={k.label}
+                description={k.description}
+                control={<Switch label={k.label} checked={p.notifyKinds[k.id]} onChange={(on) => setPrefs({ notifyKinds: { ...p.notifyKinds, [k.id]: on } })} />}
+              />
+            ))}
+          </>
+        )}
       </Section>
     </>
   );
