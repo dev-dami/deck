@@ -295,6 +295,7 @@ export function Shell(props: ShellProps) {
               onPreview={preview}
               toast={toast}
               info={info}
+              onOpenThread={openSession}
             />
           )}
         </main>
@@ -326,6 +327,7 @@ export function Shell(props: ShellProps) {
             onPanel={(p) => openPanel(p)}
             onWide={() => setWide((w) => !w)}
             onClose={() => dispatch({ type: "panel", panel: null })}
+            onOpenThread={openSession}
           />
         </LineComments.Provider>
       )}

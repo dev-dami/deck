@@ -184,6 +184,7 @@ export function Room({
   onPreview,
   toast,
   info,
+  onOpenThread,
 }: {
   c: DeckClient;
   state: ShellSlice;
@@ -213,6 +214,8 @@ export function Room({
   onPreview: (url: string) => void;
   toast: (text: string) => void;
   info: (text: string) => void;
+  // Opens another thread of the project (the graph's History).
+  onOpenThread?: (id: string) => void;
 }) {
   const { draft, setDraft, files, paths, crew, lane, room, send } = r;
   const prefs = usePrefs();
@@ -322,8 +325,16 @@ export function Room({
         <div className="room-body relative flex min-h-0 flex-1 flex-col">
           {view === "graph" ? (
             <WorkGraph
+              c={c}
               api={api}
               sid={open.id}
+              onOpenMessage={(thread, mid) => {
+                // A History node: the conversation, at that message.
+                r.setLane(null);
+                focusMessage(thread, mid);
+                if (thread !== open.id) onOpenThread?.(thread);
+                setView("conversation");
+              }}
               roster={roster}
               files={files}
               theme={state.theme}

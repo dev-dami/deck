@@ -74,7 +74,7 @@ export function AgentDetail({
       aria-label={`${a.name} details`}
       className={cn(
         "graph-detail material absolute z-20 flex animate-enter flex-col rounded-[14px]",
-        compact ? "inset-x-2 bottom-2" : "top-3 right-3 w-[312px]",
+        compact ? "inset-x-2 bottom-2" : "top-13 right-3 w-[312px]",
       )}
       style={hueOf(a.name, a.agentKind)}
     >
