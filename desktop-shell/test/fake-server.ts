@@ -235,6 +235,35 @@ export class FakeDeck {
     return t.session.id;
   }
 
+  // Adds the thread "Shared files": two agents on one checkout, with the
+  // engine's asks between them (session/coord.go, AskLine): ada edits
+  // limit.go, bob asks her before he does and she lets him, and ada now
+  // waits on bob for prune.go. For the Work Graph's file view.
+  addSharedThread(): string {
+    const t = this.addThread("ses_shared", "Shared files");
+    t.roster = [
+      { id: "ada", name: "ada", kind: "claude", model: "opus", busy: true },
+      { id: "bob", name: "bob", kind: "codex", model: "default", busy: true },
+    ];
+    const LIMIT = "pkg/remote/auth/limit.go";
+    const PRUNE = "pkg/remote/auth/prune.go";
+    const edit = (agent: string, path: string, diff: string, text = "") => {
+      const id = this.id("tc");
+      const m = this.message(t, "assistant", agent, text, true);
+      m.parts = [...m.parts, { type: "tool_call", id, name: "Edit", summary: path }];
+      const r = this.message(t, "assistant", undefined, "", true);
+      r.parts = [{ type: "tool_result", tool_call_id: id, name: "Edit", output: "ok", diff }];
+    };
+    this.message(t, "user", undefined, "@ada key the limiter by address, @bob prune idle buckets.", true);
+    edit("ada", LIMIT, "@@ -29,4 +29,4 @@\n func (l *Limiter) Fail(addr string) {\n-\tl.global.fail()\n+\tl.byAddr(addr).fail()\n }\n", "Keying failures by address.");
+    edit("bob", PRUNE, "@@ -0,0 +1,6 @@\n+// prune drops buckets idle for an hour.\n+func (l *Limiter) prune(now time.Time) {\n+\tfor k, b := range l.buckets {\n+\t\tif now.Sub(b.last) > time.Hour { delete(l.buckets, k) }\n+\t}\n+}\n", "Adding the prune.");
+    this.message(t, "system", undefined, `@bob asked @ada about \`${LIMIT}\` → ada: go ahead, I'm done with Fail`, true);
+    edit("bob", LIMIT, "@@ -40,3 +40,4 @@\n func (l *Limiter) Allow(addr string) bool {\n+\tl.prune(time.Now())\n \treturn !l.byAddr(addr).locked()\n }\n", "Calling the prune from Allow.");
+    this.message(t, "system", undefined, `@ada asked @bob about \`${PRUNE}\``, true);
+    t.session = { ...t.session, busy: true };
+    return t.session.id;
+  }
+
   // The thread's changed files, as if someone edited the tree.
   setChanges(sessionId: string, changes: ChangedFile[]): void {
     this.get(sessionId).changes = changes;

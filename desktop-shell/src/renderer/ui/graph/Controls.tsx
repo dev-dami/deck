@@ -74,6 +74,7 @@ export function Legend({ g }: { g: Graph }) {
         <Key label="works on" />
         <Key label="holds" dash="1 3" />
         <Key label="editing now" dash="4 3" live />
+        {g.edges.some((e) => e.kind === "asks") && <Key label="asks for a file" dash="6 2" live />}
       </ul>
     </div>
   );
@@ -370,6 +371,7 @@ export function HistoryLegend({ g }: { g: HistoryGraph }) {
         <Key label="hands off" dash="4 3" />
         <Key label="reviews" dash="2 3" />
         <Key label="reads" dash="1 3" />
+        {g.nodes.some((n) => n.kind === "ask") && <Key label="asks for a file" dash="6 2" />}
       </ul>
     </div>
   );

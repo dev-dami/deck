@@ -606,6 +606,10 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		return m.releaseLeases(b.a, str("paths")), nil
 	case "lease.list":
 		return m.listLeases(b.a), nil
+	case "file.claim":
+		return m.claimFile(b.a, str("paths"))
+	case "file.answer":
+		return m.answerAsks(b.a, str("path"), str("text"), a["wait"] == true)
 	case "memory.add":
 		return m.addNote(b.a, str("text"), str("paths"), str("lines"))
 	case "memory.read":

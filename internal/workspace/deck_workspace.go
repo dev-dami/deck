@@ -67,6 +67,9 @@ type DeckWorkspace struct {
 	// lastMode is the permission mode the last recorded mode change set.
 	// Only the pump goroutine touches it.
 	lastMode deckagent.Mode
+	// asks maps each ask to edit a file (decks.FileAsk) to the line that
+	// shows it, by thread and ask id. Only the pump goroutine touches it.
+	asks map[string]string
 
 	act activity // tool calls in flight and background shells, by session
 
@@ -477,6 +480,9 @@ func (w *DeckWorkspace) pump() {
 				cancel()
 			}
 		case decks.RelayMsg:
+			if m.Via == "ask" {
+				continue // the FileAskMsg line stands for it
+			}
 			w.onRelay(m)
 			to := make([]string, len(m.To))
 			for i, t := range m.To {
@@ -486,6 +492,8 @@ func (w *DeckWorkspace) pump() {
 		case decks.NoticeMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.Text)
 			w.publish(DeckChange{Kind: ChangeNotice, SessionID: w.sessionOf(m.ThreadID), Text: m.Text, Via: m.Via})
+		case decks.FileAskMsg:
+			w.onAsk(m)
 		case decks.PausedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorHopPause, "", m.Hops)
 			paused := "Paused after the agents passed messages back and forth; send a message to go on."
@@ -962,6 +970,39 @@ func (w *DeckWorkspace) notice(sid, text string) {
 		Provider: "deck",
 		Parts:    []message.ContentPart{message.TextContent{Text: "_" + text + "_"}, message.Finish{Reason: message.FinishReasonEndTurn, Time: time.Now().Unix()}},
 	})
+}
+
+// onAsk shows an ask to edit a file as one system line, which its answer
+// rewrites in place: "@codex asked @ada about `a.go` → ada: go ahead".
+func (w *DeckWorkspace) onAsk(m decks.FileAskMsg) {
+	sid := w.sessionOf(m.ThreadID)
+	if sid == "" {
+		return
+	}
+	if w.asks == nil {
+		w.asks = map[string]string{}
+	}
+	key := m.ThreadID + "/" + m.Ask.ID
+	text := decks.AskLine(m.Ask)
+	ctx := context.Background()
+	w.dbw.wait(sid)
+	if id, ok := w.asks[key]; ok {
+		delete(w.asks, key) // settled: it changes no more
+		if msg, err := w.app.Messages.Get(ctx, id); err == nil {
+			msg.Parts = []message.ContentPart{message.TextContent{Text: text}, message.Finish{Reason: message.FinishReasonEndTurn, Time: time.Now().Unix()}}
+			_ = w.app.Messages.Update(ctx, msg)
+			return
+		}
+	}
+	msg, err := w.app.Messages.Create(ctx, sid, message.CreateMessageParams{
+		Role:     message.System,
+		Model:    "deck",
+		Provider: "deck",
+		Parts:    []message.ContentPart{message.TextContent{Text: text}, message.Finish{Reason: message.FinishReasonEndTurn, Time: time.Now().Unix()}},
+	})
+	if err == nil && m.Ask.State == decks.AskPending {
+		w.asks[key] = msg.ID
+	}
 }
 
 // noAsk are the agent kinds whose CLI cannot hand Deck an approval prompt:

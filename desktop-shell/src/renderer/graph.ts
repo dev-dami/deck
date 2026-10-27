@@ -1,6 +1,7 @@
 import type { AgentLine, ChangedFile } from "@web/protocol";
 import { agentRole } from "./agents";
 import { type Board, boardRows, type BoardTask, type Crew, type RunningTool } from "./crew";
+import { type AskState, editors, type FileTrack, pendingAsks, samePath } from "./fileWork";
 import { agentLane, contextPct, type LaneStatus, leasePaths, YOU } from "./lanes";
 import type { Lease } from "./roomMeta";
 
@@ -75,6 +76,14 @@ export interface FileGraphNode extends Placed {
   glob: boolean;
   // The agents that hold a lease on it.
   holders: string[];
+  // From the thread's edits and asks (fileWork.ts): who edited it, in the
+  // order of their last edit, who owns it now, and the asks waiting on
+  // that owner. work is the whole timeline, for the file's detail.
+  editors: string[];
+  owner: string | null;
+  ownerKind: string;
+  asking: { from: string; fromKind: string; to: string; state: AskState }[];
+  work: FileTrack | null;
 }
 
 // Changed files no agent or task is linked to, folded into one node once
@@ -91,8 +100,10 @@ export type GraphNode = YouNode | AgentGraphNode | TaskGraphNode | FileGraphNode
 // you → a member (leads); an agent → its subagent (spawned); an agent → its
 // task (owns); a task → the task that waits on it (after); a task → its
 // files (touches); an agent → a file it leases (holds, drawn dashed) or
-// edits (live while it does so now).
-export type EdgeKind = "leads" | "spawned" | "owns" | "after" | "touches" | "holds" | "edits";
+// edits (live while it does so now); an agent → a file it edited before
+// (edited, in its owner's hue), and → a file it asks the owner of (asks,
+// dashed, flowing while it waits).
+export type EdgeKind = "leads" | "spawned" | "owns" | "after" | "touches" | "holds" | "edits" | "edited" | "asks";
 
 export interface GraphEdge {
   id: string;
@@ -136,6 +147,9 @@ export interface GraphInput {
   files: readonly ChangedFile[] | null;
   // The room's live leases (lease_changed), when the Deck reports them.
   leases?: readonly Lease[];
+  // Who edited which file and the asks over them (fileWork.ts), from the
+  // thread's messages.
+  work?: ReadonlyMap<string, FileTrack>;
 }
 
 // Node sizes, in graph units. An agent's card grows a line for the tool it runs.
@@ -145,6 +159,8 @@ export const SIZE = {
   agentTool: { w: 196, h: 74 },
   task: { w: 196, h: 48 },
   file: { w: 188, h: 30 },
+  // A file with edits or asks: a line for its owner and who asks.
+  fileWork: { w: 188, h: 46 },
 } as const;
 // Down, a layer is a row and its width is what limits the fit: narrower
 // cards, and a file stacks its +/− under its name.
@@ -154,6 +170,7 @@ export const SIZE_DOWN: { [K in keyof typeof SIZE]: { w: number; h: number } } =
   agentTool: { w: 164, h: 74 },
   task: { w: 164, h: 48 },
   file: { w: 120, h: 40 },
+  fileWork: { w: 120, h: 54 },
 };
 // Across, the gap between columns and between the cards of one; down,
 // between rows and between the cards of one.
@@ -335,6 +352,11 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
       changed: f !== undefined,
       glob,
       holders: [],
+      editors: [],
+      owner: null,
+      ownerKind: "",
+      asking: [],
+      work: null,
     };
     nodes.set(id, node);
     return node;
@@ -342,6 +364,20 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
   for (const f of changed) addFile(f.path, f);
   for (const t of tasks) for (const p of t.files) addFile(p);
   const known = () => [...nodes.values()].flatMap((n) => (n.kind === "file" && !n.glob ? [n.path] : []));
+  // The files the agents edited or asked about: a changed file under the
+  // name the agents gave it, else a file of its own.
+  const kindOf = (name: string) => byName.get(name)?.agentKind ?? name.replace(/[-_]?\d+$/, "");
+  for (const w of input.work?.values() ?? []) {
+    if (w.edits.length === 0 && w.asks.length === 0) continue;
+    const f = addFile(known().find((p) => samePath(p, w.path)) ?? w.path);
+    f.work = w;
+    f.editors = editors(w);
+    f.owner = w.owner;
+    f.ownerKind = w.owner === null ? "" : kindOf(w.owner);
+    f.asking = pendingAsks(w).map((a) => ({ from: a.from, fromKind: kindOf(a.from), to: a.to, state: a.state }));
+    f.w = size.fileWork.w;
+    f.h = size.fileWork.h;
+  }
   for (const a of agents) {
     for (const lease of a.leases) {
       const hits = isGlob(lease) || !known().includes(lease) ? known().filter((p) => globMatch(lease, p)) : [lease];
@@ -370,6 +406,16 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
     for (const h of n.holders) {
       const a = byName.get(h)!;
       if (!edges.has(`edits:${a.id}>${n.id}`)) edge("holds", a.id, n.id, a.id);
+    }
+    // Who asks for it, then who edited it: its owner's edge in its hue.
+    for (const q of n.asking) {
+      const a = byName.get(q.from);
+      if (a !== undefined) edge("asks", a.id, n.id, a.id, true);
+    }
+    for (const name of n.editors) {
+      const a = byName.get(name);
+      if (a === undefined || ["edits", "holds", "asks"].some((k) => edges.has(`${k}:${a.id}>${n.id}`))) continue;
+      edge("edited", a.id, n.id, name === n.owner ? a.id : null);
     }
   }
 

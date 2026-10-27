@@ -177,7 +177,13 @@ func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error)
 			r.mcpName = "deck"
 		}
 	}
-	settings, err := writeSettings(spec.Dir, spec.Attribution)
+	hook, tokenFile, err := gateHook(server)
+	if err != nil {
+		r.removeConfig()
+		return nil, err
+	}
+	r.gatePath = tokenFile
+	settings, err := writeSettings(spec.Dir, spec.Attribution, hook)
 	if err != nil {
 		r.removeConfig()
 		return nil, err
@@ -278,7 +284,9 @@ type run struct {
 	// settingsPath is the --settings file: Deck's commit/PR attribution and
 	// plans folder in place of Claude's own.
 	settingsPath string
-	mcpName      string // server name in the MCP config ("deck")
+	// gatePath holds the broker token for the edit gate's hook (gate.go).
+	gatePath string
+	mcpName  string // server name in the MCP config ("deck")
 
 	tr *translator // used by the single active reader goroutine at a time
 
@@ -916,6 +924,9 @@ func (r *run) removeConfig() {
 	if r.settingsPath != "" {
 		os.Remove(r.settingsPath)
 	}
+	if r.gatePath != "" {
+		os.Remove(r.gatePath)
+	}
 }
 
 // writeSettings writes the --settings file. Commits and PRs Claude makes in
@@ -924,8 +935,9 @@ func (r *run) removeConfig() {
 // ~/.claude/projects/<project>/memory. Claude ignores an absolute
 // plansDirectory, so that one is relative to the working directory. The
 // memory's project is the repository's main working tree, so worktrees share
-// one memory, as Claude Code's own does.
-func writeSettings(dir string, attribution bool) (string, error) {
+// one memory, as Claude Code's own does. hook, when set, is the edit gate's
+// PreToolUse hook command (gate.go).
+func writeSettings(dir string, attribution bool, hook string) (string, error) {
 	memory := brand.MemoryDir(gitutil.RepoRoot(dir))
 	_ = os.MkdirAll(memory, 0o755)
 	settings := map[string]any{"plansDirectory": brand.PlansRel, "autoMemoryDirectory": memory}
@@ -936,6 +948,9 @@ func writeSettings(dir string, attribution bool) (string, error) {
 		settings["permissions"] = map[string]any{"deny": []string{
 			"Bash(git commit --no-verify:*)", "Bash(git commit -n:*)",
 		}}
+	}
+	if hook != "" {
+		settings["hooks"] = gateHooks(hook)
 	}
 	data, _ := json.Marshal(settings)
 	f, err := os.CreateTemp("", "deck-claude-settings-*.json")
