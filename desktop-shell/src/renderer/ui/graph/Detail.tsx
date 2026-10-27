@@ -68,6 +68,9 @@ export function AgentDetail({
 }) {
   const shown = lane === agentLane(a.name);
   const busy = a.status === "working" || a.status === "waiting";
+  // A CLI-native subagent answers to its member alone: Steer and Stop are
+  // the member's.
+  const owner = a.sub !== null && parent !== null ? parent : a.name;
   return (
     <section
       data-graph-control=""
@@ -89,7 +92,7 @@ export function AgentDetail({
             <StatusDot status={a.status} />
             <span className={STATUS_TEXT[a.status]}>{STATUS_LABEL[a.status]}</span>
             {a.since > 0 && a.status === "working" && <span className="text-faint tabular-nums">{formatDuration(now - a.since)}</span>}
-            {parent !== null && <span className="min-w-0 truncate text-faint">· started by {parent}</span>}
+            {parent !== null && <span className="min-w-0 truncate text-faint">· {a.sub !== null ? `${parent}'s own subagent` : `started by ${parent}`}</span>}
           </p>
         </div>
         <Button variant="ghost-muted" size="icon-xs" className="-mt-0.5 -mr-1.5" aria-label="Close" onClick={onClose}>
@@ -98,6 +101,19 @@ export function AgentDetail({
       </header>
 
       <dl className="flex flex-col gap-1.5 border-hairline border-t px-3.5 py-2.5">
+        {a.sub !== null && (
+          <>
+            {a.sub.description !== "" && <Row label="Task">{a.sub.description}</Row>}
+            <Row label="Status">
+              {a.sub.status}
+              {a.sub.type !== "" && <span className="text-muted-foreground"> · {a.sub.type}</span>}
+              <span className="text-muted-foreground tabular-nums">
+                {" "}
+                · {a.sub.actions} action{a.sub.actions === 1 ? "" : "s"}
+              </span>
+            </Row>
+          </>
+        )}
         <Row label="Model">
           {a.model || "default"}
           {a.effort !== "" && <span className="text-muted-foreground"> · {a.effort}</span>}
@@ -148,20 +164,20 @@ export function AgentDetail({
           <MessageSquarePlus />
           {shown ? "Show all messages" : "Show its messages"}
         </Button>
-        <Button variant="ghost" size="xs" onClick={() => onSteer(a.name)}>
+        <Button variant="ghost" size="xs" onClick={() => onSteer(owner)}>
           <CornerDownRight />
-          Steer
+          {owner === a.name ? "Steer" : `Steer ${owner}`}
         </Button>
         <Button
           variant="ghost-muted"
           size="xs"
           className="ml-auto hover:text-destructive-foreground"
           disabled={!busy}
-          aria-label={`Stop ${a.name}`}
-          onClick={() => onStop(a.name)}
+          aria-label={`Stop ${owner}`}
+          onClick={() => onStop(owner)}
         >
           <Square weight="fill" className="size-2.5" />
-          Stop
+          {owner === a.name ? "Stop" : `Stop ${owner}`}
         </Button>
       </footer>
     </section>

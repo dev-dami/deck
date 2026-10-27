@@ -453,8 +453,18 @@ export class FakeRpcDeck {
       b.level = typeof r["level"] === "string" && r["level"] !== "" ? r["level"] : r["on"] === true ? "auto" : "off";
       return {};
     });
-    // The crew, and the agents agents spawned in the room (test/fake-server.ts).
-    unary("Agents", (r) => ({ ...this.crew, agents: [...this.crew.agents, ...this.deck.spawnedNodes(String(r["session_id"] ?? ""))] }));
+    // The crew, the agents agents spawned in the room, and the subagents
+    // their CLIs started on their own after their member (test/fake-server.ts).
+    unary("Agents", (r) => {
+      const sid = String(r["session_id"] ?? "");
+      const native = this.deck.nativeNodes(sid);
+      const agents: Obj[] = [];
+      for (const a of [...this.crew.agents, ...this.deck.spawnedNodes(sid)]) {
+        agents.push(a);
+        agents.push(...native.agents.filter((n) => n["parent"] === a["name"]));
+      }
+      return { ...this.crew, agents, running: [...this.crew.running, ...native.running] };
+    });
     const tm = this.team;
     unary("Team", () => ({
       available: true,

@@ -56,6 +56,7 @@ export function Legend({ g }: { g: Graph }) {
   const s = graphSummary(g);
   const parts = [
     `${s.agents} ${s.agents === 1 ? "agent" : "agents"}`,
+    ...(s.subagents > 0 ? [`${s.subagents} ${s.subagents === 1 ? "sub-agent" : "sub-agents"}`] : []),
     ...(s.tasks > 0 ? [`${s.done}/${s.tasks} tasks done`] : []),
     `${s.files} ${s.files === 1 ? "file" : "files"}`,
   ];

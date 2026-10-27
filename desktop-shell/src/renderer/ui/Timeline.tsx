@@ -9,6 +9,7 @@ import {
   ChevronRight,
   CircleAlert,
   Copy,
+  CornerDownRight,
   Eye,
   FilePen,
   FileText,
@@ -55,8 +56,9 @@ import {
 } from "../actions";
 import { agentColour, agentKind, agentRole, agentTint } from "../agents";
 import type { RoomNotice } from "../attention";
+import type { AgentNode } from "../crew";
 import { askOf, type FileAsk } from "../fileWork";
-import { shortId } from "../lanes";
+import { shortId, subName } from "../lanes";
 import { cn } from "../lib/cn";
 import { messageText } from "../messages";
 import { detectPlan, findPlan } from "../plans";
@@ -98,7 +100,7 @@ function withNotes(messages: Message[], notes: readonly RoomNotice[]): (Message 
 function lastTurnId(rows: readonly Row[]): string | null {
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i]!;
-    if (isTurn(r)) return r.id;
+    if (isTurn(r) && r.parent === null) return r.id;
     if ("role" in r && r.role === "user") return null;
   }
   return null;
@@ -688,13 +690,131 @@ function AgentTurn({
 // not): a token re-renders the row it lands in, not the whole timeline.
 const TurnView = memo(AgentTurn);
 
+const SUB_WORD: Record<string, string> = { running: "running", done: "done", failed: "failed", stopped: "stopped" };
+
+// "↳ review-pr-296 · Review PR #296 · 12 actions · done ›": the work of a
+// subagent its member's CLI started with its own tool (Claude Code's Task),
+// folded to one line under its member's reply, in the member's hue. While
+// it runs the line names its call at work; it opens to its words and calls.
+// node is the agents tree's account of it, when the Deck serves one.
+function SubTurn({
+  t,
+  roster,
+  theme,
+  node,
+  alone,
+}: {
+  t: Turn;
+  roster: AgentLine[];
+  theme: Theme | null;
+  node: AgentNode | undefined;
+  // The timeline shows its lane alone: it opens unless closed.
+  alone: boolean;
+}) {
+  const prefs = usePrefs();
+  const parent = t.parent ?? t.agent;
+  const kind = agentKind(parent, roster);
+  const colour = agentColour(parent, kind, tintOf(agentTint(parent, roster), prefs.team));
+  const mark = kindMark(theme, kind) || "●";
+  const status = node?.subStatus || (t.finished ? "done" : "running");
+  const running = status === "running";
+  const s = useMemo(() => actionStats(t.chunks, running), [t.chunks, running]);
+  const key = `sub:${t.id}`;
+  const [set, setOpen] = useState(() => openGroups.get(key));
+  const open = set ?? alone;
+  const toggle = () => {
+    openGroups.set(key, !open);
+    setOpen(!open);
+  };
+  const name = subName(t.agent);
+  const ps = useMemo(() => pieces(t.chunks, name, (i) => groupId(t, i)), [t, name]);
+  const cur: ToolChunk | null = running && s.pending > 0 ? s.current : null;
+  const CurIcon = cur === null ? null : toolIcon(toolName(cur));
+  const muted = (c: TextChunk, k: number): ReactNode => (
+    <div key={k} className="py-1 text-muted-foreground [&_.md]:text-sm">
+      <Markdown text={c.text} />
+    </div>
+  );
+  return (
+    <article
+      className="msg msg-sub -mt-3 ml-[5px] flex min-w-0 animate-enter flex-col border-hairline-strong border-l pl-3"
+      data-role="assistant"
+      data-agent={t.agent}
+      data-parent={parent}
+      data-mid={t.id}
+      data-mids={t.msgs.length > 1 ? t.msgs.map((x) => x.id).join(" ") : undefined}
+      data-state={status}
+      style={hue(colour)}
+    >
+      <button
+        type="button"
+        className="sub-head -mx-2 flex h-7 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-sm outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
+        aria-expanded={open}
+        aria-label={`${name}, @${parent}'s subagent, ${s.actions} actions, ${SUB_WORD[status] ?? status}`}
+        onClick={toggle}
+      >
+        <CornerDownRight aria-hidden className="size-3.5 shrink-0 text-faint" />
+        {running ? (
+          <Loader2 aria-hidden className="size-3.5 shrink-0 animate-spin text-(--hue)" weight="bold" />
+        ) : (
+          <span aria-hidden className={cn("w-3.5 shrink-0 text-center font-mono text-(--hue) text-[12px]", "opacity-60")}>
+            {mark}
+          </span>
+        )}
+        <span className="sub-who shrink-0 font-medium font-mono text-(--hue) text-[13px]">{name}</span>
+        {node !== undefined && node.description !== "" && <span className="sub-task min-w-0 shrink truncate text-muted-foreground">{node.description}</span>}
+        <span aria-hidden className="shrink-0 text-faint">
+          ·
+        </span>
+        <span className="sub-count shrink-0 text-muted-foreground tabular-nums">
+          {s.actions} action{s.actions === 1 ? "" : "s"}
+        </span>
+        {cur !== null && CurIcon !== null && (
+          <span className="sub-now flex min-w-0 items-center gap-1.5 font-mono text-code">
+            <CurIcon aria-hidden className="size-3.5 shrink-0 text-faint" />
+            <span className="shimmer min-w-0 truncate text-foreground/80">{cur.call?.summary || toolName(cur)}</span>
+          </span>
+        )}
+        <span className="ml-auto" />
+        <span
+          className={cn(
+            "sub-status flex shrink-0 items-center gap-1 text-2xs",
+            status === "failed" ? "text-destructive-foreground" : running ? "text-foreground" : "text-faint",
+          )}
+        >
+          {status === "failed" && <CircleAlert aria-hidden className="size-3.5" />}
+          {SUB_WORD[status] ?? status}
+        </span>
+        <ChevronRight className={cn("size-3 shrink-0 text-faint transition-transform duration-200", open && "rotate-90")} />
+      </button>
+      {open && (
+        <div className="sub-log flex animate-enter flex-col gap-1 py-1">
+          {node !== undefined && node.error !== "" && <p className="sub-error text-destructive-foreground text-xs">{node.error}</p>}
+          <Pieces ps={ps} running={running} mark={mark} text={muted} />
+        </div>
+      )}
+    </article>
+  );
+}
+
+const SubTurnView = memo(SubTurn);
+
 // One message alone as a turn of its own (the side chat).
 const lone = new WeakMap<Message, Turn>();
 const onlyMessages = (_r: Message): _r is Message => true;
 function turnOf(m: Message): Turn {
   let t = lone.get(m);
   if (t === undefined) {
-    t = buildTurns<never>([m], onlyMessages).find(isTurn) ?? { k: "turn", id: m.id, agent: m.agent ?? "agent", msgs: [m], paired: [], chunks: [], finished: m.finished };
+    t = buildTurns<never>([m], onlyMessages).find(isTurn) ?? {
+      k: "turn",
+      id: m.id,
+      agent: m.agent ?? "agent",
+      parent: null,
+      msgs: [m],
+      paired: [],
+      chunks: [],
+      finished: m.finished,
+    };
     lone.set(m, t);
   }
   return t;
@@ -882,6 +1002,8 @@ export function Timeline({
   readImage,
   focusMessage = null,
   onFocused,
+  subs,
+  subAlone = false,
 }: {
   messages: Message[];
   roster: AgentLine[];
@@ -902,6 +1024,10 @@ export function Timeline({
   // it is there; onFocused says it showed or cannot.
   focusMessage?: string | null;
   onFocused?: () => void;
+  // The agents tree's CLI-native subagents by name, for how each stands;
+  // subAlone says the timeline shows one of them alone (its lane).
+  subs?: ReadonlyMap<string, AgentNode>;
+  subAlone?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // Each agent's run of messages as one turn, its tool calls grouped; a
@@ -1025,7 +1151,9 @@ export function Timeline({
               onResize={pin}
               reveal={shown}
               render={(m) =>
-                isTurn(m) ? (
+                isTurn(m) && m.parent !== null ? (
+                  <SubTurnView t={m} roster={roster} theme={theme} node={subs?.get(m.agent)} alone={subAlone} />
+                ) : isTurn(m) ? (
                   <TurnView t={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />
                 ) : "role" in m ? (
                   <MessageView m={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />

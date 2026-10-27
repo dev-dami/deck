@@ -6,8 +6,8 @@ import { type ComponentProps, type RefObject, useCallback, useEffect, useMemo, u
 import type { EngineStop } from "../../shared/bridge";
 import { type DeckClient, serves } from "../client";
 import { FILES_LIMIT } from "../completion";
-import type { Team } from "../crew";
-import { buildLanes, filterLane } from "../lanes";
+import { subsOf, type Team } from "../crew";
+import { buildLanes, filterLane, subParent } from "../lanes";
 import { whenOf } from "../limits";
 import { pokeLimits, useLimits, useNow } from "../limitsState";
 import { focusMessage, useFocusedMessage } from "../palette";
@@ -68,6 +68,7 @@ function LiveTimeline({
       {...(readImage === undefined ? {} : { readImage })}
       focusMessage={focus}
       onFocused={() => focusMessage(sid, null)}
+      subAlone={lane !== null && subParent(lane.replace(/^agent:/, "")) !== null}
       {...rest}
     />
   );
@@ -425,6 +426,7 @@ export function Room({
               mode={room.mode}
               actions={room.actions}
               notes={r.notes}
+              subs={subsOf(crew?.agents)}
             />
           )}
           <div ref={dock} className="composer-dock pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-3 *:pointer-events-auto">

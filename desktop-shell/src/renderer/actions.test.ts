@@ -196,3 +196,48 @@ describe("turns", () => {
     expect(p.consumed.has(mixed.id)).toBe(false);
   });
 });
+
+describe("buildTurns: CLI-native subagents", () => {
+  test("each subagent's work is one block under its member's run, its siblings' messages between or not", () => {
+    const rows = [
+      msg("user", [say("spin up sub agents to review each of them")]),
+      msg("assistant", [say("Starting two reviewers."), call("ta", "Task", "Review PR #295"), call("tb", "Task", "Review PR #296")], "claude"),
+      msg("assistant", [call("a1", "Bash", "gh pr diff 295")], "claude/review-pr-295"),
+      msg("assistant", [call("b1", "Bash", "gh pr diff 296")], "claude/review-pr-296"),
+      msg("assistant", [result("a1")]),
+      msg("assistant", [result("b1", "rate limit", true)]),
+      msg("assistant", [say("PR #295 looks good.")], "claude/review-pr-295"),
+      msg("assistant", [result("ta", "PR #295 looks good.")]),
+      msg("assistant", [result("tb", "stopped", true)]),
+      msg("assistant", [say("The #296 reviewer stopped; I restarted it."), call("tc", "Task", "Review PR #296")], "claude"),
+      msg("assistant", [call("c1", "Grep", "TODO")], "claude/review-pr-296-2", false),
+    ];
+    const out = buildTurns(rows, (_r): _r is Message => true);
+    const turns = out.filter(isTurn);
+    expect(turns.map((t) => `${t.agent}<${t.parent ?? ""}> ${t.msgs.length}`)).toEqual([
+      "claude<> 2",
+      "claude/review-pr-295<claude> 2",
+      "claude/review-pr-296<claude> 1",
+      "claude/review-pr-296-2<claude> 1",
+    ]);
+    // The results pair with their calls inside each block.
+    const b = turns[2]!;
+    expect(b.chunks).toHaveLength(1);
+    expect(b.chunks[0]!.k === "tool" && b.chunks[0]!.result?.is_error).toBe(true);
+    expect(turns[3]!.finished).toBe(false);
+    // The member's own words stay its own, in one run.
+    expect(turns[0]!.chunks.filter((c) => c.k === "text").map((c) => (c.k === "text" ? c.text : ""))).toEqual([
+      "Starting two reviewers.",
+      "The #296 reviewer stopped; I restarted it.",
+    ]);
+  });
+
+  test("the person's next message closes the blocks", () => {
+    const rows = [
+      msg("assistant", [say("one")], "claude/explore"),
+      msg("user", [say("and now?")]),
+      msg("assistant", [say("two")], "claude/explore"),
+    ];
+    expect(buildTurns(rows, (_r): _r is Message => true).filter(isTurn).map((t) => t.msgs.length)).toEqual([1, 1]);
+  });
+});

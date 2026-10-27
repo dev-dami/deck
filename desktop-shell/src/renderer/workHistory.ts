@@ -3,6 +3,7 @@ import { toMillis } from "@web/time";
 import { type ActionGroup, actionKind, actionStats, buildTurns, chunkOrigin, groupId, isNote, isTurn, pieces, type Turn, toolName } from "./actions";
 import type { BoardTask } from "./crew";
 import { askOf, diffStat, type FileAsk, samePath } from "./fileWork";
+import { subName, subParent } from "./lanes";
 import { type Bounds, boundsOf } from "./graph";
 import { messageText } from "./messages";
 
@@ -220,8 +221,10 @@ function threadEvents(
   }
   const rows = buildTurns<never>(t.messages, isMessage);
   const agents = new Map<string, string>();
+  // A CLI-native subagent ("<member>/<name>") is of its member's kind.
+  const kindFor = (a: string) => kindOf.get(a) ?? a.replace(/[-_]?\d+$/, "");
   for (const r of rows) {
-    if (isTurn(r) && !agents.has(r.agent)) agents.set(r.agent, kindOf.get(r.agent) ?? r.agent.replace(/[-_]?\d+$/, ""));
+    if (isTurn(r) && !agents.has(r.agent)) agents.set(r.agent, kindFor(r.parent ?? r.agent));
   }
   for (const l of t.roster) if (!agents.has(l.id)) agents.set(l.id, l.kind);
   const known = new Set(agents.keys());
@@ -574,6 +577,16 @@ export function buildHistory(
     for (const e of [...p.events].sort((a, b) => a.seq - b.seq)) if (!ids.includes(e.n.lane)) ids.push(e.n.lane);
     const rank = (id: string) => (id.endsWith("/you") ? 0 : id.endsWith("/tasks") ? 2 : 1);
     ids.sort((a, b) => rank(a) - rank(b));
+    // A member's CLI-native subagents' lanes follow its own, in order.
+    const laneAgent = (id: string) => id.slice(p.t.id.length + 1);
+    for (const id of [...ids]) {
+      const parent = subParent(laneAgent(id));
+      if (parent === null || !ids.includes(`${p.t.id}/${parent}`)) continue;
+      ids.splice(ids.indexOf(id), 1);
+      let at = ids.indexOf(`${p.t.id}/${parent}`) + 1;
+      while (at < ids.length && subParent(laneAgent(ids[at]!)) === parent) at++;
+      ids.splice(at, 0, id);
+    }
     for (const id of ids) {
       const ns = p.events.filter((e) => e.n.lane === id).map((e) => e.n);
       const h = Math.max(...ns.map((n) => n.h));
@@ -582,7 +595,7 @@ export function buildHistory(
       lanes.push({
         id,
         thread: p.t.id,
-        label: id.endsWith("/you") ? "you" : id.endsWith("/tasks") ? "tasks" : (agent ?? ""),
+        label: id.endsWith("/you") ? "you" : id.endsWith("/tasks") ? "tasks" : agent !== null && subParent(agent) !== null ? `↳ ${subName(agent)}` : (agent ?? ""),
         agent,
         agentKind: agent === null ? "" : (p.agents.get(agent) ?? ""),
         y,

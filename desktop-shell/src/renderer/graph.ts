@@ -1,6 +1,6 @@
 import type { AgentLine, ChangedFile } from "@web/protocol";
 import { agentRole } from "./agents";
-import { type Board, boardRows, type BoardTask, type Crew, type RunningTool } from "./crew";
+import { type Board, boardRows, type BoardTask, type Crew, type RunningTool, type SubStatus } from "./crew";
 import { type AskState, editors, type FileTrack, pendingAsks, samePath } from "./fileWork";
 import { agentLane, contextPct, type LaneStatus, leasePaths, YOU } from "./lanes";
 import type { Lease } from "./roomMeta";
@@ -56,6 +56,9 @@ export interface AgentGraphNode extends Placed {
   // What it runs right now, the first one shown on its card.
   tools: RunningTool[];
   leases: string[];
+  // A subagent its member's CLI started with its own tool (Claude Code's
+  // Task), under its member; null for every other agent.
+  sub: { status: SubStatus | ""; description: string; type: string; actions: number } | null;
 }
 
 export interface TaskGraphNode extends Placed {
@@ -314,6 +317,7 @@ export function buildGraph(input: GraphInput, dir: Direction = "across"): Graph 
       since: n?.since ?? 0,
       tools,
       leases: live.length > 0 ? live : leasePaths(n?.leases ?? ""),
+      sub: n?.native === true ? { status: n.subStatus, description: n.description, type: n.subagentType, actions: n.actions } : null,
     };
     nodes.set(id, a);
     byName.set(name, a);
@@ -984,16 +988,19 @@ export function chooseDirection(across: Bounds, down: Bounds, w: number, h: numb
   return scale(down) > scale(across) * 1.15 ? "down" : "across";
 }
 
-// What the canvas's legend counts.
-export function graphSummary(g: Graph): { agents: number; working: number; tasks: number; done: number; files: number } {
+// What the canvas's legend counts: the agents, and apart from them the
+// subagents their CLIs started on their own (subagents).
+export function graphSummary(g: Graph): { agents: number; subagents: number; working: number; tasks: number; done: number; files: number } {
   let agents = 0;
+  let subagents = 0;
   let working = 0;
   let tasks = 0;
   let done = 0;
   let files = 0;
   for (const n of g.nodes) {
     if (n.kind === "agent") {
-      agents++;
+      if (n.sub !== null) subagents++;
+      else agents++;
       if (n.status === "working") working++;
     } else if (n.kind === "task") {
       tasks++;
@@ -1001,7 +1008,7 @@ export function graphSummary(g: Graph): { agents: number; working: number; tasks
     } else if (n.kind === "file") files += n.glob ? 0 : 1;
     else if (n.kind === "fold") files += n.paths.length;
   }
-  return { agents, working, tasks, done, files };
+  return { agents, subagents, working, tasks, done, files };
 }
 
 // Only the person: nothing to map yet.
