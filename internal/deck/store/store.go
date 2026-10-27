@@ -297,6 +297,8 @@ const (
 // message text lives in Event.Text.
 type Entry struct {
 	agent.Event
+	// TurnID links explicit findings to the same turn during history replay.
+	TurnID  string   `json:"turn_id,omitempty"`
 	Type    string   `json:"type,omitempty"`
 	Speaker string   `json:"speaker,omitempty"`
 	To      []string `json:"to,omitempty"` // member ids
@@ -957,6 +959,7 @@ func decodeEntry(line []byte, whole bool) (Entry, bool) {
 // Limits, LimitHit, Raw), which is most of the bytes of a log and none of what an
 // index of it needs. The fields and their JSON names are Entry's.
 type entryHead struct {
+	TurnID    string     `json:"turn_id,omitempty"`
 	AgentID   string     `json:",omitempty"`
 	Time      time.Time  `json:",omitzero"`
 	Kind      agent.Kind `json:",omitempty"`
@@ -982,8 +985,9 @@ type entryHead struct {
 
 func (h entryHead) entry() Entry {
 	return Entry{
-		Event: agent.Event{AgentID: h.AgentID, Time: h.Time, Kind: h.Kind, Text: h.Text, Delta: h.Delta, SessionID: h.SessionID},
-		Type:  h.Type, Speaker: h.Speaker, To: h.To, Via: h.Via, Held: h.Held, ID: h.ID, Images: h.Images,
+		TurnID: h.TurnID,
+		Event:  agent.Event{AgentID: h.AgentID, Time: h.Time, Kind: h.Kind, Text: h.Text, Delta: h.Delta, SessionID: h.SessionID},
+		Type:   h.Type, Speaker: h.Speaker, To: h.To, Via: h.Via, Held: h.Held, ID: h.ID, Images: h.Images,
 		Steer: h.Steer, Ref: h.Ref, Old: h.Old, Snap: h.Snap, Files: h.Files, Task: h.Task, TaskID: h.TaskID,
 	}
 }

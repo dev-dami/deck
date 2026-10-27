@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"strings"
 )
@@ -26,6 +27,10 @@ const (
 // "search" for the search tool. isErr marks a result the agent should see as
 // a failed call.
 type Executor func(agentID, op string, args json.RawMessage) (text string, isErr bool)
+
+// ResultExecutor additionally supports images. Text-only executors remain
+// usable through SetExecutor; the session uses this path for browser ops.
+type ResultExecutor func(ctx context.Context, agentID, op string, args json.RawMessage) OpResult
 
 // ExecInput is the input of an execute call. Args may be absent when an
 // agent put the op's arguments next to "op" instead of under "args".

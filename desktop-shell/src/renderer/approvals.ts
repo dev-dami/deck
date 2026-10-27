@@ -45,6 +45,7 @@ export function groupApprovals(
 export function approvalSummary(a: Approval): string {
   if (a.kind === "command" && a.command !== undefined && a.command !== "") return a.command;
   if (a.kind === "edit" && a.path !== undefined && a.path !== "") return a.path;
+  if (a.kind === "browser_origin" && a.origin !== undefined && a.origin !== "") return a.origin;
   return a.description;
 }
 

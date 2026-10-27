@@ -2,8 +2,9 @@ import { describeError, Store } from "@web/controller";
 import type { ChangedFile, Decision, Image, Mode, ModelChoice, QuestionAnswer, RaceEntrant, ServerEvent, ServerInfo, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import { applyTheme, type ThemeTarget } from "@web/theme";
+import { LiveStore } from "./live";
 import { ProjectApi } from "./project";
-import type { DeckBridge, EngineStop, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
+import type { BrowserActionResponse, BrowserCommand, DeckBridge, EngineStop, HighlightActionRequest, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
 import type { DeckClient } from "./client";
 import { getPrefs } from "./prefs";
 import type { Profile, ProfileScope } from "./profiles";
@@ -13,11 +14,15 @@ import {
   type ImageBytes,
   type SearchHit,
   toApprovals,
+  toBrowserActionResponse,
+  toBrowserState,
   toCapabilities,
   toChanges,
   toEvent,
   toFileList,
   toFiles,
+  toHighlightItem,
+  toHighlights,
   toImage,
   toMessages,
   toModels,
@@ -66,6 +71,7 @@ export class RpcDeckClient implements DeckClient {
 
   readonly project: ProjectApi;
   readonly rooms = new RoomMetaStore();
+  readonly live = new LiveStore();
 
   constructor(
     private readonly bridge: DeckBridge,
@@ -155,6 +161,10 @@ export class RpcDeckClient implements DeckClient {
         }
         if (e.seq <= this.seq) return;
         this.seq = e.seq;
+        if (e.k === "live") {
+          this.live.apply(e.live);
+          return;
+        }
         if (e.room !== undefined) this.rooms.apply(e.room);
         if (e.k === "event") this.apply(e.event);
         return;
@@ -251,6 +261,35 @@ export class RpcDeckClient implements DeckClient {
     ]);
     if (msgs !== null) this.loadedPage(sessionId, msgs, true);
     if (queue !== null) this.store.dispatch({ type: "queue.loaded", sessionId, items: toQueue(queue) });
+    await this.loadLive(sessionId);
+  }
+
+  async loadLive(sessionId: string): Promise<void> {
+    const stamp = this.live.browserStamp(sessionId);
+    const [hl, br] = await Promise.all([
+      this.serves("Highlights") ? this.call("Highlights", { session_id: sessionId }, true) : null,
+      this.serves("BrowserState") ? this.call("BrowserState", { session_id: sessionId }, true) : null,
+    ]);
+    if (hl !== null) this.live.loadHighlights(sessionId, toHighlights(hl));
+    const state = br === null ? null : toBrowserState(br);
+    if (state !== null) this.live.loadBrowser(sessionId, state.tabs, state.available, stamp);
+  }
+
+  async highlightAction(sessionId: string, action: Omit<HighlightActionRequest, "session_id">): Promise<boolean> {
+    const r = await this.optional("HighlightAction", { session_id: sessionId, ...action });
+    if (r === null) return false;
+    const item = toHighlightItem(r);
+    if (item !== null) this.live.applyItem(item);
+    return true;
+  }
+
+  async browserAction(sessionId: string, command: BrowserCommand): Promise<BrowserActionResponse | null> {
+    const stamp = this.live.browserStamp(sessionId);
+    const r = await this.optional("BrowserAction", { session_id: sessionId, command });
+    const res = r === null ? null : toBrowserActionResponse(r);
+    // A closed tab is gone; its delta says so, and a late answer must not bring it back.
+    if (res?.tab != null && command.action !== "close") this.live.applyTab(res.tab, stamp);
+    return res;
   }
 
   private loadedPage(sessionId: string, r: unknown, latest: boolean): boolean {
@@ -308,6 +347,7 @@ export class RpcDeckClient implements DeckClient {
     if ((await this.call("DeleteSession", { session_id: id })) === null) return false;
     const s = this.state.sessions.find((x) => x.id === id);
     if (s !== undefined) this.store.dispatch({ type: "event", event: { e: "session.deleted", p: s } });
+    this.live.drop(id);
     return true;
   }
 

@@ -13,6 +13,7 @@ import {
   Eye,
   FilePen,
   FileText,
+  Flag,
   Globe,
   ImageIcon,
   type IconType,
@@ -113,6 +114,8 @@ export interface RoomActions extends PlanActions {
   editMessage(m: Message): void;
   retry(replyId: string): void;
   continueRun(): void;
+  // Pins the message to Highlights; absent when the Deck does not serve them.
+  pinMessage?(m: Message): void;
 }
 
 type TextChunk = Extract<Chunk, { k: "text" }>;
@@ -370,6 +373,11 @@ function MessageActions({ m, actions, last }: { m: Message; actions: RoomActions
           onClick={() => actions.editMessage(m)}
         >
           <Pencil />
+        </Button>
+      )}
+      {m.role === "assistant" && actions.pinMessage !== undefined && (
+        <Button variant="ghost-muted" size="icon-xs" className={icon} aria-label="Pin to Highlights" title="Pin to Highlights" onClick={() => actions.pinMessage?.(m)}>
+          <Flag />
         </Button>
       )}
       {reply && (

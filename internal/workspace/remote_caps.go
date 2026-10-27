@@ -20,6 +20,7 @@ import (
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/dev-dami/deck/internal/usage"
+	"github.com/dev-dami/deck/pkg/rpc/deckv1"
 )
 
 // Permission modes as the remote control names them.
@@ -33,12 +34,14 @@ const (
 type DeckChangeKind string
 
 const (
-	ChangeBusy   DeckChangeKind = "busy"
-	ChangeQueue  DeckChangeKind = "queue"
-	ChangeMode   DeckChangeKind = "mode"
-	ChangeRoster DeckChangeKind = "roster"
-	ChangeNotice DeckChangeKind = "notice"
-	ChangeLease  DeckChangeKind = "lease"
+	ChangeBusy      DeckChangeKind = "busy"
+	ChangeQueue     DeckChangeKind = "queue"
+	ChangeMode      DeckChangeKind = "mode"
+	ChangeRoster    DeckChangeKind = "roster"
+	ChangeNotice    DeckChangeKind = "notice"
+	ChangeLease     DeckChangeKind = "lease"
+	ChangeHighlight DeckChangeKind = "highlight"
+	ChangeSummary   DeckChangeKind = "summary"
 	// ChangeQuestion: an agent asks the person (Question); ChangeQuestionGone:
 	// it was answered (Answered), declined or withdrawn.
 	ChangeQuestion     DeckChangeKind = "question"
@@ -49,6 +52,8 @@ const (
 // store: the TUI learns of these through its program, the remote through
 // SubscribeDeck. Every change names its session.
 type DeckChange struct {
+	Highlight *deckv1.HighlightItem
+	Summary   *deckv1.AgentSummary
 	Kind      DeckChangeKind
 	SessionID string
 	Busy      bool

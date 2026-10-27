@@ -8,6 +8,8 @@ import {
   FileDiff,
   FileText,
   GitBranch,
+  Globe,
+  Flag,
   Graph,
   ListChecks,
   type IconType,
@@ -36,6 +38,8 @@ import { gateMentionables } from "../teamGate";
 import { PANELS, type Panel } from "../ui";
 import { usePickerSource } from "./AgentPicker";
 import { AgentsTree } from "./AgentsTree";
+import { BrowserPanel } from "./BrowserPanel";
+import { RoomHighlights } from "./HighlightsPanel";
 import { PreviewPanel } from "./PreviewPanel";
 import { CommentsBadge, DiffToggles, DiffView, SplitAllowed } from "./DiffView";
 import { SideChat } from "./SideChat";
@@ -59,6 +63,8 @@ const TAB_ICONS: Record<Panel, IconType> = {
   changes: FileDiff,
   graph: Graph,
   tasks: ListChecks,
+  highlights: Flag,
+  browser: Globe,
   work: GitBranch,
   agents: Network,
   side: MessageCircleQuestion,
@@ -323,7 +329,9 @@ export function RightPanel({
   const named = gateMentionables(usePrefs().team, useMentionables(c, null));
   const ports = useOpenPorts(c.project);
   const tabs = PANELS.filter(
-    (p) => (p.panel !== "preview" || panel === "preview" || ports.length > 0) && (p.panel !== "work" || panel === "work" || serves(c, "Work")),
+    (p) => (p.panel !== "preview" || panel === "preview" || ports.length > 0) && (p.panel !== "work" || panel === "work" || serves(c, "Work")) &&
+      (p.panel !== "highlights" || panel === "highlights" || serves(c, "Highlights")) &&
+      (p.panel !== "browser" || panel === "browser" || (serves(c, "BrowserState") && bridge.browserView !== undefined)),
   );
   // A file the graph opened, until the Shell hands one itself.
   const [asked, setAsked] = useState<string | null>(null);
@@ -450,6 +458,10 @@ export function RightPanel({
             onError={onError}
             onInfo={onInfo}
           />
+        ) : panel === "browser" ? (
+          <BrowserPanel key={open.id} c={c} bridge={bridge} sid={open.id} onError={onError} />
+        ) : panel === "highlights" ? (
+          <RoomHighlights key={open.id} c={c} sid={open.id} projectKey={projectKey} approvals={state.approvals.filter((a) => a.session_id === open.id)} onOpenTasks={() => onPanel("tasks")} />
         ) : panel === "work" ? (
           c.project === undefined || !serves(c, "Work") ? (
             <Empty>Worktrees and capsules show for a project on this computer.</Empty>

@@ -13,7 +13,9 @@ import type {
   RpcResult,
   RpcStreamEvent,
   StartError,
+  BrowserStateResponse,
 } from "../shared/bridge";
+import type { Browser, BrowserRequest } from "./browser";
 
 // The deck binary on PATH, or null.
 export function findOnPath(name: string, env: NodeJS.ProcessEnv = process.env): string | null {
@@ -83,6 +85,7 @@ export interface Handshake {
   token: string;
   pid: number;
   version: string;
+  browser_capability?: string;
 }
 
 export function parseHandshake(line: string): Handshake | null {
@@ -99,7 +102,9 @@ export function parseHandshake(line: string): Handshake | null {
   if (typeof sock !== "string" || !isAbsolute(sock)) return null;
   if (typeof token !== "string" || !/^[0-9a-f]{32,128}$/.test(token)) return null;
   if (!Number.isInteger(pid) || typeof version !== "string") return null;
-  return { v: 1, sock, token, pid: pid as number, version };
+  const capability = h["browser_capability"];
+  if (capability !== undefined && (typeof capability !== "string" || !/^[0-9a-f]{32,128}$/.test(capability))) return null;
+  return { v: 1, sock, token, pid: pid as number, version, ...(typeof capability === "string" ? { browser_capability: capability } : {}) };
 }
 
 // The header pkg/rpc checks on every call (TokenHeader).
@@ -169,6 +174,7 @@ interface Started {
   child: ChildProcess;
   client: DeckClient;
   tail: Tail;
+  browserCapability: string;
 }
 
 interface Open {
@@ -178,6 +184,15 @@ interface Open {
   stream: grpc.ClientReadableStream<unknown> | null;
   // The output stream of each terminal the window watches.
   terms: Map<string, grpc.ClientReadableStream<unknown>>;
+  browserCapability: string;
+  browser: Controller | null;
+}
+
+interface Controller {
+  ref: { id: string; generation: string; desktop_capability: string } | null;
+  stream: grpc.ClientReadableStream<unknown> | null;
+  seen: Set<string>;
+  updates: Promise<void>;
 }
 
 type Emit = (id: string, ev: RpcStreamEvent) => void;
@@ -236,6 +251,103 @@ function readHandshake(child: ChildProcess, tail: Tail, onLine: (line: string) =
 // end stdin, and Deck stops. The token stays here; the window gets the
 // LocalDeck, call results and events, none of which carry it.
 export class RpcDecks {
+  private browser: Browser | null = null;
+
+  setBrowser(browser: Browser): void {
+    this.browser = browser;
+  }
+
+  directory(id: string): string | null {
+    return this.open_.get(id)?.deck.dir ?? null;
+  }
+
+  async browserUpdate(id: string, state: BrowserStateResponse): Promise<void> {
+    const o = this.open_.get(id),
+      control = o?.browser,
+      ref = control?.ref;
+    if (o === undefined || ref == null) return;
+    // Loading/title events can arrive faster than RPC round trips. Serialize
+    // them so an older snapshot cannot overwrite a newer takeover state.
+    const update = control!.updates.then(async () => {
+      if (o.browser !== control) return;
+      const out = await unary(o.client, "BrowserUpdate", { controller: ref, state });
+      if (!out.ok) throw new Error(out.message);
+    });
+    control!.updates = update.catch(() => {});
+    await update;
+  }
+
+  async browserOrigin(id: string, request: BrowserRequest, origin: string): Promise<boolean> {
+    const o = this.open_.get(id),
+      ref = o?.browser?.ref;
+    if (o === undefined || ref == null) return false;
+    const out = await unary(
+      o.client,
+      "BrowserOrigin",
+      {
+        controller: ref,
+        request_id: request.id,
+        session_id: request.session_id,
+        tab_id: "tab_id" in request.command ? request.command.tab_id : "",
+        origin,
+      },
+      12 * 60 * 60 * 1000,
+    );
+    return out.ok && (out.value as { allow?: boolean }).allow === true;
+  }
+
+  private startBrowser(id: string, o: Open): void {
+    if (this.browser === null || !o.browserCapability || o.browser !== null) return;
+    const control: Controller = { ref: null, stream: null, seen: new Set(), updates: Promise.resolve() };
+    o.browser = control;
+    const mine = () => this.open_.get(id) === o && o.browser === control;
+    void unary(o.client, "RegisterBrowserController", { desktop_capability: o.browserCapability }).then((out) => {
+      if (!out.ok || !mine()) {
+        if (mine()) o.browser = null;
+        return;
+      }
+      const c = out.value as { id: string; generation: string };
+      control.ref = { id: c.id, generation: c.generation, desktop_capability: o.browserCapability };
+      const stream = (o.client["Events"] as (r: object) => grpc.ClientReadableStream<unknown>).call(o.client, {
+        browser_controller: control.ref,
+      });
+      control.stream = stream;
+      stream.on("data", (event: { browser_request?: BrowserRequest }) => {
+        const r = event.browser_request;
+        if (!mine() || r === undefined || r.controller_id !== c.id || r.controller_generation !== c.generation) return;
+        if (r.cancelled) {
+          this.browser?.cancel(r.id);
+          return;
+        }
+        if (control.seen.has(r.id)) return;
+        control.seen.add(r.id);
+        void this.browser!.execute(id, r)
+          .then(async (response) => {
+            if (!mine()) return;
+            // Publish the full state before resolving open/close, including the
+            // empty final-tab update. BrowserState is immediately consistent.
+            await this.browserUpdate(id, this.browser!.state(id, r.session_id));
+            if (mine()) await unary(o.client, "BrowserResult", { controller: control.ref, id: r.id, response });
+          })
+          .catch(() => {
+            this.stopBrowser(id, o);
+          });
+      });
+      const ended = () => {
+        if (mine()) this.stopBrowser(id, o);
+      };
+      stream.on("error", ended);
+      stream.on("end", ended);
+    });
+  }
+
+  private stopBrowser(id: string, o: Open): void {
+    const c = o.browser;
+    o.browser = null;
+    c?.stream?.cancel();
+    this.browser?.closeDeck(id);
+    if (c?.ref != null) void unary(o.client, "UnregisterBrowserController", c.ref, 5000);
+  }
   private readonly open_ = new Map<string, Open>();
   // Decks whose process ended by itself, until restart() or close().
   private readonly stopped_ = new Map<string, LocalDeck>();
@@ -324,14 +436,16 @@ export class RpcDecks {
       project: typeof project === "string" && project !== "" ? project : dir,
       version: hs.version,
     };
-    return { ok: true, deck, child, client, tail };
+    return { ok: true, deck, child, client, tail, browserCapability: hs.browser_capability ?? "" };
   }
 
   // Keeps a started Deck. When its process ends by itself, the window gets
   // "stopped" with the last stderr lines, and the project stays open.
-  private keep({ deck, child, client, tail }: Started): LocalDeck {
+  private keep({ deck, child, client, tail, browserCapability }: Started): LocalDeck {
     const id = deck.id;
-    this.open_.set(id, { deck, child, client, stream: null, terms: new Map() });
+    const o: Open = { deck, child, client, stream: null, terms: new Map(), browserCapability, browser: null };
+    this.open_.set(id, o);
+    this.startBrowser(id, o);
     child.on("exit", (code) => {
       if (this.open_.get(id)?.child !== child) return;
       this.log(code === 0 ? "info" : "warn", `deck (${deck.dir}) stopped (exit ${code})`);
@@ -355,7 +469,7 @@ export class RpcDecks {
   call(id: string, method: RpcMethod, request: Record<string, unknown>): Promise<RpcResult> {
     const o = this.open_.get(id);
     if (o === undefined) return Promise.resolve({ ok: false, code: grpc.status.UNAVAILABLE, message: "That Deck is closed." });
-    return unary(o.client, method, request);
+    return unary(o.client, method, request, method === "BrowserAction" ? 12 * 60 * 60 * 1000 : 120_000);
   }
 
   subscribe(id: string, epoch: string, seq: number): void {
@@ -365,6 +479,7 @@ export class RpcDecks {
       if (!this.stopped_.has(id)) this.emit(id, { type: "exit", message: "That Deck is closed." });
       return;
     }
+    this.startBrowser(id, o);
     o.stream?.cancel();
     const stream = (o.client["Events"] as (req: object) => grpc.ClientReadableStream<unknown>).call(o.client, {
       epoch,
@@ -394,10 +509,9 @@ export class RpcDecks {
       return;
     }
     o.terms.get(term)?.cancel();
-    const stream = (o.client["TerminalOutput"] as (req: object) => grpc.ClientReadableStream<unknown>).call(
-      o.client,
-      { terminal_id: term },
-    );
+    const stream = (o.client["TerminalOutput"] as (req: object) => grpc.ClientReadableStream<unknown>).call(o.client, {
+      terminal_id: term,
+    });
     o.terms.set(term, stream);
     const mine = () => o.terms.get(term) === stream;
     stream.on("data", (chunk: { data?: Uint8Array; exited?: boolean; exit_code?: number }) => {
@@ -428,7 +542,8 @@ export class RpcDecks {
   // Ends the event streams and keeps the Decks: a reloaded window opens
   // its folder again and gets the same Deck.
   cancelStreams(): void {
-    for (const o of this.open_.values()) {
+    for (const [id, o] of this.open_) {
+      this.stopBrowser(id, o);
       const s = o.stream;
       o.stream = null;
       s?.cancel();
@@ -456,6 +571,7 @@ export class RpcDecks {
   private drop(id: string): void {
     const o = this.open_.get(id);
     if (o === undefined) return;
+    this.stopBrowser(id, o);
     this.open_.delete(id);
     const s = o.stream;
     o.stream = null;

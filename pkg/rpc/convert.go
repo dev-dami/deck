@@ -79,7 +79,7 @@ func toApproval(a wire.Approval) *deckv1.Approval {
 	out := &deckv1.Approval{
 		Id: a.ID, SessionId: a.SessionID, ToolCallId: a.ToolCallID, Agent: a.Agent, Kind: a.Kind,
 		Description: a.Description, Command: a.Command, Path: a.Path, Diff: a.Diff, Raw: a.Raw,
-		CreatedAt: ms(a.CreatedAt),
+		CreatedAt: ms(a.CreatedAt), Origin: a.Origin,
 	}
 	for _, q := range a.Questions {
 		pq := &deckv1.Question{Id: q.ID, Header: q.Header, Text: q.Text, MultiSelect: q.MultiSelect, Other: q.Other}

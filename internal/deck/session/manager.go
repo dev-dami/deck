@@ -135,6 +135,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dev-dami/deck/pkg/rpc/deckv1"
 	"math"
 	"os"
 	"slices"
@@ -309,7 +310,9 @@ type Manager struct {
 	threads map[string]*thread
 	torder  []*thread
 	// activity reports a thread's running commands (deck.jobs); see SetActivity.
-	activity func(threadID string) string
+	activity        func(threadID string) string
+	browserAction   func(context.Context, string, string, *deckv1.BrowserCommand) *deckv1.BrowserActionResponse
+	highlightAction HighlightExecutor
 	// team is the peer link for the peers.* ops; see SetTeam.
 	team hub.Team
 	// profiles reads the named agents for a thread's folder; see
@@ -357,7 +360,7 @@ func NewManager(adapters map[string]agent.Adapter, st *store.Store, cfg config.C
 	m.w = newWriter()
 	if o.Hub != nil {
 		o.Hub.SetThreadReader(m.readThread)
-		o.Hub.SetExecutor(m.execOp)
+		o.Hub.SetResultExecutor(m.execOpResult)
 		// A hub that also serves the CLIs' pre-edit hooks (Claude's).
 		if g, ok := o.Hub.(interface {
 			SetEditGate(func(agentID string, paths []string) string)
@@ -1621,6 +1624,7 @@ func (m *Manager) pump(a *agentState) {
 }
 
 func (m *Manager) onEvent(a *agentState, ev agent.Event) {
+	turnID := a.highlightTurn()
 	if ev.AgentID == "" {
 		ev.AgentID = a.id
 	}
@@ -1666,7 +1670,7 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	// restart about the process: they are not part of the thread's log.
 	if !ev.Delta && ev.Kind != agent.KindLimits && ev.Kind != agent.KindRestarting && ev.Kind != agent.KindRestarted {
 		t.mu.Lock()
-		m.appendLocked(t, store.Entry{Event: ev})
+		m.appendLocked(t, store.Entry{Event: ev, TurnID: turnID})
 		t.mu.Unlock()
 	}
 	if res.metaDirty {
@@ -1682,7 +1686,7 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 	for _, id := range res.gone {
 		m.emit(ApprovalGoneMsg{ThreadID: t.id, AgentID: a.id, ID: id})
 	}
-	m.emit(EventMsg{Event: ev, ThreadID: t.id})
+	m.emit(EventMsg{Event: ev, ThreadID: t.id, TurnID: turnID})
 	switch {
 	case ev.Kind == agent.KindLimits && ev.Limits != nil:
 		m.setLimits(a.kind, *ev.Limits)

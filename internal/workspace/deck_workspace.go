@@ -20,6 +20,7 @@ import (
 	"github.com/dev-dami/deck/internal/config"
 	deckagent "github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/engine"
+	"github.com/dev-dami/deck/internal/deck/highlights"
 	decks "github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/notify"
@@ -37,8 +38,9 @@ import (
 // history and config still come from the embedded AppWorkspace.
 type DeckWorkspace struct {
 	*AppWorkspace
-	eng   *engine.Engine
-	cfgMu sync.Mutex // guards eng.Config, which the settings and model pickers change
+	eng        *engine.Engine
+	highlights *highlights.Store
+	cfgMu      sync.Mutex // guards eng.Config, which the settings and model pickers change
 
 	mu      sync.Mutex
 	threads map[string]string // Deck session id -> Deck thread id
@@ -132,6 +134,7 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 	w.loadEntries()
 	// The agents' deck.jobs op reads what this workspace's activity tracker sees.
 	eng.Manager.SetActivity(w.activityText)
+	eng.Manager.SetHighlights(w.runHighlights)
 	go w.pump()
 	// Agents that waited for a plan limit when Deck stopped wait again, or
 	// resume if their reset has passed; scheduled messages are kept.
@@ -476,7 +479,7 @@ func (w *DeckWorkspace) pump() {
 				w.onUserMessage(m) // AgentRun stored the message already
 				continue
 			}
-			w.onEvent(m.ThreadID, m.Event)
+			w.onEvent(m.ThreadID, m.Event, m.TurnID)
 		case decks.ApprovalMsg:
 			w.onApproval(m)
 		case decks.ApprovalGoneMsg:
@@ -595,7 +598,7 @@ func (w *DeckWorkspace) syncTitle(threadID string) {
 	}
 }
 
-func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
+func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event, turnIDs ...string) {
 	if ev.Kind == deckagent.KindLimits {
 		if ev.AgentID != "" {
 			w.onLimits(ev) // about the account: no turn, no message
@@ -688,6 +691,9 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event) {
 			return
 		}
 		t.msg, t.open, t.streamed, t.thinking = m, true, false, false
+		if len(turnIDs) > 0 {
+			w.bindHighlightTurn(sid, ev.AgentID, turnIDs[0], m.ID)
+		}
 	}
 	// Text after a tool call starts a new message, as a new step does.
 	fresh := func() {

@@ -1,7 +1,7 @@
 import { applyAgentChip } from "@web/composer";
 import type { Session } from "@web/protocol";
 import { sessionMode } from "@web/state";
-import { Ellipsis, FileDiff, Folder, Hourglass, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "./icons";
+import { Ellipsis, FileDiff, Flag, Folder, Hourglass, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "./icons";
 import { type ComponentProps, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
 import type { EngineStop } from "../../shared/bridge";
 import { type DeckClient, serves } from "../client";
@@ -21,7 +21,10 @@ import type { Panel } from "../ui";
 import { usePickerSource } from "./AgentPicker";
 import { RaceBuilder } from "./RaceBuilder";
 import { AgentsStrip } from "./AgentsStrip";
+import { highlightCounts, stripItem } from "../highlights";
+import { useRoomLive } from "../live";
 import { Composer } from "./Composer";
+import { HighlightsPill, HighlightsStrip } from "./HighlightsPill";
 import { EngineStopped } from "./EngineStopped";
 import { BranchPicker, type Git } from "./Git";
 import { WorkGraph } from "./graph/WorkGraph";
@@ -77,6 +80,7 @@ function LiveTimeline({
 function MoreMenu({
   busy,
   queued,
+  highlights,
   onStop,
   onPanel,
   onSettings,
@@ -84,6 +88,8 @@ function MoreMenu({
 }: {
   busy: boolean;
   queued: number;
+  // Open Highlights, or null for a Deck that does not serve them.
+  highlights: number | null;
   onStop: () => void;
   onPanel: (p: Panel) => void;
   onSettings: () => void;
@@ -133,6 +139,12 @@ function MoreMenu({
       <MenuItem onClick={run(() => onPanel("side"))}>
         <MessageCircleQuestion /> <span className="flex-1">Side chat</span>
       </MenuItem>
+      {highlights !== null && (
+        <MenuItem onClick={run(() => onPanel("highlights"))}>
+          <Flag /> <span className="flex-1">Highlights</span>
+          {highlights > 0 && <Badge variant="muted">{highlights}</Badge>}
+        </MenuItem>
+      )}
       <MenuItem onClick={run(() => onPanel("tasks"))}>
         <ListChecks /> <span className="flex-1">Tasks</span>
         {queued > 0 && <Badge variant="muted">{queued}</Badge>}
@@ -260,6 +272,8 @@ export function Room({
   const pending = sid === null ? [] : state.approvals.filter((a) => a.session_id === sid);
   // What the person answered the room's last question, shown on the composer.
   const [answered, setAnswered] = useState<AnsweredRecord | null>(null);
+  const live = useRoomLive(c, sid);
+  const strip = serves(c, "Highlights") ? stripItem(live.items) : null;
   const queued = sid === null ? 0 : (state.queue[sid]?.length ?? 0);
   const imagesOn = state.server?.features.includes("images") ?? false;
   const online = state.link === "online";
@@ -457,8 +471,10 @@ export function Room({
                     answered={answered}
                     setAnswered={setAnswered}
                   />
+                ) : limits?.waits.some((w) => w.sessionId === open.id) === true ? (
+                  <WaitBanner api={api} sessionId={open.id} onError={toast} />
                 ) : (
-                  limits?.waits.some((w) => w.sessionId === open.id) === true && <WaitBanner api={api} sessionId={open.id} onError={toast} />
+                  strip === null ? false : <HighlightsStrip item={strip} onOpen={() => onPanel("highlights")} />
                 )
               }
               toolbar={
@@ -473,7 +489,8 @@ export function Room({
                       </span>
                     )}
                   </span>
-                  <MoreMenu busy={open.busy} queued={queued} onStop={room.stop} onPanel={(p) => onPanel(p)} onSettings={onSettings} sendAt={sendAt} />
+                  <HighlightsPill c={c} sid={open.id} onOpen={() => onPanel("highlights")} />
+                  <MoreMenu busy={open.busy} queued={queued} highlights={serves(c, "Highlights") ? highlightCounts(live.items).open : null} onStop={room.stop} onPanel={(p) => onPanel(p)} onSettings={onSettings} sendAt={sendAt} />
                 </>
               }
               strip={

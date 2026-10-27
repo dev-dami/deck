@@ -4,6 +4,7 @@ package approve
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -74,7 +75,7 @@ type Broker struct {
 
 	messages chan agent.Message
 	reader   func(agentID string) string
-	exec     agent.Executor
+	exec     agent.ResultExecutor
 	gate     func(agentID string, paths []string) string // gate.go
 }
 
@@ -122,6 +123,18 @@ func (b *Broker) SetThreadReader(f func(agentID string) string) {
 // SetExecutor installs the provider of search and of every execute op other
 // than thread.send and thread.read, which the broker answers itself.
 func (b *Broker) SetExecutor(f agent.Executor) {
+	if f == nil {
+		b.SetResultExecutor(nil)
+		return
+	}
+	b.SetResultExecutor(func(_ context.Context, agentID, op string, args json.RawMessage) agent.OpResult {
+		text, isErr := f(agentID, op, args)
+		return agent.TextResult(text, isErr)
+	})
+}
+
+// SetResultExecutor installs the provider of text and image tool results.
+func (b *Broker) SetResultExecutor(f agent.ResultExecutor) {
 	b.mu.Lock()
 	b.exec = f
 	b.mu.Unlock()
@@ -247,10 +260,7 @@ type wireResponse struct {
 }
 
 // wireReply answers exec requests.
-type wireReply struct {
-	Text    string `json:"text"`
-	IsError bool   `json:"is_error,omitempty"`
-}
+type wireReply = agent.OpResult
 
 // handleExec answers the search tool and one execute op. thread.send and
 // thread.read are answered here; everything else goes to the executor,
@@ -283,6 +293,9 @@ func (b *Broker) handleExec(req wireRequest, gone <-chan struct{}) wireReply {
 	default:
 		r = b.runExec(req, gone)
 	}
+	if err := r.ValidateImages(); err != nil {
+		r = agent.TextResult("Invalid image result: "+err.Error(), true)
+	}
 	r.Text = b.scrub(r.Text)
 	return r
 }
@@ -295,17 +308,19 @@ func (b *Broker) runExec(req wireRequest, gone <-chan struct{}) wireReply {
 		return wireReply{Text: "Deck's search and execute are not available in this session.", IsError: true}
 	}
 	done := make(chan wireReply, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	go func() {
-		text, isErr := f(req.AgentID, req.Op, req.Args)
-		done <- wireReply{Text: text, IsError: isErr}
+		done <- f(ctx, req.AgentID, req.Op, req.Args)
 	}()
-	timer := time.NewTimer(execTimeout)
+	timeout := opTimeout(req.Op)
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case r := <-done:
 		return r
 	case <-timer.C:
-		return wireReply{Text: req.Op + " took too long; Deck gave up after " + execTimeout.String(), IsError: true}
+		return wireReply{Text: req.Op + " took too long; Deck gave up after " + timeout.String(), IsError: true}
 	case <-b.done:
 		return wireReply{Text: "Deck is shutting down", IsError: true}
 	case <-gone:

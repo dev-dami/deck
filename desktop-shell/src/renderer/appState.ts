@@ -314,6 +314,11 @@ export function useRooms(): Record<string, Record<string, RoomStatus>> {
   return useSyncExternalStore(subscribe, roomsBySource);
 }
 
+// The room's status, for what the room is waiting on.
+export function useRoomStatus(key: string, sid: string): RoomStatus | undefined {
+  return useSyncExternalStore(subscribe, () => projectState(key).rooms[sid]);
+}
+
 export function useEngine(key: string): EngineStop | null {
   return useSyncExternalStore(subscribe, () => projectState(key).engine);
 }

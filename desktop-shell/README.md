@@ -27,6 +27,27 @@ default. Use **Pair with a Deck** for a Deck on
 another machine, or when Deck already runs in a terminal and you want to
 watch it from the window too.
 
+## Agent browser and Highlights
+
+For a project opened locally, the room's **Browser** tab embeds Chromium for
+testing local apps and using websites. Agents can open their own tabs, read
+accessibility snapshots, click, type and capture images. The first visit to
+a website requires approval; localhost pages are available directly. A tab's
+toolbar shows who controls it. **Take control** cancels pending agent work
+and pauses agent actions, reads and captures. Use it to sign in yourself;
+**Release** lets agents observe and interact with the page again. Website
+sign-ins persist across app restarts. The existing **Preview** stays separate.
+The browser requires an attached local desktop; paired remote Decks do not
+provide it.
+
+Open **Highlights** from the composer pill or overflow menu. Agents publish
+explicit decisions, blockers and findings, and you can pin an agent message
+with its flag button. Source links return to the original message or task.
+Opening the panel clears unread indicators; **Resolve** and **Dismiss** are
+separate actions. The **Summary** tab contains explicit agent updates. The
+Needs you section also reads the room's existing approvals and blocked/error
+state. Highlights and summaries persist with the room.
+
 ## Run it
 
 You need Node 22 and Go (to build the engine).

@@ -21,11 +21,12 @@ const TokenHeader = "authorization"
 // Handshake is the one JSON line `deck serve --rpc` prints on stdout once
 // it is listening: where to dial and the token to present.
 type Handshake struct {
-	V       int    `json:"v"`
-	Sock    string `json:"sock"`
-	Token   string `json:"token"`
-	PID     int    `json:"pid"`
-	Version string `json:"version"`
+	V                 int    `json:"v"`
+	Sock              string `json:"sock"`
+	Token             string `json:"token"`
+	PID               int    `json:"pid"`
+	Version           string `json:"version"`
+	BrowserCapability string `json:"browser_capability,omitempty"`
 }
 
 // NewToken returns a random per-launch token.

@@ -55,6 +55,7 @@ describe("the approvals inbox", () => {
   test("summarizes the command, the path or the description", () => {
     expect(approvalSummary(approval("a", "s", "x", { command: "go test ./..." }))).toBe("go test ./...");
     expect(approvalSummary(approval("a", "s", "x", { kind: "edit", path: "a/b.go" }))).toBe("a/b.go");
+    expect(approvalSummary(approval("a", "s", "x", { kind: "browser_origin", origin: "https://example.com" }))).toBe("https://example.com");
     expect(approvalSummary(approval("a", "s", "x", { kind: "other" }))).toBe("Run a command");
   });
 

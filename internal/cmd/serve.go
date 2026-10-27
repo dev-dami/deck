@@ -316,7 +316,7 @@ func runServeRPC(cmd *cobra.Command) error {
 	g := srv.GRPC()
 	go func() { _ = g.Serve(l) }()
 
-	hs, _ := json.Marshal(rpc.Handshake{V: rpc.Protocol, Sock: sock, Token: token, PID: os.Getpid(), Version: version.Version})
+	hs, _ := json.Marshal(rpc.Handshake{V: rpc.Protocol, Sock: sock, Token: token, PID: os.Getpid(), Version: version.Version, BrowserCapability: srv.BrowserCapability()})
 	if _, err := cmd.OutOrStdout().Write(append(hs, '\n')); err != nil {
 		g.Stop()
 		return err

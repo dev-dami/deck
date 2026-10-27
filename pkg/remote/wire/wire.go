@@ -261,9 +261,10 @@ type Image struct {
 
 // Approval kinds (Approval.Kind).
 const (
-	ApprovalCommand = "command"
-	ApprovalEdit    = "edit"
-	ApprovalOther   = "other"
+	ApprovalCommand       = "command"
+	ApprovalEdit          = "edit"
+	ApprovalOther         = "other"
+	ApprovalBrowserOrigin = "browser_origin"
 	// ApprovalQuestion is an agent asking the person something (Questions).
 	// It is answered with DecisionAnswer and Answers, or declined with
 	// DecisionDeny; allow does not answer it.
@@ -286,6 +287,7 @@ type Approval struct {
 	ToolCallID       string `json:"tool_call_id,omitempty"`
 	Agent            string `json:"agent"`
 	Kind             string `json:"kind"`
+	Origin           string `json:"origin,omitempty"` // browser_origin approval
 	Description      string `json:"description"`
 	Command          string `json:"command,omitempty"`
 	CommandTruncated bool   `json:"command_truncated,omitempty"`

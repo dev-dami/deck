@@ -1,6 +1,7 @@
 package fake
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +20,7 @@ type Hub struct {
 
 	mu     sync.Mutex
 	reader func(string) string
-	exec   agent.Executor
+	exec   agent.ResultExecutor
 	seq    int64
 }
 
@@ -40,6 +41,17 @@ func (h *Hub) SetThreadReader(f func(agentID string) string) {
 
 // SetExecutor installs the provider of search and the other execute ops.
 func (h *Hub) SetExecutor(f agent.Executor) {
+	if f == nil {
+		h.SetResultExecutor(nil)
+		return
+	}
+	h.SetResultExecutor(func(_ context.Context, agentID, op string, args json.RawMessage) agent.OpResult {
+		text, isErr := f(agentID, op, args)
+		return agent.TextResult(text, isErr)
+	})
+}
+
+func (h *Hub) SetResultExecutor(f agent.ResultExecutor) {
 	h.mu.Lock()
 	h.exec = f
 	h.mu.Unlock()
@@ -47,13 +59,18 @@ func (h *Hub) SetExecutor(f agent.Executor) {
 
 // Exec answers an execute call (op "search" for the search tool) for agentID.
 func (h *Hub) Exec(agentID, op string, args json.RawMessage) (string, bool) {
+	r := h.ExecResult(agentID, op, args)
+	return r.Text, r.IsError
+}
+
+func (h *Hub) ExecResult(agentID, op string, args json.RawMessage) agent.OpResult {
 	h.mu.Lock()
 	f := h.exec
 	h.mu.Unlock()
 	if f == nil {
-		return "no executor", true
+		return agent.TextResult("no executor", true)
 	}
-	return f(agentID, op, args)
+	return f(context.Background(), agentID, op, args)
 }
 
 // ReadThread answers a thread.read call for agentID ("" when no reader is set).

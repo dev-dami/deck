@@ -26,6 +26,8 @@ import (
 // that message.
 type EventMsg struct {
 	agent.Event
+	// TurnID is stamped on live agent events before a later turn can start.
+	TurnID   string
 	ThreadID string
 	To       []string // user messages only
 	EntryID  string   // user messages only: id for Manager.Edit
@@ -114,7 +116,7 @@ func msgFor(threadID string, e store.Entry) tea.Msg {
 		if e.Delta {
 			return nil
 		}
-		return EventMsg{Event: e.Event, ThreadID: threadID}
+		return EventMsg{Event: e.Event, ThreadID: threadID, TurnID: e.TurnID}
 	case store.EntryUser:
 		ev := e.Event
 		ev.Kind, ev.AgentID = agent.KindUserText, ""
