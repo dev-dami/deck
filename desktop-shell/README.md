@@ -331,11 +331,19 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   seconds that something still listens there; when it stops, the chip goes.
   Click a chip to open the page in the Preview tab of the side panel; its
   arrow also has Open in browser and Copy URL. The palette has "Preview
-  :3000" for each open port. The Preview tab has Back, Forward, Reload, Open
-  in browser, an address bar (the host is fixed, the path is yours) and a
-  width: Responsive, 390, 768 or 1280 (a width wider than the panel zooms
-  the page out). A terminal that runs a dev server has a Stop button, which
-  sends Ctrl+C. Ports show for a project on this computer only.
+  :3000" for each open port. A terminal that runs a dev server has a Stop
+  button, which sends Ctrl+C. Ports show for a project on this computer only.
+- **The browser (Preview tab).** The Preview tab is a small browser in the
+  app's Chromium: a strip of tabs, Back, Forward, Reload, one address field
+  (Ctrl or Cmd+L, or "Browser: go to address" in the palette), a hairline
+  that runs while a page loads, and a button for your own browser. The dev
+  server opens first; type any http(s) address to go elsewhere. The tabs of
+  the agents of the room are in the same strip, each with the agent's mark
+  and hue, and what it is doing shows on the tab for a moment
+  (`@claude · clicking e12`). Under the address, an agent's tab has a bar
+  with Take over: the agent's next op on it is refused until you hand it
+  back. Every agent of every kind uses this one browser (see "The browser
+  and agents" below).
 - **Usage.** Tokens and cost per day, agent and model, the plan's limits,
   a heat map of the last 20 weeks and when you work.
 - **Settings** (the gear, or Ctrl+,): send key, Yolo confirmation, folding,
@@ -474,8 +482,13 @@ renderer (React, sandboxed)                  main process (Node)                
   `windowState.ts` keeps `window.json`; `log.ts` writes the log and keeps
   the app alive after an error; `update.ts` runs electron-updater;
   `launch.ts` reads deck:// links and folder arguments. `preview.ts` probes
-  ports and owns the Preview tab's view. Menu commands, links, updates and
-  the preview's state reach the window as events, like the rpc stream.
+  ports and holds the rules of the browser's pages (where a tab may go, the
+  locked session, the guard on navigations). `browser.ts` is the shared
+  browser (tabs, ops of agents, limits), `tabs.ts` its tab bookkeeping and
+  discard policy, `pageControl.ts` what an agent does to a page over the
+  DevTools protocol, `outline.ts` the page as text, and `browserView.ts` the
+  Electron pages (`WebContentsView`s). Menu commands, links, updates and
+  the browser's tabs reach the window as events, like the rpc stream.
 - `src/preload/preload.ts` exposes `window.deck`: the host methods over IPC,
   the socket, rpc, menu, link, update and notification-click event streams,
   and the path of a
@@ -601,22 +614,64 @@ For both transports:
   shows Deck's notifications itself (`notify.ts`), from a title, a body and
   a tag that `host.ts` checks.
 
-Preview:
+The browser and agents:
 
-- **A view of its own.** The Preview tab's page is not part of the window.
-  Main shows it in a separate `WebContentsView` with its own session (the
-  `preview` partition, kept in memory only), `sandbox`, `contextIsolation`,
-  no `nodeIntegration`, `webSecurity` and no preload. It has no bridge and
-  no IPC: main accepts a host call only from the window's own page, and a
-  test checks that a call from the view is refused. The page runs with its
-  own headers; the window's CSP does not change.
-- **Loopback only.** The view loads only `http://localhost:<port>` or
-  `http://127.0.0.1:<port>`, for a port that main's own probe found open.
-  Main checks each navigation, redirect and new window: another http(s)
-  page opens in the system browser, and anything else is refused. The
-  view's session denies every permission and cancels every download.
-- **It ends with the room.** Closing the room or the project, a reload and
-  quitting the app destroy the view and its page.
+- **One Chromium, a tab for each agent.** The pages of the Preview tab are
+  `WebContentsView`s of the window, so every agent of every kind (Claude
+  Code, Codex, OpenCode, Antigravity, Pi), in any number, shares the
+  Chromium process tree Electron already runs. An agent costs a tab, not a
+  process. A Deck's tabs share one session (the `browser-<deck>` partition,
+  in memory only: logins last until the app quits), so a login you made in
+  your tab is there for the agent's, and another Deck's tabs do not see it.
+- **Cheap by default.** A page is made when its tab is first used. A page
+  nobody looks at is a hidden view of one pixel (Chromium slows its timers
+  and animation, and its audio is muted); it is shown, still one pixel, only
+  while an agent works on it, with the viewport set to a 1280x800 window.
+  At most 8 pages are alive: past that the least recently used idle page is
+  discarded (its address and title stay in the strip) and made again, at the
+  same address, when its agent or you use it. A page nobody touched for 5
+  minutes is discarded too. An agent keeps at most 6 tabs (the least
+  recently used closes when it opens another), the browser 40. Ops on a tab
+  run one at a time, and snapshots and pictures take turns, two at once.
+  `scripts/browser-bench.cjs` measures it with `app.getAppMetrics()`.
+- **How an agent sees a page.** `browser.snapshot` returns the accessibility
+  tree as an outline: one element a line, indented by the landmark, form or
+  list it is in, and a ref (`[e12]`) on everything an agent can act on:
+
+      [t2] Sign in  https://example.com/login
+      h1 "Welcome back"
+      form "Sign in"
+        textbox [e2] "Email" = "ada@example.com" required
+        textbox [e3] "Password" = (hidden)
+        checkbox [e4] "Remember me" unchecked
+        button [e5] "Sign in"
+      link [e6] "Forgot password?" -> /reset
+
+  `browser.click`, `type`, `select` and `scroll` take a ref. A ref names
+  the element until the page loads a new document or the element leaves the
+  page; the op then fails and says to snapshot again. Passwords and card
+  fields are never shown, and what an agent types is never logged: its row
+  in the conversation shows the call without the text.
+- **What a page may do.** It gets nothing of the app: `sandbox`,
+  `contextIsolation`, no `nodeIntegration`, `webSecurity`, no preload and no
+  IPC (main takes a host call only from the window's own page). Its session
+  denies every permission and cancels every download; a dialog is closed and
+  reported to the agent. The person's tab goes to any http(s) page. An
+  agent's tab goes to pages of this computer (a dev server), to the site it
+  is on, and to sites you approved; `file:`, `chrome:`, `devtools:` and the
+  like never load. Where the page tries to go anywhere else, main stops it
+  and the agent's answer says so; `browser.open` asks you.
+- **The room's mode applies.** In ask mode the first `browser.open` of a
+  site asks you (one answer holds for the room's agents), and every
+  `browser.eval` asks. In yolo nothing asks. In plan mode an agent can read
+  pages but not click, type, press, choose or run script.
+- **The channel.** The browser lives here and the engine is another process,
+  so the engine sends each op to the window over gRPC: the app opens
+  `BrowserHost` on each local Deck's socket and answers every request with
+  `BrowserReply` (proto/deck/v1). With no window attached the op fails with
+  "no browser attached: open Deck's desktop app". Only a Deck this app
+  started on this computer has the channel; a paired Deck (WebSocket) has
+  none, so an agent on another machine cannot drive this browser.
 
 Open a folder (rpc):
 

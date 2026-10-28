@@ -180,12 +180,9 @@ class ElectronPage implements BrowserPage {
     this.view.setVisible(t.visible);
     wc.setBackgroundThrottling(t.throttling);
     wc.setAudioMuted(t.muted);
-    try {
-      // Only an offscreen page takes a frame rate; the others ignore it.
-      wc.setFrameRate(t.frameRate);
-    } catch {
-      // Not offscreen.
-    }
+    // Only an offscreen page takes a frame rate; the others are slowed by
+    // being hidden, throttled and muted.
+    if (wc.isOffscreen()) wc.setFrameRate(t.frameRate);
   }
 
   destroy(): void {

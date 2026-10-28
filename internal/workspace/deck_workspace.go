@@ -154,6 +154,9 @@ func (w *DeckWorkspace) Shutdown() {
 // agents' browser.* ops use.
 func (w *DeckWorkspace) Browser() *browser.Broker { return w.eng.Manager.Browser() }
 
+// pkg/rpc serves the browser channel to a workspace that has one.
+var _ interface{ Browser() *browser.Broker } = (*DeckWorkspace)(nil)
+
 // Engine is the Deck engine the workspace drives.
 func (w *DeckWorkspace) Engine() *engine.Engine { return w.eng }
 

@@ -233,9 +233,14 @@ func (b *Broker) Complete(hostID string, r Result) bool {
 	return true
 }
 
-// Origin is the scheme://host[:port] of an http(s) URL, lower-cased.
+// Origin is the scheme://host[:port] of an http(s) URL, lower-cased and
+// without the scheme's default port: what the browser calls its origin.
 func Origin(u *url.URL) string {
-	return u.Scheme + "://" + strings.ToLower(u.Host)
+	host := strings.ToLower(u.Host)
+	if p := u.Port(); (p == "80" && u.Scheme == "http") || (p == "443" && u.Scheme == "https") {
+		host = strings.TrimSuffix(host, ":"+p)
+	}
+	return u.Scheme + "://" + host
 }
 
 // CheckURL parses raw as a page an agent may ask for: an http or https URL

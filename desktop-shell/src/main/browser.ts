@@ -316,7 +316,7 @@ export class Browser {
       return { text: "The op's arguments are not a JSON object.", isError: true };
     }
     const owner: BrowserOwner = { agent: r.agent, name: r.name, kind: r.kind };
-    const limit = Math.max(1000, r.timeout_ms || 30_000);
+    const limit = Math.min(60_000, Math.max(1000, r.timeout_ms || 30_000));
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const run = this.run(deck, owner, r, args);

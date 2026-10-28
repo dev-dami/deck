@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"encoding/json"
+	"regexp"
 	"strings"
 )
 
@@ -20,7 +21,22 @@ const (
 	// OpThreadRead is the execute op that reads the shared thread; it
 	// replaces the old read_thread tool.
 	OpThreadRead = "thread.read"
+	// OpBrowserType types text into a page of the shared browser. What it
+	// types may be a password, so no row, log or briefing shows it.
+	OpBrowserType = "browser.type"
 )
+
+var typedText = regexp.MustCompile(`("text"\s*:\s*)"(?:[^"\\]|\\.)*"`)
+
+// MaskTyped hides the text of a browser.type call in an execute call's
+// input (or its arguments): the call is shown as typing into a field, not as
+// what was typed. Any other input comes back as it is.
+func MaskTyped(input json.RawMessage) json.RawMessage {
+	if !bytes.Contains(input, []byte(OpBrowserType)) {
+		return input
+	}
+	return typedText.ReplaceAll(input, []byte(`${1}"•••"`))
+}
 
 // Executor answers Deck's search and execute MCP tools for one agent. op is
 // "search" for the search tool. isErr marks a result the agent should see as
@@ -83,6 +99,9 @@ func DeckToolDisplay(tool string, input json.RawMessage) (name, title string, ok
 			return "read", "shared thread", true
 		}
 		title := in.Op
+		if in.Op == OpBrowserType {
+			in.Args = typedText.ReplaceAll(in.Args, []byte(`${1}"•••"`))
+		}
 		if args := compact(in.Args); args != "" {
 			title += " " + args
 		}

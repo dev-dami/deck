@@ -258,8 +258,20 @@ func TestLoopbackAndOrigin(t *testing.T) {
 			t.Errorf("Loopback(%s) = %v", in, !want)
 		}
 	}
-	u, _ := CheckURL("https://Example.com:8443/a/b?c")
-	if got := Origin(u); got != "https://example.com:8443" {
-		t.Errorf("Origin = %s", got)
+	for in, want := range map[string]string{
+		"https://Example.com:8443/a/b?c": "https://example.com:8443",
+		"https://example.com:443/":       "https://example.com",
+		"http://example.com:80/x":        "http://example.com",
+		"http://example.com:443/":        "http://example.com:443",
+		"https://[::1]:443/":             "https://[::1]",
+		"http://localhost:3000":          "http://localhost:3000",
+	} {
+		u, err := CheckURL(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := Origin(u); got != want {
+			t.Errorf("Origin(%s) = %s, want %s", in, got, want)
+		}
 	}
 }

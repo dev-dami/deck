@@ -30,6 +30,10 @@ func TestDeckToolDisplay(t *testing.T) {
 		{"execute", `{"op":"thread.read"}`, "read", "shared thread", true},
 		{"execute", `{"op":"skills.read","args":{"name":"pdf"}}`, "deck", `skills.read {"name":"pdf"}`, true},
 		{"search", `{"query":"git log"}`, "deck", "search git log", true},
+		// What is typed into a page may be a password: the row never shows it.
+		{"execute", `{"op":"browser.type","args":{"ref":"e3","text":"hunter2 \"x\"","submit":true}}`, "deck", `browser.type {"ref":"e3","text":"•••","submit":true}`, true},
+		{"execute", `{"op":"browser.type","ref":"e3","text":"hunter2"}`, "deck", `browser.type {"ref":"e3","text":"•••"}`, true},
+		{"execute", `{"op":"browser.click","args":{"ref":"e3"}}`, "deck", `browser.click {"ref":"e3"}`, true},
 		{"Bash", `{}`, "", "", false},
 	} {
 		n, title, ok := DeckToolDisplay(c.tool, json.RawMessage(c.input))
