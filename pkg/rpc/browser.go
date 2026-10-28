@@ -7,6 +7,7 @@ import (
 	pb "github.com/dev-dami/deck/pkg/rpc/deckv1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func (s *Server) withBrowser(ws any) {
@@ -17,9 +18,28 @@ func (s *Server) withBrowser(ws any) {
 	s.browserWorkspace = w
 	s.browserCapability = NewToken()
 	s.browser = browser.New(s.browserCapability, w.ApproveBrowserOrigin, func(state *pb.BrowserStateResponse) {
-		s.feed.publish(&pb.Event{SessionId: state.SessionId, Kind: &pb.Event_BrowserChanged{BrowserChanged: state}})
+		s.feed.publish(&pb.Event{SessionId: state.SessionId, Kind: &pb.Event_BrowserChanged{BrowserChanged: s.forUser(state)}})
 	})
 	w.InstallBrowser(s.browser.Action)
+}
+
+// browserNamer is a workspace that knows the name each agent is listed under.
+type browserNamer interface {
+	BrowserAgentName(sid, id string) string
+}
+
+// forUser is the state as the person's window shows it: the broker and the
+// desktop controller know a tab's owner by agent id, the roster by name.
+func (s *Server) forUser(state *pb.BrowserStateResponse) *pb.BrowserStateResponse {
+	namer, ok := s.browserWorkspace.(browserNamer)
+	if !ok || state == nil {
+		return state
+	}
+	out := proto.Clone(state).(*pb.BrowserStateResponse)
+	for _, t := range out.Tabs {
+		t.Owner = namer.BrowserAgentName(out.SessionId, t.Owner)
+	}
+	return out
 }
 
 // BrowserCapability is emitted only on the private parent stdout handshake.
@@ -32,7 +52,7 @@ func (s *Server) BrowserState(ctx context.Context, r *pb.SessionRef) (*pb.Browse
 	if err := s.browserWorkspace.CheckBrowserSession(ctx, r.GetSessionId()); err != nil {
 		return nil, roomFail(err)
 	}
-	return s.browser.State(r.SessionId), nil
+	return s.forUser(s.browser.State(r.SessionId)), nil
 }
 func (s *Server) BrowserAction(ctx context.Context, r *pb.BrowserActionRequest) (*pb.BrowserActionResponse, error) {
 	if s.browser == nil {
@@ -41,7 +61,13 @@ func (s *Server) BrowserAction(ctx context.Context, r *pb.BrowserActionRequest) 
 	if err := s.browserWorkspace.CheckBrowserSession(ctx, r.GetSessionId()); err != nil {
 		return nil, roomFail(err)
 	}
-	return s.browser.Action(ctx, r.SessionId, "", r.Command), nil
+	out := s.browser.Action(ctx, r.SessionId, "", r.Command)
+	if out.Tab != nil {
+		shown := s.forUser(&pb.BrowserStateResponse{SessionId: r.SessionId, Tabs: []*pb.BrowserTab{out.Tab}})
+		out = proto.Clone(out).(*pb.BrowserActionResponse)
+		out.Tab = shown.Tabs[0]
+	}
+	return out, nil
 }
 func (s *Server) RegisterBrowserController(_ context.Context, r *pb.RegisterBrowserControllerRequest) (*pb.BrowserController, error) {
 	if s.browser == nil {

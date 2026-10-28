@@ -210,15 +210,30 @@ message Empty {}
 // BrowserCommand names a bounded operation, never arbitrary JavaScript
 // or CDP. Agent identity/session are derived from the authenticated caller.
 message BrowserCommand {
-  // open, navigate, back, forward, reload, snapshot, click, type,
-  // screenshot, close, handoff, take_control, release_control.
+  // open, navigate, back, forward, reload, snapshot, click, type, select,
+  // press, scroll, wait, screenshot, close, handoff, take_control,
+  // release_control.
   string action = 1;
   string tab_id = 2;
   string url = 3;
   string element_ref = 4;
   string snapshot_version = 5;
+  // type: what to enter. select: the option's label or value.
   string text = 6;
   string target_agent = 7;
+  // press: a key name or combination, like Enter or Control+A.
+  string key = 8;
+  // scroll: "top" or "bottom"; or dy pixels; or element_ref into view.
+  string to = 9;
+  int32 dy = 10;
+  // wait: until the page shows text, until it has loaded, or for ms.
+  // timeout_s bounds the first two.
+  bool load = 11;
+  int32 ms = 12;
+  int32 timeout_s = 13;
+  // snapshot: only what can be acted on, and at most max_lines lines.
+  bool interactive = 14;
+  int32 max_lines = 15;
 }
 
 message BrowserActionRequest {
@@ -241,6 +256,10 @@ message BrowserTab {
   bool can_forward = 8;
   bool user_in_control = 9;
   string snapshot_version = 10;
+  // What the owning agent is doing now ("clicking e12"), for a moment after.
+  string activity = 11;
+  // The page was let go to save memory; it comes back at the same address.
+  bool asleep = 12;
 }
 
 message BrowserStateResponse {

@@ -1665,6 +1665,13 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		t.mu.Unlock()
 		end.text, end.interrupted = a.takeFinal()
 	}
+	// What an agent typed into a page may be a password: the thread's rows,
+	// log and briefings show the call without it.
+	if ev.Tool != nil && len(ev.Tool.Input) > 0 {
+		t := *ev.Tool
+		t.Input = agent.MaskTyped(t.Input)
+		ev.Tool = &t
+	}
 	res := a.apply(ev)
 	// Plan limits are about the account, not the conversation, and a
 	// restart about the process: they are not part of the thread's log.

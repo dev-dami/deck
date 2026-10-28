@@ -21,7 +21,67 @@ const (
 	// OpThreadRead is the execute op that reads the shared thread; it
 	// replaces the old read_thread tool.
 	OpThreadRead = "thread.read"
+	// OpBrowserType types text into a page of the shared browser. What it
+	// types may be a password, so no row, log or briefing shows it.
+	OpBrowserType = "browser.type"
 )
+
+const typedMask = `"•••"`
+
+// MaskTyped hides the text of a browser.type call in an execute call's
+// input: the call is shown as typing into a field, not as what was typed.
+// The JSON is read, not matched as bytes, so an escaped key or op name
+// ("text") is masked too. Any other input comes back as it is.
+func MaskTyped(input json.RawMessage) json.RawMessage {
+	if ParseExecInput(input).Op != OpBrowserType {
+		return input
+	}
+	out, ok := maskText(input, true)
+	if !ok {
+		return json.RawMessage(`{"op":"` + OpBrowserType + `","args":{"text":` + typedMask + `}}`)
+	}
+	return out
+}
+
+// maskText rewrites a JSON object with its "text" members masked, in key
+// order, and its "args" object too when deep is set. ok is false when raw is
+// not a JSON object.
+func maskText(raw json.RawMessage, deep bool) (json.RawMessage, bool) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return nil, false
+	}
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for n := 0; dec.More(); n++ {
+		kt, err := dec.Token()
+		key, isKey := kt.(string)
+		if err != nil || !isKey {
+			return nil, false
+		}
+		var v json.RawMessage
+		if dec.Decode(&v) != nil {
+			return nil, false
+		}
+		switch {
+		case key == "text":
+			v = json.RawMessage(typedMask)
+		case deep && key == "args":
+			if inner, ok := maskText(v, false); ok {
+				v = inner
+			}
+		}
+		if n > 0 {
+			b.WriteByte(',')
+		}
+		k, _ := json.Marshal(key)
+		b.Write(k)
+		b.WriteByte(':')
+		b.Write(v)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), true
+}
 
 // Executor answers Deck's search and execute MCP tools for one agent. op is
 // "search" for the search tool. isErr marks a result the agent should see as
@@ -88,6 +148,11 @@ func DeckToolDisplay(tool string, input json.RawMessage) (name, title string, ok
 			return "read", "shared thread", true
 		}
 		title := in.Op
+		if in.Op == OpBrowserType {
+			if masked, ok := maskText(in.Args, false); ok {
+				in.Args = masked
+			}
+		}
 		if args := compact(in.Args); args != "" {
 			title += " " + args
 		}

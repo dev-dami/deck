@@ -34,6 +34,13 @@ app
           return;
         }
         res.setHeader("Content-Type", "text/html");
+        if (req.url === "/lab") {
+          // A page for a tab nobody looks at: keys, a choice, a long page, a dialog.
+          res.end(
+            `<!doctype html><title>Lab</title><input id="keys" aria-label="Keys" onkeydown="document.title='key:'+event.key"><select aria-label="Country"><option>France<option>Chile<option>Spain</select><button id="ask" onclick="document.title='answer:'+confirm('Delete it?')">Ask</button><div style="height:3000px">tall</div><button id="bottom" onclick="document.title='bottom'">Bottom</button>`,
+          );
+          return;
+        }
         if (req.url === "/final") {
           submissions.push({ method: req.method, body: Buffer.concat(chunks).toString() });
           res.end("<!doctype html><title>POST preserved</title>Signed-in fixture");
@@ -93,7 +100,7 @@ app
       assert.ok(snap.result.text.includes("UNTRUSTED PAGE CONTENT"));
       assert.ok(!snap.result.text.includes("never-return-this"));
       const ref = (role, name) => {
-        const match = snap.result.text.match(new RegExp(`\\[(e\\d+)\\] ${role}: ${name}`));
+        const match = snap.result.text.match(new RegExp(`${role} \\[(e\\d+)\\] "${name}"`));
         assert.ok(match, `Missing ${role} ${name}: ${snap.result.text}`);
         return match[1];
       };
@@ -107,7 +114,7 @@ app
       assert.equal(typed.error_code, "", typed.result?.text);
       assert.equal(await pages[0].executeJavaScript('document.querySelector("#message").value'), "Deck native browser");
       const fresh = await run({ action: "snapshot", tab_id: tab });
-      const button = fresh.result.text.match(/\[(e\d+)\] button: Submit/)[1];
+      const button = fresh.result.text.match(/button \[(e\d+)\] "Submit"/)[1];
       const clicked = await run({ action: "click", tab_id: tab, element_ref: button, snapshot_version: fresh.tab.snapshot_version });
       assert.equal(clicked.error_code, "", clicked.result?.text);
       for (let n = 0; n < 20 && (await pages[0].executeJavaScript("document.title")) !== "Clicked"; n++)
@@ -118,7 +125,7 @@ app
       const image = await run({ action: "screenshot", tab_id: tab });
       assert.equal(image.error_code, "", image.result?.text);
       const png = image.result.images[0].data;
-      assert.equal(Buffer.from(png).subarray(1, 4).toString(), "PNG");
+      assert.equal(Buffer.from(png).subarray(0, 3).toString("hex"), "ffd8ff");
       assert.ok(png.length > 100);
       if (process.env.DECK_BROWSER_SCREENSHOT) writeFileSync(process.env.DECK_BROWSER_SCREENSHOT, png);
       assert.equal((await run({ action: "take_control", tab_id: tab }, "")).tab.user_in_control, true);
@@ -131,7 +138,7 @@ app
       const authOrigin = `http://auth.browser.test:${fixture.address().port}`;
       assert.equal((await run({ action: "navigate", tab_id: tab, url: appOrigin })).error_code, "");
       const form = await run({ action: "snapshot", tab_id: tab });
-      const signIn = form.result.text.match(/\[(e\d+)\] button: Sign in/)[1];
+      const signIn = form.result.text.match(/button \[(e\d+)\] "Sign in"/)[1];
       assert.equal(
         (await run({ action: "click", tab_id: tab, element_ref: signIn, snapshot_version: form.tab.snapshot_version })).error_code,
         "",
@@ -141,6 +148,42 @@ app
       assert.equal(await pages[0].executeJavaScript("document.title"), "POST preserved");
       assert.deepEqual(submissions, [{ method: "POST", body: "proof=fixture-post-body" }]);
       assert.deepEqual(origins, [appOrigin, authOrigin]);
+      // A second tab that is never shown: Chromium does not deliver input to a
+      // page hidden since it was made, so the browser shows it, one pixel, while it works.
+      const lab = (await run({ action: "open", url: `${url}lab` })).tab.id;
+      const labView = pages[1];
+      assert.equal((await run({ action: "wait", tab_id: lab, load: true })).error_code, "");
+      const labSnap = await run({ action: "snapshot", tab_id: lab, interactive: true });
+      const labRef = (re) => labSnap.result.text.match(re)[1];
+      const labVersion = () => labSnap.tab.snapshot_version;
+      const field = labRef(/textbox \[(e\d+)\] "Keys"/);
+      const clk = await run({ action: "click", tab_id: lab, element_ref: field, snapshot_version: labVersion() });
+      assert.equal(clk.error_code, "", clk.result?.text);
+      assert.equal((await run({ action: "press", tab_id: lab, key: "ArrowDown" })).error_code, "");
+      assert.equal(await labView.executeJavaScript("document.title"), "key:ArrowDown");
+      const pick = await run({ action: "snapshot", tab_id: lab, interactive: true });
+      const choose = await run({ action: "select", tab_id: lab, element_ref: pick.result.text.match(/(?:select|combobox) \[(e\d+)\] "Country"/)[1], snapshot_version: pick.tab.snapshot_version, text: "Chile" });
+      assert.equal(choose.error_code, "", choose.result?.text);
+      assert.equal(await labView.executeJavaScript('document.querySelector("select").value'), "Chile");
+      assert.equal((await run({ action: "scroll", tab_id: lab, to: "bottom" })).error_code, "");
+      assert.ok((await labView.executeJavaScript("scrollY")) > 1000);
+      const down = await run({ action: "scroll", tab_id: lab, dy: -500 });
+      assert.equal(down.error_code, "", down.result?.text);
+      const after = await run({ action: "snapshot", tab_id: lab, interactive: true });
+      const bottom = after.result.text.match(/button \[(e\d+)\] "Bottom"/)[1];
+      const clip = await run({ action: "screenshot", tab_id: lab, element_ref: bottom, snapshot_version: after.tab.snapshot_version });
+      assert.equal(clip.error_code, "", clip.result?.text);
+      assert.equal(Buffer.from(clip.result.images[0].data).subarray(0, 3).toString("hex"), "ffd8ff");
+      // A dialog is answered for the agent, who hears of it.
+      const ask = after.result.text.match(/button \[(e\d+)\] "Ask"/)[1];
+      const dialog = await run({ action: "click", tab_id: lab, element_ref: ask, snapshot_version: after.tab.snapshot_version });
+      assert.equal(dialog.error_code, "", dialog.result?.text);
+      assert.match(dialog.result.text, /opened a dialog \(confirm\)/);
+      assert.equal(await labView.executeJavaScript("document.title"), "answer:false");
+      // A moment after its agent stopped, the page is hidden again.
+      const native = win.contentView.children[1];
+      for (let n = 0; n < 60 && native.getVisible(); n++) await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.equal(native.getVisible(), false);
       browser.closeDeck("deck");
       assert.equal(browser.state("deck", "room").tabs.length, 0);
       assert.equal((await profile.cookies.get({ url, name: "browser-smoke" }))[0].value, "persisted");
@@ -155,11 +198,14 @@ app
             "CDP type",
             "CDP click",
             "stale handle",
-            "PNG capture",
+            "JPEG capture",
             "takeover pauses reads and captures",
             "explicit release",
             "persistent cookie store",
             "origin approval preserves POST across a 307 redirect",
+            "keys, choice, scroll, element picture and click on a tab never shown",
+            "a dialog is answered and reported",
+            "the working page is hidden again",
             "final-tab cleanup",
           ],
           screenshot_bytes: png.length,

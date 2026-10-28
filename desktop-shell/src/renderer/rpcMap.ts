@@ -239,6 +239,8 @@ function toTab(v: unknown): BrowserTab | null {
     can_forward: v["can_forward"] === true,
     user_in_control: v["user_in_control"] === true,
     snapshot_version: s(v["snapshot_version"]),
+    activity: s(v["activity"]),
+    asleep: v["asleep"] === true,
   };
 }
 

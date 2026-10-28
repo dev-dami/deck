@@ -38,3 +38,16 @@ func (w *DeckWorkspace) ApproveBrowserOrigin(ctx context.Context, sid, owner, or
 	ok, err := w.app.Permissions.Request(ctx, permission.CreatePermissionRequest{SessionID: sid, ToolName: "browser_origin", Description: owner + " wants to open " + origin + " in the agent browser", Action: "browse", Path: origin, Params: string(raw), MustAsk: true})
 	return err == nil && ok
 }
+
+// BrowserAgentName is the name the roster lists agent id under, which is what
+// the window shows for the tab's owner; an id nobody has stays as it is.
+func (w *DeckWorkspace) BrowserAgentName(sid, id string) string {
+	if th, ok := w.threadOf(sid); ok {
+		for _, a := range th.Members {
+			if a.ID == id {
+				return a.Name
+			}
+		}
+	}
+	return id
+}

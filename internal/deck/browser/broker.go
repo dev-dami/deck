@@ -24,6 +24,10 @@ import (
 
 const ExecutionTimeout = 30 * time.Second
 
+// MaxTabs is the most tabs one room's state may list. Most of them can be
+// asleep (their pages let go), so this bounds bookkeeping, not memory.
+const MaxTabs = 40
+
 var ErrController = errors.New("invalid or disconnected desktop browser controller")
 
 type pending struct {
@@ -147,7 +151,7 @@ func (b *Broker) Update(r *pb.BrowserControllerRef, s *pb.BrowserStateResponse) 
 	if !b.valid(r) || !b.attached {
 		return ErrController
 	}
-	if s == nil || s.SessionId == "" || len(s.Tabs) > 16 {
+	if s == nil || s.SessionId == "" || len(s.Tabs) > MaxTabs {
 		return errors.New("invalid browser state")
 	}
 	seen := map[string]bool{}
@@ -501,10 +505,27 @@ func validCommand(c *pb.BrowserCommand, owner string) bool {
 	switch c.Action {
 	case "navigate":
 		return c.Url != ""
-	case "back", "forward", "reload", "snapshot", "screenshot", "close":
+	case "back", "forward", "reload", "close":
 		return true
-	case "click", "type":
+	case "snapshot":
+		return c.MaxLines >= 0 && c.MaxLines <= 2000
+	case "screenshot":
+		// An element to clip to is named with the snapshot it comes from.
+		return (c.ElementRef == "") == (c.SnapshotVersion == "")
+	case "click", "type", "select":
 		return c.ElementRef != "" && c.SnapshotVersion != ""
+	case "press":
+		return c.Key != "" && len(c.Key) <= 40
+	case "scroll":
+		if c.Dy > 50000 || c.Dy < -50000 || (c.To != "" && c.To != "top" && c.To != "bottom") {
+			return false
+		}
+		if c.ElementRef != "" {
+			return c.SnapshotVersion != ""
+		}
+		return c.To != "" || c.Dy != 0
+	case "wait":
+		return (c.Text != "" || c.Load || c.Ms > 0) && c.Ms >= 0 && c.Ms <= 10000 && c.TimeoutS >= 0 && c.TimeoutS <= 25
 	case "handoff":
 		return c.TargetAgent != "" && len(c.TargetAgent) <= 128
 	case "take_control", "release_control":

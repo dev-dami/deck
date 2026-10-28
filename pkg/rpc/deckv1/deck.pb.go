@@ -67,17 +67,32 @@ func (*Empty) Descriptor() ([]byte, []int) {
 // or CDP. Agent identity/session are derived from the authenticated caller.
 type BrowserCommand struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// open, navigate, back, forward, reload, snapshot, click, type,
-	// screenshot, close, handoff, take_control, release_control.
+	// open, navigate, back, forward, reload, snapshot, click, type, select,
+	// press, scroll, wait, screenshot, close, handoff, take_control,
+	// release_control.
 	Action          string `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
 	TabId           string `protobuf:"bytes,2,opt,name=tab_id,json=tabId,proto3" json:"tab_id,omitempty"`
 	Url             string `protobuf:"bytes,3,opt,name=url,proto3" json:"url,omitempty"`
 	ElementRef      string `protobuf:"bytes,4,opt,name=element_ref,json=elementRef,proto3" json:"element_ref,omitempty"`
 	SnapshotVersion string `protobuf:"bytes,5,opt,name=snapshot_version,json=snapshotVersion,proto3" json:"snapshot_version,omitempty"`
-	Text            string `protobuf:"bytes,6,opt,name=text,proto3" json:"text,omitempty"`
-	TargetAgent     string `protobuf:"bytes,7,opt,name=target_agent,json=targetAgent,proto3" json:"target_agent,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// type: what to enter. select: the option's label or value.
+	Text        string `protobuf:"bytes,6,opt,name=text,proto3" json:"text,omitempty"`
+	TargetAgent string `protobuf:"bytes,7,opt,name=target_agent,json=targetAgent,proto3" json:"target_agent,omitempty"`
+	// press: a key name or combination, like Enter or Control+A.
+	Key string `protobuf:"bytes,8,opt,name=key,proto3" json:"key,omitempty"`
+	// scroll: "top" or "bottom"; or dy pixels; or element_ref into view.
+	To string `protobuf:"bytes,9,opt,name=to,proto3" json:"to,omitempty"`
+	Dy int32  `protobuf:"varint,10,opt,name=dy,proto3" json:"dy,omitempty"`
+	// wait: until the page shows text, until it has loaded, or for ms.
+	// timeout_s bounds the first two.
+	Load     bool  `protobuf:"varint,11,opt,name=load,proto3" json:"load,omitempty"`
+	Ms       int32 `protobuf:"varint,12,opt,name=ms,proto3" json:"ms,omitempty"`
+	TimeoutS int32 `protobuf:"varint,13,opt,name=timeout_s,json=timeoutS,proto3" json:"timeout_s,omitempty"`
+	// snapshot: only what can be acted on, and at most max_lines lines.
+	Interactive   bool  `protobuf:"varint,14,opt,name=interactive,proto3" json:"interactive,omitempty"`
+	MaxLines      int32 `protobuf:"varint,15,opt,name=max_lines,json=maxLines,proto3" json:"max_lines,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BrowserCommand) Reset() {
@@ -159,6 +174,62 @@ func (x *BrowserCommand) GetTargetAgent() string {
 	return ""
 }
 
+func (x *BrowserCommand) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *BrowserCommand) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
+func (x *BrowserCommand) GetDy() int32 {
+	if x != nil {
+		return x.Dy
+	}
+	return 0
+}
+
+func (x *BrowserCommand) GetLoad() bool {
+	if x != nil {
+		return x.Load
+	}
+	return false
+}
+
+func (x *BrowserCommand) GetMs() int32 {
+	if x != nil {
+		return x.Ms
+	}
+	return 0
+}
+
+func (x *BrowserCommand) GetTimeoutS() int32 {
+	if x != nil {
+		return x.TimeoutS
+	}
+	return 0
+}
+
+func (x *BrowserCommand) GetInteractive() bool {
+	if x != nil {
+		return x.Interactive
+	}
+	return false
+}
+
+func (x *BrowserCommand) GetMaxLines() int32 {
+	if x != nil {
+		return x.MaxLines
+	}
+	return 0
+}
+
 type BrowserActionRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -227,8 +298,12 @@ type BrowserTab struct {
 	CanForward      bool                   `protobuf:"varint,8,opt,name=can_forward,json=canForward,proto3" json:"can_forward,omitempty"`
 	UserInControl   bool                   `protobuf:"varint,9,opt,name=user_in_control,json=userInControl,proto3" json:"user_in_control,omitempty"`
 	SnapshotVersion string                 `protobuf:"bytes,10,opt,name=snapshot_version,json=snapshotVersion,proto3" json:"snapshot_version,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// What the owning agent is doing now ("clicking e12"), for a moment after.
+	Activity string `protobuf:"bytes,11,opt,name=activity,proto3" json:"activity,omitempty"`
+	// The page was let go to save memory; it comes back at the same address.
+	Asleep        bool `protobuf:"varint,12,opt,name=asleep,proto3" json:"asleep,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BrowserTab) Reset() {
@@ -329,6 +404,20 @@ func (x *BrowserTab) GetSnapshotVersion() string {
 		return x.SnapshotVersion
 	}
 	return ""
+}
+
+func (x *BrowserTab) GetActivity() string {
+	if x != nil {
+		return x.Activity
+	}
+	return ""
+}
+
+func (x *BrowserTab) GetAsleep() bool {
+	if x != nil {
+		return x.Asleep
+	}
+	return false
 }
 
 type BrowserStateResponse struct {
@@ -12166,7 +12255,7 @@ var File_deck_v1_deck_proto protoreflect.FileDescriptor
 const file_deck_v1_deck_proto_rawDesc = "" +
 	"\n" +
 	"\x12deck/v1/deck.proto\x12\adeck.v1\"\a\n" +
-	"\x05Empty\"\xd4\x01\n" +
+	"\x05Empty\"\x86\x03\n" +
 	"\x0eBrowserCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x15\n" +
 	"\x06tab_id\x18\x02 \x01(\tR\x05tabId\x12\x10\n" +
@@ -12175,11 +12264,20 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"elementRef\x12)\n" +
 	"\x10snapshot_version\x18\x05 \x01(\tR\x0fsnapshotVersion\x12\x12\n" +
 	"\x04text\x18\x06 \x01(\tR\x04text\x12!\n" +
-	"\ftarget_agent\x18\a \x01(\tR\vtargetAgent\"h\n" +
+	"\ftarget_agent\x18\a \x01(\tR\vtargetAgent\x12\x10\n" +
+	"\x03key\x18\b \x01(\tR\x03key\x12\x0e\n" +
+	"\x02to\x18\t \x01(\tR\x02to\x12\x0e\n" +
+	"\x02dy\x18\n" +
+	" \x01(\x05R\x02dy\x12\x12\n" +
+	"\x04load\x18\v \x01(\bR\x04load\x12\x0e\n" +
+	"\x02ms\x18\f \x01(\x05R\x02ms\x12\x1b\n" +
+	"\ttimeout_s\x18\r \x01(\x05R\btimeoutS\x12 \n" +
+	"\vinteractive\x18\x0e \x01(\bR\vinteractive\x12\x1b\n" +
+	"\tmax_lines\x18\x0f \x01(\x05R\bmaxLines\"h\n" +
 	"\x14BrowserActionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x121\n" +
-	"\acommand\x18\x02 \x01(\v2\x17.deck.v1.BrowserCommandR\acommand\"\xa2\x02\n" +
+	"\acommand\x18\x02 \x01(\v2\x17.deck.v1.BrowserCommandR\acommand\"\xd6\x02\n" +
 	"\n" +
 	"BrowserTab\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
@@ -12194,7 +12292,9 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"canForward\x12&\n" +
 	"\x0fuser_in_control\x18\t \x01(\bR\ruserInControl\x12)\n" +
 	"\x10snapshot_version\x18\n" +
-	" \x01(\tR\x0fsnapshotVersion\"|\n" +
+	" \x01(\tR\x0fsnapshotVersion\x12\x1a\n" +
+	"\bactivity\x18\v \x01(\tR\bactivity\x12\x16\n" +
+	"\x06asleep\x18\f \x01(\bR\x06asleep\"|\n" +
 	"\x14BrowserStateResponse\x12\x1c\n" +
 	"\tavailable\x18\x01 \x01(\bR\tavailable\x12'\n" +
 	"\x04tabs\x18\x02 \x03(\v2\x13.deck.v1.BrowserTabR\x04tabs\x12\x1d\n" +

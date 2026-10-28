@@ -188,6 +188,9 @@ export class FakeRpcDeck {
   // "conflict" the files a sync stops on; a capsule's "land" likewise, and
   // "total" how many files CapsuleFiles pages through.
   readonly lines = { worktrees: [] as Obj[], capsules: [] as Obj[], asked: [] as string[] };
+  // The room's browser tabs and what the person asked of them, as pkg/rpc
+  // serves BrowserState and BrowserAction once serveBrowser is called.
+  readonly browser = { tabs: [] as Obj[], asked: [] as string[] };
   // Each terminal: what it printed and who watches it.
   private readonly terms = new Map<string, { out: string; line: string; subs: Set<grpc.ServerWritableStream<Obj, Obj>> }>();
 
@@ -230,6 +233,18 @@ export class FakeRpcDeck {
     for (const m of ["Work", "WorktreeAction", "CapsuleAction", "CapsuleFiles"]) if (!this.room.caps.includes(m)) this.room.caps.push(m);
     this.lines.worktrees.splice(0, Infinity, ...worktrees);
     this.lines.capsules.splice(0, Infinity, ...capsules);
+  }
+
+  // Serves the browser calls with these tabs, and tells the window when they
+  // change (setTabs), as the engine does when an agent acts.
+  serveBrowser(tabs: Obj[]): void {
+    for (const m of ["BrowserState", "BrowserAction"]) if (!this.room.caps.includes(m)) this.room.caps.push(m);
+    this.browser.tabs.splice(0, Infinity, ...tabs);
+  }
+
+  setTabs(session: string, tabs: Obj[]): void {
+    this.browser.tabs.splice(0, Infinity, ...this.browser.tabs.filter((t) => t["session_id"] !== session), ...tabs);
+    this.emit("browser_changed", { session_id: session, available: true, tabs });
   }
 
   // The profiles as ListProfiles merges them: a project profile overrides
@@ -617,6 +632,22 @@ export class FakeRpcDeck {
       }
       return { ...out, conflicts: [] };
     };
+    // The browser calls. Take control and Release flip the tab, as the
+    // engine does; Close drops it.
+    const bw = this.browser;
+    const tabsOf = (session: unknown) => bw.tabs.filter((t) => t["session_id"] === session);
+    call("BrowserState", (r) => ({ available: true, session_id: String(r["session_id"]), tabs: tabsOf(r["session_id"]) }));
+    call("BrowserAction", (r) => {
+      const c = r["command"] as Obj;
+      const action = String(c["action"]);
+      bw.asked.push(`${action} ${String(c["tab_id"] ?? "")}`.trim());
+      const tab = bw.tabs.find((t) => t["id"] === c["tab_id"]);
+      if (tab === undefined) return { tab: null, result: { text: "Unknown tab in this room.", images: [], is_error: true }, error_code: "invalid_request" };
+      if (action === "take_control" || action === "release_control") tab["user_in_control"] = action === "take_control";
+      if (action === "close") bw.tabs.splice(bw.tabs.indexOf(tab), 1);
+      this.emit("browser_changed", { session_id: String(r["session_id"]), available: true, tabs: tabsOf(r["session_id"]) });
+      return { tab: action === "close" ? null : tab, result: { text: "", images: [], is_error: false }, error_code: "" };
+    });
     call("Work", () => ({ worktrees: ln.worktrees.map(strip), capsules: ln.capsules.map(strip) }));
     call("WorktreeAction", (r) => {
       const action = String(r["action"]);

@@ -185,6 +185,79 @@ func TestOriginPolicy(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, local)
 	require.Equal(t, "https://example.test", origin)
+	// A name that only starts like a loopback address is a site like any other.
+	for _, raw := range []string{"http://127.attacker.example/", "http://127.0.0.1.attacker.example/", "http://localhost.attacker.example/"} {
+		_, local, err := Origin(raw)
+		require.NoError(t, err, raw)
+		require.False(t, local, raw)
+	}
+}
+
+// Every command is checked before it can reach the desktop.
+func TestCommandsAreValidated(t *testing.T) {
+	ok := func(c *pb.BrowserCommand) bool { return validCommand(c, "codex") }
+	ref := func(c *pb.BrowserCommand) *pb.BrowserCommand {
+		c.TabId, c.ElementRef, c.SnapshotVersion = "tab", "e1", "v1"
+		return c
+	}
+	tab := func(c *pb.BrowserCommand) *pb.BrowserCommand { c.TabId = "tab"; return c }
+	for name, c := range map[string]*pb.BrowserCommand{
+		"select":               ref(&pb.BrowserCommand{Action: "select", Text: "Chile"}),
+		"press":                tab(&pb.BrowserCommand{Action: "press", Key: "Control+A"}),
+		"scroll dy":            tab(&pb.BrowserCommand{Action: "scroll", Dy: -300}),
+		"scroll to":            tab(&pb.BrowserCommand{Action: "scroll", To: "bottom"}),
+		"scroll to an element": ref(&pb.BrowserCommand{Action: "scroll"}),
+		"wait text":            tab(&pb.BrowserCommand{Action: "wait", Text: "Done", TimeoutS: 5}),
+		"wait load":            tab(&pb.BrowserCommand{Action: "wait", Load: true}),
+		"wait ms":              tab(&pb.BrowserCommand{Action: "wait", Ms: 500}),
+		"snapshot":             tab(&pb.BrowserCommand{Action: "snapshot", Interactive: true, MaxLines: 40}),
+		"screenshot":           tab(&pb.BrowserCommand{Action: "screenshot"}),
+		"element screenshot":   ref(&pb.BrowserCommand{Action: "screenshot"}),
+	} {
+		require.True(t, ok(c), name)
+	}
+	for name, c := range map[string]*pb.BrowserCommand{
+		"select without a snapshot": tab(&pb.BrowserCommand{Action: "select", ElementRef: "e1", Text: "x"}),
+		"press without a key":       tab(&pb.BrowserCommand{Action: "press"}),
+		"press a long key":          tab(&pb.BrowserCommand{Action: "press", Key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}),
+		"scroll nowhere":            tab(&pb.BrowserCommand{Action: "scroll"}),
+		"scroll too far":            tab(&pb.BrowserCommand{Action: "scroll", Dy: 60000}),
+		"scroll to the middle":      tab(&pb.BrowserCommand{Action: "scroll", To: "middle"}),
+		"scroll to a stale element": tab(&pb.BrowserCommand{Action: "scroll", ElementRef: "e1"}),
+		"wait for nothing":          tab(&pb.BrowserCommand{Action: "wait"}),
+		"wait too long":             tab(&pb.BrowserCommand{Action: "wait", Ms: 10001}),
+		"wait with a huge timeout":  tab(&pb.BrowserCommand{Action: "wait", Load: true, TimeoutS: 26}),
+		"snapshot of too much":      tab(&pb.BrowserCommand{Action: "snapshot", MaxLines: 5000}),
+		"screenshot of a ghost":     tab(&pb.BrowserCommand{Action: "screenshot", ElementRef: "e1"}),
+		"an op nobody knows":        tab(&pb.BrowserCommand{Action: "eval", Text: "1"}),
+	} {
+		require.False(t, ok(c), name)
+	}
+}
+
+// Acting on a page is the owner's; reading it is anyone's.
+func TestNewOpsFollowTheOwnershipRules(t *testing.T) {
+	b := New("secret", nil, nil)
+	ref, requests := controller(t, b)
+	tabState(t, b, ref)
+	for _, c := range []*pb.BrowserCommand{
+		{Action: "press", TabId: "tab", Key: "Enter"},
+		{Action: "scroll", TabId: "tab", Dy: 100},
+		{Action: "wait", TabId: "tab", Ms: 10},
+		{Action: "select", TabId: "tab", ElementRef: "e1", SnapshotVersion: "v1", Text: "x"},
+	} {
+		require.Equal(t, "not_owner", reply(t, action(b, "claude", c)).ErrorCode, c.Action)
+	}
+	out := action(b, "claude", &pb.BrowserCommand{Action: "snapshot", TabId: "tab", Interactive: true})
+	r := receive(t, requests)
+	require.True(t, r.Command.Interactive)
+	require.NoError(t, b.Complete(ref, r.Id, result("", "outline")))
+	require.Equal(t, "outline", reply(t, out).Result.Text)
+	out = action(b, "codex", &pb.BrowserCommand{Action: "press", TabId: "tab", Key: "Enter"})
+	r = receive(t, requests)
+	require.Equal(t, "Enter", r.Command.Key)
+	require.NoError(t, b.Complete(ref, r.Id, result("", "pressed")))
+	require.Equal(t, "pressed", reply(t, out).Result.Text)
 }
 
 func TestBrowserTabsHidesPageMetadataUnderUserControl(t *testing.T) {

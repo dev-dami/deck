@@ -384,9 +384,9 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	fmt.Fprintf(&b, "You are %s in a shared Deck thread with %s; all of you see this thread.\n", self, clip(with, 300))
 	b.WriteString("New messages come first, prefixed by speaker, e.g. \"[codex] ...\".\n")
 	if tools {
-		b.WriteString("MCP: search finds Deck ops, skills and past threads; execute runs an op.\n")
-		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with @name ($name also works). Op \"thread.read\" shows the whole thread, \"thread.roster\" who is in it.\n")
-		b.WriteString("Shared task board (execute ops): task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list; report yours with task.done.\n")
+		b.WriteString("MCP: search finds Deck ops, skills, past threads; execute runs one.\n")
+		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with @name ($name also works). thread.read shows the whole thread, thread.roster who is in it.\n")
+		b.WriteString("Shared task board: task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list; report yours with task.done.\n")
 		b.WriteString("Pass code: sub.patch.capture, then thread.send {capsule}.\n")
 		if !ops {
 			if hasHighlights {
@@ -394,23 +394,23 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 			}
 			// Asked for agents, an agent reaches for its CLI's own subagent
 			// tool unless told: those work, but the user cannot steer them.
-			fmt.Fprintf(&b, "agent.spawn {brief, kind} starts a helper (kind: %s, or a named agent) as a lane that reports back; when the user asks for agents, use it, not your own Task/subagent tool. Orchestration is %s memory.add pins a note; search shows op args.\n",
+			fmt.Fprintf(&b, "agent.spawn {brief, kind} starts a helper (kind: %s, or a named agent) that reports back; when the user asks for agents, use it, not your own Task/subagent tool. Orchestration is %s memory.add pins a note; search shows op args.\n",
 				clip(strings.Join(m.Kinds(), ", "), 80), m.levelText(t))
-			b.WriteString("Big work: worktree.*, capsule.*, agent.spawn {worktree: true}.\n")
-			b.WriteString("Before editing files others may touch: lease.acquire {paths}, or file.claim {paths} for files another agent is changing (Deck asks it and hands you its changes). Asked about your file? file.answer {path, text}.\n")
+			b.WriteString("Big work: worktree.*, capsule.*, agent.spawn {worktree: true}. Web: browser.open, browser.snapshot.\n")
+			b.WriteString("Before editing shared files: lease.acquire {paths}, or file.claim {paths} for a file another agent is changing (Deck gets you its changes). Asked about your file? file.answer {path, text}.\n")
 		}
 		if len(mates) > 0 {
-			fmt.Fprintf(&b, "Teammates' Decks on other machines: %s. team.post {text, to: \"name\" or \"name/agent\"} writes to them (team.read shows the chat); what they write reaches you at your next turn. task.contract {peer, brief} asks one for coding work, if it made this Deck a contractor (the user allows it; changes come back as a capsule); peers.status {peer} asks how one is. Lines like \"[%s] ...\" come from them.\n",
+			fmt.Fprintf(&b, "Teammates' Decks on other machines: %s. team.post {text, to: \"name\" or \"name/agent\"} writes to them (team.read shows the chat); their words reach you next turn. task.contract {peer, brief} asks one for coding work, (changes come back as a capsule); peers.status {peer} asks how one is. Lines like \"[%s] ...\" come from them.\n",
 				clip(strings.Join(mates, ", "), 200), clip(mates[0], 32))
 		}
 	} else {
 		b.WriteString("To message another agent, start a line of your final reply with @name or @all ($name also works).\n")
 	}
-	b.WriteString("Keep agent messages short; avoid repeats.\n")
+	b.WriteString("Keep agent messages short.\n")
 	fmt.Fprintf(&b, "Write plan files in %s.", brand.PlansDir(t.dir))
 	// Deck's own attribution, whichever CLI does the work (Settings → General).
 	if cfg.DeckAttribution {
-		fmt.Fprintf(&b, " Commits you make end with the trailer %q and no other AI attribution; pull requests end with %q.",
+		fmt.Fprintf(&b, " Commits end with the trailer %q, no other AI attribution; PRs end with %q.",
 			brand.CommitTrailer, brand.PRFooter)
 	}
 	out := clipInstruction(b.String(), maxInstrChars)

@@ -30,6 +30,8 @@ const tab = (id: string, over: Partial<BrowserTab> = {}): BrowserTab => ({
   can_forward: false,
   user_in_control: false,
   snapshot_version: "1",
+  activity: "",
+  asleep: false,
   ...over,
 });
 

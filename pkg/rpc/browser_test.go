@@ -106,3 +106,32 @@ func TestBrowserRPCPrivateLiveEventsAndImageResult(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, got.Available)
 }
+
+// A named agent is "claude2" to the broker and the desktop and "scout" in the
+// roster: the window is told the roster's name, the controller keeps the id.
+type namingWorkspace struct{ browserWorkspace }
+
+func (namingWorkspace) BrowserAgentName(_, id string) string {
+	if id == "claude2" {
+		return "scout"
+	}
+	return id
+}
+
+func TestBrowserTabOwnersAreShownByRosterName(t *testing.T) {
+	w := &namingWorkspace{}
+	srv := New(remotetest.New(), "ordinary-token").WithWorkspace(w)
+	t.Cleanup(srv.Close)
+	state := &pb.BrowserStateResponse{SessionId: "s1", Available: true, Tabs: []*pb.BrowserTab{
+		{Id: "a", SessionId: "s1", Owner: "claude2"},
+		{Id: "b", SessionId: "s1", Owner: "claude"},
+		{Id: "c", SessionId: "s1"},
+	}}
+	shown := srv.forUser(state)
+	require.Equal(t, []string{"scout", "claude", ""}, []string{shown.Tabs[0].Owner, shown.Tabs[1].Owner, shown.Tabs[2].Owner})
+	// The state itself is not touched: ownership checks use the id.
+	require.Equal(t, "claude2", state.Tabs[0].Owner)
+	// A workspace that cannot name agents passes the state through.
+	plain := New(remotetest.New(), "ordinary-token").WithWorkspace(&browserWorkspace{})
+	require.Equal(t, "claude2", plain.forUser(state).Tabs[0].Owner)
+}

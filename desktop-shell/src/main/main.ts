@@ -386,6 +386,7 @@ async function main(): Promise<void> {
     approve: (id, request, origin) => decks.browserOrigin(id, request, origin),
   });
   decks.setBrowser(browser);
+  browser.start();
   // A reload or a closed window ends what the renderer had open, the
   // preview's page with it.
   const reset = () => {

@@ -459,7 +459,7 @@ export function RightPanel({
             onInfo={onInfo}
           />
         ) : panel === "browser" ? (
-          <BrowserPanel key={open.id} c={c} bridge={bridge} sid={open.id} onError={onError} />
+          <BrowserPanel key={open.id} c={c} bridge={bridge} sid={open.id} roster={state.roster[open.id] ?? NO_ROSTER} theme={state.theme} onError={onError} />
         ) : panel === "highlights" ? (
           <RoomHighlights key={open.id} c={c} sid={open.id} projectKey={projectKey} approvals={state.approvals.filter((a) => a.session_id === open.id)} onOpenTasks={() => onPanel("tasks")} />
         ) : panel === "work" ? (

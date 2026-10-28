@@ -217,7 +217,7 @@ export interface OpResult {
 export const BROWSER_LIMITS = {
   url: 8192,
   text: 16_384,
-  tabs: 16,
+  tabs: 40,
   snapshot: 64 * 1024,
   imageBytes: 8 * 1024 * 1024,
   imagePixels: 16_777_216,
@@ -227,9 +227,18 @@ export const BROWSER_LIMITS = {
 export type BrowserCommand =
   | { action: "open"; url: string }
   | { action: "navigate"; tab_id: string; url: string }
-  | { action: "back" | "forward" | "reload" | "snapshot" | "screenshot" | "close" | "take_control" | "release_control"; tab_id: string }
+  | { action: "back" | "forward" | "reload" | "close" | "take_control" | "release_control"; tab_id: string }
+  | { action: "snapshot"; tab_id: string; interactive?: boolean; max_lines?: number }
+  // An element_ref in a screenshot clips to the element; it then needs the snapshot_version too.
+  | { action: "screenshot"; tab_id: string; element_ref?: string; snapshot_version?: string }
   | { action: "click"; tab_id: string; element_ref: string; snapshot_version: string }
   | { action: "type"; tab_id: string; element_ref: string; snapshot_version: string; text: string }
+  | { action: "select"; tab_id: string; element_ref: string; snapshot_version: string; text: string }
+  | { action: "press"; tab_id: string; key: string }
+  // scroll: dy pixels, or to top/bottom, or an element_ref (with its snapshot_version) into view.
+  | { action: "scroll"; tab_id: string; dy?: number; to?: "top" | "bottom"; element_ref?: string; snapshot_version?: string }
+  // wait: for text on the page, for the load to finish, or for ms; timeout_s bounds the first two.
+  | { action: "wait"; tab_id: string; text?: string; load?: boolean; ms?: number; timeout_s?: number }
   | { action: "handoff"; tab_id: string; target_agent: string };
 
 export interface BrowserActionRequest {
@@ -250,6 +259,10 @@ export interface BrowserTab {
   can_forward: boolean;
   user_in_control: boolean;
   snapshot_version: string;
+  // What the owning agent is doing now ("clicking e12"), for a moment after.
+  activity: string;
+  // The page was let go to save memory; it comes back at the same address.
+  asleep: boolean;
 }
 
 export interface BrowserStateResponse {

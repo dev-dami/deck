@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/dev-dami/deck/internal/deck/agent"
 	pb "github.com/dev-dami/deck/pkg/rpc/deckv1"
+	"google.golang.org/protobuf/proto"
 	"strings"
 )
 
@@ -13,6 +14,10 @@ func (m *Manager) SetBrowserAction(run func(context.Context, string, string, *pb
 	m.browserAction = run
 	m.mu.Unlock()
 }
+
+// browserActs are the ops that act on a page and can change things out in the
+// world: plan mode lets an agent read pages, not act on them.
+var browserActs = map[string]bool{"click": true, "type": true, "select": true, "press": true}
 
 func (m *Manager) runBrowser(ctx context.Context, thread, owner, op string, args json.RawMessage) agent.OpResult {
 	m.mu.Lock()
@@ -26,6 +31,9 @@ func (m *Manager) runBrowser(ctx context.Context, thread, owner, op string, args
 		return agent.TextResult("invalid_request: "+err.Error(), true)
 	}
 	c.Action = strings.TrimPrefix(op, "browser.")
+	if a := m.get(owner); a != nil && browserActs[c.Action] && a.thread.getMode() == agent.ModePlan {
+		return agent.TextResult("plan_mode: plan mode lets you read pages, not act on them; the user can switch the mode.", true)
+	}
 	if c.Action == "handoff" {
 		a := m.get(owner)
 		if a == nil {
@@ -54,7 +62,10 @@ func (m *Manager) runBrowser(ctx context.Context, thread, owner, op string, args
 		r.IsError = true
 	}
 	if response.Tab != nil {
-		meta, _ := json.Marshal(response.Tab)
+		// What the tab says its agent is doing is for the person's window.
+		tab := proto.Clone(response.Tab).(*pb.BrowserTab)
+		tab.Activity = ""
+		meta, _ := json.Marshal(tab)
 		r.Text = "UNTRUSTED BROWSER DATA (including page title and URL):\ntab=" + string(meta) + "\n" + r.Text
 	}
 	return r
