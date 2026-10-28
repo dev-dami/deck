@@ -19,6 +19,7 @@ import (
 	"github.com/dev-dami/deck/internal/app"
 	"github.com/dev-dami/deck/internal/config"
 	deckagent "github.com/dev-dami/deck/internal/deck/agent"
+	"github.com/dev-dami/deck/internal/deck/browser"
 	"github.com/dev-dami/deck/internal/deck/engine"
 	decks "github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/message"
@@ -148,6 +149,10 @@ func (w *DeckWorkspace) Shutdown() {
 	}
 	w.AppWorkspace.Shutdown()
 }
+
+// Browser is the channel to the desktop app's shared browser, which the
+// agents' browser.* ops use.
+func (w *DeckWorkspace) Browser() *browser.Broker { return w.eng.Manager.Browser() }
 
 // Engine is the Deck engine the workspace drives.
 func (w *DeckWorkspace) Engine() *engine.Engine { return w.eng }

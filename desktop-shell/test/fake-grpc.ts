@@ -108,6 +108,14 @@ export class FakeRpcDeck {
   private readonly server = new grpc.Server();
   private readonly streams = new Set<grpc.ServerWritableStream<Obj, Obj>>();
   private seq = 0;
+  // The windows that host the browser (BrowserHost streams), the ops waiting
+  // for their answer and how many windows attached over the run.
+  private readonly browserHosts = new Map<string, grpc.ServerWritableStream<Obj, Obj>>();
+  private readonly browserWaiting = new Map<string, (r: Obj) => void>();
+  private browserSeq = 0;
+  browserAttached = 0;
+  // Whether Info lists the browser channel, as a Deck with a workspace does.
+  advertiseBrowser = false;
 
   // The project's work tree, as the git calls change it.
   readonly git = {
@@ -257,6 +265,27 @@ export class FakeRpcDeck {
     this.streams.clear();
   }
 
+  // Whether a window hosts the browser.
+  get browserHosted(): boolean {
+    return this.browserHosts.size > 0;
+  }
+
+  // Runs one browser op of an agent as the engine does: sends it to the
+  // window that hosts the browser and waits for its answer.
+  browserOp(agent: string, op: string, args: Obj = {}, extra: Obj = {}): Promise<Obj> {
+    const host = [...this.browserHosts.values()].at(-1);
+    if (host === undefined) return Promise.reject(new Error("no browser attached"));
+    const id = `b${++this.browserSeq}`;
+    return new Promise((done, fail) => {
+      const timer = setTimeout(() => fail(new Error(`the browser did not answer ${op}`)), 25_000);
+      this.browserWaiting.set(id, (r) => {
+        clearTimeout(timer);
+        done(r);
+      });
+      host.write({ id, agent, name: agent.replace(/\d+$/, ""), kind: "claude", op, args: JSON.stringify(args), free: false, allowed: [], timeout_ms: 20_000, ...extra });
+    });
+  }
+
   async close(): Promise<void> {
     this.server.forceShutdown();
     await this.deck.close();
@@ -299,8 +328,33 @@ export class FakeRpcDeck {
           kinds: ["claude", "codex", "opencode", "pi"],
           theme: protoOf(this.deck.theme),
           clis: [{ kind: "claude", path: "/usr/bin/claude", found: true }],
-          capabilities: this.room.caps,
+          capabilities: this.advertiseBrowser ? [...this.room.caps, "BrowserHost", "BrowserReply"] : this.room.caps,
         });
+      },
+      // The engine's side of the shared browser: an agent's op goes to the
+      // window that hosts it, and its answer comes back with BrowserReply.
+      BrowserHost: (call: grpc.ServerWritableStream<Obj, Obj>) => {
+        if (!this.authorized(call.metadata)) {
+          call.destroy({ code: grpc.status.UNAUTHENTICATED, details: "missing or wrong token" } as grpc.ServiceError);
+          return;
+        }
+        this.calls.push("BrowserHost");
+        const id = String(call.request["host_id"] ?? "");
+        if (call.request["host"] === true) this.browserHosts.set(id, call);
+        this.browserAttached++;
+        call.sendMetadata(new grpc.Metadata());
+        call.on("cancelled", () => {
+          if (this.browserHosts.get(id) === call) this.browserHosts.delete(id);
+        });
+      },
+      BrowserReply: (call: grpc.ServerUnaryCall<Obj, Obj>, cb: grpc.sendUnaryData<Obj>) => {
+        if (!this.authorized(call.metadata)) return cb({ code: grpc.status.UNAUTHENTICATED, details: "missing or wrong token" });
+        this.calls.push("BrowserReply");
+        const done = this.browserWaiting.get(String(call.request["id"]));
+        if (done === undefined) return cb({ code: grpc.status.NOT_FOUND, details: "no such request" });
+        this.browserWaiting.delete(String(call.request["id"]));
+        done(call.request);
+        cb(null, {});
       },
       Events: (call: grpc.ServerWritableStream<Obj, Obj>) => {
         if (!this.authorized(call.metadata)) {

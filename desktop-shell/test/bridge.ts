@@ -6,10 +6,9 @@ import { loadService, RpcDecks } from "../src/main/decks";
 import { createHost, type HostDeps } from "../src/main/host";
 import { LinkHost } from "../src/main/link";
 import { PhoneLink } from "../src/main/phone";
-import { Preview } from "../src/main/preview";
+import { Browser } from "../src/main/browser";
 import { RecentFolders } from "../src/main/recent";
 import { type Sealer, ServerStore } from "../src/main/servers";
-import type { Session } from "electron";
 import type { DeckBridge, DeckHost, LogLevel, RpcStreamEvent, SocketEvent } from "../src/shared/bridge";
 import { PROTO } from "./fake-grpc";
 
@@ -45,7 +44,9 @@ export function testHost(
 ): TestHost {
   const store = new ServerStore(null, noKeychain);
   const links = new LinkHost(store, emit);
-  const decks = new RpcDecks(FAKE_DECK, loadService(PROTO), emitRpc);
+  // No window unless a test brings one: its pages are not made.
+  const browser = (deps.browser as Browser | undefined) ?? new Browser({ factory: { create: () => null }, send: () => {} });
+  const decks = new RpcDecks(FAKE_DECK, loadService(PROTO), emitRpc, null, undefined, browser);
   const logged: [LogLevel, string][] = [];
   const host = createHost({
     store,
@@ -71,15 +72,7 @@ export function testHost(
       { kind: "antigravity", path: null },
       { kind: "pi", path: null },
     ],
-    // A real probe; no window, so no view.
-    preview: new Preview({
-      create: () => null,
-      remove: () => {},
-      zoom: () => 1,
-      openExternal: () => {},
-      send: () => {},
-      session: () => ({}) as Session,
-    }),
+    browser,
     setAppIcon: () => ({ shown: true, launchers: "none" }),
     ...deps,
   });
@@ -130,7 +123,7 @@ export function inProcessBridge(): DeckBridge & TestHost & { seen: unknown[] } {
     onLink: () => () => {},
     onUpdate: () => () => {},
     onNotificationClick: () => () => {},
-    onPreview: () => () => {},
+    onBrowser: () => () => {},
     folderPath: () => "",
   };
 }

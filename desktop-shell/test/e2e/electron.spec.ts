@@ -19,12 +19,14 @@ const display = process.platform !== "linux" || process.env["DISPLAY"] !== undef
 // with `npm run e2e` under a display (xvfb-run on a headless Linux).
 test.skip(!built || !display, "needs `npm run build` and a display");
 
-function launch(userData: string, env: Record<string, string> = {}): Promise<ElectronApplication> {
-  const args = [root, `--user-data-dir=${userData}`];
+function launch(userData: string, env: Record<string, string> = {}, extra: string[] = []): Promise<ElectronApplication> {
+  const args = [root, `--user-data-dir=${userData}`, ...extra];
   // Root in a container cannot use Chromium's sandbox; a desktop user can.
   if (process.getuid?.() === 0) args.push("--no-sandbox");
   const base = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined));
-  return electron.launch({ args, cwd: root, env: { ...base, ...env } });
+  // ELECTRON_BIN runs another build of Electron than node_modules' (a machine that downloaded none).
+  const executablePath = process.env["ELECTRON_BIN"];
+  return electron.launch({ args, cwd: root, env: { ...base, ...env }, ...(executablePath === undefined ? {} : { executablePath }) });
 }
 
 test("over rpc: the app reopens the last folder and runs two agents", async () => {
@@ -121,55 +123,61 @@ test("over v2: the app pairs, connects and runs two agents", async () => {
   }
 });
 
-test("ports: a terminal's dev server opens in the preview view, which keeps to its port", async () => {
+test("the browser: a dev server for the person, tabs for agents, one session per Deck, and a page that gets nothing of the app", async () => {
+  test.setTimeout(120_000);
   const fake = await FakeRpcDeck.start({ tickMs: 300 });
+  fake.advertiseBrowser = true;
   const folder = mkdtempSync(join(tmpdir(), "deck-folder-"));
   const userData = mkdtempSync(join(tmpdir(), "deck-desktop-"));
   writeFileSync(join(userData, "recent.json"), JSON.stringify([folder]));
   const bin = join(mkdtempSync(join(tmpdir(), "deck-bin-")), "bin");
   mkdirSync(bin);
   symlinkSync(FAKE_DECK, join(bin, "deck"));
-  const server = createServer((_req, res) => {
+  // The port is known once it listens; the page links to another name for this machine.
+  let port = 0;
+  const server = createServer((req, res) => {
     res.setHeader("content-type", "text/html");
+    res.setHeader("set-cookie", "seen=1; Path=/");
     res.end(
-      '<title>Fixture</title><h1>Preview fixture</h1><a id="out" href="http://deck-preview.invalid/">out</a>' +
-        '<a id="pop" href="http://deck-preview.invalid/pop" target="_blank">pop</a><a id="file" href="file:///etc/hosts">file</a>',
+      `<title>Fixture</title><h1>Preview fixture</h1><p id="host">${req.headers.host}</p>` +
+        `<a id="out" href="http://elsewhere.test:${port}/other">out</a><a id="file" href="file:///etc/hosts">file</a>` +
+        "<form onsubmit=\"event.preventDefault();document.title='sent '+document.getElementById('q').value\"><label>Search <input id=\"q\"></label><button>Go</button></form>",
     );
   });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const port = (server.address() as AddressInfo).port;
-  const app = await launch(userData, {
-    DECK_BIN: join(bin, "deck"),
-    PATH: `${bin}${delimiter}${process.env["PATH"] ?? ""}`,
-    DECK_FAKE_HANDSHAKE: fake.handshake,
-  });
-  // The view's page, read from main through Playwright: the app has no hook for it.
-  const viewUrl = () =>
-    app.evaluate(({ webContents }, p) => webContents.getAllWebContents().find((w) => w.getURL().includes(`:${p}/`))?.getURL() ?? null, port);
-  const inView = (code: string) =>
-    app.evaluate(
-      ({ webContents }, [p, js]) => webContents.getAllWebContents().find((w) => w.getURL().includes(`:${p}/`))?.executeJavaScript(js),
-      [port, code] as const,
-    );
-  const shown = () =>
+  port = (server.address() as AddressInfo).port;
+  const app = await launch(
+    userData,
+    {
+      DECK_BIN: join(bin, "deck"),
+      PATH: `${bin}${delimiter}${process.env["PATH"] ?? ""}`,
+      DECK_FAKE_HANDSHAKE: fake.handshake,
+    },
+    // Not a loopback name for the policy, but this machine for the network.
+    [`--host-resolver-rules=MAP elsewhere.test 127.0.0.1`],
+  );
+  // A tab's page, read from main through Playwright: the app has no hook for it.
+  const pageUrls = () =>
+    app.evaluate(({ webContents }) => webContents.getAllWebContents().map((w) => w.getURL()).filter((u) => u.startsWith("http")));
+  const inPage = (needle: string, code: string) =>
+    app.evaluate(({ webContents }, [n, js]) => webContents.getAllWebContents().find((w) => w.getURL().includes(n as string))?.executeJavaScript(js as string, true), [needle, code] as const);
+  const views = () =>
     app.evaluate(({ BrowserWindow }) => {
-      const views = BrowserWindow.getAllWindows()[0]?.contentView.children ?? [];
-      return views.map((v) => ({ visible: v.getVisible(), width: v.getBounds().width }));
+      const kids = BrowserWindow.getAllWindows()[0]?.contentView.children ?? [];
+      return kids.map((v) => ({ visible: v.getVisible(), width: v.getBounds().width }));
     });
+  const ask = async (agent: string, op: string, args: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => {
+    const r = await fake.browserOp(agent, op, args, extra);
+    return { text: String(r["text"] ?? ""), isError: r["is_error"] === true };
+  };
   try {
     const win = await app.firstWindow();
     await win.setViewportSize({ width: 1360, height: 860 });
     await expect(win.locator(".link")).toHaveText("Connected");
-    // What the app hands the system browser, kept here instead.
-    await app.evaluate(({ shell }) => {
-      const g = globalThis as unknown as { opened: string[] };
-      g.opened = [];
-      shell.openExternal = async (url: string) => {
-        g.opened.push(url);
-      };
-    });
-    const opened = () => app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened);
+    // The window told the engine it hosts the browser.
+    await expect.poll(() => fake.browserHosted, { timeout: 10_000 }).toBe(true);
 
+    // The person: a dev server a terminal printed opens in the Preview tab.
     await win.keyboard.press("Control+j");
     const drawer = win.getByRole("region", { name: "Terminal" });
     await expect(drawer.locator(".xterm-rows")).toContainText("fake shell");
@@ -177,45 +185,83 @@ test("ports: a terminal's dev server opens in the preview view, which keeps to i
     await win.keyboard.type(`echo Local: http://localhost:${port}/`);
     await win.keyboard.press("Enter");
     await win.getByRole("group", { name: "Dev servers" }).getByRole("button", { name: `Preview :${port}` }).click();
-    await expect(win.getByRole("complementary", { name: "Side panel" }).getByRole("tab", { name: "Preview" })).toHaveAttribute("aria-selected", "true");
-
-    await expect.poll(viewUrl, { timeout: 10_000 }).toBe(`http://localhost:${port}/`);
-    await expect.poll(() => inView("document.querySelector('h1')?.textContent")).toBe("Preview fixture");
-    await expect.poll(shown).toEqual([{ visible: true, width: expect.any(Number) }]);
-    expect((await shown())[0]?.width).toBeGreaterThan(100);
-    // The page has none of the app: no bridge, no Node, its own session.
-    expect(await inView("[typeof window.deck, typeof require, typeof process].join(' ')")).toBe("undefined undefined undefined");
+    const panel = win.getByRole("complementary", { name: "Side panel" });
+    await expect(panel.getByRole("tab", { name: "Preview" })).toHaveAttribute("aria-selected", "true");
+    const pane = panel.getByRole("region", { name: "Browser" });
+    await expect.poll(pageUrls, { timeout: 10_000 }).toContain(`http://localhost:${port}/`);
+    await expect.poll(() => inPage(`:${port}/`, "document.querySelector('h1')?.textContent")).toBe("Preview fixture");
+    await expect(pane.getByRole("textbox", { name: "Address" })).toHaveValue(`http://localhost:${port}/`);
+    await expect.poll(async () => (await views()).filter((v) => v.visible).length).toBe(1);
+    expect((await views()).find((v) => v.visible)?.width).toBeGreaterThan(100);
+    // The page has none of the app: no bridge, no Node, a session of its own.
+    expect(await inPage(`:${port}/`, "[typeof window.deck, typeof require, typeof process].join(' ')")).toBe("undefined undefined undefined");
     const own = await app.evaluate(({ webContents, session }, p) => {
       const wc = webContents.getAllWebContents().find((w) => w.getURL().includes(`:${p}/`));
-      return wc !== undefined && wc.session !== session.defaultSession && wc.session === session.fromPartition("preview");
+      return wc !== undefined && wc.session !== session.defaultSession && wc.session === session.fromPartition("browser-local-1");
     }, port);
     expect(own).toBe(true);
-    await expect(win.getByRole("region", { name: "Preview" }).locator(".preview-host")).toHaveText(`localhost:${port}`);
 
-    // A link to another site goes to the browser, a new window too, and a
-    // file link nowhere; the view stays on the port. Main opens at most one
-    // browser tab a second, so the second click waits out that gap.
-    await inView("document.getElementById('out').click()");
-    await expect.poll(opened).toEqual(["http://deck-preview.invalid/"]);
-    await win.waitForTimeout(1100);
-    await inView("document.getElementById('pop').click()");
-    await inView("document.getElementById('file').click()");
-    await expect.poll(opened).toEqual(["http://deck-preview.invalid/", "http://deck-preview.invalid/pop"]);
-    await win.waitForTimeout(500);
-    expect(await viewUrl()).toBe(`http://localhost:${port}/`);
+    // The person browses anywhere: a link to another site opens in the tab.
+    await inPage(`:${port}/`, "document.getElementById('out').click()");
+    await expect.poll(() => inPage("elsewhere.test", "document.getElementById('host')?.textContent")).toBe(`elsewhere.test:${port}`);
+    // A file link goes nowhere.
+    await inPage("elsewhere.test", "document.getElementById('file').click()");
+    await win.waitForTimeout(300);
+    expect(await pageUrls()).toEqual([`http://elsewhere.test:${port}/other`]);
+    await pane.getByRole("button", { name: "Back" }).click();
+    await expect.poll(pageUrls).toEqual([`http://localhost:${port}/`]);
+
+    // An agent: its own tab, read as an outline, driven by refs.
+    // The person's tab sets a cookie; the agent's tab, in the same session, sees it.
+    await inPage(`localhost:${port}`, "document.cookie = 'shared=yes; path=/'");
+    const opened = await ask("claude1", "open", { url: `http://localhost:${port}/` });
+    expect(opened.isError).toBe(false);
+    expect(opened.text).toContain("opened t2: Fixture");
+    const snap = await ask("claude1", "snapshot");
+    const search = /textbox \[(e\d+)\] "Search" = ""/.exec(snap.text)?.[1] ?? "";
+    expect(search).not.toBe("");
+    expect((await ask("claude1", "type", { ref: search, text: "moon", submit: true })).isError).toBe(false);
+    await expect.poll(async () => (await ask("claude1", "eval", { js: "document.title" })).text).toBe('"sent moon"');
+    expect((await ask("claude1", "eval", { js: "document.cookie" })).text).toMatch(/shared=yes/);
+    await expect(pane.locator('[data-tab="t2"]')).toHaveAttribute("data-owner", "claude1");
+
+    // Its page is kept to the sites the person let it go to.
+    const link = await ask("claude1", "snapshot", { interactive: true });
+    const outRef = /link \[(e\d+)\] "out"/.exec(link.text)?.[1] ?? "";
+    const click = await ask("claude1", "click", { ref: outRef });
+    expect(click.isError).toBe(false);
+    // The click's answer says where the page tried to go, and the page stayed.
+    expect(click.text).toContain(`tried to go to http://elsewhere.test:${port}/other`);
+    const after = await ask("claude1", "snapshot", { interactive: true });
+    expect(after.text).toContain(`http://localhost:${port}/`);
+    // Approved by the person (the engine passes the origin): it goes.
+    await ask("claude1", "open", { url: `http://elsewhere.test:${port}/other` }, { allowed: [`http://elsewhere.test:${port}`] });
+    await expect.poll(() => inPage(`elsewhere.test:${port}/other`, "document.getElementById('host')?.textContent")).toBe(`elsewhere.test:${port}`);
+    // A scheme that is no web page never loads.
+    expect((await ask("claude1", "open", { url: "file:///etc/passwd" }, { free: true })).isError).toBe(true);
+
+    // A second agent works in a tab of its own, beside the first's.
+    const second = await ask("codex1", "open", { url: `http://localhost:${port}/` });
+    expect(second.text).toContain("opened t3");
+    await expect(pane.getByRole("tab")).toHaveCount(3);
+
+    // Hidden tabs are one pixel, not shown to the person; the shown one is the person's.
+    const shown = await views();
+    expect(shown.filter((v) => v.visible && v.width > 10)).toHaveLength(1);
 
     // The palette covers the view, so main hides it.
     await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await win.keyboard.press("Control+k");
-    await expect.poll(shown).toEqual([{ visible: false, width: expect.any(Number) }]);
+    await expect.poll(async () => (await views()).filter((v) => v.visible && v.width > 10).length).toBe(0);
     await win.keyboard.press("Escape");
-    await expect.poll(shown).toEqual([{ visible: true, width: expect.any(Number) }]);
-    // Another tab hides it; closing the panel too.
-    await win.getByRole("complementary", { name: "Side panel" }).getByRole("tab", { name: "Changes" }).click();
-    await expect.poll(shown).toEqual([{ visible: false, width: expect.any(Number) }]);
+    await expect.poll(async () => (await views()).filter((v) => v.visible && v.width > 10).length).toBe(1);
+    // Another tab of the panel hides it.
+    await panel.getByRole("tab", { name: "Changes" }).click();
+    await expect.poll(async () => (await views()).filter((v) => v.visible && v.width > 10).length).toBe(0);
   } finally {
     await app.close();
     server.close();
+    server.closeAllConnections();
     await fake.close();
   }
 });

@@ -19,8 +19,9 @@ interface Entry {
   list: DetectedPort[];
   // The open ports, the same array until one opens or closes.
   open: DetectedPort[];
-  // The URL the Preview tab shows; null: the first open port.
-  target: string | null;
+  // The URL the Preview tab shows; null: the first open port. The nonce
+  // changes with each ask, so asking for the same page again loads it again.
+  target: { url: string; nonce: number } | null;
   // The unfinished last line of each terminal.
   rest: Map<string, string>;
   // The message parts already read (ports.ts, messagePorts).
@@ -141,15 +142,14 @@ export function useOpenPorts(api: ProjectApi | undefined): DetectedPort[] {
   return useSyncExternalStore(subscribe, () => (api === undefined ? NONE : (entries.get(api)?.open ?? NONE)));
 }
 
-export function usePreviewTarget(api: ProjectApi | undefined): string | null {
+export function usePreviewTarget(api: ProjectApi | undefined): { url: string; nonce: number } | null {
   return useSyncExternalStore(subscribe, () => (api === undefined ? null : (entries.get(api)?.target ?? null)));
 }
 
 // Points the Preview tab at url.
 export function setPreviewTarget(api: ProjectApi, url: string): void {
   const e = entryOf(api);
-  if (e.target === url) return;
-  e.target = url;
+  e.target = { url, nonce: (e.target?.nonce ?? 0) + 1 };
   changed();
 }
 

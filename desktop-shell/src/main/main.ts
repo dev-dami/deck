@@ -29,7 +29,7 @@ import {
   type LinkEvent,
   MENU_EVENT_CHANNEL,
   NOTIFICATION_EVENT_CHANNEL,
-  PREVIEW_EVENT_CHANNEL,
+  BROWSER_EVENT_CHANNEL,
   RPC_EVENT_CHANNEL,
   SOCKET_EVENT_CHANNEL,
   type ThreadChoice,
@@ -50,7 +50,9 @@ import { menuTemplate } from "./menu";
 import { mimeOf } from "./mime";
 import { Notifier } from "./notify";
 import { execRun, PhoneLink, readRelayHint, type Run } from "./phone";
-import { lockSession, Preview, PREVIEW_PARTITION } from "./preview";
+import { Browser } from "./browser";
+import { electronPages } from "./browserView";
+import { browserPartition } from "./preview";
 import { RecentFolders } from "./recent";
 import { type Sealer, ServerStore } from "./servers";
 import { Updater } from "./update";
@@ -346,35 +348,32 @@ async function main(): Promise<void> {
   const Service = loadService(join(__dirname, "..", "proto", "deck.proto"));
   // Started now, ready by the first open: the login shell's PATH.
   const path = enginePath();
-  const decks = new RpcDecks(deckPath, Service, (id, ev) => win?.webContents.send(RPC_EVENT_CHANNEL, id, ev), path, writeLog);
+  // The shared browser: one Chromium for the person's tabs and every
+  // agent's. Its pages are views of the window; a Deck's tabs share one
+  // session, which lives in memory only.
+  const browser = new Browser({
+    factory: electronPages({
+      window: () => win,
+      zoom: () => win?.webContents.getZoomFactor() ?? 1,
+      newView: (webPreferences) => new WebContentsView({ webPreferences }),
+      sessionFor: (deck) => session.fromPartition(browserPartition(deck)),
+    }),
+    send: (s) => win?.webContents.send(BROWSER_EVENT_CHANNEL, s),
+  });
+  browser.start();
+  const decks = new RpcDecks(deckPath, Service, (id, ev) => win?.webContents.send(RPC_EVENT_CHANNEL, id, ev), path, writeLog, browser);
   // The phone link runs the engine's `mobile connect`; the relay it starts
   // needs Node, which the same PATH finds.
   const phoneRun: Run | null =
     deckPath === null ? null : async (args) => execRun(deckPath, { ...process.env, PATH: await path })(args);
   const phone = new PhoneLink(phoneRun, readRelayHint(join(bundledDir, "relay-dir.txt")));
-  const previewSession = session.fromPartition(PREVIEW_PARTITION);
-  lockSession(previewSession);
-  const preview = new Preview({
-    create: (webPreferences) => {
-      if (win === null) return null;
-      const view = new WebContentsView({ webPreferences });
-      win.contentView.addChildView(view);
-      return view;
-    },
-    remove: (view) => {
-      if (win !== null && !win.isDestroyed()) win.contentView.removeChildView(view);
-    },
-    zoom: () => win?.webContents.getZoomFactor() ?? 1,
-    openExternal: (url) => void shell.openExternal(url),
-    send: (s) => win?.webContents.send(PREVIEW_EVENT_CHANNEL, s),
-    session: () => previewSession,
-  });
-  // A reload or a closed window ends what the renderer had open, the
-  // preview's page with it.
+  // A reload or a closed window ends what the renderer had open; the page
+  // it laid over the window goes back where nobody sees it. The tabs stay:
+  // agents are still using them.
   const reset = () => {
     links.closeAll();
     decks.cancelStreams();
-    preview.close();
+    browser.hide();
   };
   const windowState = new WindowStateFile(join(app.getPath("userData"), "window.json"));
   const updater = new Updater((ev) => win?.webContents.send(UPDATE_EVENT_CHANNEL, ev));
@@ -416,7 +415,7 @@ async function main(): Promise<void> {
     badge: (count) => notifier.badge(count),
     focused: () => notifier.focused(),
     agentClis: async () => findAgentClis(await path),
-    preview,
+    browser,
     setAppIcon: (images, standard) => {
       const img = iconImage(images);
       if (img === null) return { shown: false, launchers: "none" };
@@ -500,6 +499,7 @@ async function main(): Promise<void> {
   });
   // Every local Deck stops with the app: its stdin closes.
   app.on("before-quit", () => {
+    browser.stop();
     links.closeAll();
     decks.closeAll();
   });

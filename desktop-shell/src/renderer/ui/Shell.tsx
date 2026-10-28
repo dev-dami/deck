@@ -28,6 +28,7 @@ import { TerminalDrawer, useTerminalShown } from "./Terminal";
 import { Toasts } from "./Toasts";
 import { useLimitCommands } from "./Limits";
 import { UsagePage } from "./Usage";
+import { askAddressFocus, useWatchBrowser } from "./useBrowser";
 import { setPreviewTarget, useOpenPorts, useWatchPorts } from "./usePorts";
 import { useOpenRoom } from "./useRoom";
 import { useForeignThreads, useModDigits, usePaletteRooms, useShellCommands, useShellNav, useUpdate } from "./useShell";
@@ -125,8 +126,7 @@ export function Shell(props: ShellProps) {
     if (ui.openId === null) c.closeSession();
     else void c.openSession(ui.openId);
   }, [c, ui.openId]);
-  // Closing the room or the project closes the preview's page.
-  useEffect(() => () => void bridge.previewClose(), [bridge, ui.openId]);
+  useWatchBrowser(bridge);
 
   const focusInput = useCallback(() => requestAnimationFrame(() => inputRef.current?.focus()), []);
   const toast = useCallback((text: string) => c.store.dispatch({ type: "toast.add", kind: "error", text }), [c]);
@@ -166,6 +166,10 @@ export function Shell(props: ShellProps) {
     setPreviewTarget(api, url);
     openPanel("preview");
   };
+  const browserAddress = () => {
+    openPanel("preview");
+    askAddressFocus();
+  };
   const addProject = () => orToast(onAddProject());
   const commands = useShellCommands(
     {
@@ -178,6 +182,7 @@ export function Shell(props: ShellProps) {
       newThread: newSession,
       toggleSidebar: () => setSidebar((v) => !v),
       nextAttention: nav.nextAttention,
+      browserAddress,
       room: nav.toRow,
       toggleTerminal,
       addProject,

@@ -99,6 +99,8 @@ const (
 	Deck_CapsuleAction_FullMethodName    = "/deck.v1.Deck/CapsuleAction"
 	Deck_CapsuleFiles_FullMethodName     = "/deck.v1.Deck/CapsuleFiles"
 	Deck_Events_FullMethodName           = "/deck.v1.Deck/Events"
+	Deck_BrowserHost_FullMethodName      = "/deck.v1.Deck/BrowserHost"
+	Deck_BrowserReply_FullMethodName     = "/deck.v1.Deck/BrowserReply"
 )
 
 // DeckClient is the client API for Deck service.
@@ -269,6 +271,13 @@ type DeckClient interface {
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
 	Events(ctx context.Context, in *Subscribe, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error)
+	// BrowserHost makes this window the host of the shared browser: agents'
+	// browser.* ops arrive on the stream, one BrowserRequest each, and the
+	// window answers each with BrowserReply. The stream ends when the window
+	// detaches; its unanswered requests then fail. Only this machine's desktop
+	// app uses it. Info lists it in capabilities.
+	BrowserHost(ctx context.Context, in *BrowserAttach, opts ...grpc.CallOption) (grpc.ServerStreamingClient[BrowserRequest], error)
+	BrowserReply(ctx context.Context, in *BrowserResult, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type deckClient struct {
@@ -1037,6 +1046,35 @@ func (c *deckClient) Events(ctx context.Context, in *Subscribe, opts ...grpc.Cal
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Deck_EventsClient = grpc.ServerStreamingClient[Event]
 
+func (c *deckClient) BrowserHost(ctx context.Context, in *BrowserAttach, opts ...grpc.CallOption) (grpc.ServerStreamingClient[BrowserRequest], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Deck_ServiceDesc.Streams[2], Deck_BrowserHost_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[BrowserAttach, BrowserRequest]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Deck_BrowserHostClient = grpc.ServerStreamingClient[BrowserRequest]
+
+func (c *deckClient) BrowserReply(ctx context.Context, in *BrowserResult, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_BrowserReply_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DeckServer is the server API for Deck service.
 // All implementations must embed UnimplementedDeckServer
 // for forward compatibility.
@@ -1205,6 +1243,13 @@ type DeckServer interface {
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
 	Events(*Subscribe, grpc.ServerStreamingServer[Event]) error
+	// BrowserHost makes this window the host of the shared browser: agents'
+	// browser.* ops arrive on the stream, one BrowserRequest each, and the
+	// window answers each with BrowserReply. The stream ends when the window
+	// detaches; its unanswered requests then fail. Only this machine's desktop
+	// app uses it. Info lists it in capabilities.
+	BrowserHost(*BrowserAttach, grpc.ServerStreamingServer[BrowserRequest]) error
+	BrowserReply(context.Context, *BrowserResult) (*Empty, error)
 	mustEmbedUnimplementedDeckServer()
 }
 
@@ -1436,6 +1481,12 @@ func (UnimplementedDeckServer) CapsuleFiles(context.Context, *CapsuleFilesReques
 }
 func (UnimplementedDeckServer) Events(*Subscribe, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method Events not implemented")
+}
+func (UnimplementedDeckServer) BrowserHost(*BrowserAttach, grpc.ServerStreamingServer[BrowserRequest]) error {
+	return status.Error(codes.Unimplemented, "method BrowserHost not implemented")
+}
+func (UnimplementedDeckServer) BrowserReply(context.Context, *BrowserResult) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method BrowserReply not implemented")
 }
 func (UnimplementedDeckServer) mustEmbedUnimplementedDeckServer() {}
 func (UnimplementedDeckServer) testEmbeddedByValue()              {}
@@ -2776,6 +2827,35 @@ func _Deck_Events_Handler(srv interface{}, stream grpc.ServerStream) error {
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Deck_EventsServer = grpc.ServerStreamingServer[Event]
 
+func _Deck_BrowserHost_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(BrowserAttach)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DeckServer).BrowserHost(m, &grpc.GenericServerStream[BrowserAttach, BrowserRequest]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Deck_BrowserHostServer = grpc.ServerStreamingServer[BrowserRequest]
+
+func _Deck_BrowserReply_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BrowserResult)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).BrowserReply(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_BrowserReply_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).BrowserReply(ctx, req.(*BrowserResult))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Deck_ServiceDesc is the grpc.ServiceDesc for Deck service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3071,6 +3151,10 @@ var Deck_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "CapsuleFiles",
 			Handler:    _Deck_CapsuleFiles_Handler,
 		},
+		{
+			MethodName: "BrowserReply",
+			Handler:    _Deck_BrowserReply_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -3081,6 +3165,11 @@ var Deck_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Events",
 			Handler:       _Deck_Events_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "BrowserHost",
+			Handler:       _Deck_BrowserHost_Handler,
 			ServerStreams: true,
 		},
 	},

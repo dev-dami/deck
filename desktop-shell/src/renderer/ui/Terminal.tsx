@@ -7,7 +7,7 @@ import { cn } from "../lib/cn";
 import { getPrefs, setPrefs } from "../prefs";
 import { base64Bytes, type ProjectApi } from "../project";
 import { Button } from "./kit/button";
-import { PortChip } from "./PreviewPanel";
+import { PortChip } from "./BrowserPanel";
 import { dropPorts, feedTerminal, useOpenPorts } from "./usePorts";
 
 // xterm.js writes its layout rules into <style> elements, which the

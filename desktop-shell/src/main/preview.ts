@@ -1,17 +1,17 @@
 import { connect } from "node:net";
-import type { Session, WebContents, WebContentsView, WebPreferences } from "electron";
-import type { PreviewBounds, PreviewNav, PreviewState } from "../shared/bridge";
+import type { Session, WebContents, WebPreferences } from "electron";
 
-// The preview pane's page: a dev server on this computer, in a view that
-// main owns and lays over the window. The page gets nothing of the app: a
-// session of its own that lives in memory only, the sandbox, no preload and
-// no IPC. It may show only loopback http pages of ports a probe found open.
+// The rules of the browser's pages, whoever drives them. A page gets nothing
+// of the app: a session that lives in memory only, the sandbox, no preload
+// and no IPC, no permission it asks for and no download. Where it may go
+// depends on who opened it: the person's tab goes anywhere on the web, an
+// agent's tab only where the person let it.
 
-// No "persist:" prefix: the session keeps its cookies and cache in memory.
-export const PREVIEW_PARTITION = "preview";
+// No "persist:" prefix: a session keeps its cookies and cache in memory. Each
+// local Deck has one, shared by its agents' tabs and the person's.
+export const browserPartition = (deck: string): string => `browser-${deck}`;
 
 const PROBE_MS = 300;
-export const EXTERNAL_GAP_MS = 1000;
 
 // Whether something accepts a TCP connection on host:port within ms.
 export function listening(port: number, host: string, ms = PROBE_MS): Promise<boolean> {
@@ -27,25 +27,68 @@ export function listening(port: number, host: string, ms = PROBE_MS): Promise<bo
   });
 }
 
-export type Verdict = "load" | "external" | "deny";
-
-// What happens to a URL the view is asked to show: a loopback http page of
-// an open port loads in the view, any other http(s) page opens in the
-// system browser, and anything else is refused.
-export function judgeUrl(raw: string, open: ReadonlySet<number>): Verdict {
-  let u: URL;
-  try {
-    u = new URL(raw);
-  } catch {
-    return "deny";
-  }
-  const loopback = u.hostname === "localhost" || u.hostname === "127.0.0.1";
-  if (u.protocol === "http:" && loopback && u.username === "" && u.password === "" && open.has(Number(u.port))) return "load";
-  return u.protocol === "http:" || u.protocol === "https:" ? "external" : "deny";
+// The ports that answer on 127.0.0.1 or [::1]: a dev server that binds
+// "localhost" may take either.
+export async function openPorts(ports: number[]): Promise<number[]> {
+  const up = await Promise.all(ports.map(async (p) => (await Promise.all([listening(p, "127.0.0.1"), listening(p, "::1")])).some(Boolean)));
+  return ports.filter((_, i) => up[i]);
 }
 
-// The view's page runs with no preload, no Node and the sandbox on.
-export function previewPrefs(session: Session): WebPreferences {
+export type Verdict = "load" | "ask" | "deny";
+
+// Who asks for a page. An agent's tab may go to a page of this computer
+// (a dev server), to the site it is on (a redirect to www. or https), to a
+// site in allowed (origins the person approved) and, when free is set (the
+// room is in yolo mode), to any web page.
+export type Who = { kind: "person" } | { kind: "agent"; at: string; allowed: readonly string[]; free: boolean };
+
+const isLoopback = (host: string): boolean => host === "localhost" || host === "[::1]" || host === "::1" || /^127(\.\d{1,3}){3}$/.test(host);
+
+// A page address typed by a person or named by an agent: http(s) only, no
+// credentials. "example.com/a" is https and "localhost:3000" is http.
+export function parseWebUrl(raw: string): URL | null {
+  let s = raw.trim();
+  if (s === "" || /\s/.test(s)) return null;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
+    // A scheme without slashes (javascript:, data:, mailto:) is no host.
+    if (/^[a-z][a-z0-9+.-]*:(?!\d+(\/|$))/i.test(s)) return null;
+    s = `${isLoopback(s.replace(/[:/].*$/, "").toLowerCase()) ? "http" : "https"}://${s}`;
+  }
+  let u: URL;
+  try {
+    u = new URL(s);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  if (u.hostname === "" || u.username !== "" || u.password !== "") return null;
+  return u;
+}
+
+const bare = (host: string): string => host.replace(/^www\./, "");
+
+// Whether two addresses are the same site for a redirect: the same host, with
+// or without www., on http or https.
+function sameSite(a: URL, b: URL): boolean {
+  return bare(a.hostname) === bare(b.hostname) && (a.port === b.port || a.protocol !== b.protocol);
+}
+
+// What happens to a URL a tab is asked to show, by the person, an agent or
+// the page itself: "load", "ask" (an agent needs the person's word for this
+// site) or "deny" (not a web page, or one with credentials in its address).
+export function judgeUrl(raw: string, who: Who): Verdict {
+  const u = parseWebUrl(raw);
+  if (u === null || !/^[a-z][a-z0-9+.-]*:\/\//i.test(raw.trim())) return "deny";
+  if (who.kind === "person") return "load";
+  if (who.free || isLoopback(u.hostname)) return "load";
+  if (who.allowed.includes(u.origin)) return "load";
+  const here = parseWebUrl(who.at);
+  if (here !== null && sameSite(here, u)) return "load";
+  return "ask";
+}
+
+// A page runs with no preload, no Node and the sandbox on.
+export function pagePrefs(session: Session): WebPreferences {
   return {
     session,
     sandbox: true,
@@ -57,8 +100,8 @@ export function previewPrefs(session: Session): WebPreferences {
   };
 }
 
-// The preview session asks for nothing: every permission is denied and
-// every download is cancelled.
+// The session asks for nothing: every permission is denied and every
+// download is cancelled.
 export function lockSession(ses: Session): void {
   ses.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
   ses.setPermissionCheckHandler(() => false);
@@ -66,142 +109,30 @@ export function lockSession(ses: Session): void {
   ses.on("will-download", (e) => e.preventDefault());
 }
 
-// Keeps a page on the open ports: main checks each navigation, redirect and
-// new window against judgeUrl.
-export function guardPage(
-  wc: WebContents,
-  open: ReadonlySet<number>,
-  openExternal: (url: string) => void,
-  now: () => number = Date.now,
-): void {
-  // A page can navigate from script in a loop: at most one browser tab per
-  // EXTERNAL_GAP_MS, so a dev page cannot flood the system browser.
-  let last = Number.NEGATIVE_INFINITY;
-  const away = (url: string): boolean => {
-    const v = judgeUrl(url, open);
-    if (v === "external" && now() - last >= EXTERNAL_GAP_MS) {
-      last = now();
-      openExternal(url);
-    }
-    return v !== "load";
+export interface GuardHooks {
+  /** Who owns the page now, and so where it may go. */
+  who: () => Who;
+  /** An agent's page tried to go where it may not without asking. */
+  blocked: (url: string) => void;
+}
+
+// Keeps a page where its owner may go: main checks each navigation,
+// redirect and new window against judgeUrl.
+export function guardPage(wc: WebContents, h: GuardHooks): void {
+  const go = (url: string): boolean => {
+    const v = judgeUrl(url, h.who());
+    if (v === "ask") h.blocked(url);
+    return v === "load";
   };
   wc.on("will-navigate", (e) => {
-    if (away(e.url)) e.preventDefault();
+    if (!go(e.url)) e.preventDefault();
   });
   wc.on("will-redirect", (e) => {
-    if (away(e.url)) e.preventDefault();
+    if (!go(e.url)) e.preventDefault();
   });
+  // A page never opens a window of its own: where it asks, this tab goes.
   wc.setWindowOpenHandler(({ url }) => {
-    if (!away(url)) void wc.loadURL(url).catch(() => {});
+    if (go(url)) void wc.loadURL(url).catch(() => {});
     return { action: "deny" };
   });
-}
-
-export interface PreviewDeps {
-  // Makes a view with these preferences and adds it to the window; null
-  // when there is no window.
-  create: (prefs: WebPreferences) => WebContentsView | null;
-  remove: (view: WebContentsView) => void;
-  // The window's zoom factor: the renderer's bounds are in its CSS pixels.
-  zoom: () => number;
-  openExternal: (url: string) => void;
-  send: (state: PreviewState) => void;
-  session: () => Session;
-}
-
-// The preview view and the ports it may show.
-export class Preview {
-  // The ports the last probe of each found open.
-  readonly open = new Set<number>();
-  private view: WebContentsView | null = null;
-  private pageZoom = 1;
-
-  constructor(private readonly d: PreviewDeps) {}
-
-  // The ports that answer on 127.0.0.1 or [::1]: a dev server that binds
-  // "localhost" may take either.
-  async probe(ports: number[]): Promise<number[]> {
-    const up = await Promise.all(
-      ports.map(async (p) => (await Promise.all([listening(p, "127.0.0.1"), listening(p, "::1")])).some(Boolean)),
-    );
-    ports.forEach((p, i) => (up[i] ? this.open.add(p) : this.open.delete(p)));
-    return ports.filter((_, i) => up[i]);
-  }
-
-  load(url: string): boolean {
-    if (judgeUrl(url, this.open) !== "load") return false;
-    const view = this.view ?? this.make();
-    if (view === null) return false;
-    void view.webContents.loadURL(url).catch(() => {});
-    return true;
-  }
-
-  nav(n: PreviewNav): void {
-    const wc = this.view?.webContents;
-    if (wc === undefined) return;
-    const h = wc.navigationHistory;
-    if (n.action === "path") {
-      let next: string;
-      try {
-        next = new URL(n.path, new URL(wc.getURL()).origin).href;
-      } catch {
-        return;
-      }
-      this.load(next);
-    } else if (n.action === "back") {
-      if (h.canGoBack()) h.goBack();
-    } else if (n.action === "forward") {
-      if (h.canGoForward()) h.goForward();
-    } else wc.reload();
-  }
-
-  bounds(b: PreviewBounds): void {
-    const view = this.view;
-    if (view === null) return;
-    const z = this.d.zoom();
-    view.setBounds({ x: Math.round(b.x * z), y: Math.round(b.y * z), width: Math.round(b.w * z), height: Math.round(b.h * z) });
-    if (b.zoom !== this.pageZoom) {
-      this.pageZoom = b.zoom;
-      view.webContents.setZoomFactor(b.zoom);
-    }
-    view.setVisible(true);
-  }
-
-  hide(): void {
-    this.view?.setVisible(false);
-  }
-
-  close(): void {
-    const view = this.view;
-    if (view === null) return;
-    this.view = null;
-    this.d.remove(view);
-    if (!view.webContents.isDestroyed()) view.webContents.close();
-  }
-
-  private make(): WebContentsView | null {
-    const view = this.d.create(previewPrefs(this.d.session()));
-    if (view === null) return null;
-    this.view = view;
-    this.pageZoom = 1;
-    view.setVisible(false);
-    const wc = view.webContents;
-    guardPage(wc, this.open, this.d.openExternal);
-    const send = () => {
-      if (this.view !== view || wc.isDestroyed()) return;
-      this.d.send({
-        url: wc.getURL(),
-        canBack: wc.navigationHistory.canGoBack(),
-        canForward: wc.navigationHistory.canGoForward(),
-        loading: wc.isLoading(),
-        title: wc.getTitle(),
-      });
-    };
-    for (const ev of ["did-start-loading", "did-stop-loading", "did-navigate", "did-navigate-in-page", "page-title-updated"] as const) {
-      wc.on(ev as "did-start-loading", send);
-    }
-    // A zoom is kept per origin; a new port starts at 1.
-    wc.on("did-navigate", () => wc.setZoomFactor(this.pageZoom));
-    return view;
-  }
 }

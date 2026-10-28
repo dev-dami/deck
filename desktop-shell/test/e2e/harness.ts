@@ -1,41 +1,150 @@
-import type { Page } from "@playwright/test";
-import type { Session } from "electron";
+import type { BrowserContext, CDPSession, Page } from "@playwright/test";
+import { Browser, type BrowserPage, type PageFactory, type PageHooks } from "../../src/main/browser";
 import { callHost } from "../../src/main/host";
-import { HOST_METHODS, type PreviewBounds, type PreviewNav } from "../../src/shared/bridge";
-import type { HostDeps } from "../../src/main/host";
-import { judgeUrl, Preview } from "../../src/main/preview";
+import { type BrowserBounds, HOST_METHODS } from "../../src/shared/bridge";
+import type { Cdp } from "../../src/main/pageControl";
+import type { Limits, Throttle } from "../../src/main/tabs";
 import { type TestHost, testHost } from "../bridge";
+import type { HostDeps } from "../../src/main/host";
 
-export type PreviewCall = ["open", string] | ["nav", PreviewNav] | ["bounds", PreviewBounds] | ["hide"] | ["close"];
+// A tab's page for the browser, in plain Chromium: a page of the test's own
+// context, driven over the same protocol as the app's pages, so the browser's
+// code (snapshots, refs, clicks, typing) runs for real. What needs Electron
+// (the view laid over the window, the guard on navigations) is recorded or
+// left out.
+export class PwPage implements BrowserPage {
+  private readonly ready: Promise<{ page: Page; session: CDPSession }>;
+  private u = "";
+  private t = "";
+  private n = 0;
+  private busy = false;
+  private history_ = 0;
+  private at = 0;
+  placed: (BrowserBounds | null)[] = [];
+  awakes: boolean[] = [];
+  throttle: Throttle | null = null;
+  destroyed = false;
+  readonly cdp: Cdp;
 
-// The preview's view needs Electron. In Chromium, main's preview probes for
-// real and records what the page asks of the view; an open answers as
-// main would.
-export function stubPreview(): { calls: PreviewCall[]; preview: HostDeps["preview"] } {
-  const calls: PreviewCall[] = [];
-  const real = new Preview({
-    create: () => null,
-    remove: () => {},
-    zoom: () => 1,
-    openExternal: () => {},
-    send: () => {},
-    session: () => ({}) as Session,
-  });
-  return {
-    calls,
-    preview: {
-      probe: (ports) => real.probe(ports),
-      load: (url) => {
-        calls.push(["open", url]);
-        return judgeUrl(url, real.open) === "load";
-      },
-      nav: (n) => void calls.push(["nav", n]),
-      bounds: (b) => void calls.push(["bounds", b]),
-      hide: () => void calls.push(["hide"]),
-      close: () => void calls.push(["close"]),
+  constructor(context: BrowserContext, hooks: PageHooks) {
+    this.ready = (async () => {
+      const page = await context.newPage();
+      await page.setViewportSize({ width: 1280, height: 800 });
+      const session = await context.newCDPSession(page);
+      page.on("framenavigated", (f) => {
+        if (f !== page.mainFrame()) return;
+        this.u = f.url();
+        this.n++;
+        hooks.changed();
+      });
+      page.on("request", (r) => {
+        if (r.isNavigationRequest() && r.frame() === page.mainFrame()) {
+          this.busy = true;
+          hooks.changed();
+        }
+      });
+      page.on("load", () => {
+        this.busy = false;
+        void page.title().then(
+          (t) => {
+            this.t = t;
+            hooks.changed();
+          },
+          () => {},
+        );
+      });
+      page.on("dialog", (d) => void d.dismiss());
+      return { page, session };
+    })();
+    this.cdp = { send: async (m, p) => (await this.ready).session.send(m as never, p as never) };
+  }
+
+  // Runs script in the page, for a test to read what an agent did.
+  async evaluate<T = unknown>(js: string): Promise<T> {
+    const { page } = await this.ready;
+    return (await page.evaluate(js)) as T;
+  }
+
+  info() {
+    return { url: this.u, title: this.t, loading: this.busy, canBack: this.at > 0, canForward: this.at < this.history_ };
+  }
+  url = () => this.u;
+  title = () => this.t;
+  loading = () => this.busy;
+  epoch = () => this.n;
+
+  async navigate(url: string) {
+    const { page } = await this.ready;
+    try {
+      await page.goto(url, { waitUntil: "load" });
+      this.history_ = ++this.at;
+      this.t = await page.title();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? (/net::\w+/.exec(e.message)?.[0] ?? e.message) : String(e) };
+    }
+  }
+
+  async history(dir: "back" | "forward" | "reload") {
+    const { page } = await this.ready;
+    if (dir === "reload") {
+      await page.reload();
+      return true;
+    }
+    const r = dir === "back" ? await page.goBack() : await page.goForward();
+    this.at += r === null ? 0 : dir === "back" ? -1 : 1;
+    this.u = page.url();
+    this.t = await page.title();
+    return r !== null;
+  }
+
+  async whenLoaded(ms: number) {
+    const { page } = await this.ready;
+    return page.waitForLoadState("load", { timeout: ms }).then(
+      () => true,
+      () => false,
+    );
+  }
+
+  place(b: BrowserBounds | null) {
+    this.placed.push(b);
+  }
+  async awake(on: boolean) {
+    this.awakes.push(on);
+  }
+  apply(t: Throttle) {
+    this.throttle = t;
+  }
+  destroy() {
+    this.destroyed = true;
+    void this.ready.then(({ page }) => page.close()).catch(() => {});
+  }
+}
+
+// The browser of the app, with Chromium pages for its tabs. The renderer's
+// Preview panel hears of the tabs as it would from main.
+export function stubBrowser(page: Page, limits: Partial<Limits> = {}): { browser: Browser; pages: PwPage[] } {
+  const pages: PwPage[] = [];
+  const factory: PageFactory = {
+    create(_tab, hooks) {
+      const p = new PwPage(page.context(), hooks);
+      pages.push(p);
+      return p;
     },
   };
+  const browser = new Browser({
+    factory,
+    limits: { live: 8, perAgent: 6, total: 40, idleMs: 300_000, ...limits },
+    send: (s) => {
+      void page
+        .evaluate((st) => (window as unknown as Record<string, (id: unknown, ev: unknown) => void>)["__deckBrowserEmit"]?.(st, undefined), s)
+        .catch(() => {});
+    },
+  });
+  return { browser, pages };
 }
+
+export type { HostDeps };
 
 // Serves the main-process host to the page as window.deck, the way the
 // preload does over IPC. Calls from the page reach the real host (pairing,
@@ -89,7 +198,7 @@ export async function attachBridge(
       ["onLink", "__deckLinkEmit"],
       ["onUpdate", "__deckUpdateEmit"],
       ["onNotificationClick", "__deckNotificationEmit"],
-      ["onPreview", "__deckPreviewEmit"],
+      ["onBrowser", "__deckBrowserEmit"],
     ] as const) {
       const listeners = new Set<(id: unknown, ev: unknown) => void>();
       deck[on] = (fn: (id: unknown, ev: unknown) => void) => {

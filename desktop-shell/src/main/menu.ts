@@ -81,6 +81,8 @@ export function menuTemplate(o: { isMac: boolean; packaged: boolean; name: strin
       sep,
       cmd("Inbox", "inbox"),
       cmd("Next room that needs you", "next-attention", "CmdOrCtrl+Alt+L", true),
+      // The menu answers this key, so it works with a page of the browser focused.
+      cmd("Browser address", "browser-address", "CmdOrCtrl+L"),
       {
         label: "Open room",
         submenu: ([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) => cmd(`Room ${n}`, `room-${n}`, `CmdOrCtrl+${n}`, true)),

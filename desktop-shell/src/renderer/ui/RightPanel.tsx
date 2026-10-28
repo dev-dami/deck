@@ -36,7 +36,8 @@ import { gateMentionables } from "../teamGate";
 import { PANELS, type Panel } from "../ui";
 import { usePickerSource } from "./AgentPicker";
 import { AgentsTree } from "./AgentsTree";
-import { PreviewPanel } from "./PreviewPanel";
+import { BrowserPanel } from "./BrowserPanel";
+import { useBrowserTabs } from "./useBrowser";
 import { CommentsBadge, DiffToggles, DiffView, SplitAllowed } from "./DiffView";
 import { SideChat } from "./SideChat";
 import { TasksPanel } from "./TasksPanel";
@@ -322,8 +323,12 @@ export function RightPanel({
   const picker = usePickerSource(c, state.server, open?.id ?? null);
   const named = gateMentionables(usePrefs().team, useMentionables(c, null));
   const ports = useOpenPorts(c.project);
+  // The Preview tab shows while a dev server answers or the browser has a page.
+  const pages = useBrowserTabs(c.project?.deckId);
   const tabs = PANELS.filter(
-    (p) => (p.panel !== "preview" || panel === "preview" || ports.length > 0) && (p.panel !== "work" || panel === "work" || serves(c, "Work")),
+    (p) =>
+      (p.panel !== "preview" || panel === "preview" || ports.length > 0 || pages.length > 0) &&
+      (p.panel !== "work" || panel === "work" || serves(c, "Work")),
   );
   // A file the graph opened, until the Shell hands one itself.
   const [asked, setAsked] = useState<string | null>(null);
@@ -391,9 +396,9 @@ export function RightPanel({
         {panel === "preview" ? (
           // A dev server belongs to the project, not to one thread.
           c.project === undefined ? (
-            <Empty>The preview shows for a project on this computer.</Empty>
+            <Empty>The browser shows for a project on this computer.</Empty>
           ) : (
-            <PreviewPanel key={open?.id ?? ""} api={c.project} bridge={bridge} />
+            <BrowserPanel key={c.project.deckId} api={c.project} bridge={bridge} theme={state.theme} />
           )
         ) : open === undefined ? (
           <Empty>Open a thread to see its changes, tasks and agents.</Empty>

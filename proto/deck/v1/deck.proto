@@ -190,6 +190,14 @@ service Deck {
   // epoch and seq of the last event seen to replay what was missed; Ready
   // says resync when that cannot be done and the client must refetch.
   rpc Events(Subscribe) returns (stream Event);
+
+  // BrowserHost makes this window the host of the shared browser: agents'
+  // browser.* ops arrive on the stream, one BrowserRequest each, and the
+  // window answers each with BrowserReply. The stream ends when the window
+  // detaches; its unanswered requests then fail. Only this machine's desktop
+  // app uses it. Info lists it in capabilities.
+  rpc BrowserHost(BrowserAttach) returns (stream BrowserRequest);
+  rpc BrowserReply(BrowserResult) returns (Empty);
 }
 
 message Empty {}
@@ -1411,4 +1419,42 @@ message CapsuleFilesResponse {
   repeated CapsuleFile files = 1;
   int32 total = 2;
   string diff = 3;
+}
+
+// BrowserAttach opens a BrowserHost stream. host_id names the window (the
+// same id answers with BrowserReply). Of several windows with host set, the
+// newest one gets the requests.
+message BrowserAttach {
+  string host_id = 1;
+  bool host = 2;
+}
+
+// BrowserRequest is one browser op of an agent.
+message BrowserRequest {
+  string id = 1;
+  // agent is Deck's id for the agent ("claude2"), name its name in the
+  // thread and kind its CLI.
+  string agent = 2;
+  string name = 3;
+  string kind = 4;
+  // op is the op without its "browser." prefix; args its arguments as a
+  // JSON object.
+  string op = 5;
+  string args = 6;
+  // free: the thread is in yolo mode, any http(s) page may load. Otherwise
+  // an agent's tab goes only to this machine's own pages and to allowed
+  // origins.
+  bool free = 7;
+  repeated string allowed = 8;
+  int32 timeout_ms = 9;
+}
+
+// BrowserResult answers a BrowserRequest. A screenshot comes as image.
+message BrowserResult {
+  string host_id = 1;
+  string id = 2;
+  string text = 3;
+  bool is_error = 4;
+  bytes image = 5;
+  string mime = 6;
 }

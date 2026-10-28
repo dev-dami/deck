@@ -11,9 +11,9 @@ import {
   NOTIFY_LIMITS,
   type NotifyInput,
   type PairInput,
-  PREVIEW_LIMITS,
-  type PreviewBounds,
-  type PreviewNav,
+  BROWSER_LIMITS,
+  type BrowserBounds,
+  type BrowserNav,
   RPC_METHODS,
   type RpcMethod,
   type ThreadChoice,
@@ -27,7 +27,8 @@ import type { LinkHost } from "./link";
 import { codeError, type Connect, pairWith } from "./pair";
 import { connectPinned, normalizeFingerprint, targetError } from "./pin";
 import type { PhoneService } from "./phone";
-import type { Preview } from "./preview";
+import type { Browser } from "./browser";
+import { openPorts } from "./preview";
 import type { RecentFolders } from "./recent";
 import type { ServerStore } from "./servers";
 
@@ -52,7 +53,9 @@ export interface HostDeps {
   focused: () => boolean;
   // Looks for the agent CLIs on the engine's PATH.
   agentClis: () => Promise<AgentCli[]>;
-  preview: Pick<Preview, "probe" | "load" | "nav" | "bounds" | "hide" | "close">;
+  browser: Pick<Browser, "state" | "open" | "nav" | "show" | "hide" | "close" | "pause">;
+  // Which of these ports accept a connection on this computer; the tests stub it.
+  probePorts?: (ports: number[]) => Promise<number[]>;
   // Shows the icon (checked by isAppIcon), keeps it and gives it to the
   // installed app's launchers (standard: their own icon).
   setAppIcon: (images: AppIconImage[], standard: boolean) => AppIconResult;
@@ -139,12 +142,15 @@ export function createHost(d: HostDeps): DeckHost {
       if (refresh || clis === null) clis = d.agentClis().then((list) => ({ engine: d.deckPath !== null, clis: list }));
       return clis;
     },
-    probePorts: (ports: number[]) => d.preview.probe(ports),
-    previewOpen: async (input: { url: string }) => d.preview.load(input.url),
-    previewNav: async (nav: PreviewNav) => d.preview.nav(nav.action === "path" ? { action: "path", path: nav.path } : { action: nav.action }),
-    previewBounds: async (b: PreviewBounds) => d.preview.bounds({ x: b.x, y: b.y, w: b.w, h: b.h, zoom: b.zoom }),
-    previewHide: async () => d.preview.hide(),
-    previewClose: async () => d.preview.close(),
+    probePorts: (ports: number[]) => (d.probePorts ?? openPorts)(ports),
+    browserState: async () => d.browser.state(),
+    browserOpen: async (input: { deck: string; url: string; tab?: string; newTab?: boolean }) =>
+      d.browser.open(input.deck, input.url, input.tab, input.newTab === true),
+    browserNav: async (tab: string, nav: BrowserNav) => d.browser.nav(tab, nav.action === "go" ? { action: "go", url: nav.url } : { action: nav.action }),
+    browserShow: async (tab: string, b: BrowserBounds) => d.browser.show(tab, { x: b.x, y: b.y, w: b.w, h: b.h }),
+    browserHide: async () => d.browser.hide(),
+    browserClose: async (tab: string) => d.browser.close(tab),
+    browserPause: async (tab: string, paused: boolean) => d.browser.pause(tab, paused),
     setAppIcon: async (images: AppIconImage[], standard: boolean) =>
       d.setAppIcon(
         images.map((i) => ({ size: i.size, png: i.png })),
@@ -211,29 +217,30 @@ const isNotify: Check = (v) => {
 const isBadge: Check = (v) => isNat(v) && (v as number) <= NOTIFY_LIMITS.badge;
 const isPorts: Check = (v) =>
   Array.isArray(v) &&
-  v.length <= PREVIEW_LIMITS.ports &&
+  v.length <= BROWSER_LIMITS.ports &&
   v.every((p) => Number.isInteger(p) && (p as number) >= 1 && (p as number) <= 65535);
 const isKeys = (v: unknown, keys: string[]): v is Record<string, unknown> =>
   isObject(v) && Object.keys(v as object).length === keys.length && keys.every((k) => k in (v as object));
-const isPreviewOpen: Check = (v) => isKeys(v, ["url"]) && isText(PREVIEW_LIMITS.url)(v["url"]);
-const isPreviewNav: Check = (v) => {
-  if (isKeys(v, ["action"])) return ["back", "forward", "reload"].includes(v["action"] as string);
+const isTabId: Check = (v) => typeof v === "string" && v.length >= 1 && v.length <= BROWSER_LIMITS.id;
+const isBrowserOpen: Check = (v) => {
+  if (!isObject(v)) return false;
+  const o = v as Record<string, unknown>;
+  const keys = Object.keys(o);
   return (
-    isKeys(v, ["action", "path"]) &&
-    v["action"] === "path" &&
-    isText(PREVIEW_LIMITS.url)(v["path"]) &&
-    (v["path"] as string).startsWith("/")
+    keys.every((k) => k === "deck" || k === "url" || k === "tab" || k === "newTab") &&
+    isTabId(o["deck"]) &&
+    isText(BROWSER_LIMITS.url)(o["url"]) &&
+    (o["tab"] === undefined || isTabId(o["tab"])) &&
+    (o["newTab"] === undefined || typeof o["newTab"] === "boolean")
   );
 };
+const isBrowserNav: Check = (v) => {
+  if (isKeys(v, ["action"])) return ["back", "forward", "reload"].includes(v["action"] as string);
+  return isKeys(v, ["action", "url"]) && v["action"] === "go" && isText(BROWSER_LIMITS.url)(v["url"]);
+};
 const isCoord = (v: unknown) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= 100_000;
-const isPreviewBounds: Check = (v) =>
-  isKeys(v, ["x", "y", "w", "h", "zoom"]) &&
-  ["x", "y", "w", "h"].every((k) => isCoord(v[k])) &&
-  (v["w"] as number) >= 0 &&
-  (v["h"] as number) >= 0 &&
-  typeof v["zoom"] === "number" &&
-  v["zoom"] >= 0.25 &&
-  v["zoom"] <= 1;
+const isBrowserBounds: Check = (v) =>
+  isKeys(v, ["x", "y", "w", "h"]) && ["x", "y", "w", "h"].every((k) => isCoord(v[k])) && (v["w"] as number) >= 0 && (v["h"] as number) >= 0;
 
 const ARGS: Record<HostMethod, Check[]> = {
   listServers: [],
@@ -268,11 +275,13 @@ const ARGS: Record<HostMethod, Check[]> = {
   focused: [],
   agentClis: [(v) => typeof v === "boolean"],
   probePorts: [isPorts],
-  previewOpen: [isPreviewOpen],
-  previewNav: [isPreviewNav],
-  previewBounds: [isPreviewBounds],
-  previewHide: [],
-  previewClose: [],
+  browserState: [],
+  browserOpen: [isBrowserOpen],
+  browserNav: [isTabId, isBrowserNav],
+  browserShow: [isTabId, isBrowserBounds],
+  browserHide: [],
+  browserClose: [isTabId],
+  browserPause: [isTabId, (v) => typeof v === "boolean"],
   setAppIcon: [isAppIcon, (v) => typeof v === "boolean"],
   projectIcon: [isStr],
 };

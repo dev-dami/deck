@@ -28,7 +28,7 @@ import { Button } from "./kit/button";
 import { Confirm } from "./kit/dialog";
 import { MenuItem, Popover } from "./kit/menu";
 import { segmentItem, segmentTrack } from "./kit/segmented";
-import { PortChip } from "./PreviewPanel";
+import { PortChip } from "./BrowserPanel";
 import { ROOM_VIEWS, type RoomView } from "./roomView";
 import { ShareStack } from "./Team";
 import { actionToast } from "./Toasts";

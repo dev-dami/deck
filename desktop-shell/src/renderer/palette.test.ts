@@ -17,6 +17,7 @@ const deps = (mac: boolean, terminal = true): CommandDeps => ({
   team: noop,
   inbox: noop,
   nextAttention: noop,
+  browserAddress: noop,
   room: noop,
   toggleTerminal: noop,
   theme: noop,

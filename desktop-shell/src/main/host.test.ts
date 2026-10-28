@@ -243,7 +243,7 @@ describe("platform methods", () => {
   });
 });
 
-describe("ports and the preview", () => {
+describe("ports and the browser", () => {
   const listen = async () => {
     const server = createServer();
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
@@ -270,52 +270,67 @@ describe("ports and the preview", () => {
     }
   });
 
-  test("the preview methods check their arguments before main sees them", async () => {
+  test("the browser methods check their arguments before main sees them", async () => {
     const seen: unknown[] = [];
-    const preview = {
-      probe: async () => [],
-      load: (url: string) => (seen.push(["load", url]), true),
-      nav: (n: unknown) => void seen.push(["nav", n]),
-      bounds: (b: unknown) => void seen.push(["bounds", b]),
+    const browser = {
+      state: () => (seen.push(["state"]), { tabs: [], shown: null }),
+      open: (deck: string, url: string, tab?: string) => (seen.push(["open", deck, url, tab]), { ok: true as const, tab: "t1" }),
+      nav: (tab: string, n: unknown) => void seen.push(["nav", tab, n]),
+      show: (tab: string, b: unknown) => void seen.push(["show", tab, b]),
       hide: () => void seen.push(["hide"]),
-      close: () => void seen.push(["close"]),
+      close: (tab: string) => void seen.push(["close", tab]),
+      pause: (tab: string, paused: boolean) => void seen.push(["pause", tab, paused]),
     };
-    const { host } = testHost(noEmit, noEmit, undefined, { preview });
-    const bounds = { x: 10, y: 20, w: 300, h: 400, zoom: 1 };
+    const { host } = testHost(noEmit, noEmit, undefined, { browser });
+    const bounds = { x: 10, y: 20, w: 300, h: 400 };
     const bad: [HostMethod, unknown[]][] = [
-      ["previewOpen", []],
-      ["previewOpen", ["http://localhost:3000/"]],
-      ["previewOpen", [{ url: 3000 }]],
-      ["previewOpen", [{ url: "http://localhost:3000/", extra: 1 }]],
-      ["previewOpen", [{ url: `http://localhost:3000/${"x".repeat(2048)}` }]],
-      ["previewNav", [{ action: "home" }]],
-      ["previewNav", [{ action: "path" }]],
-      ["previewNav", [{ action: "path", path: "docs" }]],
-      ["previewNav", [{ action: "back", path: "/" }]],
-      ["previewBounds", [{ ...bounds, w: -1 }]],
-      ["previewBounds", [{ ...bounds, x: Number.NaN }]],
-      ["previewBounds", [{ ...bounds, zoom: 2 }]],
-      ["previewBounds", [{ x: 1, y: 2, w: 3, h: 4 }]],
-      ["previewHide", [true]],
-      ["previewClose", ["now"]],
+      ["browserState", [1]],
+      ["browserOpen", []],
+      ["browserOpen", ["http://localhost:3000/"]],
+      ["browserOpen", [{ url: "http://localhost:3000/" }]],
+      ["browserOpen", [{ deck: "local-1", url: 3000 }]],
+      ["browserOpen", [{ deck: "local-1", url: "http://localhost:3000/", extra: 1 }]],
+      ["browserOpen", [{ deck: "local-1", url: `http://localhost:3000/${"x".repeat(2048)}` }]],
+      ["browserOpen", [{ deck: "local-1", url: "http://localhost:3000/", tab: 1 }]],
+      ["browserNav", ["t1", { action: "home" }]],
+      ["browserNav", ["t1", { action: "go" }]],
+      ["browserNav", ["t1", { action: "back", url: "http://a.example/" }]],
+      ["browserNav", ["", { action: "back" }]],
+      ["browserNav", [{ action: "back" }]],
+      ["browserShow", ["t1", { ...bounds, w: -1 }]],
+      ["browserShow", ["t1", { ...bounds, x: Number.NaN }]],
+      ["browserShow", ["t1", { ...bounds, zoom: 1 }]],
+      ["browserShow", ["t1", { x: 1, y: 2, w: 3 }]],
+      ["browserShow", [{ ...bounds }]],
+      ["browserHide", [true]],
+      ["browserClose", []],
+      ["browserClose", [7]],
+      ["browserPause", ["t1"]],
+      ["browserPause", ["t1", "yes"]],
     ];
     for (const [m, args] of bad) {
       await expect(callHost(host, m, args), `${m} ${JSON.stringify(args)}`).rejects.toThrow(/bad arguments/);
     }
     expect(seen).toEqual([]);
-    await expect(callHost(host, "previewOpen", [{ url: "http://localhost:3000/" }])).resolves.toBe(true);
-    await callHost(host, "previewNav", [{ action: "path", path: "/docs?q=1" }]);
-    await callHost(host, "previewNav", [{ action: "reload" }]);
-    await callHost(host, "previewBounds", [{ ...bounds, zoom: 0.5 }]);
-    await callHost(host, "previewHide", []);
-    await callHost(host, "previewClose", []);
+    await expect(callHost(host, "browserOpen", [{ deck: "local-1", url: "http://localhost:3000/" }])).resolves.toEqual({ ok: true, tab: "t1" });
+    await callHost(host, "browserOpen", [{ deck: "local-1", url: "https://example.com/", tab: "t2" }]);
+    await callHost(host, "browserNav", ["t1", { action: "go", url: "https://example.com/docs" }]);
+    await callHost(host, "browserNav", ["t1", { action: "reload" }]);
+    await callHost(host, "browserShow", ["t1", bounds]);
+    await callHost(host, "browserHide", []);
+    await callHost(host, "browserPause", ["t1", true]);
+    await callHost(host, "browserClose", ["t1"]);
+    await callHost(host, "browserState", []);
     expect(seen).toEqual([
-      ["load", "http://localhost:3000/"],
-      ["nav", { action: "path", path: "/docs?q=1" }],
-      ["nav", { action: "reload" }],
-      ["bounds", { ...bounds, zoom: 0.5 }],
+      ["open", "local-1", "http://localhost:3000/", undefined],
+      ["open", "local-1", "https://example.com/", "t2"],
+      ["nav", "t1", { action: "go", url: "https://example.com/docs" }],
+      ["nav", "t1", { action: "reload" }],
+      ["show", "t1", bounds],
       ["hide"],
-      ["close"],
+      ["pause", "t1", true],
+      ["close", "t1"],
+      ["state"],
     ]);
   });
 

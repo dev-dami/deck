@@ -46,7 +46,10 @@ type thread struct {
 	// keeps it.
 	index logIndex
 
-	boundary    map[string]int    // speaker -> log index just after its last finished turn
+	boundary map[string]int // speaker -> log index just after its last finished turn
+	// browserOK are the sites (origins) the person let this thread's agents
+	// open in the shared browser (browser.go).
+	browserOK   map[string]bool
 	inert       map[int]bool      // relay/user entries that must not start a turn
 	heldIdx     []int             // relays held by the pause, released by Continue
 	lastRelay   map[string]string // "from>to" -> normalised text of the last relay

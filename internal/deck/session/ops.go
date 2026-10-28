@@ -36,7 +36,7 @@ func (m *Manager) execOp(agentID, op string, args json.RawMessage) (string, bool
 		return "Deck does not know agent " + agentID, true
 	}
 	t := a.thread
-	env := hub.Env{AgentID: agentID, Tasks: taskBoard{m: m, a: a}, Sub: subBoard{m: m, a: a}, MaxOutput: m.budget(a).output}
+	env := hub.Env{AgentID: agentID, Tasks: taskBoard{m: m, a: a}, Sub: subBoard{m: m, a: a}, Browser: browserBoard{m: m, a: a}, MaxOutput: m.budget(a).output}
 	if m.st != nil { // a nil *store.Store must stay a nil interface
 		env.Store = m.st
 	}

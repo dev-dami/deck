@@ -63,6 +63,7 @@ describe("menuTemplate", () => {
       ["About Deck", "about", undefined],
       ["Inbox", "inbox", undefined],
       ["Next room that needs you", "next-attention", "CmdOrCtrl+Alt+L"],
+      ["Browser address", "browser-address", "CmdOrCtrl+L"],
       ["Room 1", "room-1", "CmdOrCtrl+1"],
       ["Room 9", "room-9", "CmdOrCtrl+9"],
     ];
@@ -83,6 +84,7 @@ describe("menuTemplate", () => {
     }
     // Only the menu answers Open folder and the zoom keys.
     expect(byLabel(t, "Open folder…")?.registerAccelerator).toBeUndefined();
+    expect(byLabel(t, "Browser address")?.registerAccelerator).toBeUndefined();
     expect(byLabel(t, "Zoom out")?.registerAccelerator).toBeUndefined();
   });
 

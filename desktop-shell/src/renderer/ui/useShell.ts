@@ -272,6 +272,7 @@ export function useShellCommands(
       team: team ? live("team") : null,
       inbox: live("inbox"),
       nextAttention: live("nextAttention"),
+      browserAddress: live("browserAddress"),
       room: live("room"),
       toggleTerminal: live("toggleTerminal"),
       theme: (theme) => setPrefs({ theme }),

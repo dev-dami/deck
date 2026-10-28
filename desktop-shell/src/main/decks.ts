@@ -14,6 +14,7 @@ import type {
   RpcStreamEvent,
   StartError,
 } from "../shared/bridge";
+import type { AgentRequest, AgentResult } from "./browser";
 
 // The deck binary on PATH, or null.
 export function findOnPath(name: string, env: NodeJS.ProcessEnv = process.env): string | null {
@@ -171,11 +172,23 @@ interface Started {
   tail: Tail;
 }
 
+// The shared browser as the engines see it: this app hosts it. Each Deck's
+// agents send browser ops on a stream the app opens (BrowserHost) and the
+// app answers each one (BrowserReply).
+export interface BrowserLink {
+  handle(deck: string, r: AgentRequest): Promise<AgentResult>;
+  closeDeck(deck: string): void;
+}
+
+const BROWSER_RETRY_MS = 1000;
+
 interface Open {
   deck: LocalDeck;
   child: ChildProcess;
   client: DeckClient;
   stream: grpc.ClientReadableStream<unknown> | null;
+  // The BrowserHost stream, while this app hosts the browser for the Deck.
+  browser: grpc.ClientReadableStream<unknown> | null;
   // The output stream of each terminal the window watches.
   terms: Map<string, grpc.ClientReadableStream<unknown>>;
 }
@@ -250,6 +263,8 @@ export class RpcDecks {
     private readonly path: Promise<string> | null = null,
     // The app's log: each engine's stderr, and why one did not start.
     private readonly log: (level: LogLevel, message: string) => void = () => {},
+    // Where the engines' browser ops go; null: this app hosts no browser.
+    private readonly browser: BrowserLink | null = null,
   ) {}
 
   async open(dir: string): Promise<OpenOutcome> {
@@ -331,7 +346,9 @@ export class RpcDecks {
   // "stopped" with the last stderr lines, and the project stays open.
   private keep({ deck, child, client, tail }: Started): LocalDeck {
     const id = deck.id;
-    this.open_.set(id, { deck, child, client, stream: null, terms: new Map() });
+    const o: Open = { deck, child, client, stream: null, browser: null, terms: new Map() };
+    this.open_.set(id, o);
+    this.hostBrowser(id, o);
     child.on("exit", (code) => {
       if (this.open_.get(id)?.child !== child) return;
       this.log(code === 0 ? "info" : "warn", `deck (${deck.dir}) stopped (exit ${code})`);
@@ -344,6 +361,44 @@ export class RpcDecks {
       });
     });
     return deck;
+  }
+
+  // Opens the stream on which the Deck's agents send browser ops. The window
+  // that hosts the browser is this one; the stream opens again if it breaks
+  // while the Deck runs. An engine without the channel (an older one) is left
+  // alone.
+  private hostBrowser(id: string, o: Open): void {
+    const link = this.browser;
+    if (link === null) return;
+    const hostId = `app-${process.pid}`;
+    const again = (stream: grpc.ClientReadableStream<unknown>, code: number) => {
+      if (o.browser !== stream) return;
+      o.browser = null;
+      if (code === grpc.status.UNIMPLEMENTED || code === grpc.status.UNAUTHENTICATED) return;
+      const t = setTimeout(() => {
+        if (this.open_.get(id) === o) attach();
+      }, BROWSER_RETRY_MS);
+      t.unref();
+    };
+    const attach = () => {
+      const stream = (o.client["BrowserHost"] as (req: object) => grpc.ClientReadableStream<unknown>).call(o.client, { host_id: hostId, host: true });
+      o.browser = stream;
+      stream.on("data", (req: AgentRequest) => {
+        void link.handle(id, req).then(
+          (res) =>
+            unary(
+              o.client,
+              "BrowserReply",
+              { host_id: hostId, id: req.id, text: res.text, is_error: res.isError, image: res.image === undefined ? Buffer.alloc(0) : Buffer.from(res.image), mime: res.mime ?? "" },
+              15_000,
+            ),
+          () => {},
+        );
+      });
+      stream.on("error", (e: grpc.ServiceError) => again(stream, e.code));
+      stream.on("end", () => again(stream, grpc.status.UNAVAILABLE));
+    };
+    attach();
   }
 
   // Whether dir is a folder this app has a Deck open in.
@@ -460,6 +515,10 @@ export class RpcDecks {
     const s = o.stream;
     o.stream = null;
     s?.cancel();
+    const b = o.browser;
+    o.browser = null;
+    b?.cancel();
+    this.browser?.closeDeck(id);
     for (const t of o.terms.values()) t.cancel();
     o.terms.clear();
     o.client.close();

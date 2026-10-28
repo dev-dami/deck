@@ -220,6 +220,9 @@ func (s *Server) capabilities() []string {
 	if s.crew != nil && s.crew.work != nil {
 		out = append(out, workMethods...)
 	}
+	if s.crew != nil && s.crew.browser != nil {
+		out = append(out, browserMethods...)
+	}
 	return out
 }
 

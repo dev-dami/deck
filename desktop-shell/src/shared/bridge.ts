@@ -228,6 +228,7 @@ export const MENU_COMMANDS = [
   "about",
   "inbox",
   "next-attention",
+  "browser-address",
   "room-1",
   "room-2",
   "room-3",
@@ -285,30 +286,57 @@ export interface NotifyInput {
 
 export const NOTIFY_LIMITS = { title: 200, body: 500, tag: 500, badge: 9999 } as const;
 
-// The preview pane: a page of a dev server on this computer, in a view that
-// main owns and lays over the window where the renderer asks.
-export const PREVIEW_LIMITS = { ports: 32, url: 2048 } as const;
+// The browser: one Chromium for the person and for every agent, in views
+// that main owns and lays over the window where the renderer asks. The
+// person's own tabs and the tabs of agents (who drive them through the
+// browser.* ops) share it.
+export const BROWSER_LIMITS = { ports: 32, url: 2048, id: 64 } as const;
 
-export type PreviewNav = { action: "back" | "forward" | "reload" } | { action: "path"; path: string };
+export type BrowserNav = { action: "back" | "forward" | "reload" } | { action: "go"; url: string };
 
-// Where the view goes, in the window's CSS pixels, and the page's zoom (a
-// device width wider than the box zooms the page out to fit).
-export interface PreviewBounds {
+// Where the shown tab goes, in the window's CSS pixels.
+export interface BrowserBounds {
   x: number;
   y: number;
   w: number;
   h: number;
-  zoom: number;
 }
 
-// What main sends on PREVIEW_EVENT_CHANNEL for the address bar.
-export interface PreviewState {
+// The agent that owns a tab: Deck's id for it, its name in the thread and
+// its CLI (claude, codex, ...).
+export interface BrowserOwner {
+  agent: string;
+  name: string;
+  kind: string;
+}
+
+export interface BrowserTab {
+  id: string;
+  // The local Deck (project) whose agent or person opened it.
+  deck: string;
+  // null: the person's own tab.
+  owner: BrowserOwner | null;
   url: string;
+  title: string;
+  loading: boolean;
   canBack: boolean;
   canForward: boolean;
-  loading: boolean;
-  title: string;
+  // false: discarded to save memory; shown or used again, it loads again.
+  live: boolean;
+  // What the agent is doing on it ("clicking e12"), for a moment.
+  doing: string | null;
+  // The person took the tab over; its agent's ops are refused.
+  paused: boolean;
 }
+
+// What main sends on BROWSER_EVENT_CHANNEL.
+export interface BrowserState {
+  tabs: BrowserTab[];
+  // The tab laid over the window now.
+  shown: string | null;
+}
+
+export type BrowserOpen = { ok: true; tab: string } | { ok: false; message: string };
 
 // The app icon, drawn by the renderer (renderer/appIcon) as PNGs at a few
 // sizes of one square image. Main checks each one (the PNG signature, its
@@ -409,15 +437,19 @@ export interface DeckHost {
   agentClis(refresh: boolean): Promise<AgentClis>;
   // The ports (at most 32) that accept a connection on this computer now.
   probePorts(ports: number[]): Promise<number[]>;
-  // Loads a loopback http URL of an open port in the preview view; false
-  // when main refuses it.
-  previewOpen(input: { url: string }): Promise<boolean>;
-  previewNav(nav: PreviewNav): Promise<void>;
-  // Shows the view at these bounds.
-  previewBounds(bounds: PreviewBounds): Promise<void>;
-  previewHide(): Promise<void>;
-  // Destroys the view and its page.
-  previewClose(): Promise<void>;
+  // The browser's tabs now.
+  browserState(): Promise<BrowserState>;
+  // Opens an http(s) URL as the person: in tab when one is given, in a new
+  // tab with newTab, else in the person's latest tab of that Deck (a new one
+  // if it has none).
+  browserOpen(input: { deck: string; url: string; tab?: string; newTab?: boolean }): Promise<BrowserOpen>;
+  browserNav(tab: string, nav: BrowserNav): Promise<void>;
+  // Lays the tab's page over the window at these bounds.
+  browserShow(tab: string, bounds: BrowserBounds): Promise<void>;
+  browserHide(): Promise<void>;
+  browserClose(tab: string): Promise<void>;
+  // Takes a tab over from its agent (paused), or gives it back.
+  browserPause(tab: string, paused: boolean): Promise<void>;
   // Shows this icon for the app, keeps it for the next start and gives it
   // to the installed app's launchers. standard: it is the icon Deck ships
   // with, so the launchers go back to their own.
@@ -437,7 +469,7 @@ export interface DeckBridge extends DeckHost {
   onUpdate(fn: (ev: UpdateEvent) => void): () => void;
   // A click on a notification, with its tag.
   onNotificationClick(fn: (ev: { tag: string }) => void): () => void;
-  onPreview(fn: (s: PreviewState) => void): () => void;
+  onBrowser(fn: (s: BrowserState) => void): () => void;
   // The path of a dropped folder. The window passes only folders, and main
   // checks that the path is one before it opens it.
   folderPath(file: File): string;
@@ -475,11 +507,13 @@ export const HOST_METHODS = [
   "focused",
   "agentClis",
   "probePorts",
-  "previewOpen",
-  "previewNav",
-  "previewBounds",
-  "previewHide",
-  "previewClose",
+  "browserState",
+  "browserOpen",
+  "browserNav",
+  "browserShow",
+  "browserHide",
+  "browserClose",
+  "browserPause",
   "setAppIcon",
   "projectIcon",
 ] as const satisfies ReadonlyArray<keyof DeckHost>;
@@ -492,7 +526,7 @@ export const MENU_EVENT_CHANNEL = "deck:menu";
 export const LINK_EVENT_CHANNEL = "deck:link";
 export const UPDATE_EVENT_CHANNEL = "deck:update";
 export const NOTIFICATION_EVENT_CHANNEL = "deck:notification-click";
-export const PREVIEW_EVENT_CHANNEL = "deck:preview";
+export const BROWSER_EVENT_CHANNEL = "deck:browser";
 
 export function hostChannel(m: HostMethod): string {
   return `deck:${m}`;

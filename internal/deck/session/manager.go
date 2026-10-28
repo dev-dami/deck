@@ -148,6 +148,7 @@ import (
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/attribution"
 	"github.com/dev-dami/deck/internal/deck/brand"
+	"github.com/dev-dami/deck/internal/deck/browser"
 	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/hub"
 	"github.com/dev-dami/deck/internal/deck/profile"
@@ -312,6 +313,9 @@ type Manager struct {
 	activity func(threadID string) string
 	// team is the peer link for the peers.* ops; see SetTeam.
 	team hub.Team
+	// browser carries the browser.* ops to the desktop app's shared
+	// browser; see Browser.
+	browser *browser.Broker
 	// profiles reads the named agents for a thread's folder; see
 	// SetProfiles.
 	profiles func(dir string) []profile.Profile
@@ -347,6 +351,7 @@ func NewManager(adapters map[string]agent.Adapter, st *store.Store, cfg config.C
 		counts:   map[string]int{},
 		threads:  map[string]*thread{},
 		relayQ:   map[*thread][]func(){},
+		browser:  browser.NewBroker(),
 	}
 	if m.maxHops <= 0 {
 		m.maxHops = DefaultMaxHops

@@ -779,6 +779,27 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   }
 }
 
+/* The browser's loading hairline: a short bar that runs along the
+   toolbar's edge while a page loads. */
+@keyframes browser-load {
+  from {
+    translate: -100% 0;
+  }
+  to {
+    translate: 400% 0;
+  }
+}
+
+.browser-load {
+  animation: browser-load 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+[data-motion="reduced"] .browser-load {
+  animation: none;
+  width: 100%;
+  opacity: 0.5;
+}
+
 /* Pulses step, so an idle window draws four frames a beat, not sixty. */
 .animate-deck-pulse {
   animation: deck-pulse 1.6s steps(4, jump-none) infinite;

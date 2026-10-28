@@ -39,6 +39,7 @@ type crew struct {
 	work      workspace.WorkDesk
 	usage     workspace.UsageReader
 	changes   deckChanges
+	browser   browserDesk
 }
 
 // deckChanges is the workspace's stream of what the message store cannot
@@ -67,6 +68,7 @@ func (s *Server) WithWorkspace(ws any) *Server {
 	c.work, _ = ws.(workspace.WorkDesk)
 	c.usage, _ = ws.(workspace.UsageReader)
 	c.changes, _ = ws.(deckChanges)
+	c.browser, _ = ws.(browserDesk)
 	s.crew = c
 	return s
 }

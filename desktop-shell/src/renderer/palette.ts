@@ -26,6 +26,7 @@ export const MENU_PALETTE: Record<Exclude<MenuCommand, "palette">, string> = {
   about: "settings-connection",
   inbox: "inbox",
   "next-attention": "next-attention",
+  "browser-address": "browser-address",
   "room-1": "room-1",
   "room-2": "room-2",
   "room-3": "room-3",
@@ -51,6 +52,8 @@ export interface CommandDeps {
   team: (() => void) | null;
   inbox: () => void;
   nextAttention: () => void;
+  // Opens the Preview tab with the cursor in its address field.
+  browserAddress: () => void;
   room: (n: number) => void;
   toggleTerminal: () => void;
   theme: (t: "light" | "dark" | "deck") => void;
@@ -88,6 +91,8 @@ export function paletteCommands(d: CommandDeps): Command[] {
       run: () => d.room(n),
     })),
     ...(d.terminal ? [{ id: "terminal", label: "Toggle terminal", hint: `${mod}J`, run: d.toggleTerminal }] : []),
+    // The browser belongs to a project on this computer, like the terminal.
+    ...(d.terminal ? [{ id: "browser-address", label: "Browser: go to address", hint: `${mod}L`, run: d.browserAddress }] : []),
     { id: "theme-light", label: "Theme: light", run: () => d.theme("light") },
     { id: "theme-dark", label: "Theme: dark", run: () => d.theme("dark") },
     { id: "theme-deck", label: "Theme: follow Deck", run: () => d.theme("deck") },

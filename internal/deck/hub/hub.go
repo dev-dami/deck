@@ -140,6 +140,8 @@ type Env struct {
 	Team Team
 	// Sub is the Source Update Bridge; nil when unavailable.
 	Sub SubBridge
+	// Browser is the shared browser of the desktop app; nil when unavailable.
+	Browser Browser
 	// Ops is set only for the agent of an ops contract: it then has
 	// sh.run and contract.result and no other op, and search shows only
 	// those two.
@@ -418,6 +420,7 @@ func init() {
 				{Name: "to", Type: tString, Desc: "one teammate (\"vps\") or one of its agents (\"vps/codex\"); empty for every teammate"},
 			}, run: opTask(OpTeamPost)},
 	}
+	ops = append(ops, browserOps()...)
 }
 
 func findOp(env *Env, name string) (Op, bool) {

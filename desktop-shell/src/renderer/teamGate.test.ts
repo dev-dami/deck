@@ -17,6 +17,7 @@ const deps = (team: (() => void) | null): CommandDeps => ({
   team,
   inbox: noop,
   nextAttention: noop,
+  browserAddress: noop,
   room: noop,
   toggleTerminal: noop,
   theme: noop,
