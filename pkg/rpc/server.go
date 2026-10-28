@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/dev-dami/deck/internal/deck/browser"
 	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/gh"
 	"github.com/dev-dami/deck/internal/usage"
@@ -52,7 +53,10 @@ type Server struct {
 	usage usage.Service
 	terms *terminals
 	// The workspace's task board, agent tree and team link (WithWorkspace).
-	crew *crew
+	crew              *crew
+	browser           *browser.Broker
+	browserWorkspace  workspace.DesktopBrowser
+	browserCapability string
 
 	// rooms is each session's room as the desktop was last told it.
 	roomMu sync.Mutex
@@ -68,7 +72,7 @@ func New(be remote.Backend, token string) *Server {
 // the feed until ctx ends.
 func (s *Server) Run(ctx context.Context) {
 	if s.crew != nil && s.crew.changes != nil {
-		go s.pumpLeases(ctx)
+		go s.pumpWorkspace(ctx)
 	}
 	for ev := range s.be.Events(ctx) {
 		e, ok := toEvent(ev)
@@ -468,6 +472,9 @@ func (s *Server) Changes(ctx context.Context, r *deckv1.SessionRef) (*deckv1.Cha
 // falls QueueSize events behind is ended with ResourceExhausted and
 // resumes from its last seq.
 func (s *Server) Events(r *deckv1.Subscribe, stream deckv1.Deck_EventsServer) error {
+	if r.GetBrowserController() != nil {
+		return s.browserEvents(r.BrowserController, stream)
+	}
 	sb, ready := s.feed.subscribe(r.GetEpoch(), r.GetSeq())
 	defer s.feed.unsubscribe(sb)
 	if err := stream.Send(&deckv1.Event{Kind: &deckv1.Event_Ready{Ready: ready}}); err != nil {

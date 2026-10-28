@@ -114,8 +114,14 @@ export type Decision = "allow" | "allow_session" | "deny" | "answer";
 const decodeDecision = oneOf(["allow", "allow_session", "deny", "answer"] as const);
 
 // "question": an agent asks the person something (Approval.questions).
-export type ApprovalKind = "command" | "edit" | "other" | "question";
-const decodeApprovalKind = oneOf(["command", "edit", "other", "question"] as const);
+export type ApprovalKind = "command" | "edit" | "other" | "question" | "browser_origin";
+const decodeApprovalKind = oneOf([
+  "command",
+  "edit",
+  "other",
+  "question",
+  "browser_origin",
+] as const);
 
 export type Role = "user" | "assistant" | "system";
 const decodeRole = oneOf(["user", "assistant", "system"] as const);
@@ -225,6 +231,7 @@ export interface Approval {
   tool_call_id?: string;
   agent: string;
   kind: ApprovalKind;
+  origin?: string;
   description: string;
   command?: string;
   command_truncated?: boolean;
@@ -282,6 +289,7 @@ export const decodeApproval: Decoder<Approval> = object(
   },
   {
     tool_call_id: str,
+    origin: str,
     command: str,
     command_truncated: bool,
     path: str,

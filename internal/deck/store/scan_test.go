@@ -54,7 +54,7 @@ func TestScanEntriesReadsHeadsBeforeFull(t *testing.T) {
 	var es []Entry
 	for i := range 4 {
 		es = append(es, Entry{Type: EntryUser, Speaker: "u", To: []string{"claude"}, Event: agent.Event{Kind: agent.KindUserText, Text: fmt.Sprint("ask ", i)}},
-			Entry{Event: agent.Event{AgentID: "claude", Kind: agent.KindToolResult, Text: "ran",
+			Entry{TurnID: fmt.Sprint("claude:turn-", i), Event: agent.Event{AgentID: "claude", Kind: agent.KindToolResult, Text: "ran",
 				Tool: &agent.Tool{Name: "Bash", Output: strings.Repeat("o", 100)}}})
 	}
 	if err := s.AppendEntries(th.ID, es); err != nil {

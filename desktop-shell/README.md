@@ -27,6 +27,31 @@ default. Use **Pair with a Deck** for a Deck on
 another machine, or when Deck already runs in a terminal and you want to
 watch it from the window too.
 
+## Agent browser and Highlights
+
+For a project opened locally, the room's **Browser** tab embeds Chromium for
+testing local apps and using websites. Agents can open their own tabs, read
+a page as a compact outline, click, type, choose, press keys, scroll, wait
+and capture images. The first visit to a website requires approval;
+localhost pages are available directly. The tab strip shows each agent's
+mark and hue and, for a moment after it acts, what it is doing
+(`@claude · clicking e12`); a bar under the toolbar says who controls the
+tab. **Take control** cancels pending agent work and pauses agent actions,
+reads and captures. Use it to sign in yourself; **Release** lets agents
+observe and interact with the page again. Website sign-ins persist across
+app restarts. The existing **Preview** stays separate. The browser requires
+an attached local desktop; paired remote Decks do not provide it. How it
+works, and what it costs with many agents, is under "The agent browser"
+below.
+
+Open **Highlights** from the composer pill or overflow menu. Agents publish
+explicit decisions, blockers and findings, and you can pin an agent message
+with its flag button. Source links return to the original message or task.
+Opening the panel clears unread indicators; **Resolve** and **Dismiss** are
+separate actions. The **Summary** tab contains explicit agent updates. The
+Needs you section also reads the room's existing approvals and blocked/error
+state. Highlights and summaries persist with the room.
+
 ## Run it
 
 You need Node 22 and Go (to build the engine).
@@ -474,8 +499,11 @@ renderer (React, sandboxed)                  main process (Node)                
   `windowState.ts` keeps `window.json`; `log.ts` writes the log and keeps
   the app alive after an error; `update.ts` runs electron-updater;
   `launch.ts` reads deck:// links and folder arguments. `preview.ts` probes
-  ports and owns the Preview tab's view. Menu commands, links, updates and
-  the preview's state reach the window as events, like the rpc stream.
+  ports and owns the Preview tab's view. `browser.ts` is the agent browser
+  (tabs, ops, approvals), `tabs.ts` its tab budget, `pageControl.ts` what an
+  agent does to a page over the DevTools protocol and `outline.ts` the page
+  as text. Menu commands, links, updates and the preview's state reach the
+  window as events, like the rpc stream.
 - `src/preload/preload.ts` exposes `window.deck`: the host methods over IPC,
   the socket, rpc, menu, link, update and notification-click event streams,
   and the path of a
@@ -617,6 +645,66 @@ Preview:
   view's session denies every permission and cancels every download.
 - **It ends with the room.** Closing the room or the project, a reload and
   quitting the app destroy the view and its page.
+
+The agent browser:
+
+- **One Chromium, a tab for each agent.** A tab's page is a
+  `WebContentsView` of the window, so every agent of every kind, in any
+  number, shares the Chromium Electron already runs: an agent costs a tab,
+  not a browser. A project's tabs share one persistent profile
+  (`persist:deck-browser-<hash of the folder>`), so a login you made by Take
+  control is there for the agents' tabs of that project and no other.
+  Remote content has no preload, Node or app IPC; its session denies every
+  permission and download.
+- **Cheap with many agents.** A page nobody looks at is a hidden view of one
+  pixel: Chromium slows its timers and animation and its audio is muted. It
+  is shown, still one pixel and with the viewport set to a 1280x800 window,
+  only while an agent works on it, because Chromium does not deliver input to
+  a page that was hidden since it was made. At most 8 pages are alive: past
+  that the least recently used idle page is discarded (its address, title and
+  site approvals stay in the strip) and made again, at the same address, when
+  its agent or you use it; a tab asleep has no refs, so the agent snapshots
+  first. A page nobody touched for 5 minutes is discarded too. An agent keeps
+  at most 6 tabs (opening another closes its least recently used one that is
+  neither busy nor shown, or is refused when every one is) and a project 40.
+  Snapshots and pictures take turns, two at once across all tabs. Which page
+  goes is decided by an order of use that only counts up, never by clock ties. `scripts/browser-bench.cjs` measures
+  it with `app.getAppMetrics()`.
+- **How an agent sees a page.** `browser.snapshot` returns the accessibility
+  tree as an outline: an element to a line, indented by the landmark, form
+  or list it is in, and a ref (`[e12]`) on everything an agent can act on.
+  The result names a `snapshot_version`; `click`, `type`, `select` and
+  `scroll` to an element take the ref and the version.
+
+      UNTRUSTED PAGE CONTENT: ...
+      snapshot_version=2f1c...
+      Sign in  https://example.com/login
+      h1 "Welcome back"
+      form "Sign in"
+        textbox [e2] "Email" = (filled)
+        textbox [e3] "Password" = (hidden)
+        checkbox [e4] "Remember me" unchecked
+        button [e5] "Sign in"
+      link [e6] "Forgot password?" -> /reset
+
+  A ref names the same element across snapshots of one document. The
+  version is spent by a click, a key, a choice, a navigation or the page
+  going away; typing and scrolling keep it. A spent or unknown handle fails
+  with `stale_snapshot`. Text fields show only whether they are filled,
+  never what is in them; passwords, card numbers and one-time codes can only
+  be typed by you (Take control).
+- **Safety.** Origin approvals use the existing approval cards, and every
+  document request, redirects included, waits for them. Take control cancels
+  pending work. The room's mode applies: in plan mode an agent can read
+  pages but not click, type, press or choose. What an agent types is never
+  logged: its row in the thread shows the call without the text.
+- **The channel.** The engine and the browser are different processes. Main
+  registers as the Deck's browser controller with a capability only it holds
+  (printed once on the handshake line), receives requests on a private,
+  non-replayed event stream, and answers each with `BrowserResult`. Requests
+  carry the controller's generation and a deadline and can be cancelled; a
+  stale controller's answer is refused. Only a Deck this app started on this
+  computer has the channel; a paired Deck has none.
 
 Open a folder (rpc):
 

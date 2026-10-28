@@ -79,7 +79,7 @@ func (m *Manager) levelText(t *thread) string {
 	case lv.MaxDepth <= 1:
 		fmt.Fprintf(&b, "you may start up to %d helpers when that clearly saves time; do small jobs yourself.", lv.MaxChildren)
 	default:
-		fmt.Fprintf(&b, "plan bigger work on the task board (deps), split it and start helpers (%d each, %d in the thread, %d levels deep); Deck runs ready tasks. Hand off and review each other's work.",
+		fmt.Fprintf(&b, "plan bigger work on the task board (deps) and start helpers (%d each, %d in the thread, %d levels deep); Deck runs ready tasks; review each other's work.",
 			lv.MaxChildren, lv.MaxSubagents, lv.MaxDepth)
 	}
 	if lv.Race {

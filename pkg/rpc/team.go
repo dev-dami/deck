@@ -23,22 +23,23 @@ const sharedWait = 10 * time.Second
 // workspace the terminal UI drives from its Tasks, Agents and Team panes.
 // Each is nil when the workspace lacks it, and its calls then say so.
 type crew struct {
-	orch      workspace.Orchestration
-	trees     workspace.Worktrees
-	roster    workspace.Roster
-	activity  workspace.Activity
-	subs      workspace.SubAgents
-	peers     workspace.Peers
-	sharing   workspace.Sharing
-	contracts workspace.Contracts
-	desk      workspace.TeamDesk
-	rooms     workspace.Rooms
-	settings  workspace.SettingsEditor
-	profiles  workspace.Profiles
-	limits    workspace.LimitsDesk
-	work      workspace.WorkDesk
-	usage     workspace.UsageReader
-	changes   deckChanges
+	highlights workspace.HighlightsDesk
+	orch       workspace.Orchestration
+	trees      workspace.Worktrees
+	roster     workspace.Roster
+	activity   workspace.Activity
+	subs       workspace.SubAgents
+	peers      workspace.Peers
+	sharing    workspace.Sharing
+	contracts  workspace.Contracts
+	desk       workspace.TeamDesk
+	rooms      workspace.Rooms
+	settings   workspace.SettingsEditor
+	profiles   workspace.Profiles
+	limits     workspace.LimitsDesk
+	work       workspace.WorkDesk
+	usage      workspace.UsageReader
+	changes    deckChanges
 }
 
 // deckChanges is the workspace's stream of what the message store cannot
@@ -67,7 +68,9 @@ func (s *Server) WithWorkspace(ws any) *Server {
 	c.work, _ = ws.(workspace.WorkDesk)
 	c.usage, _ = ws.(workspace.UsageReader)
 	c.changes, _ = ws.(deckChanges)
+	c.highlights, _ = ws.(workspace.HighlightsDesk)
 	s.crew = c
+	s.withBrowser(ws)
 	return s
 }
 

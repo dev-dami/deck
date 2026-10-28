@@ -117,8 +117,10 @@ type OpsRunner interface {
 
 // Env is what one call runs against; the caller resolves it per call.
 type Env struct {
-	AgentID  string
-	ThreadID string
+	Highlights func(context.Context, string, json.RawMessage) (string, error)
+	Browser    func(context.Context, string, json.RawMessage) agent.OpResult
+	AgentID    string
+	ThreadID   string
 	// Dir is the thread's working directory; git and gh run there.
 	Dir string
 	// Roots are the folders that count as this project for history: Dir
@@ -222,7 +224,7 @@ func (o Op) Signature() string {
 }
 
 // Ops is the catalog, in the order search lists it.
-func Ops() []Op { return ops }
+func Ops() []Op { return append(append(append([]Op{}, ops...), browserOps()...), highlightOps()...) }
 
 var ops []Op
 
@@ -245,7 +247,7 @@ func catalog(env *Env) []Op {
 	if env.Ops != nil {
 		return opsOps
 	}
-	return ops
+	return Ops()
 }
 
 func init() {
@@ -524,6 +526,16 @@ func parseArgs(o Op, raw json.RawMessage) (args, error) {
 		}
 	}
 	return out, nil
+}
+
+// ExecuteResult is the image-capable entry point. Existing ops keep their
+// string handlers and their existing output budgets/redaction.
+func ExecuteResult(ctx context.Context, env Env, op string, raw json.RawMessage) agent.OpResult {
+	if strings.HasPrefix(strings.TrimSpace(op), "browser.") {
+		return executeBrowser(ctx, env, strings.TrimSpace(op), raw)
+	}
+	text, isErr := Execute(ctx, env, op, raw)
+	return agent.TextResult(text, isErr)
 }
 
 // Execute runs one op. Unknown ops and bad arguments come back as errors

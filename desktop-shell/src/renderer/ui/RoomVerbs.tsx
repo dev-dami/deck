@@ -7,6 +7,7 @@ import { draftOf, setDraft } from "../appState";
 import type { DeckClient } from "../client";
 import { appendComment, commentBlock, countComments, fileAuthor } from "../comments";
 import { messageText, retryText } from "../messages";
+import { canPin, pinMessage } from "../pin";
 import { APPROVE_TEXT, approveMode, type ModeMemory, nextModeMemory, planText } from "../plans";
 import { changedSince, takeoverNotice, takeoverText } from "../takeover";
 import type { LineCommentApi } from "./DiffView";
@@ -95,6 +96,7 @@ export function useRoomVerbs({
   const [editing, setEditing] = useState<{ sid: string; id: string } | null>(null);
   const [stopped, setStopped] = useState<Stopped | null>(null);
 
+  const pin = canPin(c);
   const actions = useMemo<RoomActions>(
     () => ({
       approve: async (agent: string) => {
@@ -128,8 +130,9 @@ export function useRoomVerbs({
         const id = live.current.sid;
         if (id !== null) void c.continueRun(id);
       },
+      ...(pin ? { pinMessage: (m: Message) => pinMessage(c, m) } : {}),
     }),
-    [c, projectKey, write, focusEnd],
+    [c, projectKey, write, focusEnd, pin],
   );
 
   // The composer's send: an edit replaces the message it edits.

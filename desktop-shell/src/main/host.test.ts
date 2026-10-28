@@ -32,6 +32,11 @@ describe("callHost", () => {
   });
 
   test("rpc calls name a known method and pass a plain object", async () => {
+    // Registration/results carry a main-only capability. Adding the
+    // browser's public actions must never expose these controller calls.
+    for (const method of ["RegisterBrowserController", "UnregisterBrowserController", "BrowserResult", "BrowserUpdate", "BrowserOrigin"]) {
+      await expect(callHost(host, "rpcCall", ["local-1", method, {}])).rejects.toThrow(/bad arguments/);
+    }
     await expect(callHost(host, "rpcCall", ["local-1", "Shutdown", {}])).rejects.toThrow(/bad arguments/);
     await expect(callHost(host, "rpcCall", ["local-1", "Send", "text"])).rejects.toThrow(/bad arguments/);
     await expect(callHost(host, "rpcCall", ["local-1", "Send", [1]])).rejects.toThrow(/bad arguments/);

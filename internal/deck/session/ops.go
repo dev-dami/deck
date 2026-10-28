@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/hub"
@@ -31,12 +32,23 @@ func (m *Manager) SetTeam(t hub.Team) {
 // than thread.send and thread.read, for the agent that called it. It runs in
 // the caller's thread: its folder, its project's history, its tool calls.
 func (m *Manager) execOp(agentID, op string, args json.RawMessage) (string, bool) {
+	r := m.execOpResult(m.ctx, agentID, op, args)
+	return r.Text, r.IsError
+}
+
+func (m *Manager) execOpResult(ctx context.Context, agentID, op string, args json.RawMessage) agent.OpResult {
 	a := m.get(agentID)
 	if a == nil {
-		return "Deck does not know agent " + agentID, true
+		return agent.TextResult("Deck does not know agent "+agentID, true)
 	}
 	t := a.thread
 	env := hub.Env{AgentID: agentID, Tasks: taskBoard{m: m, a: a}, Sub: subBoard{m: m, a: a}, MaxOutput: m.budget(a).output}
+	env.Browser = func(ctx context.Context, op string, args json.RawMessage) agent.OpResult {
+		return m.runBrowser(ctx, t.id, agentID, op, args)
+	}
+	env.Highlights = func(ctx context.Context, op string, args json.RawMessage) (string, error) {
+		return m.runHighlights(ctx, a, op, args)
+	}
 	if m.st != nil { // a nil *store.Store must stay a nil interface
 		env.Store = m.st
 	}
@@ -84,7 +96,13 @@ func (m *Manager) execOp(agentID, op string, args json.RawMessage) (string, bool
 		env.Activity = func() string { return activity(tid) }
 	}
 
-	ctx, cancel := context.WithTimeout(m.ctx, hub.Timeout)
+	timeout := hub.Timeout
+	if strings.HasPrefix(strings.TrimSpace(op), "browser.") {
+		timeout = 12 * time.Hour
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return hub.Execute(ctx, env, op, args)
+	stop := context.AfterFunc(m.ctx, cancel)
+	defer stop()
+	return hub.ExecuteResult(ctx, env, op, args)
 }

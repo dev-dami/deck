@@ -20,6 +20,19 @@ import {
   type Session,
   type Theme,
 } from "@web/protocol";
+import type {
+  AgentSummary,
+  BrowserActionResponse,
+  BrowserErrorCode,
+  BrowserStateResponse,
+  BrowserTab,
+  HighlightItem,
+  HighlightKind,
+  HighlightSource,
+  HighlightsResponse,
+  HighlightState,
+  OpResult,
+} from "../shared/bridge";
 import type { Profile } from "./profiles";
 import { ATTENTION, type Attention, type Lease, type RoomEvent, type RoomUpdate } from "./roomMeta";
 
@@ -102,7 +115,7 @@ function mapApproval(p: Obj): unknown {
     kind: s(p["kind"]),
     description: s(p["description"]),
     created_at: isoOf(p["created_at"]),
-    ...strings(p, ["tool_call_id", "command", "path", "diff", "raw"]),
+    ...strings(p, ["tool_call_id", "command", "path", "diff", "raw", "origin"]),
   };
   const qs = Array.isArray(p["questions"]) ? p["questions"].filter(isRecord) : [];
   if (qs.length > 0) out["questions"] = qs.map(mapQuestion);
@@ -166,6 +179,105 @@ export const toModels = (r: unknown): ModelChoice[] => list(field(r, "models"), 
 export const toChanges = (r: unknown): ChangedFile[] => list(field(r, "files"), mapChanged, decodeChangedFile);
 export const toTheme = (v: unknown): Theme | null => (isRecord(v) ? decodeTheme(mapTheme(v)) : null);
 
+// ---- Highlights and the browser (live.ts): the deck.v1 messages as the
+// bridge types them. A kind or state this app does not know is dropped.
+
+const HIGHLIGHT_KINDS: readonly string[] = ["needs_you", "blocker", "finding"];
+const HIGHLIGHT_STATES: readonly string[] = ["open", "resolved", "dismissed"];
+
+function toSource(v: unknown): HighlightSource | null {
+  if (!isRecord(v)) return null;
+  const src = { message_id: s(v["message_id"]), task_id: s(v["task_id"]), turn_id: s(v["turn_id"]) };
+  return src.message_id === "" && src.task_id === "" && src.turn_id === "" ? null : src;
+}
+
+export function toHighlightItem(v: unknown): HighlightItem | null {
+  if (!isRecord(v) || s(v["id"]) === "") return null;
+  const kind = s(v["kind"]);
+  const state = s(v["state"]);
+  if (!HIGHLIGHT_KINDS.includes(kind) || !HIGHLIGHT_STATES.includes(state)) return null;
+  return {
+    id: s(v["id"]),
+    session_id: s(v["session_id"]),
+    agent: s(v["agent"]),
+    key: s(v["key"]),
+    kind: kind as HighlightKind,
+    title: s(v["title"]),
+    detail: s(v["detail"]),
+    source: toSource(v["source"]),
+    state: state as HighlightState,
+    created_at: n(v["created_at"]),
+    updated_at: n(v["updated_at"]),
+    unread: v["unread"] === true,
+  };
+}
+
+export function toSummary(v: unknown): AgentSummary | null {
+  if (!isRecord(v) || s(v["agent"]) === "") return null;
+  return { session_id: s(v["session_id"]), agent: s(v["agent"]), text: s(v["text"]), source: toSource(v["source"]), updated_at: n(v["updated_at"]) };
+}
+
+export function toHighlights(r: unknown): HighlightsResponse {
+  const items = field(r, "items");
+  const summaries = field(r, "summaries");
+  return {
+    items: Array.isArray(items) ? items.map(toHighlightItem).filter((x): x is HighlightItem => x !== null) : [],
+    summaries: Array.isArray(summaries) ? summaries.map(toSummary).filter((x): x is AgentSummary => x !== null) : [],
+  };
+}
+
+function toTab(v: unknown): BrowserTab | null {
+  if (!isRecord(v) || s(v["id"]) === "") return null;
+  return {
+    id: s(v["id"]),
+    session_id: s(v["session_id"]),
+    owner: s(v["owner"]),
+    url: s(v["url"]),
+    title: s(v["title"]),
+    loading: v["loading"] === true,
+    can_back: v["can_back"] === true,
+    can_forward: v["can_forward"] === true,
+    user_in_control: v["user_in_control"] === true,
+    snapshot_version: s(v["snapshot_version"]),
+    activity: s(v["activity"]),
+    asleep: v["asleep"] === true,
+  };
+}
+
+export function toBrowserTab(v: unknown): BrowserTab | null {
+  return toTab(v);
+}
+
+// The room the state is about comes from session_id, which is present even
+// when the room has no tab left.
+export function toBrowserState(r: unknown): (BrowserStateResponse & { session_id: string }) | null {
+  if (!isRecord(r)) return null;
+  const tabs = r["tabs"];
+  return {
+    session_id: s(r["session_id"]),
+    available: r["available"] === true,
+    tabs: Array.isArray(tabs) ? tabs.map(toTab).filter((x): x is BrowserTab => x !== null) : [],
+  };
+}
+
+export function toBrowserActionResponse(r: unknown): BrowserActionResponse | null {
+  if (!isRecord(r)) return null;
+  const res = r["result"];
+  const images = isRecord(res) && Array.isArray(res["images"]) ? res["images"] : [];
+  const result: OpResult | null = isRecord(res)
+    ? {
+        text: s(res["text"]),
+        is_error: res["is_error"] === true,
+        images: images.flatMap((im) =>
+          isRecord(im) && (im["mime_type"] === "image/png" || im["mime_type"] === "image/jpeg") && im["data"] instanceof Uint8Array
+            ? [{ mime_type: im["mime_type"], data: im["data"] }]
+            : [],
+        ),
+      }
+    : null;
+  return { tab: toTab(r["tab"]), result, error_code: s(r["error_code"]) as BrowserErrorCode | "" };
+}
+
 export interface Ready {
   epoch: string;
   seq: number;
@@ -177,7 +289,14 @@ export interface Ready {
 export type RpcEvent =
   | { k: "ready"; ready: Ready }
   | { k: "event"; seq: number; event: ServerEvent; room?: RoomEvent }
-  | { k: "room"; seq: number; room: RoomEvent };
+  | { k: "room"; seq: number; room: RoomEvent }
+  | { k: "live"; seq: number; live: LiveEvent };
+
+// What Highlights and the browser say as it happens (live.ts).
+export type LiveEvent =
+  | { k: "highlight"; item: HighlightItem }
+  | { k: "summary"; summary: AgentSummary }
+  | { k: "browser"; state: BrowserStateResponse & { session_id: string } };
 
 // The v2 name and payload of each deck.v1.Event kind.
 const EVENTS: Record<string, { e: string; map: (p: Obj) => unknown }> = {
@@ -218,6 +337,18 @@ export function toEvent(v: unknown): RpcEvent | null {
   if (kind === "lease_changed") {
     const room = toLeaseEvent(payload);
     return room === null ? null : { k: "room", seq, room };
+  }
+  if (kind === "highlight_changed") {
+    const item = toHighlightItem(payload);
+    return item === null ? null : { k: "live", seq, live: { k: "highlight", item } };
+  }
+  if (kind === "summary_changed") {
+    const summary = toSummary(payload);
+    return summary === null ? null : { k: "live", seq, live: { k: "summary", summary } };
+  }
+  if (kind === "browser_changed") {
+    const state = toBrowserState(payload);
+    return state === null || state.session_id === "" ? null : { k: "live", seq, live: { k: "browser", state } };
   }
   const spec = EVENTS[kind];
   if (spec === undefined) return null;

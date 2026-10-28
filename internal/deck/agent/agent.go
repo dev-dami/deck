@@ -328,6 +328,8 @@ const (
 	// not a permission, so no mode answers it. Allow with Answers is the
 	// person's reply; a deny says they declined to answer.
 	ApproveQuestion ApprovalKind = "question"
+	// ApproveBrowserOrigin asks before a tab visits a new remote origin.
+	ApproveBrowserOrigin ApprovalKind = "browser_origin"
 )
 
 // Decision is the user's answer to an approval request.
@@ -615,6 +617,9 @@ type Hub interface {
 	// SetExecutor installs the provider of search and of every execute op
 	// other than thread.send and thread.read.
 	SetExecutor(Executor)
+	// SetResultExecutor installs the image-capable path without changing
+	// the behavior of existing text-only ops.
+	SetResultExecutor(ResultExecutor)
 }
 
 // Run is a live agent process.

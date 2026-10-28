@@ -186,6 +186,19 @@ service Deck {
   // set returns that file's diff.
   rpc CapsuleFiles(CapsuleFilesRequest) returns (CapsuleFilesResponse);
 
+  // Browser is optional and local-desktop only. State/actions are the
+  // user's surface; controller registration/results are private to main.
+  rpc BrowserState(SessionRef) returns (BrowserStateResponse);
+  rpc BrowserAction(BrowserActionRequest) returns (BrowserActionResponse);
+  rpc RegisterBrowserController(RegisterBrowserControllerRequest) returns (BrowserController);
+  rpc UnregisterBrowserController(BrowserControllerRef) returns (Empty);
+  rpc BrowserResult(BrowserResultRequest) returns (Empty);
+  rpc BrowserUpdate(BrowserUpdateRequest) returns (Empty);
+  rpc BrowserOrigin(BrowserOriginRequest) returns (BrowserOriginResponse);
+  // Highlights is the durable snapshot; Events carries subsequent deltas.
+  rpc Highlights(SessionRef) returns (HighlightsResponse);
+  rpc HighlightAction(HighlightActionRequest) returns (HighlightItem);
+
   // Events streams everything that happens, starting with a Ready. Pass the
   // epoch and seq of the last event seen to replay what was missed; Ready
   // says resync when that cannot be done and the client must refetch.
@@ -193,6 +206,196 @@ service Deck {
 }
 
 message Empty {}
+
+// BrowserCommand names a bounded operation, never arbitrary JavaScript
+// or CDP. Agent identity/session are derived from the authenticated caller.
+message BrowserCommand {
+  // open, navigate, back, forward, reload, snapshot, click, type, select,
+  // press, scroll, wait, screenshot, close, handoff, take_control,
+  // release_control.
+  string action = 1;
+  string tab_id = 2;
+  string url = 3;
+  string element_ref = 4;
+  string snapshot_version = 5;
+  // type: what to enter. select: the option's label or value.
+  string text = 6;
+  string target_agent = 7;
+  // press: a key name or combination, like Enter or Control+A.
+  string key = 8;
+  // scroll: "top" or "bottom"; or dy pixels; or element_ref into view.
+  string to = 9;
+  int32 dy = 10;
+  // wait: until the page shows text, until it has loaded, or for ms.
+  // timeout_s bounds the first two.
+  bool load = 11;
+  int32 ms = 12;
+  int32 timeout_s = 13;
+  // snapshot: only what can be acted on, and at most max_lines lines.
+  bool interactive = 14;
+  int32 max_lines = 15;
+}
+
+message BrowserActionRequest {
+  string session_id = 1;
+  // This RPC is a user action, unlike authenticated agent browser.* ops.
+  // It may control any tab in this session. open/navigate/back/forward/
+  // reload imply Take control, cancelling agent work before navigation.
+  // Only release_control resumes agent observation and input.
+  BrowserCommand command = 2;
+}
+
+message BrowserTab {
+  string id = 1;
+  string session_id = 2;
+  string owner = 3;
+  string url = 4;
+  string title = 5;
+  bool loading = 6;
+  bool can_back = 7;
+  bool can_forward = 8;
+  bool user_in_control = 9;
+  string snapshot_version = 10;
+  // What the owning agent is doing now ("clicking e12"), for a moment after.
+  string activity = 11;
+  // The page was let go to save memory; it comes back at the same address.
+  bool asleep = 12;
+}
+
+message BrowserStateResponse {
+  bool available = 1;
+  repeated BrowserTab tabs = 2;
+  // Required even when the last tab is closed, to route browser_changed.
+  string session_id = 3;
+}
+
+// OpImage is bytes in protobuf and base64 only on the JSON/MCP wire.
+message OpImage {
+  string mime_type = 1;
+  bytes data = 2;
+}
+
+message OpResult {
+  string text = 1;
+  repeated OpImage images = 2;
+  bool is_error = 3;
+}
+
+message BrowserActionResponse {
+  BrowserTab tab = 1;
+  OpResult result = 2;
+  // browser_unavailable, user_in_control, stale_snapshot, not_owner,
+  // origin_denied, cancelled, timeout, invalid_request, unsupported_image.
+  string error_code = 3;
+}
+
+// The capability is minted for the local desktop launch, held only in
+// main, and verified independently of the ordinary RPC bearer token.
+message RegisterBrowserControllerRequest {
+  // Empty session_id registers the local desktop for this engine's rooms.
+  string session_id = 1;
+  string desktop_capability = 2;
+}
+
+message BrowserController {
+  string id = 1;
+  string session_id = 2;
+  string generation = 3;
+}
+
+message BrowserControllerRef {
+  string id = 1;
+  string generation = 2;
+  string desktop_capability = 3;
+}
+
+message BrowserRequest {
+  string id = 1;
+  string session_id = 2;
+  string controller_id = 3;
+  string controller_generation = 4;
+  string owner = 5;
+  BrowserCommand command = 6;
+  // Execution deadline after origin approval, Unix milliseconds.
+  int64 deadline_at = 7;
+  // Cancels this live request; command is absent. Never replay cancellations.
+  bool cancelled = 8;
+}
+
+message BrowserResultRequest {
+  string id = 1;
+  BrowserControllerRef controller = 2;
+  BrowserActionResponse response = 3;
+}
+
+message BrowserUpdateRequest {
+  BrowserControllerRef controller = 1;
+  BrowserStateResponse state = 2;
+}
+
+message BrowserOriginRequest {
+  BrowserControllerRef controller = 1;
+  string request_id = 2;
+  string session_id = 3;
+  string tab_id = 4;
+  string origin = 5;
+}
+
+message BrowserOriginResponse { bool allow = 1; }
+
+// Same-thread references only. At most one primary message/task ref;
+// turn_id lets the engine stamp a source before its message is complete.
+message HighlightSource {
+  string message_id = 1;
+  string task_id = 2;
+  string turn_id = 3;
+}
+
+message HighlightItem {
+  string id = 1;
+  string session_id = 2;
+  string agent = 3;
+  string key = 4;
+  // needs_you, blocker, finding.
+  string kind = 5;
+  string title = 6;
+  string detail = 7;
+  HighlightSource source = 8;
+  // open, resolved, dismissed. Seeing an item never changes state.
+  string state = 9;
+  int64 created_at = 10;
+  int64 updated_at = 11;
+  bool unread = 12;
+}
+
+message AgentSummary {
+  string session_id = 1;
+  string agent = 2;
+  string text = 3;
+  HighlightSource source = 4;
+  int64 updated_at = 5;
+}
+
+message HighlightsResponse {
+  repeated HighlightItem items = 1;
+  repeated AgentSummary summaries = 2;
+}
+
+message HighlightActionRequest {
+  string session_id = 1;
+  // add, update, resolve, dismiss, seen, pin. Engine stamps author.
+  // Existing approvals/questions remain in the attention flow; these
+  // actions cannot approve, dismiss or resolve an underlying approval.
+  string action = 2;
+  string id = 3;
+  string key = 4;
+  string kind = 5;
+  string title = 6;
+  string detail = 7;
+  HighlightSource source = 8;
+  // seen may mark a batch; ids is invalid for every other action.
+  repeated string ids = 9;
+}
 
 message SessionRef {
   string session_id = 1;
@@ -422,6 +625,8 @@ message Approval {
   int64 created_at = 11;
   // questions are what a "question" approval asks, in order.
   repeated Question questions = 12;
+  // Set for kind browser_origin; the canonical origin being approved.
+  string origin = 13;
 }
 
 // Question is one thing an agent asks the person; its answer is keyed by
@@ -481,6 +686,10 @@ message ChangesResponse {
 message Subscribe {
   string epoch = 1;
   uint64 seq = 2;
+  // Only Electron main supplies this private controller capability. A
+  // controller subscription receives live BrowserRequests for its own
+  // registration; ordinary subscribers never receive those requests.
+  BrowserControllerRef browser_controller = 3;
 }
 
 // Ready opens every Events stream.
@@ -557,6 +766,12 @@ message Event {
     Notice notice = 23;
     Theme theme_changed = 24;
     LeaseChanged lease_changed = 25;
+    // Private, live-only: never replay to a new controller or broadcast
+    // to ordinary Events subscribers. Commands are not durable history.
+    BrowserRequest browser_request = 26;
+    BrowserStateResponse browser_changed = 27;
+    HighlightItem highlight_changed = 28;
+    AgentSummary summary_changed = 29;
   }
 }
 

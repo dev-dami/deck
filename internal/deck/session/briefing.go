@@ -365,6 +365,7 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	t.mu.Unlock()
 	m.mu.Lock()
 	team := m.team
+	hasHighlights := m.highlightAction != nil
 	m.mu.Unlock()
 	var mates []string
 	if team != nil && tools && !ops && !contract {
@@ -380,40 +381,57 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 		self += strings.TrimPrefix(d, a.getName())
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are %s in a shared Deck thread with %s. Everything said in the thread is visible to all of them.\n", self, clip(with, 300))
-	b.WriteString("What others said since your last turn comes first, other agents' messages prefixed with their name, like \"[codex] ...\".\n")
+	fmt.Fprintf(&b, "You are %s in a shared Deck thread with %s; all of you see this thread.\n", self, clip(with, 300))
+	b.WriteString("New messages come first, prefixed by speaker, e.g. \"[codex] ...\".\n")
 	if tools {
-		b.WriteString("Deck's MCP tools: search finds Deck ops, other agents' skills and this project's past threads; execute runs one op.\n")
-		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with @name ($name also works). Op \"thread.read\" shows the whole thread, \"thread.roster\" who is in it.\n")
-		b.WriteString("Shared task board (execute ops): task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list; report yours with task.done.\n")
+		b.WriteString("MCP: search finds Deck ops, skills, past threads; execute runs one.\n")
+		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with @name ($name also works). thread.read shows the whole thread, thread.roster who is in it.\n")
+		b.WriteString("Shared task board: task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list; report yours with task.done.\n")
 		b.WriteString("Pass code: sub.patch.capture, then thread.send {capsule}.\n")
 		if !ops {
+			if hasHighlights {
+				b.WriteString("Flag failures, user decisions and risks with highlight.add {key,kind,title}; use one-line titles. summary.update {text} posts short status.\n")
+			}
 			// Asked for agents, an agent reaches for its CLI's own subagent
 			// tool unless told: those work, but the user cannot steer them.
-			fmt.Fprintf(&b, "agent.spawn {brief, kind} starts a helper (kind: %s, or a named agent) as a lane that reports back; when the user asks for agents, use it, not your own Task/subagent tool. Orchestration is %s memory.add pins a note; search shows op args.\n",
+			fmt.Fprintf(&b, "agent.spawn {brief, kind} starts a helper (kind: %s, or a named agent) that reports back; when the user asks for agents, use it, not your own Task/subagent tool. Orchestration is %s memory.add pins a note; search shows op args.\n",
 				clip(strings.Join(m.Kinds(), ", "), 80), m.levelText(t))
-			b.WriteString("Big work: worktree.*, capsule.*, agent.spawn {worktree: true}.\n")
-			b.WriteString("Before editing files others may touch: lease.acquire {paths}, or file.claim {paths} for files another agent is changing (Deck asks it and hands you its changes). Asked about your file? file.answer {path, text}.\n")
+			b.WriteString("Big work: worktree.*, capsule.*, agent.spawn {worktree: true}. Web: browser.open, browser.snapshot.\n")
+			b.WriteString("Before editing shared files: lease.acquire {paths}, or file.claim {paths} for a file another agent is changing (Deck gets you its changes). Asked about your file? file.answer {path, text}.\n")
 		}
 		if len(mates) > 0 {
-			fmt.Fprintf(&b, "Teammates' Decks on other machines: %s. team.post {text, to: \"name\" or \"name/agent\"} writes to them (team.read shows the chat); what they write reaches you at your next turn. task.contract {peer, brief} asks one for coding work, if it made this Deck a contractor (the user allows it; changes come back as a capsule); peers.status {peer} asks how one is. Lines like \"[%s] ...\" come from them.\n",
+			fmt.Fprintf(&b, "Teammates' Decks on other machines: %s. team.post {text, to: \"name\" or \"name/agent\"} writes to them (team.read shows the chat); their words reach you next turn. task.contract {peer, brief} asks one for coding work, (changes come back as a capsule); peers.status {peer} asks how one is. Lines like \"[%s] ...\" come from them.\n",
 				clip(strings.Join(mates, ", "), 200), clip(mates[0], 32))
 		}
 	} else {
 		b.WriteString("To message another agent, start a line of your final reply with @name or @all ($name also works).\n")
 	}
-	b.WriteString("Keep messages to other agents short; do not repeat what the user can see.\n")
+	b.WriteString("Keep agent messages short.\n")
 	fmt.Fprintf(&b, "Write plan files in %s.", brand.PlansDir(t.dir))
 	// Deck's own attribution, whichever CLI does the work (Settings → General).
 	if cfg.DeckAttribution {
-		fmt.Fprintf(&b, " Commits you make end with the trailer %q and no other AI attribution; pull requests end with %q.",
+		fmt.Fprintf(&b, " Commits end with the trailer %q, no other AI attribution; PRs end with %q.",
 			brand.CommitTrailer, brand.PRFooter)
 	}
-	out := clip(b.String(), maxInstrChars)
+	out := clipInstruction(b.String(), maxInstrChars)
 	if pb := a.prof.Briefing(); pb != "" {
 		out += "\n" + clip(pb, maxProfileChars)
 	}
 	return out
+}
+
+// Instructions travel on the CLI command line: enforce their byte budget,
+// including the truncation marker, without splitting a UTF-8 character.
+func clipInstruction(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	const marker = "...[cut]"
+	limit := max(0, n-len(marker))
+	for limit > 0 && !utf8.RuneStart(s[limit]) {
+		limit--
+	}
+	return s[:limit] + marker
 }
 
 // ---- small helpers ----

@@ -84,6 +84,7 @@ const bridge: DeckBridge = {
   previewBounds: (bounds) => invoke("previewBounds", bounds),
   previewHide: () => invoke("previewHide"),
   previewClose: () => invoke("previewClose"),
+  browserView: (input) => invoke("browserView", input),
   setAppIcon: (images, standard) => invoke("setAppIcon", images, standard),
   projectIcon: (dir) => invoke("projectIcon", dir),
   onSocket: (fn) => listen<[number, SocketEvent]>("deck:socket", fn),

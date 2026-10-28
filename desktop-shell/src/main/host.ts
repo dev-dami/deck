@@ -1,5 +1,6 @@
 import {
   type AgentCli,
+  type BrowserViewInput,
   type AgentClis,
   type AppIconImage,
   type AppIconResult,
@@ -53,6 +54,7 @@ export interface HostDeps {
   // Looks for the agent CLIs on the engine's PATH.
   agentClis: () => Promise<AgentCli[]>;
   preview: Pick<Preview, "probe" | "load" | "nav" | "bounds" | "hide" | "close">;
+  browserView?: (input: BrowserViewInput) => Promise<void>;
   // Shows the icon (checked by isAppIcon), keeps it and gives it to the
   // installed app's launchers (standard: their own icon).
   setAppIcon: (images: AppIconImage[], standard: boolean) => AppIconResult;
@@ -145,6 +147,10 @@ export function createHost(d: HostDeps): DeckHost {
     previewBounds: async (b: PreviewBounds) => d.preview.bounds({ x: b.x, y: b.y, w: b.w, h: b.h, zoom: b.zoom }),
     previewHide: async () => d.preview.hide(),
     previewClose: async () => d.preview.close(),
+    browserView: async (input: BrowserViewInput) => {
+      if (d.browserView === undefined) throw new Error("No desktop browser available.");
+      await d.browserView(input);
+    },
     setAppIcon: async (images: AppIconImage[], standard: boolean) =>
       d.setAppIcon(
         images.map((i) => ({ size: i.size, png: i.png })),
@@ -273,6 +279,7 @@ const ARGS: Record<HostMethod, Check[]> = {
   previewBounds: [isPreviewBounds],
   previewHide: [],
   previewClose: [],
+  browserView: [(v) => isKeys(v, ["deck_id", "session_id", "tab_id", "bounds"]) && isText(256)(v["deck_id"]) && isText(256)(v["session_id"]) && isText(256)(v["tab_id"]) && (v["bounds"] === null || isPreviewBounds(v["bounds"]))],
   setAppIcon: [isAppIcon, (v) => typeof v === "boolean"],
   projectIcon: [isStr],
 };

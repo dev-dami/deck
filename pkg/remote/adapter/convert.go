@@ -149,10 +149,15 @@ func toApproval(r permission.PermissionRequest, at time.Time, root string) wire.
 	case string:
 		a.Raw = p
 		var raw struct {
-			Agent string `json:"agent"`
+			Agent  string `json:"agent"`
+			Origin string `json:"origin"`
 		}
 		if json.Unmarshal([]byte(p), &raw) == nil {
 			a.Agent = raw.Agent
+			if r.ToolName == "browser_origin" {
+				a.Kind = wire.ApprovalBrowserOrigin
+				a.Origin = raw.Origin
+			}
 		}
 	default:
 		if b, err := json.Marshal(p); err == nil {

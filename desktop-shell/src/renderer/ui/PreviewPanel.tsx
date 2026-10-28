@@ -108,7 +108,7 @@ const hostOf = (url: string) => {
 
 // Whether a dialog, the palette or a menu over the box would sit under the
 // view: the view is drawn above the whole window.
-function covered(box: DOMRect): boolean {
+export function covered(box: DOMRect): boolean {
   if (document.querySelector('[aria-modal="true"]') !== null) return true;
   for (const el of document.querySelectorAll('[role="dialog"], [role="menu"], [role="listbox"]')) {
     const r = el.getBoundingClientRect();

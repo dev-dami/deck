@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,6 +52,15 @@ const ApproveToolFlag = "--approve-tool"
 
 // execTimeout is how long an execute op (other than thread.send) may run.
 var execTimeout = 60 * time.Second
+
+// A browser op can await a person; its actual execution has a separate
+// 30s deadline in the browser broker, after approval.
+func opTimeout(op string) time.Duration {
+	if strings.HasPrefix(strings.TrimSpace(op), "browser.") {
+		return 12 * time.Hour
+	}
+	return execTimeout
+}
 
 // TokenEnv is the environment variable through which the broker token reaches
 // the MCP helper process (never on the command line).
@@ -197,6 +207,24 @@ func mcpDispatch(ctx context.Context, req rpcRequest, isNote bool, write func(an
 			}
 			return reply(res)
 		}
+		opResult := func(r agent.OpResult) error {
+			if err := r.ValidateImages(); err != nil {
+				return textResult("Invalid image result: "+err.Error(), true)
+			}
+			content := make([]any, 0, 1+len(r.Images))
+			if r.Text != "" || len(r.Images) == 0 {
+				content = append(content, map[string]any{"type": "text", "text": r.Text})
+			}
+			for _, im := range r.Images {
+				// encoding/json encodes []byte as base64 in the image field.
+				content = append(content, map[string]any{"type": "image", "data": im.Data, "mimeType": im.MimeType})
+			}
+			res := map[string]any{"content": content}
+			if r.IsError {
+				res["isError"] = true
+			}
+			return reply(res)
+		}
 		switch {
 		case p.Name == MCPToolName && approveTool:
 			var a struct {
@@ -222,15 +250,15 @@ func mcpDispatch(ctx context.Context, req rpcRequest, isNote bool, write func(an
 			if in.Op == "" {
 				return textResult("execute needs an \"op\". Call search (an empty query lists every op and its arguments).", true)
 			}
-			wait := execTimeout + 15*time.Second
+			wait := opTimeout(in.Op) + 15*time.Second
 			if in.Op == agent.OpThreadSend {
 				wait = messageTimeout + 15*time.Second
 			}
-			text, isErr := askHub(ctx, addr, wireRequest{
+			r := askHubResult(ctx, addr, wireRequest{
 				Token: token, Kind: kindExec, AgentID: agentID, RequestID: newRequestID(),
 				Op: in.Op, Args: in.Args,
 			}, wait)
-			return textResult(text, isErr)
+			return opResult(r)
 		}
 		return fail(-32602, "unknown tool "+p.Name)
 	default:
@@ -349,26 +377,41 @@ func newRequestID() string {
 // askHub forwards an exec request and returns the result text. On any
 // failure it returns an error result so the agent keeps working.
 func askHub(ctx context.Context, addr string, req wireRequest, wait time.Duration) (text string, isErr bool) {
+	r := askHubResult(ctx, addr, req, wait)
+	return r.Text, r.IsError
+}
+
+// maxHubReplyBytes bounds base64-encoded images plus the text envelope.
+// Binary content has a different budget from ordinary op text.
+const maxHubReplyBytes = 24 << 20
+
+func askHubResult(ctx context.Context, addr string, req wireRequest, wait time.Duration) agent.OpResult {
 	conn, done, err := dial(ctx, addr)
 	if err != nil {
-		return "Deck is unreachable", true
+		return agent.TextResult("Deck is unreachable", true)
 	}
 	defer done()
 	payload, _ := json.Marshal(req)
 	if _, err := conn.Write(append(payload, '\n')); err != nil {
-		return "Deck is unreachable", true
+		return agent.TextResult("Deck is unreachable", true)
 	}
 	conn.SetReadDeadline(time.Now().Add(wait))
-	line, err := bufio.NewReader(conn).ReadBytes('\n')
+	line, err := bufio.NewReader(io.LimitReader(conn, maxHubReplyBytes+1)).ReadBytes('\n')
+	if len(line) > maxHubReplyBytes {
+		return agent.TextResult("Deck's reply exceeds the image transport limit", true)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
-			return "cancelled", true
+			return agent.TextResult("cancelled", true)
 		}
-		return "Deck did not answer", true
+		return agent.TextResult("Deck did not answer", true)
 	}
 	var w wireReply
 	if json.Unmarshal(line, &w) != nil {
-		return "Deck sent an invalid reply", true
+		return agent.TextResult("Deck sent an invalid reply", true)
 	}
-	return w.Text, w.IsError
+	if err := w.ValidateImages(); err != nil {
+		return agent.TextResult("Invalid image result: "+err.Error(), true)
+	}
+	return w
 }

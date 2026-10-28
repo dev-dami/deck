@@ -13,7 +13,9 @@ export function mayAnswer(who: readonly string[]): string {
 }
 
 function kindLabel(a: Approval): string {
-  return a.kind === "command" ? "Command approval" : a.kind === "edit" ? "File change approval" : "Approval";
+  if (a.kind === "command") return "Command approval";
+  if (a.kind === "edit") return "File change approval";
+  return a.kind === "browser_origin" ? "Website access" : "Approval";
 }
 
 // A request from an agent: "needs you" in the warning colour with its

@@ -35,6 +35,9 @@ func (s *Server) WithProject(dir string, u usage.Service) *Server {
 
 // Close ends what the server started on its own: the terminals.
 func (s *Server) Close() {
+	if s.browser != nil {
+		s.browser.Close()
+	}
 	if s.terms != nil {
 		s.terms.closeAll()
 	}

@@ -1,8 +1,10 @@
 import type { Store } from "@web/controller";
+import type { BrowserActionResponse, BrowserCommand, HighlightActionRequest } from "../shared/bridge";
 import type { ChangedFile, Decision, Image, Mode, ModelChoice, QuestionAnswer, RaceEntrant, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import type { Profile, ProfileScope } from "./profiles";
 import type { ProjectApi } from "./project";
+import type { LiveStore } from "./live";
 import type { RoomMetaStore } from "./roomMeta";
 import type { FileList, ImageBytes, SearchHit } from "./rpcMap";
 
@@ -48,6 +50,17 @@ export interface DeckClient {
 
   // A local Deck only: what it says of each room beyond the shared Session.
   readonly rooms?: RoomMetaStore;
+  // A local Deck only: each room's Highlights and browser tabs. Empty until
+  // the Deck serves Highlights or BrowserState (Info.capabilities).
+  readonly live?: LiveStore;
+  // Reads the room's Highlights and tabs afresh into live.
+  loadLive?(sessionId: string): Promise<void>;
+  // One Highlights action of the person's (resolve, dismiss, seen, pin);
+  // whether the Deck took it. Quiet when it does not serve Highlights.
+  highlightAction?(sessionId: string, action: Omit<HighlightActionRequest, "session_id">): Promise<boolean>;
+  // A browser command as the person (the address bar, Take control); null
+  // when the Deck does not serve BrowserAction.
+  browserAction?(sessionId: string, command: BrowserCommand): Promise<BrowserActionResponse | null>;
   // The optional deck.v1 methods the Deck serves (Info.capabilities). Each
   // call below is a no-op that answers null or false, without a toast, when
   // its method is not listed, so the shell works against an older engine.

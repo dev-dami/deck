@@ -188,9 +188,160 @@ export const RPC_METHODS = [
   "WorktreeAction",
   "CapsuleAction",
   "CapsuleFiles",
+  // Optional desktop browser and persisted thread highlights.
+  "BrowserState",
+  "BrowserAction",
+  "Highlights",
+  "HighlightAction",
 ] as const;
 
 export type RpcMethod = (typeof RPC_METHODS)[number];
+
+// Main-only methods: never add these to RPC_METHODS/the renderer allowlist.
+export const BROWSER_CONTROLLER_METHODS = ["RegisterBrowserController", "UnregisterBrowserController", "BrowserResult", "BrowserUpdate", "BrowserOrigin"] as const;
+export type MainRpcMethod = RpcMethod | (typeof BROWSER_CONTROLLER_METHODS)[number];
+
+// Protobuf/IPC image bytes arrive as Uint8Array. Only the JSON/MCP wire
+// base64-encodes them; an image is never a base64 text tool result.
+export interface OpImage {
+  mime_type: "image/png" | "image/jpeg";
+  data: Uint8Array;
+}
+
+export interface OpResult {
+  text: string;
+  images: OpImage[];
+  is_error: boolean;
+}
+
+export const BROWSER_LIMITS = {
+  url: 8192,
+  text: 16_384,
+  tabs: 40,
+  snapshot: 64 * 1024,
+  imageBytes: 8 * 1024 * 1024,
+  imagePixels: 16_777_216,
+  executionMs: 30_000,
+} as const;
+
+export type BrowserCommand =
+  | { action: "open"; url: string }
+  | { action: "navigate"; tab_id: string; url: string }
+  | { action: "back" | "forward" | "reload" | "close" | "take_control" | "release_control"; tab_id: string }
+  | { action: "snapshot"; tab_id: string; interactive?: boolean; max_lines?: number }
+  // An element_ref in a screenshot clips to the element; it then needs the snapshot_version too.
+  | { action: "screenshot"; tab_id: string; element_ref?: string; snapshot_version?: string }
+  | { action: "click"; tab_id: string; element_ref: string; snapshot_version: string }
+  | { action: "type"; tab_id: string; element_ref: string; snapshot_version: string; text: string }
+  | { action: "select"; tab_id: string; element_ref: string; snapshot_version: string; text: string }
+  | { action: "press"; tab_id: string; key: string }
+  // scroll: dy pixels, or to top/bottom, or an element_ref (with its snapshot_version) into view.
+  | { action: "scroll"; tab_id: string; dy?: number; to?: "top" | "bottom"; element_ref?: string; snapshot_version?: string }
+  // wait: for text on the page, for the load to finish, or for ms; timeout_s bounds the first two.
+  | { action: "wait"; tab_id: string; text?: string; load?: boolean; ms?: number; timeout_s?: number }
+  | { action: "handoff"; tab_id: string; target_agent: string };
+
+export interface BrowserActionRequest {
+  session_id: string;
+  // Renderer = user: any tab of this session is controllable. Navigation
+  // commands imply Take control; release_control explicitly resumes agents.
+  command: BrowserCommand;
+}
+
+export interface BrowserTab {
+  id: string;
+  session_id: string;
+  owner: string;
+  url: string;
+  title: string;
+  loading: boolean;
+  can_back: boolean;
+  can_forward: boolean;
+  user_in_control: boolean;
+  snapshot_version: string;
+  // What the owning agent is doing now ("clicking e12"), for a moment after.
+  activity: string;
+  // The page was let go to save memory; it comes back at the same address.
+  asleep: boolean;
+}
+
+export interface BrowserStateResponse {
+  available: boolean;
+  tabs: BrowserTab[];
+  session_id: string;
+}
+
+export type BrowserErrorCode = "browser_unavailable" | "user_in_control" | "stale_snapshot" | "not_owner" | "origin_denied" | "cancelled" | "timeout" | "invalid_request" | "unsupported_image";
+
+export interface BrowserActionResponse {
+  tab: BrowserTab | null;
+  result: OpResult | null;
+  error_code: BrowserErrorCode | "";
+}
+
+export interface HighlightSource {
+  message_id: string;
+  task_id: string;
+  turn_id: string;
+}
+
+export type HighlightKind = "needs_you" | "blocker" | "finding";
+export type HighlightState = "open" | "resolved" | "dismissed";
+export const HIGHLIGHT_LIMITS = { title: 160, detail: 2000, summary: 280, key: 128 } as const;
+
+export interface HighlightItem {
+  id: string;
+  session_id: string;
+  agent: string;
+  key: string;
+  kind: HighlightKind;
+  title: string;
+  detail: string;
+  source: HighlightSource | null;
+  state: HighlightState;
+  created_at: number;
+  updated_at: number;
+  unread: boolean;
+}
+
+export interface AgentSummary {
+  session_id: string;
+  agent: string;
+  text: string;
+  source: HighlightSource | null;
+  updated_at: number;
+}
+
+export interface HighlightsResponse {
+  items: HighlightItem[];
+  summaries: AgentSummary[];
+}
+
+export interface HighlightActionRequest {
+  session_id: string;
+  action: "add" | "update" | "resolve" | "dismiss" | "seen" | "pin";
+  id?: string;
+  key?: string;
+  kind?: HighlightKind;
+  title?: string;
+  detail?: string;
+  source?: HighlightSource;
+  // Only the seen action accepts a batch.
+  ids?: string[];
+}
+
+// A native tab overlays the window, like Preview. Null bounds hides the
+// browser. The caller cannot select a tab belonging to a different room.
+export interface BrowserViewInput {
+  deck_id: string;
+  session_id: string;
+  tab_id: string;
+  bounds: PreviewBounds | null;
+}
+
+export interface BrowserViewHost {
+  browserView(input: BrowserViewInput): Promise<void>;
+}
 
 // A call's answer: the response message as a plain object, or the gRPC
 // status code and its message.
@@ -356,7 +507,10 @@ export const APP_ICON_SIZES = {
 
 // What main does for the renderer. The Electron main process serves it over
 // IPC; the end-to-end tests serve the same object to a browser page.
-export interface DeckHost {
+// Optional while talking to older hosts; runtime browser support also
+// requires BrowserState/BrowserAction capabilities. Main wires the method
+// when the native browser manager is installed.
+export interface DeckHost extends Partial<BrowserViewHost> {
   listServers(): Promise<SavedServer[]>;
   pair(input: PairInput): Promise<PairOutcome>;
   forgetServer(id: string): Promise<void>;
@@ -480,6 +634,7 @@ export const HOST_METHODS = [
   "previewBounds",
   "previewHide",
   "previewClose",
+  "browserView",
   "setAppIcon",
   "projectIcon",
 ] as const satisfies ReadonlyArray<keyof DeckHost>;

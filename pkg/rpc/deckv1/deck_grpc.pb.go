@@ -25,80 +25,89 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Deck_Info_FullMethodName             = "/deck.v1.Deck/Info"
-	Deck_ListSessions_FullMethodName     = "/deck.v1.Deck/ListSessions"
-	Deck_CreateSession_FullMethodName    = "/deck.v1.Deck/CreateSession"
-	Deck_RenameSession_FullMethodName    = "/deck.v1.Deck/RenameSession"
-	Deck_DeleteSession_FullMethodName    = "/deck.v1.Deck/DeleteSession"
-	Deck_ListMessages_FullMethodName     = "/deck.v1.Deck/ListMessages"
-	Deck_Send_FullMethodName             = "/deck.v1.Deck/Send"
-	Deck_EditMessage_FullMethodName      = "/deck.v1.Deck/EditMessage"
-	Deck_Cancel_FullMethodName           = "/deck.v1.Deck/Cancel"
-	Deck_Interrupt_FullMethodName        = "/deck.v1.Deck/Interrupt"
-	Deck_Continue_FullMethodName         = "/deck.v1.Deck/Continue"
-	Deck_Queue_FullMethodName            = "/deck.v1.Deck/Queue"
-	Deck_Steer_FullMethodName            = "/deck.v1.Deck/Steer"
-	Deck_CancelQueued_FullMethodName     = "/deck.v1.Deck/CancelQueued"
-	Deck_Roster_FullMethodName           = "/deck.v1.Deck/Roster"
-	Deck_Models_FullMethodName           = "/deck.v1.Deck/Models"
-	Deck_SetModel_FullMethodName         = "/deck.v1.Deck/SetModel"
-	Deck_GetMode_FullMethodName          = "/deck.v1.Deck/GetMode"
-	Deck_SetMode_FullMethodName          = "/deck.v1.Deck/SetMode"
-	Deck_Approvals_FullMethodName        = "/deck.v1.Deck/Approvals"
-	Deck_Answer_FullMethodName           = "/deck.v1.Deck/Answer"
-	Deck_Changes_FullMethodName          = "/deck.v1.Deck/Changes"
-	Deck_GitStatus_FullMethodName        = "/deck.v1.Deck/GitStatus"
-	Deck_GitCheckout_FullMethodName      = "/deck.v1.Deck/GitCheckout"
-	Deck_GitCommit_FullMethodName        = "/deck.v1.Deck/GitCommit"
-	Deck_GitPush_FullMethodName          = "/deck.v1.Deck/GitPush"
-	Deck_GitPull_FullMethodName          = "/deck.v1.Deck/GitPull"
-	Deck_GitCreatePR_FullMethodName      = "/deck.v1.Deck/GitCreatePR"
-	Deck_GitMergePR_FullMethodName       = "/deck.v1.Deck/GitMergePR"
-	Deck_Usage_FullMethodName            = "/deck.v1.Deck/Usage"
-	Deck_TerminalOpen_FullMethodName     = "/deck.v1.Deck/TerminalOpen"
-	Deck_TerminalWrite_FullMethodName    = "/deck.v1.Deck/TerminalWrite"
-	Deck_TerminalResize_FullMethodName   = "/deck.v1.Deck/TerminalResize"
-	Deck_TerminalClose_FullMethodName    = "/deck.v1.Deck/TerminalClose"
-	Deck_TerminalOutput_FullMethodName   = "/deck.v1.Deck/TerminalOutput"
-	Deck_Board_FullMethodName            = "/deck.v1.Deck/Board"
-	Deck_TaskAction_FullMethodName       = "/deck.v1.Deck/TaskAction"
-	Deck_SetOrchestrate_FullMethodName   = "/deck.v1.Deck/SetOrchestrate"
-	Deck_Agents_FullMethodName           = "/deck.v1.Deck/Agents"
-	Deck_Team_FullMethodName             = "/deck.v1.Deck/Team"
-	Deck_TeamPost_FullMethodName         = "/deck.v1.Deck/TeamPost"
-	Deck_ShareThread_FullMethodName      = "/deck.v1.Deck/ShareThread"
-	Deck_ThreadShares_FullMethodName     = "/deck.v1.Deck/ThreadShares"
-	Deck_ProposeContract_FullMethodName  = "/deck.v1.Deck/ProposeContract"
-	Deck_AnswerContract_FullMethodName   = "/deck.v1.Deck/AnswerContract"
-	Deck_ReadShared_FullMethodName       = "/deck.v1.Deck/ReadShared"
-	Deck_PostShared_FullMethodName       = "/deck.v1.Deck/PostShared"
-	Deck_AnswerShared_FullMethodName     = "/deck.v1.Deck/AnswerShared"
-	Deck_IsolateSession_FullMethodName   = "/deck.v1.Deck/IsolateSession"
-	Deck_ApplyIsolated_FullMethodName    = "/deck.v1.Deck/ApplyIsolated"
-	Deck_UnisolateSession_FullMethodName = "/deck.v1.Deck/UnisolateSession"
-	Deck_RevertFiles_FullMethodName      = "/deck.v1.Deck/RevertFiles"
-	Deck_UndoRevert_FullMethodName       = "/deck.v1.Deck/UndoRevert"
-	Deck_ArchiveSession_FullMethodName   = "/deck.v1.Deck/ArchiveSession"
-	Deck_UnarchiveSession_FullMethodName = "/deck.v1.Deck/UnarchiveSession"
-	Deck_UndoApply_FullMethodName        = "/deck.v1.Deck/UndoApply"
-	Deck_StartRace_FullMethodName        = "/deck.v1.Deck/StartRace"
-	Deck_ListFiles_FullMethodName        = "/deck.v1.Deck/ListFiles"
-	Deck_ReadImage_FullMethodName        = "/deck.v1.Deck/ReadImage"
-	Deck_SearchMessages_FullMethodName   = "/deck.v1.Deck/SearchMessages"
-	Deck_ListProfiles_FullMethodName     = "/deck.v1.Deck/ListProfiles"
-	Deck_SaveProfile_FullMethodName      = "/deck.v1.Deck/SaveProfile"
-	Deck_DeleteProfile_FullMethodName    = "/deck.v1.Deck/DeleteProfile"
-	Deck_Limits_FullMethodName           = "/deck.v1.Deck/Limits"
-	Deck_CheckLimits_FullMethodName      = "/deck.v1.Deck/CheckLimits"
-	Deck_StartWindow_FullMethodName      = "/deck.v1.Deck/StartWindow"
-	Deck_ResolveWait_FullMethodName      = "/deck.v1.Deck/ResolveWait"
-	Deck_ScheduleSend_FullMethodName     = "/deck.v1.Deck/ScheduleSend"
-	Deck_CancelScheduled_FullMethodName  = "/deck.v1.Deck/CancelScheduled"
-	Deck_Work_FullMethodName             = "/deck.v1.Deck/Work"
-	Deck_WorktreeAction_FullMethodName   = "/deck.v1.Deck/WorktreeAction"
-	Deck_CapsuleAction_FullMethodName    = "/deck.v1.Deck/CapsuleAction"
-	Deck_CapsuleFiles_FullMethodName     = "/deck.v1.Deck/CapsuleFiles"
-	Deck_Events_FullMethodName           = "/deck.v1.Deck/Events"
+	Deck_Info_FullMethodName                        = "/deck.v1.Deck/Info"
+	Deck_ListSessions_FullMethodName                = "/deck.v1.Deck/ListSessions"
+	Deck_CreateSession_FullMethodName               = "/deck.v1.Deck/CreateSession"
+	Deck_RenameSession_FullMethodName               = "/deck.v1.Deck/RenameSession"
+	Deck_DeleteSession_FullMethodName               = "/deck.v1.Deck/DeleteSession"
+	Deck_ListMessages_FullMethodName                = "/deck.v1.Deck/ListMessages"
+	Deck_Send_FullMethodName                        = "/deck.v1.Deck/Send"
+	Deck_EditMessage_FullMethodName                 = "/deck.v1.Deck/EditMessage"
+	Deck_Cancel_FullMethodName                      = "/deck.v1.Deck/Cancel"
+	Deck_Interrupt_FullMethodName                   = "/deck.v1.Deck/Interrupt"
+	Deck_Continue_FullMethodName                    = "/deck.v1.Deck/Continue"
+	Deck_Queue_FullMethodName                       = "/deck.v1.Deck/Queue"
+	Deck_Steer_FullMethodName                       = "/deck.v1.Deck/Steer"
+	Deck_CancelQueued_FullMethodName                = "/deck.v1.Deck/CancelQueued"
+	Deck_Roster_FullMethodName                      = "/deck.v1.Deck/Roster"
+	Deck_Models_FullMethodName                      = "/deck.v1.Deck/Models"
+	Deck_SetModel_FullMethodName                    = "/deck.v1.Deck/SetModel"
+	Deck_GetMode_FullMethodName                     = "/deck.v1.Deck/GetMode"
+	Deck_SetMode_FullMethodName                     = "/deck.v1.Deck/SetMode"
+	Deck_Approvals_FullMethodName                   = "/deck.v1.Deck/Approvals"
+	Deck_Answer_FullMethodName                      = "/deck.v1.Deck/Answer"
+	Deck_Changes_FullMethodName                     = "/deck.v1.Deck/Changes"
+	Deck_GitStatus_FullMethodName                   = "/deck.v1.Deck/GitStatus"
+	Deck_GitCheckout_FullMethodName                 = "/deck.v1.Deck/GitCheckout"
+	Deck_GitCommit_FullMethodName                   = "/deck.v1.Deck/GitCommit"
+	Deck_GitPush_FullMethodName                     = "/deck.v1.Deck/GitPush"
+	Deck_GitPull_FullMethodName                     = "/deck.v1.Deck/GitPull"
+	Deck_GitCreatePR_FullMethodName                 = "/deck.v1.Deck/GitCreatePR"
+	Deck_GitMergePR_FullMethodName                  = "/deck.v1.Deck/GitMergePR"
+	Deck_Usage_FullMethodName                       = "/deck.v1.Deck/Usage"
+	Deck_TerminalOpen_FullMethodName                = "/deck.v1.Deck/TerminalOpen"
+	Deck_TerminalWrite_FullMethodName               = "/deck.v1.Deck/TerminalWrite"
+	Deck_TerminalResize_FullMethodName              = "/deck.v1.Deck/TerminalResize"
+	Deck_TerminalClose_FullMethodName               = "/deck.v1.Deck/TerminalClose"
+	Deck_TerminalOutput_FullMethodName              = "/deck.v1.Deck/TerminalOutput"
+	Deck_Board_FullMethodName                       = "/deck.v1.Deck/Board"
+	Deck_TaskAction_FullMethodName                  = "/deck.v1.Deck/TaskAction"
+	Deck_SetOrchestrate_FullMethodName              = "/deck.v1.Deck/SetOrchestrate"
+	Deck_Agents_FullMethodName                      = "/deck.v1.Deck/Agents"
+	Deck_Team_FullMethodName                        = "/deck.v1.Deck/Team"
+	Deck_TeamPost_FullMethodName                    = "/deck.v1.Deck/TeamPost"
+	Deck_ShareThread_FullMethodName                 = "/deck.v1.Deck/ShareThread"
+	Deck_ThreadShares_FullMethodName                = "/deck.v1.Deck/ThreadShares"
+	Deck_ProposeContract_FullMethodName             = "/deck.v1.Deck/ProposeContract"
+	Deck_AnswerContract_FullMethodName              = "/deck.v1.Deck/AnswerContract"
+	Deck_ReadShared_FullMethodName                  = "/deck.v1.Deck/ReadShared"
+	Deck_PostShared_FullMethodName                  = "/deck.v1.Deck/PostShared"
+	Deck_AnswerShared_FullMethodName                = "/deck.v1.Deck/AnswerShared"
+	Deck_IsolateSession_FullMethodName              = "/deck.v1.Deck/IsolateSession"
+	Deck_ApplyIsolated_FullMethodName               = "/deck.v1.Deck/ApplyIsolated"
+	Deck_UnisolateSession_FullMethodName            = "/deck.v1.Deck/UnisolateSession"
+	Deck_RevertFiles_FullMethodName                 = "/deck.v1.Deck/RevertFiles"
+	Deck_UndoRevert_FullMethodName                  = "/deck.v1.Deck/UndoRevert"
+	Deck_ArchiveSession_FullMethodName              = "/deck.v1.Deck/ArchiveSession"
+	Deck_UnarchiveSession_FullMethodName            = "/deck.v1.Deck/UnarchiveSession"
+	Deck_UndoApply_FullMethodName                   = "/deck.v1.Deck/UndoApply"
+	Deck_StartRace_FullMethodName                   = "/deck.v1.Deck/StartRace"
+	Deck_ListFiles_FullMethodName                   = "/deck.v1.Deck/ListFiles"
+	Deck_ReadImage_FullMethodName                   = "/deck.v1.Deck/ReadImage"
+	Deck_SearchMessages_FullMethodName              = "/deck.v1.Deck/SearchMessages"
+	Deck_ListProfiles_FullMethodName                = "/deck.v1.Deck/ListProfiles"
+	Deck_SaveProfile_FullMethodName                 = "/deck.v1.Deck/SaveProfile"
+	Deck_DeleteProfile_FullMethodName               = "/deck.v1.Deck/DeleteProfile"
+	Deck_Limits_FullMethodName                      = "/deck.v1.Deck/Limits"
+	Deck_CheckLimits_FullMethodName                 = "/deck.v1.Deck/CheckLimits"
+	Deck_StartWindow_FullMethodName                 = "/deck.v1.Deck/StartWindow"
+	Deck_ResolveWait_FullMethodName                 = "/deck.v1.Deck/ResolveWait"
+	Deck_ScheduleSend_FullMethodName                = "/deck.v1.Deck/ScheduleSend"
+	Deck_CancelScheduled_FullMethodName             = "/deck.v1.Deck/CancelScheduled"
+	Deck_Work_FullMethodName                        = "/deck.v1.Deck/Work"
+	Deck_WorktreeAction_FullMethodName              = "/deck.v1.Deck/WorktreeAction"
+	Deck_CapsuleAction_FullMethodName               = "/deck.v1.Deck/CapsuleAction"
+	Deck_CapsuleFiles_FullMethodName                = "/deck.v1.Deck/CapsuleFiles"
+	Deck_BrowserState_FullMethodName                = "/deck.v1.Deck/BrowserState"
+	Deck_BrowserAction_FullMethodName               = "/deck.v1.Deck/BrowserAction"
+	Deck_RegisterBrowserController_FullMethodName   = "/deck.v1.Deck/RegisterBrowserController"
+	Deck_UnregisterBrowserController_FullMethodName = "/deck.v1.Deck/UnregisterBrowserController"
+	Deck_BrowserResult_FullMethodName               = "/deck.v1.Deck/BrowserResult"
+	Deck_BrowserUpdate_FullMethodName               = "/deck.v1.Deck/BrowserUpdate"
+	Deck_BrowserOrigin_FullMethodName               = "/deck.v1.Deck/BrowserOrigin"
+	Deck_Highlights_FullMethodName                  = "/deck.v1.Deck/Highlights"
+	Deck_HighlightAction_FullMethodName             = "/deck.v1.Deck/HighlightAction"
+	Deck_Events_FullMethodName                      = "/deck.v1.Deck/Events"
 )
 
 // DeckClient is the client API for Deck service.
@@ -265,6 +274,18 @@ type DeckClient interface {
 	// CapsuleFiles pages a capsule's files with line counts, and with path
 	// set returns that file's diff.
 	CapsuleFiles(ctx context.Context, in *CapsuleFilesRequest, opts ...grpc.CallOption) (*CapsuleFilesResponse, error)
+	// Browser is optional and local-desktop only. State/actions are the
+	// user's surface; controller registration/results are private to main.
+	BrowserState(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*BrowserStateResponse, error)
+	BrowserAction(ctx context.Context, in *BrowserActionRequest, opts ...grpc.CallOption) (*BrowserActionResponse, error)
+	RegisterBrowserController(ctx context.Context, in *RegisterBrowserControllerRequest, opts ...grpc.CallOption) (*BrowserController, error)
+	UnregisterBrowserController(ctx context.Context, in *BrowserControllerRef, opts ...grpc.CallOption) (*Empty, error)
+	BrowserResult(ctx context.Context, in *BrowserResultRequest, opts ...grpc.CallOption) (*Empty, error)
+	BrowserUpdate(ctx context.Context, in *BrowserUpdateRequest, opts ...grpc.CallOption) (*Empty, error)
+	BrowserOrigin(ctx context.Context, in *BrowserOriginRequest, opts ...grpc.CallOption) (*BrowserOriginResponse, error)
+	// Highlights is the durable snapshot; Events carries subsequent deltas.
+	Highlights(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*HighlightsResponse, error)
+	HighlightAction(ctx context.Context, in *HighlightActionRequest, opts ...grpc.CallOption) (*HighlightItem, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -1018,6 +1039,96 @@ func (c *deckClient) CapsuleFiles(ctx context.Context, in *CapsuleFilesRequest, 
 	return out, nil
 }
 
+func (c *deckClient) BrowserState(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*BrowserStateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BrowserStateResponse)
+	err := c.cc.Invoke(ctx, Deck_BrowserState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) BrowserAction(ctx context.Context, in *BrowserActionRequest, opts ...grpc.CallOption) (*BrowserActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BrowserActionResponse)
+	err := c.cc.Invoke(ctx, Deck_BrowserAction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) RegisterBrowserController(ctx context.Context, in *RegisterBrowserControllerRequest, opts ...grpc.CallOption) (*BrowserController, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BrowserController)
+	err := c.cc.Invoke(ctx, Deck_RegisterBrowserController_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) UnregisterBrowserController(ctx context.Context, in *BrowserControllerRef, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_UnregisterBrowserController_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) BrowserResult(ctx context.Context, in *BrowserResultRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_BrowserResult_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) BrowserUpdate(ctx context.Context, in *BrowserUpdateRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_BrowserUpdate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) BrowserOrigin(ctx context.Context, in *BrowserOriginRequest, opts ...grpc.CallOption) (*BrowserOriginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BrowserOriginResponse)
+	err := c.cc.Invoke(ctx, Deck_BrowserOrigin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) Highlights(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*HighlightsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HighlightsResponse)
+	err := c.cc.Invoke(ctx, Deck_Highlights_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) HighlightAction(ctx context.Context, in *HighlightActionRequest, opts ...grpc.CallOption) (*HighlightItem, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HighlightItem)
+	err := c.cc.Invoke(ctx, Deck_HighlightAction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *deckClient) Events(ctx context.Context, in *Subscribe, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Deck_ServiceDesc.Streams[1], Deck_Events_FullMethodName, cOpts...)
@@ -1201,6 +1312,18 @@ type DeckServer interface {
 	// CapsuleFiles pages a capsule's files with line counts, and with path
 	// set returns that file's diff.
 	CapsuleFiles(context.Context, *CapsuleFilesRequest) (*CapsuleFilesResponse, error)
+	// Browser is optional and local-desktop only. State/actions are the
+	// user's surface; controller registration/results are private to main.
+	BrowserState(context.Context, *SessionRef) (*BrowserStateResponse, error)
+	BrowserAction(context.Context, *BrowserActionRequest) (*BrowserActionResponse, error)
+	RegisterBrowserController(context.Context, *RegisterBrowserControllerRequest) (*BrowserController, error)
+	UnregisterBrowserController(context.Context, *BrowserControllerRef) (*Empty, error)
+	BrowserResult(context.Context, *BrowserResultRequest) (*Empty, error)
+	BrowserUpdate(context.Context, *BrowserUpdateRequest) (*Empty, error)
+	BrowserOrigin(context.Context, *BrowserOriginRequest) (*BrowserOriginResponse, error)
+	// Highlights is the durable snapshot; Events carries subsequent deltas.
+	Highlights(context.Context, *SessionRef) (*HighlightsResponse, error)
+	HighlightAction(context.Context, *HighlightActionRequest) (*HighlightItem, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -1433,6 +1556,33 @@ func (UnimplementedDeckServer) CapsuleAction(context.Context, *CapsuleActionRequ
 }
 func (UnimplementedDeckServer) CapsuleFiles(context.Context, *CapsuleFilesRequest) (*CapsuleFilesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CapsuleFiles not implemented")
+}
+func (UnimplementedDeckServer) BrowserState(context.Context, *SessionRef) (*BrowserStateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BrowserState not implemented")
+}
+func (UnimplementedDeckServer) BrowserAction(context.Context, *BrowserActionRequest) (*BrowserActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BrowserAction not implemented")
+}
+func (UnimplementedDeckServer) RegisterBrowserController(context.Context, *RegisterBrowserControllerRequest) (*BrowserController, error) {
+	return nil, status.Error(codes.Unimplemented, "method RegisterBrowserController not implemented")
+}
+func (UnimplementedDeckServer) UnregisterBrowserController(context.Context, *BrowserControllerRef) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnregisterBrowserController not implemented")
+}
+func (UnimplementedDeckServer) BrowserResult(context.Context, *BrowserResultRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method BrowserResult not implemented")
+}
+func (UnimplementedDeckServer) BrowserUpdate(context.Context, *BrowserUpdateRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method BrowserUpdate not implemented")
+}
+func (UnimplementedDeckServer) BrowserOrigin(context.Context, *BrowserOriginRequest) (*BrowserOriginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BrowserOrigin not implemented")
+}
+func (UnimplementedDeckServer) Highlights(context.Context, *SessionRef) (*HighlightsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Highlights not implemented")
+}
+func (UnimplementedDeckServer) HighlightAction(context.Context, *HighlightActionRequest) (*HighlightItem, error) {
+	return nil, status.Error(codes.Unimplemented, "method HighlightAction not implemented")
 }
 func (UnimplementedDeckServer) Events(*Subscribe, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method Events not implemented")
@@ -2765,6 +2915,168 @@ func _Deck_CapsuleFiles_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Deck_BrowserState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).BrowserState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_BrowserState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).BrowserState(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_BrowserAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BrowserActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).BrowserAction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_BrowserAction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).BrowserAction(ctx, req.(*BrowserActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_RegisterBrowserController_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterBrowserControllerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).RegisterBrowserController(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_RegisterBrowserController_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).RegisterBrowserController(ctx, req.(*RegisterBrowserControllerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_UnregisterBrowserController_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BrowserControllerRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).UnregisterBrowserController(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_UnregisterBrowserController_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).UnregisterBrowserController(ctx, req.(*BrowserControllerRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_BrowserResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BrowserResultRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).BrowserResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_BrowserResult_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).BrowserResult(ctx, req.(*BrowserResultRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_BrowserUpdate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BrowserUpdateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).BrowserUpdate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_BrowserUpdate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).BrowserUpdate(ctx, req.(*BrowserUpdateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_BrowserOrigin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BrowserOriginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).BrowserOrigin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_BrowserOrigin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).BrowserOrigin(ctx, req.(*BrowserOriginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_Highlights_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).Highlights(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_Highlights_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).Highlights(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_HighlightAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HighlightActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).HighlightAction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_HighlightAction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).HighlightAction(ctx, req.(*HighlightActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Deck_Events_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(Subscribe)
 	if err := stream.RecvMsg(m); err != nil {
@@ -3070,6 +3382,42 @@ var Deck_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CapsuleFiles",
 			Handler:    _Deck_CapsuleFiles_Handler,
+		},
+		{
+			MethodName: "BrowserState",
+			Handler:    _Deck_BrowserState_Handler,
+		},
+		{
+			MethodName: "BrowserAction",
+			Handler:    _Deck_BrowserAction_Handler,
+		},
+		{
+			MethodName: "RegisterBrowserController",
+			Handler:    _Deck_RegisterBrowserController_Handler,
+		},
+		{
+			MethodName: "UnregisterBrowserController",
+			Handler:    _Deck_UnregisterBrowserController_Handler,
+		},
+		{
+			MethodName: "BrowserResult",
+			Handler:    _Deck_BrowserResult_Handler,
+		},
+		{
+			MethodName: "BrowserUpdate",
+			Handler:    _Deck_BrowserUpdate_Handler,
+		},
+		{
+			MethodName: "BrowserOrigin",
+			Handler:    _Deck_BrowserOrigin_Handler,
+		},
+		{
+			MethodName: "Highlights",
+			Handler:    _Deck_Highlights_Handler,
+		},
+		{
+			MethodName: "HighlightAction",
+			Handler:    _Deck_HighlightAction_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

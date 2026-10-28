@@ -174,10 +174,18 @@ func (s *Server) recheck(ctx context.Context, sid string) {
 	}
 }
 
-// pumpLeases turns the workspace's lease changes into lease_changed events.
-func (s *Server) pumpLeases(ctx context.Context) {
+// pumpWorkspace turns workspace state deltas into replayable RPC events.
+func (s *Server) pumpWorkspace(ctx context.Context) {
 	for ev := range s.crew.changes.SubscribeDeck(ctx) {
 		c := ev.Payload
+		if c.Kind == workspace.ChangeHighlight && c.Highlight != nil {
+			s.feed.publish(&deckv1.Event{SessionId: c.SessionID, Kind: &deckv1.Event_HighlightChanged{HighlightChanged: c.Highlight}})
+			continue
+		}
+		if c.Kind == workspace.ChangeSummary && c.Summary != nil {
+			s.feed.publish(&deckv1.Event{SessionId: c.SessionID, Kind: &deckv1.Event_SummaryChanged{SummaryChanged: c.Summary}})
+			continue
+		}
 		if c.Kind != workspace.ChangeLease {
 			continue
 		}
@@ -204,6 +212,12 @@ func (s *Server) clis() []*deckv1.AgentCli {
 
 func (s *Server) capabilities() []string {
 	var out []string
+	if s.crew != nil && s.crew.highlights != nil {
+		out = append(out, "Highlights", "HighlightAction")
+	}
+	if s.browser != nil {
+		out = append(out, "BrowserState", "BrowserAction")
+	}
 	rooms := s.crew != nil && s.crew.rooms != nil
 	if rooms {
 		out = append(out, roomMethods...)

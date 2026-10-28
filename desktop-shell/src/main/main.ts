@@ -51,6 +51,8 @@ import { mimeOf } from "./mime";
 import { Notifier } from "./notify";
 import { execRun, PhoneLink, readRelayHint, type Run } from "./phone";
 import { lockSession, Preview, PREVIEW_PARTITION } from "./preview";
+import { Browser, BROWSER_PARTITION } from "./browser";
+import { createHash } from "node:crypto";
 import { RecentFolders } from "./recent";
 import { type Sealer, ServerStore } from "./servers";
 import { Updater } from "./update";
@@ -369,12 +371,29 @@ async function main(): Promise<void> {
     send: (s) => win?.webContents.send(PREVIEW_EVENT_CHANNEL, s),
     session: () => previewSession,
   });
+  const browser = new Browser({
+    create: webPreferences => {
+      if (win === null) return null;
+      const view = new WebContentsView({ webPreferences });
+      win.contentView.addChildView(view);
+      return view;
+    },
+    remove: view => { if (win !== null && !win.isDestroyed()) win.contentView.removeChildView(view); },
+    zoom: () => win?.webContents.getZoomFactor() ?? 1,
+    // Profiles persist per project, without sharing sign-ins across folders.
+    session: id => session.fromPartition(`${BROWSER_PARTITION}-${createHash("sha256").update(decks.directory(id) ?? id).digest("hex").slice(0, 24)}`),
+    changed: (id, state) => { void decks.browserUpdate(id, state).catch(() => {}); },
+    approve: (id, request, origin) => decks.browserOrigin(id, request, origin),
+  });
+  decks.setBrowser(browser);
+  browser.start();
   // A reload or a closed window ends what the renderer had open, the
   // preview's page with it.
   const reset = () => {
     links.closeAll();
     decks.cancelStreams();
     preview.close();
+    browser.close();
   };
   const windowState = new WindowStateFile(join(app.getPath("userData"), "window.json"));
   const updater = new Updater((ev) => win?.webContents.send(UPDATE_EVENT_CHANNEL, ev));
@@ -417,6 +436,7 @@ async function main(): Promise<void> {
     focused: () => notifier.focused(),
     agentClis: async () => findAgentClis(await path),
     preview,
+    browserView: async input => { browser.present(input); },
     setAppIcon: (images, standard) => {
       const img = iconImage(images);
       if (img === null) return { shown: false, launchers: "none" };
