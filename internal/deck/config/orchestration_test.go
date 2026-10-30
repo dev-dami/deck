@@ -22,7 +22,9 @@ func TestLevelsGrow(t *testing.T) {
 	if !Levels[LevelOff].AskFirst || Levels[LevelAssist].AskFirst || Levels[LevelAssist].Schedule || !Levels[LevelAuto].Schedule || !Levels[LevelFull].Race || Levels[LevelAuto].Race {
 		t.Fatalf("levels = %+v", Levels)
 	}
-	if (Config{}).StartLevel() != LevelAuto || (Config{Orchestration: "assist"}).StartLevel() != LevelAssist {
+	// One agent works like its own CLI until the user asks for more: a new
+	// thread's board is a list, not a scheduler that starts subagents.
+	if (Config{}).StartLevel() != LevelOff || (Config{Orchestration: "assist"}).StartLevel() != LevelAssist || Levels[DefaultLevel].Schedule {
 		t.Fatal("start level")
 	}
 }

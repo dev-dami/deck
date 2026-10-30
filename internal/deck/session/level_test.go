@@ -34,7 +34,7 @@ func TestNewThreadsStartAtTheConfiguredLevel(t *testing.T) {
 	cfg := testCfg()
 	cfg.Orchestration = ""
 	r := newRigWith(t, t.TempDir(), false, cfg, nil, nil)
-	if info, _ := r.m.Thread(r.thread(t)); info.Orchestration != config.LevelAuto {
+	if info, _ := r.m.Thread(r.thread(t)); info.Orchestration != config.LevelOff {
 		t.Fatalf("default level = %q", info.Orchestration)
 	}
 	cfg.Orchestration = config.LevelFull

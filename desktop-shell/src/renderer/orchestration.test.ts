@@ -6,8 +6,8 @@ import { defaultPrefs, merge } from "./prefs";
 describe("orchestration levels", () => {
   test("four levels, least to most, auto by default", () => {
     expect(LEVELS.map((l) => l.level)).toEqual(["off", "assist", "auto", "full"]);
-    expect(DEFAULT_LEVEL).toBe("auto");
-    expect(defaultPrefs.orchestration).toBe("auto");
+    expect(DEFAULT_LEVEL).toBe("off");
+    expect(defaultPrefs.orchestration).toBe("off");
     expect(LEVELS.filter((l) => schedules(l.level)).map((l) => l.level)).toEqual(["auto", "full"]);
     expect(levelInfo("full").blurb).toContain("races");
     expect(isLevel("max")).toBe(false);
@@ -22,7 +22,7 @@ describe("orchestration levels", () => {
 
   test("the level for new threads survives a load, and an unknown one is the default", () => {
     expect(merge({ orchestration: "full" }).orchestration).toBe("full");
-    expect(merge({ orchestration: "max" }).orchestration).toBe("auto");
-    expect(merge({}).orchestration).toBe("auto");
+    expect(merge({ orchestration: "max" }).orchestration).toBe("off");
+    expect(merge({}).orchestration).toBe("off");
   });
 });

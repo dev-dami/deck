@@ -195,7 +195,7 @@ Names follow the rules of a rename: letters, digits, `-` and `_`, at most 32; no
 
 ### Tasks and subagents
 
-The Tasks pane in the sidebar is the thread's shared task board. Each thread has an orchestration level, which says how much its agents organise the work themselves; new threads start at `orchestration` (default `auto`), and `o` in the Tasks pane (or the level control in the desktop's room header) changes a thread's:
+The Tasks pane in the sidebar is the thread's shared task board. Each thread has an orchestration level, which says how much its agents organise the work themselves; new threads start at `orchestration` (default `off`, so one agent works like its own CLI), and `o` in the Tasks pane (or the level control in the desktop's room header) changes a thread's:
 
 | Level | Agents may | Helpers per agent / per thread / depth | Board |
 | --- | --- | --- | --- |
@@ -308,7 +308,7 @@ Roles point one way. The role on a teammate's row is what *it* may do on *your* 
   "bell": true,
   "tell_agents_name": false,
   "track_changes": true,
-  "orchestration": "auto",
+  "orchestration": "off",
   "orchestration_levels": {},
   "max_parallel": 3,
   "max_depth": 0,

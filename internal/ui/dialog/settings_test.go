@@ -134,7 +134,7 @@ func TestSettingsBinaryRowsAreReadOnly(t *testing.T) {
 	const fixed = 8
 	require.Len(t, rows, fixed+len(deckconfig.Kinds))
 	require.Equal(t, "Orchestration", rows[3].label)
-	require.Equal(t, "auto", rows[3].value)
+	require.Equal(t, "off", rows[3].value)
 	require.Equal(t, "Deck attribution", rows[6].label)
 	require.Equal(t, "Author commits as Deck", rows[7].label)
 	require.Equal(t, "/usr/bin/claude", rows[fixed].value)

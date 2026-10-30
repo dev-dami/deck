@@ -27,8 +27,9 @@ const (
 // LevelNames are the levels, from least to most.
 var LevelNames = []string{LevelOff, LevelAssist, LevelAuto, LevelFull}
 
-// DefaultLevel is the level of a new thread when the config names none.
-const DefaultLevel = LevelAuto
+// DefaultLevel is the level of a new thread when the config names none: off,
+// so one agent works like its own CLI until the user asks for more.
+const DefaultLevel = LevelOff
 
 // Level is what one orchestration level lets a thread's agents do.
 type Level struct {
