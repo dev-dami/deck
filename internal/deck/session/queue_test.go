@@ -188,6 +188,7 @@ func TestRelaysAreNotQueueItems(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
 	_ = r.m.postAt(tid, "$codex start")
 	waitFor(t, "codex approval", func() bool { return len(r.c.approvals()) == 1 })
 	_ = r.m.postAt(tid, "$claude go")
@@ -547,6 +548,7 @@ func TestEditRejectsOtherEntries(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
 	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "exchange", func() bool { return r.c.turnDones("claude") == 1 && r.c.turnDones("codex") == 1 })
 

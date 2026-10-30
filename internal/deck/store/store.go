@@ -971,13 +971,14 @@ func decodeEntry(line []byte, whole bool) (Entry, bool) {
 // Limits, LimitHit, Raw), which is most of the bytes of a log and none of what an
 // index of it needs. The fields and their JSON names are Entry's.
 type entryHead struct {
-	TurnID    string     `json:"turn_id,omitempty"`
-	AgentID   string     `json:",omitempty"`
-	Time      time.Time  `json:",omitzero"`
-	Kind      agent.Kind `json:",omitempty"`
-	Text      string     `json:",omitempty"`
-	Delta     bool       `json:",omitempty"`
-	SessionID string     `json:",omitempty"`
+	TurnID    string        `json:"turn_id,omitempty"`
+	AgentID   string        `json:",omitempty"`
+	Time      time.Time     `json:",omitzero"`
+	Kind      agent.Kind    `json:",omitempty"`
+	Text      string        `json:",omitempty"`
+	Delta     bool          `json:",omitempty"`
+	SessionID string        `json:",omitempty"`
+	End       agent.TurnEnd `json:",omitempty"`
 
 	Type    string     `json:"type,omitempty"`
 	Speaker string     `json:"speaker,omitempty"`
@@ -998,7 +999,7 @@ type entryHead struct {
 func (h entryHead) entry() Entry {
 	return Entry{
 		TurnID: h.TurnID,
-		Event:  agent.Event{AgentID: h.AgentID, Time: h.Time, Kind: h.Kind, Text: h.Text, Delta: h.Delta, SessionID: h.SessionID},
+		Event:  agent.Event{AgentID: h.AgentID, Time: h.Time, Kind: h.Kind, Text: h.Text, Delta: h.Delta, SessionID: h.SessionID, End: h.End},
 		Type:   h.Type, Speaker: h.Speaker, To: h.To, Via: h.Via, Held: h.Held, ID: h.ID, Images: h.Images,
 		Steer: h.Steer, Ref: h.Ref, Old: h.Old, Snap: h.Snap, Files: h.Files, Task: h.Task, TaskID: h.TaskID,
 	}

@@ -19,7 +19,8 @@ import (
 // creates the task (new_task) or takes the existing one (task), makes `to` its
 // owner and records the contract. It returns the task's id.
 func (m *Manager) handOver(t *thread, from, to *agentState, text string, msg agent.Message) (string, error) {
-	contract := &store.Contract{Expect: msg.Expect, DoneWhen: msg.DoneWhen, ExplicitDone: msg.ExplicitDone}
+	contract := &store.Contract{Objective: msg.Objective, Expect: msg.Expect, DoneWhen: msg.DoneWhen,
+		Boundaries: msg.Boundaries, Check: msg.Check, ExplicitDone: msg.ExplicitDone}
 	if msg.NewTask != "" {
 		// Claimed: created running with `to` as owner, so the scheduler cannot
 		// hand it to someone else while the relay is still on its way.
@@ -48,6 +49,9 @@ func (m *Manager) handOver(t *thread, from, to *agentState, text string, msg age
 		tk.Creator = from.id
 	}
 	if *contract != (store.Contract{}) || tk.Contract == nil {
+		if contract.Check == "" {
+			contract.Check = tk.CheckOf() // new terms do not drop the task's check
+		}
 		tk.Contract = contract
 	}
 	if tk.Brief == "" {
@@ -112,28 +116,9 @@ func handoverIndex(t *thread, id, to string) int {
 // live subagents of its own nothing is settled: the task waits for their
 // results, which start a's next turn.
 func (m *Manager) settleHanded(t *thread, a *agentState, reply string, answered int) {
-	type job struct {
-		id       string
-		explicit bool
-	}
-	var jobs []job
 	t.mu.Lock()
-	if t.waitsOnChildren(a, answered) {
-		t.mu.Unlock()
-		return
-	}
+	jobs := t.handedJobsLocked(a, answered)
 	ops := t.ops != nil
-	for _, tk := range t.tasks {
-		if tk.Owner != a.id || tk.Status != store.TaskRunning || tk.Contract == nil {
-			continue
-		}
-		// a has not been told about it yet (still ahead of its cursor, or held
-		// by a pause): this turn was about something else.
-		if idx := handoverIndex(t, tk.ID, a.id); idx < 0 || idx >= answered || t.inert[idx] {
-			continue
-		}
-		jobs = append(jobs, job{tk.ID, tk.Contract.ExplicitDone})
-	}
 	t.mu.Unlock()
 
 	for _, j := range jobs {
@@ -154,6 +139,35 @@ func (m *Manager) settleHanded(t *thread, a *agentState, reply string, answered 
 			_, _ = m.moveTask(t, j.id, store.TaskDone, a.id, reply, nil)
 		}
 	}
+}
+
+// handedJob is a task the end of a turn settles (settleHanded).
+type handedJob struct {
+	id       string
+	explicit bool
+}
+
+// handedJobsLocked are the tasks the turn of a that just ended settles: those
+// handed to a under a contract, running, whose handover a had been briefed
+// on. None while a waits on subagents of its own. turnend.go reads them too,
+// to say how the turn ended before settleHanded runs. t.mu is held.
+func (t *thread) handedJobsLocked(a *agentState, answered int) []handedJob {
+	if t.waitsOnChildren(a, answered) {
+		return nil
+	}
+	var jobs []handedJob
+	for _, tk := range t.tasks {
+		if tk.Owner != a.id || tk.Status != store.TaskRunning || tk.Contract == nil {
+			continue
+		}
+		// a has not been told about it yet (still ahead of its cursor, or held
+		// by a pause): this turn was about something else.
+		if idx := handoverIndex(t, tk.ID, a.id); idx < 0 || idx >= answered || t.inert[idx] {
+			continue
+		}
+		jobs = append(jobs, handedJob{tk.ID, tk.Contract.ExplicitDone})
+	}
+	return jobs
 }
 
 // settleBriefsLocked makes the hand-overs of task id that their recipients
@@ -196,11 +210,20 @@ func handoverNote(t *thread, e store.Entry) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n[deck] This hands you task %s \"%s\".", tk.ID, tk.Title)
 	if c := tk.Contract; c != nil {
+		if c.Objective != "" && c.Objective != tk.Title {
+			b.WriteString(" Objective: " + c.Objective + ".")
+		}
 		if c.Expect != "" {
 			b.WriteString(" Expected back: " + c.Expect + ".")
 		}
 		if c.DoneWhen != "" {
 			b.WriteString(" Done when: " + c.DoneWhen + ".")
+		}
+		if c.Boundaries != "" {
+			b.WriteString(" Boundaries: " + c.Boundaries + ".")
+		}
+		if c.Check != "" {
+			fmt.Fprintf(&b, " Check: run `%s` after your last change; it is done only once that passes (without a passing run, task.done sends it back).", c.Check)
 		}
 		if c.ExplicitDone {
 			fmt.Fprintf(&b, " Report it with execute task.done {id: %q, result} when finished; a reply alone does not finish it.", tk.ID)

@@ -91,7 +91,7 @@ function mapMessage(p: Obj): unknown {
     updated_at: isoOf(p["updated_at"]),
     finished: p["finished"] === true,
     parts: Array.isArray(p["parts"]) ? p["parts"].filter(isRecord).map(mapPart) : [],
-    ...strings(p, ["agent"]),
+    ...strings(p, ["agent", "turn_end"]),
   };
   if (p["editable"] === true) out["editable"] = true;
   if (p["edited"] === true) out["edited"] = true;

@@ -437,6 +437,20 @@ func TestSessionsAndSend(t *testing.T) {
 	require.Equal(t, "plan", r.rc.modes["s1"])
 }
 
+// How a Deck agent's turn ended rides on its finished message.
+func TestConvertCarriesTheTurnEnd(t *testing.T) {
+	msg := message.Message{ID: "a", SessionID: "s", Role: message.Assistant, Model: "claude", Parts: []message.ContentPart{
+		message.TextContent{Text: "Which do you want?"},
+	}}
+	require.Empty(t, toMessage(msg, "/work").TurnEnd, "a running turn has no end")
+	msg.AddFinish(message.FinishReasonEndTurn, "", "")
+	msg.SetTurnEnd(wire.TurnEndBlocked)
+	m := toMessage(msg, "/work")
+	require.True(t, m.Finished)
+	require.Equal(t, wire.TurnEndBlocked, m.TurnEnd)
+	require.Len(t, m.Parts, 1, "the finish part is no part of its own")
+}
+
 func TestConvertKeepsNamesNotPaths(t *testing.T) {
 	m := toMessage(message.Message{ID: "u", SessionID: "s", Role: message.User, Parts: []message.ContentPart{
 		message.TextContent{Text: "see"},

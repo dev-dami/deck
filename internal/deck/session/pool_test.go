@@ -117,6 +117,8 @@ func TestAgentsReachPools(t *testing.T) {
 	c1 := r.add(t, tid, "claude")
 	c2 := r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
+	worksFor(t, r.m, c1, "codex") // plain messages to them start turns
+	worksFor(t, r.m, c2, "codex")
 	if err := r.m.postAt(tid, "$codex go"); err != nil {
 		t.Fatal(err)
 	}

@@ -429,6 +429,7 @@ func TestMessageToBusyMemberViaToolSaysQueued(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
 	if err := r.m.postAt(tid, "$codex start"); err != nil {
 		t.Fatal(err)
 	}
@@ -460,6 +461,7 @@ func TestToolRelays(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
 	if err := r.m.postAt(tid, "$claude plan it"); err != nil {
 		t.Fatal(err)
 	}
@@ -515,6 +517,7 @@ func TestHopLimitPausesAndContinueReleases(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
 	if err := r.m.postAt(tid, "$claude start"); err != nil {
 		t.Fatal(err)
 	}
@@ -575,6 +578,7 @@ func TestHeldRelayOverToolSaysSo(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
 	if err := r.m.postAt(tid, "$claude go"); err != nil {
 		t.Fatal(err)
 	}
@@ -592,6 +596,7 @@ func TestNewUserMessageEndsPauseAndDropsHeldRelays(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
 	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "paused", func() bool { ti, _ := r.m.Thread(tid); return ti.Paused && r.c.turnDones("codex") == 1 })
 	if err := r.m.postAt(tid, "$claude never mind"); err != nil {
@@ -684,6 +689,7 @@ func TestEchoLoopIsDroppedWithNotice(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
 	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	waitFor(t, "codex to settle", func() bool { return r.c.turnDones("codex") >= 1 })
@@ -819,6 +825,7 @@ func TestResumeTwoMemberThread(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
 	_ = r.m.postAt(tid, "$claude plan it")
 	waitFor(t, "exchange", func() bool { return r.c.turnDones("claude") == 2 })
 	if err := r.m.Rename("codex", "reviewer"); err != nil {
@@ -993,16 +1000,20 @@ func TestDemoDuoCollaborates(t *testing.T) {
 	if m.Busy(tid) || m.Busy("no-such-thread") {
 		t.Fatal("Busy is true with everyone idle")
 	}
+	// claude's hand-off, then codex's reply as the task's result.
 	rel := c.relays()
-	if len(rel) != 2 || rel[0].Via != "tool" || rel[1].Via != "tool" || rel[1].From != "codex" {
+	if len(rel) != 2 || rel[0].Via != "tool" || rel[1].Via != "task" || rel[1].From != "codex" {
 		t.Fatalf("relays = %+v", rel)
+	}
+	if tk, ok := m.Task(tid, "t1"); !ok || tk.Status != store.TaskDone || tk.Contract.Objective == "" {
+		t.Fatalf("task = %+v", tk)
 	}
 	out := c.toolResults("codex", "read")
 	if len(out) != 1 || !strings.Contains(out[0], "Plan for the store change") {
 		t.Fatalf("thread.read = %q", out)
 	}
 	ti, _ := m.Thread(tid)
-	if math.Abs(ti.CostUSD-0.19) > 1e-9 || ti.Paused || ti.Hops != 2 {
+	if math.Abs(ti.CostUSD-0.19) > 1e-9 || ti.Paused || ti.Hops != 1 {
 		t.Fatalf("thread = %+v", ti)
 	}
 	for _, a := range ti.Members {

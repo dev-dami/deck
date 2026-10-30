@@ -420,7 +420,8 @@ func (r *run) callHub(t *turn, name, to, text string, ex *Exec, msg *agent.Messa
 		title = "to " + to + ": " + oneLine(text)
 		args := map[string]any{"to": to, "message": text}
 		if msg != nil {
-			for k, v := range map[string]string{"task": msg.Task, "new_task": msg.NewTask, "expect": msg.Expect, "done_when": msg.DoneWhen} {
+			for k, v := range map[string]string{"task": msg.Task, "new_task": msg.NewTask, "expect": msg.Expect, "done_when": msg.DoneWhen,
+				"objective": msg.Objective, "deliverable": msg.Deliverable, "boundaries": msg.Boundaries, "check": msg.Check} {
 				if v != "" {
 					args[k] = v
 				}

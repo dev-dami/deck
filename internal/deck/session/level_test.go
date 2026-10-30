@@ -229,7 +229,7 @@ func TestASoloAgentIsBriefedLikeItsOwnCLI(t *testing.T) {
 	}
 	waitFor(t, "the second turn", func() bool { return len(r.claude.prompts("claude")) == 2 })
 	p := r.claude.prompts("claude")[1]
-	has(t, p, `codex joined the thread; to reach it, execute thread.send {to: "codex", message}`)
+	has(t, p, `codex joined the thread; to hand it work, execute thread.send {to: "codex", objective, deliverable, done_when}`)
 	lacks(t, p, "task t1")
 	sp, _ = r.codex.spec("codex")
 	has(t, sp.Instructions, "shared Deck thread with claude")

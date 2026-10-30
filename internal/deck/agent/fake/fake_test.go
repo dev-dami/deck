@@ -639,20 +639,21 @@ func TestDemoDuoScriptsShape(t *testing.T) {
 	if len(c) != 2 || len(x) != 1 {
 		t.Fatalf("turns: claude %d codex %d", len(c), len(x))
 	}
-	// Each answers the other with thread.send: "@name" in a reply is text.
+	// claude hands the review over under a contract; codex's final reply is
+	// the result, so it sends nothing itself.
 	var sends, answers int
 	for _, st := range c[0] {
-		if st.Message != nil && st.Message.To == "codex" {
+		if st.Message != nil && st.Message.To == "codex" && st.Message.Objective != "" && st.Message.Deliverable != "" {
 			sends++
 		}
 	}
 	for _, st := range x[0] {
-		if st.Message != nil && st.Message.To == "claude" {
+		if st.Message != nil {
 			answers++
 		}
 	}
-	if sends != 1 || answers != 1 {
-		t.Fatalf("sends=%d answers=%d", sends, answers)
+	if sends != 1 || answers != 0 {
+		t.Fatalf("hand-offs=%d codex sends=%d", sends, answers)
 	}
 	adapters, hub := DemoDuo(0)
 	if adapters["claude"] == nil || adapters["codex"] == nil || hub == nil {

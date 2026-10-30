@@ -46,7 +46,7 @@ func TestSearchEmptyQueryListsCatalog(t *testing.T) {
 			t.Errorf("empty search misses %s:\n%s", o.Name, out)
 		}
 	}
-	if !strings.Contains(out, "thread.send {to*, message*, ") {
+	if !strings.Contains(out, "thread.send {to*, message, objective, deliverable, ") {
 		t.Errorf("signature missing:\n%s", out)
 	}
 	if !strings.Contains(out, "Skills:") {
