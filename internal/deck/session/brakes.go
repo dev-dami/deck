@@ -29,6 +29,8 @@ import (
 //     resets the count and wakes whoever waits. This is the one ledger the
 //     hop and work brakes cannot be: a report-back or a brief is neither a
 //     relay nor new work, but each starts a turn.
+//   - Stalls. Those turns also pause the thread early, at the level's
+//     MaxStalls, when they stop making progress (stall.go).
 //   - Loop guards. One agent may thread.send at most maxSendsPerMinute times
 //     a minute, and a member with maxWaiting agent messages it has not read
 //     takes no more.

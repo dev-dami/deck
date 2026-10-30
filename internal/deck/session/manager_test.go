@@ -16,6 +16,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/agent/fake"
+	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -513,7 +514,12 @@ func pingPong(from, to string, n int) []fake.Script {
 }
 
 func TestHopLimitPausesAndContinueReleases(t *testing.T) {
-	r := newRig(t, pingPong("claude", "codex", 4), pingPong("codex", "claude", 3))
+	// Six turns of talk with nothing changing would stall at three
+	// (stall.go): this is about the hop cap, so the stall limit is out of
+	// the way.
+	cfg := testCfg()
+	cfg.OrchestrationLevels = map[string]json.RawMessage{config.LevelOff: json.RawMessage(`{"max_stalls": 100}`)}
+	r := newRigWith(t, t.TempDir(), false, cfg, pingPong("claude", "codex", 4), pingPong("codex", "claude", 3))
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")

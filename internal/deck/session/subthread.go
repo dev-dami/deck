@@ -18,7 +18,8 @@ import (
 // The parent agent's brief (thread.open) and follow-ups (thread.post) are
 // posted into the sub-thread under that agent's name; each is an ask. When the
 // sub-thread's lead ends a turn that answered an ask, its final reply goes to
-// the parent agent as a relay with via "subthread", like a subagent's report.
+// the parent agent as a relay with via "subthread", like a subagent's report,
+// and is batched with them (batch.go).
 // What the person says in the sub-thread stays there.
 //
 // A sub-thread costs its parent: opening one and each follow-up count a turn
@@ -179,12 +180,25 @@ func (m *Manager) askSub(t *thread, from *agentState, text string) error {
 	if lead == nil {
 		return errNoLead
 	}
-	res, err := m.postFrom(t, from.getName(), text, []*agentState{lead}, nil, false, viaSubthread)
-	t.mu.Lock()
-	if res.EntryID != "" {
-		t.asks = append(t.asks, res.EntryID)
+	// On t's relay worker, where the ends of its lead's turns are settled: a
+	// lead that answers at once must find the ask recorded (reportToParent).
+	var err error
+	done := make(chan struct{})
+	m.onThread(t, func() {
+		defer close(done)
+		var res PostResult
+		res, err = m.postFrom(t, from.getName(), text, []*agentState{lead}, nil, false, viaSubthread)
+		t.mu.Lock()
+		if res.EntryID != "" {
+			t.asks = append(t.asks, res.EntryID)
+		}
+		t.mu.Unlock()
+	})
+	select {
+	case <-done:
+	case <-m.done:
+		return errClosed
 	}
-	t.mu.Unlock()
 	m.persistMeta(t)
 	return err
 }
@@ -236,6 +250,7 @@ func (m *Manager) reportToParent(t *thread, a *agentState, reply string, answere
 	if reply = strings.TrimSpace(reply); reply == "" {
 		reply = "(it ended its turn without a reply)"
 	}
+	subs := m.busySubThreads(parentID, agentID) // before p.mu: it locks the sub-threads
 	p.mu.Lock()
 	to := p.member(agentID)
 	if to == nil || to.status() == StatusExited {
@@ -247,10 +262,15 @@ func (m *Manager) reportToParent(t *thread, a *agentState, reply string, answere
 	}
 	e := store.Entry{Type: store.EntryRelay, Speaker: a.getName(), To: []string{to.id}, Via: viaSubthread, Ref: t.id,
 		Event: eventText(fmt.Sprintf("[sub-thread %q] %s", clip(title, 80), reply))}
-	m.appendLocked(p, e)
+	idx := m.appendLocked(p, e)
+	// Batched with the agent's other reports (batch.go); the lead standing in
+	// for an agent that has gone is told at once.
+	wake := to.id != agentID || p.holdReportLocked(to, heldReport{idx, fmt.Sprintf("sub-thread %q", clip(title, 60))}, false, "", subs)
 	p.mu.Unlock()
 	m.emit(msgFor(p.id, e))
-	_, _ = m.deliver(p, to)
+	if wake {
+		_, _ = m.deliver(p, to)
+	}
 }
 
 // subThread is one sub-thread as thread.children and the clients see it.

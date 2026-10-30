@@ -66,6 +66,10 @@ type thread struct {
 	// anything but the user: relays, hand-offs, briefs, reports, reviews
 	// (brakes.go, chargeTurnLocked).
 	turns int
+	// stall is the progress ledger of the turns the agents start (stall.go);
+	// held the reports each member is not woken for yet (batch.go).
+	stall stallState
+	held  map[string][]heldReport
 	sends map[string][]time.Time
 	// leases are the members' claims on files of the shared tree; edits the
 	// last change to each of its files (by pathKey), and warned when an

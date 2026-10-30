@@ -235,8 +235,9 @@ func handoverNote(t *thread, e store.Entry) string {
 }
 
 // notifyCreator tells the member who handed a task over how it ended: the
-// result, the failure or why it is blocked, as a relay entry that reaches them
-// like any other message (queued when they are busy). It does nothing when the
+// result, the failure or why it is blocked, as a relay entry, logged at once;
+// a result wakes them when the last of what they handed out has ended, a
+// failure or a block at once (batch.go). It does nothing when the
 // task has no owner or creator, or when the creator made the change
 // themselves. When the creator has left, its nearest live ancestor is told
 // instead (a subagent's parent, and so on); with none, nobody is.
@@ -267,6 +268,7 @@ func (m *Manager) notifyCreator(t *thread, tk store.Task, by string) {
 	default:
 		return
 	}
+	subs := m.busySubThreads(t.id, tk.Creator) // before t.mu: it locks the sub-threads
 	t.mu.Lock()
 	cr := t.ancestor(tk.Creator)
 	if cr == nil || cr.id == tk.Owner || t.raceOf(tk) >= 0 { // a race reports once, for all its entries
@@ -278,8 +280,13 @@ func (m *Manager) notifyCreator(t *thread, tk store.Task, by string) {
 		text += fmt.Sprintf(" [it was for %s, who has stopped]", t.name(tk.Creator))
 	}
 	e := store.Entry{Type: store.EntryRelay, Speaker: tk.Owner, To: []string{cr.id}, Via: "task", TaskID: tk.ID, Event: eventText(text)}
-	m.appendLocked(t, e)
+	idx := m.appendLocked(t, e)
+	// Logged now, but cr is woken once for the batch (batch.go).
+	line := reportLine(tk)
+	wake := t.holdReportLocked(cr, heldReport{idx, line}, tk.Status != store.TaskDone, line, subs)
 	t.mu.Unlock()
 	m.emit(msgFor(t.id, e))
-	_, _ = m.deliver(t, cr)
+	if wake {
+		_, _ = m.deliver(t, cr)
+	}
 }

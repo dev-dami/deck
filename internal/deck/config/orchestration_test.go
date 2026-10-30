@@ -33,7 +33,7 @@ func TestLevelsGrow(t *testing.T) {
 // level; an unknown level reads as off.
 func TestLevelOverrides(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	raw := `{"orchestration": "full", "max_children": 3, "orchestration_levels": {"full": {"max_depth": 5, "race": false}, "assist": {"schedule": true}}}`
+	raw := `{"orchestration": "full", "max_children": 3, "orchestration_levels": {"full": {"max_depth": 5, "race": false}, "assist": {"schedule": true, "max_stalls": 5}}}`
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -42,10 +42,10 @@ func TestLevelOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	full := c.Level(LevelFull)
-	if full.MaxDepth != 5 || full.Race || full.MaxChildren != 3 || full.MaxSubagents != 20 || full.Review != "other" {
+	if full.MaxDepth != 5 || full.Race || full.MaxChildren != 3 || full.MaxSubagents != 20 || full.Review != "other" || full.MaxStalls != 3 || !full.Replan {
 		t.Fatalf("full = %+v", full)
 	}
-	if a := c.Level(LevelAssist); !a.Schedule || a.MaxChildren != 2 {
+	if a := c.Level(LevelAssist); !a.Schedule || a.MaxChildren != 2 || a.MaxStalls != 5 || a.Replan {
 		t.Fatalf("assist = %+v", a)
 	}
 	if c.Level("max") != c.Level(LevelOff) {
@@ -64,6 +64,7 @@ func TestLevelValidation(t *testing.T) {
 		{Config{Orchestration: "on"}, "orchestration must be"},
 		{Config{OrchestrationLevels: map[string]json.RawMessage{"max": json.RawMessage(`{}`)}}, "no level"},
 		{Config{OrchestrationLevels: map[string]json.RawMessage{"auto": json.RawMessage(`{"max_depth": -1}`)}}, "0 or more"},
+		{Config{OrchestrationLevels: map[string]json.RawMessage{"auto": json.RawMessage(`{"max_stalls": -1}`)}}, "0 or more"},
 		{Config{OrchestrationLevels: map[string]json.RawMessage{"auto": json.RawMessage(`{"review": "gemini"}`)}}, "review must be"},
 		{Config{OrchestrationLevels: map[string]json.RawMessage{"auto": json.RawMessage(`{"race": "yes"}`)}}, "orchestration_levels.auto"},
 	} {

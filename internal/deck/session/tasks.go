@@ -466,6 +466,7 @@ func (m *Manager) moveTaskIf(t *thread, id string, to store.TaskStatus, by, note
 	if to == store.TaskDone || to == store.TaskFailed || to == store.TaskBlocked {
 		m.notifyCreator(t, out, by)
 	}
+	m.flushReports(t, out) // its creator may have waited on it alone
 	// A reviewer that did not make this move itself is done with the task.
 	if reviewer != "" && reviewer != by {
 		m.retireMember(t, reviewer)

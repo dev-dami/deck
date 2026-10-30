@@ -984,6 +984,7 @@ func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentStat
 	if local {
 		t.paused, t.hops, t.heldIdx, t.work, t.turns = false, 0, nil, 0, 0
 		t.lastRelay = map[string]string{}
+		t.stall.clear()
 	}
 	if t.title == "" {
 		t.title = placeholderTitle(text)
@@ -1112,7 +1113,8 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 	}
 	// A turn the user did not start counts against the thread's turn
 	// budget; paused, or at the limit, it waits for the user (brakes.go).
-	if needTrigger && !t.userTriggered(a) {
+	agentTurn := needTrigger && !t.userTriggered(a)
+	if agentTurn {
 		if pe, ok := m.chargeTurnLocked(t); !ok {
 			t.mu.Unlock()
 			a.restore(prev)
@@ -1122,6 +1124,7 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 			return dNone, nil
 		}
 	}
+	t.stall.begin(a.id, t.size(), agentTurn) // judged when it ends (stall.go)
 	prompt, images, cursor, hold := m.buildPrompt(t, a)
 	user := a.promptUser
 	oldCursor, oldHold, oldKnown := a.cursor, a.holdFrom, a.knownMode
@@ -1153,6 +1156,7 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 	if err != nil {
 		t.mu.Lock()
 		a.cursor, a.holdFrom, a.knownMode = oldCursor, oldHold, oldKnown
+		t.stall.unbegin(a.id)
 		t.mu.Unlock()
 		a.restore(prev)
 		return dNone, err

@@ -363,12 +363,15 @@ func (m *Manager) afterTurn(a *agentState, end turnEnd) {
 	text, interrupted := end.text, end.interrupted
 	t := a.thread
 	m.settleClaims(t, a, end.claims) // what it reported done with a check
+	m.releaseHeld(t, a)              // before settling: the reports it waited on (batch.go)
 	if !interrupted {
 		m.settleHanded(t, a, text, end.answered)
 		m.forgetVerdict(t, end.settles) // one settleHanded did not use
 		m.retireSpent(t, a, end.answered)
 		m.reportToParent(t, a, text, end.answered)
 	}
+	m.checkStall(t, a, end)
+	m.flushParent(t, a) // after checkStall settles the turn's record (batch.go)
 	if text != "" && !interrupted {
 		m.maybeAutoTitle(t, text)
 	}
@@ -390,6 +393,7 @@ func (m *Manager) Continue(threadID string) error {
 	}
 	t.paused = false
 	t.hops, t.work, t.turns = 0, 0, 0
+	t.stall.clear()
 	var targets []*agentState
 	for _, idx := range t.heldIdx {
 		delete(t.inert, idx)
