@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { isTop, nest } from "./subthreads";
 
 interface T {
@@ -16,7 +16,13 @@ describe("sub-threads in the list", () => {
     const all = [t("a"), t("b"), t("a1", "a", 1), t("a2", "a", 2), t("a2x", "a2", 3)];
     const ids = new Set(all.map(id));
     const tops = all.filter((x) => isTop(x, ids, parent));
-    expect(nest(tops, all, id, parent, newer).map((n) => `${n.depth}:${n.item.id}`)).toEqual(["0:a", "1:a2", "2:a2x", "1:a1", "0:b"]);
+    expect(nest(tops, all, id, parent, newer).map((n) => `${n.depth}:${n.item.id}`)).toEqual([
+      "0:a",
+      "1:a2",
+      "2:a2x",
+      "1:a1",
+      "0:b",
+    ]);
   });
 
   test("a sub-thread whose parent is not listed stands on its own", () => {
@@ -27,6 +33,6 @@ describe("sub-threads in the list", () => {
 
   test("a cycle cannot loop", () => {
     const all = [t("a", "b"), t("b", "a")];
-    expect(nest([all[0]!], all, id, parent, newer).map((n) => n.item.id)).toEqual(["a", "b"]);
+    expect(nest(all.slice(0, 1), all, id, parent, newer).map((n) => n.item.id)).toEqual(["a", "b"]);
   });
 });

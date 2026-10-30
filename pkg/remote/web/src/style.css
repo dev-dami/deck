@@ -1344,3 +1344,9 @@ legend {
   width: 100%;
   box-sizing: border-box;
 }
+
+/* A sub-thread's mark in the session list: it sits under its parent. */
+.sub-mark {
+  margin-right: 4px;
+  opacity: 0.55;
+}

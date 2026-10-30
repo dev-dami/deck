@@ -147,7 +147,12 @@ export function SessionScreen({ state, id }: { state: AppState; id: string }) {
         files={state.server?.features.includes("changes") ?? false}
       />
       {sheet === "agents" ? (
-        <AgentsSheet sessionId={id} roster={roster} onClose={() => setSheet(null)} />
+        <AgentsSheet
+          sessionId={id}
+          roster={roster}
+          lead={session?.lead?.agent}
+          onClose={() => setSheet(null)}
+        />
       ) : null}
       {sheet === "queue" ? (
         <QueueSheet sessionId={id} items={queue} onClose={() => setSheet(null)} />

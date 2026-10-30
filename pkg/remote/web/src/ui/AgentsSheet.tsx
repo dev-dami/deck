@@ -7,10 +7,15 @@ import { Sheet } from "./Sheet";
 interface AgentsSheetProps {
   sessionId: string;
   roster: AgentLine[];
+  // The agent the person talks to (the session's lead), by name.
+  lead?: string | undefined;
   onClose: () => void;
 }
 
-export function AgentsSheet({ sessionId, roster, onClose }: AgentsSheetProps) {
+// The session's agents. One is its lead: every message goes to it, and
+// "Model" on another makes that one the lead (models.set). Subagents work
+// for the lead and cannot be talked to.
+export function AgentsSheet({ sessionId, roster, lead, onClose }: AgentsSheetProps) {
   const [picking, setPicking] = useState<AgentLine | null>(null);
   const controller = useController();
   const { theme } = useAppState();
@@ -42,7 +47,8 @@ export function AgentsSheet({ sessionId, roster, onClose }: AgentsSheetProps) {
                       {kindMark(theme, a.kind)}
                     </span>
                   ) : null}
-                  ${a.name}
+                  {a.name}
+                  {lead === a.name ? <span class="tag">you talk to it</span> : null}
                 </span>
                 <span class="row-sub">
                   {a.role !== undefined && a.role !== "" ? `${a.role} · ` : ""}

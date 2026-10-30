@@ -150,11 +150,30 @@ export interface Session {
   // One of MODES in practice; kept open so an unexpected value never drops a session.
   mode: string;
   last_text?: string;
+  // The session an agent opened this one from (a sub-thread): clients list
+  // it under its parent. Absent for one the person started, and from an
+  // older Deck.
+  parent_id?: string;
+  // The agent the person talks to (docs/design/lead-agent-and-subthreads.md).
+  lead?: SessionLead;
 }
+
+export interface SessionLead {
+  agent: string;
+  kind: string;
+  model?: string;
+  effort?: string;
+  profile?: string;
+}
+
+export const decodeSessionLead: Decoder<SessionLead> = object(
+  { agent: str, kind: str },
+  { model: str, effort: str, profile: str },
+);
 
 export const decodeSession: Decoder<Session> = object(
   { id: str, title: str, updated_at: time, busy: bool, pending: int, mode: str },
-  { last_text: str },
+  { last_text: str, parent_id: str, lead: decodeSessionLead },
 );
 
 export interface Image {

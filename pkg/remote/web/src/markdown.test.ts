@@ -97,7 +97,9 @@ describe("blocks", () => {
   });
 
   test("GFM tables: header, alignment, rows padded to the header", () => {
-    const b = parseBlocks("intro\n| name | n |\n| :-- | --: |\n| `a|b` | 1 |\n| c \\| d |\n\nafter");
+    const b = parseBlocks(
+      "intro\n| name | n |\n| :-- | --: |\n| `a|b` | 1 |\n| c \\| d |\n\nafter",
+    );
     expect(b.map((x) => x.k)).toEqual(["p", "table", "p"]);
     const t = b[1];
     if (t?.k !== "table") throw new Error("no table");
