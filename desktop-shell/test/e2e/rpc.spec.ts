@@ -160,7 +160,7 @@ test("$pi starts a pi lane, and its picker offers the models pi has a key for", 
   await expect(page.locator('[data-kind="antigravity"][data-available="false"]')).toContainText("not installed");
 });
 
-test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill the composer", async ({ page }) => {
+test("first run: the Welcome lists the agent CLIs, and a new thread is one agent unless a workflow is picked", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "One deck for all your agents" })).toBeVisible();
   const clis = page.getByRole("list", { name: "Agent CLIs" });
@@ -180,15 +180,16 @@ test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill
   await page.getByRole("button", { name: "Open a folder" }).click();
   await expect(page.locator(".project")).toHaveText(basename(dir));
   await expect(page.getByRole("heading", { name: `What should we build in ${basename(dir)}?` })).toBeVisible();
-  const starts = page.getByRole("list", { name: "Ways to start" });
-  await starts.getByRole("button", { name: /Split the work/ }).click();
-  await expect(composer(page)).toHaveValue("$claude $codex ");
+  // One agent by default; a crew is a choice from the workflow menu.
+  await expect(page.getByRole("list", { name: "Workflows" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Start a multi-agent workflow" }).click();
+  const flows = page.getByRole("list", { name: "Workflows" });
+  await expect(flows.getByRole("button")).toHaveText([/^Plan, build, review/, /^Build and review/, /^Second opinion/, /^Best of several/, /^Split by area/, /^Full crew/]);
+  await flows.getByRole("button", { name: /Build and review/ }).click();
+  await expect(page.locator('.workflow-chip[data-workflow="review"]')).toContainText("claude builds it, codex reviews before it is done");
   await expect(composer(page)).toBeFocused();
-  await composer(page).pressSequentially("fix the limiter");
-  await starts.getByRole("button", { name: /Race agents/ }).click();
-  await expect(composer(page)).toHaveValue("/race fix the limiter");
-  await starts.getByRole("button", { name: /One agent/ }).click();
-  await expect(composer(page)).toHaveValue("$claude fix the limiter");
+  await page.getByRole("button", { name: "Back to one agent" }).click();
+  await expect(page.locator(".workflow-chip")).toHaveCount(0);
 
   // The palette opens the Welcome again, with a way back. Enter waits for
   // the Welcome to be the picked line.
@@ -200,6 +201,40 @@ test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill
   await expect(page.getByRole("heading", { name: "One deck for all your agents" })).toBeVisible();
   await page.getByRole("button", { name: "Back to threads" }).click();
   await expect(page.locator(".project")).toHaveText(basename(dir));
+});
+
+test("a workflow from the new-thread screen starts its thread at its level with its terms; a race opens the builder", async ({ page }) => {
+  await openFolder(page);
+  const pick = async (name: RegExp) => {
+    await page.getByRole("button", { name: "Start a multi-agent workflow" }).click();
+    await page.getByRole("list", { name: "Workflows" }).getByRole("button", { name }).click();
+  };
+  await pick(/Build and review/);
+  await composer(page).fill("fix the limiter");
+  await composer(page).press("Enter");
+  await expect.poll(() => fake.createdLevels.at(-1)).toBe("assist");
+  await expect
+    .poll(() => fake.deck.allMessages().some((m) => m.role === "user" && (m.parts[0]?.text ?? "").includes('review: "codex"')))
+    .toBe(true);
+
+  // The next new thread is one agent again: the workflow was for one send.
+  await page.getByRole("button", { name: "New thread" }).first().click();
+  await expect(page.locator(".workflow-chip")).toHaveCount(0);
+  await pick(/Best of several/);
+  await composer(page).fill("fix the flaky test");
+  await composer(page).press("Enter");
+  await expect(page.getByRole("region", { name: "Race builder" })).toBeVisible();
+});
+
+test("a room of one agent has no lanes strip; a crew's room has one", async ({ page }) => {
+  // The fake serves one agents tree for every thread: here, one agent.
+  fake.crew = { agents: [{ name: "claude-1", kind: "claude", model: "opus", status: "idle", depth: 0 }], running: [] };
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Docs pass", exact: true }).click();
+  await expect(page.locator('[data-agent="claude-1"].msg').first()).toBeVisible();
+  await expect(page.getByRole("toolbar", { name: "Lanes" })).toHaveCount(0);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await expect(page.getByRole("toolbar", { name: "Lanes" })).toBeVisible();
 });
 
 test("first run: an engine that finds no agent CLI shows the agents, any other error its last lines", async ({ page }) => {

@@ -7,7 +7,7 @@ import type { EngineStop } from "../../shared/bridge";
 import { type DeckClient, serves } from "../client";
 import { FILES_LIMIT } from "../completion";
 import { subsOf, type Team } from "../crew";
-import { buildLanes, filterLane, subParent } from "../lanes";
+import { buildLanes, filterLane, soloRoom, subParent } from "../lanes";
 import { whenOf } from "../limits";
 import { pokeLimits, useLimits, useNow } from "../limitsState";
 import { focusMessage, useFocusedMessage } from "../palette";
@@ -42,6 +42,7 @@ import { RoomHeader } from "./RoomHeader";
 import type { RoomView } from "./roomView";
 import { Timeline } from "./Timeline";
 import { NEW, type OpenRoom } from "./useRoom";
+import { type WorkflowId, workflows as workflowsFor } from "../workflows";
 
 // The open thread's timeline. It reads that thread's messages alone, so
 // tokens in other threads do not render it, nor the shell around it. lane
@@ -272,6 +273,12 @@ export function Room({
   const pending = sid === null ? [] : state.approvals.filter((a) => a.session_id === sid);
   // What the person answered the room's last question, shown on the composer.
   const [answered, setAnswered] = useState<AnsweredRecord | null>(null);
+  // The multi-agent workflow picked on the new-thread screen for its next
+  // send; none is the one agent every thread starts as. A workflow sets the
+  // new thread's level, which only a local Deck takes at creation.
+  const [workflow, setWorkflow] = useState<WorkflowId | null>(null);
+  const flows = c.capabilities === undefined ? [] : workflowsFor(kinds, kinds.includes("claude") || kinds.length === 0 ? "claude" : (kinds[0] ?? "claude"));
+  const picked = flows.find((w) => w.id === workflow) ?? null;
   const live = useRoomLive(c, sid);
   const strip = serves(c, "Highlights") ? stripItem(live.items) : null;
   const queued = sid === null ? 0 : (state.queue[sid]?.length ?? 0);
@@ -312,6 +319,7 @@ export function Room({
             });
           },
         };
+  const lanes = buildLanes({ roster, agents: crew?.agents ?? null, shares: r.shares, waiting: pending.map((a) => a.agent), leases: meta.leases });
   const common = { draft, setDraft, kinds, images: imagesOn, onSlash: send.runSlash, onError: toast, inputRef, sendKey: prefs.sendKey, theme: state.theme, ...named };
   // /race: the builder over the composer, until it starts the race or closes.
   const raceBuilder = r.race !== null && (
@@ -365,9 +373,9 @@ export function Room({
         onPreview={onPreview}
         {...(open !== undefined && engine === null ? { view, onView: setView } : {})}
       />
-      {open !== undefined && (
+      {open !== undefined && !soloRoom(lanes) && (
         <Lanes
-          lanes={buildLanes({ roster, agents: crew?.agents ?? null, shares: r.shares, waiting: pending.map((a) => a.agent), leases: meta.leases })}
+          lanes={lanes}
           theme={state.theme}
           filter={lane}
           onFilter={r.setLane}
@@ -390,13 +398,21 @@ export function Room({
           setDraft={setDraft}
           onFocus={focusInput}
           canIsolate={serves(c, "IsolateSession")}
+          workflows={flows}
+          picked={workflow}
+          onPick={setWorkflow}
         >
           <Composer
             key={NEW}
             {...common}
             roster={[]}
             online={online && state.sessionsLoaded}
-            onSend={send.start}
+            onSend={async (text, images) => {
+              if (picked === null) return send.start(text, images);
+              const ok = await send.startWorkflow(picked, text, images);
+              if (ok) setWorkflow(null);
+              return ok;
+            }}
             above={raceBuilder}
             placeholder={named.mentions ? "Ask anything. @ picks an agent, # a file, /race races several." : "Ask anything. $ picks an agent, /race races several."}
           />

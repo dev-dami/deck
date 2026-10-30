@@ -1,44 +1,26 @@
 import { activeAgents, toggleAgent } from "@web/composer";
 import type { Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
-import type { CSSProperties, ReactNode } from "react";
+import { type CSSProperties, type ReactNode, useState } from "react";
 import { cn } from "../lib/cn";
 import { setPrefs, usePrefs } from "../prefs";
-import { GitBranch } from "./icons";
+import type { Workflow, WorkflowId } from "../workflows";
+import { ChevronDown, GitBranch, Users, X } from "./icons";
+import { CARD } from "./kit/card";
 import { Switch } from "./kit/switch";
-import { AGENT_HELP, startCards, withStart } from "./landing";
+import { AGENT_HELP } from "./landing";
 
 // A kind's glyph: the theme's, else the CLI's own mark.
 const markOf = (theme: Theme | null, kind: string) => kindMark(theme, kind) || AGENT_HELP.find((h) => h.kind === kind)?.mark || "●";
 
-// A start's prefix, its agents in their hues: "$claude $codex", "/race".
-function Prefix({ text }: { text: string }) {
-  return (
-    <span className="font-mono text-[12.5px]">
-      {text
-        .trim()
-        .split(/(\$[a-z]+)/)
-        .map((part, i) =>
-          part.startsWith("$") ? (
-            <span key={i} style={{ color: kindColour(part.slice(1)) }}>
-              {part}
-            </span>
-          ) : (
-            <span key={i} className="text-muted-foreground">
-              {part}
-            </span>
-          ),
-        )}
-    </span>
-  );
-}
-
-// Deck's new-thread screen, a work surface set in type: the question, the
-// composer, and the ways to set the crew on a task, set as a ruled table
-// rather than cards. Under it, the crew this Deck runs, each
-// agent as its glyph in its hue and the $name that reaches it: a name
-// lights while the draft addresses it, and a click adds it or takes it out.
-// Last, whether the thread gets a branch of its own.
+// Deck's new-thread screen, a work surface set in type: the question and
+// the composer. A thread is one agent, as in its own CLI; a crew is a
+// choice: "Start a multi-agent workflow" opens the workflows (workflows.ts)
+// as a ruled table, and the one picked shows as a card over the composer,
+// with how it ends, until it is sent or put back. Under it, the crew this
+// Deck runs, each agent as its glyph in its hue and the $name that reaches
+// it: a name lights while the draft addresses it, and a click adds it or
+// takes it out. Last, whether the thread gets a branch of its own.
 export function NewThread({
   loaded,
   project,
@@ -48,6 +30,9 @@ export function NewThread({
   setDraft,
   onFocus,
   canIsolate,
+  workflows,
+  picked,
+  onPick,
   children,
 }: {
   // The thread list arrived; before that, the screen says it connects.
@@ -60,10 +45,17 @@ export function NewThread({
   onFocus: () => void;
   // The Deck can put a thread on a worktree and branch of its own.
   canIsolate: boolean;
+  // The multi-agent workflows this Deck can start (none for a paired Deck),
+  // and the one picked for the next send.
+  workflows: Workflow[];
+  picked: WorkflowId | null;
+  onPick: (id: WorkflowId | null) => void;
   children: ReactNode;
 }) {
   const { isolate } = usePrefs();
   const addressed = activeAgents(draft);
+  const [menu, setMenu] = useState(false);
+  const chosen = workflows.find((w) => w.id === picked) ?? null;
   return (
     <div className="welcome flex min-h-0 flex-1 flex-col overflow-y-auto">
       {/* The block sits a little above the middle, where the eye lands, and
@@ -79,30 +71,69 @@ export function NewThread({
             "Connecting to Deck…"
           )}
         </h2>
+        {chosen !== null && (
+          <div className={cn(CARD, "workflow-chip flex items-start gap-2.5 px-3 py-2 text-xs")} data-workflow={chosen.id} role="status">
+            <Users aria-hidden className="mt-0.5 size-3.5 shrink-0 text-primary" weight="fill" />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="text-foreground">
+                <span className="font-medium">{chosen.title}</span>
+                <span className="text-muted-foreground"> · {chosen.line}</span>
+              </span>
+              <span className="text-faint">{chosen.race ? "Send opens the race builder with your goal; it " + chosen.ends : `Send starts it; it ${chosen.ends}.`}</span>
+            </span>
+            <button
+              type="button"
+              className="grid size-5 shrink-0 cursor-pointer place-items-center rounded-md text-faint outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Back to one agent"
+              title="Back to one agent"
+              onClick={() => {
+                onPick(null);
+                onFocus();
+              }}
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        )}
         {children}
-        <section className="flex flex-col pt-1" aria-labelledby="ways-to-start">
-          <h3 id="ways-to-start" className="pb-1.5 text-faint text-xs">
-            Ways to start
-          </h3>
-          <ul className="start-cards flex flex-col border-hairline border-t" aria-label="Ways to start">
-            {startCards(kinds).map((s, i) => (
-              <li key={s.id} className="animate-enter border-hairline border-b" style={{ animationDelay: `${i * 40}ms` }}>
-                <button
-                  type="button"
-                  className="grid min-h-9 w-full cursor-pointer grid-cols-[7.5rem_minmax(0,1fr)] items-baseline gap-x-4 py-2 text-left outline-none transition-colors hover:bg-hover focus-visible:bg-hover @min-[34rem]/new:grid-cols-[7.5rem_10rem_minmax(0,1fr)]"
-                  onClick={() => {
-                    setDraft(withStart(s.prefix, draft));
-                    onFocus();
-                  }}
-                >
-                  <span className="pl-1 text-foreground text-sm">{s.title}</span>
-                  <Prefix text={s.prefix} />
-                  <span className="col-span-2 truncate pl-1 text-faint text-xs @min-[34rem]/new:col-span-1 @min-[34rem]/new:pl-0">{s.line}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+        {workflows.length > 0 && (
+          <section className="flex flex-col pt-1" aria-label="Multi-agent workflows">
+            <button
+              type="button"
+              className="workflows-toggle inline-flex cursor-pointer items-center gap-1.5 self-start rounded-md py-1 text-muted-foreground text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              aria-expanded={menu}
+              onClick={() => setMenu((m) => !m)}
+            >
+              <Users aria-hidden className="size-3.5" />
+              Start a multi-agent workflow
+              <ChevronDown aria-hidden className={cn("size-3 transition-transform", menu && "rotate-180")} />
+            </button>
+            {menu && (
+              <ul className="start-cards mt-1.5 flex flex-col border-hairline border-t" aria-label="Workflows">
+                {workflows.map((w, i) => (
+                  <li key={w.id} className="animate-enter border-hairline border-b" style={{ animationDelay: `${i * 40}ms` }}>
+                    <button
+                      type="button"
+                      className="grid min-h-9 w-full cursor-pointer grid-cols-[8.5rem_minmax(0,1fr)] items-baseline gap-x-4 py-2 text-left outline-none transition-colors hover:bg-hover focus-visible:bg-hover aria-pressed:bg-selected"
+                      aria-pressed={picked === w.id}
+                      data-workflow={w.id}
+                      onClick={() => {
+                        onPick(picked === w.id ? null : w.id);
+                        setMenu(false);
+                        onFocus();
+                      }}
+                    >
+                      <span className="pl-1 text-foreground text-sm">{w.title}</span>
+                      <span className="min-w-0 truncate text-faint text-xs" title={w.line}>
+                        {w.line}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <span className="-mr-2 text-faint text-xs">Write to</span>
           <ul className="crew flex flex-wrap items-baseline gap-x-4 gap-y-1" aria-label="Agents on this Deck">

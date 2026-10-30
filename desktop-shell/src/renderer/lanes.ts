@@ -201,6 +201,12 @@ export const pinnedLane = (l: Lane): boolean =>
 // "+N" (a chip of width more). The CLI-native subagents that ended fold
 // first; then lanes fold from the end, so teammates fold before agents; a
 // pinned lane never folds.
+// A room of one agent and the person, with no subagent and no teammate:
+// it reads like the agent's own CLI, with no strip of lanes to pick from.
+export function soloRoom(lanes: readonly Lane[]): boolean {
+  return lanes.filter((l) => l.kind === "agent").length <= 1 && !lanes.some((l) => l.kind === "mate");
+}
+
 export function fitLanes(
   lanes: readonly Lane[],
   widthOf: (l: Lane) => number,

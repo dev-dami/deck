@@ -7,6 +7,7 @@ import type { ProjectApi } from "./project";
 import type { LiveStore } from "./live";
 import type { RoomMetaStore } from "./roomMeta";
 import type { FileList, ImageBytes, SearchHit } from "./rpcMap";
+import type { Level } from "./orchestration";
 
 // What the window needs from a Deck, whatever the transport. The phone
 // client's Controller (protocol v2 through main's socket) has this shape;
@@ -21,8 +22,9 @@ export interface DeckClient {
   closeSession(): void;
   loadOlder(id: string): Promise<boolean>;
   // isolate starts the thread on a worktree and branch of its own (a local
-  // Deck that serves IsolateSession).
-  createSession(title?: string, isolate?: boolean): Promise<Session | null>;
+  // Deck that serves IsolateSession); level is its orchestration level, the
+  // one Settings gives new threads when unset (a local Deck only).
+  createSession(title?: string, isolate?: boolean, level?: Level): Promise<Session | null>;
   renameSession(id: string, title: string): Promise<void>;
   deleteSession(id: string): Promise<boolean>;
   send(sessionId: string, text: string, images: Image[]): Promise<boolean>;

@@ -6,6 +6,7 @@ import { LiveStore } from "./live";
 import { ProjectApi } from "./project";
 import type { BrowserActionResponse, BrowserCommand, DeckBridge, EngineStop, HighlightActionRequest, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
 import type { DeckClient } from "./client";
+import type { Level } from "./orchestration";
 import { getPrefs } from "./prefs";
 import type { Profile, ProfileScope } from "./profiles";
 import { RoomMetaStore } from "./roomMeta";
@@ -326,11 +327,11 @@ export class RpcDeckClient implements DeckClient {
     return r === null ? false : this.loadedPage(sessionId, r, false);
   }
 
-  async createSession(title?: string, isolate = false): Promise<Session | null> {
+  async createSession(title?: string, isolate = false, level?: Level): Promise<Session | null> {
     if (isolate && !this.serves("IsolateSession")) return null;
-    // The orchestration level of Settings › Agents; a Deck from before
-    // levels ignores it.
-    const r = await this.call("CreateSession", { title: title ?? "", isolate, level: getPrefs().orchestration });
+    // The workflow's level, else the one Settings › Agents gives new
+    // threads; a Deck from before levels ignores it.
+    const r = await this.call("CreateSession", { title: title ?? "", isolate, level: level ?? getPrefs().orchestration });
     const s = toSession(r);
     if (s === null) return null;
     const room = toRoom(r);
