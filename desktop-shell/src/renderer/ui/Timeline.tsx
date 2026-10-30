@@ -19,6 +19,7 @@ import {
   type IconType,
   Loader2,
   Pencil,
+  Package,
   Play,
   RotateCcw,
   Search,
@@ -75,6 +76,24 @@ import { Dialog } from "./kit/dialog";
 import { VIRTUAL_AFTER, VirtualList } from "./kit/virtual";
 import { Markdown } from "./Markdown";
 import { type PlanActions, PlanCard, wasApproved } from "./PlanCard";
+import type { ArtifactSummary } from "../../shared/artifacts";
+
+const NO_ARTIFACTS: readonly ArtifactSummary[] = [];
+const ArtifactLinks = createContext<{ items: readonly ArtifactSummary[]; open: (id: string) => void } | null>(null);
+
+function ArtifactCards({ messages }: { messages: Message[] }) {
+  const links = useContext(ArtifactLinks);
+  if (links === null) return null;
+  const ids = new Set(messages.map((m) => m.id));
+  return links.items.filter((a) => a.source?.message_id && ids.has(a.source.message_id)).map((a) => (
+    <button key={a.id} type="button" data-artifact-open={a.id} aria-label={`Open artifact: ${a.title}`}
+      className="flex w-fit max-w-full items-center gap-3 rounded-xl border border-hairline bg-card px-3 py-2 text-left text-sm outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => links.open(a.id)}>
+      <Package className="size-4 shrink-0 text-muted-foreground" />
+      <span className="min-w-0"><span className="block truncate font-medium">{a.title}</span><span className="block text-2xs text-muted-foreground">Open artifact · r{a.current_revision}</span></span>
+    </button>
+  ));
+}
 
 // A row of the timeline: a person's or a system message, an agent's turn
 // (its run of messages, actions.ts), or the shell's own note in the room
@@ -690,6 +709,7 @@ function AgentTurn({
           <Pieces ps={all} running={running} mark={mark} text={text} />
         </div>
       )}
+      <ArtifactCards messages={t.msgs} />
       {running && <Working since={m.created_at} />}
     </article>
   );
@@ -1015,6 +1035,8 @@ export function Timeline({
   onFocused,
   subs,
   subAlone = false,
+  artifacts = NO_ARTIFACTS,
+  onOpenArtifact,
 }: {
   messages: Message[];
   roster: AgentLine[];
@@ -1039,7 +1061,10 @@ export function Timeline({
   // subAlone says the timeline shows one of them alone (its lane).
   subs?: ReadonlyMap<string, AgentNode>;
   subAlone?: boolean;
+  artifacts?: readonly ArtifactSummary[];
+  onOpenArtifact?: (id: string) => void;
 }) {
+  const artifactLinks = useMemo(() => onOpenArtifact === undefined ? null : { items: artifacts, open: onOpenArtifact }, [artifacts, onOpenArtifact]);
   const ref = useRef<HTMLDivElement>(null);
   // Each agent's run of messages as one turn, its tool calls grouped; a
   // turn that did not change stays the same object, so its row keeps.
@@ -1128,6 +1153,7 @@ export function Timeline({
 
   return (
     <Images.Provider value={readImage ?? null}>
+      <ArtifactLinks.Provider value={artifactLinks}>
       <div className="relative min-h-0 flex-1" data-yolo-region="">
         <div
           className="timeline h-full overflow-y-auto"
@@ -1189,6 +1215,7 @@ export function Timeline({
           </button>
         )}
       </div>
+      </ArtifactLinks.Provider>
     </Images.Provider>
   );
 }

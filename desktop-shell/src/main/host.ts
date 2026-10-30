@@ -12,7 +12,10 @@ import {
   NOTIFY_LIMITS,
   type NotifyInput,
   type PairInput,
+  ARTIFACT_SHOW_LIMITS,
   PREVIEW_LIMITS,
+  type ArtifactShowInput,
+  type ArtifactShowResult,
   type PreviewBounds,
   type PreviewNav,
   RPC_METHODS,
@@ -55,6 +58,7 @@ export interface HostDeps {
   agentClis: () => Promise<AgentCli[]>;
   preview: Pick<Preview, "probe" | "load" | "nav" | "bounds" | "hide" | "close">;
   browserView?: (input: BrowserViewInput) => Promise<void>;
+  artifact?: ArtifactHost;
   // Shows the icon (checked by isAppIcon), keeps it and gives it to the
   // installed app's launchers (standard: their own icon).
   setAppIcon: (images: AppIconImage[], standard: boolean) => AppIconResult;
@@ -62,8 +66,21 @@ export interface HostDeps {
   findIcon?: (dir: string) => Promise<string | null>;
 }
 
+function artifact(d: HostDeps): ArtifactHost {
+  if (d.artifact === undefined) throw new Error("No artifact view available.");
+  return d.artifact;
+}
+
 // The longest renderer log line kept: a stack trace, not a flood.
 const MAX_LOG = 4000;
+
+// The artifact pane (main/artifact.ts) behind the checked host methods.
+export interface ArtifactHost {
+  show: (input: ArtifactShowInput) => Promise<ArtifactShowResult>;
+  bounds: (b: PreviewBounds) => void;
+  hide: () => void;
+  close: () => void;
+}
 
 // The main process's half of the bridge. Every argument comes from the
 // renderer, so callHost checks its type before a method sees it.
@@ -147,6 +164,10 @@ export function createHost(d: HostDeps): DeckHost {
     previewBounds: async (b: PreviewBounds) => d.preview.bounds({ x: b.x, y: b.y, w: b.w, h: b.h, zoom: b.zoom }),
     previewHide: async () => d.preview.hide(),
     previewClose: async () => d.preview.close(),
+    artifactShow: async (input: ArtifactShowInput) => artifact(d).show(input),
+    artifactBounds: async (b: PreviewBounds) => artifact(d).bounds({ x: b.x, y: b.y, w: b.w, h: b.h, zoom: b.zoom }),
+    artifactHide: async () => artifact(d).hide(),
+    artifactClose: async () => artifact(d).close(),
     browserView: async (input: BrowserViewInput) => {
       if (d.browserView === undefined) throw new Error("No desktop browser available.");
       await d.browserView(input);
@@ -241,6 +262,22 @@ const isPreviewBounds: Check = (v) =>
   v["zoom"] >= 0.25 &&
   v["zoom"] <= 1;
 
+const isArtifactShow: Check = (v) => {
+  if (!isKeys(v, ["request", "kind", "entrypoint", "files"])) return false;
+  const files = v["files"];
+  if (typeof v["request"] !== "string" || v["request"] === "" || v["request"].length > 64) return false;
+  if (!["html", "svg", "react"].includes(v["kind"] as string) || !isText(256)(v["entrypoint"])) return false;
+  if (!Array.isArray(files) || files.length > ARTIFACT_SHOW_LIMITS.files) return false;
+  let total = 0;
+  for (const f of files) {
+    if (!isKeys(f, ["path", "content"]) || !isText(256)(f["path"]) || typeof f["content"] !== "string") return false;
+    const bytes = Buffer.byteLength(f["content"] as string, "utf8");
+    total += bytes;
+    if (bytes > ARTIFACT_SHOW_LIMITS.file || total > ARTIFACT_SHOW_LIMITS.total) return false;
+  }
+  return true;
+};
+
 const ARGS: Record<HostMethod, Check[]> = {
   listServers: [],
   pair: [isPairInput],
@@ -279,6 +316,10 @@ const ARGS: Record<HostMethod, Check[]> = {
   previewBounds: [isPreviewBounds],
   previewHide: [],
   previewClose: [],
+  artifactShow: [isArtifactShow],
+  artifactBounds: [isPreviewBounds],
+  artifactHide: [],
+  artifactClose: [],
   browserView: [(v) => isKeys(v, ["deck_id", "session_id", "tab_id", "bounds"]) && isText(256)(v["deck_id"]) && isText(256)(v["session_id"]) && isText(256)(v["tab_id"]) && (v["bounds"] === null || isPreviewBounds(v["bounds"]))],
   setAppIcon: [isAppIcon, (v) => typeof v === "boolean"],
   projectIcon: [isStr],

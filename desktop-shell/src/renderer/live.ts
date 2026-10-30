@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import type { ArtifactSummary } from "../shared/artifacts";
 import type { AgentSummary, BrowserTab, HighlightItem, HighlightsResponse, HighlightSource } from "../shared/bridge";
 import type { DeckClient } from "./client";
 import type { LiveEvent } from "./rpcMap";
@@ -14,11 +15,12 @@ export interface RoomLive {
   items: readonly HighlightItem[];
   summaries: readonly AgentSummary[];
   tabs: readonly BrowserTab[];
+  artifacts: readonly ArtifactSummary[];
   // The desktop browser is attached and can take commands.
   browserAvailable: boolean;
 }
 
-export const EMPTY_LIVE: RoomLive = { items: [], summaries: [], tabs: [], browserAvailable: false };
+export const EMPTY_LIVE: RoomLive = { items: [], summaries: [], tabs: [], artifacts: [], browserAvailable: false };
 
 // The Deck fills in a source after the fact (the message of the turn)
 // without touching updated_at, so at the same time the one that names a
@@ -45,6 +47,14 @@ function mergeSummary(list: readonly AgentSummary[], s: AgentSummary): readonly 
   return keep === have ? list : list.map((x) => (x.agent === s.agent ? keep : x));
 }
 
+// An artifact is replaced only by a state at least as new (state_version),
+// so a replayed event or a snapshot read before a delta changes nothing.
+function mergeArtifact(list: readonly ArtifactSummary[], a: ArtifactSummary): readonly ArtifactSummary[] {
+  const have = list.find((x) => x.id === a.id);
+  if (have === undefined) return [...list, a];
+  return have.state_version > a.state_version ? list : list.map((x) => (x.id === a.id ? a : x));
+}
+
 export class LiveStore {
   private rooms: ReadonlyMap<string, RoomLive> = new Map();
   private readonly listeners = new Set<() => void>();
@@ -68,6 +78,10 @@ export class LiveStore {
     const items = r.items.reduce((acc, i) => mergeItem(acc, i), cur.items);
     const summaries = r.summaries.reduce((acc, s) => mergeSummary(acc, s), cur.summaries);
     this.patch(id, { items, summaries });
+  }
+
+  loadArtifacts(id: string, list: readonly ArtifactSummary[]): void {
+    this.patch(id, { artifacts: list.reduce((acc, a) => mergeArtifact(acc, a), this.get(id).artifacts) });
   }
 
   // Taken before a snapshot is fetched, given back with it.
@@ -103,6 +117,9 @@ export class LiveStore {
 
   apply(ev: LiveEvent): void {
     switch (ev.k) {
+      case "artifact":
+        this.patch(ev.artifact.session_id, { artifacts: mergeArtifact(this.get(ev.artifact.session_id).artifacts, ev.artifact) });
+        return;
       case "highlight":
         this.applyItem(ev.item);
         return;

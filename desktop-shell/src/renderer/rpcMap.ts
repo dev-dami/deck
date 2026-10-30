@@ -20,6 +20,7 @@ import {
   type Session,
   type Theme,
 } from "@web/protocol";
+import type { ArtifactBuildInfo, ArtifactKind, ArtifactRevisionInfo, ArtifactSummary } from "../shared/artifacts";
 import type {
   AgentSummary,
   BrowserActionResponse,
@@ -226,6 +227,102 @@ export function toHighlights(r: unknown): HighlightsResponse {
   };
 }
 
+// ---- Artifacts (artifacts.ts): the deck.v1 messages as the desktop types them.
+
+const ARTIFACT_KINDS: readonly string[] = ["markdown", "html", "svg", "react"];
+
+export function toArtifactSummary(v: unknown): ArtifactSummary | null {
+  if (!isRecord(v) || s(v["id"]) === "" || !ARTIFACT_KINDS.includes(s(v["kind"]))) return null;
+  const status = s(v["build_status"]);
+  return {
+    id: s(v["id"]),
+    session_id: s(v["session_id"]),
+    title: s(v["title"]),
+    kind: s(v["kind"]) as ArtifactKind,
+    current_revision: n(v["current_revision"]),
+    created_at: n(v["created_at"]),
+    updated_at: n(v["updated_at"]),
+    agent: s(v["agent"]),
+    source: toSource(v["source"]),
+    state_version: n(v["state_version"]),
+    build_status: status === "ok" || status === "error" ? status : "",
+  };
+}
+
+export function toArtifacts(r: unknown): { items: ArtifactSummary[]; next: string } {
+  const items = field(r, "items");
+  return {
+    items: Array.isArray(items) ? items.map(toArtifactSummary).filter((x): x is ArtifactSummary => x !== null) : [],
+    next: s(field(r, "next_cursor")),
+  };
+}
+
+export function toRevisionInfo(v: unknown): ArtifactRevisionInfo | null {
+  if (!isRecord(v) || n(v["revision"]) === 0) return null;
+  return {
+    revision: n(v["revision"]),
+    title: s(v["title"]),
+    entrypoint: s(v["entrypoint"]),
+    agent: s(v["agent"]),
+    created_at: n(v["created_at"]),
+    note: s(v["note"]),
+    restored_from_revision: n(v["restored_from_revision"]),
+  };
+}
+
+export function toRevisions(r: unknown): { items: ArtifactRevisionInfo[]; next: string } {
+  const items = field(r, "items");
+  return {
+    items: Array.isArray(items) ? items.map(toRevisionInfo).filter((x): x is ArtifactRevisionInfo => x !== null) : [],
+    next: s(field(r, "next_cursor")),
+  };
+}
+
+// One page of a file, or the manifest when no path was asked for.
+export interface ArtifactPage {
+  revision: number;
+  path: string;
+  content: string;
+  next_offset: number;
+  eof: boolean;
+  info: ArtifactRevisionInfo | null;
+  files: string[];
+  builds: ArtifactBuildInfo[];
+}
+
+export function toArtifactPage(r: unknown): ArtifactPage | null {
+  if (!isRecord(r) || n(r["revision"]) === 0) return null;
+  const files = r["files"];
+  const builds = r["builds"];
+  return {
+    revision: n(r["revision"]),
+    path: s(r["path"]),
+    content: s(r["content"]),
+    next_offset: n(r["next_offset"]),
+    eof: r["eof"] === true,
+    info: toRevisionInfo(r["info"]),
+    files: Array.isArray(files) ? files.flatMap((f) => (isRecord(f) && s(f["path"]) !== "" ? [s(f["path"])] : [])) : [],
+    builds: Array.isArray(builds) ? builds.flatMap((b) => toBuild(b)) : [],
+  };
+}
+
+function toBuild(v: unknown): ArtifactBuildInfo[] {
+  if (!isRecord(v) || (v["phase"] !== "build" && v["phase"] !== "runtime")) return [];
+  const diags = v["diagnostics"];
+  return [
+    {
+      phase: v["phase"],
+      ok: v["ok"] === true,
+      runtime_version: s(v["runtime_version"]),
+      diagnostics: Array.isArray(diags)
+        ? diags.flatMap((d) =>
+            isRecord(d) ? [{ file: s(d["file"]), line: n(d["line"]), column: n(d["column"]), message: s(d["message"]) }] : [],
+          )
+        : [],
+    },
+  ];
+}
+
 function toTab(v: unknown): BrowserTab | null {
   if (!isRecord(v) || s(v["id"]) === "") return null;
   return {
@@ -294,6 +391,7 @@ export type RpcEvent =
 
 // What Highlights and the browser say as it happens (live.ts).
 export type LiveEvent =
+  | { k: "artifact"; artifact: ArtifactSummary }
   | { k: "highlight"; item: HighlightItem }
   | { k: "summary"; summary: AgentSummary }
   | { k: "browser"; state: BrowserStateResponse & { session_id: string } };
@@ -345,6 +443,10 @@ export function toEvent(v: unknown): RpcEvent | null {
   if (kind === "summary_changed") {
     const summary = toSummary(payload);
     return summary === null ? null : { k: "live", seq, live: { k: "summary", summary } };
+  }
+  if (kind === "artifact_changed") {
+    const artifact = toArtifactSummary(payload);
+    return artifact === null ? null : { k: "live", seq, live: { k: "artifact", artifact } };
   }
   if (kind === "browser_changed") {
     const state = toBrowserState(payload);
