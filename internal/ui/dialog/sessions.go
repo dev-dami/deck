@@ -40,6 +40,8 @@ type Session struct {
 	input              textinput.Model
 	selectedSessionInx int
 	sessions           []session.Session
+	// depths are the sub-threads' depths under their parents (nestSessions).
+	depths map[string]int
 
 	sessionsMode  sessionsMode
 	bodyArea      image.Rectangle
@@ -73,6 +75,7 @@ func NewSessions(com *common.Common, selectedSessionID string) (*Session, error)
 	if err != nil {
 		return nil, err
 	}
+	sessions, s.depths = nestSessions(com.Workspace, sessions)
 
 	s.sessions = sessions
 	for i, sess := range sessions {
@@ -86,7 +89,7 @@ func NewSessions(com *common.Common, selectedSessionID string) (*Session, error)
 	help.Styles = com.Styles.DialogHelpStyles()
 
 	s.help = help
-	s.list = list.NewFilterableList(sessionItems(com.Styles, sessionsModeNormal, sessions...)...)
+	s.list = list.NewFilterableList(sessionItems(com.Styles, sessionsModeNormal, s.depths, sessions...)...)
 	s.list.Focus()
 	s.list.SetSelected(s.selectedSessionInx)
 
@@ -155,21 +158,21 @@ func (s *Session) HandleMsg(msg tea.Msg) Action {
 			switch {
 			case key.Matches(msg, s.keyMap.ConfirmDelete):
 				action := s.confirmDeleteSession()
-				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.sessions...)...)
+				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.depths, s.sessions...)...)
 				return action
 			case key.Matches(msg, s.keyMap.CancelDelete):
 				s.sessionsMode = sessionsModeNormal
-				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.sessions...)...)
+				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.depths, s.sessions...)...)
 			}
 		case sessionsModeUpdating:
 			switch {
 			case key.Matches(msg, s.keyMap.ConfirmRename):
 				action := s.confirmRenameSession()
-				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.sessions...)...)
+				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.depths, s.sessions...)...)
 				return action
 			case key.Matches(msg, s.keyMap.CancelRename):
 				s.sessionsMode = sessionsModeNormal
-				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.sessions...)...)
+				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeNormal, s.depths, s.sessions...)...)
 			default:
 				item := s.list.SelectedItem()
 				if item == nil {
@@ -185,13 +188,13 @@ func (s *Session) HandleMsg(msg tea.Msg) Action {
 				return ActionClose{}
 			case key.Matches(msg, s.keyMap.Rename):
 				s.sessionsMode = sessionsModeUpdating
-				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeUpdating, s.sessions...)...)
+				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeUpdating, s.depths, s.sessions...)...)
 			case key.Matches(msg, s.keyMap.Delete):
 				if s.isCurrentSessionBusy() {
 					return ActionCmd{util.ReportWarn("Agent is busy, please wait...")}
 				}
 				s.sessionsMode = sessionsModeDeleting
-				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeDeleting, s.sessions...)...)
+				s.list.SetItems(sessionItems(s.com.Styles, sessionsModeDeleting, s.depths, s.sessions...)...)
 			case key.Matches(msg, s.keyMap.Previous):
 				s.list.Focus()
 				if s.list.IsSelectedFirst() {

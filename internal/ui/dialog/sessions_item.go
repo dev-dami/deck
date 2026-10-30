@@ -13,6 +13,7 @@ import (
 	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/ui/list"
 	"github.com/dev-dami/deck/internal/ui/styles"
+	"github.com/dev-dami/deck/internal/workspace"
 	"github.com/dustin/go-humanize"
 	"github.com/rivo/uniseg"
 	"github.com/sahilm/fuzzy"
@@ -52,6 +53,8 @@ type SessionItem struct {
 	updateTitleInput textinput.Model
 	focused          bool
 	hideInfo         bool
+	// depth is how far it sits under its parent: a sub-thread's is 1 or more.
+	depth int
 }
 
 // Finished implements list.Item. Session items are render-stable
@@ -152,7 +155,12 @@ func (s *SessionItem) Render(width int) string {
 		}
 	}
 
-	return renderItem(styles, s.Title, info, s.focused, width, s.cache, &s.m)
+	title := s.Title
+	if d := s.depth; d > 0 {
+		// A sub-thread sits under its parent (nestSessions).
+		title = strings.Repeat("  ", d-1) + "↳ " + title
+	}
+	return renderItem(styles, title, info, s.focused, width, s.cache, &s.m)
 }
 
 type ListItemStyles struct {
@@ -253,10 +261,10 @@ func (s *SessionItem) SetFocused(focused bool) {
 
 // sessionItems takes a slice of [session.Session]s and convert them to a slice
 // of [ListItem]s.
-func sessionItems(t *styles.Styles, mode sessionsMode, sessions ...session.Session) []list.FilterableItem {
+func sessionItems(t *styles.Styles, mode sessionsMode, depths map[string]int, sessions ...session.Session) []list.FilterableItem {
 	items := make([]list.FilterableItem, len(sessions))
 	for i, s := range sessions {
-		item := &SessionItem{Versioned: list.NewVersioned(), Session: s, t: t, sessionsMode: mode}
+		item := &SessionItem{Versioned: list.NewVersioned(), Session: s, t: t, sessionsMode: mode, depth: depths[s.ID]}
 		if mode == sessionsModeUpdating {
 			item.updateTitleInput = textinput.New()
 			item.updateTitleInput.SetVirtualCursor(false)
@@ -314,4 +322,51 @@ func bytePosToVisibleCharPos(str string, rng [2]int) (int, int) {
 	}
 	stop = pos
 	return start, stop
+}
+
+// nestSessions puts each sub-thread (a session an agent opened from another,
+// docs/design/lead-agent-and-subthreads.md) right under its parent, newest
+// first, with each one's depth by session id; a workspace with no rooms
+// lists them as they are.
+func nestSessions(ws any, sessions []session.Session) ([]session.Session, map[string]int) {
+	depths := map[string]int{}
+	rooms, ok := ws.(interface{ Room(string) workspace.Room })
+	if !ok {
+		return sessions, depths
+	}
+	ids := map[string]bool{}
+	parent := map[string]string{}
+	kids := map[string][]session.Session{}
+	for _, s := range sessions {
+		ids[s.ID] = true
+	}
+	for _, s := range sessions {
+		if p := rooms.Room(s.ID).Parent; p != "" && ids[p] {
+			parent[s.ID] = p
+			kids[p] = append(kids[p], s)
+		}
+	}
+	out := make([]session.Session, 0, len(sessions))
+	seen := map[string]bool{}
+	var walk func(s session.Session, depth int)
+	walk = func(s session.Session, depth int) {
+		if seen[s.ID] {
+			return
+		}
+		seen[s.ID] = true
+		depths[s.ID] = depth
+		out = append(out, s)
+		for _, k := range kids[s.ID] {
+			walk(k, depth+1)
+		}
+	}
+	for _, s := range sessions {
+		if _, sub := parent[s.ID]; !sub {
+			walk(s, 0)
+		}
+	}
+	for _, s := range sessions { // a cycle's members
+		walk(s, 0)
+	}
+	return out, depths
 }

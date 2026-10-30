@@ -78,59 +78,17 @@ func TestMentionSigils(t *testing.T) {
 		},
 	}
 
-	// "@" opens the agents, with the profiles.
-	m := newMentionUI(w)
-	typeSigil(t, m, "@")
-	require.True(t, m.completionsOpen)
-	require.False(t, m.completionsFiles)
-	require.Equal(t, "@", m.agentSigil())
-	out := popup(m)
-	require.Contains(t, out, "charles · reviewer · claude profile")
-	require.Contains(t, out, "ada · codex profile")
-	require.NotContains(t, out, "start another")
-
-	// Picking a profile puts "@charles" in the message.
-	m.textarea.InsertString("cha")
-	m.filterCompletions("cha")
-	require.Contains(t, popup(m), "charles")
-	m.insertAgentCompletion(completions.AgentCompletionValue{Kind: "claude", Insert: "@charles"})
-	require.Equal(t, "@charles ", m.textarea.Value())
-	m.closeCompletions()
-
-	// Something path-like after "@" offers files, and back.
-	m = newMentionUI(w)
-	typeSigil(t, m, "@")
-	require.NotNil(t, m.filterCompletions("src/"), "the files load")
-	require.True(t, m.completionsFiles)
-	require.Nil(t, m.filterCompletions("README.md"), "still files")
-	require.True(t, m.completionsFiles)
-	m.filterCompletions("ch")
-	require.False(t, m.completionsFiles, "a name again: the agents")
-	require.Contains(t, popup(m), "charles")
-
-	// "#" opens the files.
-	m = newMentionUI(w)
-	m.openCompletions("#")
-	require.True(t, m.completionsOpen)
-	require.True(t, m.completionsFiles)
-
-	// "$" is "@" under its old name: the same popup, its own sigil, and
-	// no switch to files.
-	m = newMentionUI(w)
-	typeSigil(t, m, "$")
-	require.False(t, m.completionsFiles)
-	require.Equal(t, "$", m.agentSigil())
-	require.Contains(t, popup(m), "charles")
-	m.filterCompletions("src/")
-	require.False(t, m.completionsFiles)
-	m.closeCompletions()
-	m.textarea.SetValue("")
-	m.completionsSigil = "$"
-	m.completionsStartIndex = 0
-	m.textarea.InsertString("$cod")
-	m.insertAgentCompletion(completions.AgentCompletionValue{Kind: "codex", Current: true})
-	require.Equal(t, "$codex ", m.textarea.Value())
-
+	// "@" and "#" open the files, as in Claude Code: no popup offers
+	// agents; the session's lead is picked with ctrl+l.
+	for _, sigil := range []string{"@", "#"} {
+		m := newMentionUI(w)
+		m.openCompletions(sigil)
+		require.True(t, m.completionsOpen, sigil)
+		require.True(t, m.completionsFiles, sigil)
+		require.NotContains(t, popup(m), "charles", sigil)
+	}
+	// "$" opens nothing: "$name" is text.
+	require.False(t, completionSigil("$"))
 	require.False(t, completionSigil("!"))
 	require.False(t, completionSigil("a"))
 }
