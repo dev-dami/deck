@@ -413,6 +413,13 @@ func themeFor(name string) Theme {
 			_ = json.Unmarshal(data, &t.Palette)
 		}
 	}
+	// A theme file names a colour of Deck's palette by its name ("canvas",
+	// "signal"); a client wants the "#rrggbb" it stands for.
+	for token, v := range t.Palette {
+		if hex, ok := tone.ByName(v); ok {
+			t.Palette[token] = hex
+		}
+	}
 	for _, kind := range deckconfig.Kinds {
 		t.Kinds[kind] = KindTone{Tint: tone.Hex(tone.Tint(kind)), Mark: tone.Mark(kind)}
 	}
