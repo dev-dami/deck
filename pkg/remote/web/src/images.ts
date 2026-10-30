@@ -134,6 +134,8 @@ export function checkVideo(
 // Whether a video can go to the room's lead now, and if not why, and
 // whether Deck can send it as frames instead.
 export interface VideoGate {
+  // The Deck takes video at all (feature "video").
+  available: boolean;
   ok: boolean;
   // Why it cannot: "claude-opus-5-5 can't watch video".
   reason: string;
@@ -151,15 +153,16 @@ export function videoGate(
   const framesReason = frames ? "" : "Sending frames needs ffmpeg on the computer running Deck.";
   if (!features.includes("video")) {
     return {
+      available: false,
       ok: false,
       reason: "This Deck takes no video.",
       frames: false,
       framesReason: "This Deck takes no video.",
     };
   }
-  if (lead?.video === true) return { ok: true, reason: "", frames, framesReason };
+  if (lead?.video === true) return { available: true, ok: true, reason: "", frames, framesReason };
   const who = lead?.slug || lead?.model || lead?.kind || "This agent";
-  return { ok: false, reason: `${who} can't watch video`, frames, framesReason };
+  return { available: true, ok: false, reason: `${who} can't watch video`, frames, framesReason };
 }
 
 // An attachment as a composer holds it until it is sent: the wire Image,

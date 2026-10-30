@@ -31,6 +31,7 @@ describe("video", () => {
     const lead = { kind: "claude", slug: "claude-opus-5-5", video: false };
     const gate = videoGate(["images", "video", "video_frames"], lead);
     expect(gate).toEqual({
+      available: true,
       ok: false,
       reason: "claude-opus-5-5 can't watch video",
       frames: true,

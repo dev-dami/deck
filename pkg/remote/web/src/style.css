@@ -1212,6 +1212,23 @@ legend {
   color: var(--p-warning);
 }
 
+.attachment-frames {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--p-accent);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.attachment-frames:disabled {
+  color: var(--p-fg-more-subtle);
+  font-weight: 400;
+}
+
 /* ---- diff ----------------------------------------------------------- */
 
 .diff {

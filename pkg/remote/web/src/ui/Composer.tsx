@@ -76,7 +76,7 @@ export function Composer({
   // The attachment whose label is being edited, and the text so far.
   const [renaming, setRenaming] = useState<{ i: number; text: string } | null>(null);
   const gate = videoGate(features, lead);
-  const videoOn = features.includes("video");
+  const videoOn = gate.available;
   const blocked = blockedVideo(
     images.map((a) => a.att),
     gate,
@@ -293,7 +293,7 @@ export function Composer({
                 <span class="attachment-thumb" aria-hidden="true">
                   {video ? (
                     <>
-                      <video src={url} muted preload="metadata" playsInline />
+                      <video src={`${url}#t=0.1`} muted preload="metadata" playsInline />
                       <span class="attachment-film">▶</span>
                     </>
                   ) : (
@@ -332,27 +332,27 @@ export function Composer({
                     </button>
                   )}
                   {video && !gate.ok ? (
-                    <span class="attachment-note ellipsis">
-                      {att.frames === true ? "Goes as still frames" : gate.reason}
-                    </span>
+                    <>
+                      <span class="attachment-note">
+                        {att.frames === true ? "Goes as still frames" : gate.reason}
+                      </span>
+                      {/* The way out: up to 8 stills the engine takes with ffmpeg. */}
+                      <button
+                        type="button"
+                        class="attachment-frames"
+                        aria-pressed={att.frames === true}
+                        disabled={att.frames !== true && !gate.frames}
+                        onClick={() => change(i, { frames: att.frames !== true })}
+                      >
+                        {att.frames === true
+                          ? "Send the video instead"
+                          : gate.frames
+                            ? "Send as frames"
+                            : gate.framesReason}
+                      </button>
+                    </>
                   ) : null}
                 </span>
-                {video && !gate.ok ? (
-                  <button
-                    type="button"
-                    class="btn ghost small"
-                    aria-pressed={att.frames === true}
-                    disabled={att.frames !== true && !gate.frames}
-                    title={gate.frames ? "" : gate.framesReason}
-                    onClick={() => change(i, { frames: att.frames !== true })}
-                  >
-                    {att.frames === true
-                      ? "As frames ✓"
-                      : gate.frames
-                        ? "Send as frames"
-                        : "No ffmpeg"}
-                  </button>
-                ) : null}
                 <button
                   type="button"
                   class="btn ghost small"

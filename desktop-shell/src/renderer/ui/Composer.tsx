@@ -63,7 +63,7 @@ interface Attached {
 }
 
 // No gate: a Deck that takes no video.
-const NO_VIDEO: VideoGate = { ok: false, reason: "This Deck takes no video.", frames: false, framesReason: "This Deck takes no video." };
+const NO_VIDEO: VideoGate = { available: false, ok: false, reason: "This Deck takes no video.", frames: false, framesReason: "This Deck takes no video." };
 
 // The path of a file the person attached, where the window can tell it
 // (the desktop app's bridge); "" in a plain page.
@@ -353,7 +353,7 @@ export function Composer({
     void submit(action);
   };
 
-  const videoOn = video.reason !== NO_VIDEO.reason;
+  const videoOn = video.available;
   // Images, and with a Deck that takes video one video per message, each
   // labelled as it lands ("Screenshot 1" pasted, a file by its name).
   const addFiles = async (all: File[], source: Source) => {

@@ -59,7 +59,8 @@ export function AttachmentChip({
       <span className={cn("thumb relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-[8px] bg-secondary", blocked && "opacity-45")}>
         {video ? (
           <>
-            <video src={url} muted preload="metadata" className="size-full object-cover" aria-hidden />
+            {/* #t= asks for a frame to show, not a black box. */}
+            <video src={`${url}#t=0.1`} muted preload="metadata" className="size-full object-cover" aria-hidden />
             <span className="absolute inset-0 grid place-items-center bg-black/25 text-white">
               <FilmStrip className="size-4" weight="fill" />
             </span>
