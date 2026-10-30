@@ -108,6 +108,11 @@ func (m *Manager) handleMessage(msg agent.Message) {
 	}
 	text := strings.TrimSpace(msg.Text)
 	to := TrimSigil(msg.To)
+	if err := normHandoff(&msg, &text); err != nil { // handcontract.go
+		respond("", err)
+		return
+	}
+	handoff := msg.Task != "" || msg.NewTask != ""
 
 	t.mu.Lock()
 	valid := validNames(t, from)
@@ -148,11 +153,28 @@ func (m *Manager) handleMessage(msg agent.Message) {
 		}
 	}
 	if err == nil {
+		err = t.factoryLocked(from, targets)
+	}
+	if err == nil {
 		targets, err = t.guardSend(from, targets, time.Now())
+	}
+	// A plain message wakes only those it may (handcontract.go); the other
+	// peers have it as information.
+	var info []*agentState
+	if err == nil && !handoff {
+		targets, info = t.sortSendLocked(from, targets)
 	}
 	t.mu.Unlock()
 	if err != nil {
 		respond("", err)
+		return
+	}
+	if len(info) > 0 && isQuestion(text) {
+		res := m.redirectQuestion(t, from, info, text)
+		if len(targets) > 0 {
+			res = m.relay(t, from, targets, text, "tool") + "; " + res
+		}
+		respond(res, nil)
 		return
 	}
 	// A message to a member waiting on from for a file is the answer.
@@ -164,7 +186,7 @@ func (m *Manager) handleMessage(msg agent.Message) {
 			return
 		}
 	}
-	if msg.Task != "" || msg.NewTask != "" {
+	if handoff {
 		if len(targets) != 1 {
 			respond("", errors.New("a task is handed to one agent: set `to` to a single name, not \"all\""))
 			return
@@ -182,18 +204,19 @@ func (m *Manager) handleMessage(msg agent.Message) {
 			}
 			text += "\n\n" + note
 		}
+		m.noteTurn(from, factHandoff) // turnend.go
 		respond(m.relayTask(t, from, targets, text, "tool", id), nil)
 		return
 	}
 	if capsule != "" {
-		note, err := m.handCapsule(t, targets, "", capsule)
+		note, err := m.handCapsule(t, append(targets[:len(targets):len(targets)], info...), "", capsule)
 		if err != nil {
 			respond("", err)
 			return
 		}
 		text += "\n\n" + note
 	}
-	respond(m.relay(t, from, targets, text, "tool"), nil)
+	respond(m.relayPlain(t, from, targets, info, text), nil)
 }
 
 // validNames lists who a member can message: names, then "claude" and
@@ -324,6 +347,11 @@ type turnEnd struct {
 	// answered is the member's cursor when the turn ended: what the turn was
 	// briefed on (settleHanded, waitsOnChildren).
 	answered int
+	// claims are the turn's task.done calls on checked tasks, with the
+	// verdict its end took on their evidence, and settles the handed task
+	// its reply finishes, whose verdict it took too (evidence.go).
+	claims  []doneClaim
+	settles string
 }
 
 // afterTurn runs on the thread's relay worker when a member's turn ends: it
@@ -334,8 +362,10 @@ type turnEnd struct {
 func (m *Manager) afterTurn(a *agentState, end turnEnd) {
 	text, interrupted := end.text, end.interrupted
 	t := a.thread
+	m.settleClaims(t, a, end.claims) // what it reported done with a check
 	if !interrupted {
 		m.settleHanded(t, a, text, end.answered)
+		m.forgetVerdict(t, end.settles) // one settleHanded did not use
 		m.retireSpent(t, a, end.answered)
 		m.reportToParent(t, a, text, end.answered)
 	}

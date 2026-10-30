@@ -1710,6 +1710,7 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		end.answered = a.cursor
 		t.mu.Unlock()
 		end.text, end.interrupted = a.takeFinal()
+		ev.End = m.turnEndOf(t, a, &end) // turnend.go
 	}
 	// What an agent typed into a page may be a password: the thread's rows,
 	// log and briefings show the call without it.
@@ -1719,6 +1720,7 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		ev.Tool = &t
 	}
 	res := a.apply(ev)
+	m.noteWork(t, a, ev) // edits and check runs (evidence.go)
 	if ev.Kind == agent.KindSessionStarted && ev.Text != "" {
 		a.mu.Lock()
 		kind, pick := a.kind, a.model

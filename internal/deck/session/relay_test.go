@@ -75,7 +75,9 @@ func TestBlockedRelayDoesNotStallOtherThreads(t *testing.T) {
 		return a, c
 	}
 	aA, cA := newPair()
-	aB, _ := newPair()
+	aB, cB := newPair()
+	worksFor(t, m, cA, aA) // plain messages to them start turns
+	worksFor(t, m, cB, aB)
 	codex.mu.Lock()
 	codex.blocked[cA] = true
 	codex.mu.Unlock()

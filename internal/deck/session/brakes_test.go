@@ -229,6 +229,7 @@ func TestTurnsTheAgentsStartArePausedAtTheLevelsLimit(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
 	if err := r.m.postAt(tid, "@claude look at a and b"); err != nil {
 		t.Fatal(err)
 	}

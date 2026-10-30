@@ -44,10 +44,11 @@ func tool(id, name, title string, delay time.Duration, out string) []Step {
 // DemoDuoScripts returns per-turn scripts for a claude and a codex that
 // collaborate, for use with NewTurns:
 //
-//	claude turn 1 (the user asks for a plan): plans, then a thread.send to codex
-//	    asking for a review of the plan.
-//	codex  turn 1 (the relay arrives): reads the thread, checks the code, and
-//	    answers claude with a thread.send.
+//	claude turn 1 (the user asks for a plan): plans, then hands codex the
+//	    review with a thread.send under a contract (objective, deliverable).
+//	codex  turn 1 (the hand-off arrives): reads the thread, checks the code,
+//	    and answers with its final reply, which is the task's result: it goes
+//	    back to claude.
 //	claude turn 2 (the answer arrives): asks for permission to edit a test
 //	    file, applies it and acknowledges, ending the exchange.
 func DemoDuoScripts() (claude, codex []Script) {
@@ -60,8 +61,10 @@ func DemoDuoScripts() (claude, codex []Script) {
 	c1 = append(c1, tool("c_read", "Read", "internal/store/store.go", 300*time.Millisecond, "148 lines read")...)
 	c1 = append(c1, say(plan))
 	c1 = append(c1, Step{Delay: 300 * time.Millisecond, Message: &agent.Message{
-		To:   "codex",
-		Text: "Please review this plan for the store change and tell me what you would change:\n" + plan,
+		To:          "codex",
+		Text:        "Please review this plan for the store change:\n" + plan,
+		Objective:   "Review the plan for the store change",
+		Deliverable: "what you would change, and why",
 	}})
 	c1 = append(c1, say("I asked codex to review the plan; I will continue once it answers.")) // final reply
 	c1 = append(c1, usage(0.09)...)
@@ -98,11 +101,8 @@ func DemoDuoScripts() (claude, codex []Script) {
 	}
 	x1 = append(x1, tool("x_read", "Read", "internal/store/store.go", 400*time.Millisecond, "148 lines read")...)
 	x1 = append(x1, say("The plan holds. One change: take the per-thread lock before the index lock, "+
-		"never the other way round, or Append and List can deadlock."))
-	x1 = append(x1, Step{Delay: 150 * time.Millisecond, Message: &agent.Message{
-		To:   "claude",
-		Text: "agree on the lock order and add the 1000-delta test; I will not touch store.go meanwhile.",
-	}})
+		"never the other way round, or Append and List can deadlock. Agree on the lock order and add the "+
+		"1000-delta test; I will not touch store.go meanwhile."))
 	x1 = append(x1, usage(0.04)...)
 
 	return []Script{c1, c2}, []Script{x1}

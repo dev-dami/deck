@@ -294,10 +294,32 @@ type Event struct {
 	Sub string `json:",omitempty"`
 	// Subagent is set on KindSubagent, and by Deck on the events with Sub.
 	Subagent *Subagent `json:",omitempty"`
+	// End is how the turn ended, set by Deck on KindTurnDone from what
+	// happened in it (TurnEnd); "" when Deck did not say.
+	End TurnEnd `json:",omitempty"`
 	// Raw is the original protocol line, kept so nothing is lost. Deck keeps
 	// it past the adapter only where KeepsRaw says so.
 	Raw json.RawMessage `json:",omitempty"`
 }
+
+// TurnEnd is the terminal state of one agent turn, so clients can show
+// state rather than prose: the work is done, handed to someone else, waits
+// for the user, or simply goes on.
+type TurnEnd string
+
+const (
+	// TurnDone: the turn finished a task, with the evidence its check asks
+	// for when it names one.
+	TurnDone TurnEnd = "done"
+	// TurnHandoff: the turn handed work over under a contract (a task, a
+	// subagent, a sub-thread, a review).
+	TurnHandoff TurnEnd = "handoff"
+	// TurnBlocked: the turn ends on a question for the user (never for
+	// another agent), or blocked a task on them.
+	TurnBlocked TurnEnd = "blocked"
+	// TurnContinue: none of those; the work goes on.
+	TurnContinue TurnEnd = "continue"
+)
 
 // KeepsRaw reports whether an event of kind k keeps its Raw line once Deck
 // has it: only errors and kinds Deck does not know, whose protocol line may
@@ -601,6 +623,12 @@ type Message struct {
 	// must report it with task.done.
 	Task, NewTask, Expect, DoneWhen string
 	ExplicitDone                    bool
+	// Objective, Deliverable and Boundaries make the message a structured
+	// hand-off: what the work is for, what comes back (Expect's other name)
+	// and what the recipient must not do. Objective alone, with no task
+	// named, creates one titled after it. Check is the command whose passing
+	// run proves the task done ("go test ./pkg/x").
+	Objective, Deliverable, Boundaries, Check string
 	// Capsule is a SUB capsule id handed over with the message: the code
 	// change itself, by reference, instead of a description of it.
 	Capsule string

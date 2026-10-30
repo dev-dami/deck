@@ -76,6 +76,9 @@ type thread struct {
 	// coord is who changed which file when, and the asks to edit a file
 	// another member owns (coord.go).
 	coord coordState
+	// flow is the members' edits and check runs since they last changed
+	// code, and what each one's running turn did (evidence.go, turnend.go).
+	flow flowState
 
 	// Lifecycle (lifecycle.go): pinned to the top, resolved (settled until a
 	// new message wakes it), archived (off the sidebar, still resumable).
@@ -202,6 +205,7 @@ type head struct {
 	i      int
 	typ    string
 	id     string
+	from   string // the speaker of a relay (handcontract.go)
 	to     []string
 	via    string
 	taskID string
@@ -244,7 +248,7 @@ func (x *logIndex) add(i int, e store.Entry) {
 	if !triggers(e) {
 		return
 	}
-	h := head{i: i, typ: e.Type, id: e.ID, to: e.To, via: e.Via, taskID: e.TaskID, steer: e.Steer}
+	h := head{i: i, typ: e.Type, id: e.ID, from: e.Speaker, to: e.To, via: e.Via, taskID: e.TaskID, steer: e.Steer}
 	if e.Type == store.EntryUser && !e.Steer {
 		h.text, h.time = e.Text, e.Time
 	}
