@@ -1,4 +1,4 @@
-import type { Message } from "@web/protocol";
+import type { Message } from "./protocol";
 
 // A message one agent sent another (the engine's relay): Deck's workspace
 // writes it as the sender's message "→ $codex $claude\n\n<text>". A task's
@@ -63,7 +63,10 @@ export function firstLine(text: string): string {
 
 // What each subagent was asked: the first hand-off to it (agent.spawn logs
 // its brief as the spawner's "→ $name" message), by name, as one line.
-export function subTasks(messages: readonly Message[], isSub: (name: string) => boolean): ReadonlyMap<string, string> {
+export function subTasks(
+  messages: readonly Message[],
+  isSub: (name: string) => boolean,
+): ReadonlyMap<string, string> {
   const out = new Map<string, string>();
   for (const m of messages) {
     if (m.role !== "assistant") continue;

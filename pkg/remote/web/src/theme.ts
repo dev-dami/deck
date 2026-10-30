@@ -1,9 +1,10 @@
 import type { Theme } from "./protocol";
 
-// R6: every colour comes from welcome.server.theme. The palette tokens of
+// R6: the colours come from welcome.server.theme. The palette tokens of
 // internal/ui/styles become `--p-<token>` custom properties (underscores to
-// dashes) and each agent kind's tint becomes `--kind-<kind>`; style.css reads
-// only those, with neutral greys as fallbacks for the moments before welcome.
+// dashes) and each agent kind's tint becomes `--kind-<kind>`. The phone's
+// style.css draws the desktop's own colours for Deck's own look (deckLook)
+// and maps a theme of the person's onto the same names.
 
 const TOKEN_RE = /^[a-z0-9_]+$/;
 
@@ -61,6 +62,20 @@ export function schemeOf(theme: Theme): Scheme | null {
   return luminance(bg) < 0.4 ? "dark" : "light";
 }
 
+// Deck's own look, dark and light (the deck and deck-light themes, built
+// from the desktop's colours in internal/ui/tone), known by its canvas and
+// its accent; internal/workspace's TestThemeDeckLook pins them.
+const DECK_LOOKS: readonly (readonly [string, string])[] = [
+  ["#19191b", "#0a84ff"],
+  ["#fbfbfd", "#007aff"],
+];
+
+export function deckLook(theme: Theme): boolean {
+  const bg = theme.palette["bg_base"]?.toLowerCase();
+  const accent = theme.palette["primary"]?.toLowerCase();
+  return DECK_LOOKS.some(([b, a]) => b === bg && a === accent);
+}
+
 export interface ThemeTarget {
   setProperty(name: string, value: string): void;
   removeProperty(name: string): void;
@@ -90,9 +105,13 @@ export function documentTarget(doc: Document): ThemeTarget {
       else root.setAttribute("data-scheme", s);
     },
     setThemeColor: (hex) => {
+      // With no colour of its own the page goes back to the canvas it
+      // was built with (data-default), light or dark as the system is.
       for (const el of doc.querySelectorAll('meta[name="theme-color"]')) {
-        if (hex === null) el.removeAttribute("content");
-        else el.setAttribute("content", hex);
+        const fallback = el.getAttribute("data-default");
+        if (hex !== null) el.setAttribute("content", hex);
+        else if (fallback !== null) el.setAttribute("content", fallback);
+        else el.removeAttribute("content");
       }
     },
   };

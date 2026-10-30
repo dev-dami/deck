@@ -79,10 +79,13 @@ function themeRecorder() {
     removeProperty: (n) => {
       vars.delete(n);
     },
-    setScheme: () => {},
+    setScheme: (s) => {
+      scheme.push(s);
+    },
     setThemeColor: () => {},
   };
-  return { vars, target };
+  const scheme: Array<string | null> = [];
+  return { vars, target, scheme };
 }
 
 function setup(over: { storage?: KV | null; pairStatus?: number } = {}) {
@@ -397,6 +400,26 @@ describe("events", () => {
     expect(t.theme.vars.get("--p-primary")).toBeUndefined();
     expect(t.theme.vars.get("--kind-claude")).toBeUndefined();
     expect(t.theme.vars.get("--kind-codex")).toBe("#5b4bd6");
+  });
+
+  test("Deck's own look leaves the colours to style.css", async () => {
+    const t = setup();
+    const sock = await paired(t);
+    sock.receive(welcomeFrame({}));
+    sock.receive({
+      t: "ev",
+      seq: 1,
+      e: "theme.changed",
+      p: {
+        palette: { bg_base: "#19191b", primary: "#0a84ff", fg_base: "#e3e3e5" },
+        kinds: { claude: { tint: "#ff9f5a", mark: "✻" } },
+      },
+    });
+    // No palette, no tints and no scheme: the phone's own light or dark.
+    expect([...t.theme.vars.keys()]).toEqual([]);
+    expect(t.theme.scheme.at(-1)).toBeNull();
+    // The marks still come from the theme.
+    expect(t.controller.state.theme?.kinds["claude"]?.mark).toBe("✻");
   });
 
   test("device.paired toasts; roster.changed for the open session refetches it", async () => {

@@ -34,7 +34,7 @@ import {
   type StopReason,
 } from "./rpc";
 import { type Action, type AppState, initialState, reduce } from "./state";
-import { applyTheme, type ThemeTarget } from "./theme";
+import { applyTheme, deckLook, type ThemeTarget } from "./theme";
 
 export class Store {
   private current: AppState = initialState;
@@ -233,7 +233,11 @@ export class Controller {
   private applyTheme(): void {
     const theme = this.state.theme;
     if (this.d.theme === null || theme === null) return;
-    this.themeVars = applyTheme(this.d.theme, theme, this.themeVars);
+    // Deck's own look is the desktop's, which style.css draws itself (the
+    // agents' hues too), light or dark as the phone is set; the marks still
+    // come from the theme (kindMark).
+    const look = deckLook(theme) ? { palette: {}, kinds: {} } : theme;
+    this.themeVars = applyTheme(this.d.theme, look, this.themeVars);
   }
 
   private onEvent(e: string, p: unknown): void {

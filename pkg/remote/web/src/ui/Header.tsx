@@ -25,7 +25,9 @@ export function Header({ title, back, state, actions, subtitle }: HeaderProps) {
           aria-label="Back"
           onClick={() => navigate(back)}
         >
-          <span aria-hidden="true">&lsaquo;</span>
+          <svg class="back-chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M15 5l-7 7 7 7" />
+          </svg>
         </button>
       ) : null}
       <div class="topbar-title">

@@ -1,132 +1,170 @@
 /*
- * R6: every colour is a palette token from welcome.server.theme, set on
- * :root by theme.ts as --p-<token> (and --kind-<kind> for agent tints). The
- * values here are neutral greys used only until the welcome arrives; nothing
- * below names an agent colour or a theme colour of its own.
+ * The phone wears the desktop's look (desktop-shell styles.css, Liquid Glass
+ * on Apple's system colours): the same tokens under the same names, dark and
+ * light, with the values the desktop gives them. Everything below reads only
+ * these names; no rule names a colour of its own.
+ *
+ * Deck's own theme (theme.ts deckLook) leaves them as they are, light or
+ * dark as the phone is set, the way the desktop follows the system. A theme
+ * of the person's (R6) arrives as --p-<token> with data-scheme on <html>,
+ * and the block after the light one maps its palette onto the same names.
  */
-.hosted-app {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
-    env(safe-area-inset-left);
-}
-.hosted-app > main,
-.hosted-app > section,
-.hosted-app > p {
-  width: min(100%, 52rem);
-  margin-inline: auto;
-  padding: 1rem;
-  box-sizing: border-box;
-}
-.hosted-app section,
-.hosted-app fieldset {
-  min-width: 0;
-}
-.hosted-app input,
-.hosted-app select,
-.hosted-app textarea {
-  max-width: 100%;
-  box-sizing: border-box;
-  font: inherit;
-  color: inherit;
-  background: var(--p-bg-less-visible);
-  border: 1px solid var(--p-separator);
-  border-radius: var(--radius);
-  padding: 0.65rem;
-}
-.hosted-app label {
-  display: grid;
-  gap: 0.5rem;
-  margin-block: 0.75rem;
-}
-.hosted-app button {
-  min-height: 44px;
-  margin: 0.2rem;
-}
-.hosted-app p,
-.hosted-app li {
-  overflow-wrap: anywhere;
-}
-.hosted-app .session-screen > section[aria-label="Approvals"] {
-  max-height: 35dvh;
-  flex-shrink: 0;
-  overflow-y: auto;
-  padding-inline: 1rem;
-}
+
+/* ---- tokens: dark, the desktop's ------------------------------------- */
+
 :root {
   color-scheme: dark;
-  --p-bg-base: #161616;
-  --p-bg-least-visible: #1c1c1c;
-  --p-bg-less-visible: #242424;
-  --p-bg-most-visible: #303030;
-  --p-fg-base: #e6e6e6;
-  --p-fg-subtle: #b4b4b4;
-  --p-fg-more-subtle: #868686;
-  --p-fg-most-subtle: #5c5c5c;
-  --p-primary: #d2d2d2;
-  --p-on-primary: #161616;
-  --p-secondary: #a6a6a6;
-  --p-accent: #cacaca;
-  --p-separator: #303030;
-  --p-success: #bcbcbc;
-  --p-warning: #c4c4c4;
-  --p-error: #d6d6d6;
-  --p-destructive: #d6d6d6;
-  --p-info: #bcbcbc;
-  --p-busy: #c4c4c4;
-  --p-attention: #c4c4c4;
-  --p-plan: #bcbcbc;
-  --p-yolo: #d6d6d6;
-  --p-keyword: #cacaca;
-  --p-diff-insert-fg: #d2d2d2;
-  --p-diff-insert-code-bg: #262626;
-  --p-diff-insert-gutter-bg: #2e2e2e;
-  --p-diff-delete-fg: #d2d2d2;
-  --p-diff-delete-code-bg: #262626;
-  --p-diff-delete-gutter-bg: #2e2e2e;
+  --canvas: #19191b;
+  --surface-1: #222225;
+  --surface-2: #2a2a2d;
+  --code: #141416;
+  --bubble: color-mix(in srgb, var(--signal) 22%, #232326);
+  --hairline: rgb(255 255 255 / 0.1);
+  --hairline-strong: rgb(255 255 255 / 0.16);
+  --hover: rgb(255 255 255 / 0.065);
+  --selected: rgb(255 255 255 / 0.11);
+  --secondary: rgb(255 255 255 / 0.07);
+  --highlight: rgb(255 255 255 / 0.1);
+  --text: #e3e3e5;
+  --text-muted: #a1a1a6;
+  --text-faint: #8e8e93;
+  --signal: #0a84ff;
+  --signal-foreground: #fff;
+  --link: #409cff;
+  --destructive: #ff453a;
+  --destructive-foreground: #ff6961;
+  --success: #30d158;
+  --success-foreground: #30d158;
+  --warning: #ff9f0a;
+  --warning-foreground: #ffb340;
+  --diff-add: rgb(48 209 88 / 0.14);
+  --diff-add-fg: #5fe07f;
+  --diff-del: rgb(255 69 58 / 0.14);
+  --diff-del-fg: #ff7b72;
+  --agent-claude: #ff9f5a;
+  --agent-codex: #a1a1a6;
+  --agent-opencode: #64d2ff;
+  --agent-antigravity: #bf5af2;
+  --agent-pi: #30d158;
+  --glass: rgb(38 38 42 / 0.72);
+  --glass-thick: rgb(40 40 44 / 0.86);
+  --scrim: rgb(0 0 0 / 0.45);
+  --elevation-card: 0 0 0 0.5px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.25);
+  --elevation-popover: 0 1px 1px rgb(0 0 0 / 0.3), 0 22px 50px -12px rgb(0 0 0 / 0.7);
 
-  --gutter: 16px;
+  /* What a mode, a working agent and a waiting approval are drawn in. */
+  --mode-plan: var(--link);
+  --mode-yolo: var(--destructive-foreground);
+  --busy: var(--signal);
+  --attention: var(--warning);
+  --ring: color-mix(in srgb, var(--signal) 55%, transparent);
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI",
+    system-ui, Roboto, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  /* The desktop's family: 8px controls, 12px cards, 20px the composer. */
   --radius: 12px;
+  --control-radius: 10px;
+  --gutter: 16px;
   --tap: 44px;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
+/* Deck's own look: the agents wear the desktop's hues, light or dark (the
+   controller sets no tints of the engine's for it), and an unknown kind
+   falls back to the text colour (theme.ts kindColour). */
+:root:not([data-scheme]) {
+  --p-fg-base: var(--text);
+  --kind-claude: var(--agent-claude);
+  --kind-codex: var(--agent-codex);
+  --kind-opencode: var(--agent-opencode);
+  --kind-antigravity: var(--agent-antigravity);
+  --kind-pi: var(--agent-pi);
+}
+
+/* ---- tokens: light, the desktop's ------------------------------------ */
+
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-scheme]) {
     color-scheme: light;
-    --p-bg-base: #f4f4f4;
-    --p-bg-least-visible: #ffffff;
-    --p-bg-less-visible: #ececec;
-    --p-bg-most-visible: #dedede;
-    --p-fg-base: #1a1a1a;
-    --p-fg-subtle: #4c4c4c;
-    --p-fg-more-subtle: #7a7a7a;
-    --p-fg-most-subtle: #a4a4a4;
-    --p-primary: #2e2e2e;
-    --p-on-primary: #f4f4f4;
-    --p-secondary: #5a5a5a;
-    --p-accent: #363636;
-    --p-separator: #dedede;
-    --p-success: #444444;
-    --p-warning: #3c3c3c;
-    --p-error: #2a2a2a;
-    --p-destructive: #2a2a2a;
-    --p-info: #444444;
-    --p-busy: #3c3c3c;
-    --p-attention: #3c3c3c;
-    --p-plan: #444444;
-    --p-yolo: #2a2a2a;
-    --p-keyword: #363636;
-    --p-diff-insert-fg: #2e2e2e;
-    --p-diff-insert-code-bg: #ececec;
-    --p-diff-insert-gutter-bg: #dedede;
-    --p-diff-delete-fg: #2e2e2e;
-    --p-diff-delete-code-bg: #ececec;
-    --p-diff-delete-gutter-bg: #dedede;
+    --canvas: #fbfbfd;
+    --surface-1: #ffffff;
+    --surface-2: #ffffff;
+    --code: #f3f3f6;
+    --bubble: color-mix(in srgb, var(--signal) 13%, #f1f1f4);
+    --hairline: rgb(0 0 0 / 0.1);
+    --hairline-strong: rgb(0 0 0 / 0.16);
+    --hover: rgb(0 0 0 / 0.045);
+    --selected: rgb(0 0 0 / 0.075);
+    --secondary: rgb(0 0 0 / 0.05);
+    --highlight: transparent;
+    --text: #1d1d1f;
+    --text-muted: #636366;
+    --text-faint: #78787d;
+    --signal: #007aff;
+    --signal-foreground: #fff;
+    --link: #0066cc;
+    --destructive: #ff3b30;
+    --destructive-foreground: #d70015;
+    --success: #28cd41;
+    --success-foreground: #248a3d;
+    --warning: #ff9500;
+    --warning-foreground: #c93400;
+    --diff-add: rgb(40 205 65 / 0.13);
+    --diff-add-fg: #1a7f37;
+    --diff-del: rgb(255 59 48 / 0.11);
+    --diff-del-fg: #c4161c;
+    --agent-claude: #c4581b;
+    --agent-codex: #6e6e73;
+    --agent-opencode: #0077a8;
+    --agent-antigravity: #8944ab;
+    --agent-pi: #248a3d;
+    --glass: rgb(255 255 255 / 0.72);
+    --glass-thick: rgb(252 252 254 / 0.88);
+    --scrim: rgb(0 0 0 / 0.25);
+    --elevation-card: 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.08);
+    --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 22px 50px -14px rgb(0 0 0 / 0.28);
   }
+}
+
+/* ---- a theme of the person's: its palette on the same names ---------- */
+
+:root[data-scheme] {
+  --canvas: var(--p-bg-base);
+  --surface-1: var(--p-bg-least-visible);
+  --surface-2: var(--p-bg-less-visible);
+  --code: color-mix(in srgb, var(--p-bg-base) 88%, var(--p-bg-most-visible));
+  --bubble: color-mix(in srgb, var(--p-primary) 20%, var(--p-bg-least-visible));
+  --hairline: var(--p-separator);
+  --hairline-strong: color-mix(in srgb, var(--p-separator) 70%, var(--p-fg-base));
+  --hover: color-mix(in srgb, var(--p-fg-base) 6%, transparent);
+  --selected: color-mix(in srgb, var(--p-fg-base) 10%, transparent);
+  --secondary: color-mix(in srgb, var(--p-fg-base) 7%, transparent);
+  --highlight: transparent;
+  --text: var(--p-fg-base);
+  --text-muted: var(--p-fg-more-subtle);
+  --text-faint: var(--p-fg-most-subtle);
+  --signal: var(--p-primary);
+  --signal-foreground: var(--p-on-primary);
+  --link: var(--p-accent);
+  --destructive: var(--p-error);
+  --destructive-foreground: var(--p-destructive);
+  --success: var(--p-success);
+  --success-foreground: var(--p-success);
+  --warning: var(--p-warning);
+  --warning-foreground: var(--p-warning);
+  --diff-add: var(--p-diff-insert-code-bg);
+  --diff-add-fg: var(--p-diff-insert-fg);
+  --diff-del: var(--p-diff-delete-code-bg);
+  --diff-del-fg: var(--p-diff-delete-fg);
+  --glass: color-mix(in srgb, var(--p-bg-less-visible) 80%, transparent);
+  --glass-thick: color-mix(in srgb, var(--p-bg-less-visible) 92%, transparent);
+  --mode-plan: var(--p-plan);
+  --mode-yolo: var(--p-yolo);
+  --busy: var(--p-busy);
+  --attention: var(--p-attention);
 }
 
 :root[data-scheme="dark"] {
@@ -135,7 +173,12 @@
 
 :root[data-scheme="light"] {
   color-scheme: light;
+  --scrim: rgb(0 0 0 / 0.25);
+  --elevation-card: 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.08);
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 22px 50px -14px rgb(0 0 0 / 0.28);
 }
+
+/* ---- base ------------------------------------------------------------ */
 
 * {
   box-sizing: border-box;
@@ -145,15 +188,11 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: var(--p-bg-base);
-  color: var(--p-fg-base);
-  font:
-    16px / 1.45 system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
+  background: var(--canvas);
+  color: var(--text);
+  font: 15px / 1.45 var(--font-sans);
   -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
 
@@ -192,24 +231,26 @@ p {
 }
 
 h1 {
-  font-size: 1.15rem;
-  font-weight: 650;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 h2 {
-  font-size: 1.05rem;
-  font-weight: 650;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 code,
 pre,
 .mono {
-  font-family: var(--mono);
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
 }
 
 a {
-  color: var(--p-accent);
+  color: var(--link);
 }
 
 button,
@@ -220,16 +261,20 @@ textarea {
 }
 
 :focus-visible {
-  outline: 2px solid var(--p-accent);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
 .muted {
-  color: var(--p-fg-subtle);
+  color: var(--text-muted);
+}
+
+.faint {
+  color: var(--text-faint);
 }
 
 .small-text {
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
 }
 
 .ellipsis {
@@ -240,18 +285,35 @@ textarea {
 }
 
 .error-text {
-  color: var(--p-error);
+  color: var(--destructive-foreground);
 }
 
 .empty {
-  padding: 32px 0;
+  padding: 40px 16px;
+  color: var(--text-faint);
   text-align: center;
 }
 
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+}
+
+/* A card (the desktop's kit/card.tsx): a rounded box of the first surface
+   with a hairline ring. Nothing inside runs out of it. */
+.card {
+  min-width: 0;
+  max-width: 100%;
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  overflow-wrap: anywhere;
+}
+
+.card :where(pre, table, .md-table) {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 /* ---- layout --------------------------------------------------------- */
@@ -272,23 +334,36 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 16px max(var(--gutter), env(safe-area-inset-right))
+  padding: 12px max(var(--gutter), env(safe-area-inset-right))
     calc(24px + env(safe-area-inset-bottom)) max(var(--gutter), env(safe-area-inset-left));
 }
 
+/* The toolbar: the canvas under a hairline, translucent where the system
+   lets it be, as the desktop's room header. */
 .topbar {
+  flex: none;
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: calc(8px + env(safe-area-inset-top)) max(var(--gutter), env(safe-area-inset-right)) 8px
-    max(var(--gutter), env(safe-area-inset-left));
-  background: var(--p-bg-least-visible);
-  border-bottom: 1px solid var(--p-separator);
+  gap: 4px;
+  min-height: calc(52px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0
+    max(8px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--canvas) 86%, transparent);
+  -webkit-backdrop-filter: saturate(1.8) blur(20px);
+  backdrop-filter: saturate(1.8) blur(20px);
+  box-shadow: inset 0 -1px 0 var(--hairline);
 }
 
 .topbar-title {
   flex: 1;
   min-width: 0;
+  padding-inline: 8px;
+}
+
+.topbar .btn.icon + .topbar-title {
+  padding-left: 0;
 }
 
 .topbar-title h1,
@@ -296,6 +371,11 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.topbar-title p {
+  color: var(--text-faint);
+  font-size: 0.75rem;
 }
 
 .topbar .btn {
@@ -306,41 +386,55 @@ textarea {
   padding: 0;
 }
 
+.back-chevron {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: var(--link);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .topbar-actions {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   flex-wrap: nowrap;
 }
 
 .banner {
   flex: none;
   padding: calc(6px + env(safe-area-inset-top)) var(--gutter) 6px;
-  background: var(--p-warning);
-  color: var(--p-bg-base);
-  font-size: 0.85rem;
+  background: color-mix(in srgb, var(--warning) 16%, var(--canvas));
+  color: var(--warning-foreground);
+  box-shadow: inset 0 -1px 0 var(--hairline);
+  font-size: 0.8125rem;
+  font-weight: 500;
   text-align: center;
 }
 
 .banner + .screen .topbar {
-  padding-top: 8px;
+  min-height: 52px;
+  padding-top: 0;
 }
 
 .link-dot {
   flex: none;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
+  margin-inline: 4px;
   border-radius: 50%;
-  background: var(--p-fg-most-subtle);
+  background: var(--text-faint);
 }
 
 .link-online {
-  background: var(--p-success);
+  background: var(--success);
 }
 
 .link-offline {
-  background: var(--p-error);
+  background: var(--destructive);
 }
 
 /* ---- controls ------------------------------------------------------- */
@@ -351,39 +445,51 @@ textarea {
   justify-content: center;
   gap: 6px;
   min-height: var(--tap);
-  padding: 0 14px;
-  border: 1px solid var(--p-separator);
-  border-radius: 10px;
-  background: var(--p-bg-less-visible);
-  color: var(--p-fg-base);
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: var(--secondary);
+  color: var(--text);
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 160ms var(--ease),
+    opacity 160ms var(--ease);
+}
+
+.btn:active:not(:disabled) {
+  background: var(--selected);
 }
 
 .btn:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: default;
 }
 
 .btn.primary {
-  background: var(--p-primary);
-  border-color: var(--p-primary);
-  color: var(--p-on-primary);
-  font-weight: 600;
+  background: var(--signal);
+  color: var(--signal-foreground);
+  box-shadow: inset 0 1px 0 var(--highlight);
+}
+
+.btn.primary:active:not(:disabled) {
+  background: color-mix(in srgb, var(--signal) 85%, #000);
 }
 
 .btn.danger {
-  border-color: var(--p-destructive);
-  color: var(--p-destructive);
-  background: transparent;
+  color: var(--destructive-foreground);
 }
 
 .btn.ghost {
   background: transparent;
-  border-color: transparent;
   padding: 0 10px;
+}
+
+.btn.ghost:active:not(:disabled) {
+  background: var(--hover);
 }
 
 .btn.block {
@@ -393,18 +499,32 @@ textarea {
 .btn.icon {
   min-width: var(--tap);
   padding: 0;
-  font-size: 1.3rem;
+  font-size: 1.25rem;
 }
 
 .btn.small {
   min-height: 36px;
-  font-size: 0.85rem;
+  padding: 0 12px;
+  font-size: 0.8125rem;
 }
 
 .btn-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font-size: 0.8125rem;
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .chips {
@@ -417,30 +537,42 @@ textarea {
 .chip {
   flex: none;
   min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--p-separator);
+  padding: 0 14px;
+  border: 0;
   border-radius: 999px;
-  background: var(--p-bg-less-visible);
+  background: var(--secondary);
+  color: var(--text);
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .chip.active {
-  background: var(--p-primary);
-  border-color: var(--p-primary);
-  color: var(--p-on-primary);
+  background: var(--signal);
+  color: var(--signal-foreground);
+}
+
+/* The mode in the toolbar: a quiet capsule, in the mode's colour when it
+   is not the default. */
+.btn.chip {
+  min-height: 32px;
+  padding: 0 12px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
 }
 
 .btn.chip.mode-yolo,
 .tag.mode-yolo {
-  border-color: var(--p-yolo);
-  color: var(--p-yolo);
+  color: var(--mode-yolo);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mode-yolo) 45%, transparent);
 }
 
 .btn.chip.mode-plan,
 .tag.mode-plan {
-  border-color: var(--p-plan);
-  color: var(--p-plan);
+  color: var(--mode-plan);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mode-plan) 45%, transparent);
 }
 
 .field {
@@ -450,8 +582,8 @@ textarea {
 }
 
 .field span {
-  font-size: 0.85rem;
-  color: var(--p-fg-subtle);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
 }
 
 input[type="text"],
@@ -459,15 +591,31 @@ textarea {
   width: 100%;
   min-height: var(--tap);
   padding: 10px 12px;
-  border: 1px solid var(--p-separator);
-  border-radius: 10px;
-  background: var(--p-bg-least-visible);
+  border: 0;
+  border-radius: var(--control-radius);
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  color: var(--text);
   font-size: 16px;
+  transition: box-shadow 160ms var(--ease);
+}
+
+input[type="text"]:focus,
+textarea:focus {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px var(--signal),
+    0 0 0 3px color-mix(in srgb, var(--signal) 22%, transparent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-faint);
 }
 
 textarea {
   resize: none;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 fieldset {
@@ -480,8 +628,8 @@ fieldset {
 legend {
   padding: 0;
   margin-bottom: 8px;
-  color: var(--p-fg-subtle);
-  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
 }
 
 .toggle {
@@ -495,18 +643,31 @@ legend {
   width: 22px;
   height: 22px;
   flex: none;
-  accent-color: var(--p-primary);
+  accent-color: var(--signal);
 }
 
 /* ---- lists ---------------------------------------------------------- */
 
+/* Rows grouped on a card, a hairline between them, as System Settings and
+   the desktop's sheets draw a list. */
 .list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  overflow: hidden;
+}
+
+.list:empty {
+  display: none;
+}
+
+.list > li + li {
+  box-shadow: inset 0 1px 0 var(--hairline);
 }
 
 .row {
@@ -516,21 +677,44 @@ legend {
   width: 100%;
   min-height: 56px;
   padding: 10px 14px;
-  border: 1px solid var(--p-separator);
-  border-radius: var(--radius);
-  background: var(--p-bg-least-visible);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: inherit;
+  font: inherit;
   text-align: left;
   text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 160ms var(--ease);
+}
+
+a.row:active,
+.row.option:active:not(:disabled) {
+  background: var(--hover);
 }
 
 .row.option {
   cursor: pointer;
 }
 
+.row.option:disabled {
+  cursor: default;
+}
+
+/* The chosen row: a quiet fill and the accent's check. */
 .row.option.selected {
-  border-color: var(--p-primary);
-  box-shadow: inset 0 0 0 1px var(--p-primary);
+  background: var(--selected);
+}
+
+.row.option.selected::after {
+  content: "";
+  flex: none;
+  width: 14px;
+  height: 8px;
+  margin: 0 4px 4px auto;
+  border: solid var(--signal);
+  border-width: 0 0 2px 2px;
+  transform: rotate(-45deg);
 }
 
 .row-main {
@@ -546,12 +730,12 @@ legend {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .row-sub {
-  color: var(--p-fg-subtle);
-  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
   overflow-wrap: anywhere;
 }
 
@@ -567,95 +751,155 @@ legend {
   gap: 4px;
 }
 
-.busy-dot {
+.row-meta .small-text {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The session list: the desktop's sidebar, as rows on the canvas. */
+.list[aria-label="Sessions"] {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: visible;
+  margin-inline: -8px;
+}
+
+.list[aria-label="Sessions"] > li + li {
+  box-shadow: none;
+}
+
+.list[aria-label="Sessions"] .row {
+  min-height: 60px;
+  padding: 9px 10px;
+  border-radius: var(--control-radius);
+}
+
+.thread-row .row-title {
+  gap: 6px;
+}
+
+.row-time {
   flex: none;
-  width: 9px;
-  height: 9px;
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.row-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.row-line .row-sub {
+  flex: 1;
+}
+
+/* Ask is the default and goes without saying; plan and yolo show. */
+.thread-row .tag.mode-ask {
+  display: none;
+}
+
+.list[aria-label="Sessions"] li.sub .row {
+  min-height: 52px;
+}
+
+/* A sub-thread's mark in the session list: it sits under its parent. */
+.sub-mark {
+  flex: none;
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.busy-dot,
+.attn-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--p-busy);
-  animation: pulse 1.2s ease-in-out infinite;
+  background: var(--busy);
+  animation: pulse 1.4s ease-in-out infinite;
 }
 
 @keyframes pulse {
   50% {
-    opacity: 0.3;
+    opacity: 0.35;
   }
 }
 
 .badge {
-  min-width: 22px;
-  padding: 1px 7px;
+  min-width: 20px;
+  padding: 1px 6px;
   border-radius: 999px;
-  background: var(--p-attention);
-  color: var(--p-bg-base);
-  font-size: 0.8rem;
-  font-weight: 700;
+  background: var(--attention);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 18px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .tag {
+  flex: none;
   padding: 1px 8px;
-  border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--p-bg-less-visible);
-  color: var(--p-fg-subtle);
-  font-size: 0.75rem;
+  background: var(--secondary);
+  color: var(--text-muted);
+  font-size: 0.6875rem;
   font-weight: 500;
+  line-height: 18px;
 }
 
 .tag-yolo {
-  color: var(--p-yolo);
+  color: var(--mode-yolo);
 }
 
 .agent-row,
 .device-row,
-.queue-item,
-.file-card {
+.queue-item {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 12px 14px;
-  border: 1px solid var(--p-separator);
-  border-radius: var(--radius);
-  background: var(--p-bg-least-visible);
-}
-
-.agent-row {
-  border-left-width: 3px;
 }
 
 .agent-mark {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
 }
 
 .file-card {
-  padding: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
-.file-card .row {
-  border: 0;
-  border-radius: 0;
-}
-
 .file-card .diff {
-  border-top: 1px solid var(--p-separator);
+  box-shadow: inset 0 1px 0 var(--hairline);
 }
 
 .path {
-  font-family: var(--mono);
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
   overflow-wrap: anywhere;
 }
 
 .added {
-  color: var(--p-diff-insert-fg);
-  font-weight: 600;
+  color: var(--diff-add-fg);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .removed {
-  color: var(--p-diff-delete-fg);
-  font-weight: 600;
+  color: var(--diff-del-fg);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .queue-text {
@@ -668,37 +912,94 @@ legend {
 .pair {
   justify-content: center;
   overflow-y: auto;
-  padding: calc(24px + env(safe-area-inset-top)) max(var(--gutter), env(safe-area-inset-right))
-    calc(24px + env(safe-area-inset-bottom)) max(var(--gutter), env(safe-area-inset-left));
+  padding: calc(24px + env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+    calc(24px + env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
 }
 
 .pair-card {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   width: 100%;
-  max-width: 420px;
+  max-width: 400px;
   margin: 0 auto;
+  line-height: 1.5;
+}
+
+.pair-card h1 {
+  margin-top: 6px;
+  font-size: 1.625rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+.pair-card > p {
+  color: var(--text-muted);
+}
+
+.pair-card > p.fingerprint,
+.pair-card > p.error-text {
+  color: inherit;
+}
+
+.pair-card > p.error-text {
+  color: var(--destructive-foreground);
+}
+
+.pair-card .btn.block + .btn.block {
+  margin-top: -4px;
 }
 
 .pair code {
   overflow-wrap: anywhere;
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+  background: var(--secondary);
+  color: var(--text);
 }
 
+/* Deck's mark: three cards fanned, the front one the paper. */
 .logo {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, var(--p-primary), var(--p-bg-less-visible));
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 15px;
+  background: var(--surface-1);
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    var(--elevation-card);
+}
+
+.logo::before,
+.logo::after {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 30px;
+  border-radius: 4px;
+}
+
+.logo::before {
+  left: 15px;
+  top: 12px;
+  background: var(--signal);
+  box-shadow: -5px -3px 0 0 color-mix(in srgb, var(--signal) 45%, var(--surface-1));
+}
+
+.logo::after {
+  left: 23px;
+  top: 17px;
+  background: var(--text);
 }
 
 .fingerprint {
-  padding: 10px 12px;
-  border: 1px solid var(--p-separator);
-  border-radius: 10px;
-  background: var(--p-bg-least-visible);
-  font-family: var(--mono);
-  font-size: 0.9rem;
+  padding: 12px 14px;
+  border-radius: var(--control-radius);
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
   line-height: 1.6;
   letter-spacing: 0.02em;
   overflow-wrap: anywhere;
@@ -714,8 +1015,8 @@ legend {
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px max(var(--gutter), env(safe-area-inset-right)) 16px
+  gap: 18px;
+  padding: 16px max(var(--gutter), env(safe-area-inset-right)) 20px
     max(var(--gutter), env(safe-area-inset-left));
   overscroll-behavior: contain;
 }
@@ -726,21 +1027,42 @@ legend {
   overflow-wrap: anywhere;
 }
 
+/* The person's turn: a bubble tinted with the accent, on the right. */
+.msg-turn {
+  align-self: flex-end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  max-width: 85%;
+}
+
 .msg-user {
   align-self: flex-end;
-  max-width: 88%;
-  padding: 10px 14px;
-  border-radius: 16px 16px 4px 16px;
-  background: var(--p-primary);
-  color: var(--p-on-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 9px 15px;
+  border-radius: 20px 20px 6px 20px;
+  background: var(--bubble);
+  box-shadow: inset 0 1px 0 0 var(--highlight);
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.msg-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 4px;
+  color: var(--text-faint);
+  font-size: 0.75rem;
 }
 
 .msg-editing {
   align-self: stretch;
-  max-width: 100%;
-  background: var(--p-bg-least-visible);
-  color: var(--p-fg-base);
-  border: 1px solid var(--p-separator);
 }
 
 .edit-box {
@@ -749,66 +1071,203 @@ legend {
   gap: 8px;
 }
 
+.edit-box .btn-row {
+  justify-content: flex-end;
+}
+
 .msg-edit {
-  display: block;
-  margin: 4px 0 -4px auto;
-  min-width: 32px;
+  min-width: 44px;
   min-height: 32px;
-  padding: 0;
+  padding: 0 4px;
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: inherit;
-  opacity: 0.75;
+  color: var(--text-faint);
+  font-size: 0.75rem;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
 .msg-edit:disabled {
-  opacity: 0.3;
+  opacity: 0.4;
 }
 
+/* An agent's reply: plain text on the canvas under its mark and name. */
 .msg-assistant {
   align-self: stretch;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  line-height: 1.55;
 }
 
 .msg-system {
   align-self: center;
-  color: var(--p-fg-subtle);
-  font-size: 0.85rem;
+  max-width: 90%;
+  color: var(--text-faint);
+  font-size: 0.8125rem;
   text-align: center;
 }
 
 .agent-name {
-  font-size: 0.8rem;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.875rem;
   font-weight: 600;
 }
 
-/* A parent agent's brief to a sub-thread: the agent's words in a quiet
-   card, under who sent them from which thread. */
-.msg-brief {
-  padding: 10px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--p-separator);
-  background: var(--p-bg-least-visible);
+span.agent-name {
+  display: inline-flex;
 }
 
-.brief-from {
-  color: var(--p-fg-more-subtle);
-  font-size: 0.8rem;
+.agent-name .agent-mark {
+  flex: none;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  white-space: nowrap;
 }
 
-.brief-thread {
-  color: var(--p-fg-subtle);
+.agent-who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* A named agent's role, after its name: quiet, the name leads. */
 .agent-role {
-  color: var(--p-fg-more-subtle);
+  flex: none;
+  color: var(--text-faint);
   font-weight: 400;
+}
+
+/* A parent agent's brief to a sub-thread: the agent's words in a card,
+   under who sent them from which thread. */
+.msg-brief {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.brief-from {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  font-size: 0.75rem;
+}
+
+.brief-from .agent-name {
+  flex: none;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.brief-from .agent-name {
+  gap: 3px;
+}
+
+.brief-from .agent-mark {
+  font-size: 0.75rem;
+}
+
+.brief-thread {
+  color: var(--text-muted);
+}
+
+.brief-kind {
+  flex: none;
+  margin-left: auto;
+}
+
+/* One agent's message to others, or a task's report: a card under the
+   sender (the desktop's HandoffCard). */
+.handoff {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.handoff-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  min-width: 0;
+  font-size: 0.75rem;
+}
+
+.handoff-to {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  font-weight: 500;
+}
+
+.handoff-to > [aria-hidden] {
+  flex: none;
+  font-family: var(--font-mono);
+}
+
+.handoff-task {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
+}
+
+.handoff-id {
+  flex: none;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+}
+
+.handoff-state {
+  flex: none;
+  font-weight: 500;
+}
+
+.state-done {
+  color: var(--success-foreground);
+}
+
+.state-failed {
+  color: var(--destructive-foreground);
+}
+
+.state-blocked {
+  color: var(--warning-foreground);
+}
+
+.handoff-body {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.handoff-body.folded {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  overflow: hidden;
+}
+
+.handoff-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
 }
 
 .user-text {
@@ -816,124 +1275,155 @@ legend {
 }
 
 .image-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
   padding: 6px 10px;
-  border: 1px dashed var(--p-separator);
-  border-radius: 8px;
-  font-size: 0.85rem;
+  border-radius: var(--control-radius);
+  background: var(--secondary);
+  font-size: 0.8125rem;
+}
+
+.msg-user .image-chip {
+  align-self: flex-end;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.image-glyph {
+  color: var(--text-faint);
 }
 
 .image-chip .image-label {
-  color: var(--p-fg-base);
+  color: var(--text);
   font-weight: 500;
 }
 
+/* "Working": three dots that breathe in turn. */
 .typing {
+  display: inline-flex;
+  gap: 4px;
   align-self: flex-start;
-  width: 28px;
-  height: 8px;
-  border-radius: 4px;
-  background: var(--p-fg-more-subtle);
+  padding: 4px 0;
+}
+
+.typing > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
-/* A table scrolls in its own box, never the page. */
-.md-table {
-  max-width: 100%;
-  overflow-x: auto;
+.typing > span:nth-child(2) {
+  animation-delay: 0.15s;
 }
-.md-table table {
-  border-collapse: collapse;
-  font-size: 0.92em;
+
+.typing > span:nth-child(3) {
+  animation-delay: 0.3s;
 }
-.md-table th,
-.md-table td {
-  padding: 0.3em 0.6em;
-  text-align: left;
-  vertical-align: top;
-  border-bottom: 1px solid color-mix(in srgb, currentColor 16%, transparent);
-}
-.md-table th,
-.md-table td {
+
+/* Agent prose: the shared markdown parser's node tree. */
+.md {
+  min-width: 0;
   overflow-wrap: anywhere;
-  min-width: 6ch;
 }
-.md-table [data-align="center"] {
-  text-align: center;
-}
-.md-table [data-align="right"] {
-  text-align: right;
-}
+
 .md > * + * {
-  margin-top: 8px;
+  margin-top: 0.7em;
 }
 
 .md p {
   white-space: pre-wrap;
 }
 
+.md strong {
+  font-weight: 600;
+}
+
 .md-h {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .md-h1 {
-  font-size: 1.25rem;
+  font-size: 1.25em;
 }
 
 .md-h2 {
-  font-size: 1.15rem;
+  font-size: 1.12em;
 }
 
 .md ul,
 .md ol {
   margin: 0;
-  padding-left: 22px;
+  padding-left: 1.4em;
+}
+
+.md li + li {
+  margin-top: 0.2em;
+}
+
+.md li::marker {
+  color: var(--text-muted);
 }
 
 .md li.depth1 {
-  margin-left: 16px;
+  margin-left: 1.2em;
 }
 
 .md li.depth2 {
-  margin-left: 32px;
+  margin-left: 2.4em;
 }
 
 .md li.depth3 {
-  margin-left: 48px;
+  margin-left: 3.6em;
+}
+
+.md a {
+  color: var(--link);
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--signal) 55%, transparent);
 }
 
 .md blockquote {
   margin: 0;
   padding-left: 12px;
-  border-left: 3px solid var(--p-separator);
-  color: var(--p-fg-subtle);
+  border-left: 2px solid var(--hairline-strong);
+  color: var(--text-muted);
 }
 
 .md hr {
   border: 0;
-  border-top: 1px solid var(--p-separator);
+  border-top: 1px solid var(--hairline);
 }
 
 .md code {
-  padding: 1px 5px;
+  padding: 0.12em 0.4em;
   border-radius: 5px;
-  background: var(--p-bg-less-visible);
-  color: var(--p-keyword);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
 }
 
+/* A code block is a quiet fill: rounded, no rim. */
 .codeblock {
   margin: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--p-separator);
-  border-radius: 10px;
-  background: var(--p-bg-least-visible);
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--code);
   overflow-x: auto;
-  white-space: pre;
+  white-space: nowrap;
+  font-size: 0.78125rem;
+  line-height: 1.6;
+  tab-size: 4;
 }
 
 .md .codeblock code {
   padding: 0;
   background: none;
   color: inherit;
+  font-size: inherit;
 }
 
 .codeblock.command {
@@ -941,100 +1431,267 @@ legend {
   overflow-wrap: anywhere;
 }
 
-.reasoning {
-  color: var(--p-fg-subtle);
-  font-size: 0.9rem;
+/* A table scrolls in its own box, never the page. */
+.md-table {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: calc(var(--radius) - 2px);
+  box-shadow: inset 0 0 0 1px var(--hairline);
 }
 
+.md-table table {
+  border-collapse: collapse;
+  min-width: 100%;
+  font-size: 0.875em;
+}
+
+.md-table th,
+.md-table td {
+  padding: 0.4em 0.75em;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--hairline);
+  overflow-wrap: anywhere;
+  min-width: 6ch;
+}
+
+.md-table th {
+  font-weight: 600;
+}
+
+.md-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.md-table [data-align="center"] {
+  text-align: center;
+}
+
+.md-table [data-align="right"] {
+  text-align: right;
+}
+
+.reasoning {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.reasoning > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--text-faint);
+  cursor: pointer;
+  list-style: none;
+}
+
+.reasoning > summary::-webkit-details-marker {
+  display: none;
+}
+
+.reasoning > summary::after,
+.tool-chevron {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(-45deg);
+  transition: transform 200ms var(--ease);
+}
+
+.reasoning[open] > summary::after,
+.tool[open] .tool-chevron {
+  transform: rotate(45deg);
+}
+
+.reasoning > p {
+  padding: 2px 0 4px 12px;
+  border-left: 2px solid var(--hairline-strong);
+}
+
+/* A tool call: one quiet row of type that opens to its output, as the
+   desktop's work rows. */
 .tool {
-  border: 1px solid var(--p-separator);
-  border-radius: 10px;
-  background: var(--p-bg-least-visible);
-  overflow: hidden;
+  min-width: 0;
 }
 
 .tool > summary {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: var(--tap);
-  padding: 0 12px;
+  min-height: 36px;
+  margin-inline: -8px;
+  padding: 0 8px;
+  border-radius: var(--control-radius);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
   cursor: pointer;
   list-style: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tool > summary:active {
+  background: var(--hover);
 }
 
 .tool > summary::-webkit-details-marker {
   display: none;
 }
 
+.tool-chevron {
+  margin-inline: 3px 2px;
+  color: var(--text-faint);
+}
+
 .tool-name {
   flex: none;
-  font-family: var(--mono);
-  font-size: 0.85rem;
-  font-weight: 700;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.78125rem;
+  font-weight: 500;
 }
 
 .tool-summary {
   flex: 1;
-  color: var(--p-fg-subtle);
-  font-size: 0.85rem;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
 }
 
 .tool-status {
   flex: none;
-  font-size: 0.75rem;
-  color: var(--p-fg-subtle);
+  color: var(--text-faint);
+  font-size: 0.6875rem;
 }
 
 .tool-status-running {
-  color: var(--p-busy);
+  color: var(--busy);
 }
 
 .tool-status-failed {
-  color: var(--p-error);
+  color: var(--destructive-foreground);
 }
 
-.tool-status-done {
-  color: var(--p-success);
+.tool-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 4px;
 }
 
 .tool-full {
-  padding: 0 12px 8px;
-  font-family: var(--mono);
-  font-size: 0.8rem;
-  color: var(--p-fg-subtle);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
   overflow-wrap: anywhere;
 }
 
 .tool-output {
   margin: 0;
   padding: 10px 12px;
-  border-top: 1px solid var(--p-separator);
+  border-radius: var(--control-radius);
+  background: var(--code);
   max-height: 40vh;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  font-size: 0.75rem;
+  line-height: 1.55;
 }
 
-.tool > .muted {
-  padding: 0 12px 8px;
+/* A call that starts a subagent: "↳ Task  what it was asked · done", on a
+   hairline to the left (the desktop's subagent line). */
+.tool-sub {
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--hairline-strong);
 }
 
+.tool-sub > summary {
+  margin-left: 0;
+}
+
+.tool-glyph {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.tool-sub .tool-name {
+  color: var(--hue, var(--text));
+  font-weight: 600;
+}
+
+.tool-sub .tool-summary {
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.8125rem;
+}
+
+/* What floats just over the composer: it rides on the composer's height. */
+.dock {
+  position: relative;
+  z-index: 3;
+  flex: none;
+  height: 0;
+}
+
+/* "Latest": a round button of glass over the transcript, at the right. */
 .jump {
   position: absolute;
-  right: var(--gutter);
-  bottom: calc(150px + env(safe-area-inset-bottom));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  right: max(var(--gutter), env(safe-area-inset-right));
+  bottom: 10px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--glass-thick);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  backdrop-filter: blur(20px) saturate(1.8);
+  box-shadow:
+    inset 0 0 0 1px var(--hairline-strong),
+    var(--elevation-popover);
+  color: var(--text);
+  cursor: pointer;
+  animation: fade-in 200ms var(--ease) both;
+}
+
+.jump svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .queue-bar {
   flex: none;
-  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  margin: 0 max(var(--gutter), env(safe-area-inset-right)) 6px
+    max(var(--gutter), env(safe-area-inset-left));
   border: 0;
-  border-top: 1px solid var(--p-separator);
-  background: var(--p-bg-less-visible);
-  font-size: 0.9rem;
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
   cursor: pointer;
+}
+
+.queue-bar::after {
+  content: "›";
+  color: var(--text-faint);
 }
 
 /* ---- composer ------------------------------------------------------- */
@@ -1043,35 +1700,207 @@ legend {
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px max(var(--gutter), env(safe-area-inset-right))
-    calc(8px + env(safe-area-inset-bottom)) max(var(--gutter), env(safe-area-inset-left));
-  border-top: 1px solid var(--p-separator);
-  background: var(--p-bg-least-visible);
+  gap: 6px;
+  padding: 4px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom))
+    max(10px, env(safe-area-inset-left));
 }
 
-.composer-row {
+/* The desktop's composer: a rounded card with the prompt over a bar of
+   controls; the accent rings it while it has the focus. */
+.composer-box {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 22px;
+  background: var(--surface-1);
+  box-shadow:
+    inset 0 0 0 1px var(--hairline-strong),
+    var(--elevation-card);
+  transition: box-shadow 160ms var(--ease);
 }
 
-.composer-row textarea {
-  flex: 1;
-  min-width: 0;
+.composer-box:focus-within {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--signal) 70%, transparent),
+    var(--elevation-card);
+}
+
+.composer-box textarea {
+  display: block;
+  min-height: 48px;
   max-height: 160px;
+  padding: 13px 16px 4px;
+  border-radius: 22px 22px 0 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.composer-box textarea:focus {
+  box-shadow: none;
+}
+
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 4px 4px;
+}
+
+.bar-gap {
+  flex: 1;
+}
+
+.bar-btn,
+.send {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bar-btn:active {
+  background: var(--hover);
+}
+
+.icon {
+  width: 20px;
+  height: 20px;
+}
+
+.icon-small {
+  width: 14px;
+  height: 14px;
+}
+
+/* Cancel: a stop button, a square in a disc of the text colour. */
+.stop-square {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+.stop-square::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 2px;
+  background: var(--surface-1);
+}
+
+.stop .stop-square {
+  background: var(--text-muted);
+}
+
+/* Send: the accent's round button with an arrow, as the desktop's. */
+.send-dot {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--signal);
+  color: var(--signal-foreground);
+  transition:
+    background-color 160ms var(--ease),
+    transform 160ms var(--ease);
+}
+
+.send-dot .icon {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.4;
+}
+
+.send:disabled {
+  cursor: default;
+}
+
+.send:disabled .send-dot {
+  background: var(--selected);
+  color: var(--text-faint);
+}
+
+.send:active:not(:disabled) .send-dot {
+  transform: scale(0.92);
+}
+
+/* "✻ claude  claude-opus-5-5 ⌄": the agent every message goes to, in the
+   bar, as the desktop's lead picker; the model gives way first. */
+.lead-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  height: var(--tap);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: none;
+  color: var(--text);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lead-chip:active {
+  background: var(--hover);
+}
+
+.lead-mark {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.lead-name {
+  flex: none;
+  font-weight: 600;
+}
+
+.lead-model {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lead-chip .icon-small {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.composer-problem {
+  padding: 0 8px;
+  font-size: 0.8125rem;
 }
 
 /* The pickers over the prompt: "@" agents and people, "$" agents, "#" files.
    Each row is the agent as Deck draws it: its glyph in its hue, its name,
-   then its role or what the pick does, quiet. */
+   then its role or what the pick does, quiet. A menu of glass. */
 .suggest {
   display: flex;
   flex-direction: column;
-  padding: 4px;
-  border: 1px solid var(--p-separator);
-  border-radius: var(--radius);
-  background: var(--p-bg-less-visible);
+  padding: 5px;
+  border-radius: 14px;
+  background: var(--glass-thick);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  backdrop-filter: blur(24px) saturate(1.8);
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    var(--elevation-popover);
 }
 
 .suggest-row {
@@ -1081,23 +1910,30 @@ legend {
   min-height: var(--tap);
   padding: 0 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 9px;
   background: none;
   color: inherit;
   font: inherit;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   text-align: left;
   cursor: pointer;
 }
 
+/* The row under the keys: a capsule of the accent with its text in white. */
 .suggest-row.on {
-  background: var(--p-bg-most-visible);
+  background: var(--signal);
+  color: var(--signal-foreground);
+}
+
+.suggest-row.on > * {
+  /* biome-ignore lint/complexity/noImportantStyles: over the agent's hue, set inline */
+  color: inherit !important;
 }
 
 .suggest-mark {
   flex: none;
   width: 1.25em;
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   text-align: center;
 }
 
@@ -1105,8 +1941,8 @@ legend {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  font-family: var(--mono);
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1116,29 +1952,48 @@ legend {
   min-width: 0;
   margin-left: auto;
   overflow: hidden;
-  color: var(--p-fg-more-subtle);
-  font-size: 0.8rem;
+  color: var(--text-faint);
+  font-size: 0.75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* Attachments: chips in the composer card, each its thumbnail, its label
+   (tap to rename) and a remove button, as the desktop's. */
 .attachments {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 8px 8px 0;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+
+.attachments::-webkit-scrollbar {
+  display: none;
 }
 
 .attachment {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px;
-  border: 1px solid var(--p-separator);
-  border-radius: 10px;
-  font-size: 0.9rem;
+  flex: none;
+  min-width: 0;
+  max-width: 82%;
+  scroll-snap-align: start;
+  padding: 4px 0 4px 4px;
+  border-radius: 12px;
+  background: var(--secondary);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  font-size: 0.8125rem;
+}
+
+.attachments > .attachment:only-child,
+.attachment[data-kind="video"] {
+  max-width: 100%;
 }
 
 .attachment-thumb {
@@ -1147,8 +2002,8 @@ legend {
   width: 40px;
   height: 40px;
   overflow: hidden;
-  border-radius: 7px;
-  background: var(--p-bg-most-visible);
+  border-radius: 8px;
+  background: var(--selected);
 }
 
 .attachment-thumb img,
@@ -1182,34 +2037,43 @@ legend {
 
 .attachment-label {
   max-width: 100%;
+  min-height: 28px;
   padding: 0;
   border: 0;
   background: none;
-  color: var(--p-fg-base);
+  color: var(--text);
   font: inherit;
+  font-weight: 500;
   text-align: left;
-  text-decoration: underline dotted var(--p-fg-most-subtle);
-  text-underline-offset: 3px;
+  cursor: text;
 }
 
 .attachment-input {
   width: 100%;
+  min-width: 8em;
+  min-height: 28px;
   padding: 2px 6px;
-  border: 1px solid var(--p-primary);
+  border: 0;
   border-radius: 6px;
-  background: var(--p-bg-base);
-  color: var(--p-fg-base);
+  background: var(--canvas);
+  box-shadow: 0 0 0 2px var(--ring);
+  color: var(--text);
   font: inherit;
+  font-size: 16px;
+}
+
+.attachment-input:focus {
+  outline: none;
 }
 
 .attachment-note {
   max-width: 100%;
-  color: var(--p-fg-more-subtle);
+  color: var(--text-faint);
   font-size: 0.75rem;
 }
 
 .attachment.held .attachment-note {
-  color: var(--p-warning);
+  color: var(--warning-foreground);
 }
 
 .attachment-frames {
@@ -1217,16 +2081,36 @@ legend {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--p-accent);
+  color: var(--link);
   font: inherit;
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 0.8125rem;
+  font-weight: 500;
   text-align: left;
 }
 
 .attachment-frames:disabled {
-  color: var(--p-fg-more-subtle);
+  color: var(--text-faint);
   font-weight: 400;
+}
+
+.attachment-remove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 40px;
+  margin-left: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.attachment-remove .icon {
+  width: 16px;
+  height: 16px;
 }
 
 /* ---- diff ----------------------------------------------------------- */
@@ -1239,14 +2123,14 @@ legend {
   margin: 0;
   padding: 8px 0;
   overflow-x: auto;
-  white-space: pre;
-  border: 1px solid var(--p-separator);
-  border-radius: 8px;
-  background: var(--p-bg-least-visible);
+  white-space: nowrap;
+  border-radius: var(--control-radius);
+  background: var(--code);
+  font-size: 0.75rem;
+  line-height: 1.6;
 }
 
 .file-card .diff-body {
-  border: 0;
   border-radius: 0;
 }
 
@@ -1257,24 +2141,23 @@ legend {
 }
 
 .dl-add {
-  background: var(--p-diff-insert-code-bg);
-  color: var(--p-diff-insert-fg);
-  box-shadow: inset 3px 0 0 var(--p-diff-insert-gutter-bg);
+  background: var(--diff-add);
+  color: var(--diff-add-fg);
+  box-shadow: inset 2px 0 0 var(--diff-add-fg);
 }
 
 .dl-del {
-  background: var(--p-diff-delete-code-bg);
-  color: var(--p-diff-delete-fg);
-  box-shadow: inset 3px 0 0 var(--p-diff-delete-gutter-bg);
+  background: var(--diff-del);
+  color: var(--diff-del-fg);
+  box-shadow: inset 2px 0 0 var(--diff-del-fg);
 }
 
 .dl-hunk {
-  background: var(--p-bg-less-visible);
-  color: var(--p-info);
+  color: var(--text-faint);
 }
 
 .dl-meta {
-  color: var(--p-fg-subtle);
+  color: var(--text-muted);
 }
 
 /* ---- sheets, toasts ------------------------------------------------- */
@@ -1292,17 +2175,48 @@ legend {
   position: absolute;
   inset: 0;
   border: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim);
+  animation: fade-in 240ms var(--ease) both;
 }
 
+/* A sheet slides up from the bottom edge: the second surface with a
+   grabber, rounded at the top, as iOS and the desktop's dialogs. */
 .sheet {
   position: relative;
   display: flex;
   flex-direction: column;
-  max-height: 88dvh;
-  border-radius: 18px 18px 0 0;
-  background: var(--p-bg-base);
-  border-top: 1px solid var(--p-separator);
+  max-height: 90dvh;
+  border-radius: 16px 16px 0 0;
+  background: var(--canvas);
+  box-shadow:
+    inset 0 1px 0 var(--hairline),
+    var(--elevation-popover);
+  animation: sheet-up 320ms var(--ease) both;
+  outline: none;
+}
+
+.sheet::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--hairline-strong);
+  transform: translateX(-50%);
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
 }
 
 .sheet-head {
@@ -1310,8 +2224,22 @@ legend {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px max(var(--gutter), env(safe-area-inset-right)) 4px
+  min-height: 56px;
+  padding: 14px max(var(--gutter), env(safe-area-inset-right)) 2px
     max(var(--gutter), env(safe-area-inset-left));
+}
+
+.sheet-head h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-head .btn.ghost {
+  margin-right: -10px;
+  color: var(--link);
+  font-weight: 500;
 }
 
 .sheet-body {
@@ -1323,6 +2251,26 @@ legend {
   overflow-x: hidden;
   padding: 8px max(var(--gutter), env(safe-area-inset-right))
     calc(20px + env(safe-area-inset-bottom)) max(var(--gutter), env(safe-area-inset-left));
+}
+
+.sheet-body > p {
+  overflow-wrap: anywhere;
+}
+
+/* The agents sheet: each agent as the desktop's roster draws it. */
+.agent-row .row-title {
+  flex-wrap: wrap;
+  font-weight: 600;
+}
+
+.agent-row .btn-row .btn {
+  min-height: 36px;
+  font-size: 0.8125rem;
+}
+
+.agent-row .tag {
+  color: var(--link);
+  background: color-mix(in srgb, var(--signal) 14%, transparent);
 }
 
 .approval-desc {
@@ -1341,15 +2289,26 @@ legend {
   z-index: 15;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(96px + env(safe-area-inset-bottom));
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  max-width: calc(100% - 2 * var(--gutter));
+  min-height: 40px;
+  border-radius: 999px;
+  box-shadow: var(--elevation-popover);
+  animation: fade-in 240ms var(--ease) both;
+}
+
+/* Over a session the composer holds the bottom: the pill sits under the
+   toolbar instead. */
+body:has(.composer) .approval-pill {
+  top: calc(64px + env(safe-area-inset-top));
+  bottom: auto;
 }
 
 .toasts {
   position: fixed;
   z-index: 30;
-  left: var(--gutter);
-  right: var(--gutter);
+  left: max(var(--gutter), env(safe-area-inset-left));
+  right: max(var(--gutter), env(safe-area-inset-right));
   top: calc(8px + env(safe-area-inset-top));
   display: flex;
   flex-direction: column;
@@ -1357,34 +2316,79 @@ legend {
   pointer-events: none;
 }
 
+/* A toast: glass with only its state's dot in colour. */
 .toast {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   pointer-events: auto;
-  padding: 10px 14px;
-  border: 1px solid var(--p-separator);
-  border-radius: 10px;
-  background: var(--p-bg-least-visible);
-  color: var(--p-fg-base);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  min-height: var(--tap);
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--glass-thick);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  backdrop-filter: blur(24px) saturate(1.8);
+  color: var(--text);
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    var(--elevation-popover);
+  font-size: 0.875rem;
   text-align: left;
   overflow-wrap: anywhere;
+  animation: toast-in 280ms var(--ease) both;
 }
 
-.toast-error {
-  border-color: var(--p-error);
+.toast::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--signal);
+  transform: translateY(-1px);
+}
+
+.toast-error::before {
+  background: var(--destructive);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
 }
 
 .msg-edited {
-  display: block;
-  margin-top: 2px;
   font-size: 0.75rem;
-  opacity: 0.65;
-  text-align: right;
+  color: var(--text-faint);
+}
+
+.msg-assistant > .msg-edited {
+  align-self: flex-start;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .busy-dot,
-  .typing {
+  .attn-dot,
+  .typing > span {
     animation: none;
+  }
+
+  .sheet,
+  .backdrop,
+  .toast,
+  .jump,
+  .approval-pill {
+    animation: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: no motion, whatever a rule asks */
+    transition-duration: 0s !important;
   }
 }
 
@@ -1393,7 +2397,7 @@ legend {
 .question-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .question {
@@ -1412,16 +2416,18 @@ legend {
   gap: 2px;
   margin-bottom: 6px;
   padding: 0;
+  color: var(--text);
+  font-size: 0.9375rem;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .question-header {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--p-fg-subtle);
+  color: var(--text-faint);
 }
 
 .question-option {
@@ -1429,25 +2435,26 @@ legend {
   align-items: flex-start;
   gap: 10px;
   min-height: var(--tap);
-  padding: 10px 12px;
-  border: 1px solid var(--p-separator);
-  border-radius: 10px;
-  background: var(--p-bg-less-visible);
+  padding: 11px 12px;
+  border-radius: var(--control-radius);
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--hairline);
   cursor: pointer;
   overflow-wrap: anywhere;
 }
 
 .question-option.picked {
-  border-color: var(--p-primary);
+  background: color-mix(in srgb, var(--signal) 10%, var(--surface-1));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--signal) 60%, transparent);
 }
 
 .question-option input {
   margin-top: 3px;
-  accent-color: var(--p-primary);
+  accent-color: var(--signal);
 }
 
 .question-label {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .question-other {
@@ -1455,16 +2462,81 @@ legend {
   box-sizing: border-box;
 }
 
-/* A sub-thread's mark in the session list: it sits under its parent. */
-.sub-mark {
-  margin-right: 4px;
-  opacity: 0.55;
+/* ---- the hosted app (hosted/) ---------------------------------------- */
+
+.hosted-app {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
 }
 
-/* The thread's agent over the composer: who answers, and the model it runs. */
-.lead-chip {
-  max-width: 100%;
+.hosted-app > main,
+.hosted-app > section,
+.hosted-app > p {
+  width: min(100%, 52rem);
+  margin-inline: auto;
+  padding: 1rem;
+  box-sizing: border-box;
 }
-.lead-chip .lead-model {
-  opacity: 0.7;
+
+.hosted-app section,
+.hosted-app fieldset {
+  min-width: 0;
+}
+
+.hosted-app input,
+.hosted-app select,
+.hosted-app textarea {
+  max-width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  background: var(--surface-1);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  border-radius: var(--control-radius);
+  padding: 0.65rem;
+}
+
+.hosted-app label {
+  display: grid;
+  gap: 0.5rem;
+  margin-block: 0.75rem;
+}
+
+.hosted-app button {
+  min-height: 44px;
+  margin: 0.2rem;
+}
+
+.hosted-app p,
+.hosted-app li {
+  overflow-wrap: anywhere;
+}
+
+.hosted-app .session-screen > section[aria-label="Approvals"] {
+  max-height: 35dvh;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding-inline: 1rem;
+}
+
+/* The hosted transcript's person's turn is the bubble itself. */
+.hosted-app .msg-user {
+  max-width: 85%;
+}
+
+.hosted-app .tool {
+  padding-inline: 8px;
+}
+
+.hosted-app .file-card {
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  padding: 8px 12px;
 }

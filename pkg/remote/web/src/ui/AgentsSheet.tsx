@@ -38,7 +38,7 @@ export function AgentsSheet({ sessionId, roster, lead, onClose }: AgentsSheetPro
       ) : (
         <ul class="list">
           {roster.map((a) => (
-            <li key={a.id} class="agent-row" style={{ borderLeftColor: kindColour(a.kind) }}>
+            <li key={a.id} class="agent-row">
               <div class="row-main">
                 <span class="row-title" style={{ color: kindColour(a.kind) }}>
                   {a.busy ? <span class="busy-dot" role="img" aria-label="Working" /> : null}

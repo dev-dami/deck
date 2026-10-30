@@ -71,7 +71,7 @@ export function SessionList({ state }: { state: AppState }) {
                 class={depth > 0 ? "sub" : undefined}
                 style={depth > 0 ? { paddingLeft: `${Math.min(depth, 3) * 14}px` } : undefined}
               >
-                <a class="row" href={formatRoute({ name: "session", id: s.id })}>
+                <a class="row thread-row" href={formatRoute({ name: "session", id: s.id })}>
                   <span class="row-main">
                     <span class="row-title">
                       {depth > 0 ? (
@@ -83,21 +83,23 @@ export function SessionList({ state }: { state: AppState }) {
                         <span class="busy-dot" role="img" aria-label="Working" title="Working" />
                       ) : null}
                       <span class="ellipsis">{sessionTitle(s)}</span>
+                      <span class="row-time">{relativeTime(s.updated_at, now)}</span>
                     </span>
-                    {s.last_text !== undefined && s.last_text !== "" ? (
-                      <span class="row-sub ellipsis">{s.last_text}</span>
-                    ) : null}
-                  </span>
-                  <span class="row-meta">
-                    {s.pending > 0 ? (
-                      <span class="badge" role="img" aria-label={`${s.pending} pending approvals`}>
-                        {s.pending}
+                    <span class="row-line">
+                      <span class="row-sub ellipsis">{s.last_text ?? ""}</span>
+                      {s.pending > 0 ? (
+                        <span
+                          class="badge"
+                          role="img"
+                          aria-label={`${s.pending} pending approvals`}
+                        >
+                          {s.pending}
+                        </span>
+                      ) : null}
+                      <span class={`tag mode-${sessionMode(s) ?? "unknown"}`}>
+                        {modeLabel(sessionMode(s))}
                       </span>
-                    ) : null}
-                    <span class={`tag mode-${sessionMode(s) ?? "unknown"}`}>
-                      {modeLabel(sessionMode(s))}
                     </span>
-                    <span class="muted small-text">{relativeTime(s.updated_at, now)}</span>
                   </span>
                 </a>
               </li>

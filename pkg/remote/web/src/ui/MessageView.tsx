@@ -1,6 +1,8 @@
 import { useState } from "preact/hooks";
 import { canSaveEdit } from "../composer";
-import type { AgentLine, Message, Part } from "../protocol";
+import { foldsBody, type Handoff, handoffOf } from "../handoff";
+import type { AgentLine, Message, Part, Theme } from "../protocol";
+import { formatRoute } from "../route";
 import { briefOf } from "../subthreads";
 import { kindColour, kindMark } from "../theme";
 import { type Chunk, groupParts, messageText } from "../transcript";
@@ -8,7 +10,21 @@ import { DiffView } from "./DiffView";
 import { useAppState, useController } from "./hooks";
 import { Markdown } from "./Markdown";
 
-function ToolCard({ call, result }: { call: Part | null; result: Part | null }) {
+// An agent's kind by its name: the roster's, else the kind its name starts
+// with ("codex-2" is a codex).
+function kindOf(name: string, roster: AgentLine[]): string {
+  const line = roster.find((a) => a.name === name || a.id === name);
+  return line?.kind ?? name.replace(/[-/].*$/, "");
+}
+
+// A call that starts a subagent: a CLI's own (Claude Code's Task or Agent)
+// or Deck's agent.spawn. It is drawn as the desktop's subagent line.
+function startsSubagent(call: Part | null, name: string): boolean {
+  if (name === "Task" || name === "Agent") return true;
+  return name === "deck" && (call?.summary ?? "").startsWith("agent.spawn");
+}
+
+function ToolCard({ call, result, hue }: { call: Part | null; result: Part | null; hue: string }) {
   const name = call?.name ?? result?.name ?? "tool";
   const summary = call?.summary ?? "";
   const running = result === null;
@@ -17,21 +33,106 @@ function ToolCard({ call, result }: { call: Part | null; result: Part | null }) 
   const output = result?.output ?? "";
   const diff = result?.diff ?? call?.diff ?? "";
   const diffTruncated = result?.diff_truncated === true || call?.diff_truncated === true;
+  const sub = startsSubagent(call, name);
   // Tool rows stay collapsed unless they failed; a tap opens them.
   return (
-    <details class={`tool tool-${status}`} open={failed}>
+    <details
+      class={`tool tool-${status}${sub ? " tool-sub" : ""}`}
+      open={failed}
+      style={sub ? { "--hue": hue } : undefined}
+    >
       <summary>
+        {sub ? (
+          <span class="tool-glyph" aria-hidden="true">
+            ↳
+          </span>
+        ) : (
+          <span class="tool-chevron" aria-hidden="true" />
+        )}
         <span class="tool-name">{name}</span>
         <span class="tool-summary ellipsis">{summary}</span>
         <span class={`tool-status tool-status-${status}`}>{status}</span>
       </summary>
-      {summary !== "" ? <p class="tool-full">{summary}</p> : null}
-      {diff !== "" ? <DiffView diff={diff} truncated={diffTruncated} /> : null}
-      {output !== "" ? <pre class="tool-output">{output}</pre> : null}
-      {result?.output_truncated === true ? (
-        <p class="muted small-text">Output truncated by Deck.</p>
-      ) : null}
+      <div class="tool-body">
+        {summary !== "" ? <p class="tool-full">{summary}</p> : null}
+        {diff !== "" ? <DiffView diff={diff} truncated={diffTruncated} /> : null}
+        {output !== "" ? <pre class="tool-output">{output}</pre> : null}
+        {result?.output_truncated === true ? (
+          <p class="muted small-text">Output truncated by Deck.</p>
+        ) : null}
+      </div>
     </details>
+  );
+}
+
+const HANDOFF_STATE = { done: "done", failed: "failed", blocked: "blocked" } as const;
+
+// One agent's message to others, or a task's report to whoever handed it
+// over, as the desktop's hand-off card: who it went to, the task and how it
+// ended, and the words, folded when long.
+function HandoffCard({
+  h,
+  roster,
+  theme,
+}: {
+  h: Handoff;
+  roster: AgentLine[];
+  theme: Theme | null;
+}) {
+  const [all, setAll] = useState(false);
+  const body = h.task === null ? h.body : h.task.result;
+  const folds = foldsBody(body);
+  return (
+    <div
+      class="card handoff"
+      data-handoff={h.sub !== null ? "subthread" : (h.task?.state ?? "message")}
+    >
+      <p class="handoff-head">
+        <span class="faint">
+          {h.sub !== null ? "sub-thread answer to" : h.task === null ? "to" : "report to"}
+        </span>
+        {h.to.map((name) => {
+          const kind = kindOf(name, roster);
+          return (
+            <span key={name} class="handoff-to" style={{ color: kindColour(kind) }}>
+              <span aria-hidden="true">{kindMark(theme, kind) || "●"}</span>
+              <span class="ellipsis">{name}</span>
+            </span>
+          );
+        })}
+        {h.task !== null ? (
+          <span class="handoff-task">
+            <span class="handoff-id">{h.task.id}</span>
+            <span class="ellipsis">{h.task.title}</span>
+            <span class={`handoff-state state-${h.task.state}`}>{HANDOFF_STATE[h.task.state]}</span>
+          </span>
+        ) : null}
+      </p>
+      {body !== "" ? (
+        <div class={`handoff-body${folds && !all ? " folded" : ""}`}>
+          <Markdown text={body} />
+        </div>
+      ) : null}
+      {folds || (h.sub !== null && h.sub.id !== "") ? (
+        <p class="handoff-foot">
+          {folds ? (
+            <button
+              type="button"
+              class="link-btn"
+              aria-expanded={all}
+              onClick={() => setAll((v) => !v)}
+            >
+              {all ? "Show less" : "Show all"}
+            </button>
+          ) : null}
+          {h.sub !== null && h.sub.id !== "" ? (
+            <a class="link-btn" href={formatRoute({ name: "session", id: h.sub.id })}>
+              ↳ Open {h.sub.title !== "" ? h.sub.title : "sub-thread"}
+            </a>
+          ) : null}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -39,15 +140,29 @@ function Truncated({ on }: { on: boolean }) {
   return on ? <p class="muted small-text">Text truncated by Deck.</p> : null;
 }
 
-function ChunkView({ chunk, user }: { chunk: Chunk; user: boolean }) {
+function ChunkView({
+  chunk,
+  user,
+  roster,
+  hue,
+}: {
+  chunk: Chunk;
+  user: boolean;
+  roster: AgentLine[];
+  hue: string;
+}) {
+  const { theme } = useAppState();
   switch (chunk.k) {
-    case "text":
+    case "text": {
+      const h = user ? null : handoffOf(chunk.text);
+      if (h !== null) return <HandoffCard h={h} roster={roster} theme={theme} />;
       return (
         <>
           {user ? <p class="user-text">{chunk.text}</p> : <Markdown text={chunk.text} />}
           <Truncated on={chunk.truncated} />
         </>
       );
+    }
     case "reasoning":
       return (
         <details class="reasoning">
@@ -57,13 +172,15 @@ function ChunkView({ chunk, user }: { chunk: Chunk; user: boolean }) {
         </details>
       );
     case "tool":
-      return <ToolCard call={chunk.call} result={chunk.result} />;
+      return <ToolCard call={chunk.call} result={chunk.result} hue={hue} />;
     case "image":
       // v1 has no way to fetch an image's bytes back (§3.7): show the
       // label the person gave it, then its name.
       return (
         <p class="image-chip" data-kind={chunk.mime.startsWith("video/") ? "video" : "image"}>
-          <span aria-hidden="true">{chunk.mime.startsWith("video/") ? "\u25B6 " : "\u25A3 "}</span>
+          <span class="image-glyph" aria-hidden="true">
+            {chunk.mime.startsWith("video/") ? "▶" : "▣"}
+          </span>
           {chunk.label !== undefined ? <span class="image-label">{chunk.label} </span> : null}
           <span class={chunk.label !== undefined ? "muted" : ""}>{chunk.name}</span>
           {chunk.mime !== "" && chunk.label === undefined ? (
@@ -111,15 +228,15 @@ function EditBox({
         onInput={(e) => setDraft(e.currentTarget.value)}
       />
       <div class="btn-row">
+        <button type="button" class="btn small" disabled={saving} onClick={onDone}>
+          Cancel
+        </button>
         <button
           type="submit"
           class="btn small primary"
           disabled={!canSaveEdit(original, draft, online, saving)}
         >
           {saving ? "Saving..." : "Save"}
-        </button>
-        <button type="button" class="btn small" disabled={saving} onClick={onDone}>
-          Cancel
         </button>
       </div>
     </form>
@@ -137,7 +254,7 @@ function AgentName({
 }) {
   const { theme } = useAppState();
   const line = roster.find((a) => a.id === agentId);
-  const kind = line?.kind ?? "";
+  const kind = line?.kind ?? kindOf(agentId, roster);
   const mark = kindMark(theme, kind);
   const Tag = inline ? "span" : "p";
   return (
@@ -147,7 +264,7 @@ function AgentName({
           {mark}{" "}
         </span>
       ) : null}
-      {line?.name ?? agentId}
+      <span class="agent-who">{line?.name ?? agentId}</span>
       {line?.role !== undefined && line.role !== "" ? (
         <span class="agent-role"> {line.role}</span>
       ) : null}
@@ -168,22 +285,34 @@ export function MessageView({ message, roster, online }: MessageViewProps) {
     return (
       <div class="msg msg-system">
         {chunks.map((c, i) => (
-          <ChunkView key={i} chunk={c} user={true} />
+          <ChunkView key={i} chunk={c} user={true} roster={roster} hue="" />
         ))}
       </div>
     );
   }
-  // A parent agent's brief to this sub-thread: the agent's words, not the
-  // person's.
+  // A parent agent's brief to this sub-thread: the agent's words in a card,
+  // not the person's bubble, under who sent them from which thread.
   const brief = briefOf(message);
   if (brief !== null) {
     return (
-      <article class="msg msg-assistant msg-brief">
+      <article class="msg msg-brief card">
         <p class="brief-from">
-          From <AgentName agentId={brief.from} roster={roster} inline />
-          {brief.thread !== "" ? <span class="brief-thread"> · {brief.thread}</span> : null}
+          <span class="faint" aria-hidden="true">
+            ↳
+          </span>
+          <span class="faint">From</span>
+          <AgentName agentId={brief.from} roster={roster} inline />
+          {brief.thread !== "" ? (
+            <span class="brief-thread ellipsis">
+              <span class="faint" aria-hidden="true">
+                ·{" "}
+              </span>
+              {brief.thread}
+            </span>
+          ) : null}
+          <span class="brief-kind faint">{brief.first ? "brief" : "follow-up"}</span>
         </p>
-        <Markdown text={brief.body} />
+        {brief.body !== "" ? <Markdown text={brief.body} /> : null}
       </article>
     );
   }
@@ -191,34 +320,54 @@ export function MessageView({ message, roster, online }: MessageViewProps) {
   const canEdit = user && message.editable === true;
   if (editing && canEdit) {
     return (
-      <article class="msg msg-user msg-editing">
+      <article class="msg msg-editing">
         <EditBox message={message} online={online} onDone={() => setEditing(false)} />
       </article>
     );
   }
+  if (user) {
+    // The person's turn: a bubble tinted with the accent, on the right.
+    return (
+      <article class="msg msg-turn">
+        <div class="msg-user">
+          {chunks.map((c, i) => (
+            <ChunkView key={i} chunk={c} user={true} roster={roster} hue="" />
+          ))}
+        </div>
+        {message.edited === true || canEdit ? (
+          <footer class="msg-foot">
+            {message.edited === true ? <span class="msg-edited">edited</span> : null}
+            {canEdit ? (
+              <button
+                type="button"
+                class="msg-edit"
+                aria-label="Edit message"
+                title="Edit message"
+                disabled={!online}
+                onClick={() => setEditing(true)}
+              >
+                Edit
+              </button>
+            ) : null}
+          </footer>
+        ) : null}
+      </article>
+    );
+  }
+  const hue = kindColour(roster.find((a) => a.id === message.agent)?.kind ?? "");
   return (
-    <article class={`msg ${user ? "msg-user" : "msg-assistant"}`}>
-      {!user && message.agent !== undefined ? (
-        <AgentName agentId={message.agent} roster={roster} />
-      ) : null}
+    <article class="msg msg-assistant">
+      {message.agent !== undefined ? <AgentName agentId={message.agent} roster={roster} /> : null}
       {chunks.map((c, i) => (
-        <ChunkView key={i} chunk={c} user={user} />
+        <ChunkView key={i} chunk={c} user={false} roster={roster} hue={hue} />
       ))}
       {message.edited === true ? <span class="msg-edited">edited</span> : null}
-      {!user && !message.finished ? (
-        <span class="typing" role="status" aria-label="Working" />
-      ) : null}
-      {canEdit ? (
-        <button
-          type="button"
-          class="msg-edit"
-          aria-label="Edit message"
-          title="Edit message"
-          disabled={!online}
-          onClick={() => setEditing(true)}
-        >
-          <span aria-hidden="true">&#9998;</span>
-        </button>
+      {!message.finished ? (
+        <span class="typing" role="status" aria-label="Working">
+          <span />
+          <span />
+          <span />
+        </span>
       ) : null}
     </article>
   );

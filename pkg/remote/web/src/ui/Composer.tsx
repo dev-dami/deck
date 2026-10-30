@@ -260,112 +260,6 @@ export function Composer({
         void send();
       }}
     >
-      {lead !== undefined ? (
-        <div class="chips">
-          <button
-            type="button"
-            class="chip lead-chip"
-            style={{ borderColor: kindColour(lead.kind) }}
-            aria-label={`Agent: ${lead.profile || lead.kind}${lead.slug || lead.model ? `, ${lead.slug || lead.model}` : ""}. Change it`}
-            onClick={onAgents}
-          >
-            <span class="ellipsis">
-              {lead.profile || lead.kind}
-              {lead.slug || lead.model ? (
-                <span class="lead-model"> · {lead.slug || lead.model}</span>
-              ) : null}
-            </span>
-          </button>
-        </div>
-      ) : null}
-      {images.length > 0 ? (
-        <ul class="attachments" aria-label="Attachments">
-          {images.map(({ att, url }, i) => {
-            const video = isVideo(att.mime);
-            const held = video && !gate.ok && att.frames !== true;
-            const label = att.label ?? att.name;
-            return (
-              <li
-                key={url}
-                class={`attachment ${held ? "held" : ""}`}
-                data-kind={video ? "video" : "image"}
-              >
-                <span class="attachment-thumb" aria-hidden="true">
-                  {video ? (
-                    <>
-                      <video src={`${url}#t=0.1`} muted preload="metadata" playsInline />
-                      <span class="attachment-film">▶</span>
-                    </>
-                  ) : (
-                    <img src={url} alt="" />
-                  )}
-                </span>
-                <span class="attachment-body">
-                  {renaming?.i === i ? (
-                    <input
-                      class="attachment-input"
-                      aria-label="Attachment label"
-                      value={renaming.text}
-                      maxLength={MAX_LABEL}
-                      enterkeyhint="done"
-                      ref={(el) => el?.focus()}
-                      onInput={(e) => setRenaming({ i, text: e.currentTarget.value })}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          saveLabel();
-                        } else if (e.key === "Escape") {
-                          e.preventDefault();
-                          setRenaming(null);
-                        }
-                      }}
-                      onBlur={saveLabel}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      class="attachment-label ellipsis"
-                      aria-label={`Rename ${label}`}
-                      onClick={() => setRenaming({ i, text: label })}
-                    >
-                      {label}
-                    </button>
-                  )}
-                  {video && !gate.ok ? (
-                    <>
-                      <span class="attachment-note">
-                        {att.frames === true ? "Goes as still frames" : gate.reason}
-                      </span>
-                      {/* The way out: up to 8 stills the engine takes with ffmpeg. */}
-                      <button
-                        type="button"
-                        class="attachment-frames"
-                        aria-pressed={att.frames === true}
-                        disabled={att.frames !== true && !gate.frames}
-                        onClick={() => change(i, { frames: att.frames !== true })}
-                      >
-                        {att.frames === true
-                          ? "Send the video instead"
-                          : gate.frames
-                            ? "Send as frames"
-                            : gate.framesReason}
-                      </button>
-                    </>
-                  ) : null}
-                </span>
-                <button
-                  type="button"
-                  class="btn ghost small"
-                  aria-label={`Remove ${att.name}`}
-                  onClick={() => remove(i)}
-                >
-                  Remove
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
       {picker !== null && options.length > 0 ? (
         <div class="suggest" role="listbox" aria-label={PICKER_LABEL[picker.type]}>
           {options.map((s, i) => (
@@ -398,27 +292,101 @@ export function Composer({
         </div>
       ) : null}
       {problem !== null ? (
-        <p class="error-text" role="alert">
+        <p class="error-text composer-problem" role="alert">
           {problem}
         </p>
       ) : null}
-      <div class="composer-row">
-        <input
-          ref={fileRef}
-          type="file"
-          accept={`image/png,image/jpeg,image/gif,image/webp${videoOn ? `,${[...VIDEO_TYPES].join(",")}` : ""}`}
-          multiple
-          hidden
-          onChange={(e) => void onFiles(e)}
-        />
-        <button
-          type="button"
-          class="btn icon"
-          aria-label={videoOn ? "Attach images or a video" : "Attach image"}
-          onClick={() => fileRef.current?.click()}
-        >
-          +
-        </button>
+      {/* The desktop's composer: one rounded card, the attachments over the
+          prompt and the agent in its bottom bar. */}
+      <div class="composer-box">
+        {images.length > 0 ? (
+          <ul class="attachments" aria-label="Attachments">
+            {images.map(({ att, url }, i) => {
+              const video = isVideo(att.mime);
+              const held = video && !gate.ok && att.frames !== true;
+              const label = att.label ?? att.name;
+              return (
+                <li
+                  key={url}
+                  class={`attachment ${held ? "held" : ""}`}
+                  data-kind={video ? "video" : "image"}
+                >
+                  <span class="attachment-thumb" aria-hidden="true">
+                    {video ? (
+                      <>
+                        <video src={`${url}#t=0.1`} muted preload="metadata" playsInline />
+                        <span class="attachment-film">▶</span>
+                      </>
+                    ) : (
+                      <img src={url} alt="" />
+                    )}
+                  </span>
+                  <span class="attachment-body">
+                    {renaming?.i === i ? (
+                      <input
+                        class="attachment-input"
+                        aria-label="Attachment label"
+                        value={renaming.text}
+                        maxLength={MAX_LABEL}
+                        enterkeyhint="done"
+                        ref={(el) => el?.focus()}
+                        onInput={(e) => setRenaming({ i, text: e.currentTarget.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            saveLabel();
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            setRenaming(null);
+                          }
+                        }}
+                        onBlur={saveLabel}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        class="attachment-label ellipsis"
+                        aria-label={`Rename ${label}`}
+                        onClick={() => setRenaming({ i, text: label })}
+                      >
+                        {label}
+                      </button>
+                    )}
+                    {video && !gate.ok ? (
+                      <>
+                        <span class="attachment-note">
+                          {att.frames === true ? "Goes as still frames" : gate.reason}
+                        </span>
+                        {/* The way out: up to 8 stills the engine takes with ffmpeg. */}
+                        <button
+                          type="button"
+                          class="attachment-frames"
+                          aria-pressed={att.frames === true}
+                          disabled={att.frames !== true && !gate.frames}
+                          onClick={() => change(i, { frames: att.frames !== true })}
+                        >
+                          {att.frames === true
+                            ? "Send the video instead"
+                            : gate.frames
+                              ? "Send as frames"
+                              : gate.framesReason}
+                        </button>
+                      </>
+                    ) : null}
+                  </span>
+                  <button
+                    type="button"
+                    class="attachment-remove"
+                    aria-label={`Remove ${att.name}`}
+                    onClick={() => remove(i)}
+                  >
+                    <Icon d={X_PATH} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
         <textarea
           ref={areaRef}
           rows={1}
@@ -473,23 +441,88 @@ export function Composer({
             }
           }}
         />
-        {busy ? (
+        <div class="composer-bar">
+          <input
+            ref={fileRef}
+            type="file"
+            accept={`image/png,image/jpeg,image/gif,image/webp${videoOn ? `,${[...VIDEO_TYPES].join(",")}` : ""}`}
+            multiple
+            hidden
+            onChange={(e) => void onFiles(e)}
+          />
           <button
             type="button"
-            class="btn danger"
-            onClick={() => void controller.cancel(sessionId)}
+            class="bar-btn"
+            aria-label={videoOn ? "Attach images or a video" : "Attach image"}
+            onClick={() => fileRef.current?.click()}
           >
-            Cancel
+            <Icon d={CLIP_PATH} />
           </button>
-        ) : null}
-        <button
-          type="submit"
-          class="btn primary"
-          disabled={sending || !online || !canSend(text, images.length) || blocked}
-        >
-          {sending ? "Sending" : "Send"}
-        </button>
+          {lead !== undefined ? (
+            <button
+              type="button"
+              class="lead-chip"
+              aria-label={`Agent: ${lead.profile || lead.kind}${lead.slug || lead.model ? `, ${lead.slug || lead.model}` : ""}. Change it`}
+              onClick={onAgents}
+            >
+              <span class="lead-mark" style={{ color: kindColour(lead.kind) }} aria-hidden="true">
+                {kindMark(theme, lead.kind) || "●"}
+              </span>
+              <span class="lead-name">{lead.profile || lead.kind}</span>
+              {lead.slug || lead.model ? (
+                <span class="lead-model">{lead.slug || lead.model}</span>
+              ) : null}
+              <Icon d={CHEVRON_PATH} small />
+            </button>
+          ) : null}
+          <span class="bar-gap" />
+          {busy ? (
+            <button
+              type="button"
+              class="bar-btn stop"
+              aria-label="Cancel"
+              title="Cancel the run"
+              onClick={() => void controller.cancel(sessionId)}
+            >
+              <span class="stop-square" aria-hidden="true" />
+            </button>
+          ) : null}
+          <button
+            type="submit"
+            class="send"
+            aria-label={sending ? "Sending" : "Send"}
+            disabled={sending || !online || !canSend(text, images.length) || blocked}
+          >
+            <span class="send-dot" aria-hidden="true">
+              <Icon d={ARROW_PATH} />
+            </span>
+          </button>
+        </div>
       </div>
     </form>
+  );
+}
+
+// The composer's glyphs, drawn as the desktop's (Phosphor's outlines).
+const CLIP_PATH =
+  "M15.5 6.5 8.4 13.6a2 2 0 0 0 2.8 2.8l7.4-7.3a4 4 0 0 0-5.7-5.7L5.6 10.7a6 6 0 0 0 8.5 8.5l6.4-6.4";
+const ARROW_PATH = "M12 19V5M5.5 11.5 12 5l6.5 6.5";
+const CHEVRON_PATH = "m7 10 5 5 5-5";
+const X_PATH = "M7 7l10 10M17 7 7 17";
+
+function Icon({ d, small = false }: { d: string; small?: boolean }) {
+  return (
+    <svg
+      class={small ? "icon icon-small" : "icon"}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d={d} />
+    </svg>
   );
 }

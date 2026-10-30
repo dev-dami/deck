@@ -127,11 +127,16 @@ export function SessionScreen({ state, id }: { state: AppState; id: string }) {
           </button>
         ) : null}
       </div>
-      {showJump ? (
-        <button type="button" class="jump btn primary" onClick={jump}>
-          Latest
-        </button>
-      ) : null}
+      {/* Over the composer, whatever its height. */}
+      <div class="dock">
+        {showJump ? (
+          <button type="button" class="jump" aria-label="Latest" title="Latest" onClick={jump}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5.5 12.5 12 19l6.5-6.5" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
       {queue.length > 0 ? (
         <button type="button" class="queue-bar" onClick={() => setSheet("queue")}>
           {queue.length} queued {queue.length === 1 ? "message" : "messages"}
