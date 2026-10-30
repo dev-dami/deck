@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/internal/deck/media"
 	"github.com/dev-dami/deck/internal/workspace"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 	"github.com/dev-dami/deck/pkg/rpc/deckv1"
@@ -61,10 +62,17 @@ func raceEntrants(r *deckv1.StartRaceRequest) []workspace.RaceEntrant {
 type room struct {
 	attention, branch string
 	archived          bool
+	parent            string
+	lead              workspace.Lead
 }
 
 func (r room) fill(p *deckv1.Session) {
-	p.Attention, p.Branch, p.Archived = r.attention, r.branch, r.archived
+	p.Attention, p.Branch, p.Archived, p.ParentId = r.attention, r.branch, r.archived, r.parent
+	if r.lead != (workspace.Lead{}) {
+		p.Lead = &deckv1.SessionLead{Agent: r.lead.Agent, Kind: r.lead.Kind, Model: r.lead.Model, Slug: r.lead.Slug, Effort: r.lead.Effort, Profile: r.lead.Profile, Video: r.lead.Video}
+	} else {
+		p.Lead = nil
+	}
 }
 
 // roomOf works out a session's room from its pending approvals, its agents,
@@ -73,7 +81,7 @@ func (s *Server) roomOf(sid string, approvals []wire.Approval) room {
 	var r room
 	if s.crew != nil && s.crew.rooms != nil {
 		w := s.crew.rooms.Room(sid)
-		r.branch, r.archived = w.Branch, w.Archived
+		r.branch, r.archived, r.parent, r.lead = w.Branch, w.Archived, w.Parent, w.Lead
 	}
 	r.attention = s.attention(sid, approvals)
 	return r
@@ -211,7 +219,12 @@ func (s *Server) clis() []*deckv1.AgentCli {
 }
 
 func (s *Server) capabilities() []string {
-	var out []string
+	// Send takes video ("Video") everywhere, and sends one as frames
+	// ("VideoFrames") where the engine has ffmpeg.
+	out := []string{"Video"}
+	if media.FFmpeg() != "" {
+		out = append(out, "VideoFrames")
+	}
 	if s.crew != nil && s.crew.highlights != nil {
 		out = append(out, "Highlights", "HighlightAction")
 	}

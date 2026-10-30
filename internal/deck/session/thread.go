@@ -51,12 +51,25 @@ type thread struct {
 	heldIdx     []int             // relays held by the pause, released by Continue
 	lastRelay   map[string]string // "from>to" -> normalised text of the last relay
 	lastSpeaker string            // member who most recently wrote a reply
-	hops        int
-	paused      bool
+	lead        string            // the member the person talks to (lead.go)
+	// parent and parentAgent: the thread and member that opened this one
+	// (subthread.go); asks the ids of its entries that member waits on.
+	parent, parentAgent string
+	asks                []string
+	hops                int
+	paused              bool
 	// work counts the subagents members started and the tasks the scheduler
 	// handed out since the user's last message (brakes.go); sends the times of
 	// each member's recent thread.send calls.
-	work  int
+	work int
+	// turns counts the turns started since the user's last message by
+	// anything but the user: relays, hand-offs, briefs, reports, reviews
+	// (brakes.go, chargeTurnLocked).
+	turns int
+	// stall is the progress ledger of the turns the agents start (stall.go);
+	// held the reports each member is not woken for yet (batch.go).
+	stall stallState
+	held  map[string][]heldReport
 	sends map[string][]time.Time
 	// leases are the members' claims on files of the shared tree; edits the
 	// last change to each of its files (by pathKey), and warned when an
@@ -67,6 +80,9 @@ type thread struct {
 	// coord is who changed which file when, and the asks to edit a file
 	// another member owns (coord.go).
 	coord coordState
+	// flow is the members' edits and check runs since they last changed
+	// code, and what each one's running turn did (evidence.go, turnend.go).
+	flow flowState
 
 	// Lifecycle (lifecycle.go): pinned to the top, resolved (settled until a
 	// new message wakes it), archived (off the sidebar, still resumable).
@@ -193,6 +209,7 @@ type head struct {
 	i      int
 	typ    string
 	id     string
+	from   string // the speaker of a relay (handcontract.go)
 	to     []string
 	via    string
 	taskID string
@@ -235,7 +252,7 @@ func (x *logIndex) add(i int, e store.Entry) {
 	if !triggers(e) {
 		return
 	}
-	h := head{i: i, typ: e.Type, id: e.ID, to: e.To, via: e.Via, taskID: e.TaskID, steer: e.Steer}
+	h := head{i: i, typ: e.Type, id: e.ID, from: e.Speaker, to: e.To, via: e.Via, taskID: e.TaskID, steer: e.Steer}
 	if e.Type == store.EntryUser && !e.Steer {
 		h.text, h.time = e.Text, e.Time
 	}
@@ -354,7 +371,8 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
-		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree,
+		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree, Lead: t.lead,
+		Parent: t.parent, ParentAgent: t.parentAgent, Asks: slices.Clone(t.asks),
 		Tasks: cloneTasks(t.tasks), Orchestration: t.level, Orchestrate: m.levelLocked(t).Schedule, Contract: t.contract, Ops: t.ops != nil,
 		Scheduled: slices.Clone(t.scheduled), Trees: slices.Clone(t.trees), Capsules: cloneCapsules(t.capsules)}
 	for _, peer := range slices.Sorted(maps.Keys(t.shares)) {

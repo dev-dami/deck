@@ -63,6 +63,8 @@ test("at 960×600 the header, the lane strip and the composer show whole", async
   await pair(page);
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   await expect(page.locator(".title")).toHaveText("Fix the pairing lockout");
+  // The strip shows once the roster names a second agent.
+  await expect(page.locator(".lanes")).toBeVisible();
   // Nothing covers the title, the lanes or the prompt.
   const covered = () =>
     page.evaluate(() =>

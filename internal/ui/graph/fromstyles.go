@@ -26,10 +26,11 @@ func FromStyles(s *styles.Styles) Theme {
 	for _, k := range agentKinds {
 		t.Series[k] = tone.Tint(k)
 	}
-	think, tool := tone.Plum, tone.Sky
+	p := tone.Dark
 	if !s.IsDark {
-		think, tool = tone.LightPlum, tone.LightSky
+		p = tone.Light
 	}
+	think, tool := p.Purple, p.Teal
 	t.Spans = map[string]color.Color{
 		"think": think,
 		"text":  t.Accent,

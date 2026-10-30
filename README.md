@@ -21,7 +21,7 @@ Run Claude Code, Codex, OpenCode, Antigravity and Pi side by side in shared thre
 Deck drives the CLIs you already have, under your own logins. A thread holds you and any number of agents. They hand work to each other where you can see it, and every reply, tool call, diff and approval shows up in one place.
 
 - **Your CLIs, your plans.** Deck never calls a model API and never reads a credential. Usage counts against your own Claude and Codex plans and whatever providers OpenCode uses.
-- **Many agents, one thread.** `@claude @codex` asks both, and named agents (`@charles`, a reviewer you describe once in `deck.json`) join the same way. Agents hand work to each other with `@name`, start subagents, race each other on worktrees, and review each other's work.
+- **One agent you talk to; a crew when you want one.** Each thread has one agent, picked from a menu like a model: Claude Code, Codex, OpenCode, or a named agent (a reviewer you describe once in `deck.json`). That agent calls subagents, which report back to it, and opens sub-threads, which you can open and talk to as their own agent. Multi-agent workflows (plan, build and review; best of several; split by area) are one click on the new-thread screen.
 - **A shared task board.** Agents plan on the thread's board, claim files before they change them, and stay inside budgets you set.
 - **Terminal, desktop and phone.** The same threads in a TUI, a desktop app and a phone remote. Two Decks can link, even behind NAT, through a third they both trust.
 - **Quiet.** Deck starts no language servers or MCP servers of its own, sends no telemetry and checks for no updates (the installed desktop app checks for its own updates; see [Desktop app](#desktop-app)).
@@ -64,7 +64,8 @@ The desktop app carries the Deck engine inside it: open a project folder and wor
 - **Open a folder** runs the app's own engine (`deck serve --rpc`) in that folder, over gRPC on a Unix socket, with a token made for that launch. Deck stops when you close the folder or quit the app. Several projects can be open at once.
 - **Pair with a Deck** watches a Deck on another computer, or one you started yourself in a terminal: run `deck remote` (`--lan` for another computer), then `deck remote pair`, and paste the link or invite line. It uses a one-time pairing code, then a device token.
 - **Threads are rooms.** Each row says what its room is doing: working, needs you (an approval, a question, a blocked task), overlap (two agents changed the same file), changes to review, or done. The Inbox lists what waits for you across every open project, and the app notifies you when the window is in the background.
-- **The composer** picks who a message goes to, one chip per agent, with the mode (Plan, Ask or Yolo), slash commands (`/plan`, `/race`, `/share`, `/stop` …), `@` for agents, [named agents](#named-agents) and teammates, `#` for files, images, and queue or steer for a busy agent. Settings > Agents creates and edits the named agents.
+- **The composer** has the thread's agent menu (the agent, its model and effort; [named agents](#named-agents) too), the mode (Plan, Ask or Yolo), slash commands (`/plan`, `/race`, `/share`, `/stop` …), `#` or `@` for files, [labelled images and video](#images-and-video), and queue or steer for a busy agent. Every message goes to the thread's agent; there is no `@` for agents. Settings > Agents creates and edits the named agents.
+- **Sub-threads** sit under their parent in the thread list. The agent opens one (`thread.open`) for work you may want to follow or steer, or a second opinion; its answer comes back to the parent as a card with a link to open it, and you can talk to its agent there.
 - **The side panel** holds Changes (syntax-coloured diffs, revert, line comments to an agent), Tasks (the board, queued messages, races, worktree results), Agents (the tree of agents and subagents) and Side chat. A thread can run on a git worktree and branch of its own.
 - **Ports and preview.** When a terminal or an agent starts a dev server, its port shows as a chip; click it to open the page in the Preview tab.
 - **A browser for the crew.** The Browser tab is a small browser in the app's own Chromium that every agent of the room shares: each opens tabs of its own (`browser.open`), reads a page as a compact outline (`browser.snapshot`) and acts on it by ref (`click`, `type`, `select`, `press`, `scroll`, `wait`). You see their tabs and what they are doing live, approve the sites they ask for, and can take a tab over. An agent costs a tab, not a browser; pages nobody looks at are slowed or let go and come back at their address.
@@ -90,15 +91,17 @@ npm start
 
 Run `deck`, type, press enter.
 
-- **Who answers.** Type `@` to pick an agent and the model it should run: `@claude`, `@codex`, `@opencode` bring that agent in, `@charles` brings in a [named agent](#named-agents), `@all` asks everyone; otherwise whoever spoke last answers. The popup also lists your named agents and linked teammates. `$` works exactly like `@` (`$claude`), as it always has. `@` names that are no agent (`@Override`, `user@example.com`) and `$` ones (`$HOME`) stay plain text.
-- **More than one of an agent.** Nothing typed starts a second agent: a race does (`/race`), and so does an agent that starts helpers (`agent.spawn`). With two or more of a kind, the first is renamed `claude1` and each answers to its own name (`@claude2`); `@claude` goes to whichever is free (idle first, then the one with the fewest messages waiting). A second member from a named agent is `charles-2`. Agents address them the same way, and reach all of a kind with `claude*`. The old typed forms (`@claude+`, `@claude*`, `@claude×3`) are plain text now; the composer says so and points to `/race`.
-- **Files.** Type `#` to search the folder's files and add one to the message. Typing `@` and something path-like (`@src/`, `@main.go`) still offers files. Each agent speaks under its own CLI's mark and colour: `✻ claude`, `>_ codex`, `▯ opencode`; a named agent keeps its kind's mark, with its role after its name (`✻ charles · reviewer`).
-- **Agents talk to each other.** An agent can hand work to another; every hand-off shows in the chat as `→ @codex …`. After six agent-to-agent hand-offs Deck pauses until you write.
+- **Who answers.** The session's agent, shown under the editor with the model it runs (`✻ claude · claude-opus-5-5 · high`): every message goes to it. `ctrl+l` picks it, then its model and effort; picking another kind hands the thread to that agent, briefed on what was said. `@name` and `$name` in a message are plain text.
+- **More than one agent.** The agent brings them in itself: subagents (`agent.spawn`) that report back to it, sub-threads (`thread.open`) you can open in Sessions, where they sit under their parent, and races (`/race`).
+- **Files.** Type `#` or `@` to search the folder's files and add one to the message. Each agent speaks under its own CLI's mark and colour: `✻ claude`, `>_ codex`, `▯ opencode`; a named agent keeps its kind's mark, with its role after its name (`✻ charles · reviewer`).
+- **Agents talk to each other** through Deck's ops (`thread.send`, `agent.spawn`, `thread.open`), never by `@name` in a reply; every hand-off shows in the chat. Only a hand-off under a contract (objective, deliverable, done when, boundaries, check) starts another agent's turn: a plain message to a peer is information it reads next time, and a question goes to you, never to another agent. A thanks starts no turn, and the turns agents start without you have a budget per message of yours, after which Deck pauses until you write.
+- **How a turn ended.** Each agent turn ends as `done` (it finished a task, with the evidence its check asks for), `handoff` (it handed work on), `blocked` (it waits for you: a question) or `continue`; the clients show that state on the turn's message (`turn_end`).
 - **Working.** While agents work, the bottom line says who and for how long, with a spinner in each agent's colour.
-- **Models and effort.** `@` switches an agent's model as you address it; `ctrl+l` lists every model your CLIs offer (OpenCode: every model of every provider it is set up for), then the reasoning efforts that model takes.
+- **Models and effort.** After the agent, `ctrl+l` lists every model its CLI offers, named by the slug it runs once Deck has seen it (OpenCode: every model of every provider it is set up for), then the reasoning efforts that model takes.
 - **Approvals** open as a dialog with the command or the diff: allow, allow for the session, or deny.
 - **Plan and yolo.** `tab` switches plan mode, where agents read but change nothing. `ctrl+y` is yolo: everything is approved, and the screen tells you so.
 - **Pastes** of any size go in whole; big ones become an attachment the agent still reads in full.
+- **Images and video.** A pasted image or image path attaches it, labelled (`Screenshot 1`, or the file's name); a pasted path to a video attaches that (see [Images and video](#images-and-video)).
 - **Sessions.** `ctrl+n` starts one, `ctrl+s` switches. `deck -C` continues the last one.
 - `ctrl+p` lists every command; `esc` twice stops the agents.
 
@@ -167,7 +170,24 @@ The **Usage** pane in the sidebar shows the session's agents' plan meters, today
 
 ## Agents and threads
 
-A thread holds you and any number of agents. Each message goes to the agents you address, and an agent's reply that starts a line with `@name` (or `$name`) hands that line to the named agent.
+A thread holds you and one agent you talk to, its lead (docs/design/lead-agent-and-subthreads.md). Each message goes to it; pick another in the agent menu and that one takes over, briefed on the thread. The lead brings in others: subagents that report back to it and cannot be talked to, and sub-threads, threads of their own under the parent, whose agent you can talk to and whose answers to the lead's asks come back to it.
+
+### Images and video
+
+Every image you attach (a pasted screenshot, a dropped or picked file) gets a label: `Screenshot 1` for a paste, the file's name without its extension for a file, else `Image 1`. In the desktop app and on the phone, click (or tap) the label on its chip to rename it: Enter keeps it, Esc does not; at most 60 characters. The terminal shows the label on the chip but does not rename it; name an image in your message instead. The agent gets each image right after a line naming it, numbered in order, `[Image 1: login page error]`, so you can write "compare Image 1 and Image 2" or use your own labels. The timeline shows the label under each sent image.
+
+A video (MP4, WebM or QuickTime, one per message) attaches the same ways and is labelled `Video 1` or by its file name. It goes only to a lead whose model can watch it, through a CLI that can deliver it:
+
+| Agent | Video | How |
+| --- | --- | --- |
+| OpenCode | Gemini chat models (`google/gemini-…`, also through other providers) | an ACP `resource_link` to the file, which OpenCode passes on to models whose inputs list video |
+| Claude Code, Codex | no | their CLIs take images only, and Claude and GPT models take no video |
+| Antigravity | no | `agy`'s stream-json input takes text only |
+| Pi | no | not checked against `pi-acp`, so Deck sends it none |
+
+For any other lead the composer says so on the chip ("claude-opus-5-5 can't watch video") and holds the message until you remove the video or pick **Send as frames**: Deck takes up to 8 evenly spaced stills from it (one per second, at most 1280 px on a side) with `ffmpeg` and sends them as images labelled `Video 1 · 0:03`. Frames need `ffmpeg` on the computer running Deck; without it the button says so. In the terminal a pasted video path to such a lead goes as frames at once.
+
+Limits: a video is at most 50 MB from the desktop app or the terminal (a local Deck reads it from where it is) and 25 MB from the phone or a paired Deck (uploaded in chunks, `media.upload`). Deck checks a video by its bytes, not its name, and keeps it under its data directory (`.deck/media/<session>`, which git ignores), never in the project's files; it is removed with the session. A provider may cap a video lower than that.
 
 ### Named agents
 
@@ -189,27 +209,31 @@ A profile is a named recipe for an agent: the CLI it runs, a model and effort, a
 }
 ```
 
-`@charles` in a thread with no member called charles adds one from the profile, named `charles`, running its model and effort, with its role, instructions, voice and paths in its briefing; later `@charles` messages reach the same member; a race or an agent's helper from the profile is `charles-2`. Every agent's briefing lists the thread's members with their names, roles and kinds, and teaches `@name` for hand-offs. `/profiles` lists them; the roster shows a named agent as `✳ charles · reviewer`, always with its kind's mark, and its cost and plan limits count against its kind.
+Picking charles in the agent menu adds a member from the profile, named `charles`, running its model and effort, with its role, instructions, voice and paths in its briefing, and makes it the thread's agent; an agent can also start one (`agent.spawn {kind: "charles"}`) or open a sub-thread with it; a second member from the profile is `charles-2`. Every agent's briefing lists the thread's members with their names, roles and kinds. `/profiles` lists them; the roster shows a named agent as `✳ charles · reviewer`, always with its kind's mark, and its cost and plan limits count against its kind.
 
 Names follow the rules of a rename: letters, digits, `-` and `_`, at most 32; not `all`, `user`, `deck`, an agent kind or a linked teammate's name; case-insensitive and unique. `model`, `effort`, `role`, `instructions`, `voice`, `paths` and `color` (a CSS colour for the desktop) are optional. `deck doctor` says which profiles are skipped and why.
 
 ### Tasks and subagents
 
-The Tasks pane in the sidebar is the thread's shared task board. Each thread has an orchestration level, which says how much its agents organise the work themselves; new threads start at `orchestration` (default `auto`), and `o` in the Tasks pane (or the level control in the desktop's room header) changes a thread's:
+The Tasks pane in the sidebar is the thread's shared task board. Each thread has an orchestration level, which says how much its agents organise the work themselves; new threads start at `orchestration` (default `off`, so one agent works like its own CLI), and `o` in the Tasks pane (or the level control in the desktop's room header) changes a thread's:
 
 | Level | Agents may | Helpers per agent / per thread / depth | Board |
 | --- | --- | --- | --- |
 | `off` | start helpers only in a turn where you asked them to | 4 / 4 / 1 | a plain list |
 | `assist` | start a couple of helpers when that clearly helps | 2 / 6 / 1 | a plain list |
 | `auto` | plan on the board, split work, hand off and review each other | 4 / 12 / 2 | ready tasks run by themselves |
-| `full` | all of auto, deeper and wider, race (`task.race`); helpers' work is reviewed by another kind | 6 / 20 / 3 | ready tasks run by themselves |
+| `full` | all of auto, deeper and wider, race (`task.race`); helpers' work is reviewed by another kind; only the lead routes work: the others report to it and cannot `thread.send` each other | 6 / 20 / 3 | ready tasks run by themselves |
 
-Ready tasks run at most `max_parallel` at once, each with a new subagent of the kind, model and effort the task names. Agents' instructions say what their level lets them do, and a change of level reaches them with their next prompt. `orchestration_levels` in the config changes any of these per level (`{"full": {"max_depth": 4, "race": false}}`; the keys are `max_depth`, `max_children`, `max_subagents`, `max_work`, `ask_first`, `schedule`, `race` and `review`).
+Every turn the agents start without you (a hand-off, a task's brief or report, a review, a retry) counts against the level's turn budget: 12 at `off`, 16 at `assist`, 48 at `auto`, 96 at `full`. At the limit the thread pauses, and your next message or Continue lets the held turns go.
+
+The thread also pauses early when those turns stop getting anywhere (`max_stalls`, 3 at every level): that many turns in a row that change no file or task and run no command, that many near-identical messages, or two agents passing the work back and forth that many times while no file or task changes. The pause says who stalled and how. At `full` the first stall asks the thread's lead to re-plan instead (`replan`); a second one before you write pauses. Turns you start never count.
+
+Ready tasks run at most `max_parallel` at once, each with a new subagent of the kind, model and effort the task names. Agents' instructions say what their level lets them do, and a change of level reaches them with their next prompt. `orchestration_levels` in the config changes any of these per level (`{"full": {"max_depth": 4, "race": false}}`; the keys are `max_depth`, `max_children`, `max_subagents`, `max_work`, `max_turns`, `max_subthreads`, `max_stalls`, `ask_first`, `schedule`, `race`, `review` and `replan`).
 
 Ask an agent to split the work ("spin up two codex agents for the tests") and it does so itself with `agent.spawn {brief, kind}`: `kind` is an agent kind or a named agent. Each helper joins the thread as a lane marked with who spawned it, runs in the thread's permission mode, and reports its result back to its spawner.
 
 - **Trees.** Subagents can start subagents as deep as the level allows, below the agents you brought in; `max_depth`, `max_children` and `max_subagents` cap every level. The agents pane shows each subagent indented under the one that started it.
-- **Waiting.** An agent with subagents running does not finish its task when its turn ends; it waits for their results, which come back to it as messages. A subagent sees only its brief, not the thread so far; `thread.read` shows the rest.
+- **Waiting.** An agent with subagents running does not finish its task when its turn ends; it waits for their results, which come back to it as messages. Each result shows in the thread as it arrives, but the agent is woken once, when the last of what it handed out (tasks, subagents, sub-threads) has ended, and reads them together; a failure or a blocked task wakes it at once. A subagent sees only its brief, not the thread so far; `thread.read` shows the rest.
 - **Stopping.** When an agent stops, its subagents stop with it and their tasks are cancelled. `keep_orphans` leaves them running; their results then go to the nearest agent above that still runs.
 - **Brakes.** After each of your messages, agents may start the level's `max_work` subagents and tasks between them (8, 8, 24, 48) before the thread pauses, as it does after six agent-to-agent hand-offs; your next message or Continue goes on. An agent may send at most 12 messages a minute, and an agent with 8 unread messages from others takes no more until it catches up.
 - **Budgets.** `budget` limits each task run by subagents: `tokens`, `cost_usd` (as the CLIs report it) and `minutes`. A task's own budget (`budget_tokens`, `budget_usd`, `budget_minutes` on `task.create`; only whoever created it can change it) wins field by field. What a subagent spends counts toward its task and every task above it; a task over budget is blocked, its agents are stopped mid-turn, and whoever created it is told. `r` retries it with a fresh budget.
@@ -218,6 +242,7 @@ Ask an agent to split the work ("spin up two codex agents for the tests") and it
 - **Worktrees.** A task or spawn with `isolate` runs its subagent on a git worktree and branch of its own. On such a task in the Tasks pane, `a` applies the work to your tree as uncommitted edits, and `d` twice discards the worktree and branch. `x` cancels a task and `r` retries a failed one.
 - **Races.** `/race fix the flaky test` in the desktop composer opens the race builder: add 2 to 6 entrants, each an agent kind or a named agent with its model and effort, so one race can hold codex, claude and claude again on the same model. Start runs exactly those entrants on the same brief, each on a worktree of its own (`StartRace` over gRPC, `race.start` over the remote protocol); agents do the same with `task.race` at orchestration `full`. The Tasks pane shows the entries under the race, each with its files, `+/-` lines, tokens and minutes; `enter` shows its files and result. `a` on an entry keeps it: its changes go into your tree, and the other entries are stopped and discarded. With `judge` set, a judge agent ranks the entries when they end.
 - **Review.** A task can ask for a reviewer of another kind (`review: other`, or a kind, on `task.create`, `agent.spawn` or `task.race`; config `review` sets a default for tasks that subagents run). When the work is finished, the task goes to `review` and Deck starts the reviewer with the task, the result and the changes. It approves (`review.approve`) or sends the work back with notes (`review.changes`) for up to two rounds; after that the task is blocked for you. With one kind installed the task is done, with a note that nobody reviewed it.
+- **Done needs evidence.** A task can name a `check`, the command that proves it done (`go test ./pkg/x`), on `task.create`, `agent.spawn` or a `thread.send` hand-off. It becomes done only when the newest run of that command by whoever does the work, since their last edit, exited 0; Deck weighs this when the reporting agent's turn ends. Without it, `task.done` (or the reply that would finish a hand-off) sends the task to `review` and straight back to its owner with "no passing run of `<check>` since the last change", for up to two rounds; after that it is blocked for you. Tasks without a check finish as before.
 - **Memory pinned to code.** Agents pin short notes to files or line ranges (`memory.add`). When the code changes, Deck flags each note as fresh, moved (with the new lines), changed or gone. Notes are kept per repository in `~/.deck/memory`, and a task brief or a file lease names the notes pinned to its files.
 
 ### How agents reach Deck
@@ -234,9 +259,10 @@ Capabilities are ops, not tools, so adding one never adds a tool. Agents hear ab
 
 | Op | What it does |
 | --- | --- |
-| `thread.send {to, message}` | Message another agent in the thread, or `all`; a kind (`claude`) reaches whichever of that kind is free, `claude*` all of them. It shows in the thread like an `@name` mention. |
+| `thread.send {to, objective, deliverable, done_when?, boundaries?, check?, message?}` | Hand work to another agent in the thread under a contract: it becomes a task the recipient owns (or `task`/`new_task` names one), and its reply or `task.done` is the result that comes back. Only a hand-off starts the recipient's turn; a plain `{to, message}` to a peer is information for its next briefing, though it still reaches the sender's own subagents, the agent it works for, and a peer whose message it answers. A question to a peer goes to the user instead. At orchestration `full` only the lead routes: the others may message it and their own parent or subagents only. `to` may be `all`; a kind (`claude`) reaches whichever of that kind is free, `claude*` all of them. |
 | `thread.read` | The current shared thread. |
 | `thread.roster` | Who is in the thread: each agent's name, kind, model, status, task, parent and branch. |
+| `thread.open {brief, title?, kind?, model?, effort?}`, `thread.post {thread, message}`, `thread.children` | The thread's agent opens a sub-thread: a thread of its own under this one, led by an agent of `kind`, that the user can open and talk to; its answer to the brief (and to each `thread.post`) comes back as a message. Opening and each follow-up count against the thread's turn budget; `max_subthreads` per level (2, 4, 8, 16). |
 | `lease.acquire {paths, exclusive?, minutes?, reason?}`, `lease.release {paths?}`, `lease.list` | Claim files of the shared work tree, give them back, and see who holds what. |
 | `task.contract {peer, brief, title?}` | Ask a teammate's Deck to do a task (you allow it first); its reply and a capsule of its changes come back. |
 | `review.approve {id, note?}`, `review.changes {id, notes}` | The reviewer of a task in `review` approves it (done, with the note) or sends it back to its owner with notes. `task.create`, `agent.spawn` and `task.race` take `review`: a kind, `other` or `none`. |
@@ -308,7 +334,7 @@ Roles point one way. The role on a teammate's row is what *it* may do on *your* 
   "bell": true,
   "tell_agents_name": false,
   "track_changes": true,
-  "orchestration": "auto",
+  "orchestration": "off",
   "orchestration_levels": {},
   "max_parallel": 3,
   "max_depth": 0,

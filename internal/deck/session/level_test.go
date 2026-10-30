@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func TestNewThreadsStartAtTheConfiguredLevel(t *testing.T) {
 	cfg := testCfg()
 	cfg.Orchestration = ""
 	r := newRigWith(t, t.TempDir(), false, cfg, nil, nil)
-	if info, _ := r.m.Thread(r.thread(t)); info.Orchestration != config.LevelAuto {
+	if info, _ := r.m.Thread(r.thread(t)); info.Orchestration != config.LevelOff {
 		t.Fatalf("default level = %q", info.Orchestration)
 	}
 	cfg.Orchestration = config.LevelFull
@@ -176,7 +177,7 @@ func TestMembersHearOfALevelChange(t *testing.T) {
 	if err := r.m.SetLevel(tid, config.LevelFull); err != nil {
 		t.Fatal(err)
 	}
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude's turn", func() bool { return len(r.claude.prompts("claude")) == 1 })
 	has(t, r.claude.prompts("claude")[0], "The user set orchestration to full", "task.race")
 }
@@ -199,4 +200,37 @@ func TestFullReviewsHelpersWork(t *testing.T) {
 	if got := r.m.reviewOf(store.Task{}, config.Levels[config.LevelFull]); got != "" {
 		t.Fatalf("the user's own task: %q", got)
 	}
+}
+
+// A lone agent at level off gets the short briefing of an agent working
+// for the user: no crew, no board, no leases. When another agent joins, its
+// briefing says how to reach it. It is not briefed on its own changes to
+// the board.
+func TestASoloAgentIsBriefedLikeItsOwnCLI(t *testing.T) {
+	op := func(name, args string) fake.Step {
+		return fake.Step{Exec: &fake.Exec{Op: name, Args: json.RawMessage(args)}}
+	}
+	r := newRig(t, []fake.Script{
+		turn(op("task.create", `{"title":"read the code"}`), say("planned"), finish()),
+		turn(say("ok"), finish()),
+	}, nil)
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	sp, _ := r.claude.spec("claude")
+	has(t, sp.Instructions, "working for tester in Deck", "agent.spawn")
+	lacks(t, sp.Instructions, "shared Deck thread", "task.create", "lease.acquire", "Orchestration is")
+	if err := r.m.Post(tid, "plan it"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the first turn", func() bool { return r.c.turnDones("claude") == 1 })
+	r.add(t, tid, "codex")
+	if err := r.m.postAt(tid, "@claude go on"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the second turn", func() bool { return len(r.claude.prompts("claude")) == 2 })
+	p := r.claude.prompts("claude")[1]
+	has(t, p, `codex joined the thread; to hand it work, execute thread.send {to: "codex", objective, deliverable, done_when}`)
+	lacks(t, p, "task t1")
+	sp, _ = r.codex.spec("codex")
+	has(t, sp.Instructions, "shared Deck thread with claude")
 }

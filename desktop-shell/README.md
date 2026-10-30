@@ -4,9 +4,9 @@ The Deck desktop app. Like Claude Desktop with Claude Code, it carries the
 Deck engine inside it: open a project folder and work with its agents, no
 separate CLI to install. It shows the threads of every open project, the
 agents in each thread and their work, and it runs many agents at once. The
-layout is a sidebar of projects and threads, a chat timeline, a composer
-with its agents, the room's tabs (changes, tasks, agents, side chat) and a
-terminal drawer.
+layout is a sidebar of projects and threads, then the room as panes you
+arrange like tmux: the chat timeline with its composer, the room's views
+(changes, graph, tasks, agents, side chat) and terminals.
 
 ![The main window](docs/screenshot.png)
 
@@ -258,9 +258,8 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   task's branch, and ask. A race starts two to six agents, of any kinds,
   on one brief, each on a worktree of its own; you keep the best entry. Agents
   shows the tree of agents and subagents, each with its model, effort,
-  context, cost, leases and the tool it runs. In a window narrower than
-  1100px, the side panel floats over the room; its toggle in the header
-  shows and hides it.
+  context, cost, leases and the tool it runs. Its toggle in the header
+  shows and hides it; each view is a pane of the room's layout (below).
 - **Branches.** Under the start cards, "On its own branch" starts the new
   thread on a git worktree and branch of its own (`deck/<id>`). It is on
   by default, the app remembers the choice, and it shows only for a Deck
@@ -344,11 +343,28 @@ text and one amber lamp), and T3's look stay in the theme catalog.
 - **Git.** The strip under the composer shows the branch; switch or create
   one there. The header's git menu commits (all changes, with a message),
   pushes, pulls, and opens or merges a pull request (through `gh`).
-- **Terminal** (Ctrl+J). A drawer of shells in the project folder. Tabs keep
-  running while the drawer is hidden; drag its top edge to resize it. The
+- **Terminal** (Ctrl+J). Shells in the project folder, under the
+  conversation until you move them. Each terminal is a pane: + adds one as
+  a tab, a split adds one beside. They keep running while hidden. The
   shell is `$SHELL` on macOS and Linux. On Windows (10 version 1809 or
   later, through ConPTY) it is PowerShell 7, else Windows PowerShell, else
   the command prompt.
+- **Layout.** The conversation, each terminal and each of the side panel's
+  views are panes. Drag a pane by its tab (the conversation by the bar on
+  its top edge) onto another pane: its edges split it there, its middle
+  adds the pane as a tab, and the room's own edges run it along the whole
+  side; a dashed zone shows where it goes, Escape cancels. Drag the gap
+  between panes to resize them, or focus it and use the arrows;
+  double-click it to share evenly. A pane's ⋯ menu splits it with a new
+  terminal (Ctrl+Shift+\ right, Ctrl+Shift+- down), zooms it to fill the
+  room (Ctrl+Shift+M) and closes it; Ctrl+Shift+[ and ] move between
+  panes. The Layout button in the header has presets (Default, Terminal
+  below, Terminal right, Focus, Review), shows or hides each pane, keeps a
+  layout for this project only, and resets. The layout is kept in the
+  window's localStorage; one that does not read back gives Default. Where
+  the panes cannot all fit at their least width (a narrow window), the
+  ones beside the conversation float over it, as the side panel did; Settings
+  > Appearance > Layout can float the side panel at any width.
 - **Ports and preview.** When a terminal or an agent's command prints where
   a dev server listens (`Local: http://localhost:5173/`, `listening on port
   3000`), the port shows as a chip, such as `:3000` with a green dot, in the
@@ -381,6 +397,8 @@ text and one amber lamp), and T3's look stay in the theme catalog.
 - **Keys.** On a Mac, Cmd takes the place of Ctrl. Ctrl+K searches threads
   and commands. Ctrl+N starts a thread, Ctrl+O opens a folder, Ctrl+,
   opens Settings. Ctrl+B hides the sidebar, Ctrl+J the terminal.
+  Ctrl+Shift+\ and Ctrl+Shift+- split the focused pane with a new
+  terminal, Ctrl+Shift+M zooms it, Ctrl+Shift+[ and ] move between panes.
   Ctrl+Shift+Y turns Yolo mode on and off, so Ctrl+Y stays Redo in a text
   field. Ctrl+Alt+L goes to the next room that needs you, in any open
   project. Ctrl+1 to Ctrl+9 open the first nine rooms of the sidebar; hold
@@ -524,7 +542,11 @@ renderer (React, sandboxed)                  main process (Node)                
   picks the page; `ui/useShell.ts` holds its navigation, keys, menu and
   palette commands, and `ui/useRoom.ts` the open room's state and send path
   (first message, steer, slash commands, Yolo). `ui/Room.tsx` draws the
-  room (header, lanes, timeline, composer), `ui/NewThread.tsx` the empty
+  room (header, lanes, timeline, composer), `layout/` the room's panes
+  (`tree.ts` the pure layout tree: split, dock, close, resize, presets and
+  the check of a saved one; `store.ts` keeps it; `Workspace.tsx` draws the
+  splits, stacks, dividers and drop zones; `useRoomLayout.ts` wires it to
+  the window's toggles and keys), `ui/NewThread.tsx` the empty
   room, and `ui/Toasts.tsx` and `ui/EngineStopped.tsx` what their names
   say. The sidebar is `ui/Sidebar.tsx` with `ui/ThreadRow.tsx`,
   `ui/ProjectGroup.tsx` (groups, the project filter, shared rooms) and

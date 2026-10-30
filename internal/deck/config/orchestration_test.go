@@ -14,7 +14,7 @@ func TestLevelsGrow(t *testing.T) {
 	var prev Level
 	for i, name := range LevelNames {
 		l := Levels[name]
-		if i > 0 && (l.MaxDepth < prev.MaxDepth || l.MaxSubagents < prev.MaxSubagents || l.MaxWork < prev.MaxWork) {
+		if i > 0 && (l.MaxDepth < prev.MaxDepth || l.MaxSubagents < prev.MaxSubagents || l.MaxWork < prev.MaxWork || l.MaxTurns < prev.MaxTurns || l.MaxTurns == 0) {
 			t.Errorf("%s shrinks a limit: %+v after %+v", name, l, prev)
 		}
 		prev = l
@@ -22,7 +22,9 @@ func TestLevelsGrow(t *testing.T) {
 	if !Levels[LevelOff].AskFirst || Levels[LevelAssist].AskFirst || Levels[LevelAssist].Schedule || !Levels[LevelAuto].Schedule || !Levels[LevelFull].Race || Levels[LevelAuto].Race {
 		t.Fatalf("levels = %+v", Levels)
 	}
-	if (Config{}).StartLevel() != LevelAuto || (Config{Orchestration: "assist"}).StartLevel() != LevelAssist {
+	// One agent works like its own CLI until the user asks for more: a new
+	// thread's board is a list, not a scheduler that starts subagents.
+	if (Config{}).StartLevel() != LevelOff || (Config{Orchestration: "assist"}).StartLevel() != LevelAssist || Levels[DefaultLevel].Schedule {
 		t.Fatal("start level")
 	}
 }
@@ -31,7 +33,7 @@ func TestLevelsGrow(t *testing.T) {
 // level; an unknown level reads as off.
 func TestLevelOverrides(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	raw := `{"orchestration": "full", "max_children": 3, "orchestration_levels": {"full": {"max_depth": 5, "race": false}, "assist": {"schedule": true}}}`
+	raw := `{"orchestration": "full", "max_children": 3, "orchestration_levels": {"full": {"max_depth": 5, "race": false}, "assist": {"schedule": true, "max_stalls": 5}}}`
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -40,10 +42,10 @@ func TestLevelOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	full := c.Level(LevelFull)
-	if full.MaxDepth != 5 || full.Race || full.MaxChildren != 3 || full.MaxSubagents != 20 || full.Review != "other" {
+	if full.MaxDepth != 5 || full.Race || full.MaxChildren != 3 || full.MaxSubagents != 20 || full.Review != "other" || full.MaxStalls != 3 || !full.Replan {
 		t.Fatalf("full = %+v", full)
 	}
-	if a := c.Level(LevelAssist); !a.Schedule || a.MaxChildren != 2 {
+	if a := c.Level(LevelAssist); !a.Schedule || a.MaxChildren != 2 || a.MaxStalls != 5 || a.Replan {
 		t.Fatalf("assist = %+v", a)
 	}
 	if c.Level("max") != c.Level(LevelOff) {
@@ -62,6 +64,7 @@ func TestLevelValidation(t *testing.T) {
 		{Config{Orchestration: "on"}, "orchestration must be"},
 		{Config{OrchestrationLevels: map[string]json.RawMessage{"max": json.RawMessage(`{}`)}}, "no level"},
 		{Config{OrchestrationLevels: map[string]json.RawMessage{"auto": json.RawMessage(`{"max_depth": -1}`)}}, "0 or more"},
+		{Config{OrchestrationLevels: map[string]json.RawMessage{"auto": json.RawMessage(`{"max_stalls": -1}`)}}, "0 or more"},
 		{Config{OrchestrationLevels: map[string]json.RawMessage{"auto": json.RawMessage(`{"review": "gemini"}`)}}, "review must be"},
 		{Config{OrchestrationLevels: map[string]json.RawMessage{"auto": json.RawMessage(`{"race": "yes"}`)}}, "orchestration_levels.auto"},
 	} {

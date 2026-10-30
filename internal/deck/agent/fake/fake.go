@@ -420,7 +420,8 @@ func (r *run) callHub(t *turn, name, to, text string, ex *Exec, msg *agent.Messa
 		title = "to " + to + ": " + oneLine(text)
 		args := map[string]any{"to": to, "message": text}
 		if msg != nil {
-			for k, v := range map[string]string{"task": msg.Task, "new_task": msg.NewTask, "expect": msg.Expect, "done_when": msg.DoneWhen} {
+			for k, v := range map[string]string{"task": msg.Task, "new_task": msg.NewTask, "expect": msg.Expect, "done_when": msg.DoneWhen,
+				"objective": msg.Objective, "deliverable": msg.Deliverable, "boundaries": msg.Boundaries, "check": msg.Check} {
 				if v != "" {
 					args[k] = v
 				}
@@ -865,6 +866,17 @@ func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
 		ms = ClaudeModels()
 	}
 	return append([]agent.ModelInfo(nil), ms...), nil
+}
+
+// TakesVideo implements agent.VideoInput: the models it lists with Video
+// (WithModels) take video, and no other.
+func (a *adapter) TakesVideo(model string) bool {
+	for _, m := range a.models {
+		if m.ID == model && m.Video {
+			return true
+		}
+	}
+	return false
 }
 
 // SetMode implements agent.ModeSetter: it records the mode (the fake does not

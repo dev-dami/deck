@@ -143,9 +143,9 @@ func TestOverlappingEditsAreReported(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
-	_ = r.m.Post(tid, "$codex go")
+	_ = r.m.postAt(tid, "$codex go")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 
 	notes := func(sub string) int {
@@ -158,7 +158,7 @@ func TestOverlappingEditsAreReported(t *testing.T) {
 	waitFor(t, "the lease notice", func() bool { return notes("codex changed b.go, which claude holds b.go") == 1 })
 
 	// claude sees both in its next prompt.
-	_ = r.m.Post(tid, "$claude anything new?")
+	_ = r.m.postAt(tid, "$claude anything new?")
 	waitFor(t, "claude again", func() bool { return r.c.turnDones("claude") == 2 })
 	p := r.claude.prompts("claude")[1]
 	has(t, p, "[deck] claude and codex both changed a.go", "[deck] codex changed b.go")
@@ -171,7 +171,7 @@ func TestLeaseOpsThroughTheHub(t *testing.T) {
 		say("ok"), finish())})
 	tid := r.thread(t)
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$codex go")
+	_ = r.m.postAt(tid, "$codex go")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 	res := r.c.toolResults("codex", "deck")
 	if len(res) != 2 {

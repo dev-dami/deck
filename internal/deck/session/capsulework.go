@@ -563,7 +563,7 @@ func (m *Manager) HandCapsule(threadID, ref, to, message string) error {
 	if msg == "" {
 		msg = fmt.Sprintf("Here is capsule %s v%d: review it and take it on.", c.Name, ver)
 	}
-	return m.Post(threadID, "@"+a.getName()+" "+msg+"\n"+lines)
+	return m.postAt(threadID, "@"+a.getName()+" "+msg+"\n"+lines)
 }
 
 // CapsuleView is a named capsule with where it stands.

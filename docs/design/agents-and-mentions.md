@@ -1,6 +1,8 @@
 # Named agents, `@` mentions and `#` context
 
-Status: accepted, 2026-10-26. Deck becomes an agent development environment.
+Status: accepted, 2026-10-26; the `@` addressing of agents is superseded by
+[lead-agent-and-subthreads.md](lead-agent-and-subthreads.md).
+Deck becomes an agent development environment.
 Agents can be named ("Charles"), carry a role and an optional voice, and are
 addressed with `@`, as people are. Files and other context move to `#`.
 

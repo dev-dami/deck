@@ -222,9 +222,9 @@ describe("the per-project app state", () => {
     const store = deck();
     const rooms = new RoomMetaStore();
     attachProject("r6", "folder:/r6", store, { changes: async () => [], rooms, capabilities: () => ["ArchiveSession"] });
-    rooms.apply({ k: "session", id: "a", attention: "question", branch: "", archived: false });
+    rooms.apply({ k: "session", id: "a", attention: "question", branch: "", archived: false, parent: "", lead: null });
     expect(projectState("r6").rooms["a"]).toMatchObject({ state: "needs-you", label: "Answer a question" });
-    rooms.apply({ k: "session", id: "a", attention: "", branch: "", archived: false });
+    rooms.apply({ k: "session", id: "a", attention: "", branch: "", archived: false, parent: "", lead: null });
     expect(projectState("r6").rooms["a"]?.state).toBe("idle");
     // The rpc client keeps the mark just before the notice reaches the store.
     rooms.apply({ k: "note", session: "b", note: { text: "codex-2 touches auth.go too", via: "overlap" } });

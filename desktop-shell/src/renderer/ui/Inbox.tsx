@@ -62,7 +62,7 @@ function Row({
       data-item={item.id}
       data-state={item.state}
       className={cn(
-        "inbox-item flex cursor-pointer gap-3 rounded-[12px] px-3 py-3 transition-colors",
+        "inbox-item card flex cursor-pointer gap-3 rounded-[12px] px-3 py-3 transition-colors",
         selected ? "bg-selected" : "hover:bg-hover",
       )}
       onClick={onSelect}

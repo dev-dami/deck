@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { KV } from "./auth";
 import { Controller } from "./controller";
 import { FakeClock, type FakeSocket, flush, SocketLog, welcomeFrame } from "./fakes";
+import { UPLOAD_CHUNK_BYTES } from "./images";
 import { isRecord } from "./protocol";
 import type { ThemeTarget } from "./theme";
 
@@ -78,10 +79,13 @@ function themeRecorder() {
     removeProperty: (n) => {
       vars.delete(n);
     },
-    setScheme: () => {},
+    setScheme: (s) => {
+      scheme.push(s);
+    },
     setThemeColor: () => {},
   };
-  return { vars, target };
+  const scheme: Array<string | null> = [];
+  return { vars, target, scheme };
 }
 
 function setup(over: { storage?: KV | null; pairStatus?: number } = {}) {
@@ -398,6 +402,26 @@ describe("events", () => {
     expect(t.theme.vars.get("--kind-codex")).toBe("#5b4bd6");
   });
 
+  test("Deck's own look leaves the colours to style.css", async () => {
+    const t = setup();
+    const sock = await paired(t);
+    sock.receive(welcomeFrame({}));
+    sock.receive({
+      t: "ev",
+      seq: 1,
+      e: "theme.changed",
+      p: {
+        palette: { bg_base: "#19191b", primary: "#0a84ff", fg_base: "#e3e3e5" },
+        kinds: { claude: { tint: "#ff9f5a", mark: "✻" } },
+      },
+    });
+    // No palette, no tints and no scheme: the phone's own light or dark.
+    expect([...t.theme.vars.keys()]).toEqual([]);
+    expect(t.theme.scheme.at(-1)).toBeNull();
+    // The marks still come from the theme.
+    expect(t.controller.state.theme?.kinds["claude"]?.mark).toBe("✻");
+  });
+
   test("device.paired toasts; roster.changed for the open session refetches it", async () => {
     const t = setup();
     const sock = await paired(t);
@@ -523,6 +547,51 @@ describe("requests", () => {
     expect(sent["p"]).toMatchObject({ session_id: "s1", text: "hi", images: [img] });
     expect(typeof (sent["p"] as { idempotency_key: unknown }).idempotency_key).toBe("string");
     sock.receive({ t: "res", id: sent["id"], ok: true, r: { message_id: "m1" } });
+    expect(await p).toBe(true);
+  });
+
+  test("a video is uploaded in chunks, then chat.send names it with its label", async () => {
+    const t = setup();
+    const sock = await paired(t);
+    sock.receive(welcomeFrame({}));
+    const bytes = new Uint8Array(UPLOAD_CHUNK_BYTES + 10);
+    bytes.set([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70]);
+    const file = new Blob([bytes], { type: "video/mp4" });
+    const p = t.controller.send("s1", "look", [
+      { name: "clip.mp4", mime: "video/mp4", label: "the crash", file },
+    ]);
+    const answerUpload = async (n: number) => {
+      for (let i = 0; i < 100 && sock.requests("media.upload").length < n; i++) {
+        await new Promise((r) => setTimeout(r, 2));
+      }
+      const req = sock.requests("media.upload")[n - 1];
+      sock.receive({ t: "res", id: req?.["id"], ok: true, r: { upload_id: "up1", received: 0 } });
+      return req?.["p"] as Record<string, unknown>;
+    };
+    const first = await answerUpload(1);
+    expect(first).toMatchObject({
+      session_id: "s1",
+      name: "clip.mp4",
+      mime: "video/mp4",
+      size: bytes.length,
+      offset: 0,
+    });
+    expect(atob(String(first["data_b64"])).length).toBe(UPLOAD_CHUNK_BYTES);
+    const second = await answerUpload(2);
+    expect(second).toMatchObject({
+      session_id: "s1",
+      upload_id: "up1",
+      offset: UPLOAD_CHUNK_BYTES,
+    });
+    expect(second["size"]).toBeUndefined();
+    for (let i = 0; i < 100 && sock.requests("chat.send").length === 0; i++) await flush();
+    const sent = sock.requests("chat.send")[0];
+    expect(sent?.["p"]).toMatchObject({
+      session_id: "s1",
+      text: "look",
+      images: [{ name: "clip.mp4", mime: "video/mp4", label: "the crash", upload_id: "up1" }],
+    });
+    sock.receive({ t: "res", id: sent?.["id"], ok: true, r: { message_id: "m1" } });
     expect(await p).toBe(true);
   });
 

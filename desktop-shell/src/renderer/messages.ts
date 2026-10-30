@@ -20,7 +20,7 @@ export function lastReplyId(messages: readonly Message[]): string | null {
 }
 
 // Retry: the person's message before the reply, sent again to the agent
-// that replied.
+// that replied; null when there is none.
 export function retryText(messages: readonly Message[], replyId: string): string | null {
   const i = messages.findIndex((m) => m.id === replyId);
   const agent = messages[i]?.agent;
@@ -28,6 +28,8 @@ export function retryText(messages: readonly Message[], replyId: string): string
   for (let j = i - 1; j >= 0; j--) {
     const m = messages[j];
     if (m?.role !== "user") continue;
+    // A parent agent's brief to a sub-thread is not the person's to send.
+    if (m.agent !== undefined) return null;
     const text = messageText(m).trim();
     return text === "" ? null : setAgents(text, [agent]);
   }

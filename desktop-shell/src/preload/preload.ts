@@ -95,6 +95,7 @@ const bridge: DeckBridge = {
   onNotificationClick: (fn) => listen<[{ tag: string }]>("deck:notification-click", fn),
   onPreview: (fn) => listen<[PreviewState]>("deck:preview", fn),
   folderPath: (file) => webUtils.getPathForFile(file),
+  filePath: (file) => webUtils.getPathForFile(file),
 };
 
 contextBridge.exposeInMainWorld("deck", bridge);

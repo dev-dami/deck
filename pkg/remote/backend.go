@@ -28,11 +28,17 @@ type Info struct {
 	Theme   wire.Theme
 }
 
-// Image is an attachment uploaded from the phone, already decoded.
+// Image is an image or a video attached to a message, already decoded:
+// its bytes, or for a video from a client on the engine's own machine the
+// local file in Path. Label is what the person called it; Frames sends a
+// video as still frames.
 type Image struct {
-	Name string
-	Mime string
-	Data []byte
+	Name   string
+	Mime   string
+	Data   []byte
+	Path   string
+	Label  string
+	Frames bool
 }
 
 // Event is something the phone should hear about. Scoped events reach only

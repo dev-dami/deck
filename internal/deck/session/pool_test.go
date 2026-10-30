@@ -65,7 +65,7 @@ func TestKindSuffixesAreText(t *testing.T) {
 func TestTypedRaceIsText(t *testing.T) {
 	r, tid, _ := raceRig(t, nil, []fake.Script{turn(say("ok"), finish())})
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "$codex×3 fix the flaky test"); err != nil {
+	if err := r.m.postAt(tid, "$codex×3 fix the flaky test"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "codex's turn", func() bool { return r.c.turnDones("codex") == 1 })
@@ -84,7 +84,7 @@ func TestSecondInstanceRenamesFirst(t *testing.T) {
 	r.add(t, tid, "claude")
 	r.add(t, tid, "claude")
 	r.add(t, tid, "claude")
-	if err := r.m.Post(tid, "$codex"); err != nil {
+	if err := r.m.postAt(tid, "$codex"); err != nil {
 		t.Fatal(err)
 	}
 	th, _ := r.m.Thread(tid)
@@ -117,7 +117,9 @@ func TestAgentsReachPools(t *testing.T) {
 	c1 := r.add(t, tid, "claude")
 	c2 := r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "$codex go"); err != nil {
+	worksFor(t, r.m, c1, "codex") // plain messages to them start turns
+	worksFor(t, r.m, c2, "codex")
+	if err := r.m.postAt(tid, "$codex go"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })

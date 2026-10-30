@@ -25,10 +25,11 @@ type ProjectCaller struct {
 // NewProjectCaller returns a caller over be.
 func NewProjectCaller(be remote.Backend) *ProjectCaller {
 	return &ProjectCaller{s: &Server{
-		be:   be,
-		hub:  hub.New(),
-		idem: newIdem(time.Now),
-		now:  time.Now,
+		be:      be,
+		hub:     hub.New(),
+		idem:    newIdem(time.Now),
+		uploads: newUploads(time.Now),
+		now:     time.Now,
 	}}
 }
 

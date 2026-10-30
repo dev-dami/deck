@@ -639,19 +639,21 @@ func TestDemoDuoScriptsShape(t *testing.T) {
 	if len(c) != 2 || len(x) != 1 {
 		t.Fatalf("turns: claude %d codex %d", len(c), len(x))
 	}
-	var sends, mentions int
+	// claude hands the review over under a contract; codex's final reply is
+	// the result, so it sends nothing itself.
+	var sends, answers int
 	for _, st := range c[0] {
-		if st.Message != nil && st.Message.To == "codex" {
+		if st.Message != nil && st.Message.To == "codex" && st.Message.Objective != "" && st.Message.Deliverable != "" {
 			sends++
 		}
 	}
 	for _, st := range x[0] {
-		if st.Event.Kind == agent.KindAssistantText && strings.Contains(st.Event.Text, "\n$claude ") {
-			mentions++
+		if st.Message != nil {
+			answers++
 		}
 	}
-	if sends != 1 || mentions != 1 {
-		t.Fatalf("sends=%d mentions=%d", sends, mentions)
+	if sends != 1 || answers != 0 {
+		t.Fatalf("hand-offs=%d codex sends=%d", sends, answers)
 	}
 	adapters, hub := DemoDuo(0)
 	if adapters["claude"] == nil || adapters["codex"] == nil || hub == nil {

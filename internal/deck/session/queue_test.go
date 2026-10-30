@@ -66,7 +66,7 @@ func busyClaude(t *testing.T, claudeSteps ...fake.Script) (*rig, string) {
 	r := newRig(t, scripts, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	if err := r.m.Post(tid, "$claude build it"); err != nil {
+	if err := r.m.postAt(tid, "$claude build it"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "approval", func() bool { return len(r.c.approvals()) == 1 })
@@ -82,7 +82,9 @@ func TestPostWithImagesGoesToImageSendersOnly(t *testing.T) {
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
 
-	res, err := r.m.PostWith(tid, "$all look at these", imgs("a.png", "b.png"))
+	images := imgs("a.png", "b.png")
+	images[1].Label = "login page error"
+	res, err := r.m.postAddressed(tid, "$all look at these", images)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +104,7 @@ func TestPostWithImagesGoesToImageSendersOnly(t *testing.T) {
 	if len(p) != 1 {
 		t.Fatalf("codex prompts = %q", p)
 	}
-	has(t, p[0], "look at these", "[deck] The user attached 2 image(s) Deck could not pass to you directly; open them with your own file tools if you can: /tmp/a.png, /tmp/b.png")
+	has(t, p[0], "look at these", "[deck] The user attached 2 image(s) Deck could not pass to you directly; open them with your own file tools if you can: [Image 1] /tmp/a.png, [Image 2: login page error] /tmp/b.png")
 
 	// the user message carries the id and the image paths, live and stored
 	user := r.c.events(func(e EventMsg) bool { return e.FromUser() })
@@ -114,12 +116,45 @@ func TestPostWithImagesGoesToImageSendersOnly(t *testing.T) {
 	var found bool
 	for _, e := range entries {
 		if e.Type == store.EntryUser && e.ID == res.EntryID {
-			found = len(e.Images) == 2
+			found = len(e.Images) == 2 && len(e.ImageLabels) == 2 && e.ImageLabels[1] == "login page error"
 		}
 	}
 	if !found {
-		t.Error("stored user entry lacks the image paths or id")
+		t.Error("stored user entry lacks the image paths, labels or id")
 	}
+}
+
+// TestVideoGoesOnlyToModelsThatTakeIt covers a video in a message to two
+// members: the one whose model takes video is sent it, the other is told
+// where it is instead.
+func TestVideoGoesOnlyToModelsThatTakeIt(t *testing.T) {
+	r := newRig(t, []fake.Script{turn(say("seen"), finish())}, []fake.Script{turn(say("heard"), finish())})
+	r.claude.images, r.claude.video = true, true
+	r.codex.images = true
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	r.add(t, tid, "codex")
+
+	media := []agent.Image{
+		{Path: "/tmp/a.png", MediaType: "image/png", Label: "before"},
+		{Path: "/tmp/clip.mp4", MediaType: "video/mp4", Label: "the crash"},
+	}
+	if _, err := r.m.postAddressed(tid, "$all what happens here", media); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "both turns", func() bool { return r.c.turnDones("claude") == 1 && r.c.turnDones("codex") == 1 })
+
+	calls := r.claude.imageCalls("claude")
+	if len(calls) != 1 || len(calls[0].images) != 2 || !calls[0].images[1].IsVideo() || calls[0].images[1].Label != "the crash" {
+		t.Fatalf("claude image calls = %+v", calls)
+	}
+	lacks(t, calls[0].prompt, "cannot watch")
+
+	calls = r.codex.imageCalls("codex")
+	if len(calls) != 1 || len(calls[0].images) != 1 || calls[0].images[0].Path != "/tmp/a.png" {
+		t.Fatalf("codex image calls = %+v", calls)
+	}
+	has(t, calls[0].prompt, "what happens here", "[deck] The user attached 1 video(s) your model cannot watch, so Deck did not pass them to you; they are at: [Video 1: the crash] /tmp/clip.mp4")
 }
 
 func TestPostIsPostWithoutImages(t *testing.T) {
@@ -127,7 +162,7 @@ func TestPostIsPostWithoutImages(t *testing.T) {
 	r.claude.images = true
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	if err := r.m.Post(tid, "$claude hi"); err != nil {
+	if err := r.m.postAt(tid, "$claude hi"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "turn", func() bool { return r.c.turnDones("claude") == 1 })
@@ -143,7 +178,7 @@ func TestQueueLifecycleAndPostResult(t *testing.T) {
 	if q := r.m.Queue(tid); len(q) != 0 {
 		t.Fatalf("queue = %+v", q)
 	}
-	res, err := r.m.PostWith(tid, "$claude also lint", imgs("l.png"))
+	res, err := r.m.postAddressed(tid, "$claude also lint", imgs("l.png"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +195,7 @@ func TestQueueLifecycleAndPostResult(t *testing.T) {
 	}
 	waitFor(t, "QueueChangedMsg with the item", func() bool { got := r.c.lastQueue(); return len(got) == 1 && got[0].ID == it.ID })
 
-	res2, _ := r.m.PostWith(tid, "$claude and vet", nil)
+	res2, _ := r.m.postAddressed(tid, "$claude and vet", nil)
 	q := r.m.Queue(tid)
 	if len(q) != 2 || q[0].Text != "also lint" || q[1].Text != "and vet" || q[1].ID != res2.Queued[0].ID {
 		t.Fatalf("Queue = %+v", q)
@@ -188,9 +223,10 @@ func TestRelaysAreNotQueueItems(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$codex start")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
+	_ = r.m.postAt(tid, "$codex start")
 	waitFor(t, "codex approval", func() bool { return len(r.c.approvals()) == 1 })
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	if q := r.m.Queue(tid); len(q) != 0 {
 		t.Fatalf("a relay appeared in the user queue: %+v", q)
@@ -207,11 +243,11 @@ func TestSteerInjectsIntoRunningTurn(t *testing.T) {
 	r.claude.steer = true
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	if err := r.m.Post(tid, "$claude build it"); err != nil {
+	if err := r.m.postAt(tid, "$claude build it"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "approval", func() bool { return len(r.c.approvals()) == 1 })
-	res, err := r.m.PostWith(tid, "$claude actually write docs instead", imgs("d.png"))
+	res, err := r.m.postAddressed(tid, "$claude actually write docs instead", imgs("d.png"))
 	if err != nil || len(res.Queued) != 1 {
 		t.Fatalf("post: %+v %v", res, err)
 	}
@@ -265,7 +301,7 @@ func TestSteerInjectsIntoRunningTurn(t *testing.T) {
 		t.Errorf("History steer events = %d", replay)
 	}
 	// the redirected agent does not get the message again later
-	_ = r.m.Post(tid, "$claude thanks")
+	_ = r.m.postAt(tid, "$claude thanks")
 	waitFor(t, "next turn", func() bool { return r.c.turnDones("claude") == 2 })
 	p := r.claude.prompts("claude")
 	lacks(t, p[len(p)-1], "write docs")
@@ -273,8 +309,8 @@ func TestSteerInjectsIntoRunningTurn(t *testing.T) {
 
 func TestSteerFallsBackToInterruptThenSend(t *testing.T) {
 	r, tid := busyClaude(t, turn(say("changed course"), finish()))
-	r.m.Post(tid, "$claude first extra")
-	res, _ := r.m.PostWith(tid, "$claude switch to docs", nil)
+	r.m.postAt(tid, "$claude first extra")
+	res, _ := r.m.postAddressed(tid, "$claude switch to docs", nil)
 	if len(r.m.Queue(tid)) != 2 {
 		t.Fatalf("queue = %+v", r.m.Queue(tid))
 	}
@@ -316,8 +352,8 @@ func TestSteerUnknownItemAndIdleMember(t *testing.T) {
 
 func TestCancelQueued(t *testing.T) {
 	r, tid := busyClaude(t, turn(say("handled"), finish()))
-	a, _ := r.m.PostWith(tid, "$claude cancel me", nil)
-	b, _ := r.m.PostWith(tid, "$claude keep me", nil)
+	a, _ := r.m.postAddressed(tid, "$claude cancel me", nil)
+	b, _ := r.m.postAddressed(tid, "$claude keep me", nil)
 	if err := r.m.CancelQueued(a.Queued[0].ID); err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +383,7 @@ func TestCancelQueued(t *testing.T) {
 
 func TestCancelledOnlyMessageStartsNoTurn(t *testing.T) {
 	r, tid := busyClaude(t)
-	a, _ := r.m.PostWith(tid, "$claude cancel me", nil)
+	a, _ := r.m.postAddressed(tid, "$claude cancel me", nil)
 	if err := r.m.CancelQueued(a.Queued[0].ID); err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +393,7 @@ func TestCancelledOnlyMessageStartsNoTurn(t *testing.T) {
 		t.Fatalf("a cancelled message started a turn: %q", p)
 	}
 	// and the next briefing never mentions it
-	_ = r.m.Post(tid, "$claude next")
+	_ = r.m.postAt(tid, "$claude next")
 	waitFor(t, "next turn", func() bool { return r.c.turnDones("claude") == 2 })
 	p := r.claude.prompts("claude")
 	lacks(t, p[len(p)-1], "cancel me")
@@ -365,7 +401,7 @@ func TestCancelledOnlyMessageStartsNoTurn(t *testing.T) {
 
 func TestInterruptClearsTheQueue(t *testing.T) {
 	r, tid := busyClaude(t)
-	_, _ = r.m.PostWith(tid, "$claude later", nil)
+	_, _ = r.m.postAddressed(tid, "$claude later", nil)
 	if err := r.m.Interrupt("claude"); err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +420,7 @@ func TestEditIsDeliveredToTheOriginalAddressees(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	res, err := r.m.PostWith(tid, "$claude do X", nil)
+	res, err := r.m.postAddressed(tid, "$claude do X", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +495,7 @@ func TestEditIsDeliveredToTheOriginalAddressees(t *testing.T) {
 
 func TestEditOfAQueuedMessageReplacesItInTheQueue(t *testing.T) {
 	r, tid := busyClaude(t, turn(say("handled"), finish()))
-	res, _ := r.m.PostWith(tid, "$claude also lint", nil)
+	res, _ := r.m.postAddressed(tid, "$claude also lint", nil)
 	if err := r.m.Edit(tid, res.EntryID, "also lint, then vet"); err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +583,8 @@ func TestEditRejectsOtherEntries(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude go")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "exchange", func() bool { return r.c.turnDones("claude") == 1 && r.c.turnDones("codex") == 1 })
 
 	th := r.m.thread(tid)
@@ -585,7 +622,7 @@ func TestEditsReplayOnResume(t *testing.T) {
 	r := newRig(t, []fake.Script{turn(started("s1"), say("c1"), finish()), turn(say("c2"), finish())}, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	res, _ := r.m.PostWith(tid, "$claude do X", nil)
+	res, _ := r.m.postAddressed(tid, "$claude do X", nil)
 	waitFor(t, "turn", func() bool { return r.c.turnDones("claude") == 1 })
 	if err := r.m.Edit(tid, res.EntryID, "do Y"); err != nil {
 		t.Fatal(err)
@@ -639,7 +676,7 @@ func TestContextFieldsAreAggregatedFromUsageEvents(t *testing.T) {
 	if info, _ := r.m.Agent("claude"); info.ContextTokens != 0 || info.ContextWindow != 0 {
 		t.Fatalf("before any usage: %+v", info)
 	}
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "turn", func() bool { return r.c.turnDones("claude") == 1 })
 	info, _ := r.m.Agent("claude")
 	if info.ContextTokens != 2000 || info.ContextWindow != 200000 {
@@ -674,7 +711,7 @@ func TestMidTurnUsageKeepsTheTurnCost(t *testing.T) {
 	r := newRig(t, []fake.Script{turn(cost(0.3), ctxOnly, blockStep("apc"), finish())}, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "approval", func() bool { return len(r.c.approvals()) == 1 })
 	if info, _ := r.m.Agent("claude"); math.Abs(info.CostUSD-0.3) > 1e-9 {
 		t.Fatalf("mid-turn cost = %v", info.CostUSD)

@@ -4,7 +4,7 @@
 
 export type Level = "off" | "assist" | "auto" | "full";
 
-export const DEFAULT_LEVEL: Level = "auto";
+export const DEFAULT_LEVEL: Level = "off";
 
 // The levels, from least to most, with what each lets agents do.
 export const LEVELS: ReadonlyArray<{ level: Level; label: string; blurb: string }> = [

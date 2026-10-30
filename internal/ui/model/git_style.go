@@ -21,12 +21,19 @@ const gitKey = "ctrl+x"
 // signed out.
 const gitNoGHHint = "install gh and run `gh auth login`"
 
-// Check colours: mint passes, coral fails, amber waits.
-var (
-	gitPassStyle = lipgloss.NewStyle().Foreground(tone.Mint)
-	gitFailStyle = lipgloss.NewStyle().Foreground(tone.Coral)
-	gitWaitStyle = lipgloss.NewStyle().Foreground(tone.Amber)
-)
+// Check colours, the desktop's states: green passes, red fails, orange
+// waits.
+func gitPassStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(tone.Current().SuccessText)
+}
+
+func gitFailStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(tone.Current().DestructiveText)
+}
+
+func gitWaitStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(tone.Current().WarningText)
+}
 
 // Check glyphs.
 const (
@@ -43,9 +50,9 @@ var gitSpinnerFrames = spinner.MiniDot.Frames
 // dot when motion is off.
 func gitSpinner(frame int) string {
 	if motion.Off() {
-		return gitWaitStyle.Render(gitGlyphWait)
+		return gitWaitStyle().Render(gitGlyphWait)
 	}
-	return gitWaitStyle.Render(gitSpinnerFrames[frame%len(gitSpinnerFrames)])
+	return gitWaitStyle().Render(gitSpinnerFrames[frame%len(gitSpinnerFrames)])
 }
 
 // gitMuted is the secondary text colour.
@@ -65,11 +72,11 @@ func gitCheckGlyph(t *styles.Styles, c gh.Check, frame int) string {
 	case c.Pending():
 		return gitSpinner(frame)
 	case c.Failed():
-		return gitFailStyle.Render(gitGlyphFail)
+		return gitFailStyle().Render(gitGlyphFail)
 	case c.Bucket == gh.BucketSkipping:
 		return gitMuted(t).Render(gitGlyphSkip)
 	default:
-		return gitPassStyle.Render(gitGlyphPass)
+		return gitPassStyle().Render(gitGlyphPass)
 	}
 }
 
@@ -78,13 +85,13 @@ func gitCheckGlyph(t *styles.Styles, c gh.Check, frame int) string {
 func gitChecksBadge(s gh.CheckSummary) string {
 	switch s.State() {
 	case gh.ChecksPassed:
-		return gitPassStyle.Render(gitGlyphPass)
+		return gitPassStyle().Render(gitGlyphPass)
 	case gh.ChecksFailed:
-		return gitFailStyle.Render(gitGlyphFail)
+		return gitFailStyle().Render(gitGlyphFail)
 	case gh.ChecksPending:
-		st := gitWaitStyle
+		st := gitWaitStyle()
 		if s.Failed > 0 {
-			st = gitFailStyle
+			st = gitFailStyle()
 		}
 		return st.Render(fmt.Sprintf("%s %d/%d", gitGlyphWait, s.Done(), s.Total))
 	}
@@ -96,13 +103,13 @@ func gitChecksBadge(s gh.CheckSummary) string {
 func gitChecksText(s gh.CheckSummary) string {
 	switch s.State() {
 	case gh.ChecksPassed:
-		return gitPassStyle.Render(gitGlyphPass + " checks passed")
+		return gitPassStyle().Render(gitGlyphPass + " checks passed")
 	case gh.ChecksFailed:
-		return gitFailStyle.Render(fmt.Sprintf("%s %d of %d checks failed", gitGlyphFail, s.Failed, s.Total))
+		return gitFailStyle().Render(fmt.Sprintf("%s %d of %d checks failed", gitGlyphFail, s.Failed, s.Total))
 	case gh.ChecksPending:
-		st := gitWaitStyle
+		st := gitWaitStyle()
 		if s.Failed > 0 {
-			st = gitFailStyle
+			st = gitFailStyle()
 		}
 		return st.Render(fmt.Sprintf("%s %d/%d checks done", gitGlyphWait, s.Done(), s.Total))
 	}
@@ -167,9 +174,9 @@ func gitPRState(t *styles.Styles, pr *gh.PR) string {
 	muted := gitMuted(t)
 	switch pr.State {
 	case "MERGED":
-		return gitPassStyle.Render("merged")
+		return gitPassStyle().Render("merged")
 	case "CLOSED":
-		return gitFailStyle.Render("closed")
+		return gitFailStyle().Render("closed")
 	}
 	if pr.IsDraft {
 		return muted.Render("draft")
@@ -182,11 +189,11 @@ func gitPRState(t *styles.Styles, pr *gh.PR) string {
 func gitReview(pr *gh.PR) string {
 	switch pr.ReviewDecision {
 	case "APPROVED":
-		return gitPassStyle.Render("approved")
+		return gitPassStyle().Render("approved")
 	case "CHANGES_REQUESTED":
-		return gitFailStyle.Render("changes requested")
+		return gitFailStyle().Render("changes requested")
 	case "REVIEW_REQUIRED":
-		return gitWaitStyle.Render("review required")
+		return gitWaitStyle().Render("review required")
 	}
 	return ""
 }
@@ -196,10 +203,10 @@ func gitReview(pr *gh.PR) string {
 func gitFileCode(f gh.ChangedFile) string {
 	switch {
 	case f.Code == "U":
-		return gitFailStyle.Render(f.Code)
+		return gitFailStyle().Render(f.Code)
 	case f.Staged:
-		return gitPassStyle.Render(f.Code)
+		return gitPassStyle().Render(f.Code)
 	default:
-		return gitWaitStyle.Render(f.Code)
+		return gitWaitStyle().Render(f.Code)
 	}
 }

@@ -78,7 +78,7 @@ function mapPart(p: Obj): unknown {
   };
   if (p["is_error"] === true) out["is_error"] = true;
   const img = p["image"];
-  if (isRecord(img)) out["image"] = { name: s(img["name"]) || "image", mime: s(img["mime"]) };
+  if (isRecord(img)) out["image"] = { name: s(img["name"]) || "image", mime: s(img["mime"]), ...strings(img, ["label"]) };
   return out;
 }
 
@@ -91,7 +91,7 @@ function mapMessage(p: Obj): unknown {
     updated_at: isoOf(p["updated_at"]),
     finished: p["finished"] === true,
     parts: Array.isArray(p["parts"]) ? p["parts"].filter(isRecord).map(mapPart) : [],
-    ...strings(p, ["agent"]),
+    ...strings(p, ["agent", "turn_end"]),
   };
   if (p["editable"] === true) out["editable"] = true;
   if (p["edited"] === true) out["edited"] = true;
@@ -140,6 +140,7 @@ function mapModel(p: Obj): unknown {
   const out: Obj = { id: s(p["id"]), label: s(p["label"]) || s(p["id"]) };
   if (Array.isArray(p["efforts"]) && p["efforts"].length > 0) out["efforts"] = p["efforts"];
   if (p["selected"] === true) out["selected"] = true;
+  if (p["video"] === true) out["video"] = true;
   return out;
 }
 
@@ -369,7 +370,9 @@ const stringList = (v: unknown): string[] | null =>
 // A deck.v1 Session's room fields; null without an id.
 export function toRoom(v: unknown): RoomUpdate | null {
   if (!isRecord(v) || s(v["id"]) === "") return null;
-  return { k: "session", id: s(v["id"]), attention: attentionOf(v["attention"]), branch: s(v["branch"]), archived: v["archived"] === true };
+  const l = v["lead"];
+  const lead = isRecord(l) && s(l["kind"]) !== "" ? { agent: s(l["agent"]), kind: s(l["kind"]), model: s(l["model"]), slug: s(l["slug"]), effort: s(l["effort"]), profile: s(l["profile"]), video: l["video"] === true } : null;
+  return { k: "session", id: s(v["id"]), attention: attentionOf(v["attention"]), branch: s(v["branch"]), archived: v["archived"] === true, parent: s(v["parent_id"]), lead };
 }
 
 export function toRooms(r: unknown): RoomUpdate[] {

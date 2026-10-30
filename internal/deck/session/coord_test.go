@@ -75,7 +75,7 @@ func busyOwner(t *testing.T, codex ...fake.Script) (*rig, string) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude at work", func() bool { return len(r.c.approvals()) == 1 })
 	return r, tid
 }
@@ -171,7 +171,7 @@ func TestGateTimesOut(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude at work", func() bool { return len(r.c.approvals()) == 1 })
 	start := time.Now()
 	res := got(t, gateCall(r, "codex", "a.go", time.Minute))
@@ -207,7 +207,7 @@ func TestGateWakesAnIdleLeaseHolder(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude's turn", func() bool { return r.c.turnDones("claude") == 1 })
 	if _, err := r.m.acquireLease(r.m.get("claude"), "a.go", 0, false, "more to come"); err != nil {
 		t.Fatal(err)
@@ -227,7 +227,7 @@ func TestGateHandsOverFromAFinishedOwner(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude's turn", func() bool { return r.c.turnDones("claude") == 1 })
 	// claude is done: codex is not held, but is shown claude's change once.
 	start := time.Now()
@@ -252,7 +252,7 @@ func TestGateTwoMembersAskingEachOtherDoNotDeadlock(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude $codex go")
+	_ = r.m.postAt(tid, "$claude $codex go")
 	waitFor(t, "both at work", func() bool { return len(r.c.approvals()) == 2 })
 
 	// claude waits on codex for b.go, then codex on claude for a.go: claude's
@@ -275,7 +275,7 @@ func TestGateThroughAnEditApproval(t *testing.T) {
 		Approval: &agent.ApprovalRequest{Kind: agent.ApproveEdit, ToolName: "Edit", Summary: "a.go"},
 	}
 	r, tid := busyOwner(t, turn(edit, finish()), turn(edit, finish()))
-	_ = r.m.Post(tid, "$codex edit a.go")
+	_ = r.m.postAt(tid, "$codex edit a.go")
 	waitAsk(t, r, "the ask", func(a FileAsk) bool { return a.State == AskPending })
 	if n := len(r.c.approvals()); n != 1 {
 		t.Fatalf("codex's edit reached the person before claude answered: %d approvals", n)
@@ -285,7 +285,7 @@ func TestGateThroughAnEditApproval(t *testing.T) {
 	}
 	// Refused once, with claude's change; the retry reaches the person.
 	waitFor(t, "codex refused", func() bool { return r.c.turnDones("codex") == 1 })
-	_ = r.m.Post(tid, "$codex again")
+	_ = r.m.postAt(tid, "$codex again")
 	waitFor(t, "the retry", func() bool { return len(r.c.approvals()) == 2 })
 	if a := r.c.approvals()[1]; a.AgentID != "codex" || a.Kind != agent.ApproveEdit {
 		t.Fatalf("approval = %+v", a.ApprovalRequest)

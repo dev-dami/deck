@@ -43,6 +43,8 @@ import { DiffView } from "./DiffView";
 import { ScheduledList } from "./Limits";
 import { RaceBuilder } from "./RaceBuilder";
 import { Button } from "./kit/button";
+import { PathTail } from "./kit/path";
+import { CARD } from "./kit/card";
 import { EmptyState } from "./kit/empty";
 import { Dialog, fieldClass } from "./kit/dialog";
 import { TaskMark } from "./graph/Nodes";
@@ -69,8 +71,6 @@ function Status({ status }: { status: string }) {
   );
 }
 
-// The cards of the tab: one plane, a hairline ring, no shadow.
-const CARD = "rounded-xl bg-surface-1 ring-1 ring-hairline";
 
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
@@ -327,7 +327,7 @@ function Decide({
             <li key={f.path} className="overflow-hidden rounded-lg border border-hairline">
               <div className="flex items-center gap-2 px-3 py-1.5 text-xs">
                 <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate font-mono">{f.path}</span>
+                <PathTail path={f.path} className="flex-1" />
                 {f.diff !== null && (
                   <span className="font-mono">
                     <span className="text-diff-addition-foreground">+{f.added}</span>{" "}

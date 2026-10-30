@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/agent/fake"
+	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/store"
 )
 
@@ -209,4 +211,42 @@ func TestRouteByPlanLimits(t *testing.T) {
 			return ok && strings.Contains(n.Text, "so codex took this task")
 		}) == 1
 	})
+}
+
+// Every turn the agents start counts against the level's max_turns, not
+// only relays: at the limit the thread pauses before the hop cap, held
+// turns wait, and Continue lets them go.
+func TestTurnsTheAgentsStartArePausedAtTheLevelsLimit(t *testing.T) {
+	cfg := testCfg()
+	cfg.OrchestrationLevels = map[string]json.RawMessage{config.LevelOff: json.RawMessage(`{"max_turns": 2}`)}
+	r := newRigWith(t, t.TempDir(), false, cfg, []fake.Script{
+		turn(sendTo("codex", "check a"), finish()),
+		turn(sendTo("codex", "check b"), finish()),
+	}, []fake.Script{
+		turn(sendTo("claude", "a is fine"), finish()),
+		turn(say("b is fine"), finish()),
+	})
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	r.add(t, tid, "codex")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
+	if err := r.m.postAt(tid, "@claude look at a and b"); err != nil {
+		t.Fatal(err)
+	}
+	paused := func() bool {
+		return r.c.count(func(m tea.Msg) bool { p, ok := m.(PausedMsg); return ok && strings.Contains(p.Reason, "turns") }) == 1
+	}
+	waitFor(t, "the pause", paused)
+	time.Sleep(50 * time.Millisecond) // time for a held turn to start, were it going to
+	if c, x := len(r.claude.prompts("claude")), len(r.codex.prompts("codex")); c != 2 || x != 1 {
+		t.Fatalf("claude %d prompts, codex %d; want 2 and 1 (two turns the agents started)", c, x)
+	}
+	if info, _ := r.m.Thread(tid); info.Hops >= DefaultMaxHops {
+		t.Fatalf("hops = %d: the turn budget must stop it before the hop cap", info.Hops)
+	}
+	if err := r.m.Continue(tid); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the held turn", func() bool { return len(r.codex.prompts("codex")) == 2 })
+	has(t, r.codex.prompts("codex")[1], "check b")
 }

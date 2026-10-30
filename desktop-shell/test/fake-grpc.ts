@@ -105,6 +105,13 @@ export class FakeRpcDeck {
   modelRefreshes = 0;
   // The orchestration level each CreateSession asked for.
   readonly createdLevels: string[] = [];
+  // Each SetModel (the agent menu), as [session, agent].
+  readonly leads: Array<[string, string]> = [];
+  // What each Send carried besides its text: its attachments as they came
+  // (name, mime, label, frames, path, and the size of their bytes).
+  readonly sends: Array<{ session_id: string; text: string; images: Obj[] }> = [];
+  // The agent kinds whose model takes video: a lead of one says so.
+  readonly video = new Set<string>();
   private readonly server = new grpc.Server();
   private readonly streams = new Set<grpc.ServerWritableStream<Obj, Obj>>();
   private seq = 0;
@@ -163,8 +170,10 @@ export class FakeRpcDeck {
       "ListFiles",
       "ReadImage",
       "SearchMessages",
+      "Video",
+      "VideoFrames",
     ],
-    meta: {} as Record<string, { attention?: string; branch?: string; archived?: boolean }>,
+    meta: {} as Record<string, { attention?: string; branch?: string; archived?: boolean; parent_id?: string; lead?: Obj }>,
     asked: [] as string[],
     files: ["main.go", "pkg/remote/auth/limit.go", "pkg/remote/auth/limit_test.go", "README.md"],
   };
@@ -293,14 +302,58 @@ export class FakeRpcDeck {
     for (const s of this.streams) s.write(event);
   }
 
+  // A session with its room: the meta a test set, and its lead (the one
+  // SetModel picked, else its first agent), as pkg/rpc fills them.
   private withRoom(session: Obj): Obj {
-    return { ...session, ...this.room.meta[String(session["id"])] };
+    const id = String(session["id"]);
+    const meta = this.room.meta[id];
+    let lead = meta?.lead;
+    if (lead === undefined) {
+      try {
+        const roster = this.deck.invoke("roster.get", { session_id: id }) as Obj[];
+        const first = roster[0];
+        if (first !== undefined) lead = { agent: first["id"], kind: first["kind"], model: first["model"] ?? "", slug: fakeSlug(String(first["kind"]), String(first["model"] ?? "")), effort: first["effort"] ?? "" };
+      } catch {
+        // no such session
+      }
+    }
+    if (lead !== undefined) lead = { ...lead, video: this.video.has(String(lead["kind"])) };
+    return { ...session, ...meta, ...(lead !== undefined ? { lead } : {}) };
+  }
+
+  // Tells the window a session's room afresh (after video changed).
+  refreshRoom(id: string): void {
+    this.roomChanged(id);
   }
 
   // Sends session_updated for a session whose room changed.
   private roomChanged(id: string): void {
     const s = (this.deck.invoke("sessions.list", {}) as Obj[]).find((x) => x["id"] === id);
     if (s !== undefined) this.emit("session_updated", protoOf(s) as Obj);
+  }
+
+  // Records a Send's attachments and adds them to the message it made, as
+  // the engine does: an image with its bytes, a video without, and a video
+  // sent as frames as two labelled frames.
+  private attach(r: Obj, messageId: string): void {
+    const images = (Array.isArray(r["images"]) ? r["images"] : []) as Obj[];
+    const seen = images.map((im) => {
+      const data = im["data"];
+      const bytes = data instanceof Uint8Array ? data.length : typeof data === "string" ? Buffer.from(data, "base64").length : 0;
+      return { name: im["name"], mime: im["mime"], label: im["label"] ?? "", frames: im["frames"] === true, path: im["path"] ?? "", bytes };
+    });
+    this.sends.push({ session_id: String(r["session_id"]), text: String(r["text"] ?? ""), images: seen });
+    const atts = images.flatMap((im) => {
+      const name = String(im["name"]);
+      const mime = String(im["mime"]);
+      const label = String(im["label"] ?? "");
+      if (mime.startsWith("video/") && im["frames"] === true)
+        return ["0:01", "0:03"].map((at) => ({ name: name.replace(/\.[^.]*$/, "") + `-${at.replace(":", ".")}.jpg`, mime: "image/png", label: `${label} · ${at}`, data: FRAME }));
+      const data = im["data"];
+      const bytes = data instanceof Uint8Array ? Buffer.from(data) : typeof data === "string" ? Buffer.from(data, "base64") : Buffer.alloc(0);
+      return [{ name, mime, label, ...(mime.startsWith("video/") ? {} : { data: bytes }) }];
+    });
+    this.deck.attach(messageId, atts);
   }
 
   private handlers(): grpc.UntypedServiceImplementation {
@@ -482,11 +535,13 @@ export class FakeRpcDeck {
       const sid = String(r["session_id"] ?? "");
       const native = this.deck.nativeNodes(sid);
       const agents: Obj[] = [];
-      for (const a of [...this.crew.agents, ...this.deck.spawnedNodes(sid)]) {
+      // A sub-thread's tree is its own: none of the crew of its parent.
+      const sub = this.room.meta[sid]?.["parent_id"] !== undefined;
+      for (const a of [...(sub ? [] : this.crew.agents), ...this.deck.spawnedNodes(sid)]) {
         agents.push(a);
         agents.push(...native.agents.filter((n) => n["parent"] === a["name"]));
       }
-      return { ...this.crew, agents, running: [...this.crew.running, ...native.running] };
+      return { ...this.crew, agents, running: [...(sub ? [] : this.crew.running), ...native.running] };
     });
     const tm = this.team;
     unary("Team", () => ({
@@ -840,7 +895,20 @@ export class FakeRpcDeck {
             this.createdLevels.push(String(call.request["level"] ?? ""));
             return cb(null, this.withRoom(out));
           }
+          if (name === "SetModel") {
+            // The agent menu: that agent becomes the session's lead.
+            const sid = String(call.request["session_id"]);
+            const kind = String(call.request["kind"]);
+            const model = String(call.request["model"] ?? "");
+            this.leads.push([sid, kind]);
+            this.room.meta[sid] = {
+              ...this.room.meta[sid],
+              lead: { agent: kind, kind, model, slug: fakeSlug(kind, model), effort: String(call.request["effort"] ?? "") },
+            };
+            this.roomChanged(sid);
+          }
           if (name === "ListSessions") return cb(null, { sessions: (out["sessions"] as Obj[]).map((x) => this.withRoom(x)) });
+          if (name === "Send") this.attach(call.request, String(out["message_id"]));
           cb(null, out);
         } catch (e) {
           const code = e instanceof Fail ? (CODES[e.code] ?? grpc.status.INTERNAL) : grpc.status.INTERNAL;
@@ -851,6 +919,9 @@ export class FakeRpcDeck {
     return h;
   }
 }
+
+// FRAME is a 1×1 PNG, the fake's every frame of a video.
+const FRAME = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
 
 // Worktrees and capsules of "Fix the pairing lockout" beside crewAtWork:
 // claude-sub on its own worktree, codex-sub's landed and bundled, a long
@@ -1015,4 +1086,26 @@ export function crewAtWork(f: FakeRpcDeck): void {
     { path: TEST, added: 42, removed: 0, diff: "@@ -0,0 +1,1 @@\n+func TestLimiterIsPerAddress(t *testing.T) {}\n" },
     { path: PRUNE, added: 27, removed: 3, diff: "@@ -0,0 +1,1 @@\n+func (l *Limiter) prune() {}\n" },
   ]);
+}
+
+// A sub-thread at work under "Fix the pairing lockout": claude-1 opened it for
+// codex, which answered; the answer is a report card in the parent.
+export function subThreadAtWork(f: FakeRpcDeck): string {
+  const id = f.deck.addSubThread(
+    "ses_main",
+    "Second opinion on the limiter",
+    "claude-1",
+    "codex",
+    "Is keying the limiter by address enough? Hand back yes or no, and what is missing.",
+    "Yes, with one gap: idle buckets are never pruned. Add a prune on Allow and a test for it.",
+  );
+  f.room.meta[id] = { parent_id: "ses_main" };
+  return id;
+}
+
+// The model a fake CLI says a pick runs, as a real one does at start: an
+// alias or the default names a slug.
+export function fakeSlug(kind: string, model: string): string {
+  const slugs: Record<string, string> = { "claude/": "claude-opus-5-5", "claude/opus": "claude-opus-5-5", "claude/sonnet": "claude-sonnet-5-5", "claude/haiku": "claude-haiku-5-5", "codex/": "gpt-5.5-codex" };
+  return slugs[`${kind}/${model === "default" ? "" : model}`] ?? model;
 }

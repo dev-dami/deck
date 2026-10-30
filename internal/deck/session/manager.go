@@ -225,8 +225,9 @@ type AgentInfo struct {
 	// Deck's own text takes; both are estimates, 0 when not known.
 	ContextBaseline int
 	DeckTokens      int
-	// RunningModel is the model slug the CLI reports it is running (e.g.
-	// "claude-opus-5-5" when Model is "" or an alias); "" until it says.
+	// RunningModel is the model slug the member runs (e.g. "claude-opus-5-5"
+	// when Model is "" or an alias): what its CLI reported, or what the same
+	// pick ran as before (slugs.go); "" until Deck has seen it.
 	RunningModel string
 	// Profile is the named agent it was started from ("" for none), Role
 	// that profile's one-line role and Color its CSS colour ("" for the
@@ -253,8 +254,14 @@ type ThreadInfo struct {
 	// Pending counts approvals waiting across the members.
 	Pending     int
 	CostUSD     float64
-	LastSpeaker string     // member id the next unaddressed message goes to ("" = none yet)
-	Mode        agent.Mode // the thread's permission mode
+	LastSpeaker string // member id that last wrote a reply ("" = none yet)
+	// Lead is the member id the person's messages go to ("" before the
+	// thread's first agent).
+	Lead string
+	// Parent is the thread an agent opened this one from, "" for a thread
+	// the person started; ParentAgent that agent's member id.
+	Parent, ParentAgent string
+	Mode                agent.Mode // the thread's permission mode
 	// Pinned threads sort first; Resolved ones are settled until a new message.
 	Pinned, Resolved bool
 	// Orchestration is the thread's orchestration level (config.Levels).
@@ -293,10 +300,11 @@ type Manager struct {
 	relayMu sync.Mutex
 	relayQ  map[*thread][]func()
 
-	modelMu    sync.Mutex        // guards defModels and modelCache
+	modelMu    sync.Mutex        // guards defModels, modelCache and slugs
 	defModels  map[string]string // kind -> model for members started later (SetDefaultModel)
 	defEfforts map[string]string // kind -> effort for members started later (SetDefaultEffort)
 	modelCache map[string][]agent.ModelInfo
+	slugs      map[string]string // kind and pick -> the slug it ran as (slugs.go)
 	// policyNoted: the kinds whose context policy notice was shown
 	// (notePolicy); guarded by mu.
 	policyNoted map[string]bool
@@ -490,6 +498,10 @@ func (m *Manager) threadInfo(t *thread) ThreadInfo {
 		MaxHops: m.maxHops, Held: len(t.heldIdx), LastSpeaker: t.lastSpeaker, Mode: t.mode,
 		Pinned: t.pinned, Resolved: t.resolved, Orchestration: t.level,
 	}
+	if a := t.leadLocked(); a != nil {
+		info.Lead = a.id
+	}
+	info.Parent, info.ParentAgent = t.parent, t.parentAgent
 	if t.worktree != nil {
 		info.Branch = t.worktree.Branch
 	}
@@ -632,6 +644,7 @@ func (m *Manager) addMember(t *thread, kind, model, preferredID string, prof pro
 	}
 	effort := cmp.Or(prof.Effort, m.defaultEffort(cfg, kind))
 	a := &agentState{id: id, kind: kind, model: model, effort: effort, thread: t, base: StatusIdle, started: time.Now(), prof: prof}
+	a.running = m.ModelSlug(kind, model)
 	m.mu.Lock()
 	m.order = append(m.order, a)
 	m.byID[id] = a
@@ -818,18 +831,27 @@ func (m *Manager) defaultKind() string {
 
 // ---- the user speaks ----
 
-// Post sends the user's message into a thread. See the package comment for how
-// it is addressed. A message that is only mentions (for example "$codex") just
-// adds the missing members. Errors from starting or sending to an agent are
-// returned, but the message stays in the thread.
+// Post sends the user's message to the thread's lead (lead.go). Errors from
+// starting or sending to the agent are returned, but the message stays in the
+// thread.
 func (m *Manager) Post(threadID, text string) error {
 	_, err := m.PostWith(threadID, text, nil)
 	return err
 }
 
-// PostWith is Post with images attached (see the package comment). An image-only
-// message (empty text) is sent as "See the attached image(s)."
-func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostResult, error) {
+// postAt is postAddressed without images.
+func (m *Manager) postAt(threadID, text string) error {
+	_, err := m.postAddressed(threadID, text, nil)
+	return err
+}
+
+// postAddressed is how the engine itself posts as the person to a member it
+// names: "@name text" reaches that member, "@claude" adds one, as the
+// clients' mentions once did (ParseAddressing has the exact rules). The
+// person's own messages go to the thread's lead instead (PostWith, lead.go);
+// this is for Deck's internal asks (a capsule's hand-over) and the engine's
+// tests of rooms with several members.
+func (m *Manager) postAddressed(threadID, text string, images []agent.Image) (PostResult, error) {
 	t := m.thread(threadID)
 	if t == nil {
 		return PostResult{}, fmt.Errorf("session: no thread %q", threadID)
@@ -943,23 +965,26 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState, images [
 	if speaker == "" {
 		speaker = "user"
 	}
-	return m.postFrom(t, speaker, text, targets, images, true)
+	return m.postFrom(t, speaker, text, targets, images, true, "")
 }
 
 // postFrom is postTo for speaker. A message from a teammate (local false)
-// does not end a pause or reset the brakes: only the user does.
-func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentState, images []agent.Image, local bool) (PostResult, error) {
-	e := store.Entry{Type: store.EntryUser, ID: store.NewID(), Speaker: speaker, To: ids(targets), Event: agent.Event{Kind: agent.KindUserText, Text: text}}
+// does not end a pause or reset the brakes: only the user does. via marks
+// the entry ("subthread" for a parent agent's brief or follow-up), "" for
+// a person.
+func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentState, images []agent.Image, local bool, via string) (PostResult, error) {
+	e := store.Entry{Type: store.EntryUser, ID: store.NewID(), Speaker: speaker, To: ids(targets), Via: via, Event: agent.Event{Kind: agent.KindUserText, Text: text}}
 	if len(images) > 0 {
-		e.Images = imagePaths(images)
+		e.Images, e.ImageLabels = imagePaths(images), imageLabels(images)
 	}
 
 	var msgs []tea.Msg
 	t.mu.Lock()
 	wasPaused := t.paused && local
 	if local {
-		t.paused, t.hops, t.heldIdx, t.work = false, 0, nil, 0
+		t.paused, t.hops, t.heldIdx, t.work, t.turns = false, 0, nil, 0, 0
 		t.lastRelay = map[string]string{}
+		t.stall.clear()
 	}
 	if t.title == "" {
 		t.title = placeholderTitle(text)
@@ -987,6 +1012,9 @@ func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentStat
 		if _, err := m.deliver(t, a); err != nil && first == nil {
 			first = err
 		}
+	}
+	if wasPaused {
+		_ = m.wakeAll(t) // the reports and briefs the pause held back
 	}
 	return PostResult{EntryID: e.ID, Queued: t.queuedFor(e.ID)}, first
 }
@@ -1029,6 +1057,9 @@ func (m *Manager) Send(id, prompt string) error {
 	}
 	if a.status() == StatusExited {
 		return fmt.Errorf("session: %s has exited", id)
+	}
+	if a.isEphemeral() {
+		return errSubagent(a)
 	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
@@ -1080,6 +1111,20 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 		}
 		return dQueued, nil
 	}
+	// A turn the user did not start counts against the thread's turn
+	// budget; paused, or at the limit, it waits for the user (brakes.go).
+	agentTurn := needTrigger && !t.userTriggered(a)
+	if agentTurn {
+		if pe, ok := m.chargeTurnLocked(t); !ok {
+			t.mu.Unlock()
+			a.restore(prev)
+			if pe != nil {
+				m.emitAll(msgFor(t.id, *pe))
+			}
+			return dNone, nil
+		}
+	}
+	t.stall.begin(a.id, t.size(), agentTurn) // judged when it ends (stall.go)
 	prompt, images, cursor, hold := m.buildPrompt(t, a)
 	user := a.promptUser
 	oldCursor, oldHold, oldKnown := a.cursor, a.holdFrom, a.knownMode
@@ -1111,6 +1156,7 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 	if err != nil {
 		t.mu.Lock()
 		a.cursor, a.holdFrom, a.knownMode = oldCursor, oldHold, oldKnown
+		t.stall.unbegin(a.id)
 		t.mu.Unlock()
 		a.restore(prev)
 		return dNone, err
@@ -1125,9 +1171,45 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 	return dStarted, nil
 }
 
+// TakesVideo reports whether a member of kind running model ("" = the CLI's
+// default) can be sent a video: its adapter delivers one to that model
+// (agent.VideoInput).
+func (m *Manager) TakesVideo(kind, model string) bool {
+	vi, ok := m.adapters[kind].(agent.VideoInput)
+	return ok && vi.TakesVideo(model)
+}
+
+// takesVideo is TakesVideo for a member: its model, or the slug its CLI
+// said it runs when it runs the default.
+func (m *Manager) takesVideo(a *agentState) bool {
+	a.mu.Lock()
+	kind, model := a.kind, cmp.Or(a.model, a.running)
+	a.mu.Unlock()
+	return m.TakesVideo(kind, model)
+}
+
+// withoutVideo takes the videos out of images when a's model cannot take
+// video, and adds a line to the prompt saying where they are.
+func (m *Manager) withoutVideo(a *agentState, prompt string, images []agent.Image) (string, []agent.Image) {
+	if !slices.ContainsFunc(images, agent.Image.IsVideo) || m.takesVideo(a) {
+		return prompt, images
+	}
+	var stills, videos []agent.Image
+	for _, im := range images {
+		if im.IsVideo() {
+			videos = append(videos, im)
+		} else {
+			stills = append(stills, im)
+		}
+	}
+	return prompt + "\n\n" + noVideoLine(videos), stills
+}
+
 // sendPrompt hands a prompt (and images) to a member's run, starting the run if
-// it has not been started. A run that cannot take images gets a line saying so.
+// it has not been started. A run that cannot take images gets a line saying so,
+// and so does one whose model cannot take the videos among them.
 func (m *Manager) sendPrompt(t *thread, a *agentState, prompt string, images []agent.Image) error {
+	prompt, images = m.withoutVideo(a, prompt, images)
 	run := a.getRun()
 	if len(images) == 0 {
 		if run != nil {
@@ -1273,6 +1355,8 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 	t := newThread(m, th.ID, dir, mode)
 	t.created = true
 	t.title, t.titleSrc = th.Title, th.TitleSrc
+	t.lead = th.Lead
+	t.parent, t.parentAgent, t.asks = th.Parent, th.ParentAgent, th.Asks
 	t.pinned, t.resolved = th.Pinned, th.Resolved // resuming un-archives
 	t.worktree = th.Worktree
 	t.trees, t.capsules = th.Trees, cloneCapsules(th.Capsules)
@@ -1334,6 +1418,10 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 			parent: mem.Parent, ephemeral: mem.Ephemeral, dir: mem.Dir, worktree: mem.Worktree,
 			prof: m.storedProfile(t, mem), subs: slices.Clone(mem.Subs),
 		}
+		if mem.Running != "" && mem.Model == model {
+			m.learnSlug(mem.Kind, model, mem.Running)
+		}
+		a.running = m.ModelSlug(mem.Kind, model)
 		// Its subagents did not outlive the CLI that ran them.
 		a.stopSubsLocked(time.Now())
 		if mem.Ephemeral {
@@ -1664,6 +1752,7 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		end.answered = a.cursor
 		t.mu.Unlock()
 		end.text, end.interrupted = a.takeFinal()
+		ev.End = m.turnEndOf(t, a, &end) // turnend.go
 	}
 	// What an agent typed into a page may be a password: the thread's rows,
 	// log and briefings show the call without it.
@@ -1673,6 +1762,13 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		ev.Tool = &t
 	}
 	res := a.apply(ev)
+	m.noteWork(t, a, ev) // edits and check runs (evidence.go)
+	if ev.Kind == agent.KindSessionStarted && ev.Text != "" {
+		a.mu.Lock()
+		kind, pick := a.kind, a.model
+		a.mu.Unlock()
+		m.learnSlug(kind, pick, ev.Text)
+	}
 	// Plan limits are about the account, not the conversation, and a
 	// restart about the process: they are not part of the thread's log.
 	if !ev.Delta && ev.Kind != agent.KindLimits && ev.Kind != agent.KindRestarting && ev.Kind != agent.KindRestarted {
@@ -1855,6 +1951,9 @@ type agentState struct {
 	hit   *agent.LimitHit
 	wait  *waitState
 	nudge string
+	// solo is whether its run started with the short briefing of an agent
+	// alone with the user (instructions), which names no other agent.
+	solo bool
 	// stirred is closed, and dropped, when the member's status may have
 	// changed (stirLocked); nil while nobody waits for that (waitIdle).
 	stirred chan struct{}
@@ -1954,7 +2053,7 @@ func (a *agentState) memberMeta() store.Member {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return store.Member{
-		ID: a.id, Kind: a.kind, Name: a.name, Model: a.model, Effort: a.effort, SessionID: a.sessionID,
+		ID: a.id, Kind: a.kind, Name: a.name, Model: a.model, Running: a.running, Effort: a.effort, SessionID: a.sessionID,
 		CostUSD: a.costTotal + a.costTurn, Cursor: a.cursor,
 		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource, Briefed: a.briefed,
 		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
@@ -2103,8 +2202,9 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 			a.briefed = false // a new CLI session has not seen the instructions
 			res.metaDirty = true
 		}
-		if ev.Text != "" {
-			a.running = ev.Text
+		if s := Slug(ev.Text); s != "" && s != a.running {
+			a.running = s
+			res.metaDirty = true
 		}
 	case agent.KindAssistantText:
 		a.base = StatusWorking

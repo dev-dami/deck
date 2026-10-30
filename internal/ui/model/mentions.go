@@ -13,10 +13,10 @@ import (
 	"github.com/dev-dami/deck/internal/workspace"
 )
 
-// The composer's sigils (docs/design/agents-and-mentions.md): "@" opens
-// the agents and people, "$" is the same popup under its old name, and
-// "#" opens the files. A file picked from "#" goes in the message as it
-// did from "@": the engine and the agents see the same text.
+// The composer's sigils (docs/design/lead-agent-and-subthreads.md): "#"
+// and "@" open the files, as in Claude Code. Agents have no sigil: every
+// message goes to the session's lead, picked with the Agent picker
+// (ctrl+l, lead.go), and "@name" or "$name" in a message is text.
 const (
 	sigilAgents    = "@"
 	sigilAgentsAlt = "$"
@@ -25,7 +25,7 @@ const (
 
 // completionSigil reports whether key opens the completions popup.
 func completionSigil(key string) bool {
-	return key == sigilAgents || key == sigilAgentsAlt || key == sigilFiles
+	return key == sigilAgents || key == sigilFiles
 }
 
 // pathLike reports whether what follows an "@" looks like a file ("src/",
@@ -51,11 +51,7 @@ func (m *UI) openCompletions(sigil string) tea.Cmd {
 	m.completionsStartIndex = len(m.textarea.Value())
 	m.completionsPositionStart = m.completionsPosition()
 	m.completionsSigil = sigil
-	if sigil == sigilFiles {
-		return m.showFileCompletions()
-	}
-	m.completionsFiles = false
-	return tea.Batch(m.openAgentCompletions(), m.loadProfiles(false))
+	return m.showFileCompletions()
 }
 
 // showFileCompletions switches the popup to the project's files, which load
@@ -70,19 +66,9 @@ func (m *UI) showFileCompletions() tea.Cmd {
 }
 
 // filterCompletions narrows the open popup to query, the text after its
-// sigil. After "@" a path-like query switches it to files and back.
+// sigil.
 func (m *UI) filterCompletions(query string) tea.Cmd {
 	m.completionsQuery = query
-	if m.completionsSigil == sigilAgents {
-		switch files := pathLike(query); {
-		case files && !m.completionsFiles:
-			// The files arrive later; their handler filters them.
-			return m.showFileCompletions()
-		case !files && m.completionsFiles:
-			m.completionsFiles = false
-			m.completions.SetAgentItems(m.agentCompletionItems())
-		}
-	}
 	m.completions.Filter(query)
 	return nil
 }
@@ -142,7 +128,7 @@ func profilesNotice(ps []workspace.Profile) notice.Notice {
 	n := notice.Notice{Level: notice.Info, Source: notice.SourceDeck}
 	if len(ps) == 0 {
 		n.Title = "No profiles"
-		n.Body = `Name agents in deck.json: "profiles": [{"name": "charles", "kind": "claude", "role": "reviewer"}]. Then @charles brings charles in.`
+		n.Body = `Name agents in deck.json: "profiles": [{"name": "charles", "kind": "claude", "role": "reviewer"}]. Then pick charles with ctrl+l.`
 		return n
 	}
 	n.Title = fmt.Sprintf("Profiles (%d)", len(ps))

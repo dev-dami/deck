@@ -109,7 +109,8 @@ Unchanged from #47 unless noted. Every method that names a session takes
 | `sessions.delete` | `{id}` | `{}` |
 | `sessions.focus` | `{id}` (`""` unfocuses) | `{}` |
 | `messages.list` | `{session_id, before?: cursor, limit?: ≤100}` | `{messages: Message[], more: bool, cursor?}` |
-| `chat.send` | `{session_id, text, images?: [{name, mime, data_b64}], idempotency_key?}` | `{message_id}` |
+| `chat.send` | `{session_id, text, images?: [{name, mime, label?, data_b64?, upload_id?, frames?}], idempotency_key?}` | `{message_id}`: an image carries `data_b64`, a video the `upload_id` of a finished `media.upload`; `label` is what the agent sees it by, `frames` sends a video as stills (feature `video_frames`) |
+| `media.upload` | `{session_id, upload_id?, name?, mime?, size?, offset, data_b64}` | `{upload_id, received}`: one chunk (at most 4 MiB) of a video of at most 25 MiB. The first has no `upload_id` and says `name`, `mime` and `size`; its bytes must start like an MP4, WebM or QuickTime file. Each chunk starts at `offset`, the bytes received so far. Two uploads at a time per device, dropped 10 minutes after their last chunk or once a `chat.send` takes them |
 | `message.edit` | `{session_id, message_id, text}` | `{}` |
 | `chat.cancel` / `chat.continue` | `{session_id}` | `{}` |
 | `agent.interrupt` | `{session_id, agent}` | `{}` |
@@ -212,7 +213,9 @@ after key sorting).
   DER certificate; the page converts it to colon-separated hex pairs, which
   is how browsers show it, and `deck remote` prints the hex form.
 - `welcome.server.features` in v1 is `["images", "edit", "changes", "queue",
-  "models", "devices"]`. `messages.list` defaults to 50 when `limit` is
+  "models", "devices", "video"]`, and `"video_frames"` where the engine has
+  ffmpeg. `Session.lead.video` and `ModelChoice.video` say a model takes
+  video; a client offers video to the lead only then, else as frames. `messages.list` defaults to 50 when `limit` is
   absent. A `chat.send` image over 8 MiB is `too_large`. `devices.revoke` of
   another device from a phone is `forbidden`; revoking itself answers `{}`
   and then closes 4403.
@@ -377,7 +380,10 @@ The Deck desktop app does not use the WebSocket above. It runs
   `RESOURCE_EXHAUSTED` and resumes from its last seq. Nothing is scoped to
   a focused session; the desktop gets every event.
 - **Differences from the phone.**
-  - Images are raw `bytes`, up to 16 MB each.
+  - Images are raw `bytes`, up to 16 MB each. A video (`video/mp4`,
+    `video/webm`, `video/quicktime`) is raw `bytes` or the absolute `path`
+    of a file on this machine, at most 50 MB, checked by its bytes; `label`
+    and `frames` are as in `chat.send`.
   - Text is not capped.
   - Yolo is allowed, because the caller is the user at this machine.
   - Errors carry their message.
@@ -394,5 +400,7 @@ The Deck desktop app does not use the WebSocket above. It runs
 - **Optional calls.** `Info.capabilities` names the optional methods this
   Deck serves: the room calls (isolate, apply, undo an apply, unisolate,
   revert, undo a revert, archive, unarchive, race), `ListFiles`,
-  `ReadImage` and `SearchMessages`. A client checks it before it calls one.
+  `ReadImage` and `SearchMessages`, and `Video` (Send takes video) and
+  `VideoFrames` (it sends one as frames). A client checks it before it
+  calls one.
   `Info.clis` lists the agent CLIs Deck looks for and where it found them.

@@ -27,8 +27,9 @@ const (
 // LevelNames are the levels, from least to most.
 var LevelNames = []string{LevelOff, LevelAssist, LevelAuto, LevelFull}
 
-// DefaultLevel is the level of a new thread when the config names none.
-const DefaultLevel = LevelAuto
+// DefaultLevel is the level of a new thread when the config names none: off,
+// so one agent works like its own CLI until the user asks for more.
+const DefaultLevel = LevelOff
 
 // Level is what one orchestration level lets a thread's agents do.
 type Level struct {
@@ -41,6 +42,25 @@ type Level struct {
 	// MaxWork is how many subagents agents may start, and tasks the scheduler
 	// may hand out, per message of the user before the thread pauses.
 	MaxWork int `json:"max_work"`
+	// MaxTurns is how many turns may start without the user per message of
+	// theirs: every turn a relay, a hand-off, a task's brief or report, a
+	// review or a retry starts, in any member or subagent. At the limit the
+	// thread pauses until the user writes or continues it.
+	MaxTurns int `json:"max_turns"`
+	// MaxSubthreads is how many sub-threads one agent may open
+	// (session/subthread.go).
+	MaxSubthreads int `json:"max_subthreads"`
+	// MaxStalls is how far the agents may go without progress, counting
+	// only the turns they start themselves (session/stall.go): that many
+	// turns in a row that change no file or task and run no command, that
+	// many near-identical messages, or two agents passing the work back
+	// and forth that many times while no file or task changes. At the
+	// limit the thread pauses until the user writes or continues it.
+	MaxStalls int `json:"max_stalls"`
+	// Replan has a stall wake the thread's lead once with a request to
+	// re-plan instead of pausing; a second stall before the user speaks
+	// pauses.
+	Replan bool `json:"replan"`
 	// AskFirst lets a member start subagents only in a turn where the user
 	// spoke to it.
 	AskFirst bool `json:"ask_first"`
@@ -55,10 +75,10 @@ type Level struct {
 
 // Levels is the table of levels.
 var Levels = map[string]Level{
-	LevelOff:    {MaxDepth: 1, MaxChildren: 4, MaxSubagents: 4, MaxWork: 8, AskFirst: true},
-	LevelAssist: {MaxDepth: 1, MaxChildren: 2, MaxSubagents: 6, MaxWork: 8},
-	LevelAuto:   {MaxDepth: 2, MaxChildren: 4, MaxSubagents: 12, MaxWork: 24, Schedule: true},
-	LevelFull:   {MaxDepth: 3, MaxChildren: 6, MaxSubagents: 20, MaxWork: 48, Schedule: true, Race: true, Review: "other"},
+	LevelOff:    {MaxDepth: 1, MaxChildren: 4, MaxSubagents: 4, MaxWork: 8, MaxTurns: 12, MaxSubthreads: 2, MaxStalls: 3, AskFirst: true},
+	LevelAssist: {MaxDepth: 1, MaxChildren: 2, MaxSubagents: 6, MaxWork: 8, MaxTurns: 16, MaxSubthreads: 4, MaxStalls: 3},
+	LevelAuto:   {MaxDepth: 2, MaxChildren: 4, MaxSubagents: 12, MaxWork: 24, MaxTurns: 48, MaxSubthreads: 8, MaxStalls: 3, Schedule: true},
+	LevelFull:   {MaxDepth: 3, MaxChildren: 6, MaxSubagents: 20, MaxWork: 48, MaxTurns: 96, MaxSubthreads: 16, MaxStalls: 3, Schedule: true, Race: true, Review: "other", Replan: true},
 }
 
 // ValidLevel reports whether s names a level.
@@ -75,6 +95,8 @@ func (c Config) StartLevel() string {
 // Level is level's row of Levels with the config's changes to it: its
 // orchestration_levels entry, then max_depth, max_children, max_subagents
 // and max_work, which cap every level when set. An unknown level is off.
+// A max_turns, max_subthreads or max_stalls of 0 in config.json means the
+// level's own.
 func (c Config) Level(level string) Level {
 	if !ValidLevel(level) {
 		level = LevelOff
@@ -82,6 +104,15 @@ func (c Config) Level(level string) Level {
 	l := Levels[level]
 	if raw, ok := c.OrchestrationLevels[level]; ok {
 		_ = json.Unmarshal(raw, &l) // Validate refused a bad one
+		if l.MaxTurns == 0 {
+			l.MaxTurns = Levels[level].MaxTurns
+		}
+		if l.MaxSubthreads == 0 {
+			l.MaxSubthreads = Levels[level].MaxSubthreads
+		}
+		if l.MaxStalls == 0 {
+			l.MaxStalls = Levels[level].MaxStalls
+		}
 	}
 	ceil := func(n *int, max int) {
 		if max > 0 && *n > max {
@@ -108,7 +139,7 @@ func (c Config) validateLevels() error {
 		if err := json.Unmarshal(raw, &l); err != nil {
 			return fmt.Errorf("orchestration_levels.%s: %w", name, err)
 		}
-		if l.MaxDepth < 0 || l.MaxChildren < 0 || l.MaxSubagents < 0 || l.MaxWork < 0 {
+		if l.MaxDepth < 0 || l.MaxChildren < 0 || l.MaxSubagents < 0 || l.MaxWork < 0 || l.MaxTurns < 0 || l.MaxSubthreads < 0 || l.MaxStalls < 0 {
 			return fmt.Errorf("orchestration_levels.%s: limits must be 0 or more", name)
 		}
 		if l.Review != "" && l.Review != "none" && l.Review != "other" && !slices.Contains(Kinds, l.Review) {

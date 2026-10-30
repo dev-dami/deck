@@ -28,9 +28,9 @@ const kinds = ["claude", "codex"];
 
 describe("the composer's triggers", () => {
   test("@ opens agents and people, # files, $ agents", () => {
-    expect(pickerAt("@re", 3, true)).toEqual({ type: "@", m: { start: 0, query: "re" } });
+    expect(pickerAt("@re", 3, true)).toEqual({ type: "#", m: { start: 0, query: "re" } }); // @ is a file, as in Claude Code
     expect(pickerAt("see #rea", 8, true)).toEqual({ type: "#", m: { start: 4, query: "rea" } });
-    expect(pickerAt("$co", 3, true)).toEqual({ type: "$", m: { start: 0, query: "co" } });
+    expect(pickerAt("$co", 3, true)).toBeNull();
   });
 
   test("@ before something path-like still offers files", () => {

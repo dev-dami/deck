@@ -137,7 +137,7 @@ func TestOldEntriesAreReadBackOnDemand(t *testing.T) {
 	a := th.member("claude")
 	a.cursor = 0
 	th.mu.Unlock()
-	if err := m.Post(tid, "$claude catch up"); err != nil {
+	if err := m.postAt(tid, "$claude catch up"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the catch-up turn", func() bool { return c.turnDones("claude") == 2 })
@@ -266,7 +266,7 @@ func TestATornLogStopsTheWindowAtWhatWasRead(t *testing.T) {
 	if synced || n != 500 {
 		t.Fatalf("synced %v, %d entries in the store", synced, n)
 	}
-	if err := m.Post(tid, "$claude more"); err != nil {
+	if err := m.postAt(tid, "$claude more"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the turn", func() bool { return c.turnDones("claude") == 1 })
@@ -301,7 +301,7 @@ func TestAnUnterminatedLastEntryStaysAnEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range 40 {
-		if err := m.Post(tid, fmt.Sprintf("$claude more %d", i)); err != nil {
+		if err := m.Post(tid, fmt.Sprintf("more %d", i)); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "the turn", func() bool { return c.turnDones("claude") == i+1 })

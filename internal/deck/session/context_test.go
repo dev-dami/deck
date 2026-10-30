@@ -21,7 +21,7 @@ func TestSetModelClearsContextWindow(t *testing.T) {
 	r := newRigWith(t, t.TempDir(), true, testCfg(), []fake.Script{turn(usage, say("a"), finish())}, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "turn", func() bool { return r.c.turnDones("claude") == 1 })
 	if info, _ := r.m.Agent("claude"); info.ContextWindow != 1_000_000 {
 		t.Fatalf("window before switch = %d", info.ContextWindow)
@@ -50,7 +50,7 @@ func TestBriefedPersistsAcrossResume(t *testing.T) {
 	if first.Briefed {
 		t.Fatal("a new session is not briefed")
 	}
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "turn", func() bool { return r.c.turnDones("claude") == 1 })
 	r.m.Flush()
 	if _, meta, _ := r.st.LoadEntries(tid); len(meta.Members) != 1 || !meta.Members[0].Briefed || meta.Members[0].SessionID != "s1" {
@@ -62,7 +62,7 @@ func TestBriefedPersistsAcrossResume(t *testing.T) {
 	if _, _, err := r2.m.Resume(tid); err != nil {
 		t.Fatal(err)
 	}
-	_ = r2.m.Post(tid, "$claude again")
+	_ = r2.m.postAt(tid, "$claude again")
 	waitFor(t, "resumed run", func() bool {
 		r2.claude.mu.Lock()
 		defer r2.claude.mu.Unlock()
@@ -90,7 +90,7 @@ func TestThreadReadFitsTheHubCap(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	for i := 1; i <= turns; i++ {
-		_ = r.m.Post(tid, "$claude go")
+		_ = r.m.postAt(tid, "$claude go")
 		waitFor(t, "turn", func() bool { return r.c.turnDones("claude") == i })
 	}
 	got := r.m.readThread("claude")
@@ -113,7 +113,7 @@ func TestContextSourceKeptAndStored(t *testing.T) {
 	r := newRig(t, []fake.Script{turn(est, say("a"), finish())}, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "turn", func() bool { return r.c.turnDones("claude") == 1 })
 	if info, _ := r.m.Agent("claude"); info.ContextSource != agent.ContextEstimated {
 		t.Fatalf("source = %q", info.ContextSource)
@@ -242,7 +242,7 @@ func TestContextBreakdown(t *testing.T) {
 		t.Fatalf("at start: deck %d baseline %d, want %d and unknown", info.DeckTokens, info.ContextBaseline, instr)
 	}
 
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "turn 1", func() bool { return r.c.turnDones("claude") == 1 })
 	run := r.claude.runs["claude"]
 	run.mu.Lock()
@@ -262,9 +262,9 @@ func TestContextBreakdown(t *testing.T) {
 		t.Fatalf("baseline %d, want %d", info.ContextBaseline, want)
 	}
 
-	_ = r.m.Post(tid, "$codex look")
+	_ = r.m.postAt(tid, "$codex look")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
-	_ = r.m.Post(tid, "$claude again")
+	_ = r.m.postAt(tid, "$claude again")
 	waitFor(t, "turn 2", func() bool { return r.c.turnDones("claude") == 2 })
 	info, _ = r.m.Agent("claude")
 	if grew := info.DeckTokens - deck1; grew < estTokens(len(long))*9/10 {
@@ -275,7 +275,7 @@ func TestContextBreakdown(t *testing.T) {
 		t.Fatalf("stored %+v, want deck %d baseline %d", meta.Members[0], info.DeckTokens, info.ContextBaseline)
 	}
 
-	_ = r.m.Post(tid, "$claude compact")
+	_ = r.m.postAt(tid, "$claude compact")
 	waitFor(t, "turn 3", func() bool { return r.c.turnDones("claude") == 3 })
 	if info, _ = r.m.Agent("claude"); info.DeckTokens != 0 || info.ContextBaseline == 0 {
 		t.Fatalf("after a compaction: deck %d baseline %d, want 0 and kept", info.DeckTokens, info.ContextBaseline)

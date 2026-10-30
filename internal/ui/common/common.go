@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dev-dami/deck/internal/clipboard"
 	"github.com/dev-dami/deck/internal/config"
+	"github.com/dev-dami/deck/internal/deck/media"
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/ui/util"
 	"github.com/dev-dami/deck/internal/workspace"
@@ -127,6 +129,13 @@ func IsImagePath(path string) bool {
 	return slices.ContainsFunc(AllowedImageTypes, func(ext string) bool {
 		return strings.HasSuffix(lowerPath, ext)
 	})
+}
+
+// IsVideoPath reports whether the path names a video Deck can attach
+// (MP4, WebM or QuickTime); its bytes are checked when it is attached.
+func IsVideoPath(path string) bool {
+	_, ok := media.Types[strings.ToLower(filepath.Ext(path))]
+	return ok
 }
 
 // Common defines common UI options and configurations.

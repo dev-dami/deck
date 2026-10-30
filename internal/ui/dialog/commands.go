@@ -376,7 +376,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		NewCommandItem(c.com.Styles, "mobile_stop", "Mobile: stop managed services", "", ActionOpenDialog{MobileStopID}).WithAliases("mobile stop"),
 		NewCommandItem(c.com.Styles, "new_session", "New Session", "ctrl+n", ActionNewSession{}).WithAliases("clear"),
 		NewCommandItem(c.com.Styles, "switch_session", "Sessions", "ctrl+s", ActionOpenDialog{SessionsID}),
-		NewCommandItem(c.com.Styles, "switch_model", "Switch Model and Effort", "ctrl+l", ActionOpenDialog{AgentModelsID}),
+		NewCommandItem(c.com.Styles, "switch_model", "Agent: switch agent, model and effort", "ctrl+l", ActionOpenDialog{AgentModelsID}).WithAliases("model", "effort", "lead"),
 	}
 
 	// Only show toggle compact mode command if window width is larger than compact breakpoint (120)

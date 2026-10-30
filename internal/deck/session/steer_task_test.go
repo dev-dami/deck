@@ -49,7 +49,7 @@ func TestSteerTaskInterruptsABusyOwnerThroughItsSteerer(t *testing.T) {
 	r.add(t, tid, "claude")
 	codex := r.add(t, tid, "codex")
 	ownedTask(t, r, tid, "claude", codex)
-	if err := r.m.Post(tid, "$codex start"); err != nil {
+	if err := r.m.postAt(tid, "$codex start"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "codex approval", func() bool { return len(r.c.approvals()) == 1 })

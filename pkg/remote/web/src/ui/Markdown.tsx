@@ -70,6 +70,33 @@ function renderBlock(b: Block, i: number): ComponentChildren {
           <BlockNodes blocks={b.blocks} />
         </blockquote>
       );
+    case "table":
+      return (
+        <div key={i} class="md-table">
+          <table>
+            <thead>
+              <tr>
+                {b.head.map((c, j) => (
+                  <th key={j} data-align={b.align[j] || undefined}>
+                    <InlineNodes nodes={c} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {b.rows.map((r, j) => (
+                <tr key={j}>
+                  {r.map((c, k) => (
+                    <td key={k} data-align={b.align[k] || undefined}>
+                      <InlineNodes nodes={c} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
     case "hr":
       return <hr key={i} />;
   }

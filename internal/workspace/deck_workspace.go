@@ -183,6 +183,22 @@ func (w *DeckWorkspace) thread(sessionID string) (string, error) {
 	return id, nil
 }
 
+// openSubSession gives a sub-thread an agent opened a session of its own,
+// so every client lists it (under its parent: Room.Parent).
+func (w *DeckWorkspace) openSubSession(m decks.SubThreadMsg) {
+	sess, err := w.app.Sessions.Create(context.Background(), m.Title)
+	if err != nil {
+		slog.Error("deck: sub-thread session", "error", err)
+		return
+	}
+	w.mu.Lock()
+	w.threads[sess.ID], w.back[m.ThreadID] = m.ThreadID, sess.ID
+	b, _ := json.Marshal(w.threads)
+	w.mu.Unlock()
+	_ = os.MkdirAll(filepath.Dir(w.path), 0o755)
+	_ = os.WriteFile(w.path, b, 0o600)
+}
+
 func (w *DeckWorkspace) sessionOf(threadID string) string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -214,7 +230,10 @@ func (w *DeckWorkspace) post(ctx context.Context, sessionID, prompt string, atta
 	if err != nil {
 		return "", err
 	}
-	var images []deckagent.Image
+	images, mediaParts, err := w.attachMedia(ctx, sessionID, attachments)
+	if err != nil {
+		return "", err
+	}
 	var parts []message.ContentPart
 	parts = append(parts, message.TextContent{Text: prompt})
 	send := prompt
@@ -226,24 +245,9 @@ func (w *DeckWorkspace) post(ctx context.Context, sessionID, prompt string, atta
 ` + string(a.Content) + `
 </file>`
 			parts = append(parts, message.BinaryContent{Path: a.FileName, MIMEType: a.MimeType, Data: a.Content})
-			continue
 		}
-		if !a.IsImage() {
-			continue
-		}
-		p := a.FilePath
-		if p == "" {
-			f, err := os.CreateTemp("", "deck-*"+filepath.Ext(a.FileName))
-			if err != nil {
-				continue
-			}
-			_, _ = f.Write(a.Content)
-			f.Close()
-			p = f.Name()
-		}
-		images = append(images, deckagent.Image{Path: p, MediaType: a.MimeType})
-		parts = append(parts, message.BinaryContent{Path: a.FileName, MIMEType: a.MimeType, Data: a.Content})
 	}
+	parts = append(parts, mediaParts...)
 	w.dbw.wait(sessionID) // after the tool results already stored
 	row, err := w.app.Messages.Create(ctx, sessionID, message.CreateMessageParams{Role: message.User, Parts: parts})
 	if err != nil {
@@ -476,6 +480,10 @@ func (w *DeckWorkspace) pump() {
 		switch m := msg.(type) {
 		case decks.EventMsg:
 			if m.FromUser() {
+				if m.From != "" {
+					w.onBrief(m)
+					continue
+				}
 				w.onUserMessage(m) // AgentRun stored the message already
 				continue
 			}
@@ -500,7 +508,16 @@ func (w *DeckWorkspace) pump() {
 			for i, t := range m.To {
 				to[i] = "$" + t
 			}
-			w.say(m.ThreadID, m.From, "→ "+strings.Join(to, " ")+"\n\n"+m.Text)
+			head := "→ " + strings.Join(to, " ")
+			if m.Via == decks.ViaSubthread {
+				// A sub-thread's report: the clients link to its session.
+				if sid := w.sessionOf(m.Thread); sid != "" {
+					head += " · sub-thread " + sid
+				}
+			}
+			w.say(m.ThreadID, m.From, head+"\n\n"+m.Text)
+		case decks.SubThreadMsg:
+			w.openSubSession(m)
 		case decks.NoticeMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.Text)
 			w.publish(DeckChange{Kind: ChangeNotice, SessionID: w.sessionOf(m.ThreadID), Text: m.Text, Via: m.Via})
@@ -801,6 +818,7 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event, turnIDs ...
 				t.msg.FinishThinking()
 			}
 			t.msg.AddFinish(reason, "", "")
+			t.msg.SetTurnEnd(string(ev.End)) // done, handoff, blocked or continue
 			_ = w.app.Messages.Update(ctx, t.msg)
 		}
 		// The turn's own start outlives an error mid-turn, which restarts
@@ -977,6 +995,25 @@ func (w *DeckWorkspace) say(threadID, agentID, text string) {
 		Provider: kind,
 		Parts:    []message.ContentPart{message.TextContent{Text: text}, message.Finish{Reason: message.FinishReasonEndTurn, Time: time.Now().Unix()}},
 	})
+}
+
+// onBrief stores a parent agent's brief or follow-up to a sub-thread
+// (EventMsg.From): a user row whose Model is that agent's name, so the
+// clients show it as the agent's message (wire Message.Agent), not the
+// person's. Nobody stored it before: no AgentRun posted it.
+func (w *DeckWorkspace) onBrief(m decks.EventMsg) {
+	sid := w.sessionOf(m.ThreadID)
+	if sid == "" {
+		return
+	}
+	w.dbw.wait(sid)
+	_, _ = w.app.Messages.Create(context.Background(), sid, message.CreateMessageParams{
+		Role:     message.User,
+		Model:    m.From,
+		Provider: "deck",
+		Parts:    []message.ContentPart{message.TextContent{Text: m.Text}},
+	})
+	w.expect(m.ThreadID, m.To, usage.TriggerRelay)
 }
 
 // notice shows a note from Deck itself.

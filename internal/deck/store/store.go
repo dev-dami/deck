@@ -69,10 +69,13 @@ const CurrentVersion = 2
 
 // Member is one agent taking part in a thread.
 type Member struct {
-	ID        string  `json:"id"`   // Deck's id, unique across the deck: "claude", "claude2", "codex"
-	Kind      string  `json:"kind"` // "claude" or "codex"
-	Name      string  `json:"name"` // display name; used for addressing
-	Model     string  `json:"model,omitempty"`
+	ID    string `json:"id"`   // Deck's id, unique across the deck: "claude", "claude2", "codex"
+	Kind  string `json:"kind"` // "claude" or "codex"
+	Name  string `json:"name"` // display name; used for addressing
+	Model string `json:"model,omitempty"`
+	// Running is the slug Model ran as, as the CLI reported it
+	// ("claude-opus-5-5" for "opus"); "" until it has.
+	Running   string  `json:"running,omitempty"`
 	Effort    string  `json:"effort,omitempty"`
 	SessionID string  `json:"session_id,omitempty"` // the CLI's own session/thread id
 	CostUSD   float64 `json:"cost_usd,omitempty"`
@@ -162,9 +165,18 @@ type Thread struct {
 	// TitleSrc says who wrote Title: "" (the first-prompt placeholder), "auto"
 	// (written by the default model) or "user" (renamed by hand). Only "" may be
 	// replaced by an automatic title.
-	TitleSrc string   `json:"title_src,omitempty"`
-	Dir      string   `json:"dir"`
-	Members  []Member `json:"members,omitempty"`
+	TitleSrc string `json:"title_src,omitempty"`
+	Dir      string `json:"dir"`
+	// Lead is the member the person talks to: every message of theirs goes
+	// to it (session/lead.go). "" for a thread from before leads.
+	Lead string `json:"lead,omitempty"`
+	// Parent is the thread an agent opened this one from (a sub-thread,
+	// session/subthread.go), ParentAgent that agent's member id there, and
+	// Asks the entries of this thread that agent waits on an answer to.
+	Parent      string   `json:"parent,omitempty"`
+	ParentAgent string   `json:"parent_agent,omitempty"`
+	Asks        []string `json:"asks,omitempty"`
+	Members     []Member `json:"members,omitempty"`
 	// Mode is the thread's permission mode: "plan", "ask" or "yolo". Threads
 	// stored before modes existed (and any unknown value) read as "ask".
 	Mode string `json:"mode,omitempty"`
@@ -310,8 +322,11 @@ type Entry struct {
 	// it writes; LoadEntries gives entries from older logs a stable one ("e<n>",
 	// n = position in the log).
 	ID string `json:"id,omitempty"`
-	// Images (user entries) are the paths of the images attached to the message.
-	Images []string `json:"images,omitempty"`
+	// Images (user entries) are the paths of the images (and videos)
+	// attached to the message, and ImageLabels what the person called each
+	// one, in the same order (absent from older logs and for no label).
+	Images      []string `json:"images,omitempty"`
+	ImageLabels []string `json:"image_labels,omitempty"`
 	// Steer marks a user entry that redirected a busy agent mid-task (the
 	// message was queued and the user then steered with it).
 	Steer bool `json:"steer,omitempty"`
@@ -959,35 +974,37 @@ func decodeEntry(line []byte, whole bool) (Entry, bool) {
 // Limits, LimitHit, Raw), which is most of the bytes of a log and none of what an
 // index of it needs. The fields and their JSON names are Entry's.
 type entryHead struct {
-	TurnID    string     `json:"turn_id,omitempty"`
-	AgentID   string     `json:",omitempty"`
-	Time      time.Time  `json:",omitzero"`
-	Kind      agent.Kind `json:",omitempty"`
-	Text      string     `json:",omitempty"`
-	Delta     bool       `json:",omitempty"`
-	SessionID string     `json:",omitempty"`
+	TurnID    string        `json:"turn_id,omitempty"`
+	AgentID   string        `json:",omitempty"`
+	Time      time.Time     `json:",omitzero"`
+	Kind      agent.Kind    `json:",omitempty"`
+	Text      string        `json:",omitempty"`
+	Delta     bool          `json:",omitempty"`
+	SessionID string        `json:",omitempty"`
+	End       agent.TurnEnd `json:",omitempty"`
 
-	Type    string     `json:"type,omitempty"`
-	Speaker string     `json:"speaker,omitempty"`
-	To      []string   `json:"to,omitempty"`
-	Via     string     `json:"via,omitempty"`
-	Held    bool       `json:"held,omitempty"`
-	ID      string     `json:"id,omitempty"`
-	Images  []string   `json:"images,omitempty"`
-	Steer   bool       `json:"steer,omitempty"`
-	Ref     string     `json:"ref,omitempty"`
-	Old     string     `json:"old,omitempty"`
-	Snap    string     `json:"snap,omitempty"`
-	Files   []string   `json:"files,omitempty"`
-	Task    *TaskEvent `json:"task,omitempty"`
-	TaskID  string     `json:"task_id,omitempty"`
+	Type        string     `json:"type,omitempty"`
+	Speaker     string     `json:"speaker,omitempty"`
+	To          []string   `json:"to,omitempty"`
+	Via         string     `json:"via,omitempty"`
+	Held        bool       `json:"held,omitempty"`
+	ID          string     `json:"id,omitempty"`
+	Images      []string   `json:"images,omitempty"`
+	ImageLabels []string   `json:"image_labels,omitempty"`
+	Steer       bool       `json:"steer,omitempty"`
+	Ref         string     `json:"ref,omitempty"`
+	Old         string     `json:"old,omitempty"`
+	Snap        string     `json:"snap,omitempty"`
+	Files       []string   `json:"files,omitempty"`
+	Task        *TaskEvent `json:"task,omitempty"`
+	TaskID      string     `json:"task_id,omitempty"`
 }
 
 func (h entryHead) entry() Entry {
 	return Entry{
 		TurnID: h.TurnID,
-		Event:  agent.Event{AgentID: h.AgentID, Time: h.Time, Kind: h.Kind, Text: h.Text, Delta: h.Delta, SessionID: h.SessionID},
-		Type:   h.Type, Speaker: h.Speaker, To: h.To, Via: h.Via, Held: h.Held, ID: h.ID, Images: h.Images,
+		Event:  agent.Event{AgentID: h.AgentID, Time: h.Time, Kind: h.Kind, Text: h.Text, Delta: h.Delta, SessionID: h.SessionID, End: h.End},
+		Type:   h.Type, Speaker: h.Speaker, To: h.To, Via: h.Via, Held: h.Held, ID: h.ID, Images: h.Images, ImageLabels: h.ImageLabels,
 		Steer: h.Steer, Ref: h.Ref, Old: h.Old, Snap: h.Snap, Files: h.Files, Task: h.Task, TaskID: h.TaskID,
 	}
 }

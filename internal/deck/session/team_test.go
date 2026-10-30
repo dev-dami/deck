@@ -68,7 +68,7 @@ func TestTeamPostIsNamedRedactedAndLimited(t *testing.T) {
 	r.m.SetTeam(team)
 	tid := r.thread(t)
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$codex go")
+	_ = r.m.postAt(tid, "$codex go")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 
 	res := r.c.toolResults("codex", "deck")
@@ -90,13 +90,14 @@ func TestInstructionsNameTheTeam(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	sp, _ := r.claude.spec("claude")
-	has(t, sp.Instructions, "agent.spawn", "lease.acquire", "when the user asks for agents, use it, not your own Task/subagent tool")
-	lacks(t, sp.Instructions, "task.contract", "Teammates")
+	// Alone with the user, it hears only where Deck's ops are (solo).
+	has(t, sp.Instructions, "agent.spawn", "not your own Task/subagent tool")
+	lacks(t, sp.Instructions, "task.contract", "Teammates", "lease.acquire")
 
 	r.m.SetTeam(&postTeam{})
 	r.add(t, tid, "codex")
 	sp, _ = r.codex.spec("codex")
-	has(t, sp.Instructions, "agent.spawn", "Teammates' Decks on other machines: vps, pc2", "task.contract {peer, brief}", "team.post", `"[vps] ..."`)
+	has(t, sp.Instructions, "agent.spawn", "lease.acquire", "Teammates' Decks on other machines: vps, pc2", "task.contract {peer, brief}", "team.post", `"[vps] ..."`)
 	if len(sp.Instructions) > maxInstrChars {
 		t.Fatalf("Instructions are %d bytes", len(sp.Instructions))
 	}
@@ -112,13 +113,13 @@ func TestTeamNewsReachesTheAgent(t *testing.T) {
 	r.m.SetTeam(team)
 	tid := r.thread(t)
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$codex go")
+	_ = r.m.postAt(tid, "$codex go")
 	waitFor(t, "turn 1", func() bool { return r.c.turnDones("codex") == 1 })
 	first := r.codex.prompts("codex")[0]
 	has(t, first, "hey now", "build is green", "go")
 	lacks(t, first, "not for codex")
 
-	_ = r.m.Post(tid, "$codex again")
+	_ = r.m.postAt(tid, "$codex again")
 	waitFor(t, "turn 2", func() bool { return r.c.turnDones("codex") == 2 })
 	lacks(t, r.codex.prompts("codex")[1], "hey now", "build is green")
 }
@@ -131,7 +132,7 @@ func TestTeamPostTo(t *testing.T) {
 	r.m.SetTeam(team)
 	tid := r.thread(t)
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$codex go")
+	_ = r.m.postAt(tid, "$codex go")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 	team.mu.Lock()
 	defer team.mu.Unlock()

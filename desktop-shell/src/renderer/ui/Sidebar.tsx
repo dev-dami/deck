@@ -1,3 +1,4 @@
+import { isTop, nest } from "../subthreads";
 import type { Session, Theme } from "@web/protocol";
 import type { Link } from "@web/state";
 import { sessionTitle } from "@web/state";
@@ -18,7 +19,6 @@ import { SETTLE_AFTER_MS } from "../threads";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
-import { DeckMark } from "./kit/mark";
 
 import { modKey } from "./keys";
 import { navRow, ProjectFilter, ProjectGroup, RecentProjects, SharedGroup, type SharedEntry, type SidebarItem, ThreadList } from "./ProjectGroup";
@@ -121,16 +121,6 @@ function HeaderButton({ label, onClick, children }: { label: string; onClick: ()
   );
 }
 
-// Deck's mark (the app icon's prompt), then the name. No tile; type does it.
-function Brand() {
-  return (
-    <span className="flex min-w-0 items-center gap-1.5 font-semibold text-sm tracking-tight">
-      <DeckMark className="h-3 text-foreground" />
-      Deck
-    </span>
-  );
-}
-
 export function Sidebar({ data, actions, order }: { data: SidebarData; actions: SidebarActions; order: MutableRefObject<RowRef[]> }) {
   const { project, source, sessions, openId, unread, settings, inbox, projects, theme } = data;
   // Threads under their project folders (T3 Code's projects), or one list
@@ -201,16 +191,26 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
     return { live, settled, archived };
   };
   const grouped = grouping === "projects";
+  const depthOf = new Map<string, number>();
   // The open projects, the current one first, then the others by name.
   const current = projects.find((p) => p.key === source);
   const groups = [
     ...(current === undefined ? [{ key: source, name: project || "Deck", detail: "", kind: "folder" as const, active: true, open: true }] : [current]),
     ...projects.filter((p) => p.open && p.key !== source).sort((a, b) => a.name.localeCompare(b.name)),
   ].filter((p) => filter === null || p.key === filter);
+  // Sub-threads sit under their parent (subthreads.ts): the lists hold the
+  // threads that lead, and each parent's sub-threads follow it.
+  const parentOf = (x: SidebarItem) => (x.foreign === null ? metaOf(x).parent : "");
   const lists = (grouped ? groups.map((g) => g.key) : ["all"]).map((key) => {
     const mine = grouped ? items.filter((x) => x.source === key) : items;
-    const parts = split(mine);
-    return { key, count: mine.length - parts.archived.length, ...parts };
+    const ids = new Set(mine.map((x) => x.s.id));
+    const parts = split(mine.filter((x) => isTop(x, ids, parentOf)));
+    const under = (list: SidebarItem[]) =>
+      nest(list, mine, (x) => x.s.id, parentOf, (a, b) => toMillis(b.s.updated_at) - toMillis(a.s.updated_at)).map((n) => {
+        depthOf.set(`${n.item.source}/${n.item.s.id}`, n.depth);
+        return n.item;
+      });
+    return { key, count: mine.length - parts.archived.length, live: under(parts.live), settled: under(parts.settled), archived: under(parts.archived) };
   });
   // The rows in the order they show, for Ctrl/Cmd+1 to 9: a virtual list
   // leaves rows out of the page, so the order comes from the lists.
@@ -240,6 +240,7 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
         theme={theme}
         hideProject={grouped}
         branch={metaOf(x).branch}
+        depth={depthOf.get(`${x.source}/${s.id}`) ?? 0}
         archive={offer}
         onUnarchive={unarchiveOf(x)}
         onOpen={() => (f === null ? latest.current.onOpen(s.id) : latest.current.onForeign(f.source, s.id))}
@@ -279,7 +280,8 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
           at (18, 19) in the window, so a 36px row centres them. It stays
           36px in a compact window. */}
       <header className={cn("drag relative flex shrink-0 items-center gap-2 pr-2", data.mac ? "h-[36px]" : "h-11", lights ? "pl-[72px]" : "pl-3.5")}>
-        <Brand />
+        {/* No mark or name here: the window and the dock already say it is
+            Deck, and beside the threads it read as a second logo. */}
         <span className="ml-auto flex items-center">
           <HeaderButton label="Hide the sidebar" onClick={actions.onCollapse}>
             {sidebarSide === "left" ? <PanelLeft /> : <PanelRight />}

@@ -10,6 +10,8 @@ import (
 	"github.com/dev-dami/deck/internal/app"
 	"github.com/dev-dami/deck/internal/config"
 	"github.com/dev-dami/deck/internal/db"
+	deckagent "github.com/dev-dami/deck/internal/deck/agent"
+	decks "github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/permission"
 	"github.com/dev-dami/deck/internal/session"
@@ -43,7 +45,10 @@ func TestRoomReadsLiveAndStoredThreads(t *testing.T) {
 	// Archived, the thread is no longer live: Room reads the store.
 	require.NoError(t, w.mgr().Archive(tid))
 	w.mgr().Flush()
-	require.Equal(t, Room{Dir: live.Dir, Archived: true}, w.Room("s1"))
+	stored := w.Room("s1")
+	require.Equal(t, "claude", stored.Lead.Kind, "the stored thread keeps its lead")
+	stored.Lead = Lead{}
+	require.Equal(t, Room{Dir: live.Dir, Archived: true}, stored)
 }
 
 func TestArchiveAnEmptySessionAndUnarchiveIt(t *testing.T) {
@@ -129,4 +134,52 @@ func TestSearchMessages(t *testing.T) {
 	for _, h := range hits {
 		require.Equal(t, a.ID, h.SessionID)
 	}
+}
+
+// A sub-thread an agent opens gets a session of its own, which names its
+// parent session, so every client lists it under the parent.
+func TestASubThreadGetsASessionUnderItsParent(t *testing.T) {
+	w := roomWorkspace(t)
+	parent, err := w.app.Sessions.Create(t.Context(), "Fix the limiter")
+	require.NoError(t, err)
+	ptid, err := w.thread(parent.ID)
+	require.NoError(t, err)
+	ctid, err := w.mgr().OpenSubThread(ptid, "Second opinion", "codex")
+	require.NoError(t, err)
+	// The engine announces it; the workspace's pump (not running here)
+	// hands the announcement on.
+	w.openSubSession(decks.SubThreadMsg{ThreadID: ctid, ParentID: ptid, Title: "Second opinion"})
+
+	sid := w.sessionOf(ctid)
+	require.NotEmpty(t, sid)
+	sess, err := w.app.Sessions.Get(t.Context(), sid)
+	require.NoError(t, err)
+	require.Equal(t, "Second opinion", sess.Title)
+	require.Empty(t, sess.ParentSessionID, "a sub-thread is a session in the list, not a tool call's")
+	require.Equal(t, parent.ID, w.Room(sid).Parent)
+	require.Equal(t, "codex", w.Room(sid).Lead.Kind)
+	require.Empty(t, w.Room(parent.ID).Parent)
+}
+
+// A parent agent's brief to its sub-thread is stored as that agent's: a user
+// row naming it, which the person cannot edit.
+func TestASubThreadBriefIsTheAgents(t *testing.T) {
+	w := roomWorkspace(t)
+	parent, err := w.app.Sessions.Create(t.Context(), "Fix the limiter")
+	require.NoError(t, err)
+	ptid, err := w.thread(parent.ID)
+	require.NoError(t, err)
+	ctid, err := w.mgr().OpenSubThread(ptid, "Second opinion", "codex")
+	require.NoError(t, err)
+	w.openSubSession(decks.SubThreadMsg{ThreadID: ctid, ParentID: ptid, Title: "Second opinion"})
+	sid := w.sessionOf(ctid)
+
+	w.onBrief(decks.EventMsg{Event: deckagent.Event{Kind: deckagent.KindUserText, Text: "Is the fix right?"}, ThreadID: ctid, From: "claude"})
+	rows, err := w.app.Messages.List(t.Context(), sid)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, message.User, rows[0].Role)
+	require.Equal(t, "claude", rows[0].Model)
+	require.Equal(t, "Is the fix right?", rows[0].Content().Text)
+	require.False(t, w.EditableMessage(sid, rows[0].ID))
 }

@@ -171,26 +171,20 @@ describe("the @ picker: agents and people", () => {
 });
 
 describe("which picker the text opens", () => {
-  test("@ names, # files, $ agents, and @ before a path still files", () => {
-    expect(pickerAt("@co", 3, true)).toEqual({ type: "@", m: { start: 0, query: "co" } });
+  test("# and @ open files, as in Claude Code; agents have no sigil", () => {
+    expect(pickerAt("@co", 3, true)).toEqual({ type: "#", m: { start: 0, query: "co" } });
+    expect(pickerAt("$co", 3, true)).toBeNull();
+    expect(pickerAt("me@example", 10, true)).toBeNull();
     expect(pickerAt("#li", 3, true)).toEqual({ type: "#", m: { start: 0, query: "li" } });
     expect(pickerAt("see #", 5, true)).toEqual({ type: "#", m: { start: 4, query: "" } });
-    expect(pickerAt("$co", 3, true)).toEqual({ type: "$", m: { start: 0, query: "co" } });
     expect(pickerAt("look at @pkg/re", 15, true)).toEqual({ type: "#", m: { start: 8, query: "pkg/re" } });
     expect(pickerAt("@README.md", 10, true)).toEqual({ type: "#", m: { start: 0, query: "README.md" } });
   });
 
-  test("without files, # and a path after @ open nothing", () => {
+  test("without files, nothing opens", () => {
     expect(pickerAt("#li", 3, false)).toBeNull();
     expect(pickerAt("@pkg/", 5, false)).toBeNull();
-    expect(pickerAt("@co", 3, false)).toEqual({ type: "@", m: { start: 0, query: "co" } });
-  });
-
-  test("a Deck that reads only $: @ picks files as it did, # still files, $ agents", () => {
-    expect(pickerAt("@co", 3, true, false)).toEqual({ type: "#", m: { start: 0, query: "co" } });
-    expect(pickerAt("#co", 3, true, false)).toEqual({ type: "#", m: { start: 0, query: "co" } });
-    expect(pickerAt("$co", 3, true, false)).toEqual({ type: "$", m: { start: 0, query: "co" } });
-    expect(pickerAt("@co", 3, false, false)).toBeNull();
+    expect(pickerAt("@co", 3, false)).toBeNull();
   });
 
   test("a # inside a word, a heading or ## opens nothing", () => {

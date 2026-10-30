@@ -58,7 +58,7 @@ func collectDirs(cmd *cobra.Command) []string {
 }
 
 func printDirs(cmd *cobra.Command, dirs []string) {
-	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(tone.Mint)
+	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(tone.Dark.Link)
 
 	labels := make([]string, len(dirs))
 	longest := 0
@@ -76,7 +76,7 @@ func printDirs(cmd *cobra.Command, dirs []string) {
 			" " + d)
 	}
 
-	lipgloss.Println(lipgloss.NewStyle().Foreground(tone.Muted).Render("Configs merge from top to bottom"))
+	lipgloss.Println(lipgloss.NewStyle().Foreground(tone.Dark.Muted).Render("Configs merge from top to bottom"))
 }
 
 func dirLabel(i int) string {

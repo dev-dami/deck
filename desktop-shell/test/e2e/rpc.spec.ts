@@ -119,9 +119,8 @@ test("the agent pickers list every agent once, keep it, and refresh by hand", as
   await page.keyboard.press("ArrowDown");
   await expect(codex.getByRole("menuitemradio", { name: /Fast/ })).toBeFocused();
   await page.keyboard.press("Escape");
-  const others = sidebar(page).locator(".session");
-  await others.nth(1).click();
-  await others.nth(0).click();
+  await sidebar(page).getByRole("button", { name: "Docs pass", exact: true }).click();
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   expect(fake.deck.modelLists).toHaveLength(4);
 
   // Refresh lists them all again, asking the Deck to forget its lists once.
@@ -160,7 +159,7 @@ test("$pi starts a pi lane, and its picker offers the models pi has a key for", 
   await expect(page.locator('[data-kind="antigravity"][data-available="false"]')).toContainText("not installed");
 });
 
-test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill the composer", async ({ page }) => {
+test("first run: the Welcome lists the agent CLIs, and a new thread is one agent unless a workflow is picked", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "One deck for all your agents" })).toBeVisible();
   const clis = page.getByRole("list", { name: "Agent CLIs" });
@@ -180,15 +179,16 @@ test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill
   await page.getByRole("button", { name: "Open a folder" }).click();
   await expect(page.locator(".project")).toHaveText(basename(dir));
   await expect(page.getByRole("heading", { name: `What should we build in ${basename(dir)}?` })).toBeVisible();
-  const starts = page.getByRole("list", { name: "Ways to start" });
-  await starts.getByRole("button", { name: /Split the work/ }).click();
-  await expect(composer(page)).toHaveValue("$claude $codex ");
+  // One agent by default; a crew is a choice from the workflow menu.
+  await expect(page.getByRole("list", { name: "Workflows" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Start a multi-agent workflow" }).click();
+  const flows = page.getByRole("list", { name: "Workflows" });
+  await expect(flows.getByRole("button")).toHaveText([/^Plan, build, review/, /^Build and review/, /^Second opinion/, /^Best of several/, /^Split by area/, /^Full crew/]);
+  await flows.getByRole("button", { name: /Build and review/ }).click();
+  await expect(page.locator('.workflow-chip[data-workflow="review"]')).toContainText("claude builds it, codex reviews before it is done");
   await expect(composer(page)).toBeFocused();
-  await composer(page).pressSequentially("fix the limiter");
-  await starts.getByRole("button", { name: /Race agents/ }).click();
-  await expect(composer(page)).toHaveValue("/race fix the limiter");
-  await starts.getByRole("button", { name: /One agent/ }).click();
-  await expect(composer(page)).toHaveValue("$claude fix the limiter");
+  await page.getByRole("button", { name: "Back to one agent" }).click();
+  await expect(page.locator(".workflow-chip")).toHaveCount(0);
 
   // The palette opens the Welcome again, with a way back. Enter waits for
   // the Welcome to be the picked line.
@@ -200,6 +200,40 @@ test("first run: the Welcome lists the agent CLIs, and the new-thread cards fill
   await expect(page.getByRole("heading", { name: "One deck for all your agents" })).toBeVisible();
   await page.getByRole("button", { name: "Back to threads" }).click();
   await expect(page.locator(".project")).toHaveText(basename(dir));
+});
+
+test("a workflow from the new-thread screen starts its thread at its level with its terms; a race opens the builder", async ({ page }) => {
+  await openFolder(page);
+  const pick = async (name: RegExp) => {
+    await page.getByRole("button", { name: "Start a multi-agent workflow" }).click();
+    await page.getByRole("list", { name: "Workflows" }).getByRole("button", { name }).click();
+  };
+  await pick(/Build and review/);
+  await composer(page).fill("fix the limiter");
+  await composer(page).press("Enter");
+  await expect.poll(() => fake.createdLevels.at(-1)).toBe("assist");
+  await expect
+    .poll(() => fake.deck.allMessages().some((m) => m.role === "user" && (m.parts[0]?.text ?? "").includes('review: "codex"')))
+    .toBe(true);
+
+  // The next new thread is one agent again: the workflow was for one send.
+  await page.getByRole("button", { name: "New thread" }).first().click();
+  await expect(page.locator(".workflow-chip")).toHaveCount(0);
+  await pick(/Best of several/);
+  await composer(page).fill("fix the flaky test");
+  await composer(page).press("Enter");
+  await expect(page.getByRole("region", { name: "Race builder" })).toBeVisible();
+});
+
+test("a room of one agent has no lanes strip; a crew's room has one", async ({ page }) => {
+  // The fake serves one agents tree for every thread: here, one agent.
+  fake.crew = { agents: [{ name: "claude-1", kind: "claude", model: "opus", status: "idle", depth: 0 }], running: [] };
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Docs pass", exact: true }).click();
+  await expect(page.locator('[data-agent="claude-1"].msg').first()).toBeVisible();
+  await expect(page.getByRole("toolbar", { name: "Lanes" })).toHaveCount(0);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await expect(page.getByRole("toolbar", { name: "Lanes" })).toBeVisible();
 });
 
 test("first run: an engine that finds no agent CLI shows the agents, any other error its last lines", async ({ page }) => {
@@ -439,11 +473,11 @@ test("orchestration: the composer's level picker, and the level Settings gives n
   await expect(dock.getByRole("button", { name: "Orchestration: Full" })).toBeVisible();
   await expect(menu).toHaveCount(0);
 
-  // Settings › Agents: the level new threads start at, Auto until changed.
+  // Settings › Agents: the level new threads start at, Off until changed.
   await sidebar(page).getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Agents" }).click();
   const levels = page.getByRole("radiogroup", { name: "Orchestration for new threads" });
-  await expect(levels.getByRole("radio", { name: "Auto" })).toHaveAttribute("aria-checked", "true");
+  await expect(levels.getByRole("radio", { name: "Off" })).toHaveAttribute("aria-checked", "true");
   await levels.getByRole("radio", { name: "Assist" }).click();
   await expect(levels.getByRole("radio", { name: "Assist" })).toHaveAttribute("aria-checked", "true");
   await expect(page.locator(".settings")).toContainText("a couple of helpers");
@@ -927,8 +961,8 @@ test("an agent told to spin up agents spawns them: lanes under it, its brief as 
     await expect(lane.locator(".lane-parent")).toHaveText("by @claude-1", { timeout: 15_000 });
     await expect(page.locator(`[data-agent="${name}"].msg`).last()).toContainText("write the limiter tests");
   }
-  // The brief shows as claude's handoff to each.
-  await expect(page.locator('[data-agent="claude-1"].msg').filter({ hasText: "→ $codex-2" })).toBeVisible();
+  // The brief shows as claude's hand-off card to each.
+  await expect(page.locator('[data-agent="claude-1"].msg .handoff[aria-label="claude-1 to codex-2"]')).toBeVisible();
   expect(fake.deck.spawned.map((s) => [s.parent, s.name])).toEqual([
     ["claude-1", "codex-2"],
     ["claude-1", "codex-3"],
@@ -940,7 +974,7 @@ test("an agent told to spin up agents spawns them: lanes under it, its brief as 
   await pop.getByRole("menuitem", { name: "Spawned by @claude-1" }).click();
   await expect(lanes.locator('[data-lane="agent:claude-1"]')).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator('[data-agent="codex-2"].msg')).toHaveCount(0);
-  await expect(page.locator('[data-agent="claude-1"].msg').filter({ hasText: "→ $codex-3" })).toBeVisible();
+  await expect(page.locator('[data-agent="claude-1"].msg .handoff[aria-label="claude-1 to codex-3"]')).toBeVisible();
 });
 
 test("sharing: the share popover, a follower's lane and a room shared with you", async ({ page }) => {

@@ -86,6 +86,9 @@ type BinaryContent struct {
 	Path     string
 	MIMEType string
 	Data     []byte
+	// Label is what the person called the attachment. A video keeps no
+	// Data: the file stays in Deck's media folder (internal/deck/media).
+	Label string `json:",omitempty"`
 }
 
 func (bc BinaryContent) String(p catwalk.InferenceProvider) string {
@@ -125,6 +128,9 @@ type Finish struct {
 	Time    int64        `json:"time"`
 	Message string       `json:"message,omitempty"`
 	Details string       `json:"details,omitempty"`
+	// TurnEnd is how a Deck agent's turn ended: "done", "handoff",
+	// "blocked" or "continue" (agent.TurnEnd); "" when unknown.
+	TurnEnd string `json:"turn_end,omitempty"`
 }
 
 func (Finish) isPart() {}
@@ -567,6 +573,18 @@ func (m *Message) AddFinish(reason FinishReason, message, details string) {
 		}
 	}
 	m.Parts = append(m.Parts, Finish{Reason: reason, Time: time.Now().Unix(), Message: message, Details: details})
+}
+
+// SetTurnEnd records how the turn ended on the message's finish part; it
+// does nothing for a message that is not finished.
+func (m *Message) SetTurnEnd(end string) {
+	for i, part := range m.Parts {
+		if f, ok := part.(Finish); ok {
+			f.TurnEnd = end
+			m.Parts[i] = f
+			return
+		}
+	}
 }
 
 func (m *Message) AddImageURL(url, detail string) {

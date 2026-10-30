@@ -1,7 +1,7 @@
 import type { AgentLine, Message } from "@web/protocol";
 import { describe, expect, test } from "vitest";
 import { type AgentNode, notNative } from "./crew";
-import { buildLanes, filterLane, fitLanes, type Lane, laneOf, leasePaths, lineCount, pinnedLane, shortId, subName, subParent } from "./lanes";
+import { buildLanes, filterLane, fitLanes, type Lane, laneOf, leasePaths, lineCount, pinnedLane, shortId, soloRoom, subName, subParent } from "./lanes";
 
 const line = (id: string, busy = false): AgentLine => ({ id, name: id, kind: id.replace(/-\d+$/, ""), busy });
 
@@ -258,4 +258,16 @@ describe("CLI-native subagents", () => {
     expect(filterLane(work, "agent:claude/pr-295").map((m) => m.parts[0]!.text)).toEqual(["diff looks fine"]);
     expect(laneOf(work[2]!)).toBe("agent:claude/pr-296");
   });
+});
+
+test("a room of one agent and no teammate has no lanes strip, whatever its subagents", () => {
+  const lane = (id: string, kind: "you" | "agent" | "mate", parent = "", sub: Lane["sub"] = null) => ({ id, kind, parent, sub }) as Lane;
+  expect(soloRoom([lane("you", "you"), lane("agent:claude-1", "agent")])).toBe(true);
+  expect(soloRoom([lane("you", "you"), lane("agent:claude-1", "agent"), lane("agent:codex-1", "agent")])).toBe(false);
+  expect(soloRoom([lane("you", "you"), lane("agent:claude-1", "agent"), lane("mate:vps", "mate")])).toBe(false);
+  // A lead and the subagents it spawned, or its CLI started: still one agent.
+  const native = { status: "running", description: "", type: "", actions: 0, error: "" } as const;
+  expect(
+    soloRoom([lane("you", "you"), lane("agent:claude-1", "agent"), lane("agent:codex-2", "agent", "claude-1"), lane("agent:claude-1/r", "agent", "claude-1", native)]),
+  ).toBe(true);
 });

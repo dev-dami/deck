@@ -401,7 +401,7 @@ func (w *DeckWorkspace) Theme() Theme {
 // themeFor resolves a theme by name, falling back to Deck's own.
 func themeFor(name string) Theme {
 	if name == "" {
-		name = "deck"
+		name = styles.DefaultThemeName()
 	}
 	tf, err := styles.ExportResolvedPalette(name)
 	if err != nil {
@@ -411,6 +411,13 @@ func themeFor(name string) Theme {
 	if err == nil {
 		if data, err := json.Marshal(tf.Palette); err == nil {
 			_ = json.Unmarshal(data, &t.Palette)
+		}
+	}
+	// A theme file names a colour of Deck's palette by its name ("canvas",
+	// "signal"); a client wants the "#rrggbb" it stands for.
+	for token, v := range t.Palette {
+		if hex, ok := tone.ByName(v); ok {
+			t.Palette[token] = hex
 		}
 	}
 	for _, kind := range deckconfig.Kinds {

@@ -9,10 +9,11 @@ import { renderIcon } from "./scripts/icons";
 
 const root = import.meta.dir;
 
-// The neutral grey of style.css's pre-welcome fallback; the page updates
-// theme-color from the palette once the welcome arrives (R6).
-const NEUTRAL_DARK = "#161616";
-const NEUTRAL_LIGHT = "#f4f4f4";
+// style.css's canvas, the desktop's, dark and light. A theme of the
+// person's sets theme-color from its palette once the welcome arrives (R6);
+// theme.ts puts these back (data-default) for Deck's own look.
+const NEUTRAL_DARK = "#19191b";
+const NEUTRAL_LIGHT = "#fbfbfd";
 
 function fail(msg: string): never {
   console.error(`build failed: ${msg}`);
@@ -89,8 +90,8 @@ function indexHtml(js: string, css: string, target: "v2" | "hosted"): string {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="referrer" content="no-referrer">
-<meta name="theme-color" content="${NEUTRAL_LIGHT}" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="${NEUTRAL_DARK}" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="${NEUTRAL_LIGHT}" data-default="${NEUTRAL_LIGHT}" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="${NEUTRAL_DARK}" data-default="${NEUTRAL_DARK}" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Deck">

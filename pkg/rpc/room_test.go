@@ -55,6 +55,10 @@ func (f *fakeRooms) known(sid string) error {
 }
 
 func (f *fakeRooms) Room(sid string) workspace.Room { return f.rooms[sid] }
+
+func (f *fakeRooms) OpenSub(_ context.Context, parent, title string) (string, error) {
+	return "", errors.New("no sub-threads in this fake")
+}
 func (f *fakeRooms) Isolate(_ context.Context, sid string) error {
 	if err := f.known(sid); err != nil {
 		return err
@@ -340,7 +344,9 @@ func TestRoomCallsWithoutAWorkspace(t *testing.T) {
 		t.Fatalf("files without a project: %v", err)
 	}
 	info, err := c.Info(ctx, &deckv1.Empty{})
-	if err != nil || len(info.GetCapabilities()) != 0 || len(info.GetClis()) != 0 {
+	// Video goes through Send, which every Deck serves.
+	caps := slices.DeleteFunc(slices.Clone(info.GetCapabilities()), func(c string) bool { return c == "Video" || c == "VideoFrames" })
+	if err != nil || len(caps) != 0 || len(info.GetClis()) != 0 || !slices.Contains(info.GetCapabilities(), "Video") {
 		t.Fatalf("info %v %v", info, err)
 	}
 }
@@ -363,7 +369,7 @@ func TestInfoListsCLIsAndCapabilities(t *testing.T) {
 	if cx := clis["codex"]; cx.GetFound() || cx.GetPath() != "" {
 		t.Fatalf("codex %v", cx)
 	}
-	for _, m := range []string{"IsolateSession", "StartRace", "ListFiles", "UnarchiveSession", "UndoApply", "ReadImage", "SearchMessages"} {
+	for _, m := range []string{"IsolateSession", "StartRace", "ListFiles", "UnarchiveSession", "UndoApply", "ReadImage", "SearchMessages", "Video"} {
 		if !slices.Contains(info.GetCapabilities(), m) {
 			t.Fatalf("capabilities %v lack %s", info.GetCapabilities(), m)
 		}

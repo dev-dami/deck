@@ -1,8 +1,21 @@
 import { canSend } from "@web/composer";
-import { checkImage, displayName, readAsBase64 } from "@web/images";
-import type { AgentLine, Image, Theme } from "@web/protocol";
+import {
+  blockedVideo,
+  checkImage,
+  checkVideo,
+  defaultLabel,
+  displayName,
+  isVideo,
+  MAX_VIDEO_BYTES_LOCAL,
+  type Outgoing,
+  readAsBase64,
+  type Source,
+  VIDEO_TYPES,
+  type VideoGate,
+} from "@web/images";
+import type { Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
-import { ArrowUp, Paperclip, Square, X } from "./icons";
+import { ArrowUp, Paperclip, Square } from "./icons";
 import { type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   applySuggestion,
@@ -12,15 +25,12 @@ import {
   matchPaths,
   type Mention,
   mergeFiles,
-  type Person,
   type PickerType,
   pickerAt,
-  type ProfileRef,
   retiredForm,
   slashAt,
   slashSuggestions,
   suggestionHue,
-  suggestions,
 } from "../completion";
 import { loadHistory, pushHistory, walk } from "../history";
 import { cn } from "../lib/cn";
@@ -28,6 +38,7 @@ import type { SendKey } from "../prefs";
 import { sendAction, sendTitle } from "../queue";
 import { parseSlash, type Slash, slashCommand } from "../slash";
 import { isMac } from "./keys";
+import { AttachmentChip } from "./Attachment";
 import { Button } from "./kit/button";
 
 // What the popup over the prompt completes: an agent or a person ("@"), an
@@ -45,10 +56,24 @@ export function Glass({ className }: { className: string }) {
   return <div aria-hidden className={cn("pointer-events-none absolute inset-0 -z-10 rounded-[inherit]", className)} />;
 }
 
-// An attached image and the blob URL of its thumbnail.
+// An attached image or video and the blob URL of its preview.
 interface Attached {
-  image: Image;
+  image: Outgoing;
   url: string;
+}
+
+// No gate: a Deck that takes no video.
+const NO_VIDEO: VideoGate = { available: false, ok: false, reason: "This Deck takes no video.", frames: false, framesReason: "This Deck takes no video." };
+
+// The path of a file the person attached, where the window can tell it
+// (the desktop app's bridge); "" in a plain page.
+function pathOf(f: File): string {
+  const deck = (window as { deck?: { filePath?: (f: File) => string } }).deck;
+  try {
+    return deck?.filePath?.(f) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 // The composer: a capsule of glass that floats over the timeline
@@ -59,9 +84,9 @@ interface Attached {
 export function Composer({
   draft,
   setDraft,
-  roster,
-  kinds,
   images: imagesOn,
+  video = NO_VIDEO,
+  videoMax = MAX_VIDEO_BYTES_LOCAL,
   online,
   onSend,
   onSteer,
@@ -82,19 +107,18 @@ export function Composer({
   sendKey,
   className,
   theme = null,
-  profiles,
-  people,
-  mentions = true,
 }: {
   draft: string;
   setDraft: (s: string) => void;
-  roster: AgentLine[];
-  kinds: string[];
   images: boolean;
+  // Whether a video can go to the lead now, and if not, why and whether as
+  // frames; videoMax is the largest video the Deck takes.
+  video?: VideoGate;
+  videoMax?: number;
   online: boolean;
-  onSend: (text: string, images: Image[]) => Promise<boolean>;
+  onSend: (text: string, images: Outgoing[]) => Promise<boolean>;
   // Sends into a busy agent's running turn instead of its queue.
-  onSteer?: (text: string, images: Image[]) => Promise<boolean>;
+  onSteer?: (text: string, images: Outgoing[]) => Promise<boolean>;
   // Runs a slash command; without it, slash text is a message.
   onSlash?: (s: Slash) => Promise<boolean>;
   onError: (text: string) => void;
@@ -122,12 +146,6 @@ export function Composer({
   className?: string;
   // For the agents' glyphs in the pickers.
   theme?: Theme | null;
-  // What "@" offers beyond the room: saved profiles and teammates.
-  profiles?: readonly ProfileRef[] | undefined;
-  people?: readonly Person[] | undefined;
-  // Whether the Deck reads "@" as an agent's sigil; an older one reads
-  // only "$", and there "@" keeps picking files.
-  mentions?: boolean;
 }) {
   const [images, setImages] = useState<Attached[]>([]);
   const [picker, setPicker] = useState<Picker | null>(null);
@@ -173,9 +191,8 @@ export function Composer({
       const tree = found === null ? [] : found.query === q ? found.paths : matchPaths(q, found.paths, FILES_LIMIT);
       return mergeFiles(q, paths ?? [], tree);
     }
-    if (picker.type === "@") return suggestions(picker.m.query, roster, kinds, { sigil: "@", profiles, people }).slice(0, 16);
-    return suggestions(picker.m.query, roster, kinds).slice(0, 8);
-  }, [picker, roster, kinds, paths, lister, found, profiles, people]);
+    return [];
+  }, [picker, paths, lister, found]);
 
   // The prompt grows with its text up to a cap, then scrolls.
   useLayoutEffect(() => {
@@ -189,7 +206,7 @@ export function Composer({
     const text = el.value;
     const caret = el.selectionStart;
     const slash = onSlash === undefined ? null : slashAt(text, caret);
-    const next: Picker | null = slash !== null ? { type: "/", m: slash } : pickerAt(text, caret, (paths ?? []).length > 0 || lister !== null, mentions);
+    const next: Picker | null = slash !== null ? { type: "/", m: slash } : pickerAt(text, caret, (paths ?? []).length > 0 || lister !== null);
     if (next?.type === "#") lister?.ask(next.m.query);
     setPicker(next);
     setPick(0);
@@ -219,7 +236,12 @@ export function Composer({
 
   const sendable = canSend(draft, images.length);
   const retired = useMemo(() => retiredForm(draft), [draft]);
-  const ready = online && !sending && sendable;
+  // A video the lead cannot watch goes only as frames.
+  const blocked = blockedVideo(
+    images.map((im) => im.image),
+    video,
+  );
+  const ready = online && !sending && sendable && !blocked;
   const stopping = busy && onStop !== undefined && !sendable;
 
   const clear = () => {
@@ -251,6 +273,10 @@ export function Composer({
       return;
     }
     if (!canSend(text, images.length)) return;
+    if (blocked) {
+      onError(`${video.reason}: remove the video or send it as frames.`);
+      return;
+    }
     setSending(true);
     const go = action === "steer" && onSteer !== undefined ? onSteer : onSend;
     const ok = await go(
@@ -327,12 +353,37 @@ export function Composer({
     void submit(action);
   };
 
-  const addFiles = async (all: File[]) => {
-    const files = all.filter((f) => f.type.startsWith("image/"));
+  const videoOn = video.available;
+  // Images, and with a Deck that takes video one video per message, each
+  // labelled as it lands ("Screenshot 1" pasted, a file by its name).
+  const addFiles = async (all: File[], source: Source) => {
+    const files = all.filter((f) => f.type.startsWith("image/") || isVideo(f.type));
     if (files.length === 0) return;
     let used = images.reduce((n, im) => n + (im.image.data_b64?.length ?? 0), 0);
+    let videos = images.filter((im) => isVideo(im.image.mime)).length;
+    const taken = images.map((im) => im.image.label ?? "");
     const added: Attached[] = [];
     for (const f of files) {
+      if (isVideo(f.type)) {
+        const check = !videoOn ? { ok: false as const, reason: NO_VIDEO.reason } : checkVideo(f, videoMax);
+        if (!check.ok) {
+          onError(check.reason);
+          continue;
+        }
+        if (videos > 0) {
+          onError("One video per message.");
+          continue;
+        }
+        videos++;
+        const label = defaultLabel("video", source, f.name, taken);
+        taken.push(label);
+        const path = pathOf(f);
+        added.push({
+          image: { name: displayName(f.name || "video.mp4"), mime: f.type, label, file: f, ...(path !== "" ? { path } : {}) },
+          url: URL.createObjectURL(f),
+        });
+        continue;
+      }
       const check = checkImage(f, used);
       if (!check.ok) {
         onError(check.reason);
@@ -340,13 +391,17 @@ export function Composer({
       }
       const data = await readAsBase64(f);
       used += data.length;
+      const label = defaultLabel("image", source, f.name, taken);
+      taken.push(label);
       added.push({
-        image: { name: displayName(f.name || "pasted.png"), mime: f.type, data_b64: data },
+        image: { name: displayName(f.name || "pasted.png"), mime: f.type, label, data_b64: data },
         url: URL.createObjectURL(f),
       });
     }
     setImages((cur) => [...cur, ...added]);
   };
+  const change = (i: number, patch: Partial<Outgoing>) =>
+    setImages((cur) => cur.map((im, j) => (j === i ? { ...im, image: { ...im.image, ...patch } } : im)));
 
   return (
     <div className={cn("composer relative mx-auto flex w-full max-w-(--chat-max) flex-col gap-2", className)} data-yolo-region="">
@@ -430,28 +485,22 @@ export function Composer({
           setDragging(false);
           if (!imagesOn) return;
           e.preventDefault();
-          void addFiles([...e.dataTransfer.files]);
+          void addFiles([...e.dataTransfer.files], "file");
         }}
       >
         <Glass className="liquid" />
         {images.length > 0 && (
-          <div className="attachments flex flex-wrap gap-2 px-4 pt-3.5">
+          <div className="attachments flex flex-wrap gap-2 px-3.5 pt-3.5" aria-label="Attachments">
             {images.map((im, i) => (
-              <span
+              <AttachmentChip
                 key={im.url}
-                className="thumb relative size-12 shrink-0 animate-enter overflow-hidden rounded-[10px] bg-secondary ring-1 ring-hairline"
-                title={im.image.name}
-              >
-                <img src={im.url} alt={im.image.name} className="size-full object-cover" />
-                <button
-                  type="button"
-                  className="thumb-x liquid-thick absolute top-1 right-1 grid size-4.5 cursor-pointer place-items-center rounded-full text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label={`Remove ${im.image.name}`}
-                  onClick={() => dropImages((_, j) => j !== i)}
-                >
-                  <X className="size-2.5" weight="bold" />
-                </button>
-              </span>
+                att={im.image}
+                url={im.url}
+                gate={video}
+                onRename={(label) => change(i, { label })}
+                onRemove={() => dropImages((_, j) => j !== i)}
+                onFrames={(on) => change(i, { frames: on })}
+              />
             ))}
           </div>
         )}
@@ -474,9 +523,9 @@ export function Composer({
           onPaste={(e) => {
             if (!imagesOn) return;
             const files = [...e.clipboardData.files];
-            if (!files.some((f) => f.type.startsWith("image/"))) return;
+            if (!files.some((f) => f.type.startsWith("image/") || isVideo(f.type))) return;
             e.preventDefault();
-            void addFiles(files);
+            void addFiles(files, "paste");
           }}
           onCompositionStart={() => {
             composing.current = true;
@@ -497,17 +546,23 @@ export function Composer({
             {toolbar}
             {imagesOn && (
               <>
-                <Button variant="ghost-muted" size="icon" aria-label="Attach images" title="Attach images" onClick={() => fileRef.current?.click()}>
+                <Button
+                  variant="ghost-muted"
+                  size="icon"
+                  aria-label="Attach images"
+                  title={!videoOn ? "Attach images" : video.ok ? "Attach images or a video" : `Attach images (${video.reason}${video.frames ? "; a video goes as frames" : ""})`}
+                  onClick={() => fileRef.current?.click()}
+                >
                   <Paperclip className="size-[17px]" />
                 </Button>
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="image/*"
+                  accept={videoOn ? `image/*,${[...VIDEO_TYPES].join(",")}` : "image/*"}
                   multiple
                   hidden
                   onChange={(e) => {
-                    void addFiles([...(e.currentTarget.files ?? [])]);
+                    void addFiles([...(e.currentTarget.files ?? [])], "file");
                     e.currentTarget.value = "";
                   }}
                 />
@@ -535,7 +590,7 @@ export function Composer({
                 onClick={() => void submit(busy ? "queue" : "send")}
                 disabled={!ready}
                 aria-label="Send"
-                title={sendTitle(sendKey, mac, busy && onSteer !== undefined)}
+                title={blocked ? `${video.reason}: remove the video or send it as frames` : sendTitle(sendKey, mac, busy && onSteer !== undefined)}
               >
                 <ArrowUp className="size-4" weight="bold" />
               </Button>

@@ -1,12 +1,14 @@
 import type { Store } from "@web/controller";
 import type { BrowserActionResponse, BrowserCommand, HighlightActionRequest } from "../shared/bridge";
-import type { ChangedFile, Decision, Image, Mode, ModelChoice, QuestionAnswer, RaceEntrant, Session } from "@web/protocol";
+import type { Outgoing } from "@web/images";
+import type { ChangedFile, Decision, Mode, ModelChoice, QuestionAnswer, RaceEntrant, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import type { Profile, ProfileScope } from "./profiles";
 import type { ProjectApi } from "./project";
 import type { LiveStore } from "./live";
 import type { RoomMetaStore } from "./roomMeta";
 import type { FileList, ImageBytes, SearchHit } from "./rpcMap";
+import type { Level } from "./orchestration";
 
 // What the window needs from a Deck, whatever the transport. The phone
 // client's Controller (protocol v2 through main's socket) has this shape;
@@ -21,11 +23,13 @@ export interface DeckClient {
   closeSession(): void;
   loadOlder(id: string): Promise<boolean>;
   // isolate starts the thread on a worktree and branch of its own (a local
-  // Deck that serves IsolateSession).
-  createSession(title?: string, isolate?: boolean): Promise<Session | null>;
+  // Deck that serves IsolateSession); level is its orchestration level, the
+  // one Settings gives new threads when unset (a local Deck only).
+  createSession(title?: string, isolate?: boolean, level?: Level): Promise<Session | null>;
   renameSession(id: string, title: string): Promise<void>;
   deleteSession(id: string): Promise<boolean>;
-  send(sessionId: string, text: string, images: Image[]): Promise<boolean>;
+  // A video among images is uploaded (or, to a local Deck, sent by path).
+  send(sessionId: string, text: string, images: Outgoing[]): Promise<boolean>;
   // Replaces the person's message and runs the thread again from it.
   editMessage(sessionId: string, messageId: string, text: string): Promise<boolean>;
   // Asks the agents to go on from where they stopped.

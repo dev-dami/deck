@@ -132,5 +132,6 @@ export function inProcessBridge(): DeckBridge & TestHost & { seen: unknown[] } {
     onNotificationClick: () => () => {},
     onPreview: () => () => {},
     folderPath: () => "",
+    filePath: () => "",
   };
 }

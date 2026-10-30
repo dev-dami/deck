@@ -108,6 +108,11 @@ func (m *Manager) handleMessage(msg agent.Message) {
 	}
 	text := strings.TrimSpace(msg.Text)
 	to := TrimSigil(msg.To)
+	if err := normHandoff(&msg, &text); err != nil { // handcontract.go
+		respond("", err)
+		return
+	}
+	handoff := msg.Task != "" || msg.NewTask != ""
 
 	t.mu.Lock()
 	valid := validNames(t, from)
@@ -148,11 +153,28 @@ func (m *Manager) handleMessage(msg agent.Message) {
 		}
 	}
 	if err == nil {
+		err = t.factoryLocked(from, targets)
+	}
+	if err == nil {
 		targets, err = t.guardSend(from, targets, time.Now())
+	}
+	// A plain message wakes only those it may (handcontract.go); the other
+	// peers have it as information.
+	var info []*agentState
+	if err == nil && !handoff {
+		targets, info = t.sortSendLocked(from, targets)
 	}
 	t.mu.Unlock()
 	if err != nil {
 		respond("", err)
+		return
+	}
+	if len(info) > 0 && isQuestion(text) {
+		res := m.redirectQuestion(t, from, info, text)
+		if len(targets) > 0 {
+			res = m.relay(t, from, targets, text, "tool") + "; " + res
+		}
+		respond(res, nil)
 		return
 	}
 	// A message to a member waiting on from for a file is the answer.
@@ -164,7 +186,7 @@ func (m *Manager) handleMessage(msg agent.Message) {
 			return
 		}
 	}
-	if msg.Task != "" || msg.NewTask != "" {
+	if handoff {
 		if len(targets) != 1 {
 			respond("", errors.New("a task is handed to one agent: set `to` to a single name, not \"all\""))
 			return
@@ -182,18 +204,19 @@ func (m *Manager) handleMessage(msg agent.Message) {
 			}
 			text += "\n\n" + note
 		}
+		m.noteTurn(from, factHandoff) // turnend.go
 		respond(m.relayTask(t, from, targets, text, "tool", id), nil)
 		return
 	}
 	if capsule != "" {
-		note, err := m.handCapsule(t, targets, "", capsule)
+		note, err := m.handCapsule(t, append(targets[:len(targets):len(targets)], info...), "", capsule)
 		if err != nil {
 			respond("", err)
 			return
 		}
 		text += "\n\n" + note
 	}
-	respond(m.relay(t, from, targets, text, "tool"), nil)
+	respond(m.relayPlain(t, from, targets, info, text), nil)
 }
 
 // validNames lists who a member can message: names, then "claude" and
@@ -258,6 +281,21 @@ func (m *Manager) relayTask(t *thread, from *agentState, targets []*agentState, 
 	}
 	e := store.Entry{Type: store.EntryRelay, Speaker: from.id, To: ids(live), Via: via, TaskID: taskID, Event: eventText(text)}
 
+	// "Thanks!" "You're welcome!" is how two agents loop: a message that only
+	// acknowledges is logged, for the recipients' next briefing, but starts
+	// no turn and spends no hop.
+	if taskID == "" && isAck(text) {
+		idx := m.appendLocked(t, e)
+		t.inert[idx] = true
+		t.mu.Unlock()
+		m.emitAll(msgFor(t.id, e))
+		var names []string
+		for _, tg := range live {
+			names = append(names, tg.getName())
+		}
+		return "noted for " + strings.Join(names, ", ") + ": an acknowledgement starts no turn, so there is nothing to wait for"
+	}
+
 	if t.hops >= m.maxHops {
 		e.Held = true
 		idx := m.appendLocked(t, e)
@@ -309,63 +347,35 @@ type turnEnd struct {
 	// answered is the member's cursor when the turn ended: what the turn was
 	// briefed on (settleHanded, waitsOnChildren).
 	answered int
+	// claims are the turn's task.done calls on checked tasks, with the
+	// verdict its end took on their evidence, and settles the handed task
+	// its reply finishes, whose verdict it took too (evidence.go).
+	claims  []doneClaim
+	settles string
 }
 
 // afterTurn runs on the thread's relay worker when a member's turn ends: it
-// relays the $mention lines of the final reply, then starts the member's next
-// turn if messages queued up.
+// settles what the turn finished, then starts the member's next turn if
+// messages queued up. "@name" lines in a reply are text: agents reach each
+// other through ops (thread.send, agent.spawn, thread.open), which carry
+// terms and count against the budgets.
 func (m *Manager) afterTurn(a *agentState, end turnEnd) {
 	text, interrupted := end.text, end.interrupted
 	t := a.thread
+	m.settleClaims(t, a, end.claims) // what it reported done with a check
+	m.releaseHeld(t, a)              // before settling: the reports it waited on (batch.go)
 	if !interrupted {
 		m.settleHanded(t, a, text, end.answered)
+		m.forgetVerdict(t, end.settles) // one settleHanded did not use
 		m.retireSpent(t, a, end.answered)
+		m.reportToParent(t, a, text, end.answered)
 	}
+	m.checkStall(t, a, end)
+	m.flushParent(t, a) // after checkStall settles the turn's record (batch.go)
 	if text != "" && !interrupted {
 		m.maybeAutoTitle(t, text)
-		for _, mn := range parseMentions(text) {
-			t.mu.Lock()
-			targets := mentionTargets(t, a, mn.Names)
-			t.mu.Unlock()
-			if len(targets) > 0 {
-				m.relay(t, a, targets, mn.Text, "mention")
-			}
-		}
 	}
 	_, _ = m.deliver(t, a)
-}
-
-// mentionTargets resolves the names of an $mention line to live members other
-// than the sender; names that match nobody are ignored. t.mu is held.
-func mentionTargets(t *thread, from *agentState, names []string) []*agentState {
-	var out []*agentState
-	add := func(a *agentState) {
-		if a == nil || a == from || a.status() == StatusExited {
-			return
-		}
-		for _, o := range out {
-			if o == a {
-				return
-			}
-		}
-		out = append(out, a)
-	}
-	for _, n := range names {
-		if strings.EqualFold(n, "all") {
-			for _, a := range t.members {
-				add(a)
-			}
-			continue
-		}
-		if all, ok := t.findAll(from, n); ok {
-			for _, a := range all {
-				add(a)
-			}
-			continue
-		}
-		add(t.find(from, n))
-	}
-	return out
 }
 
 // Continue ends a pause: the thread's hop count restarts at zero and the relays
@@ -382,7 +392,8 @@ func (m *Manager) Continue(threadID string) error {
 		return nil
 	}
 	t.paused = false
-	t.hops, t.work = 0, 0
+	t.hops, t.work, t.turns = 0, 0, 0
+	t.stall.clear()
 	var targets []*agentState
 	for _, idx := range t.heldIdx {
 		delete(t.inert, idx)
@@ -410,6 +421,11 @@ func (m *Manager) Continue(threadID string) error {
 		if _, err := m.deliver(t, a); err != nil && first == nil {
 			first = err
 		}
+	}
+	// And the turns the pause held back that were no relay: reports,
+	// briefs, reviews.
+	if err := m.wakeAll(t); err != nil && first == nil {
+		first = err
 	}
 	return first
 }

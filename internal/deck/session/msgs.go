@@ -34,6 +34,10 @@ type EventMsg struct {
 	Images   []string // user messages only: attached image paths
 	Steer    bool     // user messages only: a queued message delivered as a steer
 	SteerOf  string   // steers only: EntryID of the queued message being delivered
+	// From (user messages only) is the agent whose brief or follow-up to a
+	// sub-thread this is (subthread.go), by name; "" when the person wrote it.
+	// Show it as that agent's message, not the person's.
+	From string
 }
 
 // FromUser reports whether the event is a message the user typed.
@@ -67,6 +71,8 @@ type RelayMsg struct {
 	Text     string
 	Via      string
 	Held     bool
+	// Thread is the sub-thread a report (Via "subthread") comes from.
+	Thread string
 }
 
 // PausedMsg says the thread hit its agent-to-agent hop limit: further relays
@@ -124,11 +130,18 @@ func msgFor(threadID string, e store.Entry) tea.Msg {
 		if e.Steer {
 			msg.SteerOf = e.Ref
 		}
+		if e.Via == viaSubthread {
+			msg.From = e.Speaker
+		}
 		return msg
 	case store.EntryEdit:
 		return EditedMsg{ThreadID: threadID, EntryID: e.Ref, OldText: e.Old, NewText: e.Text}
 	case store.EntryRelay:
-		return RelayMsg{ThreadID: threadID, From: e.Speaker, To: e.To, Text: e.Text, Via: e.Via, Held: e.Held}
+		r := RelayMsg{ThreadID: threadID, From: e.Speaker, To: e.To, Text: e.Text, Via: e.Via, Held: e.Held}
+		if e.Via == viaSubthread {
+			r.Thread = e.Ref
+		}
+		return r
 	case store.EntryMember:
 		return MemberAddedMsg{ThreadID: threadID, AgentID: e.Speaker, Kind: e.Text}
 	case store.EntryPause:

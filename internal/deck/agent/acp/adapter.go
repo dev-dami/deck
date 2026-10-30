@@ -54,6 +54,10 @@ type Config struct {
 	// EffortAliases maps an effort value of the agent's to Deck's level
 	// ("off" → "none"); the reverse is used when setting one.
 	EffortAliases map[string]string
+	// Video reports whether a model of the agent takes video (see
+	// agent.VideoInput); nil means none does. A video goes to the agent as
+	// a resource_link to the local file with its MIME type.
+	Video func(model string) bool
 }
 
 // Adapter starts runs of one ACP agent.
@@ -69,6 +73,7 @@ var (
 	_ agent.ModelForgetter = (*Adapter)(nil)
 	_ agent.ContextCapser  = (*Adapter)(nil)
 	_ agent.ContractSafe   = (*Adapter)(nil)
+	_ agent.VideoInput     = (*Adapter)(nil)
 )
 
 // New returns the adapter for cfg. binary is the executable ("" =
@@ -89,6 +94,9 @@ func (a *Adapter) ContextCaps() agent.ContextCaps { return a.cfg.Caps }
 
 // ContractSafe implements agent.ContractSafe.
 func (a *Adapter) ContractSafe() bool { return a.cfg.ContractSafe }
+
+// TakesVideo implements agent.VideoInput.
+func (a *Adapter) TakesVideo(model string) bool { return a.cfg.Video != nil && a.cfg.Video(model) }
 
 const rpcTimeout = 60 * time.Second
 

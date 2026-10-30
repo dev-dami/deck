@@ -118,8 +118,8 @@ describe("what deck.v1 says of a room", () => {
     expect(
       toRooms({ sessions: [{ id: "s1", attention: "blocked", branch: "deck/s1", archived: true }, { id: "s2", attention: "panic" }, { id: "" }] }),
     ).toEqual([
-      { k: "session", id: "s1", attention: "blocked", branch: "deck/s1", archived: true },
-      { k: "session", id: "s2", attention: "", branch: "", archived: false },
+      { k: "session", id: "s1", attention: "blocked", branch: "deck/s1", archived: true, parent: "", lead: null },
+      { k: "session", id: "s2", attention: "", branch: "", archived: false, parent: "", lead: null },
     ]);
     const updated = toEvent({
       seq: 6,
@@ -159,7 +159,7 @@ describe("what deck.v1 says of a room", () => {
     expect(rooms.get("s1").leases).toEqual([lease]);
     for (let i = 0; i < 25; i++) rooms.apply({ k: "note", session: "s1", note: { text: `n${i}`, via: "overlap" } });
     expect(rooms.get("s1").notes.map((x) => x.text)).toEqual(Array.from({ length: 20 }, (_, i) => `n${i + 5}`));
-    rooms.load([{ k: "session", id: "s1", attention: "error", branch: "", archived: false }]);
+    rooms.load([{ k: "session", id: "s1", attention: "error", branch: "", archived: false, parent: "", lead: null }]);
     expect(rooms.get("s1")).toMatchObject({ attention: "error", leases: [lease] });
     rooms.apply({ k: "lease", session: "s1", lease, released: true });
     expect(rooms.get("s1").leases).toEqual([]);

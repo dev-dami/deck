@@ -37,7 +37,11 @@ func TestInstructionsFitTheBudgetAtEveryLevel(t *testing.T) {
 				t.Fatalf("Instructions are %d bytes", len(sp.Instructions))
 			}
 			lacks(t, sp.Instructions, "[cut]")
-			has(t, sp.Instructions, "browser.open", "Teammates' Decks", "highlight.add", "Write plan files in", "PRs end with")
+			has(t, sp.Instructions, "browser.open", "Teammates' Decks", "highlight.add", "Write plan files in", "PRs end with",
+				"thread.send {to, objective, deliverable, done_when, boundaries, check}")
+			if level == config.LevelFull {
+				has(t, sp.Instructions, "Only the lead routes")
+			}
 		})
 	}
 }

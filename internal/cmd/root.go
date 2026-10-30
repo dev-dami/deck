@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
@@ -103,6 +104,12 @@ deck doctor
 			sessionID = sess.ID
 		}
 
+		// With no theme chosen Deck follows the terminal, as the desktop
+		// app follows the system: its light look on a light background.
+		// The terminal is asked once, before Bubble Tea takes it over.
+		if common.ThemeNameFromConfig(ws.Config()) == "" {
+			styles.SetTerminalLight(!lipgloss.HasDarkBackground(os.Stdin, os.Stdout))
+		}
 		com := common.DefaultCommon(ws)
 		model := ui.New(com, sessionID, continueLast)
 

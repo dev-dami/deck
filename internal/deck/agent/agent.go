@@ -8,6 +8,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -294,10 +295,32 @@ type Event struct {
 	Sub string `json:",omitempty"`
 	// Subagent is set on KindSubagent, and by Deck on the events with Sub.
 	Subagent *Subagent `json:",omitempty"`
+	// End is how the turn ended, set by Deck on KindTurnDone from what
+	// happened in it (TurnEnd); "" when Deck did not say.
+	End TurnEnd `json:",omitempty"`
 	// Raw is the original protocol line, kept so nothing is lost. Deck keeps
 	// it past the adapter only where KeepsRaw says so.
 	Raw json.RawMessage `json:",omitempty"`
 }
+
+// TurnEnd is the terminal state of one agent turn, so clients can show
+// state rather than prose: the work is done, handed to someone else, waits
+// for the user, or simply goes on.
+type TurnEnd string
+
+const (
+	// TurnDone: the turn finished a task, with the evidence its check asks
+	// for when it names one.
+	TurnDone TurnEnd = "done"
+	// TurnHandoff: the turn handed work over under a contract (a task, a
+	// subagent, a sub-thread, a review).
+	TurnHandoff TurnEnd = "handoff"
+	// TurnBlocked: the turn ends on a question for the user (never for
+	// another agent), or blocked a task on them.
+	TurnBlocked TurnEnd = "blocked"
+	// TurnContinue: none of those; the work goes on.
+	TurnContinue TurnEnd = "continue"
+)
 
 // KeepsRaw reports whether an event of kind k keeps its Raw line once Deck
 // has it: only errors and kinds Deck does not know, whose protocol line may
@@ -497,8 +520,11 @@ var Modes = []Mode{ModePlan, ModeAsk, ModeYolo}
 
 // ModelInfo is one model a CLI offers.
 type ModelInfo struct {
-	ID          string // value passed to the CLI (--model / model field)
-	Name        string // display name
+	ID   string // value passed to the CLI (--model / model field)
+	Name string // display name
+	// Slug is the model ID runs as when ID is an alias or "" ("opus" runs
+	// claude-opus-5-5); Deck fills it once a run has said, "" before.
+	Slug        string `json:",omitempty"`
 	Description string
 	Default     bool
 	// Efforts are the reasoning efforts the model takes, in the CLI's order;
@@ -510,6 +536,9 @@ type ModelInfo struct {
 	// knows it before a run reports one (the CLI's list, or the adapter's
 	// own table); 0 when it does not know.
 	ContextWindow int `json:",omitempty"`
+	// Video says a prompt to the model can carry a video that reaches it
+	// (VideoInput): the CLI delivers one and the model takes it.
+	Video bool `json:",omitempty"`
 }
 
 // EffortInfo is one reasoning effort a model offers.
@@ -530,11 +559,70 @@ type ModelSetter interface {
 	SetModel(model string) error
 }
 
-// Image is an image attached to a prompt. Path is a local file the user
-// chose (dropped, pasted or saved from the clipboard by Deck).
+// Image is an image (or a video) attached to a prompt. Path is a local file
+// the user chose (dropped, pasted or saved from the clipboard by Deck).
 type Image struct {
-	Path      string
-	MediaType string // "image/png", "image/jpeg", "image/gif", "image/webp"
+	Path string
+	// MediaType is "image/png", "image/jpeg", "image/gif" or "image/webp",
+	// or for a video "video/mp4", "video/webm" or "video/quicktime". Only a
+	// run whose model takes video (VideoInput) is ever sent a video.
+	MediaType string
+	// Label is what the person called the attachment ("Image 1", "login
+	// page error"); adapters put it in the reference line next to the
+	// attachment (RefLines). "" leaves just its place ("Image 2").
+	Label string
+}
+
+// IsVideo reports whether the attachment is a video.
+func (im Image) IsVideo() bool { return strings.HasPrefix(im.MediaType, "video/") }
+
+// MaxLabelRunes is the longest label kept; longer ones are cut.
+const MaxLabelRunes = 60
+
+// CleanLabel makes a label one line of at most MaxLabelRunes runes.
+func CleanLabel(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > MaxLabelRunes {
+		s = strings.TrimSpace(string(r[:MaxLabelRunes]))
+	}
+	return s
+}
+
+// RefLines are the reference lines of the attachments, in order: one each,
+// numbered per kind ("[Image 1: login page error]", "[Image 2]", "[Video
+// 1: the crash]"). Adapters send each right before its attachment, so the
+// agent can tell which is which and the person can write "compare Image 1
+// and Image 2". A label that only repeats the place ("Image 2") is left
+// out.
+func RefLines(images []Image) []string {
+	out := make([]string, len(images))
+	var stills, videos int
+	for i, im := range images {
+		var place string
+		if im.IsVideo() {
+			videos++
+			place = fmt.Sprintf("Video %d", videos)
+		} else {
+			stills++
+			place = fmt.Sprintf("Image %d", stills)
+		}
+		label := CleanLabel(im.Label)
+		if label == "" || strings.EqualFold(label, place) {
+			out[i] = "[" + place + "]"
+		} else {
+			out[i] = "[" + place + ": " + label + "]"
+		}
+	}
+	return out
+}
+
+// VideoInput is implemented by adapters that can deliver a video to some
+// of their models. TakesVideo reports whether a run of model ("" = the
+// CLI's default) can be sent one: the CLI passes it on and the model
+// watches it. Adapters without it take none, and Deck never sends them a
+// video (the session tells the agent where the file is instead).
+type VideoInput interface {
+	TakesVideo(model string) bool
 }
 
 // EffortSetter is implemented by runs that can change reasoning effort
@@ -598,6 +686,12 @@ type Message struct {
 	// must report it with task.done.
 	Task, NewTask, Expect, DoneWhen string
 	ExplicitDone                    bool
+	// Objective, Deliverable and Boundaries make the message a structured
+	// hand-off: what the work is for, what comes back (Expect's other name)
+	// and what the recipient must not do. Objective alone, with no task
+	// named, creates one titled after it. Check is the command whose passing
+	// run proves the task done ("go test ./pkg/x").
+	Objective, Deliverable, Boundaries, Check string
 	// Capsule is a SUB capsule id handed over with the message: the code
 	// change itself, by reference, instead of a description of it.
 	Capsule string

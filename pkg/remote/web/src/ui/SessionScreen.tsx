@@ -127,11 +127,16 @@ export function SessionScreen({ state, id }: { state: AppState; id: string }) {
           </button>
         ) : null}
       </div>
-      {showJump ? (
-        <button type="button" class="jump btn primary" onClick={jump}>
-          Latest
-        </button>
-      ) : null}
+      {/* Over the composer, whatever its height. */}
+      <div class="dock">
+        {showJump ? (
+          <button type="button" class="jump" aria-label="Latest" title="Latest" onClick={jump}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5.5 12.5 12 19l6.5-6.5" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
       {queue.length > 0 ? (
         <button type="button" class="queue-bar" onClick={() => setSheet("queue")}>
           {queue.length} queued {queue.length === 1 ? "message" : "messages"}
@@ -145,9 +150,17 @@ export function SessionScreen({ state, id }: { state: AppState; id: string }) {
         kinds={state.server?.kinds ?? EMPTY}
         theme={state.theme}
         files={state.server?.features.includes("changes") ?? false}
+        lead={session?.lead}
+        onAgents={() => setSheet("agents")}
+        features={state.server?.features ?? EMPTY}
       />
       {sheet === "agents" ? (
-        <AgentsSheet sessionId={id} roster={roster} onClose={() => setSheet(null)} />
+        <AgentsSheet
+          sessionId={id}
+          roster={roster}
+          lead={session?.lead?.agent}
+          onClose={() => setSheet(null)}
+        />
       ) : null}
       {sheet === "queue" ? (
         <QueueSheet sessionId={id} items={queue} onClose={() => setSheet(null)} />

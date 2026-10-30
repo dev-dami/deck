@@ -77,6 +77,11 @@ func toMessage(m message.Message, root string) wire.Message {
 	if m.Role == message.Assistant && m.Provider != "deck" {
 		out.Agent = m.Model
 	}
+	// A user row with a Model is an agent's brief to a sub-thread
+	// (workspace onBrief): its agent says who wrote it.
+	if m.Role == message.User && m.Model != "" {
+		out.Agent = m.Model
+	}
 	for _, p := range m.Parts {
 		switch v := p.(type) {
 		case message.TextContent:
@@ -97,9 +102,11 @@ func toMessage(m message.Message, root string) wire.Message {
 			}
 			out.Parts = append(out.Parts, part)
 		case message.BinaryContent:
-			out.Parts = append(out.Parts, wire.Part{Type: wire.PartImage, Image: &wire.Image{Name: displayName(v.Path), Mime: v.MIMEType}})
+			out.Parts = append(out.Parts, wire.Part{Type: wire.PartImage, Image: &wire.Image{Name: displayName(v.Path), Mime: v.MIMEType, Label: v.Label}})
 		case message.ImageURLContent:
 			out.Parts = append(out.Parts, wire.Part{Type: wire.PartImage, Image: &wire.Image{Name: "image"}})
+		case message.Finish:
+			out.TurnEnd = v.TurnEnd
 		}
 	}
 	return out
@@ -211,7 +218,7 @@ func toModels(choices []workspace.ModelChoice, kind string) []wire.ModelChoice {
 		if kind != "" && c.Kind != kind {
 			continue
 		}
-		mc := wire.ModelChoice{ID: c.ID, Label: c.Name, Selected: c.Current}
+		mc := wire.ModelChoice{ID: c.ID, Label: c.Name, Selected: c.Current, Video: c.Video}
 		for _, e := range c.Efforts {
 			mc.Efforts = append(mc.Efforts, e.Level)
 		}

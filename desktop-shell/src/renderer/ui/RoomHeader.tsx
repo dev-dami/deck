@@ -12,8 +12,7 @@ import {
   PanelRight,
   SquareTerminal,
   Trash2,
-  Undo2,
-} from "./icons";
+  Undo2, CornerDownRight } from "./icons";
 import { type ReactNode, useMemo, useState } from "react";
 import { agentColour } from "../agents";
 import { tintOf } from "../teamGate";
@@ -189,7 +188,9 @@ const VIEW_ICONS: Record<RoomView, IconType> = { conversation: ChatCircle, graph
 function ViewSwitcher({ view, onView }: { view: RoomView; onView: (v: RoomView) => void }) {
   return (
     <div
-      className={cn(segmentTrack(), "room-views")}
+      // A narrow room (beside wide panes) gives its toolbar the middle;
+      // ⌘/Ctrl+Shift+G still turns the view.
+      className={cn(segmentTrack(), "room-views hidden @[32rem]/top:inline-flex")}
       role="tablist"
       aria-label="View"
       onKeyDown={(e) => {
@@ -239,6 +240,8 @@ export function RoomHeader({
   sidebar,
   onShowSidebar,
   project,
+  parent = null,
+  onOpenParent,
   open,
   loaded,
   roster,
@@ -261,6 +264,7 @@ export function RoomHeader({
   onError,
   onInfo,
   onPreview,
+  layout,
   view,
   onView,
 }: {
@@ -272,6 +276,9 @@ export function RoomHeader({
   sidebar: boolean;
   onShowSidebar: () => void;
   project: string;
+  // The thread this sub-thread was opened from, and how to go there.
+  parent?: { id: string; title: string } | null;
+  onOpenParent?: (id: string) => void;
   open: Session | undefined;
   // The thread list arrived: without a thread, the room is a new one.
   loaded: boolean;
@@ -298,6 +305,8 @@ export function RoomHeader({
   onInfo: (t: string) => void;
   // Opens a dev server's URL in the Preview tab.
   onPreview: (url: string) => void;
+  // The Layout menu (layout/LayoutMenu.tsx), last in the panels' capsule.
+  layout?: ReactNode;
   // How the room shows its thread, and how to switch it. Without them the
   // switcher does not show.
   view?: RoomView;
@@ -348,7 +357,7 @@ export function RoomHeader({
               />
             ) : (
               <h1
-                className="title min-w-0 truncate text-balance font-semibold text-foreground tracking-tight"
+                className="title min-w-0 truncate font-semibold text-foreground tracking-tight"
                 title={open === undefined ? undefined : "Double-click to rename"}
                 onDoubleClick={() => open !== undefined && setRenaming(true)}
               >
@@ -379,9 +388,21 @@ export function RoomHeader({
               </span>
             )}
             {open !== undefined && <span aria-hidden className="text-faint">·</span>}
-            <span className="project min-w-0 truncate" title={project || "Deck"}>
-              {project || "Deck"}
-            </span>
+            {parent !== null ? (
+              <button
+                type="button"
+                className="room-parent inline-flex min-w-0 cursor-pointer items-center gap-1 truncate rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                title={`Open ${parent.title}`}
+                onClick={() => onOpenParent?.(parent.id)}
+              >
+                <CornerDownRight aria-hidden className="size-3 shrink-0 rotate-180" />
+                <span className="truncate">Sub-thread of {parent.title}</span>
+              </button>
+            ) : (
+              <span className="project min-w-0 truncate" title={project || "Deck"}>
+                {project || "Deck"}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -424,6 +445,7 @@ export function RoomHeader({
           >
             <PanelRight weight={panelOpen ? "fill" : "regular"} />
           </Button>
+          {layout}
         </Capsule>
       </div>
     </header>

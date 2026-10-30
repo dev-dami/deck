@@ -910,6 +910,61 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 10px), transparent);
 }
 
+/* A card (ui/kit/card.tsx) never lets its content out. Text breaks
+   anywhere it must (an unbroken path, URL, hash or command would otherwise
+   push past the edge; "anywhere" also shrinks the min-content size, so the
+   card's flex rows can narrow); code and tables scroll inside it. A
+   truncated line keeps its ellipsis. */
+.card {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.card :where(pre, table, .md-table) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.card :where(img, video, canvas) {
+  max-width: 100%;
+}
+
+/* A table in agent prose: it scrolls in its own box, never the page. */
+.md .md-table {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: calc(var(--radius) + 2px);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.md table {
+  border-collapse: collapse;
+  font-size: 0.92em;
+  min-width: 100%;
+}
+.md th,
+.md td {
+  padding: 0.35em 0.75em;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--hairline);
+  overflow-wrap: anywhere;
+  min-width: 6ch;
+  max-width: 32em;
+}
+.md th {
+  font-weight: var(--font-weight-semibold);
+}
+.md tr:last-child td {
+  border-bottom: 0;
+}
+.md th[data-align="center"],
+.md td[data-align="center"] {
+  text-align: center;
+}
+.md th[data-align="right"],
+.md td[data-align="right"] {
+  text-align: right;
+}
+
 /* Agent prose: the shared markdown parser's node tree. */
 .md {
   overflow-wrap: anywhere;
@@ -1952,36 +2007,17 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
    The window's chrome (docs/design-glass.md, section 4), for what the
    utilities cannot say. */
 
-/* Below 1100px the side panel floats over the room as thick glass. The
-   glass is a layer under the panel's content, not the panel itself: a
-   backdrop filter holds fixed descendants (its dialogs) and nested glass
-   (its menus) to the element that carries it. The panel has a z-index
-   there, so the layer stays inside it. */
-@media (max-width: 1100px) {
-  aside.panel {
-    background-color: transparent;
-    --tw-shadow: 0 0 #0000;
-  }
-  aside.panel::before {
-    @apply liquid-thick;
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    border-radius: inherit;
-  }
-  /* Floating on the left, its tabs clear a Mac's traffic lights. */
-  .shell[data-mac] aside.panel[data-side="left"] .panel-head {
-    padding-left: 4.75rem;
-  }
-}
-/* The same at any width, when the person floats the panel (Settings >
-   Appearance > Layout). */
-aside.panel[data-float] {
+/* A pane too wide for its split, or one the person floats (Settings >
+   Appearance > Layout), floats over the conversation as thick glass
+   (layout/Workspace.tsx). The glass is a layer under the pane's content,
+   not the pane itself: a backdrop filter holds fixed descendants (its
+   dialogs) and nested glass (its menus) to the element that carries it.
+   The pane has a z-index there, so the layer stays inside it. */
+.stack[data-float] {
   background-color: transparent;
   --tw-shadow: 0 0 #0000;
 }
-aside.panel[data-float]::before {
+.stack[data-float]::before {
   @apply liquid-thick;
   content: "";
   position: absolute;
@@ -1989,36 +2025,49 @@ aside.panel[data-float]::before {
   z-index: -1;
   border-radius: inherit;
 }
-.shell[data-mac] aside.panel[data-float][data-side="left"] .panel-head {
-  padding-left: 4.75rem;
-}
 
-/* The layout (Settings > Appearance > Layout, Shell's data-sidebar and
-   data-dock): the sidebar on the left or the right, and the side panel on
-   the side opposite it or beside it. The order in the DOM, and so the Tab
-   order, stays sidebar, room, panel. */
+/* The window: the sidebar on the left or the right, then the room. The
+   room's panes have their own layout (layout/). */
 .shell > nav.sidebar {
   order: 0;
 }
-.shell > .room-sheet {
+.shell > .room-sheet,
+.shell > .workspace {
   order: 2;
-}
-.shell > aside.panel {
-  order: 3;
-}
-.shell[data-dock="beside"] > aside.panel {
-  order: 1;
 }
 .shell[data-sidebar="right"] {
   flex-direction: row-reverse;
 }
 
+/* The pane the keys moved to wears a ring, while there is more than one. */
+.stack[data-focused] {
+  --tw-ring-shadow: 0 0 0 1.5px color-mix(in srgb, var(--primary) 60%, transparent);
+}
+/* While a pane drags or a divider moves, nothing selects and the cursor
+   holds. */
+:root[data-dragging],
+:root[data-dragging] * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+:root[data-resizing="col"] *,
+:root[data-resizing="row"] * {
+  user-select: none;
+}
+:root[data-resizing="col"] * {
+  cursor: col-resize !important;
+}
+:root[data-resizing="row"] * {
+  cursor: row-resize !important;
+}
+
 /* On a Mac the traffic lights sit at the window's top left (main.ts), so
-   whichever panel the layout puts there clears them, and centres its bar
+   whichever pane the layout puts there clears them, and centres its bar
    on them as a unified title bar does (Shell's data-lights). The sidebar
    does it itself; the room's toolbar does too while the sidebar hides. */
 .shell[data-lights="room"] .room-sheet .topbar,
-.shell[data-lights="panel"] aside.panel .panel-head {
+.shell[data-lights="corner"] .stack[data-corner] .topbar,
+.shell[data-lights="corner"] .stack[data-corner] > .stack-head {
   padding-left: 4.75rem;
   padding-bottom: 0.875rem;
 }

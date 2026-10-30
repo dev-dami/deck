@@ -19,7 +19,8 @@ import (
 // creates the task (new_task) or takes the existing one (task), makes `to` its
 // owner and records the contract. It returns the task's id.
 func (m *Manager) handOver(t *thread, from, to *agentState, text string, msg agent.Message) (string, error) {
-	contract := &store.Contract{Expect: msg.Expect, DoneWhen: msg.DoneWhen, ExplicitDone: msg.ExplicitDone}
+	contract := &store.Contract{Objective: msg.Objective, Expect: msg.Expect, DoneWhen: msg.DoneWhen,
+		Boundaries: msg.Boundaries, Check: msg.Check, ExplicitDone: msg.ExplicitDone}
 	if msg.NewTask != "" {
 		// Claimed: created running with `to` as owner, so the scheduler cannot
 		// hand it to someone else while the relay is still on its way.
@@ -48,6 +49,9 @@ func (m *Manager) handOver(t *thread, from, to *agentState, text string, msg age
 		tk.Creator = from.id
 	}
 	if *contract != (store.Contract{}) || tk.Contract == nil {
+		if contract.Check == "" {
+			contract.Check = tk.CheckOf() // new terms do not drop the task's check
+		}
 		tk.Contract = contract
 	}
 	if tk.Brief == "" {
@@ -112,28 +116,9 @@ func handoverIndex(t *thread, id, to string) int {
 // live subagents of its own nothing is settled: the task waits for their
 // results, which start a's next turn.
 func (m *Manager) settleHanded(t *thread, a *agentState, reply string, answered int) {
-	type job struct {
-		id       string
-		explicit bool
-	}
-	var jobs []job
 	t.mu.Lock()
-	if t.waitsOnChildren(a, answered) {
-		t.mu.Unlock()
-		return
-	}
+	jobs := t.handedJobsLocked(a, answered)
 	ops := t.ops != nil
-	for _, tk := range t.tasks {
-		if tk.Owner != a.id || tk.Status != store.TaskRunning || tk.Contract == nil {
-			continue
-		}
-		// a has not been told about it yet (still ahead of its cursor, or held
-		// by a pause): this turn was about something else.
-		if idx := handoverIndex(t, tk.ID, a.id); idx < 0 || idx >= answered || t.inert[idx] {
-			continue
-		}
-		jobs = append(jobs, job{tk.ID, tk.Contract.ExplicitDone})
-	}
 	t.mu.Unlock()
 
 	for _, j := range jobs {
@@ -156,6 +141,58 @@ func (m *Manager) settleHanded(t *thread, a *agentState, reply string, answered 
 	}
 }
 
+// handedJob is a task the end of a turn settles (settleHanded).
+type handedJob struct {
+	id       string
+	explicit bool
+}
+
+// handedJobsLocked are the tasks the turn of a that just ended settles: those
+// handed to a under a contract, running, whose handover a had been briefed
+// on. None while a waits on subagents of its own. turnend.go reads them too,
+// to say how the turn ended before settleHanded runs. t.mu is held.
+func (t *thread) handedJobsLocked(a *agentState, answered int) []handedJob {
+	if t.waitsOnChildren(a, answered) {
+		return nil
+	}
+	var jobs []handedJob
+	for _, tk := range t.tasks {
+		if tk.Owner != a.id || tk.Status != store.TaskRunning || tk.Contract == nil {
+			continue
+		}
+		// a has not been told about it yet (still ahead of its cursor, or held
+		// by a pause): this turn was about something else.
+		if idx := handoverIndex(t, tk.ID, a.id); idx < 0 || idx >= answered || t.inert[idx] {
+			continue
+		}
+		jobs = append(jobs, handedJob{tk.ID, tk.Contract.ExplicitDone})
+	}
+	return jobs
+}
+
+// settleBriefsLocked makes the hand-overs of task id that their recipients
+// have not been given yet inert, once the task is done or cancelled: a brief
+// for finished work must not start another turn (an agent that planned its
+// own work on the board and finished it in the same turn would be asked to
+// do it again). They stay in the log and in the next briefing. Reports to
+// the task's creator (via "task") are left alone. t.mu is held.
+func (t *thread) settleBriefsLocked(id string) {
+	for _, h := range t.index.heads {
+		if h.typ != store.EntryRelay || h.via == "task" || !strings.EqualFold(h.taskID, id) || t.inert[h.i] {
+			continue
+		}
+		pending := false
+		for _, to := range h.to {
+			if a := t.member(to); a != nil && h.i >= a.cursor {
+				pending = true
+			}
+		}
+		if pending {
+			t.inert[h.i] = true
+		}
+	}
+}
+
 // handoverNote is what a recipient is told about the task a relay hands over.
 // t.mu is held.
 func handoverNote(t *thread, e store.Entry) string {
@@ -167,14 +204,26 @@ func handoverNote(t *thread, e store.Entry) string {
 		return ""
 	}
 	tk := t.tasks[i]
+	if tk.Status.Final() {
+		return fmt.Sprintf("\n[deck] Task %s \"%s\" is already %s: nothing more to do for it.", tk.ID, tk.Title, tk.Status)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n[deck] This hands you task %s \"%s\".", tk.ID, tk.Title)
 	if c := tk.Contract; c != nil {
+		if c.Objective != "" && c.Objective != tk.Title {
+			b.WriteString(" Objective: " + c.Objective + ".")
+		}
 		if c.Expect != "" {
 			b.WriteString(" Expected back: " + c.Expect + ".")
 		}
 		if c.DoneWhen != "" {
 			b.WriteString(" Done when: " + c.DoneWhen + ".")
+		}
+		if c.Boundaries != "" {
+			b.WriteString(" Boundaries: " + c.Boundaries + ".")
+		}
+		if c.Check != "" {
+			fmt.Fprintf(&b, " Check: run `%s` after your last change; it is done only once that passes (without a passing run, task.done sends it back).", c.Check)
 		}
 		if c.ExplicitDone {
 			fmt.Fprintf(&b, " Report it with execute task.done {id: %q, result} when finished; a reply alone does not finish it.", tk.ID)
@@ -186,8 +235,9 @@ func handoverNote(t *thread, e store.Entry) string {
 }
 
 // notifyCreator tells the member who handed a task over how it ended: the
-// result, the failure or why it is blocked, as a relay entry that reaches them
-// like any other message (queued when they are busy). It does nothing when the
+// result, the failure or why it is blocked, as a relay entry, logged at once;
+// a result wakes them when the last of what they handed out has ended, a
+// failure or a block at once (batch.go). It does nothing when the
 // task has no owner or creator, or when the creator made the change
 // themselves. When the creator has left, its nearest live ancestor is told
 // instead (a subagent's parent, and so on); with none, nobody is.
@@ -218,10 +268,13 @@ func (m *Manager) notifyCreator(t *thread, tk store.Task, by string) {
 	default:
 		return
 	}
+	batchMu.Lock()                             // the batch decision below (batch.go)
+	subs := m.busySubThreads(t.id, tk.Creator) // before t.mu: it locks the sub-threads
 	t.mu.Lock()
 	cr := t.ancestor(tk.Creator)
 	if cr == nil || cr.id == tk.Owner || t.raceOf(tk) >= 0 { // a race reports once, for all its entries
 		t.mu.Unlock()
+		batchMu.Unlock()
 		return
 	}
 	text := fmt.Sprintf("task %s \"%s\" %s", tk.ID, tk.Title, clipText(what, maxEntryChars))
@@ -229,8 +282,14 @@ func (m *Manager) notifyCreator(t *thread, tk store.Task, by string) {
 		text += fmt.Sprintf(" [it was for %s, who has stopped]", t.name(tk.Creator))
 	}
 	e := store.Entry{Type: store.EntryRelay, Speaker: tk.Owner, To: []string{cr.id}, Via: "task", TaskID: tk.ID, Event: eventText(text)}
-	m.appendLocked(t, e)
+	idx := m.appendLocked(t, e)
+	// Logged now, but cr is woken once for the batch (batch.go).
+	line := reportLine(tk)
+	wake := t.holdReportLocked(cr, heldReport{idx, line}, tk.Status != store.TaskDone, line, subs)
 	t.mu.Unlock()
+	batchMu.Unlock()
 	m.emit(msgFor(t.id, e))
-	_, _ = m.deliver(t, cr)
+	if wake {
+		_, _ = m.deliver(t, cr)
+	}
 }

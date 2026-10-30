@@ -1,4 +1,4 @@
-import { MAX_FRAME_BYTES } from "./protocol";
+import { type Image, MAX_FRAME_BYTES } from "./protocol";
 
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
@@ -47,4 +47,130 @@ export function readAsBase64(file: Blob): Promise<string> {
     };
     r.readAsDataURL(file);
   });
+}
+
+// A blob's bytes as base64, without FileReader: a chunk of a video upload.
+export async function blobBase64(b: Blob): Promise<string> {
+  const bytes = new Uint8Array(await b.arrayBuffer());
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(s);
+}
+
+// ---- labels -------------------------------------------------------------------
+
+// The longest label kept (the engine cuts longer ones too).
+export const MAX_LABEL = 60;
+
+// A label as it is sent: one line, at most MAX_LABEL characters.
+export function cleanLabel(s: string): string {
+  return [
+    ...s
+      .split(/\s+/)
+      .filter((w) => w !== "")
+      .join(" "),
+  ]
+    .slice(0, MAX_LABEL)
+    .join("")
+    .trim();
+}
+
+// Where an attachment came from: a paste (a screenshot) or a file the
+// person picked or dropped.
+export type Source = "paste" | "file";
+
+// The label an attachment starts with: a pasted image is "Screenshot 1", a
+// file its name without the extension, else "Image 1" or "Video 1"; the
+// number is the first one the attached labels do not use yet.
+export function defaultLabel(
+  kind: "image" | "video",
+  source: Source,
+  fileName: string,
+  taken: readonly string[],
+): string {
+  if (source === "file") {
+    const base = displayName(fileName).replace(/\.[^.]*$/, "");
+    const named = cleanLabel(base);
+    // Names a browser makes up for a paste or a capture say nothing.
+    if (named !== "" && !/^(image|video|blob|pasted)$/i.test(named)) return named;
+  }
+  const stem = kind === "video" ? "Video" : source === "paste" ? "Screenshot" : "Image";
+  let n = 1;
+  while (taken.includes(`${stem} ${n}`)) n++;
+  return `${stem} ${n}`;
+}
+
+// ---- video --------------------------------------------------------------------
+
+export const VIDEO_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
+
+// The largest video a client sends: from the desktop to a Deck on the same
+// machine, and from the phone (or a paired desktop) in upload chunks.
+export const MAX_VIDEO_BYTES_LOCAL = 50 << 20;
+export const MAX_VIDEO_BYTES_REMOTE = 25 << 20;
+
+// The bytes of a video sent per media.upload call (the server allows 4 MB).
+export const UPLOAD_CHUNK_BYTES = 3 << 20;
+
+export function isVideo(type: string): boolean {
+  return type.startsWith("video/");
+}
+
+export function checkVideo(
+  file: { size: number; type: string; name: string },
+  max: number,
+): ImageCheck {
+  if (!VIDEO_TYPES.has(file.type)) {
+    return { ok: false, reason: `${file.name}: only MP4, WebM or QuickTime videos can be sent.` };
+  }
+  if (file.size > max) {
+    return { ok: false, reason: `${file.name} is larger than ${max >> 20} MB.` };
+  }
+  return { ok: true };
+}
+
+// Whether a video can go to the room's lead now, and if not why, and
+// whether Deck can send it as frames instead.
+export interface VideoGate {
+  // The Deck takes video at all (feature "video").
+  available: boolean;
+  ok: boolean;
+  // Why it cannot: "claude-opus-5-5 can't watch video".
+  reason: string;
+  // Deck can send it as still frames (its machine has ffmpeg).
+  frames: boolean;
+  // Why it cannot send frames either; "" when it can.
+  framesReason: string;
+}
+
+export function videoGate(
+  features: readonly string[],
+  lead: { video?: boolean; slug?: string; model?: string; kind?: string } | null | undefined,
+): VideoGate {
+  const frames = features.includes("video_frames");
+  const framesReason = frames ? "" : "Sending frames needs ffmpeg on the computer running Deck.";
+  if (!features.includes("video")) {
+    return {
+      available: false,
+      ok: false,
+      reason: "This Deck takes no video.",
+      frames: false,
+      framesReason: "This Deck takes no video.",
+    };
+  }
+  if (lead?.video === true) return { available: true, ok: true, reason: "", frames, framesReason };
+  const who = lead?.slug || lead?.model || lead?.kind || "This agent";
+  return { available: true, ok: false, reason: `${who} can't watch video`, frames, framesReason };
+}
+
+// An attachment as a composer holds it until it is sent: the wire Image,
+// and for a video the file itself, uploaded or read on send. path is the
+// file's own path where the client can tell it (the desktop).
+export type Outgoing = Image & { file?: Blob; path?: string };
+
+// A video attached while the lead cannot watch one goes only as frames.
+export function blockedVideo(atts: readonly Outgoing[], gate: VideoGate): boolean {
+  return atts.some((a) => isVideo(a.mime) && !gate.ok && a.frames !== true);
 }

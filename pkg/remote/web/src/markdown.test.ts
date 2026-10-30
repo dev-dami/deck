@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseBlocks, parseInline, safeHref } from "./markdown";
+import { parseBlocks, parseInline, safeHref, splitRow } from "./markdown";
 
 describe("inline", () => {
   test("plain text stays text", () => {
@@ -94,5 +94,30 @@ describe("blocks", () => {
   test("handles CRLF and empty input", () => {
     expect(parseBlocks("")).toEqual([]);
     expect(parseBlocks("a\r\n\r\nb").map((x) => x.k)).toEqual(["p", "p"]);
+  });
+
+  test("GFM tables: header, alignment, rows padded to the header", () => {
+    const b = parseBlocks(
+      "intro\n| name | n |\n| :-- | --: |\n| `a|b` | 1 |\n| c \\| d |\n\nafter",
+    );
+    expect(b.map((x) => x.k)).toEqual(["p", "table", "p"]);
+    const t = b[1];
+    if (t?.k !== "table") throw new Error("no table");
+    expect(t.align).toEqual(["left", "right"]);
+    expect(t.head).toEqual([[{ k: "text", text: "name" }], [{ k: "text", text: "n" }]]);
+    expect(t.rows).toEqual([
+      [[{ k: "code", text: "a|b" }], [{ k: "text", text: "1" }]],
+      [[{ k: "text", text: "c | d" }], []],
+    ]);
+  });
+
+  test("a pipe without a delimiter row is no table", () => {
+    expect(parseBlocks("a | b\nc | d").map((x) => x.k)).toEqual(["p"]);
+    expect(parseBlocks("| a | b |\n| --- |").map((x) => x.k)).toEqual(["p"]);
+  });
+
+  test("splitRow keeps escaped pipes and code", () => {
+    expect(splitRow("| a | `x|y` | b \\| c |")).toEqual(["a", "`x|y`", "b | c"]);
+    expect(splitRow("a | b")).toEqual(["a", "b"]);
   });
 });

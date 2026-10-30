@@ -58,6 +58,10 @@ const (
 	// OpThreadRoster lists the thread's members; it goes through the
 	// TaskBoard, which knows the caller's thread.
 	OpThreadRoster = "thread.roster"
+	// The sub-thread ops of a thread's lead (session/subthread.go).
+	OpThreadOpen     = "thread.open"
+	OpThreadPost     = "thread.post"
+	OpThreadChildren = "thread.children"
 	// The two ops of an ops contract's agent (Env.Ops).
 	OpShRun          = "sh.run"
 	OpContractResult = "contract.result"
@@ -252,11 +256,15 @@ func catalog(env *Env) []Op {
 
 func init() {
 	ops = []Op{
-		{Name: agent.OpThreadSend, Desc: "Message another agent in this thread (to: an agent name, or \"all\"). The user sees it.",
-			Args: []Arg{{Name: "to", Type: tString, Required: true, Desc: "agent name or \"all\""}, {Name: "message", Type: tString, Required: true},
+		{Name: agent.OpThreadSend, Desc: "Hand work to another agent in this thread under a contract: {to, objective, deliverable, done_when, boundaries, check}; it becomes a task they own, and only such a hand-off starts their turn. A message without one to a peer is information they see when next briefed; your own subagents and the agent you answer always get it. Questions go to the user, not to agents. At orchestration full only the lead routes: report to it. The user sees it all.",
+			Args: []Arg{{Name: "to", Type: tString, Required: true, Desc: "agent name or \"all\""}, {Name: "message", Type: tString, Desc: "the text; optional when objective is given"},
+				{Name: "objective", Type: tString, Desc: "what the work is for; makes this a hand-off (a new task titled after it unless task or new_task names one)"},
+				{Name: "deliverable", Type: tString, Desc: "what comes back (required with objective)"},
+				{Name: "boundaries", Type: tString, Desc: "what the recipient must not do or touch"},
+				{Name: "check", Type: tString, Desc: "command whose passing run proves it done, e.g. \"go test ./pkg/x\"; task.done without one since the last change goes to review"},
 				{Name: "new_task", Type: tString, Desc: "hand it over as a new task with this title (one recipient); they answer with task.done"},
 				{Name: "task", Type: tString, Desc: "hand it over as this existing task id (one recipient)"},
-				{Name: "expect", Type: tString, Desc: "what you expect back"}, {Name: "done_when", Type: tString, Desc: "when the task counts as done"},
+				{Name: "expect", Type: tString, Desc: "what you expect back (deliverable)"}, {Name: "done_when", Type: tString, Desc: "when the task counts as done"},
 				{Name: "explicit_done", Type: tBool, Desc: "the recipient must report with task.done; its reply alone is not enough"},
 				{Name: "capsule", Type: tString, Desc: "a SUB capsule id (sub.patch.capture) to hand over with the message; an isolated recipient gets it applied"}}},
 		{Name: agent.OpThreadRead, Desc: "Read the current shared thread: what the user and every agent said and did."},
@@ -283,6 +291,15 @@ func init() {
 			Args: []Arg{{Name: "id", Type: tString, Required: true}}, run: opTask("memory.drop")},
 		{Name: OpThreadRoster, Desc: "Who is in this thread now: each agent's name, kind, model, status, task, parent and branch, and how to reach several agents of one kind (\"claude\" reaches whichever is free, \"claude*\" all of them).",
 			run: opTask(OpThreadRoster)},
+		{Name: OpThreadOpen, Desc: "Open a sub-thread: a thread of its own for a piece of work, led by another agent (kind: an agent kind or a named agent; default your own kind) that the user can open and talk to. Use it for work the user may want to follow or steer, or a second opinion; use agent.spawn for a quick helper that only reports back. Its agent's reply to your brief comes back to you as a message. How many you may open follows the thread's orchestration level (off: only when the user asks).",
+			Args: []Arg{{Name: "brief", Type: tString, Required: true, Desc: "what its agent should do, and what to hand back"}, {Name: "title", Type: tString},
+				{Name: "kind", Type: tString}, {Name: "model", Type: tString}, {Name: "effort", Type: tString}},
+			run: opTask(OpThreadOpen)},
+		{Name: OpThreadPost, Desc: "Send a follow-up to a sub-thread you opened; its agent's reply comes back to you.",
+			Args: []Arg{{Name: "thread", Type: tString, Required: true, Desc: "the sub-thread's id (thread.children)"}, {Name: "message", Type: tString, Required: true}},
+			run:  opTask(OpThreadPost)},
+		{Name: OpThreadChildren, Desc: "List the sub-threads you opened: id, title, agent and whether it is working or has your asks waiting.",
+			run: opTask(OpThreadChildren)},
 		{Name: OpTaskCreate, Desc: "Add a task to this thread's shared task board. deps are task ids it waits for (\"t1,t2\"); owner an agent name or \"me\". Returns its id.",
 			Args: []Arg{{Name: "title", Type: tString, Required: true}, {Name: "brief", Type: tString, Desc: "what the owner should do"}, {Name: "deps", Type: tString, Desc: "task ids it waits for, e.g. \"t1,t2\""},
 				{Name: "owner", Type: tString}, {Name: "parent", Type: tString, Desc: "task id this is part of"},
@@ -293,7 +310,8 @@ func init() {
 				{Name: "budget_tokens", Type: tInt, Desc: "most tokens it may spend, its subagents' included"},
 				{Name: "budget_usd", Type: tString, Desc: "most reported cost it may spend, e.g. \"2.50\""},
 				{Name: "budget_minutes", Type: tInt, Desc: "most minutes it may run"},
-				{Name: "review", Type: tString, Desc: "agent kind that reviews the work before it is done, or \"other\" for any kind but the worker's; \"none\" for no review"}},
+				{Name: "review", Type: tString, Desc: "agent kind that reviews the work before it is done, or \"other\" for any kind but the worker's; \"none\" for no review"},
+				{Name: "check", Type: tString, Desc: "command whose passing run proves it done, e.g. \"go test ./pkg/x\"; task.done without one since the last change goes to review"}},
 			run: opTask(OpTaskCreate)},
 		{Name: OpTaskList, Desc: "List the shared task board: id, status, owner, dependencies, title and result.",
 			Args: []Arg{{Name: "status", Type: tString, Desc: "pending, ready, running, review, blocked, done, failed or cancelled"}}, run: opTask(OpTaskList)},
@@ -319,6 +337,7 @@ func init() {
 				{Name: "model", Type: tString}, {Name: "effort", Type: tString}, {Name: "task", Type: tString, Desc: "bind it to an existing task id instead of making one"}, {Name: "isolate", Type: tBool},
 				{Name: "worktree", Type: tJSON, Desc: "true for a worktree of its own (as isolate), or a worktree name to work in"},
 				{Name: "expect", Type: tString}, {Name: "done_when", Type: tString}, {Name: "explicit_done", Type: tBool},
+				{Name: "check", Type: tString, Desc: "command whose passing run proves it done, e.g. \"go test ./pkg/x\""},
 				{Name: "review", Type: tString, Desc: "agent kind that reviews the work before it is done, or \"other\" for any kind but the worker's; \"none\" for no review"}},
 			run: opTask(OpAgentSpawn)},
 		{Name: OpTaskRace, Desc: "Race several helpers on one brief (agents may at orchestration full): each works on a git worktree of its own, and when all have ended you get one summary of them (files, +/- lines, tokens, time, result). The user keeps one entry; the others are discarded. Kinds may mix. judge names an agent kind that then ranks them.",

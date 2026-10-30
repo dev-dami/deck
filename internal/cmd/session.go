@@ -167,8 +167,8 @@ func runSessionList(cmd *cobra.Command, _ []string) error {
 	w, cleanup, usingPager := sessionWriter(ctx, len(list))
 	defer cleanup()
 
-	hashStyle := lipgloss.NewStyle().Foreground(tone.Sky)
-	dateStyle := lipgloss.NewStyle().Foreground(tone.Dusk)
+	hashStyle := lipgloss.NewStyle().Foreground(tone.Dark.Link)
+	dateStyle := lipgloss.NewStyle().Foreground(tone.Dark.Muted)
 
 	width := sessionOutputWidth
 	if tw, _, err := term.GetSize(os.Stdout.Fd()); err == nil && tw > 0 {
@@ -435,8 +435,8 @@ func outputSessionHuman(ctx context.Context, cfg *config.ConfigStore, sess sessi
 	}
 	contentWidth := min(width, sessionMaxContentWidth)
 
-	keyStyle := lipgloss.NewStyle().Foreground(tone.Dusk)
-	valStyle := lipgloss.NewStyle().Foreground(tone.Sky)
+	keyStyle := lipgloss.NewStyle().Foreground(tone.Dark.Muted)
+	valStyle := lipgloss.NewStyle().Foreground(tone.Dark.Link)
 
 	hash := session.HashID(sess.ID)[:12]
 	created := time.Unix(sess.CreatedAt, 0).Format("Mon Jan 2 15:04:05 2006 -0700")

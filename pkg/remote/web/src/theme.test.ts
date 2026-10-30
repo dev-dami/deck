@@ -6,6 +6,7 @@ import {
   applyTheme,
   cssVariables,
   cssVarName,
+  deckLook,
   kindColour,
   kindMark,
   kindVarName,
@@ -91,6 +92,16 @@ describe("theme to CSS variables", () => {
     expect(r.vars.get("--kind-codex")).toBe("#5b4bd6");
     expect(second).toEqual(Object.keys(cssVariables(fixtureTheme("event_theme.changed"))));
     expect(r.log.slice(2)).toEqual(["scheme:light", "color:#fbfaf7"]);
+  });
+
+  test("Deck's own look is known by its canvas and accent", () => {
+    const own = (bg: string, primary: string) => ({ palette: { bg_base: bg, primary }, kinds: {} });
+    expect(deckLook(own("#19191b", "#0a84ff"))).toBe(true);
+    expect(deckLook(own("#FBFBFD", "#007AFF"))).toBe(true);
+    // Dark's canvas with light's accent is a theme of the person's.
+    expect(deckLook(own("#19191b", "#007aff"))).toBe(false);
+    expect(deckLook(fixtureTheme("entity_theme"))).toBe(false);
+    expect(deckLook({ palette: {}, kinds: {} })).toBe(false);
   });
 
   test("marks come from the theme", () => {

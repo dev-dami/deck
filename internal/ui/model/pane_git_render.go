@@ -235,7 +235,7 @@ func (m *UI) gitRowsAsOf(now time.Time) (rows []gitRow, until time.Time) {
 	header(gitSectionStatus, "Status")
 	if !g.statusOK {
 		if g.statusErr != "" {
-			note(gitSectionStatus, gitFailStyle.Render(g.statusErr))
+			note(gitSectionStatus, gitFailStyle().Render(g.statusErr))
 		} else {
 			note(gitSectionStatus, muted.Render("loading…"))
 		}
@@ -557,7 +557,7 @@ func (m *UI) gitPRBody(b *gitBody, v *gitView, width int, focused bool) {
 		switch {
 		case v.err != "":
 			for _, l := range gitWrap(v.err, width-1) {
-				b.add(gitFit(gitFailStyle.Render(l), "", width), -1)
+				b.add(gitFit(gitFailStyle().Render(l), "", width), -1)
 			}
 		default:
 			b.add(gitFit(spin+" "+muted.Render("loading…"), "", width), -1)
@@ -579,7 +579,7 @@ func (m *UI) gitPRBody(b *gitBody, v *gitView, width int, focused bool) {
 	case "MERGEABLE":
 		facts = append(facts, muted.Render("mergeable"))
 	case "CONFLICTING":
-		facts = append(facts, gitFailStyle.Render("conflicts"))
+		facts = append(facts, gitFailStyle().Render("conflicts"))
 	}
 	right := ""
 	if v.loading {
@@ -592,7 +592,7 @@ func (m *UI) gitPRBody(b *gitBody, v *gitView, width int, focused bool) {
 		b.add(gitFit(muted.Render("“"+first+"”"), muted.Render("d read"), width), -1)
 	}
 	if v.err != "" {
-		b.add(gitFit(gitFailStyle.Render(v.err), "", width), -1)
+		b.add(gitFit(gitFailStyle().Render(v.err), "", width), -1)
 	}
 	b.add("", -1)
 	sum := gh.Summarize(v.checks)
@@ -680,7 +680,7 @@ func (m *UI) gitCommitBody(b *gitBody, v *gitView, width int) {
 	if v.commit == nil {
 		b.add(gitFit(t.Resource.Heading.Render(v.hash), "", width), -1)
 		if v.err != "" {
-			b.add(gitFit(gitFailStyle.Render(v.err), "", width), -1)
+			b.add(gitFit(gitFailStyle().Render(v.err), "", width), -1)
 		} else {
 			b.add(gitFit(gitSpinner(m.git.pane.frame)+" "+muted.Render("loading…"), "", width), -1)
 		}
@@ -714,11 +714,11 @@ func (m *UI) gitCommitBody(b *gitBody, v *gitView, width int) {
 		files = "file"
 	}
 	b.add(gitFit(fmt.Sprintf("%d %s · ", len(c.Files), files)+
-		gitPassStyle.Render(fmt.Sprintf("+%d", c.Added))+" "+gitFailStyle.Render(fmt.Sprintf("−%d", c.Deleted)), "", width), -1)
+		gitPassStyle().Render(fmt.Sprintf("+%d", c.Added))+" "+gitFailStyle().Render(fmt.Sprintf("−%d", c.Deleted)), "", width), -1)
 	for _, f := range c.Files {
 		right := muted.Render("binary")
 		if !f.Binary {
-			right = gitPassStyle.Render(fmt.Sprintf("+%d", f.Added)) + " " + gitFailStyle.Render(fmt.Sprintf("−%d", f.Deleted))
+			right = gitPassStyle().Render(fmt.Sprintf("+%d", f.Added)) + " " + gitFailStyle().Render(fmt.Sprintf("−%d", f.Deleted))
 		}
 		for _, l := range gitWrapFit(f.Path, right, width) {
 			b.add(l, -1)
@@ -794,7 +794,7 @@ func (m *UI) gitFooter(width int) (lines, hints []string) {
 		keys = []string{"enter commit", "esc cancel"}
 	case v.kind == gitViewRoot && p.confirm != "":
 		q := fmt.Sprintf("%d changed · check out %s anyway?", g.status.Dirty, p.confirm)
-		lines = append(lines, gitFit(gitWaitStyle.Render(q), "", width))
+		lines = append(lines, gitFit(gitWaitStyle().Render(q), "", width))
 		keys = []string{"y check out", "n keep this branch"}
 	case v.merging && v.pr != nil:
 		parts := make([]string, len(gh.MergeMethods))
@@ -805,7 +805,7 @@ func (m *UI) gitFooter(width int) (lines, hints []string) {
 				parts[i] = muted.Render(" " + meth + " ")
 			}
 		}
-		lines = append(lines, gitFit(gitWaitStyle.Render(fmt.Sprintf("merge #%d:", v.pr.Number))+" "+strings.Join(parts, " "), "", width))
+		lines = append(lines, gitFit(gitWaitStyle().Render(fmt.Sprintf("merge #%d:", v.pr.Number))+" "+strings.Join(parts, " "), "", width))
 		keys = []string{"←→ method", "enter merge", "esc cancel"}
 	case v.kind == gitViewRoot:
 		keys = []string{"↑↓ move", "tab section", "enter open", "c commit", "p push", "f fetch", "P PR", "R refresh"}
@@ -831,7 +831,7 @@ func (m *UI) gitFooter(width int) (lines, hints []string) {
 	case p.refreshing:
 		lines = append(lines, gitFit(gitSpinner(p.frame)+" "+muted.Render("refreshing…"), "", width))
 	case p.err != "":
-		lines = append(lines, gitFit(gitFailStyle.Render(p.err), "", width))
+		lines = append(lines, gitFit(gitFailStyle().Render(p.err), "", width))
 	case p.info != "":
 		lines = append(lines, gitFit(muted.Render(p.info), "", width))
 	}

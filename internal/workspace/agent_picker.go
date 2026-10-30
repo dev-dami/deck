@@ -1,7 +1,9 @@
 package workspace
 
 import (
+	"cmp"
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,12 +19,16 @@ type EffortChoice struct {
 
 // ModelChoice is one model an agent CLI offers, as the model picker shows it.
 type ModelChoice struct {
-	Kind        string // "claude", "codex", "opencode", "antigravity"
-	ID          string // passed to the CLI; "" = the CLI's default
+	Kind string // "claude", "codex", "opencode", "antigravity"
+	ID   string // passed to the CLI; "" = the CLI's default
+	// Name is the model's slug ("claude-opus-5-5") once a run of ID has
+	// said what it is (session/slugs.go); before that ID, or the CLI's own
+	// name for its default.
 	Name        string
 	Description string
 	Default     bool // the CLI's own default
 	Current     bool // what the session's agent of this kind runs now
+	Video       bool // the model takes video (agent.ModelInfo.Video)
 
 	Efforts       []EffortChoice
 	DefaultEffort string
@@ -110,10 +116,7 @@ func (w *DeckWorkspace) CachedAgentModelChoices(sessionID string) []ModelChoice 
 		models, have := w.models[kind]
 		w.mu.Unlock()
 		if !have {
-			name := cur
-			if name == "" {
-				name = "default model"
-			}
+			name := cmp.Or(w.mgr().ModelSlug(kind, cur), cur, "default model")
 			out = append(out, ModelChoice{Kind: kind, ID: cur, Name: name, Current: true, CurrentEffort: curEffort})
 			continue
 		}
@@ -121,10 +124,11 @@ func (w *DeckWorkspace) CachedAgentModelChoices(sessionID string) []ModelChoice 
 			c := ModelChoice{
 				Kind:          kind,
 				ID:            mi.ID,
-				Name:          mi.Name,
+				Name:          cmp.Or(w.mgr().ModelSlug(kind, mi.ID), mi.Slug, mi.ID, mi.Name),
 				Description:   mi.Description,
 				Default:       mi.Default,
 				DefaultEffort: mi.DefaultEffort,
+				Video:         mi.Video,
 			}
 			for _, e := range mi.Efforts {
 				c.Efforts = append(c.Efforts, EffortChoice{Level: e.Level, Description: e.Description})
@@ -138,20 +142,22 @@ func (w *DeckWorkspace) CachedAgentModelChoices(sessionID string) []ModelChoice 
 	return out
 }
 
-// SetAgentModel implements [AgentPicker].
+// SetAgentModel implements [AgentPicker]. It is the clients' agent menu: the
+// session's lead becomes an agent of kind (or the named agent kind names)
+// running model at effort, and the next message goes to it
+// (session/lead.go). A kind's pick is also what new threads start with.
 func (w *DeckWorkspace) SetAgentModel(sessionID, kind, model, effort string) error {
-	if th, ok := w.threadOf(sessionID); ok {
-		for _, a := range th.Members {
-			if a.Kind != kind {
-				continue
-			}
-			if err := w.mgr().SetModel(a.ID, model); err != nil {
-				return err
-			}
-			if err := w.mgr().SetEffort(a.ID, effort); err != nil {
-				return err
-			}
+	if sessionID != "" {
+		tid, err := w.thread(sessionID)
+		if err != nil {
+			return err
 		}
+		if _, err := w.mgr().SetLead(tid, kind, model, effort); err != nil {
+			return err
+		}
+	}
+	if !slices.Contains(w.mgr().Kinds(), kind) {
+		return nil // a named agent: its profile keeps its own model
 	}
 	w.mgr().SetDefaultModel(kind, model)
 	w.mgr().SetDefaultEffort(kind, effort)

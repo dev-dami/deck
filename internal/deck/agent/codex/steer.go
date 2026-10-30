@@ -34,10 +34,12 @@ var allowedMediaTypes = map[string]bool{
 }
 
 // imageInputs validates the images and turns them into localImage input items
-// carrying absolute paths.
+// carrying absolute paths, each after a text item with its reference line
+// ("[Image 1: login page error]").
 func imageInputs(images []agent.Image) ([]userInput, error) {
 	var out []userInput
-	for _, img := range images {
+	refs := agent.RefLines(images)
+	for i, img := range images {
 		if img.Path == "" {
 			return nil, errors.New("codex: image has no path")
 		}
@@ -59,7 +61,7 @@ func imageInputs(images []agent.Image) ([]userInput, error) {
 		if !fi.Mode().IsRegular() {
 			return nil, fmt.Errorf("codex: image %s is not a regular file", filepath.Base(abs))
 		}
-		out = append(out, userInput{Type: "localImage", Path: abs})
+		out = append(out, userInput{Type: "text", Text: refs[i], TextElements: []any{}}, userInput{Type: "localImage", Path: abs})
 	}
 	return out, nil
 }

@@ -65,7 +65,7 @@ export function QuestionCard({
       role="group"
       aria-label={`${a.agent} asks`}
       tabIndex={-1}
-      className={cn("question-card flex flex-col gap-3 rounded-2xl bg-surface-1 px-3.5 pt-3 pb-2.5 outline-none ring-1 ring-hairline", className)}
+      className={cn("question-card card flex flex-col gap-3 rounded-2xl bg-surface-1 px-3.5 pt-3 pb-2.5 outline-none ring-1 ring-hairline", className)}
       data-approval={a.id}
       data-question=""
       onKeyDown={onKey}

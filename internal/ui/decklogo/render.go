@@ -31,12 +31,14 @@ type Palette struct {
 	Name   color.Color
 }
 
-// DefaultPalette is Deck's own mint wordmark for a dark or light ground.
+// DefaultPalette is Deck's wordmark for a dark or light ground: the
+// desktop's accent, faint to bright.
 func DefaultPalette(dark bool) Palette {
+	p := tone.Light
 	if dark {
-		return Palette{Low: tone.Faint, Accent: tone.Mint, High: tone.Seafoam, Name: tone.Fg}
+		p = tone.Dark
 	}
-	return Palette{Low: tone.LightFaint, Accent: tone.LightMint, High: tone.DeepTeal, Name: tone.LightFg}
+	return Palette{Low: p.Quaternary, Accent: p.Signal, High: p.Link, Name: p.Text}
 }
 
 // fill returns p with its unset colours taken from def.

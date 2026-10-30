@@ -345,6 +345,19 @@ type Styles struct {
 		ShellTruncation    lipgloss.Style // "N more lines" hint.
 		SectionHeader      lipgloss.Style
 
+		// Card is the rounded hairline box a hand-off or a subagent sits in,
+		// as the desktop draws them; CardLabel its quiet words ("to"),
+		// CardTitle what it is about, CardMeta its secondary text, and
+		// CardRunning, CardDone, CardFailed and CardBlocked a state.
+		Card        lipgloss.Style
+		CardLabel   lipgloss.Style
+		CardTitle   lipgloss.Style
+		CardMeta    lipgloss.Style
+		CardRunning lipgloss.Style
+		CardDone    lipgloss.Style
+		CardFailed  lipgloss.Style
+		CardBlocked lipgloss.Style
+
 		// Plan section styles
 		PlanBox lipgloss.Style // Border+padding for the final plan message
 
@@ -477,6 +490,7 @@ type Styles struct {
 		TitleLineBase      lipgloss.Style // Base for the gradient ╱╱╱ next to dialog titles
 		TitleGradFromColor color.Color    // Default dialog title ╱╱╱ gradient start
 		TitleGradToColor   color.Color    // Default dialog title ╱╱╱ gradient end
+		TitleRule          string         // The rule after a dialog title, in TitleLineBase; "" draws the ╱╱╱ gradient
 		// View is the main content area style.
 		View          lipgloss.Style
 		PrimaryText   lipgloss.Style

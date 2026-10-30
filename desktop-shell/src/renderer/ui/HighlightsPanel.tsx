@@ -140,7 +140,7 @@ export function HighlightsPanel({ items, summaries, approvals, attention, onReso
                 </h3>
                 <ul className="flex flex-col gap-2">
                   {g.kind === "needs_you" && attention !== null && (
-                    <li className="rounded-lg border border-hairline px-2.5 py-2" data-attention="">
+                    <li className="card rounded-lg border border-hairline px-2.5 py-2" data-attention="">
                       <p className="flex items-start gap-2 text-sm">
                         <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warning-foreground" />
                         <span className="min-w-0 flex-1">{attention}</span>
@@ -188,7 +188,7 @@ export function HighlightsPanel({ items, summaries, approvals, attention, onReso
 
 function ApprovalRow({ a }: { a: Approval }) {
   return (
-    <li className="rounded-lg border border-hairline px-2.5 py-2" data-approval-row={a.id}>
+    <li className="card rounded-lg border border-hairline px-2.5 py-2" data-approval-row={a.id}>
       <div className="flex items-start gap-2">
         <ShieldQuestion aria-hidden className="mt-0.5 size-4 shrink-0 text-warning-foreground" />
         <div className="min-w-0 flex-1">
@@ -216,7 +216,7 @@ function ItemRow({
   const Icon = KIND_ICON[item.kind];
   const hasSource = item.source !== null && (item.source.message_id !== "" || item.source.task_id !== "");
   return (
-    <li className="group/item rounded-lg border border-hairline px-2.5 py-2" data-kind={item.kind} data-unread={item.unread || undefined}>
+    <li className="group/item card rounded-lg border border-hairline px-2.5 py-2" data-kind={item.kind} data-unread={item.unread || undefined}>
       <div className="flex items-start gap-2">
         <Icon aria-hidden className={cn("mt-0.5 size-4 shrink-0", KIND_TONE[item.kind])} />
         <div className="min-w-0 flex-1">

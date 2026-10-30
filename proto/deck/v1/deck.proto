@@ -452,6 +452,27 @@ message Session {
   // branch is the thread's worktree branch when it is isolated.
   string branch = 9;
   bool archived = 10;
+  // parent_id is the session an agent opened this one from (a sub-thread),
+  // "" for one the person started. Clients list it under its parent.
+  string parent_id = 11;
+  // lead is the agent the person talks to: every message goes to it, and
+  // SetModel picks it (docs/design/lead-agent-and-subthreads.md).
+  SessionLead lead = 12;
+}
+
+message SessionLead {
+  // agent is its name in the thread ("claude", "charles"), kind its CLI.
+  string agent = 1;
+  string kind = 2;
+  string model = 3;
+  string effort = 4;
+  // profile is the named agent it runs as, "" for none.
+  string profile = 5;
+  // slug is the model it runs ("claude-opus-5-5") when model is an alias
+  // or "" for the CLI's default; "" until a run of it has said.
+  string slug = 6;
+  // video says its model takes video: an attached video reaches it.
+  bool video = 7;
 }
 
 message ListSessionsResponse {
@@ -464,6 +485,9 @@ message CreateSessionRequest {
   bool isolate = 2;
   // level is the orchestration level it starts at; "" is the Deck's default.
   string level = 3;
+  // parent_id opens it as a sub-thread of that session (the person's side
+  // thread): listed under it, led by the parent's agent's kind.
+  string parent_id = 4;
 }
 
 message RenameSessionRequest {
@@ -482,6 +506,11 @@ message Message {
   bool editable = 8;
   bool edited = 9;
   repeated Part parts = 10;
+  // turn_end is how the agent turn this message is ended, once it has:
+  // "done" (a task finished, with evidence when its check asks for it),
+  // "handoff" (work handed on under a contract), "blocked" (a question for
+  // the user) or "continue"; empty while it runs and for other messages.
+  string turn_end = 11;
 }
 
 message Part {
@@ -497,9 +526,12 @@ message Part {
   ImageRef image = 10;
 }
 
+// ImageRef is an image or a video of a message: its file name, its type,
+// and the label the person gave it ("Image 1", "login page error").
 message ImageRef {
   string name = 1;
   string mime = 2;
+  string label = 3;
 }
 
 message ListMessagesRequest {
@@ -515,10 +547,20 @@ message ListMessagesResponse {
   string cursor = 3;
 }
 
+// Image is an image or a video attached to a message. label is what the
+// person called it; the agent sees it next to the attachment ("[Image 1:
+// login page error]"). A video comes as its bytes or, from a client on the
+// engine's own machine, as path: a local file the engine reads (checked by
+// its bytes, at most 50 MB). frames asks for a video to be sent as still
+// frames, for a model that cannot watch video (needs ffmpeg: the
+// "VideoFrames" capability).
 message Image {
   string name = 1;
   string mime = 2;
   bytes data = 3;
+  string label = 4;
+  string path = 5;
+  bool frames = 6;
 }
 
 message SendRequest {
@@ -588,6 +630,8 @@ message ModelChoice {
   string label = 2;
   repeated string efforts = 3;
   bool selected = 4;
+  // video says the model takes video.
+  bool video = 5;
 }
 
 message ModelsResponse {

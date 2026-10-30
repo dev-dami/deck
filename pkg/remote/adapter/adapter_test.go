@@ -437,6 +437,20 @@ func TestSessionsAndSend(t *testing.T) {
 	require.Equal(t, "plan", r.rc.modes["s1"])
 }
 
+// How a Deck agent's turn ended rides on its finished message.
+func TestConvertCarriesTheTurnEnd(t *testing.T) {
+	msg := message.Message{ID: "a", SessionID: "s", Role: message.Assistant, Model: "claude", Parts: []message.ContentPart{
+		message.TextContent{Text: "Which do you want?"},
+	}}
+	require.Empty(t, toMessage(msg, "/work").TurnEnd, "a running turn has no end")
+	msg.AddFinish(message.FinishReasonEndTurn, "", "")
+	msg.SetTurnEnd(wire.TurnEndBlocked)
+	m := toMessage(msg, "/work")
+	require.True(t, m.Finished)
+	require.Equal(t, wire.TurnEndBlocked, m.TurnEnd)
+	require.Len(t, m.Parts, 1, "the finish part is no part of its own")
+}
+
 func TestConvertKeepsNamesNotPaths(t *testing.T) {
 	m := toMessage(message.Message{ID: "u", SessionID: "s", Role: message.User, Parts: []message.ContentPart{
 		message.TextContent{Text: "see"},
@@ -449,6 +463,13 @@ func TestConvertKeepsNamesNotPaths(t *testing.T) {
 	require.Equal(t, "shot.png", m.Parts[1].Image.Name)
 	require.Equal(t, "image/png", m.Parts[1].Image.Mime)
 	require.True(t, m.Finished)
+	require.Empty(t, m.Agent, "the person's own message names no agent")
+
+	// An agent's brief to a sub-thread is a user row that names its agent.
+	b := toMessage(message.Message{ID: "b", SessionID: "s", Role: message.User, Model: "claude", Provider: "deck",
+		Parts: []message.ContentPart{message.TextContent{Text: "check the limiter"}}}, "/work")
+	require.Equal(t, wire.RoleUser, b.Role)
+	require.Equal(t, "claude", b.Agent)
 
 	a := toApproval(permission.PermissionRequest{ID: "p", SessionID: "s", Description: "claude1 wants to edit: x",
 		Params: tools.EditPermissionsParams{FilePath: "/work/src/x.go", OldContent: "a\n", NewContent: "b\n"}}, time.Unix(1, 0), "/work")

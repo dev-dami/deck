@@ -150,20 +150,52 @@ export interface Session {
   // One of MODES in practice; kept open so an unexpected value never drops a session.
   mode: string;
   last_text?: string;
+  // The session an agent opened this one from (a sub-thread): clients list
+  // it under its parent. Absent for one the person started, and from an
+  // older Deck.
+  parent_id?: string;
+  // The agent the person talks to (docs/design/lead-agent-and-subthreads.md).
+  lead?: SessionLead;
 }
+
+export interface SessionLead {
+  agent: string;
+  kind: string;
+  model?: string;
+  // The model it runs ("claude-opus-5-5") when model is an alias or empty.
+  slug?: string;
+  effort?: string;
+  profile?: string;
+  // Its model takes video: an attached video reaches it.
+  video?: boolean;
+}
+
+export const decodeSessionLead: Decoder<SessionLead> = object(
+  { agent: str, kind: str },
+  { model: str, slug: str, effort: str, profile: str, video: bool },
+);
 
 export const decodeSession: Decoder<Session> = object(
   { id: str, title: str, updated_at: time, busy: bool, pending: int, mode: str },
-  { last_text: str },
+  { last_text: str, parent_id: str, lead: decodeSessionLead },
 );
 
+// An attached image or video: a display name, its type and the label the
+// person gave it. An image goes with its bytes; a video is uploaded first
+// (media.upload) and named by upload_id. frames sends a video as stills.
 export interface Image {
   name: string;
   mime: string;
+  label?: string;
   data_b64?: string;
+  upload_id?: string;
+  frames?: boolean;
 }
 
-export const decodeImage: Decoder<Image> = object({ name: str, mime: str }, { data_b64: str });
+export const decodeImage: Decoder<Image> = object(
+  { name: str, mime: str },
+  { label: str, data_b64: str, upload_id: str, frames: bool },
+);
 
 export interface Part {
   type: string;
@@ -210,6 +242,9 @@ export interface Message {
   editable?: boolean;
   edited?: boolean;
   parts: Part[];
+  // How the agent turn this message is ended, once it has: "done",
+  // "handoff", "blocked" (waits for the user) or "continue".
+  turn_end?: string;
 }
 
 export const decodeMessage: Decoder<Message> = object(
@@ -222,7 +257,7 @@ export const decodeMessage: Decoder<Message> = object(
     finished: bool,
     parts: list(decodePart),
   },
-  { agent: str, editable: bool, edited: bool },
+  { agent: str, editable: bool, edited: bool, turn_end: str },
 );
 
 export interface Approval {
@@ -353,11 +388,13 @@ export interface ModelChoice {
   label: string;
   efforts?: string[];
   selected?: boolean;
+  // The model takes video.
+  video?: boolean;
 }
 
 export const decodeModelChoice: Decoder<ModelChoice> = object(
   { id: str, label: str },
-  { efforts: list(str), selected: bool },
+  { efforts: list(str), selected: bool, video: bool },
 );
 
 export interface ChangedFile {
@@ -741,6 +778,23 @@ export interface ChatSendResult {
   message_id: string;
 }
 
+// One chunk of a video uploaded before chat.send names it. The first has
+// no upload_id and says the whole video's name, mime and size.
+export interface MediaUploadParams {
+  session_id: string;
+  upload_id?: string;
+  name?: string;
+  mime?: string;
+  size?: number;
+  offset: number;
+  data_b64: string;
+}
+
+export interface MediaUploadResult {
+  upload_id: string;
+  received: number;
+}
+
 export interface MessageEditParams {
   session_id: string;
   message_id: string;
@@ -862,6 +916,14 @@ export const decodeChatSendParams: Decoder<ChatSendParams> = object(
   { images: list(decodeImage), idempotency_key: str },
 );
 export const decodeChatSendResult: Decoder<ChatSendResult> = object({ message_id: str }, {});
+export const decodeMediaUploadParams: Decoder<MediaUploadParams> = object(
+  { session_id: str, offset: int, data_b64: str },
+  { upload_id: str, name: str, mime: str, size: int },
+);
+export const decodeMediaUploadResult: Decoder<MediaUploadResult> = object(
+  { upload_id: str, received: int },
+  {},
+);
 export const decodeMessageEditParams: Decoder<MessageEditParams> = object(
   { session_id: str, message_id: str, text: str },
   {},
@@ -957,6 +1019,7 @@ export interface MethodTable {
   "push.subscribe": { req: PushSubscribeParams; res: Empty };
   "push.unsubscribe": { req: Empty; res: Empty };
   "push.test": { req: Empty; res: Empty };
+  "media.upload": { req: MediaUploadParams; res: MediaUploadResult };
 }
 
 export type MethodName = keyof MethodTable;
@@ -998,6 +1061,7 @@ export const METHODS: { [M in MethodName]: MethodCodec<M> } = {
   "push.subscribe": { req: decodePushSubscribeParams, res: empty },
   "push.unsubscribe": { req: empty, res: empty },
   "push.test": { req: empty, res: empty },
+  "media.upload": { req: decodeMediaUploadParams, res: decodeMediaUploadResult },
 };
 
 export const METHOD_NAMES = Object.keys(METHODS) as MethodName[];

@@ -116,15 +116,35 @@ const subStatusOf = (v: string): SubStatus | "" => (SUB_STATUS.includes(v) ? (v 
 const subsMemo = new WeakMap<readonly AgentNode[], ReadonlyMap<string, AgentNode>>();
 const NO_SUBS: ReadonlyMap<string, AgentNode> = new Map();
 
-// The CLI-native subagents of a tree by name, the same map for the same tree.
+// The subagents of a tree by name, the same map for the same tree: the
+// CLI-native ones and the ones an agent started with agent.spawn.
 export function subsOf(agents: readonly AgentNode[] | null | undefined): ReadonlyMap<string, AgentNode> {
   if (agents === null || agents === undefined) return NO_SUBS;
   let m = subsMemo.get(agents);
   if (m === undefined) {
-    m = new Map(agents.filter((a) => a.native).map((a) => [a.name, a]));
+    m = new Map(agents.filter((a) => a.native || a.parent !== "").map((a) => [a.name, a]));
     subsMemo.set(agents, m);
   }
   return m;
+}
+
+// How a subagent stands. A CLI-native one says so itself; one agent.spawn
+// started is a member: it runs while it works or waits, failed on an error,
+// and is done once it exited, or is idle with its last message finished.
+// Without the tree's word, its messages say.
+export function subStanding(n: AgentNode | undefined, finished: boolean): SubStatus {
+  if (n?.native === true && n.subStatus !== "") return n.subStatus;
+  switch (n?.native === false ? n.status : "") {
+    case "working":
+    case "tool":
+    case "approval":
+      return "running";
+    case "error":
+      return "failed";
+    case "exited":
+      return "done";
+  }
+  return finished ? "done" : "running";
 }
 
 export interface RunningTool {

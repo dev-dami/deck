@@ -146,9 +146,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("ctrl+p"),
 			key.WithHelp("ctrl+p", "commands"),
 		),
+		// The Agent picker: the thread's lead, its model and effort.
 		Models: key.NewBinding(
 			key.WithKeys("ctrl+m", "ctrl+l"),
-			key.WithHelp("ctrl+l", "models"),
+			key.WithHelp("ctrl+l", "agent"),
 		),
 		Suspend: key.NewBinding(
 			key.WithKeys("ctrl+z"),

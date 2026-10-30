@@ -192,11 +192,28 @@ type Spend struct {
 // Contract is the terms a task was handed over under: what to deliver and how
 // to tell it is finished.
 type Contract struct {
-	Expect   string `json:"expect,omitempty"`    // what the delegator expects back
-	DoneWhen string `json:"done_when,omitempty"` // the condition that means the task is done
+	// Objective is what the work is for, Expect the deliverable: what the
+	// delegator expects back.
+	Objective string `json:"objective,omitempty"`
+	Expect    string `json:"expect,omitempty"`
+	DoneWhen  string `json:"done_when,omitempty"` // the condition that means the task is done
+	// Boundaries is what the owner must not do or touch.
+	Boundaries string `json:"boundaries,omitempty"`
+	// Check is the command whose passing run proves the work done, e.g.
+	// "go test ./pkg/x": the task becomes done only after its owner ran it
+	// with exit code 0 since its last change (session/evidence.go).
+	Check string `json:"check,omitempty"`
 	// ExplicitDone means the owner must report the task with task.done; its
 	// last reply alone does not finish it.
 	ExplicitDone bool `json:"explicit_done,omitempty"`
+}
+
+// CheckOf is the check task t names; "" for none.
+func (t Task) CheckOf() string {
+	if t.Contract == nil {
+		return ""
+	}
+	return t.Contract.Check
 }
 
 // Tries is the task's attempt limit.

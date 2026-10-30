@@ -45,17 +45,19 @@ type wireRequest struct {
 	To    string          `json:"to,omitempty"`   // thread.send: target agent name or "all"
 	Text  string          `json:"text,omitempty"` // thread.send: the text
 	// thread.send under a contract: the task and its terms (agent.Message).
-	Task         string          `json:"-"`
-	NewTask      string          `json:"-"`
-	Expect       string          `json:"-"`
-	DoneWhen     string          `json:"-"`
-	ExplicitDone bool            `json:"-"`
-	Capsule      string          `json:"-"`
-	AgentID      string          `json:"agent_id"`
-	RequestID    string          `json:"request_id"`
-	ToolName     string          `json:"tool_name"`
-	Input        json.RawMessage `json:"input"`
-	Cwd          string          `json:"cwd,omitempty"`
+	Task         string `json:"-"`
+	NewTask      string `json:"-"`
+	Expect       string `json:"-"`
+	DoneWhen     string `json:"-"`
+	ExplicitDone bool   `json:"-"`
+	Capsule      string `json:"-"`
+	// A structured hand-off's other terms (agent.Message).
+	Objective, Deliverable, Boundaries, Check string          `json:"-"`
+	AgentID                                   string          `json:"agent_id"`
+	RequestID                                 string          `json:"request_id"`
+	ToolName                                  string          `json:"tool_name"`
+	Input                                     json.RawMessage `json:"input"`
+	Cwd                                       string          `json:"cwd,omitempty"`
 }
 
 type agentState struct {
@@ -279,14 +281,22 @@ func (b *Broker) handleExec(req wireRequest, gone <-chan struct{}) wireReply {
 			DoneWhen     string `json:"done_when"`
 			ExplicitDone bool   `json:"explicit_done"`
 			Capsule      string `json:"capsule"`
+			Objective    string `json:"objective"`
+			Deliverable  string `json:"deliverable"`
+			Boundaries   string `json:"boundaries"`
+			Check        string `json:"check"`
 		}
-		if json.Unmarshal(req.Args, &a) != nil || strings.TrimSpace(a.To) == "" || strings.TrimSpace(a.Message) == "" {
-			return wireReply{Text: "thread.send needs args {\"to\": an agent name or \"all\", \"message\": the text}", IsError: true}
+		// A hand-off with an objective may leave the message out: the
+		// objective says it.
+		if json.Unmarshal(req.Args, &a) != nil || strings.TrimSpace(a.To) == "" || strings.TrimSpace(a.Message) == "" && strings.TrimSpace(a.Objective) == "" {
+			return wireReply{Text: "thread.send needs args {\"to\": an agent name or \"all\", \"message\": the text} (or an objective, for a hand-off)", IsError: true}
 		}
 		req.To, req.Text = strings.TrimSpace(a.To), a.Message
 		req.Task, req.NewTask = strings.TrimSpace(a.Task), strings.TrimSpace(a.NewTask)
 		req.Expect, req.DoneWhen, req.ExplicitDone = strings.TrimSpace(a.Expect), strings.TrimSpace(a.DoneWhen), a.ExplicitDone
 		req.Capsule = strings.TrimSpace(a.Capsule)
+		req.Objective, req.Deliverable = strings.TrimSpace(a.Objective), strings.TrimSpace(a.Deliverable)
+		req.Boundaries, req.Check = strings.TrimSpace(a.Boundaries), strings.TrimSpace(a.Check)
 		r = b.handleMessage(req, gone)
 	case agent.OpThreadRead:
 		r = b.handleRead(req)
@@ -356,7 +366,8 @@ func (b *Broker) handleMessage(req wireRequest, gone <-chan struct{}) wireReply 
 		To:   req.To,
 		Text: req.Text,
 		Task: req.Task, NewTask: req.NewTask, Expect: req.Expect, DoneWhen: req.DoneWhen, ExplicitDone: req.ExplicitDone,
-		Capsule: req.Capsule,
+		Capsule:   req.Capsule,
+		Objective: req.Objective, Deliverable: req.Deliverable, Boundaries: req.Boundaries, Check: req.Check,
 		Respond: func(text string, err error) {
 			once.Do(func() { reply <- result{text, err} })
 		},

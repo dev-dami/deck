@@ -57,7 +57,7 @@ func TestContractTaskWaitsForTheTeammate(t *testing.T) {
 	fc := &fakeContractor{}
 	r.m.SetContractor(fc)
 	lead := r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$codex go")
+	_ = r.m.postAt(tid, "$codex go")
 
 	ap := approvalOf(t, r, lead)
 	if ap.Kind != agent.ApproveShare || !strings.Contains(ap.Summary, "teammate vps") {

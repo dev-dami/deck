@@ -5,11 +5,13 @@ import { agentColour, agentRole } from "../agents";
 import { tintOf } from "../teamGate";
 import type { AgentNode, Crew, RunningTool } from "../crew";
 import { useRoomCrew } from "../crewState";
+import { type LeaseGlob, leaseGlobs } from "../leases";
 import { cn } from "../lib/cn";
 import type { ProjectApi } from "../project";
 import { formatDuration } from "../work";
 import { AgentRole } from "./AgentRole";
 import { EmptyState } from "./kit/empty";
+import { PathTail } from "./kit/path";
 
 // The Agents tab of a room, after the terminal UI's Agents pane: the agents
 // as a tree, each with its model, effort, context, cost, leases and the
@@ -32,12 +34,38 @@ const DOT: Record<string, string> = {
 
 const STATUS_WORD: Record<string, string> = { tool: "running a tool", approval: "needs you" };
 
+// The files an agent claimed: a chip per glob, wrapping onto more lines, each
+// keeping the end of its glob in view (the folder gives way first) and its
+// lease's note, "exclusive" for one, as a marker. The whole glob and its note
+// are the chip's title.
+function Leases({ name, leases }: { name: string; leases: LeaseGlob[] }) {
+  return (
+    <div className="flex min-w-0 items-start gap-1.5 text-2xs text-faint">
+      <Lock aria-hidden className="mt-[3px] size-3 shrink-0" />
+      <ul aria-label={`Files ${name} claimed`} className="leases flex min-w-0 flex-1 flex-wrap gap-1">
+        {leases.map((l, i) => {
+          const title = l.note === "" ? l.glob : `${l.glob} (${l.note})`;
+          return (
+            <li key={i} className="lease flex min-w-0 max-w-full items-center gap-1 rounded-full bg-hover px-1.5" data-note={l.note || undefined} title={title}>
+              <PathTail path={l.glob} title={title} className="text-muted-foreground" />
+              {l.note !== "" && (
+                <span className={cn("lease-note shrink-0 text-3xs", l.note === "exclusive" ? "text-warning-foreground" : "text-faint")}>{l.note}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 // One agent: its glyph in its hue, its name, its role and a status dot, its
 // model, and in smaller type what it runs now, its branch, leases, context
 // and cost.
 function AgentRow({ a, running, theme, now, role }: { a: AgentNode; running: RunningTool[]; theme: Theme | null; now: number; role: string }) {
   const pct = a.contextWindow > 0 ? Math.round((a.contextTokens / a.contextWindow) * 100) : null;
   const busy = a.status === "working" || a.status === "tool";
+  const leases = leaseGlobs(a.leases);
   return (
     <li className="crew-agent flex flex-col gap-1.5 px-3.5 py-2.5" data-agent={a.name}>
       <div className="flex min-w-0 items-center gap-2 text-sm" style={{ paddingLeft: `${a.depth * 18}px` }}>
@@ -65,7 +93,7 @@ function AgentRow({ a, running, theme, now, role }: { a: AgentNode; running: Run
             {t.started > 0 && <span className="ml-auto shrink-0 font-sans text-faint tabular-nums">{formatDuration(now - t.started)}</span>}
           </div>
         ))}
-        {(a.branch !== "" || a.leases !== "" || pct !== null || a.costUsd > 0) && (
+        {(a.branch !== "" || pct !== null || a.costUsd > 0) && (
           <div className="flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-1 text-2xs text-faint">
             {pct !== null && (
               <span className="flex items-center gap-1.5 tabular-nums" title={`${a.contextTokens} of ${a.contextWindow} tokens`}>
@@ -85,14 +113,9 @@ function AgentRow({ a, running, theme, now, role }: { a: AgentNode; running: Run
                 {a.branch}
               </span>
             )}
-            {a.leases !== "" && (
-              <span className="flex min-w-0 items-center gap-1" title="Files it claimed">
-                <Lock className="size-3 shrink-0" />
-                <span className="truncate font-mono">{a.leases}</span>
-              </span>
-            )}
           </div>
         )}
+        {leases.length > 0 && <Leases name={a.name} leases={leases} />}
       </div>
     </li>
   );
@@ -109,7 +132,7 @@ export function AgentsTree({ crew, at, theme, roster = [] }: { crew: Crew | null
       ) : crew.agents.length === 0 ? (
         <EmptyState icon={Network} title="No agents yet." hint="Send a message to start one." />
       ) : (
-        <ul className="crew divide-y divide-hairline overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline">
+        <ul className="crew card divide-y divide-hairline overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline">
           {crew.agents.map((a) => (
             <AgentRow key={a.name} a={a} running={running(a.name)} theme={theme} now={at} role={agentRole(a.name, roster, [a])} />
           ))}

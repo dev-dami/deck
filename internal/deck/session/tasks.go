@@ -388,6 +388,11 @@ func (m *Manager) moveTaskIf(t *thread, id string, to store.TaskStatus, by, note
 		t.mu.Unlock()
 		return store.Task{}, fmt.Errorf("%w: %s is %s, not %s", store.ErrTaskTransition, tk.ID, from, to)
 	}
+	// Done needs the evidence the task's check asks for (evidence.go).
+	sendBack := false
+	if to == store.TaskDone {
+		to, note, sendBack = m.gateDoneLocked(t, tk, from, by, note)
+	}
 	// Work that ends goes to review first when the task asks for one.
 	unreviewed := ""
 	if to == store.TaskDone && from == store.TaskRunning {
@@ -447,6 +452,9 @@ func (m *Manager) moveTaskIf(t *thread, id string, to store.TaskStatus, by, note
 	if to != store.TaskFailed {
 		tk.RetryAt = time.Time{}
 	}
+	if to.Final() {
+		t.settleBriefsLocked(tk.ID)
+	}
 	changes := []taskChange{m.logTaskLocked(t, *tk, from, by, note)}
 	changes = append(changes, m.refreshReadyLocked(t)...)
 	out := cloneTask(t.tasks[i])
@@ -458,11 +466,14 @@ func (m *Manager) moveTaskIf(t *thread, id string, to store.TaskStatus, by, note
 	if to == store.TaskDone || to == store.TaskFailed || to == store.TaskBlocked {
 		m.notifyCreator(t, out, by)
 	}
+	m.flushReports(t, out) // its creator may have waited on it alone
 	// A reviewer that did not make this move itself is done with the task.
 	if reviewer != "" && reviewer != by {
 		m.retireMember(t, reviewer)
 	}
-	if to == store.TaskReview && from != store.TaskReview {
+	if sendBack {
+		m.sendBack(t, out)
+	} else if to == store.TaskReview && from != store.TaskReview {
 		m.startReview(t, out.ID)
 	}
 	// A subagent whose task ended is stopped at once if it is idle; a busy one
@@ -516,7 +527,8 @@ type taskBoard struct {
 }
 
 // TaskOp runs one of the task.* ops for the calling agent.
-func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
+func (b taskBoard) TaskOp(op string, a map[string]any) (out string, err error) {
+	defer func() { b.m.noteOp(b.a, op, a, err) }() // what the turn did (turnend.go)
 	m, t, me := b.m, b.a.thread, b.a.id
 	str := func(k string) string { s, _ := a[k].(string); return strings.TrimSpace(s) }
 	num := func(k string) int { n, _ := a[k].(int); return n }
@@ -527,6 +539,9 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 			Deps: splitIDs(str("deps")), OnFail: normOnFail(str("on_fail")), MaxAttempts: num("max_attempts"),
 			Isolate: a["isolate"] == true, Kind: strings.ToLower(str("kind")), Model: str("model"), Effort: str("effort"),
 			Budget: budgetArgs(a), Review: strings.ToLower(str("review")),
+		}
+		if c := str("check"); c != "" {
+			sp.Contract = &store.Contract{Check: c} // done needs its passing run (evidence.go)
 		}
 		if o := str("owner"); o != "" {
 			id, err := b.resolveOwner(o)
@@ -600,6 +615,19 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		return "updated " + b.line(tk), nil
 	case "thread.roster":
 		return m.roster(b.a), nil
+	case "thread.open":
+		id, err := m.openSubThread(t, b.a, str("title"), str("brief"), str("kind"), str("model"), str("effort"))
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("opened sub-thread %s; its agent's reply to your brief comes back to you, and the user can talk to it there", id), nil
+	case "thread.post":
+		if err := m.postToSubThread(t, b.a, str("thread"), str("message")); err != nil {
+			return "", err
+		}
+		return "sent; its agent's reply comes back to you", nil
+	case "thread.children":
+		return m.childrenText(t, b.a), nil
 	case "lease.acquire":
 		return m.acquireLease(b.a, str("paths"), num("minutes"), a["exclusive"] == true, str("reason"))
 	case "lease.release":
@@ -630,7 +658,7 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		res, err := m.Spawn(t.id, me, SpawnSpec{
 			Kind: strings.ToLower(str("kind")), Model: str("model"), Effort: str("effort"), Title: str("title"), Brief: str("brief"), TaskID: str("task"),
 			Isolate: isolate, Tree: tree, Review: strings.ToLower(str("review")),
-			Contract: store.Contract{Expect: str("expect"), DoneWhen: str("done_when"), ExplicitDone: a["explicit_done"] == true},
+			Contract: store.Contract{Expect: str("expect"), DoneWhen: str("done_when"), ExplicitDone: a["explicit_done"] == true, Check: str("check")},
 		})
 		if err != nil {
 			return "", err
@@ -677,6 +705,18 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 				}
 				add = func(tk *store.Task) { tk.Capsules = appendCapsule(tk.Capsules, capsule) }
 				result = strings.TrimSpace(result + "\ncapsule: " + capsule)
+			}
+			// Work an agent did without starting the task first still goes to
+			// the review it asked for: the review stage takes running work.
+			// So does work whose check asks for evidence (evidence.go).
+			if cur, ok := m.Task(t.id, id); ok && (cur.Status == store.TaskReady || cur.Status == store.TaskPending) && (cur.Review != "" && cur.Review != store.ReviewNone || cur.CheckOf() != "") {
+				if _, err := m.moveTask(t, cur.ID, store.TaskRunning, me, "", nil); err != nil {
+					return "", err
+				}
+			}
+			// Done with a check is weighed when this turn ends (evidence.go).
+			if cur, ok := m.Task(t.id, id); ok && cur.Status == store.TaskRunning && cur.CheckOf() != "" {
+				return m.claimDone(b.a, cur, result, add), nil
 			}
 			tk, err = m.moveTask(t, id, store.TaskDone, me, result, add)
 		case "task.fail":
