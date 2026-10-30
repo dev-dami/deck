@@ -681,6 +681,13 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 				add = func(tk *store.Task) { tk.Capsules = appendCapsule(tk.Capsules, capsule) }
 				result = strings.TrimSpace(result + "\ncapsule: " + capsule)
 			}
+			// Work an agent did without starting the task first still goes to
+			// the review it asked for: the review stage takes running work.
+			if cur, ok := m.Task(t.id, id); ok && (cur.Status == store.TaskReady || cur.Status == store.TaskPending) && cur.Review != "" && cur.Review != store.ReviewNone {
+				if _, err := m.moveTask(t, cur.ID, store.TaskRunning, me, "", nil); err != nil {
+					return "", err
+				}
+			}
 			tk, err = m.moveTask(t, id, store.TaskDone, me, result, add)
 		case "task.fail":
 			tk, err = m.moveTask(t, id, store.TaskFailed, me, str("reason"), nil)

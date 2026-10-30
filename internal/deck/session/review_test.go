@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -381,5 +382,35 @@ func TestReviewWaitsForTheUserAfterMaxWork(t *testing.T) {
 	has(t, taskOf(t, r, tid, "t1").Result, "approved: tests pass")
 	if n := notices(r, waits); n != 1 {
 		t.Fatalf("%d wait notices", n)
+	}
+}
+
+// The desktop's "Build and review" workflow: an agent tracks its work as a
+// task that asks codex to review it and reports it done without starting it
+// first. The task still goes to codex's review, and is done only once codex
+// approves.
+func TestATaskFinishedFromReadyStillGetsItsReview(t *testing.T) {
+	op := func(name, args string) fake.Step {
+		return fake.Step{Exec: &fake.Exec{Op: name, Args: json.RawMessage(args)}}
+	}
+	cfg := testCfg()
+	cfg.Orchestration = "assist"
+	r := newRigWith(t, t.TempDir(), false, cfg, []fake.Script{
+		turn(op("task.create", `{"title":"fix it","owner":"claude","review":"codex"}`),
+			op("task.done", `{"id":"t1","result":"fixed"}`), say("fixed, in review"), finish()),
+		turn(say("ok"), finish()),
+	}, []fake.Script{
+		turn(op("review.approve", `{"id":"t1","note":"looks right"}`), say("approved"), finish()),
+	})
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	if err := r.m.Post(tid, "fix the bug"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the review", func() bool { tk, ok := r.m.Task(tid, "t1"); return ok && tk.Status == store.TaskDone })
+	tk, _ := r.m.Task(tid, "t1")
+	has(t, tk.Result, "fixed", "review by codex", "approved")
+	if p := r.codex.prompts("codex"); len(p) != 1 {
+		t.Fatalf("codex prompts = %q", p)
 	}
 }
