@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
+import { resetGlobalLayout } from "../layout/store";
 import { type PanelDock, type Prefs, SIDEBAR_WIDTH, type SidebarSide, setPrefs } from "../prefs";
 import { Button } from "./kit/button";
 import { segmentItem, segmentTrack } from "./kit/segmented";
@@ -29,9 +30,17 @@ export function LayoutPicker({ p }: { p: Prefs }) {
             </Diagram>
           ))}
         </Group>
-        <Group label="Side panel" hint="Where Changes, Graph and Tasks open.">
+        <Group label="Side panel" hint="Where Changes, Graph and Tasks open. The room's layout goes back to Default.">
           {docks.map((d) => (
-            <Diagram key={d.id} label={d.label} on={p.panelDock === d.id} onClick={() => setPrefs({ panelDock: d.id })}>
+            <Diagram
+              key={d.id}
+              label={d.label}
+              on={p.panelDock === d.id}
+              onClick={() => {
+                setPrefs({ panelDock: d.id });
+                resetGlobalLayout();
+              }}
+            >
               <Window side={p.sidebarSide} dock={d.id} />
             </Diagram>
           ))}

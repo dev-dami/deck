@@ -23,6 +23,11 @@ export const PANELS: ReadonlyArray<{ panel: Panel; label: string }> = [
   { panel: "preview", label: "Preview" },
 ];
 
+// A view this wide shows a diff split and the graph whole: what the side
+// panel widened beside a conversation at its narrowest gets in a 1360px
+// window.
+export const WIDE_PX = 560;
+
 export type SettingsSection = "general" | "appearance" | "agents" | "connection" | "phone" | "keybindings";
 
 export const SETTINGS_SECTIONS: ReadonlyArray<{ section: SettingsSection; label: string }> = [

@@ -5,7 +5,7 @@ import { moveIndex, restoreFocus } from "./focus";
 // How near a window edge a popover may come, in pixels.
 const EDGE = 8;
 
-const ITEMS = '[role="menuitem"]:not(:disabled), [role="menuitemradio"]:not(:disabled)';
+const ITEMS = '[role="menuitem"]:not(:disabled), [role="menuitemradio"]:not(:disabled), [role="menuitemcheckbox"]:not(:disabled)';
 
 // A popup anchored to its trigger: it closes on a click outside and on
 // Escape. side says whether it opens above (the composer's menus) or below.

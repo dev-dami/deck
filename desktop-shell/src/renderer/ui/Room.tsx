@@ -2,7 +2,7 @@ import { applyAgentChip } from "@web/composer";
 import type { Session } from "@web/protocol";
 import { sessionMode, sessionTitle } from "@web/state";
 import { Ellipsis, FileDiff, Flag, Folder, Hourglass, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "./icons";
-import { type ComponentProps, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
+import { type ComponentProps, type ReactNode, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
 import type { EngineStop } from "../../shared/bridge";
 import { type DeckClient, serves } from "../client";
 import { FILES_LIMIT } from "../completion";
@@ -215,10 +215,12 @@ export function Room({
   team,
   terminal,
   onTerminal,
-  panel,
+  diff,
+  panelOpen,
   onPanel,
   onDiff,
   onTogglePanel,
+  layout,
   onSettings,
   onPreview,
   toast,
@@ -243,11 +245,15 @@ export function Room({
   team: Team | string | null;
   terminal: boolean;
   onTerminal: () => void;
-  panel: Panel | null;
+  // The side panel's Changes shows; any of its views shows.
+  diff: boolean;
+  panelOpen: boolean;
   // Opens a tab of the side panel, with a file to show in Changes.
   onPanel: (p: Panel, path?: string) => void;
   onDiff: () => void;
   onTogglePanel: () => void;
+  // The Layout menu, in the header beside the panels' buttons.
+  layout?: ReactNode;
   onSettings: () => void;
   // Opens a dev server's URL in the Preview tab.
   onPreview: (url: string) => void;
@@ -391,13 +397,14 @@ export function Room({
         terminal={terminal}
         terminalKey={`${modKey(mac)}J`}
         onTerminal={onTerminal}
-        diff={panel === "changes"}
-        panelOpen={panel !== null}
+        diff={diff}
+        panelOpen={panelOpen}
         onDiff={onDiff}
         onPanel={onTogglePanel}
         onError={toast}
         onInfo={info}
         onPreview={onPreview}
+        {...(layout === undefined ? {} : { layout })}
         {...(open !== undefined && engine === null ? { view, onView: setView } : {})}
       />
       {open !== undefined && !soloRoom(lanes) && (

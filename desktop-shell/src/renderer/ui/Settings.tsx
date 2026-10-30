@@ -621,6 +621,17 @@ function Keybindings({ mac }: { mac: boolean }) {
       ],
     ],
     [
+      "Panes",
+      [
+        ["Split the focused pane right, with a new terminal", [m, "Shift", "\\"]],
+        ["Split it down", [m, "Shift", "-"]],
+        ["Zoom the focused pane, or back", [m, "Shift", "M"]],
+        ["The pane before or after", [m, "Shift", "[", "]"]],
+        ["Move a pane: drag its tab onto another pane's edge or middle", ["Drag"]],
+        ["Resize: drag the gap between panes, or focus it and use the arrows", ["←", "→"]],
+      ],
+    ],
+    [
       "Threads",
       [
         ["New thread", [m, "N"]],
