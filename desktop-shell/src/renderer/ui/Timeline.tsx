@@ -1178,9 +1178,9 @@ function EmptyRoom({ roster, theme }: { roster: AgentLine[]; theme: Theme | null
         </p>
       )}
       <p className="text-pretty text-faint text-xs leading-relaxed">
-        Send a message to start the conversation. <span className="font-mono text-muted-foreground">@name</span> addresses an agent or a
-        person (<span className="font-mono text-muted-foreground">$name</span> works too), <span className="font-mono text-muted-foreground">#</span> a
-        file, <span className="font-mono text-muted-foreground">/</span> a command.
+        Send a message to start the conversation; it goes to the agent in the menu below, which calls subagents and opens sub-threads
+        itself. <span className="font-mono text-muted-foreground">#</span> adds a file, <span className="font-mono text-muted-foreground">/</span> runs a
+        command.
       </p>
     </div>
   );

@@ -105,7 +105,7 @@ export function ProfilesEditor({ kinds, theme }: { kinds: readonly string[]; the
               New profile
             </Button>
             <p className="min-w-0 flex-1 text-pretty text-faint text-xs leading-relaxed">
-              Address one with <code className="font-mono text-muted-foreground">@name</code>. A project profile overrides a global one of the same name.
+              Each one is an entry in the composer's agent menu. A project profile overrides a global one of the same name.
             </p>
           </div>
         </>
