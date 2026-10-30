@@ -2,7 +2,6 @@ package attachments
 
 import (
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strconv"
 
@@ -47,6 +46,10 @@ func (m *Attachments) Reset()                     { m.list = nil }
 func (m *Attachments) Update(msg tea.Msg) bool {
 	switch msg := msg.(type) {
 	case message.Attachment:
+		// An image or a video lands with its label (DefaultLabel).
+		if (msg.IsImage() || msg.IsVideo()) && msg.Label == "" {
+			msg.Label = DefaultLabel(msg, m.list)
+		}
 		m.list = append(m.list, msg)
 		return true
 	case tea.KeyPressMsg:
@@ -146,7 +149,7 @@ func (r *Renderer) Render(attachments []message.Attachment, deleting, showRemove
 
 	var offset int
 	for i, att := range attachments {
-		filename := filepath.Base(att.FileName)
+		filename := chipName(att)
 		if ansi.StringWidth(filename) > maxFilename {
 			filename = ansi.Truncate(filename, maxFilename, "…")
 		}
@@ -228,7 +231,7 @@ func (r *Renderer) HitTestRemove(_ []message.Attachment, x int) int {
 }
 
 func (r *Renderer) icon(a message.Attachment) lipgloss.Style {
-	if a.IsImage() {
+	if a.IsImage() || a.IsVideo() {
 		return r.styles.Image
 	}
 	if a.IsMarkdown() {

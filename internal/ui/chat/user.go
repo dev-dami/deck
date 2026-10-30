@@ -166,6 +166,7 @@ func (m *UserMessageItem) renderAttachments(width int) string {
 		attachments = append(attachments, message.Attachment{
 			FileName: at.Path,
 			MimeType: at.MIMEType,
+			Label:    at.Label,
 		})
 	}
 	// This message is already posted, so the attachment can't be removed;
