@@ -157,7 +157,15 @@ func (b *Backend) pendingFor(sessionID string) int {
 }
 
 func (b *Backend) wireSession(s session.Session) wire.Session {
-	return toSession(s, b.core.AgentIsSessionBusy(s.ID), b.pendingFor(s.ID), b.rc.RemoteMode(s.ID))
+	out := toSession(s, b.core.AgentIsSessionBusy(s.ID), b.pendingFor(s.ID), b.rc.RemoteMode(s.ID))
+	if rs, ok := b.core.(interface{ Room(string) workspace.Room }); ok {
+		r := rs.Room(s.ID)
+		out.ParentID = r.Parent
+		if r.Lead != (workspace.Lead{}) {
+			out.Lead = &wire.Lead{Agent: r.Lead.Agent, Kind: r.Lead.Kind, Model: r.Lead.Model, Effort: r.Lead.Effort, Profile: r.Lead.Profile}
+		}
+	}
+	return out
 }
 
 func (b *Backend) Sessions(ctx context.Context) ([]wire.Session, error) {

@@ -52,8 +52,12 @@ type thread struct {
 	lastRelay   map[string]string // "from>to" -> normalised text of the last relay
 	lastSpeaker string            // member who most recently wrote a reply
 	lead        string            // the member the person talks to (lead.go)
-	hops        int
-	paused      bool
+	// parent and parentAgent: the thread and member that opened this one
+	// (subthread.go); asks the ids of its entries that member waits on.
+	parent, parentAgent string
+	asks                []string
+	hops                int
+	paused              bool
 	// work counts the subagents members started and the tasks the scheduler
 	// handed out since the user's last message (brakes.go); sends the times of
 	// each member's recent thread.send calls.
@@ -360,6 +364,7 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	defer t.mu.Unlock()
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
 		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree, Lead: t.lead,
+		Parent: t.parent, ParentAgent: t.parentAgent, Asks: slices.Clone(t.asks),
 		Tasks: cloneTasks(t.tasks), Orchestration: t.level, Orchestrate: m.levelLocked(t).Schedule, Contract: t.contract, Ops: t.ops != nil,
 		Scheduled: slices.Clone(t.scheduled), Trees: slices.Clone(t.trees), Capsules: cloneCapsules(t.capsules)}
 	for _, peer := range slices.Sorted(maps.Keys(t.shares)) {

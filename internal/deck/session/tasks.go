@@ -603,6 +603,19 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (string, error) {
 		return "updated " + b.line(tk), nil
 	case "thread.roster":
 		return m.roster(b.a), nil
+	case "thread.open":
+		id, err := m.openSubThread(t, b.a, str("title"), str("brief"), str("kind"), str("model"), str("effort"))
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("opened sub-thread %s; its agent's reply to your brief comes back to you, and the user can talk to it there", id), nil
+	case "thread.post":
+		if err := m.postToSubThread(t, b.a, str("thread"), str("message")); err != nil {
+			return "", err
+		}
+		return "sent; its agent's reply comes back to you", nil
+	case "thread.children":
+		return m.childrenText(t, b.a), nil
 	case "lease.acquire":
 		return m.acquireLease(b.a, str("paths"), num("minutes"), a["exclusive"] == true, str("reason"))
 	case "lease.release":

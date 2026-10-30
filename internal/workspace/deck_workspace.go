@@ -183,6 +183,22 @@ func (w *DeckWorkspace) thread(sessionID string) (string, error) {
 	return id, nil
 }
 
+// openSubSession gives a sub-thread an agent opened a session of its own,
+// so every client lists it (under its parent: Room.Parent).
+func (w *DeckWorkspace) openSubSession(m decks.SubThreadMsg) {
+	sess, err := w.app.Sessions.Create(context.Background(), m.Title)
+	if err != nil {
+		slog.Error("deck: sub-thread session", "error", err)
+		return
+	}
+	w.mu.Lock()
+	w.threads[sess.ID], w.back[m.ThreadID] = m.ThreadID, sess.ID
+	b, _ := json.Marshal(w.threads)
+	w.mu.Unlock()
+	_ = os.MkdirAll(filepath.Dir(w.path), 0o755)
+	_ = os.WriteFile(w.path, b, 0o600)
+}
+
 func (w *DeckWorkspace) sessionOf(threadID string) string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -500,7 +516,16 @@ func (w *DeckWorkspace) pump() {
 			for i, t := range m.To {
 				to[i] = "$" + t
 			}
-			w.say(m.ThreadID, m.From, "→ "+strings.Join(to, " ")+"\n\n"+m.Text)
+			head := "→ " + strings.Join(to, " ")
+			if m.Via == decks.ViaSubthread {
+				// A sub-thread's report: the clients link to its session.
+				if sid := w.sessionOf(m.Thread); sid != "" {
+					head += " · sub-thread " + sid
+				}
+			}
+			w.say(m.ThreadID, m.From, head+"\n\n"+m.Text)
+		case decks.SubThreadMsg:
+			w.openSubSession(m)
 		case decks.NoticeMsg:
 			w.notice(w.sessionOf(m.ThreadID), m.Text)
 			w.publish(DeckChange{Kind: ChangeNotice, SessionID: w.sessionOf(m.ThreadID), Text: m.Text, Via: m.Via})

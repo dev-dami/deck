@@ -257,7 +257,10 @@ type ThreadInfo struct {
 	// Lead is the member id the person's messages go to ("" before the
 	// thread's first agent).
 	Lead string
-	Mode agent.Mode // the thread's permission mode
+	// Parent is the thread an agent opened this one from, "" for a thread
+	// the person started; ParentAgent that agent's member id.
+	Parent, ParentAgent string
+	Mode                agent.Mode // the thread's permission mode
 	// Pinned threads sort first; Resolved ones are settled until a new message.
 	Pinned, Resolved bool
 	// Orchestration is the thread's orchestration level (config.Levels).
@@ -496,6 +499,7 @@ func (m *Manager) threadInfo(t *thread) ThreadInfo {
 	if a := t.leadLocked(); a != nil {
 		info.Lead = a.id
 	}
+	info.Parent, info.ParentAgent = t.parent, t.parentAgent
 	if t.worktree != nil {
 		info.Branch = t.worktree.Branch
 	}
@@ -1307,6 +1311,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 	t.created = true
 	t.title, t.titleSrc = th.Title, th.TitleSrc
 	t.lead = th.Lead
+	t.parent, t.parentAgent, t.asks = th.Parent, th.ParentAgent, th.Asks
 	t.pinned, t.resolved = th.Pinned, th.Resolved // resuming un-archives
 	t.worktree = th.Worktree
 	t.trees, t.capsules = th.Trees, cloneCapsules(th.Capsules)

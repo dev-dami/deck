@@ -337,6 +337,7 @@ func (m *Manager) afterTurn(a *agentState, end turnEnd) {
 	if !interrupted {
 		m.settleHanded(t, a, text, end.answered)
 		m.retireSpent(t, a, end.answered)
+		m.reportToParent(t, a, text, end.answered)
 	}
 	if text != "" && !interrupted {
 		m.maybeAutoTitle(t, text)

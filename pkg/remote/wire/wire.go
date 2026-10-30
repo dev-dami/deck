@@ -196,6 +196,20 @@ type Session struct {
 	Pending   int       `json:"pending"`
 	Mode      string    `json:"mode"`
 	LastText  string    `json:"last_text,omitempty"`
+	// ParentID is the session an agent opened this one from (a sub-thread);
+	// clients list it under its parent.
+	ParentID string `json:"parent_id,omitempty"`
+	// Lead is the agent the person talks to (models.set picks it).
+	Lead *Lead `json:"lead,omitempty"`
+}
+
+// Lead is a session's lead agent.
+type Lead struct {
+	Agent   string `json:"agent"`
+	Kind    string `json:"kind"`
+	Model   string `json:"model,omitempty"`
+	Effort  string `json:"effort,omitempty"`
+	Profile string `json:"profile,omitempty"`
 }
 
 // Message roles.

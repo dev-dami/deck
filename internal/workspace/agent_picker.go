@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -138,20 +139,22 @@ func (w *DeckWorkspace) CachedAgentModelChoices(sessionID string) []ModelChoice 
 	return out
 }
 
-// SetAgentModel implements [AgentPicker].
+// SetAgentModel implements [AgentPicker]. It is the clients' agent menu: the
+// session's lead becomes an agent of kind (or the named agent kind names)
+// running model at effort, and the next message goes to it
+// (session/lead.go). A kind's pick is also what new threads start with.
 func (w *DeckWorkspace) SetAgentModel(sessionID, kind, model, effort string) error {
-	if th, ok := w.threadOf(sessionID); ok {
-		for _, a := range th.Members {
-			if a.Kind != kind {
-				continue
-			}
-			if err := w.mgr().SetModel(a.ID, model); err != nil {
-				return err
-			}
-			if err := w.mgr().SetEffort(a.ID, effort); err != nil {
-				return err
-			}
+	if sessionID != "" {
+		tid, err := w.thread(sessionID)
+		if err != nil {
+			return err
 		}
+		if _, err := w.mgr().SetLead(tid, kind, model, effort); err != nil {
+			return err
+		}
+	}
+	if !slices.Contains(w.mgr().Kinds(), kind) {
+		return nil // a named agent: its profile keeps its own model
 	}
 	w.mgr().SetDefaultModel(kind, model)
 	w.mgr().SetDefaultEffort(kind, effort)

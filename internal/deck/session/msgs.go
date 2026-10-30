@@ -67,6 +67,8 @@ type RelayMsg struct {
 	Text     string
 	Via      string
 	Held     bool
+	// Thread is the sub-thread a report (Via "subthread") comes from.
+	Thread string
 }
 
 // PausedMsg says the thread hit its agent-to-agent hop limit: further relays
@@ -128,7 +130,11 @@ func msgFor(threadID string, e store.Entry) tea.Msg {
 	case store.EntryEdit:
 		return EditedMsg{ThreadID: threadID, EntryID: e.Ref, OldText: e.Old, NewText: e.Text}
 	case store.EntryRelay:
-		return RelayMsg{ThreadID: threadID, From: e.Speaker, To: e.To, Text: e.Text, Via: e.Via, Held: e.Held}
+		r := RelayMsg{ThreadID: threadID, From: e.Speaker, To: e.To, Text: e.Text, Via: e.Via, Held: e.Held}
+		if e.Via == viaSubthread {
+			r.Thread = e.Ref
+		}
+		return r
 	case store.EntryMember:
 		return MemberAddedMsg{ThreadID: threadID, AgentID: e.Speaker, Kind: e.Text}
 	case store.EntryPause:

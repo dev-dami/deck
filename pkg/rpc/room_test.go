@@ -55,6 +55,10 @@ func (f *fakeRooms) known(sid string) error {
 }
 
 func (f *fakeRooms) Room(sid string) workspace.Room { return f.rooms[sid] }
+
+func (f *fakeRooms) OpenSub(_ context.Context, parent, title string) (string, error) {
+	return "", errors.New("no sub-threads in this fake")
+}
 func (f *fakeRooms) Isolate(_ context.Context, sid string) error {
 	if err := f.known(sid); err != nil {
 		return err

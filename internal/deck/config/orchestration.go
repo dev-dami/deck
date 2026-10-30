@@ -47,6 +47,9 @@ type Level struct {
 	// review or a retry starts, in any member or subagent. At the limit the
 	// thread pauses until the user writes or continues it.
 	MaxTurns int `json:"max_turns"`
+	// MaxSubthreads is how many sub-threads one agent may open
+	// (session/subthread.go).
+	MaxSubthreads int `json:"max_subthreads"`
 	// AskFirst lets a member start subagents only in a turn where the user
 	// spoke to it.
 	AskFirst bool `json:"ask_first"`
@@ -61,10 +64,10 @@ type Level struct {
 
 // Levels is the table of levels.
 var Levels = map[string]Level{
-	LevelOff:    {MaxDepth: 1, MaxChildren: 4, MaxSubagents: 4, MaxWork: 8, MaxTurns: 12, AskFirst: true},
-	LevelAssist: {MaxDepth: 1, MaxChildren: 2, MaxSubagents: 6, MaxWork: 8, MaxTurns: 16},
-	LevelAuto:   {MaxDepth: 2, MaxChildren: 4, MaxSubagents: 12, MaxWork: 24, MaxTurns: 48, Schedule: true},
-	LevelFull:   {MaxDepth: 3, MaxChildren: 6, MaxSubagents: 20, MaxWork: 48, MaxTurns: 96, Schedule: true, Race: true, Review: "other"},
+	LevelOff:    {MaxDepth: 1, MaxChildren: 4, MaxSubagents: 4, MaxWork: 8, MaxTurns: 12, MaxSubthreads: 2, AskFirst: true},
+	LevelAssist: {MaxDepth: 1, MaxChildren: 2, MaxSubagents: 6, MaxWork: 8, MaxTurns: 16, MaxSubthreads: 4},
+	LevelAuto:   {MaxDepth: 2, MaxChildren: 4, MaxSubagents: 12, MaxWork: 24, MaxTurns: 48, MaxSubthreads: 8, Schedule: true},
+	LevelFull:   {MaxDepth: 3, MaxChildren: 6, MaxSubagents: 20, MaxWork: 48, MaxTurns: 96, MaxSubthreads: 16, Schedule: true, Race: true, Review: "other"},
 }
 
 // ValidLevel reports whether s names a level.
@@ -92,6 +95,9 @@ func (c Config) Level(level string) Level {
 		if l.MaxTurns == 0 {
 			l.MaxTurns = Levels[level].MaxTurns
 		}
+		if l.MaxSubthreads == 0 {
+			l.MaxSubthreads = Levels[level].MaxSubthreads
+		}
 	}
 	ceil := func(n *int, max int) {
 		if max > 0 && *n > max {
@@ -118,7 +124,7 @@ func (c Config) validateLevels() error {
 		if err := json.Unmarshal(raw, &l); err != nil {
 			return fmt.Errorf("orchestration_levels.%s: %w", name, err)
 		}
-		if l.MaxDepth < 0 || l.MaxChildren < 0 || l.MaxSubagents < 0 || l.MaxWork < 0 || l.MaxTurns < 0 {
+		if l.MaxDepth < 0 || l.MaxChildren < 0 || l.MaxSubagents < 0 || l.MaxWork < 0 || l.MaxTurns < 0 || l.MaxSubthreads < 0 {
 			return fmt.Errorf("orchestration_levels.%s: limits must be 0 or more", name)
 		}
 		if l.Review != "" && l.Review != "none" && l.Review != "other" && !slices.Contains(Kinds, l.Review) {

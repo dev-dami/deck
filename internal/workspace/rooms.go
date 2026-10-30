@@ -20,6 +20,9 @@ type Rooms interface {
 	// Room is the session's thread as a room shows it; zero when the
 	// session has no thread.
 	Room(sessionID string) Room
+	// OpenSub opens a sub-thread of the session for the person, titled
+	// title, and returns its session id.
+	OpenSub(ctx context.Context, parentSessionID, title string) (string, error)
 	Isolate(ctx context.Context, sessionID string) error
 	ApplyIsolated(ctx context.Context, sessionID string) ([]string, error)
 	// UndoApply takes the shared tree back to how it was before the last
@@ -61,6 +64,16 @@ type Room struct {
 	Dir      string // the thread's folder: in its worktree when isolated
 	Branch   string // the worktree branch when isolated
 	Archived bool
+	// Parent is the session an agent opened this one from (a sub-thread),
+	// "" for one the person started.
+	Parent string
+	// Lead is the agent the person talks to; zero before the first one.
+	Lead Lead
+}
+
+// Lead is a session's lead agent, as the clients' agent menu shows it.
+type Lead struct {
+	Agent, Kind, Model, Effort, Profile string
 }
 
 var _ Rooms = (*DeckWorkspace)(nil)
@@ -106,11 +119,28 @@ func (w *DeckWorkspace) Room(sessionID string) Room {
 		return Room{}
 	}
 	if th, live := w.mgr().Thread(id); live {
-		return Room{Dir: th.Dir, Branch: th.Branch}
+		r := Room{Dir: th.Dir, Branch: th.Branch}
+		if th.Parent != "" {
+			r.Parent = w.sessionOf(th.Parent)
+		}
+		for _, a := range th.Members {
+			if a.ID == th.Lead {
+				r.Lead = Lead{Agent: a.Name, Kind: a.Kind, Model: a.Model, Effort: a.Effort, Profile: a.Profile}
+			}
+		}
+		return r
 	}
 	for _, t := range w.mgr().Saved() {
 		if t.ID == id {
 			r := Room{Dir: t.Dir, Archived: t.Archived}
+			if t.Parent != "" {
+				r.Parent = w.sessionOf(t.Parent)
+			}
+			for _, a := range t.Members {
+				if a.ID == t.Lead {
+					r.Lead = Lead{Agent: a.Name, Kind: a.Kind, Model: a.Model, Effort: a.Effort}
+				}
+			}
 			if t.Worktree != nil {
 				r.Branch = t.Worktree.Branch
 			}
@@ -118,6 +148,31 @@ func (w *DeckWorkspace) Room(sessionID string) Room {
 		}
 	}
 	return Room{}
+}
+
+// OpenSub implements [Rooms].
+func (w *DeckWorkspace) OpenSub(ctx context.Context, parentSessionID, title string) (string, error) {
+	ptid, err := w.thread(parentSessionID)
+	if err != nil {
+		return "", err
+	}
+	ctid, err := w.mgr().OpenSubThread(ptid, title, "")
+	if err != nil {
+		return "", err
+	}
+	// The pump makes the session from the engine's announcement; wait for it
+	// briefly, else make it here, so the caller gets its id.
+	for range 50 {
+		if sid := w.sessionOf(ctid); sid != "" {
+			return sid, nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	w.openSubSession(decks.SubThreadMsg{ThreadID: ctid, ParentID: ptid, Title: title})
+	if sid := w.sessionOf(ctid); sid != "" {
+		return sid, nil
+	}
+	return "", errors.New("the sub-thread has no session")
 }
 
 // Isolate implements [Rooms].

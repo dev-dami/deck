@@ -166,8 +166,14 @@ type Thread struct {
 	Dir      string `json:"dir"`
 	// Lead is the member the person talks to: every message of theirs goes
 	// to it (session/lead.go). "" for a thread from before leads.
-	Lead    string   `json:"lead,omitempty"`
-	Members []Member `json:"members,omitempty"`
+	Lead string `json:"lead,omitempty"`
+	// Parent is the thread an agent opened this one from (a sub-thread,
+	// session/subthread.go), ParentAgent that agent's member id there, and
+	// Asks the entries of this thread that agent waits on an answer to.
+	Parent      string   `json:"parent,omitempty"`
+	ParentAgent string   `json:"parent_agent,omitempty"`
+	Asks        []string `json:"asks,omitempty"`
+	Members     []Member `json:"members,omitempty"`
 	// Mode is the thread's permission mode: "plan", "ask" or "yolo". Threads
 	// stored before modes existed (and any unknown value) read as "ask".
 	Mode string `json:"mode,omitempty"`

@@ -58,6 +58,10 @@ const (
 	// OpThreadRoster lists the thread's members; it goes through the
 	// TaskBoard, which knows the caller's thread.
 	OpThreadRoster = "thread.roster"
+	// The sub-thread ops of a thread's lead (session/subthread.go).
+	OpThreadOpen     = "thread.open"
+	OpThreadPost     = "thread.post"
+	OpThreadChildren = "thread.children"
 	// The two ops of an ops contract's agent (Env.Ops).
 	OpShRun          = "sh.run"
 	OpContractResult = "contract.result"
@@ -283,6 +287,15 @@ func init() {
 			Args: []Arg{{Name: "id", Type: tString, Required: true}}, run: opTask("memory.drop")},
 		{Name: OpThreadRoster, Desc: "Who is in this thread now: each agent's name, kind, model, status, task, parent and branch, and how to reach several agents of one kind (\"claude\" reaches whichever is free, \"claude*\" all of them).",
 			run: opTask(OpThreadRoster)},
+		{Name: OpThreadOpen, Desc: "Open a sub-thread: a thread of its own for a piece of work, led by another agent (kind: an agent kind or a named agent; default your own kind) that the user can open and talk to. Use it for work the user may want to follow or steer, or a second opinion; use agent.spawn for a quick helper that only reports back. Its agent's reply to your brief comes back to you as a message. How many you may open follows the thread's orchestration level (off: only when the user asks).",
+			Args: []Arg{{Name: "brief", Type: tString, Required: true, Desc: "what its agent should do, and what to hand back"}, {Name: "title", Type: tString},
+				{Name: "kind", Type: tString}, {Name: "model", Type: tString}, {Name: "effort", Type: tString}},
+			run: opTask(OpThreadOpen)},
+		{Name: OpThreadPost, Desc: "Send a follow-up to a sub-thread you opened; its agent's reply comes back to you.",
+			Args: []Arg{{Name: "thread", Type: tString, Required: true, Desc: "the sub-thread's id (thread.children)"}, {Name: "message", Type: tString, Required: true}},
+			run:  opTask(OpThreadPost)},
+		{Name: OpThreadChildren, Desc: "List the sub-threads you opened: id, title, agent and whether it is working or has your asks waiting.",
+			run: opTask(OpThreadChildren)},
 		{Name: OpTaskCreate, Desc: "Add a task to this thread's shared task board. deps are task ids it waits for (\"t1,t2\"); owner an agent name or \"me\". Returns its id.",
 			Args: []Arg{{Name: "title", Type: tString, Required: true}, {Name: "brief", Type: tString, Desc: "what the owner should do"}, {Name: "deps", Type: tString, Desc: "task ids it waits for, e.g. \"t1,t2\""},
 				{Name: "owner", Type: tString}, {Name: "parent", Type: tString, Desc: "task id this is part of"},

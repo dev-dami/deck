@@ -222,6 +222,30 @@ func (s *Server) CreateSession(ctx context.Context, r *deckv1.CreateSessionReque
 	if l := r.GetLevel(); l != "" && !config.ValidLevel(l) {
 		return nil, invalid("level is off, assist, auto or full")
 	}
+	if pid := r.GetParentId(); pid != "" {
+		// The person's sub-thread of a session: listed under it.
+		var sid string
+		err := s.onRoom(ctx, pid, func(w workspace.Rooms) error {
+			var err error
+			sid, err = w.OpenSub(ctx, pid, t)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+		all, err := s.be.Sessions(ctx)
+		if err != nil {
+			return nil, fail(err)
+		}
+		for _, v := range all {
+			if v.ID == sid {
+				p := toSession(v)
+				s.note(p, nil)
+				return p, nil
+			}
+		}
+		return nil, fail(errors.New("the sub-thread's session is gone"))
+	}
 	v, err := s.be.CreateSession(ctx, t)
 	if err != nil {
 		return nil, fail(err)

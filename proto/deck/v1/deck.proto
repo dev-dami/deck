@@ -452,6 +452,22 @@ message Session {
   // branch is the thread's worktree branch when it is isolated.
   string branch = 9;
   bool archived = 10;
+  // parent_id is the session an agent opened this one from (a sub-thread),
+  // "" for one the person started. Clients list it under its parent.
+  string parent_id = 11;
+  // lead is the agent the person talks to: every message goes to it, and
+  // SetModel picks it (docs/design/lead-agent-and-subthreads.md).
+  SessionLead lead = 12;
+}
+
+message SessionLead {
+  // agent is its name in the thread ("claude", "charles"), kind its CLI.
+  string agent = 1;
+  string kind = 2;
+  string model = 3;
+  string effort = 4;
+  // profile is the named agent it runs as, "" for none.
+  string profile = 5;
 }
 
 message ListSessionsResponse {
@@ -464,6 +480,9 @@ message CreateSessionRequest {
   bool isolate = 2;
   // level is the orchestration level it starts at; "" is the Deck's default.
   string level = 3;
+  // parent_id opens it as a sub-thread of that session (the person's side
+  // thread): listed under it, led by the parent's agent's kind.
+  string parent_id = 4;
 }
 
 message RenameSessionRequest {

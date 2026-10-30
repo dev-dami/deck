@@ -101,16 +101,9 @@ func (m *Manager) SetLead(threadID, kind, model, effort string) (string, error) 
 	if t == nil {
 		return "", fmt.Errorf("session: no thread %q", threadID)
 	}
-	kind = strings.TrimSpace(TrimSigil(kind))
-	var prof profile.Profile
-	if _, ok := m.adapters[strings.ToLower(kind)]; ok {
-		kind = strings.ToLower(kind)
-	} else {
-		p, ok := profile.Find(m.allProfiles(t), kind)
-		if !ok {
-			return "", fmt.Errorf("session: no agent kind or named agent %q (kinds: %s)", kind, strings.Join(m.Kinds(), ", "))
-		}
-		prof, kind = p, p.Kind
+	kind, prof, err := m.leadKind(t, kind)
+	if err != nil {
+		return "", fmt.Errorf("session: %w", err)
 	}
 	same := func(a *agentState) bool {
 		return a.kind == kind && strings.EqualFold(a.prof.Name, prof.Name)
