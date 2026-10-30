@@ -2,6 +2,7 @@ package model
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -342,8 +343,21 @@ type UI struct {
 	// after "@" and something path-like ("@src/").
 	completionsFiles bool
 	// profiles are the named agents (deck.json), as last read for the @
-	// popup or /profiles.
+	// popup, the Agent picker or /profiles.
 	profiles []workspace.Profile
+
+	// lead is leadSession's lead as last read (lead.go); the editor's last
+	// row shows it. leadGen drops reads that raced a pick.
+	lead          workspace.Lead
+	leadSession   string
+	leadCheckedAt time.Time
+	leadInFlight  bool
+	leadGen       uint64
+	// leadPicking holds reads off while a pick is being applied.
+	leadPicking bool
+	// pendingLead is the Agent picker's pick made before the session
+	// exists: the first message starts it.
+	pendingLead *dialog.ActionSelectAgentModel
 
 	// Chat components
 	chat *Chat
@@ -919,6 +933,13 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.focusOrOpenPane(msg.id))
 	case promptQueueMsg:
 		cmds = append(cmds, m.applyPromptQueue(msg)...)
+	case leadMsg:
+		cmds = append(cmds, m.applyLead(msg))
+	case leadPickedMsg:
+		// The pick is in: read the lead as the engine has it.
+		m.leadPicking = false
+		m.leadCheckedAt = time.Time{}
+		cmds = append(cmds, util.CmdHandler(msg.info))
 	case agentModelChangedMsg:
 		// The coordinator model changed (selection, thinking, reasoning):
 		// re-fetch the memoized ready/model state off-thread.
@@ -928,6 +949,8 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case agentRunSubmittedMsg:
 		m.turnOutcome = ""
+		// A first message makes the lead: read it again.
+		m.leadCheckedAt = time.Time{}
 		// A prompt was just accepted (run started or enqueued): fetch the
 		// authoritative busy/queue state to confirm the optimistic values
 		// sendMessage wrote.
@@ -1161,7 +1184,7 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyboardEnhancementsMsg:
 		m.keyenh = msg
 		if msg.SupportsKeyDisambiguation() {
-			m.keyMap.Models.SetHelp("ctrl+m", "models")
+			m.keyMap.Models.SetHelp("ctrl+m", "agent")
 			m.keyMap.Editor.Newline.SetHelp("shift+enter", "newline")
 		}
 	case copyChatHighlightMsg:
@@ -4748,7 +4771,7 @@ func (m *UI) renderEditorView(width int) string {
 	return strings.Join([]string{
 		attachmentsView,
 		m.textarea.View(),
-		"", // margin at bottom of editor
+		m.leadLine(width), // the bottom margin: the thread's agent
 	}, "\n")
 }
 
@@ -4933,12 +4956,22 @@ func (m *UI) sendMessageInternal(content string, hidden bool, attachments ...mes
 	m.setPlanReadyPending("")
 
 	var cmds []tea.Cmd
+	// The agent picked before the session existed takes its first message.
+	var pending *dialog.ActionSelectAgentModel
+	picker, _ := m.com.Workspace.(workspace.AgentPicker)
+	if !m.hasSession() && picker != nil {
+		pending, m.pendingLead = m.pendingLead, nil
+	}
 	loadCmd, err := m.ensureSession()
 	if err != nil {
 		return util.ReportError(err)
 	}
 	if loadCmd != nil {
 		cmds = append(cmds, loadCmd)
+	}
+	if pending != nil {
+		m.leadGen++
+		m.setLead(m.session.ID, pickedLead(*pending))
 	}
 
 	ctx := context.Background()
@@ -4969,7 +5002,14 @@ func (m *UI) sendMessageInternal(content string, hidden bool, attachments ...mes
 		if hidden {
 			runCtx = message.WithHiddenUserMessage(runCtx)
 		}
+		var leadErr error
+		if pending != nil {
+			leadErr = picker.SetAgentModel(sessionID, cmp.Or(pending.Agent, pending.Kind), pending.Model, pending.Effort)
+		}
 		err := m.com.Workspace.AgentRun(runCtx, sessionID, content, attachments...)
+		if err == nil {
+			err = leadErr
+		}
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return util.InfoMsg{
 				Type: util.InfoTypeError,
@@ -5207,7 +5247,7 @@ func (m *UI) openQuitDialog() tea.Cmd {
 	return nil
 }
 
-// openModelsDialog opens the models dialog.
+// openModelsDialog opens the Agent picker (ctrl+l).
 func (m *UI) openModelsDialog() tea.Cmd {
 	if m.dialog.ContainsDialog(dialog.AgentModelsID) {
 		m.dialog.BringToFront(dialog.AgentModelsID)
@@ -5216,19 +5256,22 @@ func (m *UI) openModelsDialog() tea.Cmd {
 	return m.fetchAgentModels()
 }
 
-// agentModelChoicesMsg carries the models the agent CLIs offer, for the
-// model picker.
+// agentModelChoicesMsg carries the models the agent CLIs offer and the
+// named agents, for the Agent picker.
 type agentModelChoicesMsg struct {
-	choices []workspace.ModelChoice
-	err     error
+	choices  []workspace.ModelChoice
+	profiles []workspace.Profile
+	err      error
 }
 
-// fetchAgentModels asks the agent CLIs for their models, off the UI loop.
+// fetchAgentModels asks the agent CLIs for their models, and reads the
+// named agents, off the UI loop.
 func (m *UI) fetchAgentModels() tea.Cmd {
 	picker, ok := m.com.Workspace.(workspace.AgentPicker)
 	if !ok {
 		return util.ReportWarn("Model switching is not available here")
 	}
+	profiles, _ := m.com.Workspace.(workspace.Profiles)
 	sessionID := ""
 	if m.session != nil {
 		sessionID = m.session.ID
@@ -5239,12 +5282,17 @@ func (m *UI) fetchAgentModels() tea.Cmd {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			choices, err := picker.AgentModelChoices(ctx, sessionID)
-			return agentModelChoicesMsg{choices: choices, err: err}
+			msg := agentModelChoicesMsg{choices: choices, err: err}
+			if profiles != nil {
+				msg.profiles = profiles.ListProfiles()
+			}
+			return msg
 		},
 	)
 }
 
-// openAgentModels opens the picker once the models are in.
+// openAgentModels opens the Agent picker once the models are in, on the
+// lead the editor shows.
 func (m *UI) openAgentModels(msg agentModelChoicesMsg) tea.Cmd {
 	if msg.err != nil {
 		return util.ReportError(msg.err)
@@ -5252,27 +5300,37 @@ func (m *UI) openAgentModels(msg agentModelChoicesMsg) tea.Cmd {
 	if len(msg.choices) == 0 {
 		return util.ReportWarn("No agent CLI listed any models")
 	}
+	m.profiles = msg.profiles
 	if m.dialog.ContainsDialog(dialog.AgentModelsID) {
 		m.dialog.CloseDialog(dialog.AgentModelsID)
 	}
-	m.dialog.OpenDialog(dialog.NewAgentModels(m.com, msg.choices))
+	agents := pickerAgents(msg.choices, msg.profiles, m.shownLead())
+	m.dialog.OpenDialog(dialog.NewAgentPicker(m.com, agents, msg.choices))
 	return nil
 }
 
-// selectAgentModel switches the agents of a kind to the picked model.
+// selectAgentModel makes the pick the session's lead (SetAgentModel). With
+// no session yet it waits for the first message, which starts the session
+// (sendMessageInternal).
 func (m *UI) selectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 	m.dialog.CloseDialog(dialog.AgentModelsID)
 	picker, ok := m.com.Workspace.(workspace.AgentPicker)
 	if !ok {
 		return nil
 	}
-	sessionID := ""
-	if m.session != nil {
-		sessionID = m.session.ID
+	who := cmp.Or(msg.Agent, msg.Kind)
+	if !m.hasSession() {
+		m.pendingLead = &msg
+		return util.ReportInfo(who + " takes the first message")
 	}
+	m.pendingLead = nil
+	sessionID := m.session.ID
+	m.leadGen++
+	m.leadPicking = true
+	m.setLead(sessionID, pickedLead(msg))
 	return func() tea.Msg {
-		if err := picker.SetAgentModel(sessionID, msg.Kind, msg.Model, msg.Effort); err != nil {
-			return util.ReportError(err)()
+		if err := picker.SetAgentModel(sessionID, who, msg.Model, msg.Effort); err != nil {
+			return leadPickedMsg{info: util.NewErrorMsg(err)}
 		}
 		label := msg.Model
 		if label == "" {
@@ -5281,7 +5339,7 @@ func (m *UI) selectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 		if msg.Effort != "" {
 			label += " · " + msg.Effort + " effort"
 		}
-		return util.NewInfoMsg(msg.Kind + " now runs " + label)
+		return leadPickedMsg{info: util.NewInfoMsg("Talking to " + who + " · " + label)}
 	}
 }
 

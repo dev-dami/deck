@@ -15,8 +15,8 @@ import (
 
 // The composer's sigils (docs/design/lead-agent-and-subthreads.md): "#"
 // and "@" open the files, as in Claude Code. Agents have no sigil: every
-// message goes to the session's lead, picked with the models dialog
-// (ctrl+l), and "@name" or "$name" in a message is text.
+// message goes to the session's lead, picked with the Agent picker
+// (ctrl+l, lead.go), and "@name" or "$name" in a message is text.
 const (
 	sigilAgents    = "@"
 	sigilAgentsAlt = "$"
@@ -128,7 +128,7 @@ func profilesNotice(ps []workspace.Profile) notice.Notice {
 	n := notice.Notice{Level: notice.Info, Source: notice.SourceDeck}
 	if len(ps) == 0 {
 		n.Title = "No profiles"
-		n.Body = `Name agents in deck.json: "profiles": [{"name": "charles", "kind": "claude", "role": "reviewer"}]. Then @charles brings charles in.`
+		n.Body = `Name agents in deck.json: "profiles": [{"name": "charles", "kind": "claude", "role": "reviewer"}]. Then pick charles with ctrl+l.`
 		return n
 	}
 	n.Title = fmt.Sprintf("Profiles (%d)", len(ps))
