@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	deckagent "github.com/dev-dami/deck/internal/deck/agent"
+	"github.com/dev-dami/deck/internal/deck/media"
 	"github.com/dev-dami/deck/pkg/remote"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 )
@@ -259,6 +262,16 @@ func (c *conn) call(ctx context.Context, method string, p json.RawMessage) (res 
 			return nil, fail(method, err), nil
 		}
 		return wire.ApprovalsAnswerResult{Resolved: resolved}, nil, nil
+	case wire.MMediaUpload:
+		req, werr := decode[wire.MediaUploadParams](p)
+		if werr != nil {
+			return nil, werr, nil
+		}
+		res, werr := c.s.uploads.put(c.dev.ID, req)
+		if werr != nil {
+			return nil, werr, nil
+		}
+		return res, nil, nil
 	case wire.MDevicesList:
 		return c.devicesList()
 	case wire.MDevicesRevoke:
@@ -386,10 +399,24 @@ func (c *conn) chatSend(ctx context.Context, p json.RawMessage) (any, *wire.Erro
 	if strings.TrimSpace(req.Text) == "" && len(req.Images) == 0 {
 		return nil, invalid("nothing to send"), nil
 	}
+	for _, im := range req.Images {
+		if im.UploadID == "" && !strings.HasPrefix(im.Mime, "image/") {
+			return nil, invalid("attachments must be images or uploaded videos"), nil
+		}
+		if im.UploadID != "" && im.Data != "" {
+			return nil, invalid("a video comes as its upload"), nil
+		}
+		if im.Frames && im.UploadID == "" {
+			return nil, invalid("only a video can be sent as frames"), nil
+		}
+	}
 	images := make([]remote.Image, 0, len(req.Images))
 	for _, im := range req.Images {
-		if !strings.HasPrefix(im.Mime, "image/") {
-			return nil, invalid("attachments must be images"), nil
+		if im.UploadID != "" {
+			// A placeholder: the upload is taken once the rest checks
+			// out, so a refused send leaves it for a retry.
+			images = append(images, remote.Image{})
+			continue
 		}
 		if base64.StdEncoding.DecodedLen(len(im.Data)) > maxImageBytes+3 {
 			return nil, &wire.Error{Code: wire.CodeTooLarge, Msg: "an image may be at most 8 MB"}, nil
@@ -405,7 +432,7 @@ func (c *conn) chatSend(ctx context.Context, p json.RawMessage) (any, *wire.Erro
 		if name == "." || name == "/" || name == "" {
 			name = "image"
 		}
-		images = append(images, remote.Image{Name: name, Mime: im.Mime, Data: data})
+		images = append(images, remote.Image{Name: name, Mime: im.Mime, Data: data, Label: deckagent.CleanLabel(im.Label)})
 	}
 	// A retry after a dropped connection must not post twice; the key is
 	// remembered only once the send succeeded.
@@ -415,6 +442,24 @@ func (c *conn) chatSend(ctx context.Context, p json.RawMessage) (any, *wire.Erro
 		if id, dup := c.s.idem.lookup(key); dup {
 			return wire.ChatSendResult{MessageID: id}, nil, nil
 		}
+	}
+	for i, im := range req.Images {
+		if im.UploadID == "" {
+			continue
+		}
+		up, werr := c.s.uploads.take(c.dev.ID, req.SessionID, im.UploadID)
+		if werr != nil {
+			return nil, werr, nil
+		}
+		mime, err := media.CheckBytes("video", up.data, wire.MaxVideoUploadBytes)
+		if err != nil {
+			return nil, invalid("that file is not an MP4, WebM or QuickTime video"), nil
+		}
+		name := path.Base(strings.ReplaceAll(cmp.Or(im.Name, up.name), "\\", "/"))
+		if name == "." || name == "/" || name == "" {
+			name = "video"
+		}
+		images[i] = remote.Image{Name: name, Mime: mime, Data: up.data, Label: deckagent.CleanLabel(im.Label), Frames: im.Frames}
 	}
 	id, err := c.s.be.Send(ctx, req.SessionID, req.Text, images)
 	if err != nil {

@@ -129,6 +129,7 @@ type testWorkspace struct {
 	agentReady        bool
 	agentBusy         bool
 	runPrompts        []string
+	runAttachments    [][]message.Attachment
 	yolo              bool
 	runHidden         []bool
 	compactCalls      []bool
@@ -171,8 +172,9 @@ func (w *testWorkspace) AgentReadyErr() error {
 	return nil
 }
 
-func (w *testWorkspace) AgentRun(ctx context.Context, _ string, prompt string, _ ...message.Attachment) error {
+func (w *testWorkspace) AgentRun(ctx context.Context, _ string, prompt string, atts ...message.Attachment) error {
 	w.runPrompts = append(w.runPrompts, prompt)
+	w.runAttachments = append(w.runAttachments, atts)
 	w.runHidden = append(w.runHidden, message.HiddenUserMessage(ctx))
 	return nil
 }

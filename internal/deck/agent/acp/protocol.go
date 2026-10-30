@@ -120,11 +120,15 @@ type setOptionResult struct {
 	ConfigOptions []configOption `json:"configOptions"`
 }
 
+// contentBlock is a block of a prompt: text, an image (base64 data), or a
+// resource_link (a file the agent reads itself: uri, name and mimeType).
 type contentBlock struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
 	MimeType string `json:"mimeType,omitempty"`
 	Data     string `json:"data,omitempty"`
+	URI      string `json:"uri,omitempty"`
+	Name     string `json:"name,omitempty"`
 }
 
 type promptParams struct {

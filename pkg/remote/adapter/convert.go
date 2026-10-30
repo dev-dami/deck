@@ -102,7 +102,7 @@ func toMessage(m message.Message, root string) wire.Message {
 			}
 			out.Parts = append(out.Parts, part)
 		case message.BinaryContent:
-			out.Parts = append(out.Parts, wire.Part{Type: wire.PartImage, Image: &wire.Image{Name: displayName(v.Path), Mime: v.MIMEType}})
+			out.Parts = append(out.Parts, wire.Part{Type: wire.PartImage, Image: &wire.Image{Name: displayName(v.Path), Mime: v.MIMEType, Label: v.Label}})
 		case message.ImageURLContent:
 			out.Parts = append(out.Parts, wire.Part{Type: wire.PartImage, Image: &wire.Image{Name: "image"}})
 		case message.Finish:
@@ -218,7 +218,7 @@ func toModels(choices []workspace.ModelChoice, kind string) []wire.ModelChoice {
 		if kind != "" && c.Kind != kind {
 			continue
 		}
-		mc := wire.ModelChoice{ID: c.ID, Label: c.Name, Selected: c.Current}
+		mc := wire.ModelChoice{ID: c.ID, Label: c.Name, Selected: c.Current, Video: c.Video}
 		for _, e := range c.Efforts {
 			mc.Efforts = append(mc.Efforts, e.Level)
 		}

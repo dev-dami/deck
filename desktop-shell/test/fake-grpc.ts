@@ -107,6 +107,11 @@ export class FakeRpcDeck {
   readonly createdLevels: string[] = [];
   // Each SetModel (the agent menu), as [session, agent].
   readonly leads: Array<[string, string]> = [];
+  // What each Send carried besides its text: its attachments as they came
+  // (name, mime, label, frames, path, and the size of their bytes).
+  readonly sends: Array<{ session_id: string; text: string; images: Obj[] }> = [];
+  // The agent kinds whose model takes video: a lead of one says so.
+  readonly video = new Set<string>();
   private readonly server = new grpc.Server();
   private readonly streams = new Set<grpc.ServerWritableStream<Obj, Obj>>();
   private seq = 0;
@@ -165,6 +170,8 @@ export class FakeRpcDeck {
       "ListFiles",
       "ReadImage",
       "SearchMessages",
+      "Video",
+      "VideoFrames",
     ],
     meta: {} as Record<string, { attention?: string; branch?: string; archived?: boolean; parent_id?: string; lead?: Obj }>,
     asked: [] as string[],
@@ -310,13 +317,43 @@ export class FakeRpcDeck {
         // no such session
       }
     }
+    if (lead !== undefined) lead = { ...lead, video: this.video.has(String(lead["kind"])) };
     return { ...session, ...meta, ...(lead !== undefined ? { lead } : {}) };
+  }
+
+  // Tells the window a session's room afresh (after video changed).
+  refreshRoom(id: string): void {
+    this.roomChanged(id);
   }
 
   // Sends session_updated for a session whose room changed.
   private roomChanged(id: string): void {
     const s = (this.deck.invoke("sessions.list", {}) as Obj[]).find((x) => x["id"] === id);
     if (s !== undefined) this.emit("session_updated", protoOf(s) as Obj);
+  }
+
+  // Records a Send's attachments and adds them to the message it made, as
+  // the engine does: an image with its bytes, a video without, and a video
+  // sent as frames as two labelled frames.
+  private attach(r: Obj, messageId: string): void {
+    const images = (Array.isArray(r["images"]) ? r["images"] : []) as Obj[];
+    const seen = images.map((im) => {
+      const data = im["data"];
+      const bytes = data instanceof Uint8Array ? data.length : typeof data === "string" ? Buffer.from(data, "base64").length : 0;
+      return { name: im["name"], mime: im["mime"], label: im["label"] ?? "", frames: im["frames"] === true, path: im["path"] ?? "", bytes };
+    });
+    this.sends.push({ session_id: String(r["session_id"]), text: String(r["text"] ?? ""), images: seen });
+    const atts = images.flatMap((im) => {
+      const name = String(im["name"]);
+      const mime = String(im["mime"]);
+      const label = String(im["label"] ?? "");
+      if (mime.startsWith("video/") && im["frames"] === true)
+        return ["0:01", "0:03"].map((at) => ({ name: name.replace(/\.[^.]*$/, "") + `-${at.replace(":", ".")}.jpg`, mime: "image/png", label: `${label} · ${at}`, data: FRAME }));
+      const data = im["data"];
+      const bytes = data instanceof Uint8Array ? Buffer.from(data) : typeof data === "string" ? Buffer.from(data, "base64") : Buffer.alloc(0);
+      return [{ name, mime, label, ...(mime.startsWith("video/") ? {} : { data: bytes }) }];
+    });
+    this.deck.attach(messageId, atts);
   }
 
   private handlers(): grpc.UntypedServiceImplementation {
@@ -871,6 +908,7 @@ export class FakeRpcDeck {
             this.roomChanged(sid);
           }
           if (name === "ListSessions") return cb(null, { sessions: (out["sessions"] as Obj[]).map((x) => this.withRoom(x)) });
+          if (name === "Send") this.attach(call.request, String(out["message_id"]));
           cb(null, out);
         } catch (e) {
           const code = e instanceof Fail ? (CODES[e.code] ?? grpc.status.INTERNAL) : grpc.status.INTERNAL;
@@ -881,6 +919,9 @@ export class FakeRpcDeck {
     return h;
   }
 }
+
+// FRAME is a 1×1 PNG, the fake's every frame of a video.
+const FRAME = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
 
 // Worktrees and capsules of "Fix the pairing lockout" beside crewAtWork:
 // claude-sub on its own worktree, codex-sub's landed and bundled, a long

@@ -49,3 +49,28 @@ func TestStartAsksFirstAndRunsAPlanSession(t *testing.T) {
 		t.Error("opencode is contract safe")
 	}
 }
+
+// TestTakesVideo covers Deck's table of the OpenCode models sent video:
+// Gemini chat models under any provider, nothing else.
+func TestTakesVideo(t *testing.T) {
+	for model, want := range map[string]bool{
+		"google/gemini-3-pro":                   true,
+		"google-vertex/gemini-2.5-flash":        true,
+		"openrouter/google/gemini-2.5-pro":      true,
+		"opencode/gemini-3-flash":               true,
+		"google/gemini-embedding-001":           false,
+		"google/gemini-2.5-flash-image-preview": false,
+		"google/gemini-2.5-flash-preview-tts":   false,
+		"anthropic/claude-opus-5-5":             false,
+		"openai/gpt-5.6-sol":                    false,
+		"google/gemma-3-27b":                    false,
+		"":                                      false,
+	} {
+		if got := TakesVideo(model); got != want {
+			t.Errorf("TakesVideo(%q) = %v, want %v", model, got, want)
+		}
+	}
+	if !New("").(agent.VideoInput).TakesVideo("google/gemini-3-pro") {
+		t.Error("the adapter answers from the table")
+	}
+}

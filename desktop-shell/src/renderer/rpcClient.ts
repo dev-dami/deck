@@ -1,5 +1,6 @@
 import { describeError, Store } from "@web/controller";
-import type { ChangedFile, Decision, Image, Mode, ModelChoice, QuestionAnswer, RaceEntrant, ServerEvent, ServerInfo, Session } from "@web/protocol";
+import { type Outgoing, readAsBase64 } from "@web/images";
+import type { ChangedFile, Decision, Mode, ModelChoice, QuestionAnswer, RaceEntrant, ServerEvent, ServerInfo, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import { applyTheme, type ThemeTarget } from "@web/theme";
 import { LiveStore } from "./live";
@@ -124,7 +125,9 @@ export class RpcDeckClient implements DeckClient {
       project: typeof i["project"] === "string" ? i["project"] : this.deck.project,
       kinds: Array.isArray(i["kinds"]) ? i["kinds"].filter((k): k is string => typeof k === "string") : [],
       allow_yolo: true,
-      features: FEATURES,
+      // Every local Deck takes video; one with ffmpeg also sends a video
+      // as frames (Info.capabilities).
+      features: [...FEATURES, ...(this.caps.includes("Video") ? ["video"] : []), ...(this.caps.includes("VideoFrames") ? ["video_frames"] : [])],
       server_id: this.deck.id,
       // Not a protocol v2 server.
       protocol: 0,
@@ -353,14 +356,19 @@ export class RpcDeckClient implements DeckClient {
   }
 
   // Sent once: deck.v1 Send has no idempotency key, so a retry could post
-  // the prompt twice. The draft stays in the composer on failure.
-  async send(sessionId: string, text: string, images: Image[]): Promise<boolean> {
-    const r = await this.call("Send", {
-      session_id: sessionId,
-      text,
+  // the prompt twice. The draft stays in the composer on failure. A video
+  // goes by its path when the window knows it (the engine reads the file
+  // on this machine), else as its bytes.
+  async send(sessionId: string, text: string, images: Outgoing[]): Promise<boolean> {
+    const out: Record<string, unknown>[] = [];
+    for (const im of images) {
+      const one: Record<string, unknown> = { name: im.name, mime: im.mime, label: im.label ?? "", frames: im.frames === true };
+      if (im.path !== undefined && im.path !== "") one["path"] = im.path;
       // Base64 in a bytes field; the proto encoder in main decodes it.
-      images: images.map((im) => ({ name: im.name, mime: im.mime, data: im.data_b64 ?? "" })),
-    });
+      else one["data"] = im.data_b64 ?? (im.file !== undefined ? await readAsBase64(im.file) : "");
+      out.push(one);
+    }
+    const r = await this.call("Send", { session_id: sessionId, text, images: out });
     return r !== null;
   }
 

@@ -28,6 +28,7 @@ type ModelChoice struct {
 	Description string
 	Default     bool // the CLI's own default
 	Current     bool // what the session's agent of this kind runs now
+	Video       bool // the model takes video (agent.ModelInfo.Video)
 
 	Efforts       []EffortChoice
 	DefaultEffort string
@@ -127,6 +128,7 @@ func (w *DeckWorkspace) CachedAgentModelChoices(sessionID string) []ModelChoice 
 				Description:   mi.Description,
 				Default:       mi.Default,
 				DefaultEffort: mi.DefaultEffort,
+				Video:         mi.Video,
 			}
 			for _, e := range mi.Efforts {
 				c.Efforts = append(c.Efforts, EffortChoice{Level: e.Level, Description: e.Description})

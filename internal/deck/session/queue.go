@@ -36,7 +36,21 @@ func imagePaths(images []agent.Image) []string {
 	return out
 }
 
-// mediaTypeFor guesses an image's media type from its file name.
+// imageLabels are the labels of the images, or nil when none has one.
+func imageLabels(images []agent.Image) []string {
+	out := make([]string, len(images))
+	labelled := false
+	for i, im := range images {
+		out[i] = im.Label
+		labelled = labelled || im.Label != ""
+	}
+	if !labelled {
+		return nil
+	}
+	return out
+}
+
+// mediaTypeFor guesses an attachment's media type from its file name.
 func mediaTypeFor(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".jpg", ".jpeg":
@@ -45,36 +59,62 @@ func mediaTypeFor(path string) string {
 		return "image/gif"
 	case ".webp":
 		return "image/webp"
+	case ".mp4", ".m4v":
+		return "video/mp4"
+	case ".webm":
+		return "video/webm"
+	case ".mov":
+		return "video/quicktime"
 	}
 	return "image/png"
 }
 
 // imagesOf returns the images of a user entry: as the user attached them in this
-// session, else rebuilt from the stored paths. t.mu is held.
+// session, else rebuilt from the stored paths and labels. t.mu is held.
 func (t *thread) imagesOf(e store.Entry) []agent.Image {
 	if im, ok := t.images[e.ID]; ok {
 		return im
 	}
 	var out []agent.Image
-	for _, p := range e.Images {
-		out = append(out, agent.Image{Path: p, MediaType: mediaTypeFor(p)})
+	for i, p := range e.Images {
+		im := agent.Image{Path: p, MediaType: mediaTypeFor(p)}
+		if i < len(e.ImageLabels) {
+			im.Label = e.ImageLabels[i]
+		}
+		out = append(out, im)
 	}
 	return out
 }
 
+// listed is the attachments as "[Image 1: label] path", one after another.
+func listed(images []agent.Image) string {
+	refs := agent.RefLines(images)
+	parts := make([]string, len(images))
+	for i, im := range images {
+		parts[i] = refs[i] + " " + im.Path
+	}
+	return strings.Join(parts, ", ")
+}
+
 // noImageLine tells a member that cannot view images what the user attached.
 func noImageLine(images []agent.Image) string {
-	return fmt.Sprintf("[deck] The user attached %d image(s) Deck could not pass to you directly; open them with your own file tools if you can: %s", len(images), strings.Join(imagePaths(images), ", "))
+	return fmt.Sprintf("[deck] The user attached %d image(s) Deck could not pass to you directly; open them with your own file tools if you can: %s", len(images), listed(images))
+}
+
+// noVideoLine tells a member whose model cannot take video what the user
+// attached: the videos stay on disk for its own tools.
+func noVideoLine(videos []agent.Image) string {
+	return fmt.Sprintf("[deck] The user attached %d video(s) your model cannot watch, so Deck did not pass them to you; they are at: %s", len(videos), listed(videos))
 }
 
 // imageNote tells a member who was not addressed that a user message came
 // with images, and where they are, so it can look at them with its own
 // file tools: every agent in the thread sees what the user shared.
-func imageNote(paths []string) string {
-	if len(paths) == 0 {
+func imageNote(images []agent.Image) string {
+	if len(images) == 0 {
 		return ""
 	}
-	return fmt.Sprintf(" [with %d image(s): %s]", len(paths), strings.Join(paths, ", "))
+	return fmt.Sprintf(" [with %d attachment(s): %s]", len(images), listed(images))
 }
 
 // ---- the queue ----
@@ -358,7 +398,7 @@ func (m *Manager) Steer(itemID string) error {
 		Event: agent.Event{Kind: agent.KindUserText, Text: q.Text},
 	}
 	if len(q.Images) > 0 {
-		e.Images = imagePaths(q.Images)
+		e.Images, e.ImageLabels = imagePaths(q.Images), imageLabels(q.Images)
 		t.images[e.ID] = q.Images
 	}
 	t.skip[skipKey{q.idx, a.id}] = skipSteered
@@ -435,6 +475,7 @@ func (m *Manager) steerNow(t *thread, a *agentState, st agent.Steerer) error {
 		a.knownMode = t.mode
 	}
 	t.mu.Unlock()
+	prompt, images = m.withoutVideo(a, prompt, images)
 	a.notePrompt(prompt, user)
 	err := st.Steer(prompt, images)
 	a.donePrompt(err == nil)

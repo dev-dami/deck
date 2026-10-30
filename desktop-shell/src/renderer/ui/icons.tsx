@@ -52,6 +52,7 @@ export {
   Eye,
   FileText,
   Files,
+  FilmStrip,
   Flag,
   Flame,
   Folder,

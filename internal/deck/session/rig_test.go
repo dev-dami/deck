@@ -27,6 +27,7 @@ type spyAdapter struct {
 	agent.Adapter
 	setters bool // runs also implement agent.ModeSetter, ModelSetter and EffortSetter
 	images  bool // runs implement agent.ImageSender
+	video   bool // its models take video (agent.VideoInput)
 	steer   bool // runs implement agent.Steerer
 	compact bool // runs implement agent.Compactor
 	caps    agent.ContextCaps
@@ -55,6 +56,9 @@ func (s *spyAdapter) ContractSafe() bool {
 	cs, ok := s.Adapter.(agent.ContractSafe)
 	return ok && cs.ContractSafe()
 }
+
+// TakesVideo answers what the test set.
+func (s *spyAdapter) TakesVideo(string) bool { return s.video }
 
 // ContextCaps are the caps the test gave the spy.
 func (s *spyAdapter) ContextCaps() agent.ContextCaps { return s.caps }

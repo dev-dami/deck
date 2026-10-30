@@ -64,7 +64,7 @@ The desktop app carries the Deck engine inside it: open a project folder and wor
 - **Open a folder** runs the app's own engine (`deck serve --rpc`) in that folder, over gRPC on a Unix socket, with a token made for that launch. Deck stops when you close the folder or quit the app. Several projects can be open at once.
 - **Pair with a Deck** watches a Deck on another computer, or one you started yourself in a terminal: run `deck remote` (`--lan` for another computer), then `deck remote pair`, and paste the link or invite line. It uses a one-time pairing code, then a device token.
 - **Threads are rooms.** Each row says what its room is doing: working, needs you (an approval, a question, a blocked task), overlap (two agents changed the same file), changes to review, or done. The Inbox lists what waits for you across every open project, and the app notifies you when the window is in the background.
-- **The composer** has the thread's agent menu (the agent, its model and effort; [named agents](#named-agents) too), the mode (Plan, Ask or Yolo), slash commands (`/plan`, `/race`, `/share`, `/stop` …), `#` or `@` for files, images, and queue or steer for a busy agent. Every message goes to the thread's agent; there is no `@` for agents. Settings > Agents creates and edits the named agents.
+- **The composer** has the thread's agent menu (the agent, its model and effort; [named agents](#named-agents) too), the mode (Plan, Ask or Yolo), slash commands (`/plan`, `/race`, `/share`, `/stop` …), `#` or `@` for files, [labelled images and video](#images-and-video), and queue or steer for a busy agent. Every message goes to the thread's agent; there is no `@` for agents. Settings > Agents creates and edits the named agents.
 - **Sub-threads** sit under their parent in the thread list. The agent opens one (`thread.open`) for work you may want to follow or steer, or a second opinion; its answer comes back to the parent as a card with a link to open it, and you can talk to its agent there.
 - **The side panel** holds Changes (syntax-coloured diffs, revert, line comments to an agent), Tasks (the board, queued messages, races, worktree results), Agents (the tree of agents and subagents) and Side chat. A thread can run on a git worktree and branch of its own.
 - **Ports and preview.** When a terminal or an agent starts a dev server, its port shows as a chip; click it to open the page in the Preview tab.
@@ -101,6 +101,7 @@ Run `deck`, type, press enter.
 - **Approvals** open as a dialog with the command or the diff: allow, allow for the session, or deny.
 - **Plan and yolo.** `tab` switches plan mode, where agents read but change nothing. `ctrl+y` is yolo: everything is approved, and the screen tells you so.
 - **Pastes** of any size go in whole; big ones become an attachment the agent still reads in full.
+- **Images and video.** A pasted image or image path attaches it, labelled (`Screenshot 1`, or the file's name); a pasted path to a video attaches that (see [Images and video](#images-and-video)).
 - **Sessions.** `ctrl+n` starts one, `ctrl+s` switches. `deck -C` continues the last one.
 - `ctrl+p` lists every command; `esc` twice stops the agents.
 
@@ -170,6 +171,23 @@ The **Usage** pane in the sidebar shows the session's agents' plan meters, today
 ## Agents and threads
 
 A thread holds you and one agent you talk to, its lead (docs/design/lead-agent-and-subthreads.md). Each message goes to it; pick another in the agent menu and that one takes over, briefed on the thread. The lead brings in others: subagents that report back to it and cannot be talked to, and sub-threads, threads of their own under the parent, whose agent you can talk to and whose answers to the lead's asks come back to it.
+
+### Images and video
+
+Every image you attach (a pasted screenshot, a dropped or picked file) gets a label: `Screenshot 1` for a paste, the file's name without its extension for a file, else `Image 1`. In the desktop app and on the phone, click (or tap) the label on its chip to rename it: Enter keeps it, Esc does not; at most 60 characters. The terminal shows the label on the chip but does not rename it; name an image in your message instead. The agent gets each image right after a line naming it, numbered in order, `[Image 1: login page error]`, so you can write "compare Image 1 and Image 2" or use your own labels. The timeline shows the label under each sent image.
+
+A video (MP4, WebM or QuickTime, one per message) attaches the same ways and is labelled `Video 1` or by its file name. It goes only to a lead whose model can watch it, through a CLI that can deliver it:
+
+| Agent | Video | How |
+| --- | --- | --- |
+| OpenCode | Gemini chat models (`google/gemini-…`, also through other providers) | an ACP `resource_link` to the file, which OpenCode passes on to models whose inputs list video |
+| Claude Code, Codex | no | their CLIs take images only, and Claude and GPT models take no video |
+| Antigravity | no | `agy`'s stream-json input takes text only |
+| Pi | no | not checked against `pi-acp`, so Deck sends it none |
+
+For any other lead the composer says so on the chip ("claude-opus-5-5 can't watch video") and holds the message until you remove the video or pick **Send as frames**: Deck takes up to 8 evenly spaced stills from it (one per second, at most 1280 px on a side) with `ffmpeg` and sends them as images labelled `Video 1 · 0:03`. Frames need `ffmpeg` on the computer running Deck; without it the button says so. In the terminal a pasted video path to such a lead goes as frames at once.
+
+Limits: a video is at most 50 MB from the desktop app or the terminal (a local Deck reads it from where it is) and 25 MB from the phone or a paired Deck (uploaded in chunks, `media.upload`). Deck checks a video by its bytes, not its name, and keeps it under its data directory (`.deck/media/<session>`, which git ignores), never in the project's files; it is removed with the session. A provider may cap a video lower than that.
 
 ### Named agents
 

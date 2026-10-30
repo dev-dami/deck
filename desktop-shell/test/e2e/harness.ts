@@ -102,6 +102,7 @@ export async function attachBridge(
     }
     // A page in Chromium has no file paths.
     deck["folderPath"] = () => "";
+    deck["filePath"] = () => "";
     w["deck"] = deck;
   }, HOST_METHODS);
   return t;

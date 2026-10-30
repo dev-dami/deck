@@ -37,7 +37,7 @@ func TestSendWithImagesInputShape(t *testing.T) {
 		t.Fatal("run is not an ImageSender")
 	}
 	a, b := writeImage(t, "a.png"), writeImage(t, "b.JPG")
-	if err := is.SendWithImages("what is this", []agent.Image{{Path: a, MediaType: "image/png"}, {Path: b}}); err != nil {
+	if err := is.SendWithImages("what is this", []agent.Image{{Path: a, MediaType: "image/png", Label: "login page error"}, {Path: b}}); err != nil {
 		t.Fatal(err)
 	}
 	turns := fe.recorded(t, methodTurnStart)
@@ -45,22 +45,29 @@ func TestSendWithImagesInputShape(t *testing.T) {
 		t.Fatalf("turns = %v", turns)
 	}
 	items := inputItems(t, turns[0])
-	if len(items) != 3 {
+	if len(items) != 5 {
 		t.Fatalf("input = %v", items)
 	}
+	// Each image follows its reference line.
+	for i, ref := range []string{"[Image 1: login page error]", "[Image 2]"} {
+		if items[2*i]["type"] != "text" || items[2*i]["text"] != ref {
+			t.Errorf("reference %d = %v", i, items[2*i])
+		}
+	}
 	for i, p := range []string{a, b} {
-		if items[i]["type"] != "localImage" || items[i]["path"] != p {
-			t.Errorf("item %d = %v", i, items[i])
+		img := items[2*i+1]
+		if img["type"] != "localImage" || img["path"] != p {
+			t.Errorf("item %d = %v", i, img)
 		}
-		if _, has := items[i]["text"]; has {
-			t.Errorf("image item carries text: %v", items[i])
+		if _, has := img["text"]; has {
+			t.Errorf("image item carries text: %v", img)
 		}
 	}
-	if items[2]["type"] != "text" || items[2]["text"] != "what is this" {
-		t.Errorf("text item = %v", items[2])
+	if items[4]["type"] != "text" || items[4]["text"] != "what is this" {
+		t.Errorf("text item = %v", items[4])
 	}
-	if te, ok := items[2]["text_elements"].([]any); !ok || len(te) != 0 {
-		t.Errorf("text_elements = %v", items[2]["text_elements"])
+	if te, ok := items[4]["text_elements"].([]any); !ok || len(te) != 0 {
+		t.Errorf("text_elements = %v", items[4]["text_elements"])
 	}
 }
 
@@ -71,7 +78,7 @@ func TestSendWithImagesPlanNoteAndEmptyPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	items := inputItems(t, fe.recorded(t, methodTurnStart)[0])
-	if len(items) != 2 || items[0]["text"] != planNote || items[1]["type"] != "localImage" {
+	if len(items) != 3 || items[0]["text"] != planNote || items[1]["text"] != "[Image 1]" || items[2]["type"] != "localImage" {
 		t.Errorf("input = %v", items)
 	}
 }
@@ -174,8 +181,8 @@ func TestSteerWhileBusyUsesTurnSteer(t *testing.T) {
 		t.Errorf("steer params = %v", s)
 	}
 	items := inputItems(t, s)
-	if len(items) != 2 || items[0]["type"] != "localImage" || items[0]["path"] != img ||
-		items[1]["type"] != "text" || items[1]["text"] != "actually do this" {
+	if len(items) != 3 || items[0]["text"] != "[Image 1]" || items[1]["type"] != "localImage" || items[1]["path"] != img ||
+		items[2]["type"] != "text" || items[2]["text"] != "actually do this" {
 		t.Errorf("steer input = %v", items)
 	}
 }

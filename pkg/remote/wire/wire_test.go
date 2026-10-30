@@ -113,6 +113,7 @@ func TestFixturesCoverProtocol(t *testing.T) {
 		MQueueList, MQueueSteer, MQueueCancel, MRosterGet, MRosterKinds, MRosterAdd, MModelsList, MModelsSet, MRaceStart,
 		MModeGet, MModeSet, MApprovalsList, MApprovalsAnswer, MChangesGet,
 		MDevicesList, MDevicesRevoke, MPushStatus, MPushSubscribe, MPushUnsubscribe, MPushTest,
+		MMediaUpload,
 	} {
 		if !names["req_"+m] || !names["res_"+m] {
 			t.Errorf("no params+result fixture pair for method %q", m)

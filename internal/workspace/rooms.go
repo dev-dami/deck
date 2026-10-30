@@ -78,6 +78,9 @@ type Room struct {
 // it has said.
 type Lead struct {
 	Agent, Kind, Model, Slug, Effort, Profile string
+	// Video says its model takes video: a video attached to a message
+	// reaches it (agent.VideoInput). Clients offer video only then.
+	Video bool
 }
 
 var _ Rooms = (*DeckWorkspace)(nil)
@@ -129,7 +132,8 @@ func (w *DeckWorkspace) Room(sessionID string) Room {
 		}
 		for _, a := range th.Members {
 			if a.ID == th.Lead {
-				r.Lead = Lead{Agent: a.Name, Kind: a.Kind, Model: a.Model, Slug: a.RunningModel, Effort: a.Effort, Profile: a.Profile}
+				r.Lead = Lead{Agent: a.Name, Kind: a.Kind, Model: a.Model, Slug: a.RunningModel, Effort: a.Effort, Profile: a.Profile,
+					Video: w.mgr().TakesVideo(a.Kind, cmp.Or(a.Model, a.RunningModel))}
 			}
 		}
 		return r
@@ -143,7 +147,8 @@ func (w *DeckWorkspace) Room(sessionID string) Room {
 			for _, a := range t.Members {
 				if a.ID == t.Lead {
 					slug := cmp.Or(decks.Slug(a.Running), w.mgr().ModelSlug(a.Kind, a.Model))
-					r.Lead = Lead{Agent: a.Name, Kind: a.Kind, Model: a.Model, Slug: slug, Effort: a.Effort, Profile: a.Profile}
+					r.Lead = Lead{Agent: a.Name, Kind: a.Kind, Model: a.Model, Slug: slug, Effort: a.Effort, Profile: a.Profile,
+						Video: w.mgr().TakesVideo(a.Kind, cmp.Or(a.Model, slug))}
 				}
 			}
 			if t.Worktree != nil {

@@ -5,9 +5,9 @@
 // request is decoded with the shared guards, so a malformed call from the
 // app fails the test.
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import http from "node:http";
-import { join } from "node:path";
+import { extname, join, normalize } from "node:path";
 import { type WebSocket, WebSocketServer } from "ws";
 import {
   type AgentLine,
@@ -88,6 +88,9 @@ export interface FakeOptions {
   tickMs?: number;
   // Adds the thread "Big room" with this many messages.
   bigRoom?: number;
+  // Serves this folder's files on GET (the phone app's dist, for its
+  // screenshots); the pair route and the socket stay as they are.
+  static?: string;
 }
 
 export class FakeDeck {
@@ -394,6 +397,17 @@ export class FakeDeck {
       json(200, { ok: true, protocol: 2 });
       return;
     }
+    const root = this.opts.static;
+    if (req.method === "GET" && root !== undefined) {
+      const path = (req.url ?? "/").split(/[?#]/)[0] ?? "/";
+      const file = join(root, normalize(path === "/" ? "/index.html" : path));
+      if (file.startsWith(root) && existsSync(file) && statSync(file).isFile()) {
+        const types: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".webmanifest": "application/manifest+json" };
+        res.writeHead(200, { "content-type": types[extname(file)] ?? "application/octet-stream" });
+        res.end(readFileSync(file));
+        return;
+      }
+    }
     if (req.method !== "POST" || req.url !== "/api/v1/pair") {
       json(404, { error: "not_found" });
       return;
@@ -471,7 +485,7 @@ export class FakeDeck {
             project: "deck",
             kinds: KINDS,
             allow_yolo: this.opts.allowYolo ?? false,
-            features: ["images", "edit", "changes", "queue", "models", "devices"],
+            features: ["images", "edit", "changes", "queue", "models", "devices", "video", "video_frames"],
             server_id: this.serverId,
             protocol: 2,
             headless: true,
@@ -513,10 +527,33 @@ export class FakeDeck {
   readonly listeners = new Set<(e: string, p: unknown) => void>();
   // The bytes of each message's image parts, in part order.
   readonly images = new Map<string, { data: Buffer; mime: string }[]>();
+  // The videos phones are uploading (media.upload), by upload id.
+  readonly uploads = new Map<string, { name: string; mime: string; size: number; received: number }>();
 
   // Every message of every thread, for the gRPC fake's search.
   allMessages(): Message[] {
     return [...this.threads.values()].flatMap((t) => t.messages);
+  }
+
+  // Adds attachments to a message the person sent: an image (or a frame)
+  // with its bytes, a video without, each with its label.
+  attach(messageId: string, atts: Array<{ name: string; mime: string; label?: string; data?: Buffer }>): void {
+    const t = [...this.threads.values()].find((x) => x.messages.some((m) => m.id === messageId));
+    if (t === undefined || atts.length === 0) return;
+    const parts = atts.map((a) => ({ type: "image", image: { name: a.name, mime: a.mime, ...(a.label !== undefined && a.label !== "" ? { label: a.label } : {}) } }));
+    let updated: Message | undefined;
+    t.messages = t.messages.map((m) => (m.id === messageId ? (updated = { ...m, parts: [...m.parts, ...parts] }) : m));
+    this.images.set(
+      messageId,
+      atts.map((a) => ({ data: a.data ?? Buffer.alloc(0), mime: a.mime })),
+    );
+    if (updated !== undefined) this.emit("message.updated", updated, t.session.id);
+  }
+
+  // Makes a session's lead the agent of kind, running model; video says
+  // its model takes video.
+  setLead(sessionId: string, kind: string, model: string, video: boolean): void {
+    this.touch(sessionId, { lead: { agent: kind, kind, model, slug: model, ...(video ? { video } : {}) } });
   }
 
   // A message of the person with an image, as if they had just sent it.
@@ -580,8 +617,37 @@ export class FakeDeck {
         return {};
       case "messages.list":
         return this.page(this.get(p["session_id"]), p["before"], p["limit"]);
-      case "chat.send":
-        return this.send(this.get(p["session_id"]), String(p["text"]), p["idempotency_key"]);
+      case "chat.send": {
+        const out = this.send(this.get(p["session_id"]), String(p["text"]), p["idempotency_key"]) as { message_id: string };
+        // As the engine: each image with its bytes and label, an uploaded
+        // video without bytes, a video as frames as two labelled frames.
+        const images = (p["images"] as Array<Record<string, unknown>> | undefined) ?? [];
+        this.attach(
+          out.message_id,
+          images.flatMap((im) => {
+            const name = String(im["name"]);
+            const mime = String(im["mime"]);
+            const label = String(im["label"] ?? "");
+            if (typeof im["upload_id"] === "string" && !this.uploads.has(im["upload_id"])) throw new Fail("not_found", "that video upload is gone");
+            if (typeof im["upload_id"] === "string") this.uploads.delete(im["upload_id"]);
+            if (im["frames"] === true) return ["0:01", "0:03"].map((at) => ({ name: `${name}-${at}.png`, mime: "image/png", label: `${label} · ${at}` }));
+            return [{ name, mime, label, ...(typeof im["data_b64"] === "string" ? { data: Buffer.from(im["data_b64"], "base64") } : {}) }];
+          }),
+        );
+        return out;
+      }
+      case "media.upload": {
+        const chunk = Buffer.from(String(p["data_b64"]), "base64");
+        let id = typeof p["upload_id"] === "string" ? p["upload_id"] : "";
+        if (id === "") {
+          id = this.id("up");
+          this.uploads.set(id, { name: String(p["name"] ?? ""), mime: String(p["mime"] ?? ""), size: Number(p["size"] ?? 0), received: 0 });
+        }
+        const up = this.uploads.get(id);
+        if (up === undefined || Number(p["offset"]) !== up.received) throw new Fail("invalid", "that chunk does not fit the upload");
+        up.received += chunk.length;
+        return { upload_id: id, received: up.received };
+      }
       case "roster.get":
         return this.get(p["session_id"]).roster;
       case "race.start":

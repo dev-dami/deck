@@ -3,8 +3,16 @@
   "images": [
     {
       "data_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "label": "Screenshot 1",
       "mime": "image/png",
       "name": "screenshot.png"
+    },
+    {
+      "frames": true,
+      "label": "the crash",
+      "mime": "video/mp4",
+      "name": "crash.mp4",
+      "upload_id": "9f1c2e7a5b3d4e6f80a1b2c3"
     }
   ],
   "session_id": "ses_8f2a",

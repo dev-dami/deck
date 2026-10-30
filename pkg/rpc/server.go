@@ -11,7 +11,9 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -20,9 +22,11 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	deckagent "github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/browser"
 	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/gh"
+	"github.com/dev-dami/deck/internal/deck/media"
 	"github.com/dev-dami/deck/internal/usage"
 	"github.com/dev-dami/deck/internal/workspace"
 	"github.com/dev-dami/deck/pkg/remote"
@@ -320,26 +324,66 @@ func (s *Server) Send(ctx context.Context, r *deckv1.SendRequest) (*deckv1.SendR
 	}
 	images := make([]remote.Image, 0, len(r.GetImages()))
 	for _, im := range r.GetImages() {
-		if !strings.HasPrefix(im.GetMime(), "image/") {
-			return nil, invalid("attachments must be images")
+		img, err := attachment(im)
+		if err != nil {
+			return nil, err
 		}
-		if len(im.GetData()) == 0 {
-			return nil, invalid("an image is empty")
-		}
-		if len(im.GetData()) > MaxImageBytes {
-			return nil, status.Error(codes.ResourceExhausted, "an image may be at most 16 MB")
-		}
-		name := path.Base(strings.ReplaceAll(im.GetName(), "\\", "/"))
-		if name == "." || name == "/" || name == "" {
-			name = "image"
-		}
-		images = append(images, remote.Image{Name: name, Mime: im.GetMime(), Data: im.GetData()})
+		images = append(images, img)
 	}
 	id, err := s.be.Send(ctx, r.GetSessionId(), r.GetText(), images)
 	if err != nil {
 		return nil, fail(err)
 	}
 	return &deckv1.SendResponse{MessageId: id}, nil
+}
+
+// attachment checks one image or video of a Send. An image comes as its
+// bytes; a video as its bytes or as the path of a local file (the desktop
+// shares the engine's machine), whose bytes must say it is a video. Either
+// way a video is at most media.MaxVideoBytes.
+func attachment(im *deckv1.Image) (remote.Image, error) {
+	name := path.Base(strings.ReplaceAll(im.GetName(), "\\", "/"))
+	if name == "." || name == "/" || name == "" {
+		name = "image"
+	}
+	out := remote.Image{Name: name, Mime: im.GetMime(), Data: im.GetData(), Label: deckagent.CleanLabel(im.GetLabel())}
+	switch {
+	case strings.HasPrefix(im.GetMime(), "image/"):
+		if im.GetPath() != "" || im.GetFrames() {
+			return out, invalid("an image comes as its bytes")
+		}
+		if len(im.GetData()) == 0 {
+			return out, invalid("an image is empty")
+		}
+		if len(im.GetData()) > MaxImageBytes {
+			return out, status.Error(codes.ResourceExhausted, "an image may be at most 16 MB")
+		}
+	case media.IsVideoType(im.GetMime()):
+		if len(im.GetData()) > media.MaxVideoBytes {
+			return out, status.Error(codes.ResourceExhausted, "a video may be at most "+media.Size(media.MaxVideoBytes))
+		}
+		var mime string
+		var err error
+		if p := im.GetPath(); p != "" {
+			if len(im.GetData()) > 0 || !filepath.IsAbs(p) {
+				return out, invalid("a video comes as its bytes or as an absolute path")
+			}
+			if fi, err := os.Stat(p); err == nil && fi.Size() > media.MaxVideoBytes {
+				return out, status.Error(codes.ResourceExhausted, "a video may be at most "+media.Size(media.MaxVideoBytes))
+			}
+			mime, err = media.Check(p, media.MaxVideoBytes)
+			out.Path = p
+		} else {
+			mime, err = media.CheckBytes(name, im.GetData(), media.MaxVideoBytes)
+		}
+		if err != nil {
+			return out, invalid(err.Error())
+		}
+		out.Mime, out.Frames = mime, im.GetFrames()
+	default:
+		return out, invalid("attachments must be images or videos")
+	}
+	return out, nil
 }
 
 func (s *Server) EditMessage(ctx context.Context, r *deckv1.EditMessageRequest) (*deckv1.Empty, error) {

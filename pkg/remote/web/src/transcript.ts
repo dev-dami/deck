@@ -4,7 +4,7 @@ export type Chunk =
   | { k: "text"; text: string; truncated: boolean }
   | { k: "reasoning"; text: string; truncated: boolean }
   | { k: "tool"; call: Part | null; result: Part | null }
-  | { k: "image"; name: string; mime: string };
+  | { k: "image"; name: string; mime: string; label?: string };
 
 // Pairs each tool_result with its tool_call so a call and its outcome render as
 // one card. Results whose call is missing (older history window) stand alone.
@@ -40,7 +40,12 @@ export function groupParts(parts: Part[]): Chunk[] {
         break;
       }
       case "image":
-        chunks.push({ k: "image", name: p.image?.name ?? "image", mime: p.image?.mime ?? "" });
+        chunks.push({
+          k: "image",
+          name: p.image?.name ?? "image",
+          mime: p.image?.mime ?? "",
+          ...(p.image?.label ? { label: p.image.label } : {}),
+        });
         break;
       default:
         // Unknown part types come from a newer server; skip rather than fail.

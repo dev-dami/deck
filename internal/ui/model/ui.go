@@ -38,6 +38,7 @@ import (
 	"github.com/dev-dami/deck/internal/clipboard"
 	"github.com/dev-dami/deck/internal/commands"
 	"github.com/dev-dami/deck/internal/config"
+	"github.com/dev-dami/deck/internal/deck/media"
 	"github.com/dev-dami/deck/internal/deck/peer"
 	decks "github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/fsext"
@@ -5750,7 +5751,7 @@ func (m *UI) handlePasteMsg(msg tea.PasteMsg) tea.Cmd {
 			if _, err := os.Stat(path); os.IsNotExist(err) {
 				return false
 			}
-			if !common.IsImagePath(path) {
+			if !common.IsImagePath(path) && !common.IsVideoPath(path) {
 				return false
 			}
 		}
@@ -5762,7 +5763,7 @@ func (m *UI) handlePasteMsg(msg tea.PasteMsg) tea.Cmd {
 		m.checkBangModeAfterPaste()
 		return cmd
 	}
-	if !m.currentModelSupportsImages() {
+	if slices.ContainsFunc(paths, common.IsImagePath) && !m.currentModelSupportsImages() {
 		return util.ReportWarn("The current model does not support image attachments")
 	}
 
@@ -5791,6 +5792,9 @@ func hasPasteExceededThreshold(msg tea.PasteMsg) bool {
 
 // handleFilePathPaste handles a pasted file path.
 func (m *UI) handleFilePathPaste(path string) tea.Cmd {
+	if common.IsVideoPath(path) {
+		return videoAttachment(path, m.shownLead())
+	}
 	return func() tea.Msg {
 		fileInfo, err := os.Stat(path)
 		if err != nil {
@@ -5817,6 +5821,28 @@ func (m *UI) handleFilePathPaste(path string) tea.Cmd {
 			MimeType: mimeType,
 			Content:  content,
 		}
+	}
+}
+
+// videoAttachment attaches the video at path: checked by its bytes, at
+// most media.MaxVideoBytes, and read by the engine from where it is. When
+// the lead's model cannot watch video, it goes as still frames if the
+// engine has ffmpeg; otherwise it is refused, saying why.
+func videoAttachment(path string, lead workspace.Lead) tea.Cmd {
+	return func() tea.Msg {
+		mime, err := media.Check(path, media.MaxVideoBytes)
+		if err != nil {
+			return util.NewWarnMsg(err.Error())
+		}
+		att := message.Attachment{FilePath: path, FileName: filepath.Base(path), MimeType: mime}
+		if !lead.Video {
+			who := cmp.Or(lead.Slug, lead.Model, lead.Kind, "This agent")
+			if media.FFmpeg() == "" {
+				return util.NewWarnMsg(who + " can't watch video, and sending it as frames needs ffmpeg")
+			}
+			att.Frames = true
+		}
+		return att
 	}
 }
 

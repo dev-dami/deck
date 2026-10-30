@@ -8,6 +8,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -535,6 +536,9 @@ type ModelInfo struct {
 	// knows it before a run reports one (the CLI's list, or the adapter's
 	// own table); 0 when it does not know.
 	ContextWindow int `json:",omitempty"`
+	// Video says a prompt to the model can carry a video that reaches it
+	// (VideoInput): the CLI delivers one and the model takes it.
+	Video bool `json:",omitempty"`
 }
 
 // EffortInfo is one reasoning effort a model offers.
@@ -555,11 +559,70 @@ type ModelSetter interface {
 	SetModel(model string) error
 }
 
-// Image is an image attached to a prompt. Path is a local file the user
-// chose (dropped, pasted or saved from the clipboard by Deck).
+// Image is an image (or a video) attached to a prompt. Path is a local file
+// the user chose (dropped, pasted or saved from the clipboard by Deck).
 type Image struct {
-	Path      string
-	MediaType string // "image/png", "image/jpeg", "image/gif", "image/webp"
+	Path string
+	// MediaType is "image/png", "image/jpeg", "image/gif" or "image/webp",
+	// or for a video "video/mp4", "video/webm" or "video/quicktime". Only a
+	// run whose model takes video (VideoInput) is ever sent a video.
+	MediaType string
+	// Label is what the person called the attachment ("Image 1", "login
+	// page error"); adapters put it in the reference line next to the
+	// attachment (RefLines). "" leaves just its place ("Image 2").
+	Label string
+}
+
+// IsVideo reports whether the attachment is a video.
+func (im Image) IsVideo() bool { return strings.HasPrefix(im.MediaType, "video/") }
+
+// MaxLabelRunes is the longest label kept; longer ones are cut.
+const MaxLabelRunes = 60
+
+// CleanLabel makes a label one line of at most MaxLabelRunes runes.
+func CleanLabel(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > MaxLabelRunes {
+		s = strings.TrimSpace(string(r[:MaxLabelRunes]))
+	}
+	return s
+}
+
+// RefLines are the reference lines of the attachments, in order: one each,
+// numbered per kind ("[Image 1: login page error]", "[Image 2]", "[Video
+// 1: the crash]"). Adapters send each right before its attachment, so the
+// agent can tell which is which and the person can write "compare Image 1
+// and Image 2". A label that only repeats the place ("Image 2") is left
+// out.
+func RefLines(images []Image) []string {
+	out := make([]string, len(images))
+	var stills, videos int
+	for i, im := range images {
+		var place string
+		if im.IsVideo() {
+			videos++
+			place = fmt.Sprintf("Video %d", videos)
+		} else {
+			stills++
+			place = fmt.Sprintf("Image %d", stills)
+		}
+		label := CleanLabel(im.Label)
+		if label == "" || strings.EqualFold(label, place) {
+			out[i] = "[" + place + "]"
+		} else {
+			out[i] = "[" + place + ": " + label + "]"
+		}
+	}
+	return out
+}
+
+// VideoInput is implemented by adapters that can deliver a video to some
+// of their models. TakesVideo reports whether a run of model ("" = the
+// CLI's default) can be sent one: the CLI passes it on and the model
+// watches it. Adapters without it take none, and Deck never sends them a
+// video (the session tells the agent where the file is instead).
+type VideoInput interface {
+	TakesVideo(model string) bool
 }
 
 // EffortSetter is implemented by runs that can change reasoning effort

@@ -31,6 +31,8 @@ export interface RoomLead {
   slug: string;
   effort: string;
   profile: string;
+  // Its model takes video: an attached video reaches it.
+  video?: boolean;
 }
 
 export interface RoomMeta {

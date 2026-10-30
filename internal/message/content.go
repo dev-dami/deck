@@ -86,6 +86,9 @@ type BinaryContent struct {
 	Path     string
 	MIMEType string
 	Data     []byte
+	// Label is what the person called the attachment. A video keeps no
+	// Data: the file stays in Deck's media folder (internal/deck/media).
+	Label string `json:",omitempty"`
 }
 
 func (bc BinaryContent) String(p catwalk.InferenceProvider) string {

@@ -166,7 +166,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				l.text = "[" + who + "] " + clip(raw, entry)
 				l.images = t.imagesOf(e)
 			} else {
-				l.text = "[" + who + t.arrow(e.To, "", v.self) + "] " + clip(raw, entry) + imageNote(e.Images)
+				l.text = "[" + who + t.arrow(e.To, "", v.self) + "] " + clip(raw, entry) + imageNote(t.imagesOf(e))
 			}
 			out = append(out, l)
 		case store.EntryEdit:

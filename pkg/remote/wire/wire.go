@@ -63,22 +63,27 @@ const (
 
 // Connection and pairing limits (§3.6, R3, R4, R11).
 const (
-	MaxHelloBytes      = 4 << 10
-	MaxFrameBytes      = 12 << 20
-	HelloTimeout       = 5 * time.Second
-	MaxUnauthPerSource = 4
-	MaxUnauthTotal     = 32
-	MaxInFlight        = 8
-	CallTimeout        = 2 * time.Minute
-	IdleTimeout        = 75 * time.Second
-	PingInterval       = 30 * time.Second
-	OutboundQueue      = 256
-	MaxPageLimit       = 100
-	MaxPairBodyBytes   = 4 << 10
-	PairCodeTTL        = 5 * time.Minute
-	DeviceKeyExpiry    = 90 * 24 * time.Hour
-	IdempotencyKeys    = 256
-	IdempotencyTTL     = 10 * time.Minute
+	MaxHelloBytes = 4 << 10
+	MaxFrameBytes = 12 << 20
+	// A phone uploads a video of at most MaxVideoUploadBytes in chunks of
+	// at most MaxUploadChunkBytes (media.upload), keeping each frame well
+	// under MaxFrameBytes once base64'd.
+	MaxVideoUploadBytes = 25 << 20
+	MaxUploadChunkBytes = 4 << 20
+	HelloTimeout        = 5 * time.Second
+	MaxUnauthPerSource  = 4
+	MaxUnauthTotal      = 32
+	MaxInFlight         = 8
+	CallTimeout         = 2 * time.Minute
+	IdleTimeout         = 75 * time.Second
+	PingInterval        = 30 * time.Second
+	OutboundQueue       = 256
+	MaxPageLimit        = 100
+	MaxPairBodyBytes    = 4 << 10
+	PairCodeTTL         = 5 * time.Minute
+	DeviceKeyExpiry     = 90 * 24 * time.Hour
+	IdempotencyKeys     = 256
+	IdempotencyTTL      = 10 * time.Minute
 )
 
 // Frame is the envelope of every WebSocket text frame. Only the fields of
@@ -213,6 +218,8 @@ type Lead struct {
 	Slug    string `json:"slug,omitempty"`
 	Effort  string `json:"effort,omitempty"`
 	Profile string `json:"profile,omitempty"`
+	// Video says its model takes video: an attached video reaches it.
+	Video bool `json:"video,omitempty"`
 }
 
 // Message roles.
@@ -280,12 +287,18 @@ type Part struct {
 	Image *Image `json:"image,omitempty"`
 }
 
-// Image is an attached image: a display name, never a path, and its MIME
-// type. Data carries the bytes when the phone uploads one.
+// Image is an attached image or video: a display name, never a path, its
+// MIME type and the label the person gave it (shown under it, and next to
+// it for the agent). Data carries an image's bytes when the phone uploads
+// one; a video is uploaded first with media.upload and named by UploadID.
+// Frames asks Deck to send a video as still frames taken from it.
 type Image struct {
-	Name string `json:"name"`
-	Mime string `json:"mime"`
-	Data string `json:"data_b64,omitempty"`
+	Name     string `json:"name"`
+	Mime     string `json:"mime"`
+	Label    string `json:"label,omitempty"`
+	Data     string `json:"data_b64,omitempty"`
+	UploadID string `json:"upload_id,omitempty"`
+	Frames   bool   `json:"frames,omitempty"`
 }
 
 // Approval kinds (Approval.Kind).
@@ -399,6 +412,8 @@ type ModelChoice struct {
 	Label    string   `json:"label"`
 	Efforts  []string `json:"efforts,omitempty"`
 	Selected bool     `json:"selected,omitempty"`
+	// Video says the model takes video.
+	Video bool `json:"video,omitempty"`
 }
 
 // ChangedFile is one file an agent touched in a session.
@@ -455,6 +470,7 @@ const (
 	MPushSubscribe   = "push.subscribe"
 	MPushUnsubscribe = "push.unsubscribe"
 	MPushTest        = "push.test"
+	MMediaUpload     = "media.upload"
 )
 
 // Method params and results. Methods without params take Empty; methods
@@ -508,6 +524,27 @@ type (
 		Text           string  `json:"text"`
 		Images         []Image `json:"images,omitempty"`
 		IdempotencyKey string  `json:"idempotency_key,omitempty"`
+	}
+
+	// MediaUploadParams is one chunk of a video the phone uploads before
+	// chat.send names it (Image.UploadID). The first chunk has no UploadID
+	// and says the whole video's Name, Mime and Size; each chunk starts at
+	// Offset, the bytes received so far, and carries at most
+	// MaxUploadChunkBytes.
+	MediaUploadParams struct {
+		SessionID string `json:"session_id"`
+		UploadID  string `json:"upload_id,omitempty"`
+		Name      string `json:"name,omitempty"`
+		Mime      string `json:"mime,omitempty"`
+		Size      int    `json:"size,omitempty"`
+		Offset    int    `json:"offset"`
+		Data      string `json:"data_b64"`
+	}
+
+	// MediaUploadResult names the upload and how much of it has arrived.
+	MediaUploadResult struct {
+		UploadID string `json:"upload_id"`
+		Received int    `json:"received"`
 	}
 
 	// ChatSendResult names the message chat.send created.
@@ -920,6 +957,8 @@ func Fixtures() []Fixture {
 		{"res_push.unsubscribe", Empty{}},
 		{"req_push.test", Empty{}},
 		{"res_push.test", Empty{}},
+		{"req_media.upload", MediaUploadParams{}},
+		{"res_media.upload", MediaUploadResult{}},
 
 		// Pairing HTTP bodies.
 		{"http_health", Health{}},

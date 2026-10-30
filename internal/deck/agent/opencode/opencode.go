@@ -52,7 +52,31 @@ func NewWithOptions(binary string, opts Options) agent.Adapter {
 		},
 		// In ask mode its edits, commands and fetches ask through Deck.
 		ContractSafe: true,
+		Video:        TakesVideo,
 	})
+}
+
+// TakesVideo reports whether the OpenCode model ("provider/model", or a
+// router's "provider/vendor/model") is sent the videos the person attaches.
+// OpenCode reads an ACP resource_link to a local file into a file part with
+// its MIME type and passes it on when models.dev lists video among the
+// model's inputs (otherwise it swaps it for a note that the model cannot
+// read it). The ACP model list does not carry those inputs, so this is
+// Deck's own table, kept conservative: Google's Gemini chat models take
+// video; Claude, GPT and the rest do not, and neither do Gemini's
+// embedding, speech and image-generation models. The default model ("")
+// is unknown, so it takes none.
+func TakesVideo(model string) bool {
+	name := strings.ToLower(model[strings.LastIndexByte(model, '/')+1:])
+	if !strings.HasPrefix(name, "gemini-") {
+		return false
+	}
+	for _, not := range []string{"embedding", "tts", "image", "live"} {
+		if strings.Contains(name, not) {
+			return false
+		}
+	}
+	return true
 }
 
 // askFirst makes OpenCode ask before it edits a file, runs a command or

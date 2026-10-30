@@ -191,7 +191,7 @@ func (s *Server) welcome(dev auth.Device, replay bool) wire.Frame {
 		Epoch: s.hub.Epoch(), Replay: replay,
 		Server: wire.ServerInfo{
 			Version: s.opts.Version, Project: info.Project, Kinds: nonNil(info.Kinds),
-			AllowYolo: dev.AllowYolo, Features: append([]string(nil), features...),
+			AllowYolo: dev.AllowYolo, Features: append(append([]string(nil), features...), videoFeatures()...),
 			ServerID: s.store.ServerID(), Protocol: wire.Protocol, Headless: s.opts.Headless,
 			Tunnel: wire.TunnelNone, Theme: theme,
 		},
