@@ -129,6 +129,9 @@ func deckOpts(p tone.Palette, light bool) quickStyleOpts {
 		light: light,
 	}
 	if light {
+		// The system orange is too pale for text on white; a terminal
+		// draws warnings as text, so they take its text step.
+		o.warning, o.attention = p.WarningText, p.WarningText
 		// On a light ground black is ink and white is the quiet grey.
 		o.ansiBlack, o.ansiWhite = p.Text, p.Muted
 		o.ansiBrightBlack, o.ansiBrightWhite = p.Faint, p.Secondary
