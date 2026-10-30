@@ -220,3 +220,36 @@ func TestSchedulerIsOffUnlessOrchestrating(t *testing.T) {
 		t.Fatalf("something ran: %d", n)
 	}
 }
+
+// An agent that plans its own work on the board and finishes it in the turn
+// the user asked for is not asked to do it again: the briefs the scheduler
+// queued for those tasks no longer start a turn once the tasks are done.
+func TestSchedulerDoesNotReturnSelfOwnedWorkFinishedInTheSameTurn(t *testing.T) {
+	op := func(name, args string) fake.Step {
+		return fake.Step{Exec: &fake.Exec{Op: name, Args: json.RawMessage(args)}}
+	}
+	cfg := testCfg()
+	cfg.Orchestration = "auto"
+	r := newRigWith(t, t.TempDir(), false, cfg, []fake.Script{
+		turn(
+			op("task.create", `{"title":"read the code","owner":"claude"}`),
+			op("task.create", `{"title":"fix the bug","owner":"claude"}`),
+			op("task.done", `{"id":"t1","result":"read"}`),
+			op("task.done", `{"id":"t2","result":"fixed"}`),
+			say("fixed the bug"), finish()),
+		turn(say("already did that"), finish()),
+	}, nil)
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	if err := r.m.Post(tid, "fix the login bug"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the turn to end", func() bool { return r.c.turnDones("claude") >= 1 })
+	time.Sleep(100 * time.Millisecond) // time for a second turn, were it going to start
+	if p := r.claude.prompts("claude"); len(p) != 1 {
+		t.Fatalf("claude got %d prompts, want 1: %q", len(p), p)
+	}
+	if n := countStatus(r, tid, store.TaskDone); n != 2 {
+		t.Fatalf("%d tasks done, want 2: %+v", n, r.m.Tasks(tid))
+	}
+}

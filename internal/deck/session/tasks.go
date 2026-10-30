@@ -447,6 +447,9 @@ func (m *Manager) moveTaskIf(t *thread, id string, to store.TaskStatus, by, note
 	if to != store.TaskFailed {
 		tk.RetryAt = time.Time{}
 	}
+	if to.Final() {
+		t.settleBriefsLocked(tk.ID)
+	}
 	changes := []taskChange{m.logTaskLocked(t, *tk, from, by, note)}
 	changes = append(changes, m.refreshReadyLocked(t)...)
 	out := cloneTask(t.tasks[i])

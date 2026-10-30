@@ -156,6 +156,29 @@ func (m *Manager) settleHanded(t *thread, a *agentState, reply string, answered 
 	}
 }
 
+// settleBriefsLocked makes the hand-overs of task id that their recipients
+// have not been given yet inert, once the task is done or cancelled: a brief
+// for finished work must not start another turn (an agent that planned its
+// own work on the board and finished it in the same turn would be asked to
+// do it again). They stay in the log and in the next briefing. Reports to
+// the task's creator (via "task") are left alone. t.mu is held.
+func (t *thread) settleBriefsLocked(id string) {
+	for _, h := range t.index.heads {
+		if h.typ != store.EntryRelay || h.via == "task" || !strings.EqualFold(h.taskID, id) || t.inert[h.i] {
+			continue
+		}
+		pending := false
+		for _, to := range h.to {
+			if a := t.member(to); a != nil && h.i >= a.cursor {
+				pending = true
+			}
+		}
+		if pending {
+			t.inert[h.i] = true
+		}
+	}
+}
+
 // handoverNote is what a recipient is told about the task a relay hands over.
 // t.mu is held.
 func handoverNote(t *thread, e store.Entry) string {
@@ -167,6 +190,9 @@ func handoverNote(t *thread, e store.Entry) string {
 		return ""
 	}
 	tk := t.tasks[i]
+	if tk.Status.Final() {
+		return fmt.Sprintf("\n[deck] Task %s \"%s\" is already %s: nothing more to do for it.", tk.ID, tk.Title, tk.Status)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n[deck] This hands you task %s \"%s\".", tk.ID, tk.Title)
 	if c := tk.Contract; c != nil {

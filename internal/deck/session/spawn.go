@@ -422,10 +422,19 @@ func (m *Manager) deliverBrief(t *thread, speaker string, to *agentState, text, 
 	}
 	e := store.Entry{Type: store.EntryRelay, Speaker: speaker, To: []string{to.id}, Via: "spawn", TaskID: taskID, Event: eventText(text)}
 	t.mu.Lock()
-	m.appendLocked(t, e)
+	idx := m.appendLocked(t, e)
+	// The owner may have finished the task before its brief got here (an
+	// agent that planned its own work and did it): the brief is logged, but
+	// starts no turn (settleBriefsLocked).
+	settled := false
+	if i := store.FindTask(t.tasks, taskID); taskID != "" && i >= 0 && t.tasks[i].Status.Final() {
+		t.inert[idx], settled = true, true
+	}
 	t.mu.Unlock()
 	m.emit(msgFor(t.id, e))
-	_, _ = m.deliver(t, to)
+	if !settled {
+		_, _ = m.deliver(t, to)
+	}
 }
 
 // memberWorktree makes a worktree and branch for a subagent from the
