@@ -2304,6 +2304,11 @@ body:has(.composer) .approval-pill {
   bottom: auto;
 }
 
+/* ...and the transcript starts below it, so the pill never covers a message. */
+body:has(.composer):has(.approval-pill) .transcript {
+  margin-top: 56px;
+}
+
 .toasts {
   position: fixed;
   z-index: 30;
