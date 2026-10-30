@@ -107,6 +107,11 @@ const (
 	Deck_BrowserOrigin_FullMethodName               = "/deck.v1.Deck/BrowserOrigin"
 	Deck_Highlights_FullMethodName                  = "/deck.v1.Deck/Highlights"
 	Deck_HighlightAction_FullMethodName             = "/deck.v1.Deck/HighlightAction"
+	Deck_Artifacts_FullMethodName                   = "/deck.v1.Deck/Artifacts"
+	Deck_ArtifactRevisions_FullMethodName           = "/deck.v1.Deck/ArtifactRevisions"
+	Deck_ArtifactRead_FullMethodName                = "/deck.v1.Deck/ArtifactRead"
+	Deck_ArtifactAction_FullMethodName              = "/deck.v1.Deck/ArtifactAction"
+	Deck_ReportArtifactBuild_FullMethodName         = "/deck.v1.Deck/ReportArtifactBuild"
 	Deck_Events_FullMethodName                      = "/deck.v1.Deck/Events"
 )
 
@@ -286,6 +291,12 @@ type DeckClient interface {
 	// Highlights is the durable snapshot; Events carries subsequent deltas.
 	Highlights(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*HighlightsResponse, error)
 	HighlightAction(ctx context.Context, in *HighlightActionRequest, opts ...grpc.CallOption) (*HighlightItem, error)
+	// Durable, room-scoped artifacts. Source reads are paged; events are metadata only.
+	Artifacts(ctx context.Context, in *ArtifactsRequest, opts ...grpc.CallOption) (*ArtifactsResponse, error)
+	ArtifactRevisions(ctx context.Context, in *ArtifactRevisionsRequest, opts ...grpc.CallOption) (*ArtifactRevisionsResponse, error)
+	ArtifactRead(ctx context.Context, in *ArtifactReadRequest, opts ...grpc.CallOption) (*ArtifactReadResponse, error)
+	ArtifactAction(ctx context.Context, in *ArtifactActionRequest, opts ...grpc.CallOption) (*ArtifactActionResponse, error)
+	ReportArtifactBuild(ctx context.Context, in *ReportArtifactBuildRequest, opts ...grpc.CallOption) (*ArtifactBuildReport, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -1129,6 +1140,56 @@ func (c *deckClient) HighlightAction(ctx context.Context, in *HighlightActionReq
 	return out, nil
 }
 
+func (c *deckClient) Artifacts(ctx context.Context, in *ArtifactsRequest, opts ...grpc.CallOption) (*ArtifactsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ArtifactsResponse)
+	err := c.cc.Invoke(ctx, Deck_Artifacts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) ArtifactRevisions(ctx context.Context, in *ArtifactRevisionsRequest, opts ...grpc.CallOption) (*ArtifactRevisionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ArtifactRevisionsResponse)
+	err := c.cc.Invoke(ctx, Deck_ArtifactRevisions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) ArtifactRead(ctx context.Context, in *ArtifactReadRequest, opts ...grpc.CallOption) (*ArtifactReadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ArtifactReadResponse)
+	err := c.cc.Invoke(ctx, Deck_ArtifactRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) ArtifactAction(ctx context.Context, in *ArtifactActionRequest, opts ...grpc.CallOption) (*ArtifactActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ArtifactActionResponse)
+	err := c.cc.Invoke(ctx, Deck_ArtifactAction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) ReportArtifactBuild(ctx context.Context, in *ReportArtifactBuildRequest, opts ...grpc.CallOption) (*ArtifactBuildReport, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ArtifactBuildReport)
+	err := c.cc.Invoke(ctx, Deck_ReportArtifactBuild_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *deckClient) Events(ctx context.Context, in *Subscribe, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Deck_ServiceDesc.Streams[1], Deck_Events_FullMethodName, cOpts...)
@@ -1324,6 +1385,12 @@ type DeckServer interface {
 	// Highlights is the durable snapshot; Events carries subsequent deltas.
 	Highlights(context.Context, *SessionRef) (*HighlightsResponse, error)
 	HighlightAction(context.Context, *HighlightActionRequest) (*HighlightItem, error)
+	// Durable, room-scoped artifacts. Source reads are paged; events are metadata only.
+	Artifacts(context.Context, *ArtifactsRequest) (*ArtifactsResponse, error)
+	ArtifactRevisions(context.Context, *ArtifactRevisionsRequest) (*ArtifactRevisionsResponse, error)
+	ArtifactRead(context.Context, *ArtifactReadRequest) (*ArtifactReadResponse, error)
+	ArtifactAction(context.Context, *ArtifactActionRequest) (*ArtifactActionResponse, error)
+	ReportArtifactBuild(context.Context, *ReportArtifactBuildRequest) (*ArtifactBuildReport, error)
 	// Events streams everything that happens, starting with a Ready. Pass the
 	// epoch and seq of the last event seen to replay what was missed; Ready
 	// says resync when that cannot be done and the client must refetch.
@@ -1583,6 +1650,21 @@ func (UnimplementedDeckServer) Highlights(context.Context, *SessionRef) (*Highli
 }
 func (UnimplementedDeckServer) HighlightAction(context.Context, *HighlightActionRequest) (*HighlightItem, error) {
 	return nil, status.Error(codes.Unimplemented, "method HighlightAction not implemented")
+}
+func (UnimplementedDeckServer) Artifacts(context.Context, *ArtifactsRequest) (*ArtifactsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Artifacts not implemented")
+}
+func (UnimplementedDeckServer) ArtifactRevisions(context.Context, *ArtifactRevisionsRequest) (*ArtifactRevisionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ArtifactRevisions not implemented")
+}
+func (UnimplementedDeckServer) ArtifactRead(context.Context, *ArtifactReadRequest) (*ArtifactReadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ArtifactRead not implemented")
+}
+func (UnimplementedDeckServer) ArtifactAction(context.Context, *ArtifactActionRequest) (*ArtifactActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ArtifactAction not implemented")
+}
+func (UnimplementedDeckServer) ReportArtifactBuild(context.Context, *ReportArtifactBuildRequest) (*ArtifactBuildReport, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportArtifactBuild not implemented")
 }
 func (UnimplementedDeckServer) Events(*Subscribe, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method Events not implemented")
@@ -3077,6 +3159,96 @@ func _Deck_HighlightAction_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Deck_Artifacts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ArtifactsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).Artifacts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_Artifacts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).Artifacts(ctx, req.(*ArtifactsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_ArtifactRevisions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ArtifactRevisionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).ArtifactRevisions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_ArtifactRevisions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).ArtifactRevisions(ctx, req.(*ArtifactRevisionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_ArtifactRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ArtifactReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).ArtifactRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_ArtifactRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).ArtifactRead(ctx, req.(*ArtifactReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_ArtifactAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ArtifactActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).ArtifactAction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_ArtifactAction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).ArtifactAction(ctx, req.(*ArtifactActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_ReportArtifactBuild_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportArtifactBuildRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).ReportArtifactBuild(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_ReportArtifactBuild_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).ReportArtifactBuild(ctx, req.(*ReportArtifactBuildRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Deck_Events_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(Subscribe)
 	if err := stream.RecvMsg(m); err != nil {
@@ -3418,6 +3590,26 @@ var Deck_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HighlightAction",
 			Handler:    _Deck_HighlightAction_Handler,
+		},
+		{
+			MethodName: "Artifacts",
+			Handler:    _Deck_Artifacts_Handler,
+		},
+		{
+			MethodName: "ArtifactRevisions",
+			Handler:    _Deck_ArtifactRevisions_Handler,
+		},
+		{
+			MethodName: "ArtifactRead",
+			Handler:    _Deck_ArtifactRead_Handler,
+		},
+		{
+			MethodName: "ArtifactAction",
+			Handler:    _Deck_ArtifactAction_Handler,
+		},
+		{
+			MethodName: "ReportArtifactBuild",
+			Handler:    _Deck_ReportArtifactBuild_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

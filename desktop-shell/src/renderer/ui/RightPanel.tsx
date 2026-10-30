@@ -9,6 +9,7 @@ import {
   FileText,
   GitBranch,
   Globe,
+  Package,
   Flag,
   Graph,
   ListChecks,
@@ -39,6 +40,7 @@ import { PANELS, type Panel } from "../ui";
 import { usePickerSource } from "./AgentPicker";
 import { AgentsTree } from "./AgentsTree";
 import { BrowserPanel } from "./BrowserPanel";
+import { ArtifactPanel } from "./ArtifactPanel";
 import { RoomHighlights } from "./HighlightsPanel";
 import { PreviewPanel } from "./PreviewPanel";
 import { CommentsBadge, DiffToggles, DiffView, SplitAllowed } from "./DiffView";
@@ -65,6 +67,7 @@ const TAB_ICONS: Record<Panel, IconType> = {
   tasks: ListChecks,
   highlights: Flag,
   browser: Globe,
+  artifacts: Package,
   work: GitBranch,
   agents: Network,
   side: MessageCircleQuestion,
@@ -330,6 +333,7 @@ export function RightPanel({
   const ports = useOpenPorts(c.project);
   const tabs = PANELS.filter(
     (p) => (p.panel !== "preview" || panel === "preview" || ports.length > 0) && (p.panel !== "work" || panel === "work" || serves(c, "Work")) &&
+      (p.panel !== "artifacts" || panel === "artifacts" || (serves(c, "Artifacts") && bridge.artifactShow !== undefined)) &&
       (p.panel !== "highlights" || panel === "highlights" || serves(c, "Highlights")) &&
       (p.panel !== "browser" || panel === "browser" || (serves(c, "BrowserState") && bridge.browserView !== undefined)),
   );
@@ -460,6 +464,9 @@ export function RightPanel({
           />
         ) : panel === "browser" ? (
           <BrowserPanel key={open.id} c={c} bridge={bridge} sid={open.id} roster={state.roster[open.id] ?? NO_ROSTER} theme={state.theme} onError={onError} />
+        ) : panel === "artifacts" ? (
+          !serves(c, "Artifacts") ? <Empty>This Deck version does not support artifacts. Update its engine to view them.</Empty> :
+          <ArtifactPanel key={open.id} c={c} bridge={bridge} sid={open.id} onError={onError} onInfo={onInfo} />
         ) : panel === "highlights" ? (
           <RoomHighlights key={open.id} c={c} sid={open.id} projectKey={projectKey} approvals={state.approvals.filter((a) => a.session_id === open.id)} onOpenTasks={() => onPanel("tasks")} />
         ) : panel === "work" ? (

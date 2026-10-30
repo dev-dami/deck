@@ -15,6 +15,8 @@ import type {
   StartError,
   BrowserStateResponse,
 } from "../shared/bridge";
+import { conflictFromStatus } from "./artifactConflict";
+import type { ArtifactConflict } from "../shared/artifacts";
 import type { Browser, BrowserRequest } from "./browser";
 
 // The deck binary on PATH, or null.
@@ -152,6 +154,15 @@ export function dial(Service: DeckClientCtor, sock: string, token: string): Deck
   });
 }
 
+// The ArtifactConflict a status carries, when it carries one.
+function conflictOf(err: grpc.ServiceError): ArtifactConflict | null {
+  for (const d of err.metadata?.get("grpc-status-details-bin") ?? []) {
+    const found = typeof d === "string" ? null : conflictFromStatus(d);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
 export function unary(client: DeckClient, method: string, request: object, timeoutMs = 120_000): Promise<RpcResult> {
   return new Promise((resolve) => {
     const fn = client[method];
@@ -161,8 +172,11 @@ export function unary(client: DeckClient, method: string, request: object, timeo
     }
     const deadline = new Date(Date.now() + timeoutMs);
     fn.call(client, request, { deadline }, (err: grpc.ServiceError | null, value: unknown) => {
-      if (err !== null) resolve({ ok: false, code: err.code, message: err.details || err.message });
-      else resolve({ ok: true, value });
+      if (err !== null) {
+        const failure: RpcResult = { ok: false, code: err.code, message: err.details || err.message };
+        const conflict = err.code === grpc.status.ABORTED ? conflictOf(err) : null;
+        resolve(conflict === null ? failure : { ...failure, artifact_conflict: conflict });
+      } else resolve({ ok: true, value });
     });
   });
 }

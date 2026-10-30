@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
+  ArtifactShown,
   DeckBridge,
   HostMethod,
   LinkEvent,
@@ -84,6 +85,10 @@ const bridge: DeckBridge = {
   previewBounds: (bounds) => invoke("previewBounds", bounds),
   previewHide: () => invoke("previewHide"),
   previewClose: () => invoke("previewClose"),
+  artifactShow: (input) => invoke("artifactShow", input),
+  artifactBounds: (bounds) => invoke("artifactBounds", bounds),
+  artifactHide: () => invoke("artifactHide"),
+  artifactClose: () => invoke("artifactClose"),
   browserView: (input) => invoke("browserView", input),
   setAppIcon: (images, standard) => invoke("setAppIcon", images, standard),
   projectIcon: (dir) => invoke("projectIcon", dir),
@@ -94,6 +99,7 @@ const bridge: DeckBridge = {
   onUpdate: held<UpdateEvent>("deck:update", (ev) => ev.type === "ready"),
   onNotificationClick: (fn) => listen<[{ tag: string }]>("deck:notification-click", fn),
   onPreview: (fn) => listen<[PreviewState]>("deck:preview", fn),
+  onArtifact: (fn) => listen<[ArtifactShown]>("deck:artifact", fn),
   folderPath: (file) => webUtils.getPathForFile(file),
 };
 

@@ -29,6 +29,7 @@ import {
   type LinkEvent,
   MENU_EVENT_CHANNEL,
   NOTIFICATION_EVENT_CHANNEL,
+  ARTIFACT_EVENT_CHANNEL,
   PREVIEW_EVENT_CHANNEL,
   RPC_EVENT_CHANNEL,
   SOCKET_EVENT_CHANNEL,
@@ -50,6 +51,10 @@ import { menuTemplate } from "./menu";
 import { mimeOf } from "./mime";
 import { Notifier } from "./notify";
 import { execRun, PhoneLink, readRelayHint, type Run } from "./phone";
+import { ArtifactPane, ARTIFACT_PARTITION, lockArtifactSession } from "./artifact";
+import { artifactHost } from "./artifactHost";
+import { buildArtifactReact } from "./artifactRuntime";
+import { ARTIFACT_SCHEME } from "./artifactProtocol";
 import { lockSession, Preview, PREVIEW_PARTITION } from "./preview";
 import { Browser, BROWSER_PARTITION } from "./browser";
 import { createHash } from "node:crypto";
@@ -69,6 +74,8 @@ const APP_USER_MODEL_ID = "dev.deck.desktop";
 // of its own and a CSP header.
 protocol.registerSchemesAsPrivileged([
   { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  // No bypassCSP and no service workers: the page lives by the CSP main sets.
+  { scheme: ARTIFACT_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
 async function serveRenderer(req: Request): Promise<Response> {
@@ -371,6 +378,24 @@ async function main(): Promise<void> {
     send: (s) => win?.webContents.send(PREVIEW_EVENT_CHANNEL, s),
     session: () => previewSession,
   });
+  const artifactSession = session.fromPartition(ARTIFACT_PARTITION);
+  await lockArtifactSession(artifactSession, ARTIFACT_SCHEME);
+  const artifactPane = new ArtifactPane({
+    create: (webPreferences) => {
+      if (win === null) return null;
+      const view = new WebContentsView({ webPreferences });
+      win.contentView.addChildView(view);
+      return view;
+    },
+    remove: (view) => {
+      if (win !== null && !win.isDestroyed()) win.contentView.removeChildView(view);
+    },
+    zoom: () => win?.webContents.getZoomFactor() ?? 1,
+    send: (s) => win?.webContents.send(ARTIFACT_EVENT_CHANNEL, s),
+    session: () => artifactSession,
+  });
+  artifactSession.protocol.handle(ARTIFACT_SCHEME, (req) => artifactPane.hosts.handle(req.url));
+  const artifact = artifactHost(artifactPane, buildArtifactReact);
   const browser = new Browser({
     create: webPreferences => {
       if (win === null) return null;
@@ -393,6 +418,7 @@ async function main(): Promise<void> {
     links.closeAll();
     decks.cancelStreams();
     preview.close();
+    artifact.close();
     browser.close();
   };
   const windowState = new WindowStateFile(join(app.getPath("userData"), "window.json"));
@@ -436,6 +462,7 @@ async function main(): Promise<void> {
     focused: () => notifier.focused(),
     agentClis: async () => findAgentClis(await path),
     preview,
+    artifact,
     browserView: async input => { browser.present(input); },
     setAppIcon: (images, standard) => {
       const img = iconImage(images);

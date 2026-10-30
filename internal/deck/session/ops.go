@@ -49,6 +49,9 @@ func (m *Manager) execOpResult(ctx context.Context, agentID, op string, args jso
 	env.Highlights = func(ctx context.Context, op string, args json.RawMessage) (string, error) {
 		return m.runHighlights(ctx, a, op, args)
 	}
+	env.Artifacts = func(ctx context.Context, op string, args json.RawMessage) (string, error) {
+		return m.runArtifacts(ctx, a, op, args)
+	}
 	if m.st != nil { // a nil *store.Store must stay a nil interface
 		env.Store = m.st
 	}

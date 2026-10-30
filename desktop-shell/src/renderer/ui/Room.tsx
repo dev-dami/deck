@@ -2,7 +2,8 @@ import { applyAgentChip } from "@web/composer";
 import type { Session } from "@web/protocol";
 import { sessionMode } from "@web/state";
 import { Ellipsis, FileDiff, Flag, Folder, Hourglass, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "./icons";
-import { type ComponentProps, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
+import { type ComponentProps, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { selectArtifact } from "../artifactSelection";
 import type { EngineStop } from "../../shared/bridge";
 import { type DeckClient, serves } from "../client";
 import { FILES_LIMIT } from "../completion";
@@ -273,6 +274,14 @@ export function Room({
   // What the person answered the room's last question, shown on the composer.
   const [answered, setAnswered] = useState<AnsweredRecord | null>(null);
   const live = useRoomLive(c, sid);
+  const artifactSeen = useRef({ sid, opened: Date.now(), ids: new Set<string>() });
+  useEffect(() => {
+    if (artifactSeen.current.sid !== sid) artifactSeen.current = { sid, opened: Date.now(), ids: new Set(live.artifacts.map((a) => a.id)) };
+    if (sid === null || !serves(c, "Artifacts")) return;
+    const fresh = live.artifacts.find((a) => !artifactSeen.current.ids.has(a.id) && a.created_at >= artifactSeen.current.opened);
+    for (const a of live.artifacts) artifactSeen.current.ids.add(a.id);
+    if (fresh !== undefined) { selectArtifact(c, sid, fresh.id); onPanel("artifacts"); }
+  }, [c, sid, live.artifacts, onPanel]);
   const strip = serves(c, "Highlights") ? stripItem(live.items) : null;
   const queued = sid === null ? 0 : (state.queue[sid]?.length ?? 0);
   const imagesOn = state.server?.features.includes("images") ?? false;
@@ -439,6 +448,8 @@ export function Room({
               theme={state.theme}
               changes={files}
               onOpenDiff={(path) => onPanel("changes", path)}
+              artifacts={live.artifacts}
+              onOpenArtifact={(id) => { selectArtifact(c, open.id, id); onPanel("artifacts"); }}
               mode={room.mode}
               actions={room.actions}
               notes={r.notes}

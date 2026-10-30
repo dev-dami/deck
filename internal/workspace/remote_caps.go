@@ -42,6 +42,7 @@ const (
 	ChangeLease     DeckChangeKind = "lease"
 	ChangeHighlight DeckChangeKind = "highlight"
 	ChangeSummary   DeckChangeKind = "summary"
+	ChangeArtifact  DeckChangeKind = "artifact"
 	// ChangeQuestion: an agent asks the person (Question); ChangeQuestionGone:
 	// it was answered (Answered), declined or withdrawn.
 	ChangeQuestion     DeckChangeKind = "question"
@@ -52,6 +53,7 @@ const (
 // store: the TUI learns of these through its program, the remote through
 // SubscribeDeck. Every change names its session.
 type DeckChange struct {
+	Artifact  *deckv1.ArtifactSummary
 	Highlight *deckv1.HighlightItem
 	Summary   *deckv1.AgentSummary
 	Kind      DeckChangeKind

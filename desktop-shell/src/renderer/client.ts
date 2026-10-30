@@ -1,4 +1,5 @@
 import type { Store } from "@web/controller";
+import type { ArtifactBuildInfo, ArtifactConflict, ArtifactDiagnostic, ArtifactRevisionFiles, ArtifactRevisionInfo, ArtifactSummary } from "../shared/artifacts";
 import type { BrowserActionResponse, BrowserCommand, HighlightActionRequest } from "../shared/bridge";
 import type { ChangedFile, Decision, Image, Mode, ModelChoice, QuestionAnswer, RaceEntrant, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
@@ -12,6 +13,18 @@ import type { FileList, ImageBytes, SearchHit } from "./rpcMap";
 // client's Controller (protocol v2 through main's socket) has this shape;
 // RpcDeckClient (deck serve --rpc through main's gRPC client) implements it
 // too. Both keep the same AppState, so the UI renders one state.
+// One change to an artifact as the person: restore an earlier revision, or
+// update with the whole new file set.
+export type ArtifactActionRequest =
+  | { action: "restore"; id: string; base_revision: number; restore_revision: number; note?: string }
+  | { action: "update"; id: string; base_revision: number; title: string; entrypoint: string; files: { path: string; content: string }[]; note?: string };
+
+// What the Deck answered: the artifact's new state, or why it refused. A
+// stale revision carries the conflict, so the panel can offer a reload.
+export type ArtifactActionOutcome =
+  | { ok: true; summary: ArtifactSummary | null }
+  | { ok: false; message: string; conflict: ArtifactConflict | null };
+
 export interface DeckClient {
   readonly store: Store;
   readonly state: AppState;
@@ -58,6 +71,20 @@ export interface DeckClient {
   // One Highlights action of the person's (resolve, dismiss, seen, pin);
   // whether the Deck took it. Quiet when it does not serve Highlights.
   highlightAction?(sessionId: string, action: Omit<HighlightActionRequest, "session_id">): Promise<boolean>;
+  // Artifacts the room keeps (Info.capabilities lists Artifacts). Each is a
+  // no-op that answers null when the Deck does not serve them.
+  artifactRevisions?(sessionId: string, id: string): Promise<ArtifactRevisionInfo[] | null>;
+  artifactFiles?(sessionId: string, id: string, revision: number): Promise<ArtifactRevisionFiles | null>;
+  artifactBuilds?(sessionId: string, id: string, revision: number): Promise<ArtifactBuildInfo[] | null>;
+  artifactAction?(sessionId: string, action: ArtifactActionRequest): Promise<ArtifactActionOutcome>;
+  reportArtifactBuild?(
+    sessionId: string,
+    id: string,
+    revision: number,
+    phase: "build" | "runtime",
+    ok: boolean,
+    diagnostics: readonly ArtifactDiagnostic[],
+  ): Promise<void>;
   // A browser command as the person (the address bar, Take control); null
   // when the Deck does not serve BrowserAction.
   browserAction?(sessionId: string, command: BrowserCommand): Promise<BrowserActionResponse | null>;

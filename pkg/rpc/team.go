@@ -23,6 +23,7 @@ const sharedWait = 10 * time.Second
 // workspace the terminal UI drives from its Tasks, Agents and Team panes.
 // Each is nil when the workspace lacks it, and its calls then say so.
 type crew struct {
+	artifacts  workspace.ArtifactsDesk
 	highlights workspace.HighlightsDesk
 	orch       workspace.Orchestration
 	trees      workspace.Worktrees
@@ -69,6 +70,7 @@ func (s *Server) WithWorkspace(ws any) *Server {
 	c.usage, _ = ws.(workspace.UsageReader)
 	c.changes, _ = ws.(deckChanges)
 	c.highlights, _ = ws.(workspace.HighlightsDesk)
+	c.artifacts, _ = ws.(workspace.ArtifactsDesk)
 	s.crew = c
 	s.withBrowser(ws)
 	return s

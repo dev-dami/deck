@@ -20,13 +20,18 @@
     "e2e": "npm run build && playwright test",
     "shots": "npm run build && playwright test shots",
     "smoke": "npm run build && electron . --smoke",
-    "lint": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json"
+    "lint": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json",
+    "smoke:artifact": "tsc -p tsconfig.main.json && electron test/artifact-electron.cjs",
+    "smoke:artifact:compiler": "tsc -p tsconfig.main.json && electron test/artifact-compiler.cjs"
   },
   "dependencies": {
     "@grpc/grpc-js": "1.14.6",
     "@grpc/proto-loader": "0.8.1",
     "electron-log": "5.4.4",
     "electron-updater": "6.8.10",
+    "esbuild-wasm": "0.28.2",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
     "ws": "8.22.0"
   },
   "devDependencies": {
@@ -50,8 +55,6 @@
     "electron": "44.9.0",
     "electron-builder": "26.17.0",
     "prismjs": "1.30.0",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
     "tailwind-merge": "3.7.0",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
@@ -126,6 +129,9 @@
       "createStartMenuShortcut": true,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico"
-    }
+    },
+    "asarUnpack": [
+      "node_modules/esbuild-wasm/**"
+    ]
   }
 }

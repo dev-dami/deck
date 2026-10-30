@@ -4,6 +4,9 @@ import type { AppState } from "@web/state";
 import { applyTheme, type ThemeTarget } from "@web/theme";
 import { LiveStore } from "./live";
 import { ProjectApi } from "./project";
+import type { ArtifactActionOutcome, ArtifactActionRequest } from "./client";
+import { limitDiagnostics, utf8Bytes } from "../shared/artifacts";
+import type { ArtifactBuildInfo, ArtifactDiagnostic, ArtifactRevisionFiles, ArtifactRevisionInfo, ArtifactSummary } from "../shared/artifacts";
 import type { BrowserActionResponse, BrowserCommand, DeckBridge, EngineStop, HighlightActionRequest, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
 import type { DeckClient } from "./client";
 import { getPrefs } from "./prefs";
@@ -21,8 +24,12 @@ import {
   toEvent,
   toFileList,
   toFiles,
+  toArtifactPage,
+  toArtifactSummary,
+  toArtifacts,
   toHighlightItem,
   toHighlights,
+  toRevisions,
   toImage,
   toMessages,
   toModels,
@@ -38,6 +45,11 @@ import {
 } from "./rpcMap";
 
 const PAGE = 100;
+// Lists and files are read page by page; this many pages is more than the engine keeps.
+const ARTIFACT_PAGES = 200;
+const ARTIFACT_READ_BYTES = 256 << 10;
+// Names the React and esbuild the app builds with, for the build report.
+const ARTIFACT_RUNTIME = "react-19.2.0+esbuild-wasm-0.28.2";
 const BACKOFF_MAX_MS = 10_000;
 // gRPC status codes the client names.
 const UNAVAILABLE = 14;
@@ -56,6 +68,8 @@ export class RpcDeckClient implements DeckClient {
   private epoch = "";
   private seq = 0;
   private stopped = false;
+  private readonly instance = crypto.randomUUID();
+  private reports = 0;
   // The engine stopped by itself; restart() starts it again.
   private halted = false;
   private restarting = false;
@@ -271,8 +285,118 @@ export class RpcDeckClient implements DeckClient {
       this.serves("BrowserState") ? this.call("BrowserState", { session_id: sessionId }, true) : null,
     ]);
     if (hl !== null) this.live.loadHighlights(sessionId, toHighlights(hl));
+    if (this.serves("Artifacts")) {
+      const list = await this.artifactList(sessionId);
+      if (list !== null) this.live.loadArtifacts(sessionId, list);
+    }
     const state = br === null ? null : toBrowserState(br);
     if (state !== null) this.live.loadBrowser(sessionId, state.tabs, state.available, stamp);
+  }
+
+  // Every artifact of the room, page by page; null when a page fails.
+  private async artifactList(sessionId: string): Promise<ArtifactSummary[] | null> {
+    const all: ArtifactSummary[] = [];
+    let cursor = "";
+    for (let page = 0; page < ARTIFACT_PAGES; page++) {
+      const r = await this.call("Artifacts", { session_id: sessionId, cursor, limit: 0 }, true);
+      if (r === null) return null;
+      const got = toArtifacts(r);
+      all.push(...got.items);
+      if (got.next === "") return all;
+      cursor = got.next;
+    }
+    return all;
+  }
+
+  async artifactRevisions(sessionId: string, id: string): Promise<ArtifactRevisionInfo[] | null> {
+    const all: ArtifactRevisionInfo[] = [];
+    let cursor = "";
+    for (let page = 0; page < ARTIFACT_PAGES; page++) {
+      const r = await this.optional("ArtifactRevisions", { session_id: sessionId, id, cursor, limit: 0 });
+      if (r === null) return null;
+      const got = toRevisions(r);
+      all.push(...got.items);
+      if (got.next === "") return all;
+      cursor = got.next;
+    }
+    return all;
+  }
+
+  // The manifest of a revision, then each file whole. revision 0 is the
+  // current one; the answer pins the number, and every file is read at it.
+  async artifactFiles(sessionId: string, id: string, revision: number): Promise<ArtifactRevisionFiles | null> {
+    const head = toArtifactPage(await this.optional("ArtifactRead", { session_id: sessionId, id, revision, path: "", offset: 0, limit: 0 }));
+    if (head === null || head.info === null) return null;
+    if (head.files.length > 32 || new Set(head.files).size !== head.files.length) return null;
+    const files: ArtifactRevisionFiles["files"] = [];
+    let total = 0;
+    for (const path of head.files) {
+      let content = "";
+      let offset = 0;
+      let complete = false;
+      for (let page = 0; page < ARTIFACT_PAGES; page++) {
+        const got = toArtifactPage(
+          await this.optional("ArtifactRead", { session_id: sessionId, id, revision: head.revision, path, offset, limit: ARTIFACT_READ_BYTES }),
+        );
+        if (got === null || got.revision !== head.revision || got.path !== path) return null;
+        const bytes = utf8Bytes(got.content);
+        if (got.next_offset !== offset + bytes || got.next_offset > ARTIFACT_READ_BYTES || (!got.eof && bytes === 0)) return null;
+        content += got.content;
+        total += bytes;
+        if (total > 1 << 20) return null;
+        if (got.eof) { complete = true; break; }
+        offset = got.next_offset;
+      }
+      if (!complete) return null;
+      files.push({ path, content });
+    }
+    return { revision: head.revision, info: head.info, files };
+  }
+
+  // The build reports the engine holds for a revision, for the Errors tab.
+  async artifactBuilds(sessionId: string, id: string, revision: number): Promise<ArtifactBuildInfo[] | null> {
+    const head = toArtifactPage(await this.optional("ArtifactRead", { session_id: sessionId, id, revision, path: "", offset: 0, limit: 0 }));
+    return head === null ? null : head.builds;
+  }
+
+  // One create, update or restore as the person. A refusal comes back as a
+  // value, with the conflict when the revision was stale, not as a toast.
+  async artifactAction(sessionId: string, action: ArtifactActionRequest): Promise<ArtifactActionOutcome> {
+    if (!this.serves("ArtifactAction")) return { ok: false, message: "This Deck does not keep artifacts.", conflict: null };
+    let r: Awaited<ReturnType<DeckBridge["rpcCall"]>>;
+    try {
+      r = await this.bridge.rpcCall(this.deck.id, "ArtifactAction", { session_id: sessionId, ...action });
+    } catch (e) {
+      return { ok: false, message: describeError(e), conflict: null };
+    }
+    if (!r.ok) return { ok: false, message: r.message || "Deck refused the change.", conflict: r.artifact_conflict ?? null };
+    const summary = toArtifactSummary((r.value as Record<string, unknown> | null)?.["artifact"]);
+    if (summary !== null) this.live.apply({ k: "artifact", artifact: summary });
+    return { ok: true, summary };
+  }
+
+  // Tells the Deck how a revision built or ran, so the agents can read it.
+  async reportArtifactBuild(
+    sessionId: string,
+    id: string,
+    revision: number,
+    phase: "build" | "runtime",
+    ok: boolean,
+    diagnostics: readonly ArtifactDiagnostic[],
+  ): Promise<void> {
+    this.reports += 1;
+    await this.optional("ReportArtifactBuild", {
+      session_id: sessionId,
+      id,
+      revision,
+      report_id: `${this.instance}-${this.reports}`,
+      runtime_version: ARTIFACT_RUNTIME,
+      client_instance: this.instance,
+      attempt: this.reports,
+      phase,
+      ok,
+      diagnostics: limitDiagnostics(diagnostics),
+    });
   }
 
   async highlightAction(sessionId: string, action: Omit<HighlightActionRequest, "session_id">): Promise<boolean> {

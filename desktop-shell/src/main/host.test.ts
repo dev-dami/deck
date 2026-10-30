@@ -275,6 +275,47 @@ describe("ports and the preview", () => {
     }
   });
 
+  test("the artifact methods check their arguments before main sees them", async () => {
+    const seen: unknown[] = [];
+    const artifact = {
+      show: async (i: unknown) => (seen.push(["show", i]), { ok: true as const }),
+      bounds: (b: unknown) => void seen.push(["bounds", b]),
+      hide: () => void seen.push(["hide"]),
+      close: () => void seen.push(["close"]),
+    };
+    const { host } = testHost(noEmit, noEmit, undefined, { artifact });
+    const file = { path: "a.html", content: "x" };
+    const good = { request: "r1", kind: "html", entrypoint: "a.html", files: [file] };
+    const bad: [HostMethod, unknown[]][] = [
+      ["artifactShow", []],
+      ["artifactShow", [{ ...good, kind: "markdown" }]],
+      ["artifactShow", [{ ...good, extra: 1 }]],
+      ["artifactShow", [{ ...good, request: "" }]],
+      ["artifactShow", [{ ...good, request: "x".repeat(65) }]],
+      ["artifactShow", [{ ...good, entrypoint: "x".repeat(257) }]],
+      ["artifactShow", [{ ...good, files: Array.from({ length: 33 }, () => file) }]],
+      ["artifactShow", [{ ...good, files: [{ path: "a", content: 1 }] }]],
+      ["artifactShow", [{ ...good, files: [{ path: "a", content: "x".repeat((256 << 10) + 1) }] }]],
+      ["artifactShow", [{ ...good, files: [{ path: "a", content: "\u00e9".repeat(150 << 10) }] }]],
+      ["artifactShow", [{ ...good, files: Array.from({ length: 5 }, () => ({ path: "a", content: "x".repeat(250 << 10) })) }]],
+      ["artifactBounds", [{ x: 1, y: 2, w: 3, h: 4, zoom: 4 }]],
+      ["artifactHide", [1]],
+      ["artifactClose", [1]],
+    ];
+    for (const [m, args] of bad) {
+      await expect(callHost(host, m, args), `${m} ${JSON.stringify(args).slice(0, 80)}`).rejects.toThrow(/bad arguments/);
+    }
+    expect(seen).toEqual([]);
+    await expect(callHost(host, "artifactShow", [good])).resolves.toEqual({ ok: true });
+    await callHost(host, "artifactHide", []);
+    expect(seen).toEqual([["show", good], ["hide"]]);
+  });
+
+  test("the artifact methods fail plainly when the window has no artifact view", async () => {
+    const { host } = testHost(noEmit, noEmit);
+    await expect(callHost(host, "artifactClose", [])).rejects.toThrow(/No artifact view/);
+  });
+
   test("the preview methods check their arguments before main sees them", async () => {
     const seen: unknown[] = [];
     const preview = {

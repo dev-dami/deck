@@ -4,6 +4,8 @@
 // authenticates. For a Deck on this machine (rpc), main starts
 // `deck serve --rpc`, holds the per-launch token and makes the calls.
 
+import type { ArtifactConflict, ArtifactDiagnostic, ArtifactFile, ArtifactKind } from "./artifacts";
+
 // A Deck server this app paired with. It carries no secret.
 export interface SavedServer {
   // The server_id Deck gave at pairing: one per project data dir.
@@ -193,6 +195,12 @@ export const RPC_METHODS = [
   "BrowserAction",
   "Highlights",
   "HighlightAction",
+  // Artifacts: saved revisions of documents and small apps.
+  "Artifacts",
+  "ArtifactRevisions",
+  "ArtifactRead",
+  "ArtifactAction",
+  "ReportArtifactBuild",
 ] as const;
 
 export type RpcMethod = (typeof RPC_METHODS)[number];
@@ -345,7 +353,10 @@ export interface BrowserViewHost {
 
 // A call's answer: the response message as a plain object, or the gRPC
 // status code and its message.
-export type RpcResult = { ok: true; value: unknown } | { ok: false; code: number; message: string };
+// artifact_conflict is set when the engine refused a stale artifact edit.
+export type RpcResult =
+  | { ok: true; value: unknown }
+  | { ok: false; code: number; message: string; artifact_conflict?: ArtifactConflict };
 
 // What the Events stream of a local Deck sends to the window: one event (a
 // deck.v1.Event as a plain object), the end of the stream, the end of the
@@ -461,6 +472,32 @@ export interface PreviewState {
   title: string;
 }
 
+// The artifact pane: the files of one artifact revision in a view that main
+// owns, like Preview. Main builds a React revision first (it never runs the
+// code) and answers with the diagnostics when the build fails.
+export interface ArtifactShowInput {
+  // Opaque, chosen by the caller and echoed on every ArtifactShown of this
+  // show, so events of an earlier page never count for a later one.
+  request: string;
+  kind: Exclude<ArtifactKind, "markdown">;
+  entrypoint: string;
+  files: ArtifactFile[];
+}
+
+// What main accepts to show: the contract's bounds, per revision.
+export const ARTIFACT_SHOW_LIMITS = { files: 32, file: 256 << 10, total: 1 << 20 } as const;
+
+export type ArtifactShowResult = { ok: true } | { ok: false; diagnostics: ArtifactDiagnostic[] };
+
+export type ArtifactBounds = PreviewBounds;
+
+// What main sends on ARTIFACT_EVENT_CHANNEL about the shown page.
+export interface ArtifactShown {
+  request: string;
+  kind: "loaded" | "error" | "gone";
+  message: string;
+}
+
 // The app icon, drawn by the renderer (renderer/appIcon) as PNGs at a few
 // sizes of one square image. Main checks each one (the PNG signature, its
 // IHDR width and height against size, the byte caps), then shows it on the
@@ -572,6 +609,11 @@ export interface DeckHost extends Partial<BrowserViewHost> {
   previewHide(): Promise<void>;
   // Destroys the view and its page.
   previewClose(): Promise<void>;
+  // Builds (React) and shows an artifact revision in the artifact view.
+  artifactShow(input: ArtifactShowInput): Promise<ArtifactShowResult>;
+  artifactBounds(bounds: ArtifactBounds): Promise<void>;
+  artifactHide(): Promise<void>;
+  artifactClose(): Promise<void>;
   // Shows this icon for the app, keeps it for the next start and gives it
   // to the installed app's launchers. standard: it is the icon Deck ships
   // with, so the launchers go back to their own.
@@ -592,6 +634,7 @@ export interface DeckBridge extends DeckHost {
   // A click on a notification, with its tag.
   onNotificationClick(fn: (ev: { tag: string }) => void): () => void;
   onPreview(fn: (s: PreviewState) => void): () => void;
+  onArtifact(fn: (s: ArtifactShown) => void): () => void;
   // The path of a dropped folder. The window passes only folders, and main
   // checks that the path is one before it opens it.
   folderPath(file: File): string;
@@ -634,6 +677,10 @@ export const HOST_METHODS = [
   "previewBounds",
   "previewHide",
   "previewClose",
+  "artifactShow",
+  "artifactBounds",
+  "artifactHide",
+  "artifactClose",
   "browserView",
   "setAppIcon",
   "projectIcon",
@@ -648,6 +695,7 @@ export const LINK_EVENT_CHANNEL = "deck:link";
 export const UPDATE_EVENT_CHANNEL = "deck:update";
 export const NOTIFICATION_EVENT_CHANNEL = "deck:notification-click";
 export const PREVIEW_EVENT_CHANNEL = "deck:preview";
+export const ARTIFACT_EVENT_CHANNEL = "deck:artifact";
 
 export function hostChannel(m: HostMethod): string {
   return `deck:${m}`;
