@@ -649,6 +649,13 @@ func (a *agentState) isEphemeral() bool {
 	return a.ephemeral
 }
 
+// wasSolo reports whether its run started with the solo briefing.
+func (a *agentState) wasSolo() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.solo
+}
+
 func (a *agentState) parentID() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()

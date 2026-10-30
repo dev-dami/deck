@@ -199,6 +199,9 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 				who = "you (" + who + ")"
 			}
 			text := "[deck] " + who + " joined the thread"
+			if me := t.member(v.self); me != nil && e.Speaker != v.self && me.wasSolo() {
+				text += fmt.Sprintf("; to reach it, start a line of your final reply with @%s, or execute thread.send {to, message}", t.name(e.Speaker))
+			}
 			if n := t.ofKind(e.Text); n > 1 && !hinted[e.Text] && t.name(e.Speaker) != t.firstOf(e.Text) {
 				hinted[e.Text] = true
 				text += fmt.Sprintf("; with %d %s here, %q reaches whichever is free and %q all of them", n, e.Text, e.Text, e.Text+"*")
@@ -219,6 +222,12 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 		case store.EntryRevert, store.EntryUnrevert:
 			out = append(out, line{text: revertText(e, t.revertSinceLocked(e))})
 		case store.EntryTask:
+			if e.Speaker == v.self && v.skipSelf && v.self != "" {
+				return true // its own change to the board: it knows
+			}
+			if ev := e.Task; ev != nil && e.Speaker == "" && ev.From != "" && isWaiting(ev.From) && isWaiting(ev.To) {
+				return true // Deck's own pending <-> ready as dependencies settle: nobody acts on it
+			}
 			if e.Task != nil {
 				out = append(out, line{text: taskText(t, e)})
 			}
@@ -380,17 +389,40 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	if d := who(a); d != a.getName() {
 		self += strings.TrimPrefix(d, a.getName())
 	}
+	// Alone with the user at a level where agents only do what they are
+	// told, a member works like its own CLI: it hears of Deck's ops only
+	// where to find them, so nothing nudges it into running a crew. When
+	// another agent joins, the join line in its briefing says how to reach
+	// it (walk).
+	solo := tools && len(others) == 0 && len(mates) == 0 && !ops && !contract && !a.isEphemeral() && m.level(t).AskFirst
+	a.mu.Lock()
+	a.solo = solo
+	a.mu.Unlock()
+	if solo {
+		var b strings.Builder
+		fmt.Fprintf(&b, "You are %s, working for %s in Deck. Work as you normally would.\n", self, user)
+		b.WriteString("MCP: search finds Deck ops (helpers, task board, browser, worktrees, past threads); execute runs one. When the user asks for helpers or agents, use agent.spawn {brief, kind}, not your own Task/subagent tool.\n")
+		fmt.Fprintf(&b, "Write plan files in %s.", brand.PlansDir(t.dir))
+		if cfg.DeckAttribution {
+			fmt.Fprintf(&b, " Commits end with the trailer %q, no other AI attribution; PRs end with %q.", brand.CommitTrailer, brand.PRFooter)
+		}
+		out := clipInstruction(b.String(), maxInstrChars)
+		if pb := a.prof.Briefing(); pb != "" {
+			out += "\n" + clip(pb, maxProfileChars)
+		}
+		return out
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are %s in a shared Deck thread with %s; all of you see this thread.\n", self, clip(with, 300))
 	b.WriteString("New messages come first, prefixed by speaker, e.g. \"[codex] ...\".\n")
 	if tools {
 		b.WriteString("MCP: search finds Deck ops, skills, past threads; execute runs one.\n")
-		b.WriteString("To message another agent, call execute with op \"thread.send\" and args {to: an agent name or \"all\", message}, or start a line of your final reply with @name ($name also works). thread.read shows the whole thread, thread.roster who is in it.\n")
+		b.WriteString("To message another agent: execute thread.send {to: a name or \"all\", message}, or start a line of your final reply with @name ($name also works). thread.read shows the whole thread, thread.roster who is in it.\n")
 		b.WriteString("Shared task board: task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list; report yours with task.done.\n")
 		b.WriteString("Pass code: sub.patch.capture, then thread.send {capsule}.\n")
 		if !ops {
 			if hasHighlights {
-				b.WriteString("Flag failures, user decisions and risks with highlight.add {key,kind,title}; use one-line titles. summary.update {text} posts short status.\n")
+				b.WriteString("highlight.add {key,kind,title} flags failures, user decisions and risks (one-line titles); summary.update {text} posts status.\n")
 			}
 			// Asked for agents, an agent reaches for its CLI's own subagent
 			// tool unless told: those work, but the user cannot steer them.
@@ -406,7 +438,7 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	} else {
 		b.WriteString("To message another agent, start a line of your final reply with @name or @all ($name also works).\n")
 	}
-	b.WriteString("Keep agent messages short.\n")
+	b.WriteString("Keep agent messages short; skip thanks and acks (they start no turn).\n")
 	fmt.Fprintf(&b, "Write plan files in %s.", brand.PlansDir(t.dir))
 	// Deck's own attribution, whichever CLI does the work (Settings → General).
 	if cfg.DeckAttribution {
@@ -586,6 +618,8 @@ func tail(s string, n int) string {
 	}
 	return "[... earlier activity omitted; execute thread.read shows more ...]\n\n" + string(r[len(r)-n:])
 }
+
+func isWaiting(s store.TaskStatus) bool { return s == store.TaskPending || s == store.TaskReady }
 
 // taskText is a board change as one line of briefing.
 func taskText(t *thread, e store.Entry) string {

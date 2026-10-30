@@ -1870,6 +1870,9 @@ type agentState struct {
 	hit   *agent.LimitHit
 	wait  *waitState
 	nudge string
+	// solo is whether its run started with the short briefing of an agent
+	// alone with the user (instructions), which names no other agent.
+	solo bool
 	// stirred is closed, and dropped, when the member's status may have
 	// changed (stirLocked); nil while nobody waits for that (waitIdle).
 	stirred chan struct{}

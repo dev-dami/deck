@@ -258,6 +258,21 @@ func (m *Manager) relayTask(t *thread, from *agentState, targets []*agentState, 
 	}
 	e := store.Entry{Type: store.EntryRelay, Speaker: from.id, To: ids(live), Via: via, TaskID: taskID, Event: eventText(text)}
 
+	// "Thanks!" "You're welcome!" is how two agents loop: a message that only
+	// acknowledges is logged, for the recipients' next briefing, but starts
+	// no turn and spends no hop.
+	if taskID == "" && isAck(text) {
+		idx := m.appendLocked(t, e)
+		t.inert[idx] = true
+		t.mu.Unlock()
+		m.emitAll(msgFor(t.id, e))
+		var names []string
+		for _, tg := range live {
+			names = append(names, tg.getName())
+		}
+		return "noted for " + strings.Join(names, ", ") + ": an acknowledgement starts no turn, so there is nothing to wait for"
+	}
+
 	if t.hops >= m.maxHops {
 		e.Held = true
 		idx := m.appendLocked(t, e)
