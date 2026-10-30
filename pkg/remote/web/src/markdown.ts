@@ -19,7 +19,10 @@ export type Block =
   | { k: "code"; lang: string; text: string }
   | { k: "list"; ordered: boolean; items: ListItem[] }
   | { k: "quote"; blocks: Block[] }
+  | { k: "table"; align: Align[]; head: Inline[][]; rows: Inline[][][] }
   | { k: "hr" };
+
+export type Align = "" | "left" | "center" | "right";
 
 // Only absolute http(s) links are clickable; javascript:, data: and friends
 // stay inert text (§6).
@@ -96,6 +99,51 @@ const HEADING_RE = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 const HR_RE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 const ITEM_RE = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
 const QUOTE_RE = /^\s{0,3}>\s?(.*)$/;
+// A GFM table's delimiter row: | --- | :-: | --: |, outer pipes optional.
+const DELIM_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+
+// splitRow splits a table row into its cells: an escaped \| and a pipe
+// inside `code` stay in the cell; outer pipes are optional.
+export function splitRow(line: string): string[] {
+  const cells: string[] = [];
+  let cur = "";
+  let code = false;
+  const t = line.trim();
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (ch === "\\" && t[i + 1] === "|") {
+      cur += "|";
+      i++;
+    } else if (ch === "`") {
+      code = !code;
+      cur += ch;
+    } else if (ch === "|" && !code) {
+      cells.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  cells.push(cur);
+  if (t.startsWith("|")) cells.shift();
+  if (t.endsWith("|") && !t.endsWith("\\|") && cells.length > 0) cells.pop();
+  return cells.map((c) => c.trim());
+}
+
+// tableAt reports whether a table starts at lines[i]: a row with a pipe,
+// then a delimiter row with as many cells.
+function tableAt(lines: string[], i: number): boolean {
+  const head = lines[i] ?? "";
+  const delim = lines[i + 1] ?? "";
+  if (!head.includes("|") || !delim.includes("-") || !DELIM_RE.test(delim)) return false;
+  return splitRow(head).length === splitRow(delim).length;
+}
+
+function alignOf(cell: string): Align {
+  const l = cell.startsWith(":");
+  const r = cell.endsWith(":");
+  return l && r ? "center" : r ? "right" : l ? "left" : "";
+}
 
 export function parseBlocks(src: string): Block[] {
   const lines = src.replace(/\r\n?/g, "\n").split("\n");
@@ -130,6 +178,20 @@ export function parseBlocks(src: string): Block[] {
     if (HR_RE.test(line)) {
       blocks.push({ k: "hr" });
       i++;
+      continue;
+    }
+    if (tableAt(lines, i)) {
+      const head = splitRow(line);
+      const align = splitRow(lines[i + 1] ?? "").map(alignOf);
+      const rows: Inline[][][] = [];
+      i += 2;
+      while (i < lines.length && (lines[i] ?? "").trim() !== "" && (lines[i] ?? "").includes("|")) {
+        const cells = splitRow(lines[i] ?? "");
+        // Short rows are padded and long ones cut, as GFM does.
+        rows.push(head.map((_, j) => parseInline(cells[j] ?? "")));
+        i++;
+      }
+      blocks.push({ k: "table", align, head: head.map((c) => parseInline(c)), rows });
       continue;
     }
     if (QUOTE_RE.test(line)) {
@@ -173,7 +235,8 @@ export function parseBlocks(src: string): Block[] {
         FENCE_RE.test(l) ||
         HEADING_RE.test(l) ||
         QUOTE_RE.test(l) ||
-        ITEM_RE.test(l)
+        ITEM_RE.test(l) ||
+        tableAt(lines, i)
       ) {
         break;
       }

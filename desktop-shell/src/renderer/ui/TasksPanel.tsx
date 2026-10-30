@@ -43,6 +43,7 @@ import { DiffView } from "./DiffView";
 import { ScheduledList } from "./Limits";
 import { RaceBuilder } from "./RaceBuilder";
 import { Button } from "./kit/button";
+import { CARD } from "./kit/card";
 import { EmptyState } from "./kit/empty";
 import { Dialog, fieldClass } from "./kit/dialog";
 import { TaskMark } from "./graph/Nodes";
@@ -69,8 +70,6 @@ function Status({ status }: { status: string }) {
   );
 }
 
-// The cards of the tab: one plane, a hairline ring, no shadow.
-const CARD = "rounded-xl bg-surface-1 ring-1 ring-hairline";
 
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (

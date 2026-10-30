@@ -439,11 +439,11 @@ test("orchestration: the composer's level picker, and the level Settings gives n
   await expect(dock.getByRole("button", { name: "Orchestration: Full" })).toBeVisible();
   await expect(menu).toHaveCount(0);
 
-  // Settings › Agents: the level new threads start at, Auto until changed.
+  // Settings › Agents: the level new threads start at, Off until changed.
   await sidebar(page).getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Agents" }).click();
   const levels = page.getByRole("radiogroup", { name: "Orchestration for new threads" });
-  await expect(levels.getByRole("radio", { name: "Auto" })).toHaveAttribute("aria-checked", "true");
+  await expect(levels.getByRole("radio", { name: "Off" })).toHaveAttribute("aria-checked", "true");
   await levels.getByRole("radio", { name: "Assist" }).click();
   await expect(levels.getByRole("radio", { name: "Assist" })).toHaveAttribute("aria-checked", "true");
   await expect(page.locator(".settings")).toContainText("a couple of helpers");

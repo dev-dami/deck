@@ -43,7 +43,7 @@ export function ApprovalCard({
     <div
       role="group"
       aria-label={kindLabel(a)}
-      className={cn("approval flex flex-col gap-2.5 rounded-2xl bg-surface-1 px-3.5 pt-3 pb-2.5 ring-1 ring-hairline", className)}
+      className={cn("approval card flex flex-col gap-2.5 rounded-2xl bg-surface-1 px-3.5 pt-3 pb-2.5 ring-1 ring-hairline", className)}
       data-approval={a.id}
     >
       <span className="approval-head flex w-full min-w-0 items-baseline gap-2 text-xs">

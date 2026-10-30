@@ -109,7 +109,7 @@ export function AgentsTree({ crew, at, theme, roster = [] }: { crew: Crew | null
       ) : crew.agents.length === 0 ? (
         <EmptyState icon={Network} title="No agents yet." hint="Send a message to start one." />
       ) : (
-        <ul className="crew divide-y divide-hairline overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline">
+        <ul className="crew card divide-y divide-hairline overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline">
           {crew.agents.map((a) => (
             <AgentRow key={a.name} a={a} running={running(a.name)} theme={theme} now={at} role={agentRole(a.name, roster, [a])} />
           ))}

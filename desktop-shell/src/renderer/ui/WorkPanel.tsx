@@ -43,6 +43,7 @@ import {
 } from "./icons";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
+import { CARD } from "./kit/card";
 import { Confirm, Dialog, fieldClass } from "./kit/dialog";
 import { EmptyState } from "./kit/empty";
 
@@ -54,7 +55,6 @@ import { EmptyState } from "./kit/empty";
 // A capsule opens to its versions, commits, tests, review and its files a
 // page at a time, each file's diff loaded when it opens.
 
-const CARD = "rounded-xl bg-surface-1 ring-1 ring-hairline";
 
 const TREE_TONE: Record<TreeState, "muted" | "warning" | "success" | "error" | "outline"> = {
   gone: "error",

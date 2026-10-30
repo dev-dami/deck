@@ -348,7 +348,7 @@ export function RoomHeader({
               />
             ) : (
               <h1
-                className="title min-w-0 truncate text-balance font-semibold text-foreground tracking-tight"
+                className="title min-w-0 truncate font-semibold text-foreground tracking-tight"
                 title={open === undefined ? undefined : "Double-click to rename"}
                 onDoubleClick={() => open !== undefined && setRenaming(true)}
               >

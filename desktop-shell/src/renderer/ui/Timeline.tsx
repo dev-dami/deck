@@ -57,6 +57,8 @@ import {
   toolName,
 } from "../actions";
 import { agentColour, agentKind, agentRole, agentTint } from "../agents";
+import { foldsBody, type Handoff, type HandoffState, handoffOf } from "../handoff";
+import { CARD } from "./kit/card";
 import type { RoomNotice } from "../attention";
 import type { AgentNode } from "../crew";
 import { askOf, type FileAsk } from "../fileWork";
@@ -625,8 +627,10 @@ function AgentTurn({
     if (planChunk === undefined) return null;
     return detectPlan(planChunk.text, { mode }) ?? (wasApproved(planMid) ? findPlan(planChunk.text) : null);
   }, [planChunk, mode, planMid]);
-  const text = (c: TextChunk, key: number): ReactNode =>
-    plan !== null && c === planChunk ? (
+  const text = (c: TextChunk, key: number): ReactNode => {
+    const h = handoffOf(c.text);
+    if (h !== null) return <HandoffCard key={key} from={agent} h={h} roster={roster} theme={theme} />;
+    return plan !== null && c === planChunk ? (
       <div key={key} className="flex flex-col gap-3">
         {plan.before !== "" && <Markdown text={plan.before} />}
         <PlanCard id={planMid} plan={plan} agent={agent} colour={colour} index={`${mark} ${shortId(m.session_id)}`} actions={last ? actions : null} />
@@ -635,6 +639,7 @@ function AgentTurn({
     ) : (
       <Markdown key={key} text={c.text} />
     );
+  };
   // Narration inside the fold reads quieter than the answer.
   const muted = (c: TextChunk, key: number): ReactNode => (
     <div key={key} className="py-1 text-muted-foreground [&_.md]:text-sm">
@@ -926,7 +931,7 @@ export function ChangedFilesCard({ files, onOpen }: { files: ChangedFile[]; onOp
   return (
     // One of the two boxed things in the timeline (with a tool's output): a
     // fill and a hairline, nothing more.
-    <div className="changed-files animate-enter overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline" data-changed-files="">
+    <div className="changed-files card animate-enter overflow-hidden rounded-xl bg-surface-1 ring-1 ring-hairline" data-changed-files="">
       <div className="flex h-10 items-center gap-3 pr-1.5 pl-3">
         <button
           type="button"
@@ -965,6 +970,61 @@ export function ChangedFilesCard({ files, onOpen }: { files: ChangedFile[]; onOp
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+const HANDOFF_STATE: Record<HandoffState, { label: string; tone: string }> = {
+  done: { label: "done", tone: "text-success-foreground" },
+  failed: { label: "failed", tone: "text-destructive-foreground" },
+  blocked: { label: "blocked", tone: "text-warning-foreground" },
+};
+
+// One agent's message to others, or a task's report to whoever handed it
+// over, as a card under the sender: who it went to, the task and how it
+// ended, and the words, folded when long. It is a card (kit/card.tsx), so
+// no path or command in it runs out of it.
+export function HandoffCard({ from, h, roster, theme }: { from: string; h: Handoff; roster: AgentLine[]; theme: Theme | null }) {
+  const prefs = usePrefs();
+  const [all, setAll] = useState(false);
+  const body = h.task === null ? h.body : h.task.result;
+  const folds = foldsBody(body);
+  const state = h.task === null ? null : HANDOFF_STATE[h.task.state];
+  return (
+    <div className={cn(CARD, "handoff flex flex-col gap-1.5 px-3 py-2.5")} data-handoff={h.task?.state ?? "message"} aria-label={`${from} to ${h.to.join(", ")}`}>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
+        <span className="shrink-0 text-faint">{h.task === null ? "to" : "report to"}</span>
+        {h.to.map((name) => {
+          const kind = agentKind(name, roster);
+          return (
+            <span key={name} className="inline-flex min-w-0 max-w-full items-baseline gap-1 font-medium" style={{ color: agentColour(name, kind, tintOf(agentTint(name, roster), prefs.team)) }}>
+              <span aria-hidden className="shrink-0">
+                {kindMark(theme, kind) || "●"}
+              </span>
+              <span className="truncate">{name}</span>
+            </span>
+          );
+        })}
+        {h.task !== null && state !== null && (
+          <span className="ml-auto inline-flex min-w-0 items-baseline gap-1.5">
+            <span className="shrink-0 font-mono text-2xs text-faint">{h.task.id}</span>
+            <span className="min-w-0 truncate text-foreground" title={h.task.title}>
+              {h.task.title}
+            </span>
+            <span className={cn("shrink-0 font-medium", state.tone)}>{state.label}</span>
+          </span>
+        )}
+      </div>
+      {body !== "" && (
+        <div className={cn("text-muted-foreground text-sm [&_.md]:text-sm", folds && !all && "line-clamp-6")}>
+          <Markdown text={body} />
+        </div>
+      )}
+      {folds && (
+        <button type="button" className="self-start cursor-pointer rounded-md text-faint text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" aria-expanded={all} onClick={() => setAll((v) => !v)}>
+          {all ? "Show less" : "Show all"}
+        </button>
       )}
     </div>
   );

@@ -83,6 +83,34 @@ function renderBlock(b: Block, i: number): ReactNode {
     }
     case "quote":
       return <blockquote key={i}>{b.blocks.map(renderBlock)}</blockquote>;
+    case "table":
+      // A table scrolls in its own box (.md-table), never the timeline.
+      return (
+        <div key={i} className="md-table">
+          <table>
+            <thead>
+              <tr>
+                {b.head.map((c, j) => (
+                  <th key={j} data-align={b.align[j] || undefined}>
+                    {c.map(renderInline)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {b.rows.map((r, j) => (
+                <tr key={j}>
+                  {r.map((c, k) => (
+                    <td key={k} data-align={b.align[k] || undefined}>
+                      {c.map(renderInline)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
     case "hr":
       return <hr key={i} />;
   }

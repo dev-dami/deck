@@ -58,7 +58,7 @@ export function PlanCard({
 
   return (
     <section
-      className="plan-card flex flex-col gap-3 border-hairline-strong border-y py-3.5"
+      className="plan-card card flex flex-col gap-3 border-hairline-strong border-y py-3.5"
       aria-label={plan.heading ?? "Plan"}
       data-plan={id}
       style={{ "--hue": colour } as CSSProperties}
