@@ -382,7 +382,7 @@ func (m *Manager) Continue(threadID string) error {
 		return nil
 	}
 	t.paused = false
-	t.hops, t.work = 0, 0
+	t.hops, t.work, t.turns = 0, 0, 0
 	var targets []*agentState
 	for _, idx := range t.heldIdx {
 		delete(t.inert, idx)
@@ -410,6 +410,11 @@ func (m *Manager) Continue(threadID string) error {
 		if _, err := m.deliver(t, a); err != nil && first == nil {
 			first = err
 		}
+	}
+	// And the turns the pause held back that were no relay: reports,
+	// briefs, reviews.
+	if err := m.wakeAll(t); err != nil && first == nil {
+		first = err
 	}
 	return first
 }

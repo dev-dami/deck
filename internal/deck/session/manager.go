@@ -958,7 +958,7 @@ func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentStat
 	t.mu.Lock()
 	wasPaused := t.paused && local
 	if local {
-		t.paused, t.hops, t.heldIdx, t.work = false, 0, nil, 0
+		t.paused, t.hops, t.heldIdx, t.work, t.turns = false, 0, nil, 0, 0
 		t.lastRelay = map[string]string{}
 	}
 	if t.title == "" {
@@ -987,6 +987,9 @@ func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentStat
 		if _, err := m.deliver(t, a); err != nil && first == nil {
 			first = err
 		}
+	}
+	if wasPaused {
+		_ = m.wakeAll(t) // the reports and briefs the pause held back
 	}
 	return PostResult{EntryID: e.ID, Queued: t.queuedFor(e.ID)}, first
 }
@@ -1079,6 +1082,18 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 			m.emitQueue(t)
 		}
 		return dQueued, nil
+	}
+	// A turn the user did not start counts against the thread's turn
+	// budget; paused, or at the limit, it waits for the user (brakes.go).
+	if needTrigger && !t.userTriggered(a) {
+		if pe, ok := m.chargeTurnLocked(t); !ok {
+			t.mu.Unlock()
+			a.restore(prev)
+			if pe != nil {
+				m.emitAll(msgFor(t.id, *pe))
+			}
+			return dNone, nil
+		}
 	}
 	prompt, images, cursor, hold := m.buildPrompt(t, a)
 	user := a.promptUser

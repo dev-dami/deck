@@ -56,7 +56,11 @@ type thread struct {
 	// work counts the subagents members started and the tasks the scheduler
 	// handed out since the user's last message (brakes.go); sends the times of
 	// each member's recent thread.send calls.
-	work  int
+	work int
+	// turns counts the turns started since the user's last message by
+	// anything but the user: relays, hand-offs, briefs, reports, reviews
+	// (brakes.go, chargeTurnLocked).
+	turns int
 	sends map[string][]time.Time
 	// leases are the members' claims on files of the shared tree; edits the
 	// last change to each of its files (by pathKey), and warned when an

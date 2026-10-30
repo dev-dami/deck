@@ -14,7 +14,7 @@ func TestLevelsGrow(t *testing.T) {
 	var prev Level
 	for i, name := range LevelNames {
 		l := Levels[name]
-		if i > 0 && (l.MaxDepth < prev.MaxDepth || l.MaxSubagents < prev.MaxSubagents || l.MaxWork < prev.MaxWork) {
+		if i > 0 && (l.MaxDepth < prev.MaxDepth || l.MaxSubagents < prev.MaxSubagents || l.MaxWork < prev.MaxWork || l.MaxTurns < prev.MaxTurns || l.MaxTurns == 0) {
 			t.Errorf("%s shrinks a limit: %+v after %+v", name, l, prev)
 		}
 		prev = l

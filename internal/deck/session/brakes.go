@@ -22,6 +22,13 @@ import (
 //     Budget wins field by field): tokens and reported cost, by its owner and
 //     the owner's subagents, and minutes since it started. Over budget, the
 //     task is blocked and its owner and their subagents interrupted.
+//   - Turns. Every turn that starts without the user (a relay, a hand-off,
+//     a task's brief or report, a review, a retry) counts against the
+//     level's MaxTurns; at the limit the thread pauses, and while it is
+//     paused no such turn starts. The user's next message or Continue
+//     resets the count and wakes whoever waits. This is the one ledger the
+//     hop and work brakes cannot be: a report-back or a brief is neither a
+//     relay nor new work, but each starts a turn.
 //   - Loop guards. One agent may thread.send at most maxSendsPerMinute times
 //     a minute, and a member with maxWaiting agent messages it has not read
 //     takes no more.
@@ -57,6 +64,50 @@ func (m *Manager) takeWork(t *thread) bool {
 	t.work++
 	t.mu.Unlock()
 	return true
+}
+
+// userTriggered reports whether a message from the user (or a teammate)
+// waits for a: its turn is theirs, not one the agents started. t.mu is held.
+func (t *thread) userTriggered(a *agentState) bool {
+	for _, h := range t.index.since(a.cursor) {
+		if (h.typ == store.EntryUser || h.typ == store.EntryEdit) && !t.inert[h.i] && t.skip[skipKey{h.i, a.id}] == 0 && contains(h.to, a.id) {
+			return true
+		}
+	}
+	return false
+}
+
+// chargeTurnLocked counts one turn started without the user. It reports
+// false while the thread is paused, and when the turn would pass the
+// level's MaxTurns, which pauses it; pe is the pause to announce then.
+// t.mu is held.
+func (m *Manager) chargeTurnLocked(t *thread) (pe *store.Entry, ok bool) {
+	if t.paused {
+		return nil, false
+	}
+	if limit := m.levelLocked(t).MaxTurns; limit > 0 && t.turns >= limit {
+		t.paused = true
+		e := store.Entry{Type: store.EntryPause, Event: eventText(fmt.Sprintf("%d turns the agents started without you", t.turns))}
+		m.appendLocked(t, e)
+		return &e, false
+	}
+	t.turns++
+	return nil, true
+}
+
+// wakeAll starts a turn for every live member with messages waiting: after
+// a pause ends, the turns it held back go ahead.
+func (m *Manager) wakeAll(t *thread) error {
+	t.mu.Lock()
+	live := t.live()
+	t.mu.Unlock()
+	var first error
+	for _, a := range live {
+		if _, err := m.deliver(t, a); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
 }
 
 // ---- budgets ----

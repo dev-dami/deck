@@ -204,7 +204,9 @@ The Tasks pane in the sidebar is the thread's shared task board. Each thread has
 | `auto` | plan on the board, split work, hand off and review each other | 4 / 12 / 2 | ready tasks run by themselves |
 | `full` | all of auto, deeper and wider, race (`task.race`); helpers' work is reviewed by another kind | 6 / 20 / 3 | ready tasks run by themselves |
 
-Ready tasks run at most `max_parallel` at once, each with a new subagent of the kind, model and effort the task names. Agents' instructions say what their level lets them do, and a change of level reaches them with their next prompt. `orchestration_levels` in the config changes any of these per level (`{"full": {"max_depth": 4, "race": false}}`; the keys are `max_depth`, `max_children`, `max_subagents`, `max_work`, `ask_first`, `schedule`, `race` and `review`).
+Every turn the agents start without you (a hand-off, a task's brief or report, a review, a retry) counts against the level's turn budget: 12 at `off`, 16 at `assist`, 48 at `auto`, 96 at `full`. At the limit the thread pauses, and your next message or Continue lets the held turns go.
+
+Ready tasks run at most `max_parallel` at once, each with a new subagent of the kind, model and effort the task names. Agents' instructions say what their level lets them do, and a change of level reaches them with their next prompt. `orchestration_levels` in the config changes any of these per level (`{"full": {"max_depth": 4, "race": false}}`; the keys are `max_depth`, `max_children`, `max_subagents`, `max_work`, `max_turns`, `ask_first`, `schedule`, `race` and `review`).
 
 Ask an agent to split the work ("spin up two codex agents for the tests") and it does so itself with `agent.spawn {brief, kind}`: `kind` is an agent kind or a named agent. Each helper joins the thread as a lane marked with who spawned it, runs in the thread's permission mode, and reports its result back to its spawner.
 
