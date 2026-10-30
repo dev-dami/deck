@@ -957,6 +957,8 @@ func Fixtures() []Fixture {
 		{"res_push.unsubscribe", Empty{}},
 		{"req_push.test", Empty{}},
 		{"res_push.test", Empty{}},
+		{"req_media.upload", MediaUploadParams{}},
+		{"res_media.upload", MediaUploadResult{}},
 
 		// Pairing HTTP bodies.
 		{"http_health", Health{}},

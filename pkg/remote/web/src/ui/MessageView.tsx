@@ -59,12 +59,16 @@ function ChunkView({ chunk, user }: { chunk: Chunk; user: boolean }) {
     case "tool":
       return <ToolCard call={chunk.call} result={chunk.result} />;
     case "image":
-      // v1 has no way to fetch an image's bytes back (§3.7): show its name.
+      // v1 has no way to fetch an image's bytes back (§3.7): show the
+      // label the person gave it, then its name.
       return (
-        <p class="image-chip">
-          <span aria-hidden="true">&#9635; </span>
-          {chunk.name}
-          {chunk.mime !== "" ? <span class="muted"> ({chunk.mime})</span> : null}
+        <p class="image-chip" data-kind={chunk.mime.startsWith("video/") ? "video" : "image"}>
+          <span aria-hidden="true">{chunk.mime.startsWith("video/") ? "\u25B6 " : "\u25A3 "}</span>
+          {chunk.label !== undefined ? <span class="image-label">{chunk.label} </span> : null}
+          <span class={chunk.label !== undefined ? "muted" : ""}>{chunk.name}</span>
+          {chunk.mime !== "" && chunk.label === undefined ? (
+            <span class="muted"> ({chunk.mime})</span>
+          ) : null}
         </p>
       );
   }

@@ -78,7 +78,7 @@ function mapPart(p: Obj): unknown {
   };
   if (p["is_error"] === true) out["is_error"] = true;
   const img = p["image"];
-  if (isRecord(img)) out["image"] = { name: s(img["name"]) || "image", mime: s(img["mime"]) };
+  if (isRecord(img)) out["image"] = { name: s(img["name"]) || "image", mime: s(img["mime"]), ...strings(img, ["label"]) };
   return out;
 }
 
@@ -140,6 +140,7 @@ function mapModel(p: Obj): unknown {
   const out: Obj = { id: s(p["id"]), label: s(p["label"]) || s(p["id"]) };
   if (Array.isArray(p["efforts"]) && p["efforts"].length > 0) out["efforts"] = p["efforts"];
   if (p["selected"] === true) out["selected"] = true;
+  if (p["video"] === true) out["video"] = true;
   return out;
 }
 
@@ -370,7 +371,7 @@ const stringList = (v: unknown): string[] | null =>
 export function toRoom(v: unknown): RoomUpdate | null {
   if (!isRecord(v) || s(v["id"]) === "") return null;
   const l = v["lead"];
-  const lead = isRecord(l) && s(l["kind"]) !== "" ? { agent: s(l["agent"]), kind: s(l["kind"]), model: s(l["model"]), slug: s(l["slug"]), effort: s(l["effort"]), profile: s(l["profile"]) } : null;
+  const lead = isRecord(l) && s(l["kind"]) !== "" ? { agent: s(l["agent"]), kind: s(l["kind"]), model: s(l["model"]), slug: s(l["slug"]), effort: s(l["effort"]), profile: s(l["profile"]), video: l["video"] === true } : null;
   return { k: "session", id: s(v["id"]), attention: attentionOf(v["attention"]), branch: s(v["branch"]), archived: v["archived"] === true, parent: s(v["parent_id"]), lead };
 }
 

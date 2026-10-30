@@ -1,6 +1,7 @@
 import type { Store } from "@web/controller";
 import type { BrowserActionResponse, BrowserCommand, HighlightActionRequest } from "../shared/bridge";
-import type { ChangedFile, Decision, Image, Mode, ModelChoice, QuestionAnswer, RaceEntrant, Session } from "@web/protocol";
+import type { Outgoing } from "@web/images";
+import type { ChangedFile, Decision, Mode, ModelChoice, QuestionAnswer, RaceEntrant, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import type { Profile, ProfileScope } from "./profiles";
 import type { ProjectApi } from "./project";
@@ -27,7 +28,8 @@ export interface DeckClient {
   createSession(title?: string, isolate?: boolean, level?: Level): Promise<Session | null>;
   renameSession(id: string, title: string): Promise<void>;
   deleteSession(id: string): Promise<boolean>;
-  send(sessionId: string, text: string, images: Image[]): Promise<boolean>;
+  // A video among images is uploaded (or, to a local Deck, sent by path).
+  send(sessionId: string, text: string, images: Outgoing[]): Promise<boolean>;
   // Replaces the person's message and runs the thread again from it.
   editMessage(sessionId: string, messageId: string, text: string): Promise<boolean>;
   // Asks the agents to go on from where they stopped.

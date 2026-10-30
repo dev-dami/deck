@@ -8,6 +8,7 @@ import {
   pair,
   saveToken,
 } from "./auth";
+import { blobBase64, isVideo, type Outgoing, UPLOAD_CHUNK_BYTES } from "./images";
 import {
   type ChangedFile,
   type Decision,
@@ -438,11 +439,22 @@ export class Controller {
 
   // ---- chat ---------------------------------------------------------------
 
-  async send(sessionId: string, text: string, images: Image[]): Promise<boolean> {
-    const req =
-      images.length > 0 ? { session_id: sessionId, text, images } : { session_id: sessionId, text };
+  // A video goes first, in chunks (media.upload); the message then names
+  // each upload. A failed upload sends nothing, and the draft stays.
+  async send(sessionId: string, text: string, images: Outgoing[]): Promise<boolean> {
     try {
       if (this.rpc === null) throw new RpcError("offline", "not connected");
+      const wire: Image[] = [];
+      for (const im of images) {
+        const { file, path: _path, ...rest } = im;
+        if (file !== undefined && isVideo(im.mime)) {
+          wire.push({ ...rest, upload_id: await this.upload(sessionId, im.name, im.mime, file) });
+        } else wire.push(rest);
+      }
+      const req =
+        wire.length > 0
+          ? { session_id: sessionId, text, images: wire }
+          : { session_id: sessionId, text };
       await this.rpc.sendChat(req);
       return true;
     } catch (e) {
@@ -454,6 +466,21 @@ export class Controller {
       this.store.dispatch({ type: "toast.add", kind: "error", text });
       return false;
     }
+  }
+
+  // Uploads a video in chunks and returns the upload's id.
+  private async upload(sessionId: string, name: string, mime: string, file: Blob): Promise<string> {
+    let id = "";
+    for (let at = 0; at < file.size; at += UPLOAD_CHUNK_BYTES) {
+      const data_b64 = await blobBase64(file.slice(at, at + UPLOAD_CHUNK_BYTES));
+      const params =
+        id === ""
+          ? { session_id: sessionId, name, mime, size: file.size, offset: 0, data_b64 }
+          : { session_id: sessionId, upload_id: id, offset: at, data_b64 };
+      id = (await this.call("media.upload", params)).upload_id;
+    }
+    if (id === "") throw new Error(`${name} is empty`);
+    return id;
   }
 
   // The server answers by publishing message.updated, which the reducer applies.

@@ -13,6 +13,7 @@ import {
   Eye,
   FilePen,
   FileText,
+  FilmStrip,
   Flag,
   Globe,
   ImageIcon,
@@ -267,7 +268,9 @@ function chunksOf(m: Message): Chunk[] {
 }
 
 // An image part as a thumbnail that opens larger, or as chip until (or
-// unless) its bytes arrive. Its blob: URL lives as long as it shows.
+// unless) its bytes arrive; a video is always a chip (Deck keeps its file,
+// not its bytes in the message). The label the person gave it shows
+// under it. Its blob: URL lives as long as it shows.
 function ImagePart({ c, chip }: { c: ImageChunk; chip: ReactElement }) {
   const read = useContext(Images);
   const ref = imageRefs.get(c);
@@ -275,8 +278,9 @@ function ImagePart({ c, chip }: { c: ImageChunk; chip: ReactElement }) {
   const index = ref?.index;
   const [url, setUrl] = useState<string | null>(null);
   const [big, setBig] = useState(false);
+  const video = c.mime.startsWith("video/");
   useEffect(() => {
-    if (read === null || mid === undefined || index === undefined) return;
+    if (read === null || mid === undefined || index === undefined || video) return;
     let live = true;
     let made: string | null = null;
     void read(mid, index).then((img) => {
@@ -288,22 +292,25 @@ function ImagePart({ c, chip }: { c: ImageChunk; chip: ReactElement }) {
       live = false;
       if (made !== null) URL.revokeObjectURL(made);
     };
-  }, [read, mid, index]);
+  }, [read, mid, index, video]);
   if (url === null) return chip;
   return (
     <>
-      <button
-        type="button"
-        className="image-part w-fit cursor-zoom-in rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label={`Open ${c.name}`}
-        title={c.name}
-        onClick={() => setBig(true)}
-      >
-        <img src={url} alt={c.name} className="block max-h-60 max-w-[240px] rounded-[14px] ring-1 ring-hairline" />
-      </button>
+      <figure className="image-figure flex w-fit flex-col gap-1">
+        <button
+          type="button"
+          className="image-part w-fit cursor-zoom-in rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`Open ${c.name}`}
+          title={c.name}
+          onClick={() => setBig(true)}
+        >
+          <img src={url} alt={c.label ?? c.name} className="block max-h-60 max-w-[240px] rounded-[14px] ring-1 ring-hairline" />
+        </button>
+        {c.label !== undefined && <figcaption className="image-label max-w-[240px] truncate px-1 text-muted-foreground text-xs">{c.label}</figcaption>}
+      </figure>
       {big &&
         createPortal(
-          <Dialog title={c.name} onClose={() => setBig(false)} className="image-lightbox w-auto max-w-[min(90vw,1200px)]">
+          <Dialog title={c.label ?? c.name} onClose={() => setBig(false)} className="image-lightbox w-auto max-w-[min(90vw,1200px)]">
             <img src={url} alt={c.name} className="mb-3 max-h-[70vh] max-w-full rounded-[12px] ring-1 ring-hairline object-contain" />
           </Dialog>,
           document.body,
@@ -320,11 +327,21 @@ function reveal(el: HTMLElement): void {
   if (selected !== "") el.animate([{ backgroundColor: selected }, { backgroundColor: "transparent" }], { duration: 1200, easing: "ease-out" });
 }
 
-function ImageChip({ name }: { name: string }) {
+// An image (or a video) part without its bytes: its name, and the label
+// the person gave it.
+function ImageChip({ c }: { c: ImageChunk }) {
+  const video = c.mime.startsWith("video/");
   return (
-    <span className="chip inline-flex w-fit items-center gap-1.5 text-muted-foreground text-xs">
-      <ImageIcon className="size-3.5 text-faint" />
-      {name}
+    <span className="chip inline-flex w-fit items-center gap-1.5 text-muted-foreground text-xs" data-kind={video ? "video" : "image"}>
+      {video ? <FilmStrip className="size-3.5 text-faint" /> : <ImageIcon className="size-3.5 text-faint" />}
+      {c.label !== undefined && c.label !== c.name ? (
+        <>
+          <span className="image-label text-foreground">{c.label}</span>
+          <span className="text-faint">{c.name}</span>
+        </>
+      ) : (
+        c.name
+      )}
     </span>
   );
 }
@@ -340,7 +357,7 @@ function Prose({ chunks, text }: { chunks: Chunk[]; text?: (c: TextChunk, key: n
             <Markdown key={i} text={c.text} />
           )
         ) : c.k === "image" ? (
-          <ImagePart key={i} c={c} chip={<ImageChip name={c.name} />} />
+          <ImagePart key={i} c={c} chip={<ImageChip c={c} />} />
         ) : (
           <WorkRow key={i} c={c} running={false} />
         ),
@@ -432,7 +449,7 @@ function UserMessage({ m, actions }: { m: Message; actions: RoomActions | null }
                 {c.text}
               </p>
             ) : c.k === "image" ? (
-              <ImagePart key={i} c={c} chip={<ImageChip name={c.name} />} />
+              <ImagePart key={i} c={c} chip={<ImageChip c={c} />} />
             ) : null,
           )}
         </div>

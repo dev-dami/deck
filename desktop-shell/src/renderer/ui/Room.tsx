@@ -1,4 +1,5 @@
 import { applyAgentChip } from "@web/composer";
+import { MAX_VIDEO_BYTES_LOCAL, MAX_VIDEO_BYTES_REMOTE, videoGate } from "@web/images";
 import type { Session } from "@web/protocol";
 import { sessionMode, sessionTitle } from "@web/state";
 import { Ellipsis, FileDiff, Flag, Folder, Hourglass, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "./icons";
@@ -334,7 +335,11 @@ export function Room({
           },
         };
   const lanes = buildLanes({ roster, agents: crew?.agents ?? null, shares: r.shares, waiting: pending.map((a) => a.agent), leases: meta.leases });
-  const common = { draft, setDraft, images: imagesOn, onSlash: send.runSlash, onError: toast, inputRef, sendKey: prefs.sendKey, theme: state.theme };
+  // A video reaches the lead only when its model takes one; a paired Deck
+  // takes smaller ones, uploaded in chunks.
+  const video = videoGate(state.server?.features ?? [], meta.lead ?? open?.lead);
+  const videoMax = c.capabilities === undefined ? MAX_VIDEO_BYTES_REMOTE : MAX_VIDEO_BYTES_LOCAL;
+  const common = { draft, setDraft, images: imagesOn, video, videoMax, onSlash: send.runSlash, onError: toast, inputRef, sendKey: prefs.sendKey, theme: state.theme };
   // The room's lead: the agent the person talks to (LeadPicker). The room's
   // own, else its first agent that is no subagent; on the new-thread screen
   // the one picked for it, else the default kind.

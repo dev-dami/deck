@@ -595,6 +595,9 @@ export interface DeckBridge extends DeckHost {
   // The path of a dropped folder. The window passes only folders, and main
   // checks that the path is one before it opens it.
   folderPath(file: File): string;
+  // The path of a file the person attached: a video goes to a Deck on this
+  // machine by its path, which the engine checks and copies.
+  filePath(file: File): string;
 }
 
 export const HOST_METHODS = [
