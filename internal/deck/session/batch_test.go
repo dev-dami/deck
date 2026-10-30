@@ -129,7 +129,7 @@ func TestSubThreadReportsComeBackTogether(t *testing.T) {
 	if err := r.m.Post(tid, "docs and tests, in sub-threads"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "the lead hears back", func() bool { return r.c.turnDones("claude") == 2 })
+	waitFor(t, "the lead hears back", func() bool { return r.c.turnDones("claude") >= 2 })
 	time.Sleep(60 * time.Millisecond)
 	ps := r.claude.prompts("claude")
 	if len(ps) != 2 {

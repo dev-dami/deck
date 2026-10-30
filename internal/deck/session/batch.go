@@ -3,6 +3,7 @@ package session
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/dev-dami/deck/internal/deck/store"
 )
@@ -21,6 +22,12 @@ import (
 // own either: it may still be handing work out, and the end of its turn looks
 // again (afterTurn). Releasing makes the held relays live and delivers them
 // as one prompt; with several, a line ahead of them lists what came back.
+
+// batchMu serialises the decisions to hold or release reports, with what
+// they read of other threads: two sub-threads that report at once, each on
+// its own relay worker, must not both see the other still working and both
+// hold. It is taken before any thread's mu, and never held while delivering.
+var batchMu sync.Mutex
 
 // heldReport is a report relay that has not woken its member yet: its log
 // index and how the batch line names it (`t2 "lint" done`).
@@ -176,6 +183,8 @@ func reportLine(tk store.Task) string {
 // (afterTurn) then delivers them. It runs before the turn is settled, so a
 // task that waits on those results (waitsOnChildren) sees them.
 func (m *Manager) releaseHeld(t *thread, a *agentState) {
+	batchMu.Lock()
+	defer batchMu.Unlock()
 	subs := m.busySubThreads(t.id, a.id)
 	t.mu.Lock()
 	t.releaseHeldLocked(a, subs)
@@ -202,10 +211,12 @@ func (m *Manager) flushReports(t *thread, tk store.Task) {
 // flushMember wakes cr for its held reports when nothing it handed out is in
 // flight and it is not in a turn.
 func (m *Manager) flushMember(t *thread, cr *agentState) {
+	batchMu.Lock()
 	subs := m.busySubThreads(t.id, cr.id)
 	t.mu.Lock()
 	ok := t.releaseHeldLocked(cr, subs)
 	t.mu.Unlock()
+	batchMu.Unlock()
 	if ok {
 		_, _ = m.deliver(t, cr)
 	}

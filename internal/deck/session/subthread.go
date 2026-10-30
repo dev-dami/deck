@@ -222,6 +222,16 @@ func (m *Manager) chargeAsk(parent *thread) error {
 // a is its lead and the turn answered asks of the parent agent, the reply goes
 // to that agent (its thread's lead when it has gone).
 func (m *Manager) reportToParent(t *thread, a *agentState, reply string, answered int) {
+	// From taking the answered asks off to the batch decision (batch.go);
+	// what is to be sent goes out after.
+	batchMu.Lock()
+	var send func()
+	defer func() {
+		batchMu.Unlock()
+		if send != nil {
+			send()
+		}
+	}()
 	t.mu.Lock()
 	if t.parent == "" || t.leadLocked() != a || len(t.asks) == 0 {
 		t.mu.Unlock()
@@ -267,9 +277,11 @@ func (m *Manager) reportToParent(t *thread, a *agentState, reply string, answere
 	// for an agent that has gone is told at once.
 	wake := to.id != agentID || p.holdReportLocked(to, heldReport{idx, fmt.Sprintf("sub-thread %q", clip(title, 60))}, false, "", subs)
 	p.mu.Unlock()
-	m.emit(msgFor(p.id, e))
-	if wake {
-		_, _ = m.deliver(p, to)
+	send = func() {
+		m.emit(msgFor(p.id, e))
+		if wake {
+			_, _ = m.deliver(p, to)
+		}
 	}
 }
 

@@ -67,11 +67,15 @@ func TestThreeIdleTurnsPauseTheThread(t *testing.T) {
 	var p PausedMsg
 	waitFor(t, "the stall", func() bool { var ok bool; p, ok = stalled(r); return ok })
 	has(t, p.Reason, "took 3 turns in a row without changing a file or a task or running a command")
+	// Turns already under way when the stall is judged run out; then no
+	// more start, far short of the 17 scripted.
+	turns := func() int { return len(r.claude.prompts("claude")) + len(r.codex.prompts("codex")) }
 	time.Sleep(60 * time.Millisecond)
-	if n := len(r.claude.prompts("claude")) + len(r.codex.prompts("codex")); n > 6 {
-		t.Fatalf("%d turns ran; the stall should have stopped them by 6", n)
+	before := turns()
+	time.Sleep(60 * time.Millisecond)
+	if n := turns(); n != before || n > 9 {
+		t.Fatalf("%d turns ran (%d a moment before); the stall should have stopped them", n, before)
 	}
-	before := len(r.codex.prompts("codex")) + len(r.claude.prompts("claude"))
 	if err := r.m.Continue(tid); err != nil {
 		t.Fatal(err)
 	}
@@ -171,14 +175,17 @@ func TestFullLevelReplansOnceThenPauses(t *testing.T) {
 	if replans != 1 {
 		t.Fatalf("re-plan notices = %d, want 1", replans)
 	}
-	var asked bool
-	for _, pr := range r.claude.prompts("claude") {
-		if strings.Contains(pr, "[deck → claude] [deck] The work has stalled: ") {
-			asked = true
+	// The request is a message from Deck to the lead. (When the lead is in a
+	// turn as it comes, the second stall can pause the thread before the
+	// lead's next turn reads it; the person's next message then brings it.)
+	var asks int
+	for _, rl := range r.c.relays() {
+		if rl.From == deckSpeaker && rl.Via == viaStall && len(rl.To) == 1 && rl.To[0] == "claude" && strings.Contains(rl.Text, "The work has stalled: ") {
+			asks++
 		}
 	}
-	if !asked {
-		t.Fatalf("the lead was not asked to re-plan:\n%s", strings.Join(r.claude.prompts("claude"), "\n---\n"))
+	if asks != 1 {
+		t.Fatalf("re-plan requests to the lead = %d, want 1", asks)
 	}
 	// The person's message clears the ledger and the re-plan: a later
 	// stall asks the lead again.

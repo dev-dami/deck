@@ -268,11 +268,13 @@ func (m *Manager) notifyCreator(t *thread, tk store.Task, by string) {
 	default:
 		return
 	}
+	batchMu.Lock()                             // the batch decision below (batch.go)
 	subs := m.busySubThreads(t.id, tk.Creator) // before t.mu: it locks the sub-threads
 	t.mu.Lock()
 	cr := t.ancestor(tk.Creator)
 	if cr == nil || cr.id == tk.Owner || t.raceOf(tk) >= 0 { // a race reports once, for all its entries
 		t.mu.Unlock()
+		batchMu.Unlock()
 		return
 	}
 	text := fmt.Sprintf("task %s \"%s\" %s", tk.ID, tk.Title, clipText(what, maxEntryChars))
@@ -285,6 +287,7 @@ func (m *Manager) notifyCreator(t *thread, tk store.Task, by string) {
 	line := reportLine(tk)
 	wake := t.holdReportLocked(cr, heldReport{idx, line}, tk.Status != store.TaskDone, line, subs)
 	t.mu.Unlock()
+	batchMu.Unlock()
 	m.emit(msgFor(t.id, e))
 	if wake {
 		_, _ = m.deliver(t, cr)
