@@ -1,5 +1,6 @@
+import type { Message } from "@web/protocol";
 import { describe, expect, test } from "vitest";
-import { foldsBody, handoffOf } from "./handoff";
+import { firstLine, foldsBody, handoffOf, subTasks } from "./handoff";
 
 describe("handoffOf", () => {
   test("reads the recipients and the message", () => {
@@ -30,5 +31,29 @@ describe("handoffOf", () => {
     expect(foldsBody("short")).toBe(false);
     expect(foldsBody("x".repeat(500))).toBe(true);
     expect(foldsBody("a\nb\nc\nd\ne\nf\ng")).toBe(true);
+  });
+});
+
+describe("subTasks", () => {
+  const AT = "2026-10-30T10:00:00Z";
+  const m = (agent: string, text: string): Message => ({ id: text, session_id: "s", role: "assistant", agent, created_at: AT, updated_at: AT, finished: true, parts: [{ type: "text", text }] });
+
+  test("what each subagent was first asked, as one line", () => {
+    const tasks = subTasks(
+      [
+        m("claude-1", "→ $codex-2\n\n## Review\nCheck the limiter keys by address."),
+        m("claude-1", "→ $codex-2\n\nAnd the docs."),
+        m("claude-1", "→ $codex-1\n\nA peer's task."),
+        m("codex-2", "→ $claude-1\n\nLooks right."),
+      ],
+      (name) => name === "codex-2",
+    );
+    expect([...tasks]).toEqual([["codex-2", "Review"]]);
+  });
+
+  test("firstLine skips blank lines and markdown marks", () => {
+    expect(firstLine("\n\n- **Done**: two files")).toBe("Done: two files");
+    expect(firstLine("**codex-1** on it. You asked: _check `the` flags_. snake_case stays")).toBe("codex-1 on it. You asked: check the flags. snake_case stays");
+    expect(firstLine("")).toBe("");
   });
 });

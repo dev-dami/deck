@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import type { TestHost } from "../bridge";
-import { FakeRpcDeck } from "../fake-grpc";
+import { FakeRpcDeck, subThreadAtWork } from "../fake-grpc";
 import { attachBridge } from "./harness";
 
 // A claude told to "spin up sub agents" starts four reviewers with its CLI's
@@ -123,4 +123,76 @@ test("a claude's own subagents: lanes under it, nodes in the graph, blocks of th
   await strip.locator(`[data-lane="agent:${SUBS[2]}"]`).click();
   await page.getByRole("menu", { name: "review-pr-295" }).getByRole("menuitem", { name: "Started by @claude-1" }).click();
   await expect(strip.locator('[data-lane="agent:claude-1"]')).toHaveAttribute("aria-pressed", "true");
+});
+
+// A thread's lead spawns two codex subagents (agent.spawn): no lanes strip,
+// each a folded card under the lead's reply, the Agents tab keeps the tree.
+test("a lead's spawned subagents fold under its reply, with no lanes strip", async ({ page }) => {
+  fake.crew = { agents: [{ name: "claude-1", kind: "claude", model: "opus", status: "idle", depth: 0 }], running: [] };
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open a folder" }).click();
+  await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Docs pass", exact: true }).click();
+  await expect(page.locator('[data-agent="claude-1"].msg').first()).toBeVisible();
+  const box = page.getByRole("textbox", { name: "Message" });
+  await box.fill("spin up two codex to check every flag in the README");
+  await box.press("Enter");
+
+  const cards = page.locator(".msg-sub[data-spawned]");
+  await expect(cards).toHaveCount(2, { timeout: 15_000 });
+  await expect.poll(() => fake.deck.spawned.map((s) => [s.parent, s.name])).toEqual([
+    ["claude-1", "codex-1"],
+    ["claude-1", "codex-2"],
+  ]);
+  // Subagents are no peers: the room keeps no strip of lanes.
+  await expect(lanes(page)).toHaveCount(0);
+  // The cards follow claude's reply, in its run.
+  const order = await page.locator(".msg-agent, .msg-sub").evaluateAll((els) => els.slice(-3).map((e) => (e as HTMLElement).dataset["agent"]));
+  expect(order).toEqual(["claude-1", "codex-1", "codex-2"]);
+  // Folded: its name, kind, what it was asked or found, how it stands.
+  const first = page.locator('.msg-sub[data-agent="codex-1"]');
+  await expect(first).toHaveAttribute("data-parent", "claude-1");
+  await expect(first.locator(".sub-who")).toHaveText("codex-1");
+  await expect(first.locator(".sub-kind")).toHaveText("codex");
+  await expect(first.locator(".sub-task")).toContainText("check every flag in the README");
+  await expect(first).toHaveAttribute("data-state", "done", { timeout: 15_000 });
+  await expect(first.locator(".sub-log")).toHaveCount(0);
+  // Open: its words.
+  await first.locator(".sub-head").click();
+  await expect(first.locator(".sub-log")).toContainText("check every flag in the README");
+  await page.screenshot({ path: shot("subagents-spawned-cards.png") });
+});
+
+// A lead opens a sub-thread: there the brief is the lead's card, naming the
+// thread it came from, not the person's bubble; and the answer to it has no
+// Retry, for there is nothing of the person's to send again.
+test("a sub-thread's brief is its opener's message, not the person's", async ({ page }) => {
+  const sub = subThreadAtWork(fake);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open a folder" }).click();
+  await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await page.locator('.handoff[data-handoff="subthread"]').getByRole("button", { name: /^Open / }).click();
+  await expect(page.locator(".room-parent")).toContainText("Sub-thread of Fix the pairing lockout");
+
+  const brief = page.locator('.msg-brief[data-from="claude-1"]');
+  await expect(brief).toBeVisible();
+  await expect(page.locator(".msg-user")).toHaveCount(0);
+  // One agent here: the opener is no lane of it.
+  await expect(lanes(page)).toHaveCount(0);
+  await expect(brief.locator(".brief-head")).toContainText("From");
+  await expect(brief.locator(".brief-thread")).toHaveText("Fix the pairing lockout");
+  await expect(brief.locator(".brief-body")).toHaveText("Is keying the limiter by address enough? Hand back yes or no, and what is missing.");
+  // Deck's own line to the agent folds away.
+  await expect(brief).not.toContainText("[deck]");
+  // Nobody edits an agent's brief, nor retries the answer to it.
+  await brief.hover();
+  await expect(brief.getByRole("button", { name: "Edit and resend" })).toHaveCount(0);
+  const answer = page.locator('.msg-agent[data-agent="codex"]');
+  await answer.hover();
+  await expect(answer.getByRole("button", { name: "Continue" })).toBeVisible();
+  await expect(answer.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  await page.screenshot({ path: shot("subthread-brief.png") });
+  // The thread it names opens.
+  await brief.locator(".brief-thread").click();
+  await expect(page.locator(`[data-session="${sub}"][data-sub]`)).toBeVisible();
+  await expect(page.locator('.handoff[data-handoff="subthread"]')).toBeVisible();
 });

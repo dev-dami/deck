@@ -160,8 +160,9 @@ export interface Turn {
   // The first message's id: the row's key.
   id: string;
   agent: string;
-  // For the work of a subagent its member's CLI started with its own tool
-  // (agent "<member>/<name>"), the member; else null.
+  // For the work of a subagent, the agent that started it: the member whose
+  // CLI started it with its own tool (agent "<member>/<name>"), or the one
+  // that started it with agent.spawn; else null.
   parent: string | null;
   msgs: Message[];
   // The results paired from other messages, in the order they were used:
@@ -278,15 +279,17 @@ export type TurnRow<R> = R | Message | Turn;
 // as it was. prev, the last call's turns by id, keeps a turn that did not
 // change the same object, so its row does not render again.
 //
-// The work of a CLI-native subagent (agent "<member>/<name>") is one Turn
-// per subagent from its first message until the person speaks again, its
-// parallel siblings' messages in between or not; and its member's run goes
-// on past the blocks of its own subagents, so they read as its children,
-// under it.
+// The work of a subagent (parentOf names its parent: a CLI-native one's
+// agent is "<member>/<name>"; one agent.spawn started is known from the
+// agents tree) is one Turn per subagent from its first message until the
+// person speaks again, its parallel siblings' messages in between or not;
+// and its parent's run goes on past the blocks of its own subagents, so
+// they read as its children, under it.
 export function buildTurns<R>(
   rows: readonly (Message | R)[],
   isMessage: (r: Message | R) => r is Message,
   prev?: ReadonlyMap<string, Turn>,
+  parentOf: (agent: string) => string | null = subParent,
 ): TurnRow<R>[] {
   const messages = rows.filter(isMessage);
   const pairing = pairResults(messages);
@@ -307,7 +310,7 @@ export function buildTurns<R>(
     }
     if (pairing.consumed.has(r.id)) continue;
     const agent = agentOf(r, pairing, lastAgent);
-    if (subParent(agent) !== null) {
+    if (parentOf(agent) !== null) {
       const open = subs.get(agent);
       if (open !== undefined) open.msgs.push(r);
       else {
@@ -320,7 +323,7 @@ export function buildTurns<R>(
     lastAgent = agent;
     // The tail, past the blocks of this agent's own subagents.
     let at = out.length - 1;
-    while (at >= 0 && asOpen(out[at])?.k === "open" && subParent(asOpen(out[at])!.agent!) === agent) at--;
+    while (at >= 0 && asOpen(out[at])?.k === "open" && parentOf(asOpen(out[at])!.agent!) === agent) at--;
     const tail = asOpen(out[at]);
     if (tail?.k === "open" && tail.agent === agent) tail.msgs!.push(r);
     else out.push({ k: "open", agent, msgs: [r] });
@@ -331,9 +334,10 @@ export function buildTurns<R>(
     const msgs = o.msgs!;
     const { chunks, paired } = turnChunks(msgs, pairing);
     const id = msgs[0]!.id;
+    const parent = parentOf(o.agent!);
     const old = prev?.get(id);
-    if (old !== undefined && old.agent === o.agent && sameList(old.msgs, msgs) && sameList(old.paired, paired)) return old;
-    return { k: "turn", id, agent: o.agent!, parent: subParent(o.agent!), msgs, paired, chunks, finished: msgs.every((m) => m.finished) } satisfies Turn;
+    if (old !== undefined && old.agent === o.agent && old.parent === parent && sameList(old.msgs, msgs) && sameList(old.paired, paired)) return old;
+    return { k: "turn", id, agent: o.agent!, parent, msgs, paired, chunks, finished: msgs.every((m) => m.finished) } satisfies Turn;
   });
 }
 

@@ -36,4 +36,7 @@ test("retry sends the person's message again to the agent that replied", () => {
   expect(retryText(thread, "a1")).toBe("$claude-1 Why does the limiter lock everyone out?");
   expect(retryText(thread, "nope")).toBeNull();
   expect(retryText(thread.slice(1), "a1")).toBeNull();
+  // A sub-thread's answer to its parent agent's brief: nothing of the person's.
+  const brief = msg("b1", "user", [{ type: "text", text: "[deck] From claude-1, the agent that opened this sub-thread:\n\ncheck it" }], "claude-1");
+  expect(retryText([brief, msg("a3", "assistant", [{ type: "text", text: "ok" }], "codex-1")], "a3")).toBeNull();
 });

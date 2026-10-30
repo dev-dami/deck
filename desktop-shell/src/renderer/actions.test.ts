@@ -241,3 +241,31 @@ describe("buildTurns: CLI-native subagents", () => {
     expect(buildTurns(rows, (_r): _r is Message => true).filter(isTurn).map((t) => t.msgs.length)).toEqual([1, 1]);
   });
 });
+
+describe("buildTurns: subagents agent.spawn started", () => {
+  test("the tree names their parent: their work is a block under its run", () => {
+    const rows = [
+      msg("user", [say("fix the limiter, with a reviewer")]),
+      msg("assistant", [say("→ $codex-2\n\nReview the limiter.")], "claude-1"),
+      msg("assistant", [call("x", "Bash", "go test ./...")], "codex-2"),
+      msg("assistant", [say("Keying by address now.")], "claude-1"),
+      msg("assistant", [result("x")]),
+      msg("assistant", [say("→ $claude-1\n\nLooks right.")], "codex-2"),
+      msg("assistant", [say("A peer's word.")], "codex-1"),
+    ];
+    const parents: Record<string, string> = { "codex-2": "claude-1" };
+    const out = buildTurns(rows, (_r): _r is Message => true, undefined, (a) => parents[a] ?? null);
+    expect(out.filter(isTurn).map((t) => `${t.agent}<${t.parent ?? ""}> ${t.msgs.length}`)).toEqual(["claude-1<> 2", "codex-2<claude-1> 2", "codex-1<> 1"]);
+    // Without the tree's word it is an agent like any other.
+    expect(buildTurns(rows, (_r): _r is Message => true).filter(isTurn).map((t) => t.parent)).toEqual([null, null, null, null, null]);
+  });
+
+  test("a turn whose parent becomes known is a new object", () => {
+    const rows = [msg("assistant", [say("on it")], "codex-2")];
+    const first = buildTurns(rows, (_r): _r is Message => true).filter(isTurn);
+    const prev = new Map(first.map((t) => [t.id, t]));
+    const next = buildTurns(rows, (_r): _r is Message => true, prev, () => "claude-1").filter(isTurn);
+    expect(next[0]).not.toBe(first[0]);
+    expect(next[0]!.parent).toBe("claude-1");
+  });
+});

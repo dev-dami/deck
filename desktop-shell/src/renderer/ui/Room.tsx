@@ -53,6 +53,7 @@ function LiveTimeline({
   c,
   sid,
   lane,
+  subs,
   ...rest
 }: { c: DeckClient; sid: string; lane: string | null } & Omit<ComponentProps<typeof Timeline>, "messages" | "roster" | "more" | "onOlder">) {
   const select = useMemo(() => threadSlice(sid), [sid]);
@@ -74,7 +75,9 @@ function LiveTimeline({
       {...(readImage === undefined ? {} : { readImage })}
       focusMessage={focus}
       onFocused={() => focusMessage(sid, null)}
-      subAlone={lane !== null && subParent(lane.replace(/^agent:/, "")) !== null}
+      // A subagent's lane: its work alone, open.
+      subAlone={lane !== null && ((name) => subParent(name) !== null || subs?.has(name) === true)(lane.replace(/^agent:/, ""))}
+      {...(subs === undefined ? {} : { subs })}
       {...rest}
     />
   );
@@ -480,6 +483,7 @@ export function Room({
                 actions={room.actions}
                 notes={r.notes}
                 subs={subsOf(crew?.agents)}
+                parentThread={meta.parent === "" ? null : { id: meta.parent, title: sessionTitle(state.sessions.find((x) => x.id === meta.parent)) }}
               />
             )}
             <div ref={dock} className="composer-dock pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-3 *:pointer-events-auto">

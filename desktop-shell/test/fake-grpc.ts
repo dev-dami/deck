@@ -498,11 +498,13 @@ export class FakeRpcDeck {
       const sid = String(r["session_id"] ?? "");
       const native = this.deck.nativeNodes(sid);
       const agents: Obj[] = [];
-      for (const a of [...this.crew.agents, ...this.deck.spawnedNodes(sid)]) {
+      // A sub-thread's tree is its own: none of the crew of its parent.
+      const sub = this.room.meta[sid]?.["parent_id"] !== undefined;
+      for (const a of [...(sub ? [] : this.crew.agents), ...this.deck.spawnedNodes(sid)]) {
         agents.push(a);
         agents.push(...native.agents.filter((n) => n["parent"] === a["name"]));
       }
-      return { ...this.crew, agents, running: [...this.crew.running, ...native.running] };
+      return { ...this.crew, agents, running: [...(sub ? [] : this.crew.running), ...native.running] };
     });
     const tm = this.team;
     unary("Team", () => ({

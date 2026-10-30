@@ -305,7 +305,15 @@ export class FakeDeck {
     const id = `ses_sub_${this.next++}`;
     const t = this.addThread(id, title);
     t.roster = [{ id: kind, name: kind, kind, model: "default", busy: false }];
-    this.message(t, "user", undefined, `[deck] ${opener}, the agent of the thread "${parent.session.title}", opened this sub-thread for you.\n\n${brief}`, true);
+    // The brief is the opener's: a user message that names its agent
+    // (workspace onBrief).
+    this.message(
+      t,
+      "user",
+      opener,
+      `[deck] ${opener}, the agent of the thread ${JSON.stringify(parent.session.title)}, opened this sub-thread for you. Your final reply to this goes back to it; the user may also talk to you here.\n\n${brief}`,
+      true,
+    );
     this.message(t, "assistant", kind, answer, true);
     this.message(parent, "assistant", kind, `→ $${opener} · sub-thread ${id}\n\n[sub-thread "${title}"] ${answer}`, true);
     this.broadcast("session.created", t.session);

@@ -119,9 +119,8 @@ test("the agent pickers list every agent once, keep it, and refresh by hand", as
   await page.keyboard.press("ArrowDown");
   await expect(codex.getByRole("menuitemradio", { name: /Fast/ })).toBeFocused();
   await page.keyboard.press("Escape");
-  const others = sidebar(page).locator(".session");
-  await others.nth(1).click();
-  await others.nth(0).click();
+  await sidebar(page).getByRole("button", { name: "Docs pass", exact: true }).click();
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   expect(fake.deck.modelLists).toHaveLength(4);
 
   // Refresh lists them all again, asking the Deck to forget its lists once.

@@ -260,9 +260,14 @@ describe("CLI-native subagents", () => {
   });
 });
 
-test("a room of one agent and no teammate has no lanes strip", () => {
-  const lane = (id: string, kind: "you" | "agent" | "mate") => ({ id, kind }) as Lane;
+test("a room of one agent and no teammate has no lanes strip, whatever its subagents", () => {
+  const lane = (id: string, kind: "you" | "agent" | "mate", parent = "", sub: Lane["sub"] = null) => ({ id, kind, parent, sub }) as Lane;
   expect(soloRoom([lane("you", "you"), lane("agent:claude-1", "agent")])).toBe(true);
   expect(soloRoom([lane("you", "you"), lane("agent:claude-1", "agent"), lane("agent:codex-1", "agent")])).toBe(false);
   expect(soloRoom([lane("you", "you"), lane("agent:claude-1", "agent"), lane("mate:vps", "mate")])).toBe(false);
+  // A lead and the subagents it spawned, or its CLI started: still one agent.
+  const native = { status: "running", description: "", type: "", actions: 0, error: "" } as const;
+  expect(
+    soloRoom([lane("you", "you"), lane("agent:claude-1", "agent"), lane("agent:codex-2", "agent", "claude-1"), lane("agent:claude-1/r", "agent", "claude-1", native)]),
+  ).toBe(true);
 });

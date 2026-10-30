@@ -57,12 +57,13 @@ import {
   toolName,
 } from "../actions";
 import { agentColour, agentKind, agentRole, agentTint } from "../agents";
-import { foldsBody, type Handoff, type HandoffState, handoffOf } from "../handoff";
+import { firstLine, foldsBody, type Handoff, type HandoffState, handoffOf, subTasks } from "../handoff";
+import { type Brief, briefOf } from "@web/subthreads";
 import { CARD } from "./kit/card";
 import type { RoomNotice } from "../attention";
-import type { AgentNode } from "../crew";
+import { type AgentNode, subStanding } from "../crew";
 import { askOf, type FileAsk } from "../fileWork";
-import { shortId, subName } from "../lanes";
+import { shortId, subName, subParent } from "../lanes";
 import { cn } from "../lib/cn";
 import { messageText } from "../messages";
 import { detectPlan, findPlan } from "../plans";
@@ -108,6 +109,16 @@ function lastTurnId(rows: readonly Row[]): string | null {
     if ("role" in r && r.role === "user") return null;
   }
   return null;
+}
+
+// Whether the last user message is the person's, not a parent agent's
+// brief: Retry sends it again.
+function retryable(rows: readonly Row[]): boolean {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i]!;
+    if (!isTurn(r) && "role" in r && r.role === "user") return briefOf(r) === null;
+  }
+  return true;
 }
 
 // What the open room lets a person do from its timeline. A read-only room
@@ -338,8 +349,10 @@ function Prose({ chunks, text }: { chunks: Chunk[]; text?: (c: TextChunk, key: n
   );
 }
 
-// Copy, and the room's verbs for one message, shown on hover.
-function MessageActions({ m, actions, last }: { m: Message; actions: RoomActions; last: boolean }) {
+// Copy, and the room's verbs for one message, shown on hover. retry is
+// false where the reply answers no message of the person's (a sub-thread's
+// brief): there is nothing of theirs to send again.
+function MessageActions({ m, actions, last, retry = true }: { m: Message; actions: RoomActions; last: boolean; retry?: boolean }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -365,7 +378,7 @@ function MessageActions({ m, actions, last }: { m: Message; actions: RoomActions
       >
         {copied ? <Check /> : <Copy />}
       </Button>
-      {m.role === "user" && m.editable !== false && (
+      {m.role === "user" && m.agent === undefined && m.editable !== false && (
         <Button
           variant="ghost-muted"
           size="icon-xs"
@@ -384,16 +397,18 @@ function MessageActions({ m, actions, last }: { m: Message; actions: RoomActions
       )}
       {reply && (
         <>
-          <Button
-            variant="ghost-muted"
-            size="icon-xs"
-            className={icon}
-            aria-label="Retry"
-            title="Retry: send your message again"
-            onClick={() => actions.retry(m.id)}
-          >
-            <RotateCcw />
-          </Button>
+          {retry && (
+            <Button
+              variant="ghost-muted"
+              size="icon-xs"
+              className={icon}
+              aria-label="Retry"
+              title="Retry: send your message again"
+              onClick={() => actions.retry(m.id)}
+            >
+              <RotateCcw />
+            </Button>
+          )}
           <Button variant="ghost-muted" size="icon-xs" className={icon} aria-label="Continue" title="Continue" onClick={() => actions.continueRun()}>
             <Play />
           </Button>
@@ -428,6 +443,66 @@ function UserMessage({ m, actions }: { m: Message; actions: RoomActions | null }
         {m.edited === true && <span>edited ·</span>}
         <time className="tabular-nums">{formatClock(m.created_at, prefs.clock)}</time>
       </header>
+    </article>
+  );
+}
+
+// The thread a sub-thread was opened from, for its briefs; null elsewhere.
+export const ParentThread = createContext<{ id: string; title: string } | null>(null);
+
+// A parent agent's brief or follow-up to this sub-thread (briefOf): the
+// agent's words in a card on the sheet, not the person's bubble, under who
+// sent them from which thread. Deck's own line to the agent folds away.
+function BriefMessage({ m, b, roster, theme, actions }: { m: Message; b: Brief; roster: AgentLine[]; theme: Theme | null; actions: RoomActions | null }) {
+  const prefs = usePrefs();
+  const parent = useContext(ParentThread);
+  const openThread = useContext(OpenThread);
+  const kind = agentKind(b.from, roster);
+  const colour = agentColour(b.from, kind, tintOf(agentTint(b.from, roster), prefs.team));
+  const title = parent?.title || b.thread;
+  return (
+    <article className="msg msg-brief group flex min-w-0 animate-enter flex-col gap-1" data-role="user" data-from={b.from} data-mid={m.id} style={hue(colour)}>
+      <div className={cn(CARD, "brief flex flex-col gap-1.5 px-3 py-2.5")}>
+        <header className="brief-head flex min-w-0 items-center gap-1.5 text-xs">
+          <CornerDownRight aria-hidden className="size-3.5 shrink-0 text-faint" />
+          <span className="shrink-0 text-faint">From</span>
+          <span className="brief-from inline-flex min-w-0 shrink-0 items-baseline gap-1 font-medium text-(--hue)">
+            <span aria-hidden className="font-mono">
+              {kindMark(theme, kind) || "●"}
+            </span>
+            {b.from}
+          </span>
+          {title !== "" && (
+            <>
+              <span aria-hidden className="shrink-0 text-faint">
+                ·
+              </span>
+              {parent !== null && openThread !== null ? (
+                <button
+                  type="button"
+                  className="brief-thread min-w-0 cursor-pointer truncate rounded-md text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                  title={`Open ${title}`}
+                  onClick={() => openThread(parent.id)}
+                >
+                  {title}
+                </button>
+              ) : (
+                <span className="brief-thread min-w-0 truncate text-muted-foreground">{title}</span>
+              )}
+            </>
+          )}
+          <span className="ml-auto shrink-0 text-faint">{b.first ? "brief" : "follow-up"}</span>
+        </header>
+        {b.body !== "" && (
+          <div className="brief-body text-foreground text-sm [&_.md]:text-sm">
+            <Markdown text={b.body} />
+          </div>
+        )}
+      </div>
+      <footer className="msg-head flex h-6 items-center gap-1.5 ps-1 text-2xs text-faint opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+        {actions !== null && <MessageActions m={m} actions={actions} last={false} />}
+        <time className="tabular-nums">{formatClock(m.created_at, prefs.clock)}</time>
+      </footer>
     </article>
   );
 }
@@ -594,6 +669,7 @@ function AgentTurn({
   mode,
   actions,
   last,
+  retry = true,
 }: {
   t: Turn;
   roster: AgentLine[];
@@ -601,6 +677,7 @@ function AgentTurn({
   mode: Mode | null;
   actions: RoomActions | null;
   last: boolean;
+  retry?: boolean;
 }) {
   const prefs = usePrefs();
   const agent = t.agent;
@@ -672,7 +749,7 @@ function AgentTurn({
             reply leaves no empty row under it. */}
         {t.finished && actions !== null && (
           <span className="-my-1 ml-auto flex items-center">
-            <MessageActions m={m} actions={actions} last={last} />
+            <MessageActions m={m} actions={actions} last={last} retry={retry} />
           </span>
         )}
       </header>
@@ -706,32 +783,51 @@ const TurnView = memo(AgentTurn);
 
 const SUB_WORD: Record<string, string> = { running: "running", done: "done", failed: "failed", stopped: "stopped" };
 
+// What a subagent's work came to, as one line: its report's result, else
+// its last words.
+function resultLine(t: Turn): string {
+  const last = [...t.chunks].reverse().find((c): c is TextChunk => c.k === "text");
+  if (last === undefined) return "";
+  const h = handoffOf(last.text);
+  return firstLine(h === null ? last.text : (h.task?.result ?? h.body));
+}
+
 // "↳ review-pr-296 · Review PR #296 · 12 actions · done ›": the work of a
-// subagent its member's CLI started with its own tool (Claude Code's Task),
-// folded to one line under its member's reply, in the member's hue. While
-// it runs the line names its call at work; it opens to its words and calls.
-// node is the agents tree's account of it, when the Deck serves one.
+// subagent folded to one line under its parent's reply. One its member's
+// CLI started with its own tool (Claude Code's Task) wears the member's hue
+// and its task; one an agent started with agent.spawn wears its own, names
+// its kind, and says what it was asked while it runs and what it found once
+// it ended. While it runs the line names its call at work; it opens to its
+// words and calls. node is the agents tree's account of it, when the Deck
+// serves one; task what its parent asked of it (subTasks).
 function SubTurn({
   t,
   roster,
   theme,
   node,
+  task = "",
   alone,
 }: {
   t: Turn;
   roster: AgentLine[];
   theme: Theme | null;
   node: AgentNode | undefined;
+  task?: string;
   // The timeline shows its lane alone: it opens unless closed.
   alone: boolean;
 }) {
   const prefs = usePrefs();
   const parent = t.parent ?? t.agent;
-  const kind = agentKind(parent, roster);
-  const colour = agentColour(parent, kind, tintOf(agentTint(parent, roster), prefs.team));
+  // A spawned subagent is an agent of its own kind; a CLI-native one is its
+  // member's.
+  const spawned = subParent(t.agent) === null;
+  const who = spawned ? t.agent : parent;
+  const kind = (spawned ? node?.kind : "") || agentKind(who, roster);
+  const colour = agentColour(who, kind, tintOf(agentTint(who, roster), prefs.team));
   const mark = kindMark(theme, kind) || "●";
-  const status = node?.subStatus || (t.finished ? "done" : "running");
+  const status = subStanding(node, t.finished);
   const running = status === "running";
+  const line = spawned ? (running ? task : resultLine(t)) || task : (node?.description ?? "");
   const s = useMemo(() => actionStats(t.chunks, running), [t.chunks, running]);
   const key = `sub:${t.id}`;
   const [set, setOpen] = useState(() => openGroups.get(key));
@@ -744,11 +840,15 @@ function SubTurn({
   const ps = useMemo(() => pieces(t.chunks, name, (i) => groupId(t, i)), [t, name]);
   const cur: ToolChunk | null = running && s.pending > 0 ? s.current : null;
   const CurIcon = cur === null ? null : toolIcon(toolName(cur));
-  const muted = (c: TextChunk, k: number): ReactNode => (
-    <div key={k} className="py-1 text-muted-foreground [&_.md]:text-sm">
-      <Markdown text={c.text} />
-    </div>
-  );
+  const muted = (c: TextChunk, k: number): ReactNode => {
+    const h = spawned ? handoffOf(c.text) : null;
+    if (h !== null) return <HandoffCard key={k} from={t.agent} h={h} roster={roster} theme={theme} />;
+    return (
+      <div key={k} className="py-1 text-muted-foreground [&_.md]:text-sm">
+        <Markdown text={c.text} />
+      </div>
+    );
+  };
   return (
     <article
       className="msg msg-sub -mt-3 ml-[5px] flex min-w-0 animate-enter flex-col border-hairline-strong border-l pl-3"
@@ -758,13 +858,14 @@ function SubTurn({
       data-mid={t.id}
       data-mids={t.msgs.length > 1 ? t.msgs.map((x) => x.id).join(" ") : undefined}
       data-state={status}
+      data-spawned={spawned ? "" : undefined}
       style={hue(colour)}
     >
       <button
         type="button"
         className="sub-head -mx-2 flex h-7 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-sm outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
         aria-expanded={open}
-        aria-label={`${name}, @${parent}'s subagent, ${s.actions} actions, ${SUB_WORD[status] ?? status}`}
+        aria-label={`${name}, ${parent}'s subagent, ${s.actions} actions, ${SUB_WORD[status] ?? status}`}
         onClick={toggle}
       >
         <CornerDownRight aria-hidden className="size-3.5 shrink-0 text-faint" />
@@ -776,7 +877,12 @@ function SubTurn({
           </span>
         )}
         <span className="sub-who shrink-0 font-medium font-mono text-(--hue) text-[13px]">{name}</span>
-        {node !== undefined && node.description !== "" && <span className="sub-task min-w-0 shrink truncate text-muted-foreground">{node.description}</span>}
+        {spawned && <span className="sub-kind shrink-0 text-faint text-xs">{kind}</span>}
+        {line !== "" && (
+          <span className="sub-task min-w-0 shrink truncate text-muted-foreground" title={line}>
+            {line}
+          </span>
+        )}
         <span aria-hidden className="shrink-0 text-faint">
           ·
         </span>
@@ -851,7 +957,10 @@ export const MessageView = memo(function MessageView({
   actions?: RoomActions | null;
   last?: boolean;
 }) {
-  if (m.role === "user") return <UserMessage m={m} actions={actions} />;
+  if (m.role === "user") {
+    const b = briefOf(m);
+    return b === null ? <UserMessage m={m} actions={actions} /> : <BriefMessage m={m} b={b} roster={roster} theme={theme} actions={actions} />;
+  }
   if (m.role === "system") {
     const ask = askOf(m);
     if (ask !== null) return <AskRow m={m} ask={ask} roster={roster} theme={theme} />;
@@ -1094,6 +1203,7 @@ export function Timeline({
   onFocused,
   subs,
   subAlone = false,
+  parentThread = null,
 }: {
   messages: Message[];
   roster: AgentLine[];
@@ -1114,21 +1224,33 @@ export function Timeline({
   // it is there; onFocused says it showed or cannot.
   focusMessage?: string | null;
   onFocused?: () => void;
-  // The agents tree's CLI-native subagents by name, for how each stands;
-  // subAlone says the timeline shows one of them alone (its lane).
+  // The agents tree's subagents by name (crew.ts subsOf), for whose each is
+  // and how it stands: their work folds under their parent's reply. subAlone
+  // says the timeline shows one of them alone (its lane).
   subs?: ReadonlyMap<string, AgentNode>;
   subAlone?: boolean;
+  // The thread a sub-thread was opened from, which its briefs name.
+  parentThread?: { id: string; title: string } | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // Each agent's run of messages as one turn, its tool calls grouped; a
-  // turn that did not change stays the same object, so its row keeps.
+  // turn that did not change stays the same object, so its row keeps. A
+  // subagent's run is a turn of its own under its parent's: a CLI-native
+  // one's name says its parent, a spawned one's the tree.
   const turns = useRef(new Map<string, Turn>());
   const rows = useMemo(() => {
-    const out: Row[] = buildTurns(withNotes(messages, notes), isMessage, turns.current);
+    const parentOf = (agent: string) => subParent(agent) ?? (subs?.get(agent)?.parent || null);
+    const out: Row[] = buildTurns(withNotes(messages, notes), isMessage, turns.current, parentOf);
     turns.current = new Map(out.filter(isTurn).map((t) => [t.id, t]));
     return out;
-  }, [messages, notes]);
+  }, [messages, notes, subs]);
+  // What the parents asked of their spawned subagents, for their folded line.
+  const tasks = useMemo(() => subTasks(messages, (name) => subs?.get(name)?.native === false), [messages, subs]);
   const lastId = useMemo(() => lastTurnId(rows), [rows]);
+  const retry = useMemo(() => retryable(rows), [rows]);
+  const pid = parentThread?.id ?? "";
+  const ptitle = parentThread?.title ?? "";
+  const parent = useMemo(() => (pid === "" ? null : { id: pid, title: ptitle }), [pid, ptitle]);
   const verbs = readOnly || actions === undefined ? null : actions;
   const stick = useRef(true);
   // Distance from the bottom before an older page loads, so the view stays put.
@@ -1206,68 +1328,70 @@ export function Timeline({
   }, []);
 
   return (
-    <Images.Provider value={readImage ?? null}>
-      <div className="relative min-h-0 flex-1" data-yolo-region="">
-        <div
-          className="timeline h-full overflow-y-auto"
-          ref={ref}
-          onScroll={(e) => {
-            const near = isNearBottom(e.currentTarget);
-            stick.current = near;
-            setAway(!near);
-          }}
-        >
-          {/* The end pads past the floating composer (--composer-h, set by
-              the room), so the last line rests above it. */}
-          <div className="timeline-inner mx-auto flex w-full max-w-(--chat-max) flex-col gap-6 px-6 pt-6 pb-[calc(var(--composer-h,0px)+1.5rem)]">
-            {more && (
-              <button
-                type="button"
-                className="older mx-auto h-7 rounded-full px-3 text-faint text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
-                onClick={() => void older()}
-                disabled={loading}
-              >
-                {loading ? "Loading…" : "Load older messages"}
-              </button>
-            )}
-            {messages.length === 0 && <EmptyRoom roster={roster} theme={theme} />}
-            <VirtualList
-              items={rows}
-              keyOf={rowKey}
-              scroller={ref}
-              estimate={120}
-              gap={ROW_GAP}
-              className="flex flex-col gap-6"
-              onResize={pin}
-              reveal={shown}
-              render={(m) =>
-                isTurn(m) && m.parent !== null ? (
-                  <SubTurnView t={m} roster={roster} theme={theme} node={subs?.get(m.agent)} alone={subAlone} />
-                ) : isTurn(m) ? (
-                  <TurnView t={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />
-                ) : "role" in m ? (
-                  <MessageView m={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />
-                ) : (
-                  <p className="room-note flex items-center gap-3 text-faint text-xs before:h-px before:flex-1 before:bg-hairline after:h-px after:flex-1 after:bg-hairline">
-                    {m.text}
-                  </p>
-                )
-              }
-            />
-            {changes !== null && changes.length > 0 && <ChangedFilesCard files={changes} onOpen={onOpenDiff} />}
-          </div>
-        </div>
-        {away && (
-          <button
-            type="button"
-            className="jump liquid-thick absolute inset-x-0 bottom-[calc(var(--composer-h,0px)+0.75rem)] z-10 mx-auto flex w-fit h-8 animate-enter cursor-pointer items-center gap-1.5 rounded-full pr-3.5 pl-3 text-foreground text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={toBottom}
+    <ParentThread.Provider value={parent}>
+      <Images.Provider value={readImage ?? null}>
+        <div className="relative min-h-0 flex-1" data-yolo-region="">
+          <div
+            className="timeline h-full overflow-y-auto"
+            ref={ref}
+            onScroll={(e) => {
+              const near = isNearBottom(e.currentTarget);
+              stick.current = near;
+              setAway(!near);
+            }}
           >
-            <ArrowDown className="size-3.5" weight="bold" />
-            Jump to latest
-          </button>
-        )}
-      </div>
-    </Images.Provider>
+            {/* The end pads past the floating composer (--composer-h, set by
+                the room), so the last line rests above it. */}
+            <div className="timeline-inner mx-auto flex w-full max-w-(--chat-max) flex-col gap-6 px-6 pt-6 pb-[calc(var(--composer-h,0px)+1.5rem)]">
+              {more && (
+                <button
+                  type="button"
+                  className="older mx-auto h-7 rounded-full px-3 text-faint text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+                  onClick={() => void older()}
+                  disabled={loading}
+                >
+                  {loading ? "Loading…" : "Load older messages"}
+                </button>
+              )}
+              {messages.length === 0 && <EmptyRoom roster={roster} theme={theme} />}
+              <VirtualList
+                items={rows}
+                keyOf={rowKey}
+                scroller={ref}
+                estimate={120}
+                gap={ROW_GAP}
+                className="flex flex-col gap-6"
+                onResize={pin}
+                reveal={shown}
+                render={(m) =>
+                  isTurn(m) && m.parent !== null ? (
+                    <SubTurnView t={m} roster={roster} theme={theme} node={subs?.get(m.agent)} task={tasks.get(m.agent) ?? ""} alone={subAlone} />
+                  ) : isTurn(m) ? (
+                    <TurnView t={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} retry={retry} />
+                  ) : "role" in m ? (
+                    <MessageView m={m} roster={roster} theme={theme} mode={mode} actions={verbs} last={m.id === lastId} />
+                  ) : (
+                    <p className="room-note flex items-center gap-3 text-faint text-xs before:h-px before:flex-1 before:bg-hairline after:h-px after:flex-1 after:bg-hairline">
+                      {m.text}
+                    </p>
+                  )
+                }
+              />
+              {changes !== null && changes.length > 0 && <ChangedFilesCard files={changes} onOpen={onOpenDiff} />}
+            </div>
+          </div>
+          {away && (
+            <button
+              type="button"
+              className="jump liquid-thick absolute inset-x-0 bottom-[calc(var(--composer-h,0px)+0.75rem)] z-10 mx-auto flex w-fit h-8 animate-enter cursor-pointer items-center gap-1.5 rounded-full pr-3.5 pl-3 text-foreground text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={toBottom}
+            >
+              <ArrowDown className="size-3.5" weight="bold" />
+              Jump to latest
+            </button>
+          )}
+        </div>
+      </Images.Provider>
+    </ParentThread.Provider>
   );
 }

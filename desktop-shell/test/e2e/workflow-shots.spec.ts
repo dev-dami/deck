@@ -84,7 +84,24 @@ for (const mode of ["dark", "light"] as const) {
     await page.locator('.handoff[data-handoff="subthread"]').getByRole("button", { name: /^Open / }).click();
     await expect(page.locator(".room-parent")).toContainText("Sub-thread of Fix the pairing lockout");
     await expect(page.locator(`[data-session="${sub}"][data-sub]`)).toBeVisible();
+    // Its brief is claude-1's card, not the person's bubble.
+    await expect(page.locator('.msg-brief[data-from="claude-1"]')).toBeVisible();
     await page.waitForTimeout(300);
     await shot(page, `${mode}-7-subthread-room`);
+
+    // A lead's subagents: folded cards under its reply, no lanes strip.
+    await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Long history", exact: true }).click();
+    await expect(page.locator('[data-agent="claude-1"].msg').last()).toBeVisible();
+    await composer(page).fill("spin up two codex to check every flag in the README");
+    await composer(page).press("Enter");
+    await expect(page.locator(".msg-sub[data-spawned]")).toHaveCount(2, { timeout: 15_000 });
+    await expect(page.getByRole("toolbar", { name: "Lanes" })).toHaveCount(0);
+    await page.waitForTimeout(600);
+    await shot(page, `${mode}-8-subagent-cards`);
+    await expect(page.locator('.msg-sub[data-agent="codex-1"]')).toHaveAttribute("data-state", "done", { timeout: 15_000 });
+    await page.locator('.msg-sub[data-agent="codex-1"] .sub-head').click();
+    await page.locator('.msg-sub[data-agent="codex-2"]').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await shot(page, `${mode}-9-subagent-card-open`);
   });
 }

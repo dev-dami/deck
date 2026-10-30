@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { asks, boardRows, decisionText, mirrorRow, taskPreview, toBoard } from "./crew";
+import { type AgentNode, asks, boardRows, decisionText, mirrorRow, notNative, subStanding, subsOf, taskPreview, toBoard } from "./crew";
 
 test("race entries sit under their race", () => {
   const b = toBoard({
@@ -54,4 +54,46 @@ test("a shared room's lines name who said what", () => {
   expect(mirrorRow("[ana → claude-1] look at the cache")).toEqual({ who: "ana", to: "claude-1", text: "look at the cache", note: false });
   expect(mirrorRow("[claude2 ran: go test ./...]")).toEqual({ who: "claude2", to: "", text: "ran: go test ./...", note: true });
   expect(mirrorRow("[... more of the thread was cut here ...]")).toMatchObject({ who: "", note: true });
+});
+
+const node = (name: string, over: Partial<AgentNode> = {}): AgentNode => ({
+  name,
+  kind: "claude",
+  model: "",
+  effort: "",
+  status: "idle",
+  contextTokens: 0,
+  contextWindow: 0,
+  costUsd: 0,
+  pending: 0,
+  since: 0,
+  depth: 0,
+  parent: "",
+  branch: "",
+  leases: "",
+  profile: "",
+  role: "",
+  color: "",
+  ...notNative,
+  ...over,
+});
+
+test("subsOf: the CLI-native subagents and the spawned ones, not the members", () => {
+  const tree = [
+    node("claude-1"),
+    node("codex-2", { parent: "claude-1", depth: 1 }),
+    node("claude-1/review", { parent: "claude-1", depth: 1, native: true, subStatus: "running" }),
+  ];
+  expect([...subsOf(tree).keys()]).toEqual(["codex-2", "claude-1/review"]);
+  expect(subsOf(tree)).toBe(subsOf(tree));
+});
+
+test("subStanding: a native subagent's word, a spawned one's status, else its messages", () => {
+  expect(subStanding(node("c/r", { native: true, subStatus: "failed" }), true)).toBe("failed");
+  expect(subStanding(node("codex-2", { status: "tool" }), true)).toBe("running");
+  expect(subStanding(node("codex-2", { status: "error" }), true)).toBe("failed");
+  expect(subStanding(node("codex-2", { status: "exited" }), false)).toBe("done");
+  expect(subStanding(node("codex-2", { status: "idle" }), true)).toBe("done");
+  expect(subStanding(node("codex-2", { status: "idle" }), false)).toBe("running");
+  expect(subStanding(undefined, false)).toBe("running");
 });
