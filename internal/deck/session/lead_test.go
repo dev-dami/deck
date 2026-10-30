@@ -47,7 +47,10 @@ func TestSwitchingTheLeadKeepsTheHistory(t *testing.T) {
 	if n := len(r.claude.prompts("claude")); n != 1 {
 		t.Fatalf("claude got %d prompts after the switch", n)
 	}
-	if r.c.count(func(m tea.Msg) bool { n, ok := m.(NoticeMsg); return ok && strings.Contains(n.Text, "codex took over from claude") }) != 1 {
+	if r.c.count(func(m tea.Msg) bool {
+		n, ok := m.(NoticeMsg)
+		return ok && strings.Contains(n.Text, "codex took over from claude")
+	}) != 1 {
 		t.Fatal("no notice of the switch")
 	}
 	// Back to claude: the idle member is reused, not a second claude.

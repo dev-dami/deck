@@ -253,11 +253,11 @@ type ThreadInfo struct {
 	// Pending counts approvals waiting across the members.
 	Pending     int
 	CostUSD     float64
-	LastSpeaker string     // member id that last wrote a reply ("" = none yet)
+	LastSpeaker string // member id that last wrote a reply ("" = none yet)
 	// Lead is the member id the person's messages go to ("" before the
 	// thread's first agent).
 	Lead string
-	Mode        agent.Mode // the thread's permission mode
+	Mode agent.Mode // the thread's permission mode
 	// Pinned threads sort first; Resolved ones are settled until a new message.
 	Pinned, Resolved bool
 	// Orchestration is the thread's orchestration level (config.Levels).

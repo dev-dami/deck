@@ -114,4 +114,3 @@ func TestBlockedRelayDoesNotStallOtherThreads(t *testing.T) {
 		t.Fatal("the blocked send never finished")
 	}
 }
-
