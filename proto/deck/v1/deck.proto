@@ -198,6 +198,12 @@ service Deck {
   // Highlights is the durable snapshot; Events carries subsequent deltas.
   rpc Highlights(SessionRef) returns (HighlightsResponse);
   rpc HighlightAction(HighlightActionRequest) returns (HighlightItem);
+  // Durable, room-scoped artifacts. Source reads are paged; events are metadata only.
+  rpc Artifacts(ArtifactsRequest) returns (ArtifactsResponse);
+  rpc ArtifactRevisions(ArtifactRevisionsRequest) returns (ArtifactRevisionsResponse);
+  rpc ArtifactRead(ArtifactReadRequest) returns (ArtifactReadResponse);
+  rpc ArtifactAction(ArtifactActionRequest) returns (ArtifactActionResponse);
+  rpc ReportArtifactBuild(ReportArtifactBuildRequest) returns (ArtifactBuildReport);
 
   // Events streams everything that happens, starting with a Ready. Pass the
   // epoch and seq of the last event seen to replay what was missed; Ready
@@ -395,6 +401,132 @@ message HighlightActionRequest {
   HighlightSource source = 8;
   // seen may mark a batch; ids is invalid for every other action.
   repeated string ids = 9;
+}
+
+message ArtifactSummary {
+  string id = 1;
+  string session_id = 2;
+  string title = 3;
+  string kind = 4; // markdown | html | svg | react
+  uint32 current_revision = 5;
+  int64 created_at = 6;
+  int64 updated_at = 7; // source changes only, Unix milliseconds
+  string agent = 8;
+  HighlightSource source = 9;
+  uint32 state_version = 10; // includes provenance/diagnostic updates
+  string build_status = 11; // empty | ok | error, client reported
+}
+message ArtifactFileInput {
+  string path = 1;
+  string content = 2;
+}
+message ArtifactFileInfo {
+  string path = 1;
+  string media_type = 2;
+  uint32 size_bytes = 3;
+}
+message ArtifactRevisionInfo {
+  uint32 revision = 1;
+  string title = 2;
+  string entrypoint = 3;
+  string agent = 4;
+  HighlightSource source = 5;
+  int64 created_at = 6;
+  string note = 7;
+  uint32 restored_from_revision = 8;
+}
+message ArtifactsRequest {
+  string session_id = 1;
+  string cursor = 2;
+  uint32 limit = 3;
+}
+message ArtifactsResponse {
+  repeated ArtifactSummary items = 1;
+  string next_cursor = 2;
+}
+message ArtifactRevisionsRequest {
+  string session_id = 1;
+  string id = 2;
+  string cursor = 3;
+  uint32 limit = 4;
+}
+message ArtifactRevisionsResponse {
+  repeated ArtifactRevisionInfo items = 1;
+  string next_cursor = 2;
+}
+message ArtifactReadRequest {
+  string session_id = 1;
+  string id = 2;
+  uint32 revision = 3; // 0 resolves current; reply pins a concrete number
+  string path = 4; // empty requests metadata/manifest/build feedback
+  uint32 offset = 5;
+  uint32 limit = 6; // UTF-8 bytes; gRPC max 256 KiB, hub max 2 KiB
+}
+message ArtifactReadResponse {
+  uint32 revision = 1;
+  string path = 2;
+  string content = 3;
+  uint32 next_offset = 4;
+  bool eof = 5;
+  uint32 total_bytes = 6;
+  ArtifactRevisionInfo info = 7; // metadata read only
+  repeated ArtifactFileInfo files = 8; // metadata read only
+  repeated ArtifactBuildReport builds = 9; // metadata read only
+  bool redacted = 10; // hub reads label credential-shaped source redaction
+}
+message ArtifactActionRequest {
+  string session_id = 1;
+  string action = 2; // create | update | restore
+  string id = 3;
+  string key = 4; // idempotent create only
+  uint32 base_revision = 5;
+  string title = 6;
+  string kind = 7; // create only
+  string entrypoint = 8;
+  repeated ArtifactFileInput files = 9;
+  string note = 10;
+  HighlightSource source = 11;
+  uint32 restore_revision = 12;
+}
+message ArtifactActionResponse {
+  ArtifactSummary artifact = 1;
+  ArtifactRevisionInfo revision = 2;
+  bool replayed = 3;
+}
+// gRPC Aborted status detail. Exposed to JS without parsing prose.
+message ArtifactConflict {
+  string id = 1;
+  uint32 base_revision = 2;
+  uint32 current_revision = 3;
+  string reason = 4; // stale_revision | create_key_reused
+}
+message ArtifactDiagnostic {
+  string file = 1;
+  uint32 line = 2;
+  uint32 column = 3;
+  string message = 4;
+}
+message ReportArtifactBuildRequest {
+  string session_id = 1;
+  string id = 2;
+  uint32 revision = 3;
+  string report_id = 4;
+  string runtime_version = 5;
+  string client_instance = 6;
+  uint32 attempt = 7;
+  string phase = 8; // build | runtime
+  bool ok = 9;
+  repeated ArtifactDiagnostic diagnostics = 10;
+}
+message ArtifactBuildReport {
+  string report_id = 1;
+  string runtime_version = 2;
+  string client_instance = 3;
+  uint32 attempt = 4;
+  string phase = 5;
+  bool ok = 6;
+  repeated ArtifactDiagnostic diagnostics = 7;
+  int64 received_at = 8; // engine stamped, Unix milliseconds
 }
 
 message SessionRef {
@@ -772,6 +904,7 @@ message Event {
     BrowserStateResponse browser_changed = 27;
     HighlightItem highlight_changed = 28;
     AgentSummary summary_changed = 29;
+    ArtifactSummary artifact_changed = 30;
   }
 }
 

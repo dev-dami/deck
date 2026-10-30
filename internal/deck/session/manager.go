@@ -313,6 +313,7 @@ type Manager struct {
 	activity        func(threadID string) string
 	browserAction   func(context.Context, string, string, *deckv1.BrowserCommand) *deckv1.BrowserActionResponse
 	highlightAction HighlightExecutor
+	artifactAction  ArtifactExecutor
 	// team is the peer link for the peers.* ops; see SetTeam.
 	team hub.Team
 	// profiles reads the named agents for a thread's folder; see

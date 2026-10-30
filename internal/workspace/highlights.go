@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -68,7 +69,21 @@ func (w *DeckWorkspace) DeleteSession(ctx context.Context, sid string) error {
 	if err := w.topSession(ctx, sid); err != nil {
 		return err
 	}
-	return w.highlightStore().Delete(sid, func() error { return w.AppWorkspace.DeleteSession(ctx, sid) })
+	return w.artifactStore().Delete(sid, func() error {
+		committed := false
+		err := w.highlightStore().Delete(sid, func() error {
+			err := w.AppWorkspace.DeleteSession(ctx, sid)
+			committed = err == nil
+			return err
+		})
+		if committed && err != nil {
+			// A staging-file cleanup error cannot undo the primary deletion.
+			// Do not restore an artifact file for a room that no longer exists.
+			slog.Warn("Could not remove deleted Highlight staging file", "error", err)
+			return nil
+		}
+		return err
+	})
 }
 
 // highlightSource checks primary refs before persistence. Session IDs in

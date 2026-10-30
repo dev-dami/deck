@@ -117,6 +117,7 @@ type OpsRunner interface {
 
 // Env is what one call runs against; the caller resolves it per call.
 type Env struct {
+	Artifacts  func(context.Context, string, json.RawMessage) (string, error)
 	Highlights func(context.Context, string, json.RawMessage) (string, error)
 	Browser    func(context.Context, string, json.RawMessage) agent.OpResult
 	AgentID    string
@@ -224,7 +225,9 @@ func (o Op) Signature() string {
 }
 
 // Ops is the catalog, in the order search lists it.
-func Ops() []Op { return append(append(append([]Op{}, ops...), browserOps()...), highlightOps()...) }
+func Ops() []Op {
+	return append(append(append(append([]Op{}, ops...), browserOps()...), highlightOps()...), artifactOps()...)
+}
 
 var ops []Op
 

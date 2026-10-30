@@ -178,6 +178,10 @@ func (s *Server) recheck(ctx context.Context, sid string) {
 func (s *Server) pumpWorkspace(ctx context.Context) {
 	for ev := range s.crew.changes.SubscribeDeck(ctx) {
 		c := ev.Payload
+		if c.Kind == workspace.ChangeArtifact && c.Artifact != nil {
+			s.feed.publish(&deckv1.Event{SessionId: c.SessionID, Kind: &deckv1.Event_ArtifactChanged{ArtifactChanged: c.Artifact}})
+			continue
+		}
 		if c.Kind == workspace.ChangeHighlight && c.Highlight != nil {
 			s.feed.publish(&deckv1.Event{SessionId: c.SessionID, Kind: &deckv1.Event_HighlightChanged{HighlightChanged: c.Highlight}})
 			continue
@@ -212,6 +216,9 @@ func (s *Server) clis() []*deckv1.AgentCli {
 
 func (s *Server) capabilities() []string {
 	var out []string
+	if s.crew != nil && s.crew.artifacts != nil {
+		out = append(out, artifactMethods...)
+	}
 	if s.crew != nil && s.crew.highlights != nil {
 		out = append(out, "Highlights", "HighlightAction")
 	}
