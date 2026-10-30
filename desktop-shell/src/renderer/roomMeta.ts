@@ -26,6 +26,9 @@ export interface RoomLead {
   agent: string;
   kind: string;
   model: string;
+  // The model it runs ("claude-opus-5-5") when model is an alias or "" for
+  // the CLI's default; "" until a run of it has said.
+  slug: string;
   effort: string;
   profile: string;
 }

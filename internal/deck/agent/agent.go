@@ -497,8 +497,11 @@ var Modes = []Mode{ModePlan, ModeAsk, ModeYolo}
 
 // ModelInfo is one model a CLI offers.
 type ModelInfo struct {
-	ID          string // value passed to the CLI (--model / model field)
-	Name        string // display name
+	ID   string // value passed to the CLI (--model / model field)
+	Name string // display name
+	// Slug is the model ID runs as when ID is an alias or "" ("opus" runs
+	// claude-opus-5-5); Deck fills it once a run has said, "" before.
+	Slug        string `json:",omitempty"`
 	Description string
 	Default     bool
 	// Efforts are the reasoning efforts the model takes, in the CLI's order;

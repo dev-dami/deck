@@ -305,7 +305,7 @@ export class FakeRpcDeck {
       try {
         const roster = this.deck.invoke("roster.get", { session_id: id }) as Obj[];
         const first = roster[0];
-        if (first !== undefined) lead = { agent: first["id"], kind: first["kind"], model: first["model"] ?? "", effort: first["effort"] ?? "" };
+        if (first !== undefined) lead = { agent: first["id"], kind: first["kind"], model: first["model"] ?? "", slug: fakeSlug(String(first["kind"]), String(first["model"] ?? "")), effort: first["effort"] ?? "" };
       } catch {
         // no such session
       }
@@ -860,10 +860,11 @@ export class FakeRpcDeck {
             // The agent menu: that agent becomes the session's lead.
             const sid = String(call.request["session_id"]);
             const kind = String(call.request["kind"]);
+            const model = String(call.request["model"] ?? "");
             this.leads.push([sid, kind]);
             this.room.meta[sid] = {
               ...this.room.meta[sid],
-              lead: { agent: kind, kind, model: String(call.request["model"] ?? ""), effort: String(call.request["effort"] ?? "") },
+              lead: { agent: kind, kind, model, slug: fakeSlug(kind, model), effort: String(call.request["effort"] ?? "") },
             };
             this.roomChanged(sid);
           }
@@ -1057,4 +1058,11 @@ export function subThreadAtWork(f: FakeRpcDeck): string {
   );
   f.room.meta[id] = { parent_id: "ses_main" };
   return id;
+}
+
+// The model a fake CLI says a pick runs, as a real one does at start: an
+// alias or the default names a slug.
+export function fakeSlug(kind: string, model: string): string {
+  const slugs: Record<string, string> = { "claude/": "claude-opus-5-5", "claude/opus": "claude-opus-5-5", "claude/sonnet": "claude-sonnet-5-5", "claude/haiku": "claude-haiku-5-5", "codex/": "gpt-5.5-codex" };
+  return slugs[`${kind}/${model === "default" ? "" : model}`] ?? model;
 }

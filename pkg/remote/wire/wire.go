@@ -205,9 +205,12 @@ type Session struct {
 
 // Lead is a session's lead agent.
 type Lead struct {
-	Agent   string `json:"agent"`
-	Kind    string `json:"kind"`
-	Model   string `json:"model,omitempty"`
+	Agent string `json:"agent"`
+	Kind  string `json:"kind"`
+	Model string `json:"model,omitempty"`
+	// Slug is the model it runs ("claude-opus-5-5") when Model is an alias
+	// or "" for the CLI's default; "" until a run of it has said.
+	Slug    string `json:"slug,omitempty"`
 	Effort  string `json:"effort,omitempty"`
 	Profile string `json:"profile,omitempty"`
 }

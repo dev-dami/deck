@@ -162,7 +162,7 @@ func (b *Backend) wireSession(s session.Session) wire.Session {
 		r := rs.Room(s.ID)
 		out.ParentID = r.Parent
 		if r.Lead != (workspace.Lead{}) {
-			out.Lead = &wire.Lead{Agent: r.Lead.Agent, Kind: r.Lead.Kind, Model: r.Lead.Model, Effort: r.Lead.Effort, Profile: r.Lead.Profile}
+			out.Lead = &wire.Lead{Agent: r.Lead.Agent, Kind: r.Lead.Kind, Model: r.Lead.Model, Slug: r.Lead.Slug, Effort: r.Lead.Effort, Profile: r.Lead.Profile}
 		}
 	}
 	return out

@@ -162,13 +162,15 @@ export interface SessionLead {
   agent: string;
   kind: string;
   model?: string;
+  // The model it runs ("claude-opus-5-5") when model is an alias or empty.
+  slug?: string;
   effort?: string;
   profile?: string;
 }
 
 export const decodeSessionLead: Decoder<SessionLead> = object(
   { agent: str, kind: str },
-  { model: str, effort: str, profile: str },
+  { model: str, slug: str, effort: str, profile: str },
 );
 
 export const decodeSession: Decoder<Session> = object(

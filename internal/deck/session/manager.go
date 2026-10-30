@@ -225,8 +225,9 @@ type AgentInfo struct {
 	// Deck's own text takes; both are estimates, 0 when not known.
 	ContextBaseline int
 	DeckTokens      int
-	// RunningModel is the model slug the CLI reports it is running (e.g.
-	// "claude-opus-5-5" when Model is "" or an alias); "" until it says.
+	// RunningModel is the model slug the member runs (e.g. "claude-opus-5-5"
+	// when Model is "" or an alias): what its CLI reported, or what the same
+	// pick ran as before (slugs.go); "" until Deck has seen it.
 	RunningModel string
 	// Profile is the named agent it was started from ("" for none), Role
 	// that profile's one-line role and Color its CSS colour ("" for the
@@ -299,10 +300,11 @@ type Manager struct {
 	relayMu sync.Mutex
 	relayQ  map[*thread][]func()
 
-	modelMu    sync.Mutex        // guards defModels and modelCache
+	modelMu    sync.Mutex        // guards defModels, modelCache and slugs
 	defModels  map[string]string // kind -> model for members started later (SetDefaultModel)
 	defEfforts map[string]string // kind -> effort for members started later (SetDefaultEffort)
 	modelCache map[string][]agent.ModelInfo
+	slugs      map[string]string // kind and pick -> the slug it ran as (slugs.go)
 	// policyNoted: the kinds whose context policy notice was shown
 	// (notePolicy); guarded by mu.
 	policyNoted map[string]bool
@@ -642,6 +644,7 @@ func (m *Manager) addMember(t *thread, kind, model, preferredID string, prof pro
 	}
 	effort := cmp.Or(prof.Effort, m.defaultEffort(cfg, kind))
 	a := &agentState{id: id, kind: kind, model: model, effort: effort, thread: t, base: StatusIdle, started: time.Now(), prof: prof}
+	a.running = m.ModelSlug(kind, model)
 	m.mu.Lock()
 	m.order = append(m.order, a)
 	m.byID[id] = a
@@ -1373,6 +1376,10 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 			parent: mem.Parent, ephemeral: mem.Ephemeral, dir: mem.Dir, worktree: mem.Worktree,
 			prof: m.storedProfile(t, mem), subs: slices.Clone(mem.Subs),
 		}
+		if mem.Running != "" && mem.Model == model {
+			m.learnSlug(mem.Kind, model, mem.Running)
+		}
+		a.running = m.ModelSlug(mem.Kind, model)
 		// Its subagents did not outlive the CLI that ran them.
 		a.stopSubsLocked(time.Now())
 		if mem.Ephemeral {
@@ -1712,6 +1719,12 @@ func (m *Manager) onEvent(a *agentState, ev agent.Event) {
 		ev.Tool = &t
 	}
 	res := a.apply(ev)
+	if ev.Kind == agent.KindSessionStarted && ev.Text != "" {
+		a.mu.Lock()
+		kind, pick := a.kind, a.model
+		a.mu.Unlock()
+		m.learnSlug(kind, pick, ev.Text)
+	}
 	// Plan limits are about the account, not the conversation, and a
 	// restart about the process: they are not part of the thread's log.
 	if !ev.Delta && ev.Kind != agent.KindLimits && ev.Kind != agent.KindRestarting && ev.Kind != agent.KindRestarted {
@@ -1996,7 +2009,7 @@ func (a *agentState) memberMeta() store.Member {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return store.Member{
-		ID: a.id, Kind: a.kind, Name: a.name, Model: a.model, Effort: a.effort, SessionID: a.sessionID,
+		ID: a.id, Kind: a.kind, Name: a.name, Model: a.model, Running: a.running, Effort: a.effort, SessionID: a.sessionID,
 		CostUSD: a.costTotal + a.costTurn, Cursor: a.cursor,
 		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource, Briefed: a.briefed,
 		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,
@@ -2145,8 +2158,9 @@ func (a *agentState) apply(ev agent.Event) (res applyResult) {
 			a.briefed = false // a new CLI session has not seen the instructions
 			res.metaDirty = true
 		}
-		if ev.Text != "" {
-			a.running = ev.Text
+		if s := Slug(ev.Text); s != "" && s != a.running {
+			a.running = s
+			res.metaDirty = true
 		}
 	case agent.KindAssistantText:
 		a.base = StatusWorking

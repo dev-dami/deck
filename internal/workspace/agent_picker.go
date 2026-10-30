@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"cmp"
 	"context"
 	"slices"
 	"strings"
@@ -18,8 +19,11 @@ type EffortChoice struct {
 
 // ModelChoice is one model an agent CLI offers, as the model picker shows it.
 type ModelChoice struct {
-	Kind        string // "claude", "codex", "opencode", "antigravity"
-	ID          string // passed to the CLI; "" = the CLI's default
+	Kind string // "claude", "codex", "opencode", "antigravity"
+	ID   string // passed to the CLI; "" = the CLI's default
+	// Name is the model's slug ("claude-opus-5-5") once a run of ID has
+	// said what it is (session/slugs.go); before that ID, or the CLI's own
+	// name for its default.
 	Name        string
 	Description string
 	Default     bool // the CLI's own default
@@ -111,10 +115,7 @@ func (w *DeckWorkspace) CachedAgentModelChoices(sessionID string) []ModelChoice 
 		models, have := w.models[kind]
 		w.mu.Unlock()
 		if !have {
-			name := cur
-			if name == "" {
-				name = "default model"
-			}
+			name := cmp.Or(w.mgr().ModelSlug(kind, cur), cur, "default model")
 			out = append(out, ModelChoice{Kind: kind, ID: cur, Name: name, Current: true, CurrentEffort: curEffort})
 			continue
 		}
@@ -122,7 +123,7 @@ func (w *DeckWorkspace) CachedAgentModelChoices(sessionID string) []ModelChoice 
 			c := ModelChoice{
 				Kind:          kind,
 				ID:            mi.ID,
-				Name:          mi.Name,
+				Name:          cmp.Or(w.mgr().ModelSlug(kind, mi.ID), mi.Slug, mi.ID, mi.Name),
 				Description:   mi.Description,
 				Default:       mi.Default,
 				DefaultEffort: mi.DefaultEffort,

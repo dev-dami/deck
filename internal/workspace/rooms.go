@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"slices"
@@ -72,8 +73,11 @@ type Room struct {
 }
 
 // Lead is a session's lead agent, as the clients' agent menu shows it.
+// Model is what the agent was asked to run (an alias, or "" for the CLI's
+// default) and Slug the model that is ("claude-opus-5-5"), "" until a run of
+// it has said.
 type Lead struct {
-	Agent, Kind, Model, Effort, Profile string
+	Agent, Kind, Model, Slug, Effort, Profile string
 }
 
 var _ Rooms = (*DeckWorkspace)(nil)
@@ -125,7 +129,7 @@ func (w *DeckWorkspace) Room(sessionID string) Room {
 		}
 		for _, a := range th.Members {
 			if a.ID == th.Lead {
-				r.Lead = Lead{Agent: a.Name, Kind: a.Kind, Model: a.Model, Effort: a.Effort, Profile: a.Profile}
+				r.Lead = Lead{Agent: a.Name, Kind: a.Kind, Model: a.Model, Slug: a.RunningModel, Effort: a.Effort, Profile: a.Profile}
 			}
 		}
 		return r
@@ -138,7 +142,8 @@ func (w *DeckWorkspace) Room(sessionID string) Room {
 			}
 			for _, a := range t.Members {
 				if a.ID == t.Lead {
-					r.Lead = Lead{Agent: a.Name, Kind: a.Kind, Model: a.Model, Effort: a.Effort}
+					slug := cmp.Or(decks.Slug(a.Running), w.mgr().ModelSlug(a.Kind, a.Model))
+					r.Lead = Lead{Agent: a.Name, Kind: a.Kind, Model: a.Model, Slug: slug, Effort: a.Effort, Profile: a.Profile}
 				}
 			}
 			if t.Worktree != nil {

@@ -68,7 +68,7 @@ type room struct {
 func (r room) fill(p *deckv1.Session) {
 	p.Attention, p.Branch, p.Archived, p.ParentId = r.attention, r.branch, r.archived, r.parent
 	if r.lead != (workspace.Lead{}) {
-		p.Lead = &deckv1.SessionLead{Agent: r.lead.Agent, Kind: r.lead.Kind, Model: r.lead.Model, Effort: r.lead.Effort, Profile: r.lead.Profile}
+		p.Lead = &deckv1.SessionLead{Agent: r.lead.Agent, Kind: r.lead.Kind, Model: r.lead.Model, Slug: r.lead.Slug, Effort: r.lead.Effort, Profile: r.lead.Profile}
 	} else {
 		p.Lead = nil
 	}

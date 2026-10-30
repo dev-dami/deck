@@ -2106,7 +2106,10 @@ type SessionLead struct {
 	Model  string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
 	Effort string `protobuf:"bytes,4,opt,name=effort,proto3" json:"effort,omitempty"`
 	// profile is the named agent it runs as, "" for none.
-	Profile       string `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`
+	Profile string `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`
+	// slug is the model it runs ("claude-opus-5-5") when model is an alias
+	// or "" for the CLI's default; "" until a run of it has said.
+	Slug          string `protobuf:"bytes,6,opt,name=slug,proto3" json:"slug,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2172,6 +2175,13 @@ func (x *SessionLead) GetEffort() string {
 func (x *SessionLead) GetProfile() string {
 	if x != nil {
 		return x.Profile
+	}
+	return ""
+}
+
+func (x *SessionLead) GetSlug() string {
+	if x != nil {
+		return x.Slug
 	}
 	return ""
 }
@@ -12564,13 +12574,14 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\barchived\x18\n" +
 	" \x01(\bR\barchived\x12\x1b\n" +
 	"\tparent_id\x18\v \x01(\tR\bparentId\x12(\n" +
-	"\x04lead\x18\f \x01(\v2\x14.deck.v1.SessionLeadR\x04lead\"\x7f\n" +
+	"\x04lead\x18\f \x01(\v2\x14.deck.v1.SessionLeadR\x04lead\"\x93\x01\n" +
 	"\vSessionLead\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05model\x18\x03 \x01(\tR\x05model\x12\x16\n" +
 	"\x06effort\x18\x04 \x01(\tR\x06effort\x12\x18\n" +
-	"\aprofile\x18\x05 \x01(\tR\aprofile\"D\n" +
+	"\aprofile\x18\x05 \x01(\tR\aprofile\x12\x12\n" +
+	"\x04slug\x18\x06 \x01(\tR\x04slug\"D\n" +
 	"\x14ListSessionsResponse\x12,\n" +
 	"\bsessions\x18\x01 \x03(\v2\x10.deck.v1.SessionR\bsessions\"y\n" +
 	"\x14CreateSessionRequest\x12\x14\n" +

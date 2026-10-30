@@ -468,6 +468,9 @@ message SessionLead {
   string effort = 4;
   // profile is the named agent it runs as, "" for none.
   string profile = 5;
+  // slug is the model it runs ("claude-opus-5-5") when model is an alias
+  // or "" for the CLI's default; "" until a run of it has said.
+  string slug = 6;
 }
 
 message ListSessionsResponse {

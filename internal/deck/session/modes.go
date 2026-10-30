@@ -1,6 +1,7 @@
 package session
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -236,7 +237,7 @@ func (m *Manager) Models(ctx context.Context, kind string) ([]agent.ModelInfo, e
 	cached, ok := m.modelCache[kind]
 	m.modelMu.Unlock()
 	if ok {
-		return append([]agent.ModelInfo(nil), cached...), nil
+		return m.withSlugs(kind, cached), nil
 	}
 	ml, ok := ad.(agent.ModelLister)
 	if !ok {
@@ -252,7 +253,17 @@ func (m *Manager) Models(ctx context.Context, kind string) ([]agent.ModelInfo, e
 	}
 	m.modelCache[kind] = append([]agent.ModelInfo(nil), list...)
 	m.modelMu.Unlock()
-	return list, nil
+	return m.withSlugs(kind, list), nil
+}
+
+// withSlugs is a copy of list with each model's Slug, what it ran as; ""
+// when no run has said (its ID is then the best name there is).
+func (m *Manager) withSlugs(kind string, list []agent.ModelInfo) []agent.ModelInfo {
+	out := append([]agent.ModelInfo(nil), list...)
+	for i := range out {
+		out[i].Slug = cmp.Or(m.ModelSlug(kind, out[i].ID), out[i].Slug)
+	}
+	return out
 }
 
 // ForgetModels drops every kind's cached model list, here and in each adapter
@@ -298,6 +309,8 @@ func (m *Manager) SetModel(agentID, model string) error {
 		// 5x too empty), and apply keeps a window until a non-zero one
 		// arrives: unknown until the new model reports its own.
 		a.ctxWindow = 0
+		// Nor its name: the CLI reports the new one when it restarts.
+		a.running = m.ModelSlug(a.kind, model)
 	}
 	a.model = model
 	a.mu.Unlock()

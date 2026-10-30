@@ -18,7 +18,10 @@ export interface Lead {
   // that has not started.
   agent: string;
   kind: string;
+  // What it was asked to run (an alias, "" for the CLI's default) and the
+  // model that is ("claude-opus-5-5"), which the chip shows when known.
   model: string;
+  slug?: string;
   effort: string;
   // The named agent it runs as, "" for a plain kind.
   profile: string;
@@ -55,6 +58,7 @@ export function LeadPicker({
   const [open, setOpen] = useState(false);
   const colour = agentColour(lead.agent, lead.kind, tintOf(lead.color));
   const label = lead.profile !== "" ? lead.profile : lead.kind;
+  const model = lead.slug || lead.model;
   return (
     <Popover
       open={open}
@@ -69,7 +73,7 @@ export function LeadPicker({
           style={{ "--hue": colour } as CSSProperties}
           aria-haspopup="menu"
           aria-expanded={open}
-          aria-label={`Agent: ${label}${lead.model !== "" ? `, ${lead.model}` : ""}. Change it`}
+          aria-label={`Agent: ${label}${model !== "" ? `, ${model}` : ""}. Change it`}
           data-lead={lead.kind}
           title="The agent you talk to; it calls subagents and opens sub-threads itself"
           onClick={() => setOpen((o) => !o)}
@@ -78,7 +82,7 @@ export function LeadPicker({
             {kindMark(theme, lead.kind) || "●"}
           </span>
           <span className="lead-name truncate font-medium text-foreground">{label}</span>
-          {lead.model !== "" && <span className="lead-model hidden truncate text-faint @[34rem]/bar:inline">{lead.model}</span>}
+          {model !== "" && <span className="lead-model hidden truncate text-faint @[34rem]/bar:inline">{model}</span>}
           {lead.effort !== "" && <span className="lead-effort hidden shrink-0 text-faint @[40rem]/bar:inline">· {lead.effort}</span>}
           <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status] ?? "bg-muted-foreground/40")} />
           <ChevronDown aria-hidden className="size-3 shrink-0 text-faint" />

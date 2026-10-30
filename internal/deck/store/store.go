@@ -69,10 +69,13 @@ const CurrentVersion = 2
 
 // Member is one agent taking part in a thread.
 type Member struct {
-	ID        string  `json:"id"`   // Deck's id, unique across the deck: "claude", "claude2", "codex"
-	Kind      string  `json:"kind"` // "claude" or "codex"
-	Name      string  `json:"name"` // display name; used for addressing
-	Model     string  `json:"model,omitempty"`
+	ID    string `json:"id"`   // Deck's id, unique across the deck: "claude", "claude2", "codex"
+	Kind  string `json:"kind"` // "claude" or "codex"
+	Name  string `json:"name"` // display name; used for addressing
+	Model string `json:"model,omitempty"`
+	// Running is the slug Model ran as, as the CLI reported it
+	// ("claude-opus-5-5" for "opus"); "" until it has.
+	Running   string  `json:"running,omitempty"`
 	Effort    string  `json:"effort,omitempty"`
 	SessionID string  `json:"session_id,omitempty"` // the CLI's own session/thread id
 	CostUSD   float64 `json:"cost_usd,omitempty"`

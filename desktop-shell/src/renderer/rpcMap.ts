@@ -370,7 +370,7 @@ const stringList = (v: unknown): string[] | null =>
 export function toRoom(v: unknown): RoomUpdate | null {
   if (!isRecord(v) || s(v["id"]) === "") return null;
   const l = v["lead"];
-  const lead = isRecord(l) && s(l["kind"]) !== "" ? { agent: s(l["agent"]), kind: s(l["kind"]), model: s(l["model"]), effort: s(l["effort"]), profile: s(l["profile"]) } : null;
+  const lead = isRecord(l) && s(l["kind"]) !== "" ? { agent: s(l["agent"]), kind: s(l["kind"]), model: s(l["model"]), slug: s(l["slug"]), effort: s(l["effort"]), profile: s(l["profile"]) } : null;
   return { k: "session", id: s(v["id"]), attention: attentionOf(v["attention"]), branch: s(v["branch"]), archived: v["archived"] === true, parent: s(v["parent_id"]), lead };
 }
 
