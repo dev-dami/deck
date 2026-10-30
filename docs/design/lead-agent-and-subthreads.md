@@ -1,6 +1,6 @@
 # One lead agent, subagents and sub-threads
 
-Status: proposed, 2026-10-30. Supersedes the user-facing half of
+Status: accepted and built, 2026-10-30 (engine, desktop, phone, terminal). Supersedes the user-facing half of
 [agents-and-mentions.md](agents-and-mentions.md): the person no longer
 addresses agents with `@`, and agents no longer hand work to each other with
 `@name` lines. Named agents (profiles) stay, as dropdown entries.
