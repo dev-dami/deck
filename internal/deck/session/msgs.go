@@ -34,6 +34,10 @@ type EventMsg struct {
 	Images   []string // user messages only: attached image paths
 	Steer    bool     // user messages only: a queued message delivered as a steer
 	SteerOf  string   // steers only: EntryID of the queued message being delivered
+	// From (user messages only) is the agent whose brief or follow-up to a
+	// sub-thread this is (subthread.go), by name; "" when the person wrote it.
+	// Show it as that agent's message, not the person's.
+	From string
 }
 
 // FromUser reports whether the event is a message the user typed.
@@ -125,6 +129,9 @@ func msgFor(threadID string, e store.Entry) tea.Msg {
 		msg := EventMsg{Event: ev, ThreadID: threadID, To: e.To, EntryID: e.ID, Images: e.Images, Steer: e.Steer}
 		if e.Steer {
 			msg.SteerOf = e.Ref
+		}
+		if e.Via == viaSubthread {
+			msg.From = e.Speaker
 		}
 		return msg
 	case store.EntryEdit:

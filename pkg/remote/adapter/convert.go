@@ -77,6 +77,11 @@ func toMessage(m message.Message, root string) wire.Message {
 	if m.Role == message.Assistant && m.Provider != "deck" {
 		out.Agent = m.Model
 	}
+	// A user row with a Model is an agent's brief to a sub-thread
+	// (workspace onBrief): its agent says who wrote it.
+	if m.Role == message.User && m.Model != "" {
+		out.Agent = m.Model
+	}
 	for _, p := range m.Parts {
 		switch v := p.(type) {
 		case message.TextContent:

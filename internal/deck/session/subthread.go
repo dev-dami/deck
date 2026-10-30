@@ -179,7 +179,7 @@ func (m *Manager) askSub(t *thread, from *agentState, text string) error {
 	if lead == nil {
 		return errNoLead
 	}
-	res, err := m.postFrom(t, from.getName(), text, []*agentState{lead}, nil, false)
+	res, err := m.postFrom(t, from.getName(), text, []*agentState{lead}, nil, false, viaSubthread)
 	t.mu.Lock()
 	if res.EntryID != "" {
 		t.asks = append(t.asks, res.EntryID)

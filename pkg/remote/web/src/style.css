@@ -787,6 +787,24 @@ legend {
   font-weight: 600;
 }
 
+/* A parent agent's brief to a sub-thread: the agent's words in a quiet
+   card, under who sent them from which thread. */
+.msg-brief {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--p-separator);
+  background: var(--p-bg-least-visible);
+}
+
+.brief-from {
+  color: var(--p-fg-more-subtle);
+  font-size: 0.8rem;
+}
+
+.brief-thread {
+  color: var(--p-fg-subtle);
+}
+
 /* A named agent's role, after its name: quiet, the name leads. */
 .agent-role {
   color: var(--p-fg-more-subtle);

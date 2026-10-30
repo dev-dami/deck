@@ -965,13 +965,15 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState, images [
 	if speaker == "" {
 		speaker = "user"
 	}
-	return m.postFrom(t, speaker, text, targets, images, true)
+	return m.postFrom(t, speaker, text, targets, images, true, "")
 }
 
 // postFrom is postTo for speaker. A message from a teammate (local false)
-// does not end a pause or reset the brakes: only the user does.
-func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentState, images []agent.Image, local bool) (PostResult, error) {
-	e := store.Entry{Type: store.EntryUser, ID: store.NewID(), Speaker: speaker, To: ids(targets), Event: agent.Event{Kind: agent.KindUserText, Text: text}}
+// does not end a pause or reset the brakes: only the user does. via marks
+// the entry ("subthread" for a parent agent's brief or follow-up), "" for
+// a person.
+func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentState, images []agent.Image, local bool, via string) (PostResult, error) {
+	e := store.Entry{Type: store.EntryUser, ID: store.NewID(), Speaker: speaker, To: ids(targets), Via: via, Event: agent.Event{Kind: agent.KindUserText, Text: text}}
 	if len(images) > 0 {
 		e.Images = imagePaths(images)
 	}

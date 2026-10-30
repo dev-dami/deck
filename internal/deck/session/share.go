@@ -285,7 +285,7 @@ func (m *Manager) PostShared(peer, threadID, text string) error {
 		m.emit(NoticeMsg{ThreadID: threadID, Text: peer + " posted: the thread is in ask mode now, so work a teammate starts asks before each edit and command"})
 	}
 	m.wake(t)
-	_, err = m.postFrom(t, peer, text, []*agentState{target}, nil, false)
+	_, err = m.postFrom(t, peer, text, []*agentState{target}, nil, false, "")
 	return err
 }
 

@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { canSaveEdit } from "../composer";
 import type { AgentLine, Message, Part } from "../protocol";
+import { briefOf } from "../subthreads";
 import { kindColour, kindMark } from "../theme";
 import { type Chunk, groupParts, messageText } from "../transcript";
 import { DiffView } from "./DiffView";
@@ -121,13 +122,22 @@ function EditBox({
   );
 }
 
-function AgentName({ agentId, roster }: { agentId: string; roster: AgentLine[] }) {
+function AgentName({
+  agentId,
+  roster,
+  inline = false,
+}: {
+  agentId: string;
+  roster: AgentLine[];
+  inline?: boolean;
+}) {
   const { theme } = useAppState();
   const line = roster.find((a) => a.id === agentId);
   const kind = line?.kind ?? "";
   const mark = kindMark(theme, kind);
+  const Tag = inline ? "span" : "p";
   return (
-    <p class="agent-name" style={{ color: kindColour(kind) }}>
+    <Tag class="agent-name" style={{ color: kindColour(kind) }}>
       {mark !== "" ? (
         <span class="agent-mark" aria-hidden="true">
           {mark}{" "}
@@ -137,7 +147,7 @@ function AgentName({ agentId, roster }: { agentId: string; roster: AgentLine[] }
       {line?.role !== undefined && line.role !== "" ? (
         <span class="agent-role"> {line.role}</span>
       ) : null}
-    </p>
+    </Tag>
   );
 }
 
@@ -157,6 +167,20 @@ export function MessageView({ message, roster, online }: MessageViewProps) {
           <ChunkView key={i} chunk={c} user={true} />
         ))}
       </div>
+    );
+  }
+  // A parent agent's brief to this sub-thread: the agent's words, not the
+  // person's.
+  const brief = briefOf(message);
+  if (brief !== null) {
+    return (
+      <article class="msg msg-assistant msg-brief">
+        <p class="brief-from">
+          From <AgentName agentId={brief.from} roster={roster} inline />
+          {brief.thread !== "" ? <span class="brief-thread"> · {brief.thread}</span> : null}
+        </p>
+        <Markdown text={brief.body} />
+      </article>
     );
   }
   const user = message.role === "user";

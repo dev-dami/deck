@@ -69,6 +69,17 @@ func TestASubThreadReportsToItsLeadOnlyWhatTheLeadAsked(t *testing.T) {
 	if n := len(r.claude.prompts("claude")); n != 2 {
 		t.Fatalf("the lead was woken by the person's own talk in the sub-thread: %d prompts", n)
 	}
+
+	// The clients see the brief as claude's, the person's words as theirs.
+	var from []string
+	for _, m := range r.c.all() {
+		if e, ok := m.(EventMsg); ok && e.ThreadID == sub.ThreadID && e.FromUser() {
+			from = append(from, e.From)
+		}
+	}
+	if len(from) != 2 || from[0] != "claude" || from[1] != "" {
+		t.Fatalf("user messages in the sub-thread are from %q, want [claude \"\"]", from)
+	}
 }
 
 // A follow-up from the lead is an ask too; one from anyone else is refused.

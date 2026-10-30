@@ -492,6 +492,10 @@ func (w *DeckWorkspace) pump() {
 		switch m := msg.(type) {
 		case decks.EventMsg:
 			if m.FromUser() {
+				if m.From != "" {
+					w.onBrief(m)
+					continue
+				}
 				w.onUserMessage(m) // AgentRun stored the message already
 				continue
 			}
@@ -1002,6 +1006,25 @@ func (w *DeckWorkspace) say(threadID, agentID, text string) {
 		Provider: kind,
 		Parts:    []message.ContentPart{message.TextContent{Text: text}, message.Finish{Reason: message.FinishReasonEndTurn, Time: time.Now().Unix()}},
 	})
+}
+
+// onBrief stores a parent agent's brief or follow-up to a sub-thread
+// (EventMsg.From): a user row whose Model is that agent's name, so the
+// clients show it as the agent's message (wire Message.Agent), not the
+// person's. Nobody stored it before: no AgentRun posted it.
+func (w *DeckWorkspace) onBrief(m decks.EventMsg) {
+	sid := w.sessionOf(m.ThreadID)
+	if sid == "" {
+		return
+	}
+	w.dbw.wait(sid)
+	_, _ = w.app.Messages.Create(context.Background(), sid, message.CreateMessageParams{
+		Role:     message.User,
+		Model:    m.From,
+		Provider: "deck",
+		Parts:    []message.ContentPart{message.TextContent{Text: m.Text}},
+	})
+	w.expect(m.ThreadID, m.To, usage.TriggerRelay)
 }
 
 // notice shows a note from Deck itself.

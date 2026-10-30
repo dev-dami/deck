@@ -449,6 +449,13 @@ func TestConvertKeepsNamesNotPaths(t *testing.T) {
 	require.Equal(t, "shot.png", m.Parts[1].Image.Name)
 	require.Equal(t, "image/png", m.Parts[1].Image.Mime)
 	require.True(t, m.Finished)
+	require.Empty(t, m.Agent, "the person's own message names no agent")
+
+	// An agent's brief to a sub-thread is a user row that names its agent.
+	b := toMessage(message.Message{ID: "b", SessionID: "s", Role: message.User, Model: "claude", Provider: "deck",
+		Parts: []message.ContentPart{message.TextContent{Text: "check the limiter"}}}, "/work")
+	require.Equal(t, wire.RoleUser, b.Role)
+	require.Equal(t, "claude", b.Agent)
 
 	a := toApproval(permission.PermissionRequest{ID: "p", SessionID: "s", Description: "claude1 wants to edit: x",
 		Params: tools.EditPermissionsParams{FilePath: "/work/src/x.go", OldContent: "a\n", NewContent: "b\n"}}, time.Unix(1, 0), "/work")
