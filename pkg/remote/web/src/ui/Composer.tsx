@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { activeAgent, applyAgentChip, canSend } from "../composer";
+import { canSend } from "../composer";
 import { base64Length, checkImage, displayName, readAsBase64 } from "../images";
 import {
   applySuggestion,
@@ -9,7 +9,7 @@ import {
   suggestionHue,
   suggestions,
 } from "../mentions";
-import type { AgentLine, Image, Theme } from "../protocol";
+import type { AgentLine, Image, SessionLead, Theme } from "../protocol";
 import { kindColour, kindMark } from "../theme";
 import { useController } from "./hooks";
 
@@ -23,10 +23,14 @@ interface ComposerProps {
   theme?: Theme | null;
   // Whether the Deck lists the thread's changed files, for "#".
   files?: boolean;
+  // The agent every message goes to, and how to change it (the agents
+  // sheet). There is no "@" or "$" to address one.
+  lead?: SessionLead | undefined;
+  onAgents?: () => void;
 }
 
-// The pickers over the prompt, as on the desktop: "@" agents and people,
-// "$" agents, "#" (or "@" before a path) the thread's changed files.
+// The pickers over the prompt, as on the desktop: "#" (or "@" before a path)
+// the thread's changed files. Agents are not addressed: the lead answers.
 const PICKER_LABEL = { "@": "Agents and people", $: "Agents", "#": "Files" } as const;
 const PICKER_ROWS = 6;
 
@@ -38,6 +42,8 @@ export function Composer({
   kinds = [],
   theme = null,
   files = false,
+  lead,
+  onAgents,
 }: ComposerProps) {
   const controller = useController();
   const [text, setText] = useState("");
@@ -54,7 +60,6 @@ export function Composer({
   const asked = useRef<string | null>(null);
 
   const attachedBytes = images.reduce((n, i) => n + (i.data_b64?.length ?? 0), 0);
-  const current = activeAgent(text);
 
   const options = useMemo(() => {
     if (picker === null) return [];
@@ -152,25 +157,23 @@ export function Composer({
         void send();
       }}
     >
-      {roster.length > 0 ? (
-        <fieldset class="chips">
-          <legend class="sr-only">Address an agent</legend>
-          {roster.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              class={`chip ${current === a.name ? "active" : ""}`}
-              aria-pressed={current === a.name}
-              style={current === a.name ? {} : { borderColor: kindColour(a.kind) }}
-              onClick={() => {
-                setText((t) => applyAgentChip(t, a.name));
-                areaRef.current?.focus();
-              }}
-            >
-              ${a.name}
-            </button>
-          ))}
-        </fieldset>
+      {lead !== undefined ? (
+        <div class="chips">
+          <button
+            type="button"
+            class="chip lead-chip"
+            style={{ borderColor: kindColour(lead.kind) }}
+            aria-label={`Agent: ${lead.profile || lead.kind}${lead.slug || lead.model ? `, ${lead.slug || lead.model}` : ""}. Change it`}
+            onClick={onAgents}
+          >
+            <span class="ellipsis">
+              {lead.profile || lead.kind}
+              {lead.slug || lead.model ? (
+                <span class="lead-model"> · {lead.slug || lead.model}</span>
+              ) : null}
+            </span>
+          </button>
+        </div>
       ) : null}
       {images.length > 0 ? (
         <ul class="attachments" aria-label="Attached images">
@@ -246,7 +249,11 @@ export function Composer({
           ref={areaRef}
           rows={1}
           value={text}
-          placeholder={busy ? "Queue a message" : "Message, @ an agent, # a file"}
+          placeholder={
+            busy
+              ? "Queue a message"
+              : `Message ${lead?.profile || lead?.kind || "the agent"}, # a file`
+          }
           aria-label="Message"
           enterkeyhint="send"
           onInput={(e) => {

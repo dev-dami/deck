@@ -145,6 +145,8 @@ export function SessionScreen({ state, id }: { state: AppState; id: string }) {
         kinds={state.server?.kinds ?? EMPTY}
         theme={state.theme}
         files={state.server?.features.includes("changes") ?? false}
+        lead={session?.lead}
+        onAgents={() => setSheet("agents")}
       />
       {sheet === "agents" ? (
         <AgentsSheet
