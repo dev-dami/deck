@@ -16,13 +16,10 @@ import {
   MessageCircleQuestion,
   MonitorPlay,
   Network,
-  Maximize2,
-  Minimize2,
   RefreshCw,
   Undo2,
-  X,
 } from "./icons";
-import { type ComponentProps, useEffect, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useRef, useState } from "react";
 import type { DeckBridge } from "../../shared/bridge";
 import { addLocalNotice } from "../appState";
 import { type DeckClient, serves } from "../client";
@@ -35,7 +32,7 @@ import { useMentionables } from "../profiles";
 import { NO_RACE, toWire } from "../race";
 import { panelSlice, shallowEqual, useAppSlice } from "../select";
 import { gateMentionables } from "../teamGate";
-import { PANELS, type Panel } from "../ui";
+import { type Panel, WIDE_PX } from "../ui";
 import { usePickerSource } from "./AgentPicker";
 import { AgentsTree } from "./AgentsTree";
 import { BrowserPanel } from "./BrowserPanel";
@@ -51,16 +48,15 @@ import { Button } from "./kit/button";
 import { PathTail } from "./kit/path";
 import { Confirm } from "./kit/dialog";
 import { EmptyState } from "./kit/empty";
-import { segmentItem, segmentTrack } from "./kit/segmented";
 import { WorkGraph } from "./graph/WorkGraph";
-import { useOpenPorts } from "./usePorts";
 
-// The room's tabs: Changes, Graph (the Work Graph, compact), Tasks (the
-// queue, the board and races), Work (worktrees and capsules, when the Deck
-// serves them), Agents (the tree), Side chat and, while a dev server
-// answers, Preview.
+// The side panel's views, each a pane of the room's layout (layout/):
+// Changes, Graph (the Work Graph, compact while narrow), Tasks (the queue,
+// the board and races), Work (worktrees and capsules, when the Deck serves
+// them), Agents (the tree), Side chat and, while a dev server answers,
+// Preview.
 
-const TAB_ICONS: Record<Panel, IconType> = {
+export const TAB_ICONS: Record<Panel, IconType> = {
   changes: FileDiff,
   graph: Graph,
   tasks: ListChecks,
@@ -257,7 +253,36 @@ function Changes({
   );
 }
 
-export function RightPanel({
+// The views the side panel offers now: Preview while a dev server answers,
+// Work, Highlights and Browser where the Deck serves them, and whichever
+// one is open regardless.
+export function panelAvailable(c: DeckClient, bridge: DeckBridge, ports: number, open: Panel | null): (p: Panel) => boolean {
+  return (p) =>
+    p === open ||
+    (p !== "preview" || ports > 0) &&
+      (p !== "work" || serves(c, "Work")) &&
+      (p !== "highlights" || serves(c, "Highlights")) &&
+      (p !== "browser" || (serves(c, "BrowserState") && bridge.browserView !== undefined));
+}
+
+
+function useWide(): [(el: HTMLDivElement | null) => void, boolean] {
+  const [wide, setWide] = useState(false);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    if (el === null) return;
+    const set = () => setWide(el.getBoundingClientRect().width >= WIDE_PX);
+    set();
+    const watch = new ResizeObserver(set);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+  return [ref, wide];
+}
+
+// One view of the side panel, as a pane of the room's layout (layout/):
+// Changes, Graph, Tasks and the rest. Its stack's tabs and buttons are the
+// Workspace's; this is what shows under them.
+export function PanelPane({
   c,
   bridge,
   projectKey,
@@ -266,7 +291,6 @@ export function RightPanel({
   open,
   files,
   focus,
-  wide,
   crew,
   crewAt,
   branch,
@@ -275,14 +299,10 @@ export function RightPanel({
   onError,
   onInfo,
   onPanel,
-  onWide,
-  onClose,
   lane = null,
   onLane,
   onSteer,
   onStop,
-  side = "right",
-  float = false,
   onOpenThread,
 }: {
   c: DeckClient;
@@ -294,7 +314,6 @@ export function RightPanel({
   open: Session | undefined;
   files: ChangedFile[] | null;
   focus: string | null;
-  wide: boolean;
   // The room's agents tree (the Shell reads it for the lane strip too).
   crew: Crew | null;
   crewAt: number;
@@ -304,10 +323,8 @@ export function RightPanel({
   onEditQueued: (text: string) => void;
   onError: (t: string) => void;
   onInfo: (t: string) => void;
-  // Opens a tab; a path to show with it, for Changes.
+  // Opens a view; a path to show with it, for Changes.
   onPanel: (p: Panel, path?: string) => void;
-  onWide: () => void;
-  onClose: () => void;
   // The room's lane filter and verbs, for the Graph tab's agent card.
   // Without them it puts "$agent " in the composer to steer, interrupts the
   // agent to stop it, and cannot filter the conversation.
@@ -315,178 +332,110 @@ export function RightPanel({
   onLane?: (lane: string | null) => void;
   onSteer?: (agent: string) => void;
   onStop?: (agent: string) => void;
-  // The edge of the window it floats at (the one away from the sidebar),
-  // and whether it floats at any width (Settings > Appearance > Layout).
-  side?: "left" | "right";
-  float?: boolean;
   // Opens another thread, for the Graph tab's History.
   onOpenThread?: (id: string) => void;
 }) {
-  const queued = open === undefined ? 0 : (state.queue[open.id]?.length ?? 0);
   // The race builder of the Tasks tab picks as the composer's /race does.
   const picker = usePickerSource(c, state.server, open?.id ?? null);
   const named = gateMentionables(usePrefs().team, useMentionables(c, null));
-  const ports = useOpenPorts(c.project);
-  const tabs = PANELS.filter(
-    (p) => (p.panel !== "preview" || panel === "preview" || ports.length > 0) && (p.panel !== "work" || panel === "work" || serves(c, "Work")) &&
-      (p.panel !== "highlights" || panel === "highlights" || serves(c, "Highlights")) &&
-      (p.panel !== "browser" || panel === "browser" || (serves(c, "BrowserState") && bridge.browserView !== undefined)),
-  );
-  // A file the graph opened, until the Shell hands one itself.
-  const [asked, setAsked] = useState<string | null>(null);
-  useEffect(() => {
-    if (panel !== "changes") setAsked(null);
-  }, [panel]);
+  // A wide pane shows a diff split and the graph whole.
+  const [measure, wide] = useWide();
   return (
-    <aside
-      className={cn(
-        // A sheet beside the room. Below 1100px, or by choice, it floats
-        // over the room as thick glass (styles.css, Shell), and the room
-        // keeps its width.
-        "panel sheet flex shrink-0 flex-col overflow-hidden rounded-(--sheet-radius) max-[1100px]:absolute max-[1100px]:inset-y-3 max-[1100px]:z-30 max-[1100px]:max-w-[calc(100%-4rem)]",
-        side === "left" ? "max-[1100px]:left-3" : "max-[1100px]:right-3",
-        float && cn("absolute inset-y-3 z-30 max-w-[calc(100%-4rem)]", side === "left" ? "left-3" : "right-3"),
-        wide ? "w-[min(60vw,900px)] min-w-[480px] shrink" : "w-[480px]",
-      )}
-      aria-label="Side panel"
-      data-yolo-region=""
-      data-side={side}
-      data-float={float ? "" : undefined}
-    >
-      <header className="panel-head drag @container/head flex h-12 shrink-0 items-center gap-2 px-2.5">
-        <h2 className="sr-only">{PANELS.find((p) => p.panel === panel)?.label}</h2>
-        {/* The panel's views as a segmented control. */}
-        <div className={cn(segmentTrack(), "min-w-0 overflow-x-auto [scrollbar-width:none]")} role="tablist" aria-label="Room">
-          {tabs.map((p) => {
-            const Icon = TAB_ICONS[p.panel];
-            const on = panel === p.panel;
-            return (
-              <button
-                key={p.panel}
-                type="button"
-                role="tab"
-                aria-selected={on}
-                aria-label={p.label}
-                title={p.label}
-                className={cn(segmentItem({ on }), "px-2.5")}
-                onClick={() => onPanel(p.panel)}
-              >
-                <Icon className="size-3.5" weight={on ? "fill" : "regular"} />
-                {/* Five tabs in a narrow panel: only the open one keeps its name. */}
-                <span className={on || tabs.length < 5 ? undefined : "hidden @[36rem]/head:inline"}>{p.label}</span>
-                {p.panel === "tasks" && queued > 0 && <Badge variant="muted">{queued}</Badge>}
-              </button>
-            );
-          })}
-        </div>
-        <div className="liquid-clear ml-auto flex shrink-0 items-center gap-0.5 rounded-full p-0.5">
-          <Button
-            variant="ghost-muted"
-            size="icon-xs"
-            aria-label={wide ? "Narrow the panel" : "Widen the panel"}
-            title={wide ? "Narrow the panel" : "Widen the panel"}
-            onClick={onWide}
-          >
-            {wide ? <Minimize2 /> : <Maximize2 />}
-          </Button>
-          <Button variant="ghost-muted" size="icon-xs" aria-label="Close the panel" title="Close the panel" onClick={onClose}>
-            <X />
-          </Button>
-        </div>
-      </header>
-      <div className={cn("panel-body flex min-h-0 flex-1 flex-col", panel === "graph" ? "overflow-hidden" : "overflow-y-auto")}>
-        {panel === "preview" ? (
-          // A dev server belongs to the project, not to one thread.
-          c.project === undefined ? (
-            <Empty>The preview shows for a project on this computer.</Empty>
-          ) : (
-            <PreviewPanel key={open?.id ?? ""} api={c.project} bridge={bridge} />
-          )
-        ) : open === undefined ? (
-          <Empty>Open a thread to see its changes, tasks and agents.</Empty>
-        ) : panel === "changes" ? (
-          <Changes files={files} focus={focus ?? asked} wide={wide} onRefresh={onRefresh} revert={revertWith(c, projectKey, open.id, onRefresh)} />
-        ) : panel === "graph" ? (
-          <WorkGraph
+    <div ref={measure} className={cn("panel-body flex min-h-0 flex-1 flex-col", panel === "graph" ? "overflow-hidden" : "overflow-y-auto")} data-panel={panel}>
+      {panel === "preview" ? (
+        // A dev server belongs to the project, not to one thread.
+        c.project === undefined ? (
+          <Empty>The preview shows for a project on this computer.</Empty>
+        ) : (
+          <PreviewPanel key={open?.id ?? ""} api={c.project} bridge={bridge} />
+        )
+      ) : open === undefined ? (
+        <Empty>Open a thread to see its changes, tasks and agents.</Empty>
+      ) : panel === "changes" ? (
+        <Changes files={files} focus={focus} wide={wide} onRefresh={onRefresh} revert={revertWith(c, projectKey, open.id, onRefresh)} />
+      ) : panel === "graph" ? (
+        <WorkGraph
+          key={open.id}
+          compact={!wide}
+          c={c}
+          onOpenMessage={(thread, mid) => {
+            // The conversation beside the panel scrolls to it.
+            focusMessage(thread, mid);
+            if (thread !== open.id) onOpenThread?.(thread);
+          }}
+          api={c.project}
+          sid={open.id}
+          roster={state.roster[open.id] ?? NO_ROSTER}
+          files={files}
+          theme={state.theme}
+          lane={lane}
+          onLane={onLane ?? (() => {})}
+          onOpenFile={(path) => onPanel("changes", path)}
+          onOpenTasks={() => onPanel("tasks")}
+          onOpenWork={() => onPanel("work")}
+          onSteer={onSteer ?? ((agent) => onEditQueued(`$${agent} `))}
+          onStop={onStop ?? ((agent) => void c.interrupt(open.id, agent))}
+        />
+      ) : panel === "tasks" ? (
+        <TasksPanel
+          key={open.id}
+          c={c}
+          api={c.project}
+          sessionId={open.id}
+          busy={open.busy}
+          queue={state.queue[open.id] ?? []}
+          kinds={state.server?.kinds ?? []}
+          named={named.profiles}
+          picker={picker}
+          theme={state.theme}
+          branch={branch}
+          canJudge={serves(c, "StartRace")}
+          onRace={async (d) => {
+            if (!serves(c, "StartRace")) {
+              onInfo(NO_RACE);
+              return false;
+            }
+            return ((await c.startRace?.(open.id, d.brief, toWire(d), d.judge)) ?? null) !== null;
+          }}
+          onEditQueued={onEditQueued}
+          onError={onError}
+          onInfo={onInfo}
+        />
+      ) : panel === "browser" ? (
+        <BrowserPanel key={open.id} c={c} bridge={bridge} sid={open.id} roster={state.roster[open.id] ?? NO_ROSTER} theme={state.theme} onError={onError} />
+      ) : panel === "highlights" ? (
+        <RoomHighlights key={open.id} c={c} sid={open.id} projectKey={projectKey} approvals={state.approvals.filter((a) => a.session_id === open.id)} onOpenTasks={() => onPanel("tasks")} />
+      ) : panel === "work" ? (
+        c.project === undefined || !serves(c, "Work") ? (
+          <Empty>Worktrees and capsules show for a project on this computer.</Empty>
+        ) : (
+          <WorkPanel
             key={open.id}
-            compact={!wide}
-            c={c}
-            onOpenMessage={(thread, mid) => {
-              // The conversation beside the panel scrolls to it.
-              focusMessage(thread, mid);
-              if (thread !== open.id) onOpenThread?.(thread);
-            }}
             api={c.project}
             sid={open.id}
             roster={state.roster[open.id] ?? NO_ROSTER}
-            files={files}
-            theme={state.theme}
-            lane={lane}
-            onLane={onLane ?? (() => {})}
-            onOpenFile={(path) => {
-              setAsked(path);
-              onPanel("changes", path);
-            }}
-            onOpenTasks={() => onPanel("tasks")}
-            onOpenWork={() => onPanel("work")}
-            onSteer={onSteer ?? ((agent) => onEditQueued(`$${agent} `))}
-            onStop={onStop ?? ((agent) => void c.interrupt(open.id, agent))}
-          />
-        ) : panel === "tasks" ? (
-          <TasksPanel
-            key={open.id}
-            c={c}
-            api={c.project}
-            sessionId={open.id}
-            busy={open.busy}
-            queue={state.queue[open.id] ?? []}
             kinds={state.server?.kinds ?? []}
-            named={named.profiles}
-            picker={picker}
-            theme={state.theme}
-            branch={branch}
-            canJudge={serves(c, "StartRace")}
-            onRace={async (d) => {
-              if (!serves(c, "StartRace")) {
-                onInfo(NO_RACE);
-                return false;
-              }
-              return ((await c.startRace?.(open.id, d.brief, toWire(d), d.judge)) ?? null) !== null;
-            }}
-            onEditQueued={onEditQueued}
-            onError={onError}
             onInfo={onInfo}
+            onError={onError}
           />
-        ) : panel === "browser" ? (
-          <BrowserPanel key={open.id} c={c} bridge={bridge} sid={open.id} roster={state.roster[open.id] ?? NO_ROSTER} theme={state.theme} onError={onError} />
-        ) : panel === "highlights" ? (
-          <RoomHighlights key={open.id} c={c} sid={open.id} projectKey={projectKey} approvals={state.approvals.filter((a) => a.session_id === open.id)} onOpenTasks={() => onPanel("tasks")} />
-        ) : panel === "work" ? (
-          c.project === undefined || !serves(c, "Work") ? (
-            <Empty>Worktrees and capsules show for a project on this computer.</Empty>
-          ) : (
-            <WorkPanel
-              key={open.id}
-              api={c.project}
-              sid={open.id}
-              roster={state.roster[open.id] ?? NO_ROSTER}
-              kinds={state.server?.kinds ?? []}
-              onInfo={onInfo}
-              onError={onError}
-            />
-          )
-        ) : panel === "agents" ? (
-          c.project === undefined ? (
-            <Empty>The agents tree shows for a project on this computer.</Empty>
-          ) : (
-            <AgentsTree crew={crew} at={crewAt} theme={state.theme} roster={state.roster[open.id]} />
-          )
+        )
+      ) : panel === "agents" ? (
+        c.project === undefined ? (
+          <Empty>The agents tree shows for a project on this computer.</Empty>
         ) : (
-          <SideChat key={open.id} c={c} state={state} main={open} api={c.project} theme={state.theme} />
-        )}
-      </div>
-    </aside>
+          <AgentsTree crew={crew} at={crewAt} theme={state.theme} roster={state.roster[open.id]} />
+        )
+      ) : (
+        <SideChat key={open.id} c={c} state={state} main={open} api={c.project} theme={state.theme} />
+      )}
+    </div>
   );
+}
+
+// The badge a view's tab carries: Tasks counts the room's queue.
+export function PanelBadge({ c, panel, sid }: { c: DeckClient; panel: Panel; sid: string | null }) {
+  const queued = useAppSlice(c.store, (s) => (sid === null || panel !== "tasks" ? 0 : (s.queue[sid]?.length ?? 0)));
+  return queued > 0 ? <Badge variant="muted">{queued}</Badge> : null;
 }
 
 const NO_ROSTER: AgentLine[] = [];
@@ -494,10 +443,10 @@ const wholeState = (s: AppState): AppState => s;
 // The graph reads the rooms' rosters too.
 const graphSlice = (s: AppState) => ({ ...panelSlice(s), roster: s.roster });
 
-// The side panel takes the whole state but reads only the panel slice (the
-// side chat reads messages too, the graph the rosters), so it renders when
-// that slice changes.
-export function LiveRightPanel(props: Omit<ComponentProps<typeof RightPanel>, "state">) {
+// A view takes the whole state but reads only the panel slice (the side
+// chat reads messages too, the graph the rosters), so it renders when that
+// slice changes.
+export function LivePanelPane(props: Omit<ComponentProps<typeof PanelPane>, "state">) {
   useAppSlice(props.c.store, props.panel === "side" ? wholeState : props.panel === "graph" ? graphSlice : panelSlice, shallowEqual);
-  return <RightPanel {...props} state={props.c.store.state} />;
+  return <PanelPane {...props} state={props.c.store.state} />;
 }

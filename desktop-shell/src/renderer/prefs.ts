@@ -51,8 +51,6 @@ export interface Prefs extends Aspects {
   foldWork: boolean;
   // A plan card approves itself once when it appears.
   autoApprovePlans: boolean;
-  // The terminal drawer's height in pixels.
-  terminalHeight: number;
   // Notifications (notifications.ts): the master switch, each kind, the
   // sound, and whether they pop up only while the window is in the
   // background.
@@ -107,7 +105,6 @@ export const defaultPrefs: Prefs = {
   confirmYolo: true,
   foldWork: true,
   autoApprovePlans: false,
-  terminalHeight: 280,
   notifications: true,
   notifyKinds: { approval: true, error: true, limit: true, mention: true, task: true, finished: true },
   sound: true,
@@ -175,7 +172,6 @@ export function merge(v: Record<string, unknown>): Prefs {
     confirmYolo: bool("confirmYolo", defaultPrefs.confirmYolo),
     foldWork: bool("foldWork", defaultPrefs.foldWork),
     autoApprovePlans: bool("autoApprovePlans", defaultPrefs.autoApprovePlans),
-    terminalHeight: size("terminalHeight", defaultPrefs.terminalHeight),
     // Before the kinds, notifications was "all", "needs-you" or "none".
     notifications: v["notifications"] === "none" ? false : bool("notifications", defaultPrefs.notifications),
     notifyKinds: kinds(v["notifyKinds"], v["notifications"] === "needs-you"),

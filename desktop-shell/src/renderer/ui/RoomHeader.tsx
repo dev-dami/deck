@@ -188,7 +188,9 @@ const VIEW_ICONS: Record<RoomView, IconType> = { conversation: ChatCircle, graph
 function ViewSwitcher({ view, onView }: { view: RoomView; onView: (v: RoomView) => void }) {
   return (
     <div
-      className={cn(segmentTrack(), "room-views")}
+      // A narrow room (beside wide panes) gives its toolbar the middle;
+      // ⌘/Ctrl+Shift+G still turns the view.
+      className={cn(segmentTrack(), "room-views hidden @[32rem]/top:inline-flex")}
       role="tablist"
       aria-label="View"
       onKeyDown={(e) => {
@@ -262,6 +264,7 @@ export function RoomHeader({
   onError,
   onInfo,
   onPreview,
+  layout,
   view,
   onView,
 }: {
@@ -302,6 +305,8 @@ export function RoomHeader({
   onInfo: (t: string) => void;
   // Opens a dev server's URL in the Preview tab.
   onPreview: (url: string) => void;
+  // The Layout menu (layout/LayoutMenu.tsx), last in the panels' capsule.
+  layout?: ReactNode;
   // How the room shows its thread, and how to switch it. Without them the
   // switcher does not show.
   view?: RoomView;
@@ -440,6 +445,7 @@ export function RoomHeader({
           >
             <PanelRight weight={panelOpen ? "fill" : "regular"} />
           </Button>
+          {layout}
         </Capsule>
       </div>
     </header>

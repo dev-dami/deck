@@ -10,21 +10,26 @@ import { usePrefs } from "../prefs";
 import { gateTeam } from "../teamGate";
 import { panelSlice, shallowEqual, shellSlice, useAppSlice } from "../select";
 import { isSide } from "../sideChat";
-import type { Panel, UiAction } from "../ui";
+import { PANELS, type Panel, type UiAction } from "../ui";
+import { LayoutMenu } from "../layout/LayoutMenu";
+import { CONVERSATION, isTerminal, type PaneId, terminalNumber } from "../layout/tree";
+import { useRoomLayout } from "../layout/useRoomLayout";
+import { type PaneSpec, Workspace } from "../layout/Workspace";
+import { ChatCircle, SquareTerminal } from "./icons";
 import type { Landing } from "./App";
 import { LineComments } from "./DiffView";
 import { useGit } from "./Git";
 import { Inbox } from "./Inbox";
 import { isMac } from "./keys";
 import { Palette } from "./Palette";
-import { LiveRightPanel } from "./RightPanel";
+import { LivePanelPane, PanelBadge, panelAvailable, TAB_ICONS } from "./RightPanel";
 import { Room } from "./Room";
 import { ProfilesDeck } from "./ProfilesEditor";
 import { SettingsPage } from "./Settings";
 import { SharedRoom } from "./SharedRoom";
 import { type ProjectEntry, Sidebar } from "./Sidebar";
 import { TeamPage, useTeam } from "./Team";
-import { TerminalDrawer, useTerminalShown } from "./Terminal";
+import { TerminalPane, TerminalTabExtras, useTerminalShown } from "./Terminal";
 import { Toasts } from "./Toasts";
 import { useLimitCommands } from "./Limits";
 import { UsagePage } from "./Usage";
@@ -53,19 +58,6 @@ function LiveSettings({ c, teammates, ...props }: { c: DeckClient; teammates: re
       <SettingsPage {...props} state={c.store.state} />
     </ProfilesDeck.Provider>
   );
-}
-
-// Below 1100px the side panel floats over the room (styles.css, Shell).
-const NARROW = "(max-width: 1100px)";
-function useNarrow(): boolean {
-  const [on, setOn] = useState(() => window.matchMedia(NARROW).matches);
-  useEffect(() => {
-    const m = window.matchMedia(NARROW);
-    const f = () => setOn(m.matches);
-    m.addEventListener("change", f);
-    return () => m.removeEventListener("change", f);
-  }, []);
-  return on;
 }
 
 export interface ShellProps {
@@ -103,7 +95,7 @@ export function Shell(props: ShellProps) {
   const dispatch = useCallback((a: UiAction) => dispatchUi(projectKey, a), [projectKey]);
   const engine = useEngine(projectKey);
   const [sidebar, setSidebar] = useState(true);
-  const [wide, setWide] = useState(false);
+  // The file Changes scrolls to, when a link asked for one.
   const [focus, setFocus] = useState<string | null>(null);
   const api = c.project;
   const [terminal, setTerminal] = useTerminalShown(api);
@@ -118,7 +110,6 @@ export function Shell(props: ShellProps) {
   const update = useUpdate(bridge, c);
   const open: Session | undefined = state.sessions.find((s) => s.id === ui.openId);
   useWatchPorts(c, bridge);
-  const ports = useOpenPorts(api);
   const yoloPlays = useYoloTrigger(projectKey, open?.id ?? null, sessionMode(open));
 
   useEffect(() => {
@@ -154,25 +145,61 @@ export function Shell(props: ShellProps) {
     toast,
   });
 
+  // The room's layout (layout/): the conversation, the terminals and the
+  // side panel's views as panes the person arranges. The side panel's and
+  // the terminal's buttons, keys and commands show and hide their panes.
+  const { sidebarSide, panelDock } = prefs;
+  const panelSide = (sidebarSide === "left") === (panelDock === "beside") ? "left" : "right";
+  const ports = useOpenPorts(api);
+  // Settings, Usage, Team and the inbox take the place of the room.
+  const teamPage = ui.team && prefs.team;
+  const away = ui.settings !== null || ui.usage || teamPage || ui.inbox;
+  const rl = useRoomLayout({
+    project: source,
+    side: panelSide,
+    api,
+    terminal,
+    setTerminal,
+    panel: ui.panel,
+    setPanel: (panel) => dispatch({ type: "panel", panel }),
+    panelsOn: shared === null,
+    available: panelAvailable(c, bridge, ports.length, ui.panel),
+    inputRef,
+    keys: !away,
+  });
   // Opens a panel, never closes it (the panel's own tabs and the menus).
   const openPanel = (p: Panel, path?: string) => {
-    if (ui.panel !== p) dispatch({ type: "panel", panel: p });
+    rl.openPanel(p);
     setFocus(path ?? null);
   };
-  const togglePanel = () => dispatch({ type: "panel", panel: ui.panel ?? "changes" });
-  const toggleTerminal = () => setTerminal((v) => !v);
+  const togglePanel = rl.togglePanel;
+  const toggleTerminal = rl.toggleTerminal;
   const preview = (url: string) => {
     if (api === undefined) return;
     setPreviewTarget(api, url);
     openPanel("preview");
   };
   const addProject = () => orToast(onAddProject());
+  // How the layout names and marks each pane.
+  const paneSpec = (p: PaneId): PaneSpec => {
+    if (p === CONVERSATION) return { label: "Conversation", icon: ChatCircle, keepAlive: true, close: null };
+    if (isTerminal(p)) {
+      const n = terminalNumber(rl.ctl.layout.root, p);
+      const spec: PaneSpec = { label: `Terminal ${n}`, icon: SquareTerminal, keepAlive: true, close: `Close terminal ${n}` };
+      return api === undefined ? spec : { ...spec, extras: <TerminalTabExtras project={api} slot={p} n={n} onPreview={preview} /> };
+    }
+    const panel = p as Panel;
+    const label = PANELS.find((x) => x.panel === panel)?.label ?? p;
+    const spec: PaneSpec = { label, icon: TAB_ICONS[panel], keepAlive: false, close: `Hide ${label}` };
+    return panel === "tasks" ? { ...spec, extras: <PanelBadge c={c} panel={panel} sid={open?.id ?? null} /> } : spec;
+  };
   const commands = useShellCommands(
     {
       mac,
       terminal: api !== undefined,
       team: prefs.team,
-      dispatch,
+      // A view's toggle goes through the layout, which knows what shows.
+      dispatch: (a) => (a.type === "panel" ? rl.panelAction(a.panel) : dispatch(a)),
       panel: ui.panel,
       palette: ui.palette,
       newThread: newSession,
@@ -192,31 +219,12 @@ export function Shell(props: ShellProps) {
   const limitCommands = useLimitCommands(api, toast, info);
   const paletteRooms = usePaletteRooms(c, projectKey, project, others);
   // The Team page shows only while the team is on; turning it off closes it.
-  const teamPage = ui.team && prefs.team;
   useEffect(() => {
     if (ui.team && !prefs.team) dispatch({ type: "team", open: false });
   }, [ui.team, prefs.team, dispatch]);
-  // Settings, Usage, Team and the inbox take the place of the room.
-  const away = ui.settings !== null || ui.usage || teamPage || ui.inbox;
-  // The layout (Settings > Appearance > Layout): the sidebar's side, and
-  // the side panel docked opposite it, beside it or floating over the room
-  // away from it, as it floats in a narrow window anyway.
-  const { sidebarSide, panelDock } = prefs;
-  const panelSide = sidebarSide === "left" ? "right" : "left";
-  const narrow = useNarrow();
-  const panelShown = ui.panel !== null && !away && shared === null;
-  const docked = panelShown && panelDock !== "float" && !narrow;
-  // What sits at the window's left edge, under a Mac's traffic lights.
-  const leftmost =
-    sidebarSide === "left"
-      ? sidebar
-        ? "sidebar"
-        : docked && panelDock === "beside"
-          ? "panel"
-          : "room"
-      : docked && panelDock === "opposite"
-        ? "panel"
-        : "room";
+  // What sits at the window's left edge, under a Mac's traffic lights: the
+  // sidebar, else the layout's top-left pane (Workspace marks its stack).
+  const leftmost = sidebarSide === "left" && sidebar ? "sidebar" : away ? "room" : "corner";
 
   return (
     // The window is a backdrop with panels on it (docs/design-glass.md,
@@ -280,107 +288,123 @@ export function Shell(props: ShellProps) {
           }}
         />
       )}
-      {/* The room's sheet, with the terminal drawer at its foot. It keeps
-          30rem; a widened panel gives way first. */}
-      <div className="room-sheet sheet relative flex min-w-[min(30rem,100%)] flex-1 flex-col overflow-hidden rounded-(--sheet-radius)">
-        <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
-          {ui.inbox ? (
-            <Inbox
-              items={attention.items}
-              mac={mac}
-              onAnswer={attention.onAnswer}
-              onContract={(item, accept) => orToast(attention.onContract(item, accept))}
-              onOpen={(item) => item.room !== null && openRoom(item.project, item.room)}
-              onBack={() => dispatch({ type: "inbox", open: false })}
-            />
-          ) : ui.usage ? (
-            <UsagePage project={api} theme={state.theme} onOpenThread={openSession} onAddProject={addProject} />
-          ) : teamPage ? (
-            <TeamPage
-              api={api}
-              thread={open}
-              onError={toast}
-              onInfo={info}
-              onOpenShared={openShared}
-              onConnection={() => dispatch({ type: "settings", section: "connection" })}
-              onAddProject={addProject}
-            />
-          ) : ui.settings !== null ? (
-            <LiveSettings c={c} teammates={teammates} section={ui.settings} where={where} transport={transport} mac={mac} bridge={bridge} folder={folder} onDisconnect={onDisconnect} />
-          ) : shared !== null && api !== undefined && prefs.team ? (
-            <SharedRoom
-              key={`${shared.peer}/${shared.thread.id}`}
-              api={api}
-              peer={shared.peer}
-              thread={shared.thread}
-              theme={state.theme}
-              sidebar={sidebar}
-              onShowSidebar={() => setSidebar(true)}
-              onError={toast}
-            />
-          ) : (
-            <Room
-              c={c}
-              state={state}
-              open={open}
-              project={project}
-              source={source}
-              mac={mac}
-              engine={engine}
-              r={r}
-              inputRef={inputRef}
-              focusInput={focusInput}
-              sidebar={sidebar}
-              onShowSidebar={() => setSidebar(true)}
-              git={git}
-              team={team}
-              terminal={terminal}
-              onTerminal={toggleTerminal}
-              panel={ui.panel}
-              onPanel={openPanel}
-              onDiff={() => dispatch({ type: "panel", panel: "changes" })}
-              onTogglePanel={togglePanel}
-              onSettings={() => dispatch({ type: "settings", section: "general" })}
-              onPreview={preview}
-              toast={toast}
-              info={info}
-              onOpenThread={openSession}
-            />
-          )}
-        </main>
-        {api !== undefined && (
-          <TerminalDrawer project={api} shown={terminal && !away} onHide={() => setTerminal(false)} onError={toast} onPreview={preview} />
-        )}
-      </div>
-      {panelShown && ui.panel !== null && (
-        <LineComments.Provider value={r.room.comments}>
-          <LiveRightPanel
-            projectKey={projectKey}
-            c={c}
-            bridge={bridge}
-            panel={ui.panel}
-            open={open}
-            files={r.files}
-            focus={focus}
-            wide={wide}
-            crew={r.crew}
-            crewAt={r.crewAt}
-            branch={git.status?.repo === true && !git.status.detached ? git.status.branch : null}
-            onRefresh={r.refreshChanges}
-            onEditQueued={(text) => {
-              r.setDraft(text);
-              focusInput();
-            }}
-            onError={toast}
-            onInfo={info}
-            onPanel={(p) => openPanel(p)}
-            onWide={() => setWide((w) => !w)}
-            onClose={() => dispatch({ type: "panel", panel: null })}
-            side={panelSide}
-            float={panelDock === "float"}
-            onOpenThread={openSession}
-          />
-        </LineComments.Provider>
+      {away ? (
+        // A page in the room's place: one sheet.
+        <div className="room-sheet sheet relative flex min-w-[min(30rem,100%)] flex-1 flex-col overflow-hidden rounded-(--sheet-radius)">
+          <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
+            {ui.inbox ? (
+              <Inbox
+                items={attention.items}
+                mac={mac}
+                onAnswer={attention.onAnswer}
+                onContract={(item, accept) => orToast(attention.onContract(item, accept))}
+                onOpen={(item) => item.room !== null && openRoom(item.project, item.room)}
+                onBack={() => dispatch({ type: "inbox", open: false })}
+              />
+            ) : ui.usage ? (
+              <UsagePage project={api} theme={state.theme} onOpenThread={openSession} onAddProject={addProject} />
+            ) : teamPage ? (
+              <TeamPage
+                api={api}
+                thread={open}
+                onError={toast}
+                onInfo={info}
+                onOpenShared={openShared}
+                onConnection={() => dispatch({ type: "settings", section: "connection" })}
+                onAddProject={addProject}
+              />
+            ) : ui.settings !== null ? (
+              <LiveSettings c={c} teammates={teammates} section={ui.settings} where={where} transport={transport} mac={mac} bridge={bridge} folder={folder} onDisconnect={onDisconnect} />
+            ) : null}
+          </main>
+        </div>
+      ) : (
+        // The room: its panes as the person laid them out.
+        <Workspace
+          ctl={rl.ctl}
+          visible={rl.visible}
+          spec={paneSpec}
+          render={(p, shown) =>
+            p === CONVERSATION ? (
+              <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
+      {shared !== null && api !== undefined && prefs.team ? (
+                  <SharedRoom
+                    key={`${shared.peer}/${shared.thread.id}`}
+                    api={api}
+                    peer={shared.peer}
+                    thread={shared.thread}
+                    theme={state.theme}
+                    sidebar={sidebar}
+                    onShowSidebar={() => setSidebar(true)}
+                    onError={toast}
+                  />
+                ) : (
+                  <Room
+                    c={c}
+                    state={state}
+                    open={open}
+                    project={project}
+                    source={source}
+                    mac={mac}
+                    engine={engine}
+                    r={r}
+                    inputRef={inputRef}
+                    focusInput={focusInput}
+                    sidebar={sidebar}
+                    onShowSidebar={() => setSidebar(true)}
+                    git={git}
+                    team={team}
+                    terminal={terminal}
+                    onTerminal={toggleTerminal}
+                    diff={rl.diffShown}
+                    panelOpen={rl.panelShown}
+                    onPanel={openPanel}
+                    onDiff={() => rl.panelAction("changes")}
+                    onTogglePanel={togglePanel}
+                    layout={<LayoutMenu mac={mac} {...rl.menu} />}
+                    onSettings={() => dispatch({ type: "settings", section: "general" })}
+                    onPreview={preview}
+                    toast={toast}
+                    info={info}
+                    onOpenThread={openSession}
+                  />
+                )}
+              </main>
+            ) : isTerminal(p) ? (
+              api !== undefined && <TerminalPane project={api} slot={p} visible={shown && terminal} onError={toast} />
+            ) : (
+              <LineComments.Provider value={r.room.comments}>
+                <LivePanelPane
+                  projectKey={projectKey}
+                  c={c}
+                  bridge={bridge}
+                  panel={p as Panel}
+                  open={open}
+                  files={r.files}
+                  focus={focus}
+                  crew={r.crew}
+                  crewAt={r.crewAt}
+                  branch={git.status?.repo === true && !git.status.detached ? git.status.branch : null}
+                  onRefresh={r.refreshChanges}
+                  onEditQueued={(text) => {
+                    r.setDraft(text);
+                    focusInput();
+                  }}
+                  onError={toast}
+                  onInfo={info}
+                  onPanel={openPanel}
+                  onOpenThread={openSession}
+                />
+              </LineComments.Provider>
+            )
+          }
+          ops={rl.ops}
+          float={panelDock === "float"}
+          focused={rl.focused}
+          ring={rl.ring}
+          onFocused={rl.onFocused}
+          mac={mac}
+        />
       )}
       {ui.palette && (
         <Palette
