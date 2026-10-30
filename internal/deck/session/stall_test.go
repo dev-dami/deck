@@ -54,6 +54,7 @@ func stallRig(t *testing.T, claude, codex []fake.Script) (*rig, string) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
+	worksFor(t, r.m, "codex", "claude") // plain messages between them start turns
 	return r, tid
 }
 
