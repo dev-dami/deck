@@ -14,6 +14,7 @@ let fake: FakeRpcDeck;
 let host: TestHost;
 
 const LONG_PATH = "internal/deck/session/orchestration/scheduler/dispatch/very_long_directory_name_for_testing/handoff_contract_settlement_test.go";
+const LONG_DIR = "internal/deck/session/orchestration/scheduler/dispatch/very_long_directory_name_for_testing/handoff";
 const TOKEN = "a".repeat(40) + "UNBROKEN_IDENTIFIER_WITHOUT_ANY_SPACES_" + "b".repeat(60);
 const URL = "https://example.com/" + "segment/".repeat(24) + "?query=" + "x".repeat(80);
 const CMD = "go test ./internal/deck/session/... -run 'TestSchedulerDoesNotReturnSelfOwnedWorkFinishedInTheSameTurn|TestLevelsGrow' -count=20 -race -timeout 600s -v 2>&1 | tee /tmp/very/long/output/path/log.txt";
@@ -21,7 +22,7 @@ const NAME = "reviewer-with-a-really-long-profile-name";
 
 function stress(f: FakeRpcDeck): void {
   crewAtWork(f);
-  f.crew.agents.push({ name: NAME, kind: "codex", model: "gpt-5-codex-max-preview", status: "tool", context_tokens: 1_000, context_window: 272_000, leases: `${LONG_PATH} (exclusive)` });
+  f.crew.agents.push({ name: NAME, kind: "codex", model: "gpt-5-codex-max-preview", status: "tool", context_tokens: 1_000, context_window: 272_000, leases: `${LONG_DIR}/** , ${LONG_PATH} (exclusive); internal/deck/session/*.go` });
   f.crew.running.push({ agent: NAME, kind: "codex", name: "Bash", summary: CMD, started: Date.now() - 5_000, command: true });
   f.board.tasks.push(
     { id: "t5", title: `Investigate ${TOKEN}`, status: "failed", owner: NAME, error: `${CMD}\n${TOKEN}`, attempts: 2, tries: 2, files: [LONG_PATH] },
@@ -173,6 +174,22 @@ for (const width of WIDTHS) {
         const name = page.locator(".file-path > span").last();
         await expect(name).toHaveText("handoff_contract_settlement_test.go");
         expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      }
+      if (tab === "Agents") {
+        // A lease is a chip per glob: the end of each stays in view, its
+        // note marks it, and no chip runs out of the agents card.
+        const leases = page.locator(`.crew-agent[data-agent="${NAME}"] li.lease`);
+        await expect(leases).toHaveCount(3);
+        const tails = leases.locator(".path-tail > span:last-child");
+        await expect(tails).toHaveText(["handoff/**", "handoff_contract_settlement_test.go", "session/*.go"]);
+        for (const t of await tails.all()) expect(await t.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+        await expect(leases.locator(".lease-note")).toHaveText(["exclusive", "exclusive"]);
+        await expect(leases.nth(1)).toHaveAttribute("title", `${LONG_PATH} (exclusive)`);
+        const card = await page.locator("ul.crew").boundingBox();
+        for (const l of await leases.all()) {
+          const r = await l.boundingBox();
+          expect(r && card && r.x >= card.x && r.x + r.width <= card.x + card.width + 0.5).toBe(true);
+        }
       }
     }
     // Every task card opened, with its result, error and files.
