@@ -927,8 +927,8 @@ test("an agent told to spin up agents spawns them: lanes under it, its brief as 
     await expect(lane.locator(".lane-parent")).toHaveText("by @claude-1", { timeout: 15_000 });
     await expect(page.locator(`[data-agent="${name}"].msg`).last()).toContainText("write the limiter tests");
   }
-  // The brief shows as claude's handoff to each.
-  await expect(page.locator('[data-agent="claude-1"].msg').filter({ hasText: "→ $codex-2" })).toBeVisible();
+  // The brief shows as claude's hand-off card to each.
+  await expect(page.locator('[data-agent="claude-1"].msg .handoff[aria-label="claude-1 to codex-2"]')).toBeVisible();
   expect(fake.deck.spawned.map((s) => [s.parent, s.name])).toEqual([
     ["claude-1", "codex-2"],
     ["claude-1", "codex-3"],
@@ -940,7 +940,7 @@ test("an agent told to spin up agents spawns them: lanes under it, its brief as 
   await pop.getByRole("menuitem", { name: "Spawned by @claude-1" }).click();
   await expect(lanes.locator('[data-lane="agent:claude-1"]')).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator('[data-agent="codex-2"].msg')).toHaveCount(0);
-  await expect(page.locator('[data-agent="claude-1"].msg').filter({ hasText: "→ $codex-3" })).toBeVisible();
+  await expect(page.locator('[data-agent="claude-1"].msg .handoff[aria-label="claude-1 to codex-3"]')).toBeVisible();
 });
 
 test("sharing: the share popover, a follower's lane and a room shared with you", async ({ page }) => {

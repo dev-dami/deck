@@ -43,6 +43,7 @@ import {
 } from "./icons";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
+import { PathTail } from "./kit/path";
 import { CARD } from "./kit/card";
 import { Confirm, Dialog, fieldClass } from "./kit/dialog";
 import { EmptyState } from "./kit/empty";
@@ -124,9 +125,7 @@ export function LandReport({ files, limit = 200 }: { files: readonly LandFile[];
         {sorted.slice(0, limit).map((f) => (
           <li key={f.path} className="flex items-center gap-2 border-hairline border-b px-2.5 py-1.5 last:border-b-0" data-land={f.state}>
             <span className={cn("size-1.5 shrink-0 rounded-full", f.state === "conflict" ? "bg-destructive" : f.state === "merge" ? "bg-warning" : f.state === "fits" ? "bg-success" : "bg-muted-foreground/40")} />
-            <span className="min-w-0 flex-1 truncate font-mono text-2xs" title={f.path}>
-              {f.path}
-            </span>
+            <PathTail path={f.path} className="flex-1 text-2xs" />
             <span className={cn("shrink-0 text-2xs", f.state === "conflict" ? "text-destructive-foreground" : "text-faint")} title={f.reason || undefined}>
               {f.state === "conflict" ? f.reason || "conflict" : LAND_WORD[f.state]}
             </span>

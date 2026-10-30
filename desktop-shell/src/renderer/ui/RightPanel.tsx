@@ -48,6 +48,7 @@ import { WorkPanel } from "./WorkPanel";
 import { actionToast } from "./Toasts";
 import { Badge } from "./kit/badge";
 import { Button } from "./kit/button";
+import { PathTail } from "./kit/path";
 import { Confirm } from "./kit/dialog";
 import { EmptyState } from "./kit/empty";
 import { segmentItem, segmentTrack } from "./kit/segmented";
@@ -132,9 +133,7 @@ function FileSection({
             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
           )}
           <FileText className="size-3.5 shrink-0 text-info-foreground" />
-          <span className="file-path min-w-0 flex-1 truncate font-mono text-xs" title={f.path}>
-            {f.path}
-          </span>
+          <PathTail path={f.path} className="file-path flex-1 text-xs" />
           <FileLang path={f.path} />
           <span className="del font-mono text-diff-deletion-foreground text-xs tabular-nums">−{f.removed}</span>
           <span className="add font-mono text-diff-addition-foreground text-xs tabular-nums">+{f.added}</span>

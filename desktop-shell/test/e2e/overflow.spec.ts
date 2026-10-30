@@ -168,6 +168,12 @@ for (const width of WIDTHS) {
     for (const tab of ["Changes", "Tasks", "Agents"]) {
       await roomTab(page, tab);
       await look(tab.toLowerCase());
+      if (tab === "Changes") {
+        // A long path gives up its folder, never its file name.
+        const name = page.locator(".file-path > span").last();
+        await expect(name).toHaveText("handoff_contract_settlement_test.go");
+        expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      }
     }
     // Every task card opened, with its result, error and files.
     await roomTab(page, "Tasks");
