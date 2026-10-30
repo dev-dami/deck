@@ -401,7 +401,7 @@ func (w *DeckWorkspace) Theme() Theme {
 // themeFor resolves a theme by name, falling back to Deck's own.
 func themeFor(name string) Theme {
 	if name == "" {
-		name = "deck"
+		name = styles.DefaultThemeName()
 	}
 	tf, err := styles.ExportResolvedPalette(name)
 	if err != nil {

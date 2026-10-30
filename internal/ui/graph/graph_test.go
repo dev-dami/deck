@@ -319,10 +319,10 @@ func TestMeter(t *testing.T) {
 
 func TestShare(t *testing.T) {
 	parts := []graph.Part{
-		{Label: "input", Value: 48_000, Color: tone.Sky},
-		{Label: "output", Value: 12_500, Color: tone.Mint},
-		{Label: "cache read", Value: 210_000, Color: tone.Plum},
-		{Label: "cache write", Value: 900, Color: tone.Amber},
+		{Label: "input", Value: 48_000, Color: tone.Dark.Teal},
+		{Label: "output", Value: 12_500, Color: tone.Dark.Signal},
+		{Label: "cache read", Value: 210_000, Color: tone.Dark.Purple},
+		{Label: "cache write", Value: 900, Color: tone.Dark.Warning},
 	}
 	eachTheme(t, []int{24, 48, 96}, func(t *testing.T, th graph.Theme, w int) string {
 		out := graph.Share(th, w, parts)
@@ -407,7 +407,7 @@ func TestHeatScale(t *testing.T) {
 
 func TestStack(t *testing.T) {
 	th := themes()[0].theme
-	parts := []graph.Part{{Label: "base", Value: 20, Color: th.Subtle}, {Label: "chat", Value: 30, Color: tone.Sky}, {Label: "deck", Value: 1, Color: th.Accent}}
+	parts := []graph.Part{{Label: "base", Value: 20, Color: th.Subtle}, {Label: "chat", Value: 30, Color: tone.Dark.Teal}, {Label: "deck", Value: 1, Color: th.Accent}}
 	for _, w := range []int{1, 10, 40} {
 		out := graph.Stack(th, w, parts, 100)
 		if got := ansi.StringWidth(out); got != w {

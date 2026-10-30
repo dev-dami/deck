@@ -283,7 +283,9 @@ func NewToolMessageItem(
 	case tools.LSPRestartToolName:
 		item = NewLSPRestartToolMessageItem(sty, toolCall, result, canceled)
 	default:
-		if strings.HasPrefix(toolCall.Name, "mcp_") {
+		if _, ok := subagentOf(toolCall); ok {
+			item = NewSubagentToolMessageItem(sty, toolCall, result, canceled)
+		} else if strings.HasPrefix(toolCall.Name, "mcp_") {
 			item = NewMCPToolMessageItem(sty, toolCall, result, canceled)
 		} else {
 			item = NewGenericToolMessageItem(sty, toolCall, result, canceled)

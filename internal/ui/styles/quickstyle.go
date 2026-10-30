@@ -1038,6 +1038,14 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.Messages.ShellTruncation = muted
 
 	s.Messages.SectionHeader = base.PaddingLeft(2)
+	s.Messages.Card = base.Border(lipgloss.RoundedBorder()).BorderForeground(o.bgMostVisible).Padding(0, 1)
+	s.Messages.CardLabel = subtle
+	s.Messages.CardTitle = base
+	s.Messages.CardMeta = muted
+	s.Messages.CardRunning = base.Foreground(o.busy)
+	s.Messages.CardDone = base.Foreground(o.successMostSubtle)
+	s.Messages.CardFailed = base.Foreground(o.destructive)
+	s.Messages.CardBlocked = base.Foreground(o.warning)
 	s.Messages.AssistantInfoIcon = subtle
 	s.Messages.AssistantInfoModel = muted
 	s.Messages.AssistantInfoProvider = subtle

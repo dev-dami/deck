@@ -212,12 +212,17 @@ func graphPlain(cells []graphCell) string {
 	return b.String()
 }
 
-// graphLaneColors colour the lanes in turn.
-var graphLaneColors = []color.Color{tone.Mint, tone.Sky, tone.Amber, tone.Plum, tone.Coral, tone.Moss, tone.Codex, tone.Honey}
+// graphLaneColors colour the lanes in turn: the system hues of the
+// palette for the active theme's ground.
+func graphLaneColors() []color.Color {
+	p := tone.Current()
+	return []color.Color{p.Signal, p.Teal, p.Warning, p.Purple, p.DestructiveText, p.SuccessText, p.Indigo, p.Yellow}
+}
 
 // graphLaneStyle is lane's colour.
 func graphLaneStyle(lane int) lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(graphLaneColors[lane%len(graphLaneColors)])
+	colors := graphLaneColors()
+	return lipgloss.NewStyle().Foreground(colors[lane%len(colors)])
 }
 
 // graphRender is cells in their lanes' colours.
@@ -268,9 +273,9 @@ func graphRefs(t *styles.Styles, refs []gh.Ref) string {
 			}
 			parts = append(parts, s)
 		case gh.RefRemote:
-			parts = append(parts, lipgloss.NewStyle().Foreground(tone.Coral).Render(r.Name))
+			parts = append(parts, lipgloss.NewStyle().Foreground(tone.Current().DestructiveText).Render(r.Name))
 		case gh.RefTag:
-			parts = append(parts, lipgloss.NewStyle().Foreground(tone.Amber).Render("tag "+r.Name))
+			parts = append(parts, lipgloss.NewStyle().Foreground(tone.Current().WarningText).Render("tag "+r.Name))
 		case gh.RefHead:
 			parts = append(parts, gitPrimary(t).Bold(true).Render("HEAD"))
 		}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/config"
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/ui/tone"
 )
 
@@ -82,7 +83,7 @@ func (s *Settings) deckEdit(label string, set func(*deckconfig.Config)) Action {
 }
 
 func (s *Settings) generalRows() []settingsRow {
-	theme := "deck"
+	theme := styles.DefaultThemeName()
 	if cfg := s.config(); cfg != nil && cfg.Options != nil && cfg.Options.TUI != nil && cfg.Options.TUI.ActiveTheme != "" {
 		theme = cfg.Options.TUI.ActiveTheme
 	}

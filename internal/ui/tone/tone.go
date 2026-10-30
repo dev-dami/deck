@@ -1,6 +1,13 @@
-// Package tone is Deck's colour palette: a calm graphite ground, a mint
-// accent and soft status colours, plus each agent's own tint. Every colour
-// in the interface comes from here or from a theme built on it.
+// Package tone is Deck's colour palette: the desktop app's own colours
+// (its default look, Liquid Glass on Apple's system colours, in
+// desktop-shell/src/renderer/styles.css), for dark and light terminals,
+// plus each agent's own tint and mark. Every colour in the interface comes
+// from here or from a theme built on it, so the terminal app and the
+// desktop app read as one product.
+//
+// The values are truecolor; on a terminal with fewer colours the renderer
+// (lipgloss and colorprofile) maps each one to the nearest it has, and
+// NO_COLOR drops them.
 package tone
 
 import (
@@ -12,130 +19,221 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// Grounds, darkest first.
-var (
-	Ink   = lipgloss.Color("#0E1211") // the page
-	Slate = lipgloss.Color("#141918")
-	Coal  = lipgloss.Color("#1A201F")
-	Shale = lipgloss.Color("#222928")
-	Rule  = lipgloss.Color("#2A3130") // dividers
-	Stone = lipgloss.Color("#3A4341")
-)
+// Palette is one look: the desktop's tokens under their own names.
+// Translucent desktop tokens (hairlines, the bubble) are given as the
+// solid colour they make over the canvas.
+type Palette struct {
+	// Grounds: the canvas (--canvas), raised surfaces (--surface-1,
+	// --surface-2), code blocks (--code), the person's bubble (--bubble),
+	// a chosen row (--selected) and a control's fill (the system grey a
+	// step up).
+	Canvas, Surface1, Surface2, Code, Bubble, Selected, Control color.Color
+	// Hairline is --hairline (borders, rules); HairlineStrong is
+	// --hairline-strong (cards, inputs).
+	Hairline, HairlineStrong color.Color
 
-// Inks, faintest first.
-var (
-	Faint = lipgloss.Color("#4E5755")
-	Fog   = lipgloss.Color("#6F7A77")
-	Muted = lipgloss.Color("#9AA5A2")
-	Mist  = lipgloss.Color("#BFC8C5")
-	Fg    = lipgloss.Color("#E6EDEB")
-	Paper = lipgloss.Color("#F5F8F7")
-)
+	// Inks, strongest first: --text, --secondary-label, --text-muted,
+	// --text-faint, and the quaternary label for what should barely show.
+	Text, Secondary, Muted, Faint, Quaternary color.Color
 
-// The accent: Deck's mint, with a deeper and a lighter step.
-var (
-	Mint     = lipgloss.Color("#5FD7AF")
-	Teal     = lipgloss.Color("#2FA387")
-	DeepTeal = lipgloss.Color("#1D6B59")
-	Seafoam  = lipgloss.Color("#A8EBD4")
-)
+	// The accent (--signal, the system blue) and what sits on it, and
+	// --link, its readable step for text.
+	Signal, OnSignal, Link color.Color
 
-// Status colours.
-var (
-	Amber = lipgloss.Color("#E8B04B") // approvals, warnings
-	Honey = lipgloss.Color("#F2CC7A")
-	Coral = lipgloss.Color("#F0716A") // destructive, diff deletions
-	Ember = lipgloss.Color("#D9534F") // errors
-	Moss  = lipgloss.Color("#9CCB8A") // success, diff additions
-	Fern  = lipgloss.Color("#6FA35E")
-	Sky   = lipgloss.Color("#7FB8FF") // information
-	Dusk  = lipgloss.Color("#5B7FB0")
-	Plum  = lipgloss.Color("#B48EAD")
-)
+	// States: the fill (--destructive, --warning, --success) and the text
+	// step of each (--*-foreground).
+	Destructive, DestructiveText color.Color
+	Warning, WarningText         color.Color
+	Success, SuccessText         color.Color
 
-// Diff backgrounds.
-var (
-	AddBg = lipgloss.Color("#1C2A1C")
-	DelBg = lipgloss.Color("#2E1C1B")
-)
+	// More system hues, for charts, graph lanes and code.
+	Teal, Purple, Indigo, Yellow, Pink color.Color
 
-// Agent tints: each agent's mark and name are drawn in its own CLI's colour,
-// so speakers in a shared thread are told apart at a glance.
-var (
-	Claude      = lipgloss.Color("#D97757") // Claude's spark
-	Codex       = lipgloss.Color("#8C9EFF") // the Codex logo's blue
-	Opencode    = lipgloss.Color("#E4E0DF") // OpenCode's monochrome mark
-	Antigravity = lipgloss.Color("#A78BFA") // Antigravity's violet
-	Pi          = lipgloss.Color("#7FD18B") // a green for pi's π
-	Iris        = Codex
-	Clay        = Claude
-)
+	// Diff text (--diff-add-fg, --diff-del-fg). The tinted grounds derive
+	// from Success and Destructive over the canvas, as the desktop's do.
+	DiffAddText, DiffDelText color.Color
 
-// Light grounds and inks, for the light theme.
-var (
-	LightPage  = lipgloss.Color("#FAFCFB")
-	LightRaise = lipgloss.Color("#F0F4F2")
-	LightPanel = lipgloss.Color("#E6ECEA")
-	LightRule  = lipgloss.Color("#DDE3E1")
-	LightEdge  = lipgloss.Color("#C9D1CE")
-	LightFaint = lipgloss.Color("#A3ACAA")
-	LightMuted = lipgloss.Color("#5C6664")
-	LightFg    = lipgloss.Color("#1B1F1E")
-	LightMint  = lipgloss.Color("#0F8A6E")
-	LightAmber = lipgloss.Color("#A86A00")
-	LightCoral = lipgloss.Color("#B3261E")
-	LightMoss  = lipgloss.Color("#3D7A3A")
-	LightSky   = lipgloss.Color("#2F6FB8")
-	LightPlum  = lipgloss.Color("#8A5A84")
-	LightClay  = lipgloss.Color("#C15F3C")
-	LightIris  = lipgloss.Color("#3D4BE0")
-)
+	// Syntax is the desktop's code colours.
+	Syntax Syntax
 
-// Agent tints for light grounds: the same hues, dark enough to read.
-var (
-	LightOpencode    = lipgloss.Color("#3B3634")
-	LightAntigravity = lipgloss.Color("#6D4FD8")
-	LightPi          = lipgloss.Color("#2E7D3A")
-)
+	// Agent tints (--agent-*).
+	Claude, Codex, Opencode, Antigravity, Pi color.Color
+}
+
+// Syntax is the desktop's code colours (--syn-*), after Xcode's Default
+// (Dark) and Default (Light).
+type Syntax struct {
+	Keyword, String, Comment, Number, Function, Type, Punct, Variable, Tag, Attr, Operator color.Color
+}
+
+// Dark is the desktop's dark look.
+var Dark = Palette{
+	Canvas:         lipgloss.Color("#19191b"),
+	Surface1:       lipgloss.Color("#222225"),
+	Surface2:       lipgloss.Color("#2a2a2d"),
+	Code:           lipgloss.Color("#141416"),
+	Bubble:         lipgloss.Color("#1e3856"),
+	Selected:       lipgloss.Color("#353537"),
+	Control:        lipgloss.Color("#3a3a3c"),
+	Hairline:       lipgloss.Color("#303032"),
+	HairlineStrong: lipgloss.Color("#3e3e40"),
+
+	Text:       lipgloss.Color("#e3e3e5"),
+	Secondary:  lipgloss.Color("#c7c7cc"),
+	Muted:      lipgloss.Color("#a1a1a6"),
+	Faint:      lipgloss.Color("#8e8e93"),
+	Quaternary: lipgloss.Color("#636366"),
+
+	Signal:   lipgloss.Color("#0a84ff"),
+	OnSignal: lipgloss.Color("#ffffff"),
+	Link:     lipgloss.Color("#409cff"),
+
+	Destructive:     lipgloss.Color("#ff453a"),
+	DestructiveText: lipgloss.Color("#ff6961"),
+	Warning:         lipgloss.Color("#ff9f0a"),
+	WarningText:     lipgloss.Color("#ffb340"),
+	Success:         lipgloss.Color("#30d158"),
+	SuccessText:     lipgloss.Color("#30d158"),
+
+	Teal:   lipgloss.Color("#64d2ff"),
+	Purple: lipgloss.Color("#bf5af2"),
+	Indigo: lipgloss.Color("#5e5ce6"),
+	Yellow: lipgloss.Color("#ffd60a"),
+	Pink:   lipgloss.Color("#ff375f"),
+
+	DiffAddText: lipgloss.Color("#5fe07f"),
+	DiffDelText: lipgloss.Color("#ff7b72"),
+
+	Syntax: Syntax{
+		Keyword:  lipgloss.Color("#ff7ab2"),
+		String:   lipgloss.Color("#ff8170"),
+		Comment:  lipgloss.Color("#7f8c98"),
+		Number:   lipgloss.Color("#d9c97c"),
+		Function: lipgloss.Color("#78c2b3"),
+		Type:     lipgloss.Color("#dabaff"),
+		Punct:    lipgloss.Color("#a1a1a6"),
+		Variable: lipgloss.Color("#e3e3e5"),
+		Tag:      lipgloss.Color("#ff7ab2"),
+		Attr:     lipgloss.Color("#6bdfff"),
+		Operator: lipgloss.Color("#c9c9cc"),
+	},
+
+	Claude:      lipgloss.Color("#ff9f5a"),
+	Codex:       lipgloss.Color("#a1a1a6"),
+	Opencode:    lipgloss.Color("#64d2ff"),
+	Antigravity: lipgloss.Color("#bf5af2"),
+	Pi:          lipgloss.Color("#30d158"),
+}
+
+// Light is the desktop's light look.
+var Light = Palette{
+	Canvas:         lipgloss.Color("#fbfbfd"),
+	Surface1:       lipgloss.Color("#f3f3f6"),
+	Surface2:       lipgloss.Color("#ededf0"),
+	Code:           lipgloss.Color("#f3f3f6"),
+	Bubble:         lipgloss.Color("#d2e2f6"),
+	Selected:       lipgloss.Color("#e8e8eb"),
+	Control:        lipgloss.Color("#d1d1d6"),
+	Hairline:       lipgloss.Color("#e2e2e4"),
+	HairlineStrong: lipgloss.Color("#d3d3d5"),
+
+	Text:       lipgloss.Color("#1d1d1f"),
+	Secondary:  lipgloss.Color("#3a3a3c"),
+	Muted:      lipgloss.Color("#636366"),
+	Faint:      lipgloss.Color("#78787d"),
+	Quaternary: lipgloss.Color("#aeaeb2"),
+
+	Signal:   lipgloss.Color("#007aff"),
+	OnSignal: lipgloss.Color("#ffffff"),
+	Link:     lipgloss.Color("#0066cc"),
+
+	Destructive:     lipgloss.Color("#ff3b30"),
+	DestructiveText: lipgloss.Color("#d70015"),
+	Warning:         lipgloss.Color("#ff9500"),
+	WarningText:     lipgloss.Color("#c93400"),
+	Success:         lipgloss.Color("#28cd41"),
+	SuccessText:     lipgloss.Color("#248a3d"),
+
+	Teal:   lipgloss.Color("#0077a8"),
+	Purple: lipgloss.Color("#8944ab"),
+	Indigo: lipgloss.Color("#5856d6"),
+	Yellow: lipgloss.Color("#a05a00"),
+	Pink:   lipgloss.Color("#d30f45"),
+
+	DiffAddText: lipgloss.Color("#1a7f37"),
+	DiffDelText: lipgloss.Color("#c4161c"),
+
+	Syntax: Syntax{
+		Keyword:  lipgloss.Color("#ad3da4"),
+		String:   lipgloss.Color("#c41a16"),
+		Comment:  lipgloss.Color("#5d6c79"),
+		Number:   lipgloss.Color("#272ad8"),
+		Function: lipgloss.Color("#3e8087"),
+		Type:     lipgloss.Color("#6c36a9"),
+		Punct:    lipgloss.Color("#636366"),
+		Variable: lipgloss.Color("#1d1d1f"),
+		Tag:      lipgloss.Color("#ad3da4"),
+		Attr:     lipgloss.Color("#0f68a0"),
+		Operator: lipgloss.Color("#3a3a3c"),
+	},
+
+	Claude:      lipgloss.Color("#c4581b"),
+	Codex:       lipgloss.Color("#6e6e73"),
+	Opencode:    lipgloss.Color("#0077a8"),
+	Antigravity: lipgloss.Color("#8944ab"),
+	Pi:          lipgloss.Color("#248a3d"),
+}
 
 // light is true while a light theme is active; set by SetLight.
 var light atomic.Bool
 
-// SetLight tells Tint whether the active theme is light, so agent tints
-// stay readable on it. The UI calls it whenever the theme changes.
+// SetLight tells Current and Tint whether the active theme is light, so
+// agent tints and the colours drawn outside a theme stay readable on it.
+// The UI calls it whenever the theme changes.
 func SetLight(on bool) { light.Store(on) }
 
-// Tint is an agent kind's colour ("claude", "codex", "opencode", "antigravity",
-// "pi").
-func Tint(kind string) color.Color {
+// Current is the palette for the active theme's ground: Light while a light
+// theme is on, else Dark.
+func Current() Palette {
 	if light.Load() {
-		switch kind {
-		case "claude":
-			return LightClay
-		case "codex":
-			return LightIris
-		case "opencode":
-			return LightOpencode
-		case "antigravity":
-			return LightAntigravity
-		case "pi":
-			return LightPi
-		}
-		return LightMuted
+		return Light
 	}
+	return Dark
+}
+
+// Kinds are the agent kinds with a tint and a mark of their own.
+var Kinds = []string{"claude", "codex", "opencode", "antigravity", "pi"}
+
+// Tint is an agent kind's colour ("claude", "codex", "opencode",
+// "antigravity", "pi"), the desktop's for the same kind; Muted for any
+// other kind.
+func Tint(kind string) color.Color {
+	p := Current()
 	switch kind {
 	case "claude":
-		return Claude
+		return p.Claude
 	case "codex":
-		return Codex
+		return p.Codex
 	case "opencode":
-		return Opencode
+		return p.Opencode
 	case "antigravity":
-		return Antigravity
+		return p.Antigravity
 	case "pi":
-		return Pi
+		return p.Pi
 	}
-	return Muted
+	return p.Muted
+}
+
+// KindOf is the agent kind an agent's name starts with ("codex-2",
+// "claude/review" are "codex" and "claude"); "" when it names none.
+func KindOf(name string) string {
+	name = strings.ToLower(name)
+	for _, k := range Kinds {
+		if strings.HasPrefix(name, k) {
+			return k
+		}
+	}
+	return ""
 }
 
 // Mark is how an agent kind is drawn: the mark its own CLI uses in the
@@ -158,15 +256,34 @@ func Mark(kind string) string {
 	return "▌"
 }
 
-// named lists the palette by name, for theme files.
-var named = map[string]color.Color{
-	"ink": Ink, "slate": Slate, "coal": Coal, "shale": Shale, "rule": Rule, "stone": Stone,
-	"faint": Faint, "fog": Fog, "muted": Muted, "mist": Mist, "fg": Fg, "paper": Paper,
-	"mint": Mint, "teal": Teal, "deepteal": DeepTeal, "seafoam": Seafoam,
-	"amber": Amber, "honey": Honey, "coral": Coral, "ember": Ember, "moss": Moss, "fern": Fern,
-	"sky": Sky, "dusk": Dusk, "plum": Plum, "addbg": AddBg, "delbg": DelBg,
-	"claude": Claude, "codex": Codex, "opencode": Opencode, "antigravity": Antigravity, "pi": Pi,
-}
+// named lists colours by name, for theme files: the dark palette's tokens,
+// and the names of Deck's earlier palette, which theme files written for it
+// may still use.
+var named = func() map[string]color.Color {
+	m := map[string]color.Color{}
+	for n, h := range map[string]string{
+		"ink": "#0e1211", "slate": "#141918", "coal": "#1a201f", "shale": "#222928", "rule": "#2a3130", "stone": "#3a4341",
+		"fog": "#6f7a77", "mist": "#bfc8c5", "paper": "#f5f8f7",
+		"mint": "#5fd7af", "teal": "#2fa387", "deepteal": "#1d6b59", "seafoam": "#a8ebd4",
+		"amber": "#e8b04b", "honey": "#f2cc7a", "coral": "#f0716a", "ember": "#d9534f", "moss": "#9ccb8a", "fern": "#6fa35e",
+		"sky": "#7fb8ff", "dusk": "#5b7fb0", "plum": "#b48ead", "addbg": "#1c2a1c", "delbg": "#2e1c1b",
+	} {
+		m[n] = lipgloss.Color(h)
+	}
+	d := Dark
+	for n, c := range map[string]color.Color{
+		"canvas": d.Canvas, "surface1": d.Surface1, "surface2": d.Surface2, "code": d.Code, "bubble": d.Bubble,
+		"hairline": d.Hairline, "hairlinestrong": d.HairlineStrong,
+		"fg": d.Text, "secondary": d.Secondary, "muted": d.Muted, "faint": d.Faint, "quaternary": d.Quaternary,
+		"signal": d.Signal, "link": d.Link,
+		"destructive": d.Destructive, "warning": d.Warning, "success": d.Success,
+		"cyan": d.Teal, "purple": d.Purple, "indigo": d.Indigo, "yellow": d.Yellow, "pink": d.Pink,
+		"claude": d.Claude, "codex": d.Codex, "opencode": d.Opencode, "antigravity": d.Antigravity, "pi": d.Pi,
+	} {
+		m[n] = c
+	}
+	return m
+}()
 
 // Hex is a colour as "#rrggbb".
 func Hex(c color.Color) string {
@@ -202,6 +319,7 @@ func ByName(name string) (string, bool) {
 }
 
 // NameFromHex is the palette name of a hex colour, "" when it has none.
+// When several names share a colour, the first in order is given.
 func NameFromHex(hex string) string {
 	hex = strings.ToLower(hex)
 	for _, n := range Names() {

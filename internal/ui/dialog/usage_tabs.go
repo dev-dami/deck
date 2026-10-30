@@ -203,10 +203,10 @@ func (u *Usage) share(width int) string {
 	o := u.data.overview
 	return graph.Share(u.theme, width, []graph.Part{
 		{Label: "input", Value: float64(o.InputTokens), Color: u.theme.Accent},
-		{Label: "cached", Value: float64(o.CachedTokens), Color: u.pick(tone.Sky, tone.LightSky)},
-		{Label: "cache write", Value: float64(o.CacheWriteTokens), Color: u.pick(tone.Amber, tone.LightAmber)},
-		{Label: "output", Value: float64(o.OutputTokens), Color: u.pick(tone.Moss, tone.LightMoss)},
-		{Label: "reasoning", Value: float64(o.ReasoningTokens), Color: u.pick(tone.Plum, tone.LightPlum)},
+		{Label: "cached", Value: float64(o.CachedTokens), Color: u.pick(tone.Dark.Teal, tone.Light.Teal)},
+		{Label: "cache write", Value: float64(o.CacheWriteTokens), Color: u.pick(tone.Dark.Warning, tone.Light.WarningText)},
+		{Label: "output", Value: float64(o.OutputTokens), Color: u.pick(tone.Dark.Success, tone.Light.SuccessText)},
+		{Label: "reasoning", Value: float64(o.ReasoningTokens), Color: u.pick(tone.Dark.Purple, tone.Light.Purple)},
 	})
 }
 

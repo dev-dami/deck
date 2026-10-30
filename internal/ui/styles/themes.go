@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"charm.land/lipgloss/v2"
@@ -21,196 +22,209 @@ func ThemeKeyForProvider(string) string { return "default" }
 // own theme, whichever agent is speaking.
 func ThemeForProvider(string) Styles { return DeckDark() }
 
-// DeckDark is Deck's dark theme and the default: a graphite ground, a mint
-// accent and soft status colours.
-func DeckDark() Styles { return deckOverrides(quickStyle(deckDarkOpts())) }
+// lightTerminal is true when the terminal Deck runs in has a light
+// background; set by SetTerminalLight.
+var lightTerminal atomic.Bool
 
-// DeckLight is Deck's light theme.
-func DeckLight() Styles { return deckOverrides(quickStyle(deckLightOpts())) }
+// SetTerminalLight says whether the terminal's background is light, so an
+// unset theme follows it (DefaultThemeName). The TUI asks the terminal once,
+// before it starts, when no theme is configured.
+func SetTerminalLight(on bool) { lightTerminal.Store(on) }
 
-func deckDarkOpts() quickStyleOpts {
-	return quickStyleOpts{
-		primary:   tone.Mint,
-		secondary: tone.Seafoam,
-		accent:    tone.Teal,
-		keyword:   tone.Plum,
-
-		fgBase:       tone.Fg,
-		fgMoreSubtle: tone.Muted,
-		fgSubtle:     tone.Mist,
-		fgMostSubtle: tone.Fog,
-
-		onPrimary: tone.Ink,
-
-		bgBase:         tone.Ink,
-		bgLeastVisible: tone.Slate,
-		bgLessVisible:  tone.Coal,
-		bgMostVisible:  tone.Shale,
-
-		separator: tone.Rule,
-
-		destructive:       tone.Coral,
-		error:             tone.Ember,
-		warningSubtle:     tone.Honey,
-		warning:           tone.Amber,
-		attention:         tone.Clay,
-		busy:              tone.Mint,
-		info:              tone.Sky,
-		infoMoreSubtle:    tone.Seafoam,
-		infoMostSubtle:    tone.Dusk,
-		success:           tone.Moss,
-		successMoreSubtle: tone.Teal,
-		successMostSubtle: tone.Fern,
-		yolo:              tone.Coral,
-		plan:              tone.Sky,
-		planMoreSubtle:    tone.Dusk,
-
-		diffInsertFg:     tone.Moss,
-		diffInsertCodeBg: tone.AddBg,
-		diffDeleteFg:     tone.Coral,
-		diffDeleteCodeBg: tone.DelBg,
-
-		button:         tone.Mint,
-		buttonSubtle:   tone.Coal,
-		buttonInactive: tone.Shale,
-		buttonHovered:  tone.Teal,
-
-		ansiBlack:   tone.Slate,
-		ansiRed:     tone.Coral,
-		ansiGreen:   tone.Fern,
-		ansiYellow:  tone.Amber,
-		ansiBlue:    tone.Dusk,
-		ansiMagenta: tone.Plum,
-		ansiCyan:    tone.Teal,
-		ansiWhite:   tone.Mist,
-
-		ansiBrightBlack:   tone.Stone,
-		ansiBrightRed:     tone.Coral,
-		ansiBrightGreen:   tone.Moss,
-		ansiBrightYellow:  tone.Honey,
-		ansiBrightBlue:    tone.Sky,
-		ansiBrightMagenta: tone.Plum,
-		ansiBrightCyan:    tone.Mint,
-		ansiBrightWhite:   tone.Paper,
+// DefaultThemeName is the theme used when none is configured: Deck's own,
+// light on a light terminal and dark otherwise, as the desktop app follows
+// the system's appearance.
+func DefaultThemeName() string {
+	if lightTerminal.Load() {
+		return "deck-light"
 	}
+	return "deck"
 }
 
-func deckLightOpts() quickStyleOpts {
-	return quickStyleOpts{
-		primary:   tone.LightMint,
-		secondary: tone.Teal,
-		accent:    tone.DeepTeal,
-		keyword:   tone.LightPlum,
-
-		fgBase:       tone.LightFg,
-		fgMoreSubtle: tone.LightMuted,
-		fgSubtle:     tone.LightMuted,
-		fgMostSubtle: tone.LightFaint,
-
-		onPrimary: tone.LightPage,
-
-		bgBase:         tone.LightPage,
-		bgLeastVisible: tone.LightRaise,
-		bgLessVisible:  tone.LightPanel,
-		bgMostVisible:  tone.LightEdge,
-
-		separator: tone.LightRule,
-
-		destructive:       tone.LightCoral,
-		error:             tone.LightCoral,
-		warningSubtle:     tone.LightAmber,
-		warning:           tone.LightAmber,
-		attention:         tone.LightClay,
-		busy:              tone.LightMint,
-		info:              tone.LightSky,
-		infoMoreSubtle:    tone.LightSky,
-		infoMostSubtle:    tone.LightMuted,
-		success:           tone.LightMoss,
-		successMoreSubtle: tone.LightMint,
-		successMostSubtle: tone.LightMoss,
-		yolo:              tone.LightCoral,
-		plan:              tone.LightSky,
-		planMoreSubtle:    tone.LightMuted,
-
-		diffInsertFg: tone.LightMoss,
-		diffDeleteFg: tone.LightCoral,
-
-		button:         tone.LightMint,
-		buttonSubtle:   tone.LightPanel,
-		buttonInactive: tone.LightEdge,
-		buttonHovered:  tone.DeepTeal,
-
-		ansiBlack:   tone.LightFg,
-		ansiRed:     tone.LightCoral,
-		ansiGreen:   tone.LightMoss,
-		ansiYellow:  tone.LightAmber,
-		ansiBlue:    tone.LightSky,
-		ansiMagenta: tone.LightPlum,
-		ansiCyan:    tone.LightMint,
-		ansiWhite:   tone.LightMuted,
-
-		ansiBrightBlack:   tone.LightFaint,
-		ansiBrightRed:     tone.LightCoral,
-		ansiBrightGreen:   tone.LightMoss,
-		ansiBrightYellow:  tone.LightAmber,
-		ansiBrightBlue:    tone.LightIris,
-		ansiBrightMagenta: tone.LightPlum,
-		ansiBrightCyan:    tone.DeepTeal,
-		ansiBrightWhite:   tone.LightFg,
-
-		light: true,
+// defaultTheme is the Styles of DefaultThemeName.
+func defaultTheme() Styles {
+	if lightTerminal.Load() {
+		return DeckLight()
 	}
+	return DeckDark()
+}
+
+// DeckDark is Deck's dark theme and the default: the desktop app's dark
+// look (tone.Dark), a near-black canvas, hairline rules, muted secondary
+// text and the system blue as the one accent.
+func DeckDark() Styles { return deckOverrides(quickStyle(deckDarkOpts())) }
+
+// DeckLight is Deck's light theme: the desktop app's light look.
+func DeckLight() Styles { return deckOverrides(quickStyle(deckLightOpts())) }
+
+func deckDarkOpts() quickStyleOpts { return deckOpts(tone.Dark, false) }
+
+func deckLightOpts() quickStyleOpts { return deckOpts(tone.Light, true) }
+
+// deckOpts maps the desktop's tokens (tone.Palette) onto quickStyle's.
+// Prose reads in the full text colour, as the desktop's does; muted and
+// faint are the desktop's two quieter levels. The diff grounds are left to
+// deriveDiffColors, which blends success and destructive over the canvas
+// at the desktop's own ratios.
+func deckOpts(p tone.Palette, light bool) quickStyleOpts {
+	o := quickStyleOpts{
+		primary:   p.Signal,
+		secondary: p.Link,
+		accent:    p.Link,
+		keyword:   p.Purple,
+
+		fgBase:       p.Text,
+		fgSubtle:     p.Text,
+		fgMoreSubtle: p.Muted,
+		fgMostSubtle: p.Faint,
+
+		onPrimary: p.OnSignal,
+
+		bgBase:         p.Canvas,
+		bgLeastVisible: p.Surface1,
+		bgLessVisible:  p.Surface2,
+		bgMostVisible:  p.Control,
+
+		separator: p.Hairline,
+
+		destructive:       p.DestructiveText,
+		error:             p.Destructive,
+		warningSubtle:     p.WarningText,
+		warning:           p.Warning,
+		attention:         p.Warning,
+		busy:              p.Signal,
+		info:              p.Link,
+		infoMoreSubtle:    p.Teal,
+		infoMostSubtle:    p.Muted,
+		success:           p.Success,
+		successMoreSubtle: p.DiffAddText,
+		successMostSubtle: p.SuccessText,
+		yolo:              p.Destructive,
+		plan:              p.Link,
+		planMoreSubtle:    p.Indigo,
+
+		button:         p.Signal,
+		buttonSubtle:   p.Surface2,
+		buttonInactive: p.Control,
+		buttonHovered:  p.Link,
+
+		ansiBlack:   p.Surface2,
+		ansiRed:     p.DestructiveText,
+		ansiGreen:   p.SuccessText,
+		ansiYellow:  p.WarningText,
+		ansiBlue:    p.Link,
+		ansiMagenta: p.Purple,
+		ansiCyan:    p.Teal,
+		ansiWhite:   p.Secondary,
+
+		ansiBrightBlack:   p.Quaternary,
+		ansiBrightRed:     p.DiffDelText,
+		ansiBrightGreen:   p.DiffAddText,
+		ansiBrightYellow:  p.Yellow,
+		ansiBrightBlue:    p.Signal,
+		ansiBrightMagenta: p.Pink,
+		ansiBrightCyan:    p.Teal,
+		ansiBrightWhite:   p.Text,
+
+		light: light,
+	}
+	if light {
+		// On a light ground black is ink and white is the quiet grey.
+		o.ansiBlack, o.ansiWhite = p.Text, p.Muted
+		o.ansiBrightBlack, o.ansiBrightWhite = p.Faint, p.Secondary
+	}
+	return o
 }
 
 // deckOverrides applies Deck's touches that don't fit the token model of
-// [quickStyleOpts]: calm syntax colours and the bang prompt in the accent.
+// [quickStyleOpts], so the terminal app reads as the desktop app does:
+// hairline-bordered dialogs, the desktop's code colours, plain inline code,
+// and the composer's quiet prompt.
 func deckOverrides(s Styles) Styles {
-	// Deck's dark tones, and their light-theme counterparts so deck-light
-	// does not inherit pale dark-ground colours.
-	ink, mint, deep, shale, fog := tone.Ink, tone.Mint, tone.DeepTeal, tone.Shale, tone.Fog
-	clay, plum, sky, seafoam, paper, honey := tone.Clay, tone.Plum, tone.Sky, tone.Seafoam, tone.Paper, tone.Honey
-	faint := tone.Faint
+	p := tone.Dark
 	if !s.IsDark {
-		ink, mint, deep, shale, fog = tone.LightPage, tone.LightMint, tone.Teal, tone.LightEdge, tone.LightFaint
-		clay, plum, sky, seafoam, paper, honey = tone.LightClay, tone.LightPlum, tone.LightSky, tone.DeepTeal, tone.LightFg, tone.LightAmber
-		faint = tone.LightFaint
+		p = tone.Light
 	}
 
 	s.Editor.PromptBangIconFocused = s.Editor.PromptBangIconFocused.
-		Foreground(ink).
-		Background(mint)
+		Foreground(p.OnSignal).
+		Background(p.Signal)
 	s.Editor.PromptBangDotsFocused = s.Editor.PromptBangDotsFocused.
-		Foreground(mint)
+		Foreground(p.Signal)
 	s.Editor.PromptBangDotsBlurred = s.Editor.PromptBangDotsBlurred.
-		Foreground(deep)
+		Foreground(p.Quaternary)
+	s.Editor.PromptNormalFocused = s.Editor.PromptNormalFocused.
+		Foreground(p.Quaternary)
+	s.Editor.PromptNormalBlurred = s.Editor.PromptNormalBlurred.
+		Foreground(p.Hairline)
+	s.Editor.PromptNormalIconFocused = s.Editor.PromptNormalIconFocused.Foreground(p.Signal)
+	s.Editor.PromptNormalIconBlurred = s.Editor.PromptNormalIconBlurred.Foreground(p.Faint)
 
 	s.Messages.ShellBarFocused = s.Messages.ShellBarFocused.
-		BorderForeground(mint)
+		BorderForeground(p.Signal)
 	s.Messages.ShellBarBlurred = s.Messages.ShellBarBlurred.
-		BorderForeground(shale)
+		BorderForeground(p.HairlineStrong)
 	s.Messages.ShellPrompt = s.Messages.ShellPrompt.
-		Foreground(mint)
+		Foreground(p.Signal)
 	s.Messages.ShellPromptBlurred = s.Messages.ShellPromptBlurred.
-		Foreground(fog)
+		Foreground(p.Faint)
+
+	// Dialogs: a hairline frame and a hairline after the title, as the
+	// sidebar's sections have, in place of a gradient.
+	s.Dialog.View = s.Dialog.View.BorderForeground(p.HairlineStrong)
+	s.Dialog.Quit.Frame = s.Dialog.Quit.Frame.BorderForeground(p.HairlineStrong)
+	s.Dialog.Title = s.Dialog.Title.Foreground(p.Text).Bold(true)
+	s.Dialog.TitleText = s.Dialog.TitleText.Foreground(p.Text).Bold(true)
+	s.Dialog.TitleRule = SectionSeparator
+	s.Dialog.TitleLineBase = s.Dialog.TitleLineBase.Foreground(p.Hairline)
+	s.CompactDetails.View = s.CompactDetails.View.BorderForeground(p.HairlineStrong)
+	// A chosen row is the desktop's selection, a quiet fill; the accent is
+	// kept for the primary button.
+	s.Dialog.SelectedItem = s.Dialog.SelectedItem.Background(p.Selected).Foreground(p.Text)
+
+	// Status messages sit on a raised surface, as the desktop's toasts do;
+	// only the badge carries the state's colour.
+	quiet := s.Status.SuccessMessage.Background(p.Surface2)
+	s.Status.SuccessMessage = quiet.Foreground(p.Text)
+	s.Status.InfoMessage = s.Status.SuccessMessage
+	s.Status.UpdateMessage = s.Status.SuccessMessage
+	s.Status.WarnMessage = quiet.Foreground(p.WarningText)
+	s.Status.ErrorMessage = quiet.Foreground(p.DestructiveText)
 
 	chroma := s.Markdown.CodeBlock.Chroma
 	if chroma != nil {
-		chroma.CommentPreproc.Color = hex(clay)
-		chroma.KeywordReserved.Color = hex(plum)
-		chroma.KeywordNamespace.Color = hex(plum)
-		chroma.KeywordType.Color = hex(sky)
-		chroma.Operator.Color = hex(seafoam)
-		chroma.NameTag.Color = hex(plum)
-		chroma.NameAttribute.Color = hex(sky)
-		chroma.NameClass.Color = hex(paper)
-		chroma.LiteralString.Color = hex(honey)
+		syn := p.Syntax
+		chroma.Text.Color = hex(syn.Variable)
+		chroma.Comment.Color = hex(syn.Comment)
+		chroma.CommentPreproc.Color = hex(syn.Keyword)
+		chroma.Keyword.Color = hex(syn.Keyword)
+		chroma.KeywordReserved.Color = hex(syn.Keyword)
+		chroma.KeywordNamespace.Color = hex(syn.Keyword)
+		chroma.KeywordType.Color = hex(syn.Type)
+		chroma.Operator.Color = hex(syn.Operator)
+		chroma.Punctuation.Color = hex(syn.Punct)
+		chroma.Name.Color = hex(syn.Variable)
+		chroma.NameBuiltin.Color = hex(syn.Function)
+		chroma.NameTag.Color = hex(syn.Tag)
+		chroma.NameAttribute.Color = hex(syn.Attr)
+		chroma.NameClass.Color = hex(syn.Type)
+		chroma.NameDecorator.Color = hex(syn.Attr)
+		chroma.NameFunction.Color = hex(syn.Function)
+		chroma.LiteralNumber.Color = hex(syn.Number)
+		chroma.LiteralString.Color = hex(syn.String)
+		chroma.LiteralStringEscape.Color = hex(syn.Number)
+		chroma.Background.BackgroundColor = hex(p.Code)
 	}
-	s.Markdown.Link.Color = hex(mint)
-	s.Markdown.Image.Color = hex(plum)
-	s.Markdown.Code.Color = hex(mint)
+	s.Markdown.Link.Color = hex(p.Link)
+	s.Markdown.LinkText.Color = hex(p.Link)
+	s.Markdown.Image.Color = hex(p.Purple)
+	s.Markdown.Heading.Color = hex(p.Text)
+	// Inline code is text on a raised chip, as in the desktop's prose.
+	s.Markdown.Code.Color = hex(p.Text)
+	s.Markdown.Code.BackgroundColor = hex(p.Surface2)
 
-	// The wordmark keeps its hand-picked ramp.
-	s.Logo.MarkLowColor, s.Logo.MarkColor, s.Logo.MarkHighColor = faint, mint, seafoam
+	// The wordmark: the accent, faint to bright.
+	s.Logo.MarkLowColor, s.Logo.MarkColor, s.Logo.MarkHighColor = p.Quaternary, p.Signal, p.Link
 	return s
 }
 
@@ -782,12 +796,10 @@ func BuiltinThemeNames() []string {
 	return names
 }
 
-// LoadTheme loads a theme by name. User theme files (in ThemeDirs) take
-// precedence over built-in themes of the same name. Returns
-// DeckDark styles for an empty name. Returns an error if the
-// name is not recognized as either a user file or a built-in.
 // LoadTheme loads a theme by name. Global user theme files take precedence
-// over built-in themes of the same name. Empty names use Deck.
+// over built-in themes of the same name. An empty name is the default theme
+// (DefaultThemeName). Returns an error if the name is not recognized as
+// either a user file or a built-in.
 //
 // Built themes are kept until a theme file changes; see theme_cache.go.
 func LoadTheme(name string) (Styles, error) {
@@ -804,7 +816,7 @@ func LoadTheme(name string) (Styles, error) {
 // changes, and must not be modified.
 func LoadThemeShared(name string) (*Styles, error) {
 	if name == "" {
-		s := DeckDark()
+		s := defaultTheme()
 		return &s, nil
 	}
 	key := normalizeThemeName(name)
@@ -846,14 +858,15 @@ func buildTheme(name, key string) (Styles, error) {
 }
 
 // ThemeFromConfig resolves the configured theme name, falling back to the
-// default Deck theme when the config value is empty or invalid. The
+// default theme (DefaultThemeName) when the config value is empty or
+// invalid. The
 // fallback is logged so a missing or broken theme file is not silently
 // replaced by different colors.
 func ThemeFromConfig(name string) Styles {
 	s, err := LoadTheme(name)
 	if err != nil {
 		slog.Warn("Falling back to the default theme", "configured_theme", name, "reason", err)
-		return DeckDark()
+		return defaultTheme()
 	}
 	return s
 }

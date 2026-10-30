@@ -2431,7 +2431,7 @@ func (m *UI) handleDialogAction(action dialog.Action) tea.Cmd {
 		activeTheme := common.ThemeNameFromConfig(m.com.Config())
 		isActive := strings.EqualFold(activeTheme, themeName)
 		if activeTheme == "" {
-			isActive = strings.EqualFold(themeName, "deck")
+			isActive = strings.EqualFold(themeName, styles.DefaultThemeName())
 		}
 		if isActive {
 			newStyles, err := styles.LoadTheme(themeName)

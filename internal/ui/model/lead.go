@@ -135,13 +135,15 @@ func renderLeadLine(t *styles.Styles, l workspace.Lead, key, desc string, width 
 		return ""
 	}
 	muted := lipgloss.NewStyle().Foreground(t.Dialog.SecondaryText.GetForeground())
-	primary := lipgloss.NewStyle().Foreground(t.Dialog.PrimaryText.GetForeground())
+	// As the desktop composer's agent chip: the mark in the kind's tint,
+	// the name in the text colour, the model and effort muted.
+	name := lipgloss.NewStyle().Foreground(t.Dialog.NormalItem.GetForeground())
 	hint := t.Help.ShortKey.Render(key) + " " + t.Help.ShortDesc.Render(desc)
 	if l.Kind == "" {
 		return " " + ansi.Truncate(hint, avail, "…")
 	}
 	label := lipgloss.NewStyle().Foreground(tone.Tint(l.Kind)).Render(tone.Mark(l.Kind)) + " " +
-		primary.Render(cmp.Or(l.Profile, l.Kind))
+		name.Render(cmp.Or(l.Profile, l.Kind))
 	if rest := appendLeadParts(nil, cmp.Or(l.Slug, l.Model), l.Effort); len(rest) > 0 {
 		label += muted.Render(" · " + strings.Join(rest, " · "))
 	}

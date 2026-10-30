@@ -158,10 +158,11 @@ func (m *UI) deleteThemeCmd(name string, wasActive bool) tea.Cmd {
 		if !wasActive {
 			return msg
 		}
-		if msg.err = ws.SetConfigField(config.ScopeGlobal, activeThemeField, "deck"); msg.err != nil {
+		def := styles.DefaultThemeName()
+		if msg.err = ws.SetConfigField(config.ScopeGlobal, activeThemeField, def); msg.err != nil {
 			return msg
 		}
-		msg.styles, msg.err = styles.LoadTheme("deck")
+		msg.styles, msg.err = styles.LoadTheme(def)
 		return msg
 	}
 }

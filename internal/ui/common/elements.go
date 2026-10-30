@@ -240,18 +240,23 @@ func Section(t *styles.Styles, text string, width int, info ...string) string {
 }
 
 // DialogTitle renders a dialog title with a decorative line filling the
-// remaining width. When the title alone exceeds the available width it is
-// truncated with an ellipsis so it never wraps.
+// remaining width: a ╱╱╱ gradient from fromColor to toColor, or the theme's
+// own rule (Dialog.TitleRule) in Dialog.TitleLineBase when it sets one.
+// When the title alone exceeds the available width it is truncated with an
+// ellipsis so it never wraps.
 func DialogTitle(t *styles.Styles, title string, width int, fromColor, toColor color.Color) string {
 	if width > 0 && lipgloss.Width(title) > width {
 		return ansi.Truncate(title, width, "…")
 	}
-	char := "╱"
 	length := lipgloss.Width(title) + 1
 	remainingWidth := width - length
 	if remainingWidth > 0 {
-		lines := strings.Repeat(char, remainingWidth)
-		lines = styles.ApplyForegroundGrad(t.Dialog.TitleLineBase, lines, fromColor, toColor)
+		var lines string
+		if rule := t.Dialog.TitleRule; rule != "" {
+			lines = t.Dialog.TitleLineBase.Render(strings.Repeat(rule, remainingWidth))
+		} else {
+			lines = styles.ApplyForegroundGrad(t.Dialog.TitleLineBase, strings.Repeat("╱", remainingWidth), fromColor, toColor)
+		}
 		title = title + " " + lines
 	}
 	return title

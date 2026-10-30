@@ -626,7 +626,11 @@ func (a *AssistantMessageItem) cachedContent(width int) string {
 		// grow a border.
 		out = a.renderPlanCardStreaming(common.StripPlanMarkers(text), width)
 	default:
-		out = a.renderMarkdown(common.StripPlanMarkers(text), width)
+		if h, ok := parseHandoff(text); ok {
+			out = renderHandoffCard(a.sty, h, width)
+		} else {
+			out = a.renderMarkdown(common.StripPlanMarkers(text), width)
+		}
 	}
 	a.contentSec.store(width, srcHash, extra, out, 0)
 	return out

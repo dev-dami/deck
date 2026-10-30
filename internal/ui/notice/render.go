@@ -132,8 +132,8 @@ const CardWidth = 44
 // cardLines is the most lines of text a toast shows.
 const cardLines = 3
 
-// Card is a notice drawn as a toast: a small bordered card in its level's
-// colour, at most maxWidth (and CardWidth) wide and three lines of text
+// Card is a notice drawn as a toast: a small bordered card marked in its
+// level's colour, at most maxWidth (and CardWidth) wide and three lines of text
 // tall. hovered draws it held.
 func Card(t *styles.Styles, n Notice, maxWidth int, hovered bool) string {
 	width := min(CardWidth, maxWidth)
@@ -141,13 +141,15 @@ func Card(t *styles.Styles, n Notice, maxWidth int, hovered bool) string {
 		return ""
 	}
 	col := Color(t, n.Level)
-	border := lipgloss.RoundedBorder()
+	// The frame is a dialog's; the level's colour marks the icon and the
+	// action, and the frame of a held toast.
+	border, frame := lipgloss.RoundedBorder(), t.Dialog.View.GetBorderTopForeground()
 	if hovered {
-		border = lipgloss.ThickBorder()
+		border, frame = lipgloss.ThickBorder(), col
 	}
 	box := lipgloss.NewStyle().
 		Border(border).
-		BorderForeground(col).
+		BorderForeground(frame).
 		BorderBackground(t.Background).
 		Background(t.Background).
 		Padding(0, 1).

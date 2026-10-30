@@ -140,3 +140,45 @@ func TestGruvboxDark_InlineCodeContrast(t *testing.T) {
 		t.Errorf("gruvbox-dark inline code contrast %.2f is below WCAG AA (%.1f)", ratio, minAA)
 	}
 }
+
+// With no theme set, Deck follows the terminal's background.
+func TestDefaultThemeFollowsTheTerminal(t *testing.T) {
+	defer SetTerminalLight(false)
+	if got := DefaultThemeName(); got != "deck" {
+		t.Fatalf("DefaultThemeName() on a dark terminal = %q", got)
+	}
+	s, err := LoadTheme("")
+	if err != nil || !s.IsDark {
+		t.Fatalf("LoadTheme(\"\") on a dark terminal: dark %v, err %v", s.IsDark, err)
+	}
+	SetTerminalLight(true)
+	if got := DefaultThemeName(); got != "deck-light" {
+		t.Fatalf("DefaultThemeName() on a light terminal = %q", got)
+	}
+	s, err = LoadTheme("")
+	if err != nil || s.IsDark {
+		t.Fatalf("LoadTheme(\"\") on a light terminal: dark %v, err %v", s.IsDark, err)
+	}
+	// A configured theme is kept whatever the terminal.
+	if s, _ := LoadTheme("deck"); !s.IsDark {
+		t.Fatal("deck is light on a light terminal")
+	}
+}
+
+// Deck's themes are the desktop app's colours.
+func TestDeckThemesAreTheDesktops(t *testing.T) {
+	for _, c := range []struct {
+		s          Styles
+		bg, accent string
+	}{
+		{DeckDark(), "#19191b", "#0a84ff"},
+		{DeckLight(), "#fbfbfd", "#007aff"},
+	} {
+		if got := hexOf(c.s.Background); got != c.bg {
+			t.Errorf("background %s, want %s", got, c.bg)
+		}
+		if got := hexOf(c.s.Button.Focused.GetBackground()); got != c.accent {
+			t.Errorf("accent %s, want %s", got, c.accent)
+		}
+	}
+}
