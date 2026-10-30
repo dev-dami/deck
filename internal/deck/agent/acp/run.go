@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -328,21 +330,59 @@ func (r *run) endTurn(params json.RawMessage) {
 // Send starts a turn with the prompt.
 func (r *run) Send(prompt string) error { return r.SendWithImages(prompt, nil) }
 
+// mediaBlocks turns the attachments into prompt blocks: each one's
+// reference line, then an image block with its bytes or, for a video, a
+// resource_link to the file.
+func (r *run) mediaBlocks(images []agent.Image) ([]contentBlock, error) {
+	var blocks []contentBlock
+	refs := agent.RefLines(images)
+	for i, im := range images {
+		blocks = append(blocks, contentBlock{Type: "text", Text: refs[i]})
+		if im.IsVideo() {
+			if r.a.cfg.Video == nil {
+				return nil, r.a.errorf("video: %s takes no video", r.a.cfg.Kind)
+			}
+			abs, err := filepath.Abs(im.Path)
+			if err != nil {
+				return nil, r.a.errorf("video: %w", err)
+			}
+			if fi, err := os.Stat(abs); err != nil || !fi.Mode().IsRegular() {
+				return nil, r.a.errorf("video: %s is not a readable file", filepath.Base(abs))
+			}
+			name := agent.CleanLabel(im.Label)
+			if name == "" {
+				name = filepath.Base(abs)
+			}
+			u := url.URL{Scheme: "file", Path: filepath.ToSlash(abs)}
+			if !strings.HasPrefix(u.Path, "/") {
+				u.Path = "/" + u.Path // a Windows drive path
+			}
+			blocks = append(blocks, contentBlock{Type: "resource_link", URI: u.String(), Name: name, MimeType: im.MediaType})
+			continue
+		}
+		data, err := os.ReadFile(im.Path)
+		if err != nil {
+			return nil, r.a.errorf("image: %w", err)
+		}
+		blocks = append(blocks, contentBlock{Type: "image", MimeType: im.MediaType, Data: base64.StdEncoding.EncodeToString(data)})
+	}
+	return blocks, nil
+}
+
 // SendWithImages starts a turn whose prompt is the images followed by the
-// text. The first prompt of a process carries Deck's instructions ahead of it:
+// text, each image after a text block with its reference line ("[Image 1:
+// login page error]"). A video goes as a resource_link to its file, which
+// the agent reads itself, and only to an agent whose Config takes video.
+// The first prompt of a process carries Deck's instructions ahead of it:
 // ACP has no separate place for them.
 func (r *run) SendWithImages(prompt string, images []agent.Image) error {
 	sid := r.SessionID()
 	if sid == "" {
 		return r.a.errorf("no session")
 	}
-	var blocks []contentBlock
-	for _, im := range images {
-		data, err := os.ReadFile(im.Path)
-		if err != nil {
-			return r.a.errorf("image: %w", err)
-		}
-		blocks = append(blocks, contentBlock{Type: "image", MimeType: im.MediaType, Data: base64.StdEncoding.EncodeToString(data)})
+	blocks, err := r.mediaBlocks(images)
+	if err != nil {
+		return err
 	}
 	r.mu.Lock()
 	if r.busy {

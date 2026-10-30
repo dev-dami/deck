@@ -322,8 +322,11 @@ type Entry struct {
 	// it writes; LoadEntries gives entries from older logs a stable one ("e<n>",
 	// n = position in the log).
 	ID string `json:"id,omitempty"`
-	// Images (user entries) are the paths of the images attached to the message.
-	Images []string `json:"images,omitempty"`
+	// Images (user entries) are the paths of the images (and videos)
+	// attached to the message, and ImageLabels what the person called each
+	// one, in the same order (absent from older logs and for no label).
+	Images      []string `json:"images,omitempty"`
+	ImageLabels []string `json:"image_labels,omitempty"`
 	// Steer marks a user entry that redirected a busy agent mid-task (the
 	// message was queued and the user then steered with it).
 	Steer bool `json:"steer,omitempty"`
@@ -980,27 +983,28 @@ type entryHead struct {
 	SessionID string        `json:",omitempty"`
 	End       agent.TurnEnd `json:",omitempty"`
 
-	Type    string     `json:"type,omitempty"`
-	Speaker string     `json:"speaker,omitempty"`
-	To      []string   `json:"to,omitempty"`
-	Via     string     `json:"via,omitempty"`
-	Held    bool       `json:"held,omitempty"`
-	ID      string     `json:"id,omitempty"`
-	Images  []string   `json:"images,omitempty"`
-	Steer   bool       `json:"steer,omitempty"`
-	Ref     string     `json:"ref,omitempty"`
-	Old     string     `json:"old,omitempty"`
-	Snap    string     `json:"snap,omitempty"`
-	Files   []string   `json:"files,omitempty"`
-	Task    *TaskEvent `json:"task,omitempty"`
-	TaskID  string     `json:"task_id,omitempty"`
+	Type        string     `json:"type,omitempty"`
+	Speaker     string     `json:"speaker,omitempty"`
+	To          []string   `json:"to,omitempty"`
+	Via         string     `json:"via,omitempty"`
+	Held        bool       `json:"held,omitempty"`
+	ID          string     `json:"id,omitempty"`
+	Images      []string   `json:"images,omitempty"`
+	ImageLabels []string   `json:"image_labels,omitempty"`
+	Steer       bool       `json:"steer,omitempty"`
+	Ref         string     `json:"ref,omitempty"`
+	Old         string     `json:"old,omitempty"`
+	Snap        string     `json:"snap,omitempty"`
+	Files       []string   `json:"files,omitempty"`
+	Task        *TaskEvent `json:"task,omitempty"`
+	TaskID      string     `json:"task_id,omitempty"`
 }
 
 func (h entryHead) entry() Entry {
 	return Entry{
 		TurnID: h.TurnID,
 		Event:  agent.Event{AgentID: h.AgentID, Time: h.Time, Kind: h.Kind, Text: h.Text, Delta: h.Delta, SessionID: h.SessionID, End: h.End},
-		Type:   h.Type, Speaker: h.Speaker, To: h.To, Via: h.Via, Held: h.Held, ID: h.ID, Images: h.Images,
+		Type:   h.Type, Speaker: h.Speaker, To: h.To, Via: h.Via, Held: h.Held, ID: h.ID, Images: h.Images, ImageLabels: h.ImageLabels,
 		Steer: h.Steer, Ref: h.Ref, Old: h.Old, Snap: h.Snap, Files: h.Files, Task: h.Task, TaskID: h.TaskID,
 	}
 }

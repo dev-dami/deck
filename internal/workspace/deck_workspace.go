@@ -230,7 +230,10 @@ func (w *DeckWorkspace) post(ctx context.Context, sessionID, prompt string, atta
 	if err != nil {
 		return "", err
 	}
-	var images []deckagent.Image
+	images, mediaParts, err := w.attachMedia(ctx, sessionID, attachments)
+	if err != nil {
+		return "", err
+	}
 	var parts []message.ContentPart
 	parts = append(parts, message.TextContent{Text: prompt})
 	send := prompt
@@ -242,24 +245,9 @@ func (w *DeckWorkspace) post(ctx context.Context, sessionID, prompt string, atta
 ` + string(a.Content) + `
 </file>`
 			parts = append(parts, message.BinaryContent{Path: a.FileName, MIMEType: a.MimeType, Data: a.Content})
-			continue
 		}
-		if !a.IsImage() {
-			continue
-		}
-		p := a.FilePath
-		if p == "" {
-			f, err := os.CreateTemp("", "deck-*"+filepath.Ext(a.FileName))
-			if err != nil {
-				continue
-			}
-			_, _ = f.Write(a.Content)
-			f.Close()
-			p = f.Name()
-		}
-		images = append(images, deckagent.Image{Path: p, MediaType: a.MimeType})
-		parts = append(parts, message.BinaryContent{Path: a.FileName, MIMEType: a.MimeType, Data: a.Content})
 	}
+	parts = append(parts, mediaParts...)
 	w.dbw.wait(sessionID) // after the tool results already stored
 	row, err := w.app.Messages.Create(ctx, sessionID, message.CreateMessageParams{Role: message.User, Parts: parts})
 	if err != nil {

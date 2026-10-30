@@ -975,7 +975,7 @@ func (m *Manager) postTo(t *thread, text string, targets []*agentState, images [
 func (m *Manager) postFrom(t *thread, speaker, text string, targets []*agentState, images []agent.Image, local bool, via string) (PostResult, error) {
 	e := store.Entry{Type: store.EntryUser, ID: store.NewID(), Speaker: speaker, To: ids(targets), Via: via, Event: agent.Event{Kind: agent.KindUserText, Text: text}}
 	if len(images) > 0 {
-		e.Images = imagePaths(images)
+		e.Images, e.ImageLabels = imagePaths(images), imageLabels(images)
 	}
 
 	var msgs []tea.Msg
@@ -1171,9 +1171,45 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 	return dStarted, nil
 }
 
+// TakesVideo reports whether a member of kind running model ("" = the CLI's
+// default) can be sent a video: its adapter delivers one to that model
+// (agent.VideoInput).
+func (m *Manager) TakesVideo(kind, model string) bool {
+	vi, ok := m.adapters[kind].(agent.VideoInput)
+	return ok && vi.TakesVideo(model)
+}
+
+// takesVideo is TakesVideo for a member: its model, or the slug its CLI
+// said it runs when it runs the default.
+func (m *Manager) takesVideo(a *agentState) bool {
+	a.mu.Lock()
+	kind, model := a.kind, cmp.Or(a.model, a.running)
+	a.mu.Unlock()
+	return m.TakesVideo(kind, model)
+}
+
+// withoutVideo takes the videos out of images when a's model cannot take
+// video, and adds a line to the prompt saying where they are.
+func (m *Manager) withoutVideo(a *agentState, prompt string, images []agent.Image) (string, []agent.Image) {
+	if !slices.ContainsFunc(images, agent.Image.IsVideo) || m.takesVideo(a) {
+		return prompt, images
+	}
+	var stills, videos []agent.Image
+	for _, im := range images {
+		if im.IsVideo() {
+			videos = append(videos, im)
+		} else {
+			stills = append(stills, im)
+		}
+	}
+	return prompt + "\n\n" + noVideoLine(videos), stills
+}
+
 // sendPrompt hands a prompt (and images) to a member's run, starting the run if
-// it has not been started. A run that cannot take images gets a line saying so.
+// it has not been started. A run that cannot take images gets a line saying so,
+// and so does one whose model cannot take the videos among them.
 func (m *Manager) sendPrompt(t *thread, a *agentState, prompt string, images []agent.Image) error {
+	prompt, images = m.withoutVideo(a, prompt, images)
 	run := a.getRun()
 	if len(images) == 0 {
 		if run != nil {

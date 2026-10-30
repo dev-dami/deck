@@ -2109,7 +2109,9 @@ type SessionLead struct {
 	Profile string `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`
 	// slug is the model it runs ("claude-opus-5-5") when model is an alias
 	// or "" for the CLI's default; "" until a run of it has said.
-	Slug          string `protobuf:"bytes,6,opt,name=slug,proto3" json:"slug,omitempty"`
+	Slug string `protobuf:"bytes,6,opt,name=slug,proto3" json:"slug,omitempty"`
+	// video says its model takes video: an attached video reaches it.
+	Video         bool `protobuf:"varint,7,opt,name=video,proto3" json:"video,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2184,6 +2186,13 @@ func (x *SessionLead) GetSlug() string {
 		return x.Slug
 	}
 	return ""
+}
+
+func (x *SessionLead) GetVideo() bool {
+	if x != nil {
+		return x.Video
+	}
+	return false
 }
 
 type ListSessionsResponse struct {
@@ -2598,10 +2607,13 @@ func (x *Part) GetImage() *ImageRef {
 	return nil
 }
 
+// ImageRef is an image or a video of a message: its file name, its type,
+// and the label the person gave it ("Image 1", "login page error").
 type ImageRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Mime          string                 `protobuf:"bytes,2,opt,name=mime,proto3" json:"mime,omitempty"`
+	Label         string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2646,6 +2658,13 @@ func (x *ImageRef) GetName() string {
 func (x *ImageRef) GetMime() string {
 	if x != nil {
 		return x.Mime
+	}
+	return ""
+}
+
+func (x *ImageRef) GetLabel() string {
+	if x != nil {
+		return x.Label
 	}
 	return ""
 }
@@ -2771,11 +2790,21 @@ func (x *ListMessagesResponse) GetCursor() string {
 	return ""
 }
 
+// Image is an image or a video attached to a message. label is what the
+// person called it; the agent sees it next to the attachment ("[Image 1:
+// login page error]"). A video comes as its bytes or, from a client on the
+// engine's own machine, as path: a local file the engine reads (checked by
+// its bytes, at most 50 MB). frames asks for a video to be sent as still
+// frames, for a model that cannot watch video (needs ffmpeg: the
+// "VideoFrames" capability).
 type Image struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Mime          string                 `protobuf:"bytes,2,opt,name=mime,proto3" json:"mime,omitempty"`
 	Data          []byte                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	Label         string                 `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
+	Path          string                 `protobuf:"bytes,5,opt,name=path,proto3" json:"path,omitempty"`
+	Frames        bool                   `protobuf:"varint,6,opt,name=frames,proto3" json:"frames,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2829,6 +2858,27 @@ func (x *Image) GetData() []byte {
 		return x.Data
 	}
 	return nil
+}
+
+func (x *Image) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *Image) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *Image) GetFrames() bool {
+	if x != nil {
+		return x.Frames
+	}
+	return false
 }
 
 type SendRequest struct {
@@ -3380,11 +3430,13 @@ func (x *ModelsRequest) GetRefresh() bool {
 }
 
 type ModelChoice struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Label         string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
-	Efforts       []string               `protobuf:"bytes,3,rep,name=efforts,proto3" json:"efforts,omitempty"`
-	Selected      bool                   `protobuf:"varint,4,opt,name=selected,proto3" json:"selected,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Label    string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	Efforts  []string               `protobuf:"bytes,3,rep,name=efforts,proto3" json:"efforts,omitempty"`
+	Selected bool                   `protobuf:"varint,4,opt,name=selected,proto3" json:"selected,omitempty"`
+	// video says the model takes video.
+	Video         bool `protobuf:"varint,5,opt,name=video,proto3" json:"video,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3443,6 +3495,13 @@ func (x *ModelChoice) GetEfforts() []string {
 func (x *ModelChoice) GetSelected() bool {
 	if x != nil {
 		return x.Selected
+	}
+	return false
+}
+
+func (x *ModelChoice) GetVideo() bool {
+	if x != nil {
+		return x.Video
 	}
 	return false
 }
@@ -12586,14 +12645,15 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\barchived\x18\n" +
 	" \x01(\bR\barchived\x12\x1b\n" +
 	"\tparent_id\x18\v \x01(\tR\bparentId\x12(\n" +
-	"\x04lead\x18\f \x01(\v2\x14.deck.v1.SessionLeadR\x04lead\"\x93\x01\n" +
+	"\x04lead\x18\f \x01(\v2\x14.deck.v1.SessionLeadR\x04lead\"\xa9\x01\n" +
 	"\vSessionLead\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05model\x18\x03 \x01(\tR\x05model\x12\x16\n" +
 	"\x06effort\x18\x04 \x01(\tR\x06effort\x12\x18\n" +
 	"\aprofile\x18\x05 \x01(\tR\aprofile\x12\x12\n" +
-	"\x04slug\x18\x06 \x01(\tR\x04slug\"D\n" +
+	"\x04slug\x18\x06 \x01(\tR\x04slug\x12\x14\n" +
+	"\x05video\x18\a \x01(\bR\x05video\"D\n" +
 	"\x14ListSessionsResponse\x12,\n" +
 	"\bsessions\x18\x01 \x03(\v2\x10.deck.v1.SessionR\bsessions\"y\n" +
 	"\x14CreateSessionRequest\x12\x14\n" +
@@ -12633,10 +12693,11 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x06output\x18\b \x01(\tR\x06output\x12\x12\n" +
 	"\x04diff\x18\t \x01(\tR\x04diff\x12'\n" +
 	"\x05image\x18\n" +
-	" \x01(\v2\x11.deck.v1.ImageRefR\x05image\"2\n" +
+	" \x01(\v2\x11.deck.v1.ImageRefR\x05image\"H\n" +
 	"\bImageRef\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04mime\x18\x02 \x01(\tR\x04mime\"b\n" +
+	"\x04mime\x18\x02 \x01(\tR\x04mime\x12\x14\n" +
+	"\x05label\x18\x03 \x01(\tR\x05label\"b\n" +
 	"\x13ListMessagesRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x16\n" +
@@ -12645,11 +12706,14 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x14ListMessagesResponse\x12,\n" +
 	"\bmessages\x18\x01 \x03(\v2\x10.deck.v1.MessageR\bmessages\x12\x12\n" +
 	"\x04more\x18\x02 \x01(\bR\x04more\x12\x16\n" +
-	"\x06cursor\x18\x03 \x01(\tR\x06cursor\"C\n" +
+	"\x06cursor\x18\x03 \x01(\tR\x06cursor\"\x85\x01\n" +
 	"\x05Image\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04mime\x18\x02 \x01(\tR\x04mime\x12\x12\n" +
-	"\x04data\x18\x03 \x01(\fR\x04data\"h\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data\x12\x14\n" +
+	"\x05label\x18\x04 \x01(\tR\x05label\x12\x12\n" +
+	"\x04path\x18\x05 \x01(\tR\x04path\x12\x16\n" +
+	"\x06frames\x18\x06 \x01(\bR\x06frames\"h\n" +
 	"\vSendRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
@@ -12692,12 +12756,13 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x18\n" +
-	"\arefresh\x18\x03 \x01(\bR\arefresh\"i\n" +
+	"\arefresh\x18\x03 \x01(\bR\arefresh\"\x7f\n" +
 	"\vModelChoice\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x18\n" +
 	"\aefforts\x18\x03 \x03(\tR\aefforts\x12\x1a\n" +
-	"\bselected\x18\x04 \x01(\bR\bselected\">\n" +
+	"\bselected\x18\x04 \x01(\bR\bselected\x12\x14\n" +
+	"\x05video\x18\x05 \x01(\bR\x05video\">\n" +
 	"\x0eModelsResponse\x12,\n" +
 	"\x06models\x18\x01 \x03(\v2\x14.deck.v1.ModelChoiceR\x06models\"r\n" +
 	"\x0fSetModelRequest\x12\x1d\n" +

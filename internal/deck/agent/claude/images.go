@@ -89,18 +89,22 @@ func loadImage(img agent.Image) (contentPart, error) {
 }
 
 // buildUserMessage builds the stream-json user message: image blocks first,
-// then the text. It returns the wire form and an echo form (image data elided)
-// that is safe to keep as Event.Raw. An empty prompt with images sends the
-// images alone (the API refuses empty text blocks).
+// each after a text block with its reference line ("[Image 1: login page
+// error]"), then the text. It returns the wire form and an echo form (image
+// data elided) that is safe to keep as Event.Raw. An empty prompt with
+// images sends the images alone (the API refuses empty text blocks).
 func buildUserMessage(prompt string, images []agent.Image) (wire, echo []byte, err error) {
-	parts := make([]contentPart, 0, len(images)+1)
-	elided := make([]contentPart, 0, len(images)+1)
-	for _, img := range images {
+	parts := make([]contentPart, 0, 2*len(images)+1)
+	elided := make([]contentPart, 0, 2*len(images)+1)
+	refs := agent.RefLines(images)
+	for i, img := range images {
 		p, err := loadImage(img)
 		if err != nil {
 			return nil, nil, err
 		}
-		parts = append(parts, p)
+		ref := contentPart{Type: "text", Text: refs[i]}
+		parts = append(parts, ref, p)
+		elided = append(elided, ref)
 		e := p
 		src := *p.Source
 		src.Data = fmt.Sprintf("<%d base64 bytes elided>", len(src.Data))

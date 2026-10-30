@@ -47,7 +47,7 @@ func TestBuildUserMessageImageShape(t *testing.T) {
 	}
 	wire, echo, err := buildUserMessage("what colour?", []agent.Image{
 		{Path: filepath.Join("testdata", "red.png"), MediaType: "image/png"},
-		{Path: filepath.Join("testdata", "red.png")}, // detected from content
+		{Path: filepath.Join("testdata", "red.png"), Label: "login page error"}, // detected from content
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -57,10 +57,14 @@ func TestBuildUserMessageImageShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := m.Message.Content
-	if m.Type != "user" || m.Message.Role != "user" || len(c) != 3 {
+	if m.Type != "user" || m.Message.Role != "user" || len(c) != 5 {
 		t.Fatalf("message %s", wire)
 	}
-	for i := 0; i < 2; i++ {
+	// Each image follows its reference line.
+	if c[0].Type != "text" || c[0].Text != "[Image 1]" || c[2].Type != "text" || c[2].Text != "[Image 2: login page error]" {
+		t.Fatalf("reference lines: %s", wire)
+	}
+	for _, i := range []int{1, 3} {
 		if c[i].Type != "image" || c[i].Source == nil || c[i].Source.Type != "base64" || c[i].Source.MediaType != "image/png" {
 			t.Fatalf("block %d: %s", i, wire)
 		}
@@ -69,8 +73,8 @@ func TestBuildUserMessageImageShape(t *testing.T) {
 			t.Fatalf("block %d data mismatch (%v)", i, err)
 		}
 	}
-	if c[2].Type != "text" || c[2].Text != "what colour?" || c[2].Source != nil {
-		t.Fatalf("text block %+v", c[2])
+	if c[4].Type != "text" || c[4].Text != "what colour?" || c[4].Source != nil {
+		t.Fatalf("text block %+v", c[4])
 	}
 	// exact key names of an image block: only "type" and "source"
 	var raw struct {
@@ -79,10 +83,10 @@ func TestBuildUserMessageImageShape(t *testing.T) {
 		} `json:"message"`
 	}
 	_ = json.Unmarshal(wire, &raw)
-	if len(raw.Message.Content[0]) != 2 {
-		t.Errorf("image block keys: %v", raw.Message.Content[0])
+	if len(raw.Message.Content[1]) != 2 {
+		t.Errorf("image block keys: %v", raw.Message.Content[1])
 	}
-	if bytes.Contains(echo, []byte(c[0].Source.Data)) || !bytes.Contains(echo, []byte("elided")) {
+	if bytes.Contains(echo, []byte(c[1].Source.Data)) || !bytes.Contains(echo, []byte("elided")) {
 		t.Errorf("echo must not carry image data: %s", echo)
 	}
 }
@@ -96,12 +100,12 @@ func TestBuildUserMessageNoImagesUnchanged(t *testing.T) {
 	if string(wire) != want {
 		t.Errorf("wire %s\nwant %s", wire, want)
 	}
-	// images without a prompt: no empty text block
+	// images without a prompt: no empty text block, only the reference line
 	wire, _, err = buildUserMessage("", []agent.Image{{Path: filepath.Join("testdata", "red.png")}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(wire), `"type":"text"`) {
+	if strings.Count(string(wire), `"type":"text"`) != 1 || !strings.Contains(string(wire), `"text":"[Image 1]"`) {
 		t.Errorf("empty prompt must not produce a text block: %s", wire)
 	}
 }
@@ -204,7 +208,7 @@ func TestSendWithImagesReachesClaude(t *testing.T) {
 	stdinFile := filepath.Join(t.TempDir(), "stdin.jsonl")
 	r, _ := startFake(t, func(s *agent.Spec) { s.Env["DECK_FAKE_STDIN_FILE"] = stdinFile })
 	is := r.(agent.ImageSender)
-	img := agent.Image{Path: filepath.Join("testdata", "red.png"), MediaType: "image/png"}
+	img := agent.Image{Path: filepath.Join("testdata", "red.png"), MediaType: "image/png", Label: "red square"}
 	if err := is.SendWithImages("what colour is this?", []agent.Image{img}); err != nil {
 		t.Fatal(err)
 	}
@@ -213,11 +217,11 @@ func TestSendWithImagesReachesClaude(t *testing.T) {
 		t.Errorf("echo must carry the prompt only: %+v", evs[0])
 	}
 	msgs := fakeStdin(t, stdinFile)
-	if len(msgs) != 1 || len(msgs[0].Message.Content) != 2 ||
-		msgs[0].Message.Content[0].Type != "image" || msgs[0].Message.Content[1].Type != "text" {
+	if len(msgs) != 1 || len(msgs[0].Message.Content) != 3 || msgs[0].Message.Content[0].Text != "[Image 1: red square]" ||
+		msgs[0].Message.Content[1].Type != "image" || msgs[0].Message.Content[2].Type != "text" {
 		t.Fatalf("stdin message %+v", msgs)
 	}
-	if len(evs[0].Raw) == 0 || bytes.Contains(evs[0].Raw, []byte(msgs[0].Message.Content[0].Source.Data)) {
+	if len(evs[0].Raw) == 0 || bytes.Contains(evs[0].Raw, []byte(msgs[0].Message.Content[1].Source.Data)) {
 		t.Errorf("echo Raw must not hold the image data")
 	}
 
@@ -265,7 +269,7 @@ func TestSteerIdleWithImages(t *testing.T) {
 	}
 	waitKind(t, r, agent.KindTurnDone)
 	m := fakeStdin(t, stdinFile)
-	if len(m) != 1 || m[0].Message.Content[0].Type != "image" {
+	if len(m) != 1 || m[0].Message.Content[0].Text != "[Image 1]" || m[0].Message.Content[1].Type != "image" {
 		t.Errorf("stdin %+v", m)
 	}
 }

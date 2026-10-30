@@ -16,6 +16,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/dev-dami/deck/internal/deck/media"
 	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/pkg/remote"
 	"github.com/dev-dami/deck/pkg/remote/auth"
@@ -23,8 +24,18 @@ import (
 	"github.com/dev-dami/deck/pkg/remote/wire"
 )
 
-// Features the server announces in welcome.
-var features = []string{"images", "edit", "changes", "queue", "models", "devices"}
+// Features the server announces in welcome. "video" is media.upload and
+// videos in chat.send; videoFeatures adds "video_frames" where the engine
+// has ffmpeg to send a video as frames.
+var features = []string{"images", "edit", "changes", "queue", "models", "devices", "video"}
+
+// videoFeatures are the features that depend on the machine.
+func videoFeatures() []string {
+	if media.FFmpeg() != "" {
+		return []string{"video_frames"}
+	}
+	return nil
+}
 
 // Options configure a Server.
 type Options struct {
@@ -55,6 +66,8 @@ type Server struct {
 	now    func() time.Time
 	up     websocket.Upgrader
 	idem   *idem
+	// uploads are the videos phones are uploading (media.upload).
+	uploads *uploads
 
 	// addrOf is the client address used for limits; tests replace it.
 	addrOf func(*http.Request) string
@@ -82,6 +95,7 @@ func New(be remote.Backend, store *auth.Store, opts Options) *Server {
 	s := &Server{
 		be: be, store: store, limits: auth.NewLimits(opts.Now), hub: hub.New(), opts: opts, now: opts.Now,
 		idem:    newIdem(opts.Now),
+		uploads: newUploads(opts.Now),
 		hosts:   map[string]bool{"localhost": true, "127.0.0.1": true, "::1": true},
 		conns:   map[string]map[*conn]struct{}{},
 		known:   map[string]auth.Device{},

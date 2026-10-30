@@ -60,6 +60,9 @@ func (a *Adapter) listModels(ctx context.Context) ([]agent.ModelInfo, error) {
 		}()
 	}
 	out := modelsOf(res.ConfigOptions)
+	for i := range out {
+		out[i].Video = a.TakesVideo(out[i].ID)
+	}
 	mopt, _ := findOption(res.ConfigOptions, catModel)
 	deadline := time.Now().Add(effortBudget)
 	for i := range out {

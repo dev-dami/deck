@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dev-dami/deck/internal/deck/highlights"
+	"github.com/dev-dami/deck/internal/deck/media"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/pubsub"
 	pb "github.com/dev-dami/deck/pkg/rpc/deckv1"
@@ -68,7 +69,11 @@ func (w *DeckWorkspace) DeleteSession(ctx context.Context, sid string) error {
 	if err := w.topSession(ctx, sid); err != nil {
 		return err
 	}
-	return w.highlightStore().Delete(sid, func() error { return w.AppWorkspace.DeleteSession(ctx, sid) })
+	if err := w.highlightStore().Delete(sid, func() error { return w.AppWorkspace.DeleteSession(ctx, sid) }); err != nil {
+		return err
+	}
+	// The videos and frames attached in the session go with it.
+	return media.Remove(w.dataDir(), sid)
 }
 
 // highlightSource checks primary refs before persistence. Session IDs in

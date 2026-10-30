@@ -82,7 +82,9 @@ func TestPostWithImagesGoesToImageSendersOnly(t *testing.T) {
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
 
-	res, err := r.m.postAddressed(tid, "$all look at these", imgs("a.png", "b.png"))
+	images := imgs("a.png", "b.png")
+	images[1].Label = "login page error"
+	res, err := r.m.postAddressed(tid, "$all look at these", images)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +104,7 @@ func TestPostWithImagesGoesToImageSendersOnly(t *testing.T) {
 	if len(p) != 1 {
 		t.Fatalf("codex prompts = %q", p)
 	}
-	has(t, p[0], "look at these", "[deck] The user attached 2 image(s) Deck could not pass to you directly; open them with your own file tools if you can: /tmp/a.png, /tmp/b.png")
+	has(t, p[0], "look at these", "[deck] The user attached 2 image(s) Deck could not pass to you directly; open them with your own file tools if you can: [Image 1] /tmp/a.png, [Image 2: login page error] /tmp/b.png")
 
 	// the user message carries the id and the image paths, live and stored
 	user := r.c.events(func(e EventMsg) bool { return e.FromUser() })
@@ -114,12 +116,45 @@ func TestPostWithImagesGoesToImageSendersOnly(t *testing.T) {
 	var found bool
 	for _, e := range entries {
 		if e.Type == store.EntryUser && e.ID == res.EntryID {
-			found = len(e.Images) == 2
+			found = len(e.Images) == 2 && len(e.ImageLabels) == 2 && e.ImageLabels[1] == "login page error"
 		}
 	}
 	if !found {
-		t.Error("stored user entry lacks the image paths or id")
+		t.Error("stored user entry lacks the image paths, labels or id")
 	}
+}
+
+// TestVideoGoesOnlyToModelsThatTakeIt covers a video in a message to two
+// members: the one whose model takes video is sent it, the other is told
+// where it is instead.
+func TestVideoGoesOnlyToModelsThatTakeIt(t *testing.T) {
+	r := newRig(t, []fake.Script{turn(say("seen"), finish())}, []fake.Script{turn(say("heard"), finish())})
+	r.claude.images, r.claude.video = true, true
+	r.codex.images = true
+	tid := r.thread(t)
+	r.add(t, tid, "claude")
+	r.add(t, tid, "codex")
+
+	media := []agent.Image{
+		{Path: "/tmp/a.png", MediaType: "image/png", Label: "before"},
+		{Path: "/tmp/clip.mp4", MediaType: "video/mp4", Label: "the crash"},
+	}
+	if _, err := r.m.postAddressed(tid, "$all what happens here", media); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "both turns", func() bool { return r.c.turnDones("claude") == 1 && r.c.turnDones("codex") == 1 })
+
+	calls := r.claude.imageCalls("claude")
+	if len(calls) != 1 || len(calls[0].images) != 2 || !calls[0].images[1].IsVideo() || calls[0].images[1].Label != "the crash" {
+		t.Fatalf("claude image calls = %+v", calls)
+	}
+	lacks(t, calls[0].prompt, "cannot watch")
+
+	calls = r.codex.imageCalls("codex")
+	if len(calls) != 1 || len(calls[0].images) != 1 || calls[0].images[0].Path != "/tmp/a.png" {
+		t.Fatalf("codex image calls = %+v", calls)
+	}
+	has(t, calls[0].prompt, "what happens here", "[deck] The user attached 1 video(s) your model cannot watch, so Deck did not pass them to you; they are at: [Video 1: the crash] /tmp/clip.mp4")
 }
 
 func TestPostIsPostWithoutImages(t *testing.T) {

@@ -471,6 +471,8 @@ message SessionLead {
   // slug is the model it runs ("claude-opus-5-5") when model is an alias
   // or "" for the CLI's default; "" until a run of it has said.
   string slug = 6;
+  // video says its model takes video: an attached video reaches it.
+  bool video = 7;
 }
 
 message ListSessionsResponse {
@@ -524,9 +526,12 @@ message Part {
   ImageRef image = 10;
 }
 
+// ImageRef is an image or a video of a message: its file name, its type,
+// and the label the person gave it ("Image 1", "login page error").
 message ImageRef {
   string name = 1;
   string mime = 2;
+  string label = 3;
 }
 
 message ListMessagesRequest {
@@ -542,10 +547,20 @@ message ListMessagesResponse {
   string cursor = 3;
 }
 
+// Image is an image or a video attached to a message. label is what the
+// person called it; the agent sees it next to the attachment ("[Image 1:
+// login page error]"). A video comes as its bytes or, from a client on the
+// engine's own machine, as path: a local file the engine reads (checked by
+// its bytes, at most 50 MB). frames asks for a video to be sent as still
+// frames, for a model that cannot watch video (needs ffmpeg: the
+// "VideoFrames" capability).
 message Image {
   string name = 1;
   string mime = 2;
   bytes data = 3;
+  string label = 4;
+  string path = 5;
+  bool frames = 6;
 }
 
 message SendRequest {
@@ -615,6 +630,8 @@ message ModelChoice {
   string label = 2;
   repeated string efforts = 3;
   bool selected = 4;
+  // video says the model takes video.
+  bool video = 5;
 }
 
 message ModelsResponse {

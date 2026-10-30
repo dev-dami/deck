@@ -49,7 +49,7 @@ func toPart(p wire.Part) *deckv1.Part {
 		ToolCallId: p.ToolCallID, IsError: p.IsError, Output: p.Output, Diff: p.Diff,
 	}
 	if p.Image != nil {
-		out.Image = &deckv1.ImageRef{Name: p.Image.Name, Mime: p.Image.Mime}
+		out.Image = &deckv1.ImageRef{Name: p.Image.Name, Mime: p.Image.Mime, Label: p.Image.Label}
 	}
 	return out
 }
@@ -72,7 +72,7 @@ func toAgent(a wire.AgentLine) *deckv1.AgentLine {
 }
 
 func toModel(m wire.ModelChoice) *deckv1.ModelChoice {
-	return &deckv1.ModelChoice{Id: m.ID, Label: m.Label, Efforts: m.Efforts, Selected: m.Selected}
+	return &deckv1.ModelChoice{Id: m.ID, Label: m.Label, Efforts: m.Efforts, Selected: m.Selected, Video: m.Video}
 }
 
 func toApproval(a wire.Approval) *deckv1.Approval {

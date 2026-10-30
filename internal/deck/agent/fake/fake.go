@@ -868,6 +868,17 @@ func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
 	return append([]agent.ModelInfo(nil), ms...), nil
 }
 
+// TakesVideo implements agent.VideoInput: the models it lists with Video
+// (WithModels) take video, and no other.
+func (a *adapter) TakesVideo(model string) bool {
+	for _, m := range a.models {
+		if m.ID == model && m.Video {
+			return true
+		}
+	}
+	return false
+}
+
 // SetMode implements agent.ModeSetter: it records the mode (the fake does not
 // change its script because of it).
 func (r *run) SetMode(m agent.Mode) error {

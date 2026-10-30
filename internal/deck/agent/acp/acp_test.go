@@ -310,6 +310,53 @@ func TestBriefedResumeSkipsInstructions(t *testing.T) {
 	}
 }
 
+// TestLabelsAndVideo covers attachments: each block follows its reference
+// line, an image goes as its bytes and a video as a resource_link to the
+// file, which only an agent that takes video is sent.
+func TestLabelsAndVideo(t *testing.T) {
+	f := newFake(t, "opencode")
+	img := filepath.Join(t.TempDir(), "shot.png")
+	vid := filepath.Join(t.TempDir(), "clip.mp4")
+	if err := os.WriteFile(img, []byte("\x89PNG"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(vid, []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig
+	cfg.Video = func(model string) bool { return model == "p/b" }
+	r := f.start(t, cfg, agent.Spec{})
+	<-r.Events()
+	err := r.(agent.ImageSender).SendWithImages("compare them", []agent.Image{
+		{Path: img, MediaType: "image/png", Label: "login page error"},
+		{Path: vid, MediaType: "video/mp4", Label: "the crash"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn(t, r, agent.Decision{Allow: true})
+	want := `session/prompt {"sessionId":"ses_1","prompt":[{"type":"text","text":"[Image 1: login page error]"},` +
+		`{"type":"image","mimeType":"image/png","data":"iVBORw=="},{"type":"text","text":"[Video 1: the crash]"},` +
+		`{"type":"resource_link","mimeType":"video/mp4","uri":"file://` + filepath.ToSlash(vid) + `","name":"the crash"},`
+	if !f.has(t, want) {
+		t.Errorf("prompt:\n%s\nwant prefix:\n%s", strings.Join(f.lines(t), "\n"), want)
+	}
+
+	ad := New("", cfg)
+	if !ad.TakesVideo("p/b") || ad.TakesVideo("p/a") || New("", testConfig).TakesVideo("p/b") {
+		t.Error("TakesVideo follows Config.Video")
+	}
+	ms, err := ad.Models(context.Background())
+	if err != nil || len(ms) != 2 || ms[0].Video || !ms[1].Video {
+		t.Errorf("models say which take video: %+v (%v)", ms, err)
+	}
+	r2 := f.start(t, testConfig, agent.Spec{})
+	<-r2.Events()
+	if err := r2.(agent.ImageSender).SendWithImages("x", []agent.Image{{Path: vid, MediaType: "video/mp4"}}); err == nil {
+		t.Error("an agent that takes no video is sent none")
+	}
+}
+
 func TestModelsListEveryProviderWithEfforts(t *testing.T) {
 	f := newFake(t, "opencode")
 	ms, err := New("", testConfig).Models(context.Background())
