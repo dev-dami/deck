@@ -100,6 +100,8 @@ func toMessage(m message.Message, root string) wire.Message {
 			out.Parts = append(out.Parts, wire.Part{Type: wire.PartImage, Image: &wire.Image{Name: displayName(v.Path), Mime: v.MIMEType}})
 		case message.ImageURLContent:
 			out.Parts = append(out.Parts, wire.Part{Type: wire.PartImage, Image: &wire.Image{Name: "image"}})
+		case message.Finish:
+			out.TurnEnd = v.TurnEnd
 		}
 	}
 	return out

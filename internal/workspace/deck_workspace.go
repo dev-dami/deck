@@ -826,6 +826,7 @@ func (w *DeckWorkspace) onEvent(threadID string, ev deckagent.Event, turnIDs ...
 				t.msg.FinishThinking()
 			}
 			t.msg.AddFinish(reason, "", "")
+			t.msg.SetTurnEnd(string(ev.End)) // done, handoff, blocked or continue
 			_ = w.app.Messages.Update(ctx, t.msg)
 		}
 		// The turn's own start outlives an error mid-turn, which restarts

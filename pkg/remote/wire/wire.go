@@ -236,7 +236,19 @@ type Message struct {
 	// Edited is true once the user has rewritten the message.
 	Edited bool   `json:"edited,omitempty"`
 	Parts  []Part `json:"parts"`
+	// TurnEnd is how the agent turn this message is ended, once it has:
+	// TurnEnd* below; empty while it runs, and for other messages.
+	TurnEnd string `json:"turn_end,omitempty"`
 }
+
+// How an agent turn ended (Message.TurnEnd), so a client can show state
+// rather than prose.
+const (
+	TurnEndDone     = "done"     // finished a task, with evidence when its check asks
+	TurnEndHandoff  = "handoff"  // handed work on under a contract
+	TurnEndBlocked  = "blocked"  // waits for the user: a question
+	TurnEndContinue = "continue" // none of those
+)
 
 // Part types (Part.Type).
 const (

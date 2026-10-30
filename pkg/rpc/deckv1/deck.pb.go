@@ -2355,17 +2355,22 @@ func (x *RenameSessionRequest) GetTitle() string {
 }
 
 type Message struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	Role          string                 `protobuf:"bytes,3,opt,name=role,proto3" json:"role,omitempty"`
-	Agent         string                 `protobuf:"bytes,4,opt,name=agent,proto3" json:"agent,omitempty"`
-	CreatedAt     int64                  `protobuf:"varint,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     int64                  `protobuf:"varint,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	Finished      bool                   `protobuf:"varint,7,opt,name=finished,proto3" json:"finished,omitempty"`
-	Editable      bool                   `protobuf:"varint,8,opt,name=editable,proto3" json:"editable,omitempty"`
-	Edited        bool                   `protobuf:"varint,9,opt,name=edited,proto3" json:"edited,omitempty"`
-	Parts         []*Part                `protobuf:"bytes,10,rep,name=parts,proto3" json:"parts,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SessionId string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Role      string                 `protobuf:"bytes,3,opt,name=role,proto3" json:"role,omitempty"`
+	Agent     string                 `protobuf:"bytes,4,opt,name=agent,proto3" json:"agent,omitempty"`
+	CreatedAt int64                  `protobuf:"varint,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt int64                  `protobuf:"varint,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Finished  bool                   `protobuf:"varint,7,opt,name=finished,proto3" json:"finished,omitempty"`
+	Editable  bool                   `protobuf:"varint,8,opt,name=editable,proto3" json:"editable,omitempty"`
+	Edited    bool                   `protobuf:"varint,9,opt,name=edited,proto3" json:"edited,omitempty"`
+	Parts     []*Part                `protobuf:"bytes,10,rep,name=parts,proto3" json:"parts,omitempty"`
+	// turn_end is how the agent turn this message is ended, once it has:
+	// "done" (a task finished, with evidence when its check asks for it),
+	// "handoff" (work handed on under a contract), "blocked" (a question for
+	// the user) or "continue"; empty while it runs and for other messages.
+	TurnEnd       string `protobuf:"bytes,11,opt,name=turn_end,json=turnEnd,proto3" json:"turn_end,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2468,6 +2473,13 @@ func (x *Message) GetParts() []*Part {
 		return x.Parts
 	}
 	return nil
+}
+
+func (x *Message) GetTurnEnd() string {
+	if x != nil {
+		return x.TurnEnd
+	}
+	return ""
 }
 
 type Part struct {
@@ -12592,7 +12604,7 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x14RenameSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
-	"\x05title\x18\x02 \x01(\tR\x05title\"\x95\x02\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\"\xb0\x02\n" +
 	"\aMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -12607,7 +12619,8 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\beditable\x18\b \x01(\bR\beditable\x12\x16\n" +
 	"\x06edited\x18\t \x01(\bR\x06edited\x12#\n" +
 	"\x05parts\x18\n" +
-	" \x03(\v2\r.deck.v1.PartR\x05parts\"\xfe\x01\n" +
+	" \x03(\v2\r.deck.v1.PartR\x05parts\x12\x19\n" +
+	"\bturn_end\x18\v \x01(\tR\aturnEnd\"\xfe\x01\n" +
 	"\x04Part\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12\x0e\n" +

@@ -231,6 +231,9 @@ export interface Message {
   editable?: boolean;
   edited?: boolean;
   parts: Part[];
+  // How the agent turn this message is ended, once it has: "done",
+  // "handoff", "blocked" (waits for the user) or "continue".
+  turn_end?: string;
 }
 
 export const decodeMessage: Decoder<Message> = object(
@@ -243,7 +246,7 @@ export const decodeMessage: Decoder<Message> = object(
     finished: bool,
     parts: list(decodePart),
   },
-  { agent: str, editable: bool, edited: bool },
+  { agent: str, editable: bool, edited: bool, turn_end: str },
 );
 
 export interface Approval {

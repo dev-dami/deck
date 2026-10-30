@@ -504,6 +504,11 @@ message Message {
   bool editable = 8;
   bool edited = 9;
   repeated Part parts = 10;
+  // turn_end is how the agent turn this message is ended, once it has:
+  // "done" (a task finished, with evidence when its check asks for it),
+  // "handoff" (work handed on under a contract), "blocked" (a question for
+  // the user) or "continue"; empty while it runs and for other messages.
+  string turn_end = 11;
 }
 
 message Part {
