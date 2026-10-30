@@ -17,13 +17,15 @@ describe("workflows", () => {
     expect(workflows(["claude"], "claude").map((w) => w.id)).not.toContain("second");
   });
 
-  test("the first message addresses who starts and states the terms", () => {
+  test("the first message is the goal for the thread's agent, then the terms; nobody is @-addressed", () => {
     const [, review, second] = workflows(["claude", "codex"], "claude");
     const m = workflowMessage(review!, " fix the login timeout ");
-    expect(m.startsWith("@claude fix the login timeout\n")).toBe(true);
+    expect(m.startsWith("fix the login timeout\n")).toBe(true);
     expect(m).toContain('task.create {title, owner: "claude", review: "codex"}');
-    expect(m).not.toMatch(/^@codex/m);
-    expect(workflowMessage(second!, "which store?")).toMatch(/^@claude @codex which store\?/);
+    expect(m).not.toMatch(/(^|\s)@[a-z]/);
+    const s = workflowMessage(second!, "which store?");
+    expect(s.startsWith("which store?\n")).toBe(true);
+    expect(s).toContain('thread.open {kind: "codex"');
     const race = workflows(["claude", "codex"], "claude").find((w) => w.race)!;
     expect(workflowMessage(race, "fix it")).toBe("fix it");
   });

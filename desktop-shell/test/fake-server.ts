@@ -296,6 +296,22 @@ export class FakeDeck {
     return t.session.id;
   }
 
+  // Adds a sub-thread of parentId that agent (in the parent) opened for an
+  // agent of kind, with its brief and answer, and the answer's report in
+  // the parent, as session/subthread.go writes it. Returns its id; the rpc
+  // fake names its parent (subThreadAtWork).
+  addSubThread(parentId: string, title: string, opener: string, kind: string, brief: string, answer: string): string {
+    const parent = this.get(parentId);
+    const id = `ses_sub_${this.next++}`;
+    const t = this.addThread(id, title);
+    t.roster = [{ id: kind, name: kind, kind, model: "default", busy: false }];
+    this.message(t, "user", undefined, `[deck] ${opener}, the agent of the thread "${parent.session.title}", opened this sub-thread for you.\n\n${brief}`, true);
+    this.message(t, "assistant", kind, answer, true);
+    this.message(parent, "assistant", kind, `→ $${opener} · sub-thread ${id}\n\n[sub-thread "${title}"] ${answer}`, true);
+    this.broadcast("session.created", t.session);
+    return id;
+  }
+
   // The thread's changed files, as if someone edited the tree.
   setChanges(sessionId: string, changes: ChangedFile[]): void {
     this.get(sessionId).changes = changes;

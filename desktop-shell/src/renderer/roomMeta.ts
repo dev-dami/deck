@@ -21,19 +21,32 @@ export interface RoomNote {
   via: string;
 }
 
+// The agent the person talks to in a room (deck.v1 SessionLead).
+export interface RoomLead {
+  agent: string;
+  kind: string;
+  model: string;
+  effort: string;
+  profile: string;
+}
+
 export interface RoomMeta {
   attention: Attention;
   branch: string;
   archived: boolean;
+  // The session an agent opened this one from (a sub-thread), "" for one
+  // the person started; and the room's lead, null before its first agent.
+  parent: string;
+  lead: RoomLead | null;
   leases: Lease[];
   // The marked notices, oldest first.
   notes: RoomNote[];
 }
 
-export const EMPTY_ROOM: RoomMeta = { attention: "", branch: "", archived: false, leases: [], notes: [] };
+export const EMPTY_ROOM: RoomMeta = { attention: "", branch: "", archived: false, parent: "", lead: null, leases: [], notes: [] };
 
 export type RoomEvent =
-  | { k: "session"; id: string; attention: Attention; branch: string; archived: boolean }
+  | { k: "session"; id: string; attention: Attention; branch: string; archived: boolean; parent: string; lead: RoomLead | null }
   | { k: "deleted"; id: string }
   | { k: "lease"; session: string; lease: Lease; released: boolean }
   | { k: "note"; session: string; note: RoomNote };
@@ -67,7 +80,7 @@ export class RoomMetaStore {
     const next = new Map(this.rooms);
     switch (ev.k) {
       case "session":
-        next.set(ev.id, { ...this.get(ev.id), attention: ev.attention, branch: ev.branch, archived: ev.archived });
+        next.set(ev.id, { ...this.get(ev.id), attention: ev.attention, branch: ev.branch, archived: ev.archived, parent: ev.parent, lead: ev.lead });
         break;
       case "deleted":
         next.delete(ev.id);
@@ -93,7 +106,7 @@ export class RoomMetaStore {
   // gone. Leases and notes stay, as the list does not carry them.
   load(list: RoomUpdate[]): void {
     const next = new Map<string, RoomMeta>();
-    for (const r of list) next.set(r.id, { ...this.get(r.id), attention: r.attention, branch: r.branch, archived: r.archived });
+    for (const r of list) next.set(r.id, { ...this.get(r.id), attention: r.attention, branch: r.branch, archived: r.archived, parent: r.parent, lead: r.lead });
     this.set(next);
   }
 

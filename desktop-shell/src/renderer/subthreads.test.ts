@@ -1,0 +1,32 @@
+import { describe, expect, test } from "vitest";
+import { isTop, nest } from "./subthreads";
+
+interface T {
+  id: string;
+  parent: string;
+  at: number;
+}
+const t = (id: string, parent = "", at = 0): T => ({ id, parent, at });
+const id = (x: T) => x.id;
+const parent = (x: T) => x.parent;
+const newer = (a: T, b: T) => b.at - a.at;
+
+describe("sub-threads in the list", () => {
+  test("each parent's sub-threads follow it, newest first, a level deeper", () => {
+    const all = [t("a"), t("b"), t("a1", "a", 1), t("a2", "a", 2), t("a2x", "a2", 3)];
+    const ids = new Set(all.map(id));
+    const tops = all.filter((x) => isTop(x, ids, parent));
+    expect(nest(tops, all, id, parent, newer).map((n) => `${n.depth}:${n.item.id}`)).toEqual(["0:a", "1:a2", "2:a2x", "1:a1", "0:b"]);
+  });
+
+  test("a sub-thread whose parent is not listed stands on its own", () => {
+    const all = [t("a1", "gone"), t("b")];
+    const ids = new Set(all.map(id));
+    expect(all.filter((x) => isTop(x, ids, parent)).map(id)).toEqual(["a1", "b"]);
+  });
+
+  test("a cycle cannot loop", () => {
+    const all = [t("a", "b"), t("b", "a")];
+    expect(nest([all[0]!], all, id, parent, newer).map((n) => n.item.id)).toEqual(["a", "b"]);
+  });
+});

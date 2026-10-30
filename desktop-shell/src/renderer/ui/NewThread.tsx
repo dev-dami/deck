@@ -1,33 +1,21 @@
-import { activeAgents, toggleAgent } from "@web/composer";
-import type { Theme } from "@web/protocol";
-import { kindColour, kindMark } from "@web/theme";
-import { type CSSProperties, type ReactNode, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { cn } from "../lib/cn";
 import { setPrefs, usePrefs } from "../prefs";
 import type { Workflow, WorkflowId } from "../workflows";
 import { ChevronDown, GitBranch, Users, X } from "./icons";
 import { CARD } from "./kit/card";
 import { Switch } from "./kit/switch";
-import { AGENT_HELP } from "./landing";
-
-// A kind's glyph: the theme's, else the CLI's own mark.
-const markOf = (theme: Theme | null, kind: string) => kindMark(theme, kind) || AGENT_HELP.find((h) => h.kind === kind)?.mark || "●";
 
 // Deck's new-thread screen, a work surface set in type: the question and
 // the composer. A thread is one agent, as in its own CLI; a crew is a
 // choice: "Start a multi-agent workflow" opens the workflows (workflows.ts)
 // as a ruled table, and the one picked shows as a card over the composer,
-// with how it ends, until it is sent or put back. Under it, the crew this
-// Deck runs, each agent as its glyph in its hue and the $name that reaches
-// it: a name lights while the draft addresses it, and a click adds it or
-// takes it out. Last, whether the thread gets a branch of its own.
+// with how it ends, until it is sent or put back. The agent the thread
+// starts with is the composer's agent menu (LeadPicker). Last, whether the
+// thread gets a branch of its own.
 export function NewThread({
   loaded,
   project,
-  kinds,
-  theme,
-  draft,
-  setDraft,
   onFocus,
   canIsolate,
   workflows,
@@ -38,10 +26,6 @@ export function NewThread({
   // The thread list arrived; before that, the screen says it connects.
   loaded: boolean;
   project: string;
-  kinds: string[];
-  theme: Theme | null;
-  draft: string;
-  setDraft: (s: string) => void;
   onFocus: () => void;
   // The Deck can put a thread on a worktree and branch of its own.
   canIsolate: boolean;
@@ -53,7 +37,6 @@ export function NewThread({
   children: ReactNode;
 }) {
   const { isolate } = usePrefs();
-  const addressed = activeAgents(draft);
   const [menu, setMenu] = useState(false);
   const chosen = workflows.find((w) => w.id === picked) ?? null;
   return (
@@ -135,36 +118,6 @@ export function NewThread({
           </section>
         )}
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-          <span className="-mr-2 text-faint text-xs">Write to</span>
-          <ul className="crew flex flex-wrap items-baseline gap-x-4 gap-y-1" aria-label="Agents on this Deck">
-            {kinds.map((k) => {
-              const on = addressed.includes(k);
-              return (
-                <li key={k}>
-                  <button
-                    type="button"
-                    className={cn(
-                      "inline-flex cursor-pointer items-baseline gap-1.5 border-b py-0.5 font-mono text-[12.5px] outline-none transition-colors focus-visible:text-foreground",
-                      on ? "border-(--hue) text-(--hue)" : "border-transparent text-muted-foreground hover:text-foreground",
-                    )}
-                    aria-pressed={on}
-                    title={`${AGENT_HELP.find((h) => h.kind === k)?.name ?? k}: ${on ? "take out of" : "add to"} the message`}
-                    style={{ "--hue": kindColour(k) } as CSSProperties}
-                    onClick={() => {
-                      setDraft(toggleAgent(draft, k));
-                      onFocus();
-                    }}
-                  >
-                    <span aria-hidden className="text-(--hue)">
-                      {markOf(theme, k)}
-                    </span>
-                    ${k}
-                  </button>
-                </li>
-              );
-            })}
-            {kinds.length === 0 && <li className="text-faint text-sm">This Deck found no agent CLIs yet.</li>}
-          </ul>
           {canIsolate && (
             <div className="own-branch ml-auto flex items-center gap-2 text-muted-foreground text-xs">
               <Switch label="On its own branch" checked={isolate} onChange={(v) => setPrefs({ isolate: v })} />

@@ -469,7 +469,7 @@ export class RpcDeckClient implements DeckClient {
   private markArchived(id: string, archived: boolean, answer: unknown): boolean {
     if (answer === null) return false;
     const m = this.rooms.get(id);
-    this.rooms.apply({ k: "session", id, attention: m.attention, branch: m.branch, archived });
+    this.rooms.apply({ k: "session", id, attention: m.attention, branch: m.branch, archived, parent: m.parent, lead: m.lead });
     return true;
   }
 

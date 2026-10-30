@@ -1,12 +1,13 @@
 import { applyAgentChip } from "@web/composer";
 import type { Session } from "@web/protocol";
-import { sessionMode } from "@web/state";
+import { sessionMode, sessionTitle } from "@web/state";
 import { Ellipsis, FileDiff, Flag, Folder, Hourglass, ListChecks, MessageCircleQuestion, Settings as SettingsIcon, Square } from "./icons";
 import { type ComponentProps, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
 import type { EngineStop } from "../../shared/bridge";
 import { type DeckClient, serves } from "../client";
 import { FILES_LIMIT } from "../completion";
 import { subsOf, type Team } from "../crew";
+import { agentStatus } from "../approvals";
 import { buildLanes, filterLane, soloRoom, subParent } from "../lanes";
 import { whenOf } from "../limits";
 import { pokeLimits, useLimits, useNow } from "../limitsState";
@@ -20,7 +21,7 @@ import { type ShellSlice, shallowEqual, threadSlice, useAppSlice } from "../sele
 import type { Panel } from "../ui";
 import { usePickerSource } from "./AgentPicker";
 import { RaceBuilder } from "./RaceBuilder";
-import { AgentsStrip } from "./AgentsStrip";
+import type { Pick } from "./AgentPicker";
 import { highlightCounts, stripItem } from "../highlights";
 import { useRoomLive } from "../live";
 import { Composer } from "./Composer";
@@ -38,9 +39,10 @@ import { RoomLevel } from "./LevelPicker";
 import { type AnsweredRecord, RoomAsk } from "./RoomAsk";
 import { ModePicker } from "./ModePicker";
 import { NewThread } from "./NewThread";
+import { type Lead, LeadPicker } from "./LeadPicker";
 import { RoomHeader } from "./RoomHeader";
 import type { RoomView } from "./roomView";
-import { Timeline } from "./Timeline";
+import { Timeline, OpenThread } from "./Timeline";
 import { NEW, type OpenRoom } from "./useRoom";
 import { type WorkflowId, workflows as workflowsFor } from "../workflows";
 
@@ -277,7 +279,10 @@ export function Room({
   // send; none is the one agent every thread starts as. A workflow sets the
   // new thread's level, which only a local Deck takes at creation.
   const [workflow, setWorkflow] = useState<WorkflowId | null>(null);
-  const flows = c.capabilities === undefined ? [] : workflowsFor(kinds, kinds.includes("claude") || kinds.length === 0 ? "claude" : (kinds[0] ?? "claude"));
+  // The agent picked for the next new thread; null is the default kind.
+  const [nextLead, setNextLead] = useState<Lead | null>(null);
+  const defaultKind = kinds.includes("claude") || kinds.length === 0 ? "claude" : (kinds[0] ?? "claude");
+  const flows = c.capabilities === undefined ? [] : workflowsFor(kinds, nextLead?.kind ?? defaultKind);
   const picked = flows.find((w) => w.id === workflow) ?? null;
   const live = useRoomLive(c, sid);
   const strip = serves(c, "Highlights") ? stripItem(live.items) : null;
@@ -320,7 +325,24 @@ export function Room({
           },
         };
   const lanes = buildLanes({ roster, agents: crew?.agents ?? null, shares: r.shares, waiting: pending.map((a) => a.agent), leases: meta.leases });
-  const common = { draft, setDraft, kinds, images: imagesOn, onSlash: send.runSlash, onError: toast, inputRef, sendKey: prefs.sendKey, theme: state.theme, ...named };
+  const common = { draft, setDraft, images: imagesOn, onSlash: send.runSlash, onError: toast, inputRef, sendKey: prefs.sendKey, theme: state.theme };
+  // The room's lead: the agent the person talks to (LeadPicker). The room's
+  // own, else its first agent that is no subagent; on the new-thread screen
+  // the one picked for it, else the default kind.
+  const roomLead = ((): Lead | null => {
+    if (meta.lead !== null) {
+      const line = roster.find((l) => l.id === meta.lead?.agent);
+      return { ...meta.lead, color: line?.color ?? "" };
+    }
+    // Without the Deck's word, the agent the room started with.
+    const subs = new Set((crew?.agents ?? []).filter((a) => (a.depth ?? 0) > 0).map((a) => a.name));
+    const line = roster.find((l) => !subs.has(l.id)) ?? roster[0];
+    return line === undefined ? null : { agent: line.id, kind: line.kind, model: line.model ?? "", effort: line.effort ?? "", profile: line.profile ?? "", color: line.color ?? "" };
+  })();
+  const newLead: Lead = nextLead ?? { agent: defaultKind, kind: defaultKind, model: "", effort: "", profile: "" };
+  const leadPicker = (lead: Lead, onPick: (p: Pick) => void, status?: string) => (
+    <LeadPicker lead={lead} status={status} source={picker} kinds={kinds} named={named.profiles ?? []} theme={state.theme} onPick={onPick} />
+  );
   // /race: the builder over the composer, until it starts the race or closes.
   const raceBuilder = r.race !== null && (
     <RaceBuilder
@@ -349,6 +371,8 @@ export function Room({
         sidebar={sidebar}
         onShowSidebar={onShowSidebar}
         project={project}
+        parent={((p) => (p === "" ? null : { id: p, title: sessionTitle(state.sessions.find((x) => x.id === p)) }))(meta.parent)}
+        {...(onOpenThread !== undefined ? { onOpenParent: onOpenThread } : {})}
         open={open}
         loaded={state.sessionsLoaded}
         roster={roster}
@@ -392,10 +416,6 @@ export function Room({
         <NewThread
           loaded={state.sessionsLoaded}
           project={project}
-          kinds={kinds}
-          theme={state.theme}
-          draft={draft}
-          setDraft={setDraft}
           onFocus={focusInput}
           canIsolate={serves(c, "IsolateSession")}
           workflows={flows}
@@ -405,138 +425,134 @@ export function Room({
           <Composer
             key={NEW}
             {...common}
-            roster={[]}
             online={online && state.sessionsLoaded}
             onSend={async (text, images) => {
-              if (picked === null) return send.start(text, images);
-              const ok = await send.startWorkflow(picked, text, images);
+              if (picked === null) return send.start(text, images, newLead);
+              const ok = await send.startWorkflow(picked, text, images, newLead);
               if (ok) setWorkflow(null);
               return ok;
             }}
             above={raceBuilder}
-            placeholder={named.mentions ? "Ask anything. @ picks an agent, # a file, /race races several." : "Ask anything. $ picks an agent, /race races several."}
+            placeholder={`Ask ${newLead.profile || newLead.kind} anything. # adds a file, /race races agents.`}
+            strip={leadPicker(newLead, (p) => setNextLead({ agent: p.agent, kind: p.kind, model: p.model, effort: p.effort, profile: p.agent !== p.kind ? p.agent : "" }))}
           />
         </NewThread>
       ) : (
         // The body: the timeline (or the graph) runs the full height, under
         // the composer, which floats 12px over the sheet's bottom edge.
-        <div className="room-body relative flex min-h-0 flex-1 flex-col">
-          {view === "graph" ? (
-            <WorkGraph
-              c={c}
-              api={api}
-              sid={open.id}
-              onOpenMessage={(thread, mid) => {
-                // A History node: the conversation, at that message.
-                r.setLane(null);
-                focusMessage(thread, mid);
-                if (thread !== open.id) onOpenThread?.(thread);
-                setView("conversation");
-              }}
-              roster={roster}
-              files={files}
-              theme={state.theme}
-              lane={lane}
-              onLane={(l) => {
-                r.setLane(l);
-                // "Show its messages": the conversation, filtered to that lane.
-                if (l !== null) setView("conversation");
-              }}
-              onOpenFile={(path) => onPanel("changes", path)}
-              onOpenTasks={() => onPanel("tasks")}
-              onSteer={address}
-              onStop={room.interrupt}
-            />
-          ) : (
-            <LiveTimeline
-              c={c}
-              sid={open.id}
-              lane={lane}
-              theme={state.theme}
-              changes={files}
-              onOpenDiff={(path) => onPanel("changes", path)}
-              mode={room.mode}
-              actions={room.actions}
-              notes={r.notes}
-              subs={subsOf(crew?.agents)}
-            />
-          )}
-          <div ref={dock} className="composer-dock pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-3 *:pointer-events-auto">
-            <Composer
-              key={open.id}
-              {...common}
-              roster={roster}
-              online={online}
-              onSend={room.send}
-              onSteer={send.steer}
-              paths={paths}
-              listFiles={listFiles}
-              history={{ project: source, room: open.id }}
-              busy={open.busy}
-              onStop={room.stop}
-              notice={room.notice}
-              above={raceBuilder}
-              banner={
-                pending[0] !== undefined || answered?.session === open.id ? (
-                  <RoomAsk
-                    c={c}
-                    sessionId={open.id}
-                    pending={pending}
-                    answerers={room.answerers}
-                    focusQuestion={draft.trim() === ""}
-                    answered={answered}
-                    setAnswered={setAnswered}
-                  />
-                ) : limits?.waits.some((w) => w.sessionId === open.id) === true ? (
-                  <WaitBanner api={api} sessionId={open.id} onError={toast} />
-                ) : (
-                  strip === null ? false : <HighlightsStrip item={strip} onOpen={() => onPanel("highlights")} />
-                )
-              }
-              toolbar={
-                <>
-                  <span className="flex min-w-0 shrink items-center">
-                    {api !== undefined && git.status?.repo === true ? (
-                      <BranchPicker git={git} project={api} onError={toast} />
-                    ) : (
-                      <span className="room-folder flex h-7 min-w-0 items-center gap-1.5 px-2 text-faint text-xs">
-                        <Folder className="size-3.5 shrink-0" />
-                        <span className="truncate">{project || "Deck"}</span>
-                      </span>
-                    )}
-                  </span>
-                  <HighlightsPill c={c} sid={open.id} onOpen={() => onPanel("highlights")} />
-                  <MoreMenu busy={open.busy} queued={queued} highlights={serves(c, "Highlights") ? highlightCounts(live.items).open : null} onStop={room.stop} onPanel={(p) => onPanel(p)} onSettings={onSettings} sendAt={sendAt} />
-                </>
-              }
-              strip={
-                <>
-                  <ModePicker
-                    mode={sessionMode(open)}
-                    allowYolo={state.server?.allow_yolo ?? false}
-                    confirmYolo={prefs.confirmYolo}
-                    onSet={(m) => void c.setMode(open.id, m)}
-                  />
-                  {api !== undefined && <RoomLevel api={api} sessionId={open.id} onError={toast} />}
-                  <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-hairline-strong" />
-                  <AgentsStrip
-                    sessionId={open.id}
-                    roster={roster}
-                    approvals={state.approvals}
-                    theme={state.theme}
-                    api={api}
-                    agents={crew?.agents ?? null}
-                    draft={draft}
-                    setDraft={setDraft}
-                    hint={open.busy ? sendHint(prefs.sendKey, mac) : null}
-                    onFocus={focusInput}
-                  />
-                  <RoomQuota api={api} roster={roster} />
-                </>
-              }
-            />
+        <OpenThread.Provider value={onOpenThread ?? null}>
+          <div className="room-body relative flex min-h-0 flex-1 flex-col">
+            {view === "graph" ? (
+              <WorkGraph
+                c={c}
+                api={api}
+                sid={open.id}
+                onOpenMessage={(thread, mid) => {
+                  // A History node: the conversation, at that message.
+                  r.setLane(null);
+                  focusMessage(thread, mid);
+                  if (thread !== open.id) onOpenThread?.(thread);
+                  setView("conversation");
+                }}
+                roster={roster}
+                files={files}
+                theme={state.theme}
+                lane={lane}
+                onLane={(l) => {
+                  r.setLane(l);
+                  // "Show its messages": the conversation, filtered to that lane.
+                  if (l !== null) setView("conversation");
+                }}
+                onOpenFile={(path) => onPanel("changes", path)}
+                onOpenTasks={() => onPanel("tasks")}
+                onSteer={address}
+                onStop={room.interrupt}
+              />
+            ) : (
+              <LiveTimeline
+                c={c}
+                sid={open.id}
+                lane={lane}
+                theme={state.theme}
+                changes={files}
+                onOpenDiff={(path) => onPanel("changes", path)}
+                mode={room.mode}
+                actions={room.actions}
+                notes={r.notes}
+                subs={subsOf(crew?.agents)}
+              />
+            )}
+            <div ref={dock} className="composer-dock pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-3 *:pointer-events-auto">
+              <Composer
+                key={open.id}
+                {...common}
+                online={online}
+                onSend={room.send}
+                onSteer={send.steer}
+                paths={paths}
+                listFiles={listFiles}
+                history={{ project: source, room: open.id }}
+                busy={open.busy}
+                onStop={room.stop}
+                notice={room.notice}
+                above={raceBuilder}
+                banner={
+                  pending[0] !== undefined || answered?.session === open.id ? (
+                    <RoomAsk
+                      c={c}
+                      sessionId={open.id}
+                      pending={pending}
+                      answerers={room.answerers}
+                      focusQuestion={draft.trim() === ""}
+                      answered={answered}
+                      setAnswered={setAnswered}
+                    />
+                  ) : limits?.waits.some((w) => w.sessionId === open.id) === true ? (
+                    <WaitBanner api={api} sessionId={open.id} onError={toast} />
+                  ) : (
+                    strip === null ? false : <HighlightsStrip item={strip} onOpen={() => onPanel("highlights")} />
+                  )
+                }
+                toolbar={
+                  <>
+                    <span className="flex min-w-0 shrink items-center">
+                      {api !== undefined && git.status?.repo === true ? (
+                        <BranchPicker git={git} project={api} onError={toast} />
+                      ) : (
+                        <span className="room-folder flex h-7 min-w-0 items-center gap-1.5 px-2 text-faint text-xs">
+                          <Folder className="size-3.5 shrink-0" />
+                          <span className="truncate">{project || "Deck"}</span>
+                        </span>
+                      )}
+                    </span>
+                    <HighlightsPill c={c} sid={open.id} onOpen={() => onPanel("highlights")} />
+                    <MoreMenu busy={open.busy} queued={queued} highlights={serves(c, "Highlights") ? highlightCounts(live.items).open : null} onStop={room.stop} onPanel={(p) => onPanel(p)} onSettings={onSettings} sendAt={sendAt} />
+                  </>
+                }
+                strip={
+                  <>
+                    <ModePicker
+                      mode={sessionMode(open)}
+                      allowYolo={state.server?.allow_yolo ?? false}
+                      confirmYolo={prefs.confirmYolo}
+                      onSet={(m) => void c.setMode(open.id, m)}
+                    />
+                    {api !== undefined && <RoomLevel api={api} sessionId={open.id} onError={toast} />}
+                    <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-hairline-strong" />
+                    {roomLead !== null &&
+                      leadPicker(
+                        roomLead,
+                        (p) => void c.setModel(open.id, p.agent, p.model, p.effort),
+                        ((line) => (line === undefined ? "idle" : agentStatus(line, open.id, state.approvals)))(roster.find((l) => l.id === roomLead.agent)),
+                      )}
+                    {open.busy && <span className="send-hint hidden shrink-0 px-1.5 text-[11px] text-faint @[46rem]/bar:inline">{sendHint(prefs.sendKey, mac)}</span>}
+                    <RoomQuota api={api} roster={roster} />
+                  </>
+                }
+              />
+            </div>
           </div>
-        </div>
+        </OpenThread.Provider>
       )}
     </>
   );

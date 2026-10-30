@@ -13,9 +13,13 @@ export interface Handoff {
   body: string;
   // The task a report is about, or null for a plain message.
   task: { id: string; title: string; state: HandoffState; result: string } | null;
+  // The sub-thread a report comes from (its session and title), or null.
+  sub: { id: string; title: string } | null;
 }
 
-const HEAD = /^→((?:\s+[@$][^\s@$]+)+)\s*(?:\n|$)/;
+const HEAD = /^→((?:\s+[@$][^\s@$]+)+)(?:\s+·\s+sub-thread\s+(\S+))?\s*(?:\n|$)/;
+// A sub-thread's report opens with its title (session/subthread.go).
+const SUB = /^\[sub-thread "((?:[^"\\]|\\.)*)"\]\s*/;
 const REPORT = /^task (\S+) "((?:[^"\\]|\\.)*)" (done|failed|blocked)(?::\s*([\s\S]*))?$/;
 
 export function handoffOf(text: string): Handoff | null {
@@ -27,13 +31,19 @@ export function handoffOf(text: string): Handoff | null {
     .map((n) => n.slice(1))
     .filter((n) => n !== "");
   if (to.length === 0) return null;
-  const body = text.slice(head[0].length).trim();
+  let body = text.slice(head[0].length).trim();
+  let sub: Handoff["sub"] = null;
+  const st = SUB.exec(body);
+  if (head[2] !== undefined || st !== null) {
+    sub = { id: head[2] ?? "", title: st?.[1] ?? "" };
+    if (st !== null) body = body.slice(st[0].length).trim();
+  }
   const r = REPORT.exec(body);
   const task =
     r?.[1] !== undefined && r[2] !== undefined && r[3] !== undefined
       ? { id: r[1], title: r[2], state: r[3] as HandoffState, result: (r[4] ?? "").trim() }
       : null;
-  return { to, body, task };
+  return { to, body, task, sub };
 }
 
 // Whether a body is long enough to fold behind "Show all".

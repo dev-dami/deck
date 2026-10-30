@@ -92,20 +92,14 @@ export function nameAt(text: string, caret: number): Mention | null {
   return m !== null && !pathLike(m.query) && NAME.test(m.query) ? m : null;
 }
 
-// The picker the text before the caret opens, if any. files says whether
-// the composer can list files at all; names whether the Deck reads "@" as
-// an agent's sigil. An older Deck reads only "$", so there "@" keeps
-// picking files, as it did, and never inserts a name the Deck would take
-// for text.
-export function pickerAt(text: string, caret: number, files: boolean, names = true): Picked | null {
-  if (files) {
-    const ctx = contextAt(text, caret) ?? (names ? fileAt(text, caret) : sigilAt("@", text, caret));
-    if (ctx !== null) return { type: "#", m: ctx };
-  }
-  const named = names ? nameAt(text, caret) : null;
-  if (named !== null) return { type: "@", m: named };
-  const agent = mentionAt(text, caret);
-  return agent === null ? null : { type: "$", m: agent };
+// The picker the text before the caret opens, if any: files, for "#word" or
+// "@word", when the composer can list them, as in Claude Code. Agents have
+// no sigil: the person talks to the thread's lead, picked in the agent menu
+// (docs/design/lead-agent-and-subthreads.md).
+export function pickerAt(text: string, caret: number, files: boolean): Picked | null {
+  if (!files) return null;
+  const ctx = contextAt(text, caret) ?? sigilAt("@", text, caret);
+  return ctx === null ? null : { type: "#", m: ctx };
 }
 
 const busyDetail = (l: AgentLine): string =>

@@ -12,8 +12,7 @@ import {
   PanelRight,
   SquareTerminal,
   Trash2,
-  Undo2,
-} from "./icons";
+  Undo2, CornerDownRight } from "./icons";
 import { type ReactNode, useMemo, useState } from "react";
 import { agentColour } from "../agents";
 import { tintOf } from "../teamGate";
@@ -239,6 +238,8 @@ export function RoomHeader({
   sidebar,
   onShowSidebar,
   project,
+  parent = null,
+  onOpenParent,
   open,
   loaded,
   roster,
@@ -272,6 +273,9 @@ export function RoomHeader({
   sidebar: boolean;
   onShowSidebar: () => void;
   project: string;
+  // The thread this sub-thread was opened from, and how to go there.
+  parent?: { id: string; title: string } | null;
+  onOpenParent?: (id: string) => void;
   open: Session | undefined;
   // The thread list arrived: without a thread, the room is a new one.
   loaded: boolean;
@@ -379,9 +383,21 @@ export function RoomHeader({
               </span>
             )}
             {open !== undefined && <span aria-hidden className="text-faint">·</span>}
-            <span className="project min-w-0 truncate" title={project || "Deck"}>
-              {project || "Deck"}
-            </span>
+            {parent !== null ? (
+              <button
+                type="button"
+                className="room-parent inline-flex min-w-0 cursor-pointer items-center gap-1 truncate rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                title={`Open ${parent.title}`}
+                onClick={() => onOpenParent?.(parent.id)}
+              >
+                <CornerDownRight aria-hidden className="size-3 shrink-0 rotate-180" />
+                <span className="truncate">Sub-thread of {parent.title}</span>
+              </button>
+            ) : (
+              <span className="project min-w-0 truncate" title={project || "Deck"}>
+                {project || "Deck"}
+              </span>
+            )}
           </div>
         </div>
       </div>

@@ -105,6 +105,8 @@ export class FakeRpcDeck {
   modelRefreshes = 0;
   // The orchestration level each CreateSession asked for.
   readonly createdLevels: string[] = [];
+  // Each SetModel (the agent menu), as [session, agent].
+  readonly leads: Array<[string, string]> = [];
   private readonly server = new grpc.Server();
   private readonly streams = new Set<grpc.ServerWritableStream<Obj, Obj>>();
   private seq = 0;
@@ -164,7 +166,7 @@ export class FakeRpcDeck {
       "ReadImage",
       "SearchMessages",
     ],
-    meta: {} as Record<string, { attention?: string; branch?: string; archived?: boolean }>,
+    meta: {} as Record<string, { attention?: string; branch?: string; archived?: boolean; parent_id?: string; lead?: Obj }>,
     asked: [] as string[],
     files: ["main.go", "pkg/remote/auth/limit.go", "pkg/remote/auth/limit_test.go", "README.md"],
   };
@@ -293,8 +295,22 @@ export class FakeRpcDeck {
     for (const s of this.streams) s.write(event);
   }
 
+  // A session with its room: the meta a test set, and its lead (the one
+  // SetModel picked, else its first agent), as pkg/rpc fills them.
   private withRoom(session: Obj): Obj {
-    return { ...session, ...this.room.meta[String(session["id"])] };
+    const id = String(session["id"]);
+    const meta = this.room.meta[id];
+    let lead = meta?.lead;
+    if (lead === undefined) {
+      try {
+        const roster = this.deck.invoke("roster.get", { session_id: id }) as Obj[];
+        const first = roster[0];
+        if (first !== undefined) lead = { agent: first["id"], kind: first["kind"], model: first["model"] ?? "", effort: first["effort"] ?? "" };
+      } catch {
+        // no such session
+      }
+    }
+    return { ...session, ...meta, ...(lead !== undefined ? { lead } : {}) };
   }
 
   // Sends session_updated for a session whose room changed.
@@ -840,6 +856,17 @@ export class FakeRpcDeck {
             this.createdLevels.push(String(call.request["level"] ?? ""));
             return cb(null, this.withRoom(out));
           }
+          if (name === "SetModel") {
+            // The agent menu: that agent becomes the session's lead.
+            const sid = String(call.request["session_id"]);
+            const kind = String(call.request["kind"]);
+            this.leads.push([sid, kind]);
+            this.room.meta[sid] = {
+              ...this.room.meta[sid],
+              lead: { agent: kind, kind, model: String(call.request["model"] ?? ""), effort: String(call.request["effort"] ?? "") },
+            };
+            this.roomChanged(sid);
+          }
           if (name === "ListSessions") return cb(null, { sessions: (out["sessions"] as Obj[]).map((x) => this.withRoom(x)) });
           cb(null, out);
         } catch (e) {
@@ -1015,4 +1042,19 @@ export function crewAtWork(f: FakeRpcDeck): void {
     { path: TEST, added: 42, removed: 0, diff: "@@ -0,0 +1,1 @@\n+func TestLimiterIsPerAddress(t *testing.T) {}\n" },
     { path: PRUNE, added: 27, removed: 3, diff: "@@ -0,0 +1,1 @@\n+func (l *Limiter) prune() {}\n" },
   ]);
+}
+
+// A sub-thread at work under "Fix the pairing lockout": claude-1 opened it for
+// codex, which answered; the answer is a report card in the parent.
+export function subThreadAtWork(f: FakeRpcDeck): string {
+  const id = f.deck.addSubThread(
+    "ses_main",
+    "Second opinion on the limiter",
+    "claude-1",
+    "codex",
+    "Is keying the limiter by address enough? Hand back yes or no, and what is missing.",
+    "Yes, with one gap: idle buckets are never pruned. Add a prune on Allow and a test for it.",
+  );
+  f.room.meta[id] = { parent_id: "ses_main" };
+  return id;
 }

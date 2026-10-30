@@ -2,7 +2,7 @@ import type { Session, Theme } from "@web/protocol";
 import { sessionTitle } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
 import { relativeTime } from "@web/time";
-import { Archive, ArchiveRestore, Folder, Trash2 } from "./icons";
+import { Archive, ArchiveRestore, Folder, Trash2, CornerDownRight } from "./icons";
 import { memo, useState } from "react";
 import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import type { RoomState, RoomStatus } from "../attention";
@@ -81,6 +81,7 @@ export const ThreadRow = memo(function ThreadRow({
   theme,
   hideProject = false,
   branch,
+  depth = 0,
   archive,
   onUnarchive,
   onOpen,
@@ -107,6 +108,8 @@ export const ThreadRow = memo(function ThreadRow({
   theme: Theme | null;
   // The room's own branch when it is isolated, else "".
   branch: string;
+  // How many sub-thread levels it sits under its parent (subthreads.ts).
+  depth?: number;
   archive: ArchiveOffer;
   // Set for an archived row whose Deck can bring it back.
   onUnarchive: (() => void) | undefined;
@@ -118,6 +121,8 @@ export const ThreadRow = memo(function ThreadRow({
   onMenu: () => Promise<ThreadChoice>;
 }) {
   const [renaming, setRenaming] = useState(false);
+  // A sub-thread sits indented under its parent, with ↳ before its title.
+  const indent = depth > 0 ? { paddingLeft: `${Math.min(depth, 3) * 14}px` } : undefined;
   const [confirm, setConfirm] = useState(false);
   const state = status === undefined || status.state === "idle" ? null : status.state;
   const label = status?.label ?? "";
@@ -155,6 +160,7 @@ export const ThreadRow = memo(function ThreadRow({
         active || unread ? "text-foreground" : recede ? "text-foreground/75 group-hover/sidebar-row:text-foreground" : "text-foreground/90",
       )}
     >
+      {depth > 0 && <CornerDownRight aria-label="Sub-thread" className="-mt-0.5 mr-1 inline size-3 text-faint" />}
       {sessionTitle(s)}
     </span>
   );
@@ -276,7 +282,7 @@ export const ThreadRow = memo(function ThreadRow({
   };
   if (variant === "compact") {
     return (
-      <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id}>
+      <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id} data-sub={depth > 0 || undefined} style={indent}>
         <div {...common} className={cn(surface, "flex min-h-8 flex-col justify-center py-1 pr-2 pl-1.5")}>
           <div className="flex h-6 min-w-0 items-center gap-2">
             {mark}
@@ -300,7 +306,7 @@ export const ThreadRow = memo(function ThreadRow({
     );
   }
   return (
-    <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id}>
+    <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id} data-sub={depth > 0 || undefined} style={indent}>
       <div {...common} className={surface}>
         <div className={cn("relative flex gap-2 py-2 pr-2 pl-1.5", hideProject ? "h-[3.625rem]" : "h-[4.875rem]")}>
           <span className="flex h-5 shrink-0 items-center">{mark}</span>

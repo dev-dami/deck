@@ -975,6 +975,10 @@ export function ChangedFilesCard({ files, onOpen }: { files: ChangedFile[]; onOp
   );
 }
 
+// How a hand-off card opens the sub-thread a report came from: the room's
+// way to open a thread, or null where there is none (a shared room).
+export const OpenThread = createContext<((id: string) => void) | null>(null);
+
 const HANDOFF_STATE: Record<HandoffState, { label: string; tone: string }> = {
   done: { label: "done", tone: "text-success-foreground" },
   failed: { label: "failed", tone: "text-destructive-foreground" },
@@ -987,14 +991,15 @@ const HANDOFF_STATE: Record<HandoffState, { label: string; tone: string }> = {
 // no path or command in it runs out of it.
 export function HandoffCard({ from, h, roster, theme }: { from: string; h: Handoff; roster: AgentLine[]; theme: Theme | null }) {
   const prefs = usePrefs();
+  const openThread = useContext(OpenThread);
   const [all, setAll] = useState(false);
   const body = h.task === null ? h.body : h.task.result;
   const folds = foldsBody(body);
   const state = h.task === null ? null : HANDOFF_STATE[h.task.state];
   return (
-    <div className={cn(CARD, "handoff flex flex-col gap-1.5 px-3 py-2.5")} data-handoff={h.task?.state ?? "message"} aria-label={`${from} to ${h.to.join(", ")}`}>
+    <div className={cn(CARD, "handoff flex flex-col gap-1.5 px-3 py-2.5")} data-handoff={h.sub !== null ? "subthread" : (h.task?.state ?? "message")} aria-label={`${from} to ${h.to.join(", ")}`}>
       <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-        <span className="shrink-0 text-faint">{h.task === null ? "to" : "report to"}</span>
+        <span className="shrink-0 text-faint">{h.sub !== null ? "sub-thread answer to" : h.task === null ? "to" : "report to"}</span>
         {h.to.map((name) => {
           const kind = agentKind(name, roster);
           return (
@@ -1021,10 +1026,24 @@ export function HandoffCard({ from, h, roster, theme }: { from: string; h: Hando
           <Markdown text={body} />
         </div>
       )}
-      {folds && (
-        <button type="button" className="self-start cursor-pointer rounded-md text-faint text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" aria-expanded={all} onClick={() => setAll((v) => !v)}>
-          {all ? "Show less" : "Show all"}
-        </button>
+      {(folds || (h.sub !== null && h.sub.id !== "" && openThread !== null)) && (
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          {folds && (
+            <button type="button" className="cursor-pointer rounded-md text-faint text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" aria-expanded={all} onClick={() => setAll((v) => !v)}>
+              {all ? "Show less" : "Show all"}
+            </button>
+          )}
+          {h.sub !== null && h.sub.id !== "" && openThread !== null && (
+            <button
+              type="button"
+              className="sub-open inline-flex min-w-0 cursor-pointer items-center gap-1 rounded-md text-primary text-xs outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => h.sub !== null && openThread(h.sub.id)}
+            >
+              <CornerDownRight aria-hidden className="size-3 shrink-0" />
+              <span className="truncate">Open {h.sub.title !== "" ? h.sub.title : "sub-thread"}</span>
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

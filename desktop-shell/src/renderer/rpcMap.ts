@@ -369,7 +369,9 @@ const stringList = (v: unknown): string[] | null =>
 // A deck.v1 Session's room fields; null without an id.
 export function toRoom(v: unknown): RoomUpdate | null {
   if (!isRecord(v) || s(v["id"]) === "") return null;
-  return { k: "session", id: s(v["id"]), attention: attentionOf(v["attention"]), branch: s(v["branch"]), archived: v["archived"] === true };
+  const l = v["lead"];
+  const lead = isRecord(l) && s(l["kind"]) !== "" ? { agent: s(l["agent"]), kind: s(l["kind"]), model: s(l["model"]), effort: s(l["effort"]), profile: s(l["profile"]) } : null;
+  return { k: "session", id: s(v["id"]), attention: attentionOf(v["attention"]), branch: s(v["branch"]), archived: v["archived"] === true, parent: s(v["parent_id"]), lead };
 }
 
 export function toRooms(r: unknown): RoomUpdate[] {

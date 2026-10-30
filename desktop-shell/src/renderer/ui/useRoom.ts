@@ -14,6 +14,13 @@ import { titleFrom } from "../title";
 import { type Workflow, workflowMessage } from "../workflows";
 import { yoloMove } from "../yolo";
 import { useCrew } from "./AgentsTree";
+
+// The agent a new thread starts with: a kind or a named agent's name.
+interface StartLead {
+  agent: string;
+  model: string;
+  effort: string;
+}
 import { useRoomVerbs } from "./RoomVerbs";
 import { useShares } from "./Team";
 
@@ -107,12 +114,15 @@ function useRoomSend({
 
   // Sends from the new-thread screen: makes the thread (on a branch of its
   // own when the person keeps that on), opens it and sends.
+  // lead is the agent picked for it (LeadPicker): it becomes the thread's
+  // lead before the message goes.
   const start = useCallback(
-    async (text: string, images: Image[]): Promise<boolean> => {
+    async (text: string, images: Image[], lead?: StartLead): Promise<boolean> => {
       const s = await c.createSession(titleFrom(text) || undefined, serves(c, "IsolateSession") && getPrefs().isolate);
       if (s === null) return false;
       storeDraft(projectKey, NEW, "");
       openSession(s.id);
+      if (lead !== undefined) await c.setModel(s.id, lead.agent, lead.model, lead.effort);
       const ok = await c.send(s.id, text, images);
       // The thread's own composer keeps the text of a failed send.
       if (!ok) storeDraft(projectKey, s.id, text);
@@ -125,7 +135,7 @@ function useRoomSend({
   // the race builder with the goal; the others make the thread at the
   // workflow's level and send its first message.
   const startWorkflow = useCallback(
-    async (w: Workflow, text: string, images: Image[]): Promise<boolean> => {
+    async (w: Workflow, text: string, images: Image[], lead?: StartLead): Promise<boolean> => {
       if (w.race) {
         onRace(text);
         return true;
@@ -134,6 +144,7 @@ function useRoomSend({
       if (s === null) return false;
       storeDraft(projectKey, NEW, "");
       openSession(s.id);
+      if (lead !== undefined) await c.setModel(s.id, lead.agent, lead.model, lead.effort);
       if (w.mode !== undefined) await c.setMode(s.id, w.mode);
       const ok = await c.send(s.id, workflowMessage(w, text), images);
       if (!ok) storeDraft(projectKey, s.id, text);

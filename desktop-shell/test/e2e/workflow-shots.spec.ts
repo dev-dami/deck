@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { type TestHost } from "../bridge";
-import { FakeRpcDeck } from "../fake-grpc";
+import { FakeRpcDeck, subThreadAtWork } from "../fake-grpc";
 import { attachBridge } from "./harness";
 
 // Screenshots of the single-agent default and the workflow menu, for design
@@ -51,6 +51,12 @@ for (const mode of ["dark", "light"] as const) {
     await shot(page, `${mode}-3-workflow-picked`);
     await page.getByRole("button", { name: "Back to one agent" }).click();
 
+    // The agent menu: the one agent the thread talks to, its model and effort.
+    await page.getByRole("button", { name: /^Agent: / }).click();
+    await page.waitForTimeout(300);
+    await shot(page, `${mode}-3b-agent-menu`);
+    await page.keyboard.press("Escape");
+
     // A room of one agent: no lanes strip, like the agent's own CLI.
     fake.crew = { agents: [{ name: "claude-1", kind: "claude", model: "opus", status: "idle", depth: 0 }], running: [] };
     await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Docs pass", exact: true }).click();
@@ -66,5 +72,19 @@ for (const mode of ["dark", "light"] as const) {
     await page.locator(".handoff").last().scrollIntoViewIfNeeded();
     await page.waitForTimeout(300);
     await shot(page, `${mode}-5-crew-room-handoffs`);
+
+    // A sub-thread: nested under its parent, its report a card that opens it.
+    const sub = subThreadAtWork(fake);
+    await page.reload();
+    await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+    await expect(page.locator('.handoff[data-handoff="subthread"]')).toBeVisible();
+    await page.locator('.handoff[data-handoff="subthread"]').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await shot(page, `${mode}-6-subthread-report`);
+    await page.locator('.handoff[data-handoff="subthread"]').getByRole("button", { name: /^Open / }).click();
+    await expect(page.locator(".room-parent")).toContainText("Sub-thread of Fix the pairing lockout");
+    await expect(page.locator(`[data-session="${sub}"][data-sub]`)).toBeVisible();
+    await page.waitForTimeout(300);
+    await shot(page, `${mode}-7-subthread-room`);
   });
 }

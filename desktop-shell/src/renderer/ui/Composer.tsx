@@ -1,6 +1,6 @@
 import { canSend } from "@web/composer";
 import { checkImage, displayName, readAsBase64 } from "@web/images";
-import type { AgentLine, Image, Theme } from "@web/protocol";
+import type { Image, Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
 import { ArrowUp, Paperclip, Square, X } from "./icons";
 import { type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -12,15 +12,12 @@ import {
   matchPaths,
   type Mention,
   mergeFiles,
-  type Person,
   type PickerType,
   pickerAt,
-  type ProfileRef,
   retiredForm,
   slashAt,
   slashSuggestions,
   suggestionHue,
-  suggestions,
 } from "../completion";
 import { loadHistory, pushHistory, walk } from "../history";
 import { cn } from "../lib/cn";
@@ -59,8 +56,6 @@ interface Attached {
 export function Composer({
   draft,
   setDraft,
-  roster,
-  kinds,
   images: imagesOn,
   online,
   onSend,
@@ -82,14 +77,9 @@ export function Composer({
   sendKey,
   className,
   theme = null,
-  profiles,
-  people,
-  mentions = true,
 }: {
   draft: string;
   setDraft: (s: string) => void;
-  roster: AgentLine[];
-  kinds: string[];
   images: boolean;
   online: boolean;
   onSend: (text: string, images: Image[]) => Promise<boolean>;
@@ -122,12 +112,6 @@ export function Composer({
   className?: string;
   // For the agents' glyphs in the pickers.
   theme?: Theme | null;
-  // What "@" offers beyond the room: saved profiles and teammates.
-  profiles?: readonly ProfileRef[] | undefined;
-  people?: readonly Person[] | undefined;
-  // Whether the Deck reads "@" as an agent's sigil; an older one reads
-  // only "$", and there "@" keeps picking files.
-  mentions?: boolean;
 }) {
   const [images, setImages] = useState<Attached[]>([]);
   const [picker, setPicker] = useState<Picker | null>(null);
@@ -173,9 +157,8 @@ export function Composer({
       const tree = found === null ? [] : found.query === q ? found.paths : matchPaths(q, found.paths, FILES_LIMIT);
       return mergeFiles(q, paths ?? [], tree);
     }
-    if (picker.type === "@") return suggestions(picker.m.query, roster, kinds, { sigil: "@", profiles, people }).slice(0, 16);
-    return suggestions(picker.m.query, roster, kinds).slice(0, 8);
-  }, [picker, roster, kinds, paths, lister, found, profiles, people]);
+    return [];
+  }, [picker, paths, lister, found]);
 
   // The prompt grows with its text up to a cap, then scrolls.
   useLayoutEffect(() => {
@@ -189,7 +172,7 @@ export function Composer({
     const text = el.value;
     const caret = el.selectionStart;
     const slash = onSlash === undefined ? null : slashAt(text, caret);
-    const next: Picker | null = slash !== null ? { type: "/", m: slash } : pickerAt(text, caret, (paths ?? []).length > 0 || lister !== null, mentions);
+    const next: Picker | null = slash !== null ? { type: "/", m: slash } : pickerAt(text, caret, (paths ?? []).length > 0 || lister !== null);
     if (next?.type === "#") lister?.ask(next.m.query);
     setPicker(next);
     setPick(0);

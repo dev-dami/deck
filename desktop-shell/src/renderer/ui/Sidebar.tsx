@@ -1,3 +1,4 @@
+import { isTop, nest } from "../subthreads";
 import type { Session, Theme } from "@web/protocol";
 import type { Link } from "@web/state";
 import { sessionTitle } from "@web/state";
@@ -201,16 +202,26 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
     return { live, settled, archived };
   };
   const grouped = grouping === "projects";
+  const depthOf = new Map<string, number>();
   // The open projects, the current one first, then the others by name.
   const current = projects.find((p) => p.key === source);
   const groups = [
     ...(current === undefined ? [{ key: source, name: project || "Deck", detail: "", kind: "folder" as const, active: true, open: true }] : [current]),
     ...projects.filter((p) => p.open && p.key !== source).sort((a, b) => a.name.localeCompare(b.name)),
   ].filter((p) => filter === null || p.key === filter);
+  // Sub-threads sit under their parent (subthreads.ts): the lists hold the
+  // threads that lead, and each parent's sub-threads follow it.
+  const parentOf = (x: SidebarItem) => (x.foreign === null ? metaOf(x).parent : "");
   const lists = (grouped ? groups.map((g) => g.key) : ["all"]).map((key) => {
     const mine = grouped ? items.filter((x) => x.source === key) : items;
-    const parts = split(mine);
-    return { key, count: mine.length - parts.archived.length, ...parts };
+    const ids = new Set(mine.map((x) => x.s.id));
+    const parts = split(mine.filter((x) => isTop(x, ids, parentOf)));
+    const under = (list: SidebarItem[]) =>
+      nest(list, mine, (x) => x.s.id, parentOf, (a, b) => toMillis(b.s.updated_at) - toMillis(a.s.updated_at)).map((n) => {
+        depthOf.set(`${n.item.source}/${n.item.s.id}`, n.depth);
+        return n.item;
+      });
+    return { key, count: mine.length - parts.archived.length, live: under(parts.live), settled: under(parts.settled), archived: under(parts.archived) };
   });
   // The rows in the order they show, for Ctrl/Cmd+1 to 9: a virtual list
   // leaves rows out of the page, so the order comes from the lists.
@@ -240,6 +251,7 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
         theme={theme}
         hideProject={grouped}
         branch={metaOf(x).branch}
+        depth={depthOf.get(`${x.source}/${s.id}`) ?? 0}
         archive={offer}
         onUnarchive={unarchiveOf(x)}
         onOpen={() => (f === null ? latest.current.onOpen(s.id) : latest.current.onForeign(f.source, s.id))}

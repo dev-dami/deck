@@ -6,10 +6,10 @@ import type { TestHost } from "../bridge";
 import { FakeRpcDeck } from "../fake-grpc";
 import { attachBridge } from "./harness";
 
-// Named agents, "@" mentions and "#" context
-// (docs/design/agents-and-mentions.md) over a fake Deck that keeps
-// profiles: the composer's pickers, a named member's role in the room, and
-// the profiles editor in Settings > Agents.
+// Named agents and "#"/"@" context (docs/design/lead-agent-and-subthreads.md)
+// over a fake Deck that keeps profiles: the composer's file pickers, the
+// agent menu that picks a named agent, a named member's role in the room,
+// and the profiles editor in Settings > Agents.
 let fake: FakeRpcDeck;
 let host: TestHost;
 let dir: string;
@@ -40,31 +40,16 @@ async function openMain(page: Page): Promise<void> {
   await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
 }
 
-test("@ offers agents, profiles and people; # and @path offer files; $ agents", async ({ page }) => {
+test("# and @ offer files, as in Claude Code; no picker offers agents", async ({ page }) => {
   await openMain(page);
-  await composer(page).pressSequentially("@");
-  const people = page.getByRole("listbox", { name: "Agents and people" });
-  // Members by name, the kinds, then the profiles and the team's people,
-  // each with its glyph, its name and its role.
-  await expect(people.getByRole("option").filter({ hasText: "charles" })).toContainText("reviewer");
-  await expect(people.getByRole("option").filter({ hasText: "ada" })).toContainText("writes the tests");
-  await expect(people.getByRole("option").filter({ hasText: "vps" })).toContainText("teammate");
-  await expect(people.getByRole("option").first().locator(".suggest-mark")).not.toBeEmpty();
-  await expect(people.getByRole("option").filter({ hasText: "ada" }).locator(".suggest-insert")).toHaveCSS("color", "rgb(208, 135, 112)");
-
-  await composer(page).pressSequentially("ch");
-  await expect(people.getByRole("option")).toHaveCount(1);
-  await composer(page).press("Enter");
-  await expect(composer(page)).toHaveValue("@charles ");
-
   // "#" picks a file and puts it in as an @path pick always did.
   await composer(page).pressSequentially("look at #limit");
   const files = page.getByRole("listbox", { name: "Files" });
   await expect(files.getByRole("option").first()).toContainText("pkg/remote/auth/limit.go");
   await composer(page).press("Enter");
-  await expect(composer(page)).toHaveValue("@charles look at `pkg/remote/auth/limit.go` ");
+  await expect(composer(page)).toHaveValue("look at `pkg/remote/auth/limit.go` ");
 
-  // "@" before a path still offers files.
+  // "@" offers files too, with or without a path.
   await composer(page).fill("");
   await composer(page).pressSequentially("see @pkg/remote/auth/lim");
   await expect(files.getByRole("option").first()).toContainText("pkg/remote/auth/limit.go");
@@ -72,32 +57,27 @@ test("@ offers agents, profiles and people; # and @path offer files; $ agents", 
   await expect(composer(page)).toHaveValue("see `pkg/remote/auth/limit.go` ");
   await composer(page).fill("");
   await composer(page).pressSequentially("@READ");
-  await expect(page.getByRole("listbox", { name: "Agents and people" })).toHaveCount(0);
-  await composer(page).pressSequentially("ME.md");
   await expect(files.getByRole("option")).toHaveText([/README\.md/]);
 
-  // "$" keeps opening the agents picker, without profiles or people.
+  // Agents and people have no picker: "@charles" and "$co" are text.
   await composer(page).fill("");
   await composer(page).pressSequentially("$co");
-  const agents = page.getByRole("listbox", { name: "Agents" });
-  await expect(agents.getByRole("option").first()).toContainText("$codex-1");
-  await expect(agents.getByRole("option").filter({ hasText: "charles" })).toHaveCount(0);
-  await composer(page).press("Enter");
-  await expect(composer(page)).toHaveValue("$codex-1 ");
+  await expect(page.getByRole("listbox", { name: "Agents" })).toHaveCount(0);
+  await expect(page.getByRole("listbox", { name: "Agents and people" })).toHaveCount(0);
 });
 
-test("@charles starts the profile's agent, and its role shows by its name", async ({ page }) => {
+test("the agent menu makes a named agent the thread's agent; its role shows by its name", async ({ page }) => {
   await openMain(page);
-  await composer(page).pressSequentially("@charl");
-  await composer(page).press("Enter");
+  await page.getByRole("button", { name: /^Agent: / }).click();
+  const menu = page.getByRole("menu", { name: "Agent" });
+  // The kinds, then the named agents, each with its own colour.
+  await menu.getByRole("menuitemradio", { name: /charles/ }).click();
+  await menu.getByRole("menuitem", { name: "Talk to charles" }).click();
+  await expect.poll(() => fake.leads.at(-1)).toEqual(["ses_main", "charles"]);
+  await expect(page.getByRole("button", { name: /^Agent: charles/ })).toBeVisible();
   await composer(page).pressSequentially("review the limiter");
   await composer(page).press("Enter");
-  await expect.poll(() => fake.deck.sent.at(-1)?.text).toBe("@charles review the limiter");
-  // The timeline's header and the lane strip set the role after the name.
-  const reply = page.locator('[data-agent="charles"].msg').last();
-  await expect(reply.locator(".msg-who")).toHaveText("charles");
-  await expect(reply.locator(".agent-role")).toHaveText("reviewer");
-  await expect(page.locator(".agent-role", { hasText: "reviewer" }).first()).toBeVisible();
+  await expect.poll(() => fake.deck.sent.at(-1)?.text).toBe("review the limiter");
 });
 
 test("the profiles editor lists, checks, saves and deletes profiles", async ({ page }) => {
@@ -162,12 +142,11 @@ test("the profiles editor lists, checks, saves and deletes profiles", async ({ p
   expect(fake.named.deleted).toEqual(["global:ada"]);
 });
 
-test("a Deck that keeps no profiles: @ picks files and the editor says so", async ({ page }) => {
+test("a Deck that keeps no profiles: the editor says so", async ({ page }) => {
   fake.room.caps = fake.room.caps.filter((m) => !m.endsWith("Profile") && m !== "ListProfiles");
   await openMain(page);
   await composer(page).pressSequentially("look at @limit");
   await expect(page.getByRole("listbox", { name: "Files" })).toBeVisible();
-  await expect(page.getByRole("listbox", { name: "Agents and people" })).toHaveCount(0);
   await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Agents" }).click();
   await expect(page.getByText("This Deck keeps no profiles.", { exact: false })).toBeVisible();
@@ -186,12 +165,12 @@ for (const mode of ["dark", "light"] as const) {
     await page.addInitScript((m) => localStorage.setItem("deck.desktop.prefs", JSON.stringify({ theme: m })), mode);
     await openMain(page);
     await page.mouse.move(2, 600);
-    await composer(page).pressSequentially("@");
-    await expect(page.getByRole("listbox", { name: "Agents and people" })).toBeVisible();
+    await page.getByRole("button", { name: /^Agent: / }).click();
+    await expect(page.getByRole("menu", { name: "Agent" })).toBeVisible();
     await page.waitForTimeout(300);
-    await shot("at-picker");
-    await composer(page).fill("");
-    await composer(page).pressSequentially("@charles look at #auth");
+    await shot("agent-menu");
+    await page.keyboard.press("Escape");
+    await composer(page).pressSequentially("look at #auth");
     await expect(page.getByRole("listbox", { name: "Files" })).toBeVisible();
     await page.waitForTimeout(400);
     await shot("hash-picker");

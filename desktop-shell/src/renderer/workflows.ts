@@ -96,7 +96,7 @@ export function workflows(kinds: readonly string[], defaultKind: string): Workfl
     list.splice(2, 0, {
       id: "second",
       title: "Second opinion",
-      line: `${lead} and ${other} answer on their own; you compare`,
+      line: `${lead} asks ${other} in a sub-thread; you compare`,
       ends: "ends when both have answered",
       level: "off",
       crew: [lead, other],
@@ -106,40 +106,41 @@ export function workflows(kinds: readonly string[], defaultKind: string): Workfl
   return list;
 }
 
-// The first message of a workflow: the person's goal, addressed to who
-// starts, then the terms of the workflow for the agents. Terms name the ops
-// the engine enforces (task review, worktrees, the board), so the shape of
-// the run does not rest on the agents' goodwill alone.
+// The first message of a workflow: the person's goal, for the thread's
+// agent (picked in the agent menu; nobody is addressed with "@"), then the
+// terms of the workflow. Terms name the ops the engine enforces (a task's
+// review, sub-threads, worktrees, the board), so the shape of the run does
+// not rest on the agent's goodwill alone.
 export function workflowMessage(w: Workflow, goal: string): string {
   const g = goal.trim();
   const [lead = "claude", other = lead] = w.crew;
+  const terms = (name: string, text: string) => [g, "", `[workflow: ${name}] ${text}`].join("\n");
   switch (w.id) {
     case "plan":
-      return [
-        `@${lead} ${g}`,
-        "",
-        `[workflow: plan, build and review] First write a plan for the user to approve; change nothing yet. Once they approve it, track the work as one task with execute task.create {title, owner: "${lead}", review: "${other}"}, do it and run the tests, then report it with task.done {id, result}: Deck has ${other} review it and sends you its notes. Fix what it asks; after 3 rounds the user decides.`,
-      ].join("\n");
+      return terms(
+        "plan, build and review",
+        `First write a plan for the user to approve; change nothing yet. Once they approve it, track the work as one task with execute task.create {title, owner: "${lead}", review: "${other}"}, do it and run the tests, then report it with task.done {id, result}: Deck has ${other} review it and sends you its notes. Fix what it asks; after 3 rounds the user decides.`,
+      );
     case "review":
-      return [
-        `@${lead} ${g}`,
-        "",
-        `[workflow: build and review] Track this as one task with execute task.create {title, owner: "${lead}", review: "${other}"}. Do the work and run the tests, then report it with task.done {id, result}: Deck has ${other} review it and sends you its notes. Fix what it asks; after 3 rounds the user decides.`,
-      ].join("\n");
+      return terms(
+        "build and review",
+        `Track this as one task with execute task.create {title, owner: "${lead}", review: "${other}"}. Do the work and run the tests, then report it with task.done {id, result}: Deck has ${other} review it and sends you its notes. Fix what it asks; after 3 rounds the user decides.`,
+      );
     case "second":
-      return [`@${lead} @${other} ${g}`, "", "[workflow: second opinion] Answer on your own, without messaging each other; the user compares the answers."].join("\n");
+      return terms(
+        "second opinion",
+        `Get ${other}'s view on its own: execute thread.open {kind: "${other}", title: "Second opinion", brief: the question and what to hand back}. Answer it yourself without waiting; when ${other}'s answer comes back, compare the two for the user.`,
+      );
     case "split":
-      return [
-        `@${lead} ${g}`,
-        "",
-        "[workflow: split by area] Split this into independent parts by area. Put each on the task board with task.create {title, brief, deps, isolate: true}, its brief saying what to hand back and when it is done; Deck runs ready parts with helpers on worktrees of their own. When every part is done, merge each worktree (worktree.merge), run the tests and report what changed.",
-      ].join("\n");
+      return terms(
+        "split by area",
+        "Split this into independent parts by area. Put each on the task board with task.create {title, brief, deps, isolate: true}, its brief saying what to hand back and when it is done; Deck runs ready parts with helpers on worktrees of their own. When every part is done, merge each worktree (worktree.merge), run the tests and report what changed.",
+      );
     case "factory":
-      return [
-        `@${lead} ${g}`,
-        "",
-        "[workflow: full crew] You lead. Plan the work on the task board with deps, give each part a brief with what to hand back and when it is done, and let Deck run the ready parts; another kind of agent reviews each helper's work. Integrate, run the tests and report.",
-      ].join("\n");
+      return terms(
+        "full crew",
+        "You lead. Plan the work on the task board with deps, give each part a brief with what to hand back and when it is done, and let Deck run the ready parts; another kind of agent reviews each helper's work. Open a sub-thread (thread.open) for any part the user may want to follow. Integrate, run the tests and report.",
+      );
     case "race":
       return g;
   }

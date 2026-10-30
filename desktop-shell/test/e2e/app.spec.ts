@@ -58,8 +58,8 @@ test("connects, lists sessions and opens one", async ({ page }) => {
   await expect(tool).not.toHaveAttribute("open", "");
   await tool.locator("summary").click();
   await expect(tool.locator(".tool-output")).toContainText("ok");
-  // The roster: two agents with their kind and model.
-  await expect(page.locator(".agent")).toHaveCount(2);
+  // The composer names the agent the person talks to: the thread's lead.
+  await expect(page.getByRole("button", { name: /^Agent: claude/ })).toBeVisible();
 });
 
 test("sends a message and the reply streams in", async ({ page }) => {
@@ -85,41 +85,25 @@ test("two agents stream in one thread at once", async ({ page }) => {
   const codex = page.locator('[data-agent="codex-1"].msg').last();
   await expect(claude.locator(".streaming")).toBeVisible();
   await expect(codex.locator(".streaming")).toBeVisible();
-  await expect(page.locator(".agent-busy")).toHaveCount(2);
+  await expect(page.locator('.lane[data-status="working"]')).toHaveCount(2);
   await expect(claude).toContainText("compare the fixes");
   await expect(codex).toContainText("compare the fixes");
   await expect(page.locator(".streaming")).toHaveCount(0);
-  await expect(page.locator(".agent-busy")).toHaveCount(0);
+  await expect(page.locator('.lane[data-status="working"]')).toHaveCount(0);
 });
 
-test("$codex+ is text now, with a hint that points to /race", async ({ page }) => {
+test("@ and $ open no agent picker: the thread's agent gets the text as typed", async ({ page }) => {
   await pair(page);
   await openMain(page);
   await composer(page).fill("");
-  await composer(page).pressSequentially("$codex");
-  // Nothing typed starts another agent: the picker offers no "+" or "*".
-  const pop = page.getByRole("listbox", { name: "Agents" });
-  await expect(pop.getByRole("option")).toHaveText([/\$codex-1/, /\$codex.*a free codex/]);
-  await composer(page).pressSequentially("+");
-  await expect(pop).toHaveCount(0);
-  await composer(page).pressSequentially(" review the limiter", { delay: 50 });
-  await expect(composer(page)).toHaveValue("$codex+ review the limiter");
-  await expect(page.locator(".composer-retired")).toContainText("/race");
-  // It goes as text, and starts nobody.
+  await composer(page).pressSequentially("$codex review the limiter, @codex too", { delay: 20 });
+  await expect(page.getByRole("listbox")).toHaveCount(0);
   await composer(page).press("Enter");
-  await expect(page.locator(".composer-retired")).toHaveCount(0);
-  expect(fake.sent.map((s) => s.text)).toEqual(["$codex+ review the limiter"]);
-  await expect(page.locator('.agent[data-agent="codex-2"]')).toHaveCount(0);
-
-  // No "Add agent" control beside the chips.
+  expect(fake.sent.map((s) => s.text)).toEqual(["$codex review the limiter, @codex too"]);
+  // No chip per agent, no "Add agent": one agent menu.
+  await expect(page.getByRole("checkbox", { name: /^Send to / })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Add agent" })).toHaveCount(0);
-
-  // Each agent's card addresses it; a second card addresses both.
-  await composer(page).fill("compare");
-  await page.getByRole("checkbox", { name: "Send to codex-1" }).click();
-  await expect(composer(page)).toHaveValue("$codex-1 compare");
-  await page.getByRole("checkbox", { name: "Send to codex-1" }).click();
-  await expect(composer(page)).toHaveValue("compare");
+  await expect(page.getByRole("button", { name: /^Agent: / })).toHaveCount(1);
 });
 
 test("/race on a paired Deck starts mixed entrants through race.start", async ({ page }) => {
@@ -160,8 +144,7 @@ test("a live approval makes its agent wait", async ({ page }) => {
   await pair(page);
   await openMain(page);
   fake.requestApproval("ses_main", "codex-1", "rm -rf build");
-  await expect(page.locator('.agent[data-agent="codex-1"] .agent-status')).toHaveText("waiting");
-  // Its lane says so too.
+  // Its lane says so.
   await expect(page.locator('.lane[data-lane="agent:codex-1"]')).toHaveAttribute("data-status", "waiting");
 });
 
