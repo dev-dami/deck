@@ -19,7 +19,6 @@ import { SETTLE_AFTER_MS } from "../threads";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
-import { DeckMark } from "./kit/mark";
 
 import { modKey } from "./keys";
 import { navRow, ProjectFilter, ProjectGroup, RecentProjects, SharedGroup, type SharedEntry, type SidebarItem, ThreadList } from "./ProjectGroup";
@@ -119,16 +118,6 @@ function HeaderButton({ label, onClick, children }: { label: string; onClick: ()
     <Button variant="ghost-muted" size="icon-sm" aria-label={label} title={label} onClick={onClick}>
       {children}
     </Button>
-  );
-}
-
-// Deck's mark (the app icon's prompt), then the name. No tile; type does it.
-function Brand() {
-  return (
-    <span className="flex min-w-0 items-center gap-1.5 font-semibold text-sm tracking-tight">
-      <DeckMark className="h-3 text-foreground" />
-      Deck
-    </span>
   );
 }
 
@@ -291,7 +280,8 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
           at (18, 19) in the window, so a 36px row centres them. It stays
           36px in a compact window. */}
       <header className={cn("drag relative flex shrink-0 items-center gap-2 pr-2", data.mac ? "h-[36px]" : "h-11", lights ? "pl-[72px]" : "pl-3.5")}>
-        <Brand />
+        {/* No mark or name here: the window and the dock already say it is
+            Deck, and beside the threads it read as a second logo. */}
         <span className="ml-auto flex items-center">
           <HeaderButton label="Hide the sidebar" onClick={actions.onCollapse}>
             {sidebarSide === "left" ? <PanelLeft /> : <PanelRight />}
