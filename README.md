@@ -91,12 +91,12 @@ npm start
 
 Run `deck`, type, press enter.
 
-- **Who answers.** The session's agent: every message goes to it. `ctrl+l` picks it, and its model and effort; picking another kind hands the thread to that agent, briefed on what was said. `@name` and `$name` in a message are plain text.
+- **Who answers.** The session's agent, shown under the editor with the model it runs (`✻ claude · claude-opus-5-5 · high`): every message goes to it. `ctrl+l` picks it, then its model and effort; picking another kind hands the thread to that agent, briefed on what was said. `@name` and `$name` in a message are plain text.
 - **More than one agent.** The agent brings them in itself: subagents (`agent.spawn`) that report back to it, sub-threads (`thread.open`) you can open in Sessions, where they sit under their parent, and races (`/race`).
 - **Files.** Type `#` or `@` to search the folder's files and add one to the message. Each agent speaks under its own CLI's mark and colour: `✻ claude`, `>_ codex`, `▯ opencode`; a named agent keeps its kind's mark, with its role after its name (`✻ charles · reviewer`).
 - **Agents talk to each other** through Deck's ops (`thread.send`, `agent.spawn`, `thread.open`), never by `@name` in a reply; every hand-off shows in the chat. A thanks starts no turn, and the turns agents start without you have a budget per message of yours, after which Deck pauses until you write.
 - **Working.** While agents work, the bottom line says who and for how long, with a spinner in each agent's colour.
-- **Models and effort.** `ctrl+l` lists every model your CLIs offer (OpenCode: every model of every provider it is set up for), then the reasoning efforts that model takes.
+- **Models and effort.** After the agent, `ctrl+l` lists every model its CLI offers, named by the slug it runs once Deck has seen it (OpenCode: every model of every provider it is set up for), then the reasoning efforts that model takes.
 - **Approvals** open as a dialog with the command or the diff: allow, allow for the session, or deny.
 - **Plan and yolo.** `tab` switches plan mode, where agents read but change nothing. `ctrl+y` is yolo: everything is approved, and the screen tells you so.
 - **Pastes** of any size go in whole; big ones become an attachment the agent still reads in full.
