@@ -105,7 +105,7 @@ func TestAgentRaceReportsOnceAndIsJudged(t *testing.T) {
 			turn(say("noted"), finish()),
 		})
 	lead := r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$codex go")
+	_ = r.m.postAt(tid, "$codex go")
 	waitFor(t, "the summary", func() bool { return len(r.codex.prompts(lead)) >= 2 })
 	has(t, r.c.toolResults(lead, "deck")[0], "started race t1 with entries t2, t3")
 	p := r.codex.prompts(lead)[1]

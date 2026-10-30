@@ -164,6 +164,9 @@ type Thread struct {
 	// replaced by an automatic title.
 	TitleSrc string   `json:"title_src,omitempty"`
 	Dir      string   `json:"dir"`
+	// Lead is the member the person talks to: every message of theirs goes
+	// to it (session/lead.go). "" for a thread from before leads.
+	Lead string `json:"lead,omitempty"`
 	Members  []Member `json:"members,omitempty"`
 	// Mode is the thread's permission mode: "plan", "ask" or "yolo". Threads
 	// stored before modes existed (and any unknown value) read as "ask".

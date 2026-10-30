@@ -327,8 +327,10 @@ type turnEnd struct {
 }
 
 // afterTurn runs on the thread's relay worker when a member's turn ends: it
-// relays the $mention lines of the final reply, then starts the member's next
-// turn if messages queued up.
+// settles what the turn finished, then starts the member's next turn if
+// messages queued up. "@name" lines in a reply are text: agents reach each
+// other through ops (thread.send, agent.spawn, thread.open), which carry
+// terms and count against the budgets.
 func (m *Manager) afterTurn(a *agentState, end turnEnd) {
 	text, interrupted := end.text, end.interrupted
 	t := a.thread
@@ -338,49 +340,8 @@ func (m *Manager) afterTurn(a *agentState, end turnEnd) {
 	}
 	if text != "" && !interrupted {
 		m.maybeAutoTitle(t, text)
-		for _, mn := range parseMentions(text) {
-			t.mu.Lock()
-			targets := mentionTargets(t, a, mn.Names)
-			t.mu.Unlock()
-			if len(targets) > 0 {
-				m.relay(t, a, targets, mn.Text, "mention")
-			}
-		}
 	}
 	_, _ = m.deliver(t, a)
-}
-
-// mentionTargets resolves the names of an $mention line to live members other
-// than the sender; names that match nobody are ignored. t.mu is held.
-func mentionTargets(t *thread, from *agentState, names []string) []*agentState {
-	var out []*agentState
-	add := func(a *agentState) {
-		if a == nil || a == from || a.status() == StatusExited {
-			return
-		}
-		for _, o := range out {
-			if o == a {
-				return
-			}
-		}
-		out = append(out, a)
-	}
-	for _, n := range names {
-		if strings.EqualFold(n, "all") {
-			for _, a := range t.members {
-				add(a)
-			}
-			continue
-		}
-		if all, ok := t.findAll(from, n); ok {
-			for _, a := range all {
-				add(a)
-			}
-			continue
-		}
-		add(t.find(from, n))
-	}
-	return out
 }
 
 // Continue ends a pause: the thread's hop count restarts at zero and the relays

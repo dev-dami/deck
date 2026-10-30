@@ -200,7 +200,7 @@ func (m *Manager) walk(t *thread, v viewer, start, end int, in func(i int, e sto
 			}
 			text := "[deck] " + who + " joined the thread"
 			if me := t.member(v.self); me != nil && e.Speaker != v.self && me.wasSolo() {
-				text += fmt.Sprintf("; to reach it, start a line of your final reply with @%s, or execute thread.send {to, message}", t.name(e.Speaker))
+				text += fmt.Sprintf("; to reach it, execute thread.send {to: %q, message}", t.name(e.Speaker))
 			}
 			if n := t.ofKind(e.Text); n > 1 && !hinted[e.Text] && t.name(e.Speaker) != t.firstOf(e.Text) {
 				hinted[e.Text] = true
@@ -417,7 +417,7 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	b.WriteString("New messages come first, prefixed by speaker, e.g. \"[codex] ...\".\n")
 	if tools {
 		b.WriteString("MCP: search finds Deck ops, skills, past threads; execute runs one.\n")
-		b.WriteString("To message another agent: execute thread.send {to: a name or \"all\", message}, or start a line of your final reply with @name ($name also works). thread.read shows the whole thread, thread.roster who is in it.\n")
+		b.WriteString("To message another agent: execute thread.send {to: a name or \"all\", message}; \"@name\" in a reply is plain text. thread.read shows the whole thread, thread.roster who is in it.\n")
 		b.WriteString("Shared task board: task.create {title, deps: \"t1,t2\", owner}, task.update {id, status}, task.done {id, result}, task.fail {id, reason}, task.list; report yours with task.done.\n")
 		b.WriteString("Pass code: sub.patch.capture, then thread.send {capsule}.\n")
 		if !ops {
@@ -435,8 +435,6 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 			fmt.Fprintf(&b, "Teammates' Decks on other machines: %s. team.post {text, to: \"name\" or \"name/agent\"} writes to them (team.read shows the chat); their words reach you next turn. task.contract {peer, brief} asks one for coding work, (changes come back as a capsule); peers.status {peer} asks how one is. Lines like \"[%s] ...\" come from them.\n",
 				clip(strings.Join(mates, ", "), 200), clip(mates[0], 32))
 		}
-	} else {
-		b.WriteString("To message another agent, start a line of your final reply with @name or @all ($name also works).\n")
 	}
 	b.WriteString("Keep agent messages short; skip thanks and acks (they start no turn).\n")
 	fmt.Fprintf(&b, "Write plan files in %s.", brand.PlansDir(t.dir))

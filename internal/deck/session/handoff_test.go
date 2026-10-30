@@ -35,7 +35,7 @@ func TestHandoffCompletesWithTheRecipientsReplyAndReturnsTheResult(t *testing.T)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "$claude delegate the review"); err != nil {
+	if err := r.m.postAt(tid, "$claude delegate the review"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude's second turn", func() bool { return r.c.turnDones("claude") == 2 })
@@ -73,7 +73,7 @@ func TestHandoffWithExplicitDoneBlocksWhenNothingIsReported(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "$claude go"); err != nil {
+	if err := r.m.postAt(tid, "$claude go"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude's second turn", func() bool { return r.c.turnDones("claude") == 2 })
@@ -96,7 +96,7 @@ func TestHandoffFinishedWithTaskDoneUsesTheReportedResult(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "$claude go"); err != nil {
+	if err := r.m.postAt(tid, "$claude go"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude's second turn", func() bool { return r.c.turnDones("claude") == 2 })
@@ -123,11 +123,11 @@ func TestHandoffToBusyMemberIsNotSettledByItsCurrentTurn(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "$codex first"); err != nil {
+	if err := r.m.postAt(tid, "$codex first"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "codex approval", func() bool { return len(r.c.approvals()) == 1 })
-	if err := r.m.Post(tid, "$claude hand over"); err != nil {
+	if err := r.m.postAt(tid, "$claude hand over"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude's first turn", func() bool { return r.c.turnDones("claude") == 1 })
@@ -150,7 +150,7 @@ func TestHandoffRefusesAllAndUnknownTasks(t *testing.T) {
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
 	r.add(t, tid, "codex") // two others, so "all" is several agents
-	if err := r.m.Post(tid, "$claude go"); err != nil {
+	if err := r.m.postAt(tid, "$claude go"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude's turn", func() bool { return r.c.turnDones("claude") == 1 })

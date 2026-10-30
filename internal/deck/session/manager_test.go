@@ -189,7 +189,7 @@ func TestRename(t *testing.T) {
 		t.Fatal("unknown agent")
 	}
 	// the new name addresses the member
-	if err := r.m.Post(tid, "$auth hello"); err != nil {
+	if err := r.m.postAt(tid, "$auth hello"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "auth to reply", func() bool { return r.c.turnDones(a) == 1 })
@@ -262,7 +262,7 @@ func TestPostAddsMemberForKindMentionAndBriefsItOnTheWholeThread(t *testing.T) {
 	}
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 
-	if err := r.m.Post(tid, "$codex please review"); err != nil { // kind with no member: added
+	if err := r.m.postAt(tid, "$codex please review"); err != nil { // kind with no member: added
 		t.Fatal(err)
 	}
 	waitFor(t, "codex to start", func() bool { return len(r.codex.prompts("codex")) == 1 })
@@ -296,7 +296,7 @@ func TestPostAddsMemberForKindMentionAndBriefsItOnTheWholeThread(t *testing.T) {
 	if sp.MCP == nil || sp.MCP.Name != "deck" {
 		t.Errorf("MCP = %+v", sp.MCP)
 	}
-	has(t, sp.Instructions, `"codex"`, "claude", "tester", "search", "execute", "thread.send", "thread.read", "$name")
+	has(t, sp.Instructions, `"codex"`, "claude", "tester", "search", "execute", "thread.send", "thread.read", "plain text")
 	lacks(t, sp.Instructions, "fix the store", "Store now drops")
 	if len(sp.Instructions) > maxInstrChars {
 		t.Errorf("Instructions are %d bytes", len(sp.Instructions))
@@ -309,7 +309,7 @@ func TestAddressingRoutesAndFansOut(t *testing.T) {
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
 
-	// no mention and nobody has spoken: the first member
+	// the first member is the lead
 	if err := r.m.Post(tid, "one"); err != nil {
 		t.Fatal(err)
 	}
@@ -317,27 +317,29 @@ func TestAddressingRoutesAndFansOut(t *testing.T) {
 	if len(r.codex.prompts("codex")) != 0 {
 		t.Fatal("codex should not have been addressed")
 	}
-	// the member who spoke last gets unaddressed messages
-	if err := r.m.Post(tid, "$codex two"); err != nil {
+	// Deck's own addressed posts reach a named member
+	if err := r.m.postAt(tid, "$codex two"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "codex turn", func() bool { return r.c.turnDones("codex") == 1 })
-	if err := r.m.Post(tid, "three"); err != nil {
+	// the person's message goes to the lead, whoever spoke last; @ is text
+	if err := r.m.Post(tid, "@codex three"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "codex second turn", func() bool { return r.c.turnDones("codex") == 2 })
-	if got := len(r.claude.prompts("claude")); got != 1 {
-		t.Fatalf("claude prompts = %d", got)
+	waitFor(t, "claude second turn", func() bool { return r.c.turnDones("claude") == 2 })
+	if got := len(r.codex.prompts("codex")); got != 1 {
+		t.Fatalf("codex prompts = %d", got)
 	}
+	has(t, r.claude.prompts("claude")[1], "@codex three")
 	// $all reaches both, concurrently
-	if err := r.m.Post(tid, "$all four"); err != nil {
+	if err := r.m.postAt(tid, "$all four"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "both answer", func() bool { return r.c.turnDones("claude") == 2 && r.c.turnDones("codex") == 3 })
+	waitFor(t, "both answer", func() bool { return r.c.turnDones("claude") == 3 && r.c.turnDones("codex") == 2 })
 	last := r.claude.prompts("claude")
-	has(t, last[len(last)-1], "[tester] four")
+	has(t, last[len(last)-1], "four")
 	// mention-only just adds
-	if err := r.m.Post(tid, "$claude"); err != nil {
+	if err := r.m.postAt(tid, "$claude"); err != nil {
 		t.Fatal(err)
 	}
 	users := r.c.events(func(e EventMsg) bool { return e.FromUser() })
@@ -391,14 +393,14 @@ func TestBusyMemberQueuesAndCoalesces(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 
-	if err := r.m.Post(tid, "$claude build it"); err != nil {
+	if err := r.m.postAt(tid, "$claude build it"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "approval", func() bool { return len(r.c.approvals()) == 1 })
-	if err := r.m.Post(tid, "$claude also lint"); err != nil {
+	if err := r.m.postAt(tid, "$claude also lint"); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.m.Post(tid, "$claude and vet"); err != nil {
+	if err := r.m.postAt(tid, "$claude and vet"); err != nil {
 		t.Fatal(err)
 	}
 	if got := len(r.claude.prompts("claude")); got != 1 {
@@ -427,11 +429,11 @@ func TestMessageToBusyMemberViaToolSaysQueued(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "$codex start"); err != nil {
+	if err := r.m.postAt(tid, "$codex start"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "codex approval", func() bool { return len(r.c.approvals()) == 1 })
-	if err := r.m.Post(tid, "$claude go"); err != nil {
+	if err := r.m.postAt(tid, "$claude go"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
@@ -446,17 +448,19 @@ func TestMessageToBusyMemberViaToolSaysQueued(t *testing.T) {
 
 // ---- relays: tool, mention, hops ----
 
-func TestToolAndMentionRelays(t *testing.T) {
+// Agents reach each other with thread.send only: a "$claude" line in a reply
+// is text, relayed to nobody.
+func TestToolRelays(t *testing.T) {
 	r := newRig(t, []fake.Script{
 		turn(started("sess-claude"), sendTo("codex", "review the plan"), say("asked codex"), finish()),
 		turn(say("thanks, applying it"), finish()),
 	}, []fake.Script{
-		turn(started("sess-codex"), say("Looks fine.\n\n$claude lock order matters, fix it first"), finish()),
+		turn(started("sess-codex"), sendTo("claude", "lock order matters, fix it first"), say("Looks fine.\n\n$claude a mention in a reply is text"), finish()),
 	})
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "$claude plan it"); err != nil {
+	if err := r.m.postAt(tid, "$claude plan it"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude's second turn", func() bool { return r.c.turnDones("claude") == 2 })
@@ -468,17 +472,18 @@ func TestToolAndMentionRelays(t *testing.T) {
 	if rel[0].From != "claude" || rel[0].To[0] != "codex" || rel[0].Via != "tool" || rel[0].Text != "review the plan" || rel[0].Held {
 		t.Errorf("tool relay = %+v", rel[0])
 	}
-	if rel[1].From != "codex" || rel[1].To[0] != "claude" || rel[1].Via != "mention" || rel[1].Text != "lock order matters, fix it first" {
-		t.Errorf("mention relay = %+v", rel[1])
+	if rel[1].From != "codex" || rel[1].To[0] != "claude" || rel[1].Via != "tool" || rel[1].Text != "lock order matters, fix it first" {
+		t.Errorf("reply relay = %+v", rel[1])
 	}
 	if res := r.c.toolResults("claude", "message"); len(res) != 1 || res[0] != "delivered to codex" {
 		t.Errorf("thread.send result = %q", res)
 	}
 	// codex was briefed on what claude said and got the relay as a message to it
 	has(t, r.codex.prompts("codex")[0], "[claude → codex] review the plan")
-	// claude's second prompt: codex's reply as briefing, the mention as the message
+	// claude's second prompt: codex's reply as briefing, its thread.send as the message
 	p := r.claude.prompts("claude")[1]
-	has(t, p, "[codex] Looks fine.", "[codex → claude] lock order matters, fix it first")
+	has(t, p, "[codex → claude] lock order matters, fix it first")
+	lacks(t, p, "[codex → claude] a mention in a reply is text")
 	ti, _ := r.m.Thread(tid)
 	if ti.Hops != 2 || ti.Paused || ti.MaxHops != 6 {
 		t.Errorf("thread = %+v", ti)
@@ -500,7 +505,7 @@ func TestToolAndMentionRelays(t *testing.T) {
 func pingPong(from, to string, n int) []fake.Script {
 	var out []fake.Script
 	for i := 1; i <= n; i++ {
-		out = append(out, turn(say(fmt.Sprintf("round %d from %s\n\n$%s round %d please", i, from, to, i)), finish()))
+		out = append(out, turn(sendTo(to, fmt.Sprintf("round %d please", i)), say(fmt.Sprintf("round %d from %s", i, from)), finish()))
 	}
 	return out
 }
@@ -510,7 +515,7 @@ func TestHopLimitPausesAndContinueReleases(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "$claude start"); err != nil {
+	if err := r.m.postAt(tid, "$claude start"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "pause", func() bool {
@@ -570,7 +575,7 @@ func TestHeldRelayOverToolSaysSo(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "$claude go"); err != nil {
+	if err := r.m.postAt(tid, "$claude go"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
@@ -587,9 +592,9 @@ func TestNewUserMessageEndsPauseAndDropsHeldRelays(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "paused", func() bool { ti, _ := r.m.Thread(tid); return ti.Paused && r.c.turnDones("codex") == 1 })
-	if err := r.m.Post(tid, "$claude never mind"); err != nil {
+	if err := r.m.postAt(tid, "$claude never mind"); err != nil {
 		t.Fatal(err)
 	}
 	ti, _ := r.m.Thread(tid)
@@ -602,7 +607,7 @@ func TestNewUserMessageEndsPauseAndDropsHeldRelays(t *testing.T) {
 		t.Fatalf("the held relay was delivered anyway (codex turns = %d)", got)
 	}
 	// ... but it is still in the log, so codex sees it next time
-	_ = r.m.Post(tid, "$codex status?")
+	_ = r.m.postAt(tid, "$codex status?")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 2 })
 	has(t, r.codex.prompts("codex")[1], "[claude → codex] two", "[tester] status?")
 }
@@ -614,7 +619,7 @@ func TestUnknownRecipientErrorsAndIsNotAHop(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	res := r.c.toolResults("claude", "message")
 	if len(res) != 4 {
@@ -648,7 +653,7 @@ func TestMessageToExitedAgentFailsFast(t *testing.T) {
 	waitFor(t, "codex exit", func() bool { a, _ := r.m.Agent("codex"); return a.Status == StatusExited })
 
 	start := time.Now()
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	if time.Since(start) > 3*time.Second {
 		t.Fatal("answer took too long")
@@ -663,10 +668,10 @@ func TestMessageToExitedAgentFailsFast(t *testing.T) {
 	if err := r.m.Rename("codex", "rev"); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.m.Post(tid, "$rev are you there"); err == nil || !strings.Contains(err.Error(), "exited") {
+	if err := r.m.postAt(tid, "$rev are you there"); err == nil || !strings.Contains(err.Error(), "exited") {
 		t.Fatalf("post to an exited member: %v", err)
 	}
-	if err := r.m.Post(tid, "$codex"); err != nil {
+	if err := r.m.postAt(tid, "$codex"); err != nil {
 		t.Fatalf("post to an exited kind: %v", err)
 	}
 	if a, ok := r.m.Agent("codex2"); !ok || a.Status == StatusExited {
@@ -679,7 +684,7 @@ func TestEchoLoopIsDroppedWithNotice(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	waitFor(t, "codex to settle", func() bool { return r.c.turnDones("codex") >= 1 })
 	res := r.c.toolResults("claude", "message")
@@ -694,35 +699,17 @@ func TestEchoLoopIsDroppedWithNotice(t *testing.T) {
 	}
 }
 
-func TestMentionOfSelfOrUnknownIsNotRelayed(t *testing.T) {
-	r := newRig(t, []fake.Script{turn(say("$claude note to self\n\n$nobody hello\n\n$param is a thing"), finish())}, nil)
+// "@name" lines in a reply are text: agents reach each other through ops.
+func TestAMentionInAReplyIsText(t *testing.T) {
+	r := newRig(t, []fake.Script{turn(say("$codex review this\n\n@codex and this\n\n$all everyone"), finish())}, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	time.Sleep(30 * time.Millisecond)
 	if n := len(r.c.relays()); n != 0 {
 		t.Fatalf("relays = %+v", r.c.relays())
-	}
-}
-
-func TestInterruptedTurnDoesNotRelayMentions(t *testing.T) {
-	block := fake.Step{
-		Event:    agent.Event{Kind: agent.KindToolCall, Tool: &agent.Tool{ID: "t", Name: "Bash", Title: "make", Status: agent.ToolRunning}},
-		Approval: &agent.ApprovalRequest{ID: "ap", Kind: agent.ApproveCommand, ToolName: "Bash", Summary: "make"},
-	}
-	r := newRig(t, []fake.Script{turn(say("$codex look at this"), block, finish())}, nil)
-	tid := r.thread(t)
-	r.add(t, tid, "claude")
-	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude go")
-	waitFor(t, "approval", func() bool { return len(r.c.approvals()) == 1 })
-	_ = r.m.Interrupt("claude")
-	waitFor(t, "turn end", func() bool { return r.c.turnDones("claude") == 1 })
-	time.Sleep(30 * time.Millisecond)
-	if n := len(r.c.relays()); n != 0 {
-		t.Fatalf("an interrupted turn relayed: %+v", r.c.relays())
 	}
 }
 
@@ -736,9 +723,9 @@ func TestUserNameHiddenUnlessAllowed(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude one")
+	_ = r.m.postAt(tid, "$claude one")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
-	_ = r.m.Post(tid, "$codex two")
+	_ = r.m.postAt(tid, "$codex two")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 	p := r.codex.prompts("codex")[0]
 	has(t, p, "[user → claude] one", "[user] two")
@@ -756,16 +743,16 @@ func TestOpenTurnsAreHeldBackThenDeliveredOnce(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude work")
+	_ = r.m.postAt(tid, "$claude work")
 	waitFor(t, "approval", func() bool { return len(r.c.approvals()) == 1 })
-	_ = r.m.Post(tid, "$codex what is claude doing?")
+	_ = r.m.postAt(tid, "$codex what is claude doing?")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 	first := r.codex.prompts("codex")[0]
 	lacks(t, first, "half-baked thought", "FINAL")
 
 	r.c.approvals()[0].Respond(agent.Decision{Allow: true})
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
-	_ = r.m.Post(tid, "$codex and now?")
+	_ = r.m.postAt(tid, "$codex and now?")
 	waitFor(t, "codex again", func() bool { return r.c.turnDones("codex") == 2 })
 	second := r.codex.prompts("codex")[1]
 	has(t, second, "[claude] FINAL claude answer", "[tester] and now?")
@@ -777,9 +764,9 @@ func TestReadThreadTool(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude hello there")
+	_ = r.m.postAt(tid, "$claude hello there")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
-	_ = r.m.Post(tid, "$codex read the thread")
+	_ = r.m.postAt(tid, "$codex read the thread")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 	out := r.c.toolResults("codex", "read")
 	if len(out) != 1 {
@@ -803,9 +790,9 @@ func TestExecuteSkillsUsed(t *testing.T) {
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude make a pdf")
+	_ = r.m.postAt(tid, "$claude make a pdf")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
-	_ = r.m.Post(tid, "$codex which skills were used?")
+	_ = r.m.postAt(tid, "$codex which skills were used?")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 	out := r.c.toolResults("codex", "deck")
 	if len(out) != 2 {
@@ -826,13 +813,13 @@ func TestResumeTwoMemberThread(t *testing.T) {
 		turn(say("thanks"), cost(0.02), finish()),
 	}
 	codex := []fake.Script{
-		turn(started("sess-codex"), say("Fine.\n\n$claude one change please"), cost(0.04), finish()),
+		turn(started("sess-codex"), sendTo("claude", "one change please"), say("Fine."), cost(0.04), finish()),
 	}
 	r := newRig(t, claude, codex)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$claude plan it")
+	_ = r.m.postAt(tid, "$claude plan it")
 	waitFor(t, "exchange", func() bool { return r.c.turnDones("claude") == 2 })
 	if err := r.m.Rename("codex", "reviewer"); err != nil {
 		t.Fatal(err)
@@ -878,16 +865,17 @@ func TestResumeTwoMemberThread(t *testing.T) {
 		t.Fatalf("resuming a running thread: %+v %v %v", again, h2, err)
 	}
 
-	// cursors survived: claude saw everything before, so a new message is passed untouched
-	if err := r2.m.Post(tid, "$claude again"); err != nil {
+	// cursors survived: claude is briefed only on what came after its last
+	// turn (codex's reply, which ended after its thread.send woke claude)
+	if err := r2.m.postAt(tid, "$claude again"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude after resume", func() bool { return r2.c.turnDones("claude") == 1 })
-	if got := r2.claude.prompts("claude"); len(got) != 1 || got[0] != "again" {
+	if got := r2.claude.prompts("claude"); len(got) != 1 || !strings.HasSuffix(got[0], "again") || strings.Contains(got[0], "plan it") {
 		t.Fatalf("claude prompt after resume = %q", got)
 	}
 	// codex has not seen "again"; the name survived, so $reviewer reaches it
-	if err := r2.m.Post(tid, "$reviewer and you?"); err != nil {
+	if err := r2.m.postAt(tid, "$reviewer and you?"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "codex after resume", func() bool { return r2.c.turnDones("codex") == 1 })
@@ -900,7 +888,7 @@ func TestResumeRemapsIDsThatAreTaken(t *testing.T) {
 	r := newRig(t, nil, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	_ = r.m.Post(tid, "$claude hi")
+	_ = r.m.postAt(tid, "$claude hi")
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
 	r.m.Flush()
 
@@ -984,10 +972,10 @@ func TestDemoDuoCollaborates(t *testing.T) {
 	tid, _ := m.NewThread(t.TempDir())
 	// codex first: claude's first turn sends to it, and the fakes play
 	// instantly, so codex must be in the thread before claude starts.
-	if err := m.Post(tid, "$codex"); err != nil { // add codex without a message
+	if err := m.postAt(tid, "$codex"); err != nil { // add codex without a message
 		t.Fatal(err)
 	}
-	if err := m.Post(tid, "$claude plan the store change"); err != nil {
+	if err := m.postAt(tid, "$claude plan the store change"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude's edit approval", func() bool { return len(c.approvals()) == 1 })
@@ -1006,7 +994,7 @@ func TestDemoDuoCollaborates(t *testing.T) {
 		t.Fatal("Busy is true with everyone idle")
 	}
 	rel := c.relays()
-	if len(rel) != 2 || rel[0].Via != "tool" || rel[1].Via != "mention" || rel[1].From != "codex" {
+	if len(rel) != 2 || rel[0].Via != "tool" || rel[1].Via != "tool" || rel[1].From != "codex" {
 		t.Fatalf("relays = %+v", rel)
 	}
 	out := c.toolResults("codex", "read")
@@ -1047,9 +1035,9 @@ func TestAMessageToAMemberThatIsStartingStartsOneCLI(t *testing.T) {
 	c := collect(t, m)
 	tid, _ := m.NewThread(t.TempDir())
 	errs := make(chan error, 2)
-	go func() { errs <- m.Post(tid, "$codex") }()
+	go func() { errs <- m.postAt(tid, "$codex") }()
 	<-codex.entered // codex is in the thread; its CLI is starting
-	go func() { errs <- m.Post(tid, "$codex hello") }()
+	go func() { errs <- m.postAt(tid, "$codex hello") }()
 	time.Sleep(20 * time.Millisecond) // the message reaches codex while it starts
 	close(codex.release)
 	for range 2 {

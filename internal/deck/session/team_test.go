@@ -68,7 +68,7 @@ func TestTeamPostIsNamedRedactedAndLimited(t *testing.T) {
 	r.m.SetTeam(team)
 	tid := r.thread(t)
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$codex go")
+	_ = r.m.postAt(tid, "$codex go")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 
 	res := r.c.toolResults("codex", "deck")
@@ -113,13 +113,13 @@ func TestTeamNewsReachesTheAgent(t *testing.T) {
 	r.m.SetTeam(team)
 	tid := r.thread(t)
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$codex go")
+	_ = r.m.postAt(tid, "$codex go")
 	waitFor(t, "turn 1", func() bool { return r.c.turnDones("codex") == 1 })
 	first := r.codex.prompts("codex")[0]
 	has(t, first, "hey now", "build is green", "go")
 	lacks(t, first, "not for codex")
 
-	_ = r.m.Post(tid, "$codex again")
+	_ = r.m.postAt(tid, "$codex again")
 	waitFor(t, "turn 2", func() bool { return r.c.turnDones("codex") == 2 })
 	lacks(t, r.codex.prompts("codex")[1], "hey now", "build is green")
 }
@@ -132,7 +132,7 @@ func TestTeamPostTo(t *testing.T) {
 	r.m.SetTeam(team)
 	tid := r.thread(t)
 	r.add(t, tid, "codex")
-	_ = r.m.Post(tid, "$codex go")
+	_ = r.m.postAt(tid, "$codex go")
 	waitFor(t, "codex", func() bool { return r.c.turnDones("codex") == 1 })
 	team.mu.Lock()
 	defer team.mu.Unlock()

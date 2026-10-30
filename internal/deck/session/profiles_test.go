@@ -24,7 +24,7 @@ func TestProfileMentionAddsANamedMember(t *testing.T) {
 	tid := r.thread(t)
 	lead := r.add(t, tid, "claude")
 
-	if err := r.m.Post(tid, "@charles review the store"); err != nil {
+	if err := r.m.postAt(tid, "@charles review the store"); err != nil {
 		t.Fatal(err)
 	}
 	ti, _ := r.m.Thread(tid)
@@ -43,11 +43,11 @@ func TestProfileMentionAddsANamedMember(t *testing.T) {
 		t.Fatalf("charles was told %q", p)
 	}
 	sp, _ := r.claude.spec(c.ID)
-	has(t, sp.Instructions, `You are "charles" (claude, reviewer)`, "@name", "$name also works",
+	has(t, sp.Instructions, `You are "charles" (claude, reviewer)`, "@name", "plain text",
 		"Your role: reviewer.", "Check the tests before the code.", "Voice: dry, terse.", "internal/auth/**")
 
 	// A second mention reaches the same member.
-	if err := r.m.Post(tid, "@charles and the lock order"); err != nil {
+	if err := r.m.postAt(tid, "@charles and the lock order"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "charles's second turn", func() bool { return r.c.turnDones(c.ID) == 2 })
@@ -84,7 +84,7 @@ func TestProfileMentionWithoutProfilesIsText(t *testing.T) {
 	r := newRig(t, nil, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	if err := r.m.Post(tid, "@charles hi"); err != nil {
+	if err := r.m.postAt(tid, "@charles hi"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude's turn", func() bool { return r.c.turnDones("claude") == 1 })
@@ -116,7 +116,7 @@ func TestProfileShadowedByTeammate(t *testing.T) {
 	})
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	if err := r.m.Post(tid, "@charles hi"); err != nil {
+	if err := r.m.postAt(tid, "@charles hi"); err != nil {
 		t.Fatal(err)
 	}
 	if ti, _ := r.m.Thread(tid); len(ti.Members) != 1 {

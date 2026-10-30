@@ -13,7 +13,7 @@ func TestHighlightExecutorStampsAuthenticatedCallerAndTurn(t *testing.T) {
 	r := newRig(t, nil, []fake.Script{turn(say("working"), finish())})
 	tid := r.thread(t)
 	id := r.add(t, tid, "codex")
-	require.NoError(t, r.m.Post(tid, "@codex begin"))
+	require.NoError(t, r.m.postAt(tid, "@codex begin"))
 	waitFor(t, "turn", func() bool { return r.c.turnDones(id) == 1 })
 	calls := 0
 	r.m.SetHighlights(func(_ context.Context, thread, agent, turn, op string, args json.RawMessage) (string, error) {

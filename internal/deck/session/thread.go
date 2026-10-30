@@ -51,6 +51,7 @@ type thread struct {
 	heldIdx     []int             // relays held by the pause, released by Continue
 	lastRelay   map[string]string // "from>to" -> normalised text of the last relay
 	lastSpeaker string            // member who most recently wrote a reply
+	lead        string            // the member the person talks to (lead.go)
 	hops        int
 	paused      bool
 	// work counts the subagents members started and the tasks the scheduler
@@ -358,7 +359,7 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
-		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree,
+		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree, Lead: t.lead,
 		Tasks: cloneTasks(t.tasks), Orchestration: t.level, Orchestrate: m.levelLocked(t).Schedule, Contract: t.contract, Ops: t.ops != nil,
 		Scheduled: slices.Clone(t.scheduled), Trees: slices.Clone(t.trees), Capsules: cloneCapsules(t.capsules)}
 	for _, peer := range slices.Sorted(maps.Keys(t.shares)) {

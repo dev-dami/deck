@@ -253,7 +253,10 @@ type ThreadInfo struct {
 	// Pending counts approvals waiting across the members.
 	Pending     int
 	CostUSD     float64
-	LastSpeaker string     // member id the next unaddressed message goes to ("" = none yet)
+	LastSpeaker string     // member id that last wrote a reply ("" = none yet)
+	// Lead is the member id the person's messages go to ("" before the
+	// thread's first agent).
+	Lead string
 	Mode        agent.Mode // the thread's permission mode
 	// Pinned threads sort first; Resolved ones are settled until a new message.
 	Pinned, Resolved bool
@@ -489,6 +492,9 @@ func (m *Manager) threadInfo(t *thread) ThreadInfo {
 		ID: t.id, Title: t.title, Dir: t.dir, Paused: t.paused, Hops: t.hops,
 		MaxHops: m.maxHops, Held: len(t.heldIdx), LastSpeaker: t.lastSpeaker, Mode: t.mode,
 		Pinned: t.pinned, Resolved: t.resolved, Orchestration: t.level,
+	}
+	if a := t.leadLocked(); a != nil {
+		info.Lead = a.id
 	}
 	if t.worktree != nil {
 		info.Branch = t.worktree.Branch
@@ -818,18 +824,27 @@ func (m *Manager) defaultKind() string {
 
 // ---- the user speaks ----
 
-// Post sends the user's message into a thread. See the package comment for how
-// it is addressed. A message that is only mentions (for example "$codex") just
-// adds the missing members. Errors from starting or sending to an agent are
-// returned, but the message stays in the thread.
+// Post sends the user's message to the thread's lead (lead.go). Errors from
+// starting or sending to the agent are returned, but the message stays in the
+// thread.
 func (m *Manager) Post(threadID, text string) error {
 	_, err := m.PostWith(threadID, text, nil)
 	return err
 }
 
-// PostWith is Post with images attached (see the package comment). An image-only
-// message (empty text) is sent as "See the attached image(s)."
-func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostResult, error) {
+// postAt is postAddressed without images.
+func (m *Manager) postAt(threadID, text string) error {
+	_, err := m.postAddressed(threadID, text, nil)
+	return err
+}
+
+// postAddressed is how the engine itself posts as the person to a member it
+// names: "@name text" reaches that member, "@claude" adds one, as the
+// clients' mentions once did (ParseAddressing has the exact rules). The
+// person's own messages go to the thread's lead instead (PostWith, lead.go);
+// this is for Deck's internal asks (a capsule's hand-over) and the engine's
+// tests of rooms with several members.
+func (m *Manager) postAddressed(threadID, text string, images []agent.Image) (PostResult, error) {
 	t := m.thread(threadID)
 	if t == nil {
 		return PostResult{}, fmt.Errorf("session: no thread %q", threadID)
@@ -1032,6 +1047,9 @@ func (m *Manager) Send(id, prompt string) error {
 	}
 	if a.status() == StatusExited {
 		return fmt.Errorf("session: %s has exited", id)
+	}
+	if a.isEphemeral() {
+		return errSubagent(a)
 	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
@@ -1288,6 +1306,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 	t := newThread(m, th.ID, dir, mode)
 	t.created = true
 	t.title, t.titleSrc = th.Title, th.TitleSrc
+	t.lead = th.Lead
 	t.pinned, t.resolved = th.Pinned, th.Resolved // resuming un-archives
 	t.worktree = th.Worktree
 	t.trees, t.capsules = th.Trees, cloneCapsules(th.Capsules)

@@ -33,16 +33,16 @@ func TestIsAck(t *testing.T) {
 // recipient's next briefing, and spends no hop.
 func TestAnAcknowledgementStartsNoTurn(t *testing.T) {
 	r := newRig(t, []fake.Script{
-		turn(say("@codex check the limiter"), finish()),
+		turn(sendTo("codex", "check the limiter"), say("asked codex"), finish()),
 		turn(say("unexpected"), finish()),
 	}, []fake.Script{
-		turn(say("It keys by address now.\n\n@claude thanks for the heads-up!"), finish()),
+		turn(sendTo("claude", "thanks for the heads-up!"), say("It keys by address now."), finish()),
 		turn(say("unexpected"), finish()),
 	})
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "@claude look at the limiter with codex"); err != nil {
+	if err := r.m.postAt(tid, "@claude look at the limiter with codex"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "codex's answer", func() bool { return r.c.turnDones("codex") == 1 })

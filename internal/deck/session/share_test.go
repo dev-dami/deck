@@ -17,7 +17,7 @@ func TestSharedThreadRoles(t *testing.T) {
 	}, nil)
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
-	_ = r.m.Post(tid, "$claude say hi")
+	_ = r.m.postAt(tid, "$claude say hi")
 	waitFor(t, "the first reply", func() bool { return r.c.turnDones(r.m.Threads()[0].Members[0].ID) >= 1 })
 	ctx := context.Background()
 

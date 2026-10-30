@@ -177,7 +177,7 @@ func TestMembersHearOfALevelChange(t *testing.T) {
 	if err := r.m.SetLevel(tid, config.LevelFull); err != nil {
 		t.Fatal(err)
 	}
-	_ = r.m.Post(tid, "$claude go")
+	_ = r.m.postAt(tid, "$claude go")
 	waitFor(t, "claude's turn", func() bool { return len(r.claude.prompts("claude")) == 1 })
 	has(t, r.claude.prompts("claude")[0], "The user set orchestration to full", "task.race")
 }
@@ -224,12 +224,12 @@ func TestASoloAgentIsBriefedLikeItsOwnCLI(t *testing.T) {
 	}
 	waitFor(t, "the first turn", func() bool { return r.c.turnDones("claude") == 1 })
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "@claude go on"); err != nil {
+	if err := r.m.postAt(tid, "@claude go on"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the second turn", func() bool { return len(r.claude.prompts("claude")) == 2 })
 	p := r.claude.prompts("claude")[1]
-	has(t, p, "codex joined the thread; to reach it, start a line of your final reply with @codex")
+	has(t, p, `codex joined the thread; to reach it, execute thread.send {to: "codex", message}`)
 	lacks(t, p, "task t1")
 	sp, _ = r.codex.spec("codex")
 	has(t, sp.Instructions, "shared Deck thread with claude")

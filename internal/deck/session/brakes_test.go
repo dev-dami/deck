@@ -220,16 +220,16 @@ func TestTurnsTheAgentsStartArePausedAtTheLevelsLimit(t *testing.T) {
 	cfg := testCfg()
 	cfg.OrchestrationLevels = map[string]json.RawMessage{config.LevelOff: json.RawMessage(`{"max_turns": 2}`)}
 	r := newRigWith(t, t.TempDir(), false, cfg, []fake.Script{
-		turn(say("@codex check a"), finish()),
-		turn(say("@codex check b"), finish()),
+		turn(sendTo("codex", "check a"), finish()),
+		turn(sendTo("codex", "check b"), finish()),
 	}, []fake.Script{
-		turn(say("@claude a is fine"), finish()),
+		turn(sendTo("claude", "a is fine"), finish()),
 		turn(say("b is fine"), finish()),
 	})
 	tid := r.thread(t)
 	r.add(t, tid, "claude")
 	r.add(t, tid, "codex")
-	if err := r.m.Post(tid, "@claude look at a and b"); err != nil {
+	if err := r.m.postAt(tid, "@claude look at a and b"); err != nil {
 		t.Fatal(err)
 	}
 	paused := func() bool {
