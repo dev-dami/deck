@@ -241,6 +241,12 @@ func (s *Server) capabilities() []string {
 	if s.crew != nil && s.crew.profiles != nil {
 		out = append(out, profileMethods...)
 	}
+	if s.crew != nil && s.crew.picker != nil {
+		out = append(out, specMethods...)
+	}
+	if s.crew != nil && s.crew.catalog != nil {
+		out = append(out, "GetCatalog")
+	}
 	if s.crew != nil && s.crew.limits != nil {
 		out = append(out, limitMethods...)
 	}

@@ -1193,8 +1193,11 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DelayedClickMsg:
 		// Handle delayed single-click action (e.g., expansion).
 		m.chat.HandleDelayedClick(msg)
+	case agentPickerMsg:
+		m.openAgentModels(msg)
+		return m, tea.Batch(cmds...)
 	case agentModelChoicesMsg:
-		if cmd := m.openAgentModels(msg); cmd != nil {
+		if cmd := m.refreshAgentModels(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 		return m, tea.Batch(cmds...)
@@ -2705,6 +2708,11 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			return true
 		case key.Matches(msg, m.keyMap.Models):
 			if cmd := m.openModelsDialog(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return true
+		case key.Matches(msg, m.keyMap.Effort):
+			if cmd := m.cycleLeadEffort(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 			return true
@@ -5005,7 +5013,7 @@ func (m *UI) sendMessageInternal(content string, hidden bool, attachments ...mes
 		}
 		var leadErr error
 		if pending != nil {
-			leadErr = picker.SetAgentModel(sessionID, cmp.Or(pending.Agent, pending.Kind), pending.Model, pending.Effort)
+			_, leadErr = applyPick(picker, sessionID, *pending)
 		}
 		err := m.com.Workspace.AgentRun(runCtx, sessionID, content, attachments...)
 		if err == nil {
@@ -5257,16 +5265,24 @@ func (m *UI) openModelsDialog() tea.Cmd {
 	return m.fetchAgentModels()
 }
 
-// agentModelChoicesMsg carries the models the agent CLIs offer and the
-// named agents, for the Agent picker.
-type agentModelChoicesMsg struct {
+// agentPickerMsg carries what the Agent picker opens on: the models known
+// already and the named agents.
+type agentPickerMsg struct {
 	choices  []workspace.ModelChoice
 	profiles []workspace.Profile
-	err      error
 }
 
-// fetchAgentModels asks the agent CLIs for their models, and reads the
-// named agents, off the UI loop.
+// agentModelChoicesMsg carries the models the agent CLIs offer, once the
+// ones not listed when the Agent picker opened have answered.
+type agentModelChoicesMsg struct {
+	choices []workspace.ModelChoice
+	err     error
+}
+
+// fetchAgentModels opens the Agent picker on the models known already and
+// the named agents, and asks the CLIs not listed yet, both off the UI loop:
+// the picker opens at once, and the late models join it as they come (a
+// CLI that is slow or failing never holds it up).
 func (m *UI) fetchAgentModels() tea.Cmd {
 	picker, ok := m.com.Workspace.(workspace.AgentPicker)
 	if !ok {
@@ -5277,40 +5293,46 @@ func (m *UI) fetchAgentModels() tea.Cmd {
 	if m.session != nil {
 		sessionID = m.session.ID
 	}
-	return tea.Batch(
-		util.ReportInfo("Asking the agents for their models…"),
+	return tea.Sequence(
 		func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			choices, err := picker.AgentModelChoices(ctx, sessionID)
-			msg := agentModelChoicesMsg{choices: choices, err: err}
+			msg := agentPickerMsg{choices: picker.CachedAgentModelChoices(sessionID)}
 			if profiles != nil {
 				msg.profiles = profiles.ListProfiles()
 			}
 			return msg
 		},
+		func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			choices, err := picker.AgentModelChoices(ctx, sessionID)
+			return agentModelChoicesMsg{choices: choices, err: err}
+		},
 	)
 }
 
-// openAgentModels opens the Agent picker once the models are in, on the
-// lead the editor shows.
-func (m *UI) openAgentModels(msg agentModelChoicesMsg) tea.Cmd {
-	if msg.err != nil {
-		return util.ReportError(msg.err)
-	}
-	if len(msg.choices) == 0 {
-		return util.ReportWarn("No agent CLI listed any models")
-	}
+// openAgentModels opens the Agent picker on the lead the editor shows.
+func (m *UI) openAgentModels(msg agentPickerMsg) {
 	m.profiles = msg.profiles
 	if m.dialog.ContainsDialog(dialog.AgentModelsID) {
 		m.dialog.CloseDialog(dialog.AgentModelsID)
 	}
 	agents := pickerAgents(msg.choices, msg.profiles, m.shownLead())
 	m.dialog.OpenDialog(dialog.NewAgentPicker(m.com, agents, msg.choices))
+}
+
+// refreshAgentModels hands the open Agent picker the models the CLIs
+// listed after it opened.
+func (m *UI) refreshAgentModels(msg agentModelChoicesMsg) tea.Cmd {
+	if d, ok := m.dialog.Dialog(dialog.AgentModelsID).(*dialog.AgentModels); ok && len(msg.choices) > 0 {
+		d.SetChoices(msg.choices)
+	}
+	if msg.err != nil {
+		return util.ReportWarn(msg.err.Error())
+	}
 	return nil
 }
 
-// selectAgentModel makes the pick the session's lead (SetAgentModel). With
+// selectAgentModel applies the pick to this session only (applyPick). With
 // no session yet it waits for the first message, which starts the session
 // (sendMessageInternal).
 func (m *UI) selectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
@@ -5330,8 +5352,12 @@ func (m *UI) selectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 	m.leadPicking = true
 	m.setLead(sessionID, pickedLead(msg))
 	return func() tea.Msg {
-		if err := picker.SetAgentModel(sessionID, who, msg.Model, msg.Effort); err != nil {
+		res, err := applyPick(picker, sessionID, msg)
+		if err != nil {
 			return leadPickedMsg{info: util.NewErrorMsg(err)}
+		}
+		if len(res.Warnings) > 0 {
+			return leadPickedMsg{info: util.NewWarnMsg(strings.Join(res.Warnings, "; "))}
 		}
 		label := msg.Model
 		if label == "" {
@@ -5340,8 +5366,67 @@ func (m *UI) selectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 		if msg.Effort != "" {
 			label += " · " + msg.Effort + " effort"
 		}
-		return leadPickedMsg{info: util.NewInfoMsg("Talking to " + who + " · " + label)}
+		return leadPickedMsg{info: util.NewInfoMsg("Talking to " + who + " · " + label + " · this session")}
 	}
+}
+
+// applyPick makes the pick's agent the session's lead (SetLead) and sets
+// its model and effort (SetMemberSpec), in this session only: the defaults
+// for new sessions are Settings'. A pick that hands the session to another
+// agent and names no model or effort leaves that agent its own.
+func applyPick(p workspace.AgentPicker, sessionID string, pick dialog.ActionSelectAgentModel) (workspace.SpecResult, error) {
+	lead, err := p.SetLead(sessionID, cmp.Or(pick.Agent, pick.Kind))
+	if err != nil {
+		return workspace.SpecResult{}, err
+	}
+	if lead.Changed && pick.Model == "" && pick.Effort == "" {
+		return workspace.SpecResult{}, nil
+	}
+	return p.SetMemberSpec(sessionID, lead.Agent, &pick.Model, &pick.Effort)
+}
+
+// cycleLeadEffort moves the lead's effort to the next one its model takes,
+// then back to the model's default, in this session only (alt+e).
+func (m *UI) cycleLeadEffort() tea.Cmd {
+	picker, ok := m.com.Workspace.(workspace.AgentPicker)
+	if !ok {
+		return nil
+	}
+	lead := m.shownLead()
+	if !m.hasSession() || lead.Agent == "" {
+		return util.ReportInfo("Effort changes apply to a session's agent: send a message first")
+	}
+	sessionID := m.session.ID
+	m.leadGen++
+	m.leadPicking = true
+	return func() tea.Msg {
+		next, ok := nextEffort(picker.CachedAgentModelChoices(sessionID), lead)
+		if !ok {
+			return leadPickedMsg{info: util.NewWarnMsg("No effort levels are listed for " + cmp.Or(lead.Slug, lead.Model, "this model"))}
+		}
+		res, err := picker.SetMemberSpec(sessionID, lead.Agent, nil, &next)
+		if err != nil {
+			return leadPickedMsg{info: util.NewErrorMsg(err)}
+		}
+		return leadPickedMsg{info: util.NewInfoMsg("Effort " + cmp.Or(res.Effort, "default") + " · this session")}
+	}
+}
+
+// nextEffort is the effort after lead's in the levels its model lists, ""
+// (the model's default) after the last; false when the model lists none.
+func nextEffort(choices []workspace.ModelChoice, lead workspace.Lead) (string, bool) {
+	for _, c := range choices {
+		if c.Kind != lead.Kind || !(c.ID == lead.Model || (lead.Model == "" && c.Default)) || len(c.Efforts) == 0 {
+			continue
+		}
+		levels := []string{""}
+		for _, e := range c.Efforts {
+			levels = append(levels, e.Level)
+		}
+		i := slices.Index(levels, lead.Effort)
+		return levels[(i+1)%len(levels)], true
+	}
+	return "", false
 }
 
 // openCommandsDialog opens the commands dialog.

@@ -218,7 +218,8 @@ func toModels(choices []workspace.ModelChoice, kind string) []wire.ModelChoice {
 		if kind != "" && c.Kind != kind {
 			continue
 		}
-		mc := wire.ModelChoice{ID: c.ID, Label: c.Name, Selected: c.Current, Video: c.Video}
+		mc := wire.ModelChoice{ID: c.ID, Label: c.Name, Selected: c.Current, Video: c.Video,
+			Description: c.Description, Default: c.Default, DefaultEffort: c.DefaultEffort, CurrentEffort: c.CurrentEffort}
 		for _, e := range c.Efforts {
 			mc.Efforts = append(mc.Efforts, e.Level)
 		}

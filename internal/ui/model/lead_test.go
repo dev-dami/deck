@@ -19,13 +19,13 @@ import (
 )
 
 // leadWorkspace has rooms with leads, the agent picker and the settings
-// the default agent comes from; it records what SetAgentModel was asked.
+// the default agent comes from; it records the picker calls it gets.
 type leadWorkspace struct {
 	*testWorkspace
 	leads   map[string]workspace.Lead
 	cfg     deckconfig.Config
 	kinds   []string
-	set     []string // "session kind model effort"
+	set     []string // "lead session agent", "spec session member model effort"
 	created int
 }
 
@@ -40,9 +40,26 @@ func (w *leadWorkspace) AgentModelChoices(context.Context, string) ([]workspace.
 func (w *leadWorkspace) CachedAgentModelChoices(string) []workspace.ModelChoice { return nil }
 
 func (w *leadWorkspace) SetAgentModel(sessionID, kind, model, effort string) error {
-	w.set = append(w.set, strings.Join([]string{sessionID, kind, model, effort}, " "))
+	w.set = append(w.set, strings.Join([]string{"agentmodel", sessionID, kind, model, effort}, " "))
 	return nil
 }
+
+func (w *leadWorkspace) SetLead(sessionID, agent string) (workspace.LeadResult, error) {
+	w.set = append(w.set, strings.Join([]string{"lead", sessionID, agent}, " "))
+	return workspace.LeadResult{Agent: agent, Changed: true}, nil
+}
+
+func (w *leadWorkspace) SetMemberSpec(sessionID, member string, model, effort *string) (workspace.SpecResult, error) {
+	v := func(p *string) string {
+		if p == nil {
+			return "-"
+		}
+		return *p
+	}
+	w.set = append(w.set, strings.Join([]string{"spec", sessionID, member, v(model), v(effort)}, " "))
+	return workspace.SpecResult{Effort: v(effort)}, nil
+}
+func (w *leadWorkspace) SetDefaults(string, *string, *string) error { return nil }
 
 func (w *leadWorkspace) CreateSession(context.Context, string) (session.Session, error) {
 	w.created++
@@ -176,8 +193,9 @@ func TestEditorShowsTheLead(t *testing.T) {
 	require.Contains(t, last(), "claude · opus · high  ctrl+l agent")
 }
 
-// A pick in a session sets the lead through SetAgentModel, named agents by
-// name, and shows at once; a read that raced the pick is dropped.
+// A pick in a session sets the lead, named agents by name, then the lead's
+// model and effort, for this session only, and shows at once; a read that
+// raced the pick is dropped.
 func TestPickSetsTheLead(t *testing.T) {
 	t.Parallel()
 	u, ws := newLeadUI(t, "s1")
@@ -190,8 +208,8 @@ func TestPickSetsTheLead(t *testing.T) {
 
 	picked, ok := cmd().(leadPickedMsg)
 	require.True(t, ok)
-	require.Equal(t, "Talking to charles · haiku", picked.info.Msg)
-	require.Equal(t, []string{"s1 charles haiku "}, ws.set)
+	require.Equal(t, "Talking to charles · haiku · this session", picked.info.Msg)
+	require.Equal(t, []string{"lead s1 charles", "spec s1 charles haiku "}, ws.set)
 
 	u.Update(picked)
 	require.True(t, u.leadStale(), "the lead is read again once the pick is in")
@@ -214,6 +232,41 @@ func TestPickBeforeTheFirstMessage(t *testing.T) {
 	require.Equal(t, "codex", u.shownLead().Kind, "the new session shows the pick")
 	// The last command runs the message; the first loads the session.
 	batch[len(batch)-1]()
-	require.Equal(t, []string{"new codex gpt-5 high"}, ws.set)
+	require.Equal(t, []string{"lead new codex", "spec new codex gpt-5 high"}, ws.set)
 	require.Equal(t, []string{"hello"}, ws.runPrompts)
+}
+
+// Handing the session to another agent with no model or effort picked
+// leaves it its own.
+func TestPickOfAnAgentAloneSetsNoSpec(t *testing.T) {
+	t.Parallel()
+	_, ws := newLeadUI(t, "s1")
+	_, err := applyPick(ws, "s1", dialog.ActionSelectAgentModel{Kind: "claude", Agent: "charles"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"lead s1 charles"}, ws.set)
+}
+
+// alt+e cycles the lead's effort through what its model takes, then back to
+// the model's default.
+func TestNextEffort(t *testing.T) {
+	t.Parallel()
+	choices := []workspace.ModelChoice{
+		{Kind: "claude", ID: "", Default: true, Efforts: []workspace.EffortChoice{{Level: "low"}, {Level: "high"}}},
+		{Kind: "claude", ID: "small"},
+		{Kind: "codex", ID: "gpt-5", Efforts: []workspace.EffortChoice{{Level: "medium"}}},
+	}
+	for _, c := range []struct{ cur, want string }{{"", "low"}, {"low", "high"}, {"high", ""}, {"odd", ""}} {
+		got, ok := nextEffort(choices, workspace.Lead{Kind: "claude", Effort: c.cur})
+		require.True(t, ok)
+		require.Equal(t, c.want, got, "after %q", c.cur)
+	}
+	_, ok := nextEffort(choices, workspace.Lead{Kind: "claude", Model: "small"})
+	require.False(t, ok, "a model with no effort levels")
+
+	u, ws := newLeadUI(t, "s1")
+	u.setLead("s1", workspace.Lead{Agent: "claude", Kind: "claude", Effort: "low"})
+	cmd := u.cycleLeadEffort()
+	require.NotNil(t, cmd)
+	cmd()
+	require.Empty(t, ws.set, "this fake lists no models: nothing is set")
 }

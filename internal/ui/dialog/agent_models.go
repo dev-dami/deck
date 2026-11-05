@@ -163,10 +163,23 @@ func (d *AgentModels) showAgents(name string) {
 	d.list.ScrollToSelected()
 }
 
-// pickAgent moves on to a's models: its kind's, with what a runs marked when
-// that is known. An agent whose kind listed no models is picked outright.
+// pickAgent moves on to a's models. An agent whose kind listed no models is
+// picked outright.
 func (d *AgentModels) pickAgent(a *AgentChoice) Action {
 	d.agent = a
+	models := d.modelsOf(a)
+	if len(models) == 0 {
+		return d.selection(a.Kind, "", "")
+	}
+	d.choices = models
+	d.input.SetValue("")
+	d.list.SetFilter("")
+	d.showModels()
+	return nil
+}
+
+// modelsOf is a's kind's models, with what a runs marked when that is known.
+func (d *AgentModels) modelsOf(a *AgentChoice) []workspace.ModelChoice {
 	var models []workspace.ModelChoice
 	for _, c := range d.all {
 		if c.Kind != a.Kind {
@@ -180,14 +193,27 @@ func (d *AgentModels) pickAgent(a *AgentChoice) Action {
 		}
 		models = append(models, c)
 	}
-	if len(models) == 0 {
-		return d.selection(a.Kind, "", "")
+	return models
+}
+
+// SetChoices replaces the models the picker offers, as the agent CLIs
+// answer after it opened. The model step on screen is listed again, unless
+// a filter is typed; the agent and effort steps stay as they are.
+func (d *AgentModels) SetChoices(all []workspace.ModelChoice) {
+	d.all = all
+	switch {
+	case d.picked != nil:
+	case d.agent != nil:
+		if models := d.modelsOf(d.agent); len(models) > 0 && d.input.Value() == "" {
+			d.choices = models
+			d.showModels()
+		}
+	case d.agents != nil:
+		d.choices = all
+	case d.input.Value() == "":
+		d.choices = all
+		d.showModels()
 	}
-	d.choices = models
-	d.input.SetValue("")
-	d.list.SetFilter("")
-	d.showModels()
-	return nil
 }
 
 // selection is the pick of a model and effort, for the agent picked.

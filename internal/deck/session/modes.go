@@ -1,8 +1,6 @@
 package session
 
 import (
-	"cmp"
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -202,82 +200,9 @@ func (a *agentState) claimPending(id string) bool {
 
 // ---- models ----
 
-// SetDefaultModel sets the model members of kind get when they are started from
-// now on without an explicit one. It lives in memory only; config.Models stays
-// the persisted default. An empty model means the CLI's own default.
-func (m *Manager) SetDefaultModel(kind, model string) {
-	m.modelMu.Lock()
-	if m.defModels == nil {
-		m.defModels = map[string]string{}
-	}
-	m.defModels[kind] = model
-	m.modelMu.Unlock()
-}
-
 // defaultModel is the model a new member of kind starts with.
 func (m *Manager) defaultModel(cfg config.Config, kind string) string {
-	m.modelMu.Lock()
-	model, ok := m.defModels[kind]
-	m.modelMu.Unlock()
-	if ok {
-		return model
-	}
 	return modelFor(cfg, kind)
-}
-
-// Models lists the models the kind's CLI offers, through its adapter when it
-// implements agent.ModelLister. A successful answer is cached per kind for the
-// life of the Manager. An adapter that cannot list models yields nil, nil.
-func (m *Manager) Models(ctx context.Context, kind string) ([]agent.ModelInfo, error) {
-	ad, ok := m.adapters[kind]
-	if !ok {
-		return nil, fmt.Errorf("session: unknown agent kind %q", kind)
-	}
-	m.modelMu.Lock()
-	cached, ok := m.modelCache[kind]
-	m.modelMu.Unlock()
-	if ok {
-		return m.withSlugs(kind, cached), nil
-	}
-	ml, ok := ad.(agent.ModelLister)
-	if !ok {
-		return nil, nil
-	}
-	list, err := ml.Models(ctx)
-	if err != nil {
-		return nil, err
-	}
-	m.modelMu.Lock()
-	if m.modelCache == nil {
-		m.modelCache = map[string][]agent.ModelInfo{}
-	}
-	m.modelCache[kind] = append([]agent.ModelInfo(nil), list...)
-	m.modelMu.Unlock()
-	return m.withSlugs(kind, list), nil
-}
-
-// withSlugs is a copy of list with each model's Slug, what it ran as; ""
-// when no run has said (its ID is then the best name there is).
-func (m *Manager) withSlugs(kind string, list []agent.ModelInfo) []agent.ModelInfo {
-	out := append([]agent.ModelInfo(nil), list...)
-	for i := range out {
-		out[i].Slug = cmp.Or(m.ModelSlug(kind, out[i].ID), out[i].Slug)
-	}
-	return out
-}
-
-// ForgetModels drops every kind's cached model list, here and in each adapter
-// that keeps one (agent.ModelForgetter), so the next Models asks the CLIs
-// again.
-func (m *Manager) ForgetModels() {
-	m.modelMu.Lock()
-	m.modelCache = nil
-	m.modelMu.Unlock()
-	for _, ad := range m.adapters {
-		if f, ok := ad.(agent.ModelForgetter); ok {
-			f.ForgetModels()
-		}
-	}
 }
 
 // SetModel switches a member to another model ("" = the CLI's default). The run
@@ -356,25 +281,7 @@ func (a *agentState) getEffort() string {
 	return a.effort
 }
 
-// SetDefaultEffort sets the effort members of kind get when they are started
-// from now on ("" = the model's default). Like SetDefaultModel it lives in
-// memory; config.Efforts stays the persisted default.
-func (m *Manager) SetDefaultEffort(kind, effort string) {
-	m.modelMu.Lock()
-	if m.defEfforts == nil {
-		m.defEfforts = map[string]string{}
-	}
-	m.defEfforts[kind] = effort
-	m.modelMu.Unlock()
-}
-
 // defaultEffort is the effort a new member of kind starts with.
 func (m *Manager) defaultEffort(cfg config.Config, kind string) string {
-	m.modelMu.Lock()
-	e, ok := m.defEfforts[kind]
-	m.modelMu.Unlock()
-	if ok {
-		return e
-	}
 	return cfg.Efforts.For(kind)
 }

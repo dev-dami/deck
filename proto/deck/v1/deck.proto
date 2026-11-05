@@ -30,7 +30,24 @@ service Deck {
 
   rpc Roster(SessionRef) returns (RosterResponse);
   rpc Models(ModelsRequest) returns (ModelsResponse);
+  // SetModel is the one-call pick of older clients: kind (or a named agent)
+  // leads the session, running model at effort. It changes that session
+  // only, never the defaults. New clients use SetLead and SetMemberSpec.
   rpc SetModel(SetModelRequest) returns (Empty);
+  // SetLead makes an agent kind or a named agent the session's lead. It
+  // changes no model or effort and writes no defaults.
+  rpc SetLead(SetLeadRequest) returns (SetLeadResponse);
+  // SetMemberSpec sets the model and effort of one agent of a session,
+  // named as the roster names it. It never changes the lead, adds an agent
+  // or writes the defaults. An effort the model does not take is refused.
+  rpc SetMemberSpec(SetMemberSpecRequest) returns (SpecResult);
+  // SetDefaults sets the model and effort new agents of a kind start with.
+  // Only Settings sends it; it is the one call that writes the defaults.
+  rpc SetDefaults(SetDefaultsRequest) returns (Empty);
+  // GetCatalog answers at once from the engine's model catalog, never
+  // waiting on an agent CLI, and loads the kinds not listed yet in the
+  // background; refresh reloads them. It needs no session.
+  rpc GetCatalog(GetCatalogRequest) returns (Catalog);
 
   rpc GetMode(SessionRef) returns (ModeResponse);
   rpc SetMode(SetModeRequest) returns (Empty);
@@ -632,6 +649,14 @@ message ModelChoice {
   bool selected = 4;
   // video says the model takes video.
   bool video = 5;
+  string description = 6;
+  // is_default marks the CLI's own default model, the one an empty id
+  // runs; default_effort is the effort the model uses when none is chosen.
+  bool is_default = 7;
+  string default_effort = 8;
+  // current_effort is the selected model's effort in the session ("" is
+  // the model's default).
+  string current_effort = 9;
 }
 
 message ModelsResponse {
@@ -644,6 +669,82 @@ message SetModelRequest {
   string kind = 2;
   string model = 3;
   string effort = 4;
+}
+
+// SpecChoice is a value for one field of an agent's spec. A field whose
+// choice is absent is left as it is.
+message SpecChoice {
+  oneof pick {
+    // value is a catalog model id or effort level; "" is the same as
+    // use_default.
+    string value = 1;
+    // use_default picks the CLI's default model, or the model's default
+    // effort.
+    bool use_default = 2;
+  }
+}
+
+// agent is an agent kind or a named agent's name.
+message SetLeadRequest {
+  string session_id = 1;
+  string agent = 2;
+}
+
+// member is the lead's name in the session; changed is true when another
+// agent, or none, led before.
+message SetLeadResponse {
+  string member = 1;
+  string kind = 2;
+  bool changed = 3;
+}
+
+message SetMemberSpecRequest {
+  string session_id = 1;
+  string member = 2;
+  SpecChoice model = 3;
+  SpecChoice effort = 4;
+}
+
+// SpecResult is an agent's model and effort after a change. model_source
+// and effort_source say where each came from: thread, parent (inherited
+// from the agent that delegated), delegation, profile, defaults or cli.
+// warnings say what the engine changed on its own, such as an effort the
+// new model does not take.
+message SpecResult {
+  string member = 1;
+  string kind = 2;
+  string model = 3;
+  string effort = 4;
+  string model_source = 5;
+  string effort_source = 6;
+  repeated string warnings = 7;
+}
+
+message SetDefaultsRequest {
+  string kind = 1;
+  SpecChoice model = 2;
+  SpecChoice effort = 3;
+}
+
+// kinds empty asks for every kind.
+message GetCatalogRequest {
+  repeated string kinds = 1;
+  bool refresh = 2;
+}
+
+message Catalog {
+  repeated KindCatalog kinds = 1;
+}
+
+// KindCatalog is one agent kind's models as the engine holds them. state
+// is "" (never asked), loading, fresh or failed; error says why the last
+// load failed. fetched_at is when the CLI last answered (0 for never).
+message KindCatalog {
+  string kind = 1;
+  repeated ModelChoice models = 2;
+  int64 fetched_at = 3;
+  string state = 4;
+  string error = 5;
 }
 
 message ModeResponse {
@@ -1131,6 +1232,11 @@ message AgentNode {
   string error = 23;
   string tool_call_id = 24;
   int64 ended = 25;
+  // model_source and effort_source say where model and effort came from:
+  // thread, parent (inherited from the agent that delegated), delegation,
+  // profile, defaults or cli; "" when not known.
+  string model_source = 26;
+  string effort_source = 27;
 }
 
 message RunningTool {

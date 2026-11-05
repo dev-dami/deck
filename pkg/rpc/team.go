@@ -40,6 +40,8 @@ type crew struct {
 	work       workspace.WorkDesk
 	usage      workspace.UsageReader
 	changes    deckChanges
+	picker     workspace.AgentPicker
+	catalog    workspace.ModelCatalog
 }
 
 // deckChanges is the workspace's stream of what the message store cannot
@@ -69,6 +71,8 @@ func (s *Server) WithWorkspace(ws any) *Server {
 	c.usage, _ = ws.(workspace.UsageReader)
 	c.changes, _ = ws.(deckChanges)
 	c.highlights, _ = ws.(workspace.HighlightsDesk)
+	c.picker, _ = ws.(workspace.AgentPicker)
+	c.catalog, _ = ws.(workspace.ModelCatalog)
 	s.crew = c
 	s.withBrowser(ws)
 	return s
@@ -187,6 +191,7 @@ func (s *Server) Agents(_ context.Context, r *deckv1.SessionRef) (*deckv1.Agents
 				ContextTokens: int32(a.ContextTokens), ContextWindow: int32(a.ContextWindow), CostUsd: a.CostUSD,
 				Pending: int32(a.Pending), Since: ms(a.Since), Depth: int32(a.Depth), Parent: a.Parent,
 				Branch: a.Branch, Leases: a.Leases, Profile: a.Profile, Role: a.Role, Color: a.Color,
+				ModelSource: a.ModelFrom, EffortSource: a.EffortFrom,
 			}
 		}),
 	}

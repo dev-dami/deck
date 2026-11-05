@@ -94,12 +94,6 @@ func (m *Manager) budget(a *agentState) ctxBudget {
 // listedWindow is the context window kind's model list gives model, 0 when
 // the list is not loaded or does not say.
 func (m *Manager) listedWindow(kind, model string) int {
-	m.modelMu.Lock()
-	defer m.modelMu.Unlock()
-	for _, mi := range m.modelCache[kind] {
-		if mi.ID == model || (model == "" && mi.Default) {
-			return mi.ContextWindow
-		}
-	}
-	return 0
+	mi, _ := m.listedModel(kind, model)
+	return mi.ContextWindow
 }

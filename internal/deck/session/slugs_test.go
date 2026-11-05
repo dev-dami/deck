@@ -42,11 +42,14 @@ func TestTheModelIsNamedByTheSlugTheCLIReports(t *testing.T) {
 	}
 	// A second member with the same pick is named before it runs.
 	tid2 := r.thread(t)
-	id, err := r.m.SetLead(tid2, "claude", a.Model, "")
+	lead, err := r.m.SetLead(tid2, "claude")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := r.m.Agent(id); b.RunningModel != "claude-opus-5-5" {
+	if _, err := r.m.SetMemberSpec(tid2, lead.AgentID, &a.Model, nil); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := r.m.Agent(lead.AgentID); b.RunningModel != "claude-opus-5-5" {
 		t.Fatalf("a new member of the same pick: RunningModel = %q", b.RunningModel)
 	}
 }

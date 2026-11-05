@@ -72,7 +72,8 @@ func toAgent(a wire.AgentLine) *deckv1.AgentLine {
 }
 
 func toModel(m wire.ModelChoice) *deckv1.ModelChoice {
-	return &deckv1.ModelChoice{Id: m.ID, Label: m.Label, Efforts: m.Efforts, Selected: m.Selected, Video: m.Video}
+	return &deckv1.ModelChoice{Id: m.ID, Label: m.Label, Efforts: m.Efforts, Selected: m.Selected, Video: m.Video,
+		Description: m.Description, IsDefault: m.Default, DefaultEffort: m.DefaultEffort, CurrentEffort: m.CurrentEffort}
 }
 
 func toApproval(a wire.Approval) *deckv1.Approval {

@@ -267,7 +267,6 @@ func newPickerWorkspace(t *testing.T, cfg deckconfig.Config) *DeckWorkspace {
 		eng:     &engine.Engine{Manager: m, Config: cfg},
 		threads: map[string]string{},
 		back:    map[string]string{},
-		models:  map[string][]deckagent.ModelInfo{},
 		since:   map[string]time.Time{},
 	}
 }

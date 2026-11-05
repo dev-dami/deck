@@ -539,7 +539,14 @@ func (p *fakePicker) AgentModelChoices(_ context.Context, sid string) ([]workspa
 
 func (p *fakePicker) CachedAgentModelChoices(string) []workspace.ModelChoice { return nil }
 func (p *fakePicker) SetAgentModel(string, string, string, string) error     { return nil }
-func (p *fakePicker) RefreshAgentModels()                                    { p.refreshed++ }
+func (p *fakePicker) SetLead(string, string) (workspace.LeadResult, error) {
+	return workspace.LeadResult{}, nil
+}
+func (p *fakePicker) SetMemberSpec(string, string, *string, *string) (workspace.SpecResult, error) {
+	return workspace.SpecResult{}, nil
+}
+func (p *fakePicker) SetDefaults(string, *string, *string) error { return nil }
+func (p *fakePicker) RefreshAgentModels()                        { p.refreshed++ }
 
 // The pickers list models before any thread is open, and can make the
 // workspace forget its lists.
@@ -549,7 +556,7 @@ func TestModelsApartFromAThreadAndRefresh(t *testing.T) {
 	r.b.picker = p
 	got, err := r.b.Models(context.Background(), "", "claude")
 	require.NoError(t, err)
-	require.Equal(t, []wire.ModelChoice{{ID: "", Label: "Default"}}, got)
+	require.Equal(t, []wire.ModelChoice{{ID: "", Label: "Default", Default: true}}, got)
 	_, err = r.b.Models(context.Background(), "ghost", "claude")
 	require.ErrorIs(t, err, remote.ErrNotFound)
 	require.Equal(t, []string{""}, p.sessions)
