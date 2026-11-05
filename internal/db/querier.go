@@ -13,6 +13,8 @@ type Querier interface {
 	BehaviorByDay(ctx context.Context, since int64) ([]BehaviorByDayRow, error)
 	BehaviorCounts(ctx context.Context, since int64) ([]BehaviorCountsRow, error)
 	CreateFile(ctx context.Context, arg CreateFileParams) (File, error)
+	// seq is one more than the session's last: SQLite runs the statement as one
+	// write, so two rows of a session never get the same number.
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	DeleteFile(ctx context.Context, id string) error
@@ -54,10 +56,10 @@ type Querier interface {
 	ListFilesBySession(ctx context.Context, sessionID string) ([]File, error)
 	ListMCPDisabledServers(ctx context.Context) ([]string, error)
 	ListMCPEnabledServers(ctx context.Context) ([]string, error)
+	// seq is the order the rows were created in; created_at has one-second
+	// resolution and cannot break ties.
 	ListMessagesBySession(ctx context.Context, sessionID string) ([]Message, error)
 	// Messages from the summary onward, which is all a compacted session sends.
-	// created_at has one-second resolution, so a few messages preceding the
-	// summary can come back too; the caller slices from the summary by ID.
 	ListMessagesBySessionFromSummary(ctx context.Context, arg ListMessagesBySessionFromSummaryParams) ([]Message, error)
 	ListSessionReadFiles(ctx context.Context, sessionID string) ([]ReadFile, error)
 	ListSessions(ctx context.Context) ([]Session, error)

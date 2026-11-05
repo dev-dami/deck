@@ -4,22 +4,24 @@ FROM messages
 WHERE id = ? LIMIT 1;
 
 -- name: ListMessagesBySession :many
+-- seq is the order the rows were created in; created_at has one-second
+-- resolution and cannot break ties.
 SELECT *
 FROM messages
 WHERE session_id = ?
-ORDER BY created_at ASC;
+ORDER BY seq ASC;
 
 -- name: ListMessagesBySessionFromSummary :many
 -- Messages from the summary onward, which is all a compacted session sends.
--- created_at has one-second resolution, so a few messages preceding the
--- summary can come back too; the caller slices from the summary by ID.
 SELECT m.*
 FROM messages m
 WHERE m.session_id = ?
-  AND m.created_at >= (SELECT s.created_at FROM messages s WHERE s.id = ?)
-ORDER BY m.created_at ASC;
+  AND m.seq >= (SELECT s.seq FROM messages s WHERE s.id = ?)
+ORDER BY m.seq ASC;
 
 -- name: CreateMessage :one
+-- seq is one more than the session's last: SQLite runs the statement as one
+-- write, so two rows of a session never get the same number.
 INSERT INTO messages (
     id,
     session_id,
@@ -28,10 +30,13 @@ INSERT INTO messages (
     model,
     provider,
     is_summary_message,
+    seq,
     created_at,
     updated_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now')
+    @id, @session_id, @role, @parts, @model, @provider, @is_summary_message,
+    (SELECT COALESCE(MAX(m.seq), 0) + 1 FROM messages m WHERE m.session_id = @session_id),
+    strftime('%s', 'now'), strftime('%s', 'now')
 )
 RETURNING *;
 
@@ -61,7 +66,7 @@ WHERE session_id = ?;
 SELECT *
 FROM messages
 WHERE session_id = ? AND role = 'user'
-ORDER BY created_at DESC
+ORDER BY seq DESC
 LIMIT 200;
 
 -- name: ListAllUserMessages :many
@@ -77,5 +82,5 @@ LIMIT 200;
 SELECT *
 FROM messages
 WHERE session_id = ? AND role = 'assistant' AND is_summary_message = 0
-ORDER BY created_at DESC
+ORDER BY seq DESC
 LIMIT 1;

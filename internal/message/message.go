@@ -621,6 +621,7 @@ func (s *service) fromDBItem(item db.Message) (Message, error) {
 		Provider:                item.Provider.String,
 		CreatedAt:               item.CreatedAt,
 		UpdatedAt:               item.UpdatedAt,
+		Seq:                     item.Seq,
 		IsSummaryMessage:        item.IsSummaryMessage != 0,
 		PrismModelID:            item.PrismModelID.String,
 		PrismModelName:          item.PrismModelName.String,
