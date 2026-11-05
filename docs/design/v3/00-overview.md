@@ -93,6 +93,17 @@ These are made. Chapters build on them and do not reopen them.
 | D17 | A thread can move between hosts (log + working tree; the agent resumes from a hand-off summary). "Keep running on vps-1 when the lid closes" is that move. | 05 |
 | D18 | The look: chapter 04's tokens. The Liquid Glass, Riso and Stitch art directions and mix-and-match appearance settings go. | 04 |
 
+Decisions the chapters added:
+
+| Decision | Chapter |
+|---|---|
+| One SQLite database per host (`~/.deck/deck.db`, WAL) holds a gap-free event log per thread and the materialised messages, written in one transaction. Clients see an event only after it is on disk. The Crush per-project SQLite and `deck-threads.json` are folded in; the session id becomes the thread id. | 07 |
+| A new `deck.v2` proto: `WatchHost`, `WatchThread`, paged `History`, one `Exec(Command)` for every write (with `client_op_id`, returning the resulting revision). `deck.v1` is frozen and deleted with Electron; `pkg/remote/wire` is deleted. | 07 |
+| gRPC only on local sockets. Every remote path carries `deck.v2` as Link frames inside Noise IK. The desktop and TUI reach hosts through one Go link agent per machine user, so tsnet, SSH and path logic live only in Go. | 05, 07 |
+| A run (one agent in one thread) replaces "member". A task is the only record of delegation; work handed to a named agent gets its own sub-thread. The hand-off "contract" is renamed **Brief**; the word "contract" leaves the UI and the proto. | 03 |
+| The orchestration dial (Off / Assist / Auto / Full) becomes a delegation policy: off, ask, auto. Under ask, the lead's proposals arrive as one plan to approve. | 03 |
+| The desktop app lives in a Rust workspace at `desktop/` (`deck-proto`, `deck-client`, `deck-state`, `deck-ui`, `deck-desktop`) on `gpui-pre` and gpui-component (Apache-2.0). Deck is proprietary, so no GPL Zed crate (`ui`, `editor`, `terminal`, `markdown`, `theme`, …) is used or copied; `cargo deny` enforces it. | 06 |
+
 ## 4. Do we switch to Rust?
 
 **For the desktop app, yes (D2). For the engine and TUI, no (D1).**
