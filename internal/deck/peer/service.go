@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dev-dami/deck/internal/deck/sub"
 	"log/slog"
 	"net"
 	"reflect"
@@ -13,6 +12,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/dev-dami/deck/internal/deck/sub"
+	"github.com/dev-dami/deck/pkg/remote/auth"
 
 	"github.com/dev-dami/deck/internal/deck/config"
 )
@@ -540,7 +542,7 @@ type PairWait struct {
 	Fingerprint string // this Deck's
 	Name        string // this Deck's name, as the other Deck will see it
 	// Hosts are the addresses another machine may reach it by, best first
-	// (InviteHosts); the invite carries them.
+	// (auth.InviteHosts); the invite carries them.
 	Hosts []string
 	// Reachable is false when Addr is loopback: no other machine can
 	// connect.
@@ -604,7 +606,7 @@ func (s *Service) StartPairListen(ctx context.Context) (*PairWait, error) {
 		ctx, cancel := s.bound(ctx)
 		w, err := mgr.ArmPair(ctx, PairOptions{Logger: s.log})
 		if err == nil {
-			w.Hosts = InviteHosts(w.Addr)
+			w.Hosts = auth.InviteHosts(w.Addr)
 			s.track(w, cancel)
 			return w, nil
 		}
@@ -626,7 +628,7 @@ func (s *Service) StartPairListen(ctx context.Context) (*PairWait, error) {
 			cancel()
 			return nil, err
 		}
-		w.Hosts = InviteHosts(w.Addr)
+		w.Hosts = auth.InviteHosts(w.Addr)
 		s.track(w, cancel)
 		return w, nil
 	}
@@ -645,7 +647,7 @@ func (s *Service) StartPairing(addr string) (*PairWait, error) {
 	if err != nil {
 		return nil, err
 	}
-	code, err := NewPairCode()
+	code, err := auth.NewPairCode()
 	if err != nil {
 		return nil, err
 	}
@@ -660,7 +662,7 @@ func (s *Service) StartPairing(addr string) (*PairWait, error) {
 		Code: code, Addr: ln.Addr().String(), Fingerprint: id.Fingerprint(), Name: SelfName(p),
 		Expires: time.Now().Add(DefaultPairExpiry), Done: out, cancel: cancel, ended: ended,
 	}
-	w.Reachable, w.Hosts = Reachable(w.Addr), InviteHosts(w.Addr)
+	w.Reachable, w.Hosts = Reachable(w.Addr), auth.InviteHosts(w.Addr)
 	s.mu.Lock()
 	s.wait = w
 	s.mu.Unlock()
@@ -763,7 +765,7 @@ func (s *Service) PairListenAll(w *PairWait) (*PairWait, error) {
 	}
 	moved := *w
 	moved.Addr = mgr.Addr()
-	moved.Reachable, moved.Hosts = Reachable(moved.Addr), InviteHosts(moved.Addr)
+	moved.Reachable, moved.Hosts = Reachable(moved.Addr), auth.InviteHosts(moved.Addr)
 	s.mu.Lock()
 	if s.wait == w {
 		s.wait = &moved

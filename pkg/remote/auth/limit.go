@@ -3,11 +3,9 @@ package auth
 import (
 	"context"
 	"time"
-
-	"github.com/dev-dami/deck/internal/deck/peer"
 )
 
-// Limits are the two lockouts of R1: one per source address (peer's, keyed
+// Limits are the two lockouts of R1: one per source address (Lockout, keyed
 // by IP or IPv6 /64) and one per device id, keyed only by ids that exist.
 // There is no global one. The socket consults them only after a token
 // lookup failed, so a valid token is never refused for someone else's
@@ -15,8 +13,8 @@ import (
 // since a pairing code is short enough to guess. Both are pruned on a
 // timer (R4).
 type Limits struct {
-	sources *peer.Lockout
-	devices *peer.Lockout
+	sources *Lockout
+	devices *Lockout
 	now     func() time.Time
 }
 
@@ -36,8 +34,8 @@ func NewLimits(now func() time.Time) *Limits {
 		now = time.Now
 	}
 	return &Limits{
-		sources: peer.NewLockout(SourceFailures, SourceLockout, MaxLockout, now),
-		devices: peer.NewLockout(DeviceFailures, DeviceLockout, MaxLockout, now),
+		sources: NewLockout(SourceFailures, SourceLockout, MaxLockout, now),
+		devices: NewLockout(DeviceFailures, DeviceLockout, MaxLockout, now),
 		now:     now,
 	}
 }
@@ -45,7 +43,7 @@ func NewLimits(now func() time.Time) *Limits {
 // Locked reports whether addr or device id is locked out and for how long.
 func (l *Limits) Locked(addr, id string) (time.Duration, bool) {
 	var until time.Time
-	if t := l.sources.Until(peer.LockKey(addr)); t.After(until) {
+	if t := l.sources.Until(LockKey(addr)); t.After(until) {
 		until = t
 	}
 	if id != "" {
@@ -62,7 +60,7 @@ func (l *Limits) Locked(addr, id string) (time.Duration, bool) {
 // Fail records a failed attempt from addr, for device id when the token
 // named one that exists.
 func (l *Limits) Fail(addr, id string) {
-	l.sources.Fail(peer.LockKey(addr))
+	l.sources.Fail(LockKey(addr))
 	if id != "" {
 		l.devices.Fail(id)
 	}
@@ -70,7 +68,7 @@ func (l *Limits) Fail(addr, id string) {
 
 // OK clears addr and id after a successful attempt.
 func (l *Limits) OK(addr, id string) {
-	l.sources.OK(peer.LockKey(addr))
+	l.sources.OK(LockKey(addr))
 	if id != "" {
 		l.devices.OK(id)
 	}

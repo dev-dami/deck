@@ -1,4 +1,4 @@
-package peer
+package auth
 
 import (
 	"errors"
@@ -128,17 +128,5 @@ func TestInviteHostsChoice(t *testing.T) {
 	src.env = env("198.51.100.9 50000 203.0.113.5 22")
 	if got := src.inviteHosts("10.8.0.1:7722"); strings.Join(got, ",") != "10.8.0.1" {
 		t.Fatalf("bound address: %v", got)
-	}
-}
-
-func TestPairWaitInvite(t *testing.T) {
-	w := &PairWait{Code: "BXSV4-4XRZC", Addr: "0.0.0.0:7722", Fingerprint: testFP, Name: "vps",
-		Hosts: []string{"203.0.113.5", "10.0.0.5"}, Expires: time.Unix(1760000000, 0)}
-	inv, err := ParseInvite(w.Invite().Encode())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if inv.Addr() != "203.0.113.5:7722" || inv.Code != w.Code || inv.Fingerprint != testFP || inv.Alt[0] != "10.0.0.5" {
-		t.Fatalf("invite: %+v", inv)
 	}
 }

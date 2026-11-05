@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/dev-dami/deck/internal/privfile"
 )
 
 // The control socket lets `deck peer` hand its work to the Deck that runs
@@ -81,7 +83,7 @@ func resultOf(r PairResult) *controlResult {
 // startControl serves the control socket in the peers directory until the
 // Service closes, unless another running Deck serves it already.
 func (s *Service) startControl() {
-	if err := ensurePrivateDir(s.dir); err != nil {
+	if err := privfile.EnsureDir(s.dir); err != nil {
 		s.log.Debug("peer: no control socket", "error", err)
 		return
 	}
@@ -102,7 +104,7 @@ func (s *Service) startControl() {
 			return
 		}
 	}
-	_ = restrictPath(path, false)
+	_ = privfile.Restrict(path, false)
 	s.ctlWG.Add(1)
 	go func() {
 		defer s.ctlWG.Done()

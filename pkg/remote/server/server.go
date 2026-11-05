@@ -17,7 +17,6 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/dev-dami/deck/internal/deck/media"
-	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/pkg/remote"
 	"github.com/dev-dami/deck/pkg/remote/auth"
 	"github.com/dev-dami/deck/pkg/remote/hub"
@@ -293,7 +292,7 @@ func (s *Server) Connections(deviceID string) int {
 
 // admit reserves an unauthenticated slot for addr (R4), or refuses.
 func (s *Server) admit(addr string) bool {
-	key := peer.LockKey(addr)
+	key := auth.LockKey(addr)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.unauth[key] >= wire.MaxUnauthPerSource || s.unauthTotal >= wire.MaxUnauthTotal {
@@ -306,7 +305,7 @@ func (s *Server) admit(addr string) bool {
 
 // release frees addr's unauthenticated slot.
 func (s *Server) release(addr string) {
-	key := peer.LockKey(addr)
+	key := auth.LockKey(addr)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.unauth[key] <= 1 {

@@ -6,9 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dev-dami/deck/internal/privfile"
 	"github.com/stretchr/testify/require"
-
-	"github.com/dev-dami/deck/internal/deck/peer"
 )
 
 func TestR9_CertificateIsMadeOncePerDataDir(t *testing.T) {
@@ -25,7 +24,7 @@ func TestR9_CertificateIsMadeOncePerDataDir(t *testing.T) {
 	require.NoError(t, leaf.VerifyHostname("deck.local"))
 	require.NoError(t, leaf.VerifyHostname("127.0.0.1"))
 	require.WithinDuration(t, clk.now().Add(certLife), leaf.NotAfter, time.Minute)
-	require.NoError(t, peer.CheckPrivate(s.path(KeyFile)))
+	require.NoError(t, privfile.Check(s.path(KeyFile)))
 
 	again, err := s.EnsureCertificate([]string{"192.168.1.5"})
 	require.NoError(t, err)

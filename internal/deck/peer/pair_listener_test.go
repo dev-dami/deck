@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/pkg/remote/auth"
 )
 
 // Pairing served by the link's own listener (Server.ArmPair, Manager.ArmPair,
@@ -102,13 +103,13 @@ func TestPairUserRefusedWhenNotArmed(t *testing.T) {
 	_, _, srv, _ := pairUp(t, ServerOptions{LockoutThreshold: 2, LockoutBase: time.Minute})
 	addr := srv.Addr().String()
 	stranger := ed25519Signer(t)
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	pc := newTestPeer(t, "pc")
 	if _, err := DialPair(ctxT(t), addr, PairOptions{Identity: pc.id, Name: "pc", Code: code}); !errors.Is(err, ErrPairNotWaiting) {
 		t.Fatalf("pairing with nothing armed: %v, want ErrPairNotWaiting", err)
 	}
 	// A refused pairing login is an auth failure like any other.
-	for i := 0; i < 10 && !srv.keyed.locked("127.0.0.1 "+Fingerprint(stranger.PublicKey())); i++ {
+	for i := 0; i < 10 && !srv.keyed.Locked("127.0.0.1 "+Fingerprint(stranger.PublicKey())); i++ {
 		if _, err := pairLogin(t, addr, stranger); err == nil {
 			t.Fatal("deck-pair let in with nothing armed")
 		}
@@ -208,9 +209,9 @@ func TestPairWrongCodeOnMainListenerChangesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	pc := newTestPeer(t, "pc")
-	wrong, _ := NewPairCode()
+	wrong, _ := auth.NewPairCode()
 	for wrong == w.Code {
-		wrong, _ = NewPairCode()
+		wrong, _ = auth.NewPairCode()
 	}
 	if _, err := DialPair(ctxT(t), srv.Addr().String(), PairOptions{Identity: pc.id, Name: "pc", Code: wrong}); !errors.Is(err, ErrPairWrong) {
 		t.Fatalf("wrong code: %v", err)
@@ -272,7 +273,7 @@ func TestCLIAddInviteMismatchPinsNothing(t *testing.T) {
 	}()
 	host, port, _ := net.SplitHostPort(w.Addr)
 	other := newTestPeer(t, "other")
-	inv := Invite{Host: host, Port: port, Code: w.Code, Fingerprint: other.id.Fingerprint(), Name: "vps"}
+	inv := auth.Invite{Host: host, Port: port, Code: w.Code, Fingerprint: other.id.Fingerprint(), Name: "vps"}
 	var out syncBuf
 	c := CLI{Dir: t.TempDir(), Out: &out}
 	err = c.Add(ctxT(t), AddArgs{Invite: inv.Encode(), Yes: true})
@@ -285,7 +286,7 @@ func TestCLIAddInviteMismatchPinsNothing(t *testing.T) {
 	if strings.Contains(err.Error(), w.Code) || strings.Contains(out.String(), w.Code) {
 		t.Fatal("the code leaked into the output")
 	}
-	if err := c.Add(ctxT(t), AddArgs{Invite: "deck://pair?v=9"}); !errors.Is(err, ErrNotInvite) {
+	if err := c.Add(ctxT(t), AddArgs{Invite: "deck://pair?v=9"}); !errors.Is(err, auth.ErrNotInvite) {
 		t.Fatalf("bad invite: %v", err)
 	}
 }
@@ -293,7 +294,7 @@ func TestCLIAddInviteMismatchPinsNothing(t *testing.T) {
 func TestPairDialNoAnswerAndCancel(t *testing.T) {
 	leakCheck(t)
 	pc := newTestPeer(t, "pc")
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

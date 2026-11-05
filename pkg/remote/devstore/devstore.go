@@ -26,8 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/internal/lock"
+	"github.com/dev-dami/deck/internal/privfile"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 )
 
@@ -428,7 +428,7 @@ func (s *Store) write(next []Device) error {
 	if err != nil {
 		return err
 	}
-	if err := peer.WritePrivateFile(s.path, raw); err != nil {
+	if err := privfile.Write(s.path, raw); err != nil {
 		return fmt.Errorf("devstore: write: %w", err)
 	}
 	if st, err := os.Stat(s.path); err == nil {

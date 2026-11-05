@@ -1,6 +1,6 @@
 //go:build windows
 
-package peer
+package privfile
 
 import (
 	"fmt"
@@ -18,11 +18,11 @@ func currentUserSID() (*windows.SID, error) {
 	return u.User.Sid.Copy()
 }
 
-// restrictPath replaces path's DACL with one protected entry that grants the
+// Restrict replaces path's DACL with one protected entry that grants the
 // current user full control and nobody else anything. Mode bits mean little on
 // Windows, so this is what keeps the identity key private. A directory's entry
 // is inherited by what is created in it.
-func restrictPath(path string, isDir bool) error {
+func Restrict(path string, isDir bool) error {
 	sid, err := currentUserSID()
 	if err != nil {
 		return err
@@ -58,12 +58,12 @@ const (
 	aceDeniedCallbackObject = 0xC
 )
 
-// CheckPrivate reports an error unless path is owned by the current user and
+// Check reports an error unless path is owned by the current user and
 // its DACL grants access to the current user alone. Deny entries are fine; an
 // allow entry for anyone else, or of a kind this check does not read (object
 // ACEs), fails it, and so does a missing DACL, which grants everyone access.
 // The owner matters as much as the DACL: an owner can always rewrite it.
-func CheckPrivate(path string) error {
+func Check(path string) error {
 	sid, err := currentUserSID()
 	if err != nil {
 		return err
@@ -127,6 +127,6 @@ func trustedOwner(owner, user *windows.SID) bool {
 	return owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) || owner.IsWellKnown(windows.WinLocalSystemSid)
 }
 
-// checkTrusted is CheckPrivate: on Windows a file others can read is as bad
+// CheckTrusted is Check: on Windows a file others can read is as bad
 // as one they can write, since the DACL is the only guard.
-func checkTrusted(path string, _ bool) error { return CheckPrivate(path) }
+func CheckTrusted(path string, _ bool) error { return Check(path) }

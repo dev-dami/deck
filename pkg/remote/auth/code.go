@@ -4,16 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"strings"
 	"time"
 
-	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 )
 
 // Code is an armed pairing code.
 type Code struct {
-	Code      string // XXXXX-XXXXX, as peer.NewPairCode makes it
+	Code      string // XXXXX-XXXXX, as NewPairCode makes it
 	ExpiresAt time.Time
 }
 
@@ -25,13 +23,13 @@ type armed struct {
 
 // Arm mints a code valid for wire.PairCodeTTL, replacing any armed before.
 func (s *Store) Arm() (Code, error) {
-	code, err := peer.NewPairCode()
+	code, err := NewPairCode()
 	if err != nil {
 		return Code{}, err
 	}
 	c := Code{Code: code, ExpiresAt: s.now().Add(wire.PairCodeTTL).UTC().Truncate(time.Second)}
 	err = s.withLock(func() error {
-		return s.write(PairFile, armed{Hash: s.digest(normalizeCode(code)), ExpiresAt: c.ExpiresAt})
+		return s.write(PairFile, armed{Hash: s.digest(NormalizeCode(code)), ExpiresAt: c.ExpiresAt})
 	})
 	if err != nil {
 		return Code{}, err
@@ -73,21 +71,8 @@ func (s *Store) takeCode(code string) bool {
 		_ = os.Remove(s.path(PairFile))
 		return false
 	}
-	if a.Hash != s.digest(normalizeCode(code)) {
+	if a.Hash != s.digest(NormalizeCode(code)) {
 		return false
 	}
 	return os.Remove(s.path(PairFile)) == nil
-}
-
-// normalizeCode upper-cases a typed code and drops dashes and spaces, as
-// peer does for its codes.
-func normalizeCode(s string) string {
-	var b strings.Builder
-	for _, r := range strings.ToUpper(s) {
-		if r == '-' || r == ' ' || r == '\t' {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
 }

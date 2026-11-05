@@ -16,7 +16,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/dev-dami/deck/internal/deck/peer"
+	"github.com/dev-dami/deck/internal/privfile"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 )
 
@@ -70,7 +70,7 @@ func Open(dir string) (*Store, error) {
 	}
 	for _, f := range []string{path, path + "-wal", path + "-shm"} {
 		if _, err := os.Stat(f); err == nil {
-			if err := peer.RestrictPrivate(f, false); err != nil {
+			if err := privfile.Restrict(f, false); err != nil {
 				db.Close()
 				return nil, fmt.Errorf("queue: %w", err)
 			}

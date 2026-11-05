@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dev-dami/deck/internal/deck/peer"
+	"github.com/dev-dami/deck/internal/privfile"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 )
 
@@ -185,7 +185,7 @@ func (r *Registry) save(next []Project) error {
 	if err != nil {
 		return err
 	}
-	if err := peer.WritePrivateFile(r.path, raw); err != nil {
+	if err := privfile.Write(r.path, raw); err != nil {
 		return fmt.Errorf("projects: write: %w", err)
 	}
 	if st, err := os.Stat(r.path); err == nil {

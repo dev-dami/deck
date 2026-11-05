@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dev-dami/deck/pkg/remote/auth"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -46,33 +46,10 @@ func waitPair(t *testing.T, ch <-chan pairOutcome) pairOutcome {
 	return pairOutcome{}
 }
 
-func TestPairCodeFormat(t *testing.T) {
-	re := regexp.MustCompile(`^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{5}-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{5}$`)
-	seen := map[string]bool{}
-	for i := 0; i < 200; i++ {
-		c, err := NewPairCode()
-		if err != nil || !re.MatchString(c) {
-			t.Fatalf("code %q: %v", c, err)
-		}
-		if seen[c] {
-			t.Fatalf("repeated code %q", c)
-		}
-		seen[c] = true
-		if !validCode(normalizeCode(strings.ToLower(c))) || !validCode(normalizeCode(strings.ReplaceAll(c, "-", " "))) {
-			t.Fatalf("normalize failed for %q", c)
-		}
-	}
-	for _, bad := range []string{"", "ABCDE", "ABCDE-2345O", "ABCDE-234561", "ABCDE-2345I"} {
-		if validCode(normalizeCode(bad)) {
-			t.Fatalf("%q accepted", bad)
-		}
-	}
-}
-
 func TestPairHappyPathRealKDF(t *testing.T) {
 	leakCheck(t)
 	l, d := newTestPeer(t, "vps"), newTestPeer(t, "pc")
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	addr, out := servePair(t, l, code, PairOptions{})
 	res, err := DialPair(ctxT(t), addr, PairOptions{Identity: d.id, Name: "pc", Code: strings.ToLower(code)})
 	if err != nil {
@@ -114,8 +91,8 @@ func TestPairWrongCodeThenRightCode(t *testing.T) {
 	leakCheck(t)
 	fastKDF(t)
 	l, d := newTestPeer(t, "vps"), newTestPeer(t, "pc")
-	code, _ := NewPairCode()
-	other, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
+	other, _ := auth.NewPairCode()
 	addr, out := servePair(t, l, code, PairOptions{MaxAttempts: 3})
 	if _, err := DialPair(ctxT(t), addr, PairOptions{Identity: d.id, Name: "pc", Code: other}); !errors.Is(err, ErrPairWrong) {
 		t.Fatalf("wrong code: %v", err)
@@ -132,10 +109,10 @@ func TestPairAttemptsBurnCode(t *testing.T) {
 	leakCheck(t)
 	fastKDF(t)
 	l, d := newTestPeer(t, "vps"), newTestPeer(t, "pc")
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	addr, out := servePair(t, l, code, PairOptions{MaxAttempts: 3})
 	for i := 0; i < 3; i++ {
-		wrong, _ := NewPairCode()
+		wrong, _ := auth.NewPairCode()
 		if _, err := DialPair(ctxT(t), addr, PairOptions{Identity: d.id, Name: "pc", Code: wrong}); err == nil {
 			t.Fatal("wrong code accepted")
 		}
@@ -152,7 +129,7 @@ func TestPairExpiry(t *testing.T) {
 	leakCheck(t)
 	fastKDF(t)
 	l, d := newTestPeer(t, "vps"), newTestPeer(t, "pc")
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	addr, out := servePair(t, l, code, PairOptions{Expiry: 150 * time.Millisecond})
 	if o := waitPair(t, out); !errors.Is(o.err, ErrPairExpired) {
 		t.Fatalf("ServePair = %v, want ErrPairExpired", o.err)
@@ -166,7 +143,7 @@ func TestPairExpiryCutsStalledConnection(t *testing.T) {
 	leakCheck(t)
 	fastKDF(t)
 	l := newTestPeer(t, "vps")
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	addr, out := servePair(t, l, code, PairOptions{Expiry: 300 * time.Millisecond})
 	c, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -182,7 +159,7 @@ func TestPairJunkDoesNotBurnAttempts(t *testing.T) {
 	leakCheck(t)
 	fastKDF(t)
 	l, d := newTestPeer(t, "vps"), newTestPeer(t, "pc")
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	addr, out := servePair(t, l, code, PairOptions{MaxAttempts: 1})
 	// A port scan and a plain ssh client that opens the wrong channel.
 	c, _ := net.Dial("tcp", addr)
@@ -286,7 +263,7 @@ func TestPairMITMWithoutCodeCannotPin(t *testing.T) {
 	leakCheck(t)
 	fastKDF(t)
 	l, d := newTestPeer(t, "vps"), newTestPeer(t, "pc")
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	addr, out := servePair(t, l, code, PairOptions{MaxAttempts: 1})
 	via := mitm(t, addr)
 	_, err := DialPair(ctxT(t), via, PairOptions{Identity: d.id, Name: "pc", Code: code})
@@ -348,7 +325,7 @@ func TestPairDialerRejectsUnprovenListener(t *testing.T) {
 	leakCheck(t)
 	fastKDF(t)
 	d := newTestPeer(t, "pc")
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	for name, reply := range map[string]func(pairHello) pairHello{
 		"ok without mac":   func(pairHello) pairHello { return pairHello{V: 1, OK: true, Name: "vps"} },
 		"echoed mac":       func(h pairHello) pairHello { return pairHello{V: 1, OK: true, Name: "vps", MAC: h.MAC} },
@@ -366,5 +343,19 @@ func TestPairDialerRejectsUnprovenListener(t *testing.T) {
 	}
 	if _, err := DialPair(ctxT(t), "127.0.0.1:1", PairOptions{Identity: d.id, Code: "nope"}); err == nil || !strings.Contains(err.Error(), "not a pairing code") {
 		t.Fatalf("bad code format: %v", err)
+	}
+}
+
+const testFP = "SHA256:jaSK+FcF9OBTJiSft2QoKvM2UHimsBx3eM7RWdM7RAQ"
+
+func TestPairWaitInvite(t *testing.T) {
+	w := &PairWait{Code: "BXSV4-4XRZC", Addr: "0.0.0.0:7722", Fingerprint: testFP, Name: "vps",
+		Hosts: []string{"203.0.113.5", "10.0.0.5"}, Expires: time.Unix(1760000000, 0)}
+	inv, err := auth.ParseInvite(w.Invite().Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv.Addr() != "203.0.113.5:7722" || inv.Code != w.Code || inv.Fingerprint != testFP || inv.Alt[0] != "10.0.0.5" {
+		t.Fatalf("invite: %+v", inv)
 	}
 }

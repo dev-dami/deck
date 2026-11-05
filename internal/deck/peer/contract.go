@@ -13,6 +13,7 @@ import (
 
 	"github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/sub"
+	"github.com/dev-dami/deck/internal/privfile"
 )
 
 // Code contracts (docs/multiplayer-design.md §8.4): one Deck asks a
@@ -184,7 +185,7 @@ func (b *contractBook) saveLocked() {
 		return
 	}
 	if raw, err := json.Marshal(b.list); err == nil {
-		_ = writePrivateFile(b.path, raw, false)
+		_ = privfile.Write(b.path, raw)
 	}
 }
 

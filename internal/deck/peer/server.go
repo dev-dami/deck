@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dev-dami/deck/pkg/remote/auth"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -115,9 +116,9 @@ type ServerOptions struct {
 type Server struct {
 	opts     ServerOptions
 	cfg      *ssh.ServerConfig
-	lock     *lockout // failures with no key offered, per IP
-	keyed    *lockout // failures with a key offered, per IP and key
-	spray    *lockout // failures with a key offered, per IP, at 4x the threshold
+	lock     *auth.Lockout // failures with no key offered, per IP
+	keyed    *auth.Lockout // failures with a key offered, per IP and key
+	spray    *auth.Lockout // failures with a key offered, per IP, at 4x the threshold
 	log      *slog.Logger
 	pairs    *pairSlot
 	ownPairs bool // pairs is this Server's own: Close ends its session
@@ -169,9 +170,9 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	}
 	s := &Server{
 		opts:    opts,
-		lock:    newLockout(opts.LockoutThreshold, opts.LockoutBase, opts.LockoutMax, opts.now),
-		keyed:   newLockout(opts.LockoutThreshold, opts.LockoutBase, opts.LockoutMax, opts.now),
-		spray:   newLockout(4*opts.LockoutThreshold, opts.LockoutBase, opts.LockoutMax, opts.now),
+		lock:    auth.NewLockout(opts.LockoutThreshold, opts.LockoutBase, opts.LockoutMax, opts.now),
+		keyed:   auth.NewLockout(opts.LockoutThreshold, opts.LockoutBase, opts.LockoutMax, opts.now),
+		spray:   auth.NewLockout(4*opts.LockoutThreshold, opts.LockoutBase, opts.LockoutMax, opts.now),
 		log:     opts.Logger,
 		raw:     map[net.Conn]struct{}{},
 		conns:   map[*Conn]struct{}{},
@@ -256,7 +257,7 @@ func (s *Server) Serve(ln net.Listener) error {
 			time.Sleep(50 * time.Millisecond) // e.g. too many open files
 			continue
 		}
-		s.accept(raw, lockKey(raw.RemoteAddr()), nil)
+		s.accept(raw, auth.LockKey(raw.RemoteAddr().String()), nil)
 	}
 }
 
@@ -264,7 +265,7 @@ func (s *Server) Serve(ln net.Listener) error {
 // closes it at once when key is locked out or over the handshake caps. rel
 // is set for a relayed link (relay.go).
 func (s *Server) accept(raw net.Conn, key string, rel *relayFrom) {
-	if s.lock.locked(key) || s.spray.locked(key) || !s.admit(raw, key) {
+	if s.lock.Locked(key) || s.spray.Locked(key) || !s.admit(raw, key) {
 		raw.Close()
 		return
 	}
@@ -349,7 +350,7 @@ func (s *Server) handle(raw net.Conn, key string, rel *relayFrom) {
 	cfg := *s.cfg
 	cfg.PublicKeyCallback = func(meta ssh.ConnMetadata, k ssh.PublicKey) (*ssh.Permissions, error) {
 		offered = k
-		if s.keyed.locked(key + " " + Fingerprint(k)) {
+		if s.keyed.Locked(key + " " + Fingerprint(k)) {
 			keyLocked = true
 			return nil, errNotPinned
 		}
@@ -375,10 +376,10 @@ func (s *Server) handle(raw net.Conn, key string, rel *relayFrom) {
 		case keyLocked:
 			// Already locked out for this key; not a new strike.
 		case offered != nil:
-			s.keyed.fail(key + " " + Fingerprint(offered))
-			s.spray.fail(key)
+			s.keyed.Fail(key + " " + Fingerprint(offered))
+			s.spray.Fail(key)
 		default:
-			s.lock.fail(key)
+			s.lock.Fail(key)
 		}
 		s.log.Debug("peer: handshake failed", "remote", key, "error", err)
 		return
@@ -402,9 +403,9 @@ func (s *Server) handle(raw net.Conn, key string, rel *relayFrom) {
 		closeUnserved(sc, chans, reqs) // unpinned or re-paired between auth and now
 		return
 	}
-	s.lock.ok(key)
-	s.spray.ok(key)
-	s.keyed.ok(key + " " + fp)
+	s.lock.OK(key)
+	s.spray.OK(key)
+	s.keyed.OK(key + " " + fp)
 	if !s.authenticated(key, fp) {
 		s.log.Warn("peer: connection limit reached; refusing a link", "peer", name, "remote", key)
 		closeUnserved(sc, chans, reqs)

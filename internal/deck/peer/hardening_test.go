@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dev-dami/deck/pkg/remote/auth"
 	"github.com/sourcegraph/jsonrpc2"
 	"golang.org/x/crypto/ssh"
 )
@@ -357,7 +358,7 @@ func TestPairListenerNotHeldByIdleConnections(t *testing.T) {
 	leakCheck(t)
 	fastKDF(t)
 	l, d := newTestPeer(t, "vps"), newTestPeer(t, "pc")
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	addr, out := servePair(t, l, code, PairOptions{MaxAttempts: 1})
 
 	// One idle connection from the dialer's own IP (the per-IP cap is 2),
@@ -398,7 +399,7 @@ func TestPairIdleConnectionCutAtHelloTimeout(t *testing.T) {
 	pairHelloTimeout = time.Second
 	t.Cleanup(func() { pairHelloTimeout = old })
 	l, d := newTestPeer(t, "vps"), newTestPeer(t, "pc")
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	addr, out := servePair(t, l, code, PairOptions{MaxAttempts: 1})
 	// Fill this IP's two slots with silent connections: they are cut at the
 	// hello timeout and the real dialer then gets in.

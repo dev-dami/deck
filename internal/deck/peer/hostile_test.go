@@ -8,13 +8,13 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/dev-dami/deck/pkg/remote/auth"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -411,10 +411,10 @@ func TestHostileConnectionLimitAndStalledHandshake(t *testing.T) {
 // waitLocked waits for the server to record the failures it is still
 // processing: a handshake failure is counted after the client has given up,
 // so the lockout can trail the last dial by a moment.
-func waitLocked(t *testing.T, l *lockout, key string) {
+func waitLocked(t *testing.T, l *auth.Lockout, key string) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
-	for !l.locked(key) {
+	for !l.Locked(key) {
 		if time.Now().After(deadline) {
 			t.Fatalf("%s was never locked out", key)
 		}
@@ -462,7 +462,7 @@ func TestHostileLockout(t *testing.T) {
 
 	// Failures that offer no key lock the whole IP: even the pinned key is
 	// cut off before the handshake.
-	for i := 0; i < 40 && !srv.lock.locked("127.0.0.1"); i++ {
+	for i := 0; i < 40 && !srv.lock.Locked("127.0.0.1"); i++ {
 		if _, _, _, err := rawDial(t, addr, noKey, nil); err == nil {
 			t.Fatal("password authenticated")
 		}
@@ -492,70 +492,12 @@ func TestHostileLockout(t *testing.T) {
 
 	// Rotating keys does not dodge the IP lock: 4x the threshold of keyed
 	// failures locks the IP too.
-	for i := 0; i < 80 && !srv.spray.locked("127.0.0.1"); i++ {
+	for i := 0; i < 80 && !srv.spray.Locked("127.0.0.1"); i++ {
 		_, _, _, _ = rawDial(t, addr, []ssh.AuthMethod{ssh.PublicKeys(ed25519Signer(t))}, nil)
 		time.Sleep(10 * time.Millisecond)
 	}
 	waitLocked(t, srv.spray, "127.0.0.1")
 	if _, _, _, err := rawDial(t, addr, good, nil); err == nil {
 		t.Fatal("key spraying did not lock the IP")
-	}
-}
-
-// TestLockoutTableAtCapacity: with the table full of live lockouts a new
-// source is still tracked and locked (the oldest record makes room).
-func TestLockoutTableAtCapacity(t *testing.T) {
-	now := time.Unix(0, 0)
-	l := newLockout(1, time.Hour, time.Hour, func() time.Time { return now })
-	for i := 0; i < maxTracked; i++ {
-		l.fail(fmt.Sprintf("10.%d.%d.%d", i>>16&255, i>>8&255, i&255))
-		now = now.Add(time.Millisecond)
-	}
-	if len(l.m) != maxTracked || !l.locked("10.0.0.0") {
-		t.Fatalf("table %d, first locked %v", len(l.m), l.locked("10.0.0.0"))
-	}
-	l.fail("192.0.2.1")
-	if !l.locked("192.0.2.1") {
-		t.Fatal("new source ignored when the table is full")
-	}
-	if len(l.m) > maxTracked {
-		t.Fatalf("table grew to %d", len(l.m))
-	}
-	if l.locked("10.0.0.0") {
-		t.Fatal("the oldest record was not the one evicted")
-	}
-	if !l.locked("10.0.0.1") {
-		t.Fatal("a newer record was evicted")
-	}
-}
-
-func TestLockoutBackoffGrows(t *testing.T) {
-	now := time.Unix(0, 0)
-	l := newLockout(2, time.Second, 4*time.Second, func() time.Time { return now })
-	ip := "192.0.2.1"
-	for strike, want := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 4 * time.Second} {
-		l.fail(ip)
-		l.fail(ip)
-		if !l.locked(ip) {
-			t.Fatalf("strike %d: not locked", strike)
-		}
-		now = now.Add(want - time.Millisecond)
-		if !l.locked(ip) {
-			t.Fatalf("strike %d: unlocked before %s", strike, want)
-		}
-		now = now.Add(2 * time.Millisecond)
-		if l.locked(ip) {
-			t.Fatalf("strike %d: still locked after %s", strike, want)
-		}
-	}
-	l.ok(ip)
-	if l.locked(ip) {
-		t.Fatal("locked after ok")
-	}
-	if got := lockKey(&net.TCPAddr{IP: net.ParseIP("2001:db8:1:2:3:4:5:6"), Port: 1}); got != "2001:db8:1:2::/64" {
-		t.Fatalf("lockKey v6 = %q", got)
-	}
-	if got := lockKey(&net.TCPAddr{IP: net.ParseIP("192.0.2.7"), Port: 1}); got != "192.0.2.7" {
-		t.Fatalf("lockKey v4 = %q", got)
 	}
 }

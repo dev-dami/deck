@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dev-dami/deck/internal/deck/hub"
+	"github.com/dev-dami/deck/internal/privfile"
 )
 
 // maxAuditLines caps the audit log; past it, the oldest fifth goes.
@@ -64,7 +65,7 @@ func (l *auditLog) add(e AuditEntry) {
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			// A new file is made private before anything goes in it.
-			if writePrivateFile(l.path, nil, false) != nil {
+			if privfile.Write(l.path, nil) != nil {
 				return
 			}
 			l.lines = 0
@@ -83,7 +84,7 @@ func (l *auditLog) add(e AuditEntry) {
 		for n := bytes.Count(keep, []byte("\n")); n > maxAuditLines*4/5; n-- {
 			_, keep, _ = bytes.Cut(keep, []byte("\n"))
 		}
-		if writePrivateFile(l.path, append(keep, append(line, '\n')...), false) == nil {
+		if privfile.Write(l.path, append(keep, append(line, '\n')...)) == nil {
 			l.lines = bytes.Count(keep, []byte("\n")) + 1
 		}
 		return

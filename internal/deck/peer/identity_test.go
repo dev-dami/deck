@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dev-dami/deck/internal/privfile"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -41,10 +42,10 @@ func TestIdentityCreatedOnceAndPrivate(t *testing.T) {
 	if data, err := os.ReadFile(path); err != nil || len(data) == 0 {
 		t.Fatalf("owner cannot read identity: %v", err)
 	}
-	if err := CheckPrivate(path); err != nil {
+	if err := privfile.Check(path); err != nil {
 		t.Fatalf("identity not private: %v", err)
 	}
-	if err := CheckPrivate(dir); err != nil {
+	if err := privfile.Check(dir); err != nil {
 		t.Fatalf("peers dir not private: %v", err)
 	}
 	if runtime.GOOS != "windows" {
@@ -63,29 +64,6 @@ func TestIdentityCreatedOnceAndPrivate(t *testing.T) {
 		if strings.HasSuffix(e.Name(), ".tmp") {
 			t.Fatalf("temp file left: %s", e.Name())
 		}
-	}
-}
-
-func TestCheckPrivateFlagsSharedFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "shared")
-	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if runtime.GOOS != "windows" {
-		if err := os.Chmod(path, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// On Windows a file in the temp dir inherits its ACL, which also grants
-	// SYSTEM and Administrators.
-	if err := CheckPrivate(path); err == nil {
-		t.Fatal("CheckPrivate accepted a file others can read")
-	}
-	if err := restrictPath(path, false); err != nil {
-		t.Fatal(err)
-	}
-	if err := CheckPrivate(path); err != nil {
-		t.Fatalf("after restrictPath: %v", err)
 	}
 }
 
@@ -122,7 +100,7 @@ func TestIdentityRejectsBadFiles(t *testing.T) {
 	for _, content := range []string{"", "garbage", "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n"} {
 		// Written private, so the load gets past the permission check to
 		// the parse.
-		if err := writePrivateFile(path, []byte(content), false); err != nil {
+		if err := privfile.Write(path, []byte(content)); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := LoadIdentity(dir); err == nil || errors.Is(err, ErrNoIdentity) {
@@ -135,7 +113,7 @@ func TestIdentityRejectsBadFiles(t *testing.T) {
 	// A non-ed25519 key is refused.
 	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	block, _ := ssh.MarshalPrivateKey(k, "")
-	if err := writePrivateFile(path, pem.EncodeToMemory(block), false); err != nil {
+	if err := privfile.Write(path, pem.EncodeToMemory(block)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := LoadIdentity(dir); err == nil || !strings.Contains(err.Error(), "want ed25519") {
@@ -210,7 +188,7 @@ func TestStorePinListRemove(t *testing.T) {
 	if _, ok, _ := s.Get("vps"); ok {
 		t.Fatal("still pinned after remove")
 	}
-	if err := CheckPrivate(s.Path()); err != nil {
+	if err := privfile.Check(s.Path()); err != nil {
 		t.Fatalf("store not private: %v", err)
 	}
 }
@@ -227,7 +205,7 @@ func TestStoreFailsClosedOnDamage(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := writePrivateFile(filepath.Join(dir, StoreFile), []byte(content), false); err != nil {
+			if err := privfile.Write(filepath.Join(dir, StoreFile), []byte(content)); err != nil {
 				t.Fatal(err)
 			}
 			s := OpenStore(dir)
@@ -245,7 +223,7 @@ func TestStoreFailsClosedOnDamage(t *testing.T) {
 	dir := t.TempDir()
 	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pub)))
 	content := `{"peers":[{"name":"a","public_key":"` + line + `","fingerprint":"` + Fingerprint(pub) + `"}]}`
-	_ = writePrivateFile(filepath.Join(dir, StoreFile), []byte(content), false)
+	_ = privfile.Write(filepath.Join(dir, StoreFile), []byte(content))
 	if _, err := OpenStore(dir).List(); err == nil || !strings.Contains(err.Error(), "want ed25519") {
 		t.Fatalf("ecdsa pin loaded: %v", err)
 	}
@@ -257,7 +235,7 @@ func TestStoreFailsClosedOnDamage(t *testing.T) {
 	}
 	line = strings.TrimSpace(string(ssh.MarshalAuthorizedKey(cert)))
 	content = `{"peers":[{"name":"a","public_key":"` + line + `","fingerprint":"` + Fingerprint(cert) + `"}]}`
-	_ = writePrivateFile(filepath.Join(dir, StoreFile), []byte(content), false)
+	_ = privfile.Write(filepath.Join(dir, StoreFile), []byte(content))
 	if _, err := OpenStore(dir).List(); err == nil {
 		t.Fatal("certificate pin loaded")
 	}

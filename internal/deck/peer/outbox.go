@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dev-dami/deck/internal/privfile"
 )
 
 // The outbox (docs/peers-design.md §1): calls to a teammate that could not
@@ -91,7 +93,7 @@ func (o *outbox) save() {
 		return
 	}
 	if b, err := json.Marshal(o.items); err == nil {
-		_ = writePrivateFile(o.path, b, false)
+		_ = privfile.Write(o.path, b)
 	}
 }
 

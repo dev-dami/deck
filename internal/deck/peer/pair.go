@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -20,6 +19,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/pkg/remote/auth"
 )
 
 // Pairing: one side arms a one-time code and waits, the other dials it with
@@ -75,12 +75,6 @@ const (
 // hello (a var for tests).
 var pairHelloTimeout = 5 * time.Second
 
-// codeAlphabet has no 0/O, 1/I/L or U, so a code read aloud survives.
-const codeAlphabet = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
-
-// codeLen is the code's length without the dash: 30^10, about 49 bits.
-const codeLen = 10
-
 // Pairing errors.
 var (
 	ErrPairExpired  = errors.New("peer: pairing code expired")
@@ -113,49 +107,6 @@ var kdfParams = struct {
 	time, memory uint32
 	threads      uint8
 }{time: 1, memory: 64 * 1024, threads: 4}
-
-// NewPairCode returns a fresh random code, formatted XXXXX-XXXXX.
-func NewPairCode() (string, error) {
-	var b strings.Builder
-	buf := make([]byte, 1)
-	for b.Len() < codeLen {
-		if _, err := rand.Read(buf); err != nil {
-			return "", err
-		}
-		// Reject sampling keeps every symbol equally likely.
-		if int(buf[0]) >= 256-256%len(codeAlphabet) {
-			continue
-		}
-		b.WriteByte(codeAlphabet[int(buf[0])%len(codeAlphabet)])
-	}
-	s := b.String()
-	return s[:5] + "-" + s[5:], nil
-}
-
-// normalizeCode upper-cases a typed code and drops dashes and spaces.
-func normalizeCode(s string) string {
-	var b strings.Builder
-	for _, r := range strings.ToUpper(s) {
-		if r == '-' || r == ' ' || r == '\t' {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
-}
-
-// validCode reports whether a normalized code could have come from NewPairCode.
-func validCode(s string) bool {
-	if len(s) != codeLen {
-		return false
-	}
-	for _, r := range s {
-		if !strings.ContainsRune(codeAlphabet, r) {
-			return false
-		}
-	}
-	return true
-}
 
 func pairKey(code string, sid []byte) []byte {
 	salt := sha256.Sum256(append([]byte("deck-pair-v1"), sid...))
@@ -300,8 +251,8 @@ func newPairSession(o PairOptions, now time.Time) (*pairSession, error) {
 	if o.Identity == nil {
 		return nil, errors.New("peer: pairing needs an identity")
 	}
-	code := normalizeCode(o.Code)
-	if !validCode(code) {
+	code := auth.NormalizeCode(o.Code)
+	if !auth.ValidCode(code) {
 		return nil, errors.New("peer: invalid pairing code")
 	}
 	if o.Expiry <= 0 {
@@ -448,7 +399,7 @@ func (s *pairSlot) stop() {
 // Addr and Reachable are the caller's to fill in.
 func armPair(ctx context.Context, slot *pairSlot, o PairOptions, ln net.Listener) (*PairWait, error) {
 	if o.Code == "" {
-		code, err := NewPairCode()
+		code, err := auth.NewPairCode()
 		if err != nil {
 			return nil, err
 		}
@@ -527,7 +478,7 @@ func acceptPair(ln net.Listener, ps *pairSession, wg *sync.WaitGroup, acceptErr 
 			acceptErr <- err
 			return
 		}
-		ip := lockKey(raw.RemoteAddr())
+		ip := auth.LockKey(raw.RemoteAddr().String())
 		if !ps.g.admit(raw, ip) {
 			raw.Close()
 			continue
@@ -672,8 +623,8 @@ func DialPair(ctx context.Context, addr string, o PairOptions) (PairResult, erro
 	if o.Identity == nil {
 		return PairResult{}, errors.New("peer: pairing needs an identity")
 	}
-	code := normalizeCode(o.Code)
-	if !validCode(code) {
+	code := auth.NormalizeCode(o.Code)
+	if !auth.ValidCode(code) {
 		return PairResult{}, errors.New("peer: that is not a pairing code (10 letters and digits, like ABCDE-23456)")
 	}
 	ctx, cancel := context.WithTimeout(ctx, PairDialTimeout)
@@ -719,8 +670,8 @@ func DialPairVia(ctx context.Context, relay *Conn, o PairOptions) (PairResult, e
 	if o.ExpectFingerprint == "" {
 		return PairResult{}, errors.New("peer: pairing through a relay needs the invite's fingerprint")
 	}
-	code := normalizeCode(o.Code)
-	if !validCode(code) {
+	code := auth.NormalizeCode(o.Code)
+	if !auth.ValidCode(code) {
 		return PairResult{}, errors.New("peer: that is not a pairing code (10 letters and digits, like ABCDE-23456)")
 	}
 	ctx, cancel := context.WithTimeout(ctx, PairDialTimeout)
@@ -938,4 +889,21 @@ func (f *firstHostKey) mismatched() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.mismatch
+}
+
+// Invite is the invite for this wait: the best of Hosts as the host, the
+// rest as alternatives.
+func (w *PairWait) Invite() auth.Invite {
+	inv := auth.Invite{
+		Port: portOfAddr(w.Addr), Code: w.Code, Fingerprint: w.Fingerprint,
+		Name: w.Name, Expires: w.Expires,
+	}
+	if !config.ValidPeerName(inv.Name) {
+		inv.Name = ""
+	}
+	if len(w.Hosts) > 0 {
+		inv.Host = w.Hosts[0]
+		inv.Alt = w.Hosts[1:min(len(w.Hosts), 1+auth.MaxInviteAlts)]
+	}
+	return inv
 }

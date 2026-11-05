@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/internal/privfile"
 )
 
 // StoreFile is the pinned-peer list in the peers directory.
@@ -119,7 +120,7 @@ func (s *Store) save(peers []Pinned) error {
 	if err != nil {
 		return err
 	}
-	return writePrivateFile(s.path, append(data, '\n'), false)
+	return privfile.Write(s.path, append(data, '\n'))
 }
 
 // List returns every pinned peer, sorted by name.

@@ -22,6 +22,7 @@ import (
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/util"
 	"github.com/dev-dami/deck/internal/workspace"
+	"github.com/dev-dami/deck/pkg/remote/auth"
 )
 
 // The "Add a teammate" wizard of the Team settings page: pairing with
@@ -463,8 +464,8 @@ func (p *PeerPair) paste(text string, explicit bool) Action {
 	default:
 		return nil
 	}
-	if peer.LooksLikeInvite(text) || explicit {
-		inv, err := peer.ParseInvite(text)
+	if auth.LooksLikeInvite(text) || explicit {
+		inv, err := auth.ParseInvite(text)
 		if err != nil {
 			p.err = "That is not a Deck invite. Copy it again with c on the waiting Deck."
 			if p.step == pairFailed {
@@ -486,7 +487,7 @@ func (p *PeerPair) paste(text string, explicit bool) Action {
 
 // fillFromInvite fills the connect form from an invite and remembers the
 // fingerprint it names; the person checks the name and presses Enter.
-func (p *PeerPair) fillFromInvite(inv peer.Invite) {
+func (p *PeerPair) fillFromInvite(inv auth.Invite) {
 	p.abort()
 	name := inv.Name
 	if cur := strings.TrimSpace(p.inputs[fieldName].Value()); cur != "" && p.step == pairForm {

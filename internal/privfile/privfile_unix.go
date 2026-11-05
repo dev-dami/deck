@@ -1,6 +1,6 @@
 //go:build !windows
 
-package peer
+package privfile
 
 import (
 	"fmt"
@@ -8,9 +8,9 @@ import (
 	"syscall"
 )
 
-// restrictPath limits path to the current user: 0700 for a directory, 0600
+// Restrict limits path to the current user: 0700 for a directory, 0600
 // for a file.
-func restrictPath(path string, isDir bool) error {
+func Restrict(path string, isDir bool) error {
 	mode := os.FileMode(0o600)
 	if isDir {
 		mode = 0o700
@@ -18,9 +18,9 @@ func restrictPath(path string, isDir bool) error {
 	return os.Chmod(path, mode)
 }
 
-// CheckPrivate reports an error when anyone but the current user can read or
+// Check reports an error when anyone but the current user can read or
 // write path (any group or other permission bit set).
-func CheckPrivate(path string) error {
+func Check(path string) error {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return err
@@ -31,10 +31,10 @@ func CheckPrivate(path string) error {
 	return nil
 }
 
-// checkTrusted is OpenSSH's StrictModes for the peers directory: path must
+// CheckTrusted is OpenSSH's StrictModes for a private directory: path must
 // be owned by the user Deck runs as and not writable by group or others; with
 // secret set it must not be readable by them either.
-func checkTrusted(path string, secret bool) error {
+func CheckTrusted(path string, secret bool) error {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return err
