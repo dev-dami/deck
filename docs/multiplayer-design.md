@@ -7,6 +7,14 @@ described. It builds on what already ships (verified against `main` at
 capsules (`docs/sub.md`), and the peer link (`internal/deck/peer`: SSH
 transport, pairing, pinning, supervisor, team chat, capsule pull).
 
+> **Deck v3:** the team chat (`console.post`, `console.read`, `team.read`,
+> `team.post`), the outbox, code contracts, ops contracts and the `vsh`
+> sandbox were removed. The parts of this document that describe them are
+> marked "removed in Deck v3" and kept as history. The peer link, pairing,
+> presence, shared threads and capsule transfer stay until Deck Link
+> replaces them. The plan is in [design/v3/02-cuts.md](design/v3/02-cuts.md)
+> and [design/v3/05-fleet-and-connect.md](design/v3/05-fleet-and-connect.md).
+
 Goal: one Deck runs any number of agents of any kind, lets them start
 subagents that start subagents, and works with other Decks (teammates and
 machines) as one team, while staying local-first, CLI-agnostic, and never
@@ -239,6 +247,10 @@ All in `session/brakes.go`.
 
 ## 8. Peers: from chat to teamwork
 
+> Items 1 (the outbox), 3 and 4 below, and the ops contracts of §10 item 9,
+> were removed in Deck v3 ([design/v3/02-cuts.md](design/v3/02-cuts.md)).
+> Presence, shared threads and capsule fetches stay until Deck Link.
+
 Everything below goes through the existing pinned SSH link and the two
 MCP tools; new inbound ops are opt-in per peer (`allow_inbound`).
 
@@ -258,12 +270,12 @@ MCP tools; new inbound ops are opt-in per peer (`allow_inbound`).
    `vps/claude2 ▸ working · fix the flaky test · 40%`, the leases and the
    plans. Not done: matching by remote URL (the root commit alone names
    the project; forks share it).
-3. **Agents in team chat** (done). `team.read {since}` and
+3. **Agents in team chat** (removed in Deck v3). `team.read {since}` and
    `team.post {text}`. A post carries the agent's name (`vps/claude2`), so
    the chat shows each origin: you, your agent, a teammate, a teammate's
    agent. Posts are redacted and limited to 4 a minute per agent; what
    `team.read` returns is marked as information, not instructions.
-4. **Code contracts (remote tasks)** (done, see below). This is the main
+4. **Code contracts (remote tasks)** (removed in Deck v3). This is the main
    multiplayer step and comes before the ops sandbox (vsh), because it is
    what teammates want:
    - `contract.propose {title, brief, base, capsules, result}` asks a peer
@@ -385,7 +397,7 @@ Each phase is one or two PRs and useful alone.
 6. **Peer plumbing and presence** (done). Chat over live links, outbox,
    rich `peer.status`, `team.read`/`team.post`. `Manager.Subscribe` moves
    to phase 8.
-7. **Code contracts** (done). `contract.*`, confirmation card, remote
+7. **Code contracts** (removed in Deck v3). `contract.*`, confirmation card, remote
    runs on a copy of the tree, capsule results, federated task board,
    `peer/agent` owners.
 8. **Shared threads** (done). Mirror, then join with roles and attributed
@@ -398,8 +410,9 @@ Each phase is one or two PRs and useful alone.
      opts in (`peers.relay`), the target opts in per relay
      (`peers.remote[].relay`), and the dialer per remote (`via`). Not done:
      Settings controls for relaying, and relaying in one-shot dials.
-   - `internal/deck/vsh`: the allow-list sandbox of `peers-design.md` §4.
-   - Ops contracts: `o` in the Team pane, a fixed parser and a confirmation
+   - `internal/deck/vsh`: the allow-list sandbox of `peers-design.md` §4
+     (removed in Deck v3).
+   - Ops contracts (removed in Deck v3): `o` in the Team pane, a fixed parser and a confirmation
      card, a `max_scope` check with no live approver, a run by an agent
      with no tools of its own (Claude only, `agent.OpsSafe`) and only
      `sh.run` and `contract.result`, in a vsh sandbox per contract. The
@@ -427,6 +440,6 @@ Each phase is one or two PRs and useful alone.
   shell); apply-time enforcement is the guarantee, notices are the help.
 - Deeper trees multiply plan usage quickly; budgets and the work limit must
   ship with depth, not after.
-- Code contracts run a teammate's brief on your machine under your plan;
-  confirmation, isolation and the capsule-only return path are mandatory.
+- Code contracts ran a teammate's brief on your machine under your plan
+  (removed in Deck v3).
 - Relaying through a peer must never terminate the inner SSH session.
