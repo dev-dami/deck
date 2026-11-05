@@ -245,6 +245,9 @@ export interface Message {
   // How the agent turn this message is ended, once it has: "done",
   // "handoff", "blocked" (waits for the user) or "continue".
   turn_end?: string;
+  // The message's place in its session: 1, 2, 3, ... in the order the rows
+  // were created. Absent from an older Deck.
+  order?: number;
 }
 
 export const decodeMessage: Decoder<Message> = object(
@@ -257,8 +260,18 @@ export const decodeMessage: Decoder<Message> = object(
     finished: bool,
     parts: list(decodePart),
   },
-  { agent: str, editable: bool, edited: bool, turn_end: str },
+  { agent: str, editable: bool, edited: bool, turn_end: str, order: int },
 );
+
+// compareMessages orders a session's messages: by order when both have one
+// (created_at has one-second resolution and ids are random, so rows of the
+// same second would otherwise land in a random order), else by time, then
+// by id so the result is at least stable.
+export function compareMessages(a: Message, b: Message): number {
+  if (a.order !== undefined && b.order !== undefined && a.order !== b.order)
+    return a.order - b.order;
+  return Date.parse(a.created_at) - Date.parse(b.created_at) || a.id.localeCompare(b.id);
+}
 
 export interface Approval {
   id: string;
