@@ -85,19 +85,13 @@ service Deck {
   rpc Agents(SessionRef) returns (AgentsResponse);
 
   // Team is the link to teammates' Decks: who they are, whether they are
-  // reachable, what their agents do, the threads they share with this one,
-  // the team chat and the contracts both ways.
+  // reachable, what their agents do and the threads they share with this
+  // one. Team chat and contracts were removed in Deck v3.
   rpc Team(Empty) returns (TeamResponse);
-  rpc TeamPost(TeamPostRequest) returns (TeamPostResponse);
   // ShareThread shares a thread with a teammate as observer, participant
   // or editor, or stops sharing it (role "").
   rpc ShareThread(ShareThreadRequest) returns (Empty);
   rpc ThreadShares(SessionRef) returns (ThreadSharesResponse);
-  // ProposeContract asks a teammate's Deck to do a task for the thread.
-  rpc ProposeContract(ProposeContractRequest) returns (ProposeContractResponse);
-  // AnswerContract accepts (with an agent kind) or declines one proposed
-  // to this Deck.
-  rpc AnswerContract(AnswerContractRequest) returns (Empty);
   // ReadShared follows a thread a teammate shares with this Deck.
   rpc ReadShared(ReadSharedRequest) returns (SharedMirror);
   rpc PostShared(PostSharedRequest) returns (Empty);
@@ -1180,29 +1174,6 @@ message Teammate {
   repeated TeamThread threads = 8;
 }
 
-message TeamChat {
-  uint64 seq = 1;
-  string from = 2;
-  string agent = 3;
-  string text = 4;
-  int64 at = 5;
-  bool mine = 6;
-}
-
-message TeamContract {
-  string id = 1;
-  string peer = 2;
-  bool inbound = 3;
-  string title = 4;
-  string brief = 5;
-  // state is proposed, accepted, declined, done, failed or cancelled.
-  string state = 6;
-  string agent = 7;
-  string note = 8;
-  string summary = 9;
-  string kind = 10;
-}
-
 message TeamResponse {
   // available is false when this Deck has no peer link.
   bool available = 1;
@@ -1210,18 +1181,9 @@ message TeamResponse {
   string name = 3;
   string fingerprint = 4;
   repeated Teammate teammates = 5;
-  repeated TeamChat chat = 6;
-  repeated TeamContract contracts = 7;
-  // contract_kinds are the agent kinds that may run a teammate's contract.
-  repeated string contract_kinds = 8;
-}
-
-message TeamPostRequest {
-  string text = 1;
-}
-
-message TeamPostResponse {
-  repeated string reached = 1;
+  // Team chat and contracts were removed in Deck v3.
+  reserved 6, 7, 8;
+  reserved "chat", "contracts", "contract_kinds";
 }
 
 message ShareThreadRequest {
@@ -1232,24 +1194,6 @@ message ShareThreadRequest {
 
 message ThreadSharesResponse {
   map<string, string> shares = 1;
-}
-
-message ProposeContractRequest {
-  string session_id = 1;
-  string peer = 2;
-  string brief = 3;
-}
-
-message ProposeContractResponse {
-  string task_id = 1;
-  bool queued = 2;
-}
-
-message AnswerContractRequest {
-  string peer = 1;
-  string id = 2;
-  bool accept = 3;
-  string agent = 4;
 }
 
 message ReadSharedRequest {

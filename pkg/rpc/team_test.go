@@ -10,7 +10,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/dev-dami/deck/internal/deck/peer"
-	decks "github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/workspace"
 	"github.com/dev-dami/deck/pkg/remote/remotetest"
 	"github.com/dev-dami/deck/pkg/rpc/deckv1"
@@ -22,7 +21,6 @@ type fakeCrew struct {
 	did     []string
 	shares  map[string]string
 	link    *fakeLink
-	posted  []string
 	applied []string
 	subs    []workspace.SubAgentLine
 }
@@ -79,22 +77,11 @@ func (f *fakeCrew) ShareThread(_, name, role string) error {
 	return nil
 }
 func (f *fakeCrew) ThreadShares(string) map[string]string { return f.shares }
-func (f *fakeCrew) ProposeContract(_, name, _ string) (string, bool, error) {
-	return "t9", name == "away", nil
-}
-func (f *fakeCrew) ContractKinds() []string             { return []string{"claude", "codex"} }
-func (f *fakeCrew) Capsules(string) []decks.CapsuleInfo { return nil }
-func (f *fakeCrew) SetCapsulePublic(string, bool) error { return nil }
-func (f *fakeCrew) SendTeamChat(_ context.Context, text string) ([]string, error) {
-	f.posted = append(f.posted, text)
-	return []string{"vps"}, nil
-}
 
 // fakeLink answers the peer link calls the team calls use; any other call
 // would panic on the nil embedded interface.
 type fakeLink struct {
 	workspace.PeerLink
-	answered []string
 }
 
 func (l *fakeLink) Snapshot() peer.Snapshot {
@@ -109,14 +96,7 @@ func (l *fakeLink) Snapshot() peer.Snapshot {
 				Threads: []peer.SharedThread{{ID: "th1", Title: "Deploy", Role: "participant", Mode: "ask", Entries: 12}},
 			},
 		}},
-		Chat:      []peer.ChatMessage{{Seq: 1, From: "vps", Agent: "claude2", Text: "on it", At: time.Now()}},
-		Contracts: []peer.Contract{{ID: "c1", Peer: "vps", Inbound: true, Title: "Port the cache", State: peer.ContractProposed}},
 	}
-}
-
-func (l *fakeLink) AnswerContract(name, id string, accept bool, agent string) error {
-	l.answered = append(l.answered, name+" "+id+" "+agent)
-	return nil
 }
 
 func (l *fakeLink) ReadShared(_ context.Context, name, thread string, after int, _ time.Duration) (peer.Mirror, error) {
@@ -248,12 +228,6 @@ func TestTeam(t *testing.T) {
 	if !r.GetAvailable() || mate.GetLink() != "online" || mate.GetAgents()[0].GetTask() != "fix the flaky test" || mate.GetThreads()[0].GetTitle() != "Deploy" {
 		t.Fatalf("team %+v", r)
 	}
-	if len(r.GetChat()) != 1 || r.GetContracts()[0].GetState() != "proposed" || len(r.GetContractKinds()) != 2 {
-		t.Fatalf("chat and contracts %+v", r)
-	}
-	if p, err := c.TeamPost(ctx, &deckv1.TeamPostRequest{Text: "shipping at 5"}); err != nil || p.GetReached()[0] != "vps" {
-		t.Fatalf("post %+v %v", p, err)
-	}
 	if _, err := c.ShareThread(ctx, &deckv1.ShareThreadRequest{SessionId: "s", Peer: "vps", Role: "editor"}); err != nil {
 		t.Fatal(err)
 	}
@@ -263,13 +237,6 @@ func TestTeam(t *testing.T) {
 	sh, _ := c.ThreadShares(ctx, &deckv1.SessionRef{SessionId: "s"})
 	if sh.GetShares()["vps"] != "editor" {
 		t.Fatalf("shares %+v", sh)
-	}
-	pc, err := c.ProposeContract(ctx, &deckv1.ProposeContractRequest{SessionId: "s", Peer: "away", Brief: "port the cache"})
-	if err != nil || pc.GetTaskId() != "t9" || !pc.GetQueued() {
-		t.Fatalf("propose %+v %v", pc, err)
-	}
-	if _, err := c.AnswerContract(ctx, &deckv1.AnswerContractRequest{Peer: "vps", Id: "c1", Accept: true, Agent: "codex"}); err != nil || f.link.answered[0] != "vps c1 codex" {
-		t.Fatalf("answer %v %v", err, f.link.answered)
 	}
 	m, err := c.ReadShared(ctx, &deckv1.ReadSharedRequest{Peer: "vps", Thread: "th1", After: 4})
 	if err != nil || m.GetNext() != 5 || m.GetLines()[0] != "[claude2] building" {
