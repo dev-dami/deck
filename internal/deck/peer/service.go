@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dev-dami/deck/internal/deck/sub"
 	"log/slog"
 	"net"
 	"reflect"
@@ -13,6 +12,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/dev-dami/deck/internal/deck/sub"
+	"github.com/dev-dami/deck/pkg/remote/auth"
 
 	"github.com/dev-dami/deck/internal/deck/config"
 )
@@ -46,26 +48,15 @@ type Service struct {
 	ver      uint64
 	wake     chan struct{} // closed and replaced on every change
 
-	// team is the team chat and the capsule requests.
+	// team is the capsule requests.
 	team *Team
-	// out holds the calls waiting for a teammate (outbox.go); flushing is
-	// set while a loop delivers them.
-	out      *outbox
-	flushing atomic.Bool
 	// local is this Deck's own work; presence what each teammate said of
 	// its own, by name (presence.go).
 	local    Local
 	presence map[string]Presence
-	// contracts are the code contracts both ways (contract.go); hooks run
-	// them in the engine's threads.
-	contracts *contractBook
-	hooks     ContractHooks
-	answerMu  sync.Mutex
-	shared    Shared
+	shared   Shared
 	// draining is set by Drain: teammates can start no new work here.
 	draining atomic.Bool
-	// audit logs every event of the ops contracts (audit.go).
-	audit *auditLog
 	// ctlWG counts the control socket's goroutines (control.go).
 	ctlWG   sync.WaitGroup
 	ctlOnce sync.Once
@@ -83,9 +74,6 @@ type ServiceOptions struct {
 	SubStore func() *sub.Store
 	// Local is this Deck's own work, for peer.status; zero tells nothing.
 	Local Local
-	// Contracts runs the contracts this Deck's person accepts, and hears of
-	// the ones it proposed; zero runs none.
-	Contracts ContractHooks
 	// Shared serves this Deck's shared threads to teammates; nil serves
 	// none.
 	Shared Shared
@@ -107,11 +95,8 @@ func NewService(o ServiceOptions) (*Service, error) {
 		o.Logger = slog.Default()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, local: o.Local, hooks: o.Contracts, shared: o.Shared, base: ctx, cancel: cancel, wake: make(chan struct{})}
-	s.team = NewTeam(o.Dir, s.changed)
-	s.out = newOutbox(o.Dir)
-	s.contracts = newContractBook(o.Dir)
-	s.audit = newAuditLog(o.Dir)
+	s := &Service{dir: o.Dir, cfgPath: o.ConfigPath, log: o.Logger, subStore: o.SubStore, local: o.Local, shared: o.Shared, base: ctx, cancel: cancel, wake: make(chan struct{})}
+	s.team = NewTeam(s.changed)
 	return s, nil
 }
 
@@ -119,11 +104,7 @@ func NewService(o ServiceOptions) (*Service, error) {
 // off it makes nothing: no key, no listener, no goroutines.
 func (s *Service) Start(p *config.Peers) error {
 	s.ctlOnce.Do(s.startControl)
-	err := s.apply(p)
-	if p != nil && p.Enabled {
-		s.flushSoon() // what waited when Deck last stopped
-	}
-	return err
+	return s.apply(p)
 }
 
 // Close ends any pairing and stops the link.
@@ -144,13 +125,9 @@ func (s *Service) Close() {
 // errDraining refuses new work while the Service drains.
 var errDraining = errors.New("peer: this Deck is shutting down and takes no new work")
 
-// Drain makes teammates unable to start new work here (contract.propose,
-// thread.post) before the Deck stops. The link stays up, so work under way
-// can still report and the outbox can still deliver.
+// Drain makes teammates unable to start new work here (thread.post) before
+// the Deck stops. The link stays up.
 func (s *Service) Drain() { s.draining.Store(true) }
-
-// Waiting is how many calls wait in the outbox for a teammate.
-func (s *Service) Waiting() int { return s.out.len() }
 
 // Manager is the running Manager, or nil before peers were first on.
 func (s *Service) Manager() *Manager {
@@ -230,7 +207,7 @@ func (s *Service) apply(p *config.Peers) error {
 		err = mgr.Apply(p)
 	case p != nil && p.Enabled:
 		mgr, err = NewManager(ManagerOptions{Dir: s.dir, Peers: p, ConfigPath: s.cfgPath, OnChange: s.changed, Logger: s.log, SubStore: s.subStore, Team: s.team, Local: s.local,
-			Granted: s.granted, Shared: s.shared, Extra: func(h Handler) Handler { return &ContractHandler{Base: h, S: s} }})
+			Shared: s.shared})
 		if err != nil {
 			break
 		}
@@ -239,7 +216,6 @@ func (s *Service) apply(p *config.Peers) error {
 		s.mu.Unlock()
 		err = mgr.Start(s.base)
 		go s.presenceLoop()
-		go s.contractLoop()
 	}
 	if err != nil {
 		s.log.Warn("Peers: not all of the config is in effect", "error", err)
@@ -540,7 +516,7 @@ type PairWait struct {
 	Fingerprint string // this Deck's
 	Name        string // this Deck's name, as the other Deck will see it
 	// Hosts are the addresses another machine may reach it by, best first
-	// (InviteHosts); the invite carries them.
+	// (auth.InviteHosts); the invite carries them.
 	Hosts []string
 	// Reachable is false when Addr is loopback: no other machine can
 	// connect.
@@ -604,7 +580,7 @@ func (s *Service) StartPairListen(ctx context.Context) (*PairWait, error) {
 		ctx, cancel := s.bound(ctx)
 		w, err := mgr.ArmPair(ctx, PairOptions{Logger: s.log})
 		if err == nil {
-			w.Hosts = InviteHosts(w.Addr)
+			w.Hosts = auth.InviteHosts(w.Addr)
 			s.track(w, cancel)
 			return w, nil
 		}
@@ -626,7 +602,7 @@ func (s *Service) StartPairListen(ctx context.Context) (*PairWait, error) {
 			cancel()
 			return nil, err
 		}
-		w.Hosts = InviteHosts(w.Addr)
+		w.Hosts = auth.InviteHosts(w.Addr)
 		s.track(w, cancel)
 		return w, nil
 	}
@@ -645,7 +621,7 @@ func (s *Service) StartPairing(addr string) (*PairWait, error) {
 	if err != nil {
 		return nil, err
 	}
-	code, err := NewPairCode()
+	code, err := auth.NewPairCode()
 	if err != nil {
 		return nil, err
 	}
@@ -660,7 +636,7 @@ func (s *Service) StartPairing(addr string) (*PairWait, error) {
 		Code: code, Addr: ln.Addr().String(), Fingerprint: id.Fingerprint(), Name: SelfName(p),
 		Expires: time.Now().Add(DefaultPairExpiry), Done: out, cancel: cancel, ended: ended,
 	}
-	w.Reachable, w.Hosts = Reachable(w.Addr), InviteHosts(w.Addr)
+	w.Reachable, w.Hosts = Reachable(w.Addr), auth.InviteHosts(w.Addr)
 	s.mu.Lock()
 	s.wait = w
 	s.mu.Unlock()
@@ -763,7 +739,7 @@ func (s *Service) PairListenAll(w *PairWait) (*PairWait, error) {
 	}
 	moved := *w
 	moved.Addr = mgr.Addr()
-	moved.Reachable, moved.Hosts = Reachable(moved.Addr), InviteHosts(moved.Addr)
+	moved.Reachable, moved.Hosts = Reachable(moved.Addr), auth.InviteHosts(moved.Addr)
 	s.mu.Lock()
 	if s.wait == w {
 		s.wait = &moved
@@ -962,12 +938,8 @@ type Snapshot struct {
 	Relaying int
 	Err      string // the config or the pins could not be read, or the last change failed
 	Peers    []PeerState
-	// Chat is the team chat, oldest first; Requests the capsules teammates
-	// asked this Deck for.
-	Chat     []ChatMessage
+	// Requests are the capsules teammates asked this Deck for.
 	Requests []CapsuleRequest
-	// Contracts are the code contracts both ways, oldest first.
-	Contracts []Contract
 }
 
 // PeerState is one paired or configured peer.
@@ -1059,9 +1031,8 @@ func (s *Service) Snapshot() Snapshot {
 	sort.Slice(snap.Peers, func(i, j int) bool { return snap.Peers[i].Name < snap.Peers[j].Name })
 	snap.Err = Sanitize(strings.Join(errs, "; "))
 	if s.team != nil {
-		snap.Chat, snap.Requests = s.team.Chat(), s.team.Requests()
+		snap.Requests = s.team.Requests()
 	}
-	snap.Contracts = s.contracts.all()
 	return snap
 }
 

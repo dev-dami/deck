@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dev-dami/deck/internal/deck/sub"
 	"log/slog"
 	"net"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/internal/deck/sub"
 	"github.com/dev-dami/deck/internal/version"
 )
 
@@ -47,17 +47,12 @@ type ManagerOptions struct {
 	// SubStore, when set with a nil Handler, adds the SUB ops to the
 	// default handler (SubHandler).
 	SubStore func() *sub.Store
-	// Team, when set with a nil Handler, adds the team chat (console.post)
-	// to the default handler and records capsule requests.
+	// Team, when set with SubStore and a nil Handler, records capsule
+	// requests.
 	Team *Team
 	// Local, with a nil Handler, is what peer.status tells of this Deck's
 	// work (presence.go).
 	Local Local
-	// Granted, with SubStore, also serves a peer the objects a contract
-	// shares with it alone (contract.go).
-	Granted func(peer string, id sub.ID) bool
-	// Extra, with a nil Handler, wraps the default handler with more ops.
-	Extra func(Handler) Handler
 	// Shared, with a nil Handler, serves this Deck's shared threads.
 	Shared Shared
 	// MaxRelays caps relayed channels on this Deck at once (16), both the
@@ -158,20 +153,14 @@ func NewManager(o ManagerOptions) (*Manager, error) {
 		}
 		m.o.Handler = sh
 		if o.SubStore != nil {
-			sh := &SubHandler{Base: m.o.Handler, Store: o.SubStore, Granted: o.Granted}
+			sh := &SubHandler{Base: m.o.Handler, Store: o.SubStore}
 			if o.Team != nil {
 				sh.OnRequest = func(from Caller, id sub.ID, served bool) { o.Team.AddRequest(from.Name, id, served) }
 			}
 			m.o.Handler = sh
 		}
-		if o.Team != nil {
-			m.o.Handler = &TeamHandler{Base: m.o.Handler, Team: o.Team}
-		}
 		if o.Shared != nil {
 			m.o.Handler = &ShareHandler{Base: m.o.Handler, Shared: o.Shared}
-		}
-		if o.Extra != nil {
-			m.o.Handler = o.Extra(m.o.Handler)
 		}
 	}
 	return m, nil
@@ -590,7 +579,6 @@ func (m *Manager) caller(p Pinned) Caller {
 	if r, ok := m.peers.Load().Find(p.Name); ok {
 		c.Role = r.RoleOrDefault()
 		c.AllowInbound = r.AllowInbound
-		c.MaxScope = r.MaxScope
 	}
 	return c
 }

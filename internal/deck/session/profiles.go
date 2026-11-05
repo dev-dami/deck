@@ -19,23 +19,18 @@ func (m *Manager) SetProfiles(f func(dir string) []profile.Profile) {
 }
 
 // profilesFor is the profiles a message in t can name: none when text
-// holds no sigil (to spare reading deck.json), and none that a teammate's
-// name shadows.
+// holds no sigil (to spare reading deck.json).
 func (m *Manager) profilesFor(t *thread, text string) []profile.Profile {
 	if !strings.ContainsAny(text, "@$") {
 		return nil
 	}
 	m.mu.Lock()
-	read, team := m.profiles, m.team
+	read := m.profiles
 	m.mu.Unlock()
 	if read == nil {
 		return nil
 	}
-	ps := read(t.dir)
-	if team != nil {
-		ps = profile.Without(ps, team.Names())
-	}
-	return ps
+	return read(t.dir)
 }
 
 // storedProfile is the profile a resumed member came from: the one of that

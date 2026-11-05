@@ -117,7 +117,7 @@ func (s *Service) pollPresence(ctx context.Context) {
 	}
 	got := map[string]Presence{}
 	for name := range mgr.Links() {
-		cctx, cancel := context.WithTimeout(ctx, chatTimeout)
+		cctx, cancel := context.WithTimeout(ctx, callTimeout)
 		cl, release := mgr.channel(cctx, name)
 		if cl == nil {
 			cancel()

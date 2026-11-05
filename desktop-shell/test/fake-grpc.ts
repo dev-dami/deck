@@ -148,10 +148,7 @@ export class FakeRpcDeck {
   };
   // The team link.
   readonly team = {
-    chat: [{ seq: 1, from: "vps", agent: "claude2", text: "I am on the flaky test.", at: Date.now() }] as Obj[],
-    contracts: [{ id: "c1", peer: "vps", inbound: true, title: "Port the cache", brief: "Move the cache to the new store.", state: "proposed" }] as Obj[],
     shares: {} as Record<string, string>,
-    proposed: [] as string[],
     mirror: ["[vps] deploy the relay", "[claude2] building the image"],
   };
   // The rooms: the optional calls Info names, what each session's room says
@@ -551,7 +548,7 @@ export class FakeRpcDeck {
       teammates: [
         {
           name: "vps",
-          role: "contractor",
+          role: "observer",
           pinned: true,
           link: "online",
           present: true,
@@ -559,32 +556,13 @@ export class FakeRpcDeck {
           threads: [{ id: "th1", title: "Deploy the relay", role: "participant", mode: "ask", entries: 3 }],
         },
       ],
-      chat: tm.chat,
-      contracts: tm.contracts,
-      contract_kinds: ["claude", "codex"],
     }));
-    unary("TeamPost", (r) => {
-      tm.chat.push({ seq: tm.chat.length + 1, from: "laptop", text: r["text"], at: Date.now(), mine: true });
-      return { reached: ["vps"] };
-    });
     unary("ShareThread", (r) => {
       if (r["role"] === "") delete tm.shares[String(r["peer"])];
       else tm.shares[String(r["peer"])] = String(r["role"]);
       return {};
     });
     unary("ThreadShares", () => ({ shares: tm.shares }));
-    unary("ProposeContract", (r) => {
-      tm.proposed.push(String(r["brief"]));
-      return { task_id: "t9", queued: false };
-    });
-    unary("AnswerContract", (r) => {
-      const c = tm.contracts.find((x) => x["id"] === r["id"]);
-      if (c !== undefined) {
-        c["state"] = r["accept"] === true ? "accepted" : "declined";
-        c["agent"] = r["agent"];
-      }
-      return {};
-    });
     unary("ReadShared", (r) => {
       const after = Number(r["after"] ?? 0);
       const lines = tm.mirror.slice(after);

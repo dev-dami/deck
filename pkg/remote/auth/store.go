@@ -23,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/internal/lock"
+	"github.com/dev-dami/deck/internal/privfile"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 )
 
@@ -116,7 +116,7 @@ func Open(dir string, opts ...Option) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create remote dir: %w", err)
 	}
-	if err := peer.RestrictPrivate(dir, true); err != nil {
+	if err := privfile.Restrict(dir, true); err != nil {
 		return nil, fmt.Errorf("restrict remote dir: %w", err)
 	}
 	f, err := s.read()
@@ -205,7 +205,7 @@ func (s *Store) write(name string, v any) error {
 	if err != nil {
 		return err
 	}
-	return peer.WritePrivateFile(s.path(name), append(data, '\n'))
+	return privfile.Write(s.path(name), append(data, '\n'))
 }
 
 func random(n int) (string, error) {

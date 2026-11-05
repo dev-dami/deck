@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dev-dami/deck/pkg/remote/auth"
 )
 
 // TestControlPairWithRunningDeck: deck peer pair, with a Deck running,
@@ -58,7 +60,7 @@ func TestControlAddThroughRelay(t *testing.T) {
 	}
 	defer w.Cancel()
 	host, port, _ := net.SplitHostPort(unreachable(t))
-	inv := Invite{Host: host, Port: port, Code: w.Code, Fingerprint: w.Fingerprint, Name: "b"}
+	inv := auth.Invite{Host: host, Port: port, Code: w.Code, Fingerprint: w.Fingerprint, Name: "b"}
 	var out bytes.Buffer
 	cli := CLI{Dir: a.dir, ConfigPath: a.cfgPath, Out: &out}
 	if err := cli.Add(ctxT(t), AddArgs{Invite: inv.Encode(), Yes: true}); err != nil {

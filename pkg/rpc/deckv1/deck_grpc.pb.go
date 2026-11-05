@@ -69,11 +69,8 @@ const (
 	Deck_SetOrchestrate_FullMethodName              = "/deck.v1.Deck/SetOrchestrate"
 	Deck_Agents_FullMethodName                      = "/deck.v1.Deck/Agents"
 	Deck_Team_FullMethodName                        = "/deck.v1.Deck/Team"
-	Deck_TeamPost_FullMethodName                    = "/deck.v1.Deck/TeamPost"
 	Deck_ShareThread_FullMethodName                 = "/deck.v1.Deck/ShareThread"
 	Deck_ThreadShares_FullMethodName                = "/deck.v1.Deck/ThreadShares"
-	Deck_ProposeContract_FullMethodName             = "/deck.v1.Deck/ProposeContract"
-	Deck_AnswerContract_FullMethodName              = "/deck.v1.Deck/AnswerContract"
 	Deck_ReadShared_FullMethodName                  = "/deck.v1.Deck/ReadShared"
 	Deck_PostShared_FullMethodName                  = "/deck.v1.Deck/PostShared"
 	Deck_AnswerShared_FullMethodName                = "/deck.v1.Deck/AnswerShared"
@@ -198,19 +195,13 @@ type DeckClient interface {
 	// that started them) with what each runs right now.
 	Agents(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*AgentsResponse, error)
 	// Team is the link to teammates' Decks: who they are, whether they are
-	// reachable, what their agents do, the threads they share with this one,
-	// the team chat and the contracts both ways.
+	// reachable, what their agents do and the threads they share with this
+	// one. Team chat and contracts were removed in Deck v3.
 	Team(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*TeamResponse, error)
-	TeamPost(ctx context.Context, in *TeamPostRequest, opts ...grpc.CallOption) (*TeamPostResponse, error)
 	// ShareThread shares a thread with a teammate as observer, participant
 	// or editor, or stops sharing it (role "").
 	ShareThread(ctx context.Context, in *ShareThreadRequest, opts ...grpc.CallOption) (*Empty, error)
 	ThreadShares(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*ThreadSharesResponse, error)
-	// ProposeContract asks a teammate's Deck to do a task for the thread.
-	ProposeContract(ctx context.Context, in *ProposeContractRequest, opts ...grpc.CallOption) (*ProposeContractResponse, error)
-	// AnswerContract accepts (with an agent kind) or declines one proposed
-	// to this Deck.
-	AnswerContract(ctx context.Context, in *AnswerContractRequest, opts ...grpc.CallOption) (*Empty, error)
 	// ReadShared follows a thread a teammate shares with this Deck.
 	ReadShared(ctx context.Context, in *ReadSharedRequest, opts ...grpc.CallOption) (*SharedMirror, error)
 	PostShared(ctx context.Context, in *PostSharedRequest, opts ...grpc.CallOption) (*Empty, error)
@@ -770,16 +761,6 @@ func (c *deckClient) Team(ctx context.Context, in *Empty, opts ...grpc.CallOptio
 	return out, nil
 }
 
-func (c *deckClient) TeamPost(ctx context.Context, in *TeamPostRequest, opts ...grpc.CallOption) (*TeamPostResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(TeamPostResponse)
-	err := c.cc.Invoke(ctx, Deck_TeamPost_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *deckClient) ShareThread(ctx context.Context, in *ShareThreadRequest, opts ...grpc.CallOption) (*Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
@@ -794,26 +775,6 @@ func (c *deckClient) ThreadShares(ctx context.Context, in *SessionRef, opts ...g
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ThreadSharesResponse)
 	err := c.cc.Invoke(ctx, Deck_ThreadShares_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *deckClient) ProposeContract(ctx context.Context, in *ProposeContractRequest, opts ...grpc.CallOption) (*ProposeContractResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ProposeContractResponse)
-	err := c.cc.Invoke(ctx, Deck_ProposeContract_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *deckClient) AnswerContract(ctx context.Context, in *AnswerContractRequest, opts ...grpc.CallOption) (*Empty, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Empty)
-	err := c.cc.Invoke(ctx, Deck_AnswerContract_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1293,19 +1254,13 @@ type DeckServer interface {
 	// that started them) with what each runs right now.
 	Agents(context.Context, *SessionRef) (*AgentsResponse, error)
 	// Team is the link to teammates' Decks: who they are, whether they are
-	// reachable, what their agents do, the threads they share with this one,
-	// the team chat and the contracts both ways.
+	// reachable, what their agents do and the threads they share with this
+	// one. Team chat and contracts were removed in Deck v3.
 	Team(context.Context, *Empty) (*TeamResponse, error)
-	TeamPost(context.Context, *TeamPostRequest) (*TeamPostResponse, error)
 	// ShareThread shares a thread with a teammate as observer, participant
 	// or editor, or stops sharing it (role "").
 	ShareThread(context.Context, *ShareThreadRequest) (*Empty, error)
 	ThreadShares(context.Context, *SessionRef) (*ThreadSharesResponse, error)
-	// ProposeContract asks a teammate's Deck to do a task for the thread.
-	ProposeContract(context.Context, *ProposeContractRequest) (*ProposeContractResponse, error)
-	// AnswerContract accepts (with an agent kind) or declines one proposed
-	// to this Deck.
-	AnswerContract(context.Context, *AnswerContractRequest) (*Empty, error)
 	// ReadShared follows a thread a teammate shares with this Deck.
 	ReadShared(context.Context, *ReadSharedRequest) (*SharedMirror, error)
 	PostShared(context.Context, *PostSharedRequest) (*Empty, error)
@@ -1548,20 +1503,11 @@ func (UnimplementedDeckServer) Agents(context.Context, *SessionRef) (*AgentsResp
 func (UnimplementedDeckServer) Team(context.Context, *Empty) (*TeamResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Team not implemented")
 }
-func (UnimplementedDeckServer) TeamPost(context.Context, *TeamPostRequest) (*TeamPostResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method TeamPost not implemented")
-}
 func (UnimplementedDeckServer) ShareThread(context.Context, *ShareThreadRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method ShareThread not implemented")
 }
 func (UnimplementedDeckServer) ThreadShares(context.Context, *SessionRef) (*ThreadSharesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ThreadShares not implemented")
-}
-func (UnimplementedDeckServer) ProposeContract(context.Context, *ProposeContractRequest) (*ProposeContractResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ProposeContract not implemented")
-}
-func (UnimplementedDeckServer) AnswerContract(context.Context, *AnswerContractRequest) (*Empty, error) {
-	return nil, status.Error(codes.Unimplemented, "method AnswerContract not implemented")
 }
 func (UnimplementedDeckServer) ReadShared(context.Context, *ReadSharedRequest) (*SharedMirror, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReadShared not implemented")
@@ -2483,24 +2429,6 @@ func _Deck_Team_Handler(srv interface{}, ctx context.Context, dec func(interface
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Deck_TeamPost_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TeamPostRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DeckServer).TeamPost(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Deck_TeamPost_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DeckServer).TeamPost(ctx, req.(*TeamPostRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _Deck_ShareThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ShareThreadRequest)
 	if err := dec(in); err != nil {
@@ -2533,42 +2461,6 @@ func _Deck_ThreadShares_Handler(srv interface{}, ctx context.Context, dec func(i
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DeckServer).ThreadShares(ctx, req.(*SessionRef))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Deck_ProposeContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ProposeContractRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DeckServer).ProposeContract(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Deck_ProposeContract_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DeckServer).ProposeContract(ctx, req.(*ProposeContractRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Deck_AnswerContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AnswerContractRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DeckServer).AnswerContract(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Deck_AnswerContract_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DeckServer).AnswerContract(ctx, req.(*AnswerContractRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3430,24 +3322,12 @@ var Deck_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Deck_Team_Handler,
 		},
 		{
-			MethodName: "TeamPost",
-			Handler:    _Deck_TeamPost_Handler,
-		},
-		{
 			MethodName: "ShareThread",
 			Handler:    _Deck_ShareThread_Handler,
 		},
 		{
 			MethodName: "ThreadShares",
 			Handler:    _Deck_ThreadShares_Handler,
-		},
-		{
-			MethodName: "ProposeContract",
-			Handler:    _Deck_ProposeContract_Handler,
-		},
-		{
-			MethodName: "AnswerContract",
-			Handler:    _Deck_AnswerContract_Handler,
 		},
 		{
 			MethodName: "ReadShared",

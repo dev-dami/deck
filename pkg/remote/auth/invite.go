@@ -1,4 +1,4 @@
-package peer
+package auth
 
 import (
 	"errors"
@@ -39,8 +39,10 @@ const InvitePrefix = "deck://pair?"
 const (
 	inviteVersion = "1"
 	maxInviteLen  = 1024
-	maxInviteAlts = 3
 )
+
+// MaxInviteAlts is how many other addresses an invite carries at most.
+const MaxInviteAlts = 3
 
 // ErrNotInvite is returned by ParseInvite for text that is not a Deck
 // invite; the wrapped reason says what is wrong (never the code).
@@ -114,7 +116,7 @@ func ParseInvite(s string) (Invite, error) {
 			}
 		}
 		if k != "alt" && len(vs) != 1 {
-			return bad("repeated " + truncate(k, 16))
+			return bad("repeated " + k[:min(len(k), 16)])
 		}
 		switch k {
 		case "v":
@@ -138,7 +140,7 @@ func ParseInvite(s string) (Invite, error) {
 			}
 			inv.Expires = time.Unix(n, 0)
 		case "alt":
-			if len(vs) > maxInviteAlts {
+			if len(vs) > MaxInviteAlts {
 				return bad("too many addresses")
 			}
 			inv.Alt = vs
@@ -160,8 +162,8 @@ func ParseInvite(s string) (Invite, error) {
 	if p, err := strconv.Atoi(inv.Port); err != nil || p < 1 || p > 65535 || strconv.Itoa(p) != inv.Port {
 		return bad("bad port")
 	}
-	code := normalizeCode(inv.Code)
-	if !validCode(code) {
+	code := NormalizeCode(inv.Code)
+	if !ValidCode(code) {
 		return bad("bad code")
 	}
 	inv.Code = code[:5] + "-" + code[5:]
@@ -268,21 +270,4 @@ func (src hostSources) inviteHosts(bound string) []string {
 // not link-local.
 func usableIP(ip net.IP) bool {
 	return ip != nil && ip.IsGlobalUnicast() && !ip.IsLinkLocalUnicast()
-}
-
-// Invite is the invite for this wait: the best of Hosts as the host, the
-// rest as alternatives.
-func (w *PairWait) Invite() Invite {
-	inv := Invite{
-		Port: portOfAddr(w.Addr), Code: w.Code, Fingerprint: w.Fingerprint,
-		Name: w.Name, Expires: w.Expires,
-	}
-	if !config.ValidPeerName(inv.Name) {
-		inv.Name = ""
-	}
-	if len(w.Hosts) > 0 {
-		inv.Host = w.Hosts[0]
-		inv.Alt = w.Hosts[1:min(len(w.Hosts), 1+maxInviteAlts)]
-	}
-	return inv
 }

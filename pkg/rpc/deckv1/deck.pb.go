@@ -8974,226 +8974,21 @@ func (x *Teammate) GetThreads() []*TeamThread {
 	return nil
 }
 
-type TeamChat struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Seq           uint64                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
-	From          string                 `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
-	Agent         string                 `protobuf:"bytes,3,opt,name=agent,proto3" json:"agent,omitempty"`
-	Text          string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
-	At            int64                  `protobuf:"varint,5,opt,name=at,proto3" json:"at,omitempty"`
-	Mine          bool                   `protobuf:"varint,6,opt,name=mine,proto3" json:"mine,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TeamChat) Reset() {
-	*x = TeamChat{}
-	mi := &file_deck_v1_deck_proto_msgTypes[114]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TeamChat) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TeamChat) ProtoMessage() {}
-
-func (x *TeamChat) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[114]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TeamChat.ProtoReflect.Descriptor instead.
-func (*TeamChat) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{114}
-}
-
-func (x *TeamChat) GetSeq() uint64 {
-	if x != nil {
-		return x.Seq
-	}
-	return 0
-}
-
-func (x *TeamChat) GetFrom() string {
-	if x != nil {
-		return x.From
-	}
-	return ""
-}
-
-func (x *TeamChat) GetAgent() string {
-	if x != nil {
-		return x.Agent
-	}
-	return ""
-}
-
-func (x *TeamChat) GetText() string {
-	if x != nil {
-		return x.Text
-	}
-	return ""
-}
-
-func (x *TeamChat) GetAt() int64 {
-	if x != nil {
-		return x.At
-	}
-	return 0
-}
-
-func (x *TeamChat) GetMine() bool {
-	if x != nil {
-		return x.Mine
-	}
-	return false
-}
-
-type TeamContract struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	Id      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Peer    string                 `protobuf:"bytes,2,opt,name=peer,proto3" json:"peer,omitempty"`
-	Inbound bool                   `protobuf:"varint,3,opt,name=inbound,proto3" json:"inbound,omitempty"`
-	Title   string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
-	Brief   string                 `protobuf:"bytes,5,opt,name=brief,proto3" json:"brief,omitempty"`
-	// state is proposed, accepted, declined, done, failed or cancelled.
-	State         string `protobuf:"bytes,6,opt,name=state,proto3" json:"state,omitempty"`
-	Agent         string `protobuf:"bytes,7,opt,name=agent,proto3" json:"agent,omitempty"`
-	Note          string `protobuf:"bytes,8,opt,name=note,proto3" json:"note,omitempty"`
-	Summary       string `protobuf:"bytes,9,opt,name=summary,proto3" json:"summary,omitempty"`
-	Kind          string `protobuf:"bytes,10,opt,name=kind,proto3" json:"kind,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TeamContract) Reset() {
-	*x = TeamContract{}
-	mi := &file_deck_v1_deck_proto_msgTypes[115]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TeamContract) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TeamContract) ProtoMessage() {}
-
-func (x *TeamContract) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[115]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TeamContract.ProtoReflect.Descriptor instead.
-func (*TeamContract) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{115}
-}
-
-func (x *TeamContract) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *TeamContract) GetPeer() string {
-	if x != nil {
-		return x.Peer
-	}
-	return ""
-}
-
-func (x *TeamContract) GetInbound() bool {
-	if x != nil {
-		return x.Inbound
-	}
-	return false
-}
-
-func (x *TeamContract) GetTitle() string {
-	if x != nil {
-		return x.Title
-	}
-	return ""
-}
-
-func (x *TeamContract) GetBrief() string {
-	if x != nil {
-		return x.Brief
-	}
-	return ""
-}
-
-func (x *TeamContract) GetState() string {
-	if x != nil {
-		return x.State
-	}
-	return ""
-}
-
-func (x *TeamContract) GetAgent() string {
-	if x != nil {
-		return x.Agent
-	}
-	return ""
-}
-
-func (x *TeamContract) GetNote() string {
-	if x != nil {
-		return x.Note
-	}
-	return ""
-}
-
-func (x *TeamContract) GetSummary() string {
-	if x != nil {
-		return x.Summary
-	}
-	return ""
-}
-
-func (x *TeamContract) GetKind() string {
-	if x != nil {
-		return x.Kind
-	}
-	return ""
-}
-
 type TeamResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// available is false when this Deck has no peer link.
-	Available   bool            `protobuf:"varint,1,opt,name=available,proto3" json:"available,omitempty"`
-	Enabled     bool            `protobuf:"varint,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	Name        string          `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Fingerprint string          `protobuf:"bytes,4,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
-	Teammates   []*Teammate     `protobuf:"bytes,5,rep,name=teammates,proto3" json:"teammates,omitempty"`
-	Chat        []*TeamChat     `protobuf:"bytes,6,rep,name=chat,proto3" json:"chat,omitempty"`
-	Contracts   []*TeamContract `protobuf:"bytes,7,rep,name=contracts,proto3" json:"contracts,omitempty"`
-	// contract_kinds are the agent kinds that may run a teammate's contract.
-	ContractKinds []string `protobuf:"bytes,8,rep,name=contract_kinds,json=contractKinds,proto3" json:"contract_kinds,omitempty"`
+	Available     bool        `protobuf:"varint,1,opt,name=available,proto3" json:"available,omitempty"`
+	Enabled       bool        `protobuf:"varint,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Name          string      `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Fingerprint   string      `protobuf:"bytes,4,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
+	Teammates     []*Teammate `protobuf:"bytes,5,rep,name=teammates,proto3" json:"teammates,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TeamResponse) Reset() {
 	*x = TeamResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[116]
+	mi := &file_deck_v1_deck_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9205,7 +9000,7 @@ func (x *TeamResponse) String() string {
 func (*TeamResponse) ProtoMessage() {}
 
 func (x *TeamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[116]
+	mi := &file_deck_v1_deck_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9218,7 +9013,7 @@ func (x *TeamResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TeamResponse.ProtoReflect.Descriptor instead.
 func (*TeamResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{116}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *TeamResponse) GetAvailable() bool {
@@ -9256,115 +9051,6 @@ func (x *TeamResponse) GetTeammates() []*Teammate {
 	return nil
 }
 
-func (x *TeamResponse) GetChat() []*TeamChat {
-	if x != nil {
-		return x.Chat
-	}
-	return nil
-}
-
-func (x *TeamResponse) GetContracts() []*TeamContract {
-	if x != nil {
-		return x.Contracts
-	}
-	return nil
-}
-
-func (x *TeamResponse) GetContractKinds() []string {
-	if x != nil {
-		return x.ContractKinds
-	}
-	return nil
-}
-
-type TeamPostRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TeamPostRequest) Reset() {
-	*x = TeamPostRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[117]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TeamPostRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TeamPostRequest) ProtoMessage() {}
-
-func (x *TeamPostRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[117]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TeamPostRequest.ProtoReflect.Descriptor instead.
-func (*TeamPostRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{117}
-}
-
-func (x *TeamPostRequest) GetText() string {
-	if x != nil {
-		return x.Text
-	}
-	return ""
-}
-
-type TeamPostResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Reached       []string               `protobuf:"bytes,1,rep,name=reached,proto3" json:"reached,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TeamPostResponse) Reset() {
-	*x = TeamPostResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[118]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TeamPostResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TeamPostResponse) ProtoMessage() {}
-
-func (x *TeamPostResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[118]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TeamPostResponse.ProtoReflect.Descriptor instead.
-func (*TeamPostResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{118}
-}
-
-func (x *TeamPostResponse) GetReached() []string {
-	if x != nil {
-		return x.Reached
-	}
-	return nil
-}
-
 type ShareThreadRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -9376,7 +9062,7 @@ type ShareThreadRequest struct {
 
 func (x *ShareThreadRequest) Reset() {
 	*x = ShareThreadRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[119]
+	mi := &file_deck_v1_deck_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9388,7 +9074,7 @@ func (x *ShareThreadRequest) String() string {
 func (*ShareThreadRequest) ProtoMessage() {}
 
 func (x *ShareThreadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[119]
+	mi := &file_deck_v1_deck_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9401,7 +9087,7 @@ func (x *ShareThreadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShareThreadRequest.ProtoReflect.Descriptor instead.
 func (*ShareThreadRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{119}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *ShareThreadRequest) GetSessionId() string {
@@ -9434,7 +9120,7 @@ type ThreadSharesResponse struct {
 
 func (x *ThreadSharesResponse) Reset() {
 	*x = ThreadSharesResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[120]
+	mi := &file_deck_v1_deck_proto_msgTypes[116]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9446,7 +9132,7 @@ func (x *ThreadSharesResponse) String() string {
 func (*ThreadSharesResponse) ProtoMessage() {}
 
 func (x *ThreadSharesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[120]
+	mi := &file_deck_v1_deck_proto_msgTypes[116]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9459,7 +9145,7 @@ func (x *ThreadSharesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ThreadSharesResponse.ProtoReflect.Descriptor instead.
 func (*ThreadSharesResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{120}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{116}
 }
 
 func (x *ThreadSharesResponse) GetShares() map[string]string {
@@ -9467,186 +9153,6 @@ func (x *ThreadSharesResponse) GetShares() map[string]string {
 		return x.Shares
 	}
 	return nil
-}
-
-type ProposeContractRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	Peer          string                 `protobuf:"bytes,2,opt,name=peer,proto3" json:"peer,omitempty"`
-	Brief         string                 `protobuf:"bytes,3,opt,name=brief,proto3" json:"brief,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ProposeContractRequest) Reset() {
-	*x = ProposeContractRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[121]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ProposeContractRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ProposeContractRequest) ProtoMessage() {}
-
-func (x *ProposeContractRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[121]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ProposeContractRequest.ProtoReflect.Descriptor instead.
-func (*ProposeContractRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{121}
-}
-
-func (x *ProposeContractRequest) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *ProposeContractRequest) GetPeer() string {
-	if x != nil {
-		return x.Peer
-	}
-	return ""
-}
-
-func (x *ProposeContractRequest) GetBrief() string {
-	if x != nil {
-		return x.Brief
-	}
-	return ""
-}
-
-type ProposeContractResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	Queued        bool                   `protobuf:"varint,2,opt,name=queued,proto3" json:"queued,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ProposeContractResponse) Reset() {
-	*x = ProposeContractResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[122]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ProposeContractResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ProposeContractResponse) ProtoMessage() {}
-
-func (x *ProposeContractResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[122]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ProposeContractResponse.ProtoReflect.Descriptor instead.
-func (*ProposeContractResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{122}
-}
-
-func (x *ProposeContractResponse) GetTaskId() string {
-	if x != nil {
-		return x.TaskId
-	}
-	return ""
-}
-
-func (x *ProposeContractResponse) GetQueued() bool {
-	if x != nil {
-		return x.Queued
-	}
-	return false
-}
-
-type AnswerContractRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Peer          string                 `protobuf:"bytes,1,opt,name=peer,proto3" json:"peer,omitempty"`
-	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
-	Accept        bool                   `protobuf:"varint,3,opt,name=accept,proto3" json:"accept,omitempty"`
-	Agent         string                 `protobuf:"bytes,4,opt,name=agent,proto3" json:"agent,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AnswerContractRequest) Reset() {
-	*x = AnswerContractRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[123]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AnswerContractRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AnswerContractRequest) ProtoMessage() {}
-
-func (x *AnswerContractRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[123]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AnswerContractRequest.ProtoReflect.Descriptor instead.
-func (*AnswerContractRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{123}
-}
-
-func (x *AnswerContractRequest) GetPeer() string {
-	if x != nil {
-		return x.Peer
-	}
-	return ""
-}
-
-func (x *AnswerContractRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *AnswerContractRequest) GetAccept() bool {
-	if x != nil {
-		return x.Accept
-	}
-	return false
-}
-
-func (x *AnswerContractRequest) GetAgent() string {
-	if x != nil {
-		return x.Agent
-	}
-	return ""
 }
 
 type ReadSharedRequest struct {
@@ -9660,7 +9166,7 @@ type ReadSharedRequest struct {
 
 func (x *ReadSharedRequest) Reset() {
 	*x = ReadSharedRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[124]
+	mi := &file_deck_v1_deck_proto_msgTypes[117]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9672,7 +9178,7 @@ func (x *ReadSharedRequest) String() string {
 func (*ReadSharedRequest) ProtoMessage() {}
 
 func (x *ReadSharedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[124]
+	mi := &file_deck_v1_deck_proto_msgTypes[117]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9685,7 +9191,7 @@ func (x *ReadSharedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadSharedRequest.ProtoReflect.Descriptor instead.
 func (*ReadSharedRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{124}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{117}
 }
 
 func (x *ReadSharedRequest) GetPeer() string {
@@ -9721,7 +9227,7 @@ type SharedApproval struct {
 
 func (x *SharedApproval) Reset() {
 	*x = SharedApproval{}
-	mi := &file_deck_v1_deck_proto_msgTypes[125]
+	mi := &file_deck_v1_deck_proto_msgTypes[118]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9733,7 +9239,7 @@ func (x *SharedApproval) String() string {
 func (*SharedApproval) ProtoMessage() {}
 
 func (x *SharedApproval) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[125]
+	mi := &file_deck_v1_deck_proto_msgTypes[118]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9746,7 +9252,7 @@ func (x *SharedApproval) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SharedApproval.ProtoReflect.Descriptor instead.
 func (*SharedApproval) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{125}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{118}
 }
 
 func (x *SharedApproval) GetId() string {
@@ -9789,7 +9295,7 @@ type SharedMirror struct {
 
 func (x *SharedMirror) Reset() {
 	*x = SharedMirror{}
-	mi := &file_deck_v1_deck_proto_msgTypes[126]
+	mi := &file_deck_v1_deck_proto_msgTypes[119]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9801,7 +9307,7 @@ func (x *SharedMirror) String() string {
 func (*SharedMirror) ProtoMessage() {}
 
 func (x *SharedMirror) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[126]
+	mi := &file_deck_v1_deck_proto_msgTypes[119]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9814,7 +9320,7 @@ func (x *SharedMirror) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SharedMirror.ProtoReflect.Descriptor instead.
 func (*SharedMirror) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{126}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{119}
 }
 
 func (x *SharedMirror) GetThread() *TeamThread {
@@ -9856,7 +9362,7 @@ type PostSharedRequest struct {
 
 func (x *PostSharedRequest) Reset() {
 	*x = PostSharedRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[127]
+	mi := &file_deck_v1_deck_proto_msgTypes[120]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9868,7 +9374,7 @@ func (x *PostSharedRequest) String() string {
 func (*PostSharedRequest) ProtoMessage() {}
 
 func (x *PostSharedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[127]
+	mi := &file_deck_v1_deck_proto_msgTypes[120]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9881,7 +9387,7 @@ func (x *PostSharedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PostSharedRequest.ProtoReflect.Descriptor instead.
 func (*PostSharedRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{127}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{120}
 }
 
 func (x *PostSharedRequest) GetPeer() string {
@@ -9917,7 +9423,7 @@ type AnswerSharedRequest struct {
 
 func (x *AnswerSharedRequest) Reset() {
 	*x = AnswerSharedRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[128]
+	mi := &file_deck_v1_deck_proto_msgTypes[121]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9929,7 +9435,7 @@ func (x *AnswerSharedRequest) String() string {
 func (*AnswerSharedRequest) ProtoMessage() {}
 
 func (x *AnswerSharedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[128]
+	mi := &file_deck_v1_deck_proto_msgTypes[121]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9942,7 +9448,7 @@ func (x *AnswerSharedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnswerSharedRequest.ProtoReflect.Descriptor instead.
 func (*AnswerSharedRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{128}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{121}
 }
 
 func (x *AnswerSharedRequest) GetPeer() string {
@@ -9982,7 +9488,7 @@ type FilesResponse struct {
 
 func (x *FilesResponse) Reset() {
 	*x = FilesResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[129]
+	mi := &file_deck_v1_deck_proto_msgTypes[122]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9994,7 +9500,7 @@ func (x *FilesResponse) String() string {
 func (*FilesResponse) ProtoMessage() {}
 
 func (x *FilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[129]
+	mi := &file_deck_v1_deck_proto_msgTypes[122]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10007,7 +9513,7 @@ func (x *FilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilesResponse.ProtoReflect.Descriptor instead.
 func (*FilesResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{129}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{122}
 }
 
 func (x *FilesResponse) GetFiles() []string {
@@ -10031,7 +9537,7 @@ type RevertFilesRequest struct {
 
 func (x *RevertFilesRequest) Reset() {
 	*x = RevertFilesRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[130]
+	mi := &file_deck_v1_deck_proto_msgTypes[123]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10043,7 +9549,7 @@ func (x *RevertFilesRequest) String() string {
 func (*RevertFilesRequest) ProtoMessage() {}
 
 func (x *RevertFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[130]
+	mi := &file_deck_v1_deck_proto_msgTypes[123]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10056,7 +9562,7 @@ func (x *RevertFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevertFilesRequest.ProtoReflect.Descriptor instead.
 func (*RevertFilesRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{130}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{123}
 }
 
 func (x *RevertFilesRequest) GetSessionId() string {
@@ -10097,7 +9603,7 @@ type StartRaceRequest struct {
 
 func (x *StartRaceRequest) Reset() {
 	*x = StartRaceRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[131]
+	mi := &file_deck_v1_deck_proto_msgTypes[124]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10109,7 +9615,7 @@ func (x *StartRaceRequest) String() string {
 func (*StartRaceRequest) ProtoMessage() {}
 
 func (x *StartRaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[131]
+	mi := &file_deck_v1_deck_proto_msgTypes[124]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10122,7 +9628,7 @@ func (x *StartRaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartRaceRequest.ProtoReflect.Descriptor instead.
 func (*StartRaceRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{131}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{124}
 }
 
 func (x *StartRaceRequest) GetSessionId() string {
@@ -10181,7 +9687,7 @@ type RaceEntrant struct {
 
 func (x *RaceEntrant) Reset() {
 	*x = RaceEntrant{}
-	mi := &file_deck_v1_deck_proto_msgTypes[132]
+	mi := &file_deck_v1_deck_proto_msgTypes[125]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10193,7 +9699,7 @@ func (x *RaceEntrant) String() string {
 func (*RaceEntrant) ProtoMessage() {}
 
 func (x *RaceEntrant) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[132]
+	mi := &file_deck_v1_deck_proto_msgTypes[125]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10206,7 +9712,7 @@ func (x *RaceEntrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RaceEntrant.ProtoReflect.Descriptor instead.
 func (*RaceEntrant) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{132}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{125}
 }
 
 func (x *RaceEntrant) GetAgent() string {
@@ -10239,7 +9745,7 @@ type StartRaceResponse struct {
 
 func (x *StartRaceResponse) Reset() {
 	*x = StartRaceResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[133]
+	mi := &file_deck_v1_deck_proto_msgTypes[126]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10251,7 +9757,7 @@ func (x *StartRaceResponse) String() string {
 func (*StartRaceResponse) ProtoMessage() {}
 
 func (x *StartRaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[133]
+	mi := &file_deck_v1_deck_proto_msgTypes[126]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10264,7 +9770,7 @@ func (x *StartRaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartRaceResponse.ProtoReflect.Descriptor instead.
 func (*StartRaceResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{133}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{126}
 }
 
 func (x *StartRaceResponse) GetTaskId() string {
@@ -10286,7 +9792,7 @@ type ListFilesRequest struct {
 
 func (x *ListFilesRequest) Reset() {
 	*x = ListFilesRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[134]
+	mi := &file_deck_v1_deck_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10298,7 +9804,7 @@ func (x *ListFilesRequest) String() string {
 func (*ListFilesRequest) ProtoMessage() {}
 
 func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[134]
+	mi := &file_deck_v1_deck_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10311,7 +9817,7 @@ func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesRequest.ProtoReflect.Descriptor instead.
 func (*ListFilesRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{134}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{127}
 }
 
 func (x *ListFilesRequest) GetSessionId() string {
@@ -10346,7 +9852,7 @@ type ListFilesResponse struct {
 
 func (x *ListFilesResponse) Reset() {
 	*x = ListFilesResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[135]
+	mi := &file_deck_v1_deck_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10358,7 +9864,7 @@ func (x *ListFilesResponse) String() string {
 func (*ListFilesResponse) ProtoMessage() {}
 
 func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[135]
+	mi := &file_deck_v1_deck_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10371,7 +9877,7 @@ func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesResponse.ProtoReflect.Descriptor instead.
 func (*ListFilesResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{135}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{128}
 }
 
 func (x *ListFilesResponse) GetPaths() []string {
@@ -10399,7 +9905,7 @@ type ReadImageRequest struct {
 
 func (x *ReadImageRequest) Reset() {
 	*x = ReadImageRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[136]
+	mi := &file_deck_v1_deck_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10411,7 +9917,7 @@ func (x *ReadImageRequest) String() string {
 func (*ReadImageRequest) ProtoMessage() {}
 
 func (x *ReadImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[136]
+	mi := &file_deck_v1_deck_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10424,7 +9930,7 @@ func (x *ReadImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadImageRequest.ProtoReflect.Descriptor instead.
 func (*ReadImageRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{136}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *ReadImageRequest) GetSessionId() string {
@@ -10458,7 +9964,7 @@ type ReadImageResponse struct {
 
 func (x *ReadImageResponse) Reset() {
 	*x = ReadImageResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[137]
+	mi := &file_deck_v1_deck_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10470,7 +9976,7 @@ func (x *ReadImageResponse) String() string {
 func (*ReadImageResponse) ProtoMessage() {}
 
 func (x *ReadImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[137]
+	mi := &file_deck_v1_deck_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10483,7 +9989,7 @@ func (x *ReadImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadImageResponse.ProtoReflect.Descriptor instead.
 func (*ReadImageResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{137}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{130}
 }
 
 func (x *ReadImageResponse) GetData() []byte {
@@ -10511,7 +10017,7 @@ type SearchMessagesRequest struct {
 
 func (x *SearchMessagesRequest) Reset() {
 	*x = SearchMessagesRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[138]
+	mi := &file_deck_v1_deck_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10523,7 +10029,7 @@ func (x *SearchMessagesRequest) String() string {
 func (*SearchMessagesRequest) ProtoMessage() {}
 
 func (x *SearchMessagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[138]
+	mi := &file_deck_v1_deck_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10536,7 +10042,7 @@ func (x *SearchMessagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchMessagesRequest.ProtoReflect.Descriptor instead.
 func (*SearchMessagesRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{138}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{131}
 }
 
 func (x *SearchMessagesRequest) GetQuery() string {
@@ -10568,7 +10074,7 @@ type SearchHit struct {
 
 func (x *SearchHit) Reset() {
 	*x = SearchHit{}
-	mi := &file_deck_v1_deck_proto_msgTypes[139]
+	mi := &file_deck_v1_deck_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10580,7 +10086,7 @@ func (x *SearchHit) String() string {
 func (*SearchHit) ProtoMessage() {}
 
 func (x *SearchHit) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[139]
+	mi := &file_deck_v1_deck_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10593,7 +10099,7 @@ func (x *SearchHit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchHit.ProtoReflect.Descriptor instead.
 func (*SearchHit) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{139}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{132}
 }
 
 func (x *SearchHit) GetSessionId() string {
@@ -10640,7 +10146,7 @@ type SearchMessagesResponse struct {
 
 func (x *SearchMessagesResponse) Reset() {
 	*x = SearchMessagesResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[140]
+	mi := &file_deck_v1_deck_proto_msgTypes[133]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10652,7 +10158,7 @@ func (x *SearchMessagesResponse) String() string {
 func (*SearchMessagesResponse) ProtoMessage() {}
 
 func (x *SearchMessagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[140]
+	mi := &file_deck_v1_deck_proto_msgTypes[133]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10665,7 +10171,7 @@ func (x *SearchMessagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchMessagesResponse.ProtoReflect.Descriptor instead.
 func (*SearchMessagesResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{140}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{133}
 }
 
 func (x *SearchMessagesResponse) GetHits() []*SearchHit {
@@ -10707,7 +10213,7 @@ type Profile struct {
 
 func (x *Profile) Reset() {
 	*x = Profile{}
-	mi := &file_deck_v1_deck_proto_msgTypes[141]
+	mi := &file_deck_v1_deck_proto_msgTypes[134]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10719,7 +10225,7 @@ func (x *Profile) String() string {
 func (*Profile) ProtoMessage() {}
 
 func (x *Profile) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[141]
+	mi := &file_deck_v1_deck_proto_msgTypes[134]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10732,7 +10238,7 @@ func (x *Profile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Profile.ProtoReflect.Descriptor instead.
 func (*Profile) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{141}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{134}
 }
 
 func (x *Profile) GetName() string {
@@ -10813,7 +10319,7 @@ type ListProfilesRequest struct {
 
 func (x *ListProfilesRequest) Reset() {
 	*x = ListProfilesRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[142]
+	mi := &file_deck_v1_deck_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10825,7 +10331,7 @@ func (x *ListProfilesRequest) String() string {
 func (*ListProfilesRequest) ProtoMessage() {}
 
 func (x *ListProfilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[142]
+	mi := &file_deck_v1_deck_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10838,7 +10344,7 @@ func (x *ListProfilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfilesRequest.ProtoReflect.Descriptor instead.
 func (*ListProfilesRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{142}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{135}
 }
 
 type ListProfilesResponse struct {
@@ -10850,7 +10356,7 @@ type ListProfilesResponse struct {
 
 func (x *ListProfilesResponse) Reset() {
 	*x = ListProfilesResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[143]
+	mi := &file_deck_v1_deck_proto_msgTypes[136]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10862,7 +10368,7 @@ func (x *ListProfilesResponse) String() string {
 func (*ListProfilesResponse) ProtoMessage() {}
 
 func (x *ListProfilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[143]
+	mi := &file_deck_v1_deck_proto_msgTypes[136]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10875,7 +10381,7 @@ func (x *ListProfilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfilesResponse.ProtoReflect.Descriptor instead.
 func (*ListProfilesResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{143}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{136}
 }
 
 func (x *ListProfilesResponse) GetProfiles() []*Profile {
@@ -10895,7 +10401,7 @@ type SaveProfileRequest struct {
 
 func (x *SaveProfileRequest) Reset() {
 	*x = SaveProfileRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[144]
+	mi := &file_deck_v1_deck_proto_msgTypes[137]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10907,7 +10413,7 @@ func (x *SaveProfileRequest) String() string {
 func (*SaveProfileRequest) ProtoMessage() {}
 
 func (x *SaveProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[144]
+	mi := &file_deck_v1_deck_proto_msgTypes[137]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10920,7 +10426,7 @@ func (x *SaveProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveProfileRequest.ProtoReflect.Descriptor instead.
 func (*SaveProfileRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{144}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{137}
 }
 
 func (x *SaveProfileRequest) GetProfile() *Profile {
@@ -10940,7 +10446,7 @@ type SaveProfileResponse struct {
 
 func (x *SaveProfileResponse) Reset() {
 	*x = SaveProfileResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[145]
+	mi := &file_deck_v1_deck_proto_msgTypes[138]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10952,7 +10458,7 @@ func (x *SaveProfileResponse) String() string {
 func (*SaveProfileResponse) ProtoMessage() {}
 
 func (x *SaveProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[145]
+	mi := &file_deck_v1_deck_proto_msgTypes[138]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10965,7 +10471,7 @@ func (x *SaveProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveProfileResponse.ProtoReflect.Descriptor instead.
 func (*SaveProfileResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{145}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{138}
 }
 
 func (x *SaveProfileResponse) GetProfile() *Profile {
@@ -10986,7 +10492,7 @@ type DeleteProfileRequest struct {
 
 func (x *DeleteProfileRequest) Reset() {
 	*x = DeleteProfileRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[146]
+	mi := &file_deck_v1_deck_proto_msgTypes[139]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10998,7 +10504,7 @@ func (x *DeleteProfileRequest) String() string {
 func (*DeleteProfileRequest) ProtoMessage() {}
 
 func (x *DeleteProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[146]
+	mi := &file_deck_v1_deck_proto_msgTypes[139]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11011,7 +10517,7 @@ func (x *DeleteProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProfileRequest.ProtoReflect.Descriptor instead.
 func (*DeleteProfileRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{146}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{139}
 }
 
 func (x *DeleteProfileRequest) GetName() string {
@@ -11036,7 +10542,7 @@ type DeleteProfileResponse struct {
 
 func (x *DeleteProfileResponse) Reset() {
 	*x = DeleteProfileResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[147]
+	mi := &file_deck_v1_deck_proto_msgTypes[140]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11048,7 +10554,7 @@ func (x *DeleteProfileResponse) String() string {
 func (*DeleteProfileResponse) ProtoMessage() {}
 
 func (x *DeleteProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[147]
+	mi := &file_deck_v1_deck_proto_msgTypes[140]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11061,7 +10567,7 @@ func (x *DeleteProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProfileResponse.ProtoReflect.Descriptor instead.
 func (*DeleteProfileResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{147}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{140}
 }
 
 type LimitsRequest struct {
@@ -11075,7 +10581,7 @@ type LimitsRequest struct {
 
 func (x *LimitsRequest) Reset() {
 	*x = LimitsRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[148]
+	mi := &file_deck_v1_deck_proto_msgTypes[141]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11087,7 +10593,7 @@ func (x *LimitsRequest) String() string {
 func (*LimitsRequest) ProtoMessage() {}
 
 func (x *LimitsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[148]
+	mi := &file_deck_v1_deck_proto_msgTypes[141]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11100,7 +10606,7 @@ func (x *LimitsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LimitsRequest.ProtoReflect.Descriptor instead.
 func (*LimitsRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{148}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{141}
 }
 
 func (x *LimitsRequest) GetHistoryHours() int32 {
@@ -11124,7 +10630,7 @@ type LimitCheck struct {
 
 func (x *LimitCheck) Reset() {
 	*x = LimitCheck{}
-	mi := &file_deck_v1_deck_proto_msgTypes[149]
+	mi := &file_deck_v1_deck_proto_msgTypes[142]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11136,7 +10642,7 @@ func (x *LimitCheck) String() string {
 func (*LimitCheck) ProtoMessage() {}
 
 func (x *LimitCheck) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[149]
+	mi := &file_deck_v1_deck_proto_msgTypes[142]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11149,7 +10655,7 @@ func (x *LimitCheck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LimitCheck.ProtoReflect.Descriptor instead.
 func (*LimitCheck) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{149}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{142}
 }
 
 func (x *LimitCheck) GetKind() string {
@@ -11196,7 +10702,7 @@ type AgentWait struct {
 
 func (x *AgentWait) Reset() {
 	*x = AgentWait{}
-	mi := &file_deck_v1_deck_proto_msgTypes[150]
+	mi := &file_deck_v1_deck_proto_msgTypes[143]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11208,7 +10714,7 @@ func (x *AgentWait) String() string {
 func (*AgentWait) ProtoMessage() {}
 
 func (x *AgentWait) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[150]
+	mi := &file_deck_v1_deck_proto_msgTypes[143]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11221,7 +10727,7 @@ func (x *AgentWait) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentWait.ProtoReflect.Descriptor instead.
 func (*AgentWait) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{150}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{143}
 }
 
 func (x *AgentWait) GetSessionId() string {
@@ -11279,7 +10785,7 @@ type ScheduledSend struct {
 
 func (x *ScheduledSend) Reset() {
 	*x = ScheduledSend{}
-	mi := &file_deck_v1_deck_proto_msgTypes[151]
+	mi := &file_deck_v1_deck_proto_msgTypes[144]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11291,7 +10797,7 @@ func (x *ScheduledSend) String() string {
 func (*ScheduledSend) ProtoMessage() {}
 
 func (x *ScheduledSend) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[151]
+	mi := &file_deck_v1_deck_proto_msgTypes[144]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11304,7 +10810,7 @@ func (x *ScheduledSend) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduledSend.ProtoReflect.Descriptor instead.
 func (*ScheduledSend) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{151}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{144}
 }
 
 func (x *ScheduledSend) GetId() string {
@@ -11358,7 +10864,7 @@ type LimitsResponse struct {
 
 func (x *LimitsResponse) Reset() {
 	*x = LimitsResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[152]
+	mi := &file_deck_v1_deck_proto_msgTypes[145]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11370,7 +10876,7 @@ func (x *LimitsResponse) String() string {
 func (*LimitsResponse) ProtoMessage() {}
 
 func (x *LimitsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[152]
+	mi := &file_deck_v1_deck_proto_msgTypes[145]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11383,7 +10889,7 @@ func (x *LimitsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LimitsResponse.ProtoReflect.Descriptor instead.
 func (*LimitsResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{152}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{145}
 }
 
 func (x *LimitsResponse) GetLimits() []*UsageLimit {
@@ -11438,7 +10944,7 @@ type CheckLimitsRequest struct {
 
 func (x *CheckLimitsRequest) Reset() {
 	*x = CheckLimitsRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[153]
+	mi := &file_deck_v1_deck_proto_msgTypes[146]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11450,7 +10956,7 @@ func (x *CheckLimitsRequest) String() string {
 func (*CheckLimitsRequest) ProtoMessage() {}
 
 func (x *CheckLimitsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[153]
+	mi := &file_deck_v1_deck_proto_msgTypes[146]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11463,7 +10969,7 @@ func (x *CheckLimitsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckLimitsRequest.ProtoReflect.Descriptor instead.
 func (*CheckLimitsRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{153}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{146}
 }
 
 func (x *CheckLimitsRequest) GetKind() string {
@@ -11483,7 +10989,7 @@ type CheckLimitsResponse struct {
 
 func (x *CheckLimitsResponse) Reset() {
 	*x = CheckLimitsResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[154]
+	mi := &file_deck_v1_deck_proto_msgTypes[147]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11495,7 +11001,7 @@ func (x *CheckLimitsResponse) String() string {
 func (*CheckLimitsResponse) ProtoMessage() {}
 
 func (x *CheckLimitsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[154]
+	mi := &file_deck_v1_deck_proto_msgTypes[147]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11508,7 +11014,7 @@ func (x *CheckLimitsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckLimitsResponse.ProtoReflect.Descriptor instead.
 func (*CheckLimitsResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{154}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{147}
 }
 
 func (x *CheckLimitsResponse) GetChecks() []*LimitCheck {
@@ -11534,7 +11040,7 @@ type StartWindowRequest struct {
 
 func (x *StartWindowRequest) Reset() {
 	*x = StartWindowRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[155]
+	mi := &file_deck_v1_deck_proto_msgTypes[148]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11546,7 +11052,7 @@ func (x *StartWindowRequest) String() string {
 func (*StartWindowRequest) ProtoMessage() {}
 
 func (x *StartWindowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[155]
+	mi := &file_deck_v1_deck_proto_msgTypes[148]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11559,7 +11065,7 @@ func (x *StartWindowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartWindowRequest.ProtoReflect.Descriptor instead.
 func (*StartWindowRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{155}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{148}
 }
 
 func (x *StartWindowRequest) GetKind() string {
@@ -11580,7 +11086,7 @@ type StartWindowResponse struct {
 
 func (x *StartWindowResponse) Reset() {
 	*x = StartWindowResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[156]
+	mi := &file_deck_v1_deck_proto_msgTypes[149]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11592,7 +11098,7 @@ func (x *StartWindowResponse) String() string {
 func (*StartWindowResponse) ProtoMessage() {}
 
 func (x *StartWindowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[156]
+	mi := &file_deck_v1_deck_proto_msgTypes[149]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11605,7 +11111,7 @@ func (x *StartWindowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartWindowResponse.ProtoReflect.Descriptor instead.
 func (*StartWindowResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{156}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{149}
 }
 
 func (x *StartWindowResponse) GetModel() string {
@@ -11633,7 +11139,7 @@ type ResolveWaitRequest struct {
 
 func (x *ResolveWaitRequest) Reset() {
 	*x = ResolveWaitRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[157]
+	mi := &file_deck_v1_deck_proto_msgTypes[150]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11645,7 +11151,7 @@ func (x *ResolveWaitRequest) String() string {
 func (*ResolveWaitRequest) ProtoMessage() {}
 
 func (x *ResolveWaitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[157]
+	mi := &file_deck_v1_deck_proto_msgTypes[150]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11658,7 +11164,7 @@ func (x *ResolveWaitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveWaitRequest.ProtoReflect.Descriptor instead.
 func (*ResolveWaitRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{157}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{150}
 }
 
 func (x *ResolveWaitRequest) GetSessionId() string {
@@ -11693,7 +11199,7 @@ type ScheduleSendRequest struct {
 
 func (x *ScheduleSendRequest) Reset() {
 	*x = ScheduleSendRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[158]
+	mi := &file_deck_v1_deck_proto_msgTypes[151]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11705,7 +11211,7 @@ func (x *ScheduleSendRequest) String() string {
 func (*ScheduleSendRequest) ProtoMessage() {}
 
 func (x *ScheduleSendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[158]
+	mi := &file_deck_v1_deck_proto_msgTypes[151]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11718,7 +11224,7 @@ func (x *ScheduleSendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleSendRequest.ProtoReflect.Descriptor instead.
 func (*ScheduleSendRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{158}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{151}
 }
 
 func (x *ScheduleSendRequest) GetSessionId() string {
@@ -11751,7 +11257,7 @@ type ScheduleSendResponse struct {
 
 func (x *ScheduleSendResponse) Reset() {
 	*x = ScheduleSendResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[159]
+	mi := &file_deck_v1_deck_proto_msgTypes[152]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11763,7 +11269,7 @@ func (x *ScheduleSendResponse) String() string {
 func (*ScheduleSendResponse) ProtoMessage() {}
 
 func (x *ScheduleSendResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[159]
+	mi := &file_deck_v1_deck_proto_msgTypes[152]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11776,7 +11282,7 @@ func (x *ScheduleSendResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleSendResponse.ProtoReflect.Descriptor instead.
 func (*ScheduleSendResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{159}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{152}
 }
 
 func (x *ScheduleSendResponse) GetId() string {
@@ -11797,7 +11303,7 @@ type CancelScheduledRequest struct {
 
 func (x *CancelScheduledRequest) Reset() {
 	*x = CancelScheduledRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[160]
+	mi := &file_deck_v1_deck_proto_msgTypes[153]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11809,7 +11315,7 @@ func (x *CancelScheduledRequest) String() string {
 func (*CancelScheduledRequest) ProtoMessage() {}
 
 func (x *CancelScheduledRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[160]
+	mi := &file_deck_v1_deck_proto_msgTypes[153]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11822,7 +11328,7 @@ func (x *CancelScheduledRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelScheduledRequest.ProtoReflect.Descriptor instead.
 func (*CancelScheduledRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{160}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{153}
 }
 
 func (x *CancelScheduledRequest) GetSessionId() string {
@@ -11857,7 +11363,7 @@ type WorkResponse struct {
 
 func (x *WorkResponse) Reset() {
 	*x = WorkResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[161]
+	mi := &file_deck_v1_deck_proto_msgTypes[154]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11869,7 +11375,7 @@ func (x *WorkResponse) String() string {
 func (*WorkResponse) ProtoMessage() {}
 
 func (x *WorkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[161]
+	mi := &file_deck_v1_deck_proto_msgTypes[154]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11882,7 +11388,7 @@ func (x *WorkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkResponse.ProtoReflect.Descriptor instead.
 func (*WorkResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{161}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{154}
 }
 
 func (x *WorkResponse) GetWorktrees() []*WorktreeView {
@@ -11930,7 +11436,7 @@ type WorktreeView struct {
 
 func (x *WorktreeView) Reset() {
 	*x = WorktreeView{}
-	mi := &file_deck_v1_deck_proto_msgTypes[162]
+	mi := &file_deck_v1_deck_proto_msgTypes[155]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11942,7 +11448,7 @@ func (x *WorktreeView) String() string {
 func (*WorktreeView) ProtoMessage() {}
 
 func (x *WorktreeView) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[162]
+	mi := &file_deck_v1_deck_proto_msgTypes[155]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11955,7 +11461,7 @@ func (x *WorktreeView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorktreeView.ProtoReflect.Descriptor instead.
 func (*WorktreeView) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{162}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{155}
 }
 
 func (x *WorktreeView) GetName() string {
@@ -12107,7 +11613,7 @@ type CapsuleView struct {
 
 func (x *CapsuleView) Reset() {
 	*x = CapsuleView{}
-	mi := &file_deck_v1_deck_proto_msgTypes[163]
+	mi := &file_deck_v1_deck_proto_msgTypes[156]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12119,7 +11625,7 @@ func (x *CapsuleView) String() string {
 func (*CapsuleView) ProtoMessage() {}
 
 func (x *CapsuleView) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[163]
+	mi := &file_deck_v1_deck_proto_msgTypes[156]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12132,7 +11638,7 @@ func (x *CapsuleView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapsuleView.ProtoReflect.Descriptor instead.
 func (*CapsuleView) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{163}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{156}
 }
 
 func (x *CapsuleView) GetName() string {
@@ -12247,7 +11753,7 @@ type CapsuleVersionView struct {
 
 func (x *CapsuleVersionView) Reset() {
 	*x = CapsuleVersionView{}
-	mi := &file_deck_v1_deck_proto_msgTypes[164]
+	mi := &file_deck_v1_deck_proto_msgTypes[157]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12259,7 +11765,7 @@ func (x *CapsuleVersionView) String() string {
 func (*CapsuleVersionView) ProtoMessage() {}
 
 func (x *CapsuleVersionView) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[164]
+	mi := &file_deck_v1_deck_proto_msgTypes[157]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12272,7 +11778,7 @@ func (x *CapsuleVersionView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapsuleVersionView.ProtoReflect.Descriptor instead.
 func (*CapsuleVersionView) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{164}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{157}
 }
 
 func (x *CapsuleVersionView) GetId() string {
@@ -12377,7 +11883,7 @@ type CapsuleCommit struct {
 
 func (x *CapsuleCommit) Reset() {
 	*x = CapsuleCommit{}
-	mi := &file_deck_v1_deck_proto_msgTypes[165]
+	mi := &file_deck_v1_deck_proto_msgTypes[158]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12389,7 +11895,7 @@ func (x *CapsuleCommit) String() string {
 func (*CapsuleCommit) ProtoMessage() {}
 
 func (x *CapsuleCommit) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[165]
+	mi := &file_deck_v1_deck_proto_msgTypes[158]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12402,7 +11908,7 @@ func (x *CapsuleCommit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapsuleCommit.ProtoReflect.Descriptor instead.
 func (*CapsuleCommit) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{165}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{158}
 }
 
 func (x *CapsuleCommit) GetSha() string {
@@ -12438,7 +11944,7 @@ type CapsuleComment struct {
 
 func (x *CapsuleComment) Reset() {
 	*x = CapsuleComment{}
-	mi := &file_deck_v1_deck_proto_msgTypes[166]
+	mi := &file_deck_v1_deck_proto_msgTypes[159]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12450,7 +11956,7 @@ func (x *CapsuleComment) String() string {
 func (*CapsuleComment) ProtoMessage() {}
 
 func (x *CapsuleComment) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[166]
+	mi := &file_deck_v1_deck_proto_msgTypes[159]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12463,7 +11969,7 @@ func (x *CapsuleComment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapsuleComment.ProtoReflect.Descriptor instead.
 func (*CapsuleComment) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{166}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{159}
 }
 
 func (x *CapsuleComment) GetBy() string {
@@ -12507,7 +12013,7 @@ type CapsuleLanding struct {
 
 func (x *CapsuleLanding) Reset() {
 	*x = CapsuleLanding{}
-	mi := &file_deck_v1_deck_proto_msgTypes[167]
+	mi := &file_deck_v1_deck_proto_msgTypes[160]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12519,7 +12025,7 @@ func (x *CapsuleLanding) String() string {
 func (*CapsuleLanding) ProtoMessage() {}
 
 func (x *CapsuleLanding) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[167]
+	mi := &file_deck_v1_deck_proto_msgTypes[160]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12532,7 +12038,7 @@ func (x *CapsuleLanding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapsuleLanding.ProtoReflect.Descriptor instead.
 func (*CapsuleLanding) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{167}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{160}
 }
 
 func (x *CapsuleLanding) GetVersion() int32 {
@@ -12589,7 +12095,7 @@ type WorktreeActionRequest struct {
 
 func (x *WorktreeActionRequest) Reset() {
 	*x = WorktreeActionRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[168]
+	mi := &file_deck_v1_deck_proto_msgTypes[161]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12601,7 +12107,7 @@ func (x *WorktreeActionRequest) String() string {
 func (*WorktreeActionRequest) ProtoMessage() {}
 
 func (x *WorktreeActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[168]
+	mi := &file_deck_v1_deck_proto_msgTypes[161]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12614,7 +12120,7 @@ func (x *WorktreeActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorktreeActionRequest.ProtoReflect.Descriptor instead.
 func (*WorktreeActionRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{168}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{161}
 }
 
 func (x *WorktreeActionRequest) GetSessionId() string {
@@ -12707,7 +12213,7 @@ type CapsuleActionRequest struct {
 
 func (x *CapsuleActionRequest) Reset() {
 	*x = CapsuleActionRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[169]
+	mi := &file_deck_v1_deck_proto_msgTypes[162]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12719,7 +12225,7 @@ func (x *CapsuleActionRequest) String() string {
 func (*CapsuleActionRequest) ProtoMessage() {}
 
 func (x *CapsuleActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[169]
+	mi := &file_deck_v1_deck_proto_msgTypes[162]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12732,7 +12238,7 @@ func (x *CapsuleActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapsuleActionRequest.ProtoReflect.Descriptor instead.
 func (*CapsuleActionRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{169}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{162}
 }
 
 func (x *CapsuleActionRequest) GetSessionId() string {
@@ -12846,7 +12352,7 @@ type LandFile struct {
 
 func (x *LandFile) Reset() {
 	*x = LandFile{}
-	mi := &file_deck_v1_deck_proto_msgTypes[170]
+	mi := &file_deck_v1_deck_proto_msgTypes[163]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12858,7 +12364,7 @@ func (x *LandFile) String() string {
 func (*LandFile) ProtoMessage() {}
 
 func (x *LandFile) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[170]
+	mi := &file_deck_v1_deck_proto_msgTypes[163]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12871,7 +12377,7 @@ func (x *LandFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LandFile.ProtoReflect.Descriptor instead.
 func (*LandFile) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{170}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{163}
 }
 
 func (x *LandFile) GetPath() string {
@@ -12919,7 +12425,7 @@ type WorkActionResponse struct {
 
 func (x *WorkActionResponse) Reset() {
 	*x = WorkActionResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[171]
+	mi := &file_deck_v1_deck_proto_msgTypes[164]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12931,7 +12437,7 @@ func (x *WorkActionResponse) String() string {
 func (*WorkActionResponse) ProtoMessage() {}
 
 func (x *WorkActionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[171]
+	mi := &file_deck_v1_deck_proto_msgTypes[164]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12944,7 +12450,7 @@ func (x *WorkActionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkActionResponse.ProtoReflect.Descriptor instead.
 func (*WorkActionResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{171}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{164}
 }
 
 func (x *WorkActionResponse) GetText() string {
@@ -13016,7 +12522,7 @@ type CapsuleFilesRequest struct {
 
 func (x *CapsuleFilesRequest) Reset() {
 	*x = CapsuleFilesRequest{}
-	mi := &file_deck_v1_deck_proto_msgTypes[172]
+	mi := &file_deck_v1_deck_proto_msgTypes[165]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13028,7 +12534,7 @@ func (x *CapsuleFilesRequest) String() string {
 func (*CapsuleFilesRequest) ProtoMessage() {}
 
 func (x *CapsuleFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[172]
+	mi := &file_deck_v1_deck_proto_msgTypes[165]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13041,7 +12547,7 @@ func (x *CapsuleFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapsuleFilesRequest.ProtoReflect.Descriptor instead.
 func (*CapsuleFilesRequest) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{172}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{165}
 }
 
 func (x *CapsuleFilesRequest) GetSessionId() string {
@@ -13092,7 +12598,7 @@ type CapsuleFile struct {
 
 func (x *CapsuleFile) Reset() {
 	*x = CapsuleFile{}
-	mi := &file_deck_v1_deck_proto_msgTypes[173]
+	mi := &file_deck_v1_deck_proto_msgTypes[166]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13104,7 +12610,7 @@ func (x *CapsuleFile) String() string {
 func (*CapsuleFile) ProtoMessage() {}
 
 func (x *CapsuleFile) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[173]
+	mi := &file_deck_v1_deck_proto_msgTypes[166]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13117,7 +12623,7 @@ func (x *CapsuleFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapsuleFile.ProtoReflect.Descriptor instead.
 func (*CapsuleFile) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{173}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{166}
 }
 
 func (x *CapsuleFile) GetPath() string {
@@ -13166,7 +12672,7 @@ type CapsuleFilesResponse struct {
 
 func (x *CapsuleFilesResponse) Reset() {
 	*x = CapsuleFilesResponse{}
-	mi := &file_deck_v1_deck_proto_msgTypes[174]
+	mi := &file_deck_v1_deck_proto_msgTypes[167]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13178,7 +12684,7 @@ func (x *CapsuleFilesResponse) String() string {
 func (*CapsuleFilesResponse) ProtoMessage() {}
 
 func (x *CapsuleFilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[174]
+	mi := &file_deck_v1_deck_proto_msgTypes[167]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13191,7 +12697,7 @@ func (x *CapsuleFilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapsuleFilesResponse.ProtoReflect.Descriptor instead.
 func (*CapsuleFilesResponse) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{174}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{167}
 }
 
 func (x *CapsuleFilesResponse) GetFiles() []*CapsuleFile {
@@ -13242,7 +12748,7 @@ type MessageAppendText struct {
 
 func (x *MessageAppendText) Reset() {
 	*x = MessageAppendText{}
-	mi := &file_deck_v1_deck_proto_msgTypes[175]
+	mi := &file_deck_v1_deck_proto_msgTypes[168]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13254,7 +12760,7 @@ func (x *MessageAppendText) String() string {
 func (*MessageAppendText) ProtoMessage() {}
 
 func (x *MessageAppendText) ProtoReflect() protoreflect.Message {
-	mi := &file_deck_v1_deck_proto_msgTypes[175]
+	mi := &file_deck_v1_deck_proto_msgTypes[168]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13267,7 +12773,7 @@ func (x *MessageAppendText) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageAppendText.ProtoReflect.Descriptor instead.
 func (*MessageAppendText) Descriptor() ([]byte, []int) {
-	return file_deck_v1_deck_proto_rawDescGZIP(), []int{175}
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{168}
 }
 
 func (x *MessageAppendText) GetId() string {
@@ -14097,39 +13603,13 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\tlast_seen\x18\x05 \x01(\x03R\blastSeen\x12\x18\n" +
 	"\apresent\x18\x06 \x01(\bR\apresent\x12*\n" +
 	"\x06agents\x18\a \x03(\v2\x12.deck.v1.TeamAgentR\x06agents\x12-\n" +
-	"\athreads\x18\b \x03(\v2\x13.deck.v1.TeamThreadR\athreads\"~\n" +
-	"\bTeamChat\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x12\n" +
-	"\x04from\x18\x02 \x01(\tR\x04from\x12\x14\n" +
-	"\x05agent\x18\x03 \x01(\tR\x05agent\x12\x12\n" +
-	"\x04text\x18\x04 \x01(\tR\x04text\x12\x0e\n" +
-	"\x02at\x18\x05 \x01(\x03R\x02at\x12\x12\n" +
-	"\x04mine\x18\x06 \x01(\bR\x04mine\"\xe6\x01\n" +
-	"\fTeamContract\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04peer\x18\x02 \x01(\tR\x04peer\x12\x18\n" +
-	"\ainbound\x18\x03 \x01(\bR\ainbound\x12\x14\n" +
-	"\x05title\x18\x04 \x01(\tR\x05title\x12\x14\n" +
-	"\x05brief\x18\x05 \x01(\tR\x05brief\x12\x14\n" +
-	"\x05state\x18\x06 \x01(\tR\x05state\x12\x14\n" +
-	"\x05agent\x18\a \x01(\tR\x05agent\x12\x12\n" +
-	"\x04note\x18\b \x01(\tR\x04note\x12\x18\n" +
-	"\asummary\x18\t \x01(\tR\asummary\x12\x12\n" +
-	"\x04kind\x18\n" +
-	" \x01(\tR\x04kind\"\xb0\x02\n" +
+	"\athreads\x18\b \x03(\v2\x13.deck.v1.TeamThreadR\athreads\"\xe0\x01\n" +
 	"\fTeamResponse\x12\x1c\n" +
 	"\tavailable\x18\x01 \x01(\bR\tavailable\x12\x18\n" +
 	"\aenabled\x18\x02 \x01(\bR\aenabled\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
 	"\vfingerprint\x18\x04 \x01(\tR\vfingerprint\x12/\n" +
-	"\tteammates\x18\x05 \x03(\v2\x11.deck.v1.TeammateR\tteammates\x12%\n" +
-	"\x04chat\x18\x06 \x03(\v2\x11.deck.v1.TeamChatR\x04chat\x123\n" +
-	"\tcontracts\x18\a \x03(\v2\x15.deck.v1.TeamContractR\tcontracts\x12%\n" +
-	"\x0econtract_kinds\x18\b \x03(\tR\rcontractKinds\"%\n" +
-	"\x0fTeamPostRequest\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\",\n" +
-	"\x10TeamPostResponse\x12\x18\n" +
-	"\areached\x18\x01 \x03(\tR\areached\"[\n" +
+	"\tteammates\x18\x05 \x03(\v2\x11.deck.v1.TeammateR\tteammatesJ\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\b\x10\tR\x04chatR\tcontractsR\x0econtract_kinds\"[\n" +
 	"\x12ShareThreadRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
@@ -14139,20 +13619,7 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x06shares\x18\x01 \x03(\v2).deck.v1.ThreadSharesResponse.SharesEntryR\x06shares\x1a9\n" +
 	"\vSharesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"a\n" +
-	"\x16ProposeContractRequest\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
-	"\x04peer\x18\x02 \x01(\tR\x04peer\x12\x14\n" +
-	"\x05brief\x18\x03 \x01(\tR\x05brief\"J\n" +
-	"\x17ProposeContractResponse\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x16\n" +
-	"\x06queued\x18\x02 \x01(\bR\x06queued\"i\n" +
-	"\x15AnswerContractRequest\x12\x12\n" +
-	"\x04peer\x18\x01 \x01(\tR\x04peer\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\x12\x16\n" +
-	"\x06accept\x18\x03 \x01(\bR\x06accept\x12\x14\n" +
-	"\x05agent\x18\x04 \x01(\tR\x05agent\"U\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"U\n" +
 	"\x11ReadSharedRequest\x12\x12\n" +
 	"\x04peer\x18\x01 \x01(\tR\x04peer\x12\x16\n" +
 	"\x06thread\x18\x02 \x01(\tR\x06thread\x12\x14\n" +
@@ -14444,7 +13911,7 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x06offset\x18\x04 \x01(\x04R\x06offset\x12\x12\n" +
 	"\x04text\x18\x05 \x01(\tR\x04text\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x06 \x01(\x03R\tupdatedAt2\xe2*\n" +
+	"updated_at\x18\x06 \x01(\x03R\tupdatedAt2\x89)\n" +
 	"\x04Deck\x12-\n" +
 	"\x04Info\x12\x0e.deck.v1.Empty\x1a\x15.deck.v1.InfoResponse\x12=\n" +
 	"\fListSessions\x12\x0e.deck.v1.Empty\x1a\x1d.deck.v1.ListSessionsResponse\x12@\n" +
@@ -14492,12 +13959,9 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"TaskAction\x12\x1a.deck.v1.TaskActionRequest\x1a\x1b.deck.v1.TaskActionResponse\x12@\n" +
 	"\x0eSetOrchestrate\x12\x1e.deck.v1.SetOrchestrateRequest\x1a\x0e.deck.v1.Empty\x126\n" +
 	"\x06Agents\x12\x13.deck.v1.SessionRef\x1a\x17.deck.v1.AgentsResponse\x12-\n" +
-	"\x04Team\x12\x0e.deck.v1.Empty\x1a\x15.deck.v1.TeamResponse\x12?\n" +
-	"\bTeamPost\x12\x18.deck.v1.TeamPostRequest\x1a\x19.deck.v1.TeamPostResponse\x12:\n" +
+	"\x04Team\x12\x0e.deck.v1.Empty\x1a\x15.deck.v1.TeamResponse\x12:\n" +
 	"\vShareThread\x12\x1b.deck.v1.ShareThreadRequest\x1a\x0e.deck.v1.Empty\x12B\n" +
-	"\fThreadShares\x12\x13.deck.v1.SessionRef\x1a\x1d.deck.v1.ThreadSharesResponse\x12T\n" +
-	"\x0fProposeContract\x12\x1f.deck.v1.ProposeContractRequest\x1a .deck.v1.ProposeContractResponse\x12@\n" +
-	"\x0eAnswerContract\x12\x1e.deck.v1.AnswerContractRequest\x1a\x0e.deck.v1.Empty\x12?\n" +
+	"\fThreadShares\x12\x13.deck.v1.SessionRef\x1a\x1d.deck.v1.ThreadSharesResponse\x12?\n" +
 	"\n" +
 	"ReadShared\x12\x1a.deck.v1.ReadSharedRequest\x1a\x15.deck.v1.SharedMirror\x128\n" +
 	"\n" +
@@ -14553,7 +14017,7 @@ func file_deck_v1_deck_proto_rawDescGZIP() []byte {
 	return file_deck_v1_deck_proto_rawDescData
 }
 
-var file_deck_v1_deck_proto_msgTypes = make([]protoimpl.MessageInfo, 179)
+var file_deck_v1_deck_proto_msgTypes = make([]protoimpl.MessageInfo, 172)
 var file_deck_v1_deck_proto_goTypes = []any{
 	(*Empty)(nil),                            // 0: deck.v1.Empty
 	(*BrowserCommand)(nil),                   // 1: deck.v1.BrowserCommand
@@ -14669,71 +14133,64 @@ var file_deck_v1_deck_proto_goTypes = []any{
 	(*TeamAgent)(nil),                        // 111: deck.v1.TeamAgent
 	(*TeamThread)(nil),                       // 112: deck.v1.TeamThread
 	(*Teammate)(nil),                         // 113: deck.v1.Teammate
-	(*TeamChat)(nil),                         // 114: deck.v1.TeamChat
-	(*TeamContract)(nil),                     // 115: deck.v1.TeamContract
-	(*TeamResponse)(nil),                     // 116: deck.v1.TeamResponse
-	(*TeamPostRequest)(nil),                  // 117: deck.v1.TeamPostRequest
-	(*TeamPostResponse)(nil),                 // 118: deck.v1.TeamPostResponse
-	(*ShareThreadRequest)(nil),               // 119: deck.v1.ShareThreadRequest
-	(*ThreadSharesResponse)(nil),             // 120: deck.v1.ThreadSharesResponse
-	(*ProposeContractRequest)(nil),           // 121: deck.v1.ProposeContractRequest
-	(*ProposeContractResponse)(nil),          // 122: deck.v1.ProposeContractResponse
-	(*AnswerContractRequest)(nil),            // 123: deck.v1.AnswerContractRequest
-	(*ReadSharedRequest)(nil),                // 124: deck.v1.ReadSharedRequest
-	(*SharedApproval)(nil),                   // 125: deck.v1.SharedApproval
-	(*SharedMirror)(nil),                     // 126: deck.v1.SharedMirror
-	(*PostSharedRequest)(nil),                // 127: deck.v1.PostSharedRequest
-	(*AnswerSharedRequest)(nil),              // 128: deck.v1.AnswerSharedRequest
-	(*FilesResponse)(nil),                    // 129: deck.v1.FilesResponse
-	(*RevertFilesRequest)(nil),               // 130: deck.v1.RevertFilesRequest
-	(*StartRaceRequest)(nil),                 // 131: deck.v1.StartRaceRequest
-	(*RaceEntrant)(nil),                      // 132: deck.v1.RaceEntrant
-	(*StartRaceResponse)(nil),                // 133: deck.v1.StartRaceResponse
-	(*ListFilesRequest)(nil),                 // 134: deck.v1.ListFilesRequest
-	(*ListFilesResponse)(nil),                // 135: deck.v1.ListFilesResponse
-	(*ReadImageRequest)(nil),                 // 136: deck.v1.ReadImageRequest
-	(*ReadImageResponse)(nil),                // 137: deck.v1.ReadImageResponse
-	(*SearchMessagesRequest)(nil),            // 138: deck.v1.SearchMessagesRequest
-	(*SearchHit)(nil),                        // 139: deck.v1.SearchHit
-	(*SearchMessagesResponse)(nil),           // 140: deck.v1.SearchMessagesResponse
-	(*Profile)(nil),                          // 141: deck.v1.Profile
-	(*ListProfilesRequest)(nil),              // 142: deck.v1.ListProfilesRequest
-	(*ListProfilesResponse)(nil),             // 143: deck.v1.ListProfilesResponse
-	(*SaveProfileRequest)(nil),               // 144: deck.v1.SaveProfileRequest
-	(*SaveProfileResponse)(nil),              // 145: deck.v1.SaveProfileResponse
-	(*DeleteProfileRequest)(nil),             // 146: deck.v1.DeleteProfileRequest
-	(*DeleteProfileResponse)(nil),            // 147: deck.v1.DeleteProfileResponse
-	(*LimitsRequest)(nil),                    // 148: deck.v1.LimitsRequest
-	(*LimitCheck)(nil),                       // 149: deck.v1.LimitCheck
-	(*AgentWait)(nil),                        // 150: deck.v1.AgentWait
-	(*ScheduledSend)(nil),                    // 151: deck.v1.ScheduledSend
-	(*LimitsResponse)(nil),                   // 152: deck.v1.LimitsResponse
-	(*CheckLimitsRequest)(nil),               // 153: deck.v1.CheckLimitsRequest
-	(*CheckLimitsResponse)(nil),              // 154: deck.v1.CheckLimitsResponse
-	(*StartWindowRequest)(nil),               // 155: deck.v1.StartWindowRequest
-	(*StartWindowResponse)(nil),              // 156: deck.v1.StartWindowResponse
-	(*ResolveWaitRequest)(nil),               // 157: deck.v1.ResolveWaitRequest
-	(*ScheduleSendRequest)(nil),              // 158: deck.v1.ScheduleSendRequest
-	(*ScheduleSendResponse)(nil),             // 159: deck.v1.ScheduleSendResponse
-	(*CancelScheduledRequest)(nil),           // 160: deck.v1.CancelScheduledRequest
-	(*WorkResponse)(nil),                     // 161: deck.v1.WorkResponse
-	(*WorktreeView)(nil),                     // 162: deck.v1.WorktreeView
-	(*CapsuleView)(nil),                      // 163: deck.v1.CapsuleView
-	(*CapsuleVersionView)(nil),               // 164: deck.v1.CapsuleVersionView
-	(*CapsuleCommit)(nil),                    // 165: deck.v1.CapsuleCommit
-	(*CapsuleComment)(nil),                   // 166: deck.v1.CapsuleComment
-	(*CapsuleLanding)(nil),                   // 167: deck.v1.CapsuleLanding
-	(*WorktreeActionRequest)(nil),            // 168: deck.v1.WorktreeActionRequest
-	(*CapsuleActionRequest)(nil),             // 169: deck.v1.CapsuleActionRequest
-	(*LandFile)(nil),                         // 170: deck.v1.LandFile
-	(*WorkActionResponse)(nil),               // 171: deck.v1.WorkActionResponse
-	(*CapsuleFilesRequest)(nil),              // 172: deck.v1.CapsuleFilesRequest
-	(*CapsuleFile)(nil),                      // 173: deck.v1.CapsuleFile
-	(*CapsuleFilesResponse)(nil),             // 174: deck.v1.CapsuleFilesResponse
-	(*MessageAppendText)(nil),                // 175: deck.v1.MessageAppendText
-	nil,                                      // 176: deck.v1.Theme.PaletteEntry
-	nil,                                      // 177: deck.v1.Theme.KindsEntry
-	nil,                                      // 178: deck.v1.ThreadSharesResponse.SharesEntry
+	(*TeamResponse)(nil),                     // 114: deck.v1.TeamResponse
+	(*ShareThreadRequest)(nil),               // 115: deck.v1.ShareThreadRequest
+	(*ThreadSharesResponse)(nil),             // 116: deck.v1.ThreadSharesResponse
+	(*ReadSharedRequest)(nil),                // 117: deck.v1.ReadSharedRequest
+	(*SharedApproval)(nil),                   // 118: deck.v1.SharedApproval
+	(*SharedMirror)(nil),                     // 119: deck.v1.SharedMirror
+	(*PostSharedRequest)(nil),                // 120: deck.v1.PostSharedRequest
+	(*AnswerSharedRequest)(nil),              // 121: deck.v1.AnswerSharedRequest
+	(*FilesResponse)(nil),                    // 122: deck.v1.FilesResponse
+	(*RevertFilesRequest)(nil),               // 123: deck.v1.RevertFilesRequest
+	(*StartRaceRequest)(nil),                 // 124: deck.v1.StartRaceRequest
+	(*RaceEntrant)(nil),                      // 125: deck.v1.RaceEntrant
+	(*StartRaceResponse)(nil),                // 126: deck.v1.StartRaceResponse
+	(*ListFilesRequest)(nil),                 // 127: deck.v1.ListFilesRequest
+	(*ListFilesResponse)(nil),                // 128: deck.v1.ListFilesResponse
+	(*ReadImageRequest)(nil),                 // 129: deck.v1.ReadImageRequest
+	(*ReadImageResponse)(nil),                // 130: deck.v1.ReadImageResponse
+	(*SearchMessagesRequest)(nil),            // 131: deck.v1.SearchMessagesRequest
+	(*SearchHit)(nil),                        // 132: deck.v1.SearchHit
+	(*SearchMessagesResponse)(nil),           // 133: deck.v1.SearchMessagesResponse
+	(*Profile)(nil),                          // 134: deck.v1.Profile
+	(*ListProfilesRequest)(nil),              // 135: deck.v1.ListProfilesRequest
+	(*ListProfilesResponse)(nil),             // 136: deck.v1.ListProfilesResponse
+	(*SaveProfileRequest)(nil),               // 137: deck.v1.SaveProfileRequest
+	(*SaveProfileResponse)(nil),              // 138: deck.v1.SaveProfileResponse
+	(*DeleteProfileRequest)(nil),             // 139: deck.v1.DeleteProfileRequest
+	(*DeleteProfileResponse)(nil),            // 140: deck.v1.DeleteProfileResponse
+	(*LimitsRequest)(nil),                    // 141: deck.v1.LimitsRequest
+	(*LimitCheck)(nil),                       // 142: deck.v1.LimitCheck
+	(*AgentWait)(nil),                        // 143: deck.v1.AgentWait
+	(*ScheduledSend)(nil),                    // 144: deck.v1.ScheduledSend
+	(*LimitsResponse)(nil),                   // 145: deck.v1.LimitsResponse
+	(*CheckLimitsRequest)(nil),               // 146: deck.v1.CheckLimitsRequest
+	(*CheckLimitsResponse)(nil),              // 147: deck.v1.CheckLimitsResponse
+	(*StartWindowRequest)(nil),               // 148: deck.v1.StartWindowRequest
+	(*StartWindowResponse)(nil),              // 149: deck.v1.StartWindowResponse
+	(*ResolveWaitRequest)(nil),               // 150: deck.v1.ResolveWaitRequest
+	(*ScheduleSendRequest)(nil),              // 151: deck.v1.ScheduleSendRequest
+	(*ScheduleSendResponse)(nil),             // 152: deck.v1.ScheduleSendResponse
+	(*CancelScheduledRequest)(nil),           // 153: deck.v1.CancelScheduledRequest
+	(*WorkResponse)(nil),                     // 154: deck.v1.WorkResponse
+	(*WorktreeView)(nil),                     // 155: deck.v1.WorktreeView
+	(*CapsuleView)(nil),                      // 156: deck.v1.CapsuleView
+	(*CapsuleVersionView)(nil),               // 157: deck.v1.CapsuleVersionView
+	(*CapsuleCommit)(nil),                    // 158: deck.v1.CapsuleCommit
+	(*CapsuleComment)(nil),                   // 159: deck.v1.CapsuleComment
+	(*CapsuleLanding)(nil),                   // 160: deck.v1.CapsuleLanding
+	(*WorktreeActionRequest)(nil),            // 161: deck.v1.WorktreeActionRequest
+	(*CapsuleActionRequest)(nil),             // 162: deck.v1.CapsuleActionRequest
+	(*LandFile)(nil),                         // 163: deck.v1.LandFile
+	(*WorkActionResponse)(nil),               // 164: deck.v1.WorkActionResponse
+	(*CapsuleFilesRequest)(nil),              // 165: deck.v1.CapsuleFilesRequest
+	(*CapsuleFile)(nil),                      // 166: deck.v1.CapsuleFile
+	(*CapsuleFilesResponse)(nil),             // 167: deck.v1.CapsuleFilesResponse
+	(*MessageAppendText)(nil),                // 168: deck.v1.MessageAppendText
+	nil,                                      // 169: deck.v1.Theme.PaletteEntry
+	nil,                                      // 170: deck.v1.Theme.KindsEntry
+	nil,                                      // 171: deck.v1.ThreadSharesResponse.SharesEntry
 }
 var file_deck_v1_deck_proto_depIdxs = []int32{
 	1,   // 0: deck.v1.BrowserActionRequest.command:type_name -> deck.v1.BrowserCommand
@@ -14754,8 +14211,8 @@ var file_deck_v1_deck_proto_depIdxs = []int32{
 	16,  // 15: deck.v1.HighlightActionRequest.source:type_name -> deck.v1.HighlightSource
 	25,  // 16: deck.v1.InfoResponse.theme:type_name -> deck.v1.Theme
 	24,  // 17: deck.v1.InfoResponse.clis:type_name -> deck.v1.AgentCli
-	176, // 18: deck.v1.Theme.palette:type_name -> deck.v1.Theme.PaletteEntry
-	177, // 19: deck.v1.Theme.kinds:type_name -> deck.v1.Theme.KindsEntry
+	169, // 18: deck.v1.Theme.palette:type_name -> deck.v1.Theme.PaletteEntry
+	170, // 19: deck.v1.Theme.kinds:type_name -> deck.v1.Theme.KindsEntry
 	28,  // 20: deck.v1.Session.lead:type_name -> deck.v1.SessionLead
 	27,  // 21: deck.v1.ListSessionsResponse.sessions:type_name -> deck.v1.Session
 	33,  // 22: deck.v1.Message.parts:type_name -> deck.v1.Part
@@ -14798,7 +14255,7 @@ var file_deck_v1_deck_proto_depIdxs = []int32{
 	4,   // 59: deck.v1.Event.browser_changed:type_name -> deck.v1.BrowserStateResponse
 	17,  // 60: deck.v1.Event.highlight_changed:type_name -> deck.v1.HighlightItem
 	18,  // 61: deck.v1.Event.summary_changed:type_name -> deck.v1.AgentSummary
-	175, // 62: deck.v1.Event.message_append_text:type_name -> deck.v1.MessageAppendText
+	168, // 62: deck.v1.Event.message_append_text:type_name -> deck.v1.MessageAppendText
 	81,  // 63: deck.v1.GitPullRequest.checks:type_name -> deck.v1.GitCheck
 	80,  // 64: deck.v1.GitStatusResponse.branches:type_name -> deck.v1.GitBranch
 	82,  // 65: deck.v1.GitStatusResponse.pull_request:type_name -> deck.v1.GitPullRequest
@@ -14819,213 +14276,205 @@ var file_deck_v1_deck_proto_depIdxs = []int32{
 	111, // 80: deck.v1.Teammate.agents:type_name -> deck.v1.TeamAgent
 	112, // 81: deck.v1.Teammate.threads:type_name -> deck.v1.TeamThread
 	113, // 82: deck.v1.TeamResponse.teammates:type_name -> deck.v1.Teammate
-	114, // 83: deck.v1.TeamResponse.chat:type_name -> deck.v1.TeamChat
-	115, // 84: deck.v1.TeamResponse.contracts:type_name -> deck.v1.TeamContract
-	178, // 85: deck.v1.ThreadSharesResponse.shares:type_name -> deck.v1.ThreadSharesResponse.SharesEntry
-	112, // 86: deck.v1.SharedMirror.thread:type_name -> deck.v1.TeamThread
-	125, // 87: deck.v1.SharedMirror.pending:type_name -> deck.v1.SharedApproval
-	132, // 88: deck.v1.StartRaceRequest.entrants:type_name -> deck.v1.RaceEntrant
-	139, // 89: deck.v1.SearchMessagesResponse.hits:type_name -> deck.v1.SearchHit
-	141, // 90: deck.v1.ListProfilesResponse.profiles:type_name -> deck.v1.Profile
-	141, // 91: deck.v1.SaveProfileRequest.profile:type_name -> deck.v1.Profile
-	141, // 92: deck.v1.SaveProfileResponse.profile:type_name -> deck.v1.Profile
-	93,  // 93: deck.v1.LimitsResponse.limits:type_name -> deck.v1.UsageLimit
-	93,  // 94: deck.v1.LimitsResponse.history:type_name -> deck.v1.UsageLimit
-	149, // 95: deck.v1.LimitsResponse.checks:type_name -> deck.v1.LimitCheck
-	150, // 96: deck.v1.LimitsResponse.waits:type_name -> deck.v1.AgentWait
-	151, // 97: deck.v1.LimitsResponse.scheduled:type_name -> deck.v1.ScheduledSend
-	149, // 98: deck.v1.CheckLimitsResponse.checks:type_name -> deck.v1.LimitCheck
-	93,  // 99: deck.v1.CheckLimitsResponse.limits:type_name -> deck.v1.UsageLimit
-	93,  // 100: deck.v1.StartWindowResponse.limits:type_name -> deck.v1.UsageLimit
-	162, // 101: deck.v1.WorkResponse.worktrees:type_name -> deck.v1.WorktreeView
-	163, // 102: deck.v1.WorkResponse.capsules:type_name -> deck.v1.CapsuleView
-	164, // 103: deck.v1.CapsuleView.versions:type_name -> deck.v1.CapsuleVersionView
-	166, // 104: deck.v1.CapsuleView.comments:type_name -> deck.v1.CapsuleComment
-	167, // 105: deck.v1.CapsuleView.landings:type_name -> deck.v1.CapsuleLanding
-	165, // 106: deck.v1.CapsuleVersionView.commits:type_name -> deck.v1.CapsuleCommit
-	170, // 107: deck.v1.WorkActionResponse.files:type_name -> deck.v1.LandFile
-	162, // 108: deck.v1.WorkActionResponse.worktree:type_name -> deck.v1.WorktreeView
-	173, // 109: deck.v1.CapsuleFilesResponse.files:type_name -> deck.v1.CapsuleFile
-	26,  // 110: deck.v1.Theme.KindsEntry.value:type_name -> deck.v1.KindTone
-	0,   // 111: deck.v1.Deck.Info:input_type -> deck.v1.Empty
-	0,   // 112: deck.v1.Deck.ListSessions:input_type -> deck.v1.Empty
-	30,  // 113: deck.v1.Deck.CreateSession:input_type -> deck.v1.CreateSessionRequest
-	31,  // 114: deck.v1.Deck.RenameSession:input_type -> deck.v1.RenameSessionRequest
-	21,  // 115: deck.v1.Deck.DeleteSession:input_type -> deck.v1.SessionRef
-	35,  // 116: deck.v1.Deck.ListMessages:input_type -> deck.v1.ListMessagesRequest
-	38,  // 117: deck.v1.Deck.Send:input_type -> deck.v1.SendRequest
-	40,  // 118: deck.v1.Deck.EditMessage:input_type -> deck.v1.EditMessageRequest
-	21,  // 119: deck.v1.Deck.Cancel:input_type -> deck.v1.SessionRef
-	41,  // 120: deck.v1.Deck.Interrupt:input_type -> deck.v1.InterruptRequest
-	21,  // 121: deck.v1.Deck.Continue:input_type -> deck.v1.SessionRef
-	21,  // 122: deck.v1.Deck.Queue:input_type -> deck.v1.SessionRef
-	22,  // 123: deck.v1.Deck.Steer:input_type -> deck.v1.QueueItemRef
-	22,  // 124: deck.v1.Deck.CancelQueued:input_type -> deck.v1.QueueItemRef
-	21,  // 125: deck.v1.Deck.Roster:input_type -> deck.v1.SessionRef
-	46,  // 126: deck.v1.Deck.Models:input_type -> deck.v1.ModelsRequest
-	49,  // 127: deck.v1.Deck.SetModel:input_type -> deck.v1.SetModelRequest
-	51,  // 128: deck.v1.Deck.SetLead:input_type -> deck.v1.SetLeadRequest
-	53,  // 129: deck.v1.Deck.SetMemberSpec:input_type -> deck.v1.SetMemberSpecRequest
-	55,  // 130: deck.v1.Deck.SetDefaults:input_type -> deck.v1.SetDefaultsRequest
-	56,  // 131: deck.v1.Deck.GetCatalog:input_type -> deck.v1.GetCatalogRequest
-	21,  // 132: deck.v1.Deck.GetMode:input_type -> deck.v1.SessionRef
-	60,  // 133: deck.v1.Deck.SetMode:input_type -> deck.v1.SetModeRequest
-	21,  // 134: deck.v1.Deck.Approvals:input_type -> deck.v1.SessionRef
-	66,  // 135: deck.v1.Deck.Answer:input_type -> deck.v1.AnswerRequest
-	21,  // 136: deck.v1.Deck.Changes:input_type -> deck.v1.SessionRef
-	0,   // 137: deck.v1.Deck.GitStatus:input_type -> deck.v1.Empty
-	84,  // 138: deck.v1.Deck.GitCheckout:input_type -> deck.v1.GitCheckoutRequest
-	85,  // 139: deck.v1.Deck.GitCommit:input_type -> deck.v1.GitCommitRequest
-	0,   // 140: deck.v1.Deck.GitPush:input_type -> deck.v1.Empty
-	0,   // 141: deck.v1.Deck.GitPull:input_type -> deck.v1.Empty
-	86,  // 142: deck.v1.Deck.GitCreatePR:input_type -> deck.v1.GitCreatePRRequest
-	87,  // 143: deck.v1.Deck.GitMergePR:input_type -> deck.v1.GitMergePRRequest
-	88,  // 144: deck.v1.Deck.Usage:input_type -> deck.v1.UsageRequest
-	98,  // 145: deck.v1.Deck.TerminalOpen:input_type -> deck.v1.TerminalOpenRequest
-	100, // 146: deck.v1.Deck.TerminalWrite:input_type -> deck.v1.TerminalInput
-	101, // 147: deck.v1.Deck.TerminalResize:input_type -> deck.v1.TerminalSize
-	99,  // 148: deck.v1.Deck.TerminalClose:input_type -> deck.v1.TerminalRef
-	99,  // 149: deck.v1.Deck.TerminalOutput:input_type -> deck.v1.TerminalRef
-	21,  // 150: deck.v1.Deck.Board:input_type -> deck.v1.SessionRef
-	105, // 151: deck.v1.Deck.TaskAction:input_type -> deck.v1.TaskActionRequest
-	107, // 152: deck.v1.Deck.SetOrchestrate:input_type -> deck.v1.SetOrchestrateRequest
-	21,  // 153: deck.v1.Deck.Agents:input_type -> deck.v1.SessionRef
-	0,   // 154: deck.v1.Deck.Team:input_type -> deck.v1.Empty
-	117, // 155: deck.v1.Deck.TeamPost:input_type -> deck.v1.TeamPostRequest
-	119, // 156: deck.v1.Deck.ShareThread:input_type -> deck.v1.ShareThreadRequest
-	21,  // 157: deck.v1.Deck.ThreadShares:input_type -> deck.v1.SessionRef
-	121, // 158: deck.v1.Deck.ProposeContract:input_type -> deck.v1.ProposeContractRequest
-	123, // 159: deck.v1.Deck.AnswerContract:input_type -> deck.v1.AnswerContractRequest
-	124, // 160: deck.v1.Deck.ReadShared:input_type -> deck.v1.ReadSharedRequest
-	127, // 161: deck.v1.Deck.PostShared:input_type -> deck.v1.PostSharedRequest
-	128, // 162: deck.v1.Deck.AnswerShared:input_type -> deck.v1.AnswerSharedRequest
-	21,  // 163: deck.v1.Deck.IsolateSession:input_type -> deck.v1.SessionRef
-	21,  // 164: deck.v1.Deck.ApplyIsolated:input_type -> deck.v1.SessionRef
-	21,  // 165: deck.v1.Deck.UnisolateSession:input_type -> deck.v1.SessionRef
-	130, // 166: deck.v1.Deck.RevertFiles:input_type -> deck.v1.RevertFilesRequest
-	21,  // 167: deck.v1.Deck.UndoRevert:input_type -> deck.v1.SessionRef
-	21,  // 168: deck.v1.Deck.ArchiveSession:input_type -> deck.v1.SessionRef
-	21,  // 169: deck.v1.Deck.UnarchiveSession:input_type -> deck.v1.SessionRef
-	21,  // 170: deck.v1.Deck.UndoApply:input_type -> deck.v1.SessionRef
-	131, // 171: deck.v1.Deck.StartRace:input_type -> deck.v1.StartRaceRequest
-	134, // 172: deck.v1.Deck.ListFiles:input_type -> deck.v1.ListFilesRequest
-	136, // 173: deck.v1.Deck.ReadImage:input_type -> deck.v1.ReadImageRequest
-	138, // 174: deck.v1.Deck.SearchMessages:input_type -> deck.v1.SearchMessagesRequest
-	142, // 175: deck.v1.Deck.ListProfiles:input_type -> deck.v1.ListProfilesRequest
-	144, // 176: deck.v1.Deck.SaveProfile:input_type -> deck.v1.SaveProfileRequest
-	146, // 177: deck.v1.Deck.DeleteProfile:input_type -> deck.v1.DeleteProfileRequest
-	148, // 178: deck.v1.Deck.Limits:input_type -> deck.v1.LimitsRequest
-	153, // 179: deck.v1.Deck.CheckLimits:input_type -> deck.v1.CheckLimitsRequest
-	155, // 180: deck.v1.Deck.StartWindow:input_type -> deck.v1.StartWindowRequest
-	157, // 181: deck.v1.Deck.ResolveWait:input_type -> deck.v1.ResolveWaitRequest
-	158, // 182: deck.v1.Deck.ScheduleSend:input_type -> deck.v1.ScheduleSendRequest
-	160, // 183: deck.v1.Deck.CancelScheduled:input_type -> deck.v1.CancelScheduledRequest
-	21,  // 184: deck.v1.Deck.Work:input_type -> deck.v1.SessionRef
-	168, // 185: deck.v1.Deck.WorktreeAction:input_type -> deck.v1.WorktreeActionRequest
-	169, // 186: deck.v1.Deck.CapsuleAction:input_type -> deck.v1.CapsuleActionRequest
-	172, // 187: deck.v1.Deck.CapsuleFiles:input_type -> deck.v1.CapsuleFilesRequest
-	21,  // 188: deck.v1.Deck.BrowserState:input_type -> deck.v1.SessionRef
-	2,   // 189: deck.v1.Deck.BrowserAction:input_type -> deck.v1.BrowserActionRequest
-	8,   // 190: deck.v1.Deck.RegisterBrowserController:input_type -> deck.v1.RegisterBrowserControllerRequest
-	10,  // 191: deck.v1.Deck.UnregisterBrowserController:input_type -> deck.v1.BrowserControllerRef
-	12,  // 192: deck.v1.Deck.BrowserResult:input_type -> deck.v1.BrowserResultRequest
-	13,  // 193: deck.v1.Deck.BrowserUpdate:input_type -> deck.v1.BrowserUpdateRequest
-	14,  // 194: deck.v1.Deck.BrowserOrigin:input_type -> deck.v1.BrowserOriginRequest
-	21,  // 195: deck.v1.Deck.Highlights:input_type -> deck.v1.SessionRef
-	20,  // 196: deck.v1.Deck.HighlightAction:input_type -> deck.v1.HighlightActionRequest
-	70,  // 197: deck.v1.Deck.Events:input_type -> deck.v1.Subscribe
-	23,  // 198: deck.v1.Deck.Info:output_type -> deck.v1.InfoResponse
-	29,  // 199: deck.v1.Deck.ListSessions:output_type -> deck.v1.ListSessionsResponse
-	27,  // 200: deck.v1.Deck.CreateSession:output_type -> deck.v1.Session
-	0,   // 201: deck.v1.Deck.RenameSession:output_type -> deck.v1.Empty
-	0,   // 202: deck.v1.Deck.DeleteSession:output_type -> deck.v1.Empty
-	36,  // 203: deck.v1.Deck.ListMessages:output_type -> deck.v1.ListMessagesResponse
-	39,  // 204: deck.v1.Deck.Send:output_type -> deck.v1.SendResponse
-	0,   // 205: deck.v1.Deck.EditMessage:output_type -> deck.v1.Empty
-	0,   // 206: deck.v1.Deck.Cancel:output_type -> deck.v1.Empty
-	0,   // 207: deck.v1.Deck.Interrupt:output_type -> deck.v1.Empty
-	0,   // 208: deck.v1.Deck.Continue:output_type -> deck.v1.Empty
-	43,  // 209: deck.v1.Deck.Queue:output_type -> deck.v1.QueueResponse
-	0,   // 210: deck.v1.Deck.Steer:output_type -> deck.v1.Empty
-	0,   // 211: deck.v1.Deck.CancelQueued:output_type -> deck.v1.Empty
-	45,  // 212: deck.v1.Deck.Roster:output_type -> deck.v1.RosterResponse
-	48,  // 213: deck.v1.Deck.Models:output_type -> deck.v1.ModelsResponse
-	0,   // 214: deck.v1.Deck.SetModel:output_type -> deck.v1.Empty
-	52,  // 215: deck.v1.Deck.SetLead:output_type -> deck.v1.SetLeadResponse
-	54,  // 216: deck.v1.Deck.SetMemberSpec:output_type -> deck.v1.SpecResult
-	0,   // 217: deck.v1.Deck.SetDefaults:output_type -> deck.v1.Empty
-	57,  // 218: deck.v1.Deck.GetCatalog:output_type -> deck.v1.Catalog
-	59,  // 219: deck.v1.Deck.GetMode:output_type -> deck.v1.ModeResponse
-	0,   // 220: deck.v1.Deck.SetMode:output_type -> deck.v1.Empty
-	65,  // 221: deck.v1.Deck.Approvals:output_type -> deck.v1.ApprovalsResponse
-	67,  // 222: deck.v1.Deck.Answer:output_type -> deck.v1.AnswerResponse
-	69,  // 223: deck.v1.Deck.Changes:output_type -> deck.v1.ChangesResponse
-	83,  // 224: deck.v1.Deck.GitStatus:output_type -> deck.v1.GitStatusResponse
-	0,   // 225: deck.v1.Deck.GitCheckout:output_type -> deck.v1.Empty
-	0,   // 226: deck.v1.Deck.GitCommit:output_type -> deck.v1.Empty
-	0,   // 227: deck.v1.Deck.GitPush:output_type -> deck.v1.Empty
-	0,   // 228: deck.v1.Deck.GitPull:output_type -> deck.v1.Empty
-	82,  // 229: deck.v1.Deck.GitCreatePR:output_type -> deck.v1.GitPullRequest
-	0,   // 230: deck.v1.Deck.GitMergePR:output_type -> deck.v1.Empty
-	96,  // 231: deck.v1.Deck.Usage:output_type -> deck.v1.UsageResponse
-	99,  // 232: deck.v1.Deck.TerminalOpen:output_type -> deck.v1.TerminalRef
-	0,   // 233: deck.v1.Deck.TerminalWrite:output_type -> deck.v1.Empty
-	0,   // 234: deck.v1.Deck.TerminalResize:output_type -> deck.v1.Empty
-	0,   // 235: deck.v1.Deck.TerminalClose:output_type -> deck.v1.Empty
-	102, // 236: deck.v1.Deck.TerminalOutput:output_type -> deck.v1.TerminalChunk
-	104, // 237: deck.v1.Deck.Board:output_type -> deck.v1.BoardResponse
-	106, // 238: deck.v1.Deck.TaskAction:output_type -> deck.v1.TaskActionResponse
-	0,   // 239: deck.v1.Deck.SetOrchestrate:output_type -> deck.v1.Empty
-	110, // 240: deck.v1.Deck.Agents:output_type -> deck.v1.AgentsResponse
-	116, // 241: deck.v1.Deck.Team:output_type -> deck.v1.TeamResponse
-	118, // 242: deck.v1.Deck.TeamPost:output_type -> deck.v1.TeamPostResponse
-	0,   // 243: deck.v1.Deck.ShareThread:output_type -> deck.v1.Empty
-	120, // 244: deck.v1.Deck.ThreadShares:output_type -> deck.v1.ThreadSharesResponse
-	122, // 245: deck.v1.Deck.ProposeContract:output_type -> deck.v1.ProposeContractResponse
-	0,   // 246: deck.v1.Deck.AnswerContract:output_type -> deck.v1.Empty
-	126, // 247: deck.v1.Deck.ReadShared:output_type -> deck.v1.SharedMirror
-	0,   // 248: deck.v1.Deck.PostShared:output_type -> deck.v1.Empty
-	0,   // 249: deck.v1.Deck.AnswerShared:output_type -> deck.v1.Empty
-	0,   // 250: deck.v1.Deck.IsolateSession:output_type -> deck.v1.Empty
-	129, // 251: deck.v1.Deck.ApplyIsolated:output_type -> deck.v1.FilesResponse
-	0,   // 252: deck.v1.Deck.UnisolateSession:output_type -> deck.v1.Empty
-	129, // 253: deck.v1.Deck.RevertFiles:output_type -> deck.v1.FilesResponse
-	0,   // 254: deck.v1.Deck.UndoRevert:output_type -> deck.v1.Empty
-	0,   // 255: deck.v1.Deck.ArchiveSession:output_type -> deck.v1.Empty
-	0,   // 256: deck.v1.Deck.UnarchiveSession:output_type -> deck.v1.Empty
-	129, // 257: deck.v1.Deck.UndoApply:output_type -> deck.v1.FilesResponse
-	133, // 258: deck.v1.Deck.StartRace:output_type -> deck.v1.StartRaceResponse
-	135, // 259: deck.v1.Deck.ListFiles:output_type -> deck.v1.ListFilesResponse
-	137, // 260: deck.v1.Deck.ReadImage:output_type -> deck.v1.ReadImageResponse
-	140, // 261: deck.v1.Deck.SearchMessages:output_type -> deck.v1.SearchMessagesResponse
-	143, // 262: deck.v1.Deck.ListProfiles:output_type -> deck.v1.ListProfilesResponse
-	145, // 263: deck.v1.Deck.SaveProfile:output_type -> deck.v1.SaveProfileResponse
-	147, // 264: deck.v1.Deck.DeleteProfile:output_type -> deck.v1.DeleteProfileResponse
-	152, // 265: deck.v1.Deck.Limits:output_type -> deck.v1.LimitsResponse
-	154, // 266: deck.v1.Deck.CheckLimits:output_type -> deck.v1.CheckLimitsResponse
-	156, // 267: deck.v1.Deck.StartWindow:output_type -> deck.v1.StartWindowResponse
-	0,   // 268: deck.v1.Deck.ResolveWait:output_type -> deck.v1.Empty
-	159, // 269: deck.v1.Deck.ScheduleSend:output_type -> deck.v1.ScheduleSendResponse
-	0,   // 270: deck.v1.Deck.CancelScheduled:output_type -> deck.v1.Empty
-	161, // 271: deck.v1.Deck.Work:output_type -> deck.v1.WorkResponse
-	171, // 272: deck.v1.Deck.WorktreeAction:output_type -> deck.v1.WorkActionResponse
-	171, // 273: deck.v1.Deck.CapsuleAction:output_type -> deck.v1.WorkActionResponse
-	174, // 274: deck.v1.Deck.CapsuleFiles:output_type -> deck.v1.CapsuleFilesResponse
-	4,   // 275: deck.v1.Deck.BrowserState:output_type -> deck.v1.BrowserStateResponse
-	7,   // 276: deck.v1.Deck.BrowserAction:output_type -> deck.v1.BrowserActionResponse
-	9,   // 277: deck.v1.Deck.RegisterBrowserController:output_type -> deck.v1.BrowserController
-	0,   // 278: deck.v1.Deck.UnregisterBrowserController:output_type -> deck.v1.Empty
-	0,   // 279: deck.v1.Deck.BrowserResult:output_type -> deck.v1.Empty
-	0,   // 280: deck.v1.Deck.BrowserUpdate:output_type -> deck.v1.Empty
-	15,  // 281: deck.v1.Deck.BrowserOrigin:output_type -> deck.v1.BrowserOriginResponse
-	19,  // 282: deck.v1.Deck.Highlights:output_type -> deck.v1.HighlightsResponse
-	17,  // 283: deck.v1.Deck.HighlightAction:output_type -> deck.v1.HighlightItem
-	79,  // 284: deck.v1.Deck.Events:output_type -> deck.v1.Event
-	198, // [198:285] is the sub-list for method output_type
-	111, // [111:198] is the sub-list for method input_type
-	111, // [111:111] is the sub-list for extension type_name
-	111, // [111:111] is the sub-list for extension extendee
-	0,   // [0:111] is the sub-list for field type_name
+	171, // 83: deck.v1.ThreadSharesResponse.shares:type_name -> deck.v1.ThreadSharesResponse.SharesEntry
+	112, // 84: deck.v1.SharedMirror.thread:type_name -> deck.v1.TeamThread
+	118, // 85: deck.v1.SharedMirror.pending:type_name -> deck.v1.SharedApproval
+	125, // 86: deck.v1.StartRaceRequest.entrants:type_name -> deck.v1.RaceEntrant
+	132, // 87: deck.v1.SearchMessagesResponse.hits:type_name -> deck.v1.SearchHit
+	134, // 88: deck.v1.ListProfilesResponse.profiles:type_name -> deck.v1.Profile
+	134, // 89: deck.v1.SaveProfileRequest.profile:type_name -> deck.v1.Profile
+	134, // 90: deck.v1.SaveProfileResponse.profile:type_name -> deck.v1.Profile
+	93,  // 91: deck.v1.LimitsResponse.limits:type_name -> deck.v1.UsageLimit
+	93,  // 92: deck.v1.LimitsResponse.history:type_name -> deck.v1.UsageLimit
+	142, // 93: deck.v1.LimitsResponse.checks:type_name -> deck.v1.LimitCheck
+	143, // 94: deck.v1.LimitsResponse.waits:type_name -> deck.v1.AgentWait
+	144, // 95: deck.v1.LimitsResponse.scheduled:type_name -> deck.v1.ScheduledSend
+	142, // 96: deck.v1.CheckLimitsResponse.checks:type_name -> deck.v1.LimitCheck
+	93,  // 97: deck.v1.CheckLimitsResponse.limits:type_name -> deck.v1.UsageLimit
+	93,  // 98: deck.v1.StartWindowResponse.limits:type_name -> deck.v1.UsageLimit
+	155, // 99: deck.v1.WorkResponse.worktrees:type_name -> deck.v1.WorktreeView
+	156, // 100: deck.v1.WorkResponse.capsules:type_name -> deck.v1.CapsuleView
+	157, // 101: deck.v1.CapsuleView.versions:type_name -> deck.v1.CapsuleVersionView
+	159, // 102: deck.v1.CapsuleView.comments:type_name -> deck.v1.CapsuleComment
+	160, // 103: deck.v1.CapsuleView.landings:type_name -> deck.v1.CapsuleLanding
+	158, // 104: deck.v1.CapsuleVersionView.commits:type_name -> deck.v1.CapsuleCommit
+	163, // 105: deck.v1.WorkActionResponse.files:type_name -> deck.v1.LandFile
+	155, // 106: deck.v1.WorkActionResponse.worktree:type_name -> deck.v1.WorktreeView
+	166, // 107: deck.v1.CapsuleFilesResponse.files:type_name -> deck.v1.CapsuleFile
+	26,  // 108: deck.v1.Theme.KindsEntry.value:type_name -> deck.v1.KindTone
+	0,   // 109: deck.v1.Deck.Info:input_type -> deck.v1.Empty
+	0,   // 110: deck.v1.Deck.ListSessions:input_type -> deck.v1.Empty
+	30,  // 111: deck.v1.Deck.CreateSession:input_type -> deck.v1.CreateSessionRequest
+	31,  // 112: deck.v1.Deck.RenameSession:input_type -> deck.v1.RenameSessionRequest
+	21,  // 113: deck.v1.Deck.DeleteSession:input_type -> deck.v1.SessionRef
+	35,  // 114: deck.v1.Deck.ListMessages:input_type -> deck.v1.ListMessagesRequest
+	38,  // 115: deck.v1.Deck.Send:input_type -> deck.v1.SendRequest
+	40,  // 116: deck.v1.Deck.EditMessage:input_type -> deck.v1.EditMessageRequest
+	21,  // 117: deck.v1.Deck.Cancel:input_type -> deck.v1.SessionRef
+	41,  // 118: deck.v1.Deck.Interrupt:input_type -> deck.v1.InterruptRequest
+	21,  // 119: deck.v1.Deck.Continue:input_type -> deck.v1.SessionRef
+	21,  // 120: deck.v1.Deck.Queue:input_type -> deck.v1.SessionRef
+	22,  // 121: deck.v1.Deck.Steer:input_type -> deck.v1.QueueItemRef
+	22,  // 122: deck.v1.Deck.CancelQueued:input_type -> deck.v1.QueueItemRef
+	21,  // 123: deck.v1.Deck.Roster:input_type -> deck.v1.SessionRef
+	46,  // 124: deck.v1.Deck.Models:input_type -> deck.v1.ModelsRequest
+	49,  // 125: deck.v1.Deck.SetModel:input_type -> deck.v1.SetModelRequest
+	51,  // 126: deck.v1.Deck.SetLead:input_type -> deck.v1.SetLeadRequest
+	53,  // 127: deck.v1.Deck.SetMemberSpec:input_type -> deck.v1.SetMemberSpecRequest
+	55,  // 128: deck.v1.Deck.SetDefaults:input_type -> deck.v1.SetDefaultsRequest
+	56,  // 129: deck.v1.Deck.GetCatalog:input_type -> deck.v1.GetCatalogRequest
+	21,  // 130: deck.v1.Deck.GetMode:input_type -> deck.v1.SessionRef
+	60,  // 131: deck.v1.Deck.SetMode:input_type -> deck.v1.SetModeRequest
+	21,  // 132: deck.v1.Deck.Approvals:input_type -> deck.v1.SessionRef
+	66,  // 133: deck.v1.Deck.Answer:input_type -> deck.v1.AnswerRequest
+	21,  // 134: deck.v1.Deck.Changes:input_type -> deck.v1.SessionRef
+	0,   // 135: deck.v1.Deck.GitStatus:input_type -> deck.v1.Empty
+	84,  // 136: deck.v1.Deck.GitCheckout:input_type -> deck.v1.GitCheckoutRequest
+	85,  // 137: deck.v1.Deck.GitCommit:input_type -> deck.v1.GitCommitRequest
+	0,   // 138: deck.v1.Deck.GitPush:input_type -> deck.v1.Empty
+	0,   // 139: deck.v1.Deck.GitPull:input_type -> deck.v1.Empty
+	86,  // 140: deck.v1.Deck.GitCreatePR:input_type -> deck.v1.GitCreatePRRequest
+	87,  // 141: deck.v1.Deck.GitMergePR:input_type -> deck.v1.GitMergePRRequest
+	88,  // 142: deck.v1.Deck.Usage:input_type -> deck.v1.UsageRequest
+	98,  // 143: deck.v1.Deck.TerminalOpen:input_type -> deck.v1.TerminalOpenRequest
+	100, // 144: deck.v1.Deck.TerminalWrite:input_type -> deck.v1.TerminalInput
+	101, // 145: deck.v1.Deck.TerminalResize:input_type -> deck.v1.TerminalSize
+	99,  // 146: deck.v1.Deck.TerminalClose:input_type -> deck.v1.TerminalRef
+	99,  // 147: deck.v1.Deck.TerminalOutput:input_type -> deck.v1.TerminalRef
+	21,  // 148: deck.v1.Deck.Board:input_type -> deck.v1.SessionRef
+	105, // 149: deck.v1.Deck.TaskAction:input_type -> deck.v1.TaskActionRequest
+	107, // 150: deck.v1.Deck.SetOrchestrate:input_type -> deck.v1.SetOrchestrateRequest
+	21,  // 151: deck.v1.Deck.Agents:input_type -> deck.v1.SessionRef
+	0,   // 152: deck.v1.Deck.Team:input_type -> deck.v1.Empty
+	115, // 153: deck.v1.Deck.ShareThread:input_type -> deck.v1.ShareThreadRequest
+	21,  // 154: deck.v1.Deck.ThreadShares:input_type -> deck.v1.SessionRef
+	117, // 155: deck.v1.Deck.ReadShared:input_type -> deck.v1.ReadSharedRequest
+	120, // 156: deck.v1.Deck.PostShared:input_type -> deck.v1.PostSharedRequest
+	121, // 157: deck.v1.Deck.AnswerShared:input_type -> deck.v1.AnswerSharedRequest
+	21,  // 158: deck.v1.Deck.IsolateSession:input_type -> deck.v1.SessionRef
+	21,  // 159: deck.v1.Deck.ApplyIsolated:input_type -> deck.v1.SessionRef
+	21,  // 160: deck.v1.Deck.UnisolateSession:input_type -> deck.v1.SessionRef
+	123, // 161: deck.v1.Deck.RevertFiles:input_type -> deck.v1.RevertFilesRequest
+	21,  // 162: deck.v1.Deck.UndoRevert:input_type -> deck.v1.SessionRef
+	21,  // 163: deck.v1.Deck.ArchiveSession:input_type -> deck.v1.SessionRef
+	21,  // 164: deck.v1.Deck.UnarchiveSession:input_type -> deck.v1.SessionRef
+	21,  // 165: deck.v1.Deck.UndoApply:input_type -> deck.v1.SessionRef
+	124, // 166: deck.v1.Deck.StartRace:input_type -> deck.v1.StartRaceRequest
+	127, // 167: deck.v1.Deck.ListFiles:input_type -> deck.v1.ListFilesRequest
+	129, // 168: deck.v1.Deck.ReadImage:input_type -> deck.v1.ReadImageRequest
+	131, // 169: deck.v1.Deck.SearchMessages:input_type -> deck.v1.SearchMessagesRequest
+	135, // 170: deck.v1.Deck.ListProfiles:input_type -> deck.v1.ListProfilesRequest
+	137, // 171: deck.v1.Deck.SaveProfile:input_type -> deck.v1.SaveProfileRequest
+	139, // 172: deck.v1.Deck.DeleteProfile:input_type -> deck.v1.DeleteProfileRequest
+	141, // 173: deck.v1.Deck.Limits:input_type -> deck.v1.LimitsRequest
+	146, // 174: deck.v1.Deck.CheckLimits:input_type -> deck.v1.CheckLimitsRequest
+	148, // 175: deck.v1.Deck.StartWindow:input_type -> deck.v1.StartWindowRequest
+	150, // 176: deck.v1.Deck.ResolveWait:input_type -> deck.v1.ResolveWaitRequest
+	151, // 177: deck.v1.Deck.ScheduleSend:input_type -> deck.v1.ScheduleSendRequest
+	153, // 178: deck.v1.Deck.CancelScheduled:input_type -> deck.v1.CancelScheduledRequest
+	21,  // 179: deck.v1.Deck.Work:input_type -> deck.v1.SessionRef
+	161, // 180: deck.v1.Deck.WorktreeAction:input_type -> deck.v1.WorktreeActionRequest
+	162, // 181: deck.v1.Deck.CapsuleAction:input_type -> deck.v1.CapsuleActionRequest
+	165, // 182: deck.v1.Deck.CapsuleFiles:input_type -> deck.v1.CapsuleFilesRequest
+	21,  // 183: deck.v1.Deck.BrowserState:input_type -> deck.v1.SessionRef
+	2,   // 184: deck.v1.Deck.BrowserAction:input_type -> deck.v1.BrowserActionRequest
+	8,   // 185: deck.v1.Deck.RegisterBrowserController:input_type -> deck.v1.RegisterBrowserControllerRequest
+	10,  // 186: deck.v1.Deck.UnregisterBrowserController:input_type -> deck.v1.BrowserControllerRef
+	12,  // 187: deck.v1.Deck.BrowserResult:input_type -> deck.v1.BrowserResultRequest
+	13,  // 188: deck.v1.Deck.BrowserUpdate:input_type -> deck.v1.BrowserUpdateRequest
+	14,  // 189: deck.v1.Deck.BrowserOrigin:input_type -> deck.v1.BrowserOriginRequest
+	21,  // 190: deck.v1.Deck.Highlights:input_type -> deck.v1.SessionRef
+	20,  // 191: deck.v1.Deck.HighlightAction:input_type -> deck.v1.HighlightActionRequest
+	70,  // 192: deck.v1.Deck.Events:input_type -> deck.v1.Subscribe
+	23,  // 193: deck.v1.Deck.Info:output_type -> deck.v1.InfoResponse
+	29,  // 194: deck.v1.Deck.ListSessions:output_type -> deck.v1.ListSessionsResponse
+	27,  // 195: deck.v1.Deck.CreateSession:output_type -> deck.v1.Session
+	0,   // 196: deck.v1.Deck.RenameSession:output_type -> deck.v1.Empty
+	0,   // 197: deck.v1.Deck.DeleteSession:output_type -> deck.v1.Empty
+	36,  // 198: deck.v1.Deck.ListMessages:output_type -> deck.v1.ListMessagesResponse
+	39,  // 199: deck.v1.Deck.Send:output_type -> deck.v1.SendResponse
+	0,   // 200: deck.v1.Deck.EditMessage:output_type -> deck.v1.Empty
+	0,   // 201: deck.v1.Deck.Cancel:output_type -> deck.v1.Empty
+	0,   // 202: deck.v1.Deck.Interrupt:output_type -> deck.v1.Empty
+	0,   // 203: deck.v1.Deck.Continue:output_type -> deck.v1.Empty
+	43,  // 204: deck.v1.Deck.Queue:output_type -> deck.v1.QueueResponse
+	0,   // 205: deck.v1.Deck.Steer:output_type -> deck.v1.Empty
+	0,   // 206: deck.v1.Deck.CancelQueued:output_type -> deck.v1.Empty
+	45,  // 207: deck.v1.Deck.Roster:output_type -> deck.v1.RosterResponse
+	48,  // 208: deck.v1.Deck.Models:output_type -> deck.v1.ModelsResponse
+	0,   // 209: deck.v1.Deck.SetModel:output_type -> deck.v1.Empty
+	52,  // 210: deck.v1.Deck.SetLead:output_type -> deck.v1.SetLeadResponse
+	54,  // 211: deck.v1.Deck.SetMemberSpec:output_type -> deck.v1.SpecResult
+	0,   // 212: deck.v1.Deck.SetDefaults:output_type -> deck.v1.Empty
+	57,  // 213: deck.v1.Deck.GetCatalog:output_type -> deck.v1.Catalog
+	59,  // 214: deck.v1.Deck.GetMode:output_type -> deck.v1.ModeResponse
+	0,   // 215: deck.v1.Deck.SetMode:output_type -> deck.v1.Empty
+	65,  // 216: deck.v1.Deck.Approvals:output_type -> deck.v1.ApprovalsResponse
+	67,  // 217: deck.v1.Deck.Answer:output_type -> deck.v1.AnswerResponse
+	69,  // 218: deck.v1.Deck.Changes:output_type -> deck.v1.ChangesResponse
+	83,  // 219: deck.v1.Deck.GitStatus:output_type -> deck.v1.GitStatusResponse
+	0,   // 220: deck.v1.Deck.GitCheckout:output_type -> deck.v1.Empty
+	0,   // 221: deck.v1.Deck.GitCommit:output_type -> deck.v1.Empty
+	0,   // 222: deck.v1.Deck.GitPush:output_type -> deck.v1.Empty
+	0,   // 223: deck.v1.Deck.GitPull:output_type -> deck.v1.Empty
+	82,  // 224: deck.v1.Deck.GitCreatePR:output_type -> deck.v1.GitPullRequest
+	0,   // 225: deck.v1.Deck.GitMergePR:output_type -> deck.v1.Empty
+	96,  // 226: deck.v1.Deck.Usage:output_type -> deck.v1.UsageResponse
+	99,  // 227: deck.v1.Deck.TerminalOpen:output_type -> deck.v1.TerminalRef
+	0,   // 228: deck.v1.Deck.TerminalWrite:output_type -> deck.v1.Empty
+	0,   // 229: deck.v1.Deck.TerminalResize:output_type -> deck.v1.Empty
+	0,   // 230: deck.v1.Deck.TerminalClose:output_type -> deck.v1.Empty
+	102, // 231: deck.v1.Deck.TerminalOutput:output_type -> deck.v1.TerminalChunk
+	104, // 232: deck.v1.Deck.Board:output_type -> deck.v1.BoardResponse
+	106, // 233: deck.v1.Deck.TaskAction:output_type -> deck.v1.TaskActionResponse
+	0,   // 234: deck.v1.Deck.SetOrchestrate:output_type -> deck.v1.Empty
+	110, // 235: deck.v1.Deck.Agents:output_type -> deck.v1.AgentsResponse
+	114, // 236: deck.v1.Deck.Team:output_type -> deck.v1.TeamResponse
+	0,   // 237: deck.v1.Deck.ShareThread:output_type -> deck.v1.Empty
+	116, // 238: deck.v1.Deck.ThreadShares:output_type -> deck.v1.ThreadSharesResponse
+	119, // 239: deck.v1.Deck.ReadShared:output_type -> deck.v1.SharedMirror
+	0,   // 240: deck.v1.Deck.PostShared:output_type -> deck.v1.Empty
+	0,   // 241: deck.v1.Deck.AnswerShared:output_type -> deck.v1.Empty
+	0,   // 242: deck.v1.Deck.IsolateSession:output_type -> deck.v1.Empty
+	122, // 243: deck.v1.Deck.ApplyIsolated:output_type -> deck.v1.FilesResponse
+	0,   // 244: deck.v1.Deck.UnisolateSession:output_type -> deck.v1.Empty
+	122, // 245: deck.v1.Deck.RevertFiles:output_type -> deck.v1.FilesResponse
+	0,   // 246: deck.v1.Deck.UndoRevert:output_type -> deck.v1.Empty
+	0,   // 247: deck.v1.Deck.ArchiveSession:output_type -> deck.v1.Empty
+	0,   // 248: deck.v1.Deck.UnarchiveSession:output_type -> deck.v1.Empty
+	122, // 249: deck.v1.Deck.UndoApply:output_type -> deck.v1.FilesResponse
+	126, // 250: deck.v1.Deck.StartRace:output_type -> deck.v1.StartRaceResponse
+	128, // 251: deck.v1.Deck.ListFiles:output_type -> deck.v1.ListFilesResponse
+	130, // 252: deck.v1.Deck.ReadImage:output_type -> deck.v1.ReadImageResponse
+	133, // 253: deck.v1.Deck.SearchMessages:output_type -> deck.v1.SearchMessagesResponse
+	136, // 254: deck.v1.Deck.ListProfiles:output_type -> deck.v1.ListProfilesResponse
+	138, // 255: deck.v1.Deck.SaveProfile:output_type -> deck.v1.SaveProfileResponse
+	140, // 256: deck.v1.Deck.DeleteProfile:output_type -> deck.v1.DeleteProfileResponse
+	145, // 257: deck.v1.Deck.Limits:output_type -> deck.v1.LimitsResponse
+	147, // 258: deck.v1.Deck.CheckLimits:output_type -> deck.v1.CheckLimitsResponse
+	149, // 259: deck.v1.Deck.StartWindow:output_type -> deck.v1.StartWindowResponse
+	0,   // 260: deck.v1.Deck.ResolveWait:output_type -> deck.v1.Empty
+	152, // 261: deck.v1.Deck.ScheduleSend:output_type -> deck.v1.ScheduleSendResponse
+	0,   // 262: deck.v1.Deck.CancelScheduled:output_type -> deck.v1.Empty
+	154, // 263: deck.v1.Deck.Work:output_type -> deck.v1.WorkResponse
+	164, // 264: deck.v1.Deck.WorktreeAction:output_type -> deck.v1.WorkActionResponse
+	164, // 265: deck.v1.Deck.CapsuleAction:output_type -> deck.v1.WorkActionResponse
+	167, // 266: deck.v1.Deck.CapsuleFiles:output_type -> deck.v1.CapsuleFilesResponse
+	4,   // 267: deck.v1.Deck.BrowserState:output_type -> deck.v1.BrowserStateResponse
+	7,   // 268: deck.v1.Deck.BrowserAction:output_type -> deck.v1.BrowserActionResponse
+	9,   // 269: deck.v1.Deck.RegisterBrowserController:output_type -> deck.v1.BrowserController
+	0,   // 270: deck.v1.Deck.UnregisterBrowserController:output_type -> deck.v1.Empty
+	0,   // 271: deck.v1.Deck.BrowserResult:output_type -> deck.v1.Empty
+	0,   // 272: deck.v1.Deck.BrowserUpdate:output_type -> deck.v1.Empty
+	15,  // 273: deck.v1.Deck.BrowserOrigin:output_type -> deck.v1.BrowserOriginResponse
+	19,  // 274: deck.v1.Deck.Highlights:output_type -> deck.v1.HighlightsResponse
+	17,  // 275: deck.v1.Deck.HighlightAction:output_type -> deck.v1.HighlightItem
+	79,  // 276: deck.v1.Deck.Events:output_type -> deck.v1.Event
+	193, // [193:277] is the sub-list for method output_type
+	109, // [109:193] is the sub-list for method input_type
+	109, // [109:109] is the sub-list for extension type_name
+	109, // [109:109] is the sub-list for extension extendee
+	0,   // [0:109] is the sub-list for field type_name
 }
 
 func init() { file_deck_v1_deck_proto_init() }
@@ -15067,7 +14516,7 @@ func file_deck_v1_deck_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_deck_v1_deck_proto_rawDesc), len(file_deck_v1_deck_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   179,
+			NumMessages:   172,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

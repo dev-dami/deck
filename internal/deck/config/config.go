@@ -17,7 +17,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // EnvReducedMotion, when set to "1", forces Motion to "off".
@@ -301,7 +300,7 @@ const DefaultPeerPort = "7722"
 // Peer roles: what a remote Deck may ask of this one.
 const (
 	PeerRoleObserver   = "observer"   // read-only ops (the default)
-	PeerRoleContractor = "contractor" // may also propose code contracts
+	PeerRoleContractor = "contractor" // proposed code contracts until Deck v3; now the same as observer
 )
 
 // Peers is the peers section of the config.
@@ -320,9 +319,9 @@ type Peers struct {
 	// Decks that cannot reach each other. The two ends run SSH inside the
 	// relayed channel, so this Deck sees only ciphertext. Off by default.
 	Relay bool `json:"relay,omitempty"`
-	// Sandbox sets the limits of the sandbox that ops contracts run in
-	// (SandboxLimits).
-	Sandbox *PeerSandbox `json:"sandbox,omitempty"`
+	// peers.sandbox (ttl, scratch_mb, output_kb, presets) set the ops
+	// contracts' sandbox until Deck v3 removed them. The loader ignores the
+	// key, and the next save drops it.
 }
 
 // PeerListen is the embedded SSH listener. It is off by default.
@@ -346,49 +345,8 @@ type PeerRemote struct {
 	// AllowInbound lists the ops this peer may run here; empty means the
 	// defaults (docs/peers-design.md section 2).
 	AllowInbound []string `json:"allow_inbound,omitempty"`
-	// MaxScope is the outer limit for ops contracts from this peer: the
-	// presets (OpsPresets) it may ask for. Empty allows none.
-	MaxScope []string `json:"max_scope,omitempty"`
-}
-
-// OpsPresets are the sandbox presets an ops contract can ask for: each
-// lets the contract's agent run a fixed set of read-only commands.
-var OpsPresets = []string{"podman-read", "systemd-read"}
-
-// PeerSandbox sets the limits of the sandbox that ops contracts run in.
-// Presets is reserved: it is parsed but not used.
-type PeerSandbox struct {
-	TTL       string              `json:"ttl,omitempty"`
-	ScratchMB int                 `json:"scratch_mb,omitempty"`
-	OutputKB  int                 `json:"output_kb,omitempty"`
-	Presets   map[string][]string `json:"presets,omitempty"`
-}
-
-// The sandbox limits when peers.sandbox leaves them out.
-const (
-	DefaultSandboxTTL       = 2 * time.Hour
-	DefaultSandboxScratchMB = 64
-	DefaultSandboxOutputKB  = 64
-)
-
-// SandboxLimits are how long an ops contract may run, and the sizes of its
-// scratch folder (MB) and of each command's output (KB), with the defaults
-// for what peers.sandbox leaves out. p may be nil.
-func (p *Peers) SandboxLimits() (ttl time.Duration, scratchMB, outputKB int) {
-	ttl, scratchMB, outputKB = DefaultSandboxTTL, DefaultSandboxScratchMB, DefaultSandboxOutputKB
-	if p == nil || p.Sandbox == nil {
-		return
-	}
-	if d, err := time.ParseDuration(p.Sandbox.TTL); err == nil && d > 0 {
-		ttl = d
-	}
-	if p.Sandbox.ScratchMB > 0 {
-		scratchMB = p.Sandbox.ScratchMB
-	}
-	if p.Sandbox.OutputKB > 0 {
-		outputKB = p.Sandbox.OutputKB
-	}
-	return
+	// max_scope limited a peer's ops contracts until Deck v3 removed them;
+	// the loader ignores it.
 }
 
 // PeersEnabled reports whether the peer link is on.
@@ -531,25 +489,6 @@ func (p *Peers) validate() error {
 			if op != strings.TrimSpace(op) {
 				return fmt.Errorf("peers.remote[%d].allow_inbound[%d] %q has spaces around it", i, j, op)
 			}
-		}
-		for j, s := range r.MaxScope {
-			if strings.TrimSpace(s) == "" {
-				return fmt.Errorf("peers.remote[%d].max_scope[%d] is empty", i, j)
-			}
-			if s != strings.TrimSpace(s) {
-				return fmt.Errorf("peers.remote[%d].max_scope[%d] %q has spaces around it", i, j, s)
-			}
-			if !slices.Contains(OpsPresets, s) {
-				return fmt.Errorf("peers.remote[%d].max_scope[%d] %q is not a preset (use %s)", i, j, s, strings.Join(OpsPresets, ", "))
-			}
-		}
-	}
-	if sb := p.Sandbox; sb != nil {
-		if d, err := time.ParseDuration(sb.TTL); sb.TTL != "" && (err != nil || d <= 0) {
-			return fmt.Errorf("peers.sandbox.ttl %q: use a duration such as \"2h\"", sb.TTL)
-		}
-		if sb.ScratchMB < 0 || sb.OutputKB < 0 {
-			return errors.New("peers.sandbox: scratch_mb and output_kb cannot be negative")
 		}
 	}
 	for i, r := range p.Remote {

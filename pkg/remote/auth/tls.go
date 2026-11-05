@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dev-dami/deck/internal/deck/peer"
+	"github.com/dev-dami/deck/internal/privfile"
 )
 
 // Certificate is the LAN certificate of R9: self-signed, ECDSA P-256, one
@@ -156,10 +156,10 @@ func (s *Store) makeCertificate(hosts []string) (Certificate, error) {
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
 	err = s.withLock(func() error {
-		if err := peer.WritePrivateFile(s.path(KeyFile), keyPEM); err != nil {
+		if err := privfile.Write(s.path(KeyFile), keyPEM); err != nil {
 			return err
 		}
-		return peer.WritePrivateFile(s.path(CertFile), certPEM)
+		return privfile.Write(s.path(CertFile), certPEM)
 	})
 	if err != nil {
 		return Certificate{}, err

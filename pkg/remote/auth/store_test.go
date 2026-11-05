@@ -13,7 +13,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dev-dami/deck/internal/deck/peer"
+	"github.com/dev-dami/deck/internal/privfile"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 )
 
@@ -248,8 +248,8 @@ func TestFilesArePrivate(t *testing.T) {
 	clk := newClock()
 	s := openStore(t, clk)
 	pair(t, s, "a")
-	require.NoError(t, peer.CheckPrivate(s.Dir()))
-	require.NoError(t, peer.CheckPrivate(s.path(DevicesFile)))
+	require.NoError(t, privfile.Check(s.Dir()))
+	require.NoError(t, privfile.Check(s.path(DevicesFile)))
 }
 
 func TestAdvert(t *testing.T) {

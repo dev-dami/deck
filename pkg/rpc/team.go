@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -31,8 +30,6 @@ type crew struct {
 	subs       workspace.SubAgents
 	peers      workspace.Peers
 	sharing    workspace.Sharing
-	contracts  workspace.Contracts
-	desk       workspace.TeamDesk
 	rooms      workspace.Rooms
 	settings   workspace.SettingsEditor
 	profiles   workspace.Profiles
@@ -61,8 +58,6 @@ func (s *Server) WithWorkspace(ws any) *Server {
 	c.subs, _ = ws.(workspace.SubAgents)
 	c.peers, _ = ws.(workspace.Peers)
 	c.sharing, _ = ws.(workspace.Sharing)
-	c.contracts, _ = ws.(workspace.Contracts)
-	c.desk, _ = ws.(workspace.TeamDesk)
 	c.rooms, _ = ws.(workspace.Rooms)
 	c.settings, _ = ws.(workspace.SettingsEditor)
 	c.profiles, _ = ws.(workspace.Profiles)
@@ -83,10 +78,6 @@ var errNoCrew = status.Error(codes.Unimplemented, "this Deck does not serve that
 // refused keeps Deck's own words for a refused action.
 func refused(err error) error {
 	if err == nil {
-		return nil
-	}
-	var q peer.QueuedError
-	if errors.As(err, &q) {
 		return nil
 	}
 	if s, ok := status.FromError(err); ok && s.Code() != codes.Unknown {
@@ -329,34 +320,8 @@ func (s *Server) Team(_ context.Context, _ *deckv1.Empty) (*deckv1.TeamResponse,
 			}
 			return t
 		}),
-		Chat: each(snap.Chat, func(m peer.ChatMessage) *deckv1.TeamChat {
-			return &deckv1.TeamChat{Seq: m.Seq, From: m.From, Agent: m.Agent, Text: m.Text, At: ms(m.At), Mine: m.Mine}
-		}),
-		Contracts: each(snap.Contracts, func(c peer.Contract) *deckv1.TeamContract {
-			return &deckv1.TeamContract{
-				Id: c.ID, Peer: c.Peer, Inbound: c.Inbound, Title: c.Title, Brief: c.Brief, State: c.State,
-				Agent: c.Agent, Note: c.Note, Summary: c.Summary, Kind: c.Kind,
-			}
-		}),
-	}
-	if s.crew.contracts != nil {
-		out.ContractKinds = s.crew.contracts.ContractKinds()
 	}
 	return out, nil
-}
-
-func (s *Server) TeamPost(ctx context.Context, r *deckv1.TeamPostRequest) (*deckv1.TeamPostResponse, error) {
-	if s.crew == nil || s.crew.desk == nil {
-		return nil, errNoCrew
-	}
-	if strings.TrimSpace(r.GetText()) == "" {
-		return nil, invalid("an empty message")
-	}
-	reached, err := s.crew.desk.SendTeamChat(ctx, r.GetText())
-	if err != nil {
-		return nil, refused(err)
-	}
-	return &deckv1.TeamPostResponse{Reached: reached}, nil
 }
 
 func (s *Server) ShareThread(_ context.Context, r *deckv1.ShareThreadRequest) (*deckv1.Empty, error) {
@@ -385,34 +350,6 @@ func (s *Server) ThreadShares(_ context.Context, r *deckv1.SessionRef) (*deckv1.
 		return nil, err
 	}
 	return &deckv1.ThreadSharesResponse{Shares: s.crew.sharing.ThreadShares(r.GetSessionId())}, nil
-}
-
-func (s *Server) ProposeContract(_ context.Context, r *deckv1.ProposeContractRequest) (*deckv1.ProposeContractResponse, error) {
-	if s.crew == nil || s.crew.contracts == nil {
-		return nil, errNoCrew
-	}
-	if err := needSession(r.GetSessionId()); err != nil {
-		return nil, err
-	}
-	if r.GetPeer() == "" || strings.TrimSpace(r.GetBrief()) == "" {
-		return nil, invalid("a teammate and a brief are needed")
-	}
-	id, queued, err := s.crew.contracts.ProposeContract(r.GetSessionId(), r.GetPeer(), r.GetBrief())
-	if err != nil {
-		return nil, refused(err)
-	}
-	return &deckv1.ProposeContractResponse{TaskId: id, Queued: queued}, nil
-}
-
-func (s *Server) AnswerContract(_ context.Context, r *deckv1.AnswerContractRequest) (*deckv1.Empty, error) {
-	pl := s.link()
-	if pl == nil {
-		return nil, errNoCrew
-	}
-	if r.GetPeer() == "" || r.GetId() == "" {
-		return nil, invalid("a teammate and a contract are needed")
-	}
-	return &deckv1.Empty{}, refused(pl.AnswerContract(r.GetPeer(), r.GetId(), r.GetAccept(), r.GetAgent()))
 }
 
 func (s *Server) ReadShared(ctx context.Context, r *deckv1.ReadSharedRequest) (*deckv1.SharedMirror, error) {

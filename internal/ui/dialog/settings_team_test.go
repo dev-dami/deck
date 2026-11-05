@@ -21,6 +21,7 @@ import (
 	"github.com/dev-dami/deck/internal/ui/common"
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/workspace"
+	"github.com/dev-dami/deck/pkg/remote/auth"
 )
 
 // fakePeerLink is a PeerLink that records what the UI asked of it.
@@ -120,14 +121,6 @@ func (f *fakePeerLink) Pin(r peer.PinRequest) error {
 	}
 	f.pinned = append(f.pinned, r)
 	return nil
-}
-func (f *fakePeerLink) AnswerContract(name, id string, accept bool, agent string) error {
-	f.record("AnswerContract")
-	return nil
-}
-func (f *fakePeerLink) ProposeContract(_ context.Context, _ string, c peer.Contract) (peer.Contract, error) {
-	f.record("ProposeContract")
-	return c, nil
 }
 func (f *fakePeerLink) ReadShared(context.Context, string, string, int, time.Duration) (peer.Mirror, error) {
 	return peer.Mirror{}, nil
@@ -708,7 +701,7 @@ func TestPairCopyInvite(t *testing.T) {
 	text := squash(pairText(p))
 	at := strings.Index(text, "deck://")
 	require.GreaterOrEqual(t, at, 0, "the invite shows")
-	inv, err := peer.ParseInvite(text[at:])
+	inv, err := auth.ParseInvite(text[at:])
 	require.NoError(t, err)
 	require.Equal(t, "203.0.113.5:7722", inv.Addr())
 	require.Equal(t, w.Code, inv.Code)
@@ -719,7 +712,7 @@ func TestPairCopyInvite(t *testing.T) {
 
 // testInviteLine is an invite from the waiting Deck of testPairWait.
 func testInviteLine() string {
-	return peer.Invite{Host: "203.0.113.5", Port: "7722", Code: "ABCDE-23456", Fingerprint: theirsFP, Name: "vps"}.Encode()
+	return auth.Invite{Host: "203.0.113.5", Port: "7722", Code: "ABCDE-23456", Fingerprint: theirsFP, Name: "vps"}.Encode()
 }
 
 func TestPairPasteInviteFillsEveryField(t *testing.T) {

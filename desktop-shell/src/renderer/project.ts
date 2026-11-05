@@ -459,14 +459,6 @@ export class ProjectApi {
     return r.ok ? toTeam(r.value) : r.message;
   }
 
-  // The teammates a post reached, or the error.
-  async teamPost(text: string): Promise<string[] | string> {
-    const r = await this.call("TeamPost", { text });
-    if (!r.ok) return r.message;
-    const reached = (r.value as { reached?: unknown }).reached;
-    return Array.isArray(reached) ? reached.filter((f): f is string => typeof f === "string") : [];
-  }
-
   async shareThread(sessionId: string, peer: string, role: string): Promise<string | null> {
     const r = await this.call("ShareThread", { session_id: sessionId, peer, role });
     return r.ok ? null : r.message;
@@ -477,18 +469,6 @@ export class ProjectApi {
     if (!r.ok) return r.message;
     const shares = obj(obj(r.value)["shares"]);
     return Object.fromEntries(Object.entries(shares).filter((e): e is [string, string] => typeof e[1] === "string"));
-  }
-
-  async proposeContract(sessionId: string, peer: string, brief: string): Promise<{ taskId: string; queued: boolean } | string> {
-    const r = await this.call("ProposeContract", { session_id: sessionId, peer, brief });
-    if (!r.ok) return r.message;
-    const o = obj(r.value);
-    return { taskId: str(o, "task_id"), queued: bool(o, "queued") };
-  }
-
-  async answerContract(peer: string, id: string, accept: boolean, agent: string): Promise<string | null> {
-    const r = await this.call("AnswerContract", { peer, id, accept, agent });
-    return r.ok ? null : r.message;
   }
 
   async readShared(peer: string, thread: string, after: number): Promise<SharedMirror | string> {

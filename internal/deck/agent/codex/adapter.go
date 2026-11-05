@@ -78,10 +78,6 @@ func (a *adapter) ContextCaps() agent.ContextCaps {
 	}
 }
 
-// ContractSafe implements agent.ContractSafe: in ask mode codex runs
-// on-request in its workspace-write sandbox, and asks through Deck.
-func (a *adapter) ContractSafe() bool { return true }
-
 func (a *adapter) Start(ctx context.Context, spec agent.Spec) (agent.Run, error) {
 	bin := spec.Binary
 	if bin == "" {

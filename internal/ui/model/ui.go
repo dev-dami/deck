@@ -392,8 +392,8 @@ type UI struct {
 	// thread left behind is dropped.
 	shared    *sharedView
 	sharedGen int
-	// teamSeen is the newest chat message or capsule request already
-	// told; newer ones become notices.
+	// teamSeen is the newest capsule request already told; newer ones
+	// become notices.
 	teamSeen uint64
 
 	// capsules is the session's capsules for the Capsules pane, as last
@@ -926,10 +926,6 @@ func (m *UI) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.shareCapsule(msg))
 	case capsuleSharedMsg:
 		cmds = append(cmds, m.applyCapsuleShared(msg))
-	case teamChatSentMsg:
-		if cmd := m.applyTeamChatSent(msg); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
 	case focusPaneMsg:
 		cmds = append(cmds, m.focusOrOpenPane(msg.id))
 	case promptQueueMsg:

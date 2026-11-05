@@ -2,6 +2,8 @@ package peer
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -217,6 +219,14 @@ func (s *Service) PostShared(ctx context.Context, name, thread, text string) err
 		return errors.New("nothing to send")
 	}
 	return s.shareCall(ctx, name, OpThreadPost, map[string]any{"thread": thread, "text": text, "id": newCallKey()}, nil)
+}
+
+// newCallKey is a fresh idempotency key: a teammate drops a post it already
+// has.
+func newCallKey() string {
+	b := make([]byte, 12)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // AnswerShared answers approval of thread, which teammate name shares with

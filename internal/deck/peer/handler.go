@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/dev-dami/deck/internal/deck/config"
 )
 
 // OpPeerStatus is the one op phase 1 answers: this Deck's name, version and
@@ -24,19 +22,10 @@ var ErrUnknownOp = errors.New("unknown op")
 // because a handler happens to know it.
 //
 // The SUB ops are in it: they only ever serve capsules this Deck's user
-// published (sub.capsule.publish), which is the consent to share them.
-//
-// The contract ops are in it too: contract.propose also needs role
-// contractor; contract.status and contract.result only touch contracts this
-// Deck proposed to the caller, and contract.cancel only those the caller
-// proposed here. The thread ops only touch threads shared with the caller,
-// in the role it was given.
-var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects, OpConsolePost, OpContractPropose, OpContractStatus, OpContractResult, OpContractCancel,
-	OpThreadMirror, OpThreadPost, OpThreadAnswer}
-
-// contractorOps are the ops only a peer with role contractor may run, on top
-// of allow_inbound.
-var contractorOps = map[string]bool{OpContractPropose: true}
+// published (sub.capsule.publish), which is the consent to share them. The
+// thread ops only touch threads shared with the caller, in the role it was
+// given. The team chat and contract ops were removed in Deck v3.
+var DefaultAllowInbound = []string{OpPeerStatus, OpSubClosure, OpSubObjects, OpThreadMirror, OpThreadPost, OpThreadAnswer}
 
 // Caller is the pinned peer on the other end of a connection, as this Deck
 // knows it. Name and Fingerprint come from the pinned store, never from the
@@ -48,20 +37,13 @@ type Caller struct {
 	// AllowInbound is the ops this peer may run here (config
 	// peers.remote[].allow_inbound); empty means DefaultAllowInbound.
 	AllowInbound []string
-	// MaxScope is the presets its ops contracts may ask for here (config
-	// peers.remote[].max_scope); empty allows none.
-	MaxScope []string
 }
 
 // Allowed reports whether the caller may run op. The match is exact: no case
 // folding, trimming or Unicode normalization, so "Peer.Status" or a
-// look-alike never matches peer.status. Contractor-only ops also need role
-// contractor.
+// look-alike never matches peer.status.
 func (c Caller) Allowed(op string) bool {
 	if op == "" {
-		return false
-	}
-	if contractorOps[op] && c.Role != config.PeerRoleContractor {
 		return false
 	}
 	list := c.AllowInbound

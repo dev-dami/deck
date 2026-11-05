@@ -13,7 +13,6 @@ import (
 	"time"
 
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
-	"github.com/dev-dami/deck/internal/deck/peer"
 	"github.com/dev-dami/deck/pkg/remote"
 	"github.com/dev-dami/deck/pkg/remote/auth"
 )
@@ -75,7 +74,7 @@ func Start(ctx context.Context, be remote.Backend, ro RunOptions) (*Running, err
 	scheme := "http"
 	if ro.LAN {
 		scheme = "https"
-		r.Hosts = peer.InviteHosts("")
+		r.Hosts = auth.InviteHosts("")
 		cert, err := store.EnsureCertificate(r.Hosts)
 		if err != nil {
 			ln.Close()
@@ -146,7 +145,7 @@ func NewPairing(a auth.Advert, code auth.Code, project string) Pairing {
 	if !a.TLS || a.Fingerprint == "" || len(a.Hosts) == 0 {
 		return p
 	}
-	inv := peer.Invite{Host: a.Hosts[0], Port: strconv.Itoa(a.Port), Code: code.Code, Fingerprint: a.Fingerprint, Expires: code.ExpiresAt}
+	inv := auth.Invite{Host: a.Hosts[0], Port: strconv.Itoa(a.Port), Code: code.Code, Fingerprint: a.Fingerprint, Expires: code.ExpiresAt}
 	if deckconfig.ValidPeerName(project) {
 		inv.Name = project
 	}

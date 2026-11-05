@@ -2,7 +2,7 @@ import { getPrefs, usePrefs } from "./prefs";
 
 // The Team switch (Settings > Agents). Off, the window drops everything of
 // the team: the Team page and its footer button, the teammates online,
-// rooms teammates share, sharing a room, contracts in the inbox, and the
+// rooms teammates share, sharing a room, and the
 // named agents (the profiles editor, profiles and people in the "@" picker,
 // and the roles and colours members carry from their profiles). Plain
 // agents stay. Nothing is deleted: the profiles stay in deck.json and the

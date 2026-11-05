@@ -38,14 +38,12 @@ type SubHandler struct {
 	// capsule this Deck has: served when it was published and handed over,
 	// not served when it is private, so the person can choose to share it.
 	OnRequest func(from Caller, id sub.ID, served bool)
-	// Granted, when set, says which other objects a peer may fetch: those a
-	// contract shares with it alone (contract.go).
-	Granted func(peer string, id sub.ID) bool
 }
 
-// shared reports whether from may fetch id.
-func (h *SubHandler) shared(s *sub.Store, from Caller, id sub.ID) bool {
-	return s.Shareable(id) || h.Granted != nil && h.Granted(from.Name, id)
+// shared reports whether from may fetch id: only what this Deck's user
+// published.
+func (h *SubHandler) shared(s *sub.Store, _ Caller, id sub.ID) bool {
+	return s.Shareable(id)
 }
 
 // Search implements Handler.

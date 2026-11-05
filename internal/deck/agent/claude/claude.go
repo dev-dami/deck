@@ -117,14 +117,10 @@ func contextArgs(p agent.ContextPolicy, model string) []string {
 	return args
 }
 
-// ContractSafe implements agent.ContractSafe: in ask mode every tool use asks
-// through Deck's permission-prompt tool.
-func (a *adapter) ContractSafe() bool { return true }
-
-// OpsSafe implements agent.OpsSafe: Spec.NoTools turns Claude's own tools
-// off (--tools "" and --disallowedTools), so only Deck's search and execute
-// stay.
-func (a *adapter) OpsSafe() bool { return true }
+// HonorsNoTools implements agent.NoToolsHonorer: Spec.NoTools turns Claude's
+// own tools off (--tools "" and --disallowedTools), so only Deck's search and
+// execute stay.
+func (a *adapter) HonorsNoTools() bool { return true }
 
 // builtinTools are Claude's own tools, denied when Spec.NoTools is set.
 const builtinTools = "Bash,BashOutput,KillShell,Edit,MultiEdit,Write,NotebookEdit,Read,Glob,Grep,LS,WebFetch,WebSearch,Task,TodoWrite,SlashCommand,Skill"

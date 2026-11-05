@@ -39,7 +39,7 @@ No `@` anywhere. `#` stays for files, `/` for commands.
    sub-thread stays there, unless they send it up ("Send to parent").
 3. **Named agents stay** as dropdown entries and as kinds the lead may spawn
    or open sub-threads with (`kind: "charles"`). Teammates keep the Team
-   panel; `@alice` is gone (team.post covers agent-to-teammate).
+   panel; `@alice` is gone (team.post covered agent-to-teammate until Deck v3 removed it).
 4. **All clients change at once**: engine, desktop, terminal app, phone.
 
 ## 1. Engine (`internal/deck/session`)

@@ -48,9 +48,6 @@ type Config struct {
 	Tap codex.Tap
 	// Caps are the adapter's ContextCaps.
 	Caps agent.ContextCaps
-	// ContractSafe: in ask mode the agent's edits and commands ask through
-	// session/request_permission (see agent.ContractSafe).
-	ContractSafe bool
 	// EffortAliases maps an effort value of the agent's to Deck's level
 	// ("off" → "none"); the reverse is used when setting one.
 	EffortAliases map[string]string
@@ -72,7 +69,6 @@ var (
 	_ agent.ModelLister    = (*Adapter)(nil)
 	_ agent.ModelForgetter = (*Adapter)(nil)
 	_ agent.ContextCapser  = (*Adapter)(nil)
-	_ agent.ContractSafe   = (*Adapter)(nil)
 	_ agent.VideoInput     = (*Adapter)(nil)
 )
 
@@ -91,9 +87,6 @@ func (a *Adapter) Name() string { return a.cfg.Kind }
 
 // ContextCaps implements agent.ContextCapser.
 func (a *Adapter) ContextCaps() agent.ContextCaps { return a.cfg.Caps }
-
-// ContractSafe implements agent.ContractSafe.
-func (a *Adapter) ContractSafe() bool { return a.cfg.ContractSafe }
 
 // TakesVideo implements agent.VideoInput.
 func (a *Adapter) TakesVideo(model string) bool { return a.cfg.Video != nil && a.cfg.Video(model) }

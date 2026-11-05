@@ -156,12 +156,11 @@ func TestInstructionsFollowTheLevel(t *testing.T) {
 	} {
 		t.Run(tc.level, func(t *testing.T) {
 			r, tid := levelRig(t, tc.level)
-			r.m.SetTeam(&postTeam{})
 			r.add(t, tid, "codex")
 			sp, _ := r.codex.spec("codex")
 			has(t, sp.Instructions, tc.has...)
 			lacks(t, sp.Instructions, tc.lacks...)
-			has(t, sp.Instructions, "Teammates' Decks", "Write plan files in") // nothing was cut
+			has(t, sp.Instructions, "Write plan files in") // nothing was cut
 			if len(sp.Instructions) > maxInstrChars {
 				t.Fatalf("Instructions are %d bytes", len(sp.Instructions))
 			}

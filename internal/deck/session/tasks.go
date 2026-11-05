@@ -51,9 +51,6 @@ type TaskSpec struct {
 	Judge string
 	// Review is who reviews it before it is done (review.go).
 	Review string
-	// Remote is the teammate that does it under a code contract
-	// (contract.go).
-	Remote string
 	// Claimed creates the task already running (its first attempt under way),
 	// so the scheduler never hands out a task its creator is about to work on
 	// or hand over itself.
@@ -258,7 +255,7 @@ func (m *Manager) addTask(t *thread, sp TaskSpec) (store.Task, error) {
 		ID: id, Title: clipText(title, 120), Brief: clipText(sp.Brief, maxTaskText),
 		Creator: sp.Creator, Owner: sp.Owner, Parent: canonicalID(t.tasks, sp.Parent), Deps: deps,
 		Status: store.TaskPending, OnFail: sp.OnFail, MaxAttempts: sp.MaxAttempts, Contract: sp.Contract, Isolate: sp.Isolate,
-		Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort, Budget: sp.Budget, Race: sp.Race, Judge: sp.Judge, Remote: sp.Remote,
+		Kind: sp.Kind, Model: sp.Model, Effort: sp.Effort, Budget: sp.Budget, Race: sp.Race, Judge: sp.Judge,
 		Review: sp.Review, Created: now, Updated: now,
 	}
 	if sp.Claimed {
@@ -485,9 +482,6 @@ func (m *Manager) moveTaskIf(t *thread, id string, to store.TaskStatus, by, note
 		_, _ = m.moveTask(t, id, store.TaskCancelled, by, "its parent task was cancelled", nil)
 	}
 	m.raceStep(t, out)
-	if from != to {
-		m.taskEnded(t, out)
-	}
 	return out, nil
 }
 
@@ -646,8 +640,6 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (out string, err error) {
 		return m.listNotes(b.a)
 	case "memory.drop":
 		return m.dropNote(b.a, str("id"))
-	case "team.post":
-		return m.teamPost(b.a, str("to"), str("text"))
 	case "task.steer":
 		if err := m.SteerTask(t.id, str("id"), me, str("message")); err != nil {
 			return "", err
@@ -674,16 +666,6 @@ func (b taskBoard) TaskOp(op string, a map[string]any) (out string, err error) {
 			return "", err
 		}
 		return fmt.Sprintf("started race %s with entries %s; when all have ended, a summary comes back to you, and the user keeps one", res.TaskID, strings.Join(res.Entries, ", ")), nil
-	case "task.contract":
-		tk, queued, err := m.Contract(t.id, me, ContractSpec{Peer: str("peer"), Title: str("title"), Brief: str("brief")})
-		if err != nil {
-			return "", err
-		}
-		how := "its person confirms it first"
-		if queued {
-			how = tk.Remote + " cannot be reached now: the request goes when its link is back, then its person confirms it"
-		}
-		return fmt.Sprintf("asked %s to do %s %q; %s. When it ends, its result comes back to you, with a capsule of its changes.", tk.Remote, tk.ID, tk.Title, how), nil
 	case "review.approve":
 		return m.answerReview(b.a, str("id"), true, str("note"))
 	case "review.changes":
@@ -867,9 +849,6 @@ func (m *Manager) RetryTask(threadID, id, by string) (store.Task, error) {
 	t := m.thread(threadID)
 	if t == nil {
 		return store.Task{}, fmt.Errorf("session: no thread %q", threadID)
-	}
-	if tk, ok := m.Task(threadID, id); ok && tk.Remote != "" {
-		return store.Task{}, fmt.Errorf("%s was a contract with %s: ask again with task.contract", tk.ID, tk.Remote)
 	}
 	var old *store.RunRef
 	tk, err := m.moveTask(t, id, store.TaskReady, by, "retry", func(tk *store.Task) {

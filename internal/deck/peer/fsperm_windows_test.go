@@ -3,7 +3,6 @@
 package peer
 
 import (
-	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows"
@@ -51,22 +50,11 @@ func setDACL(t *testing.T, path string, everyone windows.ACCESS_MODE) {
 	}
 }
 
-// TestCheckPrivateDACL: an allow entry for anyone else fails the check, a
-// deny entry does not.
-func TestCheckPrivateDACL(t *testing.T) {
-	path := t.TempDir() + `\f`
-	if err := writePrivateFile(path, []byte("x"), false); err != nil {
-		t.Fatal(err)
+// currentUserSID is the SID of the user this process runs as.
+func currentUserSID() (*windows.SID, error) {
+	u, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return nil, err
 	}
-	if err := CheckPrivate(path); err != nil {
-		t.Fatalf("private file: %v", err)
-	}
-	setDACL(t, path, windows.GRANT_ACCESS)
-	if err := CheckPrivate(path); err == nil || !strings.Contains(err.Error(), "accessible by") {
-		t.Fatalf("Everyone allowed: %v", err)
-	}
-	setDACL(t, path, windows.DENY_ACCESS)
-	if err := CheckPrivate(path); err != nil {
-		t.Fatalf("Everyone denied: %v", err)
-	}
+	return u.User.Sid.Copy()
 }

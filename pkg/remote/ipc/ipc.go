@@ -29,7 +29,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dev-dami/deck/internal/deck/peer"
+	"github.com/dev-dami/deck/internal/privfile"
 	"github.com/dev-dami/deck/pkg/remote"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 )
@@ -146,7 +146,7 @@ func WriteEndpoint(dir string, e Endpoint) error {
 	if err != nil {
 		return err
 	}
-	return peer.WritePrivateFile(filepath.Join(dir, endpointFile), raw)
+	return privfile.Write(filepath.Join(dir, endpointFile), raw)
 }
 
 // ReadEndpoint reads the endpoint a running daemon published.

@@ -57,6 +57,9 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 	if t == nil {
 		return PostResult{}, fmt.Errorf("session: no thread %q", threadID)
 	}
+	if err := t.frozenErr(); err != nil {
+		return PostResult{}, err
+	}
 	text = strings.TrimSpace(text)
 	if text == "" && len(images) > 0 {
 		text = "See the attached image(s)."

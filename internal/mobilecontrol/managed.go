@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dev-dami/deck/internal/deck/peer"
+	"github.com/dev-dami/deck/internal/privfile"
 )
 
 // A live supervisor, authenticated with a random local capability, owns its
@@ -180,7 +180,7 @@ func ServeManaged(ctx context.Context, dir, role string) error {
 	done := make(chan error, 1)
 	go func() { done <- child.Wait() }()
 	record, _ := json.Marshal(managedState{Address: listener.Addr().String(), Token: token, Role: role, PID: child.Process.Pid})
-	if err := peer.WritePrivateFile(statePath(dir, role), record); err != nil {
+	if err := privfile.Write(statePath(dir, role), record); err != nil {
 		_ = stopChild(child)
 		return err
 	}

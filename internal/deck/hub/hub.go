@@ -53,8 +53,6 @@ const (
 	// reviewer may call them.
 	OpReviewApprove = "review.approve"
 	OpReviewChanges = "review.changes"
-	// OpTaskContract asks a teammate's Deck to do a task (a code contract).
-	OpTaskContract = "task.contract"
 	// OpThreadRoster lists the thread's members; it goes through the
 	// TaskBoard, which knows the caller's thread.
 	OpThreadRoster = "thread.roster"
@@ -62,9 +60,6 @@ const (
 	OpThreadOpen     = "thread.open"
 	OpThreadPost     = "thread.post"
 	OpThreadChildren = "thread.children"
-	// The two ops of an ops contract's agent (Env.Ops).
-	OpShRun          = "sh.run"
-	OpContractResult = "contract.result"
 )
 
 // Limits.
@@ -111,14 +106,6 @@ type SubBridge interface {
 	SubOp(ctx context.Context, op string, a map[string]any) (string, error)
 }
 
-// OpsRunner is a teammate's ops contract as its agent's two ops see it:
-// sh.run runs a command in the contract's sandbox, and contract.result
-// delivers the result, which must fit the contract's schema.
-type OpsRunner interface {
-	ShRun(ctx context.Context, cmd string) (string, error)
-	Deliver(result json.RawMessage) (string, error)
-}
-
 // Env is what one call runs against; the caller resolves it per call.
 type Env struct {
 	Highlights func(context.Context, string, json.RawMessage) (string, error)
@@ -142,14 +129,8 @@ type Env struct {
 	Activity func() string
 	// Tasks is the thread's task board; nil when unavailable.
 	Tasks TaskBoard
-	// Team is this Deck's peer link (its teammates); nil when there is none.
-	Team Team
 	// Sub is the Source Update Bridge; nil when unavailable.
 	Sub SubBridge
-	// Ops is set only for the agent of an ops contract: it then has
-	// sh.run and contract.result and no other op, and search shows only
-	// those two.
-	Ops OpsRunner
 	// MaxOutput is the most text a result may hold for this agent; 0 means
 	// MaxOutput, and it is never more than MaxOutputCap.
 	MaxOutput int
@@ -231,28 +212,6 @@ func (o Op) Signature() string {
 func Ops() []Op { return append(append(append([]Op{}, ops...), browserOps()...), highlightOps()...) }
 
 var ops []Op
-
-// opsOps are the only ops of an ops contract's agent (Env.Ops). No other
-// agent has them.
-var opsOps = []Op{
-	{Name: OpShRun, Desc: "Run a command in this contract's sandbox: only the commands its scope allows run, on its targets. Returns stdout, stderr and the exit code.",
-		Args: []Arg{{Name: "cmd", Type: tString, Required: true, Desc: "the command line, e.g. \"podman ps --all\""}},
-		run:  func(ctx context.Context, env *Env, a args) (string, error) { return env.Ops.ShRun(ctx, a.str("cmd")) }},
-	{Name: OpContractResult, Desc: "Deliver this contract's result: {\"rows\": [{field: value, ...}]} with only the contract's fields. Deck checks it and sends it to the teammate. A result that does not fit comes back with the reason.",
-		Args: []Arg{{Name: "result", Type: tJSON, Required: true, Desc: "the JSON object"}},
-		run: func(_ context.Context, env *Env, a args) (string, error) {
-			raw, _ := a["result"].(json.RawMessage)
-			return env.Ops.Deliver(raw)
-		}},
-}
-
-// catalog is the ops the agent of env has.
-func catalog(env *Env) []Op {
-	if env.Ops != nil {
-		return opsOps
-	}
-	return Ops()
-}
 
 func init() {
 	ops = []Op{
@@ -349,9 +308,6 @@ func init() {
 			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "note", Type: tString, Desc: "what you checked"}}, run: opTask(OpReviewApprove)},
 		{Name: OpReviewChanges, Desc: "As a task's reviewer: send the work back with what must change. Its owner gets your notes and works on it again; its next result comes back for review. After a few rounds the user decides.",
 			Args: []Arg{{Name: "id", Type: tString, Required: true}, {Name: "notes", Type: tString, Required: true, Desc: "what must change, and why"}}, run: opTask(OpReviewChanges)},
-		{Name: OpTaskContract, Desc: "Ask a teammate's Deck (peers.list) to do a coding task. That Deck must have made this Deck a contractor on its side (the role peers.list shows is the one this Deck gives it, not the other way). The user allows it first, a copy of your tree goes to that Deck alone, and its person confirms and picks the agent. It becomes a task on the board that the teammate owns; when it ends, its reply and a capsule of its changes come back to you (apply it with sub.patch.apply).",
-			Args: []Arg{{Name: "peer", Type: tString, Required: true, Desc: "the teammate's name"}, {Name: "brief", Type: tString, Required: true}, {Name: "title", Type: tString}},
-			run:  opTask(OpTaskContract)},
 		{Name: "sub.snapshot.create", Desc: "Record your work tree as a SUB snapshot (content-addressed; unchanged files cost nothing). It becomes your base for sub.patch.capture.",
 			run: opSub("sub.snapshot.create")},
 		{Name: "sub.snapshot.inspect", Desc: "List a SUB snapshot's files (optionally those under a path prefix).",
@@ -428,21 +384,11 @@ func init() {
 			Args: []Arg{{Name: "number", Type: tInt, Required: true}}, run: opGHPR},
 		{Name: "gh.runs", Desc: "Recent GitHub Actions workflow runs (default 10).", Args: []Arg{{Name: "limit", Type: tInt}}, run: opGHRuns},
 		{Name: "deck.jobs", Desc: "Commands Deck's agents are running now and shells left running in the background.", run: opDeckJobs},
-		{Name: OpPeersList, Desc: "Your teammates: the other Decks paired with this one over the peer link (peers), with each one's role and whether it is connected.", run: opPeersList},
-		{Name: OpPeersStatus, Desc: "Ask one teammate's Deck (a peer from peers.list) how it is: its name, version and uptime, over the link.",
-			Args: []Arg{{Name: "peer", Type: tString, Required: true, Desc: "the teammate's name"}}, run: opPeersStatus},
-		{Name: OpTeamRead, Desc: "Read the team chat shared with your teammates' Decks: people and agents on other machines, and this Deck's. Each line has its number; since skips what you read already.",
-			Args: []Arg{{Name: "since", Type: tInt, Desc: "the last message number you read"}}, run: opTeamRead},
-		{Name: OpTeamPost, Desc: "Post a short message to the team chat, which your teammates (people and their agents on other machines) read. Only for things they need to know: a status, a question, a hand-off. A few per minute at most. to sends it to one teammate only, or to one of its agents, which reads it at the start of its next turn.",
-			Args: []Arg{
-				{Name: "text", Type: tString, Required: true},
-				{Name: "to", Type: tString, Desc: "one teammate (\"vps\") or one of its agents (\"vps/codex\"); empty for every teammate"},
-			}, run: opTask(OpTeamPost)},
 	}
 }
 
 func findOp(env *Env, name string) (Op, bool) {
-	for _, o := range catalog(env) {
+	for _, o := range Ops() {
 		if o.Name == name {
 			return o, true
 		}

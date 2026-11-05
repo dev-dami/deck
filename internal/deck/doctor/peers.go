@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dev-dami/deck/internal/deck/peer"
+	"github.com/dev-dami/deck/internal/privfile"
 )
 
 // PeerChecker answers the peers report's questions. Tests inject a fake.
@@ -133,7 +134,7 @@ func (c realPeerChecker) Identity() (string, string, error) {
 	return id.Fingerprint(), id.Path, nil
 }
 
-func (realPeerChecker) Private(path string) error { return peer.CheckPrivate(path) }
+func (realPeerChecker) Private(path string) error { return privfile.Check(path) }
 
 func (c realPeerChecker) Pinned(name string) (string, bool, error) {
 	dir, err := c.dir()

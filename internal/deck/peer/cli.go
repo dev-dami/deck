@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/dev-dami/deck/internal/deck/config"
+	"github.com/dev-dami/deck/pkg/remote/auth"
 )
 
 // CLI implements the `deck peer` subcommands; the cobra layer only parses
@@ -112,7 +113,7 @@ func (c CLI) Pair(ctx context.Context, a PairArgs) error {
 	if err != nil {
 		return err
 	}
-	code, err := NewPairCode()
+	code, err := auth.NewPairCode()
 	if err != nil {
 		return err
 	}
@@ -130,7 +131,7 @@ func (c CLI) Pair(ctx context.Context, a PairArgs) error {
 	addr := ln.Addr().String()
 	w := PairWait{
 		Code: code, Addr: addr, Fingerprint: id.Fingerprint(), Name: self,
-		Hosts: InviteHosts(addr), Expires: time.Now().Add(expiry), Reachable: Reachable(addr),
+		Hosts: auth.InviteHosts(addr), Expires: time.Now().Add(expiry), Reachable: Reachable(addr),
 	}
 	c.printWait(w, expiry, "Run again with --addr 0.0.0.0:"+portOf(ln.Addr())+" to listen on all interfaces.")
 	if a.Ready != nil {
@@ -290,12 +291,12 @@ func (e explained) Unwrap() error { return e.err }
 
 // Add dials a waiting Deck, proves the code and pins it.
 func (c CLI) Add(ctx context.Context, a AddArgs) error {
-	if a.Invite == "" && LooksLikeInvite(a.Code) {
+	if a.Invite == "" && auth.LooksLikeInvite(a.Code) {
 		a.Invite, a.Code = a.Code, ""
 	}
 	var expect string
 	if a.Invite != "" {
-		inv, err := ParseInvite(a.Invite)
+		inv, err := auth.ParseInvite(a.Invite)
 		if err != nil {
 			return err
 		}

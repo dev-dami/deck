@@ -13,9 +13,9 @@ import (
 
 	deckagent "github.com/dev-dami/deck/internal/deck/agent"
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
-	"github.com/dev-dami/deck/internal/deck/peer"
 	decks "github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/message"
+	"github.com/dev-dami/deck/internal/privfile"
 	"github.com/dev-dami/deck/internal/pubsub"
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/ui/tone"
@@ -311,7 +311,7 @@ func (w *DeckWorkspace) saveEntries() {
 	if err != nil {
 		return
 	}
-	if err := peer.WritePrivateFile(path, data); err != nil {
+	if err := privfile.Write(path, data); err != nil {
 		slog.Warn("Could not save the message edit index", "error", err)
 	}
 }

@@ -2,6 +2,15 @@
 
 Status: implemented on branch feat/agent-pools. In `internal/deck/peer`: the transport, pairing, pinning, supervisor and `deck peer` commands; `peer.status` with presence; `console.post` and `console.read` team chat with idempotency keys and the outbox; capsule transfer (`sub.closure`/`sub.objects`); code contracts and shared threads (`docs/multiplayer-design.md` §8.4, §8.5); ops contracts (§3) run in the `internal/deck/vsh` sandbox (§4); relaying through a paired Deck (§1); and `deck serve` (§8 step 7). Not built: the full-screen team console (§5; the Team, Chat and Shared panes cover its parts) and the per-peer mirror store of §6 (shared threads are read live instead). The outbox is one file, `~/.deck/peers/outbox.json`, not one per peer.
 
+> **Deck v3:** the team chat (`console.post`, `console.read`, `chat.jsonl`),
+> the outbox (`outbox.json`), code contracts (`contracts.json`), ops
+> contracts (§3, `audit.jsonl`), the `internal/deck/vsh` sandbox (§4) and the
+> team console (§5) were removed. Their files stay in `~/.deck/peers`,
+> unread. The transport, pairing, pinning, relaying, presence, shared threads
+> and capsule transfer stay until Deck Link replaces them in the same release
+> that deletes this link. See [design/v3/02-cuts.md](design/v3/02-cuts.md)
+> and [design/v3/05-fleet-and-connect.md](design/v3/05-fleet-and-connect.md).
+
 Decisions:
 - Peer-to-peer mesh between Deck instances.
 - **Deck's own app-internal SSH** (golang.org/x/crypto/ssh) is only an encrypted, authenticated pipe. It is not a login service. It accepts one thing: **remote MCP calls to exactly the 2 tools, `search` and `execute`**.
@@ -45,7 +54,7 @@ Nothing else is reachable remotely: no git, no gh, no `thread.send`, no raw comm
 
 Agents on the local Deck reach a peer with the same tools: `execute {op: "peer.call", peer, op, args}` forwards one of the peer-scoped ops above (`vps` / `pc` names). Qualified agent names like `vps/claude` appear only in the console, never as shell input.
 
-## 3. Contracts: word-based grants for working together
+## 3. Contracts: word-based grants for working together (removed in Deck v3)
 
 As built: the person asks in the Team pane (`o` on a teammate). The parser knows the presets `podman-read` and `systemd-read`, and makes every field a string of at most 200 characters. The requester confirms the card; the contractor runs a contract at once when its scope is inside `max_scope`, at most 2 at a time per teammate. Only Claude can run one (`agent.OpsSafe`: `--tools ""` and its built-in tools disallowed); the other CLIs fail closed. The audit log is `~/.deck/peers/audit.jsonl`, not the console log; it keeps the last 5000 lines.
 
@@ -68,7 +77,7 @@ Contract {
 - **Results only:** the agent delivers by calling `contract.result` with JSON that must validate against the contract schema (types, no extra properties, per-field maxLength, total size cap, redaction pass). Invalid results go back to the agent to fix (limited retries); nothing else crosses the link. The agent's free-form chat and tool output stay on the executing Deck, visible to its owner, and are never sent to the requester.
 - **Audit:** every contract, command run, denial and result is written to the console log.
 
-## 4. Virtual bash instance (sandbox)
+## 4. Virtual bash instance (sandbox) (removed in Deck v3)
 
 As built (`internal/deck/vsh`):
 - It parses each script with mvdan.cc/sh and refuses the whole script, before anything runs, when it uses loops, case, functions, aliases, variables, substitutions, arithmetic, here-docs, background jobs or unquoted braces.
@@ -93,7 +102,7 @@ All commands for a contract run through a **virtual bash** built on the interpre
   - A new capability flag `ContractSafe` per adapter makes the refusal explicit.
 - **Honest limits:** this is a command-level sandbox, not an OS container. Shim processes run as Deck's user, so run Deck on the VPS as a dedicated low-privilege (rootless podman) user or in a unit with restricted permissions for defense in depth. The security-critical code is small and fully testable, and Phase 3 builds and attacks it before anything else depends on it.
 
-## 5. Team console (TUI)
+## 5. Team console (TUI) (removed in Deck v3)
 
 One nice shared surface for people and agents.
 

@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dev-dami/deck/pkg/remote/auth"
 	"github.com/sourcegraph/jsonrpc2"
 	"golang.org/x/crypto/ssh"
 )
@@ -357,7 +358,7 @@ func TestPairListenerNotHeldByIdleConnections(t *testing.T) {
 	leakCheck(t)
 	fastKDF(t)
 	l, d := newTestPeer(t, "vps"), newTestPeer(t, "pc")
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	addr, out := servePair(t, l, code, PairOptions{MaxAttempts: 1})
 
 	// One idle connection from the dialer's own IP (the per-IP cap is 2),
@@ -398,7 +399,7 @@ func TestPairIdleConnectionCutAtHelloTimeout(t *testing.T) {
 	pairHelloTimeout = time.Second
 	t.Cleanup(func() { pairHelloTimeout = old })
 	l, d := newTestPeer(t, "vps"), newTestPeer(t, "pc")
-	code, _ := NewPairCode()
+	code, _ := auth.NewPairCode()
 	addr, out := servePair(t, l, code, PairOptions{MaxAttempts: 1})
 	// Fill this IP's two slots with silent connections: they are cut at the
 	// hello timeout and the real dialer then gets in.
@@ -567,24 +568,15 @@ func TestAllowInboundOpVariants(t *testing.T) {
 	}
 }
 
-func TestContractorOpsNeedRole(t *testing.T) {
-	allow := []string{OpPeerStatus, "contract.propose"}
-	if (Caller{Role: "observer", AllowInbound: allow}).Allowed("contract.propose") {
-		t.Fatal("observer may run a contractor op")
+// The team chat and contract ops were removed in Deck v3: the default allow
+// list leaves them out, whatever the caller's role.
+func TestRemovedOpsAreNotAllowed(t *testing.T) {
+	for _, op := range []string{"contract.propose", "contract.result", "console.post", "console.read"} {
+		if (Caller{Role: "contractor"}).Allowed(op) {
+			t.Fatalf("%s is allowed", op)
+		}
 	}
-	if (Caller{AllowInbound: allow}).Allowed("contract.propose") {
-		t.Fatal("empty role may run a contractor op")
-	}
-	if !(Caller{Role: "contractor", AllowInbound: allow}).Allowed("contract.propose") {
-		t.Fatal("contractor refused an allowed contractor op")
-	}
-	if !(Caller{Role: "contractor"}).Allowed("contract.propose") {
-		t.Fatal("the default allow list refused a contractor its op")
-	}
-	if (Caller{Role: "contractor", AllowInbound: []string{OpPeerStatus}}).Allowed("contract.propose") {
-		t.Fatal("contractor op allowed by an allow_inbound that leaves it out")
-	}
-	if !(Caller{}).Allowed(OpPeerStatus) || (Caller{}).Allowed("console.read") || (Caller{}).Allowed("") {
+	if !(Caller{}).Allowed(OpPeerStatus) || (Caller{}).Allowed("") {
 		t.Fatal("default allow list")
 	}
 }

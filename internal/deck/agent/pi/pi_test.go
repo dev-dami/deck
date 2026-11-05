@@ -156,10 +156,10 @@ func TestSwitches(t *testing.T) {
 
 func readLog(f fake) string { b, _ := os.ReadFile(f.log); return string(b) }
 
-func TestNotContractSafe(t *testing.T) {
+func TestNameAndInstallHint(t *testing.T) {
 	a := New("")
-	if a.Name() != "pi" || a.ContractSafe() {
-		t.Error("pi runs its tools without asking: never a contract")
+	if a.Name() != "pi" {
+		t.Error("pi is named pi")
 	}
 	_, err := New("no-such-pi-acp").Start(context.Background(), agent.Spec{Dir: t.TempDir()})
 	if err == nil || !strings.Contains(err.Error(), Install) {

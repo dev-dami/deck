@@ -39,6 +39,10 @@ func startMode(cfg config.Config) (mode agent.Mode, ignoredYolo bool) {
 	return agent.Mode(s), ignored
 }
 
+// Notice tells every client text, a note of Deck's own that belongs to no
+// thread (the engine's migration notices).
+func (m *Manager) Notice(text string) { m.emit(NoticeMsg{Text: text}) }
+
 func yoloIgnoredNotice() NoticeMsg {
 	return NoticeMsg{Text: "default_mode yolo ignored at startup; press shift+tab to switch"}
 }
@@ -86,10 +90,6 @@ func (m *Manager) SetMode(threadID string, mode agent.Mode) error {
 		return errClosed
 	}
 	t.mu.Lock()
-	if mode == agent.ModeYolo && t.contract != "" {
-		t.mu.Unlock()
-		return fmt.Errorf("this thread runs a contract from %s: it runs in ask mode at most", t.contract)
-	}
 	prev := t.mode
 	if prev == mode {
 		t.mu.Unlock()

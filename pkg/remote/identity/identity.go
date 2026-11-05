@@ -16,7 +16,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dev-dami/deck/internal/deck/peer"
+	"github.com/dev-dami/deck/internal/privfile"
 )
 
 const fileName = "identity.json"
@@ -70,7 +70,7 @@ func LoadOrCreate(dir string) (*Identity, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := peer.WritePrivateFile(path, raw); err != nil {
+	if err := privfile.Write(path, raw); err != nil {
 		return nil, fmt.Errorf("write identity: %w", err)
 	}
 	return id, nil

@@ -226,37 +226,12 @@ export interface Teammate {
   threads: TeamThread[];
 }
 
-export interface TeamChat {
-  seq: number;
-  from: string;
-  agent: string;
-  text: string;
-  at: number;
-  mine: boolean;
-}
-
-export interface TeamContract {
-  id: string;
-  peer: string;
-  inbound: boolean;
-  title: string;
-  brief: string;
-  state: string;
-  agent: string;
-  note: string;
-  summary: string;
-  kind: string;
-}
-
 export interface Team {
   available: boolean;
   enabled: boolean;
   name: string;
   fingerprint: string;
   teammates: Teammate[];
-  chat: TeamChat[];
-  contracts: TeamContract[];
-  contractKinds: string[];
 }
 
 const toThread = (t: Obj): TeamThread => ({
@@ -291,27 +266,6 @@ export function toTeam(v: unknown): Team {
       })),
       threads: list(p, "threads", toThread),
     })),
-    chat: list(o, "chat", (m) => ({
-      seq: num(m, "seq"),
-      from: str(m, "from"),
-      agent: str(m, "agent"),
-      text: str(m, "text"),
-      at: num(m, "at"),
-      mine: bool(m, "mine"),
-    })),
-    contracts: list(o, "contracts", (c) => ({
-      id: str(c, "id"),
-      peer: str(c, "peer"),
-      inbound: bool(c, "inbound"),
-      title: str(c, "title"),
-      brief: str(c, "brief"),
-      state: str(c, "state"),
-      agent: str(c, "agent"),
-      note: str(c, "note"),
-      summary: str(c, "summary"),
-      kind: str(c, "kind"),
-    })),
-    contractKinds: strs(o, "contract_kinds"),
   };
 }
 

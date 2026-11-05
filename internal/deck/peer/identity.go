@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dev-dami/deck/internal/privfile"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -63,7 +64,7 @@ func LoadOrCreateIdentity(dir string) (*Identity, error) {
 		return nil, err
 	}
 	path := filepath.Join(dir, IdentityFile)
-	err = writePrivateFile(path, pem.EncodeToMemory(block), true)
+	err = privfile.WriteNew(path, pem.EncodeToMemory(block))
 	if err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, fmt.Errorf("peer: write identity: %w", err)
 	}

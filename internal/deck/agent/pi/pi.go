@@ -13,8 +13,7 @@
 //
 // Differences from OpenCode, which uses the same client:
 //   - Pi runs its tools without asking: there is no approval for an edit or
-//     a command, so Deck's ask and plan modes cannot hold it back, and Pi
-//     never runs a teammate's contract. The approvals Deck does get are an
+//     a command, so Deck's ask and plan modes cannot hold it back. The approvals Deck does get are an
 //     extension's confirm prompts, and its select prompts come as questions
 //     (agent.ApproveQuestion, the choices as options).
 //   - pi-acp does not pass ACP's MCP servers on to pi, so Pi has none of
