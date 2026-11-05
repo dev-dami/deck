@@ -269,8 +269,9 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 	s.pendingRequests.Set(permission.ID, respCh)
 	defer s.pendingRequests.Del(permission.ID)
 
-	// Publish the request
-	s.Publish(pubsub.CreatedEvent, permission)
+	// Publish the request. An agent waits on it, so it must not be
+	// dropped for a busy subscriber.
+	s.PublishMustDeliver(ctx, pubsub.CreatedEvent, permission)
 
 	select {
 	case <-ctx.Done():
@@ -288,6 +289,12 @@ func (s *permissionService) AutoApproveSession(sessionID string) {
 
 func (s *permissionService) SubscribeNotifications(ctx context.Context) <-chan pubsub.Event[PermissionNotification] {
 	return s.notificationBroker.Subscribe(ctx)
+}
+
+// SubscribeNotificationsReliable is SubscribeNotifications without loss:
+// see [pubsub.Broker.SubscribeReliable].
+func (s *permissionService) SubscribeNotificationsReliable(ctx context.Context) *pubsub.Subscription[PermissionNotification] {
+	return s.notificationBroker.SubscribeReliable(ctx)
 }
 
 func (s *permissionService) SetSkipRequests(skip bool) {

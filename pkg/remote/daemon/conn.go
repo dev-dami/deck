@@ -52,7 +52,7 @@ func (d *Daemon) Serve(ctx context.Context, c Conn) error {
 	out := make(chan wire.Frame3, outQueue)
 	w := &connWriter{c: c, sess: sess}
 	welcome := wire.Frame3{T: wire.FrameWelcome, Welcome3: &wire.Welcome3{
-		Epoch: d.hub.epoch, Replay: replay,
+		Epoch: d.hub.currentEpoch(), Replay: replay,
 		Server: wire.ServerInfo3{
 			Version: d.cfg.Version, CID: d.cfg.Identity.CID(), Name: d.cfg.Name,
 			Projects: d.projectRefs(), Kinds: d.kinds(), AllowYolo: dev.AllowYolo,

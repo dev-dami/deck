@@ -124,6 +124,28 @@ func (h *hub) subscribe(resume *wire.Resume3) (c *client, replay, resync bool) {
 	return c, len(frames) > 0, false
 }
 
+// currentEpoch is the hub's epoch now; reset changes it.
+func (h *hub) currentEpoch() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.epoch
+}
+
+// reset starts a new epoch and kicks every phone: a project lost events
+// before they reached the hub (remote.EvLost), so no position of the old
+// epoch can be replayed. Each phone reconnects, resyncs and refetches.
+func (h *hub) reset() {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.epoch = hex.EncodeToString(b)
+	h.ring = nil
+	for c := range h.clients {
+		c.kick()
+	}
+}
+
 func (h *hub) unsubscribe(c *client) {
 	h.mu.Lock()
 	delete(h.clients, c)

@@ -76,13 +76,35 @@ type Hub struct {
 
 // New returns an empty hub with a fresh epoch.
 func New() *Hub {
+	return &Hub{epoch: newEpoch(), clients: map[*Client]struct{}{}}
+}
+
+func newEpoch() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
-	return &Hub{epoch: hex.EncodeToString(b), clients: map[*Client]struct{}{}}
+	return hex.EncodeToString(b)
 }
 
 // Epoch identifies this hub's run.
-func (h *Hub) Epoch() string { return h.epoch }
+func (h *Hub) Epoch() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.epoch
+}
+
+// Reset starts a new epoch and kicks every client: events were lost
+// before they reached the hub (remote.EvLost), so no position of the old
+// epoch can be replayed. Each phone reconnects, is told to resync, and
+// refetches.
+func (h *Hub) Reset() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.epoch = newEpoch()
+	h.ring = nil
+	for c := range h.clients {
+		c.kick()
+	}
+}
 
 // Seq is the sequence number of the latest event.
 func (h *Hub) Seq() uint64 {

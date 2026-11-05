@@ -222,13 +222,32 @@ func (app *App) subscribe[T any](
 					slog.Debug("Subscription channel closed", "name", name)
 					return
 				}
-				app.events.Publish(pubsub.UpdatedEvent, tea.Msg(event))
+				if structural(event) {
+					app.events.PublishMustDeliver(ctx, pubsub.UpdatedEvent, tea.Msg(event))
+				} else {
+					app.events.Publish(pubsub.UpdatedEvent, tea.Msg(event))
+				}
 			case <-ctx.Done():
 				slog.Debug("Subscription cancelled", "name", name)
 				return
 			}
 		}
 	})
+}
+
+// structural reports whether ev changes what exists rather than how it
+// looks mid-stream: a row or session created or deleted, or a message
+// finished. The services publish these on the must-deliver path, and the
+// fan-in keeps them there, so the TUI does not lose them to a full buffer
+// at this hop. Streaming updates stay lossy: the next one carries the
+// whole message again. (Remote clients do not read this broker; they use
+// ReliableEvents.)
+func structural[T any](ev pubsub.Event[T]) bool {
+	if ev.Type == pubsub.CreatedEvent || ev.Type == pubsub.DeletedEvent {
+		return true
+	}
+	m, ok := any(ev.Payload).(message.Message)
+	return ok && m.IsFinished()
 }
 
 // subscribeMustDeliver is the bounded-blocking fan-in variant of

@@ -12,6 +12,7 @@ import (
 
 	deckconfig "github.com/dev-dami/deck/internal/deck/config"
 	"github.com/dev-dami/deck/internal/deck/media"
+	"github.com/dev-dami/deck/internal/pubsub"
 	"github.com/dev-dami/deck/internal/workspace"
 	"github.com/dev-dami/deck/pkg/remote/wire"
 	"github.com/dev-dami/deck/pkg/rpc/deckv1"
@@ -183,8 +184,26 @@ func (s *Server) recheck(ctx context.Context, sid string) {
 }
 
 // pumpWorkspace turns workspace state deltas into replayable RPC events.
+// It reads them without loss where the workspace allows; a cut starts a
+// new feed epoch, so clients resync instead of resuming over the gap.
 func (s *Server) pumpWorkspace(ctx context.Context) {
-	for ev := range s.crew.changes.SubscribeDeck(ctx) {
+	for {
+		var sub *pubsub.Subscription[workspace.DeckChange]
+		if r, ok := s.crew.changes.(workspace.ReliableDeck); ok {
+			sub = r.SubscribeDeckReliable(ctx)
+		} else {
+			sub = pubsub.NewSubscription(s.crew.changes.SubscribeDeck(ctx), nil)
+		}
+		s.pumpChanges(sub.C)
+		if !sub.Lost() || ctx.Err() != nil {
+			return
+		}
+		s.feed.reset()
+	}
+}
+
+func (s *Server) pumpChanges(changes <-chan pubsub.Event[workspace.DeckChange]) {
+	for ev := range changes {
 		c := ev.Payload
 		if c.Kind == workspace.ChangeHighlight && c.Highlight != nil {
 			s.feed.publish(&deckv1.Event{SessionId: c.SessionID, Kind: &deckv1.Event_HighlightChanged{HighlightChanged: c.Highlight}})
@@ -221,7 +240,8 @@ func (s *Server) clis() []*deckv1.AgentCli {
 func (s *Server) capabilities() []string {
 	// Send takes video ("Video") everywhere, and sends one as frames
 	// ("VideoFrames") where the engine has ffmpeg.
-	out := []string{"Video"}
+	// Events can carry append-text deltas ("AppendText").
+	out := []string{"Video", infoCapAppendText}
 	if media.FFmpeg() != "" {
 		out = append(out, "VideoFrames")
 	}

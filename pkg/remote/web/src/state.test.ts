@@ -104,6 +104,13 @@ describe("messages", () => {
     expect(mergeMessages([a, c], [b]).map((m) => m.id)).toEqual(["m0", "m1"]);
   });
 
+  test("rows of the same second keep the order they were made in, not their ids", () => {
+    const at = "2026-10-12T09:00:00Z";
+    const made = ["f3", "a9", "c1"].map((id, i) => ({ ...msg(id, at, id), order: i + 1 }));
+    const [first, second, third] = made as [Message, Message, Message];
+    expect(mergeMessages([third, first], [second]).map((m) => m.id)).toEqual(["f3", "a9", "c1"]);
+  });
+
   test("the latest page sets the cursor; older pages move it back", () => {
     let st = reduce(initialState, {
       type: "messages.loaded",

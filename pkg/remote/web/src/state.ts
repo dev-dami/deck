@@ -2,6 +2,7 @@ import type { PairOffer } from "./auth";
 import {
   type AgentLine,
   type Approval,
+  compareMessages,
   type Device,
   type DeviceRef,
   isMode,
@@ -118,9 +119,7 @@ export function upsertSession(list: Session[], s: Session): Session[] {
   return sortSessions(next);
 }
 
-function byCreated(a: Message, b: Message): number {
-  return toMillis(a.created_at) - toMillis(b.created_at) || a.id.localeCompare(b.id);
-}
+const byCreated = compareMessages;
 
 // Merge by id and keep the newer revision, so a snapshot that raced with live
 // events never rolls a streaming message back.

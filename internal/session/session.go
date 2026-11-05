@@ -107,7 +107,7 @@ func (s *service) Create(ctx context.Context, title string) (Session, error) {
 		return Session{}, err
 	}
 	session := s.fromDBItem(dbSession)
-	s.Publish(pubsub.CreatedEvent, session)
+	s.PublishMustDeliver(ctx, pubsub.CreatedEvent, session)
 	return session, nil
 }
 
@@ -121,7 +121,7 @@ func (s *service) CreateTaskSession(ctx context.Context, toolCallID, parentSessi
 		return Session{}, err
 	}
 	session := s.fromDBItem(dbSession)
-	s.Publish(pubsub.CreatedEvent, session)
+	s.PublishMustDeliver(ctx, pubsub.CreatedEvent, session)
 	return session, nil
 }
 
@@ -135,7 +135,7 @@ func (s *service) CreateTitleSession(ctx context.Context, parentSessionID string
 		return Session{}, err
 	}
 	session := s.fromDBItem(dbSession)
-	s.Publish(pubsub.CreatedEvent, session)
+	s.PublishMustDeliver(ctx, pubsub.CreatedEvent, session)
 	return session, nil
 }
 
@@ -167,7 +167,9 @@ func (s *service) Delete(ctx context.Context, id string) error {
 
 	session := s.fromDBItem(dbSession)
 	s.clearEstimatedUsageState(dbSession.ID)
-	s.Publish(pubsub.DeletedEvent, session)
+	// Created and deleted sessions are state every client keeps; they
+	// are not left to the lossy path.
+	s.PublishMustDeliver(ctx, pubsub.DeletedEvent, session)
 	return nil
 }
 

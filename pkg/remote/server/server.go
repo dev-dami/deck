@@ -153,6 +153,10 @@ func (s *Server) Run(ctx context.Context) {
 				s.closeAll(websocket.CloseInternalServerErr, "backend closed")
 				return
 			}
+			if ev.Name == remote.EvLost {
+				s.hub.Reset() // every phone resyncs instead of resuming over the gap
+				continue
+			}
 			s.hub.Publish(capEvent(ev))
 		case <-s.changed:
 			s.refreshDevices()

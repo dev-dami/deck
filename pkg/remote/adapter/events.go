@@ -26,8 +26,8 @@ func (b *Backend) Events(ctx context.Context) <-chan remote.Event {
 	out := make(chan remote.Event, 256)
 	go func() {
 		defer close(out)
-		appCh := b.events(ctx)
-		deckCh := b.rc.SubscribeDeck(ctx)
+		appSub := b.events(ctx)
+		deckSub := b.subscribeDeck(ctx)
 		dirty := map[string]message.Message{}
 		tick := time.NewTicker(coalesceEvery)
 		defer tick.Stop()
@@ -58,20 +58,42 @@ func (b *Backend) Events(ctx context.Context) <-chan remote.Event {
 					theme = t
 					emit(remote.Event{Name: wire.EvThemeChanged, Payload: toTheme(t)})
 				}
-			case ev, ok := <-appCh:
+			case ev, ok := <-appSub.C:
 				if !ok {
-					return
+					if !appSub.Lost() || ctx.Err() != nil {
+						return
+					}
+					// Cut for falling behind: say so, so whatever numbers
+					// these events makes its clients resync, then listen
+					// again from now.
+					emit(remote.Event{Name: remote.EvLost})
+					appSub = b.events(ctx)
+					continue
 				}
 				b.onApp(ev.Payload, dirty, emit)
-			case ev, ok := <-deckCh:
+			case ev, ok := <-deckSub.C:
 				if !ok {
-					return
+					if !deckSub.Lost() || ctx.Err() != nil {
+						return
+					}
+					emit(remote.Event{Name: remote.EvLost})
+					deckSub = b.subscribeDeck(ctx)
+					continue
 				}
 				b.onDeck(ev.Payload, emit)
 			}
 		}
 	}()
 	return out
+}
+
+// subscribeDeck subscribes to the workspace's changes, without loss when
+// it can.
+func (b *Backend) subscribeDeck(ctx context.Context) *pubsub.Subscription[workspace.DeckChange] {
+	if r, ok := b.rc.(workspace.ReliableDeck); ok {
+		return r.SubscribeDeckReliable(ctx)
+	}
+	return pubsub.NewSubscription(b.rc.SubscribeDeck(ctx), nil)
 }
 
 // onApp turns one app event into wire events. Streaming deltas are

@@ -42,8 +42,17 @@ type Core interface {
 	WorkingDir() string
 }
 
-// Events is the app's event stream, as app.App.Events.
-type Events func(ctx context.Context) <-chan pubsub.Event[tea.Msg]
+// Events is the app's event stream, as app.App.ReliableEvents: its
+// subscription ends with Lost() true when events were missed.
+type Events func(ctx context.Context) *pubsub.Subscription[tea.Msg]
+
+// Lossy makes a plain event stream (a test's) an Events. Its losses, if
+// it has any, cannot be seen.
+func Lossy(f func(ctx context.Context) <-chan pubsub.Event[tea.Msg]) Events {
+	return func(ctx context.Context) *pubsub.Subscription[tea.Msg] {
+		return pubsub.NewSubscription(f(ctx), nil)
+	}
+}
 
 // raceStarter is the workspace's StartRace (workspace.Rooms).
 type raceStarter interface {
@@ -90,7 +99,7 @@ func New(ws workspace.Workspace, version, project string) (*Backend, error) {
 	}
 	picker, _ := ws.(workspace.AgentPicker)
 	roster, _ := ws.(workspace.Roster)
-	return NewWith(ws, rc, picker, roster, src.App().Events, version, project), nil
+	return NewWith(ws, rc, picker, roster, src.App().ReliableEvents, version, project), nil
 }
 
 // NewWith builds a Backend from its parts; tests use it with fakes.
@@ -225,7 +234,13 @@ func (b *Backend) Messages(ctx context.Context, sessionID, before string, limit 
 	if err != nil {
 		return nil, false, "", err
 	}
+	// Seq is the order the rows were made in. created_at has one-second
+	// resolution and ids are random, so they only order rows without a
+	// seq (none in a real store), never ones of the same second.
 	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Seq != rows[j].Seq {
+			return rows[i].Seq < rows[j].Seq
+		}
 		if rows[i].CreatedAt != rows[j].CreatedAt {
 			return rows[i].CreatedAt < rows[j].CreatedAt
 		}

@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -46,9 +47,11 @@ const (
 // Server implements deckv1.DeckServer over a remote.Backend.
 type Server struct {
 	deckv1.UnimplementedDeckServer
-	be    remote.Backend
-	feed  *feed
-	token string
+	be   remote.Backend
+	feed *feed
+	// deltas makes append-text forms of streaming updates; only Run uses it.
+	deltas *deltas
+	token  string
 
 	// The project (WithProject): where git runs and terminals start, and
 	// Deck's usage record. Without it those calls fail or say unavailable.
@@ -69,7 +72,7 @@ type Server struct {
 
 // New returns a server for be that admits callers presenting token.
 func New(be remote.Backend, token string) *Server {
-	return &Server{be: be, feed: newFeed(), token: token, rooms: map[string]room{}}
+	return &Server{be: be, feed: newFeed(), deltas: newDeltas(), token: token, rooms: map[string]room{}}
 }
 
 // Run pumps the backend's events, and the workspace's lease changes, into
@@ -79,12 +82,19 @@ func (s *Server) Run(ctx context.Context) {
 		go s.pumpWorkspace(ctx)
 	}
 	for ev := range s.be.Events(ctx) {
+		if ev.Name == remote.EvLost {
+			// Events were missed before they reached the feed: no client
+			// may resume over that gap.
+			s.feed.reset()
+			s.deltas.reset()
+			continue
+		}
 		e, ok := toEvent(ev)
 		if !ok {
 			continue
 		}
 		s.mark(e)
-		s.feed.publish(e)
+		s.feed.publishWith(e, s.deltas.observe(e))
 		// An agent's status moves without a session event.
 		if e.GetRosterChanged() != nil {
 			s.recheck(ctx, ev.SessionID)
@@ -199,6 +209,9 @@ func (s *Server) Info(context.Context, *deckv1.Empty) (*deckv1.InfoResponse, err
 }
 
 func (s *Server) ListSessions(ctx context.Context, _ *deckv1.Empty) (*deckv1.ListSessionsResponse, error) {
+	// The position comes first: whatever the data shows then is at least
+	// what the events up to it said (see Subscribe in deck.proto).
+	epoch, seq := s.feed.position()
 	v, err := s.be.Sessions(ctx)
 	if err != nil {
 		return nil, fail(err)
@@ -212,7 +225,7 @@ func (s *Server) ListSessions(ctx context.Context, _ *deckv1.Empty) (*deckv1.Lis
 	for _, p := range out {
 		s.note(p, bySession[p.GetId()])
 	}
-	return &deckv1.ListSessionsResponse{Sessions: out}, nil
+	return &deckv1.ListSessionsResponse{Sessions: out, Epoch: epoch, Seq: seq}, nil
 }
 
 func (s *Server) CreateSession(ctx context.Context, r *deckv1.CreateSessionRequest) (*deckv1.Session, error) {
@@ -304,11 +317,12 @@ func (s *Server) ListMessages(ctx context.Context, r *deckv1.ListMessagesRequest
 	if p.Limit == 0 {
 		p.Limit = defaultPage
 	}
+	epoch, seq := s.feed.position() // before the read: see ListSessions
 	msgs, more, next, err := s.be.Messages(ctx, p.SessionID, p.Before, p.Limit)
 	if err != nil {
 		return nil, fail(err)
 	}
-	res := &deckv1.ListMessagesResponse{Messages: each(msgs, toMessage), More: more}
+	res := &deckv1.ListMessagesResponse{Messages: each(msgs, toMessage), More: more, Epoch: epoch, Seq: seq}
 	if more {
 		res.Cursor = next
 	}
@@ -500,11 +514,12 @@ func (s *Server) SetMode(_ context.Context, r *deckv1.SetModeRequest) (*deckv1.E
 }
 
 func (s *Server) Approvals(_ context.Context, r *deckv1.SessionRef) (*deckv1.ApprovalsResponse, error) {
+	epoch, seq := s.feed.position() // before the read: see ListSessions
 	v, err := s.be.Approvals(r.GetSessionId())
 	if err != nil {
 		return nil, fail(err)
 	}
-	return &deckv1.ApprovalsResponse{Approvals: each(v, toApproval)}, nil
+	return &deckv1.ApprovalsResponse{Approvals: each(v, toApproval), Epoch: epoch, Seq: seq}, nil
 }
 
 func (s *Server) Answer(_ context.Context, r *deckv1.AnswerRequest) (*deckv1.AnswerResponse, error) {
@@ -543,7 +558,7 @@ func (s *Server) Events(r *deckv1.Subscribe, stream deckv1.Deck_EventsServer) er
 	if r.GetBrowserController() != nil {
 		return s.browserEvents(r.BrowserController, stream)
 	}
-	sb, ready := s.feed.subscribe(r.GetEpoch(), r.GetSeq())
+	sb, ready := s.feed.subscribeWith(r.GetEpoch(), r.GetSeq(), slices.Contains(r.GetCapabilities(), CapAppendText))
 	defer s.feed.unsubscribe(sb)
 	if err := stream.Send(&deckv1.Event{Kind: &deckv1.Event_Ready{Ready: ready}}); err != nil {
 		return err

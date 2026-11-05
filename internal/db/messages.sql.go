@@ -19,12 +19,15 @@ INSERT INTO messages (
     model,
     provider,
     is_summary_message,
+    seq,
     created_at,
     updated_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now')
+    ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+    (SELECT COALESCE(MAX(m.seq), 0) + 1 FROM messages m WHERE m.session_id = ?2),
+    strftime('%s', 'now'), strftime('%s', 'now')
 )
-RETURNING id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, prism_model_id, prism_model_name, prism_hypercredit_savings, prism_dollar_savings
+RETURNING id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, prism_model_id, prism_model_name, prism_hypercredit_savings, prism_dollar_savings, seq
 `
 
 type CreateMessageParams struct {
@@ -37,6 +40,8 @@ type CreateMessageParams struct {
 	IsSummaryMessage int64          `json:"is_summary_message"`
 }
 
+// seq is one more than the session's last: SQLite runs the statement as one
+// write, so two rows of a session never get the same number.
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error) {
 	row := q.queryRow(ctx, q.createMessageStmt, createMessage,
 		arg.ID,
@@ -63,6 +68,7 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 		&i.PrismModelName,
 		&i.PrismHypercreditSavings,
 		&i.PrismDollarSavings,
+		&i.Seq,
 	)
 	return i, err
 }
@@ -88,10 +94,10 @@ func (q *Queries) DeleteSessionMessages(ctx context.Context, sessionID string) e
 }
 
 const getLastAssistantMessageBySession = `-- name: GetLastAssistantMessageBySession :one
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, prism_model_id, prism_model_name, prism_hypercredit_savings, prism_dollar_savings
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, prism_model_id, prism_model_name, prism_hypercredit_savings, prism_dollar_savings, seq
 FROM messages
 WHERE session_id = ? AND role = 'assistant' AND is_summary_message = 0
-ORDER BY created_at DESC
+ORDER BY seq DESC
 LIMIT 1
 `
 
@@ -113,12 +119,13 @@ func (q *Queries) GetLastAssistantMessageBySession(ctx context.Context, sessionI
 		&i.PrismModelName,
 		&i.PrismHypercreditSavings,
 		&i.PrismDollarSavings,
+		&i.Seq,
 	)
 	return i, err
 }
 
 const getMessage = `-- name: GetMessage :one
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, prism_model_id, prism_model_name, prism_hypercredit_savings, prism_dollar_savings
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, prism_model_id, prism_model_name, prism_hypercredit_savings, prism_dollar_savings, seq
 FROM messages
 WHERE id = ? LIMIT 1
 `
@@ -141,12 +148,13 @@ func (q *Queries) GetMessage(ctx context.Context, id string) (Message, error) {
 		&i.PrismModelName,
 		&i.PrismHypercreditSavings,
 		&i.PrismDollarSavings,
+		&i.Seq,
 	)
 	return i, err
 }
 
 const listAllUserMessages = `-- name: ListAllUserMessages :many
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, prism_model_id, prism_model_name, prism_hypercredit_savings, prism_dollar_savings
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, prism_model_id, prism_model_name, prism_hypercredit_savings, prism_dollar_savings, seq
 FROM messages
 WHERE role = 'user'
 ORDER BY created_at DESC
@@ -179,6 +187,7 @@ func (q *Queries) ListAllUserMessages(ctx context.Context) ([]Message, error) {
 			&i.PrismModelName,
 			&i.PrismHypercreditSavings,
 			&i.PrismDollarSavings,
+			&i.Seq,
 		); err != nil {
 			return nil, err
 		}
@@ -194,12 +203,14 @@ func (q *Queries) ListAllUserMessages(ctx context.Context) ([]Message, error) {
 }
 
 const listMessagesBySession = `-- name: ListMessagesBySession :many
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, prism_model_id, prism_model_name, prism_hypercredit_savings, prism_dollar_savings
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, prism_model_id, prism_model_name, prism_hypercredit_savings, prism_dollar_savings, seq
 FROM messages
 WHERE session_id = ?
-ORDER BY created_at ASC
+ORDER BY seq ASC
 `
 
+// seq is the order the rows were created in; created_at has one-second
+// resolution and cannot break ties.
 func (q *Queries) ListMessagesBySession(ctx context.Context, sessionID string) ([]Message, error) {
 	rows, err := q.query(ctx, q.listMessagesBySessionStmt, listMessagesBySession, sessionID)
 	if err != nil {
@@ -224,6 +235,7 @@ func (q *Queries) ListMessagesBySession(ctx context.Context, sessionID string) (
 			&i.PrismModelName,
 			&i.PrismHypercreditSavings,
 			&i.PrismDollarSavings,
+			&i.Seq,
 		); err != nil {
 			return nil, err
 		}
@@ -239,11 +251,11 @@ func (q *Queries) ListMessagesBySession(ctx context.Context, sessionID string) (
 }
 
 const listMessagesBySessionFromSummary = `-- name: ListMessagesBySessionFromSummary :many
-SELECT m.id, m.session_id, m.role, m.parts, m.model, m.created_at, m.updated_at, m.finished_at, m.provider, m.is_summary_message, m.prism_model_id, m.prism_model_name, m.prism_hypercredit_savings, m.prism_dollar_savings
+SELECT m.id, m.session_id, m.role, m.parts, m.model, m.created_at, m.updated_at, m.finished_at, m.provider, m.is_summary_message, m.prism_model_id, m.prism_model_name, m.prism_hypercredit_savings, m.prism_dollar_savings, m.seq
 FROM messages m
 WHERE m.session_id = ?
-  AND m.created_at >= (SELECT s.created_at FROM messages s WHERE s.id = ?)
-ORDER BY m.created_at ASC
+  AND m.seq >= (SELECT s.seq FROM messages s WHERE s.id = ?)
+ORDER BY m.seq ASC
 `
 
 type ListMessagesBySessionFromSummaryParams struct {
@@ -252,8 +264,6 @@ type ListMessagesBySessionFromSummaryParams struct {
 }
 
 // Messages from the summary onward, which is all a compacted session sends.
-// created_at has one-second resolution, so a few messages preceding the
-// summary can come back too; the caller slices from the summary by ID.
 func (q *Queries) ListMessagesBySessionFromSummary(ctx context.Context, arg ListMessagesBySessionFromSummaryParams) ([]Message, error) {
 	rows, err := q.query(ctx, q.listMessagesBySessionFromSummaryStmt, listMessagesBySessionFromSummary, arg.SessionID, arg.ID)
 	if err != nil {
@@ -278,6 +288,7 @@ func (q *Queries) ListMessagesBySessionFromSummary(ctx context.Context, arg List
 			&i.PrismModelName,
 			&i.PrismHypercreditSavings,
 			&i.PrismDollarSavings,
+			&i.Seq,
 		); err != nil {
 			return nil, err
 		}
@@ -293,10 +304,10 @@ func (q *Queries) ListMessagesBySessionFromSummary(ctx context.Context, arg List
 }
 
 const listUserMessagesBySession = `-- name: ListUserMessagesBySession :many
-SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, prism_model_id, prism_model_name, prism_hypercredit_savings, prism_dollar_savings
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, prism_model_id, prism_model_name, prism_hypercredit_savings, prism_dollar_savings, seq
 FROM messages
 WHERE session_id = ? AND role = 'user'
-ORDER BY created_at DESC
+ORDER BY seq DESC
 LIMIT 200
 `
 
@@ -325,6 +336,7 @@ func (q *Queries) ListUserMessagesBySession(ctx context.Context, sessionID strin
 			&i.PrismModelName,
 			&i.PrismHypercreditSavings,
 			&i.PrismDollarSavings,
+			&i.Seq,
 		); err != nil {
 			return nil, err
 		}

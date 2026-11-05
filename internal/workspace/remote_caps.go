@@ -146,6 +146,20 @@ func (w *DeckWorkspace) SubscribeDeck(ctx context.Context) <-chan pubsub.Event[D
 	return w.changes().Subscribe(ctx)
 }
 
+// ReliableDeck is a RemoteControl whose changes can be subscribed to
+// without loss (see [pubsub.Broker.SubscribeReliable]). Remote feeds use
+// it: approvals, questions and busy states are state clients keep.
+type ReliableDeck interface {
+	SubscribeDeckReliable(ctx context.Context) *pubsub.Subscription[DeckChange]
+}
+
+var _ ReliableDeck = (*DeckWorkspace)(nil)
+
+// SubscribeDeckReliable implements [ReliableDeck].
+func (w *DeckWorkspace) SubscribeDeckReliable(ctx context.Context) *pubsub.Subscription[DeckChange] {
+	return w.changes().SubscribeReliable(ctx)
+}
+
 // RemoteMode implements [RemoteControl]: the thread's mode, or the
 // workspace's for a session with no thread yet.
 func (w *DeckWorkspace) RemoteMode(sessionID string) string {

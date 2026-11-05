@@ -494,6 +494,9 @@ message SessionLead {
 
 message ListSessionsResponse {
   repeated Session sessions = 1;
+  // The Events position this snapshot reflects; see Subscribe.
+  string epoch = 2;
+  uint64 seq = 3;
 }
 
 message CreateSessionRequest {
@@ -528,6 +531,11 @@ message Message {
   // "handoff" (work handed on under a contract), "blocked" (a question for
   // the user) or "continue"; empty while it runs and for other messages.
   string turn_end = 11;
+  // order is the message's place in its session: 1, 2, 3, ... in the
+  // order the rows were created. Sort by it: created_at has one-second
+  // resolution and ids are random, so neither can order rows of the same
+  // second. 0 from an older engine.
+  int64 order = 12;
 }
 
 message Part {
@@ -562,6 +570,9 @@ message ListMessagesResponse {
   repeated Message messages = 1;
   bool more = 2;
   string cursor = 3;
+  // The Events position this snapshot reflects; see Subscribe.
+  string epoch = 4;
+  uint64 seq = 5;
 }
 
 // Image is an image or a video attached to a message. label is what the
@@ -801,6 +812,9 @@ message QuestionAnswer {
 
 message ApprovalsResponse {
   repeated Approval approvals = 1;
+  // The Events position this snapshot reflects; see Subscribe.
+  string epoch = 2;
+  uint64 seq = 3;
 }
 
 message AnswerRequest {
@@ -828,6 +842,32 @@ message ChangesResponse {
   repeated ChangedFile files = 1;
 }
 
+// Subscribe opens the Events stream at a position: (epoch, seq) of the last
+// event the client applied, or empty for a fresh client.
+//
+// The resume contract:
+// - Events of one epoch are numbered 1, 2, 3, ... in one order that every
+//   subscriber sees. None is dropped: a subscriber that falls behind is
+//   ended with RESOURCE_EXHAUSTED and resubscribes from its last seq, and
+//   when the engine itself may have missed changes it starts a new epoch
+//   and ends every stream, so each client resyncs.
+// - Ready.resync is false: every event after seq follows, in order.
+//   Ready.resync is true (unknown epoch, or seq no longer replayable):
+//   refetch, then carry on from the snapshots' positions.
+// - ListSessions, ListMessages (the newest page) and Approvals carry the
+//   (epoch, seq) they reflect. The position is taken before the data is
+//   read, so a snapshot holds at least every event up to seq, and may
+//   already hold some after it. Events are full-state upserts and
+//   deletions by id, so applying a snapshot and then every event with a
+//   greater seq, in order, gives the engine's state. To start without a
+//   gap, subscribe with the snapshot's (epoch, seq); if Ready.resync is
+//   true, fetch again.
+// - The epoch is per engine process: a restart means a resync, because
+//   events are not yet kept on disk to replay from.
+// - With the capability "append_text", a streaming message_updated that
+//   only appended text to one part comes as message_append_text instead,
+//   with the same seq. Created and finished messages, and any other
+//   change, still come whole.
 message Subscribe {
   string epoch = 1;
   uint64 seq = 2;
@@ -835,6 +875,9 @@ message Subscribe {
   // controller subscription receives live BrowserRequests for its own
   // registration; ordinary subscribers never receive those requests.
   BrowserControllerRef browser_controller = 3;
+  // capabilities are optional event forms this client understands:
+  // "append_text" (MessageAppendText). Unknown ones are ignored.
+  repeated string capabilities = 4;
 }
 
 // Ready opens every Events stream.
@@ -917,6 +960,9 @@ message Event {
     BrowserStateResponse browser_changed = 27;
     HighlightItem highlight_changed = 28;
     AgentSummary summary_changed = 29;
+    // Only to a subscriber with the "append_text" capability, in place of
+    // a message_updated that only appended text.
+    MessageAppendText message_append_text = 30;
   }
 }
 
@@ -1776,4 +1822,26 @@ message CapsuleFilesResponse {
   repeated CapsuleFile files = 1;
   int32 total = 2;
   string diff = 3;
+}
+
+// MessageAppendText is a streaming message growing: text appended to its
+// part number part (a "text" or "reasoning" part), which was offset bytes
+// of UTF-8 long before. Everything else about the message is unchanged
+// but updated_at. Applying it: if the part is exactly offset bytes long,
+// append text; if it already holds offset+len(text) bytes or more, the
+// client has this text already (from a snapshot newer than the event);
+// if it is longer than offset but shorter, append the missing tail. If
+// the client has no such message, ignore the event: the message was
+// deleted before the client's snapshot was read, and its deletion
+// follows. A part shorter than offset cannot happen to a client that
+// follows Subscribe's contract; one that sees it anyway refetches the
+// message, or keeps what it has until the message's next full update
+// (finishing always sends the whole message).
+message MessageAppendText {
+  string id = 1;
+  string session_id = 2;
+  uint32 part = 3;
+  uint64 offset = 4;
+  string text = 5;
+  int64 updated_at = 6;
 }

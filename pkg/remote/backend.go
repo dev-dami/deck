@@ -41,6 +41,13 @@ type Image struct {
 	Frames bool
 }
 
+// EvLost is the Event a Backend yields when it may have missed changes:
+// an internal subscription fell behind and was cut. It is never sent to a
+// client as an event. A feed that numbers events starts a new epoch and
+// cuts its subscribers instead, so every client refetches its state rather
+// than resuming over a gap it cannot see.
+const EvLost = "backend.lost"
+
 // Event is something the phone should hear about. Scoped events reach only
 // connections focused on SessionID and are never replayed.
 type Event struct {
@@ -108,7 +115,8 @@ type Backend interface {
 
 	// Events streams until ctx ends. The backend coalesces streaming
 	// message updates itself and yields theme.changed when the palette
-	// changes.
+	// changes. Nothing is dropped on the way: when the backend may have
+	// missed changes it yields EvLost, then carries on.
 	Events(ctx context.Context) <-chan Event
 }
 

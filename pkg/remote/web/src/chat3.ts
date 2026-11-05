@@ -6,6 +6,7 @@ import {
   type AgentLine,
   bool,
   type ChangedFile,
+  compareMessages,
   type Decoder,
   decodeAgentKind,
   decodeAgentLine,
@@ -32,7 +33,7 @@ function mergeMessages(existing: Message[], incoming: Message[]): Message[] {
     const cur = byId.get(m.id);
     if (cur === undefined || m.updated_at >= cur.updated_at) byId.set(m.id, m);
   }
-  return [...byId.values()].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+  return [...byId.values()].sort(compareMessages);
 }
 
 function decodeMessageList(v: unknown): Message[] {

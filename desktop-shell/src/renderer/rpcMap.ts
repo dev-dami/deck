@@ -95,6 +95,8 @@ function mapMessage(p: Obj): unknown {
   };
   if (p["editable"] === true) out["editable"] = true;
   if (p["edited"] === true) out["edited"] = true;
+  // The message's place in its session, to sort by; 0 from an older engine.
+  if (n(p["order"]) > 0) out["order"] = n(p["order"]);
   return out;
 }
 

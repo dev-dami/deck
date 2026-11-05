@@ -167,14 +167,18 @@ func (m *Message) ShellCommands() []ShellCommand {
 }
 
 type Message struct {
-	ID               string
-	Role             MessageRole
-	SessionID        string
-	Parts            []ContentPart
-	Model            string
-	Provider         string
-	CreatedAt        int64
-	UpdatedAt        int64
+	ID        string
+	Role      MessageRole
+	SessionID string
+	Parts     []ContentPart
+	Model     string
+	Provider  string
+	CreatedAt int64
+	UpdatedAt int64
+	// Seq is the message's place in its session: 1, 2, 3, ... in the order
+	// the rows were created. Sort by it; CreatedAt has one-second
+	// resolution and cannot break ties.
+	Seq              int64
 	IsSummaryMessage bool
 	// PrismModelID and PrismModelName identify the model that actually
 	// served the turn, as reported by the Hyper Prism model router

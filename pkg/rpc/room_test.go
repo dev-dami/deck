@@ -344,8 +344,9 @@ func TestRoomCallsWithoutAWorkspace(t *testing.T) {
 		t.Fatalf("files without a project: %v", err)
 	}
 	info, err := c.Info(ctx, &deckv1.Empty{})
-	// Video goes through Send, which every Deck serves.
-	caps := slices.DeleteFunc(slices.Clone(info.GetCapabilities()), func(c string) bool { return c == "Video" || c == "VideoFrames" })
+	// Video goes through Send and append-text deltas through Events,
+	// which every Deck serves.
+	caps := slices.DeleteFunc(slices.Clone(info.GetCapabilities()), func(c string) bool { return c == "Video" || c == "VideoFrames" || c == "AppendText" })
 	if err != nil || len(caps) != 0 || len(info.GetClis()) != 0 || !slices.Contains(info.GetCapabilities(), "Video") {
 		t.Fatalf("info %v %v", info, err)
 	}

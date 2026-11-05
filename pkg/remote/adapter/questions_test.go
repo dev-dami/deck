@@ -57,7 +57,7 @@ func newAskRig(t *testing.T) (*rig, *askRC) {
 	t.Helper()
 	rc := &askRC{fakeRC: newRC()}
 	r := &rig{core: newCore(), rc: rc.fakeRC, app: make(chan pubsub.Event[tea.Msg], 16)}
-	events := func(context.Context) <-chan pubsub.Event[tea.Msg] { return r.app }
+	events := Lossy(func(context.Context) <-chan pubsub.Event[tea.Msg] { return r.app })
 	r.b = NewWith(r.core, rc, nil, fakeRoster{}, events, "v", "proj")
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

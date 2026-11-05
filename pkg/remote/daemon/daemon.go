@@ -132,6 +132,10 @@ func (d *Daemon) Attach(pj string, be remote.Backend) {
 	d.hub.publish(event{name: wire.EvInboxChanged, payload: d.inboxFor(context.Background(), devstore.Device{})})
 	go func() {
 		for ev := range be.Events(ctx) {
+			if ev.Name == remote.EvLost {
+				d.hub.reset() // every phone resyncs instead of resuming over the gap
+				continue
+			}
 			d.hub.publish(event{pj: pj, name: ev.Name, sessionID: ev.SessionID, scoped: ev.Scoped, payload: ev.Payload})
 			d.onProjectEvent(ctx, pj, ev.Name, ev.Payload)
 			if affectsInbox(ev.Name) {
