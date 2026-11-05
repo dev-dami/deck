@@ -146,3 +146,16 @@ func TestAgentPickerStepsBack(t *testing.T) {
 	require.Nil(t, d.agent)
 	require.Equal(t, ActionClose{}, agentModelsKey(d, tea.KeyEscape))
 }
+
+// Models a CLI lists after the picker opened join the model step on screen.
+func TestAgentPickerTakesLateModels(t *testing.T) {
+	t.Parallel()
+	d := newTestAgentPicker()
+	agentModelsKey(d, tea.KeyDown)
+	require.Nil(t, agentModelsKey(d, tea.KeyEnter))
+	require.Len(t, d.list.FilteredItems(), 1, "codex listed one model so far")
+
+	d.SetChoices(append(d.all, workspace.ModelChoice{Kind: "codex", ID: "gpt-5-codex", Name: "gpt-5-codex"}))
+	require.Len(t, d.list.FilteredItems(), 2, "the late model is listed")
+	require.Equal(t, "codex", d.agent.Name, "still on codex's models")
+}

@@ -121,6 +121,7 @@ type KeyMap struct {
 	Help       key.Binding
 	Commands   key.Binding
 	Models     key.Binding
+	Effort     key.Binding
 	Suspend    key.Binding
 	Sessions   key.Binding
 	Settings   key.Binding
@@ -150,6 +151,11 @@ func DefaultKeyMap() KeyMap {
 		Models: key.NewBinding(
 			key.WithKeys("ctrl+m", "ctrl+l"),
 			key.WithHelp("ctrl+l", "agent"),
+		),
+		// Cycles the lead's effort in this session without the picker.
+		Effort: key.NewBinding(
+			key.WithKeys("alt+e"),
+			key.WithHelp("alt+e", "effort"),
 		),
 		Suspend: key.NewBinding(
 			key.WithKeys("ctrl+z"),
