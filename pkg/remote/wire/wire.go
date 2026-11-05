@@ -413,7 +413,14 @@ type ModelChoice struct {
 	Efforts  []string `json:"efforts,omitempty"`
 	Selected bool     `json:"selected,omitempty"`
 	// Video says the model takes video.
-	Video bool `json:"video,omitempty"`
+	Video       bool   `json:"video,omitempty"`
+	Description string `json:"description,omitempty"`
+	// Default marks the CLI's own default model, the one an empty ID runs;
+	// DefaultEffort is the effort the model uses when none is chosen, and
+	// CurrentEffort the Selected model's effort in the session.
+	Default       bool   `json:"default,omitempty"`
+	DefaultEffort string `json:"default_effort,omitempty"`
+	CurrentEffort string `json:"current_effort,omitempty"`
 }
 
 // ChangedFile is one file an agent touched in a session.

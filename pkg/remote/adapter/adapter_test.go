@@ -556,7 +556,7 @@ func TestModelsApartFromAThreadAndRefresh(t *testing.T) {
 	r.b.picker = p
 	got, err := r.b.Models(context.Background(), "", "claude")
 	require.NoError(t, err)
-	require.Equal(t, []wire.ModelChoice{{ID: "", Label: "Default"}}, got)
+	require.Equal(t, []wire.ModelChoice{{ID: "", Label: "Default", Default: true}}, got)
 	_, err = r.b.Models(context.Background(), "ghost", "claude")
 	require.ErrorIs(t, err, remote.ErrNotFound)
 	require.Equal(t, []string{""}, p.sessions)

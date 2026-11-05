@@ -42,6 +42,10 @@ const (
 	Deck_Roster_FullMethodName                      = "/deck.v1.Deck/Roster"
 	Deck_Models_FullMethodName                      = "/deck.v1.Deck/Models"
 	Deck_SetModel_FullMethodName                    = "/deck.v1.Deck/SetModel"
+	Deck_SetLead_FullMethodName                     = "/deck.v1.Deck/SetLead"
+	Deck_SetMemberSpec_FullMethodName               = "/deck.v1.Deck/SetMemberSpec"
+	Deck_SetDefaults_FullMethodName                 = "/deck.v1.Deck/SetDefaults"
+	Deck_GetCatalog_FullMethodName                  = "/deck.v1.Deck/GetCatalog"
 	Deck_GetMode_FullMethodName                     = "/deck.v1.Deck/GetMode"
 	Deck_SetMode_FullMethodName                     = "/deck.v1.Deck/SetMode"
 	Deck_Approvals_FullMethodName                   = "/deck.v1.Deck/Approvals"
@@ -130,7 +134,24 @@ type DeckClient interface {
 	CancelQueued(ctx context.Context, in *QueueItemRef, opts ...grpc.CallOption) (*Empty, error)
 	Roster(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*RosterResponse, error)
 	Models(ctx context.Context, in *ModelsRequest, opts ...grpc.CallOption) (*ModelsResponse, error)
+	// SetModel is the one-call pick of older clients: kind (or a named agent)
+	// leads the session, running model at effort. It changes that session
+	// only, never the defaults. New clients use SetLead and SetMemberSpec.
 	SetModel(ctx context.Context, in *SetModelRequest, opts ...grpc.CallOption) (*Empty, error)
+	// SetLead makes an agent kind or a named agent the session's lead. It
+	// changes no model or effort and writes no defaults.
+	SetLead(ctx context.Context, in *SetLeadRequest, opts ...grpc.CallOption) (*SetLeadResponse, error)
+	// SetMemberSpec sets the model and effort of one agent of a session,
+	// named as the roster names it. It never changes the lead, adds an agent
+	// or writes the defaults. An effort the model does not take is refused.
+	SetMemberSpec(ctx context.Context, in *SetMemberSpecRequest, opts ...grpc.CallOption) (*SpecResult, error)
+	// SetDefaults sets the model and effort new agents of a kind start with.
+	// Only Settings sends it; it is the one call that writes the defaults.
+	SetDefaults(ctx context.Context, in *SetDefaultsRequest, opts ...grpc.CallOption) (*Empty, error)
+	// GetCatalog answers at once from the engine's model catalog, never
+	// waiting on an agent CLI, and loads the kinds not listed yet in the
+	// background; refresh reloads them. It needs no session.
+	GetCatalog(ctx context.Context, in *GetCatalogRequest, opts ...grpc.CallOption) (*Catalog, error)
 	GetMode(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*ModeResponse, error)
 	SetMode(ctx context.Context, in *SetModeRequest, opts ...grpc.CallOption) (*Empty, error)
 	// Approvals lists one session's pending approvals, or every session's
@@ -464,6 +485,46 @@ func (c *deckClient) SetModel(ctx context.Context, in *SetModelRequest, opts ...
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
 	err := c.cc.Invoke(ctx, Deck_SetModel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) SetLead(ctx context.Context, in *SetLeadRequest, opts ...grpc.CallOption) (*SetLeadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetLeadResponse)
+	err := c.cc.Invoke(ctx, Deck_SetLead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) SetMemberSpec(ctx context.Context, in *SetMemberSpecRequest, opts ...grpc.CallOption) (*SpecResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SpecResult)
+	err := c.cc.Invoke(ctx, Deck_SetMemberSpec_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) SetDefaults(ctx context.Context, in *SetDefaultsRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Deck_SetDefaults_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deckClient) GetCatalog(ctx context.Context, in *GetCatalogRequest, opts ...grpc.CallOption) (*Catalog, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Catalog)
+	err := c.cc.Invoke(ctx, Deck_GetCatalog_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1168,7 +1229,24 @@ type DeckServer interface {
 	CancelQueued(context.Context, *QueueItemRef) (*Empty, error)
 	Roster(context.Context, *SessionRef) (*RosterResponse, error)
 	Models(context.Context, *ModelsRequest) (*ModelsResponse, error)
+	// SetModel is the one-call pick of older clients: kind (or a named agent)
+	// leads the session, running model at effort. It changes that session
+	// only, never the defaults. New clients use SetLead and SetMemberSpec.
 	SetModel(context.Context, *SetModelRequest) (*Empty, error)
+	// SetLead makes an agent kind or a named agent the session's lead. It
+	// changes no model or effort and writes no defaults.
+	SetLead(context.Context, *SetLeadRequest) (*SetLeadResponse, error)
+	// SetMemberSpec sets the model and effort of one agent of a session,
+	// named as the roster names it. It never changes the lead, adds an agent
+	// or writes the defaults. An effort the model does not take is refused.
+	SetMemberSpec(context.Context, *SetMemberSpecRequest) (*SpecResult, error)
+	// SetDefaults sets the model and effort new agents of a kind start with.
+	// Only Settings sends it; it is the one call that writes the defaults.
+	SetDefaults(context.Context, *SetDefaultsRequest) (*Empty, error)
+	// GetCatalog answers at once from the engine's model catalog, never
+	// waiting on an agent CLI, and loads the kinds not listed yet in the
+	// background; refresh reloads them. It needs no session.
+	GetCatalog(context.Context, *GetCatalogRequest) (*Catalog, error)
 	GetMode(context.Context, *SessionRef) (*ModeResponse, error)
 	SetMode(context.Context, *SetModeRequest) (*Empty, error)
 	// Approvals lists one session's pending approvals, or every session's
@@ -1388,6 +1466,18 @@ func (UnimplementedDeckServer) Models(context.Context, *ModelsRequest) (*ModelsR
 }
 func (UnimplementedDeckServer) SetModel(context.Context, *SetModelRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetModel not implemented")
+}
+func (UnimplementedDeckServer) SetLead(context.Context, *SetLeadRequest) (*SetLeadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetLead not implemented")
+}
+func (UnimplementedDeckServer) SetMemberSpec(context.Context, *SetMemberSpecRequest) (*SpecResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetMemberSpec not implemented")
+}
+func (UnimplementedDeckServer) SetDefaults(context.Context, *SetDefaultsRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetDefaults not implemented")
+}
+func (UnimplementedDeckServer) GetCatalog(context.Context, *GetCatalogRequest) (*Catalog, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCatalog not implemented")
 }
 func (UnimplementedDeckServer) GetMode(context.Context, *SessionRef) (*ModeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMode not implemented")
@@ -1910,6 +2000,78 @@ func _Deck_SetModel_Handler(srv interface{}, ctx context.Context, dec func(inter
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DeckServer).SetModel(ctx, req.(*SetModelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_SetLead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetLeadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).SetLead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_SetLead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).SetLead(ctx, req.(*SetLeadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_SetMemberSpec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetMemberSpecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).SetMemberSpec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_SetMemberSpec_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).SetMemberSpec(ctx, req.(*SetMemberSpecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_SetDefaults_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetDefaultsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).SetDefaults(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_SetDefaults_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).SetDefaults(ctx, req.(*SetDefaultsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Deck_GetCatalog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCatalogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeckServer).GetCatalog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Deck_GetCatalog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeckServer).GetCatalog(ctx, req.(*GetCatalogRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3162,6 +3324,22 @@ var Deck_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetModel",
 			Handler:    _Deck_SetModel_Handler,
+		},
+		{
+			MethodName: "SetLead",
+			Handler:    _Deck_SetLead_Handler,
+		},
+		{
+			MethodName: "SetMemberSpec",
+			Handler:    _Deck_SetMemberSpec_Handler,
+		},
+		{
+			MethodName: "SetDefaults",
+			Handler:    _Deck_SetDefaults_Handler,
+		},
+		{
+			MethodName: "GetCatalog",
+			Handler:    _Deck_GetCatalog_Handler,
 		},
 		{
 			MethodName: "GetMode",

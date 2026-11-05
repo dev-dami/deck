@@ -124,6 +124,47 @@ func (w *DeckWorkspace) CachedAgentModelChoices(sessionID string) []ModelChoice 
 	return w.modelChoices(sessionID, w.mgr().Catalog())
 }
 
+// KindCatalog is one agent CLI's models as the engine's catalog holds them.
+type KindCatalog struct {
+	Kind    string
+	Models  []ModelChoice // none marked Current
+	Fetched time.Time     // when the CLI last answered; zero if never
+	State   string        // "" (never asked), "loading", "fresh" or "failed"
+	Err     string        // why the last load failed
+}
+
+// ModelCatalog reads the engine's model catalog, apart from any session.
+type ModelCatalog interface {
+	// ModelCatalog answers at once for kinds (every kind when none is
+	// given) and loads in the background those not listed yet, or, with
+	// refresh, all of them again. It never waits on a CLI.
+	ModelCatalog(kinds []string, refresh bool) []KindCatalog
+}
+
+var _ ModelCatalog = (*DeckWorkspace)(nil)
+
+// ModelCatalog implements [ModelCatalog].
+func (w *DeckWorkspace) ModelCatalog(kinds []string, refresh bool) []KindCatalog {
+	if refresh {
+		w.mgr().RefreshCatalog(kinds...)
+	} else {
+		w.mgr().LoadCatalog(kinds...)
+	}
+	cat := w.mgr().Catalog(kinds...)
+	out := make([]KindCatalog, 0, len(cat))
+	for _, kc := range cat {
+		k := KindCatalog{Kind: kc.Kind, Fetched: kc.Fetched, State: string(kc.State), Err: kc.Err}
+		if len(kc.Models) > 0 {
+			for _, c := range w.modelChoices("", []decks.KindCatalog{kc}) {
+				c.Current, c.CurrentEffort = false, ""
+				k.Models = append(k.Models, c)
+			}
+		}
+		out = append(out, k)
+	}
+	return out
+}
+
 // modelChoices lists the catalog's models with the session's current ones
 // marked.
 func (w *DeckWorkspace) modelChoices(sessionID string, cat []decks.KindCatalog) []ModelChoice {
@@ -266,9 +307,12 @@ func (w *DeckWorkspace) SetAgentModel(sessionID, agent, model, effort string) er
 type AgentLine struct {
 	ID, Kind      string
 	Model, Effort string
-	Status        string // "idle", "working", "tool", "approval", "restarting", "error", "exited", "ready"
-	ContextTokens int
-	ContextWindow int
+	// ModelFrom and EffortFrom say where Model and Effort came from
+	// (session.SpecSource: "thread", "parent" when inherited, ...).
+	ModelFrom, EffortFrom string
+	Status                string // "idle", "working", "tool", "approval", "restarting", "error", "exited", "ready"
+	ContextTokens         int
+	ContextWindow         int
 	// ContextSource is where the two came from (agent.ContextCLI, ...).
 	ContextSource string
 	// ContextBaseline of ContextTokens is what the agent's session started
@@ -427,6 +471,7 @@ func (w *DeckWorkspace) Roster(sessionID string) []AgentLine {
 				w.mu.Unlock()
 				out = append(out, AgentLine{
 					ID: a.Name, Kind: a.Kind, Model: model, Effort: a.Effort, Status: string(a.Status),
+					ModelFrom: string(a.ModelFrom), EffortFrom: string(a.EffortFrom),
 					ContextTokens: a.ContextTokens, ContextWindow: a.ContextWindow, ContextSource: a.ContextSource,
 					ContextBaseline: a.ContextBaseline, DeckTokens: a.DeckTokens,
 					CostUSD: a.CostUSD, Pending: a.Pending,
