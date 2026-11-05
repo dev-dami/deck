@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/dev-dami/deck/pkg/remote"
 	"github.com/dev-dami/deck/pkg/remote/remotetest"
@@ -132,7 +133,7 @@ func serveEngine(t *testing.T, be remote.Backend) (*Server, deckv1.DeckClient) {
 // events applied as upserts and deletions by id.
 type clientState map[string]*deckv1.Message
 
-func (cs clientState) apply(ev *deckv1.Event) {
+func (cs clientState) apply(ev *deckv1.Event) error {
 	switch {
 	case ev.GetMessageCreated() != nil:
 		cs[ev.GetMessageCreated().GetId()] = ev.GetMessageCreated()
@@ -140,7 +141,29 @@ func (cs clientState) apply(ev *deckv1.Event) {
 		cs[ev.GetMessageUpdated().GetId()] = ev.GetMessageUpdated()
 	case ev.GetMessageDeleted() != nil:
 		delete(cs, ev.GetMessageDeleted().GetId())
+	case ev.GetMessageAppendText() != nil:
+		// The rule in deck.proto's MessageAppendText.
+		a := ev.GetMessageAppendText()
+		m, ok := cs[a.GetId()]
+		if !ok {
+			return nil // deleted before the snapshot was read: its deletion follows
+		}
+		if int(a.GetPart()) >= len(m.GetParts()) {
+			return fmt.Errorf("append to part %d of %s, which has %d", a.GetPart(), a.GetId(), len(m.GetParts()))
+		}
+		m = proto.CloneOf(m)
+		p := m.Parts[a.GetPart()]
+		have, off, end := uint64(len(p.Text)), a.GetOffset(), a.GetOffset()+uint64(len(a.GetText()))
+		switch {
+		case have < off:
+			return fmt.Errorf("append to %s at %d, the client has %d bytes", a.GetId(), off, have)
+		case have < end:
+			p.Text += a.GetText()[have-off:]
+		}
+		m.UpdatedAt = a.GetUpdatedAt()
+		cs[a.GetId()] = m
 	}
+	return nil
 }
 
 func (cs clientState) list() []string {
@@ -202,41 +225,61 @@ func TestSnapshotThenDeltasEqualsFinalState(t *testing.T) {
 				t.Fatal(err)
 			}
 			close(snapped)
-			cs := clientState{}
-			for _, m := range snap.GetMessages() {
-				cs[m.GetId()] = m
-			}
 
-			st, err := c.Events(ctx, &deckv1.Subscribe{Epoch: snap.GetEpoch(), Seq: snap.GetSeq()})
-			if err != nil {
-				t.Fatal(err)
+			// One client takes whole messages, the other append-text
+			// deltas where it can; both start from the same snapshot.
+			type client struct {
+				cs     clientState
+				st     deckv1.Deck_EventsClient
+				deltas int
 			}
-			if ready := recv(t, st).GetReady(); ready.GetResync() {
-				t.Fatalf("resuming from the snapshot's position was refused: %v", ready)
+			var clients []*client
+			for _, caps := range [][]string{nil, {CapAppendText}} {
+				cl := &client{cs: clientState{}}
+				for _, m := range snap.GetMessages() {
+					cl.cs[m.GetId()] = m
+				}
+				cl.st, err = c.Events(ctx, &deckv1.Subscribe{Epoch: snap.GetEpoch(), Seq: snap.GetSeq(), Capabilities: caps})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ready := recv(t, cl.st).GetReady(); ready.GetResync() {
+					t.Fatalf("resuming from the snapshot's position was refused: %v", ready)
+				}
+				clients = append(clients, cl)
 			}
 			<-done
 			// A marker after the last change: once it arrives, every
 			// change has.
 			e.events <- remote.Event{Name: wire.EvBusy, SessionID: "end", Payload: wire.BusyChanged{SessionID: "end"}}
-			for last := snap.GetSeq(); ; {
-				ev := recv(t, st)
-				if ev.GetSeq() != last+1 {
-					t.Fatalf("seq %d after %d: a gap", ev.GetSeq(), last)
-				}
-				last = ev.GetSeq()
-				if ev.GetBusy().GetSessionId() == "end" {
-					break
-				}
-				cs.apply(ev)
-			}
-
 			want, err := c.ListMessages(ctx, &deckv1.ListMessagesRequest{SessionId: "s1", Limit: 100})
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, exp := cs.list(), listOf(want.GetMessages())
-			if fmt.Sprint(got) != fmt.Sprint(exp) {
-				t.Fatalf("client state differs from the engine's:\n got %v\nwant %v", got, exp)
+			for i, cl := range clients {
+				for last := snap.GetSeq(); ; {
+					ev := recv(t, cl.st)
+					if ev.GetSeq() != last+1 {
+						t.Fatalf("client %d: seq %d after %d: a gap", i, ev.GetSeq(), last)
+					}
+					last = ev.GetSeq()
+					if ev.GetBusy().GetSessionId() == "end" {
+						break
+					}
+					if ev.GetMessageAppendText() != nil {
+						cl.deltas++
+					}
+					if err := cl.cs.apply(ev); err != nil {
+						t.Fatalf("client %d: %v", i, err)
+					}
+				}
+				got, exp := cl.cs.list(), listOf(want.GetMessages())
+				if fmt.Sprint(got) != fmt.Sprint(exp) {
+					t.Fatalf("client %d's state differs from the engine's:\n got %v\nwant %v", i, got, exp)
+				}
+			}
+			if clients[0].deltas != 0 || clients[1].deltas == 0 {
+				t.Fatalf("deltas: %d to the plain client, %d to the one that asked", clients[0].deltas, clients[1].deltas)
 			}
 		})
 	}

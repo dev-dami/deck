@@ -240,7 +240,8 @@ func (s *Server) clis() []*deckv1.AgentCli {
 func (s *Server) capabilities() []string {
 	// Send takes video ("Video") everywhere, and sends one as frames
 	// ("VideoFrames") where the engine has ffmpeg.
-	out := []string{"Video"}
+	// Events can carry append-text deltas ("AppendText").
+	out := []string{"Video", infoCapAppendText}
 	if media.FFmpeg() != "" {
 		out = append(out, "VideoFrames")
 	}

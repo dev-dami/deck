@@ -4414,6 +4414,10 @@ func (x *ChangesResponse) GetFiles() []*ChangedFile {
 //     true, fetch again.
 //   - The epoch is per engine process: a restart means a resync, because
 //     events are not yet kept on disk to replay from.
+//   - With the capability "append_text", a streaming message_updated that
+//     only appended text to one part comes as message_append_text instead,
+//     with the same seq. Created and finished messages, and any other
+//     change, still come whole.
 type Subscribe struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Epoch string                 `protobuf:"bytes,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
@@ -4422,8 +4426,11 @@ type Subscribe struct {
 	// controller subscription receives live BrowserRequests for its own
 	// registration; ordinary subscribers never receive those requests.
 	BrowserController *BrowserControllerRef `protobuf:"bytes,3,opt,name=browser_controller,json=browserController,proto3" json:"browser_controller,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// capabilities are optional event forms this client understands:
+	// "append_text" (MessageAppendText). Unknown ones are ignored.
+	Capabilities  []string `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Subscribe) Reset() {
@@ -4473,6 +4480,13 @@ func (x *Subscribe) GetSeq() uint64 {
 func (x *Subscribe) GetBrowserController() *BrowserControllerRef {
 	if x != nil {
 		return x.BrowserController
+	}
+	return nil
+}
+
+func (x *Subscribe) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
 	}
 	return nil
 }
@@ -4975,6 +4989,7 @@ type Event struct {
 	//	*Event_BrowserChanged
 	//	*Event_HighlightChanged
 	//	*Event_SummaryChanged
+	//	*Event_MessageAppendText
 	Kind          isEvent_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5211,6 +5226,15 @@ func (x *Event) GetSummaryChanged() *AgentSummary {
 	return nil
 }
 
+func (x *Event) GetMessageAppendText() *MessageAppendText {
+	if x != nil {
+		if x, ok := x.Kind.(*Event_MessageAppendText); ok {
+			return x.MessageAppendText
+		}
+	}
+	return nil
+}
+
 type isEvent_Kind interface {
 	isEvent_Kind()
 }
@@ -5297,6 +5321,12 @@ type Event_SummaryChanged struct {
 	SummaryChanged *AgentSummary `protobuf:"bytes,29,opt,name=summary_changed,json=summaryChanged,proto3,oneof"`
 }
 
+type Event_MessageAppendText struct {
+	// Only to a subscriber with the "append_text" capability, in place of
+	// a message_updated that only appended text.
+	MessageAppendText *MessageAppendText `protobuf:"bytes,30,opt,name=message_append_text,json=messageAppendText,proto3,oneof"`
+}
+
 func (*Event_Ready) isEvent_Kind() {}
 
 func (*Event_SessionCreated) isEvent_Kind() {}
@@ -5336,6 +5366,8 @@ func (*Event_BrowserChanged) isEvent_Kind() {}
 func (*Event_HighlightChanged) isEvent_Kind() {}
 
 func (*Event_SummaryChanged) isEvent_Kind() {}
+
+func (*Event_MessageAppendText) isEvent_Kind() {}
 
 type GitBranch struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -12524,6 +12556,103 @@ func (x *CapsuleFilesResponse) GetDiff() string {
 	return ""
 }
 
+// MessageAppendText is a streaming message growing: text appended to its
+// part number part (a "text" or "reasoning" part), which was offset bytes
+// of UTF-8 long before. Everything else about the message is unchanged
+// but updated_at. Applying it: if the part is exactly offset bytes long,
+// append text; if it already holds offset+len(text) bytes or more, the
+// client has this text already (from a snapshot newer than the event);
+// if it is longer than offset but shorter, append the missing tail. If
+// the client has no such message, ignore the event: the message was
+// deleted before the client's snapshot was read, and its deletion
+// follows. A part shorter than offset cannot happen to a client that
+// follows Subscribe's contract; one that sees it anyway refetches the
+// message, or keeps what it has until the message's next full update
+// (finishing always sends the whole message).
+type MessageAppendText struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Part          uint32                 `protobuf:"varint,3,opt,name=part,proto3" json:"part,omitempty"`
+	Offset        uint64                 `protobuf:"varint,4,opt,name=offset,proto3" json:"offset,omitempty"`
+	Text          string                 `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
+	UpdatedAt     int64                  `protobuf:"varint,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MessageAppendText) Reset() {
+	*x = MessageAppendText{}
+	mi := &file_deck_v1_deck_proto_msgTypes[166]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MessageAppendText) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessageAppendText) ProtoMessage() {}
+
+func (x *MessageAppendText) ProtoReflect() protoreflect.Message {
+	mi := &file_deck_v1_deck_proto_msgTypes[166]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MessageAppendText.ProtoReflect.Descriptor instead.
+func (*MessageAppendText) Descriptor() ([]byte, []int) {
+	return file_deck_v1_deck_proto_rawDescGZIP(), []int{166}
+}
+
+func (x *MessageAppendText) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *MessageAppendText) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *MessageAppendText) GetPart() uint32 {
+	if x != nil {
+		return x.Part
+	}
+	return 0
+}
+
+func (x *MessageAppendText) GetOffset() uint64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *MessageAppendText) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *MessageAppendText) GetUpdatedAt() int64 {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return 0
+}
+
 var File_deck_v1_deck_proto protoreflect.FileDescriptor
 
 const file_deck_v1_deck_proto_rawDesc = "" +
@@ -12917,11 +13046,12 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\aremoved\x18\x03 \x01(\x05R\aremoved\x12\x12\n" +
 	"\x04diff\x18\x04 \x01(\tR\x04diff\"=\n" +
 	"\x0fChangesResponse\x12*\n" +
-	"\x05files\x18\x01 \x03(\v2\x14.deck.v1.ChangedFileR\x05files\"\x81\x01\n" +
+	"\x05files\x18\x01 \x03(\v2\x14.deck.v1.ChangedFileR\x05files\"\xa5\x01\n" +
 	"\tSubscribe\x12\x14\n" +
 	"\x05epoch\x18\x01 \x01(\tR\x05epoch\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12L\n" +
-	"\x12browser_controller\x18\x03 \x01(\v2\x1d.deck.v1.BrowserControllerRefR\x11browserController\"G\n" +
+	"\x12browser_controller\x18\x03 \x01(\v2\x1d.deck.v1.BrowserControllerRefR\x11browserController\x12\"\n" +
+	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\"G\n" +
 	"\x05Ready\x12\x14\n" +
 	"\x05epoch\x18\x01 \x01(\tR\x05epoch\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x16\n" +
@@ -12958,7 +13088,8 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x05agent\x18\x02 \x01(\tR\x05agent\x12\x14\n" +
 	"\x05paths\x18\x03 \x03(\tR\x05paths\x12\x1c\n" +
 	"\texclusive\x18\x04 \x01(\bR\texclusive\x12\x1a\n" +
-	"\breleased\x18\x05 \x01(\bR\breleased\"\xfe\t\n" +
+	"\breleased\x18\x05 \x01(\bR\breleased\"\xcc\n" +
+	"\n" +
 	"\x05Event\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x1d\n" +
 	"\n" +
@@ -12983,7 +13114,8 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x0fbrowser_request\x18\x1a \x01(\v2\x17.deck.v1.BrowserRequestH\x00R\x0ebrowserRequest\x12H\n" +
 	"\x0fbrowser_changed\x18\x1b \x01(\v2\x1d.deck.v1.BrowserStateResponseH\x00R\x0ebrowserChanged\x12E\n" +
 	"\x11highlight_changed\x18\x1c \x01(\v2\x16.deck.v1.HighlightItemH\x00R\x10highlightChanged\x12@\n" +
-	"\x0fsummary_changed\x18\x1d \x01(\v2\x15.deck.v1.AgentSummaryH\x00R\x0esummaryChangedB\x06\n" +
+	"\x0fsummary_changed\x18\x1d \x01(\v2\x15.deck.v1.AgentSummaryH\x00R\x0esummaryChanged\x12L\n" +
+	"\x13message_append_text\x18\x1e \x01(\v2\x1a.deck.v1.MessageAppendTextH\x00R\x11messageAppendTextB\x06\n" +
 	"\x04kind\"x\n" +
 	"\tGitBranch\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
@@ -13592,7 +13724,16 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x14CapsuleFilesResponse\x12*\n" +
 	"\x05files\x18\x01 \x03(\v2\x14.deck.v1.CapsuleFileR\x05files\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x05R\x05total\x12\x12\n" +
-	"\x04diff\x18\x03 \x01(\tR\x04diff2\xe7(\n" +
+	"\x04diff\x18\x03 \x01(\tR\x04diff\"\xa1\x01\n" +
+	"\x11MessageAppendText\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04part\x18\x03 \x01(\rR\x04part\x12\x16\n" +
+	"\x06offset\x18\x04 \x01(\x04R\x06offset\x12\x12\n" +
+	"\x04text\x18\x05 \x01(\tR\x04text\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\x06 \x01(\x03R\tupdatedAt2\xe7(\n" +
 	"\x04Deck\x12-\n" +
 	"\x04Info\x12\x0e.deck.v1.Empty\x1a\x15.deck.v1.InfoResponse\x12=\n" +
 	"\fListSessions\x12\x0e.deck.v1.Empty\x1a\x1d.deck.v1.ListSessionsResponse\x12@\n" +
@@ -13696,7 +13837,7 @@ func file_deck_v1_deck_proto_rawDescGZIP() []byte {
 	return file_deck_v1_deck_proto_rawDescData
 }
 
-var file_deck_v1_deck_proto_msgTypes = make([]protoimpl.MessageInfo, 169)
+var file_deck_v1_deck_proto_msgTypes = make([]protoimpl.MessageInfo, 170)
 var file_deck_v1_deck_proto_goTypes = []any{
 	(*Empty)(nil),                            // 0: deck.v1.Empty
 	(*BrowserCommand)(nil),                   // 1: deck.v1.BrowserCommand
@@ -13864,9 +14005,10 @@ var file_deck_v1_deck_proto_goTypes = []any{
 	(*CapsuleFilesRequest)(nil),              // 163: deck.v1.CapsuleFilesRequest
 	(*CapsuleFile)(nil),                      // 164: deck.v1.CapsuleFile
 	(*CapsuleFilesResponse)(nil),             // 165: deck.v1.CapsuleFilesResponse
-	nil,                                      // 166: deck.v1.Theme.PaletteEntry
-	nil,                                      // 167: deck.v1.Theme.KindsEntry
-	nil,                                      // 168: deck.v1.ThreadSharesResponse.SharesEntry
+	(*MessageAppendText)(nil),                // 166: deck.v1.MessageAppendText
+	nil,                                      // 167: deck.v1.Theme.PaletteEntry
+	nil,                                      // 168: deck.v1.Theme.KindsEntry
+	nil,                                      // 169: deck.v1.ThreadSharesResponse.SharesEntry
 }
 var file_deck_v1_deck_proto_depIdxs = []int32{
 	1,   // 0: deck.v1.BrowserActionRequest.command:type_name -> deck.v1.BrowserCommand
@@ -13887,8 +14029,8 @@ var file_deck_v1_deck_proto_depIdxs = []int32{
 	16,  // 15: deck.v1.HighlightActionRequest.source:type_name -> deck.v1.HighlightSource
 	25,  // 16: deck.v1.InfoResponse.theme:type_name -> deck.v1.Theme
 	24,  // 17: deck.v1.InfoResponse.clis:type_name -> deck.v1.AgentCli
-	166, // 18: deck.v1.Theme.palette:type_name -> deck.v1.Theme.PaletteEntry
-	167, // 19: deck.v1.Theme.kinds:type_name -> deck.v1.Theme.KindsEntry
+	167, // 18: deck.v1.Theme.palette:type_name -> deck.v1.Theme.PaletteEntry
+	168, // 19: deck.v1.Theme.kinds:type_name -> deck.v1.Theme.KindsEntry
 	28,  // 20: deck.v1.Session.lead:type_name -> deck.v1.SessionLead
 	27,  // 21: deck.v1.ListSessionsResponse.sessions:type_name -> deck.v1.Session
 	33,  // 22: deck.v1.Message.parts:type_name -> deck.v1.Part
@@ -13925,225 +14067,226 @@ var file_deck_v1_deck_proto_depIdxs = []int32{
 	4,   // 53: deck.v1.Event.browser_changed:type_name -> deck.v1.BrowserStateResponse
 	17,  // 54: deck.v1.Event.highlight_changed:type_name -> deck.v1.HighlightItem
 	18,  // 55: deck.v1.Event.summary_changed:type_name -> deck.v1.AgentSummary
-	72,  // 56: deck.v1.GitPullRequest.checks:type_name -> deck.v1.GitCheck
-	71,  // 57: deck.v1.GitStatusResponse.branches:type_name -> deck.v1.GitBranch
-	73,  // 58: deck.v1.GitStatusResponse.pull_request:type_name -> deck.v1.GitPullRequest
-	85,  // 59: deck.v1.UsageHabits.fit:type_name -> deck.v1.UsageFit
-	80,  // 60: deck.v1.UsageResponse.overview:type_name -> deck.v1.UsageOverview
-	81,  // 61: deck.v1.UsageResponse.days:type_name -> deck.v1.UsageDay
-	82,  // 62: deck.v1.UsageResponse.kinds:type_name -> deck.v1.UsageGroup
-	82,  // 63: deck.v1.UsageResponse.models:type_name -> deck.v1.UsageGroup
-	83,  // 64: deck.v1.UsageResponse.sessions:type_name -> deck.v1.UsageSession
-	84,  // 65: deck.v1.UsageResponse.limits:type_name -> deck.v1.UsageLimit
-	81,  // 66: deck.v1.UsageResponse.heat:type_name -> deck.v1.UsageDay
-	86,  // 67: deck.v1.UsageResponse.habits:type_name -> deck.v1.UsageHabits
-	88,  // 68: deck.v1.UsageResponse.hours:type_name -> deck.v1.UsageHour
-	84,  // 69: deck.v1.UsageResponse.limit_history:type_name -> deck.v1.UsageLimit
-	94,  // 70: deck.v1.BoardResponse.tasks:type_name -> deck.v1.BoardTask
-	99,  // 71: deck.v1.AgentsResponse.agents:type_name -> deck.v1.AgentNode
-	100, // 72: deck.v1.AgentsResponse.running:type_name -> deck.v1.RunningTool
-	102, // 73: deck.v1.Teammate.agents:type_name -> deck.v1.TeamAgent
-	103, // 74: deck.v1.Teammate.threads:type_name -> deck.v1.TeamThread
-	104, // 75: deck.v1.TeamResponse.teammates:type_name -> deck.v1.Teammate
-	105, // 76: deck.v1.TeamResponse.chat:type_name -> deck.v1.TeamChat
-	106, // 77: deck.v1.TeamResponse.contracts:type_name -> deck.v1.TeamContract
-	168, // 78: deck.v1.ThreadSharesResponse.shares:type_name -> deck.v1.ThreadSharesResponse.SharesEntry
-	103, // 79: deck.v1.SharedMirror.thread:type_name -> deck.v1.TeamThread
-	116, // 80: deck.v1.SharedMirror.pending:type_name -> deck.v1.SharedApproval
-	123, // 81: deck.v1.StartRaceRequest.entrants:type_name -> deck.v1.RaceEntrant
-	130, // 82: deck.v1.SearchMessagesResponse.hits:type_name -> deck.v1.SearchHit
-	132, // 83: deck.v1.ListProfilesResponse.profiles:type_name -> deck.v1.Profile
-	132, // 84: deck.v1.SaveProfileRequest.profile:type_name -> deck.v1.Profile
-	132, // 85: deck.v1.SaveProfileResponse.profile:type_name -> deck.v1.Profile
-	84,  // 86: deck.v1.LimitsResponse.limits:type_name -> deck.v1.UsageLimit
-	84,  // 87: deck.v1.LimitsResponse.history:type_name -> deck.v1.UsageLimit
-	140, // 88: deck.v1.LimitsResponse.checks:type_name -> deck.v1.LimitCheck
-	141, // 89: deck.v1.LimitsResponse.waits:type_name -> deck.v1.AgentWait
-	142, // 90: deck.v1.LimitsResponse.scheduled:type_name -> deck.v1.ScheduledSend
-	140, // 91: deck.v1.CheckLimitsResponse.checks:type_name -> deck.v1.LimitCheck
-	84,  // 92: deck.v1.CheckLimitsResponse.limits:type_name -> deck.v1.UsageLimit
-	84,  // 93: deck.v1.StartWindowResponse.limits:type_name -> deck.v1.UsageLimit
-	153, // 94: deck.v1.WorkResponse.worktrees:type_name -> deck.v1.WorktreeView
-	154, // 95: deck.v1.WorkResponse.capsules:type_name -> deck.v1.CapsuleView
-	155, // 96: deck.v1.CapsuleView.versions:type_name -> deck.v1.CapsuleVersionView
-	157, // 97: deck.v1.CapsuleView.comments:type_name -> deck.v1.CapsuleComment
-	158, // 98: deck.v1.CapsuleView.landings:type_name -> deck.v1.CapsuleLanding
-	156, // 99: deck.v1.CapsuleVersionView.commits:type_name -> deck.v1.CapsuleCommit
-	161, // 100: deck.v1.WorkActionResponse.files:type_name -> deck.v1.LandFile
-	153, // 101: deck.v1.WorkActionResponse.worktree:type_name -> deck.v1.WorktreeView
-	164, // 102: deck.v1.CapsuleFilesResponse.files:type_name -> deck.v1.CapsuleFile
-	26,  // 103: deck.v1.Theme.KindsEntry.value:type_name -> deck.v1.KindTone
-	0,   // 104: deck.v1.Deck.Info:input_type -> deck.v1.Empty
-	0,   // 105: deck.v1.Deck.ListSessions:input_type -> deck.v1.Empty
-	30,  // 106: deck.v1.Deck.CreateSession:input_type -> deck.v1.CreateSessionRequest
-	31,  // 107: deck.v1.Deck.RenameSession:input_type -> deck.v1.RenameSessionRequest
-	21,  // 108: deck.v1.Deck.DeleteSession:input_type -> deck.v1.SessionRef
-	35,  // 109: deck.v1.Deck.ListMessages:input_type -> deck.v1.ListMessagesRequest
-	38,  // 110: deck.v1.Deck.Send:input_type -> deck.v1.SendRequest
-	40,  // 111: deck.v1.Deck.EditMessage:input_type -> deck.v1.EditMessageRequest
-	21,  // 112: deck.v1.Deck.Cancel:input_type -> deck.v1.SessionRef
-	41,  // 113: deck.v1.Deck.Interrupt:input_type -> deck.v1.InterruptRequest
-	21,  // 114: deck.v1.Deck.Continue:input_type -> deck.v1.SessionRef
-	21,  // 115: deck.v1.Deck.Queue:input_type -> deck.v1.SessionRef
-	22,  // 116: deck.v1.Deck.Steer:input_type -> deck.v1.QueueItemRef
-	22,  // 117: deck.v1.Deck.CancelQueued:input_type -> deck.v1.QueueItemRef
-	21,  // 118: deck.v1.Deck.Roster:input_type -> deck.v1.SessionRef
-	46,  // 119: deck.v1.Deck.Models:input_type -> deck.v1.ModelsRequest
-	49,  // 120: deck.v1.Deck.SetModel:input_type -> deck.v1.SetModelRequest
-	21,  // 121: deck.v1.Deck.GetMode:input_type -> deck.v1.SessionRef
-	51,  // 122: deck.v1.Deck.SetMode:input_type -> deck.v1.SetModeRequest
-	21,  // 123: deck.v1.Deck.Approvals:input_type -> deck.v1.SessionRef
-	57,  // 124: deck.v1.Deck.Answer:input_type -> deck.v1.AnswerRequest
-	21,  // 125: deck.v1.Deck.Changes:input_type -> deck.v1.SessionRef
-	0,   // 126: deck.v1.Deck.GitStatus:input_type -> deck.v1.Empty
-	75,  // 127: deck.v1.Deck.GitCheckout:input_type -> deck.v1.GitCheckoutRequest
-	76,  // 128: deck.v1.Deck.GitCommit:input_type -> deck.v1.GitCommitRequest
-	0,   // 129: deck.v1.Deck.GitPush:input_type -> deck.v1.Empty
-	0,   // 130: deck.v1.Deck.GitPull:input_type -> deck.v1.Empty
-	77,  // 131: deck.v1.Deck.GitCreatePR:input_type -> deck.v1.GitCreatePRRequest
-	78,  // 132: deck.v1.Deck.GitMergePR:input_type -> deck.v1.GitMergePRRequest
-	79,  // 133: deck.v1.Deck.Usage:input_type -> deck.v1.UsageRequest
-	89,  // 134: deck.v1.Deck.TerminalOpen:input_type -> deck.v1.TerminalOpenRequest
-	91,  // 135: deck.v1.Deck.TerminalWrite:input_type -> deck.v1.TerminalInput
-	92,  // 136: deck.v1.Deck.TerminalResize:input_type -> deck.v1.TerminalSize
-	90,  // 137: deck.v1.Deck.TerminalClose:input_type -> deck.v1.TerminalRef
-	90,  // 138: deck.v1.Deck.TerminalOutput:input_type -> deck.v1.TerminalRef
-	21,  // 139: deck.v1.Deck.Board:input_type -> deck.v1.SessionRef
-	96,  // 140: deck.v1.Deck.TaskAction:input_type -> deck.v1.TaskActionRequest
-	98,  // 141: deck.v1.Deck.SetOrchestrate:input_type -> deck.v1.SetOrchestrateRequest
-	21,  // 142: deck.v1.Deck.Agents:input_type -> deck.v1.SessionRef
-	0,   // 143: deck.v1.Deck.Team:input_type -> deck.v1.Empty
-	108, // 144: deck.v1.Deck.TeamPost:input_type -> deck.v1.TeamPostRequest
-	110, // 145: deck.v1.Deck.ShareThread:input_type -> deck.v1.ShareThreadRequest
-	21,  // 146: deck.v1.Deck.ThreadShares:input_type -> deck.v1.SessionRef
-	112, // 147: deck.v1.Deck.ProposeContract:input_type -> deck.v1.ProposeContractRequest
-	114, // 148: deck.v1.Deck.AnswerContract:input_type -> deck.v1.AnswerContractRequest
-	115, // 149: deck.v1.Deck.ReadShared:input_type -> deck.v1.ReadSharedRequest
-	118, // 150: deck.v1.Deck.PostShared:input_type -> deck.v1.PostSharedRequest
-	119, // 151: deck.v1.Deck.AnswerShared:input_type -> deck.v1.AnswerSharedRequest
-	21,  // 152: deck.v1.Deck.IsolateSession:input_type -> deck.v1.SessionRef
-	21,  // 153: deck.v1.Deck.ApplyIsolated:input_type -> deck.v1.SessionRef
-	21,  // 154: deck.v1.Deck.UnisolateSession:input_type -> deck.v1.SessionRef
-	121, // 155: deck.v1.Deck.RevertFiles:input_type -> deck.v1.RevertFilesRequest
-	21,  // 156: deck.v1.Deck.UndoRevert:input_type -> deck.v1.SessionRef
-	21,  // 157: deck.v1.Deck.ArchiveSession:input_type -> deck.v1.SessionRef
-	21,  // 158: deck.v1.Deck.UnarchiveSession:input_type -> deck.v1.SessionRef
-	21,  // 159: deck.v1.Deck.UndoApply:input_type -> deck.v1.SessionRef
-	122, // 160: deck.v1.Deck.StartRace:input_type -> deck.v1.StartRaceRequest
-	125, // 161: deck.v1.Deck.ListFiles:input_type -> deck.v1.ListFilesRequest
-	127, // 162: deck.v1.Deck.ReadImage:input_type -> deck.v1.ReadImageRequest
-	129, // 163: deck.v1.Deck.SearchMessages:input_type -> deck.v1.SearchMessagesRequest
-	133, // 164: deck.v1.Deck.ListProfiles:input_type -> deck.v1.ListProfilesRequest
-	135, // 165: deck.v1.Deck.SaveProfile:input_type -> deck.v1.SaveProfileRequest
-	137, // 166: deck.v1.Deck.DeleteProfile:input_type -> deck.v1.DeleteProfileRequest
-	139, // 167: deck.v1.Deck.Limits:input_type -> deck.v1.LimitsRequest
-	144, // 168: deck.v1.Deck.CheckLimits:input_type -> deck.v1.CheckLimitsRequest
-	146, // 169: deck.v1.Deck.StartWindow:input_type -> deck.v1.StartWindowRequest
-	148, // 170: deck.v1.Deck.ResolveWait:input_type -> deck.v1.ResolveWaitRequest
-	149, // 171: deck.v1.Deck.ScheduleSend:input_type -> deck.v1.ScheduleSendRequest
-	151, // 172: deck.v1.Deck.CancelScheduled:input_type -> deck.v1.CancelScheduledRequest
-	21,  // 173: deck.v1.Deck.Work:input_type -> deck.v1.SessionRef
-	159, // 174: deck.v1.Deck.WorktreeAction:input_type -> deck.v1.WorktreeActionRequest
-	160, // 175: deck.v1.Deck.CapsuleAction:input_type -> deck.v1.CapsuleActionRequest
-	163, // 176: deck.v1.Deck.CapsuleFiles:input_type -> deck.v1.CapsuleFilesRequest
-	21,  // 177: deck.v1.Deck.BrowserState:input_type -> deck.v1.SessionRef
-	2,   // 178: deck.v1.Deck.BrowserAction:input_type -> deck.v1.BrowserActionRequest
-	8,   // 179: deck.v1.Deck.RegisterBrowserController:input_type -> deck.v1.RegisterBrowserControllerRequest
-	10,  // 180: deck.v1.Deck.UnregisterBrowserController:input_type -> deck.v1.BrowserControllerRef
-	12,  // 181: deck.v1.Deck.BrowserResult:input_type -> deck.v1.BrowserResultRequest
-	13,  // 182: deck.v1.Deck.BrowserUpdate:input_type -> deck.v1.BrowserUpdateRequest
-	14,  // 183: deck.v1.Deck.BrowserOrigin:input_type -> deck.v1.BrowserOriginRequest
-	21,  // 184: deck.v1.Deck.Highlights:input_type -> deck.v1.SessionRef
-	20,  // 185: deck.v1.Deck.HighlightAction:input_type -> deck.v1.HighlightActionRequest
-	61,  // 186: deck.v1.Deck.Events:input_type -> deck.v1.Subscribe
-	23,  // 187: deck.v1.Deck.Info:output_type -> deck.v1.InfoResponse
-	29,  // 188: deck.v1.Deck.ListSessions:output_type -> deck.v1.ListSessionsResponse
-	27,  // 189: deck.v1.Deck.CreateSession:output_type -> deck.v1.Session
-	0,   // 190: deck.v1.Deck.RenameSession:output_type -> deck.v1.Empty
-	0,   // 191: deck.v1.Deck.DeleteSession:output_type -> deck.v1.Empty
-	36,  // 192: deck.v1.Deck.ListMessages:output_type -> deck.v1.ListMessagesResponse
-	39,  // 193: deck.v1.Deck.Send:output_type -> deck.v1.SendResponse
-	0,   // 194: deck.v1.Deck.EditMessage:output_type -> deck.v1.Empty
-	0,   // 195: deck.v1.Deck.Cancel:output_type -> deck.v1.Empty
-	0,   // 196: deck.v1.Deck.Interrupt:output_type -> deck.v1.Empty
-	0,   // 197: deck.v1.Deck.Continue:output_type -> deck.v1.Empty
-	43,  // 198: deck.v1.Deck.Queue:output_type -> deck.v1.QueueResponse
-	0,   // 199: deck.v1.Deck.Steer:output_type -> deck.v1.Empty
-	0,   // 200: deck.v1.Deck.CancelQueued:output_type -> deck.v1.Empty
-	45,  // 201: deck.v1.Deck.Roster:output_type -> deck.v1.RosterResponse
-	48,  // 202: deck.v1.Deck.Models:output_type -> deck.v1.ModelsResponse
-	0,   // 203: deck.v1.Deck.SetModel:output_type -> deck.v1.Empty
-	50,  // 204: deck.v1.Deck.GetMode:output_type -> deck.v1.ModeResponse
-	0,   // 205: deck.v1.Deck.SetMode:output_type -> deck.v1.Empty
-	56,  // 206: deck.v1.Deck.Approvals:output_type -> deck.v1.ApprovalsResponse
-	58,  // 207: deck.v1.Deck.Answer:output_type -> deck.v1.AnswerResponse
-	60,  // 208: deck.v1.Deck.Changes:output_type -> deck.v1.ChangesResponse
-	74,  // 209: deck.v1.Deck.GitStatus:output_type -> deck.v1.GitStatusResponse
-	0,   // 210: deck.v1.Deck.GitCheckout:output_type -> deck.v1.Empty
-	0,   // 211: deck.v1.Deck.GitCommit:output_type -> deck.v1.Empty
-	0,   // 212: deck.v1.Deck.GitPush:output_type -> deck.v1.Empty
-	0,   // 213: deck.v1.Deck.GitPull:output_type -> deck.v1.Empty
-	73,  // 214: deck.v1.Deck.GitCreatePR:output_type -> deck.v1.GitPullRequest
-	0,   // 215: deck.v1.Deck.GitMergePR:output_type -> deck.v1.Empty
-	87,  // 216: deck.v1.Deck.Usage:output_type -> deck.v1.UsageResponse
-	90,  // 217: deck.v1.Deck.TerminalOpen:output_type -> deck.v1.TerminalRef
-	0,   // 218: deck.v1.Deck.TerminalWrite:output_type -> deck.v1.Empty
-	0,   // 219: deck.v1.Deck.TerminalResize:output_type -> deck.v1.Empty
-	0,   // 220: deck.v1.Deck.TerminalClose:output_type -> deck.v1.Empty
-	93,  // 221: deck.v1.Deck.TerminalOutput:output_type -> deck.v1.TerminalChunk
-	95,  // 222: deck.v1.Deck.Board:output_type -> deck.v1.BoardResponse
-	97,  // 223: deck.v1.Deck.TaskAction:output_type -> deck.v1.TaskActionResponse
-	0,   // 224: deck.v1.Deck.SetOrchestrate:output_type -> deck.v1.Empty
-	101, // 225: deck.v1.Deck.Agents:output_type -> deck.v1.AgentsResponse
-	107, // 226: deck.v1.Deck.Team:output_type -> deck.v1.TeamResponse
-	109, // 227: deck.v1.Deck.TeamPost:output_type -> deck.v1.TeamPostResponse
-	0,   // 228: deck.v1.Deck.ShareThread:output_type -> deck.v1.Empty
-	111, // 229: deck.v1.Deck.ThreadShares:output_type -> deck.v1.ThreadSharesResponse
-	113, // 230: deck.v1.Deck.ProposeContract:output_type -> deck.v1.ProposeContractResponse
-	0,   // 231: deck.v1.Deck.AnswerContract:output_type -> deck.v1.Empty
-	117, // 232: deck.v1.Deck.ReadShared:output_type -> deck.v1.SharedMirror
-	0,   // 233: deck.v1.Deck.PostShared:output_type -> deck.v1.Empty
-	0,   // 234: deck.v1.Deck.AnswerShared:output_type -> deck.v1.Empty
-	0,   // 235: deck.v1.Deck.IsolateSession:output_type -> deck.v1.Empty
-	120, // 236: deck.v1.Deck.ApplyIsolated:output_type -> deck.v1.FilesResponse
-	0,   // 237: deck.v1.Deck.UnisolateSession:output_type -> deck.v1.Empty
-	120, // 238: deck.v1.Deck.RevertFiles:output_type -> deck.v1.FilesResponse
-	0,   // 239: deck.v1.Deck.UndoRevert:output_type -> deck.v1.Empty
-	0,   // 240: deck.v1.Deck.ArchiveSession:output_type -> deck.v1.Empty
-	0,   // 241: deck.v1.Deck.UnarchiveSession:output_type -> deck.v1.Empty
-	120, // 242: deck.v1.Deck.UndoApply:output_type -> deck.v1.FilesResponse
-	124, // 243: deck.v1.Deck.StartRace:output_type -> deck.v1.StartRaceResponse
-	126, // 244: deck.v1.Deck.ListFiles:output_type -> deck.v1.ListFilesResponse
-	128, // 245: deck.v1.Deck.ReadImage:output_type -> deck.v1.ReadImageResponse
-	131, // 246: deck.v1.Deck.SearchMessages:output_type -> deck.v1.SearchMessagesResponse
-	134, // 247: deck.v1.Deck.ListProfiles:output_type -> deck.v1.ListProfilesResponse
-	136, // 248: deck.v1.Deck.SaveProfile:output_type -> deck.v1.SaveProfileResponse
-	138, // 249: deck.v1.Deck.DeleteProfile:output_type -> deck.v1.DeleteProfileResponse
-	143, // 250: deck.v1.Deck.Limits:output_type -> deck.v1.LimitsResponse
-	145, // 251: deck.v1.Deck.CheckLimits:output_type -> deck.v1.CheckLimitsResponse
-	147, // 252: deck.v1.Deck.StartWindow:output_type -> deck.v1.StartWindowResponse
-	0,   // 253: deck.v1.Deck.ResolveWait:output_type -> deck.v1.Empty
-	150, // 254: deck.v1.Deck.ScheduleSend:output_type -> deck.v1.ScheduleSendResponse
-	0,   // 255: deck.v1.Deck.CancelScheduled:output_type -> deck.v1.Empty
-	152, // 256: deck.v1.Deck.Work:output_type -> deck.v1.WorkResponse
-	162, // 257: deck.v1.Deck.WorktreeAction:output_type -> deck.v1.WorkActionResponse
-	162, // 258: deck.v1.Deck.CapsuleAction:output_type -> deck.v1.WorkActionResponse
-	165, // 259: deck.v1.Deck.CapsuleFiles:output_type -> deck.v1.CapsuleFilesResponse
-	4,   // 260: deck.v1.Deck.BrowserState:output_type -> deck.v1.BrowserStateResponse
-	7,   // 261: deck.v1.Deck.BrowserAction:output_type -> deck.v1.BrowserActionResponse
-	9,   // 262: deck.v1.Deck.RegisterBrowserController:output_type -> deck.v1.BrowserController
-	0,   // 263: deck.v1.Deck.UnregisterBrowserController:output_type -> deck.v1.Empty
-	0,   // 264: deck.v1.Deck.BrowserResult:output_type -> deck.v1.Empty
-	0,   // 265: deck.v1.Deck.BrowserUpdate:output_type -> deck.v1.Empty
-	15,  // 266: deck.v1.Deck.BrowserOrigin:output_type -> deck.v1.BrowserOriginResponse
-	19,  // 267: deck.v1.Deck.Highlights:output_type -> deck.v1.HighlightsResponse
-	17,  // 268: deck.v1.Deck.HighlightAction:output_type -> deck.v1.HighlightItem
-	70,  // 269: deck.v1.Deck.Events:output_type -> deck.v1.Event
-	187, // [187:270] is the sub-list for method output_type
-	104, // [104:187] is the sub-list for method input_type
-	104, // [104:104] is the sub-list for extension type_name
-	104, // [104:104] is the sub-list for extension extendee
-	0,   // [0:104] is the sub-list for field type_name
+	166, // 56: deck.v1.Event.message_append_text:type_name -> deck.v1.MessageAppendText
+	72,  // 57: deck.v1.GitPullRequest.checks:type_name -> deck.v1.GitCheck
+	71,  // 58: deck.v1.GitStatusResponse.branches:type_name -> deck.v1.GitBranch
+	73,  // 59: deck.v1.GitStatusResponse.pull_request:type_name -> deck.v1.GitPullRequest
+	85,  // 60: deck.v1.UsageHabits.fit:type_name -> deck.v1.UsageFit
+	80,  // 61: deck.v1.UsageResponse.overview:type_name -> deck.v1.UsageOverview
+	81,  // 62: deck.v1.UsageResponse.days:type_name -> deck.v1.UsageDay
+	82,  // 63: deck.v1.UsageResponse.kinds:type_name -> deck.v1.UsageGroup
+	82,  // 64: deck.v1.UsageResponse.models:type_name -> deck.v1.UsageGroup
+	83,  // 65: deck.v1.UsageResponse.sessions:type_name -> deck.v1.UsageSession
+	84,  // 66: deck.v1.UsageResponse.limits:type_name -> deck.v1.UsageLimit
+	81,  // 67: deck.v1.UsageResponse.heat:type_name -> deck.v1.UsageDay
+	86,  // 68: deck.v1.UsageResponse.habits:type_name -> deck.v1.UsageHabits
+	88,  // 69: deck.v1.UsageResponse.hours:type_name -> deck.v1.UsageHour
+	84,  // 70: deck.v1.UsageResponse.limit_history:type_name -> deck.v1.UsageLimit
+	94,  // 71: deck.v1.BoardResponse.tasks:type_name -> deck.v1.BoardTask
+	99,  // 72: deck.v1.AgentsResponse.agents:type_name -> deck.v1.AgentNode
+	100, // 73: deck.v1.AgentsResponse.running:type_name -> deck.v1.RunningTool
+	102, // 74: deck.v1.Teammate.agents:type_name -> deck.v1.TeamAgent
+	103, // 75: deck.v1.Teammate.threads:type_name -> deck.v1.TeamThread
+	104, // 76: deck.v1.TeamResponse.teammates:type_name -> deck.v1.Teammate
+	105, // 77: deck.v1.TeamResponse.chat:type_name -> deck.v1.TeamChat
+	106, // 78: deck.v1.TeamResponse.contracts:type_name -> deck.v1.TeamContract
+	169, // 79: deck.v1.ThreadSharesResponse.shares:type_name -> deck.v1.ThreadSharesResponse.SharesEntry
+	103, // 80: deck.v1.SharedMirror.thread:type_name -> deck.v1.TeamThread
+	116, // 81: deck.v1.SharedMirror.pending:type_name -> deck.v1.SharedApproval
+	123, // 82: deck.v1.StartRaceRequest.entrants:type_name -> deck.v1.RaceEntrant
+	130, // 83: deck.v1.SearchMessagesResponse.hits:type_name -> deck.v1.SearchHit
+	132, // 84: deck.v1.ListProfilesResponse.profiles:type_name -> deck.v1.Profile
+	132, // 85: deck.v1.SaveProfileRequest.profile:type_name -> deck.v1.Profile
+	132, // 86: deck.v1.SaveProfileResponse.profile:type_name -> deck.v1.Profile
+	84,  // 87: deck.v1.LimitsResponse.limits:type_name -> deck.v1.UsageLimit
+	84,  // 88: deck.v1.LimitsResponse.history:type_name -> deck.v1.UsageLimit
+	140, // 89: deck.v1.LimitsResponse.checks:type_name -> deck.v1.LimitCheck
+	141, // 90: deck.v1.LimitsResponse.waits:type_name -> deck.v1.AgentWait
+	142, // 91: deck.v1.LimitsResponse.scheduled:type_name -> deck.v1.ScheduledSend
+	140, // 92: deck.v1.CheckLimitsResponse.checks:type_name -> deck.v1.LimitCheck
+	84,  // 93: deck.v1.CheckLimitsResponse.limits:type_name -> deck.v1.UsageLimit
+	84,  // 94: deck.v1.StartWindowResponse.limits:type_name -> deck.v1.UsageLimit
+	153, // 95: deck.v1.WorkResponse.worktrees:type_name -> deck.v1.WorktreeView
+	154, // 96: deck.v1.WorkResponse.capsules:type_name -> deck.v1.CapsuleView
+	155, // 97: deck.v1.CapsuleView.versions:type_name -> deck.v1.CapsuleVersionView
+	157, // 98: deck.v1.CapsuleView.comments:type_name -> deck.v1.CapsuleComment
+	158, // 99: deck.v1.CapsuleView.landings:type_name -> deck.v1.CapsuleLanding
+	156, // 100: deck.v1.CapsuleVersionView.commits:type_name -> deck.v1.CapsuleCommit
+	161, // 101: deck.v1.WorkActionResponse.files:type_name -> deck.v1.LandFile
+	153, // 102: deck.v1.WorkActionResponse.worktree:type_name -> deck.v1.WorktreeView
+	164, // 103: deck.v1.CapsuleFilesResponse.files:type_name -> deck.v1.CapsuleFile
+	26,  // 104: deck.v1.Theme.KindsEntry.value:type_name -> deck.v1.KindTone
+	0,   // 105: deck.v1.Deck.Info:input_type -> deck.v1.Empty
+	0,   // 106: deck.v1.Deck.ListSessions:input_type -> deck.v1.Empty
+	30,  // 107: deck.v1.Deck.CreateSession:input_type -> deck.v1.CreateSessionRequest
+	31,  // 108: deck.v1.Deck.RenameSession:input_type -> deck.v1.RenameSessionRequest
+	21,  // 109: deck.v1.Deck.DeleteSession:input_type -> deck.v1.SessionRef
+	35,  // 110: deck.v1.Deck.ListMessages:input_type -> deck.v1.ListMessagesRequest
+	38,  // 111: deck.v1.Deck.Send:input_type -> deck.v1.SendRequest
+	40,  // 112: deck.v1.Deck.EditMessage:input_type -> deck.v1.EditMessageRequest
+	21,  // 113: deck.v1.Deck.Cancel:input_type -> deck.v1.SessionRef
+	41,  // 114: deck.v1.Deck.Interrupt:input_type -> deck.v1.InterruptRequest
+	21,  // 115: deck.v1.Deck.Continue:input_type -> deck.v1.SessionRef
+	21,  // 116: deck.v1.Deck.Queue:input_type -> deck.v1.SessionRef
+	22,  // 117: deck.v1.Deck.Steer:input_type -> deck.v1.QueueItemRef
+	22,  // 118: deck.v1.Deck.CancelQueued:input_type -> deck.v1.QueueItemRef
+	21,  // 119: deck.v1.Deck.Roster:input_type -> deck.v1.SessionRef
+	46,  // 120: deck.v1.Deck.Models:input_type -> deck.v1.ModelsRequest
+	49,  // 121: deck.v1.Deck.SetModel:input_type -> deck.v1.SetModelRequest
+	21,  // 122: deck.v1.Deck.GetMode:input_type -> deck.v1.SessionRef
+	51,  // 123: deck.v1.Deck.SetMode:input_type -> deck.v1.SetModeRequest
+	21,  // 124: deck.v1.Deck.Approvals:input_type -> deck.v1.SessionRef
+	57,  // 125: deck.v1.Deck.Answer:input_type -> deck.v1.AnswerRequest
+	21,  // 126: deck.v1.Deck.Changes:input_type -> deck.v1.SessionRef
+	0,   // 127: deck.v1.Deck.GitStatus:input_type -> deck.v1.Empty
+	75,  // 128: deck.v1.Deck.GitCheckout:input_type -> deck.v1.GitCheckoutRequest
+	76,  // 129: deck.v1.Deck.GitCommit:input_type -> deck.v1.GitCommitRequest
+	0,   // 130: deck.v1.Deck.GitPush:input_type -> deck.v1.Empty
+	0,   // 131: deck.v1.Deck.GitPull:input_type -> deck.v1.Empty
+	77,  // 132: deck.v1.Deck.GitCreatePR:input_type -> deck.v1.GitCreatePRRequest
+	78,  // 133: deck.v1.Deck.GitMergePR:input_type -> deck.v1.GitMergePRRequest
+	79,  // 134: deck.v1.Deck.Usage:input_type -> deck.v1.UsageRequest
+	89,  // 135: deck.v1.Deck.TerminalOpen:input_type -> deck.v1.TerminalOpenRequest
+	91,  // 136: deck.v1.Deck.TerminalWrite:input_type -> deck.v1.TerminalInput
+	92,  // 137: deck.v1.Deck.TerminalResize:input_type -> deck.v1.TerminalSize
+	90,  // 138: deck.v1.Deck.TerminalClose:input_type -> deck.v1.TerminalRef
+	90,  // 139: deck.v1.Deck.TerminalOutput:input_type -> deck.v1.TerminalRef
+	21,  // 140: deck.v1.Deck.Board:input_type -> deck.v1.SessionRef
+	96,  // 141: deck.v1.Deck.TaskAction:input_type -> deck.v1.TaskActionRequest
+	98,  // 142: deck.v1.Deck.SetOrchestrate:input_type -> deck.v1.SetOrchestrateRequest
+	21,  // 143: deck.v1.Deck.Agents:input_type -> deck.v1.SessionRef
+	0,   // 144: deck.v1.Deck.Team:input_type -> deck.v1.Empty
+	108, // 145: deck.v1.Deck.TeamPost:input_type -> deck.v1.TeamPostRequest
+	110, // 146: deck.v1.Deck.ShareThread:input_type -> deck.v1.ShareThreadRequest
+	21,  // 147: deck.v1.Deck.ThreadShares:input_type -> deck.v1.SessionRef
+	112, // 148: deck.v1.Deck.ProposeContract:input_type -> deck.v1.ProposeContractRequest
+	114, // 149: deck.v1.Deck.AnswerContract:input_type -> deck.v1.AnswerContractRequest
+	115, // 150: deck.v1.Deck.ReadShared:input_type -> deck.v1.ReadSharedRequest
+	118, // 151: deck.v1.Deck.PostShared:input_type -> deck.v1.PostSharedRequest
+	119, // 152: deck.v1.Deck.AnswerShared:input_type -> deck.v1.AnswerSharedRequest
+	21,  // 153: deck.v1.Deck.IsolateSession:input_type -> deck.v1.SessionRef
+	21,  // 154: deck.v1.Deck.ApplyIsolated:input_type -> deck.v1.SessionRef
+	21,  // 155: deck.v1.Deck.UnisolateSession:input_type -> deck.v1.SessionRef
+	121, // 156: deck.v1.Deck.RevertFiles:input_type -> deck.v1.RevertFilesRequest
+	21,  // 157: deck.v1.Deck.UndoRevert:input_type -> deck.v1.SessionRef
+	21,  // 158: deck.v1.Deck.ArchiveSession:input_type -> deck.v1.SessionRef
+	21,  // 159: deck.v1.Deck.UnarchiveSession:input_type -> deck.v1.SessionRef
+	21,  // 160: deck.v1.Deck.UndoApply:input_type -> deck.v1.SessionRef
+	122, // 161: deck.v1.Deck.StartRace:input_type -> deck.v1.StartRaceRequest
+	125, // 162: deck.v1.Deck.ListFiles:input_type -> deck.v1.ListFilesRequest
+	127, // 163: deck.v1.Deck.ReadImage:input_type -> deck.v1.ReadImageRequest
+	129, // 164: deck.v1.Deck.SearchMessages:input_type -> deck.v1.SearchMessagesRequest
+	133, // 165: deck.v1.Deck.ListProfiles:input_type -> deck.v1.ListProfilesRequest
+	135, // 166: deck.v1.Deck.SaveProfile:input_type -> deck.v1.SaveProfileRequest
+	137, // 167: deck.v1.Deck.DeleteProfile:input_type -> deck.v1.DeleteProfileRequest
+	139, // 168: deck.v1.Deck.Limits:input_type -> deck.v1.LimitsRequest
+	144, // 169: deck.v1.Deck.CheckLimits:input_type -> deck.v1.CheckLimitsRequest
+	146, // 170: deck.v1.Deck.StartWindow:input_type -> deck.v1.StartWindowRequest
+	148, // 171: deck.v1.Deck.ResolveWait:input_type -> deck.v1.ResolveWaitRequest
+	149, // 172: deck.v1.Deck.ScheduleSend:input_type -> deck.v1.ScheduleSendRequest
+	151, // 173: deck.v1.Deck.CancelScheduled:input_type -> deck.v1.CancelScheduledRequest
+	21,  // 174: deck.v1.Deck.Work:input_type -> deck.v1.SessionRef
+	159, // 175: deck.v1.Deck.WorktreeAction:input_type -> deck.v1.WorktreeActionRequest
+	160, // 176: deck.v1.Deck.CapsuleAction:input_type -> deck.v1.CapsuleActionRequest
+	163, // 177: deck.v1.Deck.CapsuleFiles:input_type -> deck.v1.CapsuleFilesRequest
+	21,  // 178: deck.v1.Deck.BrowserState:input_type -> deck.v1.SessionRef
+	2,   // 179: deck.v1.Deck.BrowserAction:input_type -> deck.v1.BrowserActionRequest
+	8,   // 180: deck.v1.Deck.RegisterBrowserController:input_type -> deck.v1.RegisterBrowserControllerRequest
+	10,  // 181: deck.v1.Deck.UnregisterBrowserController:input_type -> deck.v1.BrowserControllerRef
+	12,  // 182: deck.v1.Deck.BrowserResult:input_type -> deck.v1.BrowserResultRequest
+	13,  // 183: deck.v1.Deck.BrowserUpdate:input_type -> deck.v1.BrowserUpdateRequest
+	14,  // 184: deck.v1.Deck.BrowserOrigin:input_type -> deck.v1.BrowserOriginRequest
+	21,  // 185: deck.v1.Deck.Highlights:input_type -> deck.v1.SessionRef
+	20,  // 186: deck.v1.Deck.HighlightAction:input_type -> deck.v1.HighlightActionRequest
+	61,  // 187: deck.v1.Deck.Events:input_type -> deck.v1.Subscribe
+	23,  // 188: deck.v1.Deck.Info:output_type -> deck.v1.InfoResponse
+	29,  // 189: deck.v1.Deck.ListSessions:output_type -> deck.v1.ListSessionsResponse
+	27,  // 190: deck.v1.Deck.CreateSession:output_type -> deck.v1.Session
+	0,   // 191: deck.v1.Deck.RenameSession:output_type -> deck.v1.Empty
+	0,   // 192: deck.v1.Deck.DeleteSession:output_type -> deck.v1.Empty
+	36,  // 193: deck.v1.Deck.ListMessages:output_type -> deck.v1.ListMessagesResponse
+	39,  // 194: deck.v1.Deck.Send:output_type -> deck.v1.SendResponse
+	0,   // 195: deck.v1.Deck.EditMessage:output_type -> deck.v1.Empty
+	0,   // 196: deck.v1.Deck.Cancel:output_type -> deck.v1.Empty
+	0,   // 197: deck.v1.Deck.Interrupt:output_type -> deck.v1.Empty
+	0,   // 198: deck.v1.Deck.Continue:output_type -> deck.v1.Empty
+	43,  // 199: deck.v1.Deck.Queue:output_type -> deck.v1.QueueResponse
+	0,   // 200: deck.v1.Deck.Steer:output_type -> deck.v1.Empty
+	0,   // 201: deck.v1.Deck.CancelQueued:output_type -> deck.v1.Empty
+	45,  // 202: deck.v1.Deck.Roster:output_type -> deck.v1.RosterResponse
+	48,  // 203: deck.v1.Deck.Models:output_type -> deck.v1.ModelsResponse
+	0,   // 204: deck.v1.Deck.SetModel:output_type -> deck.v1.Empty
+	50,  // 205: deck.v1.Deck.GetMode:output_type -> deck.v1.ModeResponse
+	0,   // 206: deck.v1.Deck.SetMode:output_type -> deck.v1.Empty
+	56,  // 207: deck.v1.Deck.Approvals:output_type -> deck.v1.ApprovalsResponse
+	58,  // 208: deck.v1.Deck.Answer:output_type -> deck.v1.AnswerResponse
+	60,  // 209: deck.v1.Deck.Changes:output_type -> deck.v1.ChangesResponse
+	74,  // 210: deck.v1.Deck.GitStatus:output_type -> deck.v1.GitStatusResponse
+	0,   // 211: deck.v1.Deck.GitCheckout:output_type -> deck.v1.Empty
+	0,   // 212: deck.v1.Deck.GitCommit:output_type -> deck.v1.Empty
+	0,   // 213: deck.v1.Deck.GitPush:output_type -> deck.v1.Empty
+	0,   // 214: deck.v1.Deck.GitPull:output_type -> deck.v1.Empty
+	73,  // 215: deck.v1.Deck.GitCreatePR:output_type -> deck.v1.GitPullRequest
+	0,   // 216: deck.v1.Deck.GitMergePR:output_type -> deck.v1.Empty
+	87,  // 217: deck.v1.Deck.Usage:output_type -> deck.v1.UsageResponse
+	90,  // 218: deck.v1.Deck.TerminalOpen:output_type -> deck.v1.TerminalRef
+	0,   // 219: deck.v1.Deck.TerminalWrite:output_type -> deck.v1.Empty
+	0,   // 220: deck.v1.Deck.TerminalResize:output_type -> deck.v1.Empty
+	0,   // 221: deck.v1.Deck.TerminalClose:output_type -> deck.v1.Empty
+	93,  // 222: deck.v1.Deck.TerminalOutput:output_type -> deck.v1.TerminalChunk
+	95,  // 223: deck.v1.Deck.Board:output_type -> deck.v1.BoardResponse
+	97,  // 224: deck.v1.Deck.TaskAction:output_type -> deck.v1.TaskActionResponse
+	0,   // 225: deck.v1.Deck.SetOrchestrate:output_type -> deck.v1.Empty
+	101, // 226: deck.v1.Deck.Agents:output_type -> deck.v1.AgentsResponse
+	107, // 227: deck.v1.Deck.Team:output_type -> deck.v1.TeamResponse
+	109, // 228: deck.v1.Deck.TeamPost:output_type -> deck.v1.TeamPostResponse
+	0,   // 229: deck.v1.Deck.ShareThread:output_type -> deck.v1.Empty
+	111, // 230: deck.v1.Deck.ThreadShares:output_type -> deck.v1.ThreadSharesResponse
+	113, // 231: deck.v1.Deck.ProposeContract:output_type -> deck.v1.ProposeContractResponse
+	0,   // 232: deck.v1.Deck.AnswerContract:output_type -> deck.v1.Empty
+	117, // 233: deck.v1.Deck.ReadShared:output_type -> deck.v1.SharedMirror
+	0,   // 234: deck.v1.Deck.PostShared:output_type -> deck.v1.Empty
+	0,   // 235: deck.v1.Deck.AnswerShared:output_type -> deck.v1.Empty
+	0,   // 236: deck.v1.Deck.IsolateSession:output_type -> deck.v1.Empty
+	120, // 237: deck.v1.Deck.ApplyIsolated:output_type -> deck.v1.FilesResponse
+	0,   // 238: deck.v1.Deck.UnisolateSession:output_type -> deck.v1.Empty
+	120, // 239: deck.v1.Deck.RevertFiles:output_type -> deck.v1.FilesResponse
+	0,   // 240: deck.v1.Deck.UndoRevert:output_type -> deck.v1.Empty
+	0,   // 241: deck.v1.Deck.ArchiveSession:output_type -> deck.v1.Empty
+	0,   // 242: deck.v1.Deck.UnarchiveSession:output_type -> deck.v1.Empty
+	120, // 243: deck.v1.Deck.UndoApply:output_type -> deck.v1.FilesResponse
+	124, // 244: deck.v1.Deck.StartRace:output_type -> deck.v1.StartRaceResponse
+	126, // 245: deck.v1.Deck.ListFiles:output_type -> deck.v1.ListFilesResponse
+	128, // 246: deck.v1.Deck.ReadImage:output_type -> deck.v1.ReadImageResponse
+	131, // 247: deck.v1.Deck.SearchMessages:output_type -> deck.v1.SearchMessagesResponse
+	134, // 248: deck.v1.Deck.ListProfiles:output_type -> deck.v1.ListProfilesResponse
+	136, // 249: deck.v1.Deck.SaveProfile:output_type -> deck.v1.SaveProfileResponse
+	138, // 250: deck.v1.Deck.DeleteProfile:output_type -> deck.v1.DeleteProfileResponse
+	143, // 251: deck.v1.Deck.Limits:output_type -> deck.v1.LimitsResponse
+	145, // 252: deck.v1.Deck.CheckLimits:output_type -> deck.v1.CheckLimitsResponse
+	147, // 253: deck.v1.Deck.StartWindow:output_type -> deck.v1.StartWindowResponse
+	0,   // 254: deck.v1.Deck.ResolveWait:output_type -> deck.v1.Empty
+	150, // 255: deck.v1.Deck.ScheduleSend:output_type -> deck.v1.ScheduleSendResponse
+	0,   // 256: deck.v1.Deck.CancelScheduled:output_type -> deck.v1.Empty
+	152, // 257: deck.v1.Deck.Work:output_type -> deck.v1.WorkResponse
+	162, // 258: deck.v1.Deck.WorktreeAction:output_type -> deck.v1.WorkActionResponse
+	162, // 259: deck.v1.Deck.CapsuleAction:output_type -> deck.v1.WorkActionResponse
+	165, // 260: deck.v1.Deck.CapsuleFiles:output_type -> deck.v1.CapsuleFilesResponse
+	4,   // 261: deck.v1.Deck.BrowserState:output_type -> deck.v1.BrowserStateResponse
+	7,   // 262: deck.v1.Deck.BrowserAction:output_type -> deck.v1.BrowserActionResponse
+	9,   // 263: deck.v1.Deck.RegisterBrowserController:output_type -> deck.v1.BrowserController
+	0,   // 264: deck.v1.Deck.UnregisterBrowserController:output_type -> deck.v1.Empty
+	0,   // 265: deck.v1.Deck.BrowserResult:output_type -> deck.v1.Empty
+	0,   // 266: deck.v1.Deck.BrowserUpdate:output_type -> deck.v1.Empty
+	15,  // 267: deck.v1.Deck.BrowserOrigin:output_type -> deck.v1.BrowserOriginResponse
+	19,  // 268: deck.v1.Deck.Highlights:output_type -> deck.v1.HighlightsResponse
+	17,  // 269: deck.v1.Deck.HighlightAction:output_type -> deck.v1.HighlightItem
+	70,  // 270: deck.v1.Deck.Events:output_type -> deck.v1.Event
+	188, // [188:271] is the sub-list for method output_type
+	105, // [105:188] is the sub-list for method input_type
+	105, // [105:105] is the sub-list for extension type_name
+	105, // [105:105] is the sub-list for extension extendee
+	0,   // [0:105] is the sub-list for field type_name
 }
 
 func init() { file_deck_v1_deck_proto_init() }
@@ -14173,6 +14316,7 @@ func file_deck_v1_deck_proto_init() {
 		(*Event_BrowserChanged)(nil),
 		(*Event_HighlightChanged)(nil),
 		(*Event_SummaryChanged)(nil),
+		(*Event_MessageAppendText)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -14180,7 +14324,7 @@ func file_deck_v1_deck_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_deck_v1_deck_proto_rawDesc), len(file_deck_v1_deck_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   169,
+			NumMessages:   170,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

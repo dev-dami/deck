@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -46,9 +47,11 @@ const (
 // Server implements deckv1.DeckServer over a remote.Backend.
 type Server struct {
 	deckv1.UnimplementedDeckServer
-	be    remote.Backend
-	feed  *feed
-	token string
+	be   remote.Backend
+	feed *feed
+	// deltas makes append-text forms of streaming updates; only Run uses it.
+	deltas *deltas
+	token  string
 
 	// The project (WithProject): where git runs and terminals start, and
 	// Deck's usage record. Without it those calls fail or say unavailable.
@@ -69,7 +72,7 @@ type Server struct {
 
 // New returns a server for be that admits callers presenting token.
 func New(be remote.Backend, token string) *Server {
-	return &Server{be: be, feed: newFeed(), token: token, rooms: map[string]room{}}
+	return &Server{be: be, feed: newFeed(), deltas: newDeltas(), token: token, rooms: map[string]room{}}
 }
 
 // Run pumps the backend's events, and the workspace's lease changes, into
@@ -83,6 +86,7 @@ func (s *Server) Run(ctx context.Context) {
 			// Events were missed before they reached the feed: no client
 			// may resume over that gap.
 			s.feed.reset()
+			s.deltas.reset()
 			continue
 		}
 		e, ok := toEvent(ev)
@@ -90,7 +94,7 @@ func (s *Server) Run(ctx context.Context) {
 			continue
 		}
 		s.mark(e)
-		s.feed.publish(e)
+		s.feed.publishWith(e, s.deltas.observe(e))
 		// An agent's status moves without a session event.
 		if e.GetRosterChanged() != nil {
 			s.recheck(ctx, ev.SessionID)
@@ -554,7 +558,7 @@ func (s *Server) Events(r *deckv1.Subscribe, stream deckv1.Deck_EventsServer) er
 	if r.GetBrowserController() != nil {
 		return s.browserEvents(r.BrowserController, stream)
 	}
-	sb, ready := s.feed.subscribe(r.GetEpoch(), r.GetSeq())
+	sb, ready := s.feed.subscribeWith(r.GetEpoch(), r.GetSeq(), slices.Contains(r.GetCapabilities(), CapAppendText))
 	defer s.feed.unsubscribe(sb)
 	if err := stream.Send(&deckv1.Event{Kind: &deckv1.Event_Ready{Ready: ready}}); err != nil {
 		return err

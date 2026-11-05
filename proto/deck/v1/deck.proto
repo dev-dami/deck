@@ -763,6 +763,10 @@ message ChangesResponse {
 //   true, fetch again.
 // - The epoch is per engine process: a restart means a resync, because
 //   events are not yet kept on disk to replay from.
+// - With the capability "append_text", a streaming message_updated that
+//   only appended text to one part comes as message_append_text instead,
+//   with the same seq. Created and finished messages, and any other
+//   change, still come whole.
 message Subscribe {
   string epoch = 1;
   uint64 seq = 2;
@@ -770,6 +774,9 @@ message Subscribe {
   // controller subscription receives live BrowserRequests for its own
   // registration; ordinary subscribers never receive those requests.
   BrowserControllerRef browser_controller = 3;
+  // capabilities are optional event forms this client understands:
+  // "append_text" (MessageAppendText). Unknown ones are ignored.
+  repeated string capabilities = 4;
 }
 
 // Ready opens every Events stream.
@@ -852,6 +859,9 @@ message Event {
     BrowserStateResponse browser_changed = 27;
     HighlightItem highlight_changed = 28;
     AgentSummary summary_changed = 29;
+    // Only to a subscriber with the "append_text" capability, in place of
+    // a message_updated that only appended text.
+    MessageAppendText message_append_text = 30;
   }
 }
 
@@ -1706,4 +1716,26 @@ message CapsuleFilesResponse {
   repeated CapsuleFile files = 1;
   int32 total = 2;
   string diff = 3;
+}
+
+// MessageAppendText is a streaming message growing: text appended to its
+// part number part (a "text" or "reasoning" part), which was offset bytes
+// of UTF-8 long before. Everything else about the message is unchanged
+// but updated_at. Applying it: if the part is exactly offset bytes long,
+// append text; if it already holds offset+len(text) bytes or more, the
+// client has this text already (from a snapshot newer than the event);
+// if it is longer than offset but shorter, append the missing tail. If
+// the client has no such message, ignore the event: the message was
+// deleted before the client's snapshot was read, and its deletion
+// follows. A part shorter than offset cannot happen to a client that
+// follows Subscribe's contract; one that sees it anyway refetches the
+// message, or keeps what it has until the message's next full update
+// (finishing always sends the whole message).
+message MessageAppendText {
+  string id = 1;
+  string session_id = 2;
+  uint32 part = 3;
+  uint64 offset = 4;
+  string text = 5;
+  int64 updated_at = 6;
 }
