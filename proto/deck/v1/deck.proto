@@ -477,6 +477,9 @@ message SessionLead {
 
 message ListSessionsResponse {
   repeated Session sessions = 1;
+  // The Events position this snapshot reflects; see Subscribe.
+  string epoch = 2;
+  uint64 seq = 3;
 }
 
 message CreateSessionRequest {
@@ -511,6 +514,11 @@ message Message {
   // "handoff" (work handed on under a contract), "blocked" (a question for
   // the user) or "continue"; empty while it runs and for other messages.
   string turn_end = 11;
+  // order is the message's place in its session: 1, 2, 3, ... in the
+  // order the rows were created. Sort by it: created_at has one-second
+  // resolution and ids are random, so neither can order rows of the same
+  // second. 0 from an older engine.
+  int64 order = 12;
 }
 
 message Part {
@@ -545,6 +553,9 @@ message ListMessagesResponse {
   repeated Message messages = 1;
   bool more = 2;
   string cursor = 3;
+  // The Events position this snapshot reflects; see Subscribe.
+  string epoch = 4;
+  uint64 seq = 5;
 }
 
 // Image is an image or a video attached to a message. label is what the
@@ -700,6 +711,9 @@ message QuestionAnswer {
 
 message ApprovalsResponse {
   repeated Approval approvals = 1;
+  // The Events position this snapshot reflects; see Subscribe.
+  string epoch = 2;
+  uint64 seq = 3;
 }
 
 message AnswerRequest {
@@ -727,6 +741,28 @@ message ChangesResponse {
   repeated ChangedFile files = 1;
 }
 
+// Subscribe opens the Events stream at a position: (epoch, seq) of the last
+// event the client applied, or empty for a fresh client.
+//
+// The resume contract:
+// - Events of one epoch are numbered 1, 2, 3, ... in one order that every
+//   subscriber sees. None is dropped: a subscriber that falls behind is
+//   ended with RESOURCE_EXHAUSTED and resubscribes from its last seq, and
+//   when the engine itself may have missed changes it starts a new epoch
+//   and ends every stream, so each client resyncs.
+// - Ready.resync is false: every event after seq follows, in order.
+//   Ready.resync is true (unknown epoch, or seq no longer replayable):
+//   refetch, then carry on from the snapshots' positions.
+// - ListSessions, ListMessages (the newest page) and Approvals carry the
+//   (epoch, seq) they reflect. The position is taken before the data is
+//   read, so a snapshot holds at least every event up to seq, and may
+//   already hold some after it. Events are full-state upserts and
+//   deletions by id, so applying a snapshot and then every event with a
+//   greater seq, in order, gives the engine's state. To start without a
+//   gap, subscribe with the snapshot's (epoch, seq); if Ready.resync is
+//   true, fetch again.
+// - The epoch is per engine process: a restart means a resync, because
+//   events are not yet kept on disk to replay from.
 message Subscribe {
   string epoch = 1;
   uint64 seq = 2;

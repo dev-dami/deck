@@ -59,6 +59,7 @@ func toMessage(m wire.Message) *deckv1.Message {
 		Id: m.ID, SessionId: m.SessionID, Role: m.Role, Agent: m.Agent,
 		CreatedAt: ms(m.CreatedAt), UpdatedAt: ms(m.UpdatedAt), Finished: m.Finished,
 		Editable: m.Editable, Edited: m.Edited, Parts: each(m.Parts, toPart), TurnEnd: m.TurnEnd,
+		Order: m.Order,
 	}
 }
 

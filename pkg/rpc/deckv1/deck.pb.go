@@ -2196,8 +2196,11 @@ func (x *SessionLead) GetVideo() bool {
 }
 
 type ListSessionsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Sessions      []*Session             `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Sessions []*Session             `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	// The Events position this snapshot reflects; see Subscribe.
+	Epoch         string `protobuf:"bytes,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	Seq           uint64 `protobuf:"varint,3,opt,name=seq,proto3" json:"seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2237,6 +2240,20 @@ func (x *ListSessionsResponse) GetSessions() []*Session {
 		return x.Sessions
 	}
 	return nil
+}
+
+func (x *ListSessionsResponse) GetEpoch() string {
+	if x != nil {
+		return x.Epoch
+	}
+	return ""
+}
+
+func (x *ListSessionsResponse) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 type CreateSessionRequest struct {
@@ -2379,7 +2396,12 @@ type Message struct {
 	// "done" (a task finished, with evidence when its check asks for it),
 	// "handoff" (work handed on under a contract), "blocked" (a question for
 	// the user) or "continue"; empty while it runs and for other messages.
-	TurnEnd       string `protobuf:"bytes,11,opt,name=turn_end,json=turnEnd,proto3" json:"turn_end,omitempty"`
+	TurnEnd string `protobuf:"bytes,11,opt,name=turn_end,json=turnEnd,proto3" json:"turn_end,omitempty"`
+	// order is the message's place in its session: 1, 2, 3, ... in the
+	// order the rows were created. Sort by it: created_at has one-second
+	// resolution and ids are random, so neither can order rows of the same
+	// second. 0 from an older engine.
+	Order         int64 `protobuf:"varint,12,opt,name=order,proto3" json:"order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2489,6 +2511,13 @@ func (x *Message) GetTurnEnd() string {
 		return x.TurnEnd
 	}
 	return ""
+}
+
+func (x *Message) GetOrder() int64 {
+	if x != nil {
+		return x.Order
+	}
+	return 0
 }
 
 type Part struct {
@@ -2731,10 +2760,13 @@ func (x *ListMessagesRequest) GetLimit() int32 {
 }
 
 type ListMessagesResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Messages      []*Message             `protobuf:"bytes,1,rep,name=messages,proto3" json:"messages,omitempty"`
-	More          bool                   `protobuf:"varint,2,opt,name=more,proto3" json:"more,omitempty"`
-	Cursor        string                 `protobuf:"bytes,3,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Messages []*Message             `protobuf:"bytes,1,rep,name=messages,proto3" json:"messages,omitempty"`
+	More     bool                   `protobuf:"varint,2,opt,name=more,proto3" json:"more,omitempty"`
+	Cursor   string                 `protobuf:"bytes,3,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	// The Events position this snapshot reflects; see Subscribe.
+	Epoch         string `protobuf:"bytes,4,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	Seq           uint64 `protobuf:"varint,5,opt,name=seq,proto3" json:"seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2788,6 +2820,20 @@ func (x *ListMessagesResponse) GetCursor() string {
 		return x.Cursor
 	}
 	return ""
+}
+
+func (x *ListMessagesResponse) GetEpoch() string {
+	if x != nil {
+		return x.Epoch
+	}
+	return ""
+}
+
+func (x *ListMessagesResponse) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 // Image is an image or a video attached to a message. label is what the
@@ -4059,8 +4105,11 @@ func (x *QuestionAnswer) GetOther() string {
 }
 
 type ApprovalsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Approvals     []*Approval            `protobuf:"bytes,1,rep,name=approvals,proto3" json:"approvals,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Approvals []*Approval            `protobuf:"bytes,1,rep,name=approvals,proto3" json:"approvals,omitempty"`
+	// The Events position this snapshot reflects; see Subscribe.
+	Epoch         string `protobuf:"bytes,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	Seq           uint64 `protobuf:"varint,3,opt,name=seq,proto3" json:"seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4100,6 +4149,20 @@ func (x *ApprovalsResponse) GetApprovals() []*Approval {
 		return x.Approvals
 	}
 	return nil
+}
+
+func (x *ApprovalsResponse) GetEpoch() string {
+	if x != nil {
+		return x.Epoch
+	}
+	return ""
+}
+
+func (x *ApprovalsResponse) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 type AnswerRequest struct {
@@ -4329,6 +4392,28 @@ func (x *ChangesResponse) GetFiles() []*ChangedFile {
 	return nil
 }
 
+// Subscribe opens the Events stream at a position: (epoch, seq) of the last
+// event the client applied, or empty for a fresh client.
+//
+// The resume contract:
+//   - Events of one epoch are numbered 1, 2, 3, ... in one order that every
+//     subscriber sees. None is dropped: a subscriber that falls behind is
+//     ended with RESOURCE_EXHAUSTED and resubscribes from its last seq, and
+//     when the engine itself may have missed changes it starts a new epoch
+//     and ends every stream, so each client resyncs.
+//   - Ready.resync is false: every event after seq follows, in order.
+//     Ready.resync is true (unknown epoch, or seq no longer replayable):
+//     refetch, then carry on from the snapshots' positions.
+//   - ListSessions, ListMessages (the newest page) and Approvals carry the
+//     (epoch, seq) they reflect. The position is taken before the data is
+//     read, so a snapshot holds at least every event up to seq, and may
+//     already hold some after it. Events are full-state upserts and
+//     deletions by id, so applying a snapshot and then every event with a
+//     greater seq, in order, gives the engine's state. To start without a
+//     gap, subscribe with the snapshot's (epoch, seq); if Ready.resync is
+//     true, fetch again.
+//   - The epoch is per engine process: a restart means a resync, because
+//     events are not yet kept on disk to replay from.
 type Subscribe struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Epoch string                 `protobuf:"bytes,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
@@ -12653,9 +12738,11 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x06effort\x18\x04 \x01(\tR\x06effort\x12\x18\n" +
 	"\aprofile\x18\x05 \x01(\tR\aprofile\x12\x12\n" +
 	"\x04slug\x18\x06 \x01(\tR\x04slug\x12\x14\n" +
-	"\x05video\x18\a \x01(\bR\x05video\"D\n" +
+	"\x05video\x18\a \x01(\bR\x05video\"l\n" +
 	"\x14ListSessionsResponse\x12,\n" +
-	"\bsessions\x18\x01 \x03(\v2\x10.deck.v1.SessionR\bsessions\"y\n" +
+	"\bsessions\x18\x01 \x03(\v2\x10.deck.v1.SessionR\bsessions\x12\x14\n" +
+	"\x05epoch\x18\x02 \x01(\tR\x05epoch\x12\x10\n" +
+	"\x03seq\x18\x03 \x01(\x04R\x03seq\"y\n" +
 	"\x14CreateSessionRequest\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x18\n" +
 	"\aisolate\x18\x02 \x01(\bR\aisolate\x12\x14\n" +
@@ -12664,7 +12751,7 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x14RenameSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
-	"\x05title\x18\x02 \x01(\tR\x05title\"\xb0\x02\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\"\xc6\x02\n" +
 	"\aMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -12680,7 +12767,8 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x06edited\x18\t \x01(\bR\x06edited\x12#\n" +
 	"\x05parts\x18\n" +
 	" \x03(\v2\r.deck.v1.PartR\x05parts\x12\x19\n" +
-	"\bturn_end\x18\v \x01(\tR\aturnEnd\"\xfe\x01\n" +
+	"\bturn_end\x18\v \x01(\tR\aturnEnd\x12\x14\n" +
+	"\x05order\x18\f \x01(\x03R\x05order\"\xfe\x01\n" +
 	"\x04Part\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12\x0e\n" +
@@ -12702,11 +12790,13 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x16\n" +
 	"\x06before\x18\x02 \x01(\tR\x06before\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"p\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"\x98\x01\n" +
 	"\x14ListMessagesResponse\x12,\n" +
 	"\bmessages\x18\x01 \x03(\v2\x10.deck.v1.MessageR\bmessages\x12\x12\n" +
 	"\x04more\x18\x02 \x01(\bR\x04more\x12\x16\n" +
-	"\x06cursor\x18\x03 \x01(\tR\x06cursor\"\x85\x01\n" +
+	"\x06cursor\x18\x03 \x01(\tR\x06cursor\x12\x14\n" +
+	"\x05epoch\x18\x04 \x01(\tR\x05epoch\x12\x10\n" +
+	"\x03seq\x18\x05 \x01(\x04R\x03seq\"\x85\x01\n" +
 	"\x05Image\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04mime\x18\x02 \x01(\tR\x04mime\x12\x12\n" +
@@ -12808,9 +12898,11 @@ const file_deck_v1_deck_proto_rawDesc = "" +
 	"\x0eQuestionAnswer\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\bselected\x18\x02 \x03(\tR\bselected\x12\x14\n" +
-	"\x05other\x18\x03 \x01(\tR\x05other\"D\n" +
+	"\x05other\x18\x03 \x01(\tR\x05other\"l\n" +
 	"\x11ApprovalsResponse\x12/\n" +
-	"\tapprovals\x18\x01 \x03(\v2\x11.deck.v1.ApprovalR\tapprovals\"\x8d\x01\n" +
+	"\tapprovals\x18\x01 \x03(\v2\x11.deck.v1.ApprovalR\tapprovals\x12\x14\n" +
+	"\x05epoch\x18\x02 \x01(\tR\x05epoch\x12\x10\n" +
+	"\x03seq\x18\x03 \x01(\x04R\x03seq\"\x8d\x01\n" +
 	"\rAnswerRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x0e\n" +

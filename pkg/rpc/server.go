@@ -205,6 +205,9 @@ func (s *Server) Info(context.Context, *deckv1.Empty) (*deckv1.InfoResponse, err
 }
 
 func (s *Server) ListSessions(ctx context.Context, _ *deckv1.Empty) (*deckv1.ListSessionsResponse, error) {
+	// The position comes first: whatever the data shows then is at least
+	// what the events up to it said (see Subscribe in deck.proto).
+	epoch, seq := s.feed.position()
 	v, err := s.be.Sessions(ctx)
 	if err != nil {
 		return nil, fail(err)
@@ -218,7 +221,7 @@ func (s *Server) ListSessions(ctx context.Context, _ *deckv1.Empty) (*deckv1.Lis
 	for _, p := range out {
 		s.note(p, bySession[p.GetId()])
 	}
-	return &deckv1.ListSessionsResponse{Sessions: out}, nil
+	return &deckv1.ListSessionsResponse{Sessions: out, Epoch: epoch, Seq: seq}, nil
 }
 
 func (s *Server) CreateSession(ctx context.Context, r *deckv1.CreateSessionRequest) (*deckv1.Session, error) {
@@ -310,11 +313,12 @@ func (s *Server) ListMessages(ctx context.Context, r *deckv1.ListMessagesRequest
 	if p.Limit == 0 {
 		p.Limit = defaultPage
 	}
+	epoch, seq := s.feed.position() // before the read: see ListSessions
 	msgs, more, next, err := s.be.Messages(ctx, p.SessionID, p.Before, p.Limit)
 	if err != nil {
 		return nil, fail(err)
 	}
-	res := &deckv1.ListMessagesResponse{Messages: each(msgs, toMessage), More: more}
+	res := &deckv1.ListMessagesResponse{Messages: each(msgs, toMessage), More: more, Epoch: epoch, Seq: seq}
 	if more {
 		res.Cursor = next
 	}
@@ -506,11 +510,12 @@ func (s *Server) SetMode(_ context.Context, r *deckv1.SetModeRequest) (*deckv1.E
 }
 
 func (s *Server) Approvals(_ context.Context, r *deckv1.SessionRef) (*deckv1.ApprovalsResponse, error) {
+	epoch, seq := s.feed.position() // before the read: see ListSessions
 	v, err := s.be.Approvals(r.GetSessionId())
 	if err != nil {
 		return nil, fail(err)
 	}
-	return &deckv1.ApprovalsResponse{Approvals: each(v, toApproval)}, nil
+	return &deckv1.ApprovalsResponse{Approvals: each(v, toApproval), Epoch: epoch, Seq: seq}, nil
 }
 
 func (s *Server) Answer(_ context.Context, r *deckv1.AnswerRequest) (*deckv1.AnswerResponse, error) {
