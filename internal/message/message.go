@@ -172,24 +172,51 @@ func (s *service) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	// Drop any pending coalesced state for this ID: we never want to
+	// flush back over a deleted row. A flush already writing is waited
+	// for, so its update event goes out before the deletion and cannot
+	// bring the row back on a client after it.
+	if err := s.dropPending(ctx, id); err != nil {
+		return err
+	}
 	err = s.q.DeleteMessage(ctx, message.ID)
 	if err != nil {
 		return err
 	}
-	// Drop any pending coalesced state for this ID. We never want to
-	// flush back over a deleted row.
-	s.mu.Lock()
-	if p, ok := s.pending[id]; ok {
-		if p.timer != nil {
-			p.timer.Stop()
-		}
-		delete(s.pending, id)
-	}
-	s.mu.Unlock()
 	// Clone the message before publishing to avoid race conditions with
-	// concurrent modifications to the Parts slice.
-	s.Publish(pubsub.DeletedEvent, message.Clone())
+	// concurrent modifications to the Parts slice. A deletion is state
+	// every client must see, so it is not left to the lossy path.
+	s.PublishMustDeliver(ctx, pubsub.DeletedEvent, message.Clone())
 	return nil
+}
+
+// dropPending forgets the buffered state of id once no flush of it is in
+// flight.
+func (s *service) dropPending(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for {
+		p, ok := s.pending[id]
+		if !ok {
+			return nil
+		}
+		if !p.flushing {
+			if p.timer != nil {
+				p.timer.Stop()
+			}
+			delete(s.pending, id)
+			return nil
+		}
+		flushed := p.flushed
+		s.mu.Unlock()
+		select {
+		case <-flushed:
+		case <-ctx.Done():
+			s.mu.Lock()
+			return ctx.Err()
+		}
+		s.mu.Lock()
+	}
 }
 
 func (s *service) Create(ctx context.Context, sessionID string, params CreateMessageParams) (Message, error) {
@@ -223,8 +250,9 @@ func (s *service) Create(ctx context.Context, sessionID string, params CreateMes
 		return Message{}, err
 	}
 	// Clone the message before publishing to avoid race conditions with
-	// concurrent modifications to the Parts slice.
-	s.Publish(pubsub.CreatedEvent, message.Clone())
+	// concurrent modifications to the Parts slice. A new row is state
+	// every client must see, so it is not left to the lossy path.
+	s.PublishMustDeliver(ctx, pubsub.CreatedEvent, message.Clone())
 	return message, nil
 }
 
@@ -393,6 +421,23 @@ func (s *service) flushOne(ctx context.Context, id string, syncCaller bool) erro
 
 		err := s.write(ctx, snap)
 
+		// Publish while this flush still holds the message: the next
+		// flusher waits on p.flushed, so updates of one message reach
+		// subscribers in the order they were written. Publishing after
+		// letting go let a newer snapshot overtake an older one, leaving
+		// subscribers on the stale state.
+		//
+		// Terminal events — message finished, tool call added or
+		// finished, reasoning ended — use the bounded must-deliver
+		// path so they never get dropped under channel contention.
+		if err == nil {
+			if isTerminal {
+				s.PublishMustDeliver(ctx, pubsub.UpdatedEvent, snap)
+			} else {
+				s.Publish(pubsub.UpdatedEvent, snap)
+			}
+		}
+
 		s.mu.Lock()
 		p.flushing = false
 		close(p.flushed)
@@ -418,15 +463,6 @@ func (s *service) flushOne(ctx context.Context, id string, syncCaller bool) erro
 
 		if err != nil {
 			return err
-		}
-
-		// Terminal events — message finished, tool call added or
-		// finished, reasoning ended — use the bounded must-deliver
-		// path so they never get dropped under channel contention.
-		if isTerminal {
-			s.PublishMustDeliver(ctx, pubsub.UpdatedEvent, snap)
-		} else {
-			s.Publish(pubsub.UpdatedEvent, snap)
 		}
 
 		if wasDirty && syncCaller {
