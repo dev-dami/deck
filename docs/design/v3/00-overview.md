@@ -82,7 +82,7 @@ These are made. Chapters build on them and do not reopen them.
 | D4 | The engine is the only source of truth: one store per conversation, durable revisions, a snapshot then ordered deltas, a cheap per-host summary stream, idempotent writes, engine-owned attention, structured hand-off/report/plan/turn-end events, no polling. | 07 |
 | D5 | Agent, model and effort form one resolved spec with explicit scope: this thread, a profile, or the defaults (changed only in Settings). `SetModel` is split into `SetLead`, `SetMemberSpec`, `SetDefaults`; one non-blocking catalog. Every reply shows its model and effort and where they came from. Subagents inherit their parent's spec unless the profile says otherwise. | 03 |
 | D6 | Named agents become persistent teammates with a description used for delegation by profile. Delegation is a structured task with an owner, a delegate, a done-when and a reviewable result. | 03 |
-| D7 | One home, **Inbox + Now**: Needs you, Review, Running (across hosts), later Routines. It replaces the Inbox, the bell and Highlights. | 03, 04 |
+| D7 | One home, **Inbox + Now** (the "Dispatch" direction in chapter 04): Needs you, Review, Running (across hosts), later Routines. It replaces the Inbox, the bell and Highlights. | 03, 04 |
 | D8 | Team chat, the outbox, code and ops contracts, the vsh sandbox and the peer link are deleted. A teammate gets direct access to the host's threads with a role. | 02, 05 |
 | D9 | One connection system, **Deck Link**, for devices, hosts and teammates, built on the phone's Noise stack (`pkg/remote`). Transport: Tailscale + SSH. | 05 |
 | D10 | The agent browser runs on the host (headless Chromium + CDP) and streams to whichever client watches. | 06 |
