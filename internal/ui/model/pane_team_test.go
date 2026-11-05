@@ -2,109 +2,172 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dev-dami/deck/internal/deck/peer"
+	"github.com/dev-dami/deck/internal/deck/sub"
 	"github.com/dev-dami/deck/internal/ui/common"
+	"github.com/dev-dami/deck/internal/workspace"
 )
 
-func (l *answerLink) ProposeContract(_ context.Context, name string, c peer.Contract) (peer.Contract, error) {
-	l.answers = append(l.answers, fmt.Sprintf("ops %s %s %v %v", name, c.Title, c.Scope, c.Targets))
-	return c, nil
+func TestTeamSnapshotNotifiesNewRequests(t *testing.T) {
+	m := newBusyUI(&countingWorkspace{})
+	cap := sub.ID("blake3:" + "ab12cd34ef" + "00000000000000000000000000000000000000000000000000000000")
+	old := peer.Snapshot{Requests: []peer.CapsuleRequest{{Seq: 1, From: "vps", ID: cap}}}
+	m.applyTeamSnap(teamSnapMsg{snap: old})
+	require.Zero(t, m.notices.store.Len(), "what was there at the first read is not news")
+
+	next := peer.Snapshot{
+		Requests: []peer.CapsuleRequest{
+			{Seq: 1, From: "vps", ID: cap},
+			{Seq: 2, From: "vps", ID: cap},
+			{Seq: 3, From: "vps", ID: cap, Served: true},
+		},
+	}
+	m.applyTeamSnap(teamSnapMsg{snap: next})
+
+	list := m.notices.store.List() // newest first
+	require.Len(t, list, 2, "one private request, one quiet fetch")
+	var share *capsuleShareMsg
+	for _, n := range list {
+		if n.Action != nil {
+			if s, ok := n.Action.Msg.(capsuleShareMsg); ok {
+				share = &s
+			}
+		}
+	}
+	require.NotNil(t, share, "a private capsule's request offers to share it")
+	require.Equal(t, capsuleShareMsg{id: string(cap), from: "vps", public: true}, *share)
+
+	m.applyTeamSnap(teamSnapMsg{snap: next})
+	require.Len(t, m.notices.store.List(), 2, "the same snapshot again tells nothing new")
 }
 
-// o on a teammate asks it for a report: the request shows as a card, and
-// only y proposes it. Its result shows as a table.
-func TestTeamPaneAsksForAReport(t *testing.T) {
+func TestTeamPaneShowsPresence(t *testing.T) {
+	ps := peer.PeerState{Name: "vps", Presence: &peer.Presence{
+		Agents: []peer.AgentPresence{{Name: "claude2", Kind: "claude", Status: "working", Task: "fix the flaky test", ContextPct: 40}},
+		Leases: []peer.LeasePresence{{Agent: "claude2", Paths: []string{"a.go", "b/**"}, Exclusive: true}},
+		Limits: []peer.LimitPresence{{Kind: "claude", Window: "5h", UsedPct: 80}},
+	}}
+	require.Equal(t, []string{
+		"vps/claude2 ▸ working · fix the flaky test · 40%",
+		"claude2 holds a.go, b/** (exclusive)",
+		"plans: claude 5h 80%",
+	}, presenceLines(ps))
+	require.Nil(t, presenceLines(peer.PeerState{Name: "pc"}), "no link, nothing said")
+}
+
+// shareWorkspace has a peer link that records what the panes ask of it.
+type shareWorkspace struct {
+	*countingWorkspace
+	link   *answerLink
+	shares map[string]string
+}
+
+func (w *shareWorkspace) PeerLink() workspace.PeerLink { return w.link }
+
+func (w *shareWorkspace) ShareThread(sid, name, role string) error {
+	w.link.answers = append(w.link.answers, "share "+sid+" "+name+" "+role)
+	if w.shares == nil {
+		w.shares = map[string]string{}
+	}
+	w.shares[name] = role
+	return nil
+}
+func (w *shareWorkspace) ThreadShares(string) map[string]string { return w.shares }
+
+type answerLink struct {
+	workspace.PeerLink
+	answers []string
+	mirror  peer.Mirror
+}
+
+func (l *answerLink) ReadShared(_ context.Context, name, thread string, after int, wait time.Duration) (peer.Mirror, error) {
+	l.answers = append(l.answers, fmt.Sprintf("read %s %s %d %v", name, thread, after, wait))
+	return l.mirror, nil
+}
+func (l *answerLink) PostShared(_ context.Context, name, thread, text string) error {
+	l.answers = append(l.answers, "post "+name+" "+thread+" "+text)
+	return nil
+}
+func (l *answerLink) AnswerShared(_ context.Context, name, thread, id string, allow bool) error {
+	l.answers = append(l.answers, fmt.Sprintf("answer %s %s %s %v", name, thread, id, allow))
+	return nil
+}
+
+func TestSharedPaneFollowsAThread(t *testing.T) {
 	link := &answerLink{}
+	ws := &shareWorkspace{countingWorkspace: &countingWorkspace{}, link: link}
 	m := newBusyUI(&countingWorkspace{})
-	m.com = common.DefaultCommon(&contractWorkspace{countingWorkspace: &countingWorkspace{}, link: link})
+	m.com = common.DefaultCommon(ws)
+	th := peer.SharedThread{ID: "th1", Title: "fix the parser", Role: "editor", Mode: "ask", Members: []string{"claude"}, Entries: 1000}
 	m.applyTeamSnap(teamSnapMsg{snap: peer.Snapshot{Name: "me", Peers: []peer.PeerState{{Name: "vps"}}}})
-	p := &teamPane{}
+	m.applyTeamSnap(teamSnapMsg{snap: peer.Snapshot{Name: "me", Peers: []peer.PeerState{{Name: "vps", Presence: &peer.Presence{Threads: []peer.SharedThread{th}}}}}})
+	require.Equal(t, "vps shared a thread with you", m.notices.store.List()[0].Title)
+
+	p := &sharedPane{}
 	text := func() string {
 		var lines []string
-		for _, r := range p.rows(m, 120) {
+		for _, r := range p.rows(m, 100, 30) {
 			lines = append(lines, r.lines...)
 		}
 		return ansi.Strip(strings.Join(lines, "\n"))
 	}
-	typeText := func(s string) {
-		for _, r := range s {
-			p.key(m, tea.KeyPressMsg{Code: r, Text: string(r)})
-		}
-	}
-	p.list.cursor = 1 // vps
-	handled, _ := p.key(m, tea.KeyPressMsg{Code: 'o', Text: "o"})
-	require.True(t, handled)
-	typeText("podman containers: name, state for web")
-	require.Contains(t, text(), "report: ask vps to report podman containers: name, state for web")
-
-	p.key(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.Contains(t, text(), "vps · fix the parser")
+	_, cmd := p.key(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	link.mirror = peer.Mirror{Thread: th, Lines: []string{"[tester] fix it", "[claude] on it"}, Next: 1002,
+		Pending: []peer.PendingApproval{{ID: "a1", Agent: "claude", Summary: "make"}}}
+	next := m.applySharedMirror(cmd().(sharedMirrorMsg))
+	require.NotNil(t, next, "it keeps following")
+	require.Equal(t, "read vps th1 600 0s", link.answers[0], "the first read starts a little before the end")
 	out := text()
-	require.Contains(t, out, "▸ ask vps to report podman containers")
-	require.Contains(t, out, "scope: podman-read · targets: web")
-	require.Contains(t, out, "fields: name, state")
-	require.Contains(t, out, "y proposes · n drops")
-	require.Empty(t, link.answers, "nothing goes before y")
-	handled, cmd := p.key(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
-	require.True(t, handled)
-	require.Contains(t, fmt.Sprint(cmd()), "Asked vps to report podman containers")
-	require.Equal(t, []string{"ops vps report podman containers [podman-read] [web]"}, link.answers)
-	require.Nil(t, p.card)
+	require.Contains(t, out, "[claude] on it")
+	require.Contains(t, out, "claude asks: make")
+	require.Contains(t, out, "you are editor · ask mode · esc back · p posts")
 
-	// A request Deck cannot read stays in the input; n drops a card.
-	p.key(m, tea.KeyPressMsg{Code: 'o', Text: "o"})
-	typeText("disks: name")
-	_, cmd = p.key(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	require.Contains(t, fmt.Sprint(cmd()), "is not something Deck can report")
-	require.Equal(t, "vps", p.opsFor)
-	p.key(m, tea.KeyPressMsg{Code: tea.KeyEscape})
-	p.key(m, tea.KeyPressMsg{Code: 'o', Text: "o"})
-	typeText("services: name")
-	p.key(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	require.NotNil(t, p.card)
-	p.key(m, tea.KeyPressMsg{Code: 'n', Text: "n"})
-	require.Nil(t, p.card)
-	require.Len(t, link.answers, 1)
+	p.list.cursor = 1 // the approval
+	_, cmd = p.key(m, tea.KeyPressMsg{Code: 'y', Text: "y"})
+	cmd()
+	require.Equal(t, "answer vps th1 a1 true", link.answers[len(link.answers)-1])
 
-	// The result comes, and a report runs here: both are news.
-	schema := []peer.Field{{Name: "name", Type: peer.FieldString}, {Name: "restarts", Type: peer.FieldNumber}}
-	snap := peer.Snapshot{Name: "me", Peers: []peer.PeerState{{Name: "vps"}}, Contracts: []peer.Contract{
-		{ID: "k3", Peer: "vps", Kind: peer.KindOps, Title: "report podman containers", State: peer.ContractDone, Schema: schema,
-			Result: json.RawMessage(`{"rows":[{"name":"web","restarts":2},{"name":"database-primary","restarts":null}]}`)},
-		{ID: "k4", Peer: "vps", Inbound: true, Kind: peer.KindOps, Title: "report services", State: peer.ContractAccepted, Scope: []string{"systemd-read"}},
-	}}
-	before := m.notices.store.Len()
-	snap.Contracts[0].State = peer.ContractAccepted
-	m.applyTeamSnap(teamSnapMsg{snap: snap})
-	snap.Contracts = append([]peer.Contract(nil), snap.Contracts...)
-	snap.Contracts[0].State = peer.ContractDone
-	m.applyTeamSnap(teamSnapMsg{snap: snap})
-	var titles []string
-	for _, n := range m.notices.store.List()[before:] {
-		titles = append(titles, n.Title)
+	p.key(m, tea.KeyPressMsg{Code: 'p', Text: "p"})
+	for _, r := range "thanks" {
+		p.key(m, tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
-	require.Contains(t, titles, "vps runs a report here: report services")
-	require.Contains(t, titles, "vps reported: report podman containers")
+	_, cmd = p.key(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	cmd()
+	require.Equal(t, "post vps th1 thanks", link.answers[len(link.answers)-1])
 
-	out = text()
-	require.Contains(t, out, "→ vps · report podman containers · done (enter shows the rows)")
-	require.Contains(t, out, "← vps · report services · accepted")
-	require.NotContains(t, out, "y run with", "a report that runs here is no card")
-	p.list.cursor = 1 // the report
-	handled, _ = p.key(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	require.True(t, handled)
-	out = text()
-	require.Contains(t, out, "name              restarts")
-	require.Contains(t, out, "web               2")
-	require.Contains(t, out, "database-primary")
-	p.key(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	require.NotContains(t, text(), "database-primary")
+	p.key(m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	require.Nil(t, m.shared)
+	require.Nil(t, m.applySharedMirror(sharedMirrorMsg{gen: 1}), "a read for a thread left behind is dropped")
+}
+
+func TestTeamPaneSharesTheThread(t *testing.T) {
+	link := &answerLink{}
+	ws := &shareWorkspace{countingWorkspace: &countingWorkspace{}, link: link}
+	m := newBusyUI(&countingWorkspace{})
+	m.com = common.DefaultCommon(ws)
+	m.teamSnap = &peer.Snapshot{Name: "me", Peers: []peer.PeerState{{Name: "vps"}}}
+	p := &teamPane{}
+	p.list.cursor = 1
+	for _, want := range []string{"observer", "participant", "editor", ""} {
+		_, cmd := p.key(m, tea.KeyPressMsg{Code: 's', Text: "s"})
+		cmd()
+		require.Equal(t, "share s1 vps "+want, link.answers[len(link.answers)-1])
+	}
+	ws.shares["vps"] = "participant"
+	var lines []string
+	for _, r := range p.rows(m, 100) {
+		lines = append(lines, r.lines...)
+	}
+	require.Contains(t, ansi.Strip(strings.Join(lines, "\n")), "sees this thread as participant")
 }

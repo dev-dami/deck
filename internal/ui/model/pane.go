@@ -74,10 +74,23 @@ var paneFactories = map[paneID]func() pane{}
 
 func registerPane(id paneID, f func() pane) { paneFactories[id] = f }
 
+// focusPaneMsg focuses a pane, opening it when it is closed (a notice's
+// action).
+type focusPaneMsg struct{ id paneID }
+
+func (m *UI) focusOrOpenPane(id paneID) tea.Cmd {
+	if m.strip().live[id] == nil {
+		if cmd := m.reopenPane(id); cmd != nil {
+			return tea.Batch(cmd, m.focusPane(id))
+		}
+	}
+	return m.focusPane(id)
+}
+
 // defaultColumns is the strip a new session starts with.
 var defaultColumns = [][]paneID{
 	{paneSession, paneAgents, paneTeam},
-	{paneChat, paneShared, paneCapsules},
+	{paneShared, paneCapsules},
 	{paneGit},
 	{paneTasks, paneCommands},
 	{paneUsage},
