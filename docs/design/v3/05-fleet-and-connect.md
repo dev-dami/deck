@@ -114,7 +114,7 @@ device ↔ any host".
 | `daemon/snapshot.go`, `push.go`, `push` | Sealed snapshots and E2E web push for phones | Same; snapshots now carry the host summary (chapter 07) | **Reuse** |
 | `relayclient` (472) | Host side of `relay/v1` | Unchanged; lanes open for any device | **Reuse** |
 | `relay` (TypeScript Worker, 4 files) | The only relay | Kept as the optional hosted relay; `deck relay` (Go) implements the same `relay/v1` contract | **Keep + add a Go twin** |
-| `wire` v3 `Frame3` | Hand-written JSON mirror of v2 methods | Replaced by `deck.v1` inside the channel (chapter 07); `QueuedAction` and `Snapshot` stay as sealed payloads | **Replace** |
+| `wire` v3 `Frame3` | Hand-written JSON mirror of v2 methods | Replaced by `deck.v2` Link frames inside the channel (chapter 07); `QueuedAction` and `Snapshot` stay as sealed payloads | **Replace** |
 | `ipc`, `mobile`, `adapter` | Per-project Deck processes provide to the daemon | Gone: one daemon serves every project (D3) | **Delete** with chapter 07's daemon |
 | `server`, `auth` (v2) | `deck remote` HTTPS + WebSocket | Gone | **Delete** (chapter 02) |
 | `internal/mobilecontrol` | Supervises a local Node/wrangler relay for LAN mode (`docs/mobile-lan.md` §2) | Gone: `deck relay` is a Go subcommand, and the LAN case is the direct path | **Delete** |
@@ -128,7 +128,7 @@ team, contracts, vsh) plus 2–3k (v2), per research-team §5.4.
 The GPUI app is Rust and the phone is TypeScript; tsnet, the SSH carrier
 and path racing are Go. We write the path logic once:
 
-- **Desktop and TUI** talk plain gRPC (`deck.v1`) to a **link agent** on a
+- **Desktop and TUI** talk plain gRPC (`deck.v2`) to a **link agent** on a
   local Unix socket (`~/.deck/run/link.sock`, 0600 in a 0700 directory).
   The agent is the `deck` binary (`deck link agent`), started on demand by
   either client, like `ssh-agent`. When the laptop's own daemon runs, the
@@ -606,7 +606,7 @@ invites in one link; the teammate's client joins each.
 
 4. **What she sees.** A group "dami's vps-1" in her sidebar with only the
    granted projects and their threads. It is the full room through the same
-   `deck.v1` calls the owner uses: timeline with tool cards, changes, tasks,
+   `deck.v2` calls the owner uses: timeline with tool cards, changes, tasks,
    the agents pane, worktrees. Terminals and Sign in are admin-only. Every
    thread row carries "on dami's vps-1". The composer footer says
    `Runs on dami's vps-1 · ask mode · dami's claude plan`. Her messages enter

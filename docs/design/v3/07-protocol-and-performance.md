@@ -12,7 +12,7 @@ What this chapter decides, in one place:
 | Proto | New package `deck.v2` under `proto/deck/v2/`. `deck.v1` is frozen and deleted with the Electron app. Inside v2 only additive changes, checked by `buf breaking` in CI. |
 | Streams | `WatchHost` (summary, no bodies) and `WatchThread` (snapshot at R, then ordered deltas). Paged `History`. One `Exec(Command)` RPC for every write, with `client_op_id`, returning the resulting rev. |
 | Delivery | Lossless. A subscriber that falls behind is disconnected with a resume hint and resumes from its last rev. Nothing is ever dropped silently. |
-| Transport | Local socket (plain gRPC), otherwise Deck Link: a Noise IK session (the pkg/remote v3 stack) carrying the same deck.v2 messages. Desktop and TUI run gRPC/HTTP2 inside Noise; the phone runs Link frames (Connect semantics) inside Noise. One schema, two framings, chosen by client, not by path. `pkg/remote/wire` is deleted. |
+| Transport | gRPC over HTTP/2 on local sockets only. Every remote path is Deck Link: a Noise IK session (the pkg/remote v3 stack) carrying deck.v2 messages in Link frames (Connect semantics). GPUI and the TUI reach remote hosts through the local link agent, which bridges gRPC calls to Link frames without decoding them; the phone speaks Link frames itself. One schema, one remote framing. `pkg/remote/wire` is deleted. |
 | TUI | A client of the local daemon over the same protocol. It spawns the daemon if none is running. |
 
 ---
@@ -553,22 +553,35 @@ message BrowserFrame {
 
 Chromium runs headless on the host and streams CDP screencast frames only while at least one client watches. Frames are ephemeral and never logged; tab list, URL, origin approvals and "who has control" are durable `BrowserState` thread events. The Electron browser controller RPCs (`RegisterBrowserController`, `BrowserResult`, `BrowserUpdate`) are not carried over.
 
-### 3.11 Transports: one schema, two framings (D13, D14)
+### 3.11 Transports: one schema, gRPC on local sockets, Link frames inside Noise (D13, D14)
 
-A client tries a host's paths in this order and keeps the first that works: **local socket → tailnet → direct (LAN/public) → Noise relay → SSH stdio tunnel** (`ssh host deck link --stdio`). Trust always comes from Deck's pinned keys and roles, never from the network path.
+The connection system itself (paths, pairing, the link agent, the relay) is the fleet chapter (`05-fleet-and-connect.md`). This section fixes what travels over it.
 
-| Path | Below the proto | Framing for desktop and TUI | Framing for phone (and the one web client) |
-|---|---|---|---|
-| Local socket (`~/.deck/run/deck.sock`, 0600; named pipe on Windows) | none; OS user checked by peer credentials ⇒ owner, admin | gRPC over HTTP/2 | n/a |
-| Tailnet, direct | TCP → **Noise IK** (pkg/remote v3 handshake, pinned host and device keys) | gRPC over HTTP/2 inside the Noise byte stream | Link frames inside Noise messages |
-| Noise relay (`deck relay`, self-hostable) | WebSocket → relay → Noise IK end to end; the relay sees ciphertext only | gRPC over HTTP/2; Noise messages carry the HTTP/2 bytes in order | Link frames |
-| SSH stdio tunnel | the user's sshd → `deck link --stdio` → Noise IK | gRPC over HTTP/2 | not offered on phones |
+A client tries a host's paths in this order and keeps the first that works: **local socket → tailnet → direct (LAN/public) → Noise relay → SSH stdio tunnel** (`ssh <alias> deck link --stdio`). Trust always comes from Deck's pinned keys and roles, never from the network path.
 
-Why two framings and not one:
-- **gRPC/HTTP2 for desktop and TUI** because tonic (GPUI) and grpc-go already provide streaming, flow control, cancellation and deadlines. Both accept a custom byte-stream connector (tonic's `connect_with_connector`, grpc-go `TransportCredentials`), so Noise slots in where TLS would be. Running Noise even over the tailnet keeps one trust model (D13); the double encryption costs little.
-- **Link frames for the phone** because React Native has no HTTP/2 client we can run over our own encrypted stream, and the relay's limits (frame ≤ 1 MiB, 65,518-byte chunks, `docs/mobile-contract.md:53-69`) suit a message framing. A Link frame is a protobuf `LinkFrame{call_id, method, flags (end, cancel), status, bytes payload}` whose payload is the deck.v2 request or response message. It follows Connect protocol semantics (method paths like `/deck.v2.Threads/WatchThread`, end-of-stream with status). The phone uses protobuf-es generated clients with a custom Connect-ES `Transport` over Link frames. On the daemon, a small generated dispatch table (`protoc-gen-decklink`) routes Link frames to the **same service implementation** as gRPC.
+```
+ GPUI (tonic) ─┐ gRPC/HTTP2 over link.sock         ┌─ local host: gRPC/HTTP2 over host.sock (no Noise)
+ TUI (grpc-go) ┴─▶ link agent (Go, in `deck`) ─────┤
+                   generic gRPC proxy:             └─ remote host: Noise IK over tailnet | direct | relay | SSH stdio
+                   call ⇄ Link frames                    └─ Link frames ⇄ the same deck.v2 service implementation
+ phone (Connect-ES transport) ── Link frames in Noise IK over relay | direct | tailnet ──▶ same hosts
+```
 
-So there is one schema (`deck.v2`), one service implementation, one trust model, and the framing depends only on which client is talking.
+| Hop | Encryption and auth | Framing |
+|---|---|---|
+| GPUI / TUI → link agent (`~/.deck/run/link.sock`, 0600 in 0700; named pipe on Windows) | none; same OS user | gRPC over HTTP/2; the target host is chosen by a `deck-host` call header |
+| Link agent → this machine's daemon (`~/.deck/run/host.sock`) | none; peer credentials ⇒ owner, admin | gRPC over HTTP/2 (the agent passes calls through untouched) |
+| Link agent or phone → remote host, on any of tailnet, direct, relay, SSH stdio | **Noise IK** (the pkg/remote v3 stack: pinned host static, per-device static) | **Link frames**, one per Noise transport message, chunked as in `docs/mobile-contract.md` §3 |
+
+Decisions and reasons:
+- **Inside Noise there is exactly one framing: Link frames.** A Link frame is a protobuf `LinkFrame{call_id, method, kind (headers | message | end | cancel | credit), status, bytes payload}`; `payload` is the serialized deck.v2 request or response message. It follows Connect protocol semantics: method paths like `/deck.v2.Threads/WatchThread`, unary and server-streaming calls, end of stream with a status code, cancellation, deadlines in the headers frame. Per-call `credit` frames give flow control, so one busy `WatchThread` cannot starve an `Exec` on the same session. One framing on every remote path means one set of fuzz and hostile-input tests, and it fits the relay's message limits (frame ≤ 1 MiB, 65,518-byte chunks, `docs/mobile-contract.md:53-69`).
+- **gRPC over HTTP/2 only on local sockets**, where tonic and grpc-go give GPUI and the TUI streaming, cancellation and deadlines for free and no Noise is needed (the OS user is the owner).
+- **The link agent bridges the two generically.** It is a grpc-go proxy with a raw-bytes codec (`UnknownServiceHandler`): it maps a gRPC call to a Link call with the same method path and the same payload bytes, without decoding them. So a new RPC needs no agent change, and GPUI never implements Noise, path racing or tsnet (all Go, written once).
+- **The phone speaks Link frames directly.** React Native has no HTTP/2 client we can run over our own encrypted channel. It uses protobuf-es generated clients with a custom Connect-ES `Transport` over Link frames inside its existing TypeScript Noise client.
+- **The daemon serves both framings from one implementation.** A small generated dispatch table (`protoc-gen-decklink`) routes incoming Link calls to the same Go service handlers that serve gRPC on `host.sock`. The principal comes from the Noise static (device ⇒ person ⇒ role) for Link calls and from peer credentials for the socket.
+- Running Noise even over the tailnet keeps one trust model (D13); the double encryption costs little.
+
+So there is one schema (`deck.v2`), one service implementation, one trust model and one remote framing.
 
 What gets deleted from pkg/remote: `wire` (the JSON v2/v3 schema, 2,127 lines plus fixtures), `adapter` (1,604), `hub` (290), `server` (2,738), the inbox in `daemon`, and `pkg/rpc/convert.go` and `feed.go`. What stays and is reused: `identity`, `passkey`, `push`, `relay`, `relayclient`, `queue` (now a command outbox), `devstore`, `auth`, and the Noise code. Pairing bodies that lived in `wire` move into `link.proto`.
 
@@ -578,9 +591,9 @@ What gets deleted from pkg/remote: `wire` (the JSON v2/v3 schema, 2,127 lines pl
 
 ### 4.1 How it connects
 
-- `deck` (the TUI) dials `~/.deck/run/deck.sock`. If nothing answers, it starts `deck daemon --detach` (the same binary) and waits up to 2 s for the socket. Quitting the TUI leaves the daemon and its threads running.
+- `deck` (the TUI) dials the link agent on `~/.deck/run/link.sock`; for this machine the agent passes calls straight to the daemon on `~/.deck/run/host.sock`. If no daemon answers, the TUI starts `deck daemon --detach` (the same binary; the link agent runs inside it) and waits up to 2 s for the socket. Quitting the TUI leaves the daemon and its threads running.
 - `deck --no-daemon` runs an in-process server reached through `bufconn`, for CI containers and one-shot use. The TUI still talks to it through the generated gRPC client, so there is no second code path. Tests use the same mode.
-- The TUI can open a remote host the same way the desktop does (Deck Link), so a TUI over SSH on a laptop can watch the VPS's threads.
+- The TUI opens a remote host exactly as the desktop does, by naming it in the `deck-host` header; the link agent does the Noise and path work. A TUI on a laptop can watch the VPS's threads.
 
 ### 4.2 Structure
 
@@ -646,7 +659,7 @@ Rules for every client (Desktop, TUI, Phone own their implementations):
 
 **Batching.** The thread actor coalesces deltas per part on a 50 ms tick. The fan-out sends one `ThreadEvents` batch per subscriber per tick. The phone's subscriber tick is 150 ms on a metered network (client hint in `WatchThreadRequest`).
 
-**Compression.** Snapshots, history pages and catalog responses over 4 KB are gzip-compressed per message (grpc-go, tonic and fflate on the phone all support gzip). Delta batches are not compressed: they are small, and compressing short attacker-influenced text next to secrets inside one compression context is not worth the risk.
+**Compression.** Snapshots, history pages and catalog responses over 4 KB are gzip-compressed per message (the gRPC `grpc-encoding` on local sockets; a `compressed` flag on the Link frame remotely; grpc-go, tonic and fflate on the phone all handle gzip). Delta batches are not compressed: they are small, and compressing short attacker-influenced text next to secrets inside one compression context is not worth the risk.
 
 **Payload budgets per event type** (enforced by encoders, checked in the replay harness):
 
@@ -750,7 +763,7 @@ Each step ships on its own and leaves every client working.
 | 4 | **`deck daemon` + `deck.v2` on the local socket.** One daemon per host owns the Manager and `deck.db`, runs as a user service, and serves v2. Legacy surfaces move inside it: the per-project Crush workspace is fed from v2 streams instead of `Manager.out`, and still serves deck.v1 to Electron and wire v3 to the phone. Electron connects to the daemon's socket instead of spawning `deck serve --rpc` per folder (a small change in `decks.ts`). | One engine per host; threads outlive clients | P8, P9, P10 (desktop B9 config clobber) |
 | 5 | **TUI on v2.** `internal/client` + reducer; the TUI spawns the daemon; Needs you and Running from `WatchHost`. | New TUI | All `[IN-PROC]` bugs in §4.3; 37 workspace type assertions |
 | 6 | **GPUI desktop on v2** (alpha to parity, per the desktop chapter). | New desktop app alongside Electron | Nothing yet on the engine side |
-| 7 | **Deck Link carries v2.** gRPC-in-Noise for desktop and TUI, Link frames for the phone, path order per D14; the phone moves to v2 with push and background close. | Remote hosts, phone v3 | P11, P13 on the phone path; mobile B7 |
+| 7 | **Deck Link carries v2.** Link frames inside Noise on every remote path, the link agent's gRPC bridge for desktop and TUI, path order per D14; the phone moves to v2 with push and background close. | Remote hosts, phone v3 | P11, P13 on the phone path; mobile B7 |
 | 8 | **Roles and presence on.** Until now only the owner (admin) exists; turn on viewer/member, presence and actor attribution (team-access chapter). | Direct access for teammates | The peer link's teammate path |
 | 9 | **Delete the old path.** Once GPUI is at parity: the Crush message store and `deck-threads.json`, the workspace pump, `pkg/remote/{wire,adapter,hub,server}`, the daemon inbox, `pkg/rpc` (deck.v1, `convert.go`, `feed.go`), `proto/deck/v1`, JSONL writes (the importer stays one more release), `desktop-shell`. | Smaller binary, one schema | P1–P7, P12, the three-store split |
 
