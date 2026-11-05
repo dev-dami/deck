@@ -35,10 +35,44 @@ type sub struct {
 
 func (s *sub) kick() { s.once.Do(func() { close(s.kicked) }) }
 
-func newFeed() *feed {
+// newEpoch is a fresh random epoch. The epoch is per process on purpose:
+// the ring lives in memory, so after a restart no seq of the old process
+// can be replayed, and a stable epoch would let a client take the new
+// process's renumbered events for the ones it missed. A stable epoch
+// needs a durable, gap-free event log to replay from (the per-host store
+// planned for deck.v2).
+func newEpoch() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
-	return &feed{epoch: hex.EncodeToString(b), subs: map[*sub]struct{}{}}
+	return hex.EncodeToString(b)
+}
+
+func newFeed() *feed {
+	return &feed{epoch: newEpoch(), subs: map[*sub]struct{}{}}
+}
+
+// position is the epoch and the seq of the latest event. A snapshot read
+// after taking it reflects at least every event up to that seq (each
+// event's change is stored before the event is published), so a client
+// that applies the snapshot and then every event after seq, as upserts by
+// id, ends at the true state.
+func (f *feed) position() (string, uint64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.epoch, f.seq
+}
+
+// reset starts a new epoch and cuts every subscriber: something upstream
+// lost events, so no position of the old epoch can be resumed. Each
+// client reconnects, is told to resync, and refetches its state.
+func (f *feed) reset() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.epoch = newEpoch()
+	f.ring = nil
+	for s := range f.subs {
+		s.kick()
+	}
 }
 
 // publish numbers ev and hands it to every subscriber, kicking one whose

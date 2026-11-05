@@ -210,7 +210,7 @@ type rig struct {
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	r := &rig{core: newCore(), rc: newRC(), app: make(chan pubsub.Event[tea.Msg], 16)}
-	events := func(context.Context) <-chan pubsub.Event[tea.Msg] { return r.app }
+	events := Lossy(func(context.Context) <-chan pubsub.Event[tea.Msg] { return r.app })
 	r.b = NewWith(r.core, r.rc, nil, fakeRoster{}, events, "v", "proj")
 	r.b.themePoll = 20 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())

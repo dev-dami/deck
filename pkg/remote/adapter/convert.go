@@ -70,7 +70,7 @@ func role(r message.MessageRole) string {
 func toMessage(m message.Message, root string) wire.Message {
 	out := wire.Message{
 		ID: m.ID, SessionID: m.SessionID, Role: role(m.Role),
-		CreatedAt: unix(m.CreatedAt), UpdatedAt: unix(m.UpdatedAt),
+		CreatedAt: unix(m.CreatedAt), UpdatedAt: unix(m.UpdatedAt), Order: m.Seq,
 		Finished: m.IsFinished() || m.Role != message.Assistant,
 		Parts:    []wire.Part{},
 	}

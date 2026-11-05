@@ -237,7 +237,11 @@ type Message struct {
 	Agent     string    `json:"agent,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	Finished  bool      `json:"finished"`
+	// Order is the message's place in its session: 1, 2, 3, ... in the
+	// order the rows were created. Clients sort by it; created_at is for
+	// display and has one-second resolution. 0 from an older Deck.
+	Order    int64 `json:"order,omitempty"`
+	Finished bool  `json:"finished"`
 	// Editable is true for a message of the user's that message.edit can change.
 	Editable bool `json:"editable,omitempty"`
 	// Edited is true once the user has rewritten the message.

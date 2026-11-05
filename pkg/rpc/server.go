@@ -79,6 +79,12 @@ func (s *Server) Run(ctx context.Context) {
 		go s.pumpWorkspace(ctx)
 	}
 	for ev := range s.be.Events(ctx) {
+		if ev.Name == remote.EvLost {
+			// Events were missed before they reached the feed: no client
+			// may resume over that gap.
+			s.feed.reset()
+			continue
+		}
 		e, ok := toEvent(ev)
 		if !ok {
 			continue
