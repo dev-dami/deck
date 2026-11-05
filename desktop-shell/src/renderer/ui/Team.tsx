@@ -1,22 +1,20 @@
-import type { Session } from "@web/protocol";
 import { relativeTime } from "@web/time";
 import { kindColour } from "@web/theme";
-import { Check, Eye, Handshake, Loader2, RefreshCw, Send, Users, X } from "./icons";
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Eye, Loader2, RefreshCw, Users } from "./icons";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import type { Team, Teammate, TeamThread } from "../crew";
 import { cn } from "../lib/cn";
 import type { ProjectApi } from "../project";
 import { Button } from "./kit/button";
 import { EmptyPlate } from "./kit/plate";
 import { PLATES } from "../plates";
-import { fieldClass } from "./kit/dialog";
 import { Popover } from "./kit/menu";
 import { Ring } from "./kit/ring";
 import { segmentItem, segmentTrack } from "./kit/segmented";
 
 // Working with teammates' Decks (docs/multiplayer-design.md §8): who is
-// there and what their agents do, the team chat and contracts both ways.
-// The room header shares a thread (ShareStack); a thread a teammate shares
+// there and what their agents do. Team chat and contracts were removed in
+// Deck v3 (docs/design/v3/02-cuts.md). The room header shares a thread (ShareStack); a thread a teammate shares
 // opens in the room view (SharedRoom).
 
 const ROLES = [
@@ -31,17 +29,6 @@ const LINK_DOT: Record<string, string> = {
   connecting: "bg-warning animate-deck-pulse",
   offline: "bg-muted-foreground/40",
   "": "bg-muted-foreground/25",
-};
-
-// A contract's state as a dot: waiting on someone, under way, done, or not.
-const CONTRACT_DOT: Record<string, string> = {
-  proposed: "bg-warning",
-  accepted: "bg-primary",
-  running: "bg-primary animate-deck-pulse",
-  done: "bg-success",
-  delivered: "bg-success",
-  declined: "bg-faint",
-  failed: "bg-destructive",
 };
 
 // A part of the page: its title, an action at the trailing edge, then what
@@ -149,174 +136,13 @@ function Mate({ m, now, onOpen }: { m: Teammate; now: number; onOpen: (peer: str
   );
 }
 
-function Chat({ team, api, onError, onDone }: { team: Team; api: ProjectApi; onError: (t: string) => void; onDone: () => void }) {
-  const [text, setText] = useState("");
-  const list = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const el = list.current;
-    if (el !== null) el.scrollTop = el.scrollHeight;
-  }, [team.chat.length]);
-  const post = async () => {
-    const t = text.trim();
-    if (t === "") return;
-    const r = await api.teamPost(t);
-    if (typeof r === "string") return onError(r);
-    setText("");
-    onDone();
-  };
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div ref={list} className="team-chat flex max-h-[28rem] min-h-48 flex-1 flex-col gap-2.5 overflow-y-auto pt-4 pb-4">
-        {team.chat.length === 0 && <p className="m-auto text-faint text-xs">No messages yet. Say hello to the team.</p>}
-        {team.chat.map((m) => (
-          <div key={m.seq} className={cn("flex flex-col gap-1", m.mine && "items-end")}>
-            <span className="px-1 text-2xs text-faint">
-              {m.mine ? "You" : m.from}
-              {m.agent !== "" ? `/${m.agent}` : ""} · {new Date(m.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-            </span>
-            <p
-              className={cn(
-                "max-w-[85%] whitespace-pre-wrap text-pretty px-3 py-1.5 text-[13px]",
-                m.mine ? "rounded-[18px_18px_6px_18px] bg-bubble" : "rounded-[18px_18px_18px_6px] bg-selected",
-              )}
-            >
-              {m.text}
-            </p>
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center gap-2 pt-1">
-        <input
-          aria-label="Message the team"
-          placeholder="Message the team…"
-          value={text}
-          className={cn(fieldClass, "h-8 rounded-full py-1")}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void post();
-          }}
-        />
-        <Button
-          size="icon-sm"
-          variant={text.trim() === "" ? "outline" : "default"}
-          aria-label="Send to the team"
-          disabled={text.trim() === ""}
-          onClick={() => void post()}
-        >
-          <Send />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-const selectClass =
-  "h-8 cursor-pointer rounded-full border border-input bg-hover px-3 text-xs outline-none transition-[border-color,box-shadow] focus:border-primary/50 focus:ring-[3px] focus:ring-ring";
-
-function Contracts({ team, api, onError, onDone }: { team: Team; api: ProjectApi; onError: (t: string) => void; onDone: () => void }) {
-  const [agent, setAgent] = useState(team.contractKinds[0] ?? "");
-  if (team.contracts.length === 0) return <p className="py-3 text-faint text-xs">No contracts yet.</p>;
-  const answer = async (peer: string, id: string, accept: boolean) => {
-    const err = await api.answerContract(peer, id, accept, agent);
-    if (err !== null) onError(err);
-    onDone();
-  };
-  return (
-    <ul className="flex flex-col [&>li+li]:border-hairline [&>li+li]:border-t">
-      {[...team.contracts].reverse().map((c) => (
-        <li key={c.id} className="contract flex flex-col gap-1.5 py-3" data-contract={c.id}>
-          <div className="flex items-center gap-2">
-            <span aria-hidden className={cn("size-2 shrink-0 rounded-full", CONTRACT_DOT[c.state] ?? "bg-faint")} />
-            <span className="min-w-0 truncate font-medium text-[13px]">{c.title || c.id}</span>
-            <span className="shrink-0 text-faint text-xs">
-              {c.inbound ? `from ${c.peer}` : `to ${c.peer}`} · {c.state}
-              {c.agent !== "" ? ` · ${c.agent}` : ""}
-            </span>
-          </div>
-          <div className="flex flex-col gap-1.5 pl-4">
-            {c.brief !== "" && <p className="whitespace-pre-wrap text-pretty text-muted-foreground text-xs">{c.brief}</p>}
-            {c.summary !== "" && <p className="whitespace-pre-wrap text-pretty text-xs">{c.summary}</p>}
-            {c.note !== "" && <p className="text-pretty text-warning-foreground text-xs">{c.note}</p>}
-            {c.inbound && c.state === "proposed" && (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <span className="text-muted-foreground text-xs">Run it with</span>
-                <select aria-label="Agent for the contract" value={agent} onChange={(e) => setAgent(e.target.value)} className={cn(selectClass, "h-7")}>
-                  {team.contractKinds.map((k) => (
-                    <option key={k} value={k}>
-                      {k}
-                    </option>
-                  ))}
-                </select>
-                <Button size="xs" variant="ghost-muted" className="ml-auto" onClick={() => void answer(c.peer, c.id, false)}>
-                  <X /> Decline
-                </Button>
-                <Button size="xs" onClick={() => void answer(c.peer, c.id, true)}>
-                  <Check /> Accept
-                </Button>
-              </div>
-            )}
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function Propose({ team, api, thread, onError, onInfo }: { team: Team; api: ProjectApi; thread: Session; onError: (t: string) => void; onInfo: (t: string) => void }) {
-  const [peer, setPeer] = useState(team.teammates[0]?.name ?? "");
-  const [brief, setBrief] = useState("");
-  const go = async () => {
-    const r = await api.proposeContract(thread.id, peer, brief);
-    if (typeof r === "string") return onError(r);
-    setBrief("");
-    onInfo(r.queued ? `${peer} is away: the request goes when their link is back (task ${r.taskId}).` : `Asked ${peer} (task ${r.taskId}).`);
-  };
-  const ready = peer !== "" && brief.trim() !== "";
-  return (
-    <div className="flex flex-col gap-2.5 pt-3.5">
-      <p className="text-pretty text-muted-foreground text-xs leading-relaxed">
-        Ask a teammate's Deck to do a task for <span className="text-foreground">"{thread.title || "this thread"}"</span>. It runs there on a
-        copy of the tree, under their plan; what it changed comes back as a capsule on your task board.
-      </p>
-      <div className="flex items-center gap-2">
-        <select aria-label="Teammate" value={peer} onChange={(e) => setPeer(e.target.value)} className={selectClass}>
-          {team.teammates.map((m) => (
-            <option key={m.name} value={m.name}>
-              {m.name}
-            </option>
-          ))}
-        </select>
-        <input
-          aria-label="Contract brief"
-          placeholder="What should they do?"
-          value={brief}
-          className={cn(fieldClass, "h-8 rounded-full py-1")}
-          onChange={(e) => setBrief(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && ready) void go();
-          }}
-        />
-        <Button size="sm" variant="outline" disabled={!ready} onClick={() => void go()}>
-          <Handshake /> Ask
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 export function TeamPage({
   api,
-  thread,
-  onError,
-  onInfo,
   onOpenShared,
   onConnection,
   onAddProject,
 }: {
   api: ProjectApi | undefined;
-  thread: Session | undefined;
-  onError: (t: string) => void;
-  onInfo: (t: string) => void;
   // Opens a thread a teammate shares in the room view.
   onOpenShared: (peer: string, t: TeamThread) => void;
   // The empty pages' next step, when the shell gives it: Settings at
@@ -377,7 +203,7 @@ export function TeamPage({
       <EmptyPlate
         art={PLATES.wave}
         title="No team link yet"
-        hint="Turn on peers in Deck's settings and pair with a teammate's Deck. Then you see what their agents do, chat, share threads and hand each other tasks."
+        hint="Turn on peers in Deck's settings and pair with a teammate's Deck. Then you see what their agents do and share threads."
         className="py-20"
         action={
           onConnection !== undefined && (
@@ -391,47 +217,34 @@ export function TeamPage({
   } else {
     const online = team.teammates.filter((m) => m.link === "online").length;
     body = (
-      <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
-        <div className="flex min-w-0 flex-col gap-12">
-          <Card
-            title="Teammates"
-            action={
-              team.teammates.length > 0 && (
-                <span className="text-faint text-xs tabular-nums">
-                  {online} of {team.teammates.length} online
-                </span>
-              )
-            }
-          >
-            {team.teammates.length === 0 ? (
-              <p className="flex flex-wrap items-baseline gap-x-2 py-4 text-muted-foreground text-xs">
-                <span className="font-medium text-foreground text-sm">No teammates yet.</span>
-                Pair with a Deck from Settings → Connection.
-                {onConnection !== undefined && (
-                  <Button variant="link" size="xs" className="px-0" onClick={onConnection}>
-                    Open Connection
-                  </Button>
-                )}
-              </p>
-            ) : (
-              <ul className="[&>li+li]:border-hairline [&>li+li]:border-t">
-                {team.teammates.map((m) => (
-                  <Mate key={m.name} m={m} now={now} onOpen={onOpenShared} />
-                ))}
-              </ul>
-            )}
-          </Card>
-          <Card title="Contracts">
-            <Contracts team={team} api={api} onError={onError} onDone={() => void load()} />
-            {thread !== undefined && team.teammates.length > 0 && (
-              <div className="border-hairline border-t">
-                <Propose team={team} api={api} thread={thread} onError={onError} onInfo={onInfo} />
-              </div>
-            )}
-          </Card>
-        </div>
-        <Card title="Team chat" className="lg:sticky lg:top-0 lg:self-start">
-          <Chat team={team} api={api} onError={onError} onDone={() => void load()} />
+      <div className="flex min-w-0 flex-col gap-12">
+        <Card
+          title="Teammates"
+          action={
+            team.teammates.length > 0 && (
+              <span className="text-faint text-xs tabular-nums">
+                {online} of {team.teammates.length} online
+              </span>
+            )
+          }
+        >
+          {team.teammates.length === 0 ? (
+            <p className="flex flex-wrap items-baseline gap-x-2 py-4 text-muted-foreground text-xs">
+              <span className="font-medium text-foreground text-sm">No teammates yet.</span>
+              Pair with a Deck from Settings → Connection.
+              {onConnection !== undefined && (
+                <Button variant="link" size="xs" className="px-0" onClick={onConnection}>
+                  Open Connection
+                </Button>
+              )}
+            </p>
+          ) : (
+            <ul className="[&>li+li]:border-hairline [&>li+li]:border-t">
+              {team.teammates.map((m) => (
+                <Mate key={m.name} m={m} now={now} onOpen={onOpenShared} />
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
     );

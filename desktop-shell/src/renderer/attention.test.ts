@@ -11,7 +11,7 @@ import {
   type RoomInput,
   roomStatus,
 } from "./attention";
-import { type AgentNode, type BoardTask, notNative, type TeamContract } from "./crew";
+import { type AgentNode, type BoardTask, notNative } from "./crew";
 
 const T0 = Date.parse("2026-10-25T10:00:00Z");
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -234,18 +234,6 @@ describe("helpers", () => {
 });
 
 describe("inboxItems", () => {
-  const contract = (id: string, state: string, inbound = true): TeamContract => ({
-    id,
-    peer: "vps",
-    inbound,
-    title: "Port the cache",
-    brief: "",
-    state,
-    agent: "",
-    note: "",
-    summary: "",
-    kind: "",
-  });
   const project = (key: string, extra: Partial<InboxProject>): InboxProject => ({
     key,
     source: `folder:/${key}`,
@@ -254,7 +242,6 @@ describe("inboxItems", () => {
     rooms: {},
     approvals: [],
     notices: [],
-    contracts: [],
     ...extra,
   });
 
@@ -274,7 +261,6 @@ describe("inboxItems", () => {
         { session: "b", text: OVERLAP, at: T0 + 61, seen: false, via: null },
         { session: "b", text: "codex-2 touches a.go too", at: T0 + 62, seen: false, via: "overlap" },
       ],
-      contracts: [contract("c1", "proposed"), contract("c2", "accepted"), contract("c3", "proposed", false)],
     });
     const web = project("web", {
       sessions: [session("x")],
@@ -282,19 +268,17 @@ describe("inboxItems", () => {
       approvals: [approval("p2", "x", T0 + 20), approval("p9", "nope", T0 + 99)],
     });
     const items = inboxItems([deck, web]);
-    expect(items.map((i) => `${i.project}:${i.state}:${i.action}:${i.room ?? "-"}`)).toEqual([
+    expect(items.map((i) => `${i.project}:${i.state}:${i.action}:${i.room}`)).toEqual([
       "deck:needs-you:open:c",
       "web:needs-you:answer:x",
       "deck:needs-you:answer:a",
-      "deck:needs-you:contract:-",
       "web:review:open:x",
       "deck:done:open:b",
       "deck:notice:open:b",
     ]);
     expect(items[1]).toMatchObject({ projectName: "web", title: "x", label: "Approve command", source: "folder:/web" });
     expect(items[1]?.approval?.id).toBe("p2");
-    expect(items[3]).toMatchObject({ label: "Contract from vps", title: "Port the cache" });
-    expect(items[6]?.label).toBe("PR #12 opened");
+    expect(items[5]?.label).toBe("PR #12 opened");
   });
 
   test("Ctrl+Alt+L walks the rooms that need you, across projects, round and round", () => {

@@ -1012,24 +1012,12 @@ test("sharing: the share popover, a follower's lane and a room shared with you",
   await expect(room.locator('.shared-row[data-who="laptop"]')).toContainText("ping me when it is up");
 });
 
-test("team: presence, chat and contracts", async ({ page }) => {
+test("team: presence", async ({ page }) => {
   await openFolder(page);
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   await sidebar(page).getByRole("button", { name: "1 teammate online" }).click();
   const team = page.locator("[data-team]");
   await expect(team.locator('.teammate[data-peer="vps"]')).toContainText("fix the flaky test");
-  // The team chat.
-  await expect(team.locator(".team-chat")).toContainText("I am on the flaky test.");
-  await team.getByLabel("Message the team").fill("shipping at five");
-  await team.getByLabel("Message the team").press("Enter");
-  await expect(team.locator(".team-chat")).toContainText("shipping at five");
-  // A teammate's contract, accepted with codex; one proposed for this thread.
-  await team.getByLabel("Agent for the contract").selectOption("codex");
-  await team.locator('.contract[data-contract="c1"]').getByRole("button", { name: "Accept" }).click();
-  await expect(team.locator('.contract[data-contract="c1"]')).toContainText("accepted · codex");
-  await team.getByLabel("Contract brief").fill("review the limiter");
-  await team.getByRole("button", { name: "Ask" }).click();
-  await expect(page.locator(".toast")).toContainText("Asked vps (task t9)");
   // A shared room opens from the team page too.
   await team.locator('.teammate[data-peer="vps"]').getByRole("button", { name: "Open" }).click();
   await expect(page.locator(".shared-room .title")).toHaveText("Deploy the relay");

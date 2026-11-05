@@ -1,6 +1,6 @@
 import type { Decision, QuestionAnswer } from "@web/protocol";
 import { relativeTime } from "@web/time";
-import { CircleCheck, FileDiff, GitCompareArrows, Inbox as InboxIcon, Info, ShieldQuestion, Users } from "./icons";
+import { CircleCheck, FileDiff, GitCompareArrows, Inbox as InboxIcon, Info, ShieldQuestion } from "./icons";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { approvalSummary, DECISIONS } from "../approvals";
 import type { InboxItem, InboxState } from "../attention";
@@ -27,7 +27,6 @@ const STATES: Record<InboxState, { icon: typeof Info; tone: string; group: strin
 export interface InboxActions {
   // A question takes "answer" with answers, or "deny" to skip it.
   onAnswer: (item: InboxItem, d: Decision, answers?: QuestionAnswer[]) => void;
-  onContract: (item: InboxItem, accept: boolean) => void;
   onOpen: (item: InboxItem) => void;
 }
 
@@ -45,7 +44,7 @@ function Row({
   actions: InboxActions;
 }) {
   const s = STATES[item.state];
-  const Icon = item.contract !== undefined ? Users : s.icon;
+  const Icon = s.icon;
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (selected) ref.current?.scrollIntoView({ block: "nearest" });
@@ -93,16 +92,10 @@ function Row({
             {approvalSummary(item.approval)}
           </code>
         )}
-        {item.contract !== undefined && item.contract.brief !== "" && (
-          <p className="line-clamp-3 whitespace-pre-wrap text-pretty text-muted-foreground text-xs">{item.contract.brief}</p>
-        )}
-        {(item.approval !== undefined || item.contract !== undefined || item.room !== null) && (
-          <div className="flex flex-wrap items-center justify-end gap-1.5 pt-0.5">
-            {item.room !== null && (
-              <Button size="xs" variant="ghost-muted" className="mr-auto -ml-2" onMouseDown={keep} onClick={() => actions.onOpen(item)}>
-                Open
-              </Button>
-            )}
+        <div className="flex flex-wrap items-center justify-end gap-1.5 pt-0.5">
+          <Button size="xs" variant="ghost-muted" className="mr-auto -ml-2" onMouseDown={keep} onClick={() => actions.onOpen(item)}>
+            Open
+          </Button>
             {item.approval !== undefined &&
               !isQuestion(item.approval) &&
               [...DECISIONS].reverse().map((d) => (
@@ -119,18 +112,7 @@ function Row({
                   {d.label}
                 </Button>
               ))}
-            {item.contract !== undefined && (
-              <>
-                <Button size="xs" variant="ghost-muted" onMouseDown={keep} onClick={() => actions.onContract(item, false)}>
-                  Decline
-                </Button>
-                <Button size="xs" variant={strong(true)} onMouseDown={keep} onClick={() => actions.onContract(item, true)}>
-                  Accept
-                </Button>
-              </>
-            )}
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -189,9 +171,8 @@ export function Inbox({
         if (e.key === "y") return;
         actions.onAnswer(current, "deny");
       } else if (current.approval !== undefined) actions.onAnswer(current, e.key === "y" ? "allow" : "deny");
-      else if (current.contract !== undefined) actions.onContract(current, e.key === "y");
       else return;
-    } else if (e.key === "Enter" && current.room !== null) actions.onOpen(current);
+    } else if (e.key === "Enter") actions.onOpen(current);
     else return;
     e.preventDefault();
   };

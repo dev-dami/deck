@@ -140,9 +140,8 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   against an older engine the app reads them by their words.
 - **Inbox.** The sidebar's Inbox (or "Open inbox" in the palette) lists,
   across every open project, what waits for you: approvals with Approve,
-  Decline and Always allow, contract proposals with Accept and Decline,
-  overlaps, rooms to review, finished rooms and notices from rooms you are
-  not in. `j` and `k` move, `y` and `n` answer, Enter opens the room, in
+  Decline and Always allow, overlaps, rooms to review, finished rooms and
+  notices from rooms you are not in. `j` and `k` move, `y` and `n` answer, Enter opens the room, in
   its own project. Notices from the room you are in show as toasts; each
   toast has a close button.
 - **Notifications.** While the window is in the background, the app sends a
@@ -336,8 +335,8 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   One opens in the room view: read-only for an observer, with a composer
   for a participant or editor, and with Approve and Decline for an editor.
   The sidebar footer counts the teammates online; click it for the Team
-  page: teammates and what their agents do, team chat, and contracts
-  (propose, accept, decline). Beside the count, a dot shows the connection
+  page: teammates and what their agents do. (Team chat and contracts were
+  removed in Deck v3; see `docs/design/v3/02-cuts.md`.) Beside the count, a dot shows the connection
   (its tooltip names it); click it for the connection settings. A sidebar
   wider than 260px also shows the word.
 - **Git.** The strip under the composer shows the branch; switch or create

@@ -6,7 +6,6 @@ import { attachProject, dispatchUi, dropProject, setEngine, showProject } from "
 import type { InboxItem } from "../attention";
 import type { DeckClient } from "../client";
 import { connect, openLocal } from "../connection";
-import { refreshTeam, teamOf } from "../crewState";
 import { useInbox } from "../inbox";
 import { parseTag, setNotifyOpener, useBadge, useNotifyCentre } from "../notifyCentre";
 import { forgetOpen, type OpenProject, rememberOpen, restoredOpen } from "../openProjects";
@@ -290,14 +289,6 @@ export function App({ bridge }: { bridge: DeckBridge }) {
     onAnswer: (item: InboxItem, d: Decision, answers?: QuestionAnswer[]) => {
       const p = live.current.find((x) => x.key === item.project);
       if (p !== undefined && item.approval !== undefined) void p.c.answerApproval(item.approval.session_id, item.approval.id, d, answers);
-    },
-    onContract: async (item: InboxItem, accept: boolean): Promise<string | null> => {
-      const api = live.current.find((x) => x.key === item.project)?.c.project;
-      const c = item.contract;
-      if (api === undefined || c === undefined) return null;
-      const err = await api.answerContract(c.peer, c.id, accept, teamOf(api)?.contractKinds[0] ?? "");
-      await refreshTeam(api);
-      return err;
     },
   };
 

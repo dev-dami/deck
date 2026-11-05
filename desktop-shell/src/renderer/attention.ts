@@ -1,7 +1,7 @@
 import type { Approval, Message, QueuedItem, Session } from "@web/protocol";
 import { sessionTitle } from "@web/state";
 import { toMillis } from "@web/time";
-import type { AgentNode, BoardTask, TeamContract } from "./crew";
+import type { AgentNode, BoardTask } from "./crew";
 import type { Attention } from "./roomMeta";
 
 // One status per room, derived from what Deck sent and what the person did.
@@ -217,30 +217,25 @@ export interface InboxProject {
   rooms: Record<string, RoomStatus>;
   approvals: Approval[];
   notices: RoomNotice[];
-  // Contracts from Team, when the project loaded them.
-  contracts: TeamContract[];
 }
 
 export type InboxState = "needs-you" | "overlap" | "review" | "done" | "notice";
 
-// answer: Approve, Decline, Always allow; contract: Accept, Decline; open:
-// opens the room.
-export type InboxAction = "answer" | "contract" | "open";
+// answer: Approve, Decline, Always allow; open: opens the room.
+export type InboxAction = "answer" | "open";
 
 export interface InboxItem {
   id: string;
   project: string;
   source: string;
   projectName: string;
-  // The room, or null for a contract.
-  room: string | null;
+  room: string;
   title: string;
   state: InboxState;
   label: string;
   at: number;
   action: InboxAction;
   approval?: Approval;
-  contract?: TeamContract;
 }
 
 const RANK: Record<InboxState, number> = { "needs-you": 0, overlap: 1, review: 2, done: 3, notice: 4 };
@@ -280,20 +275,6 @@ export function inboxItems(projects: InboxProject[]): InboxItem[] {
       if (n.seen || !ids.has(n.session) || overlapLabel(n) !== null) continue;
       out.push({ ...head, id: `${p.key}/notice/${n.session}/${n.at}/${n.text}`, room: n.session, title: title(n.session), state: "notice", label: n.text, at: n.at, action: "open" });
     }
-    for (const c of p.contracts) {
-      if (!c.inbound || c.state !== "proposed") continue;
-      out.push({
-        ...head,
-        id: `${p.key}/contract/${c.peer}/${c.id}`,
-        room: null,
-        title: c.title || c.id,
-        state: "needs-you",
-        label: `Contract from ${c.peer}`,
-        at: 0,
-        action: "contract",
-        contract: c,
-      });
-    }
   }
   return out.sort((a, b) => RANK[a.state] - RANK[b.state] || b.at - a.at || a.id.localeCompare(b.id));
 }
@@ -303,7 +284,7 @@ export function needsYouRooms(items: InboxItem[]): { project: string; room: stri
   const seen = new Set<string>();
   const out: { project: string; room: string }[] = [];
   for (const i of items) {
-    if (i.state !== "needs-you" || i.room === null) continue;
+    if (i.state !== "needs-you") continue;
     const k = `${i.project}/${i.room}`;
     if (seen.has(k)) continue;
     seen.add(k);

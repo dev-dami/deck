@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import { projectState, subscribe } from "./appState";
 import { type InboxItem, inboxItems } from "./attention";
-import { subscribeCrew, teamOf } from "./crewState";
 import type { OpenProject } from "./openProjects";
-import { subscribePrefs } from "./prefs";
 import { isSide } from "./sideChat";
 
 // The window's attention across its open projects: the inbox, read from the
@@ -18,7 +16,7 @@ export function useInbox(open: OpenProject[]): InboxItem[] {
       const next = open.flatMap((p) => {
         const ps = projectState(p.key);
         const s = p.c.store.state;
-        return [ps.rooms, ps.notices, s.sessions, s.approvals, teamOf(p.c.project), p.c.rooms?.snapshot()];
+        return [ps.rooms, ps.notices, s.sessions, s.approvals, p.c.rooms?.snapshot()];
       });
       if (next.length === parts.length && next.every((x, i) => x === parts[i])) return;
       parts = next;
@@ -36,7 +34,6 @@ export function useInbox(open: OpenProject[]): InboxItem[] {
               rooms: ps.rooms,
               approvals: s.approvals,
               notices: ps.notices,
-              contracts: teamOf(p.c.project)?.contracts ?? [],
             };
           }),
         ),
@@ -45,9 +42,6 @@ export function useInbox(open: OpenProject[]): InboxItem[] {
     read();
     const offs = [
       subscribe(read),
-      subscribeCrew(read),
-      // The Team switch takes contracts out of the inbox and puts them back.
-      subscribePrefs(read),
       ...open.map((p) => p.c.store.subscribe(read)),
       ...open.flatMap((p) => (p.c.rooms === undefined ? [] : [p.c.rooms.subscribe(read)])),
     ];

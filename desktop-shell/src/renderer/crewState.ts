@@ -18,7 +18,7 @@ export interface RoomCrew {
 
 const BUSY_MS = 3000;
 const IDLE_MS = 10_000;
-// The team (for contract proposals) changes slowly.
+// The team changes slowly.
 const TEAM_MS = 30_000;
 
 interface Watch {
@@ -71,7 +71,7 @@ export function crewOf(api: ProjectApi | undefined, sid: string): RoomCrew | und
   return api === undefined ? undefined : watches.get(api)?.rooms.get(sid);
 }
 
-// null with the team off (teamGate.ts), whose contracts then leave the inbox.
+// null with the team off (teamGate.ts).
 export function teamOf(api: ProjectApi | undefined): Team | null {
   return api === undefined || !teamOn() ? null : (watches.get(api)?.team ?? null);
 }

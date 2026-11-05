@@ -44,7 +44,6 @@ export interface ShellAttention {
   items: InboxItem[];
   onOpenRoom: (project: string, room: string) => void;
   onAnswer: (item: InboxItem, d: Decision, answers?: QuestionAnswer[]) => void;
-  onContract: (item: InboxItem, accept: boolean) => Promise<string | null>;
 }
 
 // Settings takes the whole state but reads only the panel slice.
@@ -297,8 +296,7 @@ export function Shell(props: ShellProps) {
                 items={attention.items}
                 mac={mac}
                 onAnswer={attention.onAnswer}
-                onContract={(item, accept) => orToast(attention.onContract(item, accept))}
-                onOpen={(item) => item.room !== null && openRoom(item.project, item.room)}
+                onOpen={(item) => openRoom(item.project, item.room)}
                 onBack={() => dispatch({ type: "inbox", open: false })}
               />
             ) : ui.usage ? (
@@ -306,9 +304,6 @@ export function Shell(props: ShellProps) {
             ) : teamPage ? (
               <TeamPage
                 api={api}
-                thread={open}
-                onError={toast}
-                onInfo={info}
                 onOpenShared={openShared}
                 onConnection={() => dispatch({ type: "settings", section: "connection" })}
                 onAddProject={addProject}
