@@ -202,21 +202,6 @@ func Merge(base, over []Profile) []Profile {
 	return out
 }
 
-// Without drops the profiles whose names are in names (teammates, say).
-func Without(ps []Profile, names []string) []Profile {
-	var out []Profile
-	for _, p := range ps {
-		drop := false
-		for _, n := range names {
-			drop = drop || strings.EqualFold(p.Name, n)
-		}
-		if !drop {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
 // Briefing is what a member started from p is told about itself, after
 // Deck's own briefing: its role, standing instructions, voice and paths.
 // "" when p says nothing of them.

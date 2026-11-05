@@ -45,9 +45,6 @@ func TestStartAsksFirstAndRunsAPlanSession(t *testing.T) {
 	if !strings.Contains(string(b), `"configId":"mode","value":"plan"`) {
 		t.Errorf("plan mode runs OpenCode's plan agent:\n%s", b)
 	}
-	if New("").Name() != "opencode" || !New("").(agent.ContractSafe).ContractSafe() {
-		t.Error("opencode is contract safe")
-	}
 }
 
 // TestTakesVideo covers Deck's table of the OpenCode models sent video:

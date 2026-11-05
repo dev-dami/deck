@@ -195,12 +195,14 @@ type Thread struct {
 	// chose, and takes the configured default.
 	Orchestration string `json:"orchestration,omitempty"`
 	Orchestrate   bool   `json:"orchestrate,omitempty"`
-	// Contract is the teammate whose code contract runs in this thread: its
-	// mode is at most ask.
-	Contract string `json:"contract,omitempty"`
-	// Ops is set when the thread runs, or ran, a teammate's ops contract:
-	// its agents stay locked down to sh.run and contract.result.
-	Ops bool `json:"ops,omitempty"`
+	// Frozen is why the thread is read-only ("" when it is not): it opens
+	// for reading and refuses posts, Continue and agent resume.
+	Frozen string `json:"frozen,omitempty"`
+	// LegacyContract and LegacyOps are the "contract" and "ops" keys of a
+	// thread that ran a teammate's code or ops contract before Deck v3
+	// removed them. Normalize turns them into Frozen; nothing sets them.
+	LegacyContract string `json:"contract,omitempty"`
+	LegacyOps      bool   `json:"ops,omitempty"`
 	// Shares are the teammates the thread is shared with, and their roles.
 	Shares []Share `json:"shares,omitempty"`
 	// Scheduled are messages waiting for their time (session/waits.go).
@@ -229,18 +231,28 @@ type Share struct {
 	Role string `json:"role"`
 }
 
+// Why a thread is frozen (Thread.Frozen) after Deck v3 removed teammates'
+// contracts, and why a task a teammate owned failed.
+const (
+	FrozenContract    = "teammate contract"
+	FrozenOps         = "ops contract"
+	RemoteTaskRemoved = "teammate contracts were removed in Deck v3"
+)
+
 // Normalize migrates a pre-shared-thread record in place: when there are no
 // Members but a legacy AgentKind, the legacy fields become one Member. It then
 // refreshes the legacy mirror and CostUSD from Members. A missing or unknown
-// Mode becomes "ask". Version is left as is,
-// so a caller can tell a migrated thread (Version < CurrentVersion) from a new
-// one.
+// Mode becomes "ask". A thread that ran a teammate's contract becomes frozen
+// and archived, and a task a teammate owned fails (see migrateContracts).
+// Version is left as is, so a caller can tell a migrated thread (Version <
+// CurrentVersion) from a new one.
 func (t *Thread) Normalize() {
 	switch t.Mode {
 	case "plan", "ask", "yolo":
 	default:
 		t.Mode = "ask"
 	}
+	t.migrateContracts()
 	if len(t.Members) == 0 && t.AgentKind != "" {
 		id := t.Name
 		if id == "" || strings.ContainsAny(id, "+ ") {
@@ -269,6 +281,36 @@ func (t *Thread) Normalize() {
 	t.AgentKind, t.Model, t.SessionID = first.Kind, first.Model, first.SessionID
 	t.Name = strings.Join(names, "+")
 	t.CostUSD = cost
+}
+
+// migrateContracts applies Deck v3's removal of teammates' code and ops
+// contracts to a thread stored before it. A thread that ran one becomes
+// frozen and archived: before v3 its agents were locked down, and without the
+// lockdown they must not resume. A task a teammate's Deck owned fails for
+// good, so the tasks that wait on it follow their OnFail policy instead of
+// waiting for a run that never comes. It is idempotent: it clears the legacy
+// keys it reads.
+func (t *Thread) migrateContracts() {
+	switch {
+	case t.LegacyOps:
+		t.Frozen, t.Archived = FrozenOps, true
+	case t.LegacyContract != "":
+		t.Frozen, t.Archived = FrozenContract, true
+	}
+	t.LegacyContract, t.LegacyOps = "", false
+	for i := range t.Tasks {
+		tk := &t.Tasks[i]
+		if tk.LegacyRemote == "" {
+			continue
+		}
+		tk.LegacyRemote = ""
+		if tk.Status == TaskDone || tk.Status == TaskCancelled {
+			continue
+		}
+		tk.Status, tk.Error, tk.Run = TaskFailed, RemoteTaskRemoved, nil
+		tk.Attempts = max(tk.Attempts, tk.Tries())
+		tk.RetryAt = time.Time{}
+	}
 }
 
 // Entry types. The zero value is a plain agent event.
@@ -420,25 +462,6 @@ func Lock(dir string, exclusive bool) (func(), error) {
 		_ = os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600)
 	}
 	return release, nil
-}
-
-// Unused reports whether no Deck holds the lock on the threads directory
-// dir ("" means DefaultDir) now. Call it before Lock: Lock's own hold makes
-// it false.
-func Unused(dir string) bool {
-	if dir == "" {
-		d, err := DefaultDir()
-		if err != nil {
-			return false
-		}
-		dir = d
-	}
-	release, err := lock.TryFile(filepath.Join(dir, lockFile))
-	if err != nil {
-		return false
-	}
-	release()
-	return true
 }
 
 // New opens the store in dir, creating it if needed. An empty dir means

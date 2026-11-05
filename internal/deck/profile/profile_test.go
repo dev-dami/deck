@@ -70,9 +70,6 @@ func TestMergeAndFind(t *testing.T) {
 	if _, ok := Find(got, "nobody"); ok {
 		t.Fatal("found nobody")
 	}
-	if strings.Join(Names(Without(got, []string{"ADA"})), ",") != "Charles,linus" {
-		t.Fatal("Without kept a teammate's name")
-	}
 }
 
 func TestBriefing(t *testing.T) {

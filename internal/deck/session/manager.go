@@ -135,7 +135,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dev-dami/deck/pkg/rpc/deckv1"
 	"math"
 	"os"
 	"slices"
@@ -144,13 +143,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dev-dami/deck/pkg/rpc/deckv1"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dev-dami/deck/internal/deck/agent"
 	"github.com/dev-dami/deck/internal/deck/attribution"
 	"github.com/dev-dami/deck/internal/deck/brand"
 	"github.com/dev-dami/deck/internal/deck/config"
-	"github.com/dev-dami/deck/internal/deck/hub"
 	"github.com/dev-dami/deck/internal/deck/profile"
 	"github.com/dev-dami/deck/internal/deck/store"
 	"github.com/dev-dami/deck/internal/deck/sub"
@@ -321,17 +321,9 @@ type Manager struct {
 	activity        func(threadID string) string
 	browserAction   func(context.Context, string, string, *deckv1.BrowserCommand) *deckv1.BrowserActionResponse
 	highlightAction HighlightExecutor
-	// team is the peer link for the peers.* ops; see SetTeam.
-	team hub.Team
 	// profiles reads the named agents for a thread's folder; see
 	// SetProfiles.
 	profiles func(dir string) []profile.Profile
-	// contractor sends code contracts to teammates, and taskEnd hears of
-	// every task that ends (contract.go).
-	contractor Contractor
-	taskEnd    func(threadID string, tk store.Task)
-	// sandbox makes the sandbox of each ops contract (opscontract.go).
-	sandbox NewSandbox
 }
 
 // NewManager returns a Manager that starts agents from adapters (keyed by kind,
@@ -777,9 +769,6 @@ func (m *Manager) spec(t *thread, a *agentState, prompt, resume string) agent.Sp
 	a.mu.Lock()
 	s.Briefed = resume != "" && resume == a.sessionID && a.briefed
 	a.mu.Unlock()
-	if t.opsOf() != nil {
-		s.NoTools, s.Instructions = true, opsInstructions
-	}
 	return s
 }
 
@@ -855,6 +844,9 @@ func (m *Manager) postAddressed(threadID, text string, images []agent.Image) (Po
 	t := m.thread(threadID)
 	if t == nil {
 		return PostResult{}, fmt.Errorf("session: no thread %q", threadID)
+	}
+	if err := t.frozenErr(); err != nil {
+		return PostResult{}, err
 	}
 	text = strings.TrimSpace(text)
 	if text == "" && len(images) > 0 {
@@ -960,6 +952,9 @@ func (m *Manager) postAddressed(threadID, text string, images []agent.Image) (Po
 // postTo logs a user message addressed to targets and delivers it. A user
 // message ends any pause and resets the hop count.
 func (m *Manager) postTo(t *thread, text string, targets []*agentState, images []agent.Image) (PostResult, error) {
+	if err := t.frozenErr(); err != nil {
+		return PostResult{}, err
+	}
 	cfg := m.config()
 	speaker := cfg.UserName
 	if speaker == "" {
@@ -1093,6 +1088,9 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 	if m.isClosed() {
 		return dNone, errClosed
 	}
+	if err := t.frozenErr(); err != nil {
+		return dNone, err
+	}
 	t.mu.Lock()
 	if needTrigger && !t.hasTrigger(a) {
 		t.mu.Unlock()
@@ -1139,17 +1137,8 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 		a.nudge = ""
 	}
 	a.mu.Unlock()
-	// A contract's agents work for a teammate: the team chat is not theirs.
-	quiet := t.ops != nil || t.contract != ""
 	t.mu.Unlock()
 
-	var newsSeq uint64
-	if !quiet {
-		var news string
-		if news, newsSeq = m.teamNews(a); news != "" {
-			prompt = news + "\n\n" + prompt
-		}
-	}
 	a.notePrompt(prompt, user)
 	err := m.sendPrompt(t, a, prompt, images)
 	a.donePrompt(err == nil)
@@ -1160,11 +1149,6 @@ func (m *Manager) deliverEx(t *thread, a *agentState, needTrigger bool) (deliver
 		t.mu.Unlock()
 		a.restore(prev)
 		return dNone, err
-	}
-	if newsSeq > 0 {
-		a.mu.Lock()
-		a.teamSeq = newsSeq
-		a.mu.Unlock()
 	}
 	m.persistMeta(t)
 	m.queueDelivered(t, a, cursor)
@@ -1362,15 +1346,9 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 	t.trees, t.capsules = th.Trees, cloneCapsules(th.Capsules)
 	t.tasks = cloneTasks(th.Tasks)
 	t.level = storedLevel(th, cfg)
-	t.contract = th.Contract
-	if th.Ops {
-		// Its contract ended when Deck stopped, but the thread stays locked
-		// down: its agents get no tools, approvals, thread.send and
-		// thread.read are refused, and sh.run and contract.result answer that
-		// the contract is over. The thread resumes, so its person can still
-		// read it; a refusal would hide its history.
-		t.ops = &opsState{}
-	}
+	// A frozen thread resumes, so its person can still read it, but it
+	// refuses posts, Continue and every agent turn (thread.frozenErr).
+	t.frozen = th.Frozen
 	for _, sh := range th.Shares {
 		if validShareRole(sh.Role) {
 			if t.shares == nil {
@@ -1424,8 +1402,10 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 		a.running = m.ModelSlug(mem.Kind, model)
 		// Its subagents did not outlive the CLI that ran them.
 		a.stopSubsLocked(time.Now())
-		if mem.Ephemeral {
-			a.base = StatusExited // a subagent's run does not outlive Deck; its worktree and task stay
+		if mem.Ephemeral || t.frozen != "" {
+			// A subagent's run does not outlive Deck; its worktree and task
+			// stay. No agent of a frozen thread runs again.
+			a.base = StatusExited
 		}
 		// Names are per thread: only another member of this thread can clash.
 		for _, o := range members {
@@ -1486,7 +1466,7 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 	var starting []*agentState
 	var sessions []string
 	for i, a := range members {
-		if !a.ephemeral {
+		if !a.ephemeral && t.frozen == "" {
 			starting = append(starting, a)
 			sessions = append(sessions, th.Members[i].SessionID)
 		}
@@ -1498,13 +1478,15 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 	}
 	m.failOrphans(t)
 	for i, a := range members {
-		if w := th.Members[i].Wait; w != nil && !a.ephemeral {
+		if w := th.Members[i].Wait; w != nil && !a.ephemeral && t.frozen == "" {
 			m.restoreWait(t, a, *w)
 		}
 	}
 	t.scheduled = append([]store.Scheduled(nil), th.Scheduled...)
 	for _, sc := range th.Scheduled {
-		m.armScheduled(t, sc)
+		if t.frozen == "" {
+			m.armScheduled(t, sc)
+		}
 	}
 	m.kick(t)
 	if th.Archived {
@@ -1838,12 +1820,6 @@ func (m *Manager) onApproval(a *agentState, req agent.ApprovalRequest) {
 		}
 		return
 	}
-	if a.thread.opsOf() != nil {
-		if req.Respond != nil {
-			req.Respond(agent.Decision{Allow: false, Reason: errOpsOnly.Error()})
-		}
-		return
-	}
 	if req.Kind == agent.ApproveEdit && a.thread.getMode() != agent.ModePlan && m.gated(a, req) {
 		// An edit first passes the gate (coord.go), which may wait for the
 		// file's owner: off the pump, which goes on with a's events.
@@ -1923,7 +1899,6 @@ type agentState struct {
 	tokTurn     int     // current turn's input and output tokens, as last reported
 	sessionID   string
 	briefed     bool   // sessionID has had Deck's instructions (store.Member.Briefed)
-	teamSeq     uint64 // the last team chat message it was told of (teamNews)
 	lastText    string // the last assistant text of the running turn
 	interrupted bool
 	ctxTokens   int // context window use, from the latest usage event that reported it

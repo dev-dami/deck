@@ -50,9 +50,7 @@ func NewWithOptions(binary string, opts Options) agent.Adapter {
 			IsolateMCP:     agent.SupportPartial,
 			ReportsContext: agent.ContextCLI, ReportsWindow: agent.ContextCLI,
 		},
-		// In ask mode its edits, commands and fetches ask through Deck.
-		ContractSafe: true,
-		Video:        TakesVideo,
+		Video: TakesVideo,
 	})
 }
 

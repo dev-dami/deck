@@ -48,7 +48,7 @@ type schedState struct {
 // caller's goroutine. At a level that does not schedule, it only starts the reviews
 // that wait for room.
 func (m *Manager) kick(t *thread) {
-	if m.isClosed() || t.gone.Load() {
+	if m.isClosed() || t.gone.Load() || t.frozen != "" {
 		return
 	}
 	t.sched.mu.Lock()
@@ -219,9 +219,6 @@ func (m *Manager) dispatchReady(t *thread) {
 		running := 0
 		var next *store.Task
 		for i := range t.tasks {
-			if t.tasks[i].Remote != "" {
-				continue // a teammate's Deck does it
-			}
 			switch t.tasks[i].Status {
 			case store.TaskRunning:
 				running++

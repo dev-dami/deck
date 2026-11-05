@@ -114,12 +114,9 @@ type thread struct {
 	// and wide members spawn, whether they race, and whether the scheduler
 	// runs the board (spawn.go, sched.go).
 	level string
-	// contract is the teammate whose code contract this thread runs: its
-	// mode is never yolo (contract.go).
-	contract string
-	// ops is the teammate's ops contract the thread runs, or nil: its
-	// agents have no tools but sh.run and contract.result (opscontract.go).
-	ops *opsState
+	// frozen is why the thread is read-only, or "" (store.Thread.Frozen).
+	// It is set when the thread resumes and never changes.
+	frozen string
 	// shares are the teammates the thread is shared with, by name, and
 	// their roles; grew is closed when the log grows (share.go).
 	shares map[string]string
@@ -366,6 +363,15 @@ func (m *Manager) persistMeta(t *thread) {
 	})
 }
 
+// frozenErr refuses a post, a Continue or an agent turn in a frozen thread;
+// it is nil for every other thread.
+func (t *thread) frozenErr() error {
+	if t.frozen == "" {
+		return nil
+	}
+	return fmt.Errorf("this thread is read-only (%s)", t.frozen)
+}
+
 // snapshot is the thread's stored metadata.
 func (m *Manager) snapshot(t *thread) store.Thread {
 	t.mu.Lock()
@@ -373,7 +379,7 @@ func (m *Manager) snapshot(t *thread) store.Thread {
 	th := store.Thread{ID: t.id, Title: t.title, TitleSrc: t.titleSrc, Dir: t.dir, Mode: string(t.mode),
 		Pinned: t.pinned, Resolved: t.resolved, Archived: t.archived, Worktree: t.worktree, Lead: t.lead,
 		Parent: t.parent, ParentAgent: t.parentAgent, Asks: slices.Clone(t.asks),
-		Tasks: cloneTasks(t.tasks), Orchestration: t.level, Orchestrate: m.levelLocked(t).Schedule, Contract: t.contract, Ops: t.ops != nil,
+		Tasks: cloneTasks(t.tasks), Orchestration: t.level, Orchestrate: m.levelLocked(t).Schedule, Frozen: t.frozen,
 		Scheduled: slices.Clone(t.scheduled), Trees: slices.Clone(t.trees), Capsules: cloneCapsules(t.capsules)}
 	for _, peer := range slices.Sorted(maps.Keys(t.shares)) {
 		th.Shares = append(th.Shares, store.Share{Peer: peer, Role: t.shares[peer]})

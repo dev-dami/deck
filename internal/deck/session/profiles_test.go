@@ -1,10 +1,8 @@
 package session
 
 import (
-	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/dev-dami/deck/internal/deck/profile"
 )
@@ -90,37 +88,6 @@ func TestProfileMentionWithoutProfilesIsText(t *testing.T) {
 	waitFor(t, "claude's turn", func() bool { return r.c.turnDones("claude") == 1 })
 	if p := r.claude.prompts("claude"); len(p) != 1 || p[0] != "@charles hi" {
 		t.Fatalf("claude was told %q", p)
-	}
-}
-
-// namesTeam is a hub.Team that only names its teammates.
-type namesTeam []string
-
-func (n namesTeam) Names() []string { return n }
-func (namesTeam) List() string      { return "" }
-func (namesTeam) Status(context.Context, string) (string, error) {
-	return "", nil
-}
-func (namesTeam) Read(int) string { return "" }
-func (namesTeam) Post(context.Context, string, string, string) (string, error) {
-	return "", nil
-}
-func (namesTeam) News(string, uint64, time.Time) (string, uint64) { return "", 0 }
-
-// A teammate's name is never a profile, even when deck.json says so.
-func TestProfileShadowedByTeammate(t *testing.T) {
-	r := newRig(t, nil, nil)
-	r.m.SetTeam(namesTeam{"charles"})
-	r.m.SetProfiles(func(string) []profile.Profile {
-		return []profile.Profile{{Name: "charles", Kind: "codex"}}
-	})
-	tid := r.thread(t)
-	r.add(t, tid, "claude")
-	if err := r.m.postAt(tid, "@charles hi"); err != nil {
-		t.Fatal(err)
-	}
-	if ti, _ := r.m.Thread(tid); len(ti.Members) != 1 {
-		t.Fatalf("a teammate's name added a member: %+v", ti.Members)
 	}
 }
 

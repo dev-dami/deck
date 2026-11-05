@@ -306,9 +306,6 @@ func (m *Manager) readThread(agentID string) string {
 	t := a.thread
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.ops != nil {
-		return errOpsOnly.Error()
-	}
 	n := t.size()
 	start := max(n-readThreadLast, 0)
 	budget := m.budget(a)
@@ -353,7 +350,7 @@ func tailBytes(s string, n int) string {
 // thread history (that goes in prompts) and stays short because it travels
 // on a command line. It names the members with their kinds and roles, how to
 // mention them, and the ops an agent would not think to search for:
-// subagents, races, leases, and the teammates on other machines. A member
+// subagents, races and leases. A member
 // started from a profile has the profile's briefing after it (role,
 // standing instructions, voice, paths), within maxProfileChars.
 func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
@@ -369,18 +366,10 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 			others = append(others, who(o))
 		}
 	}
-	// An ops contract's agent has sh.run and contract.result only, and a
-	// contract's agent works for a teammate: neither hears of more.
-	ops, contract := t.ops != nil, t.contract != ""
 	t.mu.Unlock()
 	m.mu.Lock()
-	team := m.team
 	hasHighlights := m.highlightAction != nil
 	m.mu.Unlock()
-	var mates []string
-	if team != nil && tools && !ops && !contract {
-		mates = team.Names()
-	}
 
 	with := user
 	if len(others) > 0 {
@@ -395,7 +384,7 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 	// where to find them, so nothing nudges it into running a crew. When
 	// another agent joins, the join line in its briefing says how to reach
 	// it (walk).
-	solo := tools && len(others) == 0 && len(mates) == 0 && !ops && !contract && !a.isEphemeral() && m.level(t).AskFirst
+	solo := tools && len(others) == 0 && !a.isEphemeral() && m.level(t).AskFirst
 	a.mu.Lock()
 	a.solo = solo
 	a.mu.Unlock()
@@ -430,21 +419,15 @@ func (m *Manager) instructions(t *thread, a *agentState, tools bool) string {
 		b.WriteString(" thread.read, thread.roster.\n")
 		b.WriteString("Task board: task.create {title, deps: \"t1,t2\", owner, check}, task.update {id, status}, task.done {id, result} (once its check passes), task.fail, task.list.\n")
 		b.WriteString("Pass code: sub.patch.capture, then thread.send {capsule}.\n")
-		if !ops {
-			if hasHighlights {
-				b.WriteString("highlight.add {key,kind,title} flags failures, user decisions and risks (one-line titles); summary.update {text} posts status.\n")
-			}
-			// Asked for agents, an agent reaches for its CLI's own subagent
-			// tool unless told: those work, but the user cannot steer them.
-			fmt.Fprintf(&b, "agent.spawn {brief, kind} starts a helper (kind: %s, or a named agent) that reports back; when the user asks for agents, use it, not your own Task/subagent tool. Orchestration is %s memory.add pins a note; search shows op args.\n",
-				clip(strings.Join(m.Kinds(), ", "), 80), m.levelText(t))
-			b.WriteString("Big work: worktree.*, capsule.*, agent.spawn {worktree: true}. Web: browser.open, browser.snapshot.\n")
-			b.WriteString("Before editing shared files: lease.acquire {paths}, or file.claim {paths} for a file another agent is changing (Deck gets you its changes). Asked about your file? file.answer {path, text}.\n")
+		if hasHighlights {
+			b.WriteString("highlight.add {key,kind,title} flags failures, user decisions and risks (one-line titles); summary.update {text} posts status.\n")
 		}
-		if len(mates) > 0 {
-			fmt.Fprintf(&b, "Teammates' Decks on other machines: %s. team.post {text, to: \"name\" or \"name/agent\"} writes to them (team.read shows the chat); their words reach you next turn. task.contract {peer, brief} asks one for coding work, (changes come back as a capsule); peers.status {peer} asks how one is. Lines like \"[%s] ...\" come from them.\n",
-				clip(strings.Join(mates, ", "), 200), clip(mates[0], 32))
-		}
+		// Asked for agents, an agent reaches for its CLI's own subagent
+		// tool unless told: those work, but the user cannot steer them.
+		fmt.Fprintf(&b, "agent.spawn {brief, kind} starts a helper (kind: %s, or a named agent) that reports back; when the user asks for agents, use it, not your own Task/subagent tool. Orchestration is %s memory.add pins a note; search shows op args.\n",
+			clip(strings.Join(m.Kinds(), ", "), 80), m.levelText(t))
+		b.WriteString("Big work: worktree.*, capsule.*, agent.spawn {worktree: true}. Web: browser.open, browser.snapshot.\n")
+		b.WriteString("Before editing shared files: lease.acquire {paths}, or file.claim {paths} for a file another agent is changing (Deck gets you its changes). Asked about your file? file.answer {path, text}.\n")
 	}
 	b.WriteString("Keep agent messages short; no thanks or acks.\n")
 	fmt.Fprintf(&b, "Write plan files in %s.", brand.PlansDir(t.dir))

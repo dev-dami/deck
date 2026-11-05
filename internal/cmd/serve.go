@@ -39,8 +39,7 @@ start while a terminal Deck runs, and a terminal Deck does not start while it
 runs. Either one stops at once and names the lock file.
 
 On SIGTERM or ctrl+c, Deck refuses new work from teammates, gives running
-agents the --drain time to end their turns and the outbox time to deliver,
-and then stops. A second signal stops it at once. On SIGHUP it applies the
+agents the --drain time to end their turns, and then stops. A second signal stops it at once. On SIGHUP it applies the
 peers section of the config again (after 'deck peer relay', say). Logs go to
 stderr.
 
@@ -221,31 +220,19 @@ func logToStderr(cmd *cobra.Command) {
 type drainer interface {
 	Drain()
 	Busy() int
-	Waiting() int
 }
 
-const (
-	// drainPoll is how often drain looks at the agents and the outbox.
-	drainPoll = 200 * time.Millisecond
-	// outboxGrace caps the wait for the outbox after the agents stop. A
-	// teammate that is away gets the calls after the next start.
-	outboxGrace = 15 * time.Second
-)
+// drainPoll is how often drain looks at the agents.
+const drainPoll = 200 * time.Millisecond
 
-// drain refuses new work, then waits until no agent is in a turn and then
-// until the outbox is empty. The whole wait takes at most limit, and the
-// outbox wait at most outboxGrace. When ctx ends, drain returns at once.
+// drain refuses new work, then waits until no agent is in a turn. The wait
+// takes at most limit. When ctx ends, drain returns at once.
 func drain(ctx context.Context, d drainer, limit time.Duration) {
 	d.Drain()
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	if !waitUntil(ctx, func() bool { return d.Busy() == 0 }) {
 		slog.Warn("deck serve: agents are still in a turn; stopping them", "agents", d.Busy())
-	}
-	octx, ocancel := context.WithTimeout(ctx, outboxGrace)
-	defer ocancel()
-	if !waitUntil(octx, func() bool { return d.Waiting() == 0 }) {
-		slog.Info("deck serve: calls wait in the outbox for the next start", "calls", d.Waiting())
 	}
 }
 

@@ -404,6 +404,58 @@ func TestLegacySingleAgentThreadMigratesOnLoad(t *testing.T) {
 	}
 }
 
+// Threads that ran a teammate's code or ops contract before Deck v3 load
+// frozen and archived, and a task a teammate owned loads failed for good.
+func TestContractThreadsMigrateOnLoad(t *testing.T) {
+	dir := t.TempDir()
+	metas := map[string]string{
+		"code1": `{"id":"code1","title":"port","contract":"vps","members":[{"id":"claude","kind":"claude"}],"created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"}`,
+		"ops1":  `{"id":"ops1","title":"report","ops":true,"members":[{"id":"claude","kind":"claude"}],"created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"}`,
+		"mine1": `{"id":"mine1","title":"mine","members":[{"id":"claude","kind":"claude"}],"tasks":[` +
+			`{"id":"t1","title":"asked vps","status":"running","owner":"vps/claude","remote":"vps","attempts":1,"created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"},` +
+			`{"id":"t2","title":"done there","status":"done","owner":"vps","remote":"vps","created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"},` +
+			`{"id":"t3","title":"local","status":"pending","deps":["t1"],"created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"}` +
+			`],"created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"}`,
+	}
+	for id, meta := range metas {
+		if err := os.WriteFile(filepath.Join(dir, id+".meta.json"), []byte(meta), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, why := range map[string]string{"code1": FrozenContract, "ops1": FrozenOps, "mine1": ""} {
+		th, err := s.Meta(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if th.Frozen != why || th.Archived != (why != "") || th.LegacyContract != "" || th.LegacyOps {
+			t.Errorf("%s: frozen %q archived %v legacy %q %v", id, th.Frozen, th.Archived, th.LegacyContract, th.LegacyOps)
+		}
+	}
+	th, _ := s.Meta("mine1")
+	t1, t2, t3 := th.Tasks[0], th.Tasks[1], th.Tasks[2]
+	if t1.Status != TaskFailed || t1.Error != RemoteTaskRemoved || t1.Attempts < t1.Tries() || t1.LegacyRemote != "" {
+		t.Errorf("a teammate's running task = %+v", t1)
+	}
+	if t2.Status != TaskDone || t2.LegacyRemote != "" {
+		t.Errorf("a teammate's finished task = %+v", t2)
+	}
+	if t3.Status != TaskPending {
+		t.Errorf("a local task = %+v", t3)
+	}
+	// Saving drops the legacy keys from the file.
+	if err := s.UpdateMeta(th); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "mine1.meta.json"))
+	if err != nil || strings.Contains(string(data), `"remote"`) {
+		t.Errorf("saved meta still has the legacy key: %s, %v", data, err)
+	}
+}
+
 func TestAppendEntryKeepsSpeakerAndStaysReadableAsEvents(t *testing.T) {
 	s, _ := newStore(t)
 	th := mustCreate(t, s, Thread{})

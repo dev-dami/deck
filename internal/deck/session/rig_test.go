@@ -51,12 +51,6 @@ type sentImages struct {
 	images []agent.Image
 }
 
-// ContractSafe forwards to the adapter it wraps.
-func (s *spyAdapter) ContractSafe() bool {
-	cs, ok := s.Adapter.(agent.ContractSafe)
-	return ok && cs.ContractSafe()
-}
-
 // TakesVideo answers what the test set.
 func (s *spyAdapter) TakesVideo(string) bool { return s.video }
 
@@ -73,10 +67,10 @@ func (r *spyRunCompact) Compact() error {
 	return nil
 }
 
-// OpsSafe forwards to the adapter it wraps.
-func (s *spyAdapter) OpsSafe() bool {
-	o, ok := s.Adapter.(agent.OpsSafe)
-	return ok && o.OpsSafe()
+// HonorsNoTools forwards to the adapter it wraps.
+func (s *spyAdapter) HonorsNoTools() bool {
+	o, ok := s.Adapter.(agent.NoToolsHonorer)
+	return ok && o.HonorsNoTools()
 }
 
 func newSpy(a agent.Adapter) *spyAdapter { return &spyAdapter{Adapter: a, runs: map[string]*spyRun{}} }

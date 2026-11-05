@@ -98,10 +98,6 @@ func (m *Manager) handleMessage(msg agent.Message) {
 		return
 	}
 	t := from.thread
-	if t.opsOf() != nil {
-		respond("", errOpsOnly)
-		return
-	}
 	if from.status() == StatusExited {
 		respond("", fmt.Errorf("%s is not running", from.getName()))
 		return
@@ -385,6 +381,9 @@ func (m *Manager) Continue(threadID string) error {
 	t := m.thread(threadID)
 	if t == nil {
 		return fmt.Errorf("session: no thread %q", threadID)
+	}
+	if err := t.frozenErr(); err != nil {
+		return err
 	}
 	t.mu.Lock()
 	if !t.paused {

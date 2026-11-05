@@ -460,7 +460,7 @@ type Spec struct {
 	Mode Mode
 	// NoTools starts the agent with none of its CLI's own tools (shell,
 	// edits, web): only the tools of MCP. Deck sets it only for adapters
-	// that implement OpsSafe.
+	// that implement NoToolsHonorer.
 	NoTools bool
 	// Context is what the CLI should load into its context besides Deck's
 	// own: the zero value is the CLI's defaults plus Deck's MCP server only.
@@ -793,18 +793,9 @@ func CapsOf(ad Adapter) ContextCaps {
 	return ContextCaps{}
 }
 
-// ContractSafe is implemented by an adapter whose agent Deck can hold to a
-// thread's mode, at most ask, when it runs a teammate's code contract:
-// every edit and command it makes asks the person through Deck, or is
-// denied. Deck never runs a contract with an adapter that lacks it or
-// answers false.
-type ContractSafe interface {
-	ContractSafe() bool
-}
-
-// OpsSafe is implemented by an adapter that honors Spec.NoTools: its agent
-// then has Deck's MCP tools and nothing else. Deck runs a teammate's ops
-// contract only with an adapter that has it and answers true.
-type OpsSafe interface {
-	OpsSafe() bool
+// NoToolsHonorer is implemented by an adapter that honors Spec.NoTools: its
+// agent then has Deck's MCP tools and nothing else. The plan-limit check
+// (session/limitcheck.go) sets NoTools only when it answers true.
+type NoToolsHonorer interface {
+	HonorsNoTools() bool
 }

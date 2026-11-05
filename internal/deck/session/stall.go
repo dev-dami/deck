@@ -315,7 +315,7 @@ func (m *Manager) checkStall(t *thread, a *agentState, end turnEnd) {
 		delete(t.stall.begun, a.id)
 	}
 	n := m.levelLocked(t).MaxStalls
-	if end.interrupted || t.ops != nil || t.gone.Load() || n <= 0 {
+	if end.interrupted || t.gone.Load() || n <= 0 {
 		t.mu.Unlock()
 		return
 	}

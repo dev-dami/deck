@@ -568,24 +568,15 @@ func TestAllowInboundOpVariants(t *testing.T) {
 	}
 }
 
-func TestContractorOpsNeedRole(t *testing.T) {
-	allow := []string{OpPeerStatus, "contract.propose"}
-	if (Caller{Role: "observer", AllowInbound: allow}).Allowed("contract.propose") {
-		t.Fatal("observer may run a contractor op")
+// The team chat and contract ops were removed in Deck v3: the default allow
+// list leaves them out, whatever the caller's role.
+func TestRemovedOpsAreNotAllowed(t *testing.T) {
+	for _, op := range []string{"contract.propose", "contract.result", "console.post", "console.read"} {
+		if (Caller{Role: "contractor"}).Allowed(op) {
+			t.Fatalf("%s is allowed", op)
+		}
 	}
-	if (Caller{AllowInbound: allow}).Allowed("contract.propose") {
-		t.Fatal("empty role may run a contractor op")
-	}
-	if !(Caller{Role: "contractor", AllowInbound: allow}).Allowed("contract.propose") {
-		t.Fatal("contractor refused an allowed contractor op")
-	}
-	if !(Caller{Role: "contractor"}).Allowed("contract.propose") {
-		t.Fatal("the default allow list refused a contractor its op")
-	}
-	if (Caller{Role: "contractor", AllowInbound: []string{OpPeerStatus}}).Allowed("contract.propose") {
-		t.Fatal("contractor op allowed by an allow_inbound that leaves it out")
-	}
-	if !(Caller{}).Allowed(OpPeerStatus) || (Caller{}).Allowed("console.read") || (Caller{}).Allowed("") {
+	if !(Caller{}).Allowed(OpPeerStatus) || (Caller{}).Allowed("") {
 		t.Fatal("default allow list")
 	}
 }

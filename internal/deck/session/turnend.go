@@ -17,7 +17,7 @@ import (
 //     final reply ends asking something, or the agent blocked a task.
 //   - handoff: the turn handed work over under a contract: a thread.send
 //     that hands a task over, agent.spawn, a sub-thread's brief or post, a
-//     teammate's contract, a race, a review's changes, or work it finished
+//     race, a review's changes, or work it finished
 //     that went to a reviewer.
 //   - done: the turn finished a task: task.done (with the evidence its check
 //     asks for, evidence.go), review.approve, or a reply that settles a task
@@ -81,7 +81,7 @@ func (m *Manager) noteOp(a *agentState, op string, args map[string]any, err erro
 		}
 	case "review.approve":
 		m.noteTurn(a, factDone)
-	case "agent.spawn", "thread.open", "thread.post", "task.contract", "task.race", "review.changes":
+	case "agent.spawn", "thread.open", "thread.post", "task.race", "review.changes":
 		m.noteTurn(a, factHandoff)
 	case "task.update":
 		if strings.EqualFold(str("status"), string(store.TaskBlocked)) {
@@ -101,7 +101,7 @@ func (m *Manager) turnEndOf(t *thread, a *agentState, end *turnEnd) agent.TurnEn
 	f := t.flow.ends[a.id]
 	delete(t.flow.ends, a.id)
 	settles := ""
-	if !end.interrupted && strings.TrimSpace(end.text) != "" && t.ops == nil {
+	if !end.interrupted && strings.TrimSpace(end.text) != "" {
 		if jobs := t.handedJobsLocked(a, end.answered); len(jobs) == 1 && !jobs[0].explicit {
 			settles = jobs[0].id
 		}

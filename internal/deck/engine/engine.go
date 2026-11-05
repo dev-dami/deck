@@ -60,9 +60,6 @@ func Start() (_ *Engine, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
-	// Only a Deck that is alone on the thread store knows that the ops
-	// contracts still marked running are not another Deck's.
-	alone := ExclusiveStore || store.Unused("")
 	unlock, err := store.Lock("", ExclusiveStore)
 	if err != nil {
 		return nil, err
@@ -123,23 +120,16 @@ func Start() (_ *Engine, err error) {
 		return ps
 	})
 	work := &localWork{mgr: mgr}
-	deals := newContracts(mgr)
 	peers := startPeers(cfg, peer.ServiceOptions{SubStore: mgr.SubStore, Local: peer.Local{Presence: work.Presence, Repos: work.Repos},
-		Contracts: deals.hooks(), Shared: sharing{mgr}})
+		Shared: sharing{mgr}})
 	if peers != nil {
-		deals.svc.Store(peers)
-		mgr.SetContractor(deals)
-		mgr.SetSandbox(opsSandbox(cfg.Peers))
-		mgr.SetTaskEnd(deals.taskEnd)
-		mgr.SetTeam(peerTeam{peers})
 		mgr.SetSubFetch(func(ctx context.Context, name string, id sub.ID, s *sub.Store) (int, error) {
 			return peers.FetchCapsule(ctx, name, id, s)
 		})
-		if alone {
-			// Deck does not resume an ops contract: its requester hears it
-			// failed.
-			peers.FailRunningOps(session.OpsRestarted)
-		}
+	}
+	if text := teamConnectNotice(st); text != "" {
+		slog.Warn(text)
+		mgr.Notice(text)
 	}
 	go mgr.CollectSub()
 	return &Engine{Manager: mgr, Config: cfg, broker: broker, peers: peers, unlock: unlock, adapters: adapters}, nil
@@ -164,8 +154,8 @@ func startPeers(cfg config.Config, o peer.ServiceOptions) *peer.Service {
 	return svc
 }
 
-// Drain makes teammates unable to start new work here: new contracts and
-// posts to shared threads are refused. Work under way goes on.
+// Drain makes teammates unable to start new work here: posts to shared
+// threads are refused. Work under way goes on.
 func (e *Engine) Drain() {
 	if e.peers != nil {
 		e.peers.Drain()
@@ -182,14 +172,6 @@ func (e *Engine) Busy() int {
 		}
 	}
 	return n
-}
-
-// Waiting is how many peer calls wait in the outbox for a teammate.
-func (e *Engine) Waiting() int {
-	if e.peers == nil {
-		return 0
-	}
-	return e.peers.Waiting()
 }
 
 // Close stops every agent, the peer link and the approval broker, and then

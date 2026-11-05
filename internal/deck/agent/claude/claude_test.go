@@ -847,8 +847,8 @@ func TestWriteSettingsRedirectsPrivateFolders(t *testing.T) {
 // With NoTools, Claude starts with none of its own tools: only Deck's.
 func TestAdapterNoTools(t *testing.T) {
 	a, spec, argsFile := newFake(t)
-	if s, ok := a.(agent.OpsSafe); !ok || !s.OpsSafe() {
-		t.Fatal("claude is not ops safe")
+	if s, ok := a.(agent.NoToolsHonorer); !ok || !s.HonorsNoTools() {
+		t.Fatal("claude does not honor NoTools")
 	}
 	spec.FirstPrompt, spec.NoTools = "go", true
 	r, err := a.Start(context.Background(), spec)

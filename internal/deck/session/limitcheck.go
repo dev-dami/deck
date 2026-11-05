@@ -127,7 +127,7 @@ func (m *Manager) throwaway(ctx context.Context, kind, model, effort, prompt str
 		Dir: dir, Model: model, Effort: effort, FirstPrompt: prompt, Mode: agent.ModePlan,
 		Context: agent.ContextPolicy{IsolateGlobalConfig: true, InstructionFiles: agent.InstrFilesNone, MCP: agent.MCPDeckOnly},
 	}
-	if o, ok := ad.(agent.OpsSafe); ok && o.OpsSafe() {
+	if o, ok := ad.(agent.NoToolsHonorer); ok && o.HonorsNoTools() {
 		spec.NoTools = true
 	}
 	if b := cfg.Binary(kind); b != kind {

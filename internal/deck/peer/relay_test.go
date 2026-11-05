@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -40,9 +39,9 @@ func identityOf(t *testing.T, s *Service) *Identity {
 // and b both dial r, and are pinned with each other but have no address for
 // each other. a dials b via r, and b lets r relay links to it. It returns
 // once r has both links.
-func relayTrio(t *testing.T, relay bool) (a, b, r *Service) {
+func relayTrio(t *testing.T, relay bool, bLocal Local) (a, b, r *Service) {
 	t.Helper()
-	r, a, b = newService(t, "r", ServiceOptions{}), newService(t, "a", ServiceOptions{}), newService(t, "b", ServiceOptions{})
+	r, a, b = newService(t, "r", ServiceOptions{}), newService(t, "a", ServiceOptions{}), newService(t, "b", ServiceOptions{Local: bLocal})
 	if err := r.SetListen(true, freeAddr(t)); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +107,11 @@ func relayedUp(a *Service) func() bool {
 
 func TestRelayLinksTwoDecksThatCannotReachEachOther(t *testing.T) {
 	leakCheck(t)
-	a, b, r := relayTrio(t, true)
+	const marker = "relay-plaintext-marker-5d1c"
+	bLocal := Local{Presence: func(string, []string, bool) Presence {
+		return Presence{Agents: []AgentPresence{{Name: "claude1", Kind: "claude", Status: "working", Task: marker}}}
+	}}
+	a, b, r := relayTrio(t, true, bLocal)
 	spliced := tapRelay(r)
 	waitFor(t, 20*time.Second, "a's relayed link to b", relayedUp(a))
 	if st := a.Manager().Supervisor("b").Status(); st.Via != "r" {
@@ -117,20 +120,13 @@ func TestRelayLinksTwoDecksThatCannotReachEachOther(t *testing.T) {
 	ctx := ctxT(t)
 
 	out, err := a.PeerStatus(ctx, "b")
-	if err != nil || !strings.Contains(out, `"b"`) {
+	if err != nil || !strings.Contains(out, `"b"`) || !strings.Contains(out, marker) {
 		t.Fatalf("peer.status over the relay = %q, %v", out, err)
 	}
-	const marker = "relay-plaintext-marker-5d1c"
-	if reached, err := a.PostChat(ctx, "claude1", marker); err != nil || !slices.Contains(reached, "b") {
-		t.Fatalf("a posts: %v, %v", reached, err)
-	}
-	if got := b.Team().Chat(); len(got) != 1 || got[0].Author() != "a/claude1" || got[0].Text != marker {
-		t.Fatalf("b's chat = %+v", got)
-	}
-	// b has no address for a and no supervisor for it: it answers over the
+	// b has no address for a and no supervisor for it: it asks over the
 	// relayed link a opened.
-	if reached, err := b.SendChat(ctx, "got it"); err != nil || !slices.Contains(reached, "a") {
-		t.Fatalf("b answers over the relayed link: %v, %v", reached, err)
+	if out, err := b.PeerStatus(ctx, "a"); err != nil || !strings.Contains(out, `"a"`) {
+		t.Fatalf("b asks over the relayed link: %q, %v", out, err)
 	}
 
 	// Both ends show the link as relayed via r.
@@ -155,7 +151,7 @@ func TestRelayLinksTwoDecksThatCannotReachEachOther(t *testing.T) {
 	if !bytes.Contains(got, []byte(sshVersion)) {
 		t.Fatalf("r's tap saw no inner handshake (%d bytes)", len(got))
 	}
-	if bytes.Contains(got, []byte(marker)) || bytes.Contains(got, []byte("console.post")) {
+	if bytes.Contains(got, []byte(marker)) || bytes.Contains(got, []byte(OpPeerStatus)) {
 		t.Fatal("r saw the inner traffic in the clear")
 	}
 	if r.Manager().relays.bytes.Load() == 0 {
@@ -172,7 +168,7 @@ func TestRelayLinksTwoDecksThatCannotReachEachOther(t *testing.T) {
 
 func TestRelayOffByDefault(t *testing.T) {
 	leakCheck(t)
-	a, b, _ := relayTrio(t, false)
+	a, b, _ := relayTrio(t, false, Local{})
 	waitFor(t, 20*time.Second, "a's dial refused", func() bool {
 		return strings.Contains(a.Manager().Supervisor("b").Status().LastError, "relaying is off")
 	})
@@ -202,7 +198,7 @@ func openReason(t *testing.T, c *Conn, typ string, payload []byte) ssh.Rejection
 // with the key the relay named.
 func TestHostileRelayChannels(t *testing.T) {
 	leakCheck(t)
-	a, b, r := relayTrio(t, true)
+	a, b, r := relayTrio(t, true, Local{})
 	waitFor(t, 20*time.Second, "a's relayed link to b", relayedUp(a))
 	aToR := a.Manager().directLink("r")
 	rToB := r.Manager().directLink("b")

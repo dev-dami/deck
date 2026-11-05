@@ -926,6 +926,46 @@ func TestResumeRemapsIDsThatAreTaken(t *testing.T) {
 	}
 }
 
+// A thread that ran a teammate's contract before Deck v3 opens for reading
+// only: its agents do not start, and posts and Continue are refused.
+func TestFrozenThreadIsReadOnly(t *testing.T) {
+	dir := t.TempDir()
+	meta := `{"id":"k1","title":"port the cache","ops":true,"dir":"` + strings.ReplaceAll(t.TempDir(), `\`, `\\`) +
+		`","members":[{"id":"claude","kind":"claude","session_id":"sess-k1"}],` +
+		`"tasks":[{"id":"t1","title":"report","status":"running","owner":"claude","created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"}],` +
+		`"created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"}`
+	log := `{"AgentID":"claude","Time":"2026-01-01T00:00:01Z","Kind":"assistant_text","Text":"the report"}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "k1.meta.json"), []byte(meta), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "k1.jsonl"), []byte(log), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := newRigIn(t, dir, nil, nil)
+	_, hist, err := r.m.Resume("k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first, ok := hist.Msgs()[0].(EventMsg); !ok || first.Text != "the report" {
+		t.Fatalf("history = %+v", hist.Msgs())
+	}
+	if _, started := r.claude.spec("claude"); started {
+		t.Fatal("an agent of a frozen thread started")
+	}
+	if err := r.m.Post("k1", "go on"); err == nil || !strings.Contains(err.Error(), "read-only") {
+		t.Fatalf("Post = %v", err)
+	}
+	if err := r.m.Continue("k1"); err == nil || !strings.Contains(err.Error(), "read-only") {
+		t.Fatalf("Continue = %v", err)
+	}
+	if tk, ok := r.m.Task("k1", "t1"); !ok || tk.Status != store.TaskFailed {
+		t.Fatalf("its running task = %+v", tk)
+	}
+	if th, err := r.st.Meta("k1"); err != nil || th.Frozen != store.FrozenOps {
+		t.Fatalf("stored = %+v, %v", th, err)
+	}
+}
+
 func TestOldSingleAgentThreadMigrates(t *testing.T) {
 	dir := t.TempDir()
 	meta := `{"id":"old1","agent_kind":"claude","name":"claude","title":"fix it","dir":"` + strings.ReplaceAll(t.TempDir(), `\`, `\\`) +
