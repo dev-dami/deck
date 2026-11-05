@@ -1,7 +1,6 @@
 package session
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"strings"
@@ -91,19 +90,28 @@ func (m *Manager) PostWith(threadID, text string, images []agent.Image) (PostRes
 	return m.postTo(t, text, []*agentState{lead}, images)
 }
 
+// LeadResult says who leads a thread after SetLead.
+type LeadResult struct {
+	AgentID string // the lead's member id
+	// Changed is true when another member, or none, led before.
+	Changed bool
+}
+
 // SetLead makes an agent of kind (an agent kind, or a named agent's
-// profile) the thread's lead, with model and effort ("" keeps the current or
-// default one). The lead's own kind changes in place; another kind takes
-// over: an idle member of it is reused, else one is added, briefed on the
-// thread so far with its first message. It returns the lead's member id.
-func (m *Manager) SetLead(threadID, kind, model, effort string) (string, error) {
+// profile) the thread's lead. The lead of that kind and profile stays;
+// another takes over: an idle member of it is reused, else one is added,
+// briefed on the thread so far with its first message. A member it adds
+// runs its profile's model and effort, else the defaults. SetLead changes
+// no member's model or effort and writes no config (SetMemberSpec does the
+// first, Settings the second).
+func (m *Manager) SetLead(threadID, kind string) (LeadResult, error) {
 	t := m.thread(threadID)
 	if t == nil {
-		return "", fmt.Errorf("session: no thread %q", threadID)
+		return LeadResult{}, fmt.Errorf("session: no thread %q", threadID)
 	}
 	kind, prof, err := m.leadKind(t, kind)
 	if err != nil {
-		return "", fmt.Errorf("session: %w", err)
+		return LeadResult{}, fmt.Errorf("session: %w", err)
 	}
 	same := func(a *agentState) bool {
 		return a.kind == kind && strings.EqualFold(a.prof.Name, prof.Name)
@@ -123,9 +131,9 @@ func (m *Manager) SetLead(threadID, kind, model, effort string) (string, error) 
 	}
 	t.mu.Unlock()
 	if next == nil {
-		a, err := m.addMember(t, kind, model, "", prof)
+		a, err := m.addMember(t, kind, "", "", prof)
 		if err != nil {
-			return "", err
+			return LeadResult{}, err
 		}
 		next = a
 	}
@@ -136,28 +144,7 @@ func (m *Manager) SetLead(threadID, kind, model, effort string) (string, error) 
 	if old != nil && old != next {
 		m.notice(t, fmt.Sprintf("%s took over from %s", next.getName(), old.getName()))
 	}
-	if model != "" || effort != "" {
-		if err := m.setModelEffort(next, model, effort); err != nil {
-			return next.id, err
-		}
-	}
-	return next.id, nil
-}
-
-// setModelEffort sets what a member runs; "" keeps that part.
-func (m *Manager) setModelEffort(a *agentState, model, effort string) error {
-	a.mu.Lock()
-	curModel, curEffort := a.model, a.effort
-	a.mu.Unlock()
-	if model != "" && model != curModel {
-		if err := m.SetModel(a.id, model); err != nil {
-			return err
-		}
-	}
-	if effort = cmp.Or(effort, curEffort); effort != curEffort {
-		return m.SetEffort(a.id, effort)
-	}
-	return nil
+	return LeadResult{AgentID: next.id, Changed: old != next}, nil
 }
 
 // allProfiles are the named agents a thread's lead can be.

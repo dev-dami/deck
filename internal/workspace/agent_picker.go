@@ -3,11 +3,14 @@ package workspace
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
 
 	deckagent "github.com/dev-dami/deck/internal/deck/agent"
+	deckconfig "github.com/dev-dami/deck/internal/deck/config"
 	decks "github.com/dev-dami/deck/internal/deck/session"
 )
 
@@ -27,25 +30,58 @@ type ModelChoice struct {
 	Name        string
 	Description string
 	Default     bool // the CLI's own default
-	Current     bool // what the session's agent of this kind runs now
-	Video       bool // the model takes video (agent.ModelInfo.Video)
+	// Current marks what a pick for the session would change: for the
+	// lead's kind the lead's model, for another kind the agent that would
+	// take over, else what a new agent of the kind runs.
+	Current bool
+	Video   bool // the model takes video (agent.ModelInfo.Video)
 
 	Efforts       []EffortChoice
 	DefaultEffort string
 	CurrentEffort string // set on the Current choice
 }
 
-// AgentPicker lists the models of the user's agent CLIs and switches them.
-// The UI type-asserts its Workspace to it.
+// SpecResult is an agent's model and effort after SetMemberSpec, with where
+// each came from and what the engine changed on its own.
+type SpecResult = decks.SpecResult
+
+// LeadResult says who leads a session after SetLead.
+type LeadResult struct {
+	Agent string // the lead's name in the session ("claude", "charles-2")
+	Kind  string
+	// Changed is true when another agent, or none, led before.
+	Changed bool
+}
+
+// AgentPicker lists the models of the user's agent CLIs and sets what agents
+// run. A pick for a session changes that session only: SetDefaults, which
+// only Settings calls, is the one way to change what new sessions start
+// with. The UI type-asserts its Workspace to it.
 type AgentPicker interface {
-	// AgentModelChoices asks every installed CLI for its models (once per
-	// run). It can take a few seconds: call it off the UI loop.
+	// AgentModelChoices waits for the CLIs not listed yet, all at once and
+	// each for at most its own timeout (a CLI that failed lately is not
+	// asked again), and returns every model. Call it off the UI loop.
 	AgentModelChoices(ctx context.Context, sessionID string) ([]ModelChoice, error)
-	// CachedAgentModelChoices answers at once from what is known already.
+	// CachedAgentModelChoices answers at once from what is known already,
+	// without asking the CLIs. A kind not listed yet shows its current
+	// model alone.
 	CachedAgentModelChoices(sessionID string) []ModelChoice
-	// SetAgentModel makes model (and effort; "" = the model's default) what
-	// agents of kind run: in the session now, and in new sessions.
-	SetAgentModel(sessionID, kind, model, effort string) error
+	// SetLead makes agent (a kind or a named agent) the session's lead,
+	// handing the session over when another agent leads. It changes no
+	// model or effort.
+	SetLead(sessionID, agent string) (LeadResult, error)
+	// SetMemberSpec sets the model and effort of one agent of the session,
+	// named as the roster names it. A nil value is left as it is; "" is
+	// the CLI's default model, or the model's default effort.
+	SetMemberSpec(sessionID, member string, model, effort *string) (SpecResult, error)
+	// SetDefaults sets the model and effort new agents of kind start with,
+	// as SetMemberSpec reads its values, and saves the settings. Only
+	// Settings calls it.
+	SetDefaults(kind string, model, effort *string) error
+	// SetAgentModel is the one-call pick of older clients: agent (a kind or
+	// a named agent) leads the session, running model at effort. It changes
+	// the session only.
+	SetAgentModel(sessionID, agent, model, effort string) error
 }
 
 var _ AgentPicker = (*DeckWorkspace)(nil)
@@ -62,69 +98,55 @@ var _ ModelRefresher = (*DeckWorkspace)(nil)
 
 // RefreshAgentModels implements [ModelRefresher].
 func (w *DeckWorkspace) RefreshAgentModels() {
-	w.mu.Lock()
-	clear(w.models)
-	w.mu.Unlock()
 	w.mgr().ForgetModels()
 }
 
-// AgentModelChoices implements [AgentPicker]. Each CLI is asked once; its
-// list is kept for the rest of the run.
+// AgentModelChoices implements [AgentPicker].
 func (w *DeckWorkspace) AgentModelChoices(ctx context.Context, sessionID string) ([]ModelChoice, error) {
-	var firstErr error
-	for _, kind := range w.mgr().Kinds() {
-		w.mu.Lock()
-		_, have := w.models[kind]
-		w.mu.Unlock()
-		if have {
-			continue
+	cat := w.mgr().WaitCatalog(ctx)
+	out := w.modelChoices(sessionID, cat)
+	listed := false
+	var errs []string
+	for _, kc := range cat {
+		listed = listed || len(kc.Models) > 0
+		if kc.Err != "" {
+			errs = append(errs, kc.Kind+": "+kc.Err)
 		}
-		models, err := w.mgr().Models(ctx, kind)
-		if err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-		w.mu.Lock()
-		w.models[kind] = models
-		w.mu.Unlock()
 	}
-	out := w.CachedAgentModelChoices(sessionID)
-	if len(out) == 0 && firstErr != nil {
-		return nil, firstErr
+	if !listed && len(errs) > 0 {
+		return out, errors.New("no agent CLI listed its models (" + strings.Join(errs, "; ") + ")")
 	}
 	return out, nil
 }
 
-// CachedAgentModelChoices is the model list as far as the CLIs have been
-// asked already, without asking them: instant, for the $ popup. A CLI not
-// asked yet is listed with just its current model.
+// CachedAgentModelChoices implements [AgentPicker].
 func (w *DeckWorkspace) CachedAgentModelChoices(sessionID string) []ModelChoice {
-	th, _ := w.threadOf(sessionID)
+	return w.modelChoices(sessionID, w.mgr().Catalog())
+}
+
+// modelChoices lists the catalog's models with the session's current ones
+// marked.
+func (w *DeckWorkspace) modelChoices(sessionID string, cat []decks.KindCatalog) []ModelChoice {
+	th, have := w.threadOf(sessionID)
 	cfg := w.DeckSettings()
 	var out []ModelChoice
-	for _, kind := range w.mgr().Kinds() {
-		cur, curEffort := cfg.Models.For(kind), cfg.Efforts.For(kind)
-		for _, a := range th.Members {
-			if a.Kind == kind {
-				cur, curEffort = a.Model, a.Effort
-				break
-			}
-		}
-		w.mu.Lock()
-		models, have := w.models[kind]
-		w.mu.Unlock()
-		if !have {
+	for _, kc := range cat {
+		kind := kc.Kind
+		cur, curEffort := currentSpec(th, have, cfg, kind)
+		if len(kc.Models) == 0 {
 			name := cmp.Or(w.mgr().ModelSlug(kind, cur), cur, "default model")
-			out = append(out, ModelChoice{Kind: kind, ID: cur, Name: name, Current: true, CurrentEffort: curEffort})
+			c := ModelChoice{Kind: kind, ID: cur, Name: name, Current: true, CurrentEffort: curEffort}
+			if kc.Err != "" {
+				c.Description = "can't list models: " + kc.Err
+			}
+			out = append(out, c)
 			continue
 		}
-		for _, mi := range models {
+		for _, mi := range kc.Models {
 			c := ModelChoice{
 				Kind:          kind,
 				ID:            mi.ID,
-				Name:          cmp.Or(w.mgr().ModelSlug(kind, mi.ID), mi.Slug, mi.ID, mi.Name),
+				Name:          cmp.Or(mi.Slug, mi.ID, mi.Name),
 				Description:   mi.Description,
 				Default:       mi.Default,
 				DefaultEffort: mi.DefaultEffort,
@@ -142,33 +164,102 @@ func (w *DeckWorkspace) CachedAgentModelChoices(sessionID string) []ModelChoice 
 	return out
 }
 
-// SetAgentModel implements [AgentPicker]. It is the clients' agent menu: the
-// session's lead becomes an agent of kind (or the named agent kind names)
-// running model at effort, and the next message goes to it
-// (session/lead.go). A kind's pick is also what new threads start with.
-func (w *DeckWorkspace) SetAgentModel(sessionID, kind, model, effort string) error {
-	if sessionID != "" {
-		tid, err := w.thread(sessionID)
-		if err != nil {
-			return err
+// currentSpec is the model and effort a pick of kind would start from in
+// the thread: the lead's when it is an agent of kind (not a named one);
+// else the agent of kind SetLead would hand the thread to; else what a new
+// agent of kind runs.
+func currentSpec(th decks.ThreadInfo, have bool, cfg deckconfig.Config, kind string) (model, effort string) {
+	if have {
+		for _, a := range th.Members {
+			if a.ID == th.Lead && a.Kind == kind && a.Profile == "" {
+				return a.Model, a.Effort
+			}
 		}
-		if _, err := w.mgr().SetLead(tid, kind, model, effort); err != nil {
-			return err
+		for _, a := range th.Members {
+			if a.Kind == kind && a.Profile == "" && !a.Ephemeral && a.Status != decks.StatusExited {
+				return a.Model, a.Effort
+			}
 		}
 	}
+	return cfg.Models.For(kind), cfg.Efforts.For(kind)
+}
+
+// errNoSession refuses a pick that names no session: a pick is for one
+// thread, and defaults change only in Settings.
+var errNoSession = errors.New("pick an agent in a session; the defaults for new sessions are in Settings")
+
+// SetLead implements [AgentPicker].
+func (w *DeckWorkspace) SetLead(sessionID, agent string) (LeadResult, error) {
+	if sessionID == "" {
+		return LeadResult{}, errNoSession
+	}
+	tid, err := w.thread(sessionID)
+	if err != nil {
+		return LeadResult{}, err
+	}
+	res, err := w.mgr().SetLead(tid, agent)
+	if err != nil {
+		return LeadResult{}, err
+	}
+	out := LeadResult{Agent: res.AgentID, Changed: res.Changed}
+	if a, ok := w.mgr().Agent(res.AgentID); ok {
+		out.Agent, out.Kind = a.Name, a.Kind
+	}
+	return out, nil
+}
+
+// SetMemberSpec implements [AgentPicker].
+func (w *DeckWorkspace) SetMemberSpec(sessionID, member string, model, effort *string) (SpecResult, error) {
+	if sessionID == "" {
+		return SpecResult{}, errNoSession
+	}
+	tid, err := w.thread(sessionID)
+	if err != nil {
+		return SpecResult{}, err
+	}
+	return w.mgr().SetMemberSpec(tid, member, model, effort)
+}
+
+// SetDefaults implements [AgentPicker]. An effort the model does not take
+// is refused; a new model that does not take the kind's effort resets it
+// to the model's default.
+func (w *DeckWorkspace) SetDefaults(kind string, model, effort *string) error {
 	if !slices.Contains(w.mgr().Kinds(), kind) {
-		return nil // a named agent: its profile keeps its own model
+		return fmt.Errorf("no agent kind %q", kind)
 	}
-	w.mgr().SetDefaultModel(kind, model)
-	w.mgr().SetDefaultEffort(kind, effort)
-	w.cfgMu.Lock()
-	defer w.cfgMu.Unlock()
-	cfg := w.eng.Config
-	cfg.Models.Set(kind, model)
-	cfg.Efforts.Set(kind, effort)
-	w.eng.Config = cfg
-	w.mgr().SetConfig(cfg)
-	return saveDeckConfig(cfg)
+	cur := w.DeckSettings()
+	m, e := cur.Models.For(kind), cur.Efforts.For(kind)
+	if model != nil {
+		m = strings.TrimSpace(*model)
+	}
+	if effort != nil {
+		e = strings.ToLower(strings.TrimSpace(*effort))
+		if err := w.mgr().CheckEffort(kind, m, e); err != nil {
+			return err
+		}
+	} else if w.mgr().CheckEffort(kind, m, e) != nil {
+		e = ""
+	}
+	return w.SetDeckSettings(func(c *deckconfig.Config) {
+		c.Models.Set(kind, m)
+		c.Efforts.Set(kind, e)
+	})
+}
+
+// SetAgentModel implements [AgentPicker]: SetLead, then SetMemberSpec on the
+// lead. When the pick hands the session to another agent and names neither
+// a model nor an effort, the agent keeps its own (its profile's, or the
+// defaults).
+func (w *DeckWorkspace) SetAgentModel(sessionID, agent, model, effort string) error {
+	lead, err := w.SetLead(sessionID, agent)
+	if err != nil {
+		return err
+	}
+	if lead.Changed && model == "" && effort == "" {
+		return nil
+	}
+	_, err = w.SetMemberSpec(sessionID, lead.Agent, &model, &effort)
+	return err
 }
 
 // AgentLine is one agent as the sidebar shows it.

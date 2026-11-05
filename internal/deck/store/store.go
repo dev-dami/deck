@@ -75,10 +75,15 @@ type Member struct {
 	Model string `json:"model,omitempty"`
 	// Running is the slug Model ran as, as the CLI reported it
 	// ("claude-opus-5-5" for "opus"); "" until it has.
-	Running   string  `json:"running,omitempty"`
-	Effort    string  `json:"effort,omitempty"`
-	SessionID string  `json:"session_id,omitempty"` // the CLI's own session/thread id
-	CostUSD   float64 `json:"cost_usd,omitempty"`
+	Running string `json:"running,omitempty"`
+	Effort  string `json:"effort,omitempty"`
+	// ModelFrom and EffortFrom say where Model and Effort came from
+	// (session.SpecSource: "thread", "parent", "defaults", ...); "" in a
+	// member stored before they were recorded.
+	ModelFrom  string  `json:"model_from,omitempty"`
+	EffortFrom string  `json:"effort_from,omitempty"`
+	SessionID  string  `json:"session_id,omitempty"` // the CLI's own session/thread id
+	CostUSD    float64 `json:"cost_usd,omitempty"`
 	// Cursor is how many thread-log entries this member has been briefed on.
 	Cursor int `json:"cursor,omitempty"`
 	// ContextTokens and ContextWindow are the member's last reported context

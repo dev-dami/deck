@@ -84,8 +84,8 @@ func (m *Manager) cheapest(ctx context.Context, kind string) (model, effort stri
 	if !ok {
 		return "", ""
 	}
-	models, err := ml.Models(ctx)
-	if err != nil || len(models) == 0 {
+	models, _ := ml.Models(ctx) // a static list on a failure is good enough here
+	if len(models) == 0 {
 		return "", ""
 	}
 	pick := -1

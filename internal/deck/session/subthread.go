@@ -72,7 +72,7 @@ func (m *Manager) openSubThread(parent *thread, from *agentState, title, brief, 
 	if title = strings.TrimSpace(title); title == "" {
 		title = placeholderTitle(brief)
 	}
-	t, err := m.newSubThread(parent, from.id, title, kind, model, effort, prof)
+	t, err := m.newSubThread(parent, from, from.id, title, kind, model, effort, prof)
 	if err != nil {
 		return "", err
 	}
@@ -89,8 +89,9 @@ func (m *Manager) openSubThread(parent *thread, from *agentState, title, brief, 
 
 // newSubThread makes a sub-thread of parent in its folder and mode, opened by
 // member agentID ("" for the person), led by an agent of kind, and announces
-// it to the clients.
-func (m *Manager) newSubThread(parent *thread, agentID, title, kind, model, effort string, prof profile.Profile) (*thread, error) {
+// it to the clients. Its lead inherits what the delegation (model, effort)
+// and its profile leave open from member from (nil for none).
+func (m *Manager) newSubThread(parent *thread, from *agentState, agentID, title, kind, model, effort string, prof profile.Profile) (*thread, error) {
 	parent.mu.Lock()
 	dir, mode := parent.dir, parent.mode
 	parent.mu.Unlock()
@@ -111,7 +112,12 @@ func (m *Manager) newSubThread(parent *thread, agentID, title, kind, model, effo
 	t.lead = lead.id
 	t.mu.Unlock()
 	if effort != "" {
-		_ = m.SetEffort(lead.id, effort)
+		lead.mu.Lock()
+		lead.effort, lead.effortFrom = strings.ToLower(strings.TrimSpace(effort)), SourceDelegation
+		lead.mu.Unlock()
+	}
+	if warn := m.inherit(lead, from); warn != "" {
+		m.notice(t, warn)
 	}
 	m.persistMeta(t)
 	m.emit(SubThreadMsg{ThreadID: id, ParentID: parent.id, Title: title})
@@ -127,18 +133,17 @@ func (m *Manager) OpenSubThread(parentID, title, kind string) (string, error) {
 	if parent == nil {
 		return "", fmt.Errorf("session: no thread %q", parentID)
 	}
-	if strings.TrimSpace(kind) == "" {
-		parent.mu.Lock()
-		if a := parent.leadLocked(); a != nil {
-			kind = a.kind
-		}
-		parent.mu.Unlock()
+	parent.mu.Lock()
+	lead := parent.leadLocked()
+	parent.mu.Unlock()
+	if strings.TrimSpace(kind) == "" && lead != nil {
+		kind = lead.kind
 	}
 	kind, prof, err := m.leadKind(parent, cmp.Or(strings.TrimSpace(kind), m.defaultKind()))
 	if err != nil {
 		return "", fmt.Errorf("session: %w", err)
 	}
-	t, err := m.newSubThread(parent, "", cmp.Or(strings.TrimSpace(title), "Side thread"), kind, "", "", prof)
+	t, err := m.newSubThread(parent, lead, "", cmp.Or(strings.TrimSpace(title), "Side thread"), kind, "", "", prof)
 	if err != nil {
 		return "", err
 	}

@@ -60,8 +60,8 @@
 //	Mode(threadID)                    the thread's mode
 //	NextMode(mode)                    plan -> ask -> yolo -> plan (shift+tab)
 //	SetModel(agentID, model)          switch one member's model mid-session
-//	SetDefaultModel(kind, model)      model for members of that kind started later
-//	Models(ctx, kind)                 the models the kind's CLI offers (cached)
+//	SetLead / SetMemberSpec           a thread's lead; one member's model and effort (spec.go)
+//	Models(ctx, kind) / Catalog()     the models the kind's CLI offers (catalog.go)
 //	Start / Send                      one-member shortcuts kept for older callers
 //	Close()
 //
@@ -123,8 +123,8 @@
 // Models come from the CLI itself: Models lists them through an adapter that
 // implements agent.ModelLister; SetModel needs the member's run to implement
 // agent.ModelSetter and otherwise fails with "this agent can't switch model
-// mid-session; start a new one". New members get SetDefaultModel's model for their
-// kind, else config.Models.
+// mid-session; start a new one". New members get config.Models for their kind
+// unless their profile or the member that delegated to them says otherwise.
 //
 // The Manager persists each thread (members, cursors, and a log of entries that
 // carry the speaker) on a single writer goroutine, so the UI never blocks on disk.
@@ -197,17 +197,20 @@ type Options struct {
 
 // AgentInfo is a snapshot of one agent (a thread member).
 type AgentInfo struct {
-	ID       string
-	Kind     string
-	Name     string
-	Title    string // the thread's title: its first message, one line
-	Dir      string
-	Model    string
-	Effort   string // "" = the model's default
-	Status   Status
-	CostUSD  float64
-	Pending  int // approvals waiting for an answer
-	ThreadID string
+	ID     string
+	Kind   string
+	Name   string
+	Title  string // the thread's title: its first message, one line
+	Dir    string
+	Model  string
+	Effort string // "" = the model's default
+	// ModelFrom and EffortFrom say where Model and Effort came from:
+	// SourceParent when inherited from the member that delegated.
+	ModelFrom, EffortFrom SpecSource
+	Status                Status
+	CostUSD               float64
+	Pending               int // approvals waiting for an answer
+	ThreadID              string
 	// Parent is the member that started this one when it is a Deck-managed
 	// subagent (Ephemeral); "" otherwise.
 	Parent    string
@@ -300,11 +303,9 @@ type Manager struct {
 	relayMu sync.Mutex
 	relayQ  map[*thread][]func()
 
-	modelMu    sync.Mutex        // guards defModels, modelCache and slugs
-	defModels  map[string]string // kind -> model for members started later (SetDefaultModel)
-	defEfforts map[string]string // kind -> effort for members started later (SetDefaultEffort)
-	modelCache map[string][]agent.ModelInfo
-	slugs      map[string]string // kind and pick -> the slug it ran as (slugs.go)
+	modelMu sync.Mutex        // guards slugs
+	slugs   map[string]string // kind and pick -> the slug it ran as (slugs.go)
+	cat     catalog           // the agent CLIs' model lists (catalog.go)
 	// policyNoted: the kinds whose context policy notice was shown
 	// (notePolicy); guarded by mu.
 	policyNoted map[string]bool
@@ -620,9 +621,16 @@ func (m *Manager) AddMember(threadID, kind, model string) (string, error) {
 	return a.id, nil
 }
 
-// newMember registers a member (without starting its process) and announces it.
+// newMember registers a member (without starting its process) and announces
+// it. A model given is the person's pick in this thread.
 func (m *Manager) newMember(t *thread, kind, model, preferredID string) (*agentState, error) {
-	return m.addMember(t, kind, model, preferredID, profile.Profile{})
+	a, err := m.addMember(t, kind, model, preferredID, profile.Profile{})
+	if err == nil && model != "" {
+		a.mu.Lock()
+		a.modelFrom = SourceThread
+		a.mu.Unlock()
+	}
+	return a, err
 }
 
 // addMember is newMember for a member that may come from a profile (prof's
@@ -639,11 +647,21 @@ func (m *Manager) addMember(t *thread, kind, model, preferredID string, prof pro
 	if err != nil {
 		return nil, err
 	}
+	modelFrom := SourceDelegation
 	if model == "" {
-		model = cmp.Or(prof.Model, m.defaultModel(cfg, kind))
+		model, modelFrom = prof.Model, SourceProfile
+		if model == "" {
+			model = m.defaultModel(cfg, kind)
+			modelFrom = specFrom(model, SourceDefaults)
+		}
 	}
-	effort := cmp.Or(prof.Effort, m.defaultEffort(cfg, kind))
-	a := &agentState{id: id, kind: kind, model: model, effort: effort, thread: t, base: StatusIdle, started: time.Now(), prof: prof}
+	effort, effortFrom := prof.Effort, SourceProfile
+	if effort == "" {
+		effort = m.defaultEffort(cfg, kind)
+		effortFrom = specFrom(effort, SourceDefaults)
+	}
+	a := &agentState{id: id, kind: kind, model: model, effort: effort, modelFrom: modelFrom, effortFrom: effortFrom,
+		thread: t, base: StatusIdle, started: time.Now(), prof: prof}
 	a.running = m.ModelSlug(kind, model)
 	m.mu.Lock()
 	m.order = append(m.order, a)
@@ -1403,15 +1421,19 @@ func (m *Manager) Resume(threadID string) (ThreadInfo, History, error) {
 		if name == "" {
 			name = id
 		}
+		// A member stored with its sources keeps its values, "" (the CLI's
+		// default) included; one stored before sources were takes the
+		// defaults for what it left empty.
 		model, effort := mem.Model, mem.Effort
-		if model == "" {
+		if model == "" && mem.ModelFrom == "" {
 			model = m.defaultModel(cfg, mem.Kind)
 		}
-		if effort == "" {
+		if effort == "" && mem.EffortFrom == "" {
 			effort = m.defaultEffort(cfg, mem.Kind)
 		}
 		a := &agentState{
 			id: id, kind: mem.Kind, name: name, model: model, effort: effort, thread: t, base: StatusIdle,
+			modelFrom: storedSource(mem.ModelFrom, model), effortFrom: storedSource(mem.EffortFrom, effort),
 			started: time.Now(), costTotal: mem.CostUSD, sessionID: mem.SessionID, cursor: mem.Cursor,
 			knownMode: mode, ctxTokens: mem.ContextTokens, ctxWindow: mem.ContextWindow, ctxSource: mem.ContextSource, briefed: mem.Briefed,
 			ctxBaseline: mem.ContextBaseline, deckTokens: mem.DeckTokens,
@@ -1916,6 +1938,8 @@ type agentState struct {
 	name        string
 	model       string
 	effort      string
+	modelFrom   SpecSource // where model and effort came from (spec.go)
+	effortFrom  SpecSource
 	base        Status
 	pending     []pendingApproval
 	costTotal   float64 // folded turns
@@ -2030,6 +2054,7 @@ func (a *agentState) info() AgentInfo {
 	}
 	return AgentInfo{
 		ID: a.id, Kind: a.kind, Name: a.name, Dir: dir, Model: a.model, Effort: a.effort,
+		ModelFrom: a.modelFrom, EffortFrom: a.effortFrom,
 		Parent: a.parent, Ephemeral: a.ephemeral, Branch: branch,
 		Status: a.statusLocked(), CostUSD: a.costTotal + a.costTurn, Pending: len(a.pending),
 		ThreadID: a.thread.id, ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource,
@@ -2054,6 +2079,7 @@ func (a *agentState) memberMeta() store.Member {
 	defer a.mu.Unlock()
 	return store.Member{
 		ID: a.id, Kind: a.kind, Name: a.name, Model: a.model, Running: a.running, Effort: a.effort, SessionID: a.sessionID,
+		ModelFrom: string(a.modelFrom), EffortFrom: string(a.effortFrom),
 		CostUSD: a.costTotal + a.costTurn, Cursor: a.cursor,
 		ContextTokens: a.ctxTokens, ContextWindow: a.ctxWindow, ContextSource: a.ctxSource, Briefed: a.briefed,
 		ContextBaseline: a.ctxBaseline, DeckTokens: a.deckTokens,

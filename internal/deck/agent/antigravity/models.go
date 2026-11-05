@@ -36,7 +36,9 @@ func (a *adapter) Models(ctx context.Context) ([]agent.ModelInfo, error) {
 		return a.loadModels(ctx), nil
 	})
 	if err != nil {
-		return fallbackModels(), nil
+		// ctx ended before the load: the static list for now, and the
+		// error, so a catalog does not keep the static list as the answer.
+		return fallbackModels(), err
 	}
 	return list, nil
 }

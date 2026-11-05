@@ -61,11 +61,10 @@ type DeckWorkspace struct {
 	busy map[string]bool // last busy state sent, by session
 	plan bool            // the UI is in plan mode
 
-	models map[string][]deckagent.ModelInfo // each CLI's models, once asked
-	since  map[string]time.Time             // when each busy agent's turn began
-	warned map[string]bool                  // agents told they cannot ask in ask mode
-	next   map[string]pendingTurn           // what starts each agent's next turn
-	limits map[string]LiveLimits            // plan limits by agent kind, as last reported
+	since  map[string]time.Time   // when each busy agent's turn began
+	warned map[string]bool        // agents told they cannot ask in ask mode
+	next   map[string]pendingTurn // what starts each agent's next turn
+	limits map[string]LiveLimits  // plan limits by agent kind, as last reported
 	// lastMode is the permission mode the last recorded mode change set.
 	// Only the pump goroutine touches it.
 	lastMode deckagent.Mode
@@ -117,7 +116,6 @@ func NewDeckWorkspace(a *app.App, store *config.ConfigStore, eng *engine.Engine)
 		dbw:          newDBWriter(),
 		approvals:    map[string]context.CancelFunc{},
 		busy:         map[string]bool{},
-		models:       map[string][]deckagent.ModelInfo{},
 		since:        map[string]time.Time{},
 		warned:       map[string]bool{},
 		next:         map[string]pendingTurn{},
@@ -561,6 +559,8 @@ func (w *DeckWorkspace) pump() {
 			} else {
 				w.recordBehavior(w.sessionOf(m.ThreadID), m.AgentID, usage.BehaviorModelChange, m.Model, 1)
 			}
+			// The roster and the lead show the model and effort.
+			w.publish(DeckChange{Kind: ChangeRoster, SessionID: w.sessionOf(m.ThreadID)})
 		case decks.EditedMsg:
 			w.recordBehavior(w.sessionOf(m.ThreadID), "", usage.BehaviorQueueEdit, "", 1)
 		case decks.QueueCancelledMsg:

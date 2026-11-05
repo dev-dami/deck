@@ -709,6 +709,7 @@ func TestModelsCachedPerKind(t *testing.T) {
 		"codex":  &stubAdapter{}, // cannot list
 	}, nil, testCfg())
 	t.Cleanup(m.Close)
+	m.cat.backoff = -1 // a failed CLI may be asked again at once
 	ctx := context.Background()
 
 	lister.fail.Store(true)
@@ -752,7 +753,7 @@ func TestModelsCachedPerKind(t *testing.T) {
 
 func (l *listerAdapter) ForgetModels() { l.forgot.Add(1) }
 
-func TestSetDefaultModelAppliesToLaterMembers(t *testing.T) {
+func TestDefaultModelAppliesToLaterMembers(t *testing.T) {
 	cfg := testCfg()
 	cfg.Models = config.Models{Claude: "from-config", Codex: "codex-config"}
 	r := newRigWith(t, t.TempDir(), false, cfg, nil, nil)
@@ -762,10 +763,11 @@ func TestSetDefaultModelAppliesToLaterMembers(t *testing.T) {
 	if sp, _ := r.claude.spec(a); sp.Model != "from-config" {
 		t.Errorf("config default: spec model = %q", sp.Model)
 	}
-	r.m.SetDefaultModel("claude", "opus")
+	cfg.Models.Set("claude", "opus")
+	r.m.SetConfig(cfg)
 	b := r.add(t, tid, "claude")
 	if sp, _ := r.claude.spec(b); sp.Model != "opus" {
-		t.Errorf("SetDefaultModel: spec model = %q", sp.Model)
+		t.Errorf("new default: spec model = %q", sp.Model)
 	}
 	if sp, _ := r.claude.spec(a); sp.Model != "from-config" {
 		t.Errorf("running member's spec rewritten: %q", sp.Model)
@@ -778,7 +780,8 @@ func TestSetDefaultModelAppliesToLaterMembers(t *testing.T) {
 	if sp, _ := r.codex.spec(d); sp.Model != "codex-config" {
 		t.Errorf("other kind affected: %q", sp.Model)
 	}
-	r.m.SetDefaultModel("claude", "") // back to the CLI's own default
+	cfg.Models.Set("claude", "") // back to the CLI's own default
+	r.m.SetConfig(cfg)
 	e := r.add(t, tid, "claude")
 	if sp, _ := r.claude.spec(e); sp.Model != "" {
 		t.Errorf("empty default: spec model = %q", sp.Model)

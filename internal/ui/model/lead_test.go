@@ -44,6 +44,14 @@ func (w *leadWorkspace) SetAgentModel(sessionID, kind, model, effort string) err
 	return nil
 }
 
+func (w *leadWorkspace) SetLead(string, string) (workspace.LeadResult, error) {
+	return workspace.LeadResult{}, nil
+}
+func (w *leadWorkspace) SetMemberSpec(string, string, *string, *string) (workspace.SpecResult, error) {
+	return workspace.SpecResult{}, nil
+}
+func (w *leadWorkspace) SetDefaults(string, *string, *string) error { return nil }
+
 func (w *leadWorkspace) CreateSession(context.Context, string) (session.Session, error) {
 	w.created++
 	return session.Session{ID: "new"}, nil

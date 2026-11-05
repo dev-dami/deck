@@ -34,9 +34,9 @@ func TestSwitchingTheLeadKeepsTheHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "claude", func() bool { return r.c.turnDones("claude") == 1 })
-	id, err := r.m.SetLead(tid, "codex", "", "")
-	if err != nil || id != "codex" {
-		t.Fatalf("SetLead = %q, %v", id, err)
+	res, err := r.m.SetLead(tid, "codex")
+	if err != nil || res.AgentID != "codex" || !res.Changed {
+		t.Fatalf("SetLead = %+v, %v", res, err)
 	}
 	if err := r.m.Post(tid, "fix it"); err != nil {
 		t.Fatal(err)
@@ -54,8 +54,8 @@ func TestSwitchingTheLeadKeepsTheHistory(t *testing.T) {
 		t.Fatal("no notice of the switch")
 	}
 	// Back to claude: the idle member is reused, not a second claude.
-	if id, _ := r.m.SetLead(tid, "claude", "", ""); id != "claude" {
-		t.Fatalf("SetLead back = %q", id)
+	if res, _ := r.m.SetLead(tid, "claude"); res.AgentID != "claude" {
+		t.Fatalf("SetLead back = %+v", res)
 	}
 	if info, _ := r.m.Thread(tid); len(info.Members) != 2 || info.Lead != "claude" {
 		t.Fatalf("members %+v lead %q", info.Members, info.Lead)
@@ -65,7 +65,7 @@ func TestSwitchingTheLeadKeepsTheHistory(t *testing.T) {
 func TestSetLeadRefusesAnUnknownKind(t *testing.T) {
 	r := newRig(t, nil, nil)
 	tid := r.thread(t)
-	if _, err := r.m.SetLead(tid, "gemini", "", ""); err == nil || !strings.Contains(err.Error(), "no agent kind") {
+	if _, err := r.m.SetLead(tid, "gemini"); err == nil || !strings.Contains(err.Error(), "no agent kind") {
 		t.Fatalf("err = %v", err)
 	}
 }

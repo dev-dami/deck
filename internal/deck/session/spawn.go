@@ -85,8 +85,20 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 			prof, sp.Kind = p, p.Kind
 		}
 	}
+	var from *agentState
+	if parentID != "" {
+		t.mu.Lock()
+		from = t.member(parentID)
+		t.mu.Unlock()
+	}
 	kind, routed := sp.Kind, ""
-	if kind == "" {
+	switch {
+	case kind != "":
+	case from != nil:
+		// A member's subagent runs its kind, and below its model and
+		// effort, unless the spawn, the task or a profile says otherwise.
+		kind = from.kind
+	default:
 		kind, routed = m.routeKind(m.defaultKind())
 	}
 	if _, ok := m.adapters[kind]; !ok {
@@ -159,9 +171,12 @@ func (m *Manager) Spawn(threadID, parentID string, sp SpawnSpec) (SpawnResult, e
 	a.mu.Lock()
 	a.parent, a.ephemeral, a.reviews = parentID, true, sp.ReviewOf
 	if sp.Effort != "" {
-		a.effort = sp.Effort
+		a.effort, a.effortFrom = sp.Effort, SourceDelegation
 	}
 	a.mu.Unlock()
+	if warn := m.inherit(a, from); warn != "" {
+		m.notice(t, warn)
+	}
 	// A subagent's view of the thread starts at its brief: what came before
 	// is not its business unless it asks (thread.read), which keeps a deep
 	// tree's prompts small.
