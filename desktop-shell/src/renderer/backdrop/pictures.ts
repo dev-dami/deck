@@ -28,6 +28,15 @@ const MET = "The Metropolitan Museum of Art, CC0";
 
 // Each URL is a literal, so Vite finds and bundles the file.
 export const PICTURES: readonly Picture[] = [
+  // Horizon: a planet's lit limb, drawn for Deck (scripts/horizon-art.py).
+  {
+    id: "horizon",
+    url: new URL("../art/horizon-deck.jpg", import.meta.url).href,
+    credit: "Horizon, drawn for Deck",
+    source: "Deck, CC0",
+    ax: 0.75,
+    ay: 0.35,
+  },
   // Liquid Glass: scenes with a sky, at dusk in its inks.
   {
     id: "alps",
@@ -167,7 +176,8 @@ export const PICTURES: readonly Picture[] = [
 
 // Each art direction's own set, its default first. The picker offers the
 // set of the theme on screen; any picture prints through any process.
-export const SETS: Record<"glass" | "riso" | "stitch", readonly string[]> = {
+export const SETS: Record<"horizon" | "glass" | "riso" | "stitch", readonly string[]> = {
+  horizon: ["horizon", "xdf", "clouds", "sete", "great-wave", "alps"],
   glass: ["alps", "yosemite", "hira-snow", "clouds", "sete", "xdf"],
   riso: ["allium", "great-wave", "irises", "plum-moon"],
   stitch: ["canyon", "nagasaki", "red-fuji", "shower-bridge", "kintai"],

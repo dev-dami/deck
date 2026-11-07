@@ -4,6 +4,7 @@ import { setPrefs, usePrefs } from "../prefs";
 import type { Workflow, WorkflowId } from "../workflows";
 import { ChevronDown, GitBranch, Users, X } from "./icons";
 import { CARD } from "./kit/card";
+import { DeckMark } from "./kit/mark";
 import { Switch } from "./kit/switch";
 
 // Deck's new-thread screen, a work surface set in type: the question and
@@ -21,6 +22,7 @@ export function NewThread({
   workflows,
   picked,
   onPick,
+  home,
   children,
 }: {
   // The thread list arrived; before that, the screen says it connects.
@@ -34,6 +36,8 @@ export function NewThread({
   workflows: Workflow[];
   picked: WorkflowId | null;
   onPick: (id: WorkflowId | null) => void;
+  // The home's cards under the composer (Home.tsx), once the threads are in.
+  home?: ReactNode;
   children: ReactNode;
 }) {
   const { isolate } = usePrefs();
@@ -45,6 +49,8 @@ export function NewThread({
           scrolls when the window is too short for it. */}
       <div className="@container/new mx-auto my-auto flex w-full max-w-(--chat-max) flex-col gap-5 px-6 pt-8 pb-[max(2rem,10vh)]">
         <h2 className="welcome-title text-balance font-semibold text-[30px] text-foreground leading-[1.15] tracking-[-0.02em]">
+          {/* Horizon sets the mark before the question, as a wordmark. */}
+          <DeckMark className="welcome-mark mr-[0.4em] hidden h-[0.62em] align-[0.04em]" />
           {loaded ? (
             <>
               What should we build{project === "" ? "" : " in "}
@@ -129,6 +135,7 @@ export function NewThread({
             </div>
           )}
         </div>
+        {loaded && home}
       </div>
     </div>
   );

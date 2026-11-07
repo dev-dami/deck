@@ -15,6 +15,7 @@ needs a credit, and we give one anyway.
 | `dust-bowl-lange-1940.jpg` | Dorothea Lange, an abandoned Dust Bowl home, gelatin silver print, about 1940 | The J. Paul Getty Museum, Open Content Program; CC0 1.0 |
 | `hubble-xdf-nasa-2012.jpg` | Hubble eXtreme Deep Field, 2012 | NASA; public domain (NASA media guidelines) |
 | `falcon-launch-spacex-2015.jpg` | A Falcon 9 launch, 2015 | SpaceX; released to the public domain (CC0 1.0) |
+| `horizon-deck.jpg` | *Horizon*: a planet's lit limb from orbit, drawn for Deck by `scripts/horizon-art.py` | Deck's own; CC0 1.0 |
 
 The Getty files came from the `@stdlib/datasets-img-*` packages (their
 contents CC0 1.0, data PDDL 1.0); the NASA and SpaceX files from
@@ -58,6 +59,7 @@ credits the picture behind the window.
 
 | Set | Pictures (the theme's own first) |
 |---|---|
+| Horizon | *Horizon* (`horizon-deck.jpg`); the Hubble eXtreme Deep Field; Constable, a cloud study; Le Gray, *Mediterranean Sea, Sète*; Hokusai, *Under the Wave off Kanagawa*; Braun, the Alps |
 | Liquid Glass | Braun, the Alps (`alpine-braun-1870.jpg`); Watkins, *Looking Down Yosemite Valley*; Hiroshige, *Evening Snow on Hira*; Constable, a cloud study; Le Gray, *Mediterranean Sea, Sète*; Tokyo Night: the Hubble eXtreme Deep Field |
 | Riso | Blossfeldt, *Allium oreophilum* (`allium-blossfeldt-1928.jpg`); Hokusai, *Under the Wave off Kanagawa*; Kōrin, *Irises at Yatsuhashi*; Jakuchū, *White Plum Blossoms and Moon* |
 | Stitch | O'Sullivan, *Black Cañon* (`black-canyon-osullivan-1871.jpg`); Beato, boats at Nagasaki; Hokusai, *South Wind, Clear Sky*; Hiroshige, *Sudden Shower over Shin-Ōhashi Bridge and Atake*; Hokusai, *Kintai Bridge* |

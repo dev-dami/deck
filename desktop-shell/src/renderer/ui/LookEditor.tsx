@@ -241,6 +241,7 @@ function MaterialSwatch({ material, texture, mode }: { material: string; texture
 function forBox(art: Art): Art {
   if (art.process === "scene") return { ...art, side: 0, margin: 0 };
   if (art.process === "halftone") return { ...art, margin: 4 };
+  if (art.process === "spectrum") return art;
   return { ...art, clear: 0 };
 }
 

@@ -253,7 +253,7 @@
    separatorColor, controlAccentColor and the system greens, oranges and
    reds); the agents take system hues too. It sets Tabletop's names, so
    every component reads it without a map. */
-:root:is([data-palette="apple"], [data-palette="glass"])[data-mode] {
+:root:is([data-palette="apple"], [data-palette="glass"], [data-palette="horizon"])[data-mode] {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "SFMono-Regular", "Geist Mono", Menlo, Consolas, monospace;
   /* SF has a real semibold; headings and the selected row use it. */
@@ -317,7 +317,7 @@
   --kind-antigravity: var(--agent-antigravity) !important;
   --kind-pi: var(--agent-pi) !important;
 }
-:root:is([data-palette="apple"], [data-palette="glass"])[data-mode="light"] {
+:root:is([data-palette="apple"], [data-palette="glass"], [data-palette="horizon"])[data-mode="light"] {
   --canvas: #ffffff;
   --sidebar: #efeff1;
   --surface-1: #ffffff;
@@ -481,6 +481,64 @@
   --glass-fill-thick: rgb(252 252 254 / 0.76);
   --glass-fill-clear: rgb(255 255 255 / 0.55);
   --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 22px 50px -14px rgb(0 0 0 / 0.28);
+}
+
+/* Horizon, the default theme (docs/design-glass.md, section 10): near-black
+   planes, quiet greys and one soft blue, taken from the picture behind
+   them. Apple's semantic colours (the blocks above name it), its own
+   surfaces. */
+:root[data-palette="horizon"][data-mode] {
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-weight-semibold: 500;
+  --font-weight-bold: 600;
+  --radius: 10px;
+  --control-radius: 7px;
+  --chat-max: 46rem;
+  --backdrop: #0b0b0d;
+  --canvas: #111113;
+  --sidebar: #141415;
+  --surface-1: #1a1a1d;
+  --surface-2: #212125;
+  --code: #0e0e10;
+  --bubble: #25252a;
+  --hairline: rgb(255 255 255 / 0.075);
+  --hairline-strong: rgb(255 255 255 / 0.13);
+  --hover: rgb(255 255 255 / 0.05);
+  --selected: rgb(255 255 255 / 0.085);
+  --segment: rgb(255 255 255 / 0.12);
+  --highlight: rgb(255 255 255 / 0.05);
+  --text: #e6e6e8;
+  --text-muted: #a3a3a9;
+  --text-faint: #7f7f86;
+  --signal: #5b8def;
+  --signal-foreground: #fff;
+  --link: #7ea7f5;
+  --info-foreground: #7ea7f5;
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 22px 50px -12px rgb(0 0 0 / 0.75);
+}
+:root[data-palette="horizon"][data-mode="light"] {
+  --backdrop: #e7e7ea;
+  --canvas: #f8f8f9;
+  --sidebar: #f1f1f3;
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --code: #f2f2f4;
+  --bubble: #ebebef;
+  --hairline: rgb(0 0 0 / 0.08);
+  --hairline-strong: rgb(0 0 0 / 0.14);
+  --hover: rgb(0 0 0 / 0.045);
+  --selected: rgb(0 0 0 / 0.075);
+  --segment: #ffffff;
+  --highlight: transparent;
+  --text: #1b1b1d;
+  --text-muted: #5f5f66;
+  --text-faint: #75757d;
+  --signal: #2f6fdb;
+  --signal-foreground: #fff;
+  --link: #2563c9;
+  --info-foreground: #2563c9;
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 22px 50px -14px rgb(0 0 0 / 0.26);
 }
 
 /* The materials, as utilities. They write Tailwind's shadow variables, so
@@ -1100,12 +1158,12 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 
 /* The sidebar's brand strip. Tabletop has no glow; the other themes keep
    T3 Code's blue one behind the wordmark. */
-:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"]) .brand-glow {
+:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"]):not([data-palette="horizon"]) .brand-glow {
   background:
     radial-gradient(120% 140% at 10% 0%, rgb(59 130 246 / 38%) 0%, rgb(37 99 235 / 14%) 45%, transparent 75%),
     linear-gradient(180deg, rgb(59 130 246 / 10%), transparent);
 }
-:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"])[data-mode="light"] .brand-glow {
+:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"]):not([data-palette="horizon"])[data-mode="light"] .brand-glow {
   background:
     radial-gradient(120% 140% at 10% 0%, rgb(59 130 246 / 22%) 0%, rgb(37 99 235 / 8%) 45%, transparent 75%);
 }
@@ -1264,7 +1322,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 }
 
 /* Every other theme defines the old names; Tabletop's names follow them. */
-:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"]) {
+:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"]):not([data-palette="horizon"]) {
   --canvas: var(--background);
   --surface-1: var(--card);
   --surface-2: var(--popover);
@@ -1282,7 +1340,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --link: var(--primary);
   --info-foreground: var(--primary);
 }
-:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"])[data-mode="light"] {
+:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"]):not([data-palette="horizon"])[data-mode="light"] {
   --highlight: transparent;
 }
 
@@ -1688,7 +1746,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --syn-attr: #e50000;
   --syn-operator: #000000;
 }
-:root:is([data-palette="apple"], [data-palette="glass"])[data-mode] {
+:root:is([data-palette="apple"], [data-palette="glass"], [data-palette="horizon"])[data-mode] {
   /* After Xcode's Default (Dark) and Default (Light). */
   --syn-keyword: #ff7ab2;
   --syn-string: #ff8170;
@@ -1702,7 +1760,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --syn-attr: #6bdfff;
   --syn-operator: #c9c9cc;
 }
-:root:is([data-palette="apple"], [data-palette="glass"])[data-mode="light"] {
+:root:is([data-palette="apple"], [data-palette="glass"], [data-palette="horizon"])[data-mode="light"] {
   --syn-keyword: #ad3da4;
   --syn-string: #c41a16;
   --syn-comment: #5d6c79;
@@ -2494,6 +2552,140 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 :is(:root, .look)[data-material="plain"][data-mode="light"] {
   --glass-rim: rgb(0 0 0 / 0.09);
   --glass-fill-clear: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+/* Smoked glass (Horizon's material, design-glass.md section 10): the
+   sidebar flush to the window's edge and opaque, and the picture behind
+   the room itself. What floats over it (the composer, the new-thread
+   screen's cards, menus) is dark glass with a fine rim and little blur,
+   so the dots stay crisp round it. A thread, a pane or a page reads
+   behind a veil: the picture is a glow there, never under the words. */
+:is(:root, .look)[data-material="smoke"][data-mode] {
+  --panel-radius: 12px;
+  --sheet-radius: 10px;
+  --glass-fill: color-mix(in srgb, var(--surface-1) 58%, transparent);
+  --glass-fill-thick: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  --glass-fill-clear: color-mix(in srgb, var(--text) 6%, transparent);
+  --glass-blur: 12px;
+  --glass-saturate: 1.3;
+  --glass-rim: color-mix(in srgb, var(--text) 9%, transparent);
+  --glass-spec: color-mix(in srgb, var(--text) 5%, transparent);
+  --glass-sheen: none;
+  --glass-shadow: 0 18px 44px -20px rgb(0 0 0 / 0.75);
+  --glass-shadow-clear: none;
+  --sheet-rim: transparent;
+  --sheet-shadow: none;
+  --tint-sheen: none;
+  --material-edge: none;
+  --sheet-edge: none;
+  --room-veil: color-mix(in srgb, var(--canvas) 86%, transparent);
+  --page-veil: color-mix(in srgb, var(--canvas) 93%, transparent);
+}
+:is(:root, .look)[data-material="smoke"][data-mode="light"] {
+  --glass-fill: color-mix(in srgb, var(--surface-1) 68%, transparent);
+  --glass-fill-thick: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  --glass-rim: rgb(0 0 0 / 0.08);
+  --glass-spec: rgb(255 255 255 / 0.7);
+  --glass-shadow: 0 18px 44px -22px rgb(0 0 0 / 0.28);
+  --room-veil: color-mix(in srgb, var(--canvas) 88%, transparent);
+  --page-veil: color-mix(in srgb, var(--canvas) 94%, transparent);
+}
+/* The window: no gutter, the sidebar a flat column with a hairline on its
+   inner edge, and the room's panes square to it. */
+:root[data-material="smoke"] .shell {
+  gap: 0;
+  padding: 0;
+}
+:root[data-material="smoke"] .shell > nav.sidebar,
+:root[data-material="smoke"] .shell > nav.sidebar > .liquid {
+  border-radius: 0;
+}
+:root[data-material="smoke"] .shell > nav.sidebar > .liquid {
+  background: var(--sidebar);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  outline: none;
+  box-shadow: inset -1px 0 0 var(--hairline);
+}
+:root[data-material="smoke"] .shell[data-sidebar="right"] > nav.sidebar > .liquid {
+  box-shadow: inset 1px 0 0 var(--hairline);
+}
+/* The picture fills the room's side of the window. */
+:root[data-material="smoke"] body:has(.shell) .backdrop {
+  clip-path: inset(0 0 0 var(--sidebar-w));
+}
+:root[data-material="smoke"] body:has(.shell):not(:has(nav.sidebar)) .backdrop {
+  visibility: visible;
+  clip-path: none;
+}
+/* Panes and pages: clear, with the veil as a layer of their own under
+   their content (a backdrop filter on the pane itself would hold the
+   composer's and the menus' glass to it). The layer sits at z-index -1
+   in the window's stacking context, after the picture; the pane makes no
+   stacking context of its own, so a dialog inside it still rises over
+   the pane dividers. The new-thread screen has no veil: it is where the
+   picture shows whole. */
+:root[data-material="smoke"] .shell .stack:not([data-float]),
+:root[data-material="smoke"] .shell > .room-sheet {
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+:root[data-material="smoke"] .shell .stack:not([data-float])::before,
+:root[data-material="smoke"] .shell > .room-sheet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--room-veil);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  backdrop-filter: blur(22px) saturate(1.2);
+}
+:root[data-material="smoke"] .shell > .room-sheet::before {
+  background: var(--page-veil);
+}
+:root[data-material="smoke"] .shell .stack:not([data-float]):has(.pane-slot:not([hidden]) .welcome)::before {
+  display: none;
+}
+:root[data-material="smoke"] .shell main.center {
+  background-color: transparent;
+}
+/* Neighbouring panes part on a hairline. */
+:root[data-material="smoke"] .shell .stack:not([data-float]) {
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+}
+/* The composer and what stacks on it are cards, not capsules. The send
+   button is a quiet light disc, as the rest of the bar is grey. */
+:root[data-material="smoke"] :is(.composer-box, .composer-above, .composer-banner) {
+  border-radius: 12px;
+}
+:root[data-material="smoke"] .composer .room-notice {
+  border-radius: 10px;
+}
+:root[data-material="smoke"] .composer .send:not(:disabled) {
+  background-color: color-mix(in srgb, var(--text) 86%, transparent);
+  background-image: none;
+  color: var(--canvas);
+  box-shadow: none;
+}
+/* The new-thread screen as Horizon's home: the mark before the question,
+   a little smaller, as a wordmark over the composer. */
+:root[data-material="smoke"] .welcome-mark {
+  display: inline-block;
+}
+:root[data-material="smoke"] .welcome-title {
+  font-size: 24px;
+  letter-spacing: -0.015em;
+}
+/* Reduce transparency: the veils turn solid, as every glass does. */
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-material="smoke"] .shell .stack:not([data-float])::before,
+  :root[data-material="smoke"] .shell > .room-sheet::before {
+    background: var(--canvas);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 /* ── Textures ──

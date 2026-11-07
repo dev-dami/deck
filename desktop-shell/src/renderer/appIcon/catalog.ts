@@ -40,6 +40,9 @@ const flat = (tile: [string, string], chevron: [string, string], cursor: string,
 export const APP_ICONS: readonly AppIconInfo[] = [
   // The icon Deck ships with (build/icon.png): amber on warm ink.
   { id: "classic", label: "Classic", style: flat(["#2b2822", "#151411"], ["#f7bb5c", "#ea972f"], "#f4eee4") },
+  // Horizon: near black, the chevron shading from the limb's blue to its
+  // orange.
+  { id: "horizon", label: "Horizon", style: flat(["#1c1c20", "#0b0b0d"], ["#8fb6ff", "#ff8c42"], "#e6e6e8") },
   { id: "glass", label: "Liquid Glass", style: { kind: "glass" } },
   { id: "riso", label: "Riso", style: { kind: "riso", ground: "black" } },
   { id: "riso-paper", label: "Riso on paper", style: { kind: "riso", ground: "paper" } },
@@ -73,6 +76,7 @@ export function appIconInfo(id: string): AppIconInfo {
 // for each mode: Riso prints on black in the dark and on paper in the
 // light, Cross-stitch is linen in the light and denim in the dark.
 const BY_THEME: Record<string, string | { light: string; dark: string }> = {
+  horizon: "horizon",
   glass: "glass",
   riso: { dark: "riso", light: "riso-paper" },
   stitch: { light: "stitch", dark: "stitch-denim" },

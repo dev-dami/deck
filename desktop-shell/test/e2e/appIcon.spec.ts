@@ -82,9 +82,8 @@ function near(rgb: [number, number, number], hex: string, slack = 14): void {
 
 test("the icon follows the theme: picking one sends its icon, valid, to main", async ({ page }) => {
   await pair(page);
-  // Liquid Glass, the default: the dusk sky, blue at mid-height.
-  const glass = await ground(page, await nth(1));
-  expect(glass[2]).toBeGreaterThan(glass[0] + 40);
+  // Horizon, the default: a near-black tile.
+  near(await ground(page, await nth(1)), "#141417");
   await appearance(page);
   await theme(page, /Tokyo Night/);
   await expect(page.locator("html")).toHaveAttribute("data-palette", "tokyo-night");
@@ -104,7 +103,7 @@ test("an icon picked by hand stays through theme changes; Match theme follows ag
     localStorage.setItem("deck.desktop.prefs", JSON.stringify({ appIcon: "riso-paper" }));
   });
   await pair(page);
-  // Riso on paper, although the theme is Liquid Glass.
+  // Riso on paper, although the theme is Horizon.
   near(await ground(page, await nth(1)), "#f3ede1", 20);
   await appearance(page);
   await theme(page, /Nord/);

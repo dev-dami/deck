@@ -96,7 +96,7 @@ export interface Prefs extends Aspects {
 
 export const defaultPrefs: Prefs = {
   theme: "deck",
-  ...DIRECTIONS.glass.look,
+  ...DIRECTIONS.horizon.look,
   accent: "theme",
   rows: "compact",
   grouping: "projects",

@@ -8,10 +8,11 @@
 // data-material, data-process, data-face, data-texture, data-corners and
 // data-translucency.
 //
-// The three art directions, Liquid Glass (the default), Riso and Stitch,
-// are presets that set every aspect at once; a look that matches none of
-// them is "Custom". glass, riso, stitch, apple, tabletop and default follow
-// light or dark; every other theme has a mode of its own.
+// The art directions, Horizon (the default), Liquid Glass, Riso and
+// Stitch, are presets that set every aspect at once; a look that matches
+// none of them is "Custom". horizon, glass, riso, stitch, apple, tabletop
+// and default follow light or dark; every other theme has a mode of its
+// own.
 
 export interface ThemeInfo {
   id: string;
@@ -24,9 +25,9 @@ export interface ThemeInfo {
   light?: [string, string, string, string];
 }
 
-export type Material = "glass" | "paper" | "felt" | "plain";
+export type Material = "smoke" | "glass" | "paper" | "felt" | "plain";
 // "none" prints no picture: the window behind the panels is plain.
-export type PictureProcess = "dither" | "halftone" | "stitch" | "none";
+export type PictureProcess = "spectrum" | "dither" | "halftone" | "stitch" | "none";
 export type Face = "inter-tight" | "space-grotesk" | "pixelify" | "system";
 export type Texture = "none" | "fibre" | "felt";
 // "auto" keeps the material's own.
@@ -52,6 +53,7 @@ export interface Choice<T extends string> {
 }
 
 export const MATERIALS: readonly Choice<Material>[] = [
+  { id: "smoke", label: "Smoked glass", line: "A flush sidebar, the picture behind the room" },
   { id: "glass", label: "Liquid glass", line: "Tinted and blurred, with a bright rim" },
   { id: "paper", label: "Paper", line: "Square, ruled, a shadow out of register" },
   { id: "felt", label: "Felt", line: "Opaque, with a running stitch" },
@@ -59,6 +61,7 @@ export const MATERIALS: readonly Choice<Material>[] = [
 ];
 
 export const PROCESSES: readonly Choice<PictureProcess>[] = [
+  { id: "spectrum", label: "Spectrum", line: "Red, green and blue dots" },
   { id: "dither", label: "Dither", line: "Atkinson, in two inks" },
   { id: "halftone", label: "Halftone", line: "One spot ink at 15°" },
   { id: "stitch", label: "Cross-stitch", line: "Floss on even-weave cloth" },
@@ -95,7 +98,7 @@ export const TRANSLUCENCIES: readonly Choice<Translucency>[] = [
 
 // An art direction: a preset of every aspect, and how its card describes
 // it.
-export type PresetId = "glass" | "riso" | "stitch";
+export type PresetId = "horizon" | "glass" | "riso" | "stitch";
 export interface Direction {
   id: PresetId;
   // How the picture is printed, what the panels are made of, and the
@@ -112,6 +115,15 @@ export interface Direction {
 const KNOBS = { corners: "auto", translucency: "auto" } as const;
 
 export const DIRECTIONS: Record<PresetId, Direction> = {
+  horizon: {
+    id: "horizon",
+    process: "RGB dither",
+    material: "Smoked glass",
+    face: "System",
+    family: "var(--font-sans)",
+    inks: "Red, green and blue",
+    look: { palette: "horizon", material: "smoke", process: "spectrum", face: "system", texture: "none", ...KNOBS },
+  },
   glass: {
     id: "glass",
     process: "Atkinson dither",
@@ -141,7 +153,7 @@ export const DIRECTIONS: Record<PresetId, Direction> = {
   },
 };
 
-export const PRESET_IDS: readonly PresetId[] = ["glass", "riso", "stitch"];
+export const PRESET_IDS: readonly PresetId[] = ["horizon", "glass", "riso", "stitch"];
 
 export const ASPECT_KEYS: readonly (keyof Aspects)[] = ["palette", "material", "process", "face", "texture", "corners", "translucency"];
 
@@ -151,27 +163,34 @@ export function presetOf(a: Aspects): PresetId | "custom" {
 }
 
 // The preset a look shares most aspects with, for "Custom, from Riso". The
-// material breaks a tie, and Liquid Glass wins what is left.
+// material breaks a tie, and Horizon, the default, wins what is left.
 export function nearestPreset(a: Aspects): PresetId {
   const score = (id: PresetId) =>
     ASPECT_KEYS.filter((k) => DIRECTIONS[id].look[k] === a[k]).length + (DIRECTIONS[id].look.material === a.material ? 0.5 : 0);
-  return PRESET_IDS.reduce<PresetId>((best, id) => (score(id) > score(best) ? id : best), "glass");
+  return PRESET_IDS.reduce<PresetId>((best, id) => (score(id) > score(best) ? id : best), "horizon");
 }
 
 // A window from before the aspects saved one theme. An art direction
 // becomes its preset; any other theme was a colourway of Liquid Glass, and
 // stays one.
 export function lookFromPalette(palette: string): Aspects {
-  if (palette === "riso" || palette === "stitch") return { ...DIRECTIONS[palette].look };
+  if (palette === "riso" || palette === "stitch" || palette === "horizon") return { ...DIRECTIONS[palette].look };
   return { ...DIRECTIONS.glass.look, palette: THEMES.some((t) => t.id === palette) ? palette : "glass" };
 }
 
 // The backdrop's set of pictures for a process (backdrop/pictures.ts SETS).
 export function setOf(process: PictureProcess): PresetId {
-  return process === "halftone" ? "riso" : process === "stitch" ? "stitch" : "glass";
+  return process === "halftone" ? "riso" : process === "stitch" ? "stitch" : process === "spectrum" ? "horizon" : "glass";
 }
 
 export const THEMES: readonly ThemeInfo[] = [
+  {
+    id: "horizon",
+    label: "Horizon",
+    mode: null,
+    swatch: ["#0c0c0d", "#141415", "#e6e6e8", "#5b8def"],
+    light: ["#f6f6f7", "#ececee", "#1b1b1d", "#2f6fdb"],
+  },
   {
     id: "glass",
     label: "Liquid Glass",

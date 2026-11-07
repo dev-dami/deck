@@ -1,12 +1,13 @@
 # Deck desktop: Liquid Glass
 
-Status: 2026-10-27. This replaces the look in `design-apple.md` for every
+Status: 2026-11-07. This replaces the look in `design-apple.md` for every
 theme. The components and the motion below are the same in every look.
 A look is made of aspects that mix (section 9): the colours (any theme of
 the catalog, Riso's and Stitch's inks among them), the material, the
 picture's process, the display face, the texture, and two knobs, corners
-and translucency. Liquid Glass, the default, Riso and Stitch are presets
-that set every aspect at once. The layout can mirror (section 4).
+and translucency. Horizon (section 10), the default, Liquid Glass, Riso
+and Stitch are presets that set every aspect at once. The layout can
+mirror (section 4).
 
 ## 1. Direction
 
@@ -410,3 +411,48 @@ any process.
 `ATTRIBUTION.md`, add it to `PICTURES` with its crop and subject, and to a
 set. Ship JPG or PNG: app:// names them (`src/main/mime.ts`), and it sends
 `nosniff`.
+
+## 10. Horizon
+
+Horizon is the default look since 2026-11-07. Where Liquid Glass floats
+panels on a backdrop, Horizon is a dark window with one picture in it: a
+flush sidebar, and the room open onto a planet's lit limb, printed in red,
+green and blue dots. The new-thread screen is its home: the composer and a
+few cards of smoked glass over the picture.
+
+| Aspect | Horizon |
+|---|---|
+| Colours (`horizon`) | near-black planes (`--canvas` `#111113`, `--sidebar` `#141415`), quiet greys, one soft blue (`#5b8def`); in light, white planes and a deeper blue |
+| Material (`smoke`) | smoked glass: dark, 12px blur, a 9% rim, no sheen; 10 to 12px corners |
+| Process (`spectrum`) | each of red, green and blue dithered on its own into four steps, at 1.5px, half Bayer and half noise, with a faint floor so the shadows speckle (`backdrop/spectrum.ts`) |
+| Picture | *Horizon*, drawn for Deck by `scripts/horizon-art.py`: space and blue air above the limb, a white-gold line of sun on it, the night side lit orange and red below |
+| Face | the UI's own (Geist) |
+
+**The window.** No gutter: the sidebar runs flush to the window's edge, an
+opaque column of `--sidebar` with a hairline on its inner edge. The
+picture fills the rest of the window (`.backdrop`'s clip follows
+`--sidebar-w`), behind the room itself.
+
+**Veils, not sheets.** The room's panes and the pages are clear, with a
+veil under their content (`--room-veil`, the canvas at 86% and a 22px
+blur, as a `::before` layer, so the composer's and the menus' own glass
+still reach the picture). In a thread the picture is a soft glow behind
+the words, never under them. The new-thread screen has no veil.
+
+**Home.** Under the composer (`ui/Home.tsx`), five cards of `liquid`
+glass on a four-column grid, two on a narrow pane:
+
+| Card | Shows | From |
+|---|---|---|
+| Activity | 24 weeks of days, one blue from quiet to full | turns per day (the usage record's heat); a paired Deck counts threads by the day they were last touched |
+| Recent threads | the three last touched, with a status dot and how long ago | the thread list |
+| Usage | the plan window nearest its limit and when it resets, or the last 30 days' spend | the usage record |
+| In progress | threads working (a pulsing dot) or waiting on you (the shield) | the thread list |
+| This month | threads and turns so far, against last month | the thread list and the usage record |
+
+A paired Deck keeps no usage record here, and the Usage card says so. The
+question over the composer keeps its words, with the Deck mark before it
+as a wordmark.
+
+**Light.** The paper is the dots' peak, so bare paper prints clean and the
+limb is a pastel arc of dots on it.

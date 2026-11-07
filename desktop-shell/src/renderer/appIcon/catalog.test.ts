@@ -37,6 +37,7 @@ describe("which icon a theme wears", () => {
         expect(APP_ICON_IDS, `${t.id} ${mode}`).toContain(id);
       }
     }
+    expect(iconForTheme("horizon", "dark")).toBe("horizon");
     expect(iconForTheme("glass", "dark")).toBe("glass");
     expect(iconForTheme("tabletop", "light")).toBe("classic");
     expect(iconForTheme("default", "dark")).toBe("t3");

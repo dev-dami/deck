@@ -7,7 +7,7 @@ import { setPrefs } from "../prefs";
 import { type Aspects, DIRECTIONS, type Direction, nearestPreset, PRESET_IDS, presetOf, themeInfo } from "../themes";
 import { CircleCheck } from "./icons";
 
-// The presets of Settings > Appearance: the three art directions as prints
+// The presets of Settings > Appearance: the four art directions as prints
 // of their own process. A pick sets every aspect of the look at once; a
 // look that matches none of them is Custom, and says which it came from.
 export function ThemeGrid({ look }: { look: Aspects }) {
@@ -15,7 +15,7 @@ export function ThemeGrid({ look }: { look: Aspects }) {
   const from = DIRECTIONS[nearestPreset(look)];
   return (
     <div className="flex flex-col gap-2.5">
-      <div className="grid grid-cols-1 gap-3 @md:grid-cols-3" role="radiogroup" aria-label="Theme">
+      <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-4" role="radiogroup" aria-label="Theme">
         {PRESET_IDS.map((id) => (
           <DirectionCard key={id} d={DIRECTIONS[id]} on={preset === id} />
         ))}
@@ -87,7 +87,7 @@ export function useMiniPrint(canvas: RefObject<HTMLCanvasElement | null>, size: 
 }
 
 // A print's corners: glass is rounded, a riso is cut square, felt is soft.
-const RADIUS: Record<Direction["id"], string> = { glass: "rounded-[10px]", riso: "rounded-[3px]", stitch: "rounded-[12px]" };
+const RADIUS: Record<Direction["id"], string> = { horizon: "rounded-[8px]", glass: "rounded-[10px]", riso: "rounded-[3px]", stitch: "rounded-[12px]" };
 
 // An art direction: its picture printed through its process, in the mode
 // on screen, its name in its own display face, and what it is made of.
