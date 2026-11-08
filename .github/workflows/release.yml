@@ -131,13 +131,15 @@ jobs:
   # The desktop app on each system, with this commit's engine inside, added
   # to the same release: the Windows installer (.exe), the macOS .dmg and
   # .zip, and the Linux AppImage and .deb, with the latest*.yml files the
-  # app's updater reads. The apps are not code-signed.
+  # app's updater reads. The apps are not code-signed. Linux builds on
+  # Ubuntu 24.04, as in ci.yml, so a release is made on the image CI tests on
+  # rather than whatever ubuntu-latest has moved to (it is now 26.04).
   desktop:
     needs: release
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [windows-latest, macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     defaults:
       run:

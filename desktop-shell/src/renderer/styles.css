@@ -3580,3 +3580,339 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   transition: none;
   animation: none;
 }
+
+/* ---- Small motion (ui/kit/motion.tsx, design-glass.md section 6) -------
+   Micro-motion on the window's items, so it feels alive but calm: what
+   arrives rises in once, a pressed control gives a little and springs
+   back, the open thread's card glides between rows, folds open their
+   height, counts tick, and popups scale out of their trigger. Only
+   transform and opacity move (and grid-template-rows, for a fold's
+   height): 120 to 260ms on --ease, presses and settles on --spring.
+   Nothing loops. Entrances fill backwards only, so a hover's transform
+   still transitions after them. Every animation here is under
+   :not([data-motion="reduced"]), and the reduced-motion rule above zeroes
+   every transition. */
+@keyframes small-rise {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+@keyframes small-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes small-pop {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+@keyframes small-settle {
+  from {
+    opacity: 0;
+    scale: 0.9;
+  }
+}
+@keyframes small-tick {
+  from {
+    opacity: 0.2;
+    translate: 0 0.4em;
+  }
+}
+@keyframes small-sweep {
+  from {
+    opacity: 0;
+    scale: 1 0.4;
+  }
+}
+@keyframes small-toast {
+  from {
+    opacity: 0;
+    translate: 18px 0;
+    scale: 0.98;
+  }
+}
+@keyframes small-jump {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+    scale: 0.94;
+  }
+}
+@keyframes small-ready {
+  from {
+    scale: 0.84;
+  }
+}
+@keyframes small-fold-open {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+@keyframes small-fold-close {
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+/* A fold (kit/motion.tsx Fold) is a one-row grid. Its clip hides the
+   overflow only while the row grows or shrinks, so focus rings and
+   negative margins show once it rests. */
+.fold-body {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+.fold-clip {
+  min-height: 0;
+}
+.fold-body[data-fold] > .fold-clip {
+  overflow: hidden;
+}
+
+/* The open card's glide (kit/motion.tsx useGlide): the row's <li> draws
+   the card as ::before for the move, under the row, and the row leaves
+   its own off until it lands. */
+.session {
+  position: relative;
+}
+.session[data-glide]::before {
+  content: "";
+  position: absolute;
+  left: var(--gl-l);
+  top: var(--gl-t);
+  width: var(--gl-w);
+  height: var(--gl-h);
+  border-radius: var(--gl-r);
+  background-color: var(--gl-bg);
+  box-shadow: var(--gl-shadow);
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.sidebar .session[data-glide] > [role="button"][aria-current="page"] {
+  background-color: transparent;
+  box-shadow: none;
+}
+[data-glide-to],
+[data-glide-from] {
+  transition-property: scale, translate !important;
+}
+
+/* Arrivals: a row, a message or a run of calls that shows for the first
+   time rises 4px and fades in. A batch staggers, 35ms a step. */
+:root:not([data-motion="reduced"]) [data-arrive] {
+  animation: small-rise 220ms var(--ease) backwards;
+}
+:root:not([data-motion="reduced"]) [data-arrive="1"] {
+  animation-delay: 35ms;
+}
+:root:not([data-motion="reduced"]) [data-arrive="2"] {
+  animation-delay: 70ms;
+}
+:root:not([data-motion="reduced"]) [data-arrive="3"] {
+  animation-delay: 105ms;
+}
+:root:not([data-motion="reduced"]) [data-arrive="4"] {
+  animation-delay: 140ms;
+}
+:root:not([data-motion="reduced"]) [data-arrive="5"] {
+  animation-delay: 175ms;
+}
+/* An archived row folds its height away as it fades. */
+:root:not([data-motion="reduced"]) .session[data-leaving] {
+  display: grid;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+  pointer-events: none;
+  animation: small-fold-close 180ms var(--ease) forwards;
+}
+:root:not([data-motion="reduced"]) .session[data-leaving] > * {
+  min-height: 0;
+}
+
+:root:not([data-motion="reduced"]) .fold-body[data-fold="opening"] {
+  animation: small-fold-open 220ms var(--ease) both;
+}
+:root:not([data-motion="reduced"]) .fold-body[data-fold="closing"] {
+  animation: small-fold-close 180ms var(--ease) both;
+}
+/* A tool call or a thought opens its output with a fade down. */
+:root:not([data-motion="reduced"]) details.fold[open] > :not(summary) {
+  animation: small-rise 180ms var(--ease) backwards;
+}
+/* A file's diff, opened in the side panel. */
+:root:not([data-motion="reduced"]) .file > .diff {
+  animation: small-fade 160ms var(--ease) backwards;
+}
+
+/* Counts tick up into place when they change. */
+:root:not([data-motion="reduced"]) .tick {
+  animation: small-tick 260ms var(--spring) backwards;
+}
+
+/* Popups scale out of their trigger. Liquid Glass blooms them (section
+   11), so the other looks make the same gesture, quieter. */
+:root:not([data-material="glass"]):not([data-motion="reduced"]) .material:not(.drag-ghost) {
+  animation: small-pop 160ms var(--ease) backwards;
+}
+:root:not([data-material="glass"]):not([data-motion="reduced"]) .material.toast {
+  animation: small-toast 240ms var(--ease) backwards;
+}
+.material[data-side="bottom"] {
+  transform-origin: top left;
+}
+.material[data-side="bottom"][data-align="end"] {
+  transform-origin: top right;
+}
+.material[data-side="top"] {
+  transform-origin: bottom left;
+}
+.material[data-side="top"][data-align="end"] {
+  transform-origin: bottom right;
+}
+.suggest {
+  transform-origin: bottom center;
+}
+.toast {
+  transform-origin: right center;
+}
+
+/* A pane that comes forward (a tab of a stack, the room's other view)
+   cross-fades in. */
+:root:not([data-motion="reduced"]) :is(.pane-slot:not([hidden]), .room-body > :first-child) {
+  animation: small-fade 180ms var(--ease) backwards;
+}
+
+/* The home's cards cascade in, and the activity grid fills in a sweep, a
+   week at a time from the oldest. */
+:root:not([data-motion="reduced"]) .home > .home-card {
+  animation: small-rise 260ms var(--ease) backwards;
+}
+:root:not([data-motion="reduced"]) .home > .home-card:nth-child(2) {
+  animation-delay: 40ms;
+}
+:root:not([data-motion="reduced"]) .home > .home-card:nth-child(3) {
+  animation-delay: 80ms;
+}
+:root:not([data-motion="reduced"]) .home > .home-card:nth-child(4) {
+  animation-delay: 120ms;
+}
+:root:not([data-motion="reduced"]) .home > .home-card:nth-child(5) {
+  animation-delay: 160ms;
+}
+:root:not([data-motion="reduced"]) .activity-week {
+  transform-origin: bottom;
+  animation: small-sweep 200ms var(--ease) backwards;
+  animation-delay: calc(120ms + var(--week, 0) * 9ms);
+}
+
+/* Chips that come and go settle in on the spring. */
+:root:not([data-motion="reduced"]) :is(.lane, .bell-count) {
+  animation: small-settle 300ms var(--spring) backwards;
+}
+
+/* The send button springs up once there is something to send, and the
+   jump pill slides in over the composer. */
+:root:not([data-motion="reduced"]) .composer .send:not(:disabled) {
+  animation: small-ready 380ms var(--spring) backwards;
+}
+:root:not([data-motion="reduced"]) .jump {
+  animation: small-jump 240ms var(--spring) backwards;
+}
+
+/* Presses: a control gives a little under the pointer and springs back
+   as it lets go. Liquid Glass presses its glass deeper (section 11), and
+   its rules win there. */
+[data-slot="button"] {
+  transition-timing-function: var(--ease), var(--ease), var(--ease), var(--ease), var(--spring);
+  transition-duration: 160ms, 160ms, 160ms, 160ms, 420ms;
+}
+[data-slot="button"]:not(:disabled):active {
+  transition-duration: 160ms, 160ms, 160ms, 160ms, 90ms;
+}
+:root:not([data-motion="reduced"]) [data-slot="button"][data-icon]:not(:disabled):active {
+  scale: 0.92;
+}
+.sidebar :is(.side-head, .side-foot, .bar-tools) button:not([data-slot]),
+.session-main button,
+.lane,
+.home-row,
+.worked,
+.actions-head,
+.sub-head {
+  transition-property: color, background-color, border-color, opacity, scale;
+  transition-timing-function: var(--ease), var(--ease), var(--ease), var(--ease), var(--spring);
+  transition-duration: 160ms, 160ms, 160ms, 160ms, 420ms;
+}
+:root:not([data-motion="reduced"]) :is(.sidebar :is(.side-head, .side-foot, .bar-tools) button:not([data-slot]), .session-main button):active {
+  scale: 0.88;
+  transition-duration: 160ms, 160ms, 160ms, 160ms, 90ms;
+}
+:root:not([data-motion="reduced"]) .lane:active {
+  scale: 0.95;
+  transition-duration: 160ms, 160ms, 160ms, 160ms, 90ms;
+}
+:root:not([data-motion="reduced"]) :is(.home-row, .worked, .actions-head, .sub-head):active {
+  scale: 0.985;
+  transition-duration: 160ms, 160ms, 160ms, 160ms, 90ms;
+}
+
+/* Thread rows and the bar's chips: a soft press, and on hover a row's
+   title leans 2px in and a chip lifts 1px. */
+.session > [role="button"] {
+  transition-property: color, background-color, box-shadow, scale, translate;
+  transition-timing-function: var(--ease), var(--ease), var(--ease), var(--spring), var(--ease);
+  transition-duration: 160ms, 160ms, 160ms, 420ms, 200ms;
+}
+.session > [role="button"]:active {
+  transition-duration: 160ms, 160ms, 160ms, 90ms, 200ms;
+}
+:root:not([data-motion="reduced"]) .session-main:active {
+  scale: 0.985;
+}
+:root:not([data-motion="reduced"]) .thread-bar .chip:active {
+  scale: 0.96;
+}
+:root:not([data-motion="reduced"]) .thread-bar .session:not(.open) > .chip:hover {
+  translate: 0 -1px;
+}
+.session-title {
+  transition: translate 200ms var(--ease);
+}
+:root:not([data-motion="reduced"]) .sidebar .session:not(.open) > .session-main:hover .session-title {
+  translate: 2px 0;
+}
+
+/* The home's cards lift a little under the pointer, and their rim
+   brightens: a ring over the glass that fades in. */
+.home-card {
+  position: relative;
+  transition: translate 200ms var(--ease);
+}
+.home-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 14%, transparent);
+  opacity: 0;
+  transition: opacity 200ms var(--ease);
+  pointer-events: none;
+}
+:root:not([data-motion="reduced"]) .home-card:hover {
+  translate: 0 -2px;
+}
+.home-card:hover::after {
+  opacity: 1;
+}
+
+/* The composer rises 2px while it has the focus. */
+.composer-box {
+  transition: translate 220ms var(--ease);
+}
+:root:not([data-motion="reduced"]) .composer-box:focus-within {
+  translate: 0 -2px;
+}

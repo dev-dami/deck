@@ -183,3 +183,47 @@ func TestASubThreadBriefIsTheAgents(t *testing.T) {
 	require.Equal(t, "Is the fix right?", rows[0].Content().Text)
 	require.False(t, w.EditableMessage(sid, rows[0].ID))
 }
+
+// A session made to start in yolo (the desktop app's) says so before it has
+// a thread and its thread starts in yolo; a session made otherwise (a
+// phone's) keeps the workspace's mode.
+func TestCreateSessionInStartsOnlyThatSessionInTheMode(t *testing.T) {
+	w := roomWorkspace(t)
+	ctx := context.Background()
+	s, err := w.CreateSessionIn(ctx, "desk", RemoteModeYolo)
+	require.NoError(t, err)
+	require.Equal(t, RemoteModeYolo, w.RemoteMode(s.ID))
+	other, err := w.CreateSession(ctx, "phone")
+	require.NoError(t, err)
+	require.Equal(t, RemoteModeAsk, w.RemoteMode(other.ID))
+
+	tid, err := w.thread(s.ID)
+	require.NoError(t, err)
+	th, ok := w.mgr().Thread(tid)
+	require.True(t, ok)
+	require.Equal(t, deckagent.ModeYolo, th.Mode)
+	require.Equal(t, RemoteModeYolo, w.RemoteMode(s.ID))
+	_, pending := w.startModeOf(s.ID)
+	require.False(t, pending, "the thread answers for its mode now")
+
+	otid, err := w.thread(other.ID)
+	require.NoError(t, err)
+	oth, _ := w.mgr().Thread(otid)
+	require.Equal(t, deckagent.ModeAsk, oth.Mode)
+
+	// Plan and Ask stay a switch away.
+	require.NoError(t, w.SetRemoteMode(s.ID, RemoteModePlan))
+	require.Equal(t, RemoteModePlan, w.RemoteMode(s.ID))
+	require.NoError(t, w.SetRemoteMode(s.ID, RemoteModeAsk))
+	require.Equal(t, RemoteModeAsk, w.RemoteMode(s.ID))
+
+	_, err = w.CreateSessionIn(ctx, "x", "reckless")
+	require.Error(t, err)
+
+	// A session deleted before its thread is made leaves no start mode.
+	gone, err := w.CreateSessionIn(ctx, "gone", RemoteModeYolo)
+	require.NoError(t, err)
+	require.NoError(t, w.DeleteSession(ctx, gone.ID))
+	_, pending = w.startModeOf(gone.ID)
+	require.False(t, pending)
+}

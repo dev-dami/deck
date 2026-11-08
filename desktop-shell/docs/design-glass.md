@@ -237,6 +237,38 @@ live status). Copy in Deck's own plain voice.
   or dashed animations. They pause off screen, and under
   `[data-motion="reduced"]` they stop.
 
+**Small motion.** The items of the window move a little, so it feels alive
+but calm (`ui/kit/motion.tsx`, "Small motion" in styles.css). The words:
+
+| Word | What moves | Where | Time |
+|---|---|---|---|
+| Arrive | rises 4px and fades in, once; a batch staggers 35ms a step, five steps at most (`data-arrive`) | a new thread row or chip, a new message or turn, a run of calls in a running turn, a call that comes while its run is open | 220ms, `--ease` |
+| Glide | the open card flies from the old row to the new one (the row's `<li>` draws it as `::before`, from the old place and size) | the sidebar's rows, the top bar's chips | 340ms, the segmented pill's spring |
+| Press | gives under the pointer, springs back as it lets go | buttons (0.97, icon buttons 0.92), the sidebar's glyphs and a row's actions (0.88), rows and chips (0.985 and 0.96), lane chips (0.95), the timeline's fold rows | 90ms in, 420ms back on `--spring` |
+| Lean, lift | a row's title leans 2px in; a chip lifts 1px; a home card lifts 2px and its rim brightens (a ring that fades in); the composer rises 2px while it has the focus | the sidebar, the top bar, the home, the composer | 200 to 220ms, `--ease` |
+| Fold | the height opens from nothing and fades in, and shuts the same way before it goes (`grid-template-rows` 0fr to 1fr, `Fold`) | "Worked · N steps", a run of calls, a subagent's log, the changed files; a tool call's or a thought's output fades down | 220ms open, 180ms shut |
+| Leave | the row folds its height away and fades, then goes (`leave`) | a thread archived from its row | 180ms |
+| Tick | the new number rises into place (`Tick`), only when it changes | the inbox count, a row's waiting count, the bell's badge, "N actions", "N steps", the home's figures | 260ms, `--spring` |
+| Pop | scales from 0.96 out of its trigger's corner (`data-side`, `data-align`) and fades in; a toast slides in from the right; Liquid Glass blooms instead (section 11) | menus, popovers, dialogs, the palette, toasts, chart tips | 160ms (toasts 240ms), `--ease` |
+| Settle | scales from 0.9 and fades in, on the spring | lane chips, the bell's badge, the send button as it becomes ready (from 0.84), the jump pill (from 10px lower) | 240 to 380ms, `--spring` |
+| Cross-fade | fades in | a pane's tab that comes forward, Conversation and Graph, another thread's timeline | 180ms |
+| Cascade | the home's cards rise in 40ms apart; the activity grid fills a week at a time, from the oldest | the home | 260ms; 200ms a week, 9ms apart |
+
+Rules:
+
+- Only `transform` (`translate`, `scale`) and `opacity`, and
+  `grid-template-rows` for a fold's height. Never blur, and never a glass
+  surface's size.
+- An entrance plays when the item first shows, never again on a
+  re-render, a virtual list's scroll or a return to the thread
+  (`arrival` keeps the keys it has seen). Rows that come in one go (a
+  thread opened, an older page) settle without moving (`settle`, `quiet`),
+  and the pane cross-fades instead. Entrances fill backwards only, so a
+  hover's transform still transitions after them.
+- Nothing loops but the live state above.
+- Every effect is the same in every look, under `:root:not([data-motion="reduced"])`;
+  reduced motion stops all of it, and the JavaScript ones check it too.
+
 ## 7. The Work Graph
 
 The graph is an interactive map of one thread's work. It is new, and it

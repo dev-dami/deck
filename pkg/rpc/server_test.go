@@ -90,6 +90,67 @@ func TestUnaryRoundTrip(t *testing.T) {
 	}
 }
 
+// A session the desktop makes starts in yolo, the person at this machine's
+// default, and Plan and Ask are still a switch away.
+func TestNewSessionsStartInYolo(t *testing.T) {
+	fake, _, c, _ := rig(t)
+	ctx := ctxT(t)
+	s, err := c.CreateSession(ctx, &deckv1.CreateSessionRequest{Title: "Two"})
+	if err != nil || s.GetMode() != wire.ModeYolo {
+		t.Fatalf("create = %v, %v; want mode yolo", s, err)
+	}
+	if m, err := c.GetMode(ctx, &deckv1.SessionRef{SessionId: s.GetId()}); err != nil || m.GetMode() != wire.ModeYolo {
+		t.Fatalf("mode = %v, %v", m, err)
+	}
+	for _, mode := range []string{wire.ModePlan, wire.ModeAsk} {
+		if _, err := c.SetMode(ctx, &deckv1.SetModeRequest{SessionId: s.GetId(), Mode: mode}); err != nil {
+			t.Fatalf("set %s: %v", mode, err)
+		}
+		if m, _ := c.GetMode(ctx, &deckv1.SessionRef{SessionId: s.GetId()}); m.GetMode() != mode {
+			t.Fatalf("mode = %q, want %q", m.GetMode(), mode)
+		}
+	}
+	// Sessions that were there before keep their own mode.
+	if got := fake.Get("s1").Mode; got != wire.ModeAsk {
+		t.Fatalf("s1 mode = %q, want ask", got)
+	}
+}
+
+// starter is a backend that makes a session in a mode itself, as the Deck
+// workspace does.
+type starter struct {
+	*remotetest.Fake
+	asked []string
+}
+
+func (b *starter) CreateSessionIn(ctx context.Context, title, mode string) (wire.Session, error) {
+	b.asked = append(b.asked, title+"="+mode)
+	s, err := b.CreateSession(ctx, title)
+	if err != nil {
+		return s, err
+	}
+	b.Get(s.ID).Mode, b.Get(s.ID).Session.Mode = mode, mode
+	s.Mode = mode
+	return s, nil
+}
+
+// A backend that can make a session in a mode is asked to, so the session's
+// first event already says yolo; no SetMode follows.
+func TestNewSessionsStartInYoloThroughModeStarter(t *testing.T) {
+	be := &starter{Fake: remotetest.New()}
+	srv := New(be, "secret")
+	s, err := srv.CreateSession(ctxT(t), &deckv1.CreateSessionRequest{Title: "Two"})
+	if err != nil || s.GetMode() != wire.ModeYolo {
+		t.Fatalf("create = %v, %v; want mode yolo", s, err)
+	}
+	if len(be.asked) != 1 || be.asked[0] != "Two=yolo" {
+		t.Fatalf("CreateSessionIn calls = %v", be.asked)
+	}
+	if m := be.Modes(); len(m) != 0 {
+		t.Fatalf("mode.set calls = %v, want none", m)
+	}
+}
+
 // The pickers list each kind's models once, before any thread is open; a
 // refresh asks the Deck to forget its lists first; "" picks the CLI's default.
 func TestModelsWithoutSessionRefreshAndDefault(t *testing.T) {

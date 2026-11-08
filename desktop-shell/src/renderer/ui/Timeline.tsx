@@ -77,6 +77,7 @@ import { AgentRole } from "./AgentRole";
 import { DiffView } from "./DiffView";
 import { Button } from "./kit/button";
 import { Dialog } from "./kit/dialog";
+import { arrival, Fold, fadeIn, hasArrived, quiet, settle, Tick } from "./kit/motion";
 import { VIRTUAL_AFTER, VirtualList } from "./kit/virtual";
 import { Markdown } from "./Markdown";
 import { type PlanActions, PlanCard, wasApproved } from "./PlanCard";
@@ -440,7 +441,7 @@ function UserMessage({ m, actions }: { m: Message; actions: RoomActions | null }
   const prefs = usePrefs();
   const chunks = chunksOf(m);
   return (
-    <article className="msg msg-user group flex animate-enter flex-col gap-1" data-role="user" data-mid={m.id}>
+    <article className="msg msg-user group flex flex-col gap-1" data-role="user" data-mid={m.id} data-arrive={arrival(`msg:${m.id}`)}>
       {/* The person's turn: a bubble of the accent, on the right. */}
       <div className="user-card text-message-foreground">
         <div className="flex flex-col gap-2">
@@ -479,7 +480,7 @@ function BriefMessage({ m, b, roster, theme, actions }: { m: Message; b: Brief; 
   const colour = agentColour(b.from, kind, tintOf(agentTint(b.from, roster), prefs.team));
   const title = parent?.title || b.thread;
   return (
-    <article className="msg msg-brief group flex min-w-0 animate-enter flex-col gap-1" data-role="user" data-from={b.from} data-mid={m.id} style={hue(colour)}>
+    <article className="msg msg-brief group flex min-w-0 flex-col gap-1" data-role="user" data-from={b.from} data-mid={m.id} data-arrive={arrival(`msg:${m.id}`)} style={hue(colour)}>
       <div className={cn(CARD, "brief flex flex-col gap-1.5 px-3 py-2.5")}>
         <header className="brief-head flex min-w-0 items-center gap-1.5 text-xs">
           <CornerDownRight aria-hidden className="size-3.5 shrink-0 text-faint" />
@@ -551,7 +552,7 @@ function WorkFold({ work, took, open, onToggle }: { work: Chunk[]; took: string;
         ·
       </span>
       <span className="text-faint tabular-nums">
-        {steps} step{steps === 1 ? "" : "s"}
+        <Tick value={steps} /> step{steps === 1 ? "" : "s"}
       </span>
       <ChevronRight className={cn("size-3 text-faint transition-transform duration-200", open && "rotate-90")} />
     </button>
@@ -596,7 +597,11 @@ function GroupItem({ c, running }: { c: Chunk; running: boolean }) {
 const ActionsRow = memo(function ActionsRow({ g, running, mark }: { g: ActionGroup; running: boolean; mark: string }) {
   const [open, setOpen] = useState(() => openGroups.get(g.id) ?? false);
   const s = useMemo(() => actionStats(g.items, running), [g.items, running]);
+  // The calls there when it opens unfold with it; one that comes while it
+  // is open rises in.
+  const itemKey = (i: number) => `${g.id}:${i}`;
   const toggle = () => {
+    if (!open) settle(g.items.map((_, i) => itemKey(i)));
     openGroups.set(g.id, !open);
     setOpen(!open);
   };
@@ -604,7 +609,12 @@ const ActionsRow = memo(function ActionsRow({ g, running, mark }: { g: ActionGro
   const cur: ToolChunk | null = live ? s.current : null;
   const CurIcon = cur === null ? null : toolIcon(toolName(cur));
   return (
-    <div className="actions-group flex flex-col" data-actions={g.id} data-state={live ? "running" : s.failed > 0 ? "failed" : "done"}>
+    <div
+      className="actions-group flex flex-col"
+      data-actions={g.id}
+      data-state={live ? "running" : s.failed > 0 ? "failed" : "done"}
+      data-arrive={running ? arrival(`group:${g.id}`) : undefined}
+    >
       <button
         type="button"
         className="actions-head -mx-2 flex h-7 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-sm outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
@@ -623,7 +633,7 @@ const ActionsRow = memo(function ActionsRow({ g, running, mark }: { g: ActionGro
           ·
         </span>
         <span className="actions-count shrink-0 text-muted-foreground tabular-nums">
-          {s.actions} action{s.actions === 1 ? "" : "s"}
+          <Tick value={s.actions} /> action{s.actions === 1 ? "" : "s"}
         </span>
         {cur !== null && CurIcon !== null ? (
           <span className="actions-now flex min-w-0 items-center gap-1.5 font-mono text-code">
@@ -642,13 +652,13 @@ const ActionsRow = memo(function ActionsRow({ g, running, mark }: { g: ActionGro
         )}
         <ChevronRight className={cn("size-3 shrink-0 text-faint transition-transform duration-200", open && "rotate-90")} />
       </button>
-      {open && (
-        <div className="actions-list ml-[5px] flex animate-enter flex-col gap-px border-hairline-strong border-l py-1 pl-[18px]">
-          {g.items.map((c, i) => (
-            <GroupItem key={i} c={c} running={running} />
-          ))}
-        </div>
-      )}
+      <Fold open={open} className="actions-list ml-[5px] flex flex-col gap-px border-hairline-strong border-l py-1 pl-[18px]">
+        {g.items.map((c, i) => (
+          <div key={i} data-arrive={running && open ? arrival(itemKey(i)) : undefined}>
+            <GroupItem c={c} running={running} />
+          </div>
+        ))}
+      </Fold>
     </div>
   );
 });
@@ -745,10 +755,11 @@ function AgentTurn({
   const took = ms >= 1000 ? `Worked for ${formatDuration(ms)}` : "Worked";
   return (
     <article
-      className="msg msg-agent group flex min-w-0 animate-enter flex-col gap-2"
+      className="msg msg-agent group flex min-w-0 flex-col gap-2"
       data-role="assistant"
       data-agent={agent}
       data-mid={t.id}
+      data-arrive={arrival(`msg:${t.id}`)}
       data-mids={t.msgs.length > 1 ? t.msgs.map((x) => x.id).join(" ") : undefined}
       style={hue(colour)}
     >
@@ -774,11 +785,9 @@ function AgentTurn({
       {folds ? (
         <>
           <WorkFold work={work} took={took} open={open} onToggle={fold} />
-          {open && (
-            <div className="work-log ml-[5px] flex animate-enter flex-col gap-1 border-hairline-strong border-l py-1 pl-[18px]">
-              <Pieces ps={worked} running={false} mark={mark} text={muted} />
-            </div>
-          )}
+          <Fold open={open} className="work-log ml-[5px] flex flex-col gap-1 border-hairline-strong border-l py-1 pl-[18px]">
+            <Pieces ps={worked} running={false} mark={mark} text={muted} />
+          </Fold>
           {answer.length > 0 && (
             <div className="flex flex-col gap-3 text-foreground text-prose">
               <Prose chunks={answer} text={text} />
@@ -869,11 +878,12 @@ function SubTurn({
   };
   return (
     <article
-      className="msg msg-sub -mt-3 ml-[5px] flex min-w-0 animate-enter flex-col border-hairline-strong border-l pl-3"
+      className="msg msg-sub -mt-3 ml-[5px] flex min-w-0 flex-col border-hairline-strong border-l pl-3"
       data-role="assistant"
       data-agent={t.agent}
       data-parent={parent}
       data-mid={t.id}
+      data-arrive={arrival(`msg:${t.id}`)}
       data-mids={t.msgs.length > 1 ? t.msgs.map((x) => x.id).join(" ") : undefined}
       data-state={status}
       data-spawned={spawned ? "" : undefined}
@@ -905,7 +915,7 @@ function SubTurn({
           ·
         </span>
         <span className="sub-count shrink-0 text-muted-foreground tabular-nums">
-          {s.actions} action{s.actions === 1 ? "" : "s"}
+          <Tick value={s.actions} /> action{s.actions === 1 ? "" : "s"}
         </span>
         {cur !== null && CurIcon !== null && (
           <span className="sub-now flex min-w-0 items-center gap-1.5 font-mono text-code">
@@ -925,12 +935,10 @@ function SubTurn({
         </span>
         <ChevronRight className={cn("size-3 shrink-0 text-faint transition-transform duration-200", open && "rotate-90")} />
       </button>
-      {open && (
-        <div className="sub-log flex animate-enter flex-col gap-1 py-1">
-          {node !== undefined && node.error !== "" && <p className="sub-error text-destructive-foreground text-xs">{node.error}</p>}
-          <Pieces ps={ps} running={running} mark={mark} text={muted} />
-        </div>
-      )}
+      <Fold open={open} className="sub-log flex flex-col gap-1 py-1">
+        {node !== undefined && node.error !== "" && <p className="sub-error text-destructive-foreground text-xs">{node.error}</p>}
+        <Pieces ps={ps} running={running} mark={mark} text={muted} />
+      </Fold>
     </article>
   );
 }
@@ -1080,8 +1088,8 @@ export function ChangedFilesCard({ files, onOpen }: { files: ChangedFile[]; onOp
           Open diff
         </Button>
       </div>
-      {open && (
-        <ul className="flex flex-col gap-px border-hairline border-t p-1.5">
+      <Fold open={open} className="border-hairline border-t">
+        <ul className="flex flex-col gap-px p-1.5">
           {files.map((f) => (
             <li key={f.path}>
               <button
@@ -1097,7 +1105,7 @@ export function ChangedFilesCard({ files, onOpen }: { files: ChangedFile[]; onOp
             </li>
           ))}
         </ul>
-      )}
+      </Fold>
     </div>
   );
 }
@@ -1260,6 +1268,13 @@ export function Timeline({
     const parentOf = (agent: string) => subParent(agent) ?? (subs?.get(agent)?.parent || null);
     const out: Row[] = buildTurns(withNotes(messages, notes), isMessage, turns.current, parentOf);
     turns.current = new Map(out.filter(isTurn).map((t) => [t.id, t]));
+    // Rows that come in one go (a thread opened, an older page) were there
+    // all along: only a row that comes after rises in (kit/motion.tsx).
+    const fresh = out.map((r) => `msg:${rowKey(r)}`).filter((k) => !hasArrived(k));
+    if (fresh.length > 3) {
+      settle(fresh);
+      quiet(300);
+    }
     return out;
   }, [messages, notes, subs]);
   // What the parents asked of their spawned subagents, for their folded line.
@@ -1275,6 +1290,11 @@ export function Timeline({
   const keep = useRef<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [away, setAway] = useState(false);
+  // Another thread cross-fades in.
+  const sid = messages[0]?.session_id ?? "";
+  useLayoutEffect(() => {
+    if (sid !== "") fadeIn(ref.current);
+  }, [sid]);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -1401,7 +1421,7 @@ export function Timeline({
           {away && (
             <button
               type="button"
-              className="jump liquid-thick absolute inset-x-0 bottom-[calc(var(--composer-h,0px)+0.75rem)] z-10 mx-auto flex w-fit h-8 animate-enter cursor-pointer items-center gap-1.5 rounded-full pr-3.5 pl-3 text-foreground text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="jump liquid-thick absolute inset-x-0 bottom-[calc(var(--composer-h,0px)+0.75rem)] z-10 mx-auto flex w-fit h-8 cursor-pointer items-center gap-1.5 rounded-full pr-3.5 pl-3 text-foreground text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={toBottom}
             >
               <ArrowDown className="size-3.5" weight="bold" />

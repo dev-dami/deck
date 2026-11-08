@@ -84,6 +84,9 @@ export interface NativeSub {
 
 export interface FakeOptions {
   allowYolo?: boolean;
+  // The mode sessions.create starts a thread in: "ask" for a paired Deck,
+  // "yolo" for the desktop's own (pkg/rpc StartMode, FakeRpcDeck).
+  startMode?: "plan" | "ask" | "yolo";
   // Milliseconds between streamed updates.
   tickMs?: number;
   // Adds the thread "Big room" with this many messages.
@@ -308,7 +311,8 @@ export class FakeDeck {
   addSubThread(parentId: string, title: string, opener: string, kind: string, brief: string, answer: string): string {
     const parent = this.get(parentId);
     const id = `ses_sub_${this.next++}`;
-    const t = this.addThread(id, title);
+    // A sub-thread starts in its parent's mode (session/subthread.go).
+    const t = this.addThread(id, title, parent.session.mode);
     t.roster = [{ id: kind, name: kind, kind, model: "default", busy: false }];
     // The brief is the opener's: a user message that names its agent
     // (workspace onBrief).
@@ -599,7 +603,7 @@ export class FakeDeck {
       case "sessions.list":
         return [...this.threads.values()].map((t) => this.withPending(t.session));
       case "sessions.create": {
-        const t = this.addThread(this.id("ses"), typeof p["title"] === "string" ? p["title"] : "");
+        const t = this.addThread(this.id("ses"), typeof p["title"] === "string" ? p["title"] : "", this.opts.startMode);
         this.broadcast("session.created", t.session);
         return t.session;
       }
@@ -1101,9 +1105,9 @@ export class FakeDeck {
     return `${prefix}_${this.next++}`;
   }
 
-  private addThread(id: string, title: string): Thread {
+  private addThread(id: string, title: string, mode: Session["mode"] = "ask"): Thread {
     const t: Thread = {
-      session: { id, title, updated_at: this.now(), busy: false, pending: 0, mode: "ask" },
+      session: { id, title, updated_at: this.now(), busy: false, pending: 0, mode },
       messages: [],
       roster: [],
       queue: [],

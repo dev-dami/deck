@@ -24,7 +24,7 @@ export function Switch({ checked, onChange, label }: { checked: boolean; onChang
       <span
         aria-hidden
         className={cn(
-          "absolute top-[2px] left-[2px] h-[18px] w-[22px] rounded-full bg-white bg-[linear-gradient(180deg,#fff,rgb(240_240_244))] shadow-[0_1px_2px_rgb(0_0_0/0.22),0_2px_6px_-1px_rgb(0_0_0/0.18),inset_0_0_0_0.5px_rgb(0_0_0/0.06)] transition-transform duration-200 ease-(--ease) group-active:scale-x-[1.14] group-active:scale-y-[1.06]",
+          "absolute top-[2px] left-[2px] h-[18px] w-[22px] rounded-full bg-white bg-[linear-gradient(180deg,#fff,rgb(240_240_244))] shadow-[0_1px_2px_rgb(0_0_0/0.22),0_2px_6px_-1px_rgb(0_0_0/0.18),inset_0_0_0_0.5px_rgb(0_0_0/0.06)] transition-transform duration-300 ease-(--spring) group-active:scale-x-[1.14] group-active:scale-y-[1.06]",
           checked ? "translate-x-[12px] group-active:origin-right" : "translate-x-0 group-active:origin-left",
         )}
       />

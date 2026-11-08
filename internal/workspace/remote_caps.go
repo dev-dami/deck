@@ -17,6 +17,7 @@ import (
 	decks "github.com/dev-dami/deck/internal/deck/session"
 	"github.com/dev-dami/deck/internal/message"
 	"github.com/dev-dami/deck/internal/pubsub"
+	"github.com/dev-dami/deck/internal/session"
 	"github.com/dev-dami/deck/internal/ui/styles"
 	"github.com/dev-dami/deck/internal/ui/tone"
 	"github.com/dev-dami/deck/internal/usage"
@@ -146,13 +147,62 @@ func (w *DeckWorkspace) SubscribeDeck(ctx context.Context) <-chan pubsub.Event[D
 	return w.changes().Subscribe(ctx)
 }
 
-// RemoteMode implements [RemoteControl]: the thread's mode, or the
-// workspace's for a session with no thread yet.
+// RemoteMode implements [RemoteControl]: the thread's mode, or for a
+// session with no thread yet the mode it was made to start in
+// (CreateSessionIn), else the workspace's.
 func (w *DeckWorkspace) RemoteMode(sessionID string) string {
 	if th, ok := w.threadOf(sessionID); ok {
 		return string(th.Mode)
 	}
+	if m, ok := w.startModeOf(sessionID); ok {
+		return string(m)
+	}
+	// thread publishes the thread before it drops the start mode, so a
+	// thread made between the two lookups above is there now.
+	if th, ok := w.threadOf(sessionID); ok {
+		return string(th.Mode)
+	}
 	return string(w.mode())
+}
+
+// ModeStarter is a workspace that makes a session whose thread starts in a
+// given mode, not the workspace's: the desktop app's sessions start in yolo
+// (pkg/rpc). The session reports that mode from its first event on.
+type ModeStarter interface {
+	CreateSessionIn(ctx context.Context, title, mode string) (session.Session, error)
+}
+
+// CreateSessionIn implements [ModeStarter]. Only the session it makes
+// starts in mode: sessions made otherwise, a phone's among them, keep the
+// workspace's mode.
+func (w *DeckWorkspace) CreateSessionIn(ctx context.Context, title, mode string) (session.Session, error) {
+	switch mode {
+	case RemoteModePlan, RemoteModeAsk, RemoteModeYolo:
+	default:
+		return session.Session{}, fmt.Errorf("unknown mode %q", mode)
+	}
+	// Held while the session is made: its created event, read on another
+	// goroutine, waits here for the mode.
+	w.startMu.Lock()
+	defer w.startMu.Unlock()
+	s, err := w.AppWorkspace.CreateSession(ctx, title)
+	if err != nil {
+		return s, err
+	}
+	if w.startModes == nil {
+		w.startModes = map[string]deckagent.Mode{}
+	}
+	w.startModes[s.ID] = deckagent.Mode(mode)
+	return s, nil
+}
+
+// startModeOf is the mode CreateSessionIn gave a session that has no thread
+// yet.
+func (w *DeckWorkspace) startModeOf(sessionID string) (deckagent.Mode, bool) {
+	w.startMu.Lock()
+	defer w.startMu.Unlock()
+	m, ok := w.startModes[sessionID]
+	return m, ok
 }
 
 // SetRemoteMode implements [RemoteControl]. Modes are per thread, as the

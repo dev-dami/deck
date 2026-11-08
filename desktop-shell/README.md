@@ -20,7 +20,7 @@ arrange like tmux: the chat timeline with its composer, the room's views
 | Trust | A token made for this launch, printed on Deck's stdout | A one-time pairing code, then a device token |
 | Lifetime | Deck stops when you close the folder or quit the app | Deck runs until you stop it |
 | Events | Every session's events, live | The open session's messages only |
-| Yolo mode | Allowed | Only with `deck remote devices --allow-yolo <id>` |
+| Yolo mode | Allowed, and where new threads start | Only with `deck remote devices --allow-yolo <id>`; new threads start in the paired Deck's mode |
 
 Use **Open a folder** for your own projects on this computer. It is the
 default. Use **Pair with a Deck** for a Deck on
@@ -166,8 +166,9 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   than 200 messages renders only the messages in view; so does a list of
   more than 200 threads in the sidebar.
 - **Composer.** The strip under the composer holds the mode (Plan, Ask or
-  Yolo) and picks who the message goes to: one chip per agent of the
-  thread, with its glyph, name, context use as a thin ring and a status
+  Yolo; a new thread of a folder on this computer starts in Yolo, where
+  agents run everything without asking) and picks who the message goes
+  to: one chip per agent of the thread, with its glyph, name, context use as a thin ring and a status
   dot (amber while it works, the warning colour while it waits for an
   approval). A member shows its role after its name when it came from a
   profile. Click a chip to address the agent (`$codex-1`), again to take
@@ -177,7 +178,10 @@ text and one amber lamp), and T3's look stay in the theme catalog.
   The app asks for the limits at most once a minute, and only while the
   strip shows. While agents work and the prompt is empty, send turns into
   stop.
-  - **Modes.** When the open thread switches to Yolo (the mode chip,
+  - **Modes.** A thread of a folder on this computer starts in Yolo; Plan
+    and Ask are in the mode menu, and Ctrl+Shift+Y goes back and forth.
+    Opening a room or starting a thread in Yolo plays nothing. When the open
+    thread switches to Yolo (the mode chip,
     Ctrl+Shift+Y, `/yolo` or another device), a shockwave crosses the
     window, as in the terminal, and the Yolo chip keeps a
     slow rainbow border while the thread stays in Yolo. A click or Escape
@@ -199,8 +203,9 @@ text and one amber lamp), and T3's look stay in the theme catalog.
     alone and inserts `$codex`. A Deck from before named agents reads only
     `$`; there `@` keeps picking files and the placeholder says `$`.
   - **Slash commands.** Type `/` at the start of the message for the
-    commands: `/plan`, `/ask` and `/yolo` set the mode (Yolo still asks
-    first), `/new [title]` starts a thread, `/race [task]` opens the race
+    commands: `/plan`, `/ask` and `/yolo` set the mode (Yolo asks
+    first when Settings > General > "Confirm Yolo mode" is on; it is off
+    by default), `/new [title]` starts a thread, `/race [task]` opens the race
     builder, `/share` opens the share popover, `/stop` stops all
     agents and `/clear` clears the draft. Other text after a `/` is an
     ordinary message.
@@ -578,7 +583,9 @@ renderer (React, sandboxed)                  main process (Node)                
   in it. Opening it needs no refetch.
 - **Resume by (epoch, seq).** When the stream ends, the client subscribes
   again from its last event. A `Ready` with `resync` makes it refetch.
-- **Yolo** is allowed: the caller is the person at this machine.
+- **Yolo** is allowed, and a session made with `CreateSession` starts in
+  it: the caller is the person at this machine. A phone's sessions keep the
+  engine's default.
 - **No caps.** Text and diffs are not cut; images travel as bytes.
 - **Error messages.** A refused call carries Deck's own message; the app
   shows it in a toast.

@@ -7,6 +7,7 @@ import { usePrefs } from "../prefs";
 import { At, Bell, BellSlash, Check, Checks, CircleAlert, CircleCheck, Gauge, type IconType, ListChecks, ShieldQuestion, Trash2 } from "./icons";
 import { Button } from "./kit/button";
 import { Popover } from "./kit/menu";
+import { Tick } from "./kit/motion";
 import { ProjectIcon } from "./ProjectIcon";
 
 // Each kind's glyph and colour, as the inbox wears them: what waits for an
@@ -102,9 +103,9 @@ export function NotificationBell({ onSettings, side = "top" }: { onSettings: () 
           {unread > 0 && (
             <span
               aria-hidden
-              className="-top-0.5 -right-0.5 absolute grid h-3.5 min-w-3.5 place-items-center rounded-full bg-primary px-1 font-semibold text-[9px] text-primary-foreground tabular-nums leading-none"
+              className="bell-count -top-0.5 -right-0.5 absolute grid h-3.5 min-w-3.5 place-items-center rounded-full bg-primary px-1 font-semibold text-[9px] text-primary-foreground tabular-nums leading-none"
             >
-              {unread > 99 ? "99+" : unread}
+              <Tick value={unread > 99 ? "99+" : unread} />
             </span>
           )}
         </Button>

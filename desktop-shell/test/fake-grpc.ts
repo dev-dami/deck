@@ -206,7 +206,8 @@ export class FakeRpcDeck {
   private constructor(readonly deck: FakeDeck) {}
 
   static async start(opts: FakeOptions = {}): Promise<FakeRpcDeck> {
-    const f = new FakeRpcDeck(await FakeDeck.start({ allowYolo: true, ...opts }));
+    // As pkg/rpc: yolo is allowed, and new sessions start in it (StartMode).
+    const f = new FakeRpcDeck(await FakeDeck.start({ allowYolo: true, startMode: "yolo", ...opts }));
     const def = protoLoader.loadSync(PROTO, { keepCase: true, longs: Number, defaults: true, oneofs: true });
     const pkg = grpc.loadPackageDefinition(def) as unknown as {
       deck: { v1: { Deck: { service: grpc.ServiceDefinition } } };
