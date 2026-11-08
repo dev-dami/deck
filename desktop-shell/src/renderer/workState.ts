@@ -1,4 +1,6 @@
+import { Effect, type Fiber } from "effect";
 import { useEffect, useSyncExternalStore } from "react";
+import { interrupt, pollLoop, runFork } from "../shared/effect";
 import type { ProjectApi } from "./project";
 import type { Work } from "./worktrees";
 
@@ -14,7 +16,7 @@ interface Room {
   work: Work | null;
   // How many views watch it, and the poll that runs while any does.
   views: number;
-  timer: ReturnType<typeof setTimeout> | null;
+  poll: Fiber.RuntimeFiber<never> | null;
 }
 
 const rooms = new Map<ProjectApi, Map<string, Room>>();
@@ -29,7 +31,7 @@ function roomOf(api: ProjectApi, sid: string): Room {
   }
   let r = m.get(sid);
   if (r === undefined) {
-    r = { work: null, views: 0, timer: null };
+    r = { work: null, views: 0, poll: null };
     m.set(sid, r);
   }
   return r;
@@ -63,17 +65,12 @@ export function useRoomWork(api: ProjectApi | undefined, sid: string | null, on 
     if (api === undefined || sid === null || !on) return;
     const r = roomOf(api, sid);
     r.views++;
-    const tick = async () => {
-      r.timer = null;
-      await refreshWork(api, sid);
-      if (r.views > 0 && r.timer === null) r.timer = setTimeout(() => void tick(), POLL_MS);
-    };
-    if (r.views === 1) void tick();
+    if (r.views === 1) r.poll = runFork(pollLoop(Effect.as(Effect.ignore(Effect.tryPromise(() => refreshWork(api, sid))), POLL_MS)));
     return () => {
       r.views--;
-      if (r.views === 0 && r.timer !== null) {
-        clearTimeout(r.timer);
-        r.timer = null;
+      if (r.views === 0) {
+        interrupt(r.poll);
+        r.poll = null;
       }
     };
   }, [api, sid, on]);

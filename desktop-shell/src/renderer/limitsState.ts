@@ -1,5 +1,7 @@
 import type { Store } from "@web/controller";
+import { Effect } from "effect";
 import { useEffect, useReducer, useSyncExternalStore } from "react";
+import { interrupt, pollLoop, runFork } from "../shared/effect";
 import type { Limits } from "./limits";
 import type { ProjectApi } from "./project";
 
@@ -54,7 +56,7 @@ export async function refreshLimits(api: ProjectApi): Promise<void> {
 
 // Asks for a refresh shortly (after a call that changed the waits).
 export function pokeLimits(api: ProjectApi | undefined): void {
-  if (api !== undefined) setTimeout(() => watchOf(api).poke(), SOON_MS);
+  if (api !== undefined) runFork(Effect.sleep(SOON_MS).pipe(Effect.andThen(() => watchOf(api).poke())));
 }
 
 export function limitsOf(api: ProjectApi | undefined): LimitsView {
@@ -65,18 +67,19 @@ export function limitsOf(api: ProjectApi | undefined): LimitsView {
 // Returns the function that stops it.
 export function watchLimits(api: ProjectApi, store: Store, serves: () => boolean): () => void {
   let stopped = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const tick = async () => {
-    timer = null;
-    // Until the Deck said what it serves (Info), look again soon.
+  // One poll, and the wait before the next: until the Deck said what it
+  // serves (Info), it looks again soon.
+  const poll = Effect.suspend(() => {
     const ok = serves();
-    if (ok) await refreshLimits(api);
-    if (!stopped) timer = setTimeout(() => void tick(), ok ? POLL_MS : SOON_MS);
-  };
+    const fetch = ok ? Effect.ignore(Effect.tryPromise(() => refreshLimits(api))) : Effect.void;
+    return Effect.as(fetch, ok ? POLL_MS : SOON_MS);
+  });
+  let fiber = runFork(pollLoop(poll));
+  // Starts the polling over, its next poll SOON_MS from now.
   const soon = () => {
     if (stopped) return;
-    if (timer !== null) clearTimeout(timer);
-    timer = setTimeout(() => void tick(), SOON_MS);
+    interrupt(fiber);
+    fiber = runFork(Effect.sleep(SOON_MS).pipe(Effect.andThen(pollLoop(poll))));
   };
   watchOf(api).poke = soon;
   // A room that stops working may have hit a limit; one that starts may
@@ -92,11 +95,10 @@ export function watchLimits(api: ProjectApi, store: Store, serves: () => boolean
       soon();
     }
   });
-  void tick();
   return () => {
     stopped = true;
     off();
-    if (timer !== null) clearTimeout(timer);
+    interrupt(fiber);
     watches.delete(api);
     changed();
   };

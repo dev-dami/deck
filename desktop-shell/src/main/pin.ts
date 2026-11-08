@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import net from "node:net";
 import tls from "node:tls";
+import { Data, Deferred, Effect } from "effect";
+import { listenNow, runPromise } from "../shared/effect";
 
 // Where a Deck server listens and how this app trusts it.
 export interface Target {
@@ -11,12 +13,21 @@ export interface Target {
   fingerprint: string | null;
 }
 
-export class PinError extends Error {
+export class PinError extends Data.TaggedError("PinError")<{ readonly message: string }> {
   constructor() {
-    super("certificate fingerprint mismatch");
+    super({ message: "certificate fingerprint mismatch" });
     this.name = "PinError";
   }
 }
+
+// The connection did not open in time.
+export class ConnectTimeout extends Data.TaggedError("ConnectTimeout")<{ readonly message: string }> {}
+
+// The socket failed before it connected; error is Node's (its code says
+// why, ECONNREFUSED and the like).
+export class SocketError extends Data.TaggedError("SocketError")<{ readonly message: string; readonly error: Error }> {}
+
+export type ConnectError = PinError | ConnectTimeout | SocketError;
 
 const B64_RE = /^SHA256:([A-Za-z0-9+/]{43})=?$/;
 const HEX_RE = /^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){31}$/;
@@ -78,8 +89,11 @@ export function originOf(t: Target): string {
 // before it resolves, so the caller writes nothing to a server it has not
 // verified. Deck's certificate is self-signed, so the pin replaces the CA
 // check: rejectUnauthorized is off and the fingerprint decides.
-export function connectPinned(t: Target, timeoutMs = 10_000): Promise<net.Socket> {
-  return new Promise((resolve, reject) => {
+//
+// Interrupting the effect (its timeout does) destroys the socket; once it
+// succeeds the socket is the caller's.
+export function connectPinnedEffect(t: Target, timeoutMs = 10_000): Effect.Effect<net.Socket, ConnectError> {
+  return Effect.suspend(() => {
     const sock: net.Socket = t.tls
       ? tls.connect({
           host: t.host,
@@ -88,27 +102,38 @@ export function connectPinned(t: Target, timeoutMs = 10_000): Promise<net.Socket
           ...(net.isIP(t.host) === 0 ? { servername: t.host } : {}),
         })
       : net.connect({ host: t.host, port: t.port });
-    const timer = setTimeout(() => {
-      sock.destroy();
-      reject(new Error("connection timed out"));
-    }, timeoutMs);
-    // An error after the connection is handed over goes to its new owner;
-    // this listener only keeps an early one from being unhandled.
-    sock.once("error", (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
-    sock.once(t.tls ? "secureConnect" : "connect", () => {
-      clearTimeout(timer);
-      if (sock instanceof tls.TLSSocket) {
-        const cert = sock.getPeerCertificate();
-        if (cert.raw === undefined || fingerprintOf(cert.raw) !== t.fingerprint) {
-          sock.destroy();
-          reject(new PinError());
-          return;
+    const opened = listenNow<net.Socket, ConnectError>((done) => {
+      // An error after the connection is handed over goes to its new owner;
+      // this listener only keeps an early one from being unhandled.
+      sock.once("error", (e) => done(Effect.fail(new SocketError({ message: e.message, error: e }))));
+      sock.once(t.tls ? "secureConnect" : "connect", () => {
+        if (sock instanceof tls.TLSSocket) {
+          const cert = sock.getPeerCertificate();
+          if (cert.raw === undefined || fingerprintOf(cert.raw) !== t.fingerprint) {
+            sock.destroy();
+            done(Effect.fail(new PinError()));
+            return;
+          }
         }
-      }
-      resolve(sock);
+        done(Effect.succeed(sock));
+      });
     });
+    return Deferred.await(opened).pipe(
+      Effect.onInterrupt(() => Effect.sync(() => sock.destroy())),
+      Effect.timeoutFail({ duration: timeoutMs, onTimeout: () => new ConnectTimeout({ message: "connection timed out" }) }),
+    );
   });
+}
+
+// connectPinnedEffect as a Promise. It rejects as a socket would: with
+// Node's own error, a PinError, or "connection timed out".
+export function connectPinned(t: Target, timeoutMs = 10_000): Promise<net.Socket> {
+  return runPromise(
+    connectPinnedEffect(t, timeoutMs).pipe(
+      Effect.catchTags({
+        SocketError: (e) => Effect.fail(e.error),
+        ConnectTimeout: (e) => Effect.fail(new Error(e.message)),
+      }),
+    ),
+  );
 }

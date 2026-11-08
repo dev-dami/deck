@@ -1,7 +1,9 @@
+import { Effect, Schedule } from "effect";
 import { app } from "electron";
 import log from "electron-log/main";
 import { autoUpdater } from "electron-updater";
 import type { UpdateEvent } from "../shared/bridge";
+import { runFork } from "../shared/effect";
 
 const FIRST_CHECK_MS = 10_000;
 const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
@@ -26,8 +28,10 @@ export class Updater {
       this.ready = info.version;
       this.send({ type: "ready", version: info.version });
     });
-    setTimeout(() => void this.check(false), FIRST_CHECK_MS);
-    setInterval(() => void this.check(false), CHECK_EVERY_MS);
+    // A check soon after launch, then one every CHECK_EVERY_MS for the
+    // life of the app. check() reports its own errors, so it never fails.
+    const check = Effect.promise(() => this.check(false));
+    runFork(Effect.sleep(FIRST_CHECK_MS).pipe(Effect.andThen(Effect.repeat(check, Schedule.spaced(CHECK_EVERY_MS)))));
   }
 
   async check(asked: boolean): Promise<void> {

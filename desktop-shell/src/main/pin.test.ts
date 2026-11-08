@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { X509Certificate } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import net, { type AddressInfo } from "node:net";
 import { join } from "node:path";
 import tls from "node:tls";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -27,6 +28,38 @@ describe("fingerprints and targets", () => {
     expect(targetError({ host: "192.168.1.5", port: 7878, tls: true, fingerprint: B64 })).toBeNull();
     expect(targetError({ host: "bad host", port: 7878, tls: true, fingerprint: B64 })).not.toBeNull();
     expect(targetError({ host: "127.0.0.1", port: 70000, tls: false, fingerprint: null })).not.toBeNull();
+  });
+});
+
+describe("connectPinned's timeout", () => {
+  test("a server that never finishes the TLS handshake times out, and the socket is closed", async () => {
+    const closed: Promise<void>[] = [];
+    const server = net.createServer((s) => {
+      s.on("error", () => {});
+      // Read what the client sends (its ClientHello), so its close is seen.
+      s.resume();
+      closed.push(new Promise((r) => s.on("close", () => r())));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const t0 = Date.now();
+      await expect(connectPinned({ host: "127.0.0.1", port, tls: true, fingerprint: B64 }, 150)).rejects.toThrow("connection timed out");
+      expect(Date.now() - t0).toBeLessThan(2000);
+      // The client let go of its end.
+      await Promise.all(closed);
+    } finally {
+      server.close();
+    }
+  });
+
+  test("nothing listening is Node's own ECONNREFUSED", async () => {
+    const server = net.createServer();
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as AddressInfo).port;
+    await new Promise((r) => server.close(r));
+    const err = await connectPinned({ host: "127.0.0.1", port, tls: false, fingerprint: null }).catch((e: unknown) => e);
+    expect((err as { code?: string }).code).toBe("ECONNREFUSED");
   });
 });
 

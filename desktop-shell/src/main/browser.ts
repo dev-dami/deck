@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { Session, WebContentsView, WebPreferences } from "electron";
+import { Deferred, Effect, type Fiber } from "effect";
+import type { Session, WebContents, WebContentsView, WebPreferences } from "electron";
 import {
   BROWSER_LIMITS,
   type BrowserActionResponse,
@@ -9,6 +10,7 @@ import {
   type BrowserTab,
   type BrowserViewInput,
 } from "../shared/bridge";
+import { interrupt, listenNow, runFork, runPromise, unrefSleep } from "../shared/effect";
 import { type Cdp, type ControlledPage, PageControl, PageError } from "./pageControl";
 import { previewPrefs } from "./preview";
 import { DOING_MS, Gate, HEAVY_AT_ONCE, HIDDEN, LIMITS, type Limits, pickDiscards, pickEviction, REST_MS, SHOWN, SWEEP_MS, type Throttle } from "./tabs";
@@ -182,17 +184,16 @@ export class Browser {
   private readonly limits: Limits;
   private readonly now: () => number;
   private useSeq = 0;
-  private sweeper: ReturnType<typeof setInterval> | null = null;
+  private sweeper: Fiber.RuntimeFiber<never> | null = null;
 
   constructor(private readonly d: BrowserDeps) {
     this.limits = d.limits ?? LIMITS;
     this.now = d.now ?? Date.now;
   }
 
-  /** Starts letting go of idle pages; close() ends it. */
+  /** Starts letting go of idle pages, every SWEEP_MS; close() interrupts it. */
   start(): void {
-    this.sweeper ??= setInterval(() => this.sweep(), SWEEP_MS);
-    this.sweeper.unref?.();
+    this.sweeper ??= runFork(Effect.forever(unrefSleep(SWEEP_MS).pipe(Effect.andThen(() => void this.sweep()))));
   }
 
   state(deck: string, session: string): BrowserStateResponse {
@@ -238,7 +239,7 @@ export class Browser {
   }
 
   close(): void {
-    if (this.sweeper !== null) clearInterval(this.sweeper);
+    interrupt(this.sweeper);
     this.sweeper = null;
     for (const request of this.requests.values()) request.abort.abort(new BrowserFailure("cancelled"));
     for (const t of [...this.tabs.values()]) this.closeTab(t);
@@ -280,7 +281,10 @@ export class Browser {
     if (this.now() >= r.deadline_at) return failure("timeout");
     const ac = new AbortController();
     this.requests.set(r.id, { deck, abort: ac });
-    let timer = setTimeout(() => ac.abort(new BrowserFailure("timeout")), Math.min(BROWSER_LIMITS.executionMs, r.deadline_at - this.now()));
+    // The op's deadline: a fiber that aborts it, interrupted when the op
+    // ends or pauses for a person's approval.
+    const deadline = (ms: number) => runFork(unrefSleep(ms).pipe(Effect.andThen(() => ac.abort(new BrowserFailure("timeout")))));
+    let timer = deadline(Math.min(BROWSER_LIMITS.executionMs, r.deadline_at - this.now()));
     let t: Tab | undefined;
     let release: (() => void) | null = null;
     let note = "";
@@ -293,11 +297,11 @@ export class Browser {
       if (u === null) throw new BrowserFailure("origin_denied", "Only http(s) URLs without embedded credentials are allowed.");
       if (loopback(u) || t?.grants.has(u.origin)) return;
       // The engine pauses its execution timer during this human approval too.
-      clearTimeout(timer);
+      interrupt(timer);
       const allowed = await abortable(this.d.approve(deck, r, u.origin), ac.signal);
       check();
       if (!allowed) throw new BrowserFailure("origin_denied");
-      timer = setTimeout(() => ac.abort(new BrowserFailure("timeout")), BROWSER_LIMITS.executionMs);
+      timer = deadline(BROWSER_LIMITS.executionMs);
       t?.grants.add(u.origin);
     };
     try {
@@ -496,7 +500,7 @@ export class Browser {
       if (cause instanceof PageError) return failure(cause.code, cause.message);
       return failure("invalid_request", cause instanceof Error ? cause.message : "Browser operation failed.");
     } finally {
-      clearTimeout(timer);
+      interrupt(timer);
       release?.();
       this.requests.delete(r.id);
       if (t?.operations.delete(ac)) {
@@ -634,20 +638,7 @@ export class Browser {
       title: () => wc()?.getTitle() ?? "",
       loading: () => wc()?.isLoading() ?? false,
       epoch: () => t.doc,
-      whenLoaded: (ms) => {
-        const w = wc();
-        if (w === undefined || !w.isLoading()) return Promise.resolve(true);
-        return new Promise((done) => {
-          const finish = (ok: boolean) => {
-            clearTimeout(timer);
-            w.removeListener("did-stop-loading", onStop);
-            done(ok);
-          };
-          const onStop = () => finish(true);
-          const timer = setTimeout(() => finish(false), ms);
-          w.once("did-stop-loading", onStop);
-        });
-      },
+      whenLoaded: (ms) => runPromise(whenLoaded(wc(), ms)),
     };
   }
 
@@ -948,19 +939,48 @@ export class Browser {
     t.fetchReady = true;
   }
 
-  private async follow(t: Tab): Promise<void> {
-    while (t.network.size > 0) await Promise.all([...t.network]);
+  // Waits for the navigation requests in flight to be approved or refused,
+  // and for those they let through; the first refusal fails it.
+  private follow(t: Tab): Promise<void> {
+    // Each round waits for those in flight; more may join meanwhile.
+    const round = Effect.tryPromise({ try: () => Promise.all([...t.network]), catch: (e) => e });
+    return runPromise(Effect.whileLoop({ while: () => t.network.size > 0, body: () => round, step: () => {} }));
   }
 }
 
-function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const aborted = () => reject(signal.reason);
+// True once w stops loading (at once when it is not loading); false when
+// ms ran out first. The listener goes either way.
+export function whenLoaded(w: Pick<WebContents, "isLoading" | "once" | "removeListener"> | undefined, ms: number): Effect.Effect<boolean> {
+  return Effect.suspend(() => {
+    if (w === undefined || !w.isLoading()) return Effect.succeed(true);
+    let onStop = () => {};
+    const stopped = listenNow<boolean>((done) => {
+      onStop = () => done(Effect.succeed(true));
+      w.once("did-stop-loading", onStop);
+    });
+    return Deferred.await(stopped).pipe(
+      Effect.timeoutTo({ duration: ms, onTimeout: () => false, onSuccess: (ok) => ok }),
+      Effect.ensuring(Effect.sync(() => void w.removeListener("did-stop-loading", onStop))),
+    );
+  });
+}
+
+// Fails with the signal's reason once it aborts.
+function aborted(signal: AbortSignal): Effect.Effect<never, unknown> {
+  return Effect.async<never, unknown>((resume) => {
     if (signal.aborted) {
-      reject(signal.reason);
+      resume(Effect.fail(signal.reason));
       return;
     }
-    signal.addEventListener("abort", aborted, { once: true });
-    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", aborted));
+    const gone = () => resume(Effect.fail(signal.reason));
+    signal.addEventListener("abort", gone, { once: true });
+    return Effect.sync(() => signal.removeEventListener("abort", gone));
   });
+}
+
+// The promise, or the signal's reason if it aborts first (the promise's
+// own outcome is then dropped).
+export function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  promise.catch(() => {});
+  return runPromise(Effect.raceFirst(Effect.tryPromise({ try: () => promise, catch: (e) => e }), aborted(signal)));
 }

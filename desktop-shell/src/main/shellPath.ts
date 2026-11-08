@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
+import { Effect } from "effect";
+import { runPromise } from "../shared/effect";
 
 // An app started from the Dock, Finder or a desktop launcher gets a bare
 // PATH (/usr/bin:/bin), without the folders the agent CLIs live in. Like
@@ -54,21 +56,29 @@ export function pathFromOutput(out: string): string | null {
 
 // The login shell's PATH, or null when there is none to ask (Windows) or
 // it does not answer in time.
-export function loginShellPath(env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
-  if (process.platform === "win32") return Promise.resolve(null);
+// execFile kills the shell at TIMEOUT_MS; so does interrupting the effect.
+export function loginShellPathEffect(env: NodeJS.ProcessEnv = process.env): Effect.Effect<string | null> {
+  if (process.platform === "win32") return Effect.succeed(null);
   const shell = env["SHELL"] || "/bin/sh";
-  return new Promise((resolve) => {
-    execFile(
+  return Effect.async<string | null>((resume) => {
+    const child = execFile(
       shell,
       ["-ilc", `printf '${MARK}%s${MARK}' "$PATH"`],
       { timeout: TIMEOUT_MS, env: { ...env, DISABLE_AUTO_UPDATE: "true" } },
-      (err, stdout) => resolve(err === null || stdout !== "" ? pathFromOutput(String(stdout)) : null),
+      (err, stdout) => resume(Effect.succeed(err === null || stdout !== "" ? pathFromOutput(String(stdout)) : null)),
     );
+    return Effect.sync(() => void child.kill());
   });
+}
+
+export function loginShellPath(env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  return runPromise(loginShellPathEffect(env));
 }
 
 // The PATH the engine runs with: the app's own, the login shell's, then
 // the well-known folders.
-export async function enginePath(env: NodeJS.ProcessEnv = process.env): Promise<string> {
-  return mergePath(env["PATH"], (await loginShellPath(env)) ?? undefined, wellKnownDirs().join(delimiter));
+export function enginePath(env: NodeJS.ProcessEnv = process.env): Promise<string> {
+  return runPromise(
+    loginShellPathEffect(env).pipe(Effect.map((login) => mergePath(env["PATH"], login ?? undefined, wellKnownDirs().join(delimiter)))),
+  );
 }

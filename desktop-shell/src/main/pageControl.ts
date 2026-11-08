@@ -1,3 +1,5 @@
+import { Clock, Data, Effect, Schedule } from "effect";
+import { runPromise } from "../shared/effect";
 import { type AxNode, buildOutline, RefTable, renderOutline } from "./outline";
 
 // What an agent does to a page, over the Chrome DevTools Protocol: see it
@@ -29,12 +31,9 @@ export interface ControlledPage {
 export type PageErrorCode = "stale_snapshot" | "invalid_request" | "user_in_control";
 
 /** An op that cannot be done as asked; the code is what the agent is told. */
-export class PageError extends Error {
-  constructor(
-    message: string,
-    readonly code: PageErrorCode = "invalid_request",
-  ) {
-    super(message);
+export class PageError extends Data.TaggedError("PageError")<{ readonly message: string; readonly code: PageErrorCode }> {
+  constructor(message: string, code: PageErrorCode = "invalid_request") {
+    super({ message, code });
   }
 }
 
@@ -45,8 +44,14 @@ export class RefError extends PageError {
   }
 }
 
+/**
+ * A protocol command that failed. The page's channel may fail for its own
+ * reasons (the browser's abort, a takeover), so its error is kept as is
+ * and is what an op's Promise rejects with.
+ */
+class CdpFailure extends Data.TaggedError("CdpFailure")<{ readonly method: string; readonly error: unknown }> {}
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+type Op<A> = Effect.Effect<A, PageError | CdpFailure>;
 
 // Keys by name: DOM key, code, Windows virtual key code, and the text it types.
 const KEYS: Record<string, { key: string; code: string; vk: number; text?: string }> = {
@@ -186,8 +191,21 @@ export class PageControl {
     this.refEpoch = page.epoch();
   }
 
-  private async cdp<T>(method: string, params?: object): Promise<T> {
-    return (await this.page.cdp.send(method, params)) as T;
+  // Each op is an Effect; the public methods run it and keep the Promise API
+  // the browser calls. A failed protocol command rejects with its own error.
+  private run<A>(op: Op<A>): Promise<A> {
+    return runPromise(op.pipe(Effect.catchTag("CdpFailure", (f) => Effect.fail(f.error))));
+  }
+
+  private cdp<T>(method: string, params?: object): Effect.Effect<T, CdpFailure> {
+    return Effect.tryPromise({
+      try: async () => (await this.page.cdp.send(method, params)) as T,
+      catch: (error) => new CdpFailure({ method, error }),
+    });
+  }
+
+  private whenLoaded(ms: number): Effect.Effect<boolean> {
+    return Effect.promise(() => this.page.whenLoaded(ms));
   }
 
   /** The refs reset when the page got a new document. */
@@ -203,19 +221,24 @@ export class PageControl {
     return this.table.size;
   }
 
-  async snapshot(opts: { interactive?: boolean; max?: number }): Promise<string> {
-    this.fresh();
-    await this.cdp("Accessibility.enable");
-    const { nodes } = await this.cdp<{ nodes: AxNode[] }>("Accessibility.getFullAXTree");
-    const secret = await this.secrets();
-    const o = buildOutline(nodes, {
-      refs: this.table,
-      url: this.page.url(),
-      ...(secret === null ? { hideAll: true } : { secret }),
-      ...(opts.interactive === undefined ? {} : { interactive: opts.interactive }),
-      ...(opts.max === undefined ? {} : { max: opts.max }),
-    });
-    return renderOutline(o, { title: this.page.title(), url: this.page.url(), loading: this.page.loading() }, opts.interactive === true);
+  snapshot(opts: { interactive?: boolean; max?: number }): Promise<string> {
+    const self = this;
+    return this.run(
+      Effect.gen(function* () {
+        self.fresh();
+        yield* self.cdp("Accessibility.enable");
+        const { nodes } = yield* self.cdp<{ nodes: AxNode[] }>("Accessibility.getFullAXTree");
+        const secret = yield* self.secrets();
+        const o = buildOutline(nodes, {
+          refs: self.table,
+          url: self.page.url(),
+          ...(secret === null ? { hideAll: true } : { secret }),
+          ...(opts.interactive === undefined ? {} : { interactive: opts.interactive }),
+          ...(opts.max === undefined ? {} : { max: opts.max }),
+        });
+        return renderOutline(o, { title: self.page.title(), url: self.page.url(), loading: self.page.loading() }, opts.interactive === true);
+      }),
+    );
   }
 
   /**
@@ -223,245 +246,296 @@ export class PageControl {
    * of them. null when they could not be found: then no field's value is
    * shown at all.
    */
-  private async secrets(): Promise<Set<number> | null> {
-    try {
-      const { root } = await this.cdp<{ root: { nodeId: number } }>("DOM.getDocument", { depth: 0 });
-      const { nodeIds } = await this.cdp<{ nodeIds: number[] }>("DOM.querySelectorAll", { nodeId: root.nodeId, selector: SECRET_FIELDS });
-      const described = await Promise.all(nodeIds.map((nodeId) => this.cdp<{ node: { backendNodeId: number } }>("DOM.describeNode", { nodeId })));
+  private secrets(): Effect.Effect<Set<number> | null> {
+    const self = this;
+    return Effect.gen(function* () {
+      const { root } = yield* self.cdp<{ root: { nodeId: number } }>("DOM.getDocument", { depth: 0 });
+      const { nodeIds } = yield* self.cdp<{ nodeIds: number[] }>("DOM.querySelectorAll", { nodeId: root.nodeId, selector: SECRET_FIELDS });
+      const described = yield* Effect.forEach(
+        nodeIds,
+        (nodeId) => self.cdp<{ node: { backendNodeId: number } }>("DOM.describeNode", { nodeId }),
+        { concurrency: "unbounded" },
+      );
       return new Set(described.map((d) => d.node.backendNodeId));
-    } catch {
-      return null;
-    }
+    }).pipe(Effect.orElseSucceed(() => null));
   }
 
   /** The element behind a ref, or why it cannot be used. */
-  private async element(ref: string): Promise<Element> {
-    if (this.fresh()) throw new RefError(`${ref}: the page loaded a new document (${this.page.url()}); its refs are gone. Call browser.snapshot.`);
-    const node = this.table.node(ref);
-    if (node === undefined) throw new RefError(`${ref} is not in the latest snapshot of this tab. Call browser.snapshot to get the current refs.`);
-    let objectId: string | undefined;
-    try {
-      const { object } = await this.cdp<{ object: RemoteObject }>("DOM.resolveNode", { backendNodeId: node });
-      objectId = object.objectId;
-      if (objectId === undefined) throw new Error("gone");
-      const alive = await this.cdp<Evaluated>("Runtime.callFunctionOn", {
-        objectId,
-        functionDeclaration: "function () { return this.isConnected; }",
-        returnByValue: true,
-      });
-      if (alive.result.value !== true) throw new Error("detached");
-      const { node: described } = await this.cdp<{ node: { attributes?: string[] } }>("DOM.describeNode", { backendNodeId: node });
-      const attrs = new Map<string, string>();
-      const list = described.attributes ?? [];
-      for (let i = 0; i + 1 < list.length; i += 2) attrs.set((list[i] ?? "").toLowerCase(), list[i + 1] ?? "");
-      return { node, objectId, attrs };
-    } catch (e) {
-      if (objectId !== undefined) this.release(objectId);
-      if (e instanceof PageError) throw e;
-      throw new RefError(`${ref} is stale: the element left the page. Call browser.snapshot for the current refs.`);
-    }
+  private element(ref: string): Op<Element> {
+    const self = this;
+    return Effect.gen(function* () {
+      if (self.fresh()) return yield* new RefError(`${ref}: the page loaded a new document (${self.page.url()}); its refs are gone. Call browser.snapshot.`);
+      const node = self.table.node(ref);
+      if (node === undefined) return yield* new RefError(`${ref} is not in the latest snapshot of this tab. Call browser.snapshot to get the current refs.`);
+      let objectId: string | undefined;
+      return yield* Effect.gen(function* () {
+        const { object } = yield* self.cdp<{ object: RemoteObject }>("DOM.resolveNode", { backendNodeId: node });
+        objectId = object.objectId;
+        if (objectId === undefined) return yield* Effect.fail("gone" as const);
+        const alive = yield* self.cdp<Evaluated>("Runtime.callFunctionOn", {
+          objectId,
+          functionDeclaration: "function () { return this.isConnected; }",
+          returnByValue: true,
+        });
+        if (alive.result.value !== true) return yield* Effect.fail("detached" as const);
+        const { node: described } = yield* self.cdp<{ node: { attributes?: string[] } }>("DOM.describeNode", { backendNodeId: node });
+        const attrs = new Map<string, string>();
+        const list = described.attributes ?? [];
+        for (let i = 0; i + 1 < list.length; i += 2) attrs.set((list[i] ?? "").toLowerCase(), list[i + 1] ?? "");
+        return { node, objectId, attrs };
+      }).pipe(
+        // Whatever went wrong, the element is not one to act on.
+        Effect.catchAll(() => {
+          if (objectId !== undefined) self.release(objectId);
+          return Effect.fail(new RefError(`${ref} is stale: the element left the page. Call browser.snapshot for the current refs.`));
+        }),
+      );
+    });
   }
 
   private release(objectId: string): void {
-    void this.cdp("Runtime.releaseObject", { objectId }).catch(() => {});
+    void this.page.cdp.send("Runtime.releaseObject", { objectId }).catch(() => {});
   }
 
-  private async withElement<T>(ref: string, f: (e: Element) => Promise<T>): Promise<T> {
-    const e = await this.element(ref);
-    try {
-      return await f(e);
-    } finally {
-      this.release(e.objectId);
-    }
+  /** Runs f on the element behind ref, and lets go of its handle after, however f ends. */
+  private withElement<T>(ref: string, f: (e: Element) => Op<T>): Op<T> {
+    return Effect.acquireUseRelease(this.element(ref), f, (e) => Effect.sync(() => this.release(e.objectId)));
   }
 
-  private async centre(node: number, ref: string): Promise<{ x: number; y: number }> {
-    try {
-      await this.cdp("DOM.scrollIntoViewIfNeeded", { backendNodeId: node });
-    } catch {
+  private centre(node: number, ref: string): Op<{ x: number; y: number }> {
+    const self = this;
+    return Effect.gen(function* () {
       // Elements with no box fail here; the quads say so below.
-    }
-    const { quads } = await this.cdp<{ quads: number[][] }>("DOM.getContentQuads", { backendNodeId: node });
-    const q = quads.find((x) => x.length === 8 && Math.abs((x[2] ?? 0) - (x[0] ?? 0)) > 0.5 && Math.abs((x[5] ?? 0) - (x[1] ?? 0)) > 0.5);
-    if (q === undefined) throw new RefError(`${ref} is not visible (hidden or empty). Scroll to it or open what contains it.`);
-    return { x: ((q[0] ?? 0) + (q[2] ?? 0) + (q[4] ?? 0) + (q[6] ?? 0)) / 4, y: ((q[1] ?? 0) + (q[3] ?? 0) + (q[5] ?? 0) + (q[7] ?? 0)) / 4 };
+      yield* Effect.ignore(self.cdp("DOM.scrollIntoViewIfNeeded", { backendNodeId: node }));
+      const { quads } = yield* self.cdp<{ quads: number[][] }>("DOM.getContentQuads", { backendNodeId: node });
+      const q = quads.find((x) => x.length === 8 && Math.abs((x[2] ?? 0) - (x[0] ?? 0)) > 0.5 && Math.abs((x[5] ?? 0) - (x[1] ?? 0)) > 0.5);
+      if (q === undefined) return yield* new RefError(`${ref} is not visible (hidden or empty). Scroll to it or open what contains it.`);
+      return { x: ((q[0] ?? 0) + (q[2] ?? 0) + (q[4] ?? 0) + (q[6] ?? 0)) / 4, y: ((q[1] ?? 0) + (q[3] ?? 0) + (q[5] ?? 0) + (q[7] ?? 0)) / 4 };
+    });
   }
 
   /** Whether the element is what a click at its centre would reach. */
-  private async reaches(node: number, x: number, y: number, ref: string): Promise<void> {
-    const hit = await this.cdp<{ backendNodeId?: number }>("DOM.getNodeForLocation", { x: Math.round(x), y: Math.round(y), includeUserAgentShadowDOM: false });
-    if (hit.backendNodeId === node) return;
-    const objects: string[] = [];
-    try {
-      if (hit.backendNodeId === undefined) throw new Error("nothing there");
-      const target = await this.cdp<{ object: RemoteObject }>("DOM.resolveNode", { backendNodeId: node });
-      const over = await this.cdp<{ object: RemoteObject }>("DOM.resolveNode", { backendNodeId: hit.backendNodeId });
-      objects.push(target.object.objectId ?? "", over.object.objectId ?? "");
-      const r = await this.cdp<Evaluated>("Runtime.callFunctionOn", {
-        objectId: target.object.objectId,
-        arguments: [{ objectId: over.object.objectId }],
-        functionDeclaration: "function (hit) { return this === hit || this.contains(hit); }",
-        returnByValue: true,
-      });
-      if (r.result.value === true) return;
-    } catch {
-      // Treated as covered below.
-    } finally {
-      for (const o of objects) if (o !== "") this.release(o);
-    }
-    throw new RefError(`${ref} is covered or has moved; something else would get the click. Call browser.snapshot.`);
+  private reaches(node: number, x: number, y: number, ref: string): Op<void> {
+    const self = this;
+    const covered = new RefError(`${ref} is covered or has moved; something else would get the click. Call browser.snapshot.`);
+    return Effect.gen(function* () {
+      const hit = yield* self.cdp<{ backendNodeId?: number }>("DOM.getNodeForLocation", { x: Math.round(x), y: Math.round(y), includeUserAgentShadowDOM: false });
+      if (hit.backendNodeId === node) return;
+      const over = hit.backendNodeId;
+      if (over === undefined) return yield* covered;
+      const objects: string[] = [];
+      const inside = Effect.gen(function* () {
+        const target = yield* self.cdp<{ object: RemoteObject }>("DOM.resolveNode", { backendNodeId: node });
+        const hitObj = yield* self.cdp<{ object: RemoteObject }>("DOM.resolveNode", { backendNodeId: over });
+        objects.push(target.object.objectId ?? "", hitObj.object.objectId ?? "");
+        const r = yield* self.cdp<Evaluated>("Runtime.callFunctionOn", {
+          objectId: target.object.objectId,
+          arguments: [{ objectId: hitObj.object.objectId }],
+          functionDeclaration: "function (hit) { return this === hit || this.contains(hit); }",
+          returnByValue: true,
+        });
+        return r.result.value === true;
+      }).pipe(
+        // A failure here counts as covered.
+        Effect.orElseSucceed(() => false),
+        Effect.ensuring(Effect.sync(() => objects.forEach((o) => o !== "" && self.release(o)))),
+      );
+      if (!(yield* inside)) return yield* covered;
+    });
   }
 
   /** After an action: lets a navigation it started finish. */
-  private async settle(before: number): Promise<string> {
-    const started = Date.now();
-    while (Date.now() - started < 350) {
-      if (this.page.epoch() !== before || this.page.loading()) {
-        await this.page.whenLoaded(8000);
-        await sleep(60);
-        return `\npage: ${this.page.title() || "(untitled)"}  ${this.page.url()}`;
+  private settle(before: number): Effect.Effect<string> {
+    const self = this;
+    return Effect.gen(function* () {
+      const started = yield* Clock.currentTimeMillis;
+      while ((yield* Clock.currentTimeMillis) - started < 350) {
+        if (self.page.epoch() !== before || self.page.loading()) {
+          yield* self.whenLoaded(8000);
+          yield* Effect.sleep(60);
+          return `\npage: ${self.page.title() || "(untitled)"}  ${self.page.url()}`;
+        }
+        yield* Effect.sleep(40);
       }
-      await sleep(40);
-    }
-    return "";
-  }
-
-  async click(ref: string, double = false): Promise<string> {
-    return this.withElement(ref, async ({ node }) => {
-      const { x, y } = await this.centre(node, ref);
-      await this.reaches(node, x, y, ref);
-      const before = this.page.epoch();
-      for (let n = 1; n <= (double ? 2 : 1); n++) {
-        await this.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: n });
-        // Released even when the press navigated: the button must not stay down.
-        await this.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: n });
-      }
-      return `clicked ${ref}.${await this.settle(before)}`;
+      return "";
     });
   }
 
-  async type(ref: string, text: string, append: boolean): Promise<string> {
-    return this.withElement(ref, async ({ objectId, attrs }) => {
-      if (attrs.get("type")?.toLowerCase() === "password" || SECRET_AUTOCOMPLETE.test(attrs.get("autocomplete") ?? "")) {
-        throw new PageError("Use Take control to enter passwords, payment details and codes.", "user_in_control");
-      }
-      const r = await this.cdp<Evaluated>("Runtime.callFunctionOn", {
-        objectId,
-        functionDeclaration: FILL,
-        arguments: [{ value: append }],
-        returnByValue: true,
-      });
-      if (r.exceptionDetails !== undefined) throw new RefError(`${ref} cannot take text.`);
-      if (text !== "") await this.cdp("Input.insertText", { text });
-      // Never says what was typed: it may be a secret.
-      return `typed ${[...text].length} characters into ${ref}.`;
-    });
+  click(ref: string, double = false): Promise<string> {
+    const self = this;
+    return this.run(
+      this.withElement(ref, ({ node }) =>
+        Effect.gen(function* () {
+          const { x, y } = yield* self.centre(node, ref);
+          yield* self.reaches(node, x, y, ref);
+          const before = self.page.epoch();
+          for (let n = 1; n <= (double ? 2 : 1); n++) {
+            yield* self.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: n });
+            // Released even when the press navigated: the button must not stay down.
+            yield* self.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: n });
+          }
+          return `clicked ${ref}.${yield* self.settle(before)}`;
+        }),
+      ),
+    );
   }
 
-  private async key(k: KeyEvent): Promise<void> {
+  type(ref: string, text: string, append: boolean): Promise<string> {
+    const self = this;
+    return this.run(
+      this.withElement(ref, ({ objectId, attrs }) =>
+        Effect.gen(function* () {
+          if (attrs.get("type")?.toLowerCase() === "password" || SECRET_AUTOCOMPLETE.test(attrs.get("autocomplete") ?? "")) {
+            return yield* new PageError("Use Take control to enter passwords, payment details and codes.", "user_in_control");
+          }
+          const r = yield* self.cdp<Evaluated>("Runtime.callFunctionOn", {
+            objectId,
+            functionDeclaration: FILL,
+            arguments: [{ value: append }],
+            returnByValue: true,
+          });
+          if (r.exceptionDetails !== undefined) return yield* new RefError(`${ref} cannot take text.`);
+          if (text !== "") yield* self.cdp("Input.insertText", { text });
+          // Never says what was typed: it may be a secret.
+          return `typed ${[...text].length} characters into ${ref}.`;
+        }),
+      ),
+    );
+  }
+
+  private key(k: KeyEvent): Op<void> {
     const base = { key: k.key, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk, modifiers: k.modifiers };
-    await this.cdp("Input.dispatchKeyEvent", {
+    return this.cdp("Input.dispatchKeyEvent", {
       type: k.text === undefined ? "rawKeyDown" : "keyDown",
       ...base,
       ...(k.text === undefined ? {} : { text: k.text, unmodifiedText: k.text }),
       ...(k.commands.length > 0 ? { commands: k.commands } : {}),
-    });
-    await this.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base });
+    }).pipe(Effect.andThen(this.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...base })), Effect.asVoid);
   }
 
-  async press(spec: string): Promise<string> {
-    const k = parseKey(spec);
-    if (k === null) throw new PageError(`${JSON.stringify(spec)} is not a key. Use a name like Enter, Tab, Escape, ArrowDown, or Control+A.`);
-    const before = this.page.epoch();
-    await this.key(k);
-    return `pressed ${spec}.${await this.settle(before)}`;
+  press(spec: string): Promise<string> {
+    const self = this;
+    return this.run(
+      Effect.gen(function* () {
+        const k = parseKey(spec);
+        if (k === null) return yield* new PageError(`${JSON.stringify(spec)} is not a key. Use a name like Enter, Tab, Escape, ArrowDown, or Control+A.`);
+        const before = self.page.epoch();
+        yield* self.key(k);
+        return `pressed ${spec}.${yield* self.settle(before)}`;
+      }),
+    );
   }
 
-  private async position(): Promise<string> {
-    const r = await this.cdp<Evaluated>("Runtime.evaluate", { expression: SCROLLED, returnByValue: true });
-    const v = r.result.value as { y: number; max: number } | undefined;
-    if (v === undefined) return "";
-    return v.max === 0 ? "the page does not scroll" : `scroll position ${v.y} of ${v.max} px (${Math.round((v.y / v.max) * 100)}%)`;
+  private position(): Op<string> {
+    return this.cdp<Evaluated>("Runtime.evaluate", { expression: SCROLLED, returnByValue: true }).pipe(
+      Effect.map((r) => {
+        const v = r.result.value as { y: number; max: number } | undefined;
+        if (v === undefined) return "";
+        return v.max === 0 ? "the page does not scroll" : `scroll position ${v.y} of ${v.max} px (${Math.round((v.y / v.max) * 100)}%)`;
+      }),
+    );
   }
 
-  async scroll(a: { dy?: number; to?: string; ref?: string }): Promise<string> {
-    if (a.ref !== undefined && a.ref !== "") {
-      await this.withElement(a.ref, async ({ node }) => {
-        await this.cdp("DOM.scrollIntoViewIfNeeded", { backendNodeId: node });
-      });
-    } else if (a.to === "top" || a.to === "bottom") {
-      await this.cdp("Runtime.evaluate", { expression: `scrollTo(0, ${a.to === "top" ? 0 : "document.documentElement.scrollHeight"})` });
-    } else {
-      const m = await this.cdp<{ cssVisualViewport: { clientWidth: number; clientHeight: number } }>("Page.getLayoutMetrics");
-      await this.cdp("Input.dispatchMouseEvent", {
-        type: "mouseWheel",
-        x: m.cssVisualViewport.clientWidth / 2,
-        y: m.cssVisualViewport.clientHeight / 2,
-        deltaX: 0,
-        deltaY: a.dy ?? 0,
-      });
-    }
-    await sleep(250);
-    return `scrolled. ${await this.position()}`;
+  scroll(a: { dy?: number; to?: string; ref?: string }): Promise<string> {
+    const self = this;
+    return this.run(
+      Effect.gen(function* () {
+        if (a.ref !== undefined && a.ref !== "") {
+          yield* self.withElement(a.ref, ({ node }) => self.cdp("DOM.scrollIntoViewIfNeeded", { backendNodeId: node }));
+        } else if (a.to === "top" || a.to === "bottom") {
+          yield* self.cdp("Runtime.evaluate", { expression: `scrollTo(0, ${a.to === "top" ? 0 : "document.documentElement.scrollHeight"})` });
+        } else {
+          const m = yield* self.cdp<{ cssVisualViewport: { clientWidth: number; clientHeight: number } }>("Page.getLayoutMetrics");
+          yield* self.cdp("Input.dispatchMouseEvent", {
+            type: "mouseWheel",
+            x: m.cssVisualViewport.clientWidth / 2,
+            y: m.cssVisualViewport.clientHeight / 2,
+            deltaX: 0,
+            deltaY: a.dy ?? 0,
+          });
+        }
+        yield* Effect.sleep(250);
+        return `scrolled. ${yield* self.position()}`;
+      }),
+    );
   }
 
-  async select(ref: string, value: string): Promise<string> {
-    return this.withElement(ref, async ({ objectId }) => {
-      const r = await this.cdp<Evaluated>("Runtime.callFunctionOn", {
-        objectId,
-        functionDeclaration: PICK,
-        arguments: [{ value }],
-        returnByValue: true,
-      });
-      const v = r.result.value as { err?: string; options?: string[]; picked?: string } | undefined;
-      if (v?.err !== undefined) {
-        throw new PageError(`${ref}: ${v.err}${v.options === undefined ? "" : `. Options: ${v.options.map((o) => JSON.stringify(o)).join(", ")}`}`);
-      }
-      return `chose ${JSON.stringify(v?.picked ?? value)} in ${ref}.`;
-    });
+  select(ref: string, value: string): Promise<string> {
+    const self = this;
+    return this.run(
+      this.withElement(ref, ({ objectId }) =>
+        Effect.gen(function* () {
+          const r = yield* self.cdp<Evaluated>("Runtime.callFunctionOn", {
+            objectId,
+            functionDeclaration: PICK,
+            arguments: [{ value }],
+            returnByValue: true,
+          });
+          const v = r.result.value as { err?: string; options?: string[]; picked?: string } | undefined;
+          if (v?.err !== undefined) {
+            return yield* new PageError(`${ref}: ${v.err}${v.options === undefined ? "" : `. Options: ${v.options.map((o) => JSON.stringify(o)).join(", ")}`}`);
+          }
+          return `chose ${JSON.stringify(v?.picked ?? value)} in ${ref}.`;
+        }),
+      ),
+    );
   }
 
-  async wait(a: { text?: string; load?: boolean; ms?: number; timeout?: number }): Promise<string> {
+  wait(a: { text?: string; load?: boolean; ms?: number; timeout?: number }): Promise<string> {
+    return this.run(this.waitFor(a));
+  }
+
+  /** wait as an Effect: the text is polled every WAIT_LIMITS.pollMs until it shows or the limit runs out. */
+  waitFor(a: { text?: string; load?: boolean; ms?: number; timeout?: number }): Op<string> {
+    const self = this;
     const limit = (a.timeout ?? WAIT_LIMITS.defaultSec) * 1000;
-    if (a.text !== undefined && a.text !== "") {
-      const want = JSON.stringify(a.text);
-      const started = Date.now();
-      for (;;) {
-        const r = await this.cdp<Evaluated>("Runtime.evaluate", {
-          expression: `!!document.body && document.body.innerText.includes(${want})`,
-          returnByValue: true,
-        });
-        if (r.result.value === true) return `the page shows ${want} (after ${Date.now() - started} ms).`;
-        if (Date.now() - started >= limit) throw new PageError(`waited ${limit / 1000}s: the page does not show ${want}.`);
-        await sleep(WAIT_LIMITS.pollMs);
+    return Effect.gen(function* () {
+      if (a.text !== undefined && a.text !== "") {
+        const want = JSON.stringify(a.text);
+        const started = yield* Clock.currentTimeMillis;
+        const shows = self
+          .cdp<Evaluated>("Runtime.evaluate", { expression: `!!document.body && document.body.innerText.includes(${want})`, returnByValue: true })
+          .pipe(Effect.map((r) => r.result.value === true));
+        yield* shows.pipe(
+          Effect.repeat({ schedule: Schedule.spaced(WAIT_LIMITS.pollMs), until: (shown) => shown }),
+          Effect.timeoutFail({ duration: limit, onTimeout: () => new PageError(`waited ${limit / 1000}s: the page does not show ${want}.`) }),
+        );
+        return `the page shows ${want} (after ${(yield* Clock.currentTimeMillis) - started} ms).`;
       }
-    }
-    if (a.load === true) {
-      const ok = await this.page.whenLoaded(limit);
-      if (!ok) throw new PageError(`waited ${limit / 1000}s: the page is still loading.`);
-      return `the page finished loading: ${this.page.title() || "(untitled)"}  ${this.page.url()}`;
-    }
-    const ms = Math.max(0, a.ms ?? 0);
-    await sleep(ms);
-    return `waited ${ms} ms.`;
+      if (a.load === true) {
+        const ok = yield* self.whenLoaded(limit);
+        if (!ok) return yield* new PageError(`waited ${limit / 1000}s: the page is still loading.`);
+        return `the page finished loading: ${self.page.title() || "(untitled)"}  ${self.page.url()}`;
+      }
+      const ms = Math.max(0, a.ms ?? 0);
+      yield* Effect.sleep(ms);
+      return `waited ${ms} ms.`;
+    });
   }
 
-  async screenshot(ref?: string): Promise<Shot> {
-    const m = await this.cdp<{ cssVisualViewport: { clientWidth: number; clientHeight: number } }>("Page.getLayoutMetrics");
-    let clip = { x: 0, y: 0, width: Math.max(1, m.cssVisualViewport.clientWidth), height: Math.max(1, m.cssVisualViewport.clientHeight) };
-    if (ref !== undefined && ref !== "") {
-      clip = await this.withElement(ref, async ({ node }) => {
-        await this.centre(node, ref);
-        const { model } = await this.cdp<{ model: { border: number[] } }>("DOM.getBoxModel", { backendNodeId: node });
-        const b = model.border;
-        const xs = [b[0] ?? 0, b[2] ?? 0, b[4] ?? 0, b[6] ?? 0];
-        const ys = [b[1] ?? 0, b[3] ?? 0, b[5] ?? 0, b[7] ?? 0];
-        return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(1, Math.max(...xs) - Math.min(...xs)), height: Math.max(1, Math.max(...ys) - Math.min(...ys)) };
-      });
-    }
-    const scale = Math.min(1, WAIT_LIMITS.maxShot / Math.max(clip.width, clip.height));
-    const r = await this.cdp<{ data: string }>("Page.captureScreenshot", { format: "jpeg", quality: 60, clip: { ...clip, scale } });
-    return { data: Buffer.from(r.data, "base64"), mime: "image/jpeg", width: Math.round(clip.width * scale), height: Math.round(clip.height * scale) };
+  screenshot(ref?: string): Promise<Shot> {
+    const self = this;
+    return this.run(
+      Effect.gen(function* () {
+        const m = yield* self.cdp<{ cssVisualViewport: { clientWidth: number; clientHeight: number } }>("Page.getLayoutMetrics");
+        let clip = { x: 0, y: 0, width: Math.max(1, m.cssVisualViewport.clientWidth), height: Math.max(1, m.cssVisualViewport.clientHeight) };
+        if (ref !== undefined && ref !== "") {
+          clip = yield* self.withElement(ref, ({ node }) =>
+            Effect.gen(function* () {
+              yield* self.centre(node, ref);
+              const { model } = yield* self.cdp<{ model: { border: number[] } }>("DOM.getBoxModel", { backendNodeId: node });
+              const b = model.border;
+              const xs = [b[0] ?? 0, b[2] ?? 0, b[4] ?? 0, b[6] ?? 0];
+              const ys = [b[1] ?? 0, b[3] ?? 0, b[5] ?? 0, b[7] ?? 0];
+              return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(1, Math.max(...xs) - Math.min(...xs)), height: Math.max(1, Math.max(...ys) - Math.min(...ys)) };
+            }),
+          );
+        }
+        const scale = Math.min(1, WAIT_LIMITS.maxShot / Math.max(clip.width, clip.height));
+        const r = yield* self.cdp<{ data: string }>("Page.captureScreenshot", { format: "jpeg", quality: 60, clip: { ...clip, scale } });
+        return { data: Buffer.from(r.data, "base64"), mime: "image/jpeg", width: Math.round(clip.width * scale), height: Math.round(clip.height * scale) };
+      }),
+    );
   }
 
   /** The node behind a ref of the latest snapshot, for the browser's own checks. */
