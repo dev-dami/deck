@@ -81,6 +81,8 @@ export function Popover({
           ref={pop}
           role={role}
           aria-label={label}
+          data-side={side}
+          data-align={align}
           className={cn(
             "material absolute z-50 min-w-48 animate-enter overflow-hidden rounded-[14px] p-1.5 text-foreground",
             side === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5",

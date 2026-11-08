@@ -44,6 +44,7 @@ export function Button({ className, variant, size, type, ...props }: ButtonProps
     <button
       type={type ?? "button"}
       data-slot="button"
+      data-icon={typeof size === "string" && size.startsWith("icon") ? "" : undefined}
       className={cn(buttonVariants({ variant, size }), className)}
       {...props}
     />

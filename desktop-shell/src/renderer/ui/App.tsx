@@ -16,6 +16,7 @@ import { Backdrop } from "./Backdrop";
 import { ConnectScreen } from "./ConnectScreen";
 import { Shell } from "./Shell";
 import type { ProjectEntry } from "./Sidebar";
+import { useGlide } from "./kit/motion";
 import { closeTerminals } from "./Terminal";
 import { Tour } from "./Tour";
 import { base, type StartFailure, Welcome } from "./Welcome";
@@ -239,6 +240,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   useMotion(prefs.motion);
   useLiquidGlass(prefs.material);
   useLiquidPills();
+  useGlide();
 
   // The project on screen sees its open room; the others gather news.
   const shownKey = connecting || welcome ? null : currentKey;
