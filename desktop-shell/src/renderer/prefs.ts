@@ -114,7 +114,9 @@ export const defaultPrefs: Prefs = {
   grouping: "projects",
   clock: "12h",
   sendKey: "enter",
-  confirmYolo: true,
+  // Yolo is where a thread starts (pkg/rpc StartMode), so switching back to
+  // it does not ask unless the person turns this on.
+  confirmYolo: false,
   foldWork: true,
   autoApprovePlans: false,
   notifications: true,

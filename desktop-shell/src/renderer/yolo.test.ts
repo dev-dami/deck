@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { defaultPrefs, merge } from "./prefs";
 import { yoloMove } from "./yolo";
 
 test("enters yolo from any other mode when it is allowed", () => {
@@ -19,4 +20,12 @@ test("leaves yolo for the mode the thread was in, else Ask", () => {
 
 test("leaving yolo is always possible, even if the grant was withdrawn", () => {
   expect(yoloMove("yolo", "ask", false)).toEqual({ to: "ask" });
+});
+
+test("Yolo does not ask first unless the person turns that on", () => {
+  // New threads start in Yolo, so switching back to it is the normal state.
+  expect(defaultPrefs.confirmYolo).toBe(false);
+  expect(merge({}).confirmYolo).toBe(false);
+  // The setting is kept: asking first stays possible.
+  expect(merge({ confirmYolo: true }).confirmYolo).toBe(true);
 });
