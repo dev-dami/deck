@@ -219,6 +219,9 @@ describe("aspects and presets", () => {
     expect(merge({}).pages).toBe("full");
     expect(merge({ pages: "side" }).pages).toBe("side");
     expect(merge({ pages: "window" }).pages).toBe("full");
+    // The newer prefs load side by side, each checked on its own.
+    expect(merge({ sidebarSide: "top", pages: "side", tour: "new" })).toMatchObject({ sidebarSide: "top", pages: "side", tour: "new" });
+    expect(merge({ sidebarSide: "top", pages: 1, tour: "later" })).toMatchObject({ sidebarSide: "top", pages: "full", tour: "done" });
   });
 
   test("each process prints from its own set of pictures", () => {

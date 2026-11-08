@@ -17,6 +17,7 @@ import { ConnectScreen } from "./ConnectScreen";
 import { Shell } from "./Shell";
 import type { ProjectEntry } from "./Sidebar";
 import { closeTerminals } from "./Terminal";
+import { Tour } from "./Tour";
 import { base, type StartFailure, Welcome } from "./Welcome";
 
 // A paired Deck as the window names it: where it runs, never its address.
@@ -469,6 +470,7 @@ export function App({ bridge }: { bridge: DeckBridge }) {
           {...back}
         />
       )}
+      <Tour screen={current !== null && !connecting && !welcome ? "shell" : servers !== null && welcome ? "welcome" : null} bridge={bridge} />
     </div>
   );
 }

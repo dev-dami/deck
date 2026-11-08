@@ -9,6 +9,7 @@ import { NOTIFY_KINDS } from "../notifications";
 import { LEVELS, levelInfo } from "../orchestration";
 import { type Prefs, setPrefs, usePrefs } from "../prefs";
 import { ACCENTS, DIFF_THEMES } from "../themes";
+import { startTour } from "../tour";
 import { AppIconPicker } from "./AppIconPicker";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Kbd } from "./kit/badge";
@@ -189,6 +190,17 @@ function General({ p }: { p: Prefs }) {
           title="Projected run-out"
           description="Warn when, at the last hours' burn rate, an agent will run out within two hours and before its window resets."
           control={<Switch label="Projected run-out" checked={p.limitProjection} onChange={set("limitProjection")} />}
+        />
+      </Section>
+      <Section title="Getting started">
+        <Row
+          title="The tour"
+          description="A minute's walk through threads, the composer, the modes and the views, a step at a time."
+          control={
+            <Button size="sm" variant="outline" onClick={() => startTour("shell")}>
+              Show the tour
+            </Button>
+          }
         />
       </Section>
     </>

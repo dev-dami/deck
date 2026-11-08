@@ -42,6 +42,8 @@ export type Density = "comfortable" | "compact";
 // room's place, or at the side of the conversation as a pane of the room's
 // layout. Either can still go the other way from the page itself.
 export type PagesPref = "full" | "side";
+// The starter tour (tour.ts): "new" until it is finished or skipped.
+export type TourPref = "new" | "done";
 
 export const SIDEBAR_WIDTH = { min: 208, max: 420, default: 256 } as const;
 
@@ -100,6 +102,8 @@ export interface Prefs extends Aspects {
   panelDock: PanelDock;
   density: Density;
   pages: PagesPref;
+  // Whether the starter tour still starts by itself on a first run.
+  tour: TourPref;
 }
 
 export const defaultPrefs: Prefs = {
@@ -135,6 +139,7 @@ export const defaultPrefs: Prefs = {
   panelDock: "opposite",
   density: "comfortable",
   pages: "full",
+  tour: "new",
 };
 
 const KEY = "deck.desktop.prefs";
@@ -204,6 +209,9 @@ export function merge(v: Record<string, unknown>): Prefs {
     panelDock: pick("panelDock", ["opposite", "beside", "float"] as const, defaultPrefs.panelDock),
     density: pick("density", ["comfortable", "compact"] as const, defaultPrefs.density),
     pages: pick("pages", ["full", "side"] as const, defaultPrefs.pages),
+    // Prefs saved before the tour existed belong to someone who knows the
+    // window already: the tour waits for the palette or Settings.
+    tour: pick("tour", ["new", "done"] as const, "done"),
   };
 }
 

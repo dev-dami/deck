@@ -241,7 +241,7 @@ export function FirstStrip({ onBack, className }: { onBack?: (() => void) | unde
 }
 
 // One of the first screens' actions as a card of glass (design-glass.md,
-// "The first screens"): an icon, what it does, a line on when, and on the
+// section 12): an icon, what it does, a line on when, and on the
 // right its keys over the arrow. The primary one wears the accent on its
 // rim and in its icon.
 export function ActionCard({
@@ -297,7 +297,7 @@ export function ActionCard({
   );
 }
 
-// The first screens' frame (design-glass.md, "The first screens"): the
+// The first screens' frame (design-glass.md, section 12): the
 // theme's picture full bleed behind everything, a scrim that pools the
 // canvas behind the column so the type reads and leaves the picture whole
 // at the edges, the strip along the top, and one centred column that

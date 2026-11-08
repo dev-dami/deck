@@ -408,6 +408,9 @@ export interface AppInfo {
   electron: string;
   chromium: string;
   platform: string;
+  // Launched by a test driver (a remote debugging port): the starter tour
+  // then never starts by itself.
+  automated: boolean;
 }
 
 // The item picked in a thread row's native menu, or null.

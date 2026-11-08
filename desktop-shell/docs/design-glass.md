@@ -137,7 +137,7 @@ its parent's radius minus the padding between them.
   `rounded-(--sheet-radius) bg-surface-1` with a rim.
 - **Welcome and Connect**: no sheet. Glass cards float straight on the
   picture, which is the first impression and should feel like it (section
-  10, "The first screens").
+  12, "The first screens").
 
 **Moving things.** Settings > Appearance > Layout (`ui/LayoutPicker.tsx`)
 draws each choice as the window it makes. The sidebar sits on the left or
@@ -396,7 +396,7 @@ colours.
   backdrop's picture themselves (`ui/ArtFigure.tsx`), full bleed behind
   their glass, with its credit on a chip in the corner. Liquid Glass hangs
   its true duotone in either mode. The window's backdrop hides there. The
-  type sits on a scrim, not on the bare picture (section 10, "The first
+  type sits on a scrim, not on the bare picture (section 12, "The first
   screens").
 - **Never in the room.** The room's sheet, the chat, the composer and the
   diff stay opaque and plain. The pages' small plates (empty Inbox, Team,
@@ -468,32 +468,6 @@ A paired Deck keeps no usage record here, and the Usage card says so. The
 question over the composer keeps its words, with the Deck mark before it
 as a wordmark.
 
-**The first screens.** The Welcome ("One deck for all your agents") and
-the connect screen ("What should we work on?") are the home's family, in
-every look (`FirstFrame` in `ui/Welcome.tsx`):
-
-- The theme's picture fills the window, the same on both screens, so Pair
-  on the Welcome changes the cards and not the room.
-- A scrim (`.first-scrim`) pools the canvas behind the column, about 84%
-  at its middle and 22% at the edges, so the picture shows whole round
-  the column. Under the column the dots soften through a 5px blur that
-  fades out by a mask, so a hard dither never fights the type. Bands of
-  the canvas sit under the top strip and the credit.
-- One centred column, 44rem at most: the Deck mark, the question in two
-  tones (its quiet half in the muted colour, with a soft halo of the
-  canvas), a line on what Deck is, and on the Welcome a sample message as
-  a capsule of glass.
-- Under it, two `ActionCard`s side by side (one column below 640px): Open
-  a folder or Add project, and Pair with a Deck. The primary one wears
-  the accent on its rim and in its icon.
-- Then cards of `liquid` glass: the agents Deck found, the pairing form,
-  the recent folders, and any notice or start error.
-- Liquid Glass frosts these cards more here (16px, a 55% tint), as it
-  does the sidebar. The picture's credit is a chip of the canvas in the
-  bottom right.
-- The column scrolls when the window is short. Under 760px tall, the mark
-  and the gaps shrink.
-
 **Light.** The paper is the dots' peak, so bare paper prints clean and the
 limb is a pastel arc of dots on it.
 
@@ -549,6 +523,49 @@ lip and a shade in the lower (`--glass-inset`).
 - In Liquid Glass, menus, popovers, dialogs and toasts bloom open from a
   drop (`liquid-bloom`): squashed, a small overshoot, then still.
 
+## 12. The mode dial and the first screens
+
+**The mode dial** (`ui/ModePicker.tsx`, "The mode dial" in styles.css).
+The session's mode (Plan, Ask, Yolo) is a machined knob with no words on
+it; the names are only for assistive tech and the tooltip.
+
+- In the composer it is a small knob: a mark for each mode round its top,
+  the chosen one lit in the mode's hue (`--dial-hue`), and a notch turned
+  to it (`--dial-angle`). The arrow keys or the wheel turn it a step.
+- A click opens the dial itself: a larger knob in a machined seat, a fine
+  scale, and the modes' icons as stops to click. Drag the knob and it
+  snaps to the nearest stop. Yolo asks first.
+- The cap is a knurled rim round a brushed face, lit from above: graphite
+  in the dark, satin aluminium in the light. The rim and the notch turn on
+  a spring while the light stays put; reduced motion holds them still.
+  `--k` is the cap's size, so one set of rules draws both knobs.
+
+**The first screens.** The Welcome ("One deck for all your agents") and
+the connect screen ("What should we work on?") are the home's family, in
+every look (`FirstFrame` in `ui/Welcome.tsx`):
+
+- The theme's picture fills the window, the same on both screens, so Pair
+  on the Welcome changes the cards and not the room.
+- A scrim (`.first-scrim`) pools the canvas behind the column, about 84%
+  at its middle and 22% at the edges, so the picture shows whole round
+  the column. Under the column the dots soften through a 5px blur that
+  fades out by a mask, so a hard dither never fights the type. Bands of
+  the canvas sit under the top strip and the credit.
+- One centred column, 44rem at most: the Deck mark, the question in two
+  tones (its quiet half in the muted colour, with a soft halo of the
+  canvas), a line on what Deck is, and on the Welcome a sample message as
+  a capsule of glass.
+- Under it, two `ActionCard`s side by side (one column below 640px): Open
+  a folder or Add project, and Pair with a Deck. The primary one wears
+  the accent on its rim and in its icon.
+- Then cards of `liquid` glass: the agents Deck found, the pairing form,
+  the recent folders, and any notice or start error.
+- Liquid Glass frosts these cards more here (16px, a 55% tint), as it
+  does the sidebar. The picture's credit is a chip of the canvas in the
+  bottom right.
+- The column scrolls when the window is short. Under 760px tall, the mark
+  and the gaps shrink.
+
 ## 13. The sidebar, the top bar and pages at the side
 
 After T3 Code's Obsidian theme, the sidebar is calm: the threads and little
@@ -589,3 +606,47 @@ leaves its name to its tab, Settings picks its section from a strip of its
 own, and an empty page stands its plate over its words. Full size stays
 the default from the sidebar; Settings > Appearance > Layout > Pages makes
 the sidebar's buttons open them at the side instead (while a room shows).
+
+## 14. The starter tour
+
+A skippable walk through the window for a new person (`ui/Tour.tsx`, the
+steps and their logic in `tour.ts`), as coach marks in the window's own
+material.
+
+**Steps.** The Welcome has four: what Deck is, Open a folder, Pair with a
+Deck, and the agent CLIs. A project's window has nine: a look around, the
+threads (`nav[aria-label="Threads"]`, the sidebar or the top bar), the
+composer and its `$agent`, `@` and `#` mentions, the mode dial (Plan / Ask
+/ Yolo), the home cards (`section.home`), Conversation / Graph
+(`.room-views`), the diff and panels (`.panel-toggles`), the palette
+(⌘/Ctrl+K) and Settings › Appearance (the Settings button in the sidebar's
+foot, or in the top bar's tools). Each finds its target by selector when
+it shows (a selector can name it in each layout, and the first match on
+screen wins); a step whose target is not on screen is passed over (the
+home cards in an open thread, the views on a new one). The mode dial lives
+only in a thread, so its step shows in the middle without it.
+
+**Look.** A dim veil with a hole cut round the target (one element whose
+spread shadow is the veil), the hole's edge a ring of the accent that
+breathes, and a card of `liquid-thick` glass on `--radius`: the count,
+the title, a line or two, the dots (the current one a capsule of the
+accent), Skip, Back and Next. The card sits below the target, else above,
+else beside it, else in the middle, never past the window's edges, and
+follows the target as the window resizes. A step with no target shrinks
+the hole to a point under the card. Hole and card glide between steps on
+`--ease`; reduced motion holds them still.
+
+**Input.** The veil takes no pointer, only the card does: the window stays
+usable, and Open a folder mid-tour opens the folder (the tour then goes on
+with the project's steps). ← and → step, Esc leaves, Next holds the focus;
+while the person types in a field the keys are theirs.
+
+**When.** The pref `tour` is `"new"` in a new window and `"done"` once the
+tour is finished or skipped (prefs saved before it existed load as done).
+It starts by itself only on a real first run: never when
+`navigator.webdriver` is set or the app was launched with a remote
+debugging port (`AppInfo.automated`), so the end-to-end tests click through
+an untouched window. The Welcome's part ends in Got it and hands over to the
+project's when a project opens. The palette's Show the tour and Settings ›
+General › Getting started start it again; starting it closes the page in
+the room's place.

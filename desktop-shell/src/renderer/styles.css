@@ -3239,7 +3239,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 }
 
 /* ---- The first screens (ui/Welcome.tsx FirstFrame, design-glass.md
-   "The first screens") ---------------------------------------------------
+   section 12) ------------------------------------------------------------
    The picture full bleed. The scrim pools the canvas behind the column,
    deepest where the type is, and lets go towards the edges so the picture
    shows whole there; a band at the top under the strip and one at the
@@ -3617,4 +3617,105 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 }
 .history-graph[data-lod="far"] .hist-card {
   background-color: color-mix(in srgb, var(--hue, var(--text)) 30%, var(--surface-1));
+}
+
+/* ---- The starter tour (ui/Tour.tsx, tour.ts, design-glass.md section 14) -
+   Coach marks: a dim veil with a hole cut round the step's target (one
+   element whose huge spread shadow is the veil), a ring of the accent on
+   the hole's edge, and a card of thick glass beside it. Nothing but the
+   card takes a pointer: the window under the veil stays usable. A step
+   with no target shrinks the hole to a point, so the veil covers all. */
+.tour {
+  --tour-veil: rgb(4 4 10 / 0.56);
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+:root[data-mode="light"] .tour {
+  --tour-veil: rgb(20 18 32 / 0.32);
+}
+.tour-spot {
+  position: fixed;
+  box-shadow: 0 0 0 200vmax var(--tour-veil);
+  transition:
+    left 420ms var(--ease),
+    top 420ms var(--ease),
+    width 420ms var(--ease),
+    height 420ms var(--ease),
+    border-radius 420ms var(--ease);
+  animation: tour-veil 260ms var(--ease) both;
+}
+.tour-spot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--primary) 80%, transparent),
+    0 0 24px 2px color-mix(in srgb, var(--primary) 32%, transparent);
+  animation: tour-breathe 2.4s ease-in-out infinite;
+}
+.tour-spot[data-empty]::after {
+  display: none;
+}
+.tour-card {
+  position: fixed;
+  width: min(21rem, calc(100vw - 1.5rem));
+  pointer-events: auto;
+  transition:
+    left 420ms var(--ease),
+    top 420ms var(--ease);
+  animation: tour-card 300ms var(--ease) both;
+}
+.tour-text {
+  animation: tour-step 260ms var(--ease) both;
+}
+.tour-key {
+  padding: 0 0.3em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+/* The dots: one per step that shows, the current one a capsule of the
+   accent. */
+.tour-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  transition:
+    width 260ms var(--ease),
+    background-color 260ms var(--ease);
+}
+.tour-dot[aria-current="step"] {
+  width: 16px;
+  background: var(--primary);
+}
+@keyframes tour-veil {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes tour-card {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+    scale: 0.98;
+  }
+}
+@keyframes tour-step {
+  from {
+    opacity: 0;
+    translate: 0 3px;
+  }
+}
+@keyframes tour-breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+:root[data-motion="reduced"] :is(.tour-spot, .tour-card, .tour-text, .tour-dot),
+:root[data-motion="reduced"] .tour-spot::after {
+  transition: none;
+  animation: none;
 }

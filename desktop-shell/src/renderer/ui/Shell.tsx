@@ -11,6 +11,7 @@ import { gateTeam } from "../teamGate";
 import { panelSlice, shallowEqual, shellSlice, useAppSlice } from "../select";
 import { isSide } from "../sideChat";
 import { type Page, PAGES, PANELS, type Panel, SETTINGS_SECTIONS, type SettingsSection, type UiAction } from "../ui";
+import { startTour, useTour } from "../tour";
 import { LayoutMenu } from "../layout/LayoutMenu";
 import { CONVERSATION, isTerminal, pageId, pageOf, type PaneId, terminalNumber } from "../layout/tree";
 import { useRoomLayout } from "../layout/useRoomLayout";
@@ -303,6 +304,7 @@ export function Shell(props: ShellProps) {
       addProject,
       switchDeck: onDisconnect,
       welcome: onWelcome,
+      tour: () => startTour("shell"),
       toggleYolo: r.send.toggleYolo,
       ports,
       preview,
@@ -311,6 +313,13 @@ export function Shell(props: ShellProps) {
   );
   const limitCommands = useLimitCommands(api, toast, info);
   const paletteRooms = usePaletteRooms(c, projectKey, project, others);
+  // The tour shows the room: starting it (from Settings, say) closes the
+  // page in the room's place. A page the person opens during the tour stays.
+  const tourOn = useTour().open;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only as the tour starts
+  useEffect(() => {
+    if (tourOn && away) dispatch({ type: "open", id: ui.openId });
+  }, [tourOn]);
   // The Team page shows only while the team is on; turning it off closes it.
   useEffect(() => {
     if (ui.team && !prefs.team) dispatch({ type: "team", open: false });
