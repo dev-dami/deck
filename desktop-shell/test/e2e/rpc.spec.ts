@@ -922,8 +922,8 @@ test("lane strip: the people in the room, a lane filter and an agent's popover",
   await expect(claude).toHaveAttribute("data-status", "working");
   await expect(claude.locator(".lane-ring")).toBeVisible();
   await expect(lanes.locator('[data-lane="agent:codex-sub"] .lane-leases')).toHaveText("1");
-  // A spawned agent's lane says who spawned it.
-  await expect(lanes.locator('[data-lane="agent:codex-sub"] .lane-parent')).toHaveText("by @claude-1");
+  // A spawned agent's lane says who spawned it, by the name people say.
+  await expect(lanes.locator('[data-lane="agent:codex-sub"] .lane-parent')).toHaveText("by @Claude");
   await expect(lanes.locator('[data-lane="agent:codex-1"] .lane-parent')).toHaveCount(0);
   await expect(page.locator(".room-index")).toContainText("ain");
 
@@ -933,8 +933,8 @@ test("lane strip: the people in the room, a lane filter and an agent's popover",
   await expect(page.locator('[data-agent="claude-1"].msg')).toHaveCount(0);
   await expect(page.locator(".msg-user")).toHaveCount(0);
   const pop = page.getByRole("menu", { name: "codex-1" });
-  await expect(pop.getByRole("menuitem", { name: "Stop codex-1" })).toBeDisabled();
-  await pop.getByRole("menuitem", { name: "Steer codex-1" }).click();
+  await expect(pop.getByRole("menuitem", { name: "Stop Codex" })).toBeDisabled();
+  await pop.getByRole("menuitem", { name: "Steer Codex" }).click();
   await expect(composer(page)).toHaveValue("$codex-1 ");
   await expect(composer(page)).toBeFocused();
 
@@ -958,7 +958,7 @@ test("an agent told to spin up agents spawns them: lanes under it, its brief as 
   const lanes = page.getByRole("toolbar", { name: "Lanes" });
   for (const name of ["codex-2", "codex-3"]) {
     const lane = lanes.locator(`[data-lane="agent:${name}"]`);
-    await expect(lane.locator(".lane-parent")).toHaveText("by @claude-1", { timeout: 15_000 });
+    await expect(lane.locator(".lane-parent")).toHaveText("by @Claude", { timeout: 15_000 });
     await expect(page.locator(`[data-agent="${name}"].msg`).last()).toContainText("write the limiter tests");
   }
   // The brief shows as claude's hand-off card to each.
@@ -971,7 +971,7 @@ test("an agent told to spin up agents spawns them: lanes under it, its brief as 
   // The spawned lane's popover links to its spawner's lane.
   await lanes.locator('[data-lane="agent:codex-2"]').click();
   const pop = page.getByRole("menu", { name: "codex-2" });
-  await pop.getByRole("menuitem", { name: "Spawned by @claude-1" }).click();
+  await pop.getByRole("menuitem", { name: "Spawned by @Claude" }).click();
   await expect(lanes.locator('[data-lane="agent:claude-1"]')).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator('[data-agent="codex-2"].msg')).toHaveCount(0);
   await expect(page.locator('[data-agent="claude-1"].msg .handoff[aria-label="claude-1 to codex-3"]')).toBeVisible();

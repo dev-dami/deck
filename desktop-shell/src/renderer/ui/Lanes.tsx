@@ -1,4 +1,5 @@
 import type { Theme } from "@web/protocol";
+import { agentName, atName } from "../agentName";
 import { kindMark } from "@web/theme";
 import { CircleAlert, CornerDownRight, GitBranch, Lock, Square } from "./icons";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
@@ -51,7 +52,7 @@ const MORE = 36;
 function FoldedLane({ lane, on, onFilter }: { lane: Lane; on: boolean; onFilter: () => void }) {
   return (
     <MenuItem className={cn(on && "on bg-selected")} onClick={onFilter}>
-      <span className="min-w-0 flex-1 truncate font-mono text-2xs">{lane.sub !== null ? `↳ ${subName(lane.name)}` : lane.name}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-2xs">{lane.sub !== null ? `↳ ${subName(lane.name)}` : agentName(lane.name)}</span>
       <span className="shrink-0 text-2xs text-faint">
         {lane.kind === "mate" ? lane.role : lane.sub !== null ? (SUB_WORD[lane.sub.status] ?? "") : lane.kind === "agent" ? WORD[lane.status] : ""}
       </span>
@@ -146,13 +147,13 @@ function SubChip({
           }}
         >
           <CornerDownRight className="rotate-180" />
-          <span className="truncate">Started by @{lane.parent}</span>
+          <span className="truncate">Started by {atName(lane.parent)}</span>
         </MenuItem>
       </div>
       <div className="flex flex-col gap-1 px-2 pb-1.5 text-xs">
         {sub.description !== "" && <p className="sub-task text-foreground">{sub.description}</p>}
         <p className="text-2xs text-muted-foreground tabular-nums">
-          {sub.actions} action{sub.actions === 1 ? "" : "s"} · @{lane.parent}'s own subagent: it answers to @{lane.parent} alone, so steer or stop @{lane.parent}.
+          {sub.actions} action{sub.actions === 1 ? "" : "s"} · {atName(lane.parent)}'s own subagent: it answers to {atName(lane.parent)} alone, so steer or stop {atName(lane.parent)}.
         </p>
         {sub.error !== "" && <p className="sub-error text-2xs text-destructive-foreground">{sub.error}</p>}
       </div>
@@ -165,7 +166,7 @@ function SubChip({
           onStopParent();
         }}
       >
-        <Square /> <span className="truncate">Stop @{lane.parent} and its subagents</span>
+        <Square /> <span className="truncate">Stop {atName(lane.parent)} and its subagents</span>
       </MenuItem>
     </Popover>
   );
@@ -240,10 +241,10 @@ function AgentChip({
             {kindMark(theme, lane.agentKind) || "●"}
           </span>
           <span className={cn("lane-name truncate font-mono text-2xs", running ? "text-foreground" : lane.status === "exited" ? "text-faint" : "text-foreground/80")}>
-            {lane.name}
+            {agentName(lane.name)}
           </span>
           <AgentRole role={lane.role} className="max-w-32 text-2xs" />
-          {lane.parent !== "" && <span className="lane-parent max-w-24 shrink-0 truncate text-3xs text-faint">by @{lane.parent}</span>}
+          {lane.parent !== "" && <span className="lane-parent max-w-24 shrink-0 truncate text-3xs text-faint">by {atName(lane.parent)}</span>}
           {/* The branch of its own worktree: it works apart from the shared tree. */}
           {lane.branch !== "" && (
             <span className="lane-branch flex max-w-28 shrink-0 items-center gap-0.5 rounded-full bg-hover px-1.5 font-mono text-3xs text-muted-foreground" title={`Works on its own worktree, branch ${lane.branch}`}>
@@ -277,7 +278,7 @@ function AgentChip({
     >
       <div className="flex items-center gap-1">
         <MenuLabel className="min-w-0 flex-1 truncate">
-          {lane.name} · {lane.model || "default model"}
+          {agentName(lane.name)} · {lane.model || "default model"}
           {lane.effort !== "" ? ` · ${lane.effort}` : ""}
         </MenuLabel>
         {lane.parent !== "" && (
@@ -290,7 +291,7 @@ function AgentChip({
             }}
           >
             <CornerDownRight className="rotate-180" />
-            <span className="truncate">Spawned by @{lane.parent}</span>
+            <span className="truncate">Spawned by {atName(lane.parent)}</span>
           </MenuItem>
         )}
       </div>
@@ -330,7 +331,7 @@ function AgentChip({
             onSteer();
           }}
         >
-          <CornerDownRight /> <span className="truncate">Steer {lane.name}</span>
+          <CornerDownRight /> <span className="truncate">Steer {agentName(lane.name)}</span>
         </MenuItem>
         <MenuItem
           className="min-w-0 text-destructive-foreground"
@@ -340,7 +341,7 @@ function AgentChip({
             onStop();
           }}
         >
-          <Square /> <span className="truncate">Stop {lane.name}</span>
+          <Square /> <span className="truncate">Stop {agentName(lane.name)}</span>
         </MenuItem>
       </div>
     </Popover>
@@ -451,7 +452,7 @@ export function Lanes({
                 ◇
               </span>
             )}
-            <span className="lane-name truncate font-mono text-2xs text-foreground/80">{l.name}</span>
+            <span className="lane-name truncate font-mono text-2xs text-foreground/80">{agentName(l.name)}</span>
             {l.kind === "mate" && <span className="lane-role text-2xs text-faint">{l.role}</span>}
           </button>
         ),

@@ -98,7 +98,7 @@ export const TRANSLUCENCIES: readonly Choice<Translucency>[] = [
 
 // An art direction: a preset of every aspect, and how its card describes
 // it.
-export type PresetId = "horizon" | "glass" | "riso" | "stitch";
+export type PresetId = "horizon" | "aurora" | "dune" | "nebula" | "glass" | "riso" | "stitch";
 export interface Direction {
   id: PresetId;
   // How the picture is printed, what the panels are made of, and the
@@ -123,6 +123,34 @@ export const DIRECTIONS: Record<PresetId, Direction> = {
     family: "var(--font-sans)",
     inks: "Red, green and blue",
     look: { palette: "horizon", material: "smoke", process: "spectrum", face: "system", texture: "none", ...KNOBS },
+  },
+  // Horizon's sisters: the same window over a picture of their own.
+  aurora: {
+    id: "aurora",
+    process: "RGB dither",
+    material: "Smoked glass",
+    face: "System",
+    family: "var(--font-sans)",
+    inks: "Green and violet light",
+    look: { palette: "aurora", material: "smoke", process: "spectrum", face: "system", texture: "none", ...KNOBS },
+  },
+  dune: {
+    id: "dune",
+    process: "RGB dither",
+    material: "Smoked glass",
+    face: "System",
+    family: "var(--font-sans)",
+    inks: "Ember and indigo",
+    look: { palette: "dune", material: "smoke", process: "spectrum", face: "system", texture: "none", ...KNOBS },
+  },
+  nebula: {
+    id: "nebula",
+    process: "RGB dither",
+    material: "Smoked glass",
+    face: "System",
+    family: "var(--font-sans)",
+    inks: "Magenta and blue",
+    look: { palette: "nebula", material: "smoke", process: "spectrum", face: "system", texture: "none", ...KNOBS },
   },
   glass: {
     id: "glass",
@@ -153,7 +181,7 @@ export const DIRECTIONS: Record<PresetId, Direction> = {
   },
 };
 
-export const PRESET_IDS: readonly PresetId[] = ["horizon", "glass", "riso", "stitch"];
+export const PRESET_IDS: readonly PresetId[] = ["horizon", "aurora", "dune", "nebula", "glass", "riso", "stitch"];
 
 export const ASPECT_KEYS: readonly (keyof Aspects)[] = ["palette", "material", "process", "face", "texture", "corners", "translucency"];
 
@@ -174,7 +202,7 @@ export function nearestPreset(a: Aspects): PresetId {
 // becomes its preset; any other theme was a colourway of Liquid Glass, and
 // stays one.
 export function lookFromPalette(palette: string): Aspects {
-  if (palette === "riso" || palette === "stitch" || palette === "horizon") return { ...DIRECTIONS[palette].look };
+  if (PRESET_IDS.includes(palette as PresetId) && palette !== "glass") return { ...DIRECTIONS[palette as PresetId].look };
   return { ...DIRECTIONS.glass.look, palette: THEMES.some((t) => t.id === palette) ? palette : "glass" };
 }
 
@@ -190,6 +218,27 @@ export const THEMES: readonly ThemeInfo[] = [
     mode: null,
     swatch: ["#0c0c0d", "#141415", "#e6e6e8", "#5b8def"],
     light: ["#f6f6f7", "#ececee", "#1b1b1d", "#2f6fdb"],
+  },
+  {
+    id: "aurora",
+    label: "Aurora",
+    mode: null,
+    swatch: ["#0d1110", "#131716", "#e4ebe8", "#3ecf8e"],
+    light: ["#f6f8f7", "#eef2f0", "#18201d", "#13955f"],
+  },
+  {
+    id: "dune",
+    label: "Dune",
+    mode: null,
+    swatch: ["#13100f", "#181413", "#efe6df", "#f59e4b"],
+    light: ["#faf6f2", "#f3ece5", "#2a201b", "#c7681c"],
+  },
+  {
+    id: "nebula",
+    label: "Nebula",
+    mode: null,
+    swatch: ["#0f0e14", "#14131a", "#e8e6f0", "#a78bfa"],
+    light: ["#f8f7fb", "#f0eef6", "#1f1c2a", "#6d4fd8"],
   },
   {
     id: "glass",

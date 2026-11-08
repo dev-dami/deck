@@ -1,4 +1,5 @@
 import type { Approval, QuestionAnswer } from "@web/protocol";
+import { agentName } from "../agentName";
 import { answersOf, isPicked, setOther } from "@web/questions";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { cardKey, NEW_CARD, pickAt, questionsOf } from "../questions";
@@ -73,7 +74,7 @@ export function QuestionCard({
       <span className="flex w-full min-w-0 items-baseline gap-2 text-xs">
         <MessageCircleQuestion aria-hidden className="size-3.5 shrink-0 self-center text-warning-foreground" weight="fill" />
         <span className="shrink-0 font-medium text-warning-foreground">Question</span>
-        <span className="min-w-0 truncate font-mono text-muted-foreground">{a.agent}</span>
+        <span className="min-w-0 truncate font-mono text-muted-foreground">{agentName(a.agent)}</span>
         {count !== undefined && count > 1 && (
           <span className="ml-auto shrink-0 text-2xs text-faint tabular-nums">
             {(index ?? 0) + 1} of {count}
@@ -177,7 +178,7 @@ export function AnsweredLine({ agent, text, onDismiss }: { agent: string; text: 
     <div className="question-answered flex min-w-0 items-center gap-2 rounded-2xl px-3.5 py-2 text-xs" data-answered="">
       <Check aria-hidden className="size-3.5 shrink-0 text-success-foreground" />
       <span className="min-w-0 truncate text-muted-foreground">
-        <span className="font-mono">{agent}</span> · <span className="text-foreground">{text}</span>
+        <span className="font-mono">{agentName(agent)}</span> · <span className="text-foreground">{text}</span>
       </span>
       <Button size="xs" variant="ghost-muted" className="ml-auto" onClick={onDismiss}>
         Dismiss

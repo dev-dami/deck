@@ -206,7 +206,10 @@ const DEEP_FIELD: SceneArt = {
   side: 0.55,
 };
 
-export const PROCESS: Record<string, Process> = { riso: "halftone", stitch: "stitch", horizon: "spectrum" };
+export const PROCESS: Record<string, Process> = { riso: "halftone", stitch: "stitch", horizon: "spectrum", aurora: "spectrum", dune: "spectrum", nebula: "spectrum" };
+
+// The picture each spectrum look prints: its own, never another's.
+export const SPECTRUM_PICTURES: Record<string, string> = { horizon: "horizon", aurora: "aurora", dune: "dune", nebula: "nebula" };
 
 // A theme's own process: the one its preset prints through.
 export function processOf(theme: string): Process {
@@ -280,9 +283,12 @@ export function artFor(theme: string, mode: Mode, tokens?: Tokens, use: Use = "w
     return use === "print" ? { ...art, margin: 0 } : art;
   }
   if (process === "spectrum") {
-    // Another theme's colours: its backdrop is the ground, or in light
-    // its canvas the paper.
-    if (theme === "horizon" || tokens === undefined) return mode === "dark" ? NIGHT : DAY;
+    // Horizon and its sisters print their own pictures; another theme's
+    // colours print Horizon's, its backdrop the ground, or in light its
+    // canvas the paper.
+    const own = SPECTRUM_PICTURES[theme];
+    if (own !== undefined) return { ...(mode === "dark" ? NIGHT : DAY), picture: own };
+    if (tokens === undefined) return mode === "dark" ? NIGHT : DAY;
     return mode === "dark" ? { ...NIGHT, ground: tokens.backdrop, paper: tokens.backdrop } : { ...DAY, peak: tokens.canvas };
   }
   if (process === "stitch") {

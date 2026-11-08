@@ -5,8 +5,9 @@ theme. The components and the motion below are the same in every look.
 A look is made of aspects that mix (section 9): the colours (any theme of
 the catalog, Riso's and Stitch's inks among them), the material, the
 picture's process, the display face, the texture, and two knobs, corners
-and translucency. Horizon (section 10), the default, Liquid Glass, Riso
-and Stitch are presets that set every aspect at once. The layout can
+and translucency. Horizon (section 10), the default, its sisters Aurora,
+Dune and Nebula, Liquid Glass (section 11), Riso and Stitch are presets
+that set every aspect at once. The layout can
 mirror (section 4).
 
 ## 1. Direction
@@ -456,3 +457,55 @@ as a wordmark.
 
 **Light.** The paper is the dots' peak, so bare paper prints clean and the
 limb is a pastel arc of dots on it.
+
+**Sisters.** Aurora (green and violet curtains over a ridge, a green
+accent), Dune (sand ridges under a low sun, amber) and Nebula (lit gas
+over deep stars, violet) are Horizon's window over a picture of their own,
+drawn by `scripts/scene-art.py`. No two looks print the same picture
+(`SPECTRUM_PICTURES` in `backdrop/inks.ts`, and its test).
+
+**Choosing.** Each preset's card in Settings > Appearance is its picture
+with the window in miniature over it, in its own colours (`MiniWindow` in
+`ui/ThemeCard.tsx`): the flush sidebar, the composer and the home's cards
+for smoked glass; the floating panels, made of the material, for the
+others. The live preview over the cards draws the same home for a smoked
+look (`SmokePreview` in `ui/LookEditor.tsx`).
+
+**Agents' names.** The window shows an agent as people say it: "Claude",
+and "Claude 2" for the second of its kind (`agentName.ts`), whatever its
+id ("claude", "claude2", or "claude-1" from an older Deck). The id stays
+what @mentions, lanes, tests and the engine use.
+
+## 11. Liquid glass
+
+The Liquid Glass material bends what is behind it, as a thick pane does at
+its rim, and moves like a liquid.
+
+**The lens** (`liquidGlass.ts`). Each glass panel (`.liquid`,
+`.liquid-thick`, `.liquid-clear`, `.material`) gets an SVG filter drawn for
+its own size and corner radius: a displacement map that is flat in the
+middle and, across a rim up to 32px wide, reads the backdrop from further
+inside, most at the edge (a circle's profile, 1 − √(1 − t²)). Red, green
+and blue bend by 110%, 100% and 90%, so the rim splits the faintest
+spectrum. CSS reads the filter from `--lens` (an unregistered-inherit
+`@property`), before the blur: `backdrop-filter: var(--lens,) blur()
+saturate()`. A panel the runtime has not reached, and every panel with
+Reduce transparency, is plain frosted glass. Filters are cached per size,
+96 at most; a panel that is resizing waits 90ms to settle first.
+
+**The material.** Clearer than before (a 30% tint, a 4px blur, 18px for
+menus and dialogs, 14px for the sidebar over the picture), with light on
+the top-left edge, fainter on the bottom-right, a glow inside the upper
+lip and a shade in the lower (`--glass-inset`).
+
+**Motion.** Only scale and opacity move, on `--spring` (a damped spring as
+`linear()`), and reduced motion stops all of it.
+
+- The segmented controls' pill is one shape the track draws
+  (`.seg-track::before`). Picking another segment stretches it across both,
+  squashing it a little, and it settles on the new one with a spring. This
+  is in every look.
+- In Liquid Glass, a glass button gives under a press (0.9) and springs
+  back; the send and tinted buttons swell a little under the pointer.
+- In Liquid Glass, menus, popovers, dialogs and toasts bloom open from a
+  drop (`liquid-bloom`): squashed, a small overshoot, then still.

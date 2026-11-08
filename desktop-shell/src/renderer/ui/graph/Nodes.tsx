@@ -1,4 +1,5 @@
 import type { Theme } from "@web/protocol";
+import { agentName } from "../../agentName";
 import { kindMark } from "@web/theme";
 import { type CSSProperties, memo, type ReactNode } from "react";
 import { agentColour } from "../../agents";
@@ -158,7 +159,7 @@ export const AgentCard = memo(function AgentCard({ n, picked, dim, live, theme, 
                 sub !== null && "font-mono text-xs",
               )}
             >
-              {name}
+              {agentName(name)}
             </span>
             <AgentRole role={n.role} className="text-2xs" />
           </span>
@@ -396,7 +397,7 @@ export const BranchCard = memo(function BranchCard({ n, picked, dim, theme, onPi
       <span className="flex min-w-0 items-center gap-1 pl-4.5 text-3xs text-muted-foreground">
         {w.ownerName !== "" && <Glyph kind={n.ownerKind} theme={theme} className="w-auto text-3xs" />}
         <span className="min-w-0 truncate">
-          {who} · {w.files.length} files · {shortRef(w.baseRef)}
+          {agentName(who)} · {w.files.length} files · {shortRef(w.baseRef)}
         </span>
         <span className="ml-auto shrink-0 text-faint">{TREE_STATE_LABEL[n.state]}</span>
       </span>

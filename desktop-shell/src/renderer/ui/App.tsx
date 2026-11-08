@@ -2,6 +2,7 @@ import type { Decision, QuestionAnswer } from "@web/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DeckBridge, LocalDeck, SavedServer, StartError } from "../../shared/bridge";
 import { useAppearance, useMotion } from "../appearance";
+import { useLiquidGlass, useLiquidPills } from "../liquidGlass";
 import { attachProject, dispatchUi, dropProject, setEngine, showProject } from "../appState";
 import type { InboxItem } from "../attention";
 import type { DeckClient } from "../client";
@@ -235,6 +236,8 @@ export function App({ bridge }: { bridge: DeckBridge }) {
   const prefs = usePrefs();
   useAppearance(prefs.theme, prefs.palette, prefs.accent);
   useMotion(prefs.motion);
+  useLiquidGlass(prefs.material);
+  useLiquidPills();
 
   // The project on screen sees its open room; the others gather news.
   const shownKey = connecting || welcome ? null : currentKey;

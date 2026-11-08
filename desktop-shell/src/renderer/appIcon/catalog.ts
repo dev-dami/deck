@@ -43,6 +43,9 @@ export const APP_ICONS: readonly AppIconInfo[] = [
   // Horizon: near black, the chevron shading from the limb's blue to its
   // orange.
   { id: "horizon", label: "Horizon", style: flat(["#1c1c20", "#0b0b0d"], ["#8fb6ff", "#ff8c42"], "#e6e6e8") },
+  { id: "aurora", label: "Aurora", style: flat(["#18201e", "#0a0e0d"], ["#5ef0a8", "#9b6bff"], "#e4ebe8") },
+  { id: "dune", label: "Dune", style: flat(["#221a17", "#0f0b0a"], ["#ffc27a", "#e8743a"], "#efe6df") },
+  { id: "nebula", label: "Nebula", style: flat(["#1d1a27", "#0b0a10"], ["#f07ad0", "#6f8dff"], "#e8e6f0") },
   { id: "glass", label: "Liquid Glass", style: { kind: "glass" } },
   { id: "riso", label: "Riso", style: { kind: "riso", ground: "black" } },
   { id: "riso-paper", label: "Riso on paper", style: { kind: "riso", ground: "paper" } },
@@ -77,6 +80,9 @@ export function appIconInfo(id: string): AppIconInfo {
 // light, Cross-stitch is linen in the light and denim in the dark.
 const BY_THEME: Record<string, string | { light: string; dark: string }> = {
   horizon: "horizon",
+  aurora: "aurora",
+  dune: "dune",
+  nebula: "nebula",
   glass: "glass",
   riso: { dark: "riso", light: "riso-paper" },
   stitch: { light: "stitch", dark: "stitch-denim" },

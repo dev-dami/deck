@@ -1,4 +1,5 @@
 import type { HighlightItem } from "../../shared/bridge";
+import { agentName } from "../agentName";
 import type { DeckClient } from "../client";
 import { serves } from "../client";
 import { highlightCounts } from "../highlights";
@@ -37,7 +38,7 @@ export function HighlightsStrip({ item, onOpen }: { item: HighlightItem; onOpen:
       {item.kind === "needs_you" ? <CircleAlert className="size-4 shrink-0 text-warning-foreground" /> : <Flag className="size-4 shrink-0 text-destructive-foreground" />}
       <span className="shrink-0 text-muted-foreground">{item.kind === "needs_you" ? "Needs you" : "Blocker"}</span>
       <span className="min-w-0 flex-1 truncate">{item.title}</span>
-      <span className="shrink-0 text-faint">{item.agent}</span>
+      <span className="shrink-0 text-faint">{agentName(item.agent)}</span>
     </button>
   );
 }

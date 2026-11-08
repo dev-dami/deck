@@ -1,4 +1,5 @@
 import type { Theme } from "@web/protocol";
+import { agentName } from "../../agentName";
 import type { ReactNode } from "react";
 import type { AgentGraphNode } from "../../graph";
 import { agentLane } from "../../lanes";
@@ -85,7 +86,7 @@ export function AgentDetail({
         <Glyph kind={a.agentKind} theme={theme} className="mt-px text-sm" />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h3 className="flex min-w-0 items-baseline gap-1.5 font-medium text-sm leading-tight">
-            <span className="truncate">{a.name}</span>
+            <span className="truncate">{agentName(a.name)}</span>
             <AgentRole role={a.role} className="text-xs" />
           </h3>
           <p className="flex min-w-0 items-center gap-1.5 text-2xs">

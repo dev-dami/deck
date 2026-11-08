@@ -3,6 +3,8 @@
 // person's own wallpaper. Vite bundles each file, so it loads under
 // img-src 'self'.
 
+import type { PresetId } from "../themes";
+
 export interface Picture {
   id: string;
   url: string;
@@ -36,6 +38,31 @@ export const PICTURES: readonly Picture[] = [
     source: "Deck, CC0",
     ax: 0.75,
     ay: 0.35,
+  },
+  // Its sisters, drawn for Deck too (scripts/scene-art.py).
+  {
+    id: "aurora",
+    url: new URL("../art/aurora-deck.jpg", import.meta.url).href,
+    credit: "Aurora, drawn for Deck",
+    source: "Deck, CC0",
+    ax: 0.7,
+    ay: 0.4,
+  },
+  {
+    id: "dune",
+    url: new URL("../art/dune-deck.jpg", import.meta.url).href,
+    credit: "Dune, drawn for Deck",
+    source: "Deck, CC0",
+    ax: 0.7,
+    ay: 0.5,
+  },
+  {
+    id: "nebula",
+    url: new URL("../art/nebula-deck.jpg", import.meta.url).href,
+    credit: "Nebula, drawn for Deck",
+    source: "Deck, CC0",
+    ax: 0.65,
+    ay: 0.45,
   },
   // Liquid Glass: scenes with a sky, at dusk in its inks.
   {
@@ -176,8 +203,11 @@ export const PICTURES: readonly Picture[] = [
 
 // Each art direction's own set, its default first. The picker offers the
 // set of the theme on screen; any picture prints through any process.
-export const SETS: Record<"horizon" | "glass" | "riso" | "stitch", readonly string[]> = {
-  horizon: ["horizon", "xdf", "clouds", "sete", "great-wave", "alps"],
+export const SETS: Record<PresetId, readonly string[]> = {
+  horizon: ["horizon", "aurora", "dune", "nebula", "xdf", "clouds"],
+  aurora: ["aurora", "horizon", "dune", "nebula"],
+  dune: ["dune", "horizon", "aurora", "nebula"],
+  nebula: ["nebula", "horizon", "aurora", "dune"],
   glass: ["alps", "yosemite", "hira-snow", "clouds", "sete", "xdf"],
   riso: ["allium", "great-wave", "irises", "plum-moon"],
   stitch: ["canyon", "nagasaki", "red-fuji", "shower-bridge", "kintai"],

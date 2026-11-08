@@ -32,7 +32,7 @@ export function LookEditor({ p }: { p: Prefs }) {
   const pick = (a: Partial<Aspects>) => setPrefs(a);
   return (
     <div className="flex flex-col gap-5 py-4">
-      <LookPreview look={look} tokens={tokens} sidebar={p.sidebarSide} wallpaper={p.wallpaper} />
+      <LookPreview look={look} tokens={tokens} sidebar={p.sidebarSide} wallpaper={p.wallpaper} material={p.material} />
       <ThemeGrid look={p} />
       <div className="flex flex-col">
         <h3 className="pb-1 text-[13px]">Mix your own</h3>
@@ -274,8 +274,10 @@ function ProcessSwatch({ process, look, tokens }: { process: PictureProcess; loo
 // The window in miniature, live: the picture (or the person's) through
 // the process, the sidebar of the material on the side the layout puts
 // it, and the room's sheet with a heading in the display face, the
-// person's bubble and the composer. Every token is the window's own.
-function LookPreview({ look, tokens, sidebar, wallpaper }: { look: Look; tokens: Tokens; sidebar: "left" | "right"; wallpaper: string }) {
+// person's bubble and the composer. Every token is the window's own. In
+// smoked glass, the window as it opens: the flush sidebar, and the picture
+// with the question, the composer and the home's cards over it.
+function LookPreview({ look, tokens, sidebar, wallpaper, material }: { look: Look; tokens: Tokens; sidebar: "left" | "right"; wallpaper: string; material: string }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const size = useBoxSize(box);
@@ -296,6 +298,9 @@ function LookPreview({ look, tokens, sidebar, wallpaper }: { look: Look; tokens:
       {art !== null && (
         <canvas ref={canvas} aria-hidden className={cn("absolute inset-0 size-full opacity-0 transition-opacity duration-240", drawn && "opacity-100")} />
       )}
+      {material === "smoke" ? (
+        <SmokePreview sidebar={sidebar} />
+      ) : (
       <div className={cn("absolute inset-0 flex gap-2 p-2", sidebar === "right" && "flex-row-reverse")}>
         <div className="liquid flex w-[27%] flex-col gap-1.5 rounded-(--panel-radius) p-2.5 pt-3">
           <span className="pb-1 font-semibold text-foreground text-xs">Deck</span>
@@ -314,6 +319,57 @@ function LookPreview({ look, tokens, sidebar, wallpaper }: { look: Look; tokens:
           <div className="liquid mt-auto flex h-8 items-center rounded-full pr-1 pl-3 text-[11px] text-faint">
             Message the crew
             <span className="liquid-tint ml-auto size-6 rounded-full" />
+          </div>
+        </div>
+      </div>
+      )}
+    </div>
+  );
+}
+
+function SmokePreview({ sidebar }: { sidebar: "left" | "right" }) {
+  const card = "liquid flex flex-col gap-1 rounded-[6px] p-1.5";
+  const bar = (w: string, c = "bg-hairline-strong") => <span className={cn("h-1.5 rounded-full", c)} style={{ width: w }} />;
+  return (
+    <div className={cn("absolute inset-0 flex", sidebar === "right" && "flex-row-reverse")}>
+      <div className="flex w-[22%] shrink-0 flex-col gap-1.5 bg-(--sidebar) p-2.5 pt-3 shadow-[inset_-1px_0_0_var(--hairline)]">
+        <span className="h-5 rounded-(--control-radius) bg-selected" />
+        {bar("80%")}
+        {bar("60%")}
+        {bar("70%")}
+        <span className="mt-auto h-2 w-2/5 rounded-full bg-hairline" />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-2 px-[14%]">
+        <h4 className="w-full truncate font-medium text-foreground text-sm">What should we build?</h4>
+        <div className="liquid flex h-9 w-full items-end rounded-[7px] p-1.5 text-[10px] text-faint">
+          <span className="mb-auto">Ask anything</span>
+          <span className="ml-auto size-4 rounded-full bg-foreground/80" />
+        </div>
+        <div className="grid w-full grid-cols-4 gap-1.5">
+          <div className={cn(card, "col-span-2")}>
+            <span className="text-[8px] text-muted-foreground">Activity</span>
+            <span className="grid grid-cols-12 gap-[2px]">
+              {Array.from({ length: 24 }, (_, i) => (
+                <span key={i} className="aspect-square rounded-[1px] bg-primary" style={{ opacity: [0.12, 0.5, 0.25, 0.9, 0.12, 0.35, 0.7, 0.18][(i * 5) % 8] }} />
+              ))}
+            </span>
+          </div>
+          <div className={cn(card, "col-span-2")}>
+            <span className="text-[8px] text-muted-foreground">Recent threads</span>
+            {bar("70%")}
+            {bar("55%")}
+          </div>
+          <div className={card}>
+            <span className="text-[8px] text-muted-foreground">Usage</span>
+            <span className="font-medium text-[11px] text-foreground leading-none">42%</span>
+          </div>
+          <div className={cn(card, "col-span-2")}>
+            <span className="text-[8px] text-muted-foreground">In progress</span>
+            {bar("50%")}
+          </div>
+          <div className={card}>
+            <span className="text-[8px] text-muted-foreground">This month</span>
+            <span className="font-medium text-[11px] text-primary leading-none">36</span>
           </div>
         </div>
       </div>

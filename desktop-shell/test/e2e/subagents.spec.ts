@@ -115,13 +115,13 @@ test("a claude's own subagents: lanes under it, nodes in the graph, blocks of th
   const pop = page.getByRole("menu", { name: "review-pr-295" });
   await expect(pop.locator(".sub-task")).toHaveText("Review PR #295");
   await page.screenshot({ path: shot("subagents-lane-alone.png") });
-  await pop.getByRole("menuitem", { name: "Stop @claude-1 and its subagents" }).click();
+  await pop.getByRole("menuitem", { name: "Stop @Claude and its subagents" }).click();
   await expect.poll(() => fake.deck.interrupted).toContain("claude-1");
   // Its subagents stopped with it.
   await expect(strip.locator(`[data-lane="agent:${SUBS[2]}"]`)).toHaveAttribute("data-sub", "stopped", { timeout: 15_000 });
   await expect(page.locator(`.msg-sub[data-agent="${SUBS[2]}"]`)).toHaveAttribute("data-state", "stopped");
   await strip.locator(`[data-lane="agent:${SUBS[2]}"]`).click();
-  await page.getByRole("menu", { name: "review-pr-295" }).getByRole("menuitem", { name: "Started by @claude-1" }).click();
+  await page.getByRole("menu", { name: "review-pr-295" }).getByRole("menuitem", { name: "Started by @Claude" }).click();
   await expect(strip.locator('[data-lane="agent:claude-1"]')).toHaveAttribute("aria-pressed", "true");
 });
 
@@ -151,7 +151,8 @@ test("a lead's spawned subagents fold under its reply, with no lanes strip", asy
   // Folded: its name, kind, what it was asked or found, how it stands.
   const first = page.locator('.msg-sub[data-agent="codex-1"]');
   await expect(first).toHaveAttribute("data-parent", "claude-1");
-  await expect(first.locator(".sub-who")).toHaveText("codex-1");
+  // Its name as people say it; data-agent keeps the id.
+  await expect(first.locator(".sub-who")).toHaveText("Codex");
   await expect(first.locator(".sub-kind")).toHaveText("codex");
   await expect(first.locator(".sub-task")).toContainText("check every flag in the README");
   await expect(first).toHaveAttribute("data-state", "done", { timeout: 15_000 });

@@ -130,7 +130,7 @@ describe("aspects and presets", () => {
   const horizon = DIRECTIONS.horizon.look;
 
   test("Horizon is the default look, and each preset names only known choices", () => {
-    expect(PRESET_IDS).toEqual(["horizon", "glass", "riso", "stitch"]);
+    expect(PRESET_IDS).toEqual(["horizon", "aurora", "dune", "nebula", "glass", "riso", "stitch"]);
     for (const k of ASPECT_KEYS) expect(defaultPrefs[k], k).toBe(horizon[k]);
     for (const id of PRESET_IDS) {
       const l = DIRECTIONS[id].look;
@@ -142,6 +142,8 @@ describe("aspects and presets", () => {
       expect(l).toMatchObject({ corners: "auto", translucency: "auto" });
     }
     expect(horizon).toMatchObject({ palette: "horizon", material: "smoke", process: "spectrum", face: "system", texture: "none" });
+    // Horizon's sisters: the same window over a picture of their own.
+    for (const id of ["aurora", "dune", "nebula"] as const) expect(DIRECTIONS[id].look).toEqual({ ...horizon, palette: id });
     expect(glass).toMatchObject({ palette: "glass", material: "glass", process: "dither", face: "inter-tight", texture: "none" });
     expect(DIRECTIONS.riso.look).toMatchObject({ palette: "riso", material: "paper", process: "halftone", face: "space-grotesk", texture: "fibre" });
     expect(DIRECTIONS.stitch.look).toMatchObject({ palette: "stitch", material: "felt", process: "stitch", face: "pixelify", texture: "felt" });
