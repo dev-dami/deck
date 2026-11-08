@@ -3,12 +3,13 @@ import { sessionTitle } from "@web/state";
 import { kindColour, kindMark } from "@web/theme";
 import { relativeTime } from "@web/time";
 import { Archive, ArchiveRestore, Folder, Trash2, CornerDownRight } from "./icons";
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import type { ArchiveOffer, ThreadChoice } from "../../shared/bridge";
 import type { RoomState, RoomStatus } from "../attention";
 import { cn } from "../lib/cn";
 import type { RowStyle } from "../prefs";
 import { sameData } from "../select";
+import { arrival, leave, Tick } from "./kit/motion";
 
 // Each state is a dot at the row's leading edge, in the colour of what it
 // asks of you; the word is the row's second line, the tooltip and what a
@@ -124,6 +125,9 @@ export const ThreadRow = memo(function ThreadRow({
   // A sub-thread sits indented under its parent, with ↳ before its title.
   const indent = depth > 0 ? { paddingLeft: `${Math.min(depth, 3) * 14}px` } : undefined;
   const [confirm, setConfirm] = useState(false);
+  // The row folds away before it goes to the archive.
+  const li = useRef<HTMLLIElement>(null);
+  const archiveRow = () => leave(li.current, onArchive);
   const state = status === undefined || status.state === "idle" ? null : status.state;
   const label = status?.label ?? "";
   const recede = !active && state === null && !unread;
@@ -172,7 +176,7 @@ export const ThreadRow = memo(function ThreadRow({
         {digit !== null ? (
           <span className="row-digit font-medium text-2xs text-foreground">{digit}</span>
         ) : state === "needs-you" && s.pending > 1 ? (
-          <span className="font-medium text-warning-foreground">{s.pending}</span>
+          <Tick value={s.pending} className="font-medium text-warning-foreground" />
         ) : (
           relativeTime(s.updated_at, now)
         )}
@@ -226,7 +230,7 @@ export const ThreadRow = memo(function ThreadRow({
                 className={cn(rowAction, "aria-disabled:cursor-default aria-disabled:opacity-40")}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (archive === "on") onArchive();
+                  if (archive === "on") archiveRow();
                 }}
               >
                 <Archive className="size-3.5" />
@@ -269,7 +273,7 @@ export const ThreadRow = memo(function ThreadRow({
       e.preventDefault();
       void onMenu().then((choice) => {
         if (choice === "rename") setRenaming(true);
-        else if (choice === "archive") onArchive();
+        else if (choice === "archive") archiveRow();
         else if (choice === "unarchive") onUnarchive?.();
         else if (choice === "delete") onDelete();
       });
@@ -282,7 +286,7 @@ export const ThreadRow = memo(function ThreadRow({
   };
   if (variant === "compact") {
     return (
-      <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id} data-sub={depth > 0 || undefined} style={indent}>
+      <li ref={li} className={cn("session list-none", active && "open")} data-session={s.id} data-sub={depth > 0 || undefined} data-arrive={arrival(`row:${s.id}`)} style={indent}>
         <div {...common} className={cn(surface, "flex min-h-7.5 flex-col justify-center py-0.75 pr-2 pl-1.5")}>
           <div className="flex h-6 min-w-0 items-center gap-1.5">
             {mark}
@@ -306,7 +310,7 @@ export const ThreadRow = memo(function ThreadRow({
     );
   }
   return (
-    <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id} data-sub={depth > 0 || undefined} style={indent}>
+    <li ref={li} className={cn("session list-none", active && "open")} data-session={s.id} data-sub={depth > 0 || undefined} data-arrive={arrival(`row:${s.id}`)} style={indent}>
       <div {...common} className={surface}>
         <div className={cn("relative flex gap-1.5 py-1.5 pr-2 pl-1.5", hideProject ? "h-[3.25rem]" : "h-[4.375rem]")}>
           <span className="flex h-5 shrink-0 items-center">{mark}</span>

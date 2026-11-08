@@ -1,10 +1,11 @@
 import type { Session } from "@web/protocol";
 import { sessionTitle } from "@web/state";
 import { toMillis } from "@web/time";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from "react";
 import { cn } from "../lib/cn";
 import type { ProjectApi, Usage, UsageDay, UsageLimit } from "../project";
 import { BarChart3, Calendar, Clock, Gauge, Loader2, ShieldQuestion } from "./icons";
+import { Tick } from "./kit/motion";
 import { compact, dollars } from "./Usage";
 
 // The new-thread screen's home, under the composer (docs/design-glass.md,
@@ -168,7 +169,7 @@ function Activity({ usage, sessions, now }: { usage: Usage | null; sessions: rea
     <>
       <div className="flex gap-[3px]" role="img" aria-label={`${unit === "turn" ? "Turns" : "Threads"} per day, the last ${WEEKS} weeks`}>
         {grid.map((col, i) => (
-          <div key={i} className="flex min-w-0 flex-1 flex-col gap-[3px]">
+          <div key={i} className="activity-week flex min-w-0 flex-1 flex-col gap-[3px]" style={{ "--week": i } as CSSProperties}>
             {col.map((c) => (
               <div
                 key={c.day}
@@ -274,7 +275,7 @@ function UsageStat({ usage, local, now }: { usage: Usage | null; local: boolean;
 function Stat({ value, line }: { value: string; line: string }) {
   return (
     <div className="mt-auto flex min-w-0 flex-col gap-0.5">
-      <span className="truncate font-medium text-[26px] text-foreground leading-tight tracking-[-0.02em] tabular-nums">{value}</span>
+      <Tick value={value} className="truncate font-medium text-[26px] text-foreground leading-tight tracking-[-0.02em] tabular-nums" />
       <span className="truncate text-2xs text-faint">{line}</span>
     </div>
   );
@@ -324,7 +325,7 @@ function Figure({ label, value, last }: { label: string; value: number; last: nu
     <div className="flex flex-col">
       <span className="text-2xs text-faint">{label}</span>
       <span className="flex items-baseline gap-1.5 tabular-nums">
-        <span className="font-medium text-lg text-primary leading-tight">{compact(value)}</span>
+        <Tick value={compact(value)} className="font-medium text-lg text-primary leading-tight" />
         {delta !== 0 && (
           <span className={cn("text-2xs", delta > 0 ? "text-success-foreground" : "text-destructive-foreground")} title="Against last month">
             {delta > 0 ? "+" : "−"}

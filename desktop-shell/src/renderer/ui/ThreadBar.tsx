@@ -10,6 +10,7 @@ import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { ArrowLeft, ChevronDown, Plus } from "./icons";
 import { Button } from "./kit/button";
 import { MenuItem, MenuLabel, MenuSeparator, Popover } from "./kit/menu";
+import { arrival, Tick } from "./kit/motion";
 import type { SidebarItem } from "./ProjectGroup";
 import type { ProjectEntry } from "./Sidebar";
 import { Mark } from "./ThreadRow";
@@ -233,7 +234,7 @@ export const ThreadChip = memo(function ThreadChip({
   const label = status?.label ?? "";
   const title = sessionTitle(s);
   return (
-    <li className={cn("session list-none", active && "open")} data-session={s.id} data-settled={settled || undefined}>
+    <li className={cn("session list-none", active && "open")} data-session={s.id} data-settled={settled || undefined} data-arrive={arrival(`row:${s.id}`)}>
       <div
         role="button"
         tabIndex={0}
@@ -290,7 +291,7 @@ export const ThreadChip = memo(function ThreadChip({
         {digit !== null ? (
           <span className="row-digit font-medium text-2xs text-foreground tabular-nums">{digit}</span>
         ) : (
-          state === "needs-you" && s.pending > 1 && <span className="font-medium text-2xs text-warning-foreground tabular-nums">{s.pending}</span>
+          state === "needs-you" && s.pending > 1 && <Tick value={s.pending} className="font-medium text-2xs text-warning-foreground tabular-nums" />
         )}
       </div>
     </li>

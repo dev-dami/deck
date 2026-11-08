@@ -18,6 +18,7 @@ import { kindsBySession, sameKinds, useAppSlice } from "../select";
 import { SETTLE_AFTER_MS } from "../threads";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
 import { Button } from "./kit/button";
+import { Tick } from "./kit/motion";
 
 import { modKey } from "./keys";
 import { type BarGroup, ThreadBar, ThreadChip } from "./ThreadBar";
@@ -285,7 +286,7 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
       onClick={actions.onInbox}
     >
       <InboxIcon weight={inbox ? "fill" : "regular"} />
-      {data.inboxCount > 0 && <span className="inbox-count font-medium text-2xs text-warning-foreground tabular-nums">{data.inboxCount}</span>}
+      {data.inboxCount > 0 && <Tick value={data.inboxCount} className="inbox-count font-medium text-2xs text-warning-foreground tabular-nums" />}
     </button>
   );
   const searchButton = (

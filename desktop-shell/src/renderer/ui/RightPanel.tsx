@@ -1,7 +1,6 @@
 import type { AgentLine, ChangedFile, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
 import {
-  ChevronDown,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
@@ -123,11 +122,7 @@ function FileSection({
           aria-expanded={open}
           onClick={onToggle}
         >
-          {open ? (
-            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-          )}
+          <ChevronRight className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform duration-200", open && "rotate-90")} />
           <FileText className="size-3.5 shrink-0 text-info-foreground" />
           <PathTail path={f.path} className="file-path flex-1 text-xs" />
           <FileLang path={f.path} />
