@@ -311,7 +311,8 @@ export class FakeDeck {
   addSubThread(parentId: string, title: string, opener: string, kind: string, brief: string, answer: string): string {
     const parent = this.get(parentId);
     const id = `ses_sub_${this.next++}`;
-    const t = this.addThread(id, title);
+    // A sub-thread starts in its parent's mode (session/subthread.go).
+    const t = this.addThread(id, title, parent.session.mode);
     t.roster = [{ id: kind, name: kind, kind, model: "default", busy: false }];
     // The brief is the opener's: a user message that names its agent
     // (workspace onBrief).
@@ -1104,7 +1105,7 @@ export class FakeDeck {
     return `${prefix}_${this.next++}`;
   }
 
-  private addThread(id: string, title: string, mode: "plan" | "ask" | "yolo" = "ask"): Thread {
+  private addThread(id: string, title: string, mode: Session["mode"] = "ask"): Thread {
     const t: Thread = {
       session: { id, title, updated_at: this.now(), busy: false, pending: 0, mode },
       messages: [],

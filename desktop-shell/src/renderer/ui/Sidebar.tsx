@@ -207,13 +207,22 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
   const lists = (grouped ? groups.map((g) => g.key) : ["all"]).map((key) => {
     const mine = grouped ? items.filter((x) => x.source === key) : items;
     const ids = new Set(mine.map((x) => x.s.id));
-    const parts = split(mine.filter((x) => isTop(x, ids, parentOf)));
-    const under = (list: SidebarItem[]) =>
-      nest(list, mine, (x) => x.s.id, parentOf, (a, b) => toMillis(b.s.updated_at) - toMillis(a.s.updated_at)).map((n) => {
+    // An archived sub-thread of a thread that is not leaves it for the fold.
+    const shelved = new Set(mine.filter(isArchived).map((x) => x.s.id));
+    const kept = mine.filter((x) => !shelved.has(x.s.id));
+    const parts = split(mine.filter((x) => isTop(x, ids, parentOf) || (shelved.has(x.s.id) && !shelved.has(parentOf(x)))));
+    const under = (list: SidebarItem[], all: SidebarItem[]) =>
+      nest(list, all, (x) => x.s.id, parentOf, (a, b) => toMillis(b.s.updated_at) - toMillis(a.s.updated_at)).map((n) => {
         depthOf.set(`${n.item.source}/${n.item.s.id}`, n.depth);
         return n.item;
       });
-    return { key, count: mine.length - parts.archived.length, live: under(parts.live), settled: under(parts.settled), archived: under(parts.archived) };
+    return {
+      key,
+      count: mine.length - parts.archived.length,
+      live: under(parts.live, kept),
+      settled: under(parts.settled, kept),
+      archived: under(parts.archived, mine),
+    };
   });
   // The rows in the order they show, for Ctrl/Cmd+1 to 9: a virtual list
   // leaves rows out of the page, so the order comes from the lists.

@@ -219,4 +219,11 @@ func TestCreateSessionInStartsOnlyThatSessionInTheMode(t *testing.T) {
 
 	_, err = w.CreateSessionIn(ctx, "x", "reckless")
 	require.Error(t, err)
+
+	// A session deleted before its thread is made leaves no start mode.
+	gone, err := w.CreateSessionIn(ctx, "gone", RemoteModeYolo)
+	require.NoError(t, err)
+	require.NoError(t, w.DeleteSession(ctx, gone.ID))
+	_, pending = w.startModeOf(gone.ID)
+	require.False(t, pending)
 }

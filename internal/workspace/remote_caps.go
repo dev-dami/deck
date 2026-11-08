@@ -157,6 +157,11 @@ func (w *DeckWorkspace) RemoteMode(sessionID string) string {
 	if m, ok := w.startModeOf(sessionID); ok {
 		return string(m)
 	}
+	// thread publishes the thread before it drops the start mode, so a
+	// thread made between the two lookups above is there now.
+	if th, ok := w.threadOf(sessionID); ok {
+		return string(th.Mode)
+	}
 	return string(w.mode())
 }
 

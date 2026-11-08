@@ -4,7 +4,7 @@ import { basename, join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import type { NotifyInput, ThreadChoice, ThreadMenuInput } from "../../src/shared/bridge";
 import type { TestHost } from "../bridge";
-import { FakeRpcDeck, protoOf } from "../fake-grpc";
+import { FakeRpcDeck, protoOf, subThreadAtWork } from "../fake-grpc";
 import { attachBridge } from "./harness";
 
 // The renderer over the rpc transport: "Open a folder" starts the fake deck
@@ -844,6 +844,23 @@ test("archive: Deck archives at once, Undo unarchives, and the fold brings a roo
   await expect.poll(() => fake.room.asked.at(-1)).toBe("UnarchiveSession ses_long");
   await expect(fold).toHaveCount(0);
   await expect(row).toBeVisible();
+});
+
+test("archive: a sub-thread under a live parent leaves it for the fold", async ({ page }) => {
+  const sub = subThreadAtWork(fake);
+  await openFolder(page);
+  const row = sidebar(page).locator(`[data-session="${sub}"]`);
+  await expect(row).toHaveAttribute("data-sub", "true");
+  await row.hover();
+  await row.getByRole("button", { name: "Archive Second opinion on the limiter" }).click();
+  await expect(row).toHaveCount(0);
+  // Past the row's fold and the Undo, it stays gone from under its parent.
+  await expect.poll(() => fake.room.asked).toEqual([`ArchiveSession ${sub}`]);
+  await page.waitForTimeout(800);
+  await expect(row).toHaveCount(0);
+  await sidebar(page).getByRole("button", { name: "Archived (1)" }).click();
+  await expect(row).toBeVisible();
+  await expect(sidebar(page).locator('[data-session="ses_main"]')).toBeVisible();
 });
 
 test("archive: with a Deck that cannot unarchive, the row goes, Undo brings it back, and after five seconds Deck archives it", async ({ page }) => {

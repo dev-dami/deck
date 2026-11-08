@@ -207,6 +207,8 @@ func (b *Backend) CreateSessionIn(ctx context.Context, title, mode string) (wire
 			return s, err
 		}
 		if err := b.SetMode(s.ID, mode); err != nil {
+			// As pkg/rpc does: a failed create leaves no session behind.
+			_ = b.DeleteSession(ctx, s.ID)
 			return wire.Session{}, err
 		}
 		s.Mode = mode

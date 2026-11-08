@@ -72,6 +72,10 @@ func (w *DeckWorkspace) DeleteSession(ctx context.Context, sid string) error {
 	if err := w.highlightStore().Delete(sid, func() error { return w.AppWorkspace.DeleteSession(ctx, sid) }); err != nil {
 		return err
 	}
+	// A session deleted before its thread was made drops its start mode.
+	w.startMu.Lock()
+	delete(w.startModes, sid)
+	w.startMu.Unlock()
 	// The videos and frames attached in the session go with it.
 	return media.Remove(w.dataDir(), sid)
 }
