@@ -125,3 +125,10 @@ type Racer interface {
 type ModelRefresher interface {
 	RefreshModels()
 }
+
+// ModeStarter is a Backend that makes a session starting in a given
+// permission mode (wire.ModePlan, ModeAsk or ModeYolo) instead of its
+// default one, and says that mode from the session's first event on.
+type ModeStarter interface {
+	CreateSessionIn(ctx context.Context, title, mode string) (wire.Session, error)
+}

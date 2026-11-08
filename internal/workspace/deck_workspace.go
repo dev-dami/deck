@@ -69,6 +69,12 @@ type DeckWorkspace struct {
 	// lastMode is the permission mode the last recorded mode change set.
 	// Only the pump goroutine touches it.
 	lastMode deckagent.Mode
+	// startModes is the mode each session made by CreateSessionIn starts
+	// in, until its thread is made. startMu guards it and is held while
+	// such a session is made, so nothing reads the session's mode before it
+	// is known.
+	startMu    sync.Mutex
+	startModes map[string]deckagent.Mode
 	// asks maps each ask to edit a file (decks.FileAsk) to the line that
 	// shows it, by thread and ask id. Only the pump goroutine touches it.
 	asks map[string]string
@@ -173,11 +179,21 @@ func (w *DeckWorkspace) thread(sessionID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	_ = w.mgr().SetMode(id, w.mode())
+	mode, started := w.startModeOf(sessionID)
+	if !started {
+		mode = w.mode()
+	}
+	_ = w.mgr().SetMode(id, mode)
 	w.mu.Lock()
 	w.threads[sessionID], w.back[id] = id, sessionID
 	b, _ := json.Marshal(w.threads)
 	w.mu.Unlock()
+	if started {
+		// The thread has the mode now and answers for it.
+		w.startMu.Lock()
+		delete(w.startModes, sessionID)
+		w.startMu.Unlock()
+	}
 	_ = os.MkdirAll(filepath.Dir(w.path), 0o755)
 	_ = os.WriteFile(w.path, b, 0o600)
 	return id, nil

@@ -558,3 +558,35 @@ func TestModelsApartFromAThreadAndRefresh(t *testing.T) {
 	require.Equal(t, 1, p.refreshed)
 	var _ remote.ModelRefresher = r.b
 }
+
+// startingCore makes a session in a mode itself, as the Deck workspace does
+// (workspace.ModeStarter).
+type startingCore struct {
+	*fakeCore
+	rc *fakeRC
+}
+
+func (c startingCore) CreateSessionIn(ctx context.Context, title, mode string) (session.Session, error) {
+	s, err := c.CreateSession(ctx, title)
+	c.rc.modes[s.ID] = mode
+	return s, err
+}
+
+// CreateSessionIn uses the workspace's own when it has one, and otherwise
+// makes the session and switches it.
+func TestCreateSessionInStartsTheSessionInTheMode(t *testing.T) {
+	r := newRig(t)
+	s, err := r.b.CreateSessionIn(context.Background(), "", "yolo")
+	require.NoError(t, err)
+	require.Equal(t, "New Session", s.Title)
+	require.Equal(t, "yolo", s.Mode)
+	require.Equal(t, "yolo", r.rc.modes["new"])
+
+	rc := newRC()
+	events := func(context.Context) <-chan pubsub.Event[tea.Msg] { return make(chan pubsub.Event[tea.Msg]) }
+	b := NewWith(startingCore{newCore(), rc}, rc, nil, fakeRoster{}, events, "v", "proj")
+	s, err = b.CreateSessionIn(context.Background(), "Desk", "yolo")
+	require.NoError(t, err)
+	require.Equal(t, "yolo", s.Mode, "the session says its mode from the start")
+	require.Equal(t, "Desk", s.Title)
+}
