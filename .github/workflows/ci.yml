@@ -104,6 +104,18 @@ jobs:
           cache-dependency-path: desktop-shell/package-lock.json
 
       - run: npm ci
+
+      # Electron 44 fetches its binary on first use, not on install, so the
+      # first Electron test would download it from GitHub's releases inside
+      # its 30s timeout. Fetch it here instead, retrying GitHub's 503s.
+      - name: install the Electron binary
+        run: |
+          for wait in 10 30 60 0; do
+            npx install-electron && exit 0
+            sleep "$wait"
+          done
+          exit 1
+
       - run: npm run lint
       - run: npm test
       - run: npm run build
