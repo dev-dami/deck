@@ -130,6 +130,27 @@ test("the agent pickers list every agent once, keep it, and refresh by hand", as
   expect(fake.modelRefreshes).toBe(1);
 });
 
+test("the composer shows the lead's effort as a glyph, and a click picks the level", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
+  // No word in the bar: bars filled to the level, its name for the tooltip.
+  const dial = page.locator(".effort-picker");
+  await expect(dial).toHaveAttribute("data-effort", "high");
+  await expect(dial).toHaveAttribute("title", "Reasoning effort: High");
+  await expect(dial.locator(".effort-glyph")).toHaveAttribute("data-filled", "3");
+  await expect(page.locator(".lead-picker")).not.toContainText("high");
+  await dial.click();
+  const levels = page.getByRole("menu", { name: "Reasoning effort" });
+  await expect(levels.getByRole("menuitemradio")).toHaveText(["Default", "Low", "Medium", "High", "Extra high", "Max"]);
+  await expect(levels.getByRole("menuitemradio", { name: "High", exact: true })).toBeFocused();
+  await levels.getByRole("menuitemradio", { name: "Max" }).click();
+  await expect(levels).toHaveCount(0);
+  await expect.poll(() => fake.deck.modelSets.at(-1)).toEqual({ kind: "claude", model: "", effort: "max" });
+  await expect(dial).toHaveAttribute("data-effort", "max");
+  await expect(dial.locator(".effort-glyph")).toHaveAttribute("data-filled", "5");
+});
+
 test("$pi starts a pi lane, and its picker offers the models pi has a key for", async ({ page }) => {
   await openFolder(page);
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
@@ -145,7 +166,7 @@ test("$pi starts a pi lane, and its picker offers the models pi has a key for", 
   await expect(menu.getByRole("menuitemradio", { name: /Coder/ })).toBeVisible();
   await menu.getByRole("menuitemradio", { name: /Reasoner/ }).click();
   const efforts = menu.getByRole("group", { name: "Reasoning effort" });
-  await expect(efforts.getByRole("menuitemradio")).toHaveText(["Default", "none", "low", "medium", "high"]);
+  await expect(efforts.getByRole("menuitemradio")).toHaveText(["Default", "None", "Low", "Medium", "High"]);
   await efforts.getByRole("menuitemradio", { name: "medium" }).click();
   await menu.getByRole("menuitem", { name: "Apply" }).click();
   const roster = () => fake.deck.invoke("roster.get", { session_id: "ses_main" }) as Array<{ id: string; model?: string }>;

@@ -34,7 +34,7 @@ describe("the tour's steps", () => {
 
   test("the shell's steps point at the room's own hooks", () => {
     const targets = stepsFor("shell").map((s) => s.target);
-    for (const t of ['nav[aria-label="Threads"]', ".composer", ".mode-picker", "section.home", ".panel-toggles"]) expect(targets).toContain(t);
+    for (const t of ['nav[aria-label="Threads"]', ".composer", ".mode-picker", ".effort-picker", "section.home", ".panel-toggles"]) expect(targets).toContain(t);
   });
 
   test("the Settings step finds its button with the sidebar and with the top bar", () => {
@@ -68,7 +68,7 @@ describe("the tour's steps", () => {
     expect(shows(kept[2] as TourStep, only())).toBe(false);
     expect(stepFrom(kept, 0, 1, only())).toBe(1);
     expect(stepFrom(kept, 1, 1, only())).toBeNull();
-    // The mode dial is only in a thread; what it does is worth a step anyway.
+    // The mode menu is only in a thread; what it does is worth a step anyway.
     expect(TOUR_STEPS.find((s) => s.id === "mode")?.always).toBe(true);
   });
 });

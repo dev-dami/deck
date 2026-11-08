@@ -68,13 +68,19 @@ test("the palette starts the tour, which steps past what is not there and never 
   await at(page, "composer");
   await expect(card(page)).toContainText("$claude");
   await shot(page, "composer");
-  // A new thread has no mode dial: its step shows in the middle.
+  // A new thread has no mode menu: its step shows in the middle.
   await page.keyboard.press("ArrowRight");
   await at(page, "mode");
   await expect(page.locator(".tour-spot")).toHaveAttribute("data-empty", "");
   await page.keyboard.press("ArrowLeft");
   await at(page, "composer");
   await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  // The effort glyph after the agent's chip is there on a new thread too.
+  await at(page, "effort");
+  await expect(page.locator(".tour-spot")).not.toHaveAttribute("data-empty", "");
+  await expect(card(page)).toContainText("reasoning effort");
+  await shot(page, "effort");
   await page.keyboard.press("ArrowRight");
   // The new thread shows the home cards, not the views: those are passed.
   await at(page, "home");
@@ -87,7 +93,7 @@ test("the palette starts the tour, which steps past what is not there and never 
   await at(page, "panels");
 
   // The veil takes no click: a thread opens under it, and its views and
-  // its dial now make steps of their own.
+  // its mode menu now make steps of their own.
   await page.getByRole("navigation", { name: "Threads" }).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   await expect(page.locator(".title")).toHaveText("Fix the pairing lockout");
   // The room took the focus to its composer, where the arrows move the
@@ -97,10 +103,14 @@ test("the palette starts the tour, which steps past what is not there and never 
   await card(page).getByRole("button", { name: "Back" }).click();
   await at(page, "views");
   await shot(page, "views");
+  // The home cards are passed, back to the effort glyph, then the mode menu.
+  await page.keyboard.press("ArrowLeft");
+  await at(page, "effort");
   await page.keyboard.press("ArrowLeft");
   await at(page, "mode");
   await expect(page.locator(".tour-spot")).not.toHaveAttribute("data-empty", "");
   await shot(page, "mode");
+  await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
   await at(page, "panels");

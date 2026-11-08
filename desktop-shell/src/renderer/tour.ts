@@ -84,7 +84,14 @@ export const TOUR_STEPS: readonly TourStep[] = [
     target: ".mode-picker",
     always: true,
     title: "Plan, Ask or Yolo",
-    body: "In a thread, the dial in the composer sets how freely its agents act: Plan proposes and runs nothing, Ask checks before commands and edits, Yolo runs everything.",
+    body: "In a thread, the mode menu in the composer sets how freely its agents act: Plan proposes and runs nothing, Ask checks before commands and edits, Yolo runs everything.",
+  },
+  {
+    id: "effort",
+    screen: "shell",
+    target: ".effort-picker",
+    title: "How hard it thinks",
+    body: "The bars after the agent are its reasoning effort: more bars think longer and answer slower. Click them to pick a level, or leave it at the agent's default.",
   },
   {
     id: "home",

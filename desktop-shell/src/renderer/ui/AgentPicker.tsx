@@ -3,7 +3,9 @@ import { kindColour, kindMark } from "@web/theme";
 import { type ComponentProps, type ReactNode, useState } from "react";
 import { type AgentModels, currentModel, DEFAULT_LABEL, modelRows, useAgentCatalog } from "../agentCatalog";
 import type { DeckClient } from "../client";
+import { effortGlyph, effortName } from "../effort";
 import { cn } from "../lib/cn";
+import { EffortGlyph } from "./EffortGlyph";
 import { Check, Loader2, RefreshCw } from "./icons";
 import { MenuItem } from "./kit/menu";
 
@@ -130,7 +132,7 @@ const ago = (at: number, now: number) => {
 // the agent as a segmented control (when the picker starts one; a lane's
 // picker is for its own), the models as a two-column grid of one-line
 // cells, then one bar with the model's reasoning efforts as a segmented
-// control, Refresh and the action. Each section shows only when it has a
+// control of effort glyphs, Refresh and the action. Each section shows only when it has a
 // choice. The radios only choose; the action applies the choice. The lists
 // come from the catalog (agentCatalog.ts), already loaded: opening a picker
 // asks nothing.
@@ -234,13 +236,16 @@ export function AgentPicker({
       )}
       <div className="pick-bar flex items-center gap-1 border-hairline border-t pt-1">
         {k !== "" && efforts.length > 0 && (
-          <div className={segments} role="group" aria-label="Reasoning effort" title="Reasoning effort">
-            <Segment checked={choice.effort === ""} onClick={() => setChoice({ ...choice, effort: "" })}>
+          <div className={segments} role="group" aria-label="Reasoning effort">
+            <Segment checked={choice.effort === ""} title="The agent's own effort" onClick={() => setChoice({ ...choice, effort: "" })}>
               {DEFAULT_LABEL}
             </Segment>
+            {/* Each level as the composer's bar shows it: its glyph, the
+                name for the tooltip and assistive tech. */}
             {efforts.map((e) => (
-              <Segment key={e} className="effort" checked={choice.effort === e} onClick={() => setChoice({ ...choice, effort: e })}>
-                {e}
+              <Segment key={e} className="effort px-1" checked={choice.effort === e} title={effortName(e)} onClick={() => setChoice({ ...choice, effort: e })}>
+                <EffortGlyph {...effortGlyph(efforts, e)} height={12} />
+                <span className="sr-only">{effortName(e)}</span>
               </Segment>
             ))}
           </div>

@@ -523,22 +523,42 @@ lip and a shade in the lower (`--glass-inset`).
 - In Liquid Glass, menus, popovers, dialogs and toasts bloom open from a
   drop (`liquid-bloom`): squashed, a small overshoot, then still.
 
-## 12. The mode dial and the first screens
+## 12. The mode menu, the effort glyph and the first screens
 
-**The mode dial** (`ui/ModePicker.tsx`, "The mode dial" in styles.css).
-The session's mode (Plan, Ask, Yolo) is a machined knob with no words on
-it; the names are only for assistive tech and the tooltip.
+**The mode menu** (`ui/ModePicker.tsx`). The session's mode (Plan, Ask,
+Yolo) is a word, not a dial: a pill in the composer's bar with the mode's
+icon, its name and a chevron (`.mode-picker`, `data-mode`). A click opens
+a `Popover` of `PickRow`s, the same rows and keys as the agent picker:
+each mode's icon, name and what it does, the current one checked. Yolo
+asks first; a room in yolo keeps the rainbow border on the pill, and the
+amber flash (`[data-yolo-flash]`) stands in for the shockwave.
 
-- In the composer it is a small knob: a mark for each mode round its top,
-  the chosen one lit in the mode's hue (`--dial-hue`), and a notch turned
-  to it (`--dial-angle`). The arrow keys or the wheel turn it a step.
-- A click opens the dial itself: a larger knob in a machined seat, a fine
-  scale, and the modes' icons as stops to click. Drag the knob and it
-  snaps to the nearest stop. Yolo asks first.
-- The cap is a knurled rim round a brushed face, lit from above: graphite
-  in the dark, satin aluminium in the light. The rim and the notch turn on
-  a spring while the light stays put; reduced motion holds them still.
-  `--k` is the cap's size, so one set of rules draws both knobs.
+**The effort glyph** (`ui/EffortGlyph.tsx`, `ui/EffortPicker.tsx`, the
+levels in `effort.ts`, "The effort glyph" in styles.css), after T3 Code's
+effort bars (`apps/web/src/components/chat/EffortGlyph.tsx` there). The
+lead's reasoning effort shows with no word, right after the agent's chip:
+
+- Rising bars, 2px wide on a 4px step in a 14px box, their base on the
+  text's baseline, heights rising in one whole-pixel step from about half
+  to full, so they stay sharp at 1x. One bar per level the model takes
+  (the catalog's list, lightest first; an off level such as `none` is no
+  bar and fills none; seven at most), filled up to the level it runs at.
+- Colour is the text's: lit bars full, the rest at 32% (26% in light).
+  The agent's own level (`""`, `data-auto`) dims every bar alike at 55%,
+  a scale at rest rather than "off". A new level fills or empties bar by
+  bar (`--i` staggers 30ms); the glyph gives under the pointer on
+  `--spring`. Reduced motion holds both still.
+- The name lives in the `title`, the `aria-label` and an `sr-only` span
+  ("Reasoning effort: High"); the levels read as Default, None, Minimal,
+  Low, Medium, High, Extra high (`xhigh`) and Max.
+- A click opens the levels as a short column (`Popover`, "Effort" over
+  the model's name): Default, then each level with its glyph and name, the
+  current one checked; a pick applies at once (`setModel` with the lead's
+  model and the new effort). A model that takes no effort shows no glyph;
+  one the catalog lists without levels but that runs at one is drawn on
+  Claude Code's scale (low to max).
+- In the agent picker the effort bar is the same glyphs as a segmented
+  control after Default, each level's name in its tooltip.
 
 **The first screens.** The Welcome ("One deck for all your agents") and
 the connect screen ("What should we work on?") are the home's family, in
@@ -614,17 +634,18 @@ steps and their logic in `tour.ts`), as coach marks in the window's own
 material.
 
 **Steps.** The Welcome has four: what Deck is, Open a folder, Pair with a
-Deck, and the agent CLIs. A project's window has nine: a look around, the
+Deck, and the agent CLIs. A project's window has ten: a look around, the
 threads (`nav[aria-label="Threads"]`, the sidebar or the top bar), the
-composer and its `$agent`, `@` and `#` mentions, the mode dial (Plan / Ask
-/ Yolo), the home cards (`section.home`), Conversation / Graph
+composer and its `$agent`, `@` and `#` mentions, the mode menu (Plan / Ask
+/ Yolo), the effort glyph (`.effort-picker`), the home cards (`section.home`), Conversation / Graph
 (`.room-views`), the diff and panels (`.panel-toggles`), the palette
 (⌘/Ctrl+K) and Settings › Appearance (the Settings button in the sidebar's
 foot, or in the top bar's tools). Each finds its target by selector when
 it shows (a selector can name it in each layout, and the first match on
 screen wins); a step whose target is not on screen is passed over (the
-home cards in an open thread, the views on a new one). The mode dial lives
-only in a thread, so its step shows in the middle without it.
+home cards in an open thread, the views on a new one, the effort glyph for
+a model that takes none). The mode menu lives only in a thread, so its step
+shows in the middle without it.
 
 **Look.** A dim veil with a hole cut round the target (one element whose
 spread shadow is the veil), the hole's edge a ring of the accent that
