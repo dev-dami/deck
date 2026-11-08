@@ -39,3 +39,7 @@ credentials.json
 .env
 .env.*
 !.env.example
+
+# Agent skills installed locally with `npx skills add` (kept out of the repo)
+.claude/skills/
+skills-lock.json
